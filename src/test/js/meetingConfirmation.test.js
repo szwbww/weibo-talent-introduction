@@ -1333,7 +1333,7 @@ describe("fast-p 02 组件：国家选择与多时区分组（F-1/F-2/F-3/F-5）
         assert.strictEqual(mount.el("meetingZoneSearch").value, "印度（UTC+5:30）");
         assert.strictEqual(mount.el("meetingZoneOptions").hidden, true, "隐藏时列表关闭");
         assert.strictEqual(search.getAttribute("aria-activedescendant"), null, "清理 aria-activedescendant");
-        assert.strictEqual(mount.doc.activeElement, mount.el("meetingCountry"), "焦点移出被隐藏区域");
+        assert.strictEqual(mount.doc.activeElement, mount.el("meetingCountrySearch"), "焦点移出被隐藏区域");
         mount.controller.dispose();
     });
 
@@ -1625,6 +1625,80 @@ describe("fast-p 04 组件：apply 契约（onApply 参数/返回值）", () => 
         assert.strictEqual(calls.length, 2);
         assert.strictEqual(calls[1].payload.mode, "replace");
         assert.strictEqual(dialog.hasAttribute("open"), false);
+        mount.controller.dispose();
+    });
+});
+
+describe("会议国家搜索", () => {
+    after(() => restoreGlobalDom());
+
+    it("中文、英文和代码过滤；搜索不修改已选国家，鼠标选择才更新时区", async () => {
+        const mount = mountComponent();
+        openComponent(mount);
+        await flush();
+        await fillMeetingFields(mount);
+        const search = mount.el("meetingCountrySearch");
+        assert.ok(search, "真实模板提供国家搜索框");
+        assert.strictEqual(search.value, "土耳其");
+        const list = mount.el("meetingCountryOptions");
+        for (const query of ["巴西", "bRaZiL", " br "]) {
+            inputInto(search, query);
+            const buttons = list.querySelectorAll('button[role="option"]');
+            assert.strictEqual(buttons.length, 1);
+            assert.strictEqual(buttons[0].getAttribute("data-country"), "BR");
+            assert.strictEqual(mount.el("meetingCountry").value, "TR");
+            assert.strictEqual(mount.el("meetingZoneSearch").value, "土耳其（UTC+3）");
+        }
+        eventOn(list.querySelector('button[role="option"]'), "mousedown");
+        assert.strictEqual(search.value, "巴西");
+        assert.strictEqual(list.hidden, true);
+        assert.strictEqual(mount.el("meetingCountry").value, "BR");
+        assert.strictEqual(mount.el("meetingZoneSearch").value, "");
+        assert.strictEqual(mount.el("applyMeeting").disabled, true);
+        assert.strictEqual(mount.el("meetingZoneField").hidden, false);
+        mount.controller.dispose();
+    });
+
+    it("键盘选择、空结果 Enter、Esc/失焦恢复、清空搜索和重开", async () => {
+        const mount = mountComponent();
+        openComponent(mount);
+        await flush();
+        const search = mount.el("meetingCountrySearch");
+        assert.ok(search);
+        const list = mount.el("meetingCountryOptions");
+        inputInto(search, "ind");
+        eventOn(search, "keydown", "ArrowDown");
+        assert.ok(search.getAttribute("aria-activedescendant"));
+        eventOn(search, "keydown", "Enter");
+        assert.strictEqual(search.value, "印度");
+        assert.strictEqual(mount.el("meetingCountry").value, "IN");
+        inputInto(search, "不存在的国家");
+        assert.ok(list.textContent.includes("没有匹配的国家/地区"));
+        const enter = new MiniEvent("keydown", { bubbles: true });
+        enter.key = "Enter";
+        let prevented = false;
+        enter.preventDefault = () => { prevented = true; };
+        search.dispatchEvent(enter);
+        assert.strictEqual(prevented, true);
+        assert.strictEqual(mount.el("meetingCountry").value, "IN");
+        eventOn(search, "keydown", "Escape");
+        assert.strictEqual(search.value, "印度");
+        assert.strictEqual(mount.el("meetingDialog").hasAttribute("open"), true);
+        inputInto(search, "China");
+        eventOn(search, "blur");
+        assert.strictEqual(search.value, "印度");
+        inputInto(search, "");
+        assert.strictEqual(list.querySelectorAll('button[role="option"]').length, 7);
+        eventOn(search, "keydown", "Tab");
+        assert.strictEqual(list.hidden, true);
+        assert.strictEqual(search.value, "印度");
+        inputInto(search, "Brazil");
+        clickEl(mount.el("cancelMeeting"));
+        openComponent(mount);
+        await flush();
+        assert.strictEqual(search.value, "土耳其");
+        assert.strictEqual(list.hidden, true);
+        assert.strictEqual(search.getAttribute("aria-expanded"), "false");
         mount.controller.dispose();
     });
 });

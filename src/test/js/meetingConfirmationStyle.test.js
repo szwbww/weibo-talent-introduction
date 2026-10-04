@@ -166,8 +166,12 @@ describe("S-2/S-3/S-4/S-5: 关键 id 与 data-role 源文本存在性（DOM stub
     });
 
     it("S-1/S-2 国家控件与分组契约：aria-describedby、无新 class/inline style、时区块位置", () => {
-        assert.ok(componentSource.includes("id=\"meetingCountry\" aria-describedby=\"meetingCountrySummary\""),
-            "country select 关联摘要 aria-describedby");
+        const countryInput = componentSource.match(/<input id="meetingCountrySearch"[^>]*>/)[0];
+        assert.ok(countryInput.includes('aria-describedby="meetingCountrySummary"'),
+            "国家搜索框关联摘要");
+        assert.ok(countryInput.includes('role="combobox"'));
+        assert.ok(countryInput.includes('aria-controls="meetingCountryOptions"'));
+        assert.ok(componentSource.includes('id="meetingCountryOptions" class="meeting-zone-options" role="listbox"'));
         assert.ok(componentSource.includes("\u8be5\u56fd\u5bb6/\u5730\u533a\u6709\u591a\u4e2a\u65f6\u533a\uff0c\u8bf7\u9009\u62e9\u3002"), "多组未选摘要文案");
         assert.ok(componentSource.includes("\u8be5\u65f6\u95f4\u6ca1\u6709\u53ef\u7528\u65f6\u533a\uff0c\u8bf7\u8c03\u6574\u65e5\u671f\u6216\u65f6\u95f4\u3002"), "0 组提示文案");
         assert.ok(componentSource.includes("\u586b\u5199\u5b8c\u6574\u4f1a\u8bae\u65e5\u671f\u548c\u65f6\u95f4\u540e\u663e\u793a\u65f6\u533a\u3002"), "未填完整时间提示");

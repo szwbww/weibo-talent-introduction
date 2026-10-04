@@ -222,7 +222,8 @@
             var code = zone.countryCode == null ? "" : String(zone.countryCode);
             if (!code || seen[code]) return;
             seen[code] = true;
-            out.push({ code: code, label: countryNameFor(code, zone.countryLabelZh) });
+            out.push({ code: code, label: countryNameFor(code, zone.countryLabelZh),
+                labelEn: String(zone.countryLabelEn || "") });
         });
         out.sort(function (a, b) {
             var byLabel = String(a.label).localeCompare(String(b.label), "zh-Hans-CN");
@@ -389,6 +390,9 @@
             zonesError: false,
             zonesMetaMissing: false,
             selectedCountryCode: "",
+            countryQuery: "",
+            countryListOpen: false,
+            activeCountryIndex: -1,
             zoneGroups: [],
             selectedGroupMemberIds: [],
             unresolvedZoneId: "",
@@ -705,7 +709,7 @@
             if (!doc || !field || typeof field.contains !== "function") return;
             var active = doc.activeElement;
             if (!active || !field.contains(active)) return;
-            var country = el("meetingCountry");
+            var country = el("meetingCountrySearch");
             if (country && typeof country.focus === "function") {
                 try { country.focus(); } catch (e) { /* noop */ }
             }
@@ -728,6 +732,115 @@
                 clearZoneSelection();
             }
             select.value = state.selectedCountryCode;
+            if (state.countryListOpen) renderCountrySearch();
+            else closeCountryList();
+        }
+
+        function countryMatches() {
+            var query = normalizeZoneText(state.countryQuery);
+            return buildCountryOptions(state.zones).filter(function (option) {
+                return !query || normalizeZoneText([option.label, option.labelEn, option.code].join(" "))
+                    .indexOf(query) !== -1;
+            });
+        }
+
+        function closeCountryList() {
+            state.countryListOpen = false;
+            state.countryQuery = "";
+            state.activeCountryIndex = -1;
+            var list = el("meetingCountryOptions");
+            if (list) list.hidden = true;
+            var input = el("meetingCountrySearch");
+            if (!input) return;
+            var selected = buildCountryOptions(state.zones).filter(function (option) {
+                return option.code === state.selectedCountryCode;
+            })[0];
+            input.value = selected ? selected.label : "";
+            input.setAttribute("aria-expanded", "false");
+            input.removeAttribute("aria-activedescendant");
+        }
+
+        function renderCountrySearch() {
+            var input = el("meetingCountrySearch");
+            var list = el("meetingCountryOptions");
+            if (!input || !list || input.disabled) return;
+            var options = countryMatches();
+            if (state.activeCountryIndex >= options.length) state.activeCountryIndex = -1;
+            list.innerHTML = options.map(function (option, index) {
+                return '<button type="button" role="option" tabindex="-1" id="meeting-country-option-' + index +
+                    '" data-country="' + escapeHtml(option.code) + '" aria-selected="' +
+                    (option.code === state.selectedCountryCode ? "true" : "false") + '"' +
+                    (index === state.activeCountryIndex ? ' data-active="true"' : "") + '>' +
+                    escapeHtml(option.label) + '</button>';
+            }).join("") || '<div class="meeting-zone-empty">没有匹配的国家/地区</div>';
+            state.countryListOpen = true;
+            list.hidden = false;
+            input.setAttribute("aria-expanded", "true");
+            input.removeAttribute("aria-activedescendant");
+            if (state.activeCountryIndex >= 0) {
+                var id = "meeting-country-option-" + state.activeCountryIndex;
+                input.setAttribute("aria-activedescendant", id);
+                var active = el(id);
+                if (active && active.scrollIntoView) active.scrollIntoView({ block: "nearest" });
+            }
+        }
+
+        function selectCountry(code) {
+            var select = el("meetingCountry");
+            if (!select || !countryMatches().some(function (option) { return option.code === code; })) return;
+            select.value = code;
+            if (code !== state.selectedCountryCode) onCountryChanged();
+            else closeCountryList();
+        }
+
+        function bindCountrySearch() {
+            var input = el("meetingCountrySearch");
+            var list = el("meetingCountryOptions");
+            input.addEventListener("focus", function () {
+                if (!state.countryListOpen) renderCountrySearch();
+            });
+            input.addEventListener("input", function () {
+                state.countryQuery = input.value || "";
+                state.activeCountryIndex = -1;
+                renderCountrySearch();
+            });
+            input.addEventListener("blur", closeCountryList);
+            input.addEventListener("keydown", function (event) {
+                if (event.isComposing) return;
+                var key = event.key;
+                if (key === "ArrowDown" || key === "ArrowUp") {
+                    event.preventDefault();
+                    var count = countryMatches().length;
+                    if (count) state.activeCountryIndex = state.activeCountryIndex < 0
+                        ? (key === "ArrowDown" ? 0 : count - 1)
+                        : (state.activeCountryIndex + (key === "ArrowDown" ? 1 : -1) + count) % count;
+                    renderCountrySearch();
+                } else if (key === "Enter") {
+                    event.preventDefault();
+                    if (!state.countryListOpen) { renderCountrySearch(); return; }
+                    var options = countryMatches();
+                    var pick = options[state.activeCountryIndex] || (options.length === 1 ? options[0] : null);
+                    if (pick) selectCountry(pick.code);
+                } else if (key === "Escape" && state.countryListOpen) {
+                    event.preventDefault();
+                    if (event.stopPropagation) event.stopPropagation();
+                    event._countryEscapeHandled = true;
+                    closeCountryList();
+                } else if (key === "Tab") closeCountryList();
+            });
+            // 在 blur 前选择，防止关闭候选后鼠标事件丢失；click 同时支持触屏/辅助技术。
+            list.addEventListener("mousedown", function (event) { event.preventDefault(); });
+            function choose(event) {
+                var button = event.target.closest && event.target.closest('button[data-country]');
+                if (button) selectCountry(button.getAttribute("data-country"));
+            }
+            list.addEventListener("mousedown", choose);
+            list.addEventListener("click", choose);
+            el("toggleCountry").addEventListener("mousedown", function (event) { event.preventDefault(); });
+            el("toggleCountry").addEventListener("click", function () {
+                if (state.countryListOpen) closeCountryList();
+                else { input.focus(); renderCountrySearch(); }
+            });
         }
 
         /** 候选过滤：组标签/偏移/成员别名联合命中（别名只用于搜索，不展示）。 */
@@ -869,7 +982,7 @@
 
         function localIssues() {
             var issues = {};
-            if (!state.selectedCountryCode) issues.meetingCountry = "请选择国家/地区";
+            if (!state.selectedCountryCode) issues.meetingCountrySearch = "请选择国家/地区";
             if (state.unresolvedZoneId) {
                 issues.meetingZoneSearch = "该旧时区没有国家归属，请重新选择国家和时区";
             } else if (state.selectedCountryCode && !selectedZoneUsable()) {
@@ -1287,6 +1400,7 @@
         function onCountryChanged() {
             var select = el("meetingCountry");
             state.selectedCountryCode = select ? String(select.value || "") : "";
+            closeCountryList();
             state.unresolvedZoneId = "";
             clearZoneSelection();
             refreshError(null);
@@ -1593,6 +1707,8 @@
         }
 
         function dialogClickOutside(event) {
+            var countryField = el("meetingCountryField");
+            if (state.countryListOpen && countryField && !countryField.contains(event.target)) closeCountryList();
             if (!state.zoneListOpen) return;
             var target = event.target;
             if (!target) return;
@@ -1610,7 +1726,12 @@
         function keydownOnDialog(event) {
             if (state.disposed || !state.open) return;
             if ((event.key || "") !== "Escape") return;
-            if (event._zoneEscapeHandled) return;
+            if (event._zoneEscapeHandled || event._countryEscapeHandled) return;
+            if (state.countryListOpen) {
+                event.preventDefault();
+                closeCountryList();
+                return;
+            }
             if (state.zoneListOpen) {
                 event.preventDefault();
                 if (event.stopPropagation) event.stopPropagation();
@@ -1658,6 +1779,7 @@
             var restore = !!(opts && opts.restoreFocus);
             if (!state.open) return;
             state.open = false;
+            closeCountryList();
             state.latestPreviewReady = false;
             state.preview = null;
             state.editing = false;
@@ -1741,6 +1863,7 @@
                 dialog.addEventListener("click", dialogClickOutside);
             }
             bindZoneSearch();
+            bindCountrySearch();
             bindFormEvents();
         }
 
@@ -1812,6 +1935,7 @@
                 state.zonesError = false;
                 state.zonesMetaMissing = false;
                 state.selectedCountryCode = "";
+                closeCountryList();
                 state.zoneGroups = [];
                 state.selectedGroupMemberIds = [];
                 state.unresolvedZoneId = "";
@@ -1917,10 +2041,16 @@
         "<span></span>" +
         '<button type="button" class="meeting-link" id="retryMeeting" hidden>重试</button>' +
         "</p>" +
-        '<label for="meetingCountry">国家/地区' +
-        '<select id="meetingCountry" aria-describedby="meetingCountrySummary"></select>' +
+        '<div id="meetingCountryField" class="meeting-zone-field">' +
+        '<label id="meetingCountryLabel" for="meetingCountrySearch">国家/地区</label>' +
+        '<select id="meetingCountry" hidden aria-label="已选国家/地区"></select>' +
+        '<div class="meeting-zone-control">' +
+        '<input id="meetingCountrySearch" type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="meetingCountryOptions" aria-labelledby="meetingCountryLabel" aria-describedby="meetingCountrySummary" autocomplete="off" placeholder="搜索国家/地区（中文、英文或代码）">' +
+        '<button type="button" id="toggleCountry" aria-label="展开国家/地区选项">⌄</button>' +
+        '</div>' +
+        '<div id="meetingCountryOptions" class="meeting-zone-options" role="listbox" aria-label="国家/地区选项" hidden></div>' +
         '<small id="meetingCountrySummary" aria-live="polite">填写完整会议日期和时间后显示时区。</small>' +
-        "</label>" +
+        "</div>" +
         '<div class="meeting-fields">' +
         '<label>开始日期<input type="date" id="meetingDate" required></label>' +
         '<label>开始时间<input type="time" id="meetingStart" required step="60"></label>' +
