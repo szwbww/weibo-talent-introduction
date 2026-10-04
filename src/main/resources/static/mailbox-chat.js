@@ -2508,15 +2508,17 @@
         }
 
         // 空页回退最后有效页（I-1：处理最后待处理信后列表可能空页）
+        // 02（T-2）：首查与回退 fetch 后先检查 disposed/data==null 并短路——过期/失败的 null
+        // 回包不得触发旧页回退或选中项协调。
         function refreshListWithFallback() {
             const page = instance.list.page;
             return fetchList({ page }).then((data) => {
-                if (instance.disposed) return data;
+                if (instance.disposed || data == null) return data;
                 const items = instance.list.items || [];
                 const total = Number(instance.list.total) || 0;
                 if (items.length === 0 && page > 0 && total > 0) {
                     return fetchList({ page: page - 1 }).then((retryData) => {
-                        if (instance.disposed) return retryData;
+                        if (instance.disposed || retryData == null) return retryData;
                         resolveFocusAndSelection();
                         return retryData;
                     });

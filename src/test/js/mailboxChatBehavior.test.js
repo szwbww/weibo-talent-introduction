@@ -2891,6 +2891,85 @@ describe("02 · 三态状态菜单（I-1/I-2/I-3/I-5）", () => {
     });
 });
 
+describe("02 · refreshListWithFallback null 短路（T-2/I-3）", () => {
+    function pageRequests(ctx, page) {
+        return ctx.calls.api.filter((entry) => entry.url.startsWith("/api/mail/mailbox/conversations?")
+            && queryOf(entry.url).get("size") !== "1"
+            && queryOf(entry.url).get("page") === String(page));
+    }
+
+    async function bootList(options) {
+        return bootChat(Object.assign({
+            conversations: { items: [expertA()], total: 21 },
+            contact: contactA(),
+            messages: messagesA()
+        }, options || {}));
+    }
+
+    async function goLastPage(ctx) {
+        click(ctx.host.querySelector('[data-action="mc-page-next"]'));
+        await flush();
+    }
+
+    async function triggerMarkResolved(ctx) {
+        const pending = ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"] [data-action="mc-mark-resolved"]');
+        assert.ok(pending, "存在 MANUAL_REVIEW 原位处理入口");
+        click(pending);
+        await flush();
+        const confirm = ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"] [data-action="mc-process-confirm"]');
+        assert.ok(confirm, "原位确认出现");
+        click(confirm);
+        await flush();
+    }
+
+    it("首查 null（失败回包）：短路，不回退旧页", async () => {
+        let failFirst = false;
+        const ctx = await bootList({
+            route: (url, method, body, entry, next) => {
+                if (url.startsWith("/api/mail/mailbox/conversations?") && queryOf(url).get("size") !== "1") {
+                    const page = Number(queryOf(url).get("page"));
+                    if (page === 1) {
+                        if (failFirst) return Promise.reject(new Error("list down"));
+                        return Promise.resolve({ items: [], total: 21 });
+                    }
+                    return Promise.resolve({ items: [expertA()], total: 21 });
+                }
+                return next(url, method, body);
+            }
+        });
+        click(ctx.host.querySelector('.mc-person[data-contact-id="1"] .mc-person-main'));
+        await flush();
+        await goLastPage(ctx);
+        const before = pageRequests(ctx, 0).length;
+        failFirst = true;
+        await triggerMarkResolved(ctx);
+        assert.ok(pageRequests(ctx, 1).length >= 1, "刷新确已请求末页");
+        assert.strictEqual(pageRequests(ctx, 0).length, before, "首查 null 不得触发上一页回退");
+    });
+
+    it("回退 fetch null（过期回包）：短路，不做选中项协调", async () => {
+        let fallbackNull = false;
+        const ctx = await bootList({
+            route: (url, method, body, entry, next) => {
+                if (url.startsWith("/api/mail/mailbox/conversations?") && queryOf(url).get("size") !== "1") {
+                    const page = Number(queryOf(url).get("page"));
+                    if (page === 1) return Promise.resolve({ items: [], total: 21 });
+                    if (page === 0 && fallbackNull) return Promise.resolve(null);
+                    return Promise.resolve({ items: [expertA()], total: 21 });
+                }
+                return next(url, method, body);
+            }
+        });
+        click(ctx.host.querySelector('.mc-person[data-contact-id="1"] .mc-person-main'));
+        await flush();
+        assert.strictEqual(ctx.host.querySelector(".mc-conversation h2").textContent, "专家A");
+        await goLastPage(ctx);
+        fallbackNull = true;
+        await triggerMarkResolved(ctx);
+        assert.strictEqual(ctx.host.querySelector(".mc-conversation h2").textContent, "专家A", "过期 null 不清选中/不串空态");
+    });
+});
+
 describe("I-5 位置/窗口缓存与异步守卫", () => {
     it("A 慢响应晚于 B 选中到达：不得写入 B", async () => {
         const deferredA = [];
