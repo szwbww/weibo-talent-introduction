@@ -2891,6 +2891,18 @@ describe("02 · 三态状态菜单（I-1/I-2/I-3/I-5）", () => {
     });
 });
 
+describe("02 · 卡片姓名 title（S-2/A-4；V-1 回归）", () => {
+    it("长含特殊字符姓名：可见文本与 title 同时保留完整原文，转义边界一致", async () => {
+        const longName = "Katherine \"Kate\" O'Brien <Smith> & van der Waals 教授 长姓名测试一二三四五六七八九十";
+        const ctx = await bootChat({ conversations: { items: [expertA({ name: longName })], total: 1 } });
+        const strong = ctx.host.querySelector('.mc-person[data-contact-id="1"] .mc-person-heading strong');
+        assert.ok(strong, "卡片姓名节点存在");
+        assert.strictEqual(strong.textContent, longName, "可见文本解码后等于完整原文");
+        assert.strictEqual(strong.getAttribute("title"), longName, "title 必须暴露完整原文（不可缺失、不可截断）");
+        assert.ok(strong.outerHTML.includes("&quot;") && strong.outerHTML.includes("&lt;"), "文本与 title 均走同一 escapeText 边界");
+    });
+});
+
 describe("02 · refreshListWithFallback null 短路（T-2/I-3）", () => {
     function pageRequests(ctx, page) {
         return ctx.calls.api.filter((entry) => entry.url.startsWith("/api/mail/mailbox/conversations?")

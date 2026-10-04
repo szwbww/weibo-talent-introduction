@@ -1614,6 +1614,7 @@
             const accounts = Array.isArray(item.accountCodes) && item.accountCodes.length
                 ? item.accountCodes.join("、")
                 : (item.email || "-");
+            const cardName = item.name || item.email || "-";
             const active = instance.selectedContactId != null
                 && String(item.contactId) === String(instance.selectedContactId);
             const tagNames = personTagNames(item);
@@ -1627,7 +1628,7 @@
             return `
                 <div class="mc-person mailbox-progress-card" data-replied="${instance.chip === CHIP_REPLIED ? "true" : "false"}" data-active="${active ? "true" : "false"}" data-contact-id="${escapeText(item.contactId)}">
                     <button class="mc-person-main" type="button" data-action="mc-select-expert" data-contact-id="${escapeText(item.contactId)}" aria-label="${escapeText(ariaLabel)}"${active ? ' aria-current="true"' : ""}>
-                        <span class="mc-person-heading"><strong>${escapeText(item.name || item.email || "-")}</strong></span>
+                        <span class="mc-person-heading"><strong title="${escapeText(cardName)}">${escapeText(cardName)}</strong></span>
                         <small>${escapeText(accounts)}</small>
                         <small>${escapeText(latestLine)}</small>
                         ${lastReplyListMarkup(item)}
