@@ -50,7 +50,7 @@
 
 ## 变更文件清单
 
-共8文件，审核+现有任务框架2子系统，既有表新增字段0。
+共9文件，审核+现有任务框架2子系统，既有表新增字段0。（A1 修正：新增第 9 个文件为既有目录点数断言测试的最小重同步；见下表末行。）
 
 | 文件 | 操作 |
 |---|---|
@@ -62,6 +62,7 @@
 | src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewAllPagesTest.kt | 新增10005人、并发与恢复 |
 | src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepositoryIT.kt | 持久幂等 |
 | src/test/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryReviewControllerTest.kt | 快照状态/API |
+| src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt | 目录断言重同步（A1：2 个新 taskType 的计数/集合断言 18→20 与 hasProgressUi 集；仅同步断言、不弱化） |
 
 ## 验收标准
 
