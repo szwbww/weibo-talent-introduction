@@ -118,31 +118,29 @@ class BatchRecipientSelectionService(
         for (profile in distinct) {
             val docId = docIdOf(profile)
             val keys = conditionKeys[docId]
-            if (keys != null) {
-                keys.forEach { reasonHits.merge(it, 1, Int::plus) }
-                excluded += RecipientDecision(docId, profile.orcidId, RecipientAdmissionState.NOT_DISCOVERY, null, null, keys, false)
-                continue
+            val decision: RecipientDecision = when {
+                keys != null ->
+                    RecipientDecision(docId, profile.orcidId, RecipientAdmissionState.NOT_DISCOVERY, null, null, keys, false)
+                !RecipientScope.isDiscoveryOutreach(profile) ->
+                    RecipientDecision(docId, profile.orcidId, RecipientAdmissionState.NOT_DISCOVERY, null, null, emptyList(), true)
+                else -> {
+                    val resolved = admissions[docId]
+                    val state = admissionStateOf(resolved)
+                    RecipientDecision(
+                        docId = docId,
+                        orcidId = profile.orcidId,
+                        admissionState = state,
+                        admissionDecision = resolved?.decision,
+                        syncErrorCode = resolved?.syncErrorCode,
+                        filterKeys = emptyList(),
+                        included = state == RecipientAdmissionState.ADMITTED
+                    )
+                }
             }
-            if (!RecipientScope.isDiscoveryOutreach(profile)) {
-                included += RecipientDecision(docId, profile.orcidId, RecipientAdmissionState.NOT_DISCOVERY, null, null, emptyList(), true)
-                continue
-            }
-            val resolved = admissions[docId]
-            val state = admissionStateOf(resolved)
-            val admitted = state == RecipientAdmissionState.ADMITTED
-            val decision = RecipientDecision(
-                docId = docId,
-                orcidId = profile.orcidId,
-                admissionState = state,
-                admissionDecision = resolved?.decision,
-                syncErrorCode = resolved?.syncErrorCode,
-                filterKeys = emptyList(),
-                included = admitted
-            )
-            if (admitted) {
+            if (decision.included) {
                 included += decision
             } else {
-                reasonHits.merge(admissionReasonKey(state), 1, Int::plus)
+                reasonKeysOf(decision).forEach { reasonHits.merge(it, 1, Int::plus) }
                 excluded += decision
             }
         }
@@ -192,18 +190,29 @@ class BatchRecipientSelectionService(
         }
     }
 
-    private fun admissionReasonKey(state: RecipientAdmissionState): String = when (state) {
-        RecipientAdmissionState.UNINITIALIZED -> RecipientAdmissionReasonKeys.UNINITIALIZED
-        RecipientAdmissionState.IDENTITY_CHANGED -> RecipientAdmissionReasonKeys.IDENTITY_CHANGED
-        RecipientAdmissionState.MANUAL_REJECTED -> RecipientAdmissionReasonKeys.MANUAL_REJECTED
-        else -> RecipientAdmissionReasonKeys.NEEDS_REVIEW
-    }
-
     companion object {
         /** 04（I-1）：批量读取准入的上限，与 [DiscoveryReviewService.resolveAdmissionBatch] 契约一致。 */
         const val ADMISSION_BATCH_SIZE = 500
 
         fun docIdOf(profile: ExpertProfile): String = profile.esDocId ?: profile.orcidId
+
+        /**
+         * I-3/A3: 一条结论对「原因命中」贡献的 key —— 与 [select] 的内部合并口径**逐字一致**
+         * （显式条件不匹配只计 filterKeys；准入未通过只计一个准入状态 key；准入通过不计）。
+         * 预估侧的准入摘要复用本方法，避免出现第二套解释。
+         */
+        fun reasonKeysOf(decision: RecipientDecision): List<String> = when {
+            decision.filterKeys.isNotEmpty() -> decision.filterKeys
+            decision.included -> emptyList()
+            else -> listOf(admissionReasonKey(decision.admissionState))
+        }
+
+        private fun admissionReasonKey(state: RecipientAdmissionState): String = when (state) {
+            RecipientAdmissionState.UNINITIALIZED -> RecipientAdmissionReasonKeys.UNINITIALIZED
+            RecipientAdmissionState.IDENTITY_CHANGED -> RecipientAdmissionReasonKeys.IDENTITY_CHANGED
+            RecipientAdmissionState.MANUAL_REJECTED -> RecipientAdmissionReasonKeys.MANUAL_REJECTED
+            else -> RecipientAdmissionReasonKeys.NEEDS_REVIEW
+        }
 
         /** 只判准入、不判研发类型的哨兵 mailType（不是任何真实发信类型）。 */
         private const val ADMISSION_ONLY_MAIL_TYPE = "ADMISSION_ONLY"

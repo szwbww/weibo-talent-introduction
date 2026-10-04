@@ -10,6 +10,7 @@ import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.MailSendAttempt
 import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
 import com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest
+import com.weibo.talentintroduction.campaign.domain.RecipientFilterKeys
 import com.weibo.talentintroduction.campaign.domain.RecipientScope
 import com.weibo.talentintroduction.campaign.domain.toExecutionSnapshot
 import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository
@@ -36,6 +37,7 @@ import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
 import com.weibo.talentintroduction.mail.service.MailDeliveryService
+import com.weibo.talentintroduction.mail.service.BatchTemplateEvaluation
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import com.weibo.talentintroduction.mail.service.AccountRateLimiter
 import com.weibo.talentintroduction.mail.service.AutoReplySettingService
@@ -52,6 +54,9 @@ import com.weibo.talentintroduction.mail.service.SenderAccountSelfCheckService
 import com.weibo.talentintroduction.mail.service.SenderWarmupService
 import com.weibo.talentintroduction.task.service.TaskProgressStore
 import com.weibo.talentintroduction.task.service.TaskProgress
+import com.weibo.talentintroduction.template.service.ComposeTemplateRenderResult
+import com.weibo.talentintroduction.template.service.ComposeTemplateSnapshot
+import com.weibo.talentintroduction.template.service.MailComposeTemplateDetail
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -4674,6 +4679,12 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
             .thenReturn(emptyList())
         Mockito.`when`(mailComposeTemplateService.requiredEsFields(42L)).thenReturn(listOf("institution"))
+        // A3 (I-4): 门禁开启时预估/执行还过一遍精确模板门禁；该 fixture 的专家不缺专家变量。
+        Mockito.`when`(
+            introductionMailComposer.evaluateForBatch(
+                anyValue<String?>(null), anyValue(expert("", "")), anyValue(42L)
+            )
+        ).thenReturn(BatchTemplateEvaluation(emptyList(), 42L, 0))
 
         // 门禁开启的预期 filter 列表：exists email 基座 + institution 存在性 filter（I4a-2 平铺）
         // + 类型 filter（快照携带 PRODUCTION_RND）。
@@ -4727,6 +4738,181 @@ class ManualInitialOutreachServiceTest {
         Mockito.verify(expertSearchService, Mockito.times(1))
             .countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
     }
+
+    // ── A3 (05 epoch 2): 预览准入计数 / 模板版本冻结 / 过期令牌 / 账号变量预检 ──────────────
+
+    @Test
+    fun `preview exposes admission counts and per-person reason keys (A3 I-3)`() {
+        stubEmptyRetryCandidates()
+        val admitted = expert("D001", "admitted@example.org").copy(emailSource = "PAPER_FULLTEXT")
+        val typeExcluded = expert("D002", "type@example.org").copy(
+            emailSource = "PAPER_FULLTEXT",
+            expertClassification = classification(ExpertType.SERVICE_ONLY)
+        )
+        val needsReview = expert("D003", "review@example.org").copy(emailSource = "PAPER_FULLTEXT")
+        stubScrolledExperts(listOf(admitted, typeExcluded, needsReview))
+        stubAdmissions("D001" to "AUTO_PASSED", "D003" to "NEEDS_REVIEW")
+
+        val summary = service.countBySnapshot(runScheduledSnapshot())
+
+        assertEquals(1, summary.totalSendable)
+        assertEquals(1, summary.admission.admitted)
+        assertEquals(1, summary.admission.needsReview)
+        assertEquals(1, summary.admission.explicitFilterExcluded)
+        assertEquals(1, summary.admission.target)
+        assertEquals(1, summary.reasonHits[RecipientFilterKeys.EXPERT_TYPE])
+        assertEquals(1, summary.reasonHits[RecipientAdmissionReasonKeys.NEEDS_REVIEW])
+        assertEquals(2, summary.excludedRecipients.size)
+        val excludedByDoc = summary.excludedRecipients.associateBy { it.docId }
+        assertEquals(listOf(RecipientFilterKeys.EXPERT_TYPE), excludedByDoc["D002"]!!.filterKeys)
+        assertEquals(listOf(RecipientFilterKeys.EXPERT_TYPE), excludedByDoc["D002"]!!.reasonKeys)
+        assertEquals(emptyList<String>(), excludedByDoc["D003"]!!.filterKeys)
+        assertEquals(listOf(RecipientAdmissionReasonKeys.NEEDS_REVIEW), excludedByDoc["D003"]!!.reasonKeys)
+    }
+
+    @Test
+    fun `preview freezes the template version summary (A3 I-4)`() {
+        stubEmptyRetryCandidates()
+        stubScrolledExperts(emptyList())
+        Mockito.`when`(mailComposeTemplateService.loadSnapshot(42L)).thenReturn(
+            ComposeTemplateSnapshot(42L, "INTRODUCTION", "INTRODUCTION", true, "token-v1") { _, _ ->
+                ComposeTemplateRenderResult("s", "b", templateId = 42L)
+            }
+        )
+
+        val summary = service.countBySnapshot(runScheduledSnapshot().copy(templateId = 42L))
+
+        assertEquals(42L, summary.template?.templateId)
+        assertEquals("token-v1", summary.template?.versionToken)
+    }
+
+    @Test
+    fun `run renders every mail from the frozen template snapshot (A3 I-4)`() {
+        val account = account("chen")
+        stubIntroSendPipeline(account, listOf(expert("E0001", "e1@test.com")))
+        val frozen = ComposeTemplateSnapshot(42L, null, "INTRODUCTION", true, "token-v1") { _, _ ->
+            ComposeTemplateRenderResult(
+                "Frozen", "Frozen body", mailType = "INTRODUCTION",
+                rawTexts = listOf("Frozen body"), templateId = 42L
+            )
+        }
+        Mockito.`when`(mailComposeTemplateService.loadSnapshot(42L)).thenReturn(frozen)
+        Mockito.`when`(
+            introductionMailComposer.composeFromSnapshot(
+                anyValue("chen"), anyValue(expert("", "")), anyValue(42L), anyBooleanValue(), anyValue(frozen)
+            )
+        ).thenReturn(ComposedMail("e1@test.com", "Subject", "Body"))
+
+        val result = service.run(
+            introSnapshot(roundSize = 10, roundsPerRun = 1).copy(templateId = 42L),
+            12345L, ExecutionMode.MANUAL, oneRoundOnly = true
+        )
+
+        assertEquals(1, result.sent)
+        Mockito.verify(introductionMailComposer).composeFromSnapshot(
+            anyValue("chen"), anyValue(expert("", "")), anyValue(42L), anyBooleanValue(), anyValue(frozen)
+        )
+        // 冻结快照路径绝不回退到逐条读库渲染。
+        Mockito.verify(introductionMailComposer, Mockito.never()).compose(
+            anyValue("chen"), anyValue(expert("", "")), anyValue(42L), anyBooleanValue()
+        )
+    }
+
+    @Test
+    fun `startManual rejects a stale preview template token with 409 (A3 I-4)`() {
+        Mockito.`when`(mailComposeTemplateService.getById(42L)).thenReturn(introTemplateDetail(42L))
+        Mockito.`when`(mailComposeTemplateService.loadSnapshot(42L)).thenReturn(
+            ComposeTemplateSnapshot(42L, null, "INTRODUCTION", true, "current-token") { _, _ ->
+                ComposeTemplateRenderResult("s", "b", templateId = 42L)
+            }
+        )
+        val control = controlService()
+
+        val response = control.startManual(
+            ManualBatchExecutionRequest(
+                snapshot = ValidationSnapshot,
+                previewTemplateToken = "stale-token"
+            )
+        )
+
+        assertEquals(HttpStatus.CONFLICT, response.statusCode)
+        assertTrue(response.body?.get("message").toString().contains("已过期"), "过期令牌必须明确拒绝：${response.body}")
+        Mockito.verifyNoInteractions(progressStore)
+    }
+
+    @Test
+    fun `startManual accepts a matching preview token and stops only at the capacity gate (A3 I-4)`() {
+        Mockito.`when`(mailComposeTemplateService.getById(42L)).thenReturn(introTemplateDetail(42L))
+        Mockito.`when`(mailComposeTemplateService.loadSnapshot(42L)).thenReturn(
+            ComposeTemplateSnapshot(42L, null, "INTRODUCTION", true, "current-token") { _, _ ->
+                ComposeTemplateRenderResult("s", "b", templateId = 42L)
+            }
+        )
+        // 额度置 0：匹配的令牌必须穿过版本校验、只在额度处被拦（409 ≠ 版本拒绝）。
+        Mockito.`when`(mailSenderAccountService.remainingDailyCapacity(Mockito.anyBoolean())).thenReturn(0)
+        val control = controlService()
+
+        val response = control.startManual(
+            ManualBatchExecutionRequest(
+                snapshot = ValidationSnapshot,
+                previewTemplateToken = "current-token"
+            )
+        )
+
+        assertEquals(HttpStatus.CONFLICT, response.statusCode)
+        assertTrue(response.body?.get("message").toString().contains("额度"), "capacity gate must be the stop point: ${response.body}")
+        Mockito.verifyNoInteractions(progressStore)
+    }
+
+    @Test
+    fun `startManual surfaces a missing account variable as a config error before launch (A3 I-4)`() {
+        Mockito.`when`(mailComposeTemplateService.getById(42L)).thenReturn(introTemplateDetail(42L))
+        Mockito.`when`(mailComposeTemplateService.accountRequiredKeys(42L)).thenReturn(listOf("senderTitle"))
+        Mockito.`when`(mailSenderAccountService.getEnabledAccount("chen"))
+            .thenReturn(account("chen").copy(senderTitle = null))
+        val control = controlService()
+
+        val response = control.startManual(
+            ManualBatchExecutionRequest(
+                snapshot = ValidationSnapshot.copy(
+                    gateFilterEnabled = true,
+                    senderAccountCodes = listOf("chen")
+                )
+            )
+        )
+
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, response.statusCode)
+        val message = response.body?.get("message").toString()
+        assertTrue(message.contains("senderTitle") && message.contains("chen"), "配置错误须点名模板变量与账号：$message")
+        Mockito.verifyNoInteractions(progressStore)
+    }
+
+    /** A3 校验用例的公共快照：合法类型 + 模板 + 门禁可开关。 */
+    private val ValidationSnapshot: BatchExecutionSnapshot
+        get() = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION", roundSize = 10, roundsPerRun = 1,
+            perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE", templateId = 42L,
+            expertTypes = listOf("PRODUCTION_RND")
+        )
+
+    private fun introTemplateDetail(id: Long): MailComposeTemplateDetail = MailComposeTemplateDetail(
+        id = id, templateCode = "INTRODUCTION", templateName = "Intro", subject = "Subject",
+        description = null, mailType = "INTRODUCTION", subjectVariants = null, enabled = true,
+        blocks = emptyList(), createdAt = null, updatedAt = null
+    )
+
+    private fun controlService(): BatchSendControlService = BatchSendControlService(
+        progressStore = progressStore,
+        taskExecutionService = taskExecutionService,
+        manualInitialOutreachService = service,
+        batchSendSettingService = batchSendSettingService,
+        batchSendTaskConfigRepository = Mockito.mock(BatchSendTaskConfigRepository::class.java),
+        mailSenderAccountService = mailSenderAccountService,
+        mailComposeTemplateService = mailComposeTemplateService,
+        objectMapper = ObjectMapper().registerKotlinModule(),
+        manualOutreachExecutor = Mockito.mock(Executor::class.java)
+    )
 
     @Test
     fun `matchesExpert agrees with fieldPresenceFilter semantics per profile (I4a-5)`() {

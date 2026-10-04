@@ -65,7 +65,7 @@ class BatchSendControlService(
         }
         val snapshot = config.toExecutionSnapshot(objectMapper)
         validateSnapshotFields(snapshot)?.let { return it }
-        validateTemplateAtLaunch(snapshot.mailType, snapshot.templateId)?.let { return it }
+        validateTemplateAtLaunch(snapshot)?.let { return it }
         val request = ManualBatchExecutionRequest(
             sourceConfigId = configId,
             sourceUpdatedAt = config.updatedAt,
@@ -83,7 +83,8 @@ class BatchSendControlService(
     /** Manual run from a full snapshot request (I-1). */
     fun startManual(request: ManualBatchExecutionRequest): ResponseEntity<Map<String, Any>> {
         validateSnapshotFields(request.snapshot)?.let { return it }
-        validateTemplateAtLaunch(request.snapshot.mailType, request.snapshot.templateId)?.let { return it }
+        validateTemplateAtLaunch(request.snapshot)?.let { return it }
+        validatePreviewTemplateToken(request)?.let { return it }
         val batchConfigId = request.sourceConfigId
         val capacityError = checkRemainingAccountCapacity()
         if (capacityError != null) return capacityError
@@ -123,7 +124,7 @@ class BatchSendControlService(
             }
             val snapshot = config.toExecutionSnapshot(objectMapper)
             validateSnapshotFields(snapshot)?.let { return ResponseEntity.status(it.statusCode).body(it.body?.mapValues { e -> e.value.toString() }) }
-            validateTemplateAtLaunch(snapshot.mailType, snapshot.templateId)?.let { return ResponseEntity.status(it.statusCode).body(it.body?.mapValues { e -> e.value.toString() }) }
+            validateTemplateAtLaunch(snapshot)?.let { return ResponseEntity.status(it.statusCode).body(it.body?.mapValues { e -> e.value.toString() }) }
             val request = ManualBatchExecutionRequest(legacy.id, config.updatedAt, snapshot)
             val response = launchFromSnapshot(
                 snapshot = snapshot,
@@ -153,7 +154,7 @@ class BatchSendControlService(
                 ?: return conflict("配置不存在或已删除")
             val snapshot = config.toExecutionSnapshot(objectMapper)
             validateSnapshotFields(snapshot)?.let { return ResponseEntity.status(it.statusCode).body(it.body?.mapValues { e -> e.value.toString() }) }
-            validateTemplateAtLaunch(snapshot.mailType, snapshot.templateId)?.let { return ResponseEntity.status(it.statusCode).body(it.body?.mapValues { e -> e.value.toString() }) }
+            validateTemplateAtLaunch(snapshot)?.let { return ResponseEntity.status(it.statusCode).body(it.body?.mapValues { e -> e.value.toString() }) }
             val request = ManualBatchExecutionRequest(legacy.id, config.updatedAt, snapshot)
             val response = launchFromSnapshot(
                 snapshot = snapshot,
@@ -257,7 +258,7 @@ class BatchSendControlService(
                 ?: return conflict("配置不存在或已删除")
             val snapshot = config.toExecutionSnapshot(objectMapper, oneRoundOnly = true)
             validateSnapshotFields(snapshot)?.let { return ResponseEntity.status(it.statusCode).body(it.body?.mapValues { e -> e.value.toString() }) }
-            validateTemplateAtLaunch(snapshot.mailType, snapshot.templateId)?.let { return ResponseEntity.status(it.statusCode).body(it.body?.mapValues { e -> e.value.toString() }) }
+            validateTemplateAtLaunch(snapshot)?.let { return ResponseEntity.status(it.statusCode).body(it.body?.mapValues { e -> e.value.toString() }) }
             val request = ManualBatchExecutionRequest(legacy.id, config.updatedAt, snapshot)
             val response = launchFromSnapshot(
                 snapshot = snapshot,
@@ -465,7 +466,9 @@ class BatchSendControlService(
         }
     }
 
-    private fun validateTemplateAtLaunch(mailType: String, templateId: Long?): ResponseEntity<Map<String, Any>>? {
+    private fun validateTemplateAtLaunch(snapshot: BatchExecutionSnapshot): ResponseEntity<Map<String, Any>>? {
+        val mailType = snapshot.mailType
+        val templateId = snapshot.templateId
         if (templateId == null) {
             return if (mailType == BatchSendType.MATERIAL_REMINDER.name) {
                 ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
@@ -481,12 +484,84 @@ class BatchSendControlService(
                     .body(mapOf("message" to "模板 $templateId 已禁用，无法发送"))
                 template.mailType != mailType -> ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
                     .body(mapOf("message" to "模板 $templateId 类型为 ${template.mailType}，与 $mailType 不匹配"))
-                else -> null
+                else -> validateAccountVariablesAtLaunch(snapshot, templateId)
             }
         } catch (e: Exception) {
             ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
                 .body(mapOf("message" to "模板校验失败: ${e.message}"))
         }
+    }
+
+    /**
+     * A3 (I-4): 门禁开启时，模板里由**发件账号**提供的必需变量（[MailComposeTemplateService.ACCOUNT_VARIABLE_KEYS]）
+     * 必须在任务启动前就可用 —— 缺项是模板/账号配置错误，返回明确的 422，而不是靠 `account=null`
+     * 把全部专家当作"缺个性化字段"筛掉。
+     *
+     * 账号集合 = 本次快照 `senderAccountCodes`（非空即精确校验该集合）；为空=不限，则校验全部启用账号。
+     * 门禁关闭 / 模板无账号变量时不校验（零行为变化）。
+     */
+    private fun validateAccountVariablesAtLaunch(
+        snapshot: BatchExecutionSnapshot,
+        templateId: Long
+    ): ResponseEntity<Map<String, Any>>? {
+        if (!snapshot.gateFilterEnabled) return null
+        val requiredAccountKeys = try {
+            mailComposeTemplateService.accountRequiredKeys(templateId) ?: emptyList()
+        } catch (e: Exception) {
+            return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(mapOf("message" to "模板 $templateId 变量解析失败: ${e.message}"))
+        }
+        if (requiredAccountKeys.isEmpty()) return null
+
+        val selectedCodes = snapshot.senderAccountCodes.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        val accounts = if (selectedCodes.isNotEmpty()) {
+            selectedCodes.mapNotNull { code ->
+                runCatching { mailSenderAccountService.getEnabledAccount(code) }.getOrNull()
+            }
+        } else {
+            runCatching { mailSenderAccountService.listEnabledAccounts() }.getOrDefault(emptyList())
+        }
+        accounts.forEach { account ->
+            val accountVariables = mapOf(
+                "senderEmail" to account.senderEmail,
+                "senderName" to account.senderName,
+                "senderTitle" to account.senderTitle.orEmpty(),
+                "teamName" to account.teamName.orEmpty(),
+                "countryName" to account.countryName.orEmpty()
+            )
+            val missing = requiredAccountKeys.filter { accountVariables[it].isNullOrBlank() }
+            if (missing.isNotEmpty()) {
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                    .body(mapOf("message" to
+                        "模板/账号配置错误：模板 $templateId 需要账号变量 " +
+                            missing.joinToString(",") + "，但账号 ${account.accountCode} 未配置" +
+                            "（请补全发件账号信息或改用带默认值的模板变量）"
+                    ))
+            }
+        }
+        return null
+    }
+
+    /**
+     * A3 (I-4): 执行开始读取同一模板的**当前**版本令牌，与预估冻结的令牌比对；不一致说明模板在预估后
+     * 已被修改 —— 拒绝使用过期预估（409），要求重新预估，绝不沿用旧人数开跑。
+     * 无令牌（旧调用 / 定时路径）或无模板时不校验。
+     */
+    private fun validatePreviewTemplateToken(request: ManualBatchExecutionRequest): ResponseEntity<Map<String, Any>>? {
+        val previewToken = request.previewTemplateToken ?: return null
+        val templateId = request.snapshot.templateId ?: return null
+        val currentToken = try {
+            mailComposeTemplateService.loadSnapshot(templateId).versionToken
+        } catch (e: Exception) {
+            return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(mapOf("message" to "模板校验失败: ${e.message}"))
+        }
+        if (currentToken == previewToken) return null
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+            .body(mapOf("message" to
+                "预估已过期：模板 $templateId 自预估后已变更，请重新预估后再执行" +
+                    "（预估令牌与当前模板版本不一致）"
+            ))
     }
 
     private fun checkRemainingAccountCapacity(): ResponseEntity<Map<String, Any>>? {
@@ -616,7 +691,7 @@ class BatchSendControlService(
         )
 
     private fun validateTemplateGate(sendType: BatchSendType, config: BatchSendConfig): ResponseEntity<Map<String, String>>? {
-        val err = validateTemplateAtLaunch(sendType.name, config.templateId) ?: return null
+        val err = validateTemplateAtLaunch(config.toLegacySnapshot(oneRoundOnly = false)) ?: return null
         return ResponseEntity.status(err.statusCode)
             .body(err.body?.mapValues { it.value.toString() } ?: emptyMap())
     }

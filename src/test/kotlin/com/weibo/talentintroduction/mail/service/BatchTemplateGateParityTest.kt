@@ -12,6 +12,7 @@ import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.weibo.talentintroduction.template.service.ComposeTemplateRenderResult
+import com.weibo.talentintroduction.template.service.ComposeTemplateSnapshot
 import com.weibo.talentintroduction.template.service.MailComposeTemplateDetail
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -76,6 +77,72 @@ class BatchTemplateGateParityTest {
 
         assertEquals(listOf(requiredKey), evaluation.missingKeys)
         assertEquals(42L, evaluation.templateId)
+    }
+
+    @Test
+    fun `composeFromSnapshot renders the frozen in-memory content (A3 I-4)`() {
+        val accountService = Mockito.mock(MailSenderAccountService::class.java)
+        val templates = Mockito.mock(MailComposeTemplateService::class.java)
+        val variables = Mockito.mock(MailVariableService::class.java)
+        val composer = IntroductionMailComposer(accountService, templates, variables)
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        // 运行中模板被改写：live render 返回 LIVE，若不冻结就会发错内容。
+        stubIntroductionTemplate(templates)
+        Mockito.`when`(
+            variables.buildVariables(
+                anyValue(account), anyValue(expert), anyValue<String?>(null),
+                Mockito.anyBoolean(), anyValue<ExpertContact?>(null)
+            )
+        ).thenReturn(mapOf("senderName" to "Sender"))
+
+        val frozen = ComposeTemplateSnapshot(
+            templateId = 42L,
+            templateCode = null,
+            mailType = "INTRODUCTION",
+            enabled = true,
+            versionToken = "token-1"
+        ) { _, _ ->
+            ComposeTemplateRenderResult(
+                subject = "Frozen subject", body = "FROZEN BODY",
+                mailType = "INTRODUCTION", rawTexts = listOf("FROZEN BODY"), templateId = 42L
+            )
+        }
+
+        val mail = composer.composeFromSnapshot("sender", expert, 42L, enforcePersonalizationGate = false, snapshot = frozen)
+
+        assertEquals("FROZEN BODY", mail.text)
+        // 快照路径绝不读回 DB 模板内容。
+        Mockito.verify(templates, Mockito.never())
+            .render(eqValue(42L), anyValue(emptyMap<String, String>()), Mockito.anyInt())
+    }
+
+    @Test
+    fun `compose freezes the current template content through the snapshot seam (A3 I-4)`() {
+        val accountService = Mockito.mock(MailSenderAccountService::class.java)
+        val templates = Mockito.mock(MailComposeTemplateService::class.java)
+        val variables = Mockito.mock(MailVariableService::class.java)
+        val composer = IntroductionMailComposer(accountService, templates, variables)
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(
+            variables.buildVariables(
+                anyValue(account), anyValue(expert), anyValue<String?>(null),
+                Mockito.anyBoolean(), anyValue<ExpertContact?>(null)
+            )
+        ).thenReturn(mapOf("senderName" to "Sender"))
+        Mockito.`when`(templates.loadSnapshot(42L)).thenReturn(
+            ComposeTemplateSnapshot(42L, null, "INTRODUCTION", true, "token-1") { _, _ ->
+                ComposeTemplateRenderResult(
+                    subject = "Frozen subject", body = "FROZEN BODY",
+                    mailType = "INTRODUCTION", rawTexts = listOf("FROZEN BODY"), templateId = 42L
+                )
+            }
+        )
+
+        val mail = composer.compose("sender", expert, 42L, enforcePersonalizationGate = false)
+
+        assertEquals("FROZEN BODY", mail.text)
+        Mockito.verify(templates, Mockito.never())
+            .render(eqValue(42L), anyValue(emptyMap<String, String>()), Mockito.anyInt())
     }
 
     @Test

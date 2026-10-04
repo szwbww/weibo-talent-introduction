@@ -100,7 +100,13 @@ data class BatchExecutionSnapshot(
 data class ManualBatchExecutionRequest(
     val sourceConfigId: Long? = null,
     val sourceUpdatedAt: LocalDateTime? = null,
-    val snapshot: BatchExecutionSnapshot
+    val snapshot: BatchExecutionSnapshot,
+    /**
+     * A3 (I-4)：预估时冻结的模板版本令牌（[com.weibo.talentintroduction.campaign.service.PendingOutreachSummary.template]
+     * 里的 `versionToken`）。执行开始时与同一模板的**当前**令牌比对，不一致即拒绝使用过期预估；
+     * null = 旧调用 / 定时路径无预览，不校验。随请求写入 `task_execution.request_payload`。
+     */
+    val previewTemplateToken: String? = null
 )
 
 data class ReasonCount(

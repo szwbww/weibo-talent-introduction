@@ -198,6 +198,30 @@ class BatchRecipientSelectionServiceTest {
         Mockito.verifyNoMoreInteractions(review)
     }
 
+    @Test
+    fun `reason keys mirror the selection口径 exactly (A3 I-3)`() {
+        // 显式条件排除（filterKeys 非空）只计 filterKeys，绝不叠加准入状态原因。
+        val filterExcluded = RecipientDecision(
+            docId = "X", orcidId = "X", admissionState = RecipientAdmissionState.NOT_DISCOVERY,
+            admissionDecision = null, syncErrorCode = null,
+            filterKeys = listOf(RecipientFilterKeys.TAGS), included = false
+        )
+        assertEquals(listOf(RecipientFilterKeys.TAGS), BatchRecipientSelectionService.reasonKeysOf(filterExcluded))
+
+        // 准入未通过只计一个准入状态 key；通过（included）不计任何原因。
+        val needsReview = filterExcluded.copy(
+            admissionState = RecipientAdmissionState.NEEDS_REVIEW, filterKeys = emptyList()
+        )
+        assertEquals(
+            listOf(RecipientAdmissionReasonKeys.NEEDS_REVIEW),
+            BatchRecipientSelectionService.reasonKeysOf(needsReview)
+        )
+        assertEquals(
+            emptyList<String>(),
+            BatchRecipientSelectionService.reasonKeysOf(needsReview.copy(included = true))
+        )
+    }
+
     private fun resolved(
         docId: String,
         decision: String?,

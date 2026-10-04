@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.mail.service
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.template.service.ComposeTemplateRenderResult
+import com.weibo.talentintroduction.template.service.ComposeTemplateSnapshot
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.springframework.stereotype.Service
 import java.util.UUID
@@ -21,10 +22,40 @@ class IntroductionMailComposer(
         templateId: Long? = null,
         enforcePersonalizationGate: Boolean = true
     ): ComposedMail {
+        // A3 (I-4): 未显式传入内存快照时按当前模板读取一次（人工单发/旧调用逐字不变）。
+        val snapshot = runCatching { loadTemplateSnapshot(templateId) }.getOrNull()
+        return composeWith(accountCode, expert, templateId, enforcePersonalizationGate, snapshot)
+    }
+
+    /**
+     * A3 (I-4): 批量执行使用**本次内存模板内容快照**渲染，运行中模板变化不混用。
+     */
+    fun composeFromSnapshot(
+        accountCode: String,
+        expert: ExpertProfile,
+        templateId: Long?,
+        enforcePersonalizationGate: Boolean,
+        snapshot: ComposeTemplateSnapshot
+    ): ComposedMail = composeWith(accountCode, expert, templateId, enforcePersonalizationGate, snapshot)
+
+    private fun loadTemplateSnapshot(templateId: Long?): ComposeTemplateSnapshot? =
+        if (templateId != null) {
+            mailComposeTemplateService.loadSnapshot(templateId)
+        } else {
+            mailComposeTemplateService.loadSnapshotByCode("INTRODUCTION")
+        }
+
+    private fun composeWith(
+        accountCode: String,
+        expert: ExpertProfile,
+        templateId: Long?,
+        enforcePersonalizationGate: Boolean,
+        snapshot: ComposeTemplateSnapshot?
+    ): ComposedMail {
         val account = mailSenderAccountService.getEnabledAccount(accountCode)
         val variables = buildVariables(account, expert)
         val variantSeed = MailComposeTemplateService.variantSeedFor(expert.orcidId, expert.email)
-        val rendered = renderTemplate(templateId, variables, variantSeed)
+        val rendered = renderTemplate(templateId, variables, variantSeed, snapshot)
 
         // I-4/I-5: 批量显式门禁开关关闭时不再检查个性化缺项（裸变量按 renderText 变空串）。
         // 人工单发/旧调用保持默认 true，行为逐字不变。
@@ -56,12 +87,19 @@ class IntroductionMailComposer(
     /**
      * I-4: 与 [compose] 共用同一模板 ID/版本、seed、实际选中变体与 [MailVariableService] 实际值，
      * 只返回缺失的个性化 key（不发送、不写库）。预估与执行用同一判定，避免"关了仍挡/开了不挡"。
+     *
+     * A3：`accountCode` 可为 null —— 预估侧用 null 只判**专家变量**；账号变量（见
+     * [MailComposeTemplateService.ACCOUNT_VARIABLE_KEYS]）缺项是启动前配置错误，由启动校验负责，
+     * 绝不用 `account=null` 伪造缺项把全部专家筛掉。
      */
-    fun evaluateForBatch(accountCode: String, expert: ExpertProfile, templateId: Long? = null): BatchTemplateEvaluation {
-        val account = mailSenderAccountService.getEnabledAccount(accountCode)
+    fun evaluateForBatch(accountCode: String?, expert: ExpertProfile, templateId: Long? = null): BatchTemplateEvaluation {
+        val account = accountCode
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { mailSenderAccountService.getEnabledAccount(it) }
         val variables = buildVariables(account, expert)
         val variantSeed = MailComposeTemplateService.variantSeedFor(expert.orcidId, expert.email)
-        val rendered = renderTemplate(templateId, variables, variantSeed)
+        val rendered = renderTemplate(templateId, variables, variantSeed, snapshot = null)
         val gateTemplateId = templateId ?: rendered.templateId
         val requiredKeys = gateTemplateId?.let { mailComposeTemplateService.effectiveRequiredKeys(it) }.orEmpty()
         val gate = personalizationGateService.evaluate(rendered.rawTexts, variables, requiredKeys)
@@ -75,11 +113,12 @@ class IntroductionMailComposer(
     private fun renderTemplate(
         templateId: Long?,
         variables: Map<String, String>,
-        variantSeed: Int
-    ): ComposeTemplateRenderResult = if (templateId != null) {
-        mailComposeTemplateService.render(templateId, variables, variantSeed)
-    } else {
-        mailComposeTemplateService.renderByCode(templateCode = "INTRODUCTION", variables = variables, variantSeed = variantSeed)
+        variantSeed: Int,
+        snapshot: ComposeTemplateSnapshot?
+    ): ComposeTemplateRenderResult = when {
+        snapshot != null -> snapshot.render(variables, variantSeed)
+        templateId != null -> mailComposeTemplateService.render(templateId, variables, variantSeed)
+        else -> mailComposeTemplateService.renderByCode(templateCode = "INTRODUCTION", variables = variables, variantSeed = variantSeed)
     }
 
     fun buildTemplateVariables(expert: ExpertProfile, accountCode: String?): List<TemplateVariableItem> {
