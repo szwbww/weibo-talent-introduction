@@ -9,8 +9,8 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-04T22:17:44+0800
-- Current child: 01
-- Waiting role: VERIFIER
+- Current child: 02
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -19,8 +19,8 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| 01 | docs/plans/2026-10-04/mailbox-progress-01-backend.md | commit:9594d4b3b3c3022b2be2bc04b24d90ee40a58ad4 | none | 1 | LIGHT_VERIFYING | 9594d4b3b3c3022b2be2bc04b24d90ee40a58ad4 | dbe79c2bfb466bedb2c70d767bdd34082307579c | 0 | — | dbe79c2bfb466bedb2c70d767bdd34082307579c | — | 10 授权文件；迁移 V149；写者 ImplMailboxProgress01；B2 81/0/1（+14 pass），B3 36/0/0（+1）；核实者 VerifyMailboxProgress01 |
-| 02 | docs/plans/2026-10-04/mailbox-progress-02-frontend.md | commit:9594d4b3b3c3022b2be2bc04b24d90ee40a58ad4 | 01 | 1 | PENDING | — | — | 0 | — | — | — | 6 授权文件 |
+| 01 | docs/plans/2026-10-04/mailbox-progress-01-backend.md | commit:9594d4b3b3c3022b2be2bc04b24d90ee40a58ad4 | none | 1 | LIGHT_PASS_WITH_NOTES | 9594d4b3b3c3022b2be2bc04b24d90ee40a58ad4 | dbe79c2bfb466bedb2c70d767bdd34082307579c | 0 | — | dbe79c2bfb466bedb2c70d767bdd34082307579c | 41df80c0e2bf6df873f1b9c176ef8ddbf4f84449 | 10 授权文件；迁移 V149；写者 ImplMailboxProgress01，核实者 VerifyMailboxProgress01；B2 81/0/1（+14 pass），B3 36/0/0（+1）；RECORD_ONLY O-1（共享测试库 V148/V149 协调） |
+| 02 | docs/plans/2026-10-04/mailbox-progress-02-frontend.md | commit:9594d4b3b3c3022b2be2bc04b24d90ee40a58ad4 | 01 | 1 | IMPLEMENTING | dbe79c2bfb466bedb2c70d767bdd34082307579c | — | 0 | — | — | — | 6 授权文件；写者 ImplMailboxProgress02 |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
