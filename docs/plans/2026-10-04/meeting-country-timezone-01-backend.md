@@ -181,7 +181,7 @@ val localTimeIssue: String? = null
 
 - Pending 真实生成器用 Brazil/East 固定例，断言预览 filename 等于重建后 payload 和 ComposedMail 的 filename，UTC 为 12:00Z–12:30Z，正文含 Brazil (UTC-3)，同一 snapshot 实例贯通。
 - Mailbox controller 为新格式与旧姓名格式分别存入合法快照，核对 timeline filename 和下载 Content-Disposition/原件 bytes。旧 fixture 使用明确旧 filename 和匹配 ICS hash，不从新生成器重新获得旧名。
-- 沿用 SmtpMailDeliveryServiceTest 对 MIME 文件名/字节等于 snapshot 的用例；沿用 ManualReplySendAttemptServiceTest 的成功/失败四分支序列化及幂等；不加“模拟数据库”替代真实 schema 证明。
+- 沿用 SmtpMailDeliveryServiceTest 对 MIME 文件名/字节等于 snapshot 的用例；该测试类经 A1 修订加入清单，只更新 4 处旧附件名字面量（:449/:516/:548/:597）为新命名确定期望，附件名/字节仍等于同一 snapshot 实例；沿用 ManualReplySendAttemptServiceTest 的成功/失败四分支序列化及幂等；不加“模拟数据库”替代真实 schema 证明。
 - 既有 MeetingCalendarSendIntegrationTest 为 `mysqlIt` 门控，只在已配置的隔离测试 MySQL 上执行；未开启就记录 skipped，不能宣称真实 MySQL 验证通过。本次不改持久化/事务逻辑，不要求为计划安装 DB。
 
 ## 变更文件清单
@@ -198,8 +198,9 @@ val localTimeIssue: String? = null
 | 8 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/MeetingConfirmationControllerTest.kt` | 旧/新目录 HTTP 契约 |
 | 9 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt` | 同源发送重建回归 |
 | 10 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt` | 新旧附件元信息及下载回归 |
+| 11 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryServiceTest.kt` | 4 处旧附件名字面量改为新命名确定期望（真实生成器夹具，A1 修订加入） |
 
-本计划没有前端文件。未列文件不得为顺手重构而改；验证可运行清单外已有测试。若发现确需改其他文件，先以代码证据修订清单/拆分，不突破 10 文件限制。
+本计划没有前端文件。未列文件不得为顺手重构而改；验证可运行清单外已有测试。2026-10-04 修订 A1：因必跑命令包含且 `SmtpMailDeliveryServiceTest.kt` 把旧附件名写死为字面量、与 I-5 冲突，将该文件列入清单（10→11），仅允许更新其附件名断言；其余未列文件仍不得改。
 
 ## 验收标准
 
