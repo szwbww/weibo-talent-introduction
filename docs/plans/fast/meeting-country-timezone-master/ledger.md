@@ -24,6 +24,7 @@
 - `node --test` on the 7 child-02 JS files -> exit 0, 123 pass / 0 fail.
 - `mvn test -Dtest=MeetingConfirmationServiceTest,MeetingConfirmationControllerTest,PendingMailOperationServiceTest,MailboxConversationControllerTest,SmtpMailDeliveryServiceTest,ManualReplySendAttemptServiceTest,MeetingCalendarServiceTest` -> exit 0, BUILD SUCCESS; exec-bound JS suite 1434 pass / 0 fail.
 - `python3 -m unittest discover -s scripts -p 'test_generate_meeting_zone_countries.py'` -> N/A baseline: the file is created by child 01.
+- `mvn package` (full suite) at child-02 base -> exit 1; Tests run 4561, Failures 0, Errors 19, Skipped 13; all 19 errors are `ExpertContactLocationServiceTest.<init>:38 » 国家时区目录配置错误：国家 CL 的时区 id 无法解析：America/Coyhaique`, reproduced identically on master base (main worktree `-Dtest=ExpertContactLocationServiceTest` -> 19 errors, exit 1). Pre-existing/environmental (JDK 11 tzdb lacks the zone; `contact-country-timezones.json` is out of scope and must not change).
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
