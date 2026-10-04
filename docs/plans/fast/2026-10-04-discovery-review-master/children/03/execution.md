@@ -1,117 +1,81 @@
-## Execution Result: PLAN_CONFLICT
+# Child 03 Execution Report — Epoch 2（审核所有页）
 
-Plan: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master/docs/plans/2026-10-04/discovery-review-03-all-pages.md
-Plan SHA-256: 3f157ccc37f3ad3abbeac445ae88327b46c90910c46cf7799247975f0e48db77
-Execution ID: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master/docs/plans/2026-10-04/discovery-review-03-all-pages.md@3f157ccc37f3ad3abbeac445ae88327b46c90910c46cf7799247975f0e48db77
-Execution epoch: NEW
-Approval basis: current invocation (child 03 brief, master identity commit:07beaafc111a1b14ed3c48d514db527c8a13fc31); conflict detected at preflight before any edit
-Executor: ImplDiscoveryReview03
-Target worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master
-Target branch: fast/2026-10-04-discovery-review-master
-Worktree ID: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master@fast/2026-10-04-discovery-review-master@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-2026-10-04-discovery-review-master
-Pre-execution code SHA: c8bcec702e26074b53a5e148a390f784cdc99342 (HEAD; child_base_sha df9cad44ea77f37ebdb0e4af1b2d555573b6ffe5 = child 02 code head, c8bcec7 is the 02 evidence commit)
-Post-execution code SHA: N/A (no product or test file modified)
-Evidence HEAD: N/A
-Implementation boundary: N/A — `git status --short` is empty; no product commit created.
+## Execution Result: READY_FOR_VERIFICATION
 
-### Conflict (blocking, needs a scope amendment)
-
-Plan task 5 (`TaskTypeCatalog.kt` — "2种任务中文名/计数") cannot be implemented inside the 8-file Authorized list without turning the repository's declared test command (`CLAUDE.md`: `mvn test`) red, because an **unauthorized, non-gated** test file pins the catalog exactly:
-
-`src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt`
-
-| Line | Assertion | Effect of registering `DISCOVERY_REVIEW_PREPARE` / `DISCOVERY_REVIEW_APPLY` |
-|---|---|---|
-| 248 | `assertEquals(auditedCodes, TaskTypeCatalog.entries.keys)` (18 codes, exact `Set` equality) | FAILS on any added entry |
-| 264 | `assertEquals(18, TaskTypeCatalog.entries.size)` | FAILS |
-| 219 | `assertEquals(expected, actual)` with `actual = TaskTypeCatalog.entries.filter { it.value.hasProgressUi }.keys` (exact 7-code set, line 218) | FAILS if either new type is in the progress whitelist (`hasProgressUi = true`), which plan §实现方案 2/3 and brief rule 9 require |
-
-Receipts (fresh, worktree root):
-
-```sh
-grep -n "assertEquals(expected, actual)\|assertEquals(auditedCodes, TaskTypeCatalog.entries.keys)\|assertEquals(18, TaskTypeCatalog.entries.size)" \
-  src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt
-# 219:        assertEquals(expected, actual)
-# 248:        assertEquals(auditedCodes, TaskTypeCatalog.entries.keys)
-# 264:        assertEquals(18, TaskTypeCatalog.entries.size)
-
-grep -l "TaskExecutionSummaryExtractor" docs/plans/fast/2026-10-04-discovery-review-master/children/*/brief.md   # → no match
-grep -rl "TaskExecutionSummaryExtractor" docs/plans/2026-10-04/*.md                                              # → no match
-```
-
-- No child whitelist in this run (01–06 briefs) authorizes that file, so no later child can repair the staleness either.
-- Unlike the Flyway pin handled in 02 (`FlywayMigrationIntegrationTest`, gated by `-DmigrationIt=true`, explicitly escaped via 02 brief rule 7 → RECORD_ONLY), this test has **no** `@EnabledIfSystemProperty` gate: it runs under plain `mvn test` (surefire has no includes/excludes; verified `pom.xml:173-183`).
-- Child 03 brief rule 1 ("只允许修改 Authorized Files 表内 8 个文件 … 其余 Kotlin … 全部只读") and rule 4 ("需要白名单外文件 … 返回 PLAN_CONFLICT") leave no sanctioned RECORD_ONLY path for this file (contrast: 02 brief rule 7).
-- Implementing 03 while omitting the catalog registration is **not** an acceptable substitute: it leaves plan task 5 unimplemented and leaves `DISCOVERY_REVIEW_PREPARE` / `DISCOVERY_REVIEW_APPLY` without Chinese labels or progress whitelist, contradicting M-3 (TaskTypeCatalog is the single declaration source; brief rule 9: "不硬写前端字符串") and the downstream contract for 04/05/06 ("两个 task type 名称与计数语义").
-
-### Requested amendment (smallest unblock)
-
-Authorize one additional file in child 03 with the operation "catalog pin resync (counts/labels only, no assertion weakening)":
-
-`src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt`
-- add `DISCOVERY_REVIEW_PREPARE`, `DISCOVERY_REVIEW_APPLY` to the `auditedCodes` literal (lines 239–247);
-- add the same two codes to the `hasProgressUi` expected set (lines 213–217);
-- `assertEquals(18, TaskTypeCatalog.entries.size)` → `20` (line 264);
-- refresh the stale wording "16/18 种" in that test's name/comment (cosmetic only).
-
-Alternative human decision (if the catalog must stay frozen): amend plan §实现方案 2/3 + brief rule 9 so child 03 records the two task-type codes as plain constants without catalog registration and accepts that the task list shows raw codes with no progress-whitelist entry — 03 cannot pick this itself.
-
-### Preflight findings recorded for the resumed round (no code written)
-
-Design constraints already verified so the amended round is mechanical. These are `[INFERENCE]`-free; each carries its receipt.
-
-1. **Constructor/signature freeze (02 tests must keep compiling unmodified).** `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewServiceTest.kt` constructs the service positionally with the current 8 params (`:68-70`) and calls/mocks exactly: `service.prepare(request, actor)` (`:104/110/113/120/123/137`), `service.confirm(batchKey, hash, actor): DiscoveryReviewConfirmResult` (`:158/172/184/199/211`), `service.revoke(id, actor, note)` (`:235/245/251/259`), `repository.insertItem` (15 args, `:133`), `repository.applyItem(itemId, identityHash, decision, policyVersion, now)` (5 args, `:169/196`), `repository.revokeCurrent` (11 args, `:228/251`), `repository.findItemsByBatch/findItem/findAdmission/markItemFailed`. ⇒ 03 must ADD trailing constructor params **with defaults** and ADD overloads for the execution-owned claim/apply, never change existing signatures; IDS `confirm` keeps its 02 semantics, ALL_MATCHING confirm is a separate dispatch method.
-   Safe-ness of defaulted trailing params is established, not assumed: in-repo precedent `TaskProgressController(..., pipelineService: DiscoveryPipelineService? = null, promotionProgress: DiscoveryPromotionProgressService? = null)` (both are unconditional `@Service` beans, injected despite the nullable default); mechanism confirmed in the resolved Spring 5.3.31 sources — `DependencyDescriptor.isRequired()` → `MethodParameter.isOptional()` → `KotlinDelegate.isOptional(... kParameter.isOptional())`, and `BeanUtils$KotlinDelegate.instantiateClass` omits only params that are `isOptional() && args[i] == null`.
-2. **No new request fields.** `DiscoveryReviewPrepareRequest` lives in `discovery/domain/DiscoveryReview.kt`, which is NOT authorized ⇒ ALL_MATCHING scope must take its filter (`tag`/`q`/`issue`/`decision`) as controller query params / an internal filter DTO and persist only `batchKey/action/filter/actor` in `task_execution.request_payload` (never the 10005 docIds).
-3. **No migration/column** ⇒ batch phase + READY hash must be read back from the `DISCOVERY_REVIEW_PREPARE` / `DISCOVERY_REVIEW_APPLY` `task_execution` rows (match `request_payload.batchKey`), and 24h expiry derives from `MIN(expert_discovery_review_item.created_at)` per `batch_key` (no new column). `TaskExecutionRepository`/`TaskExecutionService` stay read-only, unmodified.
-4. **Controller shape.** `DiscoveryReviewControllerTest` is `@WebMvcTest(DiscoveryReviewController::class)` with `@MockBean DiscoveryReviewService`; new endpoints must keep the single-service constructor (or the authorized test adds a `@MockBean`).
-5. **Fixture substitution.** No local ES (`localhost:9200`) exists in this environment, so the 10005-row fixture will be an injectable scan-layer/HTTP-boundary fixture with the real scroll/filter code and honest recording, per the brief.
-6. **Pre-existing, unrelated staleness (unchanged):** `campaign/repository/FlywayMigrationIntegrationTest.kt` latest-target `"147"` pins (RECORD_ONLY O-1 from 01/02). 03 adds no migration, so 03 does not affect it.
+Plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master/docs/plans/2026-10-04/discovery-review-03-all-pages.md`
+Plan SHA-256: `e6b687b3b1b0c62438218094c173f5c1347c584bcbb92750de7d8bb63e1f6193`
+Execution ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master/docs/plans/2026-10-04/discovery-review-03-all-pages.md@e6b687b3b1b0c62438218094c173f5c1347c584bcbb92750de7d8bb63e1f6193`
+Execution epoch: NEW（同路径新内容：A1/A2 修正后字节；epoch 1 的 PLAN_CONFLICT 见 `pause.md`）
+Approval basis: child 03 brief（A1/A2 修正版，master identity `commit:8853573`）+ 人工批准的 A1/A2 修订（提交 `8853573`、`19350c9`）
+Executor: `ImplDiscoveryReview03E2`（execute-p）
+Target worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master`
+Target branch: `fast/2026-10-04-discovery-review-master`
+Worktree ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master@fast/2026-10-04-discovery-review-master@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-2026-10-04-discovery-review-master`
+Pre-execution code SHA: `19350c9ad08b239def2e27642396e707c82349b9`
+Post-execution code SHA: `6043a678fe7736d133c9b2f25c1e139ad1130985`
+Evidence HEAD: N/A（无单独 evidence 提交；本报告由控制方单独提交，不在产品提交内）
+Implementation boundary: `19350c9..6043a67`（9 个授权文件，`git show --stat 6043a67` 逐条为清单内路径）
 
 ### Task Status
 
 | Requirement | Status | Files | Evidence |
 |---|---|---|---|
-| 1 — new `DiscoveryReviewScanService` (unified list + all-page conditions, one admission read per batch) | PENDING (not started) | …/discovery/service/DiscoveryReviewScanService.kt | blocked by the conflict above (no product edit made; scaffolding an unregistered-task-type implementation would contradict plan §实现方案 2/3) |
-| 2 — `DiscoveryReviewService` all-page prepare/apply/resume/retry/cancel | PENDING | …/discovery/service/DiscoveryReviewService.kt | as above |
-| 3 — `DiscoveryReviewRepository` batch CAS/progress aggregation/per-500 claim | PENDING | …/discovery/repository/DiscoveryReviewRepository.kt | as above |
-| 4 — `DiscoveryReviewController` all-page/retry/cancel endpoints | PENDING | …/discovery/controller/DiscoveryReviewController.kt | as above |
-| 5 — `TaskTypeCatalog` 2 task types (中文名/计数) | CONFLICT | …/task/domain/TaskTypeCatalog.kt | requires an unauthorized test-file amendment (see Conflict) |
-| 6 — `DiscoveryReviewAllPagesTest` (10005 人/并发/恢复) | PENDING | src/test/kotlin/.../discovery/service/DiscoveryReviewAllPagesTest.kt | as above |
-| 7 — `DiscoveryReviewRepositoryIT` (持久幂等) | PENDING | src/test/kotlin/.../discovery/repository/DiscoveryReviewRepositoryIT.kt | as above |
-| 8 — `DiscoveryReviewControllerTest` (快照状态/API) | PENDING | src/test/kotlin/.../discovery/controller/DiscoveryReviewControllerTest.kt | as above |
+| 1 — 新增 `DiscoveryReviewScanService`（统一列表与全页条件、每批一次 admission 读取、真实 scroll + finally clear） | IMPLEMENTED | `discovery/service/DiscoveryReviewScanService.kt` | `scanAll`（`_search?scroll=5m` → `_search/scroll` → finally DELETE）+ `listPage`；`DiscoveryReviewAllPagesTest`（21 批 / 21 次 admission 批量读取 / 1 次 scroll DELETE） |
+| 2 — `DiscoveryReviewService` 全页 prepare/apply/恢复/retry/cancel | IMPLEMENTED | `discovery/service/DiscoveryReviewService.kt` | `prepareAllMatching`/`runPrepareWorker`/`confirmAllMatching`/`startApply`/`runApplyWorker`/`retryBatch`/`cancelBatch`/`batchStatus`；I-1～I-4 用例全绿 |
+| 3 — `DiscoveryReviewRepository` 批次 CAS/进度聚合/逐 500 领取 | IMPLEMENTED | `discovery/repository/DiscoveryReviewRepository.kt` | `markBatchReady`/`claimBatchItems`/`cancelUnappliedItems`/`findItemsByBatchPage`/`findBatchCreatedAt`；IT 13/13 绿 |
+| 4 — `DiscoveryReviewController` 全页/重试/取消端点 | IMPLEMENTED | `discovery/controller/DiscoveryReviewController.kt` | `POST /batches/prepare`（scope=ALL_MATCHING → 202）、`POST /batches/{key}/retry`、`POST /batches/{key}/cancel`、`GET /batches/{key}?afterId&limit`；ControllerTest 12/12 绿 |
+| 5 — `TaskTypeCatalog` 2 个任务类型（中文名/进度白名单） | IMPLEMENTED | `task/domain/TaskTypeCatalog.kt` | `DISCOVERY_REVIEW_PREPARE`「发现审核名单固定」/`DISCOVERY_REVIEW_APPLY`「发现审核应用」，`hasProgressUi=true`、`summaryRule=null`；`TaskExecutionSummaryExtractorTest` 20/20 绿 |
+| 6 — `DiscoveryReviewAllPagesTest`（10005 人、并发与恢复） | IMPLEMENTED | `discovery/service/DiscoveryReviewAllPagesTest.kt` | 11/11 绿（10005 完整性、第二批 ES 失败、I-2 不扩张、10002+3 恢复/重试、并发 confirm、并发领取、24h 过期、取消不倒退、HOLD/已批准不覆盖、requestKey 幂等） |
+| 7 — `DiscoveryReviewRepositoryIT`（持久幂等/批次 CAS） | IMPLEMENTED | `discovery/repository/DiscoveryReviewRepositoryIT.kt` | 13/13 绿（新增 markBatchReady、领取互斥+重试只回收 FAILED、取消只碰未应用项、id 游标分页、批次 created_at） |
+| 8 — `DiscoveryReviewControllerTest`（快照状态/API） | IMPLEMENTED | `discovery/controller/DiscoveryReviewControllerTest.kt` | 12/12 绿（新增 ALL_MATCHING 202、retry/cancel、id 游标 state、404） |
+| 9 — `TaskExecutionSummaryExtractorTest` 目录断言最小重同步（A1） | IMPLEMENTED | `task/service/TaskExecutionSummaryExtractorTest.kt` | 仅同步：`auditedCodes` +2、`18→20`、`hasProgressUi` 集 7→9、陈旧文案；无断言弱化/删除 |
+| I-1 全页快照完整后才能确认 | IMPLEMENTED | ScanService/Service/Repository | 10005 完整保存；第二批 ES 失败 → `PREPARE_FAILED` 且 confirm 409；`finally` 清 scroll；`request_payload` 无 docId 名单 |
+| I-2 目标不可扩张 | IMPLEMENTED | Service/ScanService | `decision=NEEDS_REVIEW` 服务端固定；confirm 只消费已存 `batchKey+hash`，不再筛选；READY 后新增/刷新不扩张；HOLD/`MANUAL_APPROVED` 不被覆盖 |
+| I-3 持久状态决定进度 | IMPLEMENTED | Service/Repository | `total=applied+stale+failed+cancelled+pending`；逐人失败原因落库；重启不重复已完成项；重试只重领 FAILED/未处理；成功计数取自持久明细（非 202） |
+| I-4 过期/并发可见 | IMPLEMENTED | Service/Repository | per-item `revision+identity` CAS；重复 confirm 复用既有 APPLY 任务；24h（`MIN(created_at)`）过期 409；取消只动未应用项 |
 
 ### Commands
 
 | Command | Result | Evidence |
 |---|---|---|
-| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -DskipTests test-compile` | PASS | exit 0; BUILD SUCCESS; Total time 01:56 min — identical toolchain result to baseline B1 (`baseline.md`) |
-| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=DiscoveryReviewAllPagesTest,DiscoveryReviewServiceTest,DiscoveryReviewControllerTest test` | NOT RUN | Required command cannot express the current state: `DiscoveryReviewAllPagesTest.kt` does not exist, and implementing it is the blocked work. No implementation exists to test. |
-| `DB_URL="jdbc:mysql://localhost:3306/talent_introduction?…allowPublicKeyRetrieval=true" DB_USERNAME=root DB_PASSWORD=root JAVA_HOME=… mvn -DmysqlIt=true -Dtest=DiscoveryReviewRepositoryIT test` | PASS (preflight) | exit 0; `Tests run: 8, Failures: 0, Errors: 0, Skipped: 0`; log `Current version of schema `talent_introduction`: 148`; BUILD SUCCESS. Confirms local container `ti-mysql-it` + V148 are ready for the resumed round. |
-
-These two PASS runs are environment/preflight evidence only; they are not acceptance evidence for child 03 (no 03 implementation exists).
+| `JAVA_HOME=…/zulu-11 … mvn -DskipTests test-compile` | PASS | exit 0；BUILD SUCCESS（fresh，本 epoch） |
+| `JAVA_HOME=… mvn -Dtest=DiscoveryReviewAllPagesTest,DiscoveryReviewServiceTest,DiscoveryReviewControllerTest test` | PASS | exit 0；`Tests run: 11 + 12 + 12 = 35, Failures: 0, Errors: 0, Skipped: 0`；`node --test` 1434 pass / 0 fail；BUILD SUCCESS |
+| `DB_URL=…local…:3306…allowPublicKeyRetrieval=true DB_USERNAME=root DB_PASSWORD=root JAVA_HOME=… mvn -DmysqlIt=true -Dtest=DiscoveryReviewRepositoryIT test` | PASS | exit 0；`Tests run: 13, Failures: 0, Errors: 0, Skipped: 0`；本机容器 `ti-mysql-it`，schema 148；BUILD SUCCESS |
+| `JAVA_HOME=… mvn -Dtest=TaskExecutionSummaryExtractorTest test` | PASS | exit 0；`Tests run: 20, Failures: 0, Errors: 0, Skipped: 0`；BUILD SUCCESS |
 
 ### Changed Files
 
-- `docs/plans/fast/2026-10-04-discovery-review-master/children/03/execution.md` — this report only (the sole non-product file child 03 may write).
-- No product/test file: `git status --short` empty; `git rev-parse HEAD` = c8bcec7 (unchanged).
+- `src/main/kotlin/.../discovery/service/DiscoveryReviewScanService.kt` — 新增：统一列表/全页筛选 + 真实 ES scroll + 每批一次 admission 读取。
+- `src/main/kotlin/.../discovery/service/DiscoveryReviewService.kt` — 全页 prepare/apply/恢复/retry/cancel/状态；`listExperts` 委托 scan service；抽取共享快照构建与应用 seam。
+- `src/main/kotlin/.../discovery/repository/DiscoveryReviewRepository.kt` — 批次 READY/领取/取消/id 游标/MIN(created_at)；`applyItem` 接受 APPLYING；`markItemFailed` 落真实 FAILED。
+- `src/main/kotlin/.../discovery/controller/DiscoveryReviewController.kt` — ALL_MATCHING 202、retry/cancel、id 游标状态端点。
+- `src/main/kotlin/.../task/domain/TaskTypeCatalog.kt` — 2 个新 taskType（中文名/进度白名单）。
+- `src/test/kotlin/.../discovery/service/DiscoveryReviewAllPagesTest.kt` — 新增：10005/并发/恢复/过期/取消/幂等。
+- `src/test/kotlin/.../discovery/repository/DiscoveryReviewRepositoryIT.kt` — 批次 CAS/领取/取消/游标/时间的真实 MySQL 用例。
+- `src/test/kotlin/.../discovery/controller/DiscoveryReviewControllerTest.kt` — 全页/重试/取消/状态 API 契约。
+- `src/test/kotlin/.../task/service/TaskExecutionSummaryExtractorTest.kt` — A1 目录断言最小重同步。
 
 ### Deviations
 
-- None from the authorized scope. `PLAN_CONFLICT` was returned at preflight instead of implementing around an un-authorized pinned test.
+1. **10005 大样本 fixture 替代（如实记录）**：本机无可用隔离 ES（`localhost:9200` 不可达），按 brief/计划授权改用**可注入的 scan 层 HTTP-boundary fixture**——mock `RestTemplate` 按真实 scroll 协议返回 21 批（20×500 + 5）真实 `_id/_source/_seq_no`，`DiscoveryReviewScanService` 的真实 scroll/筛选/合并代码逐行走过；断言含「21 批 / 21 次 admission 批量读取 / 1 次 finally DELETE / 10005 全量落地 / request_payload 无 docId」。真实 MySQL 行锁/CAS 由 IT 覆盖。**未伪造大样本结论**：未连接线上 ES/MySQL、未发信。
+2. **`DiscoveryReviewBatchDetail`/`batchDetail` → `DiscoveryReviewBatchStatus`/`batchStatus`**：`GET /batches/{key}` 现返回批次阶段+计数+id 游标分页的超集；被取代的服务方法已删除（域 DTO 声明留在未授权的 `discovery/domain/DiscoveryReview.kt`，不在授权清单内，故保留声明）。
+3. **`markItemFailed` 语义**：02 原本落 `STALE`，03 依 I-3「失败/未处理只有明确重试才继续」改为真实 `FAILED`（STALE 仍需重新 prepare）。02 的两个调用方（IDS confirm、服务单测）语义与断言不变且全绿。
+4. **`applyItem` 接受 `APPLYING`**：03 逐 500 领取需先把项置 `APPLYING` 再由同一 CAS 应用；对 02 的 STAGED/READY/APPLIED 路径无行为变化（IT 全绿）。
+5. **构造器**：`DiscoveryReviewService` 追加尾随默认参数（`taskExecutions`/`@Qualifier("enrichmentExecutor") executor`/`scanService` 默认自建），保持 02 单测的 8 参位置构造可编译、不修改未授权测试。
+6. 未改任何迁移；未改 `FlywayMigrationIntegrationTest` 的 `147` 旧断言（RECORD_ONLY，不在授权清单）。
 
 ### Freshness
 
-- Plan identity rechecked: YES (SHA-256 `3f157ccc37f3ad3abbeac445ae88327b46c90910c46cf7799247975f0e48db77`, re-read from disk in this invocation, unchanged)
-- Worktree identity rechecked: YES (root/branch/git-dir match; helper `worktree_identity.py` exit 0)
-- Reported commits reachable from target branch: N/A (no commit created)
-- Required commands run this invocation: PARTIAL (CMD1 and CMD3 fresh preflight; CMD2 impossible — blocked by the conflict)
-- Historical evidence used only as baseline: YES (B1/B3 and 02 evidence used only for comparison)
+- Plan identity rechecked: YES（`e6b687b…`，本 epoch 执行前后一致）
+- Worktree identity rechecked: YES（root/branch/git-dir 与 `--expect-*` 全部匹配，helper exit 0）
+- Reported commits reachable from target branch: YES（`6043a67` 为 HEAD 且 `git merge-base --is-ancestor HEAD <branch>` = 0）
+- Required commands run this invocation: YES（4 条命令均在最终实现状态之后 fresh 运行）
+- Historical evidence used only as baseline: YES（02 的 8/12 计数与 baseline.md 仅作对照）
 
 ### Remaining Blocker
 
-- A control-plane decision on exactly one point: authorize `src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt` in child 03's Authorized Files (3 count-set updates, no assertion weakening) **or** amend plan §实现方案 2/3 + brief rule 9 to drop the catalog registration. Nothing else blocks 03; the environment, the local MySQL container, and the 02 seams are verified ready.
+- None.
 
 ### Next Action
 
-- PLAN_CONFLICT → apply the amendment above to the child 03 brief and re-dispatch child 03 (`execute-p`, epoch NEW on amended bytes). No commit to reconcile; the worktree is clean at c8bcec7.
+- READY_FOR_VERIFICATION → run `verify-p`
