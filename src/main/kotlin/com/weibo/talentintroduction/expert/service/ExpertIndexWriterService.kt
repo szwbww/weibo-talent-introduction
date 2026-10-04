@@ -732,7 +732,10 @@ class ExpertIndexWriterService(
             enrichmentSource = text("enrichmentSource"), institutionType = text("institutionType"),
             identityVerification = source["identityVerification"]?.let {
                 DiscoveryIdentity.read(objectMapper.valueToTree(it))
-            }, researchFieldIds = strings("researchFieldIds")
+            }, researchFieldIds = strings("researchFieldIds"),
+            // 02（I-1/I-3）：完整 profile 读取必须带上发送门禁依赖的证据与资格键；
+            // 旧文档没有这两个键 → null（不是合格），不在本方法做任何 ES 写。
+            institutionEvidence = text("institutionEvidence"), filterResult = text("filterResult")
         )
     }
 
