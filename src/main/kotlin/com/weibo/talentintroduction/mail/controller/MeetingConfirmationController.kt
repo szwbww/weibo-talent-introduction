@@ -41,10 +41,17 @@ class MeetingConfirmationController(
 
     @GetMapping("/meeting-confirmation/time-zones")
     fun timeZones(
-        @RequestParam("date") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) date: LocalDate?
+        @RequestParam("date") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) date: LocalDate?,
+        @RequestParam("startLocal", required = false) startLocal: String? = null,
+        @RequestParam("endLocal", required = false) endLocal: String? = null
     ): List<MeetingTimeZoneOption> {
         requireNotNull(date) { "date is required, ISO-8601 e.g. 2026-09-11" }
-        return meetingConfirmationService.timeZones(date)
+        return when {
+            startLocal == null && endLocal == null -> meetingConfirmationService.timeZones(date)
+            startLocal == null || endLocal == null ->
+                throw IllegalArgumentException("startLocal 与 endLocal 必须成对提供")
+            else -> meetingConfirmationService.timeZonesForMeeting(date, startLocal, endLocal)
+        }
     }
 
     @PostMapping("/unmatched-inbound/{processingId}/meeting-confirmation/preview")

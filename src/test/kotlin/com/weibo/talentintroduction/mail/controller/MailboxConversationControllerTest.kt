@@ -2003,6 +2003,52 @@ class CalendarAttachmentIntegrationTest {
     }
 
     @Test
+    fun `timeline and download accept both the legacy expert-name and the new deterministic snapshots`() {
+        val newPreview = previewFor()
+        val newJson = archiveJson(newPreview)
+        // 旧姓名格式：明确旧 filename + 匹配 ICS hash，不从新生成器重新获得旧名。
+        val legacyIcs = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n"
+        val legacy = CalendarAttachmentSnapshot(
+            schemaVersion = MeetingConfirmationDomain.CALENDAR_SCHEMA_VERSION,
+            filename = "meeting-2026-09-11-Professor-Basdogan.ics",
+            contentType = MeetingConfirmationDomain.CALENDAR_CONTENT_TYPE,
+            icsText = legacyIcs,
+            sha256 = java.security.MessageDigest.getInstance("SHA-256")
+                .digest(legacyIcs.toByteArray(StandardCharsets.UTF_8))
+                .joinToString("") { "%02x".format(it) },
+            semanticSha256 = "a".repeat(64)
+        )
+        val legacyJson = CalendarAttachmentCodec.serialize(legacy)
+        insertOutboundCalendarRow(900011L, 1L, newJson, subject = "cal-new-name")
+        insertOutboundCalendarRow(900012L, 1L, legacyJson, subject = "cal-legacy-name")
+        stubMailRecords(listOf(mailRecordOf(900011L, 1L, newJson), mailRecordOf(900012L, 1L, legacyJson)))
+
+        val timeline = mockMvc.perform(
+            get("/api/mail/mailbox/conversations/1/messages").session(sessionOf("op1"))
+        ).andExpect(status().isOk).andReturn()
+        val items = objectMapper.readTree(utf8Body(timeline))["items"]
+        val newItem = items.first { it["source"].asText() == "MAIL_RECORD" && it["id"].asLong() == 900011L }
+        assertEquals(newPreview.attachment.filename, newItem["calendarAttachment"]["filename"].asText())
+        val legacyItem = items.first { it["source"].asText() == "MAIL_RECORD" && it["id"].asLong() == 900012L }
+        assertEquals("meeting-2026-09-11-Professor-Basdogan.ics", legacyItem["calendarAttachment"]["filename"].asText())
+
+        val newDownload = mockMvc.perform(
+            get("/api/mail/conversations/1/messages/900011/calendar-attachment").session(sessionOf("op1"))
+        ).andExpect(status().isOk).andReturn()
+        assertArrayEquals(
+            newPreview.attachment.icsText.toByteArray(StandardCharsets.UTF_8),
+            newDownload.response.contentAsByteArray
+        )
+        assertTrue(newDownload.response.getHeader("Content-Disposition")!!.contains(newPreview.attachment.filename))
+
+        val legacyDownload = mockMvc.perform(
+            get("/api/mail/conversations/1/messages/900012/calendar-attachment").session(sessionOf("op1"))
+        ).andExpect(status().isOk).andReturn()
+        assertArrayEquals(legacyIcs.toByteArray(StandardCharsets.UTF_8), legacyDownload.response.contentAsByteArray)
+        assertTrue(legacyDownload.response.getHeader("Content-Disposition")!!.contains(legacy.filename))
+    }
+
+    @Test
     fun `download rejects wrong-contact not-sent corrupt old-null and out-of-scope account uniformly 404`() {
         val preview = previewFor()
         val json = archiveJson(preview)

@@ -446,7 +446,11 @@ class SmtpMailDeliveryServiceTest {
         )
         val preview = generator.preview(7L, MeetingPreviewRequest(contactId = 1L, meeting = input))
         // A-1 fixture 契约：附件名与 01 样例同；时间 15:00–15:30 中国。
-        assertEquals("meeting-2026-09-11-Professor-Basdogan.ics", preview.attachment.filename)
+        // I-5 fixture 契约：文件名 = 当地开始日期 + HHmm + 语义摘要前 8 位（真实生成器派生，不猜）。
+        assertEquals(
+            "meeting-2026-09-11-1000-${preview.attachment.semanticSha256.take(8)}.ics",
+            preview.attachment.filename
+        )
         assertTrue(preview.chinaTime.startsWith("2026/09/11"))
         return CalendarAttachmentSnapshot(
             schemaVersion = 1,
@@ -513,7 +517,7 @@ class SmtpMailDeliveryServiceTest {
         assertEquals("<p>Please join the meeting.</p>", alternative.getBodyPart(1).content.toString())
 
         val calendarPart = mixed.getBodyPart(1)
-        assertEquals("meeting-2026-09-11-Professor-Basdogan.ics", calendarPart.fileName)
+        assertEquals("meeting-2026-09-11-1000-${snapshot.semanticSha256.take(8)}.ics", calendarPart.fileName)
         assertEquals("attachment", calendarPart.disposition)
         assertTrue(calendarPart.contentType.lowercase().startsWith("text/calendar"))
         assertEquals(snapshot.icsText, calendarPart.inputStream.readBytes().toString(Charsets.UTF_8))
@@ -545,7 +549,7 @@ class SmtpMailDeliveryServiceTest {
         assertEquals(2, mixed.count)
         assertEquals("Plain meeting body", mixed.getBodyPart(0).content.toString().trim())
         val calendarPart = mixed.getBodyPart(1)
-        assertEquals("meeting-2026-09-11-Professor-Basdogan.ics", calendarPart.fileName)
+        assertEquals("meeting-2026-09-11-1000-${snapshot.semanticSha256.take(8)}.ics", calendarPart.fileName)
         assertEquals(snapshot.icsText, calendarPart.inputStream.readBytes().toString(Charsets.UTF_8))
     }
 
@@ -594,7 +598,7 @@ class SmtpMailDeliveryServiceTest {
         val reparsed = roundTrip(captureSentMime(testAccount(), mail, enabledTokenService))
         val mixed = reparsed.content as MimeMultipart
         val calendarPart = mixed.getBodyPart(1)
-        assertEquals("meeting-2026-09-11-Professor-Basdogan.ics", calendarPart.fileName)
+        assertEquals("meeting-2026-09-11-1000-${snapshot.semanticSha256.take(8)}.ics", calendarPart.fileName)
         assertEquals(snapshot.icsText, calendarPart.inputStream.readBytes().toString(Charsets.UTF_8))
         assertArrayEquals(snapshot.icsText.toByteArray(Charsets.UTF_8), calendarPart.inputStream.readBytes())
         assertTrue(snapshot.sha256.length == 64 && snapshot.semanticSha256.length == 64)

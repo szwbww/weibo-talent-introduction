@@ -62,22 +62,90 @@ class MeetingConfirmationService(
 
     fun timeZones(date: LocalDate): List<MeetingTimeZoneOption> {
         val noonUtc = date.atTime(12, 0).toInstant(ZoneOffset.UTC)
-        val zoneIds = catalogZoneIds()
-        val orderedIds = COMMON_ZONE_IDS.filter { it in zoneIds } +
-            (zoneIds - COMMON_ZONE_IDS.toSet()).sorted()
-        return orderedIds.map { id ->
+        return orderedZoneIds().map { id ->
             val offset = ZoneId.of(id).rules.getOffset(noonUtc)
-            val metadata = TIME_ZONE_CATALOG[id]
-                ?: throw IllegalStateException("时区中文目录缺少条目：$id")
+            val catalog = catalogEntry(id)
+            val country = COUNTRY_METADATA[id]
             MeetingTimeZoneOption(
                 id = id,
-                labelZh = metadata.labelZh,
-                aliases = metadata.aliases,
+                labelZh = catalog.labelZh,
+                aliases = catalog.aliases,
                 offsetLabel = formatUtcOffset(offset.totalSeconds),
-                offsetSeconds = offset.totalSeconds
+                offsetSeconds = offset.totalSeconds,
+                countryCode = country?.countryCode,
+                countryLabelZh = country?.countryLabelZh,
+                countryLabelEn = country?.countryLabelEn,
+                canonicalZoneId = country?.canonicalZoneId
             )
         }
     }
+
+    /**
+     * 会议模式目录（I-3）：用本场会议两个当地端点计算实际偏移，与旧目录同一 raw ID
+     * 列表与排序。每项两端各取 `getValidOffsets`，恰好 1 个才有效；无效项给出既有
+     * gap/overlap/duration 文案、`endOffsetSeconds=null`，旧 offset 字段保留目录辅助值。
+     * 处理顺序固定：起点 gap/overlap → 终点 gap/overlap → 实际 duration(1..1440)。
+     */
+    fun timeZonesForMeeting(date: LocalDate, startLocal: String, endLocal: String): List<MeetingTimeZoneOption> {
+        val start = parseLocalDateTime(startLocal)
+        val end = parseLocalDateTime(endLocal)
+        validateYearRange(start, end)
+        if (start.toLocalDate() != date) {
+            throw IllegalArgumentException(MSG_DATE_MISMATCH)
+        }
+        val noonUtc = date.atTime(12, 0).toInstant(ZoneOffset.UTC)
+        return orderedZoneIds().map { id ->
+            val zone = ZoneId.of(id)
+            val catalog = catalogEntry(id)
+            val country = COUNTRY_METADATA[id]
+            val noonOffset = zone.rules.getOffset(noonUtc).totalSeconds
+            val startOffsets = zone.rules.getValidOffsets(start)
+            val endOffsets = zone.rules.getValidOffsets(end)
+            var issue: String? = null
+            var startSeconds: Int? = null
+            var endSeconds: Int? = null
+            when {
+                startOffsets.isEmpty() -> issue = MSG_DST_GAP
+                startOffsets.size > 1 -> issue = MSG_DST_OVERLAP
+                endOffsets.isEmpty() -> issue = MSG_DST_GAP
+                endOffsets.size > 1 -> issue = MSG_DST_OVERLAP
+                else -> {
+                    val startZoned = java.time.ZonedDateTime.of(start, startOffsets[0])
+                    val endZoned = java.time.ZonedDateTime.of(end, endOffsets[0])
+                    val minutes = Duration.between(startZoned.toInstant(), endZoned.toInstant()).toMinutes()
+                    if (minutes !in 1..MAX_DURATION_MINUTES) {
+                        issue = MSG_DURATION_INVALID
+                    } else {
+                        startSeconds = startOffsets[0].totalSeconds
+                        endSeconds = endOffsets[0].totalSeconds
+                    }
+                }
+            }
+            MeetingTimeZoneOption(
+                id = id,
+                labelZh = catalog.labelZh,
+                aliases = catalog.aliases,
+                offsetLabel = formatUtcOffset(startSeconds ?: noonOffset),
+                offsetSeconds = startSeconds ?: noonOffset,
+                countryCode = country?.countryCode,
+                countryLabelZh = country?.countryLabelZh,
+                countryLabelEn = country?.countryLabelEn,
+                canonicalZoneId = country?.canonicalZoneId,
+                endOffsetSeconds = endSeconds,
+                localTimeIssue = issue
+            )
+        }
+    }
+
+    /** 固定常用表先行（与映射同序）；余者 id 字典序；UTC 由目录并入。 */
+    private fun orderedZoneIds(): List<String> {
+        val zoneIds = catalogZoneIds()
+        return COMMON_ZONE_IDS.filter { it in zoneIds } +
+            (zoneIds - COMMON_ZONE_IDS.toSet()).sorted()
+    }
+
+    private fun catalogEntry(id: String): TimeZoneCatalogEntry =
+        TIME_ZONE_CATALOG[id] ?: throw IllegalStateException("时区中文目录缺少条目：$id")
 
     fun preview(processingId: Long, request: MeetingPreviewRequest): MeetingPreviewResponse {
         val processing = requireProcessingForContact(processingId, request.contactId)
@@ -118,7 +186,7 @@ class MeetingConfirmationService(
             throw IllegalArgumentException(MSG_DURATION_INVALID)
         }
 
-        val meetingTime = meetingTimeText(zoneIdRaw, zone, startZoned, endZoned)
+        val meetingTime = meetingTimeText(zoneIdRaw, startZoned, endZoned)
         val chinaTime = chinaTimeText(startInstant, endInstant)
 
         val variables = meetingTemplateVariables(contact, account, meetingTime, zoomUrl)
@@ -160,7 +228,7 @@ class MeetingConfirmationService(
             throw IllegalArgumentException("会议日历内容超出 64KiB 限制")
         }
         val sha256 = sha256Hex(icsBytes)
-        val filename = buildCalendarFilename(startZoned.toLocalDate(), salutation)
+        val filename = buildCalendarFilename(startZoned.toLocalDateTime(), semanticSha256)
 
         val echoMeeting = if (input.generatedAt.isBlank()) {
             input.copy(generatedAt = generatedAt.toString())
@@ -381,7 +449,7 @@ class MeetingConfirmationService(
 
     // ───────────────────────── 时间文本（I-3） ─────────────────────────
 
-    private fun meetingTimeText(zoneIdRaw: String, zone: ZoneId, start: java.time.ZonedDateTime, end: java.time.ZonedDateTime): String {
+    private fun meetingTimeText(zoneIdRaw: String, start: java.time.ZonedDateTime, end: java.time.ZonedDateTime): String {
         val startOffset = start.offset.totalSeconds
         val endOffset = end.offset.totalSeconds
         val offsetInfo = if (startOffset == endOffset) {
@@ -389,7 +457,7 @@ class MeetingConfirmationService(
         } else {
             "${formatUtcOffset(startOffset)} → ${formatUtcOffset(endOffset)}"
         }
-        val label = zoneLabel(zone, zoneIdRaw)
+        val label = zoneLabel(zoneIdRaw)
         val startFullDate = start.format(FULL_DATE_FORMAT)
         val endFullDate = end.format(FULL_DATE_FORMAT)
         val startTime = start.format(TIME_FORMAT)
@@ -401,11 +469,9 @@ class MeetingConfirmationService(
         }
     }
 
-    private fun zoneLabel(zone: ZoneId, zoneIdRaw: String): String = when (zoneIdRaw) {
-        "Europe/Istanbul" -> "Türkiye Time"
-        "Asia/Shanghai" -> "China Standard Time"
-        else -> zone.id.substringAfterLast('/').replace('_', ' ') + " Time"
-    }
+    /** 英文国家名（无 ` Time` 后缀）；UTC 用明确特殊名；无国家归属的旧技术时区显式拒绝（I-8）。 */
+    private fun zoneLabel(zoneIdRaw: String): String =
+        COUNTRY_METADATA[zoneIdRaw]?.countryLabelEn ?: throw IllegalArgumentException(MSG_ZONE_NO_COUNTRY)
 
     private fun chinaTimeText(start: Instant, end: Instant): String =
         chinaLine(start) + " – " + chinaLine(end)
@@ -526,15 +592,9 @@ class MeetingConfirmationService(
         return sb.toString()
     }
 
-    private fun buildCalendarFilename(date: LocalDate, salutation: String): String {
-        val token = salutation
-            .map { ch -> if (ch in 'A'..'Z' || ch in 'a'..'z' || ch in '0'..'9' || ch == '-') ch else '-' }
-            .joinToString("")
-            .replace(DASH_RUN, "-")
-            .trim('-')
-        val safe = token.take(60).trimEnd('-')
-        return "meeting-$date-${safe.ifEmpty { "expert" }}.ics"
-    }
+    /** 无姓名、确定的附件名（I-5）：当地开始日期 + 当地开始分钟 + 语义摘要前 8 位小写 hex。 */
+    private fun buildCalendarFilename(startLocal: LocalDateTime, semanticSha256: String): String =
+        "meeting-${startLocal.toLocalDate()}-${startLocal.format(HHMM_FORMAT)}-${semanticSha256.take(8)}.ics"
 
     // ───────────────────────── 语义摘要（I-6） ─────────────────────────
 
@@ -598,6 +658,8 @@ class MeetingConfirmationService(
         private const val MSG_DURATION_INVALID = "会议时长须大于 0 且不超过 24 小时"
         private const val MSG_DST_GAP = "该当地时间不存在，请避开夏令时跳时区间"
         private const val MSG_DST_OVERLAP = "该当地时间出现两次，请选择不处于夏令时回拨区间的时间"
+        private const val MSG_DATE_MISMATCH = "会议开始日期必须与所选日期一致"
+        private const val MSG_ZONE_NO_COUNTRY = "该旧时区没有国家归属，请重新选择国家和时区"
 
         private const val MAX_BODY_CHARS = 20_000
         private const val MAX_DURATION_MINUTES = 1440
@@ -608,7 +670,6 @@ class MeetingConfirmationService(
 
         private val SHANGHAI: ZoneId = ZoneId.of("Asia/Shanghai")
         private val LOCAL_DATETIME_PATTERN = Regex("""^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$""")
-        private val DASH_RUN = Regex("-+")
         private val ZOOM_JOIN_PATH = Regex("""^/j/[^/]+$""")
         private val ZOOM_MY_PATH = Regex("""^/my/[^/]+$""")
 
@@ -618,6 +679,8 @@ class MeetingConfirmationService(
             DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy", Locale.US)
         private val TIME_FORMAT: DateTimeFormatter =
             DateTimeFormatter.ofPattern("h:mm a", Locale.US)
+        private val HHMM_FORMAT: DateTimeFormatter =
+            DateTimeFormatter.ofPattern("HHmm")
         private val BASIC_UTC_FORMAT: DateTimeFormatter =
             DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC)
 
@@ -634,6 +697,13 @@ class MeetingConfirmationService(
         private data class TimeZoneCatalogEntry(
             val labelZh: String,
             val aliases: List<String>
+        )
+
+        private data class CountryMetadata(
+            val countryCode: String,
+            val countryLabelZh: String,
+            val countryLabelEn: String,
+            val canonicalZoneId: String
         )
 
         /**
@@ -654,6 +724,29 @@ class MeetingConfirmationService(
                 val aliases = parts[1].split('\u001f').filter { it.isNotBlank() }
                 require(aliases.isNotEmpty()) { "时区中文目录缺少搜索别名：$id" }
                 TimeZoneCatalogEntry(parts[0], aliases)
+            }
+        }
+
+        /**
+         * 离线国家元信息（I-1；`scripts/generate_meeting_zone_countries.py` 派生）。
+         * 行格式 `zoneId=countryCode\tcountryLabelZh\tcountryLabelEn\tcanonicalZoneId`；
+         * 无国家归属的旧技术时区不在此 map 中（国家字段为 null）。资源缺失/格式不合法
+         * 显式配置错误。运行时不联网、不调用生成脚本。
+         */
+        private val COUNTRY_METADATA: Map<String, CountryMetadata> by lazy {
+            val properties = Properties()
+            MeetingConfirmationService::class.java.classLoader
+                .getResourceAsStream("meeting-zone-countries.properties")
+                ?.use { input ->
+                    InputStreamReader(input, StandardCharsets.UTF_8).use(properties::load)
+                }
+                ?: throw IllegalStateException("找不到时区国家元信息目录资源")
+            properties.stringPropertyNames().associateWith { id ->
+                val parts = properties.getProperty(id).split('\t')
+                require(parts.size == 4 && parts.all { it.isNotBlank() }) {
+                    "时区国家元信息目录格式错误：$id"
+                }
+                CountryMetadata(parts[0], parts[1], parts[2], parts[3])
             }
         }
 

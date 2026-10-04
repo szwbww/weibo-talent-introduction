@@ -75,14 +75,49 @@ class MeetingConfirmationControllerTest {
             labelZh = "土耳其 · 伊斯坦布尔",
             aliases = listOf("土耳其", "伊斯坦布尔", "Turkey", "Türkiye", "Istanbul"),
             offsetLabel = "UTC+3",
-            offsetSeconds = 10800
+            offsetSeconds = 10800,
+            countryCode = "TR",
+            countryLabelZh = "土耳其",
+            countryLabelEn = "Turkey",
+            canonicalZoneId = "Europe/Istanbul"
         ),
         MeetingTimeZoneOption(
             id = "Asia/Kolkata",
             labelZh = "印度 · 加尔各答",
             aliases = listOf("印度", "加尔各答", "India", "Kolkata"),
             offsetLabel = "UTC+5:30",
-            offsetSeconds = 19800
+            offsetSeconds = 19800,
+            countryCode = "IN",
+            countryLabelZh = "印度",
+            countryLabelEn = "India",
+            canonicalZoneId = "Asia/Kolkata"
+        )
+    )
+
+    private fun sampleMeetingZones() = listOf(
+        MeetingTimeZoneOption(
+            id = "Europe/Istanbul",
+            labelZh = "土耳其 · 伊斯坦布尔",
+            aliases = listOf("土耳其", "伊斯坦布尔", "Turkey", "Türkiye", "Istanbul"),
+            offsetLabel = "UTC+3",
+            offsetSeconds = 10800,
+            countryCode = "TR",
+            countryLabelZh = "土耳其",
+            countryLabelEn = "Turkey",
+            canonicalZoneId = "Europe/Istanbul",
+            endOffsetSeconds = 10800
+        ),
+        MeetingTimeZoneOption(
+            id = "America/New_York",
+            labelZh = "美国 · 纽约",
+            aliases = listOf("美国", "纽约", "United States", "New York"),
+            offsetLabel = "UTC-5",
+            offsetSeconds = -18000,
+            countryCode = "US",
+            countryLabelZh = "美国",
+            countryLabelEn = "United States",
+            canonicalZoneId = "America/New_York",
+            localTimeIssue = "该当地时间不存在，请避开夏令时跳时区间"
         )
     )
 
@@ -98,13 +133,13 @@ class MeetingConfirmationControllerTest {
         ),
         textBody = "Dear Professor Basdogan,",
         htmlBody = "<p>Dear Professor Basdogan,</p>",
-        meetingTime = "Friday, September 11, 2026, from 10:00 AM to 10:30 AM Türkiye Time (UTC+3)",
+        meetingTime = "Friday, September 11, 2026, from 10:00 AM to 10:30 AM Turkey (UTC+3)",
         startUtc = "2026-09-11T07:00:00Z",
         endUtc = "2026-09-11T07:30:00Z",
         chinaTime = "2026/09/11 周五 15:00 – 2026/09/11 周五 15:30",
         durationMinutes = 30,
         attachment = com.weibo.talentintroduction.mail.service.MeetingCalendarAttachment(
-            filename = "meeting-2026-09-11-Professor-Basdogan.ics",
+            filename = "meeting-2026-09-11-1000-a1b2c3d4.ics",
             contentType = MeetingConfirmationDomain.CALENDAR_CONTENT_TYPE,
             icsText = "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n",
             byteLength = 40,
@@ -228,6 +263,92 @@ class MeetingConfirmationControllerTest {
             .andExpect(jsonPath("$[0].offsetLabel").value("UTC+3"))
             .andExpect(jsonPath("$[0].offsetSeconds").value(10800))
             .andExpect(jsonPath("$[1].offsetLabel").value("UTC+5:30"))
+            // 02 冻结契约：尾部新增国家字段；旧目录模式无会议端点字段值。
+            .andExpect(jsonPath("$[0].countryCode").value("TR"))
+            .andExpect(jsonPath("$[0].countryLabelZh").value("土耳其"))
+            .andExpect(jsonPath("$[0].countryLabelEn").value("Turkey"))
+            .andExpect(jsonPath("$[0].canonicalZoneId").value("Europe/Istanbul"))
+            .andExpect(jsonPath("$[0].endOffsetSeconds").isEmpty())
+            .andExpect(jsonPath("$[0].localTimeIssue").isEmpty())
+    }
+
+    @Test
+    fun `time-zones meeting mode dispatches paired start and end params`() {
+        stubAuth()
+        Mockito.`when`(
+            meetingConfirmationService.timeZonesForMeeting(
+                java.time.LocalDate.of(2026, 3, 8),
+                "2026-03-08T01:30",
+                "2026-03-08T03:30"
+            )
+        ).thenReturn(sampleMeetingZones())
+
+        mockMvc.perform(
+            get("/api/mail/meeting-confirmation/time-zones").session(sessionOf())
+                .param("date", "2026-03-08")
+                .param("startLocal", "2026-03-08T01:30")
+                .param("endLocal", "2026-03-08T03:30")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$[0].endOffsetSeconds").value(10800))
+            .andExpect(jsonPath("$[1].offsetSeconds").value(-18000))
+            .andExpect(jsonPath("$[1].endOffsetSeconds").isEmpty())
+            .andExpect(jsonPath("$[1].localTimeIssue").value("该当地时间不存在，请避开夏令时跳时区间"))
+        Mockito.verify(meetingConfirmationService)
+            .timeZonesForMeeting(java.time.LocalDate.of(2026, 3, 8), "2026-03-08T01:30", "2026-03-08T03:30")
+        Mockito.verify(meetingConfirmationService, Mockito.never())
+            .timeZones(java.time.LocalDate.of(2026, 3, 8))
+    }
+
+    @Test
+    fun `time-zones meeting mode rejects a single endpoint or empty strings`() {
+        stubAuth()
+        mockMvc.perform(
+            get("/api/mail/meeting-confirmation/time-zones").session(sessionOf())
+                .param("date", "2026-03-08")
+                .param("startLocal", "2026-03-08T01:30")
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
+
+        mockMvc.perform(
+            get("/api/mail/meeting-confirmation/time-zones").session(sessionOf())
+                .param("date", "2026-03-08")
+                .param("endLocal", "2026-03-08T03:30")
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
+
+        Mockito.verify(meetingConfirmationService, Mockito.never())
+            .timeZonesForMeeting(
+                anyValue(java.time.LocalDate.of(2026, 3, 8)),
+                anyValue("2026-03-08T01:30"),
+                anyValue("2026-03-08T03:30")
+            )
+        Mockito.verify(meetingConfirmationService, Mockito.never())
+            .timeZones(anyValue(java.time.LocalDate.of(2026, 3, 8)))
+    }
+
+    @Test
+    fun `time-zones meeting mode surfaces a service validation error as 400`() {
+        stubAuth()
+        Mockito.`when`(
+            meetingConfirmationService.timeZonesForMeeting(
+                anyValue(java.time.LocalDate.of(2026, 3, 8)),
+                anyValue("2026-03-08T01:30"),
+                anyValue("2026-03-08T03:30")
+            )
+        ).thenThrow(IllegalArgumentException("会议开始日期必须与所选日期一致"))
+
+        mockMvc.perform(
+            get("/api/mail/meeting-confirmation/time-zones").session(sessionOf())
+                .param("date", "2026-03-08")
+                .param("startLocal", "2026-03-09T01:30")
+                .param("endLocal", "2026-03-09T03:30")
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
+            .andExpect(jsonPath("$.message").value("会议开始日期必须与所选日期一致"))
     }
 
     @Test
@@ -298,11 +419,11 @@ class MeetingConfirmationControllerTest {
             .andExpect(jsonPath("$.targetKey").value("1:acc-1"))
             .andExpect(jsonPath("$.meeting.zoneId").value("Europe/Istanbul"))
             .andExpect(jsonPath("$.meetingTime").value(
-                "Friday, September 11, 2026, from 10:00 AM to 10:30 AM Türkiye Time (UTC+3)"
+                "Friday, September 11, 2026, from 10:00 AM to 10:30 AM Turkey (UTC+3)"
             ))
             .andExpect(jsonPath("$.startUtc").value("2026-09-11T07:00:00Z"))
             .andExpect(jsonPath("$.durationMinutes").value(30))
-            .andExpect(jsonPath("$.attachment.filename").value("meeting-2026-09-11-Professor-Basdogan.ics"))
+            .andExpect(jsonPath("$.attachment.filename").value("meeting-2026-09-11-1000-a1b2c3d4.ics"))
             .andExpect(jsonPath("$.attachment.byteLength").value(40))
             .andExpect(jsonPath("$.attachment.sha256").value("a".repeat(64)))
     }

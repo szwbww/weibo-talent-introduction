@@ -289,15 +289,19 @@ class MeetingConfirmationServiceTest {
         assertEquals("2026-09-11T07:30:00Z", response.endUtc)
         assertEquals(30, response.durationMinutes)
         assertEquals(
-            "Friday, September 11, 2026, from 10:00 AM to 10:30 AM Türkiye Time (UTC+3)",
+            "Friday, September 11, 2026, from 10:00 AM to 10:30 AM Turkey (UTC+3)",
             response.meetingTime
         )
         assertEquals("2026/09/11 周五 15:00 – 2026/09/11 周五 15:30", response.chinaTime)
         assertTrue(response.textBody.startsWith("Dear Basdogan,\n\nThank you for confirming"), response.textBody)
-        assertTrue(response.textBody.contains("Friday, September 11, 2026, from 10:00 AM to 10:30 AM Türkiye Time (UTC+3)"))
+        assertTrue(response.textBody.contains("Friday, September 11, 2026, from 10:00 AM to 10:30 AM Turkey (UTC+3)"))
         assertTrue(response.textBody.contains(ZOOM_URL))
         assertTrue(response.textBody.endsWith("Best regards,\nLuKai, Customer Care Officer\nQingfei Tech Talent Team China"))
-        assertEquals("meeting-2026-09-11-Professor-Basdogan.ics", response.attachment.filename)
+        // I-5：文件名=当地开始日期 + HHmm + 当前语义摘要前 8 位；不含姓名。
+        assertEquals(
+            "meeting-2026-09-11-1000-${response.attachment.semanticSha256.take(8)}.ics",
+            response.attachment.filename
+        )
         assertEquals(MeetingConfirmationDomain.CALENDAR_CONTENT_TYPE, response.attachment.contentType)
         assertTrue(response.attachment.byteLength > 0)
         assertEquals(64, response.attachment.sha256.length)
@@ -356,8 +360,12 @@ class MeetingConfirmationServiceTest {
         val response = preview()
 
         assertTrue(response.textBody.startsWith("Dear Colleague,"), response.textBody)
-        // ICS 称呼回退到联系人姓名，而不是空串
-        assertEquals("meeting-2026-09-11-Professor-Basdogan.ics", response.attachment.filename)
+        // I-5：文件名不再来自称呼，姓名（含兜底）不出现在文件名。
+        assertEquals(
+            "meeting-2026-09-11-1000-${response.attachment.semanticSha256.take(8)}.ics",
+            response.attachment.filename
+        )
+        assertFalse(response.attachment.filename.contains("Basdogan"))
     }
 
     @Test
@@ -523,6 +531,13 @@ class MeetingConfirmationServiceTest {
         assertTrue(istanbul.aliases.contains("Istanbul"))
         assertEquals("UTC+3", istanbul.offsetLabel)
         assertEquals(10800, istanbul.offsetSeconds)
+        // I-1/I-2：旧目录模式尾部加法式新增国家元信息；无会议端点。
+        assertEquals("TR", istanbul.countryCode)
+        assertEquals("土耳其", istanbul.countryLabelZh)
+        assertEquals("Turkey", istanbul.countryLabelEn)
+        assertEquals("Europe/Istanbul", istanbul.canonicalZoneId)
+        assertNull(istanbul.endOffsetSeconds)
+        assertNull(istanbul.localTimeIssue)
 
         val kolkata = zones.first { it.id == "Asia/Kolkata" }
         assertEquals("UTC+5:30", kolkata.offsetLabel)
@@ -582,6 +597,129 @@ class MeetingConfirmationServiceTest {
     }
 
     @Test
+    fun `packaged country metadata covers mapped zones and omits countryless legacy ids`() {
+        val properties = Properties()
+        MeetingConfirmationService::class.java.classLoader
+            .getResourceAsStream("meeting-zone-countries.properties")
+            .use { input ->
+                requireNotNull(input) { "missing meeting-zone-countries.properties" }
+                InputStreamReader(input, StandardCharsets.UTF_8).use(properties::load)
+            }
+        assertEquals(519, properties.size)
+        assertEquals("BR\t巴西\tBrazil\tAmerica/Sao_Paulo", properties.getProperty("Brazil/East"))
+        assertEquals("IN\t印度\tIndia\tAsia/Kolkata", properties.getProperty("Asia/Calcutta"))
+        assertEquals("FM\t密克罗尼西亚\tMicronesia\tPacific/Pohnpei", properties.getProperty("Pacific/Ponape"))
+        assertEquals("BE\t比利时\tBelgium\tEurope/Brussels", properties.getProperty("Europe/Brussels"))
+        assertEquals("UTC\t协调世界时\tCoordinated Universal Time\tUTC", properties.getProperty("UTC"))
+        assertNull(properties.getProperty("SystemV/EST5"))
+    }
+
+    // ───────────────────────── I-3：会议模式目录 ─────────────────────────
+
+    @Test
+    fun `meeting zone catalog reports actual endpoints and the new york spring-forward offsets`() {
+        val zones = service.timeZonesForMeeting(
+            LocalDate.of(2026, 3, 8),
+            "2026-03-08T01:30",
+            "2026-03-08T03:30"
+        )
+        val newYork = zones.first { it.id == "America/New_York" }
+        assertEquals(-18000, newYork.offsetSeconds)
+        assertEquals("UTC-5", newYork.offsetLabel)
+        assertEquals(-14400, newYork.endOffsetSeconds)
+        assertNull(newYork.localTimeIssue)
+        // 目录顺序与旧目录一致。
+        assertEquals("Europe/Istanbul", zones.first().id)
+        assertEquals(service.timeZones(LocalDate.of(2026, 3, 8)).map { it.id }, zones.map { it.id })
+    }
+
+    @Test
+    fun `meeting zone catalog marks gap overlap and duration issues without dropping the catalog`() {
+        val gapZones = service.timeZonesForMeeting(
+            LocalDate.of(2026, 3, 8),
+            "2026-03-08T02:30",
+            "2026-03-08T03:30"
+        )
+        val gapNewYork = gapZones.first { it.id == "America/New_York" }
+        assertEquals("该当地时间不存在，请避开夏令时跳时区间", gapNewYork.localTimeIssue)
+        assertNull(gapNewYork.endOffsetSeconds)
+        // 无效项保留目录辅助偏移；其他有效地区不受影响。
+        assertEquals(-14400, gapNewYork.offsetSeconds)
+        assertNull(gapZones.first { it.id == "Asia/Shanghai" }.localTimeIssue)
+
+        val overlapZones = service.timeZonesForMeeting(
+            LocalDate.of(2026, 11, 1),
+            "2026-11-01T01:30",
+            "2026-11-01T02:30"
+        )
+        val overlapNewYork = overlapZones.first { it.id == "America/New_York" }
+        assertEquals("该当地时间出现两次，请选择不处于夏令时回拨区间的时间", overlapNewYork.localTimeIssue)
+        assertNull(overlapNewYork.endOffsetSeconds)
+
+        val durationZones = service.timeZonesForMeeting(
+            LocalDate.of(2026, 10, 7),
+            "2026-10-07T09:00",
+            "2026-10-08T10:00"
+        )
+        val durationShanghai = durationZones.first { it.id == "Asia/Shanghai" }
+        assertEquals("会议时长须大于 0 且不超过 24 小时", durationShanghai.localTimeIssue)
+        assertNull(durationShanghai.endOffsetSeconds)
+
+        val reversedZones = service.timeZonesForMeeting(
+            LocalDate.of(2026, 10, 7),
+            "2026-10-07T09:00",
+            "2026-10-07T08:00"
+        )
+        val reversedShanghai = reversedZones.first { it.id == "Asia/Shanghai" }
+        assertEquals("会议时长须大于 0 且不超过 24 小时", reversedShanghai.localTimeIssue)
+        assertNull(reversedShanghai.endOffsetSeconds)
+    }
+
+    @Test
+    fun `meeting zone catalog keeps minute offsets and the utc special entry`() {
+        val zones = service.timeZonesForMeeting(
+            LocalDate.of(2026, 10, 7),
+            "2026-10-07T09:00",
+            "2026-10-07T09:30"
+        )
+        val india = zones.first { it.id == "Asia/Kolkata" }
+        assertEquals(19800, india.offsetSeconds)
+        assertEquals("UTC+5:30", india.offsetLabel)
+        assertEquals(19800, india.endOffsetSeconds)
+        val nepal = zones.first { it.id == "Asia/Kathmandu" }
+        assertEquals(20700, nepal.offsetSeconds)
+        assertEquals("UTC+5:45", nepal.offsetLabel)
+
+        val utc = zones.first { it.id == "UTC" }
+        assertEquals(0, utc.offsetSeconds)
+        assertEquals("UTC+0", utc.offsetLabel)
+        assertEquals(0, utc.endOffsetSeconds)
+        assertNull(utc.localTimeIssue)
+    }
+
+    @Test
+    fun `meeting zone catalog validates date pairing and year range`() {
+        val mismatch = assertThrows<IllegalArgumentException> {
+            service.timeZonesForMeeting(
+                LocalDate.of(2026, 10, 7),
+                "2026-10-08T09:00",
+                "2026-10-08T09:30"
+            )
+        }
+        assertEquals("会议开始日期必须与所选日期一致", mismatch.message)
+
+        val blank = assertThrows<IllegalArgumentException> {
+            service.timeZonesForMeeting(LocalDate.of(2026, 10, 7), "", "2026-10-07T09:30")
+        }
+        assertEquals("请填写日期和起止时间", blank.message)
+
+        val outOfRange = assertThrows<IllegalArgumentException> {
+            service.timeZonesForMeeting(LocalDate.of(1800, 1, 1), "1800-01-01T09:00", "1800-01-01T09:30")
+        }
+        assertTrue(outOfRange.message!!.contains("1900"))
+    }
+
+    @Test
     fun `istanbul morning preview matches the approved example`() {
         stubIdentity()
         stubMeetingPreparation()
@@ -596,7 +734,7 @@ class MeetingConfirmationServiceTest {
         assertEquals("2026-09-11T02:00:00Z", response.startUtc)
         assertEquals("2026-09-11T02:30:00Z", response.endUtc)
         assertEquals("2026/09/11 周五 10:00 – 2026/09/11 周五 10:30", response.chinaTime)
-        assertTrue(response.meetingTime.contains("China Standard Time (UTC+8)"))
+        assertTrue(response.meetingTime.contains("China (UTC+8)"))
     }
 
     @Test
@@ -607,7 +745,7 @@ class MeetingConfirmationServiceTest {
         assertEquals("2026-09-11T04:30:00Z", response.startUtc)
         assertEquals("2026-09-11T05:00:00Z", response.endUtc)
         assertEquals(30, response.durationMinutes)
-        assertTrue(response.meetingTime.contains("Kolkata Time (UTC+5:30)"))
+        assertTrue(response.meetingTime.contains("India (UTC+5:30)"))
     }
 
     @Test
@@ -625,10 +763,13 @@ class MeetingConfirmationServiceTest {
         assertEquals("2026-09-11T14:30:00Z", response.endUtc)
         assertEquals(90, response.durationMinutes)
         assertEquals(
-            "Friday, September 11, 2026, from 11:00 PM to Saturday, September 12, 2026, at 12:30 AM Sydney Time (UTC+10)",
+            "Friday, September 11, 2026, from 11:00 PM to Saturday, September 12, 2026, at 12:30 AM Australia (UTC+10)",
             response.meetingTime
         )
-        assertEquals("meeting-2026-09-11-Professor-Basdogan.ics", response.attachment.filename)
+        assertEquals(
+            "meeting-2026-09-11-2300-${response.attachment.semanticSha256.take(8)}.ics",
+            response.attachment.filename
+        )
     }
 
     @Test
@@ -646,7 +787,7 @@ class MeetingConfirmationServiceTest {
         assertEquals("2026-03-29T01:30:00Z", response.endUtc)
         assertEquals(60, response.durationMinutes)
         assertEquals(
-            "Sunday, March 29, 2026, from 12:30 AM to 2:30 AM London Time (UTC+0 → UTC+1)",
+            "Sunday, March 29, 2026, from 12:30 AM to 2:30 AM Britain (UK) (UTC+0 → UTC+1)",
             response.meetingTime
         )
     }
@@ -745,6 +886,28 @@ class MeetingConfirmationServiceTest {
         )
         assertEquals("2025-03-05T07:00:00Z", response.startUtc)
         assertEquals("2025-03-05T07:30:00Z", response.endUtc)
+    }
+
+    @Test
+    fun `utc preview uses the explicit special country name`() {
+        stubIdentity()
+        stubMeetingPreparation()
+        val response = preview(meetingInput(zoneId = "UTC"))
+        assertEquals("2026-09-11T10:00:00Z", response.startUtc)
+        assertEquals(
+            "Friday, September 11, 2026, from 10:00 AM to 10:30 AM Coordinated Universal Time (UTC+0)",
+            response.meetingTime
+        )
+    }
+
+    @Test
+    fun `countryless legacy zone asks the operator to reselect before any send`() {
+        stubIdentity()
+        stubMeetingPreparation()
+        val ex = assertThrows<IllegalArgumentException> {
+            preview(meetingInput(zoneId = "SystemV/EST5"))
+        }
+        assertEquals("该旧时区没有国家归属，请重新选择国家和时区", ex.message)
     }
 
     // ───────────────────────── I-5：受限内容与安全 ─────────────────────────
@@ -886,12 +1049,12 @@ class MeetingConfirmationServiceTest {
         val response = preview()
         val description = propertyLine(response, "DESCRIPTION")
         assertEquals(
-            "Friday\\, September 11\\, 2026\\, from 10:00 AM to 10:30 AM Türkiye Time (UTC+3)\\n\\n" +
+            "Friday\\, September 11\\, 2026\\, from 10:00 AM to 10:30 AM Turkey (UTC+3)\\n\\n" +
                 "Join Zoom meeting:\\n$ZOOM_URL\\n\\nLuKai\\, Customer Care Officer\\nQingfei Tech Talent Team China",
             description
         )
         assertEquals(
-            "Friday, September 11, 2026, from 10:00 AM to 10:30 AM Türkiye Time (UTC+3)\n\n" +
+            "Friday, September 11, 2026, from 10:00 AM to 10:30 AM Turkey (UTC+3)\n\n" +
                 "Join Zoom meeting:\n$ZOOM_URL\n\nLuKai, Customer Care Officer\nQingfei Tech Talent Team China",
             unescapeText(description)
         )
@@ -960,19 +1123,77 @@ class MeetingConfirmationServiceTest {
     }
 
     @Test
-    fun `filename falls back to expert for non-ascii salutation`() {
+    fun `filename never carries the expert salutation for ascii punctuation or non-ascii names`() {
         stubIdentity()
         stubInvitationTemplate()
         stubVariables(mapOf("expertName" to "王教授", "expertFamilyName" to "王教授", "senderName" to "", "senderTitle" to "",
             "teamName" to "", "countryName" to ""))
 
-        val response = preview()
-        assertEquals("meeting-2026-09-11-expert.ics", response.attachment.filename)
-        assertTrue(MeetingConfirmationDomain.CALENDAR_FILENAME_REGEX.matches(response.attachment.filename))
+        val chineseName = preview()
+        assertEquals(
+            "meeting-2026-09-11-1000-${chineseName.attachment.semanticSha256.take(8)}.ics",
+            chineseName.attachment.filename
+        )
+        assertTrue(MeetingConfirmationDomain.CALENDAR_FILENAME_REGEX.matches(chineseName.attachment.filename))
+        assertFalse(chineseName.attachment.filename.contains("王"))
 
         stubVariables(mapOf("expertName" to "Dr. Anne-Marie O'Brien -- x"))
         val punctuationName = preview()
-        assertEquals("meeting-2026-09-11-Dr-Anne-Marie-O-Brien-x.ics", punctuationName.attachment.filename)
+        assertEquals(
+            "meeting-2026-09-11-1000-${punctuationName.attachment.semanticSha256.take(8)}.ics",
+            punctuationName.attachment.filename
+        )
+        assertFalse(punctuationName.attachment.filename.contains("Anne"))
+        assertFalse(punctuationName.attachment.filename.contains("expert"))
+    }
+
+    @Test
+    fun `brazil meeting uses the fixed filename date minute and semantic short code`() {
+        stubIdentity()
+        stubMeetingPreparation()
+        val input = meetingInput(
+            zoneId = "Brazil/East",
+            startLocal = "2026-10-07T09:00",
+            endLocal = "2026-10-07T09:30"
+        )
+        val response = preview(input)
+
+        // I-4/I-5：巴西/圣保罗当地 09:00–09:30 = 12:00Z–12:30Z；北京 20:00–20:30。
+        assertEquals("2026-10-07T12:00:00Z", response.startUtc)
+        assertEquals("2026-10-07T12:30:00Z", response.endUtc)
+        assertEquals("2026/10/07 周三 20:00 – 2026/10/07 周三 20:30", response.chinaTime)
+        assertEquals(
+            "Wednesday, October 7, 2026, from 9:00 AM to 9:30 AM Brazil (UTC-3)",
+            response.meetingTime
+        )
+        // I-4：国家文案只影响显示，原请求 zoneId 不被替换。
+        assertEquals("Brazil/East", response.meeting.zoneId)
+        // 文件名日期/分钟取当地开始；尾码等于当前语义摘要前 8 位。
+        assertEquals(
+            "meeting-2026-10-07-0900-${response.attachment.semanticSha256.take(8)}.ics",
+            response.attachment.filename
+        )
+        assertTrue(MeetingConfirmationDomain.CALENDAR_FILENAME_REGEX.matches(response.attachment.filename))
+
+        // 同一时刻 America/Sao_Paulo 得到相同 UTC/北京显示（I-4）。
+        val paulo = preview(input.copy(zoneId = "America/Sao_Paulo"))
+        assertEquals(response.startUtc, paulo.startUtc)
+        assertEquals(response.endUtc, paulo.endUtc)
+        assertEquals(response.chinaTime, paulo.chinaTime)
+    }
+
+    @Test
+    fun `filename is insensitive to generatedAt but follows the semantic digest`() {
+        stubIdentity()
+        stubMeetingPreparation()
+        val first = preview(meetingInput(generatedAt = "2026-09-09T03:00:40Z"))
+        val shifted = preview(meetingInput(generatedAt = "2026-09-09T03:01:01Z"))
+        assertEquals(first.attachment.semanticSha256, shifted.attachment.semanticSha256)
+        assertEquals(first.attachment.filename, shifted.attachment.filename)
+        assertNotEquals(first.attachment.sha256, shifted.attachment.sha256)
+
+        val differentTime = preview(meetingInput(endLocal = "2026-09-11T11:00"))
+        assertNotEquals(first.attachment.filename, differentTime.attachment.filename)
     }
 
     @Test
@@ -1025,6 +1246,16 @@ class MeetingConfirmationServiceTest {
         assertNull(CalendarAttachmentCodec.parseOrNull(json.replace("\"schemaVersion\":1", "\"schemaVersion\":2")))
         assertNull(CalendarAttachmentCodec.parseOrNull(json.replace("\"schemaVersion\":1,", "")))
         assertNull(CalendarAttachmentCodec.parseOrNull("""{"schemaVersion":1,"extra":true}"""))
+    }
+
+    @Test
+    fun `codec accepts the legacy expert-name name and the new deterministic name`() {
+        val legacy = validSnapshot()
+        assertEquals(legacy, CalendarAttachmentCodec.parseOrNull(CalendarAttachmentCodec.serialize(legacy)))
+        // I-6：不收紧正则/不升 schemaVersion，新命名同样可解析。
+        val renamed = legacy.copy(filename = "meeting-2026-10-07-0900-a1b2c3d4.ics")
+        assertEquals(renamed, CalendarAttachmentCodec.parseOrNull(CalendarAttachmentCodec.serialize(renamed)))
+        assertTrue(MeetingConfirmationDomain.CALENDAR_FILENAME_REGEX.matches(renamed.filename))
     }
 
     @Test

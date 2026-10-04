@@ -82,7 +82,20 @@ data class MeetingTimeZoneOption(
     val aliases: List<String>,
     /** 该 date 12:00 UTC 的偏移展示（仅列表辅助，不作会议时间换算结果）。 */
     val offsetLabel: String,
-    val offsetSeconds: Int
+    val offsetSeconds: Int,
+    /**
+     * 02 冻结契约：尾部新增国家/地区元信息，默认 null，旧构造调用可编译。
+     * 无国家归属的旧技术时区（SystemV 系列）保持 null。
+     */
+    val countryCode: String? = null,
+    val countryLabelZh: String? = null,
+    val countryLabelEn: String? = null,
+    /** 别名首次到达的现有国家目录 zone ID（不追过国家边界）。 */
+    val canonicalZoneId: String? = null,
+    /** 会议模式终点实际偏移（秒）；旧目录模式与无效项为 null。 */
+    val endOffsetSeconds: Int? = null,
+    /** 会议模式无效项原因（gap/overlap/duration 文案）；有效项与旧目录模式为 null。 */
+    val localTimeIssue: String? = null
 )
 
 data class MeetingCalendarAttachment(

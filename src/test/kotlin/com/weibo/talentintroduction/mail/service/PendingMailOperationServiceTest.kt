@@ -936,6 +936,38 @@ class PendingMailOperationServiceTest {
     }
 
     @Test
+    fun `brazil meeting send keeps one deterministic filename from preview through payload to composed mail`() {
+        val input = MeetingInput(
+            zoneId = "Brazil/East",
+            startLocal = "2026-10-07T09:00",
+            endLocal = "2026-10-07T09:30",
+            zoomUrl = "https://zoom.us/j/92123456789?pwd=abcDEF123",
+            generatedAt = "2026-09-09T02:00:00Z"
+        )
+        val preview = previewFor(input)
+        // 巴西当地 09:00–09:30 = 12:00Z–12:30Z；正文含英文国家名 + 实际偏移。
+        assertEquals("2026-10-07T12:00:00Z", preview.startUtc)
+        assertEquals("2026-10-07T12:30:00Z", preview.endUtc)
+        assertTrue(preview.textBody.contains("Brazil (UTC-3)"), preview.textBody)
+        assertEquals(
+            "meeting-2026-10-07-0900-${preview.attachment.semanticSha256.take(8)}.ics",
+            preview.attachment.filename
+        )
+
+        val capturedMails = mutableListOf<ComposedMail>()
+        val capturedPayloads = captureCalendarSend(capturedMails)
+        val result = calendarRichSend(preview = preview, input = input, safetyWarningConfirmed = true)
+
+        assertEquals("SENT", result.sendStatus)
+        val payload = capturedPayloads.single()
+        val snapshot = requireNotNull(payload.calendarAttachment) { "payload 必须携带 01 快照" }
+        // 预览 filename = 重建后 payload filename = ComposedMail filename，同一实例。
+        assertEquals(preview.attachment.filename, snapshot.filename)
+        assertEquals(preview.attachment.filename, capturedMails.single().calendarAttachment?.filename)
+        assertSame(snapshot, capturedMails.single().calendarAttachment)
+    }
+
+    @Test
     fun `meeting without preview digest or digest alone is rejected 400 before any claim`() {
         val input = meetingInput()
         val preview = previewFor(input)
