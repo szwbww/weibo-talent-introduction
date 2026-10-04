@@ -1,0 +1,68 @@
+$ rg -n (continue|return null|filter\s*\{|isSuppressed|hasSent|hasBound|Permanent|matchesEsTarget|matchesExpert|prepareAttempt|existsBy) src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt src/main/kotlin/com/weibo/talentintroduction/campaign/service/OutreachTargetIterator.kt
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:37:            .map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:67:            if (expertContactRepository.existsByCampaignIdAndOrcidId(campaignId, expert.orcidId)) {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:73:            if (email.isNullOrBlank() || emailSuppressionService.isSuppressed(email)) {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:181:            eligible += raw.filter { RecipientScope.matchesDiscoveryOutreach(it) }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:313:                if (email.isBlank() || emailSuppressionService.isSuppressed(email)) {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:320:                    continue
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:325:                if (contact.boundSenderAccountCode != null || hasBoundContact(normOrcid)) {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:335:                    continue
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:355:                    if (hasSentMaterialReminder(contactId)) {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:361:                        continue
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:480:        val usable = required.filter { it in ExpertSearchService.ALLOWED_HAS_FIELDS }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:535:     *   mail_send_attempt UNIQUE upsert, hasSentIntroduction double-check — all unchanged).
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:619:                    profiles.filter { scope.matchesEsTarget(it) },
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:702:                if (!scope.matchesExpertType(expert)) {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:713:                    continue
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:716:                // I-1/I-3: 发送前最后门禁 —— 与 ES 取页、预估共用同一最终谓词（[RecipientScope.matchesEsTarget]）。
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:718:                if (!scope.matchesEsTarget(expert)) {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:729:                    continue
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:733:                if (email.isNullOrBlank() || emailSuppressionService.isSuppressed(email)) {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:741:                    continue
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:746:                if (existingContact?.boundSenderAccountCode != null || hasBoundContact(normOrcid)) {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:757:                    continue
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:804:                            continue
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:819:                            continue
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:846:                                continue
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:897:                if (hasPermanentFirstMailFailure(introductionHistoryContactIds(normOrcid, existingContact))) {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:898:                    log.info("Permanent introduction failure already recorded for ORCID {}, blocking automatic resend", normOrcid)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:907:                    continue
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:932:                    if (hasSentIntroduction(contact.id!!)) {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:939:                        continue
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:959:                        continue
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:971:                        continue
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1064:                                if (RecipientAddressFailureClassifier.isInvalidPermanentSummary(errorSummary)) {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1227:            .filter { it.accountCode != MailSenderAccountService.SIMULATOR_ACCOUNT_CODE }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1229:            .filter { allowedAccountCodes.isEmpty() || it.accountCode in allowedAccountCodes }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1293:            .filter { it.accountCode != MailSenderAccountService.SIMULATOR_ACCOUNT_CODE }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1294:            .filter { allowedAccountCodes.isEmpty() || it.accountCode in allowedAccountCodes }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1327:    private fun hasSentIntroduction(contactId: Long): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1337:    private fun MailRecord.isPermanentIntroductionFailure(): Boolean =
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1353:    private fun hasPermanentFirstMailFailure(contactIds: List<Long>): Boolean =
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1356:                .any { it.isPermanentIntroductionFailure() }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1394:            .filter { allowedAccountCodes.isEmpty() || it.accountCode in allowedAccountCodes }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1414:        snapshot.senderAccountCodes.map { it.trim() }.filter { it.isNotEmpty() }.distinct().toSet()
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1420:    private fun hasBoundContact(normOrcid: String): Boolean =
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1444:        val distinct = orcidIds.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1447:            .filter { !it.boundSenderAccountCode.isNullOrBlank() }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1465:            val retryableContacts = newContacts.filter { contact ->
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1469:                val hasSent = records.any {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1472:                !hasSent && !records.any { it.isPermanentIntroductionFailure() } &&
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1488:                if (normOrcid in boundOrcids) continue
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1491:                    .firstOrNull() ?: continue
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1492:                if (!scope.matchesExpert(profile)) continue
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1525:            .filter { it.accountCode != MailSenderAccountService.SIMULATOR_ACCOUNT_CODE }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1610:    private fun hasSentMaterialReminder(contactId: Long): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1711:            .filter { !it.boundSenderAccountCode.isNullOrBlank() }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1720:            if (normOrcid in boundOrcids) continue             // exclude: already bound to a sender account (I-3)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1721:            val contact = contactByNormOrcid[normOrcid] ?: continue  // exclude: no existing contact
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1722:            val contactId = contact.id ?: continue
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1723:            if (!seenContactIds.add(contactId)) continue              // dedup by contactId
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1725:            if (email.isBlank()) continue                             // exclude: empty email
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1726:            if (emailSuppressionService.isSuppressed(email)) continue  // exclude: suppressed
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1727:            if (hasSentMaterialReminder(contactId)) continue          // exclude: already SENT (I-6)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1767:                    val matched = batch.filter { scope.matchesEsTarget(it) }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1800:        return profiles.filter { normalizeVerificationEmail(it.email) !in known }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1810:        val filtered = targets.filter { normalizeVerificationEmail(email(it)) !in known }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1824:                continue
