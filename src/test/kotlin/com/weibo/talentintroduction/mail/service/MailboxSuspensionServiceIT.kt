@@ -251,6 +251,74 @@ class MailboxSuspensionServiceIT {
         assertEquals(4L, service.pendingBadge("op1").manualReviewTotal)
     }
 
+    @Test
+    fun `suspension responses carry the real progress status across every endpoint`() {
+        insertProcessing(1, "acc-a", 501, "MANUAL_REVIEW", "2026-09-01 09:00:00", "prog-1")
+
+        fun mark(contactId: Long, status: String) {
+            jdbcTemplate.update(
+                "INSERT INTO expert_follow (username, expert_contact_id, created_at, progress_status) " +
+                    "VALUES ('op1', ?, NOW(), ?)",
+                contactId, status
+            )
+        }
+
+        // 未标记 → NONE / followed=false。
+        val untouched = service.get("op1", 1L)
+        assertEquals(MailboxProgressStatus.NONE, untouched.progressStatus)
+        assertFalse(untouched.followed)
+
+        mark(1L, "PROVIDED")
+        val provided = service.get("op1", 1L)
+        assertEquals(MailboxProgressStatus.PROVIDED, provided.progressStatus)
+        assertFalse(provided.followed, "已提供绝不能被说成跟进中 I-6")
+
+        // PUT → 挂起响应同样带真实状态；挂起语义不变。
+        val suspended = service.suspend("op1", 1L, "等待材料")
+        assertTrue(suspended.suspended)
+        assertEquals("等待材料", suspended.suspendReason)
+        assertEquals(1L, suspended.suspensionPendingCount)
+        assertEquals(MailboxProgressStatus.PROVIDED, suspended.progressStatus)
+        assertFalse(suspended.followed)
+
+        val reasonEdited = service.updateReason("op1", 1L, "等待补充")
+        assertEquals(MailboxProgressStatus.PROVIDED, reasonEdited.progressStatus)
+        assertEquals("等待补充", reasonEdited.suspendReason)
+        assertEquals(1L, reasonEdited.suspensionPendingCount)
+
+        // 切换标记不改挂起其它字段。
+        jdbcTemplate.update(
+            "UPDATE expert_follow SET progress_status = 'FOLLOWING' WHERE username = 'op1' AND expert_contact_id = 1"
+        )
+        val switched = service.get("op1", 1L)
+        assertTrue(switched.suspended)
+        assertEquals("等待补充", switched.suspendReason)
+        assertEquals(1L, switched.suspensionPendingCount)
+        assertEquals(MailboxProgressStatus.FOLLOWING, switched.progressStatus)
+        assertTrue(switched.followed)
+
+        // 标记期间消息被处理：挂起与标记状态都不变，pending 计数下降。
+        jdbcTemplate.update(
+            "UPDATE inbound_mail_processing SET process_status = 'PROCESSED' WHERE message_id = 'prog-1'"
+        )
+        val afterProcessing = service.get("op1", 1L)
+        assertTrue(afterProcessing.suspended)
+        assertEquals(0L, afterProcessing.suspensionPendingCount)
+        assertEquals(MailboxProgressStatus.FOLLOWING, afterProcessing.progressStatus)
+
+        val resumed = service.resume("op1", 1L)
+        assertFalse(resumed.suspended)
+        assertEquals(MailboxProgressStatus.FOLLOWING, resumed.progressStatus)
+        assertTrue(resumed.followed)
+
+        // 用户隔离 + 取消标记回 NONE。
+        assertEquals(MailboxProgressStatus.NONE, service.get("op2", 1L).progressStatus)
+        jdbcTemplate.update("DELETE FROM expert_follow WHERE username = 'op1' AND expert_contact_id = 1")
+        val cleared = service.get("op1", 1L)
+        assertEquals(MailboxProgressStatus.NONE, cleared.progressStatus)
+        assertFalse(cleared.followed)
+    }
+
     // ------------------------------------------------------------------
     // 工具
     // ------------------------------------------------------------------

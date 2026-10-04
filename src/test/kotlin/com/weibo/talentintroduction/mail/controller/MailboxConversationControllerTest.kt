@@ -27,6 +27,7 @@ import com.weibo.talentintroduction.mail.service.InboundMailTagService
 import com.weibo.talentintroduction.mail.service.MailContentService
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import com.weibo.talentintroduction.mail.service.MailboxConversationService
+import com.weibo.talentintroduction.mail.service.MailboxProgressStatus
 import com.weibo.talentintroduction.mail.service.MailboxSuspensionService
 import com.weibo.talentintroduction.mail.service.PendingMailOperationService
 import com.weibo.talentintroduction.mail.service.PendingMailSendResult
@@ -347,6 +348,259 @@ class MailboxConversationControllerTest {
         )
         assertEquals(1, followedBody["total"].asInt())
         assertEquals(1L, followedBody["items"][0]["contactId"].asLong())
+    }
+
+    // ------------------------------------------------------------------
+    // 01 (I-1/I-2/I-3/I-4/I-5)：三态标记端点、旧接口兼容与列表事实
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `PUT progress-status walks all six transitions and keeps the first created_at`() {
+        val url = "/api/mail/mailbox/conversations/1/progress-status"
+
+        fun putStatus(status: String) {
+            mockMvc.perform(
+                put(url).session(sessionOf("op1"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"status":"$status"}""")
+            ).andExpect(status().isOk)
+                .andExpect(jsonPath("$.contactId").value(1))
+                .andExpect(jsonPath("$.progressStatus").value(status))
+                .andExpect(jsonPath("$.followed").value(status == "FOLLOWING"))
+        }
+
+        putStatus("FOLLOWING")
+        assertEquals("FOLLOWING", progressStatusOf("op1", 1L))
+        assertEquals(1L, followRows("op1", 1L))
+        val firstCreatedAt = followCreatedAt("op1", 1L)
+
+        putStatus("PROVIDED")
+        assertEquals("PROVIDED", progressStatusOf("op1", 1L))
+        assertEquals(1L, followRows("op1", 1L), "同一主键一行")
+        assertEquals(firstCreatedAt, followCreatedAt("op1", 1L), "转态不刷新首次 created_at")
+
+        putStatus("NONE")
+        assertEquals(0L, followRows("op1", 1L), "NONE 即删除行，绝不存 NONE 行")
+        assertNull(progressStatusOf("op1", 1L))
+
+        putStatus("PROVIDED")
+        assertEquals("PROVIDED", progressStatusOf("op1", 1L))
+        putStatus("FOLLOWING")
+        assertEquals("FOLLOWING", progressStatusOf("op1", 1L))
+        putStatus("NONE")
+        assertEquals(0L, followRows("op1", 1L))
+
+        // 重复相同状态幂等：仍一行，且不重置 created_at。
+        putStatus("FOLLOWING")
+        val afterReset = followCreatedAt("op1", 1L)
+        repeat(3) { putStatus("FOLLOWING") }
+        assertEquals(1L, followRows("op1", 1L))
+        assertEquals(afterReset, followCreatedAt("op1", 1L), "重复相同状态不刷新 created_at")
+    }
+
+    @Test
+    fun `PUT progress-status rejects invalid missing status and unknown expert without writing`() {
+        val url = "/api/mail/mailbox/conversations/1/progress-status"
+        listOf("""{"status":"BOGUS"}""", """{}""", """{"status":null}""").forEach { content ->
+            mockMvc.perform(
+                put(url).session(sessionOf("op1"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(content)
+            ).andExpect(status().isBadRequest)
+        }
+        assertEquals(0L, followRows("op1", 1L), "非法/缺失 status 不得写表")
+
+        mockMvc.perform(
+            put("/api/mail/mailbox/conversations/999999/progress-status").session(sessionOf("op1"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"status":"PROVIDED"}""")
+        ).andExpect(status().isNotFound)
+        assertEquals(0L, followRows("op1", 999999L))
+    }
+
+    @Test
+    fun `PUT progress-status rejects anonymous and blank sessions with 401`() {
+        val body = """{"status":"PROVIDED"}"""
+        mockMvc.perform(
+            put("/api/mail/mailbox/conversations/1/progress-status")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body)
+        ).andExpect(status().isUnauthorized)
+            .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+
+        mockMvc.perform(
+            put("/api/mail/mailbox/conversations/1/progress-status").session(sessionOf(""))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body)
+        ).andExpect(status().isUnauthorized)
+
+        mockMvc.perform(
+            put("/api/mail/mailbox/conversations/1/progress-status").session(sessionOf("ghost-user"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body)
+        ).andExpect(status().isUnauthorized)
+        assertEquals(0L, followRows("op1", 1L))
+    }
+
+    @Test
+    fun `progress status is per session user and body username is ignored`() {
+        val url = "/api/mail/mailbox/conversations/1/progress-status"
+        mockMvc.perform(
+            put(url).session(sessionOf("op1"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"status":"PROVIDED","username":"attacker"}""")
+        ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.progressStatus").value("PROVIDED"))
+
+        assertEquals("PROVIDED", progressStatusOf("op1", 1L), "写入 session 用户")
+        assertNull(progressStatusOf("attacker", 1L), "body 里的 username 绝不能改变 owner")
+        assertNull(progressStatusOf("op2", 1L))
+
+        mockMvc.perform(
+            put(url).session(sessionOf("op2"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"status":"FOLLOWING"}""")
+        ).andExpect(status().isOk)
+        assertEquals("PROVIDED", progressStatusOf("op1", 1L), "op2 的写入不影响 op1")
+        assertEquals("FOLLOWING", progressStatusOf("op2", 1L))
+        assertEquals(2L, jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM expert_follow WHERE expert_contact_id = 1", Long::class.java
+        ))
+    }
+
+    @Test
+    fun `legacy follow endpoints stay compatible with the three-state mark`() {
+        expertFollowService.setProgressStatus("op1", 1L, MailboxProgressStatus.PROVIDED)
+
+        // 旧 DELETE follow 只取消 FOLLOWING，不得误删 PROVIDED（I-3）。
+        mockMvc.perform(delete("/api/mail/mailbox/conversations/1/follow").session(sessionOf("op1")))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.followed").value(false))
+        assertEquals("PROVIDED", progressStatusOf("op1", 1L), "旧 DELETE 保留已提供")
+
+        // 旧 PUT follow 显式转 FOLLOWING，重复不重置 created_at。
+        mockMvc.perform(put("/api/mail/mailbox/conversations/1/follow").session(sessionOf("op1")))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.followed").value(true))
+        assertEquals("FOLLOWING", progressStatusOf("op1", 1L))
+        val createdAt = followCreatedAt("op1", 1L)
+        repeat(2) {
+            mockMvc.perform(put("/api/mail/mailbox/conversations/1/follow").session(sessionOf("op1")))
+                .andExpect(status().isOk)
+        }
+        assertEquals(1L, followRows("op1", 1L))
+        assertEquals(createdAt, followCreatedAt("op1", 1L))
+
+        // 旧 DELETE 对 FOLLOWING 正常生效。
+        mockMvc.perform(delete("/api/mail/mailbox/conversations/1/follow").session(sessionOf("op1")))
+            .andExpect(status().isOk)
+        assertEquals(0L, followRows("op1", 1L))
+    }
+
+    @Test
+    fun `list exposes real progressStatus and providedOnly never overlaps with followed`() {
+        insertOutbound(1, "SENT", "2026-09-01 09:00:00")
+        insertOutbound(2, "SENT", "2026-09-02 09:00:00")
+        insertOutbound(3, "SENT", "2026-09-03 09:00:00")
+        expertFollowService.setProgressStatus("op1", 1L, MailboxProgressStatus.PROVIDED)
+        expertFollowService.setProgressStatus("op1", 2L, MailboxProgressStatus.FOLLOWING)
+        expertFollowService.setProgressStatus("op2", 3L, MailboxProgressStatus.PROVIDED)
+
+        val all = objectMapper.readTree(
+            mockMvc.perform(get("/api/mail/mailbox/conversations").session(sessionOf("op1")))
+                .andExpect(status().isOk).andReturn().response.contentAsString
+        )
+        assertEquals(3, all["total"].asInt())
+        fun item(contactId: Long) = all["items"].first { it["contactId"].asLong() == contactId }
+        assertEquals("PROVIDED", item(1L)["progressStatus"].asText())
+        assertFalse(item(1L)["followed"].asBoolean())
+        assertEquals("FOLLOWING", item(2L)["progressStatus"].asText())
+        assertTrue(item(2L)["followed"].asBoolean())
+        assertEquals("NONE", item(3L)["progressStatus"].asText(), "op2 的标记不属于 op1")
+        assertFalse(item(3L)["followed"].asBoolean())
+
+        val provided = objectMapper.readTree(
+            mockMvc.perform(
+                get("/api/mail/mailbox/conversations?providedOnly=true").session(sessionOf("op1"))
+            ).andExpect(status().isOk).andReturn().response.contentAsString
+        )
+        assertEquals(1, provided["total"].asInt())
+        assertEquals(1L, provided["items"][0]["contactId"].asLong())
+        assertEquals("PROVIDED", provided["items"][0]["progressStatus"].asText())
+
+        val providedOp2 = objectMapper.readTree(
+            mockMvc.perform(
+                get("/api/mail/mailbox/conversations?providedOnly=true").session(sessionOf("op2"))
+            ).andExpect(status().isOk).andReturn().response.contentAsString
+        )
+        assertEquals(1, providedOp2["total"].asInt())
+        assertEquals(3L, providedOp2["items"][0]["contactId"].asLong(), "用户隔离：只看自己的已提供")
+
+        val followed = objectMapper.readTree(
+            mockMvc.perform(
+                get("/api/mail/mailbox/conversations?followed=true").session(sessionOf("op1"))
+            ).andExpect(status().isOk).andReturn().response.contentAsString
+        )
+        assertEquals(1, followed["total"].asInt())
+        assertEquals(2L, followed["items"][0]["contactId"].asLong())
+
+        // I-4：同传两个互斥筛选得空集，不悄悄取其一。
+        val both = objectMapper.readTree(
+            mockMvc.perform(
+                get("/api/mail/mailbox/conversations?followed=true&providedOnly=true").session(sessionOf("op1"))
+            ).andExpect(status().isOk).andReturn().response.contentAsString
+        )
+        assertEquals(0, both["total"].asInt())
+        assertEquals(0, both["items"].size())
+    }
+
+    @Test
+    fun `concurrent progress status writes keep one row with a complete committed state`() {
+        val pool = Executors.newFixedThreadPool(8)
+        val latch = CountDownLatch(1)
+        val errors = ConcurrentLinkedQueue<Throwable>()
+        try {
+            repeat(8) { index ->
+                pool.submit {
+                    latch.await()
+                    val status = if (index % 2 == 0) MailboxProgressStatus.FOLLOWING
+                    else MailboxProgressStatus.PROVIDED
+                    runCatching { expertFollowService.setProgressStatus("op1", 1L, status) }
+                        .onFailure { errors.add(it) }
+                }
+            }
+            latch.countDown()
+            pool.shutdown()
+            assertTrue(pool.awaitTermination(30, TimeUnit.SECONDS), "并发 PUT 必须全部完成")
+        } finally {
+            pool.shutdownNow()
+        }
+        assertTrue(errors.isEmpty(), "并发 PUT 不得失败: $errors")
+        assertEquals(1L, followRows("op1", 1L), "并发 upsert 只产生一行")
+        assertTrue(
+            progressStatusOf("op1", 1L) in setOf("FOLLOWING", "PROVIDED"),
+            "最终必须是某个完整提交状态"
+        )
+    }
+
+    @Test
+    fun `progress status writes never touch other business tables`() {
+        insertOutbound(1, "SENT", "2026-09-01 09:00:00")
+        insertProcessing(1, "MANUAL_REVIEW", "2026-09-02 09:00:00", "iso-progress")
+
+        fun counts(): Map<String, Long> = listOf(
+            "expert_contact", "mail_record", "inbound_mail_processing",
+            "inbound_mail_tag", "expert_mailbox_suspension", "expert_replied_dismissal"
+        ).associateWith { table ->
+            jdbcTemplate.queryForObject("SELECT COUNT(*) FROM $table", Long::class.java)!!
+        }
+
+        val before = counts()
+        expertFollowService.setProgressStatus("op1", 1L, MailboxProgressStatus.PROVIDED)
+        expertFollowService.setProgressStatus("op1", 1L, MailboxProgressStatus.NONE)
+        expertFollowService.setFollowed("op1", 1L, true)
+        expertFollowService.setFollowed("op1", 1L, false)
+        assertEquals(before, counts(), "三态标记不得改动其它业务表 I-5")
     }
 
     @Test
@@ -1471,6 +1725,19 @@ class MailboxConversationControllerTest {
             "SELECT COUNT(*) FROM expert_follow WHERE username = ? AND expert_contact_id = ?",
             Long::class.java, username, contactId
         )!!
+
+    /** 01：DB 真值三态（无行 = null → NONE），绝不从响应或布尔反推。 */
+    private fun progressStatusOf(username: String, contactId: Long): String? =
+        jdbcTemplate.queryForList(
+            "SELECT progress_status FROM expert_follow WHERE username = ? AND expert_contact_id = ?",
+            String::class.java, username, contactId
+        ).firstOrNull()
+
+    private fun followCreatedAt(username: String, contactId: Long): Timestamp? =
+        jdbcTemplate.queryForList(
+            "SELECT created_at FROM expert_follow WHERE username = ? AND expert_contact_id = ?",
+            Timestamp::class.java, username, contactId
+        ).firstOrNull()
 
     private fun suspendRows(username: String, contactId: Long): Long =
         jdbcTemplate.queryForObject(

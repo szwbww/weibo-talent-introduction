@@ -4,6 +4,7 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
+import com.weibo.talentintroduction.mail.service.MailboxProgressStatus
 import java.sql.ResultSet
 import java.time.LocalDateTime
 
@@ -45,7 +46,9 @@ class MailboxConversationRepository(
         val recipientEmail: String? = null,
         val keyword: String? = null,
         /** 01 (I-4)：只看当前用户的挂起专家；默认 false 保持既有调用兼容。 */
-        val suspendedOnly: Boolean = false
+        val suspendedOnly: Boolean = false,
+        /** 01 (I-4)：只看当前用户的“已提供”专家；与 followed 同层 AND（同传得空集）。 */
+        val providedOnly: Boolean = false
     )
 
     data class ConversationSummarySqlRow(
@@ -58,8 +61,15 @@ class MailboxConversationRepository(
         val failedCount: Long,
         val pendingCount: Long,
         val latestEventAt: LocalDateTime,
+        /**
+         * 01 (I-1/I-4)：DB 真值三态（无行 = NONE）。`followed` 由同一次读取派生，
+         * 绝不二次查询状态或布尔。
+         */
+        val progressStatus: MailboxProgressStatus
+    ) {
         val followed: Boolean
-    )
+            get() = progressStatus == MailboxProgressStatus.FOLLOWING
+    }
 
     data class ConversationLatestMessageRow(
         val source: String,
@@ -176,11 +186,11 @@ class MailboxConversationRepository(
                    SUM(u.failed_flag) AS failed_count,
                    SUM(u.pending_flag) AS pending_count,
                    MAX(u.event_at) AS latest_event_at,
-                   EXISTS (
-                       SELECT 1 FROM expert_follow ef
+                   COALESCE((
+                       SELECT ef.progress_status FROM expert_follow ef
                         WHERE ef.username = :username
                           AND ef.expert_contact_id = u.expert_contact_id
-                   ) AS followed
+                   ), 'NONE') AS progress_status
               FROM (${rangeUnionSql(includeBody = false)}) u
               JOIN expert_contact ec ON ec.id = u.expert_contact_id
              WHERE ${expertPredicates(username, filter, eligibility)}
@@ -217,11 +227,11 @@ class MailboxConversationRepository(
                    SUM(u.failed_flag) AS failed_count,
                    SUM(u.pending_flag) AS pending_count,
                    MAX(u.event_at) AS latest_event_at,
-                   EXISTS (
-                       SELECT 1 FROM expert_follow ef
+                   COALESCE((
+                       SELECT ef.progress_status FROM expert_follow ef
                         WHERE ef.username = :username
                           AND ef.expert_contact_id = u.expert_contact_id
-                   ) AS followed
+                   ), 'NONE') AS progress_status
               FROM (${rangeUnionSql(includeBody = false)}) u
               JOIN expert_contact ec ON ec.id = u.expert_contact_id
              WHERE ${expertPredicates(username, filter, eligibility)}
@@ -253,7 +263,7 @@ class MailboxConversationRepository(
             "u.expert_contact_id DESC"
         )
         val pendingFirst = if (filter.followed || filter.repliedOnly || filter.pendingOnly ||
-            filter.waitingReply || filter.suspendedOnly
+            filter.waitingReply || filter.suspendedOnly || filter.providedOnly
         ) {
             emptyList()
         } else {
@@ -658,7 +668,8 @@ class MailboxConversationRepository(
     }
 
     /**
-     * WHERE 片段：q（真实 expert_contact 姓名/邮箱）+ followed 过滤 + 消息级 membership。
+     * WHERE 片段：q（真实 expert_contact 姓名/邮箱）+ followed/providedOnly 三态过滤 +
+     * 挂起归类 + 消息级 membership。
      * membership 为单消息合取语义：方向/日期/主题/标签须被同一封消息满足；label 只
      * join 其对应来源（inbound_mail_tag → processing），绝不因多标签产生重复行。
      * outbound/inbound 两个方向 EXISTS 是 OR 互补组：组外加整层括号后再与 q/followed
@@ -675,7 +686,18 @@ class MailboxConversationRepository(
             (:followed = 0 OR EXISTS (
                 SELECT 1 FROM expert_follow eff
                  WHERE eff.username = :username
-                   AND eff.expert_contact_id = u.expert_contact_id))
+                   AND eff.expert_contact_id = u.expert_contact_id
+                   AND eff.progress_status = 'FOLLOWING'))
+        """.trimIndent()
+        // 01 (I-4)：已提供与跟进中同层、互斥（同一行 progress_status 只能取一个值），
+        // followed=true AND providedOnly=true 按 AND 得空集（不悄悄取其一）；参数化布尔
+        // 开关，绝不被消息 OR 括号绕过。
+        clauses += """
+            (:providedOnly = 0 OR EXISTS (
+                SELECT 1 FROM expert_follow ef_provided
+                 WHERE ef_provided.username = :username
+                   AND ef_provided.expert_contact_id = u.expert_contact_id
+                   AND ef_provided.progress_status = 'PROVIDED'))
         """.trimIndent()
         // 01 (I-4)：挂起归类与关注/待处理同层，OR 组外再 AND（q/followed 不可被绕过）。
         // suspendedOnly=true 用 EXISTS（有行）；待处理/已回复用 NOT EXISTS（无当前用户挂起行）。
@@ -752,6 +774,7 @@ class MailboxConversationRepository(
             .addValue("accountCode", filter.accountCode)
             .addValue("q", filter.q?.takeIf { it.isNotBlank() })
             .addValue("followed", if (filter.followed) 1 else 0)
+            .addValue("providedOnly", if (filter.providedOnly) 1 else 0)
             .addValue("startTime", filter.startTime)
             .addValue("endTime", filter.endTime)
             .addValue("subject", filter.subject?.takeIf { it.isNotBlank() })
@@ -770,7 +793,7 @@ class MailboxConversationRepository(
             failedCount = getLong("failed_count"),
             pendingCount = getLong("pending_count"),
             latestEventAt = localDateTime("latest_event_at"),
-            followed = getBoolean("followed")
+            progressStatus = MailboxProgressStatus.valueOf(getString("progress_status"))
         )
 
     private fun ResultSet.toLatestMessageRow(): ConversationLatestMessageRow =
