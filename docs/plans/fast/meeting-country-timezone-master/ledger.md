@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-10-04/meeting-country-timezone-master.md
 
-- Status: PAUSED_FOR_HUMAN
+- Status: RUNNING
 - Master plan: docs/plans/2026-10-04/meeting-country-timezone-master.md (commit fee3a7ca2f3b3b619ac46ee90dc88ddcb459f35f)
-- Amendments: N/A
+- Amendments: A1
 - Master base: e28e53fd898edd62905a0d45a6bf90396b18b1bf
 - Branch: fast/meeting-country-timezone-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-meeting-country-timezone-master
@@ -10,11 +10,11 @@
 - Finalization repair parent: N/A
 - Started: 2026-10-04T14:05:00+08:00
 - Current child: 01-backend
-- Waiting role: N/A
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: PLAN_CONFLICT child 01-backend epoch 1: required command class SmtpMailDeliveryServiceTest.kt pins the old calendar filename at :449/:516/:548/:597 and is not among the 10 authorized files; the I-5 filename change makes it fail, so repair needs a plan amendment.
-- Resume from: e6e1bf10dc5be548db9c5034ae13f0080ceb4654 (child 01-backend, new epoch 2, fix_round=0, after an approved amendment)
+- Pause reason: N/A
+- Resume from: N/A (A1 approved 2026-10-04; child 01-backend resumed in epoch 2 at base e6e1bf10dc5be548db9c5034ae13f0080ceb4654)
 
 ## Baseline
 
@@ -28,9 +28,10 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 01-backend | docs/plans/2026-10-04/meeting-country-timezone-01-backend.md | commit:fee3a7ca2f3b3b619ac46ee90dc88ddcb459f35f | none | 1 | PAUSED_FOR_HUMAN | e6e1bf10dc5be548db9c5034ae13f0080ceb4654 | — | 0 | — | — | — | no product commit; PLAN_CONFLICT SmtpMailDeliveryServiceTest.kt old-filename literals; agent MCT01Impl; pause evidence commit recorded below after commit |
+| 01-backend | docs/plans/2026-10-04/meeting-country-timezone-01-backend.md | commit:3a896ce28a533cc68fe9107638c3c74b141afc38 | none | 2 | IMPLEMENTING | e6e1bf10dc5be548db9c5034ae13f0080ceb4654 | — | 0 | — | — | — | A1 widened authorized files to 11; epoch 1 paused (agent MCT01Impl) |
 | 02-frontend | docs/plans/2026-10-04/meeting-country-timezone-02-frontend.md | commit:fee3a7ca2f3b3b619ac46ee90dc88ddcb459f35f | 01-backend | 1 | PENDING | — | — | 0 | — | — | — | 6 authorized files |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
 |---|---|---|---|---|---|---|
+| A1 | docs/plans/2026-10-04/meeting-country-timezone-01-backend.md | commit:fee3a7ca2f3b3b619ac46ee90dc88ddcb459f35f | commit:3a896ce28a533cc68fe9107638c3c74b141afc38 | M-4/M-5 附件名派生与同源快照传播回归 | 必跑回归 SmtpMailDeliveryServiceTest.kt 用真实生成器夹具写死旧附件名（:449/:516/:548/:597），I-5 改名后必失败且需 1 个清单外测试文件 | HUMAN:修订 01 计划：加入第 11 个授权文件 (2026-10-04, fast-p pause 329206f) |

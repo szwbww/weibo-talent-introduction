@@ -14,7 +14,7 @@
 - 执行报告（写这里，提交由控制器负责）：`docs/plans/fast/meeting-country-timezone-master/children/01-backend/execution.md`
 - 只读证据目录（计划阶段产物）：`docs/plans/2026-10-04/meeting-country-timezone-evidence/`，含 `code-baseline.md`、`grep-receipts.md`、`country-mapping-audit.json`、`iana-2026c-backward`、`iana-2026c-iso3166.tab`、`iana-2026c-zone.tab`、`iana-2026c-version`、`jdk11-timezone-probe.txt`、`plan-self-review.md`。
 
-## 授权文件（只准改这 10 个，其余一律不动；也不得新建清单外文件）
+## 授权文件（只准改这 11 个，其余一律不动；也不得新建清单外文件；11 = 10 + A1 修订加入的回归测试）
 
 | # | 文件 | 修改 |
 |---:|---|---|
@@ -28,6 +28,7 @@
 | 8 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/MeetingConfirmationControllerTest.kt` | 旧/新目录 HTTP 契约 |
 | 9 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt` | 同源发送重建回归 |
 | 10 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt` | 新旧附件元信息及下载回归 |
+| 11 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryServiceTest.kt` | 仅更新 4 处旧附件名字面量（:449/:516/:548/:597）为新命名确定期望；夹具仍走真实生成器 |
 
 明确禁止改：`contact-country-timezones.json`、`meeting-timezones-zh.properties`、`scripts/generate_meeting_timezone_catalog.py`、`MeetingConfirmationModels.kt` 的 `CalendarAttachmentCodec` 正则/schemaVersion、MIME/下载控制器、任何 Flyway 迁移、`world-clock.js`、`mailbox-chat.js`、`index.html`。
 
