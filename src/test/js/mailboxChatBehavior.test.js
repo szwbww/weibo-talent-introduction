@@ -2580,6 +2580,38 @@ describe("02 · 三态状态菜单（I-1/I-2/I-3/I-5）", () => {
         click(progressButton(ctx, contactId));
     }
 
+    it("NodeList 无 filter：三个状态均可展开菜单，键盘跳过禁用项", async () => {
+        for (const progressStatus of ["NONE", "FOLLOWING", "PROVIDED"]) {
+            const ctx = await bootChat({
+                conversations: { items: [expertA({ progressStatus })], total: 1 }
+            });
+            const menu = ctx.host.querySelector(".mailbox-progress-menu");
+            const querySelectorAll = menu.querySelectorAll.bind(menu);
+            const options = querySelectorAll(".mailbox-progress-option");
+            options[0].disabled = true;
+            // 原 Mini DOM 返回 Array，掩盖浏览器 NodeList 没有 filter 的错误。
+            menu.querySelectorAll = (selector) => {
+                const nodes = querySelectorAll(selector);
+                return Object.assign({
+                    length: nodes.length,
+                    item: (index) => nodes[index] || null,
+                    [Symbol.iterator]: () => nodes[Symbol.iterator]()
+                }, nodes);
+            };
+            assert.strictEqual(menu.querySelectorAll(".mailbox-progress-option").filter, undefined);
+            openMenu(ctx, 1);
+            assert.strictEqual(menu.hidden, false, progressStatus);
+            assert.strictEqual(progressButton(ctx, 1).getAttribute("aria-expanded"), "true");
+            assert.strictEqual(ctx.doc.activeElement, options[1], "首项禁用时聚焦下一可用项");
+            keyEvent(ctx.doc.activeElement, "ArrowDown");
+            assert.strictEqual(ctx.doc.activeElement, options[1], "键盘导航跳过禁用项");
+            keyEvent(ctx.doc.activeElement, "Escape");
+            assert.strictEqual(menu.hidden, true);
+            assert.strictEqual(ctx.doc.activeElement, progressButton(ctx, 1));
+            assert.ok(!ctx.calls.api.some((entry) => entry.url.endsWith("/progress-status")), "展开不写状态");
+        }
+    });
+
     it("未标记入口六条转换：菜单逐字、PUT body 仅 status、取消回 NONE、绝不调旧 follow", async () => {
         let status = "NONE";
         const ctx = await bootChat({

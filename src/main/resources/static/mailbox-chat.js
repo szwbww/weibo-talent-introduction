@@ -4855,7 +4855,7 @@
                 ? trigger.parentNode.querySelector(".mailbox-progress-menu")
                 : null;
             if (!menu) return;
-            const options = (menu.querySelectorAll ? menu.querySelectorAll(".mailbox-progress-option") : [])
+            const options = Array.from(menu.querySelectorAll ? menu.querySelectorAll(".mailbox-progress-option") : [])
                 .filter((option) => !option.disabled);
             menu.hidden = false;
             if (typeof trigger.setAttribute === "function") trigger.setAttribute("aria-expanded", "true");
