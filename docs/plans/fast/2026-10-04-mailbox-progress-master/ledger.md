@@ -30,4 +30,7 @@
 - 授权：用户显式 `/fast-p docs/plans/2026-10-04/mailbox-progress-master.md`（2026-10-04），批准以该 master 及其两个子计划为执行合同。
 - seed 提交 9594d4b3b3c3022b2be2bc04b24d90ee40a58ad4（3 份计划 + evidence，docs/plans-only）。
 - 计划基线一致性：`source-manifest.json` 记录的 10 个源文件 SHA256 与 worktree（e28e53f 检出）逐一相符，0 mismatch。
-- 基线命令结果：待记录（B1 test-compile / B2 mysqlIt / B3 migrationIt / B4 JS 全量 / B5 mvn test 全量）；结果写入 children/01/baseline.md、children/02/baseline.md。
+- 基线命令结果（起始 HEAD 5b5b092f，源码=master base；详细见 children/01/baseline.md、children/02/baseline.md）：
+  - B1 `mvn -DskipTests test-compile` exit 0；B2（mysqlIt 3 类）exit 1，Tests 67/F0/E1（唯一既有 error：MailboxConversationRepositoryIT `replied filter excludes followed...` :225，`dismissed_at` 无默认值）；B3（migrationIt）exit 0，35/0/0。
+  - B4 `node --test src/test/js/*.test.js` exit 0，1434/1434 pass；B5 `mvn test` exit 1，surefire 4547/F0/E19，唯一失败类 `ExpertContactLocationServiceTest`（国家 CL 时区配置），因 surefire 先失败 node 阶段未执行。
+- 提交链：master base e28e53fd → seed 9594d4b3（3 计划+evidence）→ init 5b5b092f（ledger/briefs）→ baseline 记录提交（本提交）。
