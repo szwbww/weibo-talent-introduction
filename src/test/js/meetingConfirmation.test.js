@@ -309,6 +309,9 @@ class MiniElement {
         }
         return false;
     }
+    focus() {
+        if (this.ownerDocument) this.ownerDocument.activeElement = this;
+    }
 
     get textContent() {
         return collectText(this);
@@ -638,13 +641,53 @@ function inputInto(el, value) {
 }
 
 // ---- 组件 stub API（01 只读形状；正文由服务端通用模板渲染，弹窗不传模板） ----
+// 01 契约：尾部新增 countryCode/countryLabelZh/countryLabelEn/canonicalZoneId/
+// endOffsetSeconds/localTimeIssue。date-only 模式无 endOffsetSeconds；会议模式两端都有。
 
-const UNIT_ZONES = [
-    { id: "Europe/Istanbul", labelZh: "土耳其 · 伊斯坦布尔", aliases: ["土耳其", "伊斯坦布尔", "Turkey", "Türkiye", "Istanbul"], offsetLabel: "UTC+3", offsetSeconds: 10800 },
-    { id: "Asia/Shanghai", labelZh: "中国 · 北京 / 上海", aliases: ["中国", "北京", "上海", "China", "Beijing", "Shanghai"], offsetLabel: "UTC+8", offsetSeconds: 28800 },
-    { id: "Asia/Kolkata", labelZh: "印度 · 加尔各答", aliases: ["印度", "加尔各答", "India", "Kolkata"], offsetLabel: "UTC+5:30", offsetSeconds: 19800 },
-    { id: "America/New_York", labelZh: "美国东部 · 纽约", aliases: ["美国东部", "纽约", "US Eastern", "New York"], offsetLabel: "UTC-5", offsetSeconds: -18000 }
+const BASE_ZONES = [
+    { id: "Brazil/East", labelZh: "巴西 · 东部", aliases: ["巴西", "圣保罗"],
+        offsetLabel: "UTC-3", offsetSeconds: -10800, countryCode: "BR", countryLabelZh: "巴西",
+        countryLabelEn: "Brazil", canonicalZoneId: "America/Sao_Paulo" },
+    { id: "America/Sao_Paulo", labelZh: "巴西 · 圣保罗", aliases: ["巴西", "圣保罗"],
+        offsetLabel: "UTC-3", offsetSeconds: -10800, countryCode: "BR", countryLabelZh: "巴西",
+        countryLabelEn: "Brazil", canonicalZoneId: "America/Sao_Paulo" },
+    { id: "America/Noronha", labelZh: "巴西 · 洛罗尼亚", aliases: ["巴西", "洛罗尼亚"],
+        offsetLabel: "UTC-2", offsetSeconds: -7200, countryCode: "BR", countryLabelZh: "巴西",
+        countryLabelEn: "Brazil", canonicalZoneId: "America/Noronha" },
+    { id: "America/Manaus", labelZh: "巴西 · 马瑙斯", aliases: ["巴西", "马瑙斯"],
+        offsetLabel: "UTC-4", offsetSeconds: -14400, countryCode: "BR", countryLabelZh: "巴西",
+        countryLabelEn: "Brazil", canonicalZoneId: "America/Manaus" },
+    { id: "America/Rio_Branco", labelZh: "巴西 · 里约布兰科", aliases: ["巴西", "里约布兰科"],
+        offsetLabel: "UTC-5", offsetSeconds: -18000, countryCode: "BR", countryLabelZh: "巴西",
+        countryLabelEn: "Brazil", canonicalZoneId: "America/Rio_Branco" },
+    { id: "Europe/Istanbul", labelZh: "土耳其 · 伊斯坦布尔", aliases: ["土耳其", "伊斯坦布尔", "Turkey", "Türkiye", "Istanbul"],
+        offsetLabel: "UTC+3", offsetSeconds: 10800, countryCode: "TR", countryLabelZh: "土耳其",
+        countryLabelEn: "Turkey", canonicalZoneId: "Europe/Istanbul" },
+    { id: "Asia/Shanghai", labelZh: "中国 · 北京 / 上海", aliases: ["中国", "北京", "上海", "China", "Beijing", "Shanghai"],
+        offsetLabel: "UTC+8", offsetSeconds: 28800, countryCode: "CN", countryLabelZh: "中国",
+        countryLabelEn: "China", canonicalZoneId: "Asia/Shanghai" },
+    { id: "Asia/Urumqi", labelZh: "中国 · 乌鲁木齐", aliases: ["中国", "乌鲁木齐", "Urumqi"],
+        offsetLabel: "UTC+8", offsetSeconds: 28800, countryCode: "CN", countryLabelZh: "中国",
+        countryLabelEn: "China", canonicalZoneId: "Asia/Urumqi" },
+    { id: "Asia/Kolkata", labelZh: "印度 · 加尔各答", aliases: ["印度", "加尔各答", "India", "Kolkata"],
+        offsetLabel: "UTC+5:30", offsetSeconds: 19800, countryCode: "IN", countryLabelZh: "印度",
+        countryLabelEn: "India", canonicalZoneId: "Asia/Kolkata" },
+    { id: "America/New_York", labelZh: "美国东部 · 纽约", aliases: ["美国东部", "纽约", "US Eastern", "New York"],
+        offsetLabel: "UTC-5", offsetSeconds: -18000, countryCode: "US", countryLabelZh: "美国",
+        countryLabelEn: "United States", canonicalZoneId: "America/New_York" },
+    { id: "Asia/Kathmandu", labelZh: "尼泊尔 · 加德满都", aliases: ["尼泊尔", "加德满都", "Nepal", "Kathmandu"],
+        offsetLabel: "UTC+5:45", offsetSeconds: 20700, countryCode: "NP", countryLabelZh: "尼泊尔",
+        countryLabelEn: "Nepal", canonicalZoneId: "Asia/Kathmandu" },
+    { id: "UTC", labelZh: "协调世界时", aliases: ["协调世界时", "Coordinated Universal Time"],
+        offsetLabel: "UTC+0", offsetSeconds: 0, countryCode: "UTC", countryLabelZh: "协调世界时",
+        countryLabelEn: "Coordinated Universal Time", canonicalZoneId: "UTC" }
 ];
+
+// 目录模式（date-only）：无 endOffsetSeconds/localTimeIssue。
+const UNIT_ZONES = BASE_ZONES.map((zone) => Object.assign({}, zone));
+// 会议模式：offsetSeconds=实际起点、endOffsetSeconds=实际终点（本 fixture 起止同偏移）。
+const UNIT_MEETING_ZONES = BASE_ZONES.map((zone) =>
+    Object.assign({}, zone, { endOffsetSeconds: zone.offsetSeconds, localTimeIssue: null }));
 
 function makeStubApi(overrides) {
     const requests = [];
@@ -657,7 +700,12 @@ function makeStubApi(overrides) {
                     generatedAt: "2026-09-09T08:00:00Z", defaultZoneId: "Europe/Istanbul" });
         }
         if (/\/meeting-confirmation\/time-zones/.test(url)) {
-            return Promise.resolve(UNIT_ZONES);
+            if (overrides && overrides.zonesError) return Promise.reject(overrides.zonesError);
+            if (overrides && typeof overrides.zones === "function") {
+                return Promise.resolve(overrides.zones(url));
+            }
+            if (overrides && Array.isArray(overrides.zones)) return Promise.resolve(overrides.zones);
+            return Promise.resolve(/startLocal=/.test(url) ? UNIT_MEETING_ZONES : UNIT_ZONES);
         }
         if (/\/meeting-confirmation\/preview/.test(url)) {
             if (overrides && overrides.previewError) return Promise.reject(overrides.previewError);
@@ -735,6 +783,75 @@ function openComponent(mount) {
     return trigger;
 }
 
+function openComponentWith(mount, savedMeeting) {
+    const dom = mount.dom;
+    const trigger = dom.doc.createElement("button");
+    dom.doc.body.appendChild(trigger);
+    dom.doc.activeElement = trigger;
+    mount.controller.open({
+        ownerKey: "u|scope|1",
+        targetKey: "1:101:acc1",
+        contactId: 1,
+        processingId: 101,
+        senderAccountCode: "acc1",
+        expertLabel: "专家A",
+        editorHtml: "",
+        editorText: "",
+        savedMeeting: savedMeeting
+            ? { input: Object.assign({ templateId: 0, templateBody: "", expertSalutation: "", senderSignature: "" },
+                savedMeeting) }
+            : null
+    });
+    return trigger;
+}
+
+/** 填写完整起止+链接并驱动 目录→分组→预览 两段 debounce。 */
+async function fillMeetingFields(mount, values) {
+    const v = Object.assign({
+        date: "2026-09-11", start: "10:00", endDate: "2026-09-11", end: "10:30",
+        url: "https://zoom.us/j/1?pwd=x"
+    }, values || {});
+    inputInto(mount.el("meetingDate"), v.date);
+    inputInto(mount.el("meetingStart"), v.start);
+    inputInto(mount.el("meetingEndDate"), v.endDate);
+    inputInto(mount.el("meetingEnd"), v.end);
+    inputInto(mount.el("meetingUrl"), v.url);
+    runTimers();          // 会议模式目录请求
+    await flush();        // 目录落地 → 分组/自动选择 → 预览排队
+    runTimers();          // 预览 debounce
+    await flush();
+}
+
+/** 2026-10-07 09:00–09:30：巴西 4 个偏移组（-2/-3/-4/-5）。 */
+async function loadBrazilGroups(mount) {
+    inputInto(mount.el("meetingDate"), "2026-10-07");
+    inputInto(mount.el("meetingStart"), "09:00");
+    inputInto(mount.el("meetingEndDate"), "2026-10-07");
+    inputInto(mount.el("meetingEnd"), "09:30");
+    runTimers();
+    await flush();
+    pickCountry(mount, "BR");
+}
+
+function pickCountry(mount, code) {
+    const select = mount.el("meetingCountry");
+    select.value = code;
+    eventOn(select, "change");
+}
+
+/** 多组国家自输入过滤并 mousedown 第一行候选。 */
+function pickGroupOption(mount, query) {
+    const search = mount.el("meetingZoneSearch");
+    search.value = query;
+    eventOn(search, "input");
+    const list = mount.el("meetingZoneOptions");
+    assert.strictEqual(list.hidden, false, "候选必须展开");
+    const option = list.querySelectorAll('button[role="option"]')[0];
+    assert.ok(option, `候选必须匹配 ${query}`);
+    eventOn(option, "mousedown");
+    return option;
+}
+
 // ════════════════════════════════════════════════════════════════════════
 
 describe("fast-p 04 纯导出：filterZones（I-5 搜索语义）", () => {
@@ -773,6 +890,81 @@ describe("fast-p 04 纯导出：filterZones（I-5 搜索语义）", () => {
         assert.strictEqual(Meeting.filterZones(ZONES, "  EUROPE/ISTANBUL  ").length, 1);
         assert.strictEqual(Meeting.filterZones(ZONES, "ＩＳＴＡＮＢＵＬ").length, 1, "全角字母 NFKC");
         assert.ok(Meeting.filterZones(ZONES, "utc+8").length >= 1);
+    });
+});
+
+describe("fast-p 02 纯导出：groupMeetingZones（F-1/F-2 国家＋本场偏移分组）", () => {
+    it("同国相同起止偏移合并为一行；不跨国合并同偏移", () => {
+        const groups = Meeting.groupMeetingZones(UNIT_MEETING_ZONES, "BR");
+        assert.deepStrictEqual(groups.map((g) => Meeting.groupOffsetLabel(g)),
+            ["UTC-2", "UTC-3", "UTC-4", "UTC-5"], "巴西 4 个偏移组，起点降序");
+        assert.strictEqual(groups.length, 4, "UTC-3 只出现一次");
+        // 美国 + 中国都在 fixture 里但同偏移，跨国绝不合并
+        const us = Meeting.groupMeetingZones(UNIT_MEETING_ZONES, "US");
+        assert.strictEqual(us.length, 1);
+        assert.strictEqual(us[0].members.every((m) => m.countryCode === "US"), true);
+    });
+
+    it("Sao_Paulo 与 Brazil/East 同组，代表取有效 canonical（不猜城市）", () => {
+        const groups = Meeting.groupMeetingZones(UNIT_MEETING_ZONES, "BR");
+        const minusThree = groups.find((g) => g.startOffsetSeconds === -10800);
+        assert.deepStrictEqual(minusThree.memberIds.slice().sort(),
+            ["America/Sao_Paulo", "Brazil/East"], "旧别名与标准 ID 同组");
+        assert.strictEqual(minusThree.representative.id, "America/Sao_Paulo", "代表 id==canonicalZoneId");
+        assert.strictEqual(minusThree.members.length, 2);
+    });
+
+    it("两端偏移不同用 → 保留 DST 变化；小数偏移保留分钟", () => {
+        const straddle = [
+            { id: "America/New_York", offsetLabel: "UTC-5", offsetSeconds: -18000, endOffsetSeconds: -14400,
+                countryCode: "US", countryLabelZh: "美国", canonicalZoneId: "America/New_York", localTimeIssue: null }
+        ];
+        const groups = Meeting.groupMeetingZones(straddle, "US");
+        assert.strictEqual(groups.length, 1);
+        assert.strictEqual(Meeting.groupOffsetLabel(groups[0]), "UTC-5 → UTC-4");
+        assert.strictEqual(Meeting.formatOffsetSeconds(19800), "UTC+5:30");
+        assert.strictEqual(Meeting.formatOffsetSeconds(20700), "UTC+5:45");
+        assert.strictEqual(Meeting.formatOffsetSeconds(0), "UTC+0");
+        const india = Meeting.groupMeetingZones(UNIT_MEETING_ZONES, "IN");
+        assert.strictEqual(Meeting.groupOffsetLabel(india[0]), "UTC+5:30", "分钟偏移保留");
+    });
+
+    it("缺国家元信息/无 endOffsetSeconds/带 localTimeIssue 的项不进组", () => {
+        const mixed = [
+            { id: "A", offsetSeconds: 3600, endOffsetSeconds: 3600, countryCode: "XX", canonicalZoneId: "A" },
+            { id: "B", offsetSeconds: 3600, countryCode: "XX", canonicalZoneId: "B" }, // 无 endOffset
+            { id: "C", offsetSeconds: 3600, endOffsetSeconds: 3600, countryCode: "XX", canonicalZoneId: "C",
+                localTimeIssue: "该当地时间不存在，请避开夏令时跳时区区间" },
+            { id: "D", offsetSeconds: 3600, endOffsetSeconds: 3600, canonicalZoneId: "D" }, // 无国家
+            { id: "E", offsetSeconds: 3600, endOffsetSeconds: 3600, countryCode: "YY", canonicalZoneId: "E" }
+        ];
+        const groups = Meeting.groupMeetingZones(mixed, "XX");
+        assert.strictEqual(groups.length, 1);
+        assert.deepStrictEqual(groups[0].memberIds, ["A"], "只保留有国家元信息且有效的成员");
+        assert.deepStrictEqual(Meeting.groupMeetingZones(mixed, "YY")[0].memberIds, ["E"]);
+        assert.deepStrictEqual(Meeting.groupMeetingZones(mixed, ""), [], "空国家不分组");
+    });
+
+    it("排序：起点偏移降序 → 终点偏移降序 → 代表 ID 字典序", () => {
+        const zones = [
+            { id: "Z/Zulu", offsetSeconds: 0, endOffsetSeconds: -3600, countryCode: "ZZ", canonicalZoneId: "Z/Zulu" },
+            { id: "A/Alpha", offsetSeconds: 0, endOffsetSeconds: 0, countryCode: "ZZ", canonicalZoneId: "A/Alpha" },
+            { id: "M/Mike", offsetSeconds: 3600, endOffsetSeconds: 7200, countryCode: "ZZ", canonicalZoneId: "M/Mike" },
+            { id: "N/November", offsetSeconds: 3600, endOffsetSeconds: 3600, countryCode: "ZZ", canonicalZoneId: "N/November" }
+        ];
+        const groups = Meeting.groupMeetingZones(zones, "ZZ");
+        assert.deepStrictEqual(groups.map((g) => g.representative.id),
+            ["M/Mike", "N/November", "A/Alpha", "Z/Zulu"]);
+    });
+
+    it("buildCountryOptions：UTC 显式特殊项、无国家 SystemV 排除、中文名排序同码排序", () => {
+        const options = Meeting.buildCountryOptions(UNIT_ZONES.concat([
+            { id: "SystemV/EST5", offsetLabel: "UTC-5", offsetSeconds: -18000, countryCode: null }
+        ]));
+        assert.strictEqual(options.some((o) => o.code === "UTC"), true, "UTC 显式特殊项");
+        assert.strictEqual(options.find((o) => o.code === "UTC").label, "协调世界时");
+        assert.strictEqual(options.some((o) => !o.code), false, "null 国家不进列表");
+        assert.deepStrictEqual(options.map((o) => o.code), ["BR", "US", "NP", "TR", "UTC", "IN", "CN"], "中文名排序");
     });
 });
 
@@ -963,7 +1155,7 @@ describe("fast-p 04 组件：create/open/close/dispose 生命周期（S-2）", (
         mount.controller.dispose();
     });
 
-    it("loading 阶段字段禁用、确认/下载禁用；成功后可填并预览", async () => {
+    it("loading 阶段字段禁用、确认/下载禁用；填写完整后按国家自动选时区并预览", async () => {
         const mount = mountComponent();
         openComponent(mount);
         await flush();
@@ -971,109 +1163,190 @@ describe("fast-p 04 组件：create/open/close/dispose 生命周期（S-2）", (
         assert.strictEqual(mount.el("meetingTemplate"), null, "模板选择已移除");
         assert.strictEqual(mount.el("templateText"), null, "模板正文已移除");
         assert.strictEqual(mount.el("meetingSignature"), null, "签名输入已移除");
-        assert.strictEqual(mount.el("meetingZoneSearch").value, "土耳其 · 伊斯坦布尔 (UTC+3)", "默认时区来自 options");
+        assert.strictEqual(mount.el("meetingCountry").value, "TR", "默认国家来自 options.defaultZoneId");
+        assert.strictEqual(mount.el("meetingCountrySummary").textContent, "填写完整会议日期和时间后显示时区。");
+        assert.strictEqual(mount.el("meetingZoneField").hidden, true, "未填完整时间不显示时区选择");
+        assert.strictEqual(mount.el("meetingZoneSearch").value, "", "未填完整时间不给 noon 结果当选项");
         assert.strictEqual(mount.el("meetingDate").value, "");
-        // 填写完整 → 预览
-        inputInto(mount.el("meetingDate"), "2026-09-11");
-        inputInto(mount.el("meetingStart"), "10:00");
-        inputInto(mount.el("meetingEndDate"), "2026-09-11");
-        inputInto(mount.el("meetingEnd"), "10:30");
-        inputInto(mount.el("meetingUrl"), "https://zoom.us/j/1?pwd=x");
-        runTimers();
-        await flush();
+        // 初次打开只有 date-only 目录请求
+        const dateOnly = mount.api.requests.filter((r) => /time-zones/.test(r.url));
+        assert.strictEqual(dateOnly.length, 1);
+        assert.ok(!/startLocal=/.test(dateOnly[0].url), "未填完整时间不发会议模式请求");
+        // 填写完整 → 会议模式目录 → 土耳其单组自动采用 → 预览
+        await fillMeetingFields(mount);
+        assert.strictEqual(mount.el("meetingZoneField").hidden, true, "土耳其一个 group 整块隐藏");
+        assert.strictEqual(mount.el("meetingCountrySummary").textContent, "土耳其（UTC+3）");
+        assert.strictEqual(mount.el("meetingZoneSearch").value, "土耳其（UTC+3）");
+        assert.strictEqual(mount.el("meetingZoneHint").textContent,
+            "土耳其（UTC+3） · 日期和时间均按此时区填写");
         assert.strictEqual(mount.el("applyMeeting").disabled, false, "ready 后可确认");
+        const zoneCalls = mount.api.requests.filter((r) => /time-zones/.test(r.url));
+        assert.ok(/startLocal=2026-09-11T10%3A00/.test(zoneCalls[zoneCalls.length - 1].url));
+        assert.ok(/endLocal=2026-09-11T10%3A30/.test(zoneCalls[zoneCalls.length - 1].url));
         const filename = mount.el("meetingFilename").textContent;
         assert.match(filename, /^meeting-2026-09-11-/);
         // I-3：新请求只携带时区/起止本地时间/Zoom/generatedAt
         const previews = mount.api.requests.filter((r) => /preview/.test(r.url));
         const payload = JSON.parse(previews[previews.length - 1].body);
+        assert.strictEqual(payload.meeting.zoneId, "Europe/Istanbul", "提交真实 zoneId");
         assert.deepStrictEqual(Object.keys(payload.meeting).sort(),
             ["endLocal", "generatedAt", "startLocal", "zoneId", "zoomUrl"]);
         mount.controller.dispose();
     });
-});
 
-describe("fast-p 04 组件：时区搜索键盘状态（S-4/I-5）", () => {
-    it("focus 展开全部、输入过滤、Enter 单选/多选不自动选、Tab 恢复标签", async () => {
+    it("savedMeeting 的旧别名 raw ID 原样提交；分组选择才用 canonical 代表", async () => {
         const mount = mountComponent();
-        openComponent(mount);
+        openComponentWith(mount, {
+            zoneId: "Brazil/East",
+            startLocal: "2026-10-07T09:00",
+            endLocal: "2026-10-07T09:30",
+            zoomUrl: "https://zoom.us/j/9?pwd=saved",
+            generatedAt: "2026-09-09T08:00:00Z"
+        });
         await flush();
-        const search = mount.el("meetingZoneSearch");
-        const list = mount.el("meetingZoneOptions");
-        eventOn(search, "focus");
-        assert.strictEqual(list.hidden, false, "focus 展开全部");
-        assert.strictEqual(list.querySelectorAll('button[role="option"]').length, UNIT_ZONES.length);
-        // 多结果 Enter 不自动选
-        search.value = "Istanbul";
-        eventOn(search, "input");
-        assert.strictEqual(list.querySelectorAll('button[role="option"]').length, 1);
-        eventOn(search, "keydown", "Enter");
-        assert.strictEqual(search.value, "土耳其 · 伊斯坦布尔 (UTC+3)", "单结果 Enter 选中");
-        // 再搜索多个结果：无 active 时不自动选（输入词保持、selection 不变）
-        search.value = "Asia";
-        eventOn(search, "input");
-        assert.ok(list.querySelectorAll('button[role="option"]').length >= 2, "多结果");
-        eventOn(search, "keydown", "Enter");
-        assert.strictEqual(search.value, "Asia", "多结果无 active：Enter 不吞查询词、不自动选");
-        eventOn(search, "keydown", "Escape");
-        assert.strictEqual(search.value, "土耳其 · 伊斯坦布尔 (UTC+3)", "Esc 后恢复已选标签");
+        runTimers();
+        await flush();
+        assert.strictEqual(mount.el("meetingCountry").value, "BR");
+        assert.strictEqual(mount.el("meetingZoneSearch").value, "巴西（UTC-3）", "国家＋UTC 展示");
+        const previews = mount.api.requests.filter((r) => /preview/.test(r.url));
+        assert.ok(previews.length >= 1, "saved 完整时间直接预览");
+        assert.strictEqual(JSON.parse(previews[previews.length - 1].body).meeting.zoneId, "Brazil/East",
+            "旧别名 raw ID 不静默换成员");
         mount.controller.dispose();
     });
 
-    it("键盘 active/selected 分离：Arrow 移动 focused 但不改 selected；aria 同步", async () => {
+    it("saved 的 SystemV/未知 zone 认不出国家：保留 raw、阻断应用、提示重选国家", async () => {
+        const mount = mountComponent();
+        openComponentWith(mount, {
+            zoneId: "SystemV/EST5",
+            startLocal: "2026-10-07T09:00",
+            endLocal: "2026-10-07T09:30",
+            zoomUrl: "https://zoom.us/j/9?pwd=saved",
+            generatedAt: "2026-09-09T08:00:00Z"
+        });
+        await flush();
+        runTimers();
+        await flush();
+        assert.strictEqual(mount.el("meetingCountry").value, "", "不回退中国/上海");
+        assert.strictEqual(mount.el("meetingCountrySummary").textContent,
+            "该旧时区没有国家归属，请重新选择国家和时区");
+        assert.strictEqual(mount.el("applyMeeting").disabled, true, "不允许应用");
+        assert.strictEqual(mount.api.requests.filter((r) => /preview/.test(r.url)).length, 0);
+        mount.controller.dispose();
+    });
+});
+
+describe("fast-p 02 组件：国家选择与多时区分组（F-1/F-2/F-3/F-5）", () => {
+    it("巴西多组必选；候选只显示国家＋UTC、无城市/IANA；选择后摘要与 payload 同步", async () => {
         const mount = mountComponent();
         openComponent(mount);
         await flush();
+        await loadBrazilGroups(mount);
         const search = mount.el("meetingZoneSearch");
         const list = mount.el("meetingZoneOptions");
+        assert.strictEqual(mount.el("meetingCountry").value, "BR");
+        assert.strictEqual(mount.el("meetingZoneField").hidden, false, "多个 group 才显示选择器");
+        assert.strictEqual(mount.el("meetingCountrySummary").textContent, "该国家/地区有多个时区，请选择。");
         eventOn(search, "focus");
-        search.value = "";
+        assert.strictEqual(list.hidden, false);
+        assert.strictEqual(list.querySelectorAll('button[role="option"]').length, 4, "巴西 4 个偏移组");
+        const labels = Array.prototype.slice.call(list.querySelectorAll('[data-role="zone-label"]'))
+            .map((n) => n.textContent);
+        const offsets = Array.prototype.slice.call(list.querySelectorAll('[data-role="zone-offset"]'))
+            .map((n) => n.textContent);
+        assert.deepStrictEqual(labels, ["巴西", "巴西", "巴西", "巴西"], "候选只有国家名，无城市");
+        assert.deepStrictEqual(offsets, ["UTC-2", "UTC-3", "UTC-4", "UTC-5"], "偏移升序外的降序排列");
+        const visible = Array.prototype.slice.call(list.querySelectorAll('button[role="option"]'))
+            .map((b) => b.textContent).join(" ");
+        assert.strictEqual(visible.includes("America/Sao_Paulo"), false, "候选不展示原始 IANA");
+        assert.strictEqual(visible.includes("East Time"), false, "无 East Time");
+        assert.strictEqual(visible.includes("圣保罗"), false, "候选不展示城市");
+        assert.strictEqual(list.innerHTML.includes("<small"), false, "候选删除 IANA small");
+        assert.strictEqual(list.querySelectorAll('button[role="option"]')[1].getAttribute("data-zone"),
+            "America/Sao_Paulo", "data-zone 仍是真实提交 ID");
+        // 未显式选择不能应用
+        assert.strictEqual(mount.el("applyMeeting").disabled, true, "多组未选不得应用");
+        // 过滤到 -3 组（同组只一行），Enter 显式选中 canonical 代表
+        search.value = "Sao_Paulo";
         eventOn(search, "input");
+        assert.strictEqual(list.querySelectorAll('button[role="option"]').length, 1, "别名与标准 ID 同组只一行");
+        eventOn(search, "keydown", "Enter");
+        assert.strictEqual(search.value, "巴西（UTC-3）");
+        assert.strictEqual(mount.el("meetingZoneHint").textContent, "巴西（UTC-3） · 日期和时间均按此时区填写");
+        assert.strictEqual(mount.el("meetingCountrySummary").textContent, "巴西（UTC-3）");
+        assert.strictEqual(list.hidden, true, "选择后关闭候选");
+        // 提交真实 zoneId（canonical 代表），不新增字段
+        inputInto(mount.el("meetingUrl"), "https://zoom.us/j/1?pwd=x");
+        runTimers();
+        await flush();
+        const previews = mount.api.requests.filter((r) => /preview/.test(r.url));
+        const payload = JSON.parse(previews[previews.length - 1].body);
+        assert.strictEqual(payload.meeting.zoneId, "America/Sao_Paulo");
+        assert.deepStrictEqual(Object.keys(payload.meeting).sort(),
+            ["endLocal", "generatedAt", "startLocal", "zoneId", "zoomUrl"]);
+        mount.controller.dispose();
+    });
+
+    it("键盘 active/selected 分离：Arrow 移动 focused 不改 selected；aria 同步", async () => {
+        const mount = mountComponent();
+        openComponent(mount);
+        await flush();
+        await loadBrazilGroups(mount);
+        const search = mount.el("meetingZoneSearch");
+        const list = mount.el("meetingZoneOptions");
+        // 先显式选中 UTC-5（Rio_Branco）
+        eventOn(search, "focus");
+        search.value = "Rio_Branco";
+        eventOn(search, "input");
+        eventOn(search, "keydown", "Enter");
+        assert.strictEqual(search.value, "巴西（UTC-5）");
+        // Arrow 只移动 focused
+        eventOn(search, "focus");
+        assert.strictEqual(list.hidden, false, "focus 重新展开全部 4 组");
         eventOn(search, "keydown", "ArrowDown");
         const first = list.querySelector('button[role="option"]');
         assert.ok(first.classList.contains("focused"));
         assert.strictEqual(search.getAttribute("aria-activedescendant"), first.getAttribute("id"));
-        // ArrowDown 到第二项
+        assert.strictEqual(mount.el("meetingZoneHint").textContent, "巴西（UTC-5） · 日期和时间均按此时区填写",
+            "Arrow 不改 selected");
         eventOn(search, "keydown", "ArrowDown");
         const second = list.querySelectorAll('button[role="option"]')[1];
         assert.ok(second.classList.contains("focused"));
         assert.ok(!first.classList.contains("focused"));
-        // 仍未显式选中：hint 保持默认已选（Europe/Istanbul），active 只是键盘焦点
-        assert.strictEqual(mount.el("meetingZoneHint").textContent, "Europe/Istanbul · 日期和时间均按此时区填写");
         eventOn(search, "keydown", "Enter");
-        const secondZoneId = second.getAttribute("data-zone");
-        const secondLabel = second.querySelector('[data-role="zone-label"]').textContent;
-        const secondOffset = second.querySelector('[data-role="zone-offset"]').textContent.replace(" ✓", "");
-        assert.strictEqual(search.value, `${secondLabel} (${secondOffset})`, "Enter 显式选中 active 项");
-        assert.strictEqual(mount.el("meetingZoneHint").textContent, `${secondZoneId} · 日期和时间均按此时区填写`);
+        assert.strictEqual(search.value, "巴西（UTC-3）", "Enter 选中 active 组（canonical 代表）");
+        assert.strictEqual(mount.el("meetingZoneHint").textContent, "巴西（UTC-3） · 日期和时间均按此时区填写");
         mount.controller.dispose();
     });
 
-    it("鼠标 mousedown 选择候选项：先选定再关列表（不依赖迟到的 click）", async () => {
+    it("焦点在被隐藏时区块外移；单一 group 自动采用并隐藏选择器", async () => {
         const mount = mountComponent();
         openComponent(mount);
         await flush();
+        await loadBrazilGroups(mount);
         const search = mount.el("meetingZoneSearch");
-        const list = mount.el("meetingZoneOptions");
-        // 先显式选中上海
-        search.value = "Shanghai";
-        eventOn(search, "input");
-        eventOn(list.querySelectorAll('button[role="option"]')[0], "mousedown");
-        assert.strictEqual(search.value, "中国 · 北京 / 上海 (UTC+8)");
-        // 再用鼠标按下 Istanbul：mousedown 即选中，blur 顺序不再抢先
-        search.value = "Istanbul";
-        eventOn(search, "input");
-        eventOn(search, "keydown", "ArrowDown");
-        const option = list.querySelectorAll('button[role="option"]')[0];
-        assert.strictEqual(option.getAttribute("data-zone"), "Europe/Istanbul");
-        eventOn(option, "mousedown");
-        assert.strictEqual(search.value, "土耳其 · 伊斯坦布尔 (UTC+3)", "点击候选项立即改选中值");
-        assert.strictEqual(mount.el("meetingZoneHint").textContent, "Europe/Istanbul · 日期和时间均按此时区填写");
-        assert.strictEqual(list.hidden, true, "选择后关闭候选");
-        // blur 恢复标签不覆盖已选（I-4：同一 selectZone 路径）
-        eventOn(search, "blur");
-        assert.strictEqual(search.value, "土耳其 · 伊斯坦布尔 (UTC+3)");
-        // 预览 payload 携带新 zoneId
+        eventOn(search, "focus");
+        mount.doc.activeElement = search;
+        pickCountry(mount, "IN");
+        assert.strictEqual(mount.el("meetingZoneField").hidden, true, "印度单组整块隐藏");
+        assert.strictEqual(mount.el("meetingCountrySummary").textContent, "印度（UTC+5:30）");
+        assert.strictEqual(mount.el("meetingZoneSearch").value, "印度（UTC+5:30）");
+        assert.strictEqual(mount.el("meetingZoneOptions").hidden, true, "隐藏时列表关闭");
+        assert.strictEqual(search.getAttribute("aria-activedescendant"), null, "清理 aria-activedescendant");
+        assert.strictEqual(mount.doc.activeElement, mount.el("meetingCountry"), "焦点移出被隐藏区域");
+        mount.controller.dispose();
+    });
+
+    it("0 个有效 group 提示调整时间并阻断；UTC 特殊项可显式选择", async () => {
+        const mount = mountComponent({
+            api: {
+                zones: (url) => (/startLocal=/.test(url)
+                    ? UNIT_MEETING_ZONES.map((zone) => Object.assign({}, zone, { endOffsetSeconds: null }))
+                    : UNIT_ZONES)
+            }
+        });
+        openComponent(mount);
+        await flush();
         inputInto(mount.el("meetingDate"), "2026-09-11");
         inputInto(mount.el("meetingStart"), "10:00");
         inputInto(mount.el("meetingEndDate"), "2026-09-11");
@@ -1081,59 +1354,239 @@ describe("fast-p 04 组件：时区搜索键盘状态（S-4/I-5）", () => {
         inputInto(mount.el("meetingUrl"), "https://zoom.us/j/1?pwd=x");
         runTimers();
         await flush();
-        const previews = mount.api.requests.filter((r) => /preview/.test(r.url));
-        assert.strictEqual(JSON.parse(previews[previews.length - 1].body).meeting.zoneId, "Europe/Istanbul");
+        assert.strictEqual(mount.el("meetingCountrySummary").textContent,
+            "该时间没有可用时区，请调整日期或时间。");
+        assert.strictEqual(mount.el("applyMeeting").disabled, true);
+        assert.strictEqual(mount.api.requests.filter((r) => /preview/.test(r.url)).length, 0, "无分组不发预览");
         mount.controller.dispose();
     });
 
-    it("Escape 两级与 Tab 恢复：先关列表再关弹窗；无结果不吞已选值", async () => {
-        const mount = mountComponent();
-        openComponent(mount);
-        await flush();
-        const search = mount.el("meetingZoneSearch");
-        const list = mount.el("meetingZoneOptions");
-        const dialog = mount.doc.getElementById("meetingDialog");
-        search.value = "Asia/Kolkata";
-        eventOn(search, "input");
-        eventOn(search, "keydown", "Enter");
-        assert.strictEqual(search.value, "印度 · 加尔各答 (UTC+5:30)");
-        search.value = "zzz";
-        eventOn(search, "input");
-        assert.ok(list.querySelector(".meeting-zone-empty"), "无结果固定文案");
-        eventOn(search, "keydown", "Escape");
-        assert.strictEqual(list.hidden, true, "第一下 Esc 关列表");
-        assert.strictEqual(search.value, "印度 · 加尔各答 (UTC+5:30)", "无结果 Esc 恢复已选标签");
-        assert.strictEqual(dialog.hasAttribute("open"), true);
-        eventOn(dialog, "keydown", "Escape");
-        assert.strictEqual(dialog.hasAttribute("open"), false, "第二下 Esc 关弹窗");
-        // Tab 恢复已选标签
-        mount.controller.open({
-            ownerKey: "u|scope|1", targetKey: "1:101:acc1", contactId: 1, processingId: 101,
-            senderAccountCode: "acc1", expertLabel: "专家A", editorHtml: "", editorText: "", savedMeeting: null
+    it("改期后原组成员落入多个新偏移对：清选择并要求重选（F-2）", async () => {
+        const catalog = (summer) => [
+            { id: "America/Denver", labelZh: "美国 · 丹佛", aliases: ["美国", "丹佛"],
+                offsetLabel: summer ? "UTC-6" : "UTC-7", offsetSeconds: summer ? -21600 : -25200,
+                endOffsetSeconds: summer ? -21600 : -25200, countryCode: "US", countryLabelZh: "美国",
+                canonicalZoneId: "America/Denver", localTimeIssue: null },
+            { id: "America/Phoenix", labelZh: "美国 · 凤凰城", aliases: ["美国", "凤凰城"],
+                offsetLabel: "UTC-7", offsetSeconds: -25200, endOffsetSeconds: -25200,
+                countryCode: "US", countryLabelZh: "美国", canonicalZoneId: "America/Phoenix",
+                localTimeIssue: null }
+        ];
+        const mount = mountComponent({
+            api: { zones: (url) => (/startLocal=/.test(url) ? catalog(/2026-07-15/.test(url)) : UNIT_ZONES) }
+        });
+        openComponentWith(mount, {
+            zoneId: "America/Denver", startLocal: "2026-01-15T09:00", endLocal: "2026-01-15T09:30",
+            zoomUrl: "https://zoom.us/j/1?pwd=x", generatedAt: "2026-09-09T08:00:00Z"
         });
         await flush();
-        const search2 = mount.el("meetingZoneSearch");
-        search2.value = "America";
-        eventOn(search2, "input");
-        eventOn(search2, "keydown", "Tab");
-        assert.strictEqual(list.hidden, true);
-        assert.strictEqual(search2.value, "土耳其 · 伊斯坦布尔 (UTC+3)", "Tab 恢复已选标签");
+        runTimers();
+        await flush();
+        assert.strictEqual(mount.el("meetingCountry").value, "US");
+        assert.strictEqual(mount.el("meetingCountrySummary").textContent, "美国（UTC-7）", "冬同组");
+        // 改到夏季：Denver -6 / Phoenix -7 → 原组拆开
+        inputInto(mount.el("meetingDate"), "2026-07-15");
+        runTimers();
+        await flush();
+        runTimers();
+        await flush();
+        assert.match(mount.el("meetingLoadStatus").textContent, /原时区选项已分开，请重新选择/);
+        assert.strictEqual(mount.el("meetingZoneSearch").value, "", "清空原选择");
+        assert.strictEqual(mount.el("meetingCountrySummary").textContent, "该国家/地区有多个时区，请选择。");
+        assert.strictEqual(mount.el("meetingZoneField").hidden, false, "分拆后重新显示选择器");
+        assert.strictEqual(mount.el("applyMeeting").disabled, true, "分拆后禁止应用");
+        assert.strictEqual(mount.el("meetingDate").value, "2026-07-15", "日期不因分拆回退");
+        assert.strictEqual(mount.el("meetingUrl").value, "https://zoom.us/j/1?pwd=x", "链接不因分拆回退");
         mount.controller.dispose();
     });
 
-    it("日期 change 只重载目录偏移、保留 zone id；endDate 为空时跟随 startDate", async () => {
+    it("逆序目录响应：旧 seq 结果不得覆盖当前分组/选择（F-4）", async () => {
+        const pending = [];
+        const catalog = (offset) => ([
+            { id: "Europe/Istanbul", labelZh: "土耳其 · 伊斯坦布尔", aliases: [],
+                offsetLabel: "UTC+" + offset, offsetSeconds: offset * 3600,
+                endOffsetSeconds: offset * 3600, countryCode: "TR", countryLabelZh: "土耳其",
+                canonicalZoneId: "Europe/Istanbul", localTimeIssue: null }
+        ]);
+        const mount = mountComponent({
+            api: {
+                zones: (url) => {
+                    if (!/startLocal=/.test(url)) return UNIT_ZONES;
+                    const offset = /11%3A00/.test(url) ? 4 : 3;
+                    return new Promise((resolve) => pending.push({ offset, resolve: () => resolve(catalog(offset)) }));
+                }
+            }
+        });
+        openComponent(mount);
+        await flush();
+        inputInto(mount.el("meetingDate"), "2026-09-11");
+        inputInto(mount.el("meetingStart"), "10:00");
+        inputInto(mount.el("meetingEndDate"), "2026-09-11");
+        inputInto(mount.el("meetingEnd"), "10:30");
+        inputInto(mount.el("meetingUrl"), "https://zoom.us/j/1?pwd=x");
+        runTimers();
+        await flush();
+        assert.strictEqual(pending.length, 1);
+        inputInto(mount.el("meetingEnd"), "11:00");
+        runTimers();
+        await flush();
+        assert.strictEqual(pending.length, 2);
+        // 新结果先回：采用 offset +4
+        pending[1].resolve();
+        await flush();
+        runTimers();
+        await flush();
+        assert.strictEqual(mount.el("meetingCountrySummary").textContent, "土耳其（UTC+4）");
+        assert.strictEqual(mount.el("applyMeeting").disabled, false);
+        // 旧结果后回：seq 过期，不得覆盖
+        pending[0].resolve();
+        await flush();
+        runTimers();
+        await flush();
+        assert.strictEqual(mount.el("meetingCountrySummary").textContent, "土耳其（UTC+4）", "旧目录不得覆盖");
+        assert.strictEqual(mount.el("meetingZoneSearch").value, "土耳其（UTC+4）");
+        const previews = mount.api.requests.filter((r) => /preview/.test(r.url));
+        assert.strictEqual(JSON.parse(previews[previews.length - 1].body).meeting.endLocal, "2026-09-11T11:00",
+            "当前预览属于最新起止");
+        mount.controller.dispose();
+    });
+
+    it("switch 国家清空原选择并要求重选（不静默沿用旧国家）", async () => {
         const mount = mountComponent();
         openComponent(mount);
         await flush();
-        const dateInput = mount.el("meetingDate");
-        const zoneCalls = () => mount.api.requests.filter((r) => /time-zones/.test(r.url));
-        const before = zoneCalls().length;
-        dateInput.value = "2026-03-08";
-        eventOn(dateInput, "input");
-        assert.ok(zoneCalls().length > before, "日期变化触发目录重载");
-        assert.ok(zoneCalls()[zoneCalls().length - 1].url.includes("date=2026-03-08"));
-        assert.strictEqual(mount.el("meetingEndDate").value, "2026-03-08", "endDate 空时跟随 startDate");
-        assert.strictEqual(mount.el("meetingZoneSearch").value, "土耳其 · 伊斯坦布尔 (UTC+3)", "zone id 保留");
+        await fillMeetingFields(mount);
+        assert.strictEqual(mount.el("meetingCountry").value, "TR");
+        assert.strictEqual(mount.el("meetingZoneSearch").value, "土耳其（UTC+3）", "单组自动采用");
+        assert.strictEqual(mount.el("applyMeeting").disabled, false, "已自动采用的可继续");
+        // 切到多组国家：清空原选择，必须重新选择
+        pickCountry(mount, "BR");
+        assert.strictEqual(mount.el("meetingCountrySummary").textContent, "该国家/地区有多个时区，请选择。");
+        assert.strictEqual(mount.el("meetingZoneSearch").value, "", "切国家清空旧选择");
+        assert.strictEqual(mount.el("applyMeeting").disabled, true, "多组未选不得应用");
+        // 明确选择后恢复可继续使用
+        pickGroupOption(mount, "Sao_Paulo");
+        assert.strictEqual(mount.el("meetingZoneSearch").value, "巴西（UTC-3）");
+        runTimers();
+        await flush();
+        assert.strictEqual(mount.el("applyMeeting").disabled, false, "明确选择后可应用");
+        mount.controller.dispose();
+    });
+});
+
+describe("fast-p 02 组件：时区目录异步门禁（F-4）", () => {
+    it("目录失败阻断预览/应用并可重试；不沿用旧目录", async () => {
+        let fail = true;
+        const failing = mountComponent({
+            api: {
+                zones: (url) => {
+                    if (fail && /startLocal=/.test(url)) return Promise.reject(new Error("network down"));
+                    return /startLocal=/.test(url) ? UNIT_MEETING_ZONES : UNIT_ZONES;
+                }
+            }
+        });
+        openComponent(failing);
+        await flush();
+        inputInto(failing.el("meetingDate"), "2026-09-11");
+        inputInto(failing.el("meetingStart"), "10:00");
+        inputInto(failing.el("meetingEndDate"), "2026-09-11");
+        inputInto(failing.el("meetingEnd"), "10:30");
+        inputInto(failing.el("meetingUrl"), "https://zoom.us/j/1?pwd=x");
+        runTimers();
+        await flush();
+        assert.match(failing.el("meetingLoadStatus").textContent, /会议时区加载失败，请重试/);
+        assert.strictEqual(failing.el("meetingLoadStatus").hidden, false);
+        assert.strictEqual(failing.el("retryMeeting").hidden, false, "重试按钮出现");
+        assert.strictEqual(failing.el("applyMeeting").disabled, true, "失败时不可应用");
+        assert.strictEqual(failing.el("downloadMeeting").getAttribute("aria-disabled"), "true", "下载不可用");
+        assert.strictEqual(failing.api.requests.filter((r) => /preview/.test(r.url)).length, 0);
+        // 重试只重发当前起止目录，不重置表单
+        fail = false;
+        const before = failing.api.requests.filter((r) => /time-zones/.test(r.url)).length;
+        clickEl(failing.el("retryMeeting"));
+        await flush();
+        runTimers();
+        await flush();
+        const after = failing.api.requests.filter((r) => /time-zones/.test(r.url));
+        assert.ok(after.length > before, "重试重新请求目录");
+        assert.strictEqual(failing.el("meetingDate").value, "2026-09-11", "重试保留表单日期");
+        assert.strictEqual(failing.el("meetingUrl").value, "https://zoom.us/j/1?pwd=x");
+        failing.controller.dispose();
+    });
+
+    it("目录缺 01 国家元信息：阻断预览/应用并提示刷新", async () => {
+        const mount = mountComponent({
+            api: {
+                zones: () => Promise.resolve([
+                    { id: "Europe/Istanbul", labelZh: "土耳其 · 伊斯坦布尔", aliases: [], offsetLabel: "UTC+3", offsetSeconds: 10800 }
+                ])
+            }
+        });
+        openComponent(mount);
+        await flush();
+        assert.match(mount.el("meetingLoadStatus").textContent, /会议时区配置版本不匹配，请刷新后重试/);
+        inputInto(mount.el("meetingDate"), "2026-09-11");
+        inputInto(mount.el("meetingStart"), "10:00");
+        inputInto(mount.el("meetingEndDate"), "2026-09-11");
+        inputInto(mount.el("meetingEnd"), "10:30");
+        inputInto(mount.el("meetingUrl"), "https://zoom.us/j/1?pwd=x");
+        runTimers();
+        await flush();
+        assert.strictEqual(mount.el("applyMeeting").disabled, true, "缺元信息阻断应用");
+        assert.strictEqual(mount.api.requests.filter((r) => /preview/.test(r.url)).length, 0);
+        mount.controller.dispose();
+    });
+
+    it("只改 Zoom 链接不重取目录", async () => {
+        const mount = mountComponent();
+        openComponent(mount);
+        await flush();
+        await fillMeetingFields(mount);
+        const before = mount.api.requests.filter((r) => /time-zones/.test(r.url)).length;
+        inputInto(mount.el("meetingUrl"), "https://zoom.us/j/2?pwd=y");
+        runTimers();
+        await flush();
+        assert.strictEqual(mount.api.requests.filter((r) => /time-zones/.test(r.url)).length, before,
+            "Zoom 链接变化不取目录");
+        assert.ok(mount.api.requests.filter((r) => /preview/.test(r.url)).length >= 2, "仍重做预览校验");
+        mount.controller.dispose();
+    });
+
+    it("关闭使在途目录失效；重开不复用上一目标状态（F-4）", async () => {
+        const pending = [];
+        const mount = mountComponent({
+            api: {
+                zones: (url) => (/startLocal=/.test(url)
+                    ? new Promise((resolve) => pending.push(resolve))
+                    : UNIT_ZONES)
+            }
+        });
+        openComponent(mount);
+        await flush();
+        inputInto(mount.el("meetingDate"), "2026-09-11");
+        inputInto(mount.el("meetingStart"), "10:00");
+        inputInto(mount.el("meetingEndDate"), "2026-09-11");
+        inputInto(mount.el("meetingEnd"), "10:30");
+        runTimers();
+        await flush();
+        assert.strictEqual(pending.length, 1, "会议目录请求在途");
+        mount.controller.close({});
+        pending[0](UNIT_MEETING_ZONES);
+        await flush();
+        runTimers();
+        await flush();
+        assert.strictEqual(mount.el("meetingDialog").hasAttribute("open"), false);
+        assert.strictEqual(mount.el("meetingCountrySummary").textContent.includes("土耳其（UTC+3）"), false,
+            "关闭后旧目录响应不得落地");
+        assert.strictEqual(mount.el("meetingZoneSearch").value, "");
+        assert.strictEqual(mount.el("applyMeeting").disabled, true);
+        // 重开（另一目标）：不复用上一人分组/选择
+        openComponentWith(mount, null);
+        await flush();
+        assert.strictEqual(mount.el("meetingCountry").value, "TR");
+        assert.strictEqual(mount.el("meetingCountrySummary").textContent,
+            "填写完整会议日期和时间后显示时区。");
+        assert.strictEqual(mount.el("meetingZoneSearch").value, "");
         mount.controller.dispose();
     });
 });
@@ -1149,13 +1602,7 @@ describe("fast-p 04 组件：apply 契约（onApply 参数/返回值）", () => 
         });
         openComponent(mount);
         await flush();
-        inputInto(mount.el("meetingDate"), "2026-09-11");
-        inputInto(mount.el("meetingStart"), "10:00");
-        inputInto(mount.el("meetingEndDate"), "2026-09-11");
-        inputInto(mount.el("meetingEnd"), "10:30");
-        inputInto(mount.el("meetingUrl"), "https://zoom.us/j/1?pwd=x");
-        runTimers();
-        await flush();
+        await fillMeetingFields(mount);
         const dialog = mount.doc.getElementById("meetingDialog");
         clickEl(mount.el("applyMeeting"));
         await flush();

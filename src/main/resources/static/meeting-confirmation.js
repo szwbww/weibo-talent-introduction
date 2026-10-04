@@ -8,8 +8,8 @@
  * - controller.open({ownerKey,targetKey,contactId,processingId,senderAccountCode,
  *     expertLabel,editorHtml,editorText,savedMeeting})
  * - controller.close({restoreFocus}) / controller.dispose()
- * 纯导出：filterZones / normalizeMeetingText / sanitizeDraftHtml /
- *   planMeetingInsertion（T1 契约签名）。
+ * 纯导出：filterZones / groupMeetingZones / formatOffsetSeconds / buildCountryOptions /
+ *   normalizeMeetingText / sanitizeDraftHtml / planMeetingInsertion（契约签名）。
  *
  * 正文由服务端按启用的通用 `MEETING_INVITATION` 模板渲染：弹窗不选模板、不编辑
  * 模板正文、不填称呼与签名，只发时区/起止本地时间/Zoom 链接（I-1/I-2/I-5）。
@@ -118,6 +118,126 @@
             }
             if (qSeconds !== null && Number(zone.offsetSeconds) === qSeconds) return true;
             return false;
+        });
+    }
+
+    // ---- 会议专用国家/本场偏移分组（F-1/F-2：只在会议组件内使用） ----
+
+    /** 秒 → "UTC+5:30"/"UTC-3"/"UTC+0"（只做算术格式化，不用 Intl 反推时区规则）。 */
+    function formatOffsetSeconds(seconds) {
+        var value = Number(seconds);
+        if (!isFinite(value)) return "";
+        var sign = value < 0 ? "-" : "+";
+        var abs = Math.abs(Math.round(value));
+        var hours = Math.floor(abs / 3600);
+        var minutes = Math.round((abs % 3600) / 60);
+        return "UTC" + sign + hours + (minutes ? ":" + (minutes < 10 ? "0" + minutes : minutes) : "");
+    }
+
+    /** 组起止偏移文案：相同只给一个；不同用 → 保留 DST 变化（F-1）。 */
+    function groupOffsetLabel(group) {
+        if (!group) return "";
+        var start = group.offsetLabel || formatOffsetSeconds(group.startOffsetSeconds);
+        var end = formatOffsetSeconds(group.endOffsetSeconds);
+        if (!start) return end;
+        if (!end || start === end) return start;
+        return start + " → " + end;
+    }
+
+    function byZoneIdAsc(a, b) {
+        var left = String(a && a.id != null ? a.id : "");
+        var right = String(b && b.id != null ? b.id : "");
+        return left < right ? -1 : left > right ? 1 : 0;
+    }
+
+    /** 组代表项：优先 id==canonicalZoneId 的可用项字典序首项，否则可用 raw ID 字典序首项（F-2）。 */
+    function pickGroupRepresentative(members) {
+        var canonical = members.filter(function (member) {
+            return member.canonicalZoneId != null && String(member.canonicalZoneId) === String(member.id);
+        });
+        var pool = canonical.length ? canonical : members;
+        return pool.slice().sort(byZoneIdAsc)[0];
+    }
+
+    /**
+     * 会议专用分组（F-1）：key = countryCode + startOffsetSeconds + endOffsetSeconds，
+     * 不跨国合并；成员必须带国家元信息、localTimeIssue=null、非空 endOffsetSeconds，
+     * 且来自当前起止请求。组按起点偏移降序、终点偏移降序、代表 ID 字典序稳定排序。
+     * 纯函数：不改动入参，不依赖组件状态。
+     */
+    function groupMeetingZones(zones, countryCode) {
+        var code = String(countryCode == null ? "" : countryCode);
+        if (!code) return [];
+        var byKey = {};
+        var order = [];
+        (Array.isArray(zones) ? zones : []).forEach(function (zone) {
+            if (!zone || typeof zone !== "object") return;
+            if (String(zone.countryCode == null ? "" : zone.countryCode) !== code) return;
+            if (zone.localTimeIssue != null && String(zone.localTimeIssue) !== "") return;
+            if (zone.endOffsetSeconds == null) return;
+            var start = Number(zone.offsetSeconds);
+            var end = Number(zone.endOffsetSeconds);
+            if (!isFinite(start) || !isFinite(end)) return;
+            var key = code + "|" + start + "|" + end;
+            if (!byKey[key]) {
+                byKey[key] = {
+                    key: key,
+                    countryCode: code,
+                    countryLabelZh: zone.countryLabelZh || code,
+                    startOffsetSeconds: start,
+                    endOffsetSeconds: end,
+                    offsetLabel: zone.offsetLabel || "",
+                    members: []
+                };
+                order.push(key);
+            }
+            byKey[key].members.push(zone);
+        });
+        var groups = order.map(function (key) { return byKey[key]; });
+        groups.forEach(function (group) {
+            group.members.sort(byZoneIdAsc);
+            group.representative = pickGroupRepresentative(group.members);
+            group.memberIds = group.members.map(function (member) { return String(member.id); });
+        });
+        groups.sort(function (a, b) {
+            if (a.startOffsetSeconds !== b.startOffsetSeconds) return b.startOffsetSeconds - a.startOffsetSeconds;
+            if (a.endOffsetSeconds !== b.endOffsetSeconds) return b.endOffsetSeconds - a.endOffsetSeconds;
+            return byZoneIdAsc(a.representative, b.representative);
+        });
+        return groups;
+    }
+
+    /** 国家显示名（UTC 特殊项固定“协调世界时”，其余用服务端中文名，不回退城市）。 */
+    function countryNameFor(code, labelZh) {
+        if (String(code == null ? "" : code) === "UTC") return "协调世界时";
+        return String(labelZh || code || "");
+    }
+
+    /** 国家选项：只保留有国家元信息的项（null 国家 SystemV 不进列表），中文名排序、同码排序。 */
+    function buildCountryOptions(zones) {
+        var seen = {};
+        var out = [];
+        (Array.isArray(zones) ? zones : []).forEach(function (zone) {
+            if (!zone || typeof zone !== "object") return;
+            var code = zone.countryCode == null ? "" : String(zone.countryCode);
+            if (!code || seen[code]) return;
+            seen[code] = true;
+            out.push({ code: code, label: countryNameFor(code, zone.countryLabelZh) });
+        });
+        out.sort(function (a, b) {
+            var byLabel = String(a.label).localeCompare(String(b.label), "zh-Hans-CN");
+            if (byLabel !== 0) return byLabel;
+            return a.code < b.code ? -1 : a.code > b.code ? 1 : 0;
+        });
+        return out;
+    }
+
+    /** 目录是否携带 01 国家元信息；空目录视为可用（不冒充配置不匹配）。 */
+    function catalogHasCountryMetadata(zones) {
+        var list = Array.isArray(zones) ? zones : [];
+        if (list.length === 0) return true;
+        return list.some(function (zone) {
+            return zone && zone.countryCode != null && String(zone.countryCode) !== "";
         });
     }
 
@@ -262,7 +382,16 @@
             previewSeq: 0,
             options: null,
             zones: [],
-            zoneDate: "",
+            zonesSeq: 0,
+            zonesKey: "",
+            zonesMeeting: false,
+            zonesPending: false,
+            zonesError: false,
+            zonesMetaMissing: false,
+            selectedCountryCode: "",
+            zoneGroups: [],
+            selectedGroupMemberIds: [],
+            unresolvedZoneId: "",
             selectedZone: null,
             zoneListOpen: false,
             activeZoneIndex: -1,
@@ -284,6 +413,9 @@
             retryAction: null
         };
         var previewTimer = null;
+        var previewToken = null;
+        var zonesTimer = null;
+        var zonesToken = null;
         var loadStatusEl = null;
         var controllerHandle = null;
 
@@ -340,6 +472,7 @@
         function applyEnabled() {
             if (state.phase !== "ready") return false;
             if (!state.latestPreviewReady || !state.preview) return false;
+            if (!canPreview()) return false; // 当前起止/目录/选择仍须合法（F-4）
             if (state.flow === "conflict" && state.mode !== "replace") return false;
             return true;
         }
@@ -398,37 +531,253 @@
             syncApplyState();
         }
 
-        // ---- 时区下拉（S-4） ----
+        // ---- 国家选择 + 会议时区分组（F-1/F-2/F-3/F-5；S-1/S-2） ----
 
-        function zoneLabel(zone) {
-            if (!zone) return "";
-            var offset = zone.offsetLabel ? " (" + zone.offsetLabel + ")" : "";
-            return String(zone.labelZh || zone.id || "") + offset;
+        function findZoneById(zoneId) {
+            var found = null;
+            (state.zones || []).forEach(function (zone) {
+                if (zone && String(zone.id) === String(zoneId)) found = zone;
+            });
+            return found;
+        }
+
+        function selectedRawIssue() {
+            var raw = state.selectedZone ? findZoneById(state.selectedZone.id) : null;
+            return raw && raw.localTimeIssue ? String(raw.localTimeIssue) : "";
+        }
+
+        /** 当前国家在本场会议下推导出的有效分组；非当前起止响应/缺元信息一律为空。 */
+        function currentGroups() {
+            if (!state.selectedCountryCode || !meetingReady()) return [];
+            return groupMeetingZones(state.zones, state.selectedCountryCode);
+        }
+
+        /** 本场起止的完整 key；起止未填完整或本地 end<=start 时为空。 */
+        function meetingKey() {
+            var start = startLocalValue();
+            var end = endLocalValue();
+            if (!start || !end || start >= end) return "";
+            return start + "|" + end;
+        }
+
+        /** 目录必须是当前起止的会议模式响应，且未 pending/error/缺元信息。 */
+        function meetingReady() {
+            if (!state.zonesMeeting || state.zonesPending || state.zonesError) return false;
+            if (state.zonesMetaMissing) return false;
+            var key = meetingKey();
+            return !!key && state.zonesKey === key;
+        }
+
+        function groupById(groupId) {
+            var found = null;
+            (state.zoneGroups || []).forEach(function (group) {
+                if (group.memberIds.indexOf(String(groupId)) !== -1) found = group;
+            });
+            return found;
+        }
+
+        function groupByIdIn(groups, groupId) {
+            var found = null;
+            (Array.isArray(groups) ? groups : []).forEach(function (group) {
+                if (group.memberIds.indexOf(String(groupId)) !== -1) found = group;
+            });
+            return found;
+        }
+
+        function groupLabel(group) {
+            if (!group) return "";
+            return countryNameFor(group.countryCode, group.countryLabelZh) +
+                "（" + groupOffsetLabel(group) + "）";
+        }
+
+        /** 当前选中项是否可提交：在当前响应里、无 issue、且落在某个有效组内。 */
+        function selectedZoneUsable() {
+            if (!state.selectedZone || state.unresolvedZoneId) return false;
+            if (!meetingReady()) return false;
+            var raw = findZoneById(state.selectedZone.id);
+            if (!raw || (raw.localTimeIssue != null && String(raw.localTimeIssue) !== "")) return false;
+            return !!groupById(raw.id);
+        }
+
+        function setCountrySummary(text) {
+            var summary = el("meetingCountrySummary");
+            if (summary) summary.textContent = text || "";
+        }
+
+        /** 组内成员是否仍落于单一有效组；返回 true 表示保留原 raw ID 合法。 */
+        function reconcileGroupMembership(groups) {
+            var prev = state.selectedGroupMemberIds || [];
+            if (!prev.length) {
+                var current = groupByIdIn(groups, state.selectedZone.id);
+                if (current) {
+                    state.selectedGroupMemberIds = current.memberIds.slice();
+                }
+                return !!current;
+            }
+            var keys = {};
+            prev.forEach(function (id) {
+                var group = groupByIdIn(groups, id);
+                if (group) keys[group.key] = group;
+            });
+            var keyList = Object.keys(keys);
+            if (keyList.length > 1) return false;
+            if (keyList.length === 1) {
+                state.selectedGroupMemberIds = keys[keyList[0]].memberIds.slice();
+            }
+            return true;
+        }
+
+        function adoptGroup(group) {
+            if (!group || !group.representative) return;
+            state.selectedZone = group.representative;
+            state.selectedGroupMemberIds = group.memberIds.slice();
+            state.unresolvedZoneId = "";
+        }
+
+        function clearZoneSelection() {
+            state.selectedZone = null;
+            state.selectedGroupMemberIds = [];
+        }
+
+        /** 同步下拉输入框/hint 的国家＋UTC 文案（正在输入时不覆盖用户输入）。 */
+        function syncZoneDisplay() {
+            var input = el("meetingZoneSearch");
+            var hint = el("meetingZoneHint");
+            var group = state.selectedZone ? groupById(state.selectedZone.id) : null;
+            if (group) {
+                if (input && !state.editing) input.value = groupLabel(group);
+                if (hint) hint.textContent = groupLabel(group) + " · 日期和时间均按此时区填写";
+                return;
+            }
+            if (input && !state.editing) input.value = "";
+            if (hint) hint.textContent = "日期和时间均按所选时区填写。";
+        }
+
+        /** 单一入口刷新时区块显隐、国家摘要、下拉文案（F-3/F-5；S-1/S-2）。 */
+        function refreshZoneUi() {
+            var groups = currentGroups();
+            state.zoneGroups = groups;
+            var field = el("meetingZoneField");
+            if (!field) return;
+            var country = state.selectedCountryCode;
+            if (!country) {
+                field.hidden = true;
+                setCountrySummary(state.zonesMetaMissing
+                    ? "会议时区配置版本不匹配，请刷新后重试"
+                    : state.unresolvedZoneId
+                        ? "该旧时区没有国家归属，请重新选择国家和时区"
+                        : meetingReady()
+                            ? "请选择国家/地区。"
+                            : "填写完整会议日期和时间后显示时区。");
+            } else if (!meetingReady()) {
+                field.hidden = true;
+                setCountrySummary(state.zonesMetaMissing
+                    ? "会议时区配置版本不匹配，请刷新后重试"
+                    : state.zonesPending ? "正在更新会议时区…"
+                        : state.zonesError ? "会议时区加载失败，请重试"
+                            : "填写完整会议日期和时间后显示时区。");
+            } else {
+                var issue = selectedRawIssue();
+                if (issue) {
+                    field.hidden = groups.length <= 1;
+                    setCountrySummary(issue);
+                } else if (groups.length === 0) {
+                    field.hidden = true;
+                    setCountrySummary("该时间没有可用时区，请调整日期或时间。");
+                } else if (groups.length === 1) {
+                    field.hidden = true;
+                    if (!state.selectedZone || !groupById(state.selectedZone.id)) adoptGroup(groups[0]);
+                    setCountrySummary(groupLabel(groups[0]));
+                } else {
+                    field.hidden = false;
+                    var selectedGroup = state.selectedZone ? groupById(state.selectedZone.id) : null;
+                    setCountrySummary(selectedGroup ? groupLabel(selectedGroup) : "该国家/地区有多个时区，请选择。");
+                }
+            }
+            if (field.hidden) {
+                closeZoneList(false);
+                moveFocusOutOfHiddenField(field);
+            }
+            syncZoneDisplay();
+        }
+
+        function moveFocusOutOfHiddenField(field) {
+            if (!doc || !field || typeof field.contains !== "function") return;
+            var active = doc.activeElement;
+            if (!active || !field.contains(active)) return;
+            var country = el("meetingCountry");
+            if (country && typeof country.focus === "function") {
+                try { country.focus(); } catch (e) { /* noop */ }
+            }
+        }
+
+        function renderCountryOptions() {
+            var select = el("meetingCountry");
+            if (!select) return;
+            var previous = state.selectedCountryCode;
+            var options = buildCountryOptions(state.zones);
+            var html = '<option value="">请选择国家/地区</option>';
+            options.forEach(function (option) {
+                html += '<option value="' + escapeHtml(option.code) + '">' +
+                    escapeHtml(option.label) + "</option>";
+            });
+            select.innerHTML = html;
+            var stillThere = previous && options.some(function (option) { return option.code === previous; });
+            state.selectedCountryCode = stillThere ? previous : "";
+            if (!stillThere && previous) {
+                clearZoneSelection();
+            }
+            select.value = state.selectedCountryCode;
+        }
+
+        /** 候选过滤：组标签/偏移/成员别名联合命中（别名只用于搜索，不展示）。 */
+        function filterGroupOptions(groups, query) {
+            var list = Array.isArray(groups) ? groups : [];
+            var q = normalizeZoneText(query);
+            if (!q) return list.slice();
+            var qSeconds = parseUtcOffsetSeconds(q);
+            return list.filter(function (group) {
+                var text = group.members.map(function (member) {
+                    return [
+                        group.countryLabelZh,
+                        countryNameFor(group.countryCode, group.countryLabelZh),
+                        groupOffsetLabel(group),
+                        member.id,
+                        member.labelZh,
+                        member.offsetLabel,
+                        (Array.isArray(member.aliases) ? member.aliases : []).join(" ")
+                    ].join(" ");
+                }).join(" ");
+                if (normalizeZoneText(text).indexOf(q) !== -1) return true;
+                if (qSeconds !== null && Number(group.startOffsetSeconds) === qSeconds) return true;
+                return false;
+            });
         }
 
         function renderZoneOptions() {
             var list = el("meetingZoneOptions");
             var input = el("meetingZoneSearch");
             if (!list || !input) return;
-            var zones = filterZones(state.zones, state.query);
-            if (zones.length === 0) {
+            var groups = filterGroupOptions(state.zoneGroups, state.query);
+            if (groups.length === 0) {
                 list.innerHTML = '<div class="meeting-zone-empty">没有匹配的时区，请尝试英文城市名或 UTC+3。</div>';
                 input.setAttribute("aria-expanded", "true");
                 input.removeAttribute("aria-activedescendant");
                 list.hidden = false;
                 return;
             }
-            var selectedId = state.selectedZone ? state.selectedZone.id : "";
-            var html = zones.map(function (zone, index) {
-                var selected = String(zone.id) === String(selectedId);
-                var offset = zone.offsetLabel || "";
+            var selectedId = state.selectedZone ? String(state.selectedZone.id) : "";
+            var html = groups.map(function (group, index) {
+                var selected = group.memberIds.indexOf(selectedId) !== -1;
                 var check = selected ? " ✓" : "";
                 return '<button type="button" id="meeting-zone-option-' + index +
                     '" role="option" aria-selected="' + (selected ? "true" : "false") +
-                    '" data-zone="' + escapeHtml(zone.id) + '" tabindex="-1">' +
-                    '<span><span data-role="zone-label">' + escapeHtml(zone.labelZh || zone.id) +
-                    "</span><small>" + escapeHtml(zone.id) + "</small></span>" +
-                    '<span data-role="zone-offset">' + escapeHtml(offset) + check + "</span></button>";
+                    '" data-zone="' + escapeHtml(group.representative.id) + '" tabindex="-1">' +
+                    '<span><span data-role="zone-label">' +
+                    escapeHtml(countryNameFor(group.countryCode, group.countryLabelZh)) +
+                    "</span></span>" +
+                    '<span data-role="zone-offset">' + escapeHtml(groupOffsetLabel(group)) + check +
+                    "</span></button>";
             }).join("");
             list.innerHTML = html;
             input.setAttribute("aria-expanded", "true");
@@ -467,9 +816,7 @@
             }
             state.zoneListOpen = false;
             state.activeZoneIndex = -1;
-            if (restoreLabel && !state.editing && input && state.selectedZone) {
-                input.value = zoneLabel(state.selectedZone);
-            }
+            if (restoreLabel && !state.editing) syncZoneDisplay();
         }
 
         function openZoneList() {
@@ -479,28 +826,29 @@
             state.zoneListOpen = true;
         }
 
-        function selectZone(zone) {
-            state.selectedZone = zone;
+        function selectGroup(group) {
+            if (!group || !group.representative) return;
+            state.selectedZone = group.representative;
+            state.selectedGroupMemberIds = group.memberIds.slice();
+            state.unresolvedZoneId = "";
             state.editing = false;
             state.query = "";
             state.activeZoneIndex = -1;
-            var input = el("meetingZoneSearch");
-            if (input) {
-                input.value = zoneLabel(zone);
-                input.removeAttribute("aria-activedescendant");
-            }
             closeZoneList(false);
-            var hint = el("meetingZoneHint");
-            if (hint) hint.textContent = String(zone.id) + " · 日期和时间均按此时区填写";
+            refreshZoneUi();
             formChanged();
         }
 
-        function selectZoneById(zoneId) {
-            var zone = null;
-            (state.zones || []).forEach(function (item) {
-                if (String(item.id) === String(zoneId)) zone = item;
+        function selectGroupById(zoneId) {
+            var group = null;
+            (state.zoneGroups || []).forEach(function (item) {
+                if (item.memberIds.indexOf(String(zoneId)) !== -1) group = item;
             });
-            if (zone) selectZone(zone);
+            if (!group) {
+                var raw = findZoneById(zoneId);
+                if (raw) group = groupByIdIn(currentGroups(), zoneId);
+            }
+            if (group) selectGroup(group);
         }
 
         // ---- 表单读取 ----
@@ -521,7 +869,12 @@
 
         function localIssues() {
             var issues = {};
-            if (!zoneSelectedValue()) issues.meetingZoneSearch = "请选择会议时区";
+            if (!state.selectedCountryCode) issues.meetingCountry = "请选择国家/地区";
+            if (state.unresolvedZoneId) {
+                issues.meetingZoneSearch = "该旧时区没有国家归属，请重新选择国家和时区";
+            } else if (state.selectedCountryCode && !selectedZoneUsable()) {
+                issues.meetingZoneSearch = selectedRawIssue() || "请选择会议时区";
+            }
             var startLocal = startLocalValue();
             var endLocal = endLocalValue();
             if (!startLocal) {
@@ -538,7 +891,8 @@
             if (!zoomValue()) issues.meetingUrl = "请填写 Zoom 会议链接";
             else if (!validUrl(zoomValue())) issues.meetingUrl = "请输入有效的 Zoom 会议链接";
             var complete = !!startLocal && !!endLocal && startLocal < endLocal &&
-                !!zoomValue() && !!zoneSelectedValue() && validUrl(zoomValue());
+                !!zoomValue() && validUrl(zoomValue()) && !state.unresolvedZoneId &&
+                selectedZoneUsable();
             return { complete: complete, issues: issues };
         }
 
@@ -595,27 +949,142 @@
             return !!state.options && localIssues().complete;
         }
 
-        function schedulePreview() {
-            if (previewTimer) {
-                if (typeof clearTimeout === "function") clearTimeout(previewTimer);
-                previewTimer = null;
-            }
-            state.formRevision += 1;
+        function invalidatePreview() {
             state.latestPreviewReady = false;
             state.preview = null;
             disableDownloadLink();
             setPreviewPaneIdle();
             var apply = applyButton();
             if (apply) apply.disabled = true;
+        }
+
+        function schedulePreview() {
+            previewToken = {};
+            var token = previewToken;
+            if (previewTimer) {
+                if (typeof clearTimeout === "function") clearTimeout(previewTimer);
+                previewTimer = null;
+            }
+            state.formRevision += 1;
+            invalidatePreview();
             applyAriaInvalid(localIssues().issues);
             if (!canPreview()) return;
             if (typeof setTimeout === "function") {
                 previewTimer = setTimeout(function () {
+                    if (previewToken !== token) return;
                     previewTimer = null;
                     if (state.disposed || !state.open) return;
                     runPreview();
                 }, PREVIEW_DEBOUNCE_MS);
             }
+        }
+
+        // ---- 会议时区目录（F-4：独立 zonesSeq + 完整起止 key；不复用 configSeq） ----
+
+        function invalidateZones() {
+            state.zonesKey = "";
+            state.zonesMeeting = false;
+            state.zonesPending = false;
+            state.zonesError = false;
+            state.zoneGroups = [];
+        }
+
+        function scheduleZonesRefresh() {
+            zonesToken = {};
+            var token = zonesToken;
+            if (zonesTimer) {
+                if (typeof clearTimeout === "function") clearTimeout(zonesTimer);
+                zonesTimer = null;
+            }
+            var key = meetingKey();
+            state.zonesPending = !!key;
+            state.zonesError = false;
+            refreshZoneUi();
+            syncApplyState();
+            if (!key) return;
+            if (typeof setTimeout === "function") {
+                zonesTimer = setTimeout(function () {
+                    if (zonesToken !== token) return;
+                    zonesTimer = null;
+                    if (state.disposed || !state.open) return;
+                    runZonesRequest();
+                }, PREVIEW_DEBOUNCE_MS);
+            } else {
+                runZonesRequest();
+            }
+        }
+
+        function runZonesRequest() {
+            var key = meetingKey();
+            if (!key) {
+                state.zonesPending = false;
+                refreshZoneUi();
+                syncApplyState();
+                return;
+            }
+            var startLocal = startLocalValue();
+            var endLocal = endLocalValue();
+            var zoneDate = startLocal.slice(0, 10);
+            var mySeq = ++state.zonesSeq;
+            var url = "/api/mail/meeting-confirmation/time-zones?date=" +
+                encodeURIComponent(zoneDate) +
+                "&startLocal=" + encodeURIComponent(startLocal) +
+                "&endLocal=" + encodeURIComponent(endLocal);
+            apiFn(url).then(function (data) {
+                if (state.disposed || !state.open || mySeq !== state.zonesSeq) return;
+                if (meetingKey() !== key) return; // 起止已变，旧目录不得落地
+                state.zones = Array.isArray(data) ? data : [];
+                state.zonesMeeting = true;
+                state.zonesKey = key;
+                state.zonesPending = false;
+                state.zonesError = false;
+                state.zonesMetaMissing = !catalogHasCountryMetadata(state.zones);
+                if (state.zonesMetaMissing) {
+                    state.formRevision += 1;
+                    invalidatePreview();
+                    showStatus("会议时区配置版本不匹配，请刷新后重试", "config");
+                }
+                reconcileAfterZones();
+            }).catch(function () {
+                if (state.disposed || !state.open || mySeq !== state.zonesSeq) return;
+                if (meetingKey() !== key) return;
+                state.zonesPending = false;
+                state.zonesError = true;
+                state.zonesMeeting = false;
+                state.zonesKey = "";
+                state.zoneGroups = [];
+                state.formRevision += 1;
+                invalidatePreview();
+                showStatus("会议时区加载失败，请重试", "zones");
+                refreshZoneUi();
+                syncApplyState();
+            });
+        }
+
+        /** 目录落地后核对国家选择/原 raw 选择，并重算分组（F-2 改期分拆）。 */
+        function reconcileAfterZones() {
+            renderCountryOptions();
+            if (state.selectedZone && !state.zonesMetaMissing) {
+                var raw = findZoneById(state.selectedZone.id);
+                var groups = currentGroups();
+                var group = raw ? groupByIdIn(groups, raw.id) : null;
+                if (!raw || !raw.countryCode) {
+                    // 原 id 不在当前响应/无国家归属：保留 raw 值供恢复，阻断预览/应用（F-6）
+                    state.unresolvedZoneId = String(state.selectedZone.id);
+                    refreshLoadStatus("该旧时区没有国家归属，请重新选择国家和时区", null);
+                } else {
+                    state.unresolvedZoneId = "";
+                    if (!state.selectedCountryCode) state.selectedCountryCode = String(raw.countryCode);
+                    if (group && !reconcileGroupMembership(groups)) {
+                        // 原组成员落入多个新偏移对：清选择并要求重选（F-2）
+                        clearZoneSelection();
+                        refreshLoadStatus("会议日期或时间变化后，原时区选项已分开，请重新选择。", null);
+                    }
+                }
+            }
+            refreshZoneUi();
+            syncApplyState();
+            schedulePreview();
         }
 
         function runPreview() {
@@ -625,6 +1094,7 @@
             }
             var mySeq = ++state.previewSeq;
             var revision = state.formRevision;
+            var zoneKey = state.zonesKey;
             state.latestPreviewReady = false;
             state.preview = null;
             syncApplyState();
@@ -640,6 +1110,7 @@
             apiFn(url, { method: "POST", body: JSON.stringify(body) }).then(function (data) {
                 if (state.disposed || !state.open || mySeq !== state.previewSeq) return;
                 if (revision !== state.formRevision) return; // 过期响应不覆盖新值
+                if (zoneKey !== state.zonesKey) return; // 起止目录已变：旧预览作废
                 setPreviewBusy(false);
                 state.previewNetworkError = false;
                 state.preview = data || null;
@@ -656,6 +1127,8 @@
                 syncApplyState();
             }).catch(function (err) {
                 if (state.disposed || !state.open || mySeq !== state.previewSeq) return;
+                if (revision !== state.formRevision) return;
+                if (zoneKey !== state.zonesKey) return;
                 setPreviewBusy(false);
                 state.preview = null;
                 state.latestPreviewReady = false;
@@ -794,6 +1267,13 @@
             schedulePreview();
         }
 
+        /** 起止任一变化：先撤销预览/应用，再按完整起止重取目录（F-4）。 */
+        function onMeetingTimeChanged() {
+            invalidateZones();
+            formChanged();
+            scheduleZonesRefresh();
+        }
+
         function onMeetingDateChanged() {
             var date = fieldValue("meetingDate");
             var endValue = fieldValue("meetingEndDate");
@@ -801,11 +1281,19 @@
                 var endDate = el("meetingEndDate");
                 if (endDate) endDate.value = date;
             }
-            var zoneDate = date || chinaToday();
-            if (zoneDate !== state.zoneDate) {
-                loadZones(zoneDate);
-            }
-            formChanged();
+            onMeetingTimeChanged();
+        }
+
+        function onCountryChanged() {
+            var select = el("meetingCountry");
+            state.selectedCountryCode = select ? String(select.value || "") : "";
+            state.unresolvedZoneId = "";
+            clearZoneSelection();
+            refreshError(null);
+            refreshLoadStatus(null, null);
+            refreshZoneUi();
+            schedulePreview();
+            syncApplyState();
         }
 
         function chinaToday() {
@@ -828,33 +1316,7 @@
                 (day.length === 1 ? "0" + day : day);
         }
 
-        // ---- 配置加载（options / time-zones 并行；seq 保护） ----
-
-        function loadZones(zoneDate) {
-            if (!zoneDate) return;
-            var mySeq = ++state.configSeq;
-            state.zoneDate = zoneDate;
-            var url = "/api/mail/meeting-confirmation/time-zones?date=" + encodeURIComponent(zoneDate);
-            apiFn(url).then(function (data) {
-                if (state.disposed || !state.open || mySeq !== state.configSeq) return;
-                var zones = Array.isArray(data) ? data : [];
-                state.zones = zones;
-                if (state.selectedZone) {
-                    var kept = null;
-                    zones.forEach(function (zone) {
-                        if (String(zone.id) === String(state.selectedZone.id)) kept = zone;
-                    });
-                    if (kept) {
-                        state.selectedZone = kept;
-                        var input = el("meetingZoneSearch");
-                        if (input) input.value = zoneLabel(kept);
-                    }
-                }
-                if (state.zoneListOpen) renderZoneOptions();
-            }).catch(function () {
-                // 目录重载失败不阻断表单；保留旧目录（I-5 不隐式改 zone）
-            });
-        }
+        // ---- 配置加载（options + 目录并行；seq 保护） ----
 
         function loadConfig() {
             var mySeq = ++state.configSeq;
@@ -869,9 +1331,16 @@
                 "/meeting-confirmation/options?contactId=" + contactId +
                 "&senderAccountCode=" + encodeURIComponent(state.openCtx.senderAccountCode || "");
             var saved = state.savedMeeting && state.savedMeeting.input ? state.savedMeeting.input : null;
-            var zoneDate = saved && saved.startLocal ? String(saved.startLocal).slice(0, 10) : chinaToday();
-            state.zoneDate = zoneDate;
+            var savedStart = saved ? String(saved.startLocal || "") : "";
+            var savedEnd = saved ? String(saved.endLocal || "") : "";
+            var completeSaved = savedStart.indexOf("T") !== -1 && savedEnd.indexOf("T") !== -1 &&
+                savedStart < savedEnd;
+            var zoneDate = savedStart.indexOf("T") !== -1 ? savedStart.slice(0, 10) : chinaToday();
             var zonesUrl = "/api/mail/meeting-confirmation/time-zones?date=" + encodeURIComponent(zoneDate);
+            if (completeSaved) {
+                zonesUrl += "&startLocal=" + encodeURIComponent(savedStart) +
+                    "&endLocal=" + encodeURIComponent(savedEnd);
+            }
             Promise.all([
                 apiFn(optsUrl),
                 apiFn(zonesUrl)
@@ -881,7 +1350,12 @@
                 var zonesData = results[1];
                 state.options = optionsData;
                 state.zones = Array.isArray(zonesData) ? zonesData : [];
+                state.zonesMeeting = completeSaved;
+                state.zonesPending = false;
+                state.zonesError = false;
+                state.zonesMetaMissing = !catalogHasCountryMetadata(state.zones);
                 populateFormFromOptions();
+                state.zonesKey = completeSaved ? meetingKey() : "";
                 state.phase = "ready";
                 setFieldsDisabled(false);
                 refreshLoadStatus(null, null);
@@ -890,9 +1364,10 @@
                     context.textContent = state.openCtx.expertLabel + " · 回复账号 " +
                         String(optionsData.resolvedAccountCode || state.openCtx.senderAccountCode || "-");
                 }
-                // 初始无值时先跑一次便利校验/占位（不请求）
-                schedulePreview();
-                syncApplyState();
+                if (state.zonesMetaMissing) {
+                    showStatus("会议时区配置版本不匹配，请刷新后重试", "config");
+                }
+                reconcileAfterZones();
             }).catch(function () {
                 if (state.disposed || !state.open || mySeq !== state.configSeq) return;
                 state.phase = "config-error";
@@ -933,26 +1408,27 @@
                 urlInput.value = saved ? String(saved.zoomUrl || "") : "";
             }
             state.selectedZone = null;
+            state.selectedCountryCode = "";
+            state.selectedGroupMemberIds = [];
+            state.unresolvedZoneId = "";
             if (zoneId) {
-                var found = null;
-                (state.zones || []).forEach(function (zone) {
-                    if (String(zone.id) === zoneId) found = zone;
-                });
-                if (found) {
+                var found = findZoneById(zoneId);
+                if (found && found.countryCode) {
+                    // 保留 raw ID（含 Brazil/East 旧别名）；国家由 01 元信息给出
                     state.selectedZone = found;
+                    state.selectedCountryCode = String(found.countryCode);
                 } else {
-                    // 目录缺该 id：以 id 兜底占位（不发明数据；仍可在预览时报错）
-                    state.selectedZone = { id: zoneId, labelZh: zoneId, aliases: [], offsetLabel: "", offsetSeconds: 0 };
+                    // 目录缺该 id/无国家归属：保留 raw 值供恢复，阻断预览与应用（F-6）
+                    state.selectedZone = {
+                        id: zoneId, labelZh: zoneId, aliases: [], offsetLabel: "",
+                        offsetSeconds: 0, countryCode: null, canonicalZoneId: null,
+                        endOffsetSeconds: null, localTimeIssue: null
+                    };
+                    state.unresolvedZoneId = zoneId;
                 }
             }
-            var search = el("meetingZoneSearch");
-            if (search) search.value = state.selectedZone ? zoneLabel(state.selectedZone) : "";
-            var hint = el("meetingZoneHint");
-            if (hint) {
-                hint.textContent = state.selectedZone
-                    ? String(state.selectedZone.id) + " · 日期和时间均按此时区填写"
-                    : "下方日期和时间均按所选时区填写。";
-            }
+            renderCountryOptions();
+            refreshZoneUi();
         }
 
         // ---- flow（正文插入语义；宿主经 savedMeeting._flow 提供真实 DOM 判定） ----
@@ -1043,7 +1519,7 @@
                         } else if (buttons.length === 1) {
                             pick = buttons[0];
                         }
-                        if (pick) selectZoneById(pick.getAttribute("data-zone"));
+                        if (pick) selectGroupById(pick.getAttribute("data-zone"));
                     }
                     return;
                 }
@@ -1069,7 +1545,7 @@
             if (list) {
                 // I-4：候选项选择必须早于搜索框 blur 关闭列表 —— 在 mousedown 阶段
                 // 先 preventDefault（阻止默认焦点转移 → 不触发 blur），再走既有
-                // selectZoneById 路径；选择逻辑不复制。
+                // selectGroupById 路径；选择逻辑不复制。
                 list.addEventListener("mousedown", function (event) {
                     var target = event.target;
                     var button = target && typeof target.closest === "function"
@@ -1077,7 +1553,7 @@
                         : null;
                     if (!button) return;
                     event.preventDefault();
-                    selectZoneById(button.getAttribute("data-zone"));
+                    selectGroupById(button.getAttribute("data-zone"));
                 });
             }
             var toggle = el("toggleZone");
@@ -1098,13 +1574,16 @@
         }
 
         function bindFormEvents() {
-            var ids = ["meetingStart", "meetingEnd", "meetingEndDate", "meetingUrl"];
-            ids.forEach(function (id) {
+            ["meetingStart", "meetingEnd", "meetingEndDate"].forEach(function (id) {
                 var node = el(id);
-                if (node) node.addEventListener("input", function () { formChanged(); });
+                if (node) node.addEventListener("input", onMeetingTimeChanged);
             });
             var date = el("meetingDate");
             if (date) date.addEventListener("input", onMeetingDateChanged);
+            var url = el("meetingUrl");
+            if (url) url.addEventListener("input", function () { formChanged(); });
+            var country = el("meetingCountry");
+            if (country) country.addEventListener("change", onCountryChanged);
             var insertSelect = el("insertMode");
             if (insertSelect) insertSelect.addEventListener("change", function () {
                 state.mode = String(insertSelect.value || "append");
@@ -1185,9 +1664,20 @@
             state.zoneListOpen = false;
             state.activeZoneIndex = -1;
             state.retryAction = null;
+            state.zonesSeq += 1;
+            state.zonesPending = false;
+            state.zonesKey = "";
+            state.zonesMeeting = false;
+            state.zoneGroups = [];
+            previewToken = {};
+            zonesToken = {};
             if (previewTimer) {
                 if (typeof clearTimeout === "function") clearTimeout(previewTimer);
                 previewTimer = null;
+            }
+            if (zonesTimer) {
+                if (typeof clearTimeout === "function") clearTimeout(zonesTimer);
+                zonesTimer = null;
             }
             revokePreviewBlob();
             if (dialog) {
@@ -1222,6 +1712,8 @@
                 if (state.retryAction === "config") {
                     state.phase = "idle";
                     loadConfig();
+                } else if (state.retryAction === "zones") {
+                    runZonesRequest();
                 } else if (state.retryAction === "preview") {
                     runPreview();
                 }
@@ -1310,6 +1802,25 @@
                 state.query = "";
                 state.editing = false;
                 state.zoneListOpen = false;
+                state.activeZoneIndex = -1;
+                // 关闭/切目标/重开都使旧时区目录与预览失效（F-4）
+                state.zonesSeq += 1;
+                state.zones = [];
+                state.zonesKey = "";
+                state.zonesMeeting = false;
+                state.zonesPending = false;
+                state.zonesError = false;
+                state.zonesMetaMissing = false;
+                state.selectedCountryCode = "";
+                state.zoneGroups = [];
+                state.selectedGroupMemberIds = [];
+                state.unresolvedZoneId = "";
+                previewToken = {};
+                zonesToken = {};
+                if (zonesTimer) {
+                    if (typeof clearTimeout === "function") clearTimeout(zonesTimer);
+                    zonesTimer = null;
+                }
                 revokePreviewBlob();
                 state.triggerEl = null;
                 if (doc.activeElement && doc.activeElement.nodeType === 1) {
@@ -1323,6 +1834,14 @@
                     });
                 var insertSelect = el("insertMode");
                 if (insertSelect) insertSelect.value = "append";
+                var countrySelect = el("meetingCountry");
+                if (countrySelect) {
+                    countrySelect.innerHTML = '<option value="">请选择国家/地区</option>';
+                    countrySelect.value = "";
+                }
+                setCountrySummary("填写完整会议日期和时间后显示时区。");
+                var zoneField = el("meetingZoneField");
+                if (zoneField) zoneField.hidden = true;
                 state.flow = effectiveFlow();
                 var selectLabel = el("insertModeLabel");
                 if (selectLabel) {
@@ -1351,9 +1870,17 @@
             dispose: function () {
                 state.disposed = true;
                 state.open = false;
+                state.zonesSeq += 1;
+                state.zonesPending = false;
+                previewToken = {};
+                zonesToken = {};
                 if (previewTimer) {
                     if (typeof clearTimeout === "function") clearTimeout(previewTimer);
                     previewTimer = null;
+                }
+                if (zonesTimer) {
+                    if (typeof clearTimeout === "function") clearTimeout(zonesTimer);
+                    zonesTimer = null;
                 }
                 revokePreviewBlob();
                 if (dialog && dialog.parentNode) {
@@ -1390,15 +1917,10 @@
         "<span></span>" +
         '<button type="button" class="meeting-link" id="retryMeeting" hidden>重试</button>' +
         "</p>" +
-        '<div class="meeting-zone-field">' +
-        '<label id="meetingZoneLabel" for="meetingZoneSearch">会议时区</label>' +
-        '<div class="meeting-zone-control">' +
-        '<input id="meetingZoneSearch" type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="meetingZoneOptions" aria-labelledby="meetingZoneLabel" autocomplete="off" placeholder="搜索国家、城市、时区或 UTC 偏移">' +
-        '<button type="button" id="toggleZone" aria-label="展开时区选项">⌄</button>' +
-        "</div>" +
-        '<div id="meetingZoneOptions" class="meeting-zone-options" role="listbox" aria-label="会议时区选项" hidden></div>' +
-        '<small id="meetingZoneHint">下方日期和时间均按所选时区填写。</small>' +
-        "</div>" +
+        '<label for="meetingCountry">国家/地区' +
+        '<select id="meetingCountry" aria-describedby="meetingCountrySummary"></select>' +
+        '<small id="meetingCountrySummary" aria-live="polite">填写完整会议日期和时间后显示时区。</small>' +
+        "</label>" +
         '<div class="meeting-fields">' +
         '<label>开始日期<input type="date" id="meetingDate" required></label>' +
         '<label>开始时间<input type="time" id="meetingStart" required step="60"></label>' +
@@ -1406,6 +1928,15 @@
         '<div class="meeting-fields">' +
         '<label>结束日期<input type="date" id="meetingEndDate" required></label>' +
         '<label>结束时间<input type="time" id="meetingEnd" required step="60"></label>' +
+        "</div>" +
+        '<div id="meetingZoneField" class="meeting-zone-field" hidden>' +
+        '<label id="meetingZoneLabel" for="meetingZoneSearch">会议时区</label>' +
+        '<div class="meeting-zone-control">' +
+        '<input id="meetingZoneSearch" type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="meetingZoneOptions" aria-labelledby="meetingZoneLabel" autocomplete="off" placeholder="选择 UTC 偏移">' +
+        '<button type="button" id="toggleZone" aria-label="展开时区选项">⌄</button>' +
+        "</div>" +
+        '<div id="meetingZoneOptions" class="meeting-zone-options" role="listbox" aria-label="会议时区选项" hidden></div>' +
+        '<small id="meetingZoneHint">日期和时间均按所选时区填写。</small>' +
         "</div>" +
         '<div class="meeting-clock" id="meetingClock" aria-live="polite"></div>' +
         '<label>Zoom 会议链接<input type="url" id="meetingUrl" required maxlength="2048" placeholder="https://zoom.us/j/…">' +
@@ -1452,6 +1983,10 @@
     API = Object.freeze({
         create: create,
         filterZones: filterZones,
+        groupMeetingZones: groupMeetingZones,
+        formatOffsetSeconds: formatOffsetSeconds,
+        groupOffsetLabel: groupOffsetLabel,
+        buildCountryOptions: buildCountryOptions,
         normalizeMeetingText: normalizeMeetingText,
         sanitizeDraftHtml: sanitizeDraftHtml,
         planMeetingInsertion: planMeetingInsertion

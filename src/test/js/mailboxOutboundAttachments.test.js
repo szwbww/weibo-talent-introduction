@@ -693,13 +693,46 @@ function escapeHtmlLike(value) {
 // fast-p 04 会议 fixture：01 options/zones/preview 的 stub 响应形状（只读契约）
 // ════════════════════════════════════════════════════════════════════════
 
-const DEFAULT_MEETING_ZONES = [
-    { id: "Europe/Istanbul", labelZh: "土耳其 · 伊斯坦布尔", aliases: ["土耳其", "伊斯坦布尔", "Turkey", "Türkiye", "Istanbul"], offsetLabel: "UTC+3", offsetSeconds: 10800 },
-    { id: "Asia/Shanghai", labelZh: "中国 · 北京 / 上海", aliases: ["中国", "北京", "上海", "China", "Beijing", "Shanghai"], offsetLabel: "UTC+8", offsetSeconds: 28800 },
-    { id: "Asia/Kolkata", labelZh: "印度 · 加尔各答", aliases: ["印度", "加尔各答", "India", "Kolkata"], offsetLabel: "UTC+5:30", offsetSeconds: 19800 },
-    { id: "America/New_York", labelZh: "美国东部 · 纽约", aliases: ["美国东部", "纽约", "US Eastern", "New York"], offsetLabel: "UTC-5", offsetSeconds: -18000 },
-    { id: "Pacific/Auckland", labelZh: "新西兰 · 奥克兰", aliases: ["新西兰", "奥克兰", "New Zealand", "Auckland"], offsetLabel: "UTC+12", offsetSeconds: 43200 }
+// 01 只读契约 fixture（mock）：countryCode/canonicalZoneId/endOffsetSeconds/localTimeIssue。
+// date-only 无 endOffsetSeconds；会议模式 offsetSeconds=实际起点、endOffsetSeconds=实际终点。
+const MEETING_BASE_ZONES = [
+    { id: "Brazil/East", labelZh: "巴西 · 东部", aliases: ["巴西", "圣保罗"],
+        offsetLabel: "UTC-3", offsetSeconds: -10800, countryCode: "BR", countryLabelZh: "巴西",
+        countryLabelEn: "Brazil", canonicalZoneId: "America/Sao_Paulo" },
+    { id: "America/Sao_Paulo", labelZh: "巴西 · 圣保罗", aliases: ["巴西", "圣保罗"],
+        offsetLabel: "UTC-3", offsetSeconds: -10800, countryCode: "BR", countryLabelZh: "巴西",
+        countryLabelEn: "Brazil", canonicalZoneId: "America/Sao_Paulo" },
+    { id: "America/Noronha", labelZh: "巴西 · 洛罗尼亚", aliases: ["巴西", "洛罗尼亚"],
+        offsetLabel: "UTC-2", offsetSeconds: -7200, countryCode: "BR", countryLabelZh: "巴西",
+        countryLabelEn: "Brazil", canonicalZoneId: "America/Noronha" },
+    { id: "America/Manaus", labelZh: "巴西 · 马瑙斯", aliases: ["巴西", "马瑙斯"],
+        offsetLabel: "UTC-4", offsetSeconds: -14400, countryCode: "BR", countryLabelZh: "巴西",
+        countryLabelEn: "Brazil", canonicalZoneId: "America/Manaus" },
+    { id: "America/Rio_Branco", labelZh: "巴西 · 里约布兰科", aliases: ["巴西", "里约布兰科"],
+        offsetLabel: "UTC-5", offsetSeconds: -18000, countryCode: "BR", countryLabelZh: "巴西",
+        countryLabelEn: "Brazil", canonicalZoneId: "America/Rio_Branco" },
+    { id: "Europe/Istanbul", labelZh: "土耳其 · 伊斯坦布尔", aliases: ["土耳其", "伊斯坦布尔", "Turkey", "Türkiye", "Istanbul"],
+        offsetLabel: "UTC+3", offsetSeconds: 10800, countryCode: "TR", countryLabelZh: "土耳其",
+        countryLabelEn: "Turkey", canonicalZoneId: "Europe/Istanbul" },
+    { id: "Asia/Shanghai", labelZh: "中国 · 北京 / 上海", aliases: ["中国", "北京", "上海", "China", "Beijing", "Shanghai"],
+        offsetLabel: "UTC+8", offsetSeconds: 28800, countryCode: "CN", countryLabelZh: "中国",
+        countryLabelEn: "China", canonicalZoneId: "Asia/Shanghai" },
+    { id: "Asia/Kolkata", labelZh: "印度 · 加尔各答", aliases: ["印度", "加尔各答", "India", "Kolkata"],
+        offsetLabel: "UTC+5:30", offsetSeconds: 19800, countryCode: "IN", countryLabelZh: "印度",
+        countryLabelEn: "India", canonicalZoneId: "Asia/Kolkata" },
+    { id: "America/New_York", labelZh: "美国东部 · 纽约", aliases: ["美国东部", "纽约", "US Eastern", "New York"],
+        offsetLabel: "UTC-5", offsetSeconds: -18000, countryCode: "US", countryLabelZh: "美国",
+        countryLabelEn: "United States", canonicalZoneId: "America/New_York" },
+    { id: "Pacific/Auckland", labelZh: "新西兰 · 奥克兰", aliases: ["新西兰", "奥克兰", "New Zealand", "Auckland"],
+        offsetLabel: "UTC+12", offsetSeconds: 43200, countryCode: "NZ", countryLabelZh: "新西兰",
+        countryLabelEn: "New Zealand", canonicalZoneId: "Pacific/Auckland" },
+    { id: "UTC", labelZh: "协调世界时", aliases: ["协调世界时", "Coordinated Universal Time"],
+        offsetLabel: "UTC+0", offsetSeconds: 0, countryCode: "UTC", countryLabelZh: "协调世界时",
+        countryLabelEn: "Coordinated Universal Time", canonicalZoneId: "UTC" }
 ];
+const DEFAULT_ZONES = MEETING_BASE_ZONES.map((zone) => Object.assign({}, zone));
+const DEFAULT_MEETING_ZONES = MEETING_BASE_ZONES.map((zone) =>
+    Object.assign({}, zone, { endOffsetSeconds: zone.offsetSeconds, localTimeIssue: null }));
 
 function meetingInputToLocal(input) {
     const startLocal = String(input.startLocal || "");
@@ -718,7 +751,7 @@ function defaultPreviewResponse(input, options) {
     const { startDate, startTime, endTime } = meetingInputToLocal(meeting);
     const textBody = `Dear ${name},\n\nPlease join our online meeting on ${startDate} ${startTime}-${endTime} (${zoneId}).\n\nBest regards`;
     const htmlBody = `<p>Dear ${name},</p><p>Please join our online meeting on ${startDate} ${startTime}-${endTime} (${zoneId}).</p><p>Best regards</p>`;
-    const filename = `meeting-${startDate}-${name.replace(/[^A-Za-z0-9-]/g, "-")}.ics`;
+    const filename = `meeting-${startDate}-${startTime.replace(":", "")}-a7f3c2d1.ics`;
     const icsText = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nSUMMARY:Meeting with ${name}\r\nDTSTART:20260911T070000Z\r\nDTEND:20260911T073000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n`;
     const sha256 = "a".repeat(64);
     return {
@@ -880,7 +913,10 @@ function createChatSandbox(options) {
         }
         if (/\/meeting-confirmation\/time-zones/.test(url)) {
             if (opts.zonesError) return Promise.reject(new Error(opts.zonesError));
-            return Promise.resolve(opts.meetingZones || DEFAULT_MEETING_ZONES);
+            const supplied = opts.meetingZones;
+            if (typeof supplied === "function") return Promise.resolve(supplied(url));
+            if (Array.isArray(supplied)) return Promise.resolve(supplied);
+            return Promise.resolve(/startLocal=/.test(url) ? DEFAULT_MEETING_ZONES : DEFAULT_ZONES);
         }
         if (/\/meeting-confirmation\/preview/.test(url) && method === "POST") {
             if (opts.previewError) return Promise.reject(opts.previewError);
@@ -1347,7 +1383,15 @@ function setMeetingFieldValue(ctx, id, value) {
     return node;
 }
 
-/** 通过搜索 + 鼠标按下候选项明确选中时区（I-4：只有显式选择才改 selectedZoneId） */
+/** 切换国家 select（change 事件走真实宿主路径）。 */
+function pickCountry(ctx, code) {
+    const select = meetingField(ctx, "meetingCountry");
+    assert.ok(select, "国家 select 必须存在");
+    select.value = code;
+    changeEvent(select);
+}
+
+/** 通过搜索 + 鼠标按下候选项明确选中时区（data-zone 为组代表 raw ID）。 */
 function pickZone(ctx, zoneId) {
     const search = meetingField(ctx, "meetingZoneSearch");
     assert.ok(search);
@@ -1378,13 +1422,18 @@ async function fillCompleteMeetingForm(ctx, overrides) {
         meetingEnd: "10:30",
         meetingUrl: "https://zoom.us/j/123456789?pwd=AbC123"
     }, overrides || {});
-    pickZone(ctx, values.zoneId || "Europe/Istanbul");
     setMeetingFieldValue(ctx, "meetingDate", values.meetingDate);
     setMeetingFieldValue(ctx, "meetingStart", values.meetingStart);
     setMeetingFieldValue(ctx, "meetingEndDate", values.meetingEndDate);
     setMeetingFieldValue(ctx, "meetingEnd", values.meetingEnd);
+    await flush();
+    if (values.countryCode) pickCountry(ctx, values.countryCode);
+    if (values.zoneId) pickZone(ctx, values.zoneId);
     // 最后一个字段触发 300ms debounce 的最终一次预览
     setMeetingFieldValue(ctx, "meetingUrl", values.meetingUrl);
+    await flush();
+    ctx.runTimers();
+    await flush();
 }
 
 async function bootMeetingA(serverOverrides, mountOverrides) {

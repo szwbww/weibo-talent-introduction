@@ -108,6 +108,7 @@ describe("S-2/S-3/S-4/S-5: 关键 id 与 data-role 源文本存在性（DOM stub
     const COMPONENT_IDS = [
         "id=\"meetingForm\"", "id=\"meetingTitle\"", "id=\"meetingContext\"",
         "id=\"closeMeeting\"", "id=\"meetingLoadStatus\"", "id=\"retryMeeting\"",
+        "id=\"meetingCountry\"", "id=\"meetingCountrySummary\"", "id=\"meetingZoneField\"",
         "id=\"meetingZoneLabel\"", "id=\"meetingZoneSearch\"", "id=\"toggleZone\"", "id=\"meetingZoneOptions\"",
         "id=\"meetingZoneHint\"", "id=\"meetingDate\"", "id=\"meetingStart\"", "id=\"meetingEndDate\"",
         "id=\"meetingEnd\"", "id=\"meetingClock\"", "id=\"meetingUrl\"",
@@ -158,6 +159,36 @@ describe("S-2/S-3/S-4/S-5: 关键 id 与 data-role 源文本存在性（DOM stub
         assert.ok(componentSource.includes("meeting-zone-option-"), "候选 id 前缀");
         assert.ok(componentSource.includes("没有匹配的时区，请尝试英文城市名或 UTC+3。"), "空结果固定文案");
         assert.ok(componentSource.includes("aria-activedescendant"), "键盘 active 跟随 input");
+        assert.ok(componentSource.includes('data-role="zone-label"'), "候选国家标签 span");
+        assert.ok(componentSource.includes('data-role="zone-offset"'), "候选 UTC 偏移 span");
+        assert.strictEqual(componentSource.includes("</span><small>"), false,
+            "候选不再内嵌原始 IANA small");
+    });
+
+    it("S-1/S-2 国家控件与分组契约：aria-describedby、无新 class/inline style、时区块位置", () => {
+        assert.ok(componentSource.includes("id=\"meetingCountry\" aria-describedby=\"meetingCountrySummary\""),
+            "country select 关联摘要 aria-describedby");
+        assert.ok(componentSource.includes("\u8be5\u56fd\u5bb6/\u5730\u533a\u6709\u591a\u4e2a\u65f6\u533a\uff0c\u8bf7\u9009\u62e9\u3002"), "多组未选摘要文案");
+        assert.ok(componentSource.includes("\u8be5\u65f6\u95f4\u6ca1\u6709\u53ef\u7528\u65f6\u533a\uff0c\u8bf7\u8c03\u6574\u65e5\u671f\u6216\u65f6\u95f4\u3002"), "0 组提示文案");
+        assert.ok(componentSource.includes("\u586b\u5199\u5b8c\u6574\u4f1a\u8bae\u65e5\u671f\u548c\u65f6\u95f4\u540e\u663e\u793a\u65f6\u533a\u3002"), "未填完整时间提示");
+        assert.ok(componentSource.includes("\u4f1a\u8bae\u65f6\u533a\u914d\u7f6e\u7248\u672c\u4e0d\u5339\u914d\uff0c\u8bf7\u5237\u65b0\u540e\u91cd\u8bd5"), "缺元信息文案");
+        assert.ok(componentSource.includes("\u4f1a\u8bae\u65f6\u533a\u52a0\u8f7d\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5"), "目录失败文案");
+        assert.ok(componentSource.includes("\u4f1a\u8bae\u65e5\u671f\u6216\u65f6\u95f4\u53d8\u5316\u540e\uff0c\u539f\u65f6\u533a\u9009\u9879\u5df2\u5206\u5f00\uff0c\u8bf7\u91cd\u65b0\u9009\u62e9\u3002"),
+            "改期分拆提示文案");
+        // country 在 loadStatus 之后、start/end fields 之前；zone field 在两个 fields 之后、clock 之前
+        const loadAt = componentSource.indexOf("id=\"meetingLoadStatus\"");
+        const countryAt = componentSource.indexOf("id=\"meetingCountry\"");
+        const fieldsAt = componentSource.indexOf("class=\"meeting-fields\"");
+        const zoneFieldAt = componentSource.indexOf("id=\"meetingZoneField\"");
+        const clockAt = componentSource.indexOf("id=\"meetingClock\"");
+        assert.ok(loadAt > -1 && countryAt > loadAt, "country 在 loadStatus 之后");
+        assert.ok(fieldsAt > countryAt, "country 在起止字段之前");
+        assert.ok(zoneFieldAt > fieldsAt, "时区选择移到最后一段起止字段之后");
+        assert.ok(clockAt > zoneFieldAt, "时区块在 meetingClock 之前");
+        assert.ok(componentSource.includes("<div id=\"meetingZoneField\" class=\"meeting-zone-field\" hidden>"),
+            "时区块整块 hidden 契约");
+        assert.strictEqual(componentSource.includes("placeholder=\"搜索国家、城市、时区或 UTC 偏移\""), false,
+            "旧搜索候选文案退役");
     });
 
     it("空结果/加载/错误/ready/stale/sending 均有确定文案源", () => {
