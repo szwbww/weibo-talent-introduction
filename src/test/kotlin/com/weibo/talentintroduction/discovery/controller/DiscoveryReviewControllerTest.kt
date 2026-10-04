@@ -11,6 +11,8 @@ import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewExpertPage
 import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewPrepareRequest
 import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewPrepareResult
 import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewRevokeResult
+import com.weibo.talentintroduction.discovery.service.DiscoveryReviewBatchPhase
+import com.weibo.talentintroduction.discovery.service.DiscoveryReviewBatchStatus
 import com.weibo.talentintroduction.discovery.service.DiscoveryReviewConflictException
 import com.weibo.talentintroduction.discovery.service.DiscoveryReviewService
 import com.weibo.talentintroduction.discovery.service.DiscoveryReviewTimeoutException
@@ -91,6 +93,8 @@ class DiscoveryReviewControllerTest {
             post("/api/discovery/review/batches/b1/confirm").contentType(MediaType.APPLICATION_JSON).content("""{"batchHash":"h"}""")
         ).andExpect(status().isUnauthorized)
         mockMvc.perform(get("/api/discovery/review/batches/b1")).andExpect(status().isUnauthorized)
+        mockMvc.perform(post("/api/discovery/review/batches/b1/retry")).andExpect(status().isUnauthorized)
+        mockMvc.perform(post("/api/discovery/review/batches/b1/cancel")).andExpect(status().isUnauthorized)
         mockMvc.perform(get("/api/discovery/review/history?docId=doc1")).andExpect(status().isUnauthorized)
         mockMvc.perform(post("/api/discovery/review/items/1/revoke")).andExpect(status().isUnauthorized)
     }
@@ -188,5 +192,78 @@ class DiscoveryReviewControllerTest {
 
         Mockito.verify(service).confirm("b1", "h", "op1")
         Mockito.verify(service).revoke(7L, "op1", "复核")
+    }
+
+    private fun batchStatus(phase: String): DiscoveryReviewBatchStatus =
+        DiscoveryReviewBatchStatus(
+            batchKey = "b-window", phase = phase, batchHash = "h", total = 0,
+            applied = 0, stale = 0, failed = 0, cancelled = 0, pending = 0,
+            prepareExecutionId = 5L, applyExecutionId = null, expiresAt = null,
+            items = emptyList(), nextCursor = null
+        )
+
+    @Test
+    fun `all-page prepare returns 202 and forwards the server-side filter`() {
+        Mockito.`when`(service.prepareAllMatching(anyRequest(), any(), any(), any(), any(), anyString()))
+            .thenReturn(batchStatus(DiscoveryReviewBatchPhase.PREPARING))
+
+        mockMvc.perform(
+            post("/api/discovery/review/batches/prepare?scope=ALL_MATCHING&tag=discovered&q=ada&issue=EMAIL_MISSING&requestKey=win-1")
+                .session(sessionOf("op1"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"scope":"ALL_MATCHING","action":"APPROVE"}""")
+        ).andExpect(status().isAccepted)
+            .andExpect(jsonPath("$.phase").value("PREPARING"))
+
+        val captured = ArgumentCaptor.forClass(DiscoveryReviewPrepareRequest::class.java)
+        Mockito.verify(service).prepareAllMatching(
+            captured.capture() ?: DiscoveryReviewPrepareRequest(),
+            Mockito.eq("discovered") ?: "discovered",
+            Mockito.eq("ada") ?: "ada",
+            Mockito.eq("EMAIL_MISSING") ?: "EMAIL_MISSING",
+            Mockito.eq("win-1") ?: "win-1",
+            Mockito.eq("op1") ?: "op1"
+        )
+        assertEquals("ALL_MATCHING", captured.value.scope)
+    }
+
+    @Test
+    fun `retry and cancel forward the batch key and the session actor`() {
+        Mockito.`when`(service.retryBatch(anyString(), anyString()))
+            .thenReturn(batchStatus(DiscoveryReviewBatchPhase.APPLYING))
+        Mockito.`when`(service.cancelBatch(anyString(), anyString()))
+            .thenReturn(batchStatus(DiscoveryReviewBatchPhase.CANCELLED))
+
+        mockMvc.perform(post("/api/discovery/review/batches/b-window/retry").session(sessionOf("op1")))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.phase").value("APPLYING"))
+        mockMvc.perform(post("/api/discovery/review/batches/b-window/cancel").session(sessionOf("op1")))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.phase").value("CANCELLED"))
+
+        Mockito.verify(service).retryBatch("b-window", "op1")
+        Mockito.verify(service).cancelBatch("b-window", "op1")
+    }
+
+    @Test
+    fun `batch status uses the id cursor and exposes the persistent phase`() {
+        Mockito.`when`(service.batchStatus(anyString(), anyLong(), anyInt()))
+            .thenReturn(batchStatus(DiscoveryReviewBatchPhase.READY))
+
+        mockMvc.perform(
+            get("/api/discovery/review/batches/b-window?afterId=120&limit=50").session(sessionOf("op1"))
+        ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.phase").value("READY"))
+
+        Mockito.verify(service).batchStatus("b-window", 120L, 50)
+    }
+
+    @Test
+    fun `a missing batch status maps to 404 through the global advice`() {
+        Mockito.`when`(service.batchStatus(anyString(), anyLong(), anyInt()))
+            .thenThrow(NoSuchElementException("批次不存在：ghost"))
+
+        mockMvc.perform(get("/api/discovery/review/batches/ghost").session(sessionOf("op1")))
+            .andExpect(status().isNotFound)
     }
 }

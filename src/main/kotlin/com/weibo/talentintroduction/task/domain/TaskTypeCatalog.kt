@@ -87,6 +87,14 @@ object TaskTypeCatalog {
             metricLabel = null, summaryRule = null, hasProgressUi = false, drilldown = null
         ),
         TaskTypeMeta(
+            code = "DISCOVERY_REVIEW_PREPARE", label = "发现审核名单固定", group = "MANUAL",
+            metricLabel = null, summaryRule = null, hasProgressUi = true, drilldown = null
+        ),
+        TaskTypeMeta(
+            code = "DISCOVERY_REVIEW_APPLY", label = "发现审核应用", group = "MANUAL",
+            metricLabel = null, summaryRule = null, hasProgressUi = true, drilldown = null
+        ),
+        TaskTypeMeta(
             code = "EXPERT_CLASSIFICATION_BACKFILL", label = "专家研发类型回填", group = "MANUAL",
             metricLabel = "已处理/失败", summaryRule = null, hasProgressUi = true, drilldown = null
         ),

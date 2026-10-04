@@ -222,4 +222,87 @@ class DiscoveryReviewRepositoryIT {
         assertEquals(DiscoveryReviewRevokeOutcome.NOT_CURRENT, again)
         assertNull(againId)
     }
+
+    // ---- 03：全页批次持久语义（I-1/I-3/I-4） ----
+
+    @Test
+    fun `mark batch ready promotes only the target batch`() {
+        initAdmission("doc1")
+        initAdmission("doc2")
+        initAdmission("doc3")
+        insertStaged("b1", "doc1")
+        insertStaged("b1", "doc2")
+        val other = insertStaged("b2", "doc3")
+
+        assertEquals(2, repository.markBatchReady("b1"))
+        assertEquals(2, repository.batchStateCounts("b1")["READY"])
+        assertEquals("STAGED", repository.findItem(other)!!.state)
+    }
+
+    @Test
+    fun `claim is exclusive to a live execution and retry reopens only failed items`() {
+        initAdmission("doc1")
+        initAdmission("doc2")
+        initAdmission("doc3")
+        val a = insertStaged("b1", "doc1")
+        val b = insertStaged("b1", "doc2")
+        val c = insertStaged("b1", "doc3")
+
+        val first = repository.claimBatchItems("b1", 101L, 2, includeFailed = false)
+        assertEquals(listOf(a, b), first.map { it.id })
+        assertEquals("APPLYING", repository.findItem(a)!!.state)
+
+        // 另一个执行不能抢走已被领取（APPLYING）的项，只能拿剩余项。
+        assertEquals(listOf(c), repository.claimBatchItems("b1", 102L, 10, includeFailed = false).map { it.id })
+
+        // 已应用项绝不进入申请/重试范围。
+        assertEquals(DiscoveryReviewApplyOutcome.APPLIED, repository.applyItem(a, "h1", "MANUAL_APPROVED", "v", now))
+        assertEquals(DiscoveryReviewApplyOutcome.APPLIED, repository.applyItem(b, "h1", "MANUAL_APPROVED", "v", now))
+        repository.markItemFailed(c, "BOOM", now)
+        assertEquals("FAILED", repository.findItem(c)!!.state)
+
+        assertTrue(repository.claimBatchItems("b1", 103L, 10, includeFailed = false).isEmpty())
+        assertEquals(listOf(c), repository.claimBatchItems("b1", 103L, 10, includeFailed = true).map { it.id })
+        assertEquals("APPLIED", repository.findItem(a)!!.state)
+    }
+
+    @Test
+    fun `cancel only touches unapplied items and keeps applied results`() {
+        initAdmission("doc1")
+        initAdmission("doc2")
+        val applied = insertStaged("b1", "doc1")
+        repository.applyItem(applied, "h1", "MANUAL_APPROVED", "v", now)
+        val staged = insertStaged("b1", "doc2")
+
+        assertEquals(1, repository.cancelUnappliedItems("b1"))
+        assertEquals("APPLIED", repository.findItem(applied)!!.state)
+        assertEquals("CANCELLED", repository.findItem(staged)!!.state)
+    }
+
+    @Test
+    fun `id cursor pagination walks the batch without skipping`() {
+        initAdmission("doc1")
+        initAdmission("doc2")
+        initAdmission("doc3")
+        val a = insertStaged("b1", "doc1")
+        val b = insertStaged("b1", "doc2")
+        val c = insertStaged("b1", "doc3")
+
+        val page1 = repository.findItemsByBatchPage("b1", 0L, 2)
+        assertEquals(listOf(a, b), page1.map { it.id })
+        val page2 = repository.findItemsByBatchPage("b1", page1.last().id, 2)
+        assertEquals(listOf(c), page2.map { it.id })
+        assertTrue(repository.findItemsByBatchPage("b1", c, 2).isEmpty())
+    }
+
+    @Test
+    fun `batch created at is the earliest item timestamp for the 24h expiry`() {
+        initAdmission("doc1")
+        initAdmission("doc2")
+        repository.insertItem("b1", "doc1", "RAW", "h1", "s1", 0L, "APPROVE", "STAGED", "{}", null, "op1", null, null, null, now.minusHours(2))
+        repository.insertItem("b1", "doc2", "RAW", "h1", "s2", 0L, "APPROVE", "STAGED", "{}", null, "op1", null, null, null, now)
+
+        assertEquals(now.minusHours(2), repository.findBatchCreatedAt("b1"))
+        assertNull(repository.findBatchCreatedAt("missing-batch"))
+    }
 }

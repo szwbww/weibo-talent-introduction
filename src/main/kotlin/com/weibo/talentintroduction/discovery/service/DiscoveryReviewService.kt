@@ -1,15 +1,12 @@
 package com.weibo.talentintroduction.discovery.service
 
-import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.ElasticsearchProperties
 import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewAction
-import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewBatchDetail
 import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewConfirmItemView
 import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewConfirmResult
 import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewDecision
 import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewExpertPage
-import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewExpertRow
 import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewIdentity
 import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewItemState
 import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewPrepareItemView
@@ -27,17 +24,16 @@ import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.ExpertIndexService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
-import org.springframework.http.HttpEntity
-import org.springframework.http.HttpHeaders
-import org.springframework.http.HttpMethod
-import org.springframework.http.MediaType
+import com.weibo.talentintroduction.task.domain.TaskExecution
+import com.weibo.talentintroduction.task.service.TaskExecutionService
+import com.weibo.talentintroduction.task.service.TaskExecutionSummaryProvider
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
-import org.springframework.web.client.RestTemplate
-import java.nio.charset.StandardCharsets
 import java.time.Clock
 import java.time.LocalDateTime
-import java.util.Base64
 import java.util.UUID
+import java.util.concurrent.Executor
+import java.util.concurrent.RejectedExecutionException
 
 /** 02（I-3）：提交的固定快照已变化 / 撤销对象已不是当前有效决策 —— 映射为 409。 */
 class DiscoveryReviewConflictException(message: String) : IllegalStateException(message)
@@ -46,33 +42,99 @@ class DiscoveryReviewConflictException(message: String) : IllegalStateException(
 class DiscoveryReviewTimeoutException(message: String) : IllegalStateException(message)
 
 /**
- * 02（I-1～I-4）：深度发现审核的查询 / 准备 / 确认 / 撤销。
+ * 03：批次阶段。没有新列，全部由 `task_execution` 行与 `expert_discovery_review_item` 持久状态派生
+ * （计划 §实现方案 2/4；TaskProgressStore 只用于实时进度，不是审核权威）。
+ */
+object DiscoveryReviewBatchPhase {
+    const val PREPARING = "PREPARING"
+    const val READY = "READY"
+    const val PREPARE_FAILED = "PREPARE_FAILED"
+    const val APPLYING = "APPLYING"
+    const val APPLIED = "APPLIED"
+    const val CANCELLED = "CANCELLED"
+}
+
+/**
+ * 03（I-1～I-4）：批次状态快照。`total = applied + stale + failed + cancelled + pending`（恒等式，I-3）。
+ * `expiresAt` 由本批最早一项 `created_at + 24h` 派生（无新列，I-4）。
+ */
+data class DiscoveryReviewBatchStatus(
+    val batchKey: String,
+    val phase: String,
+    val batchHash: String?,
+    val total: Int,
+    val applied: Int,
+    val stale: Int,
+    val failed: Int,
+    val cancelled: Int,
+    val pending: Int,
+    val prepareExecutionId: Long?,
+    val applyExecutionId: Long?,
+    val expiresAt: LocalDateTime?,
+    val items: List<ExpertDiscoveryReviewItem>,
+    val nextCursor: Long?
+)
+
+/** 03（I-1）：名单固定任务的持久终态（写进 `task_execution.result_summary`，读回判 READY/PREPARE_FAILED）。 */
+data class DiscoveryReviewPrepareOutcome(
+    val batchKey: String,
+    val phase: String,
+    val batchHash: String?,
+    val total: Int,
+    override val taskSuccessCount: Int,
+    override val taskFailureCount: Int,
+    override val taskFinalStatus: String?
+) : TaskExecutionSummaryProvider
+
+/** 03（I-3）：应用任务的持久终态（计数来自持久明细，不是 202 受理时的估计）。 */
+data class DiscoveryReviewApplyOutcomeSummary(
+    val batchKey: String,
+    val phase: String,
+    val total: Int,
+    val applied: Int,
+    val stale: Int,
+    val failed: Int,
+    val cancelled: Int,
+    val pending: Int,
+    override val taskSuccessCount: Int,
+    override val taskFailureCount: Int,
+    override val taskFinalStatus: String?
+) : TaskExecutionSummaryProvider
+
+/**
+ * 02 + 03：深度发现审核的查询 / 准备 / 确认 / 撤销；03 追加「审核所有页」的异步名单固定与批量应用。
  *
  * 边界：读取真实 ES source（[ExpertIndexWriterService.readDiscoveryDocument]）用于展示事实与身份
  * 绑定；持久化只写 [DiscoveryReviewRepository] 的两张表；**不做任何 ES 晋升**（04 接投影），
  * **不发送邮件**，actor 只由调用方从登录会话取得。资格判定复用 01 的
  * [DiscoveryAdmissionPolicy]，本片不另写规则。
+ *
+ * 03 的异步工作者（`DISCOVERY_REVIEW_PREPARE` / `DISCOVERY_REVIEW_APPLY`）复用现有
+ * [TaskExecutionService] 与 `enrichmentExecutor` 单任务 token 语义；两个 task type 不在本文件硬写前端字符串，
+ * 中文名/进度白名单只在 [com.weibo.talentintroduction.task.domain.TaskTypeCatalog] 声明。
  */
 @Service
 class DiscoveryReviewService(
     private val repository: DiscoveryReviewRepository,
     private val policy: DiscoveryAdmissionPolicy,
     private val writer: ExpertIndexWriterService,
-    private val restTemplate: RestTemplate,
+    private val restTemplate: org.springframework.web.client.RestTemplate,
     private val properties: ElasticsearchProperties,
     private val expertIndexService: ExpertIndexService,
     private val objectMapper: ObjectMapper,
-    private val clock: Clock = Clock.systemUTC()
+    private val clock: Clock = Clock.systemUTC(),
+    private val taskExecutions: TaskExecutionService? = null,
+    @Qualifier("enrichmentExecutor") private val executor: Executor? = null,
+    private val scanService: DiscoveryReviewScanService = DiscoveryReviewScanService(
+        repository, policy, writer, restTemplate, properties, expertIndexService, objectMapper
+    )
 ) {
 
     // ── 查询（I-2/I-3） ───────────────────────────────────────────────────────
 
     /**
-     * `GET /experts`：服务端过滤，不只过滤当前页。
-     *
-     * 无跨 MySQL 过滤（issue/decision）时直接按 ES 分页 + 精确 total；有跨 MySQL 过滤时按
-     * 500 一批扫描全部基础命中，批量取准入结论后精确过滤/计数，再切页。扫描有超时/取消边界，
-     * 超时抛 [DiscoveryReviewTimeoutException]（明确错误，不给不完整总数）。
+     * `GET /experts`：服务端过滤，不只过滤当前页。读取/筛选与「审核所有页」共用
+     * [DiscoveryReviewScanService] 的同一份条件（计划 §实现方案 1）。
      */
     fun listExperts(
         levelRaw: String?,
@@ -82,53 +144,15 @@ class DiscoveryReviewService(
         q: String?,
         issue: String?,
         decision: String?
-    ): DiscoveryReviewExpertPage {
-        require(from >= 0) { "from 必须 >= 0" }
-        require(size in 1..MAX_PAGE_SIZE) { "size 必须在 1～$MAX_PAGE_SIZE" }
-        val level = parseLevel(levelRaw)
-        val decisionFilter = decision?.takeIf { it.isNotBlank() && it != FILTER_ALL }
-        val issueFilter = issue?.takeIf { it.isNotBlank() && it != FILTER_ALL }
-        if (decisionFilter == null && issueFilter == null) {
-            val page = esSearchPage(level, tag, q, from, size)
-            return DiscoveryReviewExpertPage(page.total, from, size, enrich(page.hits, level))
-        }
-        val deadline = System.nanoTime() + SCAN_TIMEOUT_NANOS
-        val matched = mutableListOf<DiscoveryReviewExpertRow>()
-        var offset = 0
-        while (true) {
-            checkScanBudget(deadline)
-            if (offset >= ES_MAX_WINDOW) {
-                throw DiscoveryReviewTimeoutException("审核范围超过服务端可精确统计窗口，请缩小筛选范围后重试")
-            }
-            val page = esSearchPage(level, tag, q, offset, SCAN_BATCH_SIZE)
-            if (page.hits.isEmpty()) break
-            matched += enrich(page.hits, level).filter {
-                matchesDecision(it, decisionFilter) && matchesIssue(it, issueFilter)
-            }
-            offset += page.hits.size
-            if (offset >= page.total || page.hits.size < SCAN_BATCH_SIZE) break
-        }
-        return DiscoveryReviewExpertPage(
-            total = matched.size.toLong(),
-            from = from,
-            size = size,
-            experts = matched.drop(from).take(size)
-        )
-    }
+    ): DiscoveryReviewExpertPage =
+        scanService.listPage(parseLevel(levelRaw), tag, from, size, q, issue, decision)
 
     fun history(docId: String, limit: Int = HISTORY_LIMIT): List<ExpertDiscoveryReviewItem> {
         require(docId.isNotBlank()) { "docId 必填" }
         return repository.findHistory(docId, limit.coerceIn(1, HISTORY_LIMIT))
     }
 
-    fun batchDetail(batchKey: String): DiscoveryReviewBatchDetail {
-        require(batchKey.isNotBlank()) { "batchKey 必填" }
-        val items = repository.findItemsByBatch(batchKey)
-        require(items.isNotEmpty()) { "批次不存在：$batchKey" }
-        return DiscoveryReviewBatchDetail(batchKey, repository.batchStateCounts(batchKey), items)
-    }
-
-    // ── 准备（I-3/I-4） ──────────────────────────────────────────────────────
+    // ── 准备（IDS，I-3/I-4） ──────────────────────────────────────────────────
 
     fun prepare(request: DiscoveryReviewPrepareRequest, actor: String): DiscoveryReviewPrepareResult {
         require(actor.isNotBlank()) { "缺少操作者身份" }
@@ -140,11 +164,7 @@ class DiscoveryReviewService(
         require(docIds.isNotEmpty()) { "docIds 不能为空" }
         require(docIds.size <= MAX_BATCH_SIZE) { "单批最多 $MAX_BATCH_SIZE 人" }
         require(docIds.distinct().size == docIds.size) { "docIds 不得重复" }
-        val note = request.note?.trim()?.takeIf { it.isNotEmpty() }
-        if (action == DiscoveryReviewAction.REJECT) {
-            require(!note.isNullOrEmpty()) { "拒绝必须填写备注" }
-        }
-        if (note != null) require(note.length <= NOTE_MAX) { "备注最多 $NOTE_MAX 字符" }
+        val note = normalizedNote(request.note, action)
 
         val level = parseLevel(request.level)
         val now = LocalDateTime.now(clock)
@@ -161,25 +181,7 @@ class DiscoveryReviewService(
             val currentRevision = repository.findAdmission(docId)?.revision ?: 0L
             val expectedRevision = request.expectedRevisions[docId] ?: currentRevision
 
-            val snapshotJson = objectMapper.writeValueAsString(
-                DiscoveryReviewSnapshot(
-                    docId = docId,
-                    level = level.name,
-                    orcidId = profile.orcidId,
-                    email = profile.email,
-                    givenNames = profile.givenNames,
-                    familyNames = profile.familyNames,
-                    institution = profile.institution,
-                    country = profile.country,
-                    researchFields = profile.researchFields,
-                    disciplineCategory = profile.disciplineCategory,
-                    institutionEvidence = profile.institutionEvidence,
-                    filterResult = profile.filterResult,
-                    esSeqNo = snapshot.seqNo,
-                    esPrimaryTerm = snapshot.primaryTerm,
-                    preparedAt = now.toString()
-                )
-            )
+            val snapshotJson = snapshotJson(level, docId, profile, snapshot.seqNo, snapshot.primaryTerm, now)
             val reasonJson = objectMapper.writeValueAsString(
                 DiscoveryReviewReasonSnapshot(
                     automaticStatus = automatic.status.name,
@@ -205,14 +207,10 @@ class DiscoveryReviewService(
                 executionId = request.executionId,
                 now = now
             )
-            inserted += ExpertDiscoveryReviewItem(
-                id = itemId, batchKey = batchKey, expertDocId = docId, sourceLevel = level.name,
-                identityHash = identityHash, snapshotHash = DiscoveryIdentity.hash(snapshotJson),
-                expectedRevision = expectedRevision, action = action.name,
-                state = DiscoveryReviewItemState.STAGED.name, snapshotJson = snapshotJson,
-                reasonSnapshotJson = reasonJson, actor = actor, note = note, previousItemId = null,
-                executionId = request.executionId, errorCode = null, createdAt = now,
-                confirmedAt = null, appliedAt = null
+            inserted += stagedItem(
+                itemId, batchKey, docId, level.name, identityHash,
+                DiscoveryIdentity.hash(snapshotJson), expectedRevision, action.name,
+                snapshotJson, reasonJson, actor, note, request.executionId, now
             )
         }
 
@@ -228,15 +226,163 @@ class DiscoveryReviewService(
         )
     }
 
+    // ── 全页：准备（I-1/I-2/I-4） ─────────────────────────────────────────────
+
+    /**
+     * `POST /batches/prepare`（`scope=ALL_MATCHING`）：固定规范筛选 + action + 准备人 + 时间，
+     * 服务端 ES scroll **每批 500 完整扫描**，落地 `review_item`，完成后才 READY。
+     *
+     * - request 只存 `batchKey/action/筛选/actor`（**绝不**存 docId 名单）；
+     * - `requestKey` 相同 + payload 相同幂等返回，payload 不同 409；
+     * - 扫描失败 → PREPARE_FAILED，不可 confirm。
+     */
+    fun prepareAllMatching(
+        request: DiscoveryReviewPrepareRequest,
+        tag: String?,
+        q: String?,
+        issue: String?,
+        requestKey: String?,
+        actor: String
+    ): DiscoveryReviewBatchStatus {
+        require(actor.isNotBlank()) { "缺少操作者身份" }
+        require(request.scope?.trim().equals(SCOPE_ALL_MATCHING, ignoreCase = true)) {
+            "全页准备必须 scope=$SCOPE_ALL_MATCHING"
+        }
+        val action = parseAction(request.action)
+        require(action != DiscoveryReviewAction.REVOKE) { "REVOKE 请使用 /items/{id}/revoke" }
+        val note = normalizedNote(request.note, action)
+
+        val level = parseLevel(request.level)
+        val batchKey = resolveBatchKey(requestKey)
+        // I-2：全页只收 NEEDS_REVIEW，筛选条件由服务端固定，客户端无法扩张到 HOLD/REJECTED/已批准。
+        val filter = DiscoveryReviewScanService.DiscoveryReviewFilter(
+            level = level,
+            tag = tag?.trim()?.takeIf { it.isNotEmpty() },
+            q = q?.trim()?.takeIf { it.isNotEmpty() },
+            issue = issue?.trim()?.takeIf { it.isNotEmpty() },
+            decision = DiscoveryReviewDecision.NEEDS_REVIEW.name
+        )
+        val payload = preparePayload(batchKey, action, filter, actor)
+
+        val existing = findPrepareTask(batchKey)
+        if (existing != null) {
+            if (!samePayload(existing.requestPayload, payload)) {
+                throw DiscoveryReviewConflictException("相同 requestKey 的名单筛选不同，请更换 requestKey")
+            }
+            return batchStatus(batchKey)
+        }
+
+        val tasks = requireTaskExecutions()
+        val worker = requireExecutor()
+        try {
+            worker.execute {
+                try {
+                    var prepareExecutionId: Long? = null
+                    tasks.runAndRecordWithResult(
+                        TASK_PREPARE, "MANUAL", payload,
+                        onStarted = { prepareExecutionId = it }
+                    ) {
+                        runPrepareWorker(batchKey, action, filter, note, actor, prepareExecutionId)
+                    }
+                } catch (_: Exception) {
+                    // 名单固定失败：task_execution 行已置 FAILED（= PREPARE_FAILED），不做任何成功计数。
+                }
+            }
+        } catch (reEx: RejectedExecutionException) {
+            throw DiscoveryReviewConflictException("名单固定任务启动失败，请稍后重试")
+        }
+        return statusAfterSubmit(batchKey)
+    }
+
+    private fun runPrepareWorker(
+        batchKey: String,
+        action: DiscoveryReviewAction,
+        filter: DiscoveryReviewScanService.DiscoveryReviewFilter,
+        note: String?,
+        actor: String,
+        prepareExecutionId: Long?
+    ): DiscoveryReviewPrepareOutcome {
+        val now = LocalDateTime.now(clock)
+        val inserted = mutableListOf<ExpertDiscoveryReviewItem>()
+        val seen = mutableSetOf<String>()
+        scanService.scanAll(filter) { experts ->
+            for (expert in experts) {
+                // I-2 双保险：即使筛选语义变化，也绝不把非 NEEDS_REVIEW 拉进默认全页批准。
+                if (expert.row.decision != DiscoveryReviewDecision.NEEDS_REVIEW.name) continue
+                if (!seen.add(expert.docId)) continue
+                val identityHash = identityHashOf(expert.docId, expert.profile)
+                repository.initializeAdmission(
+                    expert.docId, identityHash, expert.row.automaticStatus,
+                    DiscoveryAdmissionPolicy.POLICY_VERSION, now
+                )
+                // 每批只读一次 admission：expectedRevision 直接取扫描批次里已读到的当前版本。
+                val expectedRevision = expert.row.revision
+                val snapshotJson = snapshotJson(
+                    expert.level, expert.docId, expert.profile, expert.seqNo, expert.primaryTerm, now
+                )
+                val reasonJson = objectMapper.writeValueAsString(
+                    DiscoveryReviewReasonSnapshot(
+                        automaticStatus = expert.row.automaticStatus,
+                        blockingReasons = expert.row.automaticReasons,
+                        hints = expert.row.automaticHints,
+                        policyVersion = DiscoveryAdmissionPolicy.POLICY_VERSION
+                    )
+                )
+                val snapshotHash = DiscoveryIdentity.hash(snapshotJson)
+                val itemId = repository.insertItem(
+                    batchKey = batchKey,
+                    expertDocId = expert.docId,
+                    sourceLevel = expert.level.name,
+                    identityHash = identityHash,
+                    snapshotHash = snapshotHash,
+                    expectedRevision = expectedRevision,
+                    action = action.name,
+                    state = DiscoveryReviewItemState.STAGED.name,
+                    snapshotJson = snapshotJson,
+                    reasonSnapshotJson = reasonJson,
+                    actor = actor,
+                    note = note,
+                    previousItemId = null,
+                    executionId = prepareExecutionId,
+                    now = now
+                )
+                inserted += stagedItem(
+                    itemId, batchKey, expert.docId, expert.level.name, identityHash, snapshotHash,
+                    expectedRevision, action.name, snapshotJson, reasonJson, actor, note, prepareExecutionId, now
+                )
+            }
+            true
+        }
+        // 完整扫描落地后才把整批推进 READY；中途失败则全部保持 STAGED，confirm 拒绝。
+        repository.markBatchReady(batchKey)
+        return DiscoveryReviewPrepareOutcome(
+            batchKey = batchKey,
+            phase = DiscoveryReviewBatchPhase.READY,
+            batchHash = computeBatchHash(inserted),
+            total = inserted.size,
+            taskSuccessCount = inserted.size,
+            taskFailureCount = 0,
+            taskFinalStatus = "SUCCESS"
+        )
+    }
+
     // ── 确认（I-3/I-4） ──────────────────────────────────────────────────────
 
     /**
-     * `POST /batches/{batchKey}/confirm`：只接受固定快照（batchHash 由服务端从已存项重算），
-     * 逐项独立事务应用；版本或身份不符记 `STALE` 且不覆盖当前结论；重复确认幂等。
+     * `POST /batches/{batchKey}/confirm`。
+     *
+     * - IDS 批次（无 PREPARE 任务）：02 语义逐字保留，逐项独立事务应用。
+     * - 全页批次（有 PREPARE 任务）：只消费已存 `batchKey+hash`，24h 过期拒绝，重复确认返回同一结果，
+     *   应用走 `DISCOVERY_REVIEW_APPLY` 任务 + 持久明细 CAS。
      */
     fun confirm(batchKey: String, batchHash: String?, actor: String): DiscoveryReviewConfirmResult {
         require(actor.isNotBlank()) { "缺少操作者身份" }
         require(!batchHash.isNullOrBlank()) { "batchHash 必填" }
+        val prepareTask = findPrepareTask(batchKey) ?: return confirmItems(batchKey, batchHash, actor)
+        return confirmAllMatching(batchKey, batchHash, prepareTask, actor)
+    }
+
+    private fun confirmItems(batchKey: String, batchHash: String, actor: String): DiscoveryReviewConfirmResult {
         val items = repository.findItemsByBatch(batchKey)
         require(items.isNotEmpty()) { "批次不存在：$batchKey" }
         if (computeBatchHash(items) != batchHash) {
@@ -271,14 +417,13 @@ class DiscoveryReviewService(
             val profile = writer.discoveryProfile(item.expertDocId, snapshot.source)
             val currentIdentityHash = identityHashOf(item.expertDocId, profile)
             val decision = DiscoveryReviewDecision.forAction(parseAction(item.action)).name
-            val outcome = repository.applyItem(
+            when (repository.applyItem(
                 itemId = item.id,
                 currentIdentityHash = currentIdentityHash,
                 decision = decision,
                 policyVersion = DiscoveryAdmissionPolicy.POLICY_VERSION,
                 now = LocalDateTime.now(clock)
-            )
-            when (outcome) {
+            )) {
                 DiscoveryReviewApplyOutcome.APPLIED, DiscoveryReviewApplyOutcome.ALREADY_APPLIED -> {
                     applied++
                     views += DiscoveryReviewConfirmItemView(item.id, item.expertDocId, DiscoveryReviewItemState.APPLIED.name)
@@ -308,6 +453,180 @@ class DiscoveryReviewService(
         )
     }
 
+    private fun confirmAllMatching(
+        batchKey: String,
+        batchHash: String,
+        prepareTask: TaskExecution,
+        actor: String
+    ): DiscoveryReviewConfirmResult {
+        if (prepareTask.status in ACTIVE_STATUSES) {
+            throw DiscoveryReviewConflictException("名单仍在固定中，完成前不能确认")
+        }
+        if (prepareTask.status !in SUCCESS_STATUSES) {
+            throw DiscoveryReviewConflictException("名单固定失败（PREPARE_FAILED），不能确认，请重新准备")
+        }
+        val storedHash = prepareResultBatchHash(prepareTask)
+            ?: throw DiscoveryReviewConflictException("名单尚未固定完成，不能确认")
+        val items = repository.findItemsByBatch(batchKey)
+        require(items.isNotEmpty()) { "批次不存在：$batchKey" }
+        if (storedHash != batchHash || computeBatchHash(items) != batchHash) {
+            throw DiscoveryReviewConflictException("批次快照已变化，请重新准备")
+        }
+        // I-4：24h 未确认即过期（快照最早一项 created_at + 24h，无新列）。
+        val createdAt = repository.findBatchCreatedAt(batchKey)
+        if (createdAt != null && createdAt.plusHours(SNAPSHOT_TTL_HOURS).isBefore(LocalDateTime.now(clock))) {
+            throw DiscoveryReviewConflictException("名单快照已超过 $SNAPSHOT_TTL_HOURS 小时，请重新准备")
+        }
+        // I-4：既有确认重复调用返回同一任务/结果，不新建执行。
+        if (findApplyTask(batchKey) != null) {
+            return confirmResultFromCounts(batchKey, items.size)
+        }
+        startApply(batchKey, actor, includeFailed = false)
+        return confirmResultFromCounts(batchKey, items.size)
+    }
+
+    // ── 重试 / 取消（I-3/I-4） ────────────────────────────────────────────────
+
+    /** `POST /batches/{key}/retry`：只在用户明确点击后重领 FAILED/未处理项；STALE 需重新 prepare。 */
+    fun retryBatch(batchKey: String, actor: String): DiscoveryReviewBatchStatus {
+        require(actor.isNotBlank()) { "缺少操作者身份" }
+        val prepareTask = findPrepareTask(batchKey)
+            ?: throw DiscoveryReviewConflictException("该批次不是全页快照，无法重试")
+        if (prepareTask.status !in SUCCESS_STATUSES) {
+            throw DiscoveryReviewConflictException("名单固定未完成，无法重试")
+        }
+        val applied = findApplyTask(batchKey)
+        if (applied != null && applied.status in ACTIVE_STATUSES) {
+            throw DiscoveryReviewConflictException("审核应用仍在执行中，请等待完成")
+        }
+        startApply(batchKey, actor, includeFailed = true)
+        return batchStatus(batchKey)
+    }
+
+    /** `POST /batches/{key}/cancel`：只影响未应用项；已应用结果不倒退（I-4）。 */
+    fun cancelBatch(batchKey: String, actor: String): DiscoveryReviewBatchStatus {
+        require(actor.isNotBlank()) { "缺少操作者身份" }
+        val counts = repository.batchStateCounts(batchKey)
+        if (counts.isEmpty() && findPrepareTask(batchKey) == null && findApplyTask(batchKey) == null) {
+            throw NoSuchElementException("批次不存在：$batchKey")
+        }
+        repository.cancelUnappliedItems(batchKey)
+        return batchStatus(batchKey)
+    }
+
+    /** `GET /batches/{key}`：持久明细驱动的状态 + id 游标分页（绝不反复 offset 跳过）。 */
+    fun batchStatus(batchKey: String, afterId: Long = 0L, limit: Int = STATUS_PAGE_SIZE): DiscoveryReviewBatchStatus {
+        require(batchKey.isNotBlank()) { "batchKey 必填" }
+        require(afterId >= 0) { "afterId 必须 >= 0" }
+        val pageSize = limit.coerceIn(1, MAX_STATUS_PAGE_SIZE)
+        val prepareTask = findPrepareTask(batchKey)
+        val applyTask = findApplyTask(batchKey)
+        val counts = repository.batchStateCounts(batchKey)
+        if (counts.isEmpty() && prepareTask == null && applyTask == null) {
+            throw NoSuchElementException("批次不存在：$batchKey")
+        }
+        val items = repository.findItemsByBatchPage(batchKey, afterId, pageSize)
+        return buildBatchStatus(batchKey, counts, prepareTask, applyTask, items, afterId, pageSize)
+    }
+
+    /** 提交异步任务后立刻读状态：任务行可能尚未落库，此时明确回 `PREPARING`，绝不 404/500。 */
+    private fun statusAfterSubmit(batchKey: String): DiscoveryReviewBatchStatus =
+        try {
+            batchStatus(batchKey)
+        } catch (_: NoSuchElementException) {
+            DiscoveryReviewBatchStatus(
+                batchKey = batchKey,
+                phase = DiscoveryReviewBatchPhase.PREPARING,
+                batchHash = null,
+                total = 0, applied = 0, stale = 0, failed = 0, cancelled = 0, pending = 0,
+                prepareExecutionId = null, applyExecutionId = null, expiresAt = null,
+                items = emptyList(), nextCursor = null
+            )
+        }
+
+    // ── 应用工作者（I-3） ────────────────────────────────────────────────────
+
+    private fun startApply(batchKey: String, actor: String, includeFailed: Boolean) {
+        val tasks = requireTaskExecutions()
+        val worker = requireExecutor()
+        val payload = mapOf(
+            "batchKey" to batchKey,
+            "actor" to actor,
+            "retry" to includeFailed
+        )
+        try {
+            worker.execute {
+                try {
+                    var applyExecutionId: Long? = null
+                    tasks.runAndRecordWithResult(
+                        TASK_APPLY, "MANUAL", payload,
+                        onStarted = { applyExecutionId = it }
+                    ) {
+                        runApplyWorker(batchKey, includeFailed, applyExecutionId)
+                    }
+                } catch (_: Exception) {
+                    // 应用失败：逐项失败原因已按人保存，task_execution 行已置 FAILED，绝不凭受理伪造成功总数。
+                }
+            }
+        } catch (reEx: RejectedExecutionException) {
+            throw DiscoveryReviewConflictException("审核应用任务启动失败，请稍后重试")
+        }
+    }
+
+    private fun runApplyWorker(
+        batchKey: String,
+        includeFailed: Boolean,
+        applyExecutionId: Long?
+    ): DiscoveryReviewApplyOutcomeSummary {
+        val executionId = applyExecutionId ?: return emptyApplyOutcome(batchKey)
+        while (true) {
+            val claimed = repository.claimBatchItems(batchKey, executionId, APPLY_BATCH_SIZE, includeFailed)
+            if (claimed.isEmpty()) break
+            for (item in claimed) {
+                try {
+                    applyItemAndView(item)
+                } catch (ex: Exception) {
+                    // I-3：失败原因逐人保存，剩余项继续；只有明确重试才重新领取该项。
+                    repository.markItemFailed(item.id, "APPLY_ERROR", LocalDateTime.now(clock))
+                }
+            }
+            if (claimed.size < APPLY_BATCH_SIZE) break
+        }
+        return applyOutcomeFromCounts(batchKey)
+    }
+
+    /**
+     * 应用单项：同一份应用逻辑服务 IDS confirm 与全页 worker（绝不另写绕过版本检查的 bulk 批准）。
+     * 返回给 IDS confirm 的回显视图。
+     */
+    private fun applyItemAndView(item: ExpertDiscoveryReviewItem): DiscoveryReviewConfirmItemView {
+        val level = parseLevel(item.sourceLevel)
+        val snapshot = writer.readDiscoveryDocument(level, item.expertDocId)
+        if (snapshot == null) {
+            repository.markItemFailed(item.id, "SOURCE_MISSING", LocalDateTime.now(clock))
+            return DiscoveryReviewConfirmItemView(item.id, item.expertDocId, DiscoveryReviewItemState.FAILED.name, "SOURCE_MISSING")
+        }
+        val profile = writer.discoveryProfile(item.expertDocId, snapshot.source)
+        val currentIdentityHash = identityHashOf(item.expertDocId, profile)
+        val decision = DiscoveryReviewDecision.forAction(parseAction(item.action)).name
+        return when (repository.applyItem(
+            itemId = item.id,
+            currentIdentityHash = currentIdentityHash,
+            decision = decision,
+            policyVersion = DiscoveryAdmissionPolicy.POLICY_VERSION,
+            now = LocalDateTime.now(clock)
+        )) {
+            DiscoveryReviewApplyOutcome.APPLIED, DiscoveryReviewApplyOutcome.ALREADY_APPLIED ->
+                DiscoveryReviewConfirmItemView(item.id, item.expertDocId, DiscoveryReviewItemState.APPLIED.name)
+            DiscoveryReviewApplyOutcome.STALE ->
+                DiscoveryReviewConfirmItemView(item.id, item.expertDocId, DiscoveryReviewItemState.STALE.name, "STALE")
+            DiscoveryReviewApplyOutcome.SKIPPED ->
+                DiscoveryReviewConfirmItemView(item.id, item.expertDocId, item.state)
+            DiscoveryReviewApplyOutcome.NOT_FOUND ->
+                DiscoveryReviewConfirmItemView(item.id, item.expertDocId, DiscoveryReviewItemState.FAILED.name, "NOT_FOUND")
+        }
+    }
+
     // ── 撤销（I-2） ──────────────────────────────────────────────────────────
 
     /**
@@ -330,25 +649,7 @@ class DiscoveryReviewService(
         val automatic = policy.evaluate(profile)
         val identityHash = identityHashOf(item.expertDocId, profile)
         val now = LocalDateTime.now(clock)
-        val snapshotJson = objectMapper.writeValueAsString(
-            DiscoveryReviewSnapshot(
-                docId = item.expertDocId,
-                level = level.name,
-                orcidId = profile.orcidId,
-                email = profile.email,
-                givenNames = profile.givenNames,
-                familyNames = profile.familyNames,
-                institution = profile.institution,
-                country = profile.country,
-                researchFields = profile.researchFields,
-                disciplineCategory = profile.disciplineCategory,
-                institutionEvidence = profile.institutionEvidence,
-                filterResult = profile.filterResult,
-                esSeqNo = snapshot.seqNo,
-                esPrimaryTerm = snapshot.primaryTerm,
-                preparedAt = now.toString()
-            )
-        )
+        val snapshotJson = snapshotJson(level, item.expertDocId, profile, snapshot.seqNo, snapshot.primaryTerm, now)
         val reasonJson = objectMapper.writeValueAsString(
             DiscoveryReviewReasonSnapshot(
                 automaticStatus = automatic.status.name,
@@ -377,111 +678,244 @@ class DiscoveryReviewService(
         return DiscoveryReviewRevokeResult(newItemId, item.expertDocId, automatic.status.name, revision)
     }
 
-    // ── ES 读取 + 准入查询（03 将抽为 ScanService） ───────────────────────────
+    // ── task_execution 读取（只读；phase/hash 无新列，从此派生） ───────────────
 
-    private fun enrich(hits: List<EsHit>, level: ExpertIndexLevel): List<DiscoveryReviewExpertRow> {
-        val admissions = repository.findAdmissions(hits.map { it.docId }).associateBy { it.expertDocId }
-        val reviewedItemIds = admissions.values.mapNotNull { it.decisionItemId }
-        val reviewedItems = repository.findItemsByIds(reviewedItemIds).associateBy { it.id }
-        return hits.map { hit ->
-            val profile = writer.discoveryProfile(hit.docId, hit.source)
-            val automatic = policy.evaluate(profile)
-            val currentIdentity = identityHashOf(hit.docId, profile)
-            val stored = admissions[hit.docId]
-            val identityChanged = stored != null && stored.identityHash != currentIdentity
-            val useStored = stored != null && !identityChanged
-            val decision = if (useStored) stored!!.decision else automatic.status.name
-            val decisionManual = useStored && stored!!.decisionEnum.manual
-            val reviewedItem = if (decisionManual) stored!!.decisionItemId?.let { reviewedItems[it] } else null
-            DiscoveryReviewExpertRow(
-                docId = hit.docId,
-                level = level.name,
-                orcidId = profile.orcidId,
-                email = profile.email,
-                givenNames = profile.givenNames,
-                familyNames = profile.familyNames,
-                institution = profile.institution,
-                country = profile.country,
-                researchFields = profile.researchFields,
-                disciplineCategory = profile.disciplineCategory,
-                institutionEvidence = profile.institutionEvidence,
-                filterResult = profile.filterResult,
-                tags = profile.tags.orEmpty(),
-                automaticStatus = automatic.status.name,
-                automaticReasons = automatic.blockingReasons,
-                automaticHints = automatic.hints,
-                revision = stored?.revision ?: 0L,
-                decision = decision,
-                decisionManual = decisionManual,
-                identityChanged = identityChanged,
-                reviewedActor = reviewedItem?.actor,
-                reviewedAt = reviewedItem?.appliedAt,
-                addressWarning = addressWarning(profile.email)
-            )
+    private fun findPrepareTask(batchKey: String): TaskExecution? =
+        findTask(TASK_PREPARE, batchKey)
+
+    private fun findApplyTask(batchKey: String): TaskExecution? =
+        findTask(TASK_APPLY, batchKey)
+
+    private fun findTask(taskType: String, batchKey: String): TaskExecution? {
+        val tasks = taskExecutions ?: return null
+        return tasks.listRecentByTaskType(taskType, TASK_LOOKUP_LIMIT)
+            .firstOrNull { payloadBatchKey(it.requestPayload) == batchKey }
+    }
+
+    private fun payloadBatchKey(requestPayload: String?): String? {
+        if (requestPayload.isNullOrBlank()) return null
+        return try {
+            objectMapper.readTree(requestPayload).path("batchKey").asText("").takeIf { it.isNotEmpty() }
+        } catch (_: Exception) {
+            null
         }
     }
 
-    private data class EsHit(val docId: String, val source: Map<String, Any?>)
-
-    private data class EsPage(val hits: List<EsHit>, val total: Long)
-
-    private fun esSearchPage(
-        level: ExpertIndexLevel,
-        tag: String?,
-        q: String?,
-        from: Int,
-        size: Int
-    ): EsPage {
-        val filters = mutableListOf<Map<String, Any>>()
-        tag?.trim()?.takeIf { it.isNotEmpty() }?.let { filters += mapOf("term" to mapOf("tags" to it)) }
-        q?.trim()?.takeIf { it.isNotEmpty() }?.let { query ->
-            val escaped = query.replace("\\", "\\\\").replace("*", "\\*").replace("?", "\\?")
-            val wildcard = "*$escaped*"
-            filters += mapOf(
-                "bool" to mapOf(
-                    "should" to listOf("email", "givenNames", "familyNames", "orcidId", "institution")
-                        .map { mapOf("wildcard" to mapOf(it to mapOf("value" to wildcard))) },
-                    "minimum_should_match" to 1
-                )
-            )
+    private fun prepareResultBatchHash(task: TaskExecution): String? {
+        val summary = task.resultSummary ?: return null
+        return try {
+            val node = objectMapper.readTree(summary)
+            if (node.path("phase").asText("") != DiscoveryReviewBatchPhase.READY) return null
+            node.path("batchHash").asText("").takeIf { it.isNotEmpty() }
+        } catch (_: Exception) {
+            null
         }
-        val queryClause = if (filters.isEmpty()) {
-            mapOf("match_all" to emptyMap<String, Any>())
-        } else {
-            mapOf("bool" to mapOf("filter" to filters))
+    }
+
+    private fun applyResultPhase(task: TaskExecution): String? {
+        val summary = task.resultSummary ?: return null
+        return try {
+            objectMapper.readTree(summary).path("phase").asText("").takeIf { it.isNotEmpty() }
+        } catch (_: Exception) {
+            null
         }
-        val requestBody = mapOf(
-            "from" to from,
-            "size" to size,
-            "track_total_hits" to true,
-            "_source" to SOURCE_FIELDS,
-            "query" to queryClause,
-            "sort" to listOf(mapOf("_doc" to mapOf("order" to "asc")))
+    }
+
+    private fun buildBatchStatus(
+        batchKey: String,
+        counts: Map<String, Int>,
+        prepareTask: TaskExecution?,
+        applyTask: TaskExecution?,
+        items: List<ExpertDiscoveryReviewItem>,
+        afterId: Long,
+        pageSize: Int
+    ): DiscoveryReviewBatchStatus {
+        val applied = counts[DiscoveryReviewItemState.APPLIED.name] ?: 0
+        val stale = counts[DiscoveryReviewItemState.STALE.name] ?: 0
+        val failed = counts[DiscoveryReviewItemState.FAILED.name] ?: 0
+        val cancelled = counts[DiscoveryReviewItemState.CANCELLED.name] ?: 0
+        val pending = (counts[DiscoveryReviewItemState.STAGED.name] ?: 0) +
+            (counts[DiscoveryReviewItemState.READY.name] ?: 0) +
+            (counts[DiscoveryReviewItemState.APPLYING.name] ?: 0)
+        val phase = derivePhase(prepareTask, applyTask, cancelled)
+        return DiscoveryReviewBatchStatus(
+            batchKey = batchKey,
+            phase = phase,
+            batchHash = prepareTask?.let { prepareResultBatchHash(it) },
+            total = applied + stale + failed + cancelled + pending,
+            applied = applied,
+            stale = stale,
+            failed = failed,
+            cancelled = cancelled,
+            pending = pending,
+            prepareExecutionId = prepareTask?.id,
+            applyExecutionId = applyTask?.id,
+            expiresAt = repository.findBatchCreatedAt(batchKey)?.plusHours(SNAPSHOT_TTL_HOURS),
+            items = items,
+            nextCursor = if (items.size == pageSize) items.last().id else null
         )
-        val response = restTemplate.exchange(
-            "${properties.baseUrl}/${expertIndexService.indexName(level)}/_search",
-            HttpMethod.POST,
-            HttpEntity(requestBody, headers()),
-            JsonNode::class.java
-        ).body ?: return EsPage(emptyList(), 0L)
-        val hits = response.path("hits").path("hits").map { hit ->
-            @Suppress("UNCHECKED_CAST")
-            EsHit(
-                hit.path("_id").asText(""),
-                objectMapper.convertValue(hit.path("_source"), Map::class.java) as Map<String, Any?>
-            )
-        }
-        return EsPage(hits, response.path("hits").path("total").path("value").asLong(0L))
     }
 
-    private fun headers(): HttpHeaders =
-        HttpHeaders().apply {
-            contentType = MediaType.APPLICATION_JSON
-            val raw = "${properties.username}:${properties.password}"
-            set(HttpHeaders.AUTHORIZATION, "Basic " + Base64.getEncoder().encodeToString(raw.toByteArray(StandardCharsets.UTF_8)))
+    private fun derivePhase(prepareTask: TaskExecution?, applyTask: TaskExecution?, cancelled: Int): String {
+        if (prepareTask == null) {
+            // IDS 快照：准备是同步的，直接可确认。
+            return if (cancelled > 0) DiscoveryReviewBatchPhase.CANCELLED else DiscoveryReviewBatchPhase.READY
         }
+        if (prepareTask.status in ACTIVE_STATUSES) return DiscoveryReviewBatchPhase.PREPARING
+        if (prepareTask.status !in SUCCESS_STATUSES || prepareResultBatchHash(prepareTask) == null) {
+            return DiscoveryReviewBatchPhase.PREPARE_FAILED
+        }
+        if (applyTask != null) {
+            if (applyTask.status in ACTIVE_STATUSES) return DiscoveryReviewBatchPhase.APPLYING
+            return applyResultPhase(applyTask)
+                ?: if (cancelled > 0) DiscoveryReviewBatchPhase.CANCELLED else DiscoveryReviewBatchPhase.APPLIED
+        }
+        return if (cancelled > 0) DiscoveryReviewBatchPhase.CANCELLED else DiscoveryReviewBatchPhase.READY
+    }
+
+    private fun confirmResultFromCounts(batchKey: String, total: Int): DiscoveryReviewConfirmResult {
+        val counts = repository.batchStateCounts(batchKey)
+        val applied = counts[DiscoveryReviewItemState.APPLIED.name] ?: 0
+        val stale = counts[DiscoveryReviewItemState.STALE.name] ?: 0
+        val failed = counts[DiscoveryReviewItemState.FAILED.name] ?: 0
+        val cancelled = counts[DiscoveryReviewItemState.CANCELLED.name] ?: 0
+        val skipped = (counts[DiscoveryReviewItemState.STAGED.name] ?: 0) +
+            (counts[DiscoveryReviewItemState.READY.name] ?: 0) +
+            (counts[DiscoveryReviewItemState.APPLYING.name] ?: 0)
+        return DiscoveryReviewConfirmResult(
+            batchKey = batchKey,
+            total = maxOf(total, applied + stale + failed + cancelled + skipped),
+            applied = applied,
+            stale = stale,
+            failed = failed,
+            skipped = skipped + cancelled,
+            items = emptyList()
+        )
+    }
+
+    private fun emptyApplyOutcome(batchKey: String): DiscoveryReviewApplyOutcomeSummary =
+        DiscoveryReviewApplyOutcomeSummary(batchKey, DiscoveryReviewBatchPhase.APPLIED, 0, 0, 0, 0, 0, 0, 0, 0, "SUCCESS")
+
+    private fun applyOutcomeFromCounts(batchKey: String): DiscoveryReviewApplyOutcomeSummary {
+        val counts = repository.batchStateCounts(batchKey)
+        val applied = counts[DiscoveryReviewItemState.APPLIED.name] ?: 0
+        val stale = counts[DiscoveryReviewItemState.STALE.name] ?: 0
+        val failed = counts[DiscoveryReviewItemState.FAILED.name] ?: 0
+        val cancelled = counts[DiscoveryReviewItemState.CANCELLED.name] ?: 0
+        val pending = (counts[DiscoveryReviewItemState.STAGED.name] ?: 0) +
+            (counts[DiscoveryReviewItemState.READY.name] ?: 0) +
+            (counts[DiscoveryReviewItemState.APPLYING.name] ?: 0)
+        val phase = if (cancelled > 0) DiscoveryReviewBatchPhase.CANCELLED else DiscoveryReviewBatchPhase.APPLIED
+        val status = when {
+            failed > 0 && applied > 0 -> "PARTIAL_SUCCESS"
+            failed > 0 -> "FAILED"
+            else -> "SUCCESS"
+        }
+        return DiscoveryReviewApplyOutcomeSummary(
+            batchKey = batchKey,
+            phase = phase,
+            total = applied + stale + failed + cancelled + pending,
+            applied = applied,
+            stale = stale,
+            failed = failed,
+            cancelled = cancelled,
+            pending = pending,
+            taskSuccessCount = applied,
+            taskFailureCount = failed + stale,
+            taskFinalStatus = status
+        )
+    }
 
     // ── 纯函数辅助 ───────────────────────────────────────────────────────────
+
+    private fun snapshotJson(
+        level: ExpertIndexLevel,
+        docId: String,
+        profile: ExpertProfile,
+        seqNo: Long,
+        primaryTerm: Long,
+        preparedAt: LocalDateTime
+    ): String = objectMapper.writeValueAsString(
+        DiscoveryReviewSnapshot(
+            docId = docId,
+            level = level.name,
+            orcidId = profile.orcidId,
+            email = profile.email,
+            givenNames = profile.givenNames,
+            familyNames = profile.familyNames,
+            institution = profile.institution,
+            country = profile.country,
+            researchFields = profile.researchFields,
+            disciplineCategory = profile.disciplineCategory,
+            institutionEvidence = profile.institutionEvidence,
+            filterResult = profile.filterResult,
+            esSeqNo = seqNo,
+            esPrimaryTerm = primaryTerm,
+            preparedAt = preparedAt.toString()
+        )
+    )
+
+    private fun stagedItem(
+        id: Long, batchKey: String, docId: String, level: String, identityHash: String,
+        snapshotHash: String, expectedRevision: Long, action: String, snapshotJson: String,
+        reasonJson: String?, actor: String, note: String?, executionId: Long?, now: LocalDateTime
+    ): ExpertDiscoveryReviewItem = ExpertDiscoveryReviewItem(
+        id = id, batchKey = batchKey, expertDocId = docId, sourceLevel = level,
+        identityHash = identityHash, snapshotHash = snapshotHash, expectedRevision = expectedRevision,
+        action = action, state = DiscoveryReviewItemState.STAGED.name, snapshotJson = snapshotJson,
+        reasonSnapshotJson = reasonJson, actor = actor, note = note, previousItemId = null,
+        executionId = executionId, errorCode = null, createdAt = now, confirmedAt = null, appliedAt = null
+    )
+
+    private fun normalizedNote(note: String?, action: DiscoveryReviewAction): String? {
+        val trimmed = note?.trim()?.takeIf { it.isNotEmpty() }
+        if (action == DiscoveryReviewAction.REJECT) {
+            require(!trimmed.isNullOrEmpty()) { "拒绝必须填写备注" }
+        }
+        if (trimmed != null) require(trimmed.length <= NOTE_MAX) { "备注最多 $NOTE_MAX 字符" }
+        return trimmed
+    }
+
+    private fun resolveBatchKey(requestKey: String?): String {
+        val trimmed = requestKey?.trim()
+        if (trimmed.isNullOrEmpty()) return UUID.randomUUID().toString().replace("-", "")
+        require(trimmed.length <= BATCH_KEY_MAX) { "requestKey 最长 $BATCH_KEY_MAX 字符" }
+        require(BATCH_KEY_REGEX.matches(trimmed)) { "requestKey 只允许字母、数字、下划线与横线" }
+        return trimmed
+    }
+
+    private fun preparePayload(
+        batchKey: String,
+        action: DiscoveryReviewAction,
+        filter: DiscoveryReviewScanService.DiscoveryReviewFilter,
+        actor: String
+    ): Map<String, Any?> = mapOf(
+        "batchKey" to batchKey,
+        "action" to action.name,
+        "filter" to mapOf(
+            "level" to filter.level.name,
+            "tag" to filter.tag,
+            "q" to filter.q,
+            "issue" to filter.issue,
+            "decision" to filter.decision
+        ),
+        "actor" to actor
+    )
+
+    private fun samePayload(existingJson: String?, payload: Map<String, Any?>): Boolean {
+        if (existingJson.isNullOrBlank()) return false
+        return try {
+            objectMapper.readTree(existingJson) == objectMapper.valueToTree(payload)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun requireTaskExecutions(): TaskExecutionService =
+        taskExecutions ?: error("TaskExecutionService 未装配，无法执行全页审核任务")
+
+    private fun requireExecutor(): Executor =
+        executor ?: error("审核执行线程池未装配，无法执行全页审核任务")
 
     private fun identityHashOf(docId: String, profile: ExpertProfile): String =
         DiscoveryReviewIdentity.hash(docId, profile.email, profile.givenNames, profile.familyNames)
@@ -491,27 +925,6 @@ class DiscoveryReviewService(
             items.sortedBy { it.expertDocId }
                 .joinToString("\n") { "${it.expertDocId}|${it.expectedRevision}|${it.identityHash}|${it.snapshotHash}|${it.action}" }
         )
-
-    private fun matchesDecision(row: DiscoveryReviewExpertRow, filter: String?): Boolean =
-        filter == null || row.decision == filter
-
-    private fun matchesIssue(row: DiscoveryReviewExpertRow, filter: String?): Boolean = when (filter) {
-        null -> true
-        FILTER_ANY -> row.automaticReasons.isNotEmpty()
-        else -> row.automaticReasons.any { it.code == filter }
-    }
-
-    private fun checkScanBudget(deadline: Long) {
-        if (System.nanoTime() > deadline || Thread.currentThread().isInterrupted) {
-            throw DiscoveryReviewTimeoutException("审核查询超出服务端时间预算，请缩小范围后重试")
-        }
-    }
-
-    private fun addressWarning(email: String?): String? = when {
-        email.isNullOrBlank() -> "无可投递地址"
-        !EMAIL_REGEX.matches(email.trim()) -> "邮箱格式非法"
-        else -> null
-    }
 
     private fun parseLevel(raw: String?): ExpertIndexLevel {
         val value = raw?.trim()?.uppercase().orEmpty().ifEmpty { ExpertIndexLevel.RAW.name }
@@ -533,21 +946,20 @@ class DiscoveryReviewService(
 
     companion object {
         const val MAX_BATCH_SIZE = 1000
-        const val MAX_PAGE_SIZE = 100
         const val NOTE_MAX = 1000
         const val HISTORY_LIMIT = 200
-        const val FILTER_ALL = "ALL"
-        const val FILTER_ANY = "ANY"
         const val SCOPE_IDS = "IDS"
-        private const val SCAN_BATCH_SIZE = 500
-        private const val ES_MAX_WINDOW = 10_000
-        private const val SCAN_TIMEOUT_NANOS = 20_000_000_000L
-        private val EMAIL_REGEX = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
-        private val SOURCE_FIELDS = listOf(
-            "orcidId", "email", "givenNames", "familyNames", "country", "age", "degree", "nationality",
-            "hIndex", "citationCount", "lastPublicationYear", "researchFields", "researchFieldIds",
-            "disciplineCategory", "institution", "institutionType", "emailSource", "externalIds",
-            "identityVerification", "institutionEvidence", "filterResult", "tags", "expertClassification"
-        )
+        const val SCOPE_ALL_MATCHING = "ALL_MATCHING"
+        const val TASK_PREPARE = "DISCOVERY_REVIEW_PREPARE"
+        const val TASK_APPLY = "DISCOVERY_REVIEW_APPLY"
+        const val SNAPSHOT_TTL_HOURS = 24L
+        const val STATUS_PAGE_SIZE = 200
+        const val MAX_STATUS_PAGE_SIZE = 500
+        const val APPLY_BATCH_SIZE = 500
+        private const val BATCH_KEY_MAX = 64
+        private const val TASK_LOOKUP_LIMIT = 200
+        private val ACTIVE_STATUSES = setOf("RUNNING", "CANCELLING")
+        private val SUCCESS_STATUSES = setOf("SUCCESS", "PARTIAL_SUCCESS")
+        private val BATCH_KEY_REGEX = Regex("^[A-Za-z0-9_-]+$")
     }
 }

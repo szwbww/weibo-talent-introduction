@@ -159,6 +159,75 @@ class DiscoveryReviewRepository(private val jdbcTemplate: JdbcTemplate) {
             { rs, _ -> rs.getString("state") to rs.getInt("c") }, batchKey
         ).toMap()
 
+    /** 03（I-1）：完整扫描落地后，一次性把本批全部 `STAGED` 名单推进到 `READY`（名单阶段完成）。 */
+    fun markBatchReady(batchKey: String): Int =
+        jdbcTemplate.update(
+            "UPDATE expert_discovery_review_item SET state = ? WHERE batch_key = ? AND state = ?",
+            STATE_READY, batchKey, STATE_STAGED
+        )
+
+    /**
+     * 03（I-1/I-4）：本批最早一项的创建时间（24h 过期判据，无新列）。
+     * 空批返回 `null`。
+     */
+    fun findBatchCreatedAt(batchKey: String): LocalDateTime? =
+        jdbcTemplate.query(
+            "SELECT MIN(created_at) AS created FROM expert_discovery_review_item WHERE batch_key = ?",
+            { rs, _ -> rs.getTimestamp("created")?.toLocalDateTime() }, batchKey
+        ).firstOrNull()
+
+    /** 03（I-3/§5）：后台列表分页用持久 `id` 游标，绝不反复 offset 跳过。 */
+    fun findItemsByBatchPage(batchKey: String, afterId: Long, limit: Int): List<ExpertDiscoveryReviewItem> =
+        jdbcTemplate.query(
+            "SELECT * FROM expert_discovery_review_item WHERE batch_key = ? AND id > ? ORDER BY id ASC LIMIT ?",
+            ITEM_MAPPER, batchKey, afterId, limit
+        )
+
+    /**
+     * 03（I-3）：原子领取一批待应用项。
+     *
+     * 单条 `UPDATE ... ORDER BY id LIMIT` 把 `STAGED/READY`（重试时含 `FAILED/APPLYING`）置为
+     * `APPLYING` 并写入本次执行的 `execution_id`；InnoDB 行锁保证并发领取互斥，
+     * 同批并发 confirm 不会重复应用同一个人。随后按 `execution_id + APPLYING` 读回本执行领取到的项。
+     */
+    fun claimBatchItems(
+        batchKey: String,
+        executionId: Long,
+        limit: Int,
+        includeFailed: Boolean
+    ): List<ExpertDiscoveryReviewItem> {
+        val states = if (includeFailed) {
+            "('$STATE_STAGED','$STATE_READY','$STATE_APPLYING','$STATE_FAILED')"
+        } else {
+            "('$STATE_STAGED','$STATE_READY')"
+        }
+        jdbcTemplate.update(
+            """
+            UPDATE expert_discovery_review_item
+            SET state = ?, execution_id = ?
+            WHERE batch_key = ? AND state IN $states
+            ORDER BY id ASC
+            LIMIT ?
+            """.trimIndent(),
+            STATE_APPLYING, executionId, batchKey, limit
+        )
+        return jdbcTemplate.query(
+            """
+            SELECT * FROM expert_discovery_review_item
+            WHERE batch_key = ? AND execution_id = ? AND state = ?
+            ORDER BY id ASC LIMIT ?
+            """.trimIndent(),
+            ITEM_MAPPER, batchKey, executionId, STATE_APPLYING, limit
+        )
+    }
+
+    /** 03（I-4）：取消只影响未应用项；已 `APPLIED`/`STALE`/`FAILED` 的既有结果不倒退。 */
+    fun cancelUnappliedItems(batchKey: String): Int =
+        jdbcTemplate.update(
+            "UPDATE expert_discovery_review_item SET state = ? WHERE batch_key = ? AND state IN (?, ?, ?)",
+            STATE_CANCELLED, batchKey, STATE_STAGED, STATE_READY, STATE_APPLYING
+        )
+
     // ── 应用（单事务 + 行锁 + CAS） ───────────────────────────────────────────
 
     /**
@@ -176,7 +245,9 @@ class DiscoveryReviewRepository(private val jdbcTemplate: JdbcTemplate) {
     ): DiscoveryReviewApplyOutcome {
         val item = lockItem(itemId) ?: return DiscoveryReviewApplyOutcome.NOT_FOUND
         if (item.state == STATE_APPLIED) return DiscoveryReviewApplyOutcome.ALREADY_APPLIED
-        if (item.state != STATE_STAGED && item.state != STATE_READY) return DiscoveryReviewApplyOutcome.SKIPPED
+        if (item.state != STATE_STAGED && item.state != STATE_READY && item.state != STATE_APPLYING) {
+            return DiscoveryReviewApplyOutcome.SKIPPED
+        }
         updateItemState(itemId, STATE_READY)
         val admission = lockAdmission(item.expertDocId)
         if (admission == null) {
@@ -267,8 +338,20 @@ class DiscoveryReviewRepository(private val jdbcTemplate: JdbcTemplate) {
         return DiscoveryReviewRevokeOutcome.APPLIED to newItemId
     }
 
-    fun markItemFailed(itemId: Long, errorCode: String, now: LocalDateTime): Unit =
-        markStale(itemId, errorCode, now)
+    /**
+     * 03（I-3）：逐项失败原因保存，并置真实 `FAILED`（与需重新 prepare 的 `STALE` 区分）。
+     * `FAILED` 只有在用户明确 retry 时才被重新领取。
+     */
+    fun markItemFailed(itemId: Long, errorCode: String, now: LocalDateTime) {
+        jdbcTemplate.update(
+            """
+            UPDATE expert_discovery_review_item
+            SET state = ?, error_code = ?, confirmed_at = ?
+            WHERE id = ?
+            """.trimIndent(),
+            STATE_FAILED, errorCode, Timestamp.valueOf(now), itemId
+        )
+    }
 
     // ── 内部 ─────────────────────────────────────────────────────────────────
 
