@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-04/discovery-review-master.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-10-04/discovery-review-master.md (commit cf107940fb4414c4919a0d0ac6f605c6ad1ed0cb)
 - Amendments: A1, A2, A3, A4
 - Master base: e28e53fd898edd62905a0d45a6bf90396b18b1bf
@@ -10,11 +10,11 @@
 - Finalization repair parent: N/A
 - Started: 2026-10-04T20:05:00+0800
 - Current child: 05
-- Waiting role: IMPLEMENTER
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: N/A
+- Pause reason: TWO_CHILD_CAUSED_SUITE_BREAKS + SIBLING_REGRESSION: ① MailOpenTrackingPersistenceTest 2E（compose 新增第 4 默认参数→Mockito 3/4 matcher；未授权文件）② LegacyDiscoveryApprovalTest 4F（计划 5.3 移除 matchesDiscoveryOutreach 后 4 条旧契约断言过时；未授权文件）③ child 04 回归：DiscoveryReviewAllPagesTest 5F 自 08f5bd5 起红（因果在 04 的 DiscoveryReviewService.kt）④ ExpertContactLocationServiceTest 19E 为 master base 既有（祖先 ab8e4cb，本 run 未触碰）。待人工批准 A5 扩权（05 修复两个测试文件）与 04 回归修复归属。
+- Resume from: f34d59ade2ae823f3cea3e3d7853680761bc4a1d
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
@@ -22,8 +22,8 @@
 | 01 | docs/plans/2026-10-04/discovery-review-01-admission.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | none | 1 | LIGHT_PASS_WITH_NOTES | 07beaafc111a1b14ed3c48d514db527c8a13fc31 | 209315103a89c5ea7807e4707bb87967d8579525 | 0 | — | 209315103a89c5ea7807e4707bb87967d8579525 | 91909432fb03a787a53b5fb0be7d7afbf2690a5f | 5 授权文件；写者 ImplDiscoveryReview01；核实者 VerifyDiscoveryReview01 LIGHT_PASS_WITH_NOTES（O-1 RECORD_ONLY） |
 | 02 | docs/plans/2026-10-04/discovery-review-02-review.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | 01 | 1 | LIGHT_PASS_WITH_NOTES | 209315103a89c5ea7807e4707bb87967d8579525 | df9cad44ea77f37ebdb0e4af1b2d555573b6ffe5 | 0 | — | df9cad44ea77f37ebdb0e4af1b2d555573b6ffe5 | 721c3804b7409c875daaec2560c6efb0e952a7ef | 9 授权文件（含 V148）；写者 ImplDiscoveryReview02；核实者 VerifyDiscoveryReview02 LIGHT_PASS_WITH_NOTES（O-1 RECORD_ONLY：FlywayMigrationIT latest-target 147 过期） |
 | 03 | docs/plans/2026-10-04/discovery-review-03-all-pages.md | commit:8853573efcfc82a84d75264a53923709e94b4702 | 02 | 2 | LIGHT_PASS_WITH_NOTES | df9cad44ea77f37ebdb0e4af1b2d555573b6ffe5 | 6043a678fe7736d133c9b2f25c1e139ad1130985 | 0 | — | 6043a678fe7736d133c9b2f25c1e139ad1130985 | 71572fee009b621203645cd75dbd970aa69d8e48 | 9 授权文件（A1/A2 人工修正）；写者 ImplDiscoveryReview03E2；核实者 VerifyDiscoveryReview03 LIGHT_PASS_WITH_NOTES（O-1 共享库漂移 RECORD_ONLY；O-2 derivePhase 无 INTERRUPTED 信息项）；epoch 1 PLAN_CONFLICT 见 children/03/pause.md |
-| 04 | docs/plans/2026-10-04/discovery-review-04-admission-writes.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | 01,02,03 | 1 | LIGHT_PASS_WITH_NOTES | 6043a678fe7736d133c9b2f25c1e139ad1130985 | 08f5bd5421333447f9173d34fad1c55ac43c3ba5 | 0 | — | 08f5bd5421333447f9173d34fad1c55ac43c3ba5 | 682346e2cd8e0a23425e522c6a5b3b202a903188 | 10 授权文件；写者首轮 BLOCKED 未提交→二轮 ImplDiscoveryReview04R 完成；核实者 VerifyDiscoveryReview04 LIGHT_PASS_WITH_NOTES（O-1 信息项：人工分支投影无 allowedMap 守卫，计划 5.4 明许） |
-| 05 | docs/plans/2026-10-04/discovery-review-05-explicit-send.md | commit:cf107940fb4414c4919a0d0ac6f605c6ad1ed0cb | 01,02,03,04 | 2 | IMPLEMENTING | 08f5bd5421333447f9173d34fad1c55ac43c3ba5 | — | 0 | — | — | — | A3/A4 人工修正（扩权 BatchSendControlService.kt、MailComposeTemplateService.kt 并补预览 DTO，10→12）；epoch 1 已提交 10 文件后核实者 PAUSE（缺权，见 children/05/verify-log.md），epoch 2 实现 step 5 + 预览 DTO |
+| 04 | docs/plans/2026-10-04/discovery-review-04-admission-writes.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | 01,02,03 | 1 | LIGHT_PASS_WITH_NOTES | 6043a678fe7736d133c9b2f25c1e139ad1130985 | 08f5bd5421333447f9173d34fad1c55ac43c3ba5 | 0 | — | 08f5bd5421333447f9173d34fad1c55ac43c3ba5 | 682346e2cd8e0a23425e522c6a5b3b202a903188 | 10 授权文件；写者首轮 BLOCKED 未提交→二轮 ImplDiscoveryReview04R 完成；核实者 VerifyDiscoveryReview04 LIGHT_PASS_WITH_NOTES（O-1 信息项）；05 epoch2 复验发现该 child 引入回归：03 的 DiscoveryReviewAllPagesTest 5F 自 08f5bd5 起红（因果在 DiscoveryReviewService.kt），待人工决定修复归属 |
+| 05 | docs/plans/2026-10-04/discovery-review-05-explicit-send.md | commit:cf107940fb4414c4919a0d0ac6f605c6ad1ed0cb | 01,02,03,04 | 2 | PAUSED_FOR_HUMAN | 08f5bd5421333447f9173d34fad1c55ac43c3ba5 | f34d59ade2ae823f3cea3e3d7853680761bc4a1d | 0 | — | f34d59ade2ae823f3cea3e3d7853680761bc4a1d | — | A3/A4 修正后 epoch 2 实现 step 5 + 预览 DTO（必跑命令 209 tests 全绿）；核实者 VerifyDiscoveryReview05E2 PAUSE：全量 mvn test 4653/9F/21E，其中本 child 引入 ①MailOpenTrackingPersistenceTest 2E ②LegacyDiscoveryApprovalTest 4F（均需未授权文件最小修复）；O-4=04 回归（AllPages 5F）、O-5=baseline 既有 19E |
 | 06 | docs/plans/2026-10-04/discovery-review-06-ui.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | 01,02,03,04,05 | 1 | PENDING | — | — | 0 | — | — | — | 依赖 01,02,03,04,05 |
 
 ## Amendments
