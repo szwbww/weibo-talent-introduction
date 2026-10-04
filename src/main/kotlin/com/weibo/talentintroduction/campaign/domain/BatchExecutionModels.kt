@@ -255,16 +255,18 @@ data class RecipientScope(
          * 必须同时成立：身份凭证经 [DiscoveryIdentity.allowed]、`institution` 非空、
          * `country` 能由 [CountryContinentMapping] 映射（空/未映射值不等于 Other）、
          * `institutionEvidence` 经 02 的唯一验签函数重算通过（含来源 ID 一致性）、
-         * `filterResult == PASSED`。缺字段绝不等于通过；非新发现档案一律放行。
+         * `filterResult == PASSED`。显式历史人工认可可替代身份及机构来源凭证，
+         * 但不替代机构、国家、PASSED 条件。未获认可的缺字段不通过；非新发现档案一律放行。
          */
         fun matchesDiscoveryOutreach(profile: ExpertProfile): Boolean {
             if (!isDiscoveryOutreach(profile)) return true
-            if (!DiscoveryIdentity.allowed(profile)) return false
+            val legacyApproved = DiscoveryIdentity.legacyOutreachApproved(profile)
+            if (!legacyApproved && !DiscoveryIdentity.allowed(profile)) return false
             if (profile.institution.isNullOrBlank()) return false
             if (profile.country.isNullOrBlank()) return false
             if (CountryContinentMapping.toRegion(profile.country) == CountryContinentMapping.REGION_OTHER) return false
             if (profile.filterResult != FILTER_RESULT_PASSED) return false
-            return DiscoveryIdentity.validInstitutionEvidence(profile)
+            return legacyApproved || DiscoveryIdentity.validInstitutionEvidence(profile)
         }
 
         fun fromSnapshot(snapshot: BatchExecutionSnapshot): RecipientScope {

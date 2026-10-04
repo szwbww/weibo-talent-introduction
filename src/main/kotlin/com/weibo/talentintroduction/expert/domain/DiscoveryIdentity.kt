@@ -43,7 +43,7 @@ object DiscoveryIdentity {
             source.path("emailSource").asText(null) in sources ||
             source.path("tags").takeIf { it.isArray }?.any { it.asText() == "discovered" } == true
 
-    /** Bound academic identity only; admission, outreach and promotion do not require this proof. */
+    /** Source-verified identity; a legacy outreach approval cannot authorize academic author binding. */
     fun allowed(profile: ExpertProfile): Boolean {
         if (!isDiscovery(profile)) return true
         val proof = profile.identityVerification ?: return false
@@ -68,6 +68,23 @@ object DiscoveryIdentity {
         identityVerification = read(source.path("identityVerification"))
     ))
     fun allowedMap(source: Map<String, Any?>): Boolean = allowedSource(mapper.valueToTree(source))
+
+    /** Explicit, finite historical approval. Automatic discovery never issues this receipt. */
+    const val LEGACY_APPROVAL_SOURCE = "LEGACY_USER_APPROVED_20261002"
+
+    fun legacyApprovalDigest(profile: ExpertProfile): String = hash(mapper.writeValueAsString(listOf(
+        LEGACY_APPROVAL_SOURCE, profile.orcidId, normalizedEmail(profile.email),
+        profile.givenNames, profile.familyNames, profile.institution, profile.country, profile.institutionType
+    )))
+
+    fun legacyOutreachApproved(profile: ExpertProfile): Boolean {
+        val proof = profile.identityVerification ?: return false
+        return proof.status == "LEGACY_APPROVED" && proof.version == VERSION &&
+            proof.source == LEGACY_APPROVAL_SOURCE && normalizedEmail(profile.email).isNotEmpty() &&
+            proof.email == normalizedEmail(profile.email) &&
+            proof.givenNames == profile.givenNames && proof.familyNames == profile.familyNames &&
+            proof.evidenceHash == legacyApprovalDigest(profile)
+    }
 
     // ── 02（I-1/I-2）：机构来源证据 token ──────────────────────────────────────
     // 一个字段把「已存身份 + 来源种类 + 显示机构」绑成可重算的校验值：签发与验签共用下面
