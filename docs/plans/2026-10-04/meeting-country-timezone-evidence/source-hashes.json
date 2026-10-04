@@ -1,0 +1,19 @@
+{
+  "src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt": "cf37f144f8fe8e9042065d52adbded29809a41732dc970359770d67afb9404bc",
+  "src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationModels.kt": "ebab420bd577e3770125e42739a31882cb2669507613fb04320ae04f0c8d1a2c",
+  "src/main/kotlin/com/weibo/talentintroduction/mail/controller/MeetingConfirmationController.kt": "5adaa665d8f0e73893fe2c884c2d21dc6b0434309a4a72ba88b0af19f7b4cbed",
+  "src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationCatalog.kt": "e95126f1ab075ca278f1278315b05f5fbb46643fd8126a44cbbcf2f3337108bf",
+  "src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt": "1735fdbf9c300156fa9c510fce9bf8c94012331dc58d09a98fae30bdc5a86462",
+  "src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt": "918be1d99e16e04b497ee498f174dab1c886c6d4f9a4fa6c1eef627bf8624269",
+  "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt": "d9073e9ecf8cd00629fca20c9a081f445ba7a9ac742b414d1facb6086d5388f0",
+  "src/main/kotlin/com/weibo/talentintroduction/mail/controller/CalendarAttachmentController.kt": "e9199f0b73f1916649e538bd90e2729a700428ea4482a622eb18d37a53f008c6",
+  "src/main/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryService.kt": "1427a72bdc57d857a83686e6525dfbe33d0b8ff9b2882ab433790d2b549c45e4",
+  "src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarService.kt": "cc90a11a22334ea3d5996899beb13d4f7e0c66f7ab6656698d62be2844248270",
+  "src/main/resources/static/meeting-confirmation.js": "dcc72772e6a2b9205b7253296c47d0b689f477699d66513be0c9838ce963433b",
+  "src/main/resources/static/mailbox-chat.js": "8f917d83493213b7165b901c49806769029816bf5454fc7e5a05644c49e4f26a",
+  "src/main/resources/static/meeting-confirmation.css": "171149a1a002f041fdf844dbb2363138296a2a85bb83dbb305b6ed7c52eb2299",
+  "src/main/resources/static/world-clock.js": "ceb6ccd4b796953b4344ca35d4f9ad5acc8c2d0f0828000ece4388ae053721c7",
+  "scripts/generate_meeting_timezone_catalog.py": "07e58e9bf1c6f9655e910b0432094a405f9029758ca80f934c9a45f00d2bd501",
+  "src/main/resources/db/migration/V123__add_mail_record_calendar_attachment.sql": "bee6d7dfb1ae216de9cbdf9b7d54d6e3bcca5a1f1299a3559eb492d5c2734ecf",
+  "src/main/resources/db/migration/V125__create_meeting_calendar_event.sql": "28e4afa466f26cb1867e28883fe14e7a25a02e0b1ca5d6f5c04d62321e6da820"
+}

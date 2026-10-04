@@ -1,0 +1,3151 @@
+{
+  "country_count": 247,
+  "country_zone_count": 418,
+  "catalog_count": 532,
+  "mapped_including_UTC": 519,
+  "unmapped": [
+    "SystemV/AST4",
+    "SystemV/AST4ADT",
+    "SystemV/CST6",
+    "SystemV/CST6CDT",
+    "SystemV/EST5",
+    "SystemV/EST5EDT",
+    "SystemV/HST10",
+    "SystemV/MST7",
+    "SystemV/MST7MDT",
+    "SystemV/PST8",
+    "SystemV/PST8PDT",
+    "SystemV/YST9",
+    "SystemV/YST9YDT"
+  ],
+  "mapped_country_count_excluding_UTC": 247,
+  "mapping": {
+    "Africa/Abidjan": {
+      "countryCode": "CI",
+      "countryLabelZh": "科特迪瓦",
+      "countryLabelEn": "Côte d’Ivoire",
+      "canonicalZoneId": "Africa/Abidjan"
+    },
+    "Africa/Accra": {
+      "countryCode": "GH",
+      "countryLabelZh": "加纳",
+      "countryLabelEn": "Ghana",
+      "canonicalZoneId": "Africa/Accra"
+    },
+    "Africa/Addis_Ababa": {
+      "countryCode": "ET",
+      "countryLabelZh": "埃塞俄比亚",
+      "countryLabelEn": "Ethiopia",
+      "canonicalZoneId": "Africa/Addis_Ababa"
+    },
+    "Africa/Algiers": {
+      "countryCode": "DZ",
+      "countryLabelZh": "阿尔及利亚",
+      "countryLabelEn": "Algeria",
+      "canonicalZoneId": "Africa/Algiers"
+    },
+    "Africa/Asmara": {
+      "countryCode": "ER",
+      "countryLabelZh": "厄立特里亚",
+      "countryLabelEn": "Eritrea",
+      "canonicalZoneId": "Africa/Asmara"
+    },
+    "Africa/Asmera": {
+      "countryCode": "ER",
+      "countryLabelZh": "厄立特里亚",
+      "countryLabelEn": "Eritrea",
+      "canonicalZoneId": "Africa/Asmara"
+    },
+    "Africa/Bamako": {
+      "countryCode": "ML",
+      "countryLabelZh": "马里",
+      "countryLabelEn": "Mali",
+      "canonicalZoneId": "Africa/Bamako"
+    },
+    "Africa/Bangui": {
+      "countryCode": "CF",
+      "countryLabelZh": "中非共和国",
+      "countryLabelEn": "Central African Rep.",
+      "canonicalZoneId": "Africa/Bangui"
+    },
+    "Africa/Banjul": {
+      "countryCode": "GM",
+      "countryLabelZh": "冈比亚",
+      "countryLabelEn": "Gambia",
+      "canonicalZoneId": "Africa/Banjul"
+    },
+    "Africa/Bissau": {
+      "countryCode": "GW",
+      "countryLabelZh": "几内亚比绍",
+      "countryLabelEn": "Guinea-Bissau",
+      "canonicalZoneId": "Africa/Bissau"
+    },
+    "Africa/Blantyre": {
+      "countryCode": "MW",
+      "countryLabelZh": "马拉维",
+      "countryLabelEn": "Malawi",
+      "canonicalZoneId": "Africa/Blantyre"
+    },
+    "Africa/Brazzaville": {
+      "countryCode": "CG",
+      "countryLabelZh": "刚果（布）",
+      "countryLabelEn": "Congo (Rep.)",
+      "canonicalZoneId": "Africa/Brazzaville"
+    },
+    "Africa/Bujumbura": {
+      "countryCode": "BI",
+      "countryLabelZh": "布隆迪",
+      "countryLabelEn": "Burundi",
+      "canonicalZoneId": "Africa/Bujumbura"
+    },
+    "Africa/Cairo": {
+      "countryCode": "EG",
+      "countryLabelZh": "埃及",
+      "countryLabelEn": "Egypt",
+      "canonicalZoneId": "Africa/Cairo"
+    },
+    "Africa/Casablanca": {
+      "countryCode": "MA",
+      "countryLabelZh": "摩洛哥",
+      "countryLabelEn": "Morocco",
+      "canonicalZoneId": "Africa/Casablanca"
+    },
+    "Africa/Ceuta": {
+      "countryCode": "ES",
+      "countryLabelZh": "西班牙",
+      "countryLabelEn": "Spain",
+      "canonicalZoneId": "Africa/Ceuta"
+    },
+    "Africa/Conakry": {
+      "countryCode": "GN",
+      "countryLabelZh": "几内亚",
+      "countryLabelEn": "Guinea",
+      "canonicalZoneId": "Africa/Conakry"
+    },
+    "Africa/Dakar": {
+      "countryCode": "SN",
+      "countryLabelZh": "塞内加尔",
+      "countryLabelEn": "Senegal",
+      "canonicalZoneId": "Africa/Dakar"
+    },
+    "Africa/Dar_es_Salaam": {
+      "countryCode": "TZ",
+      "countryLabelZh": "坦桑尼亚",
+      "countryLabelEn": "Tanzania",
+      "canonicalZoneId": "Africa/Dar_es_Salaam"
+    },
+    "Africa/Djibouti": {
+      "countryCode": "DJ",
+      "countryLabelZh": "吉布提",
+      "countryLabelEn": "Djibouti",
+      "canonicalZoneId": "Africa/Djibouti"
+    },
+    "Africa/Douala": {
+      "countryCode": "CM",
+      "countryLabelZh": "喀麦隆",
+      "countryLabelEn": "Cameroon",
+      "canonicalZoneId": "Africa/Douala"
+    },
+    "Africa/El_Aaiun": {
+      "countryCode": "EH",
+      "countryLabelZh": "西撒哈拉",
+      "countryLabelEn": "Western Sahara",
+      "canonicalZoneId": "Africa/El_Aaiun"
+    },
+    "Africa/Freetown": {
+      "countryCode": "SL",
+      "countryLabelZh": "塞拉利昂",
+      "countryLabelEn": "Sierra Leone",
+      "canonicalZoneId": "Africa/Freetown"
+    },
+    "Africa/Gaborone": {
+      "countryCode": "BW",
+      "countryLabelZh": "博茨瓦纳",
+      "countryLabelEn": "Botswana",
+      "canonicalZoneId": "Africa/Gaborone"
+    },
+    "Africa/Harare": {
+      "countryCode": "ZW",
+      "countryLabelZh": "津巴布韦",
+      "countryLabelEn": "Zimbabwe",
+      "canonicalZoneId": "Africa/Harare"
+    },
+    "Africa/Johannesburg": {
+      "countryCode": "ZA",
+      "countryLabelZh": "南非",
+      "countryLabelEn": "South Africa",
+      "canonicalZoneId": "Africa/Johannesburg"
+    },
+    "Africa/Juba": {
+      "countryCode": "SS",
+      "countryLabelZh": "南苏丹",
+      "countryLabelEn": "South Sudan",
+      "canonicalZoneId": "Africa/Juba"
+    },
+    "Africa/Kampala": {
+      "countryCode": "UG",
+      "countryLabelZh": "乌干达",
+      "countryLabelEn": "Uganda",
+      "canonicalZoneId": "Africa/Kampala"
+    },
+    "Africa/Khartoum": {
+      "countryCode": "SD",
+      "countryLabelZh": "苏丹",
+      "countryLabelEn": "Sudan",
+      "canonicalZoneId": "Africa/Khartoum"
+    },
+    "Africa/Kigali": {
+      "countryCode": "RW",
+      "countryLabelZh": "卢旺达",
+      "countryLabelEn": "Rwanda",
+      "canonicalZoneId": "Africa/Kigali"
+    },
+    "Africa/Kinshasa": {
+      "countryCode": "CD",
+      "countryLabelZh": "刚果（金）",
+      "countryLabelEn": "Congo (Dem. Rep.)",
+      "canonicalZoneId": "Africa/Kinshasa"
+    },
+    "Africa/Lagos": {
+      "countryCode": "NG",
+      "countryLabelZh": "尼日利亚",
+      "countryLabelEn": "Nigeria",
+      "canonicalZoneId": "Africa/Lagos"
+    },
+    "Africa/Libreville": {
+      "countryCode": "GA",
+      "countryLabelZh": "加蓬",
+      "countryLabelEn": "Gabon",
+      "canonicalZoneId": "Africa/Libreville"
+    },
+    "Africa/Lome": {
+      "countryCode": "TG",
+      "countryLabelZh": "多哥",
+      "countryLabelEn": "Togo",
+      "canonicalZoneId": "Africa/Lome"
+    },
+    "Africa/Luanda": {
+      "countryCode": "AO",
+      "countryLabelZh": "安哥拉",
+      "countryLabelEn": "Angola",
+      "canonicalZoneId": "Africa/Luanda"
+    },
+    "Africa/Lubumbashi": {
+      "countryCode": "CD",
+      "countryLabelZh": "刚果（金）",
+      "countryLabelEn": "Congo (Dem. Rep.)",
+      "canonicalZoneId": "Africa/Lubumbashi"
+    },
+    "Africa/Lusaka": {
+      "countryCode": "ZM",
+      "countryLabelZh": "赞比亚",
+      "countryLabelEn": "Zambia",
+      "canonicalZoneId": "Africa/Lusaka"
+    },
+    "Africa/Malabo": {
+      "countryCode": "GQ",
+      "countryLabelZh": "赤道几内亚",
+      "countryLabelEn": "Equatorial Guinea",
+      "canonicalZoneId": "Africa/Malabo"
+    },
+    "Africa/Maputo": {
+      "countryCode": "MZ",
+      "countryLabelZh": "莫桑比克",
+      "countryLabelEn": "Mozambique",
+      "canonicalZoneId": "Africa/Maputo"
+    },
+    "Africa/Maseru": {
+      "countryCode": "LS",
+      "countryLabelZh": "莱索托",
+      "countryLabelEn": "Lesotho",
+      "canonicalZoneId": "Africa/Maseru"
+    },
+    "Africa/Mbabane": {
+      "countryCode": "SZ",
+      "countryLabelZh": "斯威士兰",
+      "countryLabelEn": "Eswatini (Swaziland)",
+      "canonicalZoneId": "Africa/Mbabane"
+    },
+    "Africa/Mogadishu": {
+      "countryCode": "SO",
+      "countryLabelZh": "索马里",
+      "countryLabelEn": "Somalia",
+      "canonicalZoneId": "Africa/Mogadishu"
+    },
+    "Africa/Monrovia": {
+      "countryCode": "LR",
+      "countryLabelZh": "利比里亚",
+      "countryLabelEn": "Liberia",
+      "canonicalZoneId": "Africa/Monrovia"
+    },
+    "Africa/Nairobi": {
+      "countryCode": "KE",
+      "countryLabelZh": "肯尼亚",
+      "countryLabelEn": "Kenya",
+      "canonicalZoneId": "Africa/Nairobi"
+    },
+    "Africa/Ndjamena": {
+      "countryCode": "TD",
+      "countryLabelZh": "乍得",
+      "countryLabelEn": "Chad",
+      "canonicalZoneId": "Africa/Ndjamena"
+    },
+    "Africa/Niamey": {
+      "countryCode": "NE",
+      "countryLabelZh": "尼日尔",
+      "countryLabelEn": "Niger",
+      "canonicalZoneId": "Africa/Niamey"
+    },
+    "Africa/Nouakchott": {
+      "countryCode": "MR",
+      "countryLabelZh": "毛里塔尼亚",
+      "countryLabelEn": "Mauritania",
+      "canonicalZoneId": "Africa/Nouakchott"
+    },
+    "Africa/Ouagadougou": {
+      "countryCode": "BF",
+      "countryLabelZh": "布基纳法索",
+      "countryLabelEn": "Burkina Faso",
+      "canonicalZoneId": "Africa/Ouagadougou"
+    },
+    "Africa/Porto-Novo": {
+      "countryCode": "BJ",
+      "countryLabelZh": "贝宁",
+      "countryLabelEn": "Benin",
+      "canonicalZoneId": "Africa/Porto-Novo"
+    },
+    "Africa/Sao_Tome": {
+      "countryCode": "ST",
+      "countryLabelZh": "圣多美和普林西比",
+      "countryLabelEn": "Sao Tome & Principe",
+      "canonicalZoneId": "Africa/Sao_Tome"
+    },
+    "Africa/Timbuktu": {
+      "countryCode": "CI",
+      "countryLabelZh": "科特迪瓦",
+      "countryLabelEn": "Côte d’Ivoire",
+      "canonicalZoneId": "Africa/Abidjan"
+    },
+    "Africa/Tripoli": {
+      "countryCode": "LY",
+      "countryLabelZh": "利比亚",
+      "countryLabelEn": "Libya",
+      "canonicalZoneId": "Africa/Tripoli"
+    },
+    "Africa/Tunis": {
+      "countryCode": "TN",
+      "countryLabelZh": "突尼斯",
+      "countryLabelEn": "Tunisia",
+      "canonicalZoneId": "Africa/Tunis"
+    },
+    "Africa/Windhoek": {
+      "countryCode": "NA",
+      "countryLabelZh": "纳米比亚",
+      "countryLabelEn": "Namibia",
+      "canonicalZoneId": "Africa/Windhoek"
+    },
+    "America/Adak": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Adak"
+    },
+    "America/Anchorage": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Anchorage"
+    },
+    "America/Anguilla": {
+      "countryCode": "AI",
+      "countryLabelZh": "安圭拉",
+      "countryLabelEn": "Anguilla",
+      "canonicalZoneId": "America/Anguilla"
+    },
+    "America/Antigua": {
+      "countryCode": "AG",
+      "countryLabelZh": "安提瓜和巴布达",
+      "countryLabelEn": "Antigua & Barbuda",
+      "canonicalZoneId": "America/Antigua"
+    },
+    "America/Araguaina": {
+      "countryCode": "BR",
+      "countryLabelZh": "巴西",
+      "countryLabelEn": "Brazil",
+      "canonicalZoneId": "America/Araguaina"
+    },
+    "America/Argentina/Buenos_Aires": {
+      "countryCode": "AR",
+      "countryLabelZh": "阿根廷",
+      "countryLabelEn": "Argentina",
+      "canonicalZoneId": "America/Argentina/Buenos_Aires"
+    },
+    "America/Argentina/Catamarca": {
+      "countryCode": "AR",
+      "countryLabelZh": "阿根廷",
+      "countryLabelEn": "Argentina",
+      "canonicalZoneId": "America/Argentina/Catamarca"
+    },
+    "America/Argentina/ComodRivadavia": {
+      "countryCode": "AR",
+      "countryLabelZh": "阿根廷",
+      "countryLabelEn": "Argentina",
+      "canonicalZoneId": "America/Argentina/Catamarca"
+    },
+    "America/Argentina/Cordoba": {
+      "countryCode": "AR",
+      "countryLabelZh": "阿根廷",
+      "countryLabelEn": "Argentina",
+      "canonicalZoneId": "America/Argentina/Cordoba"
+    },
+    "America/Argentina/Jujuy": {
+      "countryCode": "AR",
+      "countryLabelZh": "阿根廷",
+      "countryLabelEn": "Argentina",
+      "canonicalZoneId": "America/Argentina/Jujuy"
+    },
+    "America/Argentina/La_Rioja": {
+      "countryCode": "AR",
+      "countryLabelZh": "阿根廷",
+      "countryLabelEn": "Argentina",
+      "canonicalZoneId": "America/Argentina/La_Rioja"
+    },
+    "America/Argentina/Mendoza": {
+      "countryCode": "AR",
+      "countryLabelZh": "阿根廷",
+      "countryLabelEn": "Argentina",
+      "canonicalZoneId": "America/Argentina/Mendoza"
+    },
+    "America/Argentina/Rio_Gallegos": {
+      "countryCode": "AR",
+      "countryLabelZh": "阿根廷",
+      "countryLabelEn": "Argentina",
+      "canonicalZoneId": "America/Argentina/Rio_Gallegos"
+    },
+    "America/Argentina/Salta": {
+      "countryCode": "AR",
+      "countryLabelZh": "阿根廷",
+      "countryLabelEn": "Argentina",
+      "canonicalZoneId": "America/Argentina/Salta"
+    },
+    "America/Argentina/San_Juan": {
+      "countryCode": "AR",
+      "countryLabelZh": "阿根廷",
+      "countryLabelEn": "Argentina",
+      "canonicalZoneId": "America/Argentina/San_Juan"
+    },
+    "America/Argentina/San_Luis": {
+      "countryCode": "AR",
+      "countryLabelZh": "阿根廷",
+      "countryLabelEn": "Argentina",
+      "canonicalZoneId": "America/Argentina/San_Luis"
+    },
+    "America/Argentina/Tucuman": {
+      "countryCode": "AR",
+      "countryLabelZh": "阿根廷",
+      "countryLabelEn": "Argentina",
+      "canonicalZoneId": "America/Argentina/Tucuman"
+    },
+    "America/Argentina/Ushuaia": {
+      "countryCode": "AR",
+      "countryLabelZh": "阿根廷",
+      "countryLabelEn": "Argentina",
+      "canonicalZoneId": "America/Argentina/Ushuaia"
+    },
+    "America/Aruba": {
+      "countryCode": "AW",
+      "countryLabelZh": "阿鲁巴",
+      "countryLabelEn": "Aruba",
+      "canonicalZoneId": "America/Aruba"
+    },
+    "America/Asuncion": {
+      "countryCode": "PY",
+      "countryLabelZh": "巴拉圭",
+      "countryLabelEn": "Paraguay",
+      "canonicalZoneId": "America/Asuncion"
+    },
+    "America/Atikokan": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Atikokan"
+    },
+    "America/Atka": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Adak"
+    },
+    "America/Bahia": {
+      "countryCode": "BR",
+      "countryLabelZh": "巴西",
+      "countryLabelEn": "Brazil",
+      "canonicalZoneId": "America/Bahia"
+    },
+    "America/Bahia_Banderas": {
+      "countryCode": "MX",
+      "countryLabelZh": "墨西哥",
+      "countryLabelEn": "Mexico",
+      "canonicalZoneId": "America/Bahia_Banderas"
+    },
+    "America/Barbados": {
+      "countryCode": "BB",
+      "countryLabelZh": "巴巴多斯",
+      "countryLabelEn": "Barbados",
+      "canonicalZoneId": "America/Barbados"
+    },
+    "America/Belem": {
+      "countryCode": "BR",
+      "countryLabelZh": "巴西",
+      "countryLabelEn": "Brazil",
+      "canonicalZoneId": "America/Belem"
+    },
+    "America/Belize": {
+      "countryCode": "BZ",
+      "countryLabelZh": "伯利兹",
+      "countryLabelEn": "Belize",
+      "canonicalZoneId": "America/Belize"
+    },
+    "America/Blanc-Sablon": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Blanc-Sablon"
+    },
+    "America/Boa_Vista": {
+      "countryCode": "BR",
+      "countryLabelZh": "巴西",
+      "countryLabelEn": "Brazil",
+      "canonicalZoneId": "America/Boa_Vista"
+    },
+    "America/Bogota": {
+      "countryCode": "CO",
+      "countryLabelZh": "哥伦比亚",
+      "countryLabelEn": "Colombia",
+      "canonicalZoneId": "America/Bogota"
+    },
+    "America/Boise": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Boise"
+    },
+    "America/Buenos_Aires": {
+      "countryCode": "AR",
+      "countryLabelZh": "阿根廷",
+      "countryLabelEn": "Argentina",
+      "canonicalZoneId": "America/Argentina/Buenos_Aires"
+    },
+    "America/Cambridge_Bay": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Cambridge_Bay"
+    },
+    "America/Campo_Grande": {
+      "countryCode": "BR",
+      "countryLabelZh": "巴西",
+      "countryLabelEn": "Brazil",
+      "canonicalZoneId": "America/Campo_Grande"
+    },
+    "America/Cancun": {
+      "countryCode": "MX",
+      "countryLabelZh": "墨西哥",
+      "countryLabelEn": "Mexico",
+      "canonicalZoneId": "America/Cancun"
+    },
+    "America/Caracas": {
+      "countryCode": "VE",
+      "countryLabelZh": "委内瑞拉",
+      "countryLabelEn": "Venezuela",
+      "canonicalZoneId": "America/Caracas"
+    },
+    "America/Catamarca": {
+      "countryCode": "AR",
+      "countryLabelZh": "阿根廷",
+      "countryLabelEn": "Argentina",
+      "canonicalZoneId": "America/Argentina/Catamarca"
+    },
+    "America/Cayenne": {
+      "countryCode": "GF",
+      "countryLabelZh": "法属圭亚那",
+      "countryLabelEn": "French Guiana",
+      "canonicalZoneId": "America/Cayenne"
+    },
+    "America/Cayman": {
+      "countryCode": "KY",
+      "countryLabelZh": "开曼群岛",
+      "countryLabelEn": "Cayman Islands",
+      "canonicalZoneId": "America/Cayman"
+    },
+    "America/Chicago": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Chicago"
+    },
+    "America/Chihuahua": {
+      "countryCode": "MX",
+      "countryLabelZh": "墨西哥",
+      "countryLabelEn": "Mexico",
+      "canonicalZoneId": "America/Chihuahua"
+    },
+    "America/Ciudad_Juarez": {
+      "countryCode": "MX",
+      "countryLabelZh": "墨西哥",
+      "countryLabelEn": "Mexico",
+      "canonicalZoneId": "America/Ciudad_Juarez"
+    },
+    "America/Coral_Harbour": {
+      "countryCode": "PA",
+      "countryLabelZh": "巴拿马",
+      "countryLabelEn": "Panama",
+      "canonicalZoneId": "America/Panama"
+    },
+    "America/Cordoba": {
+      "countryCode": "AR",
+      "countryLabelZh": "阿根廷",
+      "countryLabelEn": "Argentina",
+      "canonicalZoneId": "America/Argentina/Cordoba"
+    },
+    "America/Costa_Rica": {
+      "countryCode": "CR",
+      "countryLabelZh": "哥斯达黎加",
+      "countryLabelEn": "Costa Rica",
+      "canonicalZoneId": "America/Costa_Rica"
+    },
+    "America/Coyhaique": {
+      "countryCode": "CL",
+      "countryLabelZh": "智利",
+      "countryLabelEn": "Chile",
+      "canonicalZoneId": "America/Coyhaique"
+    },
+    "America/Creston": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Creston"
+    },
+    "America/Cuiaba": {
+      "countryCode": "BR",
+      "countryLabelZh": "巴西",
+      "countryLabelEn": "Brazil",
+      "canonicalZoneId": "America/Cuiaba"
+    },
+    "America/Curacao": {
+      "countryCode": "CW",
+      "countryLabelZh": "库拉索",
+      "countryLabelEn": "Curaçao",
+      "canonicalZoneId": "America/Curacao"
+    },
+    "America/Danmarkshavn": {
+      "countryCode": "GL",
+      "countryLabelZh": "格陵兰",
+      "countryLabelEn": "Greenland",
+      "canonicalZoneId": "America/Danmarkshavn"
+    },
+    "America/Dawson": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Dawson"
+    },
+    "America/Dawson_Creek": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Dawson_Creek"
+    },
+    "America/Denver": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Denver"
+    },
+    "America/Detroit": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Detroit"
+    },
+    "America/Dominica": {
+      "countryCode": "DM",
+      "countryLabelZh": "多米尼克",
+      "countryLabelEn": "Dominica",
+      "canonicalZoneId": "America/Dominica"
+    },
+    "America/Edmonton": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Edmonton"
+    },
+    "America/Eirunepe": {
+      "countryCode": "BR",
+      "countryLabelZh": "巴西",
+      "countryLabelEn": "Brazil",
+      "canonicalZoneId": "America/Eirunepe"
+    },
+    "America/El_Salvador": {
+      "countryCode": "SV",
+      "countryLabelZh": "萨尔瓦多",
+      "countryLabelEn": "El Salvador",
+      "canonicalZoneId": "America/El_Salvador"
+    },
+    "America/Ensenada": {
+      "countryCode": "MX",
+      "countryLabelZh": "墨西哥",
+      "countryLabelEn": "Mexico",
+      "canonicalZoneId": "America/Tijuana"
+    },
+    "America/Fort_Nelson": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Fort_Nelson"
+    },
+    "America/Fort_Wayne": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Indiana/Indianapolis"
+    },
+    "America/Fortaleza": {
+      "countryCode": "BR",
+      "countryLabelZh": "巴西",
+      "countryLabelEn": "Brazil",
+      "canonicalZoneId": "America/Fortaleza"
+    },
+    "America/Glace_Bay": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Glace_Bay"
+    },
+    "America/Godthab": {
+      "countryCode": "GL",
+      "countryLabelZh": "格陵兰",
+      "countryLabelEn": "Greenland",
+      "canonicalZoneId": "America/Nuuk"
+    },
+    "America/Goose_Bay": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Goose_Bay"
+    },
+    "America/Grand_Turk": {
+      "countryCode": "TC",
+      "countryLabelZh": "特克斯和凯科斯群岛",
+      "countryLabelEn": "Turks & Caicos Is",
+      "canonicalZoneId": "America/Grand_Turk"
+    },
+    "America/Grenada": {
+      "countryCode": "GD",
+      "countryLabelZh": "格林纳达",
+      "countryLabelEn": "Grenada",
+      "canonicalZoneId": "America/Grenada"
+    },
+    "America/Guadeloupe": {
+      "countryCode": "GP",
+      "countryLabelZh": "瓜德罗普",
+      "countryLabelEn": "Guadeloupe",
+      "canonicalZoneId": "America/Guadeloupe"
+    },
+    "America/Guatemala": {
+      "countryCode": "GT",
+      "countryLabelZh": "危地马拉",
+      "countryLabelEn": "Guatemala",
+      "canonicalZoneId": "America/Guatemala"
+    },
+    "America/Guayaquil": {
+      "countryCode": "EC",
+      "countryLabelZh": "厄瓜多尔",
+      "countryLabelEn": "Ecuador",
+      "canonicalZoneId": "America/Guayaquil"
+    },
+    "America/Guyana": {
+      "countryCode": "GY",
+      "countryLabelZh": "圭亚那",
+      "countryLabelEn": "Guyana",
+      "canonicalZoneId": "America/Guyana"
+    },
+    "America/Halifax": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Halifax"
+    },
+    "America/Havana": {
+      "countryCode": "CU",
+      "countryLabelZh": "古巴",
+      "countryLabelEn": "Cuba",
+      "canonicalZoneId": "America/Havana"
+    },
+    "America/Hermosillo": {
+      "countryCode": "MX",
+      "countryLabelZh": "墨西哥",
+      "countryLabelEn": "Mexico",
+      "canonicalZoneId": "America/Hermosillo"
+    },
+    "America/Indiana/Indianapolis": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Indiana/Indianapolis"
+    },
+    "America/Indiana/Knox": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Indiana/Knox"
+    },
+    "America/Indiana/Marengo": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Indiana/Marengo"
+    },
+    "America/Indiana/Petersburg": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Indiana/Petersburg"
+    },
+    "America/Indiana/Tell_City": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Indiana/Tell_City"
+    },
+    "America/Indiana/Vevay": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Indiana/Vevay"
+    },
+    "America/Indiana/Vincennes": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Indiana/Vincennes"
+    },
+    "America/Indiana/Winamac": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Indiana/Winamac"
+    },
+    "America/Indianapolis": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Indiana/Indianapolis"
+    },
+    "America/Inuvik": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Inuvik"
+    },
+    "America/Iqaluit": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Iqaluit"
+    },
+    "America/Jamaica": {
+      "countryCode": "JM",
+      "countryLabelZh": "牙买加",
+      "countryLabelEn": "Jamaica",
+      "canonicalZoneId": "America/Jamaica"
+    },
+    "America/Jujuy": {
+      "countryCode": "AR",
+      "countryLabelZh": "阿根廷",
+      "countryLabelEn": "Argentina",
+      "canonicalZoneId": "America/Argentina/Jujuy"
+    },
+    "America/Juneau": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Juneau"
+    },
+    "America/Kentucky/Louisville": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Kentucky/Louisville"
+    },
+    "America/Kentucky/Monticello": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Kentucky/Monticello"
+    },
+    "America/Knox_IN": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Indiana/Knox"
+    },
+    "America/Kralendijk": {
+      "countryCode": "BQ",
+      "countryLabelZh": "荷属加勒比区",
+      "countryLabelEn": "Caribbean NL",
+      "canonicalZoneId": "America/Kralendijk"
+    },
+    "America/La_Paz": {
+      "countryCode": "BO",
+      "countryLabelZh": "玻利维亚",
+      "countryLabelEn": "Bolivia",
+      "canonicalZoneId": "America/La_Paz"
+    },
+    "America/Lima": {
+      "countryCode": "PE",
+      "countryLabelZh": "秘鲁",
+      "countryLabelEn": "Peru",
+      "canonicalZoneId": "America/Lima"
+    },
+    "America/Los_Angeles": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Los_Angeles"
+    },
+    "America/Louisville": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Kentucky/Louisville"
+    },
+    "America/Lower_Princes": {
+      "countryCode": "SX",
+      "countryLabelZh": "荷属圣马丁",
+      "countryLabelEn": "St Maarten (Dutch)",
+      "canonicalZoneId": "America/Lower_Princes"
+    },
+    "America/Maceio": {
+      "countryCode": "BR",
+      "countryLabelZh": "巴西",
+      "countryLabelEn": "Brazil",
+      "canonicalZoneId": "America/Maceio"
+    },
+    "America/Managua": {
+      "countryCode": "NI",
+      "countryLabelZh": "尼加拉瓜",
+      "countryLabelEn": "Nicaragua",
+      "canonicalZoneId": "America/Managua"
+    },
+    "America/Manaus": {
+      "countryCode": "BR",
+      "countryLabelZh": "巴西",
+      "countryLabelEn": "Brazil",
+      "canonicalZoneId": "America/Manaus"
+    },
+    "America/Marigot": {
+      "countryCode": "MF",
+      "countryLabelZh": "法属圣马丁",
+      "countryLabelEn": "St Martin (French)",
+      "canonicalZoneId": "America/Marigot"
+    },
+    "America/Martinique": {
+      "countryCode": "MQ",
+      "countryLabelZh": "马提尼克",
+      "countryLabelEn": "Martinique",
+      "canonicalZoneId": "America/Martinique"
+    },
+    "America/Matamoros": {
+      "countryCode": "MX",
+      "countryLabelZh": "墨西哥",
+      "countryLabelEn": "Mexico",
+      "canonicalZoneId": "America/Matamoros"
+    },
+    "America/Mazatlan": {
+      "countryCode": "MX",
+      "countryLabelZh": "墨西哥",
+      "countryLabelEn": "Mexico",
+      "canonicalZoneId": "America/Mazatlan"
+    },
+    "America/Mendoza": {
+      "countryCode": "AR",
+      "countryLabelZh": "阿根廷",
+      "countryLabelEn": "Argentina",
+      "canonicalZoneId": "America/Argentina/Mendoza"
+    },
+    "America/Menominee": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Menominee"
+    },
+    "America/Merida": {
+      "countryCode": "MX",
+      "countryLabelZh": "墨西哥",
+      "countryLabelEn": "Mexico",
+      "canonicalZoneId": "America/Merida"
+    },
+    "America/Metlakatla": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Metlakatla"
+    },
+    "America/Mexico_City": {
+      "countryCode": "MX",
+      "countryLabelZh": "墨西哥",
+      "countryLabelEn": "Mexico",
+      "canonicalZoneId": "America/Mexico_City"
+    },
+    "America/Miquelon": {
+      "countryCode": "PM",
+      "countryLabelZh": "圣皮埃尔和密克隆群岛",
+      "countryLabelEn": "St Pierre & Miquelon",
+      "canonicalZoneId": "America/Miquelon"
+    },
+    "America/Moncton": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Moncton"
+    },
+    "America/Monterrey": {
+      "countryCode": "MX",
+      "countryLabelZh": "墨西哥",
+      "countryLabelEn": "Mexico",
+      "canonicalZoneId": "America/Monterrey"
+    },
+    "America/Montevideo": {
+      "countryCode": "UY",
+      "countryLabelZh": "乌拉圭",
+      "countryLabelEn": "Uruguay",
+      "canonicalZoneId": "America/Montevideo"
+    },
+    "America/Montreal": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Toronto"
+    },
+    "America/Montserrat": {
+      "countryCode": "MS",
+      "countryLabelZh": "蒙特塞拉特",
+      "countryLabelEn": "Montserrat",
+      "canonicalZoneId": "America/Montserrat"
+    },
+    "America/Nassau": {
+      "countryCode": "BS",
+      "countryLabelZh": "巴哈马",
+      "countryLabelEn": "Bahamas",
+      "canonicalZoneId": "America/Nassau"
+    },
+    "America/New_York": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/New_York"
+    },
+    "America/Nipigon": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Toronto"
+    },
+    "America/Nome": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Nome"
+    },
+    "America/Noronha": {
+      "countryCode": "BR",
+      "countryLabelZh": "巴西",
+      "countryLabelEn": "Brazil",
+      "canonicalZoneId": "America/Noronha"
+    },
+    "America/North_Dakota/Beulah": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/North_Dakota/Beulah"
+    },
+    "America/North_Dakota/Center": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/North_Dakota/Center"
+    },
+    "America/North_Dakota/New_Salem": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/North_Dakota/New_Salem"
+    },
+    "America/Nuuk": {
+      "countryCode": "GL",
+      "countryLabelZh": "格陵兰",
+      "countryLabelEn": "Greenland",
+      "canonicalZoneId": "America/Nuuk"
+    },
+    "America/Ojinaga": {
+      "countryCode": "MX",
+      "countryLabelZh": "墨西哥",
+      "countryLabelEn": "Mexico",
+      "canonicalZoneId": "America/Ojinaga"
+    },
+    "America/Panama": {
+      "countryCode": "PA",
+      "countryLabelZh": "巴拿马",
+      "countryLabelEn": "Panama",
+      "canonicalZoneId": "America/Panama"
+    },
+    "America/Pangnirtung": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Iqaluit"
+    },
+    "America/Paramaribo": {
+      "countryCode": "SR",
+      "countryLabelZh": "苏里南",
+      "countryLabelEn": "Suriname",
+      "canonicalZoneId": "America/Paramaribo"
+    },
+    "America/Phoenix": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Phoenix"
+    },
+    "America/Port-au-Prince": {
+      "countryCode": "HT",
+      "countryLabelZh": "海地",
+      "countryLabelEn": "Haiti",
+      "canonicalZoneId": "America/Port-au-Prince"
+    },
+    "America/Port_of_Spain": {
+      "countryCode": "TT",
+      "countryLabelZh": "特立尼达和多巴哥",
+      "countryLabelEn": "Trinidad & Tobago",
+      "canonicalZoneId": "America/Port_of_Spain"
+    },
+    "America/Porto_Acre": {
+      "countryCode": "BR",
+      "countryLabelZh": "巴西",
+      "countryLabelEn": "Brazil",
+      "canonicalZoneId": "America/Rio_Branco"
+    },
+    "America/Porto_Velho": {
+      "countryCode": "BR",
+      "countryLabelZh": "巴西",
+      "countryLabelEn": "Brazil",
+      "canonicalZoneId": "America/Porto_Velho"
+    },
+    "America/Puerto_Rico": {
+      "countryCode": "PR",
+      "countryLabelZh": "波多黎各",
+      "countryLabelEn": "Puerto Rico",
+      "canonicalZoneId": "America/Puerto_Rico"
+    },
+    "America/Punta_Arenas": {
+      "countryCode": "CL",
+      "countryLabelZh": "智利",
+      "countryLabelEn": "Chile",
+      "canonicalZoneId": "America/Punta_Arenas"
+    },
+    "America/Rainy_River": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Winnipeg"
+    },
+    "America/Rankin_Inlet": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Rankin_Inlet"
+    },
+    "America/Recife": {
+      "countryCode": "BR",
+      "countryLabelZh": "巴西",
+      "countryLabelEn": "Brazil",
+      "canonicalZoneId": "America/Recife"
+    },
+    "America/Regina": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Regina"
+    },
+    "America/Resolute": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Resolute"
+    },
+    "America/Rio_Branco": {
+      "countryCode": "BR",
+      "countryLabelZh": "巴西",
+      "countryLabelEn": "Brazil",
+      "canonicalZoneId": "America/Rio_Branco"
+    },
+    "America/Rosario": {
+      "countryCode": "AR",
+      "countryLabelZh": "阿根廷",
+      "countryLabelEn": "Argentina",
+      "canonicalZoneId": "America/Argentina/Cordoba"
+    },
+    "America/Santa_Isabel": {
+      "countryCode": "MX",
+      "countryLabelZh": "墨西哥",
+      "countryLabelEn": "Mexico",
+      "canonicalZoneId": "America/Tijuana"
+    },
+    "America/Santarem": {
+      "countryCode": "BR",
+      "countryLabelZh": "巴西",
+      "countryLabelEn": "Brazil",
+      "canonicalZoneId": "America/Santarem"
+    },
+    "America/Santiago": {
+      "countryCode": "CL",
+      "countryLabelZh": "智利",
+      "countryLabelEn": "Chile",
+      "canonicalZoneId": "America/Santiago"
+    },
+    "America/Santo_Domingo": {
+      "countryCode": "DO",
+      "countryLabelZh": "多米尼加共和国",
+      "countryLabelEn": "Dominican Republic",
+      "canonicalZoneId": "America/Santo_Domingo"
+    },
+    "America/Sao_Paulo": {
+      "countryCode": "BR",
+      "countryLabelZh": "巴西",
+      "countryLabelEn": "Brazil",
+      "canonicalZoneId": "America/Sao_Paulo"
+    },
+    "America/Scoresbysund": {
+      "countryCode": "GL",
+      "countryLabelZh": "格陵兰",
+      "countryLabelEn": "Greenland",
+      "canonicalZoneId": "America/Scoresbysund"
+    },
+    "America/Shiprock": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Denver"
+    },
+    "America/Sitka": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Sitka"
+    },
+    "America/St_Barthelemy": {
+      "countryCode": "BL",
+      "countryLabelZh": "圣巴泰勒米",
+      "countryLabelEn": "St Barthelemy",
+      "canonicalZoneId": "America/St_Barthelemy"
+    },
+    "America/St_Johns": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/St_Johns"
+    },
+    "America/St_Kitts": {
+      "countryCode": "KN",
+      "countryLabelZh": "圣基茨和尼维斯",
+      "countryLabelEn": "St Kitts & Nevis",
+      "canonicalZoneId": "America/St_Kitts"
+    },
+    "America/St_Lucia": {
+      "countryCode": "LC",
+      "countryLabelZh": "圣卢西亚",
+      "countryLabelEn": "St Lucia",
+      "canonicalZoneId": "America/St_Lucia"
+    },
+    "America/St_Thomas": {
+      "countryCode": "VI",
+      "countryLabelZh": "美属维尔京群岛",
+      "countryLabelEn": "Virgin Islands (US)",
+      "canonicalZoneId": "America/St_Thomas"
+    },
+    "America/St_Vincent": {
+      "countryCode": "VC",
+      "countryLabelZh": "圣文森特和格林纳丁斯",
+      "countryLabelEn": "St Vincent",
+      "canonicalZoneId": "America/St_Vincent"
+    },
+    "America/Swift_Current": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Swift_Current"
+    },
+    "America/Tegucigalpa": {
+      "countryCode": "HN",
+      "countryLabelZh": "洪都拉斯",
+      "countryLabelEn": "Honduras",
+      "canonicalZoneId": "America/Tegucigalpa"
+    },
+    "America/Thule": {
+      "countryCode": "GL",
+      "countryLabelZh": "格陵兰",
+      "countryLabelEn": "Greenland",
+      "canonicalZoneId": "America/Thule"
+    },
+    "America/Thunder_Bay": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Toronto"
+    },
+    "America/Tijuana": {
+      "countryCode": "MX",
+      "countryLabelZh": "墨西哥",
+      "countryLabelEn": "Mexico",
+      "canonicalZoneId": "America/Tijuana"
+    },
+    "America/Toronto": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Toronto"
+    },
+    "America/Tortola": {
+      "countryCode": "VG",
+      "countryLabelZh": "英属维尔京群岛",
+      "countryLabelEn": "Virgin Islands (UK)",
+      "canonicalZoneId": "America/Tortola"
+    },
+    "America/Vancouver": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Vancouver"
+    },
+    "America/Virgin": {
+      "countryCode": "VI",
+      "countryLabelZh": "美属维尔京群岛",
+      "countryLabelEn": "Virgin Islands (US)",
+      "canonicalZoneId": "America/St_Thomas"
+    },
+    "America/Whitehorse": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Whitehorse"
+    },
+    "America/Winnipeg": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Winnipeg"
+    },
+    "America/Yakutat": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Yakutat"
+    },
+    "America/Yellowknife": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Edmonton"
+    },
+    "Antarctica/Casey": {
+      "countryCode": "AQ",
+      "countryLabelZh": "南极洲",
+      "countryLabelEn": "Antarctica",
+      "canonicalZoneId": "Antarctica/Casey"
+    },
+    "Antarctica/Davis": {
+      "countryCode": "AQ",
+      "countryLabelZh": "南极洲",
+      "countryLabelEn": "Antarctica",
+      "canonicalZoneId": "Antarctica/Davis"
+    },
+    "Antarctica/DumontDUrville": {
+      "countryCode": "AQ",
+      "countryLabelZh": "南极洲",
+      "countryLabelEn": "Antarctica",
+      "canonicalZoneId": "Antarctica/DumontDUrville"
+    },
+    "Antarctica/Macquarie": {
+      "countryCode": "AU",
+      "countryLabelZh": "澳大利亚",
+      "countryLabelEn": "Australia",
+      "canonicalZoneId": "Antarctica/Macquarie"
+    },
+    "Antarctica/Mawson": {
+      "countryCode": "AQ",
+      "countryLabelZh": "南极洲",
+      "countryLabelEn": "Antarctica",
+      "canonicalZoneId": "Antarctica/Mawson"
+    },
+    "Antarctica/McMurdo": {
+      "countryCode": "AQ",
+      "countryLabelZh": "南极洲",
+      "countryLabelEn": "Antarctica",
+      "canonicalZoneId": "Antarctica/McMurdo"
+    },
+    "Antarctica/Palmer": {
+      "countryCode": "AQ",
+      "countryLabelZh": "南极洲",
+      "countryLabelEn": "Antarctica",
+      "canonicalZoneId": "Antarctica/Palmer"
+    },
+    "Antarctica/Rothera": {
+      "countryCode": "AQ",
+      "countryLabelZh": "南极洲",
+      "countryLabelEn": "Antarctica",
+      "canonicalZoneId": "Antarctica/Rothera"
+    },
+    "Antarctica/South_Pole": {
+      "countryCode": "NZ",
+      "countryLabelZh": "新西兰",
+      "countryLabelEn": "New Zealand",
+      "canonicalZoneId": "Pacific/Auckland"
+    },
+    "Antarctica/Syowa": {
+      "countryCode": "AQ",
+      "countryLabelZh": "南极洲",
+      "countryLabelEn": "Antarctica",
+      "canonicalZoneId": "Antarctica/Syowa"
+    },
+    "Antarctica/Troll": {
+      "countryCode": "AQ",
+      "countryLabelZh": "南极洲",
+      "countryLabelEn": "Antarctica",
+      "canonicalZoneId": "Antarctica/Troll"
+    },
+    "Antarctica/Vostok": {
+      "countryCode": "AQ",
+      "countryLabelZh": "南极洲",
+      "countryLabelEn": "Antarctica",
+      "canonicalZoneId": "Antarctica/Vostok"
+    },
+    "Arctic/Longyearbyen": {
+      "countryCode": "SJ",
+      "countryLabelZh": "斯瓦尔巴和扬马延",
+      "countryLabelEn": "Svalbard & Jan Mayen",
+      "canonicalZoneId": "Arctic/Longyearbyen"
+    },
+    "Asia/Aden": {
+      "countryCode": "YE",
+      "countryLabelZh": "也门",
+      "countryLabelEn": "Yemen",
+      "canonicalZoneId": "Asia/Aden"
+    },
+    "Asia/Almaty": {
+      "countryCode": "KZ",
+      "countryLabelZh": "哈萨克斯坦",
+      "countryLabelEn": "Kazakhstan",
+      "canonicalZoneId": "Asia/Almaty"
+    },
+    "Asia/Amman": {
+      "countryCode": "JO",
+      "countryLabelZh": "约旦",
+      "countryLabelEn": "Jordan",
+      "canonicalZoneId": "Asia/Amman"
+    },
+    "Asia/Anadyr": {
+      "countryCode": "RU",
+      "countryLabelZh": "俄罗斯",
+      "countryLabelEn": "Russia",
+      "canonicalZoneId": "Asia/Anadyr"
+    },
+    "Asia/Aqtau": {
+      "countryCode": "KZ",
+      "countryLabelZh": "哈萨克斯坦",
+      "countryLabelEn": "Kazakhstan",
+      "canonicalZoneId": "Asia/Aqtau"
+    },
+    "Asia/Aqtobe": {
+      "countryCode": "KZ",
+      "countryLabelZh": "哈萨克斯坦",
+      "countryLabelEn": "Kazakhstan",
+      "canonicalZoneId": "Asia/Aqtobe"
+    },
+    "Asia/Ashgabat": {
+      "countryCode": "TM",
+      "countryLabelZh": "土库曼斯坦",
+      "countryLabelEn": "Turkmenistan",
+      "canonicalZoneId": "Asia/Ashgabat"
+    },
+    "Asia/Ashkhabad": {
+      "countryCode": "TM",
+      "countryLabelZh": "土库曼斯坦",
+      "countryLabelEn": "Turkmenistan",
+      "canonicalZoneId": "Asia/Ashgabat"
+    },
+    "Asia/Atyrau": {
+      "countryCode": "KZ",
+      "countryLabelZh": "哈萨克斯坦",
+      "countryLabelEn": "Kazakhstan",
+      "canonicalZoneId": "Asia/Atyrau"
+    },
+    "Asia/Baghdad": {
+      "countryCode": "IQ",
+      "countryLabelZh": "伊拉克",
+      "countryLabelEn": "Iraq",
+      "canonicalZoneId": "Asia/Baghdad"
+    },
+    "Asia/Bahrain": {
+      "countryCode": "BH",
+      "countryLabelZh": "巴林",
+      "countryLabelEn": "Bahrain",
+      "canonicalZoneId": "Asia/Bahrain"
+    },
+    "Asia/Baku": {
+      "countryCode": "AZ",
+      "countryLabelZh": "阿塞拜疆",
+      "countryLabelEn": "Azerbaijan",
+      "canonicalZoneId": "Asia/Baku"
+    },
+    "Asia/Bangkok": {
+      "countryCode": "TH",
+      "countryLabelZh": "泰国",
+      "countryLabelEn": "Thailand",
+      "canonicalZoneId": "Asia/Bangkok"
+    },
+    "Asia/Barnaul": {
+      "countryCode": "RU",
+      "countryLabelZh": "俄罗斯",
+      "countryLabelEn": "Russia",
+      "canonicalZoneId": "Asia/Barnaul"
+    },
+    "Asia/Beirut": {
+      "countryCode": "LB",
+      "countryLabelZh": "黎巴嫩",
+      "countryLabelEn": "Lebanon",
+      "canonicalZoneId": "Asia/Beirut"
+    },
+    "Asia/Bishkek": {
+      "countryCode": "KG",
+      "countryLabelZh": "吉尔吉斯斯坦",
+      "countryLabelEn": "Kyrgyzstan",
+      "canonicalZoneId": "Asia/Bishkek"
+    },
+    "Asia/Brunei": {
+      "countryCode": "BN",
+      "countryLabelZh": "文莱",
+      "countryLabelEn": "Brunei",
+      "canonicalZoneId": "Asia/Brunei"
+    },
+    "Asia/Calcutta": {
+      "countryCode": "IN",
+      "countryLabelZh": "印度",
+      "countryLabelEn": "India",
+      "canonicalZoneId": "Asia/Kolkata"
+    },
+    "Asia/Chita": {
+      "countryCode": "RU",
+      "countryLabelZh": "俄罗斯",
+      "countryLabelEn": "Russia",
+      "canonicalZoneId": "Asia/Chita"
+    },
+    "Asia/Choibalsan": {
+      "countryCode": "MN",
+      "countryLabelZh": "蒙古",
+      "countryLabelEn": "Mongolia",
+      "canonicalZoneId": "Asia/Ulaanbaatar"
+    },
+    "Asia/Chongqing": {
+      "countryCode": "CN",
+      "countryLabelZh": "中国",
+      "countryLabelEn": "China",
+      "canonicalZoneId": "Asia/Shanghai"
+    },
+    "Asia/Chungking": {
+      "countryCode": "CN",
+      "countryLabelZh": "中国",
+      "countryLabelEn": "China",
+      "canonicalZoneId": "Asia/Shanghai"
+    },
+    "Asia/Colombo": {
+      "countryCode": "LK",
+      "countryLabelZh": "斯里兰卡",
+      "countryLabelEn": "Sri Lanka",
+      "canonicalZoneId": "Asia/Colombo"
+    },
+    "Asia/Dacca": {
+      "countryCode": "BD",
+      "countryLabelZh": "孟加拉国",
+      "countryLabelEn": "Bangladesh",
+      "canonicalZoneId": "Asia/Dhaka"
+    },
+    "Asia/Damascus": {
+      "countryCode": "SY",
+      "countryLabelZh": "叙利亚",
+      "countryLabelEn": "Syria",
+      "canonicalZoneId": "Asia/Damascus"
+    },
+    "Asia/Dhaka": {
+      "countryCode": "BD",
+      "countryLabelZh": "孟加拉国",
+      "countryLabelEn": "Bangladesh",
+      "canonicalZoneId": "Asia/Dhaka"
+    },
+    "Asia/Dili": {
+      "countryCode": "TL",
+      "countryLabelZh": "东帝汶",
+      "countryLabelEn": "East Timor",
+      "canonicalZoneId": "Asia/Dili"
+    },
+    "Asia/Dubai": {
+      "countryCode": "AE",
+      "countryLabelZh": "阿拉伯联合酋长国",
+      "countryLabelEn": "United Arab Emirates",
+      "canonicalZoneId": "Asia/Dubai"
+    },
+    "Asia/Dushanbe": {
+      "countryCode": "TJ",
+      "countryLabelZh": "塔吉克斯坦",
+      "countryLabelEn": "Tajikistan",
+      "canonicalZoneId": "Asia/Dushanbe"
+    },
+    "Asia/Famagusta": {
+      "countryCode": "CY",
+      "countryLabelZh": "塞浦路斯",
+      "countryLabelEn": "Cyprus",
+      "canonicalZoneId": "Asia/Famagusta"
+    },
+    "Asia/Gaza": {
+      "countryCode": "PS",
+      "countryLabelZh": "巴勒斯坦领土",
+      "countryLabelEn": "Palestine",
+      "canonicalZoneId": "Asia/Gaza"
+    },
+    "Asia/Harbin": {
+      "countryCode": "CN",
+      "countryLabelZh": "中国",
+      "countryLabelEn": "China",
+      "canonicalZoneId": "Asia/Shanghai"
+    },
+    "Asia/Hebron": {
+      "countryCode": "PS",
+      "countryLabelZh": "巴勒斯坦领土",
+      "countryLabelEn": "Palestine",
+      "canonicalZoneId": "Asia/Hebron"
+    },
+    "Asia/Ho_Chi_Minh": {
+      "countryCode": "VN",
+      "countryLabelZh": "越南",
+      "countryLabelEn": "Vietnam",
+      "canonicalZoneId": "Asia/Ho_Chi_Minh"
+    },
+    "Asia/Hong_Kong": {
+      "countryCode": "HK",
+      "countryLabelZh": "中国香港特别行政区",
+      "countryLabelEn": "Hong Kong",
+      "canonicalZoneId": "Asia/Hong_Kong"
+    },
+    "Asia/Hovd": {
+      "countryCode": "MN",
+      "countryLabelZh": "蒙古",
+      "countryLabelEn": "Mongolia",
+      "canonicalZoneId": "Asia/Hovd"
+    },
+    "Asia/Irkutsk": {
+      "countryCode": "RU",
+      "countryLabelZh": "俄罗斯",
+      "countryLabelEn": "Russia",
+      "canonicalZoneId": "Asia/Irkutsk"
+    },
+    "Asia/Istanbul": {
+      "countryCode": "TR",
+      "countryLabelZh": "土耳其",
+      "countryLabelEn": "Turkey",
+      "canonicalZoneId": "Europe/Istanbul"
+    },
+    "Asia/Jakarta": {
+      "countryCode": "ID",
+      "countryLabelZh": "印度尼西亚",
+      "countryLabelEn": "Indonesia",
+      "canonicalZoneId": "Asia/Jakarta"
+    },
+    "Asia/Jayapura": {
+      "countryCode": "ID",
+      "countryLabelZh": "印度尼西亚",
+      "countryLabelEn": "Indonesia",
+      "canonicalZoneId": "Asia/Jayapura"
+    },
+    "Asia/Jerusalem": {
+      "countryCode": "IL",
+      "countryLabelZh": "以色列",
+      "countryLabelEn": "Israel",
+      "canonicalZoneId": "Asia/Jerusalem"
+    },
+    "Asia/Kabul": {
+      "countryCode": "AF",
+      "countryLabelZh": "阿富汗",
+      "countryLabelEn": "Afghanistan",
+      "canonicalZoneId": "Asia/Kabul"
+    },
+    "Asia/Kamchatka": {
+      "countryCode": "RU",
+      "countryLabelZh": "俄罗斯",
+      "countryLabelEn": "Russia",
+      "canonicalZoneId": "Asia/Kamchatka"
+    },
+    "Asia/Karachi": {
+      "countryCode": "PK",
+      "countryLabelZh": "巴基斯坦",
+      "countryLabelEn": "Pakistan",
+      "canonicalZoneId": "Asia/Karachi"
+    },
+    "Asia/Kashgar": {
+      "countryCode": "CN",
+      "countryLabelZh": "中国",
+      "countryLabelEn": "China",
+      "canonicalZoneId": "Asia/Urumqi"
+    },
+    "Asia/Kathmandu": {
+      "countryCode": "NP",
+      "countryLabelZh": "尼泊尔",
+      "countryLabelEn": "Nepal",
+      "canonicalZoneId": "Asia/Kathmandu"
+    },
+    "Asia/Katmandu": {
+      "countryCode": "NP",
+      "countryLabelZh": "尼泊尔",
+      "countryLabelEn": "Nepal",
+      "canonicalZoneId": "Asia/Kathmandu"
+    },
+    "Asia/Khandyga": {
+      "countryCode": "RU",
+      "countryLabelZh": "俄罗斯",
+      "countryLabelEn": "Russia",
+      "canonicalZoneId": "Asia/Khandyga"
+    },
+    "Asia/Kolkata": {
+      "countryCode": "IN",
+      "countryLabelZh": "印度",
+      "countryLabelEn": "India",
+      "canonicalZoneId": "Asia/Kolkata"
+    },
+    "Asia/Krasnoyarsk": {
+      "countryCode": "RU",
+      "countryLabelZh": "俄罗斯",
+      "countryLabelEn": "Russia",
+      "canonicalZoneId": "Asia/Krasnoyarsk"
+    },
+    "Asia/Kuala_Lumpur": {
+      "countryCode": "MY",
+      "countryLabelZh": "马来西亚",
+      "countryLabelEn": "Malaysia",
+      "canonicalZoneId": "Asia/Kuala_Lumpur"
+    },
+    "Asia/Kuching": {
+      "countryCode": "MY",
+      "countryLabelZh": "马来西亚",
+      "countryLabelEn": "Malaysia",
+      "canonicalZoneId": "Asia/Kuching"
+    },
+    "Asia/Kuwait": {
+      "countryCode": "KW",
+      "countryLabelZh": "科威特",
+      "countryLabelEn": "Kuwait",
+      "canonicalZoneId": "Asia/Kuwait"
+    },
+    "Asia/Macao": {
+      "countryCode": "MO",
+      "countryLabelZh": "中国澳门特别行政区",
+      "countryLabelEn": "Macau",
+      "canonicalZoneId": "Asia/Macau"
+    },
+    "Asia/Macau": {
+      "countryCode": "MO",
+      "countryLabelZh": "中国澳门特别行政区",
+      "countryLabelEn": "Macau",
+      "canonicalZoneId": "Asia/Macau"
+    },
+    "Asia/Magadan": {
+      "countryCode": "RU",
+      "countryLabelZh": "俄罗斯",
+      "countryLabelEn": "Russia",
+      "canonicalZoneId": "Asia/Magadan"
+    },
+    "Asia/Makassar": {
+      "countryCode": "ID",
+      "countryLabelZh": "印度尼西亚",
+      "countryLabelEn": "Indonesia",
+      "canonicalZoneId": "Asia/Makassar"
+    },
+    "Asia/Manila": {
+      "countryCode": "PH",
+      "countryLabelZh": "菲律宾",
+      "countryLabelEn": "Philippines",
+      "canonicalZoneId": "Asia/Manila"
+    },
+    "Asia/Muscat": {
+      "countryCode": "OM",
+      "countryLabelZh": "阿曼",
+      "countryLabelEn": "Oman",
+      "canonicalZoneId": "Asia/Muscat"
+    },
+    "Asia/Nicosia": {
+      "countryCode": "CY",
+      "countryLabelZh": "塞浦路斯",
+      "countryLabelEn": "Cyprus",
+      "canonicalZoneId": "Asia/Nicosia"
+    },
+    "Asia/Novokuznetsk": {
+      "countryCode": "RU",
+      "countryLabelZh": "俄罗斯",
+      "countryLabelEn": "Russia",
+      "canonicalZoneId": "Asia/Novokuznetsk"
+    },
+    "Asia/Novosibirsk": {
+      "countryCode": "RU",
+      "countryLabelZh": "俄罗斯",
+      "countryLabelEn": "Russia",
+      "canonicalZoneId": "Asia/Novosibirsk"
+    },
+    "Asia/Omsk": {
+      "countryCode": "RU",
+      "countryLabelZh": "俄罗斯",
+      "countryLabelEn": "Russia",
+      "canonicalZoneId": "Asia/Omsk"
+    },
+    "Asia/Oral": {
+      "countryCode": "KZ",
+      "countryLabelZh": "哈萨克斯坦",
+      "countryLabelEn": "Kazakhstan",
+      "canonicalZoneId": "Asia/Oral"
+    },
+    "Asia/Phnom_Penh": {
+      "countryCode": "KH",
+      "countryLabelZh": "柬埔寨",
+      "countryLabelEn": "Cambodia",
+      "canonicalZoneId": "Asia/Phnom_Penh"
+    },
+    "Asia/Pontianak": {
+      "countryCode": "ID",
+      "countryLabelZh": "印度尼西亚",
+      "countryLabelEn": "Indonesia",
+      "canonicalZoneId": "Asia/Pontianak"
+    },
+    "Asia/Pyongyang": {
+      "countryCode": "KP",
+      "countryLabelZh": "朝鲜",
+      "countryLabelEn": "Korea (North)",
+      "canonicalZoneId": "Asia/Pyongyang"
+    },
+    "Asia/Qatar": {
+      "countryCode": "QA",
+      "countryLabelZh": "卡塔尔",
+      "countryLabelEn": "Qatar",
+      "canonicalZoneId": "Asia/Qatar"
+    },
+    "Asia/Qostanay": {
+      "countryCode": "KZ",
+      "countryLabelZh": "哈萨克斯坦",
+      "countryLabelEn": "Kazakhstan",
+      "canonicalZoneId": "Asia/Qostanay"
+    },
+    "Asia/Qyzylorda": {
+      "countryCode": "KZ",
+      "countryLabelZh": "哈萨克斯坦",
+      "countryLabelEn": "Kazakhstan",
+      "canonicalZoneId": "Asia/Qyzylorda"
+    },
+    "Asia/Rangoon": {
+      "countryCode": "MM",
+      "countryLabelZh": "缅甸",
+      "countryLabelEn": "Myanmar (Burma)",
+      "canonicalZoneId": "Asia/Yangon"
+    },
+    "Asia/Riyadh": {
+      "countryCode": "SA",
+      "countryLabelZh": "沙特阿拉伯",
+      "countryLabelEn": "Saudi Arabia",
+      "canonicalZoneId": "Asia/Riyadh"
+    },
+    "Asia/Saigon": {
+      "countryCode": "VN",
+      "countryLabelZh": "越南",
+      "countryLabelEn": "Vietnam",
+      "canonicalZoneId": "Asia/Ho_Chi_Minh"
+    },
+    "Asia/Sakhalin": {
+      "countryCode": "RU",
+      "countryLabelZh": "俄罗斯",
+      "countryLabelEn": "Russia",
+      "canonicalZoneId": "Asia/Sakhalin"
+    },
+    "Asia/Samarkand": {
+      "countryCode": "UZ",
+      "countryLabelZh": "乌兹别克斯坦",
+      "countryLabelEn": "Uzbekistan",
+      "canonicalZoneId": "Asia/Samarkand"
+    },
+    "Asia/Seoul": {
+      "countryCode": "KR",
+      "countryLabelZh": "韩国",
+      "countryLabelEn": "Korea (South)",
+      "canonicalZoneId": "Asia/Seoul"
+    },
+    "Asia/Shanghai": {
+      "countryCode": "CN",
+      "countryLabelZh": "中国",
+      "countryLabelEn": "China",
+      "canonicalZoneId": "Asia/Shanghai"
+    },
+    "Asia/Singapore": {
+      "countryCode": "SG",
+      "countryLabelZh": "新加坡",
+      "countryLabelEn": "Singapore",
+      "canonicalZoneId": "Asia/Singapore"
+    },
+    "Asia/Srednekolymsk": {
+      "countryCode": "RU",
+      "countryLabelZh": "俄罗斯",
+      "countryLabelEn": "Russia",
+      "canonicalZoneId": "Asia/Srednekolymsk"
+    },
+    "Asia/Taipei": {
+      "countryCode": "TW",
+      "countryLabelZh": "台湾",
+      "countryLabelEn": "Taiwan",
+      "canonicalZoneId": "Asia/Taipei"
+    },
+    "Asia/Tashkent": {
+      "countryCode": "UZ",
+      "countryLabelZh": "乌兹别克斯坦",
+      "countryLabelEn": "Uzbekistan",
+      "canonicalZoneId": "Asia/Tashkent"
+    },
+    "Asia/Tbilisi": {
+      "countryCode": "GE",
+      "countryLabelZh": "格鲁吉亚",
+      "countryLabelEn": "Georgia",
+      "canonicalZoneId": "Asia/Tbilisi"
+    },
+    "Asia/Tehran": {
+      "countryCode": "IR",
+      "countryLabelZh": "伊朗",
+      "countryLabelEn": "Iran",
+      "canonicalZoneId": "Asia/Tehran"
+    },
+    "Asia/Tel_Aviv": {
+      "countryCode": "IL",
+      "countryLabelZh": "以色列",
+      "countryLabelEn": "Israel",
+      "canonicalZoneId": "Asia/Jerusalem"
+    },
+    "Asia/Thimbu": {
+      "countryCode": "BT",
+      "countryLabelZh": "不丹",
+      "countryLabelEn": "Bhutan",
+      "canonicalZoneId": "Asia/Thimphu"
+    },
+    "Asia/Thimphu": {
+      "countryCode": "BT",
+      "countryLabelZh": "不丹",
+      "countryLabelEn": "Bhutan",
+      "canonicalZoneId": "Asia/Thimphu"
+    },
+    "Asia/Tokyo": {
+      "countryCode": "JP",
+      "countryLabelZh": "日本",
+      "countryLabelEn": "Japan",
+      "canonicalZoneId": "Asia/Tokyo"
+    },
+    "Asia/Tomsk": {
+      "countryCode": "RU",
+      "countryLabelZh": "俄罗斯",
+      "countryLabelEn": "Russia",
+      "canonicalZoneId": "Asia/Tomsk"
+    },
+    "Asia/Ujung_Pandang": {
+      "countryCode": "ID",
+      "countryLabelZh": "印度尼西亚",
+      "countryLabelEn": "Indonesia",
+      "canonicalZoneId": "Asia/Makassar"
+    },
+    "Asia/Ulaanbaatar": {
+      "countryCode": "MN",
+      "countryLabelZh": "蒙古",
+      "countryLabelEn": "Mongolia",
+      "canonicalZoneId": "Asia/Ulaanbaatar"
+    },
+    "Asia/Ulan_Bator": {
+      "countryCode": "MN",
+      "countryLabelZh": "蒙古",
+      "countryLabelEn": "Mongolia",
+      "canonicalZoneId": "Asia/Ulaanbaatar"
+    },
+    "Asia/Urumqi": {
+      "countryCode": "CN",
+      "countryLabelZh": "中国",
+      "countryLabelEn": "China",
+      "canonicalZoneId": "Asia/Urumqi"
+    },
+    "Asia/Ust-Nera": {
+      "countryCode": "RU",
+      "countryLabelZh": "俄罗斯",
+      "countryLabelEn": "Russia",
+      "canonicalZoneId": "Asia/Ust-Nera"
+    },
+    "Asia/Vientiane": {
+      "countryCode": "LA",
+      "countryLabelZh": "老挝",
+      "countryLabelEn": "Laos",
+      "canonicalZoneId": "Asia/Vientiane"
+    },
+    "Asia/Vladivostok": {
+      "countryCode": "RU",
+      "countryLabelZh": "俄罗斯",
+      "countryLabelEn": "Russia",
+      "canonicalZoneId": "Asia/Vladivostok"
+    },
+    "Asia/Yakutsk": {
+      "countryCode": "RU",
+      "countryLabelZh": "俄罗斯",
+      "countryLabelEn": "Russia",
+      "canonicalZoneId": "Asia/Yakutsk"
+    },
+    "Asia/Yangon": {
+      "countryCode": "MM",
+      "countryLabelZh": "缅甸",
+      "countryLabelEn": "Myanmar (Burma)",
+      "canonicalZoneId": "Asia/Yangon"
+    },
+    "Asia/Yekaterinburg": {
+      "countryCode": "RU",
+      "countryLabelZh": "俄罗斯",
+      "countryLabelEn": "Russia",
+      "canonicalZoneId": "Asia/Yekaterinburg"
+    },
+    "Asia/Yerevan": {
+      "countryCode": "AM",
+      "countryLabelZh": "亚美尼亚",
+      "countryLabelEn": "Armenia",
+      "canonicalZoneId": "Asia/Yerevan"
+    },
+    "Atlantic/Azores": {
+      "countryCode": "PT",
+      "countryLabelZh": "葡萄牙",
+      "countryLabelEn": "Portugal",
+      "canonicalZoneId": "Atlantic/Azores"
+    },
+    "Atlantic/Bermuda": {
+      "countryCode": "BM",
+      "countryLabelZh": "百慕大",
+      "countryLabelEn": "Bermuda",
+      "canonicalZoneId": "Atlantic/Bermuda"
+    },
+    "Atlantic/Canary": {
+      "countryCode": "ES",
+      "countryLabelZh": "西班牙",
+      "countryLabelEn": "Spain",
+      "canonicalZoneId": "Atlantic/Canary"
+    },
+    "Atlantic/Cape_Verde": {
+      "countryCode": "CV",
+      "countryLabelZh": "佛得角",
+      "countryLabelEn": "Cape Verde",
+      "canonicalZoneId": "Atlantic/Cape_Verde"
+    },
+    "Atlantic/Faeroe": {
+      "countryCode": "FO",
+      "countryLabelZh": "法罗群岛",
+      "countryLabelEn": "Faroe Islands",
+      "canonicalZoneId": "Atlantic/Faroe"
+    },
+    "Atlantic/Faroe": {
+      "countryCode": "FO",
+      "countryLabelZh": "法罗群岛",
+      "countryLabelEn": "Faroe Islands",
+      "canonicalZoneId": "Atlantic/Faroe"
+    },
+    "Atlantic/Jan_Mayen": {
+      "countryCode": "DE",
+      "countryLabelZh": "德国",
+      "countryLabelEn": "Germany",
+      "canonicalZoneId": "Europe/Berlin"
+    },
+    "Atlantic/Madeira": {
+      "countryCode": "PT",
+      "countryLabelZh": "葡萄牙",
+      "countryLabelEn": "Portugal",
+      "canonicalZoneId": "Atlantic/Madeira"
+    },
+    "Atlantic/Reykjavik": {
+      "countryCode": "IS",
+      "countryLabelZh": "冰岛",
+      "countryLabelEn": "Iceland",
+      "canonicalZoneId": "Atlantic/Reykjavik"
+    },
+    "Atlantic/South_Georgia": {
+      "countryCode": "GS",
+      "countryLabelZh": "南乔治亚和南桑威奇群岛",
+      "countryLabelEn": "South Georgia & the South Sandwich Islands",
+      "canonicalZoneId": "Atlantic/South_Georgia"
+    },
+    "Atlantic/St_Helena": {
+      "countryCode": "SH",
+      "countryLabelZh": "圣赫勒拿",
+      "countryLabelEn": "St Helena",
+      "canonicalZoneId": "Atlantic/St_Helena"
+    },
+    "Atlantic/Stanley": {
+      "countryCode": "FK",
+      "countryLabelZh": "福克兰群岛",
+      "countryLabelEn": "Falkland Islands",
+      "canonicalZoneId": "Atlantic/Stanley"
+    },
+    "Australia/ACT": {
+      "countryCode": "AU",
+      "countryLabelZh": "澳大利亚",
+      "countryLabelEn": "Australia",
+      "canonicalZoneId": "Australia/Sydney"
+    },
+    "Australia/Adelaide": {
+      "countryCode": "AU",
+      "countryLabelZh": "澳大利亚",
+      "countryLabelEn": "Australia",
+      "canonicalZoneId": "Australia/Adelaide"
+    },
+    "Australia/Brisbane": {
+      "countryCode": "AU",
+      "countryLabelZh": "澳大利亚",
+      "countryLabelEn": "Australia",
+      "canonicalZoneId": "Australia/Brisbane"
+    },
+    "Australia/Broken_Hill": {
+      "countryCode": "AU",
+      "countryLabelZh": "澳大利亚",
+      "countryLabelEn": "Australia",
+      "canonicalZoneId": "Australia/Broken_Hill"
+    },
+    "Australia/Canberra": {
+      "countryCode": "AU",
+      "countryLabelZh": "澳大利亚",
+      "countryLabelEn": "Australia",
+      "canonicalZoneId": "Australia/Sydney"
+    },
+    "Australia/Currie": {
+      "countryCode": "AU",
+      "countryLabelZh": "澳大利亚",
+      "countryLabelEn": "Australia",
+      "canonicalZoneId": "Australia/Hobart"
+    },
+    "Australia/Darwin": {
+      "countryCode": "AU",
+      "countryLabelZh": "澳大利亚",
+      "countryLabelEn": "Australia",
+      "canonicalZoneId": "Australia/Darwin"
+    },
+    "Australia/Eucla": {
+      "countryCode": "AU",
+      "countryLabelZh": "澳大利亚",
+      "countryLabelEn": "Australia",
+      "canonicalZoneId": "Australia/Eucla"
+    },
+    "Australia/Hobart": {
+      "countryCode": "AU",
+      "countryLabelZh": "澳大利亚",
+      "countryLabelEn": "Australia",
+      "canonicalZoneId": "Australia/Hobart"
+    },
+    "Australia/LHI": {
+      "countryCode": "AU",
+      "countryLabelZh": "澳大利亚",
+      "countryLabelEn": "Australia",
+      "canonicalZoneId": "Australia/Lord_Howe"
+    },
+    "Australia/Lindeman": {
+      "countryCode": "AU",
+      "countryLabelZh": "澳大利亚",
+      "countryLabelEn": "Australia",
+      "canonicalZoneId": "Australia/Lindeman"
+    },
+    "Australia/Lord_Howe": {
+      "countryCode": "AU",
+      "countryLabelZh": "澳大利亚",
+      "countryLabelEn": "Australia",
+      "canonicalZoneId": "Australia/Lord_Howe"
+    },
+    "Australia/Melbourne": {
+      "countryCode": "AU",
+      "countryLabelZh": "澳大利亚",
+      "countryLabelEn": "Australia",
+      "canonicalZoneId": "Australia/Melbourne"
+    },
+    "Australia/NSW": {
+      "countryCode": "AU",
+      "countryLabelZh": "澳大利亚",
+      "countryLabelEn": "Australia",
+      "canonicalZoneId": "Australia/Sydney"
+    },
+    "Australia/North": {
+      "countryCode": "AU",
+      "countryLabelZh": "澳大利亚",
+      "countryLabelEn": "Australia",
+      "canonicalZoneId": "Australia/Darwin"
+    },
+    "Australia/Perth": {
+      "countryCode": "AU",
+      "countryLabelZh": "澳大利亚",
+      "countryLabelEn": "Australia",
+      "canonicalZoneId": "Australia/Perth"
+    },
+    "Australia/Queensland": {
+      "countryCode": "AU",
+      "countryLabelZh": "澳大利亚",
+      "countryLabelEn": "Australia",
+      "canonicalZoneId": "Australia/Brisbane"
+    },
+    "Australia/South": {
+      "countryCode": "AU",
+      "countryLabelZh": "澳大利亚",
+      "countryLabelEn": "Australia",
+      "canonicalZoneId": "Australia/Adelaide"
+    },
+    "Australia/Sydney": {
+      "countryCode": "AU",
+      "countryLabelZh": "澳大利亚",
+      "countryLabelEn": "Australia",
+      "canonicalZoneId": "Australia/Sydney"
+    },
+    "Australia/Tasmania": {
+      "countryCode": "AU",
+      "countryLabelZh": "澳大利亚",
+      "countryLabelEn": "Australia",
+      "canonicalZoneId": "Australia/Hobart"
+    },
+    "Australia/Victoria": {
+      "countryCode": "AU",
+      "countryLabelZh": "澳大利亚",
+      "countryLabelEn": "Australia",
+      "canonicalZoneId": "Australia/Melbourne"
+    },
+    "Australia/West": {
+      "countryCode": "AU",
+      "countryLabelZh": "澳大利亚",
+      "countryLabelEn": "Australia",
+      "canonicalZoneId": "Australia/Perth"
+    },
+    "Australia/Yancowinna": {
+      "countryCode": "AU",
+      "countryLabelZh": "澳大利亚",
+      "countryLabelEn": "Australia",
+      "canonicalZoneId": "Australia/Broken_Hill"
+    },
+    "Brazil/Acre": {
+      "countryCode": "BR",
+      "countryLabelZh": "巴西",
+      "countryLabelEn": "Brazil",
+      "canonicalZoneId": "America/Rio_Branco"
+    },
+    "Brazil/DeNoronha": {
+      "countryCode": "BR",
+      "countryLabelZh": "巴西",
+      "countryLabelEn": "Brazil",
+      "canonicalZoneId": "America/Noronha"
+    },
+    "Brazil/East": {
+      "countryCode": "BR",
+      "countryLabelZh": "巴西",
+      "countryLabelEn": "Brazil",
+      "canonicalZoneId": "America/Sao_Paulo"
+    },
+    "Brazil/West": {
+      "countryCode": "BR",
+      "countryLabelZh": "巴西",
+      "countryLabelEn": "Brazil",
+      "canonicalZoneId": "America/Manaus"
+    },
+    "Canada/Atlantic": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Halifax"
+    },
+    "Canada/Central": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Winnipeg"
+    },
+    "Canada/Eastern": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Toronto"
+    },
+    "Canada/Mountain": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Edmonton"
+    },
+    "Canada/Newfoundland": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/St_Johns"
+    },
+    "Canada/Pacific": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Vancouver"
+    },
+    "Canada/Saskatchewan": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Regina"
+    },
+    "Canada/Yukon": {
+      "countryCode": "CA",
+      "countryLabelZh": "加拿大",
+      "countryLabelEn": "Canada",
+      "canonicalZoneId": "America/Whitehorse"
+    },
+    "Chile/Continental": {
+      "countryCode": "CL",
+      "countryLabelZh": "智利",
+      "countryLabelEn": "Chile",
+      "canonicalZoneId": "America/Santiago"
+    },
+    "Chile/EasterIsland": {
+      "countryCode": "CL",
+      "countryLabelZh": "智利",
+      "countryLabelEn": "Chile",
+      "canonicalZoneId": "Pacific/Easter"
+    },
+    "Europe/Amsterdam": {
+      "countryCode": "NL",
+      "countryLabelZh": "荷兰",
+      "countryLabelEn": "Netherlands",
+      "canonicalZoneId": "Europe/Amsterdam"
+    },
+    "Europe/Andorra": {
+      "countryCode": "AD",
+      "countryLabelZh": "安道尔",
+      "countryLabelEn": "Andorra",
+      "canonicalZoneId": "Europe/Andorra"
+    },
+    "Europe/Astrakhan": {
+      "countryCode": "RU",
+      "countryLabelZh": "俄罗斯",
+      "countryLabelEn": "Russia",
+      "canonicalZoneId": "Europe/Astrakhan"
+    },
+    "Europe/Athens": {
+      "countryCode": "GR",
+      "countryLabelZh": "希腊",
+      "countryLabelEn": "Greece",
+      "canonicalZoneId": "Europe/Athens"
+    },
+    "Europe/Belfast": {
+      "countryCode": "GB",
+      "countryLabelZh": "英国",
+      "countryLabelEn": "Britain (UK)",
+      "canonicalZoneId": "Europe/London"
+    },
+    "Europe/Belgrade": {
+      "countryCode": "RS",
+      "countryLabelZh": "塞尔维亚",
+      "countryLabelEn": "Serbia",
+      "canonicalZoneId": "Europe/Belgrade"
+    },
+    "Europe/Berlin": {
+      "countryCode": "DE",
+      "countryLabelZh": "德国",
+      "countryLabelEn": "Germany",
+      "canonicalZoneId": "Europe/Berlin"
+    },
+    "Europe/Bratislava": {
+      "countryCode": "SK",
+      "countryLabelZh": "斯洛伐克",
+      "countryLabelEn": "Slovakia",
+      "canonicalZoneId": "Europe/Bratislava"
+    },
+    "Europe/Brussels": {
+      "countryCode": "BE",
+      "countryLabelZh": "比利时",
+      "countryLabelEn": "Belgium",
+      "canonicalZoneId": "Europe/Brussels"
+    },
+    "Europe/Bucharest": {
+      "countryCode": "RO",
+      "countryLabelZh": "罗马尼亚",
+      "countryLabelEn": "Romania",
+      "canonicalZoneId": "Europe/Bucharest"
+    },
+    "Europe/Budapest": {
+      "countryCode": "HU",
+      "countryLabelZh": "匈牙利",
+      "countryLabelEn": "Hungary",
+      "canonicalZoneId": "Europe/Budapest"
+    },
+    "Europe/Busingen": {
+      "countryCode": "DE",
+      "countryLabelZh": "德国",
+      "countryLabelEn": "Germany",
+      "canonicalZoneId": "Europe/Busingen"
+    },
+    "Europe/Chisinau": {
+      "countryCode": "MD",
+      "countryLabelZh": "摩尔多瓦",
+      "countryLabelEn": "Moldova",
+      "canonicalZoneId": "Europe/Chisinau"
+    },
+    "Europe/Copenhagen": {
+      "countryCode": "DK",
+      "countryLabelZh": "丹麦",
+      "countryLabelEn": "Denmark",
+      "canonicalZoneId": "Europe/Copenhagen"
+    },
+    "Europe/Dublin": {
+      "countryCode": "IE",
+      "countryLabelZh": "爱尔兰",
+      "countryLabelEn": "Ireland",
+      "canonicalZoneId": "Europe/Dublin"
+    },
+    "Europe/Gibraltar": {
+      "countryCode": "GI",
+      "countryLabelZh": "直布罗陀",
+      "countryLabelEn": "Gibraltar",
+      "canonicalZoneId": "Europe/Gibraltar"
+    },
+    "Europe/Guernsey": {
+      "countryCode": "GG",
+      "countryLabelZh": "根西岛",
+      "countryLabelEn": "Guernsey",
+      "canonicalZoneId": "Europe/Guernsey"
+    },
+    "Europe/Helsinki": {
+      "countryCode": "FI",
+      "countryLabelZh": "芬兰",
+      "countryLabelEn": "Finland",
+      "canonicalZoneId": "Europe/Helsinki"
+    },
+    "Europe/Isle_of_Man": {
+      "countryCode": "IM",
+      "countryLabelZh": "马恩岛",
+      "countryLabelEn": "Isle of Man",
+      "canonicalZoneId": "Europe/Isle_of_Man"
+    },
+    "Europe/Istanbul": {
+      "countryCode": "TR",
+      "countryLabelZh": "土耳其",
+      "countryLabelEn": "Turkey",
+      "canonicalZoneId": "Europe/Istanbul"
+    },
+    "Europe/Jersey": {
+      "countryCode": "JE",
+      "countryLabelZh": "泽西岛",
+      "countryLabelEn": "Jersey",
+      "canonicalZoneId": "Europe/Jersey"
+    },
+    "Europe/Kaliningrad": {
+      "countryCode": "RU",
+      "countryLabelZh": "俄罗斯",
+      "countryLabelEn": "Russia",
+      "canonicalZoneId": "Europe/Kaliningrad"
+    },
+    "Europe/Kiev": {
+      "countryCode": "UA",
+      "countryLabelZh": "乌克兰",
+      "countryLabelEn": "Ukraine",
+      "canonicalZoneId": "Europe/Kyiv"
+    },
+    "Europe/Kirov": {
+      "countryCode": "RU",
+      "countryLabelZh": "俄罗斯",
+      "countryLabelEn": "Russia",
+      "canonicalZoneId": "Europe/Kirov"
+    },
+    "Europe/Kyiv": {
+      "countryCode": "UA",
+      "countryLabelZh": "乌克兰",
+      "countryLabelEn": "Ukraine",
+      "canonicalZoneId": "Europe/Kyiv"
+    },
+    "Europe/Lisbon": {
+      "countryCode": "PT",
+      "countryLabelZh": "葡萄牙",
+      "countryLabelEn": "Portugal",
+      "canonicalZoneId": "Europe/Lisbon"
+    },
+    "Europe/Ljubljana": {
+      "countryCode": "SI",
+      "countryLabelZh": "斯洛文尼亚",
+      "countryLabelEn": "Slovenia",
+      "canonicalZoneId": "Europe/Ljubljana"
+    },
+    "Europe/London": {
+      "countryCode": "GB",
+      "countryLabelZh": "英国",
+      "countryLabelEn": "Britain (UK)",
+      "canonicalZoneId": "Europe/London"
+    },
+    "Europe/Luxembourg": {
+      "countryCode": "LU",
+      "countryLabelZh": "卢森堡",
+      "countryLabelEn": "Luxembourg",
+      "canonicalZoneId": "Europe/Luxembourg"
+    },
+    "Europe/Madrid": {
+      "countryCode": "ES",
+      "countryLabelZh": "西班牙",
+      "countryLabelEn": "Spain",
+      "canonicalZoneId": "Europe/Madrid"
+    },
+    "Europe/Malta": {
+      "countryCode": "MT",
+      "countryLabelZh": "马耳他",
+      "countryLabelEn": "Malta",
+      "canonicalZoneId": "Europe/Malta"
+    },
+    "Europe/Mariehamn": {
+      "countryCode": "AX",
+      "countryLabelZh": "奥兰群岛",
+      "countryLabelEn": "Åland Islands",
+      "canonicalZoneId": "Europe/Mariehamn"
+    },
+    "Europe/Minsk": {
+      "countryCode": "BY",
+      "countryLabelZh": "白俄罗斯",
+      "countryLabelEn": "Belarus",
+      "canonicalZoneId": "Europe/Minsk"
+    },
+    "Europe/Monaco": {
+      "countryCode": "MC",
+      "countryLabelZh": "摩纳哥",
+      "countryLabelEn": "Monaco",
+      "canonicalZoneId": "Europe/Monaco"
+    },
+    "Europe/Moscow": {
+      "countryCode": "RU",
+      "countryLabelZh": "俄罗斯",
+      "countryLabelEn": "Russia",
+      "canonicalZoneId": "Europe/Moscow"
+    },
+    "Europe/Nicosia": {
+      "countryCode": "CY",
+      "countryLabelZh": "塞浦路斯",
+      "countryLabelEn": "Cyprus",
+      "canonicalZoneId": "Asia/Nicosia"
+    },
+    "Europe/Oslo": {
+      "countryCode": "NO",
+      "countryLabelZh": "挪威",
+      "countryLabelEn": "Norway",
+      "canonicalZoneId": "Europe/Oslo"
+    },
+    "Europe/Paris": {
+      "countryCode": "FR",
+      "countryLabelZh": "法国",
+      "countryLabelEn": "France",
+      "canonicalZoneId": "Europe/Paris"
+    },
+    "Europe/Podgorica": {
+      "countryCode": "ME",
+      "countryLabelZh": "黑山",
+      "countryLabelEn": "Montenegro",
+      "canonicalZoneId": "Europe/Podgorica"
+    },
+    "Europe/Prague": {
+      "countryCode": "CZ",
+      "countryLabelZh": "捷克",
+      "countryLabelEn": "Czech Republic",
+      "canonicalZoneId": "Europe/Prague"
+    },
+    "Europe/Riga": {
+      "countryCode": "LV",
+      "countryLabelZh": "拉脱维亚",
+      "countryLabelEn": "Latvia",
+      "canonicalZoneId": "Europe/Riga"
+    },
+    "Europe/Rome": {
+      "countryCode": "IT",
+      "countryLabelZh": "意大利",
+      "countryLabelEn": "Italy",
+      "canonicalZoneId": "Europe/Rome"
+    },
+    "Europe/Samara": {
+      "countryCode": "RU",
+      "countryLabelZh": "俄罗斯",
+      "countryLabelEn": "Russia",
+      "canonicalZoneId": "Europe/Samara"
+    },
+    "Europe/San_Marino": {
+      "countryCode": "SM",
+      "countryLabelZh": "圣马力诺",
+      "countryLabelEn": "San Marino",
+      "canonicalZoneId": "Europe/San_Marino"
+    },
+    "Europe/Sarajevo": {
+      "countryCode": "BA",
+      "countryLabelZh": "波斯尼亚和黑塞哥维那",
+      "countryLabelEn": "Bosnia & Herzegovina",
+      "canonicalZoneId": "Europe/Sarajevo"
+    },
+    "Europe/Saratov": {
+      "countryCode": "RU",
+      "countryLabelZh": "俄罗斯",
+      "countryLabelEn": "Russia",
+      "canonicalZoneId": "Europe/Saratov"
+    },
+    "Europe/Simferopol": {
+      "countryCode": "UA",
+      "countryLabelZh": "乌克兰",
+      "countryLabelEn": "Ukraine",
+      "canonicalZoneId": "Europe/Simferopol"
+    },
+    "Europe/Skopje": {
+      "countryCode": "MK",
+      "countryLabelZh": "马其顿",
+      "countryLabelEn": "North Macedonia",
+      "canonicalZoneId": "Europe/Skopje"
+    },
+    "Europe/Sofia": {
+      "countryCode": "BG",
+      "countryLabelZh": "保加利亚",
+      "countryLabelEn": "Bulgaria",
+      "canonicalZoneId": "Europe/Sofia"
+    },
+    "Europe/Stockholm": {
+      "countryCode": "SE",
+      "countryLabelZh": "瑞典",
+      "countryLabelEn": "Sweden",
+      "canonicalZoneId": "Europe/Stockholm"
+    },
+    "Europe/Tallinn": {
+      "countryCode": "EE",
+      "countryLabelZh": "爱沙尼亚",
+      "countryLabelEn": "Estonia",
+      "canonicalZoneId": "Europe/Tallinn"
+    },
+    "Europe/Tirane": {
+      "countryCode": "AL",
+      "countryLabelZh": "阿尔巴尼亚",
+      "countryLabelEn": "Albania",
+      "canonicalZoneId": "Europe/Tirane"
+    },
+    "Europe/Tiraspol": {
+      "countryCode": "MD",
+      "countryLabelZh": "摩尔多瓦",
+      "countryLabelEn": "Moldova",
+      "canonicalZoneId": "Europe/Chisinau"
+    },
+    "Europe/Ulyanovsk": {
+      "countryCode": "RU",
+      "countryLabelZh": "俄罗斯",
+      "countryLabelEn": "Russia",
+      "canonicalZoneId": "Europe/Ulyanovsk"
+    },
+    "Europe/Uzhgorod": {
+      "countryCode": "UA",
+      "countryLabelZh": "乌克兰",
+      "countryLabelEn": "Ukraine",
+      "canonicalZoneId": "Europe/Kyiv"
+    },
+    "Europe/Vaduz": {
+      "countryCode": "LI",
+      "countryLabelZh": "列支敦士登",
+      "countryLabelEn": "Liechtenstein",
+      "canonicalZoneId": "Europe/Vaduz"
+    },
+    "Europe/Vatican": {
+      "countryCode": "VA",
+      "countryLabelZh": "梵蒂冈",
+      "countryLabelEn": "Vatican City",
+      "canonicalZoneId": "Europe/Vatican"
+    },
+    "Europe/Vienna": {
+      "countryCode": "AT",
+      "countryLabelZh": "奥地利",
+      "countryLabelEn": "Austria",
+      "canonicalZoneId": "Europe/Vienna"
+    },
+    "Europe/Vilnius": {
+      "countryCode": "LT",
+      "countryLabelZh": "立陶宛",
+      "countryLabelEn": "Lithuania",
+      "canonicalZoneId": "Europe/Vilnius"
+    },
+    "Europe/Volgograd": {
+      "countryCode": "RU",
+      "countryLabelZh": "俄罗斯",
+      "countryLabelEn": "Russia",
+      "canonicalZoneId": "Europe/Volgograd"
+    },
+    "Europe/Warsaw": {
+      "countryCode": "PL",
+      "countryLabelZh": "波兰",
+      "countryLabelEn": "Poland",
+      "canonicalZoneId": "Europe/Warsaw"
+    },
+    "Europe/Zagreb": {
+      "countryCode": "HR",
+      "countryLabelZh": "克罗地亚",
+      "countryLabelEn": "Croatia",
+      "canonicalZoneId": "Europe/Zagreb"
+    },
+    "Europe/Zaporozhye": {
+      "countryCode": "UA",
+      "countryLabelZh": "乌克兰",
+      "countryLabelEn": "Ukraine",
+      "canonicalZoneId": "Europe/Kyiv"
+    },
+    "Europe/Zurich": {
+      "countryCode": "CH",
+      "countryLabelZh": "瑞士",
+      "countryLabelEn": "Switzerland",
+      "canonicalZoneId": "Europe/Zurich"
+    },
+    "Indian/Antananarivo": {
+      "countryCode": "MG",
+      "countryLabelZh": "马达加斯加",
+      "countryLabelEn": "Madagascar",
+      "canonicalZoneId": "Indian/Antananarivo"
+    },
+    "Indian/Chagos": {
+      "countryCode": "IO",
+      "countryLabelZh": "英属印度洋领地",
+      "countryLabelEn": "British Indian Ocean Territory",
+      "canonicalZoneId": "Indian/Chagos"
+    },
+    "Indian/Christmas": {
+      "countryCode": "CX",
+      "countryLabelZh": "圣诞岛",
+      "countryLabelEn": "Christmas Island",
+      "canonicalZoneId": "Indian/Christmas"
+    },
+    "Indian/Cocos": {
+      "countryCode": "CC",
+      "countryLabelZh": "科科斯（基林）群岛",
+      "countryLabelEn": "Cocos (Keeling) Islands",
+      "canonicalZoneId": "Indian/Cocos"
+    },
+    "Indian/Comoro": {
+      "countryCode": "KM",
+      "countryLabelZh": "科摩罗",
+      "countryLabelEn": "Comoros",
+      "canonicalZoneId": "Indian/Comoro"
+    },
+    "Indian/Kerguelen": {
+      "countryCode": "TF",
+      "countryLabelZh": "法属南部领地",
+      "countryLabelEn": "French S. Terr.",
+      "canonicalZoneId": "Indian/Kerguelen"
+    },
+    "Indian/Mahe": {
+      "countryCode": "SC",
+      "countryLabelZh": "塞舌尔",
+      "countryLabelEn": "Seychelles",
+      "canonicalZoneId": "Indian/Mahe"
+    },
+    "Indian/Maldives": {
+      "countryCode": "MV",
+      "countryLabelZh": "马尔代夫",
+      "countryLabelEn": "Maldives",
+      "canonicalZoneId": "Indian/Maldives"
+    },
+    "Indian/Mauritius": {
+      "countryCode": "MU",
+      "countryLabelZh": "毛里求斯",
+      "countryLabelEn": "Mauritius",
+      "canonicalZoneId": "Indian/Mauritius"
+    },
+    "Indian/Mayotte": {
+      "countryCode": "YT",
+      "countryLabelZh": "马约特",
+      "countryLabelEn": "Mayotte",
+      "canonicalZoneId": "Indian/Mayotte"
+    },
+    "Indian/Reunion": {
+      "countryCode": "RE",
+      "countryLabelZh": "留尼汪",
+      "countryLabelEn": "Réunion",
+      "canonicalZoneId": "Indian/Reunion"
+    },
+    "Mexico/BajaNorte": {
+      "countryCode": "MX",
+      "countryLabelZh": "墨西哥",
+      "countryLabelEn": "Mexico",
+      "canonicalZoneId": "America/Tijuana"
+    },
+    "Mexico/BajaSur": {
+      "countryCode": "MX",
+      "countryLabelZh": "墨西哥",
+      "countryLabelEn": "Mexico",
+      "canonicalZoneId": "America/Mazatlan"
+    },
+    "Mexico/General": {
+      "countryCode": "MX",
+      "countryLabelZh": "墨西哥",
+      "countryLabelEn": "Mexico",
+      "canonicalZoneId": "America/Mexico_City"
+    },
+    "Pacific/Apia": {
+      "countryCode": "WS",
+      "countryLabelZh": "萨摩亚",
+      "countryLabelEn": "Samoa (western)",
+      "canonicalZoneId": "Pacific/Apia"
+    },
+    "Pacific/Auckland": {
+      "countryCode": "NZ",
+      "countryLabelZh": "新西兰",
+      "countryLabelEn": "New Zealand",
+      "canonicalZoneId": "Pacific/Auckland"
+    },
+    "Pacific/Bougainville": {
+      "countryCode": "PG",
+      "countryLabelZh": "巴布亚新几内亚",
+      "countryLabelEn": "Papua New Guinea",
+      "canonicalZoneId": "Pacific/Bougainville"
+    },
+    "Pacific/Chatham": {
+      "countryCode": "NZ",
+      "countryLabelZh": "新西兰",
+      "countryLabelEn": "New Zealand",
+      "canonicalZoneId": "Pacific/Chatham"
+    },
+    "Pacific/Chuuk": {
+      "countryCode": "FM",
+      "countryLabelZh": "密克罗尼西亚",
+      "countryLabelEn": "Micronesia",
+      "canonicalZoneId": "Pacific/Chuuk"
+    },
+    "Pacific/Easter": {
+      "countryCode": "CL",
+      "countryLabelZh": "智利",
+      "countryLabelEn": "Chile",
+      "canonicalZoneId": "Pacific/Easter"
+    },
+    "Pacific/Efate": {
+      "countryCode": "VU",
+      "countryLabelZh": "瓦努阿图",
+      "countryLabelEn": "Vanuatu",
+      "canonicalZoneId": "Pacific/Efate"
+    },
+    "Pacific/Enderbury": {
+      "countryCode": "KI",
+      "countryLabelZh": "基里巴斯",
+      "countryLabelEn": "Kiribati",
+      "canonicalZoneId": "Pacific/Kanton"
+    },
+    "Pacific/Fakaofo": {
+      "countryCode": "TK",
+      "countryLabelZh": "托克劳",
+      "countryLabelEn": "Tokelau",
+      "canonicalZoneId": "Pacific/Fakaofo"
+    },
+    "Pacific/Fiji": {
+      "countryCode": "FJ",
+      "countryLabelZh": "斐济",
+      "countryLabelEn": "Fiji",
+      "canonicalZoneId": "Pacific/Fiji"
+    },
+    "Pacific/Funafuti": {
+      "countryCode": "TV",
+      "countryLabelZh": "图瓦卢",
+      "countryLabelEn": "Tuvalu",
+      "canonicalZoneId": "Pacific/Funafuti"
+    },
+    "Pacific/Galapagos": {
+      "countryCode": "EC",
+      "countryLabelZh": "厄瓜多尔",
+      "countryLabelEn": "Ecuador",
+      "canonicalZoneId": "Pacific/Galapagos"
+    },
+    "Pacific/Gambier": {
+      "countryCode": "PF",
+      "countryLabelZh": "法属波利尼西亚",
+      "countryLabelEn": "French Polynesia",
+      "canonicalZoneId": "Pacific/Gambier"
+    },
+    "Pacific/Guadalcanal": {
+      "countryCode": "SB",
+      "countryLabelZh": "所罗门群岛",
+      "countryLabelEn": "Solomon Islands",
+      "canonicalZoneId": "Pacific/Guadalcanal"
+    },
+    "Pacific/Guam": {
+      "countryCode": "GU",
+      "countryLabelZh": "关岛",
+      "countryLabelEn": "Guam",
+      "canonicalZoneId": "Pacific/Guam"
+    },
+    "Pacific/Honolulu": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "Pacific/Honolulu"
+    },
+    "Pacific/Johnston": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "Pacific/Honolulu"
+    },
+    "Pacific/Kanton": {
+      "countryCode": "KI",
+      "countryLabelZh": "基里巴斯",
+      "countryLabelEn": "Kiribati",
+      "canonicalZoneId": "Pacific/Kanton"
+    },
+    "Pacific/Kiritimati": {
+      "countryCode": "KI",
+      "countryLabelZh": "基里巴斯",
+      "countryLabelEn": "Kiribati",
+      "canonicalZoneId": "Pacific/Kiritimati"
+    },
+    "Pacific/Kosrae": {
+      "countryCode": "FM",
+      "countryLabelZh": "密克罗尼西亚",
+      "countryLabelEn": "Micronesia",
+      "canonicalZoneId": "Pacific/Kosrae"
+    },
+    "Pacific/Kwajalein": {
+      "countryCode": "MH",
+      "countryLabelZh": "马绍尔群岛",
+      "countryLabelEn": "Marshall Islands",
+      "canonicalZoneId": "Pacific/Kwajalein"
+    },
+    "Pacific/Majuro": {
+      "countryCode": "MH",
+      "countryLabelZh": "马绍尔群岛",
+      "countryLabelEn": "Marshall Islands",
+      "canonicalZoneId": "Pacific/Majuro"
+    },
+    "Pacific/Marquesas": {
+      "countryCode": "PF",
+      "countryLabelZh": "法属波利尼西亚",
+      "countryLabelEn": "French Polynesia",
+      "canonicalZoneId": "Pacific/Marquesas"
+    },
+    "Pacific/Midway": {
+      "countryCode": "UM",
+      "countryLabelZh": "美国本土外小岛屿",
+      "countryLabelEn": "US minor outlying islands",
+      "canonicalZoneId": "Pacific/Midway"
+    },
+    "Pacific/Nauru": {
+      "countryCode": "NR",
+      "countryLabelZh": "瑙鲁",
+      "countryLabelEn": "Nauru",
+      "canonicalZoneId": "Pacific/Nauru"
+    },
+    "Pacific/Niue": {
+      "countryCode": "NU",
+      "countryLabelZh": "纽埃",
+      "countryLabelEn": "Niue",
+      "canonicalZoneId": "Pacific/Niue"
+    },
+    "Pacific/Norfolk": {
+      "countryCode": "NF",
+      "countryLabelZh": "诺福克岛",
+      "countryLabelEn": "Norfolk Island",
+      "canonicalZoneId": "Pacific/Norfolk"
+    },
+    "Pacific/Noumea": {
+      "countryCode": "NC",
+      "countryLabelZh": "新喀里多尼亚",
+      "countryLabelEn": "New Caledonia",
+      "canonicalZoneId": "Pacific/Noumea"
+    },
+    "Pacific/Pago_Pago": {
+      "countryCode": "AS",
+      "countryLabelZh": "美属萨摩亚",
+      "countryLabelEn": "Samoa (American)",
+      "canonicalZoneId": "Pacific/Pago_Pago"
+    },
+    "Pacific/Palau": {
+      "countryCode": "PW",
+      "countryLabelZh": "帕劳",
+      "countryLabelEn": "Palau",
+      "canonicalZoneId": "Pacific/Palau"
+    },
+    "Pacific/Pitcairn": {
+      "countryCode": "PN",
+      "countryLabelZh": "皮特凯恩群岛",
+      "countryLabelEn": "Pitcairn",
+      "canonicalZoneId": "Pacific/Pitcairn"
+    },
+    "Pacific/Pohnpei": {
+      "countryCode": "FM",
+      "countryLabelZh": "密克罗尼西亚",
+      "countryLabelEn": "Micronesia",
+      "canonicalZoneId": "Pacific/Pohnpei"
+    },
+    "Pacific/Ponape": {
+      "countryCode": "FM",
+      "countryLabelZh": "密克罗尼西亚",
+      "countryLabelEn": "Micronesia",
+      "canonicalZoneId": "Pacific/Pohnpei"
+    },
+    "Pacific/Port_Moresby": {
+      "countryCode": "PG",
+      "countryLabelZh": "巴布亚新几内亚",
+      "countryLabelEn": "Papua New Guinea",
+      "canonicalZoneId": "Pacific/Port_Moresby"
+    },
+    "Pacific/Rarotonga": {
+      "countryCode": "CK",
+      "countryLabelZh": "库克群岛",
+      "countryLabelEn": "Cook Islands",
+      "canonicalZoneId": "Pacific/Rarotonga"
+    },
+    "Pacific/Saipan": {
+      "countryCode": "MP",
+      "countryLabelZh": "北马里亚纳群岛",
+      "countryLabelEn": "Northern Mariana Islands",
+      "canonicalZoneId": "Pacific/Saipan"
+    },
+    "Pacific/Samoa": {
+      "countryCode": "AS",
+      "countryLabelZh": "美属萨摩亚",
+      "countryLabelEn": "Samoa (American)",
+      "canonicalZoneId": "Pacific/Pago_Pago"
+    },
+    "Pacific/Tahiti": {
+      "countryCode": "PF",
+      "countryLabelZh": "法属波利尼西亚",
+      "countryLabelEn": "French Polynesia",
+      "canonicalZoneId": "Pacific/Tahiti"
+    },
+    "Pacific/Tarawa": {
+      "countryCode": "KI",
+      "countryLabelZh": "基里巴斯",
+      "countryLabelEn": "Kiribati",
+      "canonicalZoneId": "Pacific/Tarawa"
+    },
+    "Pacific/Tongatapu": {
+      "countryCode": "TO",
+      "countryLabelZh": "汤加",
+      "countryLabelEn": "Tonga",
+      "canonicalZoneId": "Pacific/Tongatapu"
+    },
+    "Pacific/Truk": {
+      "countryCode": "FM",
+      "countryLabelZh": "密克罗尼西亚",
+      "countryLabelEn": "Micronesia",
+      "canonicalZoneId": "Pacific/Chuuk"
+    },
+    "Pacific/Wake": {
+      "countryCode": "UM",
+      "countryLabelZh": "美国本土外小岛屿",
+      "countryLabelEn": "US minor outlying islands",
+      "canonicalZoneId": "Pacific/Wake"
+    },
+    "Pacific/Wallis": {
+      "countryCode": "WF",
+      "countryLabelZh": "瓦利斯和富图纳",
+      "countryLabelEn": "Wallis & Futuna",
+      "canonicalZoneId": "Pacific/Wallis"
+    },
+    "Pacific/Yap": {
+      "countryCode": "PG",
+      "countryLabelZh": "巴布亚新几内亚",
+      "countryLabelEn": "Papua New Guinea",
+      "canonicalZoneId": "Pacific/Port_Moresby"
+    },
+    "US/Alaska": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Anchorage"
+    },
+    "US/Aleutian": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Adak"
+    },
+    "US/Arizona": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Phoenix"
+    },
+    "US/Central": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Chicago"
+    },
+    "US/East-Indiana": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Indiana/Indianapolis"
+    },
+    "US/Eastern": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/New_York"
+    },
+    "US/Hawaii": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "Pacific/Honolulu"
+    },
+    "US/Indiana-Starke": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Indiana/Knox"
+    },
+    "US/Michigan": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Detroit"
+    },
+    "US/Mountain": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Denver"
+    },
+    "US/Pacific": {
+      "countryCode": "US",
+      "countryLabelZh": "美国",
+      "countryLabelEn": "United States",
+      "canonicalZoneId": "America/Los_Angeles"
+    },
+    "US/Samoa": {
+      "countryCode": "AS",
+      "countryLabelZh": "美属萨摩亚",
+      "countryLabelEn": "Samoa (American)",
+      "canonicalZoneId": "Pacific/Pago_Pago"
+    },
+    "UTC": {
+      "countryCode": "UTC",
+      "countryLabelZh": "协调世界时",
+      "countryLabelEn": "Coordinated Universal Time",
+      "canonicalZoneId": "UTC"
+    }
+  },
+  "sha256": {
+    "src/main/resources/contact-country-timezones.json": "c27ad26d63ccc151a82844d757b6494bfa73ba69c772d4f45dc627c6fa6b5480",
+    "/Users/lukai/IdeaProjects/weibo-talent-introduction/docs/plans/2026-10-04/meeting-country-timezone-evidence/iana-2026c-backward": "d2f4c8953f204982ddf4dc0c2debf41b2464de376dad7d546d0fc70f889fa706",
+    "/Users/lukai/IdeaProjects/weibo-talent-introduction/docs/plans/2026-10-04/meeting-country-timezone-evidence/iana-2026c-iso3166.tab": "837c80785080c8433fd9d4ea87e78f161ac7a40389301c5153d4f90198baeb2a",
+    "/Users/lukai/IdeaProjects/weibo-talent-introduction/docs/plans/2026-10-04/meeting-country-timezone-evidence/iana-2026c-zone.tab": "7cc78ea166261b3dedf951cdd721051460851e6fcd96c12b8e3194cf25677f21"
+  },
+  "source": "https://data.iana.org/time-zones/releases/tzdata2026c.tar.gz",
+  "notes": [
+    "Exact country zone entry wins over merged tzdb links.",
+    "#= original target wins over cross-country merged target.",
+    "SystemV is not a country; do not guess.",
+    "This is audit evidence, not a runtime resource."
+  ]
+}

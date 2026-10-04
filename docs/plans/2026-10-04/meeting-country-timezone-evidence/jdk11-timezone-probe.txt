@@ -1,0 +1,19 @@
+java=11.0.15
+tzdb=[2021e]
+BR 2026-10-07T09:00 uniqueOffsetsSeconds=[-7200, -10800, -14400, -18000]
+America/Sao_Paulo|2026-10-07T09:00|2026-10-07T09:30 validStart=[-03:00] validEnd=[-03:00] noon=-03:00
+ startUtc=2026-10-07T12:00:00Z beijing=2026-10-07T20:00+08:00[Asia/Shanghai]
+Brazil/East|2026-10-07T09:00|2026-10-07T09:30 validStart=[-03:00] validEnd=[-03:00] noon=-03:00
+ startUtc=2026-10-07T12:00:00Z beijing=2026-10-07T20:00+08:00[Asia/Shanghai]
+America/New_York|2026-03-08T01:30|2026-03-08T03:30 validStart=[-05:00] validEnd=[-04:00] noon=-04:00
+ startUtc=2026-03-08T06:30:00Z beijing=2026-03-08T14:30+08:00[Asia/Shanghai]
+America/New_York|2026-03-08T02:30|2026-03-08T03:30 validStart=[] validEnd=[-04:00] noon=-04:00
+America/New_York|2026-11-01T01:30|2026-11-01T02:30 validStart=[-04:00, -05:00] validEnd=[-05:00] noon=-05:00
+America/Denver|2026-01-15T09:00|2026-01-15T09:30 validStart=[-07:00] validEnd=[-07:00] noon=-07:00
+ startUtc=2026-01-15T16:00:00Z beijing=2026-01-16T00:00+08:00[Asia/Shanghai]
+America/Phoenix|2026-01-15T09:00|2026-01-15T09:30 validStart=[-07:00] validEnd=[-07:00] noon=-07:00
+ startUtc=2026-01-15T16:00:00Z beijing=2026-01-16T00:00+08:00[Asia/Shanghai]
+America/Denver|2026-07-15T09:00|2026-07-15T09:30 validStart=[-06:00] validEnd=[-06:00] noon=-06:00
+ startUtc=2026-07-15T15:00:00Z beijing=2026-07-15T23:00+08:00[Asia/Shanghai]
+America/Phoenix|2026-07-15T09:00|2026-07-15T09:30 validStart=[-07:00] validEnd=[-07:00] noon=-07:00
+ startUtc=2026-07-15T16:00:00Z beijing=2026-07-16T00:00+08:00[Asia/Shanghai]
