@@ -112,4 +112,4 @@ Implementation boundary: `dbe79c2..cc69a8f`，仅 6 个授权文件。
 
 ## Fast-P Archive
 
-本报告随 02 证据提交归档（fast-p 控制方）。实现提交仅含 6 个授权文件：`feat(fast-p): implement 02`。
+本报告随 02 证据提交归档（fast-p 控制方）。实现提交仅含 6 个授权文件：`feat(fast-p): implement 02`。修复轮 1 由 `fix(fast-p): repair 02 round 1` 落地（F-1：`refreshListWithFallback` 双 null 短路 + 2 个覆盖用例），详见 fix-log.md 与 verify-log.md。

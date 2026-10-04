@@ -34,3 +34,25 @@ Verifier: VerifyMailboxProgress02
 
 ### Required Action
 - AUTO_FIX
+
+## Light Verification: LIGHT_PASS_WITH_NOTES
+Child: 02（`docs/plans/2026-10-04/mailbox-progress-02-frontend.md`；brief `docs/plans/fast/2026-10-04-mailbox-progress-master/children/02/brief.md`）
+Boundary: dbe79c2bfb466bedb2c70d767bdd34082307579c..61d630b080266220c078cb38e64bf7f542141e01（head = `fix(fast-p): repair 02 round 1`；fix delta cc69a8f0649f025bd69e80ecac4c5097fc8343b6..61d630b0）
+Verifier: ReverifyMailboxProgress02
+
+### Four Gates
+|Gate|Result|Evidence|
+|---|---|---|
+|Authorized scope|PASS|`git diff --name-status dbe79c2..61d630b0 -- src/` = 恰好 6 个授权文件（`static/{index.html,mailbox-chat.js,styles.css}`、`test/js/{mailboxChatBehavior,mailboxChatStyle,mailboxSuspension}.test.js`），与 brief Authorized Files 逐项一致；fix delta 内 `src/**` 仅 `mailbox-chat.js`+`mailboxChatBehavior.test.js`（均在白名单）；`styles.css` 为纯追加（+21/-0）；`mailbox-chat.css` 区间 diff 为空（字节未动）；`git status --porcelain --untracked-files=all` 无 src 改动/新文件。|
+|Plan and invariants|PASS|**F-1 已修复**：`mailbox-chat.js:2516` `if (instance.disposed \|\| data == null) return data;`、`:2521` `if (instance.disposed \|\| retryData == null) return retryData;`；两守卫命中即 return，不做分页/选中项协调（`:2517-2527`）。**测试真实覆盖两守卫（变异实测）**：临时副本中移除两守卫 → `node --test --test-name-pattern="短路"` 变 `pass 1 / fail 2`，保留守卫 → `pass 3 / fail 0`，用例 `mailboxChatBehavior.test.js:2894/2925/2950` 分别断言「首查 null 不得触发上一页回退」（首查失败 + 末页 items 空）与「回退 fetch 过期 null 不清选中/不串空态」，非无关空页路径。其余不变量在 fix 未触及下仍成立：I-1 `PROGRESS_MENU:80-84`/`FILTER_CHIPS:58-66`/`PROGRESS_INVALID_LABEL:85`/`progressStatusOf:221-229`（非法→INVALID 不降级 NONE）；I-2 `chipParams providedOnly:542`、`conversationsParams:1525`；I-3 PUT `:4933-4935`、`updateProgressLocal:4904` 仅在 `.then`（`:4945`）、per-contact busy `:683/4836-4839`、写/刷新失败分离 `:4946-4953`；I-4 `suspension.seq:4939-4943`、`afterSuspensionRemoved:2293-2311`（PROVIDED→已提供 `:2300/:2309`）；I-5 `renderUnmatchedPerson:1666-1681` 无 `progressActionsHtml`、菜单在 `person-actions:1640`、键盘 `:8434-8475`、旧 follow 控件 0 命中（`mailbox-chat.js`/`index.html`/`app.js`）；I-6 11 资源键 `?v=20261004-mailbox-progress`（`uniq -c`=11）、旧键 src/test 0 命中。S-1 `styles.css:12647-12648` 逐字保留；S-2 计划块 vs `styles.css` `diff` 为空（字节一致）；S-3 无 `mc-follow/mc-toggle-follow/toggleFollow`、无「进入跟进/进入提供」。|
+|Required commands|PASS|① `node --check src/main/resources/static/mailbox-chat.js` exit 0。② 6 文件 `node --test` exit 0 = **272/272** pass / fail 0（与 fix-log 一致）。③ `node --test src/test/js/*.test.js` exit 0 = **1453** pass / fail 0（baseline 1434；implement 1451，+2 新短路用例）。④ JDK11 `mvn test` exit 1 = surefire **Tests run 4547 / F0 / E19 / Skipped 13**（baseline 逐字一致），本轮报告唯一失败类 `mailbox.service.ExpertContactLocationServiceTest` 19/19 全为 `<init>:38 » IllegalStateException: 国家时区目录配置错误：国家 CL 的时区…`，无第二失败类。|
+|Downstream interfaces|PASS（末个 child，仅校验消费 01）|前端 `mailbox-chat.js:4933-4940` PUT `/api/mail/mailbox/conversations/{id}/progress-status` body `JSON.stringify({status})`、回包读 `data.progressStatus`；`:542`/`:1525` `providedOnly=true`；`:221-229` 列表项 `progressStatus`（缺字段回退 followed）；挂起回包经 `progressStatusOf(state)`（`:2296`）。对应 01 后端就位：`MailboxConversationController.kt:85-89,287-291`、`MailboxSuspensionService.kt:184-191`，与 brief 契约逐字相符。|
+
+### AUTO_FIX
+- N/A
+
+### RECORD_ONLY
+- O-1：`target/surefire-reports/TEST-...MailboxConversationRepositoryIT.xml`（mtime 2026-10-04 23:18:06，早于本轮 00:12 运行）显示 `errors="1"`（`INSERT INTO expert_replied_dismissal ... Field 'dismissed_at' doesn't have a default value`）。该类不在 `mvn test` 本轮范围（本轮报告仅 ExpertContactLocationServiceTest 失败，F0/E19），属陈旧残留、与本 child 前端改动无关，故仅记录不深究。
+
+### Required Action
+- COMPLETE_CHILD
