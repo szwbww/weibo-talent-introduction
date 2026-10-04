@@ -1,7 +1,7 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-10-04/mailbox-progress-master.md
 
-- Status: REPAIR_PLAN_READY
-- Review epoch: 1
+- Status: MACHINE_BLOCKED
+- Review epoch: 2
 - Master plan: docs/plans/2026-10-04/mailbox-progress-master.md (sha256 38c25a2e3417a37f76c143791e3c24f472072bfb78c75d9e3104090fe960e315)
 - Governing master identity: sha256 38c25a2e3417a37f76c143791e3c24f472072bfb78c75d9e3104090fe960e315; commit 9594d4b3b3c3022b2be2bc04b24d90ee40a58ad4
 - Invoked master identity: SAME (sha256 38c25a2e3417a37f76c143791e3c24f472072bfb78c75d9e3104090fe960e315)
@@ -11,23 +11,23 @@
 - Fast-p ledger: docs/plans/fast/2026-10-04-mailbox-progress-master/ledger.md (sha256 7d22a1e7ae4e257a03fb7d8cef52428c133f17e14978ee481e2341d8824a981d)
 - Fast-p handoff: docs/plans/fast/2026-10-04-mailbox-progress-master/human-review-handoff.md (sha256 37552e75ee77395d083b0abf79d9f99aab1c50da75473eebe8988b8439f3f71d)
 - Master base: e28e53fd898edd62905a0d45a6bf90396b18b1bf
-- Final code head: 61d630b080266220c078cb38e64bf7f542141e01
-- Evidence parent before next commit: 1b971f964aff53f745c3e9a2b5b29c1cc15b68da
-- Previous evidence commit: N/A
+- Final code head: cc37073675eedf8da87ca4f3856c0d5a10a45b0a
+- Evidence parent before next commit: e7f4d8ba214394d2152447df4bf8067d0451d89d
+- Previous evidence commit: e7f4d8ba214394d2152447df4bf8067d0451d89d
 - Branch: fast/2026-10-04-mailbox-progress-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-mailbox-progress-master
 - Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
 - Discovery evidence: SELECTED; worktree=/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-mailbox-progress-master; branch=fast/2026-10-04-mailbox-progress-master; fast-final-code-head=61d630b080266220c078cb38e64bf7f542141e01; exact master and recorded lineage validated
 - Misdirected review evidence: N/A
-- Reviewer: /root/aggregate_reviewer
+- Reviewer: /root/aggregate_rereviewer
 - Reviewer attempt: 1
-- Machine result: FAIL
-- Machine report epoch: machine-verification.md#epoch-1
-- Repair artifact: docs/plans/fix/mailbox-progress-master/repair.md (sha256 b846d272701a44e6449a2d24a833de191b950ea093b3b4cb0e7585fc5fbec28c; DRAFT_READY)
-- Repair evidence mode: N/A
-- Repair approval source: N/A
-- Repair executor: N/A
-- Repair code head: N/A
+- Machine result: BLOCKED
+- Machine report epoch: machine-verification.md#epoch-2
+- Repair artifact: docs/plans/fix/mailbox-progress-master/repair.md (sha256 b846d272701a44e6449a2d24a833de191b950ea093b3b4cb0e7585fc5fbec28c; EXECUTED)
+- Repair evidence mode: DURABLE_HANDOFF
+- Repair approval source: human-originated invocation `$execute-p docs/plans/fix/mailbox-progress-master/repair.md` (2026-10-05, this session)
+- Repair executor: omp session agent (main conversation; model `opencode-go/deepseek-v4.1-flash:max`)
+- Repair code head: cc37073675eedf8da87ca4f3856c0d5a10a45b0a
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: human approval required for docs/plans/fix/mailbox-progress-master/repair.md
+- Blocker/next action: mandatory Flyway and full Maven commands lack fresh terminal results; establish their configured verification environment, then rerun aggregate review for cc37073675eedf8da87ca4f3856c0d5a10a45b0a

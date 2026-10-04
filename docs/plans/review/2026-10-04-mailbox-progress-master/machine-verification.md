@@ -92,3 +92,74 @@ No implementation was performed. No product code was modified.
 |---|---|---|---|
 | 01 O-1: V148/V149 coordination | Master migration-number coordination | RECORD_ONLY; human release coordination remains | Current boundary adds V149 only; no V148 migration in scope. |
 | 02 O-1: stale Surefire XML | Fresh required test evidence | BLOCKED, not waived | XML stale; fresh Maven/Flyway evidence did not reach Surefire. |
+
+## Epoch 2 — 2026-10-05
+
+- Master plan: docs/plans/2026-10-04/mailbox-progress-master.md (sha256 38c25a2e3417a37f76c143791e3c24f472072bfb78c75d9e3104090fe960e315)
+- Governing master identity: sha256 38c25a2e3417a37f76c143791e3c24f472072bfb78c75d9e3104090fe960e315; recorded commit 9594d4b3b3c3022b2be2bc04b24d90ee40a58ad4; CONSISTENT; amendments N/A
+- Boundary: e28e53fd898edd62905a0d45a6bf90396b18b1bf..cc37073675eedf8da87ca4f3856c0d5a10a45b0a
+- Evidence boundary: cc37073675eedf8da87ca4f3856c0d5a10a45b0a..e7f4d8ba214394d2152447df4bf8067d0451d89d (repair-execution.md only)
+- Reviewer: /root/aggregate_rereviewer
+- Result: BLOCKED
+- Convergence: BLOCKED
+- Repair artifact/result: docs/plans/fix/mailbox-progress-master/repair.md (EXECUTED; sha256 b846d272701a44e6449a2d24a833de191b950ea093b3b4cb0e7585fc5fbec28c)
+
+### Command Evidence
+
+| Command | Result | Fresh evidence |
+|---|---|---|
+| `node --check src/main/resources/static/mailbox-chat.js` | PASS | exit 0 |
+| Focused six-file Node suite | PASS | exit 0; 273 pass, 0 fail |
+| `node --test src/test/js/*.test.js` | PASS | sandbox first blocked transient `target` write; elevated fresh rerun exit 0; 1454 tests, 279 suites, 1454 pass, 0 fail |
+| Required Flyway command, exact | BLOCKED | Fresh report: 1 test, 0 fail, 1 error: Docker is required for Flyway migration tests. Harness detached before terminal exit capture. |
+| Flyway rerun with reachable OrbStack socket | BLOCKED | Bounded during Kotlin compilation; terminated; no fresh Surefire result. |
+| Required MySQL command, isolated DB | BLOCKED | Disposable `mailbox_progress_review_20261005_0125`, then dropped. Controller 41/0/0; Repository 30/0/1; Suspension 10/0/0; aggregate 81/0/1. Only error is unchanged base `MailboxConversationRepositoryIT.kt:226`: `dismissed_at` has no default. Harness detached before terminal exit capture. |
+| `JAVA_HOME=... mvn test` | BLOCKED | Not started: bounded Maven/Flyway compilation consumed the verification window; no fresh terminal result. |
+| `git diff --check e28e53f..e7f4d8b` | PASS | exit 0 |
+
+### Master Contract Matrix
+
+| ID | Verdict | Evidence |
+|---|---|---|
+| R-1 tabs/order | PASS | `mailbox-chat.js:60-67`; focused Node suite |
+| R-2 card three-state control | PASS | `mailbox-chat.js:1589-1644,4919-4964`; focused Node suite |
+| R-3 exact menu words/no “进入” | PASS | `mailbox-chat.js:80-85`; style/behavior tests |
+| R-4 seven tabs/counts/wrap | PASS; geometry PENDING | `mailbox-chat.js:60-67`, `styles.css:12647-12648`; browser widths are manual |
+| I-1 single DB fact/migration | BLOCKED | V149 and `ExpertFollowService.kt:84-137` conform; Flyway success unavailable |
+| I-2 ownership, filters, pagination, replied exclusion | BLOCKED | Repository `:189-200,685-727` conforms; MySQL suite has unchanged unrelated error |
+| I-3 UI state-transition behavior | PASS | `mailbox-chat.js:2514-2529,4919-4964`; 273 focused tests pass |
+| S-1 tabs/wrapping | PASS; geometry PENDING | `styles.css:12647-12648`; Node styles pass |
+| S-2 menu/card/title/CSS | PASS | Title at `mailbox-chat.js:1631`; regression `mailboxChatBehavior.test.js:2894-2904`; CSS `styles.css:12653-12673` |
+| S-3 no detail duplicate/legacy flows | PASS | Focused behavior/style tests pass |
+| S-4 resource/cache/CSS boundaries | PASS | 11 unified `index.html` keys; full Node suite passes |
+| Prohibited scope/non-goals | PASS | Exactly 16 product/test paths; no V148/new table/ES/resource |
+| Mandatory aggregate gates | BLOCKED | Flyway and full Maven lack completed fresh terminal evidence |
+| Manual A-1–A-7 | PENDING | Requires deployed isolated/browser acceptance |
+
+### Finding Lineage
+
+| Finding | State | Evidence |
+|---|---|---|
+| V-1 | RESOLVED | Escaped full-name `title` at `mailbox-chat.js:1631`; special-character long-name regression passes |
+| New P1/P2 | N/A | None confirmed |
+
+### Observations
+
+- Child 01 O-1 remains `RECORD_ONLY`: branch has V149 only; isolated review DB avoided shared-schema interference. Human V148/V149 release coordination remains required.
+- Child 02 O-1: stale Surefire XML is superseded. Fresh XML reproduces the unchanged pre-base `dismissed_at` error at `MailboxConversationRepositoryIT.kt:226`; not attributed to this plan.
+- Historical full-Maven failures were not reused.
+
+### Repair Result
+
+- Repair: `docs/plans/fix/mailbox-progress-master/repair.md` (sha256 `b846d272701a44e6449a2d24a833de191b950ea093b3b4cb0e7585fc5fbec28c`).
+- Approved `$execute-p` execution: product `cc37073675eedf8da87ca4f3856c0d5a10a45b0a`; evidence `e7f4d8ba214394d2152447df4bf8067d0451d89d`.
+- V-1 resolved. No new repair plan.
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+| Source item | Master requirement | Result | Evidence |
+|---|---|---|---|
+| 01 O-1: V148/V149 coordination | Migration-number coordination | RECORD_ONLY | V149 only; human release coordination required. |
+| 02 O-1: stale Surefire XML | Fresh required test evidence | BLOCKED | Fresh XML has the unchanged pre-base `dismissed_at` error. |
+
+No product code, tests, review evidence, index, branch, staging, or commits were modified by the reviewer.
