@@ -7,7 +7,7 @@
  * 字段修改只是草稿，应用/Enter 才生效，重置/清除保留 tab 与 q；退出聊天还原父节点。
  *
  * 关键约束（与宿主/既有模块的关系）：
- * - 全部/关注/已回复/待处理专家请求走 conversations API；列表排序唯一权威在服务端（01），
+ * - 全部/已提供/跟进中/已回复/待处理专家请求走 conversations API；列表排序唯一权威在服务端（01），
  *   UI 不 sort、不发 waitingReply。
  * - 第五个 tab「待匹配」是邮件级队列（I-1/I-3/I-8）：只请求
  *   /api/mail/unmatched-inbound?unmatchedOnly=true（未关联专家的 MANUAL_REVIEW 来信），
@@ -49,16 +49,18 @@
     const VERSION = "2";
 
     const CHIP_ALL = "all";
+    const CHIP_PROVIDED = "provided";
     const CHIP_FOLLOWED = "followed";
     const CHIP_REPLIED = "replied";
     const CHIP_PENDING = "pending";
-    // 02（I-1/S-1）：新增「已挂起」Tab；固定顺序 全部/关注/待处理/已挂起/已回复/待匹配。
+    // 02（I-1/S-1）：三态标记；固定顺序 全部/已提供/跟进中/待处理/已挂起/已回复/待匹配。
     const CHIP_SUSPENDED = "suspended";
     const CHIP_UNMATCHED = "unmatched";
 
     const FILTER_CHIPS = [
         { key: CHIP_ALL, label: "全部" },
-        { key: CHIP_FOLLOWED, label: "关注" },
+        { key: CHIP_PROVIDED, label: "已提供" },
+        { key: CHIP_FOLLOWED, label: "跟进中" },
         { key: CHIP_PENDING, label: "待处理" },
         { key: CHIP_SUSPENDED, label: "已挂起" },
         { key: CHIP_REPLIED, label: "已回复" },
@@ -67,6 +69,20 @@
 
     // 02（S-1）：待处理/已挂起各有专家数计数 span；不可用时隐藏，绝不伪造 0。
     const CHIP_COUNT_KEYS = [CHIP_PENDING, CHIP_SUSPENDED];
+
+    // 02（I-1）：progressStatus 三态唯一真值（NONE=未标记）。旧响应完全缺字段才可从
+    // followed 派生；字段存在但非法一律显示「状态不可用」，不冒充 NONE。
+    const PROGRESS_NONE = "NONE";
+    const PROGRESS_FOLLOWING = "FOLLOWING";
+    const PROGRESS_PROVIDED = "PROVIDED";
+    const PROGRESS_STATUSES = [PROGRESS_NONE, PROGRESS_FOLLOWING, PROGRESS_PROVIDED];
+    // 02（S-2/I-1）：标签与菜单项的唯一真值表；取消均写 NONE，绝不出现「进入跟进/进入提供」。
+    const PROGRESS_MENU = {
+        [PROGRESS_NONE]: { label: "未标记", options: [[PROGRESS_FOLLOWING, "跟进中"], [PROGRESS_PROVIDED, "已提供"]] },
+        [PROGRESS_FOLLOWING]: { label: "跟进中", options: [[PROGRESS_NONE, "取消跟进"], [PROGRESS_PROVIDED, "已提供"]] },
+        [PROGRESS_PROVIDED]: { label: "已提供", options: [[PROGRESS_FOLLOWING, "跟进中"], [PROGRESS_NONE, "取消提供"]] }
+    };
+    const PROGRESS_INVALID_LABEL = "状态不可用";
 
     const SOURCE_LABELS = {
         INBOUND_PROCESSING: "专家来信",
@@ -189,6 +205,29 @@
             .replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#039;");
+    }
+
+    // 02（I-1）：菜单/标签唯一定义查询；非法状态返回 null（渲染为「状态不可用」）。
+    function progressMenuDef(status) {
+        return PROGRESS_MENU[status] || null;
+    }
+
+    function isProgressStatus(value) {
+        return PROGRESS_STATUSES.indexOf(value) >= 0;
+    }
+
+    // 02（I-1）：解析一条列表/挂起对象的真实状态。字段完全缺失才从 followed 派生；
+    // 字段存在但非法（含 null/未知值）返回 "INVALID"，绝不降级成 NONE。
+    function progressStatusOf(item) {
+        if (!item) return PROGRESS_NONE;
+        if (item.progressStatus === undefined) {
+            return item.followed === true ? PROGRESS_FOLLOWING : PROGRESS_NONE;
+        }
+        return isProgressStatus(item.progressStatus) ? item.progressStatus : "INVALID";
+    }
+
+    function progressFollowed(status) {
+        return status === PROGRESS_FOLLOWING;
     }
 
     // 人工富文本换行规范化：普通换行保留，连续空行最多保留一行；与服务端保持一致。
@@ -500,6 +539,7 @@
     }
 
     function chipParams(chip) {
+        if (chip === CHIP_PROVIDED) return { providedOnly: true };
         if (chip === CHIP_FOLLOWED) return { followed: true };
         if (chip === CHIP_REPLIED) return { repliedOnly: true };
         if (chip === CHIP_PENDING) return { pendingOnly: true };
@@ -609,7 +649,7 @@
             searchText: "",
             user: sessionUserFromOptions(options),
             filters: Object.assign({}, (options && options.filters) || {}),
-            // 02（I-1）：普通新 mount 默认暂定「待处理」，由首次列表探测决定是否转「关注」；
+            // 02（I-1）：普通新 mount 默认暂定「待处理」，由首次列表探测决定是否转「跟进中」；
             // 深链接 focus 优先，按其原语义（pendingOnly ? 待处理 : 全部）选出初始 Tab。
             chip: ((options && options.focus && options.focus.contactId != null)
                 ? ((options && options.filters && options.filters.pendingOnly) ? CHIP_PENDING : CHIP_ALL)
@@ -635,8 +675,12 @@
                 suspended: false,
                 suspendReason: null,
                 suspensionPendingCount: 0,
+                progressStatus: PROGRESS_NONE,
                 followed: false
             },
+            // 02（S-2/I-5）：卡片状态菜单（同一实例最多一个展开）与按 contactId 的在途写集合。
+            progressMenu: { contactId: null, el: null, trigger: null, options: [], index: -1 },
+            progressBusy: new Set(),
             // 02（S-3）：行内挂起原因表单（同一实例只保留一份）。
             reasonForm: { contactId: null, trigger: null, busy: false, editing: false },
             // 02（T3/I-7）：authenticated 身份只从 GET /api/auth/me 取（不读 localStorage 冒充）。
@@ -1478,6 +1522,7 @@
             const q = instance.searchText.trim();
             if (q) params.set("q", q);
             const chipValues = chipParams(chipOverride != null ? chipOverride : instance.chip);
+            if (chipValues.providedOnly) params.set("providedOnly", "true");
             if (chipValues.followed) params.set("followed", "true");
             if (chipValues.repliedOnly) params.set("repliedOnly", "true");
             if (chipValues.pendingOnly) params.set("pendingOnly", "true");
@@ -1539,6 +1584,27 @@
                     </div>`;
         }
 
+        // 02（S-2/I-1）：卡片右上角三态状态控件（标签/菜单按 PROGRESS_MENU 唯一表）。
+        // 非法状态渲染为禁用「状态不可用」；在途写按 contactId 继承 busy。
+        function progressActionsHtml(item) {
+            const contactKey = String(item.contactId);
+            const name = item.name || item.email || "该专家";
+            const status = progressStatusOf(item);
+            const def = progressMenuDef(status);
+            const busy = instance.progressBusy.has(contactKey);
+            const disabled = !def || busy;
+            const label = def ? def.label : PROGRESS_INVALID_LABEL;
+            const aria = def ? `${name}：${label}，选择状态` : `${name}：${PROGRESS_INVALID_LABEL}`;
+            const menuHtml = def ? `
+                            <span class="mailbox-progress-menu" role="menu" aria-label="${escapeText(`${name}的状态操作`)}" hidden>
+                                ${def.options.map(([next, optionLabel]) => `<button class="mailbox-progress-option" type="button" role="menuitem" data-action="mc-set-progress" data-contact-id="${escapeText(item.contactId)}" data-progress="${next}"${busy ? " disabled" : ""}>${escapeText(optionLabel)}</button>`).join("")}
+                            </span>` : "";
+            return `
+                        <span class="mailbox-progress">
+                            <button class="mailbox-progress-status" type="button" data-action="mc-progress-menu" data-contact-id="${escapeText(item.contactId)}" data-progress="${def ? escapeText(status) : ""}" aria-haspopup="menu" aria-expanded="false" aria-label="${escapeText(aria)}"${disabled ? " disabled" : ""}>${escapeText(label)}</button>${menuHtml}
+                        </span>`;
+        }
+
         function renderPerson(item) {
             const pendingCount = Number(item.pendingCount) || 0;
             const latest = item.latestMessage || null;
@@ -1559,7 +1625,7 @@
                 : `查看${item.name || item.email || ""}往来邮件`)
                 + `；${lastReplyAriaSuffix(lastReplyDisplay(item))}`;
             return `
-                <div class="mc-person" data-replied="${instance.chip === CHIP_REPLIED ? "true" : "false"}" data-active="${active ? "true" : "false"}" data-contact-id="${escapeText(item.contactId)}">
+                <div class="mc-person mailbox-progress-card" data-replied="${instance.chip === CHIP_REPLIED ? "true" : "false"}" data-active="${active ? "true" : "false"}" data-contact-id="${escapeText(item.contactId)}">
                     <button class="mc-person-main" type="button" data-action="mc-select-expert" data-contact-id="${escapeText(item.contactId)}" aria-label="${escapeText(ariaLabel)}"${active ? ' aria-current="true"' : ""}>
                         <span class="mc-person-heading"><strong>${escapeText(item.name || item.email || "-")}</strong></span>
                         <small>${escapeText(accounts)}</small>
@@ -1572,7 +1638,7 @@
                         <span class="calendar-summary" data-role="meeting-summary"></span>
                     </button>
                     <span data-role="person-actions">
-                        <button class="mc-follow" type="button" data-action="mc-toggle-follow" data-contact-id="${escapeText(item.contactId)}" aria-label="${item.followed ? "取消关注该专家" : "关注该专家"}" aria-pressed="${item.followed ? "true" : "false"}">${item.followed ? "★" : "☆"}</button>
+                        ${progressActionsHtml(item)}
                         ${instance.chip === CHIP_REPLIED ? `<button class="mc-text-button" type="button" data-action="mc-dismiss-replied" data-contact-id="${escapeText(item.contactId)}" aria-label="将${escapeText(item.name || item.email || "该专家")}移出已回复" title="移出已回复，仍可在全部查看">移出</button>` : ""}
                     </span>${suspensionCardFooterHtml(item)}
                 </div>
@@ -1580,6 +1646,7 @@
         }
 
         function renderExpertList() {
+            closeProgressMenu({ restoreFocus: false });
             const root = expertsRoot();
             if (!root) return;
             if (instance.list.error) {
@@ -1595,7 +1662,7 @@
             root.querySelectorAll(".mc-person").forEach(applyMeetingSummaryToCard);
         }
 
-        // S-2：待匹配邮件卡片（邮件级，无关注星标/专家标签/收发计数）。
+        // S-2：待匹配邮件卡片（邮件级，无状态菜单/专家标签/收发计数）。
         function renderUnmatchedPerson(item) {
             const id = Number(item.id);
             const active = instance.selectedUnmatchedId != null
@@ -1714,7 +1781,7 @@
                 renderList();
                 renderPager();
                 // 02（I-1）：首次 mount 默认 Tab 探测。仅普通（非 focus）新实例、用户尚未
-                // 点击 Tab/筛选、且本次就是暂定的待处理首查时生效；total=0 才切关注。
+                // 点击 Tab/筛选、且本次就是暂定的待处理首查时生效；total=0 才切跟进中。
                 instance.initialized = true;
                 if (instance.defaultProbe.active && !instance.defaultProbe.decided
                     && !unmatched && instance.chip === CHIP_PENDING) {
@@ -1808,6 +1875,7 @@
                 suspended: false,
                 suspendReason: null,
                 suspensionPendingCount: 0,
+                progressStatus: PROGRESS_NONE,
                 followed: false
             };
             instance.completion = {
@@ -1831,7 +1899,7 @@
                     suspended: instance.suspension.suspended,
                     suspendReason: instance.suspension.suspendReason,
                     count: instance.suspension.suspensionPendingCount,
-                    followed: instance.suspension.followed
+                    progressStatus: instance.suspension.progressStatus
                 };
             }
             const row = summary || findSummaryByContactId(contactId) || {};
@@ -1839,7 +1907,7 @@
                 suspended: row.suspended === true,
                 suspendReason: row.suspendReason == null ? null : String(row.suspendReason),
                 count: Number(row.suspensionPendingCount) || 0,
-                followed: row.followed === true
+                progressStatus: progressStatusOf(row)
             };
         }
 
@@ -1903,7 +1971,9 @@
             instance.suspension.suspended = state.suspended === true;
             instance.suspension.suspendReason = state.suspendReason == null ? null : String(state.suspendReason);
             instance.suspension.suspensionPendingCount = Number(state.suspensionPendingCount) || 0;
-            instance.suspension.followed = state.followed === true;
+            // 02（T-3）：真值取 progressStatus；响应缺字段才从 followed 兼容派生。
+            instance.suspension.progressStatus = progressStatusOf(state);
+            instance.suspension.followed = progressFollowed(instance.suspension.progressStatus);
             recomputeCompletionLine();
             renderSuspensionDetail();
         }
@@ -2218,19 +2288,27 @@
             if (refreshBadge) refreshBadge();
         }
 
+        // 02（I-4）：挂起结束按回包 progressStatus 归类：pending>0→待处理；否则
+        // PROVIDED→已提供、FOLLOWING→跟进中、NONE→已回复（沿原服务端资格）。
         function afterSuspensionRemoved(id, data) {
             const state = (data && typeof data === "object") ? data : {};
             const count = Number(state.suspensionPendingCount) || 0;
-            const followed = state.followed === true;
+            const progress = progressStatusOf(state);
             hostShowStatus(
                 count > 0
                     ? "已取消挂起，回到「待处理」"
-                    : (followed ? "已结束挂起，可在「关注」查看" : "已结束挂起"),
+                    : (progress === PROGRESS_PROVIDED
+                        ? "已结束挂起，可在「已提供」查看"
+                        : (progress === PROGRESS_FOLLOWING ? "已结束挂起，可在「跟进中」查看" : "已结束挂起")),
                 "ok"
             );
             returnToMobileList();
             clearSuspensionActionError();
-            const nextChip = count > 0 ? CHIP_PENDING : (followed ? CHIP_FOLLOWED : CHIP_REPLIED);
+            const nextChip = count > 0
+                ? CHIP_PENDING
+                : (progress === PROGRESS_PROVIDED
+                    ? CHIP_PROVIDED
+                    : (progress === PROGRESS_FOLLOWING ? CHIP_FOLLOWED : CHIP_REPLIED));
             instance.chip = nextChip;
             instance.chipUserTouched = true;
             freezeDefaultProbe();
@@ -2244,7 +2322,8 @@
             if (suspensionMatchesContact(id)) {
                 instance.suspension.suspended = false;
                 instance.suspension.suspensionPendingCount = count;
-                instance.suspension.followed = followed;
+                instance.suspension.progressStatus = progress;
+                instance.suspension.followed = progressFollowed(progress);
                 instance.suspension.loaded = true;
             }
             renderList();
@@ -2366,11 +2445,15 @@
         function completionLineHtml() {
             const contactId = Number(instance.selectedContactId);
             const kept = instance.completion.kept;
-            const followed = instance.suspension.followed;
+            const progress = instance.suspension.progressStatus;
             const busy = instance.completion.busy;
             const small = kept
                 ? "会话仍保留在「已挂起」，可随时结束。"
-                : (followed ? "结束后仍保留关注，可在「关注」查看。" : "结束后按现有「已回复」规则归类。");
+                : (progress === PROGRESS_PROVIDED
+                    ? "结束后仍保留「已提供」，可在「已提供」查看。"
+                    : (progress === PROGRESS_FOLLOWING
+                        ? "结束后仍保留跟进中，可在「跟进中」查看。"
+                        : "结束后按现有「已回复」规则归类。"));
             return `
                 <div class="mailbox-suspend-completion-line" role="status" data-contact-id="${escapeText(contactId)}">
                     <div>
@@ -2874,7 +2957,6 @@
             if (!body) return;
             const summary = instance.selectedSummary || {};
             const contactId = Number(instance.selectedContactId);
-            const followed = summary.followed === true;
             const materialCount = Number(summary.materialCount) || 0;
             const head = body.querySelector(".mc-header");
             if (!head) return;
@@ -2890,7 +2972,6 @@
                 const suspendView = suspensionViewForContact(contactId, summary);
                 actions.innerHTML = `
                     ${suspensionDetailButtonHtml(contactId, suspendView)}
-                    <button class="button" type="button" data-action="mc-toggle-follow" data-contact-id="${escapeText(contactId)}">${followed ? "★ 已关注" : "☆ 关注"}</button>
                     <button class="button" type="button" data-action="mc-open-materials" data-contact-id="${escapeText(contactId)}">材料 ${materialCount}</button>
                     <button class="button" type="button" data-action="mc-manage-expert">管理</button>
                     <button class="button" type="button" data-action="mc-add-schedule">新增排期</button>
@@ -4738,58 +4819,145 @@
         }
 
         // --------------------------------------------------------------
-        // 关注（乐观更新 + 失败回滚）
+        // 02（S-2/I-1/I-2/I-3/I-5）：卡片三态状态菜单与真实保存。
+        // 只请求新状态端点；不做乐观提前成功，不按状态在前端伪造分页。
         // --------------------------------------------------------------
 
-        function setFollowControlsDisabled(disabled) {
-            if (!host.querySelectorAll) return;
-            host.querySelectorAll("[data-action=mc-toggle-follow]").forEach((button) => {
-                button.disabled = disabled;
-            });
+        // 当前列表请求上下文指纹：仅当刷新期间上下文未变才把 list.error 归因本次动作。
+        function listContextToken() {
+            const filters = instance.filters || {};
+            const keys = Object.keys(filters).sort();
+            return [instance.user, instance.chip, instance.searchText.trim(), instance.list.page,
+                keys.map((key) => `${key}=${filters[key]}`).join("&")].join("|");
         }
 
-        function renderFollowButtons() {
-            const summary = instance.selectedSummary || {};
-            renderHeader();
-            const items = instance.list.items || [];
-            const index = items.findIndex((item) => String(item.contactId) === String(instance.selectedContactId));
-            if (index >= 0) {
-                const item = items[index];
-                const sameSummary = summary.contactId != null && String(summary.contactId) === String(instance.selectedContactId);
-                // 列表星标（未选中专家时）保留自身乐观状态；已选中专家以 summary 为准
-                const followed = sameSummary ? summary.followed === true : item.followed === true;
-                items[index] = Object.assign({}, item, { followed });
-            }
-            renderExpertList();
+        function setProgressBusy(contactId, busy) {
+            const key = String(contactId);
+            if (busy) instance.progressBusy.add(key);
+            else instance.progressBusy.delete(key);
         }
 
-        function toggleFollow(contactId) {
-            const contactIdNum = Number(contactId);
-            const items = instance.list.items || [];
-            const item = items.find((entry) => String(entry.contactId) === String(contactIdNum));
+        function progressStatusForCard(contactId) {
+            const item = findSummaryByContactId(contactId);
+            if (item) return progressStatusOf(item);
             const summary = instance.selectedSummary;
-            const target = (summary && String(summary.contactId) === String(contactIdNum)) ? summary : item;
-            if (!target) return;
-            const current = target.followed === true;
-            const optimistic = !current;
-            target.followed = optimistic;
-            setFollowControlsDisabled(true);
-            renderFollowButtons();
-            const method = optimistic ? "PUT" : "DELETE";
-            const request = hostApi()(`/api/mail/mailbox/conversations/${contactIdNum}/follow`, { method });
-            request.then(() => {
+            if (summary && String(summary.contactId) === String(contactId)) return progressStatusOf(summary);
+            return PROGRESS_NONE;
+        }
+
+        function openProgressMenu(contactId, trigger) {
+            closeProgressMenu({ restoreFocus: false });
+            if (!trigger || !trigger.parentNode) return;
+            const menu = trigger.parentNode.querySelector
+                ? trigger.parentNode.querySelector(".mailbox-progress-menu")
+                : null;
+            if (!menu) return;
+            const options = (menu.querySelectorAll ? menu.querySelectorAll(".mailbox-progress-option") : [])
+                .filter((option) => !option.disabled);
+            menu.hidden = false;
+            if (typeof trigger.setAttribute === "function") trigger.setAttribute("aria-expanded", "true");
+            instance.progressMenu = { contactId: String(contactId), el: menu, trigger, options, index: options.length ? 0 : -1 };
+            focusProgressOption(0);
+        }
+
+        function focusProgressOption(index) {
+            const menu = instance.progressMenu;
+            if (!menu || !menu.options.length) return;
+            const normalized = ((index % menu.options.length) + menu.options.length) % menu.options.length;
+            menu.index = normalized;
+            const option = menu.options[normalized];
+            if (option.scrollIntoView) {
+                try { option.scrollIntoView({ block: "nearest" }); } catch (e) { /* noop */ }
+            }
+            if (typeof option.focus === "function") option.focus();
+        }
+
+        function closeProgressMenu(options) {
+            const menu = instance.progressMenu;
+            const trigger = menu && menu.trigger;
+            if (menu && menu.el) menu.el.hidden = true;
+            if (trigger && typeof trigger.setAttribute === "function") trigger.setAttribute("aria-expanded", "false");
+            const restore = options && options.restoreFocus;
+            instance.progressMenu = { contactId: null, el: null, trigger: null, options: [], index: -1 };
+            if (restore && trigger && trigger.isConnected !== false && typeof trigger.focus === "function") {
+                trigger.focus();
+            }
+        }
+
+        function toggleProgressMenu(contactId, trigger) {
+            if (instance.progressMenu.contactId != null
+                && String(instance.progressMenu.contactId) === String(contactId)) {
+                closeProgressMenu({ restoreFocus: true });
+                return;
+            }
+            openProgressMenu(contactId, trigger);
+        }
+
+        function progressSavedMessage(status) {
+            if (status === PROGRESS_FOLLOWING) return "已标记为跟进中";
+            if (status === PROGRESS_PROVIDED) return "已标记为已提供";
+            return "已取消标记";
+        }
+
+        function updateProgressLocal(contactId, status) {
+            const followed = progressFollowed(status);
+            const item = findSummaryByContactId(contactId);
+            if (item) {
+                item.progressStatus = status;
+                item.followed = followed;
+            }
+            const summary = instance.selectedSummary;
+            if (summary && String(summary.contactId) === String(contactId)) {
+                summary.progressStatus = status;
+                summary.followed = followed;
+            }
+        }
+
+        function setProgress(contactId, status) {
+            const id = Number(contactId);
+            if (!Number.isFinite(id) || id <= 0) return;
+            const next = String(status || "");
+            if (!isProgressStatus(next)) return;
+            if (instance.progressBusy.has(String(id))) return;
+            if (progressStatusForCard(id) === next) {
+                closeProgressMenu({ restoreFocus: false });
+                return;
+            }
+            closeProgressMenu({ restoreFocus: false });
+            freezeDefaultProbe();
+            setProgressBusy(id, true);
+            renderList();
+            const contextToken = listContextToken();
+            hostApi()(`/api/mail/mailbox/conversations/${id}/progress-status`, {
+                method: "PUT",
+                body: JSON.stringify({ status: next })
+            }).then((data) => {
                 if (instance.disposed) return;
-                setFollowControlsDisabled(false);
-                if (target === summary) summary.followed = optimistic;
-                renderFollowButtons();
-                hostShowStatus(optimistic ? "已关注该专家" : "已取消关注", "ok");
-                fetchList({ page: instance.list.page });
+                const resultStatus = (data && typeof data === "object" && isProgressStatus(data.progressStatus))
+                    ? data.progressStatus : next;
+                updateProgressLocal(id, resultStatus);
+                // 02（I-4）：同专家挂起读上下文失效并重查真值；不改草稿/锚点/处理确认。
+                if (suspensionMatchesContact(id)) {
+                    instance.suspension.seq += 1;
+                    instance.suspension.progressStatus = resultStatus;
+                    instance.suspension.followed = progressFollowed(resultStatus);
+                    loadSuspensionState(id);
+                }
+                return refreshListWithFallback().then(() => {
+                    if (instance.disposed) return;
+                    if (instance.list.error && !instance.list.loading && contextToken === listContextToken()) {
+                        hostShowStatus("状态已保存，列表刷新失败，请重试", "error");
+                    } else if (!instance.list.error) {
+                        hostShowStatus(progressSavedMessage(resultStatus), "ok");
+                    }
+                });
             }).catch((err) => {
                 if (instance.disposed) return;
-                target.followed = current;
-                setFollowControlsDisabled(false);
-                renderFollowButtons();
-                hostShowStatus((err && err.message) ? `关注操作失败：${err.message}` : "关注操作失败", "error");
+                hostShowStatus((err && err.message) ? `状态保存失败：${err.message}` : "状态保存失败，请重试", "error");
+            }).then(() => {
+                if (instance.disposed) return;
+                setProgressBusy(id, false);
+                renderList();
             });
         }
 
@@ -7850,14 +8018,21 @@
                 return;
             }
             if (action === "mc-select-expert") {
+                closeProgressMenu({ restoreFocus: false });
                 if (instance.options.focus) instance.focusHandledContactId = instance.options.focus.contactId;
                 const contactId = Number(data.contactId);
                 const item = findSummaryByContactId(contactId);
                 if (item) selectExpert(item, { trigger: button });
                 return;
             }
-            if (action === "mc-toggle-follow") {
-                toggleFollow(data.contactId);
+            if (action === "mc-progress-menu") {
+                if (button && button.disabled) return;
+                toggleProgressMenu(data.contactId, button);
+                return;
+            }
+            if (action === "mc-set-progress") {
+                if (button && button.disabled) return;
+                setProgress(data.contactId, data.progress);
                 return;
             }
             if (action === "mc-dismiss-replied") {
@@ -8230,12 +8405,20 @@
 
         function onOutsideFilterClick(event) {
             if (instance.disposed) return;
+            const target = event.target;
+            if (!target) return;
+            // 02（S-2/I-5）：状态菜单外部点击关闭；触发按钮自身的点击由 onClick 处理。
+            if (instance.progressMenu.contactId != null) {
+                const menu = instance.progressMenu.el;
+                const trigger = instance.progressMenu.trigger;
+                const inMenu = menu && menu.contains && menu.contains(target);
+                const inTrigger = trigger && trigger.contains && trigger.contains(target);
+                if (!inMenu && !inTrigger) closeProgressMenu({ restoreFocus: false });
+            }
             if (!instance.popoverOpen) return;
             const popover = host.querySelector ? host.querySelector("#mcFilterPopover") : null;
             const toggle = host.querySelector ? host.querySelector('[data-action="mc-more-filters"]') : null;
             if (!popover) return;
-            const target = event.target;
-            if (!target) return;
             if (popover.contains && popover.contains(target)) return;
             if (toggle && toggle.contains && toggle.contains(target)) return;
             closeFilterPopover({ restore: true, focusButton: true });
@@ -8245,6 +8428,53 @@
             if (instance.disposed) return;
             const target = event.target;
             if (!target) return;
+            // 02（S-2/I-5）：状态菜单键盘行为——打开焦点首项；方向键/Home/End 移动；
+            // Enter/Space 使用按钮点击；Escape 关闭回触发按钮；Tab 关闭且焦点不留隐藏项。
+            if (instance.progressMenu.contactId != null) {
+                const menu = instance.progressMenu;
+                const inMenu = menu.el && menu.el.contains && menu.el.contains(target);
+                if (inMenu) {
+                    if (event.key === "Escape") {
+                        event.preventDefault();
+                        closeProgressMenu({ restoreFocus: true });
+                        return;
+                    }
+                    if (event.key === "ArrowDown") {
+                        event.preventDefault();
+                        focusProgressOption(menu.index + 1);
+                        return;
+                    }
+                    if (event.key === "ArrowUp") {
+                        event.preventDefault();
+                        focusProgressOption(menu.index - 1);
+                        return;
+                    }
+                    if (event.key === "Home") {
+                        event.preventDefault();
+                        focusProgressOption(0);
+                        return;
+                    }
+                    if (event.key === "End") {
+                        event.preventDefault();
+                        focusProgressOption(menu.options.length - 1);
+                        return;
+                    }
+                    if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {
+                        event.preventDefault();
+                        const option = target.closest ? target.closest(".mailbox-progress-option") : null;
+                        if (option && !option.disabled) {
+                            setProgress(option.dataset ? option.dataset.contactId : "", option.dataset ? option.dataset.progress : "");
+                        }
+                        return;
+                    }
+                }
+                if (event.key === "Tab" && inMenu) {
+                    const trigger = menu.trigger;
+                    closeProgressMenu({ restoreFocus: false });
+                    if (trigger && typeof trigger.focus === "function") trigger.focus();
+                    return;
+                }
+            }
             if (event.key === "Escape" && instance.popoverOpen) {
                 const popover = host.querySelector ? host.querySelector("#mcFilterPopover") : null;
                 if (popover && popover.contains && popover.contains(target)) {
@@ -8402,6 +8632,8 @@
             const next = options || {};
             if (next.sessionUser && String(next.sessionUser) !== instance.user) {
                 saveCurrentConversation();
+                closeProgressMenu({ restoreFocus: false });
+                instance.progressBusy.clear();
                 clearSelectedConversation();
                 clearUnmatchedState();
                 resetSuspensionState();
@@ -8452,6 +8684,7 @@
                 else if (typeof instance.mobileMedia.removeListener === "function") instance.mobileMedia.removeListener(onMobileViewportChange);
             }
             // 右栏/根节点清空前必须先归还详情面板 lease（I-5）。
+            closeProgressMenu({ restoreFocus: false });
             clearUnmatchedState();
             resetSuspensionState();
             instance.disposed = true;

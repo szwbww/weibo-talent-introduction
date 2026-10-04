@@ -342,3 +342,57 @@ describe("mobile-core-02 CSS 与独立返回条", () => {
 it("手机编辑器用 contenteditable 特异性保护 160px 最小高度", () => {
     assert.match(stylesSource, /@media \(max-width: 760px\) \{\s*\.mail-chat\.mobile-core-mailbox div\.mc-editor\[contenteditable="true"\] \{ min-height: 160px; max-height: 40dvh; \}/);
 });
+
+// ---------------------------------------------------------------------------
+// fast-p 2026-10-04 · mailbox-progress（S-1..S-4）
+// 三态状态菜单：S-2 逐字 CSS 块、新 class 白名单、无旧星标/详情关注控件、
+// S-1 高优先级换行规则与完整七 Tab。资源键与字节冻结由上方既有块覆盖。
+// ---------------------------------------------------------------------------
+
+describe("02 · 三态标记 S-2 样式与结构契约", () => {
+    const planSource = fs.readFileSync(
+        path.join(__dirname, "..", "..", "..", "docs", "plans", "2026-10-04", "mailbox-progress-02-frontend.md"),
+        "utf-8"
+    );
+    const START = "/* mailbox-progress-contract:start */";
+    const END = "/* mailbox-progress-contract:end */";
+    const contractBlock = (() => {
+        const start = planSource.indexOf(START);
+        const end = planSource.indexOf(END);
+        assert.ok(start >= 0 && end > start, "S-2 合同块标记存在");
+        return planSource.slice(start, end + END.length);
+    })();
+
+    it("styles.css 逐字包含 S-2 合同样式块（不删一行、不改一个值）", () => {
+        assert.ok(stylesSource.includes(contractBlock), "S-2 块必须逐字追加在 styles.css");
+    });
+
+    it("S-2 新增 5 个业务 class 均在 styles.css 声明", () => {
+        ["mailbox-progress-card", "mailbox-progress", "mailbox-progress-status", "mailbox-progress-menu", "mailbox-progress-option"]
+            .forEach((cls) => {
+                assert.ok(new RegExp("\\." + cls + "(?=[\\s,{.:\\[])").test(stylesSource), `${cls} 必须在 styles.css 声明`);
+            });
+    });
+
+    it("S-2 不写入字节锁定的 mailbox-chat.css", () => {
+        assert.ok(!/mailbox-progress/.test(cssSource), "mailbox-chat.css 不得出现 mailbox-progress* 规则");
+    });
+
+    it("删除旧星标与详情关注控件（无 mc-follow / mc-toggle-follow / 关注文案）", () => {
+        assert.ok(!/mc-follow/.test(chatSource), "模板不得再出现 mc-follow 星标");
+        assert.ok(!/mc-toggle-follow/.test(chatSource), "不得再出现 mc-toggle-follow 动作");
+        assert.ok(!/关注/.test(chatSource), "详情/卡片不得再出现关注文案");
+    });
+
+    it("S-1 优先级换行规则仍在，七 Tab key 与中文名完整", () => {
+        assert.ok(stylesSource.includes("@media(min-width:761px){#view-mailbox.mc-refined .mail-chat{grid-template-columns:380px minmax(0,1fr)}}"), "380px 规则保留");
+        assert.ok(stylesSource.includes("#view-mailbox.mc-refined .mail-chat .mc-filters{flex-wrap:wrap;overflow-x:visible;row-gap:0}"), "wrap 高优先级规则保留");
+        ["ALL", "PROVIDED", "FOLLOWED", "PENDING", "SUSPENDED", "REPLIED", "UNMATCHED"].forEach((name) => {
+            assert.ok(new RegExp("\\{ key: CHIP_" + name + ", label:").test(chatSource), `CHIP_${name} 必须在 FILTER_CHIPS`);
+        });
+        ["全部", "已提供", "跟进中", "待处理", "已挂起", "已回复", "待匹配"].forEach((label) => {
+            assert.ok(chatSource.includes(`label: "${label}"`), `${label} 必须在 FILTER_CHIPS`);
+        });
+        assert.ok(!/label: "关注"/.test(chatSource), "旧「关注」展示名必须删除");
+    });
+});

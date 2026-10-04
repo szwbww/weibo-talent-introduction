@@ -324,6 +324,9 @@ class MiniElement {
     remove() {
         if (this.parentNode) this.parentNode.removeChild(this);
     }
+    focus() {
+        this.ownerDocument._activeElement = this;
+    }
     contains(node) {
         let cur = node;
         while (cur) {
@@ -463,9 +466,13 @@ class MiniDocument {
     constructor() {
         this.root = new MiniElement("#document", this);
         this.root.nodeType = 9;
+        this._activeElement = null;
     }
     get body() {
         return this.root;
+    }
+    get activeElement() {
+        return this._activeElement;
     }
     createElement(tag) {
         return new MiniElement(tag, this);
@@ -799,7 +806,7 @@ function createChatSandbox(options) {
                 if (opts.suspensionError) return Promise.reject(new Error(opts.suspensionError));
                 if (typeof opts.suspension === "function") return Promise.resolve(opts.suspension(id));
                 if (opts.suspension !== undefined) return Promise.resolve(opts.suspension);
-                return Promise.resolve({ contactId: id, suspended: false, suspendReason: null, suspensionPendingCount: 0, followed: false });
+                return Promise.resolve({ contactId: id, suspended: false, suspendReason: null, suspensionPendingCount: 0, progressStatus: "NONE", followed: false });
             }
             if (method === "PUT") {
                 if (opts.suspendError) return Promise.reject(new Error(opts.suspendError));
@@ -810,6 +817,7 @@ function createChatSandbox(options) {
                     suspended: true,
                     suspendReason: parsed.reason == null ? null : String(parsed.reason),
                     suspensionPendingCount: Number(current.suspensionPendingCount) || 0,
+                    progressStatus: current.progressStatus !== undefined ? current.progressStatus : (current.followed === true ? "FOLLOWING" : "NONE"),
                     followed: current.followed === true
                 };
                 opts.suspension = next;
@@ -823,6 +831,7 @@ function createChatSandbox(options) {
                     suspended: false,
                     suspendReason: null,
                     suspensionPendingCount: Number(current.suspensionPendingCount) || 0,
+                    progressStatus: current.progressStatus !== undefined ? current.progressStatus : (current.followed === true ? "FOLLOWING" : "NONE"),
                     followed: current.followed === true
                 };
                 opts.suspension = next;
@@ -872,6 +881,15 @@ function createChatSandbox(options) {
         }
         if (/\/api\/mail\/mailbox\/conversations\/\d+\/follow/.test(url)) {
             return Promise.resolve({ followed: opts.followResult !== false });
+        }
+        // 02：三态标记唯一写端点（PUT status → progressStatus/followed）。
+        if (/\/api\/mail\/mailbox\/conversations\/\d+\/progress-status$/.test(url) && method === "PUT") {
+            const id = Number(url.split("/")[5]);
+            const parsed = body ? JSON.parse(body) : {};
+            const status = parsed && typeof parsed.status === "string" ? parsed.status : "NONE";
+            opts.progressStatus = opts.progressStatus || {};
+            opts.progressStatus[id] = status;
+            return Promise.resolve({ contactId: id, progressStatus: status, followed: status === "FOLLOWING" });
         }
         // fast-p c3：所在地目录 / 配置 / 推荐时间（只读消费 + 唯一写路径 PUT /{contactId}）。
         if (url === "/api/mail/contact-locations/countries") {
@@ -1370,10 +1388,10 @@ describe("mailbox chat mount + S-1 skeleton + S-7 expert tag rows", () => {
         assert.ok(ctx.host.querySelector('section.mc-conversation[aria-label="专家往来信件"]'));
         assert.ok(ctx.host.querySelector('.mc-search-row input[aria-label="搜索专家"]'));
         const chips = ctx.host.querySelectorAll(".mc-filter");
-        assert.deepStrictEqual(chips.map((chip) => chip.dataset.chip), ["all", "followed", "pending", "suspended", "replied", "unmatched"]);
+        assert.deepStrictEqual(chips.map((chip) => chip.dataset.chip), ["all", "provided", "followed", "pending", "suspended", "replied", "unmatched"]);
         assert.deepStrictEqual(
             chips.map((chip) => chip.textContent.replace(/\d+/g, "")),
-            ["全部", "关注", "待处理", "已挂起", "已回复", "待匹配"]
+            ["全部", "已提供", "跟进中", "待处理", "已挂起", "已回复", "待匹配"]
         );
         assert.strictEqual(chips.find((chip) => chip.dataset.chip === "pending").getAttribute("aria-pressed"), "true", "普通首次进入默认待处理（total>0）");
         const popover = ctx.host.querySelector("#mcFilterPopover");
@@ -2530,37 +2548,6 @@ describe("mailbox chat 既有业务（I-7）：workbench/manual/drafts/adopt/sen
         assert.strictEqual(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "typed draft");
     });
 
-    it("关注乐观更新；失败回滚星标并报错", async () => {
-        let failNext = false;
-        let followedState = false;
-        const ctx = await bootChat({
-            conversations: { items: [expertA()], total: 1 },
-            route: (url, method, body, entry, next) => {
-                if (url.startsWith("/api/mail/mailbox/conversations?")) {
-                    return Promise.resolve({ items: [expertA({ followed: followedState })], total: 1 });
-                }
-                if (/\/follow$/.test(url) && (method === "DELETE" || method === "PUT")) {
-                    if (failNext) return Promise.reject(new Error("network down"));
-                    followedState = method === "PUT";
-                    return Promise.resolve({ followed: followedState });
-                }
-                return next(url, method, body);
-            }
-        });
-        assert.strictEqual(ctx.host.querySelector(".mc-follow").getAttribute("aria-pressed"), "false");
-        click(ctx.host.querySelector(".mc-follow"));
-        await flush();
-        const starred = ctx.host.querySelector(".mc-follow");
-        assert.strictEqual(starred.getAttribute("aria-pressed"), "true", "乐观更新为已关注");
-        failNext = true;
-        click(starred);
-        await flush();
-        const rolledBack = ctx.host.querySelector(".mc-follow");
-        assert.strictEqual(rolledBack.getAttribute("aria-pressed"), "true", "失败回滚为已关注");
-        assert.ok(rolledBack.textContent.includes("★"));
-        assert.ok(ctx.calls.status.some((s) => /关注操作失败/.test(s.message)));
-    });
-
     it("header 材料按钮打开 child-08 drawer；查看专家详情走 openContactInList 适配", async () => {
         const ctx = await bootSelectedA();
         const materialsBtn = ctx.host.querySelector('[data-action="mc-open-materials"]');
@@ -2571,6 +2558,336 @@ describe("mailbox chat 既有业务（I-7）：workbench/manual/drafts/adopt/sen
         click(ctx.host.querySelector('[data-action="mc-open-expert"]'));
         await flush();
         assert.deepStrictEqual(ctx.calls.openExpert, [1]);
+    });
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// 02 · 三态状态菜单（I-1/I-2/I-3/I-5；S-2/S-3）
+// 真实保存、异步保护、分页回退、详情/待匹配边界。
+// ════════════════════════════════════════════════════════════════════════
+
+describe("02 · 三态状态菜单（I-1/I-2/I-3/I-5）", () => {
+    function progressButton(ctx, contactId) {
+        return ctx.host.querySelector(`.mc-person[data-contact-id="${contactId}"] [data-action="mc-progress-menu"]`);
+    }
+    function progressOption(ctx, contactId, statusName) {
+        return ctx.host.querySelector(`.mc-person[data-contact-id="${contactId}"] [data-action="mc-set-progress"][data-progress="${statusName}"]`);
+    }
+    function progressMenuLabels(ctx, contactId) {
+        return ctx.host.querySelectorAll(`.mc-person[data-contact-id="${contactId}"] .mailbox-progress-option`).map((option) => option.textContent);
+    }
+    function openMenu(ctx, contactId) {
+        click(progressButton(ctx, contactId));
+    }
+
+    it("未标记入口六条转换：菜单逐字、PUT body 仅 status、取消回 NONE、绝不调旧 follow", async () => {
+        let status = "NONE";
+        const ctx = await bootChat({
+            conversations: { items: [expertA()], total: 1 },
+            route: (url, method, body, entry, next) => {
+                if (url.endsWith("/1/progress-status") && method === "PUT") {
+                    status = JSON.parse(body).status;
+                    return Promise.resolve({ contactId: 1, progressStatus: status, followed: status === "FOLLOWING" });
+                }
+                if (url.startsWith("/api/mail/mailbox/conversations?") && queryOf(url).get("size") !== "1") {
+                    return Promise.resolve({ items: [Object.assign(expertA(), { progressStatus: status, followed: status === "FOLLOWING" })], total: 1 });
+                }
+                return next(url, method, body);
+            }
+        });
+        assert.strictEqual(progressButton(ctx, 1).textContent, "未标记");
+        // NONE → FOLLOWING
+        openMenu(ctx, 1);
+        assert.deepStrictEqual(progressMenuLabels(ctx, 1), ["跟进中", "已提供"]);
+        click(progressOption(ctx, 1, "FOLLOWING"));
+        await flush();
+        assert.strictEqual(progressButton(ctx, 1).textContent, "跟进中");
+        // FOLLOWING → PROVIDED
+        openMenu(ctx, 1);
+        assert.deepStrictEqual(progressMenuLabels(ctx, 1), ["取消跟进", "已提供"]);
+        click(progressOption(ctx, 1, "PROVIDED"));
+        await flush();
+        assert.strictEqual(progressButton(ctx, 1).textContent, "已提供");
+        // PROVIDED → NONE
+        openMenu(ctx, 1);
+        assert.deepStrictEqual(progressMenuLabels(ctx, 1), ["跟进中", "取消提供"]);
+        click(progressOption(ctx, 1, "NONE"));
+        await flush();
+        assert.strictEqual(progressButton(ctx, 1).textContent, "未标记");
+
+        const puts = ctx.calls.api.filter((entry) => entry.url.endsWith("/progress-status"));
+        assert.deepStrictEqual(puts.map((entry) => JSON.parse(entry.body).status), ["FOLLOWING", "PROVIDED", "NONE"]);
+        puts.forEach((entry) => assert.deepStrictEqual(Object.keys(JSON.parse(entry.body)), ["status"], "body 仅含 status"));
+        assert.ok(!ctx.calls.api.some((entry) => /\/follow$/.test(entry.url)), "不再调用旧 follow 端点");
+        assert.ok(!progressMenuLabels(ctx, 1).some((label) => /进入/.test(label)), "菜单无「进入」字样");
+    });
+
+    it("字段缺失从 followed 派生；字段存在但非法显示「状态不可用」并禁用", async () => {
+        const legacy = expertA({ followed: true });
+        const invalid = expertA({ contactId: 2, name: "专家2", progressStatus: "WAT" });
+        const ctx = await bootChat({ conversations: { items: [legacy, invalid], total: 2 } });
+        assert.strictEqual(progressButton(ctx, 1).textContent, "跟进中", "缺字段从 followed 派生");
+        assert.strictEqual(progressButton(ctx, 2).textContent, "状态不可用");
+        assert.strictEqual(progressButton(ctx, 2).disabled, true, "非法状态禁用");
+        assert.strictEqual(ctx.host.querySelector('.mc-person[data-contact-id="2"] .mailbox-progress-menu'), null, "非法状态无菜单");
+    });
+
+    it("已提供/跟进中请求互斥；标记后保持 chip/搜索与筛选", async () => {
+        const ctx = await bootChat({ conversations: { items: [expertA()], total: 1 } });
+        click(chipButton(ctx, "provided"));
+        await flush();
+        let q = queryOf(lastConversationsRequest(ctx).url);
+        assert.strictEqual(q.get("providedOnly"), "true");
+        assert.strictEqual(q.get("followed"), null);
+        click(chipButton(ctx, "followed"));
+        await flush();
+        q = queryOf(lastConversationsRequest(ctx).url);
+        assert.strictEqual(q.get("followed"), "true");
+        assert.strictEqual(q.get("providedOnly"), null);
+
+        click(chipButton(ctx, "all"));
+        await flush();
+        const search = ctx.host.querySelector('.mc-search-row input[type="search"]');
+        search.value = "needle";
+        inputEvent(search);
+        ctx.runTimers();
+        await flush();
+        assert.strictEqual(queryOf(lastConversationsRequest(ctx).url).get("q"), "needle", "搜索已生效");
+
+        let status = "NONE";
+        const ctx2 = await bootChat({
+            conversations: { items: [expertA()], total: 1 },
+            route: (url, method, body, entry, next) => {
+                if (url.endsWith("/1/progress-status") && method === "PUT") {
+                    status = JSON.parse(body).status;
+                    return Promise.resolve({ contactId: 1, progressStatus: status, followed: status === "FOLLOWING" });
+                }
+                if (url.startsWith("/api/mail/mailbox/conversations?") && queryOf(url).get("size") !== "1") {
+                    return Promise.resolve({ items: [Object.assign(expertA(), { progressStatus: status })], total: 1 });
+                }
+                return next(url, method, body);
+            }
+        });
+        const search2 = ctx2.host.querySelector('.mc-search-row input[type="search"]');
+        search2.value = "needle";
+        inputEvent(search2);
+        ctx2.runTimers();
+        await flush();
+        openMenu(ctx2, 1);
+        click(progressOption(ctx2, 1, "FOLLOWING"));
+        await flush();
+        const after = queryOf(lastConversationsRequest(ctx2).url);
+        assert.strictEqual(after.get("q"), "needle", "标记后搜索保留");
+        assert.strictEqual(chipButton(ctx2, "pending").getAttribute("aria-pressed"), "true", "标记后页签保留");
+    });
+
+    it("写入成功前不改状态；busy 禁用重复操作；失败保留旧状态并可重试", async () => {
+        let status = "NONE";
+        let deferred = null;
+        let fail = false;
+        const ctx = await bootChat({
+            conversations: { items: [expertA()], total: 1 },
+            route: (url, method, body, entry, next) => {
+                if (url.endsWith("/1/progress-status") && method === "PUT") {
+                    if (fail) return Promise.reject(new Error("boom"));
+                    const nextStatus = JSON.parse(body).status;
+                    return new Promise((resolve) => {
+                        deferred = () => { status = nextStatus; resolve({ contactId: 1, progressStatus: nextStatus, followed: false }); };
+                    });
+                }
+                if (url.startsWith("/api/mail/mailbox/conversations?") && queryOf(url).get("size") !== "1") {
+                    return Promise.resolve({ items: [Object.assign(expertA(), { progressStatus: status })], total: 1 });
+                }
+                return next(url, method, body);
+            }
+        });
+        openMenu(ctx, 1);
+        click(progressOption(ctx, 1, "FOLLOWING"));
+        await flush();
+        assert.strictEqual(progressButton(ctx, 1).textContent, "未标记", "未成功前不改显示状态");
+        assert.strictEqual(progressButton(ctx, 1).disabled, true, "busy 禁用按钮");
+        const putsBefore = ctx.calls.api.filter((entry) => entry.url.endsWith("/progress-status")).length;
+        openMenu(ctx, 1);
+        assert.strictEqual(progressButton(ctx, 1).disabled, true);
+        assert.strictEqual(ctx.calls.api.filter((entry) => entry.url.endsWith("/progress-status")).length, putsBefore, "busy 不重复 PUT");
+        deferred();
+        await flush();
+        assert.strictEqual(progressButton(ctx, 1).textContent, "跟进中");
+        assert.strictEqual(progressButton(ctx, 1).disabled, false, "成功后解除 busy");
+
+        fail = true;
+        openMenu(ctx, 1);
+        click(progressOption(ctx, 1, "PROVIDED"));
+        await flush();
+        assert.strictEqual(progressButton(ctx, 1).textContent, "跟进中", "失败保留旧状态");
+        assert.strictEqual(progressButton(ctx, 1).disabled, false, "失败解除 busy");
+        assert.ok(ctx.calls.status.some((entry) => /状态保存失败/.test(entry.message)));
+
+        fail = false;
+        openMenu(ctx, 1);
+        click(progressOption(ctx, 1, "PROVIDED"));
+        await flush();
+        deferred();
+        await flush();
+        assert.strictEqual(progressButton(ctx, 1).textContent, "已提供", "重试成功");
+    });
+
+    it("写成功但列表重查失败：提示「状态已保存，列表刷新失败，请重试」且不报写入失败", async () => {
+        let status = "NONE";
+        let listFail = false;
+        const ctx = await bootChat({
+            conversations: { items: [expertA()], total: 1 },
+            route: (url, method, body, entry, next) => {
+                if (url.endsWith("/1/progress-status") && method === "PUT") {
+                    status = JSON.parse(body).status;
+                    return Promise.resolve({ contactId: 1, progressStatus: status, followed: false });
+                }
+                if (url.startsWith("/api/mail/mailbox/conversations?")) {
+                    if (listFail) return Promise.reject(new Error("list down"));
+                    return Promise.resolve({ items: [Object.assign(expertA(), { progressStatus: status })], total: 1 });
+                }
+                return next(url, method, body);
+            }
+        });
+        listFail = true;
+        openMenu(ctx, 1);
+        click(progressOption(ctx, 1, "FOLLOWING"));
+        await flush();
+        assert.ok(ctx.calls.status.some((entry) => /^状态已保存，列表刷新失败，请重试$/.test(entry.message)), "刷新失败单独提示");
+        assert.ok(!ctx.calls.status.some((entry) => /状态保存失败/.test(entry.message)), "绝不误报写入失败");
+        assert.ok(ctx.calls.api.some((entry) => entry.url.endsWith("/1/progress-status") && entry.method === "PUT"), "写入确已发生");
+    });
+
+    it("过期列表回包 null：刷新短路，不回退上一页、不误报失败", async () => {
+        let status = "NONE";
+        let progressPending = false;
+        let release = null;
+        const ctx = await bootChat({
+            conversations: { items: [expertA()], total: 40 },
+            route: (url, method, body, entry, next) => {
+                if (url.endsWith("/1/progress-status") && method === "PUT") {
+                    status = JSON.parse(body).status;
+                    return Promise.resolve({ contactId: 1, progressStatus: status, followed: false });
+                }
+                if (url.startsWith("/api/mail/mailbox/conversations?") && queryOf(url).get("size") !== "1") {
+                    if (progressPending) return new Promise((resolve) => { release = () => resolve(null); });
+                    return Promise.resolve({ items: [expertA()], total: 40 });
+                }
+                return next(url, method, body);
+            }
+        });
+        click(ctx.host.querySelector('[data-action="mc-page-next"]'));
+        await flush();
+        assert.strictEqual(queryOf(lastConversationsRequest(ctx).url).get("page"), "1");
+        const listBefore = conversationsRequests(ctx).length;
+        progressPending = true;
+        openMenu(ctx, 1);
+        click(progressOption(ctx, 1, "FOLLOWING"));
+        await flush();
+        assert.ok(release, "刷新列表请求在途");
+        release();
+        await flush();
+        const tail = conversationsRequests(ctx).slice(listBefore);
+        assert.ok(!tail.some((entry) => queryOf(entry.url).get("page") === "0"), "null 不触发上一页回退");
+        assert.ok(!ctx.calls.status.some((entry) => /状态已保存，列表刷新失败/.test(entry.message)), "过期 null 不误报刷新失败");
+    });
+
+    it("状态页最后一条移出：空页自动回退一页", async () => {
+        const page0 = Array.from({ length: 20 }, (_, i) => expertA({ contactId: i + 1, name: `专家${i + 1}` }));
+        let removed = false;
+        const ctx = await bootChat({
+            conversations: { items: page0, total: 21 },
+            route: (url, method, body, entry, next) => {
+                if (url.endsWith("/21/progress-status") && method === "PUT") {
+                    removed = true;
+                    return Promise.resolve({ contactId: 21, progressStatus: "PROVIDED", followed: false });
+                }
+                if (url.startsWith("/api/mail/mailbox/conversations?")) {
+                    const page = Number(queryOf(url).get("page"));
+                    const total = removed ? 20 : 21;
+                    if (page === 1) return Promise.resolve({ items: removed ? [] : [expertA({ contactId: 21, name: "专家21" })], total });
+                    return Promise.resolve({ items: page0, total });
+                }
+                return next(url, method, body);
+            }
+        });
+        click(ctx.host.querySelector('[data-action="mc-page-next"]'));
+        await flush();
+        assert.strictEqual(ctx.host.querySelectorAll(".mc-person").length, 1, "末页唯一一条");
+        openMenu(ctx, 21);
+        click(progressOption(ctx, 21, "PROVIDED"));
+        await flush();
+        assert.strictEqual(queryOf(lastConversationsRequest(ctx).url).get("page"), "0", "空页回退一页");
+        assert.strictEqual(ctx.host.querySelectorAll(".mc-person").length, 20);
+        assert.match(ctx.host.querySelector(".mc-pager").textContent, /共 20 位/);
+    });
+
+    it("修改卡片 A 不当作选中 A：B 详情正文不变", async () => {
+        let statusA = "NONE";
+        const ctx = await bootChat({
+            conversations: { items: [expertA(), expertB()], total: 2 },
+            contact: contactB(),
+            messages: { items: [], nextBefore: null, hasMore: false },
+            route: (url, method, body, entry, next) => {
+                if (url.endsWith("/1/progress-status") && method === "PUT") {
+                    statusA = JSON.parse(body).status;
+                    return Promise.resolve({ contactId: 1, progressStatus: statusA, followed: false });
+                }
+                if (url.startsWith("/api/mail/mailbox/conversations?") && queryOf(url).get("size") !== "1") {
+                    return Promise.resolve({ items: [expertA({ progressStatus: statusA }), expertB()], total: 2 });
+                }
+                return next(url, method, body);
+            }
+        });
+        const bPerson = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "2");
+        click(bPerson.querySelector(".mc-person-main"));
+        await flush();
+        assert.strictEqual(ctx.host.querySelector(".mc-conversation h2").textContent, "专家B");
+        openMenu(ctx, 1);
+        click(progressOption(ctx, 1, "PROVIDED"));
+        await flush();
+        assert.strictEqual(ctx.host.querySelector(".mc-conversation h2").textContent, "专家B", "改 A 不切选中");
+        assert.ok(!ctx.host.querySelector(".mc-conversation").textContent.includes("专家A"), "A 摘要不塞给 B 正文");
+    });
+
+    it("菜单：再点/Escape/外部关闭，焦点回触发按钮；详情无控件、待匹配无菜单", async () => {
+        const ctx = await bootChat({
+            conversations: { items: [expertA()], total: 1 },
+            unmatched: { records: [unmatchedMail(901)], totalCount: 1 }
+        });
+        const menu = () => ctx.host.querySelector(".mailbox-progress-menu");
+        openMenu(ctx, 1);
+        assert.strictEqual(menu().hidden, false);
+        assert.strictEqual(progressButton(ctx, 1).getAttribute("aria-expanded"), "true");
+        const options = menu().querySelectorAll(".mailbox-progress-option");
+        assert.strictEqual(ctx.doc.activeElement, options[0], "打开焦点首项");
+        keyEvent(ctx.doc.activeElement, "ArrowDown");
+        assert.strictEqual(ctx.doc.activeElement, options[1], "ArrowDown 移动");
+        keyEvent(ctx.doc.activeElement, "Escape");
+        assert.strictEqual(menu().hidden, true);
+        assert.strictEqual(progressButton(ctx, 1).getAttribute("aria-expanded"), "false");
+        assert.strictEqual(ctx.doc.activeElement, progressButton(ctx, 1), "Escape 回触发按钮");
+
+        openMenu(ctx, 1);
+        assert.strictEqual(menu().hidden, false);
+        click(ctx.host.querySelector('.mc-search-row input[type="search"]'));
+        assert.strictEqual(menu().hidden, true, "外部点击关闭");
+
+        openMenu(ctx, 1);
+        openMenu(ctx, 1);
+        assert.strictEqual(menu().hidden, true, "再次点关闭");
+
+        // 详情无旧关注/状态控件
+        click(ctx.host.querySelector('.mc-person[data-contact-id="1"] .mc-person-main'));
+        await flush();
+        assert.strictEqual(ctx.host.querySelector('.mc-header [data-action="mc-toggle-follow"]'), null, "详情无关注按钮");
+        assert.strictEqual(ctx.host.querySelector(".mc-header .mailbox-progress"), null, "详情无状态菜单");
+        assert.ok(ctx.host.querySelector('.mc-header [data-action="mc-open-materials"]'), "既有动作保留");
+
+        // 待匹配无状态菜单
+        click(chipButton(ctx, "unmatched"));
+        await flush();
+        assert.strictEqual(ctx.host.querySelector(".mailbox-progress-status"), null, "待匹配卡片无状态菜单");
     });
 });
 
@@ -2922,25 +3239,25 @@ function createUnmatchedPanelDom() {
     return { doc, host, panel };
 }
 
-describe("待匹配 Tab：第五 chip、请求契约与邮件级列表", () => {
+describe("待匹配 Tab：第七 chip、请求契约与邮件级列表", () => {
     const conversations = { items: [expertA()], total: 1 };
 
-    it("S-1：五个 tab 顺序/anchor 固定，待匹配只请求 unmatched-inbound（offset=page*20、无专家参数）", async () => {
+    it("S-1：七个 tab 顺序/anchor 固定，待匹配只请求 unmatched-inbound（offset=page*20、无专家参数）", async () => {
         const ctx = await bootChat({ conversations, unmatched: { records: [unmatchedMail(901)], totalCount: 1 } });
         const chips = ctx.host.querySelectorAll(".mc-filter");
-        assert.deepStrictEqual(chips.map((chip) => chip.dataset.chip), ["all", "followed", "pending", "suspended", "replied", "unmatched"]);
+        assert.deepStrictEqual(chips.map((chip) => chip.dataset.chip), ["all", "provided", "followed", "pending", "suspended", "replied", "unmatched"]);
         assert.deepStrictEqual(
             chips.map((chip) => chip.textContent.replace(/\d+/g, "")),
-            ["全部", "关注", "待处理", "已挂起", "已回复", "待匹配"]
+            ["全部", "已提供", "跟进中", "待处理", "已挂起", "已回复", "待匹配"]
         );
-        assert.strictEqual(chips[2].getAttribute("aria-pressed"), "true", "普通首次进入默认待处理");
-        assert.strictEqual(chips[5].getAttribute("aria-pressed"), "false");
+        assert.strictEqual(chips[3].getAttribute("aria-pressed"), "true", "普通首次进入默认待处理");
+        assert.strictEqual(chips[6].getAttribute("aria-pressed"), "false");
 
-        click(chips[5]);
+        click(chips[6]);
         await flush();
 
-        assert.strictEqual(chips[5].getAttribute("aria-pressed"), "true", "待匹配选中态");
-        assert.strictEqual(chips[2].getAttribute("aria-pressed"), "false");
+        assert.strictEqual(chips[6].getAttribute("aria-pressed"), "true", "待匹配选中态");
+        assert.strictEqual(chips[3].getAttribute("aria-pressed"), "false");
         const q = queryOf(lastUnmatchedRequest(ctx).url);
         assert.strictEqual(q.get("unmatchedOnly"), "true");
         assert.strictEqual(q.get("pageSize"), "20");

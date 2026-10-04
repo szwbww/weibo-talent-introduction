@@ -796,7 +796,7 @@ function createChatSandbox(options) {
                 if (opts.suspensionError) return Promise.reject(new Error(opts.suspensionError));
                 if (typeof opts.suspension === "function") return Promise.resolve(opts.suspension(id));
                 if (opts.suspension !== undefined) return Promise.resolve(opts.suspension);
-                return Promise.resolve({ contactId: id, suspended: false, suspendReason: null, suspensionPendingCount: 0, followed: false });
+                return Promise.resolve({ contactId: id, suspended: false, suspendReason: null, suspensionPendingCount: 0, progressStatus: "NONE", followed: false });
             }
             if (method === "PUT") {
                 if (opts.suspendError) return Promise.reject(new Error(opts.suspendError));
@@ -807,6 +807,7 @@ function createChatSandbox(options) {
                     suspended: true,
                     suspendReason: parsed.reason == null ? null : String(parsed.reason),
                     suspensionPendingCount: Number(current.suspensionPendingCount) || 0,
+                    progressStatus: current.progressStatus !== undefined ? current.progressStatus : (current.followed === true ? "FOLLOWING" : "NONE"),
                     followed: current.followed === true
                 };
                 opts.suspension = next;
@@ -820,6 +821,7 @@ function createChatSandbox(options) {
                     suspended: false,
                     suspendReason: null,
                     suspensionPendingCount: Number(current.suspensionPendingCount) || 0,
+                    progressStatus: current.progressStatus !== undefined ? current.progressStatus : (current.followed === true ? "FOLLOWING" : "NONE"),
                     followed: current.followed === true
                 };
                 opts.suspension = next;
@@ -869,6 +871,16 @@ function createChatSandbox(options) {
         }
         if (/\/api\/mail\/mailbox\/conversations\/\d+\/follow/.test(url)) {
             return Promise.resolve({ followed: opts.followResult !== false });
+        }
+        // 02：三态标记唯一写端点（PUT status → progressStatus/followed）。
+        if (/\/api\/mail\/mailbox\/conversations\/\d+\/progress-status$/.test(url) && method === "PUT") {
+            const id = Number(url.split("/")[5]);
+            const parsed = body ? JSON.parse(body) : {};
+            const status = parsed && typeof parsed.status === "string" ? parsed.status : "NONE";
+            if (opts.suspension && String(opts.suspension.contactId) === String(id)) {
+                opts.suspension = Object.assign({}, opts.suspension, { progressStatus: status, followed: status === "FOLLOWING" });
+            }
+            return Promise.resolve({ contactId: id, progressStatus: status, followed: status === "FOLLOWING" });
         }
         // fast-p c3：所在地目录 / 配置 / 推荐时间（只读消费 + 唯一写路径 PUT /{contactId}）。
         if (url === "/api/mail/contact-locations/countries") {
@@ -1406,9 +1418,10 @@ describe("02 · I-4 取消/结束挂起后的归类", () => {
         return ctx;
     }
 
-    it("回包 count>0 → 待处理；0+followed → 关注；0+未关注 → 已回复", async () => {
+    it("回包 count>0 → 待处理；0+PROVIDED → 已提供；0+跟进中 → 跟进中；0+NONE → 已回复", async () => {
         const cases = [
             { state: { suspensionPendingCount: 1, followed: false }, expect: "pending" },
+            { state: { suspensionPendingCount: 0, progressStatus: "PROVIDED", followed: false }, expect: "provided" },
             { state: { suspensionPendingCount: 0, followed: true }, expect: "followed" },
             { state: { suspensionPendingCount: 0, followed: false }, expect: "replied" }
         ];
@@ -1432,6 +1445,87 @@ describe("02 · I-4 取消/结束挂起后的归类", () => {
         assert.ok(error && error.hidden === false);
         assert.match(error.textContent, /取消失败/);
         assert.ok(ctx.host.querySelector('.mc-person[data-contact-id="1"]'), "卡片未移走");
+    });
+
+    it("已提供结束挂起：提示「已结束挂起，可在「已提供」查看」", async () => {
+        const ctx = await bootSuspended({ suspensionPendingCount: 0, progressStatus: "PROVIDED", followed: false });
+        click(ctx.host.querySelector('.mc-person[data-contact-id="1"] [data-action="mc-suspension"]'));
+        await flush();
+        assert.strictEqual(chipButton(ctx, "provided").getAttribute("aria-pressed"), "true");
+        assert.ok(ctx.calls.status.some((e) => /已结束挂起，可在「已提供」查看/.test(e.message)), "提示按真实状态");
+    });
+});
+
+describe("02 · 三态标记与挂起交互（I-1/I-3/I-4）", () => {
+    it("状态变更后旧挂起 GET 迟到不覆盖当前状态", async () => {
+        let releaseOld = null;
+        let getCount = 0;
+        const ctx = await bootChat({
+            conversations: { items: [suspendExpert(1, { suspended: true, suspensionPendingCount: 0 })], total: 1 },
+            messages: suspendMessages([inboundMsg(90, 1, "PROCESSED")]),
+            contact: { contact: { id: 1 } },
+            route: (url, method, body, entry, next) => {
+                if (/\/1\/suspension$/.test(url) && method === "GET") {
+                    getCount += 1;
+                    if (getCount === 1) {
+                        return new Promise((resolve) => {
+                            releaseOld = () => resolve({ contactId: 1, suspended: true, suspendReason: null, suspensionPendingCount: 0, progressStatus: "NONE", followed: false });
+                        });
+                    }
+                    return Promise.resolve({ contactId: 1, suspended: true, suspendReason: null, suspensionPendingCount: 0, progressStatus: "PROVIDED", followed: false });
+                }
+                return next(url, method, body);
+            }
+        });
+        openExpert(ctx, 1);
+        await flush();
+        // 旧挂起 GET 在途；此时把卡片状态改为已提供 → 触发同专家挂起重查
+        click(ctx.host.querySelector('.mc-person[data-contact-id="1"] [data-action="mc-progress-menu"]'));
+        click(ctx.host.querySelector('.mc-person[data-contact-id="1"] [data-action="mc-set-progress"][data-progress="PROVIDED"]'));
+        await flush();
+        assert.ok(releaseOld, "旧挂起 GET 在途");
+        releaseOld();
+        await flush();
+        const line = ctx.host.querySelector(".mailbox-suspend-completion-line small");
+        assert.ok(line && /已提供/.test(line.textContent), "旧 GET 不得覆盖真实状态");
+    });
+
+    it("挂起响应缺 progressStatus：从 followed 兼容为跟进中", async () => {
+        const ctx = await bootChat({
+            conversations: { items: [suspendExpert(1, { suspended: true, suspensionPendingCount: 0 })], total: 1 },
+            suspension: { contactId: 1, suspended: true, suspendReason: null, suspensionPendingCount: 0, followed: true },
+            messages: suspendMessages([inboundMsg(90, 1, "PROCESSED")]),
+            contact: { contact: { id: 1 } }
+        });
+        openExpert(ctx, 1);
+        await flush();
+        const line = ctx.host.querySelector(".mailbox-suspend-completion-line small");
+        assert.ok(line && /跟进中/.test(line.textContent), "缺字段从 followed 派生为跟进中");
+    });
+
+    it("手机返回后卡片状态菜单仍可操作；处理确认仍可用", async () => {
+        const ctx = await bootChat({
+            conversations: { items: [suspendExpert(1)], total: 1 },
+            messages: suspendMessages([inboundMsg(101, 1, "MANUAL_REVIEW")]),
+            contact: { contact: { id: 1 } }
+        });
+        ctx.resize(true);
+        openExpert(ctx, 1);
+        await flush();
+        click(ctx.host.querySelector('[data-action="mobile-mailbox-back"]'));
+        await flush();
+        const btn = ctx.host.querySelector('.mc-person[data-contact-id="1"] [data-action="mc-progress-menu"]');
+        assert.ok(btn, "返回列表后卡片状态按钮仍在");
+        click(btn);
+        assert.strictEqual(ctx.host.querySelector(".mailbox-progress-menu").hidden, false);
+        // 处理确认仍可用
+        click(ctx.host.querySelector('.mc-person[data-contact-id="1"] .mc-person-main'));
+        await flush();
+        const pendingBtn = ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"] [data-action="mc-mark-resolved"]');
+        assert.ok(pendingBtn, "原位处理确认入口保留");
+        click(pendingBtn);
+        await flush();
+        assert.ok(ctx.host.querySelector('[data-action="mc-process-confirm"]'), "确认交互保留");
     });
 });
 
