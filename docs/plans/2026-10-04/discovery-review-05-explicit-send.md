@@ -60,13 +60,15 @@
 
 ## 变更文件清单
 
-共10文件；批量选择与共享组装2子系统；数据库/ES新字段0。D1尚不在此表授权内。
+共12文件；批量选择与共享组装2子系统；数据库/ES新字段0。D1尚不在此表授权内。（A3 修正：新增 2 个文件用于启动期模板版本/令牌校验与内存模板快照渲染 seam；预览响应 DTO 字段扩充在已授权的 ManualInitialOutreachService 内完成。）
 
 | 文件 | 操作 |
 |---|---|
 | src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt | 移出隐式学术门禁、解释显式条件 |
 | src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchRecipientSelectionService.kt | 新增统一选择/解释 |
-| src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt | 预估/两循环/重试接入 |
+| src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt | 预估/两循环/重试接入；A3：预览响应 DTO 补齐准入计数与逐人原因 key |
+| src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendControlService.kt | A3：启动时模板版本/过期预览令牌校验；请求快照信息写 request_payload |
+| src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt | A3：按内存模板内容快照渲染的 seam（运行中模板变化不混用） |
 | src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt | 最终切换共用准入，保持未切换行为 |
 | src/main/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposer.kt | 精确模板判定与参数 |
 | src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt | 材料批量参数，默认保持人工行为 |
@@ -79,7 +81,7 @@
 
 - I-1：批准后缺机构/国家/凭证、filterResult非PASSED样本进入目标；不再调用旧凭证门禁；未初始化状态单独显示，不谎称待审核。
 - I-2：逐项控制开关，未选择地区不判国家、状态空不限、研究方向ANY不判断、有显式模板门禁才检查；类型空仍零人。
-- I-3：人工/定时/重试同样配置相同名单；标签/状态变更导致名单变化须给具体key；preview无数据库写与验证外呼；500名每批lookup有界。
+- I-3：人工/定时/重试同样配置相同名单；标签/状态变更导致名单变化须给具体key；preview无数据库写与验证外呼；500名每批lookup有界；预览 HTTP 响应含准入计数与逐人原因 key（06 数据源）。
 - I-4：裸变量空+关→不阻断；开→精确缺key；fallback不阻断；变体seed一致；模板变更有版本不一致提示；占位符残留有明确错误。
 - I-5：人工单发/自动回复/会议相关原测试回归；材料提醒开关也生效；SMTP全局策略没被意外改动。
 - **整体验收前置**：D1闭合后重新运行batch-gates检索，逐项记录全部分支来源；任何未解释continue/filter意味着主计划FAIL。
