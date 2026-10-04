@@ -2,9 +2,9 @@
 
 ## 身份与边界
 
-- Master plan（批准版，字节冻结）：`docs/plans/2026-10-04/discovery-review-master.md`，identity `commit:07beaafc111a1b14ed3c48d514db527c8a13fc31`。
+- Master plan（批准版，字节冻结）：`docs/plans/2026-10-04/discovery-review-master.md`，identity `commit:8853573efcfc82a84d75264a53923709e94b4702`（A2 修正后）。
 - 本 child 批准计划（完整合同，必须先通读）：`docs/plans/2026-10-04/discovery-review-05-explicit-send.md`，identity `commit:07beaafc111a1b14ed3c48d514db527c8a13fc31`。全部章节逐条生效；本 brief 摘要与计划原文冲突时以计划原文为准。
-- Worktree：`/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master`；branch `fast/2026-10-04-discovery-review-master`；`child_base_sha = <见派发消息>`。
+- Worktree：`/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master`；branch `fast/2026-10-04-discovery-review-master`；`child_base_sha = 08f5bd5421333447f9173d34fad1c55ac43c3ba5`（= child 04 code head）。
 - 依赖：01–04。下游：06（前端显示准入计数与模板开关文案；显式条件与预估口径）。
 - 关键范围事实（master 计划表与自检）：**D1（历史发送政策）未定案。本子计划可开发统一计算能力；不得启用发送切换，不得声称"所有过滤已清零"。** 现行发送分支中的退订、历史已发、账号绑定、永久失败、材料提醒无 contact、旧 cron 无页面快照等 D1 项：在 D1 定案前保留为待决冲突，不得删除、不得改名成"技术限制"、不得静默扩权（计划 5.6）。
 - 若计划内部条款（"不得启用发送切换"与实现方案 3 "删除各发送点对 matchesDiscoveryOutreach 的调用"）在本次执行中无法唯一确定行为，按 execute-p 返回 `PLAN_CONFLICT` 并说明冲突点，不要静默选择。
@@ -18,11 +18,12 @@
 3. 不得 push、merge、rebase、squash、amend、reset；不得改写已有提交。产品代码只提交一次：`feat(fast-p): implement 05`。
 4. 计划与代码冲突、需要白名单外文件、需要新行为或需要修订计划：返回 `PLAN_CONFLICT` / `BLOCKED`，不得自行扩范围或改计划。
 5. 禁止联网抓取、连线上 MySQL/ES、发信、部署；不得新增依赖；不得改 `pom.xml`。
-6. 测试库必须是本机容器 `ti-mysql-it`（localhost:3306，root/root，库 `talent_introduction`，带 `allowPublicKeyRetrieval=true`）；禁止线上/日常库。Docker = OrbStack。
+6. 测试库必须是本机容器 `ti-mysql-it` 内的**独立库 `talent_introduction_fastp`**（已创建；同容器 `talent_introduction` 已被外部工作流漂移到 V149、缺 V148，禁止使用）。连接串：`jdbc:mysql://localhost:3306/talent_introduction_fastp?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true`，`DB_USERNAME=root DB_PASSWORD=root`；禁止线上/日常库。Docker = OrbStack。
 7. 不新增迁移、不改数据库/ES 字段；`ManualOutreachTxHelper`、`SmtpMailDeliveryService`、选号 `SenderAccountAssignmentService`、任务节奏/取消/配额语义均不在授权清单，不得改动。
 8. 保持：人工单发/自动回复/会议/材料提醒共享组件与 SMTP 现有策略不被改坏；I-5 用参数默认值保持既有调用行为（`enforcePersonalizationGate` 默认 true；`ManualExpertMailService` 内部策略参数默认保持人工单发）。
 9. 发送账号/节奏是执行配置；`senderAccountCodes`/`roundSize` 等不得冒充专家学术不合格原因。
 10. 运行期结果里每个排除必须对应准入结论、现有显式条件或用户明确认可的 D1 政策；剩余 D1 分支保留并在报告中逐条列出（对应计划 5.6 与主计划 I-7）。
+11. 人工预授权（2026-10-04，适用 04–06）：若既有测试的**精确计数/集合断言**仅因本计划合法新增/变更的枚举、目录或 taskType 条目而失败，你可以在本 child 内对该测试文件做**最小重同步**（只改计数/集合/样例字面量；不弱化、不删除断言、不改无关语义），并在执行报告中逐条列出文件与旧/新断言；控制器据此记录 amendment 行并同步主计划文件数上限。超出该类别（行为断言、产品语义、其他文件）仍必须返回 PLAN_CONFLICT。
 
 ## Authorized Files（10）
 
@@ -58,9 +59,16 @@ JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest
 
 - 预估/执行同一 selector 的名单与计数；准入计数（准入通过/待审核/显式条件排除/本次目标）与模板门禁文案数据来源；`Issue`/原因 key 供前端显示。
 
-## 上游产出（01–04，由控制方在派发消息中补全）
+## 上游产出（01–04 已交付；code heads：01=2093151，02=df9cad4，03=6043a67，04=08f5bd5421333447f9173d34fad1c55ac43c3ba5）
 
-- 见派发消息中的 01–04 code head 与 execution.md 摘要。
+- 04 交付了 05 需要的准入读取与投影 seam：
+  - `DiscoveryReviewService.recordAutomatic`（同身份人工/LEGACY 不覆盖；自动 CAS 刷新）——05 只读消费，不写。
+  - `DiscoveryReviewService.resolveAdmissionBatch`（单次 `findAdmissions` + `findItemsByIds`，500 批量）：未初始化/身份变化返回 `decision=null, initialized=false, manual=false`（显示"尚未初始化"，不是待审核）；人工决定 `manual=true`。**05 的批量准入 lookup 必须走它，不得自行 SQL/另写判定。**
+  - `projectApprovedCandidate` / `retryBatchCandidateSync`（候选投影 seam；投影失败 CANDIDATE_SYNC_FAILED 且审核仍 APPLIED，独立重试）——05 不在发送路径调用投影。
+- 两个初次收录分支（`ExpertDiscoveryService.kt:1434` 旧 ORCID、`:1762` consumeOutcomeInternal）已改为 RAW 成功后 `admitDiscoveryExpert → recordAutomatic → projectApprovedCandidate`；旧的 inline promote 已删除。05 不得再依赖 `matchesDiscoveryOutreach` 作为准入（D1 关闭前，旧发送门禁仍在位，见下方 D1 约束）。
+- 重验人工分支已按计划 5.4 去掉分支前硬性 allowedMap 拒绝（O-1 信息项）；自动分支保留 CAS；作者绑定仍要求 `DiscoveryIdentity.allowed`。
+- 冻结约束（05 必须遵守）：`DiscoveryReviewService` 构造只允许追加带默认值尾参数；02/03/04 测试调用形态不得改；`ManualOutreachTxHelper`、选号/节奏、SMTP 接缝均不在授权清单。
+- 04 验证：VerifyDiscoveryReview04 `LIGHT_PASS_WITH_NOTES`；命令 exit 0/0（304 tests，0F/0E）。
 
 ## 交付物
 
