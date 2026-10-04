@@ -4,7 +4,7 @@
 
 - Master plan（批准版，字节冻结）：`docs/plans/2026-10-04/discovery-review-master.md`，identity `commit:07beaafc111a1b14ed3c48d514db527c8a13fc31`。
 - 本 child 批准计划（完整合同，必须先通读）：`docs/plans/2026-10-04/discovery-review-03-all-pages.md`，identity `commit:07beaafc111a1b14ed3c48d514db527c8a13fc31`。全部章节逐条生效；本 brief 摘要与计划原文冲突时以计划原文为准。
-- Worktree：`/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master`；branch `fast/2026-10-04-discovery-review-master`；`child_base_sha = <见派发消息>`。
+- Worktree：`/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master`；branch `fast/2026-10-04-discovery-review-master`；`child_base_sha = df9cad44ea77f37ebdb0e4af1b2d555573b6ffe5`（= child 02 code head）。
 - 依赖：02（两张表、prepare/confirm/apply、查询与筛选）。下游：04（复用 03 任务/scroll 与 fail-items 语义做存量初始化）、05/06（任务状态与重试契约）。
 - 取证材料（worktree 内只读）：`docs/plans/2026-10-04/discovery-review-audit.md`（E5 TaskExecution/TaskProgress、X5/X9）、`docs/plans/2026-10-04/discovery-review-evidence/`。
 - 基线命令结果：`docs/plans/fast/2026-10-04-discovery-review-master/baseline.md`。
@@ -57,9 +57,15 @@ DB_URL="jdbc:mysql://localhost:3306/talent_introduction?useUnicode=true&characte
 - 两个 task type 名称与计数语义；重试只重领 FAILED/未处理项；STALE 需重新 prepare。
 - `DiscoveryReviewScanService` 的完整 source 读取与统一筛选（04 存量初始化复用，不另写条件）。
 
-## 上游产出（02，由控制方在派发消息中补全）
+## 上游产出（02 已交付，code head df9cad44ea77f37ebdb0e4af1b2d555573b6ffe5）
 
-- 见派发消息中的 02 code head 与 execution.md 摘要。
+- 迁移 `V148__create_expert_discovery_review.sql` 已建两表（IT 已迁移到 schema 148）：`expert_discovery_admission`（PK `expert_doc_id`、`identity_hash`、`decision`、`revision`、`decision_item_id`、`policy_version`、`checked_at`、`updated_at`）；`expert_discovery_review_item`（`id`、`batch_key`、`expert_doc_id`、`source_level`、`identity_hash`、`snapshot_hash`、`expected_revision`、`action`、`state`、`snapshot_json`、`reason_snapshot_json`、`actor`、`note`、`previous_item_id`、`execution_id`、`error_code`、时间戳；`UNIQUE (batch_key, expert_doc_id)`，索引 `(expert_doc_id,id)`、`(batch_key,state,id)`。
+- 身份键 = SHA-256(docId ␀ normalizedEmail ␀ given ␀ family)（`DiscoveryReview.kt`）；`applyItem` 按 `revision`+`identityHash` CAS，冲突 `markStale`。
+- API（已实现，03 扩展其 ALL_MATCHING/重试/取消）：`GET /api/discovery/review/experts`、`POST /api/discovery/review/batches/prepare`（scope=IDS；含 level/executionId 扩展位）、`POST /batches/{batchKey}/confirm`（仅 batchHash）、`GET /batches/{batchKey}`、`GET /history?docId=`、`POST /items/{id}/revoke`。
+- 可扩展 seam（03 复用，不另写第二套条件）：`DiscoveryReviewService.listExperts/prepare/confirm/revoke/history/batchDetail`；`DiscoveryReviewRepository.findAdmission/findAdmissions/initializeAdmission/insertItem/applyItem/revokeCurrent/findHistory/findItemsByBatch/batchStateCounts/findItemsByIds`。
+- IT 门控 = `@EnabledIfSystemProperty(named="mysqlIt", matches="true")`；本地容器 `ti-mysql-it` 已迁移到 V148。
+- 已验证但仍有效的事实：`FlywayMigrationIntegrationTest` 的 latest-target 断言仍写 `147`（RECORD_ONLY O-1，02 未授权修改），03 也不得改（不在授权清单）。
+- 02 验证：VerifyDiscoveryReview02 `LIGHT_PASS_WITH_NOTES`；命令 exit 0/0/0（20 tests：service 12 + controller 8；IT 8）。
 
 ## 交付物
 
