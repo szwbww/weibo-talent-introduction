@@ -119,6 +119,21 @@ data class OutcomeBreakdown(
     val errorSamples: List<String> = emptyList()
 )
 
+/**
+ * I-2/I-3: 本次批量筛选的显式条件 key。每个 key 精确对应一个用户可见控件，
+ * 排除原因必须落在这里列出的 key（或统一 selector 的准入状态）之一，不得有隐式默认。
+ */
+object RecipientFilterKeys {
+    const val OPERATOR_STATUS = "OPERATOR_STATUS"
+    const val EXPERT_TYPE = "EXPERT_TYPE"
+    const val DISCIPLINE = "DISCIPLINE"
+    const val EMAIL_DOMAIN = "EMAIL_DOMAIN"
+    const val RESEARCH_DIRECTION = "RESEARCH_DIRECTION"
+    const val TAGS = "TAGS"
+    const val REGION = "REGION"
+    const val GATE_FIELD = "GATE_FIELD"
+}
+
 /** Unified recipient filter applied to ES and MySQL retry paths (I-3). */
 data class RecipientScope(
     val mailType: String,
@@ -141,7 +156,16 @@ data class RecipientScope(
     val researchDirectionFilter: String = ResearchDirectionFilters.ANY,
     val excludeVerifiedUnavailableEmails: Boolean = false
 ) {
-    fun matchesExpert(profile: com.weibo.talentintroduction.expert.domain.ExpertProfile): Boolean {
+    /**
+     * I-2/I-3: 本次显式条件的不匹配 key 列表（空列表 = 全部命中）。**不含**发现准入判定 ——
+     * 准入由 04 的持久结论经 [com.weibo.talentintroduction.campaign.service.BatchRecipientSelectionService]
+     * 统一消费；同身份批准后不再调用机构/国家/凭证验签来二次拒绝。
+     *
+     * 同一记录多个条件不满足时每个 key 各计一次「原因命中」；调用方按人（真实 docId）去重总排除数。
+     * 只读取本次列出的显式控件来源，无任何隐式默认（空集合语义见各分支）。
+     */
+    fun mismatchKeys(profile: ExpertProfile): List<String> {
+        val keys = mutableListOf<String>()
         // I3a-5：与 ES 的 operatorStatusesFilter 同口径 —— 多状态取 OR；
         // NOT_CONTACTED = ES 文档无该字段（I3a-1）；空集合不判定（I3a-3）。
         if (operatorStatuses.isNotEmpty()) {
@@ -149,76 +173,87 @@ data class RecipientScope(
                 if (it == "NOT_CONTACTED") profile.operatorStatus.isNullOrBlank()
                 else profile.operatorStatus == it
             }
-            if (!matched) return false
+            if (!matched) keys += RecipientFilterKeys.OPERATOR_STATUS
         }
         // I4-1: INTRODUCTION 的唯一收口点；MATERIAL_REMINDER 不判定（零影响）。
-        if (mailType == BatchSendType.INTRODUCTION.name && !matchesExpertType(profile)) return false
+        if (mailType == BatchSendType.INTRODUCTION.name && !matchesExpertType(profile)) {
+            keys += RecipientFilterKeys.EXPERT_TYPE
+        }
         if (!discipline.isNullOrBlank()) {
             val matched = if (discipline == "UNCLASSIFIED") {
                 profile.disciplineCategory.isNullOrBlank()
             } else {
                 profile.disciplineCategory == discipline
             }
-            if (!matched) return false
+            if (!matched) keys += RecipientFilterKeys.DISCIPLINE
         }
         // I2a-4: 与 ES 的 emailDomainsFilter 同口径 —— 多域取 OR；空集合不判定（I2a-2）。
         if (emailDomains.isNotEmpty()) {
             val email = profile.email
-            if (email.isNullOrBlank()) return false
-            if (emailDomains.none { email.endsWith("@$it") }) return false
+            if (email.isNullOrBlank() || emailDomains.none { email.endsWith("@$it") }) {
+                keys += RecipientFilterKeys.EMAIL_DOMAIN
+            }
         }
         // I-2: 方向三态与 ES 的 researchFields 存在性判据同口径。keyword 字段下
         // `fieldPresenceFilter("researchFields")` = `exists AND NOT term ""`，
         // 故只有 null/空串算「无」，纯空格串在 ES 里 exists 且非 term ""，算「有」。
         // I-3: 本判定与 expertTypes / gateEsFields 是独立维度，同时指定即 AND。
         when (researchDirectionFilter) {
-            ResearchDirectionFilters.PRESENT -> if (profile.researchFields.isNullOrEmpty()) return false
-            ResearchDirectionFilters.ABSENT -> if (!profile.researchFields.isNullOrEmpty()) return false
+            ResearchDirectionFilters.PRESENT ->
+                if (profile.researchFields.isNullOrEmpty()) keys += RecipientFilterKeys.RESEARCH_DIRECTION
+            ResearchDirectionFilters.ABSENT ->
+                if (!profile.researchFields.isNullOrEmpty()) keys += RecipientFilterKeys.RESEARCH_DIRECTION
         }
         if (tags.isNotEmpty()) {
             val expertTags = profile.tags.orEmpty()
-            if (tags.none { it in expertTags }) return false
+            if (tags.none { it in expertTags }) keys += RecipientFilterKeys.TAGS
         }
-        if (regions.isNotEmpty()) {
-            val expertRegion = com.weibo.talentintroduction.expert.domain
-                .CountryContinentMapping.toRegion(profile.country)
-            if (expertRegion !in regions) return false
-        }
-        // I4a-5: 与 ES 的 fieldPresenceFilter 同口径。BLANK_EXCLUDABLE_FIELDS
-        // （researchFields / recentWorkTitles / patentTitles / degree）在 ES 侧是
-        // `exists AND NOT term ""`，故空串不算有值；employment / institution 只有
-        // `exists`，空串在 ES 里算有值，内存侧对应 `!= null`。
-        if (gateEsFields.isNotEmpty()) {
-            val allPresent = gateEsFields.all { field ->
-                when (field) {
-                    "employment" -> profile.employment != null
-                    "institution" -> profile.institution != null
-                    "degree" -> !profile.degree.isNullOrBlank()
-                    "researchFields" -> !profile.researchFields.isNullOrBlank()
-                    "recentWorkTitles" -> profile.recentWorkTitles?.any { it.isNotBlank() } == true
-                    "patentTitles" -> profile.patentTitles?.any { it.isNotBlank() } == true
-                    else -> true   // I4a-3 已裁剪，理论不可达；保守放行，不静默排除
-                }
-            }
-            if (!allPresent) return false
-        }
-        // I-1/I-3: 新发现/待确认的最终门禁 —— 与 ES 候选页、预估共用同一份谓词（[matchesEsTarget]）。
-        if (!matchesDiscoveryOutreach(profile)) return false
-        return true
+        if (regions.isNotEmpty() && !matchesRegion(profile)) keys += RecipientFilterKeys.REGION
+        if (gateEsFields.isNotEmpty() && !matchesGateFields(profile)) keys += RecipientFilterKeys.GATE_FIELD
+        return keys
     }
 
+    /** I-2/I-3: 全部显式条件命中（准入由统一 selector 追加判定）。 */
+    fun matchesExpert(profile: ExpertProfile): Boolean = mismatchKeys(profile).isEmpty()
+
     /**
-     * I-1/I-2/I-3: ES 候选页与预估共用的最终谓词（执行取页、预估 scroll、发前兜底）。
-     *
-     * 新发现/待确认档案额外按**已证实机构所在地** `country` 判地区 —— ES 的 `regionFilter`
-     * 只是 country OR nationality 的粗筛，不能让它把国籍当成所在地。非新发现档案在此不收紧
-     * （既有 ES 粗筛语义逐字保留）。
+     * I-1/I-2/I-3: ES 候选页与预估共用的显式条件谓词（执行取页、预估 scroll、发前兜底）。
+     * 与 [matchesExpert] 同义 —— 发现准入不在此处，一律由统一 selector 消费持久结论。
      */
-    fun matchesEsTarget(profile: ExpertProfile): Boolean {
-        if (!matchesDiscoveryOutreach(profile)) return false
-        if (!isDiscoveryOutreach(profile)) return true
-        return regions.isEmpty() ||
-            CountryContinentMapping.toRegion(profile.country) in regions
+    fun matchesEsTarget(profile: ExpertProfile): Boolean = matchesExpert(profile)
+
+    /**
+     * I-2: 地区判定与 ES `regionsFilter` 同口径。发现/待确认档案按**已证实机构所在地**
+     * `country` 判（空/未映射国家不进任何地区，含 `Other`）；非发现档案按
+     * country OR nationality 判（与 ES 粗筛一致，修正重试只判 country 的不一致）。
+     */
+    private fun matchesRegion(profile: ExpertProfile): Boolean {
+        if (isDiscoveryOutreach(profile)) {
+            val country = profile.country
+            if (country.isNullOrBlank()) return false
+            val region = CountryContinentMapping.toRegion(country)
+            if (region == CountryContinentMapping.REGION_OTHER) return false
+            return region in regions
+        }
+        return regions.any { region ->
+            regionOf(profile.country) == region || regionOf(profile.nationality) == region
+        }
+    }
+
+    private fun regionOf(value: String?): String? =
+        value?.takeIf { it.isNotBlank() }?.let { CountryContinentMapping.toRegion(it) }
+
+    /** I4a-5: 与 ES 的 fieldPresenceFilter 同口径。 */
+    private fun matchesGateFields(profile: ExpertProfile): Boolean = gateEsFields.all { field ->
+        when (field) {
+            "employment" -> profile.employment != null
+            "institution" -> profile.institution != null
+            "degree" -> !profile.degree.isNullOrBlank()
+            "researchFields" -> !profile.researchFields.isNullOrBlank()
+            "recentWorkTitles" -> profile.recentWorkTitles?.any { it.isNotBlank() } == true
+            "patentTitles" -> profile.patentTitles?.any { it.isNotBlank() } == true
+            else -> true   // I4a-3 已裁剪，理论不可达；保守放行，不静默排除
+        }
     }
 
     /**

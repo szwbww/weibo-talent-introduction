@@ -1,7 +1,6 @@
 package com.weibo.talentintroduction.campaign.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
-import com.weibo.talentintroduction.campaign.domain.RecipientScope
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.config.MailSchedulingProperties
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
@@ -29,7 +28,9 @@ class InitialOutreachService(
     private val emailSuppressionService: EmailSuppressionService,
     private val autoReplySettingService: AutoReplySettingService,
     private val schedulingProperties: MailSchedulingProperties,
-    private val senderAccountBindingService: SenderAccountBindingService
+    private val senderAccountBindingService: SenderAccountBindingService,
+    /** I-1/I-3: 发现准入的唯一来源（旧首发不再做机构/国家/凭证二次校验）。 */
+    private val batchRecipientSelectionService: BatchRecipientSelectionService = BatchRecipientSelectionService()
 ) {
     fun sendInitialBatch(campaignId: Long, size: Int, taskExecutionId: Long? = null): InitialOutreachBatchResult {
         // I2-2: 未配置即快速失败，绝不退化成"不限"。
@@ -58,11 +59,8 @@ class InitialOutreachService(
                 return@forEachIndexed
             }
 
-            // I-1/I-3：新发现/待确认的发送前门禁与取页同口径（同一谓词）；不合格者不建联系人。
-            if (!RecipientScope.matchesDiscoveryOutreach(expert)) {
-                skipped += 1
-                return@forEachIndexed
-            }
+            // I-1/I-3：发现准入与类型已由 fetchSendableCandidates 按统一 selector 判定，
+            // 不再调用 matchesDiscoveryOutreach 做机构/国家/凭证二次拒绝。
 
             if (expertContactRepository.existsByCampaignIdAndOrcidId(campaignId, expert.orcidId)) {
                 skipped += 1
@@ -162,9 +160,9 @@ class InitialOutreachService(
     }
 
     /**
-     * I-3: 旧首发取目标时对 ES 粗筛页应用同一份新发现最终谓词（[RecipientScope.matchesDiscoveryOutreach]）。
+     * I-1/I-3: 旧首发取目标时对 ES 粗筛页应用统一 selector（显式条件 + 04 持久准入）。
      * 被整页过滤时必须继续按 offset 取下一页，直到凑足 [size] 名合格候选或用尽 —— 不能先建联系人再判不合格。
-     * 分类/邮箱/国家等粗筛仍由 ES 查询与内存既有门禁负责，这里只补新发现机构证据与地区证据。
+     * 分类/邮箱/国家等粗筛仍由 ES 查询与内存既有门禁负责；发现准入只消费持久结论。
      */
     private fun fetchSendableCandidates(
         size: Int,
@@ -178,7 +176,9 @@ class InitialOutreachService(
             val raw = result.experts
             if (raw.isEmpty()) break
             offset += raw.size
-            eligible += raw.filter { RecipientScope.matchesDiscoveryOutreach(it) }
+            eligible += batchRecipientSelectionService.selectAdmission(raw)
+                .includedDocIds
+                .let { ids -> raw.filter { BatchRecipientSelectionService.docIdOf(it) in ids } }
             // I-3：页 offset 针对粗筛持续推进；只有短页或已越过 totalHits 才算数据耗尽。
             if (raw.size < size || offset >= result.totalHits) break
         }

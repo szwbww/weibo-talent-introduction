@@ -114,7 +114,9 @@ class ManualInitialOutreachService(
      * I-1/I-3（03）：`operator_status` 的公共写入口 —— 永久失败只有具备地址证据时才允许写
      * EMAIL_INVALID；失败事实本身仍由 [txHelper] 记录，二者相互独立。
      */
-    private val expertOperatorStatusService: ExpertOperatorStatusService
+    private val expertOperatorStatusService: ExpertOperatorStatusService,
+    /** I-1/I-3: 批量目标的唯一准入+显式条件选择器（预估/执行/重试/材料共用）。 */
+    private val batchRecipientSelectionService: BatchRecipientSelectionService = BatchRecipientSelectionService()
 ) {
     private val log = LoggerFactory.getLogger(ManualInitialOutreachService::class.java)
 
@@ -366,7 +368,10 @@ class ManualInitialOutreachService(
                         optionValue = templateId.toString(),
                         senderAccountCode = account.accountCode
                     )
-                    val result = manualExpertMailService.sendManualMail(contactId, command)
+                    val result = manualExpertMailService.sendManualMail(
+                        contactId, command,
+                        enforcePersonalizationGate = snapshot.gateFilterEnabled
+                    )
 
                     if (result.sendStatus == "SENT") {
                         accountRateLimiter.recordSuccess(account.accountCode, provider, config.perMailIntervalMs)
@@ -616,7 +621,7 @@ class ManualInitialOutreachService(
             // 再叠加历史不可达过滤；整页被过滤时迭代器继续推进 offset（I-3）。
             filterPage = { profiles ->
                 filterKnownProfiles(
-                    profiles.filter { scope.matchesEsTarget(it) },
+                    selectIncluded(scope, profiles),
                     scope.excludeVerifiedUnavailableEmails,
                     filterNow
                 )
@@ -697,9 +702,9 @@ class ManualInitialOutreachService(
                 val (existingContact, expert) = targetIterator.next()
                 val normOrcid = normalizeOrcid(expert.orcidId)
 
-                // I4-1/I4-4: 发送前最后门禁 —— 与 ES 查询、内存重试过滤共用同一份类型判定。
-                // 查询/缓存/未来重构错误可能绕过 ES 侧，创建 contact 前再判一次。
-                if (!scope.matchesExpertType(expert)) {
+                // I-1/I-3: 发现准入与显式条件已由统一 selector 在取页/重试构造时判定；
+                // 这里保留廉价的内存类型复核，兜住任何绕过查询侧的残余路径。
+                if (scope.mailType == BatchSendType.INTRODUCTION.name && !scope.matchesExpertType(expert)) {
                     accumulator.recordSkipped(
                         BatchOutcomeReasonCodes.EXPERT_NOT_SENDABLE,
                         "研发类型不在本次选择范围内：${expert.orcidId}"
@@ -709,22 +714,6 @@ class ManualInitialOutreachService(
                     roundRejected++
                     updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
                         "RUNNING", "研发类型不在本次选择范围内：${expert.orcidId}", errors, mode, roundNumber, config, runAccountStats,
-                        roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
-                    continue
-                }
-
-                // I-1/I-3: 发送前最后门禁 —— 与 ES 取页、预估共用同一最终谓词（[RecipientScope.matchesEsTarget]）。
-                // 目标构造与取页已按该谓词过滤，这里兜住任何绕过查询侧的残余路径：不建联系人、不占名额、不发邮件。
-                if (!scope.matchesEsTarget(expert)) {
-                    accumulator.recordSkipped(
-                        BatchOutcomeReasonCodes.DISCOVERY_EVIDENCE_MISSING,
-                        "新发现机构证据不足：${expert.orcidId}"
-                    )
-                    processedTotal++
-                    roundProcessed++
-                    roundRejected++
-                    updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
-                        "RUNNING", "已跳过机构证据不足的新发现：${expert.orcidId}", errors, mode, roundNumber, config, runAccountStats,
                         roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
                     continue
                 }
@@ -941,7 +930,10 @@ class ManualInitialOutreachService(
 
                     val messageId = "<manual-outreach-${normOrcid}-${UUID.randomUUID()}@weibo.com>"
                     val mail = try {
-                        introductionMailComposer.compose(account.accountCode, expert, config.templateId)
+                        introductionMailComposer.compose(
+                            account.accountCode, expert, config.templateId,
+                            enforcePersonalizationGate = snapshot.gateFilterEnabled
+                        )
                             .copy(messageId = messageId)
                     } catch (e: PersonalizationGateException) {
                         log.info("Personalization gate blocked ORCID {}: missing keys {}", normOrcid, e.missingKeys)
@@ -1459,6 +1451,7 @@ class ManualInitialOutreachService(
     ): Pair<List<Pair<ExpertContact?, ExpertProfile>>, MutableSet<String>> {
         val seenOrcids = mutableSetOf<String>()
         val targets = mutableListOf<Pair<ExpertContact?, ExpertProfile>>()
+        val candidates = mutableListOf<Triple<ExpertContact, ExpertProfile, String>>()
 
         val newContacts = expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(campaignId, "NEW")
         if (newContacts.isNotEmpty()) {
@@ -1489,7 +1482,16 @@ class ManualInitialOutreachService(
                 val profile = scope.funnelLevels.asSequence()
                     .mapNotNull { level -> profilesByLevel[level]?.get(normOrcid) }
                     .firstOrNull() ?: continue
-                if (!scope.matchesExpert(profile)) continue
+                candidates.add(Triple(contact, profile, normOrcid))
+            }
+            // I-1/I-3: 与 ES 页、预估共用同一 selector（显式条件 + 持久准入）。
+            val included = if (candidates.isEmpty()) {
+                emptySet()
+            } else {
+                batchRecipientSelectionService.select(scope, candidates.map { it.second }).includedDocIds
+            }
+            for ((contact, profile, normOrcid) in candidates) {
+                if (BatchRecipientSelectionService.docIdOf(profile) !in included) continue
                 if (seenOrcids.add(normOrcid)) {
                     targets.add(Pair(contact, profile))
                 }
@@ -1712,11 +1714,20 @@ class ManualInitialOutreachService(
             .map { normalizeOrcid(it.orcidId) }
             .toSet()
 
+        // I-1/I-3: 与预估/执行共用同一 selector（显式条件 + 持久准入）。
+        // 材料提醒的 `承诺回复材料` 标签由快照隐式加入且已由 ES 查询强制，selector 不重复判定该隐式标签。
+        val includedDocIds = if (normalizedExperts.isEmpty()) {
+            emptySet()
+        } else {
+            batchRecipientSelectionService.select(scope.copy(tags = emptyList()), allExperts).includedDocIds
+        }
+
         // Step 4: apply exclusion rules, dedup by contactId
         val seenContactIds = mutableSetOf<Long>()
         val sendableTargets = mutableListOf<Pair<ExpertContact, ExpertProfile>>()
 
         for ((normOrcid, expert) in normalizedExperts) {
+            if (BatchRecipientSelectionService.docIdOf(expert) !in includedDocIds) continue  // exclude: not admitted / explicit condition (I-1/I-3)
             if (normOrcid in boundOrcids) continue             // exclude: already bound to a sender account (I-3)
             val contact = contactByNormOrcid[normOrcid] ?: continue  // exclude: no existing contact
             val contactId = contact.id ?: continue
@@ -1764,7 +1775,7 @@ class ManualInitialOutreachService(
                 if (shouldStop()) {
                     false
                 } else {
-                    val matched = batch.filter { scope.matchesEsTarget(it) }
+                    val matched = selectIncluded(scope, batch.filter { scope.matchesEsTarget(it) })
                     val retained = filterKnownProfiles(matched, scope.excludeVerifiedUnavailableEmails, now)
                     sendable += retained.size
                     excluded += matched.size - retained.size
@@ -1798,6 +1809,16 @@ class ManualInitialOutreachService(
         if (!enabled || profiles.isEmpty()) return profiles
         val known = findKnownUndeliverable(profiles.map { it.email }, now)
         return profiles.filter { normalizeVerificationEmail(it.email) !in known }
+    }
+
+    /**
+     * I-1/I-3: 统一 selector 的显式条件 + 持久准入过滤（同一 docId 去重后保留原序）。
+     * 预估、ES 取页、NEW 重试与材料快照全部经此，不再有第二套近似过滤。
+     */
+    private fun selectIncluded(scope: RecipientScope, profiles: List<ExpertProfile>): List<ExpertProfile> {
+        if (profiles.isEmpty()) return profiles
+        val included = batchRecipientSelectionService.select(scope, profiles).includedDocIds
+        return profiles.filter { BatchRecipientSelectionService.docIdOf(it) in included }
     }
     private fun <T> filterTargets(
         targets: List<T>,
@@ -1837,22 +1858,14 @@ class ManualInitialOutreachService(
     }
 
     private fun buildEsFiltersForLevel(scope: RecipientScope, level: String): List<Map<String, Any>> {
-        // I3a-4: 判据从「等于 NOT_CONTACTED」变为「是否含非 NOT_CONTACTED 值」。
-        // 空集合 或 仅含 NOT_CONTACTED  → 保持 notContacted 基座（N3a-2 逐字不变）。
-        val statuses = scope.operatorStatuses
-        val onlyNotContacted = statuses.isEmpty() || statuses.all { it == "NOT_CONTACTED" }
-        val filters = if (scope.mailType == BatchSendType.INTRODUCTION.name && level == "CANDIDATE" && onlyNotContacted) {
-            ExpertSearchService.notContactedWithEmailDomainsFilters(scope.emailDomains, scope.discipline).toMutableList()
-        } else {
-            // I3a-4: 含任一非 NOT_CONTACTED 状态时必须换成状态无关基座 —— notContacted 基座
-            // 自带 must_not exists operatorStatus，与 term 状态并存恒为空。
-            val base = mutableListOf<Map<String, Any>>(mapOf("exists" to mapOf("field" to "email")))
-            ExpertSearchService.emailDomainsFilter(scope.emailDomains)?.let { base.add(it) }
-            scope.discipline?.let { base.add(ExpertSearchService.disciplineFilter(it)) }
-            // I3a-3: 空集合返回 null，不追加任何状态 filter。
-            ExpertSearchService.operatorStatusesFilter(statuses)?.let { base.add(it) }
-            base
-        }
+        // I-2: 状态空集合 = 不限，绝不偷偷切到 NOT_CONTACTED 基座（页面承诺与执行一致）。
+        // 状态筛选一律走 operatorStatusesFilter（空集合返回 null，不追加）：
+        // NOT_CONTACTED = ES 文档无该字段，其余走 term；含非 NOT_CONTACTED 状态时也自然正确。
+        val base = mutableListOf<Map<String, Any>>(mapOf("exists" to mapOf("field" to "email")))
+        ExpertSearchService.emailDomainsFilter(scope.emailDomains)?.let { base.add(it) }
+        scope.discipline?.let { base.add(ExpertSearchService.disciplineFilter(it)) }
+        ExpertSearchService.operatorStatusesFilter(scope.operatorStatuses)?.let { base.add(it) }
+        val filters = base
         if (scope.tags.isNotEmpty()) {
             filters.add(mapOf("terms" to mapOf("tags" to scope.tags)))
         }

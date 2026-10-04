@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+import com.weibo.talentintroduction.template.service.ComposeTemplateRenderResult
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.springframework.stereotype.Service
 import java.util.UUID
@@ -14,21 +15,26 @@ class IntroductionMailComposer(
     private val personalizationGateService: PersonalizationGateService = PersonalizationGateService(),
     private val mailContentService: MailContentService = MailContentService()
 ) {
-    fun compose(accountCode: String, expert: ExpertProfile, templateId: Long? = null): ComposedMail {
+    fun compose(
+        accountCode: String,
+        expert: ExpertProfile,
+        templateId: Long? = null,
+        enforcePersonalizationGate: Boolean = true
+    ): ComposedMail {
         val account = mailSenderAccountService.getEnabledAccount(accountCode)
         val variables = buildVariables(account, expert)
-        val variantSeed = expert.orcidId.hashCode()
-        val rendered = if (templateId != null) {
-            mailComposeTemplateService.render(templateId, variables, variantSeed)
-        } else {
-            mailComposeTemplateService.renderByCode(templateCode = "INTRODUCTION", variables = variables, variantSeed = variantSeed)
-        }
+        val variantSeed = MailComposeTemplateService.variantSeedFor(expert.orcidId, expert.email)
+        val rendered = renderTemplate(templateId, variables, variantSeed)
 
-        val gateTemplateId = templateId ?: rendered.templateId
-        val requiredKeys = gateTemplateId?.let { mailComposeTemplateService.effectiveRequiredKeys(it) }.orEmpty()
-        val gate = personalizationGateService.evaluate(rendered.rawTexts, variables, requiredKeys)
-        if (gate.blocked) {
-            throw PersonalizationGateException(gate.missingKeys)
+        // I-4/I-5: 批量显式门禁开关关闭时不再检查个性化缺项（裸变量按 renderText 变空串）。
+        // 人工单发/旧调用保持默认 true，行为逐字不变。
+        if (enforcePersonalizationGate) {
+            val gateTemplateId = templateId ?: rendered.templateId
+            val requiredKeys = gateTemplateId?.let { mailComposeTemplateService.effectiveRequiredKeys(it) }.orEmpty()
+            val gate = personalizationGateService.evaluate(rendered.rawTexts, variables, requiredKeys)
+            if (gate.blocked) {
+                throw PersonalizationGateException(gate.missingKeys)
+            }
         }
 
         val domain = account.senderEmail.substringAfter("@")
@@ -45,6 +51,35 @@ class IntroductionMailComposer(
         )
         personalizationGateService.requireNoPlaceholderResidue(mail.subject, plain)
         return mail
+    }
+
+    /**
+     * I-4: 与 [compose] 共用同一模板 ID/版本、seed、实际选中变体与 [MailVariableService] 实际值，
+     * 只返回缺失的个性化 key（不发送、不写库）。预估与执行用同一判定，避免"关了仍挡/开了不挡"。
+     */
+    fun evaluateForBatch(accountCode: String, expert: ExpertProfile, templateId: Long? = null): BatchTemplateEvaluation {
+        val account = mailSenderAccountService.getEnabledAccount(accountCode)
+        val variables = buildVariables(account, expert)
+        val variantSeed = MailComposeTemplateService.variantSeedFor(expert.orcidId, expert.email)
+        val rendered = renderTemplate(templateId, variables, variantSeed)
+        val gateTemplateId = templateId ?: rendered.templateId
+        val requiredKeys = gateTemplateId?.let { mailComposeTemplateService.effectiveRequiredKeys(it) }.orEmpty()
+        val gate = personalizationGateService.evaluate(rendered.rawTexts, variables, requiredKeys)
+        return BatchTemplateEvaluation(
+            missingKeys = gate.missingKeys,
+            templateId = gateTemplateId,
+            variantSeed = variantSeed
+        )
+    }
+
+    private fun renderTemplate(
+        templateId: Long?,
+        variables: Map<String, String>,
+        variantSeed: Int
+    ): ComposeTemplateRenderResult = if (templateId != null) {
+        mailComposeTemplateService.render(templateId, variables, variantSeed)
+    } else {
+        mailComposeTemplateService.renderByCode(templateCode = "INTRODUCTION", variables = variables, variantSeed = variantSeed)
     }
 
     fun buildTemplateVariables(expert: ExpertProfile, accountCode: String?): List<TemplateVariableItem> {
@@ -68,6 +103,15 @@ data class TemplateVariableItem(
     val label: String,
     val value: String,
     val filled: Boolean
+)
+
+/**
+ * I-4: 批量模板门禁判定结果 —— 与 [IntroductionMailComposer.compose] 同一模板 ID/seed/变体/变量。
+ */
+data class BatchTemplateEvaluation(
+    val missingKeys: List<String>,
+    val templateId: Long?,
+    val variantSeed: Int
 )
 
 data class ComposedMail(
