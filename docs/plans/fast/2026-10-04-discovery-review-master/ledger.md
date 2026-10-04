@@ -19,7 +19,7 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| 01 | docs/plans/2026-10-04/discovery-review-01-admission.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | none | 1 | PENDING | 07beaafc111a1b14ed3c48d514db527c8a13fc31 | — | 0 | — | — | — | 依赖 none |
+| 01 | docs/plans/2026-10-04/discovery-review-01-admission.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | none | 1 | LIGHT_PASS_WITH_NOTES | 07beaafc111a1b14ed3c48d514db527c8a13fc31 | 209315103a89c5ea7807e4707bb87967d8579525 | 0 | — | 209315103a89c5ea7807e4707bb87967d8579525 | — | 5 授权文件；写者 ImplDiscoveryReview01；核实者 VerifyDiscoveryReview01 LIGHT_PASS_WITH_NOTES（O-1 RECORD_ONLY） |
 | 02 | docs/plans/2026-10-04/discovery-review-02-review.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | 01 | 1 | PENDING | — | — | 0 | — | — | — | 依赖 01 |
 | 03 | docs/plans/2026-10-04/discovery-review-03-all-pages.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | 02 | 1 | PENDING | — | — | 0 | — | — | — | 依赖 02 |
 | 04 | docs/plans/2026-10-04/discovery-review-04-admission-writes.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | 01,02,03 | 1 | PENDING | — | — | 0 | — | — | — | 依赖 01,02,03 |
