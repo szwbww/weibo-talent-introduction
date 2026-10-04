@@ -30,7 +30,7 @@
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 01-backend | docs/plans/2026-10-04/meeting-country-timezone-01-backend.md | commit:3a896ce28a533cc68fe9107638c3c74b141afc38 | none | 2 | LIGHT_PASS_WITH_NOTES | e6e1bf10dc5be548db9c5034ae13f0080ceb4654 | 4edfffdbd1f7820f73aa38c0f1449d30e812ad3b | 0 | — | 4edfffdbd1f7820f73aa38c0f1449d30e812ad3b | 854d9b5b63932abcd9361aa457544fd29d62115a | A1 widened authorized files to 11; writers MCT01Impl (epoch 1 pause), MCT01Impl2; verifier MCT01Verify LIGHT_PASS_WITH_NOTES (O-1/O-2/O-3 RECORD_ONLY) |
-| 02-frontend | docs/plans/2026-10-04/meeting-country-timezone-02-frontend.md | commit:fee3a7ca2f3b3b619ac46ee90dc88ddcb459f35f | 01-backend | 1 | IMPLEMENTING | 4edfffdbd1f7820f73aa38c0f1449d30e812ad3b | — | 0 | — | — | — | 6 authorized files; base = 01-backend Code head |
+| 02-frontend | docs/plans/2026-10-04/meeting-country-timezone-02-frontend.md | commit:fee3a7ca2f3b3b619ac46ee90dc88ddcb459f35f | 01-backend | 1 | LIGHT_PASS_WITH_NOTES | 4edfffdbd1f7820f73aa38c0f1449d30e812ad3b | eaf4fedbfa0ab09ae1d9f6bbb65764870461fe2d | 0 | — | eaf4fedbfa0ab09ae1d9f6bbb65764870461fe2d | — | writer MCT02Impl; verifier MCT02Verify LIGHT_PASS_WITH_NOTES (O-1/O-2 RECORD_ONLY) |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
