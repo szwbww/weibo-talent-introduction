@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewConfirmReque
 import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewPrepareRequest
 import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewRevokeRequest
 import com.weibo.talentintroduction.discovery.service.DiscoveryReviewConflictException
+import com.weibo.talentintroduction.discovery.service.DiscoveryReviewInitializeRequest
 import com.weibo.talentintroduction.discovery.service.DiscoveryReviewService
 import com.weibo.talentintroduction.discovery.service.DiscoveryReviewTimeoutException
 import org.springframework.http.HttpStatus
@@ -94,6 +95,43 @@ class DiscoveryReviewController(private val service: DiscoveryReviewService) {
     ): ResponseEntity<Any> {
         val actor = sessionUsername(request) ?: return unauthorized()
         return ResponseEntity.ok(service.retryBatch(batchKey, actor))
+    }
+
+    /**
+     * 04（I-2）：`POST /batches/{batchKey}/sync-retry` —— 只补候选投影，不重签审核。
+     * 只重跑 `APPLIED` 且 `error_code=CANDIDATE_SYNC_FAILED` 的项。
+     */
+    @PostMapping("/batches/{batchKey}/sync-retry")
+    fun syncRetry(
+        request: HttpServletRequest,
+        @PathVariable batchKey: String
+    ): ResponseEntity<Any> {
+        val actor = sessionUsername(request) ?: return unauthorized()
+        return ResponseEntity.ok(service.retryBatchCandidateSync(batchKey, actor))
+    }
+
+    /**
+     * 04（I-4）：`POST /initialize` —— 由已登录运营明确触发的存量准入初始化（异步固定批次扫描）。
+     * 相同 `requestKey` 幂等；不删文档、不发邮件、不覆盖已有结论。
+     */
+    @PostMapping("/initialize")
+    fun initialize(
+        request: HttpServletRequest,
+        @RequestBody(required = false) body: DiscoveryReviewInitializeRequest?
+    ): ResponseEntity<Any> {
+        val actor = sessionUsername(request) ?: return unauthorized()
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+            .body(service.initializeExistingAdmissions(body ?: DiscoveryReviewInitializeRequest(), actor))
+    }
+
+    /** 04（I-4）：`GET /initialize/{key}` —— 初始化状态（由任务行派生，无新表）。 */
+    @GetMapping("/initialize/{key}")
+    fun initializeStatus(
+        request: HttpServletRequest,
+        @PathVariable key: String
+    ): ResponseEntity<Any> {
+        sessionUsername(request) ?: return unauthorized()
+        return ResponseEntity.ok(service.initializeStatus(key))
     }
 
     /** `POST /batches/{batchKey}/cancel`：只影响未应用项，已应用结果不倒退。 */

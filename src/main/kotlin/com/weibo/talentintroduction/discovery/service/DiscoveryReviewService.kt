@@ -2,6 +2,8 @@ package com.weibo.talentintroduction.discovery.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.ElasticsearchProperties
+import com.weibo.talentintroduction.discovery.domain.AdmissionReason
+import com.weibo.talentintroduction.discovery.domain.AutomaticAdmissionResult
 import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewAction
 import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewConfirmItemView
 import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewConfirmResult
@@ -15,11 +17,13 @@ import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewPrepareResul
 import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewReasonSnapshot
 import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewRevokeResult
 import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewSnapshot
+import com.weibo.talentintroduction.discovery.domain.ExpertDiscoveryAdmission
 import com.weibo.talentintroduction.discovery.domain.ExpertDiscoveryReviewItem
 import com.weibo.talentintroduction.discovery.repository.DiscoveryReviewApplyOutcome
 import com.weibo.talentintroduction.discovery.repository.DiscoveryReviewRepository
 import com.weibo.talentintroduction.discovery.repository.DiscoveryReviewRevokeOutcome
 import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
+import com.weibo.talentintroduction.expert.domain.EligibilityResult
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.ExpertIndexService
@@ -28,7 +32,9 @@ import com.weibo.talentintroduction.task.domain.TaskExecution
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.task.service.TaskExecutionSummaryProvider
 import org.springframework.beans.factory.annotation.Qualifier
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
+import java.sql.Timestamp
 import java.time.Clock
 import java.time.LocalDateTime
 import java.util.UUID
@@ -102,6 +108,86 @@ data class DiscoveryReviewApplyOutcomeSummary(
 ) : TaskExecutionSummaryProvider
 
 /**
+ * 04（I-1）：一次自动准入写入的结果。`admitted` 由结论派生（AUTO_PASSED/LEGACY_APPROVED/MANUAL_APPROVED）；
+ * `manual` 表示结论来自人工点击；`identityChanged` 表示旧结论的身份与当前档案不一致（已生成新自动结论）。
+ */
+data class DiscoveryReviewAdmissionOutcome(
+    val docId: String,
+    val decision: String,
+    val admitted: Boolean,
+    val manual: Boolean,
+    val identityChanged: Boolean,
+    val revision: Long,
+    val reasons: List<AdmissionReason>
+)
+
+/** 04（I-1）：批量解析准入结论时的身份键（真实 docId + 当前身份哈希）。 */
+data class DiscoveryReviewAdmissionKey(val docId: String, val identityHash: String)
+
+/**
+ * 04（I-1/I-2）：一个 docId 的当前准入结论解析结果。`decision == null` 表示「尚未初始化」或
+ * 「身份已变化、原结论不适用」——两者都必须重新自动判定或人工审核，绝不当成已批准。
+ */
+data class DiscoveryReviewResolvedAdmission(
+    val docId: String,
+    val decision: String?,
+    val admitted: Boolean,
+    val manual: Boolean,
+    val initialized: Boolean,
+    val identityChanged: Boolean,
+    val revision: Long,
+    val syncErrorCode: String?
+)
+
+/** 04（I-2）：一次候选投影结果。`ok` 为 true 表示候选已存在/已进有效层/已创建/无需投影。 */
+data class DiscoveryReviewCandidateSync(
+    val result: String,
+    val ok: Boolean,
+    val errorCode: String?
+)
+
+/** 04（I-2）：只补投影的重试结果。 */
+data class DiscoveryReviewSyncRetryResult(
+    val batchKey: String,
+    val retried: Int,
+    val synced: Int,
+    val failed: Int
+)
+
+/** 04（I-4）：存量初始化请求。`requestKey` 幂等；`level` 省略时固定扫 RAW→CANDIDATE→APPLICATION。 */
+data class DiscoveryReviewInitializeRequest(
+    val requestKey: String? = null,
+    val level: String? = null
+)
+
+/** 04（I-4）：存量初始化的可见状态（由 task_execution 行与结果摘要派生，无新表）。 */
+data class DiscoveryReviewInitializeStatus(
+    val key: String,
+    val phase: String,
+    val total: Int,
+    val recorded: Int,
+    val unchanged: Int,
+    val skipped: Int,
+    val byLevel: Map<String, Int>,
+    val executionId: Long?,
+    val taskStatus: String
+)
+
+/** 04（I-4）：初始化工作者的持久终态。 */
+data class DiscoveryReviewInitializeOutcome(
+    val key: String,
+    val phase: String,
+    val total: Int,
+    val recorded: Int,
+    val unchanged: Int,
+    val skipped: Int,
+    val byLevel: Map<String, Int>,
+    override val taskSuccessCount: Int,
+    override val taskFailureCount: Int,
+    override val taskFinalStatus: String?
+) : TaskExecutionSummaryProvider
+
+/**
  * 02 + 03：深度发现审核的查询 / 准备 / 确认 / 撤销；03 追加「审核所有页」的异步名单固定与批量应用。
  *
  * 边界：读取真实 ES source（[ExpertIndexWriterService.readDiscoveryDocument]）用于展示事实与身份
@@ -127,7 +213,13 @@ class DiscoveryReviewService(
     @Qualifier("enrichmentExecutor") private val executor: Executor? = null,
     private val scanService: DiscoveryReviewScanService = DiscoveryReviewScanService(
         repository, policy, writer, restTemplate, properties, expertIndexService, objectMapper
-    )
+    ),
+    /**
+     * 04（I-1/I-2）：admission 表写入口收敛到本服务的 `recordAutomatic`/`applyManual`。
+     * 02/03 的 repository 未授权新增方法，故本服务用窄语句完成两处它没有暴露的写：
+     * 自动结论的 CAS 更新、`APPLIED` 项上的候选同步失败标记。其余读写仍全部经 repository。
+     */
+    private val jdbcTemplate: JdbcTemplate? = null
 ) {
 
     // ── 查询（I-2/I-3） ───────────────────────────────────────────────────────
@@ -426,6 +518,7 @@ class DiscoveryReviewService(
             )) {
                 DiscoveryReviewApplyOutcome.APPLIED, DiscoveryReviewApplyOutcome.ALREADY_APPLIED -> {
                     applied++
+                    syncCandidateAfterApproval(item.id, item.expertDocId, snapshot.source, decision)
                     views += DiscoveryReviewConfirmItemView(item.id, item.expertDocId, DiscoveryReviewItemState.APPLIED.name)
                 }
                 DiscoveryReviewApplyOutcome.STALE -> {
@@ -616,8 +709,10 @@ class DiscoveryReviewService(
             policyVersion = DiscoveryAdmissionPolicy.POLICY_VERSION,
             now = LocalDateTime.now(clock)
         )) {
-            DiscoveryReviewApplyOutcome.APPLIED, DiscoveryReviewApplyOutcome.ALREADY_APPLIED ->
+            DiscoveryReviewApplyOutcome.APPLIED, DiscoveryReviewApplyOutcome.ALREADY_APPLIED -> {
+                syncCandidateAfterApproval(item.id, item.expertDocId, snapshot.source, decision)
                 DiscoveryReviewConfirmItemView(item.id, item.expertDocId, DiscoveryReviewItemState.APPLIED.name)
+            }
             DiscoveryReviewApplyOutcome.STALE ->
                 DiscoveryReviewConfirmItemView(item.id, item.expertDocId, DiscoveryReviewItemState.STALE.name, "STALE")
             DiscoveryReviewApplyOutcome.SKIPPED ->
@@ -677,6 +772,374 @@ class DiscoveryReviewService(
         val revision = repository.findAdmission(item.expertDocId)?.revision ?: 0L
         return DiscoveryReviewRevokeResult(newItemId, item.expertDocId, automatic.status.name, revision)
     }
+
+    // ── 04：自动准入写入（I-1/I-4） ───────────────────────────────────────────
+
+    /**
+     * 04（I-1）：RAW 落库成功（或补全重验）后的**唯一**自动准入写入口。
+     *
+     * - 无结论：按 01 的自动判定插入 `AUTO_PASSED`/`NEEDS_REVIEW`/`LEGACY_APPROVED`；
+     * - 同身份人工结论（`MANUAL_APPROVED`/`HOLD`/`REJECTED`）与有效历史认可（`LEGACY_APPROVED`）**不被覆盖**；
+     * - 同身份自动结论：资格变化可更新为新的自动结论（不抹人工决定）；
+     * - 身份变化：生成新自动结论（CAS 递增版本），旧人工历史仍留在 `review_item`。
+     */
+    fun recordAutomatic(
+        docId: String,
+        profile: ExpertProfile,
+        eligibility: EligibilityResult
+    ): DiscoveryReviewAdmissionOutcome {
+        require(docId.isNotBlank()) { "docId 必填" }
+        val automatic = policy.evaluate(profile, eligibility)
+        val identityHash = identityHashOf(docId, profile)
+        val now = LocalDateTime.now(clock)
+        val existing = repository.findAdmission(docId)
+        if (existing == null) {
+            repository.initializeAdmission(docId, identityHash, automatic.status.name, automatic.policyVersion, now)
+            val revision = repository.findAdmission(docId)?.revision ?: 0L
+            return DiscoveryReviewAdmissionOutcome(
+                docId, automatic.status.name, admittedDecision(automatic.status.name), false, false,
+                revision, automatic.blockingReasons
+            )
+        }
+        val identityChanged = existing.identityHash != identityHash
+        val legacy = DiscoveryReviewDecision.LEGACY_APPROVED.name
+        if (!identityChanged && (existing.decisionEnum.manual || existing.decision == legacy)) {
+            return DiscoveryReviewAdmissionOutcome(
+                docId, existing.decision, admittedDecision(existing.decision), existing.decisionEnum.manual,
+                false, existing.revision, emptyList()
+            )
+        }
+        if (!identityChanged && existing.decision == automatic.status.name &&
+            existing.policyVersion == automatic.policyVersion
+        ) {
+            return DiscoveryReviewAdmissionOutcome(
+                docId, existing.decision, admittedDecision(existing.decision), false, false,
+                existing.revision, automatic.blockingReasons
+            )
+        }
+        val newRevision = updateAutomaticAdmission(existing, identityHash, automatic, now)
+            ?: return DiscoveryReviewAdmissionOutcome(
+                docId, existing.decision, admittedDecision(existing.decision), false, identityChanged,
+                existing.revision, emptyList()
+            )
+        return DiscoveryReviewAdmissionOutcome(
+            docId, automatic.status.name, admittedDecision(automatic.status.name), false, identityChanged,
+            newRevision, automatic.blockingReasons
+        )
+    }
+
+    /** 04（I-1）：单文档准入解析（重验等内部读取共用同一身份语义）。 */
+    fun resolveAdmission(docId: String, profile: ExpertProfile): DiscoveryReviewResolvedAdmission {
+        require(docId.isNotBlank()) { "docId 必填" }
+        val key = DiscoveryReviewAdmissionKey(docId, identityHashOf(docId, profile))
+        return resolveAdmissionBatch(listOf(key))[docId]
+            ?: DiscoveryReviewResolvedAdmission(docId, null, false, false, false, false, 0L, null)
+    }
+
+    /**
+     * 04（I-1）：批量解析当前准入结论（05 消费）。一次最多 500 个 docId 的批量读取，
+     * 身份不一致 → `decision == null`（原结论不适用），绝不把旧批准当成新身份的批准。
+     */
+    fun resolveAdmissionBatch(
+        keys: List<DiscoveryReviewAdmissionKey>
+    ): Map<String, DiscoveryReviewResolvedAdmission> {
+        if (keys.isEmpty()) return emptyMap()
+        val admissions = repository.findAdmissions(keys.map { it.docId }).associateBy { it.expertDocId }
+        val items = repository.findItemsByIds(admissions.values.mapNotNull { it.decisionItemId })
+            .associateBy { it.id }
+        return keys.associate { key ->
+            val stored = admissions[key.docId]
+            if (stored == null) {
+                key.docId to DiscoveryReviewResolvedAdmission(
+                    key.docId, null, false, false, false, false, 0L, null
+                )
+            } else {
+                val identityChanged = stored.identityHash != key.identityHash
+                val decision = stored.decision.takeUnless { identityChanged }
+                val manual = !identityChanged &&
+                    (stored.decisionEnum.manual || stored.decision == DiscoveryReviewDecision.LEGACY_APPROVED.name)
+                val syncError = stored.decisionItemId?.let { items[it] }
+                    ?.takeIf { it.state == DiscoveryReviewItemState.APPLIED.name }
+                    ?.errorCode
+                key.docId to DiscoveryReviewResolvedAdmission(
+                    key.docId, decision, decision != null && admittedDecision(decision), manual,
+                    true, identityChanged, stored.revision, syncError
+                )
+            }
+        }
+    }
+
+    // ── 04：候选投影（I-2） ───────────────────────────────────────────────────
+
+    /**
+     * 04（I-2）：人工批准与自动晋升共用的候选投影。真实 `_id` create；已存在候选/有效不覆盖；
+     * 失败时返回独立错误码 `CANDIDATE_SYNC_FAILED`（审核已保存、投影可重试）。
+     */
+    fun projectApprovedCandidate(
+        docId: String,
+        source: Map<String, Any?>,
+        decision: String
+    ): DiscoveryReviewCandidateSync {
+        val result = writer.projectDiscoveryCandidate(docId, source, decision)
+        return when (result) {
+            ExpertIndexWriterService.DiscoveryCandidateProjection.PROJECTED,
+            ExpertIndexWriterService.DiscoveryCandidateProjection.ALREADY_PRESENT,
+            ExpertIndexWriterService.DiscoveryCandidateProjection.APPLICATION_PRESENT,
+            ExpertIndexWriterService.DiscoveryCandidateProjection.NOT_ADMITTED ->
+                DiscoveryReviewCandidateSync(result.name, true, null)
+            else -> DiscoveryReviewCandidateSync(result.name, false, CANDIDATE_SYNC_FAILED)
+        }
+    }
+
+    /** 04（I-2）：只补投影的重试；不重签审核、不改结论，只重跑 `CANDIDATE_SYNC_FAILED` 项。 */
+    fun retryBatchCandidateSync(batchKey: String, actor: String): DiscoveryReviewSyncRetryResult {
+        require(actor.isNotBlank()) { "缺少操作者身份" }
+        val items = repository.findItemsByBatch(batchKey)
+        require(items.isNotEmpty()) { "批次不存在：$batchKey" }
+        var retried = 0
+        var synced = 0
+        var failed = 0
+        for (item in items) {
+            if (item.state != DiscoveryReviewItemState.APPLIED.name || item.errorCode != CANDIDATE_SYNC_FAILED) continue
+            retried++
+            val snapshot = try {
+                writer.readDiscoveryDocument(parseLevel(item.sourceLevel), item.expertDocId)
+            } catch (_: Exception) {
+                null
+            }
+            if (snapshot == null) {
+                failed++
+                continue
+            }
+            val decision = DiscoveryReviewDecision.forAction(parseAction(item.action)).name
+            val sync = projectApprovedCandidate(item.expertDocId, snapshot.source, decision)
+            if (sync.ok) {
+                synced++
+                clearCandidateSyncFailure(item.id)
+            } else {
+                failed++
+            }
+        }
+        return DiscoveryReviewSyncRetryResult(batchKey, retried, synced, failed)
+    }
+
+    // ── 04：存量初始化（I-4） ─────────────────────────────────────────────────
+
+    /**
+     * 04（I-4）：由已登录运营的**明确初始化操作**触发，固定批次扫描 RAW 与候选/有效层的发现/待确认数据，
+     * 按真实 `_id` 去重。只写 `AUTO_PASSED`/`NEEDS_REVIEW`/`LEGACY_APPROVED`（有效历史回执），
+     * `INSERT IGNORE` 幂等：已有结论绝不覆盖（不扩张授权）。不删文档、不发邮件、不取消人工降级。
+     */
+    fun initializeExistingAdmissions(
+        request: DiscoveryReviewInitializeRequest,
+        actor: String
+    ): DiscoveryReviewInitializeStatus {
+        require(actor.isNotBlank()) { "缺少操作者身份" }
+        val key = resolveBatchKey(request.requestKey)
+        val levels = request.level?.let { listOf(parseLevel(it)) }
+            ?: listOf(ExpertIndexLevel.RAW, ExpertIndexLevel.CANDIDATE, ExpertIndexLevel.APPLICATION)
+        val payload = mapOf(
+            "batchKey" to key,
+            "actor" to actor,
+            "levels" to levels.map { it.name }
+        )
+        val existing = findTask(TASK_INITIALIZE, key)
+        if (existing != null) {
+            if (!samePayload(existing.requestPayload, payload)) {
+                throw DiscoveryReviewConflictException("相同 requestKey 的初始化范围不同，请更换 requestKey")
+            }
+            return initializeStatus(key)
+        }
+        val tasks = requireTaskExecutions()
+        val worker = requireExecutor()
+        try {
+            worker.execute {
+                try {
+                    var executionId: Long? = null
+                    tasks.runAndRecordWithResult(TASK_INITIALIZE, "MANUAL", payload, onStarted = { executionId = it }) {
+                        runInitializeWorker(key, levels)
+                    }
+                } catch (_: Exception) {
+                    // 初始化失败：task_execution 行已置 FAILED，绝不凭受理伪造成功计数。
+                }
+            }
+        } catch (reEx: RejectedExecutionException) {
+            throw DiscoveryReviewConflictException("存量初始化任务启动失败，请稍后重试")
+        }
+        return statusAfterInitializeSubmit(key)
+    }
+
+    /** 04（I-4）：读取初始化状态（无新表；由任务行与结果摘要派生）。 */
+    fun initializeStatus(key: String): DiscoveryReviewInitializeStatus {
+        require(key.isNotBlank()) { "key 必填" }
+        val task = findTask(TASK_INITIALIZE, key) ?: throw NoSuchElementException("初始化任务不存在：$key")
+        val outcome = parseInitializeOutcome(task)
+        return DiscoveryReviewInitializeStatus(
+            key = key,
+            phase = initializePhase(task.status),
+            total = outcome?.total ?: 0,
+            recorded = outcome?.recorded ?: 0,
+            unchanged = outcome?.unchanged ?: 0,
+            skipped = outcome?.skipped ?: 0,
+            byLevel = outcome?.byLevel ?: emptyMap(),
+            executionId = task.id,
+            taskStatus = task.status
+        )
+    }
+
+    /** 04（I-4）：初始化工作者（可被单测直接调用）。 */
+    internal fun runInitializeWorker(
+        key: String,
+        levels: List<ExpertIndexLevel>
+    ): DiscoveryReviewInitializeOutcome {
+        val now = LocalDateTime.now(clock)
+        val seen = mutableSetOf<String>()
+        val byLevel = linkedMapOf<String, Int>()
+        var recorded = 0
+        var unchanged = 0
+        var skipped = 0
+        for (level in levels) {
+            var levelRecorded = 0
+            val filter = DiscoveryReviewScanService.DiscoveryReviewFilter(level, null, null, null, null)
+            scanService.scanAll(filter) { experts ->
+                val fresh = mutableListOf<DiscoveryReviewScanService.ScanExpert>()
+                for (expert in experts) {
+                    if (expert.docId.isBlank()) {
+                        skipped++
+                        continue
+                    }
+                    if (!seen.add(expert.docId)) {
+                        skipped++
+                        continue
+                    }
+                    fresh += expert
+                }
+                if (fresh.isEmpty()) return@scanAll true
+                val known = repository.findAdmissions(fresh.map { it.docId }).map { it.expertDocId }.toSet()
+                for (expert in fresh) {
+                    if (known.contains(expert.docId)) {
+                        unchanged++
+                        continue
+                    }
+                    val automatic = policy.evaluate(expert.profile)
+                    repository.initializeAdmission(
+                        expert.docId, identityHashOf(expert.docId, expert.profile),
+                        automatic.status.name, automatic.policyVersion, now
+                    )
+                    recorded++
+                    levelRecorded++
+                }
+                true
+            }
+            byLevel[level.name] = levelRecorded
+        }
+        return DiscoveryReviewInitializeOutcome(
+            key = key,
+            phase = DiscoveryReviewBatchPhase.APPLIED,
+            total = recorded + unchanged,
+            recorded = recorded,
+            unchanged = unchanged,
+            skipped = skipped,
+            byLevel = byLevel,
+            taskSuccessCount = recorded,
+            taskFailureCount = 0,
+            taskFinalStatus = "SUCCESS"
+        )
+    }
+
+    private fun updateAutomaticAdmission(
+        existing: ExpertDiscoveryAdmission,
+        identityHash: String,
+        automatic: AutomaticAdmissionResult,
+        now: LocalDateTime
+    ): Long? {
+        val jdbc = jdbcTemplate ?: return null
+        val newRevision = existing.revision + 1
+        val affected = jdbc.update(
+            """
+            UPDATE expert_discovery_admission
+            SET identity_hash = ?, decision = ?, revision = ?, decision_item_id = NULL,
+                policy_version = ?, checked_at = ?, updated_at = ?
+            WHERE expert_doc_id = ? AND revision = ? AND identity_hash = ?
+            """.trimIndent(),
+            identityHash, automatic.status.name, newRevision, automatic.policyVersion,
+            Timestamp.valueOf(now), Timestamp.valueOf(now),
+            existing.expertDocId, existing.revision, existing.identityHash
+        )
+        return if (affected == 1) newRevision else null
+    }
+
+    private fun markCandidateSyncFailed(itemId: Long, errorCode: String) {
+        jdbcTemplate?.update(
+            "UPDATE expert_discovery_review_item SET error_code = ? WHERE id = ? AND state = ?",
+            errorCode, itemId, DiscoveryReviewItemState.APPLIED.name
+        )
+    }
+
+    private fun clearCandidateSyncFailure(itemId: Long) {
+        jdbcTemplate?.update(
+            "UPDATE expert_discovery_review_item SET error_code = NULL WHERE id = ? AND state = ? AND error_code = ?",
+            itemId, DiscoveryReviewItemState.APPLIED.name, CANDIDATE_SYNC_FAILED
+        )
+    }
+
+    /**
+     * 04（I-2）：审核保存（APPLIED）之后单独投影候选；失败只在 `error_code` 记
+     * `CANDIDATE_SYNC_FAILED`，绝不把审核本身标失败、也不重签批准。
+     */
+    private fun syncCandidateAfterApproval(
+        itemId: Long,
+        docId: String,
+        source: Map<String, Any?>,
+        decision: String
+    ) {
+        val sync = projectApprovedCandidate(docId, source, decision)
+        if (sync.errorCode != null) markCandidateSyncFailed(itemId, sync.errorCode) else clearCandidateSyncFailure(itemId)
+    }
+
+    private fun admittedDecision(decision: String): Boolean =
+        decision in ExpertIndexWriterService.ADMITTED_DECISIONS
+
+    private fun initializePhase(taskStatus: String): String = when (taskStatus) {
+        "RUNNING", "CANCELLING" -> DiscoveryReviewBatchPhase.PREPARING
+        "SUCCESS", "PARTIAL_SUCCESS" -> DiscoveryReviewBatchPhase.APPLIED
+        "CANCELLED" -> DiscoveryReviewBatchPhase.CANCELLED
+        else -> DiscoveryReviewBatchPhase.PREPARE_FAILED
+    }
+
+    private fun parseInitializeOutcome(task: TaskExecution): DiscoveryReviewInitializeOutcome? {
+        val summary = task.resultSummary ?: return null
+        return try {
+            val node = objectMapper.readTree(summary)
+            val byLevel = linkedMapOf<String, Int>()
+            node.path("byLevel").fields().forEachRemaining { (name, value) -> byLevel[name] = value.asInt(0) }
+            DiscoveryReviewInitializeOutcome(
+                key = node.path("key").asText(""),
+                phase = node.path("phase").asText(DiscoveryReviewBatchPhase.APPLIED),
+                total = node.path("total").asInt(0),
+                recorded = node.path("recorded").asInt(0),
+                unchanged = node.path("unchanged").asInt(0),
+                skipped = node.path("skipped").asInt(0),
+                byLevel = byLevel,
+                taskSuccessCount = node.path("recorded").asInt(0),
+                taskFailureCount = 0,
+                taskFinalStatus = task.status
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun statusAfterInitializeSubmit(key: String): DiscoveryReviewInitializeStatus =
+        try {
+            initializeStatus(key)
+        } catch (_: NoSuchElementException) {
+            DiscoveryReviewInitializeStatus(
+                key = key, phase = DiscoveryReviewBatchPhase.PREPARING,
+                total = 0, recorded = 0, unchanged = 0, skipped = 0, byLevel = emptyMap(),
+                executionId = null, taskStatus = "RUNNING"
+            )
+        }
 
     // ── task_execution 读取（只读；phase/hash 无新列，从此派生） ───────────────
 
@@ -952,6 +1415,9 @@ class DiscoveryReviewService(
         const val SCOPE_ALL_MATCHING = "ALL_MATCHING"
         const val TASK_PREPARE = "DISCOVERY_REVIEW_PREPARE"
         const val TASK_APPLY = "DISCOVERY_REVIEW_APPLY"
+        const val TASK_INITIALIZE = "DISCOVERY_REVIEW_INITIALIZE"
+        /** 04（I-2）：审核已保存但候选投影失败 —— 独立可见、可只补投影重试。 */
+        const val CANDIDATE_SYNC_FAILED = "CANDIDATE_SYNC_FAILED"
         const val SNAPSHOT_TTL_HOURS = 24L
         const val STATUS_PAGE_SIZE = 200
         const val MAX_STATUS_PAGE_SIZE = 500

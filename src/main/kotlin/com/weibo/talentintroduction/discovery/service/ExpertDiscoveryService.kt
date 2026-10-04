@@ -26,6 +26,7 @@ import com.weibo.talentintroduction.discovery.domain.SourceUnit
 import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
+import com.weibo.talentintroduction.expert.domain.EligibilityResult
 import com.weibo.talentintroduction.task.service.TaskExecutionSummaryProvider
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
@@ -117,7 +118,12 @@ class ExpertDiscoveryService(
      * 否则「计划 30 秒后回访」在测试里无法证明。生产使用 [PolicyTimeSource.SYSTEM]（默认值），
      * 既有构造调用逐字兼容。
      */
-    private val timeSource: PolicyTimeSource = PolicyTimeSource.SYSTEM
+    private val timeSource: PolicyTimeSource = PolicyTimeSource.SYSTEM,
+    /**
+     * 04（I-1/I-2）：RAW 落库成功后的统一准入与候选投影接缝。为空（历史单测/未装配）时
+     * 不伪造结论、不晋升，按 [ADMISSION_SERVICE_UNAVAILABLE] 计入过滤；生产恒由 Spring 注入。
+     */
+    private val discoveryReviewService: DiscoveryReviewService? = null
 ) {
     private val log = LoggerFactory.getLogger(ExpertDiscoveryService::class.java)
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
@@ -1414,15 +1420,8 @@ class ExpertDiscoveryService(
                     // I-1（08）：RAW 落库成功后才入队；入队失败不推进本页。
                     enqueueEnrichmentJob(esDocId, orcid.sourceName, execId, sourceStats)
 
-                    if (eligibility.eligible) {
-                        if (promoteDiscoveredToCandidate(esDocId, profileMap)) sourceStats.promoted++
-                        else sourceStats.promotionFailed++
-                    } else {
-                        sourceStats.filtered++
-                        for (reason in rejectReasons) {
-                            sourceStats.filterReasons.merge(reason, 1) { a, b -> a + b }
-                        }
-                    }
+                    // 04（I-1/I-2）：统一准入在 RAW 成功后决定晋升，不再由旧 eligibility 单独决定。
+                    admitDiscoveryExpert(esDocId, profile, eligibility, profileMap, sourceStats)
                 }
                 if (limitReason != null) break
             }
@@ -1744,18 +1743,11 @@ class ExpertDiscoveryService(
             // I-1（08）：RAW 落库成功后才入队；入队失败不推进本页（见 enqueueEnrichmentJob）。
             enqueueEnrichmentJob(identity.esDocId, sourceName, executionId, sourceStats)
 
-            if (eligibility.eligible) {
-                if (promoteDiscoveredToCandidate(identity.esDocId, profileMap)) {
-                    sourceStats.promoted++
-                    promoted++
-                } else {
-                    sourceStats.promotionFailed++
-                }
-            } else {
-                sourceStats.filtered++
-                for (reason in rejectReasons) {
-                    sourceStats.filterReasons.merge(reason, 1) { a, b -> a + b }
-                }
+            // 04（I-1/I-2）：统一准入在 RAW 成功后决定晋升。
+            if (admitDiscoveryExpert(identity.esDocId, identity.profile, eligibility, profileMap, sourceStats) ==
+                AdmissionDisposition.PROMOTED
+            ) {
+                promoted++
             }
         }
 
@@ -2304,22 +2296,44 @@ class ExpertDiscoveryService(
         return doc
     }
 
-    private fun promoteDiscoveredToCandidate(esDocId: String, rawDoc: Map<String, Any?>): Boolean {
-        val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
-        val now = LocalDateTime.now().format(dateFormatter)
-        val candidateDoc = rawDoc.toMutableMap().apply {
-            put("candidateValidatedAt", now); put("updatedAt", now)
-            val existingTags = (get("tags") as? List<*>)?.filterIsInstance<String>() ?: emptyList()
-            put("tags", (existingTags + "discovered").distinct())
+    /** 04（I-1/I-2）：RAW 落库成功后一次准入的处置结果。 */
+    private enum class AdmissionDisposition { PROMOTED, PROMOTION_FAILED, FILTERED }
+
+    /**
+     * 04（I-1/I-2）：两个发现收录分支在 RAW 成功之后的**统一准入**。
+     *
+     * 由 01 的 [DiscoveryAdmissionPolicy]（经 [DiscoveryReviewService.recordAutomatic]）持久
+     * `AUTO_PASSED`/`NEEDS_REVIEW`/`LEGACY_APPROVED` 并决定晋升；人工结论优先。准入通过后经共享
+     * 投影方法按真实 `_id` create 候选（已存在/已进有效层不覆盖）。投影失败计入
+     * [SourceStats.promotionFailed]，绝不伪装成功。
+     */
+    private fun admitDiscoveryExpert(
+        docId: String,
+        profile: ExpertProfile,
+        eligibility: EligibilityResult,
+        rawSource: Map<String, Any?>,
+        sourceStats: SourceStats
+    ): AdmissionDisposition {
+        val review = discoveryReviewService
+        if (review == null) {
+            sourceStats.filtered++
+            sourceStats.filterReasons.merge(ADMISSION_SERVICE_UNAVAILABLE, 1) { a, b -> a + b }
+            return AdmissionDisposition.FILTERED
         }
-        val putUrl = "${esProperties.baseUrl}/$candidateIndex/_doc/$esDocId?op_type=create"
-        return try {
-            restTemplate.exchange(putUrl, HttpMethod.PUT, HttpEntity(candidateDoc, esHeaders()),
-                com.fasterxml.jackson.databind.JsonNode::class.java)
-            true
-        } catch (e: Exception) {
-            log.warn("Failed to promote discovered expert {} to candidate: {}", esDocId, e.message)
-            false
+        val admission = review.recordAutomatic(docId, profile, eligibility)
+        if (!admission.admitted) {
+            sourceStats.filtered++
+            val reasons = admission.reasons.map { it.code }.ifEmpty { eligibility.rejectReasons }
+            for (reason in reasons) sourceStats.filterReasons.merge(reason, 1) { a, b -> a + b }
+            return AdmissionDisposition.FILTERED
+        }
+        val sync = review.projectApprovedCandidate(docId, rawSource, admission.decision)
+        return if (sync.ok) {
+            sourceStats.promoted++
+            AdmissionDisposition.PROMOTED
+        } else {
+            sourceStats.promotionFailed++
+            AdmissionDisposition.PROMOTION_FAILED
         }
     }
 
@@ -3685,6 +3699,9 @@ private const val SUMMARY_STATUS_RUNNING = "RUNNING"
 
 /** I-1（08）：补全入队的失败原因码（与 [DiscoveryStopReason.ENQUEUE_INCOMPLETE] 配对）。 */
 private const val ENRICHMENT_ENQUEUE_FAILED = "ENRICHMENT_ENQUEUE_FAILED"
+
+/** 04（I-1）：准入接缝未装配（仅历史单测/未接线）—— 不伪造结论、不晋升，按此原因计入过滤。 */
+private const val ADMISSION_SERVICE_UNAVAILABLE = "ADMISSION_SERVICE_UNAVAILABLE"
 
 /** I-4（08）：补全任务的任务类型（worker 与人工入口共用同一把互斥锁）。 */
 const val EXPERT_ENRICHMENT_TASK_TYPE = "EXPERT_ENRICHMENT"

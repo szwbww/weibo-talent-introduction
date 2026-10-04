@@ -12,7 +12,12 @@ import com.weibo.talentintroduction.config.PolicyTimeSource
 import com.weibo.talentintroduction.config.RequestKind
 import com.weibo.talentintroduction.config.DiscoveryExecutorConfig
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail
+import com.weibo.talentintroduction.discovery.domain.AdmissionConfigSnapshot
+import com.weibo.talentintroduction.discovery.domain.AdmissionReason
+import com.weibo.talentintroduction.discovery.domain.AutomaticAdmissionResult
+import com.weibo.talentintroduction.discovery.domain.DiscoveryAdmissionStatus
 import com.weibo.talentintroduction.discovery.domain.DiscoveryResult
+import com.weibo.talentintroduction.discovery.repository.DiscoveryReviewRepository
 import com.weibo.talentintroduction.discovery.domain.DiscoverySourceCursor
 import com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome
 import com.weibo.talentintroduction.discovery.domain.ExpertAcademicEnrichmentJob
@@ -24,6 +29,7 @@ import com.weibo.talentintroduction.discovery.domain.SourceUnit
 import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
 import com.weibo.talentintroduction.expert.domain.EmailValidationResult
 import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
+import com.weibo.talentintroduction.expert.domain.EligibilityResult
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.CandidateEligibilityService
 import com.weibo.talentintroduction.expert.service.EmailValidationService
@@ -69,6 +75,7 @@ import org.springframework.boot.test.system.CapturedOutput
 import org.springframework.boot.test.system.OutputCaptureExtension
 import org.springframework.web.client.RestTemplate
 import java.time.Duration
+import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -126,6 +133,9 @@ class ExpertDiscoveryServiceTest {
     private lateinit var cursorRepository: DiscoverySourceCursorRepository
     private lateinit var enrichmentJobService: ExpertAcademicEnrichmentJobService
     private lateinit var enrichmentJobRepository: ExpertAcademicEnrichmentJobRepository
+    private lateinit var admissionPolicy: DiscoveryAdmissionPolicy
+    private lateinit var reviewRepository: DiscoveryReviewRepository
+    private lateinit var discoveryReviewService: DiscoveryReviewService
     private val discoveryProperties = ExpertDiscoveryProperties(
         enabled = true, maxPapersPerRun = 100, maxAuthorsPerRun = 200
     )
@@ -173,6 +183,31 @@ class ExpertDiscoveryServiceTest {
         cursorRepository = Mockito.mock(DiscoverySourceCursorRepository::class.java)
         enrichmentJobService = Mockito.mock(ExpertAcademicEnrichmentJobService::class.java)
         enrichmentJobRepository = Mockito.mock(ExpertAcademicEnrichmentJobRepository::class.java)
+        admissionPolicy = Mockito.mock(DiscoveryAdmissionPolicy::class.java)
+        reviewRepository = Mockito.mock(DiscoveryReviewRepository::class.java)
+        // 04：准入判定与既有 eligibility 语义对齐（全过 → AUTO_PASSED；不过 → NEEDS_REVIEW + 原码）。
+        Mockito.doAnswer { invocation ->
+            val eligibility = invocation.getArgument<EligibilityResult>(1)
+            if (eligibility.eligible) {
+                automaticAdmission(DiscoveryAdmissionStatus.AUTO_PASSED, emptyList())
+            } else {
+                automaticAdmission(
+                    DiscoveryAdmissionStatus.NEEDS_REVIEW,
+                    eligibility.rejectReasons.map {
+                        AdmissionReason(it, it, AdmissionReason.UNKNOWN_FIELD, null, null, "CandidateEligibilityService")
+                    }
+                )
+            }
+        }.`when`(admissionPolicy).evaluate(
+            anyProfile(), anyEligibilityResult()
+        )
+        Mockito.doReturn(automaticAdmission(DiscoveryAdmissionStatus.AUTO_PASSED, emptyList()))
+            .`when`(admissionPolicy).evaluate(anyProfile())
+        // 04：未替换成真实 writer 的用例（无 ES 交互）把投影视为成功。
+        Mockito.doReturn(ExpertIndexWriterService.DiscoveryCandidateProjection.PROJECTED)
+            .`when`(indexWriterService).projectDiscoveryCandidate(
+                Mockito.anyString(), Mockito.any<Map<String, Any?>>() ?: emptyMap(), Mockito.anyString()
+            )
         storedCheckpoints.clear()
         cursorStoreInstalled = false
 
@@ -192,6 +227,39 @@ class ExpertDiscoveryServiceTest {
             .indexName(com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.APPLICATION)
     }
 
+    private fun anyProfile(): ExpertProfile =
+        Mockito.any(ExpertProfile::class.java) ?: ExpertProfile(
+            orcidId = "any", email = null, givenNames = null, familyNames = null,
+            country = null, keyword = null, employment = null
+        )
+
+    private fun anyEligibilityResult(): EligibilityResult =
+        Mockito.any(EligibilityResult::class.java) ?: EligibilityResult(true, emptyList())
+
+    /** 04：把统一准入投影到候选的 RAW 源快照捕获进 [into]（mock writer 的投影接缝）。 */
+    private fun captureProjectedCandidate(into: MutableList<Map<String, Any?>>) {
+        Mockito.doAnswer { invocation ->
+            @Suppress("UNCHECKED_CAST")
+            into.add(invocation.getArgument(1) as Map<String, Any?>)
+            ExpertIndexWriterService.DiscoveryCandidateProjection.PROJECTED
+        }.`when`(indexWriterService).projectDiscoveryCandidate(
+            Mockito.anyString(), Mockito.any<Map<String, Any?>>() ?: emptyMap(), Mockito.anyString()
+        )
+    }
+
+    private fun automaticAdmission(
+        status: DiscoveryAdmissionStatus,
+        reasons: List<AdmissionReason>
+    ): AutomaticAdmissionResult = AutomaticAdmissionResult(
+        status, reasons, emptyList(), "2026-10-04.1", Instant.parse("2026-10-04T02:00:00Z"),
+        AdmissionConfigSnapshot(
+            requireOrcid = true, requireValidEmail = true, requireDoctoralDegree = false,
+            excludeChineseNationality = false, enableAgeFilter = false, maxAgeExclusive = 70,
+            enableHIndexFilter = false, minHIndex = 5, enableCitationFilter = false, minCitationCount = 50,
+            enableActivityFilter = false, recentYearsThreshold = 5
+        )
+    )
+
     private fun createService(
         props: ExpertDiscoveryProperties = discoveryProperties,
         executor: Executor = Executor { it.run() },
@@ -199,13 +267,19 @@ class ExpertDiscoveryServiceTest {
         europePmcProps: EuropePmcProperties = EuropePmcProperties(),
         timeSource: PolicyTimeSource = PolicyTimeSource.SYSTEM
     ): ExpertDiscoveryService {
+        // 04：真实准入服务（判定走上面的策略桩；写入经 mock repository；投影经当前 indexWriterService）。
+        discoveryReviewService = DiscoveryReviewService(
+            reviewRepository, admissionPolicy, indexWriterService, restTemplate, esProperties,
+            indexService, objectMapper,
+            Clock.fixed(Instant.parse("2026-10-04T02:00:00Z"), java.time.ZoneOffset.UTC)
+        )
         return ExpertDiscoveryService(
             europePmc, openAlexProvider, crossrefProvider, arxivProvider,
             pmcOaProvider, orcidProvider, coreProvider,
             emailValidationService, eligibilityService,
             indexWriterService, indexService, revalidationService, expertSearchService, expertClassificationService, restTemplate, esProperties,
             props, openAlexProps, objectMapper, progressStore, cursorRepository, enrichmentJobService,
-            enrichmentJobRepository, executor, europePmcProps, timeSource
+            enrichmentJobRepository, executor, europePmcProps, timeSource, discoveryReviewService
         )
     }
 
@@ -488,7 +562,7 @@ class ExpertDiscoveryServiceTest {
     private fun discoverOrcidAndCapture(
         institutionNames: List<String>,
         publicEmail: String
-    ): Triple<DiscoveryResult, Map<String, Any?>, Map<*, *>> {
+    ): Triple<DiscoveryResult, Map<String, Any?>, Map<String, Any?>> {
         val criteria = PaperSearchCriteria(
             pageSize = 100, subjectScope = SubjectScopeCatalog.RND_TARGET, sources = listOf("ORCID")
         )
@@ -507,15 +581,9 @@ class ExpertDiscoveryServiceTest {
             true
         }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
 
-        val candidateDocs = mutableListOf<Map<*, *>>()
-        Mockito.doAnswer { invocation ->
-            val entity = invocation.getArgument<HttpEntity<*>>(2)
-            candidateDocs.add(entity.body as Map<*, *>)
-            ResponseEntity.ok(objectMapper.createObjectNode())
-        }.`when`(restTemplate).exchange(
-            Mockito.contains("orcid_info_candidate/_doc/"), Mockito.eq(HttpMethod.PUT), Mockito.any(),
-            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
-        )
+        // 04：晋升走统一准入的投影接缝（mock writer），捕获投影所用的 RAW 源快照。
+        val candidateDocs = mutableListOf<Map<String, Any?>>()
+        captureProjectedCandidate(candidateDocs)
 
         val result = createService(c4Props()).discover(criteria, "TEST")
         assertEquals(1, result.stats.bySource["ORCID"]?.indexed, "该页的 1 位专家必须被收录")
@@ -585,6 +653,12 @@ class ExpertDiscoveryServiceTest {
                 "total" to mapOf("value" to if (hit == null) 0 else 1), "hits" to listOfNotNull(hit)))))
         }.`when`(restTemplate).exchange(Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST), Mockito.any(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
         DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        // 04：投影先复读候选（create-only 的 409 语义）；本夹具的候选由 PUT 建立，复读一律 404。
+        Mockito.doThrow(HttpClientErrorException(HttpStatus.NOT_FOUND))
+            .`when`(restTemplate).exchange(
+                Mockito.contains("/orcid_info_candidate/_doc/"), Mockito.eq(HttpMethod.GET),
+                Mockito.any(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
         return docs
     }
 
@@ -1998,6 +2072,69 @@ class ExpertDiscoveryServiceTest {
         initialAdmissionEvidence()
     }
 
+    // ── 04：两初次写路径共用统一准入（I-1/I-2） ──────────────────────────────
+
+    @Test
+    fun `discovery records the automatic conclusion after RAW success`() {
+        val svc = createService()
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(paper("PMC1", "Test")), null, 1))
+        DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
+            listOf(verifiedAuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001")))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "john@oxford.ac.uk", EmailValidationResult(3, true))
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+
+        val result = svc.discover(PaperSearchCriteria(), "TEST")
+
+        assertEquals(1, result.stats.indexed)
+        assertEquals(1, result.stats.promoted)
+        val initCalls = Mockito.mockingDetails(reviewRepository).invocations
+            .filter { it.method.name == "initializeAdmission" }
+        assertEquals(1, initCalls.size)
+        assertEquals("AUTO_PASSED", initCalls.single().arguments[2])
+        val projections = Mockito.mockingDetails(indexWriterService).invocations
+            .filter { it.method.name == "projectDiscoveryCandidate" }
+        assertEquals(1, projections.size)
+        assertEquals("AUTO_PASSED", projections.single().arguments[2])
+    }
+
+    @Test
+    fun `discovery admission NEEDS_REVIEW never creates a candidate`() {
+        val svc = createService()
+        Mockito.doReturn(
+            automaticAdmission(
+                DiscoveryAdmissionStatus.NEEDS_REVIEW,
+                listOf(AdmissionReason("INSTITUTION_MISSING", "机构缺失", "institution", null, "非空机构名", "profile.institution"))
+            )
+        ).`when`(admissionPolicy).evaluate(
+            anyProfile(), anyEligibilityResult()
+        )
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(paper("PMC1", "Test")), null, 1))
+        DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
+            listOf(verifiedAuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001")))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "john@oxford.ac.uk", EmailValidationResult(3, true))
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+
+        val result = svc.discover(PaperSearchCriteria(), "TEST")
+
+        assertEquals(1, result.stats.indexed)
+        assertEquals(0, result.stats.promoted)
+        assertEquals(1, result.stats.filtered)
+        assertEquals(1, result.stats.bySource["EUROPE_PMC"]?.filterReasons?.get("INSTITUTION_MISSING"))
+        assertEquals(
+            0,
+            Mockito.mockingDetails(indexWriterService).invocations
+                .count { it.method.name == "projectDiscoveryCandidate" }
+        )
+        val initCalls = Mockito.mockingDetails(reviewRepository).invocations
+            .filter { it.method.name == "initializeAdmission" }
+        assertEquals(1, initCalls.size)
+        assertEquals("NEEDS_REVIEW", initCalls.single().arguments[2])
+    }
+
     internal fun initialAdmissionEvidence(): Map<String, Any> {
         val filters = Mockito.mock(com.weibo.talentintroduction.expert.service.EligibilityFilterService::class.java)
         Mockito.doReturn(com.weibo.talentintroduction.config.CandidateFilterProperties())
@@ -2211,15 +2348,7 @@ class ExpertDiscoveryServiceTest {
         }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
 
         val candidateDocs = mutableListOf<Map<String, Any?>>()
-        Mockito.doAnswer { invocation ->
-            val entity = invocation.getArgument<HttpEntity<*>>(2)
-            @Suppress("UNCHECKED_CAST")
-            candidateDocs.add(entity.body as Map<String, Any?>)
-            ResponseEntity.ok(objectMapper.createObjectNode())
-        }.`when`(restTemplate).exchange(
-            Mockito.contains("orcid_info_candidate/_doc/"), Mockito.eq(HttpMethod.PUT), Mockito.any(),
-            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
-        )
+        captureProjectedCandidate(candidateDocs)
 
         val result = svc.discover(PaperSearchCriteria(), "TEST")
 
@@ -2363,12 +2492,9 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
         DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
 
-        Mockito.doThrow(RuntimeException("ES write failed"))
-            .`when`(restTemplate).exchange(
-                Mockito.contains("orcid_info_candidate/_doc/"),
-                Mockito.eq(org.springframework.http.HttpMethod.PUT),
-                Mockito.any(),
-                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        Mockito.doReturn(ExpertIndexWriterService.DiscoveryCandidateProjection.WRITE_FAILED)
+            .`when`(indexWriterService).projectDiscoveryCandidate(
+                Mockito.anyString(), Mockito.any<Map<String, Any?>>() ?: emptyMap(), Mockito.anyString()
             )
 
         val result = svc.discover(PaperSearchCriteria(), "TEST")
@@ -7103,15 +7229,7 @@ class ExpertDiscoveryServiceTest {
         }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
 
         val candidateDocs = mutableListOf<Map<String, Any?>>()
-        Mockito.doAnswer { invocation ->
-            val entity = invocation.getArgument<HttpEntity<*>>(2)
-            @Suppress("UNCHECKED_CAST")
-            candidateDocs.add(entity.body as Map<String, Any?>)
-            ResponseEntity.ok(objectMapper.createObjectNode())
-        }.`when`(restTemplate).exchange(
-            Mockito.contains("orcid_info_candidate/_doc/"), Mockito.eq(HttpMethod.PUT), Mockito.any(),
-            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
-        )
+        captureProjectedCandidate(candidateDocs)
         return rawDocs to candidateDocs
     }
 

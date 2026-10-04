@@ -1,9 +1,14 @@
 package com.weibo.talentintroduction.expert.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.weibo.talentintroduction.config.AcademicFilterProperties
 import com.weibo.talentintroduction.config.CandidateFilterProperties
 import com.weibo.talentintroduction.config.ExpertClassificationProperties
+import com.weibo.talentintroduction.discovery.service.DiscoveryReviewCandidateSync
+import com.weibo.talentintroduction.discovery.service.DiscoveryReviewResolvedAdmission
+import com.weibo.talentintroduction.discovery.service.DiscoveryReviewService
+import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.weibo.talentintroduction.expert.domain.ExpertClassification
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
@@ -148,6 +153,27 @@ class ExpertRevalidationServiceTest {
     )
 
     private fun <T> eqValue(value: T): T = eq(value) ?: value
+
+    private fun anyProfile(): ExpertProfile =
+        org.mockito.ArgumentMatchers.any(ExpertProfile::class.java) ?: validExpert("DOC", "researcher@example.org")
+
+    private fun anyEligibility(): com.weibo.talentintroduction.expert.domain.EligibilityResult =
+        org.mockito.ArgumentMatchers.any(com.weibo.talentintroduction.expert.domain.EligibilityResult::class.java)
+            ?: com.weibo.talentintroduction.expert.domain.EligibilityResult.pass()
+
+    private fun anyClassification(): com.weibo.talentintroduction.expert.domain.ExpertClassification =
+        org.mockito.ArgumentMatchers.any(com.weibo.talentintroduction.expert.domain.ExpertClassification::class.java)
+            ?: ExpertClassificationService().classify(validExpert("DOC", "researcher@example.org"))
+
+    private fun anySnapshot(): ExpertIndexWriterService.DiscoverySnapshot =
+        org.mockito.ArgumentMatchers.any(ExpertIndexWriterService.DiscoverySnapshot::class.java)
+            ?: ExpertIndexWriterService.DiscoverySnapshot(emptyMap(), 0, 0)
+
+    private fun anyReasons(): List<String> =
+        org.mockito.ArgumentMatchers.anyList<String>() ?: emptyList()
+
+    private fun anyMap(): Map<String, Any?> =
+        org.mockito.ArgumentMatchers.anyMap<String, Any?>() ?: emptyMap()
 
     private fun <T> captureValue(captor: ArgumentCaptor<T>, defaultValue: T): T = captor.capture() ?: defaultValue
 
@@ -475,5 +501,125 @@ class ExpertRevalidationServiceTest {
         val outcome = serviceWith().revalidateEnrichedRaw("DOC-8")
 
         assertEquals(PromotionOutcome.WriteFailed, outcome)
+    }
+
+    // ── 04：重验尊重有效人工准入（I-3） ──────────────────────────────────────
+
+    private fun serviceWithReview(review: DiscoveryReviewService): ExpertRevalidationService =
+        ExpertRevalidationService(
+            searchService,
+            // 04：发现重验的资格判定也走同一个 classification 桩，避免真实分类器对无据档案判 RND_SCOPE_UNCONFIRMED。
+            CandidateEligibilityService(filterService, emailValidationService, classificationService),
+            emailValidationService, writerService, progressStore, filterService,
+            classificationService, ExpertClassificationProperties(promotionGateEnabled = false), review
+        )
+
+    private fun discoveryAdmissionSource(): Map<String, Any?> {
+        val proof = DiscoveryIdentity.verified(
+            "researcher@example.org", "Test", "User", "JATS_SHA256:" + "a".repeat(64), null, "A42"
+        )
+        return mapOf(
+            "orcidId" to "HISTORICAL-ORCID", "email" to "researcher@example.org",
+            "givenNames" to "Test", "familyNames" to "User", "emailSource" to "PAPER_FULLTEXT",
+            "identityVerification" to jacksonObjectMapper().convertValue(proof, Map::class.java),
+            "institution" to "University", "lastPublicationYear" to 2026
+        )
+    }
+
+    private fun resolved(
+        decision: String?,
+        manual: Boolean,
+        identityChanged: Boolean = false
+    ) = DiscoveryReviewResolvedAdmission(
+        "OLD-DOC", decision, decision != null && !identityChanged, manual, decision != null, identityChanged, 4L, null
+    )
+
+    @Test
+    fun `discovery manual approval skips base re-rejection and keeps the candidate`() {
+        val source = discoveryAdmissionSource()
+        val snapshot = ExpertIndexWriterService.DiscoverySnapshot(source, 3, 2)
+        val review = mock(DiscoveryReviewService::class.java)
+        `when`(writerService.readDiscoveryDocument(ExpertIndexLevel.RAW, "OLD-DOC")).thenReturn(snapshot)
+        `when`(writerService.discoveryProfile("OLD-DOC", source)).thenReturn(
+            validExpert("HISTORICAL-ORCID", "researcher@example.org", esDocId = "OLD-DOC").copy(nationality = "Chinese")
+        )
+        `when`(review.resolveAdmission(eqValue("OLD-DOC"), anyProfile())).thenReturn(resolved("MANUAL_APPROVED", manual = true))
+        `when`(review.projectApprovedCandidate(eqValue("OLD-DOC"), eqValue(source), eqValue("MANUAL_APPROVED")))
+            .thenReturn(DiscoveryReviewCandidateSync("ALREADY_PRESENT", true, null))
+
+        assertEquals(PromotionOutcome.AlreadyPresent, serviceWithReview(review).revalidateDiscovery("OLD-DOC"))
+
+        verify(emailValidationService, never()).validate(anyString())
+        verify(writerService, never()).reconcileDiscoveryCandidate(
+            anyString(), anySnapshot(), anyClassification(), anyReasons(), eqValue(false)
+        )
+    }
+
+    @Test
+    fun `discovery manual HOLD does not auto-promote and never deletes the candidate`() {
+        val source = discoveryAdmissionSource()
+        val snapshot = ExpertIndexWriterService.DiscoverySnapshot(source, 3, 2)
+        val review = mock(DiscoveryReviewService::class.java)
+        `when`(writerService.readDiscoveryDocument(ExpertIndexLevel.RAW, "OLD-DOC")).thenReturn(snapshot)
+        `when`(writerService.discoveryProfile("OLD-DOC", source)).thenReturn(
+            validExpert("HISTORICAL-ORCID", "researcher@example.org", esDocId = "OLD-DOC")
+        )
+        `when`(review.resolveAdmission(eqValue("OLD-DOC"), anyProfile())).thenReturn(resolved("HOLD", manual = true))
+
+        assertEquals(PromotionOutcome.AlreadyPresent, serviceWithReview(review).revalidateDiscovery("OLD-DOC"))
+
+        verify(review, never()).projectApprovedCandidate(anyString(), anyMap(), anyString())
+        verify(writerService, never()).reconcileDiscoveryCandidate(
+            anyString(), anySnapshot(), anyClassification(), anyReasons(), eqValue(false)
+        )
+    }
+
+    @Test
+    fun `discovery identity change falls back to the automatic path`() {
+        val source = discoveryAdmissionSource()
+        val snapshot = ExpertIndexWriterService.DiscoverySnapshot(source, 3, 2)
+        val review = mock(DiscoveryReviewService::class.java)
+        `when`(writerService.readDiscoveryDocument(ExpertIndexLevel.RAW, "OLD-DOC")).thenReturn(snapshot)
+        `when`(writerService.discoveryProfile("OLD-DOC", source)).thenReturn(
+            validExpert("HISTORICAL-ORCID", "researcher@example.org", esDocId = "OLD-DOC").copy(
+                emailSource = "PAPER_FULLTEXT", institution = "University", lastPublicationYear = 2026
+            )
+        )
+        `when`(review.resolveAdmission(eqValue("OLD-DOC"), anyProfile()))
+            .thenReturn(resolved(null, manual = false, identityChanged = true))
+        `when`(classificationService.classify(anyProfile())).thenReturn(classification(ExpertType.PRODUCTION_RND))
+        `when`(emailValidationService.validate("researcher@example.org")).thenReturn(EmailValidationResult(3, true))
+        `when`(writerService.reconcileDiscoveryCandidate(
+            eqValue("OLD-DOC"), eqValue(snapshot), anyClassification(), anyReasons(), eqValue(false)
+        )).thenReturn(true)
+
+        assertEquals(PromotionOutcome.Promoted, serviceWithReview(review).revalidateDiscovery("OLD-DOC"))
+
+        verify(review, never()).projectApprovedCandidate(anyString(), anyMap(), anyString())
+        verify(review).recordAutomatic(eqValue("OLD-DOC"), anyProfile(), anyEligibility())
+    }
+
+    @Test
+    fun `discovery automatic path refreshes the automatic conclusion`() {
+        val source = discoveryAdmissionSource()
+        val snapshot = ExpertIndexWriterService.DiscoverySnapshot(source, 3, 2)
+        val review = mock(DiscoveryReviewService::class.java)
+        `when`(writerService.readDiscoveryDocument(ExpertIndexLevel.RAW, "OLD-DOC")).thenReturn(snapshot)
+        `when`(writerService.discoveryProfile("OLD-DOC", source)).thenReturn(
+            validExpert("HISTORICAL-ORCID", "researcher@example.org", esDocId = "OLD-DOC").copy(
+                emailSource = "PAPER_FULLTEXT", institution = "University", lastPublicationYear = 2026
+            )
+        )
+        `when`(review.resolveAdmission(eqValue("OLD-DOC"), anyProfile()))
+            .thenReturn(DiscoveryReviewResolvedAdmission("OLD-DOC", null, false, false, false, false, 0L, null))
+        `when`(classificationService.classify(anyProfile())).thenReturn(classification(ExpertType.PRODUCTION_RND))
+        `when`(emailValidationService.validate("researcher@example.org")).thenReturn(EmailValidationResult(3, true))
+        `when`(writerService.reconcileDiscoveryCandidate(
+            eqValue("OLD-DOC"), eqValue(snapshot), anyClassification(), anyReasons(), eqValue(false)
+        )).thenReturn(true)
+
+        assertEquals(PromotionOutcome.Promoted, serviceWithReview(review).revalidateDiscovery("OLD-DOC"))
+
+        verify(review).recordAutomatic(eqValue("OLD-DOC"), anyProfile(), anyEligibility())
     }
 }

@@ -230,6 +230,24 @@ class ExpertRevalidationServiceBehaviorTest {
         assertEquals(5, result.stats.passed)
     }
 
+    @Test
+    fun `non-discovery revalidation never consults the admission service (04)`() {
+        val review = mock(com.weibo.talentintroduction.discovery.service.DiscoveryReviewService::class.java)
+        val svc = ExpertRevalidationService(
+            searchService, eligibilityService, emailValidationService, writerService, progressStore, filterService,
+            discoveryReviewService = review
+        )
+        val expert = validExpert("0001", "john@oxford.ac.uk")
+        `when`(emailValidationService.validate("john@oxford.ac.uk"))
+            .thenReturn(com.weibo.talentintroduction.expert.domain.EmailValidationResult(2, true))
+        ScrollExpertsMockHelper.stubScrollExperts(searchService, listOf(listOf(expert)))
+
+        val result = svc.revalidateCandidates()
+
+        assertEquals(1, result.stats.passed)
+        verifyNoInteractions(review)
+    }
+
     private fun serviceWithEmailFilterOff(): ExpertRevalidationService {
         val fs = mock(EligibilityFilterService::class.java).also {
             `when`(it.getCandidateFilter()).thenReturn(CandidateFilterProperties(requireValidEmail = false))

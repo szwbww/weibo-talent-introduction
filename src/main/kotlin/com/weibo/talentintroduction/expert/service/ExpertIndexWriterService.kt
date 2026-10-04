@@ -45,6 +45,11 @@ class ExpertIndexWriterService(
 
         /** 失败样本保留上限：统计全部失败，但样本最多保留 100 条（I2-4）。 */
         const val CLASSIFICATION_FAILURE_SAMPLE_CAP = 100
+
+        /** 04（I-2）：允许投影到候选的准入结论（人工批准、历史认可、自动通过）。 */
+        val ADMITTED_DECISIONS = setOf("AUTO_PASSED", "MANUAL_APPROVED", "LEGACY_APPROVED")
+
+        private const val DISCOVERY_TAG = "discovered"
     }
 
     fun markApplicationClosed(contact: ExpertContact) {
@@ -787,6 +792,94 @@ class ExpertIndexWriterService(
             true
         } catch (e: HttpClientErrorException) {
             if (e.statusCode == HttpStatus.NOT_FOUND) true else throw e
+        }
+    }
+
+    /**
+     * 04（I-2）：RAW-only 准入通过后的候选投影结果。区分「真的创建」「已存在/已进有效层（不覆盖）」
+     * 「身份冲突（同一 `_id` 却是别人）」「未准入」「源缺失」「写入失败」；调用方据此把失败单独记
+     * `CANDIDATE_SYNC_FAILED`，绝不把失败当成功。
+     */
+    enum class DiscoveryCandidateProjection {
+        PROJECTED,
+        ALREADY_PRESENT,
+        APPLICATION_PRESENT,
+        IDENTITY_CONFLICT,
+        NOT_ADMITTED,
+        SOURCE_MISSING,
+        WRITE_FAILED
+    }
+
+    /**
+     * 04（I-2）：人工批准与自动晋升共用的发现候选投影接缝。
+     *
+     * 以**真实 `_id`**（[docId]）和调用方手里的 RAW 源快照 [source] 执行 create：
+     * 有效层已存在时不反向复制候选；候选已存在时不覆盖任何运营字段；`op_type=create` 的 409
+     * 只有复读身份一致才算「已存在」，否则身份冲突。**绝不**写 `filterResult`/`identityVerification`/
+     * 机构/国家来伪装自动通过 —— 正文逐字来自 RAW 源。
+     */
+    fun projectDiscoveryCandidate(
+        docId: String,
+        source: Map<String, Any?>,
+        decision: String
+    ): DiscoveryCandidateProjection {
+        if (docId.isBlank()) return DiscoveryCandidateProjection.SOURCE_MISSING
+        if (decision !in ADMITTED_DECISIONS) return DiscoveryCandidateProjection.NOT_ADMITTED
+        if (source.isEmpty()) return DiscoveryCandidateProjection.SOURCE_MISSING
+
+        val alreadyApplied = try {
+            documentExistsInIndex(ExpertIndexLevel.APPLICATION, docId)
+        } catch (e: Exception) {
+            log.warn("Failed to check APPLICATION existence for esDocId={} during projection", docId, e)
+            return DiscoveryCandidateProjection.WRITE_FAILED
+        }
+        if (alreadyApplied) return DiscoveryCandidateProjection.APPLICATION_PRESENT
+
+        val candidate = try {
+            readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+        } catch (e: Exception) {
+            log.warn("Failed to read CANDIDATE for esDocId={} during projection", docId, e)
+            return DiscoveryCandidateProjection.WRITE_FAILED
+        }
+        if (candidate != null) {
+            return if (sameDiscoveryIdentity(source, candidate.source)) {
+                DiscoveryCandidateProjection.ALREADY_PRESENT
+            } else {
+                DiscoveryCandidateProjection.IDENTITY_CONFLICT
+            }
+        }
+
+        val now = LocalDateTime.now().format(dateFormatter)
+        val candidateDoc = source.toMutableMap().apply {
+            put("candidateValidatedAt", now)
+            put("updatedAt", now)
+            val existingTags = (get("tags") as? List<*>)?.filterIsInstance<String>().orEmpty()
+            put("tags", (existingTags + DISCOVERY_TAG).distinct())
+        }
+        val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
+        val putUrl = "${properties.baseUrl}/$candidateIndex/_doc/$docId?op_type=create"
+        return try {
+            restTemplate.exchange(putUrl, HttpMethod.PUT, HttpEntity(candidateDoc, headers()), JsonNode::class.java)
+            DiscoveryCandidateProjection.PROJECTED
+        } catch (e: HttpClientErrorException) {
+            if (e.statusCode == HttpStatus.CONFLICT) {
+                val raced = try {
+                    readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+                } catch (_: Exception) {
+                    null
+                }
+                if (raced != null && sameDiscoveryIdentity(source, raced.source)) {
+                    DiscoveryCandidateProjection.ALREADY_PRESENT
+                } else {
+                    DiscoveryCandidateProjection.IDENTITY_CONFLICT
+                }
+            } else {
+                log.warn("Failed to project candidate for esDocId={} (HTTP {})", docId, e.statusCode)
+                DiscoveryCandidateProjection.WRITE_FAILED
+            }
+        } catch (e: Exception) {
+            log.warn("Failed to project candidate for esDocId={}", docId, e)
+            DiscoveryCandidateProjection.WRITE_FAILED
         }
     }
 
