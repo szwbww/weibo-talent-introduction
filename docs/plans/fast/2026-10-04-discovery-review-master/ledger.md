@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-04/discovery-review-master.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-10-04/discovery-review-master.md (commit 8853573efcfc82a84d75264a53923709e94b4702)
 - Amendments: A1, A2
 - Master base: e28e53fd898edd62905a0d45a6bf90396b18b1bf
@@ -10,11 +10,11 @@
 - Finalization repair parent: N/A
 - Started: 2026-10-04T20:05:00+0800
 - Current child: 05
-- Waiting role: IMPLEMENTER
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: N/A
+- Pause reason: MISSING_AUTHORITY: 05 实现方案 5（模板版本冻结/过期预览令牌拒绝/账号变量预检）与 06 预览数据源（准入计数/reasonHits/filterKeys）需要授权 BatchSendControlService.kt 与 MailComposeTemplateService.kt（+在已授权 ManualInitialOutreachService 的预览 DTO 内补字段）；VerifyDiscoveryReview05 独立确认为 PAUSE 而非 AUTO_FIX。待人工批准 A3 扩权，或决定把该缺口降级推迟。
+- Resume from: 6a54f008e1b907df77572791679a74cb80175e3a
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
@@ -23,7 +23,7 @@
 | 02 | docs/plans/2026-10-04/discovery-review-02-review.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | 01 | 1 | LIGHT_PASS_WITH_NOTES | 209315103a89c5ea7807e4707bb87967d8579525 | df9cad44ea77f37ebdb0e4af1b2d555573b6ffe5 | 0 | — | df9cad44ea77f37ebdb0e4af1b2d555573b6ffe5 | 721c3804b7409c875daaec2560c6efb0e952a7ef | 9 授权文件（含 V148）；写者 ImplDiscoveryReview02；核实者 VerifyDiscoveryReview02 LIGHT_PASS_WITH_NOTES（O-1 RECORD_ONLY：FlywayMigrationIT latest-target 147 过期） |
 | 03 | docs/plans/2026-10-04/discovery-review-03-all-pages.md | commit:8853573efcfc82a84d75264a53923709e94b4702 | 02 | 2 | LIGHT_PASS_WITH_NOTES | df9cad44ea77f37ebdb0e4af1b2d555573b6ffe5 | 6043a678fe7736d133c9b2f25c1e139ad1130985 | 0 | — | 6043a678fe7736d133c9b2f25c1e139ad1130985 | 71572fee009b621203645cd75dbd970aa69d8e48 | 9 授权文件（A1/A2 人工修正）；写者 ImplDiscoveryReview03E2；核实者 VerifyDiscoveryReview03 LIGHT_PASS_WITH_NOTES（O-1 共享库漂移 RECORD_ONLY；O-2 derivePhase 无 INTERRUPTED 信息项）；epoch 1 PLAN_CONFLICT 见 children/03/pause.md |
 | 04 | docs/plans/2026-10-04/discovery-review-04-admission-writes.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | 01,02,03 | 1 | LIGHT_PASS_WITH_NOTES | 6043a678fe7736d133c9b2f25c1e139ad1130985 | 08f5bd5421333447f9173d34fad1c55ac43c3ba5 | 0 | — | 08f5bd5421333447f9173d34fad1c55ac43c3ba5 | 682346e2cd8e0a23425e522c6a5b3b202a903188 | 10 授权文件；写者首轮 BLOCKED 未提交→二轮 ImplDiscoveryReview04R 完成；核实者 VerifyDiscoveryReview04 LIGHT_PASS_WITH_NOTES（O-1 信息项：人工分支投影无 allowedMap 守卫，计划 5.4 明许） |
-| 05 | docs/plans/2026-10-04/discovery-review-05-explicit-send.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | 01,02,03,04 | 1 | PENDING | — | — | 0 | — | — | — | 依赖 01,02,03,04；D1 未定案，不得启用生产发送切换 |
+| 05 | docs/plans/2026-10-04/discovery-review-05-explicit-send.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | 01,02,03,04 | 1 | PAUSED_FOR_HUMAN | 08f5bd5421333447f9173d34fad1c55ac43c3ba5 | 6a54f008e1b907df77572791679a74cb80175e3a | 0 | — | 6a54f008e1b907df77572791679a74cb80175e3a | — | 10 授权文件已提交；核实者 VerifyDiscoveryReview05 PAUSE（门禁 2 缺权）：step 5 与 06 预览 DTO 需扩权 BatchSendControlService.kt、MailComposeTemplateService.kt；待人工批准 A3 或降级 |
 | 06 | docs/plans/2026-10-04/discovery-review-06-ui.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | 01,02,03,04,05 | 1 | PENDING | — | — | 0 | — | — | — | 依赖 01,02,03,04,05 |
 
 ## Amendments
