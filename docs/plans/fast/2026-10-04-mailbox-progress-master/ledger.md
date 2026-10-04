@@ -10,7 +10,7 @@
 - Finalization repair parent: N/A
 - Started: 2026-10-04T22:17:44+0800
 - Current child: 01
-- Waiting role: N/A
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -19,7 +19,7 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| 01 | docs/plans/2026-10-04/mailbox-progress-01-backend.md | commit:9594d4b3b3c3022b2be2bc04b24d90ee40a58ad4 | none | 1 | PENDING | 9594d4b3b3c3022b2be2bc04b24d90ee40a58ad4 | — | 0 | — | — | — | 10 授权文件；迁移 V149 |
+| 01 | docs/plans/2026-10-04/mailbox-progress-01-backend.md | commit:9594d4b3b3c3022b2be2bc04b24d90ee40a58ad4 | none | 1 | IMPLEMENTING | 9594d4b3b3c3022b2be2bc04b24d90ee40a58ad4 | — | 0 | — | — | — | 10 授权文件；迁移 V149；写者 ImplMailboxProgress01 |
 | 02 | docs/plans/2026-10-04/mailbox-progress-02-frontend.md | commit:9594d4b3b3c3022b2be2bc04b24d90ee40a58ad4 | 01 | 1 | PENDING | — | — | 0 | — | — | — | 6 授权文件 |
 
 ## Amendments
