@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-10-04/discovery-review-master.md
 
-- Status: PAUSED_FOR_HUMAN
-- Master plan: docs/plans/2026-10-04/discovery-review-master.md (commit 07beaafc111a1b14ed3c48d514db527c8a13fc31)
-- Amendments: N/A
+- Status: RUNNING
+- Master plan: docs/plans/2026-10-04/discovery-review-master.md (commit 8853573efcfc82a84d75264a53923709e94b4702)
+- Amendments: A1, A2
 - Master base: e28e53fd898edd62905a0d45a6bf90396b18b1bf
 - Branch: fast/2026-10-04-discovery-review-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master
@@ -10,18 +10,18 @@
 - Finalization repair parent: N/A
 - Started: 2026-10-04T20:05:00+0800
 - Current child: 03
-- Waiting role: N/A
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: AMENDMENT_REQUIRED: child 03 注册 DISCOVERY_REVIEW_PREPARE/APPLY 会使未授权的已有点数断言测试 TaskExecutionSummaryExtractorTest.kt（:248 keys 集、:264 18、:219 hasProgressUi 集）在 `mvn test` 下变红；该文件不在 01–06 任何授权清单。需人工批准：① 03 计划授权该文件做最小重同步（计数/标签，不弱化断言）② 主计划 03 文件数上限 8→9。备选：修改计划 2/3 与 brief 规则 9，放弃 catalog 登记（与 M-3/下游契约冲突）。
-- Resume from: c8bcec702e26074b53a5e148a390f784cdc99342
+- Pause reason: N/A
+- Resume from: N/A
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | 01 | docs/plans/2026-10-04/discovery-review-01-admission.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | none | 1 | LIGHT_PASS_WITH_NOTES | 07beaafc111a1b14ed3c48d514db527c8a13fc31 | 209315103a89c5ea7807e4707bb87967d8579525 | 0 | — | 209315103a89c5ea7807e4707bb87967d8579525 | 91909432fb03a787a53b5fb0be7d7afbf2690a5f | 5 授权文件；写者 ImplDiscoveryReview01；核实者 VerifyDiscoveryReview01 LIGHT_PASS_WITH_NOTES（O-1 RECORD_ONLY） |
 | 02 | docs/plans/2026-10-04/discovery-review-02-review.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | 01 | 1 | LIGHT_PASS_WITH_NOTES | 209315103a89c5ea7807e4707bb87967d8579525 | df9cad44ea77f37ebdb0e4af1b2d555573b6ffe5 | 0 | — | df9cad44ea77f37ebdb0e4af1b2d555573b6ffe5 | 721c3804b7409c875daaec2560c6efb0e952a7ef | 9 授权文件（含 V148）；写者 ImplDiscoveryReview02；核实者 VerifyDiscoveryReview02 LIGHT_PASS_WITH_NOTES（O-1 RECORD_ONLY：FlywayMigrationIT latest-target 147 过期） |
-| 03 | docs/plans/2026-10-04/discovery-review-03-all-pages.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | 02 | 1 | PAUSED_FOR_HUMAN | — | — | 0 | — | — | — | AMENDMENT_REQUIRED：TaskTypeCatalog 两新 taskType 打红未授权的 TaskExecutionSummaryExtractorTest.kt（:248/:264/:219 点数断言）；待人工批准 03 计划授权该文件最小重同步 + 主计划文件数上限 8→9 |
+| 03 | docs/plans/2026-10-04/discovery-review-03-all-pages.md | commit:8853573efcfc82a84d75264a53923709e94b4702 | 02 | 2 | IMPLEMENTING | df9cad44ea77f37ebdb0e4af1b2d555573b6ffe5 | — | 0 | — | — | — | 人工批准 A1/A2（授权 TaskExecutionSummaryExtractorTest.kt 最小重同步，文件数 8→9）；epoch 2 恢复执行；epoch 1 为 PLAN_CONFLICT（见 children/03/execution.md） |
 | 04 | docs/plans/2026-10-04/discovery-review-04-admission-writes.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | 01,02,03 | 1 | PENDING | — | — | 0 | — | — | — | 依赖 01,02,03 |
 | 05 | docs/plans/2026-10-04/discovery-review-05-explicit-send.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | 01,02,03,04 | 1 | PENDING | — | — | 0 | — | — | — | 依赖 01,02,03,04；D1 未定案，不得启用生产发送切换 |
 | 06 | docs/plans/2026-10-04/discovery-review-06-ui.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | 01,02,03,04,05 | 1 | PENDING | — | — | 0 | — | — | — | 依赖 01,02,03,04,05 |
@@ -29,6 +29,8 @@
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
 |---|---|---|---|---|---|---|
+| A1 | docs/plans/2026-10-04/discovery-review-03-all-pages.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | commit:8853573efcfc82a84d75264a53923709e94b4702 | 主计划「实现方案」表 03 行文件数上限（8）与「发现额外文件必要时先修订计划」 | TaskTypeCatalog 新增 2 个 taskType 会打红未授权的既有点数断言测试 TaskExecutionSummaryExtractorTest.kt（:248/:264/:219）；授权该文件做计数/集合最小重同步（不弱化断言），03 文件数 8→9 | HUMAN:2026-10-04 批准「授权该测试文件做最小重同步」 |
+| A2 | docs/plans/2026-10-04/discovery-review-master.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | commit:8853573efcfc82a84d75264a53923709e94b4702 | 主计划「实现方案」表 03 行「文件数上限」 | 同步 03 授权文件数上限 8→9（与 A1 同一人工批准） | HUMAN:2026-10-04 批准 A1 时同步（同一指令） |
 
 ## Baseline
 - 授权依据：用户 2026-10-04 以 `/fast-p docs/plans/2026-10-04/discovery-review-master.md` 显式发起本次本地执行；master 为评审稿且 D1（历史发送政策）未定案，本 run 仅执行 01–06 的确定部分，D1 与"发送切换"的实际发布不在本次范围。

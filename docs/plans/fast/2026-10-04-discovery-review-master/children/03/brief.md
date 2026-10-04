@@ -2,8 +2,8 @@
 
 ## 身份与边界
 
-- Master plan（批准版，字节冻结）：`docs/plans/2026-10-04/discovery-review-master.md`，identity `commit:07beaafc111a1b14ed3c48d514db527c8a13fc31`。
-- 本 child 批准计划（完整合同，必须先通读）：`docs/plans/2026-10-04/discovery-review-03-all-pages.md`，identity `commit:07beaafc111a1b14ed3c48d514db527c8a13fc31`。全部章节逐条生效；本 brief 摘要与计划原文冲突时以计划原文为准。
+- Master plan（批准版，字节冻结）：`docs/plans/2026-10-04/discovery-review-master.md`，identity `commit:8853573efcfc82a84d75264a53923709e94b4702`（A2 修正后）。
+- 本 child 批准计划（完整合同，必须先通读）：`docs/plans/2026-10-04/discovery-review-03-all-pages.md`，identity `commit:8853573efcfc82a84d75264a53923709e94b4702`（A1/A2 修正后版本）。全部章节逐条生效；本 brief 摘要与计划原文冲突时以计划原文为准。
 - Worktree：`/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master`；branch `fast/2026-10-04-discovery-review-master`；`child_base_sha = df9cad44ea77f37ebdb0e4af1b2d555573b6ffe5`（= child 02 code head）。
 - 依赖：02（两张表、prepare/confirm/apply、查询与筛选）。下游：04（复用 03 任务/scroll 与 fail-items 语义做存量初始化）、05/06（任务状态与重试契约）。
 - 取证材料（worktree 内只读）：`docs/plans/2026-10-04/discovery-review-audit.md`（E5 TaskExecution/TaskProgress、X5/X9）、`docs/plans/2026-10-04/discovery-review-evidence/`。
@@ -11,7 +11,7 @@
 
 ## 全局约束
 
-1. 只允许修改「Authorized Files」表内 8 个文件；不得新建白名单外文件。其余 Kotlin/SQL/迁移/前端/文档全部只读。
+1. 只允许修改「Authorized Files」表内 9 个文件；不得新建白名单外文件。其余 Kotlin/SQL/迁移/前端/文档全部只读。
 2. 不得修改 `docs/plans/**` 内的计划与其他证据；本 child 唯一可写非产品文件是执行报告 `docs/plans/fast/2026-10-04-discovery-review-master/children/03/execution.md`。fast-p 报告不进入产品提交（控制方单独提交）。
 3. 不得 push、merge、rebase、squash、amend、reset；不得改写已有提交。产品代码只提交一次：`feat(fast-p): implement 03`。
 4. 计划与代码冲突、需要白名单外文件、需要新行为或需要修订计划：返回 `PLAN_CONFLICT` / `BLOCKED`，不得自行扩范围或改计划。
@@ -21,7 +21,9 @@
 8. D1 未定案：不得改动任何发送行为、不得接发送切换；不得声称"所有黑盒已清除"。
 9. 保持既有任务框架语义（token/心跳/中断/interrupted 恢复），TaskTypeCatalog 只加中文名/进度白名单，不硬写前端字符串。
 
-## Authorized Files（8）
+## Authorized Files（9）
+
+A1 修正（人工批准 2026-10-04）：第 9 个文件仅用于本轮 taskType 登记的计数/集合断言最小重同步（新增 `DISCOVERY_REVIEW_PREPARE`/`DISCOVERY_REVIEW_APPLY`：keys 集、18→20、hasProgressUi 集、样例字面量；不弱化断言、不改无关语义）。同类预授权：若其他既有测试的精确计数/集合断言因本计划合法改动失败，可做同一标准的最小重同步并在报告中列出；任何其他越界仍返回 PLAN_CONFLICT。
 
 | # | 精确路径 | 改动 |
 |---|---|---|
@@ -33,6 +35,7 @@
 | 6 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewAllPagesTest.kt` | 新增 10005 人、并发与恢复 |
 | 7 | `src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepositoryIT.kt` | 持久幂等 |
 | 8 | `src/test/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryReviewControllerTest.kt` | 快照状态/API |
+| 9 | `src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt` | A1：目录断言最小重同步（新 taskType 的计数/集合/样例；不弱化断言） |
 
 ## 关键不变量（计划 I-1～I-4；逐字以计划为准）
 
