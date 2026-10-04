@@ -1,0 +1,25 @@
+{
+  "date": "2026-10-04",
+  "source_hashes_unchanged": true,
+  "implementation_performed": false,
+  "plans": [
+    {
+      "file": "docs/plans/2026-10-04/mailbox-progress-01-backend.md",
+      "implementation_files": 10,
+      "subsystems": 1,
+      "new_store_fields": 1,
+      "required_sections_in_order": true,
+      "invariants": 6,
+      "manual_scenarios": 4
+    },
+    {
+      "file": "docs/plans/2026-10-04/mailbox-progress-02-frontend.md",
+      "implementation_files": 6,
+      "subsystems": 1,
+      "new_store_fields": 0,
+      "required_sections_in_order": true,
+      "invariants": 6,
+      "manual_scenarios": 7
+    }
+  ]
+}

@@ -1,0 +1,101 @@
+$ rg -n expert_follow|ExpertFollowService|setFollowed\( src/main scripts ops config --glob !*.csv --glob !*.json
+exit=0
+src/main/resources/db/migration/V121__create_expert_follow.sql:2:-- V121 expert_follow：专家会话关注（fast-p 07，最终 schema 迁移）
+src/main/resources/db/migration/V121__create_expert_follow.sql:7:-- 唯一写者 ExpertFollowService（参数化 JDBC）；读者 = 会话 summary 的 join /
+src/main/resources/db/migration/V121__create_expert_follow.sql:10:CREATE TABLE expert_follow (
+src/main/resources/db/migration/V121__create_expert_follow.sql:15:    CONSTRAINT fk_expert_follow_contact
+src/main/resources/db/migration/V147__create_expert_mailbox_suspension.sql:8:-- username = 登录会话 AUTH_USERNAME（沿 V121 expert_follow 的现有关注模式；
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionService.kt:17: * - followed：既有 expert_follow 归属（只读，不因挂起改变 I-6）。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionService.kt:55: * - 只写新表；不写 expert_contact/expert_follow/expert_replied_dismissal/mail_record/
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionService.kt:199:            SELECT COUNT(*) FROM expert_follow
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:5:import com.weibo.talentintroduction.mail.service.ExpertFollowService
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:195:    private val expertFollowService: ExpertFollowService,
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:260:        return ResponseEntity.ok(expertFollowService.setFollowed(username, contactId, true))
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:371:        return ResponseEntity.ok(expertFollowService.setFollowed(username, contactId, false))
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertFollowService.kt:12: * expert_follow 的唯一写者（I-3）。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertFollowService.kt:24:class ExpertFollowService(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertFollowService.kt:27:    fun setFollowed(username: String, expertContactId: Long, followed: Boolean): FollowResult {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertFollowService.kt:40:                INSERT IGNORE INTO expert_follow (username, expert_contact_id, created_at)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertFollowService.kt:51:                DELETE FROM expert_follow
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:180:                       SELECT 1 FROM expert_follow ef
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:221:                       SELECT 1 FROM expert_follow ef
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:676:                SELECT 1 FROM expert_follow eff
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:702:                    SELECT 1 FROM expert_follow ef_replied
+
+$ rg -n expert_follow src/test
+exit=0
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1706:    fun `V121 creates expert_follow with composite ownership key and contact FK`() {
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1709:            assertFalse(connection.tableExists("expert_follow"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1714:            assertTrue(connection.tableExists("expert_follow"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1716:                assertTrue(connection.columnExists("expert_follow", column), "missing column $column")
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1722:                    "WHERE table_schema = DATABASE() AND table_name = 'expert_follow' " +
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1727:                    "WHERE table_schema = DATABASE() AND table_name = 'expert_follow' " +
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1732:                    "WHERE table_schema = DATABASE() AND table_name = 'expert_follow' " +
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1738:                        "WHERE table_schema = DATABASE() AND table_name = 'expert_follow' " +
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1746:                    "WHERE table_schema = DATABASE() AND table_name = 'expert_follow' " +
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1751:                    "WHERE table_schema = DATABASE() AND table_name = 'expert_follow' " +
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1756:                    "WHERE table_schema = DATABASE() AND table_name = 'expert_follow' " +
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1763:                "INSERT INTO expert_follow (username, expert_contact_id, created_at) " +
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1768:                    "INSERT INTO expert_follow (username, expert_contact_id, created_at) " +
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1773:                "INSERT INTO expert_follow (username, expert_contact_id, created_at) " +
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1777:                "INSERT INTO expert_follow (username, expert_contact_id, created_at) " +
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1780:            assertEquals(3L, connection.queryLong("SELECT COUNT(*) FROM expert_follow"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1782:                "SELECT COUNT(*) FROM expert_follow WHERE username = 'admin' AND expert_contact_id = 1"
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1788:                    "INSERT INTO expert_follow (username, expert_contact_id) VALUES ('admin', 1)"
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1793:            assertTrue(connection.foreignKeyExists("expert_follow", "fk_expert_follow_contact"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:1796:                    "INSERT INTO expert_follow (username, expert_contact_id, created_at) " +
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionServiceIT.kt:169:            "INSERT INTO expert_follow (username, expert_contact_id, created_at) VALUES ('op1', 1, NOW())"
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionServiceIT.kt:175:        val before = countsOf("expert_contact", "expert_follow", "expert_replied_dismissal",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionServiceIT.kt:181:        assertEquals(before, countsOf("expert_contact", "expert_follow", "expert_replied_dismissal",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionServiceIT.kt:272:        jdbcTemplate.update("DELETE FROM expert_follow")
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:193:        // 关注/会话数据真实落库（expert_follow 复合主键、expert_contact FK、mail_record/
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:245:            "SELECT created_at FROM expert_follow WHERE username = 'op1' AND expert_contact_id = 1",
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:270:            "SELECT created_at FROM expert_follow WHERE username = 'op1' AND expert_contact_id = 1",
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:1471:            "SELECT COUNT(*) FROM expert_follow WHERE username = ? AND expert_contact_id = ?",
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:1483:        jdbcTemplate.update("DELETE FROM expert_follow")
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:2112:        jdbcTemplate.update("DELETE FROM expert_follow")
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:224:        jdbcTemplate.update("INSERT INTO expert_follow (username, expert_contact_id, created_at) VALUES ('op1', 1, NOW())")
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:312:    fun `followed filter and flag come from expert_follow ownership`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:317:            "INSERT INTO expert_follow (username, expert_contact_id, created_at) VALUES (?, ?, ?)",
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:321:            "INSERT INTO expert_follow (username, expert_contact_id, created_at) VALUES (?, ?, ?)",
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:528:                "INSERT INTO expert_follow (username, expert_contact_id, created_at) VALUES (?, ?, ?)",
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:662:            "INSERT INTO expert_follow (username, expert_contact_id, created_at) VALUES (?, ?, ?)",
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:713:            "INSERT INTO expert_follow (username, expert_contact_id, created_at) VALUES ('op1', 3, NOW())"
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:880:        jdbcTemplate.update("DELETE FROM expert_follow")
+
+$ rg -n mc-filters|mc-filter\{|mc-person\{|person-actions src/main/resources/static/styles.css src/main/resources/static/mailbox-chat.css
+exit=0
+src/main/resources/static/mailbox-chat.css:9:.mail-chat .mc-filters{display:flex;flex-wrap:wrap;gap:6px}
+src/main/resources/static/mailbox-chat.css:10:.mail-chat .mc-filter{min-height:28px;padding:3px 8px;border:1px solid #dce4ef;border-radius:7px;background:#f8faff;color:#64748b;font:inherit;cursor:pointer}
+src/main/resources/static/mailbox-chat.css:16:.mail-chat .mc-person{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 28px;gap:8px;margin-bottom:6px;border:1px solid transparent;border-left:3px solid transparent;border-radius:10px;background:transparent}
+src/main/resources/static/mailbox-chat.css:86:.mail-chat .mc-filters{gap:12px;flex-wrap:nowrap}
+src/main/resources/static/mailbox-chat.css:87:.mail-chat .mc-filter{border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;padding:6px 5px 10px}
+src/main/resources/static/styles.css:11961:.mail-chat .mc-person [data-role=person-actions] { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 0; }
+src/main/resources/static/styles.css:11962:.mail-chat .mc-person [data-role=person-actions] .mc-follow { margin-right: 0; }
+src/main/resources/static/styles.css:12648:#view-mailbox.mc-refined .mail-chat .mc-filters{flex-wrap:wrap;overflow-x:visible;row-gap:0}
+src/main/resources/static/styles.css:12654:#view-mailbox.mc-refined .mc-filters{display:flex;flex-wrap:nowrap;gap:4px;overflow-x:auto;scrollbar-width:thin}
+src/main/resources/static/styles.css:12655:#view-mailbox.mc-refined .mc-filter{flex:0 0 auto;min-height:36px;padding:7px 5px 10px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:#7d8ca2;font-size:12px;line-height:1.5;white-space:nowrap}
+src/main/resources/static/styles.css:12701:@media(max-width:760px){.mailbox-suspend-banner{margin:12px 12px 3px;padding:11px 12px}#view-mailbox.mc-refined .mc-filter{min-height:44px;padding-left:6px;padding-right:6px}.mailbox-suspend-card-action,#view-mailbox.mc-refined .mc-actions .mailbox-suspend-action,.mailbox-suspend-inline-secondary,.mailbox-suspend-inline-primary,#view-mailbox.mc-refined .mc-message footer .mailbox-suspend-pending-action{min-height:44px}.mailbox-suspend-inline-reason textarea{font-size:16px}.mailbox-suspend-inline-reason{margin:10px 12px}#view-mailbox.mc-refined .mc-message .mailbox-suspend-completion-line{flex-direction:column;align-items:flex-start;gap:10px}.mailbox-suspend-completion-actions{align-self:flex-end}.mailbox-suspend-process-confirm>span{flex-basis:100%;text-align:right}}
+
+$ rg -n mc-filters|mc-filter|person-actions|mc-refined src/main/resources/static/mailbox-chat.js src/main/resources/static/app.js src/main/resources/static/index.html
+exit=0
+src/main/resources/static/mailbox-chat.js:4: * 布局：S-1 两栏（专家列表 + 会话）；聊天挂载时 view-mailbox 加 mc-refined，
+src/main/resources/static/mailbox-chat.js:751:        // S-1：宿主 chrome（mc-refined / 刷新按钮迁移 / 旧筛选节点迁移）
+src/main/resources/static/mailbox-chat.js:822:            if (on) view.classList.add("mc-refined");
+src/main/resources/static/mailbox-chat.js:823:            else view.classList.remove("mc-refined");
+src/main/resources/static/mailbox-chat.js:1076:                return `<button class="mc-filter" type="button" data-action="mc-filter" data-chip="${chip.key}" aria-pressed="${instance.chip === chip.key ? "true" : "false"}">${escapeText(chip.label)}${countSpan}</button>`;
+src/main/resources/static/mailbox-chat.js:1084:                                <button class="mc-icon" type="button" data-action="mc-more-filters" title="更多筛选" aria-label="更多筛选" aria-expanded="false" aria-controls="mcFilterPopover">⋯<span class="mc-filter-count" hidden></span></button>
+src/main/resources/static/mailbox-chat.js:1085:                                <div class="mc-filter-popover" id="mcFilterPopover" role="dialog" aria-label="更多筛选" hidden>
+src/main/resources/static/mailbox-chat.js:1087:                                    <div class="mc-filter-fields" id="mailboxFilterFields"></div>
+src/main/resources/static/mailbox-chat.js:1092:                            <div class="mc-filters">
+src/main/resources/static/mailbox-chat.js:1095:                            <div class="mc-filter-summary" hidden></div>
+src/main/resources/static/mailbox-chat.js:1243:            const countBadge = host.querySelector ? host.querySelector(".mc-filter-count") : null;
+src/main/resources/static/mailbox-chat.js:1253:            const summary = host.querySelector ? host.querySelector(".mc-filter-summary") : null;
+src/main/resources/static/mailbox-chat.js:1574:                    <span data-role="person-actions">
+src/main/resources/static/mailbox-chat.js:2152:            const chip = host.querySelector ? host.querySelector(`.mc-filter[data-chip="${instance.chip}"]`) : null;
+src/main/resources/static/mailbox-chat.js:7872:            if (action === "mc-filter") {
+src/main/resources/static/mailbox-chat.js:8359:            host.querySelectorAll(".mc-filter[data-action=mc-filter]").forEach((button) => {
+src/main/resources/static/app.js:16817:        view.classList.toggle("mc-refined", !!chatOn);
+
+$ rg -n -F 20261004-mailbox-suspension-followup src/test
+exit=1

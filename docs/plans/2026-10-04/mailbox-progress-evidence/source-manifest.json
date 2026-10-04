@@ -1,0 +1,46 @@
+{
+  "date": "2026-10-04",
+  "head": "e28e53fd898edd62905a0d45a6bf90396b18b1bf",
+  "files": [
+    {
+      "path": "src/main/resources/db/migration/V121__create_expert_follow.sql",
+      "sha256": "80edf9480b9c6eba5275f50f5c46160520ffcdc93068850014440cca5d21e77a"
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertFollowService.kt",
+      "sha256": "ed7df83aabeecaadb2afd1333d6c19052f76090d1b179df8cce1da8d3b705840"
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt",
+      "sha256": "5ba134ab4e22fed35b01515353460d23bd0d7b450fcccb0e947ee64390b0b153"
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt",
+      "sha256": "d9073e9ecf8cd00629fca20c9a081f445ba7a9ac742b414d1facb6086d5388f0"
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt",
+      "sha256": "d6eab6c384fe42047abb1cb3acaf955d4f17d09a03dd1a7042335f011a3bb29e"
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionService.kt",
+      "sha256": "af01fbbd7dcce35eb2935d0e663872ef08444bee3db30c8d6d45880fd475074e"
+    },
+    {
+      "path": "src/main/resources/static/mailbox-chat.js",
+      "sha256": "8f917d83493213b7165b901c49806769029816bf5454fc7e5a05644c49e4f26a"
+    },
+    {
+      "path": "src/main/resources/static/mailbox-chat.css",
+      "sha256": "0fd354027e54ae69f0a2ba76451801b85c6b74cd2792e98a3852cbb14bade17d"
+    },
+    {
+      "path": "src/main/resources/static/styles.css",
+      "sha256": "6baf0a7f860d72309284667b69e6e0114cf14686c53fecd978a5992e2542bc3d"
+    },
+    {
+      "path": "src/main/resources/static/index.html",
+      "sha256": "f670f75fe7dcb1e427f700f8e6541d2e320b370edfa95d023a194602a8b684fb"
+    }
+  ]
+}
