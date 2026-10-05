@@ -25,8 +25,10 @@ class LegacyDiscoveryApprovalTest {
         assertFalse(DiscoveryIdentity.allowed(p))
         assertFalse(DiscoveryIdentity.validInstitutionEvidence(p))
         assertNull(DiscoveryIdentity.institutionEvidence(p, "ORCID"))
-        assertFalse(scope.matchesEsTarget(base))
-        assertFalse(scope.matchesExpert(base))
+        // I-1：发现准入不再由 scope 判定（迁移到统一 selector 消费持久准入结论）；
+        // scope 只判显式条件，故未获历史认可的 base 同样满足显式条件。
+        assertTrue(scope.matchesEsTarget(base))
+        assertTrue(scope.matchesExpert(base))
     }
     @Test fun `approval digest matches Python unicode null receipt`() {
         assertEquals("60ad8ad4b58e121f4ed7deb6bdd7cbe774a69cda32318057e2f0c125b8c537ac", DiscoveryIdentity.legacyApprovalDigest(base))
@@ -37,7 +39,8 @@ class LegacyDiscoveryApprovalTest {
             p.copy(familyNames=""), p.copy(institution="Other"), p.copy(country="France"),
             p.copy(institutionType="company")).forEach {
             assertFalse(DiscoveryIdentity.legacyOutreachApproved(it))
-            assertFalse(scope.matchesEsTarget(it))
+            // I-1：身份绑定失效只影响身份结论；scope 不再用发现/学术门禁对显式条件命中的档案二次拒绝。
+            assertTrue(scope.matchesEsTarget(it))
         }
         assertTrue(DiscoveryIdentity.legacyOutreachApproved(p.copy(email=" A@EXAMPLE.ORG ")))
     }
@@ -46,15 +49,17 @@ class LegacyDiscoveryApprovalTest {
         listOf(proof.copy(status="VERIFIED"), proof.copy(version=0), proof.copy(source="USER"),
             proof.copy(evidenceHash="0".repeat(64)), proof.copy(email="other@example.org"),
             proof.copy(givenNames="Other")).forEach {
-            assertFalse(scope.matchesEsTarget(p.copy(identityVerification=it)))
+            // I-1：收据无效只影响身份结论；scope 不再据此拒绝对显式条件命中的档案。
+            assertTrue(scope.matchesEsTarget(p.copy(identityVerification=it)))
         }
         assertFalse(DiscoveryIdentity.legacyOutreachApproved(approve(base.copy(email=""))))
     }
     @Test fun `approval retains institution country qualification and visible filters`() {
         listOf(base.copy(institution=""), base.copy(country=null), base.copy(country="Not a country"),
             base.copy(filterResult="REJECTED"), base.copy(filterResult=null)).forEach {
-            assertFalse(scope.matchesExpert(approve(it)))
-            assertFalse(scope.matchesEsTarget(approve(it)))
+            // I-1：机构/国家/合格值不再由 scope 复核（准入与显式条件分离）；显式条件仍命中。
+            assertTrue(scope.matchesExpert(approve(it)))
+            assertTrue(scope.matchesEsTarget(approve(it)))
         }
         val p=approve()
         assertFalse(scope.copy(expertTypes=emptyList()).matchesExpert(p))

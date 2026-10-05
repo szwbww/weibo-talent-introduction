@@ -137,7 +137,7 @@ class MailOpenTrackingPersistenceTest {
             listOf("PRODUCTION_RND"))).thenReturn(ExpertSearchResult(experts = listOf(expert), totalHits = 1))
         Mockito.`when`(assignment.selectAccount(anyValue(expert), anyValue(mutableListOf()),
             eqValue(false), anyValue(SenderBindingStock.EMPTY))).thenReturn(account)
-        Mockito.`when`(composer.compose(eqValue("sender"), anyValue(expert), Mockito.isNull()))
+        Mockito.`when`(composer.compose(eqValue("sender"), anyValue(expert), Mockito.isNull(), Mockito.anyBoolean()))
             .thenReturn(ComposedMail(contact.expertEmail, "Introduction", "Original body"))
         Mockito.`when`(delivery.send(eqValue(account), anyValue(ComposedMail("", "", ""))))
             .thenReturn(DeliveredMail("msg", "SENT", openTrackingId = 55L))
@@ -218,7 +218,7 @@ class MailOpenTrackingPersistenceTest {
         }
         Mockito.`when`(binding.bindingFieldsFor(Mockito.anyString(), anyValue(java.time.LocalDateTime.now())))
             .thenReturn("sender" to java.time.LocalDateTime.now())
-        Mockito.`when`(composer.compose(eqValue("sender"), anyValue(expert), Mockito.isNull()))
+        Mockito.`when`(composer.compose(eqValue("sender"), anyValue(expert), Mockito.isNull(), Mockito.anyBoolean()))
             .thenReturn(ComposedMail(contact.expertEmail, "Introduction", "Original body"))
         Mockito.`when`(attempts.save(Mockito.any(MailSendAttempt::class.java))).thenAnswer {
             it.getArgument<MailSendAttempt>(0).copy(id = 3L)

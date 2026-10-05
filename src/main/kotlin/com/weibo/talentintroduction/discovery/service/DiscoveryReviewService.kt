@@ -1093,7 +1093,15 @@ class DiscoveryReviewService(
         source: Map<String, Any?>,
         decision: String
     ) {
-        val sync = projectApprovedCandidate(docId, source, decision)
+        val sync = try {
+            projectApprovedCandidate(docId, source, decision)
+        } catch (ex: Exception) {
+            // 04（I-2）回归修复：投影抛错绝不能把已 APPLIED 的审核项翻成 FAILED
+            // （runApplyWorker 的 catch 会调用 markItemFailed 覆盖 APPLIED）。投影失败只以
+            // 独立错误码记录，供 retryBatchCandidateSync 补投影 —— 与本节 KDoc 的承诺一致。
+            markCandidateSyncFailed(itemId, CANDIDATE_SYNC_FAILED)
+            return
+        }
         if (sync.errorCode != null) markCandidateSyncFailed(itemId, sync.errorCode) else clearCandidateSyncFailure(itemId)
     }
 
