@@ -99,9 +99,17 @@ An explicit human-originated `$execute-p /Users/lukai/IdeaProjects/weibo-talent-
    - `node --test src/test/js/*.test.js`
    - `DB_URL="jdbc:mysql://localhost:3306/talent_introduction_fastp?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true" DB_USERNAME=root DB_PASSWORD=root JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home PATH=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home/bin:$PATH mvn -DmysqlIt=true -Dtest=DiscoveryReviewRepositoryIT test`
    - `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home PATH=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home/bin:$PATH mvn test`
-2. After all repair tasks and required commands pass, exactly one local product commit before emitting `READY_FOR_VERIFICATION`, staging only the Authorized Files. Product commit subject: `fix(discovery-review): align target totals and interrupted review state`.
+2. After both repair tasks, the focused JVM tests, full Node suite, and isolated repository IT pass, and all required commands have run freshly, create exactly one local product commit before emitting `READY_FOR_VERIFICATION`, staging only the Authorized Files. The full Maven result must be reported without suppression: the already excluded 19 `ExpertContactLocationServiceTest` timezone errors and the specifically observed `RestTemplateConfigTest.kt:295` deadline-versus-connection-reset failure may remain for independent verification. This permits handoff only; it does not establish that the HTTP failure is baseline/transient or waive its disposition. Other failures still block handoff. Product commit subject: `fix(discovery-review): align target totals and interrupted review state`.
 3. Append `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master/docs/plans/review/discovery-review-master/repair-execution.md` with the exact approval source, repair identity, pre/post code SHAs, changed files, commands, deviations, executor identity when exposed, and clean-state evidence.
 4. Exactly one docs-only evidence commit containing only that execution handoff. Evidence commit subject: `docs(review-fast-p): record repair execution`.
 5. Return to the already authorized aggregate re-review in the same task when the human invocation requests it: `$review-fast-p docs/plans/fast/2026-10-04-discovery-review-master/human-review-handoff.md`, using the committed repair-execution handoff.
 
 This authorizes no extra files, amend, history rewrite, push, merge, deployment, or product repair beyond this plan.
+
+## Human-Approved Amendment
+
+- Approval source: the human asked for the smallest scope, explicitly instructed not to invoke `review-fast-p`, and then approved continuation with “好的 继续” after the assistant restated the boundary: amend the commit prerequisite, commit only the six authorized files, and update execution evidence.
+- Only the commit/handoff prerequisite changes. R-1/R-2 acceptance, required commands, product-file scope, D1 and all unchanged contracts remain intact.
+- The 19 timezone errors remain excluded. The named HTTP/deadline failure remains unresolved for independent verification; it is not accepted as harmless, baseline, or intermittent. No out-of-scope product fix is authorized.
+- Record this amendment in a separate plan-only documentation commit, then create the specified six-file product commit and one report-only evidence commit for this amended execution epoch. Preserve the previous blocked report/commit as historical evidence; do not amend or rewrite history.
+- Stop at `READY_FOR_VERIFICATION`. Do not invoke `review-fast-p`, `verify-p`, or aggregate re-review in this task.
