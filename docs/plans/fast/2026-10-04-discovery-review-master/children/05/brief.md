@@ -2,8 +2,8 @@
 
 ## 身份与边界
 
-- Master plan（批准版，字节冻结）：`docs/plans/2026-10-04/discovery-review-master.md`，identity `commit:cf107940fb4414c4919a0d0ac6f605c6ad1ed0cb`（A4 修正后）。
-- 本 child 批准计划（完整合同，必须先通读）：`docs/plans/2026-10-04/discovery-review-05-explicit-send.md`，identity `commit:cf107940fb4414c4919a0d0ac6f605c6ad1ed0cb`（A3/A4 修正后版本）。全部章节逐条生效；本 brief 摘要与计划原文冲突时以计划原文为准。
+- Master plan（批准版，字节冻结）：`docs/plans/2026-10-04/discovery-review-master.md`，identity `commit:54ddacf3335a200553794575511b1e6659d22dca`（A6 修正后）。
+- 本 child 批准计划（完整合同，必须先通读）：`docs/plans/2026-10-04/discovery-review-05-explicit-send.md`，identity `commit:54ddacf3335a200553794575511b1e6659d22dca`（A3/A4/A5/A6 修正后版本）。全部章节逐条生效；本 brief 摘要与计划原文冲突时以计划原文为准。
 - Worktree：`/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master`；branch `fast/2026-10-04-discovery-review-master`；`child_base_sha = 08f5bd5421333447f9173d34fad1c55ac43c3ba5`（= child 04 code head）。
 - 依赖：01–04。下游：06（前端显示准入计数与模板开关文案；显式条件与预估口径）。
 - 关键范围事实（master 计划表与自检）：**D1（历史发送政策）未定案。本子计划可开发统一计算能力；不得启用发送切换，不得声称"所有过滤已清零"。** 现行发送分支中的退订、历史已发、账号绑定、永久失败、材料提醒无 contact、旧 cron 无页面快照等 D1 项：在 D1 定案前保留为待决冲突，不得删除、不得改名成"技术限制"、不得静默扩权（计划 5.6）。
@@ -13,7 +13,7 @@
 
 ## 全局约束
 
-1. 只允许修改「Authorized Files」表内 12 个文件；不得新建白名单外文件。其余 Kotlin/SQL/迁移/前端/文档全部只读。
+1. 只允许修改「Authorized Files」表内 16 个文件；不得新建白名单外文件。其余 Kotlin/SQL/迁移/前端/文档全部只读。
 2. 不得修改 `docs/plans/**` 内的计划与其他证据；本 child 唯一可写非产品文件是执行报告 `docs/plans/fast/2026-10-04-discovery-review-master/children/05/execution.md`。fast-p 报告不进入产品提交（控制方单独提交）。
 3. 不得 push、merge、rebase、squash、amend、reset；不得改写已有提交。产品代码只提交一次：`feat(fast-p): implement 05`。
 4. 计划与代码冲突、需要白名单外文件、需要新行为或需要修订计划：返回 `PLAN_CONFLICT` / `BLOCKED`，不得自行扩范围或改计划。
@@ -25,9 +25,11 @@
 10. 运行期结果里每个排除必须对应准入结论、现有显式条件或用户明确认可的 D1 政策；剩余 D1 分支保留并在报告中逐条列出（对应计划 5.6 与主计划 I-7）。
 11. 人工预授权（2026-10-04，适用 04–06）：若既有测试的**精确计数/集合断言**仅因本计划合法新增/变更的枚举、目录或 taskType 条目而失败，你可以在本 child 内对该测试文件做**最小重同步**（只改计数/集合/样例字面量；不弱化、不删除断言、不改无关语义），并在执行报告中逐条列出文件与旧/新断言；控制器据此记录 amendment 行并同步主计划文件数上限。超出该类别（行为断言、产品语义、其他文件）仍必须返回 PLAN_CONFLICT。
 
-## Authorized Files（12）
+## Authorized Files（16）
 
 A3 修正（人工批准 2026-10-04）：新增 #11 `BatchSendControlService.kt`（启动期模板版本/过期预览令牌校验；请求快照信息写 request_payload）与 #12 `MailComposeTemplateService.kt`（按内存模板内容快照渲染的 seam，运行中模板变化不混用）；并在已授权 `ManualInitialOutreachService.kt` 的预览响应 DTO 内补齐准入计数（准入通过/待审核/显式条件排除/本次目标）与逐人 reasonHits/filterKeys（06 数据源）。
+
+A5 修正（人工批准 2026-10-04，epoch 3 范围）：新增 #13 `MailOpenTrackingPersistenceTest.kt`（compose 第 4 默认参数 → 补 Mockito matcher，2E）、#14 `LegacyDiscoveryApprovalTest.kt`（按新准入契约改写 4 条过时断言）、#15 `DiscoveryReviewService.kt` / #16 `DiscoveryReviewRepository.kt`（修复 child 04 回归：03 的 DiscoveryReviewAllPagesTest 5F，自 08f5bd5 起红）。修复只许最小化：不移除仍有效的断言、不改审核语义、不做无关重构。
 
 | # | 精确路径 | 改动 |
 |---|---|---|
@@ -36,6 +38,10 @@ A3 修正（人工批准 2026-10-04）：新增 #11 `BatchSendControlService.kt`
 | 3 | `src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt` | 预估/两循环/重试接入统一 selector；A3：预览响应 DTO 补齐准入计数与逐人原因 key |
 | 11 | `src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendControlService.kt` | A3：启动期模板版本/过期预览令牌校验；请求快照信息写 request_payload |
 | 12 | `src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt` | A3：按内存模板内容快照渲染的 seam |
+| 13 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailOpenTrackingPersistenceTest.kt` | A5：Mockito matcher 补齐（最小修） |
+| 14 | `src/test/kotlin/com/weibo/talentintroduction/expert/domain/LegacyDiscoveryApprovalTest.kt` | A5：4 条过时断言改写为新准入契约（最小修） |
+| 15 | `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt` | A5：修复 04 回归（AllPages 5F），不改审核语义 |
+| 16 | `src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt` | A5：同上（必要时） |
 | 4 | `src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt` | 按计划接入共用准入（如与"不得启用发送切换"冲突则返回 PLAN_CONFLICT，不得静默） |
 | 5 | `src/main/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposer.kt` | `evaluateForBatch` 共用判定 + 显式参数 `enforcePersonalizationGate`（默认 true） |
 | 6 | `src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt` | 材料批量调用显式传开关；默认保持人工行为 |
