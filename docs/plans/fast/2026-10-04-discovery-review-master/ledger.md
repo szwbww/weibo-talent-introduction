@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-04/discovery-review-master.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-10-04/discovery-review-master.md (commit 54ddacf3335a200553794575511b1e6659d22dca)
 - Amendments: A1, A2, A3, A4, A5, A6
 - Master base: e28e53fd898edd62905a0d45a6bf90396b18b1bf
@@ -10,11 +10,11 @@
 - Finalization repair parent: N/A
 - Started: 2026-10-04T20:05:00+0800
 - Current child: 06
-- Waiting role: IMPLEMENTER
-- Agent attempt: 1
-- Last agent error: opencode-go/deepseek-v4.1-flash getaddrinfo ENOTFOUND opencode.ai（child 06 IMPLEMENTER dispatch 失败，job ImplDiscoveryReview06 无产物；code head 保持 9291584332fd6b7499f8da263365ad199ee96954；action=RETRY，2026-10-05T16:52）
-- Pause reason: N/A
-- Resume from: N/A
+- Waiting role: N/A
+- Agent attempt: 0
+- Last agent error: N/A
+- Pause reason: child 06 I-1 要求区分 UNINITIALIZED，但真实列表 DTO 丢弃 admission 是否存在，revision=0 也不能区分；需要人工批准后端 API/过滤/回归测试扩权或明确修订 I-1。六文件前端实现保留未提交，独立核验未开始。
+- Resume from: 180d88f933bb643621789d3fe64013cc98804611
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
@@ -24,7 +24,7 @@
 | 03 | docs/plans/2026-10-04/discovery-review-03-all-pages.md | commit:8853573efcfc82a84d75264a53923709e94b4702 | 02 | 2 | LIGHT_PASS_WITH_NOTES | df9cad44ea77f37ebdb0e4af1b2d555573b6ffe5 | 6043a678fe7736d133c9b2f25c1e139ad1130985 | 0 | — | 6043a678fe7736d133c9b2f25c1e139ad1130985 | 71572fee009b621203645cd75dbd970aa69d8e48 | 9 授权文件（A1/A2 人工修正）；写者 ImplDiscoveryReview03E2；核实者 VerifyDiscoveryReview03 LIGHT_PASS_WITH_NOTES（O-1 共享库漂移 RECORD_ONLY；O-2 derivePhase 无 INTERRUPTED 信息项）；epoch 1 PLAN_CONFLICT 见 children/03/pause.md |
 | 04 | docs/plans/2026-10-04/discovery-review-04-admission-writes.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | 01,02,03 | 1 | LIGHT_PASS_WITH_NOTES | 6043a678fe7736d133c9b2f25c1e139ad1130985 | 08f5bd5421333447f9173d34fad1c55ac43c3ba5 | 0 | — | 08f5bd5421333447f9173d34fad1c55ac43c3ba5 | 682346e2cd8e0a23425e522c6a5b3b202a903188 | 10 授权文件；写者首轮 BLOCKED 未提交→二轮 ImplDiscoveryReview04R 完成；核实者 VerifyDiscoveryReview04 LIGHT_PASS_WITH_NOTES（O-1 信息项）；05 epoch2 复验发现该 child 引入回归：03 的 DiscoveryReviewAllPagesTest 5F 自 08f5bd5 起红（因果在 DiscoveryReviewService.kt），已并入 05 epoch 3 修复（A5） |
 | 05 | docs/plans/2026-10-04/discovery-review-05-explicit-send.md | commit:54ddacf3335a200553794575511b1e6659d22dca | 01,02,03,04 | 3 | LIGHT_PASS_WITH_NOTES | 08f5bd5421333447f9173d34fad1c55ac43c3ba5 | b699750b9a84ed56224541e3137cdf1c79f77e7e | 0 | — | b699750b9a84ed56224541e3137cdf1c79f77e7e | 424686b9c0848858db4cfe04023fa0379a07d2ad | A3/A4/A5/A6 修正后 epoch 3 完成：step5+预览 DTO+A5 三修复；全量 mvn test 4653/0F/19E（仅 baseline 既有 ExpertContactLocationServiceTest 19E，O-6）；写者 ImplDiscoveryReview05E3；核实者 VerifyDiscoveryReview05E3 LIGHT_PASS_WITH_NOTES |
-| 06 | docs/plans/2026-10-04/discovery-review-06-ui.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | 01,02,03,04,05 | 1 | PENDING | — | — | 0 | — | — | — | 依赖 01,02,03,04,05 |
+| 06 | docs/plans/2026-10-04/discovery-review-06-ui.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | 01,02,03,04,05 | 1 | PAUSED_FOR_HUMAN | b699750b9a84ed56224541e3137cdf1c79f77e7e | — | 0 | — | — | — | ImplDiscoveryReview06Resume PLAN_CONFLICT：I-1 UNINITIALIZED 缺真实 API 依据；六文件保留未提交；JS 1460/1460，浏览器隔离静态 smoke 已执行；尚无产品提交/独立核验 |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
@@ -40,6 +40,8 @@
 | Child | Role | Attempt | Error | Code head | Action |
 |---|---|---|---|---|---|
 | 06 | IMPLEMENTER | 1 | opencode-go/deepseek-v4.1-flash getaddrinfo ENOTFOUND opencode.ai（job ImplDiscoveryReview06 失败，无产物；2026-10-05T16:52） | 9291584332fd6b7499f8da263365ad199ee96954 | RETRY |
+| 06 | IMPLEMENTER | 2 | [opencode-go/deepseek-v4.1-flash] 429 Go usage limit exceeded retry-after-ms=346056000; GoUsageLimitError（ImplDiscoveryReview06R 中断，保留六文件未提交改动） | 180d88f933bb643621789d3fe64013cc98804611 | RETRY |
+| 06 | IMPLEMENTER | 0 | N/A（成功取得 ImplDiscoveryReview06Resume，当前会话默认模型；接续未提交工作） | 180d88f933bb643621789d3fe64013cc98804611 | RESUME |
 
 ## Baseline
 - 授权依据：用户 2026-10-04 以 `/fast-p docs/plans/2026-10-04/discovery-review-master.md` 显式发起本次本地执行；master 为评审稿且 D1（历史发送政策）未定案，本 run 仅执行 01–06 的确定部分，D1 与"发送切换"的实际发布不在本次范围。
