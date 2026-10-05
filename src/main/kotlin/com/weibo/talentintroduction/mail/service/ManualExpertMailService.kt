@@ -13,6 +13,7 @@ import com.weibo.talentintroduction.mail.domain.TriggeredBy
 import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
+import com.weibo.talentintroduction.template.service.ComposeTemplateSnapshot
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -52,13 +53,42 @@ class ManualExpertMailService(
     }
 
     @Transactional
-    fun sendManualMail(contactId: Long, command: ManualMailSendCommand): ManualMailSendResult {
+    fun sendManualMail(
+        contactId: Long,
+        command: ManualMailSendCommand,
+        /**
+         * I-5: 内部批量调用策略参数。默认 true 保持人工单发/旧调用逐字不变；
+         * 材料提醒批量按其快照模板门禁开关显式传入。不是前端"跳过所有限制"开关。
+         */
+        enforcePersonalizationGate: Boolean = true
+    ): ManualMailSendResult =
+        sendManualMailInternal(contactId, command, enforcePersonalizationGate, templateSnapshot = null)
+
+    /**
+     * A3 (I-4): 材料提醒批量使用**本次内存模板内容快照**渲染 —— 运行中模板被改写不会与
+     * 已冻结内容混用。除渲染来源外与 [sendManualMail] 完全同路径。
+     */
+    @Transactional
+    fun sendManualMailFromSnapshot(
+        contactId: Long,
+        command: ManualMailSendCommand,
+        enforcePersonalizationGate: Boolean,
+        templateSnapshot: ComposeTemplateSnapshot
+    ): ManualMailSendResult =
+        sendManualMailInternal(contactId, command, enforcePersonalizationGate, templateSnapshot)
+
+    private fun sendManualMailInternal(
+        contactId: Long,
+        command: ManualMailSendCommand,
+        enforcePersonalizationGate: Boolean,
+        templateSnapshot: ComposeTemplateSnapshot?
+    ): ManualMailSendResult {
         val contact = expertContactRepository.findById(contactId)
             .orElseThrow { error("Expert contact not found: $contactId") }
         require(contact.expertEmail.isNotBlank()) { "Expert email is required" }
 
         val account = resolveAccount(contact, command.senderAccountCode)
-        val composed = compose(contact, account, command)
+        val composed = compose(contact, account, command, enforcePersonalizationGate, templateSnapshot)
         personalizationGateService.requireNoPlaceholderResidue(
             composed.mail.subject,
             composed.mail.text,
@@ -183,7 +213,9 @@ class ManualExpertMailService(
     private fun compose(
         contact: ExpertContact,
         account: MailSenderAccount,
-        command: ManualMailSendCommand
+        command: ManualMailSendCommand,
+        enforcePersonalizationGate: Boolean,
+        templateSnapshot: ComposeTemplateSnapshot?
     ): ManualComposedMail {
         val optionType = try {
             ManualMailOptionType.valueOf(command.optionType.uppercase())
@@ -196,7 +228,9 @@ class ManualExpertMailService(
                 account,
                 command.optionValue.toLong(),
                 command.allowSuppressed,
-                command.sourceInboundId != null
+                command.sourceInboundId != null,
+                enforcePersonalizationGate,
+                templateSnapshot
             )
         }
     }
@@ -206,7 +240,9 @@ class ManualExpertMailService(
         account: MailSenderAccount,
         templateId: Long,
         allowSuppressed: Boolean,
-        hasSourceInbound: Boolean
+        hasSourceInbound: Boolean,
+        enforcePersonalizationGate: Boolean,
+        templateSnapshot: ComposeTemplateSnapshot?
     ): ManualComposedMail {
         val template = mailComposeTemplateService.getById(templateId)
         // 专用会议模板只经会议弹窗确认流程；普通单发列表已过滤，直接按 id
@@ -228,20 +264,23 @@ class ManualExpertMailService(
             // the pre-gate behavior so pre-existing tests keep their observable contract.
             senderVariables(account) + MailVariableService.EXPERT_KEYS.associateWith { "" }
         }
-        val rendered = mailComposeTemplateService.render(
-            templateId,
-            variables,
-            MailComposeTemplateService.variantSeedFor(contact.orcidId, contact.expertEmail)
-        )
+        val variantSeed = MailComposeTemplateService.variantSeedFor(contact.orcidId, contact.expertEmail)
+        val rendered = if (templateSnapshot != null && templateSnapshot.templateId == templateId) {
+            templateSnapshot.render(variables, variantSeed)
+        } else {
+            mailComposeTemplateService.render(templateId, variables, variantSeed)
+        }
         require(rendered.body.isNotBlank()) {
             "邮件模板正文为空：所有内容块均不可用，请检查模板配置"
         }
 
-        val requiredKeys = (mailComposeTemplateService.effectiveRequiredKeys(templateId) ?: emptyList())
-        val rawTexts = rendered.rawTexts.ifEmpty { listOf(template.subject) }
-        val gate = personalizationGateService.evaluate(rawTexts, variables, requiredKeys)
-        if (gate.blocked) {
-            throw PersonalizationGateException(gate.missingKeys)
+        if (enforcePersonalizationGate) {
+            val requiredKeys = (mailComposeTemplateService.effectiveRequiredKeys(templateId) ?: emptyList())
+            val rawTexts = rendered.rawTexts.ifEmpty { listOf(template.subject) }
+            val gate = personalizationGateService.evaluate(rawTexts, variables, requiredKeys)
+            if (gate.blocked) {
+                throw PersonalizationGateException(gate.missingKeys)
+            }
         }
 
         val isMaterialReminder = (rendered.mailType ?: "COMPOSE_TEMPLATE") == "MATERIAL_REMINDER"

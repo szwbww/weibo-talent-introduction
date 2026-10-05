@@ -2328,6 +2328,8 @@ function openTaskModal(taskType, label, btnId, options = {}) {
 
         // c4/I-2：设置面板只在 EXPERT_DISCOVERY 显示；其他任务立即隐藏并作废旧响应。
         initDiscoverySchedulePanel(taskType, capturedGeneration);
+        // c5/I-1：审核页签同样只挂 EXPERT_DISCOVERY；其他任务隐藏并作废旧响应。
+        if (typeof initDiscoveryReview === "function") initDiscoveryReview(taskType, capturedGeneration);
 
     // 启动进度轮询（每 1s）—— 连续模式改由 GET /pipeline 轮询，绝不用旧 task 记录冒充流水线状态。
     const progressTimer = pipelineMode ? null : setInterval(async () => {
@@ -2394,6 +2396,8 @@ function closeTaskModal() {
     stopBatchSendStatusPoll();
     // c4/I-2：关闭即隐藏面板并失效在途 GET/PUT（继续执行的后台任务不因此被取消/暂停）。
     resetDiscoverySchedulePanel();
+    // c5/I-3：关闭只停本弹窗轮询与在途审核请求；后台审核任务继续（不发送取消）。
+    if (typeof resetDiscoveryReviewPanel === "function") resetDiscoveryReviewPanel();
     $("#taskProgressModal").hidden = true;
     document.body.classList.remove("modal-open");
     currentTaskModal = null;
@@ -2415,6 +2419,1722 @@ function stopTaskModalPolling() {
         currentTaskModal.pipelineTimer = null;
     }
     discoveryPipelineRequestInFlight = false;
+}
+
+// ── c5（I-1～I-4 / S-1～S-3）：深度发现审核页签（采集运行 / 专家审核 / 审核记录） ──────────
+// 审核只挂 EXPERT_DISCOVERY；数量、状态、固定名单与原因全部来自 01–03 的真实接口，
+// 前端不推断资格、不做本地授权、不在浏览器保存批准、不重算可审核集合。
+// 生命周期与在途响应由 modal generation + 独立请求序号隔离（I-3）。
+const DISCOVERY_REVIEW_PATH = "/api/discovery/review";
+const DISCOVERY_REVIEW_TASK_EXECUTIONS_PATH = "/api/task-executions";
+const DISCOVERY_REVIEW_LEVEL = "RAW";
+const DISCOVERY_REVIEW_TAG = "discovered";
+const DISCOVERY_REVIEW_TIMEOUT_MS = 25000;
+const DISCOVERY_REVIEW_POLL_MS = 2000;
+const DISCOVERY_REVIEW_POLL_MAX = 150;
+const DISCOVERY_REVIEW_RECORD_SIZE = 50;
+const DISCOVERY_REVIEW_ITEM_PAGE_SIZE = 200;
+
+function discoveryReviewStatusCounts(status) {
+    return { APPLIED: Number(status.applied || 0), FAILED: Number(status.failed || 0),
+        STALE: Number(status.stale || 0), CANCELLED: Number(status.cancelled || 0),
+        READY: Number(status.pending || 0) };
+}
+const DISCOVERY_REVIEW_PAGE_SIZES = [20, 50, 100];
+const DISCOVERY_REVIEW_MISSING = "未记录";
+const DISCOVERY_REVIEW_UNPROVIDED = "未提供";
+const DISCOVERY_REVIEW_READ_FAILED = "读取失败";
+const DISCOVERY_REVIEW_ACTIONS = ["APPROVE", "HOLD", "REJECT"];
+const DISCOVERY_REVIEW_ACTION_LABELS = { APPROVE: "通过", HOLD: "暂缓", REJECT: "不通过" };
+const DISCOVERY_REVIEW_TABS = ["pipeline", "review", "history"];
+const DISCOVERY_REVIEW_SCOPE_LABELS = { SINGLE: "单人", SELECTED: "所选", PAGE: "当前页", ALL: "所有页" };
+// decision / phase / item state 的值域与后端枚举逐字一致（词义前后端一致，不新增同义词）。
+const DISCOVERY_REVIEW_DECISION_LABELS = {
+    UNINITIALIZED: "未初始化",
+    AUTO_PASSED: "自动通过",
+    NEEDS_REVIEW: "待人工审核",
+    MANUAL_APPROVED: "人工通过",
+    LEGACY_APPROVED: "历史通过",
+    HOLD: "暂缓",
+    REJECTED: "不通过"
+};
+const DISCOVERY_REVIEW_DECISION_FILTERS = [
+    { value: "", label: "全部准入结果" },
+    { value: "UNINITIALIZED", label: "未初始化" },
+    { value: "NEEDS_REVIEW", label: "待人工审核" },
+    { value: "AUTO_PASSED", label: "自动通过" },
+    { value: "MANUAL_APPROVED", label: "人工通过" },
+    { value: "LEGACY_APPROVED", label: "历史通过" },
+    { value: "HOLD", label: "暂缓" },
+    { value: "REJECTED", label: "不通过" }
+];
+const DISCOVERY_REVIEW_COUNT_GROUPS = [
+    { key: "autoPassed", subject: "自动通过", decisions: ["AUTO_PASSED"] },
+    { key: "needsReview", subject: "待人工审核", decisions: ["NEEDS_REVIEW"] },
+    { key: "manualApproved", subject: "人工 / 历史通过", decisions: ["MANUAL_APPROVED", "LEGACY_APPROVED"] },
+    { key: "held", subject: "暂缓 / 不通过", decisions: ["HOLD", "REJECTED"] }
+];
+const DISCOVERY_REVIEW_ITEM_STATE_LABELS = {
+    STAGED: "待确认",
+    READY: "已就绪",
+    APPLYING: "处理中",
+    APPLIED: "已应用",
+    STALE: "已过期",
+    FAILED: "失败",
+    CANCELLED: "已取消"
+};
+const DISCOVERY_REVIEW_PHASE_LABELS = {
+    PREPARING: "正在固定名单",
+    READY: "待确认",
+    PREPARE_FAILED: "固定名单失败",
+    APPLYING: "处理中",
+    INTERRUPTED: "已中断（仍有待处理项）",
+    APPLIED: "已完成",
+    CANCELLED: "已取消"
+};
+const DISCOVERY_REVIEW_TASK_STATUS_LABELS = {
+    RUNNING: "执行中",
+    CANCELLING: "取消中",
+    SUCCESS: "已完成",
+    COMPLETED: "已完成",
+    PARTIAL_SUCCESS: "部分成功",
+    FAILED: "失败",
+    INTERRUPTED: "已中断",
+    CANCELLED: "已取消"
+};
+
+const discoveryReviewState = {
+    taskType: null,
+    generation: 0,
+    active: false,
+    tab: "pipeline",
+    requestSeq: 0,
+    listSeq: 0,
+    countsSeq: 0,
+    prepareSeq: 0,
+    recordSeq: 0,
+    historySeq: 0,
+    pollSeq: 0,
+    page: 1,
+    pageSize: 20,
+    q: "",
+    issue: "",
+    decision: "",
+    total: 0,
+    rows: [],
+    loaded: false,
+    loading: false,
+    listError: null,
+    selected: new Set(),
+    issues: new Map(),
+    counts: null,
+    countErrors: [],
+    confirm: null,
+    pollTimer: null,
+    searchTimer: null,
+    records: [],
+    recordsLoaded: false,
+    recordsError: null,
+    recordDetails: {}
+};
+let discoveryReviewEventsBound = false;
+
+function discoveryReviewElements() {
+    return {
+        modal: $("#taskProgressModal"),
+        tabs: $("#discoveryReviewTabs"),
+        tabPipeline: $("#discoveryPipelineTab"),
+        tabReview: $("#discoveryReviewTab"),
+        tabHistory: $("#discoveryReviewHistoryTab"),
+        pipelinePane: $("#discoveryPipelinePane"),
+        reviewPane: $("#discoveryReviewPane"),
+        historyPane: $("#discoveryReviewHistoryPane"),
+        counts: $("#discoveryReviewCounts"),
+        search: $("#discoveryReviewSearch"),
+        issue: $("#discoveryReviewIssue"),
+        decision: $("#discoveryReviewDecision"),
+        pageSize: $("#discoveryReviewPageSize"),
+        approvePage: $("#discoveryReviewApprovePage"),
+        approveAll: $("#discoveryReviewApproveAll"),
+        selection: $("#discoveryReviewSelection"),
+        error: $("#discoveryReviewError"),
+        result: $("#discoveryReviewResult"),
+        selectPage: $("#discoveryReviewSelectPage"),
+        rows: $("#discoveryReviewRows"),
+        pageInfo: $("#discoveryReviewPageInfo"),
+        prev: $("#discoveryReviewPrev"),
+        next: $("#discoveryReviewNext"),
+        confirm: $("#discoveryReviewConfirm"),
+        confirmScope: $("#discoveryReviewConfirmScope"),
+        confirmReasons: $("#discoveryReviewConfirmReasons"),
+        confirmPeople: $("#discoveryReviewConfirmPeople"),
+        note: $("#discoveryReviewNote"),
+        cancelConfirm: $("#discoveryReviewCancelConfirm"),
+        commit: $("#discoveryReviewCommit")
+    };
+}
+
+/** 动态节点一律 textContent（禁止未转义 HTML）；只使用 S-2/S-3 允许的标准元素。 */
+function discoveryReviewNode(tag, className, text) {
+    const el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text != null) el.textContent = String(text);
+    return el;
+}
+
+function discoveryReviewButton(text, className, onClick, dataset) {
+    const btn = discoveryReviewNode("button", className, text);
+    btn.type = "button";
+    if (dataset && typeof btn.setAttribute === "function") {
+        Object.keys(dataset).forEach(function (key) {
+            btn.setAttribute("data-" + key.replace(/[A-Z]/g, function (m) { return "-" + m.toLowerCase(); }), dataset[key]);
+        });
+    }
+    if (typeof btn.addEventListener === "function") btn.addEventListener("click", onClick);
+    return btn;
+}
+
+function discoveryReviewCanRender(container) {
+    return container != null && typeof container.appendChild === "function";
+}
+
+/** 空值=未记录；无返回字段=未提供；数据读取失败=读取失败（三者不混为同一个破折号）。 */
+function discoveryReviewFieldText(row, key) {
+    if (row == null || typeof row !== "object") return DISCOVERY_REVIEW_READ_FAILED;
+    if (!Object.prototype.hasOwnProperty.call(row, key)) return DISCOVERY_REVIEW_UNPROVIDED;
+    const value = row[key];
+    if (value == null || (typeof value === "string" && value.trim() === "")) return DISCOVERY_REVIEW_MISSING;
+    return String(value);
+}
+
+function discoveryReviewExpertName(row) {
+    if (row == null || typeof row !== "object") return DISCOVERY_REVIEW_READ_FAILED;
+    const given = typeof row.givenNames === "string" ? row.givenNames.trim() : "";
+    const family = typeof row.familyNames === "string" ? row.familyNames.trim() : "";
+    const name = (given + " " + family).trim();
+    return name || DISCOVERY_REVIEW_MISSING;
+}
+
+function discoveryReviewReasonLine(reason) {
+    if (reason == null || typeof reason !== "object") return DISCOVERY_REVIEW_READ_FAILED;
+    const label = reason.label ? String(reason.label) : (reason.code ? String(reason.code) : DISCOVERY_REVIEW_MISSING);
+    const parts = [];
+    if (reason.field && reason.field !== "UNKNOWN") parts.push("字段 " + reason.field);
+    if (reason.observed != null && reason.observed !== "") parts.push("实际 " + reason.observed);
+    if (reason.expected != null && reason.expected !== "") parts.push("期望 " + reason.expected);
+    if (reason.sourceLocation) parts.push("来源 " + reason.sourceLocation);
+    return parts.length === 0 ? label : label + "（" + parts.join("；") + "）";
+}
+
+function discoveryReviewActionLabel(action) {
+    return DISCOVERY_REVIEW_ACTION_LABELS[action] || String(action == null ? "" : action);
+}
+
+function discoveryReviewItemStateLabel(state) {
+    return DISCOVERY_REVIEW_ITEM_STATE_LABELS[state] || String(state == null ? DISCOVERY_REVIEW_MISSING : state);
+}
+
+function discoveryReviewPhaseLabel(phase) {
+    return DISCOVERY_REVIEW_PHASE_LABELS[phase] || String(phase == null ? DISCOVERY_REVIEW_MISSING : phase);
+}
+
+function discoveryReviewTaskStatusLabel(status) {
+    return DISCOVERY_REVIEW_TASK_STATUS_LABELS[status] || String(status == null ? DISCOVERY_REVIEW_MISSING : status);
+}
+
+function discoveryReviewErrorMessage(error) {
+    if (error && error.data && error.data.message) return String(error.data.message);
+    if (error && error.message) return String(error.message);
+    return "未知原因";
+}
+
+function discoveryReviewParseSummary(raw) {
+    if (raw == null || raw === "") return null;
+    if (typeof raw === "object") return raw;
+    try { return JSON.parse(String(raw)); } catch (e) { return null; }
+}
+
+// ── 生命周期与页签（I-1 / I-3 / S-1） ──────────────────────────────────────────
+
+function discoveryReviewBumpAll() {
+    discoveryReviewState.requestSeq += 1;
+    discoveryReviewState.listSeq += 1;
+    discoveryReviewState.countsSeq += 1;
+    discoveryReviewState.prepareSeq += 1;
+    discoveryReviewState.recordSeq += 1;
+    discoveryReviewState.historySeq += 1;
+    discoveryReviewState.pollSeq += 1;
+    return discoveryReviewState.requestSeq;
+}
+
+function discoveryReviewSeqIsCurrent(seq) {
+    if (discoveryReviewState.active !== true) return false;
+    if (discoveryReviewState.requestSeq !== seq) return false;
+    if (typeof isCurrentTaskModal !== "function") return true;
+    return isCurrentTaskModal(discoveryReviewState.taskType, discoveryReviewState.generation);
+}
+
+function discoveryReviewListCurrent(seq, listSeq) {
+    return discoveryReviewSeqIsCurrent(seq) && discoveryReviewState.listSeq === listSeq;
+}
+
+function discoveryReviewCountsCurrent(seq, countsSeq) {
+    return discoveryReviewSeqIsCurrent(seq) && discoveryReviewState.countsSeq === countsSeq;
+}
+
+/**
+ * T-1/I-1/I-3：两个打开入口（PROGRESS 与 CONFIG）都调用；只有 EXPERT_DISCOVERY 显示页签，
+ * 其他任务隐藏页签、作废旧响应，并移除宽度标记（其他任务仍 700px）。
+ */
+function initDiscoveryReview(taskType, generation) {
+    const els = discoveryReviewElements();
+    if (!els.tabs || !els.pipelinePane) return;
+    const isDiscovery = taskType === DISCOVERY_TASK_TYPE;
+    discoveryReviewState.taskType = taskType;
+    discoveryReviewState.generation = generation;
+    discoveryReviewState.active = isDiscovery;
+    discoveryReviewBumpAll();
+    stopDiscoveryReviewPolling();
+    resetDiscoveryReviewTransient();
+    if (els.modal) {
+        // 仅深度发现标记触发宽度；不改既有规则，其他任务不受影响。
+        if (isDiscovery) els.modal.setAttribute("data-discovery-review", "true");
+        else els.modal.removeAttribute("data-discovery-review");
+    }
+    // S-1：其他任务 nav 隐藏、pipeline 常显；深度发现显示三页签。
+    els.tabs.hidden = !isDiscovery;
+    bindDiscoveryReviewEvents();
+    ensureDiscoveryReviewControls();
+    selectDiscoveryReviewTab("pipeline");
+}
+
+/** I-3：关闭弹窗只停本页轮询与在途请求（不取消任何后台审核任务）。 */
+function resetDiscoveryReviewPanel() {
+    discoveryReviewBumpAll();
+    stopDiscoveryReviewPolling();
+    discoveryReviewState.active = false;
+    resetDiscoveryReviewTransient();
+    const els = discoveryReviewElements();
+    if (els.modal) els.modal.removeAttribute("data-discovery-review");
+    if (els.tabs) els.tabs.hidden = true;
+    if (els.pipelinePane) els.pipelinePane.hidden = false;
+    if (els.reviewPane) els.reviewPane.hidden = true;
+    if (els.historyPane) els.historyPane.hidden = true;
+}
+
+function resetDiscoveryReviewTransient() {
+    discoveryReviewState.tab = "pipeline";
+    discoveryReviewState.page = 1;
+    discoveryReviewState.q = "";
+    discoveryReviewState.issue = "";
+    discoveryReviewState.decision = "";
+    discoveryReviewState.total = 0;
+    discoveryReviewState.rows = [];
+    discoveryReviewState.loaded = false;
+    discoveryReviewState.loading = false;
+    discoveryReviewState.listError = null;
+    discoveryReviewState.selected = new Set();
+    discoveryReviewState.counts = null;
+    discoveryReviewState.countErrors = [];
+    discoveryReviewState.confirm = null;
+    discoveryReviewState.records = [];
+    discoveryReviewState.recordsLoaded = false;
+    discoveryReviewState.recordsError = null;
+    discoveryReviewState.recordDetails = {};
+    clearTimeout(discoveryReviewState.searchTimer);
+    discoveryReviewState.searchTimer = null;
+    const els = discoveryReviewElements();
+    if (els.search) els.search.value = "";
+    if (els.decision) els.decision.value = "";
+    if (els.issue) els.issue.value = "";
+    if (els.note) els.note.value = "";
+    if (els.selectPage) els.selectPage.checked = false;
+    if (els.confirm) els.confirm.hidden = true;
+    setDiscoveryReviewError(null);
+    setDiscoveryReviewResult("");
+    renderDiscoveryReviewCounts();
+    renderDiscoveryReviewRows();
+    renderDiscoveryReviewSelection();
+    renderDiscoveryReviewPager();
+}
+
+function stopDiscoveryReviewPolling() {
+    clearTimeout(discoveryReviewState.pollTimer);
+    discoveryReviewState.pollTimer = null;
+    discoveryReviewState.pollSeq += 1;
+}
+
+function discoveryReviewTabButtons() {
+    const els = discoveryReviewElements();
+    return { pipeline: els.tabPipeline, review: els.tabReview, history: els.tabHistory };
+}
+
+function discoveryReviewPanes() {
+    const els = discoveryReviewElements();
+    return { pipeline: els.pipelinePane, review: els.reviewPane, history: els.historyPane };
+}
+
+/** S-1/I-3：唯一页签切换接缝；aria-selected/tabindex/hidden 同源同步。 */
+function selectDiscoveryReviewTab(name, options) {
+    options = options || {};
+    if (DISCOVERY_REVIEW_TABS.indexOf(name) < 0) name = "pipeline";
+    const els = discoveryReviewElements();
+    if (!discoveryReviewState.active) {
+        // 其他任务：页签隐藏、采集内容常显，审核页签永不显示。
+        if (els.tabs) els.tabs.hidden = true;
+        if (els.pipelinePane) els.pipelinePane.hidden = false;
+        if (els.reviewPane) els.reviewPane.hidden = true;
+        if (els.historyPane) els.historyPane.hidden = true;
+        return;
+    }
+    discoveryReviewBumpAll();
+    discoveryReviewState.tab = name;
+    const buttons = discoveryReviewTabButtons();
+    const panes = discoveryReviewPanes();
+    DISCOVERY_REVIEW_TABS.forEach(function (key) {
+        const btn = buttons[key];
+        const pane = panes[key];
+        const selected = key === name;
+        if (btn) {
+            btn.classList.toggle("is-active", selected);
+            if (typeof btn.setAttribute === "function") {
+                btn.setAttribute("aria-selected", selected ? "true" : "false");
+                btn.setAttribute("tabindex", selected ? "0" : "-1");
+            }
+            if (selected && options.focus === true && typeof btn.focus === "function") btn.focus();
+        }
+        if (pane) pane.hidden = !selected;
+    });
+    if (name !== "review") stopDiscoveryReviewPolling();
+    if (name === "review") {
+        ensureDiscoveryReviewData();
+        resumeDiscoveryReviewPolling();
+    } else if (name === "history") {
+        loadDiscoveryReviewRecords();
+    }
+}
+
+function discoveryReviewTabKeydown(event) {
+    if (!event) return;
+    const key = event.key;
+    const total = DISCOVERY_REVIEW_TABS.length;
+    const current = Math.max(0, DISCOVERY_REVIEW_TABS.indexOf(discoveryReviewState.tab));
+    let next = null;
+    if (key === "ArrowRight" || key === "Right") next = (current + 1) % total;
+    else if (key === "ArrowLeft" || key === "Left") next = (current - 1 + total) % total;
+    else if (key === "Home") next = 0;
+    else if (key === "End") next = total - 1;
+    else return;
+    if (typeof event.preventDefault === "function") event.preventDefault();
+    selectDiscoveryReviewTab(DISCOVERY_REVIEW_TABS[next], { focus: true });
+}
+
+function bindDiscoveryReviewEvents() {
+    if (discoveryReviewEventsBound) return;
+    const els = discoveryReviewElements();
+    if (!els.tabs || !els.pipelinePane) return;
+    discoveryReviewEventsBound = true;
+    const bind = function (el, type, handler) {
+        if (el && typeof el.addEventListener === "function") el.addEventListener(type, handler);
+    };
+    bind(els.tabPipeline, "click", function () { selectDiscoveryReviewTab("pipeline"); });
+    bind(els.tabReview, "click", function () { selectDiscoveryReviewTab("review"); });
+    bind(els.tabHistory, "click", function () { selectDiscoveryReviewTab("history"); });
+    bind(els.tabPipeline, "keydown", discoveryReviewTabKeydown);
+    bind(els.tabReview, "keydown", discoveryReviewTabKeydown);
+    bind(els.tabHistory, "keydown", discoveryReviewTabKeydown);
+    bind(els.search, "input", function () {
+        discoveryReviewState.q = els.search && els.search.value != null ? String(els.search.value) : "";
+        invalidateDiscoveryReviewBatch("筛选条件已变化，未确认的名单快照已作废");
+        discoveryReviewState.listSeq += 1;
+        clearTimeout(discoveryReviewState.searchTimer);
+        discoveryReviewState.searchTimer = setTimeout(function () {
+            discoveryReviewState.searchTimer = null;
+            discoveryReviewApplyFilterChange();
+        }, 400);
+    });
+    bind(els.issue, "change", discoveryReviewApplyFilterChange);
+    bind(els.decision, "change", discoveryReviewApplyFilterChange);
+    bind(els.pageSize, "change", function () {
+        const size = Number(els.pageSize ? els.pageSize.value : NaN);
+        discoveryReviewState.pageSize = DISCOVERY_REVIEW_PAGE_SIZES.indexOf(size) >= 0 ? size : 20;
+        discoveryReviewState.page = 1;
+        invalidateDiscoveryReviewBatch();
+        refreshDiscoveryReviewList();
+    });
+    bind(els.selectPage, "change", function () {
+        discoveryReviewTogglePageSelection(Boolean(els.selectPage && els.selectPage.checked));
+    });
+    bind(els.approvePage, "click", function () { discoveryReviewOpenConfirm("PAGE", "APPROVE"); });
+    bind(els.approveAll, "click", function () { discoveryReviewOpenConfirm("ALL", "APPROVE"); });
+    bind(els.prev, "click", function () { discoveryReviewChangePage(-1); });
+    bind(els.next, "click", function () { discoveryReviewChangePage(1); });
+    bind(els.cancelConfirm, "click", function () { closeDiscoveryReviewConfirm(); });
+    bind(els.commit, "click", function () { discoveryReviewCommit(); });
+    bind(els.note, "input", function () {
+        if (discoveryReviewState.confirm) {
+            discoveryReviewState.confirm.note = els.note && els.note.value != null ? String(els.note.value) : "";
+            const pending = discoveryReviewState.confirm;
+            if (pending.batchKey && pending.phase === "READY") {
+                pending.batchKey = null;
+                pending.batchHash = null;
+                pending.phase = null;
+                discoveryReviewState.prepareSeq += 1;
+            }
+        }
+        discoveryReviewRenderConfirm();
+    });
+    if (typeof $$ === "function") {
+        $$("#discoveryReviewPane [data-review-action]").forEach(function (btn) {
+            const action = btn && btn.dataset ? btn.dataset.reviewAction : null;
+            if (!action || DISCOVERY_REVIEW_ACTIONS.indexOf(action) < 0) return;
+            bind(btn, "click", function () { discoveryReviewOpenConfirm("SELECTED", action); });
+        });
+    }
+}
+
+function discoveryReviewApplyFilterChange() {
+    const els = discoveryReviewElements();
+    discoveryReviewState.issue = els.issue && els.issue.value != null ? String(els.issue.value) : "";
+    discoveryReviewState.decision = els.decision && els.decision.value != null ? String(els.decision.value) : "";
+    discoveryReviewState.page = 1;
+    discoveryReviewState.selected.clear();
+    invalidateDiscoveryReviewBatch("筛选条件已变化，未确认的名单快照已作废");
+    refreshDiscoveryReviewList();
+}
+
+function ensureDiscoveryReviewControls() {
+    const els = discoveryReviewElements();
+    if (els.decision && els.decision.discoveryReviewBound !== true && typeof document.createElement === "function") {
+        els.decision.discoveryReviewBound = true;
+        DISCOVERY_REVIEW_DECISION_FILTERS.forEach(function (opt) {
+            const option = document.createElement("option");
+            option.value = opt.value;
+            option.textContent = opt.label;
+            if (typeof els.decision.appendChild === "function") els.decision.appendChild(option);
+        });
+        els.decision.value = "";
+    }
+    renderDiscoveryReviewIssueOptions();
+    if (els.pageSize) els.pageSize.value = String(discoveryReviewState.pageSize);
+}
+
+function renderDiscoveryReviewIssueOptions() {
+    const els = discoveryReviewElements();
+    const select = els.issue;
+    if (!select || typeof document.createElement !== "function") return;
+    const current = discoveryReviewState.issue || "";
+    const options = [{ value: "", label: "全部校验问题" }, { value: "ANY", label: "有校验问题" }];
+    Array.from(discoveryReviewState.issues.entries())
+        .sort(function (a, b) { return a[0] < b[0] ? -1 : (a[0] > b[0] ? 1 : 0); })
+        .forEach(function (entry) { options.push({ value: entry[0], label: entry[1] }); });
+    if (typeof select.innerHTML === "string") select.innerHTML = "";
+    options.forEach(function (opt) {
+        const option = document.createElement("option");
+        option.value = opt.value;
+        option.textContent = opt.label;
+        if (typeof select.appendChild === "function") select.appendChild(option);
+    });
+    const stillThere = options.some(function (opt) { return opt.value === current; });
+    select.value = stillThere ? current : "";
+    if (!stillThere) discoveryReviewState.issue = "";
+}
+
+function rememberDiscoveryReviewIssues(rows) {
+    (rows || []).forEach(function (row) {
+        const reasons = row && Array.isArray(row.automaticReasons) ? row.automaticReasons : [];
+        reasons.forEach(function (reason) {
+            if (reason && reason.code) {
+                discoveryReviewState.issues.set(String(reason.code), String(reason.label || reason.code));
+            }
+        });
+    });
+}
+
+// ── 数量（I-1）：全部来自 API 的 decision 过滤 total ──────────────────────────
+
+async function discoveryReviewFetchDecisionTotal(decision, seq, countsSeq) {
+    const params = new URLSearchParams();
+    params.set("level", DISCOVERY_REVIEW_LEVEL);
+    params.set("tag", DISCOVERY_REVIEW_TAG);
+    params.set("size", "100");
+    params.set("decision", decision);
+    let from = 0;
+    let initializedCount = 0;
+    while (true) {
+        params.set("from", String(from));
+        const page = await api(DISCOVERY_REVIEW_PATH + "/experts?" + params.toString(), { timeoutMs: DISCOVERY_REVIEW_TIMEOUT_MS });
+        if (!discoveryReviewCountsCurrent(seq, countsSeq)) return null;
+        const rows = page && Array.isArray(page.experts) ? page.experts : [];
+        initializedCount += rows.filter(function (row) { return row.initialized === true; }).length;
+        from += rows.length;
+        if (from >= Number(page && page.total || 0)) return initializedCount;
+        if (rows.length === 0) throw new Error("准入数量分页不完整");
+    }
+}
+
+async function discoveryReviewLoadCounts(seq, countsSeq) {
+    const groups = DISCOVERY_REVIEW_COUNT_GROUPS;
+    const results = await Promise.all(groups.map(function (group) {
+        return Promise.all(group.decisions.map(function (decision) {
+            return discoveryReviewFetchDecisionTotal(decision, seq, countsSeq).catch(function () { return undefined; });
+        }));
+    }));
+    if (!discoveryReviewCountsCurrent(seq, countsSeq)) return;
+    const counts = {};
+    const errors = [];
+    groups.forEach(function (group, index) {
+        const parts = results[index];
+        if (parts.some(function (value) { return value === undefined || value === null; })) {
+            counts[group.key] = null;
+            errors.push(group.subject);
+            return;
+        }
+        counts[group.key] = parts.reduce(function (sum, value) { return sum + value; }, 0);
+    });
+    discoveryReviewState.counts = counts;
+    discoveryReviewState.countErrors = errors;
+    renderDiscoveryReviewCounts();
+    if (errors.length > 0) {
+        setDiscoveryReviewError("部分准入数量读取失败：" + errors.join("、") + "；列表仍以服务端结果为准");
+    }
+}
+
+function refreshDiscoveryReviewCounts() {
+    const seq = discoveryReviewState.requestSeq;
+    const countsSeq = ++discoveryReviewState.countsSeq;
+    discoveryReviewLoadCounts(seq, countsSeq);
+}
+
+function discoveryReviewCountNodes() {
+    const els = discoveryReviewElements();
+    const container = els.counts;
+    if (!container || typeof container.querySelectorAll !== "function") return [];
+    return Array.prototype.slice.call(container.querySelectorAll("strong"));
+}
+
+function renderDiscoveryReviewCounts() {
+    const nodes = discoveryReviewCountNodes();
+    if (nodes.length === 0) return;
+    DISCOVERY_REVIEW_COUNT_GROUPS.forEach(function (group, index) {
+        const node = nodes[index];
+        if (!node) return;
+        const value = discoveryReviewState.counts ? discoveryReviewState.counts[group.key] : null;
+        node.textContent = value == null ? "—" : String(value);
+    });
+}
+
+// ── 列表、选择与分页（I-2 / S-2） ────────────────────────────────────────────
+
+function discoveryReviewListPath() {
+    const params = new URLSearchParams();
+    params.set("level", DISCOVERY_REVIEW_LEVEL);
+    params.set("tag", DISCOVERY_REVIEW_TAG);
+    params.set("from", String((discoveryReviewState.page - 1) * discoveryReviewState.pageSize));
+    params.set("size", String(discoveryReviewState.pageSize));
+    if (discoveryReviewState.q) params.set("q", discoveryReviewState.q);
+    if (discoveryReviewState.issue) params.set("issue", discoveryReviewState.issue);
+    if (discoveryReviewState.decision) params.set("decision", discoveryReviewState.decision);
+    return DISCOVERY_REVIEW_PATH + "/experts?" + params.toString();
+}
+
+async function discoveryReviewLoadList(seq, listSeq) {
+    discoveryReviewState.loading = true;
+    renderDiscoveryReviewRows();
+    let page;
+    try {
+        page = await api(discoveryReviewListPath(), { timeoutMs: DISCOVERY_REVIEW_TIMEOUT_MS });
+    } catch (error) {
+        if (!discoveryReviewListCurrent(seq, listSeq)) return;
+        discoveryReviewState.loading = false;
+        discoveryReviewState.loaded = true;
+        discoveryReviewState.listError = discoveryReviewErrorMessage(error);
+        setDiscoveryReviewError("审核列表读取失败：" + discoveryReviewState.listError);
+        renderDiscoveryReviewRows();
+        renderDiscoveryReviewSelection();
+        renderDiscoveryReviewPager();
+        return;
+    }
+    if (!discoveryReviewListCurrent(seq, listSeq)) return;
+    discoveryReviewState.loading = false;
+    discoveryReviewState.loaded = true;
+    discoveryReviewState.listError = null;
+    discoveryReviewState.rows = Array.isArray(page && page.experts) ? page.experts : [];
+    discoveryReviewState.total = Number(page && page.total != null ? page.total : 0);
+    rememberDiscoveryReviewIssues(discoveryReviewState.rows);
+    setDiscoveryReviewError(null);
+    renderDiscoveryReviewIssueOptions();
+    renderDiscoveryReviewRows();
+    renderDiscoveryReviewSelection();
+    renderDiscoveryReviewPager();
+}
+
+function refreshDiscoveryReviewList() {
+    const seq = discoveryReviewState.requestSeq;
+    const listSeq = ++discoveryReviewState.listSeq;
+    discoveryReviewLoadList(seq, listSeq);
+}
+
+function ensureDiscoveryReviewData() {
+    const seq = discoveryReviewBumpAll();
+    discoveryReviewState.loading = true;
+    discoveryReviewState.loaded = false;
+    renderDiscoveryReviewRows();
+    renderDiscoveryReviewCounts();
+    discoveryReviewLoadCounts(seq, discoveryReviewState.countsSeq);
+    discoveryReviewLoadList(seq, discoveryReviewState.listSeq);
+}
+
+function discoveryReviewReferenceRows() {
+    return discoveryReviewState.rows.filter(function (row) { return row != null && typeof row === "object"; });
+}
+
+function discoveryReviewReviewableRows() {
+    return discoveryReviewReferenceRows().filter(function (row) { return row.decision === "NEEDS_REVIEW"; });
+}
+
+function discoveryReviewToggleSelection(docId, checked) {
+    if (!docId) return;
+    if (checked) discoveryReviewState.selected.add(String(docId));
+    else discoveryReviewState.selected.delete(String(docId));
+    invalidateDiscoveryReviewBatch();
+    renderDiscoveryReviewSelection();
+}
+
+function discoveryReviewTogglePageSelection(checked) {
+    discoveryReviewReviewableRows().forEach(function (row) {
+        if (row.docId == null) return;
+        if (checked) discoveryReviewState.selected.add(String(row.docId));
+        else discoveryReviewState.selected.delete(String(row.docId));
+    });
+    invalidateDiscoveryReviewBatch();
+    renderDiscoveryReviewRows();
+    renderDiscoveryReviewSelection();
+}
+
+function discoveryReviewChangePage(delta) {
+    const pages = Math.max(1, Math.ceil(discoveryReviewState.total / discoveryReviewState.pageSize));
+    const next = Math.min(pages, Math.max(1, discoveryReviewState.page + delta));
+    if (next === discoveryReviewState.page) return;
+    discoveryReviewState.page = next;
+    invalidateDiscoveryReviewBatch();
+    refreshDiscoveryReviewList();
+}
+
+function discoveryReviewStatusRow(text) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.setAttribute("colspan", "7");
+    td.textContent = String(text);
+    tr.appendChild(td);
+    return tr;
+}
+
+function renderDiscoveryReviewRows() {
+    const els = discoveryReviewElements();
+    const tbody = els.rows;
+    if (!discoveryReviewCanRender(tbody)) return;
+    tbody.innerHTML = "";
+    if (discoveryReviewState.loading) {
+        tbody.appendChild(discoveryReviewStatusRow("加载中…"));
+        return;
+    }
+    if (!discoveryReviewState.loaded) {
+        tbody.appendChild(discoveryReviewStatusRow("尚未加载，切换到专家审核后加载"));
+        return;
+    }
+    if (discoveryReviewState.rows.length === 0) {
+        tbody.appendChild(discoveryReviewStatusRow(discoveryReviewState.listError
+            ? "加载失败：" + discoveryReviewState.listError
+            : "没有符合条件的专家"));
+        return;
+    }
+    discoveryReviewState.rows.forEach(function (row) {
+        tbody.appendChild(buildDiscoveryReviewRow(row));
+    });
+}
+
+function buildDiscoveryReviewRow(row) {
+    const docId = row && row.docId != null ? String(row.docId) : "";
+    const reviewable = row != null && row.decision === "NEEDS_REVIEW";
+    const tr = document.createElement("tr");
+
+    // 1. 选择（只有待人工审核可勾选）
+    const tdSelect = document.createElement("td");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = reviewable && discoveryReviewState.selected.has(docId);
+    checkbox.disabled = !reviewable;
+    if (typeof checkbox.setAttribute === "function") {
+        checkbox.setAttribute("aria-label", "选择审核 " + discoveryReviewExpertName(row));
+    }
+    checkbox.addEventListener("change", function () {
+        discoveryReviewToggleSelection(docId, checkbox.checked === true);
+    });
+    tdSelect.appendChild(checkbox);
+    tr.appendChild(tdSelect);
+
+    // 2. 专家 / 邮箱
+    const tdExpert = document.createElement("td");
+    const name = document.createElement("strong");
+    name.textContent = discoveryReviewExpertName(row);
+    tdExpert.appendChild(name);
+    tdExpert.appendChild(discoveryReviewNode("span", null, "邮箱 " + discoveryReviewFieldText(row, "email")));
+    tr.appendChild(tdExpert);
+
+    // 3. 机构 / 所在国家
+    const tdInstitution = document.createElement("td");
+    tdInstitution.appendChild(discoveryReviewNode("span", null, "机构 " + discoveryReviewFieldText(row, "institution")));
+    tdInstitution.appendChild(discoveryReviewNode("span", null, "国家 " + discoveryReviewFieldText(row, "country")));
+    tr.appendChild(tdInstitution);
+
+    // 4. 研究方向 / 学术指标
+    const tdResearch = document.createElement("td");
+    tdResearch.appendChild(discoveryReviewNode("span", null, "研究方向 " + discoveryReviewFieldText(row, "researchFields")));
+    tdResearch.appendChild(discoveryReviewNode("span", null, "学科分类 " + discoveryReviewFieldText(row, "disciplineCategory")));
+    tr.appendChild(tdResearch);
+
+    // 5. 校验问题（自动阻断原因，证据在上方 details）
+    const tdIssues = document.createElement("td");
+    const reasons = row && Array.isArray(row.automaticReasons) ? row.automaticReasons : null;
+    if (reasons == null) {
+        tdIssues.appendChild(discoveryReviewNode("p", null, DISCOVERY_REVIEW_READ_FAILED));
+    } else if (reasons.length === 0) {
+        tdIssues.appendChild(discoveryReviewNode("p", null, "无自动阻断原因"));
+    } else {
+        reasons.forEach(function (reason) {
+            tdIssues.appendChild(discoveryReviewNode("p", null, discoveryReviewReasonLine(reason)));
+        });
+    }
+    tr.appendChild(tdIssues);
+
+    // 6. 准入结果 + 证据与原因
+    const tdDecision = document.createElement("td");
+    const decision = row && row.initialized === false ? "UNINITIALIZED"
+        : (row && row.decision ? String(row.decision) : "");
+    const stateSpan = discoveryReviewNode("span", "dr-state",
+        DISCOVERY_REVIEW_DECISION_LABELS[decision] || decision || DISCOVERY_REVIEW_MISSING);
+    if (decision && typeof stateSpan.setAttribute === "function") stateSpan.setAttribute("data-state", decision);
+    tdDecision.appendChild(stateSpan);
+    if (row && row.identityChanged === true) {
+        tdDecision.appendChild(discoveryReviewNode("p", null, "身份已变化，原审核不适用"));
+    }
+    if (row && row.addressWarning) {
+        tdDecision.appendChild(discoveryReviewNode("p", null, "邮箱提示：" + row.addressWarning));
+    }
+    if (row && row.reviewedActor) {
+        tdDecision.appendChild(discoveryReviewNode("p", null, "审核人 " + row.reviewedActor
+            + (row.reviewedAt ? " · " + row.reviewedAt : "")));
+    }
+    const details = document.createElement("details");
+    details.appendChild(discoveryReviewNode("summary", null, "证据与原因"));
+    const evidence = document.createElement("div");
+    evidence.appendChild(discoveryReviewNode("p", null,
+        "层级 " + discoveryReviewFieldText(row, "level") + " · ORCID " + discoveryReviewFieldText(row, "orcidId")));
+    evidence.appendChild(discoveryReviewNode("p", null,
+        "机构证据 " + discoveryReviewFieldText(row, "institutionEvidence")
+        + " · 过滤结果 " + discoveryReviewFieldText(row, "filterResult")));
+    const hints = row && Array.isArray(row.automaticHints) ? row.automaticHints : [];
+    evidence.appendChild(discoveryReviewNode("p", null, hints.length === 0
+        ? "提示：无"
+        : "提示：" + hints.map(function (hint) { return discoveryReviewReasonLine(hint); }).join("；")));
+    const tags = row && Array.isArray(row.tags) && row.tags.length ? row.tags.join("、") : DISCOVERY_REVIEW_MISSING;
+    evidence.appendChild(discoveryReviewNode("p", null, "标签 " + tags));
+    const historyHolder = document.createElement("div");
+    evidence.appendChild(discoveryReviewButton("审核历史", "button small secondary", function () {
+        loadDiscoveryReviewExpertHistory(docId, historyHolder);
+    }));
+    evidence.appendChild(historyHolder);
+    details.appendChild(evidence);
+    tdDecision.appendChild(details);
+    tr.appendChild(tdDecision);
+
+    // 7. 操作（单个审核：与所选/当前页/所有页共用确认框）
+    const tdActions = document.createElement("td");
+    DISCOVERY_REVIEW_ACTIONS.forEach(function (action) {
+        const btn = discoveryReviewButton(discoveryReviewActionLabel(action), "button small secondary", function () {
+            discoveryReviewOpenConfirm("SINGLE", action, docId);
+        });
+        btn.disabled = !reviewable;
+        tdActions.appendChild(btn);
+    });
+    tr.appendChild(tdActions);
+
+    return tr;
+}
+
+function renderDiscoveryReviewSelection() {
+    const els = discoveryReviewElements();
+    if (els.selection) els.selection.textContent = "已选择 " + discoveryReviewState.selected.size + " 人";
+    const reviewable = discoveryReviewReviewableRows();
+    if (els.selectPage) {
+        els.selectPage.checked = reviewable.length > 0 && reviewable.every(function (row) {
+            return row.docId != null && discoveryReviewState.selected.has(String(row.docId));
+        });
+        els.selectPage.disabled = reviewable.length === 0;
+    }
+    if (typeof $$ === "function") {
+        const selectedCount = discoveryReviewState.selected.size;
+        $$("#discoveryReviewPane [data-review-action]").forEach(function (btn) {
+            if (btn) btn.disabled = selectedCount === 0;
+        });
+    }
+    if (els.approvePage) els.approvePage.disabled = reviewable.length === 0;
+}
+
+function renderDiscoveryReviewPager() {
+    const els = discoveryReviewElements();
+    const total = discoveryReviewState.total;
+    const pages = Math.max(1, Math.ceil(total / discoveryReviewState.pageSize));
+    const page = Math.min(discoveryReviewState.page, pages);
+    if (els.pageInfo) {
+        els.pageInfo.textContent = total === 0
+            ? "共 0 人"
+            : "第 " + page + " / " + pages + " 页，共 " + total + " 人";
+    }
+    if (els.prev) els.prev.disabled = page <= 1;
+    if (els.next) els.next.disabled = page >= pages;
+}
+
+function setDiscoveryReviewError(message) {
+    const els = discoveryReviewElements();
+    if (!els.error) return;
+    if (message == null || message === "") {
+        els.error.hidden = true;
+        els.error.textContent = "";
+        return;
+    }
+    els.error.hidden = false;
+    els.error.textContent = String(message);
+}
+
+function setDiscoveryReviewResult(message) {
+    const els = discoveryReviewElements();
+    if (els.result) els.result.textContent = message == null ? "" : String(message);
+}
+
+// ── 原因命中统计（仅展示，不参与授权） ──────────────────────────────────────
+
+function discoveryReviewReasonHitsFromRows(rows) {
+    const hits = {};
+    const list = Array.isArray(rows) ? rows : [];
+    list.forEach(function (row) {
+        const reasons = row && Array.isArray(row.automaticReasons) ? row.automaticReasons : [];
+        reasons.forEach(function (reason) {
+            const code = reason && reason.code ? String(reason.code) : "";
+            if (code) hits[code] = (hits[code] || 0) + 1;
+        });
+    });
+    return { hits: hits, counted: list.length, total: list.length, partial: false };
+}
+
+function discoveryReviewReasonHitsFromItems(items, total) {
+    const hits = {};
+    const list = Array.isArray(items) ? items : [];
+    let counted = 0;
+    list.forEach(function (item) {
+        counted += 1;
+        const snapshot = discoveryReviewParseSummary(item && item.reasonSnapshotJson);
+        const reasons = snapshot && Array.isArray(snapshot.blockingReasons) ? snapshot.blockingReasons : [];
+        reasons.forEach(function (reason) {
+            const code = reason && reason.code ? String(reason.code) : "";
+            if (code) hits[code] = (hits[code] || 0) + 1;
+        });
+    });
+    const size = Number(total || 0);
+    return { hits: hits, counted: counted, total: size, partial: size > counted };
+}
+
+function discoveryReviewReasonHitsText(reasonHits) {
+    if (!reasonHits) return "原因命中：名单固定完成后统计";
+    const hits = reasonHits.hits || {};
+    const codes = Object.keys(hits).sort();
+    if (codes.length === 0) return "原因命中：无自动阻断原因";
+    const text = codes.map(function (code) {
+        const label = discoveryReviewState.issues.get(code) || code;
+        return label + " " + hits[code] + " 人";
+    }).join("；");
+    return "原因命中：" + text + (reasonHits.partial
+        ? "（已统计前 " + reasonHits.counted + " / " + reasonHits.total + " 人）"
+        : "");
+}
+
+// ── 确认与提交（I-2 / S-3）：备注随 prepare 提交（REJECT 服务端强制非空） ──────
+
+function discoveryReviewOpenConfirm(scope, action, singleDocId) {
+    if (!discoveryReviewState.active) return;
+    if (DISCOVERY_REVIEW_ACTIONS.indexOf(action) < 0) return;
+    let docIds = [];
+    if (scope === "SINGLE") {
+        if (!singleDocId) return;
+        docIds = [String(singleDocId)];
+    } else if (scope === "SELECTED") {
+        docIds = Array.from(discoveryReviewState.selected);
+    } else if (scope === "PAGE") {
+        docIds = discoveryReviewReviewableRows()
+            .filter(function (row) { return row.docId != null; })
+            .map(function (row) { return String(row.docId); });
+    }
+    if (scope !== "ALL" && docIds.length === 0) {
+        setDiscoveryReviewError("没有可审核的专家：请先勾选待人工审核项或确认当前页存在待审核项");
+        return;
+    }
+    stopDiscoveryReviewPolling();
+    discoveryReviewState.prepareSeq += 1;
+    const rowsById = {};
+    discoveryReviewReferenceRows().forEach(function (row) {
+        if (row.docId != null) rowsById[String(row.docId)] = row;
+    });
+    const people = docIds.map(function (id) { return rowsById[id] || { docId: id }; });
+    discoveryReviewState.confirm = {
+        scope: scope,
+        action: action,
+        docIds: docIds,
+        batchKey: null,
+        batchHash: null,
+        phase: null,
+        total: docIds.length,
+        counts: null,
+        items: [],
+        nextCursor: null,
+        reasonHits: scope === "ALL" ? null : discoveryReviewReasonHitsFromRows(people),
+        people: people,
+        note: ""
+    };
+    const els = discoveryReviewElements();
+    if (els.note) els.note.value = "";
+    setDiscoveryReviewError(null);
+    setDiscoveryReviewResult("");
+    discoveryReviewRenderConfirm();
+    if (els.confirm) els.confirm.hidden = false;
+}
+
+function discoveryReviewRenderConfirm() {
+    const confirm = discoveryReviewState.confirm;
+    const els = discoveryReviewElements();
+    if (!confirm) {
+        if (els.confirm) els.confirm.hidden = true;
+        return;
+    }
+    const scopeLabel = DISCOVERY_REVIEW_SCOPE_LABELS[confirm.scope] || confirm.scope;
+    const actionLabel = discoveryReviewActionLabel(confirm.action);
+    const phaseText = confirm.batchKey ? discoveryReviewPhaseLabel(confirm.phase) : "待提交";
+    let scopeText = "范围：" + actionLabel + " · " + scopeLabel;
+    if (confirm.scope === "ALL") scopeText += "（服务端当前筛选内全部待人工审核）";
+    scopeText += "；固定总数：" + String(confirm.total == null ? 0 : confirm.total);
+    scopeText += "；状态：" + phaseText;
+    if (els.confirmScope) els.confirmScope.textContent = scopeText;
+    if (els.confirmReasons) els.confirmReasons.textContent = discoveryReviewReasonHitsText(confirm.reasonHits);
+    discoveryReviewRenderConfirmPeople(confirm, els);
+
+    const note = confirm.note == null ? "" : String(confirm.note).trim();
+    const rejectNeedsNote = confirm.action === "REJECT" && note.length === 0;
+    const phase = confirm.phase;
+    let enabled = false;
+    let label = "确认审核";
+    if (!confirm.batchKey) {
+        enabled = !rejectNeedsNote;
+        label = confirm.scope === "ALL" ? "固定名单" : "确认审核";
+    } else if (phase === "PREPARING") {
+        label = "正在固定名单…";
+    } else if (phase === "READY") {
+        enabled = Number(confirm.total) > 0 && Boolean(confirm.batchHash) && !confirm.submitting;
+        label = "确认审核";
+    } else if (phase === "APPLYING") {
+        label = "处理中…";
+    } else if (phase === "INTERRUPTED") {
+        label = "已中断";
+    } else {
+        label = "已结束";
+    }
+    if (els.commit) {
+        els.commit.disabled = !enabled;
+        els.commit.textContent = label;
+    }
+    if (els.cancelConfirm) els.cancelConfirm.disabled = phase === "APPLYING";
+    if (els.confirm) els.confirm.hidden = false;
+}
+
+function discoveryReviewRenderConfirmPeople(confirm, els) {
+    const container = els.confirmPeople;
+    if (!discoveryReviewCanRender(container)) return;
+    container.innerHTML = "";
+    const items = confirm.batchKey && Array.isArray(confirm.items) && confirm.items.length
+        ? confirm.items
+        : (confirm.people || []);
+    if (items.length === 0) {
+        container.appendChild(discoveryReviewNode("p", null, confirm.scope === "ALL"
+            ? "名单由服务端固定，完成后展示人数与逐项结果"
+            : "无可展示名单"));
+        return;
+    }
+    items.forEach(function (item) {
+        const who = item.givenNames || item.familyNames ? discoveryReviewExpertName(item) + " · " : "";
+        container.appendChild(discoveryReviewNode("p", null,
+            who + (item.expertDocId || item.docId || DISCOVERY_REVIEW_MISSING)
+            + (item.state ? " · " + discoveryReviewItemStateLabel(item.state) : "")
+            + (item.errorCode ? " · " + item.errorCode : "")));
+    });
+    const total = Number(confirm.total || items.length);
+    if (total > items.length) {
+        container.appendChild(discoveryReviewNode("p", null, "仅展示已加载的前 " + items.length + " / " + total + " 项"));
+    }
+    if (confirm.nextCursor != null) {
+        container.appendChild(discoveryReviewButton("加载更多", "button small secondary", function () {
+            loadDiscoveryReviewConfirmItems(confirm);
+        }));
+    }
+}
+
+async function loadDiscoveryReviewConfirmItems(confirm) {
+    const seq = discoveryReviewState.requestSeq;
+    const prepareSeq = discoveryReviewState.prepareSeq;
+    try {
+        const status = await discoveryReviewFetchBatch(confirm.batchKey, confirm.nextCursor);
+        if (!discoveryReviewSeqIsCurrent(seq) || prepareSeq !== discoveryReviewState.prepareSeq
+            || discoveryReviewState.confirm !== confirm) return;
+        confirm.items = confirm.items.concat(status.items || []);
+        confirm.nextCursor = status.nextCursor;
+        confirm.reasonHits = discoveryReviewReasonHitsFromItems(confirm.items, confirm.total);
+        discoveryReviewRenderConfirm();
+    } catch (error) {
+        if (discoveryReviewSeqIsCurrent(seq)) setDiscoveryReviewError("固定名单读取失败：" + discoveryReviewErrorMessage(error));
+    }
+}
+
+function closeDiscoveryReviewConfirm() {
+    stopDiscoveryReviewPolling();
+    discoveryReviewState.prepareSeq += 1;
+    discoveryReviewState.confirm = null;
+    const els = discoveryReviewElements();
+    if (els.confirm) els.confirm.hidden = true;
+    if (els.note) els.note.value = "";
+}
+
+/** I-2：筛选/翻页/选择变化使未确认快照作废；已提交的批次不因此取消或扩大。 */
+function invalidateDiscoveryReviewBatch(message) {
+    const confirm = discoveryReviewState.confirm;
+    if (!confirm) return;
+    if (confirm.batchKey) {
+        if (confirm.phase === "APPLYING" || confirm.phase === "APPLIED" || confirm.phase === "INTERRUPTED") return;
+    }
+    closeDiscoveryReviewConfirm();
+    if (message) setDiscoveryReviewResult(message);
+}
+
+async function discoveryReviewCommit() {
+    const confirm = discoveryReviewState.confirm;
+    if (!confirm) return;
+    if (confirm.submitting) return;
+    const els = discoveryReviewElements();
+    const note = els.note && els.note.value != null ? String(els.note.value) : (confirm.note || "");
+    confirm.note = note;
+    if (confirm.action === "REJECT" && note.trim().length === 0) {
+        setDiscoveryReviewError("不通过必须填写备注");
+        discoveryReviewRenderConfirm();
+        return;
+    }
+    if (!confirm.batchKey) {
+        await discoveryReviewPrepare(confirm);
+        return;
+    }
+    if (confirm.phase === "READY") {
+        await discoveryReviewConfirmBatch(confirm);
+    }
+}
+
+async function discoveryReviewPrepare(confirm) {
+    const umbrella = discoveryReviewState.requestSeq;
+    const seq = ++discoveryReviewState.prepareSeq;
+    const els = discoveryReviewElements();
+    if (els.commit) {
+        els.commit.disabled = true;
+        els.commit.textContent = "提交中…";
+    }
+    setDiscoveryReviewError(null);
+    const note = confirm.note ? confirm.note.trim() : null;
+    if (confirm.scope === "ALL") {
+        const params = new URLSearchParams();
+        params.set("tag", DISCOVERY_REVIEW_TAG);
+        params.set("level", DISCOVERY_REVIEW_LEVEL);
+        if (discoveryReviewState.q) params.set("q", discoveryReviewState.q);
+        if (discoveryReviewState.issue) params.set("issue", discoveryReviewState.issue);
+        let status;
+        try {
+            status = await api(DISCOVERY_REVIEW_PATH + "/batches/prepare?" + params.toString(), {
+                method: "POST",
+                timeoutMs: DISCOVERY_REVIEW_TIMEOUT_MS,
+                body: JSON.stringify({
+                    scope: "ALL_MATCHING",
+                    action: confirm.action,
+                    level: DISCOVERY_REVIEW_LEVEL,
+                    note: note
+                })
+            });
+        } catch (error) {
+            if (seq !== discoveryReviewState.prepareSeq || umbrella !== discoveryReviewState.requestSeq
+                || !discoveryReviewSeqIsCurrent(umbrella)) return;
+            setDiscoveryReviewError("名单固定失败：" + discoveryReviewErrorMessage(error));
+            discoveryReviewRenderConfirm();
+            return;
+        }
+        if (seq !== discoveryReviewState.prepareSeq || umbrella !== discoveryReviewState.requestSeq
+            || !discoveryReviewSeqIsCurrent(umbrella)) return;
+        confirm.batchKey = status && status.batchKey ? String(status.batchKey) : null;
+        confirm.batchHash = status && status.batchHash ? String(status.batchHash) : null;
+        confirm.phase = status && status.phase ? String(status.phase) : "PREPARING";
+        confirm.total = Number(status && status.total != null ? status.total : 0);
+        confirm.counts = discoveryReviewStatusCounts(status);
+        confirm.items = status && Array.isArray(status.items) ? status.items : [];
+        confirm.nextCursor = status && status.nextCursor != null ? status.nextCursor : null;
+        confirm.reasonHits = discoveryReviewReasonHitsFromItems(confirm.items, confirm.total);
+        discoveryReviewApplyConfirmPhase();
+        return;
+    }
+    let prepared;
+    try {
+        prepared = await api(DISCOVERY_REVIEW_PATH + "/batches/prepare", {
+            method: "POST",
+            timeoutMs: DISCOVERY_REVIEW_TIMEOUT_MS,
+            body: JSON.stringify({
+                scope: "IDS",
+                action: confirm.action,
+                docIds: confirm.docIds,
+                level: DISCOVERY_REVIEW_LEVEL,
+                note: note
+            })
+        });
+    } catch (error) {
+        if (seq !== discoveryReviewState.prepareSeq || umbrella !== discoveryReviewState.requestSeq
+            || !discoveryReviewSeqIsCurrent(umbrella)) return;
+        setDiscoveryReviewError("名单准备失败：" + discoveryReviewErrorMessage(error));
+        discoveryReviewRenderConfirm();
+        return;
+    }
+    if (seq !== discoveryReviewState.prepareSeq || umbrella !== discoveryReviewState.requestSeq
+        || !discoveryReviewSeqIsCurrent(umbrella)) return;
+    confirm.batchKey = prepared && prepared.batchKey ? String(prepared.batchKey) : null;
+    confirm.batchHash = prepared && prepared.batchHash ? String(prepared.batchHash) : null;
+    confirm.phase = "READY";
+    confirm.total = Number(prepared && prepared.itemCount != null ? prepared.itemCount : confirm.docIds.length);
+    confirm.items = prepared && Array.isArray(prepared.items) ? prepared.items : [];
+    if (!confirm.batchKey || !confirm.batchHash) {
+        setDiscoveryReviewError("名单准备未返回可确认的批次快照");
+        discoveryReviewRenderConfirm();
+        return;
+    }
+    discoveryReviewApplyConfirmPhase();
+}
+
+function discoveryReviewApplyConfirmPhase() {
+    const confirm = discoveryReviewState.confirm;
+    if (!confirm) return;
+    discoveryReviewRenderConfirm();
+    if (confirm.phase === "PREPARING" || confirm.phase === "APPLYING") {
+        setDiscoveryReviewResult(confirm.phase === "APPLYING"
+            ? "审核处理中…（关闭弹窗不影响后台任务）"
+            : "正在固定名单…（关闭弹窗不影响后台任务）");
+        if (confirm.batchKey) startDiscoveryReviewPolling();
+        return;
+    }
+    if (confirm.phase === "READY") {
+        setDiscoveryReviewResult("名单已固定，等待确认");
+        return;
+    }
+    if (confirm.phase === "INTERRUPTED") {
+        setDiscoveryReviewResult("审核已中断，仍有待处理项；不会自动继续，请在审核记录中明确重试");
+        return;
+    }
+    if (confirm.phase === "PREPARE_FAILED") {
+        setDiscoveryReviewError("名单固定失败（PREPARE_FAILED），请重新准备");
+    }
+}
+
+async function discoveryReviewConfirmBatch(confirm) {
+    const umbrella = discoveryReviewState.requestSeq;
+    const seq = discoveryReviewState.prepareSeq;
+    if (!confirm.batchKey || !confirm.batchHash) {
+        setDiscoveryReviewError("名单尚未固定完成，不能确认");
+        return;
+    }
+    confirm.submitting = true;
+    setDiscoveryReviewError(null);
+    setDiscoveryReviewResult("正在提交审核…");
+    discoveryReviewRenderConfirm();
+    let result;
+    try {
+        result = await api(DISCOVERY_REVIEW_PATH + "/batches/" + encodeURIComponent(confirm.batchKey) + "/confirm", {
+            method: "POST",
+            timeoutMs: DISCOVERY_REVIEW_TIMEOUT_MS,
+            body: JSON.stringify({ batchHash: confirm.batchHash })
+        });
+    } catch (error) {
+        if (seq !== discoveryReviewState.prepareSeq || umbrella !== discoveryReviewState.requestSeq) return;
+        confirm.submitting = false;
+        setDiscoveryReviewError("确认失败：" + discoveryReviewErrorMessage(error));
+        discoveryReviewRenderConfirm();
+        return;
+    }
+    if (seq !== discoveryReviewState.prepareSeq || umbrella !== discoveryReviewState.requestSeq) return;
+    confirm.submitting = false;
+    if (confirm.scope === "ALL") {
+        // I-1：202/APPLYING 不是完成；只有持久 APPLIED 才刷新成功数。
+        confirm.phase = "APPLYING";
+        confirm.counts = discoveryReviewStatusCounts(result);
+        discoveryReviewRenderConfirm();
+        setDiscoveryReviewResult("审核处理中…（以后台任务持久结果为准）");
+        startDiscoveryReviewPolling();
+        return;
+    }
+    const applied = Number(result && result.applied || 0);
+    const failed = Number(result && result.failed || 0);
+    const stale = Number(result && result.stale || 0);
+    const skipped = Number(result && result.skipped || 0);
+    confirm.phase = "APPLIED";
+    confirm.counts = { APPLIED: applied, FAILED: failed, STALE: stale, CANCELLED: skipped };
+    confirm.items = result && Array.isArray(result.items) ? result.items : [];
+    confirm.reasonHits = discoveryReviewReasonHitsFromItems(confirm.items, confirm.total);
+    discoveryReviewRenderConfirm();
+    if (failed > 0 || stale > 0) {
+        setDiscoveryReviewResult("审核已保存：成功 " + applied + "，失败 " + failed
+            + (stale ? "，已过期 " + stale : "") + (skipped ? "，跳过 " + skipped : "")
+            + "；失败/过期项可在审核记录重试或重新准备");
+    } else {
+        setDiscoveryReviewResult("审核已完成：成功 " + applied + " 人" + (skipped ? "，跳过 " + skipped : ""));
+    }
+    discoveryReviewState.selected = new Set();
+    refreshDiscoveryReviewCounts();
+    refreshDiscoveryReviewList();
+}
+
+// ── 批次轮询（I-1 / I-3）：只在真实终态刷新成功数 ────────────────────────────
+
+function resumeDiscoveryReviewPolling() {
+    const confirm = discoveryReviewState.confirm;
+    if (!confirm || !confirm.batchKey) return;
+    if (confirm.phase === "PREPARING" || confirm.phase === "APPLYING") startDiscoveryReviewPolling();
+}
+
+async function discoveryReviewFetchBatch(batchKey, afterId) {
+    const url = DISCOVERY_REVIEW_PATH + "/batches/" + encodeURIComponent(batchKey)
+        + "?afterId=" + (Number(afterId) || 0) + "&limit=" + DISCOVERY_REVIEW_ITEM_PAGE_SIZE;
+    return api(url, { timeoutMs: DISCOVERY_REVIEW_TIMEOUT_MS });
+}
+
+function startDiscoveryReviewPolling() {
+    const confirm = discoveryReviewState.confirm;
+    if (!confirm || !confirm.batchKey) return;
+    stopDiscoveryReviewPolling();
+    const seq = discoveryReviewState.pollSeq;
+    const batchKey = confirm.batchKey;
+    let attempts = 0;
+    const tick = async function () {
+        if (discoveryReviewState.pollSeq !== seq || !discoveryReviewSeqIsCurrent(discoveryReviewState.requestSeq)) return;
+        if (!discoveryReviewState.confirm || discoveryReviewState.confirm.batchKey !== batchKey) return;
+        attempts += 1;
+        if (attempts > DISCOVERY_REVIEW_POLL_MAX) {
+            setDiscoveryReviewError("审核状态轮询超时，请重新打开弹窗查看最新状态");
+            return;
+        }
+        try {
+            const status = await discoveryReviewFetchBatch(batchKey, 0);
+            if (discoveryReviewState.pollSeq !== seq || !discoveryReviewState.active) return;
+            if (!discoveryReviewState.confirm || discoveryReviewState.confirm.batchKey !== batchKey) return;
+            discoveryReviewApplyBatchStatus(status);
+        } catch (error) {
+            if (discoveryReviewState.pollSeq !== seq) return;
+            // 保留阶段并按间隔重试；不把读取失败假装成成功或终态。
+            setDiscoveryReviewError("审核状态读取失败：" + discoveryReviewErrorMessage(error));
+        }
+        if (discoveryReviewState.pollSeq !== seq) return;
+        const phase = discoveryReviewState.confirm ? discoveryReviewState.confirm.phase : null;
+        if (phase === "PREPARING" || phase === "APPLYING") {
+            discoveryReviewState.pollTimer = setTimeout(tick, DISCOVERY_REVIEW_POLL_MS);
+        } else {
+            discoveryReviewState.pollTimer = null;
+            discoveryReviewAfterTerminalPhase();
+        }
+    };
+    discoveryReviewState.pollTimer = setTimeout(tick, DISCOVERY_REVIEW_POLL_MS);
+}
+
+function discoveryReviewApplyBatchStatus(status) {
+    const confirm = discoveryReviewState.confirm;
+    if (!confirm || !status) return;
+    const counts = discoveryReviewStatusCounts(status);
+    confirm.phase = status.phase ? String(status.phase) : confirm.phase;
+    confirm.batchHash = status.batchHash ? String(status.batchHash) : confirm.batchHash;
+    confirm.total = Number(status.total != null ? status.total : confirm.total);
+    confirm.counts = counts;
+    confirm.items = Array.isArray(status.items) ? status.items : confirm.items;
+    confirm.nextCursor = status.nextCursor != null ? status.nextCursor : null;
+    confirm.reasonHits = discoveryReviewReasonHitsFromItems(confirm.items, confirm.total);
+    discoveryReviewRenderConfirm();
+}
+
+function discoveryReviewAfterTerminalPhase() {
+    const confirm = discoveryReviewState.confirm;
+    if (!confirm) return;
+    if (confirm.phase === "INTERRUPTED") {
+        discoveryReviewApplyConfirmPhase();
+        return;
+    }
+    if (confirm.phase !== "APPLIED") return;
+    const counts = confirm.counts || {};
+    const failed = Number(counts.FAILED || 0);
+    const stale = Number(counts.STALE || 0);
+    const applied = Number(counts.APPLIED || 0);
+    if (failed > 0 || stale > 0) {
+        setDiscoveryReviewResult("审核已完成：已应用 " + applied + "，失败 " + failed
+            + (stale ? "，已过期 " + stale : "") + "；失败/过期项可在审核记录重试或重新准备");
+    } else {
+        setDiscoveryReviewResult("审核已完成：已应用 " + applied + " 人");
+    }
+    if (applied > 0) discoveryReviewState.selected = new Set();
+    refreshDiscoveryReviewCounts();
+    refreshDiscoveryReviewList();
+}
+
+// ── 审核记录（S-3）：以持久任务记录驱动，关窗/刷新后可重建 ────────────────────
+
+async function loadDiscoveryReviewRecords() {
+    const umbrella = discoveryReviewState.requestSeq;
+    const seq = ++discoveryReviewState.recordSeq;
+    discoveryReviewState.recordsLoaded = false;
+    discoveryReviewState.recordsError = null;
+    renderDiscoveryReviewRecords();
+    const base = DISCOVERY_REVIEW_TASK_EXECUTIONS_PATH + "?page=0&size=" + DISCOVERY_REVIEW_RECORD_SIZE + "&taskType=";
+    let preparePage;
+    let applyPage;
+    try {
+        const pages = await Promise.all([
+            api(base + "DISCOVERY_REVIEW_PREPARE", { timeoutMs: DISCOVERY_REVIEW_TIMEOUT_MS }),
+            api(base + "DISCOVERY_REVIEW_APPLY", { timeoutMs: DISCOVERY_REVIEW_TIMEOUT_MS })
+        ]);
+        preparePage = pages[0];
+        applyPage = pages[1];
+    } catch (error) {
+        if (seq !== discoveryReviewState.recordSeq || umbrella !== discoveryReviewState.requestSeq
+            || !discoveryReviewSeqIsCurrent(umbrella)) return;
+        discoveryReviewState.recordsLoaded = true;
+        discoveryReviewState.records = [];
+        discoveryReviewState.recordsError = discoveryReviewErrorMessage(error);
+        renderDiscoveryReviewRecords();
+        return;
+    }
+    if (seq !== discoveryReviewState.recordSeq || umbrella !== discoveryReviewState.requestSeq
+        || !discoveryReviewSeqIsCurrent(umbrella)) return;
+    const items = []
+        .concat(Array.isArray(preparePage && preparePage.items) ? preparePage.items : [])
+        .concat(Array.isArray(applyPage && applyPage.items) ? applyPage.items : []);
+    items.sort(function (a, b) { return String(b.startedAt || "").localeCompare(String(a.startedAt || "")); });
+    discoveryReviewState.records = items;
+    discoveryReviewState.recordsLoaded = true;
+    discoveryReviewState.recordDetails = {};
+    renderDiscoveryReviewRecords();
+}
+
+function discoveryReviewRecordKey(record) {
+    return String(record && record.taskType || "") + "#" + String(record && record.id != null ? record.id : "");
+}
+
+function discoveryReviewRecordsStatusText() {
+    if (!discoveryReviewState.recordsLoaded) return "正在加载审核记录…";
+    if (discoveryReviewState.recordsError) return "审核记录加载失败：" + discoveryReviewState.recordsError;
+    if (discoveryReviewState.records.length === 0) return "暂无发现审核记录";
+    return "共 " + discoveryReviewState.records.length + " 条发现审核任务（按开始时间倒序）";
+}
+
+function renderDiscoveryReviewRecords() {
+    const els = discoveryReviewElements();
+    const pane = els.historyPane;
+    if (!discoveryReviewCanRender(pane)) return;
+    pane.innerHTML = "";
+    pane.appendChild(discoveryReviewNode("p", null, discoveryReviewRecordsStatusText()));
+    if (!discoveryReviewState.recordsLoaded || discoveryReviewState.recordsError) return;
+    discoveryReviewState.records.forEach(function (record) {
+        pane.appendChild(buildDiscoveryReviewRecord(record));
+    });
+}
+
+function buildDiscoveryReviewRecord(record) {
+    const key = discoveryReviewRecordKey(record);
+    if (!discoveryReviewState.recordDetails[key]) {
+        discoveryReviewState.recordDetails[key] = { state: "idle", record: record };
+    }
+    const detail = discoveryReviewState.recordDetails[key];
+    const article = discoveryReviewNode("article", "dr-record");
+    article.appendChild(discoveryReviewNode("strong", null,
+        (record.taskTypeLabel || record.taskType || "发现审核") + " #"
+        + (record.id == null ? DISCOVERY_REVIEW_MISSING : record.id)
+        + " · " + discoveryReviewTaskStatusLabel(record.status)));
+    article.appendChild(discoveryReviewNode("p", null,
+        "开始 " + (record.startedAt || DISCOVERY_REVIEW_MISSING)
+        + (record.finishedAt ? "；结束 " + record.finishedAt : "")
+        + "；成功 " + Number(record.successCount || 0) + "，失败 " + Number(record.failureCount || 0)
+        + (record.errorMessage ? "；错误：" + record.errorMessage : "")));
+    if (detail.batchKey) {
+        article.appendChild(discoveryReviewNode("p", null,
+            "批次 " + detail.batchKey + " · " + discoveryReviewPhaseLabel(detail.phase)
+            + "；已应用 " + Number(detail.applied || 0) + "，失败 " + Number(detail.failed || 0)
+            + "，已过期 " + Number(detail.stale || 0) + "，待处理 " + Number(detail.pending || 0)));
+    }
+    const details = discoveryReviewNode("details", null, null);
+    details.appendChild(discoveryReviewNode("summary", null, "名单及逐项结果"));
+    const holder = discoveryReviewNode("div", null, null);
+    if (detail.state === "loading") {
+        holder.appendChild(discoveryReviewNode("p", null, "正在读取名单…"));
+    } else if (detail.state === "error") {
+        holder.appendChild(discoveryReviewNode("p", null, "名单读取失败：" + detail.error));
+    } else if (detail.state === "ready" && detail.batchKey) {
+        const items = Array.isArray(detail.items) ? detail.items : [];
+        if (items.length === 0) {
+            holder.appendChild(discoveryReviewNode("p", null, "无可展示明细"));
+        } else {
+            items.forEach(function (item) {
+                holder.appendChild(discoveryReviewNode("p", null,
+                    (item.expertDocId || DISCOVERY_REVIEW_MISSING) + " · " + discoveryReviewItemStateLabel(item.state)
+                    + (item.action ? " · " + discoveryReviewActionLabel(item.action) : "")
+                    + (item.errorCode ? " · " + item.errorCode : "")
+                    + (item.note ? " · " + item.note : "")));
+                if (discoveryReviewIsCurrentDecision(item)) {
+                    holder.appendChild(discoveryReviewButton("撤销当前审核 · " + item.expertDocId, "button small secondary", function () {
+                        detail.revokeItemId = item.id;
+                        revokeDiscoveryReviewRecord(key);
+                    }, { reviewRevoke: "1" }));
+                }
+            });
+        }
+        if (Number(detail.total || 0) > items.length) {
+            holder.appendChild(discoveryReviewButton("加载更多", "button small secondary", function () {
+                loadDiscoveryReviewRecordItems(key);
+            }, { reviewMore: "1" }));
+        }
+    } else {
+        holder.appendChild(discoveryReviewNode("p", null, "展开后读取固定名单与逐项结果"));
+    }
+    details.appendChild(holder);
+    if (detail.state === "idle" && typeof details.addEventListener === "function") {
+        details.addEventListener("toggle", function () {
+            if (details.open === true) loadDiscoveryReviewRecordDetail(key);
+        });
+    }
+    article.appendChild(details);
+    const toolbar = discoveryReviewNode("div", "dr-toolbar", null);
+    const retryBtn = discoveryReviewButton(detail.phase === "INTERRUPTED" ? "重试未处理项" : "重试失败项", "button small secondary", function () {
+        retryDiscoveryReviewRecord(key);
+    }, { reviewRetry: "1" });
+    details.open = detail.state !== "idle";
+    const ready = detail.state === "ready" && Boolean(detail.batchKey);
+    retryBtn.disabled = !(ready && (Number(detail.failed || 0) > 0 || Number(detail.pending || 0) > 0)
+        && detail.phase !== "PREPARING" && detail.phase !== "APPLYING");
+    toolbar.appendChild(retryBtn);
+    article.appendChild(toolbar);
+    return article;
+}
+
+function discoveryReviewApplyRecordStatus(detail, status) {
+    const counts = discoveryReviewStatusCounts(status);
+    detail.state = "ready";
+    detail.phase = status && status.phase ? String(status.phase) : null;
+    detail.total = Number(status && status.total != null ? status.total : 0);
+    detail.applied = Number(counts.APPLIED || 0);
+    detail.failed = Number(counts.FAILED || 0);
+    detail.stale = Number(counts.STALE || 0);
+    detail.pending = Number(counts.STAGED || 0) + Number(counts.READY || 0) + Number(counts.APPLYING || 0);
+    detail.items = status && Array.isArray(status.items) ? status.items : [];
+    detail.nextCursor = status && status.nextCursor != null ? status.nextCursor : null;
+    detail.error = null;
+    const applied = detail.items.filter(function (item) {
+        return item && item.state === "APPLIED" && item.action && item.action !== "REVOKE";
+    });
+    detail.revokeItemId = applied.length ? applied[applied.length - 1].id : null;
+}
+
+async function loadDiscoveryReviewRecordDetail(key) {
+    const detail = discoveryReviewState.recordDetails[key];
+    if (!detail || !detail.record) return;
+    const umbrella = discoveryReviewState.requestSeq;
+    const seq = ++discoveryReviewState.recordSeq;
+    detail.state = "loading";
+    renderDiscoveryReviewRecords();
+    let task;
+    try {
+        task = await api(DISCOVERY_REVIEW_TASK_EXECUTIONS_PATH + "/" + encodeURIComponent(detail.record.id), {
+            timeoutMs: DISCOVERY_REVIEW_TIMEOUT_MS
+        });
+    } catch (error) {
+        if (seq !== discoveryReviewState.recordSeq || umbrella !== discoveryReviewState.requestSeq) return;
+        detail.state = "error";
+        detail.error = discoveryReviewErrorMessage(error);
+        renderDiscoveryReviewRecords();
+        return;
+    }
+    if (seq !== discoveryReviewState.recordSeq || umbrella !== discoveryReviewState.requestSeq) return;
+    const summary = discoveryReviewParseSummary(task && task.rawResultSummary);
+    const batchKey = summary && summary.batchKey ? String(summary.batchKey) : null;
+    if (!batchKey) {
+        detail.state = "ready";
+        detail.batchKey = null;
+        detail.items = [];
+        detail.total = 0;
+        detail.revokeItemId = null;
+        renderDiscoveryReviewRecords();
+        return;
+    }
+    detail.batchKey = batchKey;
+    try {
+        const status = await discoveryReviewFetchBatch(batchKey, 0);
+        if (seq !== discoveryReviewState.recordSeq || umbrella !== discoveryReviewState.requestSeq) return;
+        discoveryReviewApplyRecordStatus(detail, status);
+    } catch (error) {
+        if (seq !== discoveryReviewState.recordSeq || umbrella !== discoveryReviewState.requestSeq) return;
+        detail.state = "error";
+        detail.error = discoveryReviewErrorMessage(error);
+    }
+    renderDiscoveryReviewRecords();
+}
+
+async function loadDiscoveryReviewRecordItems(key) {
+    const detail = discoveryReviewState.recordDetails[key];
+    if (!detail || !detail.batchKey || detail.nextCursor == null) return;
+    const umbrella = discoveryReviewState.requestSeq;
+    const seq = ++discoveryReviewState.recordSeq;
+    try {
+        const status = await discoveryReviewFetchBatch(detail.batchKey, detail.nextCursor);
+        if (seq !== discoveryReviewState.recordSeq || umbrella !== discoveryReviewState.requestSeq) return;
+        detail.items = (Array.isArray(detail.items) ? detail.items : [])
+            .concat(Array.isArray(status && status.items) ? status.items : []);
+        const counts = discoveryReviewStatusCounts(status);
+        detail.phase = status && status.phase ? String(status.phase) : detail.phase;
+        detail.total = Number(status && status.total != null ? status.total : detail.total);
+        detail.applied = Number(counts.APPLIED || detail.applied || 0);
+        detail.failed = Number(counts.FAILED || detail.failed || 0);
+        detail.stale = Number(counts.STALE || detail.stale || 0);
+        detail.pending = Number(counts.STAGED || 0) + Number(counts.READY || 0) + Number(counts.APPLYING || 0);
+        detail.nextCursor = status && status.nextCursor != null ? status.nextCursor : null;
+    } catch (error) {
+        if (seq !== discoveryReviewState.recordSeq || umbrella !== discoveryReviewState.requestSeq) return;
+        setDiscoveryReviewError("名单分页读取失败：" + discoveryReviewErrorMessage(error));
+    }
+    renderDiscoveryReviewRecords();
+}
+
+async function retryDiscoveryReviewRecord(key) {
+    const detail = discoveryReviewState.recordDetails[key];
+    if (!detail || !detail.batchKey) return;
+    const umbrella = discoveryReviewState.requestSeq;
+    const seq = ++discoveryReviewState.recordSeq;
+    try {
+        await api(DISCOVERY_REVIEW_PATH + "/batches/" + encodeURIComponent(detail.batchKey) + "/retry", {
+            method: "POST",
+            timeoutMs: DISCOVERY_REVIEW_TIMEOUT_MS
+        });
+    } catch (error) {
+        if (seq !== discoveryReviewState.recordSeq || umbrella !== discoveryReviewState.requestSeq) return;
+        setDiscoveryReviewError("重试失败项失败：" + discoveryReviewErrorMessage(error));
+        return;
+    }
+    if (seq !== discoveryReviewState.recordSeq || umbrella !== discoveryReviewState.requestSeq) return;
+    setDiscoveryReviewResult("已提交重试（只重领失败/未处理项）");
+    detail.state = "idle";
+    detail.revokeItemId = null;
+    renderDiscoveryReviewRecords();
+    await loadDiscoveryReviewRecordDetail(key);
+}
+
+async function revokeDiscoveryReviewRecord(key) {
+    const detail = discoveryReviewState.recordDetails[key];
+    if (!detail || detail.revokeItemId == null) return;
+    const umbrella = discoveryReviewState.requestSeq;
+    const seq = ++discoveryReviewState.recordSeq;
+    let result;
+    try {
+        result = await api(DISCOVERY_REVIEW_PATH + "/items/" + encodeURIComponent(detail.revokeItemId) + "/revoke", {
+            method: "POST",
+            timeoutMs: DISCOVERY_REVIEW_TIMEOUT_MS,
+            body: JSON.stringify({})
+        });
+    } catch (error) {
+        if (seq !== discoveryReviewState.recordSeq || umbrella !== discoveryReviewState.requestSeq) return;
+        setDiscoveryReviewError("撤销审核失败：" + discoveryReviewErrorMessage(error));
+        return;
+    }
+    if (seq !== discoveryReviewState.recordSeq || umbrella !== discoveryReviewState.requestSeq) return;
+    setDiscoveryReviewResult("已撤销当前审核：" + (result && result.decision ? result.decision : "已重新运行自动校验"));
+    detail.state = "idle";
+    detail.revokeItemId = null;
+    renderDiscoveryReviewRecords();
+    await loadDiscoveryReviewRecordDetail(key);
+    refreshDiscoveryReviewCounts();
+    refreshDiscoveryReviewList();
+}
+
+function discoveryReviewIsCurrentDecision(item) {
+    return item && item.state === "APPLIED" && item.action !== "REVOKE"
+        && discoveryReviewState.rows.some(function (row) {
+            return row.docId === item.expertDocId && row.decisionManual === true
+                && row.identityChanged !== true && Number(row.revision) === Number(item.expectedRevision) + 1;
+        });
+}
+
+async function revokeDiscoveryReviewExpertItem(item, container) {
+    if (!discoveryReviewIsCurrentDecision(item)) return;
+    const seq = discoveryReviewState.requestSeq;
+    try {
+        await api(DISCOVERY_REVIEW_PATH + "/items/" + encodeURIComponent(item.id) + "/revoke", {
+            method: "POST", body: JSON.stringify({}), timeoutMs: DISCOVERY_REVIEW_TIMEOUT_MS
+        });
+        if (!discoveryReviewSeqIsCurrent(seq)) return;
+        setDiscoveryReviewResult("已撤销当前审核：" + item.expertDocId);
+        refreshDiscoveryReviewList();
+        refreshDiscoveryReviewCounts();
+        container.innerHTML = "";
+        container.appendChild(discoveryReviewNode("p", null, "审核已撤销，请展开最新记录"));
+    } catch (error) {
+        if (discoveryReviewSeqIsCurrent(seq)) setDiscoveryReviewError("撤销审核失败：" + discoveryReviewErrorMessage(error));
+    }
+}
+
+async function loadDiscoveryReviewExpertHistory(docId, container) {
+    if (!docId || !discoveryReviewCanRender(container)) return;
+    const umbrella = discoveryReviewState.requestSeq;
+    const seq = ++discoveryReviewState.historySeq;
+    container.innerHTML = "";
+    container.appendChild(discoveryReviewNode("p", null, "正在读取审核历史…"));
+    let items;
+    try {
+        items = await api(DISCOVERY_REVIEW_PATH + "/history?docId=" + encodeURIComponent(docId) + "&limit=200", {
+            timeoutMs: DISCOVERY_REVIEW_TIMEOUT_MS
+        });
+    } catch (error) {
+        if (seq !== discoveryReviewState.historySeq || umbrella !== discoveryReviewState.requestSeq) return;
+        container.innerHTML = "";
+        container.appendChild(discoveryReviewNode("p", null, "审核历史读取失败：" + discoveryReviewErrorMessage(error)));
+        return;
+    }
+    if (seq !== discoveryReviewState.historySeq || umbrella !== discoveryReviewState.requestSeq) return;
+    container.innerHTML = "";
+    const list = Array.isArray(items) ? items : [];
+    if (list.length === 0) {
+        container.appendChild(discoveryReviewNode("p", null, "暂无审核历史"));
+        return;
+    }
+    list.forEach(function (item) {
+        container.appendChild(discoveryReviewNode("p", null,
+            (item.appliedAt || item.createdAt || DISCOVERY_REVIEW_MISSING) + " · "
+            + discoveryReviewActionLabel(item.action) + " · " + discoveryReviewItemStateLabel(item.state)
+            + (item.actor ? " · " + item.actor : "") + (item.note ? " · " + item.note : "")));
+        if (item.errorCode) container.appendChild(discoveryReviewNode("p", null,
+            item.errorCode === "CANDIDATE_SYNC_FAILED"
+                ? "审核已保存，但候选同步失败（CANDIDATE_SYNC_FAILED）"
+                : item.errorCode));
+        if (discoveryReviewIsCurrentDecision(item)) {
+            container.appendChild(discoveryReviewButton("撤销当前审核", "button small secondary", function () {
+                revokeDiscoveryReviewExpertItem(item, container);
+            }, { reviewRevoke: "1" }));
+        }
+    });
 }
 
 async function handleCancelTask() {
@@ -7988,6 +9708,8 @@ async function openTaskLaunchModal(taskType) {
 
     // c4/I-2：设置面板跟随刚建立的弹窗代次（其他任务立即隐藏并作废旧响应）。
     initDiscoverySchedulePanel(taskType, capturedGeneration);
+    // c5/I-1：两个打开路径统一初始化审核页签（含配置态），其他任务隐藏并作废旧响应。
+    if (typeof initDiscoveryReview === "function") initDiscoveryReview(taskType, capturedGeneration);
 
     // Immediately load execution list
     fetchRunList(taskType, capturedGeneration);
@@ -18146,7 +19868,7 @@ async function preloadBatchSendLookups() {
 
 function switchBatchSendTab(tab) {
     batchTaskState.activeTab = tab;
-    var tabs = $$(".batch-send-tab");
+    var tabs = $$("#batchSendTaskModal .batch-send-tab");
     tabs.forEach(function(t) {
         t.classList.toggle("is-active", t.dataset.tab === tab);
     });
@@ -19081,8 +20803,8 @@ async function refreshBatchGateState(kind) {
     if (!field || !checkbox || !keys || !hint) return;
     var st = batchGateState[kind];
     var DEFAULT_HINTS = {
-        editor: "仅向满足该模板必填字段的专家发送，缺字段的会在发送时被门禁拦下并计入失败。",
-        manual: "仅影响本次执行，不修改原定时任务。"
+        editor: "开启后仅向满足该模板必填字段的专家发送，缺字段的会在发送时被门禁拦下并计入失败；关闭时不按个性化缺项排除，仍按本次显式条件筛选。",
+        manual: "仅影响本次执行，不修改原定时任务；开启后按该模板必填字段门禁，关闭时不按个性化缺项排除，仍按本次显式条件筛选。"
     };
 
     var setUnavailable = function(warnText) {
@@ -19415,6 +21137,15 @@ function baseHintHtml(total, res, excludeVerifiedUnavailableEmails) {
     var retryable = Number(res.retryable || 0);
     var hint = "当前条件命中 <strong>" + total + "</strong> 位专家（其中未联系 " + pending +
         "、可重试 " + retryable + "）";
+    // c5/I-4：批量页展示服务端准入与显式条件计数，不新增审核筛选控件。
+    var admission = res.admission || null;
+    if (admission) {
+        hint += "；准入通过 <strong>" + Number(admission.admitted || 0) + "</strong>" +
+            "；待审核 <strong>" + Number(admission.needsReview || 0) + "</strong>（去深度发现）" +
+            "；显式条件排除 <strong>" + Number(admission.explicitFilterExcluded || 0) + "</strong>" +
+            "；本次目标 <strong>" +
+            Number(admission.target != null ? admission.target : total) + "</strong>";
+    }
     if (excludeVerifiedUnavailableEmails) {
         hint += "；已排除不可用邮箱 <strong>" +
             Number(res.excludedVerifiedUnavailable || 0) + "</strong> 位";
@@ -20936,7 +22667,7 @@ function formatDuration(ms) {
 
 function bindBatchSendTaskEvents() {
     // Tab switching
-    $$(".batch-send-tab").forEach(function(tab) {
+    $$("#batchSendTaskModal .batch-send-tab").forEach(function(tab) {
         tab.addEventListener("click", function() {
             switchBatchSendTab(tab.dataset.tab);
         });

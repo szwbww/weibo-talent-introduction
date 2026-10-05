@@ -6,6 +6,8 @@ const { describe, it } = require("node:test");
 
 const appJsPath = path.join(__dirname, "..", "..", "main", "resources", "static", "app.js");
 const appJsSource = fs.readFileSync(appJsPath, "utf-8");
+const indexHtmlPath = path.join(__dirname, "..", "..", "main", "resources", "static", "index.html");
+const indexHtmlSource = fs.readFileSync(indexHtmlPath, "utf-8");
 
 function extractGateFn() {
     const regex = /function\s+initExpertGateFilter\s*\([^)]*\)\s*\{[\s\S]*?\n\}/;
@@ -274,5 +276,34 @@ describe("expert gate template filter", () => {
         assert.match(sb.__status[0].message, /按模板门禁筛选失败/);
         // the prior gate-filtered list is not left stale: a refresh was requested with no gate chip active
         assert.ok((sb.__reloads || 0) > reloadsBefore, "list refresh requested after a failed switch");
+    });
+
+    it("both gate entries share one copy: closing does not exclude by personalization gaps (c5/I-4)", () => {
+        const gateSource = extractFn("refreshBatchGateState");
+        const editorHint = /editor:\s*"([^"]+)"/.exec(gateSource);
+        const manualHint = /manual:\s*"([^"]+)"/.exec(gateSource);
+        assert.ok(editorHint, "the editor default hint must exist");
+        assert.ok(manualHint, "the manual default hint must exist");
+        for (const [kind, hint] of [["editor", editorHint[1]], ["manual", manualHint[1]]]) {
+            assert.ok(hint.includes("关闭时不按个性化缺项排除"),
+                kind + " hint must state that a closed gate does not exclude personalization gaps");
+            assert.ok(hint.includes("显式条件"), kind + " hint must keep pointing at the explicit conditions");
+            assert.doesNotMatch(hint, /可发送|可发/, kind + " hint must not imply an exact sendable count");
+        }
+        assert.ok(!gateSource.includes("required_keys"), "the legacy column name must stay gone");
+    });
+
+    it("the rendered hint copy matches the index.html snapshot byte-for-byte (two entries)", () => {
+        const gateSource = extractFn("refreshBatchGateState");
+        const editorHint = /editor:\s*"([^"]+)"/.exec(gateSource)[1];
+        const manualHint = /manual:\s*"([^"]+)"/.exec(gateSource)[1];
+        const editorHtml = /id="batchConfigEditorGateFilterHint">([^<]*)</.exec(indexHtmlSource);
+        const manualHtml = /id="batchManualGateFilterHint">([^<]*)</.exec(indexHtmlSource);
+        assert.ok(editorHtml, "index.html must declare the editor gate hint");
+        assert.ok(manualHtml, "index.html must declare the manual gate hint");
+        assert.strictEqual(editorHtml[1], editorHint, "editor static copy must equal the rendered copy");
+        assert.strictEqual(manualHtml[1], manualHint, "manual static copy must equal the rendered copy");
+        assert.notStrictEqual(editorHint, manualHint, "the two entries keep their distinct scope wording");
+        assert.ok(manualHint.includes("仅影响本次执行"), "the manual entry keeps its run-scoped wording");
     });
 });

@@ -1,6 +1,8 @@
 package com.weibo.talentintroduction.expert.service
 
 import com.weibo.talentintroduction.config.ExpertClassificationProperties
+import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewDecision
+import com.weibo.talentintroduction.discovery.service.DiscoveryReviewService
 import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.weibo.talentintroduction.expert.domain.ExpertClassification
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
@@ -24,7 +26,12 @@ class ExpertRevalidationService(
     private val progressStore: TaskProgressStore,
     private val eligibilityFilterService: EligibilityFilterService,
     private val expertClassificationService: ExpertClassificationService = ExpertClassificationService(),
-    private val expertClassificationProperties: ExpertClassificationProperties = ExpertClassificationProperties()
+    private val expertClassificationProperties: ExpertClassificationProperties = ExpertClassificationProperties(),
+    /**
+     * 04（I-3）：准入结论的唯一读取/写入接缝。为空时（历史单测）按改前的纯自动路径运行；
+     * 生产恒由 Spring 注入，发现重验先读当前结论再决定自动校验或保留。
+     */
+    private val discoveryReviewService: DiscoveryReviewService? = null
 ) {
     private val log = LoggerFactory.getLogger(ExpertRevalidationService::class.java)
 
@@ -331,9 +338,29 @@ class ExpertRevalidationService(
         return try {
             val snapshot = expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.RAW, docId)
                 ?: return PromotionOutcome.RawMissing
+            val profile = expertIndexWriterService.discoveryProfile(docId, snapshot.source)
+
+            // I-3：先读当前准入结论。有效人工批准跳过基础重新拒绝，且不按基础失败删候选；
+            // 人工暂缓/拒绝不自动晋升。身份变化（decision == null）按无有效批准处理。
+            val review = discoveryReviewService
+            val admission = review?.resolveAdmission(docId, profile)
+            if (review != null && admission != null && admission.manual) {
+                val decision = admission.decision
+                if (decision == DiscoveryReviewDecision.HOLD.name || decision == DiscoveryReviewDecision.REJECTED.name) {
+                    return PromotionOutcome.AlreadyPresent
+                }
+                val sync = review.projectApprovedCandidate(docId, snapshot.source, decision!!)
+                return when (sync.result) {
+                    ExpertIndexWriterService.DiscoveryCandidateProjection.PROJECTED.name -> PromotionOutcome.Promoted
+                    ExpertIndexWriterService.DiscoveryCandidateProjection.ALREADY_PRESENT.name,
+                    ExpertIndexWriterService.DiscoveryCandidateProjection.APPLICATION_PRESENT.name ->
+                        PromotionOutcome.AlreadyPresent
+                    else -> PromotionOutcome.WriteFailed
+                }
+            }
+
             if (!DiscoveryIdentity.allowedMap(snapshot.source))
                 return PromotionOutcome.WriteFailed
-            val profile = expertIndexWriterService.discoveryProfile(docId, snapshot.source)
             val candidateBefore = if (applied) null
                 else expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
             val eligibility = eligibilityService.evaluateEligibility(profile)
@@ -346,6 +373,8 @@ class ExpertRevalidationService(
             if (!expertIndexWriterService.reconcileDiscoveryCandidate(
                     docId, snapshot, classification, reasons, preserveApplication = applied
                 )) return PromotionOutcome.WriteFailed
+            // I-1：补全/重验后刷新自动结论（同身份人工决定不被覆盖；身份变化生成新自动结论）。
+            discoveryReviewService?.recordAutomatic(docId, profile, eligibility)
             if (applied) PromotionOutcome.AlreadyPresent
             else if (reasons.isNotEmpty()) PromotionOutcome.Rejected(reasons)
             else if (candidateBefore != null) PromotionOutcome.AlreadyPresent

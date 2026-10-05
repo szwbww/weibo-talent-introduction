@@ -1,0 +1,318 @@
+{
+  "baseline": "e28e53fd898edd62905a0d45a6bf90396b18b1bf",
+  "status": "DRAFT_PENDING_D1",
+  "plans": [
+    {
+      "plan": "discovery-review-01-admission.md",
+      "fileCount": 5,
+      "invariants": [
+        "I-1",
+        "I-2",
+        "I-3"
+      ],
+      "files": [
+        {
+          "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryAdmissionModels.kt",
+          "exists": false,
+          "sha256": null
+        },
+        {
+          "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicy.kt",
+          "exists": false,
+          "sha256": null
+        },
+        {
+          "path": "src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt",
+          "exists": true,
+          "sha256": "178a2d9aafa5d3d53f9f57ddcd534c3e9a4c984c0b3e0cac65c7e300f94a6781"
+        },
+        {
+          "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicyTest.kt",
+          "exists": false,
+          "sha256": null
+        },
+        {
+          "path": "src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt",
+          "exists": true,
+          "sha256": "6315a50ffbcbc981617761a846b9d3408d47609efb82f0a3c3c8afa1abbb39fc"
+        }
+      ]
+    },
+    {
+      "plan": "discovery-review-02-review.md",
+      "fileCount": 9,
+      "invariants": [
+        "I-1",
+        "I-2",
+        "I-3",
+        "I-4"
+      ],
+      "files": [
+        {
+          "path": "src/main/resources/db/migration/V148__create_expert_discovery_review.sql",
+          "exists": false,
+          "sha256": null
+        },
+        {
+          "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryReview.kt",
+          "exists": false,
+          "sha256": null
+        },
+        {
+          "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt",
+          "exists": false,
+          "sha256": null
+        },
+        {
+          "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt",
+          "exists": false,
+          "sha256": null
+        },
+        {
+          "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryReviewController.kt",
+          "exists": false,
+          "sha256": null
+        },
+        {
+          "path": "src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt",
+          "exists": true,
+          "sha256": "49fda083ec3c246dfbf591a0b597eb354c6dd91ef2bfae5eb44a87c630a2ede7"
+        },
+        {
+          "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewServiceTest.kt",
+          "exists": false,
+          "sha256": null
+        },
+        {
+          "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepositoryIT.kt",
+          "exists": false,
+          "sha256": null
+        },
+        {
+          "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryReviewControllerTest.kt",
+          "exists": false,
+          "sha256": null
+        }
+      ]
+    },
+    {
+      "plan": "discovery-review-03-all-pages.md",
+      "fileCount": 8,
+      "invariants": [
+        "I-1",
+        "I-2",
+        "I-3",
+        "I-4"
+      ],
+      "files": [
+        {
+          "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewScanService.kt",
+          "exists": false,
+          "sha256": null
+        },
+        {
+          "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt",
+          "exists": false,
+          "sha256": null
+        },
+        {
+          "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt",
+          "exists": false,
+          "sha256": null
+        },
+        {
+          "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryReviewController.kt",
+          "exists": false,
+          "sha256": null
+        },
+        {
+          "path": "src/main/kotlin/com/weibo/talentintroduction/task/domain/TaskTypeCatalog.kt",
+          "exists": true,
+          "sha256": "b8fe21fd7b121260e63c362ec5211d38cfdde8db4357877636bb1abf1d61121f"
+        },
+        {
+          "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewAllPagesTest.kt",
+          "exists": false,
+          "sha256": null
+        },
+        {
+          "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepositoryIT.kt",
+          "exists": false,
+          "sha256": null
+        },
+        {
+          "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryReviewControllerTest.kt",
+          "exists": false,
+          "sha256": null
+        }
+      ]
+    },
+    {
+      "plan": "discovery-review-04-admission-writes.md",
+      "fileCount": 10,
+      "invariants": [
+        "I-1",
+        "I-2",
+        "I-3",
+        "I-4"
+      ],
+      "files": [
+        {
+          "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt",
+          "exists": false,
+          "sha256": null
+        },
+        {
+          "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryReviewController.kt",
+          "exists": false,
+          "sha256": null
+        },
+        {
+          "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt",
+          "exists": true,
+          "sha256": "fca3aa6dd639414c9c3e8d5c9605f1cc8a9987c3989f77ee6826d2da26a4e48d"
+        },
+        {
+          "path": "src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt",
+          "exists": true,
+          "sha256": "4b32a0b897895492ebc9574018abd7d7ebad929e869174847c0913bdf6d94d51"
+        },
+        {
+          "path": "src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt",
+          "exists": true,
+          "sha256": "49fda083ec3c246dfbf591a0b597eb354c6dd91ef2bfae5eb44a87c630a2ede7"
+        },
+        {
+          "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewServiceTest.kt",
+          "exists": false,
+          "sha256": null
+        },
+        {
+          "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt",
+          "exists": true,
+          "sha256": "f7427e0fd4dedc4f7161f8b11fd2185ec6b3a993e32c616f426a8e6a937b0157"
+        },
+        {
+          "path": "src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceTest.kt",
+          "exists": true,
+          "sha256": "a9e69833eba612b4c8573e46d4f63daaf6ff360c91c7a39404fbca5b5739cb98"
+        },
+        {
+          "path": "src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceBehaviorTest.kt",
+          "exists": true,
+          "sha256": "c6ef11b2af99afa08dda1782a1991c817ae25eebba1ce1e006ed146dd1a52263"
+        },
+        {
+          "path": "src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt",
+          "exists": true,
+          "sha256": "afc79e579a6d0e4dd9ce3100e156355e2cef1c1898ab1e5b493f6e4d06baf63e"
+        }
+      ]
+    },
+    {
+      "plan": "discovery-review-05-explicit-send.md",
+      "fileCount": 10,
+      "invariants": [
+        "I-1",
+        "I-2",
+        "I-3",
+        "I-4",
+        "I-5"
+      ],
+      "files": [
+        {
+          "path": "src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt",
+          "exists": true,
+          "sha256": "b565078ff639f520530aee1c8a03a2e419822f4da8d0e9064edf424ad69e509e"
+        },
+        {
+          "path": "src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchRecipientSelectionService.kt",
+          "exists": false,
+          "sha256": null
+        },
+        {
+          "path": "src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt",
+          "exists": true,
+          "sha256": "44c484cd428a66af2f67636e52617a25100e440dad0a1850199f99e99cbff9d8"
+        },
+        {
+          "path": "src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt",
+          "exists": true,
+          "sha256": "b13562403dd6b0b11cf508f2edd5e5dfaf9bf837cce448409023fcc8bd22e754"
+        },
+        {
+          "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposer.kt",
+          "exists": true,
+          "sha256": "d13803930c4e5edecdaa4b47997e748e0a19d4c632891cb14925804f7d17286e"
+        },
+        {
+          "path": "src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt",
+          "exists": true,
+          "sha256": "3cbdaaf55256574e2fae83bdb7eb58c626df01c4c9f20ff11bfb4048597f3b8b"
+        },
+        {
+          "path": "src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchRecipientSelectionServiceTest.kt",
+          "exists": false,
+          "sha256": null
+        },
+        {
+          "path": "src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt",
+          "exists": true,
+          "sha256": "001e19e2cb945591f11ccdb0dd5570ea2103821a383e8439518054eb20df2578"
+        },
+        {
+          "path": "src/test/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachServiceTest.kt",
+          "exists": true,
+          "sha256": "a4916fe32b5b40bcb681c358dc4991bea0a6df3cf66b9dca0f972fc6a07061fc"
+        },
+        {
+          "path": "src/test/kotlin/com/weibo/talentintroduction/mail/service/BatchTemplateGateParityTest.kt",
+          "exists": false,
+          "sha256": null
+        }
+      ]
+    },
+    {
+      "plan": "discovery-review-06-ui.md",
+      "fileCount": 6,
+      "invariants": [
+        "I-1",
+        "I-2",
+        "I-3",
+        "I-4"
+      ],
+      "files": [
+        {
+          "path": "src/main/resources/static/index.html",
+          "exists": true,
+          "sha256": "f670f75fe7dcb1e427f700f8e6541d2e320b370edfa95d023a194602a8b684fb"
+        },
+        {
+          "path": "src/main/resources/static/app.js",
+          "exists": true,
+          "sha256": "809911b938eb134d242b581d3689fd065e3cc0dacd65f9abf36791946e389c70"
+        },
+        {
+          "path": "src/main/resources/static/styles.css",
+          "exists": true,
+          "sha256": "6baf0a7f860d72309284667b69e6e0114cf14686c53fecd978a5992e2542bc3d"
+        },
+        {
+          "path": "src/test/js/discoveryReview.test.js",
+          "exists": false,
+          "sha256": null
+        },
+        {
+          "path": "src/test/js/taskModalLifecycleIntegration.test.js",
+          "exists": true,
+          "sha256": "9f4726ab218dcdeb35332701c45d695ad384d245752cef3dfd19c79113a7f75f"
+        },
+        {
+          "path": "src/test/js/gateTemplateFilter.test.js",
+          "exists": true,
+          "sha256": "bb845779484614003c4de44cfb9d67d6b27dd1db55306e728348be299d902cdf"
+        }
+      ]
+    }
+  ]
+}

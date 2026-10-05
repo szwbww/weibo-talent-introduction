@@ -207,13 +207,13 @@ class TaskExecutionSummaryExtractorTest {
 
     // ---- TaskTypeCatalog 断言（原 TaskTypeCatalogTest 合并于此） ----
 
-    /** N1-2 锁定：hasProgressUi 的集合恰好等于既有 allowedTaskTypes 的 7 项（A2：+EXPERT_CLASSIFICATION_BACKFILL）。 */
+    /** N1-2 锁定：hasProgressUi 的集合恰好等于既有 allowedTaskTypes 的 9 项（A2：+EXPERT_CLASSIFICATION_BACKFILL；03：+DISCOVERY_REVIEW_PREPARE/APPLY）。 */
     @Test
-    fun `catalog hasProgressUi set equals the six-item whitelist`() {
+    fun `catalog hasProgressUi set equals the whitelist`() {
         val expected = setOf(
             "EXPERT_REVALIDATION", "RAW_PROMOTION_SCAN", "EXPERT_DISCOVERY",
             "EXPERT_ENRICHMENT", "MANUAL_INITIAL_OUTREACH", "CHECK_REPLIES",
-            "EXPERT_CLASSIFICATION_BACKFILL"
+            "EXPERT_CLASSIFICATION_BACKFILL", "DISCOVERY_REVIEW_PREPARE", "DISCOVERY_REVIEW_APPLY"
         )
         val actual = TaskTypeCatalog.entries.filter { it.value.hasProgressUi }.keys
         assertEquals(expected, actual)
@@ -233,13 +233,14 @@ class TaskExecutionSummaryExtractorTest {
         )
     }
 
-    /** 现状审计的 16 种 taskType 全集逐条声明（字面量断言）。 */
+    /** 现状审计的全量 taskType 全集逐条声明（字面量断言；03 追加两个审核 taskType 后为 20）。 */
     @Test
-    fun `catalog covers the sixteen audited task types`() {
+    fun `catalog covers the audited task types`() {
         val auditedCodes = setOf(
             "AI_QA_EXTRACTION", "AUTO_REPLY_ACCOUNT", "AUTO_REPLY_ALL",
             "AUTO_REPLY_ALL_DISPATCH", "BOUNCE_COLLECTION", "CANDIDATE_OPERATOR_STATUS_SYNC",
-            "CHECK_REPLIES", "DAILY_COUNT_RESET", "EXPERT_CLASSIFICATION_BACKFILL",
+            "CHECK_REPLIES", "DAILY_COUNT_RESET", "DISCOVERY_REVIEW_PREPARE",
+            "DISCOVERY_REVIEW_APPLY", "EXPERT_CLASSIFICATION_BACKFILL",
             "EXPERT_DISCOVERY", "EXPERT_ENRICHMENT",
             "EXPERT_REVALIDATION", "INITIAL_OUTREACH", "MANUAL_INITIAL_OUTREACH",
             "OPERATOR_STATUS_RECONCILE", "POSTMASTER_REPUTATION", "RAW_PROMOTION_SCAN",
@@ -261,6 +262,6 @@ class TaskExecutionSummaryExtractorTest {
         assertNull(meta("BOUNCE_COLLECTION").metricLabel)
         assertNull(meta("EXPERT_ENRICHMENT").metricLabel)
         assertNull(meta("DAILY_COUNT_RESET").metricLabel)
-        assertEquals(18, TaskTypeCatalog.entries.size)
+        assertEquals(20, TaskTypeCatalog.entries.size)
     }
 }

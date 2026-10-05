@@ -1281,4 +1281,128 @@ class ExpertIndexWriterServiceTest {
         Mockito.verify(restTemplate, Mockito.never()).exchange(Mockito.contains("orcid_info_candidate"),
             eq(HttpMethod.DELETE), any<HttpEntity<*>>(), eq(JsonNode::class.java))
     }
+
+    // ── 04（I-2）：准入候选投影 ────────────────────────────────────────────────
+
+    private fun discoverySource(email: String = "a@example.org"): Map<String, Any?> {
+        val proof = com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.verified(
+            email, "Jane", "Doe", "JATS_SHA256:" + "a".repeat(64), null, "A42"
+        )
+        return mapOf(
+            "orcidId" to "DOC", "email" to email, "givenNames" to "Jane", "familyNames" to "Doe",
+            "emailSource" to "PAPER_FULLTEXT", "institution" to "Oxford",
+            "filterResult" to "REJECTED", "tags" to listOf("discovered"),
+            "identityVerification" to mapper.convertValue(proof, Map::class.java)
+        )
+    }
+
+    private fun candidateBody(source: Map<String, Any?>): String =
+        mapper.writeValueAsString(mapOf("_seq_no" to 8, "_primary_term" to 1, "_source" to source))
+
+    private fun stubApplicationMissing(docId: String = "DOC") {
+        Mockito.`when`(restTemplate.exchange(
+            eq("https://es.example.com:9200/orcid_info_application/_doc/$docId"),
+            eq(HttpMethod.HEAD), any<HttpEntity<*>>(), eq(Void::class.java)
+        )).thenThrow(HttpClientErrorException(HttpStatus.NOT_FOUND))
+    }
+
+    private fun stubCandidateGet(docId: String = "DOC"): org.mockito.stubbing.OngoingStubbing<ResponseEntity<JsonNode>> =
+        Mockito.`when`(restTemplate.exchange(
+            eq("https://es.example.com:9200/orcid_info_candidate/_doc/$docId"),
+            eq(HttpMethod.GET), any<HttpEntity<*>>(), eq(JsonNode::class.java)
+        ))
+
+    @Test
+    fun `projectDiscoveryCandidate creates the candidate from the RAW source`() {
+        val source = discoverySource()
+        stubApplicationMissing()
+        stubCandidateGet().thenThrow(HttpClientErrorException(HttpStatus.NOT_FOUND))
+        Mockito.`when`(restTemplate.exchange(
+            eq("https://es.example.com:9200/orcid_info_candidate/_doc/DOC?op_type=create"),
+            eq(HttpMethod.PUT), any<HttpEntity<*>>(), eq(JsonNode::class.java)
+        )).thenReturn(ResponseEntity(mapper.readTree("{}"), HttpStatus.CREATED))
+
+        val result = service.projectDiscoveryCandidate("DOC", source, "MANUAL_APPROVED")
+
+        assertEquals(ExpertIndexWriterService.DiscoveryCandidateProjection.PROJECTED, result)
+        Mockito.verify(restTemplate).exchange(
+            eq("https://es.example.com:9200/orcid_info_candidate/_doc/DOC?op_type=create"),
+            eq(HttpMethod.PUT), any<HttpEntity<*>>(), eq(JsonNode::class.java)
+        )
+        val body = Mockito.mockingDetails(restTemplate).invocations
+            .first { it.arguments.getOrNull(1) == HttpMethod.PUT }
+            .arguments.getOrNull(2) as HttpEntity<*>
+        @Suppress("UNCHECKED_CAST")
+        val doc = body.body as Map<String, Any?>
+        assertNotNull(doc["candidateValidatedAt"])
+        assertNotNull(doc["updatedAt"])
+        // 04（I-2）：绝不把缺项伪装成 PASSED —— 正文逐字来自 RAW 源。
+        assertEquals("REJECTED", doc["filterResult"])
+        assertEquals(source["identityVerification"], doc["identityVerification"])
+    }
+
+    @Test
+    fun `projectDiscoveryCandidate never overwrites an existing candidate`() {
+        val source = discoverySource()
+        stubApplicationMissing()
+        stubCandidateGet().thenReturn(ResponseEntity(mapper.readTree(candidateBody(source)), HttpStatus.OK))
+
+        val result = service.projectDiscoveryCandidate("DOC", source, "AUTO_PASSED")
+
+        assertEquals(ExpertIndexWriterService.DiscoveryCandidateProjection.ALREADY_PRESENT, result)
+        Mockito.verify(restTemplate, Mockito.never()).exchange(Mockito.contains("orcid_info_candidate"),
+            eq(HttpMethod.PUT), any<HttpEntity<*>>(), eq(JsonNode::class.java))
+    }
+
+    @Test
+    fun `projectDiscoveryCandidate reports a conflicting candidate identity`() {
+        val source = discoverySource()
+        stubApplicationMissing()
+        stubCandidateGet().thenReturn(ResponseEntity(mapper.readTree(candidateBody(discoverySource("other@example.org"))), HttpStatus.OK))
+
+        val result = service.projectDiscoveryCandidate("DOC", source, "AUTO_PASSED")
+
+        assertEquals(ExpertIndexWriterService.DiscoveryCandidateProjection.IDENTITY_CONFLICT, result)
+        Mockito.verify(restTemplate, Mockito.never()).exchange(Mockito.contains("orcid_info_candidate"),
+            eq(HttpMethod.PUT), any<HttpEntity<*>>(), eq(JsonNode::class.java))
+    }
+
+    @Test
+    fun `projectDiscoveryCandidate treats a 409 with matching identity as already present`() {
+        val source = discoverySource()
+        stubApplicationMissing()
+        stubCandidateGet()
+            .thenThrow(HttpClientErrorException(HttpStatus.NOT_FOUND))
+            .thenReturn(ResponseEntity(mapper.readTree(candidateBody(source)), HttpStatus.OK))
+        Mockito.`when`(restTemplate.exchange(
+            eq("https://es.example.com:9200/orcid_info_candidate/_doc/DOC?op_type=create"),
+            eq(HttpMethod.PUT), any<HttpEntity<*>>(), eq(JsonNode::class.java)
+        )).thenThrow(HttpClientErrorException(HttpStatus.CONFLICT))
+
+        val result = service.projectDiscoveryCandidate("DOC", source, "LEGACY_APPROVED")
+
+        assertEquals(ExpertIndexWriterService.DiscoveryCandidateProjection.ALREADY_PRESENT, result)
+    }
+
+    @Test
+    fun `projectDiscoveryCandidate refuses a non-admitted decision`() {
+        val result = service.projectDiscoveryCandidate("DOC", discoverySource(), "HOLD")
+
+        assertEquals(ExpertIndexWriterService.DiscoveryCandidateProjection.NOT_ADMITTED, result)
+        Mockito.verifyNoInteractions(restTemplate)
+    }
+
+    @Test
+    fun `projectDiscoveryCandidate does not copy a candidate back when the application exists`() {
+        Mockito.`when`(restTemplate.exchange(
+            eq("https://es.example.com:9200/orcid_info_application/_doc/DOC"),
+            eq(HttpMethod.HEAD), any<HttpEntity<*>>(), eq(Void::class.java)
+        )).thenReturn(ResponseEntity(HttpStatus.OK))
+
+        val result = service.projectDiscoveryCandidate("DOC", discoverySource(), "MANUAL_APPROVED")
+
+        assertEquals(ExpertIndexWriterService.DiscoveryCandidateProjection.APPLICATION_PRESENT, result)
+        Mockito.verify(restTemplate, Mockito.never()).exchange(Mockito.contains("orcid_info_candidate"),
+            eq(HttpMethod.PUT), any<HttpEntity<*>>(), eq(JsonNode::class.java))
+    }
 }

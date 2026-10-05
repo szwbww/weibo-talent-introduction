@@ -45,6 +45,8 @@ function createSandbox() {
         stopBatchSendStatusPoll: () => {},
         // c4/I-2：关闭入口的设置面板清理由 closeTaskModal 负责；真实函数在 app.js 内。
         resetDiscoverySchedulePanel: () => {},
+        // c5/I-3：审核页签的关闭清理同样由 closeTaskModal 负责（不取消后台审核任务）。
+        resetDiscoveryReviewPanel: () => {},
         showStatus: () => {},
         restoreTaskButton: () => {}
     };
@@ -208,5 +210,42 @@ describe("task modal lifecycle integration", () => {
         assert.strictEqual(events[1][0], "status");
         assert.strictEqual(events[1][1], "重新验证候选人 已完成");
         assert.strictEqual(events[1][2], "ok");
+    });
+
+    it("closing the modal clears the discovery review panel state exactly once (c5/I-3)", () => {
+        const sandbox = createSandbox();
+        let resets = 0;
+        sandbox.resetDiscoveryReviewPanel = () => { resets += 1; };
+        sandbox.openTaskModal = (taskType, label, btnId, options) => {
+            const ctx = sandbox.createTaskModalContext(taskType, label, btnId, "PROGRESS");
+            ctx.knownActiveAtOpen = options.knownActiveAtOpen;
+            sandbox.currentTaskModal = ctx;
+        };
+
+        sandbox.openTaskModal("EXPERT_DISCOVERY", "深度发现（外部数据源）", null, { knownActiveAtOpen: true });
+        sandbox.closeTaskModal();
+        assert.strictEqual(resets, 1, "closeTaskModal must clear the discovery review panel state");
+
+        sandbox.closeTaskModal();
+        assert.strictEqual(resets, 1, "a close without an open modal must not clear the review panel again");
+    });
+
+    it("both open paths initialize the review tabs for the same taskType/generation (c5/I-1)", () => {
+        const progressOpen = extractFn("openTaskModal");
+        const configOpen = extractFn("openTaskLaunchModal");
+        const close = extractFn("closeTaskModal");
+        for (const [name, source] of [["openTaskModal", progressOpen], ["openTaskLaunchModal", configOpen]]) {
+            assert.match(source,
+                /typeof initDiscoveryReview === "function"\) initDiscoveryReview\(taskType, capturedGeneration\)/,
+                name + " must initialize the review tabs with the live modal generation");
+        }
+        assert.match(close, /typeof resetDiscoveryReviewPanel === "function"\) resetDiscoveryReviewPanel\(\)/,
+            "closeTaskModal must reset the review panel through the shared seam");
+
+        const init = extractFn("initDiscoveryReview");
+        assert.match(init, /taskType === DISCOVERY_TASK_TYPE/,
+            "the review tabs only attach to EXPERT_DISCOVERY");
+        assert.match(init, /removeAttribute\("data-discovery-review"\)/,
+            "other tasks must drop the width marker (still 700px)");
     });
 });

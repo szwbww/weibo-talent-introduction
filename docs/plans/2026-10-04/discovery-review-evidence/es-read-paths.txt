@@ -1,0 +1,99 @@
+$ rg -n --glob *.kt (_search|_mget|readRawDocument|readDiscoveryDocument|searchExperts|scrollExperts|findByDocumentIds|searchByOrcidIds|findByOrcidId) src/main/kotlin
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:304:    fun searchExperts(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:351:            "${properties.baseUrl}/${expertIndexService.indexName(level)}/_search",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:364:    fun searchExpertsWithEmail(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:384:            "${properties.baseUrl}/${expertIndexService.indexName(level)}/_search",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:397:    fun scrollExperts(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:402:        scrollExperts(level, batchSize) { batch, _, _ -> handler(batch) }
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:405:    fun scrollExperts(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:414:            val initialUrl = "${properties.baseUrl}/$index/_search?scroll=5m"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:443:                    "${properties.baseUrl}/_search/scroll",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:455:                        "${properties.baseUrl}/_search/scroll",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:638:    fun searchByOrcidIds(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:654:            "${properties.baseUrl}/$index/_search",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:665:    fun searchExpertsFiltered(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:689:            "${properties.baseUrl}/${expertIndexService.indexName(level)}/_search",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:720:    fun scrollExpertsFiltered(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:730:            val initialUrl = "${properties.baseUrl}/$index/_search?scroll=5m"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:764:                    "${properties.baseUrl}/_search/scroll",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:776:                        "${properties.baseUrl}/_search/scroll",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:812:                "${properties.baseUrl}/$index/_search",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:829:    fun findByOrcidId(orcidId: String, level: ExpertIndexLevel): ExpertProfile? {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:839:            "${properties.baseUrl}/${expertIndexService.indexName(level)}/_search",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:853:     * I-1/I-3：按真实 `_id` 批量读取（`_mget`），结果复用 [toExpertProfile]，因此与列表/详情读到同一批字段。
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:854:     * `orcidId` 只是文档里的一个字段：搜索式 `findByOrcidId` 不能保证命中真实文档，定位一律以 `_id` 为准。
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:857:    fun findByDocumentIds(level: ExpertIndexLevel, ids: List<String>): List<ExpertProfile> {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:867:            "${properties.baseUrl}/_mget",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:907:            "${properties.baseUrl}/${expertIndexService.indexName(level)}/_search",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:1003:            "${properties.baseUrl}/${expertIndexService.indexName(level)}/_search",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:1048:            "${properties.baseUrl}/${expertIndexService.indexName(level)}/_search",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:1156:            "${properties.baseUrl}/${expertIndexService.indexName(level)}/_search",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:1179:    fun searchExpertsByTypesWithEmail(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:1206:            "${properties.baseUrl}/${expertIndexService.indexName(level)}/_search",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:37:            expertSearchService.scrollExperts(ExpertIndexLevel.CANDIDATE) { batch, batchNumber, totalHits ->
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:40:                    return@scrollExperts false
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:158:            expertSearchService.scrollExperts(ExpertIndexLevel.RAW) { batch, batchNumber, totalHits ->
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:162:                    return@scrollExperts false
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:267:        val rawDoc = expertIndexWriterService.readRawDocument(docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:332:            val snapshot = expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.RAW, docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:338:                else expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:374:            expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.RAW, docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:390:        val raw = expertSearchService.findByDocumentIds(ExpertIndexLevel.RAW, listOf(docId)).firstOrNull()
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:385:                "${properties.baseUrl}/$index/_search",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:673:    fun readRawDocument(docId: String): Map<String, Any?>? {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:694:    /** Unlike readRawDocument, a transport failure is never mistaken for missing RAW. */
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:695:    fun readDiscoveryDocument(level: ExpertIndexLevel, docId: String): DiscoverySnapshot? {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:750:        val current = readDiscoveryDocument(ExpertIndexLevel.RAW, docId) ?: return false
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:753:        val candidate = if (preserveApplication) null else readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:765:        val stableRaw = readDiscoveryDocument(ExpertIndexLevel.RAW, docId) ?: return false
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:70:        val result = expertSearchService.searchExperts(
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:76:            .findByOrcidIdIn(orcidIds)
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:275:        val profile = expertSearchService.findByOrcidId(request.orcidId, request.level)
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:289:        val profile = expertSearchService.findByOrcidId(request.orcidId, request.level)
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:316:        val expert = expertSearchService.findByOrcidId(orcidId, level)
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:330:        val profile = expertSearchService.findByOrcidId(orcidId, level)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2844:        val profiles = expertSearchService.findByDocumentIds(ExpertIndexLevel.RAW, claimed.map { it.expertDocId })
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3270:        val url = "${esProperties.baseUrl}/$indices/_search?ignore_unavailable=true"
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3405:        expertSearchService.scrollExperts(ExpertIndexLevel.RAW) { batch, batchNumber, totalHits ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3406:            if (progressStore.isCancelled("EXPERT_DISCOVERY")) return@scrollExperts false
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3407:            if (attemptedCount >= limit) return@scrollExperts false
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPromotionProgressService.kt:86:            val response = restTemplate.exchange("${properties.baseUrl}/_mget", HttpMethod.POST,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ContactCountryBackfillService.kt:53:                        expertSearchService.searchByOrcidIds(orcidBatch, level)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchEmailVerificationService.kt:41: * - I-5 仅 undeliverable 追加 tags 中的「邮箱异常」：用真实 `esDocId` 做 `_mget`，只在真实 ID、ORCID、
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchEmailVerificationService.kt:363:                val document = expertSearchService.findByDocumentIds(level, listOf(docId)).firstOrNull() ?: continue
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:177:            val result = expertSearchService.searchExpertsByTypesWithEmail(size, level, types, offset)
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyContextService.kt:76:            val profile = expertSearchService.findByOrcidId(orcidId, level)
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyContextService.kt:78:                    expertSearchService.findByOrcidId(orcidId, ExpertIndexLevel.CANDIDATE)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:34: * 对 ES 仅做 `_search` 只读查询。
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:266:            "${properties.baseUrl}/$index/_search",
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1002:                    val existingAttempt = mailSendAttemptRepository.findByOrcidIdAndMailType(normOrcid, "INTRODUCTION")
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1343:     * 故按 ORCID 取既有行（复用既有 `findByOrcidIdIn`，不新增仓储方法/表/状态），
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1349:            addAll(expertContactRepository.findByOrcidIdIn(listOf(normOrcid)).mapNotNull { it.id })
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1421:        expertContactRepository.findByOrcidIdIn(listOf(normOrcid))
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1446:        return expertContactRepository.findByOrcidIdIn(distinct)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1482:                    expertSearchService.searchByOrcidIds(orcidIds, ExpertIndexLevel.valueOf(level))
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1687:                val page = expertSearchService.searchExpertsFiltered(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1707:        val contacts = if (normOrcidList.isNotEmpty()) expertContactRepository.findByOrcidIdIn(normOrcidList) else emptyList()
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1759:            expertSearchService.scrollExpertsFiltered(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1826:            val page = expertSearchService.searchExpertsFiltered(
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:369:        val contactIds = expertContactRepository.findByOrcidIdIn(orcidIds).mapNotNull { it.id }
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:377:        val candidate = expertSearchService.searchExperts(
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:382:        val application = expertSearchService.searchExperts(
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:392:        val candidate = expertSearchService.searchByOrcidIds(orcidIds, ExpertIndexLevel.CANDIDATE)
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:394:        val application = expertSearchService.searchByOrcidIds(orcidIds, ExpertIndexLevel.APPLICATION)
+src/main/kotlin/com/weibo/talentintroduction/llm/service/UnsupportedAnswerIndexService.kt:285:                "${indexUrl()}/_search",
+src/main/kotlin/com/weibo/talentintroduction/llm/service/UnsupportedAnswerIndexService.kt:370:                "${indexUrl()}/_search",
+src/main/kotlin/com/weibo/talentintroduction/llm/service/UnsupportedAnswerIndexService.kt:491:                "${indexUrl()}/_search",
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:19:    fun findByOrcidIdIn(orcidIds: List<String>): List<ExpertContact>
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MailSendAttemptRepository.kt:12:    fun findByOrcidIdAndMailType(orcidId: String, mailType: String): MailSendAttempt?
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MailSendAttemptRepository.kt:17:    fun findByOrcidIdAndMailTypeForUpdate(orcidId: String, mailType: String): MailSendAttempt?
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:41: * 专家标签按 (level, orcidId) 批量投影（I-6，复用 [ExpertSearchService.searchByOrcidIds]，
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:320:     * - 只对当前页 id 调一次 findAllById（不查全库、不逐人 findByOrcidId）；按层级分组后
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:321:     *   每层至多一次 searchByOrcidIds（全页 ≤3 次）；页为空/无合法 (level, orcid) 零调用。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:335:                for (profile in expertSearchService.searchByOrcidIds(orcidIds, level)) {
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:358:    // + ManualInitialOutreachService 发信前的 findByOrcidIdAndMailType 存在性判定），故 MIN(sent_at)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailVariableService.kt:288:            val profile = expertSearchService.findByOrcidId(orcidId, level)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailVariableService.kt:293:                expertSearchService.findByOrcidId(orcidId, ExpertIndexLevel.CANDIDATE)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:221:        val attempt = attemptRepository.findByOrcidIdAndMailType(orcidId, shortKey) ?: return null
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:252:        val attempt = attemptRepository.findByOrcidIdAndMailTypeForUpdate(

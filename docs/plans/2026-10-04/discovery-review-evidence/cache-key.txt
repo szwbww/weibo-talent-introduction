@@ -1,0 +1,13 @@
+$ rg -n -F 20261004-mailbox-suspension-followup src/test src/main/resources/static/index.html
+exit=0
+src/main/resources/static/index.html:11:    <link rel="stylesheet" href="styles.css?v=20261004-mailbox-suspension-followup">
+src/main/resources/static/index.html:12:    <link rel="stylesheet" href="expert-materials.css?v=20261004-mailbox-suspension-followup">
+src/main/resources/static/index.html:13:    <link rel="stylesheet" href="mailbox-chat.css?v=20261004-mailbox-suspension-followup">
+src/main/resources/static/index.html:14:    <link rel="stylesheet" href="meeting-confirmation.css?v=20261004-mailbox-suspension-followup">
+src/main/resources/static/index.html:15:    <link rel="stylesheet" href="world-clock.css?v=20261004-mailbox-suspension-followup">
+src/main/resources/static/index.html:2352:<script src="trust-reply-workbench.js?v=20261004-mailbox-suspension-followup"></script>
+src/main/resources/static/index.html:2353:<script src="expert-materials.js?v=20261004-mailbox-suspension-followup"></script>
+src/main/resources/static/index.html:2354:<script src="meeting-confirmation.js?v=20261004-mailbox-suspension-followup"></script>
+src/main/resources/static/index.html:2355:<script src="mailbox-chat.js?v=20261004-mailbox-suspension-followup"></script>
+src/main/resources/static/index.html:2356:<script src="app.js?v=20261004-mailbox-suspension-followup"></script>
+src/main/resources/static/index.html:2357:<script src="world-clock.js?v=20261004-mailbox-suspension-followup"></script>

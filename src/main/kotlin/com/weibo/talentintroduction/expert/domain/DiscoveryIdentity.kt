@@ -2,6 +2,8 @@ package com.weibo.talentintroduction.expert.domain
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.weibo.talentintroduction.discovery.domain.AdmissionReason
+import com.weibo.talentintroduction.discovery.domain.AdmissionReasonCodes
 import java.security.MessageDigest
 import java.util.Locale
 
@@ -204,6 +206,137 @@ object DiscoveryIdentity {
                 .associate { it.key to it.value.asText() }
         } catch (_: Exception) {
             emptyMap()
+        }
+    }
+
+    // ── 01（I-1/I-2/I-3）：准入解释 ────────────────────────────────────────────
+    //
+    // 只读解释：逐项列出与布尔判定**完全相同**的失败条件，绝不签发、改写或升级任何凭证。
+    // 一致性契约（真值表，见 DiscoveryIdentityTest）：
+    //   explainIdentity(p).isEmpty()            == allowed(p)
+    //   explainInstitutionEvidence(p).isEmpty() == validInstitutionEvidence(p)
+    // 解释不依赖调用范围：是否需要机构来源凭证由调用方（发送门禁/准入 policy）决定。
+
+    private const val IDENTITY_STATUS_LOCATION = "DiscoveryIdentity.allowed()"
+    private const val EVIDENCE_LOCATION = "DiscoveryIdentity.validInstitutionEvidence()"
+    private const val EVIDENCE_EXPECTED = "JATS_SHA256|ORCID_RECORD_SHA256|SOURCE_SHA256:<64位小写SHA256>"
+
+    /**
+     * 身份凭证失败原因；空列表 ⟺ [allowed] 为 true。
+     * 非发现档案（[isDiscovery] 为 false）按 [allowed] 的原语义直接放行，不产生原因。
+     */
+    fun explainIdentity(profile: ExpertProfile): List<AdmissionReason> {
+        if (!isDiscovery(profile)) return emptyList()
+        val proof = profile.identityVerification ?: return listOf(AdmissionReason(
+            AdmissionReasonCodes.IDENTITY_MISSING, "身份凭证缺失（没有 VERIFIED 身份对象）",
+            "identityVerification", null, "VERIFIED 身份凭证", "profile.identityVerification"))
+        val reasons = mutableListOf<AdmissionReason>()
+        if (proof.status != "VERIFIED") reasons += AdmissionReason(
+            AdmissionReasonCodes.IDENTITY_STATUS_UNVERIFIED, "身份凭证未通过来源验证",
+            "identityVerification.status", proof.status.ifBlank { null }, "VERIFIED", IDENTITY_STATUS_LOCATION)
+        if (proof.version != VERSION) reasons += AdmissionReason(
+            AdmissionReasonCodes.IDENTITY_VERSION_UNSUPPORTED, "身份凭证版本不受支持",
+            "identityVerification.version", proof.version.toString(), VERSION.toString(), IDENTITY_STATUS_LOCATION)
+        val proofEmail = normalizedEmail(proof.email)
+        if (proofEmail.isEmpty()) reasons += AdmissionReason(
+            AdmissionReasonCodes.IDENTITY_FIELDS_MISMATCH, "身份凭证未记录邮箱",
+            "identityVerification.email", null, "与档案邮箱一致的规范邮箱", IDENTITY_STATUS_LOCATION)
+        else if (proofEmail != normalizedEmail(profile.email)) reasons += AdmissionReason(
+            AdmissionReasonCodes.IDENTITY_FIELDS_MISMATCH, "身份凭证邮箱与档案不一致",
+            "identityVerification.email", proof.email, profile.email, IDENTITY_STATUS_LOCATION)
+        if (proof.givenNames.isNullOrBlank()) reasons += AdmissionReason(
+            AdmissionReasonCodes.IDENTITY_FIELDS_MISMATCH, "身份凭证未记录名字",
+            "identityVerification.givenNames", null, "与档案 givenNames 一致的非空名字", IDENTITY_STATUS_LOCATION)
+        else if (proof.givenNames != profile.givenNames) reasons += AdmissionReason(
+            AdmissionReasonCodes.IDENTITY_FIELDS_MISMATCH, "身份凭证名字与档案不一致",
+            "identityVerification.givenNames", proof.givenNames, profile.givenNames, IDENTITY_STATUS_LOCATION)
+        if (proof.familyNames.isNullOrBlank()) reasons += AdmissionReason(
+            AdmissionReasonCodes.IDENTITY_FIELDS_MISMATCH, "身份凭证未记录姓氏",
+            "identityVerification.familyNames", null, "与档案 familyNames 一致的非空姓氏", IDENTITY_STATUS_LOCATION)
+        else if (proof.familyNames != profile.familyNames) reasons += AdmissionReason(
+            AdmissionReasonCodes.IDENTITY_FIELDS_MISMATCH, "身份凭证姓氏与档案不一致",
+            "identityVerification.familyNames", proof.familyNames, profile.familyNames, IDENTITY_STATUS_LOCATION)
+        // 与 allowed() 相同的两种可接受摘要形态；REVIEWED_SOURCE_SHA256 只影响此处判定，不改来源识别。
+        if (!validEvidence("${proof.source}:${proof.evidenceHash}") &&
+            !(proof.source == "REVIEWED_SOURCE_SHA256" && proof.evidenceHash.orEmpty().matches(Regex("[0-9a-f]{64}")))) {
+            reasons += AdmissionReason(
+                AdmissionReasonCodes.IDENTITY_SOURCE_INVALID, "身份来源摘要格式无效",
+                "identityVerification.source / identityVerification.evidenceHash",
+                "${proof.source}:${proof.evidenceHash}", EVIDENCE_EXPECTED, IDENTITY_STATUS_LOCATION)
+        }
+        return reasons
+    }
+
+    /**
+     * 机构来源凭证失败原因；空列表 ⟺ [validInstitutionEvidence] 为 true。
+     *
+     * - 凭证缺失 ⇒ [AdmissionReasonCodes.INSTITUTION_EVIDENCE_MISSING]：只陈述「当前档案没有该键」，
+     *   并列出当前输入中可核实的来源 ID 冲突，**不**声称还原当时未生成的历史原因。
+     * - 凭证存在但来源种类不在词表内，或与当前身份/机构/国家字段重算结果不一致 ⇒
+     *   [AdmissionReasonCodes.INSTITUTION_EVIDENCE_INVALID]，并按凭证来源种类补列
+     *   [AdmissionReasonCodes.SOURCE_ID_MISSING] / [AdmissionReasonCodes.SOURCE_ID_CONFLICT]。
+     */
+    fun explainInstitutionEvidence(profile: ExpertProfile): List<AdmissionReason> {
+        val token = profile.institutionEvidence
+        val source = token?.substringBefore(':')?.takeIf { it.isNotEmpty() }
+        if (source != null && source in EVIDENCE_SOURCES && token == institutionEvidence(profile, source)) return emptyList()
+        val reasons = mutableListOf<AdmissionReason>()
+        when {
+            token.isNullOrBlank() -> reasons += AdmissionReason(
+                AdmissionReasonCodes.INSTITUTION_EVIDENCE_MISSING, "机构来源凭证缺失（当前档案没有该键）",
+                "institutionEvidence", null, "来源种类:<64位小写SHA256>", "profile.institutionEvidence")
+            source == null || source !in EVIDENCE_SOURCES -> reasons += AdmissionReason(
+                AdmissionReasonCodes.INSTITUTION_EVIDENCE_INVALID, "机构来源凭证的来源种类不受支持",
+                "institutionEvidence", source, EVIDENCE_SOURCES.joinToString("|"), EVIDENCE_LOCATION)
+            else -> reasons += AdmissionReason(
+                AdmissionReasonCodes.INSTITUTION_EVIDENCE_INVALID, "机构来源凭证与当前身份/机构字段不一致",
+                "institutionEvidence", source, "由当前已存字段重算出的同一来源凭证", EVIDENCE_LOCATION)
+        }
+        reasons += sourceIdConflictReasons(profile)
+        if (source != null && source in EVIDENCE_SOURCES) reasons += missingSourceIdReasons(profile, source)
+        return reasons
+    }
+
+    /** 与 `consistentIdentityIds` 同一组配对、同一归一化、同一冲突判据；只用于解释，不参与签发。 */
+    private fun sourceIdConflictReasons(profile: ExpertProfile): List<AdmissionReason> {
+        val proof = profile.identityVerification ?: return emptyList()
+        val ids = parsedExternalIds(profile.externalIds)
+        val primaryOrcid = profile.orcidId.takeIf { it.isNotBlank() && !it.startsWith(EMAIL_KEY_PREFIX) }
+        val reasons = mutableListOf<AdmissionReason>()
+        fun check(leftLabel: String, left: String?, rightLabel: String, right: String?) {
+            val leftId = canonicalId(left) ?: return
+            val rightId = canonicalId(right) ?: return
+            if (leftId.equals(rightId, ignoreCase = true)) return
+            reasons += AdmissionReason(
+                AdmissionReasonCodes.SOURCE_ID_CONFLICT, "来源 ID 冲突（身份凭证与档案不一致）",
+                "externalIds", "$leftLabel=$leftId / $rightLabel=$rightId", "两侧 ID 归一后一致", EVIDENCE_LOCATION)
+        }
+        check("identityVerification.orcid", proof.orcid, "externalIds.orcid", ids["orcid"])
+        check("identityVerification.openAlexAuthorId", proof.openAlexAuthorId,
+            "externalIds.openAlexAuthorId", ids["openAlexAuthorId"])
+        check("orcidId", primaryOrcid, "externalIds.orcid", ids["orcid"])
+        check("orcidId", primaryOrcid, "identityVerification.orcid", proof.orcid)
+        return reasons
+    }
+
+    /** [source] 凭证签发必需的来源 ID 缺项（与 [institutionEvidence] 的必需 ID 判据逐条对应）。 */
+    private fun missingSourceIdReasons(profile: ExpertProfile, source: String): List<AdmissionReason> {
+        val ids = parsedExternalIds(profile.externalIds)
+        fun missing(label: String, field: String, expected: String) = AdmissionReason(
+            AdmissionReasonCodes.SOURCE_ID_MISSING, label, field, null, expected, "profile.externalIds")
+        return when (source) {
+            EVIDENCE_SOURCE_OPENALEX -> buildList {
+                if (ids["openAlexAuthorId"].isNullOrBlank())
+                    add(missing("OPENALEX 凭证缺少作者 ID", "externalIds.openAlexAuthorId", "非空 openAlexAuthorId"))
+                if (ids["doi"].isNullOrBlank() && ids["pmcId"].isNullOrBlank())
+                    add(missing("OPENALEX 凭证缺少论文 ID", "externalIds.doi / externalIds.pmcId", "doi 或 pmcId 至少一项"))
+            }
+            EVIDENCE_SOURCE_ORCID -> listOfNotNull(
+                if (ids["orcid"].isNullOrBlank())
+                    missing("ORCID 凭证缺少 ORCID ID", "externalIds.orcid", "非空 orcid") else null)
+            else -> listOfNotNull(
+                if (ids["pmcId"].isNullOrBlank())
+                    missing("JATS 凭证缺少论文 ID", "externalIds.pmcId", "非空 pmcId") else null)
         }
     }
 

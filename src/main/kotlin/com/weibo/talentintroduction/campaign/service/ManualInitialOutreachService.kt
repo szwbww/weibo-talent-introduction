@@ -52,6 +52,7 @@ import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.task.service.TaskExecutionSummaryProvider
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
+import com.weibo.talentintroduction.template.service.ComposeTemplateSnapshot
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -80,6 +81,9 @@ private const val PERMANENT_SUMMARY_PREFIX = "PERMANENT:"
 
 /** I-3（03）：传给公共状态入口的说明文本上限（该说明不落库，仅作调用点可读性）。 */
 private const val SUMMARY_REASON_LIMIT = 200
+
+/** A3 (I-3)：预估响应里逐人排除明细的条数上限（计数不受限，仅明细截断，避免响应过大）。 */
+private const val PREVIEW_EXCLUDED_DETAIL_LIMIT = 500
 
 @Service
 class ManualInitialOutreachService(
@@ -114,7 +118,9 @@ class ManualInitialOutreachService(
      * I-1/I-3（03）：`operator_status` 的公共写入口 —— 永久失败只有具备地址证据时才允许写
      * EMAIL_INVALID；失败事实本身仍由 [txHelper] 记录，二者相互独立。
      */
-    private val expertOperatorStatusService: ExpertOperatorStatusService
+    private val expertOperatorStatusService: ExpertOperatorStatusService,
+    /** I-1/I-3: 批量目标的唯一准入+显式条件选择器（预估/执行/重试/材料共用）。 */
+    private val batchRecipientSelectionService: BatchRecipientSelectionService = BatchRecipientSelectionService()
 ) {
     private val log = LoggerFactory.getLogger(ManualInitialOutreachService::class.java)
 
@@ -177,13 +183,28 @@ class ManualInitialOutreachService(
             }
             batchEmailVerificationService.requireConfiguredApiKey()
         }
+        // A3 (I-4)：执行开始读取一次模板内容并冻结为内存快照，本次执行的每条邮件都复用它渲染 ——
+        // 运行中模板被改写不会与已冻结内容混用；读取失败（模板缺失/启用状态异常）时回退到逐条渲染，
+        // 由发送期的模板错误明确暴露，绝不静默发错内容。
+        val templateSnapshot = loadTemplateSnapshot(snapshot.mailType, snapshot.templateId)
         return when (snapshot.mailType) {
             BatchSendType.MATERIAL_REMINDER.name ->
-                runMaterialFromSnapshot(snapshot, executionId, mode, oneRoundOnly)
+                runMaterialFromSnapshot(snapshot, executionId, mode, oneRoundOnly, templateSnapshot)
             else ->
-                runIntroductionFromSnapshot(snapshot, executionId, mode, oneRoundOnly)
+                runIntroductionFromSnapshot(snapshot, executionId, mode, oneRoundOnly, templateSnapshot)
         }
     }
+
+    /** A3 (I-4)：执行/预估共用的模板内存快照读取；不可读时返回 null（调用方回退到既有渲染路径）。 */
+    private fun loadTemplateSnapshot(mailType: String, templateId: Long?): ComposeTemplateSnapshot? =
+        runCatching {
+            when {
+                templateId != null -> mailComposeTemplateService.loadSnapshot(templateId)
+                mailType == BatchSendType.INTRODUCTION.name ->
+                    mailComposeTemplateService.loadSnapshotByCode("INTRODUCTION")
+                else -> null
+            }
+        }.getOrNull()
 
     /**
      * Material-reminder batch send loop.
@@ -208,7 +229,8 @@ class ManualInitialOutreachService(
         snapshot: BatchExecutionSnapshot,
         executionId: Long,
         mode: ExecutionMode,
-        oneRoundOnly: Boolean
+        oneRoundOnly: Boolean,
+        templateSnapshot: ComposeTemplateSnapshot?
     ): ManualOutreachResult {
         log.info("Starting material reminder batch: executionId={}, mode={}, oneRoundOnly={}", executionId, mode, oneRoundOnly)
         val ignoreWarmup = mode == ExecutionMode.MANUAL
@@ -366,7 +388,18 @@ class ManualInitialOutreachService(
                         optionValue = templateId.toString(),
                         senderAccountCode = account.accountCode
                     )
-                    val result = manualExpertMailService.sendManualMail(contactId, command)
+                    val result = if (templateSnapshot != null) {
+                        manualExpertMailService.sendManualMailFromSnapshot(
+                            contactId, command,
+                            enforcePersonalizationGate = snapshot.gateFilterEnabled,
+                            templateSnapshot = templateSnapshot
+                        )
+                    } else {
+                        manualExpertMailService.sendManualMail(
+                            contactId, command,
+                            enforcePersonalizationGate = snapshot.gateFilterEnabled
+                        )
+                    }
 
                     if (result.sendStatus == "SENT") {
                         accountRateLimiter.recordSuccess(account.accountCode, provider, config.perMailIntervalMs)
@@ -464,12 +497,12 @@ class ManualInitialOutreachService(
     }
 
     /**
-     * I4a-4: 门禁字段解析的**唯一** seam。预估与执行共用，保证 M-4 同源。
+     * I4a-4: 门禁 ES **粗筛**字段解析的唯一 seam。预估与执行共用，保证 M-4 同源。
      * I4a-1: 开关关闭 / 无模板 / 模板无 required_keys → gateEsFields 为空，零行为变化。
-     * I4a-3: requiredEsFields 可能返回 ALLOWED_HAS_FIELDS 之外的字段
-     * （familyNames/keyword/country/hIndex/worksCount/lastPublicationYear），
-     * 这些字段无法做存在性预筛，此处丢弃并记录 —— 预筛因此是子集近似，
-     * 仍可能有专家在发送时被门禁拦下。
+     * I4a-3: requiredEsFields 只返回"每个可能渲染都必需且可映射 ES 字段"的键，因此这里的
+     * `gateEsFields` 是**不会错误排除**的安全子集；非 ES 字段（familyNames/keyword/country/
+     * hIndex/worksCount/lastPublicationYear）不在此预筛 —— A3 起它们由 [batchTemplateGate]
+     * 用与发送期 compose 同源的**精确**模板门禁逐人判定，不再"丢掉后假称检查完成"。
      */
     private fun resolveScope(snapshot: BatchExecutionSnapshot): RecipientScope {
         val base = RecipientScope.fromSnapshot(snapshot)
@@ -493,39 +526,93 @@ class ManualInitialOutreachService(
      * path (I-1): resolveScope + buildRetryableTargets + countEsTargets for
      * INTRODUCTION, buildMaterialReminderSnapshot(scope, config).targets.size for MATERIAL_REMINDER.
      * Reads the campaign read-only via findByCampaignCode (I-3): never getOrCreateManualCampaign().
+     *
+     * A3: 响应同时冻结模板版本摘要、准入计数、原因命中与逐人原因 key（06 数据源）；INTRODUCTION 的
+     * 门禁开启时，目标在 selector 之后再过一次**精确**模板门禁（[batchTemplateGate]），预估与执行同判定。
      */
     fun countBySnapshot(snapshot: BatchExecutionSnapshot): PendingOutreachSummary = when (snapshot.mailType) {
         BatchSendType.MATERIAL_REMINDER.name -> {
             val scope = resolveScope(snapshot)
-            val materialSnapshot = buildMaterialReminderSnapshot(scope, verificationFilterNow())
+            val accumulator = AdmissionPreviewAccumulator()
+            val materialSnapshot = buildMaterialReminderSnapshot(
+                scope, verificationFilterNow(), onSelection = accumulator::record
+            )
             PendingOutreachSummary(
                 pending = materialSnapshot.targets.size,
                 retryable = 0,
                 totalSendable = materialSnapshot.targets.size,
-                excludedVerifiedUnavailable = materialSnapshot.excludedVerifiedUnavailable
+                excludedVerifiedUnavailable = materialSnapshot.excludedVerifiedUnavailable,
+                template = previewTemplateVersion(snapshot),
+                admission = accumulator.counts(materialSnapshot.targets.size),
+                reasonHits = accumulator.reasonHits(),
+                excludedRecipients = accumulator.excludedRecipients(PREVIEW_EXCLUDED_DETAIL_LIMIT)
             )
         }
         else -> {
             val scope = resolveScope(snapshot)
             val now = verificationFilterNow()
+            val accumulator = AdmissionPreviewAccumulator()
+            // A3 (I-4)：门禁开启时用精确模板门禁（与发送期 compose 同源），不再是 ES 字段白名单子集。
+            val gate = batchTemplateGate(snapshot)
             var retryable = 0
             var excluded = 0
+            val seenOrcids = mutableSetOf<String>()
+            val seenDocIds = mutableSetOf<String>()
             val campaign = campaignRepository.findByCampaignCode("MANUAL_OUTREACH")
             if (campaign != null) {
                 val campaignId = campaign.id ?: error("Campaign ID is null")
-                val (retryableTargets, _, retryableExcluded) = buildFilteredRetryableTargets(campaignId, scope, now)
+                val (retryableTargets, retryableSeenOrcids, retryableExcluded) = buildFilteredRetryableTargets(
+                    campaignId, scope, now, seenDocIds, gate, accumulator::record
+                )
                 retryable = retryableTargets.size
                 excluded += retryableExcluded
+                seenOrcids.addAll(retryableSeenOrcids)
             }
-            val (esEstimate, esExcluded) = countEsTargets(scope, now)
+            val (esEstimate, esExcluded) = countEsTargets(
+                scope, now, gate = gate, onSelection = accumulator::record,
+                initialSeenOrcids = seenOrcids, initialSeenDocIds = seenDocIds
+            )
             excluded += esExcluded
             PendingOutreachSummary(
                 pending = esEstimate,
                 retryable = retryable,
                 totalSendable = esEstimate + retryable,
-                excludedVerifiedUnavailable = excluded
+                excludedVerifiedUnavailable = excluded,
+                template = previewTemplateVersion(snapshot),
+                admission = accumulator.counts(esEstimate + retryable),
+                reasonHits = accumulator.reasonHits(),
+                excludedRecipients = accumulator.excludedRecipients(PREVIEW_EXCLUDED_DETAIL_LIMIT)
             )
         }
+    }
+
+    /** A3 (I-4)：预估冻结的模板版本摘要；无模板或不可读时为 null。 */
+    private fun previewTemplateVersion(snapshot: BatchExecutionSnapshot): PreviewTemplateVersion? {
+        val templateId = snapshot.templateId ?: return null
+        val loaded = runCatching { mailComposeTemplateService.loadSnapshot(templateId) }.getOrNull() ?: return null
+        return PreviewTemplateVersion(
+            templateId = loaded.templateId,
+            versionToken = loaded.versionToken,
+            enabled = loaded.enabled,
+            mailType = loaded.mailType
+        )
+    }
+
+    /**
+     * A3 (I-4): INTRODUCTION 批量模板门禁的**精确**判定过滤器 —— 与发送期 compose 使用同一模板
+     * ID/seed/实际选中变体与实际变量值，只对**专家变量**判定；账号变量缺项是启动前配置错误
+     * （[com.weibo.talentintroduction.campaign.service.BatchSendControlService.validateTemplateAtLaunch]），
+     * 绝不用 `account=null` 把全部专家筛掉。门禁关闭 / 非 INTRODUCTION 时为 no-op。
+     */
+    private fun batchTemplateGate(snapshot: BatchExecutionSnapshot): (List<ExpertProfile>) -> List<ExpertProfile> {
+        if (!snapshot.gateFilterEnabled || snapshot.mailType != BatchSendType.INTRODUCTION.name) return { it }
+        val templateId = snapshot.templateId
+        return { profiles -> profiles.filter { !batchGateExcludes(templateId, it) } }
+    }
+
+    private fun batchGateExcludes(templateId: Long?, profile: ExpertProfile): Boolean {
+        val evaluation = introductionMailComposer.evaluateForBatch(null, profile, templateId)
+        return evaluation.missingKeys.any { it !in MailComposeTemplateService.ACCOUNT_VARIABLE_KEYS }
     }
 
     /**
@@ -547,11 +634,13 @@ class ManualInitialOutreachService(
         oneRoundOnly: Boolean
     ): ManualOutreachResult {
         val config = batchSendSettingService.getConfig()
+        val snapshot = config.toSnapshot(oneRoundOnly = oneRoundOnly)
         return runIntroductionFromSnapshot(
-            config.toSnapshot(oneRoundOnly = oneRoundOnly),
+            snapshot,
             executionId,
             mode,
-            oneRoundOnly = oneRoundOnly
+            oneRoundOnly = oneRoundOnly,
+            templateSnapshot = loadTemplateSnapshot(snapshot.mailType, snapshot.templateId)
         )
     }
 
@@ -559,7 +648,8 @@ class ManualInitialOutreachService(
         snapshot: BatchExecutionSnapshot,
         executionId: Long,
         mode: ExecutionMode,
-        oneRoundOnly: Boolean
+        oneRoundOnly: Boolean,
+        templateSnapshot: ComposeTemplateSnapshot?
     ): ManualOutreachResult {
         log.info("Starting scheduled batch outreach, executionId={}, mode={}, oneRoundOnly={}", executionId, mode, oneRoundOnly)
         val ignoreWarmup = mode == ExecutionMode.MANUAL
@@ -581,10 +671,13 @@ class ManualInitialOutreachService(
             null
         }
         val filterNow = verificationFilterNow()
-        val (retryableTargets, seenOrcids, _) = buildFilteredRetryableTargets(campaignId, scope, filterNow)
-        val (esEstimate, _) = countEsTargets(scope, filterNow) {
+        // A3 (I-4)：预估（countBySnapshot）与执行共用的精确模板门禁；门禁关闭时为 no-op。
+        val gate = batchTemplateGate(snapshot)
+        val seenDocIds = mutableSetOf<String>()
+        val (retryableTargets, seenOrcids, _) = buildFilteredRetryableTargets(campaignId, scope, filterNow, seenDocIds, gate)
+        val (esEstimate, _) = countEsTargets(scope, filterNow, {
             progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)
-        }
+        }, gate, initialSeenOrcids = seenOrcids, initialSeenDocIds = seenDocIds)
         val totalEstimate = retryableTargets.size + esEstimate
         log.info("Outreach targets: {} retryable, {} ES estimate, {} total estimate; config: roundSize={}, perMailMs={}, perRoundMs={}",
             retryableTargets.size, esEstimate, totalEstimate,
@@ -616,10 +709,10 @@ class ManualInitialOutreachService(
             // 再叠加历史不可达过滤；整页被过滤时迭代器继续推进 offset（I-3）。
             filterPage = { profiles ->
                 filterKnownProfiles(
-                    profiles.filter { scope.matchesEsTarget(it) },
+                    gate(selectIncluded(scope, profiles, seenDocIds)),
                     scope.excludeVerifiedUnavailableEmails,
                     filterNow
-                )
+                ).filter { seenDocIds.add(BatchRecipientSelectionService.docIdOf(it)) }
             },
             shouldStop = { progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId) }
         )
@@ -697,9 +790,9 @@ class ManualInitialOutreachService(
                 val (existingContact, expert) = targetIterator.next()
                 val normOrcid = normalizeOrcid(expert.orcidId)
 
-                // I4-1/I4-4: 发送前最后门禁 —— 与 ES 查询、内存重试过滤共用同一份类型判定。
-                // 查询/缓存/未来重构错误可能绕过 ES 侧，创建 contact 前再判一次。
-                if (!scope.matchesExpertType(expert)) {
+                // I-1/I-3: 发现准入与显式条件已由统一 selector 在取页/重试构造时判定；
+                // 这里保留廉价的内存类型复核，兜住任何绕过查询侧的残余路径。
+                if (scope.mailType == BatchSendType.INTRODUCTION.name && !scope.matchesExpertType(expert)) {
                     accumulator.recordSkipped(
                         BatchOutcomeReasonCodes.EXPERT_NOT_SENDABLE,
                         "研发类型不在本次选择范围内：${expert.orcidId}"
@@ -709,22 +802,6 @@ class ManualInitialOutreachService(
                     roundRejected++
                     updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
                         "RUNNING", "研发类型不在本次选择范围内：${expert.orcidId}", errors, mode, roundNumber, config, runAccountStats,
-                        roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
-                    continue
-                }
-
-                // I-1/I-3: 发送前最后门禁 —— 与 ES 取页、预估共用同一最终谓词（[RecipientScope.matchesEsTarget]）。
-                // 目标构造与取页已按该谓词过滤，这里兜住任何绕过查询侧的残余路径：不建联系人、不占名额、不发邮件。
-                if (!scope.matchesEsTarget(expert)) {
-                    accumulator.recordSkipped(
-                        BatchOutcomeReasonCodes.DISCOVERY_EVIDENCE_MISSING,
-                        "新发现机构证据不足：${expert.orcidId}"
-                    )
-                    processedTotal++
-                    roundProcessed++
-                    roundRejected++
-                    updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
-                        "RUNNING", "已跳过机构证据不足的新发现：${expert.orcidId}", errors, mode, roundNumber, config, runAccountStats,
                         roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
                     continue
                 }
@@ -941,8 +1018,18 @@ class ManualInitialOutreachService(
 
                     val messageId = "<manual-outreach-${normOrcid}-${UUID.randomUUID()}@weibo.com>"
                     val mail = try {
-                        introductionMailComposer.compose(account.accountCode, expert, config.templateId)
-                            .copy(messageId = messageId)
+                        if (templateSnapshot != null) {
+                            introductionMailComposer.composeFromSnapshot(
+                                account.accountCode, expert, config.templateId,
+                                enforcePersonalizationGate = snapshot.gateFilterEnabled,
+                                snapshot = templateSnapshot
+                            ).copy(messageId = messageId)
+                        } else {
+                            introductionMailComposer.compose(
+                                account.accountCode, expert, config.templateId,
+                                enforcePersonalizationGate = snapshot.gateFilterEnabled
+                            ).copy(messageId = messageId)
+                        }
                     } catch (e: PersonalizationGateException) {
                         log.info("Personalization gate blocked ORCID {}: missing keys {}", normOrcid, e.missingKeys)
                         accumulator.recordSkipped(
@@ -1423,15 +1510,19 @@ class ManualInitialOutreachService(
     private fun buildFilteredRetryableTargets(
         campaignId: Long,
         scope: RecipientScope,
-        now: LocalDateTime
+        now: LocalDateTime,
+        seenDocIds: MutableSet<String>,
+        gate: (List<ExpertProfile>) -> List<ExpertProfile> = { it },
+        onSelection: ((RecipientSelection) -> Unit)? = null
     ): Triple<List<Pair<ExpertContact?, ExpertProfile>>, MutableSet<String>, Int> {
-        val (targets, seen) = buildRetryableTargets(campaignId, scope)
+        val (targets, seen) = buildRetryableTargets(campaignId, scope, gate, onSelection)
         val (filtered, excluded) = filterTargets(
             targets,
             enabled = scope.excludeVerifiedUnavailableEmails,
             now = now,
             email = { it.second.email }
         )
+        filtered.forEach { seenDocIds.add(BatchRecipientSelectionService.docIdOf(it.second)) }
         return Triple(filtered, seen, excluded)
     }
 
@@ -1453,12 +1544,17 @@ class ManualInitialOutreachService(
      * Retry path applies the same [RecipientScope] as ES (I-3 / K-batch-send-filter-retry-parity).
      * Profiles are loaded from every funnel level in scope (not hard-coded CANDIDATE).
      */
+    @JvmOverloads
     private fun buildRetryableTargets(
         campaignId: Long,
-        scope: RecipientScope
+        scope: RecipientScope,
+        gate: (List<ExpertProfile>) -> List<ExpertProfile> = { it },
+        onSelection: ((RecipientSelection) -> Unit)? = null
     ): Pair<List<Pair<ExpertContact?, ExpertProfile>>, MutableSet<String>> {
         val seenOrcids = mutableSetOf<String>()
+        val seenDocIds = mutableSetOf<String>()
         val targets = mutableListOf<Pair<ExpertContact?, ExpertProfile>>()
+        val candidates = mutableListOf<Triple<ExpertContact, ExpertProfile, String>>()
 
         val newContacts = expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(campaignId, "NEW")
         if (newContacts.isNotEmpty()) {
@@ -1489,8 +1585,28 @@ class ManualInitialOutreachService(
                 val profile = scope.funnelLevels.asSequence()
                     .mapNotNull { level -> profilesByLevel[level]?.get(normOrcid) }
                     .firstOrNull() ?: continue
-                if (!scope.matchesExpert(profile)) continue
-                if (seenOrcids.add(normOrcid)) {
+                candidates.add(Triple(contact, profile, normOrcid))
+            }
+            // I-1/I-3: 与 ES 页、预估共用同一 selector（显式条件 + 持久准入）。
+            val selection = if (candidates.isEmpty()) {
+                RecipientSelection.EMPTY
+            } else {
+                batchRecipientSelectionService.select(scope, candidates.map { it.second })
+            }
+            onSelection?.invoke(selection)
+            val included = selection.includedDocIds
+            // A3 (I-4): selector 之后再过精确模板门禁（与发送期 compose 同源）。
+            val gatedDocIds = candidates.asSequence()
+                .filter { BatchRecipientSelectionService.docIdOf(it.second) in included }
+                .distinctBy { BatchRecipientSelectionService.docIdOf(it.second) }
+                .map { it.second }
+                .toList()
+                .let { gate(it) }
+                .map { BatchRecipientSelectionService.docIdOf(it) }
+                .toSet()
+            for ((contact, profile, normOrcid) in candidates) {
+                if (BatchRecipientSelectionService.docIdOf(profile) !in gatedDocIds) continue
+                if (seenOrcids.add(normOrcid) && seenDocIds.add(BatchRecipientSelectionService.docIdOf(profile))) {
                     targets.add(Pair(contact, profile))
                 }
             }
@@ -1640,12 +1756,13 @@ class ManualInitialOutreachService(
      */
     private fun buildMaterialReminderSnapshot(
         scope: RecipientScope,
-        now: LocalDateTime
+        now: LocalDateTime,
+        onSelection: ((RecipientSelection) -> Unit)? = null
     ): MaterialReminderSnapshot {
         val scopeDescription = scope.funnelLevels.joinToString("+") + " + tags=${scope.tags}" +
             (scope.emailDomains.takeIf { it.isNotEmpty() }?.let { " + domains=" + it.joinToString(",") } ?: "") +
             (scope.discipline?.let { " + discipline=$it" } ?: "")
-        return buildMaterialReminderSnapshotFromScope(scope, scopeDescription, now)
+        return buildMaterialReminderSnapshotFromScope(scope, scopeDescription, now, onSelection)
     }
 
     private fun buildMaterialReminderSnapshot(config: BatchSendConfig): MaterialReminderSnapshot {
@@ -1668,7 +1785,8 @@ class ManualInitialOutreachService(
     private fun buildMaterialReminderSnapshotFromScope(
         scope: RecipientScope,
         scopeDescription: String,
-        now: LocalDateTime
+        now: LocalDateTime,
+        onSelection: ((RecipientSelection) -> Unit)? = null
     ): MaterialReminderSnapshot {
         var totalHits = 0L
         val allExperts = mutableListOf<ExpertProfile>()
@@ -1712,11 +1830,22 @@ class ManualInitialOutreachService(
             .map { normalizeOrcid(it.orcidId) }
             .toSet()
 
+        // I-1/I-3: 与预估/执行共用同一 selector（显式条件 + 持久准入）。
+        // 材料提醒的 `承诺回复材料` 标签由快照隐式加入且已由 ES 查询强制，selector 不重复判定该隐式标签。
+        val includedDocIds = if (normalizedExperts.isEmpty()) {
+            emptySet()
+        } else {
+            val selection = batchRecipientSelectionService.select(scope.copy(tags = emptyList()), allExperts)
+            onSelection?.invoke(selection)
+            selection.includedDocIds
+        }
+
         // Step 4: apply exclusion rules, dedup by contactId
         val seenContactIds = mutableSetOf<Long>()
         val sendableTargets = mutableListOf<Pair<ExpertContact, ExpertProfile>>()
 
         for ((normOrcid, expert) in normalizedExperts) {
+            if (BatchRecipientSelectionService.docIdOf(expert) !in includedDocIds) continue  // exclude: not admitted / explicit condition (I-1/I-3)
             if (normOrcid in boundOrcids) continue             // exclude: already bound to a sender account (I-3)
             val contact = contactByNormOrcid[normOrcid] ?: continue  // exclude: no existing contact
             val contactId = contact.id ?: continue
@@ -1746,14 +1875,24 @@ class ManualInitialOutreachService(
      * I-3: 预估与实际发送共用同一个最终谓词 —— 走 ES scroll 对每个批次做内存最终筛选，
      * 绝不把粗筛命中数当成可发送数。`excludeVerifiedUnavailableEmails` 打开时叠加历史不可达过滤；
      * `shouldStop` 保留取消语义（取消后不再翻页、不再计数）。
+     * A3: `gate` 是精确模板门禁（[batchTemplateGate]），`onSelection` 供预估汇总准入/原因明细。
+     * R-1: retry identities seed a private global set, just as [OutreachTargetIterator] consumes
+     * each normalized identity before selection across all pages/levels. Never mutate execution's set.
      */
+    @JvmOverloads
     private fun countEsTargets(
         scope: RecipientScope,
         now: LocalDateTime,
-        shouldStop: () -> Boolean = { false }
+        shouldStop: () -> Boolean = { false },
+        gate: (List<ExpertProfile>) -> List<ExpertProfile> = { it },
+        onSelection: ((RecipientSelection) -> Unit)? = null,
+        initialSeenOrcids: Set<String> = emptySet(),
+        initialSeenDocIds: Set<String> = emptySet()
     ): Pair<Int, Int> {
         var sendable = 0
         var excluded = 0
+        val seenOrcids = initialSeenOrcids.toMutableSet()
+        val seenDocIds = initialSeenDocIds.toMutableSet()
         for (level in scope.funnelLevels) {
             if (shouldStop()) break
             expertSearchService.scrollExpertsFiltered(
@@ -1764,9 +1903,19 @@ class ManualInitialOutreachService(
                 if (shouldStop()) {
                     false
                 } else {
-                    val matched = batch.filter { scope.matchesEsTarget(it) }
+                    val unseen = batch.filter {
+                        seenOrcids.add(normalizeOrcid(it.orcidId)) &&
+                            BatchRecipientSelectionService.docIdOf(it) !in seenDocIds
+                    }
+                        .distinctBy { BatchRecipientSelectionService.docIdOf(it) }
+                    val selection = if (unseen.isEmpty()) RecipientSelection.EMPTY
+                        else batchRecipientSelectionService.select(scope, unseen)
+                    onSelection?.invoke(selection)
+                    val matched = gate(
+                        unseen.filter { BatchRecipientSelectionService.docIdOf(it) in selection.includedDocIds }
+                    )
                     val retained = filterKnownProfiles(matched, scope.excludeVerifiedUnavailableEmails, now)
-                    sendable += retained.size
+                    sendable += retained.count { seenDocIds.add(BatchRecipientSelectionService.docIdOf(it)) }
                     excluded += matched.size - retained.size
                     !shouldStop()
                 }
@@ -1798,6 +1947,24 @@ class ManualInitialOutreachService(
         if (!enabled || profiles.isEmpty()) return profiles
         val known = findKnownUndeliverable(profiles.map { it.email }, now)
         return profiles.filter { normalizeVerificationEmail(it.email) !in known }
+    }
+
+    /**
+     * I-1/I-3: 统一 selector 的显式条件 + 持久准入过滤（同一 docId 去重后保留原序）。
+     * 预估、ES 取页、NEW 重试与材料快照全部经此，不再有第二套近似过滤。
+     */
+    private fun selectIncluded(
+        scope: RecipientScope,
+        profiles: List<ExpertProfile>,
+        seenDocIds: Set<String> = emptySet()
+    ): List<ExpertProfile> {
+        val distinct = profiles.asSequence()
+            .filter { BatchRecipientSelectionService.docIdOf(it) !in seenDocIds }
+            .distinctBy { BatchRecipientSelectionService.docIdOf(it) }
+            .toList()
+        if (distinct.isEmpty()) return distinct
+        val included = batchRecipientSelectionService.select(scope, distinct).includedDocIds
+        return distinct.filter { BatchRecipientSelectionService.docIdOf(it) in included }
     }
     private fun <T> filterTargets(
         targets: List<T>,
@@ -1837,22 +2004,14 @@ class ManualInitialOutreachService(
     }
 
     private fun buildEsFiltersForLevel(scope: RecipientScope, level: String): List<Map<String, Any>> {
-        // I3a-4: 判据从「等于 NOT_CONTACTED」变为「是否含非 NOT_CONTACTED 值」。
-        // 空集合 或 仅含 NOT_CONTACTED  → 保持 notContacted 基座（N3a-2 逐字不变）。
-        val statuses = scope.operatorStatuses
-        val onlyNotContacted = statuses.isEmpty() || statuses.all { it == "NOT_CONTACTED" }
-        val filters = if (scope.mailType == BatchSendType.INTRODUCTION.name && level == "CANDIDATE" && onlyNotContacted) {
-            ExpertSearchService.notContactedWithEmailDomainsFilters(scope.emailDomains, scope.discipline).toMutableList()
-        } else {
-            // I3a-4: 含任一非 NOT_CONTACTED 状态时必须换成状态无关基座 —— notContacted 基座
-            // 自带 must_not exists operatorStatus，与 term 状态并存恒为空。
-            val base = mutableListOf<Map<String, Any>>(mapOf("exists" to mapOf("field" to "email")))
-            ExpertSearchService.emailDomainsFilter(scope.emailDomains)?.let { base.add(it) }
-            scope.discipline?.let { base.add(ExpertSearchService.disciplineFilter(it)) }
-            // I3a-3: 空集合返回 null，不追加任何状态 filter。
-            ExpertSearchService.operatorStatusesFilter(statuses)?.let { base.add(it) }
-            base
-        }
+        // I-2: 状态空集合 = 不限，绝不偷偷切到 NOT_CONTACTED 基座（页面承诺与执行一致）。
+        // 状态筛选一律走 operatorStatusesFilter（空集合返回 null，不追加）：
+        // NOT_CONTACTED = ES 文档无该字段，其余走 term；含非 NOT_CONTACTED 状态时也自然正确。
+        val base = mutableListOf<Map<String, Any>>(mapOf("exists" to mapOf("field" to "email")))
+        ExpertSearchService.emailDomainsFilter(scope.emailDomains)?.let { base.add(it) }
+        scope.discipline?.let { base.add(ExpertSearchService.disciplineFilter(it)) }
+        ExpertSearchService.operatorStatusesFilter(scope.operatorStatuses)?.let { base.add(it) }
+        val filters = base
         if (scope.tags.isNotEmpty()) {
             filters.add(mapOf("terms" to mapOf("tags" to scope.tags)))
         }
@@ -2016,8 +2175,97 @@ data class PendingOutreachSummary(
     val pending: Int,
     val retryable: Int,
     val totalSendable: Int,
-    val excludedVerifiedUnavailable: Int = 0
+    val excludedVerifiedUnavailable: Int = 0,
+    /**
+     * A3 (I-4): 预估时冻结的模板版本摘要。执行开始时用同一模板的当前令牌比对，不一致即"预估已过期"。
+     * null = 快照无模板 / 模板不可读。
+     */
+    val template: PreviewTemplateVersion? = null,
+    /** A3 (I-3): 本次预估的准入与显式条件计数（06 数据源）。 */
+    val admission: RecipientAdmissionCounts = RecipientAdmissionCounts(),
+    /** A3 (I-3): 原因命中计数（同一人多原因各计一次；总排除按人去重）。 */
+    val reasonHits: Map<String, Int> = emptyMap(),
+    /** A3 (I-3): 被排除者逐人原因 key（受 [PREVIEW_EXCLUDED_DETAIL_LIMIT] 限制，计数不受限）。 */
+    val excludedRecipients: List<PreviewExcludedRecipient> = emptyList()
 )
+
+/**
+ * A3 (I-4): 预估冻结的模板版本摘要。[versionToken] 由模板内容摘要生成，随请求回传后由
+ * [com.weibo.talentintroduction.campaign.service.BatchSendControlService] 在执行开始比对。
+ */
+data class PreviewTemplateVersion(
+    val templateId: Long,
+    val versionToken: String,
+    val enabled: Boolean,
+    val mailType: String?
+)
+
+/**
+ * A3 (I-3): 预估准入计数（06 数据源）。
+ *
+ * - [admitted]：发现准入判定为通过的**去重人数**（非发现档案不计入此列）；
+ * - [needsReview]：持久准入为待审核（NEEDS_REVIEW）的人数；
+ * - [explicitFilterExcluded]：因本次显式条件（状态/类型/学科/域名/方向/标签/地区/门禁字段）被排除的人数；
+ * - [target]：本次目标人数（= 现有 totalSendable 口径）。
+ */
+data class RecipientAdmissionCounts(
+    val admitted: Int = 0,
+    val needsReview: Int = 0,
+    val explicitFilterExcluded: Int = 0,
+    val target: Int = 0
+)
+
+/** A3 (I-3): 被排除者的逐人原因 key（filterKeys = 显式条件；admissionState/reasonKeys = 准入）。 */
+data class PreviewExcludedRecipient(
+    val docId: String,
+    val orcidId: String,
+    val admissionState: String,
+    val filterKeys: List<String>,
+    val reasonKeys: List<String>
+)
+
+/**
+ * A3 (I-3): 预估侧准入摘要累加器（只读、无写入）。按真实 docId 去重后合并 selector 结论，
+ * 汇总 [PendingOutreachSummary] 需要的准入计数、原因命中与逐人原因 key。
+ */
+internal class AdmissionPreviewAccumulator {
+    private val decisions = LinkedHashMap<String, RecipientDecision>()
+    private val reasonHits = LinkedHashMap<String, Int>()
+
+    fun record(selection: RecipientSelection) {
+        (selection.included + selection.excluded).forEach { decision ->
+            if (decisions.putIfAbsent(decision.docId, decision) == null) {
+                BatchRecipientSelectionService.reasonKeysOf(decision).forEach { key ->
+                    reasonHits.merge(key, 1, Int::plus)
+                }
+            }
+        }
+    }
+
+    fun counts(target: Int): RecipientAdmissionCounts = RecipientAdmissionCounts(
+        admitted = decisions.values.count { it.admissionState == RecipientAdmissionState.ADMITTED },
+        needsReview = decisions.values.count { it.admissionState == RecipientAdmissionState.NEEDS_REVIEW },
+        explicitFilterExcluded = decisions.values.count { it.filterKeys.isNotEmpty() },
+        target = target
+    )
+
+    fun reasonHits(): Map<String, Int> = reasonHits.toMap()
+
+    fun excludedRecipients(limit: Int): List<PreviewExcludedRecipient> =
+        decisions.values.asSequence()
+            .filter { !it.included }
+            .take(limit)
+            .map {
+                PreviewExcludedRecipient(
+                    docId = it.docId,
+                    orcidId = it.orcidId,
+                    admissionState = it.admissionState.name,
+                    filterKeys = it.filterKeys,
+                    reasonKeys = BatchRecipientSelectionService.reasonKeysOf(it)
+                )
+            }
+            .toList()
+}
 
 data class ManualOutreachResult(
     val total: Int,

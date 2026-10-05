@@ -22,6 +22,7 @@ import org.springframework.context.annotation.Lazy
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.security.MessageDigest
 import java.time.LocalDateTime
 
 @Service
@@ -169,6 +170,74 @@ class MailComposeTemplateService(
         val blocks = blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(templateId)
         return renderTemplate(template, blocks, variables, variantSeed)
     }
+
+    /**
+     * A3 (I-4): 一次性把模板 + 内容块读进内存并冻结为 [ComposeTemplateSnapshot]。
+     *
+     * 预估用它冻结**模板版本摘要**；一次执行开始后所有渲染都复用同一份内存内容 ——
+     * 运行中模板被改写也不会与已冻结的内容混用（不再每次 `render(id, …)` 重读 DB）。
+     * [ComposeTemplateSnapshot.versionToken] 是这份内容的稳定摘要，供"过期预估令牌"比对。
+     */
+    fun loadSnapshot(id: Long): ComposeTemplateSnapshot {
+        val template = findTemplate(id)
+        val templateId = template.id ?: error("Compose template id is required")
+        val blocks = blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(templateId)
+        return snapshotOf(template, blocks)
+    }
+
+    /** [loadSnapshot] 的按 code 版本（INTRODUCTION 允许不指定 templateId）。 */
+    fun loadSnapshotByCode(templateCode: String): ComposeTemplateSnapshot {
+        val template = templateRepository.findByTemplateCodeAndEnabledTrue(templateCode)
+            ?: error("Enabled compose template not found: $templateCode")
+        val templateId = template.id ?: error("Compose template id is required")
+        val blocks = blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(templateId)
+        return snapshotOf(template, blocks)
+    }
+
+    private fun snapshotOf(
+        template: MailComposeTemplate,
+        blocks: List<MailComposeTemplateBlock>
+    ): ComposeTemplateSnapshot = ComposeTemplateSnapshot(
+        templateId = template.id ?: error("Compose template id is required"),
+        templateCode = template.templateCode,
+        mailType = template.mailType,
+        enabled = template.enabled,
+        versionToken = versionTokenOf(template, blocks)
+    ) { variables, variantSeed -> renderTemplate(template, blocks, variables, variantSeed) }
+
+    /**
+     * A3 (I-4): 模板内容摘要 —— 主题、主题片段引用与每个内容块（顺序/类型/引用/正文）的稳定
+     * SHA-256。模板行或内容块任一被改写都会得到不同令牌；与 [ComposeTemplateSnapshot] 一起构成
+     * "预估冻结 / 执行校验"的版本判据。
+     */
+    private fun versionTokenOf(
+        template: MailComposeTemplate,
+        blocks: List<MailComposeTemplateBlock>
+    ): String {
+        val canonical = buildString {
+            append(template.id).append('|')
+            append(template.subject).append('|')
+            append(template.subjectSnippetId).append('|')
+            append(template.mailType).append('|')
+            append(template.enabled).append('\n')
+            blocks.sortedBy { it.blockOrder }.forEach { block ->
+                append(block.blockOrder).append(':')
+                    .append(block.blockType).append(':')
+                    .append(block.refId).append(':')
+                    .append(block.customText).append('\n')
+            }
+        }
+        return MessageDigest.getInstance("SHA-256")
+            .digest(canonical.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * A3 (I-4): 模板门禁里由**发件账号**提供的必需变量 key。这些 key 对本次全部专家取同一值，
+     * 缺项是启动前的模板/账号配置错误（见 [ACCOUNT_VARIABLE_KEYS]），不得逐人筛掉专家。
+     */
+    fun accountRequiredKeys(templateId: Long): List<String> =
+        effectiveRequiredKeys(templateId).filter { it in ACCOUNT_VARIABLE_KEYS }
 
     /**
      * I-1: required-variable keys for the send gate, derived from the LIVE template —
@@ -785,6 +854,19 @@ class MailComposeTemplateService(
 
         private val FALLBACK_PLACEHOLDER_REGEX = Regex("""\$\{(\w+)\|([^}]*)\}""")
 
+        /**
+         * A3 (I-4): 模板变量中**只由发件账号**提供、对全部专家一致的 key。缺项必须在任务启动前
+         * 作为模板/账号配置错误暴露（见 `BatchSendControlService.validateTemplateAtLaunch`），
+         * 绝不能用 `account=null` 让这些 key 变成"缺个性化字段"把全部专家筛掉。
+         */
+        val ACCOUNT_VARIABLE_KEYS: Set<String> = setOf(
+            "senderEmail",
+            "senderName",
+            "senderTitle",
+            "teamName",
+            "countryName"
+        )
+
         fun variantSeedFor(orcidId: String?, email: String?): Int {
             val trimmedOrcid = orcidId?.trim()?.takeIf { it.isNotBlank() }
             if (trimmedOrcid != null) return trimmedOrcid.hashCode()
@@ -793,6 +875,26 @@ class MailComposeTemplateService(
             return 0
         }
     }
+}
+
+/**
+ * A3 (I-4): 一份**内存模板内容快照**。由 [MailComposeTemplateService.loadSnapshot] /
+ * [MailComposeTemplateService.loadSnapshotByCode] 一次性读取模板与内容块后冻结；之后
+ * [render] 只使用这份内存内容，运行中模板被改写不会与本次执行混用。
+ *
+ * [versionToken] 是该内容的稳定摘要：预估把它冻结进响应，执行开始时用同一模板的当前令牌
+ * 比对，不一致即"预估已过期"。
+ */
+class ComposeTemplateSnapshot internal constructor(
+    val templateId: Long,
+    val templateCode: String?,
+    val mailType: String?,
+    val enabled: Boolean,
+    val versionToken: String,
+    private val renderer: (Map<String, String>, Int) -> ComposeTemplateRenderResult
+) {
+    fun render(variables: Map<String, String>, variantSeed: Int): ComposeTemplateRenderResult =
+        renderer(variables, variantSeed)
 }
 
 data class MailComposeTemplateCommand(
