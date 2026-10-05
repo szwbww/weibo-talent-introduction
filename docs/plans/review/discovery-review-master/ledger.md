@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-10-04/discovery-review-master.md
+
+- Status: REPAIR_PLAN_READY
+- Review epoch: 1
+- Master plan: docs/plans/2026-10-04/discovery-review-master.md (sha256 a25228028b6d2a6190ebeb65e8dc15ad914e3c9a5208bef2cf55c5173f488888)
+- Governing master identity: sha256 a25228028b6d2a6190ebeb65e8dc15ad914e3c9a5208bef2cf55c5173f488888; commit 60d97bbe1425c429b4e6e66409a5585fcd08b3f7
+- Invoked master identity: sha256 15f6e8bdd74dcd25df13581fc20ad33b1b072e099d489817ee918fbe3f0b97ae
+- Master identity state: AMENDMENT_RECORDED
+- Governing amendment: A8; master rule `主计划实现方案 06 文件数上限`; reason `同步 A7 文件上限 6→10`; approval `HUMAN:2026-10-05 用户“批准 继续”`
+- Amendments: A1–A8 recorded in docs/plans/fast/2026-10-04-discovery-review-master/ledger.md; invoked/governing diff changes child limits 03 8→9, 05 10→16, 06 6→10 and adds the A7 initialization note.
+- Fast-p ledger: docs/plans/fast/2026-10-04-discovery-review-master/ledger.md (sha256 e8044aa49c007970d136ea2957fb1c9fd10c9e3b98555335839bab9f32fe87f7)
+- Fast-p handoff: docs/plans/fast/2026-10-04-discovery-review-master/human-review-handoff.md (sha256 bc8fd0ccb17ff19ddfac95438dda9f996a1d83993479831883d5cf89ad367528)
+- Master base: e28e53fd898edd62905a0d45a6bf90396b18b1bf
+- Final code head: ead644fbff77036a09302e91acb86ef092941c19
+- Evidence parent before next commit: 1b62123cab5bc23df33208b5523293443e8590b6
+- Previous evidence commit: N/A
+- Branch: fast/2026-10-04-discovery-review-master
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: invoked discover_fast_p.py against the registered repository; executor time limit prevented complete JSON emission. Using the same script module over only `git worktree list --porcelain` registered worktrees found exactly one ledger with exact master-plan path: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master/docs/plans/fast/2026-10-04-discovery-review-master/ledger.md. Its READY_FOR_HUMAN_REVIEW ledger/handoff, six terminal child rows, evidence commits, recorded branch/worktree, governing identity, and base→final-code ancestry were validated directly.
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_reviewer
+- Reviewer attempt: 1
+- Machine result: FAIL
+- Machine report epoch: docs/plans/review/discovery-review-master/machine-verification.md#epoch-1
+- Repair artifact: docs/plans/fix/discovery-review-master/repair.md
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: Human approval required for `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master/docs/plans/fix/discovery-review-master/repair.md`.
