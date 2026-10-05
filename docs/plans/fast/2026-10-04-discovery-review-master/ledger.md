@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-04/discovery-review-master.md
 
-- Status: RUNNING
+- Status: READY_FOR_HUMAN_REVIEW
 - Master plan: docs/plans/2026-10-04/discovery-review-master.md (commit 60d97bbe1425c429b4e6e66409a5585fcd08b3f7)
 - Amendments: A1, A2, A3, A4, A5, A6, A7, A8
 - Master base: e28e53fd898edd62905a0d45a6bf90396b18b1bf
@@ -24,7 +24,7 @@
 | 03 | docs/plans/2026-10-04/discovery-review-03-all-pages.md | commit:8853573efcfc82a84d75264a53923709e94b4702 | 02 | 2 | LIGHT_PASS_WITH_NOTES | df9cad44ea77f37ebdb0e4af1b2d555573b6ffe5 | 6043a678fe7736d133c9b2f25c1e139ad1130985 | 0 | — | 6043a678fe7736d133c9b2f25c1e139ad1130985 | 71572fee009b621203645cd75dbd970aa69d8e48 | 9 授权文件（A1/A2 人工修正）；写者 ImplDiscoveryReview03E2；核实者 VerifyDiscoveryReview03 LIGHT_PASS_WITH_NOTES（O-1 共享库漂移 RECORD_ONLY；O-2 derivePhase 无 INTERRUPTED 信息项）；epoch 1 PLAN_CONFLICT 见 children/03/pause.md |
 | 04 | docs/plans/2026-10-04/discovery-review-04-admission-writes.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | 01,02,03 | 1 | LIGHT_PASS_WITH_NOTES | 6043a678fe7736d133c9b2f25c1e139ad1130985 | 08f5bd5421333447f9173d34fad1c55ac43c3ba5 | 0 | — | 08f5bd5421333447f9173d34fad1c55ac43c3ba5 | 682346e2cd8e0a23425e522c6a5b3b202a903188 | 10 授权文件；写者首轮 BLOCKED 未提交→二轮 ImplDiscoveryReview04R 完成；核实者 VerifyDiscoveryReview04 LIGHT_PASS_WITH_NOTES（O-1 信息项）；05 epoch2 复验发现该 child 引入回归：03 的 DiscoveryReviewAllPagesTest 5F 自 08f5bd5 起红（因果在 DiscoveryReviewService.kt），已并入 05 epoch 3 修复（A5） |
 | 05 | docs/plans/2026-10-04/discovery-review-05-explicit-send.md | commit:54ddacf3335a200553794575511b1e6659d22dca | 01,02,03,04 | 3 | LIGHT_PASS_WITH_NOTES | 08f5bd5421333447f9173d34fad1c55ac43c3ba5 | b699750b9a84ed56224541e3137cdf1c79f77e7e | 0 | — | b699750b9a84ed56224541e3137cdf1c79f77e7e | 424686b9c0848858db4cfe04023fa0379a07d2ad | A3/A4/A5/A6 修正后 epoch 3 完成：step5+预览 DTO+A5 三修复；全量 mvn test 4653/0F/19E（仅 baseline 既有 ExpertContactLocationServiceTest 19E，O-6）；写者 ImplDiscoveryReview05E3；核实者 VerifyDiscoveryReview05E3 LIGHT_PASS_WITH_NOTES |
-| 06 | docs/plans/2026-10-04/discovery-review-06-ui.md | commit:60d97bbe1425c429b4e6e66409a5585fcd08b3f7 | 01,02,03,04,05 | 2 | LIGHT_PASS_WITH_NOTES | b699750b9a84ed56224541e3137cdf1c79f77e7e | ead644fbff77036a09302e91acb86ef092941c19 | 0 | — | ead644fbff77036a09302e91acb86ef092941c19 | — | A7/A8 epoch2 ImplDiscoveryReview06E2；VerifyDiscoveryReview06E2 COMPLETE_CHILD；40 JVM/1461 JS green；D1及整体验收仍未完成；epoch1暂停记录保留 |
+| 06 | docs/plans/2026-10-04/discovery-review-06-ui.md | commit:60d97bbe1425c429b4e6e66409a5585fcd08b3f7 | 01,02,03,04,05 | 2 | LIGHT_PASS_WITH_NOTES | b699750b9a84ed56224541e3137cdf1c79f77e7e | ead644fbff77036a09302e91acb86ef092941c19 | 0 | — | ead644fbff77036a09302e91acb86ef092941c19 | c62b34e4cafed680b78040990e504e31553eb838 | A7/A8 epoch2 ImplDiscoveryReview06E2；VerifyDiscoveryReview06E2 COMPLETE_CHILD；40 JVM/1461 JS green；D1及整体验收仍未完成；epoch1暂停记录保留 |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
@@ -32,9 +32,9 @@
 | A1 | docs/plans/2026-10-04/discovery-review-03-all-pages.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | commit:8853573efcfc82a84d75264a53923709e94b4702 | 主计划「实现方案」表 03 行文件数上限（8）与「发现额外文件必要时先修订计划」 | TaskTypeCatalog 新增 2 个 taskType 会打红未授权的既有点数断言测试 TaskExecutionSummaryExtractorTest.kt（:248/:264/:219）；授权该文件做计数/集合最小重同步（不弱化断言），03 文件数 8→9 | HUMAN:2026-10-04 批准「授权该测试文件做最小重同步」 |
 | A2 | docs/plans/2026-10-04/discovery-review-master.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | commit:8853573efcfc82a84d75264a53923709e94b4702 | 主计划「实现方案」表 03 行「文件数上限」 | 同步 03 授权文件数上限 8→9（与 A1 同一人工批准） | HUMAN:2026-10-04 批准 A1 时同步（同一指令） |
 | A3 | docs/plans/2026-10-04/discovery-review-05-explicit-send.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | commit:cf107940fb4414c4919a0d0ac6f605c6ad1ed0cb | 主计划「实现方案」表 05 行文件数上限（10）与「发现额外文件必要时先修订计划」 | step 5（启动期模板版本/过期令牌校验、内存模板快照渲染）与 06 预览数据源（准入计数/reasonHits/filterKeys）实测需要 BatchSendControlService.kt 与 MailComposeTemplateService.kt；授权 2 文件并在已授权 ManualInitialOutreachService 内补预览 DTO（10→12） | HUMAN:2026-10-04 批准 A3：扩权 2 文件 + 补预览 DTO |
-| A4 | docs/plans/2026-10-04/discovery-review-master.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | commit:cf107940fb4414c4919a0d0ac6f605c6ad1ed0cb | 主计划「实现方案」表 05 行「文件数上限」 | 同步 05 授权文件数上限 10→12（与 A3 同一人工批准） | HUMAN:2026-10-04 批准 A3 时同步（同一指令） |
+| A4 | docs/plans/2026-10-04/discovery-review-master.md | commit:8853573efcfc82a84d75264a53923709e94b4702 | commit:cf107940fb4414c4919a0d0ac6f605c6ad1ed0cb | 主计划「实现方案」表 05 行「文件数上限」 | 同步 05 授权文件数上限 10→12（与 A3 同一人工批准） | HUMAN:2026-10-04 批准 A3 时同步（同一指令） |
 | A5 | docs/plans/2026-10-04/discovery-review-05-explicit-send.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | commit:54ddacf3335a200553794575511b1e6659d22dca | 主计划「实现方案」表 05 行文件数上限与「发现额外文件必要时先修订计划」；I-7 发布前全量 mvn test 门禁 | 全量 mvn test 中本 child 两类失败（MailOpenTrackingPersistenceTest 2E：compose 第 4 默认参数→Mockito matcher；LegacyDiscoveryApprovalTest 4F：移除 matchesDiscoveryOutreach 后旧契约断言）与 child 04 回归（DiscoveryReviewAllPagesTest 5F，因果在 DiscoveryReviewService.kt）；授权 4 文件最小修复（12→16） | HUMAN:2026-10-04 批准 A5：扩权 2 个测试文件 + 04 回归并入 05 修复轮 |
-| A6 | docs/plans/2026-10-04/discovery-review-master.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | commit:54ddacf3335a200553794575511b1e6659d22dca | 主计划「实现方案」表 05 行「文件数上限」 | 同步 05 授权文件数上限 12→16（与 A5 同一人工批准） | HUMAN:2026-10-04 批准 A5 时同步（同一指令） |
+| A6 | docs/plans/2026-10-04/discovery-review-master.md | commit:cf107940fb4414c4919a0d0ac6f605c6ad1ed0cb | commit:54ddacf3335a200553794575511b1e6659d22dca | 主计划「实现方案」表 05 行「文件数上限」 | 同步 05 授权文件数上限 12→16（与 A5 同一人工批准） | HUMAN:2026-10-04 批准 A5 时同步（同一指令） |
 | A7 | docs/plans/2026-10-04/discovery-review-06-ui.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | commit:60d97bbe1425c429b4e6e66409a5585fcd08b3f7 | I-1 未初始化与待审分开；主计划发现额外文件必要时先修订计划 | 列表丢失 admission 存在性，新增 initialized 与 UNINITIALIZED 筛选，扩权 DTO/scan/直接测试四文件，保留有效判定及快照范围 | HUMAN:2026-10-05 用户“批准 继续”，批准前述后端 DTO、扫描/过滤及关联测试扩权 |
 | A8 | docs/plans/2026-10-04/discovery-review-master.md | commit:54ddacf3335a200553794575511b1e6659d22dca | commit:60d97bbe1425c429b4e6e66409a5585fcd08b3f7 | 主计划实现方案 06 文件数上限 | 同步 A7 文件上限 6→10 | HUMAN:2026-10-05 用户“批准 继续”（与 A7 同一批准） |
 
@@ -50,3 +50,6 @@
 - Seed 提交 `07beaafc111a1b14ed3c48d514db527c8a13fc31`（master + 6 子计划 + audit + evidence，docs/plans-only）；master base `e28e53fd898edd62905a0d45a6bf90396b18b1bf` = 本地 main HEAD，工作区既有未提交改动不进入本分支。
 - 环境：JDK11 zulu-11.jdk（11.0.15）；本地容器 MySQL `ti-mysql-it`（localhost:3306，root/root，库 talent_introduction）；Docker = OrbStack；localhost:9200 无本地 ES。
 - 基线命令结果见 `baseline.md`。
+
+## Finalization artifact correction
+- Validator identified A4/A6 master-chain Before incorrectly pointing at seed. Corrected only identity facts to preceding recorded master amendments A2/A4 respectively; authority/reason/After unchanged. No product, plan or child-log changes.
