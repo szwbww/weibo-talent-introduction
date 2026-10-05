@@ -8,11 +8,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20261004-mailbox-suspension-followup">
-    <link rel="stylesheet" href="expert-materials.css?v=20261004-mailbox-suspension-followup">
-    <link rel="stylesheet" href="mailbox-chat.css?v=20261004-mailbox-suspension-followup">
-    <link rel="stylesheet" href="meeting-confirmation.css?v=20261004-mailbox-suspension-followup">
-    <link rel="stylesheet" href="world-clock.css?v=20261004-mailbox-suspension-followup">
+    <link rel="stylesheet" href="styles.css?v=20261004-discovery-review">
+    <link rel="stylesheet" href="expert-materials.css?v=20261004-discovery-review">
+    <link rel="stylesheet" href="mailbox-chat.css?v=20261004-discovery-review">
+    <link rel="stylesheet" href="meeting-confirmation.css?v=20261004-discovery-review">
+    <link rel="stylesheet" href="world-clock.css?v=20261004-discovery-review">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -1125,6 +1125,12 @@
             <h3 id="taskModalTitle">任务管理</h3>
             <button class="button small" onclick="closeTaskModal()">×</button>
         </div>
+        <nav id="discoveryReviewTabs" class="batch-send-tabs" role="tablist" aria-label="深度发现功能" hidden>
+          <button class="batch-send-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="discoveryPipelinePane" id="discoveryPipelineTab">采集运行</button>
+          <button class="batch-send-tab" type="button" role="tab" aria-selected="false" aria-controls="discoveryReviewPane" id="discoveryReviewTab" tabindex="-1">专家审核</button>
+          <button class="batch-send-tab" type="button" role="tab" aria-selected="false" aria-controls="discoveryReviewHistoryPane" id="discoveryReviewHistoryTab" tabindex="-1">审核记录</button>
+        </nav>
+        <div id="discoveryPipelinePane" role="tabpanel" aria-labelledby="discoveryPipelineTab">
         <div id="taskModalToast" class="task-modal-toast" hidden></div>
         <div class="modal-body" style="gap: 20px;">
             <div id="discoverySchedulePanel" class="discovery-schedule-panel" hidden>
@@ -1241,6 +1247,46 @@
                 <pre id="taskModalErrorContent" class="task-error-log-content" style="margin: 0; padding: 12px; font-size: 11px; max-height: 150px; overflow-y: auto; color: var(--error); white-space: pre-wrap; font-family: var(--font-mono);"></pre>
             </div>
         </div>
+        </div>
+        <section id="discoveryReviewPane" class="modal-body dr-review" role="tabpanel" aria-labelledby="discoveryReviewTab" hidden>
+            <div class="dr-counts" id="discoveryReviewCounts" aria-live="polite">
+              <div>自动通过<strong>—</strong></div><div>待人工审核<strong>—</strong></div>
+              <div>人工 / 历史通过<strong>—</strong></div><div>暂缓 / 不通过<strong>—</strong></div>
+            </div>
+            <div class="dr-toolbar">
+              <input class="bsc-input" id="discoveryReviewSearch" type="search" aria-label="搜索专家" placeholder="姓名、邮箱、机构">
+              <select class="bsc-input" id="discoveryReviewIssue" aria-label="问题筛选"></select>
+              <select class="bsc-input" id="discoveryReviewDecision" aria-label="准入状态筛选"></select>
+              <select class="bsc-input" id="discoveryReviewPageSize" aria-label="每页人数"><option>20</option><option>50</option><option>100</option></select>
+              <button class="button secondary" type="button" id="discoveryReviewApprovePage">审核通过当前页</button>
+              <button class="button primary" type="button" id="discoveryReviewApproveAll">审核通过所有页</button>
+            </div>
+            <div class="dr-toolbar">
+              <span id="discoveryReviewSelection">已选择 0 人</span>
+              <button class="button secondary" type="button" data-review-action="APPROVE">通过所选</button>
+              <button class="button secondary" type="button" data-review-action="HOLD">暂缓所选</button>
+              <button class="button secondary" type="button" data-review-action="REJECT">不通过所选</button>
+            </div>
+            <div role="alert" id="discoveryReviewError" hidden></div>
+            <div role="status" id="discoveryReviewResult" aria-live="polite"></div>
+            <section class="dr-confirm" id="discoveryReviewConfirm" hidden aria-labelledby="discoveryReviewConfirmTitle">
+              <h4 id="discoveryReviewConfirmTitle">确认审核</h4>
+              <p id="discoveryReviewConfirmScope"></p><p id="discoveryReviewConfirmReasons"></p>
+              <details><summary>查看固定名单</summary><div id="discoveryReviewConfirmPeople"></div></details>
+              <label for="discoveryReviewNote">审核备注</label>
+              <textarea class="bsc-input" id="discoveryReviewNote" maxlength="1000"></textarea>
+              <div class="dr-toolbar"><button class="button secondary" type="button" id="discoveryReviewCancelConfirm">取消</button><button class="button primary" type="button" id="discoveryReviewCommit">确认审核</button></div>
+            </section>
+            <div class="dr-table-wrap"><table class="data-table dr-table">
+              <thead><tr><th><input type="checkbox" id="discoveryReviewSelectPage" aria-label="全选当前页可审核专家"></th><th>专家 / 邮箱</th><th>机构 / 所在国家</th><th>研究方向 / 学术指标</th><th>校验问题</th><th>准入结果</th><th>操作</th></tr></thead>
+              <tbody id="discoveryReviewRows"></tbody>
+            </table></div>
+            <footer class="dr-pager"><span id="discoveryReviewPageInfo"></span><div class="dr-toolbar">
+              <button class="button secondary" type="button" id="discoveryReviewPrev">上一页</button>
+              <button class="button secondary" type="button" id="discoveryReviewNext">下一页</button>
+            </div></footer>
+        </section>
+        <section id="discoveryReviewHistoryPane" class="modal-body dr-review" role="tabpanel" aria-labelledby="discoveryReviewHistoryTab" hidden></section>
     </div>
 </div>
 
@@ -1436,7 +1482,7 @@
                                     <span class="batch-task-status-switch"></span>
                                     <span class="batch-task-status-label" id="batchConfigEditorGateFilterLabel">已关闭</span>
                                 </label>
-                                <span class="batch-gate-hint" id="batchConfigEditorGateFilterHint">仅向满足该模板必填字段的专家发送，缺字段的会在发送时被门禁拦下并计入失败。</span>
+                                <span class="batch-gate-hint" id="batchConfigEditorGateFilterHint">开启后仅向满足该模板必填字段的专家发送，缺字段的会在发送时被门禁拦下并计入失败；关闭时不按个性化缺项排除，仍按本次显式条件筛选。</span>
                             </div>
                             <div class="batch-gate-keys" id="batchConfigEditorGateFilterKeys" hidden></div>
                         </div>
@@ -1703,7 +1749,7 @@
                                 <span class="batch-task-status-switch"></span>
                                 <span class="batch-task-status-label" id="batchManualGateFilterLabel">已关闭</span>
                             </label>
-                            <span class="batch-gate-hint" id="batchManualGateFilterHint">仅影响本次执行，不修改原定时任务。</span>
+                            <span class="batch-gate-hint" id="batchManualGateFilterHint">仅影响本次执行，不修改原定时任务；开启后按该模板必填字段门禁，关闭时不按个性化缺项排除，仍按本次显式条件筛选。</span>
                         </div>
                         <div class="batch-gate-keys" id="batchManualGateFilterKeys" hidden></div>
                         <span class="batch-config-diff-badge" hidden>已修改</span>
@@ -2349,11 +2395,11 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20261004-mailbox-suspension-followup"></script>
-<script src="expert-materials.js?v=20261004-mailbox-suspension-followup"></script>
-<script src="meeting-confirmation.js?v=20261004-mailbox-suspension-followup"></script>
-<script src="mailbox-chat.js?v=20261004-mailbox-suspension-followup"></script>
-<script src="app.js?v=20261004-mailbox-suspension-followup"></script>
-<script src="world-clock.js?v=20261004-mailbox-suspension-followup"></script>
+<script src="trust-reply-workbench.js?v=20261004-discovery-review"></script>
+<script src="expert-materials.js?v=20261004-discovery-review"></script>
+<script src="meeting-confirmation.js?v=20261004-discovery-review"></script>
+<script src="mailbox-chat.js?v=20261004-discovery-review"></script>
+<script src="app.js?v=20261004-discovery-review"></script>
+<script src="world-clock.js?v=20261004-discovery-review"></script>
 </body>
 </html>

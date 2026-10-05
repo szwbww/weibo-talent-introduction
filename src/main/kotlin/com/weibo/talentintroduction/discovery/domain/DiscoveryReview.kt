@@ -207,6 +207,7 @@ data class DiscoveryReviewExpertRow(
     val automaticReasons: List<AdmissionReason>,
     val automaticHints: List<AdmissionReason>,
     val revision: Long,
+    val initialized: Boolean,
     val decision: String,
     val decisionManual: Boolean,
     val identityChanged: Boolean,

@@ -156,6 +156,42 @@ class DiscoveryReviewAllPagesTest {
         return service.prepareAllMatching(approveRequest(), null, null, null, requestKey, "op1")
     }
 
+    @Test
+    fun `initialization is admission existence independent of revision and identity`() {
+        val docs = listOf("missing", "zero", "changed")
+        repository.seedAdmission("zero", identityOf("zero"), "NEEDS_REVIEW")
+        repository.seedAdmission("changed", "old-identity", "MANUAL_APPROVED")
+        fixture.reset(docs)
+        val rows = scan.listPage(ExpertIndexLevel.RAW, null, 0, 20, null, null, null).experts
+        assertEquals(listOf(false, true, true), rows.map { it.initialized })
+        assertEquals(listOf(0L, 0L, 0L), rows.map { it.revision })
+        assertEquals(listOf(false, false, true), rows.map { it.identityChanged })
+        assertEquals(listOf("NEEDS_REVIEW", "NEEDS_REVIEW", "NEEDS_REVIEW"), rows.map { it.decision })
+        fixture.reset(docs)
+        val missing = scan.listPage(ExpertIndexLevel.RAW, null, 0, 20, null, null, "UNINITIALIZED")
+        assertEquals(1L, missing.total)
+        assertEquals(listOf("missing"), missing.experts.map { it.docId })
+        fixture.reset(docs)
+        val effective = scan.listPage(ExpertIndexLevel.RAW, null, 0, 20, null, null, "NEEDS_REVIEW")
+        assertEquals(3L, effective.total)
+        fixture.reset(docs)
+        val snapshot = service.prepareAllMatching(approveRequest(), null, null, null, null, "op1")
+        assertEquals(3, snapshot.total, "ALL_MATCHING keeps the effective NEEDS_REVIEW range")
+    }
+
+    @Test
+    fun `missing admission retains automatic pass rather than becoming failed eligibility`() {
+        Mockito.`when`(policy.evaluate(Mockito.any(ExpertProfile::class.java) ?: profileOf("doc", null)))
+            .thenReturn(needsReview().copy(status = DiscoveryAdmissionStatus.AUTO_PASSED))
+        fixture.reset(listOf("automatic"))
+        val row = scan.listPage(ExpertIndexLevel.RAW, null, 0, 20, null, null, null).experts.single()
+        assertFalse(row.initialized)
+        assertEquals("AUTO_PASSED", row.decision)
+        assertEquals("AUTO_PASSED", row.automaticStatus)
+        fixture.reset(listOf("automatic"))
+        assertEquals(0, service.prepareAllMatching(approveRequest(), null, null, null, null, "op1").total)
+    }
+
     // ── I-1：10005 全量完整扫描 ──────────────────────────────────────────────
 
     @Test

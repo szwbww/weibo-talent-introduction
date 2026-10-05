@@ -12650,6 +12650,142 @@ body.preview-available:not(.preview-docked) .preview-rail {
 .mailbox-suspend-banner-content strong{overflow-wrap:anywhere}
 @media(max-width:760px){.mailbox-suspend-banner{flex-wrap:wrap}[data-role=suspension-reason-actions]{margin-left:auto}.mailbox-suspend-banner-content{flex-basis:calc(100% - 40px)}}
 
+/* ── c5/S-1：深度发现审核容器与页签（仅 data-discovery-review 生效） ───────────── */
+#taskProgressModal[data-discovery-review="true"] .modal-content.task-modal {
+    max-width: 1180px;
+    width: calc(100vw - 48px);
+}
+.dr-review {
+    color: var(--text-main);
+    font-size: 13px;
+    line-height: 1.6;
+}
+.dr-review [role="alert"] {
+    padding: 12px;
+    color: var(--error-strong);
+    background: var(--error-bg);
+    border: 1px solid var(--error-border);
+    border-radius: var(--radius-sm);
+}
+.dr-review button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+.dr-review :focus-visible,
+#discoveryReviewTabs :focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 3px;
+}
+@media (max-width: 640px) {
+    #taskProgressModal[data-discovery-review="true"] .modal-content.task-modal {
+        width: calc(100vw - 20px);
+    }
+}
+
+/* ── c5/S-2：统计、工具条、表格、分页 ─────────────────────────────────────── */
+.dr-counts {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+}
+.dr-counts > div {
+    padding: 14px;
+    background: var(--bg-subtle);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-md);
+}
+.dr-counts strong {
+    display: block;
+    font-size: 24px;
+    color: var(--primary);
+}
+.dr-toolbar,
+.dr-pager {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.dr-toolbar .bsc-input {
+    width: 180px;
+}
+.dr-pager {
+    justify-content: space-between;
+}
+.dr-table-wrap {
+    overflow: auto;
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-md);
+}
+.dr-table {
+    min-width: 1000px;
+}
+.dr-table th,
+.dr-table td {
+    padding: 12px 10px;
+    font-size: 12px;
+    line-height: 1.6;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+}
+.dr-table th {
+    background: #f8fafc;
+    color: var(--text-secondary);
+}
+.dr-table tbody tr:hover {
+    background: #f8faff;
+}
+.dr-state {
+    display: inline-block;
+    padding: 2px 8px;
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    background: var(--bg-subtle);
+}
+.dr-state[data-state="AUTO_PASSED"],
+.dr-state[data-state="MANUAL_APPROVED"],
+.dr-state[data-state="LEGACY_APPROVED"] {
+    color: var(--success);
+    background: var(--success-bg);
+    border-color: var(--success-border);
+}
+.dr-review input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--primary);
+}
+@media (max-width: 640px) {
+    .dr-counts {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+/* ── c5/S-3：确认与记录、发送提示 ─────────────────────────────────────────── */
+.dr-confirm,
+.dr-record {
+    padding: 16px;
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-md);
+    background: #ffffff;
+}
+.dr-confirm {
+    border-color: rgba(30, 64, 175, 0.25);
+    background: #f7f9ff;
+}
+.dr-confirm p,
+.dr-record p {
+    margin: 8px 0;
+    color: var(--text-secondary);
+}
+.dr-confirm textarea {
+    min-height: 68px;
+    margin: 8px 0;
+    resize: vertical;
+}
+
 /* mailbox-suspension-contract:start */
 #view-mailbox.mc-refined .mc-filters{display:flex;flex-wrap:nowrap;gap:4px;overflow-x:auto;scrollbar-width:thin}
 #view-mailbox.mc-refined .mc-filter{flex:0 0 auto;min-height:36px;padding:7px 5px 10px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:#7d8ca2;font-size:12px;line-height:1.5;white-space:nowrap}

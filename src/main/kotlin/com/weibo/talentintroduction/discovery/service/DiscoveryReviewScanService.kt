@@ -274,6 +274,7 @@ class DiscoveryReviewScanService(
                     automaticReasons = automatic.blockingReasons,
                     automaticHints = automatic.hints,
                     revision = stored?.revision ?: 0L,
+                    initialized = stored != null,
                     decision = decision,
                     decisionManual = decisionManual,
                     identityChanged = identityChanged,
@@ -289,7 +290,7 @@ class DiscoveryReviewScanService(
         DiscoveryReviewIdentity.hash(docId, profile.email, profile.givenNames, profile.familyNames)
 
     private fun matchesDecision(row: DiscoveryReviewExpertRow, filter: String?): Boolean =
-        filter == null || row.decision == filter
+        if (filter == "UNINITIALIZED") !row.initialized else filter == null || row.decision == filter
 
     private fun matchesIssue(row: DiscoveryReviewExpertRow, filter: String?): Boolean = when (filter) {
         null -> true

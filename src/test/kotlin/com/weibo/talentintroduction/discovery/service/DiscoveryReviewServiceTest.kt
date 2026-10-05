@@ -519,6 +519,7 @@ class DiscoveryReviewServiceTest {
                 researchFields = null, disciplineCategory = null, institutionEvidence = null,
                 filterResult = null, tags = emptyList(), automaticStatus = "NEEDS_REVIEW",
                 automaticReasons = emptyList(), automaticHints = emptyList(), revision = 0L,
+                initialized = false,
                 decision = "NEEDS_REVIEW", decisionManual = false, identityChanged = false,
                 reviewedActor = null, reviewedAt = null, addressWarning = null
             )
