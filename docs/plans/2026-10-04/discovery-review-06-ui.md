@@ -275,10 +275,12 @@
 3. **I-3、S-1/S-2**：tab左右键/Tab焦点切换，aria-selected/hidden同步；关闭返回触发按钮。请求序号防慢响应覆盖；UI内所有专家字段用textContent。
 4. **I-4、S-3**：批量编辑与手动两处模板提示同步替换；显示准入计数和去审核入口，不新增审核筛选。账号绑定等文案按D1最终结论更新，未定案不能写断言式承诺。
 5. **I-1–I-4、S-1–S-3**：styles.css逐字追加契约规则；11项已有资源统一bump至`20261004-discovery-review`，执行前重查当时键和测试字面量。新增资源0，仍11项。新增测试真实HTML节点存在及生命周期，不能只用万能DOM stub通过。
+6. **A7（用户批准“批准 继续”）/I-1**：列表 DTO 新增 `initialized: Boolean`，由服务端是否存在该 docId 的 admission 行决定；已初始化 revision=0 仍为 true，身份变化由原 `identityChanged` 独立表达。保留原 `decision`/`automaticStatus` 的有效自动判定，禁止把资料未初始化解释成自动资格失败。前端状态展示优先明确未初始化，不用 revision 猜测；未初始化不得混作持久待审核计数。扫描支持 `decision=UNINITIALIZED` 按 initialized=false 筛选，现有其他 decision 筛选及 ALL_MATCHING 的 NEEDS_REVIEW 有效判定范围保持不变；用户看到固定名单后仍须显式确认。补真实扫描回归，覆盖缺行、已初始化 revision=0、身份变化及筛选/快照范围。
+
 
 ## 变更文件清单
 
-共6文件、前端1子系统；新数据字段0。
+共10文件；A7 增加后端 DTO、扫描与直接关联回归，不新增表/状态机/迁移，不改发送政策。
 
 | 文件 | 操作 |
 |---|---|
@@ -288,6 +290,12 @@
 | src/test/js/discoveryReview.test.js | 新增交互/HTML/请求测试 |
 | src/test/js/taskModalLifecycleIntegration.test.js | 其他任务与双打开路径回归 |
 | src/test/js/gateTemplateFilter.test.js | 两入口开关文案/快照一致 |
+| src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryReview.kt | A7：列表 DTO initialized 字段 |
+| src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewScanService.kt | A7：权威初始化标记与 UNINITIALIZED 筛选，保留原有效判定/快照范围 |
+| src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewAllPagesTest.kt | A7：真实扫描/筛选/快照初始化边界回归 |
+| src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewServiceTest.kt | A7：直接 DTO 消费兼容及初始化边界回归（必要时） |
+
+新增必跑命令（JDK11）：`mvn -DskipTests test-compile`；`mvn -Dtest=DiscoveryReviewServiceTest,DiscoveryReviewAllPagesTest test`。原前端命令保持。API smoke 必须调用真实扫描实现验证 initialized=true/false 与筛选；静态浏览器 smoke 仍不代表整体验收。
 
 ## 验收标准
 
