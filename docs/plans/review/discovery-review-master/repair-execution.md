@@ -1,3 +1,5 @@
+Current handoff status: **READY_FOR_VERIFICATION** under the human-approved amendments. The latest execution epoch is recorded in [the appended handoff](#amended-execution-result-ready_for_verification); the earlier BLOCKED report below is historical, not the current outcome. No independent review has been invoked.
+
 ## Execution Result: BLOCKED
 
 Plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master/docs/plans/fix/discovery-review-master/repair.md`
@@ -95,3 +97,89 @@ Required full Maven command fails. The plan authorizes a product commit only aft
 ### Next Action
 
 Human decision/amendment is needed: retain strict all-commands-pass and authorize a separately scoped resolution, or explicitly authorize proceeding with named out-of-scope failures after their disposition. Do not automatically retry, expand repair scope, commit product files, or run aggregate re-review under this blocked execution. On an approved amendment, re-read the exact plan bytes and re-establish execution identity before resuming.
+
+## Amended Execution Result: READY_FOR_VERIFICATION
+
+### Identity and Approval
+
+- Plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master/docs/plans/fix/discovery-review-master/repair.md`
+- Plan SHA-256: `5a4a0786b50405000dd81e090d70a9dbf7191e98be6dc922be1e79335efae091`
+- Execution ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master/docs/plans/fix/discovery-review-master/repair.md@5a4a0786b50405000dd81e090d70a9dbf7191e98be6dc922be1e79335efae091`
+- Execution epoch: NEW — amended plan bytes, not a completion carryover from the previous hash.
+- Approval basis: after recommending a minimal commit-prerequisite amendment, the human said “你不要调用 review-fast-p 你只要完成达到条件的就行了”, then “好的 继续” after the assistant explicitly restated amendment, six-file product commit, updated evidence, and no review invocation.
+- Additional explicit human amendment during this execution: the new `UnmatchedInboundAiReplyTurnKnowledgeTest.kt:1090` 1 Hz failure was surfaced with two choices. The human selected **“允许具名交接”**: commit the six repair files and complete evidence, retaining this named failure unresolved for independent judgment. This overrides the plan's “Other failures still block handoff” only for this specific newly observed failure; it does not waive the failure, authorize unrelated fixes, or label it baseline/transient. Record this approval here without changing the execution's immutable plan bytes.
+- Executor: Main coding assistant, openai-codex/gpt-6.1-sol. No new implementation delegate or independent verifier in this epoch.
+- Target worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master`
+- Target branch: `fast/2026-10-04-discovery-review-master`
+- Worktree ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master@fast/2026-10-04-discovery-review-master@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-2026-10-04-discovery-review-master`
+- Pre-execution code SHA: `078bd8b5f8c33fc9c82282e75d38900b17756051` (last code-bearing commit; previous blocked report is docs-only).
+- Invocation starting HEAD: `79bbc1638622c8cf19f89ae7c13188a53abc25d3`.
+- Plan amendment commit: `4de97115fdb20aa6a66009a631be7871031d993c`, subject `docs(discovery-review): record approved handoff prerequisite`, containing only repair.md.
+- Post-execution code SHA: `6b5c201c7a8667376cb214f74a7069594cc9a6cc`, subject `fix(discovery-review): align target totals and interrupted review state`.
+- Evidence HEAD: the later report-only commit containing this appended handoff, subject `docs(review-fast-p): record repair execution`; its resolved SHA is emitted in the final response, not conflated with the product SHA.
+- Implementation boundary: `078bd8b5f8c33fc9c82282e75d38900b17756051..6b5c201c7a8667376cb214f74a7069594cc9a6cc`. Product commit itself contains exactly the six authorized files; intervening report/plan commits contain no product changes.
+
+### Task Status
+
+| Requirement | Status | Files / Evidence |
+|---|---|---|
+| R-1 / V-1 | IMPLEMENTED | Existing current six-file diff inspected freshly; copied retry-seeded global normalized identity set is used for preview/run prescan. Regression proves duplicate totals, target/SMTP parity, retry precedence and first-filter exclusion. Fresh JVM checks and actual-service smoke pass. |
+| R-2 / V-2 | IMPLEMENTED | Current diff derives pending interruption before completion fallback; frontend stops review polling and completion refresh, retains interrupted snapshot, and exposes only explicit retry. Fresh JVM/JS checks and actual-service interruption smoke pass. |
+| Amended commit prerequisite | IMPLEMENTED | Focused JVM, Node and isolated MySQL all pass; full Maven ran and failures are reported. Human explicitly authorized named 1 Hz failure to remain unresolved at handoff. |
+| Product and evidence handoff | IMPLEMENTED | One six-file product commit, separate plan amendment, and one report-only evidence commit for this epoch. No review invocation, push, merge, deployment or history rewrite. |
+
+### Fresh Required Commands
+
+All commands used the exact target worktree and ran after final product-source state was established. Executed sequentially with `&&`; the first three exited 0, enabling the next command, and the full Maven command exited 1. No skipped/excluded test flags were added. Full sequence output: `artifact://1326`; final command detail: `artifact://1329`.
+
+| Exact command | Result |
+|---|---|
+| `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home PATH=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home/bin:$PATH mvn -Dtest=ManualInitialOutreachServiceTest,DiscoveryReviewAllPagesTest,DiscoveryReviewServiceTest test` | PASS, exit 0: 222 tests, 0 failures/errors/skipped; BUILD SUCCESS. |
+| `node --test src/test/js/*.test.js` | PASS, exit 0: 1462 tests, 278 suites, 1462 pass, 0 failures/cancelled/skipped. |
+| `env DB_URL='jdbc:mysql://localhost:3306/talent_introduction_fastp?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true' DB_USERNAME=root DB_PASSWORD=root JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home PATH=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home/bin:$PATH mvn -DmysqlIt=true -Dtest=DiscoveryReviewRepositoryIT test` | PASS, exit 0: 13 tests, 0 failures/errors/skipped; BUILD SUCCESS. |
+| `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home PATH=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home/bin:$PATH mvn test` | FAIL, exit 1: 4661 tests, 1 failure, 19 errors, 13 skipped; BUILD FAILURE. |
+| `git diff --check` (as the prerequisite of the current authorized diff inspection) | PASS, exit 0, no whitespace errors. |
+
+Fresh full-suite disposition:
+
+- 19 `ExpertContactLocationServiceTest` errors: `America/Coyhaique` unknown to JDK 11, still the specifically excluded baseline.
+- One failure: `UnmatchedInboundAiReplyTurnKnowledgeTest.real endpoint keeps same phase progress at one hertz`, line 1090: `endpoint same phase progress must wait for the 1 Hz window`, expected 1, actual 2. Explicitly human-authorized as a named unresolved handoff item; no causal/baseline/flakiness conclusion, no out-of-scope fix, and no rerun-to-green.
+- `RestTemplateConfigTest` passed all 18 tests in this run. Its earlier `Connection reset` failure remains historical unresolved evidence; a passing fresh run does not establish the earlier failure's cause or harmlessness.
+- Scope receipt: `git diff --` against the six authorized paths reported six files, 324 insertions, 14 deletions (`artifact://1328`); product `git diff-tree --no-commit-id --name-only -r 6b5c201c7a8667376cb214f74a7069594cc9a6cc` returned exactly those six paths. No claim that the full suite passed.
+
+### Fresh Runtime Smoke
+
+Disposable JDK 11 JShell stdin invoked actual production service methods outside JUnit against compiled fixtures and mocked external seams. Observed exit 0 and both markers (`artifact://1331`):
+
+- `ACTUAL_OUTREACH_SMOKE preview=1 total=1 sent=1 SMTP attempts=1 remaining=0`.
+- `ACTUAL_REVIEW_SMOKE phase=INTERRUPTED pending=3 total=3 hashPreserved=true`.
+
+No real SMTP delivery, live ES or deployed interruption was exercised. The prior real-browser interruption observation is historical supporting evidence only; it was not rerun in this docs/commit-only continuation. No permanent smoke scripts retained.
+
+### Changed Files and Boundaries
+
+Product commit paths:
+
+- `src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt` — deduplicated accounting.
+- `src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt` — target/precedence/exclusion regressions and corrected duplicate totals.
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt` — pending interruption phase.
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewAllPagesTest.kt` — interruption/retry/cancellation regressions.
+- `src/main/resources/static/app.js` — interrupted display and terminal behavior.
+- `src/test/js/discoveryReview.test.js` — interrupted UI transition and explicit retry.
+
+Documentation-only paths: `docs/plans/fix/discovery-review-master/repair.md` (approved commit prerequisite), and this execution report (append-only epoch evidence plus current-status pointer). No extra product file, migration, mapping, SMTP API, scheduler/task-platform behavior or D1 policy change.
+
+### Deviations, Freshness and Clean State
+
+- Acceptance change is human-approved and limited to allowing the named outside-scope failures into independent verification; it is not a PASS declaration or unilateral test waiver.
+- No product source/test edits were needed in this new epoch: inspected existing repair diff, ran fresh checks/smokes, and committed it. The earlier failing-before regression proof limitation is retained; historical tests do not satisfy current required commands.
+- Plan hash rechecked unchanged before each staging/commit and handoff; worktree root/branch/git-dir checked using the execute-p helpers.
+- Product and docs commits verified as target-worktree HEAD when created and as ancestors of the target branch, with exact commit file scopes.
+- Working tree and index were clean immediately after the product commit. After the report-only evidence commit, confirm both are clean before emitting final handoff.
+- Required commands ran freshly in this invocation: YES. Historical evidence used only as baseline/support: YES.
+
+### Remaining Blocker and Next Action
+
+No remaining execution/commit blocker under the explicit approvals. The named HTTP and 1 Hz failures remain unresolved matters for independent verification; D1 remains a policy/release gate. `READY_FOR_VERIFICATION` means ready to hand off, not PASS or release approval.
+
+Human instruction: **do not invoke review-fast-p or any independent verification now**. Stop after committing this handoff and reporting exact SHAs/clean state. A later human invocation owns the review decision.
