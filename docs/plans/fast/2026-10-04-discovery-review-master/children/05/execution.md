@@ -3,9 +3,9 @@
 Plan: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master/docs/plans/2026-10-04/discovery-review-05-explicit-send.md
 Plan SHA-256: 650d0c472e9a9f77292da6ee9a44ed9b096854ea3db47ffb93c83bd38b208306
 Execution ID: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master/docs/plans/2026-10-04/discovery-review-05-explicit-send.md@650d0c472e9a9f77292da6ee9a44ed9b096854ea3db47ffb93c83bd38b208306
-Execution epoch: NEW (A3/A4 修正后的新计划字节：epoch 1 的计划 SHA-256 为 36206e60…；当前 650d0c47…)
-Approval basis: fast-p child 05 控制方合同 + 人工批准的 A3/A4 扩权（`BatchSendControlService.kt`、`MailComposeTemplateService.kt` 授权 + 预览 DTO 字段扩充）
-Executor: ImplDiscoveryReview05E2
+Execution epoch: EPOCH 3 (A5) — 本文件顶部字段为 epoch 2 快照；最新 epoch 3（A5）状态见文末「Epoch 3 (A5)」章节
+Approval basis: fast-p child 05 控制方合同 + 人工批准的 A3/A4 扩权（`BatchSendControlService.kt`、`MailComposeTemplateService.kt` 授权 + 预览 DTO 字段扩充）+ A5 扩权（`54ddacf3`：MailOpenTrackingPersistenceTest / LegacyDiscoveryApprovalTest 最小修 + DiscoveryReviewService/Repository 修复 04 回归）
+Executor: ImplDiscoveryReview05E3（epoch 3）；epoch 1/2 执行者 ImplDiscoveryReview05 / ImplDiscoveryReview05E2
 Target worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master
 Target branch: fast/2026-10-04-discovery-review-master
 Worktree ID: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master@fast/2026-10-04-discovery-review-master@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-2026-10-04-discovery-review-master
@@ -85,3 +85,47 @@ Implementation boundary: ee0168b..f34d59a
 
 ### Next Action
 - READY_FOR_VERIFICATION → run `verify-p`
+
+---
+
+## Epoch 3 (A5) — 修复本 child 引发的两类测试失败 + child 04 回归
+
+- Executor: ImplDiscoveryReview05E3
+- 输入边界: a25fc5b（epoch 1/2 产品提交 6a54f00 / f34d59a 已在 HEAD；child_base_sha 08f5bd5）
+- 授权: A5 扩权（`54ddacf3`）新增 #13 `MailOpenTrackingPersistenceTest.kt`、#14 `LegacyDiscoveryApprovalTest.kt`、#15 `DiscoveryReviewService.kt`、#16 `DiscoveryReviewRepository.kt`（后者本次无需改动）。
+- 本 epoch 只做最小修复：不改审核/发送语义、不删除仍有效的断言、不触碰 19 个既有 `ExpertContactLocationServiceTest` 错误。
+
+### RCA
+
+**1. `DiscoveryReviewAllPagesTest` 5F（child 04 回归，自 `08f5bd5` 起红）**
+- 症状：所有经 `confirm` → `runApplyWorker` 的用例 `applied` 读成 0 / `counts["APPLIED"]` 读成 null（11 tests 中 5F）。
+- 根因：epoch-2 的 04 在 `applyItemAndView` / `confirmItems` 成功分支新增 `syncCandidateAfterApproval(item.id, …)`（04 候选投影 seam）。该函数 → `projectApprovedCandidate` → `writer.projectDiscoveryCandidate(...)`；03 的 AllPages 测试 Mockito mock 了 `ExpertIndexWriterService` 且未 stub 这个 04 新增方法（返回 null），`projectApprovedCandidate` 的 `when(result)` else 分支执行 `result.name` → NPE。NPE 从 `applyItemAndView` 抛出后被 `runApplyWorker` 的逐项 `catch (ex: Exception)` 捕获并调用 `repository.markItemFailed(id, "APPLY_ERROR")`，把**已经 APPLIED 的审核项覆盖成 FAILED** → applied=0。
+- 判定：**产品缺陷**，不是测试过时（未授权测试文件本身正确）：04 自身 KDoc 承诺「候选投影失败绝不把审核本身标失败」，但异常冒泡违反了该契约。修复放产品侧。
+- 修复（仅 `DiscoveryReviewService.kt`，`syncCandidateAfterApproval`）：用 try/catch 隔离投影调用；抛错时以独立错误码 `CANDIDATE_SYNC_FAILED` 记录（`jdbcTemplate` 为空时 no-op）并 return，绝不冒泡到 worker 的 `markItemFailed`。完全落在 04 既有契约内，未改审核结论。
+- 验证：`DiscoveryReviewAllPagesTest` 11/11 通过（修复前 5F）；测试文件未改。
+
+**2. `MailOpenTrackingPersistenceTest` 2E（epoch 1 引入）**
+- 根因：epoch-1 给 `IntroductionMailComposer.compose` 增加第 4 个默认参数 `enforcePersonalizationGate: Boolean = true`；测试对 3 参调用 `composer.compose(eq, any, isNull())` 打桩，Kotlin 展开为 4 参 `compose$default` 虚拟调用 → Mockito `InvalidUseOfMatchersException`（4 matchers expected, 3 recorded）。
+- 最小修复：两处打桩补齐第 4 个 matcher `Mockito.anyBoolean()`；断言未改。
+
+**3. `LegacyDiscoveryApprovalTest` 4F（epoch 1 引入）**
+- 根因：epoch-1 按计划移除 `RecipientScope.matchesEsTarget`/`matchesExpert` 中的 `matchesDiscoveryOutreach` 学术/发现门禁（准入迁移到统一 selector 消费持久结论）。旧断言（:28、:40、:49、:57）仍期望 scope 用 legacy/academic 门禁拒绝。
+- 最小修复：只把这 4 处过时门禁断言改写为新契约（scope 不再二次判定准入，显式条件命中即 true），保留 `legacyOutreachApproved`、`allowed=false`、evidence-null、digest、身份绑定失效与可见过滤断言不变。
+
+### Epoch 3 命令（fresh，JDK11 zulu-11）
+| Command | Exit | Counts |
+|---|---|---|
+| `mvn -DskipTests test-compile` | 0 | BUILD SUCCESS |
+| `mvn -Dtest=BatchRecipientSelectionServiceTest,ManualInitialOutreachServiceTest,InitialOutreachServiceTest,BatchTemplateGateParityTest test` | 0 | Tests run 209, Failures 0, Errors 0 |
+| `mvn -Dtest=MailOpenTrackingPersistenceTest,LegacyDiscoveryApprovalTest,DiscoveryReviewAllPagesTest test` | 0 | Tests run 22, Failures 0, Errors 0 |
+| `mvn test`（全量） | 1 | Tests run 4653, **Failures 0**, **Errors 19**, Skipped 13；19E 全部为既有 `ExpertContactLocationServiceTest.<init>`（国家 CL 时区目录，祖先 ab8e4cb 既有），无其它失败类 |
+
+### Epoch 3 变更文件（均在 16 文件授权内）
+- `src/test/kotlin/…/mail/service/MailOpenTrackingPersistenceTest.kt`（#13）— 2 处 stub 补第 4 matcher。
+- `src/test/kotlin/…/expert/domain/LegacyDiscoveryApprovalTest.kt`（#14）— 4 条过时门禁断言改写。
+- `src/main/kotlin/…/discovery/service/DiscoveryReviewService.kt`（#15）— `syncCandidateAfterApproval` 投影异常隔离。
+- `DiscoveryReviewRepository.kt`（#16）— 未改动。
+- 未触碰 `DiscoveryReviewAllPagesTest.kt`（未授权；产品侧修复即足够）。
+
+### Epoch 3 验收
+- A5：本 child 引入的两类失败（MailOpenTracking 2E、LegacyDiscoveryApproval 4F）与 child 04 回归（AllPages 5F）全部消失；全量仅剩既有 `ExpertContactLocationServiceTest` 19E。满足。

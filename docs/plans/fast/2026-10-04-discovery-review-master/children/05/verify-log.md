@@ -74,3 +74,32 @@ Failure adjudication (full-suite; the implementer reported 4653/9F/21E as "unaut
 
 ### Required Action
 - PAUSE
+
+---
+
+## Light Verification: LIGHT_PASS_WITH_NOTES
+Child: 05 docs/plans/2026-10-04/discovery-review-05-explicit-send.md
+Boundary: 08f5bd5421333447f9173d34fad1c55ac43c3ba5..b699750b9a84ed56224541e3137cdf1c79f77e7e
+Verifier: VerifyDiscoveryReview05E3
+
+### Four Gates
+|Gate|Result|Evidence|
+|---|---|---|
+|1 Authorized scope|PASS|A5 product commit `b699750` changes only 3 src files: `MailOpenTrackingPersistenceTest.kt`, `LegacyDiscoveryApprovalTest.kt`, `DiscoveryReviewService.kt` (`git diff --stat f34d59a..b699750 -- src/` = 3 files; `DiscoveryReviewRepository.kt` #16 unused). Cumulative src diff over boundary = 15 files, all ⊆ the 16 Authorized Files; no migration/`pom.xml`/frontend/`application.yml`. Remaining paths in the boundary are `docs/plans/**` (amend/brief/execution/verify-log/fix-log/ledger) = evidence-only commits.|
+|2 Plan and invariants|PASS|Three A5 checks verified (below); I-1..I-5 epoch-1/2 receipts retained (no A5 diff to the selector/composer/params); A5 diff touches no D1 branch and no shared send path.|
+|3 Required commands|PASS|Fresh, JDK11 zulu-11: `mvn -DskipTests test-compile` exit 0; pinned `mvn -Dtest=BatchRecipientSelectionServiceTest,ManualInitialOutreachServiceTest,InitialOutreachServiceTest,BatchTemplateGateParityTest test` exit 0, **Tests run 209, 0F/0E** (BatchTemplateGateParity 5 / ManualInitialOutreach 176 / BatchRecipientSelection 8 / InitialOutreach 20) — matches execution; `mvn -Dtest=MailOpenTrackingPersistenceTest,LegacyDiscoveryApprovalTest,DiscoveryReviewAllPagesTest test` exit 0, **Tests run 22, 0F/0E** (Mail 6 / AllPages 11 / Legacy 5); full `mvn test` exit 1, **Tests run 4653, Failures 0, Errors 19, Skipped 13**, the only failing class `ExpertContactLocationServiceTest` 19E — exactly the A5 acceptance residual, no other class fails.|
+|4 Downstream interfaces for 06|PASS (unchanged)|A5 diff (`f34d59a..b699750`) touches neither the preview DTO (`PendingOutreachSummary`), template-gate wording inputs (`PersonalizationGateException.missingKeys` / `BatchTemplateEvaluation`), nor the parity contract (`countBySnapshot`/selector). Epoc-2 interface receipts remain valid.|
+
+A5-specific receipts:
+1. `MailOpenTrackingPersistenceTest.kt`: diff = exactly 2 lines (`:137`, `:221`), appending `Mockito.anyBoolean()` as the 4th matcher to `composer.compose(eqValue("sender"), anyValue(expert), Mockito.isNull())`; no assertion added/removed/weakened (grep of the file shows the 4-arg stub only).
+2. `LegacyDiscoveryApprovalTest.kt`: only the obsolete `scope.matchesEsTarget/matchesExpert` gate asserts in the 4 previously-failing methods were rewritten (`assertFalse`→`assertTrue`). Protected assertions are byte-identical to base `git show 08f5bd5:…LegacyDiscoveryApprovalTest.kt`: digest/unicode `:33`, identity-binding `legacyOutreachApproved` asserts, `assertFalse(DiscoveryIdentity.allowed(p))`, `assertFalse(validInstitutionEvidence(p))`/`assertNull(institutionEvidence(...,"ORCID"))`, and the 4 visible-filter `scope.copy(...).matchesExpert` asserts at end — all retained and meaningful.
+3. `DiscoveryReviewService.kt` (`syncCandidateAfterApproval`, `:1096-1104`): `projectApprovedCandidate(...)` wrapped in `try/catch (ex: Exception)`; catch calls `markCandidateSyncFailed(itemId, CANDIDATE_SYNC_FAILED)` and returns — does NOT rethrow, so `runApplyWorker`'s `catch` (`:682`, `markItemFailed("APPLY_ERROR")`) is not reached and the item stays APPLIED (`markCandidateSyncFailed` UPDATE `… WHERE id=? AND state='APPLIED'`, state unchanged). Independent retry exists: `retryBatchCandidateSync` (`:903`) selects `state==APPLIED && errorCode==CANDIDATE_SYNC_FAILED`. Consistent with 04 I-2 (`docs/plans/2026-10-04/discovery-review-04-admission-writes.md:20/49`); not a silent swallow. Removes the 5F: `DiscoveryReviewAllPagesTest` 11/11 green (was 5F), test file untouched.
+
+### AUTO_FIX
+- N/A
+
+### RECORD_ONLY
+- O-6: `ExpertContactLocationServiceTest` 19 constructor errors (`java.lang.IllegalStateException: 国家时区目录配置错误：国家 CL 的时区 id 无法解析：America/Coyhaique`) make full `mvn test` exit 1 (4653/0F/19E/13S). These are pre-existing (ancestor `ab8e4cb`; `ExpertContactLocationService.kt`/`contact-country-timezones.json` untouched by this child) and explicitly outside A5 acceptance; unrelated to any authorized file.
+
+### Required Action
+- COMPLETE_CHILD
