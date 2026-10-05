@@ -556,16 +556,20 @@ class ManualInitialOutreachService(
             val gate = batchTemplateGate(snapshot)
             var retryable = 0
             var excluded = 0
+            val seenOrcids = mutableSetOf<String>()
             val campaign = campaignRepository.findByCampaignCode("MANUAL_OUTREACH")
             if (campaign != null) {
                 val campaignId = campaign.id ?: error("Campaign ID is null")
-                val (retryableTargets, _, retryableExcluded) = buildFilteredRetryableTargets(
+                val (retryableTargets, retryableSeenOrcids, retryableExcluded) = buildFilteredRetryableTargets(
                     campaignId, scope, now, gate, accumulator::record
                 )
                 retryable = retryableTargets.size
                 excluded += retryableExcluded
+                seenOrcids.addAll(retryableSeenOrcids)
             }
-            val (esEstimate, esExcluded) = countEsTargets(scope, now, gate = gate, onSelection = accumulator::record)
+            val (esEstimate, esExcluded) = countEsTargets(
+                scope, now, gate = gate, onSelection = accumulator::record, initialSeenOrcids = seenOrcids
+            )
             excluded += esExcluded
             PendingOutreachSummary(
                 pending = esEstimate,
@@ -670,7 +674,7 @@ class ManualInitialOutreachService(
         val (retryableTargets, seenOrcids, _) = buildFilteredRetryableTargets(campaignId, scope, filterNow, gate)
         val (esEstimate, _) = countEsTargets(scope, filterNow, {
             progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)
-        }, gate)
+        }, gate, initialSeenOrcids = seenOrcids)
         val totalEstimate = retryableTargets.size + esEstimate
         log.info("Outreach targets: {} retryable, {} ES estimate, {} total estimate; config: roundSize={}, perMailMs={}, perRoundMs={}",
             retryableTargets.size, esEstimate, totalEstimate,
@@ -1865,6 +1869,8 @@ class ManualInitialOutreachService(
      * 绝不把粗筛命中数当成可发送数。`excludeVerifiedUnavailableEmails` 打开时叠加历史不可达过滤；
      * `shouldStop` 保留取消语义（取消后不再翻页、不再计数）。
      * A3: `gate` 是精确模板门禁（[batchTemplateGate]），`onSelection` 供预估汇总准入/原因明细。
+     * R-1: retry identities seed a private global set, just as [OutreachTargetIterator] consumes
+     * each normalized identity before selection across all pages/levels. Never mutate execution's set.
      */
     @JvmOverloads
     private fun countEsTargets(
@@ -1872,10 +1878,12 @@ class ManualInitialOutreachService(
         now: LocalDateTime,
         shouldStop: () -> Boolean = { false },
         gate: (List<ExpertProfile>) -> List<ExpertProfile> = { it },
-        onSelection: ((RecipientSelection) -> Unit)? = null
+        onSelection: ((RecipientSelection) -> Unit)? = null,
+        initialSeenOrcids: Set<String> = emptySet()
     ): Pair<Int, Int> {
         var sendable = 0
         var excluded = 0
+        val seenOrcids = initialSeenOrcids.toMutableSet()
         for (level in scope.funnelLevels) {
             if (shouldStop()) break
             expertSearchService.scrollExpertsFiltered(
@@ -1886,10 +1894,12 @@ class ManualInitialOutreachService(
                 if (shouldStop()) {
                     false
                 } else {
-                    val selection = batchRecipientSelectionService.select(scope, batch)
+                    val unseen = batch.filter { seenOrcids.add(normalizeOrcid(it.orcidId)) }
+                    val selection = if (unseen.isEmpty()) RecipientSelection.EMPTY
+                        else batchRecipientSelectionService.select(scope, unseen)
                     onSelection?.invoke(selection)
                     val matched = gate(
-                        batch.filter { BatchRecipientSelectionService.docIdOf(it) in selection.includedDocIds }
+                        unseen.filter { BatchRecipientSelectionService.docIdOf(it) in selection.includedDocIds }
                     )
                     val retained = filterKnownProfiles(matched, scope.excludeVerifiedUnavailableEmails, now)
                     sendable += retained.size

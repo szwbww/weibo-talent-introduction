@@ -808,6 +808,74 @@ describe("c5 discovery review · scope and confirm (I-2)", () => {
         assert.ok(sandbox.$("#discoveryReviewResult").textContent.includes("失败 1"));
     });
 
+    it("stops interrupted apply polling without completion refresh and retries only on explicit record action", async () => {
+        const sandbox = loadSandbox();
+        let phase = "READY";
+        const status = () => ({
+            batchKey: "bk-interrupted", batchHash: "fixed-hash", phase, total: 3,
+            applied: phase === "APPLIED" ? 3 : 1, pending: phase === "APPLIED" ? 0 : 2,
+            failed: 0, stale: 0, cancelled: 0, items: [], nextCursor: null
+        });
+        sandbox.apiHandler = (requestPath) => {
+            if (requestPath.includes("/batches/prepare")) return status();
+            if (requestPath.endsWith("/confirm")) { phase = "APPLYING"; return status(); }
+            if (requestPath.endsWith("/retry")) { phase = "APPLYING"; return status(); }
+            if (requestPath.includes("/batches/bk-interrupted")) return status();
+            if (requestPath.endsWith("/task-executions/41")) {
+                return { rawResultSummary: JSON.stringify({ batchKey: "bk-interrupted" }) };
+            }
+            return { total: 0, experts: [] };
+        };
+        await openReviewTab(sandbox);
+        sandbox.$("#discoveryReviewApproveAll").click();
+        sandbox.$("#discoveryReviewCommit").click();
+        await flush();
+        sandbox.$("#discoveryReviewCommit").click();
+        await flush();
+        const callsBeforeInterruption = sandbox.__apiCalls.length;
+        phase = "INTERRUPTED";
+        await runNextTimer(sandbox);
+        assert.strictEqual(sandbox.__dr.state.confirm.phase, "INTERRUPTED");
+        assert.strictEqual(sandbox.__dr.state.confirm.counts.READY, 2);
+        assert.ok(sandbox.$("#discoveryReviewConfirmScope").textContent.includes("已中断"));
+        assert.ok(sandbox.$("#discoveryReviewResult").textContent.includes("不会自动继续"));
+        assert.ok(!sandbox.$("#discoveryReviewResult").textContent.includes("已完成"));
+        assert.strictEqual(sandbox.$("#discoveryReviewCommit").textContent, "已中断");
+        assert.strictEqual(sandbox.$("#discoveryReviewCommit").disabled, true);
+        assert.strictEqual(sandbox.__dr.state.pollTimer, null);
+        assert.strictEqual(sandbox.__apiCalls.length, callsBeforeInterruption + 1,
+            "the interruption poll must not refresh counts/list or restart the worker");
+        sandbox.resumeDiscoveryReviewPolling();
+        await sandbox.discoveryReviewCommit();
+        assert.strictEqual(sandbox.__dr.state.pollTimer, null);
+        assert.ok(!sandbox.__apiCalls.some((call) => call.path.endsWith("/retry")));
+        sandbox.invalidateDiscoveryReviewBatch("changed filter");
+        assert.strictEqual(sandbox.__dr.state.confirm.phase, "INTERRUPTED",
+            "submitted interrupted snapshot must not be silently discarded on filter changes");
+
+        const record = { id: 41, taskType: "DISCOVERY_REVIEW_PREPARE", status: "SUCCESS" };
+        const key = sandbox.discoveryReviewRecordKey(record);
+        const detail = { record, batchKey: "bk-interrupted" };
+        sandbox.__dr.state.recordDetails[key] = detail;
+        sandbox.discoveryReviewApplyRecordStatus(detail, status());
+        const article = sandbox.buildDiscoveryReviewRecord(record);
+        const retryButton = article.children[article.children.length - 1].children[0];
+        assert.strictEqual(retryButton.textContent, "重试未处理项");
+        assert.strictEqual(retryButton.disabled, false);
+        retryButton.click();
+        await flush();
+        assert.strictEqual(sandbox.__apiCalls.filter((call) => call.path.endsWith("/retry")).length, 1);
+        assert.strictEqual(detail.phase, "APPLYING");
+        assert.ok(!sandbox.$("#discoveryReviewResult").textContent.includes("已完成"));
+
+        sandbox.discoveryReviewApplyBatchStatus(status());
+        sandbox.resumeDiscoveryReviewPolling();
+        phase = "APPLIED";
+        await runNextTimer(sandbox);
+        assert.ok(sandbox.$("#discoveryReviewResult").textContent.includes("审核已完成：已应用 3"));
+        assert.strictEqual(sandbox.__dr.state.confirm.counts.READY, 0);
+    });
+
     it("requires a note before REJECT and never re-sends the query on confirm", async () => {
         const sandbox = loadSandbox();
         sandbox.apiHandler = scopeHandler(sandbox);

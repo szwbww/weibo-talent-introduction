@@ -56,6 +56,7 @@ object DiscoveryReviewBatchPhase {
     const val READY = "READY"
     const val PREPARE_FAILED = "PREPARE_FAILED"
     const val APPLYING = "APPLYING"
+    const val INTERRUPTED = "INTERRUPTED"
     const val APPLIED = "APPLIED"
     const val CANCELLED = "CANCELLED"
 }
@@ -1208,7 +1209,7 @@ class DiscoveryReviewService(
         val pending = (counts[DiscoveryReviewItemState.STAGED.name] ?: 0) +
             (counts[DiscoveryReviewItemState.READY.name] ?: 0) +
             (counts[DiscoveryReviewItemState.APPLYING.name] ?: 0)
-        val phase = derivePhase(prepareTask, applyTask, cancelled)
+        val phase = derivePhase(prepareTask, applyTask, cancelled, pending)
         return DiscoveryReviewBatchStatus(
             batchKey = batchKey,
             phase = phase,
@@ -1227,7 +1228,7 @@ class DiscoveryReviewService(
         )
     }
 
-    private fun derivePhase(prepareTask: TaskExecution?, applyTask: TaskExecution?, cancelled: Int): String {
+    private fun derivePhase(prepareTask: TaskExecution?, applyTask: TaskExecution?, cancelled: Int, pending: Int): String {
         if (prepareTask == null) {
             // IDS 快照：准备是同步的，直接可确认。
             return if (cancelled > 0) DiscoveryReviewBatchPhase.CANCELLED else DiscoveryReviewBatchPhase.READY
@@ -1238,6 +1239,7 @@ class DiscoveryReviewService(
         }
         if (applyTask != null) {
             if (applyTask.status in ACTIVE_STATUSES) return DiscoveryReviewBatchPhase.APPLYING
+            if (applyTask.status == "INTERRUPTED" && pending > 0) return DiscoveryReviewBatchPhase.INTERRUPTED
             return applyResultPhase(applyTask)
                 ?: if (cancelled > 0) DiscoveryReviewBatchPhase.CANCELLED else DiscoveryReviewBatchPhase.APPLIED
         }

@@ -303,6 +303,58 @@ class DiscoveryReviewAllPagesTest {
         assertEquals("PARTIAL_SUCCESS", applyTask.status)
     }
 
+    @Test
+    fun `recovered interrupted apply stays pending until explicit retry without reapplying completed items`() {
+        val prepared = prepareAll(3)
+        val interrupted = tasks.seedInterruptedApply(prepared.batchKey)
+        val claimed = repository.claimBatchItems(prepared.batchKey, interrupted.id!!, 2, includeFailed = false)
+        val completed = claimed.first()
+        repository.applyItem(completed.id, completed.identityHash, "MANUAL_APPROVED", "v", LocalDateTime.now(clock))
+        val before = repository.items.toMap()
+        val restarted = newService()
+
+        val status = restarted.batchStatus(prepared.batchKey)
+        assertEquals(DiscoveryReviewBatchPhase.INTERRUPTED, status.phase)
+        assertEquals(prepared.batchHash, status.batchHash)
+        assertEquals(interrupted.id, status.applyExecutionId)
+        assertEquals(3, status.total)
+        assertEquals(1, status.applied)
+        assertEquals(2, status.pending, "READY and claimed APPLYING items remain unresolved")
+        assertEquals(status.total, status.applied + status.stale + status.failed + status.cancelled + status.pending)
+        restarted.confirm(prepared.batchKey, prepared.batchHash!!, "op1")
+        assertEquals(before, repository.items, "reading and repeat confirmation must not resume interrupted work")
+        assertEquals(1, tasks.rows.count { it.taskType == DiscoveryReviewService.TASK_APPLY })
+
+        val retried = restarted.retryBatch(prepared.batchKey, "op1")
+        assertEquals(DiscoveryReviewBatchPhase.APPLIED, retried.phase)
+        assertEquals(3, retried.applied)
+        assertEquals(0, retried.pending)
+        assertEquals(prepared.batchHash, retried.batchHash)
+        assertEquals(2, tasks.rows.count { it.taskType == DiscoveryReviewService.TASK_APPLY })
+        assertTrue(repository.admissions.values.all { it.revision == 1L })
+
+        // A lost task summary alone must not turn fully applied items back into pending work.
+        val finishedIndex = tasks.rows.indexOfLast { it.taskType == DiscoveryReviewService.TASK_APPLY }
+        tasks.rows[finishedIndex] = tasks.rows[finishedIndex].copy(status = "INTERRUPTED", resultSummary = null)
+        assertEquals(DiscoveryReviewBatchPhase.APPLIED, newService().batchStatus(prepared.batchKey).phase)
+    }
+
+    @Test
+    fun `cancelling recovered interrupted pending work preserves applied items`() {
+        val prepared = prepareAll(3)
+        val interrupted = tasks.seedInterruptedApply(prepared.batchKey)
+        val completed = repository.claimBatchItems(prepared.batchKey, interrupted.id!!, 1, false).single()
+        repository.applyItem(completed.id, completed.identityHash, "MANUAL_APPROVED", "v", LocalDateTime.now(clock))
+
+        val cancelled = newService().cancelBatch(prepared.batchKey, "op1")
+        assertEquals(DiscoveryReviewBatchPhase.CANCELLED, cancelled.phase)
+        assertEquals(1, cancelled.applied)
+        assertEquals(2, cancelled.cancelled)
+        assertEquals(0, cancelled.pending)
+        assertEquals(3, cancelled.total)
+        assertEquals(prepared.batchHash, cancelled.batchHash)
+    }
+
     // ── I-4：并发、过期、取消 ────────────────────────────────────────────────
 
     @Test
@@ -621,6 +673,14 @@ class DiscoveryReviewAllPagesTest {
     ) {
         val rows = mutableListOf<TaskExecution>()
         private var seq = 0L
+
+        fun seedInterruptedApply(batchKey: String): TaskExecution {
+            val running = newRunning(
+                DiscoveryReviewService.TASK_APPLY, "MANUAL",
+                mapper.writeValueAsString(mapOf("batchKey" to batchKey))
+            )
+            return running.copy(status = "INTERRUPTED", finishedAt = LocalDateTime.now()).also { replace(it) }
+        }
 
         override fun <T : Any?> runAndRecordWithResult(
             taskType: String,

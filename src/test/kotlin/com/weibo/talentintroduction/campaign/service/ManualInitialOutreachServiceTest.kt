@@ -314,6 +314,164 @@ class ManualInitialOutreachServiceTest {
         assertEquals(1, summary.totalSendable)
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun `preview and run share one normalized target across ES pages levels and NEW retry (R-1 V-1)`(
+        withRetry: Boolean
+    ) {
+        val acc = account("chen")
+        val canonicalId = "EMAIL-dedup@example.org"
+        val candidate = expert(" EMAIL-Dedup@Example.org ", "dedup@example.org")
+        val candidateDuplicate = candidate.copy(orcidId = canonicalId, givenNames = "Later candidate")
+        val applicationDuplicate = candidate.copy(orcidId = "email-DEDUP@EXAMPLE.ORG", givenNames = "Application")
+        val retryProfile = candidate.copy(orcidId = canonicalId, givenNames = "Retry")
+        val candidates = listOf(candidate, candidateDuplicate, candidate.copy(orcidId = " email-Dedup@Example.Org "))
+        val profilesByLevel = linkedMapOf(
+            ExpertIndexLevel.CANDIDATE to candidates,
+            ExpertIndexLevel.APPLICATION to listOf(applicationDuplicate)
+        )
+        stubIntroSendPipeline(acc, candidates)
+        val retryContact = ExpertContact(
+            id = 31L, campaignId = 10L, orcidId = canonicalId,
+            expertEmail = "dedup@example.org", expertName = "Retry", currentStatus = "NEW"
+        )
+        if (withRetry) {
+            Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+                .thenReturn(listOf(retryContact))
+            Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(31L))
+                .thenReturn(emptyList())
+        }
+        for ((level, profiles) in profilesByLevel) {
+            Mockito.`when`(expertSearchService.searchByOrcidIds(listOf(canonicalId), level))
+                .thenReturn(listOf(retryProfile))
+            Mockito.`when`(expertSearchService.countExperts(eqValue(level), anyValue(emptyList())))
+                .thenReturn(profiles.size.toLong())
+            Mockito.`when`(expertSearchService.searchExpertsFiltered(
+                eqValue(level), anyValue(emptyList()), anyInt(), anyInt()
+            )).thenAnswer { invocation ->
+                profiles.drop(invocation.getArgument<Int>(2)).take(invocation.getArgument<Int>(3))
+            }
+            Mockito.doAnswer { invocation ->
+                val handler = invocation.getArgument<(List<ExpertProfile>) -> Boolean>(3)
+                for (batch in profiles.chunked(2)) {
+                    if (!handler(batch)) break
+                }
+                null
+            }.`when`(expertSearchService).scrollExpertsFiltered(
+                eqValue(level), anyValue(emptyList()), eqValue(500),
+                anyValue({ _: List<ExpertProfile> -> true })
+            )
+        }
+        Mockito.`when`(introductionMailComposer.compose(
+            eqValue("chen"), anyValue(expert("", "")), Mockito.isNull(), anyBooleanValue()
+        )).thenAnswer { invocation ->
+            ComposedMail(invocation.getArgument<ExpertProfile>(1).email!!, "Subject", "Body")
+        }
+        val snapshot = introSnapshot(roundSize = 1, roundsPerRun = 3)
+
+        val preview = service.countBySnapshot(snapshot)
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(if (withRetry) 0 else 1, preview.pending)
+        assertEquals(if (withRetry) 1 else 0, preview.retryable)
+        assertEquals(1, preview.totalSendable)
+        assertEquals(1, preview.admission.target)
+        assertEquals(0, preview.excludedVerifiedUnavailable)
+        assertTrue(preview.reasonHits.isEmpty())
+        assertEquals(preview.totalSendable, result.total)
+        assertEquals(1, result.sent)
+        assertEquals(0, result.failed)
+        assertEquals(0, result.skipped)
+        assertEquals(0, result.remaining)
+        assertEquals("COMPLETED", result.finalStatus)
+        val selected = ArgumentCaptor.forClass(ExpertProfile::class.java)
+        Mockito.verify(introductionMailComposer, Mockito.times(1)).compose(
+            eqValue("chen"), captureValue(selected, candidate), Mockito.isNull(), anyBooleanValue()
+        )
+        assertEquals(if (withRetry) retryProfile else candidate, selected.value, "NEW retry must take precedence")
+        Mockito.verify(mailDeliveryService, Mockito.times(1)).send(
+            anyValue(acc), anyValue(ComposedMail("", "", ""))
+        )
+        Mockito.verify(expertSearchService).searchExpertsFiltered(
+            eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList()), eqValue(2), anyInt()
+        )
+        Mockito.verify(expertSearchService).searchExpertsFiltered(
+            eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList()), eqValue(0), anyInt()
+        )
+    }
+
+    @Test
+    fun `dedup consumes an ES identity before selection and preserves its first exclusion reason (R-1)`() {
+        val acc = account("chen")
+        val excluded = expert(" DUPLICATE ", "excluded@example.org").copy(tags = listOf("other"))
+        val laterDuplicate = expert("duplicate", "later@example.org").copy(tags = listOf("wanted"))
+        val selected = expert("unique", "unique@example.org").copy(tags = listOf("wanted"))
+        val profiles = listOf(excluded, laterDuplicate, selected)
+        stubIntroSendPipeline(acc, profiles)
+        Mockito.doAnswer { invocation ->
+            val handler = invocation.getArgument<(List<ExpertProfile>) -> Boolean>(3)
+            assertTrue(handler(listOf(excluded)))
+            assertTrue(handler(listOf(laterDuplicate, selected)))
+            null
+        }.`when`(expertSearchService).scrollExpertsFiltered(
+            eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList()), eqValue(500),
+            anyValue({ _: List<ExpertProfile> -> true })
+        )
+        val snapshot = introSnapshot(roundSize = 1, roundsPerRun = 3).copy(
+            funnelLevel = "CANDIDATE", tags = listOf("wanted")
+        )
+
+        val preview = service.countBySnapshot(snapshot)
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(1, preview.totalSendable)
+        assertEquals(1, preview.admission.explicitFilterExcluded)
+        assertEquals(BatchRecipientSelectionService.docIdOf(excluded), preview.excludedRecipients.single().docId)
+        assertEquals(listOf(RecipientFilterKeys.TAGS), preview.excludedRecipients.single().filterKeys)
+        assertEquals(1, preview.reasonHits[RecipientFilterKeys.TAGS])
+        assertEquals(preview.totalSendable, result.total)
+        assertEquals(1, result.sent)
+        Mockito.verify(introductionMailComposer, Mockito.times(1)).compose(
+            eqValue("chen"), eqValue(selected), Mockito.isNull(), anyBooleanValue()
+        )
+        Mockito.verify(mailDeliveryService, Mockito.times(1)).send(anyValue(acc), anyValue(ComposedMail("", "", "")))
+    }
+
+    @Test
+    fun `historically excluded NEW retry still reserves its normalized ES identity in preview and run (R-1)`() {
+        val acc = account("chen")
+        val canonicalId = "RETRY-DUPLICATE"
+        val retryProfile = expert(canonicalId, "unavailable@example.org")
+        val esDuplicate = expert(" retry-duplicate ", "different@example.org")
+        stubIntroSendPipeline(acc, listOf(esDuplicate))
+        val contact = ExpertContact(
+            id = 31L, campaignId = 10L, orcidId = canonicalId,
+            expertEmail = "unavailable@example.org", expertName = "Retry", currentStatus = "NEW"
+        )
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(contact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(31L)).thenReturn(emptyList())
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf(canonicalId), ExpertIndexLevel.CANDIDATE))
+            .thenReturn(listOf(retryProfile))
+        Mockito.`when`(batchEmailVerificationService.findKnownUndeliverableEmails(
+            anyValue(emptyList<String?>()), anyValue(LocalDateTime.now())
+        )).thenReturn(setOf("unavailable@example.org"))
+        val snapshot = introSnapshot(roundSize = 1, roundsPerRun = 3).copy(
+            funnelLevel = "CANDIDATE", excludeVerifiedUnavailableEmails = true
+        )
+
+        val preview = service.countBySnapshot(snapshot)
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(0, preview.pending)
+        assertEquals(0, preview.retryable)
+        assertEquals(0, preview.totalSendable)
+        assertEquals(1, preview.excludedVerifiedUnavailable)
+        assertEquals(preview.totalSendable, result.total)
+        assertEquals(0, result.sent)
+        Mockito.verify(mailDeliveryService, Mockito.never()).send(anyValue(acc), anyValue(ComposedMail("", "", "")))
+    }
+
     @Test
     fun `discovery region uses country only and non-discovery uses country or nationality (I-1 I-2)`() {
         stubEmptyRetryCandidates()
@@ -992,7 +1150,7 @@ class ManualInitialOutreachServiceTest {
             .thenReturn(DeliveredMail("msg-1", "SENT"))
 
         val result = service.run(runScheduledSnapshot(), 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
-        assertEquals(2, result.total) // ES count estimate before dedup
+        assertEquals(1, result.total)
         assertEquals(1, result.sent)
         Mockito.verify(mailDeliveryService, Mockito.times(1)).send(anyValue(account), anyValue(ComposedMail("","","")))
     }
@@ -1014,7 +1172,7 @@ class ManualInitialOutreachServiceTest {
             .thenReturn(DeliveredMail("msg-1", "SENT"))
 
         val result = service.run(runScheduledSnapshot(), 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
-        assertEquals(2, result.total) // ES count estimate before dedup
+        assertEquals(1, result.total)
         assertEquals(1, result.sent)
     }
 
@@ -1039,7 +1197,7 @@ class ManualInitialOutreachServiceTest {
             .thenReturn(DeliveredMail("msg-1", "SENT"))
 
         val result = service.run(runScheduledSnapshot(), 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
-        assertEquals(2, result.total) // retryable + ES estimate, deduped at send time
+        assertEquals(1, result.total)
         assertEquals(1, result.sent)
         Mockito.verify(expertContactRepository, Mockito.never()).save(Mockito.any(ExpertContact::class.java))
     }

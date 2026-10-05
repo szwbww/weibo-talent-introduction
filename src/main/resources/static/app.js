@@ -2488,6 +2488,7 @@ const DISCOVERY_REVIEW_PHASE_LABELS = {
     READY: "待确认",
     PREPARE_FAILED: "固定名单失败",
     APPLYING: "处理中",
+    INTERRUPTED: "已中断（仍有待处理项）",
     APPLIED: "已完成",
     CANCELLED: "已取消"
 };
@@ -2498,6 +2499,7 @@ const DISCOVERY_REVIEW_TASK_STATUS_LABELS = {
     COMPLETED: "已完成",
     PARTIAL_SUCCESS: "部分成功",
     FAILED: "失败",
+    INTERRUPTED: "已中断",
     CANCELLED: "已取消"
 };
 
@@ -3440,6 +3442,8 @@ function discoveryReviewRenderConfirm() {
         label = "确认审核";
     } else if (phase === "APPLYING") {
         label = "处理中…";
+    } else if (phase === "INTERRUPTED") {
+        label = "已中断";
     } else {
         label = "已结束";
     }
@@ -3507,12 +3511,12 @@ function closeDiscoveryReviewConfirm() {
     if (els.note) els.note.value = "";
 }
 
-/** I-2：筛选/翻页/选择变化使未确认快照作废；已提交（APPLYING/APPLIED）的后台任务不因此取消或扩大。 */
+/** I-2：筛选/翻页/选择变化使未确认快照作废；已提交的批次不因此取消或扩大。 */
 function invalidateDiscoveryReviewBatch(message) {
     const confirm = discoveryReviewState.confirm;
     if (!confirm) return;
     if (confirm.batchKey) {
-        if (confirm.phase === "APPLYING" || confirm.phase === "APPLIED") return;
+        if (confirm.phase === "APPLYING" || confirm.phase === "APPLIED" || confirm.phase === "INTERRUPTED") return;
     }
     closeDiscoveryReviewConfirm();
     if (message) setDiscoveryReviewResult(message);
@@ -3635,6 +3639,10 @@ function discoveryReviewApplyConfirmPhase() {
     }
     if (confirm.phase === "READY") {
         setDiscoveryReviewResult("名单已固定，等待确认");
+        return;
+    }
+    if (confirm.phase === "INTERRUPTED") {
+        setDiscoveryReviewResult("审核已中断，仍有待处理项；不会自动继续，请在审核记录中明确重试");
         return;
     }
     if (confirm.phase === "PREPARE_FAILED") {
@@ -3767,6 +3775,10 @@ function discoveryReviewApplyBatchStatus(status) {
 function discoveryReviewAfterTerminalPhase() {
     const confirm = discoveryReviewState.confirm;
     if (!confirm) return;
+    if (confirm.phase === "INTERRUPTED") {
+        discoveryReviewApplyConfirmPhase();
+        return;
+    }
     if (confirm.phase !== "APPLIED") return;
     const counts = confirm.counts || {};
     const failed = Number(counts.FAILED || 0);
@@ -3909,7 +3921,7 @@ function buildDiscoveryReviewRecord(record) {
     }
     article.appendChild(details);
     const toolbar = discoveryReviewNode("div", "dr-toolbar", null);
-    const retryBtn = discoveryReviewButton("重试失败项", "button small secondary", function () {
+    const retryBtn = discoveryReviewButton(detail.phase === "INTERRUPTED" ? "重试未处理项" : "重试失败项", "button small secondary", function () {
         retryDiscoveryReviewRecord(key);
     }, { reviewRetry: "1" });
     details.open = detail.state !== "idle";
