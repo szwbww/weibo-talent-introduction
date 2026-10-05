@@ -1,4 +1,4 @@
-Current handoff status: **READY_FOR_VERIFICATION** under the human-approved amendments. The latest execution epoch is recorded in [the appended handoff](#amended-execution-result-ready_for_verification); the earlier BLOCKED report below is historical, not the current outcome. No independent review has been invoked.
+Current handoff status: **READY_FOR_VERIFICATION** for the latest V-3 repair identity, recorded in [the V-3 execution handoff](#v-3-execution-result-ready_for_verification). Reports below with older plan hashes are historical; their approval/completion state is not transferred to the current plan. No independent review was invoked in this execution.
 
 ## Execution Result: BLOCKED
 
@@ -183,3 +183,98 @@ Documentation-only paths: `docs/plans/fix/discovery-review-master/repair.md` (ap
 No remaining execution/commit blocker under the explicit approvals. The named HTTP and 1 Hz failures remain unresolved matters for independent verification; D1 remains a policy/release gate. `READY_FOR_VERIFICATION` means ready to hand off, not PASS or release approval.
 
 Human instruction: **do not invoke review-fast-p or any independent verification now**. Stop after committing this handoff and reporting exact SHAs/clean state. A later human invocation owns the review decision.
+
+## V-3 Execution Result: READY_FOR_VERIFICATION
+
+### Execution Identity
+
+Plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master/docs/plans/fix/discovery-review-master/repair.md`
+
+Plan SHA-256: `b1ab4f0f97c530717ecfd221a6c05a3c95de50c0b5d35f141c928511ff45739d`
+
+Execution ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master/docs/plans/fix/discovery-review-master/repair.md@b1ab4f0f97c530717ecfd221a6c05a3c95de50c0b5d35f141c928511ff45739d`
+
+Execution epoch: NEW. The same path now contains V-3 and authorizes only the service and its test, not the prior V-1/V-2 repair. Read the current complete plan from disk and reset task/file/command/commit evidence.
+
+Approval basis: exact current human-originated `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master/docs/plans/fix/discovery-review-master/repair.md` invocation, interpreted under its execution-handoff section. No plan modification or additional failure waiver in this epoch.
+
+Executor: Main coding assistant, openai-codex/gpt-6.1-sol; inline implementation, no delegated or independent verification agent.
+
+Target worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master`
+
+Target branch: `fast/2026-10-04-discovery-review-master`
+
+Worktree ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master@fast/2026-10-04-discovery-review-master@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-2026-10-04-discovery-review-master`
+
+Pre-execution code SHA: `6b5c201c7a8667376cb214f74a7069594cc9a6cc`.
+
+Invocation starting HEAD: `0a26e56ab0266e0fcb962805a02a3acab2dc4975`; initial worktree/index clean.
+
+Post-execution code SHA: `0ce61cc2d8bc4dd7c2de868a9d3a78eb180b1e41`.
+
+Product subject: `fix(discovery-review): preserve real document target uniqueness`.
+
+Evidence HEAD: the later report-only commit containing this section, subject `docs(review-fast-p): record repair execution`; resolved SHA is emitted in the final execution response. It is not the product SHA.
+
+Implementation boundary: current product commit `0a26e56ab0266e0fcb962805a02a3acab2dc4975..0ce61cc2d8bc4dd7c2de868a9d3a78eb180b1e41`; code-bearing boundary `6b5c201c7a8667376cb214f74a7069594cc9a6cc..0ce61cc2d8bc4dd7c2de868a9d3a78eb180b1e41`.
+
+### Task Status and Changes
+
+| Requirement | Status | Files / Evidence |
+|---|---|---|
+| R-1 / V-3 real-docId target uniqueness | IMPLEMENTED | `ManualInitialOutreachService.kt`: retry construction retains one selector representative per real docId before template gating; target conversion has both normalized-ORCID and real-docId guards. Eligible retries seed the docId set used by preview and execution. ES count copies both identity sets, removes already retained real docIds and page-local duplicate representatives, then records surviving identities. Iterator `filterPage` uses the same seeded docId semantics without changing OutreachTargetIterator. |
+| Regression and ORCID preservation | IMPLEMENTED | `ManualInitialOutreachServiceTest.kt`: parameterized retryCount=0/1/2; different ORCIDs share one esDocId across pages/levels and retry/ES, plus a normalized-ORCID alias with another esDocId. Preview/total/target/SMTP attempt are one; first profile or first retry wins. The existing V-1 regressions remain unchanged and pass. |
+| V-2 unchanged behavior | IMPLEMENTED | Full Maven freshly ran `DiscoveryReviewAllPagesTest`: 15 tests, zero failures/errors, and `DiscoveryReviewServiceTest`: 27 tests, zero failures/errors. Full Node suite passes. No V-2 product/test files changed. |
+| Required commands and runtime proof | IMPLEMENTED | Four current required commands ran against final source state; focused JVM, Node and isolated MySQL pass. Full Maven fails only on the explicitly excluded timezone errors. Actual production service smoke outside JUnit observes one target/SMTP attempt. |
+| Commit/evidence contract | IMPLEMENTED | One current-epoch two-file product commit with the exact subject, then one report-only evidence commit. Scope/reachability/identity/clean-state gates recorded below. No review invocation. |
+
+Product changed files:
+
+- `src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt` — real-docId uniqueness through retry, preview prescan and execution page filtering; private prescan copies prevent consuming execution state.
+- `src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt` — same-docId/different-ORCID target parity, retry precedence and retained ORCID guard regression.
+
+Control-plane changed file: only this authorized execution report. No approved-plan edit, new product file, iterator change, schema/migration/mapping, selector admission behavior, D1 policy, account assignment, send-attempt uniqueness policy or SMTP API change.
+
+### Failing-Before / Passing-After
+
+Added the regression before changing production code and ran the focused JVM command. Observed 183 tests, 3 failures, 0 errors/skipped, exit 1 (`artifact://1337` / `artifact://1338`): all new retryCount scenarios failed on preview pending, actual 4 versus expected 1 without retry or expected 0 with retry. Existing tests had no failures.
+
+After the production repair, reran all required commands freshly. All three new scenarios and the full focused class passed without changing the new assertions. No failing test was removed or weakened.
+
+### Exact Commands and Results
+
+All repository commands used the exact target worktree and Maven used the required JDK 11. The four final commands ran sequentially with `&&`; first three exit 0 enabled the next, and full Maven exited 1. Sequence evidence: `artifact://1340`; final Maven summary: `artifact://1341`. No suppression/exclusion flags were added.
+
+| Exact command | Result |
+|---|---|
+| `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home PATH=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home/bin:$PATH mvn -Dtest=ManualInitialOutreachServiceTest test` | PASS, exit 0: 183 tests, 0 failures/errors/skipped; BUILD SUCCESS. |
+| `node --test src/test/js/*.test.js` | PASS, exit 0: 1462 tests, 278 suites, 1462 pass, 0 failures/cancelled/skipped. |
+| `env DB_URL='jdbc:mysql://localhost:3306/talent_introduction_fastp?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true' DB_USERNAME=root DB_PASSWORD=root JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home PATH=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home/bin:$PATH mvn -DmysqlIt=true -Dtest=DiscoveryReviewRepositoryIT test` | PASS, exit 0: 13 tests, 0 failures/errors/skipped; BUILD SUCCESS. |
+| `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home PATH=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home/bin:$PATH mvn test` | FAIL, exit 1: 4664 tests, 0 failures, 19 errors, 13 skipped; BUILD FAILURE. All errors are `ExpertContactLocationServiceTest` construction errors: `America/Coyhaique` unavailable in JDK 11, explicitly excluded by this plan. |
+| `git diff --check && git diff --stat && git diff --name-only && git diff -- src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt` | PASS, exit 0: exactly the two authorized files, 117 insertions and 14 deletions; `artifact://1345`. |
+
+Count/scope receipts: `grep` over `artifact://1340` for `Tests run: 183`, `Tests run: 4664`, `DiscoveryReviewAllPagesTest`, `DiscoveryReviewServiceTest`, `RestTemplateConfigTest`, Node totals and `BUILD SUCCESS` showed focused 183 green, full 4664/0F/19E/13S, V-2 15+27 green, and HTTP 18 green. The `UnmatchedInboundAiReplyTurnKnowledgeTest` class also passed 37 tests in this fresh full run. These are observed run results, not retrospective causality/flakiness claims.
+
+### Actual-Service Smoke
+
+Disposable JDK 11 JShell stdin loaded the newly compiled service and existing fixture setup, not a test-method invocation. Input: FIRST and SECOND have different normalized ORCIDs but share esDocId `shared-real-id`; a ` first ` alias has esDocId `other-real-id`. Called actual `countBySnapshot()` and `run()` and verified one mocked SMTP attempt. Observed exit 0 and:
+
+`V3_ACTUAL_SERVICE_SMOKE distinctORCIDs=2 sharedDocId=1 aliasOtherDocId=1 preview=1 total=1 sent=1 remaining=0 SMTP attempts=1`
+
+Limit: mocked external seams/fixture setup, not live ES or real SMTP. No smoke file was retained, no deployed UI change was made, and the missing live local ES index remains an excluded environment evidence gap rather than a product repair.
+
+### Deviations and Freshness
+
+- Deviations: none to current authorized repair/commit scope. Full Maven FAIL is reported as FAIL; only this plan's named 19 timezone errors remain. No old HTTP/1 Hz waiver was applied to the new plan hash.
+- Plan identity rechecked unchanged: YES, execute-p plan helper before staging/commits and handoff.
+- Worktree root/branch/git-dir rechecked: YES, execute-p worktree helper with exact expected values.
+- Required commands ran freshly after final implementation: YES.
+- Historical evidence used only as baseline: YES; earlier product/evidence commits did not satisfy current V-3 tasks.
+- Product commit verified as target HEAD at creation and ancestor of target branch, with `git diff-tree --no-commit-id --name-only -r` returning exactly the two authorized paths. Evidence commit receives the same HEAD/ancestry/file-scope gate.
+- Initial tree/index clean; post-product tree/index clean. Confirm final tree/index clean after report-only commit before final delivery.
+
+### Remaining Blocker and Next Action
+
+No remaining execution blocker under the current plan's explicitly excluded timezone baseline. This is `READY_FOR_VERIFICATION`, not independent PASS, live-ES proof or D1 release approval.
+
+No `review-fast-p`, `verify-p`, aggregate re-review, push, merge, deployment or history rewrite was invoked. Stop at execution handoff; independent verification requires a separate human request.
