@@ -60,7 +60,7 @@
 
 ## 变更文件清单
 
-共12文件；批量选择与共享组装2子系统；数据库/ES新字段0。D1尚不在此表授权内。（A3 修正：新增 2 个文件用于启动期模板版本/令牌校验与内存模板快照渲染 seam；预览响应 DTO 字段扩充在已授权的 ManualInitialOutreachService 内完成。）
+共16文件；批量选择与共享组装2子系统；数据库/ES新字段0。D1尚不在此表授权内。（A3 修正：新增 2 个文件用于启动期模板版本/令牌校验与内存模板快照渲染 seam；预览响应 DTO 字段扩充在已授权的 ManualInitialOutreachService 内完成。A5 修正：再新增 4 个文件——两个既有测试的最小修复，以及 04 回归（03 的 DiscoveryReviewAllPagesTest 5F）修复所需的 discovery review 服务/仓储。）
 
 | 文件 | 操作 |
 |---|---|
@@ -69,6 +69,8 @@
 | src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt | 预估/两循环/重试接入；A3：预览响应 DTO 补齐准入计数与逐人原因 key |
 | src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendControlService.kt | A3：启动时模板版本/过期预览令牌校验；请求快照信息写 request_payload |
 | src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt | A3：按内存模板内容快照渲染的 seam（运行中模板变化不混用） |
+| src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt | A5：修复 child 04 引入的回归（03 的 AllPages 5F），不改审核语义 |
+| src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt | A5：同上（必要时） |
 | src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt | 最终切换共用准入，保持未切换行为 |
 | src/main/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposer.kt | 精确模板判定与参数 |
 | src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt | 材料批量参数，默认保持人工行为 |
@@ -76,6 +78,8 @@
 | src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt | preview/new/retry/material |
 | src/test/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachServiceTest.kt | 旧入口回归/准入 |
 | src/test/kotlin/com/weibo/talentintroduction/mail/service/BatchTemplateGateParityTest.kt | 新增跨两composer/非批量回归 |
+| src/test/kotlin/com/weibo/talentintroduction/mail/service/MailOpenTrackingPersistenceTest.kt | A5：compose 第 4 默认参数的 Mockito matcher 补齐（最小修） |
+| src/test/kotlin/com/weibo/talentintroduction/expert/domain/LegacyDiscoveryApprovalTest.kt | A5：按新准入契约改写 4 条过时断言（最小修） |
 
 ## 验收标准
 
@@ -84,6 +88,7 @@
 - I-3：人工/定时/重试同样配置相同名单；标签/状态变更导致名单变化须给具体key；preview无数据库写与验证外呼；500名每批lookup有界；预览 HTTP 响应含准入计数与逐人原因 key（06 数据源）。
 - I-4：裸变量空+关→不阻断；开→精确缺key；fallback不阻断；变体seed一致；模板变更有版本不一致提示；占位符残留有明确错误。
 - I-5：人工单发/自动回复/会议相关原测试回归；材料提醒开关也生效；SMTP全局策略没被意外改动。
+- A5：全量 `mvn test` 中本 child 引入的两类失败（MailOpenTrackingPersistenceTest 2E、LegacyDiscoveryApprovalTest 4F）与 child 04 回归（DiscoveryReviewAllPagesTest 5F）修复后消失；仅保留 master base 既有失败（ExpertContactLocationServiceTest 19E，祖先 ab8e4cb 既有）。
 - **整体验收前置**：D1闭合后重新运行batch-gates检索，逐项记录全部分支来源；任何未解释continue/filter意味着主计划FAIL。
 
 ## 人工验收清单

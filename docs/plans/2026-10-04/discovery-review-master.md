@@ -80,7 +80,7 @@
 | 02 | [审核记录及单页审核](discovery-review-02-review.md) | 9 | API、审计、单人/所选/页审核；暂不影响发送 |
 | 03 | [所有页审核](discovery-review-03-all-pages.md) | 9 | 服务端固定快照、后台执行、恢复与失败清单 |
 | 04 | [准入写入与旧数据衔接](discovery-review-04-admission-writes.md) | 10 | 自动/人工结论覆盖收录及重验；不先删除旧发信门禁 |
-| 05 | [批量显式筛选与模板开关](discovery-review-05-explicit-send.md) | 12 | 增加统一计算能力；最终切换受发布门约束 |
+| 05 | [批量显式筛选与模板开关](discovery-review-05-explicit-send.md) | 16 | 增加统一计算能力；最终切换受发布门约束 |
 | 06 | [深度发现前端](discovery-review-06-ui.md) | 6 | 采集/审核/记录页签，所有页按钮，真实 API |
 | D1 | 历史发送政策收口 | 待选政策后列明 | 未定案；不得执行隐含扩权或宣称清零 |
 
