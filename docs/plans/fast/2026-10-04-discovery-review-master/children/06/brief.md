@@ -2,8 +2,8 @@
 
 ## 身份与边界
 
-- Master plan（批准版，字节冻结）：`docs/plans/2026-10-04/discovery-review-master.md`，identity `commit:54ddacf3335a200553794575511b1e6659d22dca`（A6 修正后）。
-- 本 child 批准计划（完整合同，必须先通读）：`docs/plans/2026-10-04/discovery-review-06-ui.md`，identity `commit:07beaafc111a1b14ed3c48d514db527c8a13fc31`。全部章节逐条生效（含 S-1/S-2/S-3 逐字 CSS 与 DOM 契约）；本 brief 摘要与计划原文冲突时以计划原文为准。
+- Master plan：`docs/plans/2026-10-04/discovery-review-master.md`，identity `commit:60d97bbe1425c429b4e6e66409a5585fcd08b3f7`（A8）。
+- 本 child 完整批准合同：`docs/plans/2026-10-04/discovery-review-06-ui.md`，identity `commit:60d97bbe1425c429b4e6e66409a5585fcd08b3f7`（A7）；全部章节生效，冲突以计划原文为准。epoch 2，fix_round=0，保留 epoch1 报告并追加新执行结果。
 - Worktree：`/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master`；branch `fast/2026-10-04-discovery-review-master`；`child_base_sha = b699750b9a84ed56224541e3137cdf1c79f77e7e`（= child 05 code head）。
 - 依赖：01–05 API 契约稳定。D1 未定案：不得写"所有黑盒已清除"等断言式承诺；未定案文案按计划 I-4 保留"待定/未定案"表述。
 - 取证材料（worktree 内只读）：`docs/plans/2026-10-04/discovery-review-evidence/frontend-baseline.md`、`cache-key.txt`、`docs/plans/2026-10-04/discovery-review-audit.md`（E6/X2/X5/X6/X7/X9）。
@@ -12,7 +12,7 @@
 
 ## 全局约束
 
-1. 只允许修改「Authorized Files」表内 6 个文件；不得新建白名单外文件（含新 CSS/JS 资源）。其余前端/后端文件全部只读。
+1. 只允许修改 Authorized Files 内 10 个文件；其余文件只读。接续既有六文件未提交工作，不删除/重做已完成 child。
 2. 不得修改 `docs/plans/**` 内的计划与其他证据；本 child 唯一可写非产品文件是执行报告 `docs/plans/fast/2026-10-04-discovery-review-master/children/06/execution.md`。fast-p 报告不进入产品提交（控制方单独提交）。
 3. 不得 push、merge、rebase、squash、amend、reset；不得改写已有提交。产品代码只提交一次：`feat(fast-p): implement 06`。
 4. 计划与代码冲突、需要白名单外文件、需要新行为或需要修订计划：返回 `PLAN_CONFLICT` / `BLOCKED`，不得自行扩范围或改计划。
@@ -24,7 +24,7 @@
 10. 人工预授权（2026-10-04，适用 04–06）：若既有测试的**精确计数/集合断言**仅因本计划合法新增/变更的枚举、目录或 taskType 条目而失败，你可以在本 child 内对该测试文件做**最小重同步**（只改计数/集合/样例字面量；不弱化、不删除断言、不改无关语义），并在执行报告中逐条列出文件与旧/新断言；控制器据此记录 amendment 行并同步主计划文件数上限。超出该类别（行为断言、产品语义、其他文件）仍必须返回 PLAN_CONFLICT。
 11. 全量 `mvn test` 既有 19 个 `ExpertContactLocationServiceTest` 错误为 master base 既有（祖先 ab8e4cb，时区目录 America/Coyhaique），不得改动该测试或其配置来"修复"。
 
-## Authorized Files（6）
+## Authorized Files（10）
 
 | # | 精确路径 | 改动 |
 |---|---|---|
@@ -34,6 +34,12 @@
 | 4 | `src/test/js/discoveryReview.test.js` | 新增交互/HTML/请求测试 |
 | 5 | `src/test/js/taskModalLifecycleIntegration.test.js` | 其他任务与双打开路径回归 |
 | 6 | `src/test/js/gateTemplateFilter.test.js` | 两入口开关文案/快照一致 |
+| 7 | `src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryReview.kt` | A7 initialized DTO |
+| 8 | `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewScanService.kt` | A7 初始化来源/筛选 |
+| 9 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewAllPagesTest.kt` | A7 真实扫描边界回归 |
+| 10 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewServiceTest.kt` | A7 直接关联回归（必要时） |
+
+A7 合同详见计划步骤6：initialized 表示 admission 行存在，revision=0/identityChanged 独立；保留原有效 decision 和 ALL_MATCHING 范围。追加必跑：JDK11 `mvn -DskipTests test-compile` 和 `mvn -Dtest=DiscoveryReviewServiceTest,DiscoveryReviewAllPagesTest test`，及真实扫描 API smoke。原 JS/浏览器约束不变。修改 exported DTO 前先 LSP references。
 
 ## 关键不变量（计划 I-1～I-4 与 S-1～S-3；逐字以计划为准）
 
