@@ -11,8 +11,8 @@
 - Started: 2026-10-04T20:05:00+0800
 - Current child: 06
 - Waiting role: IMPLEMENTER
-- Agent attempt: 0
-- Last agent error: N/A
+- Agent attempt: 1
+- Last agent error: opencode-go/deepseek-v4.1-flash getaddrinfo ENOTFOUND opencode.ai（child 06 IMPLEMENTER dispatch 失败，job ImplDiscoveryReview06 无产物；code head 保持 9291584332fd6b7499f8da263365ad199ee96954；action=RETRY，2026-10-05T16:52）
 - Pause reason: N/A
 - Resume from: N/A
 
@@ -35,6 +35,11 @@
 | A4 | docs/plans/2026-10-04/discovery-review-master.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | commit:cf107940fb4414c4919a0d0ac6f605c6ad1ed0cb | 主计划「实现方案」表 05 行「文件数上限」 | 同步 05 授权文件数上限 10→12（与 A3 同一人工批准） | HUMAN:2026-10-04 批准 A3 时同步（同一指令） |
 | A5 | docs/plans/2026-10-04/discovery-review-05-explicit-send.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | commit:54ddacf3335a200553794575511b1e6659d22dca | 主计划「实现方案」表 05 行文件数上限与「发现额外文件必要时先修订计划」；I-7 发布前全量 mvn test 门禁 | 全量 mvn test 中本 child 两类失败（MailOpenTrackingPersistenceTest 2E：compose 第 4 默认参数→Mockito matcher；LegacyDiscoveryApprovalTest 4F：移除 matchesDiscoveryOutreach 后旧契约断言）与 child 04 回归（DiscoveryReviewAllPagesTest 5F，因果在 DiscoveryReviewService.kt）；授权 4 文件最小修复（12→16） | HUMAN:2026-10-04 批准 A5：扩权 2 个测试文件 + 04 回归并入 05 修复轮 |
 | A6 | docs/plans/2026-10-04/discovery-review-master.md | commit:07beaafc111a1b14ed3c48d514db527c8a13fc31 | commit:54ddacf3335a200553794575511b1e6659d22dca | 主计划「实现方案」表 05 行「文件数上限」 | 同步 05 授权文件数上限 12→16（与 A5 同一人工批准） | HUMAN:2026-10-04 批准 A5 时同步（同一指令） |
+
+## Agent Availability Events
+| Child | Role | Attempt | Error | Code head | Action |
+|---|---|---|---|---|---|
+| 06 | IMPLEMENTER | 1 | opencode-go/deepseek-v4.1-flash getaddrinfo ENOTFOUND opencode.ai（job ImplDiscoveryReview06 失败，无产物；2026-10-05T16:52） | 9291584332fd6b7499f8da263365ad199ee96954 | RETRY |
 
 ## Baseline
 - 授权依据：用户 2026-10-04 以 `/fast-p docs/plans/2026-10-04/discovery-review-master.md` 显式发起本次本地执行；master 为评审稿且 D1（历史发送政策）未定案，本 run 仅执行 01–06 的确定部分，D1 与"发送切换"的实际发布不在本次范围。
