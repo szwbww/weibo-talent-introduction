@@ -2,9 +2,9 @@
 
 ## 身份与边界
 
-- Master plan（批准版，字节冻结）：`docs/plans/2026-10-04/discovery-review-master.md`，identity `commit:07beaafc111a1b14ed3c48d514db527c8a13fc31`。
+- Master plan（批准版，字节冻结）：`docs/plans/2026-10-04/discovery-review-master.md`，identity `commit:54ddacf3335a200553794575511b1e6659d22dca`（A6 修正后）。
 - 本 child 批准计划（完整合同，必须先通读）：`docs/plans/2026-10-04/discovery-review-06-ui.md`，identity `commit:07beaafc111a1b14ed3c48d514db527c8a13fc31`。全部章节逐条生效（含 S-1/S-2/S-3 逐字 CSS 与 DOM 契约）；本 brief 摘要与计划原文冲突时以计划原文为准。
-- Worktree：`/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master`；branch `fast/2026-10-04-discovery-review-master`；`child_base_sha = <见派发消息>`。
+- Worktree：`/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master`；branch `fast/2026-10-04-discovery-review-master`；`child_base_sha = b699750b9a84ed56224541e3137cdf1c79f77e7e`（= child 05 code head）。
 - 依赖：01–05 API 契约稳定。D1 未定案：不得写"所有黑盒已清除"等断言式承诺；未定案文案按计划 I-4 保留"待定/未定案"表述。
 - 取证材料（worktree 内只读）：`docs/plans/2026-10-04/discovery-review-evidence/frontend-baseline.md`、`cache-key.txt`、`docs/plans/2026-10-04/discovery-review-audit.md`（E6/X2/X5/X6/X7/X9）。
 - 基线命令结果：`docs/plans/fast/2026-10-04-discovery-review-master/baseline.md`（全量 JS 1434/1434 通过，0 失败）。
@@ -21,6 +21,8 @@
 7. 缓存键：11 项已有资源统一 bump 至 `20261004-discovery-review`（同值同时）；执行前重查当前键；若发现固定旧键测试需要改动而文件不在授权清单，返回 PLAN_CONFLICT（证据见 cache-key.txt：当前测试按动态键读取，预期无需改测试）。
 8. 新增 DOM id 只按计划 S-1/S-2/S-3 契约；动态事实一律 textContent，禁止未转义 HTML；错误/空态/加载态使用同一契约。
 9. 不得新增审核筛选控件到批量任务；批量页文案只显示"准入通过/待审核/显式条件排除/本次目标"。
+10. 人工预授权（2026-10-04，适用 04–06）：若既有测试的**精确计数/集合断言**仅因本计划合法新增/变更的枚举、目录或 taskType 条目而失败，你可以在本 child 内对该测试文件做**最小重同步**（只改计数/集合/样例字面量；不弱化、不删除断言、不改无关语义），并在执行报告中逐条列出文件与旧/新断言；控制器据此记录 amendment 行并同步主计划文件数上限。超出该类别（行为断言、产品语义、其他文件）仍必须返回 PLAN_CONFLICT。
+11. 全量 `mvn test` 既有 19 个 `ExpertContactLocationServiceTest` 错误为 master base 既有（祖先 ab8e4cb，时区目录 America/Coyhaique），不得改动该测试或其配置来"修复"。
 
 ## Authorized Files（6）
 
@@ -53,9 +55,14 @@ node --test src/test/js/*.test.js
 
 （若实现涉及其他已改 JS 文件，逐一对 `node --check`；新增 id 的渲染函数须在测试中断言 id 出现在 index.html 源文本，避免 DOM stub 掩盖悬空引用。）
 
-## 下游接口/上游产出（01–05，由控制方在派发消息中补全）
+## 下游接口/上游产出（01–05 已交付；code heads：05=b699750b9a84ed56224541e3137cdf1c79f77e7e）
 
-- 见派发消息中的 01–05 code head 与 execution.md 摘要（特别是 02/03 的 API 契约与 05 的准入计数/门禁语义）。
+- 审核 API（02/03，前端直接消费）：`GET /api/discovery/review/experts`（level/tag/from/size/q/issue/decision，服务端过滤）；`POST /api/discovery/review/batches/prepare`（scope=IDS|ALL_MATCHING；ALL_MATCHING 返回 202 后轮询）；`POST /batches/{batchKey}/confirm`（仅 batchHash）；`POST /batches/{key}/retry`；`POST /batches/{key}/cancel`；`GET /batches/{key}?afterId&limit`；`GET /history?docId=`；`POST /items/{id}/revoke`。
+- 批处理状态：`DiscoveryReviewBatchPhase` = PREPARING/READY/PREPARE_FAILED/APPLYING/APPLIED/CANCELLED；item 状态 STAGED/READY/APPLYING/APPLIED/STALE/FAILED/CANCELLED；24h 未确认过期；重试只重领 FAILED/未处理；STALE 需重新 prepare。task type：`DISCOVERY_REVIEW_PREPARE`（"发现审核名单固定"）、`DISCOVERY_REVIEW_APPLY`（"发现审核应用"），均有中文名与进度白名单；计数 prepare success=inserted、apply success=applied / failure=failed+stale。
+- 批量页数据源（05 交付）：预览响应 `PendingOutreachSummary` 已含 `template: PreviewTemplateVersion{templateId,versionToken,enabled,mailType}`、`admission: RecipientAdmissionCounts{admitted,needsReview,explicitFilterExcluded,target}`、`reasonHits: Map<String,Int>`、`excludedRecipients: List<PreviewExcludedRecipient{docId,orcidId,admissionState,filterKeys,reasonKeys}>`；`BatchSendConfigController.previewRecipients` 原样返回。启动期过期预览令牌 → 409；账号变量缺项 → 422 预启动配置错误。
+- 准入状态词义（05 selector）：`RecipientAdmissionState`（含 UNINITIALIZED/IDENTITY_CHANGED/MANUAL_REJECTED/ADMITTED/NOT_DISCOVERY 等）；`RecipientFilterKeys`/`RecipientAdmissionReasonKeys` 为原因 key 单一来源。
+- D1 未定案：前端不得写"所有黑盒已清除"等断言式承诺；缺项事实继续显示。
+- 05 终态：全量 `mvn test` 4653/0F/19E（仅 master base 既有 ExpertContactLocationServiceTest 19E，见 brief 规则 11）；JS 1434/1434。01–05 均 `LIGHT_PASS_WITH_NOTES`（O-1…O-6 见各 verify-log）。
 
 ## 交付物
 
