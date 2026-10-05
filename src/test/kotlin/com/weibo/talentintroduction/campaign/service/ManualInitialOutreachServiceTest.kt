@@ -472,6 +472,88 @@ class ManualInitialOutreachServiceTest {
         Mockito.verify(mailDeliveryService, Mockito.never()).send(anyValue(acc), anyValue(ComposedMail("", "", "")))
     }
 
+    @ParameterizedTest
+    @ValueSource(ints = [0, 1, 2])
+    fun `real docId remains unique across ES pages levels and NEW retries while ORCID guard remains active (V-3)`(
+        retryCount: Int
+    ) {
+        val acc = account("chen")
+        val first = expert("FIRST", "first@example.org").copy(esDocId = "shared-real-id")
+        val second = expert("SECOND", "second@example.org").copy(esDocId = "shared-real-id")
+        val later = expert("THIRD", "third@example.org").copy(esDocId = "shared-real-id")
+        val orcidAlias = first.copy(orcidId = " first ", esDocId = "different-real-id")
+        val retryProfiles = listOf(
+            expert("RETRY-FIRST", "retry-first@example.org").copy(esDocId = "shared-real-id"),
+            expert("RETRY-SECOND", "retry-second@example.org").copy(esDocId = "shared-real-id")
+        ).take(retryCount)
+        val profilesByLevel = linkedMapOf(
+            ExpertIndexLevel.CANDIDATE to listOf(first, second, later, orcidAlias),
+            ExpertIndexLevel.APPLICATION to listOf(
+                expert("FOURTH", "fourth@example.org").copy(esDocId = "shared-real-id")
+            )
+        )
+        stubIntroSendPipeline(acc, profilesByLevel.getValue(ExpertIndexLevel.CANDIDATE))
+        val contacts = retryProfiles.mapIndexed { index, profile ->
+            ExpertContact(
+                id = 31L + index, campaignId = 10L, orcidId = profile.orcidId,
+                expertEmail = profile.email!!, expertName = "Retry", currentStatus = "NEW"
+            )
+        }
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(contacts)
+        contacts.forEach { contact ->
+            Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contact.id!!))
+                .thenReturn(emptyList())
+        }
+        for ((level, profiles) in profilesByLevel) {
+            Mockito.`when`(expertSearchService.searchByOrcidIds(contacts.map { it.orcidId }, level))
+                .thenReturn(retryProfiles)
+            Mockito.`when`(expertSearchService.countExperts(eqValue(level), anyValue(emptyList())))
+                .thenReturn(profiles.size.toLong())
+            Mockito.`when`(expertSearchService.searchExpertsFiltered(
+                eqValue(level), anyValue(emptyList()), anyInt(), anyInt()
+            )).thenAnswer { invocation ->
+                profiles.drop(invocation.getArgument<Int>(2)).take(invocation.getArgument<Int>(3))
+            }
+            Mockito.doAnswer { invocation ->
+                val handler = invocation.getArgument<(List<ExpertProfile>) -> Boolean>(3)
+                for (batch in profiles.chunked(2)) {
+                    if (!handler(batch)) break
+                }
+                null
+            }.`when`(expertSearchService).scrollExpertsFiltered(
+                eqValue(level), anyValue(emptyList()), eqValue(500),
+                anyValue({ _: List<ExpertProfile> -> true })
+            )
+        }
+        val snapshot = introSnapshot(roundSize = 1, roundsPerRun = 6)
+
+        val preview = service.countBySnapshot(snapshot)
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(if (retryCount == 0) 1 else 0, preview.pending)
+        assertEquals(if (retryCount == 0) 0 else 1, preview.retryable)
+        assertEquals(1, preview.totalSendable)
+        assertEquals(1, preview.admission.target)
+        assertEquals(preview.totalSendable, result.total)
+        assertEquals(1, result.sent)
+        assertEquals(0, result.remaining)
+        val selected = ArgumentCaptor.forClass(ExpertProfile::class.java)
+        Mockito.verify(introductionMailComposer, Mockito.times(1)).compose(
+            eqValue("chen"), captureValue(selected, first), Mockito.isNull(), anyBooleanValue()
+        )
+        assertEquals(if (retryCount == 0) first else retryProfiles.first(), selected.value)
+        Mockito.verify(mailDeliveryService, Mockito.times(1)).send(
+            anyValue(acc), anyValue(ComposedMail("", "", ""))
+        )
+        Mockito.verify(expertSearchService).searchExpertsFiltered(
+            eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList()), eqValue(2), anyInt()
+        )
+        Mockito.verify(expertSearchService).searchExpertsFiltered(
+            eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList()), eqValue(0), anyInt()
+        )
+    }
+
     @Test
     fun `discovery region uses country only and non-discovery uses country or nationality (I-1 I-2)`() {
         stubEmptyRetryCandidates()

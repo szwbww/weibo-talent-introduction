@@ -557,18 +557,20 @@ class ManualInitialOutreachService(
             var retryable = 0
             var excluded = 0
             val seenOrcids = mutableSetOf<String>()
+            val seenDocIds = mutableSetOf<String>()
             val campaign = campaignRepository.findByCampaignCode("MANUAL_OUTREACH")
             if (campaign != null) {
                 val campaignId = campaign.id ?: error("Campaign ID is null")
                 val (retryableTargets, retryableSeenOrcids, retryableExcluded) = buildFilteredRetryableTargets(
-                    campaignId, scope, now, gate, accumulator::record
+                    campaignId, scope, now, seenDocIds, gate, accumulator::record
                 )
                 retryable = retryableTargets.size
                 excluded += retryableExcluded
                 seenOrcids.addAll(retryableSeenOrcids)
             }
             val (esEstimate, esExcluded) = countEsTargets(
-                scope, now, gate = gate, onSelection = accumulator::record, initialSeenOrcids = seenOrcids
+                scope, now, gate = gate, onSelection = accumulator::record,
+                initialSeenOrcids = seenOrcids, initialSeenDocIds = seenDocIds
             )
             excluded += esExcluded
             PendingOutreachSummary(
@@ -671,10 +673,11 @@ class ManualInitialOutreachService(
         val filterNow = verificationFilterNow()
         // A3 (I-4)：预估（countBySnapshot）与执行共用的精确模板门禁；门禁关闭时为 no-op。
         val gate = batchTemplateGate(snapshot)
-        val (retryableTargets, seenOrcids, _) = buildFilteredRetryableTargets(campaignId, scope, filterNow, gate)
+        val seenDocIds = mutableSetOf<String>()
+        val (retryableTargets, seenOrcids, _) = buildFilteredRetryableTargets(campaignId, scope, filterNow, seenDocIds, gate)
         val (esEstimate, _) = countEsTargets(scope, filterNow, {
             progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)
-        }, gate, initialSeenOrcids = seenOrcids)
+        }, gate, initialSeenOrcids = seenOrcids, initialSeenDocIds = seenDocIds)
         val totalEstimate = retryableTargets.size + esEstimate
         log.info("Outreach targets: {} retryable, {} ES estimate, {} total estimate; config: roundSize={}, perMailMs={}, perRoundMs={}",
             retryableTargets.size, esEstimate, totalEstimate,
@@ -706,10 +709,10 @@ class ManualInitialOutreachService(
             // 再叠加历史不可达过滤；整页被过滤时迭代器继续推进 offset（I-3）。
             filterPage = { profiles ->
                 filterKnownProfiles(
-                    gate(selectIncluded(scope, profiles)),
+                    gate(selectIncluded(scope, profiles, seenDocIds)),
                     scope.excludeVerifiedUnavailableEmails,
                     filterNow
-                )
+                ).filter { seenDocIds.add(BatchRecipientSelectionService.docIdOf(it)) }
             },
             shouldStop = { progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId) }
         )
@@ -1508,6 +1511,7 @@ class ManualInitialOutreachService(
         campaignId: Long,
         scope: RecipientScope,
         now: LocalDateTime,
+        seenDocIds: MutableSet<String>,
         gate: (List<ExpertProfile>) -> List<ExpertProfile> = { it },
         onSelection: ((RecipientSelection) -> Unit)? = null
     ): Triple<List<Pair<ExpertContact?, ExpertProfile>>, MutableSet<String>, Int> {
@@ -1518,6 +1522,7 @@ class ManualInitialOutreachService(
             now = now,
             email = { it.second.email }
         )
+        filtered.forEach { seenDocIds.add(BatchRecipientSelectionService.docIdOf(it.second)) }
         return Triple(filtered, seen, excluded)
     }
 
@@ -1547,6 +1552,7 @@ class ManualInitialOutreachService(
         onSelection: ((RecipientSelection) -> Unit)? = null
     ): Pair<List<Pair<ExpertContact?, ExpertProfile>>, MutableSet<String>> {
         val seenOrcids = mutableSetOf<String>()
+        val seenDocIds = mutableSetOf<String>()
         val targets = mutableListOf<Pair<ExpertContact?, ExpertProfile>>()
         val candidates = mutableListOf<Triple<ExpertContact, ExpertProfile, String>>()
 
@@ -1592,6 +1598,7 @@ class ManualInitialOutreachService(
             // A3 (I-4): selector 之后再过精确模板门禁（与发送期 compose 同源）。
             val gatedDocIds = candidates.asSequence()
                 .filter { BatchRecipientSelectionService.docIdOf(it.second) in included }
+                .distinctBy { BatchRecipientSelectionService.docIdOf(it.second) }
                 .map { it.second }
                 .toList()
                 .let { gate(it) }
@@ -1599,7 +1606,7 @@ class ManualInitialOutreachService(
                 .toSet()
             for ((contact, profile, normOrcid) in candidates) {
                 if (BatchRecipientSelectionService.docIdOf(profile) !in gatedDocIds) continue
-                if (seenOrcids.add(normOrcid)) {
+                if (seenOrcids.add(normOrcid) && seenDocIds.add(BatchRecipientSelectionService.docIdOf(profile))) {
                     targets.add(Pair(contact, profile))
                 }
             }
@@ -1879,11 +1886,13 @@ class ManualInitialOutreachService(
         shouldStop: () -> Boolean = { false },
         gate: (List<ExpertProfile>) -> List<ExpertProfile> = { it },
         onSelection: ((RecipientSelection) -> Unit)? = null,
-        initialSeenOrcids: Set<String> = emptySet()
+        initialSeenOrcids: Set<String> = emptySet(),
+        initialSeenDocIds: Set<String> = emptySet()
     ): Pair<Int, Int> {
         var sendable = 0
         var excluded = 0
         val seenOrcids = initialSeenOrcids.toMutableSet()
+        val seenDocIds = initialSeenDocIds.toMutableSet()
         for (level in scope.funnelLevels) {
             if (shouldStop()) break
             expertSearchService.scrollExpertsFiltered(
@@ -1894,7 +1903,11 @@ class ManualInitialOutreachService(
                 if (shouldStop()) {
                     false
                 } else {
-                    val unseen = batch.filter { seenOrcids.add(normalizeOrcid(it.orcidId)) }
+                    val unseen = batch.filter {
+                        seenOrcids.add(normalizeOrcid(it.orcidId)) &&
+                            BatchRecipientSelectionService.docIdOf(it) !in seenDocIds
+                    }
+                        .distinctBy { BatchRecipientSelectionService.docIdOf(it) }
                     val selection = if (unseen.isEmpty()) RecipientSelection.EMPTY
                         else batchRecipientSelectionService.select(scope, unseen)
                     onSelection?.invoke(selection)
@@ -1902,7 +1915,7 @@ class ManualInitialOutreachService(
                         unseen.filter { BatchRecipientSelectionService.docIdOf(it) in selection.includedDocIds }
                     )
                     val retained = filterKnownProfiles(matched, scope.excludeVerifiedUnavailableEmails, now)
-                    sendable += retained.size
+                    sendable += retained.count { seenDocIds.add(BatchRecipientSelectionService.docIdOf(it)) }
                     excluded += matched.size - retained.size
                     !shouldStop()
                 }
@@ -1940,10 +1953,18 @@ class ManualInitialOutreachService(
      * I-1/I-3: 统一 selector 的显式条件 + 持久准入过滤（同一 docId 去重后保留原序）。
      * 预估、ES 取页、NEW 重试与材料快照全部经此，不再有第二套近似过滤。
      */
-    private fun selectIncluded(scope: RecipientScope, profiles: List<ExpertProfile>): List<ExpertProfile> {
-        if (profiles.isEmpty()) return profiles
-        val included = batchRecipientSelectionService.select(scope, profiles).includedDocIds
-        return profiles.filter { BatchRecipientSelectionService.docIdOf(it) in included }
+    private fun selectIncluded(
+        scope: RecipientScope,
+        profiles: List<ExpertProfile>,
+        seenDocIds: Set<String> = emptySet()
+    ): List<ExpertProfile> {
+        val distinct = profiles.asSequence()
+            .filter { BatchRecipientSelectionService.docIdOf(it) !in seenDocIds }
+            .distinctBy { BatchRecipientSelectionService.docIdOf(it) }
+            .toList()
+        if (distinct.isEmpty()) return distinct
+        val included = batchRecipientSelectionService.select(scope, distinct).includedDocIds
+        return distinct.filter { BatchRecipientSelectionService.docIdOf(it) in included }
     }
     private fun <T> filterTargets(
         targets: List<T>,
