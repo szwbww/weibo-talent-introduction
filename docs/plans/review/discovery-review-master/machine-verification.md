@@ -143,3 +143,90 @@ V-3 can duplicate preview, execution, cross-level/page, and NEW-retry targets. S
 ### Review-P Routing
 
 `FAIL` with `PROGRESSING` convergence produced one bounded repair plan for V-3. Repair evidence mode is `DURABLE_HANDOFF`; the prior executor/approval are available in `repair-execution.md`. No product code, tests, review evidence, index, HEAD, or branch was modified by the reviewer.
+
+## Epoch 3 — 2026-10-06T00:23:59+0800
+
+- Master plan: `docs/plans/2026-10-04/discovery-review-master.md` (sha256 `a25228028b6d2a6190ebeb65e8dc15ad914e3c9a5208bef2cf55c5173f488888`)
+- Governing master identity: sha256 `a25228028b6d2a6190ebeb65e8dc15ad914e3c9a5208bef2cf55c5173f488888`; recorded commit `60d97bbe1425c429b4e6e66409a5585fcd08b3f7`
+- Master identity state: `AMENDMENT_RECORDED`. A8: `主计划实现方案 06 文件数上限`; `同步 A7 文件上限 6→10`; `HUMAN:2026-10-05 用户“批准 继续”`. Retroactively authorized A7 files: `DiscoveryReview.kt`, `DiscoveryReviewScanService.kt`, `DiscoveryReviewAllPagesTest.kt`, and `DiscoveryReviewServiceTest.kt`.
+- Boundary: `e28e53fd898edd62905a0d45a6bf90396b18b1bf..0ce61cc2d8bc4dd7c2de868a9d3a78eb180b1e41`
+- Post-repair boundary: `6b5c201c7a8667376cb214f74a7069594cc9a6cc..0ce61cc2d8bc4dd7c2de868a9d3a78eb180b1e41`; repair evidence mode `DURABLE_HANDOFF`; repair approval/executor are recorded in `repair-execution.md`.
+- Reviewer: `/root/aggregate_reviewer_epoch3`
+- Result: `BLOCKED`
+- Convergence: `BLOCKED`
+- Repair artifact/result: `docs/plans/fix/discovery-review-master/repair.md` — repair planning N/A.
+
+### Fresh Command Evidence
+
+| Command | Result | Evidence |
+|---|---|---|
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home PATH=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home/bin:$PATH mvn test` | BASELINE_FAIL | Exit 1; 4677 tests, 0 failures, 19 errors, 13 skipped. All 19 are pre-existing `mail.service.ExpertContactLocationServiceTest` errors because JDK11 lacks `America/Coyhaique`. |
+| `node --test src/test/js/*.test.js` | PASS | Final fresh rerun exit 0; 1462 tests, 278 suites, 1462 pass, 0 fail. The initial fresh run had 1461 pass and one non-reproducible `expertMaterialsShared.test.js` upload-state failure; focused rerun and final full rerun passed. |
+| `DB_URL='jdbc:mysql://localhost:3306/talent_introduction_fastp?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai' DB_USERNAME=root DB_PASSWORD=root JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home PATH=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home/bin:$PATH mvn -DmysqlIt=true -Dtest=DiscoveryReviewRepositoryIT test` | PASS | Exit 0; 13 tests, 0 failures, 0 errors, 0 skipped. |
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home PATH=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home/bin:$PATH mvn -Dtest=ManualInitialOutreachServiceTest test` | PASS | Exit 0; 183 tests, 0 failures, 0 errors. |
+| `git diff --check e28e53fd898edd62905a0d45a6bf90396b18b1bf..0ce61cc2d8bc4dd7c2de868a9d3a78eb180b1e41` | PASS_WITH_NOTES | Exit 2 only because committed plan-evidence documents contain historical trailing whitespace; product/test diff is clean. |
+
+### Master Contract Matrix
+
+| ID | Verdict | Evidence |
+|---|---|---|
+| I-1 — two admission paths | PASS | `BatchRecipientSelectionService.kt:91-191`; persistent 500-batch admission lookup, fail-closed `UNINITIALIZED`, no basic-evidence recheck. |
+| I-2 — explicit filters only | PASS | `BatchExecutionModels.kt:173-224`; selector applies scope mismatch keys only. Production send paths contain no `matchesDiscoveryOutreach` call. |
+| I-3 — factual reasons/persistent review history | PASS | `DiscoveryReviewRepositoryIT` 13/13; `DiscoveryReviewScanService.kt:272-293` preserves initialized/decision/reasons. |
+| I-4 — fixed all-page snapshot/CAS/retry | BLOCKED | Mocked scan/unit evidence passes, including interruption handling, but no isolated live ES/index CAS integration was available or freshly run. Local ES is unavailable. |
+| I-5 — MySQL authority | PASS | V148 repository transaction/CAS suite 13/13. |
+| I-6 — preview/execution/retry parity | PASS | V-1/V-3 resolved. `ManualInitialOutreachService.kt:557-575,673-716,1511-1526,1554-1616,1883-1919,1956-1967`; V-3 regression at test `:472-559`. |
+| I-7 — D1 release boundary | N/A/PENDING | D1 remains undecided; no cutover/policy expansion claimed. |
+| Authorized cumulative scope | PASS | Master sha256 and repair sha256 match the recorded identities; V-3 product commit contains exactly the two authorized files. Cumulative `src/**` diff maps to 01–06 plus A1/A3/A5/A7/A8. |
+| Manual A-1…A-5 | PENDING | Not run. |
+
+### Finding Lineage
+
+| Finding | State | Evidence |
+|---|---|---|
+| V-1 | RESOLVED | Prior normalized-ORCID preview/execution parity remains green. |
+| V-2 | RESOLVED | `DiscoveryReviewService.kt:1231-1244` returns `INTERRUPTED` with pending items; `app.js:3644-3646,3778-3783` does not complete or auto-retry. |
+| V-3 | RESOLVED | A real-docId set is carried through retry, count, and execution. Different ORCIDs sharing one `esDocId` produce one target/SMTP attempt in the parameterized regression. |
+
+### Findings
+
+#### P1
+
+- N/A.
+
+#### P2
+
+- N/A.
+
+#### Observations
+
+- The first full Node run failed one upload-state assertion; focused and second full rerun passed. No reproducible product defect is proven.
+- Full Maven’s 19 JDK11 timezone errors remain baseline/environmental and outside this plan.
+- Evidence documents contain historical trailing whitespace only.
+
+### Evidence Boundaries
+
+- No local live ES endpoint or isolated real index/CAS test for I-4.
+- No live SMTP; the master prohibits production expert test sends.
+- Manual A-1…A-5 remain pending.
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+| Source item | Master requirement | Result | Evidence |
+|---|---|---|---|
+| 01 O-1 reject-code snapshot | I-3 | Observation retained | Current mapping still matches. |
+| 02 O-1 Flyway latest-target 147 | Migration compatibility | Observation retained | Outside authorized scope. |
+| 03 O-1 shared DB drift | I-5 | External environment | Isolated `fastp` MySQL IT passes. |
+| 03 O-2 interruption phase | I-4/I-6 | RESOLVED | Resolved as V-2. |
+| 04 O-1 manual projection guard | I-1 | PASS | Author binding remains guarded. |
+| 05 O-1 template seam / O-2 DTO | I-6 | RESOLVED | Shared template seam and DTO remain present. |
+| 05 O-3 placeholder classification | Template error visibility | Observation retained | No master violation proven. |
+| 05 O-4 all-pages regression | I-4 | RESOLVED | Prior regression remains resolved. |
+| 05 O-5/O-6 timezone | Required Maven evidence | Baseline observation | JDK11 timezone-catalog errors only. |
+| 06 O-1 D1 | I-7 | PENDING | Human policy/release gate remains. |
+| 06 O-2 bounded browser smoke | Manual A-1…A-5 | PENDING | Whole-system acceptance remains manual. |
+| 06 O-3 governance | Authorized scope | PASS | No extra product scope. |
+
+### Review-P Routing
+
+`BLOCKED` requires isolated live ES/index CAS evidence for I-4; it creates no repair plan. No product code, tests, plans, review evidence, index, HEAD, branch, staging, or commits were modified by the reviewer.
