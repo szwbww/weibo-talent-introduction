@@ -62,7 +62,7 @@ class FlywayMigrationIntegrationTest {
                 (task_execution_id, orcid_id, email, decision, provider_state, request_count, checked_at, created_at, updated_at)
                 VALUES (99001, 'old', 'old@example.test', 'PASS', 'deliverable', 1, '2026-01-01 00:00:00', NOW(), NOW())""")
         }
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
         connection().use { c ->
             assertTrue(c.columnExists("batch_email_verification", "reused_from_id"))
             assertTrue(c.indexExists("batch_email_verification", "idx_batch_email_verification_email_time"))
@@ -90,7 +90,7 @@ class FlywayMigrationIntegrationTest {
             assertTrue(c.queryLong("SELECT COUNT(*) FROM batch_send_task_config") > 0L)
         }
 
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
         connection().use { c ->
             assertTrue(c.columnExists("batch_send_task_config", "exclude_verified_unavailable_emails"))
             val configId = c.queryLong("SELECT id FROM batch_send_task_config ORDER BY id LIMIT 1")
@@ -132,7 +132,7 @@ class FlywayMigrationIntegrationTest {
             assertTrue(c.queryLong("SELECT COUNT(*) FROM batch_send_task_config") > 0L)
         }
 
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
         connection().use { c ->
             assertTrue(c.columnExists("batch_send_task_config", "email_verification_allowed_states_json"))
             assertEquals(
@@ -172,7 +172,41 @@ class FlywayMigrationIntegrationTest {
     fun `fresh database migrates through the latest version`() {
         val flyway = flyway()
         flyway.clean()
-        assertEquals("150", flyway.migrate().targetSchemaVersion)
+        assertEquals("152", flyway.migrate().targetSchemaVersion)
+    }
+
+    @Test
+    fun `V152 creates durable owner target draft table without business changes or foreign keys`() {
+        val previous = flyway(MigrationVersion.fromVersion("151"))
+        previous.clean()
+        previous.migrate()
+        val before = connection().use { c ->
+            listOf("expert_contact", "mail_record", "mail_send_attempt", "inbound_mail_processing", "outbound_mail_attachment")
+                .associateWith { c.queryLong("SELECT COUNT(*) FROM $it") }
+        }
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        connection().use { c ->
+            assertTrue(c.tableExists("mailbox_reply_draft"))
+            listOf("id", "username", "expert_contact_id", "target_kind", "inbound_processing_id", "account_scope",
+                "version", "state", "subject", "html_body", "text_body", "context_json", "send_attempt_id",
+                "send_version", "created_at", "updated_at").forEach { assertTrue(c.columnExists("mailbox_reply_draft", it)) }
+            listOf("html_body", "text_body", "context_json").forEach {
+                assertEquals("longtext", c.queryString(columnMeta("mailbox_reply_draft", it, "DATA_TYPE")))
+            }
+            listOf("subject", "html_body", "text_body", "context_json", "send_attempt_id", "send_version").forEach {
+                assertEquals("YES", c.queryString(columnMeta("mailbox_reply_draft", it, "IS_NULLABLE")))
+            }
+            listOf("username", "target_kind", "account_scope").forEach {
+                assertEquals("utf8mb4_bin", c.queryString(columnMeta("mailbox_reply_draft", it, "COLLATION_NAME")))
+            }
+            listOf("created_at", "updated_at").forEach {
+                assertEquals("3", c.queryString(columnMeta("mailbox_reply_draft", it, "DATETIME_PRECISION")))
+            }
+            assertTrue(c.indexExists("mailbox_reply_draft", "uk_mailbox_reply_draft_target"))
+            assertTrue(c.indexExists("mailbox_reply_draft", "idx_mailbox_reply_draft_list"))
+            assertEquals(0L, c.queryLong("SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema=DATABASE() AND table_name='mailbox_reply_draft' AND constraint_type='FOREIGN KEY'"))
+            before.forEach { (table, count) -> assertEquals(count, c.queryLong("SELECT COUNT(*) FROM $table")) }
+        }
     }
 
     @Test
@@ -182,7 +216,7 @@ class FlywayMigrationIntegrationTest {
         connection().use { c ->
             c.execute("INSERT INTO mail_record (id, expert_contact_id, direction, mail_type, send_status, sent_at) VALUES (801, 1, 'OUTBOUND', 'INTRODUCTION', 'SENT', NOW()), (802, 2, 'OUTBOUND', 'INTRODUCTION', 'SENT', NOW())")
         }
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
         connection().use { c ->
             assertTrue(c.tableExists("mail_open_tracking"))
             assertTrue(c.columnExists("mail_record", "open_tracking_id"))
@@ -215,7 +249,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_compose_template", "subject_snippet_id"))
             assertEquals(
@@ -303,7 +337,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 列契约：outbound_attachments_json LONGTEXT NULL（I-1 唯一 absence 形态）。
             assertTrue(connection.columnExists("mail_record", "outbound_attachments_json"))
@@ -345,7 +379,7 @@ class FlywayMigrationIntegrationTest {
     @Test
     fun `V129 widens the material code check to twelve codes without touching stored rows`() {
         migrateToV23AndSeedBase()
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 零数据改写：V129 不建初始行。
             assertEquals(0L, connection.queryLong("SELECT COUNT(*) FROM expert_material_status"))
@@ -442,7 +476,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 新表列/索引/外键契约。
             assertTrue(connection.tableExists("manual_expert_material_upload"))
@@ -615,7 +649,7 @@ class FlywayMigrationIntegrationTest {
             assertEquals(historyBefore + 1, connection.queryLong("SELECT COUNT(*) FROM flyway_schema_history"))
         }
 
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
 
         connection().use { connection ->
             assertTrue(connection.tableExists("expert_academic_enrichment_job"))
@@ -737,7 +771,7 @@ class FlywayMigrationIntegrationTest {
         }
         assertTrue(rowsBefore > 0L, "V72 种子配置行必须存在，回填断言才有意义")
 
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
 
         connection().use { connection ->
             assertTrue(connection.columnExists("batch_send_task_config", "sender_account_codes_json"))
@@ -776,7 +810,7 @@ class FlywayMigrationIntegrationTest {
             assertFalse(connection.tableExists("batch_email_verification"))
         }
 
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
 
         connection().use { connection ->
             assertTrue(connection.tableExists("batch_email_verification"))
@@ -838,7 +872,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
 
         connection().use { connection ->
             assertTrue(connection.columnExists("batch_send_task_config", "email_verification_enabled"))
@@ -938,7 +972,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 列契约：calendar_attachment_json LONGTEXT NULL（I-1 唯一 absence 形态）。
             assertTrue(connection.columnExists("mail_record", "calendar_attachment_json"))
@@ -973,7 +1007,7 @@ class FlywayMigrationIntegrationTest {
     fun `V124 allows material attached promotion audit trigger`() {
         // The FK needs a seeded expert_contact before inserting the audit row.
         migrateToV23AndSeedBase()
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertEquals("32", connection.queryString(
                 "SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.columns " +
@@ -1084,7 +1118,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertEquals(1L, connection.queryLong(
                 "SELECT COUNT(*) FROM mail_sender_account " +
@@ -1191,7 +1225,7 @@ class FlywayMigrationIntegrationTest {
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
         }
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
             assertTrue(connection.tableExists("batch_send_setting"))
@@ -1207,7 +1241,7 @@ class FlywayMigrationIntegrationTest {
         connection().use { connection ->
             assertFalse(connection.tableExists("admin_user"))
         }
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("admin_user"))
             assertTrue(connection.columnExists("admin_user", "username"))
@@ -1242,7 +1276,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertEquals(101L, connection.queryLong(
                 "SELECT mail_send_attempt_id FROM mail_record WHERE id = 201"
@@ -1288,7 +1322,7 @@ class FlywayMigrationIntegrationTest {
         }
 
         flyway().repair()
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_send_attempt", "quota_counted"))
         }
@@ -1364,7 +1398,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 历史值原样保留（I-2/I-3），document_status 迁移前后不变。
             assertEquals(12345L, connection.queryLong(
@@ -1480,7 +1514,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("mail_attachment_transfer"))
             listOf(
@@ -1625,7 +1659,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 列契约：uid_validity BIGINT NOT NULL DEFAULT 0
             assertTrue(connection.columnExists("inbound_mail_processing", "uid_validity"))
@@ -1715,7 +1749,7 @@ class FlywayMigrationIntegrationTest {
             assertFalse(connection.tableExists("expert_follow"))
         }
 
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("expert_follow"))
             listOf("username", "expert_contact_id", "created_at").forEach { column ->
@@ -1892,7 +1926,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 头不被覆盖：名称/主题/禁用状态原样；不新增任何块（禁止为原有模板删块/加块）。
             assertEquals(1L, connection.queryLong(
@@ -1933,7 +1967,7 @@ class FlywayMigrationIntegrationTest {
             contactsBefore = connection.queryLong("SELECT COUNT(*) FROM expert_contact")
         }
 
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("expert_mailbox_suspension"))
             listOf("username", "expert_contact_id", "reason").forEach { column ->
@@ -2047,7 +2081,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 列契约：VARCHAR(16) NOT NULL DEFAULT 'FOLLOWING'；不新增 provided 布尔列。
             assertTrue(connection.columnExists("expert_follow", "progress_status"))
@@ -2111,7 +2145,7 @@ class FlywayMigrationIntegrationTest {
             assertFalse(c.tableExists("expert_contact_note"))
             c.queryString("SELECT CONCAT(id, '|', campaign_id, '|', orcid_id, '|', current_status, '|', updated_at) FROM expert_contact WHERE id=1")
         }
-        assertEquals("150", flyway().migrate().targetSchemaVersion)
+        assertEquals("152", flyway().migrate().targetSchemaVersion)
         connection().use { c ->
             assertEquals(before, c.queryString("SELECT CONCAT(id, '|', campaign_id, '|', orcid_id, '|', current_status, '|', updated_at) FROM expert_contact WHERE id=1"))
             assertEquals(2L, c.queryLong("SELECT COUNT(*) FROM expert_contact"))

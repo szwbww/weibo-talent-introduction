@@ -1,0 +1,21 @@
+CREATE TABLE mailbox_reply_draft (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    username VARCHAR(64) COLLATE utf8mb4_bin NOT NULL,
+    expert_contact_id BIGINT NOT NULL,
+    target_kind VARCHAR(8) COLLATE utf8mb4_bin NOT NULL,
+    inbound_processing_id BIGINT NOT NULL,
+    account_scope VARCHAR(100) COLLATE utf8mb4_bin NOT NULL DEFAULT '',
+    version BIGINT NOT NULL,
+    state VARCHAR(16) NOT NULL,
+    subject VARCHAR(255) NULL,
+    html_body LONGTEXT NULL,
+    text_body LONGTEXT NULL,
+    context_json LONGTEXT NULL,
+    send_attempt_id BIGINT NULL,
+    send_version BIGINT NULL,
+    created_at DATETIME(3) NOT NULL,
+    updated_at DATETIME(3) NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_mailbox_reply_draft_target (username, expert_contact_id, target_kind, inbound_processing_id, account_scope),
+    KEY idx_mailbox_reply_draft_list (username, state, updated_at, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
