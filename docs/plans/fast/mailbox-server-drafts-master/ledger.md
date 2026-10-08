@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-10-08/mailbox-server-drafts-master.md
 
-- Status: PAUSED_FOR_HUMAN
-- Master plan: docs/plans/2026-10-08/mailbox-server-drafts-master.md (commit 2466ad4bdc14fe15d77578ba75103d384eebf6be)
-- Amendments: A1,A2
+- Status: RUNNING
+- Master plan: docs/plans/2026-10-08/mailbox-server-drafts-master.md (commit 02af6d42cdf3617c48335a9ad3aeddb025d1302f)
+- Amendments: A1,A2,A3,A4
 - Master base: 7c86599f85f6462e00a3fcd2c5a74f1ca57f013d
 - Branch: fast/mailbox-server-drafts-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mailbox-server-drafts-master
@@ -13,21 +13,23 @@
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: Child03 epoch2 combined MySQL HTTP fixture bypasses transaction proxy; exact unlisted MailReplyDraftRepositoryIT.kt authorization required. JS1562 pass; browser prerequisite blocked.
-- Resume from: 5dac3abbbe5517b68f0c6f20d95a62b83cd0b554
+- Pause reason: N/A
+- Resume from: 5e352bdfb9df9c237a4ad117e6d59ce74fb780fd
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | 01 | docs/plans/2026-10-08/mailbox-server-drafts-01-storage.md | commit:352a3393c31fd72a582ccbb7946f83703da52a95 | none | 1 | LIGHT_PASS | 7c86599f85f6462e00a3fcd2c5a74f1ca57f013d | 099e372c2eca32596a9db670c0f13a0a30ce2b7e | 0 | — | 099e372c2eca32596a9db670c0f13a0a30ce2b7e | 109da9f7f550f82ae67abc3336e5e9ffbbff8656 | Implementer: DraftStorageImplementer; Verifier: DraftStorageVerifier |
 | 02 | docs/plans/2026-10-08/mailbox-server-drafts-02-send.md | commit:352a3393c31fd72a582ccbb7946f83703da52a95 | 01 | 1 | LIGHT_PASS | 099e372c2eca32596a9db670c0f13a0a30ce2b7e | 05bb797a51dd94b8aa712bc8f36e2426e3e801a4 | 0 | — | 05bb797a51dd94b8aa712bc8f36e2426e3e801a4 | 10d87c31de79889ada19e177d244c8be0da06058 | Implementer: DraftSendImplementer; Verifier: DraftSendVerifier |
-| 03 | docs/plans/2026-10-08/mailbox-server-drafts-03-ui.md | commit:2466ad4bdc14fe15d77578ba75103d384eebf6be | 01,02 | 2 | PAUSED_FOR_HUMAN | 05bb797a51dd94b8aa712bc8f36e2426e3e801a4 | — | 0 | — | 05bb797a51dd94b8aa712bc8f36e2426e3e801a4 | — | Implementer: DraftUIResumeImplementer; PLAN_CONFLICT; twelve authorized paths retained uncommitted; no independent verifier or repair rounds |
+| 03 | docs/plans/2026-10-08/mailbox-server-drafts-03-ui.md | commit:02af6d42cdf3617c48335a9ad3aeddb025d1302f | 01,02 | 3 | WAITING_FOR_AGENT | 05bb797a51dd94b8aa712bc8f36e2426e3e801a4 | — | 0 | — | 05bb797a51dd94b8aa712bc8f36e2426e3e801a4 | — | Epoch1/2 preserved; exact backend test-fixture amendment approved; resuming twelve retained paths |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
 |---|---|---|---|---|---|---|
 | A1 | docs/plans/2026-10-08/mailbox-server-drafts-master.md | commit:352a3393c31fd72a582ccbb7946f83703da52a95 | commit:2466ad4bdc14fe15d77578ba75103d384eebf6be | 执行前门禁第3项、第4项；变更文件清单 | Authorize child03 twelve-file exception for five required regression fixtures/contracts; no product scope expansion | HUMAN:批准 继续 (2026-10-08) |
 | A2 | docs/plans/2026-10-08/mailbox-server-drafts-03-ui.md | commit:352a3393c31fd72a582ccbb7946f83703da52a95 | commit:2466ad4bdc14fe15d77578ba75103d384eebf6be | 执行前门禁第3项、第4项；M-5 | Add exactly five named frontend regression files for durable draft fixtures and obsolete CSS/cache assertions; preserve safety invariants | HUMAN:批准 继续 (2026-10-08) |
+| A3 | docs/plans/2026-10-08/mailbox-server-drafts-master.md | commit:2466ad4bdc14fe15d77578ba75103d384eebf6be | commit:02af6d42cdf3617c48335a9ad3aeddb025d1302f | 执行前门禁第3项、第4项；变更文件清单 | Authorize child03 thirteen-file exception with one backend HTTP transaction fixture; no production scope change | HUMAN:批准 (2026-10-08) |
+| A4 | docs/plans/2026-10-08/mailbox-server-drafts-03-ui.md | commit:2466ad4bdc14fe15d77578ba75103d384eebf6be | commit:02af6d42cdf3617c48335a9ad3aeddb025d1302f | 执行前门禁第3项、第4项；M-5 | Add exactly MailReplyDraftRepositoryIT.kt for real transaction proxy wiring of temporary HTTP fixture; preserve all assertions | HUMAN:批准 (2026-10-08) |
 
 ## Approval and Baseline
 - Human approval: “批准 并 实施” (2026-10-08); approves the exact master and three child plans and releases their planning-only limitation. Plan bytes preserved unchanged.
@@ -58,3 +60,8 @@
 - Proven root: repository IT temporary HTTP controller receives raw service at lines176/182; inherited transactional discard bypasses Spring proxy, DELETE at208 fails500 because lockOwned requires transaction. Full receipts: children/03/execution.md epoch2, artifact://241.
 - Minimal requested authority: src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepositoryIT.kt; wire real transaction proxy using existing datasource/transaction manager, preserve HTTP/SQL/CAS assertions. No production/migration/pom changes. No amendment applied for this new blocker.
 - Resume same child in new epoch after human approval and recorded amendment. Preserve all twelve dirty paths and prior child history. No product commit before fresh mandatory gates and real desktop/mobile server-persistence smoke.
+
+## Child 03 resume — epoch 3
+- Approval: HUMAN:批准 (2026-10-08) for exactly the previously requested backend test path and 12→13 count exception.
+- Amendment-only commit: 02af6d42cdf3617c48335a9ad3aeddb025d1302f; A3/A4 recorded before writer dispatch.
+- Resume identity: pause HEAD5e352bdfb9df9c237a4ad117e6d59ce74fb780fd, same branch/worktree, empty index, exactly twelve authorized paths retained dirty. No completed child replay.
