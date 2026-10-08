@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-06/wecom-inbound-notification.md
 
-- Status: PAUSED_FOR_HUMAN
+- Status: READY_FOR_HUMAN_REVIEW
 - Master plan: docs/plans/2026-10-06/wecom-inbound-notification.md (commit 4826cbe111310284cf13bfe7fa395bd9e2e122ad)
 - Amendments: N/A
 - Master base: 235681497c226066fa0174a2d79bc82863a1e91a
@@ -13,8 +13,8 @@
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: Final artifact validator exit 2: 01 and 02 Evidence commit did not record fix-log.md. Zero-fix logs were created in preflight and unchanged in child evidence commits. Repair cannot satisfy child01 evidence-before-child02 implementation ancestry without separately authorized lineage-contract exception or Git history reconstruction; neither is authorized.
-- Resume from: fa402bff9f33b54a97464b7dfb7557ae7b7aa632
+- Pause reason: N/A
+- Resume from: N/A
 
 ## Baseline
 - Approval: HUMAN:批准该总方案及两个子方案，按 fast-p 执行 (2026-10-08).
@@ -32,8 +32,13 @@
 | ID | Plan | Before | After | Master rule | Reason | Approval |
 |---|---|---|---|---|---|---|
 
-## Finalization Blocker
+## Former Finalization Pause
 - Validator after canonical zero-fix field correction: result INVALID, exit 2; only remaining errors are `01 Evidence commit did not record fix-log.md` and `02 Evidence commit did not record fix-log.md`.
 - Controller orchestration error: both zero-fix logs were seeded in preflight, so terminal child evidence commits did not change those files. Product implementation and independent child verdicts remain unchanged.
 - Validator source scripts/validate_fast_p.py:599–604 requires each evidence commit to change execution.md, verify-log.md and fix-log.md even with zero repair rounds; :666–671 additionally requires child01 evidence before child02 implementation. A new evidence commit now cannot repair both conditions.
 - No amend/rebase/reset/history rewrite, validator modification, child replay, or fabricated evidence performed. Human authorization required for a lineage-contract exception or separately defined recovery procedure.
+
+## Finalization Resolution
+- User reported repaired fast-p installed; reread the installed skill before recovery. Updated contract explicitly accepts pre-created unchanged zero-round fix logs and prescribes historical finalization recovery without child replay.
+- Original commits and child artifacts validated with `--through-child 02`, complete approved manifest, exit 0, result VALID, validation_scope CHILD_CHECKPOINT, errors empty.
+- Only ledger.md and human-review-handoff.md updated for initial normal finalization. No product/test edits, child-log changes, new child epochs, completed-test reruns, validator modifications or history rewriting.
