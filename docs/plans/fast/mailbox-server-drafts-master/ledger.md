@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-08/mailbox-server-drafts-master.md
 
-- Status: RUNNING
+- Status: READY_FOR_HUMAN_REVIEW
 - Master plan: docs/plans/2026-10-08/mailbox-server-drafts-master.md (commit 02af6d42cdf3617c48335a9ad3aeddb025d1302f)
 - Amendments: A1,A2,A3,A4
 - Master base: 7c86599f85f6462e00a3fcd2c5a74f1ca57f013d
@@ -9,12 +9,12 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-08
-- Current child: 03
+- Current child: N/A
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
-- Resume from: 5e352bdfb9df9c237a4ad117e6d59ce74fb780fd
+- Resume from: N/A
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
@@ -69,3 +69,9 @@
 ## Verifier capability acquisition — epoch 3
 - DraftUIReVerifierOne acquired but aborted before commands/report because its reviewer role prohibited builds and file writes. No product/index/report modification or verdict accepted.
 - Acquired fresh independent general verifier DraftUIReVerifierCapable with command/report capability for the same repair boundary; no controller inline verification or additional repair round. Agent attempt reset0.
+
+## Finalization
+- All three ordered children terminal; checkpoint through03 passed both dirty-artifact and clean-tree modes with complete approved manifest.
+- Child03 required one automatic repair round for F-1/F-2, both resolved by independent verifier. O-1 remains a human acceptance coverage note.
+- Earlier pauses were released by A1–A4; historical entries retained unchanged.
+- NORMAL first finalization, no aggregate diff review or whole-system verification performed.

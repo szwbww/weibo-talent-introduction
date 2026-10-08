@@ -1,27 +1,31 @@
 # Fast-P Human Review Handoff
 
-- Outcome: PAUSED_FOR_HUMAN
+- Outcome: READY_FOR_HUMAN_REVIEW
 - Master base: 7c86599f85f6462e00a3fcd2c5a74f1ca57f013d
-- Current/final code head: 05bb797a51dd94b8aa712bc8f36e2426e3e801a4
-- Branch/worktree: fast/mailbox-server-drafts-master /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mailbox-server-drafts-master
+- Current/final code head: 6d80d6243be6af9c78f4ce44a54a29c7c1bc9033
+- Branch/worktree: fast/mailbox-server-drafts-master / /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mailbox-server-drafts-master
 
 ## Child Status
 | Child | Status | Code boundary | Fix rounds | Evidence commit |
 |---|---|---|---:|---|
 | 01 | LIGHT_PASS | 7c86599f85f6462e00a3fcd2c5a74f1ca57f013d..099e372c2eca32596a9db670c0f13a0a30ce2b7e | 0 | 109da9f7f550f82ae67abc3336e5e9ffbbff8656 |
 | 02 | LIGHT_PASS | 099e372c2eca32596a9db670c0f13a0a30ce2b7e..05bb797a51dd94b8aa712bc8f36e2426e3e801a4 | 0 | 10d87c31de79889ada19e177d244c8be0da06058 |
-| 03 | PAUSED_FOR_HUMAN | 05bb797a51dd94b8aa712bc8f36e2426e3e801a4..05bb797a51dd94b8aa712bc8f36e2426e3e801a4 | 0 | — |
+| 03 | LIGHT_PASS_WITH_NOTES | 05bb797a51dd94b8aa712bc8f36e2426e3e801a4..6d80d6243be6af9c78f4ce44a54a29c7c1bc9033 | 1 | 44ff9a1b1ff5db241c6a5394eb03f1d594ef97ba |
 
 ## RECORD_ONLY Index
 | Observation | Child | Evidence | Source report |
 |---|---|---|---|
+| O-1: Browser acceptance coverage limits, not an automatic repair | 03 | Actual desktop/mobile real-app MySQL/SMTP smoke exists; successful model-generated QA/RAG adoption, different-username browser exercise, orphan browser restore, uploading→failed browser restore and full delayed-upload/twelve-visit combination were not completed as browser experiments. Fresh component/backend contracts cover those seams, not a fabricated browser PASS. | children/03/verify-log.md, epoch3 attempt2; children/03/execution.md:339–394; artifact://385 |
 
 ## Pause/Resume
-- Reason: Child03 epoch2 PLAN_CONFLICT; twelve authorized paths retained uncommitted. Prior five-test scope conflict resolved under approved A1/A2. Fresh syntax/full JS1562 PASS; combined repository MySQL8 tests has1 error, zero skipped; storage17/migration39/send100/send-MySQL27 PASS.
-- Resume from: child03, next epoch3, product base05bb797a51dd94b8aa712bc8f36e2426e3e801a4, preserved working implementation atop evidence HEAD5dac3abbbe5517b68f0c6f20d95a62b83cd0b554. Obtain exact backend test-fixture authorization and record amendment before resuming. Do not replay completed children.
-- Required scope amendment: src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepositoryIT.kt only. Its temporary HTTP fixture constructs raw service and passes it directly to controller; inherited transactional discard is unproxied so lockOwned reports no existing transaction on HTTP DELETE. Wire actual Spring transaction proxy using existing datasource/manager; preserve every real HTTP/MySQL/CAS assertion. No production/schema/pom changes.
-- Actual desktop/mobile server-persistence browser smoke is blocked by combined-PASS prerequisite and was not performed. No child03 independent verdict/product commit; no final readiness claim.
-- Smoke preparation container removed; no app/SMTP/browser/runtime scaffolds remain, per epoch2 execution report.
-- Authoritative detailed blocker receipts: children/03/execution.md. Prior passing evidence: children/01/verify-log.md and children/02/verify-log.md.
+- Reason: N/A
+- Resume from: N/A
+- Previous epoch1 pause: five frontend regression fixture/contract paths approved under A1/A2; previous epoch2 pause: one backend HTTP transaction fixture approved under A3/A4. All amendments recorded with exact before/after identities in ledger; no outstanding authorization blocker.
+- Child03 implementation d32733b13af210519be90ca52c933e5f73199cfb and round1 repair6d80d6243be6af9c78f4ce44a54a29c7c1bc9033. F-1 editor baseline reversion and F-2 old-owner list preview isolation resolved by fresh independent verification.
+- Final fresh verifier commands: standalone JS1567/298 suites; backend17/8/39/100/27; zero failures/errors/skips; actual MySQL with JDK11/API1.44 (artifact://425). Earlier commands are historical, not substituted.
+- Actual browser evidence: full production application + disposable MySQL/V152 + actual SMTP at desktop1440/mobile393; restore, offline retention, CAS, discard, failed/UNKNOWN send, saved/unsaved newer versions, meeting/attachments, outbound/followup, paging/search/mobile layout. Execution report contains exact evidence and limits; original runtime resources removed.
+- Command-capability-aborted reviewer was replaced by independent general verifier; no inline controller product verification or additional repair round.
+- One deterministic evidence correction normalized the COMPLETE_CHILD action without rewriting history or rerunning product work. All child checkpoints passed; final artifact validator is the remaining readiness gate.
+- Authoritative child reports: children/01/verify-log.md, children/02/verify-log.md, children/03/verify-log.md and execution/fix logs. Original user worktree remains untouched; retained isolated branch/worktree is the review target.
 
 No whole-system verification was performed.
