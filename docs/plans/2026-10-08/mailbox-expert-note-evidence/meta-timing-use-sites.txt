@@ -1,0 +1,84 @@
+$ rg -n mc-header-meta|contact-timing\b src/main/resources/static
+exit=0
+src/main/resources/static/mailbox-chat.css:103:.mail-chat .mc-header-meta{display:flex;align-items:center;flex-wrap:wrap;gap:8px;flex-basis:100%;font-size:11px;color:#8a9bb2}
+src/main/resources/static/mailbox-chat.css:121:.mail-chat .mc-tag-row .inbound-tag-chip,.mail-chat .mc-header-meta .expert-tag{font-size:10px;line-height:1.6;padding:2px 6px;border-radius:5px;margin:0}
+src/main/resources/static/mailbox-chat.js:2987:            const meta = head.querySelector(".mc-header-meta");
+src/main/resources/static/mailbox-chat.js:3038:                    const meta = body.querySelector(".mc-header-meta");
+src/main/resources/static/mailbox-chat.js:3089:                extra = `<span class="contact-timing-note">${escapeText(error)}</span><button class="mc-text-button" type="button" data-action="mc-contact-timing-retry">重试</button>`;
+src/main/resources/static/mailbox-chat.js:3091:                extra = `<span class="contact-timing-note">${CONTACT_TIMING_LOADING_TEXT}</span>`;
+src/main/resources/static/mailbox-chat.js:3094:                extra = `<span class="contact-timing-recommend">建议北京 <strong title="${escapeText(contactBeijingRangeTitle(rec))}">${escapeText(contactBeijingRangeShort(rec))}</strong></span><button class="mc-text-button contact-timing-info" type="button" data-action="mc-contact-timing-evidence" aria-label="查看推荐依据" aria-haspopup="dialog">ⓘ</button>`;
+src/main/resources/static/mailbox-chat.js:3096:            return `<div class="contact-timing" data-role="contact-timing" aria-live="polite"><button class="mc-text-button contact-timing-location" type="button" data-action="mc-contact-location" aria-haspopup="dialog">${escapeText(label)} ▾</button>${extra}</div>`;
+src/main/resources/static/mailbox-chat.js:3201:            const meta = body.querySelector(".mc-header-meta");
+src/main/resources/static/mailbox-chat.js:3224:            const box = contactDialogField(dialog, ".contact-timing-error");
+src/main/resources/static/mailbox-chat.js:3270:            node.setAttribute("class", "contact-timing-dialog");
+src/main/resources/static/mailbox-chat.js:3506:    <button class="button contact-timing-close" type="button" data-action="mc-contact-dialog-close" aria-label="关闭所在地配置">×</button>
+src/main/resources/static/mailbox-chat.js:3509:    <div class="contact-timing-body">
+src/main/resources/static/mailbox-chat.js:3510:      <div class="contact-timing-field">
+src/main/resources/static/mailbox-chat.js:3513:        <span class="contact-timing-help" data-contact-filter-hint="countryCode" role="status" hidden></span>
+src/main/resources/static/mailbox-chat.js:3516:      <div class="contact-timing-field" data-role="contact-zone-field" hidden>
+src/main/resources/static/mailbox-chat.js:3519:        <span class="contact-timing-help" data-contact-filter-hint="zoneId" role="status" hidden></span>
+src/main/resources/static/mailbox-chat.js:3522:      <p class="contact-timing-help" data-role="contact-default-zone" hidden></p>
+src/main/resources/static/mailbox-chat.js:3523:      <p class="contact-timing-help">样本不足时按当地 08:00–17:00 推荐，保存后显示北京时间。</p>
+src/main/resources/static/mailbox-chat.js:3524:      <p class="contact-timing-error" role="alert" hidden></p>
+src/main/resources/static/mailbox-chat.js:3551:            const history = sampleItems ? `<ul class="contact-timing-history" aria-label="最近回复时间">${sampleItems}</ul>` : "";
+src/main/resources/static/mailbox-chat.js:3562:  <header><div><h3 id="${p}-evidence-title">推荐依据</h3><p>${escapeText(head)}</p></div><button class="button contact-timing-close" type="button" data-action="mc-contact-dialog-close" aria-label="关闭推荐依据">×</button></header>
+src/main/resources/static/mailbox-chat.js:3563:  <div class="contact-timing-body">
+src/main/resources/static/mailbox-chat.js:3564:    <div class="contact-timing-range"><strong>北京 ${escapeText(beijing)}</strong><span>当地 ${escapeText(local)}</span></div>
+src/main/resources/static/mailbox-chat.js:3565:    <p class="contact-timing-help">${escapeText(modeLine)}</p>
+src/main/resources/static/mailbox-chat.js:3566:    <p class="contact-timing-help">基于全部业务账号的已关联来信；最近 180 天，近期记录权重更高。</p>
+src/main/resources/static/mailbox-chat.js:3567:    <p class="contact-timing-help" data-role="contact-history-limit"${limitAttr}>仅使用最近 1000 条范围内的去重来信。</p>
+src/main/resources/static/mailbox-chat.js:3673:            const trigger = host.querySelector ? host.querySelector('[data-action="mc-contact-timing-evidence"]') : null;
+src/main/resources/static/mailbox-chat.js:3678:            focusIfAvailable(contactDialogField(dialog, ".contact-timing-close"));
+src/main/resources/static/mailbox-chat.js:4121:                    <div class="mc-header-meta"></div>
+src/main/resources/static/mailbox-chat.js:5122:                    const meta = body.querySelector(".mc-header-meta");
+src/main/resources/static/mailbox-chat.js:5342:            const meta = conversationBody() ? conversationBody().querySelector(".mc-header-meta") : null;
+src/main/resources/static/mailbox-chat.js:8103:            if (action === "mc-contact-timing-evidence") {
+src/main/resources/static/mailbox-chat.js:8107:            if (action === "mc-contact-timing-retry") {
+src/main/resources/static/styles.css:12413:/* contact-timing S-1 */
+src/main/resources/static/styles.css:12414:.mail-chat .contact-timing{display:inline-flex;align-items:center;flex-wrap:wrap;gap:9px;margin-left:auto;padding-left:10px;border-left:1px solid #e1e8f2;min-height:22px;max-width:100%;font-size:11px;line-height:1.6}
+src/main/resources/static/styles.css:12415:.mail-chat .contact-timing-location{max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#61748e}
+src/main/resources/static/styles.css:12416:.mail-chat .contact-timing-recommend{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;color:#8494aa;font-size:11px}
+src/main/resources/static/styles.css:12417:.mail-chat .contact-timing-recommend strong{font-size:12px;font-weight:600;color:#285ac0;font-variant-numeric:tabular-nums}
+src/main/resources/static/styles.css:12418:.mail-chat .contact-timing-info{justify-content:center;width:20px;height:22px;padding:0;font-size:14px;color:#8a9bb2}
+src/main/resources/static/styles.css:12419:.mail-chat .contact-timing-note{color:#8494aa;font-size:11px}
+src/main/resources/static/styles.css:12420:.mail-chat .contact-timing .mc-text-button:hover{color:#244ca9;background:#edf3ff}
+src/main/resources/static/styles.css:12421:.mail-chat .contact-timing .mc-text-button:active{background:#dbeafe}
+src/main/resources/static/styles.css:12422:.mail-chat .contact-timing .mc-text-button:disabled{opacity:.45;cursor:not-allowed}
+src/main/resources/static/styles.css:12423:.mail-chat .contact-timing .mc-text-button:focus-visible{outline:2px solid #6389d3;outline-offset:2px}
+src/main/resources/static/styles.css:12425:/* contact-timing S-2 */
+src/main/resources/static/styles.css:12426:.contact-timing-dialog{position:fixed;inset:0;margin:auto;padding:0;width:440px;max-width:calc(100vw - 32px);height:fit-content;max-height:calc(100dvh - 48px);overflow:auto;border:1px solid #d9e3f1;border-radius:14px;background:#fff;color:#475d79;box-shadow:0 20px 90px #17325730;font-family:var(--font-body);font-size:12px;line-height:1.6}
+src/main/resources/static/styles.css:12427:.contact-timing-dialog[open]{display:flex;flex-direction:column}
+src/main/resources/static/styles.css:12428:.contact-timing-dialog[data-kind=evidence]{width:360px}
+src/main/resources/static/styles.css:12429:.contact-timing-dialog,.contact-timing-dialog *{box-sizing:border-box}
+src/main/resources/static/styles.css:12430:.contact-timing-dialog [hidden]{display:none!important}
+src/main/resources/static/styles.css:12431:.contact-timing-dialog::backdrop{background:#172c4738;backdrop-filter:blur(2px)}
+src/main/resources/static/styles.css:12432:.contact-timing-dialog header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid #edf1f7}
+src/main/resources/static/styles.css:12433:.contact-timing-dialog h3{margin:0;color:#475d79;font-size:16px;font-weight:600;line-height:1.6}
+src/main/resources/static/styles.css:12434:.contact-timing-dialog header p{margin:6px 0 0;color:#8799b0;font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+src/main/resources/static/styles.css:12435:.contact-timing-dialog form{margin:0;min-width:0}
+src/main/resources/static/styles.css:12436:.contact-timing-body{display:flex;flex-direction:column;gap:12px;padding:20px;min-width:0}
+src/main/resources/static/styles.css:12437:.contact-timing-field{display:flex;flex-direction:column;gap:8px;color:#61748e;font-size:12px}
+src/main/resources/static/styles.css:12438:.contact-timing-field select{width:100%;min-width:0;height:37px;min-height:37px;margin:0;padding:0 10px;border:1px solid #dce4ef;border-radius:7px;background:#fcfdff;color:#475d79;font:inherit;font-size:12px}
+src/main/resources/static/styles.css:12439:.contact-timing-field select:hover{border-color:#93b4ec}
+src/main/resources/static/styles.css:12440:.contact-timing-field select:focus-visible{outline:2px solid #6389d3;outline-offset:2px}
+src/main/resources/static/styles.css:12441:.contact-timing-field select:disabled{opacity:.55;cursor:not-allowed}
+src/main/resources/static/styles.css:12442:.contact-timing-dialog .contact-timing-help{margin:0;color:#71849f;font-size:11px;line-height:1.7;overflow-wrap:anywhere}
+src/main/resources/static/styles.css:12443:.contact-timing-dialog .contact-timing-error{margin:0;color:#be123c;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+src/main/resources/static/styles.css:12444:.contact-timing-range{display:flex;flex-direction:column;gap:4px;color:#61748e;font-size:12px;font-variant-numeric:tabular-nums}
+src/main/resources/static/styles.css:12445:.contact-timing-range strong{color:#285ac0;font-size:13px;font-weight:600}
+src/main/resources/static/styles.css:12446:.contact-timing-history{display:flex;flex-direction:column;gap:6px;margin:0;padding:10px 0 0;list-style:none;border-top:1px solid #edf1f7;color:#71849f;font-size:11px;font-variant-numeric:tabular-nums}
+src/main/resources/static/styles.css:12447:.contact-timing-history li{display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 12px}
+src/main/resources/static/styles.css:12448:.contact-timing-dialog footer{display:flex;justify-content:flex-end;gap:9px;padding:14px 20px;border-top:1px solid #edf1f7}
+src/main/resources/static/styles.css:12449:.contact-timing-dialog .button{min-height:33px;height:33px;padding:0 13px;font-size:12px}
+src/main/resources/static/styles.css:12450:.contact-timing-dialog .button:focus-visible{outline:2px solid #6389d3;outline-offset:2px}
+src/main/resources/static/styles.css:12451:.contact-timing-dialog .button:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
+src/main/resources/static/styles.css:12452:.contact-timing-dialog .contact-timing-close{width:28px;height:28px;min-height:28px;padding:0;border:0;background:transparent;color:#91a1b7;font-size:23px}
+src/main/resources/static/styles.css:12453:.contact-timing-dialog .contact-timing-close:hover{background:#edf3ff;color:#2451b9}
+src/main/resources/static/styles.css:12454:.contact-timing-dialog .contact-timing-close:active{background:#dbeafe}
+src/main/resources/static/styles.css:12456:/* contact-timing S-3 */
+src/main/resources/static/styles.css:12457:@media(max-width:760px){.mail-chat .contact-timing{margin-left:0;padding-left:0;border-left:0}.contact-timing-dialog{max-height:calc(100dvh - 24px)}.contact-timing-dialog header{padding:14px 16px}.contact-timing-body{padding:16px}.contact-timing-dialog footer{padding:12px 16px}}
+src/main/resources/static/styles.css:12460:.contact-timing-field input[type=search]{width:100%;min-width:0;height:37px;min-height:37px;margin:0;padding:0 10px;border:1px solid #dce4ef;border-radius:7px;background:#fcfdff;color:#475d79;font:inherit;font-size:12px}
+src/main/resources/static/styles.css:12461:.contact-timing-field input[type=search]:hover{border-color:#93b4ec}
+src/main/resources/static/styles.css:12462:.contact-timing-field input[type=search]:focus-visible{outline:2px solid #6389d3;outline-offset:2px}
+src/main/resources/static/styles.css:12463:.contact-timing-field input[type=search]:disabled{opacity:.55;cursor:not-allowed}
+src/main/resources/static/styles.css:12564:    .mail-chat.mobile-core-mailbox .mc-header-meta { overflow-wrap: anywhere; }

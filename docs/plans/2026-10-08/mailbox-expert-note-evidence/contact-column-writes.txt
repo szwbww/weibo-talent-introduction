@@ -1,0 +1,12 @@
+$ rg -n updateCountryById|updateBindingById|rebindSenderAccountById|migrateBindingByAccount|clearSenderChangeMarkById src/main/kotlin
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ContactCountryBackfillService.kt:75:            expertContactRepository.updateCountryById(contactId, country)
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:68:    fun updateCountryById(id: Long, country: String?): Int
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:77:    fun updateBindingById(id: Long, accountCode: String?, boundAt: LocalDateTime?): Int
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:88:    fun rebindSenderAccountById(id: Long, accountCode: String, changedAt: LocalDateTime): Int
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:97:    fun migrateBindingByAccount(
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:110:    fun clearSenderChangeMarkById(id: Long): Int
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountBindingService.kt:45:        expertContactRepository.updateBindingById(contactId, code, at)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountBindingService.kt:58:        expertContactRepository.rebindSenderAccountById(contactId, target.accountCode, now)  // I-2
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountBindingService.kt:86:        val updated = expertContactRepository.migrateBindingByAccount(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountBindingService.kt:108:        expertContactRepository.clearSenderChangeMarkById(contactId)

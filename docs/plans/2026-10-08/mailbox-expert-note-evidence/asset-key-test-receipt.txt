@@ -1,0 +1,2 @@
+$ rg -n -F 20261006-discovery-review-merge src/test
+exit=1

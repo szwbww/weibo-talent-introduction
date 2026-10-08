@@ -327,6 +327,12 @@ class MiniElement {
     focus() {
         this.ownerDocument._activeElement = this;
     }
+    showModal() {
+        this.setAttribute("open", "");
+    }
+    close() {
+        this.removeAttribute("open");
+    }
     contains(node) {
         let cur = node;
         while (cur) {
@@ -768,6 +774,7 @@ function createChatSandbox(options) {
     const opts = options || {};
     // fast-p c3：所在地配置的服务端桩状态（PUT 写入，GET/timing 读取）。
     const contactLocations = Object.assign({}, opts.contactLocations || {});
+    const contactNotes = Object.assign({}, opts.contactNotes || {});
     const requests = [];
     const calls = {
         api: requests,
@@ -792,6 +799,14 @@ function createChatSandbox(options) {
     const timers = [];
 
     const defaultRoute = function defaultRoute(url, method, body) {
+        if (/^\/api\/mail\/contact-notes\/\d+$/.test(url)) {
+            const contactId = Number(url.split("/").pop());
+            if (method === "PUT") {
+                const note = JSON.parse(body).note.replace(/\r\n?/g, "\n").trim();
+                contactNotes[contactId] = { contactId, note, updatedBy: note ? "admin" : null, updatedAt: note ? "2026-10-08T10:18:00.000+08:00" : null };
+            }
+            return Promise.resolve(contactNotes[contactId] || { contactId, note: "", updatedBy: null, updatedAt: null });
+        }
         if (url.startsWith("/api/mail/mailbox/conversations?")) {
             return Promise.resolve(opts.conversations || { items: [], total: 0 });
         }
@@ -1281,7 +1296,7 @@ function mountChat(options, mountOptions, dom) {
     ctx.doc = doc;
     ctx.host = host;
     ctx.sandbox.document = doc;
-    ctx.sandbox.MailboxChat.mount(host, mountOptions || { filters: {} });
+    ctx.api = ctx.sandbox.MailboxChat.mount(host, mountOptions || { filters: {} });
     return ctx;
 }
 
@@ -5252,8 +5267,8 @@ describe("fast-p c3 收发信箱紧凑所在地与推荐时间（I-1..I-6 / S-1.
         assert.strictEqual(group.querySelector('[data-action="mc-contact-timing-evidence"]').textContent, "ⓘ");
         const meta = ctx.host.querySelector(".mc-header-meta");
         const kids = meta.children;
-        assert.strictEqual(kids[kids.length - 1], group, "只能追加在既有状态行末尾");
-        assert.strictEqual(kids[kids.length - 2].getAttribute("data-action"), "mc-open-expert", "原「查看专家详情」语义不变");
+        assert.strictEqual(meta.querySelector(".mc-note-row").children[1], group, "推荐仍在下排末尾");
+        assert.strictEqual(meta.querySelector(".mc-note-tags").lastChild.getAttribute("data-action"), "mc-open-expert", "原「查看专家详情」语义不变");
 
         const bare = await bootSelected(1, { contactTiming: { location: unconfiguredLocation(1), recommendation: null } });
         const bareGroup = timingGroup(bare);
@@ -6266,4 +6281,343 @@ describe("mobile-core-02: pane、草稿归属与隐藏几何", () => {
         assert.equal(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "定位失败前草稿");
     });
 
+});
+
+describe("收发件箱专家备注：正式挂载行为（I-1..I-8 / S-1..S-3）", () => {
+    const noteUrl = "/api/mail/contact-notes/1";
+    const view = (contactId, note, updatedAt = "2026-10-08T02:18:00.000Z") => ({
+        contactId, note, updatedBy: note ? "<admin>" : null, updatedAt: note ? updatedAt : null
+    });
+    const trigger = (ctx) => ctx.host.querySelector(".mc-note-trigger");
+    const dialog = (ctx) => ctx.doc.body.querySelector(".mc-note-dialog");
+    const puts = (ctx) => ctx.calls.api.filter((r) => r.url.includes("/contact-notes/") && r.method === "PUT");
+    const gets = (ctx) => ctx.calls.api.filter((r) => r.url.includes("/contact-notes/") && r.method === "GET");
+    function choose(ctx, id = 1) {
+        click(ctx.host.querySelectorAll(".mc-person-main").find((node) => node.dataset.contactId === String(id)));
+    }
+    async function selected(extra) {
+        const ctx = await bootChat(Object.assign({
+            conversations: { items: [expertA(), expertB()], total: 2 }, contact: contactA()
+        }, extra || {}));
+        choose(ctx);
+        await flush();
+        return ctx;
+    }
+    function shortcut(node, opts) {
+        const event = new MiniEvent("keydown", { bubbles: true });
+        Object.assign(event, { key: "Enter", ctrlKey: true }, opts || {});
+        node.dispatchEvent(event);
+    }
+
+    it("加载/失败不能空编辑；重试成功才显示添加，取消关闭 Escape 零 PUT", async () => {
+        let resolveRead;
+        let fail = true;
+        const ctx = await selected({ route: (url, method, body, entry, next) => {
+            if (url === noteUrl && fail) return new Promise((resolve, reject) => { resolveRead = reject; });
+            return next(url, method, body, entry);
+        } });
+        assert.equal(trigger(ctx).disabled, true);
+        assert.match(trigger(ctx).textContent, /加载中/);
+        click(trigger(ctx));
+        assert.equal(dialog(ctx), null);
+        resolveRead(new Error("down")); await flush();
+        assert.equal(trigger(ctx).dataset.action, "mc-note-retry");
+        assert.equal(trigger(ctx).getAttribute("aria-label"), "重试读取专家备注");
+        fail = false; click(trigger(ctx)); await flush();
+        assert.match(trigger(ctx).textContent, /＋ 添加备注/);
+        assert.equal(ctx.host.querySelector(".mc-note-edit"), null);
+        for (const action of ["cancel", "close", "escape"]) {
+            click(trigger(ctx));
+            const node = dialog(ctx);
+            node.querySelector("textarea").value = "丢弃";
+            if (action === "escape") keyEvent(node.querySelector("textarea"), "Escape");
+            else click(node.querySelector(`[data-note-action="${action}"]`));
+            assert.equal(dialog(ctx), null);
+            assert.equal(ctx.doc.activeElement, trigger(ctx));
+        }
+        assert.equal(puts(ctx).length, 0);
+    });
+
+    it("纯文本、准确 metadata、独立 body DOM、长度/emoji/键盘与回包清空", async () => {
+        const html = "<img src=x onerror=alert(1)>\n中文";
+        const ctx = await selected({ contactNotes: { 1: view(1, html) } });
+        assert.equal(ctx.host.querySelector(".mc-note-text").textContent, html);
+        assert.equal(ctx.host.querySelector(".mc-note-slot img"), null);
+        assert.equal(trigger(ctx).getAttribute("title"), null);
+        click(trigger(ctx));
+        let node = dialog(ctx);
+        assert.equal(node.parentNode, ctx.doc.body);
+        assert.equal(node.getAttribute("style"), null);
+        assert.ok(node.querySelector(`#${node.getAttribute("aria-labelledby")}`));
+        const input = node.querySelector("textarea");
+        assert.equal(node.querySelector("label").getAttribute("for"), input.id || input.getAttribute("id"));
+        assert.equal(input.getAttribute("maxlength"), "2000");
+        assert.equal(input.value, html);
+        assert.equal(ctx.doc.activeElement, input);
+        assert.match(node.querySelector("[data-note-meta]").textContent, /<admin> · 2026-10-08 10:18 北京时间/);
+        assert.equal(node.querySelector("admin"), null);
+        input.value = "😀".repeat(1001); inputEvent(input);
+        assert.match(node.querySelector("[data-note-meta]").textContent, /^2002 \/ 2000/);
+        shortcut(input); assert.equal(puts(ctx).length, 0);
+        input.value = "😀".repeat(1000); inputEvent(input);
+        shortcut(input, { isComposing: true }); keyEvent(input, "Enter");
+        assert.equal(puts(ctx).length, 0);
+        shortcut(input, { ctrlKey: false, metaKey: true }); await flush();
+        assert.equal(JSON.parse(puts(ctx)[0].body).note.length, 2000);
+        assert.deepEqual(Object.keys(JSON.parse(puts(ctx)[0].body)), ["note"]);
+        assert.equal(dialog(ctx), null);
+        assert.equal(ctx.host.querySelector(".mc-note-text").textContent.length, 2000);
+        click(trigger(ctx)); node = dialog(ctx);
+        node.querySelector("textarea").value = " \r\n ";
+        click(node.querySelector('[data-note-action="save"]')); await flush();
+        assert.match(trigger(ctx).textContent, /＋ 添加备注/);
+        click(trigger(ctx));
+        assert.equal(dialog(ctx).querySelector("[data-note-meta]").textContent, "0 / 2000");
+        assert.ok(ctx.calls.status.some((status) => status.message === "备注已保存"));
+    });
+
+    it("保存 busy 禁重复/关闭/读取，失败保留原摘要与草稿再显式重试", async () => {
+        let rejectPut;
+        let fail = true;
+        const ctx = await selected({ contactNotes: { 1: view(1, "服务器原值") }, route: (url, method, body, entry, next) => {
+            if (url === noteUrl && method === "PUT" && fail) return new Promise((resolve, reject) => { rejectPut = reject; });
+            return next(url, method, body, entry);
+        } });
+        click(trigger(ctx));
+        const node = dialog(ctx), input = node.querySelector("textarea");
+        input.value = "待重试\r\n第二行";
+        click(node.querySelector('[data-note-action="save"]'));
+        click(node.querySelector('[data-note-action="save"]')); shortcut(input);
+        click(node.querySelector('[data-note-action="cancel"]'));
+        click(node.querySelector('[data-note-action="close"]'));
+        keyEvent(input, "Escape"); node.dispatchEvent(new MiniEvent("cancel"));
+        assert.equal(puts(ctx).length, 1);
+        assert.equal(dialog(ctx), node);
+        assert.equal(input.disabled, true);
+        assert.ok(node.querySelectorAll("button").every((button) => button.disabled));
+        const count = gets(ctx).length;
+        ctx.api.refreshFromHost(); await flush();
+        assert.equal(gets(ctx).length, count);
+        rejectPut(new Error("<网络错误>")); await flush();
+        assert.equal(input.value, "待重试\r\n第二行");
+        assert.equal(ctx.host.querySelector(".mc-note-text").textContent, "服务器原值");
+        assert.equal(input.disabled, false);
+        assert.ok(node.querySelectorAll("button").every((button) => !button.disabled));
+        assert.match(node.querySelector(".mc-note-error").textContent, /备注保存失败，请重试/);
+        assert.equal(node.querySelector(".mc-note-error").hidden, false);
+        assert.equal(ctx.calls.status.some((s) => s.message === "备注已保存"), false);
+        fail = false; shortcut(input); await flush();
+        assert.equal(ctx.host.querySelector(".mc-note-text").textContent, "待重试\n第二行");
+    });
+
+    it("A→B→A contact/epoch/readSeq 防旧 GET；保存作废此前 GET", async () => {
+        const reads = [];
+        const ctx = await selected({ route: (url, method, body, entry, next) => {
+            if (url.includes("/contact-notes/") && method === "GET") return new Promise((resolve) => reads.push({ url, resolve }));
+            return next(url, method, body, entry);
+        } });
+        choose(ctx, 2); await flush(); choose(ctx); await flush();
+        reads[2].resolve(view(1, "新A")); await flush();
+        reads[1].resolve(view(2, "B")); reads[0].resolve(view(1, "旧A")); await flush();
+        assert.equal(ctx.host.querySelector(".mc-note-text").textContent, "新A");
+        click(trigger(ctx));
+        const node = dialog(ctx);
+        node.querySelector("textarea").value = "保存优先";
+        ctx.api.refreshFromHost(); await flush();
+        assert.equal(reads.length, 4);
+        click(node.querySelector('[data-note-action="save"]')); await flush();
+        reads[3].resolve(view(1, "保存前旧读取")); await flush();
+        assert.equal(ctx.host.querySelector(".mc-note-text").textContent, "保存优先");
+    });
+
+    it("在途 A PUT 强制切 B，晚响应不关闭 B dialog、污染数据或泄露草稿", async () => {
+        let resolvePut;
+        const ctx = await selected({ contactNotes: { 1: view(1, "A已存"), 2: view(2, "B已存") }, route: (url, method, body, entry, next) => {
+            if (url === noteUrl && method === "PUT") return new Promise((resolve) => { resolvePut = resolve; });
+            return next(url, method, body, entry);
+        } });
+        click(trigger(ctx)); const old = dialog(ctx);
+        old.querySelector("textarea").value = "A草稿";
+        click(old.querySelector('[data-note-action="save"]'));
+        choose(ctx, 2); await flush();
+        assert.equal(old.parentNode, null);
+        click(trigger(ctx)); const current = dialog(ctx);
+        current.querySelector("textarea").value = "B草稿";
+        resolvePut(view(1, "A新值")); await flush();
+        assert.equal(dialog(ctx), current);
+        assert.equal(current.querySelector("textarea").value, "B草稿");
+        assert.equal(ctx.host.querySelector(".mc-note-text").textContent, "B已存");
+        assert.equal(ctx.calls.status.some((s) => s.message === "备注已保存"), false);
+        click(current.querySelector('[data-note-action="cancel"]')); choose(ctx); await flush();
+        click(trigger(ctx)); assert.equal(dialog(ctx).querySelector("textarea").value, "A已存");
+    });
+
+    it("账号/待匹配/unmount 清理自有 dialog，晚 GET/PUT 不复活 DOM", async () => {
+        for (const boundary of ["account", "unmatched", "unmount"]) {
+            let finish;
+            const ctx = await selected({ contactNotes: { 1: view(1, "原值") }, route: (url, method, body, entry, next) => {
+                if (url === noteUrl && method === "PUT") return new Promise((resolve) => { finish = resolve; });
+                return next(url, method, body, entry);
+            } });
+            click(trigger(ctx)); const old = dialog(ctx);
+            click(old.querySelector('[data-note-action="save"]'));
+            if (boundary === "account") ctx.sandbox.MailboxChat.mount(ctx.host, { filters: { accountCode: "acc2" } });
+            else if (boundary === "unmatched") click(ctx.host.querySelector('[data-chip="unmatched"]'));
+            else ctx.sandbox.MailboxChat.unmount(ctx.host);
+            await flush(); finish(view(1, "迟到")); await flush();
+            assert.equal(old.parentNode, null);
+            assert.equal(dialog(ctx), null);
+        }
+        for (const boundary of ["account", "unmatched", "unmount"]) {
+            const reads = [];
+            const ctx = await selected({ route: (url, method, body, entry, next) => {
+                if (url === noteUrl) return new Promise((resolve) => { reads.push(resolve); });
+                return next(url, method, body, entry);
+            } });
+            if (boundary === "account") ctx.sandbox.MailboxChat.mount(ctx.host, { filters: { accountCode: "acc2" } });
+            else if (boundary === "unmatched") click(ctx.host.querySelector('[data-chip="unmatched"]'));
+            else ctx.sandbox.MailboxChat.unmount(ctx.host);
+            await flush();
+            reads[0](view(1, "迟到GET")); await flush();
+            assert.equal(ctx.host.textContent.includes("迟到GET"), false);
+            assert.equal(dialog(ctx), null);
+        }
+    });
+
+    it("timing/标签重绘不丢备注、编辑焦点或邮件草稿，不额外 GET；空 timeline 显式刷新仍 GET", async () => {
+        let finishTiming, finishTags;
+        const ctx = await selected({ messages: messagesA(), contactNotes: { 1: view(1, "内部备注") },
+            fetchTagsFn: () => new Promise((resolve) => { finishTags = resolve; }),
+            route: (url, method, body, entry, next) => {
+                if (/\/timing$/.test(url)) return new Promise((resolve) => { finishTiming = resolve; });
+                return next(url, method, body, entry);
+            }
+        });
+        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
+        setEditorContent(editor, "<p>保留邮件草稿</p>", "保留邮件草稿"); inputEvent(editor);
+        click(trigger(ctx)); const node = dialog(ctx), input = node.querySelector("textarea");
+        input.value = "尚未保存"; inputEvent(input);
+        const count = gets(ctx).length;
+        finishTiming(TIMING_WORK_HOURS_BR); await flush();
+        finishTags({ found: true, tags: ["重点关注"] }); await flush();
+        assert.equal(dialog(ctx), node);
+        assert.equal(input.value, "尚未保存");
+        assert.equal(ctx.doc.activeElement, input);
+        assert.equal(ctx.host.querySelector(".mc-note-text").textContent, "内部备注");
+        assert.equal(gets(ctx).length, count);
+        assert.equal(editor.innerHTML, "<p>保留邮件草稿</p>");
+        click(node.querySelector('[data-note-action="cancel"]'));
+        choose(ctx, 2); await flush(); choose(ctx); await flush();
+        assert.equal(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "保留邮件草稿");
+        const empty = await selected({ messages: { items: [], nextBefore: null, hasMore: false } });
+        const before = gets(empty).length;
+        empty.api.refreshFromHost(); await flush();
+        assert.equal(gets(empty).length, before + 1);
+    });
+
+    it("打开备注关闭既有浮层，关闭只删自有节点；非法日期不伪造当前时间", async () => {
+        const ctx = await selected({ contactNotes: { 1: view(1, "内容", "not-a-date") } });
+        click(ctx.host.querySelector('[data-action="mc-contact-location"]')); await flush();
+        assert.ok(ctx.doc.body.querySelector(".contact-timing-dialog"));
+        click(trigger(ctx));
+        assert.equal(ctx.doc.body.querySelector(".contact-timing-dialog"), null);
+        assert.match(dialog(ctx).querySelector("[data-note-meta]").textContent, /<admin>/);
+        assert.doesNotMatch(dialog(ctx).querySelector("[data-note-meta]").textContent, /北京时间/);
+        assert.equal(ctx.host.querySelector(".mc-note-row").querySelector(".contact-timing") !== null, true);
+        const portal = ctx.doc.body.querySelector(".mc-overlay-root");
+        const sentinel = ctx.doc.createElement("span");
+        sentinel.textContent = "其他拥有者";
+        portal.appendChild(sentinel);
+        click(dialog(ctx).querySelector('[data-note-action="cancel"]'));
+        assert.equal(sentinel.parentNode, portal);
+        assert.equal(dialog(ctx), null);
+    });
+
+    it("同 contact 显式刷新 GET 以 readSeq 最新响应为准，重新打开产生独立标识", async () => {
+        const reads = [];
+        const ctx = await selected({ route: (url, method, body, entry, next) => {
+            if (url === noteUrl) return new Promise((resolve) => { reads.push(resolve); });
+            return next(url, method, body, entry);
+        } });
+        ctx.api.refreshFromHost(); await flush();
+        reads[1](view(1, "最新")); await flush();
+        reads[0](view(1, "旧响应")); await flush();
+        assert.equal(ctx.host.querySelector(".mc-note-text").textContent, "最新");
+        click(trigger(ctx));
+        const firstId = dialog(ctx).querySelector("textarea").getAttribute("id");
+        click(dialog(ctx).querySelector('[data-note-action="cancel"]'));
+        click(trigger(ctx));
+        const input = dialog(ctx).querySelector("textarea");
+        assert.notEqual(input.getAttribute("id"), firstId);
+        assert.equal(input.value, "最新");
+        input.value = "中".repeat(2001);
+        click(dialog(ctx).querySelector('[data-note-action="save"]'));
+        assert.equal(puts(ctx).length, 0);
+        assert.equal(input.value.length, 2001);
+    });
+});
+
+describe("专家备注冻结样式与缓存键", () => {
+    it("S-1/S-2/S-3 标记块逐字一致", () => {
+        const css = fs.readFileSync(path.join(ROOT, "mailbox-chat.css"), "utf-8");
+        const blocks = [
+`/* mailbox-expert-note:S1 */
+.mail-chat .mc-header .mc-header-meta{min-width:0}
+.mail-chat .mc-note-tags{display:flex;align-items:center;gap:8px;flex-wrap:wrap;width:100%;min-width:0}
+.mail-chat .mc-note-row{display:flex;align-items:center;gap:12px;width:100%;min-width:0}
+.mail-chat .mc-note-slot{flex:1;min-width:0}
+.mail-chat .mc-note-row .contact-timing{flex:none;margin-left:auto;padding-left:0;border-left:0}
+.mail-chat .mc-note-trigger{display:flex;align-items:center;gap:4px;width:100%;min-width:0;height:24px;padding:0;border:0;border-radius:4px;background:transparent;color:#61748e;font:inherit;font-size:11px;line-height:24px;text-align:left;cursor:pointer}
+.mail-chat .mc-note-label{flex:none;color:#8494aa}
+.mail-chat .mc-note-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mail-chat .mc-note-edit{flex:none;color:#3762d8;margin-left:6px}
+.mail-chat .mc-note-trigger:hover:not(:disabled){background:#f3f6fc;color:#285ac0}
+.mail-chat .mc-note-trigger:active:not(:disabled){background:#e9efff}
+.mail-chat .mc-note-trigger:disabled{opacity:.55;cursor:default}
+.mail-chat .mc-note-trigger:focus-visible{outline:2px solid #6389d3;outline-offset:2px}
+/* mailbox-expert-note:S1:end */`,
+`/* mailbox-expert-note:S2 */
+.mc-note-dialog{position:fixed;inset:0;margin:auto;padding:0;width:460px;max-width:calc(100vw - 32px);height:fit-content;max-height:calc(100dvh - 32px);overflow:auto;border:1px solid #d9e3f1;border-radius:12px;background:#fff;color:#475569;box-shadow:0 14px 48px #17325728;font:12px/1.6 var(--font-body,sans-serif)}
+.mc-note-dialog,.mc-note-dialog *{box-sizing:border-box}
+.mc-note-dialog [hidden]{display:none!important}
+.mc-note-dialog::backdrop{background:#172c4712}
+.mc-note-dialog header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #edf1f7}
+.mc-note-dialog header strong{font-size:14px;font-weight:600}
+.mc-note-dialog .mc-note-close{border:0;border-radius:4px;background:transparent;color:#8494aa;font-size:22px;line-height:24px;cursor:pointer;padding:0 4px}
+.mc-note-dialog .mc-note-close:hover:not(:disabled){background:#edf3ff;color:#244ca9}
+.mc-note-dialog .mc-note-close:active:not(:disabled){background:#dbeafe}
+.mc-note-body{padding:12px 16px}
+.mc-note-body label{display:block;color:#97a5b8;font-size:11px;margin-bottom:6px}
+.mc-note-dialog textarea{display:block;width:100%;min-height:116px;max-height:220px;resize:vertical;border:1px solid #b8caf2;border-radius:7px;padding:9px 11px;background:#fff;color:#475569;font:inherit;line-height:1.8;margin:0 0 7px}
+.mc-note-dialog textarea:focus{outline:2px solid #dce8ff;outline-offset:1px;border-color:#668ee3}
+.mc-note-dialog textarea:disabled{opacity:.65;cursor:wait}
+.mc-note-hint{color:#97a5b8;font-size:10px}
+.mc-note-error{margin-top:8px;color:#be123c;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.mc-note-dialog footer{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 16px 14px}
+.mc-note-dialog footer>div{display:flex;gap:8px}
+.mc-note-dialog .button{height:30px;min-height:30px;padding:4px 12px;font-size:12px}
+.mc-note-dialog button:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
+.mc-note-dialog button:focus-visible{outline:2px solid #6389d3;outline-offset:2px}
+/* mailbox-expert-note:S2:end */`,
+`/* mailbox-expert-note:S3 */
+@media(max-width:760px){.mail-chat .mc-note-row{flex-wrap:wrap}.mail-chat .mc-note-row .mc-note-slot{flex-basis:100%}.mail-chat .mc-note-row .contact-timing{margin-left:0}.mail-chat .mc-note-trigger{min-height:36px}.mc-note-dialog textarea{font-size:16px}.mc-note-dialog footer{flex-wrap:wrap}.mc-note-dialog .button{min-height:36px;height:36px}}
+/* mailbox-expert-note:S3:end */`
+        ];
+        blocks.forEach((block, index) => {
+            const marker = `S${index + 1}`;
+            const actual = css.match(new RegExp(`/\\* mailbox-expert-note:${marker} \\*/[\\s\\S]*?/\\* mailbox-expert-note:${marker}:end \\*/`, "g"));
+            assert.deepEqual(actual, [block]);
+        });
+    });
+    it("所有当前版本资源统一键，原资源顺序与非版本资源不变", () => {
+        const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf-8");
+        const assets = [...html.matchAll(/(?:href|src)="([^"]+\?v=([^"]+))"/g)];
+        assert.deepEqual(assets.map((match) => match[1].split("?")[0]), [
+            "styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css", "world-clock.css",
+            "trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js", "mailbox-chat.js", "app.js", "world-clock.js"
+        ]);
+        assert.equal(new Set(assets.map((match) => match[2])).size, 1);
+        assert.match(assets[0][2], /^\d{8}-[a-z0-9-]+$/);
+        assert.ok(html.includes('<script src="task-modal-runtime.js"></script>'));
+    });
 });

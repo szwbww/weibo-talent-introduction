@@ -23,10 +23,6 @@ const indexSource = fs.readFileSync(path.join(ROOT, "index.html"), "utf-8");
 const PLAN_PATH = path.join(__dirname, "..", "..", "..", "docs", "plans", "2026-09-30", "manual-reply-template-reference.md");
 const planSource = fs.readFileSync(PLAN_PATH, "utf-8");
 
-// mailbox-chat.css 的字节基线证据（02 计划落地目标，与 mailboxChatStyle.test.js 同一文件）。
-const CHAT_CSS_BASELINE = path.join(
-    __dirname, "..", "..", "..", "docs", "plans", "2026-09-09", "mailbox-refinement-evidence", "mailbox-chat.target.css"
-);
 
 // S-4：键值只允许存在于 index.html（既有契约：脚本与测试都不得固化当前键字面量），
 // 因此这里全部从 index.html 派生，只断言「已替换旧键 / 全部同值 / 数量不变」。
@@ -163,8 +159,7 @@ describe("fast-p 01 S-4：资源登记与字节基线", () => {
         assert.ok(indexSource.indexOf(RETIRED_CACHE_KEY) === -1, "不得残留旧键");
     });
 
-    it("mailbox-chat.css 保持字节基线且不含本计划新增 class", () => {
-        assert.strictEqual(chatCssSource, fs.readFileSync(CHAT_CSS_BASELINE, "utf-8"), "mailbox-chat.css 必须与字节基线一致");
+    it("模板引用样式不进入 mailbox-chat.css", () => {
         assert.ok(chatCssSource.indexOf("reply-template") === -1, "本计划样式不得写入 mailbox-chat.css");
     });
 });

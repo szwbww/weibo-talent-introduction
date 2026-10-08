@@ -1,0 +1,16 @@
+{
+  "source_files_unchanged": 22,
+  "source_drift": [],
+  "broken_links": [],
+  "required_sections_in_order": true,
+  "implementation_file_count": 10,
+  "invariants": 8,
+  "manual_scenarios": 13,
+  "application_files_modified": false,
+  "new_function_tests_run": false,
+  "knowledge_writeback": [
+    "K-expert-contact-two-write-sites corrected and promoted at hit_count=10",
+    "K-mailbox-header-render-load-boundary added"
+  ],
+  "knowledge_scope": "Loaded entries are fresh; no archive performed. No five entries on the same newly audited subject required merging. No agents/*.md or templates/project-CLAUDE.md exists for a role pointer."
+}

@@ -644,6 +644,7 @@
             listSeq: 0,
             msgSeq: 0,
             convEpoch: 0,
+            expertNote: { contactId: null, readSeq: 0, loaded: false, loading: false, error: "", data: null, saving: false, dialog: null },
             searchTimer: null,
             saveTimer: null,
             searchText: "",
@@ -2777,6 +2778,8 @@
         }
 
         function teardownConversationSubViews() {
+            closeExpertNoteDialog({ restoreFocus: false, force: true });
+            invalidateExpertNote();
             closeContactTimingDialog({ restoreFocus: false });
             invalidateContactTiming();
             closeManageOverlay({ restoreFocus: false });
@@ -2842,6 +2845,7 @@
             renderConversationScaffold();
 
             const contactId = Number(item.contactId);
+            loadExpertNote(contactId);
             loadSuspensionState(contactId);
             // c3（I-3）：换专家即作废旧 timing 代次，再按新 contact 取推荐。
             loadContactTiming(contactId);
@@ -3001,8 +3005,190 @@
             const orcid = (contact && contact.orcidId) || summary.orcid || "";
             const expertTagSpans = headerExpertTagSpans();
             metaEl.innerHTML = `
-                ${statusBadge}${levelBadge}${expertTagSpans}${orcid ? `<span>ORCID ${escapeText(orcid)}</span>` : ""}<button class="mc-text-button" type="button" data-action="mc-open-expert" data-contact-id="${escapeText(Number(instance.selectedContactId))}">查看专家详情 ↗</button>${contactTimingMarkup()}
+                <div class="mc-note-tags">${statusBadge}${levelBadge}${expertTagSpans}${orcid ? `<span>ORCID ${escapeText(orcid)}</span>` : ""}<button class="mc-text-button" type="button" data-action="mc-open-expert" data-contact-id="${escapeText(Number(instance.selectedContactId))}">查看专家详情 ↗</button></div>
+                <div class="mc-note-row"><section class="mc-note-slot" aria-label="专家备注">${noteMarkup()}</section>${contactTimingMarkup()}</div>
             `;
+        }
+
+        function invalidateExpertNote() {
+            const state = instance.expertNote;
+            state.readSeq += 1;
+            state.contactId = null;
+            state.loaded = false;
+            state.loading = false;
+            state.error = "";
+            state.data = null;
+            state.saving = false;
+        }
+
+        function expertNoteContextAlive(contactId, epoch) {
+            return !instance.disposed && Number(instance.selectedContactId) === contactId
+                && instance.convEpoch === epoch && instance.expertNote.contactId === contactId;
+        }
+
+        function noteMarkup() {
+            const state = instance.expertNote;
+            const ready = state.loaded && state.contactId === Number(instance.selectedContactId);
+            const note = ready && state.data ? state.data.note : "";
+            const failed = !!state.error;
+            const text = failed ? "读取失败 · 重试" : (!ready || state.loading ? "加载中…" : (note || "＋ 添加备注"));
+            const label = failed ? "重试读取专家备注" : (note ? "查看或编辑专家备注" : "添加专家备注");
+            return `<button class="mc-note-trigger" type="button" data-action="${failed ? "mc-note-retry" : "mc-note-open"}" aria-haspopup="dialog" aria-label="${label}"${state.saving || (!failed && (!ready || state.loading)) ? " disabled" : ""}><span class="mc-note-label">备注：</span><span class="mc-note-text">${escapeText(text)}</span>${ready && !state.loading && !failed && note ? '<span class="mc-note-edit">编辑</span>' : ""}</button>`;
+        }
+
+        function repaintExpertNote() {
+            const slot = host.querySelector(".mc-note-slot");
+            if (slot) slot.innerHTML = noteMarkup();
+        }
+
+        function loadExpertNote(contactId) {
+            const id = Number(contactId);
+            const state = instance.expertNote;
+            if (instance.disposed || state.saving || id <= 0 || !Number.isFinite(id) || id !== Number(instance.selectedContactId)) return;
+            state.contactId = id;
+            state.loading = true;
+            state.error = "";
+            const epoch = instance.convEpoch;
+            const seq = ++state.readSeq;
+            repaintExpertNote();
+            hostApi()(`/api/mail/contact-notes/${id}`).then((data) => {
+                if (!expertNoteContextAlive(id, epoch) || seq !== state.readSeq) return;
+                state.data = data;
+                state.loaded = true;
+                state.loading = false;
+                repaintExpertNote();
+            }).catch(() => {
+                if (!expertNoteContextAlive(id, epoch) || seq !== state.readSeq) return;
+                state.loaded = false;
+                state.loading = false;
+                state.error = "读取失败";
+                repaintExpertNote();
+            });
+        }
+
+        function closeExpertNoteDialog(options) {
+            const opts = options || {};
+            const state = instance.expertNote;
+            const dialog = state.dialog;
+            if (!dialog || (state.saving && !opts.force)) return;
+            state.dialog = null;
+            const node = dialog.node;
+            dialog.listeners.forEach(([type, listener]) => node.removeEventListener(type, listener));
+            if (typeof node.close === "function") node.close();
+            if (node.parentNode) node.parentNode.removeChild(node);
+            if (opts.restoreFocus !== false && !instance.disposed) {
+                focusIfAvailable(host.querySelector('[data-action="mc-note-open"]'));
+            }
+        }
+
+        function expertNoteMetadata(data) {
+            if (!data || !data.note) return "";
+            let time = "";
+            if (data.updatedAt && /(?:Z|[+-]\d{2}:\d{2})$/.test(data.updatedAt)) {
+                const date = new Date(data.updatedAt);
+                if (!Number.isNaN(date.getTime())) {
+                    const parts = new Intl.DateTimeFormat("en-CA", {
+                        timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit",
+                        hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+                    }).formatToParts(date);
+                    const part = (type) => parts.find((entry) => entry.type === type).value;
+                    time = `${part("year")}-${part("month")}-${part("day")} ${part("hour")}:${part("minute")} 北京时间`;
+                }
+            }
+            return [data.updatedBy, time].filter(Boolean).join(" · ");
+        }
+
+        function saveExpertNote(dialog) {
+            const state = instance.expertNote;
+            if (state.dialog !== dialog || state.saving || !expertNoteContextAlive(dialog.contactId, dialog.epoch)) return;
+            const input = dialog.node.querySelector("textarea");
+            const error = dialog.node.querySelector(".mc-note-error");
+            const rawNote = input.value;
+            if (rawNote.length > 2000) {
+                error.textContent = "备注不能超过 2000 个字符";
+                error.hidden = false;
+                return;
+            }
+            state.saving = true;
+            state.readSeq += 1;
+            state.loading = false;
+            error.hidden = true;
+            input.disabled = true;
+            dialog.node.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+            repaintExpertNote();
+            hostApi()(`/api/mail/contact-notes/${dialog.contactId}`, {
+                method: "PUT", body: JSON.stringify({ note: rawNote })
+            }).then((data) => {
+                if (!expertNoteContextAlive(dialog.contactId, dialog.epoch) || state.dialog !== dialog) return;
+                state.data = data;
+                state.loaded = true;
+                state.error = "";
+                state.saving = false;
+                repaintExpertNote();
+                closeExpertNoteDialog({ restoreFocus: true });
+                hostShowStatus("备注已保存", "ok");
+            }).catch((err) => {
+                if (!expertNoteContextAlive(dialog.contactId, dialog.epoch) || state.dialog !== dialog) return;
+                state.saving = false;
+                input.disabled = false;
+                dialog.node.querySelectorAll("button").forEach((button) => { button.disabled = false; });
+                error.textContent = `备注保存失败，请重试${err && err.message ? `：${err.message}` : ""}`;
+                error.hidden = false;
+                repaintExpertNote();
+            });
+        }
+
+        function openExpertNoteDialog() {
+            const state = instance.expertNote;
+            if (state.saving || state.loading || !state.loaded || state.error || state.contactId !== Number(instance.selectedContactId)) return;
+            closeExpertNoteDialog({ restoreFocus: false });
+            closeContactTimingDialog({ restoreFocus: false });
+            closeManageOverlay({ restoreFocus: false });
+            closeFollowUpDialog({ restoreFocus: false });
+            closeMaterialRequestDialog({ restoreFocus: false });
+            closeTemplateReferenceDialog({ restoreFocus: false });
+            const doc = docRoot();
+            const node = doc.createElement("dialog");
+            // The existing module-wide sequence guarantees IDs do not collide across instances.
+            const prefix = `mc-note-${++contactTimingInstanceSeq}`;
+            node.setAttribute("class", "mc-note-dialog");
+            node.setAttribute("aria-labelledby", `${prefix}-title`);
+            node.innerHTML = `<header><strong id="${prefix}-title">专家备注</strong><button class="mc-note-close" type="button" data-note-action="close" aria-label="关闭专家备注">×</button></header>
+                <div class="mc-note-body"><label for="${prefix}-input">仅内部可见</label><textarea id="${prefix}-input" aria-label="专家备注" maxlength="2000" placeholder="填写合作意向、沟通偏好、待办事项等…"></textarea><div class="mc-note-hint" data-note-meta></div><div class="mc-note-error" role="alert" hidden></div></div>
+                <footer><span class="mc-note-hint">Ctrl / ⌘ + Enter 保存</span><div><button class="button" type="button" data-note-action="cancel">取消</button><button class="button primary" type="button" data-note-action="save">保存备注</button></div></footer>`;
+            const dialog = { node, contactId: state.contactId, epoch: instance.convEpoch, listeners: [] };
+            const input = node.querySelector("textarea");
+            input.value = state.data.note;
+            const metadata = expertNoteMetadata(state.data);
+            const updateCount = () => { node.querySelector("[data-note-meta]").textContent = `${input.value.length} / 2000${metadata ? ` · ${metadata}` : ""}`; };
+            const listen = (type, fn) => { node.addEventListener(type, fn); dialog.listeners.push([type, fn]); };
+            listen("input", updateCount);
+            listen("click", (event) => {
+                if (state.dialog !== dialog) return;
+                const button = event.target && event.target.closest("[data-note-action]");
+                if (!button) return;
+                if (button.dataset.noteAction === "save") saveExpertNote(dialog);
+                else closeExpertNoteDialog({ restoreFocus: true });
+            });
+            listen("cancel", (event) => {
+                event.preventDefault();
+                if (state.dialog === dialog) closeExpertNoteDialog({ restoreFocus: true });
+            });
+            listen("keydown", (event) => {
+                if (state.dialog !== dialog || event.isComposing) return;
+                if (event.key === "Escape") {
+                    event.preventDefault();
+                    closeExpertNoteDialog({ restoreFocus: true });
+                } else if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+                    event.preventDefault();
+                    saveExpertNote(dialog);
+                }
+            });
+            state.dialog = dialog;
+            updateCount();
+            doc.body.appendChild(node);
+            node.showModal();
+            focusIfAvailable(input);
         }
 
         function headerExpertTagSpans() {
@@ -7350,6 +7536,8 @@
         function meetingCloseDisposeOnAccountScopeChange(prevAccount, nextAccount) {
             if (instance.selectedContactId == null) return;
             if (String(prevAccount || "") === String(nextAccount || "")) return;
+            closeExpertNoteDialog({ restoreFocus: false, force: true });
+            invalidateExpertNote();
             // 跟进候选绑定账号范围：范围变化即关闭弹窗（草稿缓存不清，I-7）。
             closeFollowUpDialog({ restoreFocus: false });
             closeMaterialRequestDialog({ restoreFocus: false });
@@ -7873,6 +8061,7 @@
             const contactId = Number(instance.selectedContactId);
             if (!Number.isFinite(contactId) || contactId <= 0) return;
             const myEpoch = instance.convEpoch;
+            loadExpertNote(contactId);
             const params = new URLSearchParams();
             params.set("limit", String(MESSAGE_LIMIT));
             const scopeAccount = instance.conversation.accountScope || "";
@@ -8200,6 +8389,14 @@
             }
             if (action === "mc-open-materials") {
                 openMaterials(data.contactId);
+                return;
+            }
+            if (action === "mc-note-open") {
+                openExpertNoteDialog();
+                return;
+            }
+            if (action === "mc-note-retry") {
+                loadExpertNote(instance.selectedContactId);
                 return;
             }
             if (action === "mc-open-expert") {

@@ -1,0 +1,28 @@
+{
+  "head": "235681497c226066fa0174a2d79bc82863a1e91a",
+  "date": "2026-10-08",
+  "files": {
+    "src/main/resources/db/migration/V1__create_business_tables.sql": "944a8c45d9005871df30db4fb527320b191d943aff7c6a3a290e7f84d33d2235",
+    "src/main/resources/db/migration/V146__create_expert_contact_location.sql": "866c13af10ab8887c1242c0aeb3b5bf44163d20e5254f1417edeaef721b1b238",
+    "src/main/resources/db/migration/V149__add_expert_follow_progress_status.sql": "07be9b68faaea2f26d74057f0c8e9a88aaf941d9a630f052a8120ead114fd444",
+    "src/main/kotlin/com/weibo/talentintroduction/campaign/domain/ExpertContact.kt": "e49f9b16297ad05e0d05de7922196a4bf5dece1e13e663c91a17dec4ae10a547",
+    "src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt": "04434fe012c2ec36df639d39fdf873d1033c3bcc5f3a16aa0ad2d34975945b78",
+    "src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt": "6b0f7c661e5968398c5de3a1ef8ae816fedd6009b5a877603a704132b7d19668",
+    "src/main/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactLocationController.kt": "86ca607fb99dc119b8dc1a6c8f474046f02760829397c876f70197ac3ed38290",
+    "src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt": "a91d2661f6aec624f76ca6b5c32ec3a08d2e7359d251e36dd0d98d412fa39fda",
+    "src/main/kotlin/com/weibo/talentintroduction/auth/config/AuthInterceptor.kt": "42aeded91cd998e98ca044ddf7130f407b666f7e6740421c91679097db1dd854",
+    "src/main/kotlin/com/weibo/talentintroduction/auth/config/AuthWebConfig.kt": "f41a744f244f28346dfa4f8c1da37abe2cfd795c496699edf5f9ac8679a78ebb",
+    "src/main/kotlin/com/weibo/talentintroduction/common/controller/GlobalExceptionHandler.kt": "222ee6b60338f757957493b195f3295f23fe2b765c11d67b375c6c961b0aeeb7",
+    "src/main/resources/static/mailbox-chat.js": "6637305cece0bfca702fe4bbb72b779b14c437a0bf50b07a9a4151350187c74f",
+    "src/main/resources/static/mailbox-chat.css": "0fd354027e54ae69f0a2ba76451801b85c6b74cd2792e98a3852cbb14bade17d",
+    "src/main/resources/static/styles.css": "324ead57b7f4f71c540919b617942588b496d30da01467458f3ad7260f7d29c1",
+    "src/main/resources/static/index.html": "f986a8421155eb0158d12d9561683970c22a856a7001cb848e42c7923fbab4f8",
+    "src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt": "bbe8fa2c28b471db8df32e03bab9bfe8d1046bf18c936422ddde89ff41d8aef9",
+    "src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationServiceTest.kt": "f9cfda0979e5fc0f2891a497ecd4cf290ca5dc4c132d606e29a84e92f0193da9",
+    "src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactLocationControllerTest.kt": "ff3c92101c09e8700304a620a8c08e35aea89df77aa28b1963b7a4a58f97b8e5",
+    "src/test/js/mailboxChatBehavior.test.js": "ef5d96cfc3c996d9ef00535a76779474f2982a1dc031c8a9e4276d9d0c9b914a",
+    "docs/mockups/mailbox-notes-preview/preview.js": "242dca333d2215ef1d74862233f2a5498a3458f06bf748ecf6b23a2af32b73ee",
+    "docs/mockups/mailbox-notes-preview/preview.css": "00bf97ca778a2bed6459b6c8e1c7db52b90c94a678dce78e3d52040e61e66e40",
+    "pom.xml": "58e5999fad9df89d6479045d5ea70d86c33ccf7591da3f93470669dc30b6f21f"
+  }
+}

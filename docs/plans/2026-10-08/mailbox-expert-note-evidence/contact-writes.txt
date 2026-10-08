@@ -1,0 +1,48 @@
+$ rg -n expertContactRepository\.(save|saveAll|delete|update)|contactRepository\.(save|saveAll|delete|update)|(?i:INSERT(?: IGNORE)? INTO expert_contact\b|UPDATE expert_contact\b|DELETE FROM expert_contact\b|ALTER TABLE expert_contact\b) src/main scripts tools
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:116:                expertContactRepository.save(contact.copy(applicationIndexed = true, currentIndexLevel = "APPLICATION"))
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:67:    @Query("UPDATE expert_contact SET country = :country WHERE id = :id")
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:72:        UPDATE expert_contact
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:81:        UPDATE expert_contact
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:92:        UPDATE expert_contact
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:105:        UPDATE expert_contact
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ContactCountryBackfillService.kt:75:            expertContactRepository.updateCountryById(contactId, country)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:80:            val contact = expertContactRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ConversationStateService.kt:26:        val saved = expertContactRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertOperatorStatusService.kt:30:        val updated = expertContactRepository.save(contact.copy(operatorStatus = target.name))
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertOperatorStatusService.kt:64:        val updated = expertContactRepository.save(contact.copy(operatorStatus = targetStatus.name))
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertOperatorStatusService.kt:88:        val updated = expertContactRepository.save(contact.copy(operatorStatus = EMAIL_INVALID))
+src/main/resources/db/migration/V94__backfill_operator_status_for_manual_sends.sql:7:UPDATE expert_contact ec
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:57:        return expertContactRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:64:        return expertContactRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:277:        val updated = expertContactRepository.save(contact.copy(applicationIndexed = true, currentIndexLevel = "APPLICATION"))
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:287:        return expertContactRepository.save(contact.copy(currentIndexLevel = "CANDIDATE"))
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:296:        return expertContactRepository.save(contact.copy(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:316:                expertContactRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:69:        return expertContactRepository.save(contact.copy(currentIndexLevel = "CANDIDATE"))
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:86:        return expertContactRepository.save(contact.copy(applicationIndexed = true, currentIndexLevel = "APPLICATION"))
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:103:        return expertContactRepository.save(contact.copy(applicationIndexed = true, currentIndexLevel = "APPLICATION"))
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:110:        return expertContactRepository.save(contact.copy(currentIndexLevel = "RAW", applicationIndexed = false))
+src/main/resources/db/migration/V51__add_follow_up_marked.sql:1:ALTER TABLE expert_contact
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:190:        expertContactRepository.save(currentContact)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:253:                        expertContactRepository.save(contact.copy(needsManualAttention = false))
+src/main/resources/db/migration/V11__expert_contact_auto_reply_flag.sql:1:ALTER TABLE expert_contact
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutomaticApplicationPromotionService.kt:83:                val saved = expertContactRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1543:                        expertContactRepository.save(contact.copy(needsManualAttention = false))
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1607:                    expertContactRepository.save(contact.copy(needsManualAttention = true))
+src/main/resources/db/migration/V85__add_expert_contact_sender_binding.sql:4:ALTER TABLE expert_contact
+src/main/resources/db/migration/V85__add_expert_contact_sender_binding.sql:15:UPDATE expert_contact ec
+src/main/resources/db/migration/V13__merge_manual_review_into_handoff.sql:7:UPDATE expert_contact
+src/main/resources/db/migration/V14__contact_index_level_and_reason_type_and_qa_display_name.sql:2:ALTER TABLE expert_contact
+src/main/resources/db/migration/V14__contact_index_level_and_reason_type_and_qa_display_name.sql:6:ALTER TABLE expert_contact
+src/main/resources/db/migration/V14__contact_index_level_and_reason_type_and_qa_display_name.sql:11:UPDATE expert_contact SET current_index_level = 'APPLICATION'
+src/main/resources/db/migration/V14__contact_index_level_and_reason_type_and_qa_display_name.sql:15:UPDATE expert_contact
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:356:                    expertContactRepository.save(disabledContact.copy(needsManualAttention = true))
+src/main/resources/db/migration/V12__expert_contact_first_reply.sql:1:ALTER TABLE expert_contact
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:996:                        expertContactRepository.save(ExpertContact(
+src/main/resources/db/migration/V86__add_expert_contact_sender_change_mark.sql:3:ALTER TABLE expert_contact
+src/main/resources/db/migration/V48__add_country_to_expert_contact.sql:1:ALTER TABLE expert_contact ADD COLUMN country VARCHAR(128) NULL;
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountBindingService.kt:45:        expertContactRepository.updateBindingById(contactId, code, at)
+src/main/resources/db/migration/V19__add_operator_status_and_action_log.sql:4:SET @add_col = 'ALTER TABLE expert_contact ADD COLUMN operator_status VARCHAR(32) NOT NULL DEFAULT ''NOT_CONTACTED'' COMMENT ''运营视角专家状态: NOT_CONTACTED / CONTACTED / REPLIED / MATERIALS_RECEIVED / INVITED / COMPLETED''';
+src/main/resources/db/migration/V19__add_operator_status_and_action_log.sql:15:SET @add_idx = 'ALTER TABLE expert_contact ADD INDEX idx_expert_contact_operator_status (operator_status, updated_at)';
+src/main/resources/db/migration/V19__add_operator_status_and_action_log.sql:23:UPDATE expert_contact

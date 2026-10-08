@@ -1,0 +1,18 @@
+$ rg -n @RequestMapping|@GetMapping|@PutMapping|sessionUsername|requireContactExists|UPSERT_SQL|SELECT COUNT|NamedParameterJdbcTemplate src/main/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactLocationController.kt src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactLocationController.kt:35:@RequestMapping("/api/mail/contact-locations")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactLocationController.kt:41:    @GetMapping("/countries")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactLocationController.kt:44:    @GetMapping("/{contactId}")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactLocationController.kt:51:    @GetMapping("/{contactId}/timing")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactLocationController.kt:54:    @PutMapping("/{contactId}")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactLocationController.kt:60:        val username = sessionUsername(request) ?: return unauthorized()
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactLocationController.kt:64:    private fun sessionUsername(request: HttpServletRequest): String? =
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:6:import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:19: * 窄服务 + `NamedParameterJdbcTemplate` + contact 存在性 + MySQL 参数化 upsert
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:35:    private val jdbcTemplate: NamedParameterJdbcTemplate,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:42:        requireContactExists(contactId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:70:        requireContactExists(contactId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:75:        jdbcTemplate.update(UPSERT_SQL, params)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:171:    private fun requireContactExists(contactId: Long) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:173:            "SELECT COUNT(*) FROM expert_contact WHERE id = :contactId",
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:277:        const val UPSERT_SQL = """

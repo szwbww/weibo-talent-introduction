@@ -1,0 +1,192 @@
+$ rg -n expert_contact\b|ExpertContactRepository|ExpertContact\( src/main scripts tools
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt:357:     * I-3/I-4: 目标专家已有任一 `expert_contact.bound_sender_account_code`（与绑定值是否在
+src/main/kotlin/com/weibo/talentintroduction/qa/controller/QaRuleManagementController.kt:4:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/qa/controller/QaRuleManagementController.kt:44:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/qa/controller/QaRuleManagementController.kt:214:        return ExpertContact(
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/ExpertContact.kt:7:@Table("expert_contact")
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/ExpertContact.kt:8:data class ExpertContact(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/CandidateOperatorStatusSyncService.kt:3:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/expert/service/CandidateOperatorStatusSyncService.kt:9:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:7:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:37:    private val expertContactRepository: ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:5:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:36:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:460:        return ExpertContact(
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:3:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:40:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ContactCountryBackfillService.kt:3:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ContactCountryBackfillService.kt:21:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:4:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:26:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:81:                ExpertContact(
+src/main/kotlin/com/weibo/talentintroduction/expert/repository/ExpertApplicationPromotionRepository.kt:56:          JOIN expert_contact ec ON eap.expert_contact_id = ec.id
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarService.kt:28:    private val expertContactRepository: com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:5:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:25:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt:4:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt:45:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt:138:                "expert_contact $contactId does not exist"
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertMaterialService.kt:4:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertMaterialService.kt:103:    private val expertContactRepository: ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:6:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:14:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertEmailAliasService.kt:5:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertEmailAliasService.kt:14:    private val expertContactRepository: ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:4:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:45:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:8:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:29:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertOperatorStatusService.kt:7:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertOperatorStatusService.kt:14:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ConversationStateService.kt:5:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ConversationStateService.kt:13:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:7:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:43:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:53:    /** 全表扫描 + 内存比对（expert_contact 2062 行 / mail_record 2157 行，规模小，一次读入）。 */
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MeetingCalendarEventRepository.kt:184:              JOIN expert_contact c ON c.id = e.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt:71:    private val expertContactRepository: com.weibo.talentintroduction.campaign.repository.ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:4:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:48:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:174:                // expert_contact 无机构列（MySQL 无 institution 存储），此处恒 null，
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:17:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:94:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:345:                // I-3: 任一 expert_contact 行已有绑定（与绑定值是否在选中集合无关）→ 本次批量不发信、
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:821:                // I-3: 任一 expert_contact 行已有绑定（与绑定值是否在选中集合无关）→ 本次批量不发信、
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:996:                        expertContactRepository.save(ExpertContact(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1504:     * I-3: 同一 ORCID 的**任一** `expert_contact` 行（任意 campaign）已有非空白绑定即为已绑定。
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:3:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:54:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:3:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:64:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:63:    /** expert_contact 无机构列（DB 无 institution 存储）；恒 null，UI 自专家资料流程补充。 */
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailSenderAccountService.kt:4:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailSenderAccountService.kt:20:    private val expertContactRepository: ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:9:interface ExpertContactRepository : CrudRepository<ExpertContact, Long> {
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:44:        SELECT * FROM expert_contact
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:67:    @Query("UPDATE expert_contact SET country = :country WHERE id = :id")
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:72:        UPDATE expert_contact
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:81:        UPDATE expert_contact
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:92:        UPDATE expert_contact
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:105:        UPDATE expert_contact
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:116:          FROM expert_contact
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:128:          FROM expert_contact
+src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt:4:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt:603:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:5:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:25:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:5:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:39:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryController.kt:3:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryController.kt:28:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/BounceController.kt:5:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/BounceController.kt:21:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationModels.kt:6:// 身份口径（I-1）：配置属于 expert_contact，不属于登录用户或 ORCID；无行即未配置，
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationModels.kt:21: * `countryCode/countryLabel` 是目录权威展示值（不来自 `expert_contact.country`）。
+src/main/resources/db/migration/V126__create_outbound_mail_attachment.sql:33:        FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id) ON DELETE RESTRICT
+src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentService.kt:3:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentService.kt:39:    private val expertContactRepository: ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutomaticApplicationPromotionService.kt:5:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutomaticApplicationPromotionService.kt:18:    private val expertContactRepository: ExpertContactRepository,
+src/main/resources/db/migration/V143__create_expert_replied_dismissal.sql:8:        FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id)
+src/main/resources/db/migration/V121__create_expert_follow.sql:8:-- followed 过滤。关注不写 ES / expert_contact / 来信处理状态（I-3）。
+src/main/resources/db/migration/V121__create_expert_follow.sql:16:        FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:4:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:44:    private val expertContactRepository: ExpertContactRepository,
+src/main/resources/db/migration/V5__create_inbound_mail_processing.sql:19:        FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:21: * `expert_contact.country`、ES、回填、发信、排期或晋级（I-5）。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:173:            "SELECT COUNT(*) FROM expert_contact WHERE id = :contactId",
+src/main/resources/db/migration/V138__create_batch_email_verification.sql:36:-- 不建 contact 外键：验证拒绝的目标不得创建/绑定 expert_contact。
+src/main/resources/db/migration/V51__add_follow_up_marked.sql:1:ALTER TABLE expert_contact
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:6:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:22:    private val expertContactRepository: ExpertContactRepository,
+src/main/resources/db/migration/V146__create_expert_contact_location.sql:7:        FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id) ON DELETE CASCADE
+src/main/resources/db/migration/V94__backfill_operator_status_for_manual_sends.sql:7:UPDATE expert_contact ec
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountBindingService.kt:6:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountBindingService.kt:16:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountBindingService.kt:19:    /** 建行时固化绑定：返回可直接放进 ExpertContact(...) 构造的二元组（I-2/I-5）。 */
+src/main/resources/db/migration/V1__create_business_tables.sql:79:CREATE TABLE expert_contact (
+src/main/resources/db/migration/V1__create_business_tables.sql:112:        FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id),
+src/main/resources/db/migration/V1__create_business_tables.sql:127:        FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:8:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:64:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertRepliedDismissalService.kt:21:            "SELECT COUNT(*) FROM expert_contact WHERE id = :contactId",
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountAssignmentService.kt:3:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountAssignmentService.kt:14:    private val expertContactRepository: ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationCatalog.kt:14: * `expert_contact.country` 文本、不回退 UTC、不静默丢弃无法识别的时区、不新增国家
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt:3:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt:44:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionService.kt:63: * - 只写新表；不写 expert_contact/expert_follow/expert_replied_dismissal/mail_record/
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionService.kt:250:            "SELECT id FROM expert_contact WHERE id = :contactId FOR UPDATE",
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionService.kt:259:            "SELECT COUNT(*) FROM expert_contact WHERE id = :contactId",
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertFollowService.kt:40: * 拒绝。expert_contact 必须真实存在（JDBC 存在性校验；未知 contact → 404）。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertFollowService.kt:50: * 关注/标记不写 ES / expert_contact / 来信处理状态 / 邮件记录。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertFollowService.kt:113:            "SELECT COUNT(*) FROM expert_contact WHERE id = :contactId",
+src/main/resources/db/migration/V8__add_expert_contact_status_history.sql:12:        FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:3:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:27:    private val expertContactRepository: ExpertContactRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:203:     * LEFT JOIN expert_contact / EXISTS(mail_attachment)）。
+src/main/resources/db/migration/V14__contact_index_level_and_reason_type_and_qa_display_name.sql:1:-- 1. expert_contact 增加 ES 层级与人工待办标记
+src/main/resources/db/migration/V14__contact_index_level_and_reason_type_and_qa_display_name.sql:2:ALTER TABLE expert_contact
+src/main/resources/db/migration/V14__contact_index_level_and_reason_type_and_qa_display_name.sql:6:ALTER TABLE expert_contact
+src/main/resources/db/migration/V14__contact_index_level_and_reason_type_and_qa_display_name.sql:11:UPDATE expert_contact SET current_index_level = 'APPLICATION'
+src/main/resources/db/migration/V14__contact_index_level_and_reason_type_and_qa_display_name.sql:15:UPDATE expert_contact
+src/main/resources/db/migration/V14__contact_index_level_and_reason_type_and_qa_display_name.sql:25:  FROM expert_contact ec
+src/main/resources/db/migration/V147__create_expert_mailbox_suspension.sql:18:        FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionService.kt:3:import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionService.kt:26:    private val expertContactRepository: ExpertContactRepository,
+src/main/resources/db/migration/V86__add_expert_contact_sender_change_mark.sql:3:ALTER TABLE expert_contact
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:60:        INNER JOIN expert_contact ec ON ec.id = mr.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:361:    // 不读取 expert_contact.first_reply_at）。发送失败的 INTRODUCTION sent_at 为 null，天然不进队列，
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:379:          JOIN expert_contact ec ON ec.id = s.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:419:          JOIN expert_contact ec ON ec.id = s.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:460:          JOIN expert_contact ec ON ec.id = u.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:517:            LEFT JOIN expert_contact ec ON mr.expert_contact_id = ec.id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:551:            LEFT JOIN expert_contact ec2 ON imp.expert_contact_id = ec2.id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:584:            LEFT JOIN expert_contact ec ON mr.expert_contact_id = ec.id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:598:            LEFT JOIN expert_contact ec2 ON imp.expert_contact_id = ec2.id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:643:                JOIN expert_contact ec1 ON ec1.id = mr.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:668:                JOIN expert_contact ec2 ON ec2.id = imp.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:683:          JOIN expert_contact ec ON u.expert_contact_id = ec.id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:711:                JOIN expert_contact ec1 ON ec1.id = mr.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:734:                JOIN expert_contact ec2 ON ec2.id = imp.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:785:            JOIN expert_contact ec1 ON ec1.id = mr.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:827:            JOIN expert_contact ec2 ON ec2.id = imp.expert_contact_id
+src/main/resources/db/migration/V19__add_operator_status_and_action_log.sql:2:WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'expert_contact' AND COLUMN_NAME = 'operator_status';
+src/main/resources/db/migration/V19__add_operator_status_and_action_log.sql:4:SET @add_col = 'ALTER TABLE expert_contact ADD COLUMN operator_status VARCHAR(32) NOT NULL DEFAULT ''NOT_CONTACTED'' COMMENT ''运营视角专家状态: NOT_CONTACTED / CONTACTED / REPLIED / MATERIALS_RECEIVED / INVITED / COMPLETED''';
+src/main/resources/db/migration/V19__add_operator_status_and_action_log.sql:13:WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'expert_contact' AND INDEX_NAME = 'idx_expert_contact_operator_status';
+src/main/resources/db/migration/V19__add_operator_status_and_action_log.sql:15:SET @add_idx = 'ALTER TABLE expert_contact ADD INDEX idx_expert_contact_operator_status (operator_status, updated_at)';
+src/main/resources/db/migration/V19__add_operator_status_and_action_log.sql:23:UPDATE expert_contact
+src/main/resources/db/migration/V19__add_operator_status_and_action_log.sql:50:        FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id),
+src/main/resources/db/migration/V12__expert_contact_first_reply.sql:1:ALTER TABLE expert_contact
+src/main/resources/db/migration/V11__expert_contact_auto_reply_flag.sql:1:ALTER TABLE expert_contact
+src/main/resources/db/migration/V95__add_operator_status_to_batch_send_task_config.sql:1:-- P-E T-1: operator_status 可空，默认 NULL = 不限（与 expert_contact.operator_status 的
+src/main/resources/db/migration/V95__add_operator_status_to_batch_send_task_config.sql:4:-- 不加 CHECK 约束以便枚举演进（与 expert_contact 同款立场）。
+src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql:43:    CONSTRAINT fk_eap_contact FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id)
+src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql:52:  FROM expert_contact ec
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/BounceRecordRepository.kt:59:    // 可能指向已不存在的 expert_contact（孤儿引用）；主查询的 JOIN expert_contact 会丢弃这类行，
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/BounceRecordRepository.kt:67:                OR NOT EXISTS (SELECT 1 FROM expert_contact ec WHERE ec.id = br.original_expert_contact_id))
+src/main/resources/db/migration/V85__add_expert_contact_sender_binding.sql:4:ALTER TABLE expert_contact
+src/main/resources/db/migration/V85__add_expert_contact_sender_binding.sql:11:    ON expert_contact (bound_sender_account_code);
+src/main/resources/db/migration/V85__add_expert_contact_sender_binding.sql:15:UPDATE expert_contact ec
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:157:                  JOIN expert_contact ec ON ec.id = u.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:195:              JOIN expert_contact ec ON ec.id = u.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:236:              JOIN expert_contact ec ON ec.id = u.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:619:        // expert_contact.expert_email（本专家所有出站共享的联系人邮箱，在出站 EXISTS 内恒等），
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:671:     * WHERE 片段：q（真实 expert_contact 姓名/邮箱）+ followed/providedOnly 三态过滤 +
+src/main/resources/db/migration/V59__create_expert_analysis_result.sql:15:        FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id)
+src/main/resources/db/migration/V7__create_mail_attachment_and_expert_document.sql:25:        FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id),
+src/main/resources/db/migration/V125__create_meeting_calendar_event.sql:17:        FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id) ON DELETE RESTRICT,
+src/main/resources/db/migration/V13__merge_manual_review_into_handoff.sql:7:UPDATE expert_contact
+src/main/resources/db/migration/V13__merge_manual_review_into_handoff.sql:34:FROM expert_contact ec
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:10:                                                  CONSTRAINT fk_expert_email_alias_expert_contact FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id)
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:93:        'fk_expert_email_alias_expert_contact',
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:94:        'ALTER TABLE expert_email_alias ADD CONSTRAINT fk_expert_email_alias_expert_contact FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id)'
+src/main/resources/db/migration/V9__create_meeting_schedule_and_template.sql:15:    CONSTRAINT fk_meeting_schedule_contact FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id),
+src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:31:        FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id)
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailOpenTrackingRepository.kt:164:            "LEFT JOIN expert_contact ec ON ec.id = m.expert_contact_id"
+src/main/resources/db/migration/V48__add_country_to_expert_contact.sql:1:ALTER TABLE expert_contact ADD COLUMN country VARCHAR(128) NULL;
+src/main/resources/db/migration/V48__add_country_to_expert_contact.sql:2:CREATE INDEX idx_expert_contact_country ON expert_contact (country);
+src/main/resources/db/migration/V111__create_expert_material_status.sql:6:-- 不声明 ON DELETE CASCADE，与现有 expert_contact 子表外键基线一致。
+src/main/resources/db/migration/V111__create_expert_material_status.sql:20:        FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id)
+src/main/resources/db/migration/V6__add_inbound_cleaning_and_intent.sql:18:        FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id)

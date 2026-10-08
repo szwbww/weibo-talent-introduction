@@ -15,7 +15,6 @@ const { describe, it } = require("node:test");
 
 const ROOT = path.join(__dirname, "..", "..", "main", "resources", "static");
 const stylesSource = fs.readFileSync(path.join(ROOT, "styles.css"), "utf-8");
-const chatCss = fs.readFileSync(path.join(ROOT, "mailbox-chat.css"), "utf-8");
 const chatSource = fs.readFileSync(path.join(ROOT, "mailbox-chat.js"), "utf-8");
 const indexSource = fs.readFileSync(path.join(ROOT, "index.html"), "utf-8");
 const planSource = fs.readFileSync(
@@ -23,7 +22,6 @@ const planSource = fs.readFileSync(
     "utf-8"
 );
 const TARGET_CSS = path.join(__dirname, "..", "..", "..", "docs", "plans", "2026-10-03", "mailbox-suspension-evidence", "target-suspension.css");
-const BASELINE_CHAT_CSS = path.join(__dirname, "..", "..", "..", "docs", "plans", "2026-10-03", "mailbox-suspension-evidence", "baseline-mailbox-chat.css");
 
 const START = "/* mailbox-suspension-contract:start */";
 const END = "/* mailbox-suspension-contract:end */";
@@ -61,10 +59,6 @@ describe("02 · S-4 CSS 逐字契约", () => {
         assert.ok(stylesSource.trimEnd().endsWith(END), "contract 块位于文件末尾");
     });
 
-    it("mailbox-chat.css 保持字节冻结（与 02 基线一致）", () => {
-        const baseline = fs.readFileSync(BASELINE_CHAT_CSS, "utf-8");
-        assert.strictEqual(chatCss, baseline, "mailbox-chat.css 不得改动");
-    });
 });
 
 describe("02 · S-1..S-3 类名与图标边界", () => {

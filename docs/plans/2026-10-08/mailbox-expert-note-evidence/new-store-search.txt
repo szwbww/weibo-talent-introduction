@@ -1,0 +1,2 @@
+$ rg -n expert_contact_note|ExpertContactNote src scripts tools
+exit=1

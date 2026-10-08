@@ -1,0 +1,39 @@
+$ rg -n renderHeaderMeta\(|loadContactTiming\(|teardownConversationSubViews\(|meetingCloseDisposeOnAccountScopeChange\(|closeContactTimingDialog\(|refreshConversationQuiet\(|function unmount|function onDocumentKeyDown|function onClick src/main/resources/static/mailbox-chat.js
+exit=0
+1405:            meetingCloseDisposeOnAccountScopeChange(prevAccount, String(next.accountCode || ""));
+1418:            meetingCloseDisposeOnAccountScopeChange(prevAccount, "");
+1432:            meetingCloseDisposeOnAccountScopeChange(prevAccount, "");
+2661:            teardownConversationSubViews();
+2711:                    } else if (!instance.conversation.loading) refreshConversationQuiet();
+2779:        function teardownConversationSubViews() {
+2780:            closeContactTimingDialog({ restoreFocus: false });
+2811:            teardownConversationSubViews();
+2847:            loadContactTiming(contactId);
+2989:                renderHeaderMeta(meta);
+2993:        function renderHeaderMeta(metaEl) {
+3039:                    if (meta) renderHeaderMeta(meta);
+3173:        function loadContactTiming(contactId, failureText) {
+3202:            if (meta) renderHeaderMeta(meta);
+3251:            closeContactTimingDialog({ restoreFocus: false });
+3301:        function closeContactTimingDialog(options) {
+3327:            closeContactTimingDialog({ restoreFocus: true });
+3341:            closeContactTimingDialog({ restoreFocus: true });
+3352:                closeContactTimingDialog({ restoreFocus: true });
+3641:                closeContactTimingDialog({ restoreFocus: true });
+3644:                loadContactTiming(contactId, CONTACT_TIMING_SAVED_NO_TIMING_TEXT);
+3684:            loadContactTiming(contactId);
+4490:                refreshConversationQuiet();
+5123:                    if (meta) renderHeaderMeta(meta);
+5343:            if (meta) renderHeaderMeta(meta);
+7350:        function meetingCloseDisposeOnAccountScopeChange(prevAccount, nextAccount) {
+7359:            closeContactTimingDialog({ restoreFocus: false });
+7872:        function refreshConversationQuiet() {
+7895:                loadContactTiming(contactId);
+8003:        function onClick(event) {
+8299:        function onClickPortal(event) {
+8395:        function onDocumentKeyDown(event) {
+8665:                meetingCloseDisposeOnAccountScopeChange(prevAccount, String(next.filters.accountCode || ""));
+8682:        function unmount() {
+8696:            teardownConversationSubViews();
+8723:                if (instance.selectedContactId != null) refreshConversationQuiet();
+8814:    function unmount(host) {

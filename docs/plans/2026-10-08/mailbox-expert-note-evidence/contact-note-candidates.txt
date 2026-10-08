@@ -1,0 +1,17 @@
+$ rg -n remark|备注|note src/main/kotlin/com/weibo/talentintroduction/campaign/domain/ExpertContact.kt src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionService.kt src/main/resources/static/mailbox-chat.js
+exit=0
+src/main/resources/static/mailbox-chat.js:436:        cv: "Just following up on my note below. When convenient, could you please send your CV? It will help us identify suitable industry partners.",
+src/main/resources/static/mailbox-chat.js:3089:                extra = `<span class="contact-timing-note">${escapeText(error)}</span><button class="mc-text-button" type="button" data-action="mc-contact-timing-retry">重试</button>`;
+src/main/resources/static/mailbox-chat.js:3091:                extra = `<span class="contact-timing-note">${CONTACT_TIMING_LOADING_TEXT}</span>`;
+src/main/resources/static/mailbox-chat.js:4393:                body: JSON.stringify({ note: null })
+src/main/resources/static/mailbox-chat.js:4558:                : '<div class="mc-note">暂无专家来信，暂不能生成回复</div>';
+src/main/resources/static/mailbox-chat.js:4698:            const note = stale
+src/main/resources/static/mailbox-chat.js:4714:                <p class="${mcCls("draft-note")}">${escapeText(note)}</p>
+src/main/resources/static/mailbox-chat.js:4791:                    <div class="mc-note">该专家暂无来信。请使用既有模板发送跟进邮件；系统不会在没有真实来信时伪造可生成的人工富文本回复。</div>
+src/main/resources/static/mailbox-chat.js:5032:                        <p class="mc-manage-note">状态和层级点击保存；标签修改即时生效。</p>
+src/main/resources/static/mailbox-chat.js:5095:                tagsRoot.innerHTML = '<p class="mc-note">该专家在 ES 中无画像文档，标签功能不可用</p>';
+src/main/resources/static/mailbox-chat.js:5117:                        ? '<p class="mc-note">该专家在 ES 中无画像文档，标签功能不可用</p>'
+src/main/resources/static/mailbox-chat.js:5118:                        : '<p class="mc-note">暂无专家标签</p>';
+src/main/resources/static/mailbox-chat.js:5127:                tagsRoot.innerHTML = '<p class="mc-note">标签加载失败。<button class="mc-text-button" type="button" data-action="mc-retry-manage-tags">重试</button></p>';
+src/main/resources/static/mailbox-chat.js:5978:            return `<div class="mc-note" data-role="followup-anchor-note">${escapeText(followupAnchorNoteText(id))}</div>`;
+src/main/resources/static/mailbox-chat.js:5996:            const existing = composeEl.querySelector('[data-role="followup-anchor-note"]');

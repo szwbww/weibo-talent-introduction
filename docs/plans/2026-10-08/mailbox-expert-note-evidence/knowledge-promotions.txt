@@ -1,0 +1,4 @@
+$ rg -n K-expert-contact-two-write-sites|K-frontend-cache-key-triad|K-panel-bg-token-is-translucent CLAUDE.md
+exit=0
+68:- `--panel-bg` 为半透明 rgba(255,255,255,.55)，需遮住底层内容的浮层必须单独定义不透明背景，不能靠提高 z-index 修复透底。(K-panel-bg-token-is-translucent)
+84:- `index.html` 的 styles.css / trust-reply-workbench.js / app.js 缓存键必须同值同时 bump；固定键测试数量会变化，必须从 index 当前键用 `rg -l` 反查全部测试，不按资源引用写法检索。(K-frontend-cache-key-triad)

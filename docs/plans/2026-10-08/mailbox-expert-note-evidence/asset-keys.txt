@@ -1,0 +1,13 @@
+$ rg -n v=2026 src/main/resources/static/index.html
+exit=0
+11:    <link rel="stylesheet" href="styles.css?v=20261006-discovery-review-merge">
+12:    <link rel="stylesheet" href="expert-materials.css?v=20261006-discovery-review-merge">
+13:    <link rel="stylesheet" href="mailbox-chat.css?v=20261006-discovery-review-merge">
+14:    <link rel="stylesheet" href="meeting-confirmation.css?v=20261006-discovery-review-merge">
+15:    <link rel="stylesheet" href="world-clock.css?v=20261006-discovery-review-merge">
+2398:<script src="trust-reply-workbench.js?v=20261006-discovery-review-merge"></script>
+2399:<script src="expert-materials.js?v=20261006-discovery-review-merge"></script>
+2400:<script src="meeting-confirmation.js?v=20261006-discovery-review-merge"></script>
+2401:<script src="mailbox-chat.js?v=20261006-discovery-review-merge"></script>
+2402:<script src="app.js?v=20261006-discovery-review-merge"></script>
+2403:<script src="world-clock.js?v=20261006-discovery-review-merge"></script>

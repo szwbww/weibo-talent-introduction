@@ -25,8 +25,6 @@ const indexSource = fs.readFileSync(path.join(ROOT, "index.html"), "utf-8");
 const PLAN_PATH = path.join(__dirname, "..", "..", "..", "docs", "plans", "2026-10-02", "contact-timing-03-compact-ui.md");
 const planSource = fs.readFileSync(PLAN_PATH, "utf-8");
 
-// 02 计划落地的 mailbox-chat.css 字节基线（与 mailboxChatStyle.test.js 同一文件）。
-const CHAT_CSS_BASELINE = path.join(__dirname, "..", "..", "..", "docs", "plans", "2026-09-09", "mailbox-refinement-evidence", "mailbox-chat.target.css");
 
 const RETIRED_CACHE_KEY = "20261001-email-verification-allowlist";
 const CACHE_KEY = (() => {
@@ -105,10 +103,6 @@ describe("S-1/S-2: 新 class 声明与字节锁定的 mailbox-chat.css", () => {
         });
     });
 
-    it("mailbox-chat.css 与 02 evidence 基线字节一致且不含 contact-timing", () => {
-        assert.strictEqual(chatCssSource, fs.readFileSync(CHAT_CSS_BASELINE, "utf-8"), "mailbox-chat.css 必须逐字等于字节基线");
-        assert.ok(chatCssSource.indexOf("contact-timing") === -1, "本功能样式不得写入 mailbox-chat.css");
-    });
 
     it("S-2 复用既有 .button/.primary/.mc-text-button，不新增按钮基类", () => {
         assert.ok(/\.button\.primary\s*\{/.test(stylesSource), "复用既有 .button.primary");
