@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-10-08/mailbox-server-drafts-master.md
 
-- Status: PAUSED_FOR_HUMAN
-- Master plan: docs/plans/2026-10-08/mailbox-server-drafts-master.md (commit 352a3393c31fd72a582ccbb7946f83703da52a95)
-- Amendments: N/A
+- Status: RUNNING
+- Master plan: docs/plans/2026-10-08/mailbox-server-drafts-master.md (commit 2466ad4bdc14fe15d77578ba75103d384eebf6be)
+- Amendments: A1,A2
 - Master base: 7c86599f85f6462e00a3fcd2c5a74f1ca57f013d
 - Branch: fast/mailbox-server-drafts-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mailbox-server-drafts-master
@@ -13,19 +13,21 @@
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: Child 03 requires five unlisted frontend regression fixture/contract files; exact authorization expansion needed. JS suite: 1540 pass, 20 fail; browser gate not reached.
-- Resume from: 1b0288211051a2260107df6e4c667c9a0b259e85
+- Pause reason: N/A
+- Resume from: a683b69cd1be040d175b28fb5a51bee48d9e14d7
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | 01 | docs/plans/2026-10-08/mailbox-server-drafts-01-storage.md | commit:352a3393c31fd72a582ccbb7946f83703da52a95 | none | 1 | LIGHT_PASS | 7c86599f85f6462e00a3fcd2c5a74f1ca57f013d | 099e372c2eca32596a9db670c0f13a0a30ce2b7e | 0 | — | 099e372c2eca32596a9db670c0f13a0a30ce2b7e | 109da9f7f550f82ae67abc3336e5e9ffbbff8656 | Implementer: DraftStorageImplementer; Verifier: DraftStorageVerifier |
 | 02 | docs/plans/2026-10-08/mailbox-server-drafts-02-send.md | commit:352a3393c31fd72a582ccbb7946f83703da52a95 | 01 | 1 | LIGHT_PASS | 099e372c2eca32596a9db670c0f13a0a30ce2b7e | 05bb797a51dd94b8aa712bc8f36e2426e3e801a4 | 0 | — | 05bb797a51dd94b8aa712bc8f36e2426e3e801a4 | 10d87c31de79889ada19e177d244c8be0da06058 | Implementer: DraftSendImplementer; Verifier: DraftSendVerifier |
-| 03 | docs/plans/2026-10-08/mailbox-server-drafts-03-ui.md | commit:352a3393c31fd72a582ccbb7946f83703da52a95 | 01,02 | 1 | PAUSED_FOR_HUMAN | 05bb797a51dd94b8aa712bc8f36e2426e3e801a4 | — | 0 | — | 05bb797a51dd94b8aa712bc8f36e2426e3e801a4 | — | Implementer: DraftUIImplementer; PLAN_CONFLICT; seven authorized files retained uncommitted; no independent verification or repairs |
+| 03 | docs/plans/2026-10-08/mailbox-server-drafts-03-ui.md | commit:2466ad4bdc14fe15d77578ba75103d384eebf6be | 01,02 | 2 | WAITING_FOR_AGENT | 05bb797a51dd94b8aa712bc8f36e2426e3e801a4 | — | 0 | — | 05bb797a51dd94b8aa712bc8f36e2426e3e801a4 | — | Epoch1 pause preserved; human approved exact five test paths and master count exception; resuming preserved uncommitted implementation |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
 |---|---|---|---|---|---|---|
+| A1 | docs/plans/2026-10-08/mailbox-server-drafts-master.md | commit:352a3393c31fd72a582ccbb7946f83703da52a95 | commit:2466ad4bdc14fe15d77578ba75103d384eebf6be | 执行前门禁第3项、第4项；变更文件清单 | Authorize child03 twelve-file exception for five required regression fixtures/contracts; no product scope expansion | HUMAN:批准 继续 (2026-10-08) |
+| A2 | docs/plans/2026-10-08/mailbox-server-drafts-03-ui.md | commit:352a3393c31fd72a582ccbb7946f83703da52a95 | commit:2466ad4bdc14fe15d77578ba75103d384eebf6be | 执行前门禁第3项、第4项；M-5 | Add exactly five named frontend regression files for durable draft fixtures and obsolete CSS/cache assertions; preserve safety invariants | HUMAN:批准 继续 (2026-10-08) |
 
 ## Approval and Baseline
 - Human approval: “批准 并 实施” (2026-10-08); approves the exact master and three child plans and releases their planning-only limitation. Plan bytes preserved unchanged.
@@ -43,3 +45,9 @@
 - Exact reasons, minimal corrections and failure receipts: children/03/execution.md, artifact://216.
 - No amendment applied. No product commit for child03. Prior code/evidence lineage preserved.
 - Resume after human approval: amend exact child03 authorized table and applicable master file-count bound with recorded before/after identities and approval, then resume same child in new execution epoch. No replay of child01/02.
+
+## Child 03 resume — epoch 2
+- Approval: HUMAN:批准 继续 (2026-10-08), explicitly approving the preceding five-file expansion and 03 7→12 file exception.
+- Amendment-only commit: 2466ad4bdc14fe15d77578ba75103d384eebf6be.
+- Resume identity checked: worktree and branch match; pause HEAD a683b69cd1be040d175b28fb5a51bee48d9e14d7; product index empty; precisely seven prior authorized product/test paths retained dirty. No completed child redispatched.
+- Original pause entries above are historical; A1/A2 release that blocker without rewriting epoch1 logs.

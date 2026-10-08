@@ -19,3 +19,12 @@ Use execute-p. Controller owns fast-p evidence commits. Commit only authorized p
 - Child02 fresh evidence: 100 unit and 27 real MySQL tests, 1528 Node tests in each invocation; actual HTTP/MySQL send smoke confirmed one SMTP, SENT/version2/null content, Session isolation and replay.
 - Original existing send endpoints accept optional draftRef={id,version}; old requests/fingerprint unchanged. Only durable success can close exact content version. Newer ACTIVE versions survive; GET draft/attempt status is authority, never HTTP success alone.
 - Backend and migration baseline now include V152. Docker needs environment-only DOCKER_API_VERSION=1.44 plus Maven -Dapi.version=1.44; JDK11 explicit. UI browser smoke must use actual server persistence, not static demo or mocked transport; retain evidence and remove temporary resources.
+
+## Epoch 2 — Approved amendment and resume contract
+- Current plan identity (supersedes epoch1 header): commit:2466ad4bdc14fe15d77578ba75103d384eebf6be.
+- Current master identity: commit:2466ad4bdc14fe15d77578ba75103d384eebf6be.
+- Human approval: “批准 继续” (2026-10-08), approving the five exact regression-test paths and 03's 7→12 file exception; ledger A1/A2.
+- Resume the existing seven-file working implementation, not from scratch. Epoch1 PLAN_CONFLICT and failure receipts stay append-only in execution.md. New identity means a NEW execution epoch with fresh checklist/commands; epoch1 test passes are not proof of completion.
+- Additional authorized files and bounded changes are exactly the amended plan's rows8–12. Delete obsolete incidental EOF/release-key assertions, never re-pin them; preserve original meaningful content/resource/safety contracts. Add authenticated typed durable CAS fixtures and awaited lifecycle assertions for material/meeting consumers. Do not add production fallbacks to compensate for obsolete mocks.
+- All original I-1–I-8/S-1–S-4 invariants and required commands remain. Finish all reachable original implementation and required fresh JS/combined backend/MySQL gates and actual desktop/mobile real-server persistence browser smoke before implementation commit.
+- Append full epoch2 report to execution.md; product commit subject remains feat(fast-p): implement 03; exclude evidence and amended plans from product commit. Controller owns plan/evidence commits.
