@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-06/wecom-inbound-notification.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-10-06/wecom-inbound-notification.md (commit 4826cbe111310284cf13bfe7fa395bd9e2e122ad)
 - Amendments: N/A
 - Master base: 235681497c226066fa0174a2d79bc82863a1e91a
@@ -13,8 +13,8 @@
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: N/A
+- Pause reason: Final artifact validator exit 2: 01 and 02 Evidence commit did not record fix-log.md. Zero-fix logs were created in preflight and unchanged in child evidence commits. Repair cannot satisfy child01 evidence-before-child02 implementation ancestry without separately authorized lineage-contract exception or Git history reconstruction; neither is authorized.
+- Resume from: fa402bff9f33b54a97464b7dfb7557ae7b7aa632
 
 ## Baseline
 - Approval: HUMAN:批准该总方案及两个子方案，按 fast-p 执行 (2026-10-08).
@@ -25,9 +25,15 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| 01 | docs/plans/2026-10-06/wecom-inbound-notification-01-backend.md | commit:4826cbe111310284cf13bfe7fa395bd9e2e122ad | none | 1 | LIGHT_PASS | 4826cbe111310284cf13bfe7fa395bd9e2e122ad | 74ead840b5c8e7ab78e57a913c882cbaed3eeeb5 | 0 | N/A | 74ead840b5c8e7ab78e57a913c882cbaed3eeeb5 | fd1f44582514a205af88d690f1b68e9aa3068da7 | Implementer WecomBackendImplementer; verifier WecomBackendVerifier; focused 104 and MySQL 13 pass |
-| 02 | docs/plans/2026-10-06/wecom-inbound-notification-02-ui.md | commit:4826cbe111310284cf13bfe7fa395bd9e2e122ad | 01 | 1 | LIGHT_PASS_WITH_NOTES | 74ead840b5c8e7ab78e57a913c882cbaed3eeeb5 | b5452b4ff487766dd69c0ef4b3996dd2b484f1ef | 0 | N/A | b5452b4ff487766dd69c0ef4b3996dd2b484f1ef | N/A | Implementer WecomFrontendImplementer; verifier WecomFrontendVerifier; 17 focused/1520 JS pass; O-1 native foreground evidence limit |
+| 01 | docs/plans/2026-10-06/wecom-inbound-notification-01-backend.md | commit:4826cbe111310284cf13bfe7fa395bd9e2e122ad | none | 1 | LIGHT_PASS | 4826cbe111310284cf13bfe7fa395bd9e2e122ad | 74ead840b5c8e7ab78e57a913c882cbaed3eeeb5 | 0 | — | 74ead840b5c8e7ab78e57a913c882cbaed3eeeb5 | fd1f44582514a205af88d690f1b68e9aa3068da7 | Implementer WecomBackendImplementer; verifier WecomBackendVerifier; focused 104 and MySQL 13 pass |
+| 02 | docs/plans/2026-10-06/wecom-inbound-notification-02-ui.md | commit:4826cbe111310284cf13bfe7fa395bd9e2e122ad | 01 | 1 | LIGHT_PASS_WITH_NOTES | 74ead840b5c8e7ab78e57a913c882cbaed3eeeb5 | b5452b4ff487766dd69c0ef4b3996dd2b484f1ef | 0 | — | b5452b4ff487766dd69c0ef4b3996dd2b484f1ef | fa402bff9f33b54a97464b7dfb7557ae7b7aa632 | Implementer WecomFrontendImplementer; verifier WecomFrontendVerifier; 17 focused/1520 JS pass; O-1 native foreground evidence limit |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
 |---|---|---|---|---|---|---|
+
+## Finalization Blocker
+- Validator after canonical zero-fix field correction: result INVALID, exit 2; only remaining errors are `01 Evidence commit did not record fix-log.md` and `02 Evidence commit did not record fix-log.md`.
+- Controller orchestration error: both zero-fix logs were seeded in preflight, so terminal child evidence commits did not change those files. Product implementation and independent child verdicts remain unchanged.
+- Validator source scripts/validate_fast_p.py:599–604 requires each evidence commit to change execution.md, verify-log.md and fix-log.md even with zero repair rounds; :666–671 additionally requires child01 evidence before child02 implementation. A new evidence commit now cannot repair both conditions.
+- No amend/rebase/reset/history rewrite, validator modification, child replay, or fabricated evidence performed. Human authorization required for a lineage-contract exception or separately defined recovery procedure.
