@@ -242,7 +242,7 @@ retarget：先flush原稿；读取目标稿；已有则显示“打开已有草�
 放弃：原确认框→停止该目标后续自动保存派发并等待已在途请求→取当前ACK版本DELETE；本地还有未保存修改时不必先保存即可明确放弃，但确认应覆盖它们。版本冲突显示冲突并保留编辑器，不自动升版本再删；成功终态再清本地输入。发送中按钮disabled；unknown确认附加不能撤回文案。
 
 ### T-5：资源与测试（I-1～I-8，S-1～S-4）
-文件：`index.html`与文件表的三个JS测试。
+文件：`index.html`与文件表中的八个JS测试；其中五个既有测试仅按下述批准范围适配，不扩大产品行为。
 
 统一当前index中的资源cache key为新的本次发布值（建议`20261008-mailbox-server-drafts`，若并发发布占用则先更新计划基线）；不动资源顺序，不添加重复宿主。执行前重新grep旧字面键是否新出现于测试；只修改清单内确需改变的断言，不删除原测试以凑通过。
 
@@ -259,8 +259,13 @@ retarget：先flush原稿；读取目标稿；已有则显示“打开已有草�
 | 5 | `src/test/js/mailboxServerDrafts.test.js` | 新增请求时序/DOM/契约测试 |
 | 6 | `src/test/js/mailboxChatBehavior.test.js` | 更新加载与旧内存草稿行为断言 |
 | 7 | `src/test/js/mailboxOutboundAttachments.test.js` | 异步owner/持久化/恢复附件断言 |
+| 8 | `src/test/js/discoveryReview.test.js` | 删除过时的 CSS 绝对 EOF 位置断言，保留原内容契约 |
+| 9 | `src/test/js/mailboxSuspensionStyle.test.js` | 删除过时的 CSS 绝对 EOF 位置断言，保留唯一标记与原字节契约 |
+| 10 | `src/test/js/mailboxGroupPush.test.js` | 删除已过期的旧发布键固定断言，保留资源键一致性、数量、顺序及无旧键契约 |
+| 11 | `src/test/js/materialRequestIntegration.test.js` | 补认证、typed CAS 草稿 transport 与 await 生命周期 fixture；保留材料追加/状态/零发送断言 |
+| 12 | `src/test/js/meetingConfirmationIntegration.test.js` | 补认证、typed CAS 草稿及 draftRef 发送结果 fixture，适配显式新目标/终态继续与 await；保留会议/清洗/附件安全断言 |
 
-共7文件、1前端子系统；mailbox-chat.css、meeting-confirmation.js、弹窗实现、后端均不在本步改动边界。
+共12文件、1前端子系统；mailbox-chat.css、meeting-confirmation.js、弹窗实现、后端均不在本步改动边界。增加的五个测试文件只修复与本次既定草稿协议、CSS 追加及发布键切换直接冲突的 fixture/契约，不放宽生产认证、GET fail-closed、CAS 或发送安全规则。
 
 ## 验收标准
 
@@ -328,3 +333,6 @@ retarget：先flush原稿；读取目标稿；已有则显示“打开已有草�
 - 预期结果: 会议仍按原预览校验，RAG/附件/线程未串目标，出站富文本保留；原筛选总数不受草稿标记改变；关注/挂起状态不因存稿改变；新增tab活动底边2px #3762d8，保存状态11px/绿色#059669，失败#be123c，桌面操作按钮高32px/圆角7px；手机操作按钮按既有移动规则至少44px（筛选tab仍遵循其更高优先级36px规则）；手机无新增横向溢出、按钮可点击、焦点可见。
 - 覆盖: O-1/O-2/O-3、N-1/N-2、I-1/I-5/I-6/I-8、S-1/S-2/S-3/S-4、IP-1/IP-5/IP-6
 
+
+## 修正记录
+- 用户“批准 继续”批准上一轮列明的五个测试文件及总计划文件数例外，03 从7文件改为12文件；仅测试范围扩大，产品功能与验收不变量不变。依据：总计划“执行前门禁”第3项（文件清单外变更先修订计划）与第4项（联合通过才可发布）；暂停证据：`../fast/mailbox-server-drafts-master/children/03/execution.md`。审批完整身份由 fast-p 台账 Amendments 记录。
