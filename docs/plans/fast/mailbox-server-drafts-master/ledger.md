@@ -21,7 +21,7 @@
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | 01 | docs/plans/2026-10-08/mailbox-server-drafts-01-storage.md | commit:352a3393c31fd72a582ccbb7946f83703da52a95 | none | 1 | LIGHT_PASS | 7c86599f85f6462e00a3fcd2c5a74f1ca57f013d | 099e372c2eca32596a9db670c0f13a0a30ce2b7e | 0 | — | 099e372c2eca32596a9db670c0f13a0a30ce2b7e | 109da9f7f550f82ae67abc3336e5e9ffbbff8656 | Implementer: DraftStorageImplementer; Verifier: DraftStorageVerifier |
 | 02 | docs/plans/2026-10-08/mailbox-server-drafts-02-send.md | commit:352a3393c31fd72a582ccbb7946f83703da52a95 | 01 | 1 | LIGHT_PASS | 099e372c2eca32596a9db670c0f13a0a30ce2b7e | 05bb797a51dd94b8aa712bc8f36e2426e3e801a4 | 0 | — | 05bb797a51dd94b8aa712bc8f36e2426e3e801a4 | 10d87c31de79889ada19e177d244c8be0da06058 | Implementer: DraftSendImplementer; Verifier: DraftSendVerifier |
-| 03 | docs/plans/2026-10-08/mailbox-server-drafts-03-ui.md | commit:02af6d42cdf3617c48335a9ad3aeddb025d1302f | 01,02 | 3 | WAITING_FOR_AGENT | 05bb797a51dd94b8aa712bc8f36e2426e3e801a4 | — | 0 | — | 05bb797a51dd94b8aa712bc8f36e2426e3e801a4 | — | Epoch1/2 preserved; exact backend test-fixture amendment approved; resuming twelve retained paths |
+| 03 | docs/plans/2026-10-08/mailbox-server-drafts-03-ui.md | commit:02af6d42cdf3617c48335a9ad3aeddb025d1302f | 01,02 | 3 | LIGHT_PASS_WITH_NOTES | 05bb797a51dd94b8aa712bc8f36e2426e3e801a4 | d32733b13af210519be90ca52c933e5f73199cfb | 1 | 6d80d6243be6af9c78f4ce44a54a29c7c1bc9033 | 6d80d6243be6af9c78f4ce44a54a29c7c1bc9033 | 44ff9a1b1ff5db241c6a5394eb03f1d594ef97ba | DraftUIReVerifierCapable COMPLETE_CHILD; F-1/F-2 resolved; O-1 RECORD_ONLY; evidence action normalization correction1 |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
@@ -65,3 +65,7 @@
 - Approval: HUMAN:批准 (2026-10-08) for exactly the previously requested backend test path and 12→13 count exception.
 - Amendment-only commit: 02af6d42cdf3617c48335a9ad3aeddb025d1302f; A3/A4 recorded before writer dispatch.
 - Resume identity: pause HEAD5e352bdfb9df9c237a4ad117e6d59ce74fb780fd, same branch/worktree, empty index, exactly twelve authorized paths retained dirty. No completed child replay.
+
+## Verifier capability acquisition — epoch 3
+- DraftUIReVerifierOne acquired but aborted before commands/report because its reviewer role prohibited builds and file writes. No product/index/report modification or verdict accepted.
+- Acquired fresh independent general verifier DraftUIReVerifierCapable with command/report capability for the same repair boundary; no controller inline verification or additional repair round. Agent attempt reset0.
