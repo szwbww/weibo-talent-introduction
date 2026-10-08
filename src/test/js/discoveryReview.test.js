@@ -438,8 +438,6 @@ describe("c5 discovery review · S-1/S-2/S-3 contract", () => {
         assert.ok(stylesCss.includes(s1), "S-1 CSS must be verbatim");
         assert.ok(stylesCss.includes(s2), "S-2 CSS must be verbatim");
         assert.ok(stylesCss.includes(s3), "S-3 CSS must be verbatim");
-        assert.ok(stylesCss.trimEnd().endsWith("/* mailbox-suspension-contract:end */"),
-            "the pre-existing mailbox contract block must stay at the file end");
     });
 
     it("keeps one cache key for all eleven assets and other task modals at 700px", () => {

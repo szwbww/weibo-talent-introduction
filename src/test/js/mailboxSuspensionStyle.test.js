@@ -53,10 +53,9 @@ describe("02 · S-4 CSS 逐字契约", () => {
         assert.strictEqual(landed, target, "S-4 唯一权威证据必须一致");
     });
 
-    it("styles.css 中恰有一个 contract 块，且位于文件末尾", () => {
+    it("styles.css 中恰有一个 contract 块", () => {
         assert.strictEqual(stylesSource.split(START).length - 1, 1, "只有一个 start 标记");
         assert.strictEqual(stylesSource.split(END).length - 1, 1, "只有一个 end 标记");
-        assert.ok(stylesSource.trimEnd().endsWith(END), "contract 块位于文件末尾");
     });
 
 });

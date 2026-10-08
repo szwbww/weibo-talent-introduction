@@ -49,6 +49,7 @@
     const VERSION = "2";
 
     const CHIP_ALL = "all";
+    const CHIP_DRAFTS = "drafts";
     const CHIP_PROVIDED = "provided";
     const CHIP_FOLLOWED = "followed";
     const CHIP_REPLIED = "replied";
@@ -59,6 +60,7 @@
 
     const FILTER_CHIPS = [
         { key: CHIP_ALL, label: "全部" },
+        { key: CHIP_DRAFTS, label: "草稿" },
         { key: CHIP_PROVIDED, label: "已提供" },
         { key: CHIP_FOLLOWED, label: "跟进中" },
         { key: CHIP_PENDING, label: "待处理" },
@@ -104,6 +106,85 @@
 
     // 会话缓存（模块级）：key = `${sessionUser}|${accountScope}|${contactId}`
     const sessionStore = new Map();
+
+    // Durable drafts are owner/target scoped, independently of the conversation LRU.
+    const draftOwners = new Map();
+    const draftSaves = new Map();
+    let draftSessionUser = "";
+    let draftSessionEpoch = 0;
+
+    function setDraftSessionUser(user) {
+        if (draftSessionUser === user) return;
+        draftSessionUser = user;
+        draftSessionEpoch += 1;
+        draftSaves.forEach((rec) => clearTimeout(rec.timer));
+        draftSaves.clear();
+        draftOwners.clear();
+        sessionStore.clear();
+    }
+
+    function draftTargetFromKey(key) {
+        const parts = String(key || "").split(":");
+        return { contactId: Number(parts.shift()), kind: parts[0] === "OUTBOUND" ? "OUTBOUND" : "INBOUND",
+            processingId: parts[0] === "OUTBOUND" ? 0 : Number(parts[0]), accountScope: parts.slice(1).join(":") };
+    }
+
+    function draftTargetUrl(target) {
+        const params = new URLSearchParams();
+        Object.keys(target).forEach((key) => params.set(key, String(target[key])));
+        return `/api/mail/mailbox/drafts/target?${params.toString()}`;
+    }
+
+    function draftContent(draft) {
+        const d = draft || {};
+        const attachments = d.outboundAttachmentDraft || { revision: 0, items: [] };
+        const meeting = d.meeting || null;
+        const pick = (source, keys) => {
+            const result = {};
+            keys.forEach((key) => { if (source[key] != null) result[key] = source[key]; });
+            return result;
+        };
+        let savedMeeting = null;
+        if (meeting) {
+            savedMeeting = pick(meeting, ["blockHtml", "blockText", "state", "revision"]);
+            savedMeeting.input = meeting.input ? pick(meeting.input, ["zoneId", "startLocal", "endLocal", "zoomUrl", "generatedAt"]) : null;
+            savedMeeting.preview = meeting.preview ? pick(meeting.preview, ["htmlBody", "textBody", "startUtc", "endUtc", "meetingTime", "chinaTime", "durationMinutes"]) : null;
+            if (savedMeeting.preview) savedMeeting.preview.attachment = meeting.preview.attachment
+                ? pick(meeting.preview.attachment, ["filename", "contentType", "icsText", "byteLength", "sha256", "semanticSha256"]) : null;
+        }
+        return { subject: d.subject || "", html: d.html || "", text: d.text || "", context: {
+            schemaVersion: 1, qa: d.qa ? { ragFactCodes: (d.qa.ragFactCodes || []).slice(),
+                ragCorpusFingerprint: d.qa.ragCorpusFingerprint || "", baselineText: d.qa.baselineText || "" } : null,
+            requestId: d.requestId || null, meeting: savedMeeting, meetingAccountCode: d.meetingAccountCode || "",
+            followUpAnchorMailRecordId: d.followUpAnchorMailRecordId == null ? null : Number(d.followUpAnchorMailRecordId),
+            outboundAttachmentDraft: { revision: Number(attachments.revision) || 0, items: (attachments.items || []).map((item) => ({
+                key: String(item.key), state: item.state, id: item.id == null ? null : String(item.id),
+                filename: item.filename || "", contentType: item.contentType || "", byteLength: Number(item.byteLength) || 0,
+                sha256: item.sha256 || "", error: item.error || null
+            })) }
+        } };
+    }
+
+    function draftFromDetail(detail) {
+        if (!detail.content) return null;
+        const content = detail.content;
+        const ctx = content.context || {};
+        const field = ctx.outboundAttachmentDraft || { revision: 0, items: [] };
+        return Object.assign({}, ctx, { subject: content.subject || "", html: content.html || "", text: content.text || "",
+            updatedAt: detail.updatedAt, outboundAttachmentDraft: { revision: field.revision || 0, items: (field.items || []).map((item) => {
+                const restored = Object.assign({}, item);
+                if (restored.state === "uploading") {
+                    restored.state = "failed";
+                    restored.error = "上传未完成，请重新选择文件";
+                }
+                restored.downloadUrl = (detail.attachmentDownloads || {})[restored.id] || "";
+                return restored;
+            }) } });
+    }
+
+    function draftContentEqual(a, b) {
+        return JSON.stringify(draftContent(a)) === JSON.stringify(draftContent(b));
+    }
 
     // ------------------------------------------------------------------
     // 会议确认（fast-p 04）：mailbox-chat 侧宿主接入。
@@ -647,6 +728,12 @@
             expertNote: { contactId: null, readSeq: 0, loaded: false, loading: false, error: "", data: null, saving: false, dialog: null },
             searchTimer: null,
             saveTimer: null,
+            draftNavigationSeq: 0,
+            draftPages: { drafts: 0, conversations: 0 },
+            draftCounts: new Map(),
+            draftTotal: 0,
+            openedDraft: null,
+            existingTargetDraft: null,
             searchText: "",
             user: sessionUserFromOptions(options),
             filters: Object.assign({}, (options && options.filters) || {}),
@@ -706,7 +793,6 @@
             listTrigger: null,
             mobileMedia: null,
             pendingPosition: null,
-            clearedEditorSnapshot: null,
             focusHandledContactId: null,
             focusLocating: false,
             focusMissedContactId: null,
@@ -824,41 +910,352 @@
         }
 
         function currentDraftsMap() {
-            if (instance.draftsRef) return instance.draftsRef;
-            const record = getConversationRecord(instance.user, instance.conversation.accountScope || "", Number(instance.selectedContactId || 0));
-            if (record) {
-                instance.draftsRef = record.drafts;
-                return record.drafts;
-            }
-            return null;
+            if (!draftOwners.has(instance.user)) draftOwners.set(instance.user, new Map());
+            return draftOwners.get(instance.user);
         }
 
         function ensureDraftsMap() {
-            let drafts = currentDraftsMap();
-            if (drafts) return drafts;
-            const contactId = Number(instance.selectedContactId);
-            if (!Number.isFinite(contactId) || contactId <= 0) return null;
-            const scope = instance.conversation.accountScope || "";
-            const record = upsertConversationRecord(instance.user, scope, contactId, {});
-            instance.draftsRef = record.drafts;
-            return record.drafts;
+            instance.draftsRef = currentDraftsMap();
+            return instance.draftsRef;
         }
 
         function getDraft(targetKey) {
-            const drafts = currentDraftsMap();
-            if (!drafts || !targetKey) return null;
-            return drafts.get(targetKey) || null;
+            return targetKey ? currentDraftsMap().get(targetKey) || null : null;
+        }
+
+        function draftRecord(key) {
+            if (!key) return null;
+            const ownerKey = `${instance.user}|${key}`;
+            let rec = draftSaves.get(ownerKey);
+            if (!rec) {
+                rec = { user: instance.user, epoch: draftSessionEpoch, key, target: draftTargetFromKey(key),
+                    map: ensureDraftsMap(), id: null, version: 0, state: null, loaded: false, loading: null,
+                    seq: 0, ack: 0, timer: null, inflight: null, error: "", conflict: false, closed: false,
+                    paused: false, sending: false, uploads: new Set(), detail: null, baseline: null, reopen: false };
+                draftSaves.set(ownerKey, rec);
+            }
+            if (!instance.disposed && key === currentTargetKey()) {
+                rec.notify = refreshDraftStatus;
+                rec.render = () => renderDraftEditor(rec);
+            }
+            rec.persist = () => persistDraft(rec);
+            return rec;
+        }
+
+        function draftOwnerLive(rec) {
+            return rec.user === draftSessionUser && rec.epoch === draftSessionEpoch;
+        }
+
+        function currentDraftRecord() {
+            return currentTargetKey() ? draftRecord(currentTargetKey()) : null;
+        }
+
+        function markDraft(rec, draft) {
+            if (!rec || !draftOwnerLive(rec) || !rec.loaded || rec.readOnly || rec.paused) return;
+            const previous = rec.map.get(rec.key);
+            if (previous && draftContentEqual(previous, draft)) return;
+            rec.map.set(rec.key, draft);
+            rec.seq += 1;
+            rec.error = "";
+            if (rec.state && rec.state !== "ACTIVE") rec.closed = true;
+            clearTimeout(rec.timer);
+            if (!rec.conflict && !rec.closed) rec.timer = setTimeout(() => {
+                rec.timer = null;
+                persistDraft(rec).catch(() => {});
+            }, 800);
+            refreshDraftStatus();
         }
 
         function setDraft(targetKey, draft) {
-            const drafts = ensureDraftsMap();
-            if (!drafts || !targetKey) return;
-            drafts.set(targetKey, draft);
+            markDraft(draftRecord(targetKey), draft);
         }
 
-        function deleteDraft(targetKey) {
-            const drafts = currentDraftsMap();
-            if (drafts && targetKey) drafts.delete(targetKey);
+        function acceptDraftDetail(rec, detail, replace) {
+            if (Number(detail.version) < rec.version) return false;
+            rec.id = detail.id || null;
+            rec.version = Number(detail.version) || 0;
+            rec.state = detail.state || null;
+            rec.detail = detail;
+            rec.loaded = true;
+            rec.error = "";
+            rec.readOnly = detail.contactExists === false;
+            if (replace) {
+                const draft = draftFromDetail(detail);
+                if (draft) {
+                    rec.map.set(rec.key, draft);
+                    outboundAttachmentDraftOf(draft).items.forEach((item) => {
+                        const number = /^of-(\d+)$/.exec(String(item.key));
+                        if (number) outboundFileSeq = Math.max(outboundFileSeq, Number(number[1]));
+                    });
+                } else rec.map.delete(rec.key);
+                rec.ack = rec.seq;
+                rec.conflict = false;
+                rec.closed = false;
+                rec.sendUnconfirmed = false;
+                rec.reopen = false;
+            }
+            return true;
+        }
+
+        function renderDraftEditor(rec) {
+            if (instance.disposed || instance.user !== rec.user || currentTargetKey() !== rec.key) return;
+            const content = host.querySelector('.mc-section[data-section="manual"] .mc-section-content');
+            if (!content) return;
+            const draft = rec.map.get(rec.key) || null;
+            instance.manual.qa = draft && draft.qa ? snapshotQa(draft.qa) : null;
+            content.innerHTML = manualComposeHtml(rec.key, rec.target.kind === "INBOUND" ? rec.target.processingId : null,
+                rec.target.accountScope, draft, instance.manual.defaultSubject || "Re:", rec.target.kind === "OUTBOUND");
+            const values = readManualValues();
+            rec.baseline = values;
+            refreshMeetingAttachmentCard();
+            refreshOutboundFilesCard();
+            refreshDraftStatus();
+        }
+
+        function loadDraftRecord(rec, detail) {
+            if (rec.loading) return rec.loading;
+            if (!instance.auth.ready || !draftOwnerLive(rec)) return Promise.reject(new Error("草稿加载失败，请重试"));
+            const seq = rec.seq;
+            rec.loaded = false;
+            rec.error = "";
+            rec.loading = Promise.resolve(detail || hostApi()(draftTargetUrl(rec.target))).then((data) => {
+                if (!draftOwnerLive(rec)) throw new Error("登录用户已变化");
+                if (seq !== rec.seq || rec.inflight) return data;
+                acceptDraftDetail(rec, data, true);
+                if (rec.target.kind === "INBOUND" && data.id && data.contactExists !== false
+                    && !(instance.conversation.items || []).some((item) => item.source === "INBOUND_PROCESSING" && Number(item.id) === rec.target.processingId)) {
+                    return hostApi()(`/api/mail/unmatched-inbound/${rec.target.processingId}`).then(() => data).catch((err) => {
+                        if (err && (err.status === 404 || err.data && err.data.code === "NOT_FOUND")) rec.readOnly = true;
+                        else throw err;
+                        return data;
+                    });
+                }
+                return data;
+            }).then((data) => {
+                if (draftOwnerLive(rec) && rec.render) rec.render();
+                return data;
+            }).catch((err) => {
+                if (draftOwnerLive(rec)) rec.error = "load";
+                throw err;
+            }).finally(() => {
+                rec.loading = null;
+                if (draftOwnerLive(rec) && rec.notify) rec.notify();
+            });
+            refreshDraftStatus();
+            return rec.loading;
+        }
+
+        async function persistDraft(rec) {
+            clearTimeout(rec.timer);
+            rec.timer = null;
+            if (rec.inflight) {
+                await rec.inflight;
+                return persistDraft(rec);
+            }
+            if (!draftOwnerLive(rec)) throw new Error("登录用户已变化");
+            if (!rec.loaded || rec.loading || rec.error === "load" || rec.readOnly) throw new Error("草稿加载失败，请重试");
+            if (rec.conflict) throw new Error("草稿已在其他窗口更新，请先处理冲突");
+            if (rec.closed) throw new Error("邮件已发送，新修改尚未保存");
+            if (rec.paused || rec.seq === rec.ack) return;
+            const captured = { user: rec.user, target: rec.target, id: rec.id, version: rec.version, seq: rec.seq,
+                snapshot: draftContent(rec.map.get(rec.key)) };
+            rec.submitted = captured;
+            rec.error = "";
+            rec.inflight = Promise.resolve().then(async () => {
+                if (!draftOwnerLive(rec)) throw new Error("登录用户已变化");
+                const session = await hostApi()("/api/auth/me", { cache: "no-store" });
+                if (!draftOwnerLive(rec)) throw new Error("登录用户已变化");
+                if (!session || session.authenticated !== true || String(session.username || "") !== captured.user) {
+                    setDraftSessionUser(session && session.authenticated === true ? String(session.username || "") : "");
+                    loadAuthenticatedUser();
+                    throw new Error("登录用户已变化");
+                }
+                return hostApi()(draftTargetUrl(captured.target), { method: "PUT",
+                    body: JSON.stringify({ expectedVersion: captured.version, content: captured.snapshot, reopen: rec.reopen }) });
+            }).then((detail) => {
+                if (!draftOwnerLive(rec)) return;
+                acceptDraftDetail(rec, detail, false);
+                rec.ack = captured.seq;
+                rec.reopen = false;
+                loadDraftSummaries();
+            }).catch(async (err) => {
+                if (!draftOwnerLive(rec)) throw err;
+                const code = err && err.data && err.data.code;
+                if (err && (err.status === 409 || code === "DRAFT_VERSION_CONFLICT" || code === "DRAFT_CLOSED")) {
+                    const current = await hostApi()(rec.id ? `/api/mail/mailbox/drafts/${rec.id}` : draftTargetUrl(rec.target)).catch(() => null);
+                    if (!draftOwnerLive(rec)) throw err;
+                    if (current && current.state === "ACTIVE" && draftContentEqual(draftFromDetail(current), {
+                        subject: captured.snapshot.subject, html: captured.snapshot.html, text: captured.snapshot.text, ...captured.snapshot.context })) {
+                        acceptDraftDetail(rec, current, false);
+                        rec.ack = captured.seq;
+                        return;
+                    }
+                    if (current && current.state && current.state !== "ACTIVE" && rec.sending) {
+                        acceptDraftDetail(rec, current, false);
+                        rec.closed = true;
+                    } else rec.conflict = true;
+                } else rec.error = "save";
+                throw err;
+            }).finally(() => {
+                rec.inflight = null;
+                if (draftOwnerLive(rec) && rec.notify) rec.notify();
+            });
+            refreshDraftStatus();
+            await rec.inflight;
+            if (rec.seq !== rec.ack && !rec.paused) return persistDraft(rec);
+        }
+
+        function hasPendingDrafts() {
+            saveCurrentConversation();
+            return Array.from(draftSaves.values()).some((rec) => rec.user === instance.user && draftOwnerLive(rec)
+                && (rec.seq !== rec.ack || rec.inflight || rec.uploads.size));
+        }
+
+        async function flushDrafts() {
+            saveCurrentConversation();
+            const records = Array.from(draftSaves.values()).filter((rec) => rec.user === instance.user && draftOwnerLive(rec));
+            await Promise.all(records.map(async (rec) => {
+                while (rec.uploads.size) await Promise.all(Array.from(rec.uploads));
+                if (rec.seq !== rec.ack || rec.inflight) await persistDraft(rec);
+            }));
+        }
+
+        function draftNavigation(action) {
+            const seq = ++instance.draftNavigationSeq;
+            if (!hasPendingDrafts()) return action();
+            return flushDrafts().then(() => {
+                if (!instance.disposed && seq === instance.draftNavigationSeq) return action();
+            }).catch((err) => hostShowStatus(err.message || "保存失败，内容尚未同步到服务器", "error"));
+        }
+
+        function refreshDraftStatus() {
+            const rec = currentDraftRecord();
+            const compose = manualComposeEl();
+            if (!rec || !compose) return;
+            const status = compose.querySelector('[data-role="draft-save-status"]');
+            const loading = !rec.loaded || !!rec.loading || rec.error === "load";
+            let state = rec.conflict ? "conflict" : rec.error ? "error" : rec.inflight ? "saving"
+                : rec.seq !== rec.ack ? "dirty" : rec.id && rec.state === "ACTIVE" ? "saved" : "dirty";
+            let text = { conflict: "草稿已在其他窗口更新，请先处理冲突", error: "保存失败，内容尚未同步到服务器",
+                saving: "正在保存…", dirty: "尚未保存", saved: "已保存到服务器" }[state];
+            if (rec.closed) text = rec.state === "SENT" ? "邮件已发送，新修改尚未保存" : "草稿已关闭，新修改尚未保存";
+            if (status) { status.dataset.state = state; if (status.textContent !== text) status.textContent = text; }
+            const action = (name) => compose.querySelector(`.mailbox-draft-status-row [data-action="mc-${name}-draft"]`);
+            if (action("retry")) action("retry").hidden = rec.error !== "save";
+            if (action("reload")) action("reload").hidden = !rec.conflict && !rec.sendUnconfirmed;
+            if (action("continue")) action("continue").hidden = !rec.closed;
+            if (action("discard")) action("discard").disabled = rec.sending || !!instance.manual.busy || loading;
+            const inputs = manualInputs(compose);
+            if (inputs) {
+                inputs.subjectInput.readOnly = loading || rec.readOnly;
+                inputs.editor.setAttribute("contenteditable", loading || rec.readOnly || rec.sending && instance.meeting.sending ? "false" : "true");
+            }
+            compose.querySelectorAll(".mc-editor-tools button").forEach((button) => {
+                button.disabled = loading || rec.readOnly || rec.sending && instance.meeting.sending;
+            });
+            const error = compose.querySelector('[data-role="draft-load-error"]');
+            if (error) error.hidden = !loading;
+            const retryLoad = compose.querySelector('[data-role="draft-load-retry"]');
+            if (retryLoad) retryLoad.hidden = !loading;
+            const warning = compose.querySelector('[data-role="draft-target-warning"]');
+            if (warning) {
+                const latest = instance.selectedSummary && instance.selectedSummary.latestInbound;
+                const newer = latest && rec.target.kind === "INBOUND" && Number(latest.processingId) !== rec.target.processingId;
+                warning.textContent = rec.readOnly ? (rec.detail && rec.detail.contactExists === false
+                    ? "原专家已不存在，草稿仍为你保留，可查看或放弃。" : "原来信已不存在，草稿仍为你保留，可查看或放弃。")
+                    : newer ? "有新来信，当前仍在编辑原来信草稿" : "";
+                warning.hidden = !rec.readOnly && !newer;
+                const retarget = compose.querySelector('[data-action="mc-retarget-draft"]');
+                if (retarget) retarget.hidden = !newer || rec.readOnly;
+            }
+            const unknown = compose.querySelector('[data-role="draft-send-unknown"]');
+            if (unknown) unknown.hidden = !rec.sendUnconfirmed && (!rec.detail || rec.detail.sendAttemptStatus !== "DELIVERY_UNKNOWN");
+            const existing = compose.querySelector('[data-action="mc-open-existing-draft"]');
+            if (existing) existing.hidden = !instance.existingTargetDraft;
+            refreshSendAvailability();
+        }
+
+        async function retryDraft() {
+            const rec = currentDraftRecord();
+            if (!rec || rec.conflict || rec.closed) return;
+            try {
+                // A lost ACK may already have committed. Claim it, never blindly overwrite.
+                const detail = await hostApi()(rec.id ? `/api/mail/mailbox/drafts/${rec.id}` : draftTargetUrl(rec.target));
+                if (!draftOwnerLive(rec)) return;
+                if (detail.state === "ACTIVE" && draftContentEqual(draftFromDetail(detail), rec.map.get(rec.key))) {
+                    acceptDraftDetail(rec, detail, false);
+                    rec.ack = rec.seq;
+                    refreshDraftStatus();
+                    return;
+                }
+                if (Number(detail.version) !== rec.version || detail.state && detail.state !== "ACTIVE") {
+                    rec.conflict = true;
+                    refreshDraftStatus();
+                    return;
+                }
+                rec.error = "";
+                await persistDraft(rec);
+            } catch (err) { hostShowStatus(err.message || "保存失败，内容尚未同步到服务器", "error"); }
+        }
+
+        async function reloadDraft() {
+            const rec = currentDraftRecord();
+            if (!rec) return;
+            if (rec.conflict || rec.seq !== rec.ack) {
+                if (!await openDialog("confirm", { message: "重新加载将丢弃本窗口尚未保存的修改，是否继续？" })) return;
+            }
+            clearTimeout(rec.timer);
+            if (rec.inflight) await rec.inflight.catch(() => {});
+            rec.ack = rec.seq;
+            rec.conflict = false;
+            rec.closed = false;
+            await loadDraftRecord(rec).catch(() => {});
+        }
+
+        async function continueDraft() {
+            const rec = currentDraftRecord();
+            if (!rec || !rec.closed || rec.conflict) return;
+            if (rec.inflight) await rec.inflight.catch(() => {});
+            const detail = await hostApi()(`/api/mail/mailbox/drafts/${rec.id}`).catch(() => null);
+            if (!detail || !draftOwnerLive(rec)) return;
+            if (detail.state === "ACTIVE" || detail.version !== rec.version) {
+                rec.conflict = true;
+                refreshDraftStatus();
+                return;
+            }
+            rec.closed = false;
+            rec.reopen = true;
+            await persistDraft(rec).catch(() => {});
+        }
+
+        async function discardDraft() {
+            const rec = currentDraftRecord();
+            if (!rec || rec.sending || instance.manual.busy || rec.conflict) return;
+            const unknown = rec.detail && rec.detail.sendAttemptStatus === "DELIVERY_UNKNOWN";
+            if (!await openDialog("confirm", { message: "确定放弃这份草稿？放弃后无法恢复。" + (unknown ? "这不会撤回可能已发送的邮件。" : "") })) return;
+            if (!draftOwnerLive(rec)) return;
+            rec.paused = true;
+            clearTimeout(rec.timer);
+            try {
+                if (rec.inflight) await rec.inflight;
+                if (!draftOwnerLive(rec)) return;
+                const detail = rec.id ? await hostApi()(`/api/mail/mailbox/drafts/${rec.id}?expectedVersion=${rec.version}`, { method: "DELETE" })
+                    : await hostApi()(draftTargetUrl(rec.target));
+                if (!draftOwnerLive(rec)) return;
+                if (detail.id && detail.state === "ACTIVE") throw new Error("草稿尚未放弃");
+                acceptDraftDetail(rec, detail, true);
+                rec.map.delete(rec.key);
+                rec.ack = rec.seq;
+                renderDraftEditor(rec);
+                loadDraftSummaries();
+                fetchList({ page: instance.list.page });
+            } catch (err) {
+                if (draftOwnerLive(rec)) {
+                    if (err.status === 409 || err.data && err.data.currentVersion != null) rec.conflict = true;
+                    else rec.error = "save";
+                    refreshDraftStatus();
+                }
+            } finally { rec.paused = false; }
         }
 
         function setRefined(on) {
@@ -1115,9 +1512,10 @@
 
         function skeletonHtml() {
             const chipButtons = FILTER_CHIPS.map((chip) => {
-                const countSpan = CHIP_COUNT_KEYS.indexOf(chip.key) >= 0
-                    ? `<span class="mailbox-suspend-count" data-chip-count="${chip.key}" hidden></span>`
-                    : "";
+                const countSpan = chip.key === CHIP_DRAFTS
+                    ? '<span class="mailbox-draft-count" data-role="draft-total">0</span>'
+                    : CHIP_COUNT_KEYS.indexOf(chip.key) >= 0
+                        ? `<span class="mailbox-suspend-count" data-chip-count="${chip.key}" hidden></span>` : "";
                 return `<button class="mc-filter" type="button" data-action="mc-filter" data-chip="${chip.key}" aria-pressed="${instance.chip === chip.key ? "true" : "false"}">${escapeText(chip.label)}${countSpan}</button>`;
             }).join("");
             return `
@@ -1171,14 +1569,7 @@
         }
 
         function saveCurrentConversation() {
-            const cleared = instance.clearedEditorSnapshot;
-            const values = readManualValues();
-            const key = currentTargetKey();
-            // 已发送且已删的草稿仍可能留在 DOM；生命周期采集不能复活它。
-            const unchangedSent = cleared && cleared.key === key && cleared.draftsMap === currentDraftsMap()
-                && !getDraft(key) && values && values.subject === cleared.snapshot.subject
-                && values.html === cleared.snapshot.html && values.text === cleared.snapshot.text;
-            if (!unchangedSent) saveDraftFromInputs();
+            saveDraftFromInputs();
             saveConversationState();
         }
 
@@ -1387,7 +1778,8 @@
             return "";
         }
 
-        function applyFiltersFromFields() {
+        function applyFiltersFromFields(flushed) {
+            if (!flushed) return draftNavigation(() => applyFiltersFromFields(true));
             const values = currentFieldValues();
             const dateError = validateFieldDates(values);
             if (dateError) {
@@ -1412,7 +1804,8 @@
             loadList();
         }
 
-        function resetAdvancedFilters() {
+        function resetAdvancedFilters(flushed) {
+            if (!flushed) return draftNavigation(() => resetAdvancedFilters(true));
             const prevAccount = String(instance.filters.accountCode || "");
             saveBeforeScopeChange(prevAccount, "");
             instance.filters = {};
@@ -1426,7 +1819,8 @@
             loadList();
         }
 
-        function restoreAdvancedFilters() {
+        function restoreAdvancedFilters(flushed) {
+            if (!flushed) return draftNavigation(() => restoreAdvancedFilters(true));
             const prevAccount = String(instance.filters.accountCode || "");
             saveBeforeScopeChange(prevAccount, "");
             instance.filters = {};
@@ -1636,6 +2030,7 @@
                         <span class="mc-person-meta">
                             <span class="mc-person-counts">收 ${Number(item.receivedCount) || 0} · 发 ${Number(item.sentCount) || 0}</span>
                             ${tagLine}
+                            ${Number(instance.draftCounts.get(Number(item.contactId))) > 0 ? `<span class="mailbox-draft-count" data-role="contact-draft-count">草稿 ${Number(instance.draftCounts.get(Number(item.contactId)))}</span>` : ""}
                         </span>
                         <span class="calendar-summary" data-role="meeting-summary"></span>
                     </button>
@@ -1696,8 +2091,115 @@
             root.innerHTML = items.map(renderUnmatchedPerson).join("");
         }
 
+        function draftListParams(page, size) {
+            const params = new URLSearchParams({ page: String(page), size: String(size || PAGE_SIZE) });
+            if (instance.filters.accountCode) params.set("accountScope", instance.filters.accountCode);
+            if (instance.searchText.trim()) params.set("search", instance.searchText.trim());
+            return params;
+        }
+
+        function updateDraftTotal(total) {
+            instance.draftTotal = Number(total) || 0;
+            const span = host.querySelector('[data-role="draft-total"]');
+            if (span) span.textContent = String(instance.draftTotal);
+        }
+
+        function renderDraftList() {
+            const root = expertsRoot();
+            if (!root) return;
+            const note = '<div class="mc-note" data-role="draft-scope-note">草稿仅按账号和搜索条件筛选</div>';
+            if (instance.list.error) {
+                root.innerHTML = note + '<div class="mc-error">草稿加载失败，请重试<button class="button" type="button" data-action="mc-retry-list">重试</button></div>';
+                return;
+            }
+            root.innerHTML = note + (instance.list.items.length ? instance.list.items.map((item) => {
+                const target = item.target;
+                const date = new Date(item.updatedAt);
+                const saved = Number.isNaN(date.getTime()) ? String(item.updatedAt || "") : date.toLocaleString();
+                return `<div class="mc-person mailbox-draft-card" data-active="${instance.openedDraft && Number(instance.openedDraft.id) === Number(item.id) ? "true" : "false"}" data-draft-id="${Number(item.id)}">
+                    <button class="mc-person-main" type="button" data-action="mc-open-draft" data-draft-id="${Number(item.id)}">
+                        <strong>${escapeText(item.contactExists === false ? "原专家已不存在" : item.expertName || item.expertEmail || "专家")}</strong>
+                        <small data-role="draft-subject">${escapeText(item.subject || "无主题")}</small>
+                        <small data-role="draft-preview">${escapeText(String(item.preview || "空白草稿").slice(0, 120))}</small>
+                        <small data-role="draft-target">${escapeText(target.kind === "INBOUND" ? `回复来信 #${target.processingId}` : "回复成功发件线程")} · ${escapeText(`账号 ${target.accountScope || "全部"}`)}</small>
+                        <small data-role="draft-updated" title="${escapeText(saved)}">保存于 ${escapeText(saved)}</small>
+                    </button></div>`;
+            }).join("") : '<div class="mc-empty">暂无草稿</div>');
+        }
+
+        function loadDraftSummaries() {
+            if (instance.disposed || !instance.auth.ready || instance.user !== draftSessionUser) return;
+            const seq = instance.listSeq;
+            const user = instance.user;
+            const ids = instance.chip === CHIP_DRAFTS || isUnmatchedChip() ? []
+                : instance.list.items.map((item) => Number(item.contactId)).filter((id) => id > 0);
+            const params = new URLSearchParams();
+            if (ids.length) params.set("contactIds", ids.join(","));
+            if (instance.filters.accountCode) params.set("accountScope", instance.filters.accountCode);
+            hostApi()(`/api/mail/mailbox/drafts/summaries?${params.toString()}`).then((data) => {
+                if (instance.disposed || seq !== instance.listSeq || user !== instance.user || user !== draftSessionUser) return;
+                instance.draftCounts = new Map((data.items || []).map((item) => [Number(item.contactId), Number(item.count)]));
+                if (instance.chip !== CHIP_DRAFTS && !isUnmatchedChip()) {
+                    host.querySelectorAll(".mc-person[data-contact-id]").forEach((card) => {
+                        const meta = card.querySelector(".mc-person-meta");
+                        if (!meta) return;
+                        const old = meta.querySelector('[data-role="contact-draft-count"]');
+                        const count = instance.draftCounts.get(Number(card.dataset.contactId)) || 0;
+                        if (old && !count) old.remove();
+                        else if (old) old.textContent = `草稿 ${count}`;
+                        else if (count) meta.insertAdjacentHTML("beforeend", `<span class="mailbox-draft-count" data-role="contact-draft-count">草稿 ${count}</span>`);
+                    });
+                }
+            }).catch(() => {});
+            hostApi()(`/api/mail/mailbox/drafts?${draftListParams(0, 1).toString()}`).then((data) => {
+                if (instance.disposed || seq !== instance.listSeq || user !== instance.user || user !== draftSessionUser) return;
+                updateDraftTotal(data.total);
+            }).catch(() => {});
+        }
+
+        function fetchDraftList(page) {
+            const seq = ++instance.listSeq;
+            const user = instance.user;
+            instance.list.loading = true;
+            instance.list.error = "";
+            return hostApi()(`/api/mail/mailbox/drafts?${draftListParams(page).toString()}`).then((data) => {
+                if (instance.disposed || seq !== instance.listSeq || user !== instance.user || user !== draftSessionUser) return null;
+                instance.list = { page, total: Number(data.total) || 0, items: data.items || [], loading: false, error: "" };
+                instance.draftPages.drafts = page;
+                updateDraftTotal(data.total);
+                renderDraftList();
+                renderPager();
+                return data;
+            }).catch((err) => {
+                if (instance.disposed || seq !== instance.listSeq || user !== instance.user) return null;
+                instance.list.error = err.message || "加载失败";
+                instance.list.loading = false;
+                renderDraftList();
+                renderPager();
+                return null;
+            });
+        }
+
+        function openServerDraft(id) {
+            return draftNavigation(async () => {
+                const user = instance.user;
+                const seq = instance.draftNavigationSeq;
+                try {
+                    const detail = await hostApi()(`/api/mail/mailbox/drafts/${Number(id)}`);
+                    if (instance.disposed || user !== instance.user || user !== draftSessionUser || seq !== instance.draftNavigationSeq) return;
+                    const target = detail.target;
+                    const row = findSummaryByContactId(target.contactId);
+                    const summary = row || { contactId: target.contactId, name: detail.expertName || detail.expertEmail || "原专家已不存在",
+                        email: detail.expertEmail || "", sentCount: target.kind === "OUTBOUND" ? 1 : 0,
+                        latestInbound: target.kind === "INBOUND" ? { processingId: target.processingId, accountCode: target.accountScope } : null };
+                    selectExpert(summary, { force: true, draft: detail, skipDraftFlush: true, skipListReload: true });
+                } catch (err) { hostShowStatus("草稿加载失败，请重试", "error"); }
+            });
+        }
+
         function renderList() {
-            if (isUnmatchedChip()) renderUnmatchedList();
+            if (instance.chip === CHIP_DRAFTS) renderDraftList();
+            else if (isUnmatchedChip()) renderUnmatchedList();
             else renderExpertList();
         }
 
@@ -1750,7 +2252,7 @@
             const total = Number(instance.list.total) || 0;
             const maxPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
             const page = instance.list.page;
-            const unit = isUnmatchedChip() ? "封" : "位";
+            const unit = isUnmatchedChip() ? "封" : instance.chip === CHIP_DRAFTS ? "份" : "位";
             root.innerHTML = `
                 <span>第 ${page + 1}/${maxPage + 1} 页 · 共 ${total} ${unit}</span>
                 <button class="button" type="button" data-action="mc-page-prev"${page <= 0 ? " disabled" : ""}>上一页</button>
@@ -1761,6 +2263,7 @@
         function fetchList(extra) {
             const options = extra || {};
             const page = options.page != null ? options.page : instance.list.page;
+            if (instance.chip === CHIP_DRAFTS) return fetchDraftList(page);
             instance.listSeq += 1;
             const mySeq = instance.listSeq;
             instance.list.loading = true;
@@ -1808,6 +2311,7 @@
                     // fast-p 03（I-3）：批量摘要按当前页专家 id，epoch = 本次列表请求
                     loadMeetingSummaries();
                 }
+                loadDraftSummaries();
                 loadChipCounts();
                 return data;
             }).catch((err) => {
@@ -1833,6 +2337,7 @@
         function loadList() {
             return fetchList({ page: instance.list.page }).then((data) => {
                 if (instance.disposed) return data;
+                if (instance.chip === CHIP_DRAFTS) return data;
                 if (isUnmatchedChip()) resolveUnmatchedSelection();
                 else resolveFocusAndSelection();
                 return data;
@@ -2106,20 +2611,41 @@
                 if (instance.disposed || mySeq !== instance.auth.seq) return;
                 instance.auth.loading = false;
                 if (data && data.authenticated === true && data.username) {
+                    const username = String(data.username);
+                    const changedIdentity = instance.auth.ready && instance.user !== username;
+                    if (changedIdentity) {
+                        clearSelectedConversation();
+                        instance.listSeq += 1;
+                        instance.draftCounts.clear();
+                        instance.openedDraft = null;
+                        renderConversationEmpty();
+                    }
+                    instance.user = username;
+                    setDraftSessionUser(username);
                     instance.auth.ready = true;
                     instance.auth.username = String(data.username);
                     instance.auth.failed = false;
                     renderList();
                     renderSuspensionDetail();
                     renderTimeline();
+                    const rec = currentDraftRecord();
+                    if (rec && !rec.loaded) loadDraftRecord(rec).catch(() => {});
+                    loadDraftSummaries();
+                    if (changedIdentity) loadList();
                 } else {
-                    instance.auth.ready = false;
-                    instance.auth.failed = true;
+                    throw new Error("读取当前登录用户失败");
                 }
             }).catch(() => {
                 if (instance.disposed || mySeq !== instance.auth.seq) return;
                 instance.auth.loading = false;
+                instance.auth.ready = false;
                 instance.auth.failed = true;
+                instance.auth.username = "";
+                setDraftSessionUser("");
+                instance.draftCounts.clear();
+                updateDraftTotal(0);
+                renderList();
+                renderTimeline();
             });
         }
 
@@ -2802,6 +3328,7 @@
 
         function selectExpert(item, options) {
             const opts = options || {};
+            if (!opts.skipDraftFlush) return draftNavigation(() => selectExpert(item, Object.assign({}, opts, { skipDraftFlush: true })));
             const sameOwner = Number(instance.selectedContactId) === Number(item.contactId)
                 && String(instance.conversation.accountScope || "") === accountFilterFromOptions();
             if (sameOwner && !opts.force && !instance.conversation.error) {
@@ -2813,7 +3340,8 @@
             if (opts.present !== false) setMobilePane("detail", opts.trigger);
             teardownConversationSubViews();
             instance.pendingPosition = null;
-            instance.clearedEditorSnapshot = null;
+            instance.openedDraft = opts.draft || null;
+            instance.existingTargetDraft = null;
             instance.selectedContactId = Number(item.contactId);
             instance.selectedSummary = item;
             instance.seq += 1;
@@ -4042,13 +4570,14 @@
             });
         }
 
-        function latestInboundMessage() {
+        function latestInboundMessage(processingId) {
             const messages = instance.conversation.items || [];
             const summary = instance.selectedSummary || {};
             const latest = summary.latestInbound || null;
-            if (!latest || latest.processingId == null) return null;
+            const id = processingId == null ? latest && latest.processingId : processingId;
+            if (id == null) return null;
             const found = messages.find((message) =>
-                message.source === "INBOUND_PROCESSING" && String(message.id) === String(latest.processingId)
+                message.source === "INBOUND_PROCESSING" && String(message.id) === String(id)
             );
             return found || null;
         }
@@ -4777,22 +5306,37 @@
         function renderManualSectionInto(scroll) {
             if (!scroll) return;
             const summary = instance.selectedSummary || {};
-            const latestInbound = summary.latestInbound || null;
+            const restoredTarget = instance.openedDraft && instance.openedDraft.target;
+            if (restoredTarget) {
+                let newestInbound = null;
+                (instance.conversation.items || []).forEach((message) => {
+                    if (message.source === "INBOUND_PROCESSING"
+                        && (!newestInbound || String(message.eventAt) > String(newestInbound.eventAt))) {
+                        newestInbound = message;
+                    }
+                });
+                if (newestInbound) {
+                    summary.latestInbound = { processingId: Number(newestInbound.id), accountCode: newestInbound.accountCode || "" };
+                }
+            }
+            const latestInbound = restoredTarget
+                ? (restoredTarget.kind === "INBOUND" ? { processingId: restoredTarget.processingId, accountCode: restoredTarget.accountScope } : null)
+                : summary.latestInbound || null;
             // 三态（I-1/I-2）：来信（真实 processingId）→ inbound；无来信但至少 1 封真实
             // SENT 出站 → outbound（自由回信锚点资格由服务端再校验）；其余 → unavailable。
             const hasInbound = latestInbound && latestInbound.processingId != null;
-            const sentCount = Number(summary.sentCount) || 0;
+            const sentCount = restoredTarget && restoredTarget.kind === "OUTBOUND" ? 1 : Number(summary.sentCount) || 0;
             const mode = hasInbound ? "inbound" : (sentCount > 0 ? "outbound" : "unavailable");
             const targetProcessingId = hasInbound ? Number(latestInbound.processingId) : null;
             const targetAccount = hasInbound ? (latestInbound.accountCode || "") : "";
             // outbound 草稿 key 固定为 contactId:OUTBOUND:<accountScope>，不依赖可能变化的
             // latest message id（草稿缓存恢复语义）。
-            const scope = instance.conversation.accountScope || "";
+            const scope = restoredTarget ? restoredTarget.accountScope : instance.conversation.accountScope || "";
             const targetKey = hasInbound
                 ? `${Number(instance.selectedContactId)}:${targetProcessingId}:${targetAccount}`
                 : (mode === "outbound" ? `${Number(instance.selectedContactId)}:OUTBOUND:${scope}` : null);
             const targetMsg = hasInbound
-                ? latestInboundMessage()
+                ? latestInboundMessage(targetProcessingId)
                 : (mode === "outbound" ? (summary.latestMessage || null) : null);
             // I-1：默认主题只在最新消息确为真实 SENT 出站时由其生成 Re:；失败消息不伪装成锚点。
             const defaultSubject = targetMsg && hasInbound
@@ -4806,6 +5350,7 @@
             instance.manual.targetProcessingId = targetProcessingId;
             instance.manual.targetAccountCode = targetAccount;
             instance.manual.targetKey = targetKey;
+            instance.manual.defaultSubject = defaultSubject;
             instance.manual.qa = draft && draft.qa ? draft.qa : null;
             instance.manual.busy = false;
 
@@ -4827,6 +5372,13 @@
             refreshMeetingAttachmentCard();
             // 通用附件卡：渲染后按草稿字段重建（含上传中/失败态）并刷新发送可用性
             refreshOutboundFilesCard();
+            if (targetKey) {
+                const rec = draftRecord(targetKey);
+                rec.baseline = readManualValues();
+                if (rec.seq !== rec.ack || rec.inflight || rec.closed || rec.conflict) refreshDraftStatus();
+                else if (instance.auth.ready) loadDraftRecord(rec, instance.openedDraft).catch(() => {});
+                else refreshDraftStatus();
+            }
         }
 
         function manualTargetInfoText(processingId, account) {
@@ -4920,9 +5472,12 @@
             // 会议确认只用于真实来信目标（inbound）：组件在场且非 outbound 才渲染会议 UI。
             const ui = meetingEnabled() && !isOutbound;
             let editorContent = "";
-            if (ui && draft && draft.html && String(draft.html).trim()) {
+            if (draft && draft.html && String(draft.html).trim()) {
                 editorContent = meetingRestoreEditorHtml(String(draft.html));
-                if (!editorContent && editorText) editorContent = escapeText(editorText);
+                if (!meetingLib() || typeof meetingLib().sanitizeDraftHtml !== "function") {
+                    draftRecord(targetKey).error = "load";
+                    editorContent = escapeText(editorText);
+                }
             } else if (editorText) {
                 editorContent = escapeText(editorText);
             }
@@ -4962,6 +5517,19 @@
                     ${anchorNote}
                     ${meetingAttachment}
                     ${outboundFiles}
+                    <div class="mc-error" data-role="draft-load-error" role="alert" hidden>草稿加载失败，请重试</div>
+                    <button class="button" type="button" data-action="mc-reload-draft" data-role="draft-load-retry" hidden>重试加载</button>
+                    <div class="mc-note" data-role="draft-target-warning" hidden></div>
+                    <button class="button" type="button" data-action="mc-retarget-draft" hidden>为新来信另建草稿</button>
+                    <button class="button" type="button" data-action="mc-open-existing-draft" hidden>打开已有草稿</button>
+                    <div class="mc-note" data-role="draft-send-unknown" hidden>发送结果待确认，草稿已保留，请勿重复发送</div>
+                    <div class="mailbox-draft-status-row">
+                        <span class="mailbox-draft-status" data-role="draft-save-status" data-state="dirty" role="status" aria-live="polite">尚未保存</span>
+                        <button class="mc-text-button" type="button" data-action="mc-retry-draft" hidden>重试保存</button>
+                        <button class="mc-text-button" type="button" data-action="mc-reload-draft" hidden>重新加载</button>
+                        <button class="button" type="button" data-action="mc-continue-draft" hidden>继续编辑并保存</button>
+                        <button class="button danger" type="button" data-action="mc-discard-draft">放弃草稿</button>
+                    </div>
                     <div class="mc-compose-footer">
                         <span data-role="target-info">回复账号与目标来信信息：${targetInfo}</span>
                         ${templateFollowButton}
@@ -5621,7 +6189,9 @@
         function outboundFileMetaText(item) {
             const state = item && item.state ? String(item.state) : OUTBOUND_STATE_READY;
             if (state === OUTBOUND_STATE_UPLOADING) return OUTBOUND_TEXT_UPLOADING;
-            if (state === OUTBOUND_STATE_FAILED) return OUTBOUND_TEXT_FAILED;
+            if (state === OUTBOUND_STATE_FAILED) {
+                return item && item.error === "上传未完成，请重新选择文件" ? item.error : OUTBOUND_TEXT_FAILED;
+            }
             const size = formatOutboundFileSize(item && item.byteLength);
             return size + " · " + (state === OUTBOUND_STATE_SENT ? OUTBOUND_TEXT_SENT : OUTBOUND_TEXT_PENDING);
         }
@@ -5710,11 +6280,11 @@
          * false —— 迟到的上传回包绝不重建已消失的 key（不复活、不串目标）。
          */
         function setOutboundAttachmentItems(captured, items) {
-            if (!captured || !captured.draftsMap) return false;
+            if (!captured || !captured.draftsMap || !draftOwnerLive(captured.rec) || captured.rec.paused) return false;
             const existing = captured.draftsMap.get(captured.targetKey);
             if (!existing) return false;
             const current = outboundAttachmentDraftOf(existing);
-            captured.draftsMap.set(captured.targetKey, Object.assign({}, existing, {
+            markDraft(captured.rec, Object.assign({}, existing, {
                 outboundAttachmentDraft: { revision: current.revision + 1, items: items.slice() },
                 updatedAt: new Date().toISOString()
             }));
@@ -5726,7 +6296,7 @@
             if (!captured || !captured.draftsMap) return;
             const existing = captured.draftsMap.get(captured.targetKey);
             if (!existing || !existing.requestId) return;
-            captured.draftsMap.set(captured.targetKey, Object.assign({}, existing, {
+            markDraft(captured.rec, Object.assign({}, existing, {
                 requestId: null,
                 updatedAt: new Date().toISOString()
             }));
@@ -5741,13 +6311,14 @@
             const contactId = Number(instance.selectedContactId);
             if (!targetKey || !Number.isFinite(contactId) || contactId <= 0) return null;
             if (!getDraft(targetKey)) {
-                saveDraftFromInputs();
+                saveDraftFromInputs({ force: true });
                 if (!getDraft(targetKey)) return null;
             }
             const draftsMap = ensureDraftsMap();
             if (!draftsMap || !draftsMap.get(targetKey)) return null;
             const accountScope = instance.conversation.accountScope || "";
             return {
+                rec: draftRecord(targetKey),
                 targetKey,
                 contactId,
                 accountScope,
@@ -5770,7 +6341,11 @@
         }
 
         function refreshSendAvailability() {
-            setSendButtonDisabled(!!instance.manual.busy || outboundAttachmentsBlockSend());
+            const rec = currentDraftRecord();
+            const meeting = manualMeetingSnapshot();
+            setSendButtonDisabled(!!instance.manual.busy || outboundAttachmentsBlockSend() || !!(meeting && meeting.state !== "ready")
+                || !rec || !rec.loaded || !!rec.loading || rec.readOnly || !!rec.error || rec.conflict || rec.closed || rec.sendUnconfirmed
+                || !!(rec.detail && ["DELIVERY_UNKNOWN", "DELIVERY_IN_PROGRESS"].includes(rec.detail.sendAttemptStatus)));
         }
 
         /** 附件卡重渲染：只消费当前目标的草稿字段；发送可用性随之刷新。 */
@@ -5813,10 +6388,16 @@
             picked.map((file) => () => uploadOutboundFile(captured, file)).forEach((run) => {
                 chain = chain.then(run, run);
             });
+            captured.rec.uploads.add(chain);
+            chain.finally(() => {
+                captured.rec.uploads.delete(chain);
+                if (draftOwnerLive(captured.rec)) persistDraft(captured.rec).catch(() => {});
+            });
         }
 
         /** 单个文件：预检查 → multipart POST → 落定为 ready 或 failed。 */
         function uploadOutboundFile(captured, file) {
+            if (!captured || !draftOwnerLive(captured.rec) || captured.rec.paused) return Promise.resolve();
             const name = file && file.name != null ? String(file.name) : "";
             const size = Number(file && file.size) || 0;
             const item = {
@@ -5914,27 +6495,6 @@
             refreshOutboundFilesCard();
         }
 
-        /**
-         * I-3：发送前捕获的草稿语义快照（主题/正文/有序附件 id）。成功回包只在草稿仍等于
-         * 该快照时清除捕获 owner 的那份草稿 —— 发送期间的新编辑/新附件一律保留。
-         */
-        function outboundManualDraftSnapshot(draft) {
-            return {
-                subject: draft && draft.subject != null ? String(draft.subject) : "",
-                html: draft && draft.html != null ? String(draft.html) : "",
-                text: draft && draft.text != null ? String(draft.text) : "",
-                attachmentIds: outboundAttachmentIds(draft).join("\u0000")
-            };
-        }
-
-        function outboundDraftMatchesSnapshot(draft, snapshot) {
-            if (!draft || !snapshot) return false;
-            const now = outboundManualDraftSnapshot(draft);
-            return now.subject === snapshot.subject
-                && now.html === snapshot.html
-                && now.text === snapshot.text
-                && now.attachmentIds === snapshot.attachmentIds;
-        }
 
         // --------------------------------------------------------------
         // 人工回复：草稿 / 采用 / 发送（I-7 保持原业务；T4 增加 outbound 会话回信）
@@ -5983,6 +6543,11 @@
             if (!values) return;
             const existing = getDraft(key);
             const patch = extra || {};
+            const rec = draftRecord(key);
+            if (!rec.loaded || rec.loading || rec.error === "load" || rec.readOnly) return;
+            if (Object.keys(patch).every((name) => name === "force") && rec.baseline
+                && values.subject === rec.baseline.subject && values.html === rec.baseline.html && values.text === rec.baseline.text
+                && (existing || !patch.force)) return;
             // 跟进锚点（I-4）：patch 显式给值才改（null = 清除，如采用可信草稿/应用会议），
             // 其余保存沿用既有草稿值。
             const hasAnchorPatch = Object.prototype.hasOwnProperty.call(patch, "followUpAnchorMailRecordId");
@@ -6066,13 +6631,9 @@
             if (instance.manual.mode !== "outbound" && !anchored) return null;
             if (existing && existing.requestId) return existing.requestId;
             const requestId = createRequestId();
-            const values = readManualValues();
+            const values = existing || readManualValues();
             if (values) {
-                setDraft(key, Object.assign({}, existing || {}, {
-                    subject: values.subject,
-                    html: values.html,
-                    text: values.text,
-                    qa: values.qa,
+                setDraft(key, Object.assign({}, values, {
                     requestId,
                     updatedAt: new Date().toISOString(),
                     // fast-p 07（I-2）：程序性取 requestId 不丢附件字段。
@@ -7772,6 +8333,7 @@
             }
             saveDraftFromInputs(patch || {});
             if (patch) refreshMeetingAttachmentCard();
+            refreshSendAvailability();
         }
 
         function downloadSentMeetingAttachment(button) {
@@ -7833,33 +8395,69 @@
         }
 
         function sendManualReply() {
+            const rec = currentDraftRecord();
+            if (!rec || rec.preparing || rec.sending || rec.conflict || rec.closed || !rec.loaded || rec.error === "load" || rec.readOnly) return;
+            if (outboundAttachmentsBlockSend()) {
+                hostShowStatus("附件正在上传或上传失败，请等待上传完成或移除失败附件后再发送", "error");
+                return;
+            }
+            rec.preparing = true;
+            const key = rec.key;
+            return (async () => {
+                try {
+                    let seq;
+                    do {
+                        if (currentTargetKey() !== key || !draftOwnerLive(rec)) return;
+                        saveDraftFromInputs({ force: true });
+                        ensureOutboundRequestId();
+                        seq = rec.seq;
+                        await flushDrafts();
+                    } while (seq !== rec.seq);
+                    const detail = await hostApi()(`/api/mail/mailbox/drafts/${rec.id}`);
+                    if (currentTargetKey() !== key || !draftOwnerLive(rec)) return;
+                    if (seq !== rec.seq) { rec.preparing = false; return sendManualReply(); }
+                    if (detail.state !== "ACTIVE" || Number(detail.version) !== rec.version
+                        || !draftContentEqual(draftFromDetail(detail), rec.map.get(key))) {
+                        rec.conflict = true;
+                        refreshDraftStatus();
+                        return;
+                    }
+                    acceptDraftDetail(rec, detail, false);
+                    if (["DELIVERY_UNKNOWN", "DELIVERY_IN_PROGRESS"].includes(detail.sendAttemptStatus)) {
+                        refreshDraftStatus();
+                        return;
+                    }
+                    return sendSavedManualReply(rec, seq);
+                } catch (err) {
+                    hostShowStatus(err.message || "保存失败，内容尚未同步到服务器", "error");
+                } finally { rec.preparing = false; }
+            })();
+        }
+
+        function sendSavedManualReply(rec, sentSeq) {
             const key = currentTargetKey();
             if (!key || instance.manual.busy) return;
             const composeEl = manualComposeEl();
             const inputs = manualInputs(composeEl);
             if (!inputs) return;
-            const subject = (inputs.subjectInput.value || "").trim();
+            const draftSnapshot = getDraft(key);
+            if (!draftSnapshot) return;
+            const subject = String(draftSnapshot.subject || "").trim();
             if (!subject) {
                 hostShowStatus("请输入邮件主题", "error");
                 return;
             }
-            const hasBodyHtml = typeof inputs.editor.innerHTML === "string" && inputs.editor.innerHTML.trim();
+            const hasBodyHtml = String(draftSnapshot.html || "").trim();
             if (!hasBodyHtml) {
                 hostShowStatus("请输入邮件正文", "error");
                 return;
             }
-            const textBody = normalizeManualTextLineBreaks(
-                typeof inputs.editor.innerText === "string" ? inputs.editor.innerText : String(inputs.editor.textContent || "")
-            );
-            // I-1/I-3：提交前规范化 HTML（折叠连续 <br> 与空 <p>/<div>），请求体、确认重提与
-            // 服务端最终发送门使用同一份 canonical 正文；编辑器 DOM 不改写。
-            const htmlBody = normalizeManualRichHtmlLineBreaks(
-                typeof inputs.editor.innerHTML === "string" ? inputs.editor.innerHTML : ""
-            );
+            // The final flush and GET above acknowledged this exact canonical snapshot.
+            const textBody = String(draftSnapshot.text || "");
+            const htmlBody = String(draftSnapshot.html || "");
             const mode = instance.manual.mode;
             // I-8/跟进（I-3）：草稿携带所选锚点时，无论当前 target 是来信还是无来信会话，
             // 都必须走会话级接口并把真实 id 交给服务端重新校验。
-            const draftSnapshot = getDraft(key);
             const followUpAnchorId = draftSnapshot && draftSnapshot.followUpAnchorMailRecordId != null
                 ? Number(draftSnapshot.followUpAnchorMailRecordId)
                 : null;
@@ -7889,7 +8487,6 @@
                 return;
             }
             const attachmentIds = outboundAttachmentIds(draftSnapshot);
-            const sentDraftSnapshot = outboundManualDraftSnapshot(draftSnapshot);
             if (!conversationSend) {
                 // 来信路径：既有 processingId adapter，保留 QA/RAG payload（I-8）。
                 requestBody = {
@@ -7923,14 +8520,14 @@
             } else {
                 // 会话回信路径：body 只含 requestId/当前 accountScope/显式锚点/自由正文/确认
                 // 字段；无 processingId/senderAccountCode/QA/RAG/meeting（I-3/I-4/I-6）。
-                const requestId = ensureOutboundRequestId();
+                const requestId = draftSnapshot.requestId;
                 if (!requestId) {
                     hostShowStatus("无法生成发送请求标识", "error");
                     return;
                 }
                 requestBody = {
                     requestId,
-                    accountScope: instance.conversation.accountScope || null,
+                    accountScope: rec.target.accountScope || null,
                     subject,
                     htmlBody,
                     textBody,
@@ -7941,10 +8538,9 @@
                 if (attachmentIds.length > 0) requestBody.attachmentIds = attachmentIds.slice();
             }
             // I-2：异步前捕获 draftsMap/owner/key/revision/requestBody；不回调里再取。
-            const draftsMap = ensureDraftsMap();
             const contactId = Number(instance.selectedContactId);
             const ownerKey = conversationCacheKey(instance.user, instance.conversation.accountScope || "", contactId);
-            const capturedRevision = meeting ? meeting.revision : null;
+            requestBody.draftRef = { id: rec.id, version: rec.version };
             const inFlightKey = meeting ? `${ownerKey}|${key}` : null;
             if (inFlightKey && meetingInFlight.has(inFlightKey)) {
                 hostShowStatus("该回复目标已有发送中的会议回复，请稍候", "error");
@@ -7954,6 +8550,8 @@
             // 07（I-3）：带已就绪附件的发送同样锁住当前 owner 的编辑/附件增删；其他专家不受影响。
             const lockedCompose = !!meeting || attachmentItems.length > 0;
             instance.manual.busy = true;
+            rec.sending = true;
+            refreshDraftStatus();
             setSendButtonDisabled(true);
             if (lockedCompose) setManualComposeSending(true);
             const adapter = conversationSend
@@ -7964,65 +8562,57 @@
                     ? adapter(contactId, requestBody)
                     : adapter(processingId, requestBody))
                 : Promise.reject(new Error("发送能力不可用"));
-            request.then((sent) => {
-                if (instance.disposed) {
-                    if (inFlightKey) meetingInFlight.delete(inFlightKey);
-                    return;
-                }
-                const stillCurrent = currentTargetKey() === key;
-                if (lockedCompose && stillCurrent) setManualComposeSending(false);
-                instance.manual.busy = false;
-                refreshSendAvailability();
-                if (inFlightKey) meetingInFlight.delete(inFlightKey);
-                if (!sent) return; // 失败/取消保留全部输入（不清草稿、不改 QA、不删附件）
-                if (meeting) {
-                    // 成功只清该份已发送快照（I-2）：captured map + revision 匹配才删；
-                    // 已切目标/新草稿一律不动新目标的草稿与 QA。
-                    const snapshot = draftsMap.get(key);
-                    const currentMeeting = snapshot && snapshot.meeting ? snapshot.meeting : null;
-                    if (currentMeeting && Number(currentMeeting.revision) === Number(capturedRevision)) {
-                        draftsMap.delete(key);
-                        if (stillCurrent) {
-                            instance.clearedEditorSnapshot = { key, draftsMap, snapshot: sentDraftSnapshot };
-                            instance.manual.qa = null;
-                            refreshMeetingAttachmentCard();
-                            // 07：该草稿连同通用附件一起被清，卡片同步重建（无文件 → hidden）。
-                            refreshOutboundFilesCard();
-                        }
-                        if (stillCurrent) afterSuccessfulSend(key);
-                    } else if (currentMeeting && stillCurrent) {
-                        const nextDraft = Object.assign({}, snapshot, {
-                            meeting: Object.assign({}, currentMeeting, { state: "stale" }),
-                            updatedAt: new Date().toISOString()
-                        });
-                        draftsMap.set(key, nextDraft);
-                        refreshMeetingAttachmentCard();
+            return Promise.resolve(request).catch(() => false).then(async () => {
+                // HTTP/host Boolean is not the draft-close authority.
+                try {
+                    const detail = await hostApi()(`/api/mail/mailbox/drafts/${rec.id}`);
+                    if (!draftOwnerLive(rec)) return;
+                    const stillCurrent = !instance.disposed && currentTargetKey() === key;
+                    if (stillCurrent) saveDraftFromInputs();
+                    if (Number(detail.version) < rec.version) return;
+                    if (detail.state === "ACTIVE" && Number(detail.version) !== rec.version && rec.seq > sentSeq) {
+                        const remote = draftFromDetail(detail);
+                        if (draftContentEqual(remote, rec.map.get(key))) rec.ack = rec.seq;
+                        else if (rec.submitted && draftContentEqual(remote, {
+                            subject: rec.submitted.snapshot.subject, html: rec.submitted.snapshot.html,
+                            text: rec.submitted.snapshot.text, ...rec.submitted.snapshot.context })) {
+                            rec.ack = Math.max(rec.ack, rec.submitted.seq);
+                        } else rec.conflict = true;
                     }
-                    return;
-                }
-                // 07（I-3）：成功只清捕获 owner 里仍等于发送快照的草稿（主题/正文/有序
-                // 附件 id 全等），发送期间的新编辑或新附件一律保留；已切目标/已换草稿
-                // 绝不删当前 owner 的草稿。
-                const capturedDraft = draftsMap.get(key);
-                const cleared = outboundDraftMatchesSnapshot(capturedDraft, sentDraftSnapshot);
-                if (cleared) draftsMap.delete(key);
-                if (stillCurrent && cleared) {
-                    instance.clearedEditorSnapshot = { key, draftsMap, snapshot: sentDraftSnapshot };
-                    instance.manual.qa = null;
-                    refreshFollowupAnchorNote();
-                    refreshOutboundFilesCard();
-                }
-                afterSuccessfulSend(key);
-            }).catch(() => {
-                if (instance.disposed) {
+                    acceptDraftDetail(rec, detail, false);
+                    rec.sendUnconfirmed = false;
+                    if (detail.state === "SENT" || detail.state === "DISCARDED") {
+                        clearTimeout(rec.timer);
+                        if (rec.seq === sentSeq) {
+                            rec.map.delete(key);
+                            rec.ack = rec.seq;
+                            rec.closed = false;
+                            if (stillCurrent) renderDraftEditor(rec);
+                        } else {
+                            rec.closed = true;
+                            rec.error = "";
+                            rec.conflict = false;
+                        }
+                    } else if (rec.seq === sentSeq && rec.ack === rec.seq) {
+                        const saved = draftFromDetail(detail);
+                        if (saved && !draftContentEqual(saved, rec.map.get(key))) {
+                            rec.map.set(key, saved);
+                            if (stillCurrent) renderDraftEditor(rec);
+                        }
+                    }
+                    if (stillCurrent && detail.sendAttemptStatus === "SENT") afterSuccessfulSend(key);
+                    loadDraftSummaries();
+                } catch (err) {
+                    if (draftOwnerLive(rec)) rec.sendUnconfirmed = true;
+                } finally {
+                    rec.sending = false;
                     if (inFlightKey) meetingInFlight.delete(inFlightKey);
-                    return;
+                    if (!instance.disposed && currentTargetKey() === key && draftOwnerLive(rec)) {
+                        if (lockedCompose) setManualComposeSending(false);
+                        instance.manual.busy = false;
+                        refreshDraftStatus();
+                    }
                 }
-                const stillCurrent = currentTargetKey() === key;
-                if (lockedCompose && stillCurrent) setManualComposeSending(false);
-                instance.manual.busy = false;
-                refreshSendAvailability();
-                if (inFlightKey) meetingInFlight.delete(inFlightKey);
             });
         }
 
@@ -8088,81 +8678,48 @@
         }
 
         function checkInboundChangeQuiet() {
-            const summary = instance.selectedSummary || findSummaryByContactId(instance.selectedContactId);
-            if (!summary) return;
-            const latest = summary.latestInbound || null;
-            const mode = instance.manual.mode;
-            if (mode !== "inbound") return;
-            const currentProcessing = instance.manual.targetProcessingId;
-            const newestProcessing = latest && latest.processingId != null ? Number(latest.processingId) : null;
-            if (newestProcessing == null || newestProcessing === currentProcessing) return;
-            if (instance.dismissedNewInbound && instance.dismissedNewInbound === `${currentProcessing}:${newestProcessing}`) return;
-            const draft = currentTargetKey() ? getDraft(currentTargetKey()) : null;
-            const hasEditedDraft = draft && (draft.subject || draft.html || draft.text);
-            if (!hasEditedDraft) {
-                // 无已编辑草稿：静默跟随新目标
-                retargetManual(newestProcessing, latest.accountCode || "");
-                return;
-            }
-            const message = `该专家收到新的来信（#${newestProcessing}，${latest.receivedAt || ""}）。当前草稿仍基于来信 #${currentProcessing}。是否将回复目标切换到新来信？新来信主题将重新预填，正文与已采用回复事实保留；保留原目标请选「取消」。`;
-            openDialog("confirm", { message }).then((confirmed) => {
-                if (instance.disposed) return;
-                if (confirmed) {
-                    instance.dismissedNewInbound = null;
-                    retargetManual(newestProcessing, latest.accountCode || "", { keepBody: true });
-                } else {
-                    instance.dismissedNewInbound = `${currentProcessing}:${newestProcessing}`;
-                }
-            });
+            refreshDraftStatus();
         }
 
-        function retargetManual(newProcessingId, newAccount, options) {
-            const opts = options || {};
-            const oldKey = currentTargetKey();
-            const draft = oldKey ? getDraft(oldKey) : null;
-            const contactId = Number(instance.selectedContactId);
-            const newKey = `${contactId}:${newProcessingId}:${newAccount}`;
-            // 目标切换：关闭会议弹窗并撤销 modal URL；meeting 标 stale、保留旧 input 供改
-            const meetingController = instance.meeting.controller;
-            if (meetingController) {
-                try { meetingController.close({ restoreFocus: false }); } catch (e) { /* noop */ }
-            }
-            revokeMeetingBlob();
-            // fast-p 01（I-7）：回复目标切换即关闭引用模板弹框（旧快照与旧身份全部作废）。
-            closeTemplateReferenceDialog({ restoreFocus: false });
-            if (draft) {
-                let migrated = Object.assign({}, draft, { subject: "", updatedAt: new Date().toISOString() });
-                if (draft.meeting) {
-                    migrated = Object.assign({}, migrated, {
-                        meeting: Object.assign({}, draft.meeting, { state: "stale" })
-                    });
-                }
-                setDraft(newKey, migrated);
-                if (oldKey && oldKey !== newKey) deleteDraft(oldKey);
-            }
-            instance.meeting.editorRevision += 1;
-            instance.manual.targetProcessingId = Number(newProcessingId);
-            instance.manual.targetAccountCode = newAccount || "";
-            instance.manual.targetKey = newKey;
-            instance.manual.qa = draft && draft.qa ? snapshotQa(draft.qa) : null;
-            const composeEl = manualComposeEl();
-            if (composeEl) {
-                refreshMeetingAttachmentCard();
-                // 07（I-2）：同专家换回复目标时草稿随 targetKey 迁移，已 ready 附件保留。
-                refreshOutboundFilesCard();
-            } else {
-                return;
-            }
-            const inputs = manualInputs(composeEl);
-            if (inputs) {
-                const targetMsg = (instance.conversation.items || []).find(
-                    (message) => message.source === "INBOUND_PROCESSING" && String(message.id) === String(newProcessingId)
-                );
-                inputs.subjectInput.value = chatSubjectPrefill(targetMsg ? targetMsg.subject : "");
-            }
-            const info = composeEl.querySelector('[data-role="target-info"]');
-            if (info) info.textContent = `回复账号与目标来信信息：${manualTargetInfoText(Number(newProcessingId), newAccount)}`;
-            if (composeEl.dataset) composeEl.dataset.targetKey = newKey;
+        function retargetManual(newProcessingId, newAccount) {
+            return draftNavigation(async () => {
+                const oldKey = currentTargetKey();
+                const draft = oldKey ? getDraft(oldKey) : null;
+                const contactId = Number(instance.selectedContactId);
+                const newKey = `${contactId}:${newProcessingId}:${newAccount}`;
+                const rec = draftRecord(newKey);
+                const epoch = instance.convEpoch;
+                try {
+                    const detail = await hostApi()(draftTargetUrl(rec.target));
+                    if (instance.disposed || epoch !== instance.convEpoch || !draftOwnerLive(rec)) return;
+                    if (detail.id && detail.state === "ACTIVE") {
+                        instance.existingTargetDraft = detail;
+                        refreshDraftStatus();
+                        return;
+                    }
+                    if (!await openDialog("confirm", { message: "为新来信另建草稿，原草稿会保留，是否继续？" })) return;
+                    if (instance.disposed || epoch !== instance.convEpoch || !draftOwnerLive(rec)) return;
+                    acceptDraftDetail(rec, detail, true);
+                    if (detail.state && detail.state !== "ACTIVE") {
+                        instance.existingTargetDraft = detail;
+                        refreshDraftStatus();
+                        return;
+                    }
+                    teardownMeetingViews();
+                    closeTemplateReferenceDialog({ restoreFocus: false });
+                    const message = (instance.conversation.items || []).find((item) => item.source === "INBOUND_PROCESSING" && Number(item.id) === Number(newProcessingId));
+                    const migrated = Object.assign({}, draft || {}, { subject: chatSubjectPrefill(message ? message.subject : ""),
+                        requestId: null, meeting: draft && draft.meeting ? Object.assign({}, draft.meeting, { state: "stale" }) : null });
+                    instance.openedDraft = Object.assign({}, detail, { target: rec.target });
+                    instance.manual.targetProcessingId = Number(newProcessingId);
+                    instance.manual.targetAccountCode = newAccount;
+                    instance.manual.targetKey = newKey;
+                    instance.manual.defaultSubject = migrated.subject;
+                    instance.manual.qa = migrated.qa || null;
+                    markDraft(rec, migrated);
+                    renderDraftEditor(rec);
+                } catch (err) { hostShowStatus("草稿加载失败，请重试", "error"); }
+            });
         }
 
         // --------------------------------------------------------------
@@ -8197,6 +8754,20 @@
                 : null;
             const data = button ? (button.dataset || {}) : {};
             const action = button ? data.action : "";
+            if (action === "mc-open-draft") { openServerDraft(data.draftId); return; }
+            if (action === "mc-retry-draft") { retryDraft(); return; }
+            if (action === "mc-reload-draft") { reloadDraft(); return; }
+            if (action === "mc-continue-draft") { continueDraft(); return; }
+            if (action === "mc-discard-draft") { discardDraft(); return; }
+            if (action === "mc-open-existing-draft") {
+                if (instance.existingTargetDraft) openServerDraft(instance.existingTargetDraft.id);
+                return;
+            }
+            if (action === "mc-retarget-draft") {
+                const latest = instance.selectedSummary && instance.selectedSummary.latestInbound;
+                if (latest) retargetManual(Number(latest.processingId), latest.accountCode || "");
+                return;
+            }
             // 07（I-4）：发送中/已禁用时拦截已发/草稿附件下载锚点的默认跳转。
             const downloadAnchor = target && typeof target.closest === "function"
                 ? target.closest('[data-role="outbound-download"]')
@@ -8239,22 +8810,23 @@
             if (action === "mc-filter") {
                 const chip = data.chip || CHIP_ALL;
                 const nextChip = FILTER_CHIPS.some((entry) => entry.key === chip) ? chip : CHIP_ALL;
-                if (nextChip !== instance.chip) {
-                    returnToMobileList();
-                    if (instance.chip === CHIP_UNMATCHED) leaveUnmatchedMode();
-                    if (nextChip === CHIP_UNMATCHED) {
-                        // 离开专家会话前保存草稿/滚动，但邮件 id 绝不写入 selectedContactId（I-6）。
-                        saveCurrentConversation();
-                        clearSelectedConversation();
+                draftNavigation(() => {
+                    const previousGroup = instance.chip === CHIP_DRAFTS ? "drafts" : "conversations";
+                    const nextGroup = nextChip === CHIP_DRAFTS ? "drafts" : "conversations";
+                    instance.draftPages[previousGroup] = instance.list.page;
+                    if (nextChip !== instance.chip) {
+                        returnToMobileList();
+                        if (instance.chip === CHIP_UNMATCHED) leaveUnmatchedMode();
+                        if (nextChip === CHIP_UNMATCHED) clearSelectedConversation();
                     }
-                }
-                instance.chip = nextChip;
-                instance.chipUserTouched = true;
-                freezeDefaultProbe();
-                instance.list.page = 0;
-                syncChipButtons();
-                syncSearchChrome();
-                loadList();
+                    instance.chip = nextChip;
+                    instance.chipUserTouched = true;
+                    freezeDefaultProbe();
+                    instance.list.page = previousGroup === nextGroup ? 0 : instance.draftPages[nextGroup];
+                    syncChipButtons();
+                    syncSearchChrome();
+                    loadList();
+                });
                 return;
             }
             if (action === "mc-more-filters") {
@@ -8718,10 +9290,13 @@
                     instance.searchTimer = null;
                     if (instance.disposed) return;
                     if (instance.searchText === value) return;
-                    instance.searchText = value;
-                    freezeDefaultProbe();
-                    instance.list.page = 0;
-                    loadList();
+                    draftNavigation(() => {
+                        instance.searchText = value;
+                        freezeDefaultProbe();
+                        instance.list.page = 0;
+                        instance.draftPages = { drafts: 0, conversations: 0 };
+                        loadList();
+                    });
                 }, SEARCH_DEBOUNCE_MS);
                 return;
             }
@@ -8828,22 +9403,31 @@
         // 实例 API / options
         // --------------------------------------------------------------
 
-        function applyOptions(options) {
+        function applyOptions(options, flushed) {
             const next = options || {};
+            if (!flushed && !(next.sessionUser && String(next.sessionUser) !== instance.user)
+                && next.filters && String(next.filters.accountCode || "") !== String(instance.filters.accountCode || "")) {
+                return draftNavigation(() => applyOptions(next, true));
+            }
             if (next.sessionUser && String(next.sessionUser) !== instance.user) {
-                saveCurrentConversation();
                 closeProgressMenu({ restoreFocus: false });
                 instance.progressBusy.clear();
                 clearSelectedConversation();
                 clearUnmatchedState();
                 resetSuspensionState();
-                loadAuthenticatedUser();
+                instance.auth.seq += 1;
                 instance.listSeq += 1;
                 instance.focusLocating = false;
                 instance.focusHandledContactId = null;
                 instance.focusMissedContactId = null;
                 instance.options.focus = null;
                 instance.user = String(next.sessionUser);
+                setDraftSessionUser(instance.user);
+                instance.auth.ready = false;
+                instance.openedDraft = null;
+                instance.draftCounts.clear();
+                updateDraftTotal(0);
+                loadAuthenticatedUser();
                 setMobilePane("list");
                 renderConversationEmpty();
             }
@@ -8879,6 +9463,7 @@
         function unmount() {
             if (instance.disposed) return;
             saveCurrentConversation();
+            flushDrafts().catch(() => {});
             if (instance.mobileMedia) {
                 if (typeof instance.mobileMedia.removeEventListener === "function") instance.mobileMedia.removeEventListener("change", onMobileViewportChange);
                 else if (typeof instance.mobileMedia.removeListener === "function") instance.mobileMedia.removeListener(onMobileViewportChange);
@@ -8932,6 +9517,7 @@
         // 组装
         // --------------------------------------------------------------
 
+
         function attach() {
             renderSkeleton();
             bindMobileViewport();
@@ -8973,6 +9559,8 @@
             refresh,
             refreshFromHost,
             loadList,
+            flushDrafts,
+            hasPendingDrafts,
             unmount,
             isMounted: () => true
         };
@@ -8987,18 +9575,20 @@
         const existing = instances.get(host);
         if (existing) {
             const opts = options || {};
-            if (opts.filters || opts.focus || opts.sessionUser) {
-                if (typeof existing.applyOptions === "function") existing.applyOptions(opts);
-            }
-            if (typeof existing.loadList === "function") existing.loadList();
+            const applied = opts.filters || opts.focus || opts.sessionUser
+                ? existing.applyOptions(opts) : null;
+            if (applied && typeof applied.then === "function") applied.then(() => existing.loadList());
+            else if (typeof existing.loadList === "function") existing.loadList();
             return existing;
         }
         const controller = createInstance(host, options || {});
         const api = {
-            applyOptions: (next) => { if (controller) controller.applyOptions(next); },
+            applyOptions: (next) => controller ? controller.applyOptions(next) : undefined,
             refresh: () => { if (controller) return controller.refresh(); return undefined; },
             refreshFromHost: () => { if (controller) return controller.refreshFromHost(); return undefined; },
             loadList: () => { if (controller) return controller.loadList(); return undefined; },
+            flushDrafts: () => controller.flushDrafts(),
+            hasPendingDrafts: () => controller.hasPendingDrafts(),
             unmount: () => { if (controller) controller.unmount(); },
             isMounted: () => { if (controller) return controller.isMounted(); return false; }
         };
@@ -9024,10 +9614,27 @@
         return !!api;
     }
 
+    if (typeof global.addEventListener === "function") {
+        global.addEventListener("beforeunload", (event) => {
+            instances.forEach((api) => api.hasPendingDrafts());
+            const pending = Array.from(draftSaves.values()).some((rec) => rec.user === draftSessionUser
+                && rec.epoch === draftSessionEpoch && (rec.seq !== rec.ack || rec.inflight || rec.uploads.size));
+            if (pending) { event.preventDefault(); event.returnValue = ""; }
+        });
+        global.addEventListener("pagehide", () => {
+            instances.forEach((api) => api.flushDrafts().catch(() => {}));
+            draftSaves.forEach((rec) => {
+                if (rec.user === draftSessionUser && rec.epoch === draftSessionEpoch && rec.persist) rec.persist().catch(() => {});
+            });
+        });
+    }
+
     global.MailboxChat = Object.freeze({
         mount,
         unmount,
         isMounted,
+        flushDrafts: (host) => { const api = instances.get(host); return api ? api.flushDrafts() : Promise.resolve(); },
+        hasPendingDrafts: (host) => { const api = instances.get(host); return api ? api.hasPendingDrafts() : false; },
         version: VERSION
     });
 })(typeof window !== "undefined" ? window : (typeof globalThis !== "undefined" ? globalThis : this));

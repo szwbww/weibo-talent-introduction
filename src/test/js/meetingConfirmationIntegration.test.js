@@ -19,6 +19,11 @@ const chatSource = fs.readFileSync(path.join(ROOT, "mailbox-chat.js"), "utf-8");
 const meetingSource = fs.readFileSync(path.join(ROOT, "meeting-confirmation.js"), "utf-8");
 const appSource = fs.readFileSync(path.join(ROOT, "app.js"), "utf-8");
 
+// Reuse the controlled typed CAS transport; meeting/body/QA context remains opaque.
+const behaviorHarnessSource = fs.readFileSync(path.join(__dirname, "mailboxChatBehavior.test.js"), "utf-8");
+const draftTransportSource = behaviorHarnessSource.slice(behaviorHarnessSource.indexOf("function createDraftServer()"), behaviorHarnessSource.indexOf("// End shared draft transport."));
+const createDraftServer = new Function("URL", draftTransportSource + "\nreturn createDraftServer;")(URL);
+
 function extractFn(name, source) {
     const regex = new RegExp("(?:async\\s+)?function\\s+" + name + "\\s*\\([^)]*\\)\\s*\\{[\\s\\S]*?\\n\\}");
     const match = (source || appSource).match(regex);
@@ -823,6 +828,8 @@ function expertTagEditorHtml(orcidId, tags, level, editorId, missing) {
 
 function createChatSandbox(options) {
     const opts = options || {};
+    const draftServer = opts.draftServer || createDraftServer();
+    const owner = () => (opts.authMe && opts.authMe.username) || "admin";
     const requests = [];
     const calls = {
         api: requests,
@@ -843,6 +850,9 @@ function createChatSandbox(options) {
     const timers = [];
 
     const defaultRoute = function defaultRoute(url, method, body) {
+        if (url === "/api/auth/me") return Promise.resolve(opts.authMe || { authenticated: true, username: "admin" });
+        const draftResult = draftServer.route(owner(), url, method, body);
+        if (draftResult !== undefined) return draftResult;
         if (url.startsWith("/api/mail/mailbox/conversations?")) {
             return Promise.resolve(opts.conversations || { items: [], total: 0 });
         }
@@ -911,7 +921,8 @@ function createChatSandbox(options) {
 
     // 自定义 route 可调用第 5 参 next() 回退到默认路由
     const route = opts.route
-        ? (url, method, body, entry) => opts.route(url, method, body, entry, defaultRoute)
+        ? (url, method, body, entry) => url.startsWith("/api/mail/mailbox/drafts") || url === "/api/auth/me"
+            ? defaultRoute(url, method, body) : opts.route(url, method, body, entry, defaultRoute)
         : defaultRoute;
 
     const sandbox = {
@@ -962,9 +973,13 @@ function createChatSandbox(options) {
             if (opts.sendRichDeferred) {
                 calls.sendRichDeferred = calls.sendRichDeferred || [];
                 return new Promise((resolve, reject) => {
-                    calls.sendRichDeferred.push({ resolve, reject, processingId: Number(processingId), body });
+                    calls.sendRichDeferred.push({ resolve: (value) => {
+                        if (value && body.draftRef) draftServer.sent(owner(), body.draftRef);
+                        resolve(value);
+                    }, reject, processingId: Number(processingId), body });
                 });
             }
+            if (body.draftRef) draftServer.sent(owner(), body.draftRef);
             return Promise.resolve(true);
         },
         mcHostMountWorkbench: (hostEl, processingId, callbacks) => {
@@ -1084,6 +1099,7 @@ function createChatSandbox(options) {
     }
     return {
         sandbox,
+        draftServer,
         calls,
         timers,
         runTimers: () => { while (timers.length) { const fn = timers.shift(); fn(); } }
@@ -1511,7 +1527,9 @@ describe("fast-p 04: 组件门禁与 S-3 人工回复区（trigger/附件卡）"
         const ctx = await bootMeetingA();
         await openMeetingLoaded(ctx);
         assert.strictEqual(ctx.doc.body.querySelectorAll("#meetingDialog").length, 1);
-        ctx.sandbox.MailboxChat.unmount(ctx.host);
+        await ctx.sandbox.MailboxChat.flushDrafts(ctx.host);
+        await ctx.sandbox.MailboxChat.unmount(ctx.host);
+        await flush();
         assert.strictEqual(meetingDialog(ctx), null, "unmount 必须移除 dialog");
     });
 });
@@ -2111,7 +2129,7 @@ describe("fast-p 04: retarget 迁移与新来信目标（I-2/T3）", () => {
             },
             dialogResult: true
         });
-        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
+        let editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
         await openMeetingLoaded(ctx);
         await confirmReadyMeeting(ctx);
         const subject = ctx.host.querySelector('input[aria-label="回复主题"]');
@@ -2122,8 +2140,17 @@ describe("fast-p 04: retarget 迁移与新来信目标（I-2/T3）", () => {
             latestInbound: { processingId: 102, accountCode: "acc1", messageId: "m102", receivedAt: "2026-09-08T10:00:00" },
             pendingCount: 2
         });
-        ctx.sandbox.MailboxChat.mount(ctx.host, { filters: {} });
+        await ctx.sandbox.MailboxChat.flushDrafts(ctx.host);
+        await ctx.sandbox.MailboxChat.mount(ctx.host, { filters: {} });
         await flush();
+        assert.match(ctx.host.querySelector('[data-role="draft-target-warning"]').textContent, /新来信/);
+        click(ctx.host.querySelector('[data-action="mc-retarget-draft"]'));
+        await flush();
+        await ctx.sandbox.MailboxChat.flushDrafts(ctx.host);
+        editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
+        const active = [...ctx.draftServer.rows.values()].filter((row) => row.state === "ACTIVE");
+        assert.deepStrictEqual(active.map((row) => row.target.processingId).sort(), [101, 102], "复制新目标保留原稿");
+        assert.ok(active.every((row) => row.content.text.includes("Dear Professor Basdogan")), "双方保留会议正文");
         const card = ctx.host.querySelector('[data-role="meeting-attachment"]');
         assert.strictEqual(card.getAttribute("data-state"), "stale", "retarget 后会议标 stale");
         assert.match(card.textContent, /待重新确认/);
@@ -2166,6 +2193,10 @@ describe("fast-p 04: 发送锁与异步隔离（T4/I-2）", () => {
         assert.strictEqual(payload.meeting.zoneId, "Europe/Istanbul");
         assert.strictEqual(payload.previewAttachmentSha256, "a".repeat(64));
         assert.strictEqual(payload.senderAccountCode, null, "不改变 senderAccountCode 适配");
+        assert.ok(payload.draftRef, "发送携带已保存的确切版本");
+        const sentDraft = [...ctx.draftServer.rows.values()].find((row) => row.id === payload.draftRef.id);
+        assert.strictEqual(sentDraft.state, "SENT");
+        assert.strictEqual(sentDraft.sendVersion, payload.draftRef.version);
         // 切走再回：草稿已清（主题回默认预填、卡清空）
         const b = ctx.host.querySelectorAll(".mc-person").find((p) => p.dataset.contactId === "2");
         click(b.querySelector(".mc-person-main"));
@@ -2191,6 +2222,10 @@ describe("fast-p 04: 发送锁与异步隔离（T4/I-2）", () => {
         assert.strictEqual(subject.disabled, true, "subject 发送中禁用");
         assert.strictEqual(ctx.host.querySelector('[data-action="mc-send-manual"]').disabled, true);
         assert.strictEqual(ctx.host.querySelector('[data-action="mc-remove-meeting"]').disabled, true, "会议操作禁用");
+        ctx.sandbox.MailboxChat.hasPendingDrafts(ctx.host);
+        await ctx.sandbox.MailboxChat.flushDrafts(ctx.host);
+        assert.strictEqual(editor.getAttribute("contenteditable"), "false", "保存状态刷新不能解除会议发送锁");
+        assert.strictEqual(subject.disabled, true, "草稿 ACK 不能解除主题发送锁");
         const deferred = ctx.calls.sendRichDeferred[ctx.calls.sendRichDeferred.length - 1];
         deferred.reject(new Error("smtp down"));
         await flush();
@@ -2220,6 +2255,32 @@ describe("fast-p 04: 发送锁与异步隔离（T4/I-2）", () => {
         assert.notStrictEqual(ctx.host.querySelector('input[aria-label="回复主题"]').value, "My Subject A");
     });
 
+    it("已发送后的新输入保留，只有明确继续才重开服务器草稿", async () => {
+        const ctx = await meetingReadyCtx({ sendRichDeferred: true });
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        const pending = ctx.calls.sendRichDeferred[0];
+        assert.ok(pending.body.draftRef);
+        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
+        // Model input already queued when the send lock was acquired.
+        editor.innerText = "New meeting follow-up entered during send";
+        inputEvent(editor);
+        pending.resolve(true);
+        await flush();
+        const row = [...ctx.draftServer.rows.values()].find((item) => item.id === pending.body.draftRef.id);
+        assert.strictEqual(row.state, "SENT", "发送结果不自动重开终态");
+        assert.strictEqual(editor.innerText, "New meeting follow-up entered during send", "迟到发送结果不删除新输入");
+        const continueButton = ctx.host.querySelector('[data-action="mc-continue-draft"]');
+        assert.strictEqual(continueButton.hidden, false, "新输入需要显式继续");
+        click(continueButton);
+        await flush();
+        await ctx.sandbox.MailboxChat.flushDrafts(ctx.host);
+        assert.strictEqual(row.state, "ACTIVE");
+        assert.strictEqual(row.content.text, "New meeting follow-up entered during send");
+        assert.strictEqual(ctx.calls.sendRich.length, 1, "继续编辑不再次外发");
+        assert.ok(ctx.draftServer.requests.some((entry) => entry.method === "PUT" && entry.body.reopen === true));
+    });
+
     it("发送失败不删草稿不自动重试；再点成功", async () => {
         const ctx = await bootMeetingA();
         await openMeetingLoaded(ctx);
@@ -2231,6 +2292,7 @@ describe("fast-p 04: 发送锁与异步隔离（T4/I-2）", () => {
         ctx.sandbox.mcHostSendRichReply = (processingId, body) => {
             ctx.calls.sendRich.push({ processingId: Number(processingId), body });
             if (failNext) return Promise.reject(new Error("smtp down"));
+            if (body.draftRef) ctx.draftServer.sent("admin", body.draftRef);
             return Promise.resolve(true);
         };
         click(ctx.host.querySelector('[data-action="mc-send-manual"]'));

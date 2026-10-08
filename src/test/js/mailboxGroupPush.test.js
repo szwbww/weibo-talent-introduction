@@ -82,10 +82,18 @@ test("S-1/S-2: both approved CSS blocks remain byte-for-byte exact", () => {
     for (const block of blocks.slice(0, 2)) assert.ok(css.includes(block), "approved local CSS must match verbatim");
 });
 
-test("I-4: every existing versioned resource shares the approved new key", () => {
+test("I-4: existing versioned resources retain order and share one current release key", () => {
     const keys = [...html.matchAll(/\?v=([^"']+)/g)].map(match => match[1]);
     assert.equal(keys.length, 11);
-    assert.deepEqual([...new Set(keys)], [plan.match(/统一 bump 为 `([^`]+)`/)[1]]);
+    assert.equal(new Set(keys).size, 1);
+    assert.match(keys[0], /^\d{8}-[a-z0-9-]+$/);
+    const resources = [...html.matchAll(/(?:src|href)="([^"']+)\?v=[^"']+"/g)].map(match => match[1]);
+    assert.deepEqual(resources, [
+        "styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css", "world-clock.css",
+        "trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js",
+        "mailbox-chat.js", "app.js", "world-clock.js"
+    ]);
+    assert.doesNotMatch(html, /20261006-wecom-inbound-notification/);
     assert.doesNotMatch(html, /20261006-discovery-review-merge/);
     assert.doesNotMatch(feature, /webhook|localStorage/i);
 });

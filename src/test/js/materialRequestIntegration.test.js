@@ -19,6 +19,9 @@ const chatSource = fs.readFileSync(path.join(ROOT, "mailbox-chat.js"), "utf-8");
 const chatCssSource = fs.readFileSync(path.join(ROOT, "mailbox-chat.css"), "utf-8");
 const stylesSource = fs.readFileSync(path.join(ROOT, "styles.css"), "utf-8");
 const meetingSource = fs.readFileSync(path.join(ROOT, "meeting-confirmation.js"), "utf-8");
+const behaviorHarnessSource = fs.readFileSync(path.join(__dirname, "mailboxChatBehavior.test.js"), "utf-8");
+const draftTransportSource = behaviorHarnessSource.slice(behaviorHarnessSource.indexOf("function createDraftServer()"), behaviorHarnessSource.indexOf("// End shared draft transport."));
+const createDraftServer = new Function("URL", draftTransportSource + "\nreturn createDraftServer;")(URL);
 const PLAN_PATH = path.join(__dirname, "..", "..", "..", "docs", "plans", "2026-09-17", "03-material-request-ui.md");
 const planSource = fs.readFileSync(PLAN_PATH, "utf-8");
 
@@ -645,6 +648,8 @@ function expertItem(contactId, extra) {
 
 function createSandbox(options) {
     const opts = options || {};
+    const draftServer = opts.draftServer || createDraftServer();
+    const owner = () => (opts.authMe && opts.authMe.username) || "admin";
     const requests = [];
     const calls = { api: requests, status: [], sendRich: [], resolveMaterial: null };
     let materialCalls = 0;
@@ -662,6 +667,9 @@ function createSandbox(options) {
                 body: requestOptions && requestOptions.body
             };
             requests.push(entry);
+            if (url === "/api/auth/me") return Promise.resolve(opts.authMe || { authenticated: true, username: "admin", mustChangePassword: false });
+            const draftResult = draftServer.route(owner(), url, entry.method, entry.body);
+            if (draftResult !== undefined) return draftResult;
             if (/\/material-requests$/.test(url)) {
                 materialCalls += 1;
                 if (opts.materialError) return Promise.reject(new Error(opts.materialError));
@@ -703,7 +711,7 @@ function createSandbox(options) {
     if (opts.withMeeting !== false) {
         vm.runInContext(meetingSource, sandbox, { filename: "meeting-confirmation.js" });
     }
-    return { sandbox, calls, requests };
+    return { sandbox, calls, requests, draftServer };
 }
 
 function mountChat(options) {
@@ -733,6 +741,7 @@ function personFor(ctx, contactId) {
 }
 
 async function openExpert(ctx, contactId) {
+    await ctx.sandbox.MailboxChat.flushDrafts(ctx.host);
     click(personFor(ctx, contactId).querySelector(".mc-person-main"));
     await flush();
 }
@@ -745,6 +754,14 @@ async function bootInbound(options) {
     await flush();
     await openExpert(ctx, 1);
     return ctx;
+}
+
+/** A fresh VM has no conversation/editor cache: restoration must read the durable server. */
+async function remountInbound(ctx, options) {
+    await ctx.sandbox.MailboxChat.flushDrafts(ctx.host);
+    await ctx.sandbox.MailboxChat.unmount(ctx.host);
+    await flush();
+    return bootInbound(Object.assign({}, options || {}, { draftServer: ctx.draftServer }));
 }
 
 function toolsOf(ctx) {
@@ -958,7 +975,7 @@ describe("I-3: 只操作当前草稿", () => {
     });
 
     it("确认：只追加 <p> + <ul><li>，零状态写、零发送，重挂载后仍在", async () => {
-        const ctx = await bootInbound({
+        let ctx = await bootInbound({
             materialItems: materialItemsWith({ REQ_PATENTS: { status: "PROVIDED" }, REQ_AWARDS: { status: "DECLINED" } })
         });
         const box = materialEditor(ctx);
@@ -983,6 +1000,12 @@ describe("I-3: 只操作当前草稿", () => {
         assert.ok(materialEditor(ctx).innerHTML.includes("Dear Professor,"), "原有正文必须保留");
         await openExpert(ctx, 2);
         await openExpert(ctx, 1);
+        const persisted = ctx.draftServer.get("admin", { contactId: 1, kind: "INBOUND", processingId: 101, accountScope: "acc1" });
+        assert.strictEqual(persisted.state, "ACTIVE", "材料正文必须持久化为有效草稿");
+        assert.ok(persisted.version > 0, "恢复使用服务端确认版本");
+        assert.ok(persisted.content.html.includes(LEAD), "服务端保留富文本材料段");
+        assert.ok(persisted.content.context, "typed 草稿上下文必须保留");
+        ctx = await remountInbound(ctx);
         const restored = materialEditor(ctx);
         assert.ok(restored.innerHTML.includes("Dear Professor,"), "恢复后原正文仍在");
         assert.ok(restored.innerHTML.includes(LEAD), "恢复后引言段仍在");
@@ -991,6 +1014,8 @@ describe("I-3: 只操作当前草稿", () => {
             "Supporting documents for research projects",
             "Bachelor’s, master’s, and doctoral degree certificates"
         ], "恢复后项目符号仍在且顺序不变");
+        assert.deepStrictEqual(materialStatusWrites(ctx), [], "恢复也不得改材料状态");
+        assert.strictEqual(ctx.calls.sendRich.length, 0, "恢复不得发送邮件");
     });
 
     it("确认前编辑器 revision 变化：不得追加", async () => {
@@ -1021,7 +1046,7 @@ describe("I-3: 只操作当前草稿", () => {
     });
 
     it("已有会议块：追加材料不改写会议块，且会议块与材料段一起经草稿恢复", async () => {
-        const ctx = await bootInbound();
+        let ctx = await bootInbound();
         const box = materialEditor(ctx);
         box.innerHTML = '<div class="meeting-body-block" data-meeting-block="true"><p>Meeting body kept</p></div>';
         inputEvent(box);
@@ -1035,6 +1060,8 @@ describe("I-3: 只操作当前草稿", () => {
         assert.strictEqual(elementChildren(current)[0], blocks[0], "材料段只能追加在既有会议块之后");
         await openExpert(ctx, 2);
         await openExpert(ctx, 1);
+        assert.strictEqual(ctx.calls.sendRich.length, 0, "离开前填入材料不得自动发送");
+        ctx = await remountInbound(ctx);
         const restored = materialEditor(ctx);
         assert.strictEqual(restored.querySelectorAll('[data-meeting-block="true"]').length, 1, "恢复后会议块仍在");
         assert.ok(restored.textContent.includes("Meeting body kept"), "恢复后会议块正文仍在");

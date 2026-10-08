@@ -770,8 +770,125 @@ function expertTagEditorHtml(orcidId, tags, level, editorId, missing) {
     return `<div class="detail-section expert-tag-editor" id="${escapeHtmlLike(editorId)}" data-orcid="${escapeHtmlLike(orcidId)}" data-level="${escapeHtmlLike(level)}"><div class="inbound-tag-editor-head"><h3>专家标签</h3><div class="inbound-tag-editor-actions"><button type="button" class="button primary small" data-action="expert-add-tag-open">+ 添加标签</button></div></div><div class="inbound-tag-editor-chips">${chips}</div></div>`;
 }
 
+// Shared controlled raw-JSON draft transport, reused by the draft and attachment suites.
+function createDraftServer() {
+    const rows = new Map();
+    const requests = [];
+    let nextId = 1;
+    const clone = (value) => JSON.parse(JSON.stringify(value));
+    const key = (owner, target) => [owner, target.contactId, target.kind, target.processingId || 0, target.accountScope || ""].join("|");
+    const error = (status, code, row) => Object.assign(new Error(code), {
+        status, data: { code, message: code, currentVersion: row ? row.version : null, currentState: row ? row.state : null }
+    });
+    function normalizeContent(content) {
+        const normalized = clone(content);
+        const files = normalized.context && normalized.context.outboundAttachmentDraft;
+        if (files) files.items.forEach((item) => {
+            if (item.state === "uploading") { item.state = "failed"; item.error = "上传未完成，请重新选择文件"; }
+        });
+        return normalized;
+    }
+    function detail(row, target) {
+        if (!row) return { id: null, version: 0, state: null, target: clone(target), content: null,
+            contactExists: true, attachmentDownloads: {}, attachmentsSendable: true };
+        const response = clone(row);
+        if (response.content) {
+            response.content = normalizeContent(response.content);
+            const files = response.content.context && response.content.context.outboundAttachmentDraft;
+            if (files) files.items.forEach((item) => {
+                if (item.state === "ready" && item.id) response.attachmentDownloads[item.id] =
+                    "/api/mail/conversations/" + response.target.contactId + "/outbound-attachments/" + item.id + "/download";
+                else response.attachmentsSendable = false;
+            });
+        }
+        return response;
+    }
+    const server = {
+        rows, requests, intercept: null,
+        seed(owner, target, content, extra) {
+            const row = Object.assign({ id: nextId++, version: 1, state: "ACTIVE", target: clone(target),
+                content: clone(content), createdAt: "2026-10-08T10:00:00", updatedAt: "2026-10-08T10:00:00",
+                contactExists: true, expertName: "专家" + target.contactId, expertEmail: "expert@example.edu",
+                sendAttemptId: null, sendVersion: null, sendAttemptStatus: null, attachmentDownloads: {}, attachmentsSendable: true }, extra);
+            rows.set(key(owner, target), row);
+            return clone(row);
+        },
+        get(owner, target) { return detail(rows.get(key(owner, target)), target); },
+        sent(owner, ref) {
+            const row = [...rows.values()].find((item) => item.id === ref.id && rows.get(key(owner, item.target)) === item);
+            if (!row) throw error(404, "NOT_FOUND");
+            row.sendVersion = ref.version;
+            row.sendAttemptStatus = "SENT";
+            if (row.version === ref.version) {
+                row.version += 1;
+                row.state = "SENT";
+                row.content = null;
+            }
+        },
+        route(owner, url, method, body) {
+            if (!url.startsWith("/api/mail/mailbox/drafts")) return undefined;
+            const parsed = new URL(url, "https://test.invalid");
+            const q = parsed.searchParams;
+            const target = { contactId: Number(q.get("contactId")), kind: q.get("kind"),
+                processingId: Number(q.get("processingId")) || 0, accountScope: q.get("accountScope") || "" };
+            const entry = { owner, url, method, body: typeof body === "string" ? JSON.parse(body) : body };
+            requests.push(entry);
+            const execute = () => {
+                if (parsed.pathname.endsWith("/target")) {
+                    let row = rows.get(key(owner, target));
+                    if (method === "GET") return detail(row, target);
+                    const request = entry.body;
+                    if (request.expectedVersion !== (row ? row.version : 0)) throw error(409, "DRAFT_VERSION_CONFLICT", row);
+                    if (row && row.state !== "ACTIVE" && !request.reopen) throw error(409, "DRAFT_CLOSED", row);
+                    if (!row) {
+                        server.seed(owner, target, normalizeContent(request.content));
+                        row = rows.get(key(owner, target));
+                    } else {
+                        row.version += 1;
+                        row.state = "ACTIVE";
+                        row.content = normalizeContent(request.content);
+                    }
+                    return detail(row, target);
+                }
+                let active = [...rows.entries()].filter(([k, row]) => k.startsWith(owner + "|") && row.state === "ACTIVE")
+                    .map(([, row]) => row).filter((row) => !q.get("accountScope") || row.target.accountScope === q.get("accountScope"));
+                if (parsed.pathname.endsWith("/summaries")) {
+                    const ids = q.getAll("contactIds").flatMap((value) => value.split(",")).map(Number);
+                    return { total: active.length, items: ids.map((contactId) => ({ contactId, count: active.filter((row) => row.target.contactId === contactId).length })) };
+                }
+                if (/\/drafts\/\d+$/.test(parsed.pathname)) {
+                    const id = Number(parsed.pathname.split("/").pop());
+                    const row = [...rows.entries()].find(([k, item]) => k.startsWith(owner + "|") && item.id === id);
+                    if (!row) throw error(404, "NOT_FOUND");
+                    if (method === "DELETE") {
+                        if (Number(q.get("expectedVersion")) !== row[1].version) throw error(409, "DRAFT_VERSION_CONFLICT", row[1]);
+                        row[1].state = "DISCARDED";
+                        row[1].version += 1;
+                        row[1].content = null;
+                    }
+                    return detail(row[1], row[1].target);
+                }
+                const search = (q.get("search") || "").toLowerCase();
+                active = active.filter((row) => !search || JSON.stringify(row.content).toLowerCase().includes(search));
+                const page = Number(q.get("page")) || 0;
+                const size = Number(q.get("size")) || 20;
+                return { total: active.length, page, size, items: active.slice(page * size, (page + 1) * size).map((row) => ({
+                    id: row.id, version: row.version, state: row.state, target: row.target, subject: row.content.subject,
+                    preview: row.content.text.slice(0, 120), updatedAt: row.updatedAt, contactExists: row.contactExists,
+                    expertName: row.expertName, expertEmail: row.expertEmail
+                })) };
+            };
+            return Promise.resolve().then(() => server.intercept ? server.intercept(entry, execute) : execute());
+        }
+    };
+    return server;
+}
+// End shared draft transport.
+
 function createChatSandbox(options) {
     const opts = options || {};
+    const draftServer = opts.draftServer || createDraftServer();
+    const owner = () => (opts.authMe && opts.authMe.username) || "admin";
     // fast-p c3：所在地配置的服务端桩状态（PUT 写入，GET/timing 读取）。
     const contactLocations = Object.assign({}, opts.contactLocations || {});
     const contactNotes = Object.assign({}, opts.contactNotes || {});
@@ -797,8 +914,12 @@ function createChatSandbox(options) {
         unmatchedUnmounts: []
     };
     const timers = [];
+    const cancelledTimers = new Set();
+    let timerSequence = 0;
 
     const defaultRoute = function defaultRoute(url, method, body) {
+        const draftResult = draftServer.route(owner(), url, method, body);
+        if (draftResult !== undefined) return draftResult;
         if (/^\/api\/mail\/contact-notes\/\d+$/.test(url)) {
             const contactId = Number(url.split("/").pop());
             if (method === "PUT") {
@@ -970,14 +1091,15 @@ function createChatSandbox(options) {
 
     // 自定义 route 可调用第 5 参 next() 回退到默认路由
     const route = opts.route
-        ? (url, method, body, entry) => opts.route(url, method, body, entry, defaultRoute)
+        ? (url, method, body, entry) => url.startsWith("/api/mail/mailbox/drafts") || url === "/api/auth/me"
+            ? defaultRoute(url, method, body) : opts.route(url, method, body, entry, defaultRoute)
         : defaultRoute;
 
     const sandbox = {
         console,
         URLSearchParams,
-        setTimeout: (fn) => { timers.push(fn); return timers.length; },
-        clearTimeout: () => {},
+        setTimeout: opts.clock ? opts.clock.setTimeout : (fn) => { const id = ++timerSequence; timers.push(() => { if (!cancelledTimers.has(id)) fn(); }); return id; },
+        clearTimeout: opts.clock ? opts.clock.clearTimeout : (id) => { cancelledTimers.add(id); },
         escapeHtml: escapeHtmlLike,
         alert: (message) => { calls.lastAlert = message; },
         confirm: () => true,
@@ -1018,12 +1140,14 @@ function createChatSandbox(options) {
             calls.sendRich.push({ processingId: Number(processingId), body });
             if (opts.sendRichResult === false) return Promise.resolve(false);
             if (opts.sendRichError) return Promise.reject(new Error(opts.sendRichError));
+            if (body.draftRef) draftServer.sent(owner(), body.draftRef);
             return Promise.resolve(true);
         },
         mcHostSendConversationRichReply: (contactId, body) => {
             calls.sendConversation.push({ contactId: Number(contactId), body });
             if (opts.sendConversationResult === false) return Promise.resolve(false);
             if (opts.sendConversationError) return Promise.reject(new Error(opts.sendConversationError));
+            if (body.draftRef) draftServer.sent(owner(), body.draftRef);
             return Promise.resolve(true);
         },
         mcHostMountWorkbench: (hostEl, processingId, callbacks) => {
@@ -1118,14 +1242,27 @@ function createChatSandbox(options) {
     const frames = [];
     sandbox.matchMedia = () => media;
     sandbox.requestAnimationFrame = (fn) => { frames.push(fn); return frames.length; };
+    const lifecycleListeners = new Map();
+    sandbox.addEventListener = (type, fn) => {
+        if (!lifecycleListeners.has(type)) lifecycleListeners.set(type, new Set());
+        lifecycleListeners.get(type).add(fn);
+    };
+    sandbox.removeEventListener = (type, fn) => { if (lifecycleListeners.has(type)) lifecycleListeners.get(type).delete(fn); };
     vm.createContext(sandbox);
+    if (opts.sanitizer !== false) {
+        vm.runInContext(fs.readFileSync(path.join(ROOT, "meeting-confirmation.js"), "utf-8"), sandbox, { filename: "meeting-confirmation.js" });
+        // Preserve this suite's optional-meeting absence while using the real sanitizer.
+        if (!opts.meetingEnabled) sandbox.MailboxMeeting = { sanitizeDraftHtml: sandbox.MailboxMeeting.sanitizeDraftHtml };
+    }
     vm.runInContext(chatSource, sandbox, { filename: "mailbox-chat.js" });
     return {
         sandbox,
+        draftServer,
         calls,
         timers,
         contactLocations,
         mediaListeners,
+        dispatchGlobal: (type, event) => { (lifecycleListeners.get(type) || []).forEach((fn) => fn(event)); },
         resize: (mobile) => { media.matches = mobile; mediaListeners.forEach((fn) => fn({ matches: mobile })); },
         runFrames: () => { while (frames.length) frames.shift()(); },
         runTimers: () => { while (timers.length) { const fn = timers.shift(); fn(); } }
@@ -1403,10 +1540,10 @@ describe("mailbox chat mount + S-1 skeleton + S-7 expert tag rows", () => {
         assert.ok(ctx.host.querySelector('section.mc-conversation[aria-label="专家往来信件"]'));
         assert.ok(ctx.host.querySelector('.mc-search-row input[aria-label="搜索专家"]'));
         const chips = ctx.host.querySelectorAll(".mc-filter");
-        assert.deepStrictEqual(chips.map((chip) => chip.dataset.chip), ["all", "provided", "followed", "pending", "suspended", "replied", "unmatched"]);
+        assert.deepStrictEqual(chips.map((chip) => chip.dataset.chip), ["all", "drafts", "provided", "followed", "pending", "suspended", "replied", "unmatched"]);
         assert.deepStrictEqual(
             chips.map((chip) => chip.textContent.replace(/\d+/g, "")),
-            ["全部", "已提供", "跟进中", "待处理", "已挂起", "已回复", "待匹配"]
+            ["全部", "草稿", "已提供", "跟进中", "待处理", "已挂起", "已回复", "待匹配"]
         );
         assert.strictEqual(chips.find((chip) => chip.dataset.chip === "pending").getAttribute("aria-pressed"), "true", "普通首次进入默认待处理（total>0）");
         const popover = ctx.host.querySelector("#mcFilterPopover");
@@ -2353,7 +2490,7 @@ describe("mailbox chat 既有业务（I-7）：workbench/manual/drafts/adopt/sen
         assert.strictEqual(ctx.calls.sendConversation[1].body.requestId, requestId, "取消后复用 requestId");
     });
 
-    it("草稿跨专家切换恢复；unmount/重挂载后同专家草稿仍恢复", async () => {
+    it("服务器草稿跨专家切换恢复；unmount/重挂载仍恢复已确认版本", async () => {
         const ctx = await bootSelectedA();
         const subject = ctx.host.querySelector('input[aria-label="回复主题"]');
         const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
@@ -2369,7 +2506,8 @@ describe("mailbox chat 既有业务（I-7）：workbench/manual/drafts/adopt/sen
         await flush();
         assert.strictEqual(ctx.host.querySelector('input[aria-label="回复主题"]').value, "My subject", "草稿主题恢复");
         assert.strictEqual(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "hello draft", "草稿正文恢复");
-        // unmount → 重新挂载 → 恢复草稿（模块缓存，同标签页）
+        assert.strictEqual(ctx.draftServer.get("admin", { contactId: 1, kind: "INBOUND", processingId: 101, accountScope: "acc1" }).content.text, "hello draft", "切专家前服务器确认最后输入");
+        // unmount 不是放弃；重新挂载仍恢复服务器已确认版本。
         ctx.sandbox.MailboxChat.unmount(ctx.host);
         ctx.sandbox.MailboxChat.mount(ctx.host, { filters: {} });
         await flush();
@@ -2378,6 +2516,7 @@ describe("mailbox chat 既有业务（I-7）：workbench/manual/drafts/adopt/sen
         await flush();
         assert.strictEqual(ctx.host.querySelector('input[aria-label="回复主题"]').value, "My subject", "重挂载后草稿恢复");
         assert.strictEqual(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "hello draft");
+        assert.strictEqual(ctx.draftServer.requests.filter((entry) => entry.method === "DELETE").length, 0, "普通切换与卸载不放弃草稿");
     });
 
     it("采用 → 人工发送：QA 载荷原样进发送 payload；成功清草稿，失败保留", async () => {
@@ -2557,7 +2696,11 @@ describe("mailbox chat 既有业务（I-7）：workbench/manual/drafts/adopt/sen
         });
         ctx.sandbox.MailboxChat.mount(ctx.host, { filters: {} });
         await flush();
-        assert.strictEqual(ctx.calls.dialogs.length, 1, "已编辑草稿时必须提示选择目标");
+        assert.strictEqual(ctx.calls.dialogs.length, 0, "新来信只提示，不自行打开确认框");
+        assert.match(ctx.host.querySelector('[data-role="draft-target-warning"]').textContent, /有新来信，当前仍在编辑原来信草稿/);
+        click(ctx.host.querySelector('[data-action="mc-retarget-draft"]'));
+        await flush();
+        assert.strictEqual(ctx.calls.dialogs.length, 1, "显式新开目标时复用确认框");
         assert.strictEqual(ctx.calls.dialogs[0].type, "confirm");
         assert.strictEqual(ctx.host.querySelector('input[aria-label="回复主题"]').value, "Re: Question 1");
         assert.strictEqual(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "typed draft");
@@ -3383,19 +3526,21 @@ describe("待匹配 Tab：第七 chip、请求契约与邮件级列表", () => {
     it("S-1：七个 tab 顺序/anchor 固定，待匹配只请求 unmatched-inbound（offset=page*20、无专家参数）", async () => {
         const ctx = await bootChat({ conversations, unmatched: { records: [unmatchedMail(901)], totalCount: 1 } });
         const chips = ctx.host.querySelectorAll(".mc-filter");
-        assert.deepStrictEqual(chips.map((chip) => chip.dataset.chip), ["all", "provided", "followed", "pending", "suspended", "replied", "unmatched"]);
+        assert.deepStrictEqual(chips.map((chip) => chip.dataset.chip), ["all", "drafts", "provided", "followed", "pending", "suspended", "replied", "unmatched"]);
         assert.deepStrictEqual(
             chips.map((chip) => chip.textContent.replace(/\d+/g, "")),
-            ["全部", "已提供", "跟进中", "待处理", "已挂起", "已回复", "待匹配"]
+            ["全部", "草稿", "已提供", "跟进中", "待处理", "已挂起", "已回复", "待匹配"]
         );
-        assert.strictEqual(chips[3].getAttribute("aria-pressed"), "true", "普通首次进入默认待处理");
-        assert.strictEqual(chips[6].getAttribute("aria-pressed"), "false");
+        const pendingChip = chipButton(ctx, "pending");
+        const unmatchedChip = chipButton(ctx, "unmatched");
+        assert.strictEqual(pendingChip.getAttribute("aria-pressed"), "true", "普通首次进入默认待处理");
+        assert.strictEqual(unmatchedChip.getAttribute("aria-pressed"), "false");
 
-        click(chips[6]);
+        click(unmatchedChip);
         await flush();
 
-        assert.strictEqual(chips[6].getAttribute("aria-pressed"), "true", "待匹配选中态");
-        assert.strictEqual(chips[3].getAttribute("aria-pressed"), "false");
+        assert.strictEqual(unmatchedChip.getAttribute("aria-pressed"), "true", "待匹配选中态");
+        assert.strictEqual(pendingChip.getAttribute("aria-pressed"), "false");
         const q = queryOf(lastUnmatchedRequest(ctx).url);
         assert.strictEqual(q.get("unmatchedOnly"), "true");
         assert.strictEqual(q.get("pageSize"), "20");
@@ -4251,6 +4396,10 @@ describe("followup 01：人工选择引用邮件与自然正文（I-1..I-8/S-1/S
         selectOption(ctx, 2893);
         applyFollowup(ctx);
         await flush();
+        const continueInbound = ctx.host.querySelector('[data-action="mc-continue-draft"]');
+        assert.strictEqual(continueInbound.hidden, false, "成功后新采用的跟进正文须显式继续编辑，不能自动复活 SENT");
+        click(continueInbound);
+        await flush();
         click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
         await flush();
         assert.strictEqual(ctx.calls.sendRich.length, 1, "有锚点来信不得再走 processingId adapter");
@@ -4258,7 +4407,7 @@ describe("followup 01：人工选择引用邮件与自然正文（I-1..I-8/S-1/S
         const body = ctx.calls.sendConversation[0].body;
         assert.strictEqual(ctx.calls.sendConversation[0].contactId, 1);
         assert.strictEqual(body.anchorMailRecordId, 2893);
-        assert.strictEqual(body.accountScope, null);
+        assert.strictEqual(body.accountScope, "acc1", "持久稿使用真实来信账号，不用页面全部账号筛选");
         assert.strictEqual(body.subject, "Re: Older introduction");
         assert.ok(body.textBody.indexOf("On 2026-09-05 11:49, acc1 wrote:") >= 0, "发送正文与所选引用同源");
         assert.strictEqual(body.senderAccountCode, undefined, "会话请求不得携带发件账号");
@@ -4286,6 +4435,10 @@ describe("followup 01：人工选择引用邮件与自然正文（I-1..I-8/S-1/S
         applyFollowup(ctx);
         await flush();
         assert.ok(anchorNote(ctx), "outbound 草稿同样显示锚点提示");
+        const continueOutbound = ctx.host.querySelector('[data-action="mc-continue-draft"]');
+        assert.strictEqual(continueOutbound.hidden, false, "已发送版本后的新跟进必须显式重开");
+        click(continueOutbound);
+        await flush();
         click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
         await flush();
         assert.strictEqual(ctx.calls.sendConversation.length, 2);
@@ -4847,14 +5000,14 @@ describe("fast-p 01 引用邮件模板：入口 / 只读上下文 / 竞态 / 填
         await openTemplate(ctx);
         click(applyOf(ctx));
         await flush();
+        // 采用稿以纯文本节点落地，追加只在其后插入模板正文块（原节点不重建）
+        assert.deepStrictEqual(structureOf(editorOf(ctx)), ["text:adopted body", "div:"], "追加保留采用稿并追加模板正文块");
         click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
         await flush();
         const appended = ctx.calls.sendRich[0].body;
         assert.deepStrictEqual(appended.ragFactCodes, ["KB-COMM-044"], "追加保留 QA/RAG 证据");
         assert.strictEqual(appended.ragCorpusFingerprint, "fp-2026", "追加保留语料指纹");
         assert.strictEqual(appended.edited, true, "正文变化后 edited=true");
-        // 采用稿以纯文本节点落地，追加只在其后插入模板正文块（原节点不重建）
-        assert.deepStrictEqual(structureOf(editorOf(ctx)), ["text:adopted body", "div:"], "追加保留采用稿并追加模板正文块");
         assert.ok(appended.textBody.includes("adopted body") && appended.textBody.includes("第一段"), "追加保留原文与模板正文");
 
         const replaced = await bootInboundTemplates();
@@ -4871,12 +5024,12 @@ describe("fast-p 01 引用邮件模板：入口 / 只读上下文 / 竞态 / 填
         setReplaceMode(replaced, true);
         click(applyOf(replaced));
         await flush();
+        assert.deepStrictEqual(editorOf(replaced).children.map((child) => child.tagName), ["DIV"], "只剩模板正文");
         click(replaced.host.querySelector('[data-action="mc-send-manual"]'));
         await flush();
         const replacedBody = replaced.calls.sendRich[0].body;
         assert.strictEqual(replacedBody.ragFactCodes, undefined, "替换正文清除 QA/RAG 证据");
         assert.strictEqual(replacedBody.ragCorpusFingerprint, undefined);
-        assert.deepStrictEqual(editorOf(replaced).children.map((child) => child.tagName), ["DIV"], "只剩模板正文");
     });
 
     it("I-2/I-5：跟进锚点账号取该封成功发件账号；发送仍携带原锚点", async () => {
@@ -4976,7 +5129,10 @@ describe("fast-p 01 引用邮件模板：入口 / 只读上下文 / 竞态 / 填
         ctx.sandbox.FormData = class SandboxFormData { append() {} };
         ctx.sandbox.mcHostSendRichReply = (processingId, body) => {
             ctx.calls.sendRich.push({ processingId: Number(processingId), body });
-            return new Promise((resolve) => { pendingSend = resolve; });
+            return new Promise((resolve) => { pendingSend = (value) => {
+                if (value && body.draftRef) ctx.draftServer.sent("admin", body.draftRef);
+                resolve(value);
+            }; });
         };
         const fileInput = ctx.host.querySelector('[data-role="outbound-file-input"]');
         fileInput.files = [{ name: "template-reference-check.txt", size: 3 }];
@@ -5137,11 +5293,15 @@ describe("fast-p 01 引用邮件模板：入口 / 只读上下文 / 竞态 / 填
         await flush();
         click(applyOf(ctx));
         await flush();
+        await ctx.sandbox.MailboxChat.flushDrafts(ctx.host);
+        const savedTemplate = ctx.draftServer.get("admin", { contactId: 1, kind: "INBOUND", processingId: 101, accountScope: "acc1" });
+        assert.strictEqual(savedTemplate.content.text, ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "模板应用正文经 PUT 保存到服务器");
+        assert.strictEqual(savedTemplate.content.subject, ctx.host.querySelector('input[aria-label="回复主题"]').value);
         const urls = templateCalls(ctx).map((entry) => `${entry.method} ${entry.url}`);
         assert.deepStrictEqual(Array.from(new Set(urls)), ["GET /api/compose-templates", "POST /api/compose-templates/preview-draft"], "只使用两个只读接口");
         assert.strictEqual(ctx.calls.sendRich.length, 0, "应用不发送邮件");
         assert.strictEqual(ctx.calls.sendConversation.length, 0);
-        assert.strictEqual(ctx.calls.api.filter((entry) => entry.method !== "GET" && entry.url.indexOf("/api/compose-templates") !== 0).length, 0, "无其它写请求");
+        assert.strictEqual(ctx.calls.api.filter((entry) => entry.method !== "GET" && entry.url.indexOf("/api/compose-templates") !== 0 && !entry.url.startsWith("/api/mail/mailbox/drafts")).length, 0, "除当前用户草稿持久化外无其它写请求");
     });
 });
 
@@ -6102,8 +6262,9 @@ describe("fast-p 上次回复：收发件箱列表与详情时间（I-1..I-5 / S
         await flush();
         assert.strictEqual(ctx.host.querySelectorAll(".mailbox-reply-list").length, 0, "待匹配列表不新增时间行");
         assert.strictEqual(ctx.host.querySelectorAll('[data-role="last-reply-time"]').length, 0, "待匹配详情不新增时间槽");
-        const unknown = ctx.calls.api.map((entry) => entry.url).filter((url) => !KNOWN_ENDPOINTS.test(url));
-        assert.deepStrictEqual(unknown, [], "不得引入额外 endpoint");
+        const approvedDraftRead = (entry) => entry.method === "GET" && /^\/api\/mail\/mailbox\/drafts(?:\/summaries)?(?:\?|$)/.test(entry.url);
+        const unknown = ctx.calls.api.filter((entry) => !KNOWN_ENDPOINTS.test(entry.url) && !approvedDraftRead(entry)).map((entry) => entry.url);
+        assert.deepStrictEqual(unknown, [], "只允许原端点及本计划授权的草稿只读摘要/计数请求");
         assert.strictEqual(ctx.sandbox.localStorage, undefined, "不新增 localStorage 状态");
         assert.strictEqual(ctx.sandbox.sessionStorage, undefined, "不新增 sessionStorage 状态");
     });
@@ -6172,8 +6333,13 @@ describe("mobile-core-02: pane、草稿归属与隐藏几何", () => {
         const missing = await mobile({ conversations: { items: [], total: 0 } }, { filters: {}, focus: { contactId: 7 } });
         assert.equal(pane(missing), "detail"); back(missing); assert.equal(pane(missing), "list");
     });
-    it("scope 变更在旧 owner 采集；账号 A/B 和用户互不污染", async () => {
-        const ctx = await mobile({}, { filters: { accountCode: "acc1" }, sessionUser: "u1" });
+    it("OUTBOUND scope 变更先采集旧 owner；账号 A/B 和真实登录用户互不污染", async () => {
+        const auth = { authenticated: true, username: "u1" };
+        const ctx = await mobile({
+            authMe: auth,
+            conversations: { items: [expertB({ contactId: 1, accountCodes: ["acc1", "acc2"] })], total: 1 },
+            messages: { items: messagesA().items.filter((item) => item.direction === "OUTBOUND"), nextBefore: null, hasMore: false }
+        }, { filters: { accountCode: "acc1" } });
         choose(ctx); await flush();
         ctx.host.querySelector('[aria-label="人工回复正文"]').innerText = "A账号草稿";
         ctx.sandbox.MailboxChat.mount(ctx.host, { filters: { accountCode: "acc2" } }); await flush();
@@ -6181,11 +6347,27 @@ describe("mobile-core-02: pane、草稿归属与隐藏几何", () => {
         ctx.host.querySelector('[aria-label="人工回复正文"]').innerText = "B账号草稿";
         ctx.sandbox.MailboxChat.mount(ctx.host, { filters: { accountCode: "acc1" } }); await flush();
         assert.equal(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "A账号草稿");
-        ctx.sandbox.MailboxChat.mount(ctx.host, { sessionUser: "u2" }); await flush(); choose(ctx); await flush();
-        assert.notEqual(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "A账号草稿");
+        auth.username = "u2";
         ctx.sandbox.MailboxChat.unmount(ctx.host);
-        ctx.sandbox.MailboxChat.mount(ctx.host, { filters: { accountCode: "acc2" }, sessionUser: "u1" }); await flush();
+        ctx.sandbox.MailboxChat.mount(ctx.host, { filters: { accountCode: "acc1" } }); await flush(); choose(ctx); await flush();
+        assert.notEqual(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "A账号草稿");
+        auth.username = "u1";
+        ctx.sandbox.MailboxChat.unmount(ctx.host);
+        ctx.sandbox.MailboxChat.mount(ctx.host, { filters: { accountCode: "acc2" } }); await flush();
         choose(ctx); await flush(); assert.equal(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "B账号草稿");
+    });
+    it("INBOUND 账号筛选不分裂真实来信目标草稿", async () => {
+        const ctx = await mobile({}, { filters: { accountCode: "acc1" } });
+        choose(ctx); await flush();
+        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
+        editor.innerText = "同一真实来信草稿"; inputEvent(editor);
+        await ctx.sandbox.MailboxChat.flushDrafts(ctx.host);
+        const original = ctx.draftServer.get("admin", { contactId: 1, kind: "INBOUND", processingId: 101, accountScope: "acc1" });
+        ctx.sandbox.MailboxChat.mount(ctx.host, { filters: { accountCode: "acc2" } }); await flush();
+        assert.equal(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "同一真实来信草稿");
+        assert.equal(ctx.host.querySelector('[data-role="manual-compose"]').dataset.targetKey, "1:101:acc1");
+        assert.equal(ctx.draftServer.get("admin", original.target).id, original.id);
+        assert.equal(ctx.draftServer.rows.size, 1, "筛选账号不会另建一个相同来信草稿");
     });
     it("旋转零业务请求、编辑器不重建；unmount 清监听且采集正文", async () => {
         const ctx = await mobile(); choose(ctx); await flush(); ctx.runFrames();
@@ -6244,7 +6426,10 @@ describe("mobile-core-02: pane、草稿归属与隐藏几何", () => {
     it("发送中返回再切 B，A 迟到成功不清 B 草稿也不重开 pane", async () => {
         const ctx = await mobile(); choose(ctx); await flush();
         let resolveSend;
-        ctx.sandbox.mcHostSendRichReply = () => new Promise((done) => { resolveSend = done; });
+        ctx.sandbox.mcHostSendRichReply = (processingId, body) => new Promise((done) => { resolveSend = (value) => {
+            if (value && body.draftRef) ctx.draftServer.sent("admin", body.draftRef);
+            done(value);
+        }; });
         ctx.host.querySelector('[aria-label="人工回复正文"]').innerText = "A提交版本";
         click(ctx.host.querySelector('[data-action="mc-send-manual"]')); await flush();
         back(ctx); choose(ctx, 2); await flush();

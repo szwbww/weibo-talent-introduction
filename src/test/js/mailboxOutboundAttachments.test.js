@@ -19,6 +19,9 @@ const ROOT = path.join(__dirname, "..", "..", "main", "resources", "static");
 const chatSource = fs.readFileSync(path.join(ROOT, "mailbox-chat.js"), "utf-8");
 const meetingSource = fs.readFileSync(path.join(ROOT, "meeting-confirmation.js"), "utf-8");
 const appSource = fs.readFileSync(path.join(ROOT, "app.js"), "utf-8");
+const behaviorHarnessSource = fs.readFileSync(path.join(__dirname, "mailboxChatBehavior.test.js"), "utf-8");
+const draftTransportSource = behaviorHarnessSource.slice(behaviorHarnessSource.indexOf("function createDraftServer()"), behaviorHarnessSource.indexOf("// End shared draft transport."));
+const createDraftServer = new Function("URL", draftTransportSource + "\nreturn createDraftServer;")(URL);
 
 // fast-p 03（I-2）：app.js 顶层唯一中文北京时间 formatter 切片（与 03 集成测试同一
 // 抽取口径），用于把真实宿主 `formatBeijingMeetingRange` 注入聊天沙箱——草稿卡 meta
@@ -815,6 +818,8 @@ function expertTagEditorHtml(orcidId, tags, level, editorId, missing) {
 
 function createChatSandbox(options) {
     const opts = options || {};
+    const draftServer = opts.draftServer || createDraftServer();
+    const owner = () => (opts.authMe && opts.authMe.username) || "admin";
     const requests = [];
     const calls = {
         api: requests,
@@ -838,8 +843,13 @@ function createChatSandbox(options) {
         uploadSeq: 0
     };
     const timers = [];
+    const cancelledTimers = new Set();
+    let timerSequence = 0;
 
     const defaultRoute = function defaultRoute(url, method, body) {
+        if (url === "/api/auth/me") return Promise.resolve(opts.authMe || { authenticated: true, username: "admin" });
+        const draftResult = draftServer.route(owner(), url, method, body);
+        if (draftResult !== undefined) return draftResult;
         if (url.startsWith("/api/mail/mailbox/conversations?")) {
             return Promise.resolve(opts.conversations || { items: [], total: 0 });
         }
@@ -932,14 +942,15 @@ function createChatSandbox(options) {
 
     // 自定义 route 可调用第 5 参 next() 回退到默认路由
     const route = opts.route
-        ? (url, method, body, entry) => opts.route(url, method, body, entry, defaultRoute)
+        ? (url, method, body, entry) => url.startsWith("/api/mail/mailbox/drafts") || url === "/api/auth/me"
+            ? defaultRoute(url, method, body) : opts.route(url, method, body, entry, defaultRoute)
         : defaultRoute;
 
     const sandbox = {
         console,
         URLSearchParams,
-        setTimeout: (fn) => { timers.push(fn); return timers.length; },
-        clearTimeout: () => {},
+        setTimeout: opts.clock ? opts.clock.setTimeout : (fn) => { const id = ++timerSequence; timers.push(() => { if (!cancelledTimers.has(id)) fn(); }); return id; },
+        clearTimeout: opts.clock ? opts.clock.clearTimeout : (id) => { cancelledTimers.add(id); },
         escapeHtml: escapeHtmlLike,
         alert: (message) => { calls.lastAlert = message; },
         confirm: () => true,
@@ -983,9 +994,10 @@ function createChatSandbox(options) {
             if (opts.sendRichDeferred) {
                 calls.sendRichDeferred = calls.sendRichDeferred || [];
                 return new Promise((resolve, reject) => {
-                    calls.sendRichDeferred.push({ resolve, reject, processingId: Number(processingId), body });
+                    calls.sendRichDeferred.push({ resolve: (value) => { if (value && body.draftRef) draftServer.sent(owner(), body.draftRef); resolve(value); }, reject, processingId: Number(processingId), body });
                 });
             }
+            if (body.draftRef) draftServer.sent(owner(), body.draftRef);
             return Promise.resolve(true);
         },
         mcHostSendConversationRichReply: (contactId, body) => {
@@ -995,9 +1007,10 @@ function createChatSandbox(options) {
             if (opts.sendConversationDeferred) {
                 calls.sendConversationPending = calls.sendConversationPending || [];
                 return new Promise((resolve, reject) => {
-                    calls.sendConversationPending.push({ resolve, reject, contactId: Number(contactId), body });
+                    calls.sendConversationPending.push({ resolve: (value) => { if (value && body.draftRef) draftServer.sent(owner(), body.draftRef); resolve(value); }, reject, contactId: Number(contactId), body });
                 });
             }
+            if (body.draftRef) draftServer.sent(owner(), body.draftRef);
             return Promise.resolve(true);
         },
         mcHostMountWorkbench: (hostEl, processingId, callbacks) => {
@@ -1123,11 +1136,10 @@ function createChatSandbox(options) {
     // 测试观察到的是生产渲染结果（回显 IANA zone 的旧实现必须在此失败）。
     vm.runInContext(extractAppRegion("const MEETING_CALENDAR_ZONE = ", "// ── API adapter"), sandbox);
     vm.runInContext(chatSource, sandbox, { filename: "mailbox-chat.js" });
-    if (opts.meetingEnabled) {
-        vm.runInContext(meetingSource, sandbox, { filename: "meeting-confirmation.js" });
-    }
+    vm.runInContext(meetingSource, sandbox, { filename: "meeting-confirmation.js" });
     return {
         sandbox,
+        draftServer,
         calls,
         timers,
         runTimers: () => { while (timers.length) { const fn = timers.shift(); fn(); } }
@@ -1742,9 +1754,10 @@ describe("fast-p 07 · I-2: 上传状态、顺序队列与草稿归属", () => {
 
         selectPerson(ctx, "2");
         await flush();
-        assert.strictEqual(fileCards(ctx).length, 0, "B 不显示 A 的附件卡");
-        typeDraft(ctx, "B 草稿");
+        assert.deepStrictEqual(cardNames(ctx), ["a-only.txt"], "离开先等待原 owner 上传和保存");
         await resolvePendingUpload(ctx, 0);
+        assert.strictEqual(fileCards(ctx).length, 0, "flush 完成后才显示 B，B 不显示 A 附件");
+        typeDraft(ctx, "B 草稿");
         assert.strictEqual(manualEditor(ctx).innerText, "B 草稿", "A 的回包不清 B 正文");
         assert.strictEqual(fileCards(ctx).length, 0, "A 的回包不落 B");
         assert.strictEqual(sendButton(ctx).disabled, false, "B 的发送可用性不受 A 回包影响");
@@ -1755,7 +1768,7 @@ describe("fast-p 07 · I-2: 上传状态、顺序队列与草稿归属", () => {
         assert.deepStrictEqual(cardStates(ctx), ["ready"], "回包已落在原 owner 草稿里");
     });
 
-    it("LRU 淘汰后迟到回包被忽略：会话草稿消失，不复活也不阻塞发送", async () => {
+    it("LRU 淘汰不清持久化协调器：unmount 后迟到上传仍保存原 owner", async () => {
         const fleet = [];
         for (let i = 1; i <= 12; i += 1) {
             fleet.push(expertA({
@@ -1781,18 +1794,24 @@ describe("fast-p 07 · I-2: 上传状态、顺序队列与草稿归属", () => {
         pickFiles(ctx, [fakeFile("evicted.txt")]);
         await flush();
         assert.strictEqual(ctx.calls.uploads.length, 1, "第一个上传已发出并挂起");
+        ctx.sandbox.MailboxChat.unmount(ctx.host);
+        await resolvePendingUpload(ctx, 0);
+        ctx.runTimers();
+        await flush();
+        ctx.sandbox.MailboxChat.mount(ctx.host, { filters: {} });
+        await flush();
 
         // 访问 11 个新会话把专家 1 挤出 ≤10 的会话缓存
         for (let i = 2; i <= 12; i += 1) {
             selectPerson(ctx, String(i));
             await flush();
         }
-        await resolvePendingUpload(ctx, 0);
+        assert.strictEqual(ctx.draftServer.requests.filter((entry) => entry.method === "DELETE").length, 0, "LRU 淘汰不放弃服务器草稿");
 
         selectPerson(ctx, "1");
         await flush();
-        assert.strictEqual(fileCards(ctx).length, 0, "被淘汰会话的迟到回包不复活草稿");
-        assert.strictEqual(sendButton(ctx).disabled, false, "迟到回包不留下 uploading 阻塞");
+        assert.deepStrictEqual(cardNames(ctx), ["evicted.txt"], "被淘汰会话从服务器恢复原 owner 的附件");
+        assert.deepStrictEqual(cardStates(ctx), ["ready"], "迟到回包不会留下 uploading 阻塞");
         assert.strictEqual(ctx.calls.uploads.length, 1, "迟到回包不重发上传");
     });
 });
@@ -2111,11 +2130,20 @@ describe("fast-p 07 · I-2/I-5: 草稿重建写点保留附件", () => {
         await confirmReadyMeeting(ctx);
         assert.ok(ctx.host.querySelector('[data-role="meeting-attachment"] .meeting-file'), "会议卡已填入");
         assert.deepStrictEqual(cardNames(ctx), ["cv.pdf"], "会议全文替换不丢通用附件");
+        await ctx.sandbox.MailboxChat.flushDrafts(ctx.host);
+        const ready = ctx.draftServer.get("admin", { contactId: 1, kind: "INBOUND", processingId: 101, accountScope: "acc1" });
+        assert.strictEqual(ready.content.context.meeting.state, "ready", "会议写入经真实 PUT 持久化");
+        assert.strictEqual(ready.content.context.meeting.preview.attachment.sha256, "a".repeat(64));
+        assert.deepStrictEqual(plain(ready.content.context.outboundAttachmentDraft.items.map((item) => item.id)), ["att-1"]);
 
         click(ctx.host.querySelector('[data-action="mc-remove-meeting"]'));
         await flush();
         assert.strictEqual(ctx.host.querySelector('[data-role="meeting-attachment"]').innerHTML.trim(), "");
         assert.deepStrictEqual(cardNames(ctx), ["cv.pdf"], "移除 ICS 不删通用附件");
+        await ctx.sandbox.MailboxChat.flushDrafts(ctx.host);
+        const removed = ctx.draftServer.get("admin", { contactId: 1, kind: "INBOUND", processingId: 101, accountScope: "acc1" });
+        assert.strictEqual(removed.content.context.meeting, null, "会议移除持久化为 null");
+        assert.strictEqual(removed.content.context.outboundAttachmentDraft.items.length, 1);
 
         await openMeetingLoaded(ctx);
         await confirmReadyMeeting(ctx);
@@ -2124,6 +2152,8 @@ describe("fast-p 07 · I-2/I-5: 草稿重建写点保留附件", () => {
         await flush();
         assert.strictEqual(fileCards(ctx).length, 0, "通用附件可单独移除");
         assert.ok(ctx.host.querySelector('[data-role="meeting-attachment"] .meeting-file'), "移除通用附件不删 ICS");
+        await ctx.sandbox.MailboxChat.flushDrafts(ctx.host);
+        assert.strictEqual(ctx.draftServer.get("admin", { contactId: 1, kind: "INBOUND", processingId: 101, accountScope: "acc1" }).content.context.outboundAttachmentDraft.items.length, 0, "附件移除写入服务端");
     });
 
     it("会议 + 附件一起发送：payload 同时带 meeting 与顺序 attachmentIds", async () => {
@@ -2215,6 +2245,9 @@ describe("fast-p 07 · I-2/I-5: 草稿重建写点保留附件", () => {
         });
         ctx.sandbox.MailboxChat.mount(ctx.host, { filters: {} });
         await flush();
+        assert.strictEqual(ctx.host.querySelector('[data-role="manual-compose"]').dataset.targetKey, "1:101:acc1", "新来信不自动替换原稿目标");
+        click(ctx.host.querySelector('[data-action="mc-retarget-draft"]'));
+        await flush();
 
         assert.deepStrictEqual(cardNames(ctx), ["cv.pdf"], "换目标后已 ready 附件仍在同一草稿上");
         assert.deepStrictEqual(cardStates(ctx), ["ready"]);
@@ -2262,5 +2295,80 @@ describe("fast-p 07 · S-1/S-2: 样式与 DOM 合同", () => {
         assert.ok(chatSource.includes('data-role="outbound-file-input"'));
         assert.ok(chatSource.includes('data-action="mc-remove-attachment"'));
         assert.ok(chatSource.includes('data-action="mc-upload-attachment"'));
+    });
+});
+
+describe("server drafts: upload persistence and cross-device descriptors", () => {
+    it("uploading then ready snapshots contain descriptors, not File/blob/downloadURL; unmount retains owner completion", async () => {
+        const ctx = await bootInbound({ deferUploads: true });
+        typeDraft(ctx, "owner bytes");
+        pickFiles(ctx, [fakeFile("persist.pdf")]); await flush();
+        ctx.runTimers(); await flush();
+        const writes = () => ctx.draftServer.requests.filter((entry) => entry.method === "PUT");
+        assert.ok(writes().length > 0, "uploading descriptor must be saved before upload completion");
+        const uploading = writes().at(-1).body.content.context.outboundAttachmentDraft.items[0];
+        assert.strictEqual(uploading.state, "uploading");
+        assert.strictEqual(uploading.filename, "persist.pdf");
+        assert.strictEqual(Object.prototype.hasOwnProperty.call(uploading, "file"), false);
+        ctx.sandbox.MailboxChat.unmount(ctx.host);
+        await resolvePendingUpload(ctx, 0);
+        ctx.runTimers(); await flush();
+        const saved = ctx.draftServer.get("admin", { contactId: 1, kind: "INBOUND", processingId: 101, accountScope: "acc1" });
+        assert.strictEqual(saved.content.text, "owner bytes");
+        assert.strictEqual(saved.content.context.outboundAttachmentDraft.items[0].state, "ready");
+        assert.strictEqual(saved.content.context.outboundAttachmentDraft.items[0].id, "att-1");
+        assert.ok(writes().every((entry) => !/"(?:file|downloadUrl)"\s*:|blob:/.test(JSON.stringify(entry.body))));
+        assert.strictEqual(ctx.draftServer.requests.filter((entry) => entry.method === "DELETE").length, 0);
+    });
+
+    it("restores server downloads, fails incomplete uploads and advances of-N keys before another file selection", async () => {
+        const server = createDraftServer();
+        const target = { contactId: 1, kind: "INBOUND", processingId: 101, accountScope: "acc1" };
+        server.seed("admin", target, { subject: "Re: Question 1", html: "<b>restored</b>", text: "restored", context: {
+            schemaVersion: 1, outboundAttachmentDraft: { revision: 4, items: [
+                { key: "of-40", state: "ready", id: "persist-40", filename: "saved.pdf", contentType: "application/pdf", byteLength: 1024, sha256: "a".repeat(64) },
+                { key: "of-41", state: "uploading", filename: "unfinished.zip", byteLength: 2048 }
+            ] }
+        } }, { attachmentDownloads: { "persist-40": "/api/mail/conversations/1/outbound-attachments/persist-40/download" }, attachmentsSendable: false });
+        const ctx = await bootInbound({ draftServer: server });
+        assert.deepStrictEqual(cardNames(ctx), ["saved.pdf", "unfinished.zip"]);
+        assert.deepStrictEqual(cardStates(ctx), ["ready", "failed"]);
+        assert.match(draftFiles(ctx).textContent, /上传未完成，请重新选择文件/);
+        assert.strictEqual(sendButton(ctx).disabled, true);
+        assert.match(cardOf(ctx, 0).querySelector('[data-role="outbound-download"]').getAttribute("href"), /persist-40\/download$/);
+        pickFiles(ctx, [fakeFile("new.pdf")]); await flush();
+        const keys = fileCards(ctx).map((card) => card.getAttribute("data-key") || card.getAttribute("data-file-key"));
+        assert.strictEqual(new Set(keys).size, 3, "restored and newly selected attachments must not collide");
+        await ctx.sandbox.MailboxChat.flushDrafts(ctx.host);
+        const items = server.get("admin", target).content.context.outboundAttachmentDraft.items;
+        assert.strictEqual(new Set(items.map((item) => item.key)).size, 3);
+        assert.ok(Number(items[2].key.slice(3)) > 41);
+    });
+});
+
+describe("server drafts: restored meeting context and invalidation", () => {
+    it("meeting input/preview/ICS survive a fresh browser and a real block edit persists stale instead of silently sending", async () => {
+        const ctx = await bootInbound({ meetingEnabled: true });
+        await openMeetingLoaded(ctx);
+        await confirmReadyMeeting(ctx);
+        await ctx.sandbox.MailboxChat.flushDrafts(ctx.host);
+        const target = { contactId: 1, kind: "INBOUND", processingId: 101, accountScope: "acc1" };
+        const before = ctx.draftServer.get("admin", target).content.context;
+        assert.strictEqual(before.meeting.state, "ready");
+        assert.ok(before.meeting.input.zoneId);
+        assert.strictEqual(before.meeting.preview.attachment.icsText.includes("BEGIN:VCALENDAR"), true);
+        ctx.sandbox.MailboxChat.unmount(ctx.host);
+        const restored = await bootInbound({ meetingEnabled: true, draftServer: ctx.draftServer });
+        assert.ok(restored.host.querySelector('[data-role="meeting-attachment"] .meeting-file'));
+        const expectedBlock = restored.doc.createElement("div");
+        expectedBlock.innerHTML = before.meeting.blockHtml;
+        assert.strictEqual(meetingBodyText(manualEditor(restored)), expectedBlock.innerText, "restored block keeps the persisted HTML text structure (MiniDOM has no layout line breaks)");
+        assert.strictEqual(restored.draftServer.requests.filter((entry) => entry.method === "DELETE").length, 0);
+        typeDraft(restored, "replaced meeting body");
+        await restored.sandbox.MailboxChat.flushDrafts(restored.host);
+        const after = restored.draftServer.get("admin", target).content.context;
+        assert.strictEqual(after.meeting.state, "stale", "real content edit invalidates previously previewed meeting");
+        assert.strictEqual(after.meeting.preview.attachment.sha256, before.meeting.preview.attachment.sha256, "stale context retains preview for review");
+        assert.strictEqual(sendButton(restored).disabled, true);
     });
 });

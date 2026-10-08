@@ -14,11 +14,14 @@ import org.junit.jupiter.api.*
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty
 import org.mockito.Mockito.*
+import org.springframework.aop.framework.ProxyFactory
 import org.springframework.dao.DuplicateKeyException
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.jdbc.datasource.DataSourceTransactionManager
 import org.springframework.jdbc.datasource.DriverManagerDataSource
+import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource
+import org.springframework.transaction.interceptor.TransactionInterceptor
 import org.springframework.transaction.support.TransactionTemplate
 import org.springframework.web.context.support.GenericWebApplicationContext
 import org.springframework.web.servlet.DispatcherServlet
@@ -173,7 +176,11 @@ class MailReplyDraftRepositoryIT {
     @Test fun `runtime HTTP sessions restore conflict discard reopen and business isolation`() {
         val contacts = mock(ExpertContactRepository::class.java)
         `when`(contacts.existsById(9101)).thenAnswer { jdbc.queryForObject("SELECT COUNT(*) FROM expert_contact WHERE id=9101",Long::class.java)!! > 0 }
-        val service = MailReplyDraftService(repository,contacts,mock(InboundMailProcessingRepository::class.java),mock(MailSenderAccountRepository::class.java),mock(OutboundAttachmentService::class.java))
+        val serviceTarget = MailReplyDraftService(repository,contacts,mock(InboundMailProcessingRepository::class.java),mock(MailSenderAccountRepository::class.java),mock(OutboundAttachmentService::class.java))
+        val service = ProxyFactory(serviceTarget).apply {
+            isProxyTargetClass = true
+            addAdvice(TransactionInterceptor(tx.transactionManager!!,AnnotationTransactionAttributeSource()))
+        }.proxy as MailReplyDraftService
         val countsBefore = businessCounts()
         val dir = Files.createTempDirectory("draft-runtime-smoke")
         val tomcat = Tomcat(); tomcat.setBaseDir(dir.toString()); tomcat.setPort(0); tomcat.connector

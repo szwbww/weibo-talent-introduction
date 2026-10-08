@@ -5028,61 +5028,85 @@ function returnToMobileContactsList() {
     });
 }
 
+function flushMailboxChatDrafts() {
+    const host = $("#mailboxList");
+    if (!host || !mailboxChatAvailable() || typeof MailboxChat.flushDrafts !== "function") {
+        return Promise.resolve();
+    }
+    return MailboxChat.flushDrafts(host);
+}
+
 function setView(view) {
     if (!Object.prototype.hasOwnProperty.call(viewMeta, view)) return;
-    if (view !== "mailbox" && typeof invalidateMailboxGroupPush === "function") invalidateMailboxGroupPush();
-    if (view !== "contacts") {
-        ++mobileContactPresentation.generation;
-        const contactsView = $("#view-contacts");
-        if (contactsView) {
-            contactsView.dataset.mobilePane = "list";
-            contactsView.dataset.mobileLoading = "false";
+    const sequence = setView.draftNavigationSequence = (setView.draftNavigationSequence || 0) + 1;
+    const applyView = () => {
+        if (view !== "mailbox" && typeof invalidateMailboxGroupPush === "function") invalidateMailboxGroupPush();
+        if (view !== "contacts") {
+            ++mobileContactPresentation.generation;
+            const contactsView = $("#view-contacts");
+            if (contactsView) {
+                contactsView.dataset.mobilePane = "list";
+                contactsView.dataset.mobileLoading = "false";
+            }
         }
+        const mobileMenu = $("#mobileCoreView");
+        if (mobileMenu) mobileMenu.value = view;
+        if (view !== "ai-training") unmountAiTrainingTrustReply();
+        if (view !== "mailbox") unmountMailboxTrustReplyHosts();
+        // 离开收发件箱销毁聊天 mount；草稿由服务器持久化，待保存内容由导航门禁确认，
+        // 保存协调状态不随 mount 清空，避免跨会话/跨专家残留可见目标与 QA 上下文。
+        if (view !== "mailbox" && typeof unmountMailboxChatHosts === "function") {
+            unmountMailboxChatHosts();
+        }
+        if (state.monitoring.autoRefreshTimer && view !== "monitoring") {
+            clearTimeout(state.monitoring.autoRefreshTimer);
+            state.monitoring.autoRefreshTimer = null;
+        }
+        if (view !== "monitoring") {
+            ++state.monitoring.loadSeq;
+            ++state.monitoring.activitySeq;
+            ++state.monitoring.openTracking.requestSeq;
+            ++state.monitoring.openTracking.settingsSeq;
+            closeOpenTrackingDetail();
+        }
+        state.view = view;
+        if (view === "mail-templates") {
+            state.mailSendOptions = [];
+        }
+        $$(".nav-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.view === view));
+        $$(".view").forEach((section) => section.classList.toggle("active", section.id === `view-${view}`));
+        $("#viewTitle").textContent = viewMeta[view][0];
+        $("#viewSubtitle").textContent = viewMeta[view][1];
+        refreshCurrentView();
+        // T-3：进入/离开任务页只失效观察器请求版本；手动 watcher 的其余语义不动。
+        if (view === "tasks") {
+            // 进入任务页：后台（size=1）响应即刻作废，按当前 activePage 立即取一次卡片。
+            taskActivityState.listRequestSequence += 1;
+            if (taskActivityState.started) refreshTaskActivity();
+        } else {
+            // 离开任务页：收起页内详情并使详情与列表的迟到响应失效（I-6）。
+            taskActivityState.listRequestSequence += 1;
+            closeTaskActivityDetail();
+        }
+        if (view === "contacts") {
+            resumeProgressPollingIfNeeded();
+        } else {
+            ["EXPERT_REVALIDATION", "RAW_PROMOTION_SCAN", "EXPERT_DISCOVERY"].forEach(t => stopTaskWatcher(t, true));
+        }
+    };
+    const host = $("#mailboxList");
+    if (state.view === "mailbox" && view !== "mailbox" && host && mailboxChatAvailable()
+        && typeof MailboxChat.hasPendingDrafts === "function" && MailboxChat.hasPendingDrafts(host)) {
+        return flushMailboxChatDrafts().then(() => {
+            if (sequence === setView.draftNavigationSequence) applyView();
+        }).catch((error) => {
+            if (sequence !== setView.draftNavigationSequence) return;
+            const mobileMenu = $("#mobileCoreView");
+            if (mobileMenu) mobileMenu.value = state.view;
+            showStatus(error.message || "保存失败，内容尚未同步到服务器", "error");
+        });
     }
-    const mobileMenu = $("#mobileCoreView");
-    if (mobileMenu) mobileMenu.value = view;
-    if (view !== "ai-training") unmountAiTrainingTrustReply();
-    if (view !== "mailbox") unmountMailboxTrustReplyHosts();
-    // child 10（I-2）：离开收发件箱即销毁聊天 mount（草稿为内存态、随销毁清空，
-    // 避免跨会话/跨专家残留目标与 QA 上下文）。
-    if (view !== "mailbox" && typeof unmountMailboxChatHosts === "function") {
-        unmountMailboxChatHosts();
-    }
-    if (state.monitoring.autoRefreshTimer && view !== "monitoring") {
-        clearTimeout(state.monitoring.autoRefreshTimer);
-        state.monitoring.autoRefreshTimer = null;
-    }
-    if (view !== "monitoring") {
-        ++state.monitoring.loadSeq;
-        ++state.monitoring.activitySeq;
-        ++state.monitoring.openTracking.requestSeq;
-        ++state.monitoring.openTracking.settingsSeq;
-        closeOpenTrackingDetail();
-    }
-    state.view = view;
-    if (view === "mail-templates") {
-        state.mailSendOptions = [];
-    }
-    $$(".nav-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.view === view));
-    $$(".view").forEach((section) => section.classList.toggle("active", section.id === `view-${view}`));
-    $("#viewTitle").textContent = viewMeta[view][0];
-    $("#viewSubtitle").textContent = viewMeta[view][1];
-    refreshCurrentView();
-    // T-3：进入/离开任务页只失效观察器请求版本；手动 watcher 的其余语义不动。
-    if (view === "tasks") {
-        // 进入任务页：后台（size=1）响应即刻作废，按当前 activePage 立即取一次卡片。
-        taskActivityState.listRequestSequence += 1;
-        if (taskActivityState.started) refreshTaskActivity();
-    } else {
-        // 离开任务页：收起页内详情并使详情与列表的迟到响应失效（I-6）。
-        taskActivityState.listRequestSequence += 1;
-        closeTaskActivityDetail();
-    }
-    if (view === "contacts") {
-        resumeProgressPollingIfNeeded();
-    } else {
-        ["EXPERT_REVALIDATION", "RAW_PROMOTION_SCAN", "EXPERT_DISCOVERY"].forEach(t => stopTaskWatcher(t, true));
-    }
+    applyView();
 }
 
 async function refreshCurrentView() {
@@ -18575,6 +18599,13 @@ function bindAuthEvents() {
     });
 
     $("#logoutBtn")?.addEventListener("click", async () => {
+        setView.draftNavigationSequence = (setView.draftNavigationSequence || 0) + 1;
+        try {
+            await flushMailboxChatDrafts();
+        } catch (error) {
+            showStatus(error.message || "保存失败，内容尚未同步到服务器", "error");
+            return;
+        }
         try {
             await api("/api/auth/logout", { method: "POST" });
         } catch (e) {

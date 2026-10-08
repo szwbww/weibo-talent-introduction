@@ -12869,3 +12869,11 @@ body.preview-available:not(.preview-docked) .preview-rail {
 .mailbox-suspend-reason-count{white-space:nowrap}
 @media(max-width:760px){.mailbox-suspend-banner{margin:12px 12px 3px;padding:11px 12px}#view-mailbox.mc-refined .mc-filter{min-height:44px;padding-left:6px;padding-right:6px}.mailbox-suspend-card-action,#view-mailbox.mc-refined .mc-actions .mailbox-suspend-action,.mailbox-suspend-inline-secondary,.mailbox-suspend-inline-primary,#view-mailbox.mc-refined .mc-message footer .mailbox-suspend-pending-action{min-height:44px}.mailbox-suspend-inline-reason textarea{font-size:16px}.mailbox-suspend-inline-reason{margin:10px 12px}#view-mailbox.mc-refined .mc-message .mailbox-suspend-completion-line{flex-direction:column;align-items:flex-start;gap:10px}.mailbox-suspend-completion-actions{align-self:flex-end}.mailbox-suspend-process-confirm>span{flex-basis:100%;text-align:right}}
 /* mailbox-suspension-contract:end */
+
+.mail-chat .mailbox-draft-count{display:inline-flex;align-items:center;margin-left:4px;padding:0 5px;border:1px solid #bfdbfe;border-radius:5px;background:#eff6ff;color:#1e40af;font-size:10px;line-height:16px;white-space:nowrap}
+.mail-chat .mc-person.mailbox-draft-card{grid-template-columns:minmax(0,1fr)}
+.mail-chat .mailbox-draft-status-row{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-height:32px}
+.mail-chat .mailbox-draft-status{flex:1;min-width:0;color:#64748b;font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+.mail-chat .mailbox-draft-status[data-state=saved]{color:#059669}
+.mail-chat .mailbox-draft-status[data-state=error],.mail-chat .mailbox-draft-status[data-state=conflict]{color:#be123c}
+.mail-chat .mailbox-draft-status[data-state=saving],.mail-chat .mailbox-draft-status[data-state=dirty]{color:#b45309}
