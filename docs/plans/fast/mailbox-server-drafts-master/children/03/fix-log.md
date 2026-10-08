@@ -24,3 +24,8 @@
 - Independent re-verifier: DraftUIReVerifierCapable
 - Final verdict: LIGHT_PASS_WITH_NOTES
 - F-1/F-2 resolved; O-1 record only. No further repair dispatched.
+
+## Epoch 3 — Evidence correction closing
+- Replacement evidence records only verifier action normalization.
+- Repair count remains 1; fix commit remains 6d80d6243be6af9c78f4ce44a54a29c7c1bc9033.
+- No additional product repair or check was performed.

@@ -435,3 +435,8 @@ Not every bullet of the human acceptance checklist is claimed as a completed bro
 - DraftUIReVerifierOne capability-aborted before report/commands; replaced by independent command-capable verifier, not counted as a repair round or accepted verdict.
 - Closing records add bookkeeping only; no additional product tests or whole-system verification claimed.
 
+## Epoch 3 — Evidence correction 1
+- Checkpoint rejected explanatory COMPLETE_CHILD line formatting, not product evidence or verdict.
+- Appended canonical Required Action block to the existing verifier result; no historical entries rewritten, no tests/verdict manufactured.
+- Replacement evidence commit records this deterministic normalization and unchanged terminal code head.
+

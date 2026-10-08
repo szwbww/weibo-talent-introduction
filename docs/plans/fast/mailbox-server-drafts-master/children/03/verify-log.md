@@ -96,3 +96,9 @@ Baseline comparison: epoch2 reported HTTP transaction-fixture failure was not re
 
 ### Required Action
 - COMPLETE_CHILD — four light gates PASS; retain O-1 for human acceptance awareness. No further AUTO_FIX, plan amendment, aggregate review, deployment or unconfigured-model setup requested. Controller may record this independent result and continue its fast-p workflow.
+
+### Artifact action normalization
+- Controller checkpoint found the preceding explanatory action line is not machine-canonical. The verdict and verifier decision are unchanged; no new verification was run.
+
+### Required Action
+- COMPLETE_CHILD
