@@ -111,7 +111,7 @@ X3：API 设置写入 → enqueue/worker 读取；X4：登记 generation → 关
 
 AuthWebConfig:28 覆盖 /api/**；AuthInterceptor 校验 session、用户存在及强制改密，不存在现成细粒度角色模型；按现有控制台登录权限接入，不发明 admin 字符串校验。Controller 自身也要求 session USERNAME，禁止从正文伪造 updatedBy。
 
-TalentIntroductionApplication 已启用 Scheduling；AttachmentTransferTransactionConfig 的 TransactionTemplate 配置为 REQUIRES_NEW，通知嵌套登记必须新建 NESTED 模板。MailOpenTrackingRepositoryIT 是实际 MySQL/Testcontainers 的已有范式。计划时最新迁移 V149；预留 V150，执行前重查冲突，遇占用须同步更新本文件与清单。
+TalentIntroductionApplication 已启用 Scheduling；AttachmentTransferTransactionConfig 的 TransactionTemplate 配置为 REQUIRES_NEW，通知嵌套登记必须新建 NESTED 模板。MailOpenTrackingRepositoryIT 是实际 MySQL/Testcontainers 的已有范式。计划时最新迁移 V149；原预留 V150，合并本地 main 时已被专家备注迁移占用，群通知改用 V151；执行前重查冲突，遇占用须同步更新本文件与清单。
 
 ## 实现方案
 
@@ -139,7 +139,7 @@ enqueue 需要外层真实事务，否则拒绝登记并脱敏报告；嵌套保
 
 | # | 精确路径 | 操作 |
 |---|---|---|
-|1|src/main/resources/db/migration/V150__create_expert_inbound_notification.sql|新增|
+|1|src/main/resources/db/migration/V151__create_expert_inbound_notification.sql|新增|
 |2|src/main/kotlin/com/weibo/talentintroduction/mail/repository/ExpertInboundNotificationRepository.kt|新增|
 |3|src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertInboundNotificationService.kt|新增|
 |4|src/main/kotlin/com/weibo/talentintroduction/mail/controller/ExpertInboundNotificationController.kt|新增|
@@ -206,3 +206,7 @@ enqueue 需要外层真实事务，否则拒绝登记并脱敏报告；嵌套保
 - 操作步骤：连续收信；执行既有刷新、批量发送测试流程；结束持有通知租约的实例。
 - 预期结果：通知请求间隔至少 5 秒，无并发重复领取；另一实例可在租约到期后恢复；刷新、批量发送的原结果不变。
 - 覆盖：I-5/I-6，X5；既有按钮与发送流程回归。
+
+## 修正记录
+
+- 2026-10-08，本地 main 合并：按本方案迁移版本冲突处理条款，将未部署的群通知迁移由 V150 改为 V151，SQL 内容不变。main 的 `V150__create_expert_contact_note.sql` 保留；fast-p 隔离分支及原验收证据不改写，历史报告中的 V150 仍指当时独立分支的验证版本。

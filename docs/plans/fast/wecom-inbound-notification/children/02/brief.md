@@ -1,0 +1,15 @@
+# Child 02 approved brief
+
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/wecom-inbound-notification
+- Branch: fast/wecom-inbound-notification
+- Exact approved plan: docs/plans/2026-10-06/wecom-inbound-notification-02-ui.md
+- Plan identity: commit:4826cbe111310284cf13bfe7fa395bd9e2e122ad
+- Approval: HUMAN:批准该总方案及两个子方案，按 fast-p 执行 (2026-10-08).
+
+Read the entire exact child plan and master docs/plans/2026-10-06/wecom-inbound-notification.md. Authorized Files are exactly the exhaustive child list; required commands, invariants and downstream interfaces are exactly its contract. Do not amend plans or expand file scope. All work must target this worktree, not ambient parent checkout. Follow supplied repository instructions; docs/design.md is authoritative for mail logic. Use JDK 11. Docker is available after orb start; no real Webhook credentials or group sends. The migration V150 reservation is free at baseline.
+
+Use execute-p with plan/worktree identity gates. Fast-p overrides its normal verification handoff: controller dispatches a separate four-gate light verifier; do not invoke verify-p/review-p/repair-p/fix-v inside this child loop. Run required commands only after final changes; no mid-flight builds/lints/tests/formatters. Exercise actual changed path with an isolated smoke scenario, no real group sends. No scope expansion for docs/changelog: execution report documents behavior within evidence scope. Commit only authorized product/test files as feat(fast-p): implement 02; reports/logs are excluded. Write execution.md in this directory. Return READY_FOR_VERIFICATION, BLOCKED or PLAN_CONFLICT with SHA and evidence.
+
+Dependency: child 01 must be terminal LIGHT_PASS/LIGHT_PASS_WITH_NOTES before dispatch. Use its recorded code head for product base. Preserve settings endpoint contract and S-1/S-2 exact UI contract; browser proof mandatory.
+
+Prior child output: 01 LIGHT_PASS, code head 74ead840b5c8e7ab78e57a913c882cbaed3eeeb5. Exact settings endpoint/response verified by independent WecomBackendVerifier. Focused JVM tests 104 pass; real MySQL tests 13 pass; Maven-bound JS baseline now 1503 pass. Sources/reports children/01/execution.md and verify-log.md. Use this code head as child_base_sha; later evidence commits do not advance product base.

@@ -74,6 +74,17 @@ class AutoMailReplyService(
 ) {
     private val log = LoggerFactory.getLogger(AutoMailReplyService::class.java)
     private val duplicateInboundWindowMinutes = 30L
+    private var inboundNotificationService: ExpertInboundNotificationService? = null
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    fun setInboundNotificationService(service: ExpertInboundNotificationService) {
+        inboundNotificationService = service
+    }
+
+    @javax.annotation.PostConstruct
+    fun requireInboundNotificationService() {
+        checkNotNull(inboundNotificationService) { "Expert inbound notification service is required" }
+    }
 
     /**
      * 单信处理入口（I-2）：**所有**非退信/非 DMARC 来信（含收件人无法唯一判定者）都必须
@@ -95,7 +106,8 @@ class AutoMailReplyService(
     fun processSingle(
         account: MailSenderAccount,
         received: ReceivedMail,
-        skipImapAck: Boolean = false
+        skipImapAck: Boolean = false,
+        notifyGroups: Boolean = false
     ): SinglePipelineResult {
         val owner = mailSenderAccountService.resolveInboundOwner(account)
         // I-3/I-4：外链材料只在这里并入业务资料写链（MIME 之后，保持稳定顺序），
@@ -141,7 +153,15 @@ class AutoMailReplyService(
         }
         val result = try {
             transactionTemplate.execute {
-                processSingleCore(owner, businessMail, groupMembers)
+                val processed = processSingleCore(owner, businessMail, groupMembers)
+                if (notifyGroups && !skipImapAck && processed.expertContactId != null &&
+                    owner.accountCode != "SIMULATOR_NOOP" && account.accountCode != "SIMULATOR_NOOP" &&
+                    processed.outcome != SinglePipelineOutcome.DUPLICATE_IMAP_UID &&
+                    processed.outcome != SinglePipelineOutcome.DUPLICATE_INBOUND_MESSAGE) {
+                    checkNotNull(inboundNotificationService) { "Expert inbound notification service is required" }
+                        .enqueueBestEffort(owner.accountCode, businessMail.uidValidity, businessMail.imapUid)
+                }
+                processed
             }
         } catch (e: DataIntegrityViolationException) {
             // I-3：唯一键异常只在确实存在同一物理键时视为并发重复，其余异常向外抛。
@@ -904,7 +924,7 @@ class AutoMailReplyService(
                     handledUids.add(mail.imapUid)
                     continue
                 }
-                val r = processSingle(account, mail, skipImapAck = false)
+                val r = processSingle(account, mail, skipImapAck = false, notifyGroups = true)
                 handledUids.add(mail.imapUid)
                 if (r.recorded) {
                     recorded++
@@ -979,7 +999,7 @@ class AutoMailReplyService(
                     recorded = false,
                     reason = "UID_NOT_FOUND:$uid"
                 )
-            processSingle(account, mail, skipImapAck = false)
+            processSingle(account, mail, skipImapAck = false, notifyGroups = false)
         }
     }
 

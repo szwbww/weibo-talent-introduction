@@ -114,6 +114,8 @@ talent-introduction:
     send-interval-ms: ${MANUAL_OUTREACH_SEND_INTERVAL_MS:1000}
   mail-open-tracking:
     base-url: ${MAIL_OPEN_TRACKING_BASE_URL:}
+  wecom-inbound:
+    webhook: ${WECOM_EXPERT_INBOUND_WEBHOOK:}
   unsubscribe:
     base-url: ${UNSUBSCRIBE_BASE_URL:}
     secret: ${UNSUBSCRIBE_SECRET:}

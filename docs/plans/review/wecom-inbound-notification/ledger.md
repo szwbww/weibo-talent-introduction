@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-10-06/wecom-inbound-notification.md
+
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 1
+- Master plan: docs/plans/2026-10-06/wecom-inbound-notification.md (sha256 22efdecd3d001c8b7f04b30512e2fd644a3487ad19b6feacd5dda035656ee1da)
+- Governing master identity: worktree sha256 22efdecd3d001c8b7f04b30512e2fd644a3487ad19b6feacd5dda035656ee1da; recorded commit 4826cbe111310284cf13bfe7fa395bd9e2e122ad
+- Invoked master identity: SAME (sha256 22efdecd3d001c8b7f04b30512e2fd644a3487ad19b6feacd5dda035656ee1da)
+- Master identity state: CONSISTENT
+- Governing amendment: N/A
+- Amendments: N/A
+- Fast-p ledger: docs/plans/fast/wecom-inbound-notification/ledger.md (sha256 5d662bc6108b53d41dbc41628ce65509daf4462137205841abbd6b275305e9e2)
+- Fast-p handoff: docs/plans/fast/wecom-inbound-notification/human-review-handoff.md (sha256 75b08f5fee81059e891694437e152e1b8fb0acfad5436ded9255c77f6cce7feb)
+- Master base: 235681497c226066fa0174a2d79bc82863a1e91a
+- Final code head: b5452b4ff487766dd69c0ef4b3996dd2b484f1ef
+- Evidence parent before next commit: 686c5090bb6bb649563f37d642199ad89762e03a
+- Previous evidence commit: 686c5090bb6bb649563f37d642199ad89762e03a
+- Branch: fast/wecom-inbound-notification
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/wecom-inbound-notification
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: SELECTED; master path /Users/lukai/IdeaProjects/weibo-talent-introduction/docs/plans/2026-10-06/wecom-inbound-notification.md; candidate worktree/branch/fast-ledger/handoff and base/code ancestry validated by scripts/discover_fast_p.py.
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_reviewer
+- Reviewer attempt: 1
+- Machine result: PASS
+- Machine report epoch: 1 (`docs/plans/review/wecom-inbound-notification/machine-verification.md`)
+- Repair artifact: N/A
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: human must complete A-M1 and A-M2, then explicitly accept boundary b5452b4ff487766dd69c0ef4b3996dd2b484f1ef
