@@ -102,6 +102,7 @@ class AutoMailReplyServiceTest {
     private val dmarcReportIngestService = Mockito.mock(DmarcReportIngestService::class.java)
     private val mailContentService = MailContentService()
     private val autoReplySettingService = Mockito.mock(AutoReplySettingService::class.java)
+    private val inboundNotificationService = Mockito.mock(ExpertInboundNotificationService::class.java)
     private val inboundMailTagService = Mockito.mock(InboundMailTagService::class.java)
     private val expertSearchService = Mockito.mock(ExpertSearchService::class.java)
     private val renderTemplateService = MailComposeTemplateService(
@@ -156,6 +157,7 @@ class AutoMailReplyServiceTest {
 
     @org.junit.jupiter.api.BeforeEach
     fun setUp() {
+        service.setInboundNotificationService(inboundNotificationService)
         Mockito.`when`(autoReplySettingService.isGlobalEnabled()).thenReturn(true)
         Mockito.`when`(accountService.getAutoReceiveAccount(Mockito.anyString())).thenAnswer { invocation ->
             val code = invocation.getArgument<String>(0)
@@ -925,6 +927,87 @@ class AutoMailReplyServiceTest {
             anyValue(contact), anyValue(OperatorStatus.REPLIED), anyValue("")
         )
         Mockito.verifyNoInteractions(groundedAutoReplyDecisionService, deliveryService)
+    }
+
+    @Test
+    fun `ordinary receipt notifies even with global auto reply disabled and acknowledges after commit`() {
+        Mockito.`when`(autoReplySettingService.isGlobalEnabled()).thenReturn(false)
+        val account = account("sender")
+        stubAutoReplyPipeline(account, introSentContact())
+
+        service.receiveAndAutoReply("sender", 5)
+
+        val ordered = Mockito.inOrder(transactionManager, inboundNotificationService, receiveService)
+        ordered.verify(inboundNotificationService).enqueueBestEffort("sender", 1, 101)
+        ordered.verify(transactionManager).commit(Mockito.nullable(org.springframework.transaction.TransactionStatus::class.java))
+        ordered.verify(receiveService).markSeen(account, 101)
+        Mockito.verifyNoInteractions(deliveryService)
+    }
+
+    @Test
+    fun `processing identity notification does not depend on mail record recorded flag`() {
+        val account = account("sender")
+        val contact = introSentContact()
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com")).thenReturn(contact)
+
+        val result = service.processSingle(account, reply(), notifyGroups = true)
+
+        assertFalse(result.recorded)
+        assertEquals(SinglePipelineOutcome.INTRODUCTION_NOT_SENT, result.outcome)
+        Mockito.verify(inboundNotificationService).enqueueBestEffort("sender", 1, 101)
+        Mockito.verify(receiveService).markSeen(account, 101)
+        Mockito.verifyNoInteractions(deliveryService)
+    }
+
+    @Test
+    fun `UID backfill is never a group notification source`() {
+        val account = account("sender")
+        val received = reply(bodyTruncated = true)
+        Mockito.`when`(accountService.getAutoReceiveAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchByUids(account, listOf(101L))).thenReturn(listOf(received))
+        val contact = introSentContact()
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias(received.from)).thenReturn(contact)
+
+        service.processByUids("sender", listOf(101L))
+
+        Mockito.verifyNoInteractions(inboundNotificationService)
+        Mockito.verify(receiveService).markSeen(account, 101)
+    }
+
+    @Test
+    fun `skip IMAP acknowledgement and simulation never notify groups`() {
+        val account = account("sender")
+        stubAutoReplyPipeline(account, introSentContact())
+        service.processSingle(account, reply(bodyTruncated = true), skipImapAck = true, notifyGroups = true)
+        service.processSingle(account("SIMULATOR_NOOP"), reply(bodyTruncated = true, imapUid = 102), notifyGroups = true)
+        Mockito.verifyNoInteractions(inboundNotificationService)
+    }
+
+    @Test
+    fun `unmatched receipt does not invoke notification registration`() {
+        service.processSingle(account("sender"), reply(), notifyGroups = true)
+        Mockito.verifyNoInteractions(inboundNotificationService)
+    }
+
+    @Test
+    fun `truncated matched body still notifies without SMTP or state changes`() {
+        val account = account("sender")
+        val contact = introSentContact()
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com")).thenReturn(contact)
+        val result = service.processSingle(account, reply(bodyTruncated = true), notifyGroups = true)
+        assertEquals(SinglePipelineOutcome.BODY_TRUNCATED, result.outcome)
+        Mockito.verify(inboundNotificationService).enqueueBestEffort("sender", 1, 101)
+        Mockito.verifyNoInteractions(deliveryService, statusHistoryRepository)
+    }
+
+    @Test
+    fun `physical duplicate receipt never creates another notification`() {
+        val processing = InboundMailProcessing(id = 99, senderAccountCode = "sender", mailboxOwnerCode = "sender",
+            uidValidity = 1, imapUid = 101, messageId = "reply-1", fromEmail = "expert@example.com",
+            subject = "reply", receivedAt = reply().receivedAt, processStatus = "PROCESSED", processReason = "done", expertContactId = 11)
+        Mockito.`when`(inboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid("sender", 1, 101)).thenReturn(processing)
+        service.processSingle(account("sender"), reply(), notifyGroups = true)
+        Mockito.verifyNoInteractions(inboundNotificationService)
     }
 
     @Test
