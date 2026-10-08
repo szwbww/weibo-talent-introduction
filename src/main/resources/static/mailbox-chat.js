@@ -2617,6 +2617,9 @@
                         clearSelectedConversation();
                         instance.listSeq += 1;
                         instance.draftCounts.clear();
+                        instance.list.items = [];
+                        instance.list.total = 0;
+                        updateDraftTotal(0);
                         instance.openedDraft = null;
                         renderConversationEmpty();
                     }
@@ -2626,6 +2629,7 @@
                     instance.auth.username = String(data.username);
                     instance.auth.failed = false;
                     renderList();
+                    renderPager();
                     renderSuspensionDetail();
                     renderTimeline();
                     const rec = currentDraftRecord();
@@ -6547,7 +6551,7 @@
             if (!rec.loaded || rec.loading || rec.error === "load" || rec.readOnly) return;
             if (Object.keys(patch).every((name) => name === "force") && rec.baseline
                 && values.subject === rec.baseline.subject && values.html === rec.baseline.html && values.text === rec.baseline.text
-                && (existing || !patch.force)) return;
+                && !existing && !patch.force) return;
             // 跟进锚点（I-4）：patch 显式给值才改（null = 清除，如采用可信草稿/应用会议），
             // 其余保存沿用既有草稿值。
             const hasAnchorPatch = Object.prototype.hasOwnProperty.call(patch, "followUpAnchorMailRecordId");
@@ -9426,7 +9430,11 @@
                 instance.auth.ready = false;
                 instance.openedDraft = null;
                 instance.draftCounts.clear();
+                instance.list.items = [];
+                instance.list.total = 0;
                 updateDraftTotal(0);
+                renderList();
+                renderPager();
                 loadAuthenticatedUser();
                 setMobilePane("list");
                 renderConversationEmpty();

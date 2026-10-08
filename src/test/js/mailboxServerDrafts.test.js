@@ -111,6 +111,41 @@ describe("server drafts I-1/I-2/I-3: authority, sequence and navigation", () => 
         assert.equal(status(ctx), liveStatus, "aria-live save updates must not rebuild the compose DOM");
     });
 
+    for (const acknowledgeB of [false, true]) it("captures A→B→A " + (acknowledgeB ? "after B ACK" : "before debounce"), async () => {
+        const server = H.createDraftServer(), time = clock();
+        server.seed("admin", inbound(), content("A"));
+        const ctx = await boot(server, { clock: time });
+        const originalHtml = editor(ctx).innerHTML;
+        type(ctx, "B");
+        if (acknowledgeB) { time.advance(800); await H.flush(); assert.equal(read(server).content.text, "B"); }
+        H.setEditorContent(editor(ctx), originalHtml, "A"); H.inputEvent(editor(ctx));
+        assert.notEqual(status(ctx).dataset.state, "saved");
+        time.advance(800); await H.flush(); await save(ctx);
+        assert.equal(puts(server).at(-1).body.content.text, "A");
+        assert.equal(read(server).content.text, "A");
+        assert.equal(editor(ctx).innerText, "A");
+        assert.equal(status(ctx).textContent, "已保存到服务器");
+        const count = puts(server).length;
+        H.inputEvent(editor(ctx)); await save(ctx);
+        assert.equal(puts(server).length, count, "unchanged content remains deduplicated");
+        ctx.sandbox.MailboxChat.unmount(ctx.host);
+        const restored = await boot(server);
+        assert.equal(editor(restored).innerText, "A");
+        assert.equal(status(restored).dataset.state, "saved");
+    });
+
+    it("clearing an edited initial form captures its empty baseline instead of saving the prior edit", async () => {
+        const server = H.createDraftServer(), time = clock(), ctx = await boot(server, { clock: time });
+        const initialHtml = editor(ctx).innerHTML, initialText = editor(ctx).innerText;
+        type(ctx, "temporary edit");
+        H.setEditorContent(editor(ctx), initialHtml, initialText); H.inputEvent(editor(ctx));
+        time.advance(800); await H.flush(); await save(ctx);
+        assert.equal(puts(server).at(-1).body.content.text, initialText);
+        assert.equal(read(server).content.text, initialText);
+        assert.equal(read(server).state, "ACTIVE");
+        assert.equal(status(ctx).dataset.state, "saved");
+    });
+
     it("clearing an existing draft persists empty ACTIVE content and never DELETEs", async () => {
         const server = H.createDraftServer(); server.seed("admin", inbound(), content());
         const ctx = await boot(server);
@@ -280,6 +315,48 @@ describe("server drafts I-5/I-8: complete restoration and server paging", () => 
         assert.equal(puts(server).length, 0);
         assert.doesNotMatch(ctx.host.textContent, /private before session change/);
         assert.equal(deletes(server).length, 0);
+    });
+
+    for (const seam of ["resolve", "applyOptions"]) it(seam + " clears A cards/counts while B list is delayed and rejects a stale A response", async () => {
+        const server = H.createDraftServer(), auth = { authenticated: true, username: "admin" };
+        server.seed("admin", inbound(), content("private A preview", { subject: "private A subject" }));
+        server.seed("user-B", inbound(), content("B preview", { subject: "B subject" }));
+        const ctx = await boot(server, { authMe: auth });
+        H.click(H.chipButton(ctx, "drafts")); await H.flush();
+        assert.match(ctx.host.textContent, /private A preview/);
+        const staleA = deferred(), delayedB = deferred();
+        let oldResult, bRequests = 0;
+        server.intercept = (entry, execute) => {
+            if (/\/drafts\?/.test(entry.url) && entry.owner === "admin") {
+                oldResult = execute(); return staleA.promise;
+            }
+            if (/\/drafts\?/.test(entry.url) && entry.owner === "user-B") {
+                bRequests += 1; return delayedB.promise.then(execute);
+            }
+            return execute();
+        };
+        const oldRefresh = ctx.api.refresh(); await H.flush();
+        auth.username = "user-B";
+        if (seam === "applyOptions") {
+            ctx.sandbox.MailboxChat.mount(ctx.host, { sessionUser: "user-B", filters: {} });
+        } else {
+            type(ctx, "private A pending edit");
+            await assert.rejects(ctx.sandbox.MailboxChat.flushDrafts(ctx.host), /登录用户已变化/);
+        }
+        await H.flush();
+        assert.ok(bRequests > 0, "B list request is actually pending");
+        const cleared = () => {
+            assert.doesNotMatch(ctx.host.textContent, /private A (?:preview|subject|pending edit)/);
+            assert.equal(ctx.host.querySelectorAll(".mailbox-draft-card").length, 0);
+            assert.equal(ctx.host.querySelector('[data-role="draft-total"]').textContent, "0");
+        };
+        cleared();
+        staleA.resolve(oldResult); await oldRefresh; await H.flush(); cleared();
+        delayedB.resolve(); await H.flush();
+        assert.match(ctx.host.textContent, /B preview/);
+        assert.doesNotMatch(ctx.host.textContent, /private A/);
+        assert.equal(ctx.host.querySelectorAll(".mailbox-draft-card").length, 1);
+        assert.equal(ctx.host.querySelector('[data-role="draft-total"]').textContent, "1");
     });
 });
 
