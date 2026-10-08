@@ -1,0 +1,2 @@
+$ rg -n --no-ignore mailbox_reply_draft|MailReplyDraft src/main src/test
+exit=1

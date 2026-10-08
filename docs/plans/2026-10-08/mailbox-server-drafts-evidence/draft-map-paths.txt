@@ -1,0 +1,70 @@
+$ rg -n --no-ignore sessionStore\.|draftsRef|drafts\.set|drafts\.delete|draftsMap\.set|draftsMap\.delete|getDraft\(|setDraft\(|deleteDraft\(|saveDraftFromInputs\(|writeDraftWithMeeting\(|retargetManual\( src/main/resources/static/mailbox-chat.js
+exit=0
+569:        const rec = sessionStore.get(key);
+571:        sessionStore.delete(key);
+572:        sessionStore.set(key, rec);
+577:        const rec = sessionStore.get(key);
+579:            sessionStore.delete(key);
+580:            sessionStore.set(key, rec);
+588:        let rec = sessionStore.get(key);
+616:        sessionStore.delete(key);
+617:        sessionStore.set(key, rec);
+619:        if (sessionStore.size > SESSION_CACHE_LIMIT) {
+622:            sessionStore.forEach((entry, entryKey) => {
+628:            if (oldestKey !== null && oldestKey !== key) sessionStore.delete(oldestKey);
+634:        sessionStore.delete(conversationCacheKey(user, accountScope, contactId));
+730:            draftsRef: null,
+827:            if (instance.draftsRef) return instance.draftsRef;
+830:                instance.draftsRef = record.drafts;
+843:            instance.draftsRef = record.drafts;
+847:        function getDraft(targetKey) {
+853:        function setDraft(targetKey, draft) {
+856:            drafts.set(targetKey, draft);
+859:        function deleteDraft(targetKey) {
+861:            if (drafts && targetKey) drafts.delete(targetKey);
+1179:                && !getDraft(key) && values && values.subject === cleared.snapshot.subject
+1181:            if (!unchangedSent) saveDraftFromInputs();
+2667:            instance.draftsRef = null;
+2843:            instance.draftsRef = null;
+2877:                    instance.draftsRef = cached.drafts;
+2898:                    instance.draftsRef = cached.drafts;
+4508:            instance.draftsRef = rec.drafts;
+4803:            const draft = targetKey != null ? getDraft(targetKey) : null;
+5693:            const draft = key ? getDraft(key) : null;
+5717:            captured.draftsMap.set(captured.targetKey, Object.assign({}, existing, {
+5729:            captured.draftsMap.set(captured.targetKey, Object.assign({}, existing, {
+5743:            if (!getDraft(targetKey)) {
+5744:                saveDraftFromInputs();
+5745:                if (!getDraft(targetKey)) return null;
+5979:        function saveDraftFromInputs(extra) {
+5984:            const existing = getDraft(key);
+6016:            setDraft(key, {
+6064:            const existing = getDraft(key);
+6071:                setDraft(key, Object.assign({}, existing || {}, {
+6170:            const draft = getDraft(key);
+6350:            saveDraftFromInputs({
+6551:            saveDraftFromInputs();
+7353:            const draft = getDraft(key);
+7600:            saveDraftFromInputs();
+7602:            const draft = getDraft(key);
+7641:        function writeDraftWithMeeting(meeting, qaOverride) {
+7644:            const existing = getDraft(key);
+7662:            setDraft(key, next);
+7677:            const draft = getDraft(key);
+7725:            writeDraftWithMeeting(meeting, qaValue);
+7745:                saveDraftFromInputs({ meeting: null, meetingAccountCode: "" });
+7747:                const existing = getDraft(key);
+7748:                setDraft(key, Object.assign({}, existing || {}, {
+7773:            saveDraftFromInputs(patch || {});
+7823:            saveDraftFromInputs({ meeting: null, meetingAccountCode: "", followUpAnchorMailRecordId: null });
+7862:            const draftSnapshot = getDraft(key);
+7984:                        draftsMap.delete(key);
+7998:                        draftsMap.set(key, nextDraft);
+8008:                if (cleared) draftsMap.delete(key);
+8100:            const draft = currentTargetKey() ? getDraft(currentTargetKey()) : null;
+8104:                retargetManual(newestProcessing, latest.accountCode || "");
+8112:                    retargetManual(newestProcessing, latest.accountCode || "", { keepBody: true });
+8119:        function retargetManual(newProcessingId, newAccount, options) {
+8122:            const draft = oldKey ? getDraft(oldKey) : null;
+8140:                setDraft(newKey, migrated);
+8141:                if (oldKey && oldKey !== newKey) deleteDraft(oldKey);

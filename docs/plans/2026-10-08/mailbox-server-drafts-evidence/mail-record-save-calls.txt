@@ -1,0 +1,20 @@
+$ rg -n --no-ignore mailRecordRepository\.(save|delete)|mailSendAttemptRepository\.(save|delete)|attemptRepository\.(insertIgnore|claimStatus|updateStatusAndError) src/main scripts
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:60:        mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:89:            mailSendAttemptRepository.save(attempt.copy(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:112:        mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:138:                mailSendAttemptRepository.save(attempt.copy(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:100:        val saved = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:238:        attemptRepository.insertIgnore(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:276:                val affected = attemptRepository.claimStatus(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:300:                val affected = attemptRepository.claimStatus(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:397:        val savedRecord = mailRecordRepository.save(mailRecord)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:421:        attemptRepository.updateStatusAndError(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:496:        val savedRecord = mailRecordRepository.save(mailRecord)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:499:        attemptRepository.updateStatusAndError(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1090:                    val attempt = mailSendAttemptRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:145:        mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:439:        val inboundMailRecord = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:780:        val outboundRecord = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1067:    ): MailRecord = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1266:        val saved = mailRecordRepository.save(

@@ -1,0 +1,4 @@
+$ rg --files --no-ignore agents templates
+exit=2
+rg: agents: No such file or directory (os error 2)
+rg: templates: No such file or directory (os error 2)

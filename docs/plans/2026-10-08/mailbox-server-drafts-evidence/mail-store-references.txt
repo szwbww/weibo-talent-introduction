@@ -1,0 +1,223 @@
+$ rg -n --no-ignore \bmail_record\b|\bmail_send_attempt\b|MailRecordRepository|MailSendAttemptRepository src/main/kotlin src/main/resources/db/migration scripts
+exit=0
+src/main/resources/db/migration/V23__create_mail_send_attempt_and_add_mail_record_error.sql:1:CREATE TABLE mail_send_attempt (
+src/main/resources/db/migration/V23__create_mail_send_attempt_and_add_mail_record_error.sql:15:ALTER TABLE mail_record ADD COLUMN error_summary VARCHAR(1024) DEFAULT NULL;
+src/main/resources/db/migration/V23__create_mail_send_attempt_and_add_mail_record_error.sql:16:ALTER TABLE mail_record ADD COLUMN mail_send_attempt_id BIGINT DEFAULT NULL;
+src/main/resources/db/migration/V23__create_mail_send_attempt_and_add_mail_record_error.sql:17:CREATE INDEX idx_mr_mail_send_attempt_id ON mail_record(mail_send_attempt_id);
+scripts/dump_rag_parity_fixtures.py:20:- >= 20 real inbound emails exported from historical `mail_record` INBOUND
+src/main/resources/db/migration/V9__create_meeting_schedule_and_template.sql:16:    CONSTRAINT fk_meeting_schedule_mail FOREIGN KEY (source_mail_record_id) REFERENCES mail_record(id)
+src/main/resources/db/migration/V6__add_inbound_cleaning_and_intent.sql:1:ALTER TABLE mail_record
+src/main/resources/db/migration/V6__add_inbound_cleaning_and_intent.sql:16:        FOREIGN KEY (mail_record_id) REFERENCES mail_record(id),
+src/main/resources/db/migration/V126__create_outbound_mail_attachment.sql:16:--   I-5 发送快照 JSON 由 05 写入 mail_record 新列；本表既不存字节也不存快照。
+src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:11:--      MySQL 唯一索引允许多个 NULL，故既有 mail_record/inbound_processing 所有者行不受影响。
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:15:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:40:    private val mailRecordRepository: MailRecordRepository,
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:386:        // 7 日成熟口径天数：与 MailRecordRepository 两条队列 SQL 的 INTERVAL 7 DAY 是同一常量（I-4）。
+src/main/resources/db/migration/V127__add_outbound_attachments_snapshot.sql:2:-- V127 mail_record 人工回复通用附件存档列（fast-p 05）
+src/main/resources/db/migration/V127__add_outbound_attachments_snapshot.sql:13:ALTER TABLE mail_record
+src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql:1:-- 1. mail_record monitoring fields
+src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql:2:ALTER TABLE mail_record
+src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql:8:        COMMENT '触发本条 OUTBOUND 的 INBOUND mail_record.id' AFTER triggered_by;
+src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql:10:ALTER TABLE mail_record
+src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql:32:    source_inbound_id BIGINT NULL COMMENT '触发本次晋级的 INBOUND mail_record.id',
+src/main/resources/db/migration/V94__backfill_operator_status_for_manual_sends.sql:11:       SELECT 1 FROM mail_record mr
+src/main/resources/db/migration/V141__create_mail_open_tracking.sql:11:ALTER TABLE mail_record
+src/main/resources/db/migration/V1__create_business_tables.sql:97:CREATE TABLE mail_record (
+src/main/resources/db/migration/V123__add_mail_record_calendar_attachment.sql:2:-- V123 mail_record 会议日历附件存档列（fast-p 02）
+src/main/resources/db/migration/V123__add_mail_record_calendar_attachment.sql:13:ALTER TABLE mail_record
+src/main/resources/db/migration/V31__add_mail_record_created_at_index.sql:1:ALTER TABLE mail_record
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/MailSendAttempt.kt:7:@Table("mail_send_attempt")
+src/main/resources/db/migration/V85__add_expert_contact_sender_binding.sql:2:-- 绑定语义 = 主题发起权归属（回复仍由 mail_record.sender_account_code 决定）。
+src/main/resources/db/migration/V85__add_expert_contact_sender_binding.sql:21:      FROM mail_record mr
+src/main/resources/db/migration/V7__create_mail_attachment_and_expert_document.sql:11:        FOREIGN KEY (mail_record_id) REFERENCES mail_record(id)
+src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql:16:-- 不声明外键到 rag_fact / mail_record：事实可能被停用或改写，存证不应随之失效
+src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql:18:-- 的 mail_record 生命周期独立于本表。
+src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql:22:    mail_record_id    BIGINT       NOT NULL COMMENT '已发出的 RAG 回信 mail_record.id',
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:5:  FROM mail_send_attempt msa
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:6:  JOIN mail_record mr
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:18:ALTER TABLE mail_send_attempt
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:26:UPDATE mail_record mr
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:27:JOIN mail_send_attempt msa
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:35:DROP INDEX idx_mr_mail_send_attempt_id ON mail_record;
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:37:ALTER TABLE mail_record
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:40:        FOREIGN KEY (mail_send_attempt_id) REFERENCES mail_send_attempt(id);
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:42:UPDATE mail_send_attempt msa
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:43:JOIN mail_record mr
+src/main/resources/db/migration/V65__qa_rule_dedup_keyword_fix_and_overview.sql:128:--     If mail_record references block the delete, keep them disabled instead.
+src/main/resources/db/migration/V42__mail_record_qa_rule.sql:9:        FOREIGN KEY (mail_record_id) REFERENCES mail_record(id) ON DELETE RESTRICT,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:6:import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:9:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:18:    private val mailRecordRepository: MailRecordRepository,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:20:    private val mailSendAttemptRepository: MailSendAttemptRepository,
+src/main/resources/db/migration/V125__create_meeting_calendar_event.sql:19:        FOREIGN KEY (source_mail_record_id) REFERENCES mail_record(id) ON DELETE RESTRICT
+src/main/resources/db/migration/V101__add_task_execution_id_to_mail_record.sql:3:ALTER TABLE mail_record
+src/main/resources/db/migration/V101__add_task_execution_id_to_mail_record.sql:7:    ON mail_record (task_execution_id, id);
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/MailRecord.kt:7:@Table("mail_record")
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:18:import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:28:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:96:    private val mailRecordRepository: MailRecordRepository,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:98:    private val mailSendAttemptRepository: MailSendAttemptRepository,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:622:     *   mail_send_attempt UNIQUE upsert, hasSentIntroduction double-check — all unchanged).
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1123:                        // 6. Record success atomically (state transition + mail_record + counter + attempt + ES) — I-7
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:21:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:30:    private val mailRecordRepository: MailRecordRepository,
+src/main/kotlin/com/weibo/talentintroduction/rag/service/RagPrefilterService.kt:29: * `mail_record` 映射本类型。
+src/main/kotlin/com/weibo/talentintroduction/rag/service/RagProcessContextResolver.kt:4:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/rag/service/RagProcessContextResolver.kt:16: * - `expertReplyCount` = 该联系人 `mail_record` 中 `direction='INBOUND'` 的条数
+src/main/kotlin/com/weibo/talentintroduction/rag/service/RagProcessContextResolver.kt:26:    private val mailRecordRepository: MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:13:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:29: * 从事件（mail_record / bounce_record / mail_attachment）反推每位联系人的**期望** operator_status
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:44:    private val mailRecordRepository: MailRecordRepository,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:53:    /** 全表扫描 + 内存比对（expert_contact 2062 行 / mail_record 2157 行，规模小，一次读入）。 */
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:69:        // 材料附件挂在 INBOUND mail_record 上（MailAttachmentService.saveInboundAttachments 以 mailRecordId 关联）
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:174:     * - CONTACTED：存在 OUTBOUND + INTRODUCTION + SENT 的 mail_record（ManualInitialOutreachService.hasSentIntroduction():895 逐字）
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:176:     * - REPLIED：存在 INBOUND mail_record（AutoMailReplyService:802）
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt:10:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt:43:    private val mailRecordRepository: MailRecordRepository,
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt:76:    /** 训练邮件：mail_record 行；只接受 INBOUND。 */
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt:82:                "mail_record $sourceId does not exist"
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt:89:                "mail_record $sourceId is not an inbound mail"
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:8:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:26:    private val mailRecordRepository: MailRecordRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:18:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:54:    private val mailRecordRepository: MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:65:        /** 03 (I-3/I-4)：日历附件只在 SENT 出站行暴露（mail_record.send_status 值）。 */
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:42:interface MailRecordRepository : CrudRepository<MailRecord, Long> {
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:48:        SELECT * FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:59:        FROM mail_record mr
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:75:        SELECT mr.* FROM mail_record mr
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:78:            FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:85:                    WHERE p.expert_contact_id = mail_record.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:90:                    WHERE p2.expert_contact_id = mail_record.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:112:            FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:119:                    WHERE p.expert_contact_id = mail_record.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:124:                    WHERE p2.expert_contact_id = mail_record.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:156:        SELECT * FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:166:        SELECT * FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:190:        SELECT COUNT(*) FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:199:        SELECT COUNT(*) FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:207:        SELECT COUNT(DISTINCT expert_contact_id) FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:215:        SELECT COUNT(*) FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:225:        SELECT COUNT(*) FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:235:        SELECT COUNT(*) FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:245:        SELECT * FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:264:        SELECT COUNT(*) FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:279:        SELECT * FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:305:        SELECT COUNT(*) FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:325:    @Query("SELECT * FROM mail_record WHERE id = :id")
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:330:        SELECT COUNT(*) FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:347:          FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:357:    // 每位专家至多一封 INTRODUCTION（mail_send_attempt 的 uq_orcid_mail_type (orcid_id, mail_type)
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:375:                  FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:381:                       FROM mail_record inb
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:383:                               FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:415:                  FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:421:                       FROM mail_record inb
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:423:                               FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:450:                  FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:468:        SELECT DISTINCT sender_account_code FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:476:        SELECT COUNT(*) FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:487:        SELECT COUNT(*) FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:516:            FROM mail_record mr
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:546:                     JOIN mail_record mr2 ON ma.mail_record_id = mr2.id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:583:            FROM mail_record mr
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:642:                FROM mail_record mr
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:710:                FROM mail_record mr
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:784:            FROM mail_record mr
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:822:                     JOIN mail_record mr2 ON ma.mail_record_id = mr2.id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:874:        SELECT * FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceRateMonitorService.kt:4:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceRateMonitorService.kt:26:    private val mailRecordRepository: MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MailSendAttemptRepository.kt:11:interface MailSendAttemptRepository : CrudRepository<MailSendAttempt, Long> {
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MailSendAttemptRepository.kt:16:    @Query("SELECT * FROM mail_send_attempt WHERE orcid_id = :orcidId AND mail_type = :mailType FOR UPDATE")
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MailSendAttemptRepository.kt:22:        INSERT IGNORE INTO mail_send_attempt
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MailSendAttemptRepository.kt:47:        UPDATE mail_send_attempt
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MailSendAttemptRepository.kt:59:        UPDATE mail_send_attempt
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiQaExtractionService.kt:9:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiQaExtractionService.kt:35:    private val mailRecordRepository: MailRecordRepository,
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:23:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:55:    private val mailRecordRepository: MailRecordRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailOpenTrackingRepository.kt:163:        private const val FROM = "FROM mail_record m LEFT JOIN mail_open_tracking t ON t.id = m.open_tracking_id " +
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:14:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:26:    private val mailRecordRepository: MailRecordRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:15: * 绝不再 UNION INBOUND mail_record 重复计数）；发件只取 OUTBOUND mail_record。
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:322:    /** 每位专家最近一封来信（真实 processing.id，绝不从 mail_record 推算）。
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:528:     * 归一化 UNION 基础：OUTBOUND mail_record UNION ALL linked inbound_mail_processing。
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:563:              FROM mail_record mr
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:625:                SELECT 1 FROM mail_record mro
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:730:                    SELECT 1 FROM mail_record mr_replied
+src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt:9:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt:601:    private val mailRecordRepository: MailRecordRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:7:import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:14:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:28:    private val attemptRepository: MailSendAttemptRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:29:    private val mailRecordRepository: MailRecordRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:49:        /** 会话回信线程/审计锚点类型前缀（真实 mail_record，绝不伪造 inbound id）。 */
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:95:    /** findCompletedByRequestId 命中的已完成会话回信（attempt SENT + 唯一 mail_record）。 */
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:216:     * 且其唯一 mail_record 存在时返回。其余状态（IN_PROGRESS/UNKNOWN/FAILED…）返回空，
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:412:        // fast-p 02 (I-2)：真实 SENT mail_record 取得 id 之后、attempt 标 SENT 之前创建
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/BounceRecordRepository.kt:61:    // mail_record.expert_contact_id 有 FK（V1__create_business_tables.sql），发送失败那一支无孤儿问题。
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:13:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:33: * 其唯一 owner（mail_record 或 inbound_mail_processing）→ contact。
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:39: * mail_record.source_inbound_id 永远不作为 processing id 使用。
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:54:    private val mailRecordRepository: MailRecordRepository,
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:72:     * - mail_record owner → record.expert_contact_id；
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:420:     *    processing → 归属 processing；0 候选 → 该 mail_record 自身；
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:703:     * 唯一匹配历史 mail_record，恰好 1 条才回退其附件；0/多条一律拒绝（空列表，
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:776:            SELECT id FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:856:              LEFT JOIN mail_record mr ON mr.id = a.mail_record_id
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:24:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:40:    private val mailRecordRepository: MailRecordRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:132:        // `inbound_mail_processing`/`mail_record`/意图/标签/附件/专家状态，只在允许确认时
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:20:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:69:    private val mailRecordRepository: MailRecordRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:367:     * 跟进邮件（I-2/I-3）：`anchorMailRecordId` 非空时按 id 重读权威 `mail_record` 并逐条
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:686:            // I-3：会话回信锚点只以真实 mail_record.id 表达，绝不伪造 inbound id。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:698:            // 05 的 finalize 四分支据此写 mail_record.outbound_attachments_json。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1778:    /** 落库 mail_record.inReplyTo 与 SendPayload.inReplyTo 的值（线程锚点）。 */
+src/main/kotlin/com/weibo/talentintroduction/task/service/MailAutomationScheduler.kt:54:        // runAndRecord 上下文里跑，会有自己的 execution 行；队列模式下 mail_record.
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:6:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:43:    private val mailRecordRepository: MailRecordRepository,
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:53:            // 双 owner 兼容：mail_record owner（历史）沿用原有归属校验；
+src/main/kotlin/com/weibo/talentintroduction/mail/service/GroundedAutoReplyDecisionService.kt:16:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/GroundedAutoReplyDecisionService.kt:50:    private val mailRecordRepository: MailRecordRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:12:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:24:    private val mailRecordRepository: MailRecordRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationModels.kt:13: * mail_record.calendar_attachment_json；客户端不能直传任意 downloadUrl。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:22: *   storage_path；已匹配分支以 mail_record 为 owner，未匹配以 processing 为 owner。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:31: * 不触发 SMTP、send_attempt、mail_record、meeting_schedule、processing 状态、
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:14:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:23:    private val mailRecordRepository: MailRecordRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:19:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:42:    private val mailRecordRepository: MailRecordRepository? = null,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutomaticApplicationPromotionService.kt:9:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutomaticApplicationPromotionService.kt:21:    private val mailRecordRepository: MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BatchAutoMailReplyService.kt:4:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BatchAutoMailReplyService.kt:13:    private val mailRecordRepository: MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BatchAutoMailReplyService.kt:78:        // I-1：历史 mail_record 里的逻辑账号先映射为物理 owner，再按 owner 去重——
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:7:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:37:    private val mailRecordRepository: MailRecordRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentModels.kt:81: * `mail_record` 存档 JSON 数组里的元素形态（05 写入，06 读取比较）。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentModels.kt:125: * 固定契约：`mail_record` 里「没有通用附件」的唯一表示是 SQL NULL；非空才存 JSON 数组，
+src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentModels.kt:144:    /** 序列化（05 写 mail_record）；不合法立即抛 [IllegalArgumentException]，不产出可疑存档。 */
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionService.kt:11:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionService.kt:24:    private val mailRecordRepository: MailRecordRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionService.kt:205:     * [MailRecordRepository.findOutboundCandidatesByMessageId]（仅 `direction='OUTBOUND'`），
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/CalendarAttachmentController.kt:3:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/CalendarAttachmentController.kt:25: * 只暴露 mail_record 中 OUTBOUND + MANUAL_RICH_REPLY + SENT、expertContactId 等于 path、
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/CalendarAttachmentController.kt:36:    private val mailRecordRepository: MailRecordRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MessageIdNormalizer.kt:7: * （观测事实，无官方文档，见 K-vendor-message-id-prefix.md 两个样本）。`mail_record.message_id`
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:85:     * `findAllByAccountCodeNot(SIMULATOR_NOOP)` 的既有口径（不读 INBOUND `mail_record`、
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt:8:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt:43:    private val mailRecordRepository: MailRecordRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt:12:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt:80:    private val mailRecordRepository: MailRecordRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionService.kt:63: * - 只写新表；不写 expert_contact/expert_follow/expert_replied_dismissal/mail_record/
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:53: * 绝不从 mail_record 推算。
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:109: * `mail_record` 并验证（同联系人/OUTBOUND/SENT/真实账号/scope），非法一律 422；null
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentController.kt:6:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentController.kt:53:    private val mailRecordRepository: MailRecordRepository? = null,
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentController.kt:109:     * 2. `mail_record` 行必须存在且 `expertContactId` 等于 path、OUTBOUND +
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentController.kt:127:            "MailRecordRepository is not wired for sent attachment download"
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryController.kt:7:import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryController.kt:29:    private val mailRecordRepository: MailRecordRepository

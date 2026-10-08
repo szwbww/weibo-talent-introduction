@@ -1,0 +1,48 @@
+$ rg -n --no-ignore target.css|cssSource|stylesSource|readFileSync|strictEqual src/test/js/mailboxChatStyle.test.js
+exit=0
+4:// 1) 落地的 mailbox-chat.css 与 02 计划证据 evidence/mailbox-chat.target.css
+20:const cssSource = fs.readFileSync(cssPath, "utf-8");
+21:const stylesSource = fs.readFileSync(path.join(ROOT, "styles.css"), "utf-8");
+22:const chatSource = fs.readFileSync(path.join(ROOT, "mailbox-chat.js"), "utf-8");
+23:const indexSource = fs.readFileSync(path.join(ROOT, "index.html"), "utf-8");
+66:            assert.strictEqual(countOccurrences(indexSource, needle), 1, `${needle} 必须在 index.html 唯一存在`);
+72:            assert.strictEqual(countOccurrences(indexSource, needle), 1, `${needle} 必须唯一`);
+124:                if (!new RegExp(`\\.${cls}(?=[\\s,{.:\\[])`).test(cssSource)) unknown.push(`${cls} (mc-* 未在 mailbox-chat.css 声明)`);
+127:            if (!new RegExp(`\\.${cls}(?=[\\s,{.:\\[])`).test(stylesSource)) unknown.push(`${cls} (复用类未在 styles.css 声明)`);
+138:        const lines = cssSource.split("\n").map((line) => line.trim()).filter(Boolean);
+155:        const finalBodyRule = cssSource.slice(cssSource.lastIndexOf(".mail-chat .mc-body"));
+164:        assert.match(cssSource, /\.mail-chat \.mc-person-meta\{flex-wrap:nowrap;min-width:0;gap:6px;max-width:100%\}/);
+168:        assert.match(cssSource, /\.mail-chat \.mc-person-counts\{flex:none;white-space:nowrap;font-size:11px;color:#79899f\}/);
+172:        assert.match(cssSource, /\.mail-chat \.mc-person-tags\{display:block;flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;line-height:20px;color:#6482b2;cursor:help\}/);
+176:        assert.match(cssSource, /\.mail-chat \.mc-person-tag\{display:inline;padding:2px 5px;margin-right:4px;border:1px solid #d5e2fb;border-radius:5px;background:#edf3ff;color:#5476ba;font-size:10px;line-height:16px;white-space:nowrap\}/);
+180:        assert.match(cssSource, /\.mail-chat \.mc-person-tags-unavailable\{color:#94a3b8;font-size:10px\}/);
+194:    const planSource = fs.readFileSync(PLAN_PATH, "utf-8");
+199:            stylesSource.includes(contractBlock),
+205:        assert.match(stylesSource, /\.followup-grid\{display:grid;grid-template-columns:44% 56%;min-height:430px\}/);
+206:        assert.match(stylesSource, /@media\(max-width:760px\)\{\.followup-dialog\{width:calc\(100vw - 20px\);max-height:calc\(100dvh - 20px\)\}\.followup-grid\{grid-template-columns:1fr\}/);
+207:        assert.match(stylesSource, /\.followup-dialog :is\(button,input,textarea\):focus-visible\{outline:2px solid #3b82f6;outline-offset:2px\}/);
+208:        assert.match(stylesSource, /\.followup-dialog :is\(button,\.button\):disabled\{opacity:\.45;cursor:not-allowed;transform:none;box-shadow:none\}/);
+209:        assert.match(stylesSource, /\.followup-mail-option\[aria-checked=true\]\{border-color:#3b82f6;background:#eff5ff;box-shadow:0 0 0 1px #3b82f6\}/);
+210:        assert.match(stylesSource, /@media\(prefers-reduced-motion:reduce\)\{\.followup-dialog \*\{transition:none!important;scroll-behavior:auto!important\}\}/);
+221:            assert.ok(new RegExp(`\\.${cls}(?=[\\s,{.:\\[])`).test(stylesSource), `${cls} 必须在 styles.css 声明`);
+224:            stylesSource.includes(`.followup-dialog{`),
+230:        assert.ok(!/followup-/.test(cssSource), "mailbox-chat.css 不得出现 followup-* 规则或引用");
+236:        assert.match(cssSource, /\.mail-chat \.mc-note\{/, "S-3 必须复用既有 .mc-note");
+237:        assert.ok(!/\.followup-anchor-note/.test(stylesSource), "锚点提示不得新增 CSS 规则");
+241:        assert.ok(!/\.followup-button|\.followup-trigger/.test(stylesSource), "跟进按钮只允许既有 .button class");
+252:    const planSource = fs.readFileSync(PLAN_PATH, "utf-8");
+257:            stylesSource.includes(S3_BLOCK),
+272:        ].forEach((rule) => assert.ok(stylesSource.includes(rule), rule + " 必须存在"));
+276:        assert.ok(!/mailbox-reply-/.test(cssSource), "mailbox-chat.css 不得出现 mailbox-reply-* 规则");
+297:        assert.strictEqual((chatSource.match(/data-role="last-reply-time"/g) || []).length, 2, "建槽 1 处 + 局部刷新选择器 1 处");
+303:            assert.ok(new RegExp(`\\.${cls}(?=[\\s,{.:\\[])`).test(stylesSource), cls + " 必须在 styles.css 声明");
+309:        assert.strictEqual(keys.length, 11, "仍为 11 个版本化资源（不新增 script/link）");
+327:        const plan = fs.readFileSync(path.join(__dirname, "../../../docs/plans/2026-10-03/mobile-core-02-mailbox.md"), "utf8");
+329:        assert.ok(stylesSource.includes(block));
+337:    assert.match(stylesSource, /@media \(max-width: 760px\) \{\s*\.mail-chat\.mobile-core-mailbox div\.mc-editor\[contenteditable="true"\] \{ min-height: 160px; max-height: 40dvh; \}/);
+347:    const planSource = fs.readFileSync(
+361:        assert.ok(stylesSource.includes(contractBlock), "S-2 块必须逐字追加在 styles.css");
+367:                assert.ok(new RegExp("\\." + cls + "(?=[\\s,{.:\\[])").test(stylesSource), `${cls} 必须在 styles.css 声明`);
+372:        assert.ok(!/mailbox-progress/.test(cssSource), "mailbox-chat.css 不得出现 mailbox-progress* 规则");
+382:        assert.ok(stylesSource.includes("@media(min-width:761px){#view-mailbox.mc-refined .mail-chat{grid-template-columns:380px minmax(0,1fr)}}"), "380px 规则保留");
+383:        assert.ok(stylesSource.includes("#view-mailbox.mc-refined .mail-chat .mc-filters{flex-wrap:wrap;overflow-x:visible;row-gap:0}"), "wrap 高优先级规则保留");

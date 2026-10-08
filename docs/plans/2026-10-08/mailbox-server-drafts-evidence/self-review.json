@@ -1,0 +1,54 @@
+{
+  "date": "2026-10-08",
+  "status": "PLAN_SELF_REVIEW_PASS_NOT_IMPLEMENTED",
+  "head": "7c86599f85f6462e00a3fcd2c5a74f1ca57f013d",
+  "sourceManifestUnchanged": true,
+  "plans": [
+    {
+      "plan": "mailbox-server-drafts-01-storage.md",
+      "files": 9,
+      "invariants": 7,
+      "styleContracts": 0,
+      "manualCases": 4,
+      "sectionOrder": "PASS",
+      "invariantStyleCoverage": "PASS",
+      "outcomeRegressionInteractionCoverage": "PASS",
+      "links": "PASS"
+    },
+    {
+      "plan": "mailbox-server-drafts-02-send.md",
+      "files": 9,
+      "invariants": 7,
+      "styleContracts": 0,
+      "manualCases": 5,
+      "sectionOrder": "PASS",
+      "invariantStyleCoverage": "PASS",
+      "outcomeRegressionInteractionCoverage": "PASS",
+      "links": "PASS"
+    },
+    {
+      "plan": "mailbox-server-drafts-03-ui.md",
+      "files": 7,
+      "invariants": 8,
+      "styleContracts": 4,
+      "manualCases": 8,
+      "sectionOrder": "PASS",
+      "invariantStyleCoverage": "PASS",
+      "outcomeRegressionInteractionCoverage": "PASS",
+      "links": "PASS"
+    }
+  ],
+  "manualReview": [
+    "One new table; zero existing shared-store columns added",
+    "All store write/read references retained with commands/exit codes",
+    "All tasks name exact files and governing I/S contracts",
+    "Existing style cascade and mobile overrides verified; no new filter layout required",
+    "Terminal replay and CAS preserve newer edits",
+    "Both completed-send fast paths covered",
+    "No implementation, build tests, deployments or acceptance results claimed",
+    "11 selected knowledge entries used; stale CSS knowledge corrected; one reusable transaction fact added",
+    "No >=5 overlapping selected subject entries to merge; no stale selected entries archived",
+    "agents/ and templates/ absent; role cascade not applicable"
+  ],
+  "implementationTestsRun": false
+}

@@ -1,0 +1,42 @@
+$ rg -n --no-ignore byteLength|failOutboundItem|mcHostSendRichReply|mcHostSendConversationRichReply|function setView|logout|openActionDialog|flushDrafts src/main/resources/static/mailbox-chat.js src/main/resources/static/app.js
+exit=0
+src/main/resources/static/mailbox-chat.js:31: *   宿主 mcHostSendRichReply（服务端校验 + QA 审计）。
+src/main/resources/static/mailbox-chat.js:186:        const fn = hostFn("openActionDialog");
+src/main/resources/static/mailbox-chat.js:4115:            const sizeKb = (Number(ca.byteLength) || 0) / 1024;
+src/main/resources/static/mailbox-chat.js:5617:        function formatOutboundFileSize(byteLength) {
+src/main/resources/static/mailbox-chat.js:5618:            return ((Number(byteLength) || 0) / 1024).toFixed(1) + " KB";
+src/main/resources/static/mailbox-chat.js:5625:            const size = formatOutboundFileSize(item && item.byteLength);
+src/main/resources/static/mailbox-chat.js:5673:                byteLength: item ? item.byteLength : 0,
+src/main/resources/static/mailbox-chat.js:5705:                .reduce((sum, item) => sum + (Number(item.byteLength) || 0), 0);
+src/main/resources/static/mailbox-chat.js:5826:                byteLength: size,
+src/main/resources/static/mailbox-chat.js:5838:                failOutboundItem(captured, item.key, tooLarge
+src/main/resources/static/mailbox-chat.js:5845:                failOutboundItem(captured, item.key, "当前浏览器不支持附件上传");
+src/main/resources/static/mailbox-chat.js:5857:                    failOutboundItem(captured, item.key, OUTBOUND_TEXT_FAILED);
+src/main/resources/static/mailbox-chat.js:5865:                    byteLength: Number(uploaded.byteLength) || size,
+src/main/resources/static/mailbox-chat.js:5871:                failOutboundItem(captured, item.key, err && err.message ? String(err.message) : OUTBOUND_TEXT_FAILED);
+src/main/resources/static/mailbox-chat.js:5889:        function failOutboundItem(captured, fileKey, message) {
+src/main/resources/static/mailbox-chat.js:5895:                byteLength: 0,
+src/main/resources/static/mailbox-chat.js:7709:                        byteLength: Number(attachment.byteLength) || 0,
+src/main/resources/static/mailbox-chat.js:7960:                ? hostFn("mcHostSendConversationRichReply")
+src/main/resources/static/mailbox-chat.js:7961:                : hostFn("mcHostSendRichReply");
+src/main/resources/static/app.js:5031:function setView(view) {
+src/main/resources/static/app.js:14095:            const payload = await openActionDialog("switch-to-manual");
+src/main/resources/static/app.js:14103:            const payload = await openActionDialog("switch-to-auto");
+src/main/resources/static/app.js:14130:        const confirmDemote = await openActionDialog("confirm", { message: "确定要将此专家退回到原始层吗？此操作会同步在应用与候选Elasticsearch索引中删除该数据。" });
+src/main/resources/static/app.js:14139:        const payload = await openActionDialog("initiate-meeting-schedule");
+src/main/resources/static/app.js:14179:        const confirmCancel = await openActionDialog("confirm", { message: "确定要取消当前会议排期吗？" });
+src/main/resources/static/app.js:15335:        const payload = await openActionDialog("mark-unmatched-resolved");
+src/main/resources/static/app.js:15350:        const payload = await openActionDialog("cancel-unmatched-resolved");
+src/main/resources/static/app.js:15362:        const payload = await openActionDialog("bind-unmatched-contact");
+src/main/resources/static/app.js:15729:                const firstConfirmed = await openActionDialog("confirm", {
+src/main/resources/static/app.js:15739:                    const secondConfirmed = await openActionDialog("confirm-typed", {
+src/main/resources/static/app.js:17112:            const confirmed = await openActionDialog("confirm", {
+src/main/resources/static/app.js:17600:            const confirmDelete = await openActionDialog("confirm", { message: "确定移除该别名？" });
+src/main/resources/static/app.js:17882:function openActionDialog(type, options = {}) {
+src/main/resources/static/app.js:18104:    $("#logoutBtn")?.addEventListener("click", invalidateMailboxGroupPush);
+src/main/resources/static/app.js:18577:    $("#logoutBtn")?.addEventListener("click", async () => {
+src/main/resources/static/app.js:18579:            await api("/api/auth/logout", { method: "POST" });
+src/main/resources/static/app.js:18779:async function mcHostSendRichReply(processingId, requestBody) {
+src/main/resources/static/app.js:18785:async function mcHostSendConversationRichReply(contactId, requestBody) {
+src/main/resources/static/app.js:18829:                const firstConfirmed = await openActionDialog("confirm", {
+src/main/resources/static/app.js:18839:                    const secondConfirmed = await openActionDialog("confirm-typed", {

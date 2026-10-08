@@ -1,0 +1,23 @@
+$ rg -n --no-ignore AUTH_USERNAME|USERNAME|addPathPatterns|sessionUsername|username.*VARCHAR src/main/kotlin/com/weibo/talentintroduction/auth src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt src/main/resources/db/migration/V25__create_admin_user.sql
+exit=0
+src/main/resources/db/migration/V25__create_admin_user.sql:3:    username        VARCHAR(64)  NOT NULL,
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:203: * 专家会话查询与关注（fast-p 07）。身份沿现有 Session（AUTH_USERNAME）：
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:241:        username = sessionUsername(request),
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:279:        val username = sessionUsername(request)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:296:        val username = sessionUsername(request)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:310:        val username = sessionUsername(request) ?: return unauthorized()
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:322:        val username = sessionUsername(request) ?: return unauthorized()
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:332:        val username = sessionUsername(request) ?: return unauthorized()
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:346:        val username = sessionUsername(request) ?: return unauthorized()
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:357:        val username = sessionUsername(request) ?: return unauthorized()
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:373:        val username = sessionUsername(request) ?: return unauthorized()
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:403:        authenticatedUsername = servletRequest?.let { sessionUsername(it) }
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:411:        val username = sessionUsername(request)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:416:    private fun sessionUsername(request: HttpServletRequest): String? =
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:418:            ?.getAttribute(AuthSessionKeys.USERNAME) as? String
+src/main/kotlin/com/weibo/talentintroduction/auth/config/AuthSessionKeys.kt:4:    const val USERNAME = "AUTH_USERNAME"
+src/main/kotlin/com/weibo/talentintroduction/auth/config/AuthInterceptor.kt:19:        val username = session?.getAttribute(AuthSessionKeys.USERNAME) as? String
+src/main/kotlin/com/weibo/talentintroduction/auth/controller/AuthController.kt:39:        session.setAttribute(AuthSessionKeys.USERNAME, adminUser.username)
+src/main/kotlin/com/weibo/talentintroduction/auth/controller/AuthController.kt:56:        val username = session?.getAttribute(AuthSessionKeys.USERNAME) as? String
+src/main/kotlin/com/weibo/talentintroduction/auth/controller/AuthController.kt:81:        val username = session?.getAttribute(AuthSessionKeys.USERNAME) as? String
+src/main/kotlin/com/weibo/talentintroduction/auth/config/AuthWebConfig.kt:25:            .addPathPatterns("/api/**")

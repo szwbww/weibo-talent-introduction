@@ -1,0 +1,89 @@
+$ rg -n --no-ignore saveCurrentConversation|saveBeforeScopeChange|selectExpert|refreshConversationQuiet|retargetManual|unmount|logout|setView\(|beforeunload src/main/resources/static/mailbox-chat.js src/main/resources/static/app.js
+exit=0
+src/main/resources/static/mailbox-chat.js:16: *   .mc-scroll，离开 tab/记录消失/切页/unmount 前必须 mcHostReleaseUnmatchedDetail 归还。
+src/main/resources/static/mailbox-chat.js:26: *   每会话 ≤500 条已加载消息；不写 localStorage 正文。scroll/selectExpert/unmount/
+src/main/resources/static/mailbox-chat.js:1173:        function saveCurrentConversation() {
+src/main/resources/static/mailbox-chat.js:1231:            saveCurrentConversation();
+src/main/resources/static/mailbox-chat.js:1250:        function saveBeforeScopeChange(prev, next) {
+src/main/resources/static/mailbox-chat.js:1251:            if (String(prev || "") !== String(next || "")) saveCurrentConversation();
+src/main/resources/static/mailbox-chat.js:1404:            saveBeforeScopeChange(prevAccount, next.accountCode);
+src/main/resources/static/mailbox-chat.js:1417:            saveBeforeScopeChange(prevAccount, "");
+src/main/resources/static/mailbox-chat.js:1431:            saveBeforeScopeChange(prevAccount, "");
+src/main/resources/static/mailbox-chat.js:2671:            saveCurrentConversation();
+src/main/resources/static/mailbox-chat.js:2695:                        selectExpert(found, { skipListReload: true, present: instance.focusPaneEpoch === instance.paneEpoch });
+src/main/resources/static/mailbox-chat.js:2711:                        selectExpert(freshSummary, { skipListReload: true, present: false, force: true });
+src/main/resources/static/mailbox-chat.js:2712:                    } else if (!instance.conversation.loading) refreshConversationQuiet();
+src/main/resources/static/mailbox-chat.js:2715:                    saveCurrentConversation();
+src/main/resources/static/mailbox-chat.js:2756:                    selectExpert(located, { skipListReload: true, present: presentationEpoch === instance.paneEpoch });
+src/main/resources/static/mailbox-chat.js:2790:                try { instance.workbench.instance.unmount(); } catch (e) { /* noop */ }
+src/main/resources/static/mailbox-chat.js:2795:            const releaseMaterials = hostFn("unmountExpertMaterialsHosts");
+src/main/resources/static/mailbox-chat.js:2803:        function selectExpert(item, options) {
+src/main/resources/static/mailbox-chat.js:2812:            saveCurrentConversation();
+src/main/resources/static/mailbox-chat.js:4481:        // ---- 会话状态保存（scroll/selectExpert/unmount/loadOlder/quiet） ----
+src/main/resources/static/mailbox-chat.js:4676:                refreshConversationQuiet();
+src/main/resources/static/mailbox-chat.js:4760:                try { instance.workbench.instance.unmount(); } catch (e) { /* noop */ }
+src/main/resources/static/mailbox-chat.js:8060:        function refreshConversationQuiet() {
+src/main/resources/static/mailbox-chat.js:8104:                retargetManual(newestProcessing, latest.accountCode || "");
+src/main/resources/static/mailbox-chat.js:8112:                    retargetManual(newestProcessing, latest.accountCode || "", { keepBody: true });
+src/main/resources/static/mailbox-chat.js:8119:        function retargetManual(newProcessingId, newAccount, options) {
+src/main/resources/static/mailbox-chat.js:8183:        // 事件（host 委托 + portal 委托；unmount 解绑）
+src/main/resources/static/mailbox-chat.js:8217:                if (item) selectExpert(item, { trigger: button });
+src/main/resources/static/mailbox-chat.js:8247:                        saveCurrentConversation();
+src/main/resources/static/mailbox-chat.js:8318:                if (item) selectExpert(item, { force: true });
+src/main/resources/static/mailbox-chat.js:8834:                saveCurrentConversation();
+src/main/resources/static/mailbox-chat.js:8860:                saveBeforeScopeChange(prevAccount, next.filters.accountCode);
+src/main/resources/static/mailbox-chat.js:8879:        function unmount() {
+src/main/resources/static/mailbox-chat.js:8881:            saveCurrentConversation();
+src/main/resources/static/mailbox-chat.js:8920:                if (instance.selectedContactId != null) refreshConversationQuiet();
+src/main/resources/static/mailbox-chat.js:8976:            unmount,
+src/main/resources/static/mailbox-chat.js:9002:            unmount: () => { if (controller) controller.unmount(); },
+src/main/resources/static/mailbox-chat.js:9011:    function unmount(host) {
+src/main/resources/static/mailbox-chat.js:9014:        if (api && typeof api.unmount === "function") {
+src/main/resources/static/mailbox-chat.js:9015:            api.unmount();
+src/main/resources/static/mailbox-chat.js:9029:        unmount,
+src/main/resources/static/app.js:181:function unmountAiTrainingTrustReply() {
+src/main/resources/static/app.js:182:    aiTrainingTrustReplyInstance?.unmount();
+src/main/resources/static/app.js:194:function unmountLiveTrustReply() {
+src/main/resources/static/app.js:196:    liveTrustReplyInstance?.unmount();
+src/main/resources/static/app.js:203:function unmountMailboxTrustReplyHosts() {
+src/main/resources/static/app.js:204:    unmountLiveTrustReply();
+src/main/resources/static/app.js:1556:        globalBtn.addEventListener("click", () => setView("tasks"));
+src/main/resources/static/app.js:4616:    unmountMailboxTrustReplyHosts();
+src/main/resources/static/app.js:4945:    setView(view);
+src/main/resources/static/app.js:5031:function setView(view) {
+src/main/resources/static/app.js:5044:    if (view !== "ai-training") unmountAiTrainingTrustReply();
+src/main/resources/static/app.js:5045:    if (view !== "mailbox") unmountMailboxTrustReplyHosts();
+src/main/resources/static/app.js:5048:    if (view !== "mailbox" && typeof unmountMailboxChatHosts === "function") {
+src/main/resources/static/app.js:5049:        unmountMailboxChatHosts();
+src/main/resources/static/app.js:7604:    unmountAiTrainingTrustReply();
+src/main/resources/static/app.js:7663:        unmountAiTrainingTrustReply();
+src/main/resources/static/app.js:11196:    if (typeof unmountExpertMaterialsHosts === "function") {
+src/main/resources/static/app.js:11197:        unmountExpertMaterialsHosts(contactDetail);
+src/main/resources/static/app.js:11737:    if (typeof unmountExpertMaterialsHosts === "function") {
+src/main/resources/static/app.js:11738:        unmountExpertMaterialsHosts(contactDetail);
+src/main/resources/static/app.js:11962:    setView("contacts");
+src/main/resources/static/app.js:12062:function unmountExpertMaterialsHosts(rootEl) {
+src/main/resources/static/app.js:12064:    if (typeof window.ExpertMaterials.unmountHostsIn === "function") {
+src/main/resources/static/app.js:12065:        window.ExpertMaterials.unmountHostsIn(rootEl);
+src/main/resources/static/app.js:12456:    if (aiAnalysisState.pickerView && typeof aiAnalysisState.pickerView.unmount === "function") {
+src/main/resources/static/app.js:12457:        aiAnalysisState.pickerView.unmount();
+src/main/resources/static/app.js:13321:    setView("mail-templates");
+src/main/resources/static/app.js:13957:    setView("mailbox");
+src/main/resources/static/app.js:14430:    setView("mailbox");
+src/main/resources/static/app.js:15035:    unmountMailboxTrustReplyHosts();
+src/main/resources/static/app.js:15083:    unmountMailboxTrustReplyHosts();
+src/main/resources/static/app.js:15343:        unmountMailboxTrustReplyHosts();
+src/main/resources/static/app.js:15370:        unmountMailboxTrustReplyHosts();
+src/main/resources/static/app.js:15411:        unmountMailboxTrustReplyHosts();
+src/main/resources/static/app.js:16723:            setView("mailbox");
+src/main/resources/static/app.js:17429:        unmountMailboxTrustReplyHosts();
+src/main/resources/static/app.js:17561:            setView("mailbox");
+src/main/resources/static/app.js:18104:    $("#logoutBtn")?.addEventListener("click", invalidateMailboxGroupPush);
+src/main/resources/static/app.js:18577:    $("#logoutBtn")?.addEventListener("click", async () => {
+src/main/resources/static/app.js:18579:            await api("/api/auth/logout", { method: "POST" });
+src/main/resources/static/app.js:18626:        && typeof MailboxChat.unmount === "function";
+src/main/resources/static/app.js:18633:function unmountMailboxChatHosts() {
+src/main/resources/static/app.js:18638:        MailboxChat.unmount(list);
+src/main/resources/static/app.js:18767:        unmount: () => {
+src/main/resources/static/app.js:18769:                instance.unmount();
+src/main/resources/static/app.js:18953:    if (typeof unmountMailboxChatHosts === "function") unmountMailboxChatHosts();

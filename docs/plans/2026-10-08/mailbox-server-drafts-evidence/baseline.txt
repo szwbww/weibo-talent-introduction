@@ -1,0 +1,115 @@
+$ git status --short
+exit=0
+ M CLAUDE.md
+ M docs/knowledge/audit/K-master-plan-shared-file-sequential-gates.md
+ M docs/knowledge/audit/K-named-fixture-must-use-real-row.md
+ M docs/knowledge/audit/K-plan-quantified-claims-need-grep-receipts.md
+ M docs/knowledge/campaign/K-backfill-column-specific-update.md
+ M docs/knowledge/campaign/K-batch-config-legacy-adapter-field-preservation.md
+ M docs/knowledge/campaign/K-batch-send-filter-retry-parity.md
+ M docs/knowledge/campaign/K-batch-send-legacy-routes-entity-ssot.md
+ M docs/knowledge/campaign/K-batch-send-round-loop-symmetry.md
+ M docs/knowledge/campaign/K-batch-send-scheduler-reschedule-on-enable.md
+ M docs/knowledge/campaign/K-batch-task-config-snapshot-log-identity.md
+ M docs/knowledge/campaign/K-expert-contact-two-write-sites.md
+ M docs/knowledge/campaign/K-operator-status-reconcile.md
+ M docs/knowledge/campaign/K-operator-status-single-writer.md
+ M docs/knowledge/campaign/K-operator-status-write-seam-guard.md
+ M docs/knowledge/campaign/K-recipient-count-preview-parity.md
+ M docs/knowledge/es-index/K-enrichment-write-three-layers.md
+ M docs/knowledge/es-index/K-openalex-author-full-object.md
+ M docs/knowledge/es-index/K-openalex-enrichment-existing.md
+ M docs/knowledge/es-index/K-promotion-source-passthrough.md
+ M docs/knowledge/expert/K-expert-classification-one-object-three-layers.md
+ M docs/knowledge/expert/K-region-constant-not-display-label.md
+ M docs/knowledge/frontend/K-batch-console-regression-contract.md
+ M docs/knowledge/frontend/K-compose-templates-state-scope.md
+ M docs/knowledge/frontend/K-contacts-layout-width-preference.md
+ M docs/knowledge/frontend/K-dom-stub-tests-hide-dangling-refs.md
+ M docs/knowledge/frontend/K-expert-detail-two-panel-render-sites.md
+ M docs/knowledge/frontend/K-frontend-cache-key-triad.md
+ M docs/knowledge/frontend/K-global-p-is-muted-in-dialogs.md
+ M docs/knowledge/frontend/K-js-test-invocation-surface.md
+ M docs/knowledge/frontend/K-panel-bg-token-is-translucent.md
+ M docs/knowledge/frontend/K-shared-action-dialog-cleanup.md
+ M docs/knowledge/mail/K-batch-send-setting-kv.md
+ M docs/knowledge/mail/K-bounce-visible-fields-persisted.md
+ M docs/knowledge/mail/K-compose-template-html-after-render.md
+ M docs/knowledge/mail/K-dual-outreach-paths.md
+ M docs/knowledge/mail/K-group-before-pagination.md
+ M docs/knowledge/mail/K-inbound-processing-write-paths.md
+ M docs/knowledge/mail/K-mail-body-display-sites.md
+ M docs/knowledge/mail/K-manual-rich-render-before-send.md
+ M docs/knowledge/mail/K-meeting-confirmation-generic-template-boundary.md
+ M docs/knowledge/mail/K-mime-dsn-before-heuristic.md
+ M docs/knowledge/mail/K-mime-dsn-content-handler-absent.md
+ M docs/knowledge/mail/K-process-single-all-callers.md
+ M docs/knowledge/mail/K-sender-account-enabled-scope.md
+ M docs/knowledge/mail/K-suppression-check-call-sites.md
+ M docs/knowledge/qa/K-rich-reply-qa-audit-reuse.md
+ M docs/knowledge/task/K-clearExecutionContext-status-leak.md
+ M docs/knowledge/task/K-progress-log-batchonly-two-readers.md
+ M docs/knowledge/template/K-compose-template-preview-endpoint-split.md
+ M docs/knowledge/template/K-preview-account-resolution-order.md
+ M docs/knowledge/template/K-preview-draft-raw-before-render.md
+ M docs/plans/2026-10-04/discovery-review-03-all-pages.md
+ M docs/plans/2026-10-04/discovery-review-05-explicit-send.md
+ M docs/plans/2026-10-04/discovery-review-06-ui.md
+ M docs/plans/2026-10-04/discovery-review-master.md
+ M docs/releases.json
+ M tools/contactout-visible-export/README.md
+ M tools/contactout-visible-export/collector.js
+ M tools/contactout-visible-export/core.js
+ M tools/contactout-visible-export/manifest.json
+ M tools/contactout-visible-export/popup.js
+ M tools/contactout-visible-export/tests/browser.test.cjs
+ M tools/contactout-visible-export/tests/popup.test.cjs
+?? docs/audits/2026-09-26-deep-discovery-diagnosis/
+?? docs/audits/2026-09-27-all-discovered-subject-count/
+?? docs/audits/2026-09-27-batch-20438-name-email/
+?? docs/audits/2026-09-27-candidate-rnd-scope/
+?? docs/audits/2026-09-27-deep-discovery-batch-20285/
+?? docs/audits/2026-09-27-deep-discovery-scope/
+?? docs/audits/2026-09-27-discovered-identity-full/
+?? docs/audits/2026-09-27-discovered-identity-repair/
+?? docs/audits/2026-09-27-discovery-20432-promotion/
+?? docs/audits/2026-09-27-email-verification-statistics/
+?? docs/audits/2026-09-27-new-expert-subject-count/
+?? docs/audits/2026-09-28-discovered-country-live-repair/
+?? docs/audits/2026-09-28-discovered-institution-comprehensive/
+?? docs/audits/2026-09-28-discovered-institution-full/
+?? docs/audits/2026-09-28-discovered-institution-live-execution/
+?? docs/audits/2026-09-28-discovery-20504/
+?? docs/audits/2026-09-28-mail-open-tracking-false-positive-audit.md
+?? docs/audits/2026-09-28-sent-institution/
+?? docs/audits/2026-09-30-discovery-three-case-replay/
+?? docs/audits/2026-10-01-hard-bounce-emailable.md
+?? docs/audits/2026-10-01-institution-approved-sync/
+?? docs/audits/2026-10-01-replies-emailable.md
+?? docs/audits/2026-10-01-reply-templates.json
+?? docs/mockups/discovery-eligibility-preview/
+?? docs/mockups/discovery-review-preview/
+?? docs/mockups/email-verification-policy-preview/
+?? docs/mockups/mailbox-drafts-preview/
+?? docs/mockups/mailbox-last-reply-preview/
+?? docs/mockups/mailbox-location-preview/
+?? docs/mockups/mailbox-notes-preview/README.md
+?? docs/mockups/mailbox-notes-preview/assets/
+?? docs/mockups/mailbox-notes-preview/index.html
+?? docs/mockups/mailbox-notes-preview/online-edit.jpg
+?? docs/mockups/mailbox-notes-preview/online-preview.jpg
+?? docs/mockups/mailbox-notes-preview/preview-mailbox.js
+?? docs/mockups/mailbox-notes-preview/preview.css
+?? docs/mockups/mailbox-notes-preview/preview.js
+?? docs/mockups/mailbox-progress-preview/
+?? docs/mockups/mailbox-suspend-preview/
+?? docs/mockups/meeting-request-live-preview/
+?? docs/mockups/mobile-core-iphone15pro/
+?? docs/mockups/template-reference-preview/
+?? docs/plans/2026-09-26/discovery-repair-evidence/plan-scope-01-08.json
+?? docs/plans/2026-09-29/contactout-doctorate-gate-execution.md
+?? docs/plans/2026-09-29/contactout-doctorate-gate.md
+?? docs/plans/2026-10-04/discovery-eligibility-preview.md
+?? docs/plans/2026-10-04/discovery-review-online-preview.md
+?? output/
+?? tools/contactout-visible-export/tests/degree.test.cjs

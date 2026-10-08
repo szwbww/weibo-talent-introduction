@@ -1,0 +1,15 @@
+[
+  {
+    "key": "20261006-wecom-inbound-notification",
+    "command": [
+      "rg",
+      "-n",
+      "--no-ignore",
+      "-F",
+      "20261006-wecom-inbound-notification",
+      "src/test"
+    ],
+    "exit": 1,
+    "output": ""
+  }
+]

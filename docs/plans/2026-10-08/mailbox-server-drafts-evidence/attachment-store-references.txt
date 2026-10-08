@@ -1,0 +1,52 @@
+$ rg -n --no-ignore outbound_mail_attachment|OutboundMailAttachmentRepository|outboundAttachmentDraft|setOutboundAttachmentItems|invalidateOutboundRequestId src/main src/test
+exit=0
+src/main/resources/static/mailbox-chat.js:4948:            const outboundFiles = outboundDraftFilesHtml(draft ? outboundAttachmentDraftOf(draft).items : []);
+src/main/resources/static/mailbox-chat.js:5567:        // 唯一真值是草稿字段 outboundAttachmentDraft={revision,items}：item 以本地 key
+src/main/resources/static/mailbox-chat.js:5599:         * 增删后必须经 setOutboundAttachmentItems 写回。
+src/main/resources/static/mailbox-chat.js:5601:        function outboundAttachmentDraftOf(draft) {
+src/main/resources/static/mailbox-chat.js:5602:            const field = draft ? draft.outboundAttachmentDraft : null;
+src/main/resources/static/mailbox-chat.js:5612:            return outboundAttachmentDraftOf(draft).items
+src/main/resources/static/mailbox-chat.js:5694:            return draft ? outboundAttachmentDraftOf(draft).items : [];
+src/main/resources/static/mailbox-chat.js:5699:            return draft ? outboundAttachmentDraftOf(draft).items : [];
+src/main/resources/static/mailbox-chat.js:5712:        function setOutboundAttachmentItems(captured, items) {
+src/main/resources/static/mailbox-chat.js:5716:            const current = outboundAttachmentDraftOf(existing);
+src/main/resources/static/mailbox-chat.js:5718:                outboundAttachmentDraft: { revision: current.revision + 1, items: items.slice() },
+src/main/resources/static/mailbox-chat.js:5725:        function invalidateOutboundRequestId(captured) {
+src/main/resources/static/mailbox-chat.js:5831:            if (!setOutboundAttachmentItems(captured, items)) return Promise.resolve();
+src/main/resources/static/mailbox-chat.js:5832:            invalidateOutboundRequestId(captured);
+src/main/resources/static/mailbox-chat.js:5884:            if (!setOutboundAttachmentItems(captured, items)) return false;
+src/main/resources/static/mailbox-chat.js:5912:            if (!setOutboundAttachmentItems(captured, items)) return;
+src/main/resources/static/mailbox-chat.js:5913:            invalidateOutboundRequestId(captured);
+src/main/resources/static/mailbox-chat.js:6028:                outboundAttachmentDraft: existing && existing.outboundAttachmentDraft
+src/main/resources/static/mailbox-chat.js:6029:                    ? existing.outboundAttachmentDraft
+src/main/resources/static/mailbox-chat.js:6079:                    outboundAttachmentDraft: existing && existing.outboundAttachmentDraft
+src/main/resources/static/mailbox-chat.js:6080:                        ? existing.outboundAttachmentDraft
+src/main/resources/static/mailbox-chat.js:7658:                outboundAttachmentDraft: existing && existing.outboundAttachmentDraft
+src/main/resources/static/mailbox-chat.js:7659:                    ? existing.outboundAttachmentDraft
+src/main/resources/static/mailbox-chat.js:7886:            const attachmentItems = draftSnapshot ? outboundAttachmentDraftOf(draftSnapshot).items : [];
+src/main/resources/db/migration/V126__create_outbound_mail_attachment.sql:2:-- V126 outbound_mail_attachment（fast-p 04：人工回复通用附件上传原件）
+src/main/resources/db/migration/V126__create_outbound_mail_attachment.sql:21:CREATE TABLE outbound_mail_attachment (
+src/main/resources/db/migration/V126__create_outbound_mail_attachment.sql:31:    KEY idx_outbound_mail_attachment_contact (expert_contact_id, created_at),
+src/main/resources/db/migration/V126__create_outbound_mail_attachment.sql:32:    CONSTRAINT fk_outbound_mail_attachment_contact
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:263:    fun `V126 creates outbound_mail_attachment with the persistence contract`() {
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:268:            assertTrue(connection.tableExists("outbound_mail_attachment"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:280:            assertTrue(connection.indexExists("outbound_mail_attachment", "PRIMARY"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:281:            assertTrue(connection.indexExists("outbound_mail_attachment", "idx_outbound_mail_attachment_contact"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:282:            assertTrue(connection.foreignKeyExists("outbound_mail_attachment", "fk_outbound_mail_attachment_contact"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:286:            assertEquals(0L, connection.queryLong("SELECT COUNT(*) FROM outbound_mail_attachment"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2278:            "AND table_name = 'outbound_mail_attachment' AND column_name = '$column'"
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:37:import com.weibo.talentintroduction.mail.repository.OutboundMailAttachmentRepository
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:114:    private val attachmentRepository: OutboundMailAttachmentRepository =
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:115:        Mockito.mock(OutboundMailAttachmentRepository::class.java)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:202:     * 列宽与 04 的 `outbound_mail_attachment.created_by` 同为 100 字符，复用同一常量。
+src/test/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentServiceTest.kt:13:import com.weibo.talentintroduction.mail.repository.OutboundMailAttachmentRepository
+src/test/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentServiceTest.kt:65:    private val repository: OutboundMailAttachmentRepository =
+src/test/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentServiceTest.kt:66:        Mockito.mock(OutboundMailAttachmentRepository::class.java)
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/OutboundMailAttachment.kt:8: * outbound_mail_attachment：一行 = 一次成功上传的通用附件原件元数据（04 I-1）。
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/OutboundMailAttachment.kt:17:@Table("outbound_mail_attachment")
+src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentService.kt:6:import com.weibo.talentintroduction.mail.repository.OutboundMailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentService.kt:38:    private val repository: OutboundMailAttachmentRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/OutboundMailAttachmentRepository.kt:10: * outbound_mail_attachment 的显式 JDBC 读写（04 T1）。
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/OutboundMailAttachmentRepository.kt:21:class OutboundMailAttachmentRepository(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/OutboundMailAttachmentRepository.kt:29:            INSERT INTO outbound_mail_attachment
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/OutboundMailAttachmentRepository.kt:64:              FROM outbound_mail_attachment

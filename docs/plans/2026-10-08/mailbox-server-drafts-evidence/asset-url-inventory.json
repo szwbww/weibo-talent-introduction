@@ -1,0 +1,17 @@
+{
+  "source": "src/main/resources/static/index.html",
+  "count": 11,
+  "urls": [
+    "styles.css?v=20261006-wecom-inbound-notification",
+    "expert-materials.css?v=20261006-wecom-inbound-notification",
+    "mailbox-chat.css?v=20261006-wecom-inbound-notification",
+    "meeting-confirmation.css?v=20261006-wecom-inbound-notification",
+    "world-clock.css?v=20261006-wecom-inbound-notification",
+    "trust-reply-workbench.js?v=20261006-wecom-inbound-notification",
+    "expert-materials.js?v=20261006-wecom-inbound-notification",
+    "meeting-confirmation.js?v=20261006-wecom-inbound-notification",
+    "mailbox-chat.js?v=20261006-wecom-inbound-notification",
+    "app.js?v=20261006-wecom-inbound-notification",
+    "world-clock.js?v=20261006-wecom-inbound-notification"
+  ]
+}
