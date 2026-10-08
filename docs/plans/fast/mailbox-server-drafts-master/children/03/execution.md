@@ -289,3 +289,149 @@ Minimal required human amendment: authorize precisely that backend IT fixture pa
 
 **Next action:** controller pauses child03 for the exact backend-fixture authorization above. After approved correction, satisfy fresh required combined gates and real desktop/mobile app/server persistence smoke before product commit and independent fast-p verification. Do not mark READY or substitute the passing frontend/backend send smoke for the blocked mandatory gate.
 
+
+## Epoch 3 — 2026-10-08/09 execution result: READY_FOR_VERIFICATION
+
+### Authority, identity and implementation boundary
+
+- Execution mode: RESUME; executor `DraftUIFinalImplementer`.
+- Approval basis: current user assignment and human “批准” recorded in current brief Epoch3; exact amended master/child approval commit `02af6d42cdf3617c48335a9ad3aeddb025d1302f`. No completed child was replayed.
+- Child plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mailbox-server-drafts-master/docs/plans/2026-10-08/mailbox-server-drafts-03-ui.md`.
+- Child SHA-256: `732aa5c2db7569237c36d8cd4ae167224a5ca52c12d21f9c27a1ce01ed7a36e9`; size34469 bytes. Execution ID is the canonical child path above followed by `@732aa5c2db7569237c36d8cd4ae167224a5ca52c12d21f9c27a1ce01ed7a36e9`.
+- Master SHA-256: `fca914b11731d582381dde9254b687b86fe37c1198ef09317d2353e6d48ac676`; size9963 bytes. Both current files matched the approved commit and remained unchanged.
+- Target root: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mailbox-server-drafts-master`; branch `fast/mailbox-server-drafts-master`.
+- Git directory: `/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-mailbox-server-drafts-master`; common Git directory `/Users/lukai/IdeaProjects/weibo-talent-introduction/.git`.
+- Worktree ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mailbox-server-drafts-master@fast/mailbox-server-drafts-master@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-mailbox-server-drafts-master`.
+- Pre-execution code SHA / child base: `05bb797a51dd94b8aa712bc8f36e2426e3e801a4`; pre-execution evidence HEAD: `c869e983078b336e06562471e625f249668fa2aa`.
+- Product commit / post-execution code SHA: **`d32733b13af210519be90ca52c933e5f73199cfb`**, subject **`feat(fast-p): implement 03`**.
+- Implementation boundary: `05bb797a51dd94b8aa712bc8f36e2426e3e801a4..d32733b13af210519be90ca52c933e5f73199cfb`. Product commit contains exactly the thirteen approved product/test paths. Plans, this report and the controller-owned ledger were excluded; evidence commit remains controller-owned.
+- Initial identity receipt: `artifact://252`; pre-stage final identity, clean diff and resource receipt: `artifact://390`; exact staging receipt: `artifact://391`; pre-commit identity and product commit receipt: `artifact://392`.
+
+### Implemented tasks and scoped transaction correction
+
+| Requirement | Status | Files / evidence |
+|---|---|---|
+| T-1: server authority / target and owner identity | IMPLEMENTED | Existing retained mailbox coordinator read and preserved; GET-first fail-closed, typed snapshot and owner dispatch checks exercised by fresh JS tests and real server saves. |
+| T-2: server list / restore / typed context | IMPLEMENTED | `mailbox-chat.js`, frozen styles and markup; actual independent desktop/mobile Sessions, old/new processing targets, empty draft, restored meeting and uploaded attachments. |
+| T-3: debounce / dirty sequence / navigation | IMPLEMENTED | `mailbox-chat.js`, `app.js`; fresh controlled-clock/request tests, actual offline navigation/logout rejection and native beforeunload cancellation. |
+| T-4: version-aligned send / explicit discard | IMPLEMENTED | Actual SMTP failure, held success with concurrent saved/unsaved edits, explicit terminal reopen, acknowledgement-loss UNKNOWN, confirmed discard and stale PUT409. |
+| T-5: resource keys / frozen CSS / existing regression tests | IMPLEMENTED | Authorized index/styles and eight JS test files; syntax and full JS1562 PASS; actual desktop1440/mobile393 screenshots and computed styles. |
+| Approved backend IT fixture repair | IMPLEMENTED | `MailReplyDraftRepositoryIT.kt`: wrap existing service target in class-based `ProxyFactory` with `TransactionInterceptor(tx.transactionManager!!, AnnotationTransactionAttributeSource())`, then inject the proxy into the temporary HTTP controller. Fresh actual MySQL/HTTP eight-test suite PASS. |
+
+The epoch2 failure was read, not rerun merely to confirm. The new IT correction uses the existing data source and existing transaction manager so the actual HTTP worker invokes transactional `discard`; no test-thread substitute transaction, assertion deletion, production transaction bypass, schema, migration or pom change was introduced. All original HTTP/MySQL/CAS assertions remain.
+
+### Fresh final-state commands
+
+All commands below ran after the final implementation state, in this epoch. The five Maven invocations ran sequentially in one `&&` chain and all completed successfully before the first browser smoke application was started. All MySQL integrations used real MySQL containers, not H2, mocked persistence or skipped tests.
+
+| Exact command | Result | Receipt |
+|---|---|---|
+| `node --check src/main/resources/static/mailbox-chat.js && node --check src/main/resources/static/app.js && node --test src/test/js/*.test.js` | PASS exit0; syntax checks PASS;1562 tests/298 suites,1562 pass,0 fail/cancelled/skipped | `artifact://255:2166-2174` |
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=MailReplyDraftServiceTest,MailReplyDraftControllerTest test` | PASS exit0;17 tests,0 failures/errors/skips; bundled JS1562 PASS | `artifact://260:324,2506-2509`; finished23:22:50+08:00 |
+| `DOCKER_API_VERSION=1.44 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dapi.version=1.44 -Pmysql-it -Dtest=MailReplyDraftRepositoryIT test` | PASS exit0;8 tests,0 failures/errors/skips; bundled JS1562 PASS | `artifact://260:3090-3094,5276-5279`; finished23:25:18+08:00 |
+| `DOCKER_API_VERSION=1.44 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dapi.version=1.44 -Pmigration-it -Dtest=FlywayMigrationIntegrationTest test` | PASS exit0;39 tests,0 failures/errors/skips; bundled JS1562 PASS | `artifact://260:14607-14611,16793-16796`; finished23:33:11+08:00 |
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=PendingMailOperationServiceTest,ManualReplySendAttemptServiceTest test` | PASS exit0;100 tests,0 failures/errors/skips; bundled JS1562 PASS | `artifact://260:17179,19361-19364`; finished23:35:15+08:00 |
+| `DOCKER_API_VERSION=1.44 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dapi.version=1.44 -Pmysql-it -Dtest=MailReplyDraftSendIntegrationTest,MeetingCalendarSendIntegrationTest test` | PASS exit0;27 tests,0 failures/errors/skips; bundled JS1562 PASS | `artifact://260:20300,22482-22485`; finished23:38:03+08:00 |
+| `git diff --check` | PASS exit0 | `artifact://390` |
+
+These are execution gates, not an aggregate build/review or independent verification.
+
+### Real application / browser / durable persistence evidence
+
+After combined PASS, ran actual production application classes and actual controllers/security/service/repository code against disposable `mysql:8.0.36`, container `mailbox-draft-ui-epoch3-20261008`, durable database `talent_draft_smoke`, loopback33308. Real schema was migrated through V152. Seeded twenty-five real contacts and successful outbound threads, twenty-four real inbound rows, a real SMTP sender account and enabled migrated templates/facts. No draft transport, application bean or persistence was mocked. ES was intentionally configured to unreachable loopback instead of accessing production; profile lookup warnings are not claimed as successful profile tests.
+
+- Actual app URL: `http://127.0.0.1:38083/`; mobile used `http://localhost:38083/` for a genuinely independent Session cookie.
+- Browser: actual managed Chromium; desktop1440×1000, mobile393×852 (device scale1.25).
+- Logged in and changed the initial password through the actual auth forms; later logout/relogin and mobile relogin also used actual UI. Account was `admin`.
+- Actual SMTP socket listener127.0.0.1:33252 implemented test protocol success/failure/hold/connection-loss, not a replacement for the production send service. Production JavaMail delivered actual MIME messages to it.
+- Runtime dependency classpath was generated by `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn dependency:build-classpath -Dmdep.outputFile=/tmp/mailbox-draft-ui-epoch3-classpath -Dmdep.includeScope=test`; application classpath was `target/classes` plus those dependency jars, **not** `target/test-classes`.
+
+| Exercised area | Actual observation |
+|---|---|
+| A-1 restore / autosave / cross-device | Real draft1 saved subject“服务器草稿” and `<b>跨设备</b>`; MySQL ACTIVEv2 contained that exact HTML/text. Desktop refresh and actual logout/relogin restored it; independently logged-in mobile restored the same record. Initial save did not add mail rows:25 outbound and24 inbound remained. |
+| A-2 offline / navigation / native prompt | Actual browser offline caused save-error state and disabled send. Other-view navigation and logout remained on mailbox with input intact and login overlay hidden. An actual native `beforeunload` dialog was observed and dismissed; refresh was canceled, local input retained. Online retry obtained real server ACK. |
+| A-3 concurrent CAS | Desktop saved“窗口A”; stale mobile save of“窗口B” received actual409 and disabled send while retaining B. Canceling the existing reload confirmation kept B; confirming fetched A. No blind overwrite was used. |
+| A-4 durable attachments / owner / cache | Real template/meeting/50-byte upload on expert9104 persisted, survived visits to more than eleven distinct conversations, return and refresh. Another upload allocated distinct `of-2`, retained ordered ready IDs and rebuilt downloads. Other visited experts did not receive its attachment. Additional real delayed uploads on expert9107 completed with three distinct ready IDs/keys; see the narrower tooling coverage note below. |
+| A-5 old/new inbound / existing target / empty | Real newer inbound9406 was inserted for expert9106 after original draft6 had target9206. Refresh/open-by-draft-ID kept9206 and displayed“有新来信，当前仍在编辑原来信草稿”. Explicit confirmed new-target copy produced draft7/9406 without changing draft6. New-target body was changed; re-opening it via“打开已有草稿” retained its own content. Clearing subject/body saved ACTIVEv3 and list card displayed“无主题”“空白草稿”. SQL/GET confirmed draft6 remainedv1 with its original bytes. |
+| A-6 explicit discard / no resurrection | Cancel kept draft1/content/count; confirmed original dialog yielded DISCARDEDv6 with all content columns null and list total reduced. Actual replay of pre-discard PUT returned409 `DRAFT_VERSION_CONFLICT`, currentVersion6/DISCARDED, with no automatic reopen. |
+| A-7 failed flush / held send / versions | Offline send attempt produced no SMTP attempt. Actual550 failure retained ACTIVE draft2 and FAILED binding across refresh. Existing duplicate-failed-content policy rejected unchanged retry; content was explicitly changed, not bypassed. Held SMTP sent only original snapshot while new content saved as ACTIVEv4; independent mobile restored newer bytes. A subsequent held send completed before newer local input ACK: SENTv6/null content but newer input remained in editor with“邮件已发送，新修改尚未保存”. Explicit“继续编辑并保存” reopened ACTIVEv7; final exact send became SENTv8. |
+| A-7 UNKNOWN / original confirmation | Another real DATA transaction had its socket closed before final250; draft3 remained ACTIVE with `DELIVERY_UNKNOWN`, original body visible and repeat send disabled. Discard dialog warned“这不会撤回可能已发送的邮件。”; cancel preserved it. Meeting send safety-confirmation cancel likewise kept ACTIVEv6, meeting and two attachments; confirming the original safety dialog then completed actual send. |
+| A-8 meeting/template/attachment actual inbound send | Actual template preview/adoption and meeting dialog preview/ICS persisted typed context. Refresh restored meeting-ready and attachment IDs. Final meeting SMTP MIME contained `text/plain`, `text/html`, `text/calendar` and two file parts; actual MySQL calendar-event count1. Draft4 SENTv7/null content, captured sendVersion6. |
+| A-8 outbound rich / explicit anchored followup | Expert9125 had no inbound row. Actual rich draft5 saved/restored `<b>Outbound bold</b>` and sent through original `/api/mail/mailbox/conversations/9125/manual-rich-reply` HTTP200. Actual followup picker explicitly selected original outbound9325, generated preserved quote, saved `followUpAnchorMailRecordId:9325`, obtained original safety confirmation and sent; draft5 ended SENTv6/sendVersion5/contentnull. |
+| A-8 paging / search / visual / mobile back | Original conversation page2 had five cards and server total25, not shortened by draft markers. Draft search“Smoke Expert 06” returned two server drafts. Desktop active draft-tab bottom border2px `rgb(55,98,216)`, transparent background, `aria-pressed=true`; keyboard Tab focus outline2px `rgb(158,185,255)`. Saved state had `role=status`, `aria-live=polite`,11px/green `#059669`. Desktop buttons32px/radius7; mobile44px/radius7. Mobile actual page-select and list→draft→back→other-draft navigation worked;393px viewport/scrollWidth393, no horizontal overflow. |
+
+Final durable SQL and SMTP receipt `artifact://385`:
+
+- Draft states:1 DISCARDEDv6;2 SENTv8/sendVersion7;3 ACTIVEv1/UNKNOWN binding;4 SENTv7/sendVersion6;5 SENTv6/sendVersion5;6 ACTIVEv1/original9206;7 ACTIVEv3/new9406/empty;8 ACTIVEv7 with three ordered ready upload IDs.
+- Terminal draft1/2/4/5 HTML/text/context columns were null. Active originals/new-target/UNKNOWN retained content.
+- Actual SMTP eight attempts/seven captured DATA messages; includes the intentionally UNKNOWN message, which must not be mislabeled acknowledged delivery. Mail records33, inbound25 after the explicitly inserted new inbound; all twenty-five contact conversation statuses remained MANUAL_HANDOFF; calendar-event count1.
+
+### Visual evidence and honest coverage limits
+
+Screenshots below are actual application screenshots, not static demos. They were inspected visually where noted; files remain as session evidence:
+
+- Desktop restored rich editor: `/var/folders/r_/p27w33t543l9r08_h0sxjmf40000gn/T/omp-sshots-159e59f631bab320.webp`.
+- Mobile restored bold editor: `/var/folders/r_/p27w33t543l9r08_h0sxjmf40000gn/T/omp-sshots-159e59f606b0936f.webp` (visually inspected).
+- Offline error/retained editor: `/var/folders/r_/p27w33t543l9r08_h0sxjmf40000gn/T/omp-sshots-159e5a0b73fab321.webp`.
+- Original CAS-conflict reload confirmation: `/var/folders/r_/p27w33t543l9r08_h0sxjmf40000gn/T/omp-sshots-159e5a4d00b09370.webp`.
+- Actual UNKNOWN state: `/var/folders/r_/p27w33t543l9r08_h0sxjmf40000gn/T/omp-sshots-159e5b5d7a7ab322.webp`.
+- Mobile old-target warning, saved status and44px actions: `/var/folders/r_/p27w33t543l9r08_h0sxjmf40000gn/T/omp-sshots-159e5dc704f09371.webp` (visually inspected).
+- Desktop actual search, two drafts including empty card: `/var/folders/r_/p27w33t543l9r08_h0sxjmf40000gn/T/omp-sshots-159e5dda2e177499.webp` (visually inspected).
+
+Not every bullet of the human acceptance checklist is claimed as a completed browser experiment. Successful QA/RAG model-generated adoption, a second different configured username, orphan target, restored uploading→failed and a full delayed-upload-plus-twelve-visit sequence are covered by the fresh authorized automated contracts/backend owner tests, not asserted as browser PASS here. The real RAG fact picker was exercised with enabled `KB-AGCY-010`, but unconfigured model service returned“模型服务暂不可用，请稍后重试。” and adoption remained disabled; no fake model response was installed. Additional actual upload-delay experiments used real requests with no synthetic response, but raw browser-run waits timed out before finishing the twelve-visit sequence. A network-throttling helper rejected its parameters; that tab was subsequently closed. Their eventual actual uploaded ready IDs are SQL-observed, but those aborted harness steps are not evidence of completing that combined manual scenario. These limitations do not replace or weaken any frozen production/test acceptance assertion.
+
+### Runtime observations, deviations and cleanup
+
+- No product-scope deviation. Preserved twelve retained frontend paths and completed the exactly approved thirteenth IT fixture correction.
+- Runtime startup initially exposed environment prerequisites, not changed product files: JDBC required `allowPublicKeyRetrieval=true`; production runtime launch needed the already-declared test-scope `flyway-mysql` jar in its dependency classpath; installed old Java11 tzdb lacked `America/Coyhaique`, used by existing meeting timezone startup.
+- For browser runtime only, downloaded current real Adoptium Java11.0.32.1 to `/tmp/mailbox-draft-ui-epoch3-jdk11`, checksum `c487a1c3a56588b3a32d0d07cdd526bf3d401c4b8422be772ca178bfcd647f3f` verified against primary metadata. All mandatory Maven commands still used the specified installed zulu11. No pom or timezone backend repair was made.
+- Current app was launched via actual `com.weibo.talentintroduction.TalentIntroductionApplicationKt --server.port=38083`, with real JDBC root credentials for disposable DB, auth enabled, real attachment base `/tmp/mailbox-draft-ui-epoch3-attachments`, test unsubscribe secret/base URL, scheduling/mail queue/automatic LLM off, discovery off.
+- Disposable seed meeting template inherited `${senderDisplayName}`, which actual safety rendering correctly rejected400 before SMTP. Corrected only disposable fixture custom text to the valid `${senderName}`, regenerated via original meeting dialog, then exercised original send safety confirmation. Account sender metadata and unsubscribe test settings were also initialized solely in disposable fixture/runtime environment; no permanent backend/template migration was changed.
+- Native beforeunload initial harness default auto-accept was changed to explicit dismiss, then actual cancellation was observed. Harness form automation that produced an invalid date was corrected by setting the real native date-input value and dispatching input/change; no request/result was mocked.
+- Closed both owned Chromium tabs; `browser.tabs()` returned `[]`. Did not terminate the shared browser service.
+- Stopped owned application `draft-epoch3-configured-app`; supervised service reported exited. Shutdown/closed actual SMTP listener and joined its thread (`smtp_thread_alive:false`).
+- `docker stop mailbox-draft-ui-epoch3-20261008` succeeded; `--rm` removed the container; final name-filtered `docker ps -a` was empty. Owned MySQL log follower exited0.
+- Removed `/tmp/mailbox-draft-ui-epoch3-classpath`, temporary JDK directory/tar, upload files and attachment storage. No temporary runtime scaffold or additional permanent repository path was created/committed.
+
+### Exact changed product/test paths
+
+1. `src/main/resources/static/mailbox-chat.js` — server draft coordinator, durable list/restore, target/context/sequence binding, original send/discard integration.
+2. `src/main/resources/static/app.js` — real navigation/logout flush lifecycle.
+3. `src/main/resources/static/styles.css` — frozen approved draft CSS additions.
+4. `src/main/resources/static/index.html` — synchronized frontend cache keys.
+5. `src/test/js/mailboxServerDrafts.test.js` — behavioral invariant, request ordering, CAS/owner/terminal/restore/CSS contracts.
+6. `src/test/js/mailboxChatBehavior.test.js` — authenticated typed draft lifecycle fixture and retained behavior contracts.
+7. `src/test/js/mailboxOutboundAttachments.test.js` — owner-aware asynchronous attachment/draft lifecycle and restoration contracts.
+8. `src/test/js/discoveryReview.test.js` — approved obsolete CSS absolute-EOF assertion adaptation only.
+9. `src/test/js/mailboxSuspensionStyle.test.js` — approved CSS append-position adaptation with original byte/marker contracts retained.
+10. `src/test/js/mailboxGroupPush.test.js` — approved resource-key adaptation preserving consistency/count/order/no-old-key assertions.
+11. `src/test/js/materialRequestIntegration.test.js` — actual typed-draft test fixture/lifecycle adaptation preserving materials and zero-send assertions.
+12. `src/test/js/meetingConfirmationIntegration.test.js` — typed CAS/draftRef and explicit-target/terminal lifecycle fixture preserving safety/meeting/attachment assertions.
+13. `src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepositoryIT.kt` — approved real transaction-proxy temporary HTTP fixture only.
+
+### Freshness and handoff
+
+- Plan identity rechecked: YES; unchanged approved master/child hashes.
+- Worktree identity rechecked: YES; exact isolated root/branch/Git directory before stage and commit.
+- Reported product commit reachable from exact target branch: YES; `git merge-base --is-ancestor d32733b13af210519be90ca52c933e5f73199cfb refs/heads/fast/mailbox-server-drafts-master` exit0. Final current HEAD is the product commit; current plan/worktree identities remain unchanged. Receipt `artifact://393` also lists exact thirteen product paths, empty index, and only this report plus preserved controller-owned ledger as unstaged changes.
+- Required syntax/full JS/five backend commands run freshly this invocation: YES; all PASS after final implementation.
+- Historical evidence used only as baseline: YES; epoch1/2 results do not satisfy epoch3 gates.
+- Product-only commit created locally after mandatory combined PASS and actual desktop/mobile server/MySQL smoke: YES.
+- No aggregate/final review, unlisted fixes, push, merge or history rewrite.
+- Remaining implementation blocker: none known within authorized scope. Browser coverage limitations are explicitly distinguished above from exercised evidence; this report does not declare independent plan compliance.
+- Next action: Main/controller records evidence separately and runs the current approved fast-p child03 independent verifier; do not replay completed children or initiate aggregate/final review here.
+
+## Epoch 3 — Terminal evidence closing
+- Implementer: DraftUIFinalImplementer
+- Fixer: DraftUIFixerOne
+- Verifier: DraftUIReVerifierCapable
+- Independent verdict: LIGHT_PASS_WITH_NOTES
+- Required action: COMPLETE_CHILD
+- Implementation: d32733b13af210519be90ca52c933e5f73199cfb
+- Code head: 6d80d6243be6af9c78f4ce44a54a29c7c1bc9033
+- Fix round: 1
+- Fix commits: 6d80d6243be6af9c78f4ce44a54a29c7c1bc9033
+- Findings F-1/F-2 resolved in fresh independent attempt2; O-1 remains RECORD_ONLY.
+- DraftUIReVerifierOne capability-aborted before report/commands; replaced by independent command-capable verifier, not counted as a repair round or accepted verdict.
+- Closing records add bookkeeping only; no additional product tests or whole-system verification claimed.
+
