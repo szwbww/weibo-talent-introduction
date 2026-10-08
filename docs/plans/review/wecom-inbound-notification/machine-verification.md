@@ -78,9 +78,9 @@
 
 ## Verification Result: PASS
 
-Plan: `docs/plans/2026-10-06/wecom-inbound-notification.md`  
-Implementation boundary: `235681497c226066fa0174a2d79bc82863a1e91a..b5452b4ff487766dd69c0ef4b3996dd2b484f1ef`  
-Convergence: `INITIAL`  
+Plan: `docs/plans/2026-10-06/wecom-inbound-notification.md`
+Implementation boundary: `235681497c226066fa0174a2d79bc82863a1e91a..b5452b4ff487766dd69c0ef4b3996dd2b484f1ef`
+Convergence: `INITIAL`
 Manual acceptance: `PENDING`
 
 Repair planning: N/A. No repair artifact created. No product code was modified.

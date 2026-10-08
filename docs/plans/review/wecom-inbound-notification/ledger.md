@@ -12,8 +12,8 @@
 - Fast-p handoff: docs/plans/fast/wecom-inbound-notification/human-review-handoff.md (sha256 75b08f5fee81059e891694437e152e1b8fb0acfad5436ded9255c77f6cce7feb)
 - Master base: 235681497c226066fa0174a2d79bc82863a1e91a
 - Final code head: b5452b4ff487766dd69c0ef4b3996dd2b484f1ef
-- Evidence parent before next commit: 401bb4dd87e023c45f160e67658852178acd1ae1
-- Previous evidence commit: N/A
+- Evidence parent before next commit: 686c5090bb6bb649563f37d642199ad89762e03a
+- Previous evidence commit: 686c5090bb6bb649563f37d642199ad89762e03a
 - Branch: fast/wecom-inbound-notification
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/wecom-inbound-notification
 - Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
