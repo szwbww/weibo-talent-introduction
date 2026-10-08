@@ -103,6 +103,9 @@ class PendingMailOperationServiceTest {
     // 06 (T1/I-1/I-2): 通用附件协作件 —— 本文件断言两条入口的 id/身份透传与文件集合流动，
     // 真实原件读取/归属/容量边界由 OutboundAttachmentFlowTest 用真实 04 服务覆盖。
     private val outboundAttachmentService = Mockito.mock(OutboundAttachmentService::class.java)
+    private val draftRepository = Mockito.mock(com.weibo.talentintroduction.mail.repository.MailReplyDraftRepository::class.java)
+    private val draftService = MailReplyDraftService(draftRepository,expertContactRepository,inboundMailProcessingRepository,
+        Mockito.mock(com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository::class.java),outboundAttachmentService)
     // 03 (T3/I-1): 真实 01 生成器（validateAndBuild + ICS 字节/语义 hash 全真实），只 mock
     // 模板目录的 listEnabled（启用门禁）—— 不以 mock 返回一模一样硬编码字串替代真实生成。
     private val meetingTemplateService = Mockito.mock(MailComposeTemplateService::class.java)
@@ -138,7 +141,8 @@ class PendingMailOperationServiceTest {
         unsupportedAnswerIndexService,
         emailSuppressionService,
         meetingConfirmationService,
-        outboundAttachmentService = outboundAttachmentService
+        outboundAttachmentService = outboundAttachmentService,
+        mailReplyDraftService = draftService
     )
 
     private val contact = ExpertContact(
@@ -1651,5 +1655,66 @@ class PendingMailOperationServiceTest {
         assertEquals("<manual-rich-orig@weibo.com>", result.messageId)
         Mockito.verifyNoInteractions(outboundAttachmentService)
         assertTrue(!hasInvocation(mailDeliveryService, "send"))
+    }
+    private fun savedDraft(content: MailReplyDraftContent = MailReplyDraftContent("Re: Test","<p>Test</p>","Test"),
+        version: Long = 1, target: MailReplyDraftTarget = MailReplyDraftTarget(1,MailReplyDraftKind.INBOUND,100,"sender-1")) =
+        MailReplyDraftRow(20,"op",target,version,MailReplyDraftState.ACTIVE,content.subject,content.html,content.text,
+            MailReplyDraftContextCodec.serialize(content.context),null,null,LocalDateTime.now(),LocalDateTime.now())
+
+    @Test fun `draft ref validates raw snapshot and stays outside rendered fingerprint`() {
+        Mockito.`when`(draftRepository.findOwned("op",20)).thenReturn(savedDraft())
+        val result = service.sendManualRichReply(100,null,"Re: Test","<p>Test</p>","Test","forged",
+            authenticatedUsername="op",draftRef=MailReplyDraftRef(20,1))
+        assertEquals("SENT",result.sendStatus)
+        val sent = Mockito.mockingDetails(manualReplySendAttemptService).invocations.single { it.method.name == "prepareAndClaim" }
+            .arguments[0] as ManualReplySendAttemptService.SendPayload
+        assertEquals("op",sent.draftSendRef?.owner)
+        assertEquals(20L,sent.draftSendRef?.id)
+    }
+
+    @Test fun `draft owner version target body attachment and QA mismatches never claim`() {
+        Mockito.`when`(draftRepository.findOwned("op",20)).thenReturn(savedDraft())
+        fun rejected(owner: String = "op", version: Long = 1, html: String = "<p>Test</p>", ids: List<String> = emptyList(),
+            qaIds: List<Long>? = null): MailReplyDraftException = assertThrows(MailReplyDraftException::class.java) {
+            service.sendManualRichReply(100,null,"Re: Test",html,"Test","op",qaRuleIds=qaIds,
+                attachmentIds=ids,authenticatedUsername=owner,draftRef=MailReplyDraftRef(20,version))
+        }
+        assertEquals("NOT_FOUND",rejected(owner="other").code)
+        assertEquals("DRAFT_VERSION_CONFLICT",rejected(version=2).code)
+        assertEquals("DRAFT_CONTENT_MISMATCH",rejected(html="<p>Changed</p>").code)
+        assertEquals("DRAFT_CONTENT_MISMATCH",rejected(ids=listOf("foreign")).code)
+        assertEquals("DRAFT_CONTENT_MISMATCH",rejected(qaIds=emptyList()).code)
+        Mockito.`when`(draftRepository.findOwned("op",20)).thenReturn(savedDraft(target=MailReplyDraftTarget(2,MailReplyDraftKind.INBOUND,100,"sender-1")))
+        assertEquals("DRAFT_CONTENT_MISMATCH",rejected().code)
+        assertFalse(hasInvocation(manualReplySendAttemptService,"prepareAndClaim"))
+        assertFalse(hasInvocation(mailDeliveryService,"send"))
+    }
+
+    @Test fun `completed request alone cannot consume an unbound draft`() {
+        stubConversationRequestCanonical()
+        Mockito.`when`(manualReplySendAttemptService.findCompletedByRequestId(contact.orcidId,conversationRequestId))
+            .thenReturn(completedConversationReply())
+        Mockito.`when`(draftRepository.findOwned("op",20)).thenReturn(savedDraft(
+            content=MailReplyDraftContent("Re: Test","<p>Changed</p>","Changed",MailReplyDraftContext(requestId=conversationRequestId)),
+            target=MailReplyDraftTarget(1,MailReplyDraftKind.OUTBOUND)))
+        val ex = assertThrows(MailReplyDraftException::class.java) {
+            service.sendConversationManualRichReply(1,conversationRequestId,null,subject="Re: Test",htmlBody="<p>Test</p>",
+                textBody="Test",operatorName="op",authenticatedUsername="op",draftRef=MailReplyDraftRef(20,1))
+        }
+        assertEquals("DRAFT_CONTENT_MISMATCH",ex.code)
+        assertFalse(hasInvocation(mailDeliveryService,"send"))
+    }
+
+    @Test fun `trusted completed binding permits body free terminal replay`() {
+        stubConversationRequestCanonical()
+        val completed = completedConversationReply()
+        Mockito.`when`(manualReplySendAttemptService.findCompletedByRequestId(contact.orcidId,conversationRequestId)).thenReturn(completed)
+        Mockito.`when`(draftRepository.findOwned("op",20)).thenReturn(savedDraft(target=MailReplyDraftTarget(1,MailReplyDraftKind.OUTBOUND))
+            .copy(state=MailReplyDraftState.SENT,version=2,subject=null,html=null,text=null,contextJson=null,
+                sendAttemptId=completed.attemptId,sendVersion=1,sendAttemptStatus=MailSendAttemptStatus.SENT))
+        assertEquals("SENT",service.sendConversationManualRichReply(1,conversationRequestId,null,subject="Re: Test",
+            htmlBody="<p>Test</p>",textBody="Test",operatorName="op",authenticatedUsername="op",draftRef=MailReplyDraftRef(20,1)).sendStatus)
+        assertFalse(hasInvocation(mailDeliveryService,"send"))
+        assertFalse(hasInvocation(manualReplySendAttemptService,"prepareAndClaim"))
     }
 }

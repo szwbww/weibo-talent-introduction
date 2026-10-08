@@ -44,9 +44,10 @@ class ManualReplySendAttemptServiceTest {
     private val mailRecordQaRuleRepository = Mockito.mock(MailRecordQaRuleRepository::class.java)
     private val operatorActionLogService = Mockito.mock(OperatorActionLogService::class.java)
     private val meetingCalendarService = Mockito.mock(MeetingCalendarService::class.java)
+    private val draftService = Mockito.mock(MailReplyDraftService::class.java)
     private val service = ManualReplySendAttemptService(
         attemptRepository, mailRecordRepository, mailRecordQaRuleRepository, operatorActionLogService,
-        meetingCalendarService
+        meetingCalendarService,draftService
     )
 
     private val payload = ManualReplySendAttemptService.SendPayload(
@@ -1410,6 +1411,30 @@ class ManualReplySendAttemptServiceTest {
         assertEquals("Re: Intro", after["subject"])
         assertEquals("Hello", after["bodyPreviewText"])
         assertFalse(after.containsKey("canonicalFactIds"))
+    }
+    private fun draftRef() = ValidatedDraftSendRef("op",20,1,
+        MailReplyDraftTarget(1,MailReplyDraftKind.INBOUND,100,"sender-1"),MailReplyDraftContent(),null,null)
+
+    @Test fun `draft snapshot never changes the frozen legacy fingerprint`() {
+        val referenced = payload.copy().also { it.draftSendRef = draftRef() }
+        assertEquals("fa838dbceec46871ec1eae26e9ba4666d6f1ac0fda1bd36f872110efd38becda",
+            service.computeFingerprint(referenced).fullHex)
+        assertEquals(service.computeFingerprint(payload).shortKey,service.computeFingerprint(referenced).shortKey)
+    }
+
+    @Test fun `unresolved bound attempt returns blocked before reserving any new identity`() {
+        val ref = draftRef()
+        val referenced = payload.copy().also { it.draftSendRef = ref }
+        val row = MailReplyDraftRow(20,"op",ref.target,1,MailReplyDraftState.ACTIVE,"","","",
+            MailReplyDraftContextCodec.serialize(MailReplyDraftContext()),1,1,LocalDateTime.now(),LocalDateTime.now())
+        Mockito.`when`(draftService.lockForClaim(ref)).thenReturn(row)
+        for ((status,result) in listOf(MailSendAttemptStatus.DELIVERY_IN_PROGRESS to ManualReplySendAttemptService.ClaimResult.IN_PROGRESS,
+            MailSendAttemptStatus.DELIVERY_UNKNOWN to ManualReplySendAttemptService.ClaimResult.UNKNOWN)) {
+            Mockito.`when`(attemptRepository.findById(1L)).thenReturn(Optional.of(createAttempt(status,service.computeFingerprint(payload))))
+            assertEquals(result,service.prepareAndClaim(referenced).result)
+        }
+        assertFalse(Mockito.mockingDetails(attemptRepository).invocations.any { it.method.name == "insertIgnore" })
+        assertFalse(Mockito.mockingDetails(draftService).invocations.any { it.method.name.startsWith("bind") })
     }
 }
 

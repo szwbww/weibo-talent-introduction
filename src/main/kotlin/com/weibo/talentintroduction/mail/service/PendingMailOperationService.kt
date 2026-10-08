@@ -93,7 +93,8 @@ class PendingMailOperationService(
     // 06 (I-1/I-2): 通用附件原件解析/元数据读取（04）。与上方两个 RAG 协作件同款：
     // Spring 运行时按主构造器完整注入，可空默认值只让既有的直接构造单元测试零改动；
     // 携带附件的入口在 claim 之前用 requireNotNull 防御性校验，绝不静默放行。
-    private val outboundAttachmentService: OutboundAttachmentService? = null
+    private val outboundAttachmentService: OutboundAttachmentService? = null,
+    private val mailReplyDraftService: MailReplyDraftService? = null
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(PendingMailOperationService::class.java)
@@ -187,7 +188,8 @@ class PendingMailOperationService(
         // 保持既有内部调用点零改动；非空 id 时身份必须真实（空身份在 claim 前 400），
         // 绝不回退请求体里的 operatorName。
         attachmentIds: List<String> = emptyList(),
-        authenticatedUsername: String? = null
+        authenticatedUsername: String? = null,
+        draftRef: MailReplyDraftRef? = null
     ): PendingMailSendResult {
         val record = inboundMailProcessingRepository.findById(inboundProcessingId)
             .orElseThrow { error("Inbound mail processing not found: $inboundProcessingId") }
@@ -195,6 +197,12 @@ class PendingMailOperationService(
             ?: error("Inbound mail not bound to a contact")
         val contact = expertContactRepository.findById(contactId)
             .orElseThrow { error("Expert contact not found: $contactId") }
+        if (draftRef != null) {
+            val bound = requireNotNull(mailReplyDraftService) { "Draft sending is not wired" }.completedBinding(
+                authenticatedUsername.orEmpty(),draftRef,contactId,inboundProcessingId,
+                senderAccountCode?.takeIf { it.isNotBlank() } ?: record.senderAccountCode)
+            if (bound != null) return completedDraftResult(contactId,requireNotNull(manualReplySendAttemptService.findCompletedAttempt(bound)))
+        }
 
         require(subject.isNotBlank()) { "Subject is required" }
         require(htmlBody.isNotBlank()) { "HTML body is required" }
@@ -311,6 +319,15 @@ class PendingMailOperationService(
         val primaryRuleId = if (ragMode) null else canonicalFactIds.firstOrNull()
 
         val account = resolvePendingReplyAccount(senderAccountCode, record.senderAccountCode)
+        val validatedDraft = draftRef?.let {
+            requireNotNull(mailReplyDraftService).validateInboundSend(authenticatedUsername.orEmpty(),it,
+                MailReplyDraftTarget(contactId,MailReplyDraftKind.INBOUND,inboundProcessingId,account.accountCode),
+                subject,htmlBody,textBody,ragFactCodes,ragCorpusFingerprint,edited,freeTextPreview,meeting,
+                previewAttachmentSha256,attachmentIds,
+                qaRuleIds != null || suggestedRuleIds != null || ackSnippetId != null || useVariants ||
+                    trustReplyAssembly != null || templateTextBody?.let { raw -> raw != textBody } == true ||
+                    templateHtmlBody?.let { raw -> raw != htmlBody } == true)
+        }
 
         val manualSource = ManualRichSendSource(
             contact = contact,
@@ -354,7 +371,8 @@ class PendingMailOperationService(
             meeting = meeting,
             previewAttachmentSha256 = previewAttachmentSha256,
             attachmentIds = attachmentIds,
-            authenticatedUsername = authenticatedUsername
+            authenticatedUsername = authenticatedUsername,
+            draftSendRef = validatedDraft
         )
     }
 
@@ -381,7 +399,8 @@ class PendingMailOperationService(
         strongConfirmationText: String? = null,
         // 06 (T1/I-2)：通用附件 id 与真实会话身份。空/空身份保持既有调用点零改动。
         attachmentIds: List<String> = emptyList(),
-        authenticatedUsername: String? = null
+        authenticatedUsername: String? = null,
+        draftRef: MailReplyDraftRef? = null
     ): PendingMailSendResult {
         val contact = expertContactRepository.findById(contactId)
             .orElseThrow { error("Expert contact not found: $contactId") }
@@ -403,7 +422,11 @@ class PendingMailOperationService(
         val completed = manualReplySendAttemptService.findCompletedByRequestId(
             contact.orcidId, canonicalRequestId
         )
-        if (completed != null) {
+        val trustedDraftAttempt = draftRef?.let {
+            requireNotNull(mailReplyDraftService) { "Draft sending is not wired" }.completedBinding(
+                authenticatedUsername.orEmpty(),it,contactId,null,accountScope,completed?.attemptId)
+        }
+        if (completed != null && (draftRef == null || trustedDraftAttempt == completed.attemptId)) {
             val record = completed.mailRecord
             val originalSnapshots = OutboundAttachmentSnapshotCodec.parseOrThrow(
                 record.outboundAttachmentsJson
@@ -426,6 +449,10 @@ class PendingMailOperationService(
                 sendStatus = "SENT",
                 messageId = record.messageId ?: completed.attemptMessageId
             )
+        }
+        val validatedDraft = draftRef?.let {
+            requireNotNull(mailReplyDraftService).validateConversationSend(authenticatedUsername.orEmpty(),it,
+                contactId,accountScope,canonicalRequestId,anchorMailRecordId,subject,htmlBody,textBody,attachmentIds)
         }
 
         // I-1：真实 SENT 出站锚点（排除空账号/模拟器）；accountScope 非空时只在该账号内找，
@@ -483,9 +510,15 @@ class PendingMailOperationService(
             strongConfirmationText = strongConfirmationText,
             evidence = ManualReplyEvidenceContext(runInboundSemanticChecks = false),
             attachmentIds = attachmentIds,
-            authenticatedUsername = authenticatedUsername
+            authenticatedUsername = authenticatedUsername,
+            draftSendRef = validatedDraft
         )
     }
+
+    private fun completedDraftResult(contactId: Long, completed: ManualReplySendAttemptService.CompletedOutboundReply) =
+        PendingMailSendResult(contactId,completed.mailRecord.senderAccountCode ?: completed.attemptAccountCode,
+            "MANUAL_RICH_REPLY",completed.mailRecord.subject.orEmpty(),"SENT",
+            completed.mailRecord.messageId ?: completed.attemptMessageId)
 
     /**
      * I-2：显式锚点资格判定 —— 与 `findLatestSentOutboundAnchor` 的 SQL 谓词同口径
@@ -530,7 +563,8 @@ class PendingMailOperationService(
         // 06 (I-1)：通用附件 id（选择顺序）与真实会话身份；两条入口都传到这里，附件在
         // claim 之前解析（同一文件集合同时喂 SendPayload 快照与 ComposedMail 载荷）。
         attachmentIds: List<String> = emptyList(),
-        authenticatedUsername: String? = null
+        authenticatedUsername: String? = null,
+        draftSendRef: ValidatedDraftSendRef? = null
     ): PendingMailSendResult {
         val contact = source.contact
         require(rawSubject.isNotBlank()) { "Subject is required" }
@@ -697,7 +731,7 @@ class PendingMailOperationService(
             // 06 (I-1)：与 ComposedMail.outboundAttachments 同一文件集合导出的有序快照；
             // 05 的 finalize 四分支据此写 mail_record.outbound_attachments_json。
             outboundAttachments = attachmentFileSet.snapshots
-        )
+        ).also { it.draftSendRef = draftSendRef }
 
         val persistInReplyTo = source.persistInReplyTo
         if (persistInReplyTo != null && persistInReplyTo.length > 255) {
@@ -1855,7 +1889,8 @@ data class PendingManualRichReplyRequest(
     val previewAttachmentSha256: String? = null,
     // 06 (T1/I-1): 通用附件 id（用户选择顺序，04 上传产物）。默认空 = 既有无附件形态逐字
     // 不变；非空时服务端按 (专家 + 会话身份) 重读 04 元数据与原件，越权/缺失在 claim 前失败。
-    val attachmentIds: List<String> = emptyList()
+    val attachmentIds: List<String> = emptyList(),
+    val draftRef: MailReplyDraftRef? = null
 )
 
 data class ComposedReplyRequest(

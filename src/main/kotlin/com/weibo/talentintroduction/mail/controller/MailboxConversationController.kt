@@ -12,6 +12,9 @@ import com.weibo.talentintroduction.mail.service.MailboxSuspensionService
 import com.weibo.talentintroduction.mail.service.PendingMailOperationService
 import com.weibo.talentintroduction.mail.service.PendingMailSendResult
 import com.weibo.talentintroduction.mail.service.TagView
+import com.weibo.talentintroduction.mail.service.MailReplyDraftRef
+import com.weibo.talentintroduction.mail.service.MailReplyDraftException
+import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.DeleteMapping
@@ -124,7 +127,8 @@ data class ConversationManualRichReplyRequest(
      * 形态逐字不变；非空时服务端按 (专家 + 会话身份) 重读 04 元数据与原件，失败在 claim
      * 之前以 400/404/409/413 返回。同一 requestId 重提时附件语义必须与原记录一致。
      */
-    val attachmentIds: List<String> = emptyList()
+    val attachmentIds: List<String> = emptyList(),
+    val draftRef: MailReplyDraftRef? = null
 )
 
 data class ConversationListResponse(
@@ -400,8 +404,13 @@ class MailboxConversationController(
         strongConfirmationText = body.strongConfirmationText,
         // 06 (I-1/I-2)：附件 id 与会话身份；identity 绝不取请求体 operatorName。
         attachmentIds = body.attachmentIds,
-        authenticatedUsername = servletRequest?.let { sessionUsername(it) }
+        authenticatedUsername = servletRequest?.let { sessionUsername(it) },
+        draftRef = body.draftRef
     )
+
+    @ExceptionHandler(MailReplyDraftException::class)
+    fun draftError(ex: MailReplyDraftException): ResponseEntity<Any> = ResponseEntity.status(ex.status).body(
+        mapOf("code" to ex.code,"message" to ex.message,"currentVersion" to ex.currentVersion,"currentState" to ex.currentState))
 
     @DeleteMapping("/{contactId}/follow")
     fun unfollow(

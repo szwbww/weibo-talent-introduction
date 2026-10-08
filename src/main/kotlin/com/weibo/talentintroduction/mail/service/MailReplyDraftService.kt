@@ -1,6 +1,9 @@
 package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
+import org.springframework.transaction.annotation.Propagation
+import org.springframework.transaction.annotation.Transactional
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailReplyDraftRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
@@ -18,6 +21,7 @@ class MailReplyDraftService(
     private val accounts: MailSenderAccountRepository,
     private val attachments: OutboundAttachmentService
 ) {
+    private val mailContent = MailContentService()
     fun getTarget(owner: String, target: MailReplyDraftTarget): MailReplyDraftDetail {
         identity(owner); targetShape(target)
         val row = repository.findTarget(owner,target)
@@ -54,11 +58,16 @@ class MailReplyDraftService(
             sendVersion=if (existing.state == MailReplyDraftState.ACTIVE) existing.sendVersion else null,
             sendAttemptStatus=if (existing.state == MailReplyDraftState.ACTIVE) existing.sendAttemptStatus else null))
     }
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun discard(owner: String, id: Long, expectedVersion: Long): MailReplyDraftDetail {
         identity(owner)
+        repository.lockOwned(owner,id)
         val row = owned(owner,id)
         if (expectedVersion <= 0 || row.version != expectedVersion) conflict(row)
         if (row.state != MailReplyDraftState.ACTIVE) return detail(row)
+        if (row.sendAttemptStatus == MailSendAttemptStatus.DELIVERY_IN_PROGRESS) {
+            throw MailReplyDraftException(HttpStatus.CONFLICT,"DRAFT_SEND_IN_PROGRESS","草稿正在发送，不能放弃",row.version,row.state)
+        }
         val now = LocalDateTime.now().truncatedTo(ChronoUnit.MILLIS)
         if (!repository.discard(owner,id,expectedVersion,now)) conflict(owned(owner,id))
         return detail(row.copy(version=row.version+1,state=MailReplyDraftState.DISCARDED,subject=null,html=null,text=null,contextJson=null,updatedAt=now))
@@ -74,6 +83,103 @@ class MailReplyDraftService(
         if (ids.size > 100 || ids.any { it <= 0 }) invalid("contactIds最多100个真实id")
         return repository.summaries(owner,accountScope?.takeIf { it.isNotEmpty() },ids)
     }
+
+    internal fun validateInboundSend(owner: String, ref: MailReplyDraftRef, target: MailReplyDraftTarget,
+        subject: String, html: String, text: String?, ragCodes: List<String>?, ragFingerprint: String?,
+        edited: Boolean?, freeTextPreview: String?, meeting: MeetingInput?, previewSha: String?,
+        attachmentIds: List<String>, unsupportedQa: Boolean): ValidatedDraftSendRef {
+        val row = activeSend(owner,ref)
+        val content = content(row)
+        val qa = content.context.qa
+        val codes = qa?.ragFactCodes.orEmpty()
+        val expectedEdited = if (codes.isEmpty()) null else
+            text.orEmpty().trim() != mailContent.normalizeManualTextLineBreaks(qa?.baselineText.orEmpty()).trim()
+        val savedMeeting = content.context.meeting
+        val submittedInput = meeting?.let { MailReplyDraftMeetingInput(it.zoneId,it.startLocal,it.endLocal,it.zoomUrl,it.generatedAt) }
+        if (row.target != target || content.context.followUpAnchorMailRecordId != null || unsupportedQa ||
+            !sameBody(content,subject,html,text) || codes != ragCodes.orEmpty() ||
+            qa?.ragCorpusFingerprint.orEmpty() != ragFingerprint.orEmpty() || edited != expectedEdited ||
+            !freeTextPreview.isNullOrBlank() || savedMeeting?.input != submittedInput ||
+            savedMeeting?.preview?.attachment?.sha256 != previewSha ||
+            savedMeeting != null && savedMeeting.state != "ready" ||
+            content.context.meetingAccountCode?.takeIf { it.isNotEmpty() }?.let { it != target.accountScope } == true ||
+            !sameAttachments(content,attachmentIds)) mismatch(row)
+        return validated(row,content)
+    }
+
+    internal fun validateConversationSend(owner: String, ref: MailReplyDraftRef, contactId: Long, scope: String?,
+        requestId: String, anchorId: Long?, subject: String, html: String, text: String?,
+        attachmentIds: List<String>): ValidatedDraftSendRef {
+        val row = activeSend(owner,ref)
+        val content = content(row)
+        if (!conversationTarget(row,contactId,scope) || !sameBody(content,subject,html,text) ||
+            content.context.requestId != requestId || content.context.followUpAnchorMailRecordId != anchorId ||
+            row.target.kind == MailReplyDraftKind.INBOUND && anchorId == null ||
+            content.context.meeting != null || !sameAttachments(content,attachmentIds)) mismatch(row)
+        return validated(row,content)
+    }
+
+    /** Body-free terminal retries are admitted only by the durable binding, never by requestId alone. */
+    internal fun completedBinding(owner: String, ref: MailReplyDraftRef, contactId: Long,
+        processingId: Long?, scope: String?, attemptId: Long? = null): Long? {
+        identity(owner)
+        val row = owned(owner,ref.id)
+        val targetMatches = if (processingId != null) row.target == MailReplyDraftTarget(contactId,MailReplyDraftKind.INBOUND,processingId,scope.orEmpty())
+            else conversationTarget(row,contactId,scope)
+        if (!targetMatches) mismatch(row)
+        return row.sendAttemptId?.takeIf {
+            row.state == MailReplyDraftState.SENT && row.sendVersion == ref.version &&
+                row.version == ref.version + 1 && row.sendAttemptStatus == MailSendAttemptStatus.SENT &&
+                (attemptId == null || it == attemptId)
+        }
+    }
+
+    /** Caller already owns the sending transaction; take the draft lock before touching attempts. */
+    internal fun lockForClaim(ref: ValidatedDraftSendRef): MailReplyDraftRow {
+        val row = locked(ref.owner,ref.id)
+        if (row.state != MailReplyDraftState.ACTIVE || row.version != ref.version) conflict(row)
+        if (row.target != ref.target || content(row) != ref.content) mismatch(row)
+        return row
+    }
+    internal fun lockForFinalize(ref: ValidatedDraftSendRef) { locked(ref.owner,ref.id) }
+    internal fun releaseBinding(row: MailReplyDraftRow) {
+        check(repository.releaseCompletedBinding(row.username,row.id,requireNotNull(row.sendVersion),requireNotNull(row.sendAttemptId))) {
+            "Draft binding release failed"
+        }
+    }
+    internal fun bind(ref: ValidatedDraftSendRef, attemptId: Long) {
+        check(repository.bindAttempt(ref.owner,ref.id,ref.version,attemptId)) { "Draft send binding failed" }
+    }
+    internal fun closeSent(ref: ValidatedDraftSendRef, attemptId: Long, now: LocalDateTime) {
+        if (repository.closeSent(ref.owner,ref.id,ref.version,attemptId,now)) return
+        val row = owned(ref.owner,ref.id)
+        if (row.sendAttemptId != attemptId || row.sendVersion != ref.version) error("Draft send binding changed")
+        // An edit or an explicitly discarded UNKNOWN send is not resurrected by a late success.
+        if (row.version > ref.version) { releaseBinding(row); return }
+        error("Draft sent close failed")
+    }
+    private fun activeSend(owner: String, ref: MailReplyDraftRef): MailReplyDraftRow {
+        identity(owner)
+        val row = owned(owner,ref.id)
+        if (ref.version <= 0 || row.version != ref.version || row.state != MailReplyDraftState.ACTIVE) conflict(row)
+        return row
+    }
+    private fun locked(owner: String, id: Long): MailReplyDraftRow =
+        repository.lockOwned(owner,id) ?: throw MailReplyDraftException(HttpStatus.NOT_FOUND,"NOT_FOUND","草稿不存在")
+    private fun content(row: MailReplyDraftRow) = MailReplyDraftContent(row.subject.orEmpty(),row.html.orEmpty(),row.text.orEmpty(),
+        MailReplyDraftContextCodec.parse(requireNotNull(row.contextJson)))
+    private fun validated(row: MailReplyDraftRow, content: MailReplyDraftContent) =
+        ValidatedDraftSendRef(row.username,row.id,row.version,row.target,content,row.sendAttemptId,row.sendVersion)
+    private fun conversationTarget(row: MailReplyDraftRow, contactId: Long, scope: String?) =
+        row.target.contactId == contactId && row.target.accountScope == scope.orEmpty()
+    private fun sameBody(content: MailReplyDraftContent, subject: String, html: String, text: String?) =
+        content.subject.trim() == subject.trim() && content.html == html && content.text == text.orEmpty()
+    private fun sameAttachments(content: MailReplyDraftContent, ids: List<String>): Boolean {
+        val items = content.context.outboundAttachmentDraft?.items.orEmpty()
+        return items.all { it.state == "ready" } && items.mapNotNull { it.id } == ids
+    }
+    private fun mismatch(row: MailReplyDraftRow): Nothing = throw MailReplyDraftException(HttpStatus.CONFLICT,
+        "DRAFT_CONTENT_MISMATCH","发送内容与已保存草稿不一致",row.version,row.state)
     private fun identity(owner: String) { if (owner.isBlank() || owner.length > 64) throw MailReplyDraftException(HttpStatus.UNAUTHORIZED,"UNAUTHORIZED","请先登录") }
     private fun targetShape(target: MailReplyDraftTarget) {
         if (target.contactId <= 0 || target.accountScope.length > 100 || target.accountScope != target.accountScope.trim()) invalid("非法草稿目标")

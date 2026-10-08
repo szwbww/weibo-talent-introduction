@@ -82,7 +82,9 @@ import java.time.Instant
 @Import(
     MeetingCalendarEventRepository::class,
     ManualReplySendAttemptService::class,
-    MeetingCalendarSendIntegrationTestSupport::class
+    MeetingCalendarSendIntegrationTestSupport::class,
+    com.weibo.talentintroduction.mail.repository.MailReplyDraftRepository::class,
+    MailReplyDraftService::class
 )
 class MeetingCalendarSendIntegrationTest {
 
@@ -107,6 +109,8 @@ class MeetingCalendarSendIntegrationTest {
     /** 上下文里唯一的审计替身（ManualReplySendAttemptService 与 Pending 共用同一实例）。 */
     @Autowired
     private lateinit var operatorActionLogService: OperatorActionLogService
+    @Autowired
+    private lateinit var draftService: MailReplyDraftService
 
     // ── 仅 SMTP 与合同外协作件被 mock ──
 
@@ -199,7 +203,8 @@ class MeetingCalendarSendIntegrationTest {
             trustReplyWorkbenchService,
             unsupportedAnswerIndexService,
             emailSuppressionService,
-            meetingConfirmationService
+            meetingConfirmationService,
+            mailReplyDraftService = draftService
         )
     }
 
@@ -553,6 +558,8 @@ class MeetingCalendarSendIntegrationTest {
     }
 
     private fun cleanup() {
+        jdbcTemplate.update("DELETE FROM mailbox_reply_draft")
+        jdbcTemplate.update("DELETE FROM outbound_mail_attachment")
         jdbcTemplate.update("DELETE FROM meeting_calendar_event")
         jdbcTemplate.update("DELETE FROM mail_record_qa_rule")
         jdbcTemplate.update("DELETE FROM mail_record")
@@ -640,6 +647,10 @@ class MeetingCalendarSendIntegrationTest {
     private fun calendarVersion(): String = calendarService.get(calendarEventId()).event.updatedAt.toString()
 
     companion object {
+        private val mysql = DraftSendMysql()
+        @JvmStatic @org.springframework.test.context.DynamicPropertySource
+        fun properties(registry: org.springframework.test.context.DynamicPropertyRegistry) = mysql.properties(registry)
+        @JvmStatic @org.junit.jupiter.api.AfterAll fun stop() { mysql.stop() }
         private const val ACCOUNT_CODE = "acc-cal"
         private const val CONTACT_ID = 1L
         private const val PROCESSING_ID = 100L
@@ -680,6 +691,7 @@ class ToggleableMeetingCalendarService(
 
 /** 真实 MySQL 集成测试的窄配置：唯一 calendar 服务（真实实现 + 失败开关）与审计替身。 */
 @TestConfiguration
+@Import(com.weibo.talentintroduction.mail.repository.OutboundMailAttachmentRepository::class)
 class MeetingCalendarSendIntegrationTestSupport {
 
     @Bean
@@ -690,4 +702,14 @@ class MeetingCalendarSendIntegrationTestSupport {
 
     @Bean
     fun operatorActionLogService(): OperatorActionLogService = Mockito.mock(OperatorActionLogService::class.java)
+
+    @Bean
+    fun outboundAttachmentService(repository: com.weibo.talentintroduction.mail.repository.OutboundMailAttachmentRepository,
+        contacts: ExpertContactRepository): OutboundAttachmentService {
+        val root = java.nio.file.Files.createTempDirectory("draft-send-attachments")
+        Runtime.getRuntime().addShutdownHook(Thread {
+            java.nio.file.Files.walk(root).use { paths -> paths.sorted(Comparator.reverseOrder()).forEach { java.nio.file.Files.deleteIfExists(it) } }
+        })
+        return OutboundAttachmentService(com.weibo.talentintroduction.config.MailAttachmentStorageProperties(basePath=root.toString()),repository,contacts)
+    }
 }

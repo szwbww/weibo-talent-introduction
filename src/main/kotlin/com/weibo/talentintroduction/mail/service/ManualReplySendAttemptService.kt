@@ -31,7 +31,8 @@ class ManualReplySendAttemptService(
     private val operatorActionLogService: OperatorActionLogService,
     // fast-p 02 (I-2): 成功事务内创建排期的唯一协作件（01 createFromSentMail 要求
     // 调用方已在事务中，本方法即调用方）。
-    private val meetingCalendarService: MeetingCalendarService
+    private val meetingCalendarService: MeetingCalendarService,
+    private val mailReplyDraftService: MailReplyDraftService? = null
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(ManualReplySendAttemptService::class.java)
@@ -90,7 +91,10 @@ class ManualReplySendAttemptService(
          * 显式写入本次快照（空即显式 null）。
          */
         val outboundAttachments: List<OutboundAttachmentSnapshot> = emptyList()
-    )
+    ) {
+        // Server-only raw snapshot, deliberately absent from the fingerprint byte stream.
+        internal var draftSendRef: ValidatedDraftSendRef? = null
+    }
 
     /** findCompletedByRequestId 命中的已完成会话回信（attempt SENT + 唯一 mail_record）。 */
     data class CompletedOutboundReply(
@@ -230,8 +234,33 @@ class ManualReplySendAttemptService(
         )
     }
 
+    internal fun findCompletedAttempt(attemptId: Long): CompletedOutboundReply? {
+        val attempt = attemptRepository.findById(attemptId).orElse(null) ?: return null
+        if (attempt.status != MailSendAttemptStatus.SENT) return null
+        val record = mailRecordRepository.findByMailSendAttemptId(attemptId) ?: return null
+        return CompletedOutboundReply(attemptId,attempt.messageId,attempt.accountCode,record)
+    }
+
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun prepareAndClaim(payload: SendPayload): ClaimedAttempt {
+        val draftRef = payload.draftSendRef
+        val drafts = draftRef?.let { requireNotNull(mailReplyDraftService) { "Draft sending is not wired" } }
+        val draftRow = draftRef?.let { requireNotNull(drafts).lockForClaim(it) }
+        // A different requestId or changed content must not evade an unresolved delivery.
+        if (draftRow?.sendAttemptId != null) {
+            val bound = attemptRepository.findById(draftRow.sendAttemptId).orElseThrow {
+                IllegalStateException("Draft bound attempt is missing")
+            }
+            val blocked = when (bound.status) {
+                MailSendAttemptStatus.DELIVERY_IN_PROGRESS -> ClaimResult.IN_PROGRESS
+                MailSendAttemptStatus.DELIVERY_UNKNOWN -> ClaimResult.UNKNOWN
+                else -> null
+            }
+            if (blocked != null) return ClaimedAttempt(requireNotNull(bound.id),bound.messageId,blocked)
+            require(bound.status == MailSendAttemptStatus.FAILED_SAFE_TO_RETRY ||
+                bound.status == MailSendAttemptStatus.FAILED || bound.status == MailSendAttemptStatus.SENT) { "Draft attempt cannot be replaced" }
+            requireNotNull(drafts).releaseBinding(draftRow)
+        }
         val fingerprint = computeFingerprint(payload)
         val now = LocalDateTime.now()
 
@@ -271,7 +300,7 @@ class ManualReplySendAttemptService(
             )
         }
 
-        return when (attempt.status) {
+        val claim = when (attempt.status) {
             MailSendAttemptStatus.PREPARED -> {
                 val affected = attemptRepository.claimStatus(
                     requireNotNull(attempt.id),
@@ -334,10 +363,21 @@ class ManualReplySendAttemptService(
                     result = ClaimResult.PERMANENT_FAILED
                 )
         }
+        if (draftRef != null && (claim.result == ClaimResult.CLAIMED || claim.result == ClaimResult.SAFE_RETRY_CLAIMED || claim.result == ClaimResult.DEDUP_SENT)) {
+            if (claim.result == ClaimResult.DEDUP_SENT) {
+                check(mailRecordRepository.findByMailSendAttemptId(claim.attemptId)?.sendStatus == "SENT") {
+                    "Completed attempt has no durable SENT mail record"
+                }
+            }
+            requireNotNull(drafts).bind(draftRef,claim.attemptId)
+            if (claim.result == ClaimResult.DEDUP_SENT) drafts.closeSent(draftRef,claim.attemptId,now)
+        }
+        return claim
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun finalizeSuccess(payload: SendPayload, attemptId: Long, messageId: String): Long {
+        payload.draftSendRef?.let { requireNotNull(mailReplyDraftService).lockForFinalize(it) }
         val attempt = attemptRepository.findById(attemptId).orElseThrow {
             IllegalStateException("Mail send attempt not found: $attemptId")
         }
@@ -424,6 +464,7 @@ class ManualReplySendAttemptService(
             errorSummary = null,
             now = now
         )
+        payload.draftSendRef?.let { requireNotNull(mailReplyDraftService).closeSent(it,attemptId,now) }
 
         return mailRecordId
     }
@@ -436,6 +477,7 @@ class ManualReplySendAttemptService(
         resultStatus: String,
         errorSummary: String?
     ): Long {
+        payload.draftSendRef?.let { requireNotNull(mailReplyDraftService).lockForFinalize(it) }
         val attempt = attemptRepository.findById(attemptId).orElseThrow {
             IllegalStateException("Mail send attempt not found: $attemptId")
         }
