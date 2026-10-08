@@ -17,11 +17,11 @@
 |---|---|---|---|
 
 ## Pause/Resume
-- Reason: Child03 PLAN_CONFLICT. Seven authorized files retained uncommitted. Fresh syntax gates PASS; full JS suite 1560 tests, 1540 pass, 20 fail, zero skipped (artifact://216). Five unlisted tests require fixture/contract updates; no product fallback or unauthorized edits applied.
-- Resume from: child03, next epoch2, product base 05bb797a51dd94b8aa712bc8f36e2426e3e801a4, preserved working implementation atop evidence HEAD 1b0288211051a2260107df6e4c667c9a0b259e85. Obtain approval for exact scope expansion; amend and record plan identities before resuming isolated implementation. Do not replay completed children.
-- Required scope amendment: src/test/js/discoveryReview.test.js and src/test/js/mailboxSuspensionStyle.test.js retire obsolete absolute-EOF CSS placement assertions while retaining original content; src/test/js/mailboxGroupPush.test.js retires superseded release-key pin while retaining shared-key/resource contract; src/test/js/materialRequestIntegration.test.js and src/test/js/meetingConfirmationIntegration.test.js gain authenticated typed CAS draft fixtures and awaited lifecycle assertions without weakening original safety/business behavior.
-- Combined backend gates and actual desktop/mobile server-persistence browser smoke were not reached in child03; no passing evidence claimed. Independent child03 verifier was not dispatched because execution has no committed completed implementation.
-- Smoke preparation container removed; no app/SMTP/browser/runtime scaffolds remain, per child03 execution report.
+- Reason: Child03 epoch2 PLAN_CONFLICT; twelve authorized paths retained uncommitted. Prior five-test scope conflict resolved under approved A1/A2. Fresh syntax/full JS1562 PASS; combined repository MySQL8 tests has1 error, zero skipped; storage17/migration39/send100/send-MySQL27 PASS.
+- Resume from: child03, next epoch3, product base05bb797a51dd94b8aa712bc8f36e2426e3e801a4, preserved working implementation atop evidence HEAD5dac3abbbe5517b68f0c6f20d95a62b83cd0b554. Obtain exact backend test-fixture authorization and record amendment before resuming. Do not replay completed children.
+- Required scope amendment: src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepositoryIT.kt only. Its temporary HTTP fixture constructs raw service and passes it directly to controller; inherited transactional discard is unproxied so lockOwned reports no existing transaction on HTTP DELETE. Wire actual Spring transaction proxy using existing datasource/manager; preserve every real HTTP/MySQL/CAS assertion. No production/schema/pom changes.
+- Actual desktop/mobile server-persistence browser smoke is blocked by combined-PASS prerequisite and was not performed. No child03 independent verdict/product commit; no final readiness claim.
+- Smoke preparation container removed; no app/SMTP/browser/runtime scaffolds remain, per epoch2 execution report.
 - Authoritative detailed blocker receipts: children/03/execution.md. Prior passing evidence: children/01/verify-log.md and children/02/verify-log.md.
 
 No whole-system verification was performed.

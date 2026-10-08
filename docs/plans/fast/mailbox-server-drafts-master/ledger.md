@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-08/mailbox-server-drafts-master.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-10-08/mailbox-server-drafts-master.md (commit 2466ad4bdc14fe15d77578ba75103d384eebf6be)
 - Amendments: A1,A2
 - Master base: 7c86599f85f6462e00a3fcd2c5a74f1ca57f013d
@@ -13,15 +13,15 @@
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: a683b69cd1be040d175b28fb5a51bee48d9e14d7
+- Pause reason: Child03 epoch2 combined MySQL HTTP fixture bypasses transaction proxy; exact unlisted MailReplyDraftRepositoryIT.kt authorization required. JS1562 pass; browser prerequisite blocked.
+- Resume from: 5dac3abbbe5517b68f0c6f20d95a62b83cd0b554
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | 01 | docs/plans/2026-10-08/mailbox-server-drafts-01-storage.md | commit:352a3393c31fd72a582ccbb7946f83703da52a95 | none | 1 | LIGHT_PASS | 7c86599f85f6462e00a3fcd2c5a74f1ca57f013d | 099e372c2eca32596a9db670c0f13a0a30ce2b7e | 0 | — | 099e372c2eca32596a9db670c0f13a0a30ce2b7e | 109da9f7f550f82ae67abc3336e5e9ffbbff8656 | Implementer: DraftStorageImplementer; Verifier: DraftStorageVerifier |
 | 02 | docs/plans/2026-10-08/mailbox-server-drafts-02-send.md | commit:352a3393c31fd72a582ccbb7946f83703da52a95 | 01 | 1 | LIGHT_PASS | 099e372c2eca32596a9db670c0f13a0a30ce2b7e | 05bb797a51dd94b8aa712bc8f36e2426e3e801a4 | 0 | — | 05bb797a51dd94b8aa712bc8f36e2426e3e801a4 | 10d87c31de79889ada19e177d244c8be0da06058 | Implementer: DraftSendImplementer; Verifier: DraftSendVerifier |
-| 03 | docs/plans/2026-10-08/mailbox-server-drafts-03-ui.md | commit:2466ad4bdc14fe15d77578ba75103d384eebf6be | 01,02 | 2 | WAITING_FOR_AGENT | 05bb797a51dd94b8aa712bc8f36e2426e3e801a4 | — | 0 | — | 05bb797a51dd94b8aa712bc8f36e2426e3e801a4 | — | Epoch1 pause preserved; human approved exact five test paths and master count exception; resuming preserved uncommitted implementation |
+| 03 | docs/plans/2026-10-08/mailbox-server-drafts-03-ui.md | commit:2466ad4bdc14fe15d77578ba75103d384eebf6be | 01,02 | 2 | PAUSED_FOR_HUMAN | 05bb797a51dd94b8aa712bc8f36e2426e3e801a4 | — | 0 | — | 05bb797a51dd94b8aa712bc8f36e2426e3e801a4 | — | Implementer: DraftUIResumeImplementer; PLAN_CONFLICT; twelve authorized paths retained uncommitted; no independent verifier or repair rounds |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
@@ -51,3 +51,10 @@
 - Amendment-only commit: 2466ad4bdc14fe15d77578ba75103d384eebf6be.
 - Resume identity checked: worktree and branch match; pause HEAD a683b69cd1be040d175b28fb5a51bee48d9e14d7; product index empty; precisely seven prior authorized product/test paths retained dirty. No completed child redispatched.
 - Original pause entries above are historical; A1/A2 release that blocker without rewriting epoch1 logs.
+
+## Child 03 pause — epoch 2
+- Epoch1 five-file conflict resolved under A1/A2; fresh JS suite1562/1562 PASS, no skipped.
+- Combined fresh gates: storage/controller17 PASS; repository MySQL8 tests with1 error; migration39 PASS; sending unit100 PASS; sending/meeting MySQL27 PASS. Browser acceptance not reached.
+- Proven root: repository IT temporary HTTP controller receives raw service at lines176/182; inherited transactional discard bypasses Spring proxy, DELETE at208 fails500 because lockOwned requires transaction. Full receipts: children/03/execution.md epoch2, artifact://241.
+- Minimal requested authority: src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepositoryIT.kt; wire real transaction proxy using existing datasource/transaction manager, preserve HTTP/SQL/CAS assertions. No production/migration/pom changes. No amendment applied for this new blocker.
+- Resume same child in new epoch after human approval and recorded amendment. Preserve all twelve dirty paths and prior child history. No product commit before fresh mandatory gates and real desktop/mobile server-persistence smoke.
