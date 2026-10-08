@@ -5030,6 +5030,7 @@ function returnToMobileContactsList() {
 
 function setView(view) {
     if (!Object.prototype.hasOwnProperty.call(viewMeta, view)) return;
+    if (view !== "mailbox" && typeof invalidateMailboxGroupPush === "function") invalidateMailboxGroupPush();
     if (view !== "contacts") {
         ++mobileContactPresentation.generation;
         const contactsView = $("#view-contacts");
@@ -5092,7 +5093,8 @@ async function refreshCurrentView() {
         if (state.view === "contacts") await loadContacts();
         if (state.view === "mailbox") await Promise.all([
             loadMailbox(),
-            refreshAutoReplySummary().catch(() => {})
+            refreshAutoReplySummary().catch(() => {}),
+            refreshMailboxGroupPush()
         ]);
         if (state.view === "meeting-calendar") await loadMeetingCalendar();
         if (state.view === "inbound-summary") await loadInboundSummary();
@@ -17991,6 +17993,121 @@ function openActionDialog(type, options = {}) {
 let lastAutoReplySummary = null;
 
 
+const mailboxGroupPushState = {
+    initialized: false,
+    requestSeq: 0,
+    confirmedEnabled: null,
+    configured: false,
+    phase: "loading",
+    uncertain: false,
+    pendingRefresh: false
+};
+
+function renderMailboxGroupPush() {
+    const btn = $("#mailboxGroupPushBtn");
+    const label = $("#mailboxGroupPushState");
+    if (!btn || !label) return;
+    const push = mailboxGroupPushState;
+    btn.setAttribute("aria-checked", String(push.confirmedEnabled === true));
+    const labels = { loading: "加载中…", saving: "保存中…", error: "加载失败", unknown: "状态未知" };
+    label.textContent = labels[push.phase] || (!push.configured && !push.confirmedEnabled
+        ? "未配置" : push.confirmedEnabled ? "已开启" : "已关闭");
+    btn.disabled = push.phase === "loading" || push.phase === "saving"
+        || (push.phase === "ready" && !push.configured && !push.confirmedEnabled);
+}
+
+function invalidateMailboxGroupPush() {
+    const push = mailboxGroupPushState;
+    ++push.requestSeq;
+    if (push.phase === "saving") push.uncertain = true;
+    push.confirmedEnabled = null;
+    push.configured = false;
+    push.phase = "loading";
+    push.pendingRefresh = false;
+    renderMailboxGroupPush();
+}
+
+async function refreshMailboxGroupPush() {
+    if (state.view !== "mailbox" || !appStarted) return;
+    const push = mailboxGroupPushState;
+    // A refresh during a save must wait for its outcome, not race the write.
+    if (push.phase === "saving") {
+        push.pendingRefresh = true;
+        return;
+    }
+    const seq = ++push.requestSeq;
+    push.phase = "loading";
+    renderMailboxGroupPush();
+    try {
+        const settings = await api("/api/expert-inbound-notifications/settings", { cache: "no-store", timeoutMs: 10000 });
+        if (seq !== push.requestSeq) return;
+        push.confirmedEnabled = settings.enabled;
+        push.configured = settings.configured;
+        push.phase = "ready";
+        push.uncertain = false;
+    } catch (error) {
+        if (seq !== push.requestSeq) return;
+        push.phase = push.uncertain ? "unknown" : "error";
+        showStatus("群消息加载失败: " + error.message, "error");
+    }
+    if (seq === push.requestSeq) renderMailboxGroupPush();
+}
+
+async function saveMailboxGroupPush() {
+    const push = mailboxGroupPushState;
+    if (state.view !== "mailbox" || !appStarted || push.phase === "loading" || push.phase === "saving") return;
+    if (push.phase === "error" || push.phase === "unknown") {
+        await refreshMailboxGroupPush();
+        return;
+    }
+    if (!push.configured && !push.confirmedEnabled) return;
+    const seq = ++push.requestSeq;
+    const confirmedEnabled = push.confirmedEnabled;
+    push.phase = "saving";
+    renderMailboxGroupPush();
+    try {
+        const settings = await api("/api/expert-inbound-notifications/settings", {
+            method: "PUT",
+            body: JSON.stringify({ enabled: !confirmedEnabled }),
+            timeoutMs: 10000
+        });
+        if (seq !== push.requestSeq) return;
+        push.confirmedEnabled = settings.enabled;
+        push.configured = settings.configured;
+        push.phase = "ready";
+        push.uncertain = false;
+        renderMailboxGroupPush();
+        showStatus(`群消息已${settings.enabled ? "开启" : "关闭"}`, "ok");
+        if (push.pendingRefresh) {
+            push.pendingRefresh = false;
+            await refreshMailboxGroupPush();
+        }
+    } catch (error) {
+        if (seq !== push.requestSeq) return;
+        push.confirmedEnabled = confirmedEnabled;
+        push.phase = "unknown";
+        push.uncertain = true;
+        push.pendingRefresh = false;
+        renderMailboxGroupPush();
+        showStatus("群消息保存失败: " + error.message, "error");
+        await refreshMailboxGroupPush();
+    }
+}
+
+function initMailboxGroupPush() {
+    const btn = $("#mailboxGroupPushBtn");
+    if (!btn || mailboxGroupPushState.initialized) return;
+    mailboxGroupPushState.initialized = true;
+    // Native button activation supplies both Enter and Space without a second handler.
+    btn.addEventListener("click", saveMailboxGroupPush);
+    $("#mailboxRefreshBtn")?.addEventListener("click", () => refreshMailboxGroupPush());
+    $("#logoutBtn")?.addEventListener("click", invalidateMailboxGroupPush);
+    document.addEventListener("visibilitychange", () => {
+        if (!document.hidden && state.view === "mailbox" && appStarted) refreshMailboxGroupPush();
+    });
+    renderMailboxGroupPush();
+}
+
 async function refreshAutoReplySummary() {
     const btn = $("#bulkAutoReplyBtn");
     if (!btn) return;
@@ -18330,6 +18447,7 @@ function startAuthenticatedApp(username) {
 function stopAuthenticatedApp() {
     // 最前停止观察器：之后到达的 active/详情响应一律失效（I-5）。
     stopTaskActivityPolling();
+    if (typeof invalidateMailboxGroupPush === "function") invalidateMailboxGroupPush();
     appStarted = false;
     const shell = $(".app-shell");
     if (shell) {
@@ -23996,4 +24114,5 @@ document.addEventListener("DOMContentLoaded", function() {
     bindBatchSendTaskEvents();
 });
 
+initMailboxGroupPush();
 bootstrap();
