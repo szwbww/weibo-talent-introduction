@@ -264,8 +264,9 @@ retarget：先flush原稿；读取目标稿；已有则显示“打开已有草�
 | 10 | `src/test/js/mailboxGroupPush.test.js` | 删除已过期的旧发布键固定断言，保留资源键一致性、数量、顺序及无旧键契约 |
 | 11 | `src/test/js/materialRequestIntegration.test.js` | 补认证、typed CAS 草稿 transport 与 await 生命周期 fixture；保留材料追加/状态/零发送断言 |
 | 12 | `src/test/js/meetingConfirmationIntegration.test.js` | 补认证、typed CAS 草稿及 draftRef 发送结果 fixture，适配显式新目标/终态继续与 await；保留会议/清洗/附件安全断言 |
+| 13 | `src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepositoryIT.kt` | 临时HTTP fixture接入真实Spring事务代理及现有事务管理器，保留全部HTTP/MySQL/CAS断言 |
 
-共12文件、1前端子系统；mailbox-chat.css、meeting-confirmation.js、弹窗实现、后端均不在本步改动边界。增加的五个测试文件只修复与本次既定草稿协议、CSS 追加及发布键切换直接冲突的 fixture/契约，不放宽生产认证、GET fail-closed、CAS 或发送安全规则。
+共13文件、2子系统（前端、草稿后端测试）；mailbox-chat.css、meeting-confirmation.js、弹窗实现、生产后端、迁移及pom均不在本步改动边界。增加的五个前端测试只适配既定草稿协议/CSS追加/发布键，新增后端测试授权仅修复临时HTTP service/controller事务代理wiring；不得放宽生产认证、GET fail-closed、CAS、事务或发送安全规则。
 
 ## 验收标准
 
@@ -336,3 +337,4 @@ retarget：先flush原稿；读取目标稿；已有则显示“打开已有草�
 
 ## 修正记录
 - 用户“批准 继续”批准上一轮列明的五个测试文件及总计划文件数例外，03 从7文件改为12文件；仅测试范围扩大，产品功能与验收不变量不变。依据：总计划“执行前门禁”第3项（文件清单外变更先修订计划）与第4项（联合通过才可发布）；暂停证据：`../fast/mailbox-server-drafts-master/children/03/execution.md`。审批完整身份由 fast-p 台账 Amendments 记录。
+- 用户“批准”批准新增上述第13个测试文件，仅使用现有datasource/transaction manager建立真实事务代理后再注入临时HTTP controller；不得用测试线程事务代替HTTP线程事务，不得删除HTTP/SQL/CAS断言或放宽repository事务检查。03文件数12→13，总计划相应修订，产品不变量及联合PASS→浏览器验收门禁不变。审批及epoch2暂停证据由fast-p台账Amendments与执行报告记录。
