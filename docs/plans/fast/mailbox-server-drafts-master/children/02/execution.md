@@ -119,3 +119,14 @@ Smoke scope: real HTTP production controllers/services and real MySQL transactio
 - Fix commits: —
 - Closing records add bookkeeping only; no additional product execution is claimed.
 
+
+## 2026-10-09 — 合并后发布测试机械修复
+
+- 授权：用户在发布任务 `job_20261009-130531_publish-production_d71faf00` 构建失败后明确要求“修复”；本次只修该任务报告的测试适配遗漏，不重启发布。
+- `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt`：控制器噪声排除行号由 226/1148 校正为 228/1155，path/context 与写入白名单保持不变。
+- `src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt`：422、503、409、SENT 去重用例补齐新增尾参 `draftRef` 的 null matcher；保留原有结果断言。
+- 不修改生产代码、schema、发送指纹、状态机或业务语义。此修复不是对整个草稿计划的再次独立验收。
+- 定向命令：`JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=OperatorStatusWriteSeamGuardTest,UnmatchedInboundTrustWorkbenchTest test`，exit 0，13 tests，0 failures/errors/skipped。
+- 旧 JDK 11.0.15 完整构建失败：4739 tests，0 failures，19 errors，14 skipped；错误均为时区目录缺少 `America/Coyhaique`。随后使用 `.multi-ai-kit.yaml` 已配置的发布 JDK，不改配置或目录。
+- 发布环境命令：`JAVA_HOME=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home mvn clean package`，exit 0，BUILD SUCCESS；JVM 4739 tests，0 failures/errors，14 skipped；JS 1568 pass，0 fail/skipped。
+- WAR：`target/weibo-talent-introduction-1.0.0-SNAPSHOT.war`。本次未提交、推送或再次部署；opt-in 集成测试未在本次开启，不把 skipped 项声明为通过。
