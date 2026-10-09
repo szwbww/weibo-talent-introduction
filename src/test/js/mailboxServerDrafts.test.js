@@ -317,6 +317,44 @@ describe("server drafts I-5/I-8: complete restoration and server paging", () => 
         assert.equal(deletes(server).length, 0);
     });
 
+    it("confirmed anonymous Session clears private drafts and rejects held old-owner responses without server writes", async () => {
+        const server = H.createDraftServer(), auth = { authenticated: true, username: "admin" };
+        server.seed("admin", inbound(), content("private admin preview", { subject: "private admin subject" }));
+        const persisted = json(read(server));
+        const ctx = await boot(server, { authMe: auth });
+        H.click(H.chipButton(ctx, "drafts")); await H.flush();
+        H.click(ctx.host.querySelector('[data-action="mc-open-draft"]')); await H.flush();
+        assert.equal(editor(ctx).innerText, "private admin preview");
+        assert.match(ctx.host.textContent, /private admin subject/);
+        const held = deferred();
+        let oldResult;
+        server.intercept = (entry, execute) => {
+            if (/\/drafts\?/.test(entry.url) && entry.owner === "admin") {
+                oldResult = execute(); return held.promise;
+            }
+            return execute();
+        };
+        const oldRefresh = ctx.api.refresh(); await H.flush();
+        assert.ok(oldResult, "an admin list request is actually pending");
+        type(ctx, "private admin unsaved edit");
+        auth.authenticated = false;
+        auth.username = null;
+        await assert.rejects(ctx.sandbox.MailboxChat.flushDrafts(ctx.host), /登录用户已变化/);
+        await H.flush();
+        const cleared = () => {
+            assert.doesNotMatch(ctx.host.textContent, /private admin (?:preview|subject|unsaved edit)/);
+            assert.equal(ctx.host.querySelectorAll(".mailbox-draft-card").length, 0);
+            assert.equal(ctx.host.querySelector('[data-role="draft-total"]').textContent, "0");
+            assert.equal(editor(ctx), null);
+            assert.equal(puts(server).length, 0);
+            assert.equal(deletes(server).length, 0);
+            assert.deepEqual(json(read(server)), persisted);
+        };
+        cleared();
+        held.resolve(oldResult); await oldRefresh; await H.flush();
+        cleared();
+    });
+
     for (const seam of ["resolve", "applyOptions"]) it(seam + " clears A cards/counts while B list is delayed and rejects a stale A response", async () => {
         const server = H.createDraftServer(), auth = { authenticated: true, username: "admin" };
         server.seed("admin", inbound(), content("private A preview", { subject: "private A subject" }));

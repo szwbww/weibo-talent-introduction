@@ -2637,6 +2637,18 @@
                     loadDraftSummaries();
                     if (changedIdentity) loadList();
                 } else {
+                    if (data && data.authenticated === false && instance.auth.username) {
+                        clearSelectedConversation();
+                        instance.listSeq += 1;
+                        instance.list.items = [];
+                        instance.list.total = 0;
+                        instance.list.loading = false;
+                        instance.list.error = "";
+                        instance.openedDraft = null;
+                        instance.auth.username = "";
+                        renderConversationEmpty();
+                        renderPager();
+                    }
                     throw new Error("读取当前登录用户失败");
                 }
             }).catch(() => {
@@ -2644,7 +2656,7 @@
                 instance.auth.loading = false;
                 instance.auth.ready = false;
                 instance.auth.failed = true;
-                instance.auth.username = "";
+                // Keep the last confirmed owner on lookup errors; only confirmed anonymity clears its visible state.
                 setDraftSessionUser("");
                 instance.draftCounts.clear();
                 updateDraftTotal(0);
