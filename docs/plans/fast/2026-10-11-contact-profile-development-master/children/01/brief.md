@@ -51,7 +51,7 @@
 - 既有共享存储（expert_contact、ES 三层索引、材料、备注表）**新增字段数 0**；不创建联系人、不发邮件、不推进状态。
 - Flyway：只新增 V153，绝不改写已应用迁移。
 - 命令用 JDK 11（JAVA_HOME 如上）；遵循仓库 Kotlin/Spring Data JDBC 现状模式，不引入新框架。
-- 不修改 plan/审计/其他 docs；不触碰 `docs/plans/fast/**`；不新增授权外文件；工作区不留未跟踪残留文件。
+- 不修改 plan/审计/其他 docs；不提交或篡改 `docs/plans/fast/**` 下文件（仅按下方报告路径写入/追加本 child 的 execution.md，且不得提交它；证据提交由 controller 统一完成）；不新增授权外文件；工作区不留未跟踪残留文件。
 - 本地提交恰好一次：`feat(fast-p): implement 01`（不得 push/merge/rebase/amend/squash）。
 - 报告路径：`docs/plans/fast/2026-10-11-contact-profile-development-master/children/01/execution.md`（写入完整结果：改动文件、命令与结果、偏差、下游接口事实、遗留风险；不得写入该目录以外证据文件）。
 - 返回：`READY_FOR_VERIFICATION | BLOCKED | PLAN_CONFLICT` + commit SHA + 命令摘要 + 报告路径（紧凑 JSON）。
