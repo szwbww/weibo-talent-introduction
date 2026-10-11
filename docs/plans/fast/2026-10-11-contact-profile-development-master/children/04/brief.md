@@ -52,7 +52,7 @@
 - 旧手动材料 100 MiB、旧回复通用附件 10 MiB、multipart 100MB/101MB 均不变；不把全局阈值改 1G；不新增分片/断点续传/转码/封面/对象存储/CDN/删除；不改 server.xml。
 - 不修改 01/02/03 已交付文件（除本 brief 授权的 FlywayMigrationIntegrationTest）；前端、materials owner 链、会议/邮件状态零改动。
 - 不修改 plan/审计/docks；不提交 `docs/plans/fast/**`（仅按报告路径写入 execution.md，不提交它）；不新增授权外文件；工作区不留未跟踪残留文件（大文件测试生成的临时数据放 /tmp 或 target 下并在结束时清理）。
-- 迁移文件不得含 `${` 占位符（本仓 Flyway 未关闭 placeholder-replacement）。
+- 迁移文件不得包含**有效**的 Flyway 占位符语法。事实更正（controller，2026-10-12）：生产 `application.yml` 已显式 `spring.flyway.placeholder-replacement: false`（含说明注释），Flyway IT 亦设 `placeholderReplacement(false)`；本仓现有 10 个迁移文件已含 `${` 文本（历史先例）。因此 `${...}` 仅出现在注释/说明文本中时**不构成生产风险、不视为违反本约束**；实现报告应使用「无有效占位符」这类准确表述。
 - 本地提交恰好一次：`feat(fast-p): implement 04`（不得 push/merge/rebase/amend/squash）。
 
 ## Downstream interfaces（后续子计划依赖）
