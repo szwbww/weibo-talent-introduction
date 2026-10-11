@@ -4976,6 +4976,10 @@ function onMobileCoreViewportChange() {
 
 function beginContactDetailPresentation(trigger = document.activeElement) {
     const generation = ++mobileContactPresentation.generation;
+    // 02（I-2）：切专家/返回列表的统一出口——先中止上一个宿主的在途档案读请求并关闭编辑弹窗。
+    if (typeof unmountExpertManualProfilePanels === "function") {
+        unmountExpertManualProfilePanels();
+    }
     const view = $("#view-contacts");
     if (!view || state.view !== "contacts") return generation;
     if (view.dataset.mobilePane !== "detail") {
@@ -5011,6 +5015,10 @@ function failContactDetailPresentation(generation, error) {
 
 function returnToMobileContactsList() {
     const generation = ++mobileContactPresentation.generation;
+    // 02（I-2）：返回列表明细被替换，档案会话随之失效。
+    if (typeof unmountExpertManualProfilePanels === "function") {
+        unmountExpertManualProfilePanels();
+    }
     const view = $("#view-contacts");
     if (view) { view.dataset.mobilePane = "list"; view.dataset.mobileLoading = "false"; }
     const status = $("#mobileContactStatus");
@@ -11210,6 +11218,701 @@ function calculateExpertVariableCoverage(vars) {
     };
 }
 
+/* contact-profile-02-ui:begin */
+// 02（contact-profile-02-ui）：联系详情人工档案（19 项）。
+// 两个宿主（showExpertDetail / loadContactDetail）共用同一份字段元数据、同一个挂载入口与
+// 同一套 expertId/contactId/generation/宿主守卫；数据来源只有 01 的
+// GET/PATCH /api/experts/manual-profile，不新增第二份资料来源（I-1/I-2）。
+// 所有用户文本（含只读的姓名/国籍/关键词）只经 textContent 与 .value 写入，
+// 模板只承载常量标签与 data-ec-* 挂钩（I-4）。
+
+const EXPERT_MANUAL_PROFILE_HOST_SELECTOR = '[data-role="expert-manual-profile"]';
+const EXPERT_MANUAL_PROFILE_URL = "/api/experts/manual-profile";
+const EXPERT_MANUAL_PROFILE_LEVELS = ["RAW", "CANDIDATE", "APPLICATION"];
+const EXPERT_MANUAL_PROFILE_EMPTY_TEXT = "未填写";
+const EXPERT_MANUAL_PROFILE_UNKNOWN_TEXT = "—";
+const EXPERT_MANUAL_PROFILE_SAVED_NOTICE = "已保存";
+const EXPERT_MANUAL_PROFILE_LOADING_NOTICE = "正在加载资料…";
+const EXPERT_MANUAL_PROFILE_LOAD_FAILED_NOTICE = "资料加载失败，请重试";
+const EXPERT_MANUAL_PROFILE_MISSING_ID_NOTICE = "缺少专家标识，无法保存";
+const EXPERT_MANUAL_PROFILE_CONFLICT_NOTICE = "资料已被更新，请重新加载后再编辑";
+const EXPERT_MANUAL_PROFILE_RETRY_TEXT = "重试";
+
+// 只读复用字段（I-4）：姓名/国籍/关键词沿用现有专家响应，绝不进入 PATCH 白名单。
+const EXPERT_MANUAL_PROFILE_READONLY_FIELDS = [
+    { name: "expertName", label: "姓名" },
+    { name: "nationality", label: "国籍" },
+    { name: "keyword", label: "关键词" }
+];
+
+// 19 项人工资料：组顺序即 S-1 nav 顺序，字段顺序即展示顺序；maxLength 与枚举来自 01 字段契约。
+const EXPERT_MANUAL_PROFILE_GROUPS = [
+    {
+        key: "matching",
+        label: "科研与企业匹配",
+        fields: [
+            {
+                name: "researchAbility",
+                label: "科研能力",
+                maxLength: 16,
+                control: "select",
+                emptyOption: true,
+                emptyDisplay: "未评估",
+                options: [
+                    { value: "VERY_STRONG", label: "很强" },
+                    { value: "STRONG", label: "强" },
+                    { value: "ABOVE_AVERAGE", label: "中上" },
+                    { value: "AVERAGE", label: "中等" },
+                    { value: "FAIR", label: "一般" },
+                    { value: "LOW", label: "低" }
+                ]
+            },
+            {
+                name: "companyMatchStatus",
+                label: "匹配企业进度",
+                maxLength: 16,
+                control: "select",
+                emptyDisplay: "未匹配",
+                defaultValue: "NOT_MATCHED",
+                options: [
+                    { value: "NOT_MATCHED", label: "未匹配" },
+                    { value: "MATCHING", label: "匹配中" },
+                    { value: "MATCHED", label: "匹配上" }
+                ]
+            },
+            {
+                name: "matchedCompanies",
+                label: "匹配到的企业",
+                maxLength: 2000,
+                control: "companies",
+                multiline: true,
+                spanAll: true,
+                placeholder: "每行一家企业"
+            }
+        ]
+    },
+    {
+        key: "identity",
+        label: "身份基本信息",
+        readonly: true,
+        fields: [
+            { name: "talentCode", label: "人才编号", maxLength: 64 },
+            { name: "chineseName", label: "中文译名", maxLength: 200 },
+            { name: "birthDateText", label: "出生日期 / 年份", maxLength: 10, placeholder: "YYYY 或 YYYY-MM-DD" },
+            { name: "documentNumber", label: "护照 / 证件号", maxLength: 100 },
+            { name: "sourceCountry", label: "来源国家", maxLength: 100 }
+        ]
+    },
+    {
+        key: "education",
+        label: "教育任职",
+        fields: [
+            { name: "graduatedSchool", label: "毕业学校", maxLength: 2000, multiline: true, spanAll: true },
+            { name: "schoolRanking", label: "学校排名", maxLength: 500 },
+            { name: "preChinaOrganization", label: "来华前单位", maxLength: 2000, multiline: true, spanAll: true },
+            { name: "organizationRanking", label: "单位排名", maxLength: 500 },
+            { name: "postdocOrganization", label: "博士后单位", maxLength: 2000, multiline: true, spanAll: true },
+            { name: "postdocPeriod", label: "博士后年限", maxLength: 200, placeholder: "如 2018–2020 或 2年" },
+            { name: "professionalTitle", label: "职称", maxLength: 200 },
+            { name: "administrativeTitles", label: "行政职务 / 头衔", maxLength: 4000, multiline: true, spanAll: true }
+        ]
+    },
+    {
+        key: "technology",
+        label: "产业技术",
+        fields: [
+            { name: "industry", label: "产业领域", maxLength: 500 },
+            { name: "technicalExpertise", label: "技术专长", maxLength: 4000, multiline: true, spanAll: true },
+            { name: "programCategories", label: "申报类别", maxLength: 500, placeholder: "如 QM / BS / BSH / HJ" }
+        ]
+    }
+];
+
+const EXPERT_MANUAL_PROFILE_FIELD_INDEX = new Map();
+EXPERT_MANUAL_PROFILE_GROUPS.forEach((group) => {
+    group.fields.forEach((field) => EXPERT_MANUAL_PROFILE_FIELD_INDEX.set(field.name, { group, field }));
+});
+
+// 已挂载会话登记表：unmount 依据它中止在途读请求、关闭弹窗，避免切专家后事件/请求悬挂。
+const expertManualProfileSessions = new Set();
+
+/** 01 只接受 RAW/CANDIDATE/APPLICATION；其它取值（含空）直接省略，由服务端缺省 RAW。 */
+function expertManualProfileLevel(value) {
+    const text = String(value == null ? "" : value).trim().toUpperCase();
+    return EXPERT_MANUAL_PROFILE_LEVELS.includes(text) ? text : "";
+}
+
+function expertManualProfileCodePointLength(text) {
+    return Array.from(String(text == null ? "" : text)).length;
+}
+
+/** 缺值一律“未填写”（I-4/S-1）；只读展示不做语义替换。 */
+function expertManualProfileText(value) {
+    if (value == null) return EXPERT_MANUAL_PROFILE_EMPTY_TEXT;
+    const text = String(value).trim();
+    return text === "" ? EXPERT_MANUAL_PROFILE_EMPTY_TEXT : text;
+}
+
+/** I-4：证件详情仅末四位，≤4 位整体遮罩；编辑弹窗才显明文，PATCH 永远提交原文。 */
+function expertManualProfileMaskDocument(value) {
+    const characters = Array.from(String(value == null ? "" : value).trim());
+    if (characters.length === 0) return EXPERT_MANUAL_PROFILE_EMPTY_TEXT;
+    if (characters.length <= 4) return "•".repeat(characters.length);
+    return "•".repeat(characters.length - 4) + characters.slice(-4).join("");
+}
+
+/** I-23：与企业数组同语义的规范化（trim/去空行/去重保序），与 01 服务端一致。 */
+function expertManualProfileCompanyList(value) {
+    const raw = Array.isArray(value)
+        ? value
+        : (typeof value === "string" ? value.split(/\r\n|\r|\n/) : []);
+    const seen = new Set();
+    const items = [];
+    for (const entry of raw) {
+        const text = String(entry == null ? "" : entry).trim();
+        if (text === "" || seen.has(text)) continue;
+        seen.add(text);
+        items.push(text);
+    }
+    return items;
+}
+
+function expertManualProfileReadonlyValue(session, name) {
+    const facts = session.facts || {};
+    // 关键词沿用现有专家响应原串（逗号/分号分隔），只读，不重新解释也不做成可点标签。
+    return expertManualProfileText(facts[name]);
+}
+
+/** 只读展示值：分组 DTO + 字段元数据决定文案，全部由 textContent 写入。 */
+function expertManualProfileFieldDisplay(entry, profile) {
+    const groupData = profile && typeof profile === "object" ? profile[entry.group.key] : null;
+    const raw = groupData && typeof groupData === "object" ? groupData[entry.field.name] : null;
+    if (entry.field.control === "companies") {
+        const items = expertManualProfileCompanyList(raw);
+        return items.length ? items.join("\n") : EXPERT_MANUAL_PROFILE_EMPTY_TEXT;
+    }
+    const text = raw == null ? "" : String(raw).trim();
+    if (text === "") return entry.field.emptyDisplay || EXPERT_MANUAL_PROFILE_EMPTY_TEXT;
+    if (entry.field.control === "select") {
+        const option = (entry.field.options || []).find((item) => item.value === text);
+        return option ? option.label : text;
+    }
+    if (entry.field.name === "documentNumber") return expertManualProfileMaskDocument(text);
+    return text;
+}
+
+function expertManualProfileReadonlyCardTemplate(field) {
+    return `<div class="metadata-card" data-ec-readonly="${field.name}"><div class="metadata-card-header">${field.label}</div><div class="metadata-card-value ec-text" data-ec-value="${field.name}"></div></div>`;
+}
+
+function expertManualProfileCardTemplate(field) {
+    const spanAll = field.spanAll ? " span-all" : "";
+    return `<div class="metadata-card${spanAll}"><div class="metadata-card-header">${field.label}</div><div class="metadata-card-value ec-text" data-ec-value="${field.name}"></div></div>`;
+}
+
+function expertManualProfileSectionTemplate(group) {
+    const cards = [];
+    if (group.readonly) {
+        EXPERT_MANUAL_PROFILE_READONLY_FIELDS.forEach((field) => cards.push(expertManualProfileReadonlyCardTemplate(field)));
+    }
+    group.fields.forEach((field) => cards.push(expertManualProfileCardTemplate(field)));
+    return `<section class="ec-section" data-ec-group="${group.key}">` +
+        `<div class="ec-heading"><h3>${group.label}</h3><button type="button" class="button" data-ec-edit="${group.key}">编辑</button></div>` +
+        `<div class="metadata-grid">${cards.join("")}</div>` +
+        `<span class="ec-message" role="status" aria-live="polite"></span>` +
+        `<span class="ec-error" role="alert" hidden></span>` +
+        `</section>`;
+}
+
+function expertManualProfileEditorTemplate(group) {
+    const controls = group.fields.map((field) => {
+        const labelClass = field.multiline ? ' class="ec-span"' : "";
+        const limit = field.maxLength ? ` maxlength="${field.maxLength}"` : "";
+        const placeholder = field.placeholder ? ` placeholder="${field.placeholder}"` : "";
+        let control;
+        if (field.control === "select") {
+            const options = field.emptyOption
+                ? [{ value: "", label: field.emptyDisplay }].concat(field.options || [])
+                : (field.options || []);
+            control = `<select name="${field.name}">` +
+                options.map((option) => `<option value="${option.value}">${option.label}</option>`).join("") +
+                `</select>`;
+        } else if (field.multiline) {
+            control = `<textarea name="${field.name}"${limit}${placeholder}></textarea>`;
+        } else {
+            control = `<input name="${field.name}"${limit}${placeholder}>`;
+        }
+        return `<label${labelClass}>${field.label}${control}</label>`;
+    }).join("");
+    return `<dialog class="em-upload-dialog ec-editor" data-ec-editor="${group.key}" aria-label="编辑${group.label}">` +
+        `<form>` +
+        `<header class="em-upload-head"><div class="em-upload-title"><h3>${group.label}</h3><span class="em-upload-subtitle">保存后同步到当前专家</span></div><button class="modal-close-btn" type="button" aria-label="关闭">×</button></header>` +
+        `<div class="em-upload-body"><div class="ec-edit-grid">${controls}</div><span class="ec-error" role="alert" hidden></span></div>` +
+        `<footer class="em-upload-actions"><span class="em-upload-summary" role="status"></span><button class="button" type="button" data-ec-cancel>取消</button><button class="button primary" type="submit">保存</button></footer>` +
+        `</form>` +
+        `</dialog>`;
+}
+
+function expertManualProfileShellTemplate() {
+    const nav = EXPERT_MANUAL_PROFILE_GROUPS
+        .map((group) => `<button type="button" class="button" data-ec-jump="${group.key}">${group.label}</button>`)
+        .join("");
+    const sections = EXPERT_MANUAL_PROFILE_GROUPS.map(expertManualProfileSectionTemplate).join("");
+    const editors = EXPERT_MANUAL_PROFILE_GROUPS.map(expertManualProfileEditorTemplate).join("");
+    return `<nav class="ec-nav" aria-label="联系详情分组">${nav}</nav>` + sections + editors;
+}
+
+/** I-2：一次挂载 = 一个会话；捕获 expertId/contactId/generation/宿主引用，await 之后统一校验。 */
+function createExpertManualProfileSession(host, context) {
+    const session = {
+        host,
+        generation: context.generation,
+        expertId: String(context.expertId == null ? "" : context.expertId).trim(),
+        level: expertManualProfileLevel(context.level),
+        contactId: String(context.contactId == null ? "" : context.contactId),
+        facts: {
+            expertName: context.name,
+            nationality: context.nationality,
+            keyword: context.keyword
+        },
+        profile: null,
+        version: 0,
+        loaded: false,
+        saving: false,
+        closed: false,
+        readSeq: 0,
+        ready: null,
+        editors: new Map(),
+        controllers: new Set()
+    };
+    session.isStale = function () {
+        if (session.closed) return true;
+        if (!session.host || session.host.isConnected === false) return true;
+        return typeof isCurrentContactDetailPresentation === "function" &&
+            !isCurrentContactDetailPresentation(session.generation);
+    };
+    return session;
+}
+
+/** I-2：中止在途读请求、关闭弹窗、注销会话；已发出的保存请求不中止（结果由下次 GET 确认）。 */
+function unmountExpertManualProfileSession(session) {
+    if (!session || session.closed) return;
+    session.closed = true;
+    expertManualProfileSessions.delete(session);
+    session.controllers.forEach((controller) => {
+        try {
+            controller.abort();
+        } catch (error) {
+            // 请求可能已完成：abort 失败不影响卸载
+        }
+    });
+    session.controllers.clear();
+    session.editors.forEach((editor) => {
+        if (editor.dialog && typeof editor.dialog.close === "function") editor.dialog.close();
+    });
+    session.editors.clear();
+}
+
+function unmountExpertManualProfilePanels(rootEl) {
+    const root = rootEl && typeof rootEl.contains === "function" ? rootEl : null;
+    Array.from(expertManualProfileSessions).forEach((session) => {
+        const host = session.host;
+        const insideRoot = root ? host === root || root.contains(host) : true;
+        // innerHTML 替换后旧宿主已断连，也应随同容器一起清理。
+        const detached = !host || host.isConnected === false;
+        if (insideRoot || detached) unmountExpertManualProfileSession(session);
+    });
+}
+
+function expertManualProfileSetSectionMessage(section, message) {
+    const el = section ? section.querySelector(".ec-message") : null;
+    if (el) el.textContent = message ? String(message) : "";
+}
+
+/**
+ * S-1 错误位：文本走 textContent；需要重试时在同一位内挂同一个 `.button`，
+ * 状态恢复时移除，避免页面上留下不可用的重试按钮。
+ */
+function expertManualProfileSetSectionError(session, section, message, options) {
+    const el = section ? section.querySelector(".ec-error") : null;
+    if (!el) return;
+    const retry = !!(options && options.retry);
+    const text = message ? String(message) : "";
+    el.textContent = text;
+    el.hidden = text === "";
+    const existing = el.querySelector("[data-ec-retry]");
+    if (existing && !retry) existing.remove();
+    if (retry && session && !el.querySelector("[data-ec-retry]")) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "button";
+        button.setAttribute("data-ec-retry", "");
+        button.textContent = EXPERT_MANUAL_PROFILE_RETRY_TEXT;
+        button.addEventListener("click", () => {
+            loadExpertManualProfile(session);
+        });
+        el.appendChild(button);
+    }
+}
+
+function expertManualProfileSetEditingEnabled(session, enabled) {
+    session.editors.forEach((editor) => {
+        if (editor.editButton) editor.editButton.disabled = !enabled;
+    });
+}
+
+/** 只读展示：占位/加载中一律“—”，绝不把失败渲染成空档案（I-3）。 */
+function expertManualProfileRenderValues(session) {
+    const host = session.host;
+    if (!host || typeof host.querySelectorAll !== "function") return;
+    host.querySelectorAll("[data-ec-value]").forEach((cell) => {
+        const name = cell.dataset ? cell.dataset.ecValue : "";
+        if (!name) return;
+        let text = EXPERT_MANUAL_PROFILE_UNKNOWN_TEXT;
+        if (session.profile) {
+            if (EXPERT_MANUAL_PROFILE_READONLY_FIELDS.some((field) => field.name === name)) {
+                text = expertManualProfileReadonlyValue(session, name);
+            } else {
+                const entry = EXPERT_MANUAL_PROFILE_FIELD_INDEX.get(name);
+                text = entry
+                    ? expertManualProfileFieldDisplay(entry, session.profile)
+                    : EXPERT_MANUAL_PROFILE_UNKNOWN_TEXT;
+            }
+        }
+        cell.textContent = text;
+    });
+}
+
+async function loadExpertManualProfile(session) {
+    if (!session || session.closed) return;
+    // 同一会话内的旧读请求（例如重复触发重试）先中止，旧响应不得覆盖新读结果。
+    const readSeq = ++session.readSeq;
+    session.controllers.forEach((controller) => {
+        try {
+            controller.abort();
+        } catch (error) {
+            // 请求可能已完成：不影响本次读取
+        }
+    });
+    session.controllers.clear();
+    session.loaded = false;
+    expertManualProfileSetEditingEnabled(session, false);
+    if (session.expertId === "") {
+        // I-1：没有稳定逻辑专家 ID 时只提示，不猜 ID、不发请求、不建联系人。
+        expertManualProfileRenderValues(session);
+        session.editors.forEach((editor) => {
+            expertManualProfileSetSectionMessage(editor.section, "");
+            expertManualProfileSetSectionError(session, editor.section, EXPERT_MANUAL_PROFILE_MISSING_ID_NOTICE);
+        });
+        return;
+    }
+    session.editors.forEach((editor) => {
+        expertManualProfileSetSectionMessage(editor.section, EXPERT_MANUAL_PROFILE_LOADING_NOTICE);
+        expertManualProfileSetSectionError(session, editor.section, "");
+    });
+    expertManualProfileRenderValues(session);
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    if (controller) session.controllers.add(controller);
+    let data = null;
+    let failure = null;
+    try {
+        const query = `?expertId=${encodeURIComponent(session.expertId)}` +
+            (session.level ? `&level=${encodeURIComponent(session.level)}` : "");
+        data = await api(`${EXPERT_MANUAL_PROFILE_URL}${query}`, controller ? { signal: controller.signal } : {});
+    } catch (error) {
+        failure = error;
+    } finally {
+        if (controller) session.controllers.delete(controller);
+    }
+    if (session.isStale() || readSeq !== session.readSeq) return;
+    if (!failure && (!data || typeof data !== "object" || typeof data.version !== "number")) {
+        failure = new Error("资料响应不可用");
+    }
+    if (failure) {
+        session.profile = null;
+        expertManualProfileRenderValues(session);
+        const message = expertManualProfileErrorMessage(failure, "load") || EXPERT_MANUAL_PROFILE_LOAD_FAILED_NOTICE;
+        session.editors.forEach((editor) => {
+            expertManualProfileSetSectionMessage(editor.section, "");
+            expertManualProfileSetSectionError(session, editor.section, message, { retry: true });
+        });
+        return;
+    }
+    session.profile = data;
+    session.version = data.version;
+    session.loaded = true;
+    expertManualProfileRenderValues(session);
+    session.editors.forEach((editor) => {
+        expertManualProfileSetSectionMessage(editor.section, "");
+        expertManualProfileSetSectionError(session, editor.section, "");
+    });
+    expertManualProfileSetEditingEnabled(session, true);
+}
+
+function expertManualProfileJump(session, groupKey) {
+    const editor = session.editors.get(groupKey);
+    const target = editor ? editor.section : null;
+    if (!target || typeof target.scrollIntoView !== "function") return;
+    target.scrollIntoView({ block: "start", behavior: "smooth" });
+}
+
+function expertManualProfileFocus(element) {
+    if (element && element.isConnected !== false && typeof element.focus === "function") {
+        element.focus({ preventScroll: true });
+    }
+}
+
+function expertManualProfileFillEditor(session, editor) {
+    const groupData = session.profile && typeof session.profile === "object" ? session.profile[editor.group.key] : null;
+    editor.group.fields.forEach((field) => {
+        const control = editor.dialog.querySelector(`[name="${field.name}"]`);
+        if (!control) return;
+        const raw = groupData && typeof groupData === "object" ? groupData[field.name] : null;
+        if (field.control === "companies") {
+            control.value = expertManualProfileCompanyList(raw).join("\n");
+            return;
+        }
+        const text = raw == null ? "" : String(raw).trim();
+        if (field.control === "select") {
+            const known = (field.options || []).some((option) => option.value === text);
+            control.value = known ? text : (field.emptyOption ? "" : (field.defaultValue || ""));
+            return;
+        }
+        // I-4：证件原文只在编辑弹窗出现，PATCH 提交原文而非遮罩值。
+        control.value = text;
+    });
+}
+
+function expertManualProfileSetEditorError(editor, message) {
+    const el = editor && editor.errorEl ? editor.errorEl : null;
+    if (!el) return;
+    const text = message ? String(message) : "";
+    el.textContent = text;
+    el.hidden = text === "";
+}
+
+function expertManualProfileSetEditorBusy(editor, busy) {
+    if (!editor) return;
+    editor.busy = !!busy;
+    const form = editor.form;
+    if (!form || typeof form.querySelector !== "function") return;
+    [form.querySelector('button[type="submit"]'), form.querySelector(".modal-close-btn"), form.querySelector("[data-ec-cancel]")]
+        .forEach((button) => {
+            if (button) button.disabled = !!busy;
+        });
+}
+
+function expertManualProfileCloseEditor(session, editor) {
+    if (!editor || !editor.dialog) return;
+    if (editor.busy) return; // 保存期间禁关闭
+    if (typeof editor.dialog.close === "function") editor.dialog.close();
+}
+
+function expertManualProfileOpenEditor(session, editor) {
+    if (!editor || session.isStale() || !session.loaded) return; // GET 失败/未加载时禁编辑
+    expertManualProfileFillEditor(session, editor);
+    expertManualProfileSetEditorError(editor, "");
+    if (editor.summary) editor.summary.textContent = "";
+    editor.trigger = editor.editButton;
+    if (editor.dialog.open !== true && typeof editor.dialog.showModal === "function") {
+        editor.dialog.showModal();
+    }
+}
+
+function expertManualProfileErrorMessage(error, action) {
+    const status = error && typeof error.status === "number" ? error.status : 0;
+    const data = error && error.data && typeof error.data === "object" ? error.data : null;
+    const code = data && typeof data.code === "string" ? data.code : "";
+    const message = data && typeof data.message === "string" ? data.message : "";
+    if (status === 401 || (error && error.message === "UNAUTHORIZED")) {
+        return "登录已失效，请重新登录后再试";
+    }
+    if (status === 409 || code === "PROFILE_CONFLICT") return EXPERT_MANUAL_PROFILE_CONFLICT_NOTICE;
+    if (status === 404) return "专家不存在，无法保存资料";
+    if (status === 503) return message || "暂时无法校验专家身份，请稍后重试";
+    if (status === 400) return message || "提交内容不符合要求，请检查后重试";
+    if (status >= 500) return message || "服务暂时不可用，请稍后重试";
+    if (error && error.name === "AbortError") return "";
+    return action === "save" ? "保存结果未知，请重新加载确认" : EXPERT_MANUAL_PROFILE_LOAD_FAILED_NOTICE;
+}
+
+/** I-7（01 契约）：YYYY 或真实 YYYY-MM-DD，年份 0001–当年，完整日期不得晚于当天。 */
+function expertManualProfileBirthDateError(text) {
+    const currentYear = new Date().getFullYear();
+    if (/^\d{4}$/.test(text)) {
+        const year = Number(text);
+        if (year < 1 || year > currentYear) return `出生年份必须在 0001 到 ${currentYear} 之间`;
+        return "";
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return "出生日期只接受 YYYY 或 YYYY-MM-DD";
+    const parts = text.split("-").map((part) => Number(part));
+    const date = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+    if (date.getUTCFullYear() !== parts[0] || date.getUTCMonth() !== parts[1] - 1 || date.getUTCDate() !== parts[2]) {
+        return "出生日期必须是真实存在的日期";
+    }
+    if (parts[0] < 1 || parts[0] > currentYear) return `出生年份必须在 0001 到 ${currentYear} 之间`;
+    const today = new Date();
+    const todayUtc = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+    if (date.getTime() > todayUtc) return "出生日期不能晚于当天";
+    return "";
+}
+
+/**
+ * I-3：按组收集全部白名单字段；空白=清空（companyMatchStatus 例外：空白→NOT_MATCHED），
+ * 企业多行=每行一家。返回错误文案时不发请求。
+ */
+function expertManualProfileCollectValues(editor, values) {
+    for (const field of editor.group.fields) {
+        const control = editor.dialog.querySelector(`[name="${field.name}"]`);
+        const raw = control && typeof control.value === "string" ? control.value : "";
+        if (field.control === "companies") {
+            values[field.name] = expertManualProfileCompanyList(raw);
+            continue;
+        }
+        const text = String(raw).trim();
+        if (text === "") {
+            values[field.name] = field.name === "companyMatchStatus" ? "NOT_MATCHED" : null;
+            continue;
+        }
+        if (field.name === "birthDateText") {
+            const problem = expertManualProfileBirthDateError(text);
+            if (problem) return problem;
+        }
+        if (field.maxLength && expertManualProfileCodePointLength(text) > field.maxLength) {
+            return `${field.label}最多 ${field.maxLength} 个字符`;
+        }
+        values[field.name] = text;
+    }
+    if (editor.group.key === "matching") {
+        const companies = Array.isArray(values.matchedCompanies) ? values.matchedCompanies : [];
+        if (values.companyMatchStatus === "MATCHED" && companies.length === 0) {
+            return "匹配上时必须至少填写一家企业";
+        }
+        if (expertManualProfileCodePointLength(companies.join("\n")) > 2000) {
+            return "匹配到的企业最多 2000 个字符";
+        }
+    }
+    return "";
+}
+
+async function expertManualProfileSubmit(session, editor) {
+    // 双击保存只允许一个 PATCH；GET 未成功或保存进行中时直接忽略。
+    if (session.isStale() || !editor || !session.loaded || session.saving) return;
+    const values = {};
+    const problem = expertManualProfileCollectValues(editor, values);
+    if (problem) {
+        expertManualProfileSetEditorError(editor, problem);
+        return;
+    }
+    const body = { expertId: session.expertId, group: editor.group.key, expectedVersion: session.version, values };
+    if (session.level) body.level = session.level;
+    session.saving = true;
+    expertManualProfileSetEditorBusy(editor, true);
+    let data = null;
+    let failure = null;
+    try {
+        data = await api(EXPERT_MANUAL_PROFILE_URL, { method: "PATCH", body: JSON.stringify(body) });
+    } catch (error) {
+        failure = error;
+    } finally {
+        session.saving = false;
+        if (!session.isStale()) expertManualProfileSetEditorBusy(editor, false);
+    }
+    // 已发出的保存不因页面切换被声称回滚：只有仍属于当前会话时才更新显示，否则等下次 GET 确认。
+    if (session.isStale()) return;
+    if (!failure && (!data || typeof data !== "object" || typeof data.version !== "number")) {
+        failure = new Error("保存响应不可用");
+    }
+    if (failure) {
+        const message = expertManualProfileErrorMessage(failure, "save") || "保存失败，请稍后重试";
+        // 保留输入；409 不自动覆盖重试，只提示重新加载。
+        expertManualProfileSetEditorError(editor, message);
+        expertManualProfileSetSectionError(session, editor.section, message);
+        expertManualProfileSetSectionMessage(editor.section, "");
+        return;
+    }
+    session.profile = data;
+    session.version = data.version;
+    expertManualProfileRenderValues(session);
+    expertManualProfileFillEditor(session, editor);
+    expertManualProfileSetEditorError(editor, "");
+    expertManualProfileSetSectionError(session, editor.section, "");
+    expertManualProfileSetSectionMessage(editor.section, EXPERT_MANUAL_PROFILE_SAVED_NOTICE);
+    if (editor.summary) editor.summary.textContent = EXPERT_MANUAL_PROFILE_SAVED_NOTICE;
+}
+
+function expertManualProfileBind(session) {
+    const host = session.host;
+    host.querySelectorAll("[data-ec-jump]").forEach((button) => {
+        button.addEventListener("click", () => expertManualProfileJump(session, button.dataset.ecJump));
+    });
+    EXPERT_MANUAL_PROFILE_GROUPS.forEach((group) => {
+        const section = host.querySelector(`.ec-section[data-ec-group="${group.key}"]`);
+        const dialog = host.querySelector(`.ec-editor[data-ec-editor="${group.key}"]`);
+        if (!section || !dialog) return;
+        const editor = {
+            group,
+            section,
+            dialog,
+            form: dialog.querySelector("form"),
+            errorEl: dialog.querySelector(".ec-error"),
+            summary: dialog.querySelector(".em-upload-summary"),
+            editButton: section.querySelector("[data-ec-edit]"),
+            trigger: null,
+            busy: false
+        };
+        session.editors.set(group.key, editor);
+        if (editor.editButton) {
+            editor.editButton.addEventListener("click", () => expertManualProfileOpenEditor(session, editor));
+        }
+        if (editor.form) {
+            editor.form.addEventListener("submit", (event) => {
+                if (event && typeof event.preventDefault === "function") event.preventDefault();
+                expertManualProfileSubmit(session, editor);
+            });
+        }
+        const cancelButton = dialog.querySelector("[data-ec-cancel]");
+        if (cancelButton) {
+            cancelButton.addEventListener("click", () => expertManualProfileCloseEditor(session, editor));
+        }
+        const closeButton = dialog.querySelector(".modal-close-btn");
+        if (closeButton) {
+            closeButton.addEventListener("click", () => expertManualProfileCloseEditor(session, editor));
+        }
+        dialog.addEventListener("cancel", (event) => {
+            // Escape 统一由显式 close() 收口：取消、Escape 都不发 PATCH，保存期间不关闭。
+            if (event && typeof event.preventDefault === "function") event.preventDefault();
+            if (editor.busy) return;
+            expertManualProfileCloseEditor(session, editor);
+        });
+        dialog.addEventListener("close", () => {
+            const trigger = editor.trigger;
+            editor.trigger = null;
+            expertManualProfileFocus(trigger);
+        });
+    });
+}
+
+/**
+ * 02（I-1）：两个宿主共用的唯一挂载入口。rootEl 为 contact panel 容器（innerHTML 写入之后调用）；
+ * 监听只挂在宿主内部节点上，容器被替换时随节点一起消失，不注册 document/window 级监听。
+ */
+function mountExpertManualProfile(rootEl, context) {
+    if (!rootEl || typeof rootEl.querySelector !== "function") return null;
+    const host = typeof rootEl.matches === "function" && rootEl.matches(EXPERT_MANUAL_PROFILE_HOST_SELECTOR)
+        ? rootEl
+        : rootEl.querySelector(EXPERT_MANUAL_PROFILE_HOST_SELECTOR);
+    if (!host) return null;
+    unmountExpertManualProfilePanels(rootEl);
+    const session = createExpertManualProfileSession(host, context || {});
+    expertManualProfileSessions.add(session);
+    host.innerHTML = expertManualProfileShellTemplate();
+    expertManualProfileBind(session);
+    session.ready = loadExpertManualProfile(session);
+    return session;
+}
+/* contact-profile-02-ui:end */
+
 async function showExpertDetail(expert, generation) {
     if (generation === undefined) generation = beginContactDetailPresentation();
     try {
@@ -11262,6 +11965,7 @@ async function showExpertDetail(expert, generation) {
                 ${renderAcademicProfilePanel(expert)}
             </div>
             <div class="detail-tab-panel" data-panel="contact" hidden>
+                <div class="ec-profile" data-role="expert-manual-profile"></div>
                 <div class="metadata-grid">
                 <div class="metadata-card">
                     <div class="metadata-card-header">
@@ -11343,6 +12047,20 @@ async function showExpertDetail(expert, generation) {
         </div>
     `;
     finishContactDetailPresentation(generation);
+    // 02（I-1）：与 loadContactDetail 共用同一挂载入口；无 contact 分支用 ES 专家身份。
+    // typeof 守卫沿用本文件既有的组件挂载约定（unmountExpertMaterialsHosts / mountExpertMaterialsInline），
+    // 使按函数抽取执行的既有前端测试在缺少该函数时保持原行为。
+    if (typeof mountExpertManualProfile === "function") {
+        mountExpertManualProfile(contactDetail, {
+            expertId: expert.orcidId || "",
+            level: expert.indexLevel || "",
+            contactId: String(expert.contactId == null ? "" : expert.contactId),
+            name: expert.displayName || "",
+            nationality: expert.nationality || "",
+            keyword: expert.keyword || "",
+            generation
+        });
+    }
     requestAnimationFrame(() => {
         if (!isCurrentContactDetailPresentation(generation)) return;
         contactDetail.scrollTop = 0;
@@ -11812,6 +12530,7 @@ async function loadContactDetail(contactId, generation) {
                 ${renderAcademicProfilePanel(expert)}
             </div>
             <div class="detail-tab-panel" data-panel="contact">
+            <div class="ec-profile" data-role="expert-manual-profile"></div>
             ${mailSummaryHtml}
 
             ${renderMeetingSchedule(detail)}
@@ -11970,6 +12689,18 @@ async function loadContactDetail(contactId, generation) {
     // 当前 contact DOM 写入完成后挂载共享材料组件（真实 contactId；组件未加载时为 no-op）
     if (typeof mountExpertMaterialsInline === "function") {
         mountExpertMaterialsInline(contact.id, contactDetail);
+    }
+    // 02（I-1）：同一 render/mount 入口；有 contact 分支用联系人身份、姓名与 expertId。
+    if (typeof mountExpertManualProfile === "function") {
+        mountExpertManualProfile(contactDetail, {
+            expertId: orcidId,
+            level: contact.currentIndexLevel || expert.indexLevel || "",
+            contactId: String(contact.id == null ? "" : contact.id),
+            name: contact.expertName || expert.displayName || "",
+            nationality: expert.nationality || "",
+            keyword: expert.keyword || "",
+            generation
+        });
     }
     if (contact.id) {
         loadEmailAliases(contact.id, contact);
