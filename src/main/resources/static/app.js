@@ -11454,12 +11454,17 @@ function expertManualProfileEditorTemplate(group) {
 }
 
 function expertManualProfileShellTemplate() {
+    // 03（contact-profile-03-notes）：备注 section 前置于 nav，且沿用本文件既有的 typeof 守卫约定，
+    // 使按区域/函数切片执行的既有测试在未加载 03 区域时保持原骨架（4 个 section / 4 个 editor / nav 四按钮）。
+    const sharedNoteSection = typeof expertContactSharedNoteSectionTemplate === "function"
+        ? expertContactSharedNoteSectionTemplate()
+        : "";
     const nav = EXPERT_MANUAL_PROFILE_GROUPS
         .map((group) => `<button type="button" class="button" data-ec-jump="${group.key}">${group.label}</button>`)
         .join("");
     const sections = EXPERT_MANUAL_PROFILE_GROUPS.map(expertManualProfileSectionTemplate).join("");
     const editors = EXPERT_MANUAL_PROFILE_GROUPS.map(expertManualProfileEditorTemplate).join("");
-    return `<nav class="ec-nav" aria-label="联系详情分组">${nav}</nav>` + sections + editors;
+    return sharedNoteSection + `<nav class="ec-nav" aria-label="联系详情分组">${nav}</nav>` + sections + editors;
 }
 
 /** I-2：一次挂载 = 一个会话；捕获 expertId/contactId/generation/宿主引用，await 之后统一校验。 */
@@ -11499,6 +11504,10 @@ function unmountExpertManualProfileSession(session) {
     if (!session || session.closed) return;
     session.closed = true;
     expertManualProfileSessions.delete(session);
+    // 03：备注读请求随会话一并中止（未加载 03 区域时为 no-op）。
+    if (typeof unmountExpertContactSharedNote === "function") {
+        unmountExpertContactSharedNote(session);
+    }
     session.controllers.forEach((controller) => {
         try {
             controller.abort();
@@ -11908,10 +11917,263 @@ function mountExpertManualProfile(rootEl, context) {
     expertManualProfileSessions.add(session);
     host.innerHTML = expertManualProfileShellTemplate();
     expertManualProfileBind(session);
+    // 03（I-1/I-2）：备注独立加载，不并入资料 Promise.all —— 备注失败不影响四组资料与旧材料。
+    if (typeof mountExpertContactSharedNote === "function") {
+        mountExpertContactSharedNote(session);
+    }
     session.ready = loadExpertManualProfile(session);
     return session;
 }
 /* contact-profile-02-ui:end */
+
+/* contact-profile-03-notes:begin */
+// 03（contact-profile-03-notes）：联系详情人工档案顶部只读显示当前 contactId 的收发件箱备注。
+// I-1 单一来源：本页只有 GET /api/mail/contact-notes/{contactId}（无 PUT、无 localStorage 副本、无专家级 note）；
+//   contactId 不是正整数（含空串）时不发请求、不新建联系人，直接给“无联系人”空态。
+// I-2 五态：加载中 / 有内容 / 空内容（「暂无备注」）/ 失败（「备注加载失败，请重试」）/ 无联系人（「尚无收发件箱备注」）；
+//   失败不得显示「暂无备注」，也不阻断四组人工资料与旧材料（独立请求，不并入 Promise.all）。
+// I-3 隔离与编码：沿用 02 的 generation + readSeq + contactId 守卫；所有动态文本只经 textContent 写入。
+// S-1：无新增 CSS/class/inline style —— 复用 02 的 ec-section/ec-heading/ec-text/ec-message/ec-error 与 .button；
+//   区域位置在 02 区域之外，与 02 的耦合只有三个 typeof 守卫调用点（模板前置拼接、挂载后启动读、卸载中止）。
+
+const EXPERT_CONTACT_SHARED_NOTE_URL = "/api/mail/contact-notes";
+const EXPERT_CONTACT_SHARED_NOTE_SECTION_SELECTOR = '[data-role="expert-shared-note"]';
+const EXPERT_CONTACT_SHARED_NOTE_CONTENT_SELECTOR = '[data-role="note-content"]';
+const EXPERT_CONTACT_SHARED_NOTE_META_SELECTOR = '[data-role="note-meta"]';
+const EXPERT_CONTACT_SHARED_NOTE_REFRESH_SELECTOR = "[data-ec-refresh-note]";
+const EXPERT_CONTACT_SHARED_NOTE_LOADING_TEXT = "正在加载备注…";
+const EXPERT_CONTACT_SHARED_NOTE_EMPTY_TEXT = "暂无备注";
+const EXPERT_CONTACT_SHARED_NOTE_NO_CONTACT_TEXT = "尚无收发件箱备注";
+const EXPERT_CONTACT_SHARED_NOTE_UNREADABLE_TEXT = "备注不可读取";
+const EXPERT_CONTACT_SHARED_NOTE_LOAD_FAILED_TEXT = "备注加载失败，请重试";
+const EXPERT_CONTACT_SHARED_NOTE_UNAUTHORIZED_TEXT = "登录已失效，请重新登录后再试";
+
+/** S-1：与 03 计划逐字一致的结构；刷新按钮只在“无联系人”隐藏、加载中禁用，无新图标、无 inline style。 */
+function expertContactSharedNoteSectionTemplate() {
+    return `<section class="ec-section" data-role="expert-shared-note">
+ <div class="ec-heading"><h3>收发件箱备注</h3><button type="button" class="button" data-ec-refresh-note>刷新</button></div>
+ <div class="ec-text" data-role="note-content"></div>
+ <span class="ec-message" data-role="note-meta" role="status" aria-live="polite"></span>
+ <span class="ec-error" role="alert" hidden></span>
+</section>`;
+}
+
+/** I-1：只有真实正整数 contactId 才请求；空串/非法值一律按“无联系人”处理（不新建联系人）。 */
+function expertContactSharedNoteContactId(session) {
+    const raw = String(session && session.contactId == null ? "" : session.contactId).trim();
+    if (!/^[0-9]+$/.test(raw)) return "";
+    const value = Number(raw);
+    return Number.isSafeInteger(value) && value > 0 ? String(value) : "";
+}
+
+/** 与收发件箱同文案：服务端固定 +08:00，展示成北京时间；无法解析时原样显示。 */
+const EXPERT_CONTACT_SHARED_NOTE_TIME_FORMATTER = (() => {
+    try {
+        return new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit",
+            hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+        });
+    } catch (error) {
+        return null;
+    }
+})();
+
+function expertContactSharedNoteTimeText(value) {
+    const raw = String(value == null ? "" : value).trim();
+    if (raw === "") return "";
+    if (!/(?:Z|[+-]\d{2}:\d{2})$/.test(raw)) return raw;
+    const date = new Date(raw);
+    if (!EXPERT_CONTACT_SHARED_NOTE_TIME_FORMATTER || Number.isNaN(date.getTime())) return raw;
+    const parts = EXPERT_CONTACT_SHARED_NOTE_TIME_FORMATTER.formatToParts(date);
+    const part = (type) => {
+        const entry = parts.find((item) => item.type === type);
+        return entry ? entry.value : "";
+    };
+    return `${part("year")}-${part("month")}-${part("day")} ${part("hour")}:${part("minute")} 北京时间`;
+}
+
+/** 修改人 · 时间；成功空内容时没有可展示的元信息。 */
+function expertContactSharedNoteMetaText(data) {
+    const payload = data && typeof data === "object" ? data : null;
+    const note = payload && typeof payload.note === "string" ? payload.note : "";
+    if (note.trim() === "") return "";
+    const updatedBy = payload && typeof payload.updatedBy === "string" ? payload.updatedBy.trim() : "";
+    const updatedAt = expertContactSharedNoteTimeText(payload ? payload.updatedAt : "");
+    return [updatedBy, updatedAt].filter(Boolean).join(" · ");
+}
+
+/** I-2：错误→文案映射；401 由既有 api()/handleAuthResponse 收口，这里只给出与 02 一致的可见结果。 */
+function expertContactSharedNoteErrorMessage(error) {
+    const status = error && typeof error.status === "number" ? error.status : 0;
+    if (status === 401 || (error && error.message === "UNAUTHORIZED")) {
+        return EXPERT_CONTACT_SHARED_NOTE_UNAUTHORIZED_TEXT;
+    }
+    // I-2：400/404 显示“不可读取”，绝不显示成“暂无备注”（不把服务错误当业务空值）。
+    if (status === 400 || status === 404) return EXPERT_CONTACT_SHARED_NOTE_UNREADABLE_TEXT;
+    return EXPERT_CONTACT_SHARED_NOTE_LOAD_FAILED_TEXT;
+}
+
+function expertContactSharedNoteHasContent(value) {
+    return String(value == null ? "" : value).trim() !== "";
+}
+
+function expertContactSharedNoteState(session) {
+    if (!session) return null;
+    if (!session.sharedNote) {
+        session.sharedNote = {
+            contentEl: null,
+            metaEl: null,
+            errorEl: null,
+            refreshButton: null,
+            noContact: false,
+            loading: false,
+            error: "",
+            content: "",
+            meta: "",
+            controller: null,
+            readSeq: 0,
+            ready: null
+        };
+    }
+    return session.sharedNote;
+}
+
+function expertContactSharedNoteSetError(note, message) {
+    const el = note ? note.errorEl : null;
+    if (!el) return;
+    const text = message ? String(message) : "";
+    el.textContent = text;
+    el.hidden = text === "";
+}
+
+/** 无联系人=隐藏且禁用（I-2/S-1）；加载中=禁用；其余=可见可点（失败重试沿用刷新按钮）。 */
+function expertContactSharedNoteSetRefresh(note, state) {
+    const button = note ? note.refreshButton : null;
+    if (!button) return;
+    button.hidden = state === "hidden";
+    button.disabled = state !== "enabled";
+}
+
+/** 只更新本 section：加载中给加载文案；失败保留上一次成功内容，绝不渲染成「暂无备注」。 */
+function expertContactSharedNoteRender(session) {
+    const note = expertContactSharedNoteState(session);
+    if (!note || !note.contentEl) return;
+    if (note.noContact) {
+        note.contentEl.textContent = EXPERT_CONTACT_SHARED_NOTE_NO_CONTACT_TEXT;
+        if (note.metaEl) note.metaEl.textContent = "";
+        expertContactSharedNoteSetError(note, "");
+        expertContactSharedNoteSetRefresh(note, "hidden");
+        return;
+    }
+    if (note.loading) {
+        note.contentEl.textContent = EXPERT_CONTACT_SHARED_NOTE_LOADING_TEXT;
+        if (note.metaEl) note.metaEl.textContent = "";
+        expertContactSharedNoteSetError(note, "");
+        expertContactSharedNoteSetRefresh(note, "disabled");
+        return;
+    }
+    if (note.error) {
+        // 失败：保留上一次成功内容，绝不渲染成「暂无备注」；没有成功内容时不留下加载占位。
+        note.contentEl.textContent = note.content;
+    } else {
+        note.contentEl.textContent = expertContactSharedNoteHasContent(note.content)
+            ? note.content
+            : EXPERT_CONTACT_SHARED_NOTE_EMPTY_TEXT;
+    }
+    if (note.metaEl) note.metaEl.textContent = note.meta;
+    expertContactSharedNoteSetError(note, note.error);
+    expertContactSharedNoteSetRefresh(note, "enabled");
+}
+
+async function loadExpertContactSharedNote(session) {
+    const note = expertContactSharedNoteState(session);
+    if (!note || !session || session.closed) return;
+    const readSeq = ++note.readSeq;
+    if (note.controller) {
+        try {
+            note.controller.abort();
+        } catch (error) {
+            // 请求可能已完成：abort 失败不影响本次读取
+        }
+        note.controller = null;
+    }
+    const contactId = expertContactSharedNoteContactId(session);
+    note.error = "";
+    note.meta = "";
+    if (contactId === "") {
+        note.noContact = true;
+        note.loading = false;
+        note.content = "";
+        expertContactSharedNoteRender(session);
+        return;
+    }
+    note.noContact = false;
+    note.loading = true;
+    expertContactSharedNoteRender(session);
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    note.controller = controller;
+    let data = null;
+    let failure = null;
+    try {
+        data = await api(`${EXPERT_CONTACT_SHARED_NOTE_URL}/${contactId}`, controller ? { signal: controller.signal } : {});
+    } catch (error) {
+        failure = error;
+    } finally {
+        if (note.controller === controller) note.controller = null;
+    }
+    // I-3：切人/切 host/重读之后旧响应一律丢弃（generation + readSeq + contactId 同时校验）。
+    if (session.isStale() || readSeq !== note.readSeq || contactId !== expertContactSharedNoteContactId(session)) return;
+    note.loading = false;
+    if (failure) {
+        if (failure.name === "AbortError") return; // 已被新的读取或卸载取代
+        note.error = expertContactSharedNoteErrorMessage(failure);
+        expertContactSharedNoteRender(session);
+        return;
+    }
+    if (!data || typeof data !== "object") {
+        note.error = EXPERT_CONTACT_SHARED_NOTE_LOAD_FAILED_TEXT;
+        expertContactSharedNoteRender(session);
+        return;
+    }
+    note.error = "";
+    note.content = typeof data.note === "string" ? data.note : "";
+    note.meta = expertContactSharedNoteMetaText(data);
+    expertContactSharedNoteRender(session);
+}
+
+/** 03 挂载入口：02 挂载完成（宿主 DOM 写入后）由 typeof 守卫调用；刷新只重读本 section。 */
+function mountExpertContactSharedNote(session) {
+    const note = expertContactSharedNoteState(session);
+    if (!note || !session || !session.host || typeof session.host.querySelector !== "function") return note;
+    const section = session.host.querySelector(EXPERT_CONTACT_SHARED_NOTE_SECTION_SELECTOR);
+    note.contentEl = section ? section.querySelector(EXPERT_CONTACT_SHARED_NOTE_CONTENT_SELECTOR) : null;
+    note.metaEl = section ? section.querySelector(EXPERT_CONTACT_SHARED_NOTE_META_SELECTOR) : null;
+    note.errorEl = section ? section.querySelector(".ec-error") : null;
+    note.refreshButton = section ? section.querySelector(EXPERT_CONTACT_SHARED_NOTE_REFRESH_SELECTOR) : null;
+    if (note.refreshButton) {
+        note.refreshButton.addEventListener("click", () => {
+            note.ready = loadExpertContactSharedNote(session);
+        });
+    }
+    note.ready = loadExpertContactSharedNote(session);
+    return note;
+}
+
+/** 03 卸载入口：中止在途备注读请求；会话/host 切换后旧响应因 readSeq + isStale 被丢弃。 */
+function unmountExpertContactSharedNote(session) {
+    const note = session ? session.sharedNote : null;
+    if (!note) return;
+    note.readSeq += 1;
+    if (note.controller) {
+        try {
+            note.controller.abort();
+        } catch (error) {
+            // 请求可能已完成：abort 失败不影响卸载
+        }
+        note.controller = null;
+    }
+}
+/* contact-profile-03-notes:end */
 
 async function showExpertDetail(expert, generation) {
     if (generation === undefined) generation = beginContactDetailPresentation();
