@@ -7,6 +7,12 @@ import com.weibo.talentintroduction.expert.domain.ExpertManualProfileFields
 import com.weibo.talentintroduction.expert.domain.ExpertManualProfileGroup
 import com.weibo.talentintroduction.expert.domain.ExpertManualProfilePatch
 import com.weibo.talentintroduction.expert.domain.ExpertProfileConflictException
+import com.weibo.talentintroduction.config.MailAttachmentStorageProperties
+import com.weibo.talentintroduction.document.domain.MeetingVideoException
+import com.weibo.talentintroduction.document.domain.MeetingVideoRenameRequest
+import com.weibo.talentintroduction.document.domain.MeetingVideoUploadRequest
+import com.weibo.talentintroduction.document.domain.MeetingVideoView
+import com.weibo.talentintroduction.document.service.ExpertMeetingVideoService
 import com.weibo.talentintroduction.expert.service.ExpertManualProfileService
 import com.weibo.talentintroduction.expert.service.ExpertProfileIdentityResolver
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
@@ -23,14 +29,18 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty
 import org.testcontainers.DockerClientFactory
 import org.testcontainers.containers.MySQLContainer
 import org.mockito.Mockito
+import java.io.ByteArrayInputStream
 import java.io.File
+import java.nio.file.Files
 import java.security.MessageDigest
 import java.sql.Connection
 import java.sql.DriverManager
 import java.sql.SQLException
 import java.util.concurrent.Callable
 import java.util.concurrent.CyclicBarrier
+import java.util.Comparator
 import java.util.concurrent.Executors
+import kotlin.streams.toList
 import com.weibo.talentintroduction.mail.service.ExpertContactNoteService
 import com.weibo.talentintroduction.mail.service.ExpertContactNoteView
 import org.springframework.jdbc.datasource.DriverManagerDataSource
@@ -76,7 +86,7 @@ class FlywayMigrationIntegrationTest {
                 (task_execution_id, orcid_id, email, decision, provider_state, request_count, checked_at, created_at, updated_at)
                 VALUES (99001, 'old', 'old@example.test', 'PASS', 'deliverable', 1, '2026-01-01 00:00:00', NOW(), NOW())""")
         }
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
         connection().use { c ->
             assertTrue(c.columnExists("batch_email_verification", "reused_from_id"))
             assertTrue(c.indexExists("batch_email_verification", "idx_batch_email_verification_email_time"))
@@ -104,7 +114,7 @@ class FlywayMigrationIntegrationTest {
             assertTrue(c.queryLong("SELECT COUNT(*) FROM batch_send_task_config") > 0L)
         }
 
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
         connection().use { c ->
             assertTrue(c.columnExists("batch_send_task_config", "exclude_verified_unavailable_emails"))
             val configId = c.queryLong("SELECT id FROM batch_send_task_config ORDER BY id LIMIT 1")
@@ -146,7 +156,7 @@ class FlywayMigrationIntegrationTest {
             assertTrue(c.queryLong("SELECT COUNT(*) FROM batch_send_task_config") > 0L)
         }
 
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
         connection().use { c ->
             assertTrue(c.columnExists("batch_send_task_config", "email_verification_allowed_states_json"))
             assertEquals(
@@ -186,7 +196,7 @@ class FlywayMigrationIntegrationTest {
     fun `fresh database migrates through the latest version`() {
         val flyway = flyway()
         flyway.clean()
-        assertEquals("153", flyway.migrate().targetSchemaVersion)
+        assertEquals("154", flyway.migrate().targetSchemaVersion)
     }
 
     @Test
@@ -198,7 +208,7 @@ class FlywayMigrationIntegrationTest {
             listOf("expert_contact", "mail_record", "mail_send_attempt", "inbound_mail_processing", "outbound_mail_attachment")
                 .associateWith { c.queryLong("SELECT COUNT(*) FROM $it") }
         }
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
         connection().use { c ->
             assertTrue(c.tableExists("mailbox_reply_draft"))
             listOf("id", "username", "expert_contact_id", "target_kind", "inbound_processing_id", "account_scope",
@@ -246,7 +256,7 @@ class FlywayMigrationIntegrationTest {
             c.queryString("SELECT CONCAT(id, '|', campaign_id, '|', orcid_id, '|', current_status) FROM expert_contact WHERE id=1")
         }
 
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
         connection().use { c ->
             assertTrue(c.tableExists("expert_manual_profile"))
             // 迁移本身不写业务数据；19 项全部是真实独立列，且与白名单逐列一致。
@@ -574,13 +584,263 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
+    fun `V154 creates the expert meeting video table preserving profile and note rows`() {
+        migrateToV23AndSeedBase()
+        assertEquals("153", flyway(MigrationVersion.fromVersion("153")).migrate().targetSchemaVersion)
+        connection().use { c ->
+            assertFalse(c.tableExists("expert_meeting_video"))
+            c.execute(
+                "INSERT INTO expert_manual_profile (expert_key, updated_by, updated_at) " +
+                    "VALUES ('0000-0001', 'admin', '2026-10-11 10:18:00.123')"
+            )
+            c.execute(
+                "INSERT INTO expert_contact_note (expert_contact_id, note, updated_by, updated_at) " +
+                    "VALUES (1, '迁移前备注', 'admin', '2026-10-11 10:18:00.123')"
+            )
+        }
+
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
+        connection().use { c ->
+            assertTrue(c.tableExists("expert_meeting_video"))
+            // 迁移本身不写业务数据；新表只有 04 的 10 列。
+            assertEquals(0L, c.queryLong("SELECT COUNT(*) FROM expert_meeting_video"))
+            listOf(
+                "id", "expert_key", "original_filename", "display_filename", "byte_length",
+                "uploaded_by", "uploaded_at", "updated_by", "updated_at", "version"
+            ).forEach { column ->
+                assertTrue(c.columnExists("expert_meeting_video", column), "缺少列 $column")
+            }
+            assertEquals(
+                10L,
+                c.queryLong(
+                    "SELECT COUNT(*) FROM information_schema.columns " +
+                        "WHERE table_schema=DATABASE() AND table_name='expert_meeting_video'"
+                )
+            )
+            // id 是服务端 UUID：ASCII 定长 36，磁盘路径也只用它。
+            assertEquals("char", c.queryString(columnMeta("expert_meeting_video", "id", "DATA_TYPE")))
+            assertEquals("36", c.queryString(columnMeta("expert_meeting_video", "id", "CHARACTER_MAXIMUM_LENGTH")))
+            assertEquals("ascii", c.queryString(columnMeta("expert_meeting_video", "id", "CHARACTER_SET_NAME")))
+            assertEquals("NO", c.queryString(columnMeta("expert_meeting_video", "id", "IS_NULLABLE")))
+            // 身份与展示名大小写敏感；原始名 255、展示名 100（完整名含扩展名）。
+            assertEquals("varchar", c.queryString(columnMeta("expert_meeting_video", "expert_key", "DATA_TYPE")))
+            assertEquals("64", c.queryString(columnMeta("expert_meeting_video", "expert_key", "CHARACTER_MAXIMUM_LENGTH")))
+            assertEquals("utf8mb4_bin", c.queryString(columnMeta("expert_meeting_video", "expert_key", "COLLATION_NAME")))
+            assertEquals("varchar", c.queryString(columnMeta("expert_meeting_video", "original_filename", "DATA_TYPE")))
+            assertEquals(
+                "255",
+                c.queryString(columnMeta("expert_meeting_video", "original_filename", "CHARACTER_MAXIMUM_LENGTH"))
+            )
+            assertEquals("NO", c.queryString(columnMeta("expert_meeting_video", "original_filename", "IS_NULLABLE")))
+            assertEquals(
+                "100",
+                c.queryString(columnMeta("expert_meeting_video", "display_filename", "CHARACTER_MAXIMUM_LENGTH"))
+            )
+            assertEquals(
+                "utf8mb4_bin",
+                c.queryString(columnMeta("expert_meeting_video", "display_filename", "COLLATION_NAME"))
+            )
+            assertEquals("bigint", c.queryString(columnMeta("expert_meeting_video", "byte_length", "DATA_TYPE")))
+            assertEquals("NO", c.queryString(columnMeta("expert_meeting_video", "byte_length", "IS_NULLABLE")))
+            listOf("uploaded_by", "updated_by").forEach { column ->
+                assertEquals("varchar", c.queryString(columnMeta("expert_meeting_video", column, "DATA_TYPE")), column)
+                assertEquals(
+                    "64",
+                    c.queryString(columnMeta("expert_meeting_video", column, "CHARACTER_MAXIMUM_LENGTH")),
+                    column
+                )
+                assertEquals("NO", c.queryString(columnMeta("expert_meeting_video", column, "IS_NULLABLE")), column)
+            }
+            listOf("uploaded_at", "updated_at").forEach { column ->
+                assertEquals("datetime", c.queryString(columnMeta("expert_meeting_video", column, "DATA_TYPE")), column)
+                assertEquals(
+                    "3",
+                    c.queryString(columnMeta("expert_meeting_video", column, "DATETIME_PRECISION")),
+                    column
+                )
+                assertEquals("NO", c.queryString(columnMeta("expert_meeting_video", column, "IS_NULLABLE")), column)
+            }
+            assertEquals("bigint", c.queryString(columnMeta("expert_meeting_video", "version", "DATA_TYPE")))
+            assertEquals("NO", c.queryString(columnMeta("expert_meeting_video", "version", "IS_NULLABLE")))
+            assertEquals("1", c.queryString(columnMeta("expert_meeting_video", "version", "COLUMN_DEFAULT")))
+            // 主键 id、同一专家内展示名唯一（最终裁决）、列表索引 (expert_key, uploaded_at, id)。
+            assertEquals(
+                1L,
+                c.queryLong(
+                    "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema=DATABASE() " +
+                        "AND table_name='expert_meeting_video' AND index_name='PRIMARY' " +
+                        "AND column_name='id' AND non_unique=0"
+                )
+            )
+            assertEquals(
+                2L,
+                c.queryLong(
+                    "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema=DATABASE() " +
+                        "AND table_name='expert_meeting_video' AND index_name='uk_expert_meeting_video_name' " +
+                        "AND non_unique=0 AND column_name IN ('expert_key','display_filename')"
+                )
+            )
+            assertEquals(
+                3L,
+                c.queryLong(
+                    "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema=DATABASE() " +
+                        "AND table_name='expert_meeting_video' AND index_name='idx_expert_meeting_video_list' " +
+                        "AND non_unique=1 AND column_name IN ('expert_key','uploaded_at','id')"
+                )
+            )
+            assertEquals(
+                "InnoDB",
+                c.queryString(
+                    "SELECT ENGINE FROM information_schema.tables " +
+                        "WHERE table_schema=DATABASE() AND table_name='expert_meeting_video'"
+                )
+            )
+            // 不建 contact 外键（未联系专家也可上传）。
+            assertEquals(
+                0L,
+                c.queryLong(
+                    "SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema=DATABASE() " +
+                        "AND table_name='expert_meeting_video' AND constraint_type='FOREIGN KEY'"
+                )
+            )
+            // 既有数据保持不变。
+            assertEquals(
+                1L,
+                c.queryLong("SELECT COUNT(*) FROM expert_manual_profile WHERE expert_key='0000-0001'")
+            )
+            assertEquals("迁移前备注", c.queryString("SELECT note FROM expert_contact_note WHERE expert_contact_id=1"))
+        }
+    }
+
+    @Test
+    fun `real meeting video service settles concurrent same name uploads and stale renames on V154`() {
+        migrateToV23AndSeedBase()
+        flyway().migrate()
+        val dataSource = DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
+        val jdbc = NamedParameterJdbcTemplate(dataSource)
+        val contacts = Mockito.mock(ExpertContactRepository::class.java)
+        Mockito.`when`(contacts.existsByOrcidId("0000-0001")).thenReturn(true)
+        Mockito.`when`(contacts.existsByOrcidId("0000-0002")).thenReturn(true)
+        val resolver = ExpertProfileIdentityResolver(jdbc, contacts, Mockito.mock(ExpertSearchService::class.java))
+        val storageDir = Files.createTempDirectory("meeting-video-v154-it-")
+        val videoRoot = storageDir.resolve("meeting-videos")
+        val service = ExpertMeetingVideoService(
+            MailAttachmentStorageProperties(basePath = storageDir.toString()),
+            resolver,
+            jdbc,
+            TransactionTemplate(DataSourceTransactionManager(dataSource))
+        )
+        fun upload(expertId: String, stem: String, actor: String) = service.upload(
+            MeetingVideoUploadRequest(expertId, ExpertIndexLevel.RAW, "企业对接会.mp4", stem, "3", 3L),
+            actor,
+            "",
+            ByteArrayInputStream(byteArrayOf(1, 2, 3))
+        )
+
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            // 同一专家、同名并发上传：唯一索引最终裁决，恰好一条成功、一条 409，只落一行只留一个文件。
+            val insertBarrier = CyclicBarrier(2)
+            val inserts = listOf("userA", "userB").map { actor ->
+                pool.submit(Callable<Any> {
+                    insertBarrier.await()
+                    try {
+                        upload("0000-0001", "企业对接会", actor)
+                    } catch (ex: MeetingVideoException) {
+                        ex
+                    }
+                })
+            }.map { it.get() }
+            assertEquals(1, inserts.count { it is MeetingVideoView }, "并发同名上传必须恰好一个成功")
+            assertEquals(
+                1,
+                inserts.count { it is MeetingVideoException && it.code == "VIDEO_NAME_CONFLICT" },
+                "并发同名上传必须恰好一个 409 VIDEO_NAME_CONFLICT：$inserts"
+            )
+            val winner = inserts.filterIsInstance<MeetingVideoView>().single()
+            connection().use { c ->
+                assertEquals(
+                    1L,
+                    c.queryLong("SELECT COUNT(*) FROM expert_meeting_video WHERE expert_key='0000-0001'")
+                )
+                assertEquals("1", c.queryString("SELECT version FROM expert_meeting_video WHERE id='${winner.id}'"))
+                assertEquals(
+                    "企业对接会.mp4",
+                    c.queryString("SELECT display_filename FROM expert_meeting_video WHERE id='${winner.id}'")
+                )
+            }
+            // 输家的 final 文件必须被删除：目录里只剩赢家一个文件。
+            assertEquals(
+                listOf(winner.id),
+                Files.list(videoRoot).use { stream -> stream.map { it.fileName.toString() }.toList() }
+            )
+
+            // 跨专家同名允许；同一专家内大小写不同是不同名称（utf8mb4_bin）。
+            val otherExpert = upload("0000-0002", "企业对接会", "userC")
+            assertEquals("企业对接会.mp4", otherExpert.displayFilename)
+            assertEquals("abc.mp4", upload("0000-0001", "abc", "userA").displayFilename)
+            assertEquals("ABC.mp4", upload("0000-0001", "ABC", "userA").displayFilename)
+            assertEquals(
+                3L,
+                connection().use { c ->
+                    c.queryLong("SELECT COUNT(*) FROM expert_meeting_video WHERE expert_key='0000-0001'")
+                }
+            )
+
+            // 同版本并发重命名：CAS 恰好一条成功、一条 409 VIDEO_VERSION_CONFLICT。
+            val renameBarrier = CyclicBarrier(2)
+            val renames = listOf("新名字甲", "新名字乙").map { stem ->
+                pool.submit(Callable<Any> {
+                    renameBarrier.await()
+                    try {
+                        service.rename(
+                            MeetingVideoRenameRequest(stem, winner.version), "0000-0001", winner.id, "userA", ""
+                        )
+                    } catch (ex: MeetingVideoException) {
+                        ex
+                    }
+                })
+            }.map { it.get() }
+            assertEquals(1, renames.count { it is MeetingVideoView }, "同版本重命名必须恰好一个成功")
+            assertEquals(
+                1,
+                renames.count { it is MeetingVideoException && it.code == "VIDEO_VERSION_CONFLICT" },
+                "同版本重命名必须恰好一个 409 VIDEO_VERSION_CONFLICT：$renames"
+            )
+            connection().use { c ->
+                assertEquals("2", c.queryString("SELECT version FROM expert_meeting_video WHERE id='${winner.id}'"))
+            }
+            // 旧版本再次重命名仍然 409，且不搬动磁盘文件。
+            val stale = assertThrows(MeetingVideoException::class.java) {
+                service.rename(
+                    MeetingVideoRenameRequest("再一次", winner.version), "0000-0001", winner.id, "userA", ""
+                )
+            }
+            assertEquals("VIDEO_VERSION_CONFLICT", stale.code)
+            assertTrue(Files.exists(videoRoot.resolve(winner.id)))
+            // 归属不符：另一个专家改不动这条视频。
+            val crossOwner = assertThrows(MeetingVideoException::class.java) {
+                service.rename(MeetingVideoRenameRequest("别人的名字", 2L), "0000-0002", winner.id, "userC", "")
+            }
+            assertEquals("VIDEO_NOT_FOUND", crossOwner.code)
+        } finally {
+            pool.shutdownNow()
+            if (Files.exists(storageDir)) {
+                Files.walk(storageDir).use { paths ->
+                    paths.sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }
+                }
+            }
+        }
+    }
+
+    @Test
     fun `V141 upgrades V140 history without backfilling and enforces unique association`() {
         migrateToV23AndSeedBase()
         assertEquals("140", flyway(MigrationVersion.fromVersion("140")).migrate().targetSchemaVersion)
         connection().use { c ->
             c.execute("INSERT INTO mail_record (id, expert_contact_id, direction, mail_type, send_status, sent_at) VALUES (801, 1, 'OUTBOUND', 'INTRODUCTION', 'SENT', NOW()), (802, 2, 'OUTBOUND', 'INTRODUCTION', 'SENT', NOW())")
         }
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
         connection().use { c ->
             assertTrue(c.tableExists("mail_open_tracking"))
             assertTrue(c.columnExists("mail_record", "open_tracking_id"))
@@ -613,7 +873,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_compose_template", "subject_snippet_id"))
             assertEquals(
@@ -701,7 +961,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 列契约：outbound_attachments_json LONGTEXT NULL（I-1 唯一 absence 形态）。
             assertTrue(connection.columnExists("mail_record", "outbound_attachments_json"))
@@ -743,7 +1003,7 @@ class FlywayMigrationIntegrationTest {
     @Test
     fun `V129 widens the material code check to twelve codes without touching stored rows`() {
         migrateToV23AndSeedBase()
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 零数据改写：V129 不建初始行。
             assertEquals(0L, connection.queryLong("SELECT COUNT(*) FROM expert_material_status"))
@@ -840,7 +1100,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 新表列/索引/外键契约。
             assertTrue(connection.tableExists("manual_expert_material_upload"))
@@ -1013,7 +1273,7 @@ class FlywayMigrationIntegrationTest {
             assertEquals(historyBefore + 1, connection.queryLong("SELECT COUNT(*) FROM flyway_schema_history"))
         }
 
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
 
         connection().use { connection ->
             assertTrue(connection.tableExists("expert_academic_enrichment_job"))
@@ -1135,7 +1395,7 @@ class FlywayMigrationIntegrationTest {
         }
         assertTrue(rowsBefore > 0L, "V72 种子配置行必须存在，回填断言才有意义")
 
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
 
         connection().use { connection ->
             assertTrue(connection.columnExists("batch_send_task_config", "sender_account_codes_json"))
@@ -1174,7 +1434,7 @@ class FlywayMigrationIntegrationTest {
             assertFalse(connection.tableExists("batch_email_verification"))
         }
 
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
 
         connection().use { connection ->
             assertTrue(connection.tableExists("batch_email_verification"))
@@ -1236,7 +1496,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
 
         connection().use { connection ->
             assertTrue(connection.columnExists("batch_send_task_config", "email_verification_enabled"))
@@ -1336,7 +1596,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 列契约：calendar_attachment_json LONGTEXT NULL（I-1 唯一 absence 形态）。
             assertTrue(connection.columnExists("mail_record", "calendar_attachment_json"))
@@ -1371,7 +1631,7 @@ class FlywayMigrationIntegrationTest {
     fun `V124 allows material attached promotion audit trigger`() {
         // The FK needs a seeded expert_contact before inserting the audit row.
         migrateToV23AndSeedBase()
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertEquals("32", connection.queryString(
                 "SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.columns " +
@@ -1482,7 +1742,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertEquals(1L, connection.queryLong(
                 "SELECT COUNT(*) FROM mail_sender_account " +
@@ -1589,7 +1849,7 @@ class FlywayMigrationIntegrationTest {
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
         }
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
             assertTrue(connection.tableExists("batch_send_setting"))
@@ -1605,7 +1865,7 @@ class FlywayMigrationIntegrationTest {
         connection().use { connection ->
             assertFalse(connection.tableExists("admin_user"))
         }
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("admin_user"))
             assertTrue(connection.columnExists("admin_user", "username"))
@@ -1640,7 +1900,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertEquals(101L, connection.queryLong(
                 "SELECT mail_send_attempt_id FROM mail_record WHERE id = 201"
@@ -1686,7 +1946,7 @@ class FlywayMigrationIntegrationTest {
         }
 
         flyway().repair()
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_send_attempt", "quota_counted"))
         }
@@ -1762,7 +2022,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 历史值原样保留（I-2/I-3），document_status 迁移前后不变。
             assertEquals(12345L, connection.queryLong(
@@ -1878,7 +2138,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("mail_attachment_transfer"))
             listOf(
@@ -2023,7 +2283,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 列契约：uid_validity BIGINT NOT NULL DEFAULT 0
             assertTrue(connection.columnExists("inbound_mail_processing", "uid_validity"))
@@ -2113,7 +2373,7 @@ class FlywayMigrationIntegrationTest {
             assertFalse(connection.tableExists("expert_follow"))
         }
 
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("expert_follow"))
             listOf("username", "expert_contact_id", "created_at").forEach { column ->
@@ -2290,7 +2550,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 头不被覆盖：名称/主题/禁用状态原样；不新增任何块（禁止为原有模板删块/加块）。
             assertEquals(1L, connection.queryLong(
@@ -2331,7 +2591,7 @@ class FlywayMigrationIntegrationTest {
             contactsBefore = connection.queryLong("SELECT COUNT(*) FROM expert_contact")
         }
 
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("expert_mailbox_suspension"))
             listOf("username", "expert_contact_id", "reason").forEach { column ->
@@ -2445,7 +2705,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 列契约：VARCHAR(16) NOT NULL DEFAULT 'FOLLOWING'；不新增 provided 布尔列。
             assertTrue(connection.columnExists("expert_follow", "progress_status"))
@@ -2509,7 +2769,7 @@ class FlywayMigrationIntegrationTest {
             assertFalse(c.tableExists("expert_contact_note"))
             c.queryString("SELECT CONCAT(id, '|', campaign_id, '|', orcid_id, '|', current_status, '|', updated_at) FROM expert_contact WHERE id=1")
         }
-        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        assertEquals("154", flyway().migrate().targetSchemaVersion)
         connection().use { c ->
             assertEquals(before, c.queryString("SELECT CONCAT(id, '|', campaign_id, '|', orcid_id, '|', current_status, '|', updated_at) FROM expert_contact WHERE id=1"))
             assertEquals(2L, c.queryLong("SELECT COUNT(*) FROM expert_contact"))
