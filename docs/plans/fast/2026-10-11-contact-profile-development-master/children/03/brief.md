@@ -60,3 +60,9 @@
 
 - 报告路径：`docs/plans/fast/2026-10-11-contact-profile-development-master/children/03/execution.md`（写入完整结果：改动文件、命令与结果、偏差、下游事实、遗留风险；不提交）。
 - 返回：`READY_FOR_VERIFICATION | BLOCKED | PLAN_CONFLICT` + commit SHA + 命令摘要 + 报告路径（紧凑 JSON）。
+
+## Epoch 2 恢复说明（2026-10-11）
+
+- 人工批准 R1 后，amendment A1 已落地（commit `d484e4c`）：`contact-profile-02-ui.md` 的键字面量已同步为 `20261011-contact-profile-03`，02 静态测试的键 pin 现与 03 阶段一致（已用同源 regex 实测解析结果为 `-03`）。
+- 四类 DOM pin（4×.ec-section / 4×.ec-editor / nav 四按钮 / S-2-at-EOF）已由 epoch 1 隔离探针证明可用本 brief 指定的 typeof 守卫约定满足；S-2-at-EOF 不受 03 影响（03 无 CSS 变更）。
+- epoch 1 未产生任何产品改动（index.html 已复原、无实现提交）；按原任务要求继续执行即可，报告请**追加**到既有 execution.md 之后（保留 epoch 1 记录）。
