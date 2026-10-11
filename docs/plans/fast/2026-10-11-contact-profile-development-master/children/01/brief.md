@@ -25,7 +25,8 @@
 ## Required commands（全部必须真实运行并记录精确计数/退出码）
 
 - `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=ExpertProfileIdentityResolverTest,ExpertManualProfileServiceTest,ExpertManualProfileControllerTest test`
-- `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -DmigrationIt=true -Dtest=FlywayMigrationIntegrationTest test`（Docker 可用；本仓既有 Flyway IT 走 mysql:8.0.36 Testcontainers，必须运行，不可跳过）
+- `DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dapi.version=1.41 '-DargLine=-Dapi.version=1.41' -DmigrationIt=true -Dtest=FlywayMigrationIntegrationTest test`
+  - 必须使用这个带 DOCKER_HOST/api.version 前缀的精确形式：本机 OrbStack 守护进程要求 Docker API ≥1.40，而 Testcontainers 1.19.8 的 docker-java 默认 1.32；已验证该前缀下基线为 Tests run 39 / F 0 / E 0。不得跳过该 IT。
 
 ## 必须兑现的合同要点（以子计划正文为准，这里是标识索引）
 
