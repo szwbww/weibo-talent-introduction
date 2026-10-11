@@ -1,5 +1,15 @@
 package com.weibo.talentintroduction.campaign.repository
 
+import com.weibo.talentintroduction.expert.domain.CompanyMatchStatus
+import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
+import com.weibo.talentintroduction.expert.domain.ExpertManualProfileDto
+import com.weibo.talentintroduction.expert.domain.ExpertManualProfileFields
+import com.weibo.talentintroduction.expert.domain.ExpertManualProfileGroup
+import com.weibo.talentintroduction.expert.domain.ExpertManualProfilePatch
+import com.weibo.talentintroduction.expert.domain.ExpertProfileConflictException
+import com.weibo.talentintroduction.expert.service.ExpertManualProfileService
+import com.weibo.talentintroduction.expert.service.ExpertProfileIdentityResolver
+import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import org.flywaydb.core.Flyway
 import org.flywaydb.core.api.MigrationVersion
 import org.junit.jupiter.api.AfterAll
@@ -12,11 +22,15 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty
 import org.testcontainers.DockerClientFactory
 import org.testcontainers.containers.MySQLContainer
+import org.mockito.Mockito
 import java.io.File
 import java.security.MessageDigest
 import java.sql.Connection
 import java.sql.DriverManager
 import java.sql.SQLException
+import java.util.concurrent.Callable
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.Executors
 import com.weibo.talentintroduction.mail.service.ExpertContactNoteService
 import com.weibo.talentintroduction.mail.service.ExpertContactNoteView
 import org.springframework.jdbc.datasource.DriverManagerDataSource
@@ -62,7 +76,7 @@ class FlywayMigrationIntegrationTest {
                 (task_execution_id, orcid_id, email, decision, provider_state, request_count, checked_at, created_at, updated_at)
                 VALUES (99001, 'old', 'old@example.test', 'PASS', 'deliverable', 1, '2026-01-01 00:00:00', NOW(), NOW())""")
         }
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
         connection().use { c ->
             assertTrue(c.columnExists("batch_email_verification", "reused_from_id"))
             assertTrue(c.indexExists("batch_email_verification", "idx_batch_email_verification_email_time"))
@@ -90,7 +104,7 @@ class FlywayMigrationIntegrationTest {
             assertTrue(c.queryLong("SELECT COUNT(*) FROM batch_send_task_config") > 0L)
         }
 
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
         connection().use { c ->
             assertTrue(c.columnExists("batch_send_task_config", "exclude_verified_unavailable_emails"))
             val configId = c.queryLong("SELECT id FROM batch_send_task_config ORDER BY id LIMIT 1")
@@ -132,7 +146,7 @@ class FlywayMigrationIntegrationTest {
             assertTrue(c.queryLong("SELECT COUNT(*) FROM batch_send_task_config") > 0L)
         }
 
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
         connection().use { c ->
             assertTrue(c.columnExists("batch_send_task_config", "email_verification_allowed_states_json"))
             assertEquals(
@@ -172,7 +186,7 @@ class FlywayMigrationIntegrationTest {
     fun `fresh database migrates through the latest version`() {
         val flyway = flyway()
         flyway.clean()
-        assertEquals("152", flyway.migrate().targetSchemaVersion)
+        assertEquals("153", flyway.migrate().targetSchemaVersion)
     }
 
     @Test
@@ -184,7 +198,7 @@ class FlywayMigrationIntegrationTest {
             listOf("expert_contact", "mail_record", "mail_send_attempt", "inbound_mail_processing", "outbound_mail_attachment")
                 .associateWith { c.queryLong("SELECT COUNT(*) FROM $it") }
         }
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
         connection().use { c ->
             assertTrue(c.tableExists("mailbox_reply_draft"))
             listOf("id", "username", "expert_contact_id", "target_kind", "inbound_processing_id", "account_scope",
@@ -210,13 +224,363 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
+    fun `V153 creates the expert manual profile table and preserves note and draft rows`() {
+        migrateToV23AndSeedBase()
+        assertEquals("152", flyway(MigrationVersion.fromVersion("152")).migrate().targetSchemaVersion)
+        connection().use { c ->
+            assertFalse(c.tableExists("expert_manual_profile"))
+            c.execute(
+                "INSERT INTO expert_contact_note (expert_contact_id, note, updated_by, updated_at) " +
+                    "VALUES (1, '迁移前备注', 'admin', '2026-10-11 10:18:00.123')"
+            )
+            c.execute(
+                """
+                INSERT INTO mailbox_reply_draft
+                    (username, expert_contact_id, target_kind, inbound_processing_id, account_scope,
+                     version, state, created_at, updated_at)
+                VALUES ('admin', 1, 'INBOUND', 77, '', 1, 'DRAFT', '2026-10-11 10:18:00.123', '2026-10-11 10:18:00.123')
+                """.trimIndent()
+            )
+        }
+        val contactBefore = connection().use { c ->
+            c.queryString("SELECT CONCAT(id, '|', campaign_id, '|', orcid_id, '|', current_status) FROM expert_contact WHERE id=1")
+        }
+
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
+        connection().use { c ->
+            assertTrue(c.tableExists("expert_manual_profile"))
+            // 迁移本身不写业务数据；19 项全部是真实独立列，且与白名单逐列一致。
+            assertEquals(0L, c.queryLong("SELECT COUNT(*) FROM expert_manual_profile"))
+            assertEquals(19, ExpertManualProfileFields.ALL.size)
+            ExpertManualProfileFields.ALL.forEach { field ->
+                assertTrue(c.columnExists("expert_manual_profile", field.column), "缺少列 ${field.column}")
+            }
+            assertEquals(
+                23L,
+                c.queryLong(
+                    "SELECT COUNT(*) FROM information_schema.columns " +
+                        "WHERE table_schema=DATABASE() AND table_name='expert_manual_profile'"
+                )
+            )
+            assertEquals("varchar", c.queryString(columnMeta("expert_manual_profile", "expert_key", "DATA_TYPE")))
+            assertEquals("64", c.queryString(columnMeta("expert_manual_profile", "expert_key", "CHARACTER_MAXIMUM_LENGTH")))
+            assertEquals("utf8mb4_bin", c.queryString(columnMeta("expert_manual_profile", "expert_key", "COLLATION_NAME")))
+            assertEquals("NO", c.queryString(columnMeta("expert_manual_profile", "expert_key", "IS_NULLABLE")))
+            assertEquals(
+                1L,
+                c.queryLong(
+                    "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema=DATABASE() " +
+                        "AND table_name='expert_manual_profile' AND index_name='PRIMARY' " +
+                        "AND column_name='expert_key' AND non_unique=0"
+                )
+            )
+            assertEquals(
+                "InnoDB",
+                c.queryString("SELECT ENGINE FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='expert_manual_profile'")
+            )
+            listOf("talent_code", "administrative_titles").forEach { column ->
+                assertEquals("utf8mb4", c.queryString(columnMeta("expert_manual_profile", column, "CHARACTER_SET_NAME")))
+            }
+            mapOf(
+                "talent_code" to 64L, "chinese_name" to 200L, "birth_date_text" to 10L, "document_number" to 100L,
+                "source_country" to 100L, "school_ranking" to 500L, "organization_ranking" to 500L,
+                "postdoc_period" to 200L, "professional_title" to 200L, "industry" to 500L,
+                "program_categories" to 500L, "research_ability" to 16L
+            ).forEach { (column, limit) ->
+                assertEquals("varchar", c.queryString(columnMeta("expert_manual_profile", column, "DATA_TYPE")), column)
+                assertEquals(limit.toString(), c.queryString(columnMeta("expert_manual_profile", column, "CHARACTER_MAXIMUM_LENGTH")), column)
+                assertEquals("YES", c.queryString(columnMeta("expert_manual_profile", column, "IS_NULLABLE")), column)
+            }
+            listOf(
+                "graduated_school", "pre_china_organization", "postdoc_organization",
+                "administrative_titles", "technical_expertise", "matched_companies"
+            ).forEach { column ->
+                assertEquals("text", c.queryString(columnMeta("expert_manual_profile", column, "DATA_TYPE")), column)
+                assertEquals("YES", c.queryString(columnMeta("expert_manual_profile", column, "IS_NULLABLE")), column)
+            }
+            assertEquals("NO", c.queryString(columnMeta("expert_manual_profile", "company_match_status", "IS_NULLABLE")))
+            assertEquals("varchar", c.queryString(columnMeta("expert_manual_profile", "company_match_status", "DATA_TYPE")))
+            assertEquals("16", c.queryString(columnMeta("expert_manual_profile", "company_match_status", "CHARACTER_MAXIMUM_LENGTH")))
+            assertEquals("NOT_MATCHED", c.queryString(columnMeta("expert_manual_profile", "company_match_status", "COLUMN_DEFAULT")))
+            assertEquals("bigint", c.queryString(columnMeta("expert_manual_profile", "version", "DATA_TYPE")))
+            assertEquals("NO", c.queryString(columnMeta("expert_manual_profile", "version", "IS_NULLABLE")))
+            assertEquals("0", c.queryString(columnMeta("expert_manual_profile", "version", "COLUMN_DEFAULT")))
+            assertEquals("datetime", c.queryString(columnMeta("expert_manual_profile", "updated_at", "DATA_TYPE")))
+            assertEquals("3", c.queryString(columnMeta("expert_manual_profile", "updated_at", "DATETIME_PRECISION")))
+            assertEquals("NO", c.queryString(columnMeta("expert_manual_profile", "updated_at", "IS_NULLABLE")))
+            assertEquals("NO", c.queryString(columnMeta("expert_manual_profile", "updated_by", "IS_NULLABLE")))
+            assertEquals("varchar", c.queryString(columnMeta("expert_manual_profile", "updated_by", "DATA_TYPE")))
+            assertEquals("64", c.queryString(columnMeta("expert_manual_profile", "updated_by", "CHARACTER_MAXIMUM_LENGTH")))
+            assertEquals(
+                0L,
+                c.queryLong(
+                    "SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema=DATABASE() " +
+                        "AND table_name='expert_manual_profile' AND constraint_type='FOREIGN KEY'"
+                )
+            )
+            // 无请求的全局人才编号唯一约束不得出现。
+            assertEquals(
+                0L,
+                c.queryLong(
+                    "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema=DATABASE() " +
+                        "AND table_name='expert_manual_profile' AND column_name='talent_code' AND non_unique=0"
+                )
+            )
+            // 既有 notes/drafts 数据、外键与唯一键保持不变。
+            assertEquals("迁移前备注", c.queryString("SELECT note FROM expert_contact_note WHERE expert_contact_id=1"))
+            assertEquals(1L, c.queryLong("SELECT COUNT(*) FROM expert_contact_note"))
+            assertTrue(c.foreignKeyExists("expert_contact_note", "fk_expert_contact_note_contact"))
+            assertEquals("DRAFT", c.queryString("SELECT state FROM mailbox_reply_draft WHERE username='admin'"))
+            assertEquals(1L, c.queryLong("SELECT COUNT(*) FROM mailbox_reply_draft"))
+            assertTrue(c.indexExists("mailbox_reply_draft", "uk_mailbox_reply_draft_target"))
+            assertEquals(
+                contactBefore,
+                c.queryString("SELECT CONCAT(id, '|', campaign_id, '|', orcid_id, '|', current_status) FROM expert_contact WHERE id=1")
+            )
+        }
+    }
+
+    @Test
+    fun `real manual profile service persists the nineteen fields and preserves unrelated rows on V153`() {
+        migrateToV23AndSeedBase()
+        flyway().migrate()
+        val dataSource = DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
+        val jdbc = NamedParameterJdbcTemplate(dataSource)
+        val contacts = Mockito.mock(ExpertContactRepository::class.java)
+        Mockito.`when`(contacts.existsByOrcidId("0000-0001")).thenReturn(true)
+        val resolver = ExpertProfileIdentityResolver(jdbc, contacts, Mockito.mock(ExpertSearchService::class.java))
+        val service = ExpertManualProfileService(
+            jdbc, resolver, TransactionTemplate(DataSourceTransactionManager(dataSource))
+        )
+        val contactsBefore = jdbc.queryForList("SELECT * FROM expert_contact ORDER BY id", emptyMap<String, Any?>())
+        val mailsBefore = jdbc.queryForObject("SELECT COUNT(*) FROM mail_record", emptyMap<String, Any?>(), Long::class.java)
+
+        assertEquals(ExpertManualProfileDto.empty("0000-0001"), service.get("0000-0001", ExpertIndexLevel.RAW))
+        connection().use { assertEquals(0L, it.queryLong("SELECT COUNT(*) FROM expert_manual_profile")) }
+
+        var dto = service.patch(
+            ExpertManualProfilePatch(
+                "0000-0001", ExpertIndexLevel.RAW, ExpertManualProfileGroup.IDENTITY, 0,
+                mapOf(
+                    "talentCode" to "G0007", "chineseName" to "测试译名", "birthDateText" to "1980",
+                    "documentNumber" to "00001234", "sourceCountry" to "法国"
+                )
+            ),
+            "admin"
+        )
+        assertEquals(1L, dto.version)
+        assertEquals("00001234", dto.identity.documentNumber)
+        assertEquals(CompanyMatchStatus.NOT_MATCHED.name, dto.matching.companyMatchStatus)
+        assertTrue(dto.matching.matchedCompanies.isEmpty())
+
+        dto = service.patch(
+            ExpertManualProfilePatch(
+                "0000-0001", ExpertIndexLevel.RAW, ExpertManualProfileGroup.EDUCATION, dto.version,
+                mapOf(
+                    "graduatedSchool" to "测试大学甲\n测试大学乙", "schoolRanking" to "QS 100 / 学科前列",
+                    "preChinaOrganization" to "测试历史单位", "organizationRanking" to "世界500强",
+                    "postdocOrganization" to "测试博士后单位", "postdocPeriod" to "2018–2020",
+                    "professionalTitle" to "副教授", "administrativeTitles" to "主任\n学会委员"
+                )
+            ),
+            "admin"
+        )
+        assertEquals(2L, dto.version)
+        assertEquals("G0007", dto.identity.talentCode)
+
+        dto = service.patch(
+            ExpertManualProfilePatch(
+                "0000-0001", ExpertIndexLevel.RAW, ExpertManualProfileGroup.TECHNOLOGY, dto.version,
+                mapOf(
+                    "industry" to "新能源", "technicalExpertise" to "储能材料\n测试技术",
+                    "programCategories" to "QM/BS/工程师/RJ"
+                )
+            ),
+            "admin"
+        )
+        assertEquals(3L, dto.version)
+        assertEquals("测试大学甲\n测试大学乙", dto.education.graduatedSchool)
+
+        dto = service.patch(
+            ExpertManualProfilePatch(
+                "0000-0001", ExpertIndexLevel.RAW, ExpertManualProfileGroup.MATCHING, dto.version,
+                mapOf(
+                    "researchAbility" to "STRONG", "companyMatchStatus" to "MATCHED",
+                    "matchedCompanies" to listOf("测试企业甲", "测试企业乙")
+                )
+            ),
+            "admin"
+        )
+        assertEquals(4L, dto.version)
+        assertEquals("admin", dto.updatedBy)
+        assertTrue(dto.updatedAt!!.matches(Regex("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}\\+08:00")))
+        assertEquals("新能源", dto.technology.industry)
+        assertEquals(listOf("测试企业甲", "测试企业乙"), dto.matching.matchedCompanies)
+        assertEquals(dto, service.get("0000-0001", ExpertIndexLevel.CANDIDATE))
+
+        connection().use { c ->
+            assertEquals(1L, c.queryLong("SELECT COUNT(*) FROM expert_manual_profile"))
+            assertEquals("G0007", c.queryString("SELECT talent_code FROM expert_manual_profile WHERE expert_key='0000-0001'"))
+            assertEquals("1980", c.queryString("SELECT birth_date_text FROM expert_manual_profile WHERE expert_key='0000-0001'"))
+            assertEquals("00001234", c.queryString("SELECT document_number FROM expert_manual_profile WHERE expert_key='0000-0001'"))
+            assertEquals(
+                "测试企业甲\n测试企业乙",
+                c.queryString("SELECT matched_companies FROM expert_manual_profile WHERE expert_key='0000-0001'")
+            )
+            assertEquals("MATCHED", c.queryString("SELECT company_match_status FROM expert_manual_profile WHERE expert_key='0000-0001'"))
+            assertEquals("4", c.queryString("SELECT version FROM expert_manual_profile WHERE expert_key='0000-0001'"))
+            assertEquals("admin", c.queryString("SELECT updated_by FROM expert_manual_profile WHERE expert_key='0000-0001'"))
+            assertTrue(
+                c.queryString("SELECT DATE_FORMAT(updated_at, '%Y-%m-%d %H:%i:%s.%f') FROM expert_manual_profile WHERE expert_key='0000-0001'")
+                    .startsWith(dto.updatedAt!!.substringBefore("+08:00").replace('T', ' '))
+            )
+        }
+        assertEquals(contactsBefore, jdbc.queryForList("SELECT * FROM expert_contact ORDER BY id", emptyMap<String, Any?>()))
+        assertEquals(
+            mailsBefore,
+            jdbc.queryForObject("SELECT COUNT(*) FROM mail_record", emptyMap<String, Any?>(), Long::class.java)
+        )
+
+        // 同一专家可同时存在于多个 campaign：档案按 expertId 归属，不按 contactId（K-bound-expert-cross-campaign-read）。
+        connection().use { c ->
+            c.execute("INSERT INTO campaign (id, campaign_code, campaign_name, sender_account_id) VALUES (5, 'PROFILE_MULTI', 'Profile Multi', 1)")
+            c.execute("INSERT INTO expert_contact (id, campaign_id, orcid_id, expert_email, current_status) VALUES (5, 5, '0000-0001', 'one@example.com', 'NEW')")
+        }
+        val beforeMultiCampaign = service.get("0000-0001", ExpertIndexLevel.RAW)
+        val multiCampaign = service.patch(
+            ExpertManualProfilePatch(
+                "0000-0001", ExpertIndexLevel.RAW, ExpertManualProfileGroup.IDENTITY, beforeMultiCampaign.version,
+                mapOf(
+                    "talentCode" to "MULTI", "chineseName" to null, "birthDateText" to null,
+                    "documentNumber" to null, "sourceCountry" to null
+                )
+            ),
+            "admin"
+        )
+        assertEquals(beforeMultiCampaign.version + 1, multiCampaign.version)
+        connection().use { c ->
+            assertEquals(1L, c.queryLong("SELECT COUNT(*) FROM expert_manual_profile"))
+            assertEquals("MULTI", c.queryString("SELECT talent_code FROM expert_manual_profile WHERE expert_key='0000-0001'"))
+            assertEquals(2L, c.queryLong("SELECT COUNT(*) FROM expert_contact WHERE orcid_id='0000-0001'"))
+        }
+
+        // I-3：失败事务不改任何字段（事务内的写入随回滚消失）。
+        val beforeRollback = service.get("0000-0001", ExpertIndexLevel.RAW)
+        TransactionTemplate(DataSourceTransactionManager(dataSource)).execute { status ->
+            service.patch(
+                ExpertManualProfilePatch(
+                    "0000-0001", ExpertIndexLevel.RAW, ExpertManualProfileGroup.IDENTITY, beforeRollback.version,
+                    mapOf(
+                        "talentCode" to "ROLLBACK", "chineseName" to null, "birthDateText" to null,
+                        "documentNumber" to null, "sourceCountry" to null
+                    )
+                ),
+                "admin"
+            )
+            status.setRollbackOnly()
+        }
+        assertEquals(beforeRollback, service.get("0000-0001", ExpertIndexLevel.RAW))
+    }
+
+    @Test
+    fun `manual profile service settles concurrent first insert and same version update on V153`() {
+        migrateToV23AndSeedBase()
+        flyway().migrate()
+        val dataSource = DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
+        val jdbc = NamedParameterJdbcTemplate(dataSource)
+        val contacts = Mockito.mock(ExpertContactRepository::class.java)
+        Mockito.`when`(contacts.existsByOrcidId("0000-0001")).thenReturn(true)
+        val resolver = ExpertProfileIdentityResolver(jdbc, contacts, Mockito.mock(ExpertSearchService::class.java))
+        val service = ExpertManualProfileService(
+            jdbc, resolver, TransactionTemplate(DataSourceTransactionManager(dataSource))
+        )
+        val tx = TransactionTemplate(DataSourceTransactionManager(dataSource))
+        fun identityValues(talentCode: String) = mapOf(
+            "talentCode" to talentCode, "chineseName" to null, "birthDateText" to null,
+            "documentNumber" to null, "sourceCountry" to null
+        )
+
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            // 两连接同时以 expectedVersion=0 首次插入同一 key：恰好一个成功、一个 409、只落一行。
+            val insertBarrier = CyclicBarrier(2)
+            val inserts = listOf("userA", "userB").map { actor ->
+                pool.submit(Callable<Any> {
+                    insertBarrier.await()
+                    try {
+                        tx.execute {
+                            service.patch(
+                                ExpertManualProfilePatch(
+                                    "0000-0001", ExpertIndexLevel.RAW, ExpertManualProfileGroup.IDENTITY, 0,
+                                    identityValues(actor)
+                                ),
+                                actor
+                            )
+                        }!!
+                    } catch (ex: ExpertProfileConflictException) {
+                        ex
+                    }
+                })
+            }.map { it.get() }
+            assertEquals(1, inserts.count { it is ExpertManualProfileDto }, "并发首次插入必须恰好一个成功")
+            assertEquals(1, inserts.count { it is ExpertProfileConflictException }, "并发首次插入必须恰好一个 409")
+            connection().use { c ->
+                assertEquals(1L, c.queryLong("SELECT COUNT(*) FROM expert_manual_profile WHERE expert_key='0000-0001'"))
+                assertEquals("1", c.queryString("SELECT version FROM expert_manual_profile WHERE expert_key='0000-0001'"))
+            }
+            val inserted = inserts.filterIsInstance<ExpertManualProfileDto>().single()
+            assertEquals(inserted.identity.talentCode, service.get("0000-0001", ExpertIndexLevel.RAW).identity.talentCode)
+
+            // 两条连接持同一 version 更新：一个成功、一个 409，且赢家字段与 version 落库。
+            val updateBarrier = CyclicBarrier(2)
+            val updates = listOf("userA" to "甲产业", "userB" to "乙产业").map { (actor, industry) ->
+                pool.submit(Callable<Any> {
+                    updateBarrier.await()
+                    try {
+                        tx.execute {
+                            service.patch(
+                                ExpertManualProfilePatch(
+                                    "0000-0001", ExpertIndexLevel.RAW, ExpertManualProfileGroup.TECHNOLOGY,
+                                    inserted.version,
+                                    mapOf(
+                                        "industry" to industry, "technicalExpertise" to null,
+                                        "programCategories" to null
+                                    )
+                                ),
+                                actor
+                            )
+                        }!!
+                    } catch (ex: ExpertProfileConflictException) {
+                        ex
+                    }
+                })
+            }.map { it.get() }
+            assertEquals(1, updates.count { it is ExpertManualProfileDto }, "同 version 更新必须恰好一个成功")
+            assertEquals(1, updates.count { it is ExpertProfileConflictException }, "同 version 更新必须恰好一个 409")
+            val winner = updates.filterIsInstance<ExpertManualProfileDto>().single()
+            assertEquals(inserted.version + 1, winner.version)
+            connection().use { c ->
+                assertEquals(winner.technology.industry, c.queryString("SELECT industry FROM expert_manual_profile WHERE expert_key='0000-0001'"))
+                assertEquals(winner.identity.talentCode, c.queryString("SELECT talent_code FROM expert_manual_profile WHERE expert_key='0000-0001'"))
+                assertEquals(
+                    winner.version.toString(),
+                    c.queryString("SELECT version FROM expert_manual_profile WHERE expert_key='0000-0001'")
+                )
+            }
+            assertEquals(winner, service.get("0000-0001", ExpertIndexLevel.RAW))
+        } finally {
+            pool.shutdownNow()
+        }
+    }
+
+    @Test
     fun `V141 upgrades V140 history without backfilling and enforces unique association`() {
         migrateToV23AndSeedBase()
         assertEquals("140", flyway(MigrationVersion.fromVersion("140")).migrate().targetSchemaVersion)
         connection().use { c ->
             c.execute("INSERT INTO mail_record (id, expert_contact_id, direction, mail_type, send_status, sent_at) VALUES (801, 1, 'OUTBOUND', 'INTRODUCTION', 'SENT', NOW()), (802, 2, 'OUTBOUND', 'INTRODUCTION', 'SENT', NOW())")
         }
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
         connection().use { c ->
             assertTrue(c.tableExists("mail_open_tracking"))
             assertTrue(c.columnExists("mail_record", "open_tracking_id"))
@@ -249,7 +613,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_compose_template", "subject_snippet_id"))
             assertEquals(
@@ -337,7 +701,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 列契约：outbound_attachments_json LONGTEXT NULL（I-1 唯一 absence 形态）。
             assertTrue(connection.columnExists("mail_record", "outbound_attachments_json"))
@@ -379,7 +743,7 @@ class FlywayMigrationIntegrationTest {
     @Test
     fun `V129 widens the material code check to twelve codes without touching stored rows`() {
         migrateToV23AndSeedBase()
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 零数据改写：V129 不建初始行。
             assertEquals(0L, connection.queryLong("SELECT COUNT(*) FROM expert_material_status"))
@@ -476,7 +840,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 新表列/索引/外键契约。
             assertTrue(connection.tableExists("manual_expert_material_upload"))
@@ -649,7 +1013,7 @@ class FlywayMigrationIntegrationTest {
             assertEquals(historyBefore + 1, connection.queryLong("SELECT COUNT(*) FROM flyway_schema_history"))
         }
 
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
 
         connection().use { connection ->
             assertTrue(connection.tableExists("expert_academic_enrichment_job"))
@@ -771,7 +1135,7 @@ class FlywayMigrationIntegrationTest {
         }
         assertTrue(rowsBefore > 0L, "V72 种子配置行必须存在，回填断言才有意义")
 
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
 
         connection().use { connection ->
             assertTrue(connection.columnExists("batch_send_task_config", "sender_account_codes_json"))
@@ -810,7 +1174,7 @@ class FlywayMigrationIntegrationTest {
             assertFalse(connection.tableExists("batch_email_verification"))
         }
 
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
 
         connection().use { connection ->
             assertTrue(connection.tableExists("batch_email_verification"))
@@ -872,7 +1236,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
 
         connection().use { connection ->
             assertTrue(connection.columnExists("batch_send_task_config", "email_verification_enabled"))
@@ -972,7 +1336,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 列契约：calendar_attachment_json LONGTEXT NULL（I-1 唯一 absence 形态）。
             assertTrue(connection.columnExists("mail_record", "calendar_attachment_json"))
@@ -1007,7 +1371,7 @@ class FlywayMigrationIntegrationTest {
     fun `V124 allows material attached promotion audit trigger`() {
         // The FK needs a seeded expert_contact before inserting the audit row.
         migrateToV23AndSeedBase()
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertEquals("32", connection.queryString(
                 "SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.columns " +
@@ -1118,7 +1482,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertEquals(1L, connection.queryLong(
                 "SELECT COUNT(*) FROM mail_sender_account " +
@@ -1225,7 +1589,7 @@ class FlywayMigrationIntegrationTest {
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
         }
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
             assertTrue(connection.tableExists("batch_send_setting"))
@@ -1241,7 +1605,7 @@ class FlywayMigrationIntegrationTest {
         connection().use { connection ->
             assertFalse(connection.tableExists("admin_user"))
         }
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("admin_user"))
             assertTrue(connection.columnExists("admin_user", "username"))
@@ -1276,7 +1640,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertEquals(101L, connection.queryLong(
                 "SELECT mail_send_attempt_id FROM mail_record WHERE id = 201"
@@ -1322,7 +1686,7 @@ class FlywayMigrationIntegrationTest {
         }
 
         flyway().repair()
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_send_attempt", "quota_counted"))
         }
@@ -1398,7 +1762,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 历史值原样保留（I-2/I-3），document_status 迁移前后不变。
             assertEquals(12345L, connection.queryLong(
@@ -1514,7 +1878,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("mail_attachment_transfer"))
             listOf(
@@ -1659,7 +2023,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 列契约：uid_validity BIGINT NOT NULL DEFAULT 0
             assertTrue(connection.columnExists("inbound_mail_processing", "uid_validity"))
@@ -1749,7 +2113,7 @@ class FlywayMigrationIntegrationTest {
             assertFalse(connection.tableExists("expert_follow"))
         }
 
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("expert_follow"))
             listOf("username", "expert_contact_id", "created_at").forEach { column ->
@@ -1926,7 +2290,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 头不被覆盖：名称/主题/禁用状态原样；不新增任何块（禁止为原有模板删块/加块）。
             assertEquals(1L, connection.queryLong(
@@ -1967,7 +2331,7 @@ class FlywayMigrationIntegrationTest {
             contactsBefore = connection.queryLong("SELECT COUNT(*) FROM expert_contact")
         }
 
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("expert_mailbox_suspension"))
             listOf("username", "expert_contact_id", "reason").forEach { column ->
@@ -2081,7 +2445,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 列契约：VARCHAR(16) NOT NULL DEFAULT 'FOLLOWING'；不新增 provided 布尔列。
             assertTrue(connection.columnExists("expert_follow", "progress_status"))
@@ -2145,7 +2509,7 @@ class FlywayMigrationIntegrationTest {
             assertFalse(c.tableExists("expert_contact_note"))
             c.queryString("SELECT CONCAT(id, '|', campaign_id, '|', orcid_id, '|', current_status, '|', updated_at) FROM expert_contact WHERE id=1")
         }
-        assertEquals("152", flyway().migrate().targetSchemaVersion)
+        assertEquals("153", flyway().migrate().targetSchemaVersion)
         connection().use { c ->
             assertEquals(before, c.queryString("SELECT CONCAT(id, '|', campaign_id, '|', orcid_id, '|', current_status, '|', updated_at) FROM expert_contact WHERE id=1"))
             assertEquals(2L, c.queryLong("SELECT COUNT(*) FROM expert_contact"))
