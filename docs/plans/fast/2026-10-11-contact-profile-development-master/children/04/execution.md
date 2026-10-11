@@ -114,3 +114,8 @@ VideoView（逐字，13 键）：`{id, expertId, originalFilename, displayFilena
 - **浏览器断网取消 / 转码兼容性 / 拖动手感**：人工验收项（A-3/A-4），本子计划不包含前端。
 - **1 GiB+1 真实流超限的响应形态**：容器可能按 `maxSwallowSize` 提前断连而拿不到 JSON（计划的「结果未确认」路径）；IT 对两种结果都接受，并**强制断言**不落库、不留文件。
 - 观察（不改动）：Spring 5.3 的 416 会写出资源体；大文件 416 会浪费一次连接带宽，属框架行为，I-8 禁止自制解析器，已在手册记录客户端应立即停止读取。
+
+### Controller closing record — 2026-10-12
+
+本文件在 fast-p child 04 的 brief 更正提交 `f45b8f8` 中被一并提交（controller 的 `git add` 范围过宽），导致首版证据提交 `57d67bf` 未包含 execution.md。为满足「child 证据提交必须同时记录 execution.md 与 verify-log.md」的 artifact 契约，controller 追加本真实记录，并以本次提交作为 child 04 的正式 Evidence commit；上文全部内容未做任何修改，verifier 结论与命令证据不受影响。
+

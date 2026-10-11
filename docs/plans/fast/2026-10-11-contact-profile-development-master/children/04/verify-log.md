@@ -25,3 +25,7 @@ Verifier: Verify04
 ### Required Action
 - COMPLETE_CHILD
 
+### Controller evidence note — 2026-10-12
+
+本报告由 Verify04 追加于 `57d67bf`（当时作为中间证据提交）。因 execution.md 更早被包含在 `f45b8f8`（brief 更正提交）中，controller 追加本真实备注，并以本次提交重新锚定 child 04 的 Evidence commit；verifier 的四门禁结论、命令计数与 RECORD_ONLY 内容均未改动。
+
