@@ -124,3 +124,101 @@ src/test/js/expertManualProfile.test.js:927    assert.strictEqual(CACHE_KEY, PLA
 ### Next Action
 
 - PLAN_CONFLICT → 人工决定 R1/R2 后重跑 child 03（本轮未落地任何改动，可直接从 `9f147560f0e83ec3b111e1e8ec4eb0c95376ddf1` 重新开始）。
+
+---
+
+# Child 03 — Epoch 2 执行结果（2026-10-11，阻塞已由 amendment A1 消解）
+
+## Execution Result: READY_FOR_VERIFICATION
+
+Plan: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-11-contact-profile-development-master/docs/plans/2026-10-11/contact-profile-03-notes.md
+Plan SHA-256: 9e5cbc3c7e4ffabcc4b80ccb022cfde113fd31192b8ced7b6a033dd6e4911bc3
+Execution ID: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-11-contact-profile-development-master/docs/plans/2026-10-11/contact-profile-03-notes.md@9e5cbc3c7e4ffabcc4b80ccb022cfde113fd31192b8ced7b6a033dd6e4911bc3
+Execution epoch: RESUME（epoch 2；epoch 1 为 PLAN_CONFLICT，未落地产品改动）
+Approval basis: 人工批准 R1 → amendment A1 落地于 `d484e4c`（`docs/plans/2026-10-11/contact-profile-02-ui.md` 键字面量同步为 `20261011-contact-profile-03`，复刻 02 测试同源 regex 实测解析 = `-03`）；控制器 IRC 指令「Resume child 03 at epoch 2」+ brief 的「Epoch 2 恢复说明」+ 原始任务合同
+Executor: Impl03（fast-p child 03）
+Target worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-11-contact-profile-development-master
+Target branch: fast/2026-10-11-contact-profile-development-master
+Worktree ID: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-11-contact-profile-development-master@fast/2026-10-11-contact-profile-development-master@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-2026-10-11-contact-profile-development-master
+Pre-execution code SHA: 7297d1d17bd48da6fd64368a3477b6d5855b5aeb（A1 + resume 的 docs 提交）
+Post-execution code SHA: 89a23d351084debc54c7516898138320028fb5c1
+Evidence HEAD: N/A（本子计划只有一次实现提交；本报告为未提交证据，由控制器单独提交）
+Implementation boundary: 7297d1d..89a23d3（3 个授权文件，+1526/-12）
+提交信息: `feat(fast-p): implement 03`（恰一次；未 push/merge/rebase/amend/squash）
+
+### Task Status
+
+| Requirement | Status | Files | Evidence |
+|---|---|---|---|
+| I-1 单一来源（仅 GET `/api/mail/contact-notes/{contactId}`；无 PUT/localStorage/专家级副本；空或非法 contactId 零请求、不建联系人） | IMPLEMENTED | app.js（`EXPERT_CONTACT_SHARED_NOTE_URL`、`loadExpertContactSharedNote`、`expertContactSharedNoteContactId`） | 用例「有 contact：只发一次 GET…全程 0 次写请求」「无 contact：零请求…」「非法 contactId（0/null 文本）」「loadContactDetail：按 contact.id 读备注」「showExpertDetail（无 contact）：零备注请求」；URL 只含 contactId、不含 expertId；付款/写请求断言 `requests.filter(method !== "GET") === []` |
+| I-2 五态（加载中 / 有内容 / 空内容「暂无备注」/ 失败「备注加载失败，请重试」/ 无联系人「尚无收发件箱备注」；失败不显示无备注且不阻断四组编辑与旧材料） | IMPLEMENTED | app.js（`expertContactSharedNoteRender`、`expertContactSharedNoteErrorMessage`、`expertContactSharedNoteSetRefresh`） | 用例「加载中」（加载文案+刷新禁用→成功后内容/元信息+刷新恢复）、「成功空内容」、「成功有内容」、「失败（500）…不阻断四组资料编辑」（`session.loaded===true`、四组 `editButton.disabled===false`、`failures===[]`）、「失败（400/404）」、「失败（网络中断）…刷新后恢复」、「失败后刷新仍失败：保留上一次成功内容」、「401…」、「失败不阻断旧材料」 |
+| I-3 隔离与编码（02 generation+readSeq+contactId 守卫；textContent 转义 + 换行可见；进入即读、刷新再读） | IMPLEMENTED | app.js（`loadExpertContactSharedNote` 的 `session.isStale() \|\| readSeq !== note.readSeq \|\| contactId !== …` 三重守卫、`mountExpertContactSharedNote`、`unmountExpertContactSharedNote`） | 用例「同一 expertId 不同 contactId：甲活动不覆盖乙活动」（迟到响应被丢弃）、「卸载/切人：在途备注请求被中止」（`request.signal.aborted === true`、closed 会话不回绘）、「编码：HTML 字符串只作纯文本，不构造元素；换行原样保留」、「换行可见：.ec-text 声明 white-space: pre-wrap」 |
+| S-1 DOM（计划逐字 section；ec-profile 首子节点=nav 之前；无 contact 隐藏刷新、加载中禁用；无新 CSS/class/inline style/图标） | IMPLEMENTED | app.js（`expertContactSharedNoteSectionTemplate`） | 用例「S-1：section 模板与 03 计划逐字一致，且只用已声明的 class」（与计划 ```html 块逐字比较；class 均在 styles.css 已声明）、「挂载后：备注 section 是 ec-profile 首子节点（nav 之前）…」（`profile.firstElementChild === section`、`children[1].className === "ec-nav"`、role/aria-live/hidden/type/class 断言、5 个 `.ec-section` = 4 组 + 备注、4 个 `.ec-editor`、nav 四按钮） |
+| 缓存键（index.html 原 11 个 `?v=` 统一为 `20261011-contact-profile-03`，不增资产、不改顺序） | IMPLEMENTED | index.html | 11 个键同值（`count: 11`、`distinct: ["20261011-contact-profile-03"]`）；顺序 styles.css→expert-materials.css→mailbox-chat.css→meeting-confirmation.css→world-clock.css→trust-reply-workbench.js→expert-materials.js→meeting-confirmation.js→mailbox-chat.js→app.js→world-clock.js；用例「缓存键：index.html 11 项统一为 03 计划键…测试自身不固化字面量」（目标值从 03 计划 `同步为` 解析，实值从 index.html 派生） |
+| 新测试文件（真实 DOM、五态、隔离、失败独立、宿主入口） | IMPLEMENTED | src/test/js/expertContactSharedNote.test.js | 24 用例 / 6 suite 全绿；真实执行 02 区域 + 03 区域于可解析 innerHTML 的小型 DOM；含「停止态：未加载 03 区域的沙箱里，02 骨架仍是四组 section/editor」 |
+| 02 静态契约测试未被破坏（O-1 约束） | IMPLEMENTED | （未修改 `expertManualProfile.test.js`） | required 双文件命令 exit 0：tests 48 / pass 48 / fail 0；02 测试仍断言 4×`.ec-section` / 4×`.ec-editor` / nav 四按钮 / S-2-at-EOF（03 的 section 在其沙箱中不可见，靠三个 typeof 守卫） |
+
+### Commands（全部在最终提交状态下真实运行）
+
+| Command | Result | Evidence |
+|---|---|---|
+| `node --check src/main/resources/static/app.js` | PASS | exit 0 |
+| `node --test src/test/js/expertContactSharedNote.test.js src/test/js/expertManualProfile.test.js` | PASS | exit 0；tests 48 / suites 12 / pass 48 / fail 0 / cancelled 0 / skipped 0 / todo 0（= 03 的 24 + 02 的 24） |
+| `node --test src/test/js/*.test.js` | PASS | exit 0；tests 1616 / suites 310 / pass 1616 / fail 0 / cancelled 0 / skipped 0 / todo 0（= brief 基线 1592 + 03 新增 24，0 回归） |
+| 单文件迭代（03 测试） | PASS | exit 0；tests 24 / suites 6 / pass 24 / fail 0 |
+| 提交前/提交后各跑一次全部三条命令 | PASS | 两次结果一致（提交只改 git 记录，不改内容） |
+| 键审计（`node -e` 从 index.html 提取 `?v=`） | PASS | `key count: 11`，`distinct: ["20261011-contact-profile-03"]`，顺序未变 |
+| `git diff --numstat 7297d1d..89a23d3` | 3 文件 | app.js 263/1、index.html 11/11、expertContactSharedNote.test.js 1252/0（styles.css 未触碰） |
+| `git show --name-status HEAD` | OK | 恰 3 个文件（M app.js、M index.html、A expertContactSharedNote.test.js），信息 `feat(fast-p): implement 03` |
+
+### Changed Files
+
+- `src/main/resources/static/app.js` — 新增 03 区域（`/* contact-profile-03-notes:begin */ … :end */`，位于 02 区域之外）：section 模板、contactId 规范化、元信息（修改人 · 北京时间）、错误映射、状态与渲染（五态）、独立读（generation+readSeq+contactId 守卫、AbortController）、挂载/卸载入口；另在 02 区域加 3 个 typeof 守卫调用点（`expertManualProfileShellTemplate` 前置拼接、`mountExpertManualProfile` 启动读、`unmountExpertManualProfileSession` 中止）。
+- `src/main/resources/static/index.html` — 11 个 `?v=` 键统一为 `20261011-contact-profile-03`（+11/-11），资源数量与顺序不变，未新增/重排。
+- `src/test/js/expertContactSharedNote.test.js` — 新建 24 用例 / 6 suite：静态契约（模板逐字、缓存键、区域边界与守卫计数、02 切片沙箱不回退）、宿主结构、I-1、I-2 五态、I-3 隔离与编码、两宿主入口。
+
+### Deviations（实现选择；计划未逐字给出的部分）
+
+1. **错误文案映射**（计划只说「失败显示『备注加载失败，请重试』」「400/404显示不可读取」「401走既有登录处理」）：400/404 → 「备注不可读取」；401/UNAUTHORIZED → 「登录已失效，请重新登录后再试」（与 02 的 401 文案一致，且 401 仍由 `api()`→`handleAuthResponse` 先行收口）；其余（5xx/网络/非法响应）→ 「备注加载失败，请重试」。三种都写入 S-1 的 `.ec-error[role=alert]`，内容槽位绝不渲染成「暂无备注」。
+2. **失败时的内容槽位**：失败保留上一次成功内容（用例「失败后刷新仍失败」锁定）；首次加载即失败时内容槽位为空（不留加载占位），错误文案可见 —— 这是「400/404 显示不可读取而非清空」的可实现解释：错误走 `.ec-error`（S-1 指定的错误位），内容槽位不做业务空值渲染。
+3. **加载中文案**「正在加载备注…」与元信息格式 `updatedBy · yyyy-MM-dd HH:mm 北京时间`（与 mailbox-chat.js 的专家备注同文案）为计划未指定字面量处的最小实现选择；无修改人/时间（空备注）时不显示元信息。
+4. **与 02 的耦合方式**：按 brief 指定的 typeof 守卫约定，在 02 区域内保持 3 个守卫调用点，03 区域整体落在 02 区域标记之外（用例「区域边界」对三个守卫各计数 1 次）；未改 02 的任何断言对象（4×section/4×editor/nav 四按钮/S-2 CSS 末尾均保持）。
+5. **刷新按钮重读**：刷新点击复用同一 `loadExpertContactSharedNote`（一次 GET，仅更新该 section），并把返回 promise 存入 `note.ready` 以便测试 await；不新增按钮/端点。
+6. **测试不固化缓存键**：03 测试从 index.html 派生实键、从 03 计划正文 `11项资源键同步为 \`…\`` 解析目标键，并自断言文件内无键字面量（满足 `taskActivityCenter.test.js:696-702` 的「键字面量只允许出现在 index.html」扫描，K-frontend-cache-key-triad）。
+7. **测试自带小型 DOM**：按本仓惯例为独立副本（innerHTML 解析 / 选择器 / 事件冒泡 / dataset / dialog / isConnected），仅覆盖用到的子集；为使 `$("#id")` 生效补了 `#id` 选择器支持。
+
+### Downstream Interfaces（04/05 与验证可复用，均已实测）
+
+- **区域标记**：`app.js` 内 `/* contact-profile-03-notes:begin */ … :end */`；03 区域在 02 区域之后（`APP_SOURCE.indexOf(begin03) > indexOf(end02)`）。
+- **挂载/卸载入口**：`mountExpertContactSharedNote(session)` / `unmountExpertContactSharedNote(session)`（均由 02 区域的 typeof 守卫调用；会话对象新增字段 `session.sharedNote`）。
+- **`session.sharedNote` 结构**：`{contentEl, metaEl, errorEl, refreshButton, noContact, loading, error, content, meta, controller, readSeq, ready}`；`note.ready` 是当前读的 promise（刷新会替换）。
+- **插入点**：备注 section 是 `ec-profile` 宿主的**第一个子节点**（在 `nav.ec-nav` 之前，紧邻宿主开头）→ 05 的视频 section（按 05 计划插在四组 section 之后）不会与 03 抢位；05 不应改动 `expertManualProfileShellTemplate` 的前置拼接顺序（如需新增，请沿用同一 `typeof` 守卫惯例并落在自己的区域）。
+- **02 契约保持**：02 静态测试（`expertManualProfile.test.js`）在 03 之下仍全绿；03 只增加 02 区域内的 3 个守卫调用点，未新增 class/CSS（`styles.css` 未改，S-2 仍是文件末尾）。
+- **接口与 DTO**：`GET /api/mail/contact-notes/{contactId}` → `{contactId, note, updatedBy, updatedAt}`，`updatedAt` 形如 `2026-10-11T10:00:00.000+08:00`（固定 +08:00，前端展示为「北京时间」）；400/404/401 三形态均已映射。
+- **缓存键状态**：index.html 11 键 = `20261011-contact-profile-03`；`taskActivityCenter.test.js:37` 的 `RETIRED_KEYS` 不含该键的前值（`-02`），故 bump 不触发旧键残留断言。
+
+### Freshness
+
+- Plan identity rechecked: YES（执行前后同为 9e5cbc3c…；02 计划在 A1 后仅键字面量变化，不影响 03 计划身份）
+- Worktree identity rechecked: YES（`--expect-root/--expect-branch/--expect-git-dir` 通过；HEAD 由 7297d1d → 89a23d3）
+- Reported commits reachable from target branch: YES（`89a23d3` 为 HEAD，`git merge-base --is-ancestor HEAD <branch>` 通过）
+- Required commands run this invocation: YES（三条均在最终提交状态下重跑，计数/退出码见上）
+- Historical evidence used only as baseline: YES（1592 基线来自 brief/02 verify-log，仅作对照；本轮实测 1616 = 1592 + 24）
+
+### Remaining Blocker
+
+- None
+
+### Remaining Risks（未验证项，交人工/验证环节）
+
+1. **无真实浏览器人工验收**：03 计划的 A-1（收发件箱写备注→详情显示→刷新同步）、A-2（同 expert 两 campaign 备注隔离 + 无 contact 专家空态）、A-3（拦截请求后的错误文案、390px 长文本换行、14px 标题/12px 元信息）尚未执行；DOM 夹具通过不等于浏览器验收（计划 §人工验收清单）。
+2. **未运行 `mvn test`**：白名单只列 3 条 node 命令；`pom.xml` exec-maven-plugin 会在 `mvn test` 的 test 阶段跑同一批 JS 用例，新文件的 Maven 阶段绑定未实测。
+3. **元信息时区**：依赖 `Intl.DateTimeFormat` + `Asia/Shanghai`；若运行环境缺失完整 ICU（当前 Node v25.7.0 有），时间回退为服务端原串（不会抛错、不会空显示）。
+4. **失败保留旧内容的语义**：刷新失败时内容槽位保留上一次成功值（用例锁定），若人工验收希望「失败即清空」需回到计划层确认（I-2 只禁止显示成「暂无备注」）。
+5. **备注 section 与 05 视频 section 的最终顺序**：03 占宿主首位、05 计划插在四组之后；若 05 想把视频放在备注之前需在 05 计划内明确，避免两者都往 `expertManualProfileShellTemplate` 前置拼接。
+6. **`pendingMailOperation`/材料链路未触碰**：03 只读备注，未改收发件箱 PUT 与 2000 字上限（计划保持项），未做跨模块回归（属性上无共享写路径）。
+
+### Next Action
+
+- READY_FOR_VERIFICATION → run `verify-p`（验证者请特别核对：`.ec-error` 文案映射与「400/404 显示不可读取而非清空」的解释、备注 section 与计划逐字一致、02 静态测试仍绿、缓存键 11 项）；随后按 03 计划 A-1–A-3 做浏览器人工验收。
+

@@ -1,2 +1,26 @@
 # Child 03 — Verify Log
 
+_Epoch 2 · attempt 1 · 2026-10-12 00:06 CST · reviewed f7eb96..89a23d_
+
+## Light Verification: LIGHT_PASS
+Child: 03 docs/plans/2026-10-11/contact-profile-03-notes.md
+Boundary: f7eb96bd6408efd0d9e538ff5ff81e78b1633ecb..89a23d351084debc54c7516898138320028fb5c1
+Verifier: Verify03
+
+### Four Gates
+| Gate | Result | Evidence |
+|---|---|---|
+| Authorized scope | PASS | `git show --name-status 89a23d3` = exactly the 3 authorized files (M app.js, M index.html, A expertContactSharedNote.test.js), message `feat(fast-p): implement 03`, and it is the only range commit touching `src/` (`git log f7eb96b..89a23d3 -- src/`). `git diff --numstat 7297d1d..89a23d3` = app.js 263/1, index.html 11/11, test 1252/0. styles.css + expertManualProfile.test.js untouched in the implementation commit and across the range (`git diff --stat f7eb96b 89a23d3 -- <both>` empty; 02 test last touched at f7eb96b); backend/db/config/mailbox-chat.js diff over the range empty. Worktree == commit (sha256 index.html `078801dd…` equals `git show 89a23d3:src/main/resources/static/index.html`); `git status --porcelain` = only uncommitted children/03/execution.md, no untracked residue. Remaining range changes are docs bookkeeping only (02 plan A1 amendment d484e4c, brief/execution/fix-log/verify-log, handoff, ledger). |
+| Plan and invariants | PASS | I-1: single read site `app.js:12118` `api(/api/mail/contact-notes/{contactId})` — no `method` passed, so `api()` (`app.js:4686`) issues GET; 03 region has zero `localStorage`/`method`/write calls; only server PUT to contact-notes is the pre-existing mailbox path (`mailbox-chat.js:3663`, unchanged). `expertContactSharedNoteContactId` (`app.js:11962-11967`) rejects non-integral/non-positive ids → early no-contact branch (`app.js:12118` not reached) = 0 requests and no contact creation (every 03 request is a GET; asserted `requests.filter(method!=='GET')===[]`). A valid-but-DB-missing id hits the 404 error state rather than a literal no-contact request (plan §实现方案 2), so "empty/non-existent contactId ⇒ 0 requests" holds for the empty/absent case. I-2 five states in `expertContactSharedNoteRender` (`app.js:12058-12086`): loading 正在加载备注…, content, empty 暂无备注, failure (`.ec-error` = 备注加载失败，请重试; content slot never rendered as 暂无备注; 400/404 → 备注不可读取) and no-contact 尚无收发件箱备注; 401 flows through real `handleAuthResponse` (`task-modal-runtime.js:311` throws UNAUTHORIZED). Failure independence: note read is a separate call (`app.js:11922`) outside any Promise.all (region grep = 0), so `session.ready`/four groups/old materials proceed (tests assert `session.loaded===true`, 4 editors enabled, `failures===[]`). I-3: post-await guard `session.isStale() \|\| readSeq !== note.readSeq \|\| contactId !== expertContactSharedNoteContactId(session)` (`app.js:12125`), abort + `readSeq+1` on unmount (`app.js:12166-12172`); all dynamic text via `textContent` (no `innerHTML` in region); newlines visible via `.ec-text{white-space:pre-wrap}` (styles.css:12886). S-1: `expertContactSharedNoteSectionTemplate` (`app.js:11952-11958`) is byte-identical to the plan's fenced block (independent extraction: both 414 bytes, EQUAL:true), prepended before `nav.ec-nav` (`app.js:11459-11467`) and written as the ec-profile host content (`app.js:11918`) ⇒ first child of the host; hooks `data-role="expert-shared-note"` / `data-ec-refresh-note` / `data-role="note-content"` / `data-role="note-meta"` present exactly as planned; no contact ⇒ refresh hidden, loading ⇒ disabled (`app.js:12050-12056`); no new CSS (styles.css untouched), no inline style, and every class used is already declared (`.button` styles.css:802, `.ec-section` :12882, `.ec-heading` :12883, `.ec-text` :12886, `.ec-message` :12887, `.ec-error` :12888, `[hidden]{display:none!important}` :96). Cache keys: 11 `?v=` values all `20261011-contact-profile-03` (grep count 11 / 1 distinct), and the asset list (names + order) is identical to f7eb96b (`diff` of extracted lists = IDENTICAL). |
+| Required commands | PASS | Fresh in worktree at 89a23d3: (1) `node --test src/test/js/expertContactSharedNote.test.js src/test/js/expertManualProfile.test.js` → exit 0, tests 48 / pass 48 / fail 0 (per-file: 03 = 24/24, 02 = 24/24); (2) `node --test src/test/js/*.test.js` → exit 0, tests 1616 / pass 1616 / fail 0 (= baseline 1592 + 24 new, no test lost/re-keyed); (3) `node --check src/main/resources/static/app.js` → exit 0. All match the implementer's reported counts (48/48, 1616/1616, exit 0). |
+| Downstream interfaces | PASS | Note section occupies the ec-profile host's first slot (before `nav.ec-nav`, `app.js:11467`) and 05's plan inserts its block only after the four groups (`contact-profile-05-video-ui.md:73` "区块在四组档案后、原有邮件/材料区域前") — no slot conflict; 03 adds no interface dependency (reuses the existing contact-notes GET). 02's static contract test stays green with its file byte-identical to the verified state (last touched f7eb96b; 02 sandbox executes only the 02 region, `expertManualProfile.test.js:800`, so the three `typeof` guards keep the note section out of it; its cache-key pin parses `20261011-contact-profile-03` from the A1-amended plan line `contact-profile-02-ui.md:102`, equal to index.html's key). |
+
+### AUTO_FIX
+- N/A
+
+### RECORD_ONLY
+- N/A
+
+### Required Action
+- COMPLETE_CHILD
+
