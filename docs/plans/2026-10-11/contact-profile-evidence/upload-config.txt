@@ -1,0 +1,38 @@
+$ rg -n max-file-size|max-request-size|MAX_FILE_BYTES|MAX_UPLOAD|normalizeOutboundFileName|isPreviewable|Range|HttpServletRequest|storagePath src/main/kotlin/com/weibo/talentintroduction/document src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentModels.kt src/main/resources/application.yml
+exit=0
+src/main/resources/application.yml:19:      # MB = 1024^2，故 max-file-size 100MB 恰好等于该业务上限，max-request-size 101MB
+src/main/resources/application.yml:22:      # 旧「人工回复通用附件」服务仍以自己的 MAX_FILE_BYTES = 10 MiB 常量二次拒绝
+src/main/resources/application.yml:24:      max-file-size: 100MB
+src/main/resources/application.yml:25:      max-request-size: 101MB
+src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentModels.kt:16:const val MAX_FILE_BYTES = 10L * 1024 * 1024
+src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentModels.kt:214:            if (snapshot.byteLength < 0 || snapshot.byteLength > MAX_FILE_BYTES) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentModels.kt:237:internal fun normalizeOutboundFileName(raw: String?): String {
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:138:        val rawStoragePath = attachment.storagePath
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:146:        val storagePath = Path.of(rawStoragePath).toAbsolutePath().normalize()
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:147:        if (!Files.exists(storagePath)) {
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:154:        if (!Files.isRegularFile(storagePath)) {
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:163:        val realStoragePath = storagePath.toRealPath()
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:172:        val rawStoragePath = attachment.storagePath
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:177:            val storagePath = Path.of(rawStoragePath).toAbsolutePath().normalize()
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:178:            if (!Files.exists(storagePath) || !Files.isRegularFile(storagePath)) {
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:182:            val realStoragePath = storagePath.toRealPath()
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:193:    fun isPreviewableContentType(contentType: String): Boolean =
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:215:            storagePath = rs.getString("storage_path"),
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:389:                canPreview = canDownload && isPreviewableContentType(contentType),
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:532:        val rawStoragePath = row.storagePath
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:537:            val storagePath = Path.of(rawStoragePath).toAbsolutePath().normalize()
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:538:            if (!Files.exists(storagePath) || !Files.isRegularFile(storagePath)) {
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:542:            val realStoragePath = storagePath.toRealPath()
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:899:// 领域 DTO（与查询同文件；固定字段集，绝不输出 storagePath/凭据/workerToken）
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:1008:    val storagePath: String?,
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:17:import com.weibo.talentintroduction.mail.service.normalizeOutboundFileName
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:29: * 手动材料上传成功响应（201）。只含业务元数据：绝不含 storagePath、绝对根路径或
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:89:        val fileName = normalizeOutboundFileName(originalFilename)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:119:                        storagePath = finalPath.toString(),
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:65:            val hasLocalFile = attachment.storagePath != null
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:77:                previewable = hasLocalFile && isPreviewable(contentType),
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:108:        val previewable = isPreviewable(resource.contentType)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:129:    private fun isPreviewable(contentType: String): Boolean =
+src/main/kotlin/com/weibo/talentintroduction/document/controller/ExpertMaterialController.kt:28:import javax.servlet.http.HttpServletRequest
+src/main/kotlin/com/weibo/talentintroduction/document/controller/ExpertMaterialController.kt:61:        servletRequest: HttpServletRequest
+src/main/kotlin/com/weibo/talentintroduction/document/controller/ExpertMaterialController.kt:85:        servletRequest: HttpServletRequest

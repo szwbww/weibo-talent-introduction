@@ -1,0 +1,86 @@
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt
+
+465:     private fun toExpertProfile(hit: JsonNode): ExpertProfile {
+466:         val source = hit.path("_source").takeUnless(JsonNode::isMissingNode) ?: hit
+467:         val esDocId = hit.path("_id").asText(null)
+468:         return ExpertProfile(
+469:             esDocId = esDocId,
+470:             orcidId = source.nullableText("orcidId")
+471:                 ?: source.nullableText("orcid")
+472:                 ?: source.nullableText("id")
+473:                 ?: "",
+474:             email = source.nullableText("email"),
+475:             givenNames = source.nullableText("givenNames"),
+476:             familyNames = source.nullableText("familyNames"),
+477:             country = source.nullableText("country"),
+478:             keyword = source.nullableText("keyword"),
+479:             employment = source.nullableText("employment"),
+480:             age = source.path("age").let { if (it.isInt) it.asInt() else null },
+481:             degree = source.nullableText("degree"),
+482:             nationality = source.nullableText("nationality"),
+483:             hIndex = source.path("hIndex").let { if (it.isInt) it.asInt() else null },
+484:             citationCount = source.path("citationCount").let { if (it.isInt) it.asInt() else null },
+485:             lastPublicationYear = source.path("lastPublicationYear").let { if (it.isInt) it.asInt() else null },
+486:             researchFields = source.nullableText("researchFields"),
+487:             disciplineCategory = source.nullableText("disciplineCategory"),
+488:             institution = source.nullableText("institution"),
+489:             institutionType = source.nullableText("institutionType")?.takeIf { it.isNotBlank() },
+490:             emailSource = source.nullableText("emailSource"),
+491:             emailVerifiedLevel = source.path("emailVerifiedLevel").let { if (it.isInt) it.asInt() else null },
+492:             dataSource = source.nullableText("dataSource"),
+493:             externalIds = source.path("externalIds").let { if (it.isObject) it.toString() else null },
+494:             worksCount = source.path("worksCount").let { if (it.isInt) it.asInt() else null },
+495:             tags = source.path("tags").takeIf { it.isArray }
+
+829:     fun findByOrcidId(orcidId: String, level: ExpertIndexLevel): ExpertProfile? {
+830:         require(orcidId.isNotBlank()) { "orcidId must not be blank" }
+831: 
+832:         val requestBody = mapOf(
+833:             "size" to 1,
+834:             "_source" to sourceFields(),
+835:             "query" to mapOf("term" to mapOf("orcidId" to orcidId))
+836:         )
+837: 
+838:         val response = restTemplate.exchange(
+839:             "${properties.baseUrl}/${expertIndexService.indexName(level)}/_search",
+840:             HttpMethod.POST,
+841:             HttpEntity(requestBody, headers()),
+842:             JsonNode::class.java
+843:         ).body ?: return null
+844: 
+845:         val hits = response.path("hits").path("hits")
+846:         if (!hits.isArray || hits.isEmpty) {
+847:             return null
+848:         }
+849:         return toExpertProfile(hits[0])
+850:     }
+851: 
+852:     /**
+853:      * I-1/I-3：按真实 `_id` 批量读取（`_mget`），结果复用 [toExpertProfile]，因此与列表/详情读到同一批字段。
+854:      * `orcidId` 只是文档里的一个字段：搜索式 `findByOrcidId` 不能保证命中真实文档，定位一律以 `_id` 为准。
+855:      * 未命中的 id（`found=false`）不产出条目，也不补空对象；入参为空时不发请求。
+856:      */
+857:     fun findByDocumentIds(level: ExpertIndexLevel, ids: List<String>): List<ExpertProfile> {
+858:         val documentIds = ids.filter { it.isNotBlank() }.distinct()
+859:         if (documentIds.isEmpty()) return emptyList()
+860: 
+861:         val index = expertIndexService.indexName(level)
+862:         val requestBody = mapOf(
+863:             "docs" to documentIds.map { mapOf("_index" to index, "_id" to it, "_source" to sourceFields()) }
+864:         )
+865: 
+866:         val response = restTemplate.exchange(
+867:             "${properties.baseUrl}/_mget",
+868:             HttpMethod.POST,
+869:             HttpEntity(requestBody, headers()),
+870:             JsonNode::class.java
+871:         ).body ?: return emptyList()
+872: 
+873:         return response.path("docs")
+874:             .filter { it.path("found").asBoolean(false) }
+875:             .map { toExpertProfile(it) }
+876:     }
+877: 
+878:     fun countByFieldPresence(
+879:         level: ExpertIndexLevel,
+880:         fields: List<String>,

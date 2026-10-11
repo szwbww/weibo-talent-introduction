@@ -1,0 +1,150 @@
+$ rg -n fun |orcidId|esDocId|dynamic src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIdNormalizer.kt src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt src/main/resources/es
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIdNormalizer.kt:6:    fun normalize(id: String): String {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:56:        fun fieldPresenceFilter(field: String): Map<String, Any> =
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:74:        fun fieldPresenceFilters(fields: List<String>): List<Map<String, Any>> =
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:82:        fun disciplineFilter(discipline: String): Map<String, Any> {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:108:        fun expertTypesFilter(types: List<String>): Map<String, Any>? {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:134:        private fun expertTypePredicate(type: String): Map<String, Any> =
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:145:        fun regionFilter(region: String): Map<String, Any> {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:182:        fun regionsFilter(regions: List<String>): Map<String, Any>? {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:198:        fun emailDomainsFilter(emailDomains: List<String>): Map<String, Any>? {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:215:        fun notContactedWithEmailDomainsFilters(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:235:        fun notContactedWithEmailFilters(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:263:        fun operatorStatusFilter(status: String): List<Map<String, Any>> {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:279:        fun operatorStatusPredicate(status: String): Map<String, Any> =
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:292:        fun operatorStatusesFilter(statuses: List<String>): Map<String, Any>? {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:304:    fun searchExperts(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:364:    fun searchExpertsWithEmail(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:397:    fun scrollExperts(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:405:    fun scrollExperts(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:465:    private fun toExpertProfile(hit: JsonNode): ExpertProfile {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:467:        val esDocId = hit.path("_id").asText(null)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:469:            esDocId = esDocId,
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:470:            orcidId = source.nullableText("orcidId")
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:520:    private fun parseExpertClassification(node: JsonNode): ExpertClassification? {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:551:    private fun stringArrayOrNull(node: JsonNode, field: String): List<String>? {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:560:    private fun parseClassifiedAt(node: JsonNode): LocalDateTime? {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:582:    private fun JsonNode.nullableText(field: String): String? {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:587:    private fun sourceFields(): List<String> =
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:589:            "orcidId", "orcid", "id",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:605:    private fun sortFields(level: ExpertIndexLevel): List<Map<String, Any>> =
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:617:    private fun dateSort(field: String): Map<String, Any> =
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:626:    private fun headers(): HttpHeaders =
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:632:    private fun basicAuthHeader(): String {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:638:    fun searchByOrcidIds(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:639:        orcidIds: List<String>,
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:642:        if (orcidIds.isEmpty()) return emptyList()
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:645:            "size" to orcidIds.size,
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:649:                    "orcidId" to orcidIds
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:665:    fun searchExpertsFiltered(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:700:    fun countExperts(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:720:    fun scrollExpertsFiltered(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:786:    fun searchAfterExpertsFiltered(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:805:                "sort" to listOf(mapOf("orcidId" to "asc"))
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:829:    fun findByOrcidId(orcidId: String, level: ExpertIndexLevel): ExpertProfile? {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:830:        require(orcidId.isNotBlank()) { "orcidId must not be blank" }
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:835:            "query" to mapOf("term" to mapOf("orcidId" to orcidId))
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:854:     * `orcidId` 只是文档里的一个字段：搜索式 `findByOrcidId` 不能保证命中真实文档，定位一律以 `_id` 为准。
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:857:    fun findByDocumentIds(level: ExpertIndexLevel, ids: List<String>): List<ExpertProfile> {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:878:    fun countByFieldPresence(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:889:    fun findRandomByFieldPresence(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:928:    private fun buildFieldPresenceQuery(fields: List<String>, mode: FieldPresenceMode): Map<String, Any> =
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:938:    private fun buildFieldPresenceFilters(fields: List<String>, mode: FieldPresenceMode): List<Map<String, Any>> =
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:959:    private fun ExpertProfile.hasNonBlankEsField(esField: String): Boolean =
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:976:    fun aggregateTags(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:1021:    fun aggregateRegions(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:1071:    private fun emptyRegionCounts(): List<RegionCount> =
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:1074:    private fun buildExpertFilters(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:1131:    fun aggregateEmailDomains(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:1179:    fun searchExpertsByTypesWithEmail(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:55:    fun markApplicationClosed(contact: ExpertContact) {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:58:        val orcid = ExpertIdNormalizer.normalize(contact.orcidId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:80:    fun syncOperatorStatus(orcidId: String, operatorStatus: String): SingleSyncResult {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:84:        val normalizedOrcidId = ExpertIdNormalizer.normalize(orcidId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:127:    fun syncOperatorStatusBatch(updates: List<Pair<String, String>>): BulkSyncResult {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:129:        // per layer resolve orcidId → _id and bulk-update, aggregating results.
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:138:                    // Resolve orcidId → _id mapping via terms query
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:139:                    val orcidIds = batch.map { ExpertIdNormalizer.normalize(it.first) }.distinct()
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:140:                    val idMapping = resolveOrcidToDocIds(index, orcidIds)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:142:                    val bulkBody = batch.joinToString(separator = "\n", postfix = "\n") { (orcidId, operatorStatus) ->
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:143:                        val normalizedOrcidId = ExpertIdNormalizer.normalize(orcidId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:165:                    // Count orcidIds not found in this layer as skipped
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:166:                    for ((orcidId, _) in batch) {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:167:                        if (!idMapping.containsKey(ExpertIdNormalizer.normalize(orcidId))) {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:174:                        log.debug("No _id mappings found for batch of {} orcidIds in index {}", batch.size, index)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:231:     * 每个 item 按 [ClassificationBulkItem.esDocId] 更新原索引 `_id`，NDJSON data 逐字结构为
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:239:    fun bulkUpdateExpertClassifications(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:251:                val meta = mapOf("update" to mapOf("_id" to item.esDocId, "_index" to index))
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:271:                        recordClassificationFailure(results, failureSamples, item.esDocId, "Empty bulk response from ES")
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:279:                        recordClassificationFailure(results, failureSamples, item.esDocId, "Bulk response items path is not an array")
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:290:                            results += ClassificationBulkItemResult(item.esDocId, ClassificationBulkItemStatus.NOOP)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:293:                            results += ClassificationBulkItemResult(item.esDocId, ClassificationBulkItemStatus.UPDATED)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:301:                            recordClassificationFailure(results, failureSamples, item.esDocId, errReason)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:308:                    recordClassificationFailure(results, failureSamples, item.esDocId, "Bulk request failed: ${e.message}")
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:328:    fun checkExpertClassificationMapping(level: ExpertIndexLevel): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:357:    fun classificationNode(classification: ExpertClassification): JsonNode =
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:369:    private fun recordClassificationFailure(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:372:        esDocId: String,
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:375:        results += ClassificationBulkItemResult(esDocId, ClassificationBulkItemStatus.FAILED, reason)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:377:            failureSamples.add("docId=$esDocId error: $reason")
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:381:    private fun resolveOrcidToDocIds(index: String, orcidIds: List<String>): Map<String, String> {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:382:        if (orcidIds.isEmpty()) return emptyMap()
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:384:            "size" to orcidIds.size,
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:385:            "_source" to listOf("orcidId"),
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:386:            "query" to mapOf("terms" to mapOf("orcidId" to orcidIds))
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:398:                val hitOrcid = hit.path("_source").path("orcidId").asText(null) ?: continue
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:404:            log.warn("Failed to resolve orcidId → _id mapping: {}", e.message)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:409:    fun promoteToApplication(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:483:    fun retryFailedPromotion(promotionId: Long): ExpertApplicationPromotion {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:490:            orcid = promotion.orcidId,
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:504:    fun syncApplicationStatus(contact: ExpertContact, intent: String? = null) {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:506:        val orcid = ExpertIdNormalizer.normalize(contact.orcidId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:536:    fun promoteToCandidate(orcid: String, contact: ExpertContact): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:582:    fun removeFromCandidateIndex(esDocId: String): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:584:        val deleteUrl = "${properties.baseUrl}/$candidateIndex/_doc/$esDocId"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:595:                log.warn("Candidate doc not found for esDocId={}, DELETE returned 404", esDocId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:598:                log.warn("Failed to remove esDocId={} from candidate index (HTTP {}): {}", esDocId, e.statusCode, e.message)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:602:            log.warn("Failed to remove esDocId={} from candidate index", esDocId, e)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:607:    fun indexToRaw(orcid: String, profile: Map<String, Any?>): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:626:    fun documentExistsInIndex(indexLevel: ExpertIndexLevel, esDocId: String): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:628:        val headUrl = "${properties.baseUrl}/$index/_doc/$esDocId"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:642:    fun addTag(docId: String, tag: String, level: ExpertIndexLevel): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:660:    fun removeTag(docId: String, tag: String, level: ExpertIndexLevel): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:678:    fun readRawDocument(docId: String): Map<String, Any?>? {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:692:            log.warn("Failed to read raw document for esDocId={}", docId, e)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:700:    fun readDiscoveryDocument(level: ExpertIndexLevel, docId: String): DiscoverySnapshot? {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:717:    private fun sameDiscoveryIdentity(raw: Map<String, Any?>, candidate: Map<String, Any?>): Boolean =
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:718:        listOf("orcidId", "email", "givenNames", "familyNames", "externalIds", "identityVerification")
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:720:    fun discoveryProfile(docId: String, source: Map<String, Any?>): com.weibo.talentintroduction.expert.domain.ExpertProfile {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:721:        fun text(key: String) = source[key] as? String
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:722:        fun number(key: String) = (source[key] as? Number)?.toInt()
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:723:        fun strings(key: String) = (source[key] as? List<*>)?.filterIsInstance<String>()
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:725:            esDocId = docId, orcidId = text("orcidId").orEmpty(), email = text("email"),
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:752:    fun reconcileDiscoveryCandidate(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:821:    fun projectDiscoveryCandidate(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:833:            log.warn("Failed to check APPLICATION existence for esDocId={} during projection", docId, e)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:841:            log.warn("Failed to read CANDIDATE for esDocId={} during projection", docId, e)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:877:                log.warn("Failed to project candidate for esDocId={} (HTTP {})", docId, e.statusCode)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:881:            log.warn("Failed to project candidate for esDocId={}", docId, e)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:886:    fun writeCandidateDocument(docId: String, doc: Map<String, Any?>): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:899:            log.warn("Failed to write candidate document for esDocId={}", docId, e)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:904:    fun demoteToRaw(orcid: String, contact: ExpertContact): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:909:        val deleteBody = mapOf("query" to mapOf("term" to mapOf("orcidId" to normalizedOrcid)))
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:947:    private fun toStringMap(node: JsonNode): Map<String, Any?> {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:955:    private fun toAny(node: JsonNode): Any? = when {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:967:    private fun headers(): HttpHeaders =
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:973:    private fun basicAuthHeader(): String {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:1004:/** 分类 bulk 更新单项（I2-2）：只含 esDocId + 分类对象。 */
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:1006:    val esDocId: String,
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:1014:    val esDocId: String,
+src/main/resources/es/trust_reply_unsupported_answer_v1.json:7:    "dynamic": "strict",
+src/main/resources/es/orcid_info_candidate.json:7:    "dynamic": false,
+src/main/resources/es/orcid_info_candidate.json:9:      "orcidId": { "type": "keyword" },
+src/main/resources/es/orcid_info_candidate.json:34:      "identityVerification": { "type": "object", "dynamic": false, "properties": {
+src/main/resources/es/orcid_info_application.json:7:    "dynamic": false,
+src/main/resources/es/orcid_info_application.json:9:      "orcidId": { "type": "keyword" },
+src/main/resources/es/orcid_info_application.json:45:      "identityVerification": { "type": "object", "dynamic": false, "properties": {
+src/main/resources/es/orcid_info_raw.json:7:    "dynamic": false,
+src/main/resources/es/orcid_info_raw.json:9:      "orcidId": { "type": "keyword" },
+src/main/resources/es/orcid_info_raw.json:33:      "identityVerification": { "type": "object", "dynamic": false, "properties": {

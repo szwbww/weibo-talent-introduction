@@ -1,0 +1,102 @@
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt
+
+53:     @GetMapping
+54:     fun listExperts(
+55:         @RequestParam(defaultValue = "CANDIDATE") level: ExpertIndexLevel,
+56:         @RequestParam(defaultValue = "50") size: Int,
+57:         @RequestParam(required = false) tag: String?,
+58:         @RequestParam(required = false) sortBy: String?,
+59:         @RequestParam(defaultValue = "0") from: Int,
+60:         @RequestParam(required = false) operatorStatus: String?,
+61:         @RequestParam(required = false) emailDomain: String?,
+62:         @RequestParam(required = false) region: String?,
+63:         @RequestParam(required = false) hIndexMin: Int? = null,
+64:         @RequestParam(required = false) citationCountMin: Int? = null,
+65:         @RequestParam(required = false) recentYears: Int? = null,
+66:         @RequestParam(required = false) hasField: List<String>? = null,
+67:         @RequestParam(required = false) discipline: String? = null,
+68:         @RequestParam(required = false) expertType: List<String>? = null
+69:     ): ExpertListResponse {
+70:         val result = expertSearchService.searchExperts(
+71:             size, level, tag, sortBy, from, operatorStatus, emailDomain, region,
+72:             hIndexMin, citationCountMin, recentYears, hasField, discipline, expertType.orEmpty()
+73:         )
+74:         val orcidIds = result.experts.map { it.orcidId }.filter { it.isNotBlank() }
+75:         val contactMap = if (orcidIds.isEmpty()) emptyMap() else expertContactRepository
+76:             .findByOrcidIdIn(orcidIds)
+77:             .groupBy { ExpertIdNormalizer.normalize(it.orcidId) }
+78:             .mapValues { (_, contacts) -> contacts.maxByOrNull { it.updatedAt ?: java.time.LocalDateTime.MIN } }
+79: 
+80:         val experts = result.experts.map { expert ->
+81:             val contact = contactMap[ExpertIdNormalizer.normalize(expert.orcidId)]
+82:             ExpertIndexResponse.from(
+83:                 expert = expert,
+84:                 level = level,
+85:                 contactId = contact?.id,
+86:                 contactStatus = contact?.currentStatus,
+87:                 needsManualAttention = contact?.needsManualAttention ?: false,
+88:                 autoReplyEnabled = contact?.autoReplyEnabled ?: true,
+89:                 boundSenderAccountCode = contact?.boundSenderAccountCode,
+90:                 senderAccountChanged = contact?.senderAccountChanged ?: false,
+91:                 operatorStatus = contact?.operatorStatus ?: expert.operatorStatus ?: "NOT_CONTACTED"
+92:             )
+93:         }
+94:         return ExpertListResponse(experts = experts, totalHits = result.totalHits)
+95:     }
+96: 
+97:     @PostMapping("/reindex-applications")
+98:     fun reindexApplications(
+
+374: data class ExpertIndexResponse(
+375:     val indexLevel: String,
+376:     val indexLevelName: String,
+377:     val orcidId: String,
+378:     val email: String?,
+379:     val displayName: String,
+380:     val country: String?,
+381:     val keyword: String?,
+382:     val employment: String?,
+383:     val age: Int?,
+384:     val degree: String?,
+385:     val nationality: String?,
+386:     val operatorStatus: String?,
+387:     val contactId: Long?,
+388:     val contactStatus: String?,
+389:     val needsManualAttention: Boolean = false,
+390:     val autoReplyEnabled: Boolean = true,
+391:     val boundSenderAccountCode: String? = null,
+392:     val senderAccountChanged: Boolean = false,
+393:     val tags: List<String> = emptyList(),
+394:     val updatedAt: String? = null,
+395:     val hIndex: Int? = null,
+396:     val citationCount: Int? = null,
+397:     val lastPublicationYear: Int? = null,
+398:     val researchFields: String? = null,
+399:     val disciplineCategory: String? = null,
+400:     val institution: String? = null,
+401:     val worksCount: Int? = null,
+402:     val enrichedAt: String? = null,
+403:     val expertType: String? = null,
+404:     val expertProductionScore: Int? = null,
+405:     val expertResearchScore: Int? = null
+406: ) {
+407:     companion object {
+408:         fun from(
+409:             expert: ExpertProfile,
+410:             level: ExpertIndexLevel,
+411:             contactId: Long?,
+412:             contactStatus: String?,
+413:             needsManualAttention: Boolean = false,
+414:             autoReplyEnabled: Boolean = true,
+415:             boundSenderAccountCode: String? = null,
+416:             senderAccountChanged: Boolean = false,
+417:             operatorStatus: String? = null
+418:         ): ExpertIndexResponse =
+419:             ExpertIndexResponse(
+420:                 indexLevel = level.name,
+421:                 indexLevelName = when (level) {
+422:                     ExpertIndexLevel.RAW -> "原始"
+423:                     ExpertIndexLevel.CANDIDATE -> "筛选"
+424:                     ExpertIndexLevel.APPLICATION -> "有效"
+425:                 },
+426:                 orcidId = expert.orcidId,

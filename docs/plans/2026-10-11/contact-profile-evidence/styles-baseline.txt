@@ -1,0 +1,585 @@
+src/main/resources/static/styles.css
+
+1: :root {
+2:     /* Brand — modern business blue */
+3:     --primary: #1e40af;
+4:     --primary-hover: #1e3a8a;
+5:     --primary-active: #172554;
+6:     --primary-rgb: 30, 64, 175;
+7:     --primary-light: rgba(var(--primary-rgb), 0.07);
+8:     --primary-tint: rgba(var(--primary-rgb), 0.1);
+9: 
+10:     --bg-main: #f5f7fb;
+11:     --bg-sidebar: #ffffff;
+12:     --bg-sidebar-hover: rgba(var(--primary-rgb), 0.06);
+13:     --bg-sidebar-active: rgba(var(--primary-rgb), 0.09);
+14: 
+15:     --panel-bg: rgba(255, 255, 255, 0.55);
+16:     --panel-border: rgba(15, 23, 42, 0.08);
+17:     --line: rgba(15, 23, 42, 0.055);
+18:     --border: rgba(15, 23, 42, 0.11);
+19:     --surface: rgba(15, 23, 42, 0.022);
+20: 
+21:     --text-main: #1e293b;
+22:     --text-muted: #94a3b8;
+23:     --text-sidebar: #64748b;
+24:     --text-sidebar-active: #1e293b;
+25:     --text-secondary: #475569;
+26:     --text-strong: #334155;
+27:     --ink: #1e293b;
+28:     --bg-subtle: #f8fafc;
+29:     --border-strong: #cbd5e1;
+30:     --primary-bright: #3b82f6;
+31: 
+32:     --success: #059669;
+33:     --success-rgb: 5, 150, 105;
+34:     --success-bg: rgba(var(--success-rgb), 0.08);
+35:     --success-border: rgba(var(--success-rgb), 0.18);
+36:     --green: var(--success);
+37: 
+38:     --error: #e11d48;
+39:     --error-rgb: 225, 29, 72;
+40:     --error-bg: rgba(var(--error-rgb), 0.07);
+41:     --error-border: rgba(var(--error-rgb), 0.16);
+42:     --error-strong: #be123c;
+43:     --red: var(--error);
+44: 
+45:     --warning: #d97706;
+46:     --warning-rgb: 217, 119, 6;
+47:     --warning-bg: rgba(var(--warning-rgb), 0.08);
+48:     --warning-border: rgba(var(--warning-rgb), 0.2);
+49:     --warning-strong: #b45309;
+50:     --warning-bright: #f59e0b;
+51:     --amber: var(--warning);
+52: 
+53:     --info: #0ea5e9;
+54:     --info-rgb: 14, 165, 233;
+55:     --info-bg: rgba(var(--info-rgb), 0.08);
+56:     --info-border: rgba(var(--info-rgb), 0.2);
+57: 
+58:     --z-sticky: 10;
+59:     --z-dropdown: 20;
+60:     --z-overlay: 50;
+61:     --z-drawer: 60;
+62:     --z-modal: 1000;
+63:     --z-confirm: 1200;
+64:     --z-toast: 9999;
+65: 
+66:     --glass-border: rgba(255, 255, 255, 0.5);
+67:     --glass-shadow: 0 8px 32px rgba(var(--primary-rgb), 0.1);
+68:     --glass-blur: blur(16px);
+69: 
+70:     --radius-sm: 7px;
+71:     --radius-md: 10px;
+72:     --radius-lg: 18px;
+73: 
+74:     --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+75:     --shadow-md: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.03);
+76:     --shadow-lg: 0 10px 28px -8px rgba(15, 23, 42, 0.14), 0 2px 6px rgba(15, 23, 42, 0.05);
+77:     --shadow-xl: 0 20px 48px -12px rgba(15, 23, 42, 0.2), 0 4px 12px rgba(15, 23, 42, 0.06);
+78:     --shadow: var(--shadow-md);
+79: 
+80:     --transition: all 0.15s ease;
+81: 
+82:     --font-mono: 'SF Mono', ui-monospace, Menlo, monospace;
+83:     --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+84: 
+85:     --verbatim: #7c3aed;
+86:     --verbatim-bg: rgba(124, 58, 237, 0.06);
+87:     --verbatim-border: rgba(124, 58, 237, 0.24);
+88: }
+
+802: .button {
+803:     display: inline-flex;
+804:     align-items: center;
+805:     justify-content: center;
+806:     gap: 6px;
+807:     min-height: 32px;
+808:     height: 32px;
+809:     padding: 0 12px;
+810:     border-radius: var(--radius-sm);
+811:     font-weight: 500;
+812:     font-size: 12px;
+813:     cursor: pointer;
+814:     border: 1px solid var(--border);
+815:     background-color: transparent;
+816:     color: var(--text-main);
+817:     transition: transform 0.12s ease, box-shadow 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, opacity 0.1s ease;
+818:     outline: none;
+819:     user-select: none;
+820:     font-family: var(--font-body);
+821:     position: relative;
+822:     overflow: hidden;
+823: }
+824: 
+825: .button:hover {
+826:     border-color: rgba(15, 23, 42, 0.2);
+827:     background-color: var(--surface);
+828:     transform: translateY(-1px);
+829:     box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+830: }
+831: 
+832: .button:active {
+833:     transform: translateY(0) scale(0.97);
+834:     box-shadow: none;
+835:     opacity: 0.85;
+836: }
+837: 
+838: .button.primary {
+839:     background-image: linear-gradient(180deg, var(--primary-bright), var(--primary));
+840:     background-color: var(--primary);
+841:     border-color: transparent;
+842:     color: #ffffff;
+843:     font-weight: 600;
+844:     box-shadow: 0 1px 2px rgba(var(--primary-rgb), 0.4), inset 0 1px 0 rgba(255,255,255,0.18);
+845: }
+846: 
+847: .button.primary:hover {
+848:     background-image: linear-gradient(180deg, #2f7bff, var(--primary-hover));
+849:     box-shadow: 0 4px 14px rgba(var(--primary-rgb), 0.35), inset 0 1px 0 rgba(255,255,255,0.18);
+850: }
+851: 
+852: .button.secondary {
+853:     background-color: var(--primary-light);
+854:     border-color: rgba(var(--primary-rgb), 0.12);
+855:     color: var(--primary);
+856: }
+857: 
+858: .button.secondary:hover {
+859:     background-color: rgba(var(--primary-rgb), 0.1);
+860: }
+861: 
+862: .button.danger {
+863:     background-color: var(--error-bg);
+864:     border-color: var(--error-border);
+865:     color: var(--error);
+866: }
+867: 
+868: .button.danger:hover {
+869:     background-color: rgba(var(--error-rgb), 0.1);
+870: }
+871: 
+872: .icon-button {
+873:     width: 32px;
+
+1105: .form-grid {
+1106:     display: grid;
+1107:     grid-template-columns: repeat(2, 1fr);
+1108:     gap: 12px;
+1109:     padding: 16px;
+1110:     overflow-y: auto;
+1111: }
+1112: 
+1113: .form-grid.single {
+1114:     grid-template-columns: 1fr;
+1115: }
+1116: 
+1117: label {
+1118:     display: flex;
+1119:     flex-direction: column;
+1120:     gap: 4px;
+1121:     color: var(--text-muted);
+1122:     font-size: 11px;
+1123:     font-weight: 600;
+1124:     font-family: var(--font-body);
+1125:     text-transform: uppercase;
+1126:     letter-spacing: 0.3px;
+1127: }
+1128: 
+1129: input, select, textarea {
+1130:     width: 100%;
+1131:     height: 34px;
+1132:     min-height: 34px;
+1133:     border: 1px solid var(--border);
+1134:     border-radius: var(--radius-sm);
+1135:     padding: 6px 10px;
+1136:     color: var(--text-main);
+1137:     background-color: var(--panel-bg);
+1138:     transition: var(--transition);
+1139:     outline: none;
+1140:     font-size: 13px;
+1141: }
+1142: 
+1143: input:hover, select:hover, textarea:hover {
+1144:     border-color: rgba(15, 23, 42, 0.2);
+1145: }
+1146: 
+1147: input:focus, select:focus, textarea:focus {
+1148:     border-color: var(--primary);
+1149:     background-color: var(--panel-bg);
+1150:     box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1), 0 0 12px rgba(var(--primary-rgb), 0.06);
+1151:     transition: border-color 0.2s ease, box-shadow 0.25s ease;
+1152: }
+1153: 
+1154: input:disabled, select:disabled, textarea:disabled {
+1155:     background-color: var(--surface);
+1156:     color: var(--text-muted);
+1157:     cursor: not-allowed;
+1158:     border-color: var(--border);
+1159: }
+1160: 
+1161: textarea {
+1162:     resize: vertical;
+1163:     height: auto;
+1164: }
+1165: 
+1166: .checkbox-row {
+1167:     flex-direction: row;
+1168:     align-items: center;
+1169:     gap: 8px;
+1170:     min-height: 32px;
+
+1600: /* Profile Header */
+1601: .expert-profile-header {
+1602:     display: flex;
+1603:     align-items: center;
+1604:     gap: 12px;
+1605:     padding-bottom: 4px;
+1606: }
+1607: 
+1608: .expert-avatar {
+1609:     width: 40px;
+1610:     height: 40px;
+1611:     border-radius: var(--radius-sm);
+1612:     background: var(--primary);
+1613:     color: #ffffff;
+1614:     display: flex;
+1615:     align-items: center;
+1616:     justify-content: center;
+1617:     font-size: 16px;
+1618:     font-weight: 700;
+1619:     flex-shrink: 0;
+1620:     text-transform: uppercase;
+1621:     font-family: var(--font-body);
+1622: }
+1623: 
+1624: .expert-header-info {
+1625:     min-width: 0;
+1626:     flex-grow: 1;
+1627: }
+1628: 
+1629: .expert-header-info h2 {
+1630:     font-size: 16px;
+1631:     font-weight: 700;
+1632:     color: var(--text-main);
+1633:     margin-bottom: 2px;
+1634:     line-height: 1.3;
+1635: }
+1636: 
+1637: .expert-header-info p {
+1638:     font-size: 12px;
+1639:     color: var(--text-muted);
+1640:     margin: 0;
+1641:     display: flex;
+1642:     align-items: center;
+1643:     gap: 6px;
+1644:     flex-wrap: wrap;
+1645: }
+1646: 
+1647: .expert-header-info p .divider {
+1648:     color: var(--border);
+1649: }
+1650: 
+1651: /* Metadata Grid */
+1652: .metadata-grid {
+1653:     display: grid;
+1654:     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+1655:     gap: 8px;
+1656:     margin-bottom: 4px;
+1657: }
+1658: 
+1659: .metadata-card {
+1660:     background-color: rgba(15, 23, 42, 0.02);
+1661:     border: 1px solid var(--panel-border);
+1662:     border-radius: var(--radius-sm);
+1663:     padding: 10px 12px;
+1664:     display: flex;
+1665:     flex-direction: column;
+1666:     gap: 4px;
+1667: }
+1668: 
+1669: .metadata-card:hover {
+1670:     border-color: var(--border);
+1671: }
+1672: 
+1673: .metadata-card-header {
+1674:     display: flex;
+1675:     align-items: center;
+1676:     gap: 4px;
+1677:     color: var(--text-muted);
+1678:     font-size: 11px;
+1679:     font-weight: 600;
+1680:     text-transform: uppercase;
+1681:     letter-spacing: 0.5px;
+1682:     font-family: var(--font-body);
+1683: }
+1684: 
+1685: .metadata-card-header svg {
+1686:     color: var(--text-muted);
+1687:     flex-shrink: 0;
+1688: }
+1689: 
+1690: .metadata-card-value {
+1691:     font-size: 13px;
+1692:     font-weight: 500;
+1693:     color: var(--text-main);
+1694:     word-break: break-all;
+1695:     line-height: 1.4;
+1696: }
+1697: 
+1698: .metadata-card-value a {
+1699:     color: var(--primary);
+1700:     text-decoration: none;
+1701:     display: inline-flex;
+1702:     align-items: center;
+1703:     gap: 4px;
+1704: }
+1705: 
+1706: .metadata-card-value a:hover {
+1707:     text-decoration: underline;
+1708: }
+1709: 
+1710: .metadata-card.span-all {
+1711:     grid-column: 1 / -1;
+1712: }
+1713: 
+1714: .document-row {
+
+2560: .modal-close-btn {
+2561:     border: none;
+2562:     background: none;
+2563:     padding: 4px 8px;
+2564:     font-size: 20px;
+2565:     line-height: 1;
+2566:     cursor: pointer;
+2567:     color: var(--text-muted);
+2568:     border-radius: var(--radius-sm);
+2569:     transition: var(--transition);
+2570:     flex-shrink: 0;
+2571: }
+2572: 
+2573: .modal-close-btn:hover {
+2574:     background-color: var(--surface);
+2575:     color: var(--text-main);
+2576: }
+2577: 
+2578: /* Account form body */
+2579: .account-form-body {
+2580:     overflow-y: auto;
+
+11604:   .em-upload-dialog {
+11605:       width: min(640px, calc(100vw - 32px));
+11606:       max-width: none;
+11607:       max-height: calc(100dvh - 32px);
+11608:       margin: auto;
+11609:       padding: 0;
+11610:       border: 1px solid #dce4ef;
+11611:       border-radius: 14px;
+11612:       background: #fff;
+11613:       color: #475569;
+11614:       font-size: 12px;
+11615:       line-height: 1.5;
+11616:       box-shadow: 0 24px 64px rgba(15, 23, 42, 0.2);
+11617:       overflow: hidden;
+11618:   }
+11619: 
+11620:   .em-upload-dialog::backdrop {
+11621:       background: rgba(15, 23, 42, 0.35);
+11622:   }
+11623: 
+11624:   .em-upload-dialog[open] {
+11625:       display: flex;
+11626:       flex-direction: column;
+11627:   }
+11628: 
+11629:   .em-upload-dialog * {
+11630:       box-sizing: border-box;
+11631:   }
+11632: 
+11633:   .em-upload-head {
+11634:       display: flex;
+11635:       align-items: flex-start;
+11636:       gap: 12px;
+11637:       padding: 16px 18px;
+11638:       border-bottom: 1px solid #e2e8f0;
+11639:   }
+11640: 
+11641:   .em-upload-title {
+11642:       min-width: 0;
+11643:       margin-right: auto;
+11644:   }
+11645: 
+11646:   .em-upload-title h3 {
+11647:       margin: 0;
+11648:       color: #334155;
+11649:       font-size: 14px;
+11650:       font-weight: 600;
+11651:   }
+11652: 
+11653:   .em-upload-subtitle {
+11654:       display: block;
+11655:       margin-top: 3px;
+11656:       color: #64748b;
+11657:       font-size: 11px;
+11658:   }
+11659: 
+11660:   .em-upload-body {
+11661:       display: flex;
+11662:       flex-direction: column;
+11663:       gap: 10px;
+11664:       min-height: 0;
+11665:       padding: 16px 18px;
+11666:       overflow: auto;
+11667:   }
+11668: 
+11669:   .em-upload-picker {
+11670:       display: flex;
+11671:       align-items: center;
+11672:       justify-content: space-between;
+11673:       gap: 12px;
+11674:       padding: 12px;
+11675:       border: 1px dashed #93b4ec;
+11676:       border-radius: 7px;
+11677:       background: #eff5ff;
+11678:       color: #475569;
+11679:   }
+11680: 
+11681:   .em-upload-picker > span {
+11682:       flex: none;
+11683:       font-weight: 600;
+11684:   }
+11685: 
+11686:   .em-upload-picker input {
+11687:       min-width: 0;
+11688:       max-width: 100%;
+11689:       color: #475569;
+11690:       font: inherit;
+11691:   }
+11692: 
+11693:   .em-upload-limit {
+11694:       color: #64748b;
+11695:       font-size: 11px;
+11696:   }
+11697: 
+11698:   .em-upload-queue {
+11699:       display: flex;
+11700:       flex-direction: column;
+11701:       gap: 8px;
+11702:   }
+11703: 
+11704:   .em-upload-row {
+11705:       display: grid;
+11706:       grid-template-columns: minmax(0, 1fr) auto;
+11707:       align-items: center;
+11708:       gap: 8px;
+11709:       padding: 10px;
+11710:       border: 1px solid #e2e8f0;
+11711:       border-radius: 7px;
+11712:       background: #f8faff;
+11713:   }
+11714: 
+11715:   .em-upload-file {
+11716:       min-width: 0;
+11717:   }
+11718: 
+11719:   .em-upload-file strong {
+11720:       display: block;
+11721:       overflow: hidden;
+11722:       color: #334155;
+11723:       font-size: 12px;
+11724:       font-weight: 500;
+11725:       text-overflow: ellipsis;
+11726:       white-space: nowrap;
+11727:   }
+11728: 
+11729:   .em-upload-file small {
+11730:       display: block;
+11731:       margin-top: 2px;
+11732:       color: #64748b;
+11733:       font-size: 11px;
+11734:   }
+11735: 
+11736:   .em-upload-progress {
+11737:       grid-column: 1 / -1;
+11738:       width: 100%;
+11739:       height: 5px;
+11740:       margin: 0;
+11741:       accent-color: #3b82f6;
+11742:   }
+11743: 
+11744:   .em-upload-state {
+11745:       grid-column: 1 / -1;
+11746:       color: #64748b;
+11747:       font-size: 11px;
+11748:   }
+11749: 
+11750:   .em-upload-row[data-upload-state="success"] .em-upload-state {
+11751:       color: #059669;
+11752:   }
+11753: 
+11754:   .em-upload-row[data-upload-state="failed"] .em-upload-state,
+11755:   .em-upload-row[data-upload-state="blocked"] .em-upload-state {
+11756:       color: #be123c;
+11757:   }
+11758: 
+11759:   .em-upload-error {
+11760:       padding: 10px 12px;
+11761:       border: 1px solid #fecdd3;
+11762:       border-radius: 7px;
+11763:       background: #fff1f2;
+11764:       color: #be123c;
+11765:   }
+11766: 
+11767:   .em-upload-actions {
+11768:       display: flex;
+11769:       align-items: center;
+11770:       gap: 8px;
+11771:       padding: 12px 18px;
+11772:       border-top: 1px solid #e2e8f0;
+11773:       background: #eff5ff;
+11774:   }
+11775: 
+11776:   .em-upload-summary {
+11777:       margin-right: auto;
+11778:       color: #64748b;
+11779:       font-size: 11px;
+11780:   }
+11781: 
+11782:   .em-upload-dialog :is(button, input):focus-visible {
+11783:       outline: 2px solid #3b82f6;
+11784:       outline-offset: 2px;
+11785:   }
+11786: 
+11787:   .em-upload-dialog :is(button, input):disabled {
+11788:       opacity: 0.45;
+11789:       cursor: not-allowed;
+11790:       transform: none;
+11791:       box-shadow: none;
+11792:   }
+11793: 
+11794:   .em-upload-dialog [hidden] {
+11795:       display: none !important;
+11796:   }
+11797: 
+11798:   @media (max-width: 760px) {
+11799:       .em-upload-dialog {
+11800:           width: calc(100vw - 16px);
+11801:           max-height: calc(100dvh - 16px);
+11802:       }
+11803: 
+11804:       .em-upload-picker,
+11805:       .em-upload-actions {
+11806:           align-items: stretch;
+11807:           flex-direction: column;
+11808:       }
+11809: 
+11810:       .em-upload-summary {
+11811:           margin-right: 0;
+11812:       }
+11813:   }
+11814: 
+11815:   @media (prefers-reduced-motion: reduce) {
+11816:       .em-upload-dialog * {
+11817:           transition: none !important;
+11818:       }
+11819:   }

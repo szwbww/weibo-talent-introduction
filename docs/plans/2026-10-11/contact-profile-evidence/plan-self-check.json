@@ -1,0 +1,77 @@
+{
+  "status": "PASS",
+  "scope": "Plan structural checks only; implementation and 1GiB tests NOT RUN",
+  "children": [
+    {
+      "plan": "contact-profile-01-storage.md",
+      "files": 9,
+      "frontend": false,
+      "section_order": true,
+      "invariants": 23,
+      "manual_cases": 5
+    },
+    {
+      "plan": "contact-profile-02-ui.md",
+      "files": 4,
+      "frontend": true,
+      "section_order": true,
+      "invariants": 4,
+      "manual_cases": 5
+    },
+    {
+      "plan": "contact-profile-03-notes.md",
+      "files": 3,
+      "frontend": true,
+      "section_order": true,
+      "invariants": 3,
+      "manual_cases": 3
+    },
+    {
+      "plan": "contact-profile-04-video-api.md",
+      "files": 9,
+      "frontend": false,
+      "section_order": true,
+      "invariants": 10,
+      "manual_cases": 6
+    },
+    {
+      "plan": "contact-profile-05-video-ui.md",
+      "files": 4,
+      "frontend": true,
+      "section_order": true,
+      "invariants": 5,
+      "manual_cases": 5
+    }
+  ],
+  "new_business_fields": 19,
+  "declared_new_css_classes": [
+    "ec-actions",
+    "ec-edit-grid",
+    "ec-editor",
+    "ec-error",
+    "ec-heading",
+    "ec-message",
+    "ec-nav",
+    "ec-profile",
+    "ec-section",
+    "ec-span",
+    "ec-text",
+    "ec-video-list",
+    "ec-video-name",
+    "ec-video-pager",
+    "ec-video-player"
+  ],
+  "source_files_checked": 1051,
+  "source_files_changed": [],
+  "errors": [],
+  "manual_review": [
+    "identity versus contact boundary",
+    "new private tables / zero existing shared columns",
+    "all new writers described",
+    "per-field semantics I-5 through I-23",
+    "API errors / concurrent updates / upload unknown outcome",
+    "cross-module acceptance mapping",
+    "1GiB real HTTP release gate",
+    "no production edit or deployment"
+  ]
+}

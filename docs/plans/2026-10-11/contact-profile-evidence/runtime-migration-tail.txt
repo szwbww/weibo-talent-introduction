@@ -1,0 +1,10 @@
+2026-10-11 read-only SSH, exit=0
+Command: find /opt/apache-tomcat-9.0.71/webapps/talent/WEB-INF/classes/db/migration -maxdepth 1 -type f -name 'V*__*.sql' -printf '%f\n' | sort -V | tail -8
+V145__add_batch_email_verification_allowed_states.sql
+V146__create_expert_contact_location.sql
+V147__create_expert_mailbox_suspension.sql
+V148__create_expert_discovery_review.sql
+V149__add_expert_follow_progress_status.sql
+V150__create_expert_contact_note.sql
+V151__create_expert_inbound_notification.sql
+V152__create_mailbox_reply_draft.sql

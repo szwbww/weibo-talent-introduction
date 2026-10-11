@@ -1,0 +1,64 @@
+LISTEN     0      100       [::]:80                    [::]:*                   users:(("java",pid=32535,fd=43))
+LISTEN     0      100       [::]:443                   [::]:*                   users:(("java",pid=32535,fd=46))
+    <Connector port="80" protocol="HTTP/1.1"
+               connectionTimeout="20000"
+               redirectPort="443" />
+
+    <Connector port="443" protocol="org.apache.coyote.http11.Http11NioProtocol"
+               maxThreads="150" SSLEnabled="true" scheme="https" secure="true">
+        <SSLHostConfig>
+            <Certificate certificateKeystoreFile="conf/szwbww.com.jks"
+                         type="RSA" />
+        </SSLHostConfig>
+        <SSLHostConfig hostName="qingfei.szwbww.com">
+            <Certificate certificateKeystoreFile="conf/qingfei.szwbww.com.jks"
+                         type="RSA" />
+        </SSLHostConfig>
+    </Connector>
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/vda1        99G   26G   69G  28% /
+/dev/vda1        99G   26G   69G  28% /
+    </td></tr><tr><td><code class="attributeName">maxPostSize</code></td><td>
+      <p>The maximum size in bytes of the POST which will be handled by
+      the container FORM URL parameter parsing. The limit can be disabled by
+      setting this attribute to a value less than zero. If not specified, this
+      attribute is set to 2097152 (2 megabytes). Note that the
+      <a href="filter.html#Failed_Request_Filter"><code>FailedRequestFilter</code></a>
+      can be used to reject requests that exceed this limit.</p>
+    </td></tr><tr><td><code class="attributeName">maxSavePostSize</code></td><td>
+    </td></tr><tr><td><code class="attributeName">connectionTimeout</code></td><td>
+      <p>The number of milliseconds this <strong>Connector</strong> will wait,
+      after accepting a connection, for the request URI line to be
+      presented. Use a value of -1 to indicate no (i.e. infinite) timeout.
+      The default value is 60000 (i.e. 60 seconds) but note that the standard
+      server.xml that ships with Tomcat sets this to 20000 (i.e. 20 seconds).
+      Unless <strong>disableUploadTimeout</strong> is set to <code>false</code>,
+      this timeout will also be used when reading the request body (if any).</p>
+    </td></tr><tr><td><code class="attributeName">connectionUploadTimeout</code></td><td>
+      <p>Specifies the timeout, in milliseconds, to use while a data upload is
+      in progress. This only takes effect if
+      <strong>disableUploadTimeout</strong> is set to <code>false</code>.
+      </p>
+    </td></tr><tr><td><code class="attributeName">continueResponseTiming</code></td><td>
+    </td></tr><tr><td><code class="attributeName">disableUploadTimeout</code></td><td>
+      <p>This flag allows the servlet container to use a different, usually
+      longer connection timeout during data upload. If not specified, this
+      attribute is set to <code>true</code> which disables this longer timeout.
+      </p>
+    </td></tr><tr><td><code class="attributeName">executor</code></td><td>
+    </td></tr><tr><td><code class="attributeName">maxSwallowSize</code></td><td>
+      <p>The maximum number of request body bytes (excluding transfer encoding
+      overhead) that will be swallowed by Tomcat for an aborted upload. An
+      aborted upload is when Tomcat knows that the request body is going to be
+      ignored but the client still sends it. If Tomcat does not swallow the body
+      the client is unlikely to see the response. If not specified the default
+      of 2097152 (2 megabytes) will be used. A value of less than zero indicates
+      that no limit should be enforced.</p>
+    </td></tr><tr><td><code class="attributeName">maxThreads</code></td><td>
+      <p>The maximum number of request processing threads to be created
+      by this <strong>Connector</strong>, which therefore determines the
+      maximum number of simultaneous requests that can be handled.  If
+V15__add_mail_monitoring_columns_and_promotion_audit.sql
+V152__create_mailbox_reply_draft.sql
+V151__create_expert_inbound_notification.sql
+V150__create_expert_contact_note.sql

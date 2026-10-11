@@ -1,0 +1,65 @@
+$ rg -n expert_contact_note|contact-notes|ExpertContactNoteService src/main src/test
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactNoteService.kt:23:class ExpertContactNoteService(private val jdbcTemplate: NamedParameterJdbcTemplate) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactNoteService.kt:73:            "SELECT note, updated_by, updated_at FROM expert_contact_note WHERE expert_contact_id=:contactId"
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactNoteService.kt:74:        private const val DELETE_SQL = "DELETE FROM expert_contact_note WHERE expert_contact_id=:contactId"
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactNoteService.kt:76:            INSERT INTO expert_contact_note (expert_contact_id, note, updated_by, updated_at)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactNoteController.kt:5:import com.weibo.talentintroduction.mail.service.ExpertContactNoteService
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactNoteController.kt:19:@RequestMapping("/api/mail/contact-notes")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactNoteController.kt:20:class ExpertContactNoteController(private val service: ExpertContactNoteService) {
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:20:import com.weibo.talentintroduction.mail.service.ExpertContactNoteService
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2145:            assertFalse(c.tableExists("expert_contact_note"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2152:            assertEquals(0L, c.queryLong("SELECT COUNT(*) FROM expert_contact_note"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2153:            assertEquals(4L, c.queryLong("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='expert_contact_note'"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2155:                assertEquals(type, c.queryString(columnMeta("expert_contact_note", column, "DATA_TYPE")))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2156:                assertEquals("NO", c.queryString(columnMeta("expert_contact_note", column, "IS_NULLABLE")))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2158:            assertEquals("2000", c.queryString(columnMeta("expert_contact_note", "note", "CHARACTER_MAXIMUM_LENGTH")))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2159:            assertEquals("64", c.queryString(columnMeta("expert_contact_note", "updated_by", "CHARACTER_MAXIMUM_LENGTH")))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2160:            assertEquals("3", c.queryString(columnMeta("expert_contact_note", "updated_at", "DATETIME_PRECISION")))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2162:                assertEquals("utf8mb4", c.queryString(columnMeta("expert_contact_note", it, "CHARACTER_SET_NAME")))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2164:            assertEquals("InnoDB", c.queryString("SELECT ENGINE FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='expert_contact_note'"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2165:            assertEquals(1L, c.queryLong("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name='expert_contact_note' AND index_name='PRIMARY' AND column_name='expert_contact_id' AND non_unique=0"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2166:            assertTrue(c.foreignKeyExists("expert_contact_note", "fk_expert_contact_note_contact"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2167:            assertEquals("CASCADE", c.queryString("SELECT DELETE_RULE FROM information_schema.referential_constraints WHERE constraint_schema=DATABASE() AND constraint_name='fk_expert_contact_note_contact'"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2168:            assertEquals("expert_contact", c.queryString("SELECT REFERENCED_TABLE_NAME FROM information_schema.key_column_usage WHERE table_schema=DATABASE() AND constraint_name='fk_expert_contact_note_contact'"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2169:            assertEquals("id", c.queryString("SELECT REFERENCED_COLUMN_NAME FROM information_schema.key_column_usage WHERE table_schema=DATABASE() AND constraint_name='fk_expert_contact_note_contact'"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2171:                c.execute("INSERT INTO expert_contact_note VALUES (999999, 'orphan', 'admin', NOW(3))")
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2173:            c.execute("INSERT INTO expert_contact_note VALUES (2, 'temporary', 'admin', NOW(3))")
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2175:                c.execute("INSERT INTO expert_contact_note VALUES (2, 'duplicate', 'admin', NOW(3))")
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2178:            assertEquals(0L, c.queryLong("SELECT COUNT(*) FROM expert_contact_note"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2192:        val service = ExpertContactNoteService(jdbc)
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2197:        fun freshRead(id: Long) = ExpertContactNoteService(
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2202:        connection().use { assertEquals(0L, it.queryLong("SELECT COUNT(*) FROM expert_contact_note")) }
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2213:            assertEquals(1L, c.queryLong("SELECT COUNT(*) FROM expert_contact_note WHERE expert_contact_id=1"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2214:            assertEquals(second.note, c.queryString("SELECT note FROM expert_contact_note WHERE expert_contact_id=1"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2215:            assertEquals(second.updatedBy, c.queryString("SELECT updated_by FROM expert_contact_note WHERE expert_contact_id=1"))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2217:                c.queryString("SELECT DATE_FORMAT(updated_at, '%Y-%m-%d %H:%i:%s.%f') FROM expert_contact_note WHERE expert_contact_id=1").dropLast(3))
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2240:        connection().use { assertEquals(0L, it.queryLong("SELECT COUNT(*) FROM expert_contact_note WHERE expert_contact_id=1")) }
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt:2244:            assertEquals(0L, c.queryLong("SELECT COUNT(*) FROM expert_contact_note WHERE expert_contact_id=3"))
+src/test/js/mailboxChatBehavior.test.js:923:        if (/^\/api\/mail\/contact-notes\/\d+$/.test(url)) {
+src/test/js/mailboxChatBehavior.test.js:6472:    const noteUrl = "/api/mail/contact-notes/1";
+src/test/js/mailboxChatBehavior.test.js:6478:    const puts = (ctx) => ctx.calls.api.filter((r) => r.url.includes("/contact-notes/") && r.method === "PUT");
+src/test/js/mailboxChatBehavior.test.js:6479:    const gets = (ctx) => ctx.calls.api.filter((r) => r.url.includes("/contact-notes/") && r.method === "GET");
+src/test/js/mailboxChatBehavior.test.js:6601:            if (url.includes("/contact-notes/") && method === "GET") return new Promise((resolve) => reads.push({ url, resolve }));
+src/main/resources/db/migration/V150__create_expert_contact_note.sql:1:CREATE TABLE expert_contact_note (
+src/main/resources/db/migration/V150__create_expert_contact_note.sql:7:    CONSTRAINT fk_expert_contact_note_contact
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactNoteServiceTest.kt:14:class ExpertContactNoteServiceTest {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactNoteServiceTest.kt:16:    private val service = ExpertContactNoteService(jdbc)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactNoteServiceTest.kt:65:        assertTrue(sql.startsWith("INSERT INTO expert_contact_note"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactNoteServiceTest.kt:85:            assertEquals("DELETE FROM expert_contact_note WHERE expert_contact_id=:contactId", it.arguments[0])
+src/main/resources/static/mailbox-chat.js:3598:            hostApi()(`/api/mail/contact-notes/${id}`).then((data) => {
+src/main/resources/static/mailbox-chat.js:3663:            hostApi()(`/api/mail/contact-notes/${dialog.contactId}`, {
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactNoteControllerTest.kt:10:import com.weibo.talentintroduction.mail.service.ExpertContactNoteService
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactNoteControllerTest.kt:43:    @MockBean private lateinit var service: ExpertContactNoteService
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactNoteControllerTest.kt:60:        mvc.perform(get("/api/mail/contact-notes/42").session(session()))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactNoteControllerTest.kt:62:        mvc.perform(put("/api/mail/contact-notes/42").session(session())
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactNoteControllerTest.kt:74:        mvc.perform(put("/api/mail/contact-notes/42").session(session("userA"))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactNoteControllerTest.kt:85:            mvc.perform(put("/api/mail/contact-notes/42").session(session())
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactNoteControllerTest.kt:96:            mvc.perform(get("/api/mail/contact-notes/$id").session(session())).andExpect(status().isBadRequest)
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactNoteControllerTest.kt:97:            mvc.perform(put("/api/mail/contact-notes/$id").session(session())
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactNoteControllerTest.kt:102:        mvc.perform(put("/api/mail/contact-notes/42").session(session()).contentType(MediaType.APPLICATION_JSON)
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactNoteControllerTest.kt:106:        mvc.perform(get("/api/mail/contact-notes/404").session(session())).andExpect(status().isNotFound)
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactNoteControllerTest.kt:107:        mvc.perform(put("/api/mail/contact-notes/404").session(session()).contentType(MediaType.APPLICATION_JSON)
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactNoteControllerTest.kt:114:        for (route in listOf(get("/api/mail/contact-notes/42"), put("/api/mail/contact-notes/42")
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactNoteControllerTest.kt:120:            mvc.perform(get("/api/mail/contact-notes/42").session(login)).andExpect(status().`is`(expected))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactNoteControllerTest.kt:121:            mvc.perform(put("/api/mail/contact-notes/42").session(login).contentType(MediaType.APPLICATION_JSON)

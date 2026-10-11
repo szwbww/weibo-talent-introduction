@@ -1,0 +1,56 @@
+[
+  {
+    "plan": "contact-profile-01-storage.md",
+    "files": [
+      "src/main/resources/db/migration/V153__create_expert_manual_profile.sql",
+      "src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertManualProfile.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertProfileIdentityResolver.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertManualProfileService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertManualProfileController.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertProfileIdentityResolverTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertManualProfileServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertManualProfileControllerTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt"
+    ]
+  },
+  {
+    "plan": "contact-profile-02-ui.md",
+    "files": [
+      "src/main/resources/static/app.js",
+      "src/main/resources/static/styles.css",
+      "src/main/resources/static/index.html",
+      "src/test/js/expertManualProfile.test.js"
+    ]
+  },
+  {
+    "plan": "contact-profile-03-notes.md",
+    "files": [
+      "src/main/resources/static/app.js",
+      "src/main/resources/static/index.html",
+      "src/test/js/expertContactSharedNote.test.js"
+    ]
+  },
+  {
+    "plan": "contact-profile-04-video-api.md",
+    "files": [
+      "src/main/resources/db/migration/V154__create_expert_meeting_video.sql",
+      "src/main/kotlin/com/weibo/talentintroduction/document/domain/ExpertMeetingVideo.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMeetingVideoService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/document/controller/ExpertMeetingVideoController.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertMeetingVideoServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/document/controller/ExpertMeetingVideoControllerTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/document/controller/ExpertMeetingVideoStreamingIntegrationTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt",
+      "docs/deploy/2026-10-11-expert-meeting-video.md"
+    ]
+  },
+  {
+    "plan": "contact-profile-05-video-ui.md",
+    "files": [
+      "src/main/resources/static/app.js",
+      "src/main/resources/static/styles.css",
+      "src/main/resources/static/index.html",
+      "src/test/js/expertMeetingVideo.test.js"
+    ]
+  }
+]

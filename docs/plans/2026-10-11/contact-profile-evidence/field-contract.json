@@ -1,0 +1,173 @@
+[
+  [
+    "talentCode",
+    "人才编号",
+    "VARCHAR(64)",
+    "64",
+    "保留前缀、前导零；不充当专家主键",
+    "identity",
+    "G0007"
+  ],
+  [
+    "chineseName",
+    "中文译名",
+    "VARCHAR(200)",
+    "200",
+    "不自动覆盖原文姓名",
+    "identity",
+    "测试译名"
+  ],
+  [
+    "birthDateText",
+    "出生日期 / 年份",
+    "VARCHAR(10)",
+    "10",
+    "只接受 YYYY 或真实 YYYY-MM-DD，年份 0001–当前年，完整日期不得晚于当天；年份不补成 1 月 1 日",
+    "identity",
+    "1980"
+  ],
+  [
+    "documentNumber",
+    "护照 / 证件号",
+    "VARCHAR(100)",
+    "100",
+    "字符串，保留前导零；非编辑态仅显示末四位，其余以 • 遮罩；≤4 位全遮罩",
+    "identity",
+    "TEST001234"
+  ],
+  [
+    "sourceCountry",
+    "来源国家",
+    "VARCHAR(100)",
+    "100",
+    "不得从 country 或 nationality 自动复制",
+    "identity",
+    "法国"
+  ],
+  [
+    "graduatedSchool",
+    "毕业学校",
+    "TEXT",
+    "2000",
+    "允许多行多学校，不推定学位",
+    "education",
+    "测试大学甲\n测试大学乙"
+  ],
+  [
+    "schoolRanking",
+    "学校排名",
+    "VARCHAR(500)",
+    "500",
+    "QS 与描述文字原样保存，不数值化",
+    "education",
+    "QS 100 / 学科前列"
+  ],
+  [
+    "preChinaOrganization",
+    "来华前单位",
+    "TEXT",
+    "2000",
+    "与当前 employment 独立，不自动回填",
+    "education",
+    "测试历史单位"
+  ],
+  [
+    "organizationRanking",
+    "单位排名",
+    "VARCHAR(500)",
+    "500",
+    "保留排名描述，不数值化",
+    "education",
+    "世界500强"
+  ],
+  [
+    "postdocOrganization",
+    "博士后单位",
+    "TEXT",
+    "2000",
+    "保留多单位多行",
+    "education",
+    "测试博士后单位"
+  ],
+  [
+    "postdocPeriod",
+    "博士后年限",
+    "VARCHAR(200)",
+    "200",
+    "可填 2018–2020 或 2年，不推断、不转整数",
+    "education",
+    "2018–2020"
+  ],
+  [
+    "professionalTitle",
+    "职称",
+    "VARCHAR(200)",
+    "200",
+    "不与行政职务合并",
+    "education",
+    "副教授"
+  ],
+  [
+    "administrativeTitles",
+    "行政职务 / 头衔",
+    "TEXT",
+    "4000",
+    "保留多行头衔，与职称独立",
+    "education",
+    "主任\n学会委员"
+  ],
+  [
+    "industry",
+    "产业领域（表格 P 列暂定名）",
+    "VARCHAR(500)",
+    "500",
+    "不等同学科分类，保持文本；P1 确实为空，不自动导入",
+    "technology",
+    "新能源"
+  ],
+  [
+    "technicalExpertise",
+    "技术专长",
+    "TEXT",
+    "4000",
+    "不替代 keyword 或 researchFields，保留换行",
+    "technology",
+    "储能材料\n测试技术"
+  ],
+  [
+    "programCategories",
+    "申报类别（QM/BS/BSH/HJ）",
+    "VARCHAR(500)",
+    "500",
+    "自由文本，允许 QM/BS/工程师/RJ；不猜缩写含义、不做封闭枚举",
+    "technology",
+    "QM/BS/工程师/RJ"
+  ],
+  [
+    "researchAbility",
+    "科研能力",
+    "VARCHAR(16)",
+    "枚举",
+    "NULL=未评估；VERY_STRONG=很强、STRONG=强、ABOVE_AVERAGE=中上、AVERAGE=中等、FAIR=一般、LOW=低；不自动评分",
+    "matching",
+    "STRONG"
+  ],
+  [
+    "companyMatchStatus",
+    "匹配企业进度",
+    "VARCHAR(16)",
+    "枚举",
+    "NOT_MATCHED=未匹配、MATCHING=匹配中、MATCHED=匹配上；默认 NOT_MATCHED，不修改联系阶段",
+    "matching",
+    "MATCHED"
+  ],
+  [
+    "matchedCompanies",
+    "匹配到的企业",
+    "TEXT",
+    "2000",
+    "API 为字符串数组；去每项首尾空白、去空行、精确去重、保留顺序；数据库用换行连接；每项不得含换行；总文本≤2000；MATCHED 至少一家；改变进度不得隐式清空",
+    "matching",
+    "测试企业甲 / 测试企业乙"
+  ]
+]

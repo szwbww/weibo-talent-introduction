@@ -1,0 +1,25 @@
+/Users/lukai/.m2/repository/org/springframework/spring-webmvc/5.3.31/spring-webmvc-5.3.31-sources.jar!/org/springframework/web/servlet/mvc/method/annotation/AbstractMessageConverterMethodProcessor.java
+180: 		else {
+181: 			body = value;
+182: 			valueType = getReturnValueType(body, returnType);
+183: 			targetType = GenericTypeResolver.resolveType(getGenericType(returnType), returnType.getContainingClass());
+184: 		}
+185: 
+186: 		if (isResourceType(value, returnType)) {
+187: 			outputMessage.getHeaders().set(HttpHeaders.ACCEPT_RANGES, "bytes");
+188: 			if (value != null && inputMessage.getHeaders().getFirst(HttpHeaders.RANGE) != null &&
+189: 					outputMessage.getServletResponse().getStatus() == 200) {
+190: 				Resource resource = (Resource) value;
+191: 				try {
+192: 					List<HttpRange> httpRanges = inputMessage.getHeaders().getRange();
+193: 					outputMessage.getServletResponse().setStatus(HttpStatus.PARTIAL_CONTENT.value());
+194: 					body = HttpRange.toResourceRegions(httpRanges, resource);
+195: 					valueType = body.getClass();
+196: 					targetType = RESOURCE_REGION_LIST_TYPE;
+197: 				}
+198: 				catch (IllegalArgumentException ex) {
+199: 					outputMessage.getHeaders().set(HttpHeaders.CONTENT_RANGE, "bytes */" + resource.contentLength());
+200: 					outputMessage.getServletResponse().setStatus(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE.value());
+201: 				}
+202: 			}
+203: 		}

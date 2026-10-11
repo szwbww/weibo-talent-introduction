@@ -1,0 +1,138 @@
+$ rg -n manual_expert_material_upload|ManualExpertMaterialUploadService|mail_attachment|expert_document|material-requests src/main/kotlin src/main/resources/db/migration
+exit=0
+src/main/resources/db/migration/V118__allow_attachment_metadata_only.sql:6:ALTER TABLE mail_attachment
+src/main/resources/db/migration/V118__allow_attachment_metadata_only.sql:9:ALTER TABLE mail_attachment
+src/main/resources/db/migration/V118__allow_attachment_metadata_only.sql:12:ALTER TABLE mail_attachment
+src/main/resources/db/migration/V119__create_mail_attachment_transfer.sql:2:-- V119 mail_attachment_transfer（fast-p 02：有界、持久化附件传输服务）
+src/main/resources/db/migration/V119__create_mail_attachment_transfer.sql:25:CREATE TABLE mail_attachment_transfer (
+src/main/resources/db/migration/V119__create_mail_attachment_transfer.sql:53:    UNIQUE KEY uk_mail_attachment_transfer_source
+src/main/resources/db/migration/V119__create_mail_attachment_transfer.sql:55:    UNIQUE KEY uk_mail_attachment_transfer_attachment (attachment_id),
+src/main/resources/db/migration/V119__create_mail_attachment_transfer.sql:56:    KEY idx_mail_attachment_transfer_queue (state, queued_at, id),
+src/main/resources/db/migration/V119__create_mail_attachment_transfer.sql:57:    KEY idx_mail_attachment_transfer_account (account_code, state, lease_until),
+src/main/resources/db/migration/V119__create_mail_attachment_transfer.sql:58:    KEY idx_mail_attachment_transfer_inbound (inbound_processing_id),
+src/main/resources/db/migration/V119__create_mail_attachment_transfer.sql:59:    CONSTRAINT fk_mail_attachment_transfer_attachment
+src/main/resources/db/migration/V119__create_mail_attachment_transfer.sql:60:        FOREIGN KEY (attachment_id) REFERENCES mail_attachment(id),
+src/main/resources/db/migration/V119__create_mail_attachment_transfer.sql:61:    CONSTRAINT fk_mail_attachment_transfer_inbound
+src/main/resources/db/migration/V119__create_mail_attachment_transfer.sql:63:    CONSTRAINT chk_mail_attachment_transfer_purpose
+src/main/resources/db/migration/V119__create_mail_attachment_transfer.sql:65:    CONSTRAINT chk_mail_attachment_transfer_state
+src/main/resources/db/migration/V119__create_mail_attachment_transfer.sql:67:    CONSTRAINT chk_mail_attachment_transfer_purpose_attachment
+src/main/resources/db/migration/V36__add_mail_attachment_inbound_processing_link.sql:1:ALTER TABLE mail_attachment
+src/main/resources/db/migration/V36__add_mail_attachment_inbound_processing_link.sql:4:ALTER TABLE mail_attachment
+src/main/resources/db/migration/V36__add_mail_attachment_inbound_processing_link.sql:7:ALTER TABLE mail_attachment
+src/main/resources/db/migration/V36__add_mail_attachment_inbound_processing_link.sql:8:    ADD KEY idx_mail_attachment_inbound (inbound_processing_id, created_at);
+src/main/resources/db/migration/V36__add_mail_attachment_inbound_processing_link.sql:10:ALTER TABLE mail_attachment
+src/main/resources/db/migration/V36__add_mail_attachment_inbound_processing_link.sql:11:    ADD CONSTRAINT fk_mail_attachment_inbound
+src/main/resources/db/migration/V36__add_mail_attachment_inbound_processing_link.sql:14:ALTER TABLE mail_attachment
+src/main/resources/db/migration/V36__add_mail_attachment_inbound_processing_link.sql:15:    ADD CONSTRAINT chk_mail_attachment_owner
+src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:5:--   1. 新建上传来源表 manual_expert_material_upload：一行 = 一次成功的手动上传，
+src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:8:--      mail_attachment，材料类型/审核状态仍是 expert_document。
+src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:9:--   2. mail_attachment 新增唯一可空 manual_upload_id，成为第三个附件所有者
+src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:10:--      （owner 链：manual_upload_id → manual_expert_material_upload.expert_contact_id）。
+src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:24:CREATE TABLE manual_expert_material_upload (
+src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:34:ALTER TABLE mail_attachment
+src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:37:ALTER TABLE mail_attachment
+src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:38:    ADD CONSTRAINT uk_mail_attachment_manual_upload UNIQUE (manual_upload_id);
+src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:40:ALTER TABLE mail_attachment
+src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:41:    ADD CONSTRAINT fk_mail_attachment_manual_upload
+src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:42:        FOREIGN KEY (manual_upload_id) REFERENCES manual_expert_material_upload(id);
+src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:44:SET @has_mail_attachment_owner_check := (
+src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:48:      AND TABLE_NAME = 'mail_attachment'
+src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:49:      AND CONSTRAINT_NAME = 'chk_mail_attachment_owner'
+src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:53:SET @drop_mail_attachment_owner_check := IF(
+src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:54:    @has_mail_attachment_owner_check > 0,
+src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:55:    'ALTER TABLE mail_attachment DROP CHECK chk_mail_attachment_owner',
+src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:59:PREPARE drop_mail_attachment_owner_check_stmt FROM @drop_mail_attachment_owner_check;
+src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:60:EXECUTE drop_mail_attachment_owner_check_stmt;
+src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:61:DEALLOCATE PREPARE drop_mail_attachment_owner_check_stmt;
+src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:63:ALTER TABLE mail_attachment
+src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:64:    ADD CONSTRAINT chk_mail_attachment_owner
+src/main/resources/db/migration/V126__create_outbound_mail_attachment.sql:2:-- V126 outbound_mail_attachment（fast-p 04：人工回复通用附件上传原件）
+src/main/resources/db/migration/V126__create_outbound_mail_attachment.sql:10:--   I-1 上传只写本表与 outbound/ 目录：不写 mail_attachment/expert_document，
+src/main/resources/db/migration/V126__create_outbound_mail_attachment.sql:21:CREATE TABLE outbound_mail_attachment (
+src/main/resources/db/migration/V126__create_outbound_mail_attachment.sql:31:    KEY idx_outbound_mail_attachment_contact (expert_contact_id, created_at),
+src/main/resources/db/migration/V126__create_outbound_mail_attachment.sql:32:    CONSTRAINT fk_outbound_mail_attachment_contact
+src/main/resources/db/migration/V7__create_mail_attachment_and_expert_document.sql:1:CREATE TABLE mail_attachment (
+src/main/resources/db/migration/V7__create_mail_attachment_and_expert_document.sql:9:    KEY idx_mail_attachment_record (mail_record_id, created_at),
+src/main/resources/db/migration/V7__create_mail_attachment_and_expert_document.sql:10:    CONSTRAINT fk_mail_attachment_record
+src/main/resources/db/migration/V7__create_mail_attachment_and_expert_document.sql:14:CREATE TABLE expert_document (
+src/main/resources/db/migration/V7__create_mail_attachment_and_expert_document.sql:17:    mail_attachment_id BIGINT NOT NULL,
+src/main/resources/db/migration/V7__create_mail_attachment_and_expert_document.sql:23:    KEY idx_expert_document_contact (expert_contact_id, document_type, document_status),
+src/main/resources/db/migration/V7__create_mail_attachment_and_expert_document.sql:24:    CONSTRAINT fk_expert_document_contact
+src/main/resources/db/migration/V7__create_mail_attachment_and_expert_document.sql:26:    CONSTRAINT fk_expert_document_attachment
+src/main/resources/db/migration/V7__create_mail_attachment_and_expert_document.sql:27:        FOREIGN KEY (mail_attachment_id) REFERENCES mail_attachment(id)
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/MailAttachmentTransfer.kt:8: * mail_attachment_transfer：一行 = 一个远端 part（唯一源身份）与其有界下载状态。
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/MailAttachmentTransfer.kt:18:@Table("mail_attachment_transfer")
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/MailAttachmentTransfer.kt:22:    /** MATERIAL 必填（一个附件至多一行，uk_mail_attachment_transfer_attachment）；
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/OutboundMailAttachment.kt:8: * outbound_mail_attachment：一行 = 一次成功上传的通用附件原件元数据（04 I-1）。
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/OutboundMailAttachment.kt:17:@Table("outbound_mail_attachment")
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/MailAttachment.kt:13: *   `manual_expert_material_upload.expert_contact_id`，不是邮件事件）。
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/MailAttachment.kt:19:@Table("mail_attachment")
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:514:                 CAST(EXISTS(SELECT 1 FROM mail_attachment ma WHERE ma.mail_record_id = mr.id) AS SIGNED) AS has_attachment,
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:545:                   SELECT 1 FROM mail_attachment ma
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:782:                 CAST(EXISTS(SELECT 1 FROM mail_attachment ma WHERE ma.mail_record_id = mr.id) AS SIGNED) AS has_attachment,
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:821:                   SELECT 1 FROM mail_attachment ma
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:29: * 从事件（mail_record / bounce_record / mail_attachment）反推每位联系人的**期望** operator_status
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:178:     *   附件经 MailAttachmentService.saveInboundAttachments 以 mailRecordId 落 mail_attachment）
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/OutboundMailAttachmentRepository.kt:10: * outbound_mail_attachment 的显式 JDBC 读写（04 T1）。
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/OutboundMailAttachmentRepository.kt:29:            INSERT INTO outbound_mail_attachment
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/OutboundMailAttachmentRepository.kt:64:              FROM outbound_mail_attachment
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:258:    @GetMapping("/{contactId}/material-requests")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:262:    @PutMapping("/{contactId}/material-requests/{code}")
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:10: * mail_attachment_transfer 的全部状态写路径：
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:13: *   登记并发唯一性由 uk_mail_attachment_transfer_source 兜底。
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:42:        SELECT * FROM mail_attachment_transfer
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:50:    @Query("SELECT COUNT(*) FROM mail_attachment_transfer WHERE state = 'QUEUED'")
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:55:        SELECT COUNT(*) FROM mail_attachment_transfer
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:63:        SELECT COUNT(*) FROM mail_attachment_transfer
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:72:        SELECT DISTINCT purpose FROM mail_attachment_transfer WHERE state = 'QUEUED'
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:81:        UPDATE mail_attachment_transfer
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:102:        UPDATE mail_attachment_transfer t
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:115:                    SELECT 1 FROM mail_attachment_transfer a
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:119:                    SELECT 1 FROM mail_attachment_transfer a
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:140:        UPDATE mail_attachment_transfer
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:162:        UPDATE mail_attachment_transfer
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:187:        UPDATE mail_attachment_transfer
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt:215:        UPDATE mail_attachment_transfer
+src/main/kotlin/com/weibo/talentintroduction/document/domain/ExpertDocument.kt:7:@Table("expert_document")
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.kt:44: * MATERIAL 是内建终局（落盘 + 回写 mail_attachment + STORED），不经过消费者。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.kt:294:    // MATERIAL：下载 -> .part -> 原子转正 -> 事务提交（回写 mail_attachment）
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.kt:495:                    // mail_attachment 无 updated_at 列（V7 只有 created_at）。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.kt:498:                        UPDATE mail_attachment
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:393:    /** 每位专家全体资料数（expert_document；不随账号范围/筛选变化）。 */
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:398:              FROM expert_document
+src/main/kotlin/com/weibo/talentintroduction/document/domain/ManualExpertMaterialUpload.kt:12: *   `expert_document.expert_contact_id` 同时等于请求的 contactId；
+src/main/kotlin/com/weibo/talentintroduction/document/domain/ManualExpertMaterialUpload.kt:14: * - 文件本身（文件名/大小/磁盘路径）只存 `mail_attachment`，材料类型/审核状态只存
+src/main/kotlin/com/weibo/talentintroduction/document/domain/ManualExpertMaterialUpload.kt:15: *   `expert_document`，本表不重复。
+src/main/kotlin/com/weibo/talentintroduction/document/domain/ManualExpertMaterialUpload.kt:18: * 与 `inbound_processing_id` 恒为 null），也不创建 `mail_attachment_transfer` 行。
+src/main/kotlin/com/weibo/talentintroduction/document/domain/ManualExpertMaterialUpload.kt:20:@Table("manual_expert_material_upload")
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:31: * expert_document 归属展示材料；附件状态只来自 transfer 行 + 已验证的本地文件；
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:60:    // 手动材料 owner 解析（V130）：manual_upload_id → manual_expert_material_upload.expert_contact_id。
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:590:     * 已确认材料（expert_document 归属）；任一外来/未知 ID 整批拒绝（400，
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:756:            SELECT attachment_id FROM mail_attachment_transfer
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:852:              FROM expert_document d
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:853:              JOIN mail_attachment a ON a.id = d.mail_attachment_id
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:854:              LEFT JOIN mail_attachment_transfer t ON t.attachment_id = a.id
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:857:              LEFT JOIN manual_expert_material_upload mu ON mu.id = a.manual_upload_id
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:863:              FROM mail_attachment a
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:868:                     SELECT 1 FROM expert_document d
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:869:                      WHERE d.mail_attachment_id = a.id)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:875:              FROM mail_attachment a
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:880:                     SELECT 1 FROM expert_document d
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:881:                      WHERE d.mail_attachment_id = a.id)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentService.kt:32: * 本服务不写 `mail_attachment` / `expert_document`，不调用 SMTP、不建排期、不变更
+src/main/kotlin/com/weibo/talentintroduction/document/service/DocumentTextExtractor.kt:24: * 只有归属有效（expert_document → attachment → 唯一 owner → 该 contact）的
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:25: *   uk_mail_attachment_transfer_source）约束内创建 mail_attachment（已匹配时
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:196:     * metadata 附件登记：在 transfer 源唯一身份内幂等创建 mail_attachment +
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:199:     * uk_mail_attachment_transfer_source 兜底（冲突即本信失败回滚，重试收敛为
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:51: * 4. 在**一个** [TransactionTemplate] 事务里依次写 `manual_expert_material_upload` →
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:52: *    `mail_attachment`（三选一 owner 中的 manual、真实大小、final 路径）→
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:53: *    `expert_document`（PENDING_REVIEW、沿用推断类型）。
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:59: * 不建 `mail_attachment_transfer` 行，不推进 `MATERIALS_RECEIVED`，不触网。
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:62:class ManualExpertMaterialUploadService(
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:202:     * 列宽与 04 的 `outbound_mail_attachment.created_by` 同为 100 字符，复用同一常量。
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:54:            // processing owner（04 已绑定专家附件）以 expert_document 为准。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:203:     * LEFT JOIN expert_contact / EXISTS(mail_attachment)）。
+src/main/kotlin/com/weibo/talentintroduction/document/repository/ManualExpertMaterialUploadRepository.kt:9: * 只服务两处只读需求：owner 解析（`mail_attachment.manual_upload_id` → 上传行 →
+src/main/kotlin/com/weibo/talentintroduction/document/repository/ManualExpertMaterialUploadRepository.kt:11: * 新增行只由 [com.weibo.talentintroduction.document.service.ManualExpertMaterialUploadService]
+src/main/kotlin/com/weibo/talentintroduction/document/controller/ExpertMaterialController.kt:8:import com.weibo.talentintroduction.document.service.ManualExpertMaterialUploadService
+src/main/kotlin/com/weibo/talentintroduction/document/controller/ExpertMaterialController.kt:37:    private val uploadService: ManualExpertMaterialUploadService? = null

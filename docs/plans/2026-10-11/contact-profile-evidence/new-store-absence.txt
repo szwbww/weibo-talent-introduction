@@ -1,0 +1,2 @@
+$ rg -n expert_manual_profile|expert_meeting_video src/main src/test
+exit=1

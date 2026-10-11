@@ -1,0 +1,78 @@
+$ rg -n showExpertDetail|loadContactDetail|ContactDetailPresentation|data-panel="contact"|mountExpertMaterialsInline|unmountExpertMaterialsHosts|activateDetailSubTab|contact-notes|\?v= src/main/resources/static/app.js src/main/resources/static/mailbox-chat.js src/main/resources/static/index.html
+exit=0
+src/main/resources/static/index.html:11:    <link rel="stylesheet" href="styles.css?v=20261008-mailbox-server-drafts">
+src/main/resources/static/index.html:12:    <link rel="stylesheet" href="expert-materials.css?v=20261008-mailbox-server-drafts">
+src/main/resources/static/index.html:13:    <link rel="stylesheet" href="mailbox-chat.css?v=20261008-mailbox-server-drafts">
+src/main/resources/static/index.html:14:    <link rel="stylesheet" href="meeting-confirmation.css?v=20261008-mailbox-server-drafts">
+src/main/resources/static/index.html:15:    <link rel="stylesheet" href="world-clock.css?v=20261008-mailbox-server-drafts">
+src/main/resources/static/index.html:2403:<script src="trust-reply-workbench.js?v=20261008-mailbox-server-drafts"></script>
+src/main/resources/static/index.html:2404:<script src="expert-materials.js?v=20261008-mailbox-server-drafts"></script>
+src/main/resources/static/index.html:2405:<script src="meeting-confirmation.js?v=20261008-mailbox-server-drafts"></script>
+src/main/resources/static/index.html:2406:<script src="mailbox-chat.js?v=20261008-mailbox-server-drafts"></script>
+src/main/resources/static/index.html:2407:<script src="app.js?v=20261008-mailbox-server-drafts"></script>
+src/main/resources/static/index.html:2408:<script src="world-clock.js?v=20261008-mailbox-server-drafts"></script>
+src/main/resources/static/mailbox-chat.js:3337:            const releaseMaterials = hostFn("unmountExpertMaterialsHosts");
+src/main/resources/static/mailbox-chat.js:3598:            hostApi()(`/api/mail/contact-notes/${id}`).then((data) => {
+src/main/resources/static/mailbox-chat.js:3663:            hostApi()(`/api/mail/contact-notes/${dialog.contactId}`, {
+src/main/resources/static/app.js:4977:function beginContactDetailPresentation(trigger = document.activeElement) {
+src/main/resources/static/app.js:4993:function isCurrentContactDetailPresentation(generation) {
+src/main/resources/static/app.js:4997:function finishContactDetailPresentation(generation) {
+src/main/resources/static/app.js:4998:    if (!isCurrentContactDetailPresentation(generation)) return;
+src/main/resources/static/app.js:5005:function failContactDetailPresentation(generation, error) {
+src/main/resources/static/app.js:5006:    if (!isCurrentContactDetailPresentation(generation)) return;
+src/main/resources/static/app.js:5019:        if (!isCurrentContactDetailPresentation(generation) || !isMobileCoreViewport()) return;
+src/main/resources/static/app.js:11145:function activateDetailSubTab(btn) {
+src/main/resources/static/app.js:11213:async function showExpertDetail(expert, generation) {
+src/main/resources/static/app.js:11214:    if (generation === undefined) generation = beginContactDetailPresentation();
+src/main/resources/static/app.js:11220:    if (typeof unmountExpertMaterialsHosts === "function") {
+src/main/resources/static/app.js:11221:        unmountExpertMaterialsHosts(contactDetail);
+src/main/resources/static/app.js:11229:            if (!isCurrentContactDetailPresentation(generation)) return;
+src/main/resources/static/app.js:11231:                failContactDetailPresentation(generation, error);
+src/main/resources/static/app.js:11237:    if (!isCurrentContactDetailPresentation(generation)) return;
+src/main/resources/static/app.js:11264:            <div class="detail-tab-panel" data-panel="contact" hidden>
+src/main/resources/static/app.js:11345:    finishContactDetailPresentation(generation);
+src/main/resources/static/app.js:11347:        if (!isCurrentContactDetailPresentation(generation)) return;
+src/main/resources/static/app.js:11354:        failContactDetailPresentation(generation, error);
+src/main/resources/static/app.js:11530:    if (isCurrentContactDetailPresentation(detailGeneration)) await loadContactDetail(contactId);
+src/main/resources/static/app.js:11656:async function loadContactDetail(contactId, generation) {
+src/main/resources/static/app.js:11657:    if (generation === undefined) generation = beginContactDetailPresentation();
+src/main/resources/static/app.js:11673:    if (!isCurrentContactDetailPresentation(generation)) return;
+src/main/resources/static/app.js:11686:            if (!isCurrentContactDetailPresentation(generation)) return;
+src/main/resources/static/app.js:11688:                failContactDetailPresentation(generation, error);
+src/main/resources/static/app.js:11697:    if (!isCurrentContactDetailPresentation(generation)) return;
+src/main/resources/static/app.js:11761:    if (typeof unmountExpertMaterialsHosts === "function") {
+src/main/resources/static/app.js:11762:        unmountExpertMaterialsHosts(contactDetail);
+src/main/resources/static/app.js:11814:            <div class="detail-tab-panel" data-panel="contact">
+src/main/resources/static/app.js:11962:    finishContactDetailPresentation(generation);
+src/main/resources/static/app.js:11964:        if (!isCurrentContactDetailPresentation(generation)) return;
+src/main/resources/static/app.js:11971:    if (typeof mountExpertMaterialsInline === "function") {
+src/main/resources/static/app.js:11972:        mountExpertMaterialsInline(contact.id, contactDetail);
+src/main/resources/static/app.js:11979:        if (!isCurrentContactDetailPresentation(generation)) return;
+src/main/resources/static/app.js:11980:        failContactDetailPresentation(generation, error);
+src/main/resources/static/app.js:11987:    const generation = beginContactDetailPresentation();
+src/main/resources/static/app.js:11992:            if (!isCurrentContactDetailPresentation(generation)) return;
+src/main/resources/static/app.js:11993:            failContactDetailPresentation(generation, error);
+src/main/resources/static/app.js:11997:    if (!isCurrentContactDetailPresentation(generation)) return;
+src/main/resources/static/app.js:11998:    const contact = await loadContactDetail(contactId, generation);
+src/main/resources/static/app.js:11999:    if (!contact || !isCurrentContactDetailPresentation(generation)) return;
+src/main/resources/static/app.js:12086:function unmountExpertMaterialsHosts(rootEl) {
+src/main/resources/static/app.js:12093:function mountExpertMaterialsInline(contactId, rootEl) {
+src/main/resources/static/app.js:12129:    // 真正的 S-1 面板由 ExpertMaterials.mount 在 loadContactDetail 写入后渲染。
+src/main/resources/static/app.js:14005:            await loadContactDetail(expert.contactId, beginContactDetailPresentation(element));
+src/main/resources/static/app.js:14007:            await showExpertDetail(expert, beginContactDetailPresentation(element));
+src/main/resources/static/app.js:14012:        await loadContactDetail(id, beginContactDetailPresentation(element));
+src/main/resources/static/app.js:14035:        if (isCurrentContactDetailPresentation(detailGeneration)) await loadContactDetail(id);
+src/main/resources/static/app.js:14046:        if (isCurrentContactDetailPresentation(detailGeneration)) await loadContactDetail(id);   // I-4
+src/main/resources/static/app.js:14056:        if (isCurrentContactDetailPresentation(detailGeneration)) await loadContactDetail(id);
+src/main/resources/static/app.js:14135:        if (isCurrentContactDetailPresentation(detailGeneration)) await loadContactDetail(id);
+src/main/resources/static/app.js:14142:        if (isCurrentContactDetailPresentation(detailGeneration)) await loadContactDetail(id);
+src/main/resources/static/app.js:14149:        if (isCurrentContactDetailPresentation(detailGeneration)) await loadContactDetail(id);
+src/main/resources/static/app.js:14158:        if (isCurrentContactDetailPresentation(detailGeneration)) await loadContactDetail(id);
+src/main/resources/static/app.js:14178:        if (isCurrentContactDetailPresentation(detailGeneration)) await loadContactDetail(id);
+src/main/resources/static/app.js:14197:        if (isCurrentContactDetailPresentation(detailGeneration)) await loadContactDetail(contactId);
+src/main/resources/static/app.js:14209:        if (isCurrentContactDetailPresentation(detailGeneration)) await loadContactDetail(contactId);
+src/main/resources/static/app.js:14220:        if (isCurrentContactDetailPresentation(detailGeneration)) await loadContactDetail(contactId);
+src/main/resources/static/app.js:17052:            activateDetailSubTab(subTabBtn);
+src/main/resources/static/app.js:17164:                if (isCurrentContactDetailPresentation(detailGeneration)) await loadContactDetail(contactId);
+src/main/resources/static/app.js:17617:                if (isCurrentContactDetailPresentation(detailGeneration)) return loadContactDetail(contactId);
+src/main/resources/static/app.js:17630:                if (isCurrentContactDetailPresentation(detailGeneration)) return loadContactDetail(contactId);

@@ -1,0 +1,533 @@
+src/main/resources/static/app.js
+
+4977: function beginContactDetailPresentation(trigger = document.activeElement) {
+4978:     const generation = ++mobileContactPresentation.generation;
+4979:     const view = $("#view-contacts");
+4980:     if (!view || state.view !== "contacts") return generation;
+4981:     if (view.dataset.mobilePane !== "detail") {
+4982:         mobileContactPresentation.mainScrollTop = $(".main")?.scrollTop || 0;
+4983:         mobileContactPresentation.listScrollTop = $("#contactList")?.scrollTop || 0;
+4984:         mobileContactPresentation.trigger = trigger;
+4985:     }
+4986:     view.dataset.mobilePane = "detail";
+4987:     view.dataset.mobileLoading = "true";
+4988:     const status = $("#mobileContactStatus");
+4989:     if (status) { status.hidden = false; status.textContent = "正在加载专家详情…"; }
+4990:     return generation;
+4991: }
+4992: 
+4993: function isCurrentContactDetailPresentation(generation) {
+4994:     return generation === mobileContactPresentation.generation && state.view === "contacts";
+4995: }
+4996: 
+4997: function finishContactDetailPresentation(generation) {
+4998:     if (!isCurrentContactDetailPresentation(generation)) return;
+4999:     const view = $("#view-contacts");
+5000:     if (view) view.dataset.mobileLoading = "false";
+5001:     const status = $("#mobileContactStatus");
+5002:     if (status) { status.hidden = true; status.textContent = ""; }
+5003: }
+5004: 
+5005: function failContactDetailPresentation(generation, error) {
+5006:     if (!isCurrentContactDetailPresentation(generation)) return;
+5007:     const status = $("#mobileContactStatus");
+5008:     if (status) { status.hidden = false; status.textContent = "专家详情加载失败，请返回列表重试"; }
+5009:     showStatus(error.message, "error");
+5010: }
+5011: 
+5012: function returnToMobileContactsList() {
+5013:     const generation = ++mobileContactPresentation.generation;
+5014:     const view = $("#view-contacts");
+5015:     if (view) { view.dataset.mobilePane = "list"; view.dataset.mobileLoading = "false"; }
+5016:     const status = $("#mobileContactStatus");
+5017:     if (status) { status.hidden = true; status.textContent = ""; }
+5018:     requestAnimationFrame(() => {
+5019:         if (!isCurrentContactDetailPresentation(generation) || !isMobileCoreViewport()) return;
+5020:         const main = $(".main"), list = $("#contactList");
+
+11145: function activateDetailSubTab(btn) {
+11146:     const tabKey = btn.dataset.subTab;
+11147:     const detail = btn.closest(".detail");
+11148:     if (!detail || !tabKey) return;
+11149:     detail.querySelectorAll(".detail-sub-tab").forEach((t) => {
+11150:         t.classList.toggle("active", t.dataset.subTab === tabKey);
+11151:     });
+11152:     detail.querySelectorAll(".detail-tab-panel").forEach((p) => {
+11153:         p.hidden = p.dataset.panel !== tabKey;
+11154:     });
+11155:     if (tabKey === "template") {
+11156:         const panel = detail.querySelector('[data-panel="template"]');
+11157:         if (panel && !panel.dataset.loaded) {
+11158:             loadTemplatePreview(panel, state.selectedExpertOrcid);
+11159:         }
+11160:     }
+11161:     if (tabKey === "mail-preview") {
+11162:         const panel = detail.querySelector('[data-panel="mail-preview"]');
+11163:         if (panel && !panel.dataset.loaded) {
+11164:             loadExpertMailPreview(panel, state.selectedExpertOrcid);
+11165:         }
+11166:     }
+11167: }
+11168: 
+11169: async function loadTemplatePreview(panel, orcidId) {
+11170:     if (!orcidId) {
+11171:         panel.innerHTML = `<div class="tpl-var-empty">无 ORCID，无法预览模板变量。</div>`;
+11172:         return;
+11173:     }
+11174:     panel.innerHTML = `<div class="tpl-var-loading">加载模板变量中...</div>`;
+11175:     panel.dataset.loaded = "true";
+11176:     try {
+11177:         const level = $("#expertIndexLevel")?.value || "CANDIDATE";
+11178:         const vars = await api(`/api/experts/template-variables?orcidId=${encodeURIComponent(orcidId)}&level=${level}`);
+11179:         const coverage = calculateExpertVariableCoverage(vars);
+11180:         panel.innerHTML = `
+11181:             <div class="tpl-var-summary">
+11182:                 <span class="tpl-var-coverage">专家变量覆盖: ${coverage.filled}/${coverage.total} (${coverage.percent}%)</span>
+11183:                 <div class="tpl-var-progress-track">
+11184:                     <div class="tpl-var-progress-fill" style="width: ${coverage.percent}%"></div>
+11185:                 </div>
+11186:             </div>
+11187:             <div class="tpl-var-grid">
+11188:                 ${vars.map((v) => `
+11189:                     <div class="tpl-var-item ${v.filled ? "tpl-var-filled" : "tpl-var-empty-val"}">
+11190:                         <div class="tpl-var-key">\${${escapeHtml(v.key)}}</div>
+11191:                         <div class="tpl-var-value">${v.filled ? escapeHtml(v.value) : "—"}</div>
+11192:                     </div>
+11193:                 `).join("")}
+
+11213: async function showExpertDetail(expert, generation) {
+11214:     if (generation === undefined) generation = beginContactDetailPresentation();
+11215:     try {
+11216:     const name = expert.displayName || expert.email || expert.orcidId || "?";
+11217:     const initial = name.charAt(0).toUpperCase();
+11218:     const contactDetail = $("#contactDetail");
+11219:     // 切到 ES 原始专家视图前同样释放上一个联系人的材料组件视图
+11220:     if (typeof unmountExpertMaterialsHosts === "function") {
+11221:         unmountExpertMaterialsHosts(contactDetail);
+11222:     }
+11223:     const tagLevel = expert.indexLevel || $("#expertIndexLevel").value || "CANDIDATE";
+11224:     let expertTags = { found: false, tags: [] };
+11225:     if (expert.orcidId) {
+11226:         try {
+11227:             expertTags = await fetchExpertTagsFromEs(expert.orcidId, tagLevel);
+11228:         } catch (error) {
+11229:             if (!isCurrentContactDetailPresentation(generation)) return;
+11230:             if (isMobileCoreViewport()) {
+11231:                 failContactDetailPresentation(generation, error);
+11232:                 return;
+11233:             }
+11234:             showStatus(error.message, "error");
+11235:         }
+11236:     }
+11237:     if (!isCurrentContactDetailPresentation(generation)) return;
+11238:     $("#contactHeadActions").hidden = true;
+11239:     $("#contactHeadActions").innerHTML = "";
+11240:     contactDetail.classList.remove("detail-empty");
+11241:     contactDetail.scrollTop = 0;
+11242:     const noContactMaterialsHtml = typeof renderNoContactMaterialsEmpty === "function" ? renderNoContactMaterialsEmpty() : "";
+11243:     contactDetail.innerHTML = `
+11244:         ${backToListBtnHtml()}
+11245:         <div class="detail">
+11246:             <div class="expert-profile-header">
+11247:                 <div class="expert-avatar">${escapeHtml(initial)}</div>
+11248:                 <div class="expert-header-info">
+11249:                     <h2>${escapeHtml(name)}</h2>
+11250:                     <p>
+11251:                         <span>${escapeHtml(indexLevelLabels[expert.indexLevel] || expert.indexLevelName || expert.indexLevel)}</span>
+11252:                         <span class="divider">·</span>
+11253:                         <span>${escapeHtml(expert.email || "邮箱未知")}</span>
+11254:                     </p>
+11255:                 </div>
+11256:                 ${expert.orcidId ? renderExpertTagEditor(expertTags.tags, expert.orcidId, tagLevel, "expertTagEditor", expertTags.found === false, "inline") : ""}
+11257:             </div>
+11258: 
+11259:             ${renderDetailSubTabs("academic")}
+11260: 
+11261:             <div class="detail-tab-panel" data-panel="academic">
+11262:                 ${renderAcademicProfilePanel(expert)}
+11263:             </div>
+11264:             <div class="detail-tab-panel" data-panel="contact" hidden>
+11265:                 <div class="metadata-grid">
+11266:                 <div class="metadata-card">
+11267:                     <div class="metadata-card-header">
+11268:                         <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+11269:                         <span>ORCID</span>
+11270:                     </div>
+11271:                     <div class="metadata-card-value">
+11272:                         ${expert.orcidId ? `<a href="https://orcid.org/${escapeHtml(expert.orcidId)}" target="_blank" title="在新窗口打开 ORCID">${escapeHtml(expert.orcidId)}</a>` : "-"}
+11273:                     </div>
+11274:                 </div>
+11275: 
+11276:                 <div class="metadata-card">
+11277:                     <div class="metadata-card-header">
+11278:                         <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+11279:                         <span>国家 / 国籍</span>
+11280:                     </div>
+11281:                     <div class="metadata-card-value">
+11282:                         ${escapeHtml(expert.country || "未知")} ${expert.nationality ? `/ ${escapeHtml(expert.nationality)}` : ""}
+11283:                     </div>
+11284:                 </div>
+11285: 
+11286:                 <div class="metadata-card">
+11287:                     <div class="metadata-card-header">
+11288:                         <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+11289:                         <span>年龄 / 学历</span>
+11290:                     </div>
+11291:                     <div class="metadata-card-value">
+11292:                         ${expert.age ? `${escapeHtml(expert.age)} 岁` : ""} ${expert.degree ? `(${escapeHtml(expert.degree)})` : (!expert.age ? "-" : "")}
+11293:                     </div>
+11294:                 </div>
+11295: 
+11296:                 <div class="metadata-card">
+11297:                     <div class="metadata-card-header">
+11298:                         <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+11299:                         <span>阶段状态</span>
+11300:                     </div>
+11301:                     <div class="metadata-card-value">
+11302:                         ${badge(expert.contactStatus ? labelStatus(expert.contactStatus) : "未联系", expert.contactStatus === "MANUAL_HANDOFF" ? "warn" : expert.contactId ? "ok" : "")}
+11303:                     </div>
+11304:                 </div>
+11305: 
+11306:                 <div class="metadata-card span-all">
+11307:                     <div class="metadata-card-header">
+11308:                         <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+11309:                         <span>当前单位 / 机构</span>
+11310:                     </div>
+11311:                     <div class="metadata-card-value">
+11312:                         ${escapeHtml(expert.employment || "-")}
+11313:                     </div>
+11314:                 </div>
+11315: 
+11316:                 <div class="metadata-card span-all">
+11317:                     <div class="metadata-card-header">
+11318:                         <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+11319:                         <span>专业关键词</span>
+11320:                     </div>
+11321:                     <div class="metadata-card-value">
+11322:                         ${renderKeywords(expert.keyword)}
+11323:                     </div>
+11324:                 </div>
+11325:                 </div>
+11326: 
+11327:                 ${expert.contactId ? `
+11328:                 <div class="toolbar" style="margin-top: 4px;">
+11329:                     <button class="button primary" data-action="select-contact" data-id="${expert.contactId}">
+11330:                         <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+11331:                         查看联系详情
+11332:                     </button>
+11333:                 </div>
+11334:             ` : ""}
+11335:             ${noContactMaterialsHtml}
+11336:             </div>
+11337:             <div class="detail-tab-panel" data-panel="template" hidden>
+11338:                 <div class="tpl-var-empty">切换到本标签页以加载模板变量预览。</div>
+11339:             </div>
+11340:             <div class="detail-tab-panel" data-panel="mail-preview" hidden>
+11341:                 <div class="tpl-var-empty">切换到本标签页以加载邮件预览。</div>
+11342:             </div>
+11343:         </div>
+11344:     `;
+11345:     finishContactDetailPresentation(generation);
+11346:     requestAnimationFrame(() => {
+11347:         if (!isCurrentContactDetailPresentation(generation)) return;
+11348:         contactDetail.scrollTop = 0;
+11349:         if (window.innerWidth <= 1024) {
+11350:             document.querySelector(".contact-detail-panel")?.scrollIntoView({ behavior: "smooth" });
+11351:         }
+11352:     });
+11353:     } catch (error) {
+11354:         failContactDetailPresentation(generation, error);
+11355:     }
+11356: }
+11357: 
+
+11656: async function loadContactDetail(contactId, generation) {
+11657:     if (generation === undefined) generation = beginContactDetailPresentation();
+11658:     try {
+11659:     const [detail, options, documents, logs, materials, mailSummary] = await Promise.all([
+11660:         api(`/api/expert-contacts/${contactId}`),
+11661:         loadMailSendOptions(),
+11662:         api(`/api/expert-contacts/${contactId}/documents`).catch(() => []),
+11663:         api(`/api/operator-action-logs?expertContactId=${contactId}&pageSize=50&pageOffset=0`).catch(() => ({ records: [] })),
+11664:         api(`/api/expert-contacts/${contactId}/material-requests`).catch((error) => {
+11665:             showStatus("材料状态加载失败: " + error.message, "error");
+11666:             return null;
+11667:         }),
+11668:         api(`/api/mail/mailbox/by-expert?expertContactId=${contactId}&page=0&size=1`).catch((error) => {
+11669:             showStatus("邮件统计加载失败: " + error.message, "error");
+11670:             return null;
+11671:         })
+11672:     ]);
+11673:     if (!isCurrentContactDetailPresentation(generation)) return;
+11674:     const contact = detail.contact;
+11675:     const expert = state.contacts.find(item => item.orcidId === state.selectedExpertOrcid) || {};
+11676:     const name = contact.expertName || contact.expertEmail || expert.displayName || "?";
+11677:     const initial = name.charAt(0).toUpperCase();
+11678:     const boundSenderAccountCode = (contact.boundSenderAccountCode || "").trim();
+11679:     const tagLevel = contact.currentIndexLevel || expert.indexLevel || $("#expertIndexLevel").value || "CANDIDATE";
+11680:     const orcidId = contact.orcidId || expert.orcidId || "";
+11681:     let expertTags = { found: false, tags: [] };
+11682:     if (orcidId) {
+11683:         try {
+11684:             expertTags = await fetchExpertTagsFromEs(orcidId, tagLevel);
+11685:         } catch (error) {
+11686:             if (!isCurrentContactDetailPresentation(generation)) return;
+11687:             if (isMobileCoreViewport()) {
+11688:                 failContactDetailPresentation(generation, error);
+11689:                 return;
+11690:             }
+11691:             showStatus(error.message, "error");
+11692:         }
+11693:     }
+11694:     const accounts = state.accounts && state.accounts.length
+11695:         ? state.accounts
+11696:         : await api("/api/mail/sender-accounts").catch(() => []);
+11697:     if (!isCurrentContactDetailPresentation(generation)) return;
+11698:     $("#contactHeadActions").hidden = false;
+11699:     $("#contactHeadActions").innerHTML = `
+11700:         <div class="contact-head-main-row">
+
+11794:     contactDetail.innerHTML = `
+11795:         ${backToListBtnHtml()}
+11796:         ${banner}
+11797:         <div class="detail">
+11798:             <div class="expert-profile-header">
+11799:                 <div class="expert-avatar">${escapeHtml(initial)}</div>
+11800:                 <div class="expert-header-info">
+11801:                     <h2>${escapeHtml(name)}</h2>
+11802:                     <p>
+11803:                         <span>${escapeHtml(contact.expertEmail)}</span>
+11804:                     </p>
+11805:                 </div>
+11806:                 ${renderExpertTagEditor(expertTags.tags, orcidId, tagLevel, "expertTagEditor", expertTags.found === false, "inline")}
+11807:             </div>
+11808: 
+11809:             ${renderDetailSubTabs("contact")}
+11810: 
+11811:             <div class="detail-tab-panel" data-panel="academic" hidden>
+11812:                 ${renderAcademicProfilePanel(expert)}
+11813:             </div>
+11814:             <div class="detail-tab-panel" data-panel="contact">
+11815:             ${mailSummaryHtml}
+11816: 
+11817:             ${renderMeetingSchedule(detail)}
+11818: 
+11819:             <div class="metadata-grid">
+11820:                 <!-- Stage Status Card -->
+11821:                 <div class="metadata-card">
+11822:                     <div class="metadata-card-header">
+11823:                         <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+11824:                         <span>阶段状态</span>
+11825:                     </div>
+11826:                     <div class="metadata-card-value">
+11827:                         ${badge(labelStatus(contact.currentStatus), contact.currentStatus === "MANUAL_HANDOFF" ? "warn" : "ok")}
+11828:                     </div>
+11829:                 </div>
+11830: 
+11831:                 <div class="metadata-card">
+11832:                     <div class="metadata-card-header">
+11833:                         <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+11834:                         <span>推荐下一步</span>
+11835:                     </div>
+11836:                     <div class="metadata-card-value next-action-text">
+11837:                         ${escapeHtml(detail.recommendedNextAction || "请人工确认下一步动作。")}
+11838:                     </div>
+11839:                 </div>
+11840: 
+11841:                 <!-- Manual Review Card -->
+11842:                 <div class="metadata-card">
+11843:                     <div class="metadata-card-header">
+11844:                         <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+11845:                         <span>人工处理需求</span>
+11846:                     </div>
+11847:                     <div class="metadata-card-value">
+11848:                         ${contact.manualHandoffRequired ? badge("需要人工", "warn") : badge("无需人工", "")}
+11849:                     </div>
+11850:                 </div>
+11851: 
+11852:                 <!-- ORCID Card -->
+11853:                 <div class="metadata-card">
+11854:                     <div class="metadata-card-header">
+11855:                         <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+11856:                         <span>ORCID</span>
+11857:                     </div>
+11858:                     <div class="metadata-card-value">
+11859:                         ${expert.orcidId ? `<a href="https://orcid.org/${escapeHtml(expert.orcidId)}" target="_blank" title="在新窗口打开 ORCID">${escapeHtml(expert.orcidId)}</a>` : (contact.orcidId ? `<a href="https://orcid.org/${escapeHtml(contact.orcidId)}" target="_blank">${escapeHtml(contact.orcidId)}</a>` : "-")}
+11860:                     </div>
+11861:                 </div>
+11862: 
+11863:                 <!-- Country / Region Card -->
+11864:                 <div class="metadata-card">
+11865:                     <div class="metadata-card-header">
+11866:                         <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+11867:                         <span>国家 / 地区</span>
+11868:                     </div>
+11869:                     <div class="metadata-card-value">
+11870:                         ${escapeHtml(expert.country || contact.expertCountry || "未知")}
+11871:                     </div>
+11872:                 </div>
+11873: 
+11874:                 <!-- Employment Card -->
+11875:                 ${expert.employment ? `
+11876:                 <div class="metadata-card span-all">
+11877:                     <div class="metadata-card-header">
+11878:                         <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+11879:                         <span>当前单位 / 机构</span>
+11880:                     </div>
+11881:                     <div class="metadata-card-value">
+11882:                         ${escapeHtml(expert.employment)}
+11883:                     </div>
+11884:                 </div>
+11885:                 ` : ""}
+11886: 
+11887:                 <!-- Keywords Card -->
+11888:                 ${expert.keyword ? `
+11889:                 <div class="metadata-card span-all">
+11890:                     <div class="metadata-card-header">
+11891:                         <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+11892:                         <span>专业关键词</span>
+11893:                     </div>
+11894:                     <div class="metadata-card-value">
+11895:                         ${renderKeywords(expert.keyword)}
+11896:                     </div>
+11897:                 </div>
+11898:                 ` : ""}
+11899: 
+11900:                 <!-- Handoff & Closed Details Card -->
+11901:                 ${(contact.closedReason || detail.latestHandoff) ? `
+11902:                 <div class="metadata-card span-all" style="background-color: #fffbeb; border-color: #fde68a;">
+11903:                     <div class="metadata-card-header" style="color: #b45309;">
+11904:                         <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+11905:                         <span>人工流转与关闭备注</span>
+11906:                     </div>
+11907:                     <div class="metadata-card-value" style="font-size: 13px; font-weight: 500; color: #78350f; display: flex; flex-direction: column; gap: 4px;">
+11908:                         ${contact.closedReason ? `<div><strong>关闭原因</strong>: ${escapeHtml(contact.closedReason)}</div>` : ""}
+11909:                         ${detail.latestHandoff ? `
+11910:                             <div><strong>转人工状态</strong>: ${badge(labelStatus(detail.latestHandoff.handoffStatus), "warn")}</div>
+11911:                             ${detail.latestHandoff.assignedTo ? `<div><strong>处理人</strong>: ${escapeHtml(detail.latestHandoff.assignedTo)}</div>` : ""}
+11912:                             ${detail.latestHandoff.note ? `<div><strong>处理说明</strong>: ${escapeHtml(detail.latestHandoff.note)}</div>` : ""}
+11913:                         ` : ""}
+11914:                     </div>
+11915:                 </div>
+11916:                 ` : ""}
+11917: 
+11918:                 <div class="metadata-card span-all" id="emailAliasPlaceholder" style="min-height: 60px;">
+11919:                     <div class="metadata-card-header">
+11920:                         <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+11921:                         <span>邮箱别名</span>
+11922:                     </div>
+11923:                     <div class="metadata-card-value" style="font-size: 12px; color: var(--text-muted);">加载中...</div>
+11924:                 </div>
+11925: 
+11926:                 <div class="metadata-card span-all">
+11927:                     <div class="metadata-card-header">
+11928:                         <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+11929:                         <span>阶段流转历史</span>
+11930:                     </div>
+11931:                     <div class="metadata-card-value status-history-list">
+11932:                         ${(detail.statusHistory || []).length ? detail.statusHistory.slice().reverse().map((history) => `
+11933:                             <div class="status-history-row">
+11934:                                 <div>
+11935:                                     <strong>${escapeHtml(formatStatusTransition(history))}</strong>
+11936:                                     <span>${escapeHtml(history.reason || "-")} · ${escapeHtml(history.source || "-")}</span>
+11937:                                 </div>
+11938:                                 <span>${escapeHtml(history.createdAt || "")}</span>
+11939:                             </div>
+11940:                         `).join("") : "<span>暂无阶段流转记录。"}
+11941:                     </div>
+11942:                 </div>
+11943: 
+11944:                 <div class="metadata-card span-all" id="expertDocumentsSection">
+11945:                     ${renderExpertDocuments(documents, contactId)}
+11946:                 </div>
+11947: 
+11948:                 <div class="metadata-card span-all" id="expertOperatorLogsSection">
+11949:                     ${renderOperatorLogs(logs)}
+11950:                 </div>
+11951:             </div>
+11952:             </div>
+11953:             <div class="detail-tab-panel" data-panel="template" hidden>
+11954:                 <div class="tpl-var-empty">切换到本标签页以加载模板变量预览。</div>
+11955:             </div>
+11956:             <div class="detail-tab-panel" data-panel="mail-preview" hidden>
+11957:                 <div class="tpl-var-empty">切换到本标签页以加载邮件预览。</div>
+11958:             </div>
+11959: 
+11960:         </div>
+11961:     `;
+11962:     finishContactDetailPresentation(generation);
+11963:     requestAnimationFrame(() => {
+11964:         if (!isCurrentContactDetailPresentation(generation)) return;
+11965:         contactDetail.scrollTop = 0;
+11966:         if (window.innerWidth <= 1024) {
+11967:             document.querySelector(".contact-detail-panel")?.scrollIntoView({ behavior: "smooth" });
+11968:         }
+11969:     });
+11970:     // 当前 contact DOM 写入完成后挂载共享材料组件（真实 contactId；组件未加载时为 no-op）
+11971:     if (typeof mountExpertMaterialsInline === "function") {
+11972:         mountExpertMaterialsInline(contact.id, contactDetail);
+11973:     }
+11974:     if (contact.id) {
+11975:         loadEmailAliases(contact.id, contact);
+11976:     }
+11977:     return contact;
+11978:     } catch (error) {
+11979:         if (!isCurrentContactDetailPresentation(generation)) return;
+11980:         failContactDetailPresentation(generation, error);
+11981:         throw error;
+11982:     }
+11983: }
+11984: 
+11985: async function openContactInList(contactId) {
+11986:     setView("contacts");
+
+12086: function unmountExpertMaterialsHosts(rootEl) {
+12087:     if (!expertMaterialsAvailable() || !rootEl) return;
+12088:     if (typeof window.ExpertMaterials.unmountHostsIn === "function") {
+12089:         window.ExpertMaterials.unmountHostsIn(rootEl);
+12090:     }
+12091: }
+12092: 
+12093: function mountExpertMaterialsInline(contactId, rootEl) {
+12094:     if (!expertMaterialsAvailable() || !rootEl) return null;
+12095:     const id = Number(contactId);
+12096:     if (!Number.isFinite(id) || id <= 0) return null;
+12097:     if (typeof window.ExpertMaterials.configure !== "function" ||
+12098:         typeof window.ExpertMaterials.mount !== "function") {
+12099:         return null;
+12100:     }
+12101:     const host = rootEl.querySelector("[data-expert-materials-host]");
+12102:     if (!host) return null;
+12103:     window.ExpertMaterials.configure({
+12104:         api,
+12105:         contextPath,
+12106:         labels: {
+12107:             documentType: (value) => labelDocumentType(value),
+12108:             documentStatus: (value) => labelDocumentStatus(value),
+12109:             fileSize: (value) => formatFileSize(value)
+12110:         }
+12111:     });
+12112:     return window.ExpertMaterials.mount({ host, contactId: id, mode: "inline" });
+12113: }
+12114: 
+12115: // I-4：原始 ES 专家没有 contactId 时不挂载网络材料组件，也不请求
+12116: // undefined/null 的 materials —— 只显示静态空态（组件存在时）。
+12117: function renderNoContactMaterialsEmpty() {
+12118:     if (!expertMaterialsAvailable()) return "";
+12119:     return `
+12120:         <section class="expert-materials" aria-label="专家上传资料" aria-busy="false">
+12121:             <header><h3>专家上传资料 <span>0 份</span></h3></header>
+12122:             <p class="em-empty">尚未建立联系，暂无资料。</p>
+12123:         </section>
+12124:     `;
+12125: }
+12126: 
+12127: function renderExpertDocuments(documents, contactId) {
+12128:     // I-4/I-1：组件已加载时旧 document-row 渲染退役，只输出 data host，
+12129:     // 真正的 S-1 面板由 ExpertMaterials.mount 在 loadContactDetail 写入后渲染。
+12130:     if (expertMaterialsAvailable()) {
+12131:         const id = Number(contactId);
+12132:         if (Number.isFinite(id) && id > 0) {
+12133:             return `<div data-expert-materials-host data-contact-id="${id}"></div>`;
+12134:         }
+12135:     }

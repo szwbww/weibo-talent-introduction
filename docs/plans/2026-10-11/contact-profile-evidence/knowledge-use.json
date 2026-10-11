@@ -1,0 +1,79 @@
+{
+  "entries": [
+    {
+      "entry": "document/K-expert-document-ownership-chain",
+      "before": 7,
+      "after": 8,
+      "used": true
+    },
+    {
+      "entry": "campaign/K-expert-contact-two-write-sites",
+      "before": 11,
+      "after": 12,
+      "used": true
+    },
+    {
+      "entry": "campaign/K-bound-expert-cross-campaign-read",
+      "before": 2,
+      "after": 3,
+      "used": true
+    },
+    {
+      "entry": "frontend/K-expert-detail-two-panel-render-sites",
+      "before": 6,
+      "after": 7,
+      "used": true
+    },
+    {
+      "entry": "frontend/K-frontend-cache-key-triad",
+      "before": 47,
+      "after": 48,
+      "used": true
+    },
+    {
+      "entry": "frontend/K-panel-bg-token-is-translucent",
+      "before": 16,
+      "after": 17,
+      "used": true
+    },
+    {
+      "entry": "common/K-flyway-version-follows-deploy-order",
+      "before": 8,
+      "after": 9,
+      "used": true
+    },
+    {
+      "entry": "document/K-document-file-read-via-storage-path",
+      "before": 6,
+      "after": 7,
+      "used": true
+    },
+    {
+      "entry": "mail/K-calendar-not-expert-material-owner",
+      "before": 5,
+      "after": 6,
+      "used": true
+    },
+    {
+      "entry": "campaign/K-material-status-cv-reader-and-route-collision",
+      "before": 0,
+      "after": 1,
+      "used": true
+    },
+    {
+      "entry": "common/K-flyway-latest-version-test-pin",
+      "before": 7,
+      "after": 8,
+      "used": true
+    }
+  ],
+  "promotions": [],
+  "decay": "all selected entries refreshed; none archived",
+  "merge": "No >=5 overlapping entries within the used subset; no global sweep",
+  "corrections": [
+    "material status route",
+    "two detail host current lines",
+    "document public resolver scope"
+  ],
+  "new": "K-upload-display-name-is-not-storage-path"
+}
