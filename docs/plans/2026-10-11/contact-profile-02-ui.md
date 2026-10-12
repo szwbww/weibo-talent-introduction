@@ -99,7 +99,7 @@
 
 1. `app.js` 两模板加入S-1宿主及共用渲染/挂载/销毁函数（I-1/I-2/S-1）。不修改原材料owner或请求URL。将销毁调用接入已有 beginContactDetailPresentation / returnContactListMobile 生命周期；旧页面保留直到新页面替换时也必须使旧请求无效。01接口URL通过contextPath构造，所有expertId URL编码。
 2. `app.js` 根据01明确字段元数据渲染四组；birthDateText使用文本输入提示YYYY或YYYY-MM-DD；不使用强制完整日期的date输入；其它上限由01契约驱动。复用api()；不将异步编辑结果并入state.contacts的ES数据对象（I-3/I-4/S-1/S-2）。
-3. `styles.css` 逐字追加S-2；`index.html` 原11个版本化资源统一更新为 `20261011-contact-profile-03`，不增加script资产。保留已知11项资源顺序与数量（I-1/S-1；来源 K-frontend-cache-key-triad）。
+3. `styles.css` 逐字追加S-2；`index.html` 原11个版本化资源统一更新为 `20261011-contact-profile-05`，不增加script资产。保留已知11项资源顺序与数量（I-1/S-1；来源 K-frontend-cache-key-triad）。
 4. `expertManualProfile.test.js` 通过真实挂载DOM与可控延迟请求覆盖下列检查；使用仓库已有Node测试机制，不加新构建系统（I-1–I-4/S-1/S-2）。
 
 ## 变更文件清单
@@ -151,10 +151,11 @@
 ### A-5: 样式与缓存
 - 前置条件: 1366px和390px浏览器，清缓存后加载，再正常刷新。
 - 操作步骤: 1. 查看四组和弹窗。2. Tab聚焦控件、观察禁用保存。3. 查看Network资源版本。
-- 预期结果: 无横向溢出；白色弹窗，标题14px、字段13px、焦点2px蓝#3b82f6；小屏单列；11个资源键均20261011-contact-profile-03。
+- 预期结果: 无横向溢出；白色弹窗，标题14px、字段13px、焦点2px蓝#3b82f6；小屏单列；11个资源键均20261011-contact-profile-05。
 - 覆盖: S-1/S-2；X4
 
 ## 修正记录
 
 - 2026-10-11（fast-p amendment A1）：§实现方案 3 与 A-5 的缓存键字面量 `20261011-contact-profile-02` → `20261011-contact-profile-03`，使本计划的静态测试随 03 阶段键保持通过（02 测试把 index 实键钉死为本计划字面量；03 阶段按计划 bump 后该断言必然失败，且测试文件不在 03 授权内）。依据 master「执行门槛与顺序」2「每阶段缓存键统一11项」；05 阶段 bump 到 `20261011-contact-profile-05` 后将再次同步。
+- 2026-10-11（fast-p amendment A2）：按同一口径将键字面量再次同步为 `20261011-contact-profile-05`（05 阶段键）。
 
