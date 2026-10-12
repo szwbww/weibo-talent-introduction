@@ -11427,7 +11427,8 @@ function expertManualProfileSectionTemplate(group) {
 function expertManualProfileEditorTemplate(group) {
     const controls = group.fields.map((field) => {
         const labelClass = field.multiline ? ' class="ec-span"' : "";
-        const limit = field.maxLength ? ` maxlength="${field.maxLength}"` : "";
+        // I-3（01 字段契约）：长度上限按 Unicode code point 校验（expertManualProfileCollectValues），
+        // 因此控件刻意不输出原生 maxlength——浏览器按 UTF-16 code unit 计数，会先于契约校验拒绝合法的星平面字符值。
         const placeholder = field.placeholder ? ` placeholder="${field.placeholder}"` : "";
         let control;
         if (field.control === "select") {
@@ -11438,9 +11439,9 @@ function expertManualProfileEditorTemplate(group) {
                 options.map((option) => `<option value="${option.value}">${option.label}</option>`).join("") +
                 `</select>`;
         } else if (field.multiline) {
-            control = `<textarea name="${field.name}"${limit}${placeholder}></textarea>`;
+            control = `<textarea name="${field.name}"${placeholder}></textarea>`;
         } else {
-            control = `<input name="${field.name}"${limit}${placeholder}>`;
+            control = `<input name="${field.name}"${placeholder}>`;
         }
         return `<label${labelClass}>${field.label}${control}</label>`;
     }).join("");
@@ -12219,7 +12220,6 @@ const EXPERT_MEETING_VIDEO_TEXT = {
     unauthorized: "登录已失效，请重新登录后再试",
     uncertain: "结果未确认，请刷新视频列表",
     uncertainMatch: "列表中已有同名视频，请确认是否已上传成功",
-    notStarted: "上传未开始，可重试",
     busy: "当前上传任务过多，请稍后重试",
     activeHint: "可取消；断网需重新上传",
     busyClose: "请先取消当前上传，再关闭窗口",
@@ -12611,7 +12611,6 @@ function expertMeetingVideoAddFiles(session, input) {
             uploadedBytes: 0,
             totalBytes: Number(file.size) || 0,
             measured: false,
-            cancelRequested: false,
             video: null,
             xhr: null,
             rowEl: null,
@@ -12736,7 +12735,6 @@ function expertMeetingVideoSendEntry(session, entry) {
     expertMeetingVideoSetEntryState(entry, "uploading", "");
     entry.uploadedBytes = 0;
     entry.measured = false;
-    entry.cancelRequested = false;
     // I-4：捕获本次上传的 expertId，晚响应不得被算到别的专家头上。
     entry.expertId = session.expertId;
     expertMeetingVideoSyncQueue(session); // 活动期间：关闭禁用、取消可用、开始禁用
@@ -12774,15 +12772,15 @@ function expertMeetingVideoSendEntry(session, entry) {
     };
     xhr.onerror = () => {
         if (state.closed || entry.xhr !== xhr) return;
-        expertMeetingVideoFinishInterrupted(session, entry, { cancelled: false });
+        expertMeetingVideoFinishInterrupted(session, entry);
     };
     xhr.ontimeout = () => {
         if (state.closed || entry.xhr !== xhr) return;
-        expertMeetingVideoFinishInterrupted(session, entry, { cancelled: false });
+        expertMeetingVideoFinishInterrupted(session, entry);
     };
     xhr.onabort = () => {
         if (state.closed || entry.xhr !== xhr) return;
-        expertMeetingVideoFinishInterrupted(session, entry, { cancelled: entry.cancelRequested === true });
+        expertMeetingVideoFinishInterrupted(session, entry);
     };
     xhr.send(entry.file);
 }
@@ -12874,29 +12872,22 @@ function expertMeetingVideoHandleResponse(session, entry, xhr) {
     expertMeetingVideoPauseQueue(session, expertMeetingVideoEntryStateText(entry));
 }
 
-/** 断网/取消：未量到任何字节=未开始（可重试）；已发送=提交结果未知（必须核对列表）。 */
-function expertMeetingVideoFinishInterrupted(session, entry, options) {
+/**
+ * I-3/I-4：`xhr.send(file)` 一旦发出，进度回调是否到达就不是「未提交」的证据（首字节前中断也可能已到达服务端），
+ * 因此 abort/断网/超时一律 `uncertain`：暂停队列、刷新列表、保留固定文案，等用户核对后显式重试，绝不自动重传。
+ * 唯一的「安全取消」是 send 之前的 pending 队列项移除（expertMeetingVideoRemoveEntry），取消在途上传同样按未确认处理。
+ */
+function expertMeetingVideoFinishInterrupted(session, entry) {
     const state = expertMeetingVideoState(session);
     if (!state || state.closed) return;
     if (state.activeEntry === entry) state.activeEntry = null;
     if (state.activeXhr === entry.xhr) state.activeXhr = null;
     entry.xhr = null;
-    const cancelled = !!(options && options.cancelled);
-    const submitted = entry.uploadedBytes > 0 || entry.state === "processing";
     state.running = false;
-    if (!submitted && cancelled) {
-        expertMeetingVideoSetEntryState(entry, "cancelled", "");
-    } else if (submitted) {
-        expertMeetingVideoSetEntryState(entry, "uncertain", EXPERT_MEETING_VIDEO_TEXT.uncertain);
-    } else {
-        expertMeetingVideoSetEntryState(entry, "pending", EXPERT_MEETING_VIDEO_TEXT.notStarted);
-    }
+    expertMeetingVideoSetEntryState(entry, "uncertain", EXPERT_MEETING_VIDEO_TEXT.uncertain);
     expertMeetingVideoSyncQueue(session);
-    if (submitted) {
-        // 结果未知：提示核对列表；不自动重传、不声称服务端撤销（04 I-9）。
-        expertMeetingVideoSetDialogError(state, EXPERT_MEETING_VIDEO_TEXT.uncertain);
-        expertMeetingVideoLoadList(session, state.page);
-    }
+    expertMeetingVideoSetDialogError(state, EXPERT_MEETING_VIDEO_TEXT.uncertain);
+    expertMeetingVideoLoadList(session, state.page);
 }
 
 function expertMeetingVideoPauseQueue(session, message) {
@@ -12908,10 +12899,10 @@ function expertMeetingVideoPauseQueue(session, message) {
     expertMeetingVideoLoadList(session, state.page); // 立刻刷新：同名/已入库记录对用户可见
 }
 
+/** 取消在途上传：abort 后按未确认处理（send 已发出，本地取消不构成服务端未提交的证据）。 */
 function expertMeetingVideoCancelEntry(session, entry) {
     const state = expertMeetingVideoState(session);
     if (!state || !entry || !entry.xhr) return;
-    entry.cancelRequested = true;
     try {
         entry.xhr.abort();
     } catch (error) {

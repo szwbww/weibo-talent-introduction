@@ -28,6 +28,7 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
 import java.io.ByteArrayInputStream
+import java.io.IOException
 import java.io.InputStream
 import java.nio.file.Files
 import java.nio.file.Path
@@ -40,6 +41,7 @@ import java.util.concurrent.Callable
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.streams.toList
 
 /**
@@ -322,6 +324,106 @@ class ExpertMeetingVideoServiceTest {
     }
 
     @Test
+    fun `a known same-name upload is rejected before the request body is read or a slot is taken`() {
+        rows += row(id = "existing", display = "已存在.mp4")
+        val body = ReadForbiddenStream()
+
+        // 04 I-5：NFC 后的完整名已存在时在读请求体之前 409；唯一索引仍是并发竞争的最终裁决。
+        assertVideoError(HttpStatus.CONFLICT, "VIDEO_NAME_CONFLICT") {
+            upload(originalName = "已存在.mp4", expectedSize = "3", body = body)
+        }
+        assertEquals(0, body.reads, "已知同名必须在读请求体之前拒绝")
+        assertTrue(inserted.isEmpty())
+        assertNoVisibleFiles()
+
+        // 预检在读体与占槽之前：随后两次并发上传仍能各持一个槽。
+        val started = CountDownLatch(2)
+        val gate = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            val first = pool.submit(Callable { upload(expectedSize = "3", body = GatedStream(started, gate)) })
+            val second = pool.submit(Callable { upload(expectedSize = "3", body = GatedStream(started, gate)) })
+            assertTrue(started.await(30, TimeUnit.SECONDS), "同名预检不得占用并发槽")
+            gate.countDown()
+            assertNotNull(first.get(30, TimeUnit.SECONDS))
+            assertNotNull(second.get(30, TimeUnit.SECONDS))
+        } finally {
+            gate.countDown()
+            pool.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `cleanup failure keeps the typed outcome and cannot consume upload slots`() {
+        val deleteAttempts = AtomicInteger()
+        val failingCleanup = ExpertMeetingVideoService(
+            MailAttachmentStorageProperties(basePath = baseDir.toString()),
+            resolver,
+            jdbc,
+            TransactionTemplate(Mockito.mock(PlatformTransactionManager::class.java)),
+            { usableSpace },
+            { deleteAttempts.incrementAndGet(); throw IOException("cleanup denied") }
+        )
+
+        // 流写失败后的 temp 清理也失败：主结果仍是固定 400，不得被清理 IOException 顶成 500（更不得变成成功）。
+        assertVideoError(HttpStatus.BAD_REQUEST, "VIDEO_SIZE_MISMATCH") {
+            upload(target = failingCleanup, expectedSize = "5", body = threeBytes())
+        }
+        assertTrue(deleteAttempts.get() >= 1, "失败分支必须尝试过清理（IOException 被吞掉）")
+        val residue = storageFiles()
+        assertEquals(1, residue.size, "清理失败只留 temp 残留（已知副作用，人工核对）：$residue")
+        assertTrue(residue.single().startsWith(".tmp-"), "写失败路径的残留必须是 .tmp-：$residue")
+        assertTrue(inserted.isEmpty())
+
+        // 清理失败消耗不掉并发槽：随后两次并发上传仍能各持一槽，第三个上传才是 429。
+        val started = CountDownLatch(2)
+        val gate = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            val first = pool.submit(Callable { upload(target = failingCleanup, expectedSize = "3", body = GatedStream(started, gate)) })
+            val second = pool.submit(Callable { upload(target = failingCleanup, expectedSize = "3", body = GatedStream(started, gate)) })
+            assertTrue(started.await(30, TimeUnit.SECONDS), "清理失败不得漏放并发槽")
+            assertVideoError(HttpStatus.TOO_MANY_REQUESTS, "VIDEO_UPLOAD_BUSY") {
+                upload(target = failingCleanup, expectedSize = "3", body = threeBytes())
+            }
+            gate.countDown()
+            assertNotNull(first.get(30, TimeUnit.SECONDS))
+            assertNotNull(second.get(30, TimeUnit.SECONDS))
+        } finally {
+            gate.countDown()
+            pool.shutdownNow()
+        }
+        assertEquals(2, inserted.size)
+        assertTrue(deleteAttempts.get() >= 3, "成功分支的 temp 清理同样走注入的删除操作")
+    }
+
+    @Test
+    fun `final cleanup failure after a unique conflict still answers 409`() {
+        val failingCleanup = ExpertMeetingVideoService(
+            MailAttachmentStorageProperties(basePath = baseDir.toString()),
+            resolver,
+            jdbc,
+            TransactionTemplate(Mockito.mock(PlatformTransactionManager::class.java)),
+            { usableSpace },
+            { throw IOException("cleanup denied") }
+        )
+        Mockito.doAnswer { throw DuplicateKeyException("uk_expert_meeting_video_name") }
+            .`when`(jdbc).update(
+                Mockito.contains("INSERT INTO expert_meeting_video"),
+                Mockito.any(MapSqlParameterSource::class.java)
+            )
+
+        // final 删除失败不得把唯一冲突的 409 改成 500，也不得吞掉失败变成成功。
+        assertVideoError(HttpStatus.CONFLICT, "VIDEO_NAME_CONFLICT") {
+            upload(target = failingCleanup, expectedSize = "3", body = threeBytes())
+        }
+        val residue = storageFiles()
+        assertTrue(residue.none { it.startsWith(".tmp-") }, "tmp 已 ATOMIC_MOVE 成 final：$residue")
+        assertEquals(1, residue.size, "清理失败的 final 残留是已知副作用：$residue")
+        assertTrue(inserted.isEmpty())
+    }
+
+    @Test
     fun `two uploads hold the slots and a third concurrent upload is rejected with 429`() {
         val started = CountDownLatch(2)
         val gate = CountDownLatch(1)
@@ -579,8 +681,9 @@ class ExpertMeetingVideoServiceTest {
         level: ExpertIndexLevel = ExpertIndexLevel.RAW,
         username: String? = "admin",
         contextPath: String = "",
+        target: ExpertMeetingVideoService = service,
         body: InputStream = threeBytes()
-    ) = service.upload(
+    ) = target.upload(
         MeetingVideoUploadRequest(expertId, level, originalName, nameStem, expectedSize, declaredLength),
         username,
         contextPath,
@@ -659,6 +762,8 @@ class ExpertMeetingVideoServiceTest {
             val mapper = invocation.arguments[2] as RowMapper<Any>
             val matching = rows.filter { it["expert_key"] == params.getValue("expertKey") }
             val selected = when {
+                sql.contains("display_filename = :displayFilename") ->
+                    matching.filter { it["display_filename"] == params.getValue("displayFilename") }
                 sql.contains("ORDER BY") -> {
                     val limit = params.getValue("limit") as Int
                     val offset = (params.getValue("offset") as Long).toInt()
@@ -754,6 +859,22 @@ class ExpertMeetingVideoServiceTest {
             val count = minOf(length, 3)
             for (index in 0 until count) target[offset + index] = 7
             return count
+        }
+    }
+
+    /** 读即失败：证明「已知同名」在读请求体之前就拒绝（并统计是否被读过）。 */
+    private class ReadForbiddenStream : InputStream() {
+        var reads = 0
+            private set
+
+        override fun read(): Int {
+            reads += 1
+            throw AssertionError("已知同名不得读取请求体")
+        }
+
+        override fun read(target: ByteArray, offset: Int, length: Int): Int {
+            reads += 1
+            throw AssertionError("已知同名不得读取请求体")
         }
     }
 

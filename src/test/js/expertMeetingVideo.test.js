@@ -8,8 +8,9 @@
 // - I-2 原始文件与进度：XHR.send(原始 File)、Content-Type application/octet-stream、不用
 //   FormData/FileReader/readAsDataURL/整文件 arrayBuffer；>1GiB 网络前拦截；可计量才显示 loaded/total；
 //   100% 只显示“上传完成，正在保存”，仅 201 显示“已上传”；
-// - I-3 七态与重试：pending/uploading/processing/success/failed/uncertain/cancelled 都有可控事件；
-//   失败/未知暂停队列、不自动重传；显式重试；success 禁止移除/重发；刷新后同名提示；
+// - I-3 七态与重试：pending/uploading/processing/success/failed/uncertain/cancelled 是队列状态词表；
+//   `send` 之后的中断（abort/断网/超时）一律 uncertain（零进度也不例外）；失败/未知暂停队列、
+//   不自动重传；显式重试；success 禁止移除/重发；刷新后同名提示；
 // - I-4 编辑与生命周期：rename 用 version、409 保留输入并提示刷新、不自动覆盖；切专家/卸载
 //   abort 在途 XHR、停队列、关 dialog、清播放器 src 与文件引用；晚响应不写当前专家 DOM；
 // - I-5 鉴权与播放：401/403 构造 Response 交既有 handleAuthResponse 并停队列、status 0 不构造
@@ -68,7 +69,6 @@ const TEXT = {
     nameTooLong: "文件名（含扩展名）最多 100 个字符",
     unauthorized: "登录已失效，请重新登录后再试",
     codec: "浏览器不支持此视频编码，请下载观看",
-    notStarted: "上传未开始，可重试",
     nameConflict: "同名视频已存在，请修改名称后重试",
     versionConflict: "视频已被更新，请刷新列表后重试"
 };
@@ -1409,22 +1409,41 @@ describe("contact profile 05 — 状态机、重试与鉴权", () => {
         }
     });
 
-    it("断网/超时：未发送→未开始可重试；已发送→结果未确认且不自动重传", async () => {
-        const harness = createHarness();
-        const session = harness.mount();
-        await flush();
-        queueFiles(session, [fakeFile("甲.mp4", 1024)]);
-        startUpload(session);
-        lastXhr(harness).fail(); // 0 字节：未开始
-        assert.strictEqual(rowsOf(session)[0].getAttribute("data-upload-state"), "pending");
-        assert.strictEqual(rowStateText(rowsOf(session)[0]), TEXT.notStarted);
-        startUpload(session);
-        const second = lastXhr(harness);
-        second.progress(512, 1024, true);
-        second.timeOut();
-        assert.strictEqual(rowsOf(session)[0].getAttribute("data-upload-state"), "uncertain");
-        assert.strictEqual(rowStateText(rowsOf(session)[0]), TEXT.uncertain);
-        assert.strictEqual(harness.xhr.calls.length, 2, "no automatic retransmission after an unknown outcome");
+    it("I-3/I-4：send 之后的 abort/断网/超时（零进度也不例外）都是未确认、不自动重传、刷新列表", async () => {
+        const cases = [
+            {
+                name: "abort",
+                trigger: (harness, session) => {
+                    rowsOf(session)[0].querySelector("[data-ec-video-remove]").click();
+                }
+            },
+            { name: "network", trigger: (harness, session, xhr) => xhr.fail() },
+            { name: "timeout", trigger: (harness, session, xhr) => xhr.timeOut() }
+        ];
+        for (const item of cases) {
+            const harness = createHarness();
+            const session = harness.mount();
+            await flush();
+            queueFiles(session, [fakeFile("甲.mp4", 1024), fakeFile("乙.mp4", 1024)]);
+            const rows = rowsOf(session);
+            const getsBefore = videoGets(harness).length;
+            startUpload(session);
+            const xhr = lastXhr(harness);
+            assert.strictEqual(xhr.sent, true, `${item.name}: the XHR must have been sent`);
+            assert.strictEqual(stateOf(session).entries[0].uploadedBytes, 0,
+                `${item.name}: zero progress by construction`);
+
+            item.trigger(harness, session, xhr);
+            await flush();
+
+            // 进度回调不是传输确认：首字节之前中断同样可能已到达服务端 → uncertain，绝不能当“未开始”重发。
+            assert.strictEqual(rows[0].getAttribute("data-upload-state"), "uncertain", item.name);
+            assert.strictEqual(rowStateText(rows[0]), TEXT.uncertain, item.name);
+            assert.strictEqual(stateOf(session).running, false, `${item.name}: queue must pause`);
+            assert.strictEqual(rows[1].getAttribute("data-upload-state"), "pending", `${item.name}: no blind continuation`);
+            assert.ok(videoGets(harness).length > getsBefore, `${item.name}: the list must refresh`);
+            assert.strictEqual(harness.xhr.calls.length, 1, `${item.name}: never automatically retransmit`);
+        }
     });
 
     it("取消：活动项 abort 一次、已发送按未确认处理；pending 移除只影响队列", async () => {
@@ -1433,11 +1452,11 @@ describe("contact profile 05 — 状态机、重试与鉴权", () => {
         await flush();
         queueFiles(session, [fakeFile("甲.mp4", 1024), fakeFile("乙.mp4", 1024)]);
         const rows = rowsOf(session);
-        // pending 移除
+        // pending 移除（send 之前）：唯一的安全取消，只影响队列
         rows[1].querySelector("[data-ec-video-remove]").click();
         assert.strictEqual(rowsOf(session).length, 1, "移除 only touches the queue");
         assert.strictEqual(stateOf(session).entries.length, 1);
-        // 活动取消（已发送）
+        // 活动取消（已发送、已量到字节）→ 未确认
         startUpload(session);
         const xhr = lastXhr(harness);
         xhr.progress(256, 1024, true);
@@ -1445,15 +1464,15 @@ describe("contact profile 05 — 状态机、重试与鉴权", () => {
         assert.strictEqual(xhr.abortCount, 1, "active upload must be aborted exactly once");
         assert.strictEqual(rowsOf(session)[0].getAttribute("data-upload-state"), "uncertain");
         assert.strictEqual(stateOf(session).running, false);
-        // 活动取消（未发送）→ cancelled
+        // 活动取消（已发送、零进度）→ 同样未确认：本地 abort 不是服务端未提交的证据
         queueFiles(session, [fakeFile("丙.mp4", 1024)]);
         startUpload(session);
         const third = lastXhr(harness);
         rowsOf(session)[1].querySelector("[data-ec-video-remove]").click();
         assert.strictEqual(third.abortCount, 1);
-        assert.strictEqual(rowsOf(session)[1].getAttribute("data-upload-state"), "cancelled");
-        assert.strictEqual(rowStateText(rowsOf(session)[1]), TEXT.cancelled);
-        assert.strictEqual(rowsOf(session)[1].querySelector("[data-ec-video-remove]").textContent, "移除");
+        assert.strictEqual(rowsOf(session)[1].getAttribute("data-upload-state"), "uncertain");
+        assert.strictEqual(rowStateText(rowsOf(session)[1]), TEXT.uncertain);
+        assert.strictEqual(rowsOf(session)[1].querySelector("[data-ec-video-remove]").textContent, "重试");
     });
 
     it("活动上传期间关闭被禁用、Escape 阻止关闭并提示先取消", async () => {
@@ -1475,8 +1494,9 @@ describe("contact profile 05 — 状态机、重试与鉴权", () => {
         assert.ok(state.dialogErrorEl.textContent.includes("请先取消当前上传"), state.dialogErrorEl.textContent);
         state.dialogCloseButton.click();
         assert.strictEqual(state.uploadDialog.open, true, "close button must be a no-op during an active upload");
-        state.cancelButton.click(); // 取消活动上传
-        assert.strictEqual(rowsOf(session)[0].getAttribute("data-upload-state"), "cancelled");
+        state.cancelButton.click(); // 取消活动上传（已发送：abort 后按未确认处理）
+        assert.strictEqual(rowsOf(session)[0].getAttribute("data-upload-state"), "uncertain");
+        assert.strictEqual(rowStateText(rowsOf(session)[0]), TEXT.uncertain);
         assert.strictEqual(state.dialogCloseButton.disabled, false);
         state.dialogCloseButton.click();
         assert.strictEqual(state.uploadDialog.open, false);

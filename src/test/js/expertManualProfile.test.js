@@ -1094,9 +1094,15 @@ describe("contact profile 02 — S-1 宿主与骨架", () => {
                 continue;
             }
             assert.strictEqual(control.tagName, MULTILINE_FIELDS.includes(name) ? "TEXTAREA" : "INPUT");
-            assert.strictEqual(control.getAttribute("maxlength"), String(FIELD_LIMITS[name]),
-                `${name} maxlength must come from the 01 contract`);
+            // 01 字段契约按 Unicode code point 计长（F-4 修复）：控件不得输出原生 maxlength——
+            // 浏览器按 UTF-16 code unit 执行，会先于契约校验拒绝合法的星平面字符值。
+            assert.strictEqual(control.getAttribute("maxlength"), null,
+                `${name} must not carry native UTF-16 maxlength`);
         }
+        // 上限元数据仍然生效：由 code-point 校验器消费（而不是交给浏览器）。
+        const collector = extractFunction("expertManualProfileCollectValues");
+        assert.ok(collector.includes("field.maxLength") && collector.includes("expertManualProfileCodePointLength"),
+            "field-limit metadata must drive the code-point validator");
 
         const ability = profileOf(harness).querySelector('.ec-editor [name="researchAbility"]');
         assert.deepStrictEqual(
@@ -1751,5 +1757,32 @@ describe("contact profile 02 — I-4 字段、凭证与输入边界", () => {
         await flush();
         assert.strictEqual(patchRequests(harness).length, 2);
         assert.deepStrictEqual(lastPatchPayload(harness).values.matchedCompanies, ["企业甲", "企业乙"]);
+    });
+
+    it("01 上限按 Unicode code point 执行：星平面字符到上限接受、超一个拒绝且不发 PATCH", async () => {
+        const harness = createHarness();
+        harness.router.route("GET", "/api/experts/manual-profile", () => ({ status: 200, body: profileDto() }));
+        harness.router.route("PATCH", "/api/experts/manual-profile", (record) => ({ status: 200, body: mergeProfile(profileDto(), JSON.parse(record.body)) }));
+        const session = harness.mount({ expertId: "0000-0000-1111-2222", generation: 1 });
+        await session.ready;
+        const limit = FIELD_LIMITS.talentCode;
+        const astral = "𝒜"; // U+1D49C：1 个 code point / 2 个 UTF-16 code unit
+        const atLimit = astral.repeat(limit);
+
+        const editor = openEditor(session, "identity");
+        const control = setField(editor, "talentCode", atLimit);
+        assert.strictEqual(control.value.length, limit * 2, "astral value must be longer than the limit in UTF-16 units");
+        assert.strictEqual(control.getAttribute("maxlength"), null, "native UTF-16 length enforcement must not exist");
+        submitEditor(editor);
+        await flush();
+        assert.strictEqual(patchRequests(harness).length, 1, "a value at the code-point limit must be accepted");
+        assert.strictEqual(lastPatchPayload(harness).values.talentCode, atLimit);
+
+        setField(editor, "talentCode", astral.repeat(limit + 1));
+        submitEditor(editor);
+        await flush();
+        assert.strictEqual(editor.errorEl.textContent, `人才编号最多 ${limit} 个字符`);
+        assert.strictEqual(patchRequests(harness).length, 1, "one code point over must not PATCH");
+        assert.strictEqual(lastPatchPayload(harness).values.talentCode, atLimit);
     });
 });

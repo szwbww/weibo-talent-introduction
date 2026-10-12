@@ -57,9 +57,11 @@ data class MeetingVideoFile(
  * - 身份：上传先 [ExpertProfileIdentityResolver.requireKnown]（01 canonical expertId）；
  *   列表/重命名/播放只做规范化，再用 `expert_key + video_id` 同时查元数据（归属不符 404），
  *   因此**播放不依赖 ES**，存量视频在 ES 临时故障时仍可拖动；
- * - 流式：expectedSize/名称/身份/容量/同名语义全部在**读请求体之前**校验，随后以固定 64 KiB 缓冲
+ * - 流式：expectedSize/名称/身份/容量/同名语义全部在**读请求体之前**校验（同名预检先查 canonical
+ *   expert_key + NFC 后 display_filename，唯一索引仍是并发竞争的最终裁决），随后以固定 64 KiB 缓冲
  *   有界写入 `root/.tmp-<id>`，按实际读入字节计数，close 后同目录 ATOMIC_MOVE 到 `root/<id>`，
- *   再在独立短事务里 INSERT；数据库失败/唯一冲突删 final，IO 失败删 tmp，finally 释放并发槽；
+ *   再在独立短事务里 INSERT；数据库失败/唯一冲突删 final，IO 失败删 tmp；清理失败只吞 IOException
+ *   （不覆盖主结果），且 finally **无条件释放**并发槽；
  * - 上限：单文件 [MeetingVideoLimits.MAX_BYTES]；同一个应用实例最多
  *   [MeetingVideoLimits.MAX_CONCURRENT_UPLOADS] 个上传（tryAcquire 失败 429）。
  *
@@ -72,7 +74,12 @@ class ExpertMeetingVideoService(
     private val identityResolver: ExpertProfileIdentityResolver,
     private val jdbcTemplate: NamedParameterJdbcTemplate,
     private val transactionTemplate: TransactionTemplate,
-    private val usableSpaceProbe: (Path) -> Long = { root -> Files.getFileStore(root).usableSpace }
+    private val usableSpaceProbe: (Path) -> Long = { root -> Files.getFileStore(root).usableSpace },
+    /**
+     * 删除清理（临时/最终产物）的注入点：默认真实 [Files.deleteIfExists]。
+     * 只为「清理失败仍必须释放并发槽、且不得覆盖主结果」提供确定性 seam，不改其它行为。
+     */
+    private val deleteArtifact: (Path) -> Boolean = { path -> Files.deleteIfExists(path) }
 ) {
     /** 并发槽：每个应用实例 2 个，只在处理期持有（含流式写文件与短事务）。 */
     private val uploadSlots = Semaphore(MeetingVideoLimits.MAX_CONCURRENT_UPLOADS, true)
@@ -96,6 +103,11 @@ class ExpertMeetingVideoService(
         verifyDeclaredLength(request.declaredLength, expectedSize)
         val root = storageRoot()
         requireCapacity(root, expectedSize)
+        // 04 I-5：NFC 后的完整名已知存在时在读请求体/占用并发槽之前返回固定 409；
+        // 唯一索引与唯一冲突映射仍是并发竞争下的最终裁决（见下方 INSERT 分支）。
+        if (displayNameExists(expertKey, displayFilename)) {
+            throw MeetingVideoException.nameConflict(NAME_CONFLICT_MESSAGE)
+        }
 
         if (!uploadSlots.tryAcquire()) {
             throw MeetingVideoException.busy(UPLOAD_BUSY_MESSAGE)
@@ -111,18 +123,18 @@ class ExpertMeetingVideoService(
                     jdbcTemplate.update(INSERT_SQL, insertParams(id, expertKey, originalFilename, displayFilename, byteLength, actor, now))
                 }
             } catch (ex: DuplicateKeyException) {
-                Files.deleteIfExists(finalPath)
+                deleteQuietly(finalPath)
                 throw MeetingVideoException.nameConflict(NAME_CONFLICT_MESSAGE)
             } catch (ex: PessimisticLockingFailureException) {
                 // 同名单并发 INSERT 时 InnoDB 可能在唯一索引上先报锁等待/死锁（本表单条 INSERT、
                 // 除主键与该唯一索引外没有其它约束，因此这同样是「同名冲突」）。
-                Files.deleteIfExists(finalPath)
+                deleteQuietly(finalPath)
                 throw MeetingVideoException.nameConflict(NAME_CONFLICT_MESSAGE)
             } catch (ex: MeetingVideoException) {
-                Files.deleteIfExists(finalPath)
+                deleteQuietly(finalPath)
                 throw ex
             } catch (ex: Exception) {
-                Files.deleteIfExists(finalPath)
+                deleteQuietly(finalPath)
                 throw MeetingVideoException.storeFailed(STORE_FAILED_MESSAGE, ex)
             }
             return MeetingVideoView(
@@ -142,8 +154,12 @@ class ExpertMeetingVideoService(
             )
         } finally {
             // 写成功时 tmp 已被 ATOMIC_MOVE 移走，这里是 no-op；失败/中断分支在此清理临时文件。
-            Files.deleteIfExists(tempPath)
-            uploadSlots.release()
+            // 清理失败（IOException 等）绝不跳过槽释放：否则少量清理失败即可永久耗尽全部上传槽（04 I-6/I-9）。
+            try {
+                deleteQuietly(tempPath)
+            } finally {
+                uploadSlots.release()
+            }
         }
     }
 
@@ -291,6 +307,34 @@ class ExpertMeetingVideoService(
         } catch (ex: ExpertProfileLookupUnavailableException) {
             throw MeetingVideoException.lookupUnavailable(EXPERT_LOOKUP_MESSAGE, ex)
         }
+
+    /**
+     * 同名预检（04 I-5）：`expert_key + NFC 后 display_filename` 精确且区分大小写；
+     * 与唯一索引同语义，只为已知冲突在读请求体/占槽之前省下一次完整传输；
+     * 数据库不可用时按读取失败处理（500），绝不放行成「无同名」。
+     */
+    private fun displayNameExists(expertKey: String, displayFilename: String): Boolean =
+        try {
+            jdbcTemplate.query(
+                SELECT_NAME_SQL,
+                MapSqlParameterSource("expertKey", expertKey).addValue("displayFilename", displayFilename),
+                RowMapper { _, _ -> true }
+            ).isNotEmpty()
+        } catch (ex: DataAccessException) {
+            throw MeetingVideoException.storeFailed(STORE_FAILED_MESSAGE, ex)
+        }
+
+    /**
+     * 删除临时/最终产物：失败只吞 IOException（清理是尽力而为），既不能覆盖 409/400/413 等固定主结果，
+     * 也不能让异常漏出 finally 而跳过并发槽释放；残留文件按 04「进程硬崩不保证自动清理」人工核对。
+     */
+    private fun deleteQuietly(path: Path) {
+        try {
+            deleteArtifact(path)
+        } catch (ex: IOException) {
+            // 已尽力：残留交给人工核对，不阻断主结果与槽释放。
+        }
+    }
 
     /** 上传/重命名的审计身份：只取会话用户名，超列宽报错，绝不截断成另一个用户。 */
     private fun requireActor(username: String?): String {
@@ -593,6 +637,11 @@ class ExpertMeetingVideoService(
 
         val SELECT_ONE_SQL =
             "SELECT $COLUMNS FROM expert_meeting_video WHERE id = :id AND expert_key = :expertKey"
+
+        /** 同名预检：同一 expert_key 内精确（区分大小写）匹配 NFC 后的 display_filename，与唯一索引同语义。 */
+        val SELECT_NAME_SQL =
+            "SELECT $COLUMNS FROM expert_meeting_video " +
+                "WHERE expert_key = :expertKey AND display_filename = :displayFilename"
 
         val SELECT_PAGE_SQL =
             "SELECT $COLUMNS FROM expert_meeting_video WHERE expert_key = :expertKey " +
