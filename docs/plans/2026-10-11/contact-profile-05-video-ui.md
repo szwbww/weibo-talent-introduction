@@ -89,6 +89,8 @@
 
 禁止inline style和未列class。视频高度上限桌面420px/小屏260px，宽度100%；上传条进度复用5px高蓝#3b82f6；无虚构封面。
 
+S-2 插入位置（amendment A3，2026-10-12）：逐字插入到 02 的 S-2 块之前，保持 02 的 S-2 块为 `styles.css` 末尾 CSS；不修改任何既有规则。
+
 ## 现状审计
 
 - 宿主、样式、现有材料串行上传、会话处理与缓存事实见[审计](contact-profile-audit.md) E-5/E-6/E-8/E-9；现有api()基于fetch不能提供上传进度，故仅新视频上传用XHR；列表与rename仍用api()。
@@ -102,14 +104,14 @@
 2. `app.js` 建立局部队列并持有File引用，声明状态转移：pending→uploading→processing→success；校验失败→failed；活动项abort或断网→uncertain；未开始项取消→cancelled；failed/经用户核对的uncertain→pending；成功只刷新列表不回退pending。每次只一个XHR，任何401/403、容量/并发错误暂停余队列；其它文件失败也暂停供用户决定，避免一串大文件盲传。I-2/I-3、S-1。
 3. `app.js` XHR.timeout=0避免拿短API超时裁掉长上传，服务端读超时仍有效；上传进度只展示实际事件，显示“可取消；断网需重新上传”。onload先检查状态/解析JSON再确认；status0/network/error/abort统一区分未开始与未知提交。401/403通过 `new Response(xhr.responseText,{status:xhr.status,headers:{"Content-Type":"application/json"}})`交handleAuthResponse，利用其clone/json约定。I-2/I-3/I-5。
 4. `app.js` 销毁时停止队列、abort、清监听/文件引用/视频src；活动upload不能被标记为已取消服务器记录。同一列表一次只加载一个视频播放器，播放另一项先释放上一个；使用服务端previewUrl，不fetch整文件再Blob。I-4/I-5、S-1/S-2。
-5. `styles.css`逐字追加S-2；`index.html`11项缓存键同步`20261011-contact-profile-05`；`expertMeetingVideo.test.js`覆盖全部状态与实际挂载，配合04真实1GiB验收。I-1–I-5、S-1/S-2。
+5. `styles.css` 逐字插入 S-2 到 02 的 S-2 块之前（保持 02 块为文件末尾 CSS，见 S-2 说明）；`index.html`11项缓存键同步`20261011-contact-profile-05`；`expertMeetingVideo.test.js`覆盖全部状态与实际挂载，配合04真实1GiB验收。I-1–I-5、S-1/S-2。
 
 ## 变更文件清单
 
 | 文件 | 操作 / 职责 |
 |---|---|
 | `src/main/resources/static/app.js` | 修改：视频列表、文件名、串行上传/进度、播放/改名/销毁 |
-| `src/main/resources/static/styles.css` | 修改：只追加视频契约CSS |
+| `src/main/resources/static/styles.css` | 修改：只新增视频契约 CSS（逐字插入于 02 S-2 块之前） |
 | `src/main/resources/static/index.html` | 修改：原11个资源同步缓存键 |
 | `src/test/js/expertMeetingVideo.test.js` | 新建：真实挂载及XHR状态/异常测试 |
 
@@ -156,4 +158,8 @@
 - 操作步骤: 1. 编辑译名保存、刷新备注、下载旧材料、切四标签。2. 查看视频和命名弹窗，Tab/Escape。3. 查看Network11项资源缓存键。
 - 预期结果: 档案/备注/材料值不变，旧会议安排/邮件入口仍可操作；弹窗白底无横溢出，后缀可见，视频最大420/260px；资源键统一20261011-contact-profile-05。
 - 覆盖: I-4；S-1/S-2；X6；全部保持项
+
+## 修正记录
+
+- 2026-10-12（fast-p amendment A3）：S-2 视频 CSS 的落位由「逐字追加」明确为「逐字插入到 02 的 S-2 块之前（保持 02 块为文件末尾 CSS）」。原因：02 静态测试断言其 S-2 块为 styles.css 末尾（`expertManualProfile.test.js` 的 `endsWith`），而 05 不得修改该测试文件；经人工批准 S1 调整计划措辞，零测试文件改动。
 
