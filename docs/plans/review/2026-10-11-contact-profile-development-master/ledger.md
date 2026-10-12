@@ -12,8 +12,8 @@
 - Fast-p handoff: docs/plans/fast/2026-10-11-contact-profile-development-master/human-review-handoff.md (sha256 c293113a4db83775d17c1614e6d8845dc171faff585e1cb17febdd44e0f76016)
 - Master base: 96b89bb203019881a7fc36be557d30ad2a9c43a3
 - Final code head: 9453e3f1db24c1f83aa189b9d8c134136533bfa4
-- Evidence parent before next commit: 3d5e0d47b49f25cfdf8af2497270da921b209d42
-- Previous evidence commit: 356ea565855e187420b87cd2b247c14edb310330
+- Evidence parent before next commit: 03e8ddbd0a10d95461cba5173239e224f85ed5dd
+- Previous evidence commit: 03e8ddbd0a10d95461cba5173239e224f85ed5dd
 - Branch: fast/2026-10-11-contact-profile-development-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-11-contact-profile-development-master
 - Worktree resolution: EXPLICIT
