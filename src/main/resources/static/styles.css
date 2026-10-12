@@ -12878,6 +12878,15 @@ body.preview-available:not(.preview-docked) .preview-rail {
 .mail-chat .mailbox-draft-status[data-state=error],.mail-chat .mailbox-draft-status[data-state=conflict]{color:#be123c}
 .mail-chat .mailbox-draft-status[data-state=saving],.mail-chat .mailbox-draft-status[data-state=dirty]{color:#b45309}
 
+/* contact-profile-05-video S-2：会议视频（逐字插入 02 S-2 块之前，保持 02 块为文件末尾 CSS） */
+.ec-video-player { display: block; width: 100%; max-height: 420px; margin-top: 10px; border-radius: 7px; background: #0f172a; }
+.ec-video-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.ec-video-name input { min-width: 0; flex: 1; }
+.ec-video-name span { flex: none; color: #64748b; font-size: 12px; }
+.ec-video-list { display: flex; flex-direction: column; gap: 8px; }
+.ec-video-pager { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+@media (max-width: 760px) { .ec-video-player { max-height: 260px; } .ec-video-pager { justify-content: flex-start; flex-wrap: wrap; } }
+
 .ec-profile { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
 .ec-section { border: 1px solid var(--panel-border); border-radius: 10px; padding: 14px; background: #fff; scroll-margin-top: 12px; }
 .ec-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }

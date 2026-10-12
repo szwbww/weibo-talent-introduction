@@ -11456,15 +11456,20 @@ function expertManualProfileEditorTemplate(group) {
 function expertManualProfileShellTemplate() {
     // 03（contact-profile-03-notes）：备注 section 前置于 nav，且沿用本文件既有的 typeof 守卫约定，
     // 使按区域/函数切片执行的既有测试在未加载 03 区域时保持原骨架（4 个 section / 4 个 editor / nav 四按钮）。
+    // 05（contact-profile-05-video）：用同一守卫接入 nav「会议视频」按钮与视频 section/dialog，
+    // 未加载 05 区域时返回的骨架与新增前逐字一致。
     const sharedNoteSection = typeof expertContactSharedNoteSectionTemplate === "function"
         ? expertContactSharedNoteSectionTemplate()
         : "";
     const nav = EXPERT_MANUAL_PROFILE_GROUPS
         .map((group) => `<button type="button" class="button" data-ec-jump="${group.key}">${group.label}</button>`)
         .join("");
+    const videoNav = typeof expertMeetingVideoNavTemplate === "function" ? expertMeetingVideoNavTemplate() : "";
     const sections = EXPERT_MANUAL_PROFILE_GROUPS.map(expertManualProfileSectionTemplate).join("");
     const editors = EXPERT_MANUAL_PROFILE_GROUPS.map(expertManualProfileEditorTemplate).join("");
-    return sharedNoteSection + `<nav class="ec-nav" aria-label="联系详情分组">${nav}</nav>` + sections + editors;
+    const videoPanel = typeof expertMeetingVideoPanelTemplate === "function" ? expertMeetingVideoPanelTemplate() : "";
+    return sharedNoteSection + `<nav class="ec-nav" aria-label="联系详情分组">${nav}${videoNav}</nav>` +
+        sections + editors + videoPanel;
 }
 
 /** I-2：一次挂载 = 一个会话；捕获 expertId/contactId/generation/宿主引用，await 之后统一校验。 */
@@ -11507,6 +11512,10 @@ function unmountExpertManualProfileSession(session) {
     // 03：备注读请求随会话一并中止（未加载 03 区域时为 no-op）。
     if (typeof unmountExpertContactSharedNote === "function") {
         unmountExpertContactSharedNote(session);
+    }
+    // 05（I-4）：在途视频上传 XHR/队列随会话一并停止（未加载 05 区域时为 no-op）。
+    if (typeof unmountExpertMeetingVideos === "function") {
+        unmountExpertMeetingVideos(session);
     }
     session.controllers.forEach((controller) => {
         try {
@@ -11921,6 +11930,10 @@ function mountExpertManualProfile(rootEl, context) {
     if (typeof mountExpertContactSharedNote === "function") {
         mountExpertContactSharedNote(session);
     }
+    // 05（I-1/I-2）：会议视频列表独立加载，不并入资料 Promise.all —— 视频失败不影响四组资料/备注/旧材料。
+    if (typeof mountExpertMeetingVideos === "function") {
+        mountExpertMeetingVideos(session);
+    }
     session.ready = loadExpertManualProfile(session);
     return session;
 }
@@ -12174,6 +12187,1301 @@ function unmountExpertContactSharedNote(session) {
     }
 }
 /* contact-profile-03-notes:end */
+
+/* contact-profile-05-video:begin */
+// 05（contact-profile-05-video）：联系详情「会议视频」——列表、批量命名、串行 raw 上传、播放/改名/下载。
+// 依赖 02 的挂载会话（session.host/expertId/level/isStale）与 04 的 HTTP 契约；只通过 02 区域的四个
+// typeof 守卫调用点接入（nav 额外按钮、section/dialog 模板、挂载启动、卸载中止），本区域整体位于
+// `/* contact-profile-02-ui:begin…end */` 之外，按区域切片执行的既有测试看不到这里的节点。
+// 上传硬性约束（I-2/I-5）：每次 XHR.send(原始 File) + Content-Type: application/octet-stream；
+// 不使用浏览器表单打包、文本读取或整文件内存读取接口（只发送原始字节）；串行只跑一个 XHR；
+// XHR.timeout=0；401/403 构造 Response 交既有 handleAuthResponse；播放/下载只用 API 白名单同源路径。
+
+const EXPERT_MEETING_VIDEO_URL = "/api/experts/meeting-videos";
+const EXPERT_MEETING_VIDEO_API_MARKER = "/api/experts/meeting-videos/";
+const EXPERT_MEETING_VIDEO_SECTION_SELECTOR = '[data-role="expert-meeting-videos"]';
+const EXPERT_MEETING_VIDEO_PAGE_SIZE = 20;
+const EXPERT_MEETING_VIDEO_MAX_BYTES = 1073741824;
+const EXPERT_MEETING_VIDEO_MAX_NAME_CODE_POINTS = 100;
+const EXPERT_MEETING_VIDEO_ALLOWED_EXTENSIONS = ["mp4", "mov", "webm"];
+const EXPERT_MEETING_VIDEO_FORBIDDEN_CHARS = ["/", "\\", ":", "*", "?", "\"", "<", ">", "|"];
+const EXPERT_MEETING_VIDEO_CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/;
+// I-3：队列状态只有这七种；所有写入经 expertMeetingVideoSetEntryState 收口。
+const EXPERT_MEETING_VIDEO_STATES = ["pending", "uploading", "processing", "success", "failed", "uncertain", "cancelled"];
+const EXPERT_MEETING_VIDEO_ACTIVE_STATES = ["uploading", "processing"];
+
+const EXPERT_MEETING_VIDEO_TEXT = {
+    loading: "正在加载视频…",
+    empty: "暂无会议视频",
+    loadFailed: "视频列表加载失败，请重试",
+    missingExpertId: "缺少专家标识，无法加载视频",
+    missingExpertIdUpload: "缺少专家标识，无法上传视频",
+    unauthorized: "登录已失效，请重新登录后再试",
+    uncertain: "结果未确认，请刷新视频列表",
+    uncertainMatch: "列表中已有同名视频，请确认是否已上传成功",
+    notStarted: "上传未开始，可重试",
+    busy: "当前上传任务过多，请稍后重试",
+    activeHint: "可取消；断网需重新上传",
+    busyClose: "请先取消当前上传，再关闭窗口",
+    pickFirst: "请先选择要上传的视频",
+    pending: "待上传",
+    uploading: "正在上传…",
+    processing: "上传完成，正在保存",
+    success: "已上传",
+    cancelled: "已取消",
+    saved: "已保存",
+    codec: "浏览器不支持此视频编码，请下载观看",
+    previewUnavailable: "视频地址不可用，请刷新视频列表",
+    originalPrefix: "原始文件名：",
+    emptyVideo: "视频文件为空",
+    limit: "单个视频不能超过 1 GiB（1024 MiB）",
+    type: "只支持 mp4、mov、webm 视频",
+    emptyStem: "文件名不能为空",
+    controlChar: "文件名不能包含控制字符",
+    forbiddenChar: "文件名不能包含 / \\ : * ? \" < > |",
+    trailingDot: "文件名不能以句点结尾",
+    nameTooLong: "文件名（含扩展名）最多 100 个字符",
+    nameProblem: "文件名不符合要求，请修改后重试"
+};
+
+// 04 的固定错误码 → 运营文案；未知码回退服务端 message。
+const EXPERT_MEETING_VIDEO_ERROR_TEXT = {
+    INVALID_VIDEO_NAME: EXPERT_MEETING_VIDEO_TEXT.nameProblem,
+    VIDEO_SIZE_MISMATCH: "文件大小与声明不一致，请重新选择文件",
+    EMPTY_VIDEO: EXPERT_MEETING_VIDEO_TEXT.emptyVideo,
+    UNAUTHORIZED: EXPERT_MEETING_VIDEO_TEXT.unauthorized,
+    VIDEO_NOT_FOUND: "视频不存在或不属于该专家",
+    VIDEO_NAME_CONFLICT: "同名视频已存在，请修改名称后重试",
+    VIDEO_VERSION_CONFLICT: "视频已被更新，请刷新列表后重试",
+    VIDEO_TOO_LARGE: EXPERT_MEETING_VIDEO_TEXT.limit,
+    UNSUPPORTED_VIDEO_TYPE: EXPERT_MEETING_VIDEO_TEXT.type,
+    VIDEO_UPLOAD_BUSY: EXPERT_MEETING_VIDEO_TEXT.busy,
+    EXPERT_LOOKUP_UNAVAILABLE: "专家身份查询服务不可用，请稍后重试",
+    VIDEO_STORAGE_FULL: "服务器存储空间不足，请稍后重试",
+    VIDEO_STORE_FAILED: "视频处理失败，请稍后重试"
+};
+
+// ---------------------------------------------------------------------------
+// 纯函数：名称 / 大小 / 时间 / URL（I-1 与 04 同 NFC、code point 与非法字符规则）
+// ---------------------------------------------------------------------------
+
+function expertMeetingVideoCodePointLength(text) {
+    return Array.from(String(text == null ? "" : text)).length;
+}
+
+function expertMeetingVideoNfc(text) {
+    const raw = String(text == null ? "" : text);
+    return typeof raw.normalize === "function" ? raw.normalize("NFC") : raw;
+}
+
+/** 与 04 的 substringAfterLast('.') 同规则：无点或点结尾一律视为空扩展名（服务端随后 415）。 */
+function expertMeetingVideoExtensionOf(filename) {
+    const name = String(filename == null ? "" : filename);
+    const index = name.lastIndexOf(".");
+    if (index < 0 || index === name.length - 1) return "";
+    return name.slice(index + 1).toLowerCase();
+}
+
+/** I-1：名称主体校验；完整名（含点与扩展名）≤100 code point；超长要求人工修改，不截断。 */
+function expertMeetingVideoStemProblem(rawStem, extension) {
+    const stem = expertMeetingVideoNfc(String(rawStem == null ? "" : rawStem)).trim();
+    if (stem === "") return EXPERT_MEETING_VIDEO_TEXT.emptyStem;
+    if (EXPERT_MEETING_VIDEO_CONTROL_CHARS.test(stem)) return EXPERT_MEETING_VIDEO_TEXT.controlChar;
+    if (Array.from(stem).some((char) => EXPERT_MEETING_VIDEO_FORBIDDEN_CHARS.includes(char))) {
+        return EXPERT_MEETING_VIDEO_TEXT.forbiddenChar;
+    }
+    if (stem.endsWith(".")) return EXPERT_MEETING_VIDEO_TEXT.trailingDot;
+    const full = `${stem}.${String(extension == null ? "" : extension)}`;
+    if (expertMeetingVideoCodePointLength(full) > EXPERT_MEETING_VIDEO_MAX_NAME_CODE_POINTS) {
+        return EXPERT_MEETING_VIDEO_TEXT.nameTooLong;
+    }
+    return "";
+}
+
+function expertMeetingVideoFullName(stem, extension) {
+    return `${expertMeetingVideoNfc(String(stem == null ? "" : stem)).trim()}.${String(extension == null ? "" : extension)}`;
+}
+
+/** I-5：只接受 API 白名单同源相对路径；拒绝绝对/协议相对 URL、空白、反斜杠与 `..`。 */
+function expertMeetingVideoApiUrl(value) {
+    const raw = String(value == null ? "" : value).trim();
+    if (raw === "" || raw.startsWith("//") || raw.charAt(0) !== "/") return "";
+    if (/[\s\\]/.test(raw) || raw.includes("..")) return "";
+    return raw.includes(EXPERT_MEETING_VIDEO_API_MARKER) ? raw : "";
+}
+
+function expertMeetingVideoShortNumber(value) {
+    return String(Math.round(Number(value) * 10) / 10);
+}
+
+function expertMeetingVideoSizeText(bytes) {
+    const value = Number(bytes);
+    if (!Number.isFinite(value) || value < 0) return "";
+    if (value >= EXPERT_MEETING_VIDEO_MAX_BYTES) {
+        return `${expertMeetingVideoShortNumber(value / EXPERT_MEETING_VIDEO_MAX_BYTES)} GiB`;
+    }
+    if (value >= 1048576) return `${expertMeetingVideoShortNumber(value / 1048576)} MiB`;
+    if (value >= 1024) return `${expertMeetingVideoShortNumber(value / 1024)} KiB`;
+    return `${value} B`;
+}
+
+/** 04 固定返回 Asia/Shanghai `yyyy-MM-dd'T'HH:mm:ss.SSS+08:00`：只截取到分钟，不做本地时区换算。 */
+function expertMeetingVideoTimeText(value) {
+    const raw = String(value == null ? "" : value).trim();
+    const match = raw.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+    return match ? `${match[1]} ${match[2]} 北京时间` : raw;
+}
+
+/** I-1：每项显示（自定义完整名由调用方写入）原始名、大小、上传人/时间。 */
+function expertMeetingVideoMetaText(video) {
+    const parts = [];
+    const original = String(video && video.originalFilename ? video.originalFilename : "").trim();
+    if (original !== "") parts.push(`原始名 ${original}`);
+    const size = expertMeetingVideoSizeText(video ? video.byteLength : 0);
+    if (size !== "") parts.push(size);
+    const uploader = String(video && video.uploadedBy ? video.uploadedBy : "").trim();
+    if (uploader !== "") parts.push(`上传人 ${uploader}`);
+    const time = expertMeetingVideoTimeText(video ? video.uploadedAt : "");
+    if (time !== "") parts.push(time);
+    return parts.join(" · ");
+}
+
+/** 自定义完整名去固定扩展名 = 当前可编辑主体。 */
+function expertMeetingVideoStemOf(video) {
+    const name = String(video && video.displayFilename ? video.displayFilename : "").trim();
+    const extension = String(video && video.extension ? video.extension : "").trim();
+    if (name === "") return "";
+    if (extension !== "" && name.endsWith(`.${extension}`)) return name.slice(0, name.length - extension.length - 1);
+    return name;
+}
+
+// ---------------------------------------------------------------------------
+// S-1 模板（02 区域经 typeof 守卫调用；DOM 层级与 class 与计划逐字一致）
+// ---------------------------------------------------------------------------
+
+function expertMeetingVideoNavTemplate() {
+    return `<button type="button" class="button" data-ec-video-jump>会议视频</button>`;
+}
+
+function expertMeetingVideoSectionTemplate() {
+    return `<section class="ec-section" data-role="expert-meeting-videos">
+ <div class="ec-heading"><h3>会议视频</h3><div class="ec-actions"><button type="button" class="button" data-ec-video-refresh>刷新</button><button type="button" class="button primary" data-ec-video-upload>上传视频</button></div></div>
+ <span class="ec-message" role="status" aria-live="polite">单文件最大 1 GiB（1024 MiB）；支持 MP4、MOV、WebM</span>
+ <span class="ec-error" role="alert" hidden></span>
+ <div class="ec-video-list"></div>
+ <div class="ec-video-pager"><button class="button" type="button" data-ec-video-prev>上一页</button><span class="ec-message"></span><button class="button" type="button" data-ec-video-next>下一页</button></div>
+</section>`;
+}
+
+function expertMeetingVideoUploadDialogTemplate() {
+    return `<dialog class="em-upload-dialog ec-editor" data-ec-video-upload-dialog aria-label="上传会议视频">
+ <header class="em-upload-head"><div class="em-upload-title"><h3>上传会议视频</h3><span class="em-upload-subtitle">可设置文件名；断网后从头重传</span></div><button class="modal-close-btn" type="button" aria-label="关闭">×</button></header>
+ <div class="em-upload-body">
+  <label class="em-upload-picker"><span>选择视频</span><input type="file" multiple accept=".mp4,.mov,.webm"></label>
+  <span class="em-upload-limit">每个文件最大 1 GiB（1024 MiB）</span>
+  <div class="em-upload-queue"></div>
+  <span class="em-upload-error" role="alert" hidden></span>
+ </div>
+ <footer class="em-upload-actions"><span class="em-upload-summary"></span><button class="button" type="button" data-ec-video-cancel>取消当前上传</button><button class="button primary" type="button" data-ec-video-start>开始上传</button></footer>
+</dialog>`;
+}
+
+let expertMeetingVideoMountSeq = 0;
+
+/** 重命名复用 02 编辑 dialog 骨架：ec-edit-grid 的 label 换成 ec-video-name（唯一 id/for），
+ *  保留原始文件名 ec-message 与保存/取消，不引入其它 class。 */
+function expertMeetingVideoRenameDialogTemplate() {
+    expertMeetingVideoMountSeq += 1;
+    const fieldId = `ec-video-rename-name-stem-${expertMeetingVideoMountSeq}`;
+    return `<dialog class="em-upload-dialog ec-editor" data-ec-video-rename-dialog aria-label="重命名会议视频">
+ <form>
+ <header class="em-upload-head"><div class="em-upload-title"><h3>重命名会议视频</h3><span class="em-upload-subtitle">名称主体可改，扩展名不可改</span></div><button class="modal-close-btn" type="button" aria-label="关闭">×</button></header>
+ <div class="em-upload-body"><div class="ec-edit-grid"><label for="${fieldId}">文件名<span class="ec-video-name"><input id="${fieldId}" type="text" data-role="name-stem"><span data-role="extension"></span></span></label></div><span class="ec-message" data-role="original-name"></span><span class="ec-error" role="alert" hidden></span></div>
+ <footer class="em-upload-actions"><span class="em-upload-summary" role="status"></span><button class="button" type="button" data-ec-cancel>取消</button><button class="button primary" type="submit">保存</button></footer>
+ </form>
+</dialog>`;
+}
+
+/** 05 面板 = 视频 section + 上传/重命名 dialog；由 02 外壳模板在四组档案之后、四个 editor 之前插入。 */
+function expertMeetingVideoPanelTemplate() {
+    return expertMeetingVideoSectionTemplate() + expertMeetingVideoUploadDialogTemplate() + expertMeetingVideoRenameDialogTemplate();
+}
+
+function expertMeetingVideoRowTemplate() {
+    return `<div class="em-upload-file"><small data-role="original-name"></small><label>文件名<span class="ec-video-name"><input type="text" data-role="name-stem"><span data-role="extension">.mp4</span></span></label></div>` +
+        `<button class="button" type="button" data-ec-video-remove>移除</button>` +
+        `<progress class="em-upload-progress" max="100" hidden></progress>` +
+        `<span class="em-upload-state" role="status" aria-live="polite">待上传</span>`;
+}
+
+// ---------------------------------------------------------------------------
+// 会话状态与队列模型
+// ---------------------------------------------------------------------------
+
+function expertMeetingVideoState(session) {
+    if (!session) return null;
+    if (!session.meetingVideo) {
+        session.meetingVideo = {
+            closed: false,
+            section: null,
+            listEl: null,
+            errorEl: null,
+            pagerEl: null,
+            pagerTextEl: null,
+            prevButton: null,
+            nextButton: null,
+            refreshButton: null,
+            sectionUploadButton: null,
+            uploadDialog: null,
+            queueEl: null,
+            fileInput: null,
+            dialogErrorEl: null,
+            summaryEl: null,
+            startButton: null,
+            cancelButton: null,
+            dialogCloseButton: null,
+            renameDialog: null,
+            renameForm: null,
+            renameInput: null,
+            renameExtensionEl: null,
+            renameOriginalEl: null,
+            renameErrorEl: null,
+            renameSummaryEl: null,
+            renameCancelButton: null,
+            renameCloseButton: null,
+            renameTarget: null,
+            renameTrigger: null,
+            renameBusy: false,
+            entries: [],
+            entrySeq: 0,
+            running: false,
+            activeXhr: null,
+            activeEntry: null,
+            items: [],
+            page: 0,
+            size: EXPERT_MEETING_VIDEO_PAGE_SIZE,
+            total: 0,
+            pageCount: 1,
+            loading: false,
+            readSeq: 0,
+            controller: null,
+            player: null,
+            ready: null
+        };
+    }
+    return session.meetingVideo;
+}
+
+/** I-3：状态写入唯一收口，未知取值一律收敛为 failed。 */
+function expertMeetingVideoSetEntryState(entry, state, message) {
+    if (!entry) return;
+    entry.state = EXPERT_MEETING_VIDEO_STATES.includes(state) ? state : "failed";
+    entry.message = message == null ? "" : String(message);
+}
+
+function expertMeetingVideoIsActiveState(state) {
+    return EXPERT_MEETING_VIDEO_ACTIVE_STATES.includes(state);
+}
+
+function expertMeetingVideoEntryStateText(entry) {
+    if (!entry) return "";
+    if (entry.state === "uploading") {
+        return entry.measured && entry.totalBytes > 0
+            ? `正在上传 ${expertMeetingVideoSizeText(entry.uploadedBytes)} / ${expertMeetingVideoSizeText(entry.totalBytes)}`
+            : EXPERT_MEETING_VIDEO_TEXT.uploading;
+    }
+    if (entry.state === "processing") return EXPERT_MEETING_VIDEO_TEXT.processing;
+    if (entry.state === "success") return EXPERT_MEETING_VIDEO_TEXT.success;
+    if (entry.state === "failed") return entry.message || EXPERT_MEETING_VIDEO_TEXT.nameProblem;
+    if (entry.state === "uncertain") return entry.message || EXPERT_MEETING_VIDEO_TEXT.uncertain;
+    if (entry.state === "cancelled") return EXPERT_MEETING_VIDEO_TEXT.cancelled;
+    return entry.message || EXPERT_MEETING_VIDEO_TEXT.pending;
+}
+
+/** 每行只有一个动作按钮（同 S-1 骨架）：pending 移除 / 活动取消 / 失败与未确认重试 / success 隐藏。 */
+function expertMeetingVideoRowAction(entry) {
+    if (!entry) return { label: "", action: "none", hidden: true };
+    if (entry.state === "pending") return { label: "移除", action: "remove", hidden: false };
+    if (expertMeetingVideoIsActiveState(entry.state)) return { label: "取消", action: "cancel", hidden: false };
+    if (entry.state === "success") return { label: "", action: "none", hidden: true };
+    if (entry.state === "failed" || entry.state === "uncertain") return { label: "重试", action: "retry", hidden: false };
+    return { label: "移除", action: "remove", hidden: false };
+}
+
+function expertMeetingVideoSyncEntry(entry) {
+    const row = entry ? entry.rowEl : null;
+    if (!row) return;
+    row.setAttribute("data-upload-state", entry.state);
+    if (entry.stateEl) entry.stateEl.textContent = expertMeetingVideoEntryStateText(entry);
+    if (entry.progressEl) {
+        const active = expertMeetingVideoIsActiveState(entry.state);
+        entry.progressEl.hidden = !active || !entry.measured;
+        if (active && entry.measured && entry.totalBytes > 0) {
+            entry.progressEl.value = String(Math.min(100, Math.round(entry.uploadedBytes / entry.totalBytes * 100)));
+        }
+    }
+    if (entry.inputEl) entry.inputEl.disabled = entry.state !== "pending";
+    const action = expertMeetingVideoRowAction(entry);
+    if (entry.actionEl) {
+        entry.actionEl.hidden = action.hidden;
+        if (!action.hidden) entry.actionEl.textContent = action.label;
+    }
+}
+
+function expertMeetingVideoSetDialogError(state, message) {
+    const el = state ? state.dialogErrorEl : null;
+    if (!el) return;
+    const text = message ? String(message) : "";
+    el.textContent = text;
+    el.hidden = text === "";
+}
+
+function expertMeetingVideoSyncQueue(session) {
+    const state = expertMeetingVideoState(session);
+    if (!state || state.closed) return;
+    const queue = state.queueEl;
+    if (queue) {
+        state.entries.forEach((entry) => {
+            if (!entry.rowEl) expertMeetingVideoAppendRow(session, entry);
+            else if (entry.rowEl.parentNode !== queue) queue.appendChild(entry.rowEl);
+        });
+        Array.from(queue.children).forEach((row) => {
+            if (!state.entries.some((entry) => entry.rowEl === row)) queue.removeChild(row);
+        });
+    }
+    state.entries.forEach(expertMeetingVideoSyncEntry);
+    const active = state.entries.some((entry) => expertMeetingVideoIsActiveState(entry.state));
+    if (state.startButton) state.startButton.disabled = active;
+    if (state.cancelButton) state.cancelButton.disabled = !active;
+    if (state.dialogCloseButton) state.dialogCloseButton.disabled = active;
+    if (state.summaryEl) state.summaryEl.textContent = active ? EXPERT_MEETING_VIDEO_TEXT.activeHint : "";
+}
+
+function expertMeetingVideoAppendRow(session, entry) {
+    const state = expertMeetingVideoState(session);
+    if (!state || !state.queueEl || !entry) return;
+    const row = document.createElement("div");
+    row.className = "em-upload-row";
+    row.setAttribute("data-upload-state", entry.state);
+    row.innerHTML = expertMeetingVideoRowTemplate();
+    entry.rowEl = row;
+    entry.inputEl = row.querySelector('input[data-role="name-stem"]');
+    entry.extensionEl = row.querySelector('[data-role="extension"]');
+    entry.progressEl = row.querySelector(".em-upload-progress");
+    entry.stateEl = row.querySelector(".em-upload-state");
+    entry.actionEl = row.querySelector("[data-ec-video-remove]");
+    const originalEl = row.querySelector('[data-role="original-name"]');
+    if (originalEl) originalEl.textContent = String(entry.file && entry.file.name != null ? entry.file.name : "");
+    if (entry.extensionEl) entry.extensionEl.textContent = entry.extension ? `.${entry.extension}` : "";
+    if (entry.inputEl) {
+        entry.inputEl.value = String(entry.nameStem == null ? "" : entry.nameStem);
+        entry.inputEl.addEventListener("input", () => {
+            entry.nameStem = entry.inputEl.value;
+        });
+    }
+    if (entry.actionEl) {
+        entry.actionEl.addEventListener("click", () => expertMeetingVideoRowActionClick(session, entry));
+    }
+    state.queueEl.appendChild(row);
+    expertMeetingVideoSyncEntry(entry);
+}
+
+function expertMeetingVideoAddFiles(session, input) {
+    const state = expertMeetingVideoState(session);
+    if (!state || state.closed || !input) return;
+    const files = [];
+    const list = input.files;
+    if (list && typeof list.length === "number") {
+        for (let index = 0; index < list.length; index += 1) files.push(list[index]);
+    }
+    if (!files.length) return;
+    files.forEach((file) => {
+        if (!file || typeof file !== "object") return;
+        const name = String(file.name == null ? "" : file.name);
+        const extension = expertMeetingVideoExtensionOf(name);
+        state.entrySeq += 1;
+        const entry = {
+            key: `video-${state.entrySeq}`,
+            expertId: "",
+            file,
+            state: "pending",
+            message: "",
+            nameStem: extension === "" ? name : name.slice(0, name.length - extension.length - 1),
+            extension,
+            uploadedBytes: 0,
+            totalBytes: Number(file.size) || 0,
+            measured: false,
+            cancelRequested: false,
+            video: null,
+            xhr: null,
+            rowEl: null,
+            inputEl: null,
+            extensionEl: null,
+            progressEl: null,
+            stateEl: null,
+            actionEl: null
+        };
+        state.entries.push(entry);
+    });
+    // 清空选择框：同一文件可以再次加入队列
+    input.value = "";
+    expertMeetingVideoSetDialogError(state, "");
+    expertMeetingVideoSyncQueue(session);
+}
+
+function expertMeetingVideoRemoveEntry(session, entry) {
+    const state = expertMeetingVideoState(session);
+    if (!state || !entry) return;
+    // 活动项只能取消、success 禁止移除；本地移除只影响队列，不承诺删除服务端已入库记录（04 I-9）。
+    if (expertMeetingVideoIsActiveState(entry.state) || entry.state === "success") return;
+    if (entry.rowEl && entry.rowEl.parentNode) entry.rowEl.parentNode.removeChild(entry.rowEl);
+    state.entries = state.entries.filter((item) => item !== entry);
+    expertMeetingVideoSyncQueue(session);
+}
+
+function expertMeetingVideoRowActionClick(session, entry) {
+    const action = expertMeetingVideoRowAction(entry);
+    if (action.action === "remove") {
+        expertMeetingVideoRemoveEntry(session, entry);
+        return;
+    }
+    if (action.action === "cancel") {
+        expertMeetingVideoCancelEntry(session, entry);
+        return;
+    }
+    if (action.action === "retry") {
+        // I-3：只做显式重试（用户先按提示核对列表），绝不自动重传。
+        expertMeetingVideoSetEntryState(entry, "pending", "");
+        entry.uploadedBytes = 0;
+        entry.measured = false;
+        expertMeetingVideoSyncQueue(session);
+    }
+}
+
+function expertMeetingVideoEntryProblem(entry) {
+    if (!entry || !entry.file) return EXPERT_MEETING_VIDEO_TEXT.nameProblem;
+    const size = Number(entry.file.size);
+    if (!Number.isFinite(size) || size <= 0) return EXPERT_MEETING_VIDEO_TEXT.emptyVideo;
+    // I-2：超限在网络前拦截。
+    if (size > EXPERT_MEETING_VIDEO_MAX_BYTES) return EXPERT_MEETING_VIDEO_TEXT.limit;
+    if (!EXPERT_MEETING_VIDEO_ALLOWED_EXTENSIONS.includes(entry.extension)) return EXPERT_MEETING_VIDEO_TEXT.type;
+    return expertMeetingVideoStemProblem(entry.nameStem, entry.extension);
+}
+
+function expertMeetingVideoActiveEntry(state) {
+    return state ? state.entries.find((entry) => expertMeetingVideoIsActiveState(entry.state)) || null : null;
+}
+
+function expertMeetingVideoSetSectionError(state, message) {
+    const el = state ? state.errorEl : null;
+    if (!el) return;
+    const text = message ? String(message) : "";
+    el.textContent = text;
+    el.hidden = text === "";
+}
+
+// ---------------------------------------------------------------------------
+// 上传引擎（串行一个 XHR；任何失败/未知都暂停余队列等用户决定）
+// ---------------------------------------------------------------------------
+
+function expertMeetingVideoStartUpload(session) {
+    const state = expertMeetingVideoState(session);
+    if (!state || state.closed || state.running) return;
+    if (session.expertId === "") {
+        expertMeetingVideoSetDialogError(state, EXPERT_MEETING_VIDEO_TEXT.missingExpertIdUpload);
+        return;
+    }
+    const pending = state.entries.filter((entry) => entry.state === "pending");
+    if (!pending.length) {
+        expertMeetingVideoSetDialogError(state, EXPERT_MEETING_VIDEO_TEXT.pickFirst);
+        return;
+    }
+    let problem = "";
+    pending.forEach((entry) => {
+        const found = expertMeetingVideoEntryProblem(entry);
+        if (found !== "") {
+            expertMeetingVideoSetEntryState(entry, "failed", found); // 校验失败→failed，不发请求
+            if (problem === "") problem = found;
+        }
+    });
+    expertMeetingVideoSyncQueue(session);
+    if (problem !== "") {
+        expertMeetingVideoSetDialogError(state, problem);
+        return;
+    }
+    expertMeetingVideoSetDialogError(state, "");
+    state.running = true;
+    expertMeetingVideoSendNext(session);
+}
+
+function expertMeetingVideoSendNext(session) {
+    const state = expertMeetingVideoState(session);
+    if (!state || state.closed) return;
+    if (!state.running) {
+        expertMeetingVideoSyncQueue(session);
+        return;
+    }
+    const entry = state.entries.find((item) => item.state === "pending") || null;
+    if (!entry) {
+        state.running = false;
+        expertMeetingVideoSyncQueue(session);
+        return;
+    }
+    expertMeetingVideoSendEntry(session, entry);
+}
+
+function expertMeetingVideoSendEntry(session, entry) {
+    const state = expertMeetingVideoState(session);
+    if (!state || state.closed || !entry || !entry.file) return;
+    expertMeetingVideoSetEntryState(entry, "uploading", "");
+    entry.uploadedBytes = 0;
+    entry.measured = false;
+    entry.cancelRequested = false;
+    // I-4：捕获本次上传的 expertId，晚响应不得被算到别的专家头上。
+    entry.expertId = session.expertId;
+    expertMeetingVideoSyncQueue(session); // 活动期间：关闭禁用、取消可用、开始禁用
+    const params = new URLSearchParams();
+    params.set("expertId", entry.expertId);
+    if (session.level) params.set("level", session.level);
+    params.set("originalName", String(entry.file.name == null ? "" : entry.file.name));
+    params.set("nameStem", expertMeetingVideoNfc(entry.nameStem).trim());
+    params.set("expectedSize", String(Number(entry.file.size)));
+    const xhr = new XMLHttpRequest();
+    entry.xhr = xhr;
+    state.activeXhr = xhr;
+    state.activeEntry = entry;
+    xhr.open("POST", `${contextPath}${EXPERT_MEETING_VIDEO_URL}?${params.toString()}`);
+    xhr.setRequestHeader("Content-Type", "application/octet-stream");
+    xhr.timeout = 0; // 不用短 API 超时裁掉长上传；服务端读超时仍然有效
+    xhr.upload.onprogress = (event) => {
+        if (state.closed || entry.xhr !== xhr) return;
+        const loaded = Number(event && event.loaded);
+        if (Number.isFinite(loaded) && loaded >= 0) entry.uploadedBytes = loaded;
+        const total = Number(event && event.total);
+        if (event && event.lengthComputable === true && Number.isFinite(total) && total > 0) {
+            entry.totalBytes = total;
+            entry.measured = true;
+        }
+        // 只有真的量到 100% 才进入 processing（“上传完成，正在保存”），此时还不是成功。
+        if (entry.measured && entry.uploadedBytes >= entry.totalBytes) {
+            entry.state = "processing";
+        }
+        expertMeetingVideoSyncEntry(entry);
+    };
+    xhr.onload = () => {
+        if (state.closed || entry.xhr !== xhr) return;
+        expertMeetingVideoHandleResponse(session, entry, xhr);
+    };
+    xhr.onerror = () => {
+        if (state.closed || entry.xhr !== xhr) return;
+        expertMeetingVideoFinishInterrupted(session, entry, { cancelled: false });
+    };
+    xhr.ontimeout = () => {
+        if (state.closed || entry.xhr !== xhr) return;
+        expertMeetingVideoFinishInterrupted(session, entry, { cancelled: false });
+    };
+    xhr.onabort = () => {
+        if (state.closed || entry.xhr !== xhr) return;
+        expertMeetingVideoFinishInterrupted(session, entry, { cancelled: entry.cancelRequested === true });
+    };
+    xhr.send(entry.file);
+}
+
+function expertMeetingVideoParseView(text) {
+    let data = null;
+    try {
+        data = text ? JSON.parse(text) : null;
+    } catch (error) {
+        return null;
+    }
+    if (!data || typeof data !== "object") return null;
+    if (typeof data.id !== "string" || data.id === "") return null;
+    if (typeof data.version !== "number") return null;
+    return data;
+}
+
+function expertMeetingVideoErrorText(status, text) {
+    let data = null;
+    try {
+        data = text ? JSON.parse(text) : null;
+    } catch (error) {
+        data = null;
+    }
+    const code = data && typeof data.code === "string" ? data.code : "";
+    if (code !== "" && typeof EXPERT_MEETING_VIDEO_ERROR_TEXT[code] === "string") {
+        return EXPERT_MEETING_VIDEO_ERROR_TEXT[code];
+    }
+    const message = data && typeof data.message === "string" ? data.message.trim() : "";
+    return message !== "" ? message : `上传失败（${status}）`;
+}
+
+/** I-5：401/403 只把真实状态交给既有 handleAuthResponse；status 0 不构造非法 Response。 */
+function expertMeetingVideoHandleAuthFailure(xhr) {
+    const status = Number(xhr && xhr.status) || 0;
+    if (status !== 401 && status !== 403) return;
+    if (typeof handleAuthResponse !== "function" || typeof Response !== "function") return;
+    const text = typeof xhr.responseText === "string" ? xhr.responseText : "";
+    try {
+        const response = new Response(text, { status, headers: { "Content-Type": "application/json" } });
+        Promise.resolve(handleAuthResponse(response)).catch(() => {
+            // 认证遮罩由 handleAuthResponse 处理；本地队列已停止
+        });
+    } catch (error) {
+        // Response 构造失败不阻断本地状态收口
+    }
+}
+
+function expertMeetingVideoHandleResponse(session, entry, xhr) {
+    const state = expertMeetingVideoState(session);
+    if (!state || state.closed) return;
+    const status = Number(xhr.status) || 0;
+    if (state.activeEntry === entry) state.activeEntry = null;
+    if (state.activeXhr === xhr) state.activeXhr = null;
+    entry.xhr = null;
+    if (status === 401 || status === 403) {
+        // 鉴权在业务之前拒绝：本次上传未开始，重新登录后可再点开始上传。
+        expertMeetingVideoSetEntryState(entry, "pending", EXPERT_MEETING_VIDEO_TEXT.unauthorized);
+        expertMeetingVideoPauseQueue(session, EXPERT_MEETING_VIDEO_TEXT.unauthorized);
+        expertMeetingVideoHandleAuthFailure(xhr);
+        return;
+    }
+    if (status === 429) {
+        expertMeetingVideoSetEntryState(entry, "pending", EXPERT_MEETING_VIDEO_TEXT.busy);
+        expertMeetingVideoPauseQueue(session, EXPERT_MEETING_VIDEO_TEXT.busy);
+        return;
+    }
+    if (status === 201) {
+        const view = expertMeetingVideoParseView(xhr.responseText);
+        if (view) {
+            expertMeetingVideoSetEntryState(entry, "success", "");
+            entry.video = view;
+            expertMeetingVideoSyncQueue(session);
+            expertMeetingVideoLoadList(session, state.page); // 成功只刷新列表，不回退 pending
+            expertMeetingVideoSendNext(session);
+            return;
+        }
+        expertMeetingVideoSetEntryState(entry, "uncertain", EXPERT_MEETING_VIDEO_TEXT.uncertain);
+        expertMeetingVideoPauseQueue(session, EXPERT_MEETING_VIDEO_TEXT.uncertain);
+        return;
+    }
+    if (status >= 200 && status < 300) {
+        // 仅 201 才算“已上传”：其它 2xx 无法确认，按未确认处理。
+        expertMeetingVideoSetEntryState(entry, "uncertain", EXPERT_MEETING_VIDEO_TEXT.uncertain);
+        expertMeetingVideoPauseQueue(session, EXPERT_MEETING_VIDEO_TEXT.uncertain);
+        return;
+    }
+    expertMeetingVideoSetEntryState(entry, "failed", expertMeetingVideoErrorText(status, xhr.responseText));
+    expertMeetingVideoPauseQueue(session, expertMeetingVideoEntryStateText(entry));
+}
+
+/** 断网/取消：未量到任何字节=未开始（可重试）；已发送=提交结果未知（必须核对列表）。 */
+function expertMeetingVideoFinishInterrupted(session, entry, options) {
+    const state = expertMeetingVideoState(session);
+    if (!state || state.closed) return;
+    if (state.activeEntry === entry) state.activeEntry = null;
+    if (state.activeXhr === entry.xhr) state.activeXhr = null;
+    entry.xhr = null;
+    const cancelled = !!(options && options.cancelled);
+    const submitted = entry.uploadedBytes > 0 || entry.state === "processing";
+    state.running = false;
+    if (!submitted && cancelled) {
+        expertMeetingVideoSetEntryState(entry, "cancelled", "");
+    } else if (submitted) {
+        expertMeetingVideoSetEntryState(entry, "uncertain", EXPERT_MEETING_VIDEO_TEXT.uncertain);
+    } else {
+        expertMeetingVideoSetEntryState(entry, "pending", EXPERT_MEETING_VIDEO_TEXT.notStarted);
+    }
+    expertMeetingVideoSyncQueue(session);
+    if (submitted) {
+        // 结果未知：提示核对列表；不自动重传、不声称服务端撤销（04 I-9）。
+        expertMeetingVideoSetDialogError(state, EXPERT_MEETING_VIDEO_TEXT.uncertain);
+        expertMeetingVideoLoadList(session, state.page);
+    }
+}
+
+function expertMeetingVideoPauseQueue(session, message) {
+    const state = expertMeetingVideoState(session);
+    if (!state || state.closed) return;
+    state.running = false;
+    expertMeetingVideoSyncQueue(session);
+    expertMeetingVideoSetDialogError(state, message);
+    expertMeetingVideoLoadList(session, state.page); // 立刻刷新：同名/已入库记录对用户可见
+}
+
+function expertMeetingVideoCancelEntry(session, entry) {
+    const state = expertMeetingVideoState(session);
+    if (!state || !entry || !entry.xhr) return;
+    entry.cancelRequested = true;
+    try {
+        entry.xhr.abort();
+    } catch (error) {
+        // XHR 可能已结束：abort 失败不影响本地状态收口
+    }
+}
+
+function expertMeetingVideoCancelActive(session) {
+    const state = expertMeetingVideoState(session);
+    const active = expertMeetingVideoActiveEntry(state);
+    if (!active) return;
+    expertMeetingVideoCancelEntry(session, active);
+}
+
+// ---------------------------------------------------------------------------
+// 列表（分页 20、空态、失败保留上一次内容）
+// ---------------------------------------------------------------------------
+
+function expertMeetingVideoListMessage(text) {
+    const span = document.createElement("span");
+    span.className = "ec-message";
+    span.textContent = text;
+    return span;
+}
+
+function expertMeetingVideoReleasePlayer(state) {
+    const current = state ? state.player : null;
+    if (state) state.player = null;
+    if (!current || !current.player) return;
+    const player = current.player;
+    if (typeof player.pause === "function") {
+        try {
+            player.pause();
+        } catch (error) {
+            // 已卸载的播放器：pause 失败不影响切人
+        }
+    }
+    player.removeAttribute("src");
+    if (typeof player.load === "function") {
+        try {
+            player.load();
+        } catch (error) {
+            // 释放失败不影响切人流程
+        }
+    }
+    player.hidden = true;
+}
+
+function expertMeetingVideoSetItemError(article, message) {
+    const el = article ? article.querySelector(".ec-error") : null;
+    if (!el) return;
+    const text = message ? String(message) : "";
+    el.textContent = text;
+    el.hidden = text === "";
+}
+
+function expertMeetingVideoTogglePlayer(session, article, video) {
+    const state = expertMeetingVideoState(session);
+    if (!state || state.closed || !article) return;
+    const player = article.querySelector("video");
+    if (!player) return;
+    if (state.player && state.player.player === player) {
+        expertMeetingVideoReleasePlayer(state); // 再点一次收起
+        return;
+    }
+    const src = expertMeetingVideoApiUrl(video ? video.previewUrl : "");
+    if (src === "") {
+        expertMeetingVideoSetItemError(article, EXPERT_MEETING_VIDEO_TEXT.previewUnavailable);
+        return;
+    }
+    expertMeetingVideoReleasePlayer(state); // 同一列表一次只加载一个播放器
+    expertMeetingVideoSetItemError(article, "");
+    player.hidden = false;
+    player.setAttribute("src", src);
+    if (typeof player.load === "function") {
+        try {
+            player.load();
+        } catch (error) {
+            // 播放器加载由浏览器管理
+        }
+    }
+    state.player = { article, player, video };
+}
+
+function expertMeetingVideoItemElement(session, video) {
+    const article = document.createElement("article");
+    article.className = "metadata-card";
+    article.setAttribute("data-ec-video-id", String(video && video.id != null ? video.id : ""));
+    article.innerHTML = `<div class="metadata-card-value ec-text" data-role="video-name"></div>` +
+        `<span class="ec-message" data-role="video-meta"></span>` +
+        `<div class="ec-actions"><button class="button" type="button" data-ec-video-play>播放</button><button class="button" type="button" data-ec-video-rename>重命名</button><a class="button" data-ec-video-download>下载</a></div>` +
+        `<video class="ec-video-player" controls preload="metadata" hidden></video>` +
+        `<span class="ec-error" role="alert" hidden></span>`;
+    const nameEl = article.querySelector('[data-role="video-name"]');
+    if (nameEl) nameEl.textContent = String(video && video.displayFilename != null ? video.displayFilename : "");
+    const metaEl = article.querySelector('[data-role="video-meta"]');
+    if (metaEl) metaEl.textContent = expertMeetingVideoMetaText(video);
+    const download = article.querySelector("[data-ec-video-download]");
+    if (download) {
+        const href = expertMeetingVideoApiUrl(video ? video.downloadUrl : "");
+        if (href !== "") download.setAttribute("href", href);
+        download.setAttribute("download", String(video && video.displayFilename != null ? video.displayFilename : ""));
+    }
+    const play = article.querySelector("[data-ec-video-play]");
+    if (play) play.addEventListener("click", () => expertMeetingVideoTogglePlayer(session, article, video));
+    const rename = article.querySelector("[data-ec-video-rename]");
+    if (rename) rename.addEventListener("click", () => expertMeetingVideoOpenRename(session, video, rename));
+    const player = article.querySelector("video");
+    if (player) {
+        player.addEventListener("error", () => {
+            const current = expertMeetingVideoState(session);
+            if (!current || current.closed) return;
+            // I-5：编码不支持只给提示，下载入口保留。
+            player.hidden = true;
+            expertMeetingVideoSetItemError(article, EXPERT_MEETING_VIDEO_TEXT.codec);
+        });
+    }
+    return article;
+}
+
+function expertMeetingVideoRenderPager(state) {
+    if (!state) return;
+    const show = state.items.length > 0 && state.total > state.size;
+    if (state.pagerEl) state.pagerEl.hidden = !show;
+    if (state.pagerTextEl) {
+        state.pagerTextEl.textContent = show ? `第 ${state.page + 1} / ${state.pageCount} 页 · 共 ${state.total} 个视频` : "";
+    }
+    if (state.prevButton) state.prevButton.disabled = !show || state.page <= 0;
+    if (state.nextButton) state.nextButton.disabled = !show || state.page >= state.pageCount - 1;
+}
+
+function expertMeetingVideoRenderList(session) {
+    const state = expertMeetingVideoState(session);
+    if (!state || state.closed || !state.listEl) return;
+    expertMeetingVideoReleasePlayer(state);
+    state.listEl.innerHTML = "";
+    if (state.loading) {
+        state.listEl.appendChild(expertMeetingVideoListMessage(EXPERT_MEETING_VIDEO_TEXT.loading));
+    } else if (!state.items.length) {
+        state.listEl.appendChild(expertMeetingVideoListMessage(EXPERT_MEETING_VIDEO_TEXT.empty));
+    } else {
+        state.items.forEach((video) => state.listEl.appendChild(expertMeetingVideoItemElement(session, video)));
+    }
+    expertMeetingVideoRenderPager(state);
+}
+
+function expertMeetingVideoLoadErrorMessage(error) {
+    const status = error && typeof error.status === "number" ? error.status : 0;
+    if (status === 401 || status === 403 || (error && error.message === "UNAUTHORIZED")) {
+        return EXPERT_MEETING_VIDEO_TEXT.unauthorized;
+    }
+    return EXPERT_MEETING_VIDEO_TEXT.loadFailed;
+}
+
+/** 刷新后对 failed/uncertain 队列项追加同名提示：提示核对已上传记录，不自动改状态。 */
+function expertMeetingVideoApplyQueueHints(session) {
+    const state = expertMeetingVideoState(session);
+    if (!state) return;
+    const names = new Set(state.items.map((item) => String(item && item.displayFilename != null ? item.displayFilename : "")));
+    state.entries.forEach((entry) => {
+        if (entry.state !== "uncertain" && entry.state !== "failed") return;
+        if (!names.has(expertMeetingVideoFullName(entry.nameStem, entry.extension))) return;
+        if (entry.message.includes(EXPERT_MEETING_VIDEO_TEXT.uncertainMatch)) return;
+        entry.message = entry.message === ""
+            ? EXPERT_MEETING_VIDEO_TEXT.uncertainMatch
+            : `${entry.message}；${EXPERT_MEETING_VIDEO_TEXT.uncertainMatch}`;
+    });
+}
+
+async function expertMeetingVideoLoadList(session, page) {
+    const state = expertMeetingVideoState(session);
+    if (!state || state.closed || !session || session.closed) return;
+    const target = Number.isInteger(page) && page >= 0 ? page : 0;
+    state.readSeq += 1;
+    const seq = state.readSeq;
+    if (state.controller) {
+        try {
+            state.controller.abort();
+        } catch (error) {
+            // 请求可能已完成：abort 失败不影响本次读取
+        }
+        state.controller = null;
+    }
+    if (session.expertId === "") {
+        // I-1：没有稳定逻辑专家 ID 时不发请求、不猜 ID、不建联系人。
+        state.loading = false;
+        state.items = [];
+        state.total = 0;
+        state.pageCount = 1;
+        expertMeetingVideoRenderList(session);
+        expertMeetingVideoSetSectionError(state, EXPERT_MEETING_VIDEO_TEXT.missingExpertId);
+        return;
+    }
+    state.loading = true;
+    expertMeetingVideoSetSectionError(state, "");
+    expertMeetingVideoRenderList(session);
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    state.controller = controller;
+    const query = `?expertId=${encodeURIComponent(session.expertId)}` +
+        (session.level ? `&level=${encodeURIComponent(session.level)}` : "") +
+        `&page=${target}&size=${EXPERT_MEETING_VIDEO_PAGE_SIZE}`;
+    let data = null;
+    let failure = null;
+    try {
+        data = await api(`${EXPERT_MEETING_VIDEO_URL}${query}`, controller ? { signal: controller.signal } : {});
+    } catch (error) {
+        failure = error;
+    } finally {
+        if (state.controller === controller) state.controller = null;
+    }
+    // I-4：切专家/再次刷新之后旧响应一律丢弃，绝不写当前专家 DOM。
+    if (state.closed || session.isStale() || seq !== state.readSeq) return;
+    state.loading = false;
+    if (failure || !data || typeof data !== "object" || !Array.isArray(data.items)) {
+        // 失败保留上一次成功内容，不显示成“暂无会议视频”。
+        expertMeetingVideoRenderList(session);
+        expertMeetingVideoSetSectionError(state, expertMeetingVideoLoadErrorMessage(failure));
+        return;
+    }
+    state.items = data.items.filter((item) => item && typeof item === "object");
+    const total = Number(data.total);
+    state.total = Number.isFinite(total) && total >= 0 ? total : state.items.length;
+    const pageValue = Number(data.page);
+    state.page = Number.isInteger(pageValue) && pageValue >= 0 ? pageValue : target;
+    const sizeValue = Number(data.size);
+    state.size = Number.isFinite(sizeValue) && sizeValue > 0 ? sizeValue : EXPERT_MEETING_VIDEO_PAGE_SIZE;
+    state.pageCount = Math.max(1, Math.ceil(state.total / state.size));
+    expertMeetingVideoApplyQueueHints(session);
+    expertMeetingVideoSyncQueue(session); // 同名提示必须立即反映到队列行文案
+    expertMeetingVideoRenderList(session);
+    expertMeetingVideoSetSectionError(state, "");
+}
+
+// ---------------------------------------------------------------------------
+// 重命名（I-4：用 version、409 保留输入并提示刷新、不自动覆盖）
+// ---------------------------------------------------------------------------
+
+function expertMeetingVideoSetRenameError(state, message) {
+    const el = state ? state.renameErrorEl : null;
+    if (!el) return;
+    const text = message ? String(message) : "";
+    el.textContent = text;
+    el.hidden = text === "";
+}
+
+function expertMeetingVideoSetRenameBusy(state, busy) {
+    if (!state) return;
+    state.renameBusy = !!busy;
+    const submit = state.renameForm ? state.renameForm.querySelector('button[type="submit"]') : null;
+    [submit, state.renameCancelButton, state.renameCloseButton, state.renameInput].forEach((control) => {
+        if (control) control.disabled = !!busy;
+    });
+}
+
+function expertMeetingVideoOpenRename(session, video, trigger) {
+    const state = expertMeetingVideoState(session);
+    if (!state || state.closed || !video || !state.renameDialog || state.renameBusy) return;
+    state.renameTarget = video;
+    state.renameTrigger = trigger || null;
+    if (state.renameInput) state.renameInput.value = expertMeetingVideoStemOf(video);
+    if (state.renameExtensionEl) state.renameExtensionEl.textContent = video.extension ? `.${video.extension}` : "";
+    if (state.renameOriginalEl) {
+        state.renameOriginalEl.textContent =
+            `${EXPERT_MEETING_VIDEO_TEXT.originalPrefix}${String(video.originalFilename == null ? "" : video.originalFilename)}`;
+    }
+    if (state.renameSummaryEl) state.renameSummaryEl.textContent = "";
+    expertMeetingVideoSetRenameError(state, "");
+    if (state.renameDialog.open !== true && typeof state.renameDialog.showModal === "function") {
+        state.renameDialog.showModal();
+    }
+    if (state.renameInput && typeof state.renameInput.focus === "function") {
+        state.renameInput.focus({ preventScroll: true });
+    }
+}
+
+function expertMeetingVideoRequestCloseRename(state) {
+    if (!state || !state.renameDialog) return;
+    if (state.renameBusy) return; // 保存期间禁关闭（与 02 一致）
+    if (typeof state.renameDialog.close === "function") state.renameDialog.close();
+}
+
+function expertMeetingVideoRenameErrorMessage(error) {
+    const status = error && typeof error.status === "number" ? error.status : 0;
+    const data = error && error.data && typeof error.data === "object" ? error.data : null;
+    const code = data && typeof data.code === "string" ? data.code : "";
+    if (status === 401 || status === 403 || (error && error.message === "UNAUTHORIZED")) {
+        return EXPERT_MEETING_VIDEO_TEXT.unauthorized;
+    }
+    if (code === "VIDEO_NAME_CONFLICT") return EXPERT_MEETING_VIDEO_ERROR_TEXT.VIDEO_NAME_CONFLICT;
+    if (code === "VIDEO_VERSION_CONFLICT" || status === 409) return EXPERT_MEETING_VIDEO_ERROR_TEXT.VIDEO_VERSION_CONFLICT;
+    if (status === 404) return EXPERT_MEETING_VIDEO_ERROR_TEXT.VIDEO_NOT_FOUND;
+    if (status === 400) {
+        return code !== "" && typeof EXPERT_MEETING_VIDEO_ERROR_TEXT[code] === "string"
+            ? EXPERT_MEETING_VIDEO_ERROR_TEXT[code]
+            : EXPERT_MEETING_VIDEO_ERROR_TEXT.INVALID_VIDEO_NAME;
+    }
+    if (status === 503) return EXPERT_MEETING_VIDEO_ERROR_TEXT.EXPERT_LOOKUP_UNAVAILABLE;
+    if (status >= 500) return EXPERT_MEETING_VIDEO_ERROR_TEXT.VIDEO_STORE_FAILED;
+    return EXPERT_MEETING_VIDEO_TEXT.uncertain; // 无响应：改名结果未知，先刷新列表
+}
+
+function expertMeetingVideoApplyRenamedVideo(session, view) {
+    const state = expertMeetingVideoState(session);
+    if (!state || state.closed) return;
+    const index = state.items.findIndex((item) => String(item.id) === String(view.id));
+    if (index >= 0) state.items[index] = Object.assign({}, state.items[index], view);
+    const target = state.renameTarget;
+    if (target && String(target.id) === String(view.id)) {
+        state.renameTarget = index >= 0 ? state.items[index] : Object.assign({}, target, view);
+    }
+    expertMeetingVideoRenderList(session);
+}
+
+async function expertMeetingVideoSubmitRename(session) {
+    const state = expertMeetingVideoState(session);
+    if (!state || state.closed || state.renameBusy) return;
+    const target = state.renameTarget;
+    if (!target) return;
+    const stem = expertMeetingVideoNfc(String(state.renameInput ? state.renameInput.value : "")).trim();
+    const extension = String(target.extension == null ? "" : target.extension);
+    const problem = expertMeetingVideoStemProblem(stem, extension);
+    if (problem !== "") {
+        expertMeetingVideoSetRenameError(state, problem);
+        return;
+    }
+    if (session.expertId === "") {
+        expertMeetingVideoSetRenameError(state, EXPERT_MEETING_VIDEO_TEXT.missingExpertIdUpload);
+        return;
+    }
+    state.renameBusy = true;
+    expertMeetingVideoSetRenameBusy(state, true);
+    let data = null;
+    let failure = null;
+    try {
+        data = await api(
+            `${EXPERT_MEETING_VIDEO_URL}/${encodeURIComponent(String(target.id))}?expertId=${encodeURIComponent(session.expertId)}`,
+            { method: "PATCH", body: JSON.stringify({ nameStem: stem, expectedVersion: Number(target.version) }) }
+        );
+    } catch (error) {
+        failure = error;
+    } finally {
+        if (!state.closed) expertMeetingVideoSetRenameBusy(state, false);
+        else state.renameBusy = false;
+    }
+    if (state.closed || session.isStale()) return;
+    if (failure || !data || typeof data !== "object" || typeof data.id !== "string") {
+        // 409：保留输入、提示刷新，不自动覆盖重试。
+        expertMeetingVideoSetRenameError(state, expertMeetingVideoRenameErrorMessage(failure));
+        return;
+    }
+    expertMeetingVideoApplyRenamedVideo(session, data);
+    if (state.renameSummaryEl) state.renameSummaryEl.textContent = EXPERT_MEETING_VIDEO_TEXT.saved;
+    expertMeetingVideoSetRenameError(state, "");
+}
+
+// ---------------------------------------------------------------------------
+// 绑定 / 挂载 / 卸载
+// ---------------------------------------------------------------------------
+
+function expertMeetingVideoOpenUpload(session) {
+    const state = expertMeetingVideoState(session);
+    if (!state || state.closed) return;
+    if (session.expertId === "") {
+        expertMeetingVideoSetSectionError(state, EXPERT_MEETING_VIDEO_TEXT.missingExpertIdUpload);
+        return;
+    }
+    expertMeetingVideoSetSectionError(state, "");
+    if (state.uploadDialog && state.uploadDialog.open !== true && typeof state.uploadDialog.showModal === "function") {
+        state.uploadDialog.showModal();
+    }
+    expertMeetingVideoSyncQueue(session);
+}
+
+function expertMeetingVideoRequestCloseUpload(session) {
+    const state = expertMeetingVideoState(session);
+    if (!state || state.closed || !state.uploadDialog) return;
+    if (expertMeetingVideoActiveEntry(state)) {
+        // 活动上传期间：关闭按钮禁用 / Escape 阻止关闭，只提示先取消。
+        expertMeetingVideoSetDialogError(state, EXPERT_MEETING_VIDEO_TEXT.busyClose);
+        return;
+    }
+    if (typeof state.uploadDialog.close === "function") state.uploadDialog.close();
+}
+
+function expertMeetingVideoBindSection(session) {
+    const state = expertMeetingVideoState(session);
+    if (!state || !session || !session.host) return;
+    if (state.refreshButton) {
+        state.refreshButton.addEventListener("click", () => {
+            state.ready = expertMeetingVideoLoadList(session, state.page);
+        });
+    }
+    if (state.sectionUploadButton) {
+        state.sectionUploadButton.addEventListener("click", () => expertMeetingVideoOpenUpload(session));
+    }
+    if (state.prevButton) {
+        state.prevButton.addEventListener("click", () => {
+            if (state.page <= 0) return;
+            state.ready = expertMeetingVideoLoadList(session, state.page - 1);
+        });
+    }
+    if (state.nextButton) {
+        state.nextButton.addEventListener("click", () => {
+            if (state.page >= state.pageCount - 1) return;
+            state.ready = expertMeetingVideoLoadList(session, state.page + 1);
+        });
+    }
+    const jump = session.host.querySelector("[data-ec-video-jump]");
+    if (jump) {
+        jump.addEventListener("click", () => {
+            if (state.section && typeof state.section.scrollIntoView === "function") {
+                state.section.scrollIntoView({ block: "start", behavior: "smooth" });
+            }
+        });
+    }
+}
+
+function expertMeetingVideoFocus(element) {
+    if (element && element.isConnected !== false && typeof element.focus === "function") {
+        element.focus({ preventScroll: true });
+    }
+}
+
+function expertMeetingVideoBindUploadDialog(session) {
+    const state = expertMeetingVideoState(session);
+    const dialog = state ? state.uploadDialog : null;
+    if (!state || !dialog) return;
+    if (state.fileInput) {
+        state.fileInput.addEventListener("change", () => expertMeetingVideoAddFiles(session, state.fileInput));
+    }
+    if (state.startButton) {
+        state.startButton.addEventListener("click", () => expertMeetingVideoStartUpload(session));
+    }
+    if (state.cancelButton) {
+        state.cancelButton.addEventListener("click", () => expertMeetingVideoCancelActive(session));
+    }
+    if (state.dialogCloseButton) {
+        state.dialogCloseButton.addEventListener("click", () => expertMeetingVideoRequestCloseUpload(session));
+    }
+    dialog.addEventListener("cancel", (event) => {
+        if (event && typeof event.preventDefault === "function") event.preventDefault();
+        if (expertMeetingVideoActiveEntry(state)) {
+            expertMeetingVideoSetDialogError(state, EXPERT_MEETING_VIDEO_TEXT.busyClose);
+            return;
+        }
+        expertMeetingVideoRequestCloseUpload(session);
+    });
+    dialog.addEventListener("close", () => {
+        if (state.closed) return;
+        expertMeetingVideoFocus(state.sectionUploadButton); // 键盘关闭后焦点归还
+    });
+}
+
+function expertMeetingVideoBindRenameDialog(session) {
+    const state = expertMeetingVideoState(session);
+    if (!state) return;
+    if (state.renameForm) {
+        state.renameForm.addEventListener("submit", (event) => {
+            if (event && typeof event.preventDefault === "function") event.preventDefault();
+            expertMeetingVideoSubmitRename(session);
+        });
+    }
+    if (state.renameCancelButton) {
+        state.renameCancelButton.addEventListener("click", () => expertMeetingVideoRequestCloseRename(state));
+    }
+    if (state.renameCloseButton) {
+        state.renameCloseButton.addEventListener("click", () => expertMeetingVideoRequestCloseRename(state));
+    }
+    if (state.renameDialog) {
+        state.renameDialog.addEventListener("cancel", (event) => {
+            if (event && typeof event.preventDefault === "function") event.preventDefault();
+            expertMeetingVideoRequestCloseRename(state);
+        });
+        state.renameDialog.addEventListener("close", () => {
+            if (state.closed) return;
+            const trigger = state.renameTrigger;
+            state.renameTrigger = null;
+            expertMeetingVideoFocus(trigger); // 键盘关闭后焦点归还到「重命名」按钮
+        });
+    }
+}
+
+/** 05 挂载入口：02 外壳写入 DOM 之后由 typeof 守卫调用（不并入资料 Promise.all）。 */
+function mountExpertMeetingVideos(session) {
+    const state = expertMeetingVideoState(session);
+    if (!state || !session || !session.host || typeof session.host.querySelector !== "function") return state;
+    const section = session.host.querySelector(EXPERT_MEETING_VIDEO_SECTION_SELECTOR);
+    const dialog = session.host.querySelector("[data-ec-video-upload-dialog]");
+    const renameDialog = session.host.querySelector("[data-ec-video-rename-dialog]");
+    state.section = section;
+    state.listEl = section ? section.querySelector(".ec-video-list") : null;
+    state.errorEl = section ? section.querySelector(".ec-error") : null;
+    state.pagerEl = section ? section.querySelector(".ec-video-pager") : null;
+    state.pagerTextEl = state.pagerEl ? state.pagerEl.querySelector(".ec-message") : null;
+    state.prevButton = section ? section.querySelector("[data-ec-video-prev]") : null;
+    state.nextButton = section ? section.querySelector("[data-ec-video-next]") : null;
+    state.refreshButton = section ? section.querySelector("[data-ec-video-refresh]") : null;
+    state.sectionUploadButton = section ? section.querySelector("[data-ec-video-upload]") : null;
+    state.uploadDialog = dialog;
+    state.queueEl = dialog ? dialog.querySelector(".em-upload-queue") : null;
+    state.fileInput = dialog ? dialog.querySelector('input[type="file"]') : null;
+    state.dialogErrorEl = dialog ? dialog.querySelector(".em-upload-error") : null;
+    state.summaryEl = dialog ? dialog.querySelector(".em-upload-summary") : null;
+    state.startButton = dialog ? dialog.querySelector("[data-ec-video-start]") : null;
+    state.cancelButton = dialog ? dialog.querySelector("[data-ec-video-cancel]") : null;
+    state.dialogCloseButton = dialog ? dialog.querySelector(".modal-close-btn") : null;
+    state.renameDialog = renameDialog;
+    state.renameForm = renameDialog ? renameDialog.querySelector("form") : null;
+    state.renameInput = renameDialog ? renameDialog.querySelector('[data-role="name-stem"]') : null;
+    state.renameExtensionEl = renameDialog ? renameDialog.querySelector('[data-role="extension"]') : null;
+    state.renameOriginalEl = renameDialog ? renameDialog.querySelector('[data-role="original-name"]') : null;
+    state.renameErrorEl = renameDialog ? renameDialog.querySelector(".ec-error") : null;
+    state.renameSummaryEl = renameDialog ? renameDialog.querySelector(".em-upload-summary") : null;
+    state.renameCancelButton = renameDialog ? renameDialog.querySelector("[data-ec-cancel]") : null;
+    state.renameCloseButton = renameDialog ? renameDialog.querySelector(".modal-close-btn") : null;
+    expertMeetingVideoBindSection(session);
+    expertMeetingVideoBindUploadDialog(session);
+    expertMeetingVideoBindRenameDialog(session);
+    expertMeetingVideoSyncQueue(session);
+    state.ready = expertMeetingVideoLoadList(session, 0);
+    return state;
+}
+
+/** 05 卸载入口（02 会话卸载时由 typeof 守卫调用）：停队列、abort 在途上传、关 dialog、释放播放器。 */
+function unmountExpertMeetingVideos(session) {
+    const state = session ? session.meetingVideo : null;
+    if (!state || state.closed) return;
+    state.closed = true;
+    state.running = false;
+    state.readSeq += 1;
+    if (state.controller) {
+        try {
+            state.controller.abort();
+        } catch (error) {
+            // 请求可能已完成：abort 失败不影响卸载
+        }
+        state.controller = null;
+    }
+    const xhr = state.activeXhr;
+    state.activeXhr = null;
+    state.activeEntry = null;
+    if (xhr) {
+        try {
+            xhr.abort(); // 已发出的上传不承诺服务端撤销，晚响应因 closed 被丢弃
+        } catch (error) {
+            // XHR 可能已结束：abort 失败不影响卸载
+        }
+    }
+    expertMeetingVideoReleasePlayer(state);
+    if (state.uploadDialog && typeof state.uploadDialog.close === "function") state.uploadDialog.close();
+    if (state.renameDialog && typeof state.renameDialog.close === "function") state.renameDialog.close();
+    state.renameBusy = false;
+    state.renameTarget = null;
+    state.entries.forEach((entry) => {
+        entry.file = null;
+        entry.xhr = null;
+        entry.rowEl = null;
+        entry.inputEl = null;
+        entry.extensionEl = null;
+        entry.progressEl = null;
+        entry.stateEl = null;
+        entry.actionEl = null;
+    });
+    state.entries = [];
+    state.items = [];
+    state.listEl = null;
+    state.queueEl = null;
+    state.section = null;
+}
+/* contact-profile-05-video:end */
 
 async function showExpertDetail(expert, generation) {
     if (generation === undefined) generation = beginContactDetailPresentation();
