@@ -30,4 +30,4 @@
 - Repair code head: 9453e3f1db24c1f83aa189b9d8c134136533bfa4
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: Manual acceptance gate：人工按 docs/plans/review/2026-10-11-contact-profile-development-master/manual-acceptance.md 对边界 `96b89bb..9453e3f` 执行 A-1…A-5 并签核；随后写 final-decision.md（不得由代理代填）。
+- Blocker/next action: 人工于 2026-10-12 直接下令将分支本地合并到 main（边界 `9453e3f`；未执行 A-1…A-5 人工验收、未签核；机器 PASS epoch 2 已记录）。Review 仍为 AWAITING_HUMAN_ACCEPTANCE；如需正式收口：补 A-1…A-5 结果与签核后写 final-decision.md（不得由代理代填）。
