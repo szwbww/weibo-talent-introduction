@@ -1,0 +1,118 @@
+
+/* Only contact layout density changes; all base visuals come from production CSS. */
+.main:has(#view-contacts.active){padding:16px 24px 20px;gap:10px}
+.main:has(#view-contacts.active) .topbar{flex-wrap:wrap}
+#view-contacts .contacts-toolbar{padding:8px 12px}
+#view-contacts .contacts-layout{gap:12px}
+#view-contacts .contacts-list-panel .panel-head{padding:10px 14px}
+#view-contacts .expert-list-item{padding:10px}
+#view-contacts .contact-detail-head{padding:10px 14px;gap:6px}
+#view-contacts .contact-detail-head>div:first-child{margin-bottom:0!important}
+#view-contacts .contact-head-actions{gap:6px}
+#view-contacts #contactDetail{padding:12px 14px}
+#view-contacts .detail{gap:10px}
+#view-contacts .expert-profile-header{padding-bottom:0}
+#view-contacts .detail-sub-tabs{margin-bottom:8px}
+#view-contacts .ec-profile{gap:10px;margin-bottom:12px}
+#view-contacts .ec-section{padding:10px 12px}
+#view-contacts .ec-heading{margin-bottom:8px}
+#view-contacts [data-role="expert-shared-note"]{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:4px 12px;align-items:center}
+#view-contacts [data-role="expert-shared-note"] .ec-heading{display:contents}
+#view-contacts [data-role="expert-shared-note"] h3{grid-column:1;grid-row:1;font-size:12px}
+#view-contacts [data-role="expert-shared-note"] [data-ec-refresh-note]{grid-column:3;grid-row:1/3;height:28px;min-height:28px;padding:0 9px}
+#view-contacts [data-role="note-content"]{grid-column:2;grid-row:1;max-height:64px;overflow:auto;font-size:13px}
+#view-contacts [data-role="note-meta"]{grid-column:2;grid-row:2;font-size:11px;color:var(--text-muted)}
+#view-contacts [data-role="expert-shared-note"] .ec-error{grid-column:1/-1}
+#view-contacts [data-ec-group="matching"]{position:relative;padding-right:65px}
+#view-contacts [data-ec-group="matching"]>.ec-heading{margin-bottom:6px}
+#view-contacts [data-ec-group="matching"]>.ec-heading h3{font-size:12px;color:var(--text-secondary)}
+#view-contacts [data-ec-group="matching"] [data-ec-edit]{position:absolute;right:12px;top:26px;height:28px;min-height:28px}
+#view-contacts [data-ec-group="matching"] .metadata-grid{grid-template-columns:.8fr 1fr 1.5fr;margin:0;gap:12px}
+#view-contacts [data-ec-group="matching"] .metadata-card{padding:0;border:0;background:none}
+#view-contacts [data-ec-group="matching"] .span-all{grid-column:auto}
+#view-contacts .fp-profile{padding:10px 12px}
+#view-contacts .fp-profile>.ec-nav{gap:6px;margin-bottom:4px}
+#view-contacts .fp-profile>.ec-nav h3{font-size:14px;margin-right:8px}
+#view-contacts .fp-profile>.ec-nav button{height:28px;min-height:28px;padding:0 10px}
+.fp-meeting-jump{margin-left:auto}
+#view-contacts .fp-profile>.ec-section{padding:0;border:0;border-radius:0;background:none}
+#view-contacts .fp-profile>.ec-section>.ec-heading{justify-content:flex-end;margin-bottom:0;height:30px}
+#view-contacts .fp-profile>.ec-section>.ec-heading h3{font-size:11px;color:var(--text-muted);margin-right:auto;font-weight:400}
+#view-contacts .fp-profile [data-ec-edit]{height:26px;min-height:26px;padding:0 8px;font-size:11px}
+#view-contacts .fp-profile .metadata-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:0 16px;margin:0}
+#view-contacts .fp-profile .metadata-card{padding:7px 0;background:none;border:0;border-bottom:1px solid var(--line);border-radius:0;min-width:0;gap:3px}
+#view-contacts .fp-profile .metadata-card.span-all{grid-column:span 2}
+#view-contacts .metadata-card-header{text-transform:none;letter-spacing:0}
+#view-contacts [data-meeting-records]{scroll-margin-top:12px}
+#view-contacts [data-meeting-records]>.ec-section{margin:0}
+@media(min-width:1650px){#view-contacts .fp-profile .metadata-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+
+@media(min-width:1151px){#view-contacts .fp-profile .metadata-card{display:grid;grid-template-columns:90px minmax(0,1fr);align-items:baseline;gap:8px}}
+/* Revision 3: shorter fixed actions, identity, and separate native detail tabs. */
+#view-contacts .contact-detail-head>div:first-child{display:none!important}
+#view-contacts .contact-detail-head{padding:8px 12px}
+#view-contacts .contact-detail-head:has(#contactHeadActions[hidden]){display:none}
+#view-contacts #contactDetail{padding:8px 12px}
+#view-contacts .contact-head-main-row{gap:6px;flex-wrap:wrap}
+#view-contacts .contact-head-main-row .button,#view-contacts .contact-head-main-row select{min-height:28px;height:28px;font-size:12px}
+#view-contacts #manualMailOption{min-width:140px;max-width:320px;flex:1}
+#view-contacts .contact-head-divider{margin:0 2px}
+#view-contacts .expert-profile-header{gap:8px;min-height:36px;margin:0}
+#view-contacts .expert-profile-header .expert-avatar{width:30px;height:30px;font-size:14px}
+#view-contacts .expert-header-info h2{font-size:15px;margin:0}
+#view-contacts .expert-header-info p{font-size:11px}
+#view-contacts .expert-profile-header .back-to-list{height:26px;min-height:26px;padding:0 7px;margin:0;font-size:11px}
+#view-contacts .detail-sub-tabs{margin:0;gap:0;flex-wrap:wrap}
+#view-contacts .detail-sub-tab{padding:7px 12px;font-size:12px}
+#view-contacts .detail{gap:8px}
+#view-contacts .fp-material-menu{position:relative}
+#view-contacts .fp-material-menu>summary{list-style:none;cursor:pointer}
+#view-contacts .fp-material-menu>summary::-webkit-details-marker{display:none}
+#view-contacts .fp-material-menu[open]>summary{color:var(--primary)}
+#view-contacts .fp-material-menu>#expertMaterialRow{position:absolute;right:0;top:34px;width:360px;max-width:75vw;padding:12px;z-index:50;background:#f5f7fb;backdrop-filter:blur(20px);border:1px solid var(--line);border-radius:var(--radius-sm);box-shadow:var(--shadow-md)}
+#view-contacts .fp-material-menu .expert-material-tags{flex-wrap:wrap}
+#view-contacts .fp-contact-info .metadata-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+#view-contacts .fp-contact-info .metadata-card.span-all{grid-column:1/-1}
+#view-contacts .fp-contact-info .metadata-card-value{font-size:12px;overflow-wrap:anywhere}
+#view-contacts .fp-followup>.metadata-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:8px}
+#view-contacts .fp-followup .metadata-card{padding:10px;gap:6px}
+#view-contacts .fp-followup .metadata-card-value{font-size:12px}
+#view-contacts .fp-history{border:1px solid var(--line);border-radius:var(--radius-sm);padding:10px 12px}
+#view-contacts .fp-history>summary{font-weight:600;font-size:12px;cursor:pointer}
+#view-contacts .fp-history>.metadata-card{border:0;background:none;padding:10px 0 0}
+#view-contacts .fp-history>.metadata-card>.metadata-card-header{display:none}
+#view-contacts .fp-attachments .metadata-card{padding:12px}
+#fpInvitedQuick{white-space:nowrap}
+@media(max-width:760px){#view-contacts .fp-followup>.metadata-grid{grid-template-columns:1fr}#view-contacts .fp-contact-info .metadata-grid{grid-template-columns:1fr}#view-contacts .expert-profile-header{flex-wrap:wrap}#view-contacts .detail-sub-tab{padding:7px 9px}#view-contacts #manualMailOption{max-width:none}#view-contacts .fp-profile>.ec-nav h3{width:auto}}
+/* Revision 4: identity notes, list summaries, read-only mailbox history. */
+#view-contacts .fp-header-note{margin:0;padding:7px 10px;background:rgba(255,255,255,.65);border:1px solid var(--line);border-radius:var(--radius-sm)}
+#view-contacts .expert-meta{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11px;margin-top:5px}
+#view-contacts .expert-meta b{font-weight:500;color:var(--text-main);margin-left:3px}
+#view-contacts .fp-list-note{display:flex;gap:8px;margin:6px 0;color:var(--text-muted);font-size:11px;min-width:0}
+#view-contacts [data-list-note]{color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
+#view-contacts .fp-list-note>span:first-child{flex-shrink:0}
+#view-contacts .fp-mail-history.mail-chat{display:block;height:auto;min-height:0;border:1px solid var(--line);border-radius:var(--radius-sm);margin-bottom:10px;background:rgba(248,250,252,.65);overflow:hidden}
+#view-contacts .fp-mail-history .mc-timeline-head{padding:9px 12px;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+#view-contacts .fp-mail-history .mc-timeline-head strong{color:var(--text-main);font-size:13px}
+#view-contacts .fp-mail-history [data-history-count]{margin-right:auto}
+#view-contacts .fp-mail-scroll{position:relative;height:480px;max-height:56vh;min-height:240px;overflow:auto;padding:12px;overscroll-behavior:contain}
+#view-contacts .fp-mail-history .mc-body{font-size:12px}
+#view-contacts .fp-mail-history .mc-message{width:92%;padding:10px 12px}
+#view-contacts .fp-mail-history .mc-mail-extras{margin-top:8px;font-size:12px}
+#view-contacts .fp-mail-history .mc-mail-extras>summary{cursor:pointer;color:var(--primary)}
+#view-contacts .fp-mail-history .mc-mail-extras>.mc-body{padding:8px 0}
+#view-contacts .fp-mail-history .mc-error{padding:12px}
+@media(max-width:760px){#view-contacts .fp-mail-history .mc-message{width:100%}#view-contacts .fp-mail-scroll{max-height:55vh}}
+/* Revision 5: secondary workflow information stays available behind one row. */
+#view-contacts .fp-workflow{margin-bottom:8px;border:1px solid var(--line);border-radius:var(--radius-sm);background:rgba(255,255,255,.45)}
+#view-contacts .fp-workflow>summary{padding:8px 12px;cursor:pointer;font-size:12px;font-weight:500;color:var(--text-secondary)}
+#view-contacts .fp-workflow[open]>summary{border-bottom:1px solid var(--line);margin-bottom:8px}
+#view-contacts .fp-workflow>.metadata-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:8px}
+@media(max-width:760px){#view-contacts .fp-workflow>.metadata-grid{grid-template-columns:1fr}}
+/* Revision 6: middle width preset and text-only identity note. */
+#view-contacts [data-role="expert-shared-note"].fp-header-note{display:block;padding:0 0 2px;margin:0;background:none;border:0;border-radius:0;box-shadow:none}
+#view-contacts .fp-header-note [data-role="note-content"]{max-height:none;overflow:visible;font-size:12px;line-height:1.5;color:var(--text-secondary)}
+#view-contacts .layout-preset-btn.fp-preset-active{color:var(--primary);border-color:var(--primary);background:rgba(37,72,194,.08)}
+@media(max-width:1150px){#view-contacts .fp-profile .metadata-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.cr-pager{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:12px;font-size:12px}

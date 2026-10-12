@@ -6798,8 +6798,8 @@ describe("专家备注冻结样式与缓存键", () => {
         const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf-8");
         const assets = [...html.matchAll(/(?:href|src)="([^"]+\?v=([^"]+))"/g)];
         assert.deepEqual(assets.map((match) => match[1].split("?")[0]), [
-            "styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css", "world-clock.css",
-            "trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js", "mailbox-chat.js", "app.js", "world-clock.js"
+            "styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css", "world-clock.css", "meeting-records.css", "contact-details.css",
+            "trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js", "mailbox-chat.js", "contact-history.js", "meeting-records.js", "contact-details.js", "app.js", "world-clock.js"
         ]);
         assert.equal(new Set(assets.map((match) => match[2])).size, 1);
         assert.match(assets[0][2], /^\d{8}-[a-z0-9-]+$/);

@@ -55,7 +55,8 @@ class ExpertMeetingVideoController(private val service: ExpertMeetingVideoServic
         @RequestParam(required = false) level: ExpertIndexLevel?,
         @RequestParam(required = false) originalName: String?,
         @RequestParam(required = false) nameStem: String?,
-        @RequestParam(required = false) expectedSize: String?
+        @RequestParam(required = false) expectedSize: String?,
+        @RequestParam(required = false) meetingRecordId: String? = null
     ): ResponseEntity<Any> {
         val username = sessionUsername(request) ?: return unauthorized()
         val command = MeetingVideoUploadRequest(
@@ -64,7 +65,8 @@ class ExpertMeetingVideoController(private val service: ExpertMeetingVideoServic
             originalName = originalName,
             nameStem = nameStem,
             expectedSize = expectedSize,
-            declaredLength = request.contentLengthLong.takeIf { it >= 0L }
+            declaredLength = request.contentLengthLong.takeIf { it >= 0L },
+            meetingRecordId = meetingRecordId
         )
         val view = request.inputStream.use { body -> service.upload(command, username, request.contextPath, body) }
         return ResponseEntity.status(HttpStatus.CREATED).body(view)
@@ -86,10 +88,11 @@ class ExpertMeetingVideoController(private val service: ExpertMeetingVideoServic
         request: HttpServletRequest,
         @RequestParam(required = false) expertId: String?,
         @RequestParam(required = false) page: Int?,
-        @RequestParam(required = false) size: Int?
+        @RequestParam(required = false) size: Int?,
+        @RequestParam(required = false) meetingRecordId: String? = null
     ): ResponseEntity<Any> {
         sessionUsername(request) ?: return unauthorized()
-        return ResponseEntity.ok(service.list(expertId, page, size, request.contextPath))
+        return ResponseEntity.ok(service.list(expertId, page, size, request.contextPath, meetingRecordId))
     }
 
     @PatchMapping("/{id}")

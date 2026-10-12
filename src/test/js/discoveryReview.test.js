@@ -443,7 +443,7 @@ describe("c5 discovery review · S-1/S-2/S-3 contract", () => {
     it("keeps one cache key for all eleven assets and other task modals at 700px", () => {
         const keys = Array.from(indexHtml.matchAll(/[?"]v=([^"'&<>]+)/g)).map((m) => m[1]);
         const unique = Array.from(new Set(keys));
-        assert.strictEqual(keys.length, 11, "exactly eleven cache-busted assets");
+        assert.strictEqual(keys.length, 16, "exactly sixteen cache-busted assets");
         assert.strictEqual(unique.length, 1, "all assets must share one cache key");
         assert.match(unique[0], /^[0-9]{8}-[a-z0-9-]+$/, "cache key must be <yyyymmdd>-<slug>");
         assert.notStrictEqual(unique[0], "20261004-mailbox-suspension-followup",

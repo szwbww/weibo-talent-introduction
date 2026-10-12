@@ -26437,5 +26437,6 @@ document.addEventListener("DOMContentLoaded", function() {
     bindBatchSendTaskEvents();
 });
 
+initContactDetailsLayout();
 initMailboxGroupPush();
 bootstrap();

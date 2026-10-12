@@ -96,6 +96,7 @@ class ExpertMeetingVideoService(
     ): MeetingVideoView {
         val expertKey = resolveExpertKey(request.expertId, request.level)
         val actor = requireActor(username)
+        if (request.meetingRecordId != null) requireMeetingOwner(request.meetingRecordId, expertKey)
         val expectedSize = parseExpectedSize(request.expectedSize)
         val originalFilename = originalBasename(request.originalName)
         val extension = extensionOf(originalFilename)
@@ -120,7 +121,7 @@ class ExpertMeetingVideoService(
             val now = LocalDateTime.now(BEIJING).truncatedTo(ChronoUnit.MILLIS)
             try {
                 transactionTemplate.executeWithoutResult {
-                    jdbcTemplate.update(INSERT_SQL, insertParams(id, expertKey, originalFilename, displayFilename, byteLength, actor, now))
+                    jdbcTemplate.update(INSERT_SQL, insertParams(id, expertKey, originalFilename, displayFilename, byteLength, actor, now).addValue("meetingRecordId", request.meetingRecordId))
                 }
             } catch (ex: DuplicateKeyException) {
                 deleteQuietly(finalPath)
@@ -164,16 +165,17 @@ class ExpertMeetingVideoService(
     }
 
     /** 列表（只读）：page 从 0，size 默认 20 且 1..50，`uploaded_at DESC, id DESC`，无记录空数组。 */
-    fun list(expertId: String?, page: Int?, size: Int?, contextPath: String): MeetingVideoPage {
+    fun list(expertId: String?, page: Int?, size: Int?, contextPath: String, meetingRecordId: String? = null): MeetingVideoPage {
         val expertKey = expertKey(expertId)
         val effectivePage = page ?: 0
         val effectiveSize = size ?: MeetingVideoLimits.DEFAULT_PAGE_SIZE
         if (effectivePage < 0 || effectiveSize < 1 || effectiveSize > MeetingVideoLimits.MAX_PAGE_SIZE) {
             throw MeetingVideoException.invalidName(PAGE_INVALID_MESSAGE)
         }
-        val params = MapSqlParameterSource("expertKey", expertKey)
+        val params = MapSqlParameterSource("expertKey", expertKey).addValue("meetingRecordId", meetingRecordId)
+        if (meetingRecordId != null) requireMeetingOwner(meetingRecordId, expertKey)
         val total = try {
-            jdbcTemplate.queryForObject(COUNT_SQL, params, Long::class.java) ?: 0L
+            jdbcTemplate.queryForObject(if (meetingRecordId == null) COUNT_SQL else "$COUNT_SQL AND meeting_record_id=:meetingRecordId", params, Long::class.java) ?: 0L
         } catch (ex: DataAccessException) {
             throw MeetingVideoException.storeFailed(STORE_FAILED_MESSAGE, ex)
         }
@@ -182,7 +184,7 @@ class ExpertMeetingVideoService(
         }
         val rows = try {
             jdbcTemplate.query(
-                SELECT_PAGE_SQL,
+                if (meetingRecordId == null) SELECT_PAGE_SQL else SELECT_PAGE_SQL.replace("ORDER BY", "AND meeting_record_id=:meetingRecordId ORDER BY"),
                 params
                     .addValue("limit", effectiveSize)
                     .addValue("offset", effectivePage.toLong() * effectiveSize),
@@ -528,6 +530,13 @@ class ExpertMeetingVideoService(
     // 元数据读写
     // ------------------------------------------------------------------
 
+    private fun requireMeetingOwner(id: String, expertKey: String) {
+        val count = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM expert_meeting_record WHERE id=:id AND expert_key=:expertKey",
+            MapSqlParameterSource("id", id).addValue("expertKey", expertKey), Long::class.java) ?: 0L
+        if (count != 1L) throw MeetingVideoException.notFound("会议记录不存在或不属于该专家")
+    }
+
     private fun insertParams(
         id: String,
         expertKey: String,
@@ -629,10 +638,10 @@ class ExpertMeetingVideoService(
         val INSERT_SQL = """
             INSERT INTO expert_meeting_video
                 (id, expert_key, original_filename, display_filename, byte_length,
-                 uploaded_by, uploaded_at, updated_by, updated_at, version)
+                 uploaded_by, uploaded_at, updated_by, updated_at, version, meeting_record_id)
             VALUES
                 (:id, :expertKey, :originalFilename, :displayFilename, :byteLength,
-                 :uploadedBy, :uploadedAt, :updatedBy, :updatedAt, 1)
+                 :uploadedBy, :uploadedAt, :updatedBy, :updatedAt, 1, :meetingRecordId)
         """.trimIndent()
 
         val SELECT_ONE_SQL =

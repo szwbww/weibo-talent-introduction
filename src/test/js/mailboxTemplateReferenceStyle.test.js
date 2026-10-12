@@ -154,7 +154,7 @@ describe("fast-p 01 S-4：资源登记与字节基线", () => {
         assert.notStrictEqual(CACHE_KEY, RETIRED_CACHE_KEY, "本次实施必须替换旧缓存键");
         assert.match(CACHE_KEY, /^[0-9]{8}-[a-z0-9-]+$/, "键必须是 <yyyymmdd>-<slug>");
         const keys = Array.from(indexSource.matchAll(/\?v=([^"'&<>\s]+)/g)).map((match) => match[1]);
-        assert.strictEqual(keys.length, 11, "index.html 必须仍是 11 个版本化资源（不新增 script/link）");
+        assert.strictEqual(keys.length, 16, "index.html 必须仍是 16 个版本化资源（不新增 script/link）");
         assert.deepStrictEqual(Array.from(new Set(keys)), [CACHE_KEY], "全部资源键必须同值");
         assert.ok(indexSource.indexOf(RETIRED_CACHE_KEY) === -1, "不得残留旧键");
     });

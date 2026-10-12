@@ -61,7 +61,8 @@ data class MeetingVideoUploadRequest(
     val originalName: String?,
     val nameStem: String?,
     val expectedSize: String?,
-    val declaredLength: Long?
+    val declaredLength: Long?,
+    val meetingRecordId: String? = null
 )
 
 /** 重命名请求（PATCH body）：`{nameStem, expectedVersion}`；两者都必填。 */

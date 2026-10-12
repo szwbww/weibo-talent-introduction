@@ -173,7 +173,7 @@ describe("S-1/S-2/S-3: 模板卫生与骨架属性", () => {
 describe("资源版本：11 个键同值且无旧键残留", () => {
     it("全部 ?v= 同值，数量与位置不变，键格式合法", () => {
         const keys = Array.from(indexSource.matchAll(/\?v=([^"'&<>\s]+)/g)).map((match) => match[1]);
-        assert.strictEqual(keys.length, 11, "11 个带版本资源（5 CSS + 6 JS）");
+        assert.strictEqual(keys.length, 16, "16 个带版本资源（5 CSS + 6 JS）");
         assert.deepStrictEqual(Array.from(new Set(keys)), [CACHE_KEY], "全部资源键必须同值");
         assert.match(CACHE_KEY, /^\d{8}-[a-z0-9-]+$/, "键必须是 <yyyymmdd>-<slug>");
         assert.notStrictEqual(CACHE_KEY, RETIRED_CACHE_KEY, "本次实施必须换键（新键值以 index.html 为唯一来源）");

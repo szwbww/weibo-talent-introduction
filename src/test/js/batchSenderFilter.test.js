@@ -225,7 +225,7 @@ describe("batch sender account filter: real DOM contract (S-1/S-2, I-3)", () => 
         // The literal itself must stay only in index.html (taskActivityCenter.test.js I-8 scans
         // src/test/js for it), so this test derives the value instead of pinning it.
         const keys = [...indexSource.matchAll(/\?v=([^"']+)/g)].map((m) => m[1]);
-        assert.strictEqual(keys.length, 11, "index.html must keep exactly the 11 versioned asset keys");
+        assert.strictEqual(keys.length, 16, "index.html must keep exactly the 16 versioned asset keys");
         const distinct = [...new Set(keys)];
         assert.strictEqual(distinct.length, 1, "every versioned key must share one value: " + distinct.join(", "));
         assert.match(distinct[0], /^[0-9]{8}-[a-z0-9-]+$/, "the shared key must be <yyyymmdd>-<slug>");
