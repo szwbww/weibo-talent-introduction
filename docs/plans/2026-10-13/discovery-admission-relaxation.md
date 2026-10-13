@@ -150,7 +150,7 @@
 
 ## 变更文件清单
 
-最大10个实施文件；本次均未修改。共享文件按阶段顺序编辑。
+最大 11 个实施文件（A9 修订：增列第 11 个受影响测试类）；本次均未修改。共享文件按阶段顺序编辑。
 
 |#|文件（相对仓库根目录）|目的|
 |---|---|---|
@@ -164,8 +164,9 @@
 |8|src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewAllPagesTest.kt|完整字段与跨层读取|
 |9|src/test/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryReviewControllerTest.kt|mode/dryRun/actor/幂等|
 |10|src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceTest.kt|补全后不重新收紧|
+|11|src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceBehaviorTest.kt|A9：2 例断言 RND_SCOPE_UNCONFIRMED 阻断候选投影，改为 I-1 新语义（软原因只进 hints；reconcile 以空 reasons 调用；候选保留；其余 20 例不动）|
 
-不新增数据库/ES字段；不改模板、发送selector、分类器、前端、账号配置源码。如实施发现必须改第11个文件，先拆分或修订方案，不能暗增范围。
+不新增数据库/ES字段；不改模板、发送selector、分类器、前端、账号配置源码。如实施发现必须改第 12 个文件，先拆分或修订方案，不能暗增范围。（第 11 个文件已按 A9 修订纳入。）
 
 ## 验收标准
 
@@ -176,7 +177,7 @@
 - I-5：dryRun业务写0、apply邮件/联系人写0；已有候选/有效层运营字段逐值不变；候选失败后幂等补投影，成功人数与失败人数守恒。
 - I-6：使用既有 BatchRecipientSelectionServiceTest、ManualInitialOutreachServiceTest、InitialOutreachServiceTest 覆盖预估/ES/NEW/旧首发；未知类型只有显式包含才匹配，选地区后国家缺失仍排除，邮箱抑制/验证和去重不变。测试文件仅执行，不列为可修改文件。
 - I-7：完整source与扫描source同一档案原因/提示一致；政策版本落库；任务JSON≤48KiB；旧模式契约测试通过。
-- 使用JDK11跑上述新增与受影响测试；先确认项目实际测试类名称再给 Maven -Dtest，禁止用缺失测试被跳过冒充通过。本次不执行开发测试，尚无实现。
+- 使用JDK11跑上述新增与受影响测试（受影响测试按 A9 含 ExpertRevalidationServiceBehaviorTest）；先确认项目实际测试类名称再给 Maven -Dtest，禁止用缺失测试被跳过冒充通过。本次不执行开发测试，尚无实现。
 - 冻结审计样本回放：897条中786条预计新准入，107+4条仍硬阻断；未来在线人数变化不得强行改数据凑数。
 
 ## 人工验收清单
@@ -220,7 +221,7 @@
 ## 方案自检
 
 - 规则、存量、投影、发送配置四层闭环；未将786等同最终可发人数。
-- 实施文件10；一个准入子系统加既有批量发送配置验收；无新增持久字段，无前端改动。
+- 实施文件11（含 A9 授权的受影响测试类）；一个准入子系统加既有批量发送配置验收；无新增持久字段，无前端改动。
 - 关键写入/读取与竞态、原始数据保护、逐项人工验收已列明。
 - 回滚依赖备份与CAS；执行前需具体化生产批次和运维窗口。
 - 尚未执行实现、发布、存量迁移或发信。方案只是供用户审阅。
