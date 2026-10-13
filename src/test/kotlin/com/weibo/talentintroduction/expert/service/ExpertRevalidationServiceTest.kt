@@ -622,4 +622,101 @@ class ExpertRevalidationServiceTest {
 
         verify(review).recordAutomatic(eqValue("OLD-DOC"), anyProfile(), anyEligibility())
     }
+
+    // ── 阶段 1：软原因不再撤回候选 + 硬原因/邮箱失败保留（I-1/I-3） ──────────
+
+    private fun discoveryRawStubs(review: DiscoveryReviewService): ExpertIndexWriterService.DiscoverySnapshot {
+        val source = discoveryAdmissionSource()
+        val snapshot = ExpertIndexWriterService.DiscoverySnapshot(source, 3, 2)
+        `when`(writerService.readDiscoveryDocument(ExpertIndexLevel.RAW, "OLD-DOC")).thenReturn(snapshot)
+        `when`(writerService.discoveryProfile("OLD-DOC", source)).thenReturn(
+            validExpert("HISTORICAL-ORCID", "researcher@example.org", esDocId = "OLD-DOC").copy(
+                emailSource = "PAPER_FULLTEXT", institution = "University", lastPublicationYear = 2026
+            )
+        )
+        `when`(review.resolveAdmission(eqValue("OLD-DOC"), anyProfile()))
+            .thenReturn(DiscoveryReviewResolvedAdmission("OLD-DOC", null, false, false, false, false, 0L, null))
+        return snapshot
+    }
+
+    private fun capturedReasons(): List<String> {
+        @Suppress("UNCHECKED_CAST")
+        val captor = ArgumentCaptor.forClass(List::class.java) as ArgumentCaptor<List<String>>
+        verify(writerService).reconcileDiscoveryCandidate(
+            eqValue("OLD-DOC"), anySnapshot(), anyClassification(), captor.capture() ?: emptyList(), eqValue(false)
+        )
+        return captor.value
+    }
+
+    @Test
+    fun `discovery soft missing data reasons never remove the candidate`() {
+        val review = mock(DiscoveryReviewService::class.java)
+        val snapshot = discoveryRawStubs(review)
+        `when`(classificationService.classify(anyProfile())).thenReturn(classification(ExpertType.UNKNOWN))
+        `when`(emailValidationService.validate("researcher@example.org")).thenReturn(EmailValidationResult(3, true))
+        `when`(writerService.reconcileDiscoveryCandidate(
+            eqValue("OLD-DOC"), eqValue(snapshot), anyClassification(), anyReasons(), eqValue(false)
+        )).thenReturn(true)
+
+        assertEquals(PromotionOutcome.Promoted, serviceWithReview(review).revalidateDiscovery("OLD-DOC"))
+
+        assertEquals(emptyList<String>(), capturedReasons(), "软原因不得进入候选投影的阻断原因")
+        verify(review).recordAutomatic(eqValue("OLD-DOC"), anyProfile(), anyEligibility())
+    }
+
+    @Test
+    fun `discovery hard research scope reason still blocks and is reported verbatim`() {
+        val review = mock(DiscoveryReviewService::class.java)
+        val snapshot = discoveryRawStubs(review)
+        `when`(classificationService.classify(anyProfile())).thenReturn(classification(ExpertType.OUT_OF_SCOPE))
+        `when`(emailValidationService.validate("researcher@example.org")).thenReturn(EmailValidationResult(3, true))
+        `when`(writerService.reconcileDiscoveryCandidate(
+            eqValue("OLD-DOC"), eqValue(snapshot), anyClassification(), anyReasons(), eqValue(false)
+        )).thenReturn(true)
+
+        val outcome = serviceWithReview(review).revalidateDiscovery("OLD-DOC")
+
+        assertEquals(PromotionOutcome.Rejected(listOf("RND_OUT_OF_SCOPE")), outcome)
+        assertEquals(listOf("RND_OUT_OF_SCOPE"), capturedReasons())
+    }
+
+    @Test
+    fun `discovery email verification failure still blocks with the EMAIL vocabulary`() {
+        val review = mock(DiscoveryReviewService::class.java)
+        val snapshot = discoveryRawStubs(review)
+        `when`(classificationService.classify(anyProfile())).thenReturn(classification(ExpertType.ACADEMIC_RND))
+        `when`(emailValidationService.validate("researcher@example.org"))
+            .thenReturn(EmailValidationResult(0, false, "undeliverable"))
+        `when`(writerService.reconcileDiscoveryCandidate(
+            eqValue("OLD-DOC"), eqValue(snapshot), anyClassification(), anyReasons(), eqValue(false)
+        )).thenReturn(true)
+
+        val outcome = serviceWithReview(review).revalidateDiscovery("OLD-DOC")
+
+        assertEquals(PromotionOutcome.Rejected(listOf("EMAIL:undeliverable")), outcome)
+        assertEquals(listOf("EMAIL:undeliverable"), capturedReasons())
+    }
+
+    @Test
+    fun `discovery valid automatic admission is projected instead of re-reconciled`() {
+        val review = mock(DiscoveryReviewService::class.java)
+        val source = discoveryAdmissionSource()
+        val snapshot = ExpertIndexWriterService.DiscoverySnapshot(source, 3, 2)
+        `when`(writerService.readDiscoveryDocument(ExpertIndexLevel.RAW, "OLD-DOC")).thenReturn(snapshot)
+        `when`(writerService.discoveryProfile("OLD-DOC", source)).thenReturn(
+            validExpert("HISTORICAL-ORCID", "researcher@example.org", esDocId = "OLD-DOC")
+        )
+        `when`(review.resolveAdmission(eqValue("OLD-DOC"), anyProfile()))
+            .thenReturn(resolved("AUTO_PASSED", manual = false))
+        `when`(emailValidationService.validate("researcher@example.org")).thenReturn(EmailValidationResult(3, true))
+        `when`(review.projectApprovedCandidate(eqValue("OLD-DOC"), eqValue(source), eqValue("AUTO_PASSED")))
+            .thenReturn(DiscoveryReviewCandidateSync("PROJECTED", true, null))
+
+        assertEquals(PromotionOutcome.Promoted, serviceWithReview(review).revalidateDiscovery("OLD-DOC"))
+
+        verify(writerService, never()).reconcileDiscoveryCandidate(
+            anyString(), anySnapshot(), anyClassification(), anyReasons(), eqValue(false)
+        )
+        verify(review, never()).recordAutomatic(anyString(), anyProfile(), anyEligibility())
+    }
 }

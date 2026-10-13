@@ -2,8 +2,10 @@ package com.weibo.talentintroduction.expert.service
 
 import com.weibo.talentintroduction.config.ExpertClassificationProperties
 import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewDecision
+import com.weibo.talentintroduction.discovery.service.DiscoveryAdmissionPolicy
 import com.weibo.talentintroduction.discovery.service.DiscoveryReviewService
 import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
+import com.weibo.talentintroduction.expert.domain.EligibilityResult
 import com.weibo.talentintroduction.expert.domain.ExpertClassification
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
@@ -340,7 +342,7 @@ class ExpertRevalidationService(
                 ?: return PromotionOutcome.RawMissing
             val profile = expertIndexWriterService.discoveryProfile(docId, snapshot.source)
 
-            // I-3：先读当前准入结论。有效人工批准跳过基础重新拒绝，且不按基础失败删候选；
+            // I-3：先读当前准入结论。有效人工批准（含历史认可）跳过基础重新拒绝，且不按基础失败删候选；
             // 人工暂缓/拒绝不自动晋升。身份变化（decision == null）按无有效批准处理。
             val review = discoveryReviewService
             val admission = review?.resolveAdmission(docId, profile)
@@ -349,26 +351,22 @@ class ExpertRevalidationService(
                 if (decision == DiscoveryReviewDecision.HOLD.name || decision == DiscoveryReviewDecision.REJECTED.name) {
                     return PromotionOutcome.AlreadyPresent
                 }
-                val sync = review.projectApprovedCandidate(docId, snapshot.source, decision!!)
-                return when (sync.result) {
-                    ExpertIndexWriterService.DiscoveryCandidateProjection.PROJECTED.name -> PromotionOutcome.Promoted
-                    ExpertIndexWriterService.DiscoveryCandidateProjection.ALREADY_PRESENT.name,
-                    ExpertIndexWriterService.DiscoveryCandidateProjection.APPLICATION_PRESENT.name ->
-                        PromotionOutcome.AlreadyPresent
-                    else -> PromotionOutcome.WriteFailed
-                }
+                return projectAdmission(review, docId, snapshot.source, decision!!)
             }
 
             if (!DiscoveryIdentity.allowedMap(snapshot.source))
                 return PromotionOutcome.WriteFailed
+            // I-1/I-3：只有硬否决与独立邮箱验证失败参与候选投影；六类缺资料原因不再撤候选。
+            val eligibility = eligibilityService.evaluateEligibility(profile)
+            val reasons = hardBlockingReasons(profile, eligibility)
+            if (reasons.isEmpty() && review != null && admission != null && admission.admitted &&
+                admission.decision != null
+            ) {
+                // 有效自动准入：复用同一条共享候选投影，缺资料不再回撤（不再走 reconcile 删除候选）。
+                return projectAdmission(review, docId, snapshot.source, admission.decision)
+            }
             val candidateBefore = if (applied) null
                 else expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
-            val eligibility = eligibilityService.evaluateEligibility(profile)
-            val reasons = if (eligibilityFilterService.getCandidateFilter().requireValidEmail) {
-                val emailResult = emailValidationService.validate(profile.email.orEmpty())
-                if (emailResult.valid) eligibility.rejectReasons
-                else eligibility.rejectReasons + "EMAIL:${emailResult.rejectReason}"
-            } else eligibility.rejectReasons
             val classification = expertClassificationService.classify(profile)
             if (!expertIndexWriterService.reconcileDiscoveryCandidate(
                     docId, snapshot, classification, reasons, preserveApplication = applied
@@ -382,6 +380,34 @@ class ExpertRevalidationService(
         } catch (e: Exception) {
             log.warn("Discovery revalidation failed for {}: {}", docId, e.message)
             PromotionOutcome.WriteFailed
+        }
+    }
+
+    /**
+     * I-1：候选投影用的阻断原因 —— 六类缺资料原因（[DiscoveryAdmissionPolicy.SOFT_REASON_CODES]）
+     * 之外的一切资格原因，加上独立邮箱验证失败（含 `EMAIL:` 词汇，与既有流程逐字一致）。
+     */
+    private fun hardBlockingReasons(profile: ExpertProfile, eligibility: EligibilityResult): List<String> {
+        val reasons = eligibility.rejectReasons.filter { it !in DiscoveryAdmissionPolicy.SOFT_REASON_CODES }
+        if (!eligibilityFilterService.getCandidateFilter().requireValidEmail) return reasons
+        val emailResult = emailValidationService.validate(profile.email.orEmpty())
+        return if (emailResult.valid) reasons else reasons + "EMAIL:${emailResult.rejectReason}"
+    }
+
+    /** I-3：人工批准与有效自动准入共用的候选投影（复用同一 seam，不另写晋升/删除逻辑）。 */
+    private fun projectAdmission(
+        review: DiscoveryReviewService,
+        docId: String,
+        source: Map<String, Any?>,
+        decision: String
+    ): PromotionOutcome {
+        val sync = review.projectApprovedCandidate(docId, source, decision)
+        return when (sync.result) {
+            ExpertIndexWriterService.DiscoveryCandidateProjection.PROJECTED.name -> PromotionOutcome.Promoted
+            ExpertIndexWriterService.DiscoveryCandidateProjection.ALREADY_PRESENT.name,
+            ExpertIndexWriterService.DiscoveryCandidateProjection.APPLICATION_PRESENT.name ->
+                PromotionOutcome.AlreadyPresent
+            else -> PromotionOutcome.WriteFailed
         }
     }
 

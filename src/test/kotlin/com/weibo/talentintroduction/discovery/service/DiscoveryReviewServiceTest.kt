@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.KotlinModule
 import com.weibo.talentintroduction.config.ElasticsearchProperties
 import com.weibo.talentintroduction.discovery.domain.AdmissionConfigSnapshot
+import com.weibo.talentintroduction.discovery.domain.AdmissionReason
+import com.weibo.talentintroduction.discovery.domain.AdmissionReasonCodes
 import com.weibo.talentintroduction.discovery.domain.AutomaticAdmissionResult
 import com.weibo.talentintroduction.discovery.domain.DiscoveryAdmissionStatus
 import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewIdentity
@@ -503,9 +505,278 @@ class DiscoveryReviewServiceTest {
         Mockito.verify(writer, Mockito.never()).readDiscoveryDocument(ExpertIndexLevel.RAW, "doc2")
     }
 
+    @Test
+    fun `recordAutomatic re-reads after an initialization race and reports the concurrent decision`() {
+        stubAutomatic(auto(DiscoveryAdmissionStatus.NEEDS_REVIEW))
+        Mockito.`when`(repository.findAdmission("doc1"))
+            .thenReturn(null, admission("MANUAL_APPROVED"))
+
+        val outcome = service.recordAutomatic("doc1", profile(), eligibility())
+
+        assertEquals("MANUAL_APPROVED", outcome.decision)
+        assertTrue(outcome.admitted)
+        assertTrue(outcome.manual)
+        assertFalse(outcome.identityChanged)
+    }
+
+    @Test
+    fun `recordAutomatic retries the CAS once with the freshly read revision`() {
+        val jdbc = Mockito.mock(JdbcTemplate::class.java)
+        val svc = DiscoveryReviewService(
+            repository, policy, writer, restTemplate, properties, expertIndexService, objectMapper, clock,
+            jdbcTemplate = jdbc
+        )
+        stubAutomatic(auto())
+        Mockito.`when`(repository.findAdmission("doc1"))
+            .thenReturn(admission("NEEDS_REVIEW", revision = 2L), admission("NEEDS_REVIEW", revision = 5L))
+        Mockito.`when`(jdbc.update(anyString(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+            .thenReturn(0, 1)
+
+        val outcome = svc.recordAutomatic("doc1", profile(), eligibility())
+
+        assertEquals("AUTO_PASSED", outcome.decision)
+        assertTrue(outcome.admitted)
+        assertFalse(outcome.identityChanged)
+        assertEquals(6L, outcome.revision)
+    }
+
+    @Test
+    fun `recordAutomatic never reports a stale approval when the CAS keeps losing`() {
+        val jdbc = Mockito.mock(JdbcTemplate::class.java)
+        val svc = DiscoveryReviewService(
+            repository, policy, writer, restTemplate, properties, expertIndexService, objectMapper, clock,
+            jdbcTemplate = jdbc
+        )
+        stubAutomatic(auto())
+        val before = admission("NEEDS_REVIEW", revision = 2L)
+        val fresh = admission("HOLD", revision = 7L, identityHash = "other-identity")
+        Mockito.`when`(repository.findAdmission("doc1")).thenReturn(before, fresh)
+        Mockito.`when`(jdbc.update(anyString(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+            .thenReturn(0)
+
+        val outcome = svc.recordAutomatic("doc1", profile(), eligibility())
+
+        // 复读结果为准：身份已变化 ⇒ 不适用、不准入，调用方不得据此投影候选。
+        assertEquals("HOLD", outcome.decision)
+        assertFalse(outcome.admitted)
+        assertTrue(outcome.identityChanged)
+        assertEquals(7L, outcome.revision)
+    }
+
+    // ── 阶段 2：存量刷新（REFRESH_DISCOVERY，I-2/I-4/I-5/I-7） ───────────────
+
+    private fun refreshService(scan: DiscoveryReviewScanService): DiscoveryReviewService =
+        DiscoveryReviewService(
+            repository, policy, writer, restTemplate, properties, expertIndexService, objectMapper, clock,
+            scanService = scan
+        )
+
+    private fun stubRefreshPolicy(result: AutomaticAdmissionResult = auto()) {
+        stubAutomatic(result)
+    }
+
+    @Test
+    fun `refresh dryRun previews per person buckets without a single write`() {
+        val scan = Mockito.mock(DiscoveryReviewScanService::class.java)
+        val svc = refreshService(scan)
+        stubRefreshPolicy(auto())
+        stubScan(
+            scan,
+            listOf(
+                scanExpert("doc-new"),
+                scanExpert(
+                    "doc-manual", decision = "MANUAL_APPROVED", decisionManual = true, initialized = true
+                ),
+                scanExpert("doc-changed", identityChanged = true, initialized = true),
+                scanExpert(
+                    "doc-hard", automaticReasons = listOf(
+                        AdmissionReason("RND_OUT_OF_SCOPE", "不在研发范围内", "expertClassification.type",
+                            "OUT_OF_SCOPE", "PRODUCTION_RND", "CandidateEligibilityService.evaluateEligibility()")
+                    )
+                ),
+                scanExpert(
+                    "doc-identity", automaticReasons = listOf(
+                        AdmissionReason(AdmissionReasonCodes.IDENTITY_MISSING, "身份凭证缺失", "identityVerification",
+                            null, "VERIFIED 身份凭证", "DiscoveryIdentity.allowed()")
+                    )
+                )
+            )
+        )
+
+        val outcome = svc.runRefreshWorker("refresh-1", listOf(ExpertIndexLevel.RAW), dryRun = true)
+
+        assertEquals(DiscoveryReviewService.MODE_REFRESH_DISCOVERY, outcome.mode)
+        assertTrue(outcome.dryRun)
+        assertEquals(5, outcome.total)
+        assertEquals(1, outcome.admitted)
+        assertEquals(1, outcome.manualPreserved)
+        assertEquals(1, outcome.identityChanged)
+        assertEquals(1, outcome.hardBlocked)
+        assertEquals(1, outcome.identityMissing)
+        assertEquals(0, outcome.conflicts)
+        assertEquals(5, outcome.taskSuccessCount)
+        assertEquals(0, outcome.taskFailureCount)
+        assertEquals("SUCCESS", outcome.taskFinalStatus)
+        assertTrue(outcome.samples.contains("ADMITTED:doc-new"), outcome.samples.toString())
+        assertEquals(0, outcome.recorded)
+        assertEquals(0, outcome.candidateProjected)
+        Mockito.verify(repository, Mockito.never())
+            .initializeAdmission(anyString(), anyString(), anyString(), any(), anyTime())
+        Mockito.verify(repository, Mockito.never()).findAdmission(anyString())
+        Mockito.verify(writer, Mockito.never())
+            .projectDiscoveryCandidate(anyString(), Mockito.any<Map<String, Any?>>() ?: emptyMap(), anyString())
+    }
+
+    @Test
+    fun `refresh dedupes by real doc id across layers and reports cross layer identity conflicts`() {
+        val scan = Mockito.mock(DiscoveryReviewScanService::class.java)
+        val svc = refreshService(scan)
+        stubRefreshPolicy(auto())
+        val conflictA = profile(email = "ada-lovelace@example.org")
+        val conflictB = profile(email = "other-person@example.org")
+        stubScan(
+            scan,
+            listOf(
+                scanExpert("doc-dup"),
+                scanExpert("doc-dup"),
+                scanExpert("doc-conflict", profile = conflictA),
+                scanExpert("doc-conflict", profile = conflictB)
+            )
+        )
+
+        val outcome = svc.runRefreshWorker(
+            "refresh-1", listOf(ExpertIndexLevel.RAW, ExpertIndexLevel.CANDIDATE), dryRun = true
+        )
+
+        // 两个层各扫一遍：doc-dup 与 doc-conflict 都只计 1 人，重复层另计。
+        assertEquals(2, outcome.total)
+        assertEquals(1, outcome.admitted)
+        assertEquals(1, outcome.conflicts)
+        assertEquals(4, outcome.duplicates)
+        assertEquals(0, outcome.taskFailureCount)
+        assertEquals(mapOf("RAW" to 2), outcome.byLevel)
+        assertTrue(outcome.samples.contains("CONFLICT:doc-conflict"), outcome.samples.toString())
+        Mockito.verify(repository, Mockito.never())
+            .initializeAdmission(anyString(), anyString(), anyString(), any(), anyTime())
+    }
+
+    @Test
+    fun `refresh apply initializes missing records refreshes stale ones and projects candidates`() {
+        val jdbc = Mockito.mock(JdbcTemplate::class.java)
+        val scan = Mockito.mock(DiscoveryReviewScanService::class.java)
+        val svc = DiscoveryReviewService(
+            repository, policy, writer, restTemplate, properties, expertIndexService, objectMapper, clock,
+            scanService = scan, jdbcTemplate = jdbc
+        )
+        stubRefreshPolicy(auto())
+        stubScan(
+            scan,
+            listOf(
+                scanExpert("doc-new"),
+                scanExpert("doc-stale", decision = "NEEDS_REVIEW", initialized = true),
+                scanExpert("doc-manual", decision = "MANUAL_APPROVED", decisionManual = true, initialized = true),
+                scanExpert("doc-hard", automaticReasons = listOf(
+                    AdmissionReason("RND_SERVICE_ONLY", "仅有服务性工作", "expertClassification.type",
+                        "SERVICE_ONLY", "PRODUCTION_RND", "CandidateEligibilityService.evaluateEligibility()")
+                ))
+            )
+        )
+        Mockito.`when`(repository.findAdmission("doc-new")).thenReturn(null)
+        Mockito.`when`(repository.findAdmission("doc-stale"))
+            .thenReturn(admission("NEEDS_REVIEW", docId = "doc-stale", revision = 4L))
+        Mockito.`when`(repository.findAdmissions(Mockito.anyCollection<String>() ?: emptyList()))
+            .thenReturn(listOf(admission("NEEDS_REVIEW", docId = "doc-stale", revision = 4L)))
+        Mockito.`when`(jdbc.update(anyString(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+            .thenReturn(1)
+        stubProjection(ExpertIndexWriterService.DiscoveryCandidateProjection.PROJECTED)
+
+        val outcome = svc.runRefreshWorker("refresh-2", listOf(ExpertIndexLevel.RAW), dryRun = false)
+
+        assertFalse(outcome.dryRun)
+        assertEquals(4, outcome.total)
+        assertEquals(2, outcome.admitted)
+        assertEquals(1, outcome.manualPreserved)
+        assertEquals(1, outcome.hardBlocked)
+        assertEquals(1, outcome.recorded)
+        assertEquals(1, outcome.refreshed)
+        assertEquals(0, outcome.unchanged)
+        assertEquals(2, outcome.candidateProjected)
+        assertEquals(0, outcome.candidateFailed)
+        assertEquals(0, outcome.admissionWriteFailed)
+        assertEquals(0, outcome.applySkipped)
+        // 守恒：桶之和 = total；准入 = 记录+刷新+已一致+跳过+写入失败；成功+失败 = total。
+        assertEquals(
+            outcome.total,
+            outcome.manualPreserved + outcome.identityMissing + outcome.hardBlocked + outcome.admitted +
+                outcome.identityChanged + outcome.conflicts
+        )
+        assertEquals(
+            outcome.admitted,
+            outcome.recorded + outcome.refreshed + outcome.unchanged + outcome.applySkipped +
+                outcome.admissionWriteFailed
+        )
+        assertEquals(outcome.total, outcome.taskSuccessCount + outcome.taskFailureCount)
+        Mockito.verify(repository).initializeAdmission(
+            eqValue("doc-new"), eqValue(identity("doc-new")), eqValue("AUTO_PASSED"), any(), anyTime()
+        )
+        Mockito.verify(repository, Mockito.never()).initializeAdmission(
+            eqValue("doc-manual"), anyString(), anyString(), any(), anyTime()
+        )
+        Mockito.verify(repository, Mockito.never()).initializeAdmission(
+            eqValue("doc-hard"), anyString(), anyString(), any(), anyTime()
+        )
+    }
+
+    @Test
+    fun `refresh apply skips a person whose admission moved on between the two passes`() {
+        val scan = Mockito.mock(DiscoveryReviewScanService::class.java)
+        val svc = refreshService(scan)
+        stubRefreshPolicy(auto())
+        stubScan(scan, listOf(scanExpert("doc1")))
+        // 第二遍复读到的当前准入已是身份变化后的其他结论 → 跳过并报告，不投影。
+        Mockito.`when`(repository.findAdmissions(Mockito.anyCollection<String>() ?: emptyList()))
+            .thenReturn(listOf(admission("MANUAL_APPROVED", docId = "doc1", identityHash = "changed-identity")))
+
+        val outcome = svc.runRefreshWorker("refresh-3", listOf(ExpertIndexLevel.RAW), dryRun = false)
+
+        assertEquals(1, outcome.admitted)
+        assertEquals(1, outcome.applySkipped)
+        assertEquals(0, outcome.recorded)
+        assertEquals(0, outcome.candidateProjected)
+        assertEquals(1, outcome.taskSuccessCount)
+        assertEquals(0, outcome.taskFailureCount)
+        Mockito.verify(repository, Mockito.never())
+            .initializeAdmission(anyString(), anyString(), anyString(), any(), anyTime())
+        Mockito.verify(writer, Mockito.never())
+            .projectDiscoveryCandidate(anyString(), Mockito.any<Map<String, Any?>>() ?: emptyMap(), anyString())
+    }
+
+    @Test
+    fun `refresh keeps its persisted summary inside the 48 KiB bound with capped samples`() {
+        val scan = Mockito.mock(DiscoveryReviewScanService::class.java)
+        val svc = refreshService(scan)
+        stubRefreshPolicy(auto())
+        stubScan(scan, (1..150).map { scanExpert("doc-%05d".format(it)) })
+
+        val outcome = svc.runRefreshWorker("refresh-4", listOf(ExpertIndexLevel.RAW), dryRun = true)
+
+        assertEquals(150, outcome.admitted)
+        assertEquals(DiscoveryReviewService.MAX_REFRESH_SAMPLES, outcome.samples.size)
+        val summary = objectMapper.writeValueAsString(outcome)
+        assertTrue(summary.toByteArray(Charsets.UTF_8).size <= 48 * 1024, "summary=${summary.length}")
+    }
+
     // ── 04：存量初始化（I-4） ────────────────────────────────────────────────
 
-    private fun scanExpert(docId: String, profile: ExpertProfile = profile()): DiscoveryReviewScanService.ScanExpert =
+    private fun scanExpert(
+        docId: String,
+        profile: ExpertProfile = profile(),
+        decision: String = "NEEDS_REVIEW",
+        decisionManual: Boolean = false,
+        initialized: Boolean = false,
+        identityChanged: Boolean = false,
+        automaticReasons: List<AdmissionReason> = emptyList()
+    ): DiscoveryReviewScanService.ScanExpert =
         DiscoveryReviewScanService.ScanExpert(
             docId = docId,
             level = ExpertIndexLevel.RAW,
@@ -517,10 +788,11 @@ class DiscoveryReviewServiceTest {
                 docId = docId, level = "RAW", orcidId = "0000-0001", email = "a@example.org",
                 givenNames = "Ada", familyNames = "Lovelace", institution = "X Univ", country = "US",
                 researchFields = null, disciplineCategory = null, institutionEvidence = null,
-                filterResult = null, tags = emptyList(), automaticStatus = "NEEDS_REVIEW",
-                automaticReasons = emptyList(), automaticHints = emptyList(), revision = 0L,
-                initialized = false,
-                decision = "NEEDS_REVIEW", decisionManual = false, identityChanged = false,
+                filterResult = null, tags = emptyList(),
+                automaticStatus = if (automaticReasons.isEmpty()) "AUTO_PASSED" else "NEEDS_REVIEW",
+                automaticReasons = automaticReasons, automaticHints = emptyList(), revision = 0L,
+                initialized = initialized,
+                decision = decision, decisionManual = decisionManual, identityChanged = identityChanged,
                 reviewedActor = null, reviewedAt = null, addressWarning = null
             )
         )

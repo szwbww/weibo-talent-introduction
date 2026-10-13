@@ -14,6 +14,8 @@ import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewRevokeResult
 import com.weibo.talentintroduction.discovery.service.DiscoveryReviewBatchPhase
 import com.weibo.talentintroduction.discovery.service.DiscoveryReviewBatchStatus
 import com.weibo.talentintroduction.discovery.service.DiscoveryReviewConflictException
+import com.weibo.talentintroduction.discovery.service.DiscoveryReviewInitializeRequest
+import com.weibo.talentintroduction.discovery.service.DiscoveryReviewInitializeStatus
 import com.weibo.talentintroduction.discovery.service.DiscoveryReviewService
 import com.weibo.talentintroduction.discovery.service.DiscoveryReviewTimeoutException
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -265,5 +267,89 @@ class DiscoveryReviewControllerTest {
 
         mockMvc.perform(get("/api/discovery/review/batches/ghost").session(sessionOf("op1")))
             .andExpect(status().isNotFound)
+    }
+
+    // ── 阶段 2：/initialize 的 mode / dryRun / actor / 幂等 ───────────────────
+
+    private fun anyInitRequest(): DiscoveryReviewInitializeRequest =
+        Mockito.any(DiscoveryReviewInitializeRequest::class.java) ?: DiscoveryReviewInitializeRequest()
+
+    private fun initializeStatus() = DiscoveryReviewInitializeStatus(
+        key = "init-1", phase = DiscoveryReviewBatchPhase.PREPARING, total = 0, recorded = 0, unchanged = 0,
+        skipped = 0, byLevel = emptyMap(), executionId = 3L, taskStatus = "RUNNING",
+        mode = DiscoveryReviewService.MODE_REFRESH_DISCOVERY, dryRun = true
+    )
+
+    @Test
+    fun `initialize carries the session actor and the refresh options and returns 202`() {
+        Mockito.`when`(service.initializeExistingAdmissions(anyInitRequest(), anyString()))
+            .thenReturn(initializeStatus())
+
+        mockMvc.perform(
+            post("/api/discovery/review/initialize")
+                .session(sessionOf("op1"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """{"requestKey":"init-1","mode":"REFRESH_DISCOVERY","dryRun":true,"actor":"evil","username":"evil"}"""
+                )
+        ).andExpect(status().isAccepted)
+            .andExpect(jsonPath("$.mode").value("REFRESH_DISCOVERY"))
+            .andExpect(jsonPath("$.dryRun").value(true))
+
+        val request = ArgumentCaptor.forClass(DiscoveryReviewInitializeRequest::class.java)
+        val actor = ArgumentCaptor.forClass(String::class.java)
+        Mockito.verify(service).initializeExistingAdmissions(
+            request.capture() ?: DiscoveryReviewInitializeRequest(), actor.capture() ?: ""
+        )
+        assertEquals("op1", actor.value)
+        assertEquals("REFRESH_DISCOVERY", request.value.mode)
+        assertEquals(true, request.value.dryRun)
+    }
+
+    @Test
+    fun `an unknown initialize mode is rejected with 400 before the service runs`() {
+        mockMvc.perform(
+            post("/api/discovery/review/initialize")
+                .session(sessionOf("op1"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"mode":"SOMETHING_ELSE"}""")
+        ).andExpect(status().isBadRequest)
+
+        Mockito.verify(service, Mockito.never()).initializeExistingAdmissions(anyInitRequest(), anyString())
+    }
+
+    @Test
+    fun `dryRun on the legacy initialize mode is rejected with 400`() {
+        mockMvc.perform(
+            post("/api/discovery/review/initialize")
+                .session(sessionOf("op1"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"mode":"INITIALIZE_MISSING","dryRun":true}""")
+        ).andExpect(status().isBadRequest)
+
+        Mockito.verify(service, Mockito.never()).initializeExistingAdmissions(anyInitRequest(), anyString())
+    }
+
+    @Test
+    fun `the same request key with different refresh options maps to 409`() {
+        Mockito.`when`(service.initializeExistingAdmissions(anyInitRequest(), anyString()))
+            .thenThrow(DiscoveryReviewConflictException("相同 requestKey 的初始化模式/范围不同，请更换 requestKey"))
+
+        mockMvc.perform(
+            post("/api/discovery/review/initialize")
+                .session(sessionOf("op1"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"requestKey":"init-1","mode":"REFRESH_DISCOVERY","dryRun":false}""")
+        ).andExpect(status().isConflict)
+    }
+
+    @Test
+    fun `initialize status is served from the persisted task without the dry-run report`() {
+        Mockito.`when`(service.initializeStatus("init-1")).thenReturn(initializeStatus())
+
+        mockMvc.perform(get("/api/discovery/review/initialize/init-1").session(sessionOf("op1")))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.taskStatus").value("RUNNING"))
+            .andExpect(jsonPath("$.dryRun").value(true))
     }
 }

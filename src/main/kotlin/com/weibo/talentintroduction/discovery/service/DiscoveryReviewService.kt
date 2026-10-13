@@ -1,8 +1,10 @@
 package com.weibo.talentintroduction.discovery.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.weibo.talentintroduction.campaign.domain.RecipientScope
 import com.weibo.talentintroduction.config.ElasticsearchProperties
 import com.weibo.talentintroduction.discovery.domain.AdmissionReason
+import com.weibo.talentintroduction.discovery.domain.AdmissionReasonCodes
 import com.weibo.talentintroduction.discovery.domain.AutomaticAdmissionResult
 import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewAction
 import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewConfirmItemView
@@ -155,10 +157,20 @@ data class DiscoveryReviewSyncRetryResult(
     val failed: Int
 )
 
-/** 04（I-4）：存量初始化请求。`requestKey` 幂等；`level` 省略时固定扫 RAW→CANDIDATE→APPLICATION。 */
+/**
+ * 04（I-4）+ 阶段 2：存量初始化/刷新请求。`requestKey` 幂等；`level` 省略时固定扫 RAW→CANDIDATE→APPLICATION。
+ *
+ * - [mode] 省略或 `INITIALIZE_MISSING`：既有契约（只给没有结论的记录插入自动结论，已有记录不动）。
+ * - [mode] `REFRESH_DISCOVERY`：按新政策**重算**存量发现档案（旧自动结论可刷新，人工/历史认可不覆写），
+ *   并对准入者补候选投影；范围按 `isDiscoveryOutreach` 并集、按真实 `_id` 去重，跨层身份冲突单列不写。
+ * - [dryRun] 只对 `REFRESH_DISCOVERY` 有效，**默认 true**（预览：业务表与 ES 零写入）；只有显式 `false`
+ *   才进入写分支。旧模式收到 `dryRun` 一律拒绝（400），不做静默忽略。
+ */
 data class DiscoveryReviewInitializeRequest(
     val requestKey: String? = null,
-    val level: String? = null
+    val level: String? = null,
+    val mode: String? = null,
+    val dryRun: Boolean? = null
 )
 
 /** 04（I-4）：存量初始化的可见状态（由 task_execution 行与结果摘要派生，无新表）。 */
@@ -171,10 +183,37 @@ data class DiscoveryReviewInitializeStatus(
     val skipped: Int,
     val byLevel: Map<String, Int>,
     val executionId: Long?,
-    val taskStatus: String
+    val taskStatus: String,
+    /** 阶段 2：请求模式（`INITIALIZE_MISSING` / `REFRESH_DISCOVERY`）与该模式的预览标记。 */
+    val mode: String = DiscoveryReviewService.MODE_INITIALIZE_MISSING,
+    val dryRun: Boolean = false,
+    /** 阶段 2：按人去重的结论计数（旧模式恒为 0）。 */
+    val admitted: Int = 0,
+    val hardBlocked: Int = 0,
+    val identityMissing: Int = 0,
+    val manualPreserved: Int = 0,
+    val identityChanged: Int = 0,
+    val conflicts: Int = 0,
+    val duplicates: Int = 0,
+    val refreshed: Int = 0,
+    val candidateProjected: Int = 0,
+    val candidateAlreadyPresent: Int = 0,
+    val candidateFailed: Int = 0,
+    val applySkipped: Int = 0,
+    val admissionWriteFailed: Int = 0,
+    val samples: List<String> = emptyList()
 )
 
-/** 04（I-4）：初始化工作者的持久终态。 */
+/**
+ * 04（I-4）+ 阶段 2：初始化/刷新工作者的持久终态。
+ *
+ * 守恒（阶段 2 刷新模式）：
+ * - `total == manualPreserved + identityMissing + hardBlocked + admitted + identityChanged + conflicts`
+ *   （按人去重、互斥）；
+ * - `admitted == recorded + refreshed + unchanged + applySkipped + admissionWriteFailed`（仅 apply）；
+ * - `taskSuccessCount + taskFailureCount == total`，失败=`conflicts + candidateFailed + admissionWriteFailed`
+ *   （dryRun 恒 0 失败：预览不写任何业务表，冲突只在 `conflicts` 与样本里单列）。
+ */
 data class DiscoveryReviewInitializeOutcome(
     val key: String,
     val phase: String,
@@ -185,7 +224,23 @@ data class DiscoveryReviewInitializeOutcome(
     val byLevel: Map<String, Int>,
     override val taskSuccessCount: Int,
     override val taskFailureCount: Int,
-    override val taskFinalStatus: String?
+    override val taskFinalStatus: String?,
+    val mode: String = DiscoveryReviewService.MODE_INITIALIZE_MISSING,
+    val dryRun: Boolean = false,
+    val admitted: Int = 0,
+    val hardBlocked: Int = 0,
+    val identityMissing: Int = 0,
+    val manualPreserved: Int = 0,
+    val identityChanged: Int = 0,
+    val conflicts: Int = 0,
+    val duplicates: Int = 0,
+    val refreshed: Int = 0,
+    val candidateProjected: Int = 0,
+    val candidateAlreadyPresent: Int = 0,
+    val candidateFailed: Int = 0,
+    val applySkipped: Int = 0,
+    val admissionWriteFailed: Int = 0,
+    val samples: List<String> = emptyList()
 ) : TaskExecutionSummaryProvider
 
 /**
@@ -782,50 +837,130 @@ class DiscoveryReviewService(
      * - 无结论：按 01 的自动判定插入 `AUTO_PASSED`/`NEEDS_REVIEW`/`LEGACY_APPROVED`；
      * - 同身份人工结论（`MANUAL_APPROVED`/`HOLD`/`REJECTED`）与有效历史认可（`LEGACY_APPROVED`）**不被覆盖**；
      * - 同身份自动结论：资格变化可更新为新的自动结论（不抹人工决定）；
-     * - 身份变化：生成新自动结论（CAS 递增版本），旧人工历史仍留在 `review_item`。
+     * - 身份变化：生成新自动结论（CAS 递增版本），旧人工历史仍留在 `review_item`；
+     * - 初始化竞争/CAS 未命中（I-4）：**复读**当前身份与结论，最多按新版本重试一次；仍冲突时显式报告
+     *   复读结果（身份变化 ⇒ `decision == null`、`admitted == false`），绝不用竞争前的旧批准充当当前结论。
      */
     fun recordAutomatic(
         docId: String,
         profile: ExpertProfile,
         eligibility: EligibilityResult
+    ): DiscoveryReviewAdmissionOutcome =
+        recordAutomaticConclusion(docId, profile, policy.evaluate(profile, eligibility))
+
+    /**
+     * 阶段 2：调用方已按新政策现算结论（`policy.evaluate(profile)`）时复用同一条写入路径，
+     * 避免在存量刷新里重算或传入不同口径的结论。
+     */
+    internal fun recordAutomaticConclusion(
+        docId: String,
+        profile: ExpertProfile,
+        automatic: AutomaticAdmissionResult
     ): DiscoveryReviewAdmissionOutcome {
         require(docId.isNotBlank()) { "docId 必填" }
-        val automatic = policy.evaluate(profile, eligibility)
         val identityHash = identityHashOf(docId, profile)
         val now = LocalDateTime.now(clock)
-        val existing = repository.findAdmission(docId)
-        if (existing == null) {
+        val found = repository.findAdmission(docId)
+        if (found == null) {
             repository.initializeAdmission(docId, identityHash, automatic.status.name, automatic.policyVersion, now)
-            val revision = repository.findAdmission(docId)?.revision ?: 0L
-            return DiscoveryReviewAdmissionOutcome(
-                docId, automatic.status.name, admittedDecision(automatic.status.name), false, false,
-                revision, automatic.blockingReasons
-            )
+            // I-4：初始化竞争后复读真实结论 —— 竞争者的结论（可能是人工决定）就是当前结论。
+            val stored = repository.findAdmission(docId)
+                ?: return insertOutcome(docId, automatic)
+            return recordAutomaticAgainst(docId, identityHash, automatic, stored, now)
         }
-        val identityChanged = existing.identityHash != identityHash
+        return recordAutomaticAgainst(docId, identityHash, automatic, found, now)
+    }
+
+    private fun recordAutomaticAgainst(
+        docId: String,
+        identityHash: String,
+        automatic: AutomaticAdmissionResult,
+        existing: ExpertDiscoveryAdmission,
+        now: LocalDateTime
+    ): DiscoveryReviewAdmissionOutcome {
         val legacy = DiscoveryReviewDecision.LEGACY_APPROVED.name
+        val identityChanged = existing.identityHash != identityHash
         if (!identityChanged && (existing.decisionEnum.manual || existing.decision == legacy)) {
             return DiscoveryReviewAdmissionOutcome(
                 docId, existing.decision, admittedDecision(existing.decision), existing.decisionEnum.manual,
                 false, existing.revision, emptyList()
             )
         }
-        if (!identityChanged && existing.decision == automatic.status.name &&
-            existing.policyVersion == automatic.policyVersion
-        ) {
+        if (!identityChanged && sameAutomaticConclusion(existing, automatic)) {
             return DiscoveryReviewAdmissionOutcome(
                 docId, existing.decision, admittedDecision(existing.decision), false, false,
                 existing.revision, automatic.blockingReasons
             )
         }
-        val newRevision = updateAutomaticAdmission(existing, identityHash, automatic, now)
-            ?: return DiscoveryReviewAdmissionOutcome(
-                docId, existing.decision, admittedDecision(existing.decision), false, identityChanged,
-                existing.revision, emptyList()
+        updateAutomaticAdmission(existing, identityHash, automatic, now)?.let { revision ->
+            return DiscoveryReviewAdmissionOutcome(
+                docId, automatic.status.name, admittedDecision(automatic.status.name), false, identityChanged,
+                revision, automatic.blockingReasons
             )
+        }
+        // CAS 未命中：复读当前身份/结论；已是同一自动结论即视为达成，否则按最新版本重试一次。
+        val fresh = repository.findAdmission(docId)
+            ?: return conflictOutcome(docId, null, identityHash, automatic)
+        if (fresh.identityHash == identityHash && sameAutomaticConclusion(fresh, automatic)) {
+            return DiscoveryReviewAdmissionOutcome(
+                docId, fresh.decision, admittedDecision(fresh.decision), false, false,
+                fresh.revision, automatic.blockingReasons
+            )
+        }
+        if (fresh.identityHash == identityHash && !fresh.decisionEnum.manual && fresh.decision != legacy) {
+            updateAutomaticAdmission(fresh, identityHash, automatic, LocalDateTime.now(clock))?.let { revision ->
+                return DiscoveryReviewAdmissionOutcome(
+                    docId, automatic.status.name, admittedDecision(automatic.status.name), false, false,
+                    revision, automatic.blockingReasons
+                )
+            }
+        }
+        return conflictOutcome(docId, repository.findAdmission(docId), identityHash, automatic)
+    }
+
+    /** 同一自动结论：同身份 + 同 decision + 同政策版本。 */
+    private fun sameAutomaticConclusion(
+        existing: ExpertDiscoveryAdmission,
+        automatic: AutomaticAdmissionResult
+    ): Boolean = existing.decision == automatic.status.name &&
+        existing.policyVersion == automatic.policyVersion
+
+    /** 初始化后仍读不到行（并发删除/极端读失败）时的保守回显：按本次自动判定报告，不声称已落库版本。 */
+    private fun insertOutcome(
+        docId: String,
+        automatic: AutomaticAdmissionResult
+    ): DiscoveryReviewAdmissionOutcome = DiscoveryReviewAdmissionOutcome(
+        docId, automatic.status.name, admittedDecision(automatic.status.name), false, false,
+        0L, automatic.blockingReasons
+    )
+
+    /**
+     * I-4：CAS 未命中且复读后仍冲突 —— 显式报告**复读到的当前结论**（`decision` 为库里现值，
+     * `identityChanged` 表示该结论已不适用于当前身份）；绝不把竞争前快照里的批准、
+     * 也不把本次自动判定当成当前结论去投影候选。
+     */
+    private fun conflictOutcome(
+        docId: String,
+        fresh: ExpertDiscoveryAdmission?,
+        identityHash: String,
+        automatic: AutomaticAdmissionResult
+    ): DiscoveryReviewAdmissionOutcome {
+        if (fresh == null) {
+            // 复读都读不到行：只能显式报告「本次自动判定未确认落库」，绝不声称已准入。
+            return DiscoveryReviewAdmissionOutcome(
+                docId, automatic.status.name, false, false, true, 0L, emptyList()
+            )
+        }
+        val currentIdentityChanged = fresh.identityHash != identityHash
         return DiscoveryReviewAdmissionOutcome(
-            docId, automatic.status.name, admittedDecision(automatic.status.name), false, identityChanged,
-            newRevision, automatic.blockingReasons
+            docId = docId,
+            decision = fresh.decision,
+            admitted = !currentIdentityChanged && admittedDecision(fresh.decision),
+            manual = !currentIdentityChanged &&
+                (fresh.decisionEnum.manual || fresh.decision == DiscoveryReviewDecision.LEGACY_APPROVED.name),
+            identityChanged = currentIdentityChanged,
+            revision = fresh.revision,
+            reasons = emptyList()
         )
     }
 
@@ -927,27 +1062,30 @@ class DiscoveryReviewService(
     // ── 04：存量初始化（I-4） ─────────────────────────────────────────────────
 
     /**
-     * 04（I-4）：由已登录运营的**明确初始化操作**触发，固定批次扫描 RAW 与候选/有效层的发现/待确认数据，
-     * 按真实 `_id` 去重。只写 `AUTO_PASSED`/`NEEDS_REVIEW`/`LEGACY_APPROVED`（有效历史回执），
-     * `INSERT IGNORE` 幂等：已有结论绝不覆盖（不扩张授权）。不删文档、不发邮件、不取消人工降级。
+     * 04（I-4）+ 阶段 2：由已登录运营的**明确初始化/刷新操作**触发。
+     *
+     * - `INITIALIZE_MISSING`（默认，既有契约逐字保留）：只给没有结论的记录插入自动结论，
+     *   已有记录绝不覆盖（`INSERT IGNORE`）。
+     * - `REFRESH_DISCOVERY`：按新政策重算存量发现档案（旧自动结论允许刷新，人工/历史认可不覆写），
+     *   准入者走共享候选投影；`dryRun` 默认 true（零业务写入），只有显式 false 才写。
+     *
+     * 相同 `requestKey` 的 payload（模式/`dryRun`/范围/actor）必须一致，否则 409。
      */
     fun initializeExistingAdmissions(
         request: DiscoveryReviewInitializeRequest,
         actor: String
     ): DiscoveryReviewInitializeStatus {
         require(actor.isNotBlank()) { "缺少操作者身份" }
+        val mode = normalizeMode(request.mode)
+        val dryRun = normalizeDryRun(mode, request.dryRun)
         val key = resolveBatchKey(request.requestKey)
         val levels = request.level?.let { listOf(parseLevel(it)) }
             ?: listOf(ExpertIndexLevel.RAW, ExpertIndexLevel.CANDIDATE, ExpertIndexLevel.APPLICATION)
-        val payload = mapOf(
-            "batchKey" to key,
-            "actor" to actor,
-            "levels" to levels.map { it.name }
-        )
+        val payload = initializePayload(key, actor, levels, mode, dryRun)
         val existing = findTask(TASK_INITIALIZE, key)
         if (existing != null) {
             if (!samePayload(existing.requestPayload, payload)) {
-                throw DiscoveryReviewConflictException("相同 requestKey 的初始化范围不同，请更换 requestKey")
+                throw DiscoveryReviewConflictException("相同 requestKey 的初始化模式/范围不同，请更换 requestKey")
             }
             return initializeStatus(key)
         }
@@ -958,7 +1096,8 @@ class DiscoveryReviewService(
                 try {
                     var executionId: Long? = null
                     tasks.runAndRecordWithResult(TASK_INITIALIZE, "MANUAL", payload, onStarted = { executionId = it }) {
-                        runInitializeWorker(key, levels)
+                        if (mode == MODE_REFRESH_DISCOVERY) runRefreshWorker(key, levels, dryRun)
+                        else runInitializeWorker(key, levels)
                     }
                 } catch (_: Exception) {
                     // 初始化失败：task_execution 行已置 FAILED，绝不凭受理伪造成功计数。
@@ -968,6 +1107,23 @@ class DiscoveryReviewService(
             throw DiscoveryReviewConflictException("存量初始化任务启动失败，请稍后重试")
         }
         return statusAfterInitializeSubmit(key)
+    }
+
+    /** 一致化 payload：旧模式不加键（保持既有幂等键语义），刷新模式显式记录 mode/dryRun。 */
+    private fun initializePayload(
+        key: String,
+        actor: String,
+        levels: List<ExpertIndexLevel>,
+        mode: String,
+        dryRun: Boolean
+    ): Map<String, Any?> {
+        val base = mapOf(
+            "batchKey" to key,
+            "actor" to actor,
+            "levels" to levels.map { it.name }
+        )
+        if (mode != MODE_REFRESH_DISCOVERY) return base
+        return base + mapOf("mode" to mode, "dryRun" to dryRun)
     }
 
     /** 04（I-4）：读取初始化状态（无新表；由任务行与结果摘要派生）。 */
@@ -984,7 +1140,23 @@ class DiscoveryReviewService(
             skipped = outcome?.skipped ?: 0,
             byLevel = outcome?.byLevel ?: emptyMap(),
             executionId = task.id,
-            taskStatus = task.status
+            taskStatus = task.status,
+            mode = payloadMode(task) ?: outcome?.mode ?: MODE_INITIALIZE_MISSING,
+            dryRun = payloadDryRun(task) ?: outcome?.dryRun ?: false,
+            admitted = outcome?.admitted ?: 0,
+            hardBlocked = outcome?.hardBlocked ?: 0,
+            identityMissing = outcome?.identityMissing ?: 0,
+            manualPreserved = outcome?.manualPreserved ?: 0,
+            identityChanged = outcome?.identityChanged ?: 0,
+            conflicts = outcome?.conflicts ?: 0,
+            duplicates = outcome?.duplicates ?: 0,
+            refreshed = outcome?.refreshed ?: 0,
+            candidateProjected = outcome?.candidateProjected ?: 0,
+            candidateAlreadyPresent = outcome?.candidateAlreadyPresent ?: 0,
+            candidateFailed = outcome?.candidateFailed ?: 0,
+            applySkipped = outcome?.applySkipped ?: 0,
+            admissionWriteFailed = outcome?.admissionWriteFailed ?: 0,
+            samples = outcome?.samples ?: emptyList()
         )
     }
 
@@ -1046,6 +1218,217 @@ class DiscoveryReviewService(
             taskFailureCount = 0,
             taskFinalStatus = "SUCCESS"
         )
+    }
+
+    /**
+     * 阶段 2（I-2/I-4/I-5/I-7）：存量发现档案的准入刷新（`mode=REFRESH_DISCOVERY`）。
+     *
+     * 两阶段，读的是同一份三层完整事实（RAW→CANDIDATE→APPLICATION，每批 500 scroll，按真实 `_id` 去重）：
+     * 1. 只读判定：范围取 `isDiscoveryOutreach` 并集；先把**跨层身份不一致**的人标成冲突，再给其余人分桶 ——
+     *    只有读完全部层才知道冲突，才能保证「禁止任取一层覆盖」；
+     * 2. 仅在 `dryRun=false` 时再遍历一次，对**预测准入**者复读当前档案与准入后写入：缺记录初始化、
+     *    自动记录按新政策刷新（CAS 一次，冲突复读）、人工/历史认可与身份变化者跳过报告，
+     *    准入者走既有共享候选投影（不整行覆盖既有候选、不反向复制 APPLICATION）。
+     *
+     * `dryRun`（默认 true）对业务表与 ES **零写入**，只留 `task_execution` 执行日志与
+     * ≤[MAX_REFRESH_SAMPLES] 条样本；任何模式下都不发信、不创建联系人/邮件、不制造人工批准。
+     */
+    internal fun runRefreshWorker(
+        key: String,
+        levels: List<ExpertIndexLevel>,
+        dryRun: Boolean
+    ): DiscoveryReviewInitializeOutcome {
+        val identityByDoc = mutableMapOf<String, String>()
+        val bucketByDoc = mutableMapOf<String, RefreshBucket>()
+        val levelByDoc = mutableMapOf<String, String>()
+        val samples = mutableListOf<String>()
+        var duplicates = 0
+        var skipped = 0
+
+        for (level in levels) {
+            val filter = DiscoveryReviewScanService.DiscoveryReviewFilter(level, null, null, null, null)
+            scanService.scanAll(filter) { experts ->
+                for (expert in experts) {
+                    val docId = expert.docId
+                    if (docId.isBlank() || !RecipientScope.isDiscoveryOutreach(expert.profile)) {
+                        skipped++
+                        continue
+                    }
+                    val identityHash = identityHashOf(docId, expert.profile)
+                    val known = identityByDoc[docId]
+                    if (known != null) {
+                        if (known == identityHash) {
+                            // 同一真实 _id 的重复层：只计 1 人。
+                            duplicates++
+                        } else if (bucketByDoc[docId] != RefreshBucket.CONFLICT) {
+                            bucketByDoc[docId] = RefreshBucket.CONFLICT
+                            sample(samples, RefreshBucket.CONFLICT, docId)
+                        }
+                        continue
+                    }
+                    identityByDoc[docId] = identityHash
+                    levelByDoc[docId] = level.name
+                    bucketByDoc[docId] = refreshBucket(expert)
+                }
+                true
+            }
+        }
+
+        var admitted = 0
+        var hardBlocked = 0
+        var identityMissing = 0
+        var manualPreserved = 0
+        var identityChanged = 0
+        var conflicts = 0
+        for ((docId, bucket) in bucketByDoc) {
+            when (bucket) {
+                RefreshBucket.ADMITTED -> {
+                    admitted++
+                    sample(samples, bucket, docId)
+                }
+                RefreshBucket.HARD_BLOCKED -> hardBlocked++
+                RefreshBucket.IDENTITY_MISSING -> identityMissing++
+                RefreshBucket.MANUAL_PRESERVED -> manualPreserved++
+                RefreshBucket.IDENTITY_CHANGED -> identityChanged++
+                RefreshBucket.CONFLICT -> conflicts++
+            }
+        }
+        val byLevel = linkedMapOf<String, Int>()
+        for (level in levelByDoc.values) {
+            byLevel[level] = (byLevel[level] ?: 0) + 1
+        }
+
+        var recorded = 0
+        var refreshed = 0
+        var unchanged = 0
+        var applySkipped = 0
+        var admissionWriteFailed = 0
+        var candidateProjected = 0
+        var candidateAlreadyPresent = 0
+        var candidateFailed = 0
+        val admittedDocIds = bucketByDoc.filterValues { it == RefreshBucket.ADMITTED }.keys
+        if (!dryRun && admittedDocIds.isNotEmpty()) {
+            val processed = mutableSetOf<String>()
+            for (level in levels) {
+                val filter = DiscoveryReviewScanService.DiscoveryReviewFilter(level, null, null, null, null)
+                scanService.scanAll(filter) { experts ->
+                    val pending = experts.filter { it.docId in admittedDocIds && it.docId !in processed }
+                    if (pending.isEmpty()) return@scanAll true
+                    val known = repository.findAdmissions(pending.map { it.docId })
+                        .associateBy { it.expertDocId }
+                    for (expert in pending) {
+                        val docId = expert.docId
+                        if (!processed.add(docId)) continue
+                        val profile = expert.profile
+                        val identityHash = identityHashOf(docId, profile)
+                        val stored = known[docId]
+                        // apply 复读当前档案与准入（I-4）：身份变化 / 人工与历史认可 / 结论已变 → 跳过并报告。
+                        if (stored != null && stored.identityHash != identityHash) {
+                            applySkipped++
+                            continue
+                        }
+                        if (stored != null && (stored.decisionEnum.manual ||
+                                stored.decision == DiscoveryReviewDecision.LEGACY_APPROVED.name)) {
+                            applySkipped++
+                            continue
+                        }
+                        val automatic = policy.evaluate(profile)
+                        if (automatic.blockingReasons.isNotEmpty()) {
+                            applySkipped++
+                            continue
+                        }
+                        val predicted = when {
+                            stored == null -> PredictedWrite.RECORDED
+                            sameAutomaticConclusion(stored, automatic) -> PredictedWrite.UNCHANGED
+                            else -> PredictedWrite.REFRESHED
+                        }
+                        val outcome = recordAutomaticConclusion(docId, profile, automatic)
+                        if (!outcome.admitted || outcome.decision != automatic.status.name) {
+                            admissionWriteFailed++
+                            continue
+                        }
+                        when (predicted) {
+                            PredictedWrite.RECORDED -> recorded++
+                            PredictedWrite.REFRESHED -> refreshed++
+                            PredictedWrite.UNCHANGED -> unchanged++
+                        }
+                        val sync = try {
+                            projectApprovedCandidate(docId, expert.source, automatic.status.name)
+                        } catch (_: Exception) {
+                            DiscoveryReviewCandidateSync(CANDIDATE_SYNC_FAILED, false, CANDIDATE_SYNC_FAILED)
+                        }
+                        when {
+                            !sync.ok -> candidateFailed++
+                            sync.result == ExpertIndexWriterService.DiscoveryCandidateProjection.PROJECTED.name ->
+                                candidateProjected++
+                            else -> candidateAlreadyPresent++
+                        }
+                    }
+                    true
+                }
+            }
+        }
+
+        val total = manualPreserved + identityMissing + hardBlocked + admitted + identityChanged + conflicts
+        val taskFailureCount = if (dryRun) 0 else conflicts + candidateFailed + admissionWriteFailed
+        val taskSuccessCount = total - taskFailureCount
+        return DiscoveryReviewInitializeOutcome(
+            key = key,
+            phase = DiscoveryReviewBatchPhase.APPLIED,
+            total = total,
+            recorded = recorded,
+            unchanged = unchanged,
+            skipped = skipped,
+            byLevel = byLevel,
+            taskSuccessCount = taskSuccessCount,
+            taskFailureCount = taskFailureCount,
+            taskFinalStatus = when {
+                taskFailureCount == 0 -> "SUCCESS"
+                taskSuccessCount > 0 -> "PARTIAL_SUCCESS"
+                else -> "FAILED"
+            },
+            mode = MODE_REFRESH_DISCOVERY,
+            dryRun = dryRun,
+            admitted = admitted,
+            hardBlocked = hardBlocked,
+            identityMissing = identityMissing,
+            manualPreserved = manualPreserved,
+            identityChanged = identityChanged,
+            conflicts = conflicts,
+            duplicates = duplicates,
+            refreshed = refreshed,
+            candidateProjected = candidateProjected,
+            candidateAlreadyPresent = candidateAlreadyPresent,
+            candidateFailed = candidateFailed,
+            applySkipped = applySkipped,
+            admissionWriteFailed = admissionWriteFailed,
+            samples = samples
+        )
+    }
+
+    /**
+     * 阶段 2：按扫描行（含每批一次的 admission 合并结果）给出该人的结论桶，保护语义与
+     * [recordAutomaticConclusion] 一致：身份变化单列，人工/历史认可按原授权保留，
+     * 其余按新政策结论分准入 / 缺身份 / 硬阻断。
+     */
+    private fun refreshBucket(expert: DiscoveryReviewScanService.ScanExpert): RefreshBucket {
+        val row = expert.row
+        if (row.identityChanged) return RefreshBucket.IDENTITY_CHANGED
+        if (row.initialized && (row.decisionManual || row.decision == DiscoveryReviewDecision.LEGACY_APPROVED.name)) {
+            return RefreshBucket.MANUAL_PRESERVED
+        }
+        if (row.automaticReasons.isEmpty()) return RefreshBucket.ADMITTED
+        return if (row.automaticReasons.any { it.code == AdmissionReasonCodes.IDENTITY_MISSING }) {
+            RefreshBucket.IDENTITY_MISSING
+        } else {
+            RefreshBucket.HARD_BLOCKED
+        }
+    }
+
+    /** 阶段 2：样本 ≤[MAX_REFRESH_SAMPLES] 条，格式稳定（`桶:docId`），只存标识不存正文。 */
+    private fun sample(samples: MutableList<String>, bucket: RefreshBucket, docId: String) {
+        if (samples.size >= MAX_REFRESH_SAMPLES) return
+        samples += "${bucket.name}:$docId"
     }
 
     private fun updateAutomaticAdmission(
@@ -1122,17 +1505,35 @@ class DiscoveryReviewService(
             val node = objectMapper.readTree(summary)
             val byLevel = linkedMapOf<String, Int>()
             node.path("byLevel").fields().forEachRemaining { (name, value) -> byLevel[name] = value.asInt(0) }
+            val recorded = node.path("recorded").asInt(0)
             DiscoveryReviewInitializeOutcome(
                 key = node.path("key").asText(""),
                 phase = node.path("phase").asText(DiscoveryReviewBatchPhase.APPLIED),
                 total = node.path("total").asInt(0),
-                recorded = node.path("recorded").asInt(0),
+                recorded = recorded,
                 unchanged = node.path("unchanged").asInt(0),
                 skipped = node.path("skipped").asInt(0),
                 byLevel = byLevel,
-                taskSuccessCount = node.path("recorded").asInt(0),
-                taskFailureCount = 0,
-                taskFinalStatus = task.status
+                taskSuccessCount = node.path("taskSuccessCount").takeIf { it.isNumber }?.asInt() ?: recorded,
+                taskFailureCount = node.path("taskFailureCount").takeIf { it.isNumber }?.asInt() ?: 0,
+                taskFinalStatus = task.status,
+                mode = node.path("mode").asText(MODE_INITIALIZE_MISSING),
+                dryRun = node.path("dryRun").asBoolean(false),
+                admitted = node.path("admitted").asInt(0),
+                hardBlocked = node.path("hardBlocked").asInt(0),
+                identityMissing = node.path("identityMissing").asInt(0),
+                manualPreserved = node.path("manualPreserved").asInt(0),
+                identityChanged = node.path("identityChanged").asInt(0),
+                conflicts = node.path("conflicts").asInt(0),
+                duplicates = node.path("duplicates").asInt(0),
+                refreshed = node.path("refreshed").asInt(0),
+                candidateProjected = node.path("candidateProjected").asInt(0),
+                candidateAlreadyPresent = node.path("candidateAlreadyPresent").asInt(0),
+                candidateFailed = node.path("candidateFailed").asInt(0),
+                applySkipped = node.path("applySkipped").asInt(0),
+                admissionWriteFailed = node.path("admissionWriteFailed").asInt(0),
+                samples = node.path("samples").takeIf { it.isArray }?.map { it.asText("") }?.filter { it.isNotEmpty() }
+                    ?: emptyList()
             )
         } catch (_: Exception) {
             null
@@ -1168,6 +1569,24 @@ class DiscoveryReviewService(
         if (requestPayload.isNullOrBlank()) return null
         return try {
             objectMapper.readTree(requestPayload).path("batchKey").asText("").takeIf { it.isNotEmpty() }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** 阶段 2：从初始化任务的 payload 读回模式（旧任务无该键 → null，按既有契约处理）。 */
+    private fun payloadMode(task: TaskExecution): String? =
+        payloadNode(task)?.path("mode")?.asText("")?.takeIf { it.isNotEmpty() }
+
+    /** 阶段 2：从初始化任务的 payload 读回 `dryRun`（旧任务无该键 → null）。 */
+    private fun payloadDryRun(task: TaskExecution): Boolean? =
+        payloadNode(task)?.path("dryRun")?.takeIf { it.isBoolean }?.asBoolean()
+
+    private fun payloadNode(task: TaskExecution): com.fasterxml.jackson.databind.JsonNode? {
+        val payload = task.requestPayload ?: return null
+        if (payload.isBlank()) return null
+        return try {
+            objectMapper.readTree(payload)
         } catch (_: Exception) {
             null
         }
@@ -1417,6 +1836,12 @@ class DiscoveryReviewService(
         }
     }
 
+    /** 阶段 2：存量刷新的按人结论桶（互斥；`total` 即六桶之和）。 */
+    private enum class RefreshBucket { ADMITTED, IDENTITY_MISSING, HARD_BLOCKED, MANUAL_PRESERVED, IDENTITY_CHANGED, CONFLICT }
+
+    /** 阶段 2：apply 阶段预期写入形态，用于分别记录「新初始化 / 刷新 / 已一致」。 */
+    private enum class PredictedWrite { RECORDED, REFRESHED, UNCHANGED }
+
     companion object {
         const val MAX_BATCH_SIZE = 1000
         const val NOTE_MAX = 1000
@@ -1426,6 +1851,36 @@ class DiscoveryReviewService(
         const val TASK_PREPARE = "DISCOVERY_REVIEW_PREPARE"
         const val TASK_APPLY = "DISCOVERY_REVIEW_APPLY"
         const val TASK_INITIALIZE = "DISCOVERY_REVIEW_INITIALIZE"
+        /** 阶段 2：存量初始化模式 —— 既有契约（只插不存在者）。 */
+        const val MODE_INITIALIZE_MISSING = "INITIALIZE_MISSING"
+        /** 阶段 2：存量准入刷新模式（重算旧自动结论 + 补候选投影；`dryRun` 默认 true）。 */
+        const val MODE_REFRESH_DISCOVERY = "REFRESH_DISCOVERY"
+        /** 阶段 2：`task_execution.result_summary` 里的样本上限（≤48KiB 的持久约束）。 */
+        const val MAX_REFRESH_SAMPLES = 100
+
+        /**
+         * 阶段 2：模式规范化。缺省 `INITIALIZE_MISSING`；非法值抛 [IllegalArgumentException]（HTTP 400）。
+         * 控制器与服务工作者的唯一实现，禁止各写一份。
+         */
+        fun normalizeMode(raw: String?): String {
+            val value = raw?.trim()?.uppercase().orEmpty().ifEmpty { MODE_INITIALIZE_MISSING }
+            require(value == MODE_INITIALIZE_MISSING || value == MODE_REFRESH_DISCOVERY) {
+                "不支持的 mode：$raw"
+            }
+            return value
+        }
+
+        /**
+         * 阶段 2：`dryRun` 只属于 [MODE_REFRESH_DISCOVERY]，默认 true；旧模式携带该选项一律拒绝，
+         * 绝不静默忽略一个「不写入」的安全开关。
+         */
+        fun normalizeDryRun(mode: String, raw: Boolean?): Boolean {
+            if (mode != MODE_REFRESH_DISCOVERY) {
+                require(raw == null) { "dryRun 仅支持 mode=$MODE_REFRESH_DISCOVERY" }
+                return false
+            }
+            return raw ?: true
+        }
         /** 04（I-2）：审核已保存但候选投影失败 —— 独立可见、可只补投影重试。 */
         const val CANDIDATE_SYNC_FAILED = "CANDIDATE_SYNC_FAILED"
         const val SNAPSHOT_TTL_HOURS = 24L

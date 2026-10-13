@@ -25,8 +25,15 @@ import java.time.Instant
  * 国家可由 [CountryContinentMapping] 映射 + [DiscoveryIdentity.validInstitutionEvidence] 机构来源凭证。
  * 本子计划不新增任何阈值，[AdmissionConfigSnapshot] 只回显判定时生效的既有配置。
  *
- * 判定范围与发送门禁同定义（[RecipientScope.isDiscoveryOutreach]：身份凭证或 `待确认` 标签），
- * 非新发现档案保留原入口：直接 [DiscoveryAdmissionStatus.AUTO_PASSED]，不产生任何原因。
+ * I-1（`2026-10-13.1`）：**缺资料不再阻断首发** —— [SOFT_REASON_CODES] 的六类原因逐字保留原码与事实，
+ * 只从 `blockingReasons` 移入 `hints`；明确不合格（研发范围/服务性工作/学历/年龄/国籍/指标/邮箱）、
+ * 身份不可信、来源 ID 冲突与机构来源凭证 INVALID 继续留在 `blockingReasons`。
+ * 提示只陈述缺失事实，绝不标成「数据已补齐」，也不得把明确不合格混为未知。
+ *
+ * 判定范围与发送门禁同定义（[RecipientScope.isDiscoveryOutreach]：身份凭证或 `待确认` 标签）。
+ * 仅带 `待确认` 标签、没有身份对象的档案也必须显式阻断（I-2）——[DiscoveryIdentity.allowed]
+ * 对非发现档案恒为 true，不能据此放行。非新发现档案保留原入口：
+ * 直接 [DiscoveryAdmissionStatus.AUTO_PASSED]，不产生任何原因。
  *
  * 有效历史人工认可（[DiscoveryIdentity.legacyOutreachApproved]）单独返回
  * [DiscoveryAdmissionStatus.LEGACY_APPROVED]：机构/国家/凭证/资格问题只进 `hints`，
@@ -52,7 +59,7 @@ class DiscoveryAdmissionPolicy(
                 POLICY_VERSION, checkedAt, snapshot)
         }
         val researchHint = researchDirectionHint(profile)
-        val identityReasons = DiscoveryIdentity.explainIdentity(profile)
+        val identityReasons = identityReasons(profile)
         val institutionReasons = institutionReasons(profile)
         val countryReasons = countryReasons(profile)
         val evidenceReasons = DiscoveryIdentity.explainInstitutionEvidence(profile)
@@ -70,17 +77,47 @@ class DiscoveryAdmissionPolicy(
             return AutomaticAdmissionResult(DiscoveryAdmissionStatus.LEGACY_APPROVED, emptyList(), hints,
                 POLICY_VERSION, checkedAt, snapshot)
         }
+        // I-1：六类缺资料原因只进 hints；身份、SOURCE_ID_*、INSTITUTION_EVIDENCE_INVALID 与
+        //       明确不合格（含邮箱/研发范围）继续阻断。
         val blockingReasons = buildList {
-            addAll(eligibilityReasons)
+            addAll(eligibilityReasons.blockingOnly())
             addAll(identityReasons)
-            addAll(institutionReasons)
-            addAll(countryReasons)
-            addAll(evidenceReasons)
+            addAll(institutionReasons.blockingOnly())
+            addAll(countryReasons.blockingOnly())
+            addAll(evidenceReasons.blockingOnly())
+        }
+        val hints = buildList {
+            researchHint?.let { add(it) }
+            addAll(eligibilityReasons.softOnly())
+            addAll(institutionReasons.softOnly())
+            addAll(countryReasons.softOnly())
+            addAll(evidenceReasons.softOnly())
         }
         val status = if (blockingReasons.isEmpty()) DiscoveryAdmissionStatus.AUTO_PASSED
         else DiscoveryAdmissionStatus.NEEDS_REVIEW
-        return AutomaticAdmissionResult(status, blockingReasons, listOfNotNull(researchHint),
-            POLICY_VERSION, checkedAt, snapshot)
+        return AutomaticAdmissionResult(status, blockingReasons, hints, POLICY_VERSION, checkedAt, snapshot)
+    }
+
+    /** I-1：留在 `blockingReasons` 的原因（六类软原因之外的一切）。 */
+    private fun List<AdmissionReason>.blockingOnly(): List<AdmissionReason> =
+        filter { it.code !in SOFT_REASON_CODES }
+
+    /** I-1：只进 `hints` 的六类缺资料原因；原码与事实逐字保留，只改展示位置。 */
+    private fun List<AdmissionReason>.softOnly(): List<AdmissionReason> =
+        filter { it.code in SOFT_REASON_CODES }
+
+    /**
+     * I-2：身份原因。发现档案（[DiscoveryIdentity.isDiscovery]）逐项解释；
+     * 仅带 `待确认` 标签、没有身份对象的存量档案也必须显式阻断 ——
+     * [DiscoveryIdentity.allowed] 对非发现档案恒为 true，不能据此放行。
+     */
+    private fun identityReasons(profile: ExpertProfile): List<AdmissionReason> {
+        val explained = DiscoveryIdentity.explainIdentity(profile)
+        if (explained.isNotEmpty() || DiscoveryIdentity.isDiscovery(profile)) return explained
+        return listOf(AdmissionReason(
+            AdmissionReasonCodes.IDENTITY_MISSING,
+            "身份凭证缺失（仅有 `待确认` 标签，没有 VERIFIED 身份对象）",
+            "identityVerification", null, "VERIFIED 身份凭证", "RecipientScope.DISCOVERY_PENDING_TAG"))
     }
 
     private fun configSnapshot(): AdmissionConfigSnapshot {
@@ -118,7 +155,10 @@ class DiscoveryAdmissionPolicy(
         else -> emptyList()
     }
 
-    /** 研究方向缺失只作资料提示（I-1）：不产生资格原因，也不影响状态。 */
+    /**
+     * 研究方向缺失只作资料提示（I-1）：不产生资格原因，也不影响状态。
+     * 独立于 [SOFT_REASON_CODES]（那六类来自候选资格/机构/国家/凭证原因），但同为「缺资料」提示。
+     */
     private fun researchDirectionHint(profile: ExpertProfile): AdmissionReason? =
         if (!profile.researchFields.isNullOrBlank()) null
         else AdmissionReason(AdmissionReasonCodes.RESEARCH_DIRECTION_MISSING,
@@ -143,9 +183,27 @@ class DiscoveryAdmissionPolicy(
 
     companion object {
         /** 解释器版本：判定规则或原因词表变化时递增；持久化结论必须带此版本。 */
-        const val POLICY_VERSION = "2026-10-04.1"
+        const val POLICY_VERSION = "2026-10-13.1"
 
         private const val RND_TYPES = "PRODUCTION_RND / ACADEMIC_RND / HYBRID_RND"
+
+        /** 研发范围/证据只听「未确认/不足」两种，明确不符（OUT_OF_SCOPE/SERVICE_ONLY）继续阻断。 */
+        private const val RND_SCOPE_UNCONFIRMED = "RND_SCOPE_UNCONFIRMED"
+        private const val RND_EVIDENCE_INSUFFICIENT = "RND_EVIDENCE_INSUFFICIENT"
+
+        /**
+         * I-1：缺资料类原因码 —— 这些原因逐字保留原码与事实，但只出现在 `hints`，不再阻断自动准入。
+         * 未列入本集合的原因（身份、`SOURCE_ID_*`、`INSTITUTION_EVIDENCE_INVALID`、研发范围明确不符、
+         * 学历/年龄/国籍/指标/邮箱…）继续留在 `blockingReasons`。
+         */
+        val SOFT_REASON_CODES: Set<String> = setOf(
+            AdmissionReasonCodes.COUNTRY_MISSING,
+            AdmissionReasonCodes.COUNTRY_UNMAPPED,
+            AdmissionReasonCodes.INSTITUTION_MISSING,
+            AdmissionReasonCodes.INSTITUTION_EVIDENCE_MISSING,
+            RND_SCOPE_UNCONFIRMED,
+            RND_EVIDENCE_INSUFFICIENT
+        )
 
         /**
          * 现有候选规则码 → 可展示事实。键与 [AdmissionReasonCodes.CANDIDATE_RULE_CODES] 一致；
@@ -167,10 +225,10 @@ class DiscoveryAdmissionPolicy(
             "INACTIVE" to CandidateFact("最近年限内无发表", "lastPublicationYear", "在配置的最近年限内有发表") {
                 it.lastPublicationYear?.toString()
             },
-            "RND_SCOPE_UNCONFIRMED" to CandidateFact("研发范围未确认", "expertClassification.type", RND_TYPES) {
+            RND_SCOPE_UNCONFIRMED to CandidateFact("研发范围未确认", "expertClassification.type", RND_TYPES) {
                 it.expertClassification?.type?.name
             },
-            "RND_EVIDENCE_INSUFFICIENT" to CandidateFact("研发证据不足", "expertClassification.type", RND_TYPES) {
+            RND_EVIDENCE_INSUFFICIENT to CandidateFact("研发证据不足", "expertClassification.type", RND_TYPES) {
                 it.expertClassification?.type?.name
             },
             "RND_OUT_OF_SCOPE" to CandidateFact("不在研发范围内", "expertClassification.type", RND_TYPES) {
