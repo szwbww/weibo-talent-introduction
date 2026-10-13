@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-10-13/discovery-identity-recovery-master.md
 
-- Status: RUNNING
-- Master plan: docs/plans/2026-10-13/discovery-identity-recovery-master.md (commit b06a71898bc7850d2caeb244c9f8478f18a3b2ae)
-- Amendments: N/A
+- Status: PAUSED_FOR_HUMAN
+- Master plan: docs/plans/2026-10-13/discovery-identity-recovery-master.md (commit 36075ec06c5e4382f13606c995e24a13ec4470ce)
+- Amendments: A1, A2, A3, A4, A5, A6, A7, A8
 - Master base: 9d353934b82ed3e36a193c70748e5efccb3d9e82
 - Branch: fast/2026-10-13-discovery-identity-recovery-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master
@@ -10,20 +10,41 @@
 - Finalization repair parent: N/A
 - Started: 2026-10-13T21:55:30+0800
 - Current child: admission-relaxation
-- Waiting role: IMPLEMENTER
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: N/A
+- Pause reason: admission-relaxation 实施完成（cf08a695，10 授权文件、C1/C2/JS 全绿）但 PLAN_CONFLICT：ExpertRevalidationServiceBehaviorTest 2 例断言 I-1 之前的旧语义（RND_SCOPE_UNCONFIRMED 阻止候选投影），该文件不在授权清单内；须人工批准 A9 修订（增列第 11 个受影响测试类并把 2 例改为 hints-only 新语义）后方可继续
+- Resume from: cf08a69529c74aa0521f1cadc34e61591b0a2427（epoch 1 实施边界；批准 A9 后同分支 epoch 2 继续）
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| admission-relaxation | docs/plans/2026-10-13/discovery-admission-relaxation.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | none | — | PENDING | — | — | — | — | — | — | 依 master 实现方案步骤1实施其阶段1-2代码与测试；不执行全量迁移；10 授权文件 |
-| 01-duplicate | docs/plans/2026-10-13/discovery-identity-recovery-01-duplicate.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | admission-relaxation | — | PENDING | — | — | — | — | — | — | R1 同身份增量补证；前置=准入 CAS/重验阶段；8 授权文件 |
-| 02-replay | docs/plans/2026-10-13/discovery-identity-recovery-02-replay.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | admission-relaxation,01-duplicate | — | PENDING | — | — | — | — | — | — | R2+R4 存量回源预览与留痕；不自行运行生产 apply；10 授权文件 |
-| 03-fallback | docs/plans/2026-10-13/discovery-identity-recovery-03-fallback.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | 01-duplicate,02-replay | — | PENDING | — | — | — | — | — | — | R3 有限来源回退；收益门槛由 master 人工验收 A-4 判定；6 授权文件 |
+| admission-relaxation | docs/plans/2026-10-13/discovery-admission-relaxation.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | none | 1 | PAUSED_FOR_HUMAN | b06a71898bc7850d2caeb244c9f8478f18a3b2ae | cf08a69529c74aa0521f1cadc34e61591b0a2427 | 0 | — | cf08a69529c74aa0521f1cadc34e61591b0a2427 | — | 依 master 实现方案步骤1实施其阶段1-2代码与测试；不执行全量迁移；epoch1 完成 10 授权文件（C1 127、C2 211、补充 791，JS 1657 全绿）；PLAN_CONFLICT：ExpertRevalidationServiceBehaviorTest 2 例断言旧语义，须 A9 授权第 11 文件；写者 ImplAdmission |
+| 01-duplicate | docs/plans/2026-10-13/discovery-identity-recovery-01-duplicate.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | admission-relaxation | — | PENDING | — | — | — | — | — | — | R1 同身份增量补证；仅补证接口代码，不执行旧名单；8 授权文件 |
+| 02-replay | docs/plans/2026-10-13/discovery-identity-recovery-02-replay.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | admission-relaxation,01-duplicate | — | PENDING | — | — | — | — | — | — | R2+R4 回源与留痕机制；不运行生产 apply，回源仅限 discovered；10 授权文件 |
+| 04-registry | docs/plans/2026-10-13/discovery-person-04-registry.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | none | — | PENDING | — | — | — | — | — | — | A2 新增；人物主档 V156；6 授权文件；开发顺序在 01/02 之后 |
+| 05-ingestion | docs/plans/2026-10-13/discovery-person-05-ingestion.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 01-duplicate,02-replay,04-registry | — | PENDING | — | — | — | — | — | — | A3 新增；补证接口基线=01/02 已验证产物；8 授权文件 |
+| 06-query | docs/plans/2026-10-13/discovery-person-06-query.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 04-registry,05-ingestion | — | PENDING | — | — | — | — | — | — | A4 新增；与 07 API/DOM 联合验收；8 授权文件 |
+| 07-ui | docs/plans/2026-10-13/discovery-person-07-ui.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 06-query | — | PENDING | — | — | — | — | — | — | A5 新增；2 授权文件；样式契约 S-1/S-2 |
+| 08-selection | docs/plans/2026-10-13/discovery-person-08-selection.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 04-registry,05-ingestion,06-query | — | PENDING | — | — | — | — | — | — | A6 新增；09 完成前不得开启人物首发；10 授权文件 |
+| 09-send-guard | docs/plans/2026-10-13/discovery-person-09-send-guard.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 04-registry,08-selection | — | PENDING | — | — | — | — | — | — | A7 新增；V157 人物级首发保护；10 授权文件 |
+| 10-history | docs/plans/2026-10-13/discovery-person-10-history.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 04-registry,05-ingestion,06-query,07-ui,08-selection,09-send-guard | — | PENDING | — | — | — | — | — | — | A8 新增；仅预览与提案，数据应用属后续实施授权；6 授权文件 |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
 |---|---|---|---|---|---|---|
+| A1 | docs/plans/2026-10-13/discovery-identity-recovery-master.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 需求描述（用户追加同人多邮箱合并）＋实现方案「当前追加：新发现人物合并（04—10）」 | 人工更新加入同人多邮箱合并范围：追加 04—10 子计划、10,686 名单降级为参考并停用原 03 存量执行，开发顺序改为先验收准入修正及 01/02 补证接口代码再 04—10 | HUMAN:用户消息「计划已经更新 你再看一下」（master 于 2026-10-13T22:40:55+0800 落盘，本 run 22:43+0800 快照提交） |
+| A2 | docs/plans/2026-10-13/discovery-person-04-registry.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 变更文件清单「04 人物主档」＋实现方案 1 | 新增子计划纳入本次执行清单（A1 同一人工更新） | HUMAN:用户消息「计划已经更新 你再看一下」（2026-10-13T22:43+0800 快照提交） |
+| A3 | docs/plans/2026-10-13/discovery-person-05-ingestion.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 变更文件清单「05 发现入口」＋实现方案 1—4 | 新增子计划纳入本次执行清单（A1 同一人工更新） | HUMAN:用户消息「计划已经更新 你再看一下」（2026-10-13T22:43+0800 快照提交） |
+| A4 | docs/plans/2026-10-13/discovery-person-06-query.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 变更文件清单「06 人物查询」＋实现方案（研究门禁：流式完整匹配集） | 新增子计划纳入本次执行清单（A1 同一人工更新） | HUMAN:用户消息「计划已经更新 你再看一下」（2026-10-13T22:43+0800 快照提交） |
+| A5 | docs/plans/2026-10-13/discovery-person-07-ui.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 变更文件清单「07 多邮箱展示」＋样式契约 S-1/S-2 | 新增子计划纳入本次执行清单（A1 同一人工更新） | HUMAN:用户消息「计划已经更新 你再看一下」（2026-10-13T22:43+0800 快照提交） |
+| A6 | docs/plans/2026-10-13/discovery-person-08-selection.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 变更文件清单「08 发送目标」＋实现方案 1—3 | 新增子计划纳入本次执行清单（A1 同一人工更新） | HUMAN:用户消息「计划已经更新 你再看一下」（2026-10-13T22:43+0800 快照提交） |
+| A7 | docs/plans/2026-10-13/discovery-person-09-send-guard.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 变更文件清单「09 首发保护」＋实现方案 1—4 | 新增子计划纳入本次执行清单（A1 同一人工更新） | HUMAN:用户消息「计划已经更新 你再看一下」（2026-10-13T22:43+0800 快照提交） |
+| A8 | docs/plans/2026-10-13/discovery-person-10-history.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 变更文件清单「10 历史合并」＋实现方案 1—6 | 新增子计划纳入本次执行清单（A1 同一人工更新） | HUMAN:用户消息「计划已经更新 你再看一下」（2026-10-13T22:43+0800 快照提交） |
+
+## Baseline
+- 授权：用户显式 `/fast-p docs/plans/2026-10-13/discovery-identity-recovery-master.md`（2026-10-13），并经 22:40 人工更新该 master（A1—A8）；执行合同 = 更新后 master 与其十份在册子计划（admission-relaxation、01-duplicate、02-replay、04-registry、05-ingestion、06-query、07-ui、08-selection、09-send-guard、10-history）。
+- 原 03-fallback 未列入更新后开发顺序，且其收益门槛依赖未获授权的旧 10,686 名单执行，故不纳入本次子计划清单（设计文件保留在仓库）。
+- 存量边界：10,686 旧名单仅为参考背景；01/02 仅实现补证接口代码，不执行旧名单处理；回源能力仅可服务本次 discovered 范围；无生产迁移、无 SMTP、无发送配置变更。
+- 主工作树含用户其他未提交改动，均未纳入本 run；本 run 自 9d353934 检出，计划种子 b06a71898b，人工更新快照 36075ec06c（docs/plans-only 提交）。
+- 基线命令：16 个既有测试类 766 tests 0F/0E；JS 门禁 1657/1657（详见 baseline.md）。
