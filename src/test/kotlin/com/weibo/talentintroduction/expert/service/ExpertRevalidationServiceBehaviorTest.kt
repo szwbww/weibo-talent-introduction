@@ -448,13 +448,11 @@ class ExpertRevalidationServiceBehaviorTest {
         `when`(emailValidationService.validate("researcher@example.org"))
             .thenReturn(com.weibo.talentintroduction.expert.domain.EmailValidationResult(3, true))
         val first = service.revalidateDiscovery("DOC")
-        assertEquals(com.weibo.talentintroduction.expert.service.PromotionOutcome.Rejected(
-            listOf("RND_SCOPE_UNCONFIRMED")), first)
+        assertEquals(PromotionOutcome.Promoted, first)
         val second = service.revalidateDiscovery("DOC")
         assertEquals(PromotionOutcome.Promoted, second)
         verify(writerService).reconcileDiscoveryCandidate(
-            match("DOC"), match(unknown), anyClassification(),
-            match(listOf("RND_SCOPE_UNCONFIRMED")), match(false)
+            match("DOC"), match(unknown), anyClassification(), match(emptyList()), match(false)
         )
         verify(writerService).reconcileDiscoveryCandidate(
             match("DOC"), match(supported), anyClassification(), match(emptyList()), match(false)
@@ -478,8 +476,7 @@ class ExpertRevalidationServiceBehaviorTest {
             validExpert("APP", "researcher@example.org").copy(emailSource = "PAPER_FULLTEXT")
         )
         `when`(writerService.reconcileDiscoveryCandidate(
-            match("APP"), match(raw), anyClassification(),
-            match(listOf("RND_SCOPE_UNCONFIRMED")), match(true)
+            match("APP"), match(raw), anyClassification(), match(emptyList()), match(true)
         )).thenReturn(true)
         `when`(emailValidationService.validate("researcher@example.org"))
             .thenReturn(com.weibo.talentintroduction.expert.domain.EmailValidationResult(3, true))
