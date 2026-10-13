@@ -39,7 +39,7 @@
 1. **独立存储（I-1— I-3）**：V156 新建 `discovery_person(person_id PK, primary_doc_id, revision, created_at, updated_at)`、`discovery_person_member(expert_doc_id PK COLLATE utf8mb4_bin, person_id FK, normalized_email, identity_fingerprint, evidence_json, created_at, updated_at)`、`discovery_person_author_key(author_key PK, person_id FK)`。email 仅索引、不以 email 全局唯一代替人证据；author_key 带 `ORCID:`/`OPENALEX:` 类型前缀。evidence_json 留存合并依据及规则版本，不替代原文和实时凭证；revision 仅人物关系/代表引用变化时递增。以上均为新独立存储，现有共享表/ES 增字段 0。
 2. **事务登记（I-1— I-3）**：DiscoveryPersonRepository 使用显式事务及唯一约束；DiscoveryPersonService 只接收通过服务端校验的事实快照，返回 CREATED / ATTACHED / UNCHANGED / NEEDS_REVIEW / SCOPE_CONFLICT / STALE。后三者不写关系。首次代表按已有可追溯主档优先、否则最小 docId 固定；之后新增邮箱不悄悄换代表。生成失败事务回滚，不暴露空主档。
 3. **读契约（I-1/I-3）**：提供批量 docId→personId、人物成员/作者键、revision、指纹查询；06/08 在使用前重核当前成员事实。05/10 是仅有登记调用者；GET 和发送预估不得登记。默认开关关闭，无旧数据隐式全表迁移。
-4. **测试（I-1— I-3）**：真实数据库事务测试同时登记同作者不同邮箱，模拟唯一冲突与回滚；无证据作者号、同名不同人、跨范围别名、指纹更新分别断言具体结果。迁移编号按当前最大 V155 预留 V156；若实施时被占用，先同步修订计划，不覆盖已应用迁移。
+4. **测试（I-1— I-3）**：真实数据库事务测试同时登记同作者不同邮箱，模拟唯一冲突与回滚；无证据作者号、同名不同人、跨范围别名、指纹更新分别断言具体结果。迁移编号按当前最大 V155 预留 V156；若实施时被占用，先同步修订计划，不覆盖已应用迁移。A11：同步授权 FlywayMigrationIntegrationTest.kt（全量迁移最新版本断言 31 处 155→156，并加 V156 三新表存在性断言）。
 
 ## 变更文件清单
 
@@ -51,8 +51,9 @@
 |src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt|新增|
 |src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonServiceTest.kt|新增|
 |src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPersonRepositoryTest.kt|新增|
+|src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt|A11：31 处最新版本断言 155→156 + V156 三新表存在性断言|
 
-共 6 文件；人物登记一个子系统。禁止顺手改现有 ES/联系人 schema。
+共 7 文件（A11：第 7 个为迁移集成测试）；人物登记一个子系统。禁止顺手改现有 ES/联系人 schema。
 
 ## 验收标准
 
