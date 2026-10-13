@@ -14395,6 +14395,7 @@ function mountExpertMaterialsInline(contactId, rootEl) {
     window.ExpertMaterials.configure({
         api,
         contextPath,
+        downloadZip: (contactId, attachmentIds) => downloadExpertMaterialsZip(contactId, attachmentIds),
         labels: {
             documentType: (value) => labelDocumentType(value),
             documentStatus: (value) => labelDocumentStatus(value),
@@ -21050,6 +21051,7 @@ function mcHostOpenMaterials(contactId) {
     window.ExpertMaterials.configure({
         api,
         contextPath,
+        downloadZip: (contactId, attachmentIds) => downloadExpertMaterialsZip(contactId, attachmentIds),
         labels: {
             documentType: (value) => labelDocumentType(value),
             documentStatus: (value) => labelDocumentStatus(value),
@@ -21201,6 +21203,42 @@ async function mcHostOpenFollowUp(contactId) {
 // ObjectURL。不用 window.open、不离开当前草稿页、不调用现有 JSON api 解析 ICS。
 const CALENDAR_DOWNLOAD_ROUTE = /^\/api\/mail\/conversations\/\d+\/messages\/\d+\/calendar-attachment$/;
 const CALENDAR_FILENAME_SAFE = /^meeting-\d{4}-\d{2}-\d{2}-(expert|[A-Za-z0-9-]{1,60})\.ics$/;
+
+async function downloadExpertMaterialsZip(contactId, attachmentIds) {
+    if (!Number.isSafeInteger(contactId) || contactId <= 0) throw new Error("专家 ID 无效");
+    const response = await fetch(`${contextPath}/api/expert-contacts/${contactId}/materials/download-zip`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ attachmentIds })
+    });
+    await handleAuthResponse(response);
+    if (!response.ok) {
+        let message = `${response.status} ${response.statusText}`;
+        try {
+            const data = await response.json();
+            if (data && typeof data.message === "string" && data.message) message = data.message;
+        } catch (e) { /* 非 JSON 错误体保留 HTTP 状态 */ }
+        throw new Error(message);
+    }
+    if ((response.headers.get("Content-Type") || "").split(";")[0].trim().toLowerCase() !== "application/zip") {
+        throw new Error("未收到有效压缩包，请刷新页面后重试");
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    try {
+        anchor.setAttribute("href", url);
+        anchor.setAttribute("download", `materials-${contactId}.zip`);
+        anchor.hidden = true;
+        document.body.appendChild(anchor);
+        anchor.click();
+    } finally {
+        setTimeout(() => {
+            if (anchor.parentNode) anchor.parentNode.removeChild(anchor);
+            URL.revokeObjectURL(url);
+        }, 1000);
+    }
+}
 
 async function mcHostDownloadCalendar(relativePath, filename) {
     const route = String(relativePath || "");

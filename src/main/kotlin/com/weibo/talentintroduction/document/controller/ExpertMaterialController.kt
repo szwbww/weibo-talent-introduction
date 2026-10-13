@@ -1,6 +1,8 @@
 package com.weibo.talentintroduction.document.controller
 
 import com.weibo.talentintroduction.auth.config.AuthSessionKeys
+import com.weibo.talentintroduction.document.service.ExpertMaterialArchiveService
+import com.weibo.talentintroduction.document.service.MaterialArchiveException
 import com.weibo.talentintroduction.document.service.AttachmentTransferQueueFullException
 import com.weibo.talentintroduction.document.service.ExpertMaterialPage
 import com.weibo.talentintroduction.document.service.ExpertMaterialService
@@ -14,6 +16,8 @@ import com.weibo.talentintroduction.mail.service.OutboundAttachmentException
 import org.springframework.core.Ordered
 import org.springframework.core.annotation.Order
 import org.springframework.http.HttpStatus
+import org.springframework.http.ContentDisposition
+import org.springframework.http.HttpHeaders
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.GetMapping
@@ -26,6 +30,9 @@ import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.multipart.MultipartFile
 import javax.servlet.http.HttpServletRequest
+import javax.servlet.http.HttpServletResponse
+import java.io.IOException
+import java.nio.file.Files
 
 @RestController
 @RequestMapping("/api/expert-contacts/{contactId}/materials")
@@ -34,8 +41,36 @@ class ExpertMaterialController(
     // 手动材料上传（V130）：可空默认值只让既有直接构造（standalone / @WebMvcTest 切片）
     // 零改动；Spring 运行时按主构造器完整注入，端点入口显式拒绝未接线的情况，
     // 绝不静默放行（与 OutboundAttachmentController 同款先例）。
-    private val uploadService: ManualExpertMaterialUploadService? = null
+    private val uploadService: ManualExpertMaterialUploadService? = null,
+    private val archiveService: ExpertMaterialArchiveService? = null
 ) {
+    @PostMapping("/download-zip")
+    fun downloadZip(
+        @PathVariable contactId: Long,
+        @RequestBody request: MaterialArchiveRequest,
+        response: HttpServletResponse
+    ) {
+        val archive = archiveService ?: throw IllegalStateException("材料打包服务未接线")
+        try {
+            val ids = request.attachmentIds.map { requireNotNull(it) { "附件 ID 必须为正整数" } }
+            archive.withArchive(contactId, ids) { prepared ->
+                response.contentType = "application/zip"
+                response.setHeader(HttpHeaders.CONTENT_DISPOSITION,
+                    ContentDisposition.attachment().filename(prepared.fileName).build().toString())
+                response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store")
+                response.setContentLengthLong(prepared.fileSize)
+                Files.newInputStream(prepared.path).use { input -> input.copyTo(response.outputStream) }
+                response.flushBuffer()
+            }
+        } catch (ex: IOException) {
+            // Once bytes have been sent, a disconnect cannot be answered with a second JSON body.
+            if (!response.isCommitted) {
+                response.reset()
+                throw MaterialArchiveException.failed(ex)
+            }
+        }
+    }
+
     /**
      * GET 绝无 IMAP/下载入队/审核写：只做参数化只读查询 + 本地文件核验。
      */
@@ -116,6 +151,8 @@ data class TransferRequest(
     val attachmentIds: List<Long>
 )
 
+data class MaterialArchiveRequest(val attachmentIds: List<Long?>)
+
 data class ReconcileRequest(
     val dryRun: Boolean? = null
 )
@@ -148,6 +185,10 @@ data class TransferQueueFullResponse(
     ]
 )
 class ExpertMaterialHttpExceptionAdvice {
+    @ExceptionHandler(MaterialArchiveException::class)
+    fun handleArchive(ex: MaterialArchiveException): ResponseEntity<Map<String, String>> =
+        ResponseEntity.status(ex.status).body(mapOf("code" to ex.code, "message" to ex.message.orEmpty()))
+
     @ExceptionHandler(MaterialNotReadyException::class)
     fun handleNotReady(ex: MaterialNotReadyException): ResponseEntity<MaterialNotReadyResponse> =
         ResponseEntity.status(HttpStatus.CONFLICT).body(

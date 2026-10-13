@@ -1733,3 +1733,156 @@ describe("expert-materials: I-5 手动来源与既有来源并存", () => {
         assert.strictEqual(host.querySelectorAll(".em-row").length, 3, "切回全部来源后邮件附件恢复");
     });
 });
+
+// ZIP 下载复用共享选择；服务器负责最终就绪校验。
+describe("expert-materials: ZIP 下载", () => {
+    it("两宿主共享 busy、跨页筛选精确快照，AI 选件无入口", async () => {
+        const server = new FakeServer({ count: 20, contactId: 7 });
+        const sandbox = loadComponent(server);
+        const { doc, host } = createHost();
+        const drawerHost = doc.createElement("div");
+        const pickerHost = doc.createElement("div");
+        doc.root.appendChild(drawerHost);
+        doc.root.appendChild(pickerHost);
+        let finish;
+        const requests = [];
+        sandbox.ExpertMaterials.configure({ downloadZip: (contactId, ids) => {
+            requests.push({ contactId, ids: Array.from(ids) });
+            return new Promise((resolve) => { finish = resolve; });
+        }, debounceMs: 1 });
+        const inline = sandbox.ExpertMaterials.mount({ host, contactId: 7, mode: "inline" });
+        const drawer = sandbox.ExpertMaterials.mount({ host: drawerHost, contactId: 7, mode: "drawer" });
+        const picker = sandbox.ExpertMaterials.mount({ host: pickerHost, contactId: 7, mode: "selectionOnly" });
+        await flush();
+        const button = host.querySelector('[data-action="download-zip"]');
+        assert.ok(button, "两处资料共用 ZIP 按钮");
+        assert.strictEqual(button.disabled, true);
+        assert.strictEqual(pickerHost.querySelector('[data-action="download-zip"]'), null);
+        const first = host.querySelector('.em-row input[type="checkbox"]');
+        first.checked = true;
+        change(first);
+        click(nextBtn(host));
+        await flush();
+        const second = host.querySelector('.em-row input[type="checkbox"]');
+        second.checked = true;
+        change(second);
+        const search = host.querySelector('.em-filters input[type="search"]');
+        search.value = "no matches";
+        input(search);
+        await wait(10);
+        await flush();
+        click(button);
+        click(drawerHost.querySelector('[data-action="download-zip"]'));
+        assert.deepStrictEqual(requests, [{ contactId: 7, ids: [1, 11] }]);
+        assert.strictEqual(button.textContent, "正在打包…");
+        assert.strictEqual(drawerHost.querySelector('[data-action="download-zip"]').disabled, true);
+        click(host.querySelector('[data-action="clear"]'));
+        click(host.querySelector('[data-action="transfer"]'));
+        assert.strictEqual(server.posts.length, 0, "ZIP 不触发获取");
+        assert.ok(host.querySelector('.em-selection strong').textContent.includes('2'));
+        sandbox.ExpertMaterials.setSelection(7, [5]);
+        assert.deepStrictEqual(requests[0].ids, [1, 11], "提交后改变选择不改变下载快照");
+        finish();
+        await flush();
+        assert.strictEqual(button.textContent, "下载压缩包");
+        assert.strictEqual(button.disabled, false);
+        inline.unmount(); drawer.unmount(); picker.unmount();
+    });
+
+    it("未就绪失败保留选择、可重试，旧 store 完成不污染同专家重挂载", async () => {
+        const server = new FakeServer({ count: 10, contactId: 8 });
+        const sandbox = loadComponent(server);
+        const { host } = createHost();
+        let reject;
+        sandbox.ExpertMaterials.configure({ downloadZip: () => new Promise((resolve, fail) => { reject = fail; }) });
+        let instance = sandbox.ExpertMaterials.mount({ host, contactId: 8, mode: "inline" });
+        await flush();
+        sandbox.ExpertMaterials.setSelection(8, [1, 2]);
+        click(host.querySelector('[data-action="download-zip"]'));
+        reject(new Error("资料尚未就绪，请先获取到服务器：简历.pdf"));
+        await flush();
+        assert.ok(host.querySelector('.em-error').textContent.includes('资料尚未就绪'));
+        assert.ok(host.querySelector('.em-selection strong').textContent.includes('已选 2 份'));
+        assert.strictEqual(host.querySelector('[data-action="download-zip"]').disabled, false);
+        click(host.querySelector('[data-action="download-zip"]'));
+        const oldReject = reject;
+        instance.unmount();
+        instance = sandbox.ExpertMaterials.mount({ host, contactId: 8, mode: "inline" });
+        await flush();
+        sandbox.ExpertMaterials.setSelection(8, [3]);
+        click(host.querySelector('[data-action="download-zip"]'));
+        const newReject = reject;
+        oldReject(new Error('旧请求失败'));
+        await flush();
+        assert.strictEqual(host.querySelector('[data-action="download-zip"]').textContent, '正在打包…');
+        assert.ok(!collectText(host.querySelector('.em-error')).includes('旧请求失败'));
+        newReject(new Error('新请求失败'));
+        await flush();
+        assert.ok(host.querySelector('.em-selection strong').textContent.includes('已选 1 份'));
+        assert.ok(collectText(host.querySelector('.em-error')).includes('新请求失败'));
+        instance.unmount();
+    });
+
+    it("两个 app 宿主均注入真实二进制适配器", () => {
+        for (const name of ['mountExpertMaterialsInline', 'mcHostOpenMaterials']) {
+            const configs = [];
+            const mounts = [];
+            const host = {};
+            const adapter = (id, ids) => ({ id, ids });
+            const scope = {
+                window: { ExpertMaterials: { configure: (value) => configs.push(value), mount: (value) => mounts.push(value) } },
+                expertMaterialsAvailable: () => true,
+                api: () => {}, contextPath: '/talent', downloadExpertMaterialsZip: adapter,
+                labelDocumentType: String, labelDocumentStatus: String, formatFileSize: String,
+                $: () => host
+            };
+            const fn = vm.runInNewContext(`(${extractFunction(name)})`, scope);
+            fn(23, { querySelector: () => host });
+            assert.deepStrictEqual(configs[0].downloadZip(23, [1]), { id: 23, ids: [1] });
+            assert.strictEqual(mounts[0].contactId, 23);
+        }
+    });
+
+    it("宿主按 contextPath 下载 ZIP、处理鉴权/失败、释放瞬时 URL", async () => {
+        const requests = [], nodes = [], timers = [], revoked = [], auth = [];
+        let clicked = 0;
+        const blob = { zip: true };
+        let response = { ok: true, headers: { get: () => 'application/zip' }, blob: async () => blob };
+        let authFailure = null;
+        const scope = {
+            contextPath: '/talent',
+            fetch: async (url, options) => { requests.push({ url, options }); return response; },
+            handleAuthResponse: async (value) => { auth.push(value); if (authFailure) throw authFailure; },
+            URL: { createObjectURL: (value) => { assert.strictEqual(value, blob); return 'blob:zip'; }, revokeObjectURL: (value) => revoked.push(value) },
+            document: {
+                createElement: () => ({ attrs: {}, setAttribute(key, value) { this.attrs[key] = value; }, click() { clicked++; } }),
+                body: { appendChild(node) { nodes.push(node); node.parentNode = this; }, removeChild(node) { nodes.splice(nodes.indexOf(node), 1); node.parentNode = null; } }
+            },
+            setTimeout: (fn, ms) => { timers.push({ fn, ms }); }
+        };
+        const download = vm.runInNewContext(`(${extractFunction('downloadExpertMaterialsZip')})`, scope);
+        await download(23, [2, 5]);
+        assert.strictEqual(requests[0].url, '/talent/api/expert-contacts/23/materials/download-zip');
+        assert.strictEqual(requests[0].options.method, 'POST');
+        assert.deepStrictEqual(JSON.parse(requests[0].options.body), { attachmentIds: [2, 5] });
+        assert.strictEqual(nodes[0].attrs.download, 'materials-23.zip');
+        assert.strictEqual(nodes[0].hidden, true);
+        assert.strictEqual(timers[0].ms, 1000);
+        timers[0].fn();
+        assert.deepStrictEqual(revoked, ['blob:zip']);
+        assert.strictEqual(nodes.length, 0);
+        for (const status of [409, 413]) {
+            response = { ok: false, status, statusText: 'Error', json: async () => ({ message: '请先获取或分批下载' }) };
+            await assert.rejects(download(23, [2]), /请先获取或分批下载/);
+        }
+        response = { ok: true, headers: { get: () => 'text/html' }, blob: async () => blob };
+        await assert.rejects(download(23, [2]), /压缩包/);
+        for (const status of [401, 403]) {
+            response = { ok: false, status };
+            authFailure = new Error('登录状态已失效');
+            await assert.rejects(download(23, [2]), /登录状态已失效/);
+        }
+        assert.strictEqual(clicked, 1);
+        assert.strictEqual(auth.length, 6);
+    });
+});

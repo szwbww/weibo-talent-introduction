@@ -47,6 +47,7 @@
     const MAX_TRANSFER_IDS = 500;
     const DEFAULT_POLL_MS = 2000;
     const DEFAULT_DEBOUNCE_MS = 300;
+    const ZIP_SELECTION_HINT = "筛选与翻页保留已选文件；请先获取到服务器，再下载压缩包";
 
     // 手动上传：业务上限唯一实值是 104857600 字节，前端 file.size 只是预检，
     // 后端 413 才是最终裁决（I-2/I-4）。
@@ -84,6 +85,7 @@
 
     const cfg = {
         api: null,
+        downloadZip: null,
         contextPath: "",
         labels: {
             documentType: (value) => value || "",
@@ -182,6 +184,7 @@
             loadError: null,
             actionError: null,
             submitting: false,
+            zipDownloading: false,
             views: new Set(),
             listeners: new Set(),
             pollTimer: null,
@@ -405,6 +408,7 @@
     }
 
     async function submitTransfers(store, view, attachmentIds) {
+        if (store.zipDownloading && !attachmentIds) return { ok: false, error: "正在打包，请稍候" };
         const ids = attachmentIds && attachmentIds.length
             ? attachmentIds.map(Number).filter((id) => Number.isFinite(id) && id > 0)
             : selectedIds(store);
@@ -441,6 +445,29 @@
             if (stores.has(store.contactId)) {
                 store.submitting = false;
                 store.views.forEach((v) => syncView(v, "submit-idle"));
+            }
+        }
+    }
+
+    async function downloadSelectedZip(store) {
+        if (store.zipDownloading || store.submitting) return;
+        const ids = selectedIds(store);
+        if (!ids.length) return;
+        store.zipDownloading = true;
+        store.actionError = null;
+        store.views.forEach((view) => syncView(view, "zip-start"));
+        try {
+            if (ids.length > MAX_TRANSFER_IDS) throw makeError("一次最多下载 500 份资料，请分批下载。");
+            if (typeof cfg.downloadZip !== "function") throw makeError("压缩包下载不可用，请刷新页面后重试");
+            await cfg.downloadZip(store.contactId, ids);
+        } catch (err) {
+            if (stores.get(store.contactId) === store) {
+                store.actionError = (err && err.message) || "压缩包下载失败，请重试";
+            }
+        } finally {
+            if (stores.get(store.contactId) === store) {
+                store.zipDownloading = false;
+                store.views.forEach((view) => syncView(view, "zip-finish"));
             }
         }
     }
@@ -881,6 +908,7 @@
         let selectionHint = null;
         let clearBtn = null;
         let transferBtn = null;
+        let zipBtn = null;
         if (view.mode !== "selectionOnly") {
             footer = el("footer");
             selectionBox = el("div", "em-selection");
@@ -888,7 +916,7 @@
             selectionCount = selStrong;
             text(selectionCount, "已选 0 份");
             selectionHint = el("small");
-            text(selectionHint, "筛选与翻页保留已选文件");
+            text(selectionHint, ZIP_SELECTION_HINT);
             selectionBox.appendChild(selStrong);
             selectionBox.appendChild(selectionHint);
             clearBtn = el("button", "button", { type: "button", disabled: "", "data-action": "clear" });
@@ -898,6 +926,9 @@
             footer.appendChild(selectionBox);
             footer.appendChild(clearBtn);
             footer.appendChild(transferBtn);
+            zipBtn = el("button", "button", { type: "button", disabled: "", "data-action": "download-zip" });
+            text(zipBtn, "下载压缩包");
+            footer.appendChild(zipBtn);
             section.appendChild(footer);
         }
 
@@ -920,6 +951,7 @@
         elements.selectionHint = selectionHint;
         elements.clearBtn = clearBtn;
         elements.transferBtn = transferBtn;
+        elements.zipBtn = zipBtn;
         view.elements = elements;
         view.root = section;
         return section;
@@ -1352,18 +1384,22 @@
         if (elements.selectionCount && elements.transferBtn && elements.clearBtn) {
             const count = store.selection.size;
             text(elements.selectionCount, `已选 ${count} 份`);
-            if (elements.selectionHint && store.note && !store.submitting) {
+            if (elements.selectionHint && store.zipDownloading) {
+                text(elements.selectionHint, "正在打包，请稍候");
+            } else if (elements.selectionHint && store.note && !store.submitting) {
                 text(elements.selectionHint, store.note);
             } else if (elements.selectionHint && store.note) {
                 text(elements.selectionHint, "正在提交…");
             } else if (elements.selectionHint) {
-                text(elements.selectionHint, store.submitting ? "正在提交…" : "筛选与翻页保留已选文件");
+                text(elements.selectionHint, store.submitting ? "正在提交…" : ZIP_SELECTION_HINT);
             }
-            elements.clearBtn.disabled = count === 0 || store.submitting;
+            elements.clearBtn.disabled = count === 0 || store.submitting || store.zipDownloading;
             // 超过单次上限时不禁用主按钮：点击后在错误区明确提示分批获取，
             // 绝不静默截断或隐式分批发送。
-            elements.transferBtn.disabled = count === 0 || store.submitting;
+            elements.transferBtn.disabled = count === 0 || store.submitting || store.zipDownloading;
             text(elements.transferBtn, store.submitting ? "正在提交…" : "获取所选到服务器");
+            elements.zipBtn.disabled = count === 0 || store.submitting || store.zipDownloading;
+            text(elements.zipBtn, store.zipDownloading ? "正在打包…" : "下载压缩包");
         }
     }
 
@@ -1408,6 +1444,7 @@
                 return;
             }
             if (action === "clear") {
+                if (store.submitting || store.zipDownloading) return;
                 store.selection.clear();
                 store.note = "";
                 store.views.forEach((v) => syncView(v, "selection"));
@@ -1415,6 +1452,11 @@
             }
             if (action === "transfer") {
                 submitTransfers(store, view);
+                return;
+            }
+            if (action === "download-zip") {
+                event.stopPropagation();
+                downloadSelectedZip(store);
                 return;
             }
             if (action === "fetch") {
@@ -1582,6 +1624,7 @@
     function configure(options) {
         const opts = options || {};
         if (typeof opts.api === "function") cfg.api = opts.api;
+        if (typeof opts.downloadZip === "function") cfg.downloadZip = opts.downloadZip;
         if (typeof opts.contextPath === "string") cfg.contextPath = opts.contextPath;
         if (opts.labels && typeof opts.labels === "object") {
             if (typeof opts.labels.documentType === "function") cfg.labels.documentType = opts.labels.documentType;
