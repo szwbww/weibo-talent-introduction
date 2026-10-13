@@ -31,7 +31,7 @@
 - 来源：01 I-2/I-3。
 
 ### Invariant I-4：来源、预算与报告守恒
-- Rule：OpenAlex 调用必须走既有 getJson/requestPolicy，声明既有 RequestKind.DISCOVERY + Operation.SINGLETON；全文共用既有每篇时限、并发许可及地址数。429/预算延期记录 DEFERRED，不算不合格。仅公开来源，不解验证码。
+- Rule：OpenAlex 调用必须走既有 getJson/requestPolicy，声明既有 RequestKind.DISCOVERY + Operation.SINGLETON（A10：/works/{id} 单实体读取在既有 policy 中补全为 SINGLETON 派生，0 credit；LIST/SEARCH/CONTENT 计价不变）；全文共用既有每篇时限、并发许可及地址数。429/预算延期记录 DEFERRED，不算不合格。仅公开来源，不解验证码。
 - Rule：脚本每人一行 JSONL，记录 docId、观察时间、来源 ID/URL、元数据摘要、提取版本、proof source/hash、前后差异、各层结果、准入结果、失败原因；来源 URL/摘要不能声称是原文副本。输出目录 0700、文件 0600，文件名不含姓名邮箱；不记录认证头。报告失败则该条停止进入 apply。
 - Applies to：所有查询及维护文件写路径。
 - Violation consequence：越预算、无法复核、恢复人数重复计算。
@@ -45,7 +45,7 @@ ES schema/身份写读全集继承并重新核对 01：本份新增的唯一事�
 
 V148 准入写读全集及 CAS 前提参见既有准入方案；本份只调用其 recordAutomatic/重验接缝。V131 仅调用 enqueue。expert_contact 读取复用 existsByOrcidId/findFirstByExpertEmailOrderByUpdatedAtDesc；对真实 docId、业务 orcidId 两项分别查，不把看似 ORCID 的键视为真实作者。联系人及邮件表写入 0。
 
-公开来源：EuropePmcDataSource.extractAuthorEmails 接受 PMCID；OpenAlexDataSource 当前只有列表入口、parseResponse 内解析 work，需提取复用 parseWork 并补精确查询入口，不复制作者解析规则。OpenAlex 官方支持 DOI/PMID 单篇查询，已核对 [官方说明](https://help.openalex.org/api/get-single-entities/)；本方案不改 API 计价或额度策略。
+公开来源：EuropePmcDataSource.extractAuthorEmails 接受 PMCID；OpenAlexDataSource 当前只有列表入口、parseResponse 内解析 work，需提取复用 parseWork 并补精确查询入口，不复制作者解析规则。OpenAlex 官方支持 DOI/PMID 单篇查询，已核对 [官方说明](https://help.openalex.org/api/get-single-entities/)；本方案不改 API 计价或额度策略（A10 例外：仅补全 /works/{id} 单实体读取的既有 SINGLETON 派生；LIST/SEARCH/CONTENT 成本不变）。
 
 队列：V133 job 的 payload_json/extraction_json 由收集、saveExtraction、消费完成、clearTerminalPayloads/deleteTerminalJobs 写入；DiscoveryPipelineService.processJob 复用旧结果，consumeQueuedItem 不兼容则失败。本份不改上述队列，不依赖旧缓存一定存在。
 
@@ -64,7 +64,7 @@ V148 准入写读全集及 CAS 前提参见既有准入方案；本份只调用�
 
 ## 变更文件清单
 
-相对仓库根，共 10 个。无新的 DB/ES 字段。
+相对仓库根，共 11 个（A10：第 11 个为既有计价策略的单实体派生补全）。无新的 DB/ES 字段。
 
 |文件|用途|
 |---|---|
@@ -78,6 +78,7 @@ V148 准入写读全集及 CAS 前提参见既有准入方案；本份只调用�
 |src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt|精确查询/额度/来源校验|
 |tools/discovery-identity-recovery/replay.py|新增：名单与本地留痕、应用调度、回滚提案|
 |tools/discovery-identity-recovery/test_replay.py|新增：默认预览/日志恢复/备份失败保护|
+|src/main/kotlin/com/weibo/talentintroduction/config/OpenAlexRequestPolicy.kt|A10：为 /works/{id} 增加 SINGLETON(0 credit) 派生；LIST/SEARCH/CONTENT 计价不变|
 
 ## 验收标准
 
@@ -85,7 +86,7 @@ V148 准入写读全集及 CAS 前提参见既有准入方案；本份只调用�
 - I-2：补空成功用无旧学术/联系人样本；任一风险字段、已有非空冲突、APPLICATION/联系人、人工或历史 proof 均不自动改身份。
 - I-3：preview 业务写 0；修改源/档案使 apply 返回 409；第二层失败不计整体成功；恢复不重复更改；人工状态/业务 ID/邮箱/运营数据不变。
 - I-4：请求仍走额度控制；延期不转拒绝；人数与 manifest 去重总数守恒；报告保存失败不进入 apply；无秘密进入输出。
-- JDK 11 执行本份三项 Kotlin 测试及 01 四项既有测试；Python unittest 测试脚本。旧测试文件仅运行，不暗增修改范围。本份 RecoveryServiceTest 须通过真实 writer + HTTP 替身覆盖新增条件写入，不能 mock writer 后宣称 ES 补丁已验收。样本原始证据引用既有审计资源；需新增大夹具时先拆计划，不临时加第 11 个文件。
+- JDK 11 执行本份三项 Kotlin 测试及 01 四项既有测试；Python unittest 测试脚本。旧测试文件仅运行，不暗增修改范围。本份 RecoveryServiceTest 须通过真实 writer + HTTP 替身覆盖新增条件写入，不能 mock writer 后宣称 ES 补丁已验收。样本原始证据引用既有审计资源；需新增大夹具时先拆计划，不临时加第 12 个文件（第 11 个已按 A10 授权）。
 
 ## 人工验收清单
 
