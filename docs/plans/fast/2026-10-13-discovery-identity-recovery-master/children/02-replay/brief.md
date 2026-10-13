@@ -54,3 +54,15 @@
 - 本地提交仅含 10 个授权文件：`feat(fast-p): implement 02-replay`。
 - 返回仅限：`READY_FOR_VERIFICATION | BLOCKED | PLAN_CONFLICT`、commit SHA、命令摘要、报告路径。
 - 不审查后续子计划、不修复无关行为、不 push/merge/改写历史；遇到计划未覆盖的行为决策或需要新文件：返回 BLOCKED/PLAN_CONFLICT。
+
+## Epoch 2 修订（A10，2026-10-14T00:52+0800 人工批准：选项 A）
+
+- 授权文件 10 → **11**，新增：`src/main/kotlin/com/weibo/talentintroduction/config/OpenAlexRequestPolicy.kt`。
+  - 变更内容：为 `/works/{id}` 单实体形态（`doi:`/`pmid:`/`W…`）增加 `SINGLETON(0 credit)` 派生；`LIST/SEARCH/CONTENT` 计价与既有「显式声明 + 结构化派生 + 目标校验」语义不变；不得顺带重构其他内容。
+  - 行为证据放在已授权的 `OpenAlexDataSourceTest.kt`（精确读取声明 SINGLETON 被允许、0 credit、限流/额度语义仍生效）；`OpenAlexRequestPolicyTest.kt` 不在授权内（**仅执行，既有断言必须保持通过，不得修改**）。
+- Required commands（epoch 2 起；C1 增加既有 `OpenAlexRequestPolicyTest`；C2/C3 不变）：
+  - C1: `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=DiscoveryIdentityRecoveryServiceTest,DiscoveryIdentityRecoveryControllerTest,OpenAlexDataSourceTest,OpenAlexRequestPolicyTest test`
+  - C2: `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=ExpertDiscoveryServiceTest,DiscoveryIdentityRepairServiceTest,ExpertIndexWriterServiceTest,DiscoveryPipelineServiceTest test`
+  - C3: 同 epoch 1（Python unittest，记录实际命令）。
+- epoch 1 无产物（zero commits；工作树自 bc84bac 起干净），其余合同（I-1..I-4、边界、下游接口）不变；暂停记录见 execution.md。
+- 报告：把 epoch 2 结果**追加**到同一 execution.md 的 `## Epoch 2` 小节（不改写已有 Pause 记录）。
