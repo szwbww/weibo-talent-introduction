@@ -2264,4 +2264,78 @@ class OpenAlexDataSourceTest {
             assertTrue(elapsedMs < 5_000, "500ms 预算内必须结束（实际 ${elapsedMs}ms）")
         }
     }
+
+    // ── 02（I-1/I-4）：精确单篇读取 ─────────────────────────────────────────
+
+    private fun singleWorkJson(doi: String, pmid: String): String =
+        """
+        {
+          "id": "https://openalex.org/W2741809807",
+          "doi": "https://doi.org/$doi",
+          "ids": {"pmid": "https://pubmed.ncbi.nlm.nih.gov/$pmid"},
+          "title": "The state of OA",
+          "publication_year": 2018,
+          "primary_location": {"source": {"display_name": "PeerJ"}},
+          "best_oa_location": {"pdf_url": "https://example.org/paper.pdf"},
+          "locations": [],
+          "authorships": [
+            {"author": {"display_name": "Smith, John", "orcid": "https://orcid.org/0000-0001-2345-6789", "id": "https://openalex.org/A5023888391"},
+             "is_corresponding": true,
+             "institutions": [{"display_name": "University of Oxford", "type": "education", "country_code": "GB"}]}
+          ]
+        }
+        """.trimIndent()
+
+    @Test
+    fun `fetchWorkByDoi declares SINGLETON, reads the exact work and charges no credits`() {
+        stubWorksResponse(singleWorkJson(doi = "10.7717/peerj.4375", pmid = "29456894"))
+        val urlCaptor = org.mockito.ArgumentCaptor.forClass(String::class.java)
+
+        val work = dataSource.fetchWorkByDoi("10.7717/peerj.4375")
+
+        Mockito.verify(restTemplate).exchange(
+            urlCaptor.capture(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        assertTrue(urlCaptor.value.contains("/works/doi:10.7717/peerj.4375"), urlCaptor.value)
+        assertNotNull(work)
+        assertEquals("10.7717/peerj.4375", work!!.doi)
+        assertEquals("29456894", work.pmid)
+        assertEquals("The state of OA", work.title)
+        assertEquals(1, work.authors.size)
+        assertEquals("Smith", work.authors[0].familyNames)
+        // A10：`/works/{id}` 单实体读取 0 credit。
+        assertEquals(0L, policy.snapshot().confirmedSpentCredits)
+    }
+
+    @Test
+    fun `fetchWorkByDoi refuses a mismatched source id`() {
+        stubWorksResponse(singleWorkJson(doi = "10.7717/peerj.4375", pmid = "29456894"))
+
+        assertThrows(IllegalStateException::class.java) { dataSource.fetchWorkByDoi("10.1111/another") }
+    }
+
+    @Test
+    fun `fetchWorkByPmid returns null when the work does not exist`() {
+        Mockito.`when`(
+            restTemplate.exchange(
+                Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenThrow(HttpClientErrorException(HttpStatus.NOT_FOUND))
+
+        assertNull(dataSource.fetchWorkByPmid("1"))
+    }
+
+    @Test
+    fun `fetchWorkByDoi propagates rate limiting instead of degrading the result`() {
+        Mockito.`when`(
+            restTemplate.exchange(
+                Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenThrow(HttpServerErrorException(HttpStatus.TOO_MANY_REQUESTS))
+
+        assertThrows(HttpServerErrorException::class.java) { dataSource.fetchWorkByDoi("10.7717/peerj.4375") }
+    }
 }

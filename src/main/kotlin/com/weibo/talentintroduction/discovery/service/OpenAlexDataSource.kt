@@ -260,53 +260,103 @@ class OpenAlexDataSource(
         if (response == null) return PaperSearchResult(emptyList(), null, 0)
         val nextCursor = response.path("meta").path("next_cursor").asText(null)
         val totalResults = response.path("meta").path("count").asLong(0)
-        val papers = response.path("results").mapNotNull { node ->
-            try {
-                val doi = node.path("doi").asText(null)?.removePrefix("https://doi.org/")
-                val pmcId = extractPmcId(node)
-                val pmid = node.path("ids").path("pmid")?.asText(null)
-                    ?.removePrefix("https://pubmed.ncbi.nlm.nih.gov/")
-                val pdfUrl = node.path("best_oa_location").path("pdf_url").asText(null)
-                // c10（I-1）：locations 里的开放 PDF 是首选失效时的备用地址；只取 is_oa 的公开 http(s) 地址，
-                // 去掉首选本身与重复项 —— 付费墙与非公开协议不成其为候选。
-                val primaryPdfUrl = publicCandidateUrl(pdfUrl)
-                val otherOaPdfUrls = node.path("locations")
-                    .filter { it.path("is_oa").asBoolean(false) }
-                    .mapNotNull { publicCandidateUrl(it.path("pdf_url").asText(null)) }
-                    .filter { it != primaryPdfUrl }
-                    .distinct()
-                val authors = node.path("authorships").map { authorship ->
-                    val author = authorship.path("author")
-                    val orcid = author.path("orcid").asText(null)?.removePrefix("https://orcid.org/")
-                    val nameParts = splitDisplayName(author.path("display_name").asText(""))
-                    // I-1/I-3：展示机构只能是同一 authorship 里**唯一非空**的机构对象；
-                    // 多个不同机构一律 null（不任取第一项），affiliation 只是同一对象的原文线索。
-                    val institution = soleInstitution(authorship)
-                    val institutionName = institution?.path("display_name")?.asText(null)?.trim()?.takeIf { it.isNotEmpty() }
-                    // I5a-3: 无 type/空串均产出 null。
-                    val institutionType = institution?.path("type")?.asText(null)?.takeIf { it.isNotBlank() }
-                    // I-2：国家取同一机构对象的 country_code，且必须能被地区表识别（未知 → null）。
-                    val institutionCountry = institution?.path("country_code")?.asText(null)?.trim()
-                        ?.takeIf { it.isNotEmpty() && CountryContinentMapping.toRegion(it) != CountryContinentMapping.REGION_OTHER }
-                    PaperAuthor(
-                        givenNames = nameParts.getOrNull(0), familyNames = nameParts.getOrNull(1),
-                        orcidId = orcid, affiliation = institutionName,
-                        isCorresponding = authorship.path("is_corresponding").asBoolean(false),
-                        institutionType = institutionType,
-                        openAlexAuthorId = normalizeOpenAlexAuthorId(author.path("id").asText(null)),
-                        institutionName = institutionName,
-                        institutionCountry = institutionCountry,
-                        institutionSource = if (institutionName != null) INSTITUTION_SOURCE_OPENALEX else null
-                    )
-                }
-                PaperMetadata(pmcId = pmcId, pmid = pmid, doi = doi,
-                    title = node.path("title").asText(""), pubYear = node.path("publication_year").asInt(0),
-                    journal = node.path("primary_location").path("source").path("display_name").asText(null),
-                    authors = authors, source = sourceName, downloadUrl = pdfUrl,
-                    candidateDownloadUrls = otherOaPdfUrls)
-            } catch (e: Exception) { log.debug("Failed to parse OpenAlex: {}", e.message); null }
-        }
+        val papers = response.path("results").mapNotNull { node -> parseWork(node) }
         return PaperSearchResult(papers, nextCursor, totalResults)
+    }
+
+    /**
+     * I-1：单个 OpenAlex `work` 节点 → [PaperMetadata]（列表与精确单篇读取共用，作者解析规则只有这一份）。
+     * 解析失败返回 null，绝不抛出（列表路径与精确路径都用同一种「无结果」表达）。
+     */
+    private fun parseWork(node: JsonNode): PaperMetadata? = try {
+        val doi = node.path("doi").asText(null)?.removePrefix("https://doi.org/")
+        val pmcId = extractPmcId(node)
+        val pmid = node.path("ids").path("pmid")?.asText(null)
+            ?.removePrefix("https://pubmed.ncbi.nlm.nih.gov/")
+        val pdfUrl = node.path("best_oa_location").path("pdf_url").asText(null)
+        // c10（I-1）：locations 里的开放 PDF 是首选失效时的备用地址；只取 is_oa 的公开 http(s) 地址，
+        // 去掉首选本身与重复项 —— 付费墙与非公开协议不成其为候选。
+        val primaryPdfUrl = publicCandidateUrl(pdfUrl)
+        val otherOaPdfUrls = node.path("locations")
+            .filter { it.path("is_oa").asBoolean(false) }
+            .mapNotNull { publicCandidateUrl(it.path("pdf_url").asText(null)) }
+            .filter { it != primaryPdfUrl }
+            .distinct()
+        val authors = node.path("authorships").map { authorship ->
+            val author = authorship.path("author")
+            val orcid = author.path("orcid").asText(null)?.removePrefix("https://orcid.org/")
+            val nameParts = splitDisplayName(author.path("display_name").asText(""))
+            // I-1/I-3：展示机构只能是同一 authorship 里**唯一非空**的机构对象；
+            // 多个不同机构一律 null（不任取第一项），affiliation 只是同一对象的原文线索。
+            val institution = soleInstitution(authorship)
+            val institutionName = institution?.path("display_name")?.asText(null)?.trim()?.takeIf { it.isNotEmpty() }
+            // I5a-3: 无 type/空串均产出 null。
+            val institutionType = institution?.path("type")?.asText(null)?.takeIf { it.isNotBlank() }
+            // I-2：国家取同一机构对象的 country_code，且必须能被地区表识别（未知 → null）。
+            val institutionCountry = institution?.path("country_code")?.asText(null)?.trim()
+                ?.takeIf { it.isNotEmpty() && CountryContinentMapping.toRegion(it) != CountryContinentMapping.REGION_OTHER }
+            PaperAuthor(
+                givenNames = nameParts.getOrNull(0), familyNames = nameParts.getOrNull(1),
+                orcidId = orcid, affiliation = institutionName,
+                isCorresponding = authorship.path("is_corresponding").asBoolean(false),
+                institutionType = institutionType,
+                openAlexAuthorId = normalizeOpenAlexAuthorId(author.path("id").asText(null)),
+                institutionName = institutionName,
+                institutionCountry = institutionCountry,
+                institutionSource = if (institutionName != null) INSTITUTION_SOURCE_OPENALEX else null
+            )
+        }
+        PaperMetadata(pmcId = pmcId, pmid = pmid, doi = doi,
+            title = node.path("title").asText(""), pubYear = node.path("publication_year").asInt(0),
+            journal = node.path("primary_location").path("source").path("display_name").asText(null),
+            authors = authors, source = sourceName, downloadUrl = pdfUrl,
+            candidateDownloadUrls = otherOaPdfUrls)
+    } catch (e: Exception) {
+        log.debug("Failed to parse OpenAlex work: {}", e.message)
+        null
+    }
+
+    /**
+     * I-1（02）：精确单篇读取 —— `/works/doi:{doi}`。走既有 [OpenAlexRequestPolicy]（
+     * `RequestKind.DISCOVERY` + `Operation.SINGLETON`，A10 起 `/works/{id}` 单实体为 0 credit）。
+     * API 返回的 `doi` 与请求不一致时抛错（绝不做模糊后备）；查无此篇返回 null。
+     */
+    fun fetchWorkByDoi(doi: String): PaperMetadata? {
+        val query = doi.trim().removePrefix("https://doi.org/").removePrefix("http://doi.org/").trim()
+        if (query.isEmpty()) return null
+        return fetchSingletonWork("doi:$query") { it.doi?.equals(query, ignoreCase = true) == true }
+    }
+
+    /**
+     * I-1（02）：精确单篇读取 —— `/works/pmid:{pmid}`。语义与 [fetchWorkByDoi] 相同。
+     */
+    fun fetchWorkByPmid(pmid: String): PaperMetadata? {
+        val query = pmid.trim().removePrefix("https://pubmed.ncbi.nlm.nih.gov/").trim()
+        if (query.isEmpty()) return null
+        return fetchSingletonWork("pmid:$query") { it.pmid?.trim() == query }
+    }
+
+    /**
+     * I-1：单实体读取的公共收口 —— 声明 `Operation.SINGLETON`，校验返回的来源 ID 与请求一致。
+     * 404/空体视为「查无此篇」（null）；返回了别的来源 ID 抛错（调用方据此报 SOURCE_IDENTITY_CONFLICT）。
+     */
+    private fun fetchSingletonWork(locator: String, matches: (PaperMetadata) -> Boolean): PaperMetadata? {
+        val url = "${properties.baseUrl}/works/$locator" + mailtoSuffix()
+        val response = try {
+            if (properties.requestDelayMs > 0) Thread.sleep(properties.requestDelayMs)
+            getJson(RequestKind.DISCOVERY, Operation.SINGLETON, url) ?: return null
+        } catch (e: OpenAlexBudgetDeferredException) {
+            throw e
+        } catch (e: HttpStatusCodeException) {
+            val code = e.statusCode.value()
+            if (code == 429 || code == 503) throw e
+            if (code == 404) return null
+            log.debug("OpenAlex single work read failed for {}: {} (HTTP {})", locator, e.message, code)
+            throw e
+        }
+        val parsed = parseWork(response) ?: return null
+        check(matches(parsed)) { "OpenAlex work read for $locator returned a different source id" }
+        return parsed
     }
 
     /**

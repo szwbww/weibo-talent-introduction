@@ -155,6 +155,134 @@ class DiscoveryIdentityRepairService(
         return IdentityRepairResult(outcome, target, layers)
     }
 
+    /**
+     * 02（I-2）：受限「填空姓名 + proof」模式 —— **只服务**已完成来源复查的维护入口
+     * （[DiscoveryIdentityRecoveryService]）；自动增量入口从不启用，也不改变
+     * [repairDuplicateIdentity] 的既有语义。
+     *
+     * 前置（调用方已判，此处再次强制）：完整姓名 + 有效来源证据；规范邮箱唯一命中本 `docId`；
+     * 三层无身份/作者编号冲突；没有 existing proof。**只填**每层为空的姓名段，
+     * 已有非空姓名段与 incoming 不一致或已有 proof 一律零写入；CAS 写失败保留可重试错误。
+     */
+    fun repairEmptyNameProof(docId: String, incoming: AuthorEmail): IdentityRepairResult {
+        if (docId.isBlank()) return IdentityRepairResult(IdentityRepairOutcome.FAILED)
+        if (incoming.givenNames.isNullOrBlank() || incoming.familyNames.isNullOrBlank()) {
+            return IdentityRepairResult(IdentityRepairOutcome.MISSING_NAME_NEEDS_RECOVERY)
+        }
+        if (!DiscoveryIdentity.validEvidence(incoming.identityEvidence)) {
+            return IdentityRepairResult(IdentityRepairOutcome.CONFLICT)
+        }
+        val email = DiscoveryIdentity.normalizedEmail(incoming.email)
+        if (email.isEmpty()) return IdentityRepairResult(IdentityRepairOutcome.CONFLICT)
+
+        val hits = try {
+            expertIndexWriterService.findDiscoveryHitsByEmail(incoming.email)
+        } catch (e: Exception) {
+            log.warn("空名补证邮箱全量查询失败 docId={}: {}", docId, e.message)
+            return IdentityRepairResult(IdentityRepairOutcome.FAILED)
+        }
+        val ids = hits.map { it.docId }.distinct()
+        if (ids.isEmpty()) return IdentityRepairResult(IdentityRepairOutcome.FAILED)
+        if (ids.size != 1 || ids.single() != docId) return IdentityRepairResult(IdentityRepairOutcome.CONFLICT)
+
+        val snapshots = LinkedHashMap<ExpertIndexLevel, ExpertIndexWriterService.DiscoverySnapshot?>()
+        for (level in repairedLevels) {
+            snapshots[level] = try {
+                expertIndexWriterService.readDiscoveryDocument(level, docId)
+            } catch (e: Exception) {
+                log.warn("空名补证读取 {} 层失败 docId={}: {}", level, docId, e.message)
+                return IdentityRepairResult(IdentityRepairOutcome.FAILED)
+            }
+        }
+        if (snapshots.values.all { it == null }) return IdentityRepairResult(IdentityRepairOutcome.FAILED)
+
+        val stored = snapshots.mapNotNull { (level, snap) -> snap?.let { level to it.source } }
+        for ((_, source) in stored) {
+            if (email != DiscoveryIdentity.normalizedEmail(source["email"] as? String)) {
+                return IdentityRepairResult(IdentityRepairOutcome.CONFLICT)
+            }
+            val given = (source["givenNames"] as? String)?.takeIf { it.isNotBlank() }
+            val family = (source["familyNames"] as? String)?.takeIf { it.isNotBlank() }
+            // 已填姓名从不覆盖：任何非空姓名段与 incoming 不符即零写入。
+            if (given != null && given != incoming.givenNames) {
+                return IdentityRepairResult(IdentityRepairOutcome.CONFLICT)
+            }
+            if (family != null && family != incoming.familyNames) {
+                return IdentityRepairResult(IdentityRepairOutcome.CONFLICT)
+            }
+            // 已有 proof（含历史认可/无效摘要）：不是空名补证对象，零写入。
+            if (proofOf(source) != null) {
+                return IdentityRepairResult(IdentityRepairOutcome.ALREADY_VERIFIED)
+            }
+        }
+        if (authorIdsConflict(stored, incoming)) return IdentityRepairResult(IdentityRepairOutcome.CONFLICT)
+
+        val target = DiscoveryIdentity.verified(
+            incoming.email, incoming.givenNames, incoming.familyNames,
+            incoming.identityEvidence!!, incoming.orcidId, incoming.openAlexAuthorId
+        )
+
+        val layers = mutableListOf<IdentityRepairLayer>()
+        var written = 0
+        var failed = 0
+        for ((level, snapshot) in snapshots) {
+            if (snapshot == null) {
+                layers += IdentityRepairLayer(level, IdentityRepairLayerOutcome.MISSING)
+                continue
+            }
+            val source = snapshot.source
+            val givenBlank = (source["givenNames"] as? String).isNullOrBlank()
+            val familyBlank = (source["familyNames"] as? String).isNullOrBlank()
+            val givenToWrite = incoming.givenNames.takeIf { givenBlank }
+            val familyToWrite = incoming.familyNames.takeIf { familyBlank }
+            if (givenToWrite == null && familyToWrite == null) {
+                layers += IdentityRepairLayer(level, IdentityRepairLayerOutcome.ALREADY_VERIFIED)
+                continue
+            }
+            when (expertIndexWriterService.writeDiscoveryNameAndProofIfVersionMatches(
+                level, docId, snapshot.seqNo, snapshot.primaryTerm, givenToWrite, familyToWrite, target
+            )) {
+                IdentityProofWriteResult.UPDATED -> {
+                    val current = try {
+                        expertIndexWriterService.readDiscoveryDocument(level, docId)
+                    } catch (e: Exception) {
+                        log.warn("空名补证回读 {} 层失败 docId={}: {}", level, docId, e.message)
+                        null
+                    }
+                    val verified = current?.takeIf { snap ->
+                        snap.source["givenNames"] == incoming.givenNames &&
+                            snap.source["familyNames"] == incoming.familyNames &&
+                            proofOf(snap.source) == target
+                    }
+                    if (verified != null) {
+                        written++
+                        layers += IdentityRepairLayer(level, IdentityRepairLayerOutcome.REPAIRED, null, proofOf(verified.source))
+                    } else {
+                        failed++
+                        layers += IdentityRepairLayer(level, IdentityRepairLayerOutcome.WRITE_FAILED, null, current?.let { proofOf(it.source) })
+                    }
+                }
+                IdentityProofWriteResult.MISSING ->
+                    layers += IdentityRepairLayer(level, IdentityRepairLayerOutcome.MISSING)
+                IdentityProofWriteResult.VERSION_CONFLICT -> {
+                    failed++
+                    layers += IdentityRepairLayer(level, IdentityRepairLayerOutcome.VERSION_CONFLICT)
+                }
+                IdentityProofWriteResult.FAILED -> {
+                    failed++
+                    layers += IdentityRepairLayer(level, IdentityRepairLayerOutcome.WRITE_FAILED)
+                }
+            }
+        }
+        val outcome = when {
+            failed > 0 && written > 0 -> IdentityRepairOutcome.PARTIAL
+            failed > 0 -> IdentityRepairOutcome.FAILED
+            written > 0 -> IdentityRepairOutcome.REPAIRED
+            else -> IdentityRepairOutcome.ALREADY_VERIFIED
+        }
+        return IdentityRepairResult(outcome, target, layers)
+    }
+
     /** 层内/跨层/与 incoming 的 ORCID 或 OpenAlex 作者编号冲突（任一侧缺值不算冲突）。 */
     private fun authorIdsConflict(stored: List<Pair<ExpertIndexLevel, Map<String, Any?>>>, incoming: AuthorEmail): Boolean {
         val orcids = mutableSetOf<String>()

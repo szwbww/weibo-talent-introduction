@@ -973,6 +973,47 @@ class ExpertIndexWriterService(
         }
     }
 
+    /**
+     * 02（I-2）：受限「填空姓名 + proof」条件补丁 —— 只补调用方确认**为空**的姓名字段
+     * （`null` = 不写该字段，已填姓名逐字不覆盖），并写入身份凭证；带 `if_seq_no/if_primary_term`，
+     * 邮箱/作者编号/学术/运营字段一律不动。缺层（404）与 409 语义与
+     * [writeIdentityProofIfVersionMatches] 一致：绝不创建缺层，也绝不用旧快照盲目重试。
+     */
+    fun writeDiscoveryNameAndProofIfVersionMatches(
+        level: ExpertIndexLevel,
+        docId: String,
+        seqNo: Long,
+        primaryTerm: Long,
+        givenNames: String?,
+        familyNames: String?,
+        proof: IdentityVerification
+    ): IdentityProofWriteResult {
+        val doc = linkedMapOf<String, Any?>("identityVerification" to proof)
+        givenNames?.let { doc["givenNames"] = it }
+        familyNames?.let { doc["familyNames"] = it }
+        val index = expertIndexService.indexName(level)
+        val url = "${properties.baseUrl}/$index/_update/$docId?if_seq_no=$seqNo&if_primary_term=$primaryTerm"
+        return try {
+            val response = restTemplate.exchange(
+                url, HttpMethod.POST, HttpEntity(mapOf("doc" to doc), headers()), JsonNode::class.java
+            ).body ?: return IdentityProofWriteResult.FAILED
+            if (response.path("result").asText() == "updated") IdentityProofWriteResult.UPDATED
+            else IdentityProofWriteResult.FAILED
+        } catch (e: HttpClientErrorException) {
+            when (e.statusCode) {
+                HttpStatus.CONFLICT -> IdentityProofWriteResult.VERSION_CONFLICT
+                HttpStatus.NOT_FOUND -> IdentityProofWriteResult.MISSING
+                else -> {
+                    log.warn("Failed to write name/proof for {} in {} (HTTP {})", docId, level, e.statusCode)
+                    IdentityProofWriteResult.FAILED
+                }
+            }
+        } catch (e: Exception) {
+            log.warn("Failed to write name/proof for {} in {}", docId, level, e)
+            IdentityProofWriteResult.FAILED
+        }
+    }
+
     fun demoteToRaw(orcid: String, contact: ExpertContact): Boolean {
         val normalizedOrcid = ExpertIdNormalizer.normalize(orcid)
         val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
