@@ -2,7 +2,7 @@
 
 - Status: RUNNING
 - Master plan: docs/plans/2026-10-13/discovery-identity-recovery-master.md (commit 36075ec06c5e4382f13606c995e24a13ec4470ce)
-- Amendments: A1, A2, A3, A4, A5, A6, A7, A8, A9, A10
+- Amendments: A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11
 - Master base: 9d353934b82ed3e36a193c70748e5efccb3d9e82
 - Branch: fast/2026-10-13-discovery-identity-recovery-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master
@@ -22,7 +22,7 @@
 | admission-relaxation | docs/plans/2026-10-13/discovery-admission-relaxation.md | commit:f7c7604c268aad69df6afd15efe0eed91866a237 | none | 2 | LIGHT_PASS_WITH_NOTES | b06a71898bc7850d2caeb244c9f8478f18a3b2ae | d8ca3ca28fc94c26ec796a04c6ee332c1e760533 | 0 | — | d8ca3ca28fc94c26ec796a04c6ee332c1e760533 | 2855a757a879016f10625162384e6d614981b7b1 | epoch1 10 文件（cf08a695）→ PLAN_CONFLICT 暂停 → A9 修订 → epoch2 补改（d8ca3ca，1 文件）；C1 149、C2 211、JS 1657×2 全绿；核实者 VerifyAdmission 四门禁 PASS，RECORD_ONLY O-1（用例名沿旧）、O-2（apply 冲突计入 taskFailure 系 KDoc 明示口径）；写者 ImplAdmission/ImplAdmission2 |
 | 01-duplicate | docs/plans/2026-10-13/discovery-identity-recovery-01-duplicate.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | admission-relaxation | 1 | LIGHT_PASS_WITH_NOTES | d8ca3ca28fc94c26ec796a04c6ee332c1e760533 | bc294d2e991e58346ce456f4e5eeb7525a2b5771 | 0 | — | bc294d2e991e58346ce456f4e5eeb7525a2b5771 | 41f3b94430958866662b8556a1fc293b3f7fa998 | 8 授权文件（1039+/12-）；C1 294、C2 48、JS 1657×2 全绿；核实者 Verify01-2 四门禁 PASS，RECORD_ONLY O-1（C2 计数差异系前序子计划，非本边界）；写者 Impl01-2 |
 | 02-replay | docs/plans/2026-10-13/discovery-identity-recovery-02-replay.md | commit:58a9e511e327d61e8e3645c738921979ff26a518 | admission-relaxation,01-duplicate | 2 | LIGHT_PASS | bc294d2e991e58346ce456f4e5eeb7525a2b5771 | abdf9f4645958e1ef7ef7c44963b51c4bc5898d4 | 0 | — | abdf9f4645958e1ef7ef7c44963b51c4bc5898d4 | 49ebf99365e97c0717146cdaf7e34d9000ff77cd | epoch1 zero-commit PLAN_CONFLICT（A10）→ epoch2 全量实施 11 文件（含 policy /works/{id}→SINGLETON）；C1 156、C2 294、C3 9、JS 1657×2 全绿；核实者 Verify02-2 四门禁 PASS 无 RECORD_ONLY；写者 Impl02b |
-| 04-registry | docs/plans/2026-10-13/discovery-person-04-registry.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | none | — | PENDING | — | — | — | — | — | — | A2 新增；人物主档 V156；6 授权文件；开发顺序在 01/02 之后 |
+| 04-registry | docs/plans/2026-10-13/discovery-person-04-registry.md | commit:9bf6b8ec1319863002f7d21f4320108a0a8ec2e3 | none | — | PENDING | — | — | — | — | — | — | A2 新增；人物主档 V156；A11 后 7 授权文件（+ FlywayMigrationIntegrationTest）；开发顺序在 01/02 之后 |
 | 05-ingestion | docs/plans/2026-10-13/discovery-person-05-ingestion.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 01-duplicate,02-replay,04-registry | — | PENDING | — | — | — | — | — | — | A3 新增；补证接口基线=01/02 已验证产物；8 授权文件 |
 | 06-query | docs/plans/2026-10-13/discovery-person-06-query.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 04-registry,05-ingestion | — | PENDING | — | — | — | — | — | — | A4 新增；与 07 API/DOM 联合验收；8 授权文件 |
 | 07-ui | docs/plans/2026-10-13/discovery-person-07-ui.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 06-query | — | PENDING | — | — | — | — | — | — | A5 新增；2 授权文件；样式契约 S-1/S-2 |
@@ -43,6 +43,7 @@
 | A8 | docs/plans/2026-10-13/discovery-person-10-history.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 变更文件清单「10 历史合并」＋实现方案 1—6 | 新增子计划纳入本次执行清单（A1 同一人工更新） | HUMAN:用户消息「计划已经更新 你再看一下」（2026-10-13T22:43+0800 快照提交） |
 | A9 | docs/plans/2026-10-13/discovery-admission-relaxation.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | commit:f7c7604c268aad69df6afd15efe0eed91866a237 | 实现方案步骤1（先完成既有准入修正：规则/CAS/重验）＋子计划变更文件清单第 11 文件条款 | epoch1 PLAN_CONFLICT：I-1 把六类软原因移入 hints 后，ExpertRevalidationServiceBehaviorTest 2 例仍断言旧阻断语义；按子计划「改第 11 个文件须先修订方案」，经人工批准增列该测试类并把 2 例改为新语义 | HUMAN:2026-10-13T23:06+0800 ask 回复「批准：更新 2 例为新语义」 |
 | A10 | docs/plans/2026-10-13/discovery-identity-recovery-02-replay.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | commit:58a9e511e327d61e8e3645c738921979ff26a518 | 实现方案 2「02 定向回源预览」＋子计划 I-4（请求仍走额度控制、不改计价策略） | epoch1 PLAN_CONFLICT：计划字面要求声明 Operation.SINGLETON，但既有 policy 对 /works/* 一律派生 LIST；按人工批准选项 A 授权第 11 文件并为 /works/{id} 补 SINGLETON 派生（0 credit；LIST/SEARCH/CONTENT 不变） | HUMAN:2026-10-14T00:52+0800 ask 回复「A：授权 policy，/works/{id}→SINGLETON」 |
+| A11 | docs/plans/2026-10-13/discovery-person-04-registry.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | commit:9bf6b8ec1319863002f7d21f4320108a0a8ec2e3 | 变更文件清单「04 人物主档」＋实现方案 4（V156 真实库迁移验证） | V156 加入后 FlywayMigrationIntegrationTest 31 处全量迁移最新版本断言（155）失效，该文件不在 6 文件授权内；经人工批准增列为第 7 文件，更新 31 处断言并加 V156 三新表存在性断言 | HUMAN:2026-10-14T07:44+0800 ask 回复「批准：改 31 处断言 + 加 V156 断言」 |
 
 ## Baseline
 - 授权：用户显式 `/fast-p docs/plans/2026-10-13/discovery-identity-recovery-master.md`（2026-10-13），并经 22:40 人工更新该 master（A1—A8）；执行合同 = 更新后 master 与其十份在册子计划（admission-relaxation、01-duplicate、02-replay、04-registry、05-ingestion、06-query、07-ui、08-selection、09-send-guard、10-history）。
