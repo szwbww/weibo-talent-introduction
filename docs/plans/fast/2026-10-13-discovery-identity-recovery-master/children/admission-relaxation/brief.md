@@ -57,3 +57,13 @@
 - 本地提交仅含 10 个授权文件：`feat(fast-p): implement admission-relaxation`（不要包含 docs/plans/fast 下任何 fast-p 报告/日志）。
 - 返回仅限：`READY_FOR_VERIFICATION | BLOCKED | PLAN_CONFLICT`、commit SHA、命令摘要、报告路径。
 - 不审查后续子计划、不修复无关行为、不 push/merge/改写历史；遇到计划未覆盖的行为决策或需要新文件：返回 BLOCKED/PLAN_CONFLICT。
+
+## Epoch 2 修订（A9，2026-10-13T23:06+0800 人工批准）
+
+- 授权文件 10 → **11**，新增：`src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceBehaviorTest.kt`。
+  - 仅把 2 例断言改为 I-1 新语义（软原因只进 hints；`reconcileDiscoveryCandidate` 以空 reasons 调用、filterResult PASSED、候选保留），其余 20 例不动，不改该文件其他行为。
+- Required commands（epoch 2 起生效；C1 替换原列表，C2 不变）：
+  - C1: `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=DiscoveryAdmissionPolicyTest,DiscoveryReviewServiceTest,DiscoveryReviewAllPagesTest,DiscoveryReviewControllerTest,ExpertRevalidationServiceTest,ExpertRevalidationServiceBehaviorTest test`
+  - C2: `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=BatchRecipientSelectionServiceTest,ManualInitialOutreachServiceTest,InitialOutreachServiceTest test`
+- 其余合同（I-1..I-7、边界、下游接口、epoch 1 的 10 文件实现）不变；epoch 1 实施与 PLAN_CONFLICT 暂停记录见 execution.md。
+- 报告：把 epoch 2 结果**追加**到同一 execution.md 的 `## Epoch 2` 小节（不要改写 epoch 1 记录）。

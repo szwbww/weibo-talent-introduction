@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-10-13/discovery-identity-recovery-master.md
 
-- Status: PAUSED_FOR_HUMAN
+- Status: RUNNING
 - Master plan: docs/plans/2026-10-13/discovery-identity-recovery-master.md (commit 36075ec06c5e4382f13606c995e24a13ec4470ce)
-- Amendments: A1, A2, A3, A4, A5, A6, A7, A8
+- Amendments: A1, A2, A3, A4, A5, A6, A7, A8, A9
 - Master base: 9d353934b82ed3e36a193c70748e5efccb3d9e82
 - Branch: fast/2026-10-13-discovery-identity-recovery-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master
@@ -10,16 +10,16 @@
 - Finalization repair parent: N/A
 - Started: 2026-10-13T21:55:30+0800
 - Current child: admission-relaxation
-- Waiting role: N/A
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: admission-relaxation 实施完成（cf08a695，10 授权文件、C1/C2/JS 全绿）但 PLAN_CONFLICT：ExpertRevalidationServiceBehaviorTest 2 例断言 I-1 之前的旧语义（RND_SCOPE_UNCONFIRMED 阻止候选投影），该文件不在授权清单内；须人工批准 A9 修订（增列第 11 个受影响测试类并把 2 例改为 hints-only 新语义）后方可继续
+- Pause reason: 已解除 — 人工批准 A9（2026-10-13T23:06+0800，ask 回复「批准：更新 2 例为新语义」）：增列第 11 个授权文件 ExpertRevalidationServiceBehaviorTest.kt 并把 2 例改为 I-1 新语义；epoch 2 重派实施者（原暂停原因：epoch1 PLAN_CONFLICT — 2 例断言旧语义且文件未授权）
 - Resume from: cf08a69529c74aa0521f1cadc34e61591b0a2427（epoch 1 实施边界；批准 A9 后同分支 epoch 2 继续）
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| admission-relaxation | docs/plans/2026-10-13/discovery-admission-relaxation.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | none | 1 | PAUSED_FOR_HUMAN | b06a71898bc7850d2caeb244c9f8478f18a3b2ae | cf08a69529c74aa0521f1cadc34e61591b0a2427 | 0 | — | cf08a69529c74aa0521f1cadc34e61591b0a2427 | — | 依 master 实现方案步骤1实施其阶段1-2代码与测试；不执行全量迁移；epoch1 完成 10 授权文件（C1 127、C2 211、补充 791，JS 1657 全绿）；PLAN_CONFLICT：ExpertRevalidationServiceBehaviorTest 2 例断言旧语义，须 A9 授权第 11 文件；写者 ImplAdmission |
+| admission-relaxation | docs/plans/2026-10-13/discovery-admission-relaxation.md | commit:f7c7604c268aad69df6afd15efe0eed91866a237 | none | 2 | IMPLEMENTING | b06a71898bc7850d2caeb244c9f8478f18a3b2ae | cf08a69529c74aa0521f1cadc34e61591b0a2427 | 0 | — | cf08a69529c74aa0521f1cadc34e61591b0a2427 | — | A9 后 epoch2：11 授权文件，补改 ExpertRevalidationServiceBehaviorTest 2 例为新语义；epoch1 完成 10 文件（C1 127、C2 211、补充 791，JS 1657 全绿）后 PLAN_CONFLICT 暂停（记录见 execution.md）；写者 epoch1 ImplAdmission、epoch2 ImplAdmission2 |
 | 01-duplicate | docs/plans/2026-10-13/discovery-identity-recovery-01-duplicate.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | admission-relaxation | — | PENDING | — | — | — | — | — | — | R1 同身份增量补证；仅补证接口代码，不执行旧名单；8 授权文件 |
 | 02-replay | docs/plans/2026-10-13/discovery-identity-recovery-02-replay.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | admission-relaxation,01-duplicate | — | PENDING | — | — | — | — | — | — | R2+R4 回源与留痕机制；不运行生产 apply，回源仅限 discovered；10 授权文件 |
 | 04-registry | docs/plans/2026-10-13/discovery-person-04-registry.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | none | — | PENDING | — | — | — | — | — | — | A2 新增；人物主档 V156；6 授权文件；开发顺序在 01/02 之后 |
@@ -41,6 +41,7 @@
 | A6 | docs/plans/2026-10-13/discovery-person-08-selection.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 变更文件清单「08 发送目标」＋实现方案 1—3 | 新增子计划纳入本次执行清单（A1 同一人工更新） | HUMAN:用户消息「计划已经更新 你再看一下」（2026-10-13T22:43+0800 快照提交） |
 | A7 | docs/plans/2026-10-13/discovery-person-09-send-guard.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 变更文件清单「09 首发保护」＋实现方案 1—4 | 新增子计划纳入本次执行清单（A1 同一人工更新） | HUMAN:用户消息「计划已经更新 你再看一下」（2026-10-13T22:43+0800 快照提交） |
 | A8 | docs/plans/2026-10-13/discovery-person-10-history.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 变更文件清单「10 历史合并」＋实现方案 1—6 | 新增子计划纳入本次执行清单（A1 同一人工更新） | HUMAN:用户消息「计划已经更新 你再看一下」（2026-10-13T22:43+0800 快照提交） |
+| A9 | docs/plans/2026-10-13/discovery-admission-relaxation.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | commit:f7c7604c268aad69df6afd15efe0eed91866a237 | 实现方案步骤1（先完成既有准入修正：规则/CAS/重验）＋子计划变更文件清单第 11 文件条款 | epoch1 PLAN_CONFLICT：I-1 把六类软原因移入 hints 后，ExpertRevalidationServiceBehaviorTest 2 例仍断言旧阻断语义；按子计划「改第 11 个文件须先修订方案」，经人工批准增列该测试类并把 2 例改为新语义 | HUMAN:2026-10-13T23:06+0800 ask 回复「批准：更新 2 例为新语义」 |
 
 ## Baseline
 - 授权：用户显式 `/fast-p docs/plans/2026-10-13/discovery-identity-recovery-master.md`（2026-10-13），并经 22:40 人工更新该 master（A1—A8）；执行合同 = 更新后 master 与其十份在册子计划（admission-relaxation、01-duplicate、02-replay、04-registry、05-ingestion、06-query、07-ui、08-selection、09-send-guard、10-history）。
