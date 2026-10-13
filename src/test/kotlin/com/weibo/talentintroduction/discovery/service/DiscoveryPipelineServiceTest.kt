@@ -1555,6 +1555,30 @@ class DiscoveryPipelineServiceTest {
     }
 
     @Test
+    fun `an identity repair failure stays retryable and terminates only after the fifth attempt (I-3)`() {
+        val h = harness()
+        val stream = streamFor(h)
+        stream.cursorState = StreamCursorState.EXHAUSTED
+        val job = h.store.seedJob(stream.id, "DOI:x", extractionJson = extractionJson())
+        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))
+            .thenReturn(QueuedItemConsumption(identityRepairFailed = true, duplicateExperts = 1))
+
+        repeat(4) { round ->
+            runWindow(h)
+            val after = h.store.jobs[job.id]!!
+            assertEquals(QueueJobStatus.RETRY_WAIT, after.status, "补证未完成不得 SUCCEEDED")
+            assertEquals("IDENTITY_REPAIR_FAILED", after.lastError)
+            assertEquals(round + 1, after.attempts)
+            h.clock.current = after.nextAttemptAt
+        }
+
+        runWindow(h)
+        assertEquals(QueueJobStatus.FAILED, h.store.jobs[job.id]!!.status)
+        assertEquals("IDENTITY_REPAIR_FAILED", h.store.jobs[job.id]!!.lastError, "最后一次仍保留同一原因")
+        assertEquals(1L, h.store.pipeline.failedItems)
+    }
+
+    @Test
     fun `a manual pause lets a claimed job save its extraction but never consume (I-3, I-7)`() {
         val h = harness()
         val stream = streamFor(h)

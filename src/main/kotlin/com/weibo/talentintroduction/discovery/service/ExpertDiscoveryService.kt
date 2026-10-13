@@ -123,7 +123,12 @@ class ExpertDiscoveryService(
      * 04（I-1/I-2）：RAW 落库成功后的统一准入与候选投影接缝。为空（历史单测/未装配）时
      * 不伪造结论、不晋升，按 [ADMISSION_SERVICE_UNAVAILABLE] 计入过滤；生产恒由 Spring 注入。
      */
-    private val discoveryReviewService: DiscoveryReviewService? = null
+    private val discoveryReviewService: DiscoveryReviewService? = null,
+    /**
+     * 01（I-1/I-2/I-3）：重复命中的同身份补证协调器。为空（历史单测/未装配）时保持原行为：
+     * 只按匹配 `_id` 补建补全任务，不写 proof；生产恒由 Spring 注入。
+     */
+    private val identityRepairService: DiscoveryIdentityRepairService? = null
 ) {
     private val log = LoggerFactory.getLogger(ExpertDiscoveryService::class.java)
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
@@ -910,6 +915,8 @@ class ExpertDiscoveryService(
             // c9（I-3）：到界的哪个约束自己命名（全局论文上限 / 作者防护 / 本源额度）。
             var limitReason: String? = null
             var consumedInBatch = 0
+            // 01（I-3）：本页是否有补证未完成（部分/失败）；有则本页不推进、不记成功。
+            var identityRepairFailedInPage = false
 
             val extractions = parallelExtractOutcomes(batch.papers, source)
             for ((paper, extraction) in extractions) {
@@ -934,7 +941,9 @@ class ExpertDiscoveryService(
                 sourceStats.papersSearched++
                 sourcePapersProcessed++
                 consumedInBatch++
-                consumeOutcome(paper, extraction, source, stats, sourceStats, execId)
+                consumeOutcome(paper, extraction, source, stats, sourceStats, execId).let {
+                    if (it.identityRepairFailed) identityRepairFailedInPage = true
+                }
             }
 
             val rawWriteFailedInPage = sourceStats.rawWriteFailed - rawWriteFailedBefore
@@ -950,7 +959,7 @@ class ExpertDiscoveryService(
                     source.sourceName, batchNumber, enqueueFailedInPage)
             }
             if (!limitReached && !timeBudgetExpired && rawWriteFailedInPage == 0 &&
-                enqueueFailedInPage == 0 && dedupErrorsInPage == 0) {
+                enqueueFailedInPage == 0 && dedupErrorsInPage == 0 && !identityRepairFailedInPage) {
                 val nextCursor = batch.nextCursor
                 // 没有下一页即穷尽；完整消费的页在进入下一页前立即落盘。
                 persistCheckpoint(
@@ -1006,6 +1015,10 @@ class ExpertDiscoveryService(
             }
             if (dedupErrorsInPage > 0) {
                 stopReason = DiscoveryStopReason.DEDUP_INCOMPLETE
+                break
+            }
+            if (identityRepairFailedInPage) {
+                stopReason = DiscoveryStopReason.IDENTITY_REPAIR_INCOMPLETE
                 break
             }
             if (limitReached || circuitBreakerTripped || timeBudgetExpired) {
@@ -1360,6 +1373,8 @@ class ExpertDiscoveryService(
             // c9（I-3）：页内到点单独标记 —— 部分页按「进入该页」落盘，停止原因按 TIME_BUDGET 命名。
             var timeBudgetExpired = false
             var limitReason: String? = null
+            // 01（I-3）：本页是否有补证未完成（部分/失败）；有则本页不推进、不记成功。
+            var identityRepairFailedInPage = false
             for (record in records) {
                 if (progressStore.isCancelled("EXPERT_DISCOVERY")) break
                 if (recordsProcessed >= orcidLimit) {
@@ -1404,7 +1419,9 @@ class ExpertDiscoveryService(
                     }
                     if (duplicate != null) {
                         sourceStats.duplicates++
-                        recordIdentityDuplicate(duplicate, authorEmail, sourceStats, orcid.sourceName, execId)
+                        if (recordIdentityDuplicate(duplicate, authorEmail, sourceStats, orcid.sourceName, execId)) {
+                            identityRepairFailedInPage = true
+                        }
                         continue
                     }
 
@@ -1463,7 +1480,7 @@ class ExpertDiscoveryService(
                     orcid.sourceName, batchNumber, enqueueFailedInPage)
             }
             if (pageFullyConsumed && limitReason == null && !timeBudgetExpired && rawWriteFailedInPage == 0 &&
-                enqueueFailedInPage == 0 && dedupErrorsInPage == 0) {
+                enqueueFailedInPage == 0 && dedupErrorsInPage == 0 && !identityRepairFailedInPage) {
                 // I-2: 推进量由数据源按原始返回条数算好（不受邮箱过滤影响），这里只搬运它的游标。
                 cursor = page.nextCursor
                 persistCheckpoint(
@@ -1481,6 +1498,7 @@ class ExpertDiscoveryService(
                         rawWriteFailedInPage > 0 -> DiscoveryStopReason.RAW_WRITE_INCOMPLETE
                         enqueueFailedInPage > 0 -> DiscoveryStopReason.ENQUEUE_INCOMPLETE
                         dedupErrorsInPage > 0 -> DiscoveryStopReason.DEDUP_INCOMPLETE
+                        identityRepairFailedInPage -> DiscoveryStopReason.IDENTITY_REPAIR_INCOMPLETE
                         timeBudgetExpired -> DiscoveryStopReason.TIME_BUDGET
                         limitReason != null -> limitReason!!
                         else -> DiscoveryStopReason.PAGE_PARTIAL
@@ -1696,6 +1714,7 @@ class ExpertDiscoveryService(
         var rawWriteFailed = false
         var enqueueFailed = false
         var dedupFailed = false
+        var identityRepairFailed = false
         val enqueueFailedBefore = sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0
 
         for (authorEmail in authorEmails) {
@@ -1723,7 +1742,9 @@ class ExpertDiscoveryService(
             if (duplicate != null) {
                 sourceStats.duplicates++
                 duplicates++
-                recordIdentityDuplicate(duplicate, authorEmail, sourceStats, sourceName, executionId)
+                if (recordIdentityDuplicate(duplicate, authorEmail, sourceStats, sourceName, executionId)) {
+                    identityRepairFailed = true
+                }
                 continue
             }
 
@@ -1763,6 +1784,7 @@ class ExpertDiscoveryService(
             rawWriteFailed = rawWriteFailed,
             enqueueFailed = enqueueFailed,
             dedupFailed = dedupFailed,
+            identityRepairFailed = identityRepairFailed,
             failureReasons = snapshotRejectReasons(sourceStats)
         )
     }
@@ -2068,6 +2090,7 @@ class ExpertDiscoveryService(
             rawWriteFailed = result.rawWriteFailed,
             enqueueFailed = result.enqueueFailed,
             dedupFailed = result.dedupFailed,
+            identityRepairFailed = result.identityRepairFailed,
             failureReasons = result.failureReasons
         )
     }
@@ -2218,8 +2241,12 @@ class ExpertDiscoveryService(
         DiscoveryIdentity.verified(author.email, author.givenNames, author.familyNames, it, author.orcidId, author.openAlexAuthorId)
     }
 
+    /**
+     * 01（I-1/I-2/I-3）：重复命中的处置。返回 true 表示本轮必须保留可重试错误（部分/失败补证），
+     * 消费入口据此不推进当前页、不把 job 记成功。仍只计 duplicate、不计 indexed。
+     */
     private fun recordIdentityDuplicate(existing: DedupResult.Exists, incoming: AuthorEmail, stats: SourceStats,
-        sourceName: String, executionId: Long?) {
+        sourceName: String, executionId: Long?): Boolean {
         val source = existing.source
         val proof = source?.let { DiscoveryIdentity.read(it.path("identityVerification")) }
         val externalIds = source?.path("externalIds")?.let {
@@ -2238,9 +2265,31 @@ class ExpertDiscoveryService(
         // worker independently requires bound author IDs; no proof means no academic author query.
         if (mismatch || source == null || !DiscoveryIdentity.isDiscoverySource(source)) {
             stats.failureReasons.merge(if (mismatch) "IDENTITY_EXISTING_CONFLICT" else "IDENTITY_EXISTING_UNVERIFIED", 1) { a, b -> a + b }
-            return
+            return false
         }
-        existing.docId?.let { ensureEnrichmentJob(it, sourceName, executionId, stats) }
+        val docId = existing.docId
+        // 01（I-1）：只有带完整姓名与有效证据的合法 incoming 才进入补证；否则沿用原入队行为。
+        val repair = if (docId != null && proofFor(incoming) != null) {
+            identityRepairService?.repairDuplicateIdentity(docId, incoming)
+        } else {
+            null
+        }
+        if (repair != null && docId != null) {
+            stats.failureReasons.merge("IDENTITY_REPAIR_${repair.outcome.name}", 1) { a, b -> a + b }
+            return when (repair.outcome) {
+                // 补证成功或本就已有 proof：入队并沿用既有准入/重验接缝。
+                IdentityRepairOutcome.REPAIRED, IdentityRepairOutcome.ALREADY_VERIFIED -> {
+                    ensureEnrichmentJob(docId, sourceName, executionId, stats)
+                    false
+                }
+                // 缺姓名/冲突：独立原因、零写入，交给 02 定向恢复；不补建学术任务。
+                IdentityRepairOutcome.MISSING_NAME_NEEDS_RECOVERY, IdentityRepairOutcome.CONFLICT -> false
+                // 部分/整体失败：保留可重试错误，绝不推进为修复成功，也不先行入队。
+                IdentityRepairOutcome.PARTIAL, IdentityRepairOutcome.FAILED -> true
+            }
+        }
+        docId?.let { ensureEnrichmentJob(it, sourceName, executionId, stats) }
+        return false
     }
 
     private fun buildProfile(paper: PaperMetadata, authorEmail: AuthorEmail, emailVerifiedLevel: Int): ExpertProfile {
@@ -3567,12 +3616,18 @@ data class QueuedItemConsumption(
     val rawWriteFailed: Boolean = false,
     val enqueueFailed: Boolean = false,
     val dedupFailed: Boolean = false,
+    /**
+     * 01（I-3）：重复发现的同身份补证部分/整体失败 —— 仅内存返回值，不落库。
+     * 为 true 时 [succeeded] 必为 false，队列必须按可重试错误保留该 job。
+     */
+    val identityRepairFailed: Boolean = false,
     val failureReasons: Map<String, Int> = emptyMap(),
     /** 不可恢复的消费失败（未知版本 / 负载不可读）—— job 直接 FAILED 并给出原因。 */
     val unrecoverableReason: String? = null
 ) {
     val succeeded: Boolean
-        get() = unrecoverableReason == null && !rawWriteFailed && !enqueueFailed && !dedupFailed
+        get() = unrecoverableReason == null && !rawWriteFailed && !enqueueFailed && !dedupFailed &&
+            !identityRepairFailed
 }
 
 /**
@@ -3591,6 +3646,8 @@ data class ConsumeOutcomeResult(
     val rawWriteFailed: Boolean = false,
     val enqueueFailed: Boolean = false,
     val dedupFailed: Boolean = false,
+    /** 01（I-3）：本页/本次消费有补证部分/整体失败；仅内存返回值，不落库。 */
+    val identityRepairFailed: Boolean = false,
     val failureReasons: Map<String, Int> = emptyMap()
 )
 
@@ -3647,6 +3704,12 @@ object DiscoveryStopReason {
      * 保留进入该页的游标以便重放补建，但原因单独给：两者是不同的持久化缺口。
      */
     const val ENQUEUE_INCOMPLETE = "ENQUEUE_INCOMPLETE"
+
+    /**
+     * 01（I-3）：页内重复发现补证部分/整体失败。与 [RAW_WRITE_INCOMPLETE]/[ENQUEUE_INCOMPLETE]
+     * 一样保留进入该页的游标以便重放：补证未完成的页不推进、不记成功。
+     */
+    const val IDENTITY_REPAIR_INCOMPLETE = "IDENTITY_REPAIR_INCOMPLETE"
 
     /**
      * I-4: 分片触达供应商分页窗口（CORE offset 9000 / ORCID start 9999）。这是「该分片停止」，

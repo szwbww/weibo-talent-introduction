@@ -10,6 +10,7 @@ import com.weibo.talentintroduction.expert.domain.ExpertType
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
@@ -1404,5 +1405,105 @@ class ExpertIndexWriterServiceTest {
         assertEquals(ExpertIndexWriterService.DiscoveryCandidateProjection.APPLICATION_PRESENT, result)
         Mockito.verify(restTemplate, Mockito.never()).exchange(Mockito.contains("orcid_info_candidate"),
             eq(HttpMethod.PUT), any<HttpEntity<*>>(), eq(JsonNode::class.java))
+    }
+
+    @Test
+    fun `findDiscoveryHitsByEmail searches every layer with the full hit set`() {
+        val body = mapper.readTree(
+            """
+            {"hits":{"total":{"value":3},"hits":[
+              {"_index":"orcid_info","_id":"EMAIL-a@example.org","_source":{"email":"a@example.org","givenNames":"Jane"}},
+              {"_index":"orcid_info_candidate","_id":"EMAIL-a@example.org","_source":{"email":"a@example.org","givenNames":"Jane"}},
+              {"_index":"orcid_info_application","_id":"EMAIL-a@example.org","_source":{"email":"a@example.org","givenNames":"Jane"}}
+            ]}}
+            """.trimIndent()
+        )
+        val captured = ArgumentCaptor.forClass(HttpEntity::class.java)
+        Mockito.`when`(restTemplate.exchange(
+            Mockito.contains("/_search"), eq(HttpMethod.POST), any<HttpEntity<*>>(), eq(JsonNode::class.java)
+        )).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val hits = service.findDiscoveryHitsByEmail("A@Example.ORG")
+
+        assertEquals(
+            listOf(ExpertIndexLevel.RAW, ExpertIndexLevel.CANDIDATE, ExpertIndexLevel.APPLICATION),
+            hits.map { it.level }
+        )
+        assertTrue(hits.all { it.docId == "EMAIL-a@example.org" })
+        Mockito.verify(restTemplate).exchange(
+            eq("https://es.example.com:9200/orcid_info,orcid_info_candidate,orcid_info_application/_search?ignore_unavailable=true"),
+            eq(HttpMethod.POST), captured.capture(), eq(JsonNode::class.java)
+        )
+        @Suppress("UNCHECKED_CAST")
+        val query = captured.value.body as Map<String, Any?>
+        assertEquals(ExpertIndexWriterService.EMAIL_HIT_LIMIT, query["size"])
+        @Suppress("UNCHECKED_CAST")
+        val term = (query["query"] as Map<String, Any?>)["term"] as Map<String, Any?>
+        assertEquals("a@example.org", term["email"])
+    }
+
+    @Test
+    fun `findDiscoveryHitsByEmail never turns a query failure into no duplicate`() {
+        Mockito.doThrow(HttpClientErrorException(HttpStatus.INTERNAL_SERVER_ERROR))
+            .`when`(restTemplate).exchange(
+                Mockito.contains("/_search"), eq(HttpMethod.POST), any<HttpEntity<*>>(), eq(JsonNode::class.java)
+            )
+
+        assertThrows(HttpClientErrorException::class.java) { service.findDiscoveryHitsByEmail("a@example.org") }
+    }
+
+    @Test
+    fun `writeIdentityProofIfVersionMatches writes only the proof under the version guard`() {
+        val proof = com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.verified(
+            "a@example.org", "Jane", "Doe", "JATS_SHA256:" + "a".repeat(64), null, null
+        )
+        Mockito.`when`(restTemplate.exchange(
+            Mockito.contains("/_update/"), eq(HttpMethod.POST), any<HttpEntity<*>>(), eq(JsonNode::class.java)
+        )).thenReturn(ResponseEntity(mapper.readTree("""{"result":"updated"}"""), HttpStatus.OK))
+        val captured = ArgumentCaptor.forClass(HttpEntity::class.java)
+
+        val result = service.writeIdentityProofIfVersionMatches(
+            ExpertIndexLevel.CANDIDATE, "EMAIL-a@example.org", 4L, 2L, proof
+        )
+
+        assertEquals(IdentityProofWriteResult.UPDATED, result)
+        Mockito.verify(restTemplate).exchange(
+            eq("https://es.example.com:9200/orcid_info_candidate/_update/EMAIL-a@example.org?if_seq_no=4&if_primary_term=2"),
+            eq(HttpMethod.POST), captured.capture(), eq(JsonNode::class.java)
+        )
+        @Suppress("UNCHECKED_CAST")
+        val body = captured.value.body as Map<String, Any?>
+        assertEquals(setOf("doc"), body.keys, "运营/学术/身份字段一律不改，只有 doc")
+        @Suppress("UNCHECKED_CAST")
+        val doc = body["doc"] as Map<String, Any?>
+        assertEquals(setOf("identityVerification"), doc.keys)
+        assertEquals(proof, doc["identityVerification"])
+    }
+
+    @Test
+    fun `writeIdentityProofIfVersionMatches classifies conflict missing and failure`() {
+        val proof = com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.verified(
+            "a@example.org", "Jane", "Doe", "JATS_SHA256:" + "a".repeat(64), null, null
+        )
+        fun stub(status: HttpStatus) {
+            Mockito.doThrow(HttpClientErrorException(status)).`when`(restTemplate).exchange(
+                Mockito.contains("/_update/"), eq(HttpMethod.POST), any<HttpEntity<*>>(), eq(JsonNode::class.java)
+            )
+        }
+        stub(HttpStatus.CONFLICT)
+        assertEquals(
+            IdentityProofWriteResult.VERSION_CONFLICT,
+            service.writeIdentityProofIfVersionMatches(ExpertIndexLevel.RAW, "D", 1L, 1L, proof)
+        )
+        stub(HttpStatus.NOT_FOUND)
+        assertEquals(
+            IdentityProofWriteResult.MISSING,
+            service.writeIdentityProofIfVersionMatches(ExpertIndexLevel.RAW, "D", 1L, 1L, proof)
+        )
+        stub(HttpStatus.INTERNAL_SERVER_ERROR)
+        assertEquals(
+            IdentityProofWriteResult.FAILED,
+            service.writeIdentityProofIfVersionMatches(ExpertIndexLevel.RAW, "D", 1L, 1L, proof)
+        )
     }
 }

@@ -265,7 +265,8 @@ class ExpertDiscoveryServiceTest {
         executor: Executor = Executor { it.run() },
         openAlexProps: OpenAlexProperties = openAlexProperties,
         europePmcProps: EuropePmcProperties = EuropePmcProperties(),
-        timeSource: PolicyTimeSource = PolicyTimeSource.SYSTEM
+        timeSource: PolicyTimeSource = PolicyTimeSource.SYSTEM,
+        identityRepairService: DiscoveryIdentityRepairService? = null
     ): ExpertDiscoveryService {
         // 04：真实准入服务（判定走上面的策略桩；写入经 mock repository；投影经当前 indexWriterService）。
         discoveryReviewService = DiscoveryReviewService(
@@ -279,7 +280,8 @@ class ExpertDiscoveryServiceTest {
             emailValidationService, eligibilityService,
             indexWriterService, indexService, revalidationService, expertSearchService, expertClassificationService, restTemplate, esProperties,
             props, openAlexProps, objectMapper, progressStore, cursorRepository, enrichmentJobService,
-            enrichmentJobRepository, executor, europePmcProps, timeSource, discoveryReviewService
+            enrichmentJobRepository, executor, europePmcProps, timeSource, discoveryReviewService,
+            identityRepairService
         )
     }
 
@@ -1893,6 +1895,113 @@ class ExpertDiscoveryServiceTest {
         Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
         assertTrue(svc.enrichProfiles(noIdProfiles).values.all { it is ProfileEnrichmentOutcome.NoId })
         Mockito.verifyNoInteractions(openAlex)
+    }
+
+    // ── 01（I-1/I-3）：重复发现补证接缝与计数 ──────────────────────────────
+
+    private fun repairStub(outcome: IdentityRepairOutcome): DiscoveryIdentityRepairService {
+        val repair = Mockito.mock(DiscoveryIdentityRepairService::class.java)
+        Mockito.doReturn(IdentityRepairResult(outcome)).`when`(repair).repairDuplicateIdentity(
+            Mockito.anyString(),
+            Mockito.any(AuthorEmail::class.java)
+                ?: verifiedAuthorEmail("any@example.com", "A", "B", false, null, null)
+        )
+        return repair
+    }
+
+    private fun duplicateExtraction(): String = objectMapper.writeValueAsString(
+        EmailExtractionOutcome(
+            listOf(verifiedAuthorEmail("replay@example.com", "A", "B", false, null, null)),
+            "FULLTEXT", null, 0, null, null, DiscoveryIdentity.EXTRACTION_VERSION
+        )
+    )
+
+    private fun stubDuplicateValidation() =
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "replay@example.com", EmailValidationResult(3, true))
+
+    @Test
+    fun `a completed repair is counted and the enrichment job is still enqueued (I-1)`() {
+        val svc = createService(identityRepairService = repairStub(IdentityRepairOutcome.REPAIRED))
+        stubDedupHitFor("EMAIL-replay@example.com", "replay@example.com", "A", "B", withProof = false)
+        stubDuplicateValidation()
+
+        val result = svc.consumeQueuedItem(ownershipEnvelope(paper("replay", "Replay")), duplicateExtraction(), 7L)
+
+        assertTrue(result.succeeded)
+        assertFalse(result.identityRepairFailed)
+        assertEquals(1, result.duplicateExperts)
+        assertEquals(0, result.indexedExperts)
+        assertEquals(1, result.failureReasons["IDENTITY_REPAIR_REPAIRED"])
+        Mockito.verify(enrichmentJobService).enqueue(Mockito.anyString(), Mockito.anyString(), eqValue(7L))
+    }
+
+    @Test
+    fun `a partial repair keeps the consumption retryable and never enqueues (I-3)`() {
+        val svc = createService(identityRepairService = repairStub(IdentityRepairOutcome.PARTIAL))
+        stubDedupHitFor("EMAIL-replay@example.com", "replay@example.com", "A", "B", withProof = false)
+        stubDuplicateValidation()
+
+        val result = svc.consumeQueuedItem(ownershipEnvelope(paper("replay", "Replay")), duplicateExtraction(), null)
+
+        assertFalse(result.succeeded, "部分失败不得推进为修复成功")
+        assertTrue(result.identityRepairFailed)
+        assertEquals(1, result.duplicateExperts)
+        assertEquals(1, result.failureReasons["IDENTITY_REPAIR_PARTIAL"])
+        Mockito.verify(enrichmentJobService, Mockito.never()).enqueue(Mockito.anyString(), Mockito.anyString(), Mockito.any())
+    }
+
+    @Test
+    fun `a conflicting duplicate is a distinct reason with no enqueue and no retry (I-1)`() {
+        val svc = createService(identityRepairService = repairStub(IdentityRepairOutcome.CONFLICT))
+        stubDedupHitFor("EMAIL-replay@example.com", "replay@example.com", "A", "B", withProof = false)
+        stubDuplicateValidation()
+
+        val result = svc.consumeQueuedItem(ownershipEnvelope(paper("replay", "Replay")), duplicateExtraction(), null)
+
+        assertTrue(result.succeeded)
+        assertFalse(result.identityRepairFailed)
+        assertEquals(1, result.failureReasons["IDENTITY_REPAIR_CONFLICT"])
+        Mockito.verify(enrichmentJobService, Mockito.never()).enqueue(Mockito.anyString(), Mockito.anyString(), Mockito.any())
+    }
+
+    @Test
+    fun `a missing stored name is an independent reason and never auto-fills (I-1)`() {
+        val svc = createService(identityRepairService = repairStub(IdentityRepairOutcome.MISSING_NAME_NEEDS_RECOVERY))
+        stubDedupHitFor("EMAIL-replay@example.com", "replay@example.com", "A", "B", withProof = false)
+        stubDuplicateValidation()
+
+        val result = svc.consumeQueuedItem(ownershipEnvelope(paper("replay", "Replay")), duplicateExtraction(), null)
+
+        assertTrue(result.succeeded)
+        assertFalse(result.identityRepairFailed)
+        assertEquals(1, result.failureReasons["IDENTITY_REPAIR_MISSING_NAME_NEEDS_RECOVERY"])
+        Mockito.verify(enrichmentJobService, Mockito.never()).enqueue(Mockito.anyString(), Mockito.anyString(), Mockito.any())
+    }
+
+    @Test
+    fun `a synchronous page with an incomplete repair stops without advancing the page (I-3)`() {
+        val svc = createService(identityRepairService = repairStub(IdentityRepairOutcome.FAILED))
+        DiscoveryMockHelper.stubSearchPapers(
+            europePmc, PaperSearchResult(listOf(paper("PMC1", "Paper 1")), "C2", 4)
+        )
+        DiscoveryMockHelper.stubExtractAuthorEmails(
+            europePmc, listOf(verifiedAuthorEmail("dup@example.com", "A", "B", false, null, null))
+        )
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "dup@example.com", EmailValidationResult(3, true))
+        stubDedupHitFor("EMAIL-dup@example.com", "dup@example.com", "A", "B", withProof = false)
+
+        val result = svc.discover(PaperSearchCriteria(), "TEST")
+
+        val sourceStats = result.stats.bySource["EUROPE_PMC"]
+        assertEquals(1, sourceStats?.duplicates)
+        assertEquals(0, result.stats.indexed)
+        assertEquals(
+            DiscoveryStopReason.IDENTITY_REPAIR_INCOMPLETE,
+            sourceStats?.stopReason,
+            "补证未完成的页必须保留进入该页的游标"
+        )
+        assertTrue(sourceStats?.pendingWork == true)
+        assertEquals(1, result.stats.pendingSources)
     }
 
     @Test
@@ -6597,6 +6706,30 @@ class ExpertDiscoveryServiceTest {
             "email" to "replay@example.com", "givenNames" to "A", "familyNames" to "B",
             "identityVerification" to com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.verified(
                 "replay@example.com", "A", "B", "JATS_SHA256:" + "a".repeat(64), null, null))))
+        Mockito.doReturn(ResponseEntity.ok(body) as ResponseEntity<*>)
+            .`when`(restTemplate).exchange(
+                Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST), Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+    }
+
+    /** 01（I-1）：让去重命中带走可控的 `_id`/姓名/邮箱与（可选的）已有 proof。 */
+    private fun stubDedupHitFor(docId: String, email: String, given: String, family: String, withProof: Boolean) {
+        val source = mutableMapOf<String, Any?>(
+            "email" to email, "givenNames" to given, "familyNames" to family,
+            // 发现来源标记：既有发现档案都带 emailSource，重复处置才会进入补证分支。
+            "emailSource" to "PAPER_FULLTEXT"
+        )
+        if (withProof) {
+            source["identityVerification"] = com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
+                .verified(email, given, family, "JATS_SHA256:" + "a".repeat(64), null, null)
+        }
+        val body = objectMapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(mapOf(
+            "hits" to mapOf(
+                "total" to mapOf("value" to 1),
+                "hits" to listOf(mapOf("_id" to docId, "_source" to source))
+            )
+        ))
         Mockito.doReturn(ResponseEntity.ok(body) as ResponseEntity<*>)
             .`when`(restTemplate).exchange(
                 Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST), Mockito.any(),
