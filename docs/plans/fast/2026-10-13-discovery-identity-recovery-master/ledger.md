@@ -9,7 +9,7 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-13T21:55:30+0800
-- Current child: 01-duplicate
+- Current child: 02-replay
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
@@ -20,7 +20,7 @@
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | admission-relaxation | docs/plans/2026-10-13/discovery-admission-relaxation.md | commit:f7c7604c268aad69df6afd15efe0eed91866a237 | none | 2 | LIGHT_PASS_WITH_NOTES | b06a71898bc7850d2caeb244c9f8478f18a3b2ae | d8ca3ca28fc94c26ec796a04c6ee332c1e760533 | 0 | — | d8ca3ca28fc94c26ec796a04c6ee332c1e760533 | 2855a757a879016f10625162384e6d614981b7b1 | epoch1 10 文件（cf08a695）→ PLAN_CONFLICT 暂停 → A9 修订 → epoch2 补改（d8ca3ca，1 文件）；C1 149、C2 211、JS 1657×2 全绿；核实者 VerifyAdmission 四门禁 PASS，RECORD_ONLY O-1（用例名沿旧）、O-2（apply 冲突计入 taskFailure 系 KDoc 明示口径）；写者 ImplAdmission/ImplAdmission2 |
-| 01-duplicate | docs/plans/2026-10-13/discovery-identity-recovery-01-duplicate.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | admission-relaxation | — | PENDING | — | — | — | — | — | — | R1 同身份增量补证；仅补证接口代码，不执行旧名单；8 授权文件 |
+| 01-duplicate | docs/plans/2026-10-13/discovery-identity-recovery-01-duplicate.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | admission-relaxation | 1 | LIGHT_PASS_WITH_NOTES | d8ca3ca28fc94c26ec796a04c6ee332c1e760533 | bc294d2e991e58346ce456f4e5eeb7525a2b5771 | 0 | — | bc294d2e991e58346ce456f4e5eeb7525a2b5771 | 41f3b94430958866662b8556a1fc293b3f7fa998 | 8 授权文件（1039+/12-）；C1 294、C2 48、JS 1657×2 全绿；核实者 Verify01-2 四门禁 PASS，RECORD_ONLY O-1（C2 计数差异系前序子计划，非本边界）；写者 Impl01-2 |
 | 02-replay | docs/plans/2026-10-13/discovery-identity-recovery-02-replay.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | admission-relaxation,01-duplicate | — | PENDING | — | — | — | — | — | — | R2+R4 回源与留痕机制；不运行生产 apply，回源仅限 discovered；10 授权文件 |
 | 04-registry | docs/plans/2026-10-13/discovery-person-04-registry.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | none | — | PENDING | — | — | — | — | — | — | A2 新增；人物主档 V156；6 授权文件；开发顺序在 01/02 之后 |
 | 05-ingestion | docs/plans/2026-10-13/discovery-person-05-ingestion.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 01-duplicate,02-replay,04-registry | — | PENDING | — | — | — | — | — | — | A3 新增；补证接口基线=01/02 已验证产物；8 授权文件 |
