@@ -84,3 +84,40 @@
 ### 3. 工作树内的非我方改动
 
 `docs/plans/fast/2026-10-13-discovery-identity-recovery-master/ledger.md` 在执行期间被 controller 改为 `IMPLEMENTING`（非本子计划改动），已保持原样、**未提交**。
+
+## Epoch 2（A9 修订执行，2026-10-13T23:06+0800 批准）
+
+- Result: **READY_FOR_VERIFICATION**
+- 授权：A9 把授权文件 10 → 11，新增 `src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceBehaviorTest.kt`；本次仅改该文件 2 例断言，其余 20 例逐字未动。
+- 起始 HEAD：`7e60decc736c5eb22c55856a4b7bd37316677cdd`（`git status --porcelain` 为空，符合任务合同）。
+- Epoch 2 commit：**`d8ca3ca28fc94c26ec796a04c6ee332c1e760533`**（`feat(fast-p): implement admission-relaxation (epoch 2)`，仅 1 个文件、3 insertions / 6 deletions；`docs/plans/fast/**` 未提交）。
+- JDK：`JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home`（每条 `mvn` 命令均带该前缀）。
+
+### 精确用例改动（仅 2 例）
+
+1. `discovery revalidation admits only after current RAW has target research evidence`：
+   - 断言 `assertEquals(PromotionOutcome.Rejected(listOf("RND_SCOPE_UNCONFIRMED")), first)` → `assertEquals(PromotionOutcome.Promoted, first)`（I-1：软原因不再阻断，候选保留）。
+   - 第一处 `verify(...reconcileDiscoveryCandidate(match("DOC"), match(unknown), anyClassification(), match(listOf("RND_SCOPE_UNCONFIRMED")), match(false)))` 的 reasons 实参 → `match(emptyList())`（空 reasons；`reconcileDiscoveryCandidate` 内部据此落 `filterResult=PASSED`）。
+   - 第二处 `verify(... match(supported) ... match(emptyList()) ...)`、`assertEquals(Promoted, second)`、其余成员与 stub 不变。
+   - 测试函数名/其余行保持原样（A9 措辞限定为“断言”，故未改名；该名称现已不准确——见 §Epoch2 观察）。
+2. `application discovery still updates RAW qualification without touching candidate`：
+   - `reconcileDiscoveryCandidate` stub 的 reasons 实参 `match(listOf("RND_SCOPE_UNCONFIRMED"))` → `match(emptyList())`（其余 4 个实参 `match("APP"), match(raw), anyClassification(), match(true)` 不变），使 stub 恢复命中、走通既有 `AlreadyPresent` 流程（`preserveApplication=true`）。
+   - `assertEquals(PromotionOutcome.AlreadyPresent, ...)`、`verify(..., never()).readDiscoveryDocument(CANDIDATE, "APP")` 等断言不变。
+
+### Required commands（epoch 2 版，全新执行）
+
+| # | 命令 | 结果 | 退出码 | 计数 |
+|---|---|---|---|---|
+| C1 | `mvn -Dtest=DiscoveryAdmissionPolicyTest,DiscoveryReviewServiceTest,DiscoveryReviewAllPagesTest,DiscoveryReviewControllerTest,ExpertRevalidationServiceTest,ExpertRevalidationServiceBehaviorTest test` | PASS | **0** | **149 tests / 0F / 0E / 0 skipped**（逐类 surefire：Policy 22、ReviewService 35、AllPages 18、Controller 17、Revalidation 35、**Behavior 22**） |
+| C2 | `mvn -Dtest=BatchRecipientSelectionServiceTest,ManualInitialOutreachServiceTest,InitialOutreachServiceTest test` | PASS | **0** | **211 tests / 0F / 0E / 0 skipped**（8 + 183 + 20，与 epoch 1 基线逐类一致） |
+
+两次 `mvn test` 随附的 JS 门禁（exec-maven-plugin `node --test src/test/js/*.test.js` + `node --check app.js` / `node --check task-modal-runtime.js`）：
+
+- C1：`tests 1657 / suites 316 / pass 1657 / fail 0 / skipped 0`
+- C2：`tests 1657 / suites 316 / pass 1657 / fail 0 / skipped 0`
+
+（计数取自本次运行后 surefire 报告，C1 六类报告 mtime 均为 23:11、C2 三类均为 23:13，与命令完成时刻一致。）
+
+### Epoch2 观察（不构成阻塞）
+
+- 用例 1 的名称 “admits only after current RAW has target research evidence” 在 I-1 语义下已不反映实际行为（缺研究方向事实也直接 `Promoted`）；按 A9「仅改断言」的字面授权保留原名，建议后续在允许范围内更名为「保留候选/软原因仅提示」类表述，但不改行为。
