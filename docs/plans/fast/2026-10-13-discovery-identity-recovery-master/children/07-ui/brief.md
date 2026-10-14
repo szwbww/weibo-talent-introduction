@@ -43,3 +43,11 @@
 - 本地提交仅含 3 个授权文件：`feat(fast-p): implement 07-ui`。
 - 返回仅限：`READY_FOR_VERIFICATION | BLOCKED | PLAN_CONFLICT`、commit SHA、命令摘要、报告路径。
 - 不审查后续子计划、不修复无关行为、不 push/merge/改写历史；遇到计划未覆盖的行为决策或需要新文件：返回 BLOCKED/PLAN_CONFLICT。
+
+## Epoch 2 修订（A13 完成，2026-10-14）
+
+- 依赖更新：06-query epoch2（0755833）已让 ES 列表每行人物投影携带 `memberCount`（响应字段 `memberCount`；非 discovered/旧形状默认 1；DB 分组分支与人物详情接口不变）。
+- 本 epoch 要求：**ES 列表分支消费该字段** —— 单邮箱沿用原文本；多邮箱 `主邮箱地址 · 共 N 个邮箱`（与 S-1 同规则、两列表分支一致）。其余 epoch1 实现（两详情共用邮箱卡片、generation 防护、点击历史、`escapeHtml`、缓存键 `20261014-person-emails`）保持。
+- 授权文件不变（3 个）；Required commands 不变（C1 `node --check`、C2 单文件、C3 全量）。
+- 测试补充：ES 列表响应 `memberCount>1` 渲染摘要；`memberCount==1`/缺失回落原文案；既有用例保持通过。
+- 报告：把 epoch 2 结果追加到 execution.md 的 `## Epoch 2` 小节（epoch 1 内容不改写）。
