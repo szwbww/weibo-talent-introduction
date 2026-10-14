@@ -4,8 +4,8 @@
 - 全局约束（主计划）: `docs/plans/2026-10-14/batch-filter-main.md`
 - Worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-14-batch-filter-main`
 - Branch: `fast/2026-10-14-batch-filter-main`
-- Base SHA: `__CHILD1_CODE_HEAD__`（= 01-region 的终止 Code head，由控制器在派发前替换）
-- 依赖: 01-region（已 LIGHT_PASS；其地区语义是本阶段母集与 matcher 的输入）
+- Base SHA: `bba581fe011730b52ad05d35e6248c9599372c2d`（01-region 的终止 Code head）
+- 依赖: 01-region（已 LIGHT_PASS_WITH_NOTES，仅 RECORD_ONLY 观察项；其地区语义是本阶段母集与 matcher 的输入）
 - 实施提交信息（必须逐字）: `feat(fast-p): implement 02-diagnostics`
 
 ## 交付范围
