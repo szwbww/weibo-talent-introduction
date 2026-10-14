@@ -229,17 +229,15 @@ data class RecipientScope(
     fun matchesEsTarget(profile: ExpertProfile): Boolean = matchesExpert(profile)
 
     /**
-     * I-2: 地区判定与 ES `regionsFilter` 同口径。发现/待确认档案按**已证实机构所在地**
-     * `country` 判（空/未映射国家不进任何地区，含 `Other`）；非发现档案按
-     * country OR nationality 判（与 ES 粗筛一致，修正重试只判 country 的不一致）。
+     * I-1/I-2: 地区判定与 ES `regionsFilter` 同口径。发现/待确认档案按**已证实机构所在地**
+     * `country` 判（null/空白/未映射值统一归入 `REGION_OTHER` 桶，只有选中 `Other` 时才通过）；
+     * 非发现档案按 country OR nationality 判（与 ES 粗筛一致，修正重试只判 country 的不一致）。
      */
     private fun matchesRegion(profile: ExpertProfile): Boolean {
         if (isDiscoveryOutreach(profile)) {
-            val country = profile.country
-            if (country.isNullOrBlank()) return false
-            val region = CountryContinentMapping.toRegion(country)
-            if (region == CountryContinentMapping.REGION_OTHER) return false
-            return region in regions
+            // I-1: 已识别国家按真实大区判定 —— 选中 `Other` 不会放行 Japan 等明确国家；
+            // 未知国家（null/空白/`Other`/未识别）等于 `REGION_OTHER`，选中 `Other` 即通过。
+            return CountryContinentMapping.toRegion(profile.country) in regions
         }
         return regions.any { region ->
             regionOf(profile.country) == region || regionOf(profile.nationality) == region

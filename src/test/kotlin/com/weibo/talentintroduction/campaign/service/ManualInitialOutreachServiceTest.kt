@@ -569,13 +569,79 @@ class ManualInitialOutreachServiceTest {
         val unrestricted = service.countBySnapshot(runScheduledSnapshot())
         assertEquals(4, unrestricted.pending)
 
-        // Other：发现档案不进任何地区（空/未映射国家），非发现 legacyBlank 按 country-only 语义也不在 Other（nationality=Japan）。
+        // Other：新发现专家按国家判定 —— null/未识别国家都落在 Other 桶（I-1 修复后计入 C001/C002）；
+        // Japan 是明确国家，选中 Other 不放行；非发现 legacyBlank 仍按 country OR nationality 判定
+        // （country=null、nationality=Japan → 不属于 Other）。
         val other = service.countBySnapshot(runScheduledSnapshot().copy(regions = listOf("Other")))
-        assertEquals(0, other.pending)
+        assertEquals(2, other.pending)
 
         // Asia (Japan & Korea)：发现按 country=Japan 只进 C003；非发现 C004 按 nationality=Japan 进入。
         val asia = service.countBySnapshot(runScheduledSnapshot().copy(regions = listOf("Asia (Japan & Korea)")))
         assertEquals(2, asia.pending)
+    }
+
+    @Test
+    fun `ES region sieve widens with the discovered missing-country branch only when Other is selected (I-2)`() {
+        val otherScope = RecipientScope(
+            mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+            tags = emptyList(), regions = listOf("Other"),
+            emailDomains = emptyList(), discipline = null
+        )
+        // I-2：`country` 字段不存在（ES 里 null 国家没有该字段）的 discovered 只由这一分支命中。
+        val discoveredMissingCountry = mapOf(
+            "bool" to mapOf(
+                "must" to listOf(mapOf("term" to mapOf("tags" to "discovered"))),
+                "must_not" to listOf(mapOf("exists" to mapOf("field" to "country")))
+            )
+        )
+
+        val otherFilters = invokeBuildEsFiltersForLevel(service, otherScope, "CANDIDATE")
+        val wrapper = otherFilters.single { filter ->
+            val should = (filter["bool"] as? Map<*, *>)?.get("should") as? List<*>
+            should?.contains(discoveredMissingCountry) == true
+        }
+        val bool = wrapper["bool"] as Map<*, *>
+        assertEquals(1, bool["minimum_should_match"])
+        assertEquals(
+            listOf(ExpertSearchService.regionsFilter(listOf("Other")), discoveredMissingCountry),
+            bool["should"]
+        )
+
+        // 非 Other：既有地区查询逐字不变（不被包裹，也不出现 discovered 补充分支）。
+        val europeScope = otherScope.copy(regions = listOf("Europe"))
+        val europeFilters = invokeBuildEsFiltersForLevel(service, europeScope, "CANDIDATE")
+        assertTrue(europeFilters.contains(ExpertSearchService.regionsFilter(listOf("Europe"))))
+        assertFalse(europeFilters.toString().contains("discovered"))
+    }
+
+    @Test
+    fun `discovered experts without a country pass the Other sieve in preview and run (I-1 I-2 X1)`() {
+        val acc = account("chen")
+        val blankCountry = signedDiscoveryExpert("U001", "unknown-1@example.org", country = null)
+        val unmappedCountry = signedDiscoveryExpert("U002", "unknown-2@example.org", country = "Atlantis")
+        val japan = signedDiscoveryExpert("U003", "japan@example.org", country = "Japan")
+        stubIntroSendPipeline(acc, listOf(blankCountry, unmappedCountry, japan))
+        stubAdmissions(
+            "U001" to "AUTO_PASSED",
+            "U002" to "AUTO_PASSED",
+            "U003" to "AUTO_PASSED"
+        )
+
+        val snapshot = runScheduledSnapshot().copy(regions = listOf("Other"))
+        val preview = service.countBySnapshot(snapshot)
+        assertEquals(2, preview.pending, "null/未识别国家的 discovered 必须进 Other")
+
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = true)
+        assertEquals(preview.totalSendable, result.total, "预估与执行必须同口径")
+        assertEquals(2, result.sent, "明确国家 Japan 不因选中 Other 而放行")
+
+        // I-3：地区判定只读 —— 发送使用的仍是档案里的原始 country 值。
+        val selected = ArgumentCaptor.forClass(ExpertProfile::class.java)
+        Mockito.verify(introductionMailComposer, Mockito.times(2)).compose(
+            eqValue("chen"), captureValue(selected, blankCountry), Mockito.isNull(), anyBooleanValue()
+        )
+        assertEquals(listOf(null, "Atlantis"), selected.allValues.map { it.country })
+        assertEquals(listOf("U001", "U002"), selected.allValues.map { it.orcidId })
     }
 
     @Test

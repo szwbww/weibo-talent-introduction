@@ -17,6 +17,7 @@ import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationSe
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepository
 import com.weibo.talentintroduction.config.ManualOutreachProperties
+import com.weibo.talentintroduction.expert.domain.CountryContinentMapping
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.ExpertIdNormalizer
@@ -84,6 +85,12 @@ private const val SUMMARY_REASON_LIMIT = 200
 
 /** A3 (I-3)：预估响应里逐人排除明细的条数上限（计数不受限，仅明细截断，避免响应过大）。 */
 private const val PREVIEW_EXCLUDED_DETAIL_LIMIT = 500
+
+/**
+ * I-2：新发现专家在 ES 文档里的标签值（`ExpertDiscoveryService` 写入侧同值）。
+ * 地区粗筛的 `Other` 补充分支只看这个标签，绝不把非发现档案卷进 `Other`。
+ */
+private const val DISCOVERED_TAG = "discovered"
 
 @Service
 class ManualInitialOutreachService(
@@ -2015,7 +2022,9 @@ class ManualInitialOutreachService(
         if (scope.tags.isNotEmpty()) {
             filters.add(mapOf("terms" to mapOf("tags" to scope.tags)))
         }
-        ExpertSearchService.regionsFilter(scope.regions)?.let { filters.add(it) }
+        ExpertSearchService.regionsFilter(scope.regions)?.let { regionFilter ->
+            filters.add(withDiscoveryUnmappedCountryBranch(scope.regions, regionFilter))
+        }
         // I-2: 方向三态 —— ABSENT 是既有 PRESENT 存在性 filter 的 bool.must_not；
         // ANY 不追加任何项（旧任务人群不变）。与模板门禁字段/研发类型平铺为 AND（I-3）。
         when (scope.researchDirectionFilter) {
@@ -2044,6 +2053,36 @@ class ManualInitialOutreachService(
             )
         }
         return filters
+    }
+
+    /**
+     * I-2：`Other` 被选中时，既有地区粗筛（[ExpertSearchService.regionsFilter]）与
+     * 「`tags=discovered` 且 `country` 字段不存在」取 OR（`minimum_should_match=1`）。
+     *
+     * `country` 为 null 时 ES 文档没有该字段，既有 `Other` 查询的 `exists country` 前置永远不命中，
+     * 仅修内存 matcher 会让这批新发现专家在粗筛阶段就被丢弃。空白或未识别**非空**值不走此分支
+     * （`exists` 为真，由既有 `Other` 查询覆盖）。分支只做并集扩展，不缩小任何既有条件，
+     * 因此不会提前丢掉非地区原因的目标；最终仍由同一个 [RecipientScope.matchesRegion] 判定。
+     */
+    private fun withDiscoveryUnmappedCountryBranch(
+        regions: List<String>,
+        regionFilter: Map<String, Any>
+    ): Map<String, Any> {
+        if (CountryContinentMapping.REGION_OTHER !in regions) return regionFilter
+        return mapOf(
+            "bool" to mapOf(
+                "should" to listOf(
+                    regionFilter,
+                    mapOf(
+                        "bool" to mapOf(
+                            "must" to listOf(mapOf("term" to mapOf("tags" to DISCOVERED_TAG))),
+                            "must_not" to listOf(mapOf("exists" to mapOf("field" to "country")))
+                        )
+                    )
+                ),
+                "minimum_should_match" to 1
+            )
+        )
     }
 
     private fun BatchSendConfig.toSnapshot(oneRoundOnly: Boolean = false): BatchExecutionSnapshot =

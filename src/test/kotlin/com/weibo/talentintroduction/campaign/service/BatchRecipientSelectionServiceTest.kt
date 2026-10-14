@@ -48,14 +48,17 @@ class BatchRecipientSelectionServiceTest {
         discovery: Boolean = true,
         type: ExpertType? = ExpertType.PRODUCTION_RND,
         tags: List<String>? = null,
-        operatorStatus: String? = null
+        operatorStatus: String? = null,
+        country: String? = "China",
+        nationality: String? = null
     ): ExpertProfile = ExpertProfile(
         orcidId = docId,
         esDocId = docId,
         email = email,
         givenNames = "Given",
         familyNames = "Family",
-        country = "China",
+        country = country,
+        nationality = nationality,
         keyword = "kw",
         employment = "Employment",
         tags = tags,
@@ -187,6 +190,105 @@ class BatchRecipientSelectionServiceTest {
         assertEquals(1, selection.included.size)
         assertEquals(RecipientAdmissionState.NOT_DISCOVERY, selection.included.single().admissionState)
         Mockito.verify(review, Mockito.never()).resolveAdmissionBatch(Mockito.anyList())
+    }
+
+    @Test
+    fun `region Other admits every unknown country of a discovered expert (I-1)`() {
+        // 未知国家 = null / 空白 / 字面 Other / 未识别值；四者都是同一个 REGION_OTHER 桶。
+        val docIds = listOf("NULL", "BLANK", "SPACE", "LITERAL", "UNMAPPED")
+        stubAdmissions(*docIds.map { it to DiscoveryReviewDecision.AUTO_PASSED.name }.toTypedArray())
+        val unknown = listOf(
+            expert("NULL", country = null),
+            expert("BLANK", country = ""),
+            expert("SPACE", country = "   "),
+            expert("LITERAL", country = "Other"),
+            expert("UNMAPPED", country = "Atlantis")
+        )
+
+        val selection = service.select(scope(regions = listOf("Other")), unknown)
+
+        assertEquals(docIds.toSet(), selection.includedDocIds)
+        assertTrue(selection.excluded.isEmpty())
+        assertFalse(selection.reasonHits.containsKey(RecipientFilterKeys.REGION))
+    }
+
+    @Test
+    fun `region Other never admits a recognised country (I-1)`() {
+        stubAdmissions(
+            "K1" to DiscoveryReviewDecision.AUTO_PASSED.name,
+            "K2" to DiscoveryReviewDecision.AUTO_PASSED.name
+        )
+
+        val selection = service.select(
+            scope(regions = listOf("Other")),
+            listOf(expert("K1", country = "Japan"), expert("K2", country = "China"))
+        )
+
+        assertTrue(selection.included.isEmpty())
+        assertEquals(2, selection.reasonHits[RecipientFilterKeys.REGION])
+        assertEquals(setOf("K1", "K2"), selection.excluded.map { it.docId }.toSet())
+        assertTrue(selection.excluded.all { it.filterKeys == listOf(RecipientFilterKeys.REGION) })
+    }
+
+    @Test
+    fun `empty regions stay unrestricted for every discovered country value (I-1)`() {
+        val values = listOf(null, "", "   ", "Other", "Atlantis", "Japan", "China")
+        val docIds = values.indices.map { "R$it" }
+        stubAdmissions(*docIds.map { it to DiscoveryReviewDecision.AUTO_PASSED.name }.toTypedArray())
+
+        val selection = service.select(
+            scope(regions = emptyList()),
+            values.mapIndexed { index, value -> expert(docIds[index], country = value) }
+        )
+
+        assertEquals(docIds.toSet(), selection.includedDocIds)
+        assertFalse(selection.reasonHits.containsKey(RecipientFilterKeys.REGION))
+    }
+
+    @Test
+    fun `recognised region judges a discovered expert by country alone (I-1)`() {
+        // 已知大区：Japan 按国家通过；未知国家与其它明确国家都不通过。
+        val docIds = listOf("J", "NULL", "BLANK", "UNMAPPED", "FR")
+        stubAdmissions(*docIds.map { it to DiscoveryReviewDecision.AUTO_PASSED.name }.toTypedArray())
+
+        val selection = service.select(
+            scope(regions = listOf("Asia (Japan & Korea)")),
+            listOf(
+                expert("J", country = "Japan"),
+                expert("NULL", country = null),
+                expert("BLANK", country = " "),
+                expert("UNMAPPED", country = "Atlantis"),
+                expert("FR", country = "France")
+            )
+        )
+
+        assertEquals(setOf("J"), selection.includedDocIds)
+        assertEquals(4, selection.reasonHits[RecipientFilterKeys.REGION])
+    }
+
+    @Test
+    fun `non-discovery region rule is unchanged by the Other bucket (I-1 regression)`() {
+        stubAdmissions(
+            "N1" to DiscoveryReviewDecision.AUTO_PASSED.name,
+            "N2" to DiscoveryReviewDecision.AUTO_PASSED.name
+        )
+        val legacyJapan = expert("N1", discovery = false, country = null, nationality = "Japan")
+        val legacyGermany = expert("N2", discovery = false, country = "Germany")
+
+        // 非发现档案按 country OR nationality：nationality=Japan 不属于 Other，Germany 也不属于 Other。
+        val other = service.select(scope(regions = listOf("Other")), listOf(legacyJapan, legacyGermany))
+        assertTrue(other.included.isEmpty())
+        assertEquals(2, other.reasonHits[RecipientFilterKeys.REGION])
+
+        // 既有明确地区语义逐字保留：nationality=Japan 通过日本韩国大区，Germany 通过欧洲。
+        assertEquals(
+            setOf("N1"),
+            service.select(scope(regions = listOf("Asia (Japan & Korea)")), listOf(legacyJapan)).includedDocIds
+        )
+        assertEquals(
+            setOf("N2"),
+            service.select(scope(regions = listOf("Europe")), listOf(legacyGermany)).includedDocIds
+        )
     }
 
     @Test
