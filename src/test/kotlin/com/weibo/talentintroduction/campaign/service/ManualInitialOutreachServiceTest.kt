@@ -5161,6 +5161,47 @@ class ManualInitialOutreachServiceTest {
     }
 
     @Test
+    fun `post-cap candidates are decided individually instead of being dropped from a partial baseline (repair V-2 epoch 2)`() {
+        val acc = account("chen")
+        // 母集扫描上限 20,000：前 20,000 人被地区条件排除（母集覆盖），随后两人位于 cap 之后。
+        val preCap = (1..20_000).map { expert("S%05d".format(it), "s$it@example.org").copy(country = "Japan") }
+        val postCapEligible = expert("POST20001", "post-eligible@example.org").copy(country = "Germany")
+        val postCapProtected = expert("POST20002", "post-protected@example.org").copy(country = "Germany")
+        stubIntroSendPipeline(acc, preCap + listOf(postCapEligible, postCapProtected))
+        val suppressionLookups = mutableListOf<String?>()
+        Mockito.`when`(batchRecipientReadRepository.findSuppressedEmails(Mockito.anyCollection()))
+            .thenAnswer { invocation ->
+                val emails = invocation.getArgument<Collection<String?>>(0)
+                suppressionLookups.addAll(emails)
+                if ("post-protected@example.org" in emails) setOf("post-protected@example.org") else emptySet()
+            }
+
+        val snapshot = introSnapshot(roundSize = 10, roundsPerRun = 1).copy(regions = listOf("Europe"))
+
+        // 有界母集在 cap 处截断：partial 必须显式，绝不冒充完整总数。
+        val preview = service.countBySnapshot(snapshot)
+        assertTrue(preview.partial, "超过母集上限的统计必须显式标注 partial")
+        assertEquals(20_000, preview.baseline, "母集只覆盖 cap 之前的成员")
+
+        // 执行：cap 之后（不在 partial 母集里）的合格目标必须被单独判定并进入执行，
+        // cap 之后的确定性排除目标必须被单独判定后排除 —— 两者都不因「不在母集里」被静默丢弃。
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(1, result.sent)
+        assertEquals(0, result.failed)
+        assertEquals(0, result.skipped)
+        val saved = ArgumentCaptor.forClass(ExpertContact::class.java)
+        Mockito.verify(expertContactRepository, Mockito.times(1)).save(saved.capture())
+        assertEquals(listOf("POST20001"), saved.allValues.map { it.orcidId })
+        assertTrue(
+            suppressionLookups.contains("post-protected@example.org"),
+            "cap 之后的排除目标必须拿到自己的确定性结论，而不是仅因不在 partial 母集里被丢弃"
+        )
+        Mockito.verify(mailDeliveryService, Mockito.times(1))
+            .send(anyValue(acc), anyValue(ComposedMail("", "", "")))
+    }
+
+    @Test
     fun `recipient diagnostics rejects an oversized docId request (I-5)`() {
         val ids = (1..201).map { "D$it" }
 
