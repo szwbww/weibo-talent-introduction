@@ -155,6 +155,14 @@ class BatchRecipientSelectionService(
     fun selectAdmission(profiles: List<ExpertProfile>): RecipientSelection =
         select(admissionOnlyScope(), profiles)
 
+    /**
+     * I-3（08 人物硬保护）：读取**整组**持久准入，不施加本次显式筛选/层限制。
+     * 不满足当前筛选（如邮箱域/研发类型）的成员的人工 HOLD/身份冲突同样必须可见 ——
+     * 硬保护只按准入状态判定，绝不因本页/本次条件而隐藏保护。
+     */
+    fun selectProtection(profiles: List<ExpertProfile>): RecipientSelection =
+        select(admissionOnlyScope(), profiles)
+
     private fun resolveAdmissions(
         profiles: List<ExpertProfile>
     ): Map<String, com.weibo.talentintroduction.discovery.service.DiscoveryReviewResolvedAdmission> {

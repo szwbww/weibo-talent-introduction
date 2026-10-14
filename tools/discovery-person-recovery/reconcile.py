@@ -34,6 +34,12 @@ RULE_VERSION = 1
 MERGEABLE = {"MERGE_READY", "KEEP_SINGLE"}
 APPLY_TERMINAL = {"APPLIED", "UNCHANGED", "CHANGED_OR_FAILED", "SKIPPED"}
 
+UNAUTHORIZED_HINT = (
+    "UNAUTHORIZED：需要现有登录会话（--cookie 或 TALENT_SESSION_COOKIE）；"
+    "访问控制未放宽，也不会把凭证写入审计/日志"
+)
+SESSION_ENV = "TALENT_SESSION_COOKIE"
+
 MANIFEST_FILE = "manifest.json"
 GROUPS_FILE = "groups.jsonl"
 PREVIEW_FILE = "preview.jsonl"
@@ -179,12 +185,21 @@ def _now() -> str:
 
 
 class ApiClient:
-    """最小 HTTP 客户端；注入 transport 便于测试。"""
+    """最小 HTTP 客户端；注入 transport 便于测试。
 
-    def __init__(self, base_url: str, transport=None, timeout: float = 60.0):
+    会话凭证只作为 `Cookie` 请求头发送（沿用现有访问控制），**绝不**写入审计、日志、文件名或
+    报告；缺失/过期时由调用方给出可操作错误。
+    """
+
+    def __init__(self, base_url: str, transport=None, timeout: float = 60.0, session_cookie: str = None):
         self.base_url = base_url.rstrip("/")
         self._transport = transport
         self._timeout = timeout
+        self._session_cookie = (session_cookie or "").strip() or None
+
+    @property
+    def authenticated(self) -> bool:
+        return bool(self._session_cookie)
 
     def preview(self, frozen_ids: list, groups: list):
         return self._post(PREVIEW_ENDPOINT, {
@@ -193,12 +208,17 @@ class ApiClient:
             "candidateGroups": groups,
         })
 
-    def apply(self, preview_digest: str, groups: list):
+    def apply(self, preview_digest: str, frozen_ids: list, groups: list):
         return self._post(APPLY_ENDPOINT, {
             "ruleVersion": RULE_VERSION,
             "previewDigest": preview_digest,
+            "frozenDocIds": frozen_ids,
             "groups": [
-                {"memberDocIds": group["memberDocIds"], "expectedFingerprint": group["expectedFingerprint"]}
+                {
+                    "memberDocIds": group["memberDocIds"],
+                    "expectedFingerprint": group["expectedFingerprint"],
+                    "expectedRelationFingerprint": group.get("expectedRelationFingerprint"),
+                }
                 for group in groups
             ],
         })
@@ -213,10 +233,10 @@ class ApiClient:
 
     def _http_post(self, url: str, payload):
         data = json.dumps(payload).encode("utf-8")
-        request = urllib.request.Request(
-            url, data=data, method="POST",
-            headers={"Content-Type": "application/json"},
-        )
+        headers = {"Content-Type": "application/json"}
+        if self._session_cookie:
+            headers["Cookie"] = self._session_cookie
+        request = urllib.request.Request(url, data=data, method="POST", headers=headers)
         try:
             with urllib.request.urlopen(request, timeout=self._timeout) as response:
                 return response.status, json.loads(response.read().decode("utf-8") or "{}")
@@ -239,6 +259,7 @@ def preview_record(group: dict, observed_at: str = None) -> dict:
         "disposition": group.get("disposition"),
         "reason": group.get("reason"),
         "evidenceDigest": group.get("evidenceDigest"),
+        "relationDigest": group.get("relationDigest"),
         "canMerge": group.get("canMerge"),
         "canSend": group.get("canSend"),
         "memberCount": len(group.get("memberDocIds", [])),
@@ -247,7 +268,7 @@ def preview_record(group: dict, observed_at: str = None) -> dict:
 
 
 def member_records(group: dict) -> list:
-    """逐成员明细（含邮箱）：只写 0600 明细文件，绝不进入主报告。"""
+    """逐成员明细（含邮箱与**全部原始复核字段**）：只写 0600 明细文件，绝不进入主报告。"""
     records = []
     for member in group.get("members", []):
         records.append({
@@ -257,6 +278,19 @@ def member_records(group: dict) -> list:
             "admissionReason": member.get("admissionReason"),
             "sendBlockReason": member.get("sendBlockReason"),
             "historyReference": member.get("historyReference"),
+            "manualDecision": member.get("manualDecision"),
+            "authorKeys": member.get("authorKeys", []),
+            "layers": member.get("layers", []),
+            "layerVersions": member.get("layerVersions", {}),
+            "evidenceSource": member.get("evidenceSource"),
+            "evidenceHash": member.get("evidenceHash"),
+            "evidenceVersion": member.get("evidenceVersion"),
+            "sourceFingerprint": member.get("sourceFingerprint"),
+            "seqNo": member.get("seqNo"),
+            "primaryTerm": member.get("primaryTerm"),
+            "liveDiscovered": member.get("liveDiscovered"),
+            "relationPersonId": member.get("relationPersonId"),
+            "relationRevision": member.get("relationRevision"),
         })
     return records
 
@@ -301,6 +335,8 @@ def run_preview(client, frozen_ids: list, groups: list, out_dir: str, resume: bo
         "observedAt": _now(),
     })
     status, body = client.preview(frozen_ids, groups)
+    if status == 401:
+        return {"status": 401, "error": UNAUTHORIZED_HINT}
     if status != 200:
         return {"status": status, "error": body}
 
@@ -329,6 +365,8 @@ def run_preview(client, frozen_ids: list, groups: list, out_dir: str, resume: bo
     state.update({
         "previewDigest": body.get("previewDigest"),
         "groupKeys": [group.get("groupKey") for group in body.get("groups", [])],
+        # 完整冻结清单身份：apply（含 50 组试点/断点续跑）必须原样回传，本次选择子集不参与摘要。
+        "frozenDocIds": list(frozen_ids),
         "updatedAt": _now(),
     })
     atomic_write_json(os.path.join(out_dir, STATE_FILE), state)
@@ -339,10 +377,13 @@ def run_apply(client, out_dir: str, confirm: bool, preview_digest: str = None, l
     ensure_private_dir(out_dir)
     state = load_state(out_dir)
     digest = preview_digest or state.get("previewDigest")
+    frozen_ids = list(state.get("frozenDocIds") or [])
     if not confirm:
         return {"status": 0, "error": "REFUSED：apply 需要显式 --confirm（全量预览不是执行授权）"}
     if not digest:
         return {"status": 0, "error": "REFUSED：缺少预览摘要（先 preview 或传 --preview-digest）"}
+    if not frozen_ids:
+        return {"status": 0, "error": "REFUSED：缺少完整冻结清单（先 preview 以固定清单身份）"}
 
     previews = read_jsonl(os.path.join(out_dir, PREVIEW_FILE))
     mergeable = [
@@ -357,10 +398,16 @@ def run_apply(client, out_dir: str, confirm: bool, preview_digest: str = None, l
         return {"status": 200, "applied": 0, "unchanged": 0, "results": []}
 
     groups = [
-        {"memberDocIds": record["memberDocIds"], "expectedFingerprint": record["evidenceDigest"]}
+        {
+            "memberDocIds": record["memberDocIds"],
+            "expectedFingerprint": record["evidenceDigest"],
+            "expectedRelationFingerprint": record.get("relationDigest"),
+        }
         for record in pending
     ]
-    status, body = client.apply(digest, groups)
+    status, body = client.apply(digest, frozen_ids, groups)
+    if status == 401:
+        return {"status": 401, "error": UNAUTHORIZED_HINT}
     if status != 200:
         return {"status": status, "error": body}
 
@@ -403,6 +450,11 @@ def run_rollback_preview(client, out_dir: str) -> dict:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="新发现历史人物合并：预览/受限应用/回滚提案（默认 preview）")
     parser.add_argument("--base-url", default=os.environ.get("TALENT_BASE_URL", "http://127.0.0.1:8080"))
+    parser.add_argument(
+        "--cookie",
+        default=None,
+        help=f"现有登录会话 Cookie（默认取环境变量 {SESSION_ENV}）；只随请求头发送，不落盘",
+    )
     sub = parser.add_subparsers(dest="command")
 
     preview = sub.add_parser("preview", help="只读预览（默认命令）")
@@ -424,7 +476,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
-    client = ApiClient(args.base_url)
+    cookie = args.cookie or os.environ.get(SESSION_ENV)
+    if not cookie:
+        print(json.dumps({"status": 0, "error": f"REFUSED：{UNAUTHORIZED_HINT}"}, ensure_ascii=False))
+        return 2
+    client = ApiClient(args.base_url, session_cookie=cookie)
     if args.command in (None, "preview"):
         if args.command is None:
             print("默认 preview 需要 --manifest/--groups/--out-dir", file=sys.stderr)

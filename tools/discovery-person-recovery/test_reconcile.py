@@ -21,6 +21,7 @@ def _group(doc_ids, disposition="MERGE_READY", digest="d1"):
         "disposition": disposition,
         "reason": None,
         "evidenceDigest": digest,
+        "relationDigest": "r-digest",
         "canMerge": disposition == "MERGE_READY",
         "canSend": True,
         "members": [
@@ -30,6 +31,9 @@ def _group(doc_ids, disposition="MERGE_READY", digest="d1"):
                 "admissionReason": None,
                 "sendBlockReason": None,
                 "historyReference": False,
+                "liveDiscovered": True,
+                "relationPersonId": None,
+                "relationRevision": None,
             }
             for doc_id in doc_ids
         ],
@@ -37,13 +41,16 @@ def _group(doc_ids, disposition="MERGE_READY", digest="d1"):
 
 
 class FakeClient:
-    def __init__(self):
+    def __init__(self, status_override=None):
         self.preview_calls = []
         self.apply_calls = []
         self.rollback_calls = []
+        self.status_override = status_override
 
     def preview(self, frozen_ids, groups):
         self.preview_calls.append((frozen_ids, groups))
+        if self.status_override is not None:
+            return self.status_override, {"error": "UNAUTHORIZED"}
         body = {
             "ruleVersion": reconcile.RULE_VERSION,
             "generatedAt": "2026-10-13T00:00:00Z",
@@ -54,8 +61,10 @@ class FakeClient:
         }
         return 200, body
 
-    def apply(self, preview_digest, groups):
-        self.apply_calls.append((preview_digest, groups))
+    def apply(self, preview_digest, frozen_ids, groups):
+        self.apply_calls.append((preview_digest, frozen_ids, groups))
+        if self.status_override is not None:
+            return self.status_override, {"error": "UNAUTHORIZED"}
         return 200, [
             {
                 "groupKey": group_key_of(group),
@@ -186,9 +195,11 @@ class ReconcileCliTest(unittest.TestCase):
         result = reconcile.run_apply(client, self.out_dir, confirm=True)
         self.assertEqual(200, result["status"])
         self.assertEqual(2, result["applied"])
-        digest, groups = client.apply_calls[0]
+        digest, frozen_ids, groups = client.apply_calls[0]
         self.assertEqual("PREVIEW-DIGEST", digest)
+        self.assertEqual(self.frozen, frozen_ids, "apply 必须回传完整冻结清单身份")
         self.assertEqual({"g-digest", "s-digest"}, {group["expectedFingerprint"] for group in groups})
+        self.assertEqual({"r-digest"}, {group["expectedRelationFingerprint"] for group in groups})
         self.assertEqual(
             {"MERGE_READY", "KEEP_SINGLE"},
             {record["disposition"] for record in reconcile.read_jsonl(os.path.join(self.out_dir, reconcile.PREVIEW_FILE))},
@@ -207,8 +218,81 @@ class ReconcileCliTest(unittest.TestCase):
         client = FakeClient()
         reconcile.run_preview(client, self.frozen, self.groups, self.out_dir)
         reconcile.run_apply(client, self.out_dir, confirm=True, limit=1)
-        _, groups = client.apply_calls[0]
+        _, frozen_ids, groups = client.apply_calls[0]
         self.assertEqual(1, len(groups))
+        self.assertEqual(self.frozen, frozen_ids, "试点子集仍使用全量冻结清单身份")
+
+    def test_apply_pilot_then_resume_uses_same_full_frozen_list(self):
+        client = FakeClient()
+        reconcile.run_preview(client, self.frozen, self.groups, self.out_dir)
+        reconcile.run_apply(client, self.out_dir, confirm=True, limit=1)
+        reconcile.run_apply(client, self.out_dir, confirm=True)
+        self.assertEqual(2, len(client.apply_calls))
+        self.assertEqual([self.frozen, self.frozen], [call[1] for call in client.apply_calls])
+        self.assertEqual(1, len(client.apply_calls[1][2]), "续跑只提交剩余组")
+        self.assertEqual(
+            {("doc-a", "doc-b"), ("doc-c",)},
+            {tuple(group["memberDocIds"]) for group in [*client.apply_calls[0][2], *client.apply_calls[1][2]]},
+        )
+
+    # ── 会话认证 ────────────────────────────────────────────────────────────
+
+    def test_session_cookie_is_sent_as_header_only(self):
+        captured = {}
+
+        class FakeResponse:
+            status = 200
+
+            def read(self):
+                return b'{"ok": true}'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        def fake_urlopen(request, timeout=None):
+            captured["headers"] = {key.lower(): value for key, value in request.headers.items()}
+            return FakeResponse()
+
+        original = reconcile.urllib.request.urlopen
+        reconcile.urllib.request.urlopen = fake_urlopen
+        try:
+            client = reconcile.ApiClient("http://127.0.0.1:8080", session_cookie="JSESSIONID=s3cret")
+            status, _ = client.preview(["doc-a"], [])
+        finally:
+            reconcile.urllib.request.urlopen = original
+        self.assertEqual(200, status)
+        self.assertEqual("JSESSIONID=s3cret", captured["headers"].get("cookie"))
+
+    def test_unauthorized_is_actionable_and_writes_no_credentials(self):
+        client = FakeClient(status_override=401)
+        result = reconcile.run_preview(client, self.frozen, self.groups, self.out_dir)
+        self.assertEqual(401, result["status"])
+        self.assertIn("UNAUTHORIZED", result["error"])
+        for name in (reconcile.PREVIEW_FILE, reconcile.MEMBERS_FILE, reconcile.SUMMARY_FILE, reconcile.STATE_FILE):
+            path = os.path.join(self.out_dir, name)
+            if os.path.exists(path):
+                self.assertNotIn("s3cret", _read(path))
+
+    def test_main_refuses_without_existing_session(self):
+        import contextlib
+        import io
+
+        manifest = os.path.join(self.out_dir, "ids.txt")
+        groups = os.path.join(self.out_dir, "groups.jsonl")
+        with open(manifest, "w", encoding="utf-8") as fh:
+            fh.write("doc-a\n")
+        with open(groups, "w", encoding="utf-8") as fh:
+            fh.write("doc-a\n")
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = reconcile.main([
+                "preview", "--manifest", manifest, "--groups", groups, "--out-dir", self.out_dir
+            ])
+        self.assertEqual(2, code)
+        self.assertIn("UNAUTHORIZED", buffer.getvalue())
 
     # ── 回滚提案 ────────────────────────────────────────────────────────────
 

@@ -6,12 +6,15 @@ import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ConversationStateService
 import com.weibo.talentintroduction.campaign.service.DiscoveryPersonOutreachGuardService
 import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
+import com.weibo.talentintroduction.campaign.service.OutreachClaimOutcome
 import com.weibo.talentintroduction.campaign.service.OutreachGuardReasonCodes
+import com.weibo.talentintroduction.campaign.service.OutreachGuardTicket
 import com.weibo.talentintroduction.campaign.service.OutreachReserveOutcome
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+import com.weibo.talentintroduction.mail.domain.SmtpErrorCategory
 import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
@@ -292,6 +295,78 @@ class ManualExpertMailServiceTest {
         Mockito.verify(outreachGuardService)
             .reserveIntroduction(anyValue("orcid-1"), anyValue("expert@test.com"), anyValue(profile))
         Mockito.verify(mailDeliveryService, Mockito.never()).send(anyValue(account), anyValue(ComposedMail("", "", "")))
+    }
+
+    @Test
+    fun `detail introduction with an unreadable profile of a known person fails closed (I-3)`() {
+        val account = stubAccount()
+        stubTemplateSend(account)
+        Mockito.`when`(mailVariableService.resolveExpertProfileFor(contact)).thenReturn(null)
+        Mockito.`when`(
+            mailVariableService.buildVariables(
+                anyValue(account), Mockito.isNull(), anyValue("expert@test.com"), eqValue(false), anyValue(contact)
+            )
+        ).thenReturn(mapOf("senderEmail" to account.senderEmail, "senderName" to account.senderName))
+        Mockito.`when`(outreachGuardService.isKnownPerson("orcid-1")).thenReturn(true)
+
+        val ex = assertThrows<IllegalStateException> {
+            guardedService().sendManualMail(1L, ManualMailSendCommand("COMPOSE_TEMPLATE", "10", null))
+        }
+
+        assertTrue(ex.message!!.contains("画像不可读"))
+        Mockito.verify(mailDeliveryService, Mockito.never()).send(anyValue(account), anyValue(ComposedMail("", "", "")))
+        Mockito.verify(outreachGuardService, Mockito.never())
+            .reserveIntroduction(Mockito.anyString(), Mockito.anyString(), Mockito.any())
+    }
+
+    @Test
+    fun `detail introduction without an SMTP response code marks the guard unknown (V-8)`() {
+        val account = stubAccount()
+        stubTemplateSend(account)
+        val ticket = stubIntroductionGuardGranted(account)
+        Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("", "", ""))))
+            .thenReturn(DeliveredMail("msg-net", "FAILED", SmtpErrorCategory.TRANSIENT, null, "network error"))
+
+        guardedService().sendManualMail(1L, ManualMailSendCommand("COMPOSE_TEMPLATE", "10", null))
+
+        Mockito.verify(outreachGuardService).markUnknown(ticket)
+        Mockito.verify(outreachGuardService, Mockito.never()).markSafeRetry(anyValue(ticket))
+    }
+
+    @Test
+    fun `detail introduction with an SMTP response code marks the guard safe retry (V-8)`() {
+        val account = stubAccount()
+        stubTemplateSend(account)
+        val ticket = stubIntroductionGuardGranted(account)
+        Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("", "", ""))))
+            .thenReturn(DeliveredMail("msg-rej", "FAILED", SmtpErrorCategory.PERMANENT, 550, "recipient rejected"))
+
+        guardedService().sendManualMail(1L, ManualMailSendCommand("COMPOSE_TEMPLATE", "10", null))
+
+        Mockito.verify(outreachGuardService).markSafeRetry(ticket)
+        Mockito.verify(outreachGuardService, Mockito.never()).markUnknown(anyValue(ticket))
+    }
+
+    /** 09：把详情入口的人物级门禁铺成「占位 + 交付权」成功，供 SMTP 结果分类断言。 */
+    private fun stubIntroductionGuardGranted(account: MailSenderAccount): OutreachGuardTicket {
+        val profile = discoveryProfile()
+        Mockito.`when`(mailVariableService.resolveExpertProfileFor(contact)).thenReturn(profile)
+        Mockito.`when`(
+            mailVariableService.buildVariables(
+                anyValue(account), anyValue(profile), anyValue("expert@test.com"), eqValue(false), anyValue(contact)
+            )
+        ).thenReturn(mapOf("senderEmail" to account.senderEmail, "senderName" to account.senderName))
+        val ticket = OutreachGuardTicket(
+            personId = "person-1", mailType = "INTRODUCTION", revision = 1L,
+            ownerToken = "token-1", selectedDocId = "orcid-1", recipient = "expert@test.com"
+        )
+        Mockito.`when`(
+            outreachGuardService.reserveIntroduction(anyValue("orcid-1"), anyValue("expert@test.com"), anyValue(profile))
+        ).thenReturn(OutreachReserveOutcome.Granted(ticket))
+        Mockito.`when`(
+            outreachGuardService.claimSending(anyValue(ticket), anyValue(profile), anyValue("expert@test.com"))
+        ).thenReturn(OutreachClaimOutcome.Claimed)
+        return ticket
     }
 
     @Test

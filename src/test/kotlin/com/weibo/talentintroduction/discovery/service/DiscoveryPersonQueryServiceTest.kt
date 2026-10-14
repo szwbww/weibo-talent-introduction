@@ -2,6 +2,10 @@ package com.weibo.talentintroduction.discovery.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.campaign.service.BatchRecipientSelectionService
+import com.weibo.talentintroduction.campaign.service.RecipientAdmissionState
+import com.weibo.talentintroduction.campaign.service.RecipientDecision
+import com.weibo.talentintroduction.campaign.service.RecipientSelection
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonIdentity
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonMemberRecord
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonRecord
@@ -12,7 +16,10 @@ import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.domain.IdentityVerification
 import com.weibo.talentintroduction.expert.service.ExpertHitWithSort
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.expert.service.ExpertSearchUnavailableException
+import com.weibo.talentintroduction.mail.service.EmailSuppressionService
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -42,9 +49,22 @@ class DiscoveryPersonQueryServiceTest {
 
     private var capturedCountFilters: List<Map<String, Any>> = emptyList()
     private var capturedScrollFilters: List<Map<String, Any>> = emptyList()
+    private var capturedPrefixRequests: MutableList<Pair<Int, Int>> = mutableListOf()
 
-    private fun service(clock: Clock = Clock.systemUTC()) =
-        DiscoveryPersonQueryService(search, repository, contacts, clock)
+    /** 人物口径（featureGate 打开）服务；R-12 的两个真值服务按需注入（省略即「不可得」）。 */
+    private fun service(
+        clock: Clock = Clock.systemUTC(),
+        selection: BatchRecipientSelectionService? = null,
+        suppressionService: EmailSuppressionService? = null
+    ) = DiscoveryPersonQueryService(
+        expertSearchService = search,
+        personRepository = repository,
+        contactRepository = contacts,
+        featureGate = DiscoveryPersonFeatureGate(enabled = true),
+        clock = clock,
+        batchRecipientSelectionService = selection,
+        emailSuppressionService = suppressionService
+    )
 
     // ── fixtures ────────────────────────────────────────────────────────────────
 
@@ -58,6 +78,10 @@ class DiscoveryPersonQueryServiceTest {
         val sort: Long = 0
     )
 
+    /**
+     * R-12：档案刻意带旧 ES `filterResult=PASSED` —— 详情绝不能再把它当成可发送许可，
+     * 逐邮箱状态只能来自真实准入/抑制真值。
+     */
     private fun profile(doc: Doc): ExpertProfile = ExpertProfile(
         esDocId = doc.docId,
         orcidId = doc.docId,
@@ -68,6 +92,7 @@ class DiscoveryPersonQueryServiceTest {
         keyword = null,
         employment = null,
         emailSource = "PAPER_FULLTEXT",
+        filterResult = "PASSED",
         tags = doc.tags,
         identityVerification = IdentityVerification(
             status = "VERIFIED",
@@ -133,6 +158,42 @@ class DiscoveryPersonQueryServiceTest {
             .thenReturn(hits)
     }
 
+    /** R-9：按 (from, size) 真实分页应答，并记录每页请求参数。 */
+    private fun stubOthersPrefixPaged(all: List<ExpertHitWithSort>) {
+        Mockito.`when`(search.searchExpertsWithSort(anyLevel(), anyList(), anyInt(), anyInt(), any()))
+            .thenAnswer { invocation ->
+                val offset = invocation.arguments[2] as Int
+                val requestSize = invocation.arguments[3] as Int
+                capturedPrefixRequests += offset to requestSize
+                all.drop(offset).take(requestSize)
+            }
+    }
+
+    /** R-12：人物详情的跨层/联系人骨架；逐邮箱状态真值由各用例单独注入。 */
+    private fun stubDetail(vararg docs: Doc) {
+        val first = docs.first()
+        Mockito.`when`(repository.findMember(first.docId)).thenReturn(memberRow(first, "P1"))
+        Mockito.`when`(repository.findPerson("P1")).thenReturn(
+            DiscoveryPersonRecord("P1", first.docId, 1, LocalDateTime.now(), LocalDateTime.now())
+        )
+        Mockito.`when`(repository.findMembersByPerson("P1")).thenReturn(docs.map { memberRow(it, "P1") })
+        Mockito.`when`(search.findByDocumentIds(anyLevel(), anyList())).thenReturn(docs.map { profile(it) })
+        Mockito.`when`(contacts.findByOrcidIdIn(anyList())).thenReturn(
+            docs.mapIndexed { index, doc -> contact((index + 1).toLong(), doc.docId, "REPLIED", doc.email) }
+        )
+    }
+
+    private fun admission(docId: String, state: RecipientAdmissionState, decision: String? = null) =
+        RecipientDecision(
+            docId = docId,
+            orcidId = docId,
+            admissionState = state,
+            admissionDecision = decision,
+            syncErrorCode = null,
+            filterKeys = emptyList(),
+            included = state == RecipientAdmissionState.ADMITTED
+        )
+
     private fun stubRelations(rows: List<DiscoveryPersonMemberRecord>) {
         Mockito.`when`(repository.findMembers(anyList())).thenAnswer { invocation ->
             val ids = invocation.arguments[0] as List<String>
@@ -184,6 +245,107 @@ class DiscoveryPersonQueryServiceTest {
         // 归并前缀 [P1(d3,30), other(d5,25), P2(d4,15)] → drop(2) → [P2(d4)]
         assertEquals(3L, page2.totalHits)
         assertEquals(listOf("d4"), page2.experts.map { it.profile.esDocId })
+    }
+
+    // ── R-9（V-10）：合法深分页 ───────────────────────────────────────────────────
+
+    @Test
+    fun `deep page is read in pages of at most one thousand and returns page 21 exactly`() {
+        stubFilters()
+        val discoveredFirst = Doc("d1", sort = 1_000_000)
+        val discoveredSecond = Doc("d2", email = "ada2@example.com", sort = 999_000)
+        stubScroll(listOf(listOf(hit(discoveredFirst), hit(discoveredSecond))))
+        stubRelations(listOf(memberRow(discoveredFirst, "P1"), memberRow(discoveredSecond, "P1")))
+        // 其他分区 1050 条，按显示排序降序（o0 最前）。
+        val others = (0 until 1050).map { index ->
+            hit(
+                Doc(
+                    docId = "o$index",
+                    email = "o$index@example.com",
+                    given = "G$index",
+                    family = "F$index",
+                    tags = emptyList(),
+                    sort = (1049 - index).toLong()
+                )
+            )
+        }
+        stubCount(others.size.toLong())
+        stubOthersPrefixPaged(others)
+
+        val page21 = service().searchPersons(level = ExpertIndexLevel.CANDIDATE, size = 50, from = 1000)
+
+        // total = 其他 1050 + 人物 1；归并序列 [P1, o0..o1049]，第 21 页（from=1000）为 o999..o1048。
+        assertEquals(1051L, page21.totalHits)
+        assertEquals(50, page21.experts.size)
+        assertEquals("o999", page21.experts.first().profile.esDocId)
+        assertEquals("o1048", page21.experts.last().profile.esDocId)
+        assertEquals(50, page21.experts.map { it.profile.esDocId }.distinct().size, "边界重叠不重复")
+        // 前缀按单页上限分段读取，绝不把 from+size(=1050) 当单页 size。
+        assertEquals(listOf(0 to 1000, 1000 to 50), capturedPrefixRequests)
+    }
+
+    @Test
+    fun `shallower page keeps the same merged ordering as the deep page`() {
+        stubFilters()
+        val discoveredFirst = Doc("d1", sort = 1_000_000)
+        val discoveredSecond = Doc("d2", email = "ada2@example.com", sort = 999_000)
+        stubScroll(listOf(listOf(hit(discoveredFirst), hit(discoveredSecond))))
+        stubRelations(listOf(memberRow(discoveredFirst, "P1"), memberRow(discoveredSecond, "P1")))
+        val others = (0 until 1050).map { index ->
+            hit(
+                Doc(
+                    docId = "o$index",
+                    email = "o$index@example.com",
+                    given = "G$index",
+                    family = "F$index",
+                    tags = emptyList(),
+                    sort = (1049 - index).toLong()
+                )
+            )
+        }
+        stubCount(others.size.toLong())
+        stubOthersPrefixPaged(others)
+
+        val page1 = service().searchPersons(level = ExpertIndexLevel.CANDIDATE, size = 50, from = 0)
+
+        assertEquals(1051L, page1.totalHits)
+        assertEquals("d1", page1.experts.first().profile.esDocId)
+        assertEquals(
+            listOf("d1") + (0 until 49).map { "o$it" },
+            page1.experts.map { it.profile.esDocId },
+            "浅页与深页共用同一归并排序"
+        )
+    }
+
+    // ── R-10（V-13）：ES 不完整结果不发布部分精确数 ────────────────────────────────
+
+    @Test
+    fun `an incomplete discovered traversal propagates instead of publishing a partial total`() {
+        stubFilters()
+        stubCount(0L)
+        Mockito.doThrow(
+            ExpertSearchUnavailableException("ES 查询超时（timed_out=true），查询结果不可用")
+        ).`when`(search).scrollExpertsFilteredWithSort(anyLevel(), anyList(), anyInt(), any(), anyHandler())
+
+        assertThrows(ExpertSearchUnavailableException::class.java) {
+            service().searchPersons(level = ExpertIndexLevel.RAW, size = 10, from = 0)
+        }
+    }
+
+    @Test
+    fun `an incomplete other-partition page propagates instead of returning a short page`() {
+        stubFilters()
+        val d1 = Doc("d1")
+        stubScroll(listOf(listOf(hit(d1))))
+        stubRelations(listOf(memberRow(d1, "P1")))
+        stubCount(5L)
+        Mockito.doThrow(
+            ExpertSearchUnavailableException("ES 分片失败（_shards.failed=1），查询结果不可用")
+        ).`when`(search).searchExpertsWithSort(anyLevel(), anyList(), anyInt(), anyInt(), any())
+
+        assertThrows(ExpertSearchUnavailableException::class.java) {
+            service().searchPersons(level = ExpertIndexLevel.CANDIDATE, size = 10, from = 0)
+        }
     }
 
     // ── A13：ES 列表行携带成员数（跨页一致；非 discovered 行 = 1）─────────────────
@@ -274,6 +436,43 @@ class DiscoveryPersonQueryServiceTest {
         // P3（d7）与失效独立档案（d6）各自计数 → 2 人，而不是错误合并成 1。
         assertEquals(2L, result.totalHits)
         assertEquals(setOf("d6", "d7"), result.experts.map { it.profile.esDocId }.toSet())
+    }
+
+    // ── R-11（V-11）：DB 联系人只用当前有效关系聚合 ──────────────────────────────
+
+    @Test
+    fun `verified relations are returned while a changed fingerprint falls back and needs review`() {
+        val live = Doc("d1")
+        val changed = Doc("d6", email = "old@example.com")
+        stubRelations(
+            listOf(
+                memberRow(live, "P1"),
+                memberRow(changed, "P3", fingerprint = "deadbeef")
+            )
+        )
+        Mockito.`when`(search.findByDocumentIds(anyLevel(), anyList()))
+            .thenReturn(listOf(profile(live), profile(changed)))
+
+        val relations = service().resolveVerifiedPersonRelations(listOf("d1", "d6", "d9"))
+
+        assertEquals("P1", relations.getValue("d1").personId)
+        assertFalse(relations.getValue("d1").needsReview)
+        assertNull(relations.getValue("d6").personId, "指纹变化的关系不得再聚合")
+        assertTrue(relations.getValue("d6").needsReview, "无效关系须标待核")
+        // 范围外（无登记关系）：不产出映射，调用方保持原联系单位。
+        assertFalse(relations.containsKey("d9"))
+    }
+
+    @Test
+    fun `a member whose live discovered tag is gone is no longer aggregated`() {
+        val untagged = Doc("d6", tags = emptyList())
+        stubRelations(listOf(memberRow(untagged, "P3")))
+        Mockito.`when`(search.findByDocumentIds(anyLevel(), anyList())).thenReturn(listOf(profile(untagged)))
+
+        val relations = service().resolveVerifiedPersonRelations(listOf("d6"))
+
+        assertNull(relations.getValue("d6").personId, "移标后实时 discovered 范围不成立，不得聚合")
+        assertTrue(relations.getValue("d6").needsReview)
     }
 
     // ── I-3：超预算明确失败，不返回部分数 ────────────────────────────────────────
@@ -403,6 +602,104 @@ class DiscoveryPersonQueryServiceTest {
         Mockito.`when`(repository.findMember("missing")).thenReturn(null)
         Mockito.`when`(search.findByDocumentIds(anyLevel(), anyList())).thenReturn(emptyList())
         assertNull(service().personDetail("missing", ExpertIndexLevel.CANDIDATE))
+    }
+
+    // ── R-12（V-12）：详情展示真实逐邮箱准入与邮箱状态 ────────────────────────────
+
+    @Test
+    fun `detail shows real per-email admission and suppression instead of the legacy filterResult`() {
+        val d1 = Doc("d1", email = "ada@example.com")
+        val d2 = Doc("d2", email = "ada2@example.com")
+        stubDetail(d1, d2)
+        val selection = Mockito.mock(BatchRecipientSelectionService::class.java)
+        Mockito.`when`(selection.selectAdmission(anyList())).thenReturn(
+            RecipientSelection(
+                included = listOf(admission("d1", RecipientAdmissionState.ADMITTED)),
+                // V148 结论 HOLD → 统一 selector 归为 MANUAL_REJECTED：绝不可发送。
+                excluded = listOf(admission("d2", RecipientAdmissionState.MANUAL_REJECTED, "HOLD")),
+                reasonHits = emptyMap()
+            )
+        )
+        val suppression = Mockito.mock(EmailSuppressionService::class.java)
+        Mockito.`when`(suppression.isSuppressed("ada@example.com")).thenReturn(false)
+        Mockito.`when`(suppression.isSuppressed("ada2@example.com")).thenReturn(true)
+
+        val detail = service(selection = selection, suppressionService = suppression)
+            .personDetail("d1", ExpertIndexLevel.CANDIDATE)!!
+
+        // 档案带旧 filterResult=PASSED，但真实准入是 HOLD + 邮箱被抑制 → 两个成员都不是可发送。
+        assertEquals("ADMITTED", detail.members.first { it.docId == "d1" }.admissionStatus)
+        assertEquals("SUPPRESSED", detail.members.first { it.docId == "d2" }.admissionStatus)
+        assertTrue(detail.members.none { it.admissionStatus == "PASSED" })
+        assertTrue(detail.members.none { it.admissionStatus == RecipientAdmissionState.ADMITTED.name && it.docId == "d2" })
+    }
+
+    @Test
+    fun `detail reports unknown admission when the per-email truth is unavailable`() {
+        val d1 = Doc("d1")
+        stubDetail(d1)
+
+        // 真值服务缺失：明确未知，绝不回退成「可发送」。
+        val detail = service().personDetail("d1", ExpertIndexLevel.CANDIDATE)!!
+        assertEquals("UNKNOWN", detail.members.single().admissionStatus)
+        assertTrue(detail.members.none { it.admissionStatus == "PASSED" })
+    }
+
+    @Test
+    fun `detail reports unknown admission when reading the per-email truth fails`() {
+        val d1 = Doc("d1")
+        stubDetail(d1)
+        val selection = Mockito.mock(BatchRecipientSelectionService::class.java)
+        Mockito.`when`(selection.selectAdmission(anyList())).thenThrow(RuntimeException("admission down"))
+        val suppression = Mockito.mock(EmailSuppressionService::class.java)
+        Mockito.`when`(suppression.isSuppressed(anyString())).thenReturn(false)
+
+        val detail = service(selection = selection, suppressionService = suppression)
+            .personDetail("d1", ExpertIndexLevel.CANDIDATE)!!
+
+        assertEquals("UNKNOWN", detail.members.single().admissionStatus)
+    }
+
+    @Test
+    fun `detail reports unknown admission when the suppression truth cannot be read`() {
+        val d1 = Doc("d1")
+        stubDetail(d1)
+        val selection = Mockito.mock(BatchRecipientSelectionService::class.java)
+        Mockito.`when`(selection.selectAdmission(anyList())).thenReturn(
+            RecipientSelection(
+                included = listOf(admission("d1", RecipientAdmissionState.ADMITTED)),
+                excluded = emptyList(),
+                reasonHits = emptyMap()
+            )
+        )
+        val suppression = Mockito.mock(EmailSuppressionService::class.java)
+        Mockito.`when`(suppression.isSuppressed(anyString())).thenThrow(RuntimeException("suppression down"))
+
+        val detail = service(selection = selection, suppressionService = suppression)
+            .personDetail("d1", ExpertIndexLevel.CANDIDATE)!!
+
+        assertEquals("UNKNOWN", detail.members.single().admissionStatus)
+    }
+
+    @Test
+    fun `detail keeps non-discovery archives unknown instead of sendable`() {
+        val d1 = Doc("d1")
+        stubDetail(d1)
+        val selection = Mockito.mock(BatchRecipientSelectionService::class.java)
+        Mockito.`when`(selection.selectAdmission(anyList())).thenReturn(
+            RecipientSelection(
+                included = listOf(admission("d1", RecipientAdmissionState.NOT_DISCOVERY)),
+                excluded = emptyList(),
+                reasonHits = emptyMap()
+            )
+        )
+        val suppression = Mockito.mock(EmailSuppressionService::class.java)
+        Mockito.`when`(suppression.isSuppressed(anyString())).thenReturn(false)
+
+        val detail = service(selection = selection, suppressionService = suppression)
+            .personDetail("d1", ExpertIndexLevel.CANDIDATE)!!
+
+        assertEquals("UNKNOWN", detail.members.single().admissionStatus)
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────────

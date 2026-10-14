@@ -26,16 +26,18 @@ data class MaintenancePreviewHttpRequest(
     val candidateGroups: List<List<String>> = emptyList()
 )
 
-/** 10：apply 单组 —— 只带成员 ID 与 expected 指纹。 */
+/** 10：apply 单组 —— 只带成员 ID、expected 指纹与预览时的关系指纹。 */
 data class MaintenanceApplyHttpGroup(
     val memberDocIds: List<String> = emptyList(),
-    val expectedFingerprint: String? = null
+    val expectedFingerprint: String? = null,
+    val expectedRelationFingerprint: String? = null
 )
 
-/** 10：apply 请求 —— 只带冻结 ID、规则版本、预览摘要与逐组 expected 指纹。 */
+/** 10：apply 请求 —— 冻结 ID 全集、规则版本、预览摘要与逐组 expected 指纹。 */
 data class MaintenanceApplyHttpRequest(
     val ruleVersion: Int? = null,
     val previewDigest: String? = null,
+    val frozenDocIds: List<String> = emptyList(),
     val groups: List<MaintenanceApplyHttpGroup> = emptyList()
 )
 
@@ -75,11 +77,18 @@ class DiscoveryPersonMaintenanceController(private val service: DiscoveryPersonM
     @PostMapping("/apply")
     fun apply(request: HttpServletRequest, @RequestBody body: MaintenanceApplyHttpRequest): ResponseEntity<Any> {
         sessionUsername(request) ?: return unauthorized()
-        val groups = body.groups.map { MaintenanceApplyGroup(it.memberDocIds, it.expectedFingerprint.orEmpty()) }
+        val groups = body.groups.map {
+            MaintenanceApplyGroup(
+                it.memberDocIds,
+                it.expectedFingerprint.orEmpty(),
+                it.expectedRelationFingerprint
+            )
+        }
         return when (val outcome = service.apply(
             MaintenanceApplyRequest(
                 ruleVersion = body.ruleVersion,
                 previewDigest = body.previewDigest,
+                frozenDocIds = body.frozenDocIds,
                 groups = groups
             )
         )) {

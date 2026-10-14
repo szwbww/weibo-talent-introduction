@@ -7,6 +7,7 @@ import com.weibo.talentintroduction.campaign.service.OutreachGuardStates
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonIdentity
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonMemberSnapshot
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonOutcome
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonScope
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonSnapshot
 import com.weibo.talentintroduction.discovery.repository.DiscoveryPersonRepository
 import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
@@ -15,7 +16,10 @@ import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionCallback
+import org.springframework.transaction.support.TransactionTemplate
 import java.time.Clock
 import java.time.Instant
 
@@ -46,9 +50,13 @@ class DiscoveryPersonMaintenanceService(
     private val expertIndexWriterService: ExpertIndexWriterService,
     private val discoveryPersonOutreachGuardService: DiscoveryPersonOutreachGuardService? = null,
     private val discoveryPersonRecipientService: DiscoveryPersonRecipientService? = null,
+    private val transactionManager: PlatformTransactionManager? = null,
     private val clock: Clock = Clock.systemUTC()
 ) {
     private val log = LoggerFactory.getLogger(DiscoveryPersonMaintenanceService::class.java)
+
+    /** 同库显式事务模板：apply 由自调用进入，注解不生成代理事务，这里显式开事务保证整组原子。 */
+    private val transactionTemplate: TransactionTemplate? = transactionManager?.let { TransactionTemplate(it) }
 
     // ── 只读预览 ───────────────────────────────────────────────────────────────
 
@@ -59,6 +67,25 @@ class DiscoveryPersonMaintenanceService(
         val frozen = request.frozenDocIds.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
         if (frozen.isEmpty()) return MaintenancePreviewOutcome.Rejected(MaintenanceReasonCodes.EMPTY_FROZEN_LIST)
         val frozenSet = frozen.toSet()
+
+        // I-1：每个冻结 ID 恰好一个处置 —— 候选组必须互不重叠（重叠组会让同一档案进入两个主类）。
+        val claimed = mutableSetOf<String>()
+        val overlapping = mutableListOf<String>()
+        request.candidateGroups.forEach { raw ->
+            val members = raw.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+            if (members.isEmpty()) return@forEach
+            val repeated = members.filter { it in claimed }
+            if (repeated.isNotEmpty()) {
+                overlapping += repeated
+            } else {
+                claimed += members
+            }
+        }
+        if (overlapping.isNotEmpty()) {
+            return MaintenancePreviewOutcome.Rejected(
+                MaintenanceReasonCodes.OVERLAPPING_CANDIDATE_GROUPS
+            )
+        }
 
         val reviews = mutableListOf<MaintenanceGroupReview>()
         val covered = mutableSetOf<String>()
@@ -86,69 +113,79 @@ class DiscoveryPersonMaintenanceService(
             generatedAt = Instant.now(clock).toString(),
             groups = reviews,
             classCounts = counts,
-            totalDocuments = total,
-            previewDigest = digest(reviews)
+            totalDocuments = frozen.size,
+            previewDigest = frozenDigest(frozen)
         )
         return MaintenancePreviewOutcome.Ok(preview)
     }
 
     private fun reviewSingle(docId: String): MaintenanceGroupReview {
         val read = readMember(docId)
+        val probed = evidence(read)
+        val member = probed.evidence
         val disposition = when {
             read.changed -> MaintenanceDisposition.CHANGED_OR_FAILED
+            probed.readFailure != null -> MaintenanceDisposition.CHANGED_OR_FAILED
             else -> MaintenanceDisposition.KEEP_SINGLE
         }
-        val member = evidence(read)
         val groupKey = groupKey(listOf(docId))
         return MaintenanceGroupReview(
             groupKey = groupKey,
             memberDocIds = listOf(docId),
             disposition = disposition,
-            reason = read.reason,
-            evidenceDigest = digestMembers(listOf(member)),
+            reason = read.reason ?: probed.readFailure,
+            evidenceDigest = identityDigest(listOf(member)),
+            relationDigest = relationDigest(listOf(member)),
             canMerge = false,
-            canSend = canSend(listOf(member)),
+            canSend = probed.readFailure == null && canSend(listOf(member)),
             members = listOf(member)
         )
     }
 
     private fun reviewGroup(members: List<String>, frozenSet: Set<String>): MaintenanceGroupReview {
         val reads = members.map { readMember(it) }
-        val evidences = reads.map { evidence(it) }
+        val probed = reads.map { evidence(it) }
+        val evidences = probed.map { it.evidence }
         val groupKey = groupKey(members)
+        val readFailure = probed.firstOrNull { it.readFailure != null }?.readFailure
 
         if (members.any { it !in frozenSet }) {
             return group(groupKey, members, MaintenanceDisposition.CHANGED_OR_FAILED,
-                MaintenanceReasonCodes.OUT_OF_SCOPE, evidences)
+                MaintenanceReasonCodes.OUT_OF_SCOPE, evidences, readFailure)
         }
         if (reads.any { it.changed }) {
             return group(groupKey, members, MaintenanceDisposition.CHANGED_OR_FAILED,
-                reads.first { it.changed }.reason, evidences)
+                reads.first { it.changed }.reason, evidences, readFailure)
+        }
+        // 必需事实读取失败（关系/准入/保护）⇒ 明确失败，绝不按「无事实」继续判定。
+        if (readFailure != null) {
+            return group(groupKey, members, MaintenanceDisposition.CHANGED_OR_FAILED,
+                readFailure, evidences, readFailure)
         }
         if (members.size == 1) {
-            return group(groupKey, members, MaintenanceDisposition.KEEP_SINGLE, null, evidences)
+            return group(groupKey, members, MaintenanceDisposition.KEEP_SINGLE, null, evidences, null)
         }
         if (reads.any { it.authorKeys.isEmpty() }) {
             return group(groupKey, members, MaintenanceDisposition.REVIEW_REQUIRED,
-                MaintenanceReasonCodes.UNBOUND_MEMBER, evidences)
+                MaintenanceReasonCodes.UNBOUND_MEMBER, evidences, null)
         }
         val allKeys = reads.flatMap { it.authorKeys }
         val orcids = allKeys.filter { it.startsWith(DiscoveryPersonIdentity.ORCID_PREFIX) }.distinct()
         val openAlex = allKeys.filter { it.startsWith(DiscoveryPersonIdentity.OPENALEX_PREFIX) }.distinct()
         if (orcids.size > 1 || openAlex.size > 1) {
             return group(groupKey, members, MaintenanceDisposition.REVIEW_REQUIRED,
-                MaintenanceReasonCodes.MULTIPLE_AUTHOR_KEYS, evidences)
+                MaintenanceReasonCodes.MULTIPLE_AUTHOR_KEYS, evidences, null)
         }
         if (!connected(reads)) {
             return group(groupKey, members, MaintenanceDisposition.REVIEW_REQUIRED,
-                MaintenanceReasonCodes.UNCONNECTED_MEMBER, evidences)
+                MaintenanceReasonCodes.UNCONNECTED_MEMBER, evidences, null)
         }
         // 现有关系冲突：已登记成员指纹变化，或证据桥接两个已有人物根 → 待核，不自动吞并。
         val existing = discoveryPersonRepository.findMembers(members)
         val currentFingerprints = reads.associate { it.docId to it.fingerprint }
         if (existing.any { currentFingerprints[it.expertDocId] != it.identityFingerprint }) {
             return group(groupKey, members, MaintenanceDisposition.REVIEW_REQUIRED,
-                MaintenanceReasonCodes.RELATION_FINGERPRINT_CHANGED, evidences)
+                MaintenanceReasonCodes.RELATION_FINGERPRINT_CHANGED, evidences, null)
         }
         val roots = (
             existing.map { it.personId } +
@@ -156,9 +193,9 @@ class DiscoveryPersonMaintenanceService(
             ).distinct()
         if (roots.size > 1) {
             return group(groupKey, members, MaintenanceDisposition.REVIEW_REQUIRED,
-                MaintenanceReasonCodes.BRIDGE_EXISTING_ROOTS, evidences)
+                MaintenanceReasonCodes.BRIDGE_EXISTING_ROOTS, evidences, null)
         }
-        return group(groupKey, members, MaintenanceDisposition.MERGE_READY, null, evidences)
+        return group(groupKey, members, MaintenanceDisposition.MERGE_READY, null, evidences, null)
     }
 
     private fun group(
@@ -166,15 +203,17 @@ class DiscoveryPersonMaintenanceService(
         members: List<String>,
         disposition: MaintenanceDisposition,
         reason: String?,
-        evidences: List<MaintenanceMemberEvidence>
+        evidences: List<MaintenanceMemberEvidence>,
+        readFailure: String?
     ): MaintenanceGroupReview = MaintenanceGroupReview(
         groupKey = groupKey,
         memberDocIds = members,
         disposition = disposition,
         reason = reason,
-        evidenceDigest = digestMembers(evidences),
+        evidenceDigest = identityDigest(evidences),
+        relationDigest = relationDigest(evidences),
         canMerge = disposition == MaintenanceDisposition.MERGE_READY,
-        canSend = canSend(evidences),
+        canSend = readFailure == null && canSend(evidences),
         members = evidences
     )
 
@@ -187,30 +226,43 @@ class DiscoveryPersonMaintenanceService(
         if (request.previewDigest.isNullOrBlank()) {
             return MaintenanceApplyOutcome.Rejected(MaintenanceReasonCodes.PREVIEW_DIGEST_REQUIRED)
         }
-        if (request.groups.isEmpty()) {
+        val frozen = request.frozenDocIds.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (request.groups.isEmpty() || frozen.isEmpty()) {
             return MaintenanceApplyOutcome.Rejected(MaintenanceReasonCodes.EMPTY_FROZEN_LIST)
         }
-        val frozenSet = request.groups.flatMap { it.memberDocIds }.toSet()
-        // 服务端重复核实：重建冻结集预览并比对摘要，再逐组比对 expected 指纹。
-        val currentPreview = when (val outcome = preview(
-            MaintenancePreviewRequest(RULE_VERSION, request.groups.flatMap { it.memberDocIds }, request.groups.map { it.memberDocIds })
-        )) {
-            is MaintenancePreviewOutcome.Ok -> outcome.preview
-            is MaintenancePreviewOutcome.Rejected -> return MaintenanceApplyOutcome.Rejected(outcome.reason)
-        }
-        if (currentPreview.previewDigest != request.previewDigest) {
+        // I-1：预览摘要绑定的是**完整冻结清单身份**（不是本次选中子集），子集试点/断点续跑仍可用。
+        if (frozenDigest(frozen) != request.previewDigest) {
             return MaintenanceApplyOutcome.Rejected(MaintenanceReasonCodes.PREVIEW_DIGEST_MISMATCH)
         }
-        val byKey = currentPreview.groups.associateBy { it.groupKey }
+        val frozenSet = frozen.toSet()
+
+        // 与预览同一条互斥规则：本次选择组内部也不得重叠。
+        val claimed = mutableSetOf<String>()
+        val overlapping = request.groups.any { group ->
+            val members = group.memberDocIds.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+            val repeated = members.filter { it in claimed }
+            claimed += members
+            repeated.isNotEmpty()
+        }
+        if (overlapping) {
+            return MaintenanceApplyOutcome.Rejected(MaintenanceReasonCodes.OVERLAPPING_CANDIDATE_GROUPS)
+        }
 
         val results = mutableListOf<MaintenanceGroupApplyResult>()
         request.groups.forEach { requested ->
-            val members = requested.memberDocIds
+            val members = requested.memberDocIds.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
             val key = groupKey(members)
-            val review = byKey[key]
-            if (review == null || review.evidenceDigest != requested.expectedFingerprint) {
+            if (members.isEmpty()) {
                 results += MaintenanceGroupApplyResult(key, ApplyStatus.CHANGED_OR_FAILED, null, 0, false,
-                    MaintenanceReasonCodes.FINGERPRINT_MISMATCH)
+                    MaintenanceReasonCodes.EMPTY_FROZEN_LIST)
+                return@forEach
+            }
+            // 服务端重读证据（不接受客户端结论）；expected 只用于比对，绝不覆盖预期。
+            val review = reviewGroup(members, frozenSet)
+            if (review.evidenceDigest != requested.expectedFingerprint) {
+                results += resumedTargetResult(review, requested)
+                    ?: MaintenanceGroupApplyResult(key, ApplyStatus.CHANGED_OR_FAILED, null, 0, false,
+                        MaintenanceReasonCodes.FINGERPRINT_MISMATCH)
                 return@forEach
             }
             if (review.disposition != MaintenanceDisposition.MERGE_READY &&
@@ -219,17 +271,88 @@ class DiscoveryPersonMaintenanceService(
                 results += MaintenanceGroupApplyResult(key, ApplyStatus.CHANGED_OR_FAILED, null, 0, false, review.reason)
                 return@forEach
             }
+            // 关系事实在预览之后被第三方改动，且不构成「本申请已完成的目标状态」→ 拒绝。
+            if (requested.expectedRelationFingerprint != null &&
+                review.relationDigest != requested.expectedRelationFingerprint
+            ) {
+                results += resumedTargetResult(review, requested)
+                    ?: MaintenanceGroupApplyResult(key, ApplyStatus.CHANGED_OR_FAILED, null, 0, false,
+                        MaintenanceReasonCodes.RELATION_CHANGED)
+                return@forEach
+            }
             results += applyGroup(review, frozenSet)
         }
         return MaintenanceApplyOutcome.Ok(results)
     }
 
     /**
+     * I-3（断点续跑）：组关系已是**本申请的目标状态**时识别为 UNCHANGED —— 同一人物根、成员集合恰好
+     * 等于本组、每个成员当前指纹与实时范围仍成立，且没有第三方追加成员/改根。
+     * 该识别绝不把第三方版本或身份变化当作自己的写入：身份事实不一致时由调用方按 FINGERPRINT_MISMATCH 拒绝。
+     */
+    private fun resumedTargetResult(
+        review: MaintenanceGroupReview,
+        requested: MaintenanceApplyGroup
+    ): MaintenanceGroupApplyResult? {
+        if (requested.expectedRelationFingerprint == null) return null
+        val members = review.memberDocIds
+        val roots = review.members.mapNotNull { it.relationPersonId }.distinct()
+        if (roots.size != 1) return null
+        val personId = roots.single()
+        if (review.members.any { it.relationPersonId != personId }) return null
+        if (review.members.any { it.sourceFingerprint == null }) return null
+        val registered = try {
+            discoveryPersonRepository.findMembersByPerson(personId).map { it.expertDocId }
+        } catch (e: Exception) {
+            log.warn("10 断点续跑读取人物成员失败 personId={}: {}", personId, e.message)
+            return null
+        }
+        if (registered.toSet() != members.toSet()) return null
+        if (review.disposition == MaintenanceDisposition.CHANGED_OR_FAILED) return null
+        return MaintenanceGroupApplyResult(
+            review.groupKey,
+            ApplyStatus.UNCHANGED,
+            personId,
+            registered.size,
+            true,
+            MaintenanceReasonCodes.RESUMED_TARGET_STATE
+        )
+    }
+
+    /**
      * I-2：整组成员检查完整后**一次提交**——登记关系（04）与导入历史保护（09）在同一事务；
      * 任一步失败整组回滚，绝不产生半合并。幂等：关系已存在且历史保护已就绪 → `UNCHANGED`。
+     *
+     * 事务边界：本方法由 [apply] 自调用（self-invocation），注解不会生成代理事务，故这里显式使用
+     * 同库 [TransactionTemplate]；历史保护持久化失败时抛出回滚信号，让整组关系一并回滚。
      */
     @Transactional
     fun applyGroup(review: MaintenanceGroupReview, frozenSet: Set<String>): MaintenanceGroupApplyResult {
+        val template = transactionTemplate
+        return try {
+            if (template == null) {
+                applyGroupInTransaction(review, frozenSet)
+            } else {
+                template.execute(TransactionCallback { applyGroupInTransaction(review, frozenSet) })
+                    ?: MaintenanceGroupApplyResult(
+                        review.groupKey, ApplyStatus.CHANGED_OR_FAILED, null, 0, false,
+                        MaintenanceReasonCodes.RELATION_CHANGED
+                    )
+            }
+        } catch (e: GroupRollbackSignal) {
+            log.warn("10 整组回滚 groupKey={}: {}", review.groupKey, e.message)
+            MaintenanceGroupApplyResult(
+                review.groupKey, ApplyStatus.CHANGED_OR_FAILED, null, 0, false,
+                e.reason
+            )
+        }
+    }
+
+    /** 整组提交的实体（关系 + 历史保护同库同事务）。 */
+    private fun applyGroupInTransaction(
+        review: MaintenanceGroupReview,
+        frozenSet: Set<String>
+    ): MaintenanceGroupApplyResult {
         val members = review.memberDocIds
         if (members.any { it !in frozenSet }) {
             return MaintenanceGroupApplyResult(review.groupKey, ApplyStatus.CHANGED_OR_FAILED, null, 0, false,
@@ -255,7 +378,11 @@ class DiscoveryPersonMaintenanceService(
         }
         val personId = registration.personId
         val alreadyRegistered = registration.outcome == DiscoveryPersonOutcome.UNCHANGED
+        // 历史保护必须**实际持久化**：未持久化即整组回滚，绝不报 protectionImported=true。
         val protection = importHistoryProtection(personId, reads)
+        if (protection == ProtectionImport.BLOCKED) {
+            throw GroupRollbackSignal(MaintenanceReasonCodes.PROTECTION_IMPORT_FAILED)
+        }
         val status = if (alreadyRegistered) ApplyStatus.UNCHANGED else ApplyStatus.APPLIED
         return MaintenanceGroupApplyResult(
             review.groupKey,
@@ -267,37 +394,32 @@ class DiscoveryPersonMaintenanceService(
         )
     }
 
+    /** 整组提交失败信号：由显式事务模板回滚整组关系与保护导入。 */
+    private class GroupRollbackSignal(val reason: String) : RuntimeException(reason)
+
     /**
-     * I-3：经 09 的**只读**接口确认「已有成功/未知首发保护」，并靠 09 在真实发送前对全部成员的
-     * 读检查（联系人/别名/mail_record/mail_send_attempt）持续阻断换址首发；08 的人物级准入（含人工
-     * 拒绝/暂停）同样被视为历史保护。
+     * I-3：把**已有**成功/未知历史**持久化**为人物级保护（经 09 的唯一写服务），并靠 09 在真实
+     * 发送前对全部成员的读检查（联系人/别名/mail_record/mail_send_attempt）持续阻断换址首发；
+     * 08 的人物级准入（含人工拒绝/暂停）同样被视为历史保护。
      *
-     * 这里**绝不**调用 `reserveIntroduction`：无历史时它会新建 `RESERVED` 占位，而占位只能由本次
-     * ticket 的 CAS 消费——导入返回的 ticket 即被丢弃，占位将永久阻塞该人物的首发（违反「合并不能
-     * 导致同人多个邮箱被逐一首次邀请」的反面：也不能让任何人都无法邀请）。因此导入不产生新状态行。
+     * 这里不新建 `RESERVED` 占位（占位只能由本次 ticket 的 CAS 消费，导入的 ticket 会被丢弃并永久
+     * 阻塞该人物首发）；只把已证实的 SENT/UNKNOWN 落库。导入失败按 [ProtectionImport.BLOCKED]
+     * 交由调用方整组回滚，绝不报「已导入」。
      */
     private fun importHistoryProtection(personId: String?, reads: List<MemberRead>): ProtectionImport {
         val guard = discoveryPersonOutreachGuardService ?: return ProtectionImport.UNKNOWN
         if (personId == null) return ProtectionImport.NONE
-        return when (guard.stateOf(personId, DiscoveryPersonOutreachGuardService.INTRODUCTION)) {
-            OutreachGuardStates.SENT, OutreachGuardStates.UNKNOWN,
-            OutreachGuardStates.SENDING, OutreachGuardStates.RESERVED -> ProtectionImport.IMPORTED
-            else -> if (hasReadOnlyHistoryReference(reads)) ProtectionImport.IMPORTED else ProtectionImport.NONE
-        }
-    }
-
-    /** 09 历史检查第 1 步的同一权威只读探针（08 人物级准入）；命中人工拒绝/暂停/已联系即视为保护。 */
-    private fun hasReadOnlyHistoryReference(reads: List<MemberRead>): Boolean {
-        val recipient = discoveryPersonRecipientService ?: return false
-        return reads.any { read ->
-            val profile = read.profile ?: return@any false
-            try {
-                val selection = recipient.selectAdmission(listOf(profile))
-                (selection.excluded + selection.included).firstOrNull()?.exclusionReasons?.isNotEmpty() == true
-            } catch (e: Exception) {
-                log.warn("10 历史保护只读探针失败 docId={}: {}", read.docId, e.message)
-                false
+        return try {
+            val snapshot = guard.importExistingProtection(personId, DiscoveryPersonOutreachGuardService.INTRODUCTION)
+            when {
+                snapshot == null -> ProtectionImport.NONE
+                snapshot.state.isBlank() -> ProtectionImport.NONE
+                snapshot.state in OutreachGuardStates.PROTECTED_STATES -> ProtectionImport.IMPORTED
+                else -> ProtectionImport.BLOCKED
             }
+        } catch (e: Exception) {
+            log.warn("10 历史保护持久化失败 personId={}: {}", personId, e.message)
+            ProtectionImport.BLOCKED
         }
     }
 
@@ -318,21 +440,28 @@ class DiscoveryPersonMaintenanceService(
                 val personId = roots.single()
                 val memberRecords = discoveryPersonRepository.findMembersByPerson(personId)
                 val laterMembers = memberRecords.map { it.expertDocId }.filter { it !in members }
-                val blocked = laterMembers.isNotEmpty() || members.any { hasSentOrUnknown(personId, it) }
+                // I-3：任何进行中或不确定的保护（SENT/UNKNOWN/SENDING/RESERVED）、后续成员、关系版本
+                // 变化都不得标为可回滚 —— 只提案，绝不执行。
+                val state = guardState(personId)
+                val unsafeState = state != null && state in OutreachGuardStates.PROTECTED_STATES
+                val versionChanged = memberRecords.any { it.personId != personId }
+                val blocked = laterMembers.isNotEmpty() || unsafeState || versionChanged
                 MaintenanceRollbackProposal(
                     key, members, personId, !blocked, memberRecords.size,
-                    if (blocked) MaintenanceReasonCodes.ROLLBACK_UNSAFE else null
+                    when {
+                        laterMembers.isNotEmpty() -> MaintenanceReasonCodes.ROLLBACK_UNSAFE
+                        unsafeState -> MaintenanceReasonCodes.ROLLBACK_UNSAFE
+                        versionChanged -> MaintenanceReasonCodes.ROLLBACK_UNSAFE
+                        else -> null
+                    }
                 )
             }
         }
         return MaintenanceRollbackOutcome.Ok(proposals)
     }
 
-    private fun hasSentOrUnknown(personId: String, docId: String): Boolean {
-        val guard = discoveryPersonOutreachGuardService ?: return false
-        val state = guard.stateOf(personId, DiscoveryPersonOutreachGuardService.INTRODUCTION) ?: return false
-        return state == OutreachGuardStates.SENT || state == OutreachGuardStates.UNKNOWN
-    }
+    private fun guardState(personId: String): String? =
+        discoveryPersonOutreachGuardService?.stateOf(personId, DiscoveryPersonOutreachGuardService.INTRODUCTION)
 
     // ── 只读成员读取（服务端重读证据，绝不写） ─────────────────────────────────
 
@@ -350,7 +479,16 @@ class DiscoveryPersonMaintenanceService(
         val primaryTerm: Long?,
         val evidenceSource: String?,
         val evidenceHash: String?,
-        val evidenceVersion: Int?
+        val evidenceVersion: Int?,
+        val liveDiscovered: Boolean = false
+    )
+
+    /** 只读探针结果：`failed=true` 表示读取失败（未知保护/未知准入），绝不退化为「无事实」。 */
+    private class Probe<T>(val value: T?, val failed: Boolean)
+
+    private data class MemberEvidence(
+        val evidence: MaintenanceMemberEvidence,
+        val readFailure: String?
     )
 
     private fun readMember(docId: String): MemberRead {
@@ -366,7 +504,7 @@ class DiscoveryPersonMaintenanceService(
         }
         if (snapshots.isEmpty()) return failed(docId, MaintenanceReasonCodes.DOCUMENT_MISSING)
         val raw = snapshots[ExpertIndexLevel.RAW] ?: snapshots.values.first()
-        if (!DiscoveryIdentity.isDiscoveryMap(raw.source)) return failed(docId, MaintenanceReasonCodes.NOT_DISCOVERY)
+        if (!DiscoveryPersonScope.isLiveDiscovered(raw.source)) return failed(docId, MaintenanceReasonCodes.NOT_DISCOVERY)
         if (!layerIdentityConsistent(snapshots)) {
             return failed(docId, MaintenanceReasonCodes.LAYER_IDENTITY_CONFLICT, snapshots)
         }
@@ -392,7 +530,8 @@ class DiscoveryPersonMaintenanceService(
             primaryTerm = raw.primaryTerm,
             evidenceSource = proof?.source,
             evidenceHash = proof?.evidenceHash,
-            evidenceVersion = proof?.version
+            evidenceVersion = proof?.version,
+            liveDiscovered = DiscoveryPersonScope.isLiveDiscovered(rawProfile)
         )
     }
 
@@ -426,63 +565,84 @@ class DiscoveryPersonMaintenanceService(
 
     // ── 证据/原因装配（可读只读 DO：关系、人工准入、历史保护） ─────────────────
 
-    private fun evidence(read: MemberRead): MaintenanceMemberEvidence {
+    private fun evidence(read: MemberRead): MemberEvidence {
+        var readFailure: String? = null
         val relation = try {
             discoveryPersonRepository.findMember(read.docId)
         } catch (e: Exception) {
             log.warn("10 复核读取关系失败 docId={}: {}", read.docId, e.message)
+            readFailure = MaintenanceReasonCodes.RELATION_READ_FAILED
             null
         }
         val personId = relation?.personId
-        val (admissionReason, sendBlockReason) = sendability(personId, read)
-        return MaintenanceMemberEvidence(
-            docId = read.docId,
-            email = read.normalizedEmail,
-            authorKeys = read.authorKeys,
-            layers = read.layers,
-            evidenceSource = read.evidenceSource,
-            evidenceHash = read.evidenceHash,
-            evidenceVersion = read.evidenceVersion,
-            sourceFingerprint = read.fingerprint,
-            seqNo = read.seqNo,
-            primaryTerm = read.primaryTerm,
-            relationPersonId = personId,
-            relationRevision = personId?.let { runCatching { discoveryPersonRepository.findPerson(it)?.revision }.getOrNull() },
-            manualDecision = admissionReason,
-            historyReference = sendBlockReason != null,
-            admissionReason = admissionReason,
-            sendBlockReason = sendBlockReason,
-            layerVersions = read.layerVersions
+        // 人工准入与历史保护读取失败一律显式失败（不得转成 null 后当作「可发送」）。
+        val admission = admissionProbe(read)
+        if (admission.failed && readFailure == null) readFailure = MaintenanceReasonCodes.ADMISSION_READ_FAILED
+        val block = sendBlockProbe(personId)
+        if (block.failed && readFailure == null) readFailure = MaintenanceReasonCodes.HISTORY_READ_FAILED
+        val relationRevision = personId?.let {
+            try {
+                discoveryPersonRepository.findPerson(it)?.revision
+            } catch (e: Exception) {
+                log.warn("10 复核读取人物版本失败 personId={}: {}", it, e.message)
+                if (readFailure == null) readFailure = MaintenanceReasonCodes.RELATION_READ_FAILED
+                null
+            }
+        }
+        val admissionReason = admission.value
+        return MemberEvidence(
+            evidence = MaintenanceMemberEvidence(
+                docId = read.docId,
+                email = read.normalizedEmail,
+                authorKeys = read.authorKeys,
+                layers = read.layers,
+                evidenceSource = read.evidenceSource,
+                evidenceHash = read.evidenceHash,
+                evidenceVersion = read.evidenceVersion,
+                sourceFingerprint = read.fingerprint,
+                seqNo = read.seqNo,
+                primaryTerm = read.primaryTerm,
+                relationPersonId = personId,
+                relationRevision = relationRevision,
+                manualDecision = admissionReason,
+                historyReference = block.value != null,
+                admissionReason = admissionReason,
+                sendBlockReason = block.value,
+                layerVersions = read.layerVersions,
+                liveDiscovered = read.liveDiscovered
+            ),
+            readFailure = readFailure
         )
     }
 
-    /** 「可以发送」与「可以合并」分离：准入（人工决定）与既有首发保护分别判断。 */
-    private fun sendability(personId: String?, read: MemberRead): Pair<String?, String?> {
-        val admission = admissionReason(read)
-        val block = sendBlockReason(personId)
-        return admission to block
-    }
-
-    private fun admissionReason(read: MemberRead): String? {
-        val recipient = discoveryPersonRecipientService ?: return null
-        val profile = read.profile ?: return null
+    private fun admissionProbe(read: MemberRead): Probe<String> {
+        val recipient = discoveryPersonRecipientService ?: return Probe(null, false)
+        val profile = read.profile ?: return Probe(null, false)
         return try {
             val selection = recipient.selectAdmission(listOf(profile))
-            (selection.excluded + selection.included).firstOrNull()?.exclusionReasons?.firstOrNull()
+            Probe((selection.excluded + selection.included).firstOrNull()?.exclusionReasons?.firstOrNull(), false)
         } catch (e: Exception) {
             log.warn("10 复核读取准入失败 docId={}: {}", read.docId, e.message)
-            null
+            Probe(null, true)
         }
     }
 
-    private fun sendBlockReason(personId: String?): String? {
-        val guard = discoveryPersonOutreachGuardService ?: return null
-        if (personId == null) return null
-        return when (guard.stateOf(personId, DiscoveryPersonOutreachGuardService.INTRODUCTION)) {
-            OutreachGuardStates.SENT -> OutreachGuardReasonCodes.ALREADY_SENT
-            OutreachGuardStates.UNKNOWN -> OutreachGuardReasonCodes.UNKNOWN_PENDING
-            OutreachGuardStates.SENDING, OutreachGuardStates.RESERVED -> OutreachGuardReasonCodes.IN_FLIGHT
-            else -> null
+    private fun sendBlockProbe(personId: String?): Probe<String> {
+        val guard = discoveryPersonOutreachGuardService ?: return Probe(null, false)
+        if (personId == null) return Probe(null, false)
+        return try {
+            Probe(
+                when (guard.stateOf(personId, DiscoveryPersonOutreachGuardService.INTRODUCTION)) {
+                    OutreachGuardStates.SENT -> OutreachGuardReasonCodes.ALREADY_SENT
+                    OutreachGuardStates.UNKNOWN -> OutreachGuardReasonCodes.UNKNOWN_PENDING
+                    OutreachGuardStates.SENDING, OutreachGuardStates.RESERVED -> OutreachGuardReasonCodes.IN_FLIGHT
+                    else -> null
+                },
+                false
+            )
+        } catch (e: Exception) {
+            log.warn("10 复核读取保护状态失败 personId={}: {}", personId, e.message)
+            Probe(null, true)
         }
     }
 
@@ -491,15 +651,54 @@ class DiscoveryPersonMaintenanceService(
 
     // ── 摘要 ──────────────────────────────────────────────────────────────────
 
-    private fun digestMembers(evidences: List<MaintenanceMemberEvidence>): String =
-        DiscoveryIdentity.hash(evidences.joinToString("\u0000") { "${it.docId}|${it.sourceFingerprint}" })
-
-    /** 预览摘要：绑定「规则版本 + 冻结 docId 全集」，使单组成员变化按逐组指纹跳过而非整批拒绝。 */
-    private fun digest(reviews: List<MaintenanceGroupReview>): String =
+    /**
+     * 逐成员**身份/证据/人工与历史保护**摘要（不含关系行事实）：绑定三层版本、实时 discovered 标签、
+     * proof 源与摘要版本、身份指纹、逐层 seq_no/primary_term、人工准入决定与历史保护判定。
+     * apply 的 expected 指纹以此比对 —— 只改其中任一事实，旧预览即失配。
+     */
+    private fun identityDigest(evidences: List<MaintenanceMemberEvidence>): String =
         DiscoveryIdentity.hash(
-            "v$RULE_VERSION\u0000" +
-                reviews.flatMap { it.memberDocIds }.distinct().sorted().joinToString("\u0000")
+            evidences.sortedBy { it.docId }.joinToString("\u0000") { member ->
+                listOf(
+                    member.docId,
+                    member.email.orEmpty(),
+                    member.authorKeys.sorted().joinToString(","),
+                    member.sourceFingerprint.orEmpty(),
+                    member.evidenceSource.orEmpty(),
+                    member.evidenceHash.orEmpty(),
+                    member.evidenceVersion?.toString().orEmpty(),
+                    member.seqNo?.toString().orEmpty(),
+                    member.primaryTerm?.toString().orEmpty(),
+                    member.layers.sorted().joinToString(","),
+                    member.layerVersions.toSortedMap().entries
+                        .joinToString(",") { "${it.key}=${it.value.orEmpty()}" },
+                    member.manualDecision.orEmpty(),
+                    member.admissionReason.orEmpty(),
+                    member.sendBlockReason.orEmpty(),
+                    member.historyReference.toString(),
+                    member.liveDiscovered.toString()
+                ).joinToString("|")
+            }
         )
+
+    /** 关系行事实摘要（personId + revision）：被第三方改动即失配，用于断点续跑与并发拒绝。 */
+    private fun relationDigest(evidences: List<MaintenanceMemberEvidence>): String =
+        DiscoveryIdentity.hash(
+            evidences.sortedBy { it.docId }.joinToString("\u0000") { member ->
+                listOf(
+                    member.docId,
+                    member.relationPersonId.orEmpty(),
+                    member.relationRevision?.toString().orEmpty()
+                ).joinToString("|")
+            }
+        )
+
+    /**
+     * 预览摘要：只绑定「规则版本 + **完整冻结清单**身份」，本次选择子集不参与 ——
+     * 合法 50 组试点与断点续跑都沿用同一个预览摘要。
+     */
+    private fun frozenDigest(frozen: List<String>): String =
+        DiscoveryIdentity.hash("v$RULE_VERSION\u0000" + frozen.distinct().sorted().joinToString("\u0000"))
 
     private fun groupKey(members: List<String>): String =
         DiscoveryIdentity.hash(members.map { it.trim() }.filter { it.isNotEmpty() }.distinct().sorted().joinToString("\u0000"))
@@ -537,6 +736,13 @@ object MaintenanceReasonCodes {
     const val UNCONNECTED_MEMBER = "UNCONNECTED_MEMBER"
     const val RELATION_FINGERPRINT_CHANGED = "RELATION_FINGERPRINT_CHANGED"
     const val BRIDGE_EXISTING_ROOTS = "BRIDGE_EXISTING_ROOTS"
+    const val OVERLAPPING_CANDIDATE_GROUPS = "OVERLAPPING_CANDIDATE_GROUPS"
+    const val RELATION_READ_FAILED = "RELATION_READ_FAILED"
+    const val ADMISSION_READ_FAILED = "ADMISSION_READ_FAILED"
+    const val HISTORY_READ_FAILED = "HISTORY_READ_FAILED"
+    const val RELATION_CHANGED = "RELATION_CHANGED"
+    const val PROTECTION_IMPORT_FAILED = "PROTECTION_IMPORT_FAILED"
+    const val RESUMED_TARGET_STATE = "RESUMED_TARGET_STATE"
     const val PREVIEW_DIGEST_REQUIRED = "PREVIEW_DIGEST_REQUIRED"
     const val PREVIEW_DIGEST_MISMATCH = "PREVIEW_DIGEST_MISMATCH"
     const val FINGERPRINT_MISMATCH = "FINGERPRINT_MISMATCH"
@@ -563,7 +769,9 @@ data class MaintenanceMemberEvidence(
     val historyReference: Boolean,
     val admissionReason: String?,
     val sendBlockReason: String?,
-    val layerVersions: Map<String, String?> = emptyMap()
+    val layerVersions: Map<String, String?> = emptyMap(),
+    /** 实时 discovered 范围（来源证据 + 字面标签同时成立）—— 参与 expected 摘要绑定。 */
+    val liveDiscovered: Boolean = false
 )
 
 /** 10：逐组复核材料。[canMerge] 与 [canSend] 分别判断（合并 != 发送许可）。 */
@@ -575,7 +783,9 @@ data class MaintenanceGroupReview(
     val evidenceDigest: String,
     val canMerge: Boolean,
     val canSend: Boolean,
-    val members: List<MaintenanceMemberEvidence>
+    val members: List<MaintenanceMemberEvidence>,
+    /** 关系行事实摘要（personId + revision）；apply 用它区分「本申请已完成」与「第三方改动」。 */
+    val relationDigest: String = ""
 )
 
 /** 10：只读预览结果。`classCounts` 之和 = [totalDocuments] = 冻结档案数（逐条互斥）。 */
@@ -600,16 +810,21 @@ data class MaintenancePreviewRequest(
     val candidateGroups: List<List<String>> = emptyList()
 )
 
-/** 10：apply 的单组请求 —— 只带成员 ID 与预览摘要指纹。 */
+/** 10：apply 的单组请求 —— 只带成员 ID、预览摘要指纹与预览时的关系指纹。 */
 data class MaintenanceApplyGroup(
     val memberDocIds: List<String>,
-    val expectedFingerprint: String
+    val expectedFingerprint: String,
+    val expectedRelationFingerprint: String? = null
 )
 
-/** 10：apply 请求 —— 只带冻结 ID、规则版本、预览摘要与逐组 expected 指纹。 */
+/**
+ * 10：apply 请求 —— 冻结 ID 全集（与预览摘要同源）、规则版本、预览摘要与逐组 expected 指纹。
+ * `frozenDocIds` 是**完整冻结清单**，本次 `groups` 只是它的合法子集（试点/断点续跑）。
+ */
 data class MaintenanceApplyRequest(
     val ruleVersion: Int? = null,
     val previewDigest: String? = null,
+    val frozenDocIds: List<String> = emptyList(),
     val groups: List<MaintenanceApplyGroup> = emptyList()
 )
 

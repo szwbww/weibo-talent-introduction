@@ -21,6 +21,7 @@ import com.weibo.talentintroduction.expert.service.ExpertPromotionAuditService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -166,7 +167,11 @@ class DiscoveryIdentityRepairServiceTest {
         proof: IdentityVerification? = null,
         externalIds: Map<String, String>? = null
     ): MutableMap<String, Any?> {
-        val map = mutableMapOf<String, Any?>("email" to email, "givenNames" to given, "familyNames" to family)
+        // I-3/R-2：人物链只对**实时 discovered**（发现来源 + 字面标签）建立关系，夹具按真实档案标注。
+        val map = mutableMapOf<String, Any?>(
+            "email" to email, "givenNames" to given, "familyNames" to family,
+            "emailSource" to "PAPER_FULLTEXT", "tags" to listOf("discovered")
+        )
         if (proof != null) map["identityVerification"] = proof
         if (externalIds != null) map["externalIds"] = externalIds
         return map
@@ -382,6 +387,46 @@ class DiscoveryIdentityRepairServiceTest {
         assertTrue(updateUrls.isEmpty())
     }
 
+    // ── 02（I-3）：空名补证按「前值或本次目标值」续跑 ─────────────────────
+
+    @Test
+    fun `an empty-name repair resumes a layer already at the target without rewriting it`() {
+        val id = "EMAIL-jane@uni.edu"
+        put(ExpertIndexLevel.RAW, id, source(given = null, family = null))
+        put(ExpertIndexLevel.CANDIDATE, id, source(given = "Jane", family = "Doe", proof = targetProof()))
+
+        val result = service.repairEmptyNameProof(id, incoming())
+
+        assertEquals(IdentityRepairOutcome.REPAIRED, result.outcome)
+        assertTrue(
+            result.layers.single { it.level == ExpertIndexLevel.CANDIDATE }.outcome ==
+                IdentityRepairLayerOutcome.ALREADY_VERIFIED,
+            "已达本次目标值的层不重写"
+        )
+        assertEquals(1, updateUrls.count { it.contains("/orcid_info/_update/") })
+        assertEquals(0, updateUrls.count { it.contains("/orcid_info_candidate/_update/") })
+        assertEquals(targetProof(), docs[key(ExpertIndexLevel.RAW, id)]!!.source["identityVerification"])
+    }
+
+    @Test
+    fun `an empty-name repair never overwrites a third-party proof`() {
+        val id = "EMAIL-jane@uni.edu"
+        val thirdParty = IdentityVerification(
+            status = "VERIFIED", version = DiscoveryIdentity.VERSION, email = "jane@uni.edu",
+            givenNames = "Jane", familyNames = "Doe",
+            source = "ORCID_RECORD_SHA256", evidenceHash = "b".repeat(64)
+        )
+        put(ExpertIndexLevel.RAW, id, source(given = null, family = null))
+        put(ExpertIndexLevel.CANDIDATE, id, source(given = "Jane", family = "Doe", proof = thirdParty))
+
+        val result = service.repairEmptyNameProof(id, incoming())
+
+        assertEquals(IdentityRepairOutcome.CONFLICT, result.outcome)
+        assertTrue(updateUrls.isEmpty())
+        assertEquals(thirdParty, docs[key(ExpertIndexLevel.CANDIDATE, id)]!!.source["identityVerification"])
+        assertNull(docs[key(ExpertIndexLevel.RAW, id)]!!.source["identityVerification"])
+    }
+
     // ── 05（I-1）：统一人物登记刷新 ──────────────────────────────────────────
 
     private fun personRegistrar(repo: FakeRepository): DiscoveryPersonRegistrationService {
@@ -390,7 +435,8 @@ class DiscoveryIdentityRepairServiceTest {
             Mockito.mock(ExpertContactRepository::class.java),
             Mockito.mock(ExpertEmailAliasService::class.java)
         )
-        return DiscoveryPersonRegistrationService(writer, personService, repo)
+        // I-8/R-1：统一开启边界默认关闭；此处显式开启以验收登记链（关闭时 refresh 返回 SKIPPED）。
+        return DiscoveryPersonRegistrationService(writer, personService, repo, DiscoveryPersonFeatureGate(enabled = true))
     }
 
     @Test

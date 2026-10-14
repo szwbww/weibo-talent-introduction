@@ -269,6 +269,61 @@ class DiscoveryPersonServiceTest {
     }
 
     @Test
+    fun `two different full names sharing one orcid are not grouped`() {
+        put("doc-a", source = discoveredSource(email = "a@uni.edu", given = "Jane", family = "Doe", orcid = "0000-0002-1825-0097"))
+        put("doc-b", source = discoveredSource(email = "b@uni.edu", given = "John", family = "Smith", orcid = "0000-0002-1825-0097"))
+        val key = orcidKey("0000-0002-1825-0097")
+        val result = register(
+            member("doc-a", "a@uni.edu", given = "Jane", family = "Doe", keys = listOf(key)),
+            member("doc-b", "b@uni.edu", given = "John", family = "Smith", keys = listOf(key))
+        )
+        assertEquals(DiscoveryPersonOutcome.NEEDS_REVIEW, result.outcome)
+        assertEquals("GROUP_NAME_MISMATCH", result.reason)
+        assertTrue(repository.persons.isEmpty())
+    }
+
+    @Test
+    fun `an existing root rejects a member whose other author key differs`() {
+        put("doc-a", source = discoveredSource(email = "a@uni.edu", orcid = "0000-0002-1825-0097", openAlex = "A111"))
+        val root = register(
+            member("doc-a", "a@uni.edu", keys = listOf(orcidKey("0000-0002-1825-0097"), openAlexKey("A111")))
+        )
+        assertEquals(DiscoveryPersonOutcome.CREATED, root.outcome, root.reason)
+
+        // 同 ORCID 但 OpenAlex 键不同（A222≠A111）不是同一人：不得静默挂到既有根。
+        put("doc-b", source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097", openAlex = "A222"))
+        val second = register(
+            member("doc-b", "b@uni.edu", keys = listOf(orcidKey("0000-0002-1825-0097"), openAlexKey("A222")))
+        )
+        assertEquals(DiscoveryPersonOutcome.NEEDS_REVIEW, second.outcome)
+        assertEquals("EXISTING_AUTHOR_KEY_CONFLICT", second.reason)
+        assertNull(repository.members["doc-b"], "既有人物不接纳冲突作者键")
+        assertEquals(1, repository.members.size)
+        assertEquals(setOf(orcidKey("0000-0002-1825-0097"), openAlexKey("A111")), repository.keys.keys)
+    }
+
+    @Test
+    fun `a conflict retry re-reads the current ES facts instead of reusing the first verification`() {
+        put("doc-a", source = discoveredSource(email = "a@uni.edu", orcid = "0000-0002-1825-0097"))
+        put("doc-b", source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097"))
+        val key = orcidKey("0000-0002-1825-0097")
+        // 首次写入被并发竞争者抢占（冲突信号）；竞争间隙里 doc-b 的档案事实被改动。
+        repository.rejectNextCreate = true
+        repository.onCreateConflict = {
+            put("doc-b", source = discoveredSource(email = "b@uni.edu", given = "John", family = "Smith", orcid = "0000-0002-1825-0097"))
+        }
+
+        val result = register(
+            member("doc-a", "a@uni.edu", keys = listOf(key)),
+            member("doc-b", "b@uni.edu", keys = listOf(key))
+        )
+
+        assertEquals(DiscoveryPersonOutcome.STALE, result.outcome, result.reason)
+        assertEquals("FINGERPRINT_MISMATCH", result.reason)
+        assertTrue(repository.persons.isEmpty(), "复验到的当前事实已变化 → 不写关系")
+    }
+
+    @Test
     fun `a unique-conflict is re-read and re-verified instead of treated as success`() {
         put("doc-a", source = discoveredSource(email = "a@uni.edu", orcid = "0000-0002-1825-0097"))
         val first = register(member("doc-a", "a@uni.edu", keys = listOf(orcidKey("0000-0002-1825-0097"))))
@@ -397,6 +452,9 @@ class DiscoveryPersonServiceTest {
         val keys = linkedMapOf<String, String>()
         var rejectNextCreate = false
 
+        /** 模拟「首次写入被并发抢占、随后档案事实被改动」的竞争间隙。 */
+        var onCreateConflict: (() -> Unit)? = null
+
         override fun findPerson(personId: String): DiscoveryPersonRecord? = persons[personId]
 
         override fun findMember(expertDocId: String): DiscoveryPersonMemberRecord? = members[expertDocId]
@@ -425,6 +483,7 @@ class DiscoveryPersonServiceTest {
         ): DiscoveryPersonWriteStatus {
             if (rejectNextCreate) {
                 rejectNextCreate = false
+                onCreateConflict?.invoke()
                 return DiscoveryPersonWriteStatus.AUTHOR_KEY_TAKEN
             }
             if (authorKeys.any { keys.containsKey(it) }) return DiscoveryPersonWriteStatus.AUTHOR_KEY_TAKEN

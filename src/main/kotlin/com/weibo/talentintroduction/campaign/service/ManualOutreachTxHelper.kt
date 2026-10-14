@@ -25,6 +25,11 @@ class ManualOutreachTxHelper(
     /**
      * Atomically records a successful send: transition contact NEW→INTRO_SENT,
      * create SENT mail record, increment account counter, mark attempt SENT.
+     *
+     * 09（I-2）：成功事实必须与人物级交付权**同事务联动** —— [outreachGuardTicket] 非空时在同一
+     * 事务内推进 SENT（CAS 失败不回滚已确认的交付事实，占位停在 SENDING）。交付权本身的持久化
+     * （RESERVED/SENDING/UNKNOWN/SAFE_RETRY）由 guard 的独立事务负责，绝不并入本事务，
+     * 故业务成功事务回滚不能撤销「已取得交付权」的事实。
      */
     @Transactional
     fun recordSuccess(

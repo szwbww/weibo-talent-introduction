@@ -96,25 +96,37 @@ class InitialOutreachService(
                 }
             }
 
-            val account = senderAccountAssignmentService.selectAccount(expert, assignments, stock = stock)
+            val account = try {
+                senderAccountAssignmentService.selectAccount(expert, assignments, stock = stock)
+            } catch (e: Exception) {
+                // 未调用 SMTP，证明未交付 → 已持有的占位清理为可解释安全状态（原址可重试）。
+                guardTicket?.let { guard?.markSafeRetry(it) }
+                throw e
+            }
             val now = LocalDateTime.now()
             val (boundCode, boundAt) = senderAccountBindingService
                 .bindingFieldsFor(account.accountCode, now)
-            val contact = expertContactRepository.save(
-                ExpertContact(
-                    campaignId = campaignId,
-                    orcidId = expert.orcidId,
-                    expertEmail = expert.email.orEmpty(),
-                    expertName = expert.displayName,
-                    currentStatus = "NEW",
-                    country = expert.country,
-                    autoReplyEnabled = autoReplySettingService.isGlobalEnabled(),
-                    boundSenderAccountCode = boundCode,
-                    senderAccountBoundAt = boundAt,
-                    createdAt = now,
-                    updatedAt = now
+            val contact = try {
+                expertContactRepository.save(
+                    ExpertContact(
+                        campaignId = campaignId,
+                        orcidId = expert.orcidId,
+                        expertEmail = expert.email.orEmpty(),
+                        expertName = expert.displayName,
+                        currentStatus = "NEW",
+                        country = expert.country,
+                        autoReplyEnabled = autoReplySettingService.isGlobalEnabled(),
+                        boundSenderAccountCode = boundCode,
+                        senderAccountBoundAt = boundAt,
+                        createdAt = now,
+                        updatedAt = now
+                    )
                 )
-            )
+            } catch (e: Exception) {
+                // 同上：建行失败未调用 SMTP，清理占位后保留原有中断语义。
+                guardTicket?.let { guard?.markSafeRetry(it) }
+                throw e
+            }
 
             val mail = try {
                 introductionMailComposer.compose(account.accountCode, expert)
@@ -162,8 +174,13 @@ class InitialOutreachService(
                     outreachGuardTicket = guardTicket
                 )
             } else {
-                // SMTP 明确未接受 → 证明未交付，安全重试。
-                guardTicket?.let { guard?.markSafeRetry(it) }
+                // 只有 SMTP 明确未接受（有响应码）才证明未交付 → SAFE_RETRY；
+                // 无响应码（网络/认证等）结果不明 → UNKNOWN，绝不据此重试。
+                if (delivered.smtpResponseCode != null) {
+                    guardTicket?.let { guard?.markSafeRetry(it) }
+                } else {
+                    guardTicket?.let { guard?.markUnknown(it) }
+                }
                 txHelper.recordFailure(
                     contactId = contact.id ?: error("Saved expert contact id is null"),
                     accountCode = account.accountCode,

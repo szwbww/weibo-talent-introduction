@@ -103,6 +103,35 @@ data class DiscoveryPersonRegistrationResult(
 )
 
 /**
+ * 04/10（I-3）：人物链专属的**实时发现范围**判据。
+ *
+ * 与既有宽口径 [DiscoveryIdentity.isDiscoveryMap]（proof / 来源 / 标签**任一**成立）不同：人物登记、
+ * 补证、恢复、维护与展示都要求「发现来源证据 **且** 字面 `discovered` 标签」同时成立。二者缺一即
+ * 不是当前人物范围：旧关系立即失效（待重核），不得借保留的历史 proof/来源继续沿用人物语义。
+ *
+ * 该判据只收敛人物链，不改既有准入 `isDiscoveryOutreach` 的宽口径，也不改 01/02 的身份门槛。
+ */
+object DiscoveryPersonScope {
+    const val DISCOVERED_TAG = "discovered"
+
+    /** 与 [DiscoveryIdentity] 的发现来源词表同值（`PAPER_FULLTEXT` / `ORCID_PUBLIC`）。 */
+    private val DISCOVERY_SOURCES = listOf("PAPER_FULLTEXT", "ORCID_PUBLIC")
+
+    /** 档案版判据：发现来源证据（身份凭证或发现来源标记）与字面标签必须同时成立。 */
+    fun isLiveDiscovered(profile: ExpertProfile): Boolean =
+        hasDiscoverySource(profile.identityVerification != null, profile.emailSource) &&
+            profile.tags.orEmpty().contains(DISCOVERED_TAG)
+
+    /** ES 文档 `_source` 版判据：与 [isLiveDiscovered] 同一条规则，供服务端核实只读重算。 */
+    fun isLiveDiscovered(source: Map<String, Any?>): Boolean =
+        hasDiscoverySource(source["identityVerification"] != null, source["emailSource"] as? String) &&
+            (source["tags"] as? Collection<*>)?.any { it == DISCOVERED_TAG } == true
+
+    private fun hasDiscoverySource(hasProof: Boolean, emailSource: String?): Boolean =
+        hasProof || emailSource in DISCOVERY_SOURCES
+}
+
+/**
  * 04（I-2）：可信作者键与成员指纹的**唯一签发点**（服务端登记与 05 调用方共用同一实现，
  * 保证「同一事实 → 同一键/同一指纹」）。
  *

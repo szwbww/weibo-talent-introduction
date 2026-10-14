@@ -1,6 +1,6 @@
 package com.weibo.talentintroduction.campaign.service
 
-import com.weibo.talentintroduction.campaign.domain.RecipientScope
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonScope
 import com.weibo.talentintroduction.discovery.repository.DiscoveryPersonRepository
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.mail.service.EmailSuppressionService
@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.dao.DuplicateKeyException
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import java.sql.ResultSet
 import java.sql.Timestamp
@@ -27,6 +28,14 @@ object OutreachGuardStates {
     const val UNKNOWN = "UNKNOWN"
     /** 已证明未交付，仅可沿用原 recipient 重试。 */
     const val SAFE_RETRY = "SAFE_RETRY"
+
+    /**
+     * I-3：构成**人物级持久保护**的状态集合。同时用于两个判断：
+     * ① 10 的历史保护导入是否已就绪（存在即已保护，缺一即未保护）；
+     * ② 10 的回滚提案是否必须保守拒绝（进行中/不确定/已交付都不得标为可回滚）。
+     * `SAFE_RETRY` 不在集合内：它表示已证明未交付，可沿用原地址重试，不是保护。
+     */
+    val PROTECTED_STATES = setOf(SENT, UNKNOWN, SENDING, RESERVED)
 }
 
 /** I-1/I-3: 未获首发许可的可解释原因 key（调用方据此记 skipped，不新建 contact/不调 SMTP）。 */
@@ -66,16 +75,33 @@ sealed class OutreachClaimOutcome {
 }
 
 /**
+ * I-3（10 的历史保护导入）：导入后的保护快照。
+ * [state] 为空表示既无占位也无已证实历史（无保护）；[created] 表示本次调用是否落库；
+ * [recipient] 是绑定的原地址（仅审计/展示用，不构成许可）。
+ */
+data class OutreachProtectionImport(
+    val state: String,
+    val created: Boolean,
+    val recipient: String?
+)
+
+/**
  * 09（I-1/I-2/I-3）：`discovery_person_outreach` 的**唯一**写入点与首发原子门禁。
  *
  * - 唯一键 `(person_id, mail_type)` + 行级 `FOR UPDATE`（先锁人物行再锁占位行）保证多实例
  *   互斥；**不用** JVM `synchronized`，也不设锁超时/自动解锁。
- * - [reserveIntroduction] 在同一事务内：锁人物行 → 锁占位行 → 只读历史检查（全部成员）→ 插入
- *   RESERVED。既存 SENT/UNKNOWN/SENDING/RESERVED 一律不授予；SAFE_RETRY 仅对原地址重授。
- * - [claimSending] 在发送前复核人物 revision、地址与当前发现资格，再用
+ * - [reserveIntroduction] / [reserve] / [claimSending] / [markUnknown] / [markSafeRetry] 各自
+ *   `REQUIRES_NEW` 独立提交：交付权的持久化（RESERVED/SENDING/UNKNOWN/SAFE_RETRY）先于 SMTP 落库，
+ *   业务成功事务回滚不能撤销它。只有 [markSent] 用 `REQUIRED`，与成功的邮件业务写同事务。
+ * - [reserve] 在同一事务内：锁人物行 → 锁占位行 → 只读历史检查（全部成员）→ 插入 RESERVED。
+ *   既存 SENT/UNKNOWN/SENDING/RESERVED 一律不授予；SAFE_RETRY 仅对原地址重授，且重授前**同样**
+ *   重跑整组历史检查（期间新增人工拒绝/已联系/别名/已发信即阻断）。
+ * - 每次 reserve 与 claim 都要求画像可读且仍属**实时 discovered**（[DiscoveryPersonScope.isLiveDiscovered]）；
+ *   已知人物画像不可读绝不退化为无 guard 普通邮件。
+ * - [claimSending] 在发送前复核人物 revision、地址、实时标签、整组当前资格与历史，再用
  *   expected revision/owner_token CAS RESERVED→SENDING；失败即不发送。
  * - [markSent] 供成功的原事务联动（与 mail_record 同事务）；[markUnknown] 标记不可重发；
- *   [markSafeRetry] 仅在明确未交付时使用，且不改变绑定地址。
+ *   [markSafeRetry] 仅在明确未交付（未调用 SMTP 或 SMTP 明确未接受）时使用，且不改变绑定地址。
  *
  * 只读历史检查依赖可省略（`discoveryPersonRecipientService` / `emailSuppressionService`）——
  * 省略时退化为直连 SQL 的 contact/alias/mail_record/mail_send_attempt 检查，非人物与单元测试零影响。
@@ -95,7 +121,7 @@ class DiscoveryPersonOutreachGuardService(
      * [selectedDocId] 是 08 选中的真实 docId；未登记到人物（映射未就绪）即
      * [OutreachGuardReasonCodes.PERSON_MISSING]（fail-closed，绝不静默放行）。
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun reserveIntroduction(
         selectedDocId: String,
         recipient: String,
@@ -104,7 +130,7 @@ class DiscoveryPersonOutreachGuardService(
         return reserve(selectedDocId, INTRODUCTION, recipient, profile, null)
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun reserve(
         selectedDocId: String,
         mailType: String,
@@ -119,6 +145,14 @@ class DiscoveryPersonOutreachGuardService(
         val personId = member.personId
         val revision = lockPersonRevision(personId)
             ?: return denied(OutreachGuardReasonCodes.PERSON_MISSING, "person row missing")
+
+        // 已知人物画像不可读（null）或已脱离实时 discovered 范围：绝不授予，也不退化为普通邮件。
+        if (profile == null) {
+            return denied(OutreachGuardReasonCodes.PERSON_MISSING, "person profile unavailable for $docId")
+        }
+        if (!DiscoveryPersonScope.isLiveDiscovered(profile)) {
+            return denied(OutreachGuardReasonCodes.ADDRESS_INELIGIBLE, "not live discovered")
+        }
 
         val normalizedRecipient = normalize(recipient)
         val now = LocalDateTime.now()
@@ -136,23 +170,30 @@ class DiscoveryPersonOutreachGuardService(
                             "safe retry bound to ${existing.recipient}"
                         )
                     } else {
-                        val token = UUID.randomUUID().toString()
-                        val updated = jdbcTemplate.update(
-                            """
-                            UPDATE discovery_person_outreach
-                               SET state = ?, revision = ?, owner_token = ?, selected_doc_id = ?,
-                                   recipient = ?, updated_at = ?
-                             WHERE person_id = ? AND mail_type = ? AND state = ?
-                            """.trimIndent(),
-                            OutreachGuardStates.RESERVED, revision, token, docId, normalizedRecipient,
-                            timestamp(now), personId, mailType, OutreachGuardStates.SAFE_RETRY
-                        )
-                        if (updated == 1) {
-                            OutreachReserveOutcome.Granted(
-                                OutreachGuardTicket(personId, mailType, revision, token, docId, normalizedRecipient)
-                            )
+                        // SAFE_RETRY 也必须重跑整组历史检查：重授期间新增人工拒绝、身份冲突、
+                        // 已联系、别名或已发信事实一律阻断，不因「上次证明未交付」而绕过。
+                        val history = collectHistory(personId, docId, normalizedRecipient, profile, historyReference)
+                        if (history.blocked) {
+                            denied(history.code ?: OutreachGuardReasonCodes.HISTORY_PROTECTED, history.detail)
                         } else {
-                            denied(OutreachGuardReasonCodes.IN_FLIGHT)
+                            val token = UUID.randomUUID().toString()
+                            val updated = jdbcTemplate.update(
+                                """
+                                UPDATE discovery_person_outreach
+                                   SET state = ?, revision = ?, owner_token = ?, selected_doc_id = ?,
+                                       recipient = ?, updated_at = ?
+                                 WHERE person_id = ? AND mail_type = ? AND state = ?
+                                """.trimIndent(),
+                                OutreachGuardStates.RESERVED, revision, token, docId, normalizedRecipient,
+                                timestamp(now), personId, mailType, OutreachGuardStates.SAFE_RETRY
+                            )
+                            if (updated == 1) {
+                                OutreachReserveOutcome.Granted(
+                                    OutreachGuardTicket(personId, mailType, revision, token, docId, normalizedRecipient)
+                                )
+                            } else {
+                                denied(OutreachGuardReasonCodes.IN_FLIGHT)
+                            }
                         }
                     }
                 else -> denied(OutreachGuardReasonCodes.UNKNOWN_PENDING, existing.state)
@@ -187,11 +228,11 @@ class DiscoveryPersonOutreachGuardService(
     }
 
     /**
-     * I-2/I-3: 发送前取得唯一交付权。复核当前人物 revision、地址与发现资格后，
-     * 以 expected revision/owner_token CAS RESERVED→SENDING。只有 [OutreachClaimOutcome.Claimed]
-     * 允许调用 SMTP；任何失败都保持占位不释放。
+     * I-2/I-3: 发送前取得唯一交付权。复核当前人物 revision、地址、实时 discovered 标签与
+     * 整组当前资格/历史后，以 expected revision/owner_token CAS RESERVED→SENDING。
+     * 只有 [OutreachClaimOutcome.Claimed] 允许调用 SMTP；任何失败都保持占位不释放。
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun claimSending(
         ticket: OutreachGuardTicket,
         profile: ExpertProfile?,
@@ -206,16 +247,23 @@ class DiscoveryPersonOutreachGuardService(
         if (normalized != ticket.recipient) {
             return OutreachClaimOutcome.Denied(OutreachGuardReasonCodes.ADDRESS_INELIGIBLE, "recipient changed")
         }
-        if (profile != null) {
-            if (!RecipientScope.isDiscoveryOutreach(profile)) {
-                return OutreachClaimOutcome.Denied(OutreachGuardReasonCodes.ADDRESS_INELIGIBLE, "no longer discovery")
-            }
-            if (profile.email.isNullOrBlank()) {
-                return OutreachClaimOutcome.Denied(OutreachGuardReasonCodes.ADDRESS_INELIGIBLE, "empty email")
-            }
+        // 画像不可读（已知人物）或已脱离实时 discovered 范围：不发送，也绝不退化为无 guard 普通邮件。
+        if (profile == null) {
+            return OutreachClaimOutcome.Denied(OutreachGuardReasonCodes.PERSON_MISSING, "person profile unavailable")
+        }
+        if (!DiscoveryPersonScope.isLiveDiscovered(profile)) {
+            return OutreachClaimOutcome.Denied(OutreachGuardReasonCodes.ADDRESS_INELIGIBLE, "not live discovered")
+        }
+        if (profile.email.isNullOrBlank()) {
+            return OutreachClaimOutcome.Denied(OutreachGuardReasonCodes.ADDRESS_INELIGIBLE, "empty email")
         }
         if (emailSuppressionService?.isSuppressed(normalized) == true) {
             return OutreachClaimOutcome.Denied(OutreachGuardReasonCodes.ADDRESS_INELIGIBLE, "suppressed")
+        }
+        // 当前整组资格与历史复核：人工拒绝、身份冲突、已联系、别名、已发信任一命中即不发送。
+        val history = collectHistory(ticket.personId, ticket.selectedDocId, normalized, profile, null)
+        if (history.blocked) {
+            return OutreachClaimOutcome.Denied(history.code ?: OutreachGuardReasonCodes.HISTORY_PROTECTED, history.detail)
         }
         val updated = jdbcTemplate.update(
             """
@@ -251,8 +299,8 @@ class DiscoveryPersonOutreachGuardService(
             ticket.personId, ticket.mailType, OutreachGuardStates.SENDING, ticket.revision, ticket.ownerToken
         ) == 1
 
-    /** I-2: SMTP 结果不明（异常 / SENDING 中断）→ UNKNOWN，永不自动重发。 */
-    @Transactional
+    /** I-2: SMTP 结果不明（异常 / SENDING 中断）→ UNKNOWN，永不自动重发。独立事务提交。 */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun markUnknown(ticket: OutreachGuardTicket): Boolean =
         jdbcTemplate.update(
             """
@@ -267,9 +315,9 @@ class DiscoveryPersonOutreachGuardService(
         ) == 1
 
     /**
-     * I-2: 明确未交付（未调用 SMTP 或 SMTP 明确未接受）→ SAFE_RETRY。地址绑定不变。
+     * I-2: 明确未交付（未调用 SMTP 或 SMTP 明确未接受）→ SAFE_RETRY。地址绑定不变。独立事务提交。
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun markSafeRetry(ticket: OutreachGuardTicket): Boolean =
         jdbcTemplate.update(
             """
@@ -283,12 +331,91 @@ class DiscoveryPersonOutreachGuardService(
             ticket.revision, ticket.ownerToken
         ) == 1
 
+    /**
+     * I-3（详情/单发入口）：该 docId 是否已登记到人物（只读）。
+     * 已知人物画像不可读时据此 fail-closed —— 绝不退化为无 guard 的普通邮件；
+     * 未登记（非人物）返回 false，调用方保持原普通路径。
+     */
+    fun isKnownPerson(docId: String): Boolean {
+        val trimmed = docId.trim()
+        return trimmed.isNotEmpty() && discoveryPersonRepository.findMember(trimmed) != null
+    }
+
     /** 只读：当前占位状态（对账/对下游 10 暴露），无占位返回 null。 */
     fun stateOf(personId: String, mailType: String = INTRODUCTION): String? =
         jdbcTemplate.query(
             "SELECT state FROM discovery_person_outreach WHERE person_id = ? AND mail_type = ?",
             { rs: ResultSet, _: Int -> rs.getString("state") }, personId, mailType
         ).firstOrNull()
+
+    /**
+     * I-3（10 的持久导入接缝）：把**已有成功/未知交付历史**持久化为人物级保护。
+     *
+     * - 只在没有占位行时写入；**不新建 `RESERVED` 占位**（占位只能由本次 ticket 的 CAS 消费，
+     *   导入产生的占位会永久阻塞该人物首发）。
+     * - 与调用方（10 的整组应用）同库同事务：本方法只做锁定 + 一次条件插入，异常不吞。
+     * - 返回该人物当前的保护快照：[OutreachProtectionImport.state] 为空表示既无占位也无已证实历史
+     *   （无保护），非空即表示保护已就绪（[created] 区分本次是否由本调用落库）。
+     */
+    @Transactional
+    fun importExistingProtection(personId: String, mailType: String = INTRODUCTION): OutreachProtectionImport {
+        val revision = lockPersonRevision(personId)
+            ?: throw IllegalStateException("guard import: person row missing for $personId")
+        lockGuardRow(personId, mailType)?.let { existing ->
+            return OutreachProtectionImport(existing.state, false, existing.recipient)
+        }
+        val members = discoveryPersonRepository.findMembersByPerson(personId)
+        val memberDocIds = members.map { it.expertDocId }
+        val state = historicalDeliveryState(memberDocIds) ?: return OutreachProtectionImport("", false, null)
+        val recipient = historicalRecipient(memberDocIds, members.mapNotNull { it.normalizedEmail })
+        val selectedDocId = memberDocIds.minOrNull() ?: personId
+        val now = LocalDateTime.now()
+        try {
+            jdbcTemplate.update(
+                """
+                INSERT INTO discovery_person_outreach
+                    (person_id, mail_type, state, revision, owner_token, selected_doc_id, recipient,
+                     message_id, attempt_id, history_reference_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)
+                """.trimIndent(),
+                personId, mailType, state, revision, UUID.randomUUID().toString(), selectedDocId, recipient,
+                jsonSummary(listOf("IMPORTED_HISTORY"), memberDocIds, emptyList(), null),
+                timestamp(now), timestamp(now)
+            )
+        } catch (ex: DuplicateKeyException) {
+            // 并发导入：另一所有者已落库，读回其状态（绝不覆盖）。
+            return lockGuardRow(personId, mailType)
+                ?.let { OutreachProtectionImport(it.state, false, it.recipient) }
+                ?: throw IllegalStateException("guard import raced without visible row for $personId", ex)
+        }
+        return OutreachProtectionImport(state, true, recipient)
+    }
+
+    /** 只读：已有成功/未知交付历史（mail_record / mail_send_attempt 事实），无则 null。 */
+    private fun historicalDeliveryState(memberDocIds: List<String>): String? {
+        if (memberDocIds.isEmpty()) return null
+        if (hasSentIntroduction(memberDocIds)) return OutreachGuardStates.SENT
+        return when (ambiguousAttemptStatus(memberDocIds)) {
+            null -> null
+            "SENT" -> OutreachGuardStates.SENT
+            else -> OutreachGuardStates.UNKNOWN
+        }
+    }
+
+    /** 导入保护绑定的地址：优先历史联系人邮箱，其次人物成员的登记邮箱；无法确定时为空串。 */
+    private fun historicalRecipient(memberDocIds: List<String>, memberEmails: List<String>): String {
+        val ids = memberDocIds.filter { it.isNotBlank() }.distinct()
+        if (ids.isNotEmpty()) {
+            val placeholders = ids.joinToString(", ") { "?" }
+            val historical = jdbcTemplate.query(
+                "SELECT expert_email FROM expert_contact WHERE orcid_id IN ($placeholders) ORDER BY updated_at DESC",
+                { rs: ResultSet, _: Int -> rs.getString("expert_email") },
+                *ids.toTypedArray()
+            ).firstOrNull()?.takeIf { it.isNotBlank() }
+            if (historical != null) return normalize(historical)
+        }
+        return memberEmails.firstOrNull()?.let { normalize(it) } ?: ""
+    }
 
     /** 只读：当前占位行（对账用），无占位返回 null。 */
     fun findReservation(personId: String, mailType: String = INTRODUCTION): ReservationRow? =

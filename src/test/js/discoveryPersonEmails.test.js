@@ -98,9 +98,9 @@ describe("07-ui S-2：详情联系方式卡片（成员行 / 历史入口 / 冲�
     it("三个邮箱按成员重复；复用既有 class；每行 data-member-doc-id；有 contactId 才渲染历史按钮", () => {
         const sb = createSandbox();
         const person = personFixture([
-            member("doc1", "primary@x.com", { representative: true, contactId: 11, admissionStatus: "PASSED", operatorStatus: "NOT_CONTACTED", evidenceSource: "ORCID" }),
+            member("doc1", "primary@x.com", { representative: true, contactId: 11, admissionStatus: "ADMITTED", operatorStatus: "NOT_CONTACTED", evidenceSource: "ORCID" }),
             member("doc2", "secondary@x.com", { contactId: 12, admissionStatus: null, contactStatus: "WAITING_REPLY" }),
-            member("doc3", "third@x.com", { admissionStatus: "REJECTED" })
+            member("doc3", "third@x.com", { admissionStatus: "MANUAL_REJECTED" })
         ]);
         const html = sb.renderDiscoveryPersonEmailsCard(person);
 
@@ -117,9 +117,9 @@ describe("07-ui S-2：详情联系方式卡片（成员行 / 历史入口 / 冲�
         assert.ok(html.includes('data-contact-id="11"') && html.includes('data-contact-id="12"'));
         assert.ok(html.includes('data-member-email="primary@x.com"'), "entry carries the original email");
         assert.ok(!html.includes('data-contact-id="null"'));
-        assert.ok(html.includes("可发送"), "PASSED admission shows 可发送");
+        assert.ok(html.includes("可发送"), "ADMITTED admission shows 可发送");
         assert.ok(html.includes("准入：准入未取得"), "missing admission is not shown as sendable");
-        assert.ok(html.includes("准入：不合格"), "REJECTED admission label");
+        assert.ok(html.includes("准入：不合格"), "rejected admission label");
         assert.ok(html.includes("主邮箱"), "representative email is labelled");
     });
 
@@ -155,7 +155,7 @@ describe("07-ui S-2：详情联系方式卡片（成员行 / 历史入口 / 冲�
     it("卡片只使用 styles.css 中已声明的 class（无新 CSS）", () => {
         const sb = createSandbox();
         const html = sb.renderDiscoveryPersonEmailsCard(personFixture([
-            member("doc1", "a@x.com", { representative: true, contactId: 1, admissionStatus: "PASSED" })
+            member("doc1", "a@x.com", { representative: true, contactId: 1, admissionStatus: "ADMITTED" })
         ]));
         const classes = new Set();
         for (const m of html.matchAll(/class="([^"]+)"/g)) {
@@ -177,13 +177,50 @@ describe("07-ui S-2：详情联系方式卡片（成员行 / 历史入口 / 冲�
 });
 
 // ──────────────────────────────────────────────────────────────────────────
+describe("07-ui R-12：逐邮箱准入/邮箱状态只认真值 token（旧 filterResult 绝不显示可发送）", () => {
+    it("只有 ADMITTED 显示可发送；抑制/不合格/待复核/身份变更/未知各有准确标签", () => {
+        const sb = createSandbox();
+        assert.strictEqual(sb.discoveryAdmissionLabel("ADMITTED"), "可发送");
+        assert.strictEqual(sb.discoveryAdmissionLabel("MANUAL_REJECTED"), "不合格");
+        assert.strictEqual(sb.discoveryAdmissionLabel("NEEDS_REVIEW"), "待复核");
+        assert.strictEqual(sb.discoveryAdmissionLabel("IDENTITY_CHANGED"), "身份已变更");
+        assert.strictEqual(sb.discoveryAdmissionLabel("UNINITIALIZED"), "准入未取得");
+        assert.strictEqual(sb.discoveryAdmissionLabel("SUPPRESSED"), "已退订");
+        assert.strictEqual(sb.discoveryAdmissionLabel("UNKNOWN"), "准入未取得");
+        assert.strictEqual(sb.discoveryAdmissionLabel(null), "准入未取得");
+    });
+
+    it("旧 filterResult 值（PASSED/REJECTED）与任意未知 token 都不显示为可发送", () => {
+        const sb = createSandbox();
+        for (const legacy of ["PASSED", "REJECTED", "HOLD", "TRUE", "", "   "]) {
+            assert.notStrictEqual(sb.discoveryAdmissionLabel(legacy), "可发送", `legacy token ${legacy} must not be sendable`);
+        }
+    });
+
+    it("filterResult=PASSED 的档案在 HOLD/抑制/未知状态下，卡片都不显示可发送", () => {
+        const sb = createSandbox();
+        const html = sb.renderDiscoveryPersonEmailsCard(personFixture([
+            member("doc1", "primary@x.com", { representative: true, contactId: 1, admissionStatus: "MANUAL_REJECTED" }),
+            member("doc2", "suppressed@x.com", { contactId: 2, admissionStatus: "SUPPRESSED" }),
+            member("doc3", "unknown@x.com", { contactId: 3, admissionStatus: "UNKNOWN" }),
+            member("doc4", "legacy@x.com", { contactId: 4, admissionStatus: "PASSED" })
+        ]));
+        assert.ok(!html.includes("可发送"), "no member may render as sendable");
+        assert.ok(html.includes("准入：不合格"));
+        assert.ok(html.includes("准入：已退订"));
+        assert.ok(html.includes("准入：准入未取得"));
+        assert.ok(html.includes("准入：准入状态未知"), "unknown token is not labelled sendable");
+    });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
 describe("07-ui I-2：两宿主共用片段 + generation 守卫", () => {
     for (const host of ["showExpertDetail", "loadContactDetail"]) {
         it(`${host}：把人物卡片写入同一 host 选择器，多邮箱时头部摘要取响应数量`, async () => {
             const sb = createSandbox();
             const root = makeRoot({ withHeader: true });
             const person = personFixture([
-                member("doc1", "primary@x.com", { representative: true, contactId: 1, admissionStatus: "PASSED" }),
+                member("doc1", "primary@x.com", { representative: true, contactId: 1, admissionStatus: "ADMITTED" }),
                 member("doc2", "b@x.com", { contactId: 2 }),
                 member("doc3", "c@x.com", { contactId: 3 })
             ]);

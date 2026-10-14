@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.discovery.domain.AuthorEmail
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonIdentity
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonMemberSnapshot
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonOutcome
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonScope
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonSnapshot
 import com.weibo.talentintroduction.discovery.repository.DiscoveryPersonRepository
 import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
@@ -175,8 +176,9 @@ class DiscoveryIdentityRepairService(
      * [repairDuplicateIdentity] 的既有语义。
      *
      * 前置（调用方已判，此处再次强制）：完整姓名 + 有效来源证据；规范邮箱唯一命中本 `docId`；
-     * 三层无身份/作者编号冲突；没有 existing proof。**只填**每层为空的姓名段，
-     * 已有非空姓名段与 incoming 不一致或已有 proof 一律零写入；CAS 写失败保留可重试错误。
+     * 三层无身份/作者编号冲突。**只填**每层为空的姓名段；已有非空姓名段与 incoming 不一致一律零写入；
+     * 已有 proof 只接受**本次目标值**（同一原申请的部分层已完成 → 续跑），任何第三种值立即停止；
+     * CAS 写失败保留可重试错误。
      */
     fun repairEmptyNameProof(docId: String, incoming: AuthorEmail): IdentityRepairResult {
         if (docId.isBlank()) return IdentityRepairResult(IdentityRepairOutcome.FAILED)
@@ -210,6 +212,11 @@ class DiscoveryIdentityRepairService(
         }
         if (snapshots.values.all { it == null }) return IdentityRepairResult(IdentityRepairOutcome.FAILED)
 
+        val target = DiscoveryIdentity.verified(
+            incoming.email, incoming.givenNames, incoming.familyNames,
+            incoming.identityEvidence!!, incoming.orcidId, incoming.openAlexAuthorId
+        )
+
         val stored = snapshots.mapNotNull { (level, snap) -> snap?.let { level to it.source } }
         for ((_, source) in stored) {
             if (email != DiscoveryIdentity.normalizedEmail(source["email"] as? String)) {
@@ -224,17 +231,14 @@ class DiscoveryIdentityRepairService(
             if (family != null && family != incoming.familyNames) {
                 return IdentityRepairResult(IdentityRepairOutcome.CONFLICT)
             }
-            // 已有 proof（含历史认可/无效摘要）：不是空名补证对象，零写入。
-            if (proofOf(source) != null) {
-                return IdentityRepairResult(IdentityRepairOutcome.ALREADY_VERIFIED)
+            // I-3：已有 proof 只接受**本次目标值**（同一原申请的部分层已完成 → 续跑）；任何第三种
+            // 值（他人/并发写入的 proof）立即停止，绝不覆盖，也不当作已完成。
+            val proof = proofOf(source)
+            if (proof != null && proof != target) {
+                return IdentityRepairResult(IdentityRepairOutcome.CONFLICT)
             }
         }
         if (authorIdsConflict(stored, incoming)) return IdentityRepairResult(IdentityRepairOutcome.CONFLICT)
-
-        val target = DiscoveryIdentity.verified(
-            incoming.email, incoming.givenNames, incoming.familyNames,
-            incoming.identityEvidence!!, incoming.orcidId, incoming.openAlexAuthorId
-        )
 
         val layers = mutableListOf<IdentityRepairLayer>()
         var written = 0
@@ -419,7 +423,8 @@ data class IdentityRepairResult(
 class DiscoveryPersonRegistrationService(
     private val expertIndexWriterService: ExpertIndexWriterService,
     private val personService: DiscoveryPersonService,
-    private val personRepository: DiscoveryPersonRepository
+    private val personRepository: DiscoveryPersonRepository,
+    private val featureGate: DiscoveryPersonFeatureGate = DiscoveryPersonFeatureGate()
 ) {
     private val log = LoggerFactory.getLogger(DiscoveryPersonRegistrationService::class.java)
 
@@ -430,6 +435,10 @@ class DiscoveryPersonRegistrationService(
      * 档案读失败按 STALE、登记异常按 FAILED（均可重试），非 discovered/无档案按 SKIPPED（非失败）。
      */
     fun refresh(source: String, docId: String): DiscoveryPersonRefreshResult {
+        // I-8：默认关闭时不登记任何人物关系（未开启且无人物保护时保持旧范围行为）。
+        if (!featureGate.enabled) {
+            return DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.SKIPPED, FEATURE_DISABLED)
+        }
         if (docId.isBlank()) return DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.SKIPPED, "DOC_ID_BLANK")
         val members = try {
             buildMembers(docId)
@@ -499,12 +508,15 @@ class DiscoveryPersonRegistrationService(
         val fingerprint = DiscoveryPersonIdentity.fingerprint(
             docId, normalizedEmail, rawProfile.givenNames, rawProfile.familyNames, authorKeys
         )
-        return Facts(DiscoveryIdentity.isDiscoveryMap(raw.source), fingerprint, authorKeys)
+        return Facts(DiscoveryPersonScope.isLiveDiscovered(raw.source), fingerprint, authorKeys)
     }
 }
 
-/** 05（I-3）：一次人物登记刷新的判定；SKIPPED 不是失败（非 discovered/无档案）。 */
+/** 05（I-3）：一次人物登记刷新的判定；SKIPPED 不是失败（非 discovered/无档案/总开关关闭）。 */
 enum class DiscoveryPersonRefreshStatus { CREATED, ATTACHED, UNCHANGED, NEEDS_REVIEW, SCOPE_CONFLICT, STALE, FAILED, SKIPPED }
+
+/** 05/04：总开关关闭时的跳过原因（可审计，不伪造登记成功）。 */
+const val FEATURE_DISABLED = "FEATURE_DISABLED"
 
 /** 05（I-3）：登记刷新结果。[reason] 是判定说明或 personId。 */
 data class DiscoveryPersonRefreshResult(

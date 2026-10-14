@@ -244,8 +244,9 @@ class OutreachTargetIteratorTest {
     }
 
     @Test
-    fun `caller-provided dedupe key collapses ES members of the same person (I-2)`() {
-        // 同一人物的三个成员 docId 用同一个 person key 去重：只保留首个进入审核的成员。
+    fun `caller-provided dedupe key is registered after the decision and dedupes across pages (I-2)`() {
+        // 调用方按人物键在完整判定（filterPage）后只保留每人的一个成员；去重键在判定后登记，
+        // 后续页的同人成员不再进入判定（先判定后登记，不丢同人后续合格成员）。
         val personKeyByDocId = mapOf("d1" to "P1", "d2" to "P1", "d3" to "P2")
         val seenKeys = mutableSetOf<String>()
         val reviewed = mutableListOf<String>()
@@ -258,7 +259,7 @@ class OutreachTargetIteratorTest {
             },
             filterPage = { page ->
                 reviewed += page.map { it.esDocId!! }
-                page
+                page.distinctBy { personKeyByDocId[it.esDocId] ?: it.orcidId }
             },
             dedupeKey = { personKeyByDocId[it.esDocId] ?: it.orcidId }
         )
@@ -268,8 +269,8 @@ class OutreachTargetIteratorTest {
             collected += iterator.next().second.esDocId!!
         }
 
-        assertEquals(listOf("d1", "d3"), collected, "同一 person key 的第二成员不进审核")
-        assertEquals(listOf("d1", "d3"), reviewed)
+        assertEquals(listOf("d1", "d3"), collected, "同一 person key 只保留一个成员")
+        assertEquals(listOf("d1", "d2", "d3"), reviewed, "整页成员都进入调用方的完整判定")
         assertEquals(setOf("P1", "P2"), seenKeys)
     }
 

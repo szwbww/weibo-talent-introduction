@@ -111,9 +111,12 @@ class ManualExpertMailService(
         if (guardTicket != null) {
             if (delivered.status == "SENT") {
                 outreachGuardService?.markSent(guardTicket, delivered.messageId, null)
-            } else {
-                // SMTP 明确未接受 → 证明未交付，安全重试（绑定原地址）。
+            } else if (delivered.smtpResponseCode != null) {
+                // SMTP 明确未接受（有响应码）→ 证明未交付，安全重试（绑定原地址）。
                 outreachGuardService?.markSafeRetry(guardTicket)
+            } else {
+                // 无响应码（网络/认证等）→ 结果不明，不可自动重发。
+                outreachGuardService?.markUnknown(guardTicket)
             }
         }
         val now = LocalDateTime.now()
@@ -188,16 +191,25 @@ class ManualExpertMailService(
     }
 
     /**
-     * 09 (I-1/I-2/I-3): 详情手动发送的介绍邮件首发门禁。仅当 guard 已注入、实际 mailType=INTRODUCTION、
-     * 且当前画像为 discovered 时启用：占位 → 发送前 CAS SENDING。未获许可抛 IllegalStateException
-     * （外发事务回滚，占位随之回滚，绝不调用 SMTP）。非上述情形返回 null（保持原路径逐字不变）。
+     * 09 (I-1/I-2/I-3): 详情手动发送的介绍邮件首发门禁。仅当 guard 已注入且实际 mailType=INTRODUCTION
+     * 时启用：占位 → 发送前 CAS SENDING。未获许可抛 IllegalStateException（外发事务回滚，绝不调用 SMTP）。
+     * 已知人物画像不可读时 fail-closed —— 绝不退化为无 guard 的普通邮件；非人物 / 非 INTRODUCTION
+     * 返回 null（保持原路径逐字不变）。
      */
     private fun reserveAndClaimIntroductionGuard(contact: ExpertContact, mailType: String): OutreachGuardTicket? {
         val guard = outreachGuardService ?: return null
         if (mailType != "INTRODUCTION") return null
-        val profile = mailVariableService?.resolveExpertProfileFor(contact) ?: return null
-        if (!RecipientScope.isDiscoveryOutreach(profile)) return null
         val recipient = contact.expertEmail
+        val profile = mailVariableService?.resolveExpertProfileFor(contact)
+        if (profile == null) {
+            // 画像不可读：已知人物必须 fail-closed；未登记人物的普通联系人保持原路径。
+            val docId = contact.orcidId.takeIf { it.isNotBlank() }
+            if (docId != null && guard.isKnownPerson(docId)) {
+                throw IllegalStateException("人物画像不可读，首发保护拒绝发送（contactId=${contact.id}）")
+            }
+            return null
+        }
+        if (!RecipientScope.isDiscoveryOutreach(profile)) return null
         val docId = BatchRecipientSelectionService.docIdOf(profile)
         val ticket = when (val outcome = guard.reserveIntroduction(docId, recipient, profile)) {
             is OutreachReserveOutcome.Granted -> outcome.ticket
@@ -207,9 +219,11 @@ class ManualExpertMailService(
         }
         return when (val claim = guard.claimSending(ticket, profile, recipient)) {
             is OutreachClaimOutcome.Claimed -> ticket
-            is OutreachClaimOutcome.Denied -> throw IllegalStateException(
-                "首发交付权未取得：${claim.code}（contactId=${contact.id}）"
-            )
+            is OutreachClaimOutcome.Denied -> {
+                // 未取得交付权 = 未调用 SMTP，证明未交付 → 允许原址安全重试，绝不留 RESERVED 占位。
+                guard.markSafeRetry(ticket)
+                throw IllegalStateException("首发交付权未取得：${claim.code}（contactId=${contact.id}）")
+            }
         }
     }
 

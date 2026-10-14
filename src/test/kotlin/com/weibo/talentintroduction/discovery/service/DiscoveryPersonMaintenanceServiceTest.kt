@@ -5,6 +5,7 @@ import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.DiscoveryPersonOutreachGuardService
 import com.weibo.talentintroduction.campaign.service.DiscoveryPersonRecipientService
 import com.weibo.talentintroduction.campaign.service.OutreachGuardStates
+import com.weibo.talentintroduction.campaign.service.OutreachProtectionImport
 import com.weibo.talentintroduction.campaign.service.PersonRecipientSelection
 import com.weibo.talentintroduction.campaign.service.PersonRecipientTarget
 import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
@@ -232,8 +233,12 @@ class DiscoveryPersonMaintenanceServiceTest {
         val preview = preview(MaintenancePreviewRequest(1, docIds, listOf(docIds)))
         val group = preview.groups.single()
         return preview to MaintenanceApplyRequest(
-            1, preview.previewDigest,
-            listOf(MaintenanceApplyGroup(docIds, group.evidenceDigest))
+            ruleVersion = 1,
+            previewDigest = preview.previewDigest,
+            frozenDocIds = docIds,
+            groups = listOf(
+                MaintenanceApplyGroup(docIds, group.evidenceDigest, group.relationDigest)
+            )
         )
     }
 
@@ -365,6 +370,200 @@ class DiscoveryPersonMaintenanceServiceTest {
         )
     }
 
+    // ── I-1：每冻结 ID 恰一个处置（重叠候选组不得重复累计） ────────────────────
+
+    @Test
+    fun `overlapping candidate groups are rejected instead of double counted`() {
+        put("doc-a", source = discoveredSource(email = "a@uni.edu", orcid = "0000-0002-1825-0097"))
+        put("doc-b", source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097"))
+        val outcome = service.preview(
+            MaintenancePreviewRequest(
+                ruleVersion = 1,
+                frozenDocIds = listOf("doc-a", "doc-b"),
+                candidateGroups = listOf(listOf("doc-a", "doc-b"), listOf("doc-a"))
+            )
+        )
+        assertEquals(
+            MaintenanceReasonCodes.OVERLAPPING_CANDIDATE_GROUPS,
+            (outcome as MaintenancePreviewOutcome.Rejected).reason
+        )
+    }
+
+    @Test
+    fun `overlapping apply groups are rejected`() {
+        put("doc-a", source = discoveredSource(email = "a@uni.edu", orcid = "0000-0002-1825-0097"))
+        put("doc-b", source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097"))
+        val (_, request) = mergeReadyRequest(listOf("doc-a", "doc-b"))
+        val overlapping = request.copy(
+            groups = request.groups + MaintenanceApplyGroup(listOf("doc-a"), request.groups.single().expectedFingerprint)
+        )
+        assertEquals(
+            MaintenanceReasonCodes.OVERLAPPING_CANDIDATE_GROUPS,
+            (service.apply(overlapping) as MaintenanceApplyOutcome.Rejected).reason
+        )
+        assertTrue(repository.persons.isEmpty())
+    }
+
+    // ── I-1/I-3：全量冻结清单与本次选择子集分离（试点/断点续跑） ────────────────
+
+    @Test
+    fun `pilot subset then resume share one frozen list identity and refuse non frozen ids`() {
+        listOf("doc-a" to "a@uni.edu", "doc-b" to "b@uni.edu", "doc-c" to "c@uni.edu", "doc-d" to "d@uni.edu")
+            .forEach { (docId, email) ->
+                put(docId, source = discoveredSource(email = email, orcid = "0000-0002-1825-0097"))
+            }
+        val frozen = listOf("doc-a", "doc-b", "doc-c", "doc-d")
+        val groups = listOf(listOf("doc-a", "doc-b"), listOf("doc-c"), listOf("doc-d"))
+        val preview = preview(MaintenancePreviewRequest(1, frozen, groups))
+        val byKey = preview.groups.associateBy { it.groupKey }
+        fun keyOf(docIds: List<String>): String = DiscoveryIdentity.hash(
+            docIds.map { it.trim() }.filter { it.isNotEmpty() }.distinct().sorted().joinToString("\u0000")
+        )
+        fun applyGroup(docIds: List<String>) = MaintenanceApplyGroup(
+            docIds,
+            byKey.getValue(keyOf(docIds)).evidenceDigest,
+            byKey.getValue(keyOf(docIds)).relationDigest
+        )
+
+        // 试点：只提交前两组（同一全量冻结清单 + 同一预览摘要）。
+        val pilot = service.apply(
+            MaintenanceApplyRequest(1, preview.previewDigest, frozen, listOf(applyGroup(listOf("doc-a", "doc-b")), applyGroup(listOf("doc-c"))))
+        ) as MaintenanceApplyOutcome.Ok
+        assertEquals(2, pilot.results.size)
+        assertTrue(pilot.results.all { it.status == ApplyStatus.APPLIED })
+        assertEquals(3, repository.members.size, "试点 3 条成员落库")
+
+        // 断点续跑：只剩最后一组，仍用同一摘要与同一全量清单。
+        val resumed = service.apply(
+            MaintenanceApplyRequest(1, preview.previewDigest, frozen, listOf(applyGroup(listOf("doc-d"))))
+        ) as MaintenanceApplyOutcome.Ok
+        assertEquals(ApplyStatus.APPLIED, resumed.results.single().status)
+        assertEquals(4, repository.members.size)
+        assertEquals(1, repository.persons.size)
+
+        // 夹入非冻结 ID：明确拒绝且零新增。
+        val outside = service.apply(
+            MaintenanceApplyRequest(1, preview.previewDigest, frozen, listOf(MaintenanceApplyGroup(listOf("doc-x"), "0".repeat(64))))
+        ) as MaintenanceApplyOutcome.Ok
+        assertEquals(ApplyStatus.CHANGED_OR_FAILED, outside.results.single().status)
+        assertNull(repository.members["doc-x"])
+    }
+
+    // ── I-1/I-3：expected 绑定完整保护事实与关系版本 ────────────────────────────
+
+    @Test
+    fun `expected state binds proof hash layer version and manual decision`() {
+        put("doc-a", source = discoveredSource(email = "a@uni.edu", orcid = "0000-0002-1825-0097"))
+        put("doc-b", source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097"))
+        val (_, request) = mergeReadyRequest(listOf("doc-a", "doc-b"))
+
+        // 只改 proof 摘要 → 旧预览失配、零关系写。
+        put(
+            "doc-b",
+            source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097").apply {
+                put(
+                    "identityVerification",
+                    IdentityVerification(
+                        "VERIFIED", DiscoveryIdentity.VERSION, "b@uni.edu", "Jane", "Doe",
+                        "JATS_SHA256", "b".repeat(64), "0000-0002-1825-0097", null
+                    )
+                )
+            }
+        )
+        val proofChanged = (service.apply(request) as MaintenanceApplyOutcome.Ok).results.single()
+        assertEquals(ApplyStatus.CHANGED_OR_FAILED, proofChanged.status)
+        assertEquals(MaintenanceReasonCodes.FINGERPRINT_MISMATCH, proofChanged.reason)
+
+        // 恢复 proof，但只改一层版本（layerVersions）→ 仍失配。
+        put("doc-b", source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097"))
+        put(
+            "doc-b",
+            level = ExpertIndexLevel.CANDIDATE,
+            source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097")
+                .apply { put("updatedAt", "2026-10-14T00:00:00") }
+        )
+        val versionChanged = (service.apply(request) as MaintenanceApplyOutcome.Ok).results.single()
+        assertEquals(MaintenanceReasonCodes.FINGERPRINT_MISMATCH, versionChanged.reason)
+
+        // 恢复层，只改人工准入决定 → 仍失配。
+        docs.keys.filter { it.endsWith("/doc-b") && it.startsWith("CANDIDATE") }
+            .forEach { docs[it] = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097") }
+        recipient.excludedEmail = "b@uni.edu"
+        val decisionChanged = (service.apply(request) as MaintenanceApplyOutcome.Ok).results.single()
+        assertEquals(MaintenanceReasonCodes.FINGERPRINT_MISMATCH, decisionChanged.reason)
+        assertTrue(repository.persons.isEmpty(), "失配组零关系写")
+    }
+
+    @Test
+    fun `a third party member added after apply is refused instead of resumed`() {
+        put("doc-a", source = discoveredSource(email = "a@uni.edu", orcid = "0000-0002-1825-0097"))
+        put("doc-b", source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097"))
+        val (_, request) = mergeReadyRequest(listOf("doc-a", "doc-b"))
+        service.apply(request)
+        val personId = repository.persons.keys.single()
+        repository.members["doc-c"] = memberRecord("doc-c", personId)
+
+        val retry = (service.apply(request) as MaintenanceApplyOutcome.Ok).results.single()
+        assertEquals(ApplyStatus.CHANGED_OR_FAILED, retry.status)
+        assertEquals(MaintenanceReasonCodes.RELATION_CHANGED, retry.reason)
+        assertEquals(3, repository.members.size, "拒绝时零新增成员")
+    }
+
+    // ── I-3：必需事实读取失败不得当作「无事实」 ─────────────────────────────────
+
+    @Test
+    fun `a protection read failure fails the group instead of reporting sendable`() {
+        put("doc-a", source = discoveredSource(email = "a@uni.edu", orcid = "0000-0002-1825-0097"))
+        put("doc-b", source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097"))
+        // 先登记 doc-a：人物级保护读取只在已有人物关系时发生。
+        service.apply(mergeReadyRequest(listOf("doc-a")).second)
+        guard.readFailure = true
+
+        val result = preview(MaintenancePreviewRequest(1, listOf("doc-a", "doc-b"), listOf(listOf("doc-a", "doc-b"))))
+        val group = result.groups.single()
+        assertEquals(MaintenanceDisposition.CHANGED_OR_FAILED, group.disposition)
+        assertEquals(MaintenanceReasonCodes.HISTORY_READ_FAILED, group.reason)
+        assertFalse(group.canSend, "保护读取失败不得显示可发送")
+    }
+
+    // ── I-2/I-3：历史保护持久导入与失败整组回滚 ────────────────────────────────
+
+    @Test
+    fun `history protection is persisted through the guard and import failure rolls back the group`() {
+        put("doc-a", source = discoveredSource(email = "a@uni.edu", orcid = "0000-0002-1825-0097"))
+        put("doc-b", source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097"))
+        put("doc-c", source = discoveredSource(email = "c@uni.edu", orcid = "0000-0003-3333-3333"))
+        put("doc-d", source = discoveredSource(email = "d@uni.edu", orcid = "0000-0003-3333-3333"))
+        guard.state = OutreachGuardStates.SENT
+
+        val (_, ok) = mergeReadyRequest(listOf("doc-a", "doc-b"))
+        val applied = (service.apply(ok) as MaintenanceApplyOutcome.Ok).results.single()
+        assertEquals(ApplyStatus.APPLIED, applied.status)
+        assertTrue(applied.protectionImported, "已有成功历史必须经 09 持久化为保护")
+
+        guard.importFailure = true
+        val (_, failing) = mergeReadyRequest(listOf("doc-c", "doc-d"))
+        val failed = (service.apply(failing) as MaintenanceApplyOutcome.Ok).results.single()
+        assertEquals(ApplyStatus.CHANGED_OR_FAILED, failed.status)
+        assertEquals(MaintenanceReasonCodes.PROTECTION_IMPORT_FAILED, failed.reason)
+        assertFalse(failed.protectionImported, "导入失败不得报已导入")
+        assertEquals(0, failed.memberCount, "失败组不得报告成员数（真实回滚由整组同库事务保证）")
+    }
+
+    @Test
+    fun `rollback refuses an in flight protection`() {
+        put("doc-a", source = discoveredSource(email = "a@uni.edu", orcid = "0000-0002-1825-0097"))
+        put("doc-b", source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097"))
+        val (_, request) = mergeReadyRequest(listOf("doc-a", "doc-b"))
+        service.apply(request)
+
+        guard.state = OutreachGuardStates.SENDING
+        val inflight = service.rollbackPreview(MaintenanceRollbackRequest(1, listOf(listOf("doc-a", "doc-b"))))
+        val proposal = (inflight as MaintenanceRollbackOutcome.Ok).proposals.single()
+        assertFalse(proposal.safeToRollback, "SENDING 进行中不得标为可回滚")
+        assertEquals(MaintenanceReasonCodes.ROLLBACK_UNSAFE, proposal.reason)
+    }
+
     // ── 替身 ─────────────────────────────────────────────────────────────────
 
     private fun memberRecord(docId: String, personId: String): DiscoveryPersonMemberRecord {
@@ -375,7 +574,21 @@ class DiscoveryPersonMaintenanceServiceTest {
     private class FakeGuard(repository: DiscoveryPersonRepository) :
         DiscoveryPersonOutreachGuardService(JdbcTemplate(), repository) {
         var state: String? = null
-        override fun stateOf(personId: String, mailType: String): String? = state
+        var readFailure = false
+        var importFailure = false
+        var importCalls = 0
+
+        override fun stateOf(personId: String, mailType: String): String? {
+            if (readFailure) throw IllegalStateException("guard read failed")
+            return state
+        }
+
+        override fun importExistingProtection(personId: String, mailType: String): OutreachProtectionImport {
+            importCalls++
+            if (readFailure) throw IllegalStateException("guard read failed")
+            if (importFailure) throw IllegalStateException("guard import failed")
+            return OutreachProtectionImport(state ?: "", created = false, recipient = null)
+        }
     }
 
     private class FakeRecipient : DiscoveryPersonRecipientService() {

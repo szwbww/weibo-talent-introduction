@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.campaign.service
 
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonMemberWrite
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonScope
 import com.weibo.talentintroduction.discovery.repository.DiscoveryPersonRepository
 import com.weibo.talentintroduction.discovery.repository.DiscoveryPersonWriteStatus
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.data.jdbc.DataJdbcTest
@@ -20,8 +22,10 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import org.springframework.test.context.TestPropertySource
+import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import org.testcontainers.DockerClientFactory
 import org.testcontainers.containers.MySQLContainer
 import java.time.LocalDateTime
@@ -64,6 +68,7 @@ class DiscoveryPersonOutreachGuardServiceTest {
     @Autowired lateinit var jdbc: JdbcTemplate
     @Autowired lateinit var personRepository: DiscoveryPersonRepository
     @Autowired lateinit var guard: DiscoveryPersonOutreachGuardService
+    @Autowired lateinit var txManager: PlatformTransactionManager
 
     private val now = LocalDateTime.of(2026, 10, 13, 9, 30)
 
@@ -206,6 +211,65 @@ class DiscoveryPersonOutreachGuardServiceTest {
     }
 
     @Test
+    fun `safe retry re-checks the whole group and blocks when history appeared meanwhile (I-3)`() {
+        seedPerson("p-rh", "doc-rh")
+        val ticket = (guard.reserveIntroduction("doc-rh", "doc-rh@example.test", profile("doc-rh")) as OutreachReserveOutcome.Granted).ticket
+        assertTrue(guard.markSafeRetry(ticket))
+        // SAFE_RETRY 期间同人新增历史联系人 → 重授前必须重跑整组历史检查并阻断。
+        seedContact(7L, "doc-rh", "doc-rh@example.test", bound = "acct")
+        val denied = guard.reserveIntroduction("doc-rh", "doc-rh@example.test", profile("doc-rh"))
+        assertEquals(OutreachGuardReasonCodes.HISTORY_PROTECTED, (denied as OutreachReserveOutcome.Denied).code)
+        assertEquals(OutreachGuardStates.SAFE_RETRY, guard.stateOf("p-rh"))
+    }
+
+    @Test
+    fun `reserve refuses an unreadable profile for a known person (I-3)`() {
+        seedPerson("p-np", "doc-np")
+        val denied = guard.reserveIntroduction("doc-np", "doc-np@example.test", null)
+        assertEquals(OutreachGuardReasonCodes.PERSON_MISSING, (denied as OutreachReserveOutcome.Denied).code)
+        assertNull(guard.stateOf("p-np"))
+    }
+
+    @Test
+    fun `claim refuses when the live discovered tag was removed (I-3)`() {
+        seedPerson("p-tag", "doc-tag")
+        val ticket = (guard.reserveIntroduction("doc-tag", "doc-tag@example.test", profile("doc-tag")) as OutreachReserveOutcome.Granted).ticket
+        val untagged = profile("doc-tag").copy(tags = emptyList())
+        val claim = guard.claimSending(ticket, untagged, "doc-tag@example.test")
+        assertEquals(OutreachGuardReasonCodes.ADDRESS_INELIGIBLE, (claim as OutreachClaimOutcome.Denied).code)
+        assertEquals(OutreachGuardStates.RESERVED, guard.stateOf("p-tag"))
+    }
+
+    @Test
+    fun `claim refuses an unreadable profile instead of degrading to an ordinary mail (I-3)`() {
+        seedPerson("p-null", "doc-null")
+        val ticket = (guard.reserveIntroduction("doc-null", "doc-null@example.test", profile("doc-null")) as OutreachReserveOutcome.Granted).ticket
+        val claim = guard.claimSending(ticket, null, "doc-null@example.test")
+        assertEquals(OutreachGuardReasonCodes.PERSON_MISSING, (claim as OutreachClaimOutcome.Denied).code)
+        assertEquals(OutreachGuardStates.RESERVED, guard.stateOf("p-null"))
+    }
+
+    @Test
+    fun `delivery claim survives an outer business transaction rollback (V-7)`() {
+        seedPerson("p-tx", "doc-tx")
+        val ticket = (guard.reserveIntroduction("doc-tx", "doc-tx@example.test", profile("doc-tx")) as OutreachReserveOutcome.Granted).ticket
+        val tx = TransactionTemplate(txManager)
+        assertThrows<IllegalStateException> {
+            tx.executeWithoutResult {
+                assertTrue(guard.claimSending(ticket, profile("doc-tx"), "doc-tx@example.test") is OutreachClaimOutcome.Claimed)
+                // 假 SMTP 已交付后业务写失败 → 外层事务回滚
+                throw IllegalStateException("business write failed")
+            }
+        }
+        // REQUIRES_NEW 的交付权（SENDING）不被外层回滚撤销 → 不可再次占位/重发。
+        assertEquals(OutreachGuardStates.SENDING, guard.stateOf("p-tx"))
+        assertEquals(
+            OutreachGuardReasonCodes.UNKNOWN_PENDING,
+            (guard.reserveIntroduction("doc-tx", "doc-tx@example.test", profile("doc-tx")) as OutreachReserveOutcome.Denied).code
+        )
+    }
+
+    @Test
     fun `revision change between reserve and send denies the delivery claim`() {
         seedPerson("p-rev", "doc-rev")
         val ticket = (guard.reserveIntroduction("doc-rev", "doc-rev@example.test", profile("doc-rev")) as OutreachReserveOutcome.Granted).ticket
@@ -302,7 +366,9 @@ class DiscoveryPersonOutreachGuardServiceTest {
         country = "China",
         keyword = "kw",
         employment = "Employment",
-        emailSource = "PAPER_FULLTEXT"
+        emailSource = "PAPER_FULLTEXT",
+        // 09：门禁要求画像仍属**实时 discovered**（来源证据 + 字面标签同时成立）。
+        tags = listOf(DiscoveryPersonScope.DISCOVERED_TAG)
     )
 
     @Suppress("unused")

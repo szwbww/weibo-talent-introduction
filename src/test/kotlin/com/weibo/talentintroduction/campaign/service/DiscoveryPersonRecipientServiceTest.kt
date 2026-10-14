@@ -3,7 +3,10 @@ package com.weibo.talentintroduction.campaign.service
 import com.weibo.talentintroduction.campaign.domain.RecipientScope
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonMemberRecord
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonRecord
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonScope
 import com.weibo.talentintroduction.discovery.repository.DiscoveryPersonRepository
+import com.weibo.talentintroduction.discovery.service.DiscoveryPersonFeatureGate
 import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewDecision
 import com.weibo.talentintroduction.discovery.service.DiscoveryReviewAdmissionKey
 import com.weibo.talentintroduction.discovery.service.DiscoveryReviewResolvedAdmission
@@ -35,7 +38,9 @@ class DiscoveryPersonRecipientServiceTest {
         discoveryPersonRepository = personRepository,
         expertSearchService = expertSearchService,
         emailSuppressionService = suppression,
-        expertContactRepository = contacts
+        expertContactRepository = contacts,
+        // I-3（R-1）：总开关默认关闭；本用例显式开启以覆盖人物归并的**启用路径**。
+        featureGate = DiscoveryPersonFeatureGate(enabled = true)
     )
 
     private val loadedProfiles = mutableMapOf<String, ExpertProfile>()
@@ -299,6 +304,89 @@ class DiscoveryPersonRecipientServiceTest {
         Mockito.verify(expertSearchService).findByDocumentIds(
             com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.APPLICATION, listOf("d2")
         )
+    }
+
+    @Test
+    fun `raw hold member not on the candidate page still blocks another qualifying email (I-1)`() {
+        // d1 只在 RAW 层（不在候选页、不在 scope 层）且被人工 HOLD；d2 是本页合格成员。
+        val d1 = expert("d1")
+        val d2 = expert("d2")
+        stubPerson("P1", listOf(member("d1", "P1"), member("d2", "P1")))
+        Mockito.`when`(expertSearchService.findByDocumentIds(ExpertIndexLevel.RAW, listOf("d1")))
+            .thenReturn(listOf(d1))
+        Mockito.`when`(expertSearchService.findByDocumentIds(ExpertIndexLevel.CANDIDATE, listOf("d1")))
+            .thenReturn(emptyList())
+        Mockito.`when`(expertSearchService.findByDocumentIds(ExpertIndexLevel.APPLICATION, listOf("d1")))
+            .thenReturn(emptyList())
+        stubAdmissions("d1" to DiscoveryReviewDecision.HOLD.name, "d2" to DiscoveryReviewDecision.AUTO_PASSED.name)
+        Mockito.`when`(contacts.findByOrcidIdIn(Mockito.anyList())).thenReturn(emptyList())
+
+        val selection = service.select(scope(), listOf(d2))
+
+        assertTrue(selection.included.isEmpty())
+        assertEquals(
+            listOf(RecipientAdmissionReasonKeys.MANUAL_REJECTED),
+            selection.excluded.single().exclusionReasons
+        )
+    }
+
+    @Test
+    fun `member profile that cannot be read fails the whole person closed (I-1)`() {
+        val d1 = expert("d1")
+        stubPerson("P1", listOf(member("d1", "P1"), member("d2", "P1")))
+        // 只加载得到 d1：d2 读不到任何层档案 → 整个人物 fail-closed，绝不因「本页看不到」而放行。
+        stubExpertSearch(listOf(d1))
+        admitAll("d1", "d2")
+        Mockito.`when`(contacts.findByOrcidIdIn(Mockito.anyList())).thenReturn(emptyList())
+
+        val selection = service.select(scope(), listOf(d1))
+
+        assertTrue(selection.included.isEmpty())
+        assertEquals(
+            listOf(PersonRecipientReasonKeys.PERSON_UNREADABLE),
+            selection.excluded.single().exclusionReasons
+        )
+    }
+
+    @Test
+    fun `unmapped live-discovered profile is excluded instead of per-archive sending (I-3)`() {
+        Mockito.`when`(personRepository.findPersonIdsByDocIds(Mockito.anyCollection<String>())).thenReturn(emptyMap())
+        val x = expert("X", discovery = true).copy(tags = listOf(DiscoveryPersonScope.DISCOVERED_TAG))
+
+        val selection = service.select(scope(), listOf(x))
+
+        assertTrue(selection.included.isEmpty())
+        assertEquals(
+            listOf(PersonRecipientReasonKeys.PERSON_MAPPING_MISSING),
+            selection.excluded.single().exclusionReasons
+        )
+        Mockito.verifyNoInteractions(expertSearchService, suppression, contacts)
+    }
+
+    @Test
+    fun `primary docId member is preferred when eligible and deterministic otherwise (I-2)`() {
+        val d1 = expert("d1", level = 1)
+        val d2 = expert("d2", level = 5)
+        stubPerson("P1", listOf(member("d1", "P1"), member("d2", "P1")))
+        stubExpertSearch(listOf(d1, d2))
+        admitAll("d1", "d2")
+        Mockito.`when`(contacts.findByOrcidIdIn(Mockito.anyList())).thenReturn(emptyList())
+        Mockito.`when`(personRepository.findPerson("P1")).thenReturn(
+            DiscoveryPersonRecord(
+                personId = "P1",
+                primaryDocId = "d1",
+                revision = 1L,
+                createdAt = LocalDateTime.of(2026, 8, 1, 12, 0),
+                updatedAt = LocalDateTime.of(2026, 8, 1, 12, 0)
+            )
+        )
+
+        // 代表档案 d1 合格 → 优先 d1（否则会按验证级别选 d2）。
+        assertEquals(setOf("d1"), service.select(scope(), listOf(d1, d2)).selectedDocIds)
+
+        // 代表档案不合格（被抑制）→ 按验证级别确定性选 d2。
+        Mockito.`when`(suppression.isSuppressed("d1@example.org")).thenReturn(true)
+        assertEquals(setOf("d2"), service.select(scope(), listOf(d1, d2)).selectedDocIds)
     }
 
     @Test

@@ -5,6 +5,7 @@ import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.config.MailSchedulingProperties
 import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.weibo.talentintroduction.expert.domain.ExpertClassification
+import com.weibo.talentintroduction.discovery.service.DiscoveryPersonFeatureGate
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.domain.ExpertType
@@ -775,7 +776,9 @@ class InitialOutreachServiceTest {
             discoveryPersonRepository = personRepo,
             expertSearchService = expertSearchService,
             emailSuppressionService = emailSuppressionService,
-            expertContactRepository = expertContactRepository
+            expertContactRepository = expertContactRepository,
+            // I-3（R-1）：总开关默认关闭；本用例显式开启以覆盖人物归并的**启用路径**。
+            featureGate = DiscoveryPersonFeatureGate(enabled = true)
         )
         val personAwareService = InitialOutreachService(
             expertSearchService = expertSearchService,
@@ -836,7 +839,9 @@ class InitialOutreachServiceTest {
             discoveryPersonRepository = personRepo,
             expertSearchService = expertSearchService,
             emailSuppressionService = emailSuppressionService,
-            expertContactRepository = expertContactRepository
+            expertContactRepository = expertContactRepository,
+            // I-3（R-1）：总开关默认关闭；本用例显式开启以覆盖人物归并的**启用路径**。
+            featureGate = DiscoveryPersonFeatureGate(enabled = true)
         )
         val guard = Mockito.mock(DiscoveryPersonOutreachGuardService::class.java)
         val guardedService = InitialOutreachService(

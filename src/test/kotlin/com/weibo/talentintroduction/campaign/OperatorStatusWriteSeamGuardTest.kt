@@ -71,18 +71,28 @@ class OperatorStatusWriteSeamGuardTest {
         NoiseSite("com/weibo/talentintroduction/mail/service/MailboxService.kt", 168, "operatorStatus = summary.operatorStatus"),
         // 专家联系人列表响应 DTO 构造：查询参数回显到 DTO
         // （plan 01 新增 materials GET/PUT 端点与 UpdateExpertMaterialStatusRequest DTO 使 :549 偏移至 :564）
-        NoiseSite("com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt", 578, "operatorStatus = operatorStatus"),
+        // （repair R-11 行号钉随授权改动平移：listContacts 的人物核验分组分支新增核验/回退说明与
+        //   contact:<id> 单位注释，共 +66 行，:578 平移至 :644，path/context 不变）
+        NoiseSite("com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt", 644, "operatorStatus = operatorStatus"),
         // ES 专家列表响应 DTO 构造：contact/ES 文档字段合并到响应 DTO
-        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 91, "operatorStatus = contact?.operatorStatus"),
+        // （repair R-9/R-10：索引/分页说明与完整性校验改动使钉死点 :91 平移至 :80，context 不变）
+        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 80, "operatorStatus = operatorStatus"),
         // ES 专家详情响应 DTO 构造：同上
-        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 435, "operatorStatus = operatorStatus ?: expert.operatorStatus"),
+        // （repair R-9/R-10 行号钉随授权改动平移 +42：读投影/说明行变化使 :435 平移至 :477，context 不变）
+        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 477, "operatorStatus = operatorStatus ?: expert.operatorStatus"),
+        // ES 专家列表响应 DTO 构造：同一响应 DTO 的另一处只读投影（读 contact/ES 字段写入 DTO，非 DB 写入）
+        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 108, "operatorStatus = contact?.operatorStatus ?: expert.operatorStatus"),
+        // 人物详情响应 DTO 构造：只读投影（读 contact/档案字段写入 DTO，非 DB 写入）
+        // （repair R-12：逐邮箱真值投影改动使该投影落在 :282）
+        NoiseSite("com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryService.kt", 282, "operatorStatus = contact?.operatorStatus ?: raw?.operatorStatus"),
         // ES 文档 → 响应 DTO 映射：读取 ES 字段写入 DTO，非 DB 写入
         // （05 P-E 新增 operatorStatusFilter 使钉死点 :332 偏移至 :345，A5 授权行号修正；
         //   fast-p 01 A1：T3 分类解析/logger 导入使 :431 偏移至 :445，A1 授权行号修正，context 不变；
         //   expertSendableFilter() 当前新增版本门禁使 :491 偏移至 :498，保持读取映射排除点精确对齐；
         //   05A toExpertProfile 新增 institutionType 读取行使 :542 偏移至 :543，本计划授权行号修正
         //   05A-2 Part C 门禁 term→terms 使 expertSendableFilter 增加 2 行，:543 偏移至 :545，本计划授权行号修正
-        NoiseSite("com/weibo/talentintroduction/expert/service/ExpertSearchService.kt", 499, "operatorStatus = source.nullableText"),
+        //   ；repair R-10 完整性校验（requireCompleteResponse 调用与注释）使 :499 平移至 :505，context 不变）
+        NoiseSite("com/weibo/talentintroduction/expert/service/ExpertSearchService.kt", 505, "operatorStatus = source.nullableText"),
         // ── ES 侧写入（非 expert_contact 表写入，扫描模式天然不命中）──
         // 03 P-B T-3 后：ExpertIndexWriterService 的 operatorStatus 同步改为三层 doc 部分更新
         // （"operatorStatus" to operatorStatus），旧脚本行 ctx._source.operatorStatus = params.status

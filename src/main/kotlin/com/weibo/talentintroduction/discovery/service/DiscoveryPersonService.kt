@@ -7,6 +7,7 @@ import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonMemberWrite
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonMemberSnapshot
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonOutcome
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonRegistrationResult
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonScope
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonIdentity
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonSnapshot
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonVerifiedMember
@@ -16,14 +17,34 @@ import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.dao.DuplicateKeyException
 import org.springframework.dao.PessimisticLockingFailureException
+import org.springframework.stereotype.Component
 import org.springframework.stereotype.Service
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.util.UUID
+
+/**
+ * 04/05–10（I-8/发布段）：人物能力的**统一开启边界**，默认关闭。
+ *
+ * - 关闭（默认）：05 增量登记不执行、06/07 展示退回逐档案口径、08 目标选择退回逐档案单位；
+ *   未开启且无人物保护时行为与本轮引入前逐字一致。
+ * - 关闭**不得**绕过已建立的 SENT/UNKNOWN/SENDING 首发保护：09 的占位与历史检查与总开关无关，
+ *   始终按人物映射生效（授权维护窗口可在关闭时受限建立映射/导入保护）。
+ * - 开启：05—09 完整链生效。
+ *
+ * 配置键 `talent-introduction.discovery-person.enabled`（环境变量
+ * `TALENT_INTRODUCTION_DISCOVERY_PERSON_ENABLED`），缺省 `false`。本计划不修改任何运行配置。
+ */
+@Component
+class DiscoveryPersonFeatureGate(
+    @Value("\${talent-introduction.discovery-person.enabled:false}")
+    val enabled: Boolean = false
+)
 
 /**
  * 04（I-1/I-2/I-3）：新发现人物主档与邮箱成员的**唯一登记协调器**。
@@ -61,43 +82,29 @@ class DiscoveryPersonService(
     fun register(snapshot: DiscoveryPersonSnapshot): DiscoveryPersonRegistrationResult {
         validateStructure(snapshot)?.let { return it }
 
-        val verified = mutableListOf<DiscoveryPersonVerifiedMember>()
-        for (member in snapshot.members) {
-            when (val verification = verifyMember(snapshot.source, member)) {
-                is MemberVerification.Rejected -> return result(verification.outcome, reason = verification.reason)
-                is MemberVerification.Verified -> verified += verification.member
-            }
-        }
-
-        // I-2：可归入的身份门槛 —— 多成员组内每个成员都必须有可信作者键，且组必须由共享键连通。
-        if (verified.size > 1 && verified.any { it.authorKeys.isEmpty() }) {
-            return result(DiscoveryPersonOutcome.NEEDS_REVIEW, reason = "UNBOUND_MEMBER")
-        }
-        // I-2「每类作者键不冲突」：比较的是**去重后的类别键**——多个成员共享同一 ORCID
-        // 是同一人的正常证据，只有出现两个**不同**的同类作者键才不可归入。
-        val allKeys = verified.flatMap { it.authorKeys }
-        val distinctOrcid = allKeys.filter { it.startsWith(DiscoveryPersonIdentity.ORCID_PREFIX) }.distinct()
-        val distinctOpenAlex = allKeys.filter { it.startsWith(DiscoveryPersonIdentity.OPENALEX_PREFIX) }.distinct()
-        if (distinctOrcid.size > 1 || distinctOpenAlex.size > 1) {
-            return result(DiscoveryPersonOutcome.NEEDS_REVIEW, reason = "MULTIPLE_AUTHOR_KEYS")
-        }
-        if (!connected(verified)) {
-            return result(DiscoveryPersonOutcome.NEEDS_REVIEW, reason = "UNCONNECTED_MEMBER")
-        }
-
-        // I-3：跨范围对象不迁移，只报冲突。
-        scopeConflict(verified)?.let { return it }
-
-        val groupKeys = allKeys.distinct().sorted()
         repeat(MAX_CONFLICT_ATTEMPTS) {
-            when (val resolution = resolve(verified, groupKeys)) {
+            // I-2/I-3：每一轮（含唯一键/锁冲突后的重试）都从当前 ES 事实**重新核实整组**——
+            // 绝不把上一轮的验证结果当作复验（冲突后档案可能已被并发改动）。
+            val group = when (val verification = verifyGroup(snapshot.source, snapshot.members)) {
+                is GroupVerification.Rejected -> return verification.result
+                is GroupVerification.Verified -> verification
+            }
+            when (val resolution = resolve(group.members, group.groupKeys)) {
                 is Resolution.Reject -> return resolution.result
                 is Resolution.Unchanged -> return resolution.result
                 is Resolution.Create -> {
                     val personId = UUID.randomUUID().toString()
-                    val status = write { repository.createPerson(personId, resolution.primaryDocId, verified.map { it.write() }, groupKeys, now()) }
+                    val status = write {
+                        repository.createPerson(
+                            personId, resolution.primaryDocId, group.members.map { it.write() }, group.groupKeys, now()
+                        )
+                    }
                     if (status == DiscoveryPersonWriteStatus.APPLIED) {
-                        return result(DiscoveryPersonOutcome.CREATED, personId = personId, memberCount = repository.findMembersByPerson(personId).size)
+                        return result(
+                            DiscoveryPersonOutcome.CREATED,
+                            personId = personId,
+                            memberCount = repository.findMembersByPerson(personId).size
+                        )
                     }
                 }
                 is Resolution.Attach -> {
@@ -111,9 +118,9 @@ class DiscoveryPersonService(
                     }
                 }
             }
-            // 冲突（唯一键/成员被并发占用）：回到循环头部，重新读并复验后再决策。
+            // 冲突（唯一键/成员被并发占用）：回到循环头部，重新读 ES 并复验后再决策。
         }
-        log.warn("人物登记在 {} 次冲突后仍未收敛，保持不写关系：docIds={}", MAX_CONFLICT_ATTEMPTS, verified.map { it.docId })
+        log.warn("人物登记在 {} 次冲突后仍未收敛，保持不写关系：docIds={}", MAX_CONFLICT_ATTEMPTS, snapshot.members.map { it.docId })
         return result(DiscoveryPersonOutcome.NEEDS_REVIEW, reason = "REGISTRATION_CONFLICT")
     }
 
@@ -122,6 +129,61 @@ class DiscoveryPersonService(
     private sealed interface MemberVerification {
         data class Verified(val member: DiscoveryPersonVerifiedMember) : MemberVerification
         data class Rejected(val outcome: DiscoveryPersonOutcome, val reason: String) : MemberVerification
+    }
+
+    private sealed interface GroupVerification {
+        data class Verified(
+            val members: List<DiscoveryPersonVerifiedMember>,
+            val groupKeys: List<String>
+        ) : GroupVerification
+
+        data class Rejected(val result: DiscoveryPersonRegistrationResult) : GroupVerification
+    }
+
+    /**
+     * I-2：**整组**核实（每次尝试都重新执行）——逐个成员按当前 ES 档案重核后，再在组边界上检验
+     * 可信作者键、可归入性与规范全名一致；跨范围对象在这里只报冲突、不迁移。
+     */
+    private fun verifyGroup(
+        source: String,
+        snapshotMembers: List<DiscoveryPersonMemberSnapshot>
+    ): GroupVerification {
+        val verified = mutableListOf<DiscoveryPersonVerifiedMember>()
+        for (member in snapshotMembers) {
+            when (val verification = verifyMember(source, member)) {
+                is MemberVerification.Rejected ->
+                    return GroupVerification.Rejected(result(verification.outcome, reason = verification.reason))
+                is MemberVerification.Verified -> verified += verification.member
+            }
+        }
+
+        // I-2：多成员组内每个成员都必须有可信作者键，且组必须由共享键连通。
+        if (verified.size > 1 && verified.any { it.authorKeys.isEmpty() }) {
+            return GroupVerification.Rejected(result(DiscoveryPersonOutcome.NEEDS_REVIEW, reason = "UNBOUND_MEMBER"))
+        }
+        // I-2「每类作者键不冲突」：比较的是**去重后的类别键**——多个成员共享同一 ORCID
+        // 是同一人的正常证据，只有出现两个**不同**的同类作者键才不可归入。
+        val allKeys = verified.flatMap { it.authorKeys }
+        val distinctOrcid = allKeys.filter { it.startsWith(DiscoveryPersonIdentity.ORCID_PREFIX) }.distinct()
+        val distinctOpenAlex = allKeys.filter { it.startsWith(DiscoveryPersonIdentity.OPENALEX_PREFIX) }.distinct()
+        if (distinctOrcid.size > 1 || distinctOpenAlex.size > 1) {
+            return GroupVerification.Rejected(result(DiscoveryPersonOutcome.NEEDS_REVIEW, reason = "MULTIPLE_AUTHOR_KEYS"))
+        }
+        // I-2：整组规范全名必须一致——两个不同的规范全名即使共享作者键也不是同一人。
+        if (verified.size > 1) {
+            val fullNames = verified.map {
+                DiscoveryPersonIdentity.normalizedFullName(it.givenNames, it.familyNames)
+            }.distinct()
+            if (fullNames.size > 1) {
+                return GroupVerification.Rejected(result(DiscoveryPersonOutcome.NEEDS_REVIEW, reason = "GROUP_NAME_MISMATCH"))
+            }
+        }
+        if (!connected(verified)) {
+            return GroupVerification.Rejected(result(DiscoveryPersonOutcome.NEEDS_REVIEW, reason = "UNCONNECTED_MEMBER"))
+        }
+        // I-3：跨范围对象不迁移，只报冲突。
+        scopeConflict(verified)?.let { return GroupVerification.Rejected(it) }
+        return GroupVerification.Verified(verified, allKeys.distinct().sorted())
     }
 
     private fun validateStructure(snapshot: DiscoveryPersonSnapshot): DiscoveryPersonRegistrationResult? {
@@ -151,8 +213,8 @@ class DiscoveryPersonService(
         }
         if (snapshots.isEmpty()) return MemberVerification.Rejected(DiscoveryPersonOutcome.STALE, "DOCUMENT_MISSING")
         val raw = snapshots[ExpertIndexLevel.RAW] ?: snapshots.values.first()
-        // I-3：当前 discovered 标签（含凭证/来源标记）必须仍然成立，否则快照已失效。
-        if (!DiscoveryIdentity.isDiscoveryMap(raw.source)) {
+        // I-3：人物范围必须**实时**成立（发现来源证据 + 字面 discovered 标签），否则快照已失效。
+        if (!DiscoveryPersonScope.isLiveDiscovered(raw.source)) {
             return MemberVerification.Rejected(DiscoveryPersonOutcome.STALE, "NOT_DISCOVERY")
         }
         if (!layerIdentityConsistent(snapshots)) {
@@ -296,9 +358,18 @@ class DiscoveryPersonService(
             return Resolution.Create(verified.map { it.docId }.min())
         }
         val personId = roots.single()
+        // I-2：附加成员必须与既有根**全部当前作者键**同类唯一——同 ORCID 但不同 OpenAlex
+        // 键（或反之）不是同一人，绝不静默挂接；冲突即待核，不写关系。
+        val existingKeys = repository.findAuthorKeysByPerson(personId).map { it.authorKey }
+        val combined = (existingKeys + groupKeys).distinct()
+        val combinedOrcid = combined.filter { it.startsWith(DiscoveryPersonIdentity.ORCID_PREFIX) }.distinct()
+        val combinedOpenAlex = combined.filter { it.startsWith(DiscoveryPersonIdentity.OPENALEX_PREFIX) }.distinct()
+        if (combinedOrcid.size > 1 || combinedOpenAlex.size > 1) {
+            return Resolution.Reject(result(DiscoveryPersonOutcome.NEEDS_REVIEW, reason = "EXISTING_AUTHOR_KEY_CONFLICT"))
+        }
         val attached = existing.map { it.expertDocId }.toSet()
         val newMembers = verified.filter { it.docId !in attached }.map { it.write() }
-        val linkedKeys = repository.findAuthorKeysByPerson(personId).map { it.authorKey }.toSet()
+        val linkedKeys = existingKeys.toSet()
         val newKeys = groupKeys.filter { it !in linkedKeys }
         if (newMembers.isEmpty() && newKeys.isEmpty()) {
             return Resolution.Unchanged(

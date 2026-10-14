@@ -89,20 +89,25 @@ class ExpertContactManagementController(
         } else {
             contacts.filter { it.expertEmail.substringAfter('@', "").lowercase() == domain }
         }
-        val personIds = requirePersonQuery().resolvePersonIds(members.map { it.orcidId })
+        // R-11：只有当前核验通过的关系才并入人物聚合。普通/核验失败的联系人保持 **原 contactId 单位**，
+        // 绝不按 orcidId 合并两个不同 contactId 的联系人；分组顺序沿用原列表顺序（不再按 key 重排）。
+        val relations = requirePersonQuery().resolveVerifiedPersonRelations(members.map { it.orcidId }.distinct())
         val grouped = members
-            .groupBy { personIds[it.orcidId] ?: it.orcidId }
+            .groupBy { contact ->
+                val personId = relations[contact.orcidId]?.personId
+                if (personId != null) "person:$personId" else "contact:${contact.id ?: contact.orcidId}"
+            }
             .map { (personKey, group) ->
                 val representative = group.maxByOrNull { it.updatedAt ?: LocalDateTime.MIN } ?: group.first()
                 GroupedContactPerson(
-                    personId = personIds[representative.orcidId],
+                    personId = relations[representative.orcidId]?.personId,
                     personKey = personKey,
                     representativeContactId = representative.id,
                     contactIds = group.mapNotNull { it.id },
-                    memberCount = group.size
+                    memberCount = group.size,
+                    needsReview = group.any { relations[it.orcidId]?.needsReview == true }
                 )
             }
-            .sortedBy { it.personKey }
         return ExpertContactListResponse(
             contacts = members.map { it.toResponse() },
             totalCount = grouped.size.toLong(),
@@ -496,13 +501,20 @@ data class ExpertContactListResponse(
     val groupedPersons: List<GroupedContactPerson> = emptyList()
 )
 
-/** 06（I-1）：按有效 personId 聚合后的联系人分组；范围外（无关系）用原 orcidId 作 key。 */
+/**
+ * 06（I-1）：按人物聚合后的联系人分组。
+ *
+ * R-11：[personId] 只在关系**当前核验通过**时非空；范围外或无有效关系的联系人保持原
+ * `contactId` 单位（[personKey] = `contact:<contactId>`），两个同 orcidId 不同 contactId 的普通
+ * 联系人绝不合并。已登记但核验失败的关系回退原单位并置 [needsReview]。
+ */
 data class GroupedContactPerson(
     val personId: String?,
     val personKey: String,
     val representativeContactId: Long?,
     val contactIds: List<Long>,
-    val memberCount: Int
+    val memberCount: Int,
+    val needsReview: Boolean = false
 )
 
 data class ExpertContactResponse(

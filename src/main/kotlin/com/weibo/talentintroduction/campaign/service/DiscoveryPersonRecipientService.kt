@@ -2,10 +2,12 @@ package com.weibo.talentintroduction.campaign.service
 
 import com.weibo.talentintroduction.campaign.domain.RecipientScope
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
-import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonMemberRecord
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonScope
 import com.weibo.talentintroduction.discovery.repository.DiscoveryPersonRepository
+import com.weibo.talentintroduction.discovery.service.DiscoveryPersonFeatureGate
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
+import com.weibo.talentintroduction.expert.service.ExpertIdNormalizer
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.mail.service.EmailSuppressionService
 import org.springframework.stereotype.Service
@@ -55,6 +57,10 @@ object PersonRecipientReasonKeys {
     const val NO_QUALIFIED_EMAIL = "NO_QUALIFIED_EMAIL"
     /** 重试应沿用原尝试地址，但该地址已不合格 —— 不自动换址。 */
     const val PREFERRED_ADDRESS_INELIGIBLE = "PREFERRED_ADDRESS_INELIGIBLE"
+    /** 人物整组档案缺失/不可读（缺失/失效/不可读的成员）—— fail-closed，绝不静默发信。 */
+    const val PERSON_UNREADABLE = "PERSON_UNREADABLE"
+    /** 已发现（实时 discovered）但未登记到人物 —— fail-closed，绝不逐档案静默发信。 */
+    const val PERSON_MAPPING_MISSING = "PERSON_MAPPING_MISSING"
 }
 
 /**
@@ -64,10 +70,11 @@ object PersonRecipientReasonKeys {
  *   两服务不互相注入；
  * - 首次遇到人物时批量加载该人物当前全部成员（04 关系 + ES `_mget` 当前档案），应用同一
  *   [RecipientScope] 后确定唯一地址；因此同一人物跨页 / 跨重试目标只计一次；
- * - 选址确定性：显示默认邮箱仅在合格时优先，否则按现有验证可信级别（[ExpertProfile.emailVerifiedLevel]）
- *   降序、docId 升序确定；
- * - 人物保护按整个有效组检查：任一人被人工 HOLD/REJECTED 或身份冲突、或已存在绑定联系人，
- *   整组排除，不能用另一成员绕过；
+ * - 选址确定性：显示代表档案（04 `primaryDocId`）的邮箱仅在合格时优先，
+ *   否则按现有验证可信级别（[ExpertProfile.emailVerifiedLevel]）降序、docId 升序确定；
+ * - 人物保护先读**整个有效组**：包括不满足当前筛选或不在当前层的成员；任一成员缺失/不可读、
+ *   被人工 HOLD/REJECTED 或身份冲突、或已存在绑定联系人，整组排除，不能用另一成员绕过。
+ *   已发现（实时 discovered）但未登记人物映射的档案同样 fail-closed，绝不逐档案静默发信；
  * - 纯计算：不写库、不建 contact/campaign、不发 HTTP 写请求（ES 仅 `_mget` 读）。预估与执行共用本函数。
  *
  * 全部依赖可省略 —— 省略时退化为逐邮箱选择（fail-open 到既有行为），保证非人物档案与单元测试零影响。
@@ -78,14 +85,36 @@ class DiscoveryPersonRecipientService(
     private val discoveryPersonRepository: DiscoveryPersonRepository? = null,
     private val expertSearchService: ExpertSearchService? = null,
     private val emailSuppressionService: EmailSuppressionService? = null,
-    private val expertContactRepository: ExpertContactRepository? = null
+    private val expertContactRepository: ExpertContactRepository? = null,
+    private val featureGate: DiscoveryPersonFeatureGate = DiscoveryPersonFeatureGate()
 ) {
     /**
-     * I-2: 人物去重键。有人物映射用 personId；无映射（含未注入仓储）用真实 docId。
+     * I-8：默认关闭时不参与人物归并 —— 全部档案按真实 docId 成为独立单位，
+     * 目标选择与选中地址与本轮引入前逐字一致。
+     */
+    private val personRepository: DiscoveryPersonRepository?
+        get() = if (featureGate.enabled) discoveryPersonRepository else null
+
+    /**
+     * I-2: 人物去重键。有人物映射用 personId；无映射（含未注入仓储/总开关关闭）退回**规范化 ORCID**
+     * —— 与本轮引入前 ES 原始身份去重键逐字一致，非人物档案零行为变化。
      * 供 [OutreachTargetIterator] 等调用者作为 `dedupeKey` 使用。
      */
     fun personKeyOf(profile: ExpertProfile): String =
-        discoveryPersonRepository?.findMember(docIdOf(profile))?.personId ?: docIdOf(profile)
+        personRepository?.findMember(docIdOf(profile))?.personId
+            ?: ExpertIdNormalizer.normalize(profile.orcidId)
+
+    /**
+     * I-2: [personKeyOf] 的批量版本（docId → personId ?: 规范化 ORCID）。一次 `findPersonIdsByDocIds`
+     * 读取，供预估/执行在整页/整批上做人物级去重，避免逐条查询。
+     */
+    fun personKeysOf(profiles: List<ExpertProfile>): Map<String, String> {
+        val keys = LinkedHashMap<String, String>(profiles.size)
+        profiles.forEach { keys.putIfAbsent(docIdOf(it), ExpertIdNormalizer.normalize(it.orcidId)) }
+        val repository = personRepository ?: return keys
+        val mapping = repository.findPersonIdsByDocIds(keys.keys)
+        return keys.mapValues { (docId, fallback) -> mapping[docId] ?: fallback }
+    }
 
     /**
      * I-1/I-2/I-3: 只判准入（无本次页面条件的 scope），供旧首发等无页面快照入口复用人物级结论。
@@ -114,7 +143,7 @@ class DiscoveryPersonRecipientService(
         val byDocId = LinkedHashMap<String, ExpertProfile>(profiles.size)
         for (profile in profiles) byDocId.putIfAbsent(docIdOf(profile), profile)
 
-        val personByDocId = discoveryPersonRepository?.findPersonIdsByDocIds(byDocId.keys) ?: emptyMap()
+        val personByDocId = personRepository?.findPersonIdsByDocIds(byDocId.keys) ?: emptyMap()
 
         // 按 personId 分组；无映射档案各自成组（personId = null）。
         val groups = LinkedHashMap<String, MutableList<ExpertProfile>>()
@@ -153,14 +182,21 @@ class DiscoveryPersonRecipientService(
         if (personId == null) return decideNonPerson(scope, inBatch.single(), onPerEmailSelection)
 
         val memberDocIds = allMemberDocIds(personId, inBatch)
-        val memberProfiles = loadMemberProfiles(scope, memberDocIds, inBatch)
 
-        val selection = batchRecipientSelectionService.select(scope, memberProfiles)
-        onPerEmailSelection?.invoke(selection)
-        val includedDocIds = selection.includedDocIds
+        // 1. 人物硬保护：先读**整个有效组**（含不满足当前筛选或不在当前层的成员）。
+        //    任一成员缺失/不可读（读不到档案）即 fail-closed，绝不因「本页看不到」而放行。
+        val group = loadGroupProfiles(scope, memberDocIds, inBatch)
+        if (group.profiles.size < memberDocIds.size) {
+            return PersonRecipientTarget(
+                personId, selectedDocIdPlaceholder(memberDocIds), null, memberDocIds,
+                listOf(PersonRecipientReasonKeys.PERSON_UNREADABLE)
+            )
+        }
 
-        // 1. 人物级硬保护：任一人被人工拒绝 / 身份冲突 → 整组排除。
-        val hardReasons = selection.excluded.mapNotNull { decision ->
+        // 1a. 人物级准入：用**不带本次筛选**的准入 scope 读取整组持久结论 —— 不满足当前筛选
+        //     （如邮箱域/研发类型）或不在当前层的成员的人工 HOLD/身份冲突同样可见，不能用另一成员绕过。
+        val protection = batchRecipientSelectionService.selectProtection(group.profiles)
+        val hardReasons = protection.excluded.mapNotNull { decision ->
             when (decision.admissionState) {
                 RecipientAdmissionState.MANUAL_REJECTED -> RecipientAdmissionReasonKeys.MANUAL_REJECTED
                 RecipientAdmissionState.IDENTITY_CHANGED -> RecipientAdmissionReasonKeys.IDENTITY_CHANGED
@@ -171,20 +207,26 @@ class DiscoveryPersonRecipientService(
             return PersonRecipientTarget(personId, selectedDocIdPlaceholder(memberDocIds), null, memberDocIds, hardReasons)
         }
 
-        // 2. 人物级历史保护：任一成员已有绑定联系人（历史首封已发/已联系）→ 整组排除。
-        if (hasBoundMemberContact(memberProfiles)) {
+        // 1b. 人物级历史保护：整个有效组任一成员已有绑定联系人（历史首封已发/已联系）→ 整组排除。
+        if (hasBoundMemberContact(group.profiles)) {
             return PersonRecipientTarget(
                 personId, selectedDocIdPlaceholder(memberDocIds), null, memberDocIds,
                 listOf(PersonRecipientReasonKeys.ALREADY_CONTACTED)
             )
         }
 
+        // 2. 具体邮箱：只对**当前 scope 层**的成员执行原 scope、准入、验证与抑制。
+        val candidates = group.profiles.filter { docIdOf(it) in group.candidateDocIds }
+        val selection = batchRecipientSelectionService.select(scope, candidates)
+        onPerEmailSelection?.invoke(selection)
+        val includedDocIds = selection.includedDocIds
+
         // 3. 合格地址：准入通过 + 邮箱非空 + 未被抑制。
-        val qualified = memberProfiles.filter { docIdOf(it) in includedDocIds && qualifies(it) }
+        val qualified = candidates.filter { docIdOf(it) in includedDocIds && qualifies(it) }
         if (qualified.isEmpty()) {
             val reasons = LinkedHashSet<String>()
             selection.excluded.forEach { reasons += BatchRecipientSelectionService.reasonKeysOf(it) }
-            if (memberProfiles.any { docIdOf(it) in includedDocIds && isSuppressedEmail(it.email) }) {
+            if (candidates.any { docIdOf(it) in includedDocIds && isSuppressedEmail(it.email) }) {
                 reasons += PersonRecipientReasonKeys.SUPPRESSED
             }
             if (reasons.isEmpty()) reasons += PersonRecipientReasonKeys.NO_QUALIFIED_EMAIL
@@ -218,9 +260,20 @@ class DiscoveryPersonRecipientService(
         profile: ExpertProfile,
         onPerEmailSelection: ((RecipientSelection) -> Unit)?
     ): PersonRecipientTarget {
+        val docId = docIdOf(profile)
+        // I-3: 已发现（实时 discovered）但无 04 人物映射 → fail-closed 排除，绝不逐档案静默发信。
+        // 总开关关闭（未注入仓储）时保持既有逐邮箱行为，非人物档案零影响。
+        if (personRepository != null && DiscoveryPersonScope.isLiveDiscovered(profile)) {
+            return PersonRecipientTarget(
+                personId = null,
+                selectedDocId = docId,
+                selectedEmail = null,
+                memberDocIds = listOf(docId),
+                exclusionReasons = listOf(PersonRecipientReasonKeys.PERSON_MAPPING_MISSING)
+            )
+        }
         val selection = batchRecipientSelectionService.select(scope, listOf(profile))
         onPerEmailSelection?.invoke(selection)
-        val docId = docIdOf(profile)
         val included = docId in selection.includedDocIds
         return PersonRecipientTarget(
             personId = null,
@@ -239,30 +292,42 @@ class DiscoveryPersonRecipientService(
      */
     private fun allMemberDocIds(personId: String, inBatch: List<ExpertProfile>): List<String> {
         val ordered = LinkedHashSet<String>()
-        discoveryPersonRepository?.findMembersByPerson(personId)?.forEach { ordered += it.expertDocId }
+        personRepository?.findMembersByPerson(personId)?.forEach { ordered += it.expertDocId }
         inBatch.forEach { ordered += docIdOf(it) }
         return ordered.toList()
     }
 
     /**
-     * I-2: 加载成员当前档案（本批已有者直接复用；其余按 scope 的 funnelLevels 经 ES `_mget` 读取）。
-     * ES 不可用或读不到时不伪造档案 —— 该成员不参与选址，但人物其余成员仍可判定。
+     * I-2: 加载该人物**整个有效组**的当前档案（本批已有者直接复用；其余逐层经 ES `_mget` 读取）。
+     * scope 层优先（保持既有选址层级），其余层补齐硬保护所需的整组事实；
+     * [LoadedGroup.candidateDocIds] 只含命中当前 scope 层（或本批）的成员，用于具体邮箱选址。
+     * ES 不可用或读不到的成员不出现在 [LoadedGroup.profiles] —— 由调用方按缺失 fail-closed。
      */
-    private fun loadMemberProfiles(
+    private fun loadGroupProfiles(
         scope: RecipientScope,
         memberDocIds: List<String>,
         inBatch: List<ExpertProfile>
-    ): List<ExpertProfile> {
+    ): LoadedGroup {
         val byDocId = LinkedHashMap<String, ExpertProfile>(memberDocIds.size)
-        inBatch.forEach { byDocId.putIfAbsent(docIdOf(it), it) }
+        val candidateDocIds = LinkedHashSet<String>()
+        inBatch.forEach { profile ->
+            val docId = docIdOf(profile)
+            if (byDocId.putIfAbsent(docId, profile) == null) candidateDocIds += docId
+        }
         val missing = memberDocIds.filter { it !in byDocId }
         if (missing.isNotEmpty() && expertSearchService != null) {
-            for (level in scope.funnelLevels) {
-                expertSearchService.findByDocumentIds(ExpertIndexLevel.valueOf(level), missing)
-                    .forEach { byDocId.putIfAbsent(docIdOf(it), it) }
+            val levelNames = (scope.funnelLevels + ExpertIndexLevel.values().map { it.name }).distinct()
+            for (levelName in levelNames) {
+                val level = runCatching { ExpertIndexLevel.valueOf(levelName) }.getOrNull() ?: continue
+                expertSearchService.findByDocumentIds(level, missing).forEach { profile ->
+                    val docId = docIdOf(profile)
+                    if (byDocId.putIfAbsent(docId, profile) == null && levelName in scope.funnelLevels) {
+                        candidateDocIds += docId
+                    }
+                }
             }
         }
-        return memberDocIds.mapNotNull { byDocId[it] }
+        return LoadedGroup(memberDocIds.mapNotNull { byDocId[it] }, candidateDocIds)
     }
 
     private fun hasBoundMemberContact(memberProfiles: List<ExpertProfile>): Boolean {
@@ -273,22 +338,23 @@ class DiscoveryPersonRecipientService(
     }
 
     /**
-     * I-2: 选址确定性 —— 显示默认邮箱（成员 [DiscoveryPersonMemberRecord.normalizedEmail] 与当前档案邮箱一致）
-     * 仅在合格时优先；否则验证可信级别降序（null 最后）、docId 升序。
+     * I-2: 选址确定性 —— 显示代表档案（04 `primaryDocId`）的邮箱仅在合格时优先；
+     * 否则验证可信级别降序（null 最后）、docId 升序。
      */
     private fun pickQualified(qualified: List<ExpertProfile>, personId: String): ExpertProfile {
-        val defaultEmails = discoveryPersonRepository?.findMembersByPerson(personId)
-            ?.mapNotNull { member -> member.normalizedEmail?.let { member.expertDocId to it.normalizeEmail() } }
-            ?.toMap()
-            ?: emptyMap()
+        val primaryDocId = personRepository?.findPerson(personId)?.primaryDocId
         return qualified.sortedWith(
-            compareByDescending<ExpertProfile> {
-                defaultEmails[docIdOf(it)] != null && defaultEmails[docIdOf(it)] == it.email.normalizeEmail()
-            }
+            compareByDescending<ExpertProfile> { primaryDocId != null && docIdOf(it) == primaryDocId }
                 .thenByDescending { it.emailVerifiedLevel ?: Int.MIN_VALUE }
                 .thenBy { docIdOf(it) }
         ).first()
     }
+
+    /** I-2: 一次整组加载的产物：全部可读成员 + 命中当前 scope 层的成员 docId。 */
+    private data class LoadedGroup(
+        val profiles: List<ExpertProfile>,
+        val candidateDocIds: Set<String>
+    )
 
     private fun qualifies(profile: ExpertProfile): Boolean =
         !profile.email.isNullOrBlank() && !isSuppressedEmail(profile.email)
@@ -306,7 +372,7 @@ class DiscoveryPersonRecipientService(
     private fun docIdOfValue(value: String): String {
         val trimmed = value.trim()
         if (trimmed.isEmpty()) return trimmed
-        val member = discoveryPersonRepository?.findMember(trimmed)
+        val member = personRepository?.findMember(trimmed)
         if (member != null) return member.expertDocId
         return trimmed
     }

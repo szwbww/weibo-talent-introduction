@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
 import com.weibo.talentintroduction.config.OpenAlexBudgetDeferredException
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonScope
 import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
@@ -97,21 +98,30 @@ class DiscoveryIdentityRecoveryService(
             log.warn("空名补证失败 docId={}: {}", docId, e.message)
             return finished(docId, RecoveryApplyStatus.FAILED, "REPAIR_FAILED", emptyList(), null, null)
         }
+        // ALREADY_VERIFIED：本次申请的每一层都已等于目标值（同一原申请续跑），继续完成
+        // 人物登记与准入重验；这不是「不可恢复」，也不再被已有的目标 proof 挡住。
         val status = when (repair.outcome) {
-            IdentityRepairOutcome.REPAIRED -> RecoveryApplyStatus.APPLIED
+            IdentityRepairOutcome.REPAIRED, IdentityRepairOutcome.ALREADY_VERIFIED -> RecoveryApplyStatus.APPLIED
             IdentityRepairOutcome.PARTIAL -> RecoveryApplyStatus.PARTIAL
-            IdentityRepairOutcome.ALREADY_VERIFIED -> RecoveryApplyStatus.NOT_RECOVERABLE
             else -> RecoveryApplyStatus.FAILED
         }
         if (status != RecoveryApplyStatus.APPLIED) {
             return finished(docId, status, repair.outcome.name, repair.layers, null, null)
         }
 
-        // 05（I-1）：各层事实补齐成功后刷新人物登记（只对实时 discovered 成员；失败不改恢复结论）。
-        try {
+        // 05（I-1/I-3）：各层事实补齐成功后刷新人物登记。登记失败/STALE 不得报**完整成功**
+        // （否则同一原申请无法续跑）；返回可续跑的 PARTIAL，只差登记与准入重验。
+        val registration = try {
             personRegistrationService?.refresh(PERSON_SOURCE_RECOVERY, docId)
         } catch (e: Exception) {
             log.warn("恢复后刷新人物登记失败 docId={}: {}", docId, e.message)
+            DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.FAILED, "REGISTRATION_EXCEPTION")
+        }
+        if (registration != null && registration.retryable) {
+            return finished(
+                docId, RecoveryApplyStatus.PARTIAL, "REGISTRATION_${registration.status.name}",
+                repair.layers, null, null
+            )
         }
 
         // I-2/I-3：名字补齐改变 admission identity_hash —— 以既有规则重算，绝不复用旧人工决定。
@@ -187,11 +197,10 @@ class DiscoveryIdentityRecoveryService(
         fun blocked(status: RecoveryStatus, reason: String, reasons: List<String> = listOf(reason)): Inspection =
             inspectionResult(docId, status, reason, rawSource, layerStates, null, snapshotHash, reasons)
 
-        if (!DiscoveryIdentity.isDiscoveryMap(rawSource)) return blocked(RecoveryStatus.NEEDS_MANUAL, "NOT_DISCOVERY")
+        if (!DiscoveryPersonScope.isLiveDiscovered(rawSource)) return blocked(RecoveryStatus.NEEDS_MANUAL, "NOT_DISCOVERY")
         if (snapshots[ExpertIndexLevel.APPLICATION] != null) return blocked(RecoveryStatus.NEEDS_MANUAL, "APPLICATION_PRESENT")
 
         val presentSources = snapshots.mapNotNull { (_, snap) -> snap?.source }
-        if (presentSources.any { hasProof(it) }) return blocked(RecoveryStatus.NEEDS_MANUAL, "EXISTING_PROOF")
         if (presentSources.any { hasAcademicFields(it) }) return blocked(RecoveryStatus.NEEDS_MANUAL, "LEGACY_ACADEMIC_FIELDS")
         if (authorIdsConflictAcrossLayers(presentSources)) return blocked(RecoveryStatus.NEEDS_MANUAL, "AUTHOR_ID_CONFLICT")
 
@@ -199,18 +208,21 @@ class DiscoveryIdentityRecoveryService(
         if (email.isEmpty()) return blocked(RecoveryStatus.NEEDS_MANUAL, "EMAIL_MISSING")
 
         // 联系人保护：docId（业务主键）/真实 ORCID/邮箱/别名任一命中都只建议人工处理。
+        // I-2/V-4：保护读取异常**立即停止**（零身份写），绝不把「读不到」当作「没有保护」。
         val storedOrcid = presentSources.mapNotNull { externalIds(it)["orcid"]?.takeIf { id -> id.isNotBlank() } }.distinct()
         val orcidKeys = buildSet {
             add(docId)
             addAll(storedOrcid)
         }
-        if (orcidKeys.any { runCatching { expertContactRepository.existsByOrcidId(it) }.getOrDefault(false) }) {
-            return blocked(RecoveryStatus.NEEDS_MANUAL, "CONTACT_PRESENT")
+        val contactPresent = try {
+            orcidKeys.any { expertContactRepository.existsByOrcidId(it) } ||
+                expertContactRepository.findFirstByExpertEmailOrderByUpdatedAtDesc(email) != null ||
+                expertEmailAliasService.findContactByEmailOrAlias(email) != null
+        } catch (e: Exception) {
+            log.warn("恢复预览联系人/别名保护读取失败 docId={}: {}", docId, e.message)
+            return blocked(RecoveryStatus.SOURCE_UNAVAILABLE, "CONTACT_CHECK_FAILED")
         }
-        if (runCatching { expertContactRepository.findFirstByExpertEmailOrderByUpdatedAtDesc(email) }.getOrNull() != null) {
-            return blocked(RecoveryStatus.NEEDS_MANUAL, "CONTACT_PRESENT")
-        }
-        if (runCatching { expertEmailAliasService.findContactByEmailOrAlias(email) }.getOrNull() != null) {
+        if (contactPresent) {
             return blocked(RecoveryStatus.NEEDS_MANUAL, "CONTACT_PRESENT")
         }
 
@@ -257,22 +269,40 @@ class DiscoveryIdentityRecoveryService(
         val incoming = extraction.incoming
             ?: return blocked(RecoveryStatus.NEEDS_MANUAL, extraction.reasonCode)
         val proposalHash = proposalHash(docId, incoming)
+        val presentLayers = snapshots.mapNotNull { (l, s) -> s?.let { l to it.source } }
+        // I-3：本次申请会写下的目标 proof（与 repair service 同源、确定性）。
+        val target = DiscoveryIdentity.verified(
+            incoming.email, incoming.givenNames, incoming.familyNames,
+            incoming.identityEvidence!!, incoming.orcidId, incoming.openAlexAuthorId
+        )
+
+        // 已有 proof 只接受「本次目标值」（同一原申请的部分层已完成，可续跑）；任何第三种值立即停止。
+        for ((_, source) in presentLayers) {
+            val proof = proofOf(source)
+            if (proof != null && proof != target) {
+                return blocked(RecoveryStatus.NEEDS_MANUAL, "EXISTING_PROOF")
+            }
+        }
 
         // 姓名适用性：已有非空姓名段必须与来源一致；三层全有姓名只缺 proof → 走 01。
         var anyBlank = false
-        for ((_, source) in snapshots.mapNotNull { (l, s) -> s?.let { l to it.source } }) {
+        var allAtTarget = true
+        for ((_, source) in presentLayers) {
             val given = (source["givenNames"] as? String)?.takeIf { it.isNotBlank() }
             val family = (source["familyNames"] as? String)?.takeIf { it.isNotBlank() }
             if ((given != null && given != incoming.givenNames) || (family != null && family != incoming.familyNames)) {
                 return blocked(RecoveryStatus.NEEDS_MANUAL, "NAME_CONFLICT")
             }
             if (given == null || family == null) anyBlank = true
+            if (proofOf(source) != target || given == null || family == null) allAtTarget = false
         }
-        if (!anyBlank) {
+        // 全名已齐且未全部达到本次目标（缺 proof 等）→ 仍走 01；三层都已是本次目标值 → 可续跑
+        // （只差人物登记/准入重验，见 apply），不再被「已有 proof」挡在人工处理。
+        if (!anyBlank && !allAtTarget) {
             return blocked(RecoveryStatus.ROUTE_TO_REPAIR, "ROUTE_TO_REPAIR")
         }
 
-        for ((_, source) in snapshots.mapNotNull { (l, s) -> s?.let { l to it.source } }) {
+        for ((_, source) in presentLayers) {
             if (incomingAuthorIdConflicts(source, incoming)) {
                 return blocked(RecoveryStatus.NEEDS_MANUAL, "AUTHOR_ID_CONFLICT")
             }
@@ -368,11 +398,15 @@ class DiscoveryIdentityRecoveryService(
     private fun extractSource(locator: SourceLocator, email: String): ExtractedSource {
         val emails: List<AuthorEmail> = when {
             locator.pmcId != null -> {
-                val paper = com.weibo.talentintroduction.discovery.domain.PaperMetadata(
-                    pmcId = locator.pmcId, pmid = locator.pmid, doi = locator.doi,
-                    title = "", pubYear = 0, journal = null, authors = emptyList(), source = "EUROPE_PMC"
-                )
-                europePmcDataSource.extractAuthorEmails(paper).emails
+                // I-1：PMCID 路径必须用**原始 JATS** 回源，并核对原文声明的 PMC 编号与服务端存量
+                // locator 一致；不符（或原文没有 PMC 编号）即停止，绝不据来源不明的字节签 proof。
+                // 沿用既有抓取（含既有预算/重试）与既有解析器，不新增任意 URL 或客户端证据入口。
+                val xml = europePmcDataSource.fetchFullTextXml(locator.pmcId)
+                    ?: throw SourceUnavailableException("SOURCE_FETCH_FAILED")
+                if (!declaredPmcIds(xml).any { it.equals(locator.pmcId, ignoreCase = true) || it == locator.pmcId.removePrefix("PMC") }) {
+                    throw SourceIdentityConflictException("SOURCE_ARTICLE_ID_MISMATCH")
+                }
+                JatsXmlEmailParser.parse(xml)
             }
             locator.doi != null -> {
                 val openAlex = openAlexDataSource.getIfAvailable()
@@ -398,6 +432,34 @@ class DiscoveryIdentityRecoveryService(
             return ExtractedSource(null, "SOURCE_NO_TARGET_EMAIL")
         }
         return ExtractedSource(candidate, "RECOVERABLE")
+    }
+
+    /**
+     * I-1：从原始 JATS 里读出**PMC 形态**的明确论文编号（`article-id[@pub-id-type=pmc*]`，含
+     * `PMC7759461` 与裸数字两种写法）。只认 PMC 类型，绝不用 PMID/DOI 冒充；解析失败按「无编号」处理
+     * （因此不会签出 proof）。与 [JatsXmlEmailParser] 使用同样的安全解析设置。
+     */
+    private fun declaredPmcIds(xml: ByteArray): Set<String> = try {
+        val factory = javax.xml.parsers.DocumentBuilderFactory.newInstance().apply {
+            isNamespaceAware = false
+            setFeature("http://apache.org/xml/features/disallow-doctype-decl", false)
+            setFeature("http://xml.org/sax/features/external-general-entities", false)
+            setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+            setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+            setAttribute(javax.xml.XMLConstants.ACCESS_EXTERNAL_DTD, "")
+            setAttribute(javax.xml.XMLConstants.ACCESS_EXTERNAL_SCHEMA, "")
+        }
+        val doc = factory.newDocumentBuilder().parse(java.io.ByteArrayInputStream(xml))
+        val nodes = doc.getElementsByTagName("article-id")
+        (0 until nodes.length).mapNotNull { index ->
+            val node = nodes.item(index) as? org.w3c.dom.Element ?: return@mapNotNull null
+            val type = node.getAttribute("pub-id-type").trim().lowercase()
+            if (!type.startsWith("pmc")) return@mapNotNull null
+            node.textContent?.trim()?.takeIf { it.isNotEmpty() }
+        }.toSet<String>()
+    } catch (e: Exception) {
+        log.debug("读取 JATS PMC 编号失败: {}", e.message)
+        emptySet<String>()
     }
 
     // ── 判定辅助 ────────────────────────────────────────────────────────────

@@ -5,9 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
 import com.weibo.talentintroduction.config.ElasticsearchProperties
+import com.weibo.talentintroduction.config.EuropePmcProperties
 import com.weibo.talentintroduction.config.OpenAlexBudgetDeferredException
-import com.weibo.talentintroduction.discovery.domain.AuthorEmail
-import com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome
 import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.IdentityVerification
@@ -15,6 +14,7 @@ import com.weibo.talentintroduction.expert.service.ExpertIndexService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertPromotionAuditService
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -129,8 +129,8 @@ class DiscoveryIdentityRecoveryServiceTest {
         }.`when`(restTemplate).exchange(
             Mockito.anyString(), Mockito.any(HttpMethod::class.java), Mockito.any(), Mockito.eq(JsonNode::class.java)
         )
-        Mockito.`when`(europePmc.extractAuthorEmails(anyNonNull(paperPlaceholder)))
-            .thenReturn(extraction(listOf(candidate())))
+        Mockito.`when`(europePmc.fetchFullTextXml(anyNonNull("PMC1234567")))
+            .thenReturn(jatsXml())
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -181,17 +181,57 @@ class DiscoveryIdentityRecoveryServiceTest {
 
     // ── 夹具 ────────────────────────────────────────────────────────────────
 
-    private val evidence = "JATS_SHA256:" + "a".repeat(64)
-
-    private fun candidate(
+    /**
+     * 最小可解析 JATS：`article-id[pub-id-type=pmcid]` 声明 PMC 编号 + `contrib` 直挂邮箱，
+     * 由**真实** [JatsXmlEmailParser] 解析；`given=null` 时作者缺完整姓名 → 无有效证据。
+     */
+    private fun jatsXml(
+        pmcId: String = "PMC1234567",
         email: String = "jane@uni.edu",
         given: String? = "Jane",
         family: String? = "Doe",
-        orcid: String? = null,
-        openAlexAuthorId: String? = null
-    ) = AuthorEmail(email, given, family, false, null, orcid, null, openAlexAuthorId, evidence)
+        orcid: String? = null
+    ): ByteArray {
+        val name = buildString {
+            append("<name>")
+            if (family != null) append("<surname>$family</surname>")
+            if (given != null) append("<given-names>$given</given-names>")
+            append("</name>")
+        }
+        val contributorId =
+            if (orcid != null) "<contrib-id contrib-id-type=\"orcid\">https://orcid.org/$orcid</contrib-id>" else ""
+        return """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <article><front><article-meta>
+              <article-id pub-id-type="pmcid">$pmcId</article-id>
+              <contrib-group content-type="author">
+                <contrib contrib-type="author">$name$contributorId<email>$email</email></contrib>
+              </contrib-group>
+            </article-meta></front></article>
+        """.trimIndent().toByteArray()
+    }
 
-    private fun extraction(emails: List<AuthorEmail>) = EmailExtractionOutcome(emails, "FULLTEXT_XML", null)
+    /** 归档真实原字节（`PMC7759461.xml`，article-id=PMC7759461），SHA256 见证据报告。 */
+    private fun archivedPmcFixture(): ByteArray {
+        val archive = requireNotNull(javaClass.getResourceAsStream("/discovery/xml-route-recall.zip")).use { it.readBytes() }
+        return java.util.zip.ZipInputStream(archive.inputStream()).use { zip ->
+            generateSequence { zip.nextEntry }.first { it.name.endsWith("round2/PMC7759461.xml") }
+            zip.readBytes()
+        }
+    }
+
+    /** 真实 [EuropePmcDataSource] + 仅替身 HTTP 边界（返回归档原字节）。 */
+    private fun realPmcDataSource(bytes: ByteArray): EuropePmcDataSource {
+        val http = Mockito.mock(RestTemplate::class.java)
+        Mockito.`when`(http.getForObject(Mockito.anyString(), eqNonNull(ByteArray::class.java))).thenReturn(bytes)
+        return EuropePmcDataSource(http, EuropePmcProperties(requestDelayMs = 0, maxRetries = 0))
+    }
+
+    /** 换用另一来源边的等价服务实例（共享同一 writer/接缝），用于真实 URL 抓取路径。 */
+    private fun serviceWith(pmc: EuropePmcDataSource) = DiscoveryIdentityRecoveryService(
+        writer, repairService, pmc, openAlexProvider, aliasService,
+        contactRepository, admissionPolicy, reviewService, personRegistrationService = personRegistrationService
+    )
 
     private fun discoveredSource(
         email: String = "jane@uni.edu",
@@ -393,8 +433,8 @@ class DiscoveryIdentityRecoveryServiceTest {
     fun `a conflicting author id from the source stops recovery`() {
         val id = "EMAIL-jane@uni.edu"
         put(ExpertIndexLevel.RAW, id, discoveredSource(externalIds = mapOf("pmcId" to "PMC1234567", "orcid" to "0000-0002-1825-0097")))
-        Mockito.`when`(europePmc.extractAuthorEmails(anyNonNull(paperPlaceholder)))
-            .thenReturn(extraction(listOf(candidate(orcid = "0000-0002-1825-0099"))))
+        Mockito.`when`(europePmc.fetchFullTextXml(anyNonNull("PMC1234567")))
+            .thenReturn(jatsXml(orcid = "0000-0002-1825-0099"))
 
         assertEquals("AUTHOR_ID_CONFLICT", previewOf(RecoveryStatus.NEEDS_MANUAL).reason)
         assertTrue(updateUrls.isEmpty())
@@ -415,8 +455,8 @@ class DiscoveryIdentityRecoveryServiceTest {
     fun `a source that cannot confirm the target email is not a proof`() {
         val id = "EMAIL-jane@uni.edu"
         put(ExpertIndexLevel.RAW, id, discoveredSource())
-        Mockito.`when`(europePmc.extractAuthorEmails(anyNonNull(paperPlaceholder)))
-            .thenReturn(extraction(listOf(candidate(email = "someone-else@uni.edu"))))
+        Mockito.`when`(europePmc.fetchFullTextXml(anyNonNull("PMC1234567")))
+            .thenReturn(jatsXml(email = "someone-else@uni.edu"))
 
         assertEquals("SOURCE_NO_TARGET_EMAIL", previewOf(RecoveryStatus.NEEDS_MANUAL).reason)
         assertTrue(updateUrls.isEmpty())
@@ -426,8 +466,9 @@ class DiscoveryIdentityRecoveryServiceTest {
     fun `an invalid evidence digest is not a proof`() {
         val id = "EMAIL-jane@uni.edu"
         put(ExpertIndexLevel.RAW, id, discoveredSource())
-        Mockito.`when`(europePmc.extractAuthorEmails(anyNonNull(paperPlaceholder)))
-            .thenReturn(extraction(listOf(candidate().copy(identityEvidence = "not-a-source-hash"))))
+        // 作者缺完整姓名 → 真实解析器不产出有效来源证据。
+        Mockito.`when`(europePmc.fetchFullTextXml(anyNonNull("PMC1234567")))
+            .thenReturn(jatsXml(given = null))
 
         assertEquals("SOURCE_EVIDENCE_INVALID", previewOf(RecoveryStatus.NEEDS_MANUAL).reason)
         assertTrue(updateUrls.isEmpty())
@@ -437,7 +478,7 @@ class DiscoveryIdentityRecoveryServiceTest {
     fun `a deferred budget is reported as DEFERRED not as a rejection`() {
         val id = "EMAIL-jane@uni.edu"
         put(ExpertIndexLevel.RAW, id, discoveredSource())
-        Mockito.`when`(europePmc.extractAuthorEmails(anyNonNull(paperPlaceholder)))
+        Mockito.`when`(europePmc.fetchFullTextXml(anyNonNull("PMC1234567")))
             .thenThrow(OpenAlexBudgetDeferredException(
                 com.weibo.talentintroduction.config.DeferredReason.DAILY_BUDGET,
                 java.time.Instant.parse("2026-10-14T00:00:00Z")
@@ -447,5 +488,139 @@ class DiscoveryIdentityRecoveryServiceTest {
         assertEquals(RecoveryStatus.DEFERRED, preview.status)
         assertEquals("BUDGET_DEFERRED", preview.reason)
         assertTrue(updateUrls.isEmpty())
+    }
+
+    // ── I-3/V-4/V-19 §故障显式与续跑检查点 ────────────────────────────────
+
+    @Test
+    fun `a protection read failure stops immediately with zero identity writes`() {
+        val id = "EMAIL-jane@uni.edu"
+        put(ExpertIndexLevel.RAW, id, discoveredSource())
+        Mockito.`when`(contactRepository.existsByOrcidId(Mockito.anyString()))
+            .thenThrow(RuntimeException("contact store down"))
+
+        val preview = service.preview(id)
+        assertEquals(RecoveryStatus.SOURCE_UNAVAILABLE, preview.status)
+        assertEquals("CONTACT_CHECK_FAILED", preview.reason)
+
+        val applied = service.apply(id, preview.snapshotHash, preview.proposalHash)
+        assertFalse(applied.status == RecoveryApplyStatus.APPLIED)
+        assertTrue(updateUrls.isEmpty(), "保护读取异常不得 fail-open 写入身份")
+    }
+
+    @Test
+    fun `a partial layer failure is resumed from the same checkpoint after the fault clears`() {
+        val id = "EMAIL-jane@uni.edu"
+        put(ExpertIndexLevel.RAW, id, discoveredSource())
+        put(ExpertIndexLevel.CANDIDATE, id, discoveredSource())
+        failUpdateLevel = ExpertIndexLevel.RAW.name
+        val firstPreview = previewOf()
+
+        val first = service.apply(id, firstPreview.snapshotHash, firstPreview.proposalHash)
+        assertEquals(RecoveryApplyStatus.PARTIAL, first.status)
+        assertNull(docs[key(ExpertIndexLevel.RAW, id)]!!.source["identityVerification"])
+        assertNotNull(docs[key(ExpertIndexLevel.CANDIDATE, id)]!!.source["identityVerification"])
+
+        // 故障解除后按**同一原申请**续跑：已完成层（本次目标值）不再被视为 existing proof。
+        failUpdateLevel = null
+        val resumedPreview = previewOf()
+        val applied = service.apply(id, resumedPreview.snapshotHash, resumedPreview.proposalHash)
+
+        assertEquals(RecoveryApplyStatus.APPLIED, applied.status, "reason=${applied.reason}")
+        assertNotNull(docs[key(ExpertIndexLevel.RAW, id)]!!.source["identityVerification"])
+        assertEquals(
+            1, updateUrls.count { it.contains("/orcid_info_candidate/_update/") },
+            "已达目标值的层不重写"
+        )
+    }
+
+    @Test
+    fun `a concurrent third proof value is never overwritten on resume`() {
+        val id = "EMAIL-jane@uni.edu"
+        put(ExpertIndexLevel.RAW, id, discoveredSource())
+        put(ExpertIndexLevel.CANDIDATE, id, discoveredSource())
+        failUpdateLevel = ExpertIndexLevel.RAW.name
+        val firstPreview = previewOf()
+        assertEquals(RecoveryApplyStatus.PARTIAL, service.apply(id, firstPreview.snapshotHash, firstPreview.proposalHash).status)
+
+        // 第三方并发写入一个**非本次目标值**的 proof。
+        val thirdParty = IdentityVerification(
+            status = "VERIFIED", version = 1, email = "jane@uni.edu",
+            source = "ORCID_RECORD_SHA256", evidenceHash = "b".repeat(64)
+        )
+        docs[key(ExpertIndexLevel.CANDIDATE, id)]!!.source["identityVerification"] = thirdParty
+        failUpdateLevel = null
+        val writesBefore = updateUrls.size
+
+        val preview = service.preview(id)
+        assertEquals(RecoveryStatus.NEEDS_MANUAL, preview.status)
+        assertEquals("EXISTING_PROOF", preview.reason)
+
+        val applied = service.apply(id, preview.snapshotHash, preview.proposalHash)
+        assertFalse(applied.status == RecoveryApplyStatus.APPLIED)
+        assertEquals(writesBefore, updateUrls.size, "第三方值下不得有任何身份写")
+        assertEquals(thirdParty, docs[key(ExpertIndexLevel.CANDIDATE, id)]!!.source["identityVerification"], "第三方值不被覆盖")
+        assertNull(docs[key(ExpertIndexLevel.RAW, id)]!!.source["identityVerification"])
+    }
+
+    @Test
+    fun `a person registration failure is resumable from the existing ES facts`() {
+        Mockito.`when`(personRegistrationService.refresh(Mockito.anyString(), Mockito.anyString()))
+            .thenReturn(DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.FAILED, "REGISTRATION_EXCEPTION"))
+        val id = "EMAIL-jane@uni.edu"
+        put(ExpertIndexLevel.RAW, id, discoveredSource())
+        put(ExpertIndexLevel.CANDIDATE, id, discoveredSource())
+        val firstPreview = previewOf()
+
+        val first = service.apply(id, firstPreview.snapshotHash, firstPreview.proposalHash)
+        assertEquals(RecoveryApplyStatus.PARTIAL, first.status, "登记失败不得报完整 APPLIED")
+        assertEquals("REGISTRATION_FAILED", first.reason)
+        assertNotNull(docs[key(ExpertIndexLevel.RAW, id)]!!.source["identityVerification"])
+        assertNotNull(docs[key(ExpertIndexLevel.CANDIDATE, id)]!!.source["identityVerification"])
+
+        // 登记故障解除后按同一原申请续跑：层事实已在 ES，只补登记与准入重验。
+        Mockito.`when`(personRegistrationService.refresh(Mockito.anyString(), Mockito.anyString()))
+            .thenReturn(DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.CREATED, "person-1"))
+        val resumedPreview = previewOf()
+        val applied = service.apply(id, resumedPreview.snapshotHash, resumedPreview.proposalHash)
+
+        assertEquals(RecoveryApplyStatus.APPLIED, applied.status, "reason=${applied.reason}")
+        Mockito.verify(reviewService).recordAutomaticConclusion(eqNonNull(id), anyNonNull(profilePlaceholder), anyNonNull(automaticPassed()))
+    }
+
+    // ── I-1/V-20 §PMCID 与原文编号绑定 ─────────────────────────────────────
+
+    @Test
+    fun `an archived PMC article replays positively when the locator matches the declared id`() {
+        val email = "stefanv@berkeley.edu"
+        val id = "EMAIL-$email"
+        put(ExpertIndexLevel.RAW, id, discoveredSource(email = email, externalIds = mapOf("pmcId" to "PMC7759461")))
+        val realSourceService = serviceWith(realPmcDataSource(archivedPmcFixture()))
+
+        val preview = realSourceService.preview(id)
+        assertEquals(RecoveryStatus.RECOVERABLE, preview.status, "reason=${preview.reason}")
+        assertEquals("JATS_SHA256", preview.evidenceSource)
+
+        val applied = realSourceService.apply(id, preview.snapshotHash, preview.proposalHash)
+        assertEquals(RecoveryApplyStatus.APPLIED, applied.status, "reason=${applied.reason}")
+        assertNotNull(docs[key(ExpertIndexLevel.RAW, id)]!!.source["identityVerification"])
+    }
+
+    @Test
+    fun `a stored locator the archived JATS does not declare blocks the proof`() {
+        val email = "stefanv@berkeley.edu"
+        val id = "EMAIL-$email"
+        // 存量 locator=PMC1234567，而归档原字节的 article-id 是 PMC7759461。
+        put(ExpertIndexLevel.RAW, id, discoveredSource(email = email, externalIds = mapOf("pmcId" to "PMC1234567")))
+        val realSourceService = serviceWith(realPmcDataSource(archivedPmcFixture()))
+
+        val preview = realSourceService.preview(id)
+        assertEquals(RecoveryStatus.SOURCE_IDENTITY_CONFLICT, preview.status, "reason=${preview.reason}")
+        assertEquals("SOURCE_ARTICLE_ID_MISMATCH", preview.reason)
+
+        val applied = realSourceService.apply(id, preview.snapshotHash, preview.proposalHash)
+        assertFalse(applied.status == RecoveryApplyStatus.APPLIED)
+        assertTrue(updateUrls.isEmpty())
+        assertNull(docs[key(ExpertIndexLevel.RAW, id)]!!.source["identityVerification"], "来源编号不符不得签出 proof")
     }
 }

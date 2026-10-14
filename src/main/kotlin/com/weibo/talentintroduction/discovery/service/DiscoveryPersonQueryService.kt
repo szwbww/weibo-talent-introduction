@@ -2,7 +2,10 @@ package com.weibo.talentintroduction.discovery.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.campaign.service.BatchRecipientSelectionService
+import com.weibo.talentintroduction.campaign.service.RecipientAdmissionState
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonIdentity
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonScope
 import com.weibo.talentintroduction.discovery.repository.DiscoveryPersonRepository
 import com.weibo.talentintroduction.expert.domain.CountryContinentMapping
 import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
@@ -13,6 +16,7 @@ import com.weibo.talentintroduction.expert.service.ExpertHitWithSort
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.expert.service.RegionCount
 import com.weibo.talentintroduction.expert.service.TagCount
+import com.weibo.talentintroduction.mail.service.EmailSuppressionService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.Clock
@@ -34,13 +38,25 @@ import java.util.Locale
  * 本服务只读 ES/SQL：不登记、不修复、不创建联系人；不把 personId 填进旧 `orcidId`；
  * 关系失效（当前标签/证据指纹不再成立）的成员按独立档案显示并标记待核，不并入人物聚合。
  * 不声称 ES 与 MySQL 是同一事务快照。
+ *
+ * R-11/R-12：DB 联系人只按**核验通过**的关系聚合（其余回退原 contactId 单位并标待核）；
+ * 详情里的逐邮箱准入/邮箱状态一律读取既有真值（统一 selector 的持久准入 +
+ * `email_suppression` 抑制名单），无法取得时明确 `UNKNOWN`，绝不把旧 `filterResult` 当许可。
  */
 @Service
 class DiscoveryPersonQueryService(
     private val expertSearchService: ExpertSearchService,
     private val personRepository: DiscoveryPersonRepository,
     private val contactRepository: ExpertContactRepository,
-    private val clock: Clock = Clock.systemUTC()
+    private val featureGate: DiscoveryPersonFeatureGate = DiscoveryPersonFeatureGate(),
+    private val clock: Clock = Clock.systemUTC(),
+    /**
+     * R-12：逐邮箱准入真值的**唯一**读取入口（统一 selector，生产恒注入）。
+     * 省略时（单测）逐邮箱准入一律 `UNKNOWN`，绝不回退成「可发送」。
+     */
+    private val batchRecipientSelectionService: BatchRecipientSelectionService? = null,
+    /** R-12：逐邮箱抑制（退订）真值；省略时逐邮箱状态一律 `UNKNOWN`。 */
+    private val emailSuppressionService: EmailSuppressionService? = null
 ) {
     private val log = LoggerFactory.getLogger(DiscoveryPersonQueryService::class.java)
 
@@ -49,6 +65,14 @@ class DiscoveryPersonQueryService(
         const val MAX_DISCOVERED_DOCS = 100_000
         const val DISCOVERED_BUDGET_MS = 10_000L
         const val RELATION_BATCH_SIZE = 500
+
+        /**
+         * R-12：逐邮箱展示状态 token。除这两种外一律取统一 selector 的
+         * [RecipientAdmissionState].name（可发送 = `ADMITTED`）。
+         */
+        const val STATUS_SUPPRESSED = "SUPPRESSED"
+        const val STATUS_UNKNOWN = "UNKNOWN"
+
         private val LAYERS =
             listOf(ExpertIndexLevel.RAW, ExpertIndexLevel.CANDIDATE, ExpertIndexLevel.APPLICATION)
     }
@@ -78,16 +102,24 @@ class DiscoveryPersonQueryService(
             tag, operatorStatus, emailDomain, region,
             hIndexMin, citationCountMin, recentYears, hasField, discipline, expertTypes
         )
+        // 默认关闭：逐档案口径（与 04 引入前一致），不做任何人物归并。
+        if (!featureGate.enabled) {
+            val total = expertSearchService.countExperts(level, filters)
+            val page = if (total == 0L) emptyList()
+            else expertSearchService.searchExpertsWithSort(level, filters, from, size, sortBy)
+            return PersonSearchResult(page.map { PersonListEntry(it.profile, 1) }, total)
+        }
         val discoveredFilter = filters + discoveredFilter()
         val othersFilter = filters + notDiscoveredFilter()
 
         val othersTotal = expertSearchService.countExperts(level, othersFilter)
         val scan = scanDiscovered(level, discoveredFilter, sortBy)
         // 「其他」分区只需归并排序所需的前 from+size 条；无其他匹配时跳过 ES 前缀读取。
+        // R-9：单次 `_search` 读页上限 1000，故按上限分页读取——绝不把 from+size 当单页 size。
         val othersPrefix = if (othersTotal == 0L) {
             emptyList()
         } else {
-            expertSearchService.searchExpertsWithSort(level, othersFilter, 0, from + size, sortBy)
+            readSortedPrefix(level, othersFilter, from + size, sortBy)
         }
         val merged = mergeBySort(scan.representatives, othersPrefix, from + size, level, sortBy)
         // A13：每行人物投影携带成员数（与人物关系同源、同一次批量读取得出）。非 discovered 行（其他分区
@@ -118,6 +150,7 @@ class DiscoveryPersonQueryService(
             tag, operatorStatus, emailDomain, region,
             hIndexMin, citationCountMin, recentYears, hasField, discipline, expertTypes
         )
+        if (!featureGate.enabled) return expertSearchService.countExperts(level, filters)
         val othersTotal = expertSearchService.countExperts(level, filters + notDiscoveredFilter())
         val scan = scanDiscovered(level, filters + discoveredFilter(), null)
         return othersTotal + scan.personCount
@@ -132,6 +165,12 @@ class DiscoveryPersonQueryService(
         region: String? = null
     ): List<TagCount> {
         val filters = expertSearchService.expertFilters(null, operatorStatus, emailDomain, region)
+        if (!featureGate.enabled) {
+            return expertSearchService.aggregateTerms(level, filters, "tags", 100)
+                .map { TagCount(it.first, it.second) }
+                .filter { it.tag.isNotBlank() }
+                .sortedByDescending { it.count }
+        }
         val others = expertSearchService
             .aggregateTerms(level, filters + notDiscoveredFilter(), "tags", 100)
             .toMap()
@@ -148,6 +187,16 @@ class DiscoveryPersonQueryService(
         emailDomain: String? = null
     ): List<RegionCount> {
         val filters = expertSearchService.expertFilters(tag, operatorStatus, emailDomain, null)
+        if (!featureGate.enabled) {
+            val legacy = mutableMapOf<String, Long>()
+            expertSearchService.aggregateTerms(level, filters, "country", 500).forEach { (country, count) ->
+                val regionName = CountryContinentMapping.toRegion(country)
+                legacy[regionName] = (legacy[regionName] ?: 0L) + count
+            }
+            return CountryContinentMapping.allRegions().map { regionName ->
+                RegionCount(regionName, legacy[regionName] ?: 0L)
+            }
+        }
         val others = mutableMapOf<String, Long>()
         expertSearchService.aggregateTerms(level, filters + notDiscoveredFilter(), "country", 500)
             .forEach { (country, count) ->
@@ -171,6 +220,12 @@ class DiscoveryPersonQueryService(
         val script = mapOf(
             "source" to "doc['email'].value.substring(doc['email'].value.indexOf('@') + 1)"
         )
+        if (!featureGate.enabled) {
+            return expertSearchService.aggregateTerms(level, filters, "email", 10000, script)
+                .map { (domain, count) -> EmailDomainCount(domain, count) }
+                .filter { it.domain.isNotBlank() }
+                .sortedByDescending { it.count }
+        }
         val others = expertSearchService
             .aggregateTerms(level, filters + notDiscoveredFilter(), "email", 10000, script)
             .toMap()
@@ -190,18 +245,13 @@ class DiscoveryPersonQueryService(
     fun personDetail(docId: String, level: ExpertIndexLevel): DiscoveryPersonDetail? {
         require(docId.isNotBlank()) { "docId is required" }
         val memberRow = personRepository.findMember(docId)
-        val personId = memberRow?.personId
+        // 默认关闭：退回逐档案视图（无人物归并、无关系语义）；关系读取不参与展示。
+        val personId = if (featureGate.enabled) memberRow?.personId else null
         val person = personId?.let { personRepository.findPerson(it) }
         val memberRows = personId?.let { personRepository.findMembersByPerson(it) } ?: emptyList()
 
         val docIds = (memberRows.map { it.expertDocId } + docId).distinct()
-        val profilesByDoc = LinkedHashMap<String, MutableList<Pair<ExpertIndexLevel, ExpertProfile>>>()
-        for (layer in LAYERS) {
-            expertSearchService.findByDocumentIds(layer, docIds).forEach { profile ->
-                val id = profile.esDocId ?: return@forEach
-                profilesByDoc.getOrPut(id) { mutableListOf() }.add(layer to profile)
-            }
-        }
+        val profilesByDoc = loadProfilesByDoc(docIds)
         if (memberRow == null && profilesByDoc[docId].isNullOrEmpty()) return null
 
         val contacts = try {
@@ -212,6 +262,10 @@ class DiscoveryPersonQueryService(
         }
         val rowByDoc = memberRows.associateBy { it.expertDocId }
         val representativeDocId = person?.primaryDocId ?: docId
+
+        // R-12：逐邮箱准入/邮箱状态真值。准入经统一 selector 读取持久结论，邮箱状态取抑制名单；
+        // 任一真值不可得即明确 UNKNOWN，绝不把旧 `filterResult` 当成可发送许可。
+        val admissionStates = readAdmissionStates(docIds.mapNotNull { profilesByDoc[it]?.firstOrNull()?.second })
 
         val members = docIds.map { id ->
             val profiles = profilesByDoc[id].orEmpty()
@@ -226,7 +280,7 @@ class DiscoveryPersonQueryService(
                 contactId = contact?.id,
                 contactStatus = contact?.currentStatus,
                 operatorStatus = contact?.operatorStatus ?: raw?.operatorStatus,
-                admissionStatus = raw?.filterResult,
+                admissionStatus = perEmailAdmissionStatus(raw?.email, admissionStates[id]),
                 representative = id == representativeDocId,
                 stale = stored != null && isStale(stored.identityFingerprint, id, profiles),
                 evidenceSource = evidenceSource(stored?.evidenceJson, raw)
@@ -243,9 +297,89 @@ class DiscoveryPersonQueryService(
         )
     }
 
-    /** 数据库联系人分支（I-1/I-3）：按关系批量解析 personId（只读，不登记）。 */
-    fun resolvePersonIds(orcidOrDocIds: Collection<String>): Map<String, String> =
-        personRepository.findPersonIdsByDocIds(orcidOrDocIds)
+    /**
+     * R-11：DB 联系人分支的关系解析（只读，不登记；默认关闭时不归并）。
+     *
+     * 只有**当前核验通过**的关系才给出 `personId`（实时 discovered 范围 + 成员身份指纹与登记
+     * 快照一致）。已登记但当前核验失败（移标、指纹变化、档案不可读）的关系回退原联系人单位并
+     * 标记 [VerifiedPersonRelation.needsReview]；无关系即范围外，不参与人物聚合。
+     * 关系读取本身失败时不产出任何映射（既不归并、也不虚报待核）。
+     */
+    fun resolveVerifiedPersonRelations(docIds: Collection<String>): Map<String, VerifiedPersonRelation> {
+        if (!featureGate.enabled) return emptyMap()
+        val ids = docIds.filter { it.isNotBlank() }.distinct()
+        if (ids.isEmpty()) return emptyMap()
+        val memberRows = try {
+            personRepository.findMembers(ids)
+        } catch (e: Exception) {
+            log.warn("关系核验读取失败，本次不归并人物: {}", e.message)
+            return emptyMap()
+        }
+        if (memberRows.isEmpty()) return emptyMap()
+        val profilesByDoc = loadProfilesByDoc(memberRows.map { it.expertDocId })
+        return memberRows.associate { row ->
+            val stale = isStale(row.identityFingerprint, row.expertDocId, profilesByDoc[row.expertDocId].orEmpty())
+            row.expertDocId to VerifiedPersonRelation(
+                personId = row.personId.takeUnless { stale },
+                needsReview = stale
+            )
+        }
+    }
+
+    // ── 关系核验与逐邮箱状态辅助 ─────────────────────────────────────────────────
+
+    /** 按层读取真实 `_id` 档案（与详情/扫描同源），按 docId 归组。 */
+    private fun loadProfilesByDoc(
+        docIds: List<String>
+    ): Map<String, MutableList<Pair<ExpertIndexLevel, ExpertProfile>>> {
+        val profilesByDoc = LinkedHashMap<String, MutableList<Pair<ExpertIndexLevel, ExpertProfile>>>()
+        for (layer in LAYERS) {
+            expertSearchService.findByDocumentIds(layer, docIds).forEach { profile ->
+                val id = profile.esDocId ?: return@forEach
+                profilesByDoc.getOrPut(id) { mutableListOf() }.add(layer to profile)
+            }
+        }
+        return profilesByDoc
+    }
+
+    /**
+     * R-12：逐 docId 的持久准入结论（统一 selector 的 [RecipientAdmissionState] 词汇）。
+     * 读取异常/服务缺失时返回空表 —— 调用方据此显示 `UNKNOWN`，绝不回落成「可发送」。
+     */
+    private fun readAdmissionStates(profiles: List<ExpertProfile>): Map<String, RecipientAdmissionState> {
+        val service = batchRecipientSelectionService ?: return emptyMap()
+        if (profiles.isEmpty()) return emptyMap()
+        return try {
+            val selection = service.selectAdmission(profiles)
+            (selection.included + selection.excluded).associate { it.docId to it.admissionState }
+        } catch (e: Exception) {
+            log.warn("逐邮箱准入读取失败，本轮显示为未知: {}", e.message)
+            emptyMap()
+        }
+    }
+
+    /**
+     * R-12：单个成员邮箱的展示状态。抑制（退订）= [STATUS_SUPPRESSED]，其余取持久准入结论；
+     * 邮箱为空、准入真值或抑制真值不可得、非人物档案一律 `UNKNOWN`（绝不显示可发送）。
+     */
+    private fun perEmailAdmissionStatus(email: String?, admissionState: RecipientAdmissionState?): String {
+        if (email.isNullOrBlank()) return STATUS_UNKNOWN
+        val suppressed = isSuppressed(email) ?: return STATUS_UNKNOWN
+        if (suppressed) return STATUS_SUPPRESSED
+        if (admissionState == null || admissionState == RecipientAdmissionState.NOT_DISCOVERY) return STATUS_UNKNOWN
+        return admissionState.name
+    }
+
+    /** 抑制真值：null = 不可得（区别于「未抑制」）。 */
+    private fun isSuppressed(email: String): Boolean? {
+        val service = emailSuppressionService ?: return null
+        return try {
+            service.isSuppressed(email)
+        } catch (e: Exception) {
+            log.warn("邮箱抑制真值读取失败: {}", e.message)
+            null
+        }
+    }
 
     // ── discovered 分区扫描 ─────────────────────────────────────────────────────
 
@@ -335,6 +469,32 @@ class DiscoveryPersonQueryService(
         )
     }
 
+    /**
+     * R-9：读取「其他」分区归并排序所需的前 `limit` 条。单次 `_search` 读页上限为
+     * [ExpertSearchService.MAX_SEARCH_PAGE_SIZE]，故按该上限逐页读取（from 递增），
+     * **不**把 `from + size` 当成单页 size，也不读取请求范围之外的专家：
+     * ES 返回不足一页即说明索引已到底，立即停止。任一页不完整由 ES 服务层明确失败并向上传播。
+     */
+    private fun readSortedPrefix(
+        level: ExpertIndexLevel,
+        filters: List<Map<String, Any>>,
+        limit: Int,
+        sortBy: String?
+    ): List<ExpertHitWithSort> {
+        if (limit <= 0) return emptyList()
+        val pageSize = ExpertSearchService.MAX_SEARCH_PAGE_SIZE
+        val out = ArrayList<ExpertHitWithSort>(minOf(limit, pageSize))
+        var offset = 0
+        while (offset < limit) {
+            val requestSize = minOf(pageSize, limit - offset)
+            val page = expertSearchService.searchExpertsWithSort(level, filters, offset, requestSize, sortBy)
+            out += page
+            if (page.size < requestSize) break
+            offset += requestSize
+        }
+        return out
+    }
+
     /** 归并两个各自已按显示排序的前缀，去重（分区不相交，仅防同 key 重复），取前 `limit` 条。 */
     private fun mergeBySort(
         left: List<ExpertHitWithSort>,
@@ -401,6 +561,8 @@ class DiscoveryPersonQueryService(
      */
     private fun isStale(storedFingerprint: String, docId: String, profiles: List<Pair<ExpertIndexLevel, ExpertProfile>>): Boolean {
         val profile = profiles.firstOrNull()?.second ?: return true
+        // I-3：关系有效的前提是**实时**人物范围（来源证据 + 字面 discovered 标签）且身份仍可核实。
+        if (!DiscoveryPersonScope.isLiveDiscovered(profile)) return true
         if (!DiscoveryIdentity.allowed(profile)) return true
         val authorKeys = DiscoveryPersonIdentity.authorKeys(profiles.map { it.second })
         val normalizedEmail = DiscoveryIdentity.normalizedEmail(profile.email).takeIf { it.isNotEmpty() }
@@ -471,10 +633,24 @@ data class DiscoveryPersonMember(
     val contactId: Long?,
     val contactStatus: String?,
     val operatorStatus: String?,
+    /**
+     * R-12：逐邮箱准入/邮箱状态真值 token —— `ADMITTED`（可发送）/
+     * `NEEDS_REVIEW`/`MANUAL_REJECTED`/`IDENTITY_CHANGED`/`UNINITIALIZED` 取统一 selector 的持久准入；
+     * `SUPPRESSED` = 邮箱在抑制名单；`UNKNOWN` = 真值不可得。**绝不**是旧 ES `filterResult`。
+     */
     val admissionStatus: String?,
     val representative: Boolean,
     val stale: Boolean,
     val evidenceSource: String?
+)
+
+/**
+ * R-11：DB 联系人分支的关系核验结果。[personId] 非空表示当前关系核验通过、可并入人物聚合；
+ * [needsReview] 表示已登记关系的实时标签/身份指纹已不成立 —— 回退原联系人单位并标记待核。
+ */
+data class VerifiedPersonRelation(
+    val personId: String?,
+    val needsReview: Boolean
 )
 
 /** 06（I-2）：只读人物详情；无关系时 [personId]/[revision] 为空，成员仅含原档案。 */

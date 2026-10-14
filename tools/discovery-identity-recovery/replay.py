@@ -4,6 +4,7 @@
 - 默认只 preview；apply 必须显式 `--apply` 且引用同一输出目录里已生成的 preview 记录。
 - 每人一行 JSONL；输出目录 0700、文件 0600；文件名不含姓名/邮箱；**从不记录认证头**。
 - apply 前先原子写备份；备份写失败则**该条停止进入 apply**；恢复时按 docId 去重。
+- PARTIAL（部分层已落地）/STALE（旧 hash 过期）不是终态：重新预览取得服务端新检查点后按同一原申请续跑。
 - 只在服务器已判 `RECOVERABLE` 的条目上调用 apply；服务器在 apply 时重新取证重算 hash。
 - 仅生成逐条事实回滚**提案**，不提供接受任意旧 proof/姓名的写接口。
 
@@ -34,7 +35,19 @@ BACKUP_FILE = "backup.jsonl"
 ROLLBACK_FILE = "rollback.jsonl"
 MANIFEST_FILE = "manifest.json"
 
-APPLY_TERMINAL = {"APPLIED", "PARTIAL", "STALE", "NOT_RECOVERABLE", "FAILED"}
+APPLY_TERMINAL = {"APPLIED", "NOT_RECOVERABLE", "FAILED"}
+
+# R-17：沿用现有管理入口访问控制 —— 只把**已有登录会话**作为 Cookie 请求头发送；
+# 凭证绝不写入审计/日志/文件名，缺失或过期时给出可操作错误。
+UNAUTHORIZED_HINT = (
+    "UNAUTHORIZED：需要现有登录会话（--cookie 或 TALENT_SESSION_COOKIE）；"
+    "访问控制未放宽，也不会把凭证写入审计/日志"
+)
+SESSION_ENV = "TALENT_SESSION_COOKIE"
+
+# I-3：PARTIAL（部分层已落地）与 STALE（旧 hash 已过期）都不是终态 —— 同一 ID 可先重新预览
+# 取得服务端新检查点，再按同一原申请续跑剩余层；只有终态才永久跳过。
+APPLY_RESUMABLE = {"PARTIAL", "STALE"}
 
 
 def normalize_doc_id(raw: str) -> str:
@@ -130,10 +143,15 @@ def _now() -> str:
 class ApiClient:
     """最小 HTTP 客户端；注入 transport 便于测试。"""
 
-    def __init__(self, base_url: str, transport=None, timeout: float = 30.0):
+    def __init__(self, base_url: str, transport=None, timeout: float = 30.0, session_cookie: str = None):
         self.base_url = base_url.rstrip("/")
         self._transport = transport
         self._timeout = timeout
+        self._session_cookie = (session_cookie or "").strip() or None
+
+    @property
+    def authenticated(self) -> bool:
+        return bool(self._session_cookie)
 
     def preview(self, doc_id: str):
         return self._post(PREVIEW_ENDPOINT, {"docId": doc_id})
@@ -152,10 +170,10 @@ class ApiClient:
 
     def _http_post(self, url: str, payload):
         data = json.dumps(payload).encode("utf-8")
-        request = urllib.request.Request(
-            url, data=data, method="POST",
-            headers={"Content-Type": "application/json"},
-        )
+        headers = {"Content-Type": "application/json"}
+        if self._session_cookie:
+            headers["Cookie"] = self._session_cookie
+        request = urllib.request.Request(url, data=data, method="POST", headers=headers)
         try:
             with urllib.request.urlopen(request, timeout=self._timeout) as response:
                 return response.status, json.loads(response.read().decode("utf-8") or "{}")
@@ -261,6 +279,9 @@ def run_preview(client, ids: list, out_dir: str) -> dict:
             summary["skipped"] += 1
             continue
         status, body = client.preview(doc_id)
+        if status == 401:
+            summary["unauthorized"] = True
+            return summary
         try:
             append_jsonl(preview_path, preview_record(doc_id, status, body))
             summary["previewed"] += 1
@@ -273,13 +294,32 @@ def run_preview(client, ids: list, out_dir: str) -> dict:
 def run_apply(client, ids: list, out_dir: str) -> dict:
     ensure_private_dir(out_dir)
     preview_path = os.path.join(out_dir, PREVIEW_FILE)
+    apply_path = os.path.join(out_dir, APPLY_FILE)
     backups = {record.get("docId") for record in read_jsonl(os.path.join(out_dir, BACKUP_FILE))}
-    applied = completed_ids(os.path.join(out_dir, APPLY_FILE))
+    applied = completed_ids(apply_path, terminal=APPLY_TERMINAL)
+    resumable = completed_ids(apply_path, terminal=APPLY_RESUMABLE)
     previews = {record.get("docId"): record for record in read_jsonl(preview_path)}
-    summary = {"total": len(ids), "applied": 0, "skipped": 0, "backupFailures": 0}
+    summary = {"total": len(ids), "applied": 0, "skipped": 0, "backupFailures": 0, "repreviewed": 0}
     for doc_id in ids:
+        if doc_id in applied:
+            summary["skipped"] += 1
+            continue
         preview = previews.get(doc_id)
-        if doc_id in applied or preview is None or preview.get("status") != "RECOVERABLE":
+        if preview is None:
+            summary["skipped"] += 1
+            continue
+        # I-3 断点续跑：上次 PARTIAL/STALE 后旧 hash 已与 ES 当前事实不符，先重新预览取服务端新检查点，
+        # 再按同一原申请续跑；服务器只接受「前值或本次目标值」，遇第三种值仍停止。
+        if doc_id in resumable:
+            status, body = client.preview(doc_id)
+            if status == 401:
+                summary["unauthorized"] = True
+                return summary
+            preview = preview_record(doc_id, status, body)
+            append_jsonl(preview_path, preview)
+            previews[doc_id] = preview
+            summary["repreviewed"] += 1
+        if preview.get("status") != "RECOVERABLE":
             summary["skipped"] += 1
             continue
         # 1) 先原子写备份；备份失败则该条停止进入 apply。
@@ -292,9 +332,14 @@ def run_apply(client, ids: list, out_dir: str) -> dict:
                 continue
         # 2) 服务器重新取证重算；客户端只带 docId + 两项 hash。
         status, body = client.apply(doc_id, preview.get("snapshotHash"), preview.get("proposalHash"))
+        if status == 401:
+            summary["unauthorized"] = True
+            return summary
         append_jsonl(os.path.join(out_dir, APPLY_FILE), apply_record(doc_id, status, body))
         if body.get("status") == "APPLIED":
             summary["applied"] += 1
+        elif body.get("status") == "PARTIAL":
+            resumable.add(doc_id)
     return summary
 
 
@@ -318,6 +363,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--out-dir", required=True, help="本地留痕输出目录")
     parser.add_argument("--base-url", default="http://127.0.0.1:8080")
     parser.add_argument("--apply", action="store_true", help="显式应用（必须先 preview）")
+    parser.add_argument(
+        "--cookie",
+        default=None,
+        help=f"现有登录会话 Cookie（默认取环境变量 {SESSION_ENV}）；只随请求头发送，不落盘",
+    )
     parser.add_argument("--rollback-proposal", action="store_true", help="仅生成回滚提案")
     return parser
 
@@ -328,11 +378,15 @@ def main(argv=None) -> int:
     if args.rollback_proposal:
         return 0 if run_rollback(args.out_dir) >= 0 else 1
     ids = load_manifest(args.manifest)
-    client = ApiClient(args.base_url)
-    if args.apply:
-        run_apply(client, ids, args.out_dir)
-    else:
-        run_preview(client, ids, args.out_dir)
+    cookie = args.cookie or os.environ.get(SESSION_ENV)
+    if not cookie:
+        print(json.dumps({"status": 0, "error": f"REFUSED：{UNAUTHORIZED_HINT}"}, ensure_ascii=False))
+        return 2
+    client = ApiClient(args.base_url, session_cookie=cookie)
+    summary = run_apply(client, ids, args.out_dir) if args.apply else run_preview(client, ids, args.out_dir)
+    if summary.get("unauthorized"):
+        print(json.dumps({"status": 401, "error": UNAUTHORIZED_HINT}, ensure_ascii=False))
+        return 1
     return 0
 
 

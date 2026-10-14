@@ -565,20 +565,21 @@ class ManualInitialOutreachService(
             var retryable = 0
             var excluded = 0
             val seenOrcids = mutableSetOf<String>()
+            val seenPersonKeys = mutableSetOf<String>()
             val seenDocIds = mutableSetOf<String>()
             val campaign = campaignRepository.findByCampaignCode("MANUAL_OUTREACH")
             if (campaign != null) {
                 val campaignId = campaign.id ?: error("Campaign ID is null")
-                val (retryableTargets, retryableSeenOrcids, retryableExcluded) = buildFilteredRetryableTargets(
-                    campaignId, scope, now, seenDocIds, gate, accumulator::record
-                )
-                retryable = retryableTargets.size
-                excluded += retryableExcluded
-                seenOrcids.addAll(retryableSeenOrcids)
+                val retry = buildFilteredRetryableTargets(campaignId, scope, now, seenDocIds, gate, accumulator::record)
+                retryable = retry.targets.size
+                excluded += retry.excluded
+                seenOrcids.addAll(retry.seenOrcids)
+                seenPersonKeys.addAll(retry.seenPersonKeys)
             }
             val (esEstimate, esExcluded) = countEsTargets(
                 scope, now, gate = gate, onSelection = accumulator::record,
-                initialSeenOrcids = seenOrcids, initialSeenDocIds = seenDocIds
+                initialSeenOrcids = seenOrcids, initialSeenDocIds = seenDocIds,
+                initialSeenPersonKeys = seenPersonKeys
             )
             excluded += esExcluded
             PendingOutreachSummary(
@@ -682,10 +683,14 @@ class ManualInitialOutreachService(
         // A3 (I-4)：预估（countBySnapshot）与执行共用的精确模板门禁；门禁关闭时为 no-op。
         val gate = batchTemplateGate(snapshot)
         val seenDocIds = mutableSetOf<String>()
-        val (retryableTargets, seenOrcids, _) = buildFilteredRetryableTargets(campaignId, scope, filterNow, seenDocIds, gate)
+        val retry = buildFilteredRetryableTargets(campaignId, scope, filterNow, seenDocIds, gate)
+        val retryableTargets = retry.targets
+        val seenOrcids = retry.seenOrcids.toMutableSet()
+        val seenPersonKeys = retry.seenPersonKeys.toMutableSet()
         val (esEstimate, _) = countEsTargets(scope, filterNow, {
             progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)
-        }, gate, initialSeenOrcids = seenOrcids, initialSeenDocIds = seenDocIds)
+        }, gate, initialSeenOrcids = seenOrcids, initialSeenDocIds = seenDocIds,
+            initialSeenPersonKeys = seenPersonKeys)
         val totalEstimate = retryableTargets.size + esEstimate
         log.info("Outreach targets: {} retryable, {} ES estimate, {} total estimate; config: roundSize={}, perMailMs={}, perRoundMs={}",
             retryableTargets.size, esEstimate, totalEstimate,
@@ -711,17 +716,22 @@ class ManualInitialOutreachService(
         val targetIterator = OutreachTargetIterator(
             retryableTargets = retryableTargets,
             pageSize = config.roundSize * 2,
-            seenKeys = seenOrcids,
+            seenKeys = seenPersonKeys,
             fetchNextPage = { offset, size -> fetchEsPage(scope, offset, size) },
             // I-1/I-3: ES 页返回后先过最终谓词（新发现机构证据 + 已证实机构所在地判地区），
             // 再叠加历史不可达过滤；整页被过滤时迭代器继续推进 offset（I-3）。
+            // R-7：原始 ES 身份（规范化 ORCID）级去重含**被排除者** —— 与既有「同一身份只判定
+            // 一次、保留首次排除原因」契约一致；人物键由迭代器在完整判定后登记。
             filterPage = { profiles ->
+                val rawDistinct = profiles.filter { seenOrcids.add(normalizeOrcid(it.orcidId)) }
                 filterKnownProfiles(
-                    gate(selectIncluded(scope, profiles, seenDocIds)),
+                    gate(selectIncluded(scope, rawDistinct, seenDocIds)),
                     scope.excludeVerifiedUnavailableEmails,
                     filterNow
                 ).filter { seenDocIds.add(BatchRecipientSelectionService.docIdOf(it)) }
             },
+            // I-2（R-7）：迭代器按**真实人物键**去重 —— 与重试/预估共用同一人物集合。
+            dedupeKey = { discoveryPersonRecipientService.personKeyOf(it) },
             shouldStop = { progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId) }
         )
 
@@ -1273,13 +1283,14 @@ class ManualInitialOutreachService(
                             }
                         }
                     }
-                    // 09 (I-2): SMTP 未交付时的占位推进 —— INFRASTRUCTURE（网络层，结果不明）→ UNKNOWN；
-                    // 其余（明确未接受）→ SAFE_RETRY（绑定原地址）。SENT 已由 recordSuccess 联动。
+                    // 09 (I-2): SMTP 未交付时的占位推进 —— 只有**明确响应码**（SMTP 明确未接受）才证明
+                    // 未交付 → SAFE_RETRY（绑定原地址）；无响应码（网络/认证等）结果不明 → UNKNOWN，
+                    // 绝不从 FAILED/TRANSIENT 推断可重试。SENT 已由 recordSuccess 联动。
                     if (delivered.status != "SENT" && guardTicket != null) {
-                        if (delivered.errorCategory == SmtpErrorCategory.INFRASTRUCTURE) {
-                            guard!!.markUnknown(guardTicket)
-                        } else {
+                        if (delivered.smtpResponseCode != null) {
                             guard!!.markSafeRetry(guardTicket)
+                        } else {
+                            guard!!.markUnknown(guardTicket)
                         }
                     }
                 } catch (e: EmailVerificationAuditException) {
@@ -1305,6 +1316,13 @@ class ManualInitialOutreachService(
                     accumulator.recordFailure(BatchOutcomeReasonCodes.SEND_EXCEPTION, "发送异常 (${expert.email}): ${e.message}")
                     stat.failed++
                     roundRejected++
+                } finally {
+                    // 09 (I-2)：reserve 后**未进入 SMTP** 的 continue/break 退出（取消/compose/建行/
+                    // 地址变化/审计等）也必须把已持有的占位清理为 SAFE_RETRY（证明未交付，原址可重试）。
+                    // 已进 SMTP 的退出由上方分支按结果推进；已推进过的占位因状态不匹配而 CAS 失败，不会重复推进。
+                    if (!smtpAttempted && guardTicket != null) {
+                        guard!!.markSafeRetry(guardTicket)
+                    }
                 }
 
                 // Track assignment for account balancing
@@ -1584,8 +1602,8 @@ class ManualInitialOutreachService(
         seenDocIds: MutableSet<String>,
         gate: (List<ExpertProfile>) -> List<ExpertProfile> = { it },
         onSelection: ((RecipientSelection) -> Unit)? = null
-    ): Triple<List<Pair<ExpertContact?, ExpertProfile>>, MutableSet<String>, Int> {
-        val (targets, seen) = buildRetryableTargets(campaignId, scope, gate, onSelection)
+    ): RetrySelection {
+        val (targets, seenOrcids, seenPersonKeys) = buildRetryableTargets(campaignId, scope, gate, onSelection)
         val (filtered, excluded) = filterTargets(
             targets,
             enabled = scope.excludeVerifiedUnavailableEmails,
@@ -1593,8 +1611,16 @@ class ManualInitialOutreachService(
             email = { it.second.email }
         )
         filtered.forEach { seenDocIds.add(BatchRecipientSelectionService.docIdOf(it.second)) }
-        return Triple(filtered, seen, excluded)
+        return RetrySelection(filtered, seenOrcids, seenPersonKeys, excluded)
     }
+
+    /** R-7：重试构造的产物 —— 目标 + 原始身份键 + 人物键 + 被历史过滤数。 */
+    private data class RetrySelection(
+        val targets: List<Pair<ExpertContact?, ExpertProfile>>,
+        val seenOrcids: MutableSet<String>,
+        val seenPersonKeys: MutableSet<String>,
+        val excluded: Int
+    )
 
 
     /**
@@ -1614,15 +1640,15 @@ class ManualInitialOutreachService(
      * Retry path applies the same [RecipientScope] as ES (I-3 / K-batch-send-filter-retry-parity).
      * Profiles are loaded from every funnel level in scope (not hard-coded CANDIDATE).
      */
-    @JvmOverloads
     private fun buildRetryableTargets(
         campaignId: Long,
         scope: RecipientScope,
         gate: (List<ExpertProfile>) -> List<ExpertProfile> = { it },
         onSelection: ((RecipientSelection) -> Unit)? = null
-    ): Pair<List<Pair<ExpertContact?, ExpertProfile>>, MutableSet<String>> {
+    ): Triple<List<Pair<ExpertContact?, ExpertProfile>>, MutableSet<String>, MutableSet<String>> {
         val seenOrcids = mutableSetOf<String>()
         val seenDocIds = mutableSetOf<String>()
+        val seenPersonKeys = mutableSetOf<String>()
         val targets = mutableListOf<Pair<ExpertContact?, ExpertProfile>>()
         val candidates = mutableListOf<Triple<ExpertContact, ExpertProfile, String>>()
 
@@ -1677,19 +1703,43 @@ class ManualInitialOutreachService(
                 .let { gate(it) }
                 .map { BatchRecipientSelectionService.docIdOf(it) }
                 .toSet()
+            // I-2（R-7）：完整判定（selector + 精确模板门禁）之后才登记**人物去重键** ——
+            // 预估与 ES 执行（迭代器 seenKeys）据此跳过同人另一成员，避免重复计数/重复发信。
+            val personKeys = discoveryPersonRecipientService.personKeysOf(candidates.map { it.second })
             for ((contact, profile, normOrcid) in candidates) {
-                if (BatchRecipientSelectionService.docIdOf(profile) !in gatedDocIds) continue
-                if (seenOrcids.add(normOrcid) && seenDocIds.add(BatchRecipientSelectionService.docIdOf(profile))) {
+                val docId = BatchRecipientSelectionService.docIdOf(profile)
+                if (docId !in gatedDocIds) continue
+                if (seenOrcids.add(normOrcid) && seenDocIds.add(docId)) {
                     targets.add(Pair(contact, profile))
+                    seenPersonKeys += personKeys[docId] ?: docId
                 }
             }
         }
 
         log.info("Retryable targets: {} (funnelLevels={})", targets.size, scope.funnelLevels)
-        return Pair(targets, seenOrcids)
+        return Triple(targets, seenOrcids, seenPersonKeys)
     }
 
-    /** Legacy typed path — INTRODUCTION defaults to CANDIDATE-only funnel. */
+    /**
+     * 兼容反射接缝：既有测试按 `buildRetryableTargets(Long, RecipientScope)` 取
+     * `Pair<List<Pair<ExpertContact?, ExpertProfile>>, MutableSet<String>>`（targets + 已见 ORCID）。
+     * 人物去重键（seenPersonKeys）只在执行路径消费，不进入该兼容签名。
+     */
+    private fun buildRetryableTargets(
+        campaignId: Long,
+        scope: RecipientScope
+    ): Pair<List<Pair<ExpertContact?, ExpertProfile>>, MutableSet<String>> {
+        val (targets, seenOrcids, _) = buildRetryableTargets(campaignId, scope, { it }, null)
+        return targets to seenOrcids
+    }
+
+    /**
+     * Legacy typed path — INTRODUCTION defaults to CANDIDATE-only funnel.
+     *
+     * 兼容既有反射接缝（`BatchSendTaskRuntimeIntegrationTest` 等按
+     * `Pair<List<Pair<ExpertContact?, ExpertProfile>>, MutableSet<String>>` 取用）：这里只暴露
+     * `(targets, seenOrcids)` 两项；人物去重键（seenPersonKeys）由执行路径直接取用带 gate 的版本。
+     */
     private fun buildRetryableTargets(
         campaignId: Long,
         discipline: String? = null,
@@ -1703,7 +1753,8 @@ class ManualInitialOutreachService(
             emailDomains = emailDomain?.ifBlank { null }?.let { listOf(it) } ?: emptyList(),
             discipline = discipline
         )
-        return buildRetryableTargets(campaignId, scope)
+        val (targets, seenOrcids, _) = buildRetryableTargets(campaignId, scope, { it }, null)
+        return targets to seenOrcids
     }
 
     private fun getOrCreateManualCampaign(): Campaign {
@@ -1960,12 +2011,16 @@ class ManualInitialOutreachService(
         gate: (List<ExpertProfile>) -> List<ExpertProfile> = { it },
         onSelection: ((RecipientSelection) -> Unit)? = null,
         initialSeenOrcids: Set<String> = emptySet(),
-        initialSeenDocIds: Set<String> = emptySet()
+        initialSeenDocIds: Set<String> = emptySet(),
+        initialSeenPersonKeys: Set<String> = emptySet()
     ): Pair<Int, Int> {
         var sendable = 0
         var excluded = 0
+        // 原始 ES 身份（规范化 ORCID）级去重：与既有「同一身份只判定一次、保留首次排除原因」契约一致。
         val seenOrcids = initialSeenOrcids.toMutableSet()
         val seenDocIds = initialSeenDocIds.toMutableSet()
+        // 人物级去重键：只在完整判定后登记，避免「先标记后审核」丢掉同人后续合格成员。
+        val seenPersonKeys = initialSeenPersonKeys.toMutableSet()
         for (level in scope.funnelLevels) {
             if (shouldStop()) break
             expertSearchService.scrollExpertsFiltered(
@@ -1976,9 +2031,13 @@ class ManualInitialOutreachService(
                 if (shouldStop()) {
                     false
                 } else {
+                    // I-2（R-7）：与重试/执行共用同一人物集合 —— 已处理人物（含同人另一成员）不再计数。
+                    val personKeys = discoveryPersonRecipientService.personKeysOf(batch)
                     val unseen = batch.filter {
+                        val docId = BatchRecipientSelectionService.docIdOf(it)
                         seenOrcids.add(normalizeOrcid(it.orcidId)) &&
-                            BatchRecipientSelectionService.docIdOf(it) !in seenDocIds
+                            docId !in seenDocIds &&
+                            (personKeys[docId] ?: docId) !in seenPersonKeys
                     }
                         .distinctBy { BatchRecipientSelectionService.docIdOf(it) }
                     // I-1/I-2/I-3: 人物级选择 —— 每人最多一个入选 docId（跨页/批次/预估同源）。
@@ -1991,7 +2050,12 @@ class ManualInitialOutreachService(
                         unseen.filter { BatchRecipientSelectionService.docIdOf(it) in selected }
                     )
                     val retained = filterKnownProfiles(matched, scope.excludeVerifiedUnavailableEmails, now)
+                    // 真实 docId 只计一次；人物键在完整判定后登记。
                     sendable += retained.count { seenDocIds.add(BatchRecipientSelectionService.docIdOf(it)) }
+                    retained.forEach {
+                        val docId = BatchRecipientSelectionService.docIdOf(it)
+                        seenPersonKeys.add(personKeys[docId] ?: docId)
+                    }
                     excluded += matched.size - retained.size
                     !shouldStop()
                 }

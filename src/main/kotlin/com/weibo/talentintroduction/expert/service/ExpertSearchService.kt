@@ -35,6 +35,12 @@ class ExpertSearchService(
     companion object {
         val ALLOWED_HAS_FIELDS = setOf("employment", "degree", "institution", "researchFields", "patentTitles", "recentWorkTitles")
 
+        /**
+         * R-10：单次 `_search` 读页上限（与各 `require(size in 1..MAX_SEARCH_PAGE_SIZE)` 同值）。
+         * 需要读取更长前缀的调用方必须按该上限分页，**不能**把 `from + size` 当作单页 size。
+         */
+        const val MAX_SEARCH_PAGE_SIZE = 1000
+
         private val CLASSIFIED_AT_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
         private val CLASSIFIED_AT_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 
@@ -1271,9 +1277,11 @@ class ExpertSearchService(
             HttpMethod.POST,
             HttpEntity(requestBody, headers()),
             JsonNode::class.java
-        ).body ?: return emptyList()
+        ).body
+        // R-10：超时/失败分片/缺 body 都不是「完整结果」，绝不返回空页冒充精确结果。
+        val body = requireCompleteResponse(response)
 
-        return response.path("hits").path("hits").map { hit ->
+        return body.path("hits").path("hits").map { hit ->
             ExpertHitWithSort(toExpertProfile(hit), sortTokens(hit))
         }
     }
@@ -1303,14 +1311,15 @@ class ExpertSearchService(
                 "query" to query,
                 "sort" to displaySort(level, sortBy)
             )
-            var response = restTemplate.exchange(
+            val initial = restTemplate.exchange(
                 "${properties.baseUrl}/$index/_search?scroll=5m",
                 HttpMethod.POST,
                 HttpEntity(requestBody, headers()),
                 JsonNode::class.java
-            ).body ?: return
-
-            scrollId = response.path("_scroll_id").asText()
+            ).body
+            // R-10：先记住 scroll_id，任何完整性失败都要在 finally 里关闭游标。
+            scrollId = initial?.path("_scroll_id")?.asText()?.takeIf { it.isNotBlank() } ?: scrollId
+            var response = requireCompleteResponse(initial)
             do {
                 val hits = response.path("hits").path("hits")
                 if (hits.isEmpty) break
@@ -1319,13 +1328,22 @@ class ExpertSearchService(
                 if (!handler(batch)) break
                 if (hits.size() < batchSize) break
 
-                response = restTemplate.exchange(
+                val next = restTemplate.exchange(
                     "${properties.baseUrl}/_search/scroll",
                     HttpMethod.POST,
                     HttpEntity(mapOf("scroll" to "5m", "scroll_id" to scrollId), headers()),
                     JsonNode::class.java
-                ).body ?: break
-                scrollId = response.path("_scroll_id").asText()
+                ).body
+                val nextScrollId = next?.path("_scroll_id")?.asText()?.takeIf { it.isNotBlank() }
+                if (nextScrollId != null) scrollId = nextScrollId
+                // R-10：缺 body / 超时 / 失败分片 → 明确不可用；缺 scroll_id 且仍有下一页 → 遍历无法完整继续。
+                val validated = requireCompleteResponse(next)
+                if (nextScrollId == null && validated.path("hits").path("hits").size() >= batchSize) {
+                    throw ExpertSearchUnavailableException(
+                        "ES scroll 未返回 scroll_id，遍历无法完整继续，查询结果不可用"
+                    )
+                }
+                response = validated
             } while (true)
         } finally {
             if (scrollId != null) {
@@ -1370,11 +1388,35 @@ class ExpertSearchService(
             HttpMethod.POST,
             HttpEntity(requestBody, headers()),
             JsonNode::class.java
-        ).body ?: return emptyList()
+        ).body
+        // R-10：聚合桶同样只在完整响应上发布；超时/失败分片/缺 body 全部明确失败。
+        val body = requireCompleteResponse(response)
 
-        return response.path("aggregations").path("bucket").path("buckets").map { bucket ->
+        return body.path("aggregations").path("bucket").path("buckets").map { bucket ->
             bucket.path("key").asText() to bucket.path("doc_count").asLong()
         }
+    }
+
+    /**
+     * R-10：ES 响应完整性闸门。`timed_out`、`_shards.failed > 0`、缺 body/null 都表示
+     * 本次遍历不完整 —— 一律抛 [ExpertSearchUnavailableException]（可重试的明确「查询不可用」），
+     * 绝不把部分结果当成精确结果发布。`_shards` 缺失按 0 处理（既有测试替身与 `_count`
+     * 型响应不带该字段）。
+     */
+    private fun requireCompleteResponse(response: JsonNode?): JsonNode {
+        if (response == null || response.isNull || response.isMissingNode) {
+            throw ExpertSearchUnavailableException("ES 查询未返回响应体，查询结果不可用")
+        }
+        if (response.path("timed_out").asBoolean(false)) {
+            throw ExpertSearchUnavailableException("ES 查询超时（timed_out=true），查询结果不可用")
+        }
+        val failedShards = response.path("_shards").path("failed").asInt(0)
+        if (failedShards > 0) {
+            throw ExpertSearchUnavailableException(
+                "ES 分片失败（_shards.failed=$failedShards），查询结果不可用"
+            )
+        }
+        return response
     }
 
     private fun displaySort(level: ExpertIndexLevel, sortBy: String?): List<Map<String, Any>> =
@@ -1396,6 +1438,13 @@ class ExpertSearchService(
 
 /** 06：命中文档及其 ES 排序键（跨分区归并与人物代表成员选择的只读投影）。 */
 data class ExpertHitWithSort(val profile: ExpertProfile, val sort: List<Any?>)
+
+/**
+ * R-10：ES 查询结果不完整（超时/失败分片/缺 body/遍历无法继续）时的明确「查询不可用」失败。
+ * 继承 [IllegalStateException]，与既有全局异常处理（`DiscoveryPersonQueryUnavailableException`）
+ * 同口径：绝不据此返回部分数或近似数。调用方（人物只读查询等）直接向上传播。
+ */
+class ExpertSearchUnavailableException(message: String) : IllegalStateException(message)
 
 data class ExpertSearchResult(
     val experts: List<ExpertProfile>,

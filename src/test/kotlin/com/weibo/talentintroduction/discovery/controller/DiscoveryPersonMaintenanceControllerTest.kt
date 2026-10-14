@@ -141,8 +141,8 @@ class DiscoveryPersonMaintenanceControllerTest {
         Mockito.`when`(
             service.apply(
                 MaintenanceApplyRequest(
-                    1, "d",
-                    listOf(MaintenanceApplyGroup(listOf("doc-a", "doc-b"), "f"))
+                    1, "d", listOf("doc-a", "doc-b"),
+                    listOf(MaintenanceApplyGroup(listOf("doc-a", "doc-b"), "f", "r"))
                 )
             )
         ).thenReturn(MaintenanceApplyOutcome.Ok(listOf(sampleApply())))
@@ -151,7 +151,7 @@ class DiscoveryPersonMaintenanceControllerTest {
             post("/api/expert-discovery/person-maintenance/apply")
                 .session(sessionOf("op1"))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""{"ruleVersion":1,"previewDigest":"d","groups":[{"memberDocIds":["doc-a","doc-b"],"expectedFingerprint":"f"}]}""")
+                .content("""{"ruleVersion":1,"previewDigest":"d","frozenDocIds":["doc-a","doc-b"],"groups":[{"memberDocIds":["doc-a","doc-b"],"expectedFingerprint":"f","expectedRelationFingerprint":"r"}]}""")
         ).andExpect(status().isOk)
             .andExpect(jsonPath("$[0].status").value("APPLIED"))
     }
@@ -160,7 +160,7 @@ class DiscoveryPersonMaintenanceControllerTest {
     fun `a mismatched preview digest maps to 409`() {
         Mockito.`when`(
             service.apply(
-                MaintenanceApplyRequest(1, "stale", listOf(MaintenanceApplyGroup(listOf("doc-a"), "f")))
+                MaintenanceApplyRequest(1, "stale", listOf("doc-a"), listOf(MaintenanceApplyGroup(listOf("doc-a"), "f", "r")))
             )
         ).thenReturn(MaintenanceApplyOutcome.Rejected(MaintenanceReasonCodes.PREVIEW_DIGEST_MISMATCH))
 
@@ -168,14 +168,14 @@ class DiscoveryPersonMaintenanceControllerTest {
             post("/api/expert-discovery/person-maintenance/apply")
                 .session(sessionOf("op1"))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""{"ruleVersion":1,"previewDigest":"stale","groups":[{"memberDocIds":["doc-a"],"expectedFingerprint":"f"}]}""")
+                .content("""{"ruleVersion":1,"previewDigest":"stale","frozenDocIds":["doc-a"],"groups":[{"memberDocIds":["doc-a"],"expectedFingerprint":"f","expectedRelationFingerprint":"r"}]}""")
         ).andExpect(status().isConflict)
     }
 
     @Test
     fun `an illegal rule version is a 400`() {
         Mockito.`when`(
-            service.apply(MaintenanceApplyRequest(999, "d", emptyList()))
+            service.apply(MaintenanceApplyRequest(999, "d", emptyList(), emptyList()))
         ).thenReturn(MaintenanceApplyOutcome.Rejected(MaintenanceReasonCodes.RULE_VERSION_MISMATCH))
 
         mockMvc.perform(

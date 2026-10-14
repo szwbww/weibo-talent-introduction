@@ -425,12 +425,12 @@ class ExpertIndexControllerTest {
                 DiscoveryPersonMember(
                     docId = "d1", levels = listOf("RAW", "CANDIDATE"), email = "a@x.com",
                     contactId = 1L, contactStatus = "WAITING_REPLY", operatorStatus = "NOT_CONTACTED",
-                    admissionStatus = "PASSED", representative = true, stale = false, evidenceSource = "PAPER_FULLTEXT"
+                    admissionStatus = "ADMITTED", representative = true, stale = false, evidenceSource = "PAPER_FULLTEXT"
                 ),
                 DiscoveryPersonMember(
                     docId = "d2", levels = listOf("CANDIDATE"), email = "b@x.com",
                     contactId = 2L, contactStatus = "WAITING_REPLY", operatorStatus = "NOT_CONTACTED",
-                    admissionStatus = "PASSED", representative = false, stale = false, evidenceSource = "PAPER_FULLTEXT"
+                    admissionStatus = "MANUAL_REJECTED", representative = false, stale = false, evidenceSource = "PAPER_FULLTEXT"
                 )
             ),
             conflicts = emptyList()
@@ -441,6 +441,9 @@ class ExpertIndexControllerTest {
         assertEquals("P1", response.personId)
         assertEquals(2, response.members.size)
         assertEquals("d1", response.representativeDocId)
+        // R-12：逐邮箱状态原样透出（两个宿主共用同一契约），控制器不做任何翻译。
+        assertEquals("ADMITTED", response.members.first { it.docId == "d1" }.admissionStatus)
+        assertEquals("MANUAL_REJECTED", response.members.first { it.docId == "d2" }.admissionStatus)
     }
 
     @Test

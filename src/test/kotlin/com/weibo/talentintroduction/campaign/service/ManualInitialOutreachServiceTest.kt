@@ -30,6 +30,7 @@ import com.weibo.talentintroduction.expert.domain.ExpertType
 import com.weibo.talentintroduction.expert.domain.IdentityVerification
 import com.weibo.talentintroduction.expert.service.ExpertClassificationService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.discovery.service.DiscoveryPersonFeatureGate
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
@@ -2714,7 +2715,9 @@ class ManualInitialOutreachServiceTest {
             discoveryPersonRepository = personRepo,
             expertSearchService = expertSearchService,
             emailSuppressionService = emailSuppressionService,
-            expertContactRepository = expertContactRepository
+            expertContactRepository = expertContactRepository,
+            // I-3（R-1）：总开关默认关闭；本用例显式开启以覆盖人物归并的**启用路径**。
+            featureGate = DiscoveryPersonFeatureGate(enabled = true)
         )
         return ManualInitialOutreachService(
             expertSearchService = expertSearchService,
@@ -2801,6 +2804,81 @@ class ManualInitialOutreachServiceTest {
         members.forEach { Mockito.`when`(repo.findMember(it.expertDocId)).thenReturn(it) }
         return repo
     }
+
+    /** R-7：retry D2 与新页 D1 属同一人物 —— 预估只计一次。 */
+    @Test
+    fun `retry and same-person ES target share one person set in estimate (I-2 I-3)`() {
+        val d1 = expert("D1", "d1@test.com")
+        val d2 = expert("D2", "d2@test.com")
+        stubCampaignWithRetryContact(retryContact(55L, "D2", "d2@test.com"))
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("D2"), ExpertIndexLevel.CANDIDATE)).thenReturn(listOf(d2))
+        stubPersonMemberProfiles(listOf(d1))
+        stubScrolledExperts(listOf(d1))
+        stubAdmissions("D1" to "AUTO_PASSED", "D2" to "AUTO_PASSED")
+
+        val personAware = serviceWithPersonSelection(personMembers(listOf("D1", "D2")))
+        val summary = personAware.countBySnapshot(introSnapshot(roundSize = 10, roundsPerRun = 1))
+
+        assertEquals(1, summary.retryable)
+        assertEquals(0, summary.pending, "同人 ES 目标不再重复计数")
+        assertEquals(1, summary.totalSendable)
+    }
+
+    /** R-7：retry D2 与新页 D1 属同一人物 —— 执行只发一次。 */
+    @Test
+    fun `retry and same-person ES target send exactly once (I-2 I-3)`() {
+        val acc = account("chen")
+        val d1 = expert("D1", "d1@test.com")
+        val d2 = expert("D2", "d2@test.com")
+        stubCampaignWithRetryContact(retryContact(55L, "D2", "d2@test.com"))
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("D2"), ExpertIndexLevel.CANDIDATE)).thenReturn(listOf(d2))
+        stubPersonMemberProfiles(listOf(d1))
+        stubScrolledExperts(listOf(d1))
+        stubAdmissions("D1" to "AUTO_PASSED", "D2" to "AUTO_PASSED")
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(55L)).thenReturn(emptyList())
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(
+            anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY)
+        )).thenReturn(acc)
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("", "")), Mockito.isNull(), anyBooleanValue()))
+            .thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(mailDeliveryService.send(anyValue(acc), anyValue(ComposedMail("", "", ""))))
+            .thenReturn(DeliveredMail("msg", "SENT"))
+
+        val personAware = serviceWithPersonSelection(personMembers(listOf("D1", "D2")))
+        val result = personAware.run(
+            introSnapshot(roundSize = 10, roundsPerRun = 1), 12345L, ExecutionMode.MANUAL, oneRoundOnly = true
+        )
+
+        assertEquals(1, result.total)
+        assertEquals(1, result.sent)
+        Mockito.verify(mailDeliveryService, Mockito.times(1)).send(anyValue(acc), anyValue(ComposedMail("", "", "")))
+    }
+
+    private fun retryContact(id: Long, orcidId: String, email: String) = ExpertContact(
+        id = id, campaignId = 10L, orcidId = orcidId, expertEmail = email,
+        expertName = "Given Family", currentStatus = "NEW", operatorStatus = "NOT_CONTACTED"
+    )
+
+    private fun stubCampaignWithRetryContact(contact: ExpertContact) {
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(
+            Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        )
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(contact))
+        Mockito.`when`(expertContactRepository.findByOrcidIdIn(Mockito.anyList())).thenReturn(emptyList())
+    }
+
+    /** R-7：`findByDocumentIds` 只返回给定 docId 集合命中的成员档案（其余层返回空）。 */
+    private fun stubPersonMemberProfiles(profiles: List<ExpertProfile>) {
+        Mockito.`when`(expertSearchService.findByDocumentIds(anyIndexLevel(), Mockito.anyList()))
+            .thenAnswer { invocation ->
+                val ids = invocation.getArgument<List<String>>(1)
+                profiles.filter { (it.esDocId ?: it.orcidId) in ids }
+            }
+    }
+
+    private fun anyIndexLevel(): ExpertIndexLevel =
+        Mockito.any(ExpertIndexLevel::class.java) ?: ExpertIndexLevel.CANDIDATE
 
     @Test
     fun `roundsPerRun bounds a single execution at rounds times round size`() {

@@ -13504,11 +13504,17 @@ function unmountExpertMeetingVideos(session) {
 
 // ── 07（I-1/I-2/S-1/S-2）：一人多邮箱展示 · 共享只读片段 ──────────────────
 // 复用既有 class/CSS（metadata-card* / link-btn），不新增样式；两个详情宿主共用本片段。
+// R-12：逐邮箱状态只认服务端真值 token（统一 selector 的持久准入 + 抑制名单 + UNKNOWN）。
+// 只有 ADMITTED 才是「可发送」；旧 ES filterResult（PASSED/REJECTED）与未知 token 一律不显示为可发送。
 function discoveryAdmissionLabel(admissionStatus) {
-    if (admissionStatus === "PASSED") return "可发送";
-    if (admissionStatus === "REJECTED") return "不合格";
-    if (!admissionStatus) return "准入未取得";
-    return String(admissionStatus);
+    if (admissionStatus === "ADMITTED") return "可发送";
+    if (admissionStatus === "MANUAL_REJECTED") return "不合格";
+    if (admissionStatus === "NEEDS_REVIEW") return "待复核";
+    if (admissionStatus === "IDENTITY_CHANGED") return "身份已变更";
+    if (admissionStatus === "UNINITIALIZED") return "准入未取得";
+    if (admissionStatus === "SUPPRESSED") return "已退订";
+    if (!admissionStatus || admissionStatus === "UNKNOWN") return "准入未取得";
+    return "准入状态未知";
 }
 
 // S-2：成员行按响应重复；无 contactId 时不渲染历史入口；确有冲突时追加差异行。

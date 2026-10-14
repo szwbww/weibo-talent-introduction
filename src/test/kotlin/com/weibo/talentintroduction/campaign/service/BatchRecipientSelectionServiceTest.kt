@@ -235,6 +235,29 @@ class BatchRecipientSelectionServiceTest {
         )
     }
 
+    @Test
+    fun `protection selection ignores the current explicit filters and layers (I-3)`() {
+        // 08 人物硬保护：不满足当前筛选（邮箱域/研发类型）的成员的人工 HOLD 必须仍然可见。
+        stubAdmissions("A" to DiscoveryReviewDecision.HOLD.name, "B" to DiscoveryReviewDecision.AUTO_PASSED.name)
+        val filteredOut = expert("A", email = "a@blocked.com", type = null)
+
+        // 带筛选的本次 scope 会先按显式条件排除 A，准入状态根本不读。
+        val scoped = service.select(
+            scope(emailDomains = listOf("allowed.com")),
+            listOf(filteredOut)
+        )
+        assertEquals(1, scoped.excluded.size)
+        assertEquals(RecipientAdmissionState.NOT_DISCOVERY, scoped.excluded.single().admissionState)
+
+        // 保护读取不带任何本次筛选/层限制：A 的人工 HOLD 必须可见。
+        val protection = service.selectProtection(listOf(filteredOut))
+        assertEquals(RecipientAdmissionState.MANUAL_REJECTED, protection.excluded.single().admissionState)
+        assertEquals(
+            listOf(RecipientAdmissionReasonKeys.MANUAL_REJECTED),
+            BatchRecipientSelectionService.reasonKeysOf(protection.excluded.single())
+        )
+    }
+
     private fun resolved(
         docId: String,
         decision: String?,
