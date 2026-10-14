@@ -63,3 +63,48 @@
 ## Next Action
 
 - READY_FOR_VERIFICATION → run `verify-p`
+
+## Epoch 2
+
+## Execution Result: READY_FOR_VERIFICATION
+
+- Plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/docs/plans/2026-10-13/discovery-person-07-ui.md`
+- Plan SHA-256: `e0cad0a75d41f917d679a6eeadcf7010c8897bf27ea646e197af30c7f2a589d0`（执行前后一致，plan identity 未变）
+- Execution epoch: 同一 plan identity 的第二执行 epoch（epoch2 由 brief §Epoch 2 修订授权；A13 完成）
+- Executor: Impl07b
+- Target worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master`
+- Target branch: `fast/2026-10-13-discovery-identity-recovery-master`
+- Pre-execution HEAD: `fbd215ffa761448d9211e020ff98a2285e44d7f6`（dispatch 基线，`git status` 干净）
+- Post-execution code SHA: `2fae99a551ea656604c46a19f1f046eb3ad6593e`
+- Implementation boundary: `fbd215f..2fae99a`（2 授权文件；index.html 已在 epoch1 bump，无需改动）
+
+### 改动摘要
+
+- **app.js（ES 列表分支消费 06 的 `memberCount`）**：`loadContacts` 的 ES 分支映射新增 `discoveryEmailCount: Number.isFinite(Number(e.memberCount)) ? Number(e.memberCount) : 0`。渲染侧沿用 epoch1 已存在的同一 S-1 表达式（`renderContactListItems` 中 `contact.discoveryEmailCount > 1 ? \`${email} · 共 N 个邮箱\` : email`），故单邮箱（`memberCount==1`）或缺失时逐字回落原邮箱文本，多邮箱（`>1`）渲染 `主邮箱地址 · 共 N 个邮箱`，与 DB 分组分支同规则、同 class、无新 CSS/inline style。epoch1 行为（详情卡片、generation 防护、历史点击、escapeHtml、缓存键）未改动。
+- **discoveryPersonEmails.test.js**：新增 `07-ui epoch2：ES 列表分支消费 06 的 memberCount` describe（2 例），用 `loadContactsFilter.test.js` 的 DOM stub 范式把 `renderContactListItems` + `loadContacts` 抽入 vm 沙箱、`useDbContactPath=false` 走 ES 分支：① `memberCount: 3` → `state.contacts[0].discoveryEmailCount===3` 且列表含 `a@x.com · 共 3 个邮箱`；② `memberCount: 1` 与缺失并存 → 两行均回落原文案且无「共」。
+- **index.html**：无改动（epoch1 已同值 bump 16 个 `?v=` 为 `20261014-person-emails`）。
+
+### Epoch 2 Commands（本次调用内新鲜执行）
+
+| Command | Result | Evidence |
+|---|---|---|
+| `node --check src/main/resources/static/app.js` | PASS | exit 0 |
+| `node --test src/test/js/discoveryPersonEmails.test.js` | PASS | exit 0；tests 20 / suites 5 / pass 20 / fail 0 |
+| `node --test src/test/js/*.test.js` | PASS | exit 0；tests 1677 / suites 321 / pass 1677 / fail 0（epoch1 基线 1675 + epoch2 新增 2） |
+
+### Epoch 2 提交
+
+- Commit: `2fae99a551ea656604c46a19f1f046eb3ad6593e` `feat(fast-p): implement 07-ui (epoch 2)`
+- 文件：`src/main/resources/static/app.js`、`src/test/js/discoveryPersonEmails.test.js`（仅 2 授权文件；`docs/plans/fast/**` 记账不纳入提交）
+
+### Freshness
+
+- Plan identity rechecked: YES（`e0cad0a7…` 前后一致）
+- Worktree identity: 目标 worktree/branch 未变，提交即为该分支 HEAD（`2fae99a`）
+- Reported commits reachable from target branch: YES
+- Required commands run this invocation: YES
+- Historical evidence used only as baseline: YES
+
+### Next Action
+
+- READY_FOR_VERIFICATION → run `verify-p`
