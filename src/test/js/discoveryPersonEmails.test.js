@@ -335,6 +335,79 @@ describe("07-ui I-1/S-1：列表邮箱摘要取响应数量", () => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────
+describe("07-ui epoch2：ES 列表分支消费 06 的 memberCount（I-1/S-1）", () => {
+    // 照 loadContactsFilter.test.js 的 DOM stub 范式：把 renderContactListItems + loadContacts
+    // 抽入 vm 沙箱，令 useDbContactPath=false 走 ES 列表分支。
+    function createEsListSandbox(apiResponse) {
+        const store = new Map();
+        function el(id) {
+            if (!store.has(id)) {
+                store.set(id, {
+                    id, value: "", innerHTML: "", hidden: false, disabled: false,
+                    textContent: "", selectedOptions: null,
+                    parentElement: { style: {}, title: "" }
+                });
+            }
+            return store.get(id);
+        }
+        const sandbox = {
+            $: (sel) => el(sel.replace(/^#/, "")),
+            URLSearchParams,
+            escapeHtml,
+            state: { contactsPage: 0, contacts: [], contactsTotalHits: 0, lastEmailProvidersLevel: null, selectedExpertOrcid: null },
+            indexLevelLabels: { CANDIDATE: "筛选" },
+            operatorStatusLabels: {},
+            expertTagLabels: {},
+            contactBadgeType: () => "",
+            labelStatus: (v) => (v == null ? "" : String(v)),
+            badge: (v, t) => `<span class="badge ${t || ""}">${v}</span>`,
+            staggerListItems: () => {},
+            renderContactListSkeleton: () => {},
+            renderContactPager: () => {},
+            loadEmailProviders: () => {},
+            loadRegions: () => {},
+            loadExpertTagOptions: () => {},
+            loadOperatorStatusSyncTooltip: () => {},
+            api: async () => apiResponse
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("renderContactListItems"), sandbox);
+        vm.runInContext(extractFn("loadContacts"), sandbox);
+        sandbox.__store = store;
+        return sandbox;
+    }
+
+    it("ES 响应 memberCount>1 时列表渲染「主邮箱 · 共 N 个邮箱」", async () => {
+        const sb = createEsListSandbox({
+            experts: [{ orcidId: "o1", email: "a@x.com", displayName: "A", indexLevel: "CANDIDATE", contactId: 1, memberCount: 3 }],
+            totalHits: 1
+        });
+        sb.$("#expertIndexLevel").value = "CANDIDATE";
+        sb.$("#expertIndexSize").value = "50";
+        await sb.loadContacts();
+        assert.strictEqual(sb.state.contacts[0].discoveryEmailCount, 3, "consumes memberCount from the ES response");
+        assert.ok(sb.$("#contactList").innerHTML.includes("a@x.com · 共 3 个邮箱"), "multi-email ES row shows the count");
+    });
+
+    it("ES 响应 memberCount==1 或缺失时逐字保持原邮箱文本", async () => {
+        const sb = createEsListSandbox({
+            experts: [
+                { orcidId: "o1", email: "a@x.com", displayName: "A", indexLevel: "CANDIDATE", contactId: 1, memberCount: 1 },
+                { orcidId: "o2", email: "b@x.com", displayName: "B", indexLevel: "CANDIDATE", contactId: 2 }
+            ],
+            totalHits: 2
+        });
+        sb.$("#expertIndexLevel").value = "CANDIDATE";
+        sb.$("#expertIndexSize").value = "50";
+        await sb.loadContacts();
+        const html = sb.$("#contactList").innerHTML;
+        assert.ok(html.includes(">a@x.com<"), "memberCount==1 keeps the original text");
+        assert.ok(html.includes(">b@x.com<"), "missing memberCount keeps the original text");
+        assert.ok(!html.includes("共"), "no synthesized count for single/missing memberCount");
+    });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
 describe("07-ui：两详情宿主接入同一片段（源契约）", () => {
     it("两个宿主模板都输出同一 host 容器与同一头部摘要标记", () => {
         for (const name of ["showExpertDetail", "loadContactDetail"]) {

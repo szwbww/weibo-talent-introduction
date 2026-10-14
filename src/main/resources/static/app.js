@@ -9133,7 +9133,10 @@ async function loadContacts() {
             enrichedAt: e.enrichedAt || null,
             expertType: e.expertType ?? null,
             expertProductionScore: e.expertProductionScore ?? null,
-            expertResearchScore: e.expertResearchScore ?? null
+            expertResearchScore: e.expertResearchScore ?? null,
+            // 07 epoch2（S-1）：消费 06 ES 列表每行的 memberCount；<=1/缺失时
+            // discoveryEmailCount 非 >1，渲染侧回落原邮箱文本（与 DB 分支同一 S-1 规则）。
+            discoveryEmailCount: Number.isFinite(Number(e.memberCount)) ? Number(e.memberCount) : 0
         }));
     }
     } catch (e) {
