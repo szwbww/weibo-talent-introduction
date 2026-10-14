@@ -1,6 +1,6 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-10-13/discovery-identity-recovery-master.md
 
-- Status: MACHINE_BLOCKED
+- Status: REPAIR_PLAN_READY
 - Review epoch: 2
 - Master plan: docs/plans/2026-10-13/discovery-identity-recovery-master.md (sha256 f69d8135ce0019ad36cc8939cf8101a6f584aac9983dec3dfc78eb2ae37ce238)
 - Governing master identity: f69d8135ce0019ad36cc8939cf8101a6f584aac9983dec3dfc78eb2ae37ce238; commit 36075ec06c5e4382f13606c995e24a13ec4470ce
@@ -12,8 +12,8 @@
 - Fast-p handoff: docs/plans/fast/2026-10-13-discovery-identity-recovery-master/human-review-handoff.md (sha256 ff9fa89083d24f9a3f6b37f798a8f201273df9c7b543d8a572316e7c4a390a64)
 - Master base: 9d353934b82ed3e36a193c70748e5efccb3d9e82
 - Final code head: b08b521c12b3d0fbbf219bbb7c8a9fc61a2ec2e9
-- Evidence parent before next commit: d6186c63930b8d897d45d069ba3cc90bce427887
-- Previous evidence commit: d6186c63930b8d897d45d069ba3cc90bce427887 (repair handoff); prior aggregate evidence e60ed1379af8049853160d32f3305e0e811c618b
+- Evidence parent before next commit: 5a82206e9b0f171c332dee7512953b90179f0459
+- Previous evidence commit: 5a82206e9b0f171c332dee7512953b90179f0459 (current HEAD before revised-plan evidence; Epoch 2 report commit 5a82206e9b0f171c332dee7512953b90179f0459)
 - Branch: fast/2026-10-13-discovery-identity-recovery-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master
 - Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
@@ -23,14 +23,14 @@
 - Reviewer attempt: 2
 - Machine result: FAIL
 - Machine report epoch: machine-verification.md — Epoch 2; FAIL / DIVERGING; Epoch 1 preserved append-only
-- Repair artifact: docs/plans/fix/discovery-identity-recovery-master/repair.md (sha256 845500de628b9e7fe8671171c3e90f49f1afc6bbac2f85e05b11a57be8bd4ca5)
-- Repair evidence mode: DURABLE_HANDOFF
-- Repair approval source: Exact human execute-p invocation persisted in repair-execution.md, Execution identity
-- Repair executor: execute-p main agent session; RepairDiscoveryCore / RepairQueryUi / RepairOutreach (as recorded); canonical executor session ID UNAVAILABLE
-- Repair code head: b08b521c12b3d0fbbf219bbb7c8a9fc61a2ec2e9
+- Repair artifact: docs/plans/fix/discovery-identity-recovery-master/repair.md (sha256 1c3736141987d41bdbc1737bcd0756cf35f4a8fca0e97bc8cd661586dbeb1f59); current draft after Epoch 2 human adjudication
+- Repair evidence mode: N/A for current draft; prior repair DURABLE_HANDOFF preserved in repair-execution.md
+- Repair approval source: Human approved strategy and same-path plan revision: 「好的 就按你说的来 你是不是要更新 repair？」; current revised-plan execution PENDING
+- Repair executor: N/A for current draft; prior executor labels and unavailable canonical identity preserved in Epoch 2 preflight and repair-execution.md
+- Repair code head: N/A for current draft; previous reviewed repair code b08b521c12b3d0fbbf219bbb7c8a9fc61a2ec2e9
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: Human adjudication of V-26 new normal-first-send regression and remaining mandatory violations before any revised repair strategy. No repair-p or product execution authorized/performed by this review.
+- Blocker/next action: DRAFT_READY; human review/execute-p approval of the revised exact repair artifact, then authorized repair and requested aggregate re-review. Existing uncommitted guard diff is preserved and must be accounted for before execution; B-1/B-2 and human acceptance remain unresolved.
 
 ## Preflight — 2026-10-14 (Asia/Shanghai)
 
@@ -130,3 +130,13 @@
 - Returned report staging SHA256: 5fe58a67e3c58a44e7d28a29ad9aa58a823c2426d5e963db968f0297cffaa19f. Epoch-1 report prefix preserved byte-for-byte (SHA256 c69682c80c85df5583b7b5a443a1afa9e47cc7b6d07b75427aa5eac33fdc411e).
 - Evidence parent before next commit: d6186c63930b8d897d45d069ba3cc90bce427887. This phase stages only ledger.md and machine-verification.md under the selected review directory. Final product head remains b08b521c12b3d0fbbf219bbb7c8a9fc61a2ec2e9.
 - Evidence formatting check initially reported five Markdown hard-break trailing spaces in the returned Epoch-2 header. Controller removed only those spaces; no report content/verdict or Epoch-1 byte changed. All report file links resolve.
+
+## Epoch 2 human adjudication and revised repair — 2026-10-15T07:10:52+08:00
+
+- Human question: 「你告诉我方向是什么」. Proposed direction: preserve verified repairs; restore healthy first-send with current-attempt ownership; validate complete current group identity/admission/history; conservative SMTP outcomes; resumable admission recovery and provable maintenance/rollback; complete query results and truthful stale-member display; obtain actual-entry concurrency and real-shape performance evidence.
+- Explicit human decision: 「好的 就按你说的来 你是不是要更新 repair？」. This approves the materially different approach and updating the same repair artifact. It satisfies the DIVERGING human-adjudication stop for planning; it does not approve execution of the newly drafted plan or change the master contract. No rollback/discard of prior repaired code was requested or performed.
+- Planner: /root/aggregate_reviewer_epoch2, using repair-p against its completed Epoch 2 findings. No fresh machine-review epoch or command rerun. Result DRAFT_READY; exact current repair SHA256 1c3736141987d41bdbc1737bcd0756cf35f4a8fca0e97bc8cd661586dbeb1f59. Previous repair SHA256 845500de628b9e7fe8671171c3e90f49f1afc6bbac2f85e05b11a57be8bd4ca5 remains recoverable from report commit 5a82206e9b0f171c332dee7512953b90179f0459; prior execution handoff remains unchanged.
+- Included current P1: V-1, V-2, V-3, V-4, V-5, V-8, V-12, V-13, V-14, V-15, V-26. Resolved findings and optional V-21/V-23/V-24 excluded. B-1/B-2 remain evidence obligations, not inferred product defects; relevant actual-entry regression may supply B-2 evidence. B-1 has no supplied real-shape dataset or current measurement.
+- Machine result remains FAIL / DIVERGING at reviewed code b08b521c12b3d0fbbf219bbb7c8a9fc61a2ec2e9. Report SHA256 remains 7997793ff45408ea4a83cbb023b70e0f36c96b8e31f4f78170bc7af2d9141dd7. Manual acceptance and revised execution remain PENDING.
+- At planning preflight, an existing uncommitted diff was observed in src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardService.kt: 32 additions / 2 deletions, initial diff SHA256 d95f0b247ee13acf7d2f6f8ba7ac7c6183dc4e81620bd77d89e07f51be7c09af. Additional product files changed concurrently while the planner was read-only on product code; their author/authorization is not established here. Snapshot at ledger preparation:  M src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardService.kt;  M src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonRecipientService.kt;  M src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt;  M src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt;  M src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt;  M src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt;  M src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt;  M src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryService.kt;  M src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt;  M src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt;  M src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt;  M src/main/resources/static/app.js;  M src/test/js/discoveryPersonEmails.test.js;  M src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonRecipientServiceTest.kt;  M src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt;  M src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt;  M src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceServiceTest.kt;  M src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryServiceTest.kt;  M src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonServiceTest.kt;  M src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt;  M tools/discovery-identity-recovery/replay.py;  M tools/discovery-identity-recovery/test_replay.py. Current guard diff SHA256 3d7e51ac22b76c15d29d4ed2e0e765fcfe1ddc8dbc290dee5684c96d43970134. These are evolving, unreviewed changes outside the completed Epoch 2 committed boundary, not outcomes of this planning phase. No product file was written, reset, staged or committed by this phase. Later execution must account for inherited changes and any files outside the newly approved scope; no claim of clean product state or an unchanged external diff is made.
+- Controller evidence boundary: only the exact repair.md and this ledger.md may be staged/committed. Parent before evidence commit 5a82206e9b0f171c332dee7512953b90179f0459; final_code_head unchanged. No product/test edits, new test runs, production operations, human acceptance or automatic repair cycle.
