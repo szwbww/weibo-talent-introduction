@@ -2,14 +2,14 @@
 
 - Status: RUNNING
 - Master plan: docs/plans/2026-10-13/discovery-identity-recovery-master.md (commit 36075ec06c5e4382f13606c995e24a13ec4470ce)
-- Amendments: A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12
+- Amendments: A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13
 - Master base: 9d353934b82ed3e36a193c70748e5efccb3d9e82
 - Branch: fast/2026-10-13-discovery-identity-recovery-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-13T21:55:30+0800
-- Current child: 07-ui
+- Current child: 06-query
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: Impl04-2 运行中断（exit 1，getaddrinfo ENOTFOUND opencode.ai；2026-10-14T09:08+0800 记录）；无提交；已由 Impl04b 成功接续（de4c1a0）
@@ -24,8 +24,8 @@
 | 02-replay | docs/plans/2026-10-13/discovery-identity-recovery-02-replay.md | commit:58a9e511e327d61e8e3645c738921979ff26a518 | admission-relaxation,01-duplicate | 2 | LIGHT_PASS | bc294d2e991e58346ce456f4e5eeb7525a2b5771 | abdf9f4645958e1ef7ef7c44963b51c4bc5898d4 | 0 | — | abdf9f4645958e1ef7ef7c44963b51c4bc5898d4 | 49ebf99365e97c0717146cdaf7e34d9000ff77cd | epoch1 zero-commit PLAN_CONFLICT（A10）→ epoch2 全量实施 11 文件（含 policy /works/{id}→SINGLETON）；C1 156、C2 294、C3 9、JS 1657×2 全绿；核实者 Verify02-2 四门禁 PASS 无 RECORD_ONLY；写者 Impl02b |
 | 04-registry | docs/plans/2026-10-13/discovery-person-04-registry.md | commit:9bf6b8ec1319863002f7d21f4320108a0a8ec2e3 | none | 1 | LIGHT_PASS_WITH_NOTES | abdf9f4645958e1ef7ef7c44963b51c4bc5898d4 | de4c1a042a48ec139c95f659858e78746b6208a6 | 0 | — | de4c1a042a48ec139c95f659858e78746b6208a6 | e1bdbd3e9632968e62e785594a2d7e47cae15479 | 7 授权文件（V156+A11）；C1 6、C2 17、C3 45、JS 1657×3 全绿；D1/D2/D3 经核实确认必要（O-1..O-3），O-4 为 P2 测试质量注记；Impl04-2 网络中断→Impl04b 接续；写者 Impl04b |
 | 05-ingestion | docs/plans/2026-10-13/discovery-person-05-ingestion.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 01-duplicate,02-replay,04-registry | 1 | LIGHT_PASS_WITH_NOTES | de4c1a042a48ec139c95f659858e78746b6208a6 | 7a96b5957b75096110e392b25a98bb9ea44990a5 | 0 | — | 7a96b5957b75096110e392b25a98bb9ea44990a5 | 00327f7a226a95976bf4fffe301f6c44e519251b | 8 授权文件；C1 272（190/49/16/17）、C2 23（17/6）、JS 1657×2 全绿；O-1 为 P2 覆盖注记（SCOPE_CONFLICT 刷新无专属断言）；写者 Impl05-2、核实者 Verify05-2 |
-| 06-query | docs/plans/2026-10-13/discovery-person-06-query.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 04-registry,05-ingestion | 1 | LIGHT_PASS_WITH_NOTES | 7a96b5957b75096110e392b25a98bb9ea44990a5 | db8ed30807578f93e8082b636c52f33a9a4d1ac8 | 0 | — | db8ed30807578f93e8082b636c52f33a9a4d1ac8 | d106c23870dd57f49691b92c68e14ee5751a1e2d | 8 授权文件；C1 123（11/79/20/13）、JS 1657 全绿；性能门禁（51,829 规模 p95/堆）记录为未决（不可在本环境伪造）；O-1 深分页 from+size>1000 行为注记；写者 Impl06、核实者 Verify06 |
-| 07-ui | docs/plans/2026-10-13/discovery-person-07-ui.md | commit:a2d4166bf6ff7e61313d69a420cd5f98e28a8911 | 06-query | — | PENDING | — | — | — | — | — | — | A5 新增；A12 后 3 授权文件（+ index.html 缓存键 bump）；样式契约 S-1/S-2 |
+| 06-query | docs/plans/2026-10-13/discovery-person-06-query.md | commit:8b320426228ff9cf5e55447826bdb009bcdfa34a | 04-registry,05-ingestion | 2 | IMPLEMENTING | 7a96b5957b75096110e392b25a98bb9ea44990a5 | db8ed30807578f93e8082b636c52f33a9a4d1ac8 | 0 | — | db8ed30807578f93e8082b636c52f33a9a4d1ac8 | d106c23870dd57f49691b92c68e14ee5751a1e2d | epoch1 LIGHT_PASS_WITH_NOTES（db8ed30/d106c23 保留）→ 07 核出 ES 列表缺成员数 → A13 修订（ES 列表 memberCount）→ epoch2 补实现后重核；写者 Impl06b |
+| 07-ui | docs/plans/2026-10-13/discovery-person-07-ui.md | commit:a2d4166bf6ff7e61313d69a420cd5f98e28a8911 | 06-query | 1 | IMPLEMENTING | db8ed30807578f93e8082b636c52f33a9a4d1ac8 | — | — | — | — | — | epoch1 已实施（4fbc761，3 文件：C2 18、C3 1675 全绿；ES 列表数量受 06 投影所限）；待 A13 的 06 epoch2 完成后以 epoch2 补消费 memberCount 并重核；写者 Impl07 |
 | 08-selection | docs/plans/2026-10-13/discovery-person-08-selection.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 04-registry,05-ingestion,06-query | — | PENDING | — | — | — | — | — | — | A6 新增；09 完成前不得开启人物首发；10 授权文件 |
 | 09-send-guard | docs/plans/2026-10-13/discovery-person-09-send-guard.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 04-registry,08-selection | — | PENDING | — | — | — | — | — | — | A7 新增；V157 人物级首发保护；10 授权文件 |
 | 10-history | docs/plans/2026-10-13/discovery-person-10-history.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 04-registry,05-ingestion,06-query,07-ui,08-selection,09-send-guard | — | PENDING | — | — | — | — | — | — | A8 新增；仅预览与提案，数据应用属后续实施授权；6 授权文件 |
@@ -45,6 +45,7 @@
 | A10 | docs/plans/2026-10-13/discovery-identity-recovery-02-replay.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | commit:58a9e511e327d61e8e3645c738921979ff26a518 | 实现方案 2「02 定向回源预览」＋子计划 I-4（请求仍走额度控制、不改计价策略） | epoch1 PLAN_CONFLICT：计划字面要求声明 Operation.SINGLETON，但既有 policy 对 /works/* 一律派生 LIST；按人工批准选项 A 授权第 11 文件并为 /works/{id} 补 SINGLETON 派生（0 credit；LIST/SEARCH/CONTENT 不变） | HUMAN:2026-10-14T00:52+0800 ask 回复「A：授权 policy，/works/{id}→SINGLETON」 |
 | A11 | docs/plans/2026-10-13/discovery-person-04-registry.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | commit:9bf6b8ec1319863002f7d21f4320108a0a8ec2e3 | 变更文件清单「04 人物主档」＋实现方案 4（V156 真实库迁移验证） | V156 加入后 FlywayMigrationIntegrationTest 31 处全量迁移最新版本断言（155）失效，该文件不在 6 文件授权内；经人工批准增列为第 7 文件，更新 31 处断言并加 V156 三新表存在性断言 | HUMAN:2026-10-14T07:44+0800 ask 回复「批准：改 31 处断言 + 加 V156 断言」 |
 | A12 | docs/plans/2026-10-13/discovery-person-07-ui.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | commit:a2d4166bf6ff7e61313d69a420cd5f98e28a8911 | 变更文件清单「07 多邮箱展示」＋样式契约 S-1/S-2 | 07 改 app.js，按 K-frontend-cache-key-triad 需 index.html 16 个资源键同值 bump；计划原列 2 文件未含 index.html，经人工批准增列并 bump 为 20261014-person-emails（已核实无测试/计划字面量硬钉当前键） | HUMAN:2026-10-14T12:17+0800 ask 回复「批准：bump 到 20261014-person-emails」 |
+| A13 | docs/plans/2026-10-13/discovery-person-06-query.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | commit:8b320426228ff9cf5e55447826bdb009bcdfa34a | 07 子计划 I-1/S-1/A-1（列表显示邮箱数量）＋06 实现方案 2（ES API 人物投影） | 07 epoch1 核实出 ES 列表分支无成员数来源（06 的 PersonSearchResult 仅 experts+totalHits），07 无法在自身文件内补出；按人工批准选项「补全」修订 06：ES 列表人物投影携带 memberCount（同源批量读取），随后 06/07 各以新 epoch 重跑重核 | HUMAN:2026-10-14T12:33+0800 ask 回复「补全：改 06 加成员数，重跑 06+07」 |
 
 ## Baseline
 - 授权：用户显式 `/fast-p docs/plans/2026-10-13/discovery-identity-recovery-master.md`（2026-10-13），并经 22:40 人工更新该 master（A1—A8）；执行合同 = 更新后 master 与其十份在册子计划（admission-relaxation、01-duplicate、02-replay、04-registry、05-ingestion、06-query、07-ui、08-selection、09-send-guard、10-history）。

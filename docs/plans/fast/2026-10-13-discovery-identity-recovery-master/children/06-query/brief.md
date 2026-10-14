@@ -49,3 +49,11 @@
 - 本地提交仅含 8 个授权文件：`feat(fast-p): implement 06-query`。
 - 返回仅限：`READY_FOR_VERIFICATION | BLOCKED | PLAN_CONFLICT`、commit SHA、命令摘要、报告路径。
 - 不审查后续子计划、不修复无关行为、不 push/merge/改写历史；遇到计划未覆盖的行为决策或需要新文件：返回 BLOCKED/PLAN_CONFLICT。
+
+## Epoch 2 修订（A13，2026-10-14T12:33+0800 人工批准）
+
+- 追加要求：ES 列表每行人物投影携带成员数 `memberCount`（与人物关系同源、由同一次批量读取得出；供 07 S-1「主邮箱 · 共 N 个邮箱」显示）。不得为此新增 ES 字段；DB 分组分支与旧客户端响应契约不变。
+- 授权文件不变（仍 8 个）；Required commands 不变（C1）。
+- 补充覆盖：ES 列表面向 discovered 人物的行必须带 `memberCount`（跨页一致），非 discovered 行/旧响应形状保持；只读语义不变。
+- 其余合同（I-1..I-3、性能门禁未决项）不变；epoch 1 记录见 execution.md/verify-log.md（evidence d106c23）。
+- 报告：把 epoch 2 结果追加到 execution.md 的 `## Epoch 2` 小节（不改写 epoch 1 内容）。
