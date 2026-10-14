@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-10-14/batch-filter-main.md
+
+- Status: REPAIR_PLAN_READY
+- Review epoch: 1
+- Master plan: docs/plans/2026-10-14/batch-filter-main.md (sha256 cfca0276aa957e12d9e9ae7617a5dbd7a11bf8e55adf3e5a2daece3bf68af33c)
+- Governing master identity: worktree sha256 cfca0276aa957e12d9e9ae7617a5dbd7a11bf8e55adf3e5a2daece3bf68af33c; recorded commit b02eeb6405b27d5d4f30a32d17019e19c855483d
+- Invoked master identity: SAME (sha256 cfca0276aa957e12d9e9ae7617a5dbd7a11bf8e55adf3e5a2daece3bf68af33c)
+- Master identity state: CONSISTENT
+- Governing amendment: N/A
+- Amendments: N/A
+- Fast-p ledger: docs/plans/fast/2026-10-14-batch-filter-main/ledger.md (sha256 a8cc05e1f538e9135a5775a7ad70cf9e3918fd1db9887c66098e1526f1e72fec)
+- Fast-p handoff: docs/plans/fast/2026-10-14-batch-filter-main/human-review-handoff.md (sha256 3de0a19ebb9f791c5efe239a3d1ed0e13ab5ed600f858f6fc1fc81b196214fbd)
+- Master base: 9d353934b82ed3e36a193c70748e5efccb3d9e82
+- Final code head: 50dc450b9e3d68b4cc44ad3a660d8a00936bb662
+- Evidence parent before next commit: 6e406e22c92d9cff81df9f6453c89eac669eae77
+- Previous evidence commit: N/A
+- Branch: fast/2026-10-14-batch-filter-main
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-14-batch-filter-main
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: SELECTED; target worktree/branch and all fast-p identities validated by discover_fast_p.py; invoked and governing master SHA-256 match.
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_reviewer
+- Reviewer attempt: 1
+- Machine result: FAIL
+- Machine report epoch: machine-verification.md, Epoch 1
+- Repair artifact: docs/plans/fix/batch-filter-main/repair.md (sha256 71d5bdd391c7915a6190f9f29b9590d0d10f1de033930565e2a38194126a55be)
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: Human approval required: $execute-p docs/plans/fix/batch-filter-main/repair.md
