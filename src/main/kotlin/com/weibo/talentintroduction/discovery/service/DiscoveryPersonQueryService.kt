@@ -90,7 +90,14 @@ class DiscoveryPersonQueryService(
             expertSearchService.searchExpertsWithSort(level, othersFilter, 0, from + size, sortBy)
         }
         val merged = mergeBySort(scan.representatives, othersPrefix, from + size, level, sortBy)
-        val page = merged.drop(from).take(size).map { hit -> hit.profile }
+        // A13：每行人物投影携带成员数（与人物关系同源、同一次批量读取得出）。非 discovered 行（其他分区
+        // 每个文档天然一人）不在 count 表中，取 1；discovered 行取该人全部命中成员数，跨页一致。
+        val page = merged.drop(from).take(size).map { hit ->
+            PersonListEntry(
+                profile = hit.profile,
+                memberCount = scan.memberCountByDocId[hit.profile.esDocId] ?: 1
+            )
+        }
         return PersonSearchResult(experts = page, totalHits = othersTotal + scan.personCount)
     }
 
@@ -245,6 +252,7 @@ class DiscoveryPersonQueryService(
     private class DiscoveredScan(
         val representatives: List<ExpertHitWithSort>,
         val personCount: Int,
+        val memberCountByDocId: Map<String, Int>,
         val tagPersonCounts: Map<String, Long>,
         val regionPersonCounts: Map<String, Long>,
         val domainPersonCounts: Map<String, Long>
@@ -257,6 +265,7 @@ class DiscoveryPersonQueryService(
     ): DiscoveredScan {
         val start = java.time.Instant.now(clock)
         val representativeByPerson = LinkedHashMap<String, ExpertHitWithSort>()
+        val memberCountByKey = HashMap<String, Int>()
         val tagPersons = HashMap<String, MutableSet<String>>()
         val regionPersons = HashMap<String, MutableSet<String>>()
         val domainPersons = HashMap<String, MutableSet<String>>()
@@ -294,6 +303,8 @@ class DiscoveryPersonQueryService(
                     if (existing == null || compareHits(hit, existing, level, sortBy) < 0) {
                         representativeByPerson[key] = hit
                     }
+                    // A13：同一人物每个命中成员各计数一次（同一次批量关系读取得出成员数）。
+                    memberCountByKey.merge(key, 1, Int::plus)
                     profile.tags.orEmpty().forEach { t ->
                         if (t.isNotBlank()) tagPersons.getOrPut(t) { mutableSetOf() }.add(key)
                     }
@@ -309,9 +320,15 @@ class DiscoveryPersonQueryService(
         }
 
         val representatives = representativeByPerson.values.sortedWith { a, b -> compareHits(a, b, level, sortBy) }
+        // 以代表成员的 docId 为键给出该人物成员数（供列表投影携带）。
+        val memberCountByDocId = HashMap<String, Int>(representativeByPerson.size)
+        representativeByPerson.forEach { (key, hit) ->
+            hit.profile.esDocId?.let { docId -> memberCountByDocId[docId] = memberCountByKey[key] ?: 1 }
+        }
         return DiscoveredScan(
             representatives = representatives,
             personCount = representativeByPerson.size,
+            memberCountByDocId = memberCountByDocId,
             tagPersonCounts = tagPersons.mapValues { (_, keys) -> keys.size.toLong() },
             regionPersonCounts = regionPersons.mapValues { (_, keys) -> keys.size.toLong() },
             domainPersonCounts = domainPersons.mapValues { (_, keys) -> keys.size.toLong() }
@@ -434,9 +451,15 @@ class DiscoveryPersonQueryService(
         mapOf("bool" to mapOf("must_not" to listOf(mapOf("term" to mapOf("tags" to DISCOVERED_TAG)))))
 }
 
+/** 06（A13）：ES 列表人物口径行——代表成员档案 + 该人物成员数（与人物关系同源、同一次批量读取得出）。 */
+data class PersonListEntry(
+    val profile: ExpertProfile,
+    val memberCount: Int
+)
+
 /** 06：人物口径检索结果（代表成员档案 + 人物口径 total）。 */
 data class PersonSearchResult(
-    val experts: List<ExpertProfile>,
+    val experts: List<PersonListEntry>,
     val totalHits: Long
 )
 

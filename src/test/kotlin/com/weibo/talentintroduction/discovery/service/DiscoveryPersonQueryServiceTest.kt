@@ -162,8 +162,8 @@ class DiscoveryPersonQueryServiceTest {
         assertEquals(3L, result.totalHits)
         assertEquals(2, result.experts.size)
         // CANDIDATE 排序降序：P1 代表取命中成员中最前者（sort=30 的 d3），其次 other（25）
-        assertEquals("d3", result.experts[0].esDocId)
-        assertEquals("d5", result.experts[1].esDocId)
+        assertEquals("d3", result.experts[0].profile.esDocId)
+        assertEquals("d5", result.experts[1].profile.esDocId)
     }
 
     @Test
@@ -183,7 +183,36 @@ class DiscoveryPersonQueryServiceTest {
         val page2 = service().searchPersons(level = ExpertIndexLevel.CANDIDATE, size = 1, from = 2)
         // 归并前缀 [P1(d3,30), other(d5,25), P2(d4,15)] → drop(2) → [P2(d4)]
         assertEquals(3L, page2.totalHits)
-        assertEquals(listOf("d4"), page2.experts.map { it.esDocId })
+        assertEquals(listOf("d4"), page2.experts.map { it.profile.esDocId })
+    }
+
+    // ── A13：ES 列表行携带成员数（跨页一致；非 discovered 行 = 1）─────────────────
+
+    @Test
+    fun `discovered rows carry memberCount consistent across pages while others stay one`() {
+        stubFilters()
+        val d1 = Doc("d1", sort = 10)
+        val d2 = Doc("d2", email = "ada2@example.com", sort = 20)
+        val d3 = Doc("d3", email = "ada3@example.com", sort = 30)
+        val other = Doc("d5", email = "other@example.com", given = "Cy", family = "Dee", tags = emptyList(), sort = 25)
+
+        stubScroll(listOf(listOf(hit(d1), hit(d2), hit(d3))))
+        stubRelations(listOf(memberRow(d1, "P1"), memberRow(d2, "P1"), memberRow(d3, "P1")))
+        stubCount(1L)
+        stubOthersPrefix(listOf(hit(other)))
+
+        val service = service()
+        // 第一页：P1 代表（sort=30）在前，携带 3 个成员。
+        val page1 = service.searchPersons(level = ExpertIndexLevel.CANDIDATE, size = 1, from = 0)
+        assertEquals("d3", page1.experts[0].profile.esDocId)
+        assertEquals(3, page1.experts[0].memberCount)
+
+        // 第二页：其他分区每行天然一人 → 成员数 1；人口径 total 跨页一致。
+        val page2 = service.searchPersons(level = ExpertIndexLevel.CANDIDATE, size = 1, from = 1)
+        assertEquals("d5", page2.experts[0].profile.esDocId)
+        assertEquals(1, page2.experts[0].memberCount)
+        assertEquals(2L, page1.totalHits)
+        assertEquals(page1.totalHits, page2.totalHits)
     }
 
     @Test
@@ -244,7 +273,7 @@ class DiscoveryPersonQueryServiceTest {
         val result = service().searchPersons(level = ExpertIndexLevel.CANDIDATE, size = 10, from = 0)
         // P3（d7）与失效独立档案（d6）各自计数 → 2 人，而不是错误合并成 1。
         assertEquals(2L, result.totalHits)
-        assertEquals(setOf("d6", "d7"), result.experts.map { it.esDocId }.toSet())
+        assertEquals(setOf("d6", "d7"), result.experts.map { it.profile.esDocId }.toSet())
     }
 
     // ── I-3：超预算明确失败，不返回部分数 ────────────────────────────────────────

@@ -18,6 +18,7 @@ import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.discovery.service.DiscoveryPersonDetail
 import com.weibo.talentintroduction.discovery.service.DiscoveryPersonMember
 import com.weibo.talentintroduction.discovery.service.DiscoveryPersonQueryService
+import com.weibo.talentintroduction.discovery.service.PersonListEntry
 import com.weibo.talentintroduction.discovery.service.PersonSearchResult
 import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
 import com.weibo.talentintroduction.task.domain.TaskExecution
@@ -194,7 +195,7 @@ class ExpertIndexControllerTest {
                 emailDomain = null,
                 region = null
             )
-        ).thenReturn(PersonSearchResult(listOf(expert), 1L))
+        ).thenReturn(PersonSearchResult(listOf(PersonListEntry(expert, memberCount = 3)), 1L))
         val contact = com.weibo.talentintroduction.campaign.domain.ExpertContact(
             id = 1L,
             orcidId = "orcid-1",
@@ -220,6 +221,7 @@ class ExpertIndexControllerTest {
 
         assertEquals(1, response.experts.size)
         assertEquals("REPLIED", response.experts[0].operatorStatus)
+        assertEquals(3, response.experts[0].memberCount)
         assertEquals(1L, response.totalHits)
     }
 

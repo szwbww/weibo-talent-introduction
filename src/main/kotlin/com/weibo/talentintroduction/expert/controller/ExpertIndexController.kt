@@ -87,13 +87,14 @@ class ExpertIndexController(
             discipline = discipline,
             expertTypes = expertType.orEmpty()
         )
-        val orcidIds = result.experts.map { it.orcidId }.filter { it.isNotBlank() }
+        val orcidIds = result.experts.map { it.profile.orcidId }.filter { it.isNotBlank() }
         val contactMap = if (orcidIds.isEmpty()) emptyMap() else expertContactRepository
             .findByOrcidIdIn(orcidIds)
             .groupBy { ExpertIdNormalizer.normalize(it.orcidId) }
             .mapValues { (_, contacts) -> contacts.maxByOrNull { it.updatedAt ?: java.time.LocalDateTime.MIN } }
 
-        val experts = result.experts.map { expert ->
+        val experts = result.experts.map { entry ->
+            val expert = entry.profile
             val contact = contactMap[ExpertIdNormalizer.normalize(expert.orcidId)]
             ExpertIndexResponse.from(
                 expert = expert,
@@ -104,7 +105,8 @@ class ExpertIndexController(
                 autoReplyEnabled = contact?.autoReplyEnabled ?: true,
                 boundSenderAccountCode = contact?.boundSenderAccountCode,
                 senderAccountChanged = contact?.senderAccountChanged ?: false,
-                operatorStatus = contact?.operatorStatus ?: expert.operatorStatus ?: "NOT_CONTACTED"
+                operatorStatus = contact?.operatorStatus ?: expert.operatorStatus ?: "NOT_CONTACTED",
+                memberCount = entry.memberCount
             )
         }
         return ExpertListResponse(experts = experts, totalHits = result.totalHits)
@@ -423,6 +425,8 @@ data class ExpertIndexResponse(
     val operatorStatus: String?,
     val contactId: Long?,
     val contactStatus: String?,
+    // A13：该人物成员数（discovered 行 = 该人全部命中邮箱成员数；非 discovered 行 = 1）。
+    val memberCount: Int = 1,
     val needsManualAttention: Boolean = false,
     val autoReplyEnabled: Boolean = true,
     val boundSenderAccountCode: String? = null,
@@ -451,7 +455,8 @@ data class ExpertIndexResponse(
             autoReplyEnabled: Boolean = true,
             boundSenderAccountCode: String? = null,
             senderAccountChanged: Boolean = false,
-            operatorStatus: String? = null
+            operatorStatus: String? = null,
+            memberCount: Int = 1
         ): ExpertIndexResponse =
             ExpertIndexResponse(
                 indexLevel = level.name,
@@ -472,6 +477,7 @@ data class ExpertIndexResponse(
                 operatorStatus = operatorStatus ?: expert.operatorStatus ?: "NOT_CONTACTED",
                 contactId = contactId,
                 contactStatus = contactStatus,
+                memberCount = memberCount,
                 needsManualAttention = needsManualAttention,
                 autoReplyEnabled = autoReplyEnabled,
                 boundSenderAccountCode = boundSenderAccountCode,
