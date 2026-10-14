@@ -198,3 +198,76 @@ Initial sandbox-only Maven/full-Node runs met transient `target/` EPERM; exact p
 - Excluded: V-1 resolved; all RECORD_ONLY items.
 
 No product code was modified by the reviewer.
+
+## Epoch 3 — 2026-10-14T14:10:54+0800
+
+- Master plan: docs/plans/2026-10-14/batch-filter-main.md (sha256 cfca0276aa957e12d9e9ae7617a5dbd7a11bf8e55adf3e5a2daece3bf68af33c)
+- Governing master identity: worktree sha256 cfca0276aa957e12d9e9ae7617a5dbd7a11bf8e55adf3e5a2daece3bf68af33c; recorded commit b02eeb6405b27d5d4f30a32d17019e19c855483d.
+- Master identity state: CONSISTENT; amendments N/A.
+- Boundary: 9d353934b82ed3e36a193c70748e5efccb3d9e82..57727abf8aac2cd01f687cdb4e622abe99cbba9a
+- Evidence HEAD: a62523fe9a88a70b35926a3c8bf57c4901fe7320
+- Reviewer: /root/aggregate_final_reviewer
+- Result: PASS
+- Convergence: CONVERGED
+- Repair artifact/result: docs/plans/fix/batch-filter-main/repair.md (consumed; no new repair; sha256 bb1d080056783969eb766fc5e65e365de1af49f7073433a91809b837c2eb5218)
+
+### Review-P Result: PASS
+
+The repaired code descends from e6499a22c4696a8d98ac1ffe2be0e191db5dca97. The repair delta changes exactly its two Authorized Files: `ManualInitialOutreachService.kt` and `ManualInitialOutreachServiceTest.kt`. The cumulative non-document boundary is the exact 16 planned product/test paths; CSS is unchanged and the index is clean. The controller-owned ledger was the sole pending evidence path during review. Manual acceptance remains PENDING.
+
+### Commands
+
+| Command | Result | Evidence |
+|---|---|---|
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -B test -Dtest='BatchRecipientPreflightServiceTest,BatchRecipientSelectionServiceTest,ManualInitialOutreachServiceTest,BatchEmailVerificationServiceTest,CountryContinentMappingTest,ExpertSearchServiceTest' -DfailIfNoTests=false` | PASS | exit 0; 343 tests; 0 failures/errors/skips (preflight 14, selection 14, manual outreach 191, email verification 40, country mapping 9, expert search 75) |
+| `DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -B test -Dtest='BatchRecipientReadRepositoryIT' -DmysqlIt=true -DargLine='-Dapi.version=1.44' -DfailIfNoTests=false` | PASS | exit 0; 4 tests; 0 failures/errors/skips; real MySQL 8.0.36 Testcontainer; 154 migrations |
+| `node --test src/test/js/recipientPreviewDiagnostics.test.js` | PASS | exit 0; 13/13 |
+| `node --test src/test/js/batchEmailVerification.test.js` | PASS | exit 0; 42/42 |
+| `node --test src/test/js/gateTemplateFilter.test.js` | PASS | exit 0; 8/8 |
+| `node --test src/test/js/*.test.js` | PASS | exit 0; 1671 pass, 0 fail |
+| `node --check src/main/resources/static/app.js` | PASS | exit 0 |
+
+Initial sandbox-only Maven and full-Node attempts hit transient `target/` EPERM. Fresh permitted exact reruns passed; no command remains blocked.
+
+### Contract Matrix
+
+| ID | Verdict | Evidence |
+|---|---|---|
+| M-1 / ordered scope | PASS | 01→02→03 evidence exists; exact 16-path union; CSS unchanged. |
+| M-2 / complete baseline and parity | PASS | Level/tag-only base scan; Other matcher and non-discovered behavior retained; explicit no-address reason; execution, preview, NEW retry, and ES pages share the preflight policy. |
+| M-3 / shared counts | PASS | `baseline = excludedUnique + eligibleBeforeLiveVerification`; awaiting is a subset; 10/4/6/3 and six-overlapping-reason regressions retained. |
+| M-4 / read-only and protections | PASS | Diagnostics use reads only; no provider/SMTP path; real-SQL IT passes; dynamic suppression/binding/history checks remain before send. |
+| M-5 / verification | PASS | Seven required commands pass; no production action. Manual acceptance remains pending. |
+| S-M1 | PASS | No CSS diff; IDs, cache key, escaping, stale-response, and debounce contracts pass. |
+| 01 I-1–I-3 | PASS | Region/Other behavior, ES widening, final matcher, dedupe, no added writes. |
+| 02 I-1 | PASS | Baseline preserves address-less targets and explains `PROTECTION_NO_RECIPIENT_ADDRESS`. |
+| 02 I-2 | PASS | Post-cap candidates receive a same-policy per-candidate preflight decision; partial diagnostics are not an execution allow-list. |
+| 02 I-3–I-6 | PASS | Reusable verification history/switches, read-only behavior, bounded limits, and template-gate behavior pass. |
+| 03 I-1–I-3 / S-1/S-2 | PASS | Direct response rendering, gate copy, legacy handling, error/partial states, and resource-key tests pass. |
+
+### Finding Lineage
+
+| Finding | State | Evidence |
+|---|---|---|
+| Child F-1 | RESOLVED | Prior admission/eligibility repair retained; fresh suites pass. |
+| V-1 | RESOLVED | No `exists email` baseline filter; explicit no-address exclusion and partition test remain. |
+| V-2 | RESOLVED | 57727abf8aac2cd01f687cdb4e622abe99cbba9a replaces truncated membership filtering; fresh post-cap regression passes. |
+
+P1/P2: N/A.
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+| Source item | Master requirement | Result | Evidence |
+|---|---|---|---|
+| Dead `matchesDiscoveryOutreach` predicate/KDoc | M-2 | No reachable required path; no defect. | No call path. |
+| `tags=discovered` coarse Other branch | M-2 | No proven normal write-path impact. | Retained RECORD_ONLY. |
+| Statusless preview error copy | 03 I-3 | API failure still renders `预估不可用`. | No defect. |
+| Retained `门禁过滤已排除` | 03 I-2 | Required wording remains; forbidden `计入失败` absent. | No defect. |
+| Legacy plain `详细解释不可用` | S-1 | Compatibility path. | No confirmed breach. |
+| Unrendered aggregate `verificationPhase` | 03 I-1 | Required counts/as-of/awaiting rendering remains correct. | No defect. |
+
+### Evidence Boundaries
+
+- Browser/manual A-1–A-5 were not run.
+- No production, provider, or SMTP validation was run.
+- No product code, tests, review evidence, staging area, or commits were modified by the reviewer.
