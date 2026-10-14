@@ -2,7 +2,7 @@
 
 - Status: RUNNING
 - Master plan: docs/plans/2026-10-13/discovery-identity-recovery-master.md (commit 36075ec06c5e4382f13606c995e24a13ec4470ce)
-- Amendments: A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13
+- Amendments: A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14
 - Master base: 9d353934b82ed3e36a193c70748e5efccb3d9e82
 - Branch: fast/2026-10-13-discovery-identity-recovery-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master
@@ -27,7 +27,7 @@
 | 06-query | docs/plans/2026-10-13/discovery-person-06-query.md | commit:8b320426228ff9cf5e55447826bdb009bcdfa34a | 04-registry,05-ingestion | 2 | LIGHT_PASS_WITH_NOTES | 7a96b5957b75096110e392b25a98bb9ea44990a5 | 0755833e3e5e0480d9ad40443ae5ebba0e91ac6a | 0 | — | 0755833e3e5e0480d9ad40443ae5ebba0e91ac6a | 5dd4e5a562baa62e015d572074656c42e6719bec | epoch1（db8ed30/d106c23）→ A13 后 epoch2（0755833）补 ES 列表 memberCount；C1 124、JS 1675 全绿；性能门禁与深分页注记延续；写者 Impl06/Impl06b、核实者 Verify06/Verify06b |
 | 07-ui | docs/plans/2026-10-13/discovery-person-07-ui.md | commit:a2d4166bf6ff7e61313d69a420cd5f98e28a8911 | 06-query | 2 | LIGHT_PASS | 0755833e3e5e0480d9ad40443ae5ebba0e91ac6a | 2fae99a551ea656604c46a19f1f046eb3ad6593e | 0 | — | 2fae99a551ea656604c46a19f1f046eb3ad6593e | f6af6a8b0c70a7fabfecb117964e32772f2e9cef | epoch1（4fbc761，archive 15d3939）→ A13 后 epoch2（2fae99a）补 ES 列表 memberCount；C1/C2 20/C3 1677 全绿；含 index.html 16 键 20261014-person-emails；写者 Impl07/Impl07b、核实者 Verify07 |
 | 08-selection | docs/plans/2026-10-13/discovery-person-08-selection.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 04-registry,05-ingestion,06-query | 1 | LIGHT_PASS_WITH_NOTES | 2fae99a551ea656604c46a19f1f046eb3ad6593e | 4ee251f7c90bea7cf556c5536f8bb522c5cebc09 | 0 | — | 4ee251f7c90bea7cf556c5536f8bb522c5cebc09 | cfc4d72eeb16398f96faca2ef2fc56ef5f0868f4 | 10 授权文件；C1 236（10/9/184/21/12）、JS 1677 全绿；O-1 为注释性不一致；写者 Impl08、核实者 Verify08 |
-| 09-send-guard | docs/plans/2026-10-13/discovery-person-09-send-guard.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 04-registry,08-selection | — | PENDING | — | — | — | — | — | — | A7 新增；V157 人物级首发保护；10 授权文件 |
+| 09-send-guard | docs/plans/2026-10-13/discovery-person-09-send-guard.md | commit:6a774804e918342bb65ae4549247e37fccd0d59b | 04-registry,08-selection | 1 | IMPLEMENTING | — | — | — | — | — | — | A7 新增；A14 后 11 授权文件（+ FlywayMigrationIntegrationTest V157）；V157 人物级首发保护；写者 Impl09 |
 | 10-history | docs/plans/2026-10-13/discovery-person-10-history.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 04-registry,05-ingestion,06-query,07-ui,08-selection,09-send-guard | — | PENDING | — | — | — | — | — | — | A8 新增；仅预览与提案，数据应用属后续实施授权；6 授权文件 |
 
 ## Amendments
@@ -46,6 +46,7 @@
 | A11 | docs/plans/2026-10-13/discovery-person-04-registry.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | commit:9bf6b8ec1319863002f7d21f4320108a0a8ec2e3 | 变更文件清单「04 人物主档」＋实现方案 4（V156 真实库迁移验证） | V156 加入后 FlywayMigrationIntegrationTest 31 处全量迁移最新版本断言（155）失效，该文件不在 6 文件授权内；经人工批准增列为第 7 文件，更新 31 处断言并加 V156 三新表存在性断言 | HUMAN:2026-10-14T07:44+0800 ask 回复「批准：改 31 处断言 + 加 V156 断言」 |
 | A12 | docs/plans/2026-10-13/discovery-person-07-ui.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | commit:a2d4166bf6ff7e61313d69a420cd5f98e28a8911 | 变更文件清单「07 多邮箱展示」＋样式契约 S-1/S-2 | 07 改 app.js，按 K-frontend-cache-key-triad 需 index.html 16 个资源键同值 bump；计划原列 2 文件未含 index.html，经人工批准增列并 bump 为 20261014-person-emails（已核实无测试/计划字面量硬钉当前键） | HUMAN:2026-10-14T12:17+0800 ask 回复「批准：bump 到 20261014-person-emails」 |
 | A13 | docs/plans/2026-10-13/discovery-person-06-query.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | commit:8b320426228ff9cf5e55447826bdb009bcdfa34a | 07 子计划 I-1/S-1/A-1（列表显示邮箱数量）＋06 实现方案 2（ES API 人物投影） | 07 epoch1 核实出 ES 列表分支无成员数来源（06 的 PersonSearchResult 仅 experts+totalHits），07 无法在自身文件内补出；按人工批准选项「补全」修订 06：ES 列表人物投影携带 memberCount（同源批量读取），随后 06/07 各以新 epoch 重跑重核 | HUMAN:2026-10-14T12:33+0800 ask 回复「补全：改 06 加成员数，重跑 06+07」 |
+| A14 | docs/plans/2026-10-13/discovery-person-09-send-guard.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | commit:6a774804e918342bb65ae4549247e37fccd0d59b | 变更文件清单「09 首发保护」＋实现方案 4（V157 真实库迁移验证） | V157 加入后 FlywayMigrationIntegrationTest 31 处全量迁移最新版本断言（156）失效，该文件不在 10 文件授权内；经人工批准增列为第 11 文件，更新 31 处断言并加 V157 表存在/唯一键断言（同 A11 口径） | HUMAN:2026-10-14T15:19+0800 ask 回复「批准：改断言 156→157 + V157 断言」 |
 
 ## Baseline
 - 授权：用户显式 `/fast-p docs/plans/2026-10-13/discovery-identity-recovery-master.md`（2026-10-13），并经 22:40 人工更新该 master（A1—A8）；执行合同 = 更新后 master 与其十份在册子计划（admission-relaxation、01-duplicate、02-replay、04-registry、05-ingestion、06-query、07-ui、08-selection、09-send-guard、10-history）。
