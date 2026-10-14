@@ -2,9 +2,15 @@ package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.OperatorStatus
+import com.weibo.talentintroduction.campaign.domain.RecipientScope
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.campaign.service.BatchRecipientSelectionService
 import com.weibo.talentintroduction.campaign.service.ConversationStateService
+import com.weibo.talentintroduction.campaign.service.DiscoveryPersonOutreachGuardService
 import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
+import com.weibo.talentintroduction.campaign.service.OutreachClaimOutcome
+import com.weibo.talentintroduction.campaign.service.OutreachGuardTicket
+import com.weibo.talentintroduction.campaign.service.OutreachReserveOutcome
 import com.weibo.talentintroduction.common.domain.ConversationStatus
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailRecordQaRule
@@ -34,7 +40,9 @@ class ManualExpertMailService(
     private val senderAccountBindingService: SenderAccountBindingService,
     private val expertOperatorStatusService: ExpertOperatorStatusService,
     private val personalizationGateService: PersonalizationGateService = PersonalizationGateService(),
-    private val mailVariableService: MailVariableService? = null
+    private val mailVariableService: MailVariableService? = null,
+    /** 09 (I-1/I-2/I-3): 人物级首发原子门禁 —— 仅实际 INTRODUCTION 且 discovered 时启用。 */
+    private val outreachGuardService: DiscoveryPersonOutreachGuardService? = null
 ) {
     fun listSendOptions(): List<ManualMailOption> {
         return mailComposeTemplateService.listEnabled()
@@ -94,7 +102,20 @@ class ManualExpertMailService(
             composed.mail.text,
             composed.mail.body
         )
+
+        // 09 (I-1/I-2/I-3): 仅对**实际** INTRODUCTION 且目标为 discovered 的介绍邮件启用人物级首发门禁；
+        // 非 INTRODUCTION / 非 discovered / 无法解析画像时保持原路径逐字不变。
+        val guardTicket = reserveAndClaimIntroductionGuard(contact, composed.mailType)
+
         val delivered = mailDeliveryService.send(account, composed.mail)
+        if (guardTicket != null) {
+            if (delivered.status == "SENT") {
+                outreachGuardService?.markSent(guardTicket, delivered.messageId, null)
+            } else {
+                // SMTP 明确未接受 → 证明未交付，安全重试（绑定原地址）。
+                outreachGuardService?.markSafeRetry(guardTicket)
+            }
+        }
         val now = LocalDateTime.now()
 
         val saved = mailRecordRepository.save(
@@ -164,6 +185,32 @@ class ManualExpertMailService(
             sendStatus = delivered.status,
             messageId = delivered.messageId
         )
+    }
+
+    /**
+     * 09 (I-1/I-2/I-3): 详情手动发送的介绍邮件首发门禁。仅当 guard 已注入、实际 mailType=INTRODUCTION、
+     * 且当前画像为 discovered 时启用：占位 → 发送前 CAS SENDING。未获许可抛 IllegalStateException
+     * （外发事务回滚，占位随之回滚，绝不调用 SMTP）。非上述情形返回 null（保持原路径逐字不变）。
+     */
+    private fun reserveAndClaimIntroductionGuard(contact: ExpertContact, mailType: String): OutreachGuardTicket? {
+        val guard = outreachGuardService ?: return null
+        if (mailType != "INTRODUCTION") return null
+        val profile = mailVariableService?.resolveExpertProfileFor(contact) ?: return null
+        if (!RecipientScope.isDiscoveryOutreach(profile)) return null
+        val recipient = contact.expertEmail
+        val docId = BatchRecipientSelectionService.docIdOf(profile)
+        val ticket = when (val outcome = guard.reserveIntroduction(docId, recipient, profile)) {
+            is OutreachReserveOutcome.Granted -> outcome.ticket
+            is OutreachReserveOutcome.Denied -> throw IllegalStateException(
+                "人物级首发保护拒绝发送：${outcome.code}（contactId=${contact.id}）"
+            )
+        }
+        return when (val claim = guard.claimSending(ticket, profile, recipient)) {
+            is OutreachClaimOutcome.Claimed -> ticket
+            is OutreachClaimOutcome.Denied -> throw IllegalStateException(
+                "首发交付权未取得：${claim.code}（contactId=${contact.id}）"
+            )
+        }
     }
 
     fun sendBatchMail(contactIds: List<Long>, command: ManualMailSendCommand): BatchMailSendResult {

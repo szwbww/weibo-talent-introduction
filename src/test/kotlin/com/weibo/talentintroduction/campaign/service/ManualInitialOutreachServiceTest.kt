@@ -2072,7 +2072,8 @@ class ManualInitialOutreachServiceTest {
         Mockito.verify(txHelper, Mockito.times(20)).recordSuccess(
             anyValue(ExpertContact(campaignId = 10L, orcidId = "", expertEmail = "", expertName = null, currentStatus = "NEW")),
             Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(),
-            Mockito.anyLong(), Mockito.anyLong(), Mockito.isNull()
+            Mockito.anyLong(), Mockito.anyLong(), Mockito.isNull(),
+            Mockito.nullable(OutreachGuardTicket::class.java)
         )
     }
 
@@ -2705,7 +2706,8 @@ class ManualInitialOutreachServiceTest {
 
     /** 用同一批 mock 构造一个接入人物级选择层的 service（其余参数与 [service] 一致）。 */
     private fun serviceWithPersonSelection(
-        personRepo: com.weibo.talentintroduction.discovery.repository.DiscoveryPersonRepository
+        personRepo: com.weibo.talentintroduction.discovery.repository.DiscoveryPersonRepository,
+        guard: DiscoveryPersonOutreachGuardService? = null
     ): ManualInitialOutreachService {
         val personRecipientService = DiscoveryPersonRecipientService(
             batchRecipientSelectionService = batchRecipientSelectionService,
@@ -2743,8 +2745,35 @@ class ManualInitialOutreachServiceTest {
             batchEmailVerificationService = batchEmailVerificationService,
             expertOperatorStatusService = expertOperatorStatusService,
             batchRecipientSelectionService = batchRecipientSelectionService,
-            discoveryPersonRecipientService = personRecipientService
+            discoveryPersonRecipientService = personRecipientService,
+            outreachGuardService = guard
         )
+    }
+
+    @Test
+    fun `person-level guard denies discovered introduction before contact creation (I-1 I-2 I-3)`() {
+        val acc = account("chen")
+        val candidate = signedDiscoveryExpert("D-GUARD", "guard@example.org")
+        stubIntroSendPipeline(acc, listOf(candidate))
+        stubAdmissions("D-GUARD" to "AUTO_PASSED")
+        val guard = Mockito.mock(DiscoveryPersonOutreachGuardService::class.java)
+        Mockito.`when`(
+            guard.reserveIntroduction(anyValue("D-GUARD"), anyValue("guard@example.org"), anyValue(candidate))
+        ).thenReturn(OutreachReserveOutcome.Denied(OutreachGuardReasonCodes.IN_FLIGHT))
+        val guarded = serviceWithPersonSelection(personMembers(listOf("D-GUARD")), guard)
+        val snapshot = introSnapshot(roundSize = 1, roundsPerRun = 1)
+
+        val result = guarded.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = true)
+
+        // 未获人物级首发许可：不建 contact、不调 SMTP，目标记 skipped。
+        assertEquals(0, result.sent)
+        assertEquals(0, result.failed)
+        assertEquals(1, result.skipped)
+        Mockito.verify(guard).reserveIntroduction(anyValue("D-GUARD"), anyValue("guard@example.org"), anyValue(candidate))
+        Mockito.verify(expertContactRepository, Mockito.never()).save(
+            anyValue(ExpertContact(campaignId = 0L, orcidId = "", expertEmail = "", expertName = null))
+        )
+        Mockito.verify(mailDeliveryService, Mockito.never()).send(anyValue(acc), anyValue(ComposedMail("", "", "")))
     }
 
     /** 构造一个人物 P1 + 指定成员关系的只读仓储 mock。 */
@@ -2999,7 +3028,8 @@ class ManualInitialOutreachServiceTest {
             Mockito.verify(txHelper, Mockito.never()).recordSuccess(
                 anyValue(ExpertContact(campaignId = 0, orcidId = "", expertEmail = "", expertName = null)),
                 Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyLong(), Mockito.any(),
-                Mockito.nullable(Long::class.javaObjectType)
+                Mockito.nullable(Long::class.javaObjectType),
+                Mockito.nullable(OutreachGuardTicket::class.java)
             )
         }
 

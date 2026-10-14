@@ -18,7 +18,9 @@ class ManualOutreachTxHelper(
     private val mailRecordRepository: MailRecordRepository,
     private val mailSenderAccountRepository: MailSenderAccountRepository,
     private val mailSendAttemptRepository: MailSendAttemptRepository,
-    private val expertOperatorStatusService: ExpertOperatorStatusService
+    private val expertOperatorStatusService: ExpertOperatorStatusService,
+    /** 09: 首发保护联动（link SENT 于成功原事务）。可选 —— 省略时既有行为逐字不变。 */
+    private val outreachGuardService: DiscoveryPersonOutreachGuardService? = null
 ) {
     /**
      * Atomically records a successful send: transition contact NEW→INTRO_SENT,
@@ -33,7 +35,9 @@ class ManualOutreachTxHelper(
         body: String?,
         attemptId: Long,
         taskExecutionId: Long? = null,
-        openTrackingId: Long? = null
+        openTrackingId: Long? = null,
+        /** 09 (I-2): 介绍邮件首发占位凭据；非空时在同一事务内联动 guard SENT。 */
+        outreachGuardTicket: OutreachGuardTicket? = null
     ) {
         val now = LocalDateTime.now()
 
@@ -90,6 +94,12 @@ class ManualOutreachTxHelper(
                 status = MailSendAttemptStatus.SENT,
                 updatedAt = now
             ))
+        }
+
+        // 5. 09 (I-2): 在同一成功事务内联动人物级占位 SENT。CAS 失败不回滚已确认的交付事实 ——
+        //    占位停在 SENDING（结果未核，不可重发）。
+        if (outreachGuardTicket != null) {
+            outreachGuardService?.markSent(outreachGuardTicket, deliveredMessageId, attemptId)
         }
     }
 

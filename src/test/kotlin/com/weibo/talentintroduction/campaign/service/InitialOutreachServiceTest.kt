@@ -110,7 +110,8 @@ class InitialOutreachServiceTest {
             eqValue("Body"),
             eqValue(0L),
             Mockito.isNull(),
-            Mockito.isNull()
+            Mockito.isNull(),
+            Mockito.nullable(OutreachGuardTicket::class.java)
         )
         Mockito.verify(txHelper, Mockito.never()).recordFailure(
             Mockito.anyLong(),
@@ -174,7 +175,8 @@ class InitialOutreachServiceTest {
             eqValue("Body"),
             eqValue(0L),
             Mockito.isNull(),
-            Mockito.isNull()
+            Mockito.isNull(),
+            Mockito.nullable(OutreachGuardTicket::class.java)
         )
     }
 
@@ -209,7 +211,8 @@ class InitialOutreachServiceTest {
             Mockito.any(),
             Mockito.anyLong(),
             Mockito.any(),
-            Mockito.nullable(Long::class.javaObjectType)
+            Mockito.nullable(Long::class.javaObjectType),
+            Mockito.nullable(OutreachGuardTicket::class.java)
         )
         Mockito.verify(txHelper).recordFailure(
             contactId = eqValue(100L),
@@ -437,7 +440,8 @@ class InitialOutreachServiceTest {
             eqValue("Body"),
             eqValue(0L),
             eqValue(42L),
-            Mockito.isNull()
+            Mockito.isNull(),
+            Mockito.nullable(OutreachGuardTicket::class.java)
         )
     }
 
@@ -817,6 +821,58 @@ class InitialOutreachServiceTest {
         Mockito.verify(expertContactRepository, Mockito.times(1)).save(
             anyValue(ExpertContact(campaignId = 0L, orcidId = "", expertEmail = "", expertName = null))
         )
+    }
+
+    @Test
+    fun `sendInitialBatch consults the person-level guard for a discovered introduction (I-1 I-2 I-3)`() {
+        val d1 = signedDiscoveryExpert("D1")
+        val personRepo = Mockito.mock(com.weibo.talentintroduction.discovery.repository.DiscoveryPersonRepository::class.java)
+        val m1 = personMember("D1", "P1")
+        Mockito.`when`(personRepo.findPersonIdsByDocIds(Mockito.anyCollection<String>())).thenReturn(mapOf("D1" to "P1"))
+        Mockito.`when`(personRepo.findMembersByPerson("P1")).thenReturn(listOf(m1))
+        Mockito.`when`(personRepo.findMember("D1")).thenReturn(m1)
+        val personRecipientService = DiscoveryPersonRecipientService(
+            batchRecipientSelectionService = batchRecipientSelectionService,
+            discoveryPersonRepository = personRepo,
+            expertSearchService = expertSearchService,
+            emailSuppressionService = emailSuppressionService,
+            expertContactRepository = expertContactRepository
+        )
+        val guard = Mockito.mock(DiscoveryPersonOutreachGuardService::class.java)
+        val guardedService = InitialOutreachService(
+            expertSearchService = expertSearchService,
+            senderAccountAssignmentService = senderAccountAssignmentService,
+            introductionMailComposer = introductionMailComposer,
+            mailDeliveryService = mailDeliveryService,
+            expertContactRepository = expertContactRepository,
+            txHelper = txHelper,
+            emailSuppressionService = emailSuppressionService,
+            autoReplySettingService = autoReplySettingService,
+            schedulingProperties = schedulingProperties,
+            senderAccountBindingService = senderAccountBindingService,
+            batchRecipientSelectionService = batchRecipientSelectionService,
+            discoveryPersonRecipientService = personRecipientService,
+            outreachGuardService = guard
+        )
+        Mockito.`when`(
+            expertSearchService.searchExpertsByTypesWithEmail(1, ExpertIndexLevel.CANDIDATE, listOf("PRODUCTION_RND"))
+        ).thenReturn(ExpertSearchResult(experts = listOf(d1), totalHits = 1))
+        stubAdmissions("D1" to "AUTO_PASSED")
+        Mockito.`when`(expertContactRepository.findByOrcidIdIn(Mockito.anyList())).thenReturn(emptyList())
+        // 人物级门禁拒绝（同人已在途）—— 绝不建 contact、绝不发 SMTP。
+        Mockito.`when`(guard.reserveIntroduction(anyValue("D1"), anyValue("D1@example.com"), anyValue(d1)))
+            .thenReturn(OutreachReserveOutcome.Denied(OutreachGuardReasonCodes.IN_FLIGHT))
+
+        val result = guardedService.sendInitialBatch(campaignId = 1L, size = 1)
+
+        assertEquals(0, result.sent)
+        assertEquals(0, result.failed)
+        assertEquals(1, result.skipped)
+        Mockito.verify(guard).reserveIntroduction(anyValue("D1"), anyValue("D1@example.com"), anyValue(d1))
+        Mockito.verify(expertContactRepository, Mockito.never()).save(
+            anyValue(ExpertContact(campaignId = 0L, orcidId = "", expertEmail = "", expertName = null))
+        )
+        Mockito.verifyNoInteractions(introductionMailComposer, mailDeliveryService, txHelper)
     }
 
     private fun personMember(docId: String, personId: String) =

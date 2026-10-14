@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.campaign.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
+import com.weibo.talentintroduction.campaign.domain.RecipientScope
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.config.MailSchedulingProperties
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
@@ -33,7 +34,9 @@ class InitialOutreachService(
     private val batchRecipientSelectionService: BatchRecipientSelectionService = BatchRecipientSelectionService(),
     /** I-1/I-2/I-3（08）：人物级选择层 —— 同一人物在首发目标里只计一次、只选一个地址。 */
     private val discoveryPersonRecipientService: DiscoveryPersonRecipientService =
-        DiscoveryPersonRecipientService(batchRecipientSelectionService)
+        DiscoveryPersonRecipientService(batchRecipientSelectionService),
+    /** 09 (I-1/I-2/I-3): 人物级首发原子门禁 —— 仅 discovered INTRODUCTION 使用。 */
+    private val outreachGuardService: DiscoveryPersonOutreachGuardService? = null
 ) {
     fun sendInitialBatch(campaignId: Long, size: Int, taskExecutionId: Long? = null): InitialOutreachBatchResult {
         // I2-2: 未配置即快速失败，绝不退化成"不限"。
@@ -76,6 +79,23 @@ class InitialOutreachService(
                 return@forEachIndexed
             }
 
+            // 09 (I-1/I-2/I-3): discovered INTRODUCTION 先占人物级首发许可 —— 未获许可绝不建 contact/发信。
+            val guard = outreachGuardService
+            var guardTicket: OutreachGuardTicket? = null
+            if (guard != null && RecipientScope.isDiscoveryOutreach(expert)) {
+                when (val outcome = guard.reserveIntroduction(
+                    selectedDocId = BatchRecipientSelectionService.docIdOf(expert),
+                    recipient = email,
+                    profile = expert
+                )) {
+                    is OutreachReserveOutcome.Granted -> guardTicket = outcome.ticket
+                    is OutreachReserveOutcome.Denied -> {
+                        skipped += 1
+                        return@forEachIndexed
+                    }
+                }
+            }
+
             val account = senderAccountAssignmentService.selectAccount(expert, assignments, stock = stock)
             val now = LocalDateTime.now()
             val (boundCode, boundAt) = senderAccountBindingService
@@ -96,10 +116,29 @@ class InitialOutreachService(
                 )
             )
 
-            val mail = introductionMailComposer.compose(account.accountCode, expert)
+            val mail = try {
+                introductionMailComposer.compose(account.accountCode, expert)
+            } catch (e: Exception) {
+                // 未调用 SMTP，证明未交付 → 允许原址安全重试；保留原有中断语义。
+                guardTicket?.let { guard?.markSafeRetry(it) }
+                throw e
+            }
+            if (guardTicket != null) {
+                when (val claim = guard!!.claimSending(guardTicket, expert, mail.to)) {
+                    is OutreachClaimOutcome.Denied -> {
+                        // 未取得交付权（revision 变化/地址不合格等）→ 未调用 SMTP，安全重试后跳过。
+                        guard.markSafeRetry(guardTicket)
+                        skipped += 1
+                        return@forEachIndexed
+                    }
+                    else -> {}
+                }
+            }
             val delivered = try {
                 mailDeliveryService.send(account, mail)
             } catch (e: Exception) {
+                // SMTP 结果不明：不可重发。
+                guardTicket?.let { guard?.markUnknown(it) }
                 sentResults += InitialOutreachSendResult(
                     orcidId = expert.orcidId,
                     expertEmail = expert.email.orEmpty(),
@@ -119,9 +158,12 @@ class InitialOutreachService(
                     contact = contact, accountCode = account.accountCode,
                     deliveredMessageId = delivered.messageId, subject = mail.subject,
                     body = mail.text ?: mail.body, attemptId = 0L,
-                    taskExecutionId = taskExecutionId, openTrackingId = delivered.openTrackingId
+                    taskExecutionId = taskExecutionId, openTrackingId = delivered.openTrackingId,
+                    outreachGuardTicket = guardTicket
                 )
             } else {
+                // SMTP 明确未接受 → 证明未交付，安全重试。
+                guardTicket?.let { guard?.markSafeRetry(it) }
                 txHelper.recordFailure(
                     contactId = contact.id ?: error("Saved expert contact id is null"),
                     accountCode = account.accountCode,

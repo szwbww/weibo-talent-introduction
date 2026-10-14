@@ -126,7 +126,9 @@ class ManualInitialOutreachService(
      * 材料提醒保持逐邮箱选择不变。默认复用同一逐邮箱 selector，使旧/新路径准入口径一致。
      */
     private val discoveryPersonRecipientService: DiscoveryPersonRecipientService =
-        DiscoveryPersonRecipientService(batchRecipientSelectionService)
+        DiscoveryPersonRecipientService(batchRecipientSelectionService),
+    /** 09 (I-1/I-2/I-3): 人物级首发原子门禁 —— 仅 discovered INTRODUCTION 使用。 */
+    private val outreachGuardService: DiscoveryPersonOutreachGuardService? = null
 ) {
     private val log = LoggerFactory.getLogger(ManualInitialOutreachService::class.java)
 
@@ -992,8 +994,35 @@ class ManualInitialOutreachService(
                 // I-6：区分「SMTP 前失败（NOT_SENT）」与「SMTP 结果不明（保持 SENDING）」。
                 var smtpAttempted = false
                 var accountFaulted = false
+                // 09 (I-1/I-2/I-3): 人物级首发占位凭据（非 discovered 或 guard 未注入时为 null）。
+                val guard = outreachGuardService
+                var guardTicket: OutreachGuardTicket? = null
 
                 try {
+                    // 09 (I-1/I-2/I-3): discovered INTRODUCTION 先占人物级首发许可 ——
+                    // 未获许可绝不新建/复用 contact、不改 attempt、不发 SMTP。
+                    if (guard != null && scope.mailType == BatchSendType.INTRODUCTION.name && RecipientScope.isDiscoveryOutreach(expert)) {
+                        when (val outcome = guard.reserveIntroduction(
+                            selectedDocId = BatchRecipientSelectionService.docIdOf(expert),
+                            recipient = expert.email.orEmpty(),
+                            profile = expert
+                        )) {
+                            is OutreachReserveOutcome.Granted -> guardTicket = outcome.ticket
+                            is OutreachReserveOutcome.Denied -> {
+                                log.info("Person-level outreach guard denied for {}: {}", normOrcid, outcome.code)
+                                accumulator.recordSkipped(outcome.code, "人物级首发保护：${outcome.code}（${expert.email}）")
+                                processedTotal++
+                                roundProcessed++
+                                roundRejected++
+                                recordVerificationSend(verified, BatchEmailVerificationSendStatus.NOT_SENT, BatchOutcomeReasonCodes.SEND_EXCEPTION)
+                                updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
+                                    "RUNNING", "人物级首发保护：${outcome.code}", errors, mode, roundNumber, config, runAccountStats,
+                                    roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
+                                continue
+                            }
+                        }
+                    }
+
                     // 1. Create or reuse contact (occupy the slot) — I-7
                     val contact = existingContact ?: run {
                         val now = LocalDateTime.now()
@@ -1121,6 +1150,27 @@ class ManualInitialOutreachService(
                         break
                     }
 
+                    // 09 (I-2/I-3): 发送前取得人物级唯一交付权（revision/地址复验 + CAS RESERVED→SENDING）。
+                    // 全部原门禁已通过后才 CAS；失败即不发送，保持占位。
+                    if (guardTicket != null) {
+                        when (val claim = guard!!.claimSending(guardTicket, expert, mail.to)) {
+                            is OutreachClaimOutcome.Denied -> {
+                                // 未调用 SMTP，证明未交付 → 安全重试。
+                                guard.markSafeRetry(guardTicket)
+                                accumulator.recordSkipped(claim.code, "首发交付权未取得：${claim.code}（${expert.email}）")
+                                processedTotal++
+                                roundProcessed++
+                                roundRejected++
+                                recordVerificationSend(verified, BatchEmailVerificationSendStatus.NOT_SENT, BatchOutcomeReasonCodes.SEND_EXCEPTION)
+                                updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
+                                    "RUNNING", "首发交付权未取得：${claim.code}", errors, mode, roundNumber, config, runAccountStats,
+                                    roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
+                                continue
+                            }
+                            else -> {}
+                        }
+                    }
+
                     // 5. Send via SMTP
                     smtpAttempted = true
                     val delivered = mailDeliveryService.send(account, mail)
@@ -1131,7 +1181,8 @@ class ManualInitialOutreachService(
                             contact = contact, accountCode = account.accountCode,
                             deliveredMessageId = messageId, subject = mail.subject,
                             body = mail.text ?: mail.body, attemptId = attempt.id!!,
-                            taskExecutionId = executionId, openTrackingId = delivered.openTrackingId
+                            taskExecutionId = executionId, openTrackingId = delivered.openTrackingId,
+                            outreachGuardTicket = guardTicket
                         )
                         accumulator.recordSuccess()
                         stat.success++
@@ -1222,6 +1273,15 @@ class ManualInitialOutreachService(
                             }
                         }
                     }
+                    // 09 (I-2): SMTP 未交付时的占位推进 —— INFRASTRUCTURE（网络层，结果不明）→ UNKNOWN；
+                    // 其余（明确未接受）→ SAFE_RETRY（绑定原地址）。SENT 已由 recordSuccess 联动。
+                    if (delivered.status != "SENT" && guardTicket != null) {
+                        if (delivered.errorCategory == SmtpErrorCategory.INFRASTRUCTURE) {
+                            guard!!.markUnknown(guardTicket)
+                        } else {
+                            guard!!.markSafeRetry(guardTicket)
+                        }
+                    }
                 } catch (e: EmailVerificationAuditException) {
                     // I-6：审计边界先于广义 catch —— 绝不进入 pauseAccount / SMTP 故障统计，也不伪增失败。
                     log.error("Email verification audit failed for ORCID {}: {}", normOrcid, e.message)
@@ -1232,6 +1292,10 @@ class ManualInitialOutreachService(
                     break
                 } catch (e: Exception) {
                     log.error("Failed to process ORCID: {}", normOrcid, e)
+                    // 09 (I-2): 已进 SMTP 的结果不明 → UNKNOWN（不可重发）；未进 SMTP → 安全重试。
+                    if (guardTicket != null) {
+                        if (smtpAttempted) guard!!.markUnknown(guardTicket) else guard!!.markSafeRetry(guardTicket)
+                    }
                     // I-6：未进入 SMTP 的记 NOT_SENT + 原因；已进 SMTP 的结果不明，保持 SENDING 不覆盖。
                     if (!smtpAttempted) {
                         verified?.let {

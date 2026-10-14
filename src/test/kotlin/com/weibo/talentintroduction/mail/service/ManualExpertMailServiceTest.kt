@@ -4,8 +4,12 @@ import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.OperatorStatus
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ConversationStateService
+import com.weibo.talentintroduction.campaign.service.DiscoveryPersonOutreachGuardService
 import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
+import com.weibo.talentintroduction.campaign.service.OutreachGuardReasonCodes
+import com.weibo.talentintroduction.campaign.service.OutreachReserveOutcome
 import com.weibo.talentintroduction.common.domain.ConversationStatus
+import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
@@ -38,6 +42,8 @@ class ManualExpertMailServiceTest {
     private val senderAccountBindingService = Mockito.mock(SenderAccountBindingService::class.java)
     private val expertOperatorStatusService = Mockito.mock(ExpertOperatorStatusService::class.java)
     private val mailContentService = MailContentService()
+    private val mailVariableService = Mockito.mock(MailVariableService::class.java)
+    private val outreachGuardService = Mockito.mock(DiscoveryPersonOutreachGuardService::class.java)
     private val service = ManualExpertMailService(
         expertContactRepository,
         mailRecordRepository,
@@ -50,6 +56,34 @@ class ManualExpertMailServiceTest {
         conversationStateService,
         senderAccountBindingService,
         expertOperatorStatusService
+    )
+
+    /** 09：接入人物级首发门禁 + 可解析画像的详情发送 service。 */
+    private fun guardedService() = ManualExpertMailService(
+        expertContactRepository,
+        mailRecordRepository,
+        mailRecordQaRuleRepository,
+        mailSenderAccountService,
+        mailSenderAccountRepository,
+        mailDeliveryService,
+        mailComposeTemplateService,
+        mailContentService,
+        conversationStateService,
+        senderAccountBindingService,
+        expertOperatorStatusService,
+        mailVariableService = mailVariableService,
+        outreachGuardService = outreachGuardService
+    )
+
+    private fun discoveryProfile() = ExpertProfile(
+        orcidId = "orcid-1",
+        email = "expert@test.com",
+        givenNames = "Given",
+        familyNames = "Family",
+        country = "China",
+        keyword = "keyword",
+        employment = "University",
+        emailSource = "PAPER_FULLTEXT"
     )
 
     private val contact = ExpertContact(
@@ -234,6 +268,47 @@ class ManualExpertMailServiceTest {
         receivedAt = LocalDateTime.now(),
         sentAt = null
     )
+
+    @Test
+    fun `detail introduction send is gated by the person-level guard and fails closed (I-1 I-2 I-3)`() {
+        val account = stubAccount()
+        stubTemplateSend(account)
+        val profile = discoveryProfile()
+        Mockito.`when`(mailVariableService.resolveExpertProfileFor(contact)).thenReturn(profile)
+        Mockito.`when`(
+            mailVariableService.buildVariables(
+                anyValue(account), anyValue(profile), anyValue("expert@test.com"), eqValue(false), anyValue(contact)
+            )
+        ).thenReturn(mapOf("senderEmail" to account.senderEmail, "senderName" to account.senderName))
+        Mockito.`when`(
+            outreachGuardService.reserveIntroduction(anyValue("orcid-1"), anyValue("expert@test.com"), anyValue(profile))
+        ).thenReturn(OutreachReserveOutcome.Denied(OutreachGuardReasonCodes.ALREADY_SENT))
+
+        val ex = assertThrows<IllegalStateException> {
+            guardedService().sendManualMail(1L, ManualMailSendCommand("COMPOSE_TEMPLATE", "10", null))
+        }
+
+        assertTrue(ex.message!!.contains("人物级首发保护"))
+        Mockito.verify(outreachGuardService)
+            .reserveIntroduction(anyValue("orcid-1"), anyValue("expert@test.com"), anyValue(profile))
+        Mockito.verify(mailDeliveryService, Mockito.never()).send(anyValue(account), anyValue(ComposedMail("", "", "")))
+    }
+
+    @Test
+    fun `non-introduction detail send keeps the old path without the guard (I-1)`() {
+        val account = stubAccount()
+        stubReminderSend(account, anchor = null)
+        Mockito.`when`(
+            mailVariableService.buildVariables(
+                anyValue(account), anyValue(discoveryProfile()), anyValue("expert@test.com"), eqValue(false), anyValue(contact)
+            )
+        ).thenReturn(mapOf("senderEmail" to account.senderEmail, "senderName" to account.senderName))
+
+        guardedService().sendManualMail(1L, ManualMailSendCommand("COMPOSE_TEMPLATE", "20", null))
+
+        Mockito.verifyNoInteractions(outreachGuardService)
+        Mockito.verify(mailDeliveryService).send(anyValue(account), anyValue(ComposedMail("", "", "")))
+    }
 
     @Test
     fun `sendManualMail persists bounded delivery failure detail`() {
