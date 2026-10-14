@@ -81,14 +81,15 @@
 |---|---|
 |src/main/resources/static/app.js|修改|
 |src/test/js/discoveryPersonEmails.test.js|新增|
+|src/main/resources/static/index.html|A12：16 个资源缓存键同值 bump 为 20261014-person-emails（仅键值，无结构改动）|
 
-共 2 文件；前端一个子系统；CSS/HTML 静态文件修改 0，共享存储字段新增 0。
+共 3 文件（A12：第 3 个为 index.html 缓存键 bump）；前端一个子系统；CSS 静态文件修改 0、HTML 仅缓存键值 bump，共享存储字段新增 0。
 
 ## 验收标准
 
 - I-1：列表人次和 total 一致；三个邮箱显示“共 3 个邮箱”；点击/发送仍携带原 docId/contactId。
 - I-2：两详情入口邮箱集一致；旧响应不覆盖；特殊字符按文本展示；无 person 响应的原页面不变。
-- S-1/S-2：diff 无 CSS/inline style/未声明 class；DOM 匹配契约；桌面与窄屏目测无溢出。
+- S-1/S-2：diff 无 CSS/inline style/未声明 class；DOM 匹配契约；桌面与窄屏目测无溢出；缓存键 16 个 `?v=` 同值 `20261014-person-emails`（A12）。
 
 ## 人工验收清单
 
