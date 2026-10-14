@@ -74,13 +74,15 @@ data class RecipientPreflightDecision(
     val orcidId: String,
     val admissionState: String,
     val included: Boolean,
+    /** I-1/MAIN M-3：准入未通过时唯一贡献的准入原因 key（条件未通过时为空，口径同 selector）。 */
+    val admissionReasonKeys: List<String>,
     val conditionReasonKeys: List<String>,
     val protectionReasonKeys: List<String>,
     val templateMissingKeys: List<String>,
     val verificationPhase: RecipientVerificationPhase
 ) {
     val reasonKeys: List<String>
-        get() = conditionReasonKeys + protectionReasonKeys +
+        get() = admissionReasonKeys + conditionReasonKeys + protectionReasonKeys +
             templateMissingKeys.map { RecipientPreflightReasonKeys.TEMPLATE_MISSING } +
             if (verificationPhase == RecipientVerificationPhase.CACHED_REJECTED) {
                 listOf(RecipientPreflightReasonKeys.EMAIL_VERIFICATION_REJECTED)
@@ -88,7 +90,11 @@ data class RecipientPreflightDecision(
                 emptyList()
             }
 
-    val eligible: Boolean get() = reasonKeys.isEmpty()
+    /**
+     * I-1/MAIN M-3：准入事实必须折进资格判定 —— 未获准入的母集成员即使显式条件全通过
+     * 也**不是**通过目标（否则会被计入 `eligibleBeforeLiveVerification` 而漏出 `excludedUnique`）。
+     */
+    val eligible: Boolean get() = included && reasonKeys.isEmpty()
 }
 
 /** I-1/I-5：一次只读预检查的输入 —— 母集（仅层级/标签）与本次显式条件分开传入。 */
@@ -189,6 +195,7 @@ class BatchRecipientPreflightService(
                 orcidId = profile.orcidId,
                 admissionState = (selected?.admissionState ?: RecipientAdmissionState.UNINITIALIZED).name,
                 included = selected?.included == true,
+                admissionReasonKeys = admissionKeys,
                 conditionReasonKeys = conditionKeys,
                 protectionReasonKeys = protectionKeys,
                 templateMissingKeys = templateKeys,
@@ -373,6 +380,7 @@ data class BatchRecipientDiagnosticEntry(
     val orcidId: String? = null,
     val admissionState: String? = null,
     val eligible: Boolean? = null,
+    val admissionReasonKeys: List<String> = emptyList(),
     val conditionReasonKeys: List<String> = emptyList(),
     val protectionReasonKeys: List<String> = emptyList(),
     val templateMissingKeys: List<String> = emptyList(),

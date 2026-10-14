@@ -206,6 +206,56 @@ class BatchRecipientPreflightServiceTest {
         assertTrue(result.reasonHits.all { !it.truncated })
     }
 
+    // ── I-1/MAIN M-3：准入事实折进资格判定 ────────────────────────────────────
+
+    @Test
+    fun `a discovery target without approval is excluded even when explicit conditions pass (I-1 M-3)`() {
+        // 未 stub 任何准入结论 → 该发现档案为 UNINITIALIZED；显式条件（地区/状态/类型）全通过。
+        val result = service.preflight(input(listOf(expert("N"))))
+
+        val decision = result.decisions.single()
+        assertEquals("UNINITIALIZED", decision.admissionState)
+        assertFalse(decision.included)
+        assertFalse(decision.eligible, "未获准入不得计入通过目标")
+        assertEquals(listOf(RecipientAdmissionReasonKeys.UNINITIALIZED), decision.admissionReasonKeys)
+        assertEquals(listOf(RecipientAdmissionReasonKeys.UNINITIALIZED), decision.reasonKeys)
+        assertEquals(1, result.baseline)
+        assertEquals(1, result.excludedUnique)
+        assertEquals(0, result.eligibleBeforeLiveVerification)
+        assertEquals(
+            1,
+            result.reasonHits.single { it.reasonKey == RecipientAdmissionReasonKeys.UNINITIALIZED }.count
+        )
+    }
+
+    @Test
+    fun `a needs-review discovery target is excluded with its admission reason (I-1 M-3)`() {
+        Mockito.`when`(review.resolveAdmissionBatch(Mockito.anyList())).thenAnswer { invocation ->
+            val keys = invocation.getArgument<List<DiscoveryReviewAdmissionKey>>(0)
+            keys.associate { key ->
+                key.docId to DiscoveryReviewResolvedAdmission(
+                    docId = key.docId,
+                    decision = DiscoveryReviewDecision.NEEDS_REVIEW.name,
+                    admitted = false,
+                    manual = false,
+                    initialized = true,
+                    identityChanged = false,
+                    revision = 1L,
+                    syncErrorCode = null
+                )
+            }
+        }
+
+        val result = service.preflight(input(listOf(expert("R"))))
+
+        val decision = result.decisions.single()
+        assertEquals("NEEDS_REVIEW", decision.admissionState)
+        assertFalse(decision.eligible)
+        assertEquals(listOf(RecipientAdmissionReasonKeys.NEEDS_REVIEW), decision.reasonKeys)
+        assertEquals(1, result.excludedUnique)
+        assertEquals(0, result.eligibleBeforeLiveVerification)
+    }
+
     // ── I-5：样本上限与截断标记 ────────────────────────────────────────────────
 
     @Test

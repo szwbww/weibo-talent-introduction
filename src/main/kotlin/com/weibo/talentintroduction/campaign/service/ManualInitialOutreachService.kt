@@ -770,6 +770,7 @@ class ManualInitialOutreachService(
                     orcidId = decision.orcidId,
                     admissionState = decision.admissionState,
                     eligible = decision.eligible,
+                    admissionReasonKeys = decision.admissionReasonKeys,
                     conditionReasonKeys = decision.conditionReasonKeys,
                     protectionReasonKeys = decision.protectionReasonKeys,
                     templateMissingKeys = decision.templateMissingKeys,
