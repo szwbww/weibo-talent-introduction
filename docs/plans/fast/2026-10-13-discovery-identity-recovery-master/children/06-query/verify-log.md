@@ -22,3 +22,28 @@ Verifier: Verify06
 
 ### Required Action
 - COMPLETE_CHILD
+
+---
+
+## Light Verification: LIGHT_PASS_WITH_NOTES
+Child: 06-query (`docs/plans/2026-10-13/discovery-person-06-query.md`, A13-revised)
+Boundary: `7a96b5957b75096110e392b25a98bb9ea44990a5..0755833e3e5e0480d9ad40443ae5ebba0e91ac6a`
+Verifier: Verify06b
+
+### Four Gates
+| Gate | Result | Evidence |
+|---|---|---|
+| Authorized scope | PASS | `git diff --name-status 7a96b59..0755833` = 8 authorized 06-query files across the two 06-query commits, plus sibling-child and docs bookkeeping. Epoch-2 commit `0755833` touches exactly 4 of the 8 authorized files (2 main: `DiscoveryPersonQueryService.kt`, `ExpertIndexController.kt`; 2 test: `DiscoveryPersonQueryServiceTest.kt`, `ExpertIndexControllerTest.kt`); the other 4 are untouched by epoch 2. Epoch-1 commit `db8ed30` touches exactly the 8 authorized. Non-06 product files in the range (`app.js`, `index.html`, `src/test/js/discoveryPersonEmails.test.js` from `4fbc761`) are child 07-ui's files, authorized by `docs/plans/2026-10-13/discovery-person-07-ui.md:82-84` (A12). All remaining commits are `docs/plans/fast/**` bookkeeping. Uncommitted working-tree change is only `children/06-query/execution.md` (epoch-2 report, docs). |
+| Plan and invariants | PASS | A13 projection present and same-source: `scanDiscovered` accumulates per-person hit counts in `memberCountByKey.merge(key, 1, Int::plus)` inside the same `findMembers` batch loop (`DiscoveryPersonQueryService.kt:303-307`) and emits `memberCountByDocId` keyed by representative docId (`:320-326`); `searchPersons` maps each row to `PersonListEntry(profile, memberCount = scan.memberCountByDocId[esDocId] ?: 1)` (`:93-99`). Computed from the full scan regardless of page → cross-page consistent; non-discovered/others rows default to 1. No ES field additions (epoch-2 diff has none; `ExpertSearchService` untouched). DB grouped branch untouched (`ExpertContactManagementController.kt` not modified in epoch 2). Epoch-1 I-1/I-2/I-3 spot-check: unchanged — the epoch-2 diff is confined to the 4 files and does not touch filter construction (`filters + discoveredFilter()/notDiscoveredFilter()`), dedupe/representative (`:297-307`), `totalHits = othersTotal + scan.personCount` (`:100`), or read-only `personDetail`. Tests: `DiscoveryPersonQueryServiceTest.kt:191-215` (memberCount=3 discovered, cross-page total consistent, other row=1); `ExpertIndexControllerTest.kt:198-224` (stub `PersonListEntry(expert, memberCount=3)`, response row carries 3). |
+| Required commands | PASS | Fresh C1 (JDK 11, worktree HEAD `0755833`): exit 0, BUILD SUCCESS; `Tests run: 124, Failures: 0, Errors: 0, Skipped: 0` — DiscoveryPersonQueryServiceTest 12/0/0, ExpertSearchServiceTest 79/0/0, ExpertIndexControllerTest 20/0/0, ExpertContactManagementControllerTest 13/0/0. Epoch 1 was 123; delta +1 = the new A13 service test (11→12); other three classes unchanged. JS gate inside `mvn test`: tests 1675 / suites 320 / pass 1675 / fail 0 (≥1675). No new failures. |
+| Downstream interfaces | PASS | `ExpertIndexResponse.memberCount: Int = 1` added after `contactStatus`, with matching `from(...)` param default 1 (`ExpertIndexController.kt:429,459,480`); `listExperts` passes `memberCount = entry.memberCount` (`:109`). Default 1 preserves the old/non-discovered response shape. Satisfies 07 S-1 "数量取响应" (`children/07-ui/brief.md:32`, `discovery-person-07-ui.md:25`). DB grouped branch and `GET /api/experts/person` structure from epoch 1 unchanged. |
+
+### AUTO_FIX
+- N/A
+
+### RECORD_ONLY
+- R-1 (P2, carried from epoch-1 O-1, unresolved, out of A13 scope): deep-pagination edge — `searchPersons` reads the "其他" prefix via `searchExpertsWithSort(level, othersFilter, 0, from + size, sortBy)` (`DiscoveryPersonQueryService.kt:90`) whose `require(size in 1..1000)` (`ExpertSearchService.kt:1254`) throws `IllegalArgumentException` (HTTP 400) when `from + size > 1000`. Unchanged by epoch 2; no test covers it; repair not uniquely determined. Reserved for 07 pagination.
+- R-2 (P2, carried from epoch-1 O-2): performance gate (p95≤2s / extra heap ≤128 MiB on 51,829-row real-shape dataset) recorded as unresolved with no fabricated numbers in `execution.md` (epoch 1 and epoch 2). Failure semantics (100,000-doc cap / 10s budget → retryable `DiscoveryPersonQueryUnavailableException`) and scroll closure remain unit-covered; no fabricated measurement found.
+
+### Required Action
+- COMPLETE_CHILD

@@ -66,3 +66,51 @@
 ## 提交
 
 - `feat(fast-p): implement 06-query`，仅含 8 个授权文件（见下方 commit SHA）。
+
+---
+
+## Epoch 2（A13：ES 列表人物投影携带成员数 memberCount，2026-10-14）
+
+- Child：`06-query`（epoch 2）
+- Authoritative plan：`docs/plans/2026-10-13/discovery-person-06-query.md`（A13-revised，does not change the 8-file set or C1）
+- 起始 HEAD：`d73fd824e7075507b3bb61ebf42cea05ebe072ff`（`docs(fast-p): record amendment A13 and resume 06-query epoch 2`），`git status --porcelain` 为空。
+- 结果：READY_FOR_VERIFICATION
+
+### 命令与计数
+
+| 命令 | 退出码 | 计数 |
+|---|---|---|
+| C1 `JAVA_HOME=…/zulu-11.jdk/Contents/Home mvn -Dtest=DiscoveryPersonQueryServiceTest,ExpertSearchServiceTest,ExpertIndexControllerTest,ExpertContactManagementControllerTest test` | 0（BUILD SUCCESS） | 四定向用例 124，失败 0 |
+| ├ DiscoveryPersonQueryServiceTest | — | tests 12 / failures 0 / errors 0（epoch 1 为 11，+1） |
+| ├ ExpertSearchServiceTest | — | tests 79 / failures 0 / errors 0 |
+| ├ ExpertIndexControllerTest | — | tests 20 / failures 0 / errors 0 |
+| └ ExpertContactManagementControllerTest | — | tests 13 / failures 0 / errors 0 |
+| JS 门禁（`mvn test` 内 exec-maven-plugin，`node --test`） | 0 | tests 1675 / suites 320 / pass 1675 / fail 0（≥1675，本计划不改前端） |
+
+### 改动摘要（仅 4 个授权文件；其余 4 个授权文件未变）
+
+1. `src/main/kotlin/…/discovery/service/DiscoveryPersonQueryService.kt`
+   - 新增只读行投影 `PersonListEntry(profile, memberCount)`；`PersonSearchResult.experts` 由 `List<ExpertProfile>` 改为 `List<PersonListEntry>`。
+   - `scanDiscovered`：在归组同一人物时以 `memberCountByKey` 按人物键累计命中成员数（同一次批量 `findMembers` 读取得出），并输出 `memberCountByDocId`（代表成员 docId → 成员数）挂到 `DiscoveredScan`。
+   - `searchPersons`：列表页逐行取 `memberCountByDocId[docId] ?: 1`——discovered 行取该人全部命中成员数，其他分区（非 discovered，天然一人）为 1。**未新增 ES 字段**，无写路径，只读语义不变。
+2. `src/main/kotlin/…/expert/controller/ExpertIndexController.kt`
+   - `listExperts` 行映射改用 `entry.profile` 并透传 `entry.memberCount`。
+   - `ExpertIndexResponse` 新增 `memberCount: Int = 1`（放在 contactStatus 之后）与 `from(...)` 同名参数（默认 1）。DB 分组分支与旧客户端响应契约不变。
+3. `src/test/kotlin/…/discovery/service/DiscoveryPersonQueryServiceTest.kt`
+   - 既有断言适配 `entry.profile.esDocId`；新增 A13 用例：discovered 行携带 memberCount（=3，跨页 total 一致），其他分区行 memberCount=1。
+4. `src/test/kotlin/…/expert/controller/ExpertIndexControllerTest.kt`
+   - `searchPersons` stub 改为 `PersonListEntry(expert, memberCount = 3)`；断言 `listExperts` 响应行透传 `memberCount = 3`（非 discovered/旧形状字段值不变）。
+
+### 未决项（沿用 epoch 1，不伪造测量）
+
+- **性能门禁未执行**：同上，保留给人工/上线前验证；不以单测冒充规模性能实测。
+
+### 边界遵守
+
+- 只读 ES/SQL，未新增投影写路径；无迁移/新 ES 字段；无前端改动。
+- DB 分组分支与旧客户端响应契约、`ExpertSearchService` 发送侧低层方法单位均不变。
+- `docs/plans/fast/**` 未纳入提交。
+
+### 提交
+
+- `feat(fast-p): implement 06-query (epoch 2)`，仅含 4 个授权文件（2 主 + 2 测试；见下方 commit SHA）。
