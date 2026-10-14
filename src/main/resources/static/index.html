@@ -8,13 +8,13 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20261013-materials-zip">
-    <link rel="stylesheet" href="expert-materials.css?v=20261013-materials-zip">
-    <link rel="stylesheet" href="mailbox-chat.css?v=20261013-materials-zip">
-    <link rel="stylesheet" href="meeting-confirmation.css?v=20261013-materials-zip">
-    <link rel="stylesheet" href="world-clock.css?v=20261013-materials-zip">
-<link rel="stylesheet" href="meeting-records.css?v=20261013-materials-zip">
-<link rel="stylesheet" href="contact-details.css?v=20261013-materials-zip">
+    <link rel="stylesheet" href="styles.css?v=20261014-batch-filter">
+    <link rel="stylesheet" href="expert-materials.css?v=20261014-batch-filter">
+    <link rel="stylesheet" href="mailbox-chat.css?v=20261014-batch-filter">
+    <link rel="stylesheet" href="meeting-confirmation.css?v=20261014-batch-filter">
+    <link rel="stylesheet" href="world-clock.css?v=20261014-batch-filter">
+<link rel="stylesheet" href="meeting-records.css?v=20261014-batch-filter">
+<link rel="stylesheet" href="contact-details.css?v=20261014-batch-filter">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -1489,7 +1489,7 @@
                                     <span class="batch-task-status-switch"></span>
                                     <span class="batch-task-status-label" id="batchConfigEditorGateFilterLabel">已关闭</span>
                                 </label>
-                                <span class="batch-gate-hint" id="batchConfigEditorGateFilterHint">开启后仅向满足该模板必填字段的专家发送，缺字段的会在发送时被门禁拦下并计入失败；关闭时不按个性化缺项排除，仍按本次显式条件筛选。</span>
+                                <span class="batch-gate-hint" id="batchConfigEditorGateFilterHint">开启后按模板必填字段筛选，缺项会在发送前排除；关闭时不因个性化缺项排除。</span>
                             </div>
                             <div class="batch-gate-keys" id="batchConfigEditorGateFilterKeys" hidden></div>
                         </div>
@@ -1756,7 +1756,7 @@
                                 <span class="batch-task-status-switch"></span>
                                 <span class="batch-task-status-label" id="batchManualGateFilterLabel">已关闭</span>
                             </label>
-                            <span class="batch-gate-hint" id="batchManualGateFilterHint">仅影响本次执行，不修改原定时任务；开启后按该模板必填字段门禁，关闭时不按个性化缺项排除，仍按本次显式条件筛选。</span>
+                            <span class="batch-gate-hint" id="batchManualGateFilterHint">仅影响本次执行；开启后按模板必填字段筛选，关闭时不因个性化缺项排除。</span>
                         </div>
                         <div class="batch-gate-keys" id="batchManualGateFilterKeys" hidden></div>
                         <span class="batch-config-diff-badge" hidden>已修改</span>
@@ -2404,14 +2404,14 @@
 <dialog id="playerDialog" class="cr-dialog cr-player-dialog"><header class="cr-dialoghead"><h2 id="playerTitle">会议视频</h2><button class="button cr-iconbtn" type="button" data-close="playerDialog" aria-label="关闭视频">×</button></header><video id="player" controls preload="metadata"></video><p class="cr-hint" id="playerHint">若浏览器不支持该编码，可下载原视频观看。</p></dialog>
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20261013-materials-zip"></script>
-<script src="expert-materials.js?v=20261013-materials-zip"></script>
-<script src="meeting-confirmation.js?v=20261013-materials-zip"></script>
-<script src="mailbox-chat.js?v=20261013-materials-zip"></script>
-<script src="contact-history.js?v=20261013-materials-zip"></script>
-<script src="meeting-records.js?v=20261013-materials-zip"></script>
-<script src="contact-details.js?v=20261013-materials-zip"></script>
-<script src="app.js?v=20261013-materials-zip"></script>
-<script src="world-clock.js?v=20261013-materials-zip"></script>
+<script src="trust-reply-workbench.js?v=20261014-batch-filter"></script>
+<script src="expert-materials.js?v=20261014-batch-filter"></script>
+<script src="meeting-confirmation.js?v=20261014-batch-filter"></script>
+<script src="mailbox-chat.js?v=20261014-batch-filter"></script>
+<script src="contact-history.js?v=20261014-batch-filter"></script>
+<script src="meeting-records.js?v=20261014-batch-filter"></script>
+<script src="contact-details.js?v=20261014-batch-filter"></script>
+<script src="app.js?v=20261014-batch-filter"></script>
+<script src="world-clock.js?v=20261014-batch-filter"></script>
 </body>
 </html>
