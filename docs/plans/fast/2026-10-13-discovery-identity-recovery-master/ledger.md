@@ -9,7 +9,7 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-13T21:55:30+0800
-- Current child: 06-query
+- Current child: 07-ui
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: Impl04-2 运行中断（exit 1，getaddrinfo ENOTFOUND opencode.ai；2026-10-14T09:08+0800 记录）；无提交；已由 Impl04b 成功接续（de4c1a0）
@@ -24,7 +24,7 @@
 | 02-replay | docs/plans/2026-10-13/discovery-identity-recovery-02-replay.md | commit:58a9e511e327d61e8e3645c738921979ff26a518 | admission-relaxation,01-duplicate | 2 | LIGHT_PASS | bc294d2e991e58346ce456f4e5eeb7525a2b5771 | abdf9f4645958e1ef7ef7c44963b51c4bc5898d4 | 0 | — | abdf9f4645958e1ef7ef7c44963b51c4bc5898d4 | 49ebf99365e97c0717146cdaf7e34d9000ff77cd | epoch1 zero-commit PLAN_CONFLICT（A10）→ epoch2 全量实施 11 文件（含 policy /works/{id}→SINGLETON）；C1 156、C2 294、C3 9、JS 1657×2 全绿；核实者 Verify02-2 四门禁 PASS 无 RECORD_ONLY；写者 Impl02b |
 | 04-registry | docs/plans/2026-10-13/discovery-person-04-registry.md | commit:9bf6b8ec1319863002f7d21f4320108a0a8ec2e3 | none | 1 | LIGHT_PASS_WITH_NOTES | abdf9f4645958e1ef7ef7c44963b51c4bc5898d4 | de4c1a042a48ec139c95f659858e78746b6208a6 | 0 | — | de4c1a042a48ec139c95f659858e78746b6208a6 | e1bdbd3e9632968e62e785594a2d7e47cae15479 | 7 授权文件（V156+A11）；C1 6、C2 17、C3 45、JS 1657×3 全绿；D1/D2/D3 经核实确认必要（O-1..O-3），O-4 为 P2 测试质量注记；Impl04-2 网络中断→Impl04b 接续；写者 Impl04b |
 | 05-ingestion | docs/plans/2026-10-13/discovery-person-05-ingestion.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 01-duplicate,02-replay,04-registry | 1 | LIGHT_PASS_WITH_NOTES | de4c1a042a48ec139c95f659858e78746b6208a6 | 7a96b5957b75096110e392b25a98bb9ea44990a5 | 0 | — | 7a96b5957b75096110e392b25a98bb9ea44990a5 | 00327f7a226a95976bf4fffe301f6c44e519251b | 8 授权文件；C1 272（190/49/16/17）、C2 23（17/6）、JS 1657×2 全绿；O-1 为 P2 覆盖注记（SCOPE_CONFLICT 刷新无专属断言）；写者 Impl05-2、核实者 Verify05-2 |
-| 06-query | docs/plans/2026-10-13/discovery-person-06-query.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 04-registry,05-ingestion | — | PENDING | — | — | — | — | — | — | A4 新增；与 07 API/DOM 联合验收；8 授权文件 |
+| 06-query | docs/plans/2026-10-13/discovery-person-06-query.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 04-registry,05-ingestion | 1 | LIGHT_PASS_WITH_NOTES | 7a96b5957b75096110e392b25a98bb9ea44990a5 | db8ed30807578f93e8082b636c52f33a9a4d1ac8 | 0 | — | db8ed30807578f93e8082b636c52f33a9a4d1ac8 | d106c23870dd57f49691b92c68e14ee5751a1e2d | 8 授权文件；C1 123（11/79/20/13）、JS 1657 全绿；性能门禁（51,829 规模 p95/堆）记录为未决（不可在本环境伪造）；O-1 深分页 from+size>1000 行为注记；写者 Impl06、核实者 Verify06 |
 | 07-ui | docs/plans/2026-10-13/discovery-person-07-ui.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 06-query | — | PENDING | — | — | — | — | — | — | A5 新增；2 授权文件；样式契约 S-1/S-2 |
 | 08-selection | docs/plans/2026-10-13/discovery-person-08-selection.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 04-registry,05-ingestion,06-query | — | PENDING | — | — | — | — | — | — | A6 新增；09 完成前不得开启人物首发；10 授权文件 |
 | 09-send-guard | docs/plans/2026-10-13/discovery-person-09-send-guard.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 04-registry,08-selection | — | PENDING | — | — | — | — | — | — | A7 新增；V157 人物级首发保护；10 授权文件 |
