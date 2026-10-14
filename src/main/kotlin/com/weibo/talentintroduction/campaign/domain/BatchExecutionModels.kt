@@ -338,6 +338,7 @@ data class RecipientScope(
 object BatchOutcomeReasonCodes {
     const val SEND_EXCEPTION = "SEND_EXCEPTION"
     const val TEMPLATE_RENDER_FAILED = "TEMPLATE_RENDER_FAILED"
+    const val INVALID_RENDERED_SUBJECT = "INVALID_RENDERED_SUBJECT"
     const val ACCOUNT_UNAVAILABLE = "ACCOUNT_UNAVAILABLE"
     const val SUPPRESSED = "SUPPRESSED"
     const val NO_CONTACT = "NO_CONTACT"
@@ -373,6 +374,7 @@ object BatchOutcomeReasonCodes {
     val LABELS = mapOf(
         SEND_EXCEPTION to "发送异常",
         TEMPLATE_RENDER_FAILED to "模板渲染失败",
+        INVALID_RENDERED_SUBJECT to "主题渲染不合法",
         ACCOUNT_UNAVAILABLE to "邮箱账号不可用",
         SUPPRESSED to "退订/抑制",
         NO_CONTACT to "无联系人账号",

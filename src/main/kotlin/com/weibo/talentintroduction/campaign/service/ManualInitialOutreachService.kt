@@ -56,6 +56,7 @@ import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
 import com.weibo.talentintroduction.template.service.ComposeTemplateSnapshot
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
+import com.weibo.talentintroduction.template.service.InvalidRenderedSubjectException
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.LocalDate
@@ -1271,34 +1272,6 @@ class ManualInitialOutreachService(
                 var accountFaulted = false
 
                 try {
-                    // 1. Create or reuse contact (occupy the slot) — I-7
-                    val contact = existingContact ?: run {
-                        val now = LocalDateTime.now()
-                        val (boundCode, boundAt) = senderAccountBindingService
-                            .bindingFieldsFor(account.accountCode, now)
-                        expertContactRepository.save(ExpertContact(
-                            campaignId = campaignId, orcidId = normOrcid,
-                            expertEmail = expert.email.orEmpty(), expertName = expert.displayName,
-                            currentStatus = "NEW", operatorStatus = "NOT_CONTACTED",
-                            country = expert.country,
-                            autoReplyEnabled = autoReplySettingService.isGlobalEnabled(),
-                            boundSenderAccountCode = boundCode,
-                            senderAccountBoundAt = boundAt,
-                            createdAt = now, updatedAt = now
-                        ))
-                    }
-
-                    // 2. Double-check: skip if SENT introduction already exists (anti-duplicate, I-7)
-                    if (hasSentIntroduction(contact.id!!)) {
-                        log.info("SENT introduction already exists for contact {}, skipping", contact.id)
-                        accumulator.recordSkipped(BatchOutcomeReasonCodes.DEDUP)
-                        processedTotal++
-                        roundProcessed++
-                        // I-6：PASS 后未进 SMTP 的分支保留 NOT_SENT + 具体原因。
-                        recordVerificationSend(verified, BatchEmailVerificationSendStatus.NOT_SENT, BatchOutcomeReasonCodes.DEDUP)
-                        continue
-                    }
-
                     val messageId = "<manual-outreach-${normOrcid}-${UUID.randomUUID()}@weibo.com>"
                     val mail = try {
                         if (templateSnapshot != null) {
@@ -1313,6 +1286,18 @@ class ManualInitialOutreachService(
                                 enforcePersonalizationGate = snapshot.gateFilterEnabled
                             ).copy(messageId = messageId)
                         }
+                    } catch (e: InvalidRenderedSubjectException) {
+                        val message = "主题渲染不合法（${e.reason}）：${expert.email}"
+                        log.info("Skipping ORCID {}: {}", normOrcid, e.reason)
+                        accumulator.recordSkipped(BatchOutcomeReasonCodes.INVALID_RENDERED_SUBJECT, message)
+                        roundRejected++
+                        processedTotal++
+                        roundProcessed++
+                        recordVerificationSend(verified, BatchEmailVerificationSendStatus.NOT_SENT, BatchOutcomeReasonCodes.INVALID_RENDERED_SUBJECT)
+                        updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
+                            "RUNNING", message, errors, mode, roundNumber, config, runAccountStats,
+                            roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
+                        continue
                     } catch (e: PersonalizationGateException) {
                         log.info("Personalization gate blocked ORCID {}: missing keys {}", normOrcid, e.missingKeys)
                         accumulator.recordSkipped(
@@ -1338,6 +1323,33 @@ class ManualInitialOutreachService(
                         updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
                             "RUNNING", "模板渲染失败：${expert.email}", errors, mode, roundNumber, config, runAccountStats,
                             roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
+                        continue
+                    }
+
+                    // 主题/个性化校验通过后才创建并绑定联系人，跳过者可修正资料后重试。
+                    val contact = existingContact ?: run {
+                        val now = LocalDateTime.now()
+                        val (boundCode, boundAt) = senderAccountBindingService
+                            .bindingFieldsFor(account.accountCode, now)
+                        expertContactRepository.save(ExpertContact(
+                            campaignId = campaignId, orcidId = normOrcid,
+                            expertEmail = expert.email.orEmpty(), expertName = expert.displayName,
+                            currentStatus = "NEW", operatorStatus = "NOT_CONTACTED",
+                            country = expert.country,
+                            autoReplyEnabled = autoReplySettingService.isGlobalEnabled(),
+                            boundSenderAccountCode = boundCode,
+                            senderAccountBoundAt = boundAt,
+                            createdAt = now, updatedAt = now
+                        ))
+                    }
+
+                    // 保留发送前 SENT 去重检查（I-7）。
+                    if (hasSentIntroduction(contact.id!!)) {
+                        log.info("SENT introduction already exists for contact {}, skipping", contact.id)
+                        accumulator.recordSkipped(BatchOutcomeReasonCodes.DEDUP)
+                        processedTotal++
+                        roundProcessed++
+                        recordVerificationSend(verified, BatchEmailVerificationSendStatus.NOT_SENT, BatchOutcomeReasonCodes.DEDUP)
                         continue
                     }
 

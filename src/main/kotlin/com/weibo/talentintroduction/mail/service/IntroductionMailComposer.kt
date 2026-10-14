@@ -99,7 +99,8 @@ class IntroductionMailComposer(
             ?.let { mailSenderAccountService.getEnabledAccount(it) }
         val variables = buildVariables(account, expert)
         val variantSeed = MailComposeTemplateService.variantSeedFor(expert.orcidId, expert.email)
-        val rendered = renderTemplate(templateId, variables, variantSeed, snapshot = null)
+        // 此处仅判个性化缺项。最终主题校验在 compose 中完成，由批量引擎逐人记录跳过。
+        val rendered = mailComposeTemplateService.renderForBatchEvaluation(templateId, variables, variantSeed)
         val gateTemplateId = templateId ?: rendered.templateId
         val requiredKeys = gateTemplateId?.let { mailComposeTemplateService.effectiveRequiredKeys(it) }.orEmpty()
         val gate = personalizationGateService.evaluate(rendered.rawTexts, variables, requiredKeys)

@@ -37,6 +37,8 @@ import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
+import com.weibo.talentintroduction.mail.service.MailVariableService
+import com.weibo.talentintroduction.mail.service.MailPlaceholderService
 import com.weibo.talentintroduction.mail.service.MailDeliveryService
 import com.weibo.talentintroduction.mail.service.BatchTemplateEvaluation
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
@@ -59,6 +61,13 @@ import com.weibo.talentintroduction.template.service.ComposeTemplateRenderResult
 import com.weibo.talentintroduction.template.service.ComposeTemplateSnapshot
 import com.weibo.talentintroduction.template.service.MailComposeTemplateDetail
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
+import com.weibo.talentintroduction.template.domain.MailComposeTemplate
+import com.weibo.talentintroduction.template.repository.MailComposeTemplateRepository
+import com.weibo.talentintroduction.template.repository.MailComposeTemplateBlockRepository
+import com.weibo.talentintroduction.qa.repository.QaRuleRepository
+import com.weibo.talentintroduction.reply.repository.ReplySnippetRepository
+import com.weibo.talentintroduction.variant.repository.ContentVariantRepository
+import com.weibo.talentintroduction.variant.service.ContentVariantService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
@@ -69,6 +78,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import org.junit.jupiter.params.provider.CsvSource
 import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.ArgumentMatchers.anyLong
@@ -78,6 +88,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import java.time.LocalDateTime
 import java.util.concurrent.Executor
+import java.util.Optional
 
 class ManualInitialOutreachServiceTest {
     private val expertSearchService = Mockito.mock(ExpertSearchService::class.java)
@@ -7099,6 +7110,115 @@ class ManualInitialOutreachServiceTest {
         assertEquals(2, result.outcome!!.skippedReasons[BatchOutcomeReasonCodes.CANCELLED]?.count)
         Mockito.verify(emailSuppressionService, Mockito.times(1)).isSuppressed(Mockito.anyString())
         Mockito.verifyNoInteractions(mailDeliveryService)
+    }
+
+    @ParameterizedTest
+    @CsvSource("true,true", "true,false", "false,true", "false,false")
+    fun `invalid expert subjects skip and continue through real preflight and rendering`(gate: Boolean, frozen: Boolean) {
+        val experts = listOf(
+            expert("Q1", "long@test.com").copy(researchFields = "x".repeat(256)),
+            expert("Q2", "newline@test.com").copy(researchFields = "AI\nRobotics"),
+            expert("Q3", "carriage@test.com").copy(researchFields = "AI\rRobotics"),
+            expert("Q4", "valid@test.com").copy(researchFields = "AI"),
+            expert("Q5", "boundary@test.com").copy(researchFields = "x".repeat(255))
+        )
+        stubIntroSendPipeline(account("chen"), experts)
+        stubRealSubjectTemplate("\${researchFields}", frozen)
+        stubVerificationDecision()
+        val snapshot = introSnapshotWithVerification(roundSize = 2).copy(templateId = 42L, gateFilterEnabled = gate)
+
+        val preview = service.countBySnapshot(snapshot)
+        Mockito.verify(expertContactRepository, Mockito.never()).save(Mockito.any(ExpertContact::class.java))
+        Mockito.verifyNoInteractions(mailDeliveryService, txHelper)
+        val result = service.run(snapshot, 12345L, ExecutionMode.AUTO, false)
+
+        assertEquals(5, preview.totalSendable)
+        assertEquals(preview.totalSendable, result.total)
+        assertEquals(2, result.sent)
+        assertEquals(0, result.failed)
+        assertEquals(3, result.skipped)
+        assertEquals(0, result.remaining)
+        assertEquals("COMPLETED", result.finalStatus)
+        val reason = result.outcome!!.skippedReasons.getValue(BatchOutcomeReasonCodes.INVALID_RENDERED_SUBJECT)
+        assertEquals(3, reason.count)
+        assertEquals("主题渲染不合法", reason.label)
+        val mails = ArgumentCaptor.forClass(ComposedMail::class.java)
+        Mockito.verify(mailDeliveryService, Mockito.times(2)).send(anyValue(account("chen")), captureValue(mails, ComposedMail("", "", "")))
+        assertEquals(listOf("valid@test.com", "boundary@test.com"), mails.allValues.map { it.to })
+        val contacts = ArgumentCaptor.forClass(ExpertContact::class.java)
+        Mockito.verify(expertContactRepository, Mockito.times(2)).save(contacts.capture())
+        assertEquals(setOf("Q4", "Q5"), contacts.allValues.map { it.orcidId }.toSet())
+        val attempts = ArgumentCaptor.forClass(MailSendAttempt::class.java)
+        Mockito.verify(mailSendAttemptRepository, Mockito.atLeastOnce()).save(attempts.capture())
+        assertTrue(attempts.allValues.all { it.orcidId in setOf("Q4", "Q5") })
+        Mockito.verify(batchEmailVerificationService, Mockito.times(3)).recordSend(
+            555L, "NOT_SENT", BatchOutcomeReasonCodes.INVALID_RENDERED_SUBJECT
+        )
+    }
+
+    @Test
+    fun `empty rendered subject with gate off completes as skipped without contact or send writes`() {
+        stubIntroSendPipeline(account("chen"), listOf(expert("EMPTY", "empty@test.com").copy(researchFields = "")))
+        stubRealSubjectTemplate("\${researchFields}")
+        val result = service.run(introSnapshot(1, 1).copy(templateId = 42L), 12345L, ExecutionMode.MANUAL, false)
+        assertEquals(1, result.total)
+        assertEquals(1, result.skipped)
+        assertEquals(0, result.failed)
+        assertEquals(0, result.remaining)
+        assertEquals("COMPLETED", result.finalStatus)
+        Mockito.verify(expertContactRepository, Mockito.never()).save(Mockito.any(ExpertContact::class.java))
+        Mockito.verifyNoInteractions(mailDeliveryService, txHelper)
+        Mockito.verify(mailSendAttemptRepository, Mockito.never()).save(Mockito.any(MailSendAttempt::class.java))
+        Mockito.verifyNoInteractions(senderAccountBindingService)
+    }
+
+    @Test
+    fun `invalid NEW retry subject is skipped once while later ES expert sends`() {
+        val bad = expert("RETRY", "retry@test.com").copy(researchFields = "x".repeat(256))
+        val good = expert("GOOD", "good@test.com").copy(researchFields = "AI")
+        stubIntroSendPipeline(account("chen"), listOf(bad, good))
+        stubRealSubjectTemplate("\${researchFields}")
+        val contact = ExpertContact(id = 31L, campaignId = 10L, orcidId = bad.orcidId,
+            expertEmail = bad.email!!, expertName = "Retry", currentStatus = "NEW")
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(contact))
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("RETRY"), ExpertIndexLevel.CANDIDATE))
+            .thenReturn(listOf(bad))
+        val snapshot = introSnapshot(1, 1).copy(templateId = 42L, gateFilterEnabled = true, funnelLevel = "CANDIDATE")
+        val preview = service.countBySnapshot(snapshot)
+        val result = service.run(snapshot, 12345L, ExecutionMode.AUTO, false)
+        assertEquals(2, preview.totalSendable)
+        assertEquals(preview.totalSendable, result.total)
+        assertEquals(1, result.sent)
+        assertEquals(1, result.skipped)
+        assertEquals(0, result.failed)
+        val contacts = ArgumentCaptor.forClass(ExpertContact::class.java)
+        Mockito.verify(expertContactRepository).save(contacts.capture())
+        assertEquals("GOOD", contacts.value.orcidId)
+    }
+
+    /** 实际模板 + 实际变量 + 实际 composer，避免只模拟抛异常而漏掉预检查链路。 */
+    private fun stubRealSubjectTemplate(subject: String, frozen: Boolean = true) {
+        val templates = Mockito.mock(MailComposeTemplateRepository::class.java)
+        val blocks = Mockito.mock(MailComposeTemplateBlockRepository::class.java)
+        val template = MailComposeTemplate(id = 42L, templateCode = "INTRODUCTION", templateName = "Intro", subject = subject)
+        Mockito.`when`(templates.findById(42L)).thenReturn(Optional.of(template))
+        Mockito.`when`(templates.findByTemplateCodeAndEnabledTrue("INTRODUCTION")).thenReturn(template)
+        val renderer = MailComposeTemplateService(templates, blocks, Mockito.mock(QaRuleRepository::class.java),
+            Mockito.mock(ReplySnippetRepository::class.java), ObjectMapper(), Mockito.mock(MailVariableService::class.java),
+            expertContactRepository, mailSenderAccountService,
+            ContentVariantService(Mockito.mock(ContentVariantRepository::class.java), MailPlaceholderService()))
+        val composer = IntroductionMailComposer(mailSenderAccountService, renderer, MailVariableService(expertSearchService, renderer))
+        val templateSnapshot = renderer.loadSnapshot(42L)
+        Mockito.`when`(mailSenderAccountService.getEnabledAccount("chen")).thenReturn(account("chen"))
+        if (frozen) Mockito.`when`(mailComposeTemplateService.loadSnapshot(42L)).thenReturn(templateSnapshot)
+        Mockito.`when`(introductionMailComposer.evaluateForBatch(Mockito.isNull(), anyValue(expert("", "")), eqValue(42L)))
+            .thenAnswer { composer.evaluateForBatch(null, it.getArgument(1), 42L) }
+        Mockito.`when`(introductionMailComposer.composeFromSnapshot(eqValue("chen"), anyValue(expert("", "")), eqValue(42L),
+            anyBooleanValue(), anyValue(templateSnapshot)))
+            .thenAnswer { composer.composeFromSnapshot("chen", it.getArgument(1), 42L, it.getArgument(3), it.getArgument(4)) }
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("", "")), eqValue(42L), anyBooleanValue()))
+            .thenAnswer { composer.compose("chen", it.getArgument(1), 42L, it.getArgument(3)) }
     }
 
     // ──── Helpers ────

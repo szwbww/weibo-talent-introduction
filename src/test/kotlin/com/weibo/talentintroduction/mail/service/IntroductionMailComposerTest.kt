@@ -23,6 +23,24 @@ class IntroductionMailComposerTest {
     private val mailVariableService = MailVariableService(expertSearchService, templateService)
     private val composer = IntroductionMailComposer(accountService, templateService, mailVariableService)
 
+    @Test
+    fun `batch evaluation preserves missing variable gate when rendered subject is invalid`() {
+        val expert = sparseExpert().copy(researchFields = "x".repeat(256))
+        Mockito.`when`(templateService.renderForBatchEvaluation(Mockito.isNull(), anyValue(emptyMap()), Mockito.anyInt()))
+            .thenReturn(ComposeTemplateRenderResult(
+                subject = expert.researchFields!!, body = "Hello", templateId = 10L,
+                rawTexts = listOf("\${researchFields}", "\${institution}", "\${senderName}")
+            ))
+        Mockito.`when`(templateService.effectiveRequiredKeys(10L))
+            .thenReturn(listOf("researchFields", "institution", "senderName"))
+
+        val result = composer.evaluateForBatch(null, expert)
+
+        assertEquals(listOf("institution", "senderName"), result.missingKeys)
+        assertEquals(10L, result.templateId)
+        Mockito.verifyNoInteractions(accountService)
+    }
+
     private fun senderVariables(
         senderEmail: String = "chenjj@qftechtalent.com",
         senderName: String = "Chen",

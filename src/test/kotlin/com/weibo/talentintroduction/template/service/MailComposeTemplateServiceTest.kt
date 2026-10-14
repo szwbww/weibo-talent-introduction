@@ -335,6 +335,48 @@ class MailComposeTemplateServiceTest {
     }
 
     @Test
+    fun `batch evaluation defers rendered subject validation but all send render paths enforce it`() {
+        val template = MailComposeTemplate(
+            id = 11L, templateCode = "INTRODUCTION", templateName = "Intro",
+            subject = "\${researchFields}"
+        )
+        Mockito.`when`(templateRepository.findById(11L)).thenReturn(Optional.of(template))
+        Mockito.`when`(templateRepository.findByTemplateCodeAndEnabledTrue("INTRODUCTION")).thenReturn(template)
+        Mockito.`when`(blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(11L)).thenReturn(emptyList())
+        val snapshot = service.loadSnapshot(11L)
+        val invalidSubjects = listOf("", " ", "x".repeat(256), "AI\nRobotics", "AI\rRobotics")
+        for (subject in invalidSubjects) {
+            val variables = mapOf("researchFields" to subject)
+            for (templateId in listOf(11L, null)) {
+                val evaluated = service.renderForBatchEvaluation(templateId, variables, 0)
+                assertEquals(subject, evaluated.subject)
+                assertEquals(listOf("\${researchFields}"), evaluated.rawTexts)
+                assertEquals(11L, evaluated.templateId)
+            }
+            assertThrows(InvalidRenderedSubjectException::class.java) { service.render(11L, variables) }
+            assertThrows(InvalidRenderedSubjectException::class.java) { service.renderByCode("INTRODUCTION", variables) }
+            assertThrows(InvalidRenderedSubjectException::class.java) { snapshot.render(variables, 0) }
+        }
+        for (subject in listOf("x", "x".repeat(255))) {
+            assertEquals(subject, snapshot.render(mapOf("researchFields" to subject), 0).subject)
+        }
+    }
+
+    @Test
+    fun `batch evaluation still rejects invalid template configuration`() {
+        val template = MailComposeTemplate(id = 11L, templateName = "Intro", subject = "Bad\nSubject")
+        Mockito.`when`(templateRepository.findById(11L)).thenReturn(Optional.of(template))
+        Mockito.`when`(blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(11L)).thenReturn(emptyList())
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            service.renderForBatchEvaluation(11L, emptyMap(), 0)
+        }
+        assertFalse(error is InvalidRenderedSubjectException)
+        assertThrows(IllegalStateException::class.java) {
+            service.renderForBatchEvaluation(null, emptyMap(), 0)
+        }
+    }
+
+    @Test
     fun `referenced subject render rejects a missing or disabled snippet instead of using its snapshot`() {
         Mockito.`when`(templateRepository.findByTemplateCodeAndEnabledTrue("INTRO"))
             .thenReturn(

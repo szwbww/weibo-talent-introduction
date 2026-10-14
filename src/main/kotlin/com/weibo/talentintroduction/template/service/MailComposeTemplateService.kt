@@ -171,6 +171,21 @@ class MailComposeTemplateService(
         return renderTemplate(template, blocks, variables, variantSeed)
     }
 
+    /** 只读门禁求值：账号变量尚未填入，最终主题格式留到逐人发送前校验。模板配置错误仍抛出。 */
+    fun renderForBatchEvaluation(
+        templateId: Long?,
+        variables: Map<String, String>,
+        variantSeed: Int
+    ): ComposeTemplateRenderResult {
+        val template = templateId?.let(::findTemplate)
+            ?: templateRepository.findByTemplateCodeAndEnabledTrue("INTRODUCTION")
+            ?: error("Enabled compose template not found: INTRODUCTION")
+        val blocks = blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(
+            template.id ?: error("Compose template id is required")
+        )
+        return renderTemplate(template, blocks, variables, variantSeed, validateSubject = false)
+    }
+
     /**
      * A3 (I-4): 一次性把模板 + 内容块读进内存并冻结为 [ComposeTemplateSnapshot]。
      *
@@ -330,12 +345,13 @@ class MailComposeTemplateService(
         template: MailComposeTemplate,
         blocks: List<MailComposeTemplateBlock>,
         variables: Map<String, String>,
-        variantSeed: Int = 0
+        variantSeed: Int = 0,
+        validateSubject: Boolean = true
     ): ComposeTemplateRenderResult {
         val rawSubject = selectSubject(template, previewIndex = null)
         val resolved = resolveBlocks(blocks.map { it.toDraftBlock() }, variables, previewIndex = null)
         val subject = renderText(rawSubject, variables)
-        validateRenderedSubject(subject)
+        if (validateSubject) validateRenderedSubject(subject)
         return ComposeTemplateRenderResult(
             subject = subject,
             body = resolved.includedTexts.joinToString("\n\n"),
@@ -613,9 +629,13 @@ class MailComposeTemplateService(
     }
 
     private fun validateRenderedSubject(subject: String) {
-        require(subject.isNotBlank() && subject.length <= 255 && '\r' !in subject && '\n' !in subject) {
-            "渲染后的邮件主题必须为 1–255 字的单行文本"
+        val reason = when {
+            subject.isBlank() -> "主题为空"
+            subject.length > 255 -> "主题长度 ${subject.length} 超过 255"
+            '\r' in subject || '\n' in subject -> "主题包含换行"
+            else -> return
         }
+        throw InvalidRenderedSubjectException(reason)
     }
 
     private fun subjectSnapshot(command: MailComposeTemplateCommand): String =
@@ -896,6 +916,10 @@ class ComposeTemplateSnapshot internal constructor(
     fun render(variables: Map<String, String>, variantSeed: Int): ComposeTemplateRenderResult =
         renderer(variables, variantSeed)
 }
+
+/** 仅表示变量替换后的主题无效；原始模板/片段配置错误不使用此类型。 */
+class InvalidRenderedSubjectException(val reason: String) :
+    IllegalArgumentException("渲染后的邮件主题必须为 1–255 字的单行文本")
 
 data class MailComposeTemplateCommand(
     val templateCode: String? = null,
