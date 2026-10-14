@@ -4,8 +4,8 @@
 - 全局约束（主计划）: `docs/plans/2026-10-14/batch-filter-main.md`
 - Worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-14-batch-filter-main`
 - Branch: `fast/2026-10-14-batch-filter-main`
-- Base SHA: `__CHILD2_CODE_HEAD__`（= 02-diagnostics 的终止 Code head，由控制器在派发前替换）
-- 依赖: 02-diagnostics（已 LIGHT_PASS；其响应 DTO 是本阶段唯一数据源）
+- Base SHA: `9c9457cadda70e95dc605f720d652d3e4617b803`（02-diagnostics 的终止 Code head）
+- 依赖: 02-diagnostics（已 LIGHT_PASS，含 1 轮修复；其响应 DTO 是本阶段唯一数据源）
 - 实施提交信息（必须逐字）: `feat(fast-p): implement 03-ui`
 
 ## 交付范围

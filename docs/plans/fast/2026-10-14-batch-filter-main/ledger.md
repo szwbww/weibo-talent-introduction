@@ -20,7 +20,7 @@
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---:|---|---|---|---:|---|---|---|---|---|
 | 01-region | docs/plans/2026-10-14/batch-filter-01-region.md | commit:b02eeb6405b27d5d4f30a32d17019e19c855483d | none | 1 | LIGHT_PASS_WITH_NOTES | b02eeb6405b27d5d4f30a32d17019e19c855483d | bba581fe011730b52ad05d35e6248c9599372c2d | 0 | — | bba581fe011730b52ad05d35e6248c9599372c2d | cfe0f69839f85d008cb21fe4c4b10a0e6951fc4a | two RECORD_ONLY notes: stale dead matchesDiscoveryOutreach comment and tags-only ES branch |
-| 02-diagnostics | docs/plans/2026-10-14/batch-filter-02-diagnostics.md | commit:b02eeb6405b27d5d4f30a32d17019e19c855483d | 01-region | 1 | PENDING | | | 0 | — | | | depends on 01 region semantics and the shared ManualInitialOutreachService path |
+| 02-diagnostics | docs/plans/2026-10-14/batch-filter-02-diagnostics.md | commit:b02eeb6405b27d5d4f30a32d17019e19c855483d | 01-region | 1 | LIGHT_VERIFYING | bba581fe011730b52ad05d35e6248c9599372c2d | 8b0736389c92e5d6f4c5766cdaf968720e6d2d03 | 1 | 9c9457cadda70e95dc605f720d652d3e4617b803 | | | round 1 fixed admission eligibility; re-verification in progress |
 | 03-ui | docs/plans/2026-10-14/batch-filter-03-ui.md | commit:b02eeb6405b27d5d4f30a32d17019e19c855483d | 02-diagnostics | 1 | PENDING | | | 0 | — | | | consumes 02 diagnostics response DTOs only |
 
 ## Amendments
