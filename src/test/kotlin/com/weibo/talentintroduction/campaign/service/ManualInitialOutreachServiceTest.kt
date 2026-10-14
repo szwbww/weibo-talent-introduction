@@ -17,6 +17,7 @@ import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepos
 import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationTagStatus
 import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationErrorCodes
 import com.weibo.talentintroduction.campaign.repository.CampaignRepository
+import com.weibo.talentintroduction.campaign.repository.BatchRecipientReadRepository
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepository
 import com.weibo.talentintroduction.config.ManualOutreachProperties
@@ -136,6 +137,14 @@ class ManualInitialOutreachServiceTest {
     private val discoveryReviewService =
         Mockito.mock(com.weibo.talentintroduction.discovery.service.DiscoveryReviewService::class.java)
     private val batchRecipientSelectionService = BatchRecipientSelectionService(discoveryReviewService)
+    /** 02（I-4/I-5）：只读发送保护事实；本类默认无事实，异常/边界不参与。 */
+    private val batchRecipientReadRepository = Mockito.mock(BatchRecipientReadRepository::class.java)
+    private val batchRecipientPreflightService = BatchRecipientPreflightService(
+        batchRecipientSelectionService,
+        batchEmailVerificationService,
+        batchRecipientReadRepository,
+        introductionMailComposer
+    )
 
     private val service = ManualInitialOutreachService(
         expertSearchService = expertSearchService,
@@ -165,7 +174,8 @@ class ManualInitialOutreachServiceTest {
         mailComposeTemplateService = mailComposeTemplateService,
         batchEmailVerificationService = batchEmailVerificationService,
         expertOperatorStatusService = expertOperatorStatusService,
-        batchRecipientSelectionService = batchRecipientSelectionService
+        batchRecipientSelectionService = batchRecipientSelectionService,
+        batchRecipientPreflightService = batchRecipientPreflightService
     )
 
     private fun fastConfig(
@@ -790,7 +800,8 @@ class ManualInitialOutreachServiceTest {
         assertEquals(1, filtered.retryable)
         assertEquals(3, filtered.totalSendable)
         assertEquals(2, filtered.excludedVerifiedUnavailable)
-        Mockito.verify(expertSearchService).scrollExpertsFiltered(
+        // 02：预估还做一次只读母集扫描（层级+标签），故同一 CANDIDATE scroll 被调用两次（预估 1 + 母集 1）。
+        Mockito.verify(expertSearchService, Mockito.times(2)).scrollExpertsFiltered(
             eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList()), eqValue(500),
             anyValue({ _: List<ExpertProfile> -> true })
         )
@@ -805,8 +816,9 @@ class ManualInitialOutreachServiceTest {
         assertEquals(5, unfiltered.totalSendable)
         assertEquals(0, unfiltered.excludedVerifiedUnavailable)
         Mockito.verifyNoInteractions(batchEmailVerificationService)
-        // I-3: 预估不再读粗筛命中数 —— 关闭历史不可达过滤时同样走 scroll + 最终谓词（否则预估虚高）。
-        Mockito.verify(expertSearchService).scrollExpertsFiltered(
+        // I-3: 预估不再读粗筛命中数 —— 关闭历史不可达过滤时同样走 scroll + 最终谓词（否则预估虚高）；
+        // 02：再加一次只读母集扫描。
+        Mockito.verify(expertSearchService, Mockito.times(2)).scrollExpertsFiltered(
             eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList()), eqValue(500),
             anyValue({ _: List<ExpertProfile> -> true })
         )
@@ -5043,6 +5055,88 @@ class ManualInitialOutreachServiceTest {
             )
         Mockito.verify(expertSearchService, Mockito.times(1))
             .countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
+    }
+
+    // ── 02: 统一只读预检查（完整母集、独立原因、限量样本、动态保护） ──────────────
+
+    @Test
+    fun `preview exposes the complete-baseline preflight counts with bounded samples (I-1 I-2 I-5)`() {
+        stubEmptyRetryCandidates()
+        val profiles = (1..10).map { expert("Q%02d".format(it), "q%02d@example.org".format(it)).copy(country = "Japan") }
+        stubScrolledExperts(profiles)
+
+        val summary = service.countBySnapshot(runScheduledSnapshot().copy(regions = listOf("Europe")))
+
+        // 母集只按层级/标签（10 人），地区原因独立表达，不把粗筛后的子集冒充母集。
+        assertEquals(10, summary.baseline)
+        assertEquals(10, summary.excludedUnique)
+        assertEquals(0, summary.eligibleBeforeLiveVerification)
+        assertEquals(
+            summary.baseline,
+            (summary.excludedUnique ?: -1) + (summary.eligibleBeforeLiveVerification ?: -1),
+            "baseline = excludedUnique + eligibleBeforeLiveVerification"
+        )
+        assertEquals("DISABLED", summary.verificationPhase)
+        assertFalse(summary.partial)
+        assertNotNull(summary.asOf)
+        val region = summary.reasonHitsDetail.single { it.reasonKey == RecipientFilterKeys.REGION }
+        assertEquals(10, region.count)
+        assertEquals(10, region.samples.size)
+        assertFalse(region.truncated)
+        assertEquals(10, region.samples.map { it.docId }.toSet().size)
+    }
+
+    @Test
+    fun `suppression added after the preview still blocks the same-snapshot run (I-2 I-4)`() {
+        val acc = account("chen")
+        val guard = expert("E101", "guard@example.com")
+        stubIntroSendPipeline(acc, listOf(guard))
+        val snapshot = introSnapshot(roundSize = 10, roundsPerRun = 1)
+
+        val preview = service.countBySnapshot(snapshot)
+        assertEquals(1, preview.totalSendable)
+
+        // 同一快照、预估之后新增抑制 → 发送前动态保护必须拦住，预估本身不产生任何写入。
+        Mockito.`when`(emailSuppressionService.isSuppressed("guard@example.com")).thenReturn(true)
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(0, result.sent)
+        assertEquals(1, result.skipped)
+        Mockito.verify(mailDeliveryService, Mockito.never()).send(
+            anyValue(acc), anyValue(ComposedMail("", "", ""))
+        )
+    }
+
+    @Test
+    fun `recipient diagnostics rejects an oversized docId request (I-5)`() {
+        val ids = (1..201).map { "D$it" }
+
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            service.diagnoseRecipients(runScheduledSnapshot(), ids)
+        }
+
+        assertTrue(error.message!!.contains("200"))
+    }
+
+    @Test
+    fun `recipient diagnostics reports OK outside-baseline and not-found (I-5)`() {
+        stubEmptyRetryCandidates()
+        stubScrolledExperts(listOf(expert("IN1", "in1@example.org")))
+        Mockito.`when`(
+            expertSearchService.findByDocumentIds(eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList<String>()))
+        ).thenReturn(listOf(expert("OUT1", "out1@example.org")))
+
+        val response = service.diagnoseRecipients(
+            runScheduledSnapshot(), listOf("IN1", "OUT1", "GONE")
+        )
+
+        val byDoc = response.recipients.associateBy { it.docId }
+        assertEquals(BatchRecipientDiagnosticStatus.OK, byDoc.getValue("IN1").status)
+        assertEquals(BatchRecipientDiagnosticStatus.OUTSIDE_BASELINE, byDoc.getValue("OUT1").status)
+        assertEquals(BatchRecipientDiagnosticStatus.NOT_FOUND, byDoc.getValue("GONE").status)
+        assertEquals(1, response.baseline)
+        assertEquals("DISABLED", response.verificationPhase)
+        assertFalse(response.partial)
     }
 
     // ── A3 (05 epoch 2): 预览准入计数 / 模板版本冻结 / 过期令牌 / 账号变量预检 ──────────────

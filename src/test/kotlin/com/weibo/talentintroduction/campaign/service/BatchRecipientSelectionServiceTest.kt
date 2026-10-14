@@ -324,6 +324,23 @@ class BatchRecipientSelectionServiceTest {
         )
     }
 
+    @Test
+    fun `an admitted expert failing a condition keeps its admission fact (I-1)`() {
+        stubAdmissions("R1" to DiscoveryReviewDecision.MANUAL_APPROVED.name)
+
+        val selection = service.select(
+            scope(regions = listOf("Other")),
+            listOf(expert("R1", country = "Japan"))
+        )
+
+        val decision = selection.excluded.single()
+        assertEquals(RecipientAdmissionState.ADMITTED, decision.admissionState)
+        assertEquals(DiscoveryReviewDecision.MANUAL_APPROVED.name, decision.admissionDecision)
+        assertEquals(listOf(RecipientFilterKeys.REGION), decision.filterKeys)
+        // 显式条件命中只贡献条件原因，不叠加准入原因（原因命中口径不变）。
+        assertEquals(listOf(RecipientFilterKeys.REGION), BatchRecipientSelectionService.reasonKeysOf(decision))
+    }
+
     private fun resolved(
         docId: String,
         decision: String?,

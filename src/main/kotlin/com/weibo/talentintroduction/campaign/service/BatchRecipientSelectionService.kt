@@ -100,14 +100,15 @@ class BatchRecipientSelectionService(
 
         // 2. 显式条件：逐人收集不匹配 key。
         val conditionKeys = HashMap<String, List<String>>(distinct.size)
-        val conditionPassed = ArrayList<ExpertProfile>(distinct.size)
         for (profile in distinct) {
             val keys = scope.mismatchKeys(profile)
-            if (keys.isEmpty()) conditionPassed.add(profile) else conditionKeys[docIdOf(profile)] = keys
+            if (keys.isNotEmpty()) conditionKeys[docIdOf(profile)] = keys
         }
 
-        // 3. 持久准入：只对发现/待确认档案，按 500 一批读取。
-        val discoveryProfiles = conditionPassed.filter { RecipientScope.isDiscoveryOutreach(it) }
+        // 3. 持久准入：对**全部**发现/待确认档案读取，不因显式条件不匹配而跳过 ——
+        //    已准入但地区/状态失败的目标必须保留真实准入事实（I-1：不能标 NOT_DISCOVERY），
+        //    条件只作为独立原因，绝不改写准入结论。
+        val discoveryProfiles = distinct.filter { RecipientScope.isDiscoveryOutreach(it) }
         val admissions = resolveAdmissions(discoveryProfiles)
 
         // 4. 汇总逐人结论。
@@ -117,25 +118,21 @@ class BatchRecipientSelectionService(
 
         for (profile in distinct) {
             val docId = docIdOf(profile)
-            val keys = conditionKeys[docId]
-            val decision: RecipientDecision = when {
-                keys != null ->
-                    RecipientDecision(docId, profile.orcidId, RecipientAdmissionState.NOT_DISCOVERY, null, null, keys, false)
-                !RecipientScope.isDiscoveryOutreach(profile) ->
-                    RecipientDecision(docId, profile.orcidId, RecipientAdmissionState.NOT_DISCOVERY, null, null, emptyList(), true)
-                else -> {
-                    val resolved = admissions[docId]
-                    val state = admissionStateOf(resolved)
-                    RecipientDecision(
-                        docId = docId,
-                        orcidId = profile.orcidId,
-                        admissionState = state,
-                        admissionDecision = resolved?.decision,
-                        syncErrorCode = resolved?.syncErrorCode,
-                        filterKeys = emptyList(),
-                        included = state == RecipientAdmissionState.ADMITTED
-                    )
-                }
+            val keys = conditionKeys[docId].orEmpty()
+            val decision: RecipientDecision = if (!RecipientScope.isDiscoveryOutreach(profile)) {
+                RecipientDecision(docId, profile.orcidId, RecipientAdmissionState.NOT_DISCOVERY, null, null, keys, keys.isEmpty())
+            } else {
+                val resolved = admissions[docId]
+                val state = admissionStateOf(resolved)
+                RecipientDecision(
+                    docId = docId,
+                    orcidId = profile.orcidId,
+                    admissionState = state,
+                    admissionDecision = resolved?.decision,
+                    syncErrorCode = resolved?.syncErrorCode,
+                    filterKeys = keys,
+                    included = keys.isEmpty() && state == RecipientAdmissionState.ADMITTED
+                )
             }
             if (decision.included) {
                 included += decision

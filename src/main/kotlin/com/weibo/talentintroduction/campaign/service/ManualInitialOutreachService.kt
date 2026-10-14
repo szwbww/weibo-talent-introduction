@@ -14,6 +14,7 @@ import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
 import com.weibo.talentintroduction.campaign.repository.CampaignRepository
 import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationErrorCodes
 import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationSendStatus
+import com.weibo.talentintroduction.campaign.repository.BatchRecipientReadRepository
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepository
 import com.weibo.talentintroduction.config.ManualOutreachProperties
@@ -77,14 +78,22 @@ private const val SEND_REASON_EMAIL_CHANGED = "EMAIL_CHANGED"
 /**
  * I-1/I-4（03）：`buildSmtpErrorSummary` 的永久失败前缀 —— 在线判定与对账读取的是同一份持久化摘要。
  * 只作「历史首封永久失败」事实门禁的判据，不用于地址证据判定（那是地址证据白名单的职责）。
+ * 字符串与 `RecipientAddressFailureClassifier` 写入侧一致；只读预检查的 SQL LIKE 判据共用
+ * [com.weibo.talentintroduction.campaign.repository.BatchRecipientReadRepository.PERMANENT_FAILURE_SUMMARY_PREFIX]。
  */
-private const val PERMANENT_SUMMARY_PREFIX = "PERMANENT:"
+private val PERMANENT_SUMMARY_PREFIX = com.weibo.talentintroduction.campaign.repository.BatchRecipientReadRepository.PERMANENT_FAILURE_SUMMARY_PREFIX
 
 /** I-3（03）：传给公共状态入口的说明文本上限（该说明不落库，仅作调用点可读性）。 */
 private const val SUMMARY_REASON_LIMIT = 200
 
 /** A3 (I-3)：预估响应里逐人排除明细的条数上限（计数不受限，仅明细截断，避免响应过大）。 */
 private const val PREVIEW_EXCLUDED_DETAIL_LIMIT = 500
+
+/** I-5（02）：诊断母集 ES 扫描每批条数（只读，与批量事实读取同量级）。 */
+private const val BASE_SCAN_BATCH_SIZE = 500
+
+/** I-5（02）：单次母集扫描的条数上限；超限标 partial，绝不把截断结果当完整总数。 */
+private const val MAX_BASELINE_SCAN = 20_000
 
 /**
  * I-2：新发现专家在 ES 文档里的标签值（`ExpertDiscoveryService` 写入侧同值）。
@@ -127,7 +136,9 @@ class ManualInitialOutreachService(
      */
     private val expertOperatorStatusService: ExpertOperatorStatusService,
     /** I-1/I-3: 批量目标的唯一准入+显式条件选择器（预估/执行/重试/材料共用）。 */
-    private val batchRecipientSelectionService: BatchRecipientSelectionService = BatchRecipientSelectionService()
+    private val batchRecipientSelectionService: BatchRecipientSelectionService = BatchRecipientSelectionService(),
+    /** I-1/I-2/I-3/I-4/I-5/I-6（02）：只读统一预检查 —— 预估与诊断共用，零业务写入。 */
+    private val batchRecipientPreflightService: BatchRecipientPreflightService? = null
 ) {
     private val log = LoggerFactory.getLogger(ManualInitialOutreachService::class.java)
 
@@ -580,6 +591,9 @@ class ManualInitialOutreachService(
                 initialSeenOrcids = seenOrcids, initialSeenDocIds = seenDocIds
             )
             excluded += esExcluded
+            // I-1/I-2（02）：完整母集只读预检查 —— 母集仅按所选层级/标签读取（不再被地区/状态/模板提前缩小），
+            // 保护/模板/邮箱原因独立表达；新增字段为兼容扩展，旧字段含义逐字保留。
+            val preflight = preflightForSnapshot(snapshot, scope)
             PendingOutreachSummary(
                 pending = esEstimate,
                 retryable = retryable,
@@ -588,9 +602,213 @@ class ManualInitialOutreachService(
                 template = previewTemplateVersion(snapshot),
                 admission = accumulator.counts(esEstimate + retryable),
                 reasonHits = accumulator.reasonHits(),
-                excludedRecipients = accumulator.excludedRecipients(PREVIEW_EXCLUDED_DETAIL_LIMIT)
+                excludedRecipients = accumulator.excludedRecipients(PREVIEW_EXCLUDED_DETAIL_LIMIT),
+                baseline = preflight?.baseline,
+                excludedUnique = preflight?.excludedUnique,
+                eligibleBeforeLiveVerification = preflight?.eligibleBeforeLiveVerification,
+                awaitingVerification = preflight?.awaitingVerification,
+                verificationPhase = preflight?.verificationPhase?.name,
+                partial = preflight?.partial ?: false,
+                asOf = preflight?.asOf,
+                reasonHitsDetail = preflight?.reasonHits.orEmpty()
             )
         }
+    }
+
+    /**
+     * I-1/I-4（02）：只读统一预检查 —— 母集按「所选漏斗层级 + 标签」读取 ES 候选并并入同层级 NEW 重试候选，
+     * 按真实 docId 去重后交给 [BatchRecipientPreflightService] 逐人解释。**零业务写入**：只 SELECT/ES 读取，
+     * 不调用 verify()/SMTP/供应商，也不创建任何 campaign/contact/task/发送尝试。
+     *
+     * `shouldStop` 只为取消语义保留；母集超限时返回 `partial=true`，绝不把截断结果当完整总数。
+     */
+    private fun preflightForSnapshot(
+        snapshot: BatchExecutionSnapshot,
+        scope: RecipientScope,
+        shouldStop: () -> Boolean = { false }
+    ): BatchRecipientPreflightResult? {
+        val preflightService = batchRecipientPreflightService ?: return null
+        val scan = scanBaseCandidates(scope, shouldStop)
+        val introduction = scope.mailType == BatchSendType.INTRODUCTION.name
+        return preflightService.preflight(
+            BatchRecipientPreflightInput(
+                scope = scope,
+                profiles = scan.profiles,
+                // I-6：模板门禁只对 INTRODUCTION 生效（与 batchTemplateGate 同边界）。
+                gateFilterEnabled = snapshot.gateFilterEnabled && introduction,
+                templateId = snapshot.templateId,
+                emailVerificationEnabled = snapshot.emailVerificationEnabled,
+                emailVerificationAllowedStates = snapshot.emailVerificationAllowedStates,
+                excludeVerifiedUnavailableEmails = snapshot.excludeVerifiedUnavailableEmails,
+                asOf = verificationFilterNow(),
+                partial = scan.partial
+            )
+        )
+    }
+
+    /**
+     * I-1/I-2（02）：诊断母集扫描 —— ES 侧只应用层级与标签（[baseRecipientScope]），
+     * 并并入同层级 NEW 重试候选（按既有身份键合并、真实 docId 去重）。地区/状态/方向/类型/模板门禁
+     * 一律留给预检查逐人解释，绝不在扫描阶段提前丢人。
+     */
+    private fun scanBaseCandidates(scope: RecipientScope, shouldStop: () -> Boolean = { false }): BaseScan {
+        val baseScope = baseRecipientScope(scope)
+        val collected = LinkedHashMap<String, ExpertProfile>()
+        var partial = false
+        for (level in baseScope.funnelLevels) {
+            if (shouldStop()) {
+                partial = true
+                break
+            }
+            expertSearchService.scrollExpertsFiltered(
+                level = ExpertIndexLevel.valueOf(level),
+                filters = buildBaseEsFilters(baseScope),
+                batchSize = BASE_SCAN_BATCH_SIZE
+            ) { batch ->
+                for (profile in batch) {
+                    if (collected.size >= MAX_BASELINE_SCAN) {
+                        partial = true
+                        return@scrollExpertsFiltered false
+                    }
+                    collected.putIfAbsent(BatchRecipientSelectionService.docIdOf(profile), profile)
+                }
+                !shouldStop()
+            }
+        }
+        if (baseScope.mailType == BatchSendType.INTRODUCTION.name && !shouldStop()) {
+            campaignRepository.findByCampaignCode("MANUAL_OUTREACH")?.id?.let { campaignId ->
+                loadRetryCandidateProfiles(campaignId, baseScope.funnelLevels).forEach { profile ->
+                    collected.putIfAbsent(BatchRecipientSelectionService.docIdOf(profile), profile)
+                }
+            }
+        }
+        return BaseScan(collected.values.toList(), partial)
+    }
+
+    /** I-1（02）：只承载层级与标签的母集扫描范围（其余维度都是逐人原因，不是母集条件）。 */
+    private fun baseRecipientScope(scope: RecipientScope): RecipientScope = RecipientScope(
+        mailType = scope.mailType,
+        funnelLevels = scope.funnelLevels,
+        tags = scope.tags,
+        regions = emptyList(),
+        emailDomains = emptyList(),
+        discipline = null
+    )
+
+    /**
+     * I-1（02）：母集扫描的 ES 过滤器 —— 只有「有邮箱」与（可选）标签，**不**追加地区/状态/方向/
+     * 类型/模板门禁，也绝不追加 INTRODUCTION 空类型集合的 `MATCH_NONE_FILTER`（那会把母集误扫成 0）。
+     * 这些维度一律留给预检查逐人解释。
+     */
+    private fun buildBaseEsFilters(baseScope: RecipientScope): List<Map<String, Any>> {
+        val filters = mutableListOf<Map<String, Any>>(mapOf("exists" to mapOf("field" to "email")))
+        if (baseScope.tags.isNotEmpty()) {
+            filters.add(mapOf("terms" to mapOf("tags" to baseScope.tags)))
+        }
+        return filters
+    }
+
+    /**
+     * I-1/I-2（02）：NEW 重试候选只读加载 —— 与执行构造同源（同 campaign、同 current_status、同层级索引），
+     * 不做发送/绑定/抑制/地址保护过滤（那些由预检查作为独立原因解释）。
+     */
+    private fun loadRetryCandidateProfiles(campaignId: Long, levels: Set<String>): List<ExpertProfile> {
+        val contacts = expertContactRepository
+            .findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(campaignId, "NEW")
+        if (contacts.isEmpty()) return emptyList()
+        val orcidIds = contacts.map { it.orcidId }
+        val profilesByLevel = levels.associateWith { level ->
+            expertSearchService.searchByOrcidIds(orcidIds, ExpertIndexLevel.valueOf(level))
+                .associateBy { normalizeOrcid(it.orcidId) }
+        }
+        return contacts.mapNotNull { contact ->
+            val normOrcid = normalizeOrcid(contact.orcidId)
+            levels.asSequence().mapNotNull { profilesByLevel[it]?.get(normOrcid) }.firstOrNull()
+        }
+    }
+
+    /**
+     * I-4/I-5（02）：只读「按 docId 诊断」入口 —— 为操作端逐个解释指定目标。
+     * `docIds` 1..200；母集外显式 `OUTSIDE_BASELINE`，任何层级都找不到显式 `NOT_FOUND`，绝不静默吞掉。
+     */
+    fun diagnoseRecipients(
+        snapshot: BatchExecutionSnapshot,
+        docIds: List<String>
+    ): BatchRecipientDiagnosticsResponse {
+        val requested = docIds.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        require(requested.isNotEmpty()) { "docIds 不能为空" }
+        require(requested.size <= BatchRecipientPreflightService.MAX_DIAGNOSTIC_DOC_IDS) {
+            "单次诊断最多 ${BatchRecipientPreflightService.MAX_DIAGNOSTIC_DOC_IDS} 个 docId"
+        }
+        val scope = resolveScope(snapshot)
+        val scan = scanBaseCandidates(scope)
+        val introduction = scope.mailType == BatchSendType.INTRODUCTION.name
+        val preflightService = requireNotNull(batchRecipientPreflightService) {
+            "只读预检查服务未配置，无法诊断（Spring 环境恒注入）"
+        }
+        val preflight = preflightService.preflight(
+            BatchRecipientPreflightInput(
+                scope = scope,
+                profiles = scan.profiles,
+                gateFilterEnabled = snapshot.gateFilterEnabled && introduction,
+                templateId = snapshot.templateId,
+                emailVerificationEnabled = snapshot.emailVerificationEnabled,
+                emailVerificationAllowedStates = snapshot.emailVerificationAllowedStates,
+                excludeVerifiedUnavailableEmails = snapshot.excludeVerifiedUnavailableEmails,
+                asOf = verificationFilterNow(),
+                partial = scan.partial
+            )
+        )
+        val byDoc = preflight.decisions.associateBy { it.docId }
+        val existing = existingDocIds(requested.filter { it !in byDoc })
+        val entries = requested.map { docId ->
+            val decision = byDoc[docId]
+            if (decision != null) {
+                BatchRecipientDiagnosticEntry(
+                    docId = docId,
+                    status = BatchRecipientDiagnosticStatus.OK,
+                    orcidId = decision.orcidId,
+                    admissionState = decision.admissionState,
+                    eligible = decision.eligible,
+                    conditionReasonKeys = decision.conditionReasonKeys,
+                    protectionReasonKeys = decision.protectionReasonKeys,
+                    templateMissingKeys = decision.templateMissingKeys,
+                    verificationPhase = decision.verificationPhase.name
+                )
+            } else {
+                BatchRecipientDiagnosticEntry(
+                    docId = docId,
+                    status = if (docId in existing) {
+                        BatchRecipientDiagnosticStatus.OUTSIDE_BASELINE
+                    } else {
+                        BatchRecipientDiagnosticStatus.NOT_FOUND
+                    }
+                )
+            }
+        }
+        return BatchRecipientDiagnosticsResponse(
+            baseline = preflight.baseline,
+            excludedUnique = preflight.excludedUnique,
+            eligibleBeforeLiveVerification = preflight.eligibleBeforeLiveVerification,
+            awaitingVerification = preflight.awaitingVerification,
+            reasonHits = preflight.reasonHits,
+            asOf = preflight.asOf,
+            partial = preflight.partial,
+            verificationPhase = preflight.verificationPhase.name,
+            recipients = entries
+        )
+    }
+
+    /** 只在所选母集之外的请求 docId 上做一次跨层级存在性确认（区分 OUTSIDE_BASELINE / NOT_FOUND）。 */
+    private fun existingDocIds(docIds: List<String>): Set<String> {
+        if (docIds.isEmpty()) return emptySet()
+        val out = HashSet<String>(docIds.size)
+        for (level in ExpertIndexLevel.values()) {
+            expertSearchService.findByDocumentIds(level, docIds).forEach { profile ->
+                out += BatchRecipientSelectionService.docIdOf(profile)
+            }
+        }
+        return out
     }
 
     /** A3 (I-4)：预估冻结的模板版本摘要；无模板或不可读时为 null。 */
@@ -618,8 +836,12 @@ class ManualInitialOutreachService(
     }
 
     private fun batchGateExcludes(templateId: Long?, profile: ExpertProfile): Boolean {
-        val evaluation = introductionMailComposer.evaluateForBatch(null, profile, templateId)
-        return evaluation.missingKeys.any { it !in MailComposeTemplateService.ACCOUNT_VARIABLE_KEYS }
+        // I-6/I-2（02）：模板门禁的逐人判定收口在只读预检查服务，预估与执行共用同一实现。
+        // Spring 恒注入；仅历史手工构造的测试夹具（不传该依赖）回退到逐字相同的判定。
+        val preflight = batchRecipientPreflightService
+            ?: return introductionMailComposer.evaluateForBatch(null, profile, templateId)
+                .missingKeys.any { it !in MailComposeTemplateService.ACCOUNT_VARIABLE_KEYS }
+        return preflight.templateGateExcludes(profile, templateId)
     }
 
     /**
@@ -2202,6 +2424,12 @@ class ManualInitialOutreachService(
         ), executionId)
     }
 
+    /** I-1/I-5（02）：诊断母集扫描结果；`partial=true` 表示超限/取消，统计不完整。 */
+    private data class BaseScan(
+        val profiles: List<ExpertProfile>,
+        val partial: Boolean
+    )
+
     private data class MaterialReminderSnapshot(
         val targets: List<Pair<ExpertContact, ExpertProfile>>,
         val totalEsHits: Long,
@@ -2225,7 +2453,29 @@ data class PendingOutreachSummary(
     /** A3 (I-3): 原因命中计数（同一人多原因各计一次；总排除按人去重）。 */
     val reasonHits: Map<String, Int> = emptyMap(),
     /** A3 (I-3): 被排除者逐人原因 key（受 [PREVIEW_EXCLUDED_DETAIL_LIMIT] 限制，计数不受限）。 */
-    val excludedRecipients: List<PreviewExcludedRecipient> = emptyList()
+    val excludedRecipients: List<PreviewExcludedRecipient> = emptyList(),
+    /**
+     * I-1/I-5（02 / MAIN M-3）：完整母集（仅所选层级/标签）按既有规则去重后的目标数。
+     * `null` = 旧响应/未计算（旧 UI 显示「详细解释不可用」，**禁止补 0**）。
+     */
+    val baseline: Int? = null,
+    /** MAIN M-3：确定性条件/准入/保护未通过的目标去重数（`baseline = excludedUnique + eligibleBeforeLiveVerification`）。 */
+    val excludedUnique: Int? = null,
+    /** MAIN M-3：确定性检查通过的目标数（仍可能等待真实验证或发送前复核）。 */
+    val eligibleBeforeLiveVerification: Int? = null,
+    /** MAIN M-3：实时验证开启但无有效可复用结果的通过目标数（是 [eligibleBeforeLiveVerification] 的子集）。 */
+    val awaitingVerification: Int? = null,
+    /** MAIN M-3：本次整体邮箱验证相位（`DISABLED`/`CACHED_ALLOWED`/`CACHED_REJECTED`/`AWAITING_VERIFICATION`）。 */
+    val verificationPhase: String? = null,
+    /** MAIN M-3：母集读取是否不完整；true 时不得套用完整总数承诺。 */
+    val partial: Boolean = false,
+    /** MAIN M-3：统计时点。 */
+    val asOf: java.time.LocalDateTime? = null,
+    /**
+     * MAIN M-3：新共享口径的原因命中明细（每原因含命中数与 ≤20 样本、超限 `truncated`）。
+     * 与旧 [reasonHits] 计数口径一致但可重叠，绝不相加冒充总排除人数。
+     */
+    val reasonHitsDetail: List<RecipientReasonHit> = emptyList()
 )
 
 /**
