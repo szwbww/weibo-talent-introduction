@@ -40,7 +40,7 @@
 1. **新表与门禁（I-1— I-3）**：V157 新建 `discovery_person_outreach(person_id FK, mail_type, state, revision, owner_token, selected_doc_id, recipient, message_id, attempt_id nullable, history_reference_json, created_at, updated_at)`，复合主键。DiscoveryPersonOutreachGuardService 内聚 JDBC 条件更新和历史只读检查；每次调用需 expected 人物版本/实际地址，依靠数据库锁和唯一键，不能用 JVM synchronized 代替多实例互斥。锁持有期间复核已登记成员 revision；ES/准入变化在发送前重读，承认跨库与 SMTP 无分布式事务。
 2. **三入口接入（I-1— I-3）**：旧/新首发在建 contact 或修改 attempt 前 reserve；完成所有原门禁后 CAS 到 SENDING 才 send。详情手动发送仅对实际 INTRODUCTION 执行相同检查，其余类型原样。未获许可返回可解释重复/未知/不合格结果，不能先建另一 contact 再跳过。
 3. **结果与中断（I-2/I-3）**：ManualOutreachTxHelper 在原成功事务中联动已有 guard 的 SENT；详情自己的成功事务作等效处理。无法同时完成时不释放占位，保留 UNKNOWN 待核。占位后取消且证明未交付可标 SAFE_RETRY；SENDING 不允许定时超时解锁。上线回滚也保留此保护，不能恢复旧逐邮箱首发。
-4. **四份定向测试（I-1— I-3）**：真实数据库并发两个 worker/不同入口，假 SMTP 记录调用数；注入成功后数据库失败、异常、取消及明确未交付重试；验证非 INTRODUCTION、范围外及原配额行为。V157 实施前检查是否已被占用，禁止改既有迁移。
+4. **四份定向测试（I-1— I-3）**：真实数据库并发两个 worker/不同入口，假 SMTP 记录调用数；注入成功后数据库失败、异常、取消及明确未交付重试；验证非 INTRODUCTION、范围外及原配额行为。V157 实施前检查是否已被占用，禁止改既有迁移。A14：同步授权 FlywayMigrationIntegrationTest.kt（全量迁移最新版本断言 31 处 156→157，并加 V157 表存在/唯一键断言）。
 
 ## 变更文件清单
 
@@ -56,8 +56,9 @@
 |src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt|在 08 后修改|
 |src/test/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachServiceTest.kt|在 08 后修改|
 |src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceTest.kt|修改|
+|src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt|A14：31 处最新版本断言 156→157 + V157 表存在/唯一键断言|
 
-共 10 文件；首发保护与发送接入两个子系统，既有共享存储新增字段 0。
+共 11 文件（A14：第 11 个为迁移集成测试）；首发保护与发送接入两个子系统，既有共享存储新增字段 0。
 
 ## 验收标准
 
