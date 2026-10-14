@@ -23282,8 +23282,8 @@ async function refreshBatchGateState(kind) {
     if (!field || !checkbox || !keys || !hint) return;
     var st = batchGateState[kind];
     var DEFAULT_HINTS = {
-        editor: "开启后仅向满足该模板必填字段的专家发送，缺字段的会在发送时被门禁拦下并计入失败；关闭时不按个性化缺项排除，仍按本次显式条件筛选。",
-        manual: "仅影响本次执行，不修改原定时任务；开启后按该模板必填字段门禁，关闭时不按个性化缺项排除，仍按本次显式条件筛选。"
+        editor: "开启后按模板必填字段筛选，缺项会在发送前排除；关闭时不因个性化缺项排除。",
+        manual: "仅影响本次执行；开启后按模板必填字段筛选，关闭时不因个性化缺项排除。"
     };
 
     var setUnavailable = function(warnText) {
@@ -23640,6 +23640,74 @@ function refreshRecipientPreview(kind) {
     var snapshot = kind === "editor" ? buildConfigEditorRecipientSnapshot() : buildManualExecutionSnapshot();
     hint.innerHTML = "当前条件命中 <strong>计算中…</strong>";
 
+    /* 03/I-1（MAIN M-3）：只有带完整母集字段的响应才渲染 S-1 诊断骨架；缺新字段的旧响应走兼容渲染。
+       这些辅助函数内联，保持 refreshRecipientPreview 自包含（既有契约测试按函数名单独抽取）。 */
+    var hasDiagnostics = function(res) {
+        return Boolean(res) && res.baseline !== null && res.baseline !== undefined;
+    };
+    var numberOf = function(value) {
+        var n = Number(value);
+        return Number.isFinite(n) ? n : 0;
+    };
+    var asOfText = function(value) {
+        if (value === null || value === undefined || value === "") return "未知";
+        return String(value).replace("T", " ").slice(0, 19);
+    };
+    /* 03/S-1（I-1）：两处表单共用的诊断骨架。原因命中可重叠，绝不求和冒充排除人数；样本标注
+       「仅显示前 N 条」，截断、partial 与统计时间显式呈现；所有动态内容转义。 */
+    var diagnosticsHtml = function(res) {
+        var baseline = numberOf(res.baseline);
+        var excluded = numberOf(res.excludedUnique);
+        var eligible = numberOf(res.eligibleBeforeLiveVerification);
+        var awaiting = numberOf(res.awaitingVerification);
+        var hits = Array.isArray(res.reasonHitsDetail) ? res.reasonHitsDetail : [];
+        var html = "<div>统计时间：<span>" + escapeHtml(asOfText(res.asOf)) + "</span></div>" +
+            "<div>范围内 <strong>" + baseline + "</strong> 人；排除 <span class=\"batch-gate-excluded\">" + excluded +
+            "</span> 人；符合任务条件 <strong>" + eligible + "</strong> 人；待执行验证 <strong>" + awaiting +
+            "</strong> 人</div>" +
+            "<span class=\"batch-gate-warnline\">原因人数可重叠；发送前还会复核退订、发送历史和账号运行状态。</span>";
+        var detail = "";
+        if (hits.length === 0) {
+            detail = "<div>原因：0 人；仅显示前 0 条</div>";
+        } else {
+            hits.forEach(function(hit) {
+                var samples = hit && Array.isArray(hit.samples) ? hit.samples : [];
+                detail += "<div>原因：" + escapeHtml(hit && hit.reasonKey) + " <strong>" +
+                    numberOf(hit && hit.count) + "</strong> 人；仅显示前 <strong>" + samples.length +
+                    "</strong> 条" + (hit && hit.truncated ? "（样本已截断）" : "") + "</div>";
+                samples.forEach(function(sample) {
+                    detail += "<div>样本：" + escapeHtml(sample && sample.docId) + "（" +
+                        escapeHtml(sample && sample.orcidId) + "）</div>";
+                });
+            });
+        }
+        html += "<details><summary>查看排除原因与样本</summary>" + detail + "</details>";
+        if (res.partial) {
+            html += "<span class=\"batch-gate-warnline\">统计未完成，结果可能不完整。</span>";
+        }
+        return html;
+    };
+    /* 03/I-2：模板门禁说明跟随开关，关闭时不再称为发送失败。 */
+    var gateHtml = function(gate) {
+        if (!gate) return "";
+        if (gate.gateOn) {
+            return "；因模板缺项排除 <span class=\"batch-gate-excluded\">" + gate.excluded +
+                "</span> 人（门禁过滤已排除）";
+        }
+        if (gate.excluded > 0) {
+            return "<span class=\"batch-gate-warnline\">其中 " + gate.excluded +
+                " 位缺少该模板必填字段，当前未开启门禁不会因此排除。</span>";
+        }
+        return "";
+    };
+    /* 03/I-1/I-3：新响应按 S-1 骨架渲染；旧响应只显示现有数量并注明「详细解释不可用」，禁止补 0。 */
+    var hintHtml = function(total, res, excludeVerifiedUnavailableEmails, gate) {
+        var html = hasDiagnostics(res)
+            ? diagnosticsHtml(res)
+            : baseHintHtml(total, res, excludeVerifiedUnavailableEmails) + "<span>详细解释不可用</span>";
+        return html + gateHtml(gate);
+    };
+
     var post = function(gateOn) {
         return api("/api/mail/batch-send/recipients/preview", {
             method: "POST",
@@ -23663,25 +23731,22 @@ function refreshRecipientPreview(kind) {
         var selectedTotal = gateOn ? totalOf(results[1]) : offTotal;
         var excludeVerifiedUnavailable = snapshot.excludeVerifiedUnavailableEmails === true;
         if (!gateAvailable) {
-            hint.innerHTML = baseHintHtml(offTotal, off, excludeVerifiedUnavailable);
+            hint.innerHTML = hintHtml(offTotal, off, excludeVerifiedUnavailable);
             return;
         }
         var onTotal = totalOf(results[1]);
         var excluded = Math.max(0, offTotal - onTotal);
-        if (gateOn) {
-            hint.innerHTML = baseHintHtml(selectedTotal, selectedResponse, excludeVerifiedUnavailable) +
-                "；门禁过滤已排除 <span class=\"batch-gate-excluded\">" + excluded + "</span> 位";
-        } else {
-            hint.innerHTML = baseHintHtml(selectedTotal, selectedResponse, excludeVerifiedUnavailable) +
-                (excluded > 0
-                    ? "<span class=\"batch-gate-warnline\">其中 " + excluded +
-                      " 位缺少该模板必填字段，发送时会被门禁拦下并计入失败。</span>"
-                    : "");
-        }
+        hint.innerHTML = hintHtml(selectedTotal, selectedResponse, excludeVerifiedUnavailable,
+            { gateOn: gateOn, excluded: excluded });
     }).catch(function(error) {
         if (seq !== recipientPreviewRequestSeq[kind]) return;   // I4b-2：失败也要比 seq
-        var message = error && error.message ? String(error.message) : "请求失败";
         console.warn("Recipient preview failed", error);
+        // 03/I-3：HTTP/API 失败显示「预估不可用」且不弹窗；非 API 错误仅保留原文，不伪装成诊断结果。
+        if (error && error.status !== null && error.status !== undefined) {
+            hint.textContent = "预估不可用";
+            return;
+        }
+        var message = error && error.message ? String(error.message) : "请求失败";
         hint.textContent = "预估失败：" + message;
     });
 }

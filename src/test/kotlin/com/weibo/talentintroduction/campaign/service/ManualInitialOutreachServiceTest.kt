@@ -17,6 +17,7 @@ import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepos
 import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationTagStatus
 import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationErrorCodes
 import com.weibo.talentintroduction.campaign.repository.CampaignRepository
+import com.weibo.talentintroduction.campaign.repository.BatchRecipientReadRepository
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepository
 import com.weibo.talentintroduction.config.ManualOutreachProperties
@@ -136,6 +137,14 @@ class ManualInitialOutreachServiceTest {
     private val discoveryReviewService =
         Mockito.mock(com.weibo.talentintroduction.discovery.service.DiscoveryReviewService::class.java)
     private val batchRecipientSelectionService = BatchRecipientSelectionService(discoveryReviewService)
+    /** 02（I-4/I-5）：只读发送保护事实；本类默认无事实，异常/边界不参与。 */
+    private val batchRecipientReadRepository = Mockito.mock(BatchRecipientReadRepository::class.java)
+    private val batchRecipientPreflightService = BatchRecipientPreflightService(
+        batchRecipientSelectionService,
+        batchEmailVerificationService,
+        batchRecipientReadRepository,
+        introductionMailComposer
+    )
 
     private val service = ManualInitialOutreachService(
         expertSearchService = expertSearchService,
@@ -165,7 +174,8 @@ class ManualInitialOutreachServiceTest {
         mailComposeTemplateService = mailComposeTemplateService,
         batchEmailVerificationService = batchEmailVerificationService,
         expertOperatorStatusService = expertOperatorStatusService,
-        batchRecipientSelectionService = batchRecipientSelectionService
+        batchRecipientSelectionService = batchRecipientSelectionService,
+        batchRecipientPreflightService = batchRecipientPreflightService
     )
 
     private fun fastConfig(
@@ -569,13 +579,79 @@ class ManualInitialOutreachServiceTest {
         val unrestricted = service.countBySnapshot(runScheduledSnapshot())
         assertEquals(4, unrestricted.pending)
 
-        // Other：发现档案不进任何地区（空/未映射国家），非发现 legacyBlank 按 country-only 语义也不在 Other（nationality=Japan）。
+        // Other：新发现专家按国家判定 —— null/未识别国家都落在 Other 桶（I-1 修复后计入 C001/C002）；
+        // Japan 是明确国家，选中 Other 不放行；非发现 legacyBlank 仍按 country OR nationality 判定
+        // （country=null、nationality=Japan → 不属于 Other）。
         val other = service.countBySnapshot(runScheduledSnapshot().copy(regions = listOf("Other")))
-        assertEquals(0, other.pending)
+        assertEquals(2, other.pending)
 
         // Asia (Japan & Korea)：发现按 country=Japan 只进 C003；非发现 C004 按 nationality=Japan 进入。
         val asia = service.countBySnapshot(runScheduledSnapshot().copy(regions = listOf("Asia (Japan & Korea)")))
         assertEquals(2, asia.pending)
+    }
+
+    @Test
+    fun `ES region sieve widens with the discovered missing-country branch only when Other is selected (I-2)`() {
+        val otherScope = RecipientScope(
+            mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+            tags = emptyList(), regions = listOf("Other"),
+            emailDomains = emptyList(), discipline = null
+        )
+        // I-2：`country` 字段不存在（ES 里 null 国家没有该字段）的 discovered 只由这一分支命中。
+        val discoveredMissingCountry = mapOf(
+            "bool" to mapOf(
+                "must" to listOf(mapOf("term" to mapOf("tags" to "discovered"))),
+                "must_not" to listOf(mapOf("exists" to mapOf("field" to "country")))
+            )
+        )
+
+        val otherFilters = invokeBuildEsFiltersForLevel(service, otherScope, "CANDIDATE")
+        val wrapper = otherFilters.single { filter ->
+            val should = (filter["bool"] as? Map<*, *>)?.get("should") as? List<*>
+            should?.contains(discoveredMissingCountry) == true
+        }
+        val bool = wrapper["bool"] as Map<*, *>
+        assertEquals(1, bool["minimum_should_match"])
+        assertEquals(
+            listOf(ExpertSearchService.regionsFilter(listOf("Other")), discoveredMissingCountry),
+            bool["should"]
+        )
+
+        // 非 Other：既有地区查询逐字不变（不被包裹，也不出现 discovered 补充分支）。
+        val europeScope = otherScope.copy(regions = listOf("Europe"))
+        val europeFilters = invokeBuildEsFiltersForLevel(service, europeScope, "CANDIDATE")
+        assertTrue(europeFilters.contains(ExpertSearchService.regionsFilter(listOf("Europe"))))
+        assertFalse(europeFilters.toString().contains("discovered"))
+    }
+
+    @Test
+    fun `discovered experts without a country pass the Other sieve in preview and run (I-1 I-2 X1)`() {
+        val acc = account("chen")
+        val blankCountry = signedDiscoveryExpert("U001", "unknown-1@example.org", country = null)
+        val unmappedCountry = signedDiscoveryExpert("U002", "unknown-2@example.org", country = "Atlantis")
+        val japan = signedDiscoveryExpert("U003", "japan@example.org", country = "Japan")
+        stubIntroSendPipeline(acc, listOf(blankCountry, unmappedCountry, japan))
+        stubAdmissions(
+            "U001" to "AUTO_PASSED",
+            "U002" to "AUTO_PASSED",
+            "U003" to "AUTO_PASSED"
+        )
+
+        val snapshot = runScheduledSnapshot().copy(regions = listOf("Other"))
+        val preview = service.countBySnapshot(snapshot)
+        assertEquals(2, preview.pending, "null/未识别国家的 discovered 必须进 Other")
+
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = true)
+        assertEquals(preview.totalSendable, result.total, "预估与执行必须同口径")
+        assertEquals(2, result.sent, "明确国家 Japan 不因选中 Other 而放行")
+
+        // I-3：地区判定只读 —— 发送使用的仍是档案里的原始 country 值。
+        val selected = ArgumentCaptor.forClass(ExpertProfile::class.java)
+        Mockito.verify(introductionMailComposer, Mockito.times(2)).compose(
+            eqValue("chen"), captureValue(selected, blankCountry), Mockito.isNull(), anyBooleanValue()
+        )
+        assertEquals(listOf(null, "Atlantis"), selected.allValues.map { it.country })
+        assertEquals(listOf("U001", "U002"), selected.allValues.map { it.orcidId })
     }
 
     @Test
@@ -724,7 +800,8 @@ class ManualInitialOutreachServiceTest {
         assertEquals(1, filtered.retryable)
         assertEquals(3, filtered.totalSendable)
         assertEquals(2, filtered.excludedVerifiedUnavailable)
-        Mockito.verify(expertSearchService).scrollExpertsFiltered(
+        // 02：预估还做一次只读母集扫描（层级+标签），故同一 CANDIDATE scroll 被调用两次（预估 1 + 母集 1）。
+        Mockito.verify(expertSearchService, Mockito.times(2)).scrollExpertsFiltered(
             eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList()), eqValue(500),
             anyValue({ _: List<ExpertProfile> -> true })
         )
@@ -739,8 +816,9 @@ class ManualInitialOutreachServiceTest {
         assertEquals(5, unfiltered.totalSendable)
         assertEquals(0, unfiltered.excludedVerifiedUnavailable)
         Mockito.verifyNoInteractions(batchEmailVerificationService)
-        // I-3: 预估不再读粗筛命中数 —— 关闭历史不可达过滤时同样走 scroll + 最终谓词（否则预估虚高）。
-        Mockito.verify(expertSearchService).scrollExpertsFiltered(
+        // I-3: 预估不再读粗筛命中数 —— 关闭历史不可达过滤时同样走 scroll + 最终谓词（否则预估虚高）；
+        // 02：再加一次只读母集扫描。
+        Mockito.verify(expertSearchService, Mockito.times(2)).scrollExpertsFiltered(
             eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList()), eqValue(500),
             anyValue({ _: List<ExpertProfile> -> true })
         )
@@ -4977,6 +5055,182 @@ class ManualInitialOutreachServiceTest {
             )
         Mockito.verify(expertSearchService, Mockito.times(1))
             .countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
+    }
+
+    // ── 02: 统一只读预检查（完整母集、独立原因、限量样本、动态保护） ──────────────
+
+    @Test
+    fun `preview exposes the complete-baseline preflight counts with bounded samples (I-1 I-2 I-5)`() {
+        stubEmptyRetryCandidates()
+        val profiles = (1..10).map { expert("Q%02d".format(it), "q%02d@example.org".format(it)).copy(country = "Japan") }
+        stubScrolledExperts(profiles)
+
+        val summary = service.countBySnapshot(runScheduledSnapshot().copy(regions = listOf("Europe")))
+
+        // 母集只按层级/标签（10 人），地区原因独立表达，不把粗筛后的子集冒充母集。
+        assertEquals(10, summary.baseline)
+        assertEquals(10, summary.excludedUnique)
+        assertEquals(0, summary.eligibleBeforeLiveVerification)
+        assertEquals(
+            summary.baseline,
+            (summary.excludedUnique ?: -1) + (summary.eligibleBeforeLiveVerification ?: -1),
+            "baseline = excludedUnique + eligibleBeforeLiveVerification"
+        )
+        assertEquals("DISABLED", summary.verificationPhase)
+        assertFalse(summary.partial)
+        assertNotNull(summary.asOf)
+        val region = summary.reasonHitsDetail.single { it.reasonKey == RecipientFilterKeys.REGION }
+        assertEquals(10, region.count)
+        assertEquals(10, region.samples.size)
+        assertFalse(region.truncated)
+        assertEquals(10, region.samples.map { it.docId }.toSet().size)
+    }
+
+    @Test
+    fun `suppression added after the preview still blocks the same-snapshot run (I-2 I-4)`() {
+        val acc = account("chen")
+        val guard = expert("E101", "guard@example.com")
+        stubIntroSendPipeline(acc, listOf(guard))
+        val snapshot = introSnapshot(roundSize = 10, roundsPerRun = 1)
+
+        val preview = service.countBySnapshot(snapshot)
+        assertEquals(1, preview.totalSendable)
+
+        // 同一快照、预估之后新增抑制 → 发送前动态保护必须拦住，预估本身不产生任何写入。
+        Mockito.`when`(emailSuppressionService.isSuppressed("guard@example.com")).thenReturn(true)
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(0, result.sent)
+        assertEquals(1, result.skipped)
+        Mockito.verify(mailDeliveryService, Mockito.never()).send(
+            anyValue(acc), anyValue(ComposedMail("", "", ""))
+        )
+    }
+
+    @Test
+    fun `preview diagnostics and execution share one preflight eligibility (repair V-1 V-2)`() {
+        val acc = account("chen")
+        val addressLess = expert("E200", "addressless@example.org").copy(email = "   ")
+        val suppressed = expert("E201", "suppressed@example.org")
+        val sendable = expert("E202", "sendable@example.org")
+        stubIntroSendPipeline(acc, listOf(addressLess, suppressed, sendable))
+        Mockito.`when`(batchRecipientReadRepository.findSuppressedEmails(Mockito.anyCollection()))
+            .thenReturn(setOf("suppressed@example.org"))
+
+        val snapshot = introSnapshot(roundSize = 10, roundsPerRun = 1)
+
+        // 预估：母集只按层级/标签（3 人）；地址缺失与既有抑制各自成为独立原因，绝不静默丢人。
+        val preview = service.countBySnapshot(snapshot)
+        assertEquals(3, preview.baseline)
+        assertEquals(2, preview.excludedUnique)
+        assertEquals(1, preview.eligibleBeforeLiveVerification)
+        assertEquals(
+            preview.baseline,
+            (preview.excludedUnique ?: -1) + (preview.eligibleBeforeLiveVerification ?: -1),
+            "baseline = excludedUnique + eligibleBeforeLiveVerification"
+        )
+        assertEquals(
+            mapOf(
+                RecipientProtectionReasonKeys.NO_RECIPIENT_ADDRESS to 1,
+                RecipientProtectionReasonKeys.SUPPRESSED to 1
+            ),
+            preview.reasonHitsDetail.associate { it.reasonKey to it.count }
+        )
+
+        // 逐 docId 诊断保留同样的解释，绝不当成「不在母集」。
+        val diagnostics = service.diagnoseRecipients(snapshot, listOf("E200", "E201", "E202"))
+        val byDoc = diagnostics.recipients.associateBy { it.docId }
+        assertEquals(BatchRecipientDiagnosticStatus.OK, byDoc.getValue("E200").status)
+        assertEquals(
+            listOf(RecipientProtectionReasonKeys.NO_RECIPIENT_ADDRESS),
+            byDoc.getValue("E200").protectionReasonKeys
+        )
+        assertEquals(listOf(RecipientProtectionReasonKeys.SUPPRESSED), byDoc.getValue("E201").protectionReasonKeys)
+        assertEquals(false, byDoc.getValue("E200").eligible)
+        assertEquals(false, byDoc.getValue("E201").eligible)
+        assertEquals(true, byDoc.getValue("E202").eligible)
+
+        // 执行：只选同一快照预检查判定确定通过的目标；被排除的两个既不进执行器也不进 SMTP。
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(1, result.sent)
+        assertEquals(0, result.failed)
+        assertEquals(0, result.skipped)
+        Mockito.verify(mailDeliveryService, Mockito.times(1))
+            .send(anyValue(acc), anyValue(ComposedMail("", "", "")))
+    }
+
+    @Test
+    fun `post-cap candidates are decided individually instead of being dropped from a partial baseline (repair V-2 epoch 2)`() {
+        val acc = account("chen")
+        // 母集扫描上限 20,000：前 20,000 人被地区条件排除（母集覆盖），随后两人位于 cap 之后。
+        val preCap = (1..20_000).map { expert("S%05d".format(it), "s$it@example.org").copy(country = "Japan") }
+        val postCapEligible = expert("POST20001", "post-eligible@example.org").copy(country = "Germany")
+        val postCapProtected = expert("POST20002", "post-protected@example.org").copy(country = "Germany")
+        stubIntroSendPipeline(acc, preCap + listOf(postCapEligible, postCapProtected))
+        val suppressionLookups = mutableListOf<String?>()
+        Mockito.`when`(batchRecipientReadRepository.findSuppressedEmails(Mockito.anyCollection()))
+            .thenAnswer { invocation ->
+                val emails = invocation.getArgument<Collection<String?>>(0)
+                suppressionLookups.addAll(emails)
+                if ("post-protected@example.org" in emails) setOf("post-protected@example.org") else emptySet()
+            }
+
+        val snapshot = introSnapshot(roundSize = 10, roundsPerRun = 1).copy(regions = listOf("Europe"))
+
+        // 有界母集在 cap 处截断：partial 必须显式，绝不冒充完整总数。
+        val preview = service.countBySnapshot(snapshot)
+        assertTrue(preview.partial, "超过母集上限的统计必须显式标注 partial")
+        assertEquals(20_000, preview.baseline, "母集只覆盖 cap 之前的成员")
+
+        // 执行：cap 之后（不在 partial 母集里）的合格目标必须被单独判定并进入执行，
+        // cap 之后的确定性排除目标必须被单独判定后排除 —— 两者都不因「不在母集里」被静默丢弃。
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(1, result.sent)
+        assertEquals(0, result.failed)
+        assertEquals(0, result.skipped)
+        val saved = ArgumentCaptor.forClass(ExpertContact::class.java)
+        Mockito.verify(expertContactRepository, Mockito.times(1)).save(saved.capture())
+        assertEquals(listOf("POST20001"), saved.allValues.map { it.orcidId })
+        assertTrue(
+            suppressionLookups.contains("post-protected@example.org"),
+            "cap 之后的排除目标必须拿到自己的确定性结论，而不是仅因不在 partial 母集里被丢弃"
+        )
+        Mockito.verify(mailDeliveryService, Mockito.times(1))
+            .send(anyValue(acc), anyValue(ComposedMail("", "", "")))
+    }
+
+    @Test
+    fun `recipient diagnostics rejects an oversized docId request (I-5)`() {
+        val ids = (1..201).map { "D$it" }
+
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            service.diagnoseRecipients(runScheduledSnapshot(), ids)
+        }
+
+        assertTrue(error.message!!.contains("200"))
+    }
+
+    @Test
+    fun `recipient diagnostics reports OK outside-baseline and not-found (I-5)`() {
+        stubEmptyRetryCandidates()
+        stubScrolledExperts(listOf(expert("IN1", "in1@example.org")))
+        Mockito.`when`(
+            expertSearchService.findByDocumentIds(eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList<String>()))
+        ).thenReturn(listOf(expert("OUT1", "out1@example.org")))
+
+        val response = service.diagnoseRecipients(
+            runScheduledSnapshot(), listOf("IN1", "OUT1", "GONE")
+        )
+
+        val byDoc = response.recipients.associateBy { it.docId }
+        assertEquals(BatchRecipientDiagnosticStatus.OK, byDoc.getValue("IN1").status)
+        assertEquals(BatchRecipientDiagnosticStatus.OUTSIDE_BASELINE, byDoc.getValue("OUT1").status)
+        assertEquals(BatchRecipientDiagnosticStatus.NOT_FOUND, byDoc.getValue("GONE").status)
+        assertEquals(1, response.baseline)
+        assertEquals("DISABLED", response.verificationPhase)
+        assertFalse(response.partial)
     }
 
     // ── A3 (05 epoch 2): 预览准入计数 / 模板版本冻结 / 过期令牌 / 账号变量预检 ──────────────

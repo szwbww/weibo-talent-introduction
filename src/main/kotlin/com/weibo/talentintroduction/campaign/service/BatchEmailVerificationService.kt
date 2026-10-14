@@ -98,6 +98,32 @@ class BatchEmailVerificationService(
     }
 
     /**
+     * I-3（02）：**只读**历史解释入口 —— 对一组邮箱返回最近一条**有效原始**记录的供应商状态
+     * （键为规范化邮箱）。复用 [findKnownUndeliverableEmails] 同一仓储查询的有效期、`request_count>0`、
+     * 非复用原始记录、无错误码与 `checked_at/id` 排序，绝不发明第二套缓存有效性；不做任何写入、
+     * 不调用供应商。无有效记录的邮箱不出现在返回值中（调用方据此标 AWAITING_VERIFICATION）。
+     */
+    fun readReusableProviderStates(
+        emails: Collection<String?>,
+        now: LocalDateTime = verificationNow()
+    ): Map<String, String> {
+        val normalized = emails.asSequence()
+            .map(::normalizeVerificationEmail)
+            .filter(String::isNotEmpty)
+            .distinct()
+            .toList()
+        if (normalized.isEmpty()) return emptyMap()
+        val states = LinkedHashMap<String, String>(normalized.size)
+        normalized.chunked(BatchEmailVerificationRepository.MAX_HISTORY_EMAILS).forEach { batch ->
+            repository.findReusableByEmails(batch, now).forEach { row ->
+                val state = row.providerState?.trim().orEmpty()
+                if (state.isNotEmpty()) states.putIfAbsent(row.email, state)
+            }
+        }
+        return states
+    }
+
+    /**
      * 验证一个目标：先落 PENDING 明细，再出结论，SKIP 追加标签并写标签结果。
      * 审计写入失败抛 [EmailVerificationAuditException]；调用方据此停止本次执行且不得发信。
      *

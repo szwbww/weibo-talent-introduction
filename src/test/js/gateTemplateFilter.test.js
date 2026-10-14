@@ -285,10 +285,12 @@ describe("expert gate template filter", () => {
         assert.ok(editorHint, "the editor default hint must exist");
         assert.ok(manualHint, "the manual default hint must exist");
         for (const [kind, hint] of [["editor", editorHint[1]], ["manual", manualHint[1]]]) {
-            assert.ok(hint.includes("关闭时不按个性化缺项排除"),
+            assert.ok(hint.includes("关闭时不因个性化缺项排除"),
                 kind + " hint must state that a closed gate does not exclude personalization gaps");
-            assert.ok(hint.includes("显式条件"), kind + " hint must keep pointing at the explicit conditions");
-            assert.doesNotMatch(hint, /可发送|可发/, kind + " hint must not imply an exact sendable count");
+            assert.ok(hint.includes("开启后按模板必填字段筛选"),
+                kind + " hint must describe what an open gate filters by");
+            assert.doesNotMatch(hint, /计入失败|可发送|可发/,
+                kind + " hint must not call gate exclusions a failure or imply an exact sendable count");
         }
         assert.ok(!gateSource.includes("required_keys"), "the legacy column name must stay gone");
     });

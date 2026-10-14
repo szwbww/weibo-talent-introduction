@@ -14,9 +14,11 @@ import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
 import com.weibo.talentintroduction.campaign.repository.CampaignRepository
 import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationErrorCodes
 import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationSendStatus
+import com.weibo.talentintroduction.campaign.repository.BatchRecipientReadRepository
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepository
 import com.weibo.talentintroduction.config.ManualOutreachProperties
+import com.weibo.talentintroduction.expert.domain.CountryContinentMapping
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.ExpertIdNormalizer
@@ -76,14 +78,28 @@ private const val SEND_REASON_EMAIL_CHANGED = "EMAIL_CHANGED"
 /**
  * I-1/I-4（03）：`buildSmtpErrorSummary` 的永久失败前缀 —— 在线判定与对账读取的是同一份持久化摘要。
  * 只作「历史首封永久失败」事实门禁的判据，不用于地址证据判定（那是地址证据白名单的职责）。
+ * 字符串与 `RecipientAddressFailureClassifier` 写入侧一致；只读预检查的 SQL LIKE 判据共用
+ * [com.weibo.talentintroduction.campaign.repository.BatchRecipientReadRepository.PERMANENT_FAILURE_SUMMARY_PREFIX]。
  */
-private const val PERMANENT_SUMMARY_PREFIX = "PERMANENT:"
+private val PERMANENT_SUMMARY_PREFIX = com.weibo.talentintroduction.campaign.repository.BatchRecipientReadRepository.PERMANENT_FAILURE_SUMMARY_PREFIX
 
 /** I-3（03）：传给公共状态入口的说明文本上限（该说明不落库，仅作调用点可读性）。 */
 private const val SUMMARY_REASON_LIMIT = 200
 
 /** A3 (I-3)：预估响应里逐人排除明细的条数上限（计数不受限，仅明细截断，避免响应过大）。 */
 private const val PREVIEW_EXCLUDED_DETAIL_LIMIT = 500
+
+/** I-5（02）：诊断母集 ES 扫描每批条数（只读，与批量事实读取同量级）。 */
+private const val BASE_SCAN_BATCH_SIZE = 500
+
+/** I-5（02）：单次母集扫描的条数上限；超限标 partial，绝不把截断结果当完整总数。 */
+private const val MAX_BASELINE_SCAN = 20_000
+
+/**
+ * I-2：新发现专家在 ES 文档里的标签值（`ExpertDiscoveryService` 写入侧同值）。
+ * 地区粗筛的 `Other` 补充分支只看这个标签，绝不把非发现档案卷进 `Other`。
+ */
+private const val DISCOVERED_TAG = "discovered"
 
 @Service
 class ManualInitialOutreachService(
@@ -120,7 +136,9 @@ class ManualInitialOutreachService(
      */
     private val expertOperatorStatusService: ExpertOperatorStatusService,
     /** I-1/I-3: 批量目标的唯一准入+显式条件选择器（预估/执行/重试/材料共用）。 */
-    private val batchRecipientSelectionService: BatchRecipientSelectionService = BatchRecipientSelectionService()
+    private val batchRecipientSelectionService: BatchRecipientSelectionService = BatchRecipientSelectionService(),
+    /** I-1/I-2/I-3/I-4/I-5/I-6（02）：只读统一预检查 —— 预估与诊断共用，零业务写入。 */
+    private val batchRecipientPreflightService: BatchRecipientPreflightService? = null
 ) {
     private val log = LoggerFactory.getLogger(ManualInitialOutreachService::class.java)
 
@@ -573,6 +591,9 @@ class ManualInitialOutreachService(
                 initialSeenOrcids = seenOrcids, initialSeenDocIds = seenDocIds
             )
             excluded += esExcluded
+            // I-1/I-2（02）：完整母集只读预检查 —— 母集仅按所选层级/标签读取（不再被地区/状态/模板提前缩小），
+            // 保护/模板/邮箱原因独立表达；新增字段为兼容扩展，旧字段含义逐字保留。
+            val preflight = preflightForSnapshot(snapshot, scope)
             PendingOutreachSummary(
                 pending = esEstimate,
                 retryable = retryable,
@@ -581,9 +602,225 @@ class ManualInitialOutreachService(
                 template = previewTemplateVersion(snapshot),
                 admission = accumulator.counts(esEstimate + retryable),
                 reasonHits = accumulator.reasonHits(),
-                excludedRecipients = accumulator.excludedRecipients(PREVIEW_EXCLUDED_DETAIL_LIMIT)
+                excludedRecipients = accumulator.excludedRecipients(PREVIEW_EXCLUDED_DETAIL_LIMIT),
+                baseline = preflight?.baseline,
+                excludedUnique = preflight?.excludedUnique,
+                eligibleBeforeLiveVerification = preflight?.eligibleBeforeLiveVerification,
+                awaitingVerification = preflight?.awaitingVerification,
+                verificationPhase = preflight?.verificationPhase?.name,
+                partial = preflight?.partial ?: false,
+                asOf = preflight?.asOf,
+                reasonHitsDetail = preflight?.reasonHits.orEmpty()
             )
         }
+    }
+
+    /**
+     * I-1/I-4（02）：只读统一预检查 —— 母集按「所选漏斗层级 + 标签」读取 ES 候选并并入同层级 NEW 重试候选，
+     * 按真实 docId 去重后交给 [BatchRecipientPreflightService] 逐人解释。**零业务写入**：只 SELECT/ES 读取，
+     * 不调用 verify()/SMTP/供应商，也不创建任何 campaign/contact/task/发送尝试。
+     *
+     * `shouldStop` 只为取消语义保留；母集超限时返回 `partial=true`，绝不把截断结果当完整总数。
+     */
+    private fun preflightForSnapshot(
+        snapshot: BatchExecutionSnapshot,
+        scope: RecipientScope,
+        shouldStop: () -> Boolean = { false }
+    ): BatchRecipientPreflightResult? {
+        val preflightService = batchRecipientPreflightService ?: return null
+        val scan = scanBaseCandidates(scope, shouldStop)
+        return preflightService.preflight(preflightInput(snapshot, scope, scan.profiles, scan.partial))
+    }
+
+    /**
+     * repair V-2（epoch 2）：同一快照的只读预检查输入 —— 有界母集扫描（partial）与执行期的
+     * 逐候选复核共用同一开关/时点/门禁口径，保证两条路径判定同源。
+     */
+    private fun preflightInput(
+        snapshot: BatchExecutionSnapshot,
+        scope: RecipientScope,
+        profiles: List<ExpertProfile>,
+        partial: Boolean
+    ): BatchRecipientPreflightInput = BatchRecipientPreflightInput(
+        scope = scope,
+        profiles = profiles,
+        // I-6：模板门禁只对 INTRODUCTION 生效（与 batchTemplateGate 同边界）。
+        gateFilterEnabled = snapshot.gateFilterEnabled && scope.mailType == BatchSendType.INTRODUCTION.name,
+        templateId = snapshot.templateId,
+        emailVerificationEnabled = snapshot.emailVerificationEnabled,
+        emailVerificationAllowedStates = snapshot.emailVerificationAllowedStates,
+        excludeVerifiedUnavailableEmails = snapshot.excludeVerifiedUnavailableEmails,
+        asOf = verificationFilterNow(),
+        partial = partial
+    )
+
+    /**
+     * I-1/I-2（02）：诊断母集扫描 —— ES 侧只应用层级与标签（[baseRecipientScope]），
+     * 并并入同层级 NEW 重试候选（按既有身份键合并、真实 docId 去重）。地区/状态/方向/类型/模板门禁
+     * 一律留给预检查逐人解释，绝不在扫描阶段提前丢人。
+     */
+    private fun scanBaseCandidates(scope: RecipientScope, shouldStop: () -> Boolean = { false }): BaseScan {
+        val baseScope = baseRecipientScope(scope)
+        val collected = LinkedHashMap<String, ExpertProfile>()
+        var partial = false
+        for (level in baseScope.funnelLevels) {
+            if (shouldStop()) {
+                partial = true
+                break
+            }
+            expertSearchService.scrollExpertsFiltered(
+                level = ExpertIndexLevel.valueOf(level),
+                filters = buildBaseEsFilters(baseScope),
+                batchSize = BASE_SCAN_BATCH_SIZE
+            ) { batch ->
+                for (profile in batch) {
+                    if (collected.size >= MAX_BASELINE_SCAN) {
+                        partial = true
+                        return@scrollExpertsFiltered false
+                    }
+                    collected.putIfAbsent(BatchRecipientSelectionService.docIdOf(profile), profile)
+                }
+                !shouldStop()
+            }
+        }
+        if (baseScope.mailType == BatchSendType.INTRODUCTION.name && !shouldStop()) {
+            campaignRepository.findByCampaignCode("MANUAL_OUTREACH")?.id?.let { campaignId ->
+                loadRetryCandidateProfiles(campaignId, baseScope.funnelLevels).forEach { profile ->
+                    collected.putIfAbsent(BatchRecipientSelectionService.docIdOf(profile), profile)
+                }
+            }
+        }
+        return BaseScan(collected.values.toList(), partial)
+    }
+
+    /**
+     * repair V-2（epoch 2）：按执行期资格过滤候选。[eligibility] 为 `null`（未配置预检查服务的历史
+     * 手工夹具）时逐字保持旧行为；空候选不触发预检查。
+     */
+    private fun <T> executionEligibleOnly(
+        items: List<T>,
+        eligibility: Lazy<ExecutionPreflightEligibility>?,
+        docId: (T) -> String,
+        profile: (T) -> ExpertProfile
+    ): List<T> {
+        if (items.isEmpty() || eligibility == null) return items
+        return eligibility.value.filter(items, docId, profile)
+    }
+
+    /**
+     * I-1（02）：只承载层级与标签的母集扫描范围（其余维度都是逐人原因，不是母集条件）。
+     */
+    private fun baseRecipientScope(scope: RecipientScope): RecipientScope = RecipientScope(
+        mailType = scope.mailType,
+        funnelLevels = scope.funnelLevels,
+        tags = scope.tags,
+        regions = emptyList(),
+        emailDomains = emptyList(),
+        discipline = null
+    )
+
+    /**
+     * I-1（02）/ repair V-1：母集扫描的 ES 过滤器 —— 只有（可选）标签，**不**追加地区/状态/方向/
+     * 类型/模板门禁，也**不**追加 `exists email`（地址缺失的母集成员必须留在母集里，由预检查作为
+     * 确定性原因解释，绝不静默丢出诊断），更不追加 INTRODUCTION 空类型集合的 `MATCH_NONE_FILTER`
+     * （那会把母集误扫成 0）。这些维度一律留给预检查逐人解释。
+     */
+    private fun buildBaseEsFilters(baseScope: RecipientScope): List<Map<String, Any>> =
+        if (baseScope.tags.isEmpty()) {
+            emptyList()
+        } else {
+            listOf(mapOf("terms" to mapOf("tags" to baseScope.tags)))
+        }
+
+    /**
+     * I-1/I-2（02）：NEW 重试候选只读加载 —— 与执行构造同源（同 campaign、同 current_status、同层级索引），
+     * 不做发送/绑定/抑制/地址保护过滤（那些由预检查作为独立原因解释）。
+     */
+    private fun loadRetryCandidateProfiles(campaignId: Long, levels: Set<String>): List<ExpertProfile> {
+        val contacts = expertContactRepository
+            .findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(campaignId, "NEW")
+        if (contacts.isEmpty()) return emptyList()
+        val orcidIds = contacts.map { it.orcidId }
+        val profilesByLevel = levels.associateWith { level ->
+            expertSearchService.searchByOrcidIds(orcidIds, ExpertIndexLevel.valueOf(level))
+                .associateBy { normalizeOrcid(it.orcidId) }
+        }
+        return contacts.mapNotNull { contact ->
+            val normOrcid = normalizeOrcid(contact.orcidId)
+            levels.asSequence().mapNotNull { profilesByLevel[it]?.get(normOrcid) }.firstOrNull()
+        }
+    }
+
+    /**
+     * I-4/I-5（02）：只读「按 docId 诊断」入口 —— 为操作端逐个解释指定目标。
+     * `docIds` 1..200；母集外显式 `OUTSIDE_BASELINE`，任何层级都找不到显式 `NOT_FOUND`，绝不静默吞掉。
+     */
+    fun diagnoseRecipients(
+        snapshot: BatchExecutionSnapshot,
+        docIds: List<String>
+    ): BatchRecipientDiagnosticsResponse {
+        val requested = docIds.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        require(requested.isNotEmpty()) { "docIds 不能为空" }
+        require(requested.size <= BatchRecipientPreflightService.MAX_DIAGNOSTIC_DOC_IDS) {
+            "单次诊断最多 ${BatchRecipientPreflightService.MAX_DIAGNOSTIC_DOC_IDS} 个 docId"
+        }
+        val scope = resolveScope(snapshot)
+        val scan = scanBaseCandidates(scope)
+        val preflightService = requireNotNull(batchRecipientPreflightService) {
+            "只读预检查服务未配置，无法诊断（Spring 环境恒注入）"
+        }
+        val preflight = preflightService.preflight(preflightInput(snapshot, scope, scan.profiles, scan.partial))
+        val byDoc = preflight.decisions.associateBy { it.docId }
+        val existing = existingDocIds(requested.filter { it !in byDoc })
+        val entries = requested.map { docId ->
+            val decision = byDoc[docId]
+            if (decision != null) {
+                BatchRecipientDiagnosticEntry(
+                    docId = docId,
+                    status = BatchRecipientDiagnosticStatus.OK,
+                    orcidId = decision.orcidId,
+                    admissionState = decision.admissionState,
+                    eligible = decision.eligible,
+                    admissionReasonKeys = decision.admissionReasonKeys,
+                    conditionReasonKeys = decision.conditionReasonKeys,
+                    protectionReasonKeys = decision.protectionReasonKeys,
+                    templateMissingKeys = decision.templateMissingKeys,
+                    verificationPhase = decision.verificationPhase.name
+                )
+            } else {
+                BatchRecipientDiagnosticEntry(
+                    docId = docId,
+                    status = if (docId in existing) {
+                        BatchRecipientDiagnosticStatus.OUTSIDE_BASELINE
+                    } else {
+                        BatchRecipientDiagnosticStatus.NOT_FOUND
+                    }
+                )
+            }
+        }
+        return BatchRecipientDiagnosticsResponse(
+            baseline = preflight.baseline,
+            excludedUnique = preflight.excludedUnique,
+            eligibleBeforeLiveVerification = preflight.eligibleBeforeLiveVerification,
+            awaitingVerification = preflight.awaitingVerification,
+            reasonHits = preflight.reasonHits,
+            asOf = preflight.asOf,
+            partial = preflight.partial,
+            verificationPhase = preflight.verificationPhase.name,
+            recipients = entries
+        )
+    }
+
+    /** 只在所选母集之外的请求 docId 上做一次跨层级存在性确认（区分 OUTSIDE_BASELINE / NOT_FOUND）。 */
+    private fun existingDocIds(docIds: List<String>): Set<String> {
+        if (docIds.isEmpty()) return emptySet()
+        val out = HashSet<String>(docIds.size)
+        for (level in ExpertIndexLevel.values()) {
+            expertSearchService.findByDocumentIds(level, docIds).forEach { profile ->
+                out += BatchRecipientSelectionService.docIdOf(profile)
+            }
+        }
+        return out
     }
 
     /** A3 (I-4)：预估冻结的模板版本摘要；无模板或不可读时为 null。 */
@@ -611,8 +848,12 @@ class ManualInitialOutreachService(
     }
 
     private fun batchGateExcludes(templateId: Long?, profile: ExpertProfile): Boolean {
-        val evaluation = introductionMailComposer.evaluateForBatch(null, profile, templateId)
-        return evaluation.missingKeys.any { it !in MailComposeTemplateService.ACCOUNT_VARIABLE_KEYS }
+        // I-6/I-2（02）：模板门禁的逐人判定收口在只读预检查服务，预估与执行共用同一实现。
+        // Spring 恒注入；仅历史手工构造的测试夹具（不传该依赖）回退到逐字相同的判定。
+        val preflight = batchRecipientPreflightService
+            ?: return introductionMailComposer.evaluateForBatch(null, profile, templateId)
+                .missingKeys.any { it !in MailComposeTemplateService.ACCOUNT_VARIABLE_KEYS }
+        return preflight.templateGateExcludes(profile, templateId)
     }
 
     /**
@@ -673,12 +914,46 @@ class ManualInitialOutreachService(
         val filterNow = verificationFilterNow()
         // A3 (I-4)：预估（countBySnapshot）与执行共用的精确模板门禁；门禁关闭时为 no-op。
         val gate = batchTemplateGate(snapshot)
+        // repair V-2（epoch 2）：诊断母集是有界、可能 `partial` 的，**不能**当作执行期白名单。
+        // 执行期对每个候选（NEW 重试 + ES 取页）取同一快照的确定性预检查结论：母集已覆盖的直接复用；
+        // 因 [MAX_BASELINE_SCAN] 截断而未覆盖的候选按同一输入单独求一次结论并记忆化 ——
+        // 目标仅仅「不在 partial 母集里」绝不等于确定性排除；发送前的动态复核逐点保留。
+        // 惰性求值：只有真的要选择目标时才做母集扫描（每次运行至多一次），取消/空快照提前返回不再多付一次扫描。
+        val preflightService = batchRecipientPreflightService
+        val executionEligibility: Lazy<ExecutionPreflightEligibility>? = if (preflightService == null) {
+            null
+        } else {
+            lazy {
+                val scan = scanBaseCandidates(scope) {
+                    progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)
+                }
+                val baseline = preflightService.preflight(preflightInput(snapshot, scope, scan.profiles, scan.partial))
+                ExecutionPreflightEligibility(
+                    initial = baseline.decisions.associate { it.docId to it.eligible },
+                    // 母集因上限截断而未覆盖的候选：按同一输入单独求一次确定性结论。
+                    decide = { profiles ->
+                        preflightService.preflight(preflightInput(snapshot, scope, profiles, partial = false))
+                            .decisions
+                            .associate { it.docId to it.eligible }
+                    }
+                )
+            }
+        }
         val seenDocIds = mutableSetOf<String>()
-        val (retryableTargets, seenOrcids, _) = buildFilteredRetryableTargets(campaignId, scope, filterNow, seenDocIds, gate)
+        val (allRetryableTargets, seenOrcids, _) = buildFilteredRetryableTargets(campaignId, scope, filterNow, seenDocIds, gate)
+        // repair V-2：NEW 重试目标同样按执行期资格逐人收敛；去重标识仍由**全部**重试目标占据，
+        // 保证 ES 侧同一身份不会因执行过滤而重复出现。
+        val retryableTargets = executionEligibleOnly(
+            allRetryableTargets,
+            executionEligibility,
+            docId = { BatchRecipientSelectionService.docIdOf(it.second) },
+            profile = { it.second }
+        )
         val (esEstimate, _) = countEsTargets(scope, filterNow, {
             progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)
         }, gate, initialSeenOrcids = seenOrcids, initialSeenDocIds = seenDocIds)
-        val totalEstimate = retryableTargets.size + esEstimate
+        // 旧口径的进度估算逐字保留（预估 totalSendable 与执行 total 的同源契约不变）。
+        val totalEstimate = allRetryableTargets.size + esEstimate
         log.info("Outreach targets: {} retryable, {} ES estimate, {} total estimate; config: roundSize={}, perMailMs={}, perRoundMs={}",
             retryableTargets.size, esEstimate, totalEstimate,
             config.roundSize, config.perMailIntervalMs, config.perRoundIntervalMs)
@@ -707,9 +982,17 @@ class ManualInitialOutreachService(
             fetchNextPage = { offset, size -> fetchEsPage(scope, offset, size) },
             // I-1/I-3: ES 页返回后先过最终谓词（新发现机构证据 + 已证实机构所在地判地区），
             // 再叠加历史不可达过滤；整页被过滤时迭代器继续推进 offset（I-3）。
+            // repair V-2（epoch 2）：在这之前先按同一快照的执行期资格逐人判定 ——
+            // 母集截断未覆盖的候选在此单独求结论，绝不当成「不在母集 = 排除」。
             filterPage = { profiles ->
+                val eligible = executionEligibleOnly(
+                    profiles,
+                    executionEligibility,
+                    docId = { BatchRecipientSelectionService.docIdOf(it) },
+                    profile = { it }
+                )
                 filterKnownProfiles(
-                    gate(selectIncluded(scope, profiles, seenDocIds)),
+                    gate(selectIncluded(scope, eligible, seenDocIds)),
                     scope.excludeVerifiedUnavailableEmails,
                     filterNow
                 ).filter { seenDocIds.add(BatchRecipientSelectionService.docIdOf(it)) }
@@ -2015,7 +2298,9 @@ class ManualInitialOutreachService(
         if (scope.tags.isNotEmpty()) {
             filters.add(mapOf("terms" to mapOf("tags" to scope.tags)))
         }
-        ExpertSearchService.regionsFilter(scope.regions)?.let { filters.add(it) }
+        ExpertSearchService.regionsFilter(scope.regions)?.let { regionFilter ->
+            filters.add(withDiscoveryUnmappedCountryBranch(scope.regions, regionFilter))
+        }
         // I-2: 方向三态 —— ABSENT 是既有 PRESENT 存在性 filter 的 bool.must_not；
         // ANY 不追加任何项（旧任务人群不变）。与模板门禁字段/研发类型平铺为 AND（I-3）。
         when (scope.researchDirectionFilter) {
@@ -2044,6 +2329,36 @@ class ManualInitialOutreachService(
             )
         }
         return filters
+    }
+
+    /**
+     * I-2：`Other` 被选中时，既有地区粗筛（[ExpertSearchService.regionsFilter]）与
+     * 「`tags=discovered` 且 `country` 字段不存在」取 OR（`minimum_should_match=1`）。
+     *
+     * `country` 为 null 时 ES 文档没有该字段，既有 `Other` 查询的 `exists country` 前置永远不命中，
+     * 仅修内存 matcher 会让这批新发现专家在粗筛阶段就被丢弃。空白或未识别**非空**值不走此分支
+     * （`exists` 为真，由既有 `Other` 查询覆盖）。分支只做并集扩展，不缩小任何既有条件，
+     * 因此不会提前丢掉非地区原因的目标；最终仍由同一个 [RecipientScope.matchesRegion] 判定。
+     */
+    private fun withDiscoveryUnmappedCountryBranch(
+        regions: List<String>,
+        regionFilter: Map<String, Any>
+    ): Map<String, Any> {
+        if (CountryContinentMapping.REGION_OTHER !in regions) return regionFilter
+        return mapOf(
+            "bool" to mapOf(
+                "should" to listOf(
+                    regionFilter,
+                    mapOf(
+                        "bool" to mapOf(
+                            "must" to listOf(mapOf("term" to mapOf("tags" to DISCOVERED_TAG))),
+                            "must_not" to listOf(mapOf("exists" to mapOf("field" to "country")))
+                        )
+                    )
+                ),
+                "minimum_should_match" to 1
+            )
+        )
     }
 
     private fun BatchSendConfig.toSnapshot(oneRoundOnly: Boolean = false): BatchExecutionSnapshot =
@@ -2163,6 +2478,12 @@ class ManualInitialOutreachService(
         ), executionId)
     }
 
+    /** I-1/I-5（02）：诊断母集扫描结果；`partial=true` 表示超限/取消，统计不完整。 */
+    private data class BaseScan(
+        val profiles: List<ExpertProfile>,
+        val partial: Boolean
+    )
+
     private data class MaterialReminderSnapshot(
         val targets: List<Pair<ExpertContact, ExpertProfile>>,
         val totalEsHits: Long,
@@ -2186,7 +2507,29 @@ data class PendingOutreachSummary(
     /** A3 (I-3): 原因命中计数（同一人多原因各计一次；总排除按人去重）。 */
     val reasonHits: Map<String, Int> = emptyMap(),
     /** A3 (I-3): 被排除者逐人原因 key（受 [PREVIEW_EXCLUDED_DETAIL_LIMIT] 限制，计数不受限）。 */
-    val excludedRecipients: List<PreviewExcludedRecipient> = emptyList()
+    val excludedRecipients: List<PreviewExcludedRecipient> = emptyList(),
+    /**
+     * I-1/I-5（02 / MAIN M-3）：完整母集（仅所选层级/标签）按既有规则去重后的目标数。
+     * `null` = 旧响应/未计算（旧 UI 显示「详细解释不可用」，**禁止补 0**）。
+     */
+    val baseline: Int? = null,
+    /** MAIN M-3：确定性条件/准入/保护未通过的目标去重数（`baseline = excludedUnique + eligibleBeforeLiveVerification`）。 */
+    val excludedUnique: Int? = null,
+    /** MAIN M-3：确定性检查通过的目标数（仍可能等待真实验证或发送前复核）。 */
+    val eligibleBeforeLiveVerification: Int? = null,
+    /** MAIN M-3：实时验证开启但无有效可复用结果的通过目标数（是 [eligibleBeforeLiveVerification] 的子集）。 */
+    val awaitingVerification: Int? = null,
+    /** MAIN M-3：本次整体邮箱验证相位（`DISABLED`/`CACHED_ALLOWED`/`CACHED_REJECTED`/`AWAITING_VERIFICATION`）。 */
+    val verificationPhase: String? = null,
+    /** MAIN M-3：母集读取是否不完整；true 时不得套用完整总数承诺。 */
+    val partial: Boolean = false,
+    /** MAIN M-3：统计时点。 */
+    val asOf: java.time.LocalDateTime? = null,
+    /**
+     * MAIN M-3：新共享口径的原因命中明细（每原因含命中数与 ≤20 样本、超限 `truncated`）。
+     * 与旧 [reasonHits] 计数口径一致但可重叠，绝不相加冒充总排除人数。
+     */
+    val reasonHitsDetail: List<RecipientReasonHit> = emptyList()
 )
 
 /**
@@ -2223,6 +2566,31 @@ data class PreviewExcludedRecipient(
     val filterKeys: List<String>,
     val reasonKeys: List<String>
 )
+
+/**
+ * repair V-2（epoch 2）：执行期目标资格。
+ *
+ * 诊断母集（[MAX_BASELINE_SCAN] 上限）是有界的、可能 `partial=true`，**不能**当作执行期白名单：
+ * 目标仅仅「不在母集里」不等于确定性排除。执行期复用同一快照的同一只读预检查结论 ——
+ * 母集已覆盖的候选直接复用其结论；因截断未被覆盖的候选按同一输入单独求一次结论并记忆化，
+ * 因此每个执行候选都有完整的确定性结论，绝不静默丢人。
+ */
+private class ExecutionPreflightEligibility(
+    initial: Map<String, Boolean>,
+    private val decide: (List<ExpertProfile>) -> Map<String, Boolean>
+) {
+    private val memo = HashMap<String, Boolean>(initial)
+
+    fun <T> filter(items: List<T>, docId: (T) -> String, profile: (T) -> ExpertProfile): List<T> {
+        val unknown = items.asSequence()
+            .filter { memo[docId(it)] == null }
+            .distinctBy(docId)
+            .map(profile)
+            .toList()
+        if (unknown.isNotEmpty()) memo.putAll(decide(unknown))
+        return items.filter { memo[docId(it)] == true }
+    }
+}
 
 /**
  * A3 (I-3): 预估侧准入摘要累加器（只读、无写入）。按真实 docId 去重后合并 selector 结论，

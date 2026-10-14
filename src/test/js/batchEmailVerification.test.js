@@ -1211,6 +1211,45 @@ describe("verified-unavailable email filter UI (04-filter-ui)", () => {
         assert.ok(!elements.get("preview").innerHTML.includes("已排除不可用邮箱"),
             "failed preview must not retain a stale count");
     });
+
+    it("03: renders the shared diagnostics skeleton for new responses and keeps legacy responses explicit", async () => {
+        async function render(response) {
+            const elements = createElementStore();
+            const sandbox = {
+                document: { getElementById: (id) => elements.get(id) },
+                recipientPreviewRequestSeq: { editor: 0 },
+                batchGateState: { editor: { available: false } },
+                recipientPreviewHintId: () => "preview",
+                gateToggleId: () => "gate",
+                buildConfigEditorRecipientSnapshot: () => ({ excludeVerifiedUnavailableEmails: true }),
+                api: async () => response,
+                console: { warn: () => {} }
+            };
+            vm.createContext(sandbox);
+            ["baseHintHtml", "escapeHtml", "refreshRecipientPreview"]
+                .forEach((name) => vm.runInContext(extractFn(name), sandbox));
+            sandbox.refreshRecipientPreview("editor");
+            await flush();
+            return elements.get("preview").innerHTML;
+        }
+
+        const diagnostics = await render({
+            baseline: 10, excludedUnique: 4, eligibleBeforeLiveVerification: 6, awaitingVerification: 3,
+            asOf: "2026-10-14T09:30:00", partial: false, reasonHitsDetail: []
+        });
+        assert.ok(diagnostics.includes("范围内 <strong>10</strong> 人；排除 <span class=\"batch-gate-excluded\">4</span> 人"),
+            "the diagnostics skeleton must render the shared counts");
+        assert.ok(diagnostics.includes("符合任务条件 <strong>6</strong> 人；待执行验证 <strong>3</strong> 人"),
+            "the diagnostics skeleton must render the eligibility and awaiting counts");
+        assert.ok(!diagnostics.includes("已排除不可用邮箱"),
+            "the diagnostics path must not fall back to the legacy email heuristic");
+
+        const legacy = await render({ pending: 6, retryable: 0, totalSendable: 6 });
+        assert.ok(legacy.includes("已排除不可用邮箱 <strong>0</strong> 位"),
+            "a legacy response keeps its existing counts");
+        assert.ok(legacy.includes("详细解释不可用"), "a legacy response names the missing explanation");
+        assert.ok(!legacy.includes("范围内"), "no skeleton may be faked for legacy responses");
+    });
 });
 
 // ── c3：Emailable 放行结果白名单（I-1～I-4 / S-1～S-3） ────────────────────────────────

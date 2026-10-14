@@ -8,6 +8,7 @@ import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigView
 import com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest
 import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationRepository
 import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationRow
+import com.weibo.talentintroduction.campaign.service.BatchRecipientDiagnosticsResponse
 import com.weibo.talentintroduction.campaign.service.BatchSendConfig
 import com.weibo.talentintroduction.campaign.service.BatchSendConfigUpdateRequest
 import com.weibo.talentintroduction.campaign.service.BatchSendControlService
@@ -100,6 +101,20 @@ class BatchSendConfigController(
     @PostMapping("/recipients/preview")
     fun previewRecipients(@RequestBody snapshot: BatchExecutionSnapshot): ResponseEntity<PendingOutreachSummary> =
         ResponseEntity.ok(manualInitialOutreachService.countBySnapshot(snapshot))
+
+    /**
+     * I-1/I-4/I-5（02）：按 docId 的**只读**诊断 —— 沿用既有预估请求形状（snapshot）+ `docIds`（1..200）。
+     *
+     * 完整母集只按所选层级/标签读取；每个目标独立给出准入、显式条件、发送保护、模板门禁与邮箱验证相位原因。
+     * 母集外显式 `OUTSIDE_BASELINE`、任何层级都找不到显式 `NOT_FOUND`，绝不静默吞掉。
+     * 预估/诊断零业务写入、零供应商/SMTP 调用；非法 docIds（空或 >200）由
+     * `GlobalExceptionHandler` 映射为 400。
+     */
+    @PostMapping("/recipient-diagnostics")
+    fun recipientDiagnostics(
+        @RequestBody request: BatchRecipientDiagnosticsRequest
+    ): ResponseEntity<BatchRecipientDiagnosticsResponse> =
+        ResponseEntity.ok(manualInitialOutreachService.diagnoseRecipients(request.snapshot, request.docIds))
 
     @PostMapping("/configs/{id}/execute")
     fun executeConfig(@PathVariable id: Long): ResponseEntity<Map<String, Any>> =
@@ -523,6 +538,14 @@ class BatchSendConfigController(
 
 data class BatchSendTaskConfigEnabledRequest(
     val enabled: Boolean
+)
+
+/**
+ * I-1/I-5（02）：按 docId 诊断请求 —— 沿用既有预估 snapshot 形状 + 待解释的 docId（1..200）。
+ */
+data class BatchRecipientDiagnosticsRequest(
+    val snapshot: BatchExecutionSnapshot,
+    val docIds: List<String> = emptyList()
 )
 
 data class CronPreviewRequest(
