@@ -1579,6 +1579,30 @@ class DiscoveryPipelineServiceTest {
     }
 
     @Test
+    fun `a registration failure stays retryable and terminates only after the fifth attempt (I-2 I-3)`() {
+        val h = harness()
+        val stream = streamFor(h)
+        stream.cursorState = StreamCursorState.EXHAUSTED
+        val job = h.store.seedJob(stream.id, "DOI:x", extractionJson = extractionJson())
+        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))
+            .thenReturn(QueuedItemConsumption(registrationFailed = true, personCreated = 1))
+
+        repeat(4) { round ->
+            runWindow(h)
+            val after = h.store.jobs[job.id]!!
+            assertEquals(QueueJobStatus.RETRY_WAIT, after.status, "登记未完成为可重试，不得 SUCCEEDED")
+            assertEquals("PERSON_REGISTRATION_FAILED", after.lastError)
+            assertEquals(round + 1, after.attempts)
+            h.clock.current = after.nextAttemptAt
+        }
+
+        runWindow(h)
+        assertEquals(QueueJobStatus.FAILED, h.store.jobs[job.id]!!.status, "超过重试上限后落 FAILED，不无限重试")
+        assertEquals("PERSON_REGISTRATION_FAILED", h.store.jobs[job.id]!!.lastError)
+        assertEquals(1L, h.store.pipeline.failedItems)
+    }
+
+    @Test
     fun `a manual pause lets a claimed job save its extraction but never consume (I-3, I-7)`() {
         val h = harness()
         val stream = streamFor(h)

@@ -60,9 +60,10 @@ class DiscoveryIdentityRecoveryServiceTest {
     private val contactRepository = Mockito.mock(ExpertContactRepository::class.java)
     private val admissionPolicy = Mockito.mock(DiscoveryAdmissionPolicy::class.java)
     private val reviewService = Mockito.mock(DiscoveryReviewService::class.java)
+    private val personRegistrationService = Mockito.mock(DiscoveryPersonRegistrationService::class.java)
     private val service = DiscoveryIdentityRecoveryService(
         writer, repairService, europePmc, openAlexProvider, aliasService,
-        contactRepository, admissionPolicy, reviewService
+        contactRepository, admissionPolicy, reviewService, personRegistrationService = personRegistrationService
     )
 
     private class LayerDoc(var source: MutableMap<String, Any?>, var seq: Long)
@@ -255,6 +256,21 @@ class DiscoveryIdentityRecoveryServiceTest {
         assertEquals("Doe", docs[key(ExpertIndexLevel.CANDIDATE, id)]!!.source["familyNames"])
         // I-2：名字补齐改变 admission identity_hash —— 以既有接缝重算。
         Mockito.verify(reviewService).recordAutomaticConclusion(eqNonNull(id), anyNonNull(profilePlaceholder), anyNonNull(automaticPassed()))
+    }
+
+    @Test
+    fun `a successful recovery refreshes the person registration (I-1)`() {
+        Mockito.doReturn(DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.CREATED))
+            .`when`(personRegistrationService).refresh(Mockito.anyString(), Mockito.anyString())
+        val id = "EMAIL-jane@uni.edu"
+        put(ExpertIndexLevel.RAW, id, discoveredSource())
+        put(ExpertIndexLevel.CANDIDATE, id, discoveredSource())
+        val preview = previewOf()
+
+        val applied = service.apply(id, preview.snapshotHash, preview.proposalHash)
+
+        assertEquals(RecoveryApplyStatus.APPLIED, applied.status, "reason=${applied.reason}")
+        Mockito.verify(personRegistrationService).refresh(anyNonNull("IDENTITY_RECOVERY"), eqNonNull(id))
     }
 
     @Test

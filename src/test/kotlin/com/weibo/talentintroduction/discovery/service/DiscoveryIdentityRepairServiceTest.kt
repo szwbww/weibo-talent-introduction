@@ -3,8 +3,15 @@ package com.weibo.talentintroduction.discovery.service
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
 import com.weibo.talentintroduction.config.ElasticsearchProperties
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonAuthorKeyRecord
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonMemberRecord
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonMemberWrite
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonRecord
+import com.weibo.talentintroduction.discovery.repository.DiscoveryPersonRepository
+import com.weibo.talentintroduction.discovery.repository.DiscoveryPersonWriteStatus
 import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.IdentityVerification
@@ -13,6 +20,7 @@ import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertPromotionAuditService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -21,8 +29,10 @@ import org.springframework.http.HttpEntity
 import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.RestTemplate
+import java.time.LocalDateTime
 
 /**
  * 01（I-1/I-2/I-3）：真实 [ExpertIndexWriterService] + HTTP 替身 —— 证据矩阵、三层版本保护、
@@ -370,5 +380,145 @@ class DiscoveryIdentityRepairServiceTest {
         assertEquals(IdentityRepairOutcome.FAILED, result.outcome)
         assertTrue(result.retryableFailure)
         assertTrue(updateUrls.isEmpty())
+    }
+
+    // ── 05（I-1）：统一人物登记刷新 ──────────────────────────────────────────
+
+    private fun personRegistrar(repo: FakeRepository): DiscoveryPersonRegistrationService {
+        val personService = DiscoveryPersonService(
+            repo, writer,
+            Mockito.mock(ExpertContactRepository::class.java),
+            Mockito.mock(ExpertEmailAliasService::class.java)
+        )
+        return DiscoveryPersonRegistrationService(writer, personService, repo)
+    }
+
+    @Test
+    fun `two emails of the same orcid become one person with two email evidences (I-1)`() {
+        val repo = FakeRepository()
+        val registrar = personRegistrar(repo)
+        val orcid = "0000-0002-1825-0097"
+        val emailA = "a@uni.edu"
+        val emailB = "b@uni.edu"
+        put(ExpertIndexLevel.RAW, "EMAIL-$emailA",
+            source(emailA, proof = DiscoveryIdentity.verified(emailA, "Jane", "Doe", evidence, orcid, null),
+                externalIds = mapOf("orcid" to orcid)))
+        put(ExpertIndexLevel.RAW, "EMAIL-$emailB",
+            source(emailB, proof = DiscoveryIdentity.verified(emailB, "Jane", "Doe", evidence, orcid, null),
+                externalIds = mapOf("orcid" to orcid)))
+
+        val first = registrar.refresh("TEST", "EMAIL-$emailA")
+        val second = registrar.refresh("TEST", "EMAIL-$emailB")
+
+        assertEquals(DiscoveryPersonRefreshStatus.CREATED, first.status)
+        assertEquals(DiscoveryPersonRefreshStatus.ATTACHED, second.status)
+        assertEquals(2, repo.members.size, "两封邮箱证据都作为人物成员保留，而不是删掉第二邮箱")
+        assertEquals(1, repo.persons.size, "同一可信 ORCID 只产生一个人物主档")
+        assertEquals(2, docs.count { it.key.startsWith("RAW/") }, "原始邮箱事实仍保留两条 ES 技术记录")
+    }
+
+    @Test
+    fun `a non-discovery document is skipped and never creates a person (I-1)`() {
+        val repo = FakeRepository()
+        val registrar = personRegistrar(repo)
+        put(ExpertIndexLevel.RAW, "EMAIL-legacy@uni.edu", mutableMapOf("email" to "legacy@uni.edu"))
+
+        val result = registrar.refresh("TEST", "EMAIL-legacy@uni.edu")
+
+        assertEquals(DiscoveryPersonRefreshStatus.SKIPPED, result.status)
+        assertTrue(repo.persons.isEmpty())
+    }
+
+    @Test
+    fun `a repaired duplicate also refreshes the person registration (I-1)`() {
+        val repo = FakeRepository()
+        val registrar = personRegistrar(repo)
+        val localService = DiscoveryIdentityRepairService(writer, registrar)
+        val id = "EMAIL-jane@uni.edu"
+        put(ExpertIndexLevel.RAW, id, source())
+
+        val result = localService.repairDuplicateIdentity(id, incoming())
+
+        assertEquals(IdentityRepairOutcome.REPAIRED, result.outcome)
+        assertNotNull(result.personRegistration, "补证成功后统一刷新人物登记")
+        assertEquals(DiscoveryPersonRefreshStatus.CREATED, result.personRegistration!!.status)
+        assertEquals(1, repo.persons.size)
+    }
+
+    private class FakeRepository : DiscoveryPersonRepository(JdbcTemplate()) {
+        val persons = linkedMapOf<String, DiscoveryPersonRecord>()
+        val members = linkedMapOf<String, DiscoveryPersonMemberRecord>()
+        val keys = linkedMapOf<String, String>()
+
+        override fun findPerson(personId: String): DiscoveryPersonRecord? = persons[personId]
+
+        override fun findMember(expertDocId: String): DiscoveryPersonMemberRecord? = members[expertDocId]
+
+        override fun findMembers(expertDocIds: Collection<String>): List<DiscoveryPersonMemberRecord> =
+            expertDocIds.mapNotNull { members[it] }
+
+        override fun findMembersByPerson(personId: String): List<DiscoveryPersonMemberRecord> =
+            members.values.filter { it.personId == personId }
+
+        override fun findAuthorKeysByPerson(personId: String): List<DiscoveryPersonAuthorKeyRecord> =
+            keys.filterValues { it == personId }.map { DiscoveryPersonAuthorKeyRecord(it.key, it.value) }
+
+        override fun findPersonIdsByDocIds(expertDocIds: Collection<String>): Map<String, String> =
+            expertDocIds.mapNotNull { docId -> members[docId]?.let { docId to it.personId } }.toMap()
+
+        override fun findPersonIdsByAuthorKeys(authorKeys: Collection<String>): Map<String, String> =
+            authorKeys.mapNotNull { key -> keys[key]?.let { key to it } }.toMap()
+
+        override fun createPerson(
+            personId: String,
+            primaryDocId: String,
+            members: List<DiscoveryPersonMemberWrite>,
+            authorKeys: List<String>,
+            now: LocalDateTime
+        ): DiscoveryPersonWriteStatus {
+            if (authorKeys.any { keys.containsKey(it) }) return DiscoveryPersonWriteStatus.AUTHOR_KEY_TAKEN
+            if (members.any { this.members.containsKey(it.expertDocId) }) return DiscoveryPersonWriteStatus.MEMBER_TAKEN
+            persons[personId] = DiscoveryPersonRecord(personId, primaryDocId, 0, now, now)
+            members.forEach { this.members[it.expertDocId] = record(it, personId, now) }
+            authorKeys.forEach { keys[it] = personId }
+            return DiscoveryPersonWriteStatus.APPLIED
+        }
+
+        override fun attachToPerson(
+            personId: String,
+            members: List<DiscoveryPersonMemberWrite>,
+            authorKeys: List<String>,
+            now: LocalDateTime
+        ): DiscoveryPersonWriteStatus {
+            if (authorKeys.any { keys[it]?.let { owner -> owner != personId } == true }) {
+                return DiscoveryPersonWriteStatus.AUTHOR_KEY_TAKEN
+            }
+            if (members.any { this.members[it.expertDocId]?.personId?.let { owner -> owner != personId } == true }) {
+                return DiscoveryPersonWriteStatus.MEMBER_TAKEN
+            }
+            val person = persons[personId] ?: return DiscoveryPersonWriteStatus.PERSON_MISSING
+            var changed = false
+            members.filter { it.expertDocId !in this.members }.forEach {
+                changed = true
+                this.members[it.expertDocId] = record(it, personId, now)
+            }
+            authorKeys.filter { it !in keys }.forEach {
+                changed = true
+                keys[it] = personId
+            }
+            if (changed) persons[personId] = person.copy(revision = person.revision + 1, updatedAt = now)
+            return DiscoveryPersonWriteStatus.APPLIED
+        }
+
+        private fun record(write: DiscoveryPersonMemberWrite, personId: String, now: LocalDateTime) =
+            DiscoveryPersonMemberRecord(
+                expertDocId = write.expertDocId,
+                personId = personId,
+                normalizedEmail = write.normalizedEmail,
+                identityFingerprint = write.identityFingerprint,
+                evidenceJson = write.evidenceJson,
+                createdAt = now,
+                updatedAt = now
+            )
     }
 }

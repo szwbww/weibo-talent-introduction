@@ -128,7 +128,12 @@ class ExpertDiscoveryService(
      * 01（I-1/I-2/I-3）：重复命中的同身份补证协调器。为空（历史单测/未装配）时保持原行为：
      * 只按匹配 `_id` 补建补全任务，不写 proof；生产恒由 Spring 注入。
      */
-    private val identityRepairService: DiscoveryIdentityRepairService? = null
+    private val identityRepairService: DiscoveryIdentityRepairService? = null,
+    /**
+     * 05（I-1/I-2/I-3）：发现事实持久化后的统一人物登记刷新接缝。为空（历史单测/未装配）时保持
+     * 原行为：只写 ES 事实、不建立人物关系；生产恒由 Spring 注入。
+     */
+    private val personRegistrationService: DiscoveryPersonRegistrationService? = null
 ) {
     private val log = LoggerFactory.getLogger(ExpertDiscoveryService::class.java)
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
@@ -917,6 +922,8 @@ class ExpertDiscoveryService(
             var consumedInBatch = 0
             // 01（I-3）：本页是否有补证未完成（部分/失败）；有则本页不推进、不记成功。
             var identityRepairFailedInPage = false
+            // 05（I-3）：本页是否有可重试登记失败（STALE/FAILED）；有则本页不推进、不记成功。
+            var personRegistrationFailedInPage = false
 
             val extractions = parallelExtractOutcomes(batch.papers, source)
             for ((paper, extraction) in extractions) {
@@ -943,6 +950,7 @@ class ExpertDiscoveryService(
                 consumedInBatch++
                 consumeOutcome(paper, extraction, source, stats, sourceStats, execId).let {
                     if (it.identityRepairFailed) identityRepairFailedInPage = true
+                    if (it.registrationFailed) personRegistrationFailedInPage = true
                 }
             }
 
@@ -959,7 +967,8 @@ class ExpertDiscoveryService(
                     source.sourceName, batchNumber, enqueueFailedInPage)
             }
             if (!limitReached && !timeBudgetExpired && rawWriteFailedInPage == 0 &&
-                enqueueFailedInPage == 0 && dedupErrorsInPage == 0 && !identityRepairFailedInPage) {
+                enqueueFailedInPage == 0 && dedupErrorsInPage == 0 && !identityRepairFailedInPage &&
+                !personRegistrationFailedInPage) {
                 val nextCursor = batch.nextCursor
                 // 没有下一页即穷尽；完整消费的页在进入下一页前立即落盘。
                 persistCheckpoint(
@@ -1019,6 +1028,10 @@ class ExpertDiscoveryService(
             }
             if (identityRepairFailedInPage) {
                 stopReason = DiscoveryStopReason.IDENTITY_REPAIR_INCOMPLETE
+                break
+            }
+            if (personRegistrationFailedInPage) {
+                stopReason = DiscoveryStopReason.PERSON_REGISTRATION_INCOMPLETE
                 break
             }
             if (limitReached || circuitBreakerTripped || timeBudgetExpired) {
@@ -1375,6 +1388,8 @@ class ExpertDiscoveryService(
             var limitReason: String? = null
             // 01（I-3）：本页是否有补证未完成（部分/失败）；有则本页不推进、不记成功。
             var identityRepairFailedInPage = false
+            // 05（I-3）：本页是否有可重试登记失败（STALE/FAILED）；有则本页不推进、不记成功。
+            var personRegistrationFailedInPage = false
             for (record in records) {
                 if (progressStore.isCancelled("EXPERT_DISCOVERY")) break
                 if (recordsProcessed >= orcidLimit) {
@@ -1419,9 +1434,9 @@ class ExpertDiscoveryService(
                     }
                     if (duplicate != null) {
                         sourceStats.duplicates++
-                        if (recordIdentityDuplicate(duplicate, authorEmail, sourceStats, orcid.sourceName, execId)) {
-                            identityRepairFailedInPage = true
-                        }
+                        val disposition = recordIdentityDuplicate(duplicate, authorEmail, sourceStats, orcid.sourceName, execId)
+                        if (disposition.retryable) identityRepairFailedInPage = true
+                        if (disposition.person?.retryable == true) personRegistrationFailedInPage = true
                         continue
                     }
 
@@ -1439,6 +1454,10 @@ class ExpertDiscoveryService(
 
                     // 04（I-1/I-2）：统一准入在 RAW 成功后决定晋升，不再由旧 eligibility 单独决定。
                     admitDiscoveryExpert(esDocId, profile, eligibility, profileMap, sourceStats)
+
+                    // 05（I-1/I-2）：ES 事实持久化后统一登记人物关系；登记失败按可重试语义传播。
+                    val person = registerPerson(orcid.sourceName, esDocId, sourceStats)
+                    if (person?.retryable == true) personRegistrationFailedInPage = true
                 }
                 if (limitReason != null) break
             }
@@ -1480,7 +1499,8 @@ class ExpertDiscoveryService(
                     orcid.sourceName, batchNumber, enqueueFailedInPage)
             }
             if (pageFullyConsumed && limitReason == null && !timeBudgetExpired && rawWriteFailedInPage == 0 &&
-                enqueueFailedInPage == 0 && dedupErrorsInPage == 0 && !identityRepairFailedInPage) {
+                enqueueFailedInPage == 0 && dedupErrorsInPage == 0 && !identityRepairFailedInPage &&
+                !personRegistrationFailedInPage) {
                 // I-2: 推进量由数据源按原始返回条数算好（不受邮箱过滤影响），这里只搬运它的游标。
                 cursor = page.nextCursor
                 persistCheckpoint(
@@ -1499,6 +1519,7 @@ class ExpertDiscoveryService(
                         enqueueFailedInPage > 0 -> DiscoveryStopReason.ENQUEUE_INCOMPLETE
                         dedupErrorsInPage > 0 -> DiscoveryStopReason.DEDUP_INCOMPLETE
                         identityRepairFailedInPage -> DiscoveryStopReason.IDENTITY_REPAIR_INCOMPLETE
+                        personRegistrationFailedInPage -> DiscoveryStopReason.PERSON_REGISTRATION_INCOMPLETE
                         timeBudgetExpired -> DiscoveryStopReason.TIME_BUDGET
                         limitReason != null -> limitReason!!
                         else -> DiscoveryStopReason.PAGE_PARTIAL
@@ -1715,6 +1736,7 @@ class ExpertDiscoveryService(
         var enqueueFailed = false
         var dedupFailed = false
         var identityRepairFailed = false
+        val personCounts = PersonRegistrationCounts()
         val enqueueFailedBefore = sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0
 
         for (authorEmail in authorEmails) {
@@ -1742,9 +1764,9 @@ class ExpertDiscoveryService(
             if (duplicate != null) {
                 sourceStats.duplicates++
                 duplicates++
-                if (recordIdentityDuplicate(duplicate, authorEmail, sourceStats, sourceName, executionId)) {
-                    identityRepairFailed = true
-                }
+                val disposition = recordIdentityDuplicate(duplicate, authorEmail, sourceStats, sourceName, executionId)
+                if (disposition.retryable) identityRepairFailed = true
+                personCounts.fold(disposition.person)
                 continue
             }
 
@@ -1770,6 +1792,9 @@ class ExpertDiscoveryService(
             ) {
                 promoted++
             }
+
+            // 05（I-1/I-2）：ES 事实已持久化后统一登记人物关系（同 ORCID 的后续邮箱挂接同一人物）。
+            personCounts.fold(registerPerson(sourceName, identity.esDocId, sourceStats))
         }
 
         enqueueFailed = (sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0) > enqueueFailedBefore
@@ -1785,6 +1810,11 @@ class ExpertDiscoveryService(
             enqueueFailed = enqueueFailed,
             dedupFailed = dedupFailed,
             identityRepairFailed = identityRepairFailed,
+            personCreated = personCounts.created,
+            personAttached = personCounts.attached,
+            personNeedsReview = personCounts.needsReview,
+            personScopeConflict = personCounts.scopeConflict,
+            registrationFailed = personCounts.failed,
             failureReasons = snapshotRejectReasons(sourceStats)
         )
     }
@@ -2091,6 +2121,11 @@ class ExpertDiscoveryService(
             enqueueFailed = result.enqueueFailed,
             dedupFailed = result.dedupFailed,
             identityRepairFailed = result.identityRepairFailed,
+            personCreated = result.personCreated,
+            personAttached = result.personAttached,
+            personNeedsReview = result.personNeedsReview,
+            personScopeConflict = result.personScopeConflict,
+            registrationFailed = result.registrationFailed,
             failureReasons = result.failureReasons
         )
     }
@@ -2242,11 +2277,13 @@ class ExpertDiscoveryService(
     }
 
     /**
-     * 01（I-1/I-2/I-3）：重复命中的处置。返回 true 表示本轮必须保留可重试错误（部分/失败补证），
-     * 消费入口据此不推进当前页、不把 job 记成功。仍只计 duplicate、不计 indexed。
+     * 01/05（I-1/I-2/I-3）：重复命中的处置。[DuplicateDisposition.retryable] 为 true 表示本轮必须
+     * 保留可重试错误（部分/失败补证或可重试登记失败），消费入口据此不推进当前页、不把 job 记成功。
+     * [DuplicateDisposition.person] 是本出口触发的人物登记刷新结果（未触发时为 null）。
+     * 仍只计 duplicate、不计 indexed。
      */
     private fun recordIdentityDuplicate(existing: DedupResult.Exists, incoming: AuthorEmail, stats: SourceStats,
-        sourceName: String, executionId: Long?): Boolean {
+        sourceName: String, executionId: Long?): DuplicateDisposition {
         val source = existing.source
         val proof = source?.let { DiscoveryIdentity.read(it.path("identityVerification")) }
         val externalIds = source?.path("externalIds")?.let {
@@ -2265,7 +2302,7 @@ class ExpertDiscoveryService(
         // worker independently requires bound author IDs; no proof means no academic author query.
         if (mismatch || source == null || !DiscoveryIdentity.isDiscoverySource(source)) {
             stats.failureReasons.merge(if (mismatch) "IDENTITY_EXISTING_CONFLICT" else "IDENTITY_EXISTING_UNVERIFIED", 1) { a, b -> a + b }
-            return false
+            return DuplicateDisposition(retryable = false, person = null)
         }
         val docId = existing.docId
         // 01（I-1）：只有带完整姓名与有效证据的合法 incoming 才进入补证；否则沿用原入队行为。
@@ -2277,19 +2314,75 @@ class ExpertDiscoveryService(
         if (repair != null && docId != null) {
             stats.failureReasons.merge("IDENTITY_REPAIR_${repair.outcome.name}", 1) { a, b -> a + b }
             return when (repair.outcome) {
-                // 补证成功或本就已有 proof：入队并沿用既有准入/重验接缝。
+                // 补证成功或本就已有 proof：入队并沿用既有准入/重验接缝；登记由补证内统一刷新。
                 IdentityRepairOutcome.REPAIRED, IdentityRepairOutcome.ALREADY_VERIFIED -> {
                     ensureEnrichmentJob(docId, sourceName, executionId, stats)
-                    false
+                    DuplicateDisposition(retryable = false, person = repair.personRegistration)
                 }
-                // 缺姓名/冲突：独立原因、零写入，交给 02 定向恢复；不补建学术任务。
-                IdentityRepairOutcome.MISSING_NAME_NEEDS_RECOVERY, IdentityRepairOutcome.CONFLICT -> false
-                // 部分/整体失败：保留可重试错误，绝不推进为修复成功，也不先行入队。
-                IdentityRepairOutcome.PARTIAL, IdentityRepairOutcome.FAILED -> true
+                // 缺姓名/冲突：独立原因、零写入，交给 02 定向恢复；不补建学术任务、不登记关系。
+                IdentityRepairOutcome.MISSING_NAME_NEEDS_RECOVERY, IdentityRepairOutcome.CONFLICT ->
+                    DuplicateDisposition(retryable = false, person = null)
+                // 部分/整体失败：保留可重试错误，绝不推进为修复成功，也不先行入队/登记。
+                IdentityRepairOutcome.PARTIAL, IdentityRepairOutcome.FAILED ->
+                    DuplicateDisposition(retryable = true, person = null)
             }
         }
-        docId?.let { ensureEnrichmentJob(it, sourceName, executionId, stats) }
-        return false
+        // 05（I-1）：无补证可走的重复命中（已有可信 discovered 事实但 incoming 无凭证）——仍按当前
+        // 持久化事实登记一次，确保重复出口归人；登记失败按可重试语义传播。
+        if (docId == null) return DuplicateDisposition(retryable = false, person = null)
+        ensureEnrichmentJob(docId, sourceName, executionId, stats)
+        val person = registerPerson(sourceName, docId, stats)
+        return DuplicateDisposition(retryable = person?.retryable == true, person = person)
+    }
+
+    /** 05（I-1/I-3）：重复出口的处置结果（补证可重试标记 + 人物登记刷新结果）。 */
+    private data class DuplicateDisposition(val retryable: Boolean, val person: DiscoveryPersonRefreshResult?)
+
+    /**
+     * 05（I-1/I-3）：一次消费/一页内的人物登记计数口径（新增人物、追加邮箱、需复核、范围冲突、登记失败）。
+     * 单位相互独立：新增人物 ≠ 追加邮箱 ≠ 重复事实；[failed] 表示存在可重试登记失败。
+     */
+    private class PersonRegistrationCounts {
+        var created = 0
+        var attached = 0
+        var needsReview = 0
+        var scopeConflict = 0
+        var failed = false
+
+        fun fold(result: DiscoveryPersonRefreshResult?) {
+            when (result?.status) {
+                DiscoveryPersonRefreshStatus.CREATED -> created++
+                DiscoveryPersonRefreshStatus.ATTACHED -> attached++
+                DiscoveryPersonRefreshStatus.NEEDS_REVIEW -> needsReview++
+                DiscoveryPersonRefreshStatus.SCOPE_CONFLICT -> scopeConflict++
+                DiscoveryPersonRefreshStatus.STALE, DiscoveryPersonRefreshStatus.FAILED -> failed = true
+                else -> {}
+            }
+        }
+    }
+
+    /**
+     * 05（I-1/I-3）：统一人物登记调用点。接缝为空时直接返回 null（历史行为）。异常按可重试失败
+     * 处理；需复核/范围冲突/登记失败原因进入 failureReasons 供页面传播，绝不吞掉可重试信号。
+     */
+    private fun registerPerson(source: String, docId: String, stats: SourceStats): DiscoveryPersonRefreshResult? {
+        val registrar = personRegistrationService ?: return null
+        val result = try {
+            registrar.refresh(source, docId)
+        } catch (e: Exception) {
+            log.warn("人物登记刷新异常 docId={}: {}", docId, e.message)
+            DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.FAILED, "REGISTRATION_EXCEPTION")
+        }
+        when (result.status) {
+            DiscoveryPersonRefreshStatus.NEEDS_REVIEW ->
+                stats.failureReasons.merge("PERSON_NEEDS_REVIEW", 1) { a, b -> a + b }
+            DiscoveryPersonRefreshStatus.SCOPE_CONFLICT ->
+                stats.failureReasons.merge("PERSON_SCOPE_CONFLICT", 1) { a, b -> a + b }
+            DiscoveryPersonRefreshStatus.STALE, DiscoveryPersonRefreshStatus.FAILED ->
+                stats.failureReasons.merge("PERSON_REGISTRATION_FAILED", 1) { a, b -> a + b }
+            else -> {}
+        }
+        return result
     }
 
     private fun buildProfile(paper: PaperMetadata, authorEmail: AuthorEmail, emailVerifiedLevel: Int): ExpertProfile {
@@ -3621,13 +3714,23 @@ data class QueuedItemConsumption(
      * 为 true 时 [succeeded] 必为 false，队列必须按可重试错误保留该 job。
      */
     val identityRepairFailed: Boolean = false,
+    /**
+     * 05（I-2/I-3）：本页/本次消费有可重试的人物登记失败（STALE/FAILED）。为 true 时 [succeeded]
+     * 必为 false，队列必须按可重试错误保留该 job（不无限重试，超限转 FAILED）。
+     */
+    val registrationFailed: Boolean = false,
+    /** 05（I-3）：单位相互独立的登记计数（新增人物 / 追加邮箱 / 需复核 / 范围冲突）。 */
+    val personCreated: Int = 0,
+    val personAttached: Int = 0,
+    val personNeedsReview: Int = 0,
+    val personScopeConflict: Int = 0,
     val failureReasons: Map<String, Int> = emptyMap(),
     /** 不可恢复的消费失败（未知版本 / 负载不可读）—— job 直接 FAILED 并给出原因。 */
     val unrecoverableReason: String? = null
 ) {
     val succeeded: Boolean
         get() = unrecoverableReason == null && !rawWriteFailed && !enqueueFailed && !dedupFailed &&
-            !identityRepairFailed
+            !identityRepairFailed && !registrationFailed
 }
 
 /**
@@ -3648,6 +3751,16 @@ data class ConsumeOutcomeResult(
     val dedupFailed: Boolean = false,
     /** 01（I-3）：本页/本次消费有补证部分/整体失败；仅内存返回值，不落库。 */
     val identityRepairFailed: Boolean = false,
+    /**
+     * 05（I-2/I-3）：本页/本次消费有可重试的人物登记失败；仅内存返回值，不落库。
+     * 为 true 时消费入口必须保留可重试错误、不推进当前页。
+     */
+    val registrationFailed: Boolean = false,
+    /** 05（I-3）：单位相互独立的登记计数（新增人物 / 追加邮箱 / 需复核 / 范围冲突）。 */
+    val personCreated: Int = 0,
+    val personAttached: Int = 0,
+    val personNeedsReview: Int = 0,
+    val personScopeConflict: Int = 0,
     val failureReasons: Map<String, Int> = emptyMap()
 )
 
@@ -3710,6 +3823,12 @@ object DiscoveryStopReason {
      * 一样保留进入该页的游标以便重放：补证未完成的页不推进、不记成功。
      */
     const val IDENTITY_REPAIR_INCOMPLETE = "IDENTITY_REPAIR_INCOMPLETE"
+
+    /**
+     * 05（I-3）：页内存在可重试的人物登记失败（STALE/FAILED）。与 [IDENTITY_REPAIR_INCOMPLETE]
+     * 一样保留进入该页的游标以便重放：登记未完成的页不推进、不记成功。
+     */
+    const val PERSON_REGISTRATION_INCOMPLETE = "PERSON_REGISTRATION_INCOMPLETE"
 
     /**
      * I-4: 分片触达供应商分页窗口（CORE offset 9000 / ORCID start 9999）。这是「该分片停止」，

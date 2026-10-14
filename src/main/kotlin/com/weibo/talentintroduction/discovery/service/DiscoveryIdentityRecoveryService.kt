@@ -15,6 +15,9 @@ import org.springframework.stereotype.Service
 import java.time.Clock
 import java.time.Instant
 
+/** 05（I-1）：恢复路径记入人物成员 `evidence_json` 的发现来源标签（不参与身份判定）。 */
+private const val PERSON_SOURCE_RECOVERY = "IDENTITY_RECOVERY"
+
 /**
  * 02（I-1/I-2/I-3/I-4）：旧名单**回源预览 + 受控恢复**的唯一协调器。
  *
@@ -37,7 +40,12 @@ class DiscoveryIdentityRecoveryService(
     private val expertContactRepository: ExpertContactRepository,
     private val admissionPolicy: DiscoveryAdmissionPolicy,
     private val reviewService: DiscoveryReviewService,
-    private val clock: Clock = Clock.systemUTC()
+    private val clock: Clock = Clock.systemUTC(),
+    /**
+     * 05（I-1）：补证成功后的统一人物登记刷新接缝。为空（历史单测/未装配）时保持原行为；
+     * 生产恒由 Spring 注入。它只读、只登记关系，不改变恢复结论。
+     */
+    private val personRegistrationService: DiscoveryPersonRegistrationService? = null
 ) {
     private val log = LoggerFactory.getLogger(DiscoveryIdentityRecoveryService::class.java)
     private val mapper = jacksonObjectMapper()
@@ -97,6 +105,13 @@ class DiscoveryIdentityRecoveryService(
         }
         if (status != RecoveryApplyStatus.APPLIED) {
             return finished(docId, status, repair.outcome.name, repair.layers, null, null)
+        }
+
+        // 05（I-1）：各层事实补齐成功后刷新人物登记（只对实时 discovered 成员；失败不改恢复结论）。
+        try {
+            personRegistrationService?.refresh(PERSON_SOURCE_RECOVERY, docId)
+        } catch (e: Exception) {
+            log.warn("恢复后刷新人物登记失败 docId={}: {}", docId, e.message)
         }
 
         // I-2/I-3：名字补齐改变 admission identity_hash —— 以既有规则重算，绝不复用旧人工决定。

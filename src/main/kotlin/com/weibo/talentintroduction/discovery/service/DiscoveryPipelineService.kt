@@ -1106,6 +1106,8 @@ class DiscoveryPipelineService(
                 consumption.dedupFailed -> "DEDUP_LOOKUP_FAILED"
                 // 01（I-3）：补证部分/整体失败必须保留可重试错误，绝不推进为成功。
                 consumption.identityRepairFailed -> "IDENTITY_REPAIR_FAILED"
+                // 05（I-2/I-3）：可重试人物登记失败同样纳入未完成结果（语义冲突/需复核已在成功路径记为原因）。
+                consumption.registrationFailed -> "PERSON_REGISTRATION_FAILED"
                 else -> "CONSUME_INCOMPLETE"
             }
             handleRetryableFailure(state, job, leaseToken, reason, retryable = true)

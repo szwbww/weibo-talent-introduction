@@ -3,6 +3,11 @@ package com.weibo.talentintroduction.discovery.service
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonIdentity
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonMemberSnapshot
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonOutcome
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonSnapshot
+import com.weibo.talentintroduction.discovery.repository.DiscoveryPersonRepository
 import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.IdentityVerification
@@ -25,7 +30,12 @@ import org.springframework.stereotype.Service
  */
 @Service
 class DiscoveryIdentityRepairService(
-    private val expertIndexWriterService: ExpertIndexWriterService
+    private val expertIndexWriterService: ExpertIndexWriterService,
+    /**
+     * 05（I-1）：各层事实补齐成功后的统一人物登记刷新接缝。为空（历史单测/未装配）时保持原行为：
+     * 只补 proof、不建立人物关系；生产恒由 Spring 注入。
+     */
+    private val personRegistrationService: DiscoveryPersonRegistrationService? = null
 ) {
     private val log = LoggerFactory.getLogger(DiscoveryIdentityRepairService::class.java)
     private val mapper = jacksonObjectMapper()
@@ -152,7 +162,11 @@ class DiscoveryIdentityRepairService(
             written > 0 -> IdentityRepairOutcome.REPAIRED
             else -> IdentityRepairOutcome.ALREADY_VERIFIED
         }
-        return IdentityRepairResult(outcome, target, layers)
+        return IdentityRepairResult(
+            outcome, target, layers,
+            // 05（I-1）：事实成功补齐后统一刷新人物登记；失败不改变补证结论，由调用方按可重试语义传播。
+            personRegistration = refreshRegistration(docId, outcome)
+        )
     }
 
     /**
@@ -308,6 +322,18 @@ class DiscoveryIdentityRepairService(
         return !left.equals(right, ignoreCase = true)
     }
 
+    /**
+     * 05（I-1）：补证成功（实写或本就已证）后触发一次人物关系刷新。只对 [IdentityRepairOutcome.REPAIRED] /
+     * [IdentityRepairOutcome.ALREADY_VERIFIED] 触发；缺名/冲突/部分/失败不抢先建立或改写关系。
+     * 返回 null 表示未触发（无接缝或非成功结论）。
+     */
+    private fun refreshRegistration(docId: String, outcome: IdentityRepairOutcome): DiscoveryPersonRefreshResult? =
+        when (outcome) {
+            IdentityRepairOutcome.REPAIRED, IdentityRepairOutcome.ALREADY_VERIFIED ->
+                personRegistrationService?.refresh(PERSON_SOURCE_REPAIR, docId)
+            else -> null
+        }
+
     /** proof 存在即返回（含无效摘要默认对象）；键缺失或为 null 视为没有 proof。 */
     private fun proofOf(source: Map<String, Any?>): IdentityVerification? {
         val node: JsonNode = source["identityVerification"]?.let { mapper.valueToTree(it) } ?: return null
@@ -328,6 +354,9 @@ class DiscoveryIdentityRepairService(
         return (map[key] as? String)?.takeIf { it.isNotBlank() }
     }
 }
+
+/** 05（I-1）：补证路径记入人物成员 `evidence_json` 的发现来源标签（不参与身份判定）。 */
+private const val PERSON_SOURCE_REPAIR = "IDENTITY_REPAIR"
 
 /** I-1/I-2/I-3：一次补证的总体结果；计数器以本枚举为准。 */
 enum class IdentityRepairOutcome {
@@ -363,8 +392,132 @@ data class IdentityRepairLayer(
 data class IdentityRepairResult(
     val outcome: IdentityRepairOutcome,
     val proof: IdentityVerification? = null,
-    val layers: List<IdentityRepairLayer> = emptyList()
+    val layers: List<IdentityRepairLayer> = emptyList(),
+    /**
+     * 05（I-1）：补证成功后触发的人物登记刷新结果（仅 REPAIRED/ALREADY_VERIFIED 时非空）。
+     * 它不改变补证结论；调用方据它区分「关系已建立/追加」与「需复核/范围冲突/可重试登记失败」。
+     */
+    val personRegistration: DiscoveryPersonRefreshResult? = null
 ) {
     val retryableFailure: Boolean
         get() = outcome == IdentityRepairOutcome.PARTIAL || outcome == IdentityRepairOutcome.FAILED
+}
+
+/**
+ * 05（I-1/I-2/I-3）：发现事实持久化后的**统一人物登记刷新接缝**。
+ *
+ * 由发现的四条成功出口（新建、重复、队列消费、同步 ORCID）与 01/02 的补证/恢复复用，是
+ * 「同一事实 → 同一人物关系」的唯一调用点：所有事实都通过 [ExpertIndexWriterService] 从
+ * **当前持久化档案**重读，登记参数（含指纹）由 04 的 [DiscoveryPersonIdentity] 单源签发，
+ * 绝不从无凭证 externalIds 猜身份，也不据同名归组。
+ *
+ * 刷新只对**实时 discovered 成员**生效：非 discovered、无档案的 docId 直接 SKIPPED；已有关系的
+ * 整组会一并重新核实（指纹变化返回 STALE，不借旧关系通过；跨根连接返回 NEEDS_REVIEW），
+ * 这保证「不抢先合并、冲突保持独立」由 04 服务端复验落实。
+ */
+@Service
+class DiscoveryPersonRegistrationService(
+    private val expertIndexWriterService: ExpertIndexWriterService,
+    private val personService: DiscoveryPersonService,
+    private val personRepository: DiscoveryPersonRepository
+) {
+    private val log = LoggerFactory.getLogger(DiscoveryPersonRegistrationService::class.java)
+
+    private val layers = listOf(ExpertIndexLevel.RAW, ExpertIndexLevel.CANDIDATE, ExpertIndexLevel.APPLICATION)
+
+    /**
+     * 对 `docId` 刷新一次人物登记。返回的 [DiscoveryPersonRefreshResult] 是**只读结论**，绝不抛出；
+     * 档案读失败按 STALE、登记异常按 FAILED（均可重试），非 discovered/无档案按 SKIPPED（非失败）。
+     */
+    fun refresh(source: String, docId: String): DiscoveryPersonRefreshResult {
+        if (docId.isBlank()) return DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.SKIPPED, "DOC_ID_BLANK")
+        val members = try {
+            buildMembers(docId)
+        } catch (e: Exception) {
+            log.warn("人物登记刷新读取档案失败 docId={}: {}", docId, e.message)
+            return DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.STALE, "SOURCE_UNAVAILABLE")
+        } ?: return DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.SKIPPED, "NOT_DISCOVERY")
+        val result = try {
+            personService.register(DiscoveryPersonSnapshot(source, members))
+        } catch (e: Exception) {
+            log.warn("人物登记刷新失败 docId={}: {}", docId, e.message)
+            return DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.FAILED, "REGISTRATION_EXCEPTION")
+        }
+        return when (result.outcome) {
+            DiscoveryPersonOutcome.CREATED -> DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.CREATED, result.personId)
+            DiscoveryPersonOutcome.ATTACHED -> DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.ATTACHED, result.personId)
+            DiscoveryPersonOutcome.UNCHANGED -> DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.UNCHANGED, result.personId)
+            DiscoveryPersonOutcome.NEEDS_REVIEW -> DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.NEEDS_REVIEW, result.reason)
+            DiscoveryPersonOutcome.SCOPE_CONFLICT -> DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.SCOPE_CONFLICT, result.reason)
+            DiscoveryPersonOutcome.STALE -> DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.STALE, result.reason)
+        }
+    }
+
+    /**
+     * 构造登记快照：目标 docId 已在注册表中时，把整组现存成员一并带上（复验完整组）；
+     * 未注册或跨多个根时只带目标成员（跨根由 04 复验为 NEEDS_REVIEW）。
+     */
+    private fun buildMembers(docId: String): List<DiscoveryPersonMemberSnapshot>? {
+        val target = facts(docId) ?: return null
+        if (!target.discovered) return null
+        val related = LinkedHashSet<String>()
+        related += personRepository.findPersonIdsByDocIds(listOf(docId)).values
+        if (target.authorKeys.isNotEmpty()) {
+            related += personRepository.findPersonIdsByAuthorKeys(target.authorKeys).values
+        }
+        val groupDocIds = if (related.size == 1) {
+            personRepository.findMembersByPerson(related.first()).map { it.expertDocId }
+        } else {
+            emptyList()
+        }
+        val ids = (groupDocIds + docId).distinct()
+        val members = ids.mapNotNull { id ->
+            if (id == docId) {
+                DiscoveryPersonMemberSnapshot(docId, target.fingerprint)
+            } else {
+                facts(id)?.takeIf { it.discovered }?.let { DiscoveryPersonMemberSnapshot(id, it.fingerprint) }
+            }
+        }
+        return members.ifEmpty { listOf(DiscoveryPersonMemberSnapshot(docId, target.fingerprint)) }
+    }
+
+    private class Facts(val discovered: Boolean, val fingerprint: String, val authorKeys: List<String>)
+
+    /** 从**当前持久化档案**重读并派生指纹（与 04 服务端核实同源：docId + 规范邮箱 + 全名 + 作者键）。 */
+    private fun facts(docId: String): Facts? {
+        val snapshots = LinkedHashMap<ExpertIndexLevel, ExpertIndexWriterService.DiscoverySnapshot>()
+        for (level in layers) {
+            val document = expertIndexWriterService.readDiscoveryDocument(level, docId) ?: continue
+            snapshots[level] = document
+        }
+        if (snapshots.isEmpty()) return null
+        val raw = snapshots[ExpertIndexLevel.RAW] ?: snapshots.values.first()
+        val profiles = snapshots.values.map { expertIndexWriterService.discoveryProfile(docId, it.source) }
+        val rawProfile = expertIndexWriterService.discoveryProfile(docId, raw.source)
+        val normalizedEmail = DiscoveryIdentity.normalizedEmail(rawProfile.email).takeIf { it.isNotEmpty() }
+        val authorKeys = DiscoveryPersonIdentity.authorKeys(profiles)
+        val fingerprint = DiscoveryPersonIdentity.fingerprint(
+            docId, normalizedEmail, rawProfile.givenNames, rawProfile.familyNames, authorKeys
+        )
+        return Facts(DiscoveryIdentity.isDiscoveryMap(raw.source), fingerprint, authorKeys)
+    }
+}
+
+/** 05（I-3）：一次人物登记刷新的判定；SKIPPED 不是失败（非 discovered/无档案）。 */
+enum class DiscoveryPersonRefreshStatus { CREATED, ATTACHED, UNCHANGED, NEEDS_REVIEW, SCOPE_CONFLICT, STALE, FAILED, SKIPPED }
+
+/** 05（I-3）：登记刷新结果。[reason] 是判定说明或 personId。 */
+data class DiscoveryPersonRefreshResult(
+    val status: DiscoveryPersonRefreshStatus,
+    val reason: String? = null
+) {
+    val created: Boolean get() = status == DiscoveryPersonRefreshStatus.CREATED
+    val attached: Boolean get() = status == DiscoveryPersonRefreshStatus.ATTACHED
+    val needsReview: Boolean get() = status == DiscoveryPersonRefreshStatus.NEEDS_REVIEW
+    val scopeConflict: Boolean get() = status == DiscoveryPersonRefreshStatus.SCOPE_CONFLICT
+    val skipped: Boolean get() = status == DiscoveryPersonRefreshStatus.SKIPPED
+
+    /** 可重试登记失败：STALE（读档案与登记之间事实/指纹变化）与 FAILED（基础设施异常）。 */
+    val retryable: Boolean
+        get() = status == DiscoveryPersonRefreshStatus.STALE || status == DiscoveryPersonRefreshStatus.FAILED
 }
