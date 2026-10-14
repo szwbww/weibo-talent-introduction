@@ -120,7 +120,13 @@ class ManualInitialOutreachService(
      */
     private val expertOperatorStatusService: ExpertOperatorStatusService,
     /** I-1/I-3: 批量目标的唯一准入+显式条件选择器（预估/执行/重试/材料共用）。 */
-    private val batchRecipientSelectionService: BatchRecipientSelectionService = BatchRecipientSelectionService()
+    private val batchRecipientSelectionService: BatchRecipientSelectionService = BatchRecipientSelectionService(),
+    /**
+     * I-1/I-2/I-3（08）：人物级选择层。首发预估、ES 目标与 NEW 重试共用；
+     * 材料提醒保持逐邮箱选择不变。默认复用同一逐邮箱 selector，使旧/新路径准入口径一致。
+     */
+    private val discoveryPersonRecipientService: DiscoveryPersonRecipientService =
+        DiscoveryPersonRecipientService(batchRecipientSelectionService)
 ) {
     private val log = LoggerFactory.getLogger(ManualInitialOutreachService::class.java)
 
@@ -703,7 +709,7 @@ class ManualInitialOutreachService(
         val targetIterator = OutreachTargetIterator(
             retryableTargets = retryableTargets,
             pageSize = config.roundSize * 2,
-            seenOrcids = seenOrcids,
+            seenKeys = seenOrcids,
             fetchNextPage = { offset, size -> fetchEsPage(scope, offset, size) },
             // I-1/I-3: ES 页返回后先过最终谓词（新发现机构证据 + 已证实机构所在地判地区），
             // 再叠加历史不可达过滤；整页被过滤时迭代器继续推进 offset（I-3）。
@@ -1587,14 +1593,17 @@ class ManualInitialOutreachService(
                     .firstOrNull() ?: continue
                 candidates.add(Triple(contact, profile, normOrcid))
             }
-            // I-1/I-3: 与 ES 页、预估共用同一 selector（显式条件 + 持久准入）。
-            val selection = if (candidates.isEmpty()) {
-                RecipientSelection.EMPTY
+            // I-1/I-2/I-3: 与 ES 页、预估共用同一人物级选择层；安全重试沿用原尝试地址（不自动换址）。
+            val included = if (candidates.isEmpty()) {
+                emptySet()
             } else {
-                batchRecipientSelectionService.select(scope, candidates.map { it.second })
+                discoveryPersonRecipientService.select(
+                    scope,
+                    candidates.map { it.second },
+                    onPerEmailSelection = onSelection,
+                    preferredDocIds = candidates.map { BatchRecipientSelectionService.docIdOf(it.second) }.toSet()
+                ).selectedDocIds
             }
-            onSelection?.invoke(selection)
-            val included = selection.includedDocIds
             // A3 (I-4): selector 之后再过精确模板门禁（与发送期 compose 同源）。
             val gatedDocIds = candidates.asSequence()
                 .filter { BatchRecipientSelectionService.docIdOf(it.second) in included }
@@ -1908,11 +1917,14 @@ class ManualInitialOutreachService(
                             BatchRecipientSelectionService.docIdOf(it) !in seenDocIds
                     }
                         .distinctBy { BatchRecipientSelectionService.docIdOf(it) }
-                    val selection = if (unseen.isEmpty()) RecipientSelection.EMPTY
-                        else batchRecipientSelectionService.select(scope, unseen)
-                    onSelection?.invoke(selection)
+                    // I-1/I-2/I-3: 人物级选择 —— 每人最多一个入选 docId（跨页/批次/预估同源）。
+                    val personSelection = if (unseen.isEmpty()) PersonRecipientSelection.EMPTY
+                    else discoveryPersonRecipientService.select(
+                        scope, unseen, onPerEmailSelection = onSelection
+                    )
+                    val selected = personSelection.selectedDocIds
                     val matched = gate(
-                        unseen.filter { BatchRecipientSelectionService.docIdOf(it) in selection.includedDocIds }
+                        unseen.filter { BatchRecipientSelectionService.docIdOf(it) in selected }
                     )
                     val retained = filterKnownProfiles(matched, scope.excludeVerifiedUnavailableEmails, now)
                     sendable += retained.count { seenDocIds.add(BatchRecipientSelectionService.docIdOf(it)) }
@@ -1950,8 +1962,8 @@ class ManualInitialOutreachService(
     }
 
     /**
-     * I-1/I-3: 统一 selector 的显式条件 + 持久准入过滤（同一 docId 去重后保留原序）。
-     * 预估、ES 取页、NEW 重试与材料快照全部经此，不再有第二套近似过滤。
+     * I-1/I-3: 人物级选择过滤（同一 docId 去重后保留原序）。预估、ES 取页与 NEW 重试共用，
+     * 每人最多一个入选 docId；无人物映射时退化为逐邮箱选择，范围外行为不变。
      */
     private fun selectIncluded(
         scope: RecipientScope,
@@ -1963,8 +1975,8 @@ class ManualInitialOutreachService(
             .distinctBy { BatchRecipientSelectionService.docIdOf(it) }
             .toList()
         if (distinct.isEmpty()) return distinct
-        val included = batchRecipientSelectionService.select(scope, distinct).includedDocIds
-        return distinct.filter { BatchRecipientSelectionService.docIdOf(it) in included }
+        val selected = discoveryPersonRecipientService.select(scope, distinct).selectedDocIds
+        return distinct.filter { BatchRecipientSelectionService.docIdOf(it) in selected }
     }
     private fun <T> filterTargets(
         targets: List<T>,

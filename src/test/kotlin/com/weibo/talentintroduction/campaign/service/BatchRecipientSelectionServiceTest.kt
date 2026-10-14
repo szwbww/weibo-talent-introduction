@@ -199,6 +199,19 @@ class BatchRecipientSelectionServiceTest {
     }
 
     @Test
+    fun `admission-only scope judges admission only and ignores introduction expert type (I-3)`() {
+        // 08 人物级选择层复用本 scope：非 INTRODUCTION 不判研发类型，UNCLASSIFIED 不应被类型门禁排除。
+        stubAdmissions("A" to DiscoveryReviewDecision.AUTO_PASSED.name)
+        val unclassified = expert("A", type = null)
+
+        val selection = service.selectAdmission(listOf(unclassified))
+
+        assertEquals(1, selection.included.size)
+        assertEquals(RecipientAdmissionState.ADMITTED, selection.included.single().admissionState)
+        assertTrue(selection.included.single().filterKeys.isEmpty())
+    }
+
+    @Test
     fun `reason keys mirror the selection口径 exactly (A3 I-3)`() {
         // 显式条件排除（filterKeys 非空）只计 filterKeys，绝不叠加准入状态原因。
         val filterExcluded = RecipientDecision(

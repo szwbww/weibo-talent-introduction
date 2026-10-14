@@ -30,7 +30,10 @@ class InitialOutreachService(
     private val schedulingProperties: MailSchedulingProperties,
     private val senderAccountBindingService: SenderAccountBindingService,
     /** I-1/I-3: 发现准入的唯一来源（旧首发不再做机构/国家/凭证二次校验）。 */
-    private val batchRecipientSelectionService: BatchRecipientSelectionService = BatchRecipientSelectionService()
+    private val batchRecipientSelectionService: BatchRecipientSelectionService = BatchRecipientSelectionService(),
+    /** I-1/I-2/I-3（08）：人物级选择层 —— 同一人物在首发目标里只计一次、只选一个地址。 */
+    private val discoveryPersonRecipientService: DiscoveryPersonRecipientService =
+        DiscoveryPersonRecipientService(batchRecipientSelectionService)
 ) {
     fun sendInitialBatch(campaignId: Long, size: Int, taskExecutionId: Long? = null): InitialOutreachBatchResult {
         // I2-2: 未配置即快速失败，绝不退化成"不限"。
@@ -176,8 +179,8 @@ class InitialOutreachService(
             val raw = result.experts
             if (raw.isEmpty()) break
             offset += raw.size
-            eligible += batchRecipientSelectionService.selectAdmission(raw)
-                .includedDocIds
+            eligible += discoveryPersonRecipientService.selectAdmission(raw)
+                .selectedDocIds
                 .let { ids -> raw.filter { BatchRecipientSelectionService.docIdOf(it) in ids } }
             // I-3：页 offset 针对粗筛持续推进；只有短页或已越过 totalHits 才算数据耗尽。
             if (raw.size < size || offset >= result.totalHits) break

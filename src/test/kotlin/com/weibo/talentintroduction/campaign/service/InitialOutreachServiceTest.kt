@@ -754,6 +754,82 @@ class InitialOutreachServiceTest {
         assertEquals(1, sentResult.sent)
     }
 
+    @Test
+    fun `sendInitialBatch selects one address per person across ES pages (I-1 I-2)`() {
+        // 同一人物 P1 的两个邮箱成员同页出现 —— 只应产生一个目标、一个地址。
+        val d1 = expert("D1")
+        val d2 = expert("D2")
+        val personRepo = Mockito.mock(com.weibo.talentintroduction.discovery.repository.DiscoveryPersonRepository::class.java)
+        val m1 = personMember("D1", "P1")
+        val m2 = personMember("D2", "P1")
+        Mockito.`when`(personRepo.findPersonIdsByDocIds(Mockito.anyCollection<String>())).thenReturn(mapOf("D1" to "P1", "D2" to "P1"))
+        Mockito.`when`(personRepo.findMembersByPerson("P1")).thenReturn(listOf(m1, m2))
+        Mockito.`when`(personRepo.findMember("D1")).thenReturn(m1)
+        Mockito.`when`(personRepo.findMember("D2")).thenReturn(m2)
+        val personRecipientService = DiscoveryPersonRecipientService(
+            batchRecipientSelectionService = batchRecipientSelectionService,
+            discoveryPersonRepository = personRepo,
+            expertSearchService = expertSearchService,
+            emailSuppressionService = emailSuppressionService,
+            expertContactRepository = expertContactRepository
+        )
+        val personAwareService = InitialOutreachService(
+            expertSearchService = expertSearchService,
+            senderAccountAssignmentService = senderAccountAssignmentService,
+            introductionMailComposer = introductionMailComposer,
+            mailDeliveryService = mailDeliveryService,
+            expertContactRepository = expertContactRepository,
+            txHelper = txHelper,
+            emailSuppressionService = emailSuppressionService,
+            autoReplySettingService = autoReplySettingService,
+            schedulingProperties = schedulingProperties,
+            senderAccountBindingService = senderAccountBindingService,
+            batchRecipientSelectionService = batchRecipientSelectionService,
+            discoveryPersonRecipientService = personRecipientService
+        )
+        Mockito.`when`(
+            expertSearchService.searchExpertsByTypesWithEmail(
+                anyValue(2), anyValue(ExpertIndexLevel.CANDIDATE), anyValue(listOf("PRODUCTION_RND")), anyInt()
+            )
+        ).thenAnswer { invocation ->
+            val from = invocation.getArgument<Int>(3)
+            if (from == 0) ExpertSearchResult(experts = listOf(d1, d2), totalHits = 2)
+            else ExpertSearchResult(experts = emptyList(), totalHits = 2)
+        }
+        Mockito.`when`(expertContactRepository.existsByCampaignIdAndOrcidId(eqValue(1L), Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(
+            senderAccountAssignmentService.selectAccount(
+                anyValue(expert("0001")), anyValue(mutableListOf()), eqValue(false), anyValue(SenderBindingStock.EMPTY)
+            )
+        ).thenReturn(account("chen"))
+        Mockito.`when`(
+            introductionMailComposer.compose(eqValue("chen"), anyValue(expert("0001")), Mockito.isNull(), anyBooleanValue())
+        ).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(mailDeliveryService.send(anyValue(account("chen")), anyValue(ComposedMail("", "", ""))))
+            .thenReturn(DeliveredMail("msg-1", "SENT"))
+
+        val result = personAwareService.sendInitialBatch(campaignId = 1L, size = 2)
+
+        assertEquals(1, result.candidates, "同人只计一个目标")
+        assertEquals(1, result.sent)
+        assertEquals("D1", result.results.single().orcidId)
+        // 同一人物只建一个联系人（未选中的另一成员零副作用）。
+        Mockito.verify(expertContactRepository, Mockito.times(1)).save(
+            anyValue(ExpertContact(campaignId = 0L, orcidId = "", expertEmail = "", expertName = null))
+        )
+    }
+
+    private fun personMember(docId: String, personId: String) =
+        com.weibo.talentintroduction.discovery.domain.DiscoveryPersonMemberRecord(
+            expertDocId = docId,
+            personId = personId,
+            normalizedEmail = null,
+            identityFingerprint = "fp-$docId",
+            evidenceJson = null,
+            createdAt = LocalDateTime.of(2026, 8, 1, 12, 0),
+            updatedAt = LocalDateTime.of(2026, 8, 1, 12, 0)
+        )
+
     private fun expert(orcidId: String): ExpertProfile =
         ExpertProfile(
             orcidId = orcidId,

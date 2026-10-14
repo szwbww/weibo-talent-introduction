@@ -2680,6 +2680,100 @@ class ManualInitialOutreachServiceTest {
     }
 
     @Test
+    fun `countBySnapshot counts one person once and picks one qualified address (I-1 I-2 I-3)`() {
+        // 同人 P1 三成员：d1 默认被抑制、d2/d3 合格；另有普通专家 D9。
+        val d1 = expert("D1", "d1@test.com")
+        val d2 = expert("D2", "d2@test.com")
+        val d3 = expert("D3", "d3@test.com")
+        val d9 = expert("D9", "d9@test.com")
+        stubIntroSendPipeline(account("chen"), listOf(d1, d2, d3, d9))
+        Mockito.`when`(emailSuppressionService.isSuppressed("d1@test.com")).thenReturn(true)
+
+        val personAware = serviceWithPersonSelection(personMembers(listOf("D1", "D2", "D3")))
+        stubAdmissions(
+            "D1" to "AUTO_PASSED", "D2" to "AUTO_PASSED", "D3" to "AUTO_PASSED", "D9" to "AUTO_PASSED"
+        )
+
+        val summary = personAware.countBySnapshot(introSnapshot(roundSize = 10, roundsPerRun = 1))
+
+        // 同人只计 1 个目标，另加普通专家 1 个：预估与该时点目标数相同（I-3）。
+        assertEquals(2, summary.pending)
+        assertEquals(2, summary.totalSendable)
+        Mockito.verify(expertSearchService, Mockito.never())
+            .findByDocumentIds(anyValue(ExpertIndexLevel.CANDIDATE), Mockito.anyList())
+    }
+
+    /** 用同一批 mock 构造一个接入人物级选择层的 service（其余参数与 [service] 一致）。 */
+    private fun serviceWithPersonSelection(
+        personRepo: com.weibo.talentintroduction.discovery.repository.DiscoveryPersonRepository
+    ): ManualInitialOutreachService {
+        val personRecipientService = DiscoveryPersonRecipientService(
+            batchRecipientSelectionService = batchRecipientSelectionService,
+            discoveryPersonRepository = personRepo,
+            expertSearchService = expertSearchService,
+            emailSuppressionService = emailSuppressionService,
+            expertContactRepository = expertContactRepository
+        )
+        return ManualInitialOutreachService(
+            expertSearchService = expertSearchService,
+            senderAccountAssignmentService = senderAccountAssignmentService,
+            introductionMailComposer = introductionMailComposer,
+            mailDeliveryService = mailDeliveryService,
+            expertContactRepository = expertContactRepository,
+            campaignRepository = campaignRepository,
+            mailRecordRepository = mailRecordRepository,
+            mailSenderAccountRepository = mailSenderAccountRepository,
+            mailSendAttemptRepository = mailSendAttemptRepository,
+            progressStore = progressStore,
+            properties = properties,
+            txHelper = txHelper,
+            batchSendSettingService = batchSendSettingService,
+            mailSenderAccountService = mailSenderAccountService,
+            selfCheckService = selfCheckService,
+            expertIndexWriterService = expertIndexWriterService,
+            accountRateLimiter = accountRateLimiter,
+            emailSuppressionService = emailSuppressionService,
+            providerResolver = providerResolver,
+            senderWarmupService = senderWarmupService,
+            autoReplySettingService = autoReplySettingService,
+            manualExpertMailService = manualExpertMailService,
+            taskExecutionService = taskExecutionService,
+            senderAccountBindingService = senderAccountBindingService,
+            mailComposeTemplateService = mailComposeTemplateService,
+            batchEmailVerificationService = batchEmailVerificationService,
+            expertOperatorStatusService = expertOperatorStatusService,
+            batchRecipientSelectionService = batchRecipientSelectionService,
+            discoveryPersonRecipientService = personRecipientService
+        )
+    }
+
+    /** 构造一个人物 P1 + 指定成员关系的只读仓储 mock。 */
+    private fun personMembers(
+        docIds: List<String>,
+        personId: String = "P1"
+    ): com.weibo.talentintroduction.discovery.repository.DiscoveryPersonRepository {
+        val repo = Mockito.mock(com.weibo.talentintroduction.discovery.repository.DiscoveryPersonRepository::class.java)
+        val members = docIds.map { docId ->
+            com.weibo.talentintroduction.discovery.domain.DiscoveryPersonMemberRecord(
+                expertDocId = docId,
+                personId = personId,
+                normalizedEmail = null,
+                identityFingerprint = "fp-$docId",
+                evidenceJson = null,
+                createdAt = LocalDateTime.of(2026, 8, 1, 12, 0),
+                updatedAt = LocalDateTime.of(2026, 8, 1, 12, 0)
+            )
+        }
+        Mockito.`when`(repo.findPersonIdsByDocIds(Mockito.anyCollection<String>())).thenAnswer { invocation ->
+            val ids = invocation.getArgument<Collection<String>>(0)
+            members.filter { it.expertDocId in ids }.associate { it.expertDocId to it.personId }
+        }
+        Mockito.`when`(repo.findMembersByPerson(personId)).thenReturn(members)
+        members.forEach { Mockito.`when`(repo.findMember(it.expertDocId)).thenReturn(it) }
+        return repo
+    }
+
+    @Test
     fun `roundsPerRun bounds a single execution at rounds times round size`() {
         val account = account("chen")
         val experts = (1..100).map { expert("E%04d".format(it), "e$it@test.com") }

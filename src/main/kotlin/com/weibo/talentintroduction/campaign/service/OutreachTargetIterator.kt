@@ -6,15 +6,21 @@ import com.weibo.talentintroduction.expert.service.ExpertIdNormalizer
 
 /**
  * Lazy iterator: retryable contacts first, then ES candidates fetched page by page.
- * [seenOrcids] is shared for the full iteration lifecycle (R-3 dedup equivalence).
+ * [seenKeys] is shared for the full iteration lifecycle (R-3 dedup equivalence).
+ *
+ * I-2: 去重键由调用者提供 —— 默认按规范化后的 `orcidId`（普通记录行为不变）；
+ * 人物级调用者可传入人物去重键（`personId`，无映射时退回 docId）。去重键在 [filterPage]
+ * **之前**登记，仅作原始页/重试的廉价去重；人物级「已处理」必须由调用方在完整判定后自行维护
+ * （见 [DiscoveryPersonRecipientService]），不得依赖这里的先标记后审核顺序。
  */
 class OutreachTargetIterator(
     retryableTargets: List<Pair<ExpertContact?, ExpertProfile>>,
     private val pageSize: Int,
-    private val seenOrcids: MutableSet<String>,
+    private val seenKeys: MutableSet<String>,
     private val fetchNextPage: (offset: Int, size: Int) -> List<ExpertProfile>,
     private val filterPage: (List<ExpertProfile>) -> List<ExpertProfile> = { it },
-    private val shouldStop: () -> Boolean = { false }
+    private val shouldStop: () -> Boolean = { false },
+    private val dedupeKey: (ExpertProfile) -> String = { ExpertIdNormalizer.normalize(it.orcidId) }
 ) : Iterator<Pair<ExpertContact?, ExpertProfile>> {
 
     private val retryableIterator = retryableTargets.iterator()
@@ -47,8 +53,7 @@ class OutreachTargetIterator(
 
             val unseen = mutableListOf<ExpertProfile>()
             for (expert in page) {
-                val normOrcid = ExpertIdNormalizer.normalize(expert.orcidId)
-                if (seenOrcids.add(normOrcid)) unseen.add(expert)
+                if (seenKeys.add(dedupeKey(expert))) unseen.add(expert)
             }
             val filtered = if (unseen.isEmpty()) emptyList() else filterPage(unseen)
             esBuffer = filtered.mapTo(mutableListOf()) { Pair(null, it) }
