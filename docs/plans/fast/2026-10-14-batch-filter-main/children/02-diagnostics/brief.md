@@ -43,11 +43,12 @@
 ```bash
 cd /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-14-batch-filter-main
 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest='BatchRecipientPreflightServiceTest,BatchRecipientSelectionServiceTest,ManualInitialOutreachServiceTest,BatchEmailVerificationServiceTest,CountryContinentMappingTest,ExpertSearchServiceTest' -DfailIfNoTests=false
-JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest='BatchRecipientReadRepositoryIT' -DmysqlIt=true -DfailIfNoTests=false
+DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest='BatchRecipientReadRepositoryIT' -DmysqlIt=true -DargLine='-Dapi.version=1.44' -DfailIfNoTests=false
 ```
 
 - 第二条为真实 MySQL 集成测试（testcontainers，参考 `src/test/kotlin/com/weibo/talentintroduction/campaign/repository/BatchEmailVerificationRepositoryIT.kt` 的既有 gating 与迁移建表约定）。必须实际运行并给出结果；不得静默跳过。
 - 第二条命令不得依赖生产库；表结构由真实迁移建立。
+- 环境实测（preflight）：本机 Docker Engine 29.4.0（OrbStack socket）要求 API ≥ 1.40，而 testcontainers 1.19.8 在 `api.version` 未设置时强制 1.32；因此必须带 `DOCKER_HOST` 与 `-DargLine='-Dapi.version=1.44'`。同参数下既有 `BatchEmailVerificationRepositoryIT` 实测 17/17 通过（见 ledger 的 Baseline 段）。
 
 ## 下游接口（03 直接消费，必须逐字固定）
 

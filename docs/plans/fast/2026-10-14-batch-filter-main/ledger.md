@@ -18,7 +18,7 @@
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
-|---|---|---|---:|---|---|---|---:|---|---|---|---|
+|---|---|---|---:|---|---|---|---:|---|---|---|---|---|
 | 01-region | docs/plans/2026-10-14/batch-filter-01-region.md | commit:b02eeb6405b27d5d4f30a32d17019e19c855483d | none | 1 | PENDING | b02eeb6405b27d5d4f30a32d17019e19c855483d | | 0 | — | | | base is the plan-seed commit |
 | 02-diagnostics | docs/plans/2026-10-14/batch-filter-02-diagnostics.md | commit:b02eeb6405b27d5d4f30a32d17019e19c855483d | 01-region | 1 | PENDING | | | 0 | — | | | depends on 01 region semantics and the shared ManualInitialOutreachService path |
 | 03-ui | docs/plans/2026-10-14/batch-filter-03-ui.md | commit:b02eeb6405b27d5d4f30a32d17019e19c855483d | 02-diagnostics | 1 | PENDING | | | 0 | — | | | consumes 02 diagnostics response DTOs only |
@@ -26,3 +26,15 @@
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
 |---|---|---|---|---|---|---|
+
+## Baseline
+
+Preflight baseline recorded at Master base before any child implementation (product code = commit b02eeb6 tree).
+
+- Command: `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -B test -Dtest='BatchRecipientSelectionServiceTest,ManualInitialOutreachServiceTest,BatchEmailVerificationServiceTest' -DfailIfNoTests=false`
+- Result: exit 0; Tests run 231, Failures 0, Errors 0; node --test 1657 pass, 0 fail
+- Command: `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -B test -Dtest='CountryContinentMappingTest,ExpertSearchServiceTest' -DskipNodeTests=true -DfailIfNoTests=false`
+- Result: exit 0; CountryContinentMappingTest 9 pass, ExpertSearchServiceTest 75 pass
+- Command: `DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -B test -Dtest=BatchEmailVerificationRepositoryIT -DmysqlIt=true -DargLine='-Dapi.version=1.44' -DskipNodeTests=true`
+- Result: exit 0; 17 pass. Preflight environment probe for the real-SQL IT path.
+- Note: Testcontainers 1.19.8 forces API 1.32 when `api.version` is unset, but the local Docker Engine 29.4.0 (OrbStack) requires API >= 1.40; a probe without `DOCKER_HOST`/`-DargLine=-Dapi.version=1.44` failed with client-version 1.32 rejection. This is a local environment prerequisite, not a product failure.
