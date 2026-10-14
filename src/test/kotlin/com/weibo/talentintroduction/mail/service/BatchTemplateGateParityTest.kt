@@ -56,6 +56,18 @@ class BatchTemplateGateParityTest {
                 )
             )
         Mockito.`when`(templates.effectiveRequiredKeys(42L)).thenReturn(listOf(requiredKey))
+        // I-4: `evaluateForBatch` 的渲染走只读求值 seam（validateSubject=false），
+        // 与 compose 的 `render` 共用同一模板内容/seed/变量；同一个 stub 内容保证缺 key 判定同源。
+        Mockito.`when`(
+            templates.renderForBatchEvaluation(
+                eqValue(42L), anyValue(emptyMap<String, String>()), Mockito.anyInt()
+            )
+        ).thenReturn(
+            ComposeTemplateRenderResult(
+                subject = "Hello", body = "Dear expert, your research  is impressive.",
+                mailType = "INTRODUCTION", rawTexts = rawTexts, templateId = 42L
+            )
+        )
     }
 
     @Test

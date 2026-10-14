@@ -90,6 +90,10 @@ class OperatorStatusWriteSeamGuardTest {
         // ── SQL 只读上下文（SELECT @Query，非写入）──
         // SELECT @Query 的 WHERE 比较（读过滤条件），不是对列的赋值
         NoiseSite("com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt", 47, "operator_status = :operatorStatus"),
+        // SELECT 只读过滤：批量收件人读取按 operator_status 筛 EMAIL_INVALID，同样是读条件（非写入）。
+        // 8b07363（fast-p 02-diagnostics）新增 EMAIL_INVALID_SQL 时未登记本排除项，导致守卫误报；
+        // 该 SQL 只做 SELECT DISTINCT orcid_id，无任何 UPDATE/INSERT。
+        NoiseSite("com/weibo/talentintroduction/campaign/repository/BatchRecipientReadRepository.kt", 129, "operator_status = 'EMAIL_INVALID'"),
         // SELECT 列投影：读取列值供响应 DTO 使用
         // （2026-09-02 provider-undelivered 计划：MailRecordRepository 新增 DomainUndeliveredCount 投影
         //   与 aggregateUndeliveredByDomain 查询，:583 偏移至 :612，本计划授权行号修正）
