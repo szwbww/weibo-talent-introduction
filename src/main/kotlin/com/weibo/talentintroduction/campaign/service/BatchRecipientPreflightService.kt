@@ -12,10 +12,16 @@ import java.time.LocalDateTime
 
 /**
  * I-1/I-5（02）：发送保护原因 key。与显式条件（[com.weibo.talentintroduction.campaign.domain.RecipientFilterKeys]）
- * 和准入状态（[RecipientAdmissionReasonKeys]）分开表达 —— 保护原因描述「已发送/已绑定/已抑制/永久失败」事实，
- * 不冒充准入结论，也不放宽任何保护。
+ * 和准入状态（[RecipientAdmissionReasonKeys]）分开表达 —— 保护原因描述「已发送/已绑定/已抑制/永久失败」
+ * 以及地址可用性事实，不冒充准入结论，也不放宽任何保护。
  */
 object RecipientProtectionReasonKeys {
+    /**
+     * repair V-1：母集成员没有可用收件地址（`email` 缺失/空白）—— 确定性地址排除。
+     * 母集只按层级/标签读取，这类成员必须留在母集里并给出显式原因，绝不静默丢出诊断。
+     */
+    const val NO_RECIPIENT_ADDRESS = "PROTECTION_NO_RECIPIENT_ADDRESS"
+
     const val ALREADY_SENT = "PROTECTION_ALREADY_SENT"
     const val BOUND_SENDER = "PROTECTION_BOUND_SENDER"
     const val SUPPRESSED = "PROTECTION_SUPPRESSED"
@@ -174,13 +180,15 @@ class BatchRecipientPreflightService(
             val conditionKeys = selected?.filterKeys.orEmpty()
             val admissionKeys = admissionReasonKeys(selected)
             val orcid = normalizeOrcid(profile)
+            // repair V-1：地址可用性与抑制判据共用同一份规范化结果（没有地址就不可能被抑制，也不会进入发送验证）。
+            val normalizedEmail = normalizeVerificationEmail(profile.email)
             val protectionKeys = buildList {
+                if (normalizedEmail.isEmpty()) add(RecipientProtectionReasonKeys.NO_RECIPIENT_ADDRESS)
                 if (orcid in boundOrcids) add(RecipientProtectionReasonKeys.BOUND_SENDER)
                 if (orcid in emailInvalidOrcids) add(RecipientProtectionReasonKeys.EMAIL_INVALID)
                 val fact = sendFacts[orcid]
                 if (fact?.sent == true) add(RecipientProtectionReasonKeys.ALREADY_SENT)
                 if (fact?.permanentFailure == true) add(RecipientProtectionReasonKeys.PERMANENT_FAILURE)
-                val normalizedEmail = normalizeVerificationEmail(profile.email)
                 if (normalizedEmail.isNotEmpty() && normalizedEmail in suppressedEmails) {
                     add(RecipientProtectionReasonKeys.SUPPRESSED)
                 }
@@ -199,7 +207,7 @@ class BatchRecipientPreflightService(
                 conditionReasonKeys = conditionKeys,
                 protectionReasonKeys = protectionKeys,
                 templateMissingKeys = templateKeys,
-                verificationPhase = verification.phaseFor(normalizeVerificationEmail(profile.email))
+                verificationPhase = verification.phaseFor(normalizedEmail)
             )
         }
 

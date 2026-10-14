@@ -5108,6 +5108,59 @@ class ManualInitialOutreachServiceTest {
     }
 
     @Test
+    fun `preview diagnostics and execution share one preflight eligibility (repair V-1 V-2)`() {
+        val acc = account("chen")
+        val addressLess = expert("E200", "addressless@example.org").copy(email = "   ")
+        val suppressed = expert("E201", "suppressed@example.org")
+        val sendable = expert("E202", "sendable@example.org")
+        stubIntroSendPipeline(acc, listOf(addressLess, suppressed, sendable))
+        Mockito.`when`(batchRecipientReadRepository.findSuppressedEmails(Mockito.anyCollection()))
+            .thenReturn(setOf("suppressed@example.org"))
+
+        val snapshot = introSnapshot(roundSize = 10, roundsPerRun = 1)
+
+        // 预估：母集只按层级/标签（3 人）；地址缺失与既有抑制各自成为独立原因，绝不静默丢人。
+        val preview = service.countBySnapshot(snapshot)
+        assertEquals(3, preview.baseline)
+        assertEquals(2, preview.excludedUnique)
+        assertEquals(1, preview.eligibleBeforeLiveVerification)
+        assertEquals(
+            preview.baseline,
+            (preview.excludedUnique ?: -1) + (preview.eligibleBeforeLiveVerification ?: -1),
+            "baseline = excludedUnique + eligibleBeforeLiveVerification"
+        )
+        assertEquals(
+            mapOf(
+                RecipientProtectionReasonKeys.NO_RECIPIENT_ADDRESS to 1,
+                RecipientProtectionReasonKeys.SUPPRESSED to 1
+            ),
+            preview.reasonHitsDetail.associate { it.reasonKey to it.count }
+        )
+
+        // 逐 docId 诊断保留同样的解释，绝不当成「不在母集」。
+        val diagnostics = service.diagnoseRecipients(snapshot, listOf("E200", "E201", "E202"))
+        val byDoc = diagnostics.recipients.associateBy { it.docId }
+        assertEquals(BatchRecipientDiagnosticStatus.OK, byDoc.getValue("E200").status)
+        assertEquals(
+            listOf(RecipientProtectionReasonKeys.NO_RECIPIENT_ADDRESS),
+            byDoc.getValue("E200").protectionReasonKeys
+        )
+        assertEquals(listOf(RecipientProtectionReasonKeys.SUPPRESSED), byDoc.getValue("E201").protectionReasonKeys)
+        assertEquals(false, byDoc.getValue("E200").eligible)
+        assertEquals(false, byDoc.getValue("E201").eligible)
+        assertEquals(true, byDoc.getValue("E202").eligible)
+
+        // 执行：只选同一快照预检查判定确定通过的目标；被排除的两个既不进执行器也不进 SMTP。
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(1, result.sent)
+        assertEquals(0, result.failed)
+        assertEquals(0, result.skipped)
+        Mockito.verify(mailDeliveryService, Mockito.times(1))
+            .send(anyValue(acc), anyValue(ComposedMail("", "", "")))
+    }
+
+    @Test
     fun `recipient diagnostics rejects an oversized docId request (I-5)`() {
         val ids = (1..201).map { "D$it" }
 

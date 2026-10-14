@@ -47,11 +47,12 @@ class BatchRecipientPreflightServiceTest {
         docId: String,
         country: String? = "Germany",
         operatorStatus: String? = "CONTACTED",
-        type: ExpertType = ExpertType.PRODUCTION_RND
+        type: ExpertType = ExpertType.PRODUCTION_RND,
+        email: String? = null
     ): ExpertProfile = ExpertProfile(
         orcidId = docId,
         esDocId = docId,
-        email = "$docId@example.org",
+        email = email ?: "$docId@example.org",
         givenNames = "Given",
         familyNames = "Family",
         country = country,
@@ -376,6 +377,45 @@ class BatchRecipientPreflightServiceTest {
         assertEquals(listOf(RecipientProtectionReasonKeys.PERMANENT_FAILURE), byDoc.getValue("B").protectionReasonKeys)
         assertEquals(listOf(RecipientProtectionReasonKeys.EMAIL_INVALID), byDoc.getValue("C").protectionReasonKeys)
         assertEquals(0, result.eligibleBeforeLiveVerification)
+    }
+
+    // ── repair V-1：母集成员缺少可用收件地址时的显式确定性排除 ─────────────────
+
+    @Test
+    fun `a base member without a usable recipient address is an explicit deterministic exclusion (repair V-1)`() {
+        stubAdmissions("A", "B", "C")
+        val profiles = listOf(
+            expert("A"),
+            expert("B", email = "   "),
+            expert("C").copy(email = null)
+        )
+
+        val result = service.preflight(input(profiles))
+
+        val byDoc = result.decisions.associateBy { it.docId }
+        assertTrue(byDoc.getValue("A").eligible)
+        listOf("B", "C").forEach { docId ->
+            val decision = byDoc.getValue(docId)
+            assertFalse(decision.eligible, "没有可用收件地址不得计入通过目标：$docId")
+            assertEquals(
+                listOf(RecipientProtectionReasonKeys.NO_RECIPIENT_ADDRESS),
+                decision.protectionReasonKeys,
+                "地址缺失必须是显式原因，而不是被静默丢出母集：$docId"
+            )
+            assertEquals(RecipientVerificationPhase.DISABLED, decision.verificationPhase)
+        }
+        assertEquals(3, result.baseline, "地址缺失的母集成员仍留在母集里")
+        assertEquals(2, result.excludedUnique)
+        assertEquals(1, result.eligibleBeforeLiveVerification)
+        assertEquals(
+            result.baseline,
+            result.excludedUnique + result.eligibleBeforeLiveVerification,
+            "baseline = excludedUnique + eligibleBeforeLiveVerification"
+        )
+        assertEquals(
+            2,
+            result.reasonHits.single { it.reasonKey == RecipientProtectionReasonKeys.NO_RECIPIENT_ADDRESS }.count
+        )
     }
 
     // ── I-6：模板门禁只按真实专家变量 ──────────────────────────────────────────

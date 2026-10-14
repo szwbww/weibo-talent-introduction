@@ -685,7 +685,25 @@ class ManualInitialOutreachService(
         return BaseScan(collected.values.toList(), partial)
     }
 
-    /** I-1（02）：只承载层级与标签的母集扫描范围（其余维度都是逐人原因，不是母集条件）。 */
+    /**
+     * repair V-1/V-2：把执行侧候选收敛到同一快照只读预检查判定「确定通过」的目标集合。
+     * [eligibleDocIds] 惰性求值（每次运行至多一次母集扫描）；空候选不触发预检查。
+     * 预检查不可用（历史手工夹具，值为 `null`）逐字保持旧行为；这里只做确定性收缩，
+     * 绝不放宽发送前的动态保护复核（抑制/绑定/永久失败/实时验证）。
+     */
+    private fun <T> preflightEligibleOnly(
+        items: List<T>,
+        eligibleDocIds: Lazy<Set<String>?>,
+        docId: (T) -> String
+    ): List<T> {
+        if (items.isEmpty()) return items
+        val eligible = eligibleDocIds.value ?: return items
+        return items.filter { docId(it) in eligible }
+    }
+
+    /**
+     * I-1（02）：只承载层级与标签的母集扫描范围（其余维度都是逐人原因，不是母集条件）。
+     */
     private fun baseRecipientScope(scope: RecipientScope): RecipientScope = RecipientScope(
         mailType = scope.mailType,
         funnelLevels = scope.funnelLevels,
@@ -696,17 +714,17 @@ class ManualInitialOutreachService(
     )
 
     /**
-     * I-1（02）：母集扫描的 ES 过滤器 —— 只有「有邮箱」与（可选）标签，**不**追加地区/状态/方向/
-     * 类型/模板门禁，也绝不追加 INTRODUCTION 空类型集合的 `MATCH_NONE_FILTER`（那会把母集误扫成 0）。
-     * 这些维度一律留给预检查逐人解释。
+     * I-1（02）/ repair V-1：母集扫描的 ES 过滤器 —— 只有（可选）标签，**不**追加地区/状态/方向/
+     * 类型/模板门禁，也**不**追加 `exists email`（地址缺失的母集成员必须留在母集里，由预检查作为
+     * 确定性原因解释，绝不静默丢出诊断），更不追加 INTRODUCTION 空类型集合的 `MATCH_NONE_FILTER`
+     * （那会把母集误扫成 0）。这些维度一律留给预检查逐人解释。
      */
-    private fun buildBaseEsFilters(baseScope: RecipientScope): List<Map<String, Any>> {
-        val filters = mutableListOf<Map<String, Any>>(mapOf("exists" to mapOf("field" to "email")))
-        if (baseScope.tags.isNotEmpty()) {
-            filters.add(mapOf("terms" to mapOf("tags" to baseScope.tags)))
+    private fun buildBaseEsFilters(baseScope: RecipientScope): List<Map<String, Any>> =
+        if (baseScope.tags.isEmpty()) {
+            emptyList()
+        } else {
+            listOf(mapOf("terms" to mapOf("tags" to baseScope.tags)))
         }
-        return filters
-    }
 
     /**
      * I-1/I-2（02）：NEW 重试候选只读加载 —— 与执行构造同源（同 campaign、同 current_status、同层级索引），
@@ -903,12 +921,31 @@ class ManualInitialOutreachService(
         val filterNow = verificationFilterNow()
         // A3 (I-4)：预估（countBySnapshot）与执行共用的精确模板门禁；门禁关闭时为 no-op。
         val gate = batchTemplateGate(snapshot)
+        // I-1/I-2（repair V-2）：本次执行与预估/诊断共用同一份只读预检查结论 —— 确定性目标集合
+        // （准入/显式条件/保护/模板/地址可用性）以它为准；发送前的动态复核（抑制/绑定/永久失败/
+        // 实时验证）逐点保留，绝不放宽。惰性求值：只有真的要选择目标时才做母集扫描（每次运行至多一次），
+        // 取消/空快照提前返回的运行不再多付一次只读扫描。预检查不可用（历史手工夹具）时才回退旧口径。
+        val preflightEligible = lazy {
+            preflightForSnapshot(snapshot, scope) {
+                progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)
+            }?.decisions
+                ?.asSequence()
+                ?.filter { it.eligible }
+                ?.map { it.docId }
+                ?.toHashSet()
+        }
         val seenDocIds = mutableSetOf<String>()
-        val (retryableTargets, seenOrcids, _) = buildFilteredRetryableTargets(campaignId, scope, filterNow, seenDocIds, gate)
+        val (allRetryableTargets, seenOrcids, _) = buildFilteredRetryableTargets(campaignId, scope, filterNow, seenDocIds, gate)
+        // repair V-2：NEW 重试目标同样只保留预检查判定确定通过的目标；去重标识仍由**全部**重试目标占据，
+        // 保证 ES 侧同一身份不会因执行过滤而重复出现。
+        val retryableTargets = preflightEligibleOnly(allRetryableTargets, preflightEligible) {
+            BatchRecipientSelectionService.docIdOf(it.second)
+        }
         val (esEstimate, _) = countEsTargets(scope, filterNow, {
             progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)
         }, gate, initialSeenOrcids = seenOrcids, initialSeenDocIds = seenDocIds)
-        val totalEstimate = retryableTargets.size + esEstimate
+        // 旧口径的进度估算逐字保留（预估 totalSendable 与执行 total 的同源契约不变）。
+        val totalEstimate = allRetryableTargets.size + esEstimate
         log.info("Outreach targets: {} retryable, {} ES estimate, {} total estimate; config: roundSize={}, perMailMs={}, perRoundMs={}",
             retryableTargets.size, esEstimate, totalEstimate,
             config.roundSize, config.perMailIntervalMs, config.perRoundIntervalMs)
@@ -937,9 +974,13 @@ class ManualInitialOutreachService(
             fetchNextPage = { offset, size -> fetchEsPage(scope, offset, size) },
             // I-1/I-3: ES 页返回后先过最终谓词（新发现机构证据 + 已证实机构所在地判地区），
             // 再叠加历史不可达过滤；整页被过滤时迭代器继续推进 offset（I-3）。
+            // repair V-2：在这之前先收敛到预检查判定确定通过的目标（同快照同判据）。
             filterPage = { profiles ->
+                val eligible = preflightEligibleOnly(profiles, preflightEligible) {
+                    BatchRecipientSelectionService.docIdOf(it)
+                }
                 filterKnownProfiles(
-                    gate(selectIncluded(scope, profiles, seenDocIds)),
+                    gate(selectIncluded(scope, eligible, seenDocIds)),
                     scope.excludeVerifiedUnavailableEmails,
                     filterNow
                 ).filter { seenDocIds.add(BatchRecipientSelectionService.docIdOf(it)) }
