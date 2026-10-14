@@ -9,7 +9,7 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-13T21:55:30+0800
-- Current child: 08-selection
+- Current child: 09-send-guard
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: Impl04-2 运行中断（exit 1，getaddrinfo ENOTFOUND opencode.ai；2026-10-14T09:08+0800 记录）；无提交；已由 Impl04b 成功接续（de4c1a0）
@@ -26,7 +26,7 @@
 | 05-ingestion | docs/plans/2026-10-13/discovery-person-05-ingestion.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 01-duplicate,02-replay,04-registry | 1 | LIGHT_PASS_WITH_NOTES | de4c1a042a48ec139c95f659858e78746b6208a6 | 7a96b5957b75096110e392b25a98bb9ea44990a5 | 0 | — | 7a96b5957b75096110e392b25a98bb9ea44990a5 | 00327f7a226a95976bf4fffe301f6c44e519251b | 8 授权文件；C1 272（190/49/16/17）、C2 23（17/6）、JS 1657×2 全绿；O-1 为 P2 覆盖注记（SCOPE_CONFLICT 刷新无专属断言）；写者 Impl05-2、核实者 Verify05-2 |
 | 06-query | docs/plans/2026-10-13/discovery-person-06-query.md | commit:8b320426228ff9cf5e55447826bdb009bcdfa34a | 04-registry,05-ingestion | 2 | LIGHT_PASS_WITH_NOTES | 7a96b5957b75096110e392b25a98bb9ea44990a5 | 0755833e3e5e0480d9ad40443ae5ebba0e91ac6a | 0 | — | 0755833e3e5e0480d9ad40443ae5ebba0e91ac6a | 5dd4e5a562baa62e015d572074656c42e6719bec | epoch1（db8ed30/d106c23）→ A13 后 epoch2（0755833）补 ES 列表 memberCount；C1 124、JS 1675 全绿；性能门禁与深分页注记延续；写者 Impl06/Impl06b、核实者 Verify06/Verify06b |
 | 07-ui | docs/plans/2026-10-13/discovery-person-07-ui.md | commit:a2d4166bf6ff7e61313d69a420cd5f98e28a8911 | 06-query | 2 | LIGHT_PASS | 0755833e3e5e0480d9ad40443ae5ebba0e91ac6a | 2fae99a551ea656604c46a19f1f046eb3ad6593e | 0 | — | 2fae99a551ea656604c46a19f1f046eb3ad6593e | f6af6a8b0c70a7fabfecb117964e32772f2e9cef | epoch1（4fbc761，archive 15d3939）→ A13 后 epoch2（2fae99a）补 ES 列表 memberCount；C1/C2 20/C3 1677 全绿；含 index.html 16 键 20261014-person-emails；写者 Impl07/Impl07b、核实者 Verify07 |
-| 08-selection | docs/plans/2026-10-13/discovery-person-08-selection.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 04-registry,05-ingestion,06-query | 1 | IMPLEMENTING | — | — | — | — | — | — | A6 新增；10 授权文件；人物级原子保护归 09；写者 Impl08 |
+| 08-selection | docs/plans/2026-10-13/discovery-person-08-selection.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 04-registry,05-ingestion,06-query | 1 | LIGHT_PASS_WITH_NOTES | 2fae99a551ea656604c46a19f1f046eb3ad6593e | 4ee251f7c90bea7cf556c5536f8bb522c5cebc09 | 0 | — | 4ee251f7c90bea7cf556c5536f8bb522c5cebc09 | cfc4d72eeb16398f96faca2ef2fc56ef5f0868f4 | 10 授权文件；C1 236（10/9/184/21/12）、JS 1677 全绿；O-1 为注释性不一致；写者 Impl08、核实者 Verify08 |
 | 09-send-guard | docs/plans/2026-10-13/discovery-person-09-send-guard.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 04-registry,08-selection | — | PENDING | — | — | — | — | — | — | A7 新增；V157 人物级首发保护；10 授权文件 |
 | 10-history | docs/plans/2026-10-13/discovery-person-10-history.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 04-registry,05-ingestion,06-query,07-ui,08-selection,09-send-guard | — | PENDING | — | — | — | — | — | — | A8 新增；仅预览与提案，数据应用属后续实施授权；6 授权文件 |
 
