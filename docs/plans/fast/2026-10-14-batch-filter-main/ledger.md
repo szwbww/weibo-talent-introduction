@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-14/batch-filter-main.md
 
-- Status: RUNNING
+- Status: READY_FOR_HUMAN_REVIEW
 - Master plan: docs/plans/2026-10-14/batch-filter-main.md (commit b02eeb6405b27d5d4f30a32d17019e19c855483d)
 - Amendments: N/A
 - Master base: 9d353934b82ed3e36a193c70748e5efccb3d9e82
@@ -9,8 +9,8 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-14T01:14:45Z
-- Current child: 03-ui
-- Waiting role: IMPLEMENTER
+- Current child: N/A
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -21,7 +21,7 @@
 |---|---|---|---:|---|---|---|---:|---|---|---|---|---|
 | 01-region | docs/plans/2026-10-14/batch-filter-01-region.md | commit:b02eeb6405b27d5d4f30a32d17019e19c855483d | none | 1 | LIGHT_PASS_WITH_NOTES | b02eeb6405b27d5d4f30a32d17019e19c855483d | bba581fe011730b52ad05d35e6248c9599372c2d | 0 | — | bba581fe011730b52ad05d35e6248c9599372c2d | cfe0f69839f85d008cb21fe4c4b10a0e6951fc4a | two RECORD_ONLY notes: stale dead matchesDiscoveryOutreach comment and tags-only ES branch |
 | 02-diagnostics | docs/plans/2026-10-14/batch-filter-02-diagnostics.md | commit:b02eeb6405b27d5d4f30a32d17019e19c855483d | 01-region | 1 | LIGHT_PASS | bba581fe011730b52ad05d35e6248c9599372c2d | 8b0736389c92e5d6f4c5766cdaf968720e6d2d03 | 1 | 9c9457cadda70e95dc605f720d652d3e4617b803 | 9c9457cadda70e95dc605f720d652d3e4617b803 | b7810d0a0f47aacd96952c574efb111c4c8ac39d | round 1 folded admission into eligibility; re-verification LIGHT_PASS closed F-1 |
-| 03-ui | docs/plans/2026-10-14/batch-filter-03-ui.md | commit:b02eeb6405b27d5d4f30a32d17019e19c855483d | 02-diagnostics | 1 | PENDING | | | 0 | — | | | consumes 02 diagnostics response DTOs only |
+| 03-ui | docs/plans/2026-10-14/batch-filter-03-ui.md | commit:b02eeb6405b27d5d4f30a32d17019e19c855483d | 02-diagnostics | 1 | LIGHT_PASS_WITH_NOTES | 9c9457cadda70e95dc605f720d652d3e4617b803 | 50dc450b9e3d68b4cc44ad3a660d8a00936bb662 | 0 | — | 50dc450b9e3d68b4cc44ad3a660d8a00936bb662 | 12f2b014dd9e4ac5c30531a6f1ad2c5998ca0bd4 | four RECORD_ONLY notes: three compat deviations forced by batchSendTaskConsoleInteraction.test.js plus unused verificationPhase |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
