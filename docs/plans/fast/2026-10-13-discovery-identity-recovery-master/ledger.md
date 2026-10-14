@@ -9,10 +9,10 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-13T21:55:30+0800
-- Current child: 04-registry
+- Current child: 05-ingestion
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
-- Last agent error: N/A
+- Last agent error: Impl04-2 运行中断（exit 1，getaddrinfo ENOTFOUND opencode.ai；2026-10-14T09:08+0800 记录）；无提交；已由 Impl04b 成功接续（de4c1a0）
 - Pause reason: 已解除 — 人工批准 A10（选项 A，2026-10-14T00:52+0800）：授权 OpenAlexRequestPolicy.kt 并补 /works/{id}→SINGLETON(0 credit) 派生；02-replay 以 epoch 2 重派（原暂停原因：epoch1 zero-commit PLAN_CONFLICT — I-4 SINGLETON 与 /works→LIST 派生冲突）
 - Resume from: bc84bac009177bc3911f00a8041ca2eb48f347b1（02-replay epoch 2 起点；批准 A10 后重派实施者）
 
@@ -22,7 +22,7 @@
 | admission-relaxation | docs/plans/2026-10-13/discovery-admission-relaxation.md | commit:f7c7604c268aad69df6afd15efe0eed91866a237 | none | 2 | LIGHT_PASS_WITH_NOTES | b06a71898bc7850d2caeb244c9f8478f18a3b2ae | d8ca3ca28fc94c26ec796a04c6ee332c1e760533 | 0 | — | d8ca3ca28fc94c26ec796a04c6ee332c1e760533 | 2855a757a879016f10625162384e6d614981b7b1 | epoch1 10 文件（cf08a695）→ PLAN_CONFLICT 暂停 → A9 修订 → epoch2 补改（d8ca3ca，1 文件）；C1 149、C2 211、JS 1657×2 全绿；核实者 VerifyAdmission 四门禁 PASS，RECORD_ONLY O-1（用例名沿旧）、O-2（apply 冲突计入 taskFailure 系 KDoc 明示口径）；写者 ImplAdmission/ImplAdmission2 |
 | 01-duplicate | docs/plans/2026-10-13/discovery-identity-recovery-01-duplicate.md | commit:b06a71898bc7850d2caeb244c9f8478f18a3b2ae | admission-relaxation | 1 | LIGHT_PASS_WITH_NOTES | d8ca3ca28fc94c26ec796a04c6ee332c1e760533 | bc294d2e991e58346ce456f4e5eeb7525a2b5771 | 0 | — | bc294d2e991e58346ce456f4e5eeb7525a2b5771 | 41f3b94430958866662b8556a1fc293b3f7fa998 | 8 授权文件（1039+/12-）；C1 294、C2 48、JS 1657×2 全绿；核实者 Verify01-2 四门禁 PASS，RECORD_ONLY O-1（C2 计数差异系前序子计划，非本边界）；写者 Impl01-2 |
 | 02-replay | docs/plans/2026-10-13/discovery-identity-recovery-02-replay.md | commit:58a9e511e327d61e8e3645c738921979ff26a518 | admission-relaxation,01-duplicate | 2 | LIGHT_PASS | bc294d2e991e58346ce456f4e5eeb7525a2b5771 | abdf9f4645958e1ef7ef7c44963b51c4bc5898d4 | 0 | — | abdf9f4645958e1ef7ef7c44963b51c4bc5898d4 | 49ebf99365e97c0717146cdaf7e34d9000ff77cd | epoch1 zero-commit PLAN_CONFLICT（A10）→ epoch2 全量实施 11 文件（含 policy /works/{id}→SINGLETON）；C1 156、C2 294、C3 9、JS 1657×2 全绿；核实者 Verify02-2 四门禁 PASS 无 RECORD_ONLY；写者 Impl02b |
-| 04-registry | docs/plans/2026-10-13/discovery-person-04-registry.md | commit:9bf6b8ec1319863002f7d21f4320108a0a8ec2e3 | none | — | PENDING | — | — | — | — | — | — | A2 新增；人物主档 V156；A11 后 7 授权文件（+ FlywayMigrationIntegrationTest）；开发顺序在 01/02 之后 |
+| 04-registry | docs/plans/2026-10-13/discovery-person-04-registry.md | commit:9bf6b8ec1319863002f7d21f4320108a0a8ec2e3 | none | 1 | LIGHT_PASS_WITH_NOTES | abdf9f4645958e1ef7ef7c44963b51c4bc5898d4 | de4c1a042a48ec139c95f659858e78746b6208a6 | 0 | — | de4c1a042a48ec139c95f659858e78746b6208a6 | e1bdbd3e9632968e62e785594a2d7e47cae15479 | 7 授权文件（V156+A11）；C1 6、C2 17、C3 45、JS 1657×3 全绿；D1/D2/D3 经核实确认必要（O-1..O-3），O-4 为 P2 测试质量注记；Impl04-2 网络中断→Impl04b 接续；写者 Impl04b |
 | 05-ingestion | docs/plans/2026-10-13/discovery-person-05-ingestion.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 01-duplicate,02-replay,04-registry | — | PENDING | — | — | — | — | — | — | A3 新增；补证接口基线=01/02 已验证产物；8 授权文件 |
 | 06-query | docs/plans/2026-10-13/discovery-person-06-query.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 04-registry,05-ingestion | — | PENDING | — | — | — | — | — | — | A4 新增；与 07 API/DOM 联合验收；8 授权文件 |
 | 07-ui | docs/plans/2026-10-13/discovery-person-07-ui.md | commit:36075ec06c5e4382f13606c995e24a13ec4470ce | 06-query | — | PENDING | — | — | — | — | — | — | A5 新增；2 授权文件；样式契约 S-1/S-2 |
