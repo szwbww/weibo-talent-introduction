@@ -446,3 +446,526 @@ After READY_FOR_VERIFICATION, resume $review-fast-p /Users/lukai/IdeaProjects/we
 ```
 
 No implementation was performed. No product code was modified.
+
+
+---
+
+## Epoch 2 — 2026-10-15 (Asia/Shanghai)
+
+## Verification Result: FAIL
+
+Plan: [discovery-identity-recovery-master.md](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/docs/plans/2026-10-13/discovery-identity-recovery-master.md)
+Phase: `aggregate/master`，Epoch 2
+Reviewer: `/root/aggregate_reviewer_epoch2`，独立 post-repair reviewer；未参与实现、修复或轻量验证。
+Implementation boundary: `9d353934b82ed3e36a193c70748e5efccb3d9e82..b08b521c12b3d0fbbf219bbb7c8a9fc61a2ec2e9`
+Convergence: **DIVERGING**
+Manual acceptance: **PENDING**
+
+21 个必需命令全部首次退出 0。仍有 **11 个 P1 必需行为缺陷**：10 个旧问题持续、1 个新增正常首发回归。另有 3 个非阻断 P2；B-1/B-2 必需证据仍 BLOCKED。确认行为违反优先，整体结果为 FAIL。
+
+### 身份、授权与审查边界
+
+- Repository：`/Users/lukai/IdeaProjects/weibo-talent-introduction`
+- Retained worktree：`/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master`
+- Branch：`fast/2026-10-13-discovery-identity-recovery-master`
+- Prior code：`cd6a38d662da881ec453839921922a30602eacb3`
+- Current code：`b08b521c12b3d0fbbf219bbb7c8a9fc61a2ec2e9`
+- Evidence HEAD：`d6186c63930b8d897d45d069ba3cc90bce427887`
+- Pre-execution evidence：`e60ed1379af8049853160d32f3305e0e811c618b`
+- Resolution：`DISCOVERED_FROM_GIT_WORKTREES`；输入的 selected discovery JSON 唯一命中本工作树。未使用其他工作树 review ledger。
+- Master identity：`CONSISTENT`；invoked 与 governing 相同，无 governing diff。
+- Governing master SHA256：`f69d8135ce0019ad36cc8939cf8101a6f584aac9983dec3dfc78eb2ae37ce238`
+- Recorded master commit：`36075ec06c5e4382f13606c995e24a13ec4470ce`
+- Fast ledger SHA256：`2bbeec0ca9bbaf2008aed29b4265862a089a84cdbc25f20160a3e6ef5fe361e2`
+- Fast handoff SHA256：`ff9fa89083d24f9a3f6b37f798a8f201273df9c7b543d8a572316e7c4a390a64`
+- Approved repair：[repair.md](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/docs/plans/fix/discovery-identity-recovery-master/repair.md)
+- Repair SHA256：`845500de628b9e7fe8671171c3e90f49f1afc6bbac2f85e05b11a57be8bd4ca5`
+- Repair evidence mode：`DURABLE_HANDOFF`。
+- Approval：人工精确调用 `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/docs/plans/fix/discovery-identity-recovery-master/repair.md`，记录于 [repair-execution.md](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/docs/plans/review/2026-10-13-discovery-identity-recovery-master/repair-execution.md)。
+- Executor：execute-p main integrator、RepairDiscoveryCore、RepairQueryUi、RepairOutreach；canonical session ID `UNAVAILABLE`，属可选元数据，不阻断本次验证。
+- Prior report：[machine-verification.md，Epoch 1](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/docs/plans/review/2026-10-13-discovery-identity-recovery-master/machine-verification.md)。保留其 V-1—V-25、B-1/B-2 lineage；未继承其 verdict 作为当前证据。
+
+已检查完整累计变更、主计划、十个当前子计划、baseline、fast ledger/handoff、全部 40 份 child brief/execution/verify-log/fix-log，以及批准 repair/handoff。中途 usage-limit 恢复延续同一 epoch、同一 runner，未重复已完成命令、未并发 Maven。
+
+新鲜 scope audit：
+
+| 边界 | 文件数 | 授权结论 |
+|---|---:|---|
+| prior code → current code | 40：20 产品/工具、20 测试 | 全部属于 repair 的 47 个 Authorized Files |
+| master base → current code | 69：36 产品/工具、33 测试 | 全部属于批准 child 文件并集，加 repair 单独授权的 OperatorStatusWriteSeamGuardTest |
+| 十 child 明确文件表并集 | 68 | 无累计范围外产品/测试文件 |
+| current code → evidence HEAD | 1 | 仅 repair-execution.md |
+
+精确文件核对记录：[scope-audit.json](/tmp/discovery-aggregate-epoch2/scope-audit.json)。child 文件表计数依次为 `11,8,11,7,8,8,3,10,11,6`，含共享重叠。
+
+祖先检查 `base→current code`、`prior code→current code`、`current code→HEAD` 均退出 0。结束时 HEAD、branch、master/repair hash 未变；index 空；`git diff HEAD -- src tools` 空。唯一 tracked pending 是控制器的 review ledger。
+
+### Ordered child identities
+
+所有下列文件位于本 retained worktree 的 `docs/plans/2026-10-13/`；当前字节与记录 commit 一致。
+
+| Child / exact filename | Recorded commit | SHA256 |
+|---|---|---|
+| admission-relaxation / discovery-admission-relaxation.md | f7c7604c268aad69df6afd15efe0eed91866a237 | e2ebfb727c056b8de709150304a0cf9bc0ea4b76f7e41ebec27fa452e5e281b2 |
+| 01-duplicate / discovery-identity-recovery-01-duplicate.md | b06a71898bc7850d2caeb244c9f8478f18a3b2ae | d78c2b0e05a203558820645cc440c82b4420a782768ab9b88be2d74deb937902 |
+| 02-replay / discovery-identity-recovery-02-replay.md | 58a9e511e327d61e8e3645c738921979ff26a518 | 4bee186d37236f0e000e07c39941915a8eb37283eda44e4804d1b1ee9950c407 |
+| 04-registry / discovery-person-04-registry.md | 9bf6b8ec1319863002f7d21f4320108a0a8ec2e3 | cdd91cdef308f651733d579bd1c5ff0140dbe7b0e8e7e3a851115a31d8c42c1d |
+| 05-ingestion / discovery-person-05-ingestion.md | 36075ec06c5e4382f13606c995e24a13ec4470ce | 924e929a9228d4ba302a8ce0df6017337e430cf986c70716ef2d50fc667d92ff |
+| 06-query / discovery-person-06-query.md | 8b320426228ff9cf5e55447826bdb009bcdfa34a | 404cd02b4dd50cd2aeef2d434f183591bc36ee7bc32e43137ca7fe990da71b31 |
+| 07-ui / discovery-person-07-ui.md | a2d4166bf6ff7e61313d69a420cd5f98e28a8911 | e0cad0a75d41f917d679a6eeadcf7010c8897bf27ea646e197af30c7f2a589d0 |
+| 08-selection / discovery-person-08-selection.md | 36075ec06c5e4382f13606c995e24a13ec4470ce | aed785ba70933fd10ef73ee9a3934c5714d195894e54f69e2b15386919869916 |
+| 09-send-guard / discovery-person-09-send-guard.md | 6a774804e918342bb65ae4549247e37fccd0d59b | 1489119289122de3e89935744084c1fc30b302c3f2a54404d423d6f112aa59de |
+| 10-history / discovery-person-10-history.md | 36075ec06c5e4382f13606c995e24a13ec4470ce | 122436d48050cd7c3811265136300754ef4ae739b34ab44b9cd3ba10dcda691b |
+
+### Approved amendments
+
+下表沿用 fast ledger 的批准规则。身份缩写仅为表格引用：
+
+- B：`b06a71898bc7850d2caeb244c9f8478f18a3b2ae`
+- M：`36075ec06c5e4382f13606c995e24a13ec4470ce`
+- H1：人工「计划已经更新 你再看一下」，2026-10-13 22:43+0800。
+
+| ID | Before → After | Governing master rule、变更理由 | Human approval |
+|---|---|---|---|
+| A1 | B → M | 需求描述“用户追加同人多邮箱合并”及实现方案“当前追加：新发现人物合并（04—10）”；增加 04—10，10,686 降为背景，03 存量执行停用，admission/01/02 先于 04—10 | H1 |
+| A2 | B → M | 主文件表 04、实现步骤1；建立人物关系与独立存储范围 | H1 |
+| A3 | B → M | 主文件表 05、实现步骤1—4；发现与补证成功出口登记 | H1 |
+| A4 | B → M | 主文件表 06、完整流式研究门禁；查询、精确聚合与分页 | H1 |
+| A5 | B → M | 主文件表 07、S-1/S-2；两宿主多邮箱展示 | H1 |
+| A6 | B → M | 主文件表 08、实现步骤1—3；逐邮箱筛选及人物去重 | H1 |
+| A7 | B → M | 主文件表 09、实现步骤1—4；人物首发持久保护 | H1 |
+| A8 | B → M | 主文件表 10、实现步骤1—6；冻结清单维护、历史保护及审计 | H1 |
+| A9 | B → f7c7604c268aad69df6afd15efe0eed91866a237 | 准入/CAS/重验；追加 BehaviorTest，仅两例断言改为批准的新软原因语义 | 「批准：更新 2 例为新语义」，2026-10-13 23:06 |
+| A10 | B → 58a9e511e327d61e8e3645c738921979ff26a518 | 实现步骤2/I-4；追加 OpenAlexRequestPolicy，`/works/{id}` 为 SINGLETON、0 credit，其他计价不变 | 「A：授权 policy，/works/{id}→SINGLETON」，2026-10-14 00:52 |
+| A11 | M → 9bf6b8ec1319863002f7d21f4320108a0a8ec2e3 | 04/V156；追加迁移测试、最新版本及三表断言 | 「批准：改31处断言+加V156断言」，2026-10-14 07:44 |
+| A12 | M → a2d4166bf6ff7e61313d69a420cd5f98e28a8911 | 07 缓存同步；追加 index.html，16 个资源键统一 | 「批准：bump到20261014-person-emails」，2026-10-14 12:17 |
+| A13 | M → 8b320426228ff9cf5e55447826bdb009bcdfa34a | 07 I-1/S-1/A-1、06 实现步骤2；四文件补同批 memberCount | 「补全：改06加成员数，重跑06+07」，2026-10-14 12:33 |
+| A14 | M → 6a774804e918342bb65ae4549247e37fccd0d59b | 09/V157；追加最新迁移版本、表/键约束断言 | 「批准：改断言156→157+V157断言」，2026-10-14 15:19 |
+
+### Commands
+
+全部从 retained worktree 执行。新鲜结果来自本 reviewer 的串行 runner；完整 stdout/stderr 与退出码保留于 [results.jsonl](/tmp/discovery-aggregate-epoch2/results.jsonl) 及同目录 `Cxx.log`。
+
+计数格式：`T/F/E/S`＝测试数/失败/错误/跳过。16 个 Maven 命令均额外执行 JS：**1680 tests、1680 pass、0 fail、0 skipped**。
+
+| ID | Exact command | Result / evidence |
+|---|---|---|
+| C01 | `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=DiscoveryAdmissionPolicyTest,DiscoveryReviewServiceTest,DiscoveryReviewAllPagesTest,DiscoveryReviewControllerTest,ExpertRevalidationServiceTest,ExpertRevalidationServiceBehaviorTest test` | PASS，exit 0；149/0/0/0；160.68s |
+| C02 | `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=BatchRecipientSelectionServiceTest,ManualInitialOutreachServiceTest,InitialOutreachServiceTest test` | PASS，exit 0；219/0/0/0；156.67s |
+| C03 | `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=ExpertDiscoveryServiceTest,DiscoveryIdentityRepairServiceTest,ExpertIndexWriterServiceTest,DiscoveryPipelineServiceTest test` | PASS，exit 0；306/0/0/0；218.33s |
+| C04 | `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=DiscoveryIdentityTest,DiscoveryReviewServiceTest test` | PASS，exit 0；48/0/0/0；139.14s |
+| C05 | `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=DiscoveryIdentityRecoveryServiceTest,DiscoveryIdentityRecoveryControllerTest,OpenAlexDataSourceTest,OpenAlexRequestPolicyTest test` | PASS，exit 0；163/0/0/0；150.55s |
+| C06 | `python3 -m unittest discover -s tools/discovery-identity-recovery -p 'test_*.py'` | PASS，exit 0；15 tests，OK；0.15s |
+| C07 | `DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dapi.version=1.41 '-DargLine=-Dapi.version=1.41' -DmysqlIt=true -Dtest=DiscoveryPersonRepositoryTest test` | PASS，exit 0；真实 MySQL，6/0/0/0；167.56s |
+| C08 | `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=DiscoveryPersonServiceTest test` | PASS，exit 0；20/0/0/0；145.32s |
+| C09 | `DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dapi.version=1.41 '-DargLine=-Dapi.version=1.41' -DmigrationIt=true -Dtest=FlywayMigrationIntegrationTest test` | PASS，exit 0；真实迁移，46/0/0/0；669.74s，suite 531.456s |
+| C10 | `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=ExpertDiscoveryServiceTest,DiscoveryPipelineServiceTest,DiscoveryIdentityRepairServiceTest,DiscoveryIdentityRecoveryServiceTest test` | PASS，exit 0；280/0/0/0；204.02s |
+| C11 | `DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dapi.version=1.41 '-DargLine=-Dapi.version=1.41' -DmysqlIt=true -Dtest=DiscoveryPersonServiceTest,DiscoveryPersonRepositoryTest test` | PASS，exit 0；26/0/0/0，其中真实仓储6；159.58s |
+| C12 | `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=DiscoveryPersonQueryServiceTest,ExpertSearchServiceTest,ExpertIndexControllerTest,ExpertContactManagementControllerTest test` | PASS，exit 0；143/0/0/0；131.01s |
+| C13 | `node --check src/main/resources/static/app.js` | PASS，exit 0；语法检查无诊断；0.09s |
+| C14 | `node --test src/test/js/discoveryPersonEmails.test.js` | PASS，exit 0；23 pass、0 fail、0 skipped；0.23s |
+| C15 | `node --test src/test/js/*.test.js` | PASS，exit 0；1680 pass、0 fail、0 skipped；3.81s |
+| C16 | `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=DiscoveryPersonRecipientServiceTest,BatchRecipientSelectionServiceTest,ManualInitialOutreachServiceTest,InitialOutreachServiceTest,OutreachTargetIteratorTest test` | PASS，exit 0；245/0/0/0；169.79s |
+| C17 | `DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dapi.version=1.41 '-DargLine=-Dapi.version=1.41' -DmysqlIt=true -Dtest=DiscoveryPersonOutreachGuardServiceTest,ManualInitialOutreachServiceTest,InitialOutreachServiceTest,ManualExpertMailServiceTest test` | PASS，exit 0；263/0/0/0，其中真实guard16；177.32s |
+| C18 | `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=DiscoveryPersonMaintenanceServiceTest,DiscoveryPersonMaintenanceControllerTest test` | PASS，exit 0；26/0/0/0；151.29s |
+| C19 | `python3 -m unittest discover -s tools/discovery-person-recovery -p 'test_*.py'` | PASS，exit 0；18 tests，OK；0.22s |
+| C20 | `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn clean package` | N/A，本 epoch 不执行；批准 repair §Verification Commands 明确保留旧 JDK tzdb 环境例外，由 C21 履行同一 JDK11 门禁 |
+| C21 | `JAVA_HOME=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home mvn clean package` | PASS，exit 0；5047/0/0/20；JS1680 全通过；WAR/repackage 成功；344.34s |
+| C22 | `JAVA_HOME=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home mvn -Dtest=OperatorStatusWriteSeamGuardTest test` | PASS，exit 0；1/0/0/0；134.79s |
+
+执行数：**21 个 distinct required commands＝16 Maven＋2 Python＋3 Node**。本 epoch 无必需命令首次失败、无必需命令重跑。
+
+C20 例外仅针对已记录的 Zulu11.0.15/tzdb2021e 缺少 `America/Coyhaique`；未改产品时区数据。C21 使用已安装 Zulu11.0.32.1，未跳过失败用例。Maven3.9.11、Node25.7.0、Python3.13.1；Docker29.4 临时测试库，socket 访问经 host permission。
+
+C21 的 20 skipped 保留原样：包含 opt-in 集成测试、3 个大视频条件测试，以及既有 EuropePMC 网络 smoke、RagLetterComposer 的 `@Disabled`；不视为已执行。主合同要求的人物仓储、迁移、guard 已由 C07/C09/C11/C17 实际执行，均非 skipped。
+
+| Required source | Fresh command mapping |
+|---|---|
+| admission | C01、C02 |
+| 01 | C03、C04 |
+| 02 | C05、C03、C06 |
+| 04 | C07、C08、C09 |
+| 05 | C10、C11 |
+| 06 | C12 |
+| 07 | C13、C14、C15 |
+| 08 | C16 |
+| 09 | C17、C09 |
+| 10 | C18、C19 |
+| master/CLAUDE JDK11 gate | C21；C20 为批准环境例外 |
+| repair R-18 | C22、C21 |
+
+### Contract Matrix
+
+下列机器项均 mandatory；局部 PASS 仅覆盖该行，不抵消其他行 FAIL。来源为上述 exact master/current approved child；V/P2/B 引用后文详细证据。
+
+| ID | Requirement / source | Required evidence | Verdict / fresh evidence |
+|---|---|---|---|
+| M-I1 | 五方向不夸大故障或恢复人数，处置分母真实 | 互斥统计、最终报告 | PASS；重叠组拒绝，C18/C19；未宣称生产恢复人数 |
+| M-I1-旧名单 | 10,686 仅背景，03 不自动执行，不承诺5547全恢复 | A1、执行边界 | PASS；未执行旧名单或03 |
+| M-I2-准入 | proof 不直接等于 AUTO_PASSED，软硬原因分开 | Policy/Review/Revalidation | PASS，C01/C02/C05；准入政策仍独立 |
+| M-I2-发信资格 | 身份或旧filterResult不能代替邮箱发送资格 | 06—09实际路径 | FAIL，V-5/V-12 |
+| M-I2-真实发送 | 本次实际邮件0 | 执行边界 | PASS；仅替身，无真实SMTP |
+| M-I3 | 三层局部CAS、人工保护、失败可续跑 | writer/recovery/CLI | FAIL，V-4；原部分层续跑 V-19 已修复 |
+| M-I4 | 冻结及实时范围、姓名邮箱证据、完整作者键 | 全链当前事实复验 | FAIL，V-2/V-3/V-5/V-14；来源编号 V-20 已修复 |
+| M-I5-存储 | SQL稳定UUID，保留原docId/邮箱/contact/alias | V156、真实repository | PASS（存储结构），C07/C09/C11 |
+| M-I5-逐邮箱 | 每邮箱独立准入、验证、抑制事实 | Query/UI/发送 | FAIL，V-5/V-12 |
+| M-I6 | 两列表有效人物先聚合排序分页，范围外单位不变 | Query/Search/controllers | FAIL，V-13；深分页 V-10、DB无效关系 V-11 原根因已修复 |
+| M-I6-筛选层级 | 同一成员完整匹配，RAW不污染候选，旧引用保留 | 查询/renderer测试 | PASS（所测合同），C12/C14 |
+| M-I7 | 完整人物保护、具体邮箱审核、跨页retry、三入口 | 08/09运行链、同库并发 | FAIL，V-5/V-8/V-26；完整三入口证据另 B-2 |
+| M-I8 | 登记不成功不报完成、查询不全不伪总数、开启完整、未知不重发 | 失败/开关/生命周期 | FAIL，V-1/V-4/V-8/V-13/V-14/V-15/V-26 |
+| M-SCOPE | 批准文件并集、共享文件顺序继承 | 完整累计diff、47-row repair授权 | PASS；69累计文件均获授权，40修复文件均在47表内 |
+| M-STORAGE | 不改已有共享schema/ES mapping，不删原档案 | 完整diff、V156/V157 | PASS，C09；仅新增批准表 |
+| M-NONGOALS | 不猜名、不批量人工认可、不真实发送、不全面重写解析器、不新增审核UI | 完整diff与操作边界 | PASS（范围）；证据校验缺陷另列 |
+| M-RELEASE | 默认关闭；回退展示不撤既有首发保护 | master发布段、R-1 | FAIL，V-1 |
+| M-PERF | 51,829真实形状、p95≤2s、额外heap≤128MiB | 当前代码实测 | BLOCKED，B-1 |
+| M-COMMANDS | 所有定向命令、JDK11完整构建 | C01—C19/C21/C22 | PASS，21命令首次exit0；C20批准例外 |
+| M-DATA | 互斥名单、映射及各计数、可核对审计 | 10预览/apply/rollback | FAIL，V-14/V-15；子集/互斥已修复；无生产历史交付 |
+| admission-I1 | 缺资料软原因与明确不合格分离 | Policy/Review | PASS，C01 |
+| admission-I2 | 可信身份仍为前提 | Policy/Recovery | PASS，C01/C05 |
+| admission-I3 | 准入唯一、补全不重新收紧 | Revalidation | PASS，C01 |
+| admission-I4 | 完整去重扫描、人工/CAS保护 | Review/all pages | PASS，C01 |
+| admission-I5 | 候选投影与真实发信分开 | 准入/发送调用图 | PASS，C01/C02；无真实SMTP |
+| admission-I6 | 显式发送条件继续生效 | 既有scope筛选 | PASS（准入局部），C02；新增人物首发回归另 V-26 |
+| admission-I7 | 新旧事实读取一致 | Policy/Revalidation | PASS，C01 |
+| 01-I1 | 只补同身份缺证，不推测或覆盖身份 | Repair/Writer | PASS，C03 |
+| 01-I2 | 同邮箱原ID、三层版本保护 | Writer/CAS | PASS，C03/C04 |
+| 01-I3 | partial/conflict明确、可重试 | 独立repair路径 | PASS，C03；02后续准入失败另 V-4 |
+| 02-I1-正向 | 原文重新取证，旧摘要不作证明 | 真实解析器/归档字节 | PASS，C05 |
+| 02-I1-来源 | 来源ID不符不得签证 | JATS article-id校验 | PASS，C05，V-20 RESOLVED |
+| 02-I2 | 有限应用、联系人/alias读取失败保护 | Recovery | PASS（该子项），保护读取异常停止；C05 |
+| 02-I3-只读/CAS | preview零写、apply复验来源与版本 | Recovery/Writer | PASS（该子项），C05 |
+| 02-I3-恢复 | 后续登记/准入失败不报完整成功，原申请可续跑 | Recovery/CLI | FAIL，V-4、P2K；原层间PARTIAL V-19已修复 |
+| 02-I4 | 预算/SINGLETON、来源审计、认证工具 | Policy/CLI | PASS，C05/C06；A10/V-18 |
+| 04-I1 | 稳定UUID、doc唯一归属、原事实不复制 | V156/repository | PASS，C07/C09/C11 |
+| 04-I2 | 全名、每类键、既有根完整成员、竞争复验 | PersonService | FAIL，V-3、P2A/P2G |
+| 04-I3 | 当前来源/标签/ID/指纹；读发不盲信旧关系 | 登记/读取/选址 | FAIL，V-2/V-5 |
+| 04-开关 | 默认关闭，未开启旧范围行为不变 | Gate/三发送入口 | FAIL，V-1、P2F |
+| 05-I1 | 成功出口完成登记及后续链 | 发现/恢复接线 | FAIL，V-4；调用存在不等于完整成功 |
+| 05-I2 | ES/SQL/准入中断可恢复，不吞失败 | Recovery/Registration | FAIL，V-4；V-19原根因已修复 |
+| 05-I3 | 单位清楚、预算不变、范围受限 | 计数、Policy、当前范围 | 预算/计数PASS；范围FAIL V-2 |
+| 06-I1 | 匹配后分页；范围外doc/contact单位 | Query/Search/controllers | PASS（分页/分组原根因），C12；V-10/V-11 RESOLVED |
+| 06-I2 | 原链接与每邮箱自身状态 | Query/UI | 原链接PASS；状态FAIL V-12 |
+| 06-I3-完整性 | 完整响应才发布精确total | Search `_count`/hits/SQL关系 | FAIL，V-13、P2I/P2N |
+| 06-I3-只读 | GET不登记、不修复、不建contact | 调用图/C12 | PASS |
+| 06-I3-性能 | 真实形状预算实测 | 研究门禁 | BLOCKED，B-1 |
+| 07-I1 | 后端人数/原ID/逐邮箱状态真实 | DTO/renderer | memberCount/原ID PASS；状态FAIL V-12 |
+| 07-I2 | 两宿主共用、异步隔离、转义 | C14/C15 | PASS（机器），23个定向JS全通过 |
+| 07-S1 | 列表/头部数量与原布局 | A12/A13、DOM/资源diff | PASS（机器）；视觉人工PENDING |
+| 07-S2 | 独立状态、旧历史入口 | renderer/Query | DOM/入口PASS；资格标签FAIL V-12 |
+| 08-I1 | 逐邮箱资格、完整人物硬保护后选址 | Recipient/Guard | FAIL，V-5、P2H |
+| 08-I2 | retry/新页共用人物集合、合格primary优先 | Iterator/ManualInitial/Recipient | PASS，C02/C16，V-6 RESOLVED |
+| 08-I3 | 同源只读预估，资格与数量一致 | 预估/选址 | 零写PASS；当前资格FAIL V-5 |
+| 09-I1-存储 | INTRODUCTION唯一原子持久门禁 | V157、真实guard | PASS（guard局部），C09/C17 |
+| 09-I1-接线 | 三真实入口、共享真实DB、并发假SMTP≤1 | 真实组合测试 | BLOCKED B-2；正常首发另 FAIL V-26 |
+| 09-I2 | 持久保守状态、未知不释放、未发可恢复 | 三入口与真实事务 | FAIL，V-8/V-26；V-7/V-9原根因已修复 |
+| 09-I3 | 全组历史和当前邮箱资格不得绕过 | Guard/Recipient/import | FAIL，V-5/V-15 |
+| 10-I1 | 冻结实时完整快照、互斥处置 | Maintenance/CLI | FAIL，V-14；实时标签、互斥、子集原问题已修复 |
+| 10-I2 | 候选非核准、完整复验、登记与保护原子 | PersonService/Maintenance/import | FAIL，V-3/V-15；自调用事务缺陷已改为TransactionTemplate |
+| 10-I3 | 历史不重写、导入保护、安全回滚提案 | import/rollback | 原业务保持PASS；保护/版本FAIL V-15 |
+| 10-CLI | 50组试点/续跑/认证/私有审计 | C18/C19、expected校验 | 认证/子集PASS；错误“自身续跑”识别FAIL V-14 |
+
+### Amendment file matrix
+
+每个 retroactively authorized 文件单独核对；授权 PASS 不豁免功能 FAIL。
+
+| Amendment / file | Mandatory governing rule / evidence | Verdict |
+|---|---|---|
+| A9 [ExpertRevalidationServiceBehaviorTest.kt](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceBehaviorTest.kt) | 两例断言匹配新软原因政策，C01中22项 | PASS；旧名称保留为V-21 |
+| A10 [OpenAlexRequestPolicy.kt](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/config/OpenAlexRequestPolicy.kt) | `/works/{id}` SINGLETON/0credit，其他计价保留；C05 Policy44项 | PASS |
+| A11 [FlywayMigrationIntegrationTest.kt](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt) | V156三表/版本断言；已有V155事实对应旧断言纠正；C09真实46项 | PASS |
+| A12 [index.html](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/resources/static/index.html) | 16资源键统一20261014-person-emails；无额外样式扩张 | PASS |
+| A13 [DiscoveryPersonQueryService.kt](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryService.kt:130) | 同批有效关系产生memberCount，不新增ES字段 | PASS（字段合同） |
+| A13 [ExpertIndexController.kt](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:109) | 响应投影memberCount | PASS（字段合同） |
+| A13 [DiscoveryPersonQueryServiceTest.kt](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryServiceTest.kt) | 人数/成员数合同；C12 Query23项 | PASS |
+| A13 [ExpertIndexControllerTest.kt](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexControllerTest.kt) | memberCount响应合同；C12 controller20项 | PASS |
+| A14 [FlywayMigrationIntegrationTest.kt](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt) | V157表/键/157最新版本；C09 | PASS；31/32文档计数偏差非行为问题 |
+| repair R-18 [OperatorStatusWriteSeamGuardTest.kt](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:74) | 精确只读噪声位置、保持两真实写入口及失效排除检查 | PASS，C21/C22 |
+
+A2—A8 建立新增 child 的实施授权范围；各文件表已逐文件与累计 diff 核对。无借旧 master 文件数量摘要否定明确批准的 A9—A14，也无借 amendment 放宽其书面规则。
+
+### Approved repair completion matrix
+
+| Repair task | Verdict | Evidence |
+|---|---|---|
+| R-1 默认关闭及既有保护 | FAIL | V-1；未开启且无mapping仍被无条件guard阻断 |
+| R-2 实时范围 | FAIL | V-2/V-5；选址沿用无效当前标签/缓存关系 |
+| R-3 整组竞争复验 | FAIL | V-3；递增登记未完整核验既有根成员 |
+| R-4 恢复检查点 | FAIL | V-4；准入失败仍APPLIED；V-19原PARTIAL已修复 |
+| R-5 精确来源 | PASS | V-20、C05 |
+| R-6 完整人物保护/当前资格 | FAIL | V-5；新history复核又暴露V-26 |
+| R-7 人物去重/primary | PASS | V-6、C02/C16 |
+| R-8 持久保守生命周期 | FAIL | V-8/V-26；V-7/V-9原根因已修复 |
+| R-9 深分页 | PASS | V-10、C12 |
+| R-10 查询完整性 | FAIL | V-13 |
+| R-11 DB分组 | PASS | V-11原无效关系/范围外单位根因；SQL失败伪精确另V-13 |
+| R-12 逐邮箱真值 | FAIL | V-12；stale仍显示可发送 |
+| R-13 完整维护快照 | FAIL | V-14 |
+| R-14 历史保护/回滚 | FAIL | V-15 |
+| R-15 子集及安全幂等 | FAIL | 子集V-16已修复；“自身续跑”误认第三方变化仍违反本任务，归V-14 |
+| R-16 互斥处置 | PASS | V-17、C18/C19 |
+| R-17 CLI认证 | PASS | V-18、C06/C19 |
+| R-18 构建守卫 | PASS | V-25、C21/C22 |
+
+### Finding Lineage
+
+| Finding | State | Current evidence |
+|---|---|---|
+| V-1 P1 | PERSISTENT | gate已新增；三发送入口仍无条件接guard，默认关闭无mapping被拒，P2F |
+| V-2 P1 | PERSISTENT | 多处live判定已修；注册丢失非live既有成员、mapped选址仍接纳非live，P2G/P2H |
+| V-3 P1 | PERSISTENT | 请求组全名/作者键/冲突重读已加强；已有根完整成员仍漏验，P2A/P2G |
+| V-4 P1 | PERSISTENT | 联系人读取fail-closed、登记失败PARTIAL已修；准入失败仍APPLIED且CLI终结，P2K |
+| V-5 P1 | PERSISTENT | 隐藏HOLD、缺失成员保护已加强；inBatch缓存不重读，当前标签/指纹仍漏验，P2H |
+| V-6 P1 | RESOLVED | retry/新目标/iterator接入共同人物集合，primary只在合格时优先；C02/C16 |
+| V-7 P1 | RESOLVED | reserve/claim采用REQUIRES_NEW，外层回滚保留SENDING；C17真实guard测试 |
+| V-8 P1 | PERSISTENT | 无响应码变UNKNOWN已修；任意非空响应码仍SAFE_RETRY，包括250，P2J |
+| V-9 P1 | RESOLVED | 原account/contact/compose异常及ManualInitial未发退出清理已补；C02/C16/C17；正常流程回归另V-26 |
+| V-10 P1 | RESOLVED | “其他”前缀分块读取≤1000，from1000/size50回归；C12 |
+| V-11 P1 | RESOLVED | DB关系按当前档案校验，范围外保留contactId单位及顺序；C12 |
+| V-12 P1 | PERSISTENT | 已读持久准入/抑制；stale状态仍独立于ADMITTED→可发送，P2L |
+| V-13 P1 | PERSISTENT | 新search拒绝timeout/failed shard/null已修；缺hits与共享_count仍伪精确，P2I/P2N |
+| V-14 P1 | PERSISTENT | 快照扩充、CLI审计加强；新增resume分支接受第三方proof/revision变化，P2B/P2C |
+| V-15 P1 | PERSISTENT | TransactionTemplate、SENDING/RESERVED rollback保护已修；历史key漏导入、revision回滚仍不安全，P2M/P2D |
+| V-16 P1 | RESOLVED | 全量冻结摘要与子集group expected分开；51组→50+1，C18/C19；错误resume归V-14 |
+| V-17 P1 | RESOLVED | preview/apply拒绝重叠组，分母互斥；C18/C19 |
+| V-18 P1 | RESOLVED | 两CLI明确cookie输入、401停止、审计不落凭证；C06/C19 |
+| V-19 P1 | RESOLVED | 部分层目标值可按原检查点继续，第三值拒绝；C05/C06 |
+| V-20 P1 | RESOLVED | 原JATS article-id核对locator；真实归档正负样本，C05 |
+| V-21 P2 nonmandatory | PERSISTENT | 两个旧revalidation测试名称仍描述旧语义；授权限定断言，未发现行为问题 |
+| V-22 P2 nonmandatory | RESOLVED | 新增真实触发fake create conflict后改变ES事实的辨别性测试；C08 |
+| V-23 P2 nonmandatory | PERSISTENT | 05缺专门SCOPE_CONFLICT计数传播断言；源码未见相应功能错误 |
+| V-24 P2 nonmandatory | PERSISTENT | ALREADY_CONTACTED KDoc仍为复制说明；无行为影响 |
+| V-25 P2 mandatory | RESOLVED | 精确噪声排除项更新，真实写白名单不扩张；C21/C22均通过 |
+| V-26 P1 | NEW / REGRESSION | 修复新增claim历史复核阻断自身刚创建的NEW联系人；真实Initial入口/真实MySQL，P2E/P2O |
+
+计数仅作清单：旧25项中12 RESOLVED、13 PERSISTENT；新增1项P1。收敛判断不以数量减法代替行为判断。
+
+### Findings — P1
+
+**V-1：默认关闭仍改变未建立人物保护的旧发送行为。**
+
+要求：master I-8/发布段、04开关、repair R-1 明确“保持未开启、无人物保护的旧范围行为”。
+
+[DiscoveryPersonService.kt:45](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt:45) 新增默认 false gate，登记/查询/选址可关闭；但 [InitialOutreachService.kt:85](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:85)、[ManualInitialOutreachService.kt:1014](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1014)、[ManualExpertMailService.kt:212](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:212) 仍按旧宽范围 `isDiscoveryOutreach` 无条件调用人物guard。P2F 真MySQL输出 `OUTREACH_PERSON_MISSING`，即默认关闭、未映射、未建立保护也被拒。保留已建立SENT/UNKNOWN/SENDING保护，不能替代该旧行为要求。最小涉及范围：gate与三发送入口/guard接线。
+
+**V-2：实时标签失效后，人物成员与选址仍可沿用旧关系。**
+
+要求：master I-4、04 I-3、repair R-2。
+
+[DiscoveryIdentityRepairService.kt:483](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:483) 使用 `mapNotNull`，把读取不到或已不属于当前discovered范围的既有成员从复验快照直接删掉。P2G：旧成员移除标签后，新成员仍 ATTACHED 同一根。人物选址也未把当前映射与live/fingerprint一起验证；P2H直接传非live mapped profile仍 included。已修好的登记目标/维护范围谓词不覆盖这些路径。最小范围：整组快照构造与Recipient关系有效性检查。
+
+**V-3：递增登记未核验既有根的全部当前成员身份。**
+
+要求：04 I-2、master I-4、repair R-3。
+
+[DiscoveryPersonService.kt:88](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt:88) 只验证请求快照；`:174` 全名集合来自该快照；[同文件:342](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt:342) 起解析现有根时合并SQL作者键，但未把该根全部当前成员姓名/证据纳入同等核验。
+
+P2A两次实际register：先Jane Doe、再John Smith，同一合法ORCID；第二次 `ATTACHED`，memberCount=2。P2G证明正常registration入口在丢弃旧非live成员后同样可到达。最小范围：PersonService已有根解析、Registration整组快照。
+
+**V-4：准入重验失败仍记完整APPLIED，CLI永久跳过后续恢复。**
+
+要求：master I-3/I-8、02 I-3、05 I-2、repair R-4。
+
+[DiscoveryIdentityRecoveryService.kt:146](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:146) 捕获准入异常后返回 `APPLIED / ADMISSION_REVERIFY_FAILED`。P2K使用实际Recovery与Writer、HTTP fixture，准入服务抛错，得到该结果且 `admissionDecision=null`。
+
+[replay.py:38](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/tools/discovery-identity-recovery/replay.py:38) 将APPLIED列为终态；`:299`读取该集合后跳过。因此仍未闭合准入链却被完成账本排除。已修复的保护读取fail-closed与跨层PARTIAL续跑不能解决此残留。最小范围：Recovery后续步骤状态与CLI续跑状态。
+
+**V-5：发送前复验仍复用缓存profile，未重新验证当前标签/指纹。**
+
+要求：08 I-1/I-3、09 I-3、master I-4/I-7、repair R-6。
+
+[DiscoveryPersonRecipientService.kt:313](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonRecipientService.kt:313) 先把 `inBatch` 填入组，`:317`只对缺失成员加载ES；已在batch中的成员不重读。P2H在当前ES已移除标签时，缓存profile仍被included，ES read count=0。
+
+[DiscoveryPersonOutreachGuardService.kt:264](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardService.kt:264) claim调用collectHistory，`:465`又把调用者profile交给同一selectAdmission；当前profile检查并非当前持久事实复验。最小范围：Recipient加载策略与reserve/claim当前事实边界。
+
+**V-8：非空SMTP响应码被当作明确未接受，包括250成功接受码。**
+
+要求：09 I-2、master I-8、repair R-8。
+
+[InitialOutreachService.kt:179](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:179)、[ManualInitialOutreachService.kt:1290](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1290)、[ManualExpertMailService.kt:114](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:114) 均对非SENT且 `smtpResponseCode != null` 标SAFE_RETRY。
+
+P2J使用实际 [SmtpErrorClassifier.kt:33](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/mail/service/SmtpErrorClassifier.kt:33) 处理 `MessagingException("250 2.0.0 queued, connection then lost")`，得到 `status=FAILED,errorCategory=SUCCESS,smtpResponseCode=250`；实际Initial入口随即调用markSafeRetry。其契约是“能证明未接受”，不是“存在任意响应码”。未模拟真实线上SMTP，不宣称发生了线上重复发送。最小范围：三个caller的SMTP结果分类与状态迁移。
+
+**V-12：已失效成员仍显示“可发送”。**
+
+要求：master I-5/I-7、06 I-2、07 I-1/S-2、repair R-12。
+
+[DiscoveryPersonQueryService.kt:283](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryService.kt:283) 独立产生admissionStatus，`:285`另算stale；`:365`只看准入状态与抑制，未把关系失效纳入显示结论。[app.js:13510](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/resources/static/app.js:13510) 对ADMITTED直接显示可发送。
+
+P2L实际Query＋实际BatchRecipientSelection读取移除标签的当前档案：同一成员返回 `stale=true, admissionStatus=ADMITTED`。旧filterResult替代真准入已修，但当前失效关系仍给出错误许可提示。最小范围：逐邮箱DTO状态与renderer许可标签。
+
+**V-13：响应不完整仍可发布精确空结果或计数。**
+
+要求：06 I-3、master I-8、repair R-10。
+
+[ExpertSearchService.kt:1406](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:1406) 新完整性检查拒绝timeout/failed shard/null，但未要求正确hits结构；`:1284`、`:1324`把缺失hits读为空。P2I：缺hits的响应使search返回 `[]`，scroll正常完成0条。
+
+[同文件:718](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:718) 共享 `_count` 未使用该完整性检查；P2N：`count=123,_shards.failed=1` 返回123，参与新人物查询精确总数。[DiscoveryPersonQueryService.kt:316](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryService.kt:316) 关系SQL读取失败返回空映射，也无法区分“无人映射”和“关系未知”。最小范围：人物查询依赖的完整响应/关系读取契约。
+
+**V-14：新增续跑捷径把第三方proof或revision变化当成本次完成。**
+
+要求：10 I-1、master I-4/I-8、repair R-13/R-15。
+
+[DiscoveryPersonMaintenanceService.kt:262](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:262) expected不一致时调用resumedTargetResult；`:275`关系摘要不一致同样调用。该函数[`:293`](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:293)仅检查同一根、成员集合、非空sourceFingerprint及非CHANGED_OR_FAILED，未证明是原申请自己的目标写入；返回 `UNCHANGED, protectionImported=true`。
+
+P2B：首次apply后第三方改变proof，再送旧expected仍 `UNCHANGED/RESUMED_TARGET_STATE`。P2C：SQL人物revision加42，旧请求同样成功。另`:528`各层版本仅取updatedAt，加RAW版本；`:607`人工状态取首个选择原因，未完整绑定持久准入revision；`:630`历史保护摘要只探guard状态。最小范围：维护快照及“本次已完成”识别。
+
+**V-15：历史保护漏导入，rollback提案仍忽略人物revision变化。**
+
+要求：10 I-2/I-3、09 I-3、master I-8、repair R-14。
+
+[DiscoveryPersonOutreachGuardService.kt:369](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardService.kt:369) 仅把memberDocIds交给历史状态读取；`:395`只按这些键查SENT/attempt。当前系统允许业务orcidId与ES docId不同，同邮箱/alias关联亦不能被该键集合完整覆盖。
+
+P2M真MySQL：已有同邮箱、不同业务键的SENT介绍邮件，import返回 `state="",created=false`，持久guard仍null，已有SENT数量1。该输入与原业务键≠ES docId契约相容。
+
+[DiscoveryPersonMaintenanceService.kt:447](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:447) 用 `memberRecords.any { it.personId != personId }` 代替版本变化检查；这些记录本就按该personId读取。P2D：revision加42后仍 `safeToRollback=true`。TransactionTemplate及SENDING/RESERVED阻断已修复，不能覆盖这两处残留。最小范围：历史关联键/持久导入与rollback版本证明。
+
+**V-26：正常首次发送创建自身NEW联系人后，被新增claim历史复核永久阻断。**
+
+要求：master“预估1人、选择1地址、合格无历史时正常首发”，09 I-1/I-2及repair保持项。
+
+[InitialOutreachService.kt:109](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:109) 在reserve后保存NEW联系人，再于`:139`调用claim。[ManualInitialOutreachService.kt:1041](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1041)也先建联系人，`:1135`保存PREPARED，再`:1166`claim。修复新增 [DiscoveryPersonOutreachGuardService.kt:264](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardService.kt:264) 的collectHistory，在`:511`以anyContactExists把当前尝试自己的新联系人当历史阻断。
+
+P2E真MySQL：reserve Granted→加入本次NEW联系人→claim `OUTREACH_HISTORY_PROTECTED`；标SAFE_RETRY后再reserve仍被同一联系人拒绝。P2O进一步运行实际InitialOutreachService、实际ExpertContactRepository、真实MySQL guard：`requested=1,candidates=1,sent=0,failed=0,skipped=1`，持久contact=1、guard=SAFE_RETRY、假SMTP调用0。SMTP替身已配置成功，但未被调用。
+
+该反例发生在健康、已映射、无旧历史的正常首发主链，不依赖异常注入。最小范围：当前尝试身份、联系人/attempt创建顺序与guard历史复核之间的契约。
+
+### Findings — P2
+
+- **V-21，PERSISTENT，nonmandatory**：[ExpertRevalidationServiceBehaviorTest.kt:422](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceBehaviorTest.kt:422) 等原名称仍描述旧研究资料门槛。A9限定两例断言，保持原名称不构成行为失败。
+- **V-23，PERSISTENT，nonmandatory**：05仍缺专门驱动SCOPE_CONFLICT并断言`personScopeConflict`/原因传播的测试；[ExpertDiscoveryService.kt](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt)相关源码路径存在，未证明功能错误。
+- **V-24，PERSISTENT，nonmandatory**：[DiscoveryPersonRecipientService.kt:53](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonRecipientService.kt:53) ALREADY_CONTACTED附近KDoc仍描述人工拒绝/身份冲突，属于说明不准确。
+- **V-22已解决**：[DiscoveryPersonServiceTest.kt:305](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonServiceTest.kt:305)新增测试实际触发create冲突，再修改ES姓名，断言STALE/FINGERPRINT_MISMATCH；C08通过。旧测试未消费flag的备注保留为观察，不再把缺少该辨别性覆盖列为未解决。
+- **V-25已解决**：精确噪声排除项更新，真实写入口仍仅两个；失效排除项检查未删除，C21/C22通过。
+
+### Independent diagnostic evidence
+
+全部诊断源码/class/log位于 `/tmp/discovery-aggregate-epoch2/`；使用本工作树当前编译产物。退出0表示成功运行并观察反例，不代表产品PASS。未修改仓库测试。
+
+| Probe | 实际服务/边界与观察 | Finding |
+|---|---|---|
+| P2A | 实际PersonService，两次register不同全名同ORCID；第二次ATTACHED同根、2成员 | V-3 |
+| P2B | 实际Maintenance，apply后proof第三方变化；旧expected仍UNCHANGED且protectionImported=true | V-14/V-15 |
+| P2C | 实际Maintenance，人物revision+42；旧expected仍RESUMED_TARGET_STATE | V-14 |
+| P2D | revision+42后rollback仍safeToRollback=true | V-15 |
+| P2E | 真实Spring guard/真实MySQL；自身NEW联系人阻断claim与再次reserve | V-26 |
+| P2F | 默认关闭、未映射discovered；真实guard返回PERSON_MISSING | V-1 |
+| P2G | 实际Registration；已有成员移除live标签，被快照丢弃；新冲突姓名成员仍ATTACHED | V-2/V-3 |
+| P2H | 实际Recipient及BatchSelector；当前ES已移标签，缓存档案included，ESread0；直接非live mapped档案也included | V-2/V-5 |
+| P2I | 实际ExpertSearch；缺hits响应变search空列表、scroll完成0条 | V-13 |
+| P2J | 实际SMTP分类器＋实际Initial入口；250异常结果触发markSafeRetry | V-8 |
+| P2K | 实际Recovery/Writer与HTTP fixture；准入异常仍APPLIED/ADMISSION_REVERIFY_FAILED | V-4 |
+| P2L | 实际Query/BatchSelector；移标当前档案返回stale=true且ADMITTED，UI映射可发送 | V-12 |
+| P2M | 真实MySQL已有同邮箱不同业务键SENT；import未创建保护，state=null | V-15 |
+| P2N | 实际_count读取；failed shard=1、count123仍返回123 | V-13 |
+| P2O | 实际Initial＋实际contact repository＋真实guard/MySQL；正常一候选建contact后跳过，SMTP0，SAFE_RETRY | V-26 |
+
+最终成功诊断组及原始记录：
+
+| Harness | Compile/runtime | Final log |
+|---|---|---|
+| Epoch2Probe.java | javac0/java0 | [probe-unit.log](/tmp/discovery-aggregate-epoch2/probe-unit.log) |
+| Epoch2DbProbe.java | javac0/java0 | [probe-db.log](/tmp/discovery-aggregate-epoch2/probe-db.log) |
+| Epoch2ReadProbe.java | javac0/java0 | [probe-read-v3.log](/tmp/discovery-aggregate-epoch2/probe-read-v3.log) |
+| Epoch2SendProbe.java | javac0/java0 | [probe-send.log](/tmp/discovery-aggregate-epoch2/probe-send.log) |
+| Epoch2ImportProbe.java | JDK11 javac0/java0 | [probe-import-jdk11.log](/tmp/discovery-aggregate-epoch2/probe-import-jdk11.log) |
+| Epoch2InitialDbProbe.java | JDK11 javac0/java0 | [probe-initial-db-v2.log](/tmp/discovery-aggregate-epoch2/probe-initial-db-v2.log) |
+
+保留的首次harness失败与限制：
+
+- Epoch2Probe最初引用错误的Kotlin常量访问形式，javac失败；修正为实际静态VERSION。属于诊断代码错误。
+- SendProbe最初缺方法参数，compile失败；第一次runtime把Granted误作Claimed，出现harness异常。分别保留 [probe-send-compile.log](/tmp/discovery-aggregate-epoch2/probe-send-compile.log)、[probe-send-first-runtime-failure.log](/tmp/discovery-aggregate-epoch2/probe-send-first-runtime-failure.log)。中间一次准入mock配置了错误重载，未触发目标失败；[probe-send-pre-correction.log](/tmp/discovery-aggregate-epoch2/probe-send-pre-correction.log)不作为V-4证据，最终日志才是。
+- ImportProbe首次由系统javac产生class65，JDK11只能读到55，runtime exit1；保留 [probe-import.log](/tmp/discovery-aggregate-epoch2/probe-import.log)。改用已安装JDK11编译器后compile/runtime均0，未改产品。
+- InitialDbProbe首次成功编译，但DeliveredMail fixture传null errorCategory导致harness runtime1；保留 [probe-initial-db.log](/tmp/discovery-aggregate-epoch2/probe-initial-db.log)。修正fixture为SUCCESS后，最终v2执行成功并复现V-26。
+- 首次scope审计脚本错误假定表内文件名带反引号，曾读得0；纠正解析明文文件表后得到47/40及累计69、范围外0。初次脚本结果不作为范围判断。
+- P2O只补强一个真实Initial入口；不能替代B-2要求的三入口组合与并发。P2J验证实际分类器/caller契约，未模拟真实线上SMTP链路。
+- 所有harness修正仅发生在`/tmp`，不是产品修复，也未把harness失败误列为产品缺陷。
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+| Source item | Master requirement | Result | Current independent evidence |
+|---|---|---|---|
+| admission O-1 | 准入语义、测试说明 | 非阻断P2，V-21 PERSISTENT | 断言符合A9；旧名称未同步 |
+| admission O-2 | I-1计数真实性、失败语义 | Observation | taskFailure包含跨层冲突为明示设计；success+failure仍等于total，未违反规定终态口径 |
+| 01 O-1 | 测试计数/顺序继承 | Observation | ReviewService35相对master-base27来自前置admission；C04新鲜35+13=48，无失败 |
+| 02 RECORD_ONLY none | 02合同 | N/A | 无额外记录项；独立发现V-4不因此豁免 |
+| 04 O-1 | I-4/04 I-2 | PASS（该规则） | 同类键distinct后仅多不同键冲突；共享同ORCID合法；C08 |
+| 04 O-2 | 04竞争复验 | 局部PASS | deadlock/unique conflict返回重读，真实仓储C07/C11；完整已有根仍V-3 FAIL |
+| 04 O-3 | A11迁移授权 | Observation / scope PASS | 原V155已增加列/FK，旧V154场景断言纠正对应既有事实；C09真实通过 |
+| 04 O-4 | 冲突后重读测试深度 | V-22 RESOLVED | 新测试实际触发conflict并修改ES，断言STALE；旧未消费flag案例说明仍不精确 |
+| 05 O-1 | 05计数传播覆盖 | 非阻断P2，V-23 PERSISTENT | 缺专门SCOPE_CONFLICT计数断言；未证明功能缺陷 |
+| 06 Epoch1 O-1 | I-6完整分页 | V-10 RESOLVED | 前缀按≤1000分块，深分页回归C12 |
+| 06 Epoch2 R-1 | 同上 | V-10 RESOLVED | 与O-1同根，未重复建finding |
+| 06 Epoch1 O-2 | M-PERF/06 I-3 | BLOCKED B-1 | 缺真实51,829形状性能测量；诚实记录未测不能算通过 |
+| 06 Epoch2 R-2 | 同上 | BLOCKED B-1 | 100000/10s失败语义测试不能替代p95/heap实测 |
+| 07 RECORD_ONLY none | 07合同 | N/A | 无额外记录项；V-12由独立当前事实反例保留 |
+| 08 O-1 | 说明可维护性 | 非阻断P2，V-24 PERSISTENT | ALREADY_CONTACTED KDoc复制错误 |
+| 09 O-1 | I-7/I-8、09 I-2 | V-7 RESOLVED；B-2仍BLOCKED | REQUIRES_NEW真实guard外层回滚保留SENDING；不等同实际三入口组合 |
+| 09 O-2 | 未发退出可恢复 | V-9 RESOLVED | 原account/contact异常清理已补；新增正常主链自阻断另V-26 |
+| 09 O-3 | A14变更计数 | Observation | 实际32处旧版本pin变更，计划文字31；V157行为测试通过 |
+| 10 O-1 | 历史保护导入 | V-15 PERSISTENT | 已新增持久import，但合法业务键差异仍漏历史，P2M |
+| 10 O-2 | 冻结/当前事实绑定 | V-14 PERSISTENT | live与快照有所加强；P2B/P2C证明第三方proof/revision变化被resume接受 |
+| 10 O-3 | 组事务边界 | 原自调用问题已修；不豁免V-15 | 显式TransactionTemplate；未独立执行完整维护组“关系＋import失败”真库原子回滚组合，不宣称该组合已证明 |
+
+### Evidence Boundaries
+
+**B-1，mandatory BLOCKED：真实规模性能门禁。**
+
+[06计划:39](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/docs/plans/2026-10-13/discovery-person-06-query.md:39)要求51,829条真实形状脱敏数据，p95≤2秒、额外heap≤128MiB；`:63`要求有实测记录。本次没有取得该数据集或针对当前code head的测量报告。单元测试、100000条上限、10秒中断和scroll关闭均不能替代。未制造数据、未调用生产数据。
+
+**B-2，mandatory BLOCKED：三个实际发送入口的组合运行证据。**
+
+[09计划:43](/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/docs/plans/2026-10-13/discovery-person-09-send-guard.md:43)、`:65`要求真实数据库、不同实际入口并发、假SMTP调用数及成功后DB失败保护。C17真实guard16项证明guard局部锁/事务；caller测试mock了guard。P2O证明一个真实Initial入口的失败，不构成三入口并发/成功后回滚完整证据。该缺口保留，不转成猜测性P1，也未被executor自测结果豁免。
+
+其他边界：
+
+- 未做生产历史apply、真实发信、物理删除、部署或开关变更。
+- 未执行人工验收、视觉签收或人为接受新代码边界。
+- C21的20 skips及各诊断替身范围已明列。
+- 缺executor canonical session ID不属于mandatory evidence缺口。
+- 测试全部通过不推导完整功能合规；P2A—P2O保留实际反例。
+
+### Manual acceptance
+
+全部人为项目 **PENDING**，无人工结果、截图或签字被制造。原03对应master A-4按A1为N/A。
+
+| Source | Items | Status |
+|---|---|---|
+| Master | A-1名单和证据；A-2增量与存量闭环；A-3保护和回滚；A-5同人多邮箱完整闭环；A-6历史保护与后续不再重复 | PENDING |
+| Master | A-4来源回退是否值得实施 | N/A，03未纳入本次执行 |
+| admission | A-1缺资料候选；A-2明确不合格/身份不可信；A-3去重/人工保护；A-4补全不再收紧；A-5发送条件/数量；A-6既有行为/显示 | PENDING |
+| 01 | A-1重复补证；A-2冲突/人工状态；A-3中途失败/并发 | PENDING |
+| 02 | A-1只读预览；A-2安全恢复/身份哈希；A-3来源/并发/范围；A-4断点/备份/预算 | PENDING |
+| 04 | A-1登记/重跑；A-2并发/过期 | PENDING |
+| 05 | A-1后续新增/重复补证；A-2中断恢复 | PENDING |
+| 06 | A-1两列表/分页；A-2旧链接/只读/失败 | PENDING |
+| 07 | A-1一人三邮箱/两入口；A-2窄屏/异步 | PENDING |
+| 08 | A-1合格地址；A-2换邮箱不能绕保护 | PENDING |
+| 09 | A-1三入口竞争；A-2未知结果/历史；A-3未发送恢复/正常回归 | PENDING |
+| 10 | A-1完整名单/试点；A-2变化/中断/重复 | PENDING |
+
+### Observations
+
+- 完整 `git diff --check base current` 首次exit2，仅指出 fast child `02-replay/verify-log.md:24`新增EOF空白；产品/工具限定 `git diff --check ... -- src tools` exit0。未改只读证据文件。
+- executor handoff将40文件分为21产品/19测试；独立按实际路径分类为20产品/工具＋20测试。授权集合与总数不受该记账偏差影响。
+- A14的31/32处计数偏差、旧测试说明、既有编译warning未扩大为产品修复范围。
+- 本epoch所有required命令首次通过；Epoch1的JS首次失败、旧JDK错误及V-25失败继续保留在先前报告，不冒充本epoch结果。
+
+### Convergence
+
+**DIVERGING。**
+
+修复确实解决了深分页、关系分组、部分层续跑、来源编号、人物去重、原事务传播、原未发送退出清理、CLI认证、互斥/子集及构建问题；部分持续问题也已缩窄。
+
+但新增 **V-26 是同级P1回归**：新历史复核从保护异常/重试分支扩展到健康首发主链，把本次自己的NEW联系人当旧历史，实际可达正常发送被阻断并持续不能重试。V-14新增续跑捷径同时仍接受第三方proof/revision变化。当前失败影响已涉及必须正常工作的主流程；不能仅凭已解决项数量较多判断PROGRESSING。该判断依据行为影响与新增回归，不采用finding计数阈值。
+
+### Repair planning: N/A
+
+未调用repair-p，未创建或更新repair.md。批准artifact保持原路径、原SHA256。未写aggregate报告、产品、测试或其他tracked证据；未stage、commit或变更branch/HEAD。
+
+### Next Action
+
+停止自动修复循环，提交人工裁定：确认新增V-26及残留保护/快照问题的后续修复策略，再决定是否授权修订同一路径repair计划。
+
+此停点来自 [review-p/SKILL.md](/Users/lukai/.agents/skills/review-p/SKILL.md) 明文路由：`FAIL | STALLED or DIVERGING | Stop and request human adjudication.` 因此本轮不能自动生成下一轮repair或进入执行。
+
+No product code was modified.
