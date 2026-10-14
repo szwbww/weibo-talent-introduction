@@ -2572,6 +2572,161 @@ class ExpertSearchServiceTest {
         }
     }
 
+    // ── 06：人物口径分区读取（新增方法；不改既有方法单位）────────────────────────────
+
+    @Test
+    fun `searchExpertsWithSort returns profiles with ES sort tokens`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 2},
+                "hits": [
+                  {"_id": "doc-a", "sort": [1700000000000], "_source": {"orcidId": "doc-a", "email": "a@x.com"}},
+                  {"_id": "doc-b", "sort": [1600000000000], "_source": {"orcidId": "doc-b", "email": "b@x.com"}}
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+        val capture = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST), capture.capture(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val hits = service.searchExpertsWithSort(
+            level = ExpertIndexLevel.CANDIDATE,
+            filters = listOf(mapOf("term" to mapOf("tags" to "discovered"))),
+            from = 0, size = 10
+        )
+
+        assertEquals(2, hits.size)
+        assertEquals("doc-a", hits[0].profile.esDocId)
+        assertEquals(listOf<Any?>(1700000000000L), hits[0].sort)
+        // 显示排序（CANDIDATE）必须命中 candidateValidatedAt 降序。
+        val request = capture.value.body as Map<*, *>
+        assertTrue(request["sort"].toString().contains("candidateValidatedAt"))
+    }
+
+    @Test
+    fun `scrollExpertsFilteredWithSort streams sorted batches and closes scroll`() {
+        val page1 = mapper.readTree(
+            """
+            {
+              "_scroll_id": "s1",
+              "hits": {
+                "total": {"value": 3},
+                "hits": [
+                  {"_id": "d1", "sort": [3], "_source": {"orcidId": "d1", "email": "d1@x.com"}},
+                  {"_id": "d2", "sort": [2], "_source": {"orcidId": "d2", "email": "d2@x.com"}}
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+        val page2 = mapper.readTree(
+            """
+            {
+              "_scroll_id": "s2",
+              "hits": {
+                "total": {"value": 3},
+                "hits": [
+                  {"_id": "d3", "sort": [1], "_source": {"orcidId": "d3", "email": "d3@x.com"}}
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search?scroll=5m"),
+                eq(HttpMethod.POST), any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(page1, HttpStatus.OK))
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/_search/scroll"),
+                eq(HttpMethod.POST), any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(page2, HttpStatus.OK))
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/_search/scroll"),
+                eq(HttpMethod.DELETE), any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(mapper.createObjectNode(), HttpStatus.OK))
+
+        val batches = mutableListOf<List<String>>()
+        service.scrollExpertsFilteredWithSort(
+            level = ExpertIndexLevel.CANDIDATE,
+            filters = listOf(mapOf("term" to mapOf("tags" to "discovered"))),
+            batchSize = 2
+        ) { batch ->
+            batches.add(batch.map { it.profile.esDocId!! })
+            true
+        }
+
+        assertEquals(listOf(listOf("d1", "d2"), listOf("d3")), batches)
+        Mockito.verify(restTemplate, times(1)).exchange(
+            eq("https://es.example.com:9200/_search/scroll"),
+            eq(HttpMethod.DELETE), any(),
+            eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+    }
+
+    @Test
+    fun `aggregateTerms returns terms buckets for the filtered partition`() {
+        val body = mapper.readTree(
+            """
+            {
+              "aggregations": {
+                "bucket": {
+                  "buckets": [
+                    {"key": "gmail.com", "doc_count": 5},
+                    {"key": "outlook.com", "doc_count": 2}
+                  ]
+                }
+              }
+            }
+            """.trimIndent()
+        )
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST), any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val buckets = service.aggregateTerms(
+            level = ExpertIndexLevel.CANDIDATE,
+            filters = listOf(mapOf("bool" to mapOf("must_not" to listOf(mapOf("term" to mapOf("tags" to "discovered")))))),
+            field = "email", size = 100
+        )
+
+        assertEquals(listOf("gmail.com" to 5L, "outlook.com" to 2L), buckets)
+    }
+
+    @Test
+    fun `expertFilters exposes the original filter set for both partitions`() {
+        val filters = service.expertFilters(
+            tag = "discovered",
+            operatorStatus = "CONTACTED",
+            emailDomain = "gmail.com",
+            region = null
+        )
+        val flattened = filters.toString()
+        assertTrue(flattened.contains("discovered") && flattened.contains("CONTACTED"))
+        assertTrue(flattened.contains("gmail.com"))
+    }
+
     private fun serviceIndexName(level: ExpertIndexLevel): String = when (level) {
         ExpertIndexLevel.RAW -> properties.rawIndexName
         ExpertIndexLevel.CANDIDATE -> properties.candidateIndexName

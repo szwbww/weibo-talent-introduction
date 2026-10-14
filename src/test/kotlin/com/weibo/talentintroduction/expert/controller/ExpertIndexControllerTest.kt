@@ -15,6 +15,10 @@ import com.weibo.talentintroduction.expert.service.RegionCount
 import com.weibo.talentintroduction.expert.service.TagCount
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
+import com.weibo.talentintroduction.discovery.service.DiscoveryPersonDetail
+import com.weibo.talentintroduction.discovery.service.DiscoveryPersonMember
+import com.weibo.talentintroduction.discovery.service.DiscoveryPersonQueryService
+import com.weibo.talentintroduction.discovery.service.PersonSearchResult
 import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
 import com.weibo.talentintroduction.task.domain.TaskExecution
 import com.weibo.talentintroduction.task.domain.TaskLaunchResponse
@@ -41,12 +45,14 @@ class ExpertIndexControllerTest {
     private val progressStore = Mockito.mock(TaskProgressStore::class.java)
     private val filterService = Mockito.mock(EligibilityFilterService::class.java)
     private val introductionMailComposer = Mockito.mock(IntroductionMailComposer::class.java)
+    private val personQueryService = Mockito.mock(DiscoveryPersonQueryService::class.java)
     private val schedulingProperties = MailSchedulingProperties(autoReplyAllCron = "-")
     private val objectMapper = ObjectMapper()
     private val taskExecutionService = TaskExecutionService(repository, objectMapper, schedulingProperties)
     private val controller = ExpertIndexController(
         searchService, contactRepository, writerService, syncService,
-        revalidationService, taskExecutionService, progressStore, filterService, introductionMailComposer
+        revalidationService, taskExecutionService, progressStore, filterService, introductionMailComposer,
+        personQueryService = personQueryService
     )
 
     private fun anyTaskProgress(): TaskProgress {
@@ -177,8 +183,18 @@ class ExpertIndexControllerTest {
             employment = null,
             operatorStatus = null
         )
-        Mockito.`when`(searchService.searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, null, null, null, null, null, null))
-            .thenReturn(com.weibo.talentintroduction.expert.service.ExpertSearchResult(listOf(expert), 1L))
+        Mockito.`when`(
+            personQueryService.searchPersons(
+                level = ExpertIndexLevel.CANDIDATE,
+                size = 50,
+                tag = null,
+                sortBy = null,
+                from = 0,
+                operatorStatus = null,
+                emailDomain = null,
+                region = null
+            )
+        ).thenReturn(PersonSearchResult(listOf(expert), 1L))
         val contact = com.weibo.talentintroduction.campaign.domain.ExpertContact(
             id = 1L,
             orcidId = "orcid-1",
@@ -204,12 +220,23 @@ class ExpertIndexControllerTest {
 
         assertEquals(1, response.experts.size)
         assertEquals("REPLIED", response.experts[0].operatorStatus)
+        assertEquals(1L, response.totalHits)
     }
 
     @Test
-    fun `listExperts passes emailDomain parameter to searchService`() {
-        Mockito.`when`(searchService.searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, "gmail.com", null, null, null, null, null))
-            .thenReturn(com.weibo.talentintroduction.expert.service.ExpertSearchResult(emptyList(), 0L))
+    fun `listExperts passes emailDomain parameter to the person query`() {
+        Mockito.`when`(
+            personQueryService.searchPersons(
+                level = ExpertIndexLevel.CANDIDATE,
+                size = 50,
+                tag = null,
+                sortBy = null,
+                from = 0,
+                operatorStatus = null,
+                emailDomain = "gmail.com",
+                region = null
+            )
+        ).thenReturn(PersonSearchResult(emptyList(), 0L))
 
         val response = controller.listExperts(
             level = ExpertIndexLevel.CANDIDATE,
@@ -222,13 +249,22 @@ class ExpertIndexControllerTest {
             region = null
         )
         assertEquals(0L, response.totalHits)
-        Mockito.verify(searchService).searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, "gmail.com", null, null, null, null, null)
+        Mockito.verify(personQueryService).searchPersons(
+            level = ExpertIndexLevel.CANDIDATE,
+            size = 50,
+            tag = null,
+            sortBy = null,
+            from = 0,
+            operatorStatus = null,
+            emailDomain = "gmail.com",
+            region = null
+        )
     }
 
     @Test
-    fun `getEmailProviders aggregates email domains`() {
+    fun `getEmailProviders aggregates email domains through the person query`() {
         val expectedAggs = listOf(EmailDomainCount("gmail.com", 100L))
-        Mockito.`when`(searchService.aggregateEmailDomains(ExpertIndexLevel.CANDIDATE, null, null, null))
+        Mockito.`when`(personQueryService.aggregateEmailDomainsPersons(ExpertIndexLevel.CANDIDATE, null, null, null))
             .thenReturn(expectedAggs)
 
         val response = controller.getEmailProviders(ExpertIndexLevel.CANDIDATE)
@@ -238,22 +274,32 @@ class ExpertIndexControllerTest {
     }
 
     @Test
-    fun `getRegions delegates to searchService`() {
+    fun `getRegions delegates to the person query`() {
         val expectedAggs = listOf(RegionCount("Europe", 100L))
-        Mockito.`when`(searchService.aggregateRegions(ExpertIndexLevel.CANDIDATE, null, null, null))
+        Mockito.`when`(personQueryService.aggregateRegionsPersons(ExpertIndexLevel.CANDIDATE, null, null, null))
             .thenReturn(expectedAggs)
 
         val response = controller.getRegions(ExpertIndexLevel.CANDIDATE)
         assertEquals(1, response.size)
         assertEquals("Europe", response[0].region)
         assertEquals(100L, response[0].count)
-        Mockito.verify(searchService).aggregateRegions(ExpertIndexLevel.CANDIDATE, null, null, null)
+        Mockito.verify(personQueryService).aggregateRegionsPersons(ExpertIndexLevel.CANDIDATE, null, null, null)
     }
 
     @Test
-    fun `listExperts passes region parameter to searchService`() {
-        Mockito.`when`(searchService.searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, null, "Europe", null, null, null, null))
-            .thenReturn(com.weibo.talentintroduction.expert.service.ExpertSearchResult(emptyList(), 0L))
+    fun `listExperts passes region parameter to the person query`() {
+        Mockito.`when`(
+            personQueryService.searchPersons(
+                level = ExpertIndexLevel.CANDIDATE,
+                size = 50,
+                tag = null,
+                sortBy = null,
+                from = 0,
+                operatorStatus = null,
+                emailDomain = null,
+                region = "Europe"
+            )
+        ).thenReturn(PersonSearchResult(emptyList(), 0L))
 
         val response = controller.listExperts(
             level = ExpertIndexLevel.CANDIDATE,
@@ -266,7 +312,16 @@ class ExpertIndexControllerTest {
             region = "Europe"
         )
         assertEquals(0L, response.totalHits)
-        Mockito.verify(searchService).searchExperts(50, ExpertIndexLevel.CANDIDATE, null, null, 0, null, null, "Europe", null, null, null, null)
+        Mockito.verify(personQueryService).searchPersons(
+            level = ExpertIndexLevel.CANDIDATE,
+            size = 50,
+            tag = null,
+            sortBy = null,
+            from = 0,
+            operatorStatus = null,
+            emailDomain = null,
+            region = "Europe"
+        )
     }
 
     @Test
@@ -328,10 +383,10 @@ class ExpertIndexControllerTest {
     }
 
     @Test
-    fun `aggregateTags delegates to searchService without tag dimension`() {
+    fun `aggregateTags delegates to the person query without tag dimension`() {
         val expected = listOf(TagCount("承诺回复材料", 5L))
         Mockito.`when`(
-            searchService.aggregateTags(
+            personQueryService.aggregateTagsPersons(
                 ExpertIndexLevel.CANDIDATE,
                 "REPLIED",
                 "gmail.com",
@@ -349,12 +404,51 @@ class ExpertIndexControllerTest {
         assertEquals(1, response.size)
         assertEquals("承诺回复材料", response[0].tag)
         assertEquals(5L, response[0].count)
-        Mockito.verify(searchService).aggregateTags(
+        Mockito.verify(personQueryService).aggregateTagsPersons(
             ExpertIndexLevel.CANDIDATE,
             "REPLIED",
             "gmail.com",
             "Europe"
         )
+    }
+
+    @Test
+    fun `getPerson returns the read-only person detail`() {
+        val detail = DiscoveryPersonDetail(
+            personId = "P1",
+            revision = 3,
+            representativeDocId = "d1",
+            requestedDocId = "d2",
+            members = listOf(
+                DiscoveryPersonMember(
+                    docId = "d1", levels = listOf("RAW", "CANDIDATE"), email = "a@x.com",
+                    contactId = 1L, contactStatus = "WAITING_REPLY", operatorStatus = "NOT_CONTACTED",
+                    admissionStatus = "PASSED", representative = true, stale = false, evidenceSource = "PAPER_FULLTEXT"
+                ),
+                DiscoveryPersonMember(
+                    docId = "d2", levels = listOf("CANDIDATE"), email = "b@x.com",
+                    contactId = 2L, contactStatus = "WAITING_REPLY", operatorStatus = "NOT_CONTACTED",
+                    admissionStatus = "PASSED", representative = false, stale = false, evidenceSource = "PAPER_FULLTEXT"
+                )
+            ),
+            conflicts = emptyList()
+        )
+        Mockito.`when`(personQueryService.personDetail("d2", ExpertIndexLevel.CANDIDATE)).thenReturn(detail)
+
+        val response = controller.getPerson("d2", ExpertIndexLevel.CANDIDATE)
+        assertEquals("P1", response.personId)
+        assertEquals(2, response.members.size)
+        assertEquals("d1", response.representativeDocId)
+    }
+
+    @Test
+    fun `getPerson throws 404 when the docId is unknown`() {
+        Mockito.`when`(personQueryService.personDetail("missing", ExpertIndexLevel.CANDIDATE)).thenReturn(null)
+
+        val ex = assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            controller.getPerson("missing", ExpertIndexLevel.CANDIDATE)
+        }
+        assertEquals(org.springframework.http.HttpStatus.NOT_FOUND, ex.status)
     }
 
     @Test

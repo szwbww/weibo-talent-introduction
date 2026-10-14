@@ -1216,7 +1216,186 @@ class ExpertSearchService(
         return ExpertSearchResult(experts = experts, totalHits = totalHits)
     }
 
+    // ── 06：人物口径查询的分区读取（只读；不改变任何既有低层方法的行为/单位）────────────
+
+    /**
+     * 06：复用原筛选构造的唯一公开入口。`DiscoveryPersonQueryService` 用它把一次混合查询
+     * 拆成 discovered / 其他两个分区，保证「整套条件由同一成员满足」沿用同一套 filter，
+     * 不在别处重写筛选语义。
+     */
+    fun expertFilters(
+        tag: String?,
+        operatorStatus: String?,
+        emailDomain: String?,
+        region: String?,
+        hIndexMin: Int? = null,
+        citationCountMin: Int? = null,
+        recentYears: Int? = null,
+        hasField: List<String>? = null,
+        discipline: String? = null,
+        expertTypes: List<String> = emptyList()
+    ): List<Map<String, Any>> =
+        buildExpertFilters(
+            tag, operatorStatus, emailDomain, region,
+            hIndexMin, citationCountMin, recentYears, hasField, discipline, expertTypes
+        )
+
+    /**
+     * 06：按显示排序读取前缀，并保留 ES 排序键 [ExpertHitWithSort.sort]，供跨分区归并使用。
+     * 既有 [searchExpertsFiltered] 的返回/行为不变。
+     */
+    fun searchExpertsWithSort(
+        level: ExpertIndexLevel,
+        filters: List<Map<String, Any>>,
+        from: Int,
+        size: Int,
+        sortBy: String? = null
+    ): List<ExpertHitWithSort> {
+        require(size in 1..1000) { "size must be between 1 and 1000" }
+        require(from >= 0) { "from must be >= 0" }
+
+        val query = if (filters.isEmpty()) {
+            mapOf("match_all" to emptyMap<String, Any>())
+        } else {
+            mapOf("bool" to mapOf("filter" to filters))
+        }
+        val requestBody = mapOf(
+            "from" to from,
+            "size" to size,
+            "_source" to sourceFields(),
+            "query" to query,
+            "sort" to displaySort(level, sortBy)
+        )
+        val response = restTemplate.exchange(
+            "${properties.baseUrl}/${expertIndexService.indexName(level)}/_search",
+            HttpMethod.POST,
+            HttpEntity(requestBody, headers()),
+            JsonNode::class.java
+        ).body ?: return emptyList()
+
+        return response.path("hits").path("hits").map { hit ->
+            ExpertHitWithSort(toExpertProfile(hit), sortTokens(hit))
+        }
+    }
+
+    /**
+     * 06：按显示排序流式读取**完整**匹配集，并保留 ES 排序键；scroll 在 finally 关闭。
+     * 既有 [scrollExpertsFiltered]（`_doc` 序、无排序键）保持不动。
+     */
+    fun scrollExpertsFilteredWithSort(
+        level: ExpertIndexLevel,
+        filters: List<Map<String, Any>>,
+        batchSize: Int = 500,
+        sortBy: String? = null,
+        handler: (List<ExpertHitWithSort>) -> Boolean
+    ) {
+        val index = expertIndexService.indexName(level)
+        var scrollId: String? = null
+        try {
+            val query = if (filters.isEmpty()) {
+                mapOf("match_all" to emptyMap<String, Any>())
+            } else {
+                mapOf("bool" to mapOf("filter" to filters))
+            }
+            val requestBody = mapOf(
+                "size" to batchSize,
+                "_source" to sourceFields(),
+                "query" to query,
+                "sort" to displaySort(level, sortBy)
+            )
+            var response = restTemplate.exchange(
+                "${properties.baseUrl}/$index/_search?scroll=5m",
+                HttpMethod.POST,
+                HttpEntity(requestBody, headers()),
+                JsonNode::class.java
+            ).body ?: return
+
+            scrollId = response.path("_scroll_id").asText()
+            do {
+                val hits = response.path("hits").path("hits")
+                if (hits.isEmpty) break
+
+                val batch = hits.map { hit -> ExpertHitWithSort(toExpertProfile(hit), sortTokens(hit)) }
+                if (!handler(batch)) break
+                if (hits.size() < batchSize) break
+
+                response = restTemplate.exchange(
+                    "${properties.baseUrl}/_search/scroll",
+                    HttpMethod.POST,
+                    HttpEntity(mapOf("scroll" to "5m", "scroll_id" to scrollId), headers()),
+                    JsonNode::class.java
+                ).body ?: break
+                scrollId = response.path("_scroll_id").asText()
+            } while (true)
+        } finally {
+            if (scrollId != null) {
+                try {
+                    restTemplate.exchange(
+                        "${properties.baseUrl}/_search/scroll",
+                        HttpMethod.DELETE,
+                        HttpEntity(mapOf("scroll_id" to scrollId), headers()),
+                        JsonNode::class.java
+                    )
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    /**
+     * 06：在给定原始筛选上做一次 terms 聚合（只读）。`script` 为空时按 keyword 字段聚合；
+     * 非空时用于邮箱域名等派生键。既有 [aggregateTags]/[aggregateRegions]/[aggregateEmailDomains]
+     * 保持不变；本方法只服务人物口径的「其他」分区桶计数。
+     */
+    fun aggregateTerms(
+        level: ExpertIndexLevel,
+        filters: List<Map<String, Any>>,
+        field: String,
+        size: Int,
+        script: Map<String, Any>? = null
+    ): List<Pair<String, Long>> {
+        val query = if (filters.isEmpty()) {
+            mapOf("match_all" to emptyMap<String, Any>())
+        } else {
+            mapOf("bool" to mapOf("filter" to filters))
+        }
+        val terms = mutableMapOf<String, Any>("field" to field, "size" to size)
+        if (script != null) terms["script"] = script
+        val requestBody = mapOf(
+            "size" to 0,
+            "query" to query,
+            "aggs" to mapOf("bucket" to mapOf("terms" to terms))
+        )
+        val response = restTemplate.exchange(
+            "${properties.baseUrl}/${expertIndexService.indexName(level)}/_search",
+            HttpMethod.POST,
+            HttpEntity(requestBody, headers()),
+            JsonNode::class.java
+        ).body ?: return emptyList()
+
+        return response.path("aggregations").path("bucket").path("buckets").map { bucket ->
+            bucket.path("key").asText() to bucket.path("doc_count").asLong()
+        }
+    }
+
+    private fun displaySort(level: ExpertIndexLevel, sortBy: String?): List<Map<String, Any>> =
+        if (sortBy == "updatedAt") listOf(dateSort("updatedAt")) else sortFields(level)
+
+    private fun sortTokens(hit: JsonNode): List<Any?> {
+        val sort = hit.path("sort")
+        if (!sort.isArray) return emptyList()
+        return sort.map { node ->
+            when {
+                node.isIntegralNumber -> node.asLong()
+                node.isNumber -> node.asDouble()
+                node.isNull -> null
+                else -> node.asText()
+            }
+        }
+    }
 }
+
+/** 06：命中文档及其 ES 排序键（跨分区归并与人物代表成员选择的只读投影）。 */
+data class ExpertHitWithSort(val profile: ExpertProfile, val sort: List<Any?>)
 
 data class ExpertSearchResult(
     val experts: List<ExpertProfile>,
