@@ -96,3 +96,78 @@ C20 (`JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk mvn clean package`
 - Product commit: `git add` staged exactly the 40 changed authorized files (no other path), commit `b08b521c12b3d0fbbf219bbb7c8a9fc61a2ec2e9` on `fast/2026-10-13-discovery-identity-recovery-master`; after the commit `git status --porcelain` is empty and `git diff --check` is clean.
 - Plan identity re-read at handoff: SHA-256 unchanged (`845500de…`). Worktree identity re-checked: same root/branch/git-dir.
 - No push, merge, deploy, migration execution, real SMTP, production data apply, or switch configuration change was performed.
+
+---
+
+# Revised repair execution (round 2) — 2026-10-15
+
+## Execution identity
+
+- Approval source (exact human invocations): ① `$execute-p /Users/lukai/…/docs/plans/review/2026-10-13-discovery-identity-recovery-master/machine-verification.md` (Epoch-2 report, FAIL / DIVERGING; drove the fix work), ② `$execute-p /Users/lukai/…/docs/plans/fix/discovery-identity-recovery-master/repair.md` (revised plan — the form the revised plan declares as its own execution approval).
+- Current repair identity: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/docs/plans/fix/discovery-identity-recovery-master/repair.md`, SHA-256 `1c3736141987d41bdbc1737bcd0756cf35f4a8fca0e97bc8cd661586dbeb1f59` (40,181 bytes) — unchanged at handoff. Prior repair `845500de…` is superseded for this content (its execution record above remains historical evidence only).
+- Execution epoch: NEW for the revised identity (the plan bytes changed ⇒ new epoch; the previous round's task statuses, evidence and completion claims were reset and re-derived against the revised bytes).
+- Target worktree / branch / Worktree ID: unchanged (`…-fast-2026-10-13-discovery-identity-recovery-master` @ `fast/2026-10-13-discovery-identity-recovery-master` @ the same worktree git dir).
+- Executor: `execute-p` main integrator session; three delegated implementation groups (`Round2SendPath`, `Round2IdentityScope`, `Round2QueryMaint`) plus a fourth acceptance group (`Round2Acceptance`) were spawned, and **all four died mid-run on a provider/DNS outage** (`getaddrinfo ENOTFOUND opencode.ai`). The integrator completed, corrected and integrated their in-flight work inline.
+- Pre-execution code SHA: worktree clean at `5a82206e9b0f171c332dee7512953b90179f0459` when round 2 began; the revised-plan commit `cfcaaf6c729c756eea0c64425ee99f4092a043ab` (`docs(review-fast-p): revise repair after human adjudication`, docs-only: `repair.md` + `ledger.md`) landed during execution and is the commit base of the product change.
+- Post-execution code SHA: `3b6f854e64eae0361b86cbb6af9a9b21b0385f13` — subject `fix(discovery): restore outreach and enforce current person facts`.
+- Implementation boundary (this round): `cfcaaf6..3b6f854`; adopted pre-existing dirty diff was verified and continued as the revised plan's "Existing Unreviewed Worktree Changes" clause permits.
+
+## Tasks (revised plan R-1…R-9, findings V-26/V-1/V-2/V-3/V-5/V-8/V-4/V-14/V-15/V-13/V-12)
+
+| Task | Status | Files | Evidence |
+|---|---|---|---|
+| R-1 (V-26) current attempt vs. prior history | IMPLEMENTED | G, INIT, MI, MEM + GT/INITT/MIT/MEMT | Guard `OutreachAttemptIdentity(contactId, attemptId)` + server-side verification (`verifiedOwnContactId`/`verifiedOwnAttemptId`, own row must exist, match the ticket's bound address and belong to the person's current key space); own-row exclusion only when it is the **only** bound contact, and the address gate is skipped only for that verified case. Real-MySQL GT cases (own row + PREPARED attempt ⇒ Claimed; second same-person contact ⇒ HISTORY_PROTECTED; declared id for another address ⇒ no unlock; declared attempt of another mail type while a real UNKNOWN exists ⇒ UNKNOWN_PENDING); real entry INIT acceptance (healthy mapped person reaches SMTP exactly once with the selected address; no second send). |
+| R-2 (V-1) default-off legacy behaviour | IMPLEMENTED | INIT, MI, MEM + tests | `personGuardApplies`: gate on ⇒ current fail-closed behaviour; gate off ⇒ guard only for targets that already have a real person mapping (`isKnownPerson`), so unmapped targets keep the legacy flow with **no** guard state writes; an existing SENT/UNKNOWN/SENDING protection still denies. Three distinguishable states asserted. |
+| R-3 (V-2/V-3/V-5) full current group verification | IMPLEMENTED | P, IR, SEL (+G inherit) + PT/IRT/SELT/GT | Registration snapshot fails closed on unreadable/non-live existing members (`MEMBER_UNREADABLE`/`MEMBER_NOT_LIVE` ⇒ STALE, zero rows) instead of `mapNotNull`-dropping them; attaching re-verifies **all** current root members (`verifyRootGroup`: ES re-read + fingerprint + full name + author keys); selection re-reads every member's current facts (live scope + registration fingerprint) including in-batch members, with explicit exclusion reasons; reserve/claim inherit the same protection read. |
+| R-4 (V-8) only provable non-acceptance may safe-retry | IMPLEMENTED | INIT, MI, MEM (+G) + tests | Classification now requires a refusal code **and** a non-SUCCESS category; 250/SUCCESS after connection loss, missing response code and ambiguous results ⇒ UNKNOWN (no automatic resend). Real-DB GT acceptance: accepted-then-lost ⇒ UNKNOWN and a following request cannot send again (SMTP total 1). |
+| R-5 (V-4) admission failure keeps a resumable state | IMPLEMENTED | REC, RP + RECT/RPT | Admission re-verification failure returns a partial/retryable outcome (`ADMISSION_REVERIFY_FAILED`) instead of a complete APPLIED; the CLI keeps non-complete results resumable and only complete APPLIED terminal. |
+| R-6 (V-14/V-15 rollback half) complete expected facts | IMPLEMENTED | MAINT, MC, CP + MAT/MCT/CPT | `resumedTargetResult` now requires provable own completion: identity facts blanked of this apply's own mutable fields must equal the previewed expectation, the previewed relation digest must be the "not yet registered" state, and the root revision must be 0; third-party proof/revision/admission changes are refused with zero writes. Apply refuses requests without a relation expectation (`RELATION_EXPECTATION_REQUIRED`); rollback requires the expected person revision and refuses on any change (`ROLLBACK_UNSAFE`), later members or non-terminal protection. |
+| R-7 (V-15 import half) real business-key history import | IMPLEMENTED | G, MAINT + GT/MAT | `importExistingProtection` resolves history over member ES docIds **plus** contacts matched by member email and by alias email (business `orcid_id` may differ from the ES docId); import failure raises a rollback signal so the whole group (relations + protection) commits or rolls back together. Real-MySQL GT: different-business-key SENT ⇒ persisted SENT protection; history-free ⇒ no row; injected import failure ⇒ CHANGED_OR_FAILED + `PROTECTION_IMPORT_FAILED` with **zero** committed person/member/outreach rows. |
+| R-8 (V-13) refuse exact results from incomplete responses | IMPLEMENTED | ES, Q + QT/EST/ECT/CCT/SEAM | Missing/malformed `hits` (search, scroll continuation, and the shared `_count` used by person queries), timeouts, failed shards and incomplete traversals surface as an explicit unavailable failure; relation-SQL failure surfaces as unknown instead of an empty mapping; complete empty results still return 0. SEAM pins unchanged (C22 green). |
+| R-9 (V-12) stale members are not projected as sendable | IMPLEMENTED | Q + QT/SEAM | The per-email projection now derives the display token from the persistent admission/suppression truth **and** the relation's staleness: a stale relation, a missing email, or unavailable truth projects `UNKNOWN` instead of `ADMITTED`; the renderer is unchanged and out of scope. |
+
+## Commands (fresh, final code state)
+
+JDK per plan: C01–C20 = zulu-11 (11.0.15); C21/C22 = zulu-11.0.32.1. Docker: `DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock`.
+
+| Command | Result | Counts |
+|---|---|---|
+| C01 | PASS exit 0 | 149 / 0F / 0E / 0S |
+| C02 | PASS exit 0 | 230 / 0 / 0 / 0 |
+| C03 | PASS exit 0 | 308 / 0 / 0 / 0 |
+| C04 | PASS exit 0 | 48 / 0 / 0 / 0 |
+| C05 | PASS exit 0 | 164 / 0 / 0 / 0 |
+| C06 | PASS exit 0 | 15 tests OK |
+| C07 (real MySQL) | PASS exit 0 | 6 / 0 / 0 / 0 |
+| C08 | PASS exit 0 | 24 / 0 / 0 / 0 |
+| C09 (real migrations) | PASS exit 0 | 46 / 0 / 0 / 0 |
+| C10 | PASS exit 0 | 283 / 0 / 0 / 0 |
+| C11 (real MySQL) | PASS exit 0 | 30 / 0 / 0 / 0 |
+| C12 | PASS exit 0 | 150 / 0 / 0 / 0 |
+| C13 | PASS exit 0 | no diagnostics |
+| C14 | PASS exit 0 | 23 pass / 0 fail |
+| C15 | PASS exit 0 | 1680 pass / 0 fail |
+| C16 | PASS exit 0 | 259 / 0 / 0 / 0 |
+| C17 (real MySQL) | PASS exit 0 | 289 / 0 / 0 / 0 (guard suite 28, incl. the new R-1/R-4/R-7 real-DB acceptance tests) |
+| C18 | PASS exit 0 | 33 / 0 / 0 / 0 |
+| C19 | PASS exit 0 | 18 tests OK |
+| C21 `clean package` | PASS exit 0 | **5085 / 0F / 0E / 20S**; WAR built |
+| C22 | PASS exit 0 | 1 / 0 / 0 / 0 |
+| C20 | NOT RERUN | approved environment exception (old-JDK tzdb), same as Epoch 1/Epoch 2 |
+
+Retained failures during this round (kept, not erased): the guard real-DB suite first ran 1F/7E (α's new V-26 tests had Mockito matcher misuse and `(campaign_id, orcid_id)` unique-key collisions; the integrator's own fixtures lacked a sendable classification and used fake member fingerprints, and one fixture mixed two different ORCIDs into one person group) — all fixed inside authorized files, after which C17 is green. A first C21-equivalent full build was not attempted before these fixes, so no green claim rests on a pre-fix state.
+
+## Deviations and disclosures
+
+1. **Three-entry real-DB acceptance is partially delivered.** The real Initial entry is wired to real MySQL + real repositories + real guard + fake SMTP and covers (a) healthy mapped person ⇒ exactly one SMTP call with the selected address, (b) accepted-then-lost (250/SUCCESS) ⇒ UNKNOWN and no second send, (c) SMTP accepted + business write failure ⇒ delivery right stays SENDING and no entry may send again (SMTP total 1). `ManualInitialOutreachService` (27 collaborators) and `ManualExpertMailService` (11) full real-DB drives were **not** wired; their healthy-once behaviour is covered by the real-guard declaration contract in the unit suites (MIT/MEMT) and by the guard-level real-DB cases. This leaves the plan's "three entries in one real DB, competing for one person with exactly 1 SMTP" combined regression **incomplete** — reported, not claimed.
+2. **Pre-existing defect discovered (out of the 11 in-scope findings, not fixed):** the Initial success path persists `mail_send_attempt_id = 0L` (`InitialOutreachService.kt:183`, introduced 2026-09-25 by `439031c5`, before this repair plan), which violates `fk_mail_record_send_attempt` on a real MySQL database and rolls the success write back after SMTP acceptance. The new real-DB acceptance test asserts the guard/delivery-right semantics around this failure (SENDING preserved, no second send) and documents it; no product behaviour was changed for it, and it needs its own decision/plan.
+3. **Sub-agent infrastructure failure:** all four delegated groups died on `getaddrinfo ENOTFOUND opencode.ai` (provider unreachable). Work already written was verified and continued; incomplete/incorrect parts (α's guard-suite tests, γ's partially applied V-12/V-13/V-14 edits) were finished or corrected inline by the integrator. Because the provider may be unavailable, no further delegation was attempted.
+4. **Adopted pre-existing diff:** the revised plan's dirty-file table was reconciled hunk by hunk against the 33-file set; the out-of-scope edits to `src/main/resources/static/app.js` and `src/test/js/discoveryPersonEmails.test.js` (made under the superseded round-2 authorization) were reverted and are **not** in the product commit; no other out-of-scope path was adopted.
+5. **One product fix beyond a pure "carry-over" of the pre-existing diff:** the guard's own-row case no longer demands the excluded selection target's `selectedEmail` (the ticket's verified bound address governs instead); without this the live protection read denied a legitimate first send (V-26's live path).
+6. **B-1/B-2 remain BLOCKED** (performance evidence; complete three-entry concurrency evidence). No master PASS / READY_TO_INTEGRATE is claimed; at most READY_FOR_VERIFICATION.
+
+## Worktree / index state
+
+- `git status --porcelain` was empty before the product commit (29 files staged, all inside the 33-file authorized set) and empty after it; `git diff --check` clean; HEAD = `3b6f854` on `fast/2026-10-13-discovery-identity-recovery-master`, with `cfcaaf6` and `5a82206` as ancestors.
+- Plan identity re-read at handoff: `1c373614…` unchanged. Worktree identity re-checked with `--expect-root/--expect-branch/--expect-git-dir` (exit 0).
+- No push, merge, deploy, migration execution, real SMTP, production apply or switch-configuration change.
