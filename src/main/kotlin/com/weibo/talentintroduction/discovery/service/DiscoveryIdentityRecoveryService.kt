@@ -299,9 +299,15 @@ class DiscoveryIdentityRecoveryService(
             if (given == null || family == null) anyBlank = true
             if (proofOf(source) != target || given == null || family == null) allAtTarget = false
         }
-        // 全名已齐且未全部达到本次目标（缺 proof 等）→ 仍走 01；三层都已是本次目标值 → 可续跑
-        // （只差人物登记/准入重验，见 apply），不再被「已有 proof」挡在人工处理。
-        if (!anyBlank && !allAtTarget) {
+        // R-4（V-29）：同一原申请的部分层已经达到本次目标 proof（续跑）时不得因「姓名已齐」被路由出 02
+        // —— 继续按层 CAS 补齐剩余 proof，再完成登记/准入。初始全名且**没有任何**一层达到本次目标
+        // 的纯 01 场景仍按原合同路由。
+        val anyLayerAtTarget = presentLayers.any { (_, source) ->
+            proofOf(source) == target &&
+                !(source["givenNames"] as? String).isNullOrBlank() &&
+                !(source["familyNames"] as? String).isNullOrBlank()
+        }
+        if (!anyBlank && !allAtTarget && !anyLayerAtTarget) {
             return blocked(RecoveryStatus.ROUTE_TO_REPAIR, "ROUTE_TO_REPAIR")
         }
 

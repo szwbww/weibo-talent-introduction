@@ -177,6 +177,7 @@ class DiscoveryPersonQueryServiceTest {
             DiscoveryPersonRecord("P1", first.docId, 1, LocalDateTime.now(), LocalDateTime.now())
         )
         Mockito.`when`(repository.findMembersByPerson("P1")).thenReturn(docs.map { memberRow(it, "P1") })
+        Mockito.`when`(search.findByDocumentIdsStrict(anyLevel(), anyList())).thenReturn(docs.map { profile(it) })
         Mockito.`when`(search.findByDocumentIds(anyLevel(), anyList())).thenReturn(docs.map { profile(it) })
         Mockito.`when`(contacts.findByOrcidIdIn(anyList())).thenReturn(
             docs.mapIndexed { index, doc -> contact((index + 1).toLong(), doc.docId, "REPLIED", doc.email) }
@@ -460,6 +461,8 @@ class DiscoveryPersonQueryServiceTest {
                 memberRow(changed, "P3", fingerprint = "deadbeef")
             )
         )
+        Mockito.`when`(search.findByDocumentIdsStrict(anyLevel(), anyList()))
+            .thenReturn(listOf(profile(live), profile(changed)))
         Mockito.`when`(search.findByDocumentIds(anyLevel(), anyList()))
             .thenReturn(listOf(profile(live), profile(changed)))
 
@@ -477,6 +480,7 @@ class DiscoveryPersonQueryServiceTest {
     fun `a member whose live discovered tag is gone is no longer aggregated`() {
         val untagged = Doc("d6", tags = emptyList())
         stubRelations(listOf(memberRow(untagged, "P3")))
+        Mockito.`when`(search.findByDocumentIdsStrict(anyLevel(), anyList())).thenReturn(listOf(profile(untagged)))
         Mockito.`when`(search.findByDocumentIds(anyLevel(), anyList())).thenReturn(listOf(profile(untagged)))
 
         val relations = service().resolveVerifiedPersonRelations(listOf("d6"))
@@ -546,11 +550,11 @@ class DiscoveryPersonQueryServiceTest {
         Mockito.`when`(repository.findMembersByPerson("P1")).thenReturn(
             listOf(memberRow(d1, "P1"), memberRow(d2, "P1"))
         )
-        Mockito.`when`(search.findByDocumentIds(ExpertIndexLevel.RAW, listOf("d1", "d2")))
+        Mockito.`when`(search.findByDocumentIdsStrict(ExpertIndexLevel.RAW, listOf("d1", "d2")))
             .thenReturn(listOf(profile(d1)))
-        Mockito.`when`(search.findByDocumentIds(ExpertIndexLevel.CANDIDATE, listOf("d1", "d2")))
+        Mockito.`when`(search.findByDocumentIdsStrict(ExpertIndexLevel.CANDIDATE, listOf("d1", "d2")))
             .thenReturn(listOf(profile(d1), profile(d2)))
-        Mockito.`when`(search.findByDocumentIds(ExpertIndexLevel.APPLICATION, listOf("d1", "d2")))
+        Mockito.`when`(search.findByDocumentIdsStrict(ExpertIndexLevel.APPLICATION, listOf("d1", "d2")))
             .thenReturn(emptyList())
         Mockito.`when`(contacts.findByOrcidIdIn(listOf("d1", "d2"))).thenReturn(
             listOf(
@@ -592,6 +596,7 @@ class DiscoveryPersonQueryServiceTest {
         Mockito.`when`(repository.findMembersByPerson("P1")).thenReturn(
             listOf(memberRow(d1, "P1"), memberRow(d2, "P1"))
         )
+        Mockito.`when`(search.findByDocumentIdsStrict(anyLevel(), anyList())).thenReturn(emptyList())
         Mockito.`when`(search.findByDocumentIds(anyLevel(), anyList())).thenReturn(emptyList())
         Mockito.`when`(contacts.findByOrcidIdIn(anyList())).thenReturn(
             listOf(
@@ -610,6 +615,7 @@ class DiscoveryPersonQueryServiceTest {
     @Test
     fun `person detail returns null when the docId is unknown`() {
         Mockito.`when`(repository.findMember("missing")).thenReturn(null)
+        Mockito.`when`(search.findByDocumentIdsStrict(anyLevel(), anyList())).thenReturn(emptyList())
         Mockito.`when`(search.findByDocumentIds(anyLevel(), anyList())).thenReturn(emptyList())
         assertNull(service().personDetail("missing", ExpertIndexLevel.CANDIDATE))
     }

@@ -373,11 +373,31 @@ class DiscoveryPersonService(
             return Resolution.Create(verified.map { it.docId }.min())
         }
         val personId = roots.single()
+        // R-1（V-3）：revision 必须与「被完整核验的事实」同源 —— 核验**前**先读，核验**后**复读；
+        // 期间任何变化都不得把新 revision 配旧核验结果提交（并发挂入的成员未经本组复验）。
+        val revisionBefore = try {
+            repository.findPerson(personId)?.revision
+        } catch (e: Exception) {
+            log.warn("人物登记读取根 revision 失败 personId={}: {}", personId, e.message)
+            null
+        } ?: return Resolution.Reject(result(DiscoveryPersonOutcome.STALE, reason = "ROOT_REVISION_UNAVAILABLE"))
         // I-2/V-3：挂接前复验该根**全部当前成员**（不只本次请求快照里的那几个）——任一成员不可
         // 复验即零写入，绝不把新成员挂到无法完整复验的根上。
         val rootGroup = when (val verification = verifyRootGroup(personId, verified)) {
             is RootGroupVerification.Rejected -> return Resolution.Reject(verification.result)
             is RootGroupVerification.Verified -> verification
+        }
+        val revisionAfter = try {
+            repository.findPerson(personId)?.revision
+        } catch (e: Exception) {
+            log.warn("人物登记复读根 revision 失败 personId={}: {}", personId, e.message)
+            null
+        } ?: return Resolution.Reject(result(DiscoveryPersonOutcome.STALE, reason = "ROOT_REVISION_UNAVAILABLE"))
+        if (revisionAfter != revisionBefore) {
+            // R-1：核验期间根被并发改动 —— 旧核验结果不得配新 revision 提交，明确拒绝且零部分写。
+            return Resolution.Reject(
+                result(DiscoveryPersonOutcome.STALE, reason = "ROOT_REVISION_CHANGED_DURING_VERIFICATION")
+            )
         }
         // I-2：附加成员必须与既有根**全部当前作者键**（含已复验成员的当前键）同类唯一——同 ORCID 但
         // 不同 OpenAlex 键（或反之）不是同一人，绝不静默挂接；冲突即待核，不写关系。
@@ -401,13 +421,8 @@ class DiscoveryPersonService(
                 )
             )
         }
-        val expectedRevision = try {
-            repository.findPerson(personId)?.revision
-        } catch (e: Exception) {
-            log.warn("人物登记读取根 revision 失败 personId={}: {}", personId, e.message)
-            null
-        } ?: return Resolution.Reject(result(DiscoveryPersonOutcome.STALE, reason = "ROOT_REVISION_UNAVAILABLE"))
-        return Resolution.Attach(personId, newMembers, newKeys, expectedRevision)
+        // R-1：挂接依据的 revision 即「与完整核验事实同源」的复读值，不再事后另读。
+        return Resolution.Attach(personId, newMembers, newKeys, revisionAfter)
     }
 
     /**

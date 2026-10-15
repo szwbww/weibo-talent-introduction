@@ -288,7 +288,9 @@ class DiscoveryPersonQueryService(
                 operatorStatus = contact?.operatorStatus ?: raw?.operatorStatus,
                 admissionStatus = perEmailAdmissionStatus(
                     raw?.email, admissionStates[id], stale,
-                    currentOperatorStatus = contact?.operatorStatus,
+                    // R-3（V-12）：展示/许可共用同一有效状态依据 —— 无 contact 时 ES 当前的
+                    // EMAIL_INVALID 同样不得投影为可发送。
+                    currentOperatorStatus = contact?.operatorStatus ?: raw?.operatorStatus,
                     contactReadable = contacts != null
                 ),
                 representative = id == representativeDocId,
@@ -345,7 +347,9 @@ class DiscoveryPersonQueryService(
     ): Map<String, MutableList<Pair<ExpertIndexLevel, ExpertProfile>>> {
         val profilesByDoc = LinkedHashMap<String, MutableList<Pair<ExpertIndexLevel, ExpertProfile>>>()
         for (layer in LAYERS) {
-            expertSearchService.findByDocumentIds(layer, docIds).forEach { profile ->
+            // R-2（V-5/V-13）：人物查询链使用严格批读 —— 条目错误/缺项/漏条目必须显式失败，
+            // 不得被当成「该层无档案」或「关系失效」从而产出伪精确计数。
+            expertSearchService.findByDocumentIdsStrict(layer, docIds).forEach { profile ->
                 val id = profile.esDocId ?: return@forEach
                 profilesByDoc.getOrPut(id) { mutableListOf() }.add(layer to profile)
             }

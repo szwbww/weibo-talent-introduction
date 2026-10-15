@@ -977,22 +977,13 @@ class DiscoveryPersonOutreachGuardServiceTest {
         val service = realInitialEntry(calls)
         seedPersonWithRealFingerprint("p-b2", signedDiscoveryExpert("D1"))
 
-        val failure = try {
-            service.sendInitialBatch(campaignId = 1L, size = 1)
-            null
-        } catch (e: Exception) {
-            e
-        }
-
+        // E01 如实失败：Initial 完整健康实验必须断言**成功业务持久化**；已知
+        // mail_send_attempt_id=0L → fk_mail_record_send_attempt 缺陷会使其真实失败，
+        // 该失败连同 SMTP 恰 1 次与 SENDING 持久证据被如实记录为 B-2 BLOCKED，不得改称通过。
+        val result = service.sendInitialBatch(campaignId = 1L, size = 1)
+        assertEquals(1, result.sent, "健康首发必须完成（已知 FK 缺陷应使本条真实失败）")
         assertEquals(1, calls.size, "实际 Initial 入口健康首发恰好 1 次 SMTP")
-        // 已知既有缺陷（非本 8 项范围）：成功路径以 mail_send_attempt_id=0 落库触发 FK；如实记录异常链。
-        val fkChain = failure != null && generateSequence(failure as Throwable) { it.cause }
-            .any { it.message?.contains("fk_mail_record_send_attempt") == true }
-        assertTrue(fkChain, "Initial 完整健康事务仍受已知 FK 前置阻塞（异常链须可见）")
-        assertEquals(
-            OutreachGuardStates.SENDING, guard.stateOf("p-b2"),
-            "业务落库失败后交付权必须保持 SENDING（REQUIRES_NEW 独立持久化）"
-        )
+        assertEquals(OutreachGuardStates.SENT, guard.stateOf("p-b2"), "成功事实必须联动 guard SENT")
     }
 
     @Test

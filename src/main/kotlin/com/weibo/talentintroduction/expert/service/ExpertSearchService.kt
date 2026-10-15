@@ -902,7 +902,33 @@ class ExpertSearchService(
         if (!docs.isArray) {
             throw ExpertSearchUnavailableException("ES _mget 响应缺少 docs 数组，批量读取不可用")
         }
-        return docs.filter { it.path("found").asBoolean(false) }.map { toExpertProfile(it) }
+        // R-2（V-5/V-13）：逐项完整性 —— 条目 error、缺 found、重复/错 _id、found=true 却缺 _source
+        // 或响应漏掉请求中的 id 一律明确不可用；只有 found=false 才允许当作合法不存在。
+        val expectedIds = documentIds.toSet()
+        val seen = mutableSetOf<String>()
+        val profiles = mutableListOf<ExpertProfile>()
+        for (item in docs) {
+            if (item.has("error")) {
+                throw ExpertSearchUnavailableException("ES _mget 条目返回错误，批量读取不可用")
+            }
+            if (!item.has("found")) {
+                throw ExpertSearchUnavailableException("ES _mget 条目缺少 found 字段，批量读取不可用")
+            }
+            val id = item.path("_id").asText()
+            if (id.isBlank() || id !in expectedIds || !seen.add(id)) {
+                throw ExpertSearchUnavailableException("ES _mget 条目 _id 缺失/重复/不在请求集内，批量读取不可用")
+            }
+            if (item.path("found").asBoolean(false)) {
+                if (!item.path("_source").isObject) {
+                    throw ExpertSearchUnavailableException("ES _mget found=true 条目缺少 _source，批量读取不可用")
+                }
+                profiles += toExpertProfile(item)
+            }
+        }
+        if (seen != expectedIds) {
+            throw ExpertSearchUnavailableException("ES _mget 响应缺少请求中的条目，批量读取不可用")
+        }
+        return profiles
     }
 
     /**

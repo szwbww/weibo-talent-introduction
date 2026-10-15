@@ -33,7 +33,12 @@ class ExpertRevalidationService(
      * 04（I-3）：准入结论的唯一读取/写入接缝。为空时（历史单测）按改前的纯自动路径运行；
      * 生产恒由 Spring 注入，发现重验先读当前结论再决定自动校验或保留。
      */
-    private val discoveryReviewService: DiscoveryReviewService? = null
+    private val discoveryReviewService: DiscoveryReviewService? = null,
+    /**
+     * R-5（V-30）：当前准入 policy 的唯一结论来源。为空时（历史单测）保持改前行为；
+     * 生产恒由 Spring 注入 —— 复用同身份旧自动准入之前必须先形成**当前** policy 结论。
+     */
+    private val admissionPolicy: com.weibo.talentintroduction.discovery.service.DiscoveryAdmissionPolicy? = null
 ) {
     private val log = LoggerFactory.getLogger(ExpertRevalidationService::class.java)
 
@@ -359,6 +364,21 @@ class ExpertRevalidationService(
             // I-1/I-3：只有硬否决与独立邮箱验证失败参与候选投影；六类缺资料原因不再撤候选。
             val eligibility = eligibilityService.evaluateEligibility(profile)
             val reasons = hardBlockingReasons(profile, eligibility)
+            // R-5（V-30）：先形成当前 policy 结论 —— 当前硬阻断（如机构凭证 INVALID）时，同身份的旧
+            // AUTO_PASSED 不得被复用投影；按当前硬原因进入 reconcile，绝不据旧结论晋升。
+            val currentPolicy = admissionPolicy?.evaluate(profile, eligibility)
+            if (reasons.isEmpty() && currentPolicy != null && currentPolicy.blockingReasons.isNotEmpty()) {
+                review?.recordAutomatic(docId, profile, eligibility)
+                val policyCodes = currentPolicy.blockingReasons.map { it.code }
+                val candidateBefore = if (applied) null
+                    else expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+                val classification = expertClassificationService.classify(profile)
+                if (!expertIndexWriterService.reconcileDiscoveryCandidate(
+                        docId, snapshot, classification, policyCodes, preserveApplication = applied
+                    )) return PromotionOutcome.WriteFailed
+                return if (applied || candidateBefore != null) PromotionOutcome.AlreadyPresent
+                else PromotionOutcome.Rejected(policyCodes)
+            }
             if (reasons.isEmpty() && review != null && admission != null && admission.admitted &&
                 admission.decision != null
             ) {
