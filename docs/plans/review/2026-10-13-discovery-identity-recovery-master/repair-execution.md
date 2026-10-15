@@ -171,3 +171,78 @@ Retained failures during this round (kept, not erased): the guard real-DB suite 
 - `git status --porcelain` was empty before the product commit (29 files staged, all inside the 33-file authorized set) and empty after it; `git diff --check` clean; HEAD = `3b6f854` on `fast/2026-10-13-discovery-identity-recovery-master`, with `cfcaaf6` and `5a82206` as ancestors.
 - Plan identity re-read at handoff: `1c373614…` unchanged. Worktree identity re-checked with `--expect-root/--expect-branch/--expect-git-dir` (exit 0).
 - No push, merge, deploy, migration execution, real SMTP, production apply or switch-configuration change.
+
+---
+
+# Epoch-three repair execution — 2026-10-15
+
+## Execution identity
+
+- Approval source (exact human invocations): `$execute-p /Users/lukai/…/docs/plans/fix/discovery-identity-recovery-master/repair.md` (the epoch-three revision) followed by the human continuation instruction "批准 继续 修复".
+- Repair identity: `docs/plans/fix/discovery-identity-recovery-master/repair.md`, SHA-256 `23d72492384dd6230800fd5efcbde74eb937ae1cf3c3b1b7e9e4b4624cb98424` (43,542 bytes) — unchanged at handoff. Prior identities (`845500de…`, `1c373614…`) are superseded; their execution records above remain historical evidence only.
+- Execution epoch: NEW for the revised bytes (prior task statuses/evidence reset and re-derived).
+- Target worktree / branch: unchanged (`…-fast-2026-10-13-discovery-identity-recovery-master` @ `fast/2026-10-13-discovery-identity-recovery-master`).
+- Executor: `execute-p` main integrator session (all work performed inline; no delegation this round because the provider outage from round 2 makes subagents unusable).
+- Pre-execution code SHA: `509330a` (`docs(review-fast-p): revise repair after epoch three adjudication`; worktree clean at it).
+- Post-execution code SHA: `1ab288125b4e00b1237a69c48320d315741eaf76` — subject `fix(discovery): enforce current eligibility and identity write contracts`.
+- Implementation boundary (this round): `509330a..1ab2881`.
+
+## Tasks (R-1…R-8, findings V-27/V-3/V-5/V-28/V-13/V-14/V-29/V-12)
+
+| Task | Status | Files | Evidence |
+|---|---|---|---|
+| R-1 V-27 own-history waiver ≠ current address eligibility | IMPLEMENTED | G, SEL, GT, SELT, INITT, MIT, MEMT | `DiscoveryPersonRecipientService.currentAddressEligibility` (current admission truth ignoring the bound-contact duplicate, current-email consistency, suppression, `EMAIL_INVALID` operator status; fail-closed on unavailable truth) is required in every guard claim path including the verified own-row case; `DiscoveryPersonFeatureGate`-independent. SELT 18/18 with the new seam case; GT `own contact does not waive the current address eligibility (V-27)` covers the grant control and the `EMAIL_INVALID` denial. |
+| R-2 V-3 lock-after revision/author-key binding | IMPLEMENTED | P, R, PT, RT | `DiscoveryPersonRepository.attachToPersonVerified` (lock person row → revision must equal the verified one → re-read current author keys → same-class-different-value ⇒ `AUTHOR_KEY_CONFLICT`) and `DiscoveryPersonService.resolve` passes the verified revision; fakes updated. |
+| R-3 V-5 failed layer ≠ absent layer | IMPLEMENTED | SEL, ES, SELT, EST, GT | `ExpertSearchService.findByDocumentIdsStrict` (complete response + `docs` array required) plus per-layer `failedLevels` → `PERSON_LAYER_READ_FAILED`; SELT regression green. |
+| R-4 V-28 incomplete uniqueness search | IMPLEMENTED | W, IR, IRT, WT | `findDiscoveryHitsByEmail` rejects `timed_out`/failed shards/body/hit-structure defects; WT 51/51 incl. two new cases. |
+| R-5 V-13 aggregation structure | IMPLEMENTED | ES, EST, Q, QT, ECT, CCT | `aggregations.bucket.buckets` array + per-bucket `key`/`doc_count` required, legal empty array still zero; EST 91/91. |
+| R-6 V-14 expected/attribution | IMPLEMENTED | MAINT, MAT, MCT, CPT | the "own completion" inference was removed (no receipt ⇒ conservative `CHANGED_OR_FAILED`, no `protectionImported`), per-layer `seqNo/primaryTerm` bound into `layerVersions`; MAT 25/25. |
+| R-7 V-29 full name ≠ proof | IMPLEMENTED | IR, REC, W, IRT, RECT | a layer is `ALREADY_VERIFIED` only when its current proof equals the request's target; full-name-but-no-proof layers get the target proof via the existing version CAS (names untouched). |
+| R-8 V-12 EMAIL_INVALID not sendable | IMPLEMENTED | Q, QT, SEAM | contact-truth readability + `EMAIL_INVALID` ⇒ `UNKNOWN` projection; SEAM pin synced (Q:288). |
+
+## Commands (fresh, final code state)
+
+| Command | Result | Counts |
+|---|---|---|
+| C01 | PASS | 149 / 0F / 0E / 0S |
+| C02 | PASS | 230 / 0 / 0 / 0 |
+| C03 | PASS | 310 / 0 / 0 / 0 |
+| C04 | PASS | 48 / 0 / 0 / 0 |
+| C05 | PASS | 164 / 0 / 0 / 0 |
+| C06 | PASS | 15 tests OK |
+| C07 (real MySQL) | PASS | 6 / 0 / 0 / 0 |
+| C08 | PASS | 24 / 0 / 0 / 0 |
+| C09 (real migrations) | PASS | 46 / 0 / 0 / 0 |
+| C10 | PASS | 283 / 0 / 0 / 0 |
+| C11 (real MySQL) | PASS | 30 / 0 / 0 / 0 |
+| C12 | PASS | 151 / 0 / 0 / 0 |
+| C13 / C14 / C15 | PASS | no diagnostics / 23 pass / 1680 pass |
+| C16 | PASS | 260 / 0 / 0 / 0 |
+| C17 (real MySQL) | PASS | 294 / 0F / 0E / 4S (the 4 skips are the E01 methods without `-Db2Acceptance`) |
+| C18 | PASS | 33 / 0 / 0 / 0 |
+| C19 | PASS | 18 tests OK |
+| C22 | PASS | 1 / 0 / 0 / 0 |
+| C21 `clean package` | PASS | **5089 / 0F / 0E / 20S**; WAR built |
+| C20 | NOT RUN | approved old-JDK tzdb exception |
+| **E01** (B-2 collection) | RAN, 4/4 green | `b2HealthyInitial`, `b2HealthyManualInitial`, `b2HealthyManualExpert`, `b2SamePersonCompetition` |
+
+Retained failures during this round (kept, not erased): the first C17 attempt failed with 2F/3E and C22/C21 with the SEAM pin; the causes were (a) test fixtures not stubbing the new `currentAddressEligibility` seam / the strict layer-read method, (b) my own V-27 fixture mixing profiles, (c) the Q pin drifting 284→288 after the R-8 projection edit. All were fixed inside authorized files; the final C17/C22/C21 runs above are green.
+
+## B-1 / B-2 / Initial FK status (unchanged by this repair)
+
+- **B-1: BLOCKED** — no 51,829-row real-shape performance measurement exists; nothing was fabricated or optimised.
+- **B-2: BLOCKED — Initial FK prerequisite / remaining evidence.** E01 ran and is recorded, but `b2HealthyInitial` **asserts the known FK causal chain** (`mail_send_attempt_id = 0L` from `InitialOutreachService.kt:180–184` violating `fk_mail_record_send_attempt`) plus the independently persisted `SENDING` delivery right; it does **not** demonstrate a green healthy completion, and the MI/MEM methods drive the entries' **guard seam** (real guard, real repositories, real transaction, fake SMTP) rather than the full service objects. No green B-2 claim is made.
+- **Initial FK**: excluded from this plan (`NEW_SCOPE_REQUIRED`); not fixed, not mocked, not deleted.
+
+## Deviations and disclosures
+
+1. **V-27 sub-case "revoke the admission after reserve" is unresolved and reported, not hidden.** In the GT fixture the claim still returned `Claimed` after the current admission was switched to `HOLD` (both via a mutable stub and via an explicit second stub). The test carries an explicit open-question comment; no assertion was written to mask the behaviour. Admission revocation *at reserve* is covered by the existing V-26/SELT HOLD cases. This needs its own diagnosis round.
+2. **E01 scope**: as described above, MI/MEM cover the entry seams, not the full service objects; `b2HealthyInitial` records the known FK block.
+3. The four E01 methods are gated by `@EnabledIfSystemProperty(named = "b2Acceptance", matches = "true")` and are therefore skipped (4) in the ordinary C17/C21 runs, as the plan requires.
+4. No migration, schema, `app.js`/`index.html`, CLI product, controller product or caller product file was touched; the plan's 28-file set bounds the change (19 files modified, +591/−118).
+
+## Worktree / index state
+
+- `git status --porcelain` empty before and after the product commit; `git diff --check` clean; HEAD `1ab2881` on `fast/2026-10-13-discovery-identity-recovery-master` with `509330a` as ancestor.
+- Plan identity re-read at handoff: `23d72492…` unchanged. Worktree identity re-checked (`--expect-root/--expect-branch/--expect-git-dir`, exit 0).
+- No push, merge, deploy, real SMTP, production apply or switch-configuration change.
