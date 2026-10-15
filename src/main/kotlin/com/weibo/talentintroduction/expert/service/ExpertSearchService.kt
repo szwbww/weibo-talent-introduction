@@ -879,6 +879,33 @@ class ExpertSearchService(
     }
 
     /**
+     * R-3（V-5）：人物调用链的**严格批读边界** —— 响应不完整/缺必要结构即抛
+     * [ExpertSearchUnavailableException]，绝不把读取失败伪装成「合法缺档」；`found=false` 仍是合法缺档。
+     * 既有 [findByDocumentIds] 的非人物调用合同保持不变。
+     */
+    fun findByDocumentIdsStrict(level: ExpertIndexLevel, ids: List<String>): List<ExpertProfile> {
+        val documentIds = ids.filter { it.isNotBlank() }.distinct()
+        if (documentIds.isEmpty()) return emptyList()
+
+        val index = expertIndexService.indexName(level)
+        val requestBody = mapOf(
+            "docs" to documentIds.map { mapOf("_index" to index, "_id" to it, "_source" to sourceFields()) }
+        )
+        val response = restTemplate.exchange(
+            "${properties.baseUrl}/_mget",
+            HttpMethod.POST,
+            HttpEntity(requestBody, headers()),
+            JsonNode::class.java
+        ).body
+        requireCompleteResponse(response)
+        val docs = response!!.path("docs")
+        if (!docs.isArray) {
+            throw ExpertSearchUnavailableException("ES _mget 响应缺少 docs 数组，批量读取不可用")
+        }
+        return docs.filter { it.path("found").asBoolean(false) }.map { toExpertProfile(it) }
+    }
+
+    /**
      * I-1/I-3：按真实 `_id` 批量读取（`_mget`），结果复用 [toExpertProfile]，因此与列表/详情读到同一批字段。
      * `orcidId` 只是文档里的一个字段：搜索式 `findByOrcidId` 不能保证命中真实文档，定位一律以 `_id` 为准。
      * 未命中的 id（`found=false`）不产出条目，也不补空对象；入参为空时不发请求。
@@ -1415,7 +1442,16 @@ class ExpertSearchService(
         // R-10：聚合桶同样只在完整响应上发布；超时/失败分片/缺 body 全部明确失败。
         val body = requireCompleteResponse(response)
 
-        return body.path("aggregations").path("bucket").path("buckets").map { bucket ->
+        // R-5（V-13）：人物查询消费的聚合必须带必要桶结构；缺 aggregations/bucket/buckets 或桶缺
+        // key/doc_count 一律明确不可用，绝不退成「合法空桶/零人」。合法空数组仍返回空。
+        val buckets = body.path("aggregations").path("bucket").path("buckets")
+        if (!buckets.isArray) {
+            throw ExpertSearchUnavailableException("ES 聚合响应缺少必要的 buckets 结构，聚合结果不可用")
+        }
+        return buckets.map { bucket ->
+            if (!bucket.has("key") || !bucket.has("doc_count")) {
+                throw ExpertSearchUnavailableException("ES 聚合桶缺少 key/doc_count，聚合结果不可用")
+            }
             bucket.path("key").asText() to bucket.path("doc_count").asLong()
         }
     }

@@ -562,6 +562,28 @@ class DiscoveryPersonServiceTest {
             return DiscoveryPersonWriteStatus.APPLIED
         }
 
+        override fun attachToPersonVerified(
+            personId: String,
+            members: List<DiscoveryPersonMemberWrite>,
+            authorKeys: List<String>,
+            now: LocalDateTime,
+            expectedRevision: Long
+        ): DiscoveryPersonWriteStatus {
+            // R-2：锁后核验（revision + 当前同类作者键）——测试替身按同一契约复现。
+            if (persons[personId]?.revision != expectedRevision) {
+                return DiscoveryPersonWriteStatus.REVISION_CHANGED
+            }
+            val currentKeys = keys.filterValues { it == personId }.keys
+            val incomingByClass = authorKeys.distinct().groupBy { it.substringBefore(':') }
+            val currentByClass = currentKeys.groupBy { it.substringBefore(':') }
+            for ((keyClass, incoming) in incomingByClass) {
+                if (currentByClass[keyClass].orEmpty().any { it !in incoming }) {
+                    return DiscoveryPersonWriteStatus.AUTHOR_KEY_CONFLICT
+                }
+            }
+            return attachToPerson(personId, members, authorKeys, now)
+        }
+
         override fun attachToPerson(
             personId: String,
             members: List<DiscoveryPersonMemberWrite>,

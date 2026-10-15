@@ -265,10 +265,11 @@ class DiscoveryPersonMaintenanceService(
             }
             // 服务端重读证据（不接受客户端结论）；expected 只用于比对，绝不覆盖预期。
             val review = reviewGroup(members, frozenSet)
+            // R-6（V-14）：缺本次执行的可信归属凭据时**不得**从同形目标状态推断「自己已完成」——
+            // 本轮不新增 receipt/schema，故 expected 不一致一律保守拒绝并要求重新预览。
             if (review.evidenceDigest != requested.expectedFingerprint) {
-                results += resumedTargetResult(review, requested)
-                    ?: MaintenanceGroupApplyResult(key, ApplyStatus.CHANGED_OR_FAILED, null, 0, false,
-                        MaintenanceReasonCodes.FINGERPRINT_MISMATCH)
+                results += MaintenanceGroupApplyResult(key, ApplyStatus.CHANGED_OR_FAILED, null, 0, false,
+                    MaintenanceReasonCodes.FINGERPRINT_MISMATCH)
                 return@forEach
             }
             if (review.disposition != MaintenanceDisposition.MERGE_READY &&
@@ -281,88 +282,14 @@ class DiscoveryPersonMaintenanceService(
             if (requested.expectedRelationFingerprint != null &&
                 review.relationDigest != requested.expectedRelationFingerprint
             ) {
-                results += resumedTargetResult(review, requested)
-                    ?: MaintenanceGroupApplyResult(key, ApplyStatus.CHANGED_OR_FAILED, null, 0, false,
-                        MaintenanceReasonCodes.RELATION_CHANGED)
+                results += MaintenanceGroupApplyResult(key, ApplyStatus.CHANGED_OR_FAILED, null, 0, false,
+                    MaintenanceReasonCodes.RELATION_CHANGED)
                 return@forEach
             }
             results += applyGroup(review, frozenSet)
         }
         return MaintenanceApplyOutcome.Ok(results)
     }
-
-    /**
-     * I-3（断点续跑）：组关系已是**本申请自己的目标状态**时识别为 UNCHANGED。
-     *
-     * 仅凭「同一人物根 + 成员集合恰好等于本组」不足以免受第三方改动 —— 那只能证明「有人做过一次同形登记」。
-     * 因此这里额外要求（全部可证）：
-     * - 把**本次 apply 自己会产生**的可变成分（关系行 personId/revision、历史保护 sendBlockReason/historyReference）
-     *   归零后，身份/证据/人工准入/RAW 层版本等事实必须与预览预期 `expectedFingerprint` 逐字一致
-     *   → 第三方改 proof/准入/层版本即失配；
-     * - 预览预期 `expectedRelationFingerprint` 必须等于「整组尚未登记」的关系摘要
-     *   → 本申请的原子新建是本组唯一可能来源；
-     * - 人物根 `revision` 必须为 0（原子新建只写一次；此后任何关系新增都会递增）
-     *   → 第三方改版本即被拒。
-     *
-     * 只要任一条件不成立即返回 null，由调用方按 FINGERPRINT_MISMATCH / RELATION_CHANGED 拒绝并**零写**。
-     */
-    private fun resumedTargetResult(
-        review: MaintenanceGroupReview,
-        requested: MaintenanceApplyGroup
-    ): MaintenanceGroupApplyResult? {
-        val expectedRelation = requested.expectedRelationFingerprint ?: return null
-        val members = review.memberDocIds
-        val roots = review.members.mapNotNull { it.relationPersonId }.distinct()
-        if (roots.size != 1) return null
-        val personId = roots.single()
-        if (review.members.any { it.relationPersonId != personId }) return null
-        if (review.members.any { it.sourceFingerprint == null }) return null
-        if (review.members.any { !it.liveDiscovered }) return null
-        if (review.disposition == MaintenanceDisposition.CHANGED_OR_FAILED) return null
-        // 第三方身份/证据/准入/层版本变化：归零本申请的写入后仍须与预览预期逐字一致。
-        val blanked = applyMutableBlanked(review.members)
-        if (identityDigest(blanked) != requested.expectedFingerprint) return null
-        // 预览预期必须是「整组尚未登记」，否则无法证明本组单根是本申请的原子新建。
-        if (relationDigest(blanked) != expectedRelation) return null
-        val registered = try {
-            discoveryPersonRepository.findMembersByPerson(personId).map { it.expertDocId }
-        } catch (e: Exception) {
-            log.warn("10 断点续跑读取人物成员失败 personId={}: {}", personId, e.message)
-            return null
-        }
-        if (registered.toSet() != members.toSet()) return null
-        // 原子新建只写一次（revision=0）；任何后续关系新增/版本改动都会使其 >0 —— 版本变化即第三方改动。
-        val revision = try {
-            discoveryPersonRepository.findPerson(personId)?.revision
-        } catch (e: Exception) {
-            log.warn("10 断点续跑读取人物版本失败 personId={}: {}", personId, e.message)
-            return null
-        }
-        if (revision != 0L) return null
-        return MaintenanceGroupApplyResult(
-            review.groupKey,
-            ApplyStatus.UNCHANGED,
-            personId,
-            registered.size,
-            true,
-            MaintenanceReasonCodes.RESUMED_TARGET_STATE,
-            revision
-        )
-    }
-
-    /**
-     * 归零**本次 apply 自己会产生**的可变成分：关系行（personId/revision）与历史保护
-     * （sendBlockReason/historyReference）。仅用于「本次已完成」比对 —— 第三方不可改的事实原样保留。
-     */
-    private fun applyMutableBlanked(evidences: List<MaintenanceMemberEvidence>): List<MaintenanceMemberEvidence> =
-        evidences.map {
-            it.copy(
-                relationPersonId = null,
-                relationRevision = null,
-                sendBlockReason = null,
-                historyReference = false
-            )
-        }
 
     /**
      * I-2：整组成员检查完整后**一次提交**——登记关系（04）与导入历史保护（09）在同一事务；
@@ -593,7 +520,11 @@ class DiscoveryPersonMaintenanceService(
             normalizedEmail = normalizedEmail,
             profile = rawProfile,
             layers = snapshots.keys.map { it.name },
-            layerVersions = snapshots.mapKeys { it.key.name }.mapValues { it.value.source["updatedAt"] as? String },
+            // R-6：expected 必须绑定**每个现存层**的真实 ES 版本（seqNo/primaryTerm），
+            // updatedAt 只是展示信息，不能替代版本。
+            layerVersions = snapshots.entries.associate { (level, snapshot) ->
+                level.name to "seq=${snapshot.seqNo};pt=${snapshot.primaryTerm};updatedAt=${snapshot.source["updatedAt"] ?: ""}"
+            },
             seqNo = raw.seqNo,
             primaryTerm = raw.primaryTerm,
             evidenceSource = proof?.source,

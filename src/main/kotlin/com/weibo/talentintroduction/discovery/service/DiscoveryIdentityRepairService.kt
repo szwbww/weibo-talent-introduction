@@ -253,7 +253,10 @@ class DiscoveryIdentityRepairService(
             val familyBlank = (source["familyNames"] as? String).isNullOrBlank()
             val givenToWrite = incoming.givenNames.takeIf { givenBlank }
             val familyToWrite = incoming.familyNames.takeIf { familyBlank }
-            if (givenToWrite == null && familyToWrite == null) {
+            // R-7（V-29）：**完整姓名不等于 proof** —— 只有本层当前 proof 已等于本次目标才算
+            // ALREADY_VERIFIED；姓名已完整但缺 proof 的层仍须按现有版本 CAS 补目标 proof（姓名不动，
+            // 非空姓名与第三方 proof 由上方前置检查拒绝）。
+            if (givenToWrite == null && familyToWrite == null && proofOf(source) == target) {
                 layers += IdentityRepairLayer(level, IdentityRepairLayerOutcome.ALREADY_VERIFIED)
                 continue
             }

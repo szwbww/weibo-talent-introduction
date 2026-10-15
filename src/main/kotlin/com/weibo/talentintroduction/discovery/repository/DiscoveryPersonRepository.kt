@@ -13,7 +13,16 @@ import java.sql.Timestamp
 import java.time.LocalDateTime
 
 /** 04：关系写路径结果。只有 [APPLIED] 真正落库；其余都是并发/状态冲突信号，由服务层重新读并复验。 */
-enum class DiscoveryPersonWriteStatus { APPLIED, AUTHOR_KEY_TAKEN, MEMBER_TAKEN, PERSON_MISSING }
+enum class DiscoveryPersonWriteStatus {
+    APPLIED,
+    AUTHOR_KEY_TAKEN,
+    MEMBER_TAKEN,
+    PERSON_MISSING,
+    /** R-2：锁后人物 revision 与核验时不一致（并发写入）——不得依据旧结果提交。 */
+    REVISION_CHANGED,
+    /** R-2：锁后重读的当前作者键与本次入参同类不同值 —— 不是同一人，禁止挂接。 */
+    AUTHOR_KEY_CONFLICT
+}
 
 /**
  * 04（I-1/I-2/I-3）：`discovery_person` / `discovery_person_member` / `discovery_person_author_key`
@@ -121,6 +130,48 @@ class DiscoveryPersonRepository(private val jdbcTemplate: JdbcTemplate) {
         val existingDocIds = existing.map { it.expertDocId }.toSet()
         val newMembers = members.filter { it.expertDocId !in existingDocIds }
         val newKeys = sortedKeys.filter { it !in locked }
+        if (newMembers.isEmpty() && newKeys.isEmpty()) return DiscoveryPersonWriteStatus.APPLIED
+        insertMembers(personId, newMembers, now)
+        insertAuthorKeys(newKeys, personId)
+        jdbcTemplate.update(
+            "UPDATE discovery_person SET revision = revision + 1, updated_at = ? WHERE person_id = ?",
+            Timestamp.valueOf(now), personId
+        )
+        return DiscoveryPersonWriteStatus.APPLIED
+    }
+
+    /**
+     * R-2（V-3）：**锁后核验**的挂接 —— 在锁定人物行之后重读当前 revision 与完整作者键，再决定是否写入。
+     * 与 [attachToPerson] 的差别：把服务层核验时的事实绑定到锁内状态（revision 变化或同类不同值即拒绝），
+     * 使「锁前核验 → 锁后提交」之间的并发窗口不再能挂出同一根的两个同类不同作者键。
+     */
+    @Transactional
+    fun attachToPersonVerified(
+        personId: String,
+        members: List<DiscoveryPersonMemberWrite>,
+        authorKeys: List<String>,
+        now: LocalDateTime,
+        expectedRevision: Long
+    ): DiscoveryPersonWriteStatus {
+        val sortedKeys = authorKeys.distinct().sorted()
+        val locked = lockAuthorKeys(sortedKeys).toMap()
+        if (locked.values.any { it != personId }) return DiscoveryPersonWriteStatus.AUTHOR_KEY_TAKEN
+        val existing = findMembers(members.map { it.expertDocId })
+        if (existing.any { it.personId != personId }) return DiscoveryPersonWriteStatus.MEMBER_TAKEN
+        val person = lockPerson(personId) ?: return DiscoveryPersonWriteStatus.PERSON_MISSING
+        if (person.revision != expectedRevision) return DiscoveryPersonWriteStatus.REVISION_CHANGED
+        val currentKeys = findAuthorKeysByPerson(personId).map { it.authorKey }
+        val incomingByClass = sortedKeys.groupBy { it.substringBefore(':') }
+        val currentByClass = currentKeys.groupBy { it.substringBefore(':') }
+        for ((keyClass, incoming) in incomingByClass) {
+            val current = currentByClass[keyClass].orEmpty()
+            if (current.any { it !in incoming }) return DiscoveryPersonWriteStatus.AUTHOR_KEY_CONFLICT
+        }
+
+        val existingDocIds = existing.map { it.expertDocId }.toSet()
+        val newMembers = members.filter { it.expertDocId !in existingDocIds }
+        val linkedKeys = locked.keys
+        val newKeys = sortedKeys.filter { it !in linkedKeys }
         if (newMembers.isEmpty() && newKeys.isEmpty()) return DiscoveryPersonWriteStatus.APPLIED
         insertMembers(personId, newMembers, now)
         insertAuthorKeys(newKeys, personId)

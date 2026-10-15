@@ -3028,6 +3028,10 @@ class ManualInitialOutreachServiceTest {
 
     /** R-7：`findByDocumentIds` 只返回给定 docId 集合命中的成员档案（其余层返回空）。 */
     private fun stubPersonMemberProfiles(profiles: List<ExpertProfile>) {
+        Mockito.`when`(expertSearchService.findByDocumentIdsStrict(anyIndexLevel(), Mockito.anyList()))
+            .thenAnswer { invocation ->
+                expertSearchService.findByDocumentIds(invocation.getArgument(0), invocation.getArgument(1))
+            }
         Mockito.`when`(expertSearchService.findByDocumentIds(anyIndexLevel(), Mockito.anyList()))
             .thenAnswer { invocation ->
                 val ids = invocation.getArgument<List<String>>(1)

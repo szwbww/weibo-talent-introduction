@@ -47,6 +47,8 @@ class DiscoveryPersonRecipientServiceTest {
 
     private val loadedProfiles = mutableMapOf<String, ExpertProfile>()
 
+    private fun <T> eqValue(value: T): T = Mockito.eq(value) ?: value
+
     private fun scope(
         mailType: String = "ADMISSION_ONLY",
         funnelLevels: Set<String> = setOf("CANDIDATE")
@@ -116,6 +118,10 @@ class DiscoveryPersonRecipientServiceTest {
             val ids = invocation.getArgument<List<String>>(1)
             ids.mapNotNull { loadedProfiles[it] }
         }
+        Mockito.`when`(expertSearchService.findByDocumentIdsStrict(anyLevel(), Mockito.anyList()))
+            .thenAnswer { invocation ->
+                expertSearchService.findByDocumentIds(invocation.getArgument(0), invocation.getArgument(1))
+            }
         Mockito.`when`(expertSearchService.findByDocumentIds(anyLevel(), Mockito.anyList()))
             .thenAnswer(answer)
     }
@@ -134,12 +140,37 @@ class DiscoveryPersonRecipientServiceTest {
             ExpertIndexLevel.CANDIDATE to candidate,
             ExpertIndexLevel.APPLICATION to application
         )
+        Mockito.`when`(expertSearchService.findByDocumentIdsStrict(anyLevel(), Mockito.anyList()))
+            .thenAnswer { invocation ->
+                expertSearchService.findByDocumentIds(invocation.getArgument(0), invocation.getArgument(1))
+            }
         Mockito.`when`(expertSearchService.findByDocumentIds(anyLevel(), Mockito.anyList()))
             .thenAnswer { invocation ->
                 val level = invocation.getArgument<ExpertIndexLevel>(0)
                 val ids = invocation.getArgument<List<String>>(1)
                 byLevel[level].orEmpty().filter { (it.esDocId ?: it.orcidId) in ids }
             }
+    }
+
+    @Test
+    fun `a failed RAW layer read excludes the person instead of being treated as absent (V-5 R-3)`() {
+        val profile = expert("doc-fail")
+        stubPerson("P-fail", listOf(member("doc-fail", "P-fail")))
+        stubExpertSearch(listOf(profile))
+        Mockito.doThrow(IllegalStateException("RAW read failed")).`when`(expertSearchService)
+            .findByDocumentIdsStrict(
+                eqValue(com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.RAW), Mockito.anyList()
+            )
+        stubAdmissions("doc-fail" to "AUTO_PASSED")
+
+        val selection = service.select(scope(), listOf(profile))
+
+        assertEquals(
+            listOf(PersonRecipientReasonKeys.PERSON_LAYER_READ_FAILED),
+            selection.excluded.single().exclusionReasons,
+            "必需层读取失败必须与「该层无档案」区分，且不得被其他层的存在掩盖"
+        )
+        assertTrue(selection.included.isEmpty())
     }
 
     private fun stubAdmissions(vararg decisions: Pair<String, String>) {
@@ -333,10 +364,10 @@ class DiscoveryPersonRecipientServiceTest {
 
         // 未出现在本批的成员 d2 与本批成员 d1 一起按 scope 的 funnelLevels 逐层重读**当前**档案
         // （V-5：页面快照不再被当作当前事实）。
-        Mockito.verify(expertSearchService).findByDocumentIds(
+        Mockito.verify(expertSearchService).findByDocumentIdsStrict(
             com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.CANDIDATE, listOf("d1", "d2")
         )
-        Mockito.verify(expertSearchService).findByDocumentIds(
+        Mockito.verify(expertSearchService).findByDocumentIdsStrict(
             com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.APPLICATION, listOf("d1", "d2")
         )
     }

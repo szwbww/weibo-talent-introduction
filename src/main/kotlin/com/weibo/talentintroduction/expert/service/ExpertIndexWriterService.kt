@@ -740,12 +740,28 @@ class ExpertIndexWriterService(
             "${properties.baseUrl}/$indices/_search?ignore_unavailable=true",
             HttpMethod.POST, HttpEntity(query, headers()), JsonNode::class.java
         ).body ?: error("Empty ES _search response for email lookup")
+        // R-4（V-28）：唯一性用途的搜索必须确认**正常完整结束** —— timeout / failed shard / 缺必要结构
+        // 一律不可用，绝不从一个可见 hit 推断「唯一 doc」后写 proof。
+        if (response.isNull || response.isMissingNode) {
+            throw IllegalStateException("ES email lookup returned no usable body")
+        }
+        if (response.path("timed_out").asBoolean(false)) {
+            throw IllegalStateException("ES email lookup timed out")
+        }
+        val failedShards = response.path("_shards").path("failed").asInt(0)
+        if (failedShards > 0) {
+            throw IllegalStateException("ES email lookup had $failedShards failed shard(s)")
+        }
         val hits = response.path("hits").path("hits")
         require(hits.isArray) { "Malformed ES _search response for email lookup" }
-        return hits.mapNotNull { hit ->
-            val id = hit.path("_id").asText().takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            val level = levelByIndex[hit.path("_index").asText()] ?: return@mapNotNull null
-            DiscoveryEmailHit(id, level, toStringMap(hit.path("_source")))
+        return hits.map { hit ->
+            val id = hit.path("_id").asText().takeIf { it.isNotBlank() }
+                ?: error("ES email lookup hit without _id")
+            val level = levelByIndex[hit.path("_index").asText()]
+                ?: error("ES email lookup hit with unknown _index")
+            val source = hit.path("_source")
+            require(source.isObject) { "ES email lookup hit without _source" }
+            DiscoveryEmailHit(id, level, toStringMap(source))
         }
     }
 

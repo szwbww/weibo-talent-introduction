@@ -2893,6 +2893,30 @@ class ExpertSearchServiceTest {
     }
 
     @Test
+    fun `aggregateTerms rejects a response without bucket structure (V-13)`() {
+        val body = mapper.readTree(
+            """
+            {
+              "timed_out": false,
+              "_shards": {"total": 1, "successful": 1, "skipped": 0, "failed": 0},
+              "aggregations": {"bucket": {}}
+            }
+            """.trimIndent()
+        )
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST), any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        assertThrows(ExpertSearchUnavailableException::class.java) {
+            service.aggregateTerms(ExpertIndexLevel.CANDIDATE, emptyList(), field = "email", size = 100)
+        }
+    }
+
+    @Test
     fun `aggregateTerms rejects an incomplete response`() {
         val body = mapper.readTree(
             """

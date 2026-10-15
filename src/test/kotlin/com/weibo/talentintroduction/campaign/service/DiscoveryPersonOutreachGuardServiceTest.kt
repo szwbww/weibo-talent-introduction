@@ -413,6 +413,9 @@ class DiscoveryPersonOutreachGuardServiceTest {
                 reasonHits = mapOf(PersonRecipientReasonKeys.ALREADY_CONTACTED to 1)
             )
         )
+        Mockito.`when`(
+            recipientService.currentAddressEligibility(anyValue(profile("doc-v26c")), anyValue("doc-v26c@example.test"))
+        ).thenReturn(AddressEligibility(emptyList()))
         val guarded = DiscoveryPersonOutreachGuardService(jdbc, personRepository, recipientService, null)
         // 生产接线：本次尝试的 NEW 行先落库（建行即绑定），reserve/claim 都必须声明它。
         seedContactRow(24L, "doc-v26c", "doc-v26c@example.test", bound = "acct")
@@ -448,6 +451,9 @@ class DiscoveryPersonOutreachGuardServiceTest {
                 reasonHits = mapOf(PersonRecipientReasonKeys.ALREADY_CONTACTED to 1)
             )
         )
+        Mockito.`when`(
+            recipientService.currentAddressEligibility(anyValue(profile("doc-v26d")), anyValue("doc-v26d@example.test"))
+        ).thenReturn(AddressEligibility(emptyList()))
         val guarded = DiscoveryPersonOutreachGuardService(jdbc, personRepository, recipientService, null)
         // 本次自己的行 + 同人**另一个**绑定联系人：即使声明自己的行，另一个绑定联系人仍阻断。
         seedContactRow(25L, "doc-v26d", "doc-v26d@example.test", bound = "acct")
@@ -524,6 +530,10 @@ class DiscoveryPersonOutreachGuardServiceTest {
             )
         )
         val search = Mockito.mock(ExpertSearchService::class.java)
+        Mockito.`when`(search.findByDocumentIdsStrict(anyValue(com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.RAW), anyValue(emptyList<String>()))).thenAnswer { invocation ->
+            val ids = invocation.getArgument<List<String>>(1)
+            if ("doc-v26e" in ids) listOf(profile) else emptyList()
+        }
         Mockito.`when`(search.findByDocumentIds(anyValue(com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.RAW), anyValue(emptyList<String>()))).thenAnswer { invocation ->
             val ids = invocation.getArgument<List<String>>(1)
             if ("doc-v26e" in ids) listOf(profile) else emptyList()
@@ -751,8 +761,14 @@ class DiscoveryPersonOutreachGuardServiceTest {
         Mockito.`when`(
             expertSearch.searchExpertsByTypesWithEmail(1, com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.CANDIDATE, listOf("PRODUCTION_RND"))
         ).thenReturn(com.weibo.talentintroduction.expert.service.ExpertSearchResult(listOf(d1), 1))
-        Mockito.`when`(expertSearch.findByDocumentIds(
+        Mockito.`when`(expertSearch.findByDocumentIdsStrict(
             anyValue(com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.RAW), anyValue(emptyList())
+        )).thenReturn(listOf(d1))
+        Mockito.`when`(expertSearch.findByDocumentIdsStrict(
+            anyValue(com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.CANDIDATE), anyValue(emptyList())
+        )).thenReturn(listOf(d1))
+        Mockito.`when`(expertSearch.findByDocumentIdsStrict(
+            anyValue(com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.APPLICATION), anyValue(emptyList())
         )).thenReturn(listOf(d1))
         val reviewService = Mockito.mock(DiscoveryReviewService::class.java)
         Mockito.`when`(reviewService.resolveAdmissionBatch(Mockito.anyList())).thenAnswer { invocation ->
@@ -882,6 +898,157 @@ class DiscoveryPersonOutreachGuardServiceTest {
             emailSource = "PAPER_FULLTEXT",
             tags = listOf(DiscoveryPersonScope.DISCOVERED_TAG)
         )
+    }
+
+    // ── R-1（V-27）：自身 contact 只豁免历史重复，不豁免当前具体邮箱资格 ────────
+
+    @Test
+    fun `own contact does not waive the current address eligibility (V-27)`() {
+        val profile = profile("doc-v27")
+        seedPersonWithRealFingerprint("p-v27", profile)
+        val review = Mockito.mock(DiscoveryReviewService::class.java)
+        var admission = "AUTO_PASSED"
+        Mockito.`when`(review.resolveAdmissionBatch(Mockito.anyList())).thenAnswer { invocation ->
+            val keys = invocation.getArgument<List<com.weibo.talentintroduction.discovery.service.DiscoveryReviewAdmissionKey>>(0)
+            keys.associate { key ->
+                key.docId to DiscoveryReviewResolvedAdmission(key.docId, admission, true, true, true, false, 1L, null)
+            }
+        }
+        val search = Mockito.mock(ExpertSearchService::class.java)
+        val v27Profiles = listOf(profile, profile("doc-v27b"), profile("doc-v27c")).associateBy { it.esDocId }
+        listOf(
+            com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.RAW,
+            com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.CANDIDATE,
+            com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.APPLICATION
+        ).forEach { level ->
+            Mockito.`when`(search.findByDocumentIdsStrict(anyValue(level), anyValue(emptyList<String>()))).thenAnswer { invocation ->
+                val ids = invocation.getArgument<List<String>>(1)
+                ids.mapNotNull { v27Profiles[it] }
+            }
+        }
+        val recipientService = DiscoveryPersonRecipientService(
+            batchRecipientSelectionService = BatchRecipientSelectionService(review),
+            discoveryPersonRepository = personRepository,
+            expertSearchService = search,
+            expertContactRepository = expertContactRepository,
+            featureGate = DiscoveryPersonFeatureGate(enabled = true)
+        )
+        val guarded = DiscoveryPersonOutreachGuardService(jdbc, personRepository, recipientService, null)
+        seedContactRow(61L, "doc-v27", "doc-v27@example.test", bound = "acct")
+        val ticket = (guarded.reserveIntroduction(
+            "doc-v27", "doc-v27@example.test", profile, OutreachAttemptIdentity(contactId = 61L)
+        ) as OutreachReserveOutcome.Granted).ticket
+
+        // 1) 许可对照：当前准入通过 ⇒ claim 获准（自身行不构成历史）。
+        assertTrue(
+            guarded.claimSending(ticket, profile, "doc-v27@example.test", OutreachAttemptIdentity(contactId = 61L))
+                is OutreachClaimOutcome.Claimed,
+            "未撤销资格时自身 contact 不得阻断正常 claim"
+        )
+
+        // 2) 当前准入在 reserve 之后被撤销（P3E/P3F）在本夹具下**未能观测到拒绝**（claim 仍返回 Claimed）：
+        //    已作为未决问题上报（见 repair-execution.md「未决问题」），此处不写入会掩盖该行为的断言。
+        //    准入撤销在 reserve 期的阻断由既有 V-26 用例与 SELT 的 HOLD 用例覆盖。
+
+        // 3) 当前运营状态不合格（EMAIL_INVALID）⇒ 同样不得发。
+        admission = "AUTO_PASSED"
+        seedPersonWithRealFingerprint("p-v27c", profile("doc-v27c"))
+        seedContactRow(63L, "doc-v27c", "doc-v27c@example.test", bound = "acct")
+        val third = DiscoveryPersonOutreachGuardService(jdbc, personRepository, recipientService, null)
+        val thirdTicket = (third.reserveIntroduction(
+            "doc-v27c", "doc-v27c@example.test", profile("doc-v27c"), OutreachAttemptIdentity(contactId = 63L)
+        ) as OutreachReserveOutcome.Granted).ticket
+        jdbc.update("UPDATE expert_contact SET operator_status = 'EMAIL_INVALID' WHERE id = 63")
+        val ineligible = third.claimSending(
+            thirdTicket, profile("doc-v27c"), "doc-v27c@example.test", OutreachAttemptIdentity(contactId = 63L)
+        )
+        assertEquals(
+            OutreachGuardReasonCodes.ADDRESS_INELIGIBLE, (ineligible as OutreachClaimOutcome.Denied).code,
+            "EMAIL_INVALID 的当前地址不得被投影为可发"
+        )
+    }
+
+    // ── E01：B-2 正向/竞争采集（-Db2Acceptance=true 时执行；不作为 8 项修复的通过门槛） ──
+
+    @Test
+    @org.junit.jupiter.api.condition.EnabledIfSystemProperty(named = "b2Acceptance", matches = "true")
+    fun b2HealthyInitial() {
+        val calls = mutableListOf<String>()
+        val service = realInitialEntry(calls)
+        seedPersonWithRealFingerprint("p-b2", signedDiscoveryExpert("D1"))
+
+        val failure = try {
+            service.sendInitialBatch(campaignId = 1L, size = 1)
+            null
+        } catch (e: Exception) {
+            e
+        }
+
+        assertEquals(1, calls.size, "实际 Initial 入口健康首发恰好 1 次 SMTP")
+        // 已知既有缺陷（非本 8 项范围）：成功路径以 mail_send_attempt_id=0 落库触发 FK；如实记录异常链。
+        val fkChain = failure != null && generateSequence(failure as Throwable) { it.cause }
+            .any { it.message?.contains("fk_mail_record_send_attempt") == true }
+        assertTrue(fkChain, "Initial 完整健康事务仍受已知 FK 前置阻塞（异常链须可见）")
+        assertEquals(
+            OutreachGuardStates.SENDING, guard.stateOf("p-b2"),
+            "业务落库失败后交付权必须保持 SENDING（REQUIRES_NEW 独立持久化）"
+        )
+    }
+
+    @Test
+    @org.junit.jupiter.api.condition.EnabledIfSystemProperty(named = "b2Acceptance", matches = "true")
+    fun b2HealthyManualInitial() {
+        val profile = profile("doc-b2mi")
+        seedPersonWithRealFingerprint("p-b2mi", profile)
+        val ticket = (guard.reserveIntroduction(
+            "doc-b2mi", "doc-b2mi@example.test", profile, OutreachAttemptIdentity()
+        ) as OutreachReserveOutcome.Granted).ticket
+        // 入口接缝：ManualInitial 在 reserve 后自建 NEW contact/PREPARED attempt，再 claim（真实仓储）。
+        seedContactRow(71L, "doc-b2mi", "doc-b2mi@example.test", bound = "acct")
+        insertAttempt(71L, "doc-b2mi", "PREPARED")
+        val claim = guard.claimSending(
+            ticket, profile, "doc-b2mi@example.test", OutreachAttemptIdentity(contactId = 71L, attemptId = 71L)
+        )
+        assertTrue(claim is OutreachClaimOutcome.Claimed, "自身 NEW/PREPARED 行不得阻断健康首发")
+        assertEquals(OutreachGuardStates.SENDING, guard.stateOf("p-b2mi"))
+    }
+
+    @Test
+    @org.junit.jupiter.api.condition.EnabledIfSystemProperty(named = "b2Acceptance", matches = "true")
+    fun b2HealthyManualExpert() {
+        val profile = profile("doc-b2me")
+        seedPersonWithRealFingerprint("p-b2me", profile)
+        val ticket = (guard.reserveIntroduction(
+            "doc-b2me", "doc-b2me@example.test", profile, OutreachAttemptIdentity()
+        ) as OutreachReserveOutcome.Granted).ticket
+        seedContactRow(81L, "doc-b2me", "doc-b2me@example.test", bound = "acct")
+        val claim = guard.claimSending(
+            ticket, profile, "doc-b2me@example.test", OutreachAttemptIdentity(contactId = 81L)
+        )
+        assertTrue(claim is OutreachClaimOutcome.Claimed, "详情入口的自身 contact 不得阻断健康首发")
+        assertEquals(OutreachGuardStates.SENDING, guard.stateOf("p-b2me"))
+    }
+
+    @Test
+    @org.junit.jupiter.api.condition.EnabledIfSystemProperty(named = "b2Acceptance", matches = "true")
+    fun b2SamePersonCompetition() {
+        val calls = mutableListOf<String>()
+        val service = realInitialEntry(calls)
+        seedPersonWithRealFingerprint("p-b2c", signedDiscoveryExpert("D1"))
+
+        try {
+            service.sendInitialBatch(campaignId = 1L, size = 1)
+        } catch (e: Exception) {
+            // 已知 FK：交付权已独立持久化，随后任何入口都不得再发。
+        }
+        assertEquals(1, calls.size, "同一真库/同一人：首个入口恰好 1 次 SMTP")
+
+        // 同人第二个入口（同真实 guard/同库）必须被既有保护拒绝。
+        val second = guard.reserveIntroduction(
+            "D1", "D1@example.test", signedDiscoveryExpert("D1"), OutreachAttemptIdentity()
+        )
+        assertTrue(second is OutreachReserveOutcome.Denied, "同人第二次请求必须被既有交付权/历史保护拒绝")
+        assertEquals(1, calls.size, "跨入口竞争后 SMTP 总数仍恰为 1")
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

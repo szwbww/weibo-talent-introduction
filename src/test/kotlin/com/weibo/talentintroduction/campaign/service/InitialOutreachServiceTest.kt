@@ -775,6 +775,7 @@ class InitialOutreachServiceTest {
         Mockito.`when`(personRepo.findMember("D2")).thenReturn(m2)
         // V-5：人物成员的当前事实按层从 ES 重读（页面快照不再被当作当前档案）。
         stubCurrentMemberProfiles(listOf(d1, d2))
+        stubStrictLayerReads()
         stubAdmissions("D1" to "AUTO_PASSED", "D2" to "AUTO_PASSED")
         val personRecipientService = DiscoveryPersonRecipientService(
             batchRecipientSelectionService = batchRecipientSelectionService,
@@ -841,6 +842,7 @@ class InitialOutreachServiceTest {
         Mockito.`when`(personRepo.findMember("D1")).thenReturn(m1)
         // V-5：人物成员的当前事实按层从 ES 重读。
         stubCurrentMemberProfiles(listOf(d1))
+        stubStrictLayerReads()
         val personRecipientService = DiscoveryPersonRecipientService(
             batchRecipientSelectionService = batchRecipientSelectionService,
             discoveryPersonRepository = personRepo,
@@ -1067,6 +1069,7 @@ class InitialOutreachServiceTest {
     ): InitialOutreachService {
         // V-5：人物成员的当前事实按层从 ES 重读（页面快照不再被当作当前档案）。
         stubCurrentMemberProfiles(memberProfiles)
+        stubStrictLayerReads()
         val personRecipientService = DiscoveryPersonRecipientService(
             batchRecipientSelectionService = batchRecipientSelectionService,
             discoveryPersonRepository = personRepo,
@@ -1107,6 +1110,17 @@ class InitialOutreachServiceTest {
     }
 
     /** V-5：成员档案按层从 ES `_mget` 读取（当前事实），非本批快照。 */
+    /** R-3：人物调用链经严格批读边界读取当前层；测试替身按同一数据复现（失败由独立用例覆盖）。 */
+    private fun stubStrictLayerReads() {
+        Mockito.`when`(
+            expertSearchService.findByDocumentIdsStrict(anyIndexLevel(), Mockito.anyList())
+        ).thenAnswer { invocation ->
+            expertSearchService.findByDocumentIds(
+                invocation.getArgument(0), invocation.getArgument(1)
+            )
+        }
+    }
+
     private fun stubCurrentMemberProfiles(profiles: List<ExpertProfile>) {
         Mockito.`when`(expertSearchService.findByDocumentIds(anyIndexLevel(), Mockito.anyList()))
             .thenAnswer { invocation ->

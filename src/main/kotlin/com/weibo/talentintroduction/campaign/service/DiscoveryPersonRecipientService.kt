@@ -56,6 +56,14 @@ data class PersonRecipientSelection(
     }
 }
 
+/**
+ * R-1（V-27）：ticket 具体地址的当前资格结论。[reasons] 为空表示当前可发；
+ * 非空即不可发（原因可审计），且**不**因本次自身 contact 的历史豁免而放宽。
+ */
+data class AddressEligibility(val reasons: List<String>) {
+    val eligible: Boolean get() = reasons.isEmpty()
+}
+
 /** I-1/I-3: 人物级排除原因 key（准入状态 key 复用 [RecipientAdmissionReasonKeys]）。 */
 object PersonRecipientReasonKeys {
     /** 人物有人工拒绝/身份冲突等硬保护，整组不可首发。 */
@@ -72,6 +80,12 @@ object PersonRecipientReasonKeys {
     const val PERSON_NOT_LIVE = "PERSON_NOT_LIVE_SCOPE"
     /** V-5：成员**当前**档案事实与登记指纹不一致（档案已改动）—— 关系待重核，整组排除。 */
     const val PERSON_RELATION_STALE = "PERSON_RELATION_STALE"
+    /** R-3（V-5）：必需层读取失败/响应不完整 —— 与「该层无档案」严格区分，整组不可验证。 */
+    const val PERSON_LAYER_READ_FAILED = "PERSON_LAYER_READ_FAILED"
+    /** R-1（V-27）：ticket 具体地址与档案当前邮箱不一致（地址已变）。 */
+    const val ADDRESS_CHANGED = "ADDRESS_CHANGED"
+    /** R-1/R-8（V-27/V-12）：该地址当前已知运营状态不合格（EMAIL_INVALID）。 */
+    const val EMAIL_INELIGIBLE = "EMAIL_INVALID"
     /** 已发现（实时 discovered）但未登记到人物 —— fail-closed，绝不逐档案静默发信。 */
     const val PERSON_MAPPING_MISSING = "PERSON_MAPPING_MISSING"
 }
@@ -317,12 +331,19 @@ class DiscoveryPersonRecipientService(
         memberDocIds.forEach { byDocId[it] = LinkedHashMap() }
         val candidateDocIds = LinkedHashSet<String>()
         val search = expertSearchService
+        val failedLevels = LinkedHashSet<String>()
         if (search != null) {
             val levelNames = (scope.funnelLevels + ExpertIndexLevel.values().map { it.name }).distinct()
             for (levelName in levelNames) {
                 val level = runCatching { ExpertIndexLevel.valueOf(levelName) }.getOrNull() ?: continue
-                // 读取异常按「该层读不到」处理：成员缺档案会被 fail-closed 排除，绝不退回旧快照。
-                val current = runCatching { search.findByDocumentIds(level, memberDocIds) }.getOrDefault(emptyList())
+                // R-3（V-5）：读取失败/响应不完整必须与「该层合法无档案」严格区分 —— 前者整组不可验证，
+                // 绝不被其他层的存在掩盖（RAW 失败而 CANDIDATE 有文档不得放行）。
+                val current = try {
+                    search.findByDocumentIdsStrict(level, memberDocIds)
+                } catch (e: Exception) {
+                    failedLevels += levelName
+                    continue
+                }
                 current.forEach { profile ->
                     val docId = docIdOf(profile)
                     byDocId.getOrPut(docId) { LinkedHashMap() }[level] = profile
@@ -330,7 +351,7 @@ class DiscoveryPersonRecipientService(
                 }
             }
         }
-        return LoadedGroup(byDocId, candidateDocIds)
+        return LoadedGroup(byDocId, candidateDocIds, failedLevels)
     }
 
     /**
@@ -341,6 +362,7 @@ class DiscoveryPersonRecipientService(
         group: LoadedGroup,
         records: Map<String, DiscoveryPersonMemberRecord>
     ): String? {
+        if (group.failedLevels.isNotEmpty()) return PersonRecipientReasonKeys.PERSON_LAYER_READ_FAILED
         for ((docId, byLevel) in group.membersByDocId) {
             val layers = MEMBER_LAYERS.mapNotNull { byLevel[it] }
             if (layers.isEmpty()) return PersonRecipientReasonKeys.PERSON_UNREADABLE
@@ -394,12 +416,55 @@ class DiscoveryPersonRecipientService(
      */
     private data class LoadedGroup(
         val membersByDocId: Map<String, Map<ExpertIndexLevel, ExpertProfile>>,
-        val candidateDocIds: Set<String>
+        val candidateDocIds: Set<String>,
+        /** R-3：读取失败/响应不完整的层名（与「该层无档案」严格区分）。 */
+        val failedLevels: Set<String> = emptySet()
     ) {
         fun primary(docId: String): ExpertProfile? = membersByDocId[docId]?.let { byLevel ->
             MEMBER_LAYERS.firstNotNullOfOrNull { byLevel[it] }
         }
     }
+
+    /**
+     * R-1（V-27）：ticket 具体地址的**当前**资格（只读；只豁免「历史重复」，其余照常判定）。
+     * 覆盖：当前准入结论、档案当前邮箱一致性、邮箱非空、抑制、该地址当前运营状态（EMAIL_INVALID）。
+     * 读取失败一律保守不可许可，绝不因自身 contact 的历史豁免而跳过。
+     */
+    fun currentAddressEligibility(profile: ExpertProfile, address: String): AddressEligibility {
+        val normalized = normalizeAddress(address)
+        val reasons = LinkedHashSet<String>()
+        val selection = batchRecipientSelectionService.select(
+            BatchRecipientSelectionService.admissionOnlyScope(), listOf(profile)
+        )
+        val decision = (selection.excluded + selection.included).firstOrNull()
+        if (decision == null || docIdOf(profile) !in selection.includedDocIds) {
+            // R-1（V-27）：自身绑定联系人造成的「历史重复」（ALREADY_CONTACTED）由 guard 的历史归因
+            // 单独判定，此处不重复阻断；其余原因（人工拒绝/身份冲突/未初始化/同步失败）照旧不可发。
+            val keys = decision?.let { BatchRecipientSelectionService.reasonKeysOf(it) }.orEmpty()
+                .filter { it != PersonRecipientReasonKeys.ALREADY_CONTACTED }
+            if (keys.isEmpty() && decision == null) reasons += PersonRecipientReasonKeys.NO_QUALIFIED_EMAIL
+            reasons += keys
+        }
+        val currentEmail = profile.email?.takeIf { it.isNotBlank() }?.let { normalizeAddress(it) }
+        if (currentEmail == null || currentEmail != normalized) {
+            reasons += PersonRecipientReasonKeys.ADDRESS_CHANGED
+        }
+        if (isSuppressedEmail(address)) reasons += PersonRecipientReasonKeys.SUPPRESSED
+        if (contactEmailIneligible(address)) reasons += PersonRecipientReasonKeys.EMAIL_INELIGIBLE
+        return AddressEligibility(reasons.filter { it.isNotBlank() }.distinct())
+    }
+
+    /** 该地址当前联系人的运营状态是否已知不合格（EMAIL_INVALID）；读取失败保守视为不合格。 */
+    private fun contactEmailIneligible(address: String): Boolean {
+        val repository = expertContactRepository ?: return false
+        return try {
+            repository.findFirstByExpertEmailOrderByUpdatedAtDesc(address)?.operatorStatus == "EMAIL_INVALID"
+        } catch (e: Exception) {
+            true
+        }
+    }
+
+    private fun normalizeAddress(value: String): String = value.trim().lowercase(Locale.ROOT)
 
     private fun qualifies(profile: ExpertProfile): Boolean =
         !profile.email.isNullOrBlank() && !isSuppressedEmail(profile.email)

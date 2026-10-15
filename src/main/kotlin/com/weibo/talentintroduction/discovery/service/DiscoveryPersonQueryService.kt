@@ -73,6 +73,9 @@ class DiscoveryPersonQueryService(
         const val STATUS_SUPPRESSED = "SUPPRESSED"
         const val STATUS_UNKNOWN = "UNKNOWN"
 
+        /** R-8：当前运营状态已知不合格（不可发送）——沿用既有非许可状态投影，不改持久准入结论。 */
+        const val OPERATOR_STATUS_EMAIL_INVALID = "EMAIL_INVALID"
+
         private val LAYERS =
             listOf(ExpertIndexLevel.RAW, ExpertIndexLevel.CANDIDATE, ExpertIndexLevel.APPLICATION)
     }
@@ -254,11 +257,12 @@ class DiscoveryPersonQueryService(
         val profilesByDoc = loadProfilesByDoc(docIds)
         if (memberRow == null && profilesByDoc[docId].isNullOrEmpty()) return null
 
+        // R-8：联系人真值不可得必须与「无联系人」区分 —— null 表示读取失败，展示投影一律 UNKNOWN。
         val contacts = try {
             contactRepository.findByOrcidIdIn(docIds).groupBy { it.orcidId }
         } catch (e: Exception) {
             log.warn("人物详情读取联系人失败 docId={}: {}", docId, e.message)
-            emptyMap()
+            null
         }
         val rowByDoc = memberRows.associateBy { it.expertDocId }
         val representativeDocId = person?.primaryDocId ?: docId
@@ -272,7 +276,7 @@ class DiscoveryPersonQueryService(
             val levels = profiles.map { it.first.name }
             val raw = profiles.firstOrNull()?.second
             val stored = rowByDoc[id]
-            val contact = contacts[id]?.maxByOrNull { it.updatedAt ?: java.time.LocalDateTime.MIN }
+            val contact = contacts?.get(id)?.maxByOrNull { it.updatedAt ?: java.time.LocalDateTime.MIN }
             // V-12：关系失效（当前标签/证据指纹不成立）的成员，其准入 token 一律不可信。
             val stale = stored != null && isStale(stored.identityFingerprint, id, profiles)
             DiscoveryPersonMember(
@@ -282,7 +286,11 @@ class DiscoveryPersonQueryService(
                 contactId = contact?.id,
                 contactStatus = contact?.currentStatus,
                 operatorStatus = contact?.operatorStatus ?: raw?.operatorStatus,
-                admissionStatus = perEmailAdmissionStatus(raw?.email, admissionStates[id], stale),
+                admissionStatus = perEmailAdmissionStatus(
+                    raw?.email, admissionStates[id], stale,
+                    currentOperatorStatus = contact?.operatorStatus,
+                    contactReadable = contacts != null
+                ),
                 representative = id == representativeDocId,
                 stale = stale,
                 evidenceSource = evidenceSource(stored?.evidenceJson, raw)
@@ -295,7 +303,7 @@ class DiscoveryPersonQueryService(
             representativeDocId = representativeDocId,
             requestedDocId = docId,
             members = members,
-            conflicts = memberConflicts(members, contacts, docIds)
+            conflicts = memberConflicts(members, contacts.orEmpty(), docIds)
         )
     }
 
@@ -369,10 +377,15 @@ class DiscoveryPersonQueryService(
     private fun perEmailAdmissionStatus(
         email: String?,
         admissionState: RecipientAdmissionState?,
-        stale: Boolean
+        stale: Boolean,
+        currentOperatorStatus: String?,
+        contactReadable: Boolean
     ): String {
         if (email.isNullOrBlank()) return STATUS_UNKNOWN
         if (stale) return STATUS_UNKNOWN
+        // R-8（V-12）：当前已知运营状态不合格（EMAIL_INVALID）或联系人真值不可得 ⇒ 不得投影为可发送。
+        if (!contactReadable) return STATUS_UNKNOWN
+        if (currentOperatorStatus == OPERATOR_STATUS_EMAIL_INVALID) return STATUS_UNKNOWN
         val suppressed = isSuppressed(email) ?: return STATUS_UNKNOWN
         if (suppressed) return STATUS_SUPPRESSED
         if (admissionState == null || admissionState == RecipientAdmissionState.NOT_DISCOVERY) return STATUS_UNKNOWN

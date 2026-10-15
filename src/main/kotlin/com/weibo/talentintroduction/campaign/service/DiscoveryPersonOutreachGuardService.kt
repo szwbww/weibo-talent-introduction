@@ -535,11 +535,15 @@ class DiscoveryPersonOutreachGuardService(
             val selection = recipientService.selectAdmission(listOf(profile))
             val target = (selection.included + selection.excluded).firstOrNull()
             if (target != null) {
+                // R-1（V-27）：自身行豁免**只**作用于历史重复（ALREADY_CONTACTED）；其余原因照旧阻断。
                 val ownContactOnly = ownContactId != null &&
                     target.exclusionReasons.isNotEmpty() &&
                     target.exclusionReasons.all { it == PersonRecipientReasonKeys.ALREADY_CONTACTED } &&
                     isOwnBoundContactTheOnlyOne(ownContactId, lookupIds, memberEmails)
-                if (target.exclusionReasons.isNotEmpty() && !ownContactOnly) {
+                val otherReasons = target.exclusionReasons.filter {
+                    it != PersonRecipientReasonKeys.ALREADY_CONTACTED
+                }
+                if (otherReasons.isNotEmpty() || (target.exclusionReasons.isNotEmpty() && !ownContactOnly)) {
                     return HistoryFindings(
                         blocked = true,
                         code = OutreachGuardReasonCodes.HISTORY_PROTECTED,
@@ -547,18 +551,25 @@ class DiscoveryPersonOutreachGuardService(
                         json = jsonSummary(target.exclusionReasons, lookupIds, memberEmails, historyReference)
                     )
                 }
-                // 本次自己的行已核实为**唯一**绑定联系人时，被排除的选择结果不带选中地址 ——
-                // 此时以 ticket 绑定的地址为准（该地址已在 verifiedOwnContactId 中与自己的行核对过）。
-                if (!ownContactOnly) {
-                    val selectedEmail = target.selectedEmail?.let { normalize(it) }
-                    if (selectedEmail == null || selectedEmail != recipient) {
-                        return HistoryFindings(
-                            blocked = true,
-                            code = OutreachGuardReasonCodes.ADDRESS_INELIGIBLE,
-                            detail = "current qualified address differs",
-                            json = jsonSummary(listOf("ADDRESS_INELIGIBLE"), lookupIds, memberEmails, historyReference)
+                // R-1（V-27）：具体地址的当前资格必须独立复验（当前准入、原 scope、验证、抑制、
+                // 地址一致性、当前运营状态）—— 自身 contact 的所有权不证明当前邮箱可发。
+                val eligibility = try {
+                    recipientService.currentAddressEligibility(profile, recipient)
+                } catch (e: Exception) {
+                    log.warn("具体地址资格复验失败 docId={}: {}", selectedDocId, e.message)
+                    null
+                }
+                // 资格真值不可得 ⇒ 保守不可发（绝不因自身 contact 的历史豁免而放行）。
+                if (eligibility == null || !eligibility.eligible) {
+                    return HistoryFindings(
+                        blocked = true,
+                        code = OutreachGuardReasonCodes.ADDRESS_INELIGIBLE,
+                        detail = eligibility?.reasons?.joinToString(",") ?: "ELIGIBILITY_UNAVAILABLE",
+                        json = jsonSummary(
+                            eligibility?.reasons ?: listOf("ELIGIBILITY_UNAVAILABLE"),
+                            lookupIds, memberEmails, historyReference
                         )
-                    }
+                    )
                 }
             }
         }

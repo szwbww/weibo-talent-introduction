@@ -111,7 +111,12 @@ class DiscoveryPersonService(
                     }
                 }
                 is Resolution.Attach -> {
-                    val status = write { repository.attachToPerson(resolution.personId, resolution.members, resolution.keys, now()) }
+                    // R-2：锁后核验（revision + 当前完整作者键）——并发窗口内的事实变化不得被旧结果掩盖。
+                    val status = write {
+                        repository.attachToPersonVerified(
+                            resolution.personId, resolution.members, resolution.keys, now(), resolution.expectedRevision
+                        )
+                    }
                     if (status == DiscoveryPersonWriteStatus.APPLIED) {
                         return result(
                             DiscoveryPersonOutcome.ATTACHED,
@@ -340,7 +345,9 @@ class DiscoveryPersonService(
         data class Attach(
             val personId: String,
             val members: List<DiscoveryPersonMemberWrite>,
-            val keys: List<String>
+            val keys: List<String>,
+            /** R-2：核验该根时读到的 revision —— 锁后必须仍然一致才允许提交。 */
+            val expectedRevision: Long
         ) : Resolution
         data class Unchanged(val result: DiscoveryPersonRegistrationResult) : Resolution
         data class Reject(val result: DiscoveryPersonRegistrationResult) : Resolution
@@ -394,7 +401,13 @@ class DiscoveryPersonService(
                 )
             )
         }
-        return Resolution.Attach(personId, newMembers, newKeys)
+        val expectedRevision = try {
+            repository.findPerson(personId)?.revision
+        } catch (e: Exception) {
+            log.warn("人物登记读取根 revision 失败 personId={}: {}", personId, e.message)
+            null
+        } ?: return Resolution.Reject(result(DiscoveryPersonOutcome.STALE, reason = "ROOT_REVISION_UNAVAILABLE"))
+        return Resolution.Attach(personId, newMembers, newKeys, expectedRevision)
     }
 
     /**

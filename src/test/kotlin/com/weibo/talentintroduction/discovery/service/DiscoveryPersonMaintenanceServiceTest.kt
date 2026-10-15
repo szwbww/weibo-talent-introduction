@@ -255,10 +255,12 @@ class DiscoveryPersonMaintenanceServiceTest {
         assertEquals(1, repository.persons.size)
         assertEquals(2, repository.members.size)
 
+        // R-6（V-14）：本轮不新增 receipt/schema —— 缺「本次执行」的可信归属凭据时，同形目标状态
+        // 不得被推断为自己已完成：重放同一请求保守拒绝（RELATION_CHANGED），并保持零新增写入。
         val second = (service.apply(request) as MaintenanceApplyOutcome.Ok).results.single()
-        assertEquals(ApplyStatus.UNCHANGED, second.status)
-        assertEquals(first.personId, second.personId)
-        assertEquals(2, repository.members.size, "重复 apply 0 新增")
+        assertEquals(ApplyStatus.CHANGED_OR_FAILED, second.status)
+        assertEquals(MaintenanceReasonCodes.RELATION_CHANGED, second.reason)
+        assertEquals(2, repository.members.size, "保守拒绝同样 0 新增")
     }
 
     @Test
@@ -788,6 +790,27 @@ class DiscoveryPersonMaintenanceServiceTest {
             members.forEach { this.members[it.expertDocId] = record(it, personId, now) }
             authorKeys.forEach { keys[it] = personId }
             return DiscoveryPersonWriteStatus.APPLIED
+        }
+
+        override fun attachToPersonVerified(
+            personId: String,
+            members: List<DiscoveryPersonMemberWrite>,
+            authorKeys: List<String>,
+            now: LocalDateTime,
+            expectedRevision: Long
+        ): DiscoveryPersonWriteStatus {
+            if (persons[personId]?.revision != expectedRevision) {
+                return DiscoveryPersonWriteStatus.REVISION_CHANGED
+            }
+            val currentKeys = keys.filterValues { it == personId }.keys
+            val incomingByClass = authorKeys.distinct().groupBy { it.substringBefore(':') }
+            val currentByClass = currentKeys.groupBy { it.substringBefore(':') }
+            for ((keyClass, incoming) in incomingByClass) {
+                if (currentByClass[keyClass].orEmpty().any { it !in incoming }) {
+                    return DiscoveryPersonWriteStatus.AUTHOR_KEY_CONFLICT
+                }
+            }
+            return attachToPerson(personId, members, authorKeys, now)
         }
 
         override fun attachToPerson(

@@ -1443,6 +1443,32 @@ class ExpertIndexWriterServiceTest {
     }
 
     @Test
+    fun `findDiscoveryHitsByEmail rejects a timed out uniqueness search (V-28)`() {
+        val body = mapper.readTree(
+            """{"timed_out":true,"_shards":{"failed":1},"hits":{"hits":[
+              {"_index":"orcid_info","_id":"doc-a","_source":{"email":"a@example.org"}}]}}"""
+        )
+        Mockito.`when`(restTemplate.exchange(
+            Mockito.contains("/_search"), eq(HttpMethod.POST), any<HttpEntity<*>>(), eq(JsonNode::class.java)
+        )).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        assertThrows(IllegalStateException::class.java) { service.findDiscoveryHitsByEmail("a@example.org") }
+    }
+
+    @Test
+    fun `findDiscoveryHitsByEmail rejects a failed shard uniqueness search (V-28)`() {
+        val body = mapper.readTree(
+            """{"timed_out":false,"_shards":{"failed":1},"hits":{"hits":[
+              {"_index":"orcid_info","_id":"doc-a","_source":{"email":"a@example.org"}}]}}"""
+        )
+        Mockito.`when`(restTemplate.exchange(
+            Mockito.contains("/_search"), eq(HttpMethod.POST), any<HttpEntity<*>>(), eq(JsonNode::class.java)
+        )).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        assertThrows(IllegalStateException::class.java) { service.findDiscoveryHitsByEmail("a@example.org") }
+    }
+
+    @Test
     fun `findDiscoveryHitsByEmail never turns a query failure into no duplicate`() {
         Mockito.doThrow(HttpClientErrorException(HttpStatus.INTERNAL_SERVER_ERROR))
             .`when`(restTemplate).exchange(
