@@ -1,6 +1,6 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-10-13/discovery-identity-recovery-master.md
 
-- Status: REPAIR_PLAN_READY
+- Status: BLOCKED_PREFLIGHT
 - Review epoch: 3
 - Master plan: docs/plans/2026-10-13/discovery-identity-recovery-master.md (sha256 f69d8135ce0019ad36cc8939cf8101a6f584aac9983dec3dfc78eb2ae37ce238)
 - Governing master identity: f69d8135ce0019ad36cc8939cf8101a6f584aac9983dec3dfc78eb2ae37ce238; commit 36075ec06c5e4382f13606c995e24a13ec4470ce
@@ -12,8 +12,8 @@
 - Fast-p handoff: docs/plans/fast/2026-10-13-discovery-identity-recovery-master/human-review-handoff.md (sha256 ff9fa89083d24f9a3f6b37f798a8f201273df9c7b543d8a572316e7c4a390a64)
 - Master base: 9d353934b82ed3e36a193c70748e5efccb3d9e82
 - Final code head: 3b6f854e64eae0361b86cbb6af9a9b21b0385f13
-- Evidence parent before next commit: 73ba58f6e1f50eb03f61fcdb30c51e4ab97743c4
-- Previous evidence commit: 73ba58f6e1f50eb03f61fcdb30c51e4ab97743c4
+- Evidence parent before next commit: 509330a2a8c6008ece635805615426aeedb4217b
+- Previous evidence commit: 509330a2a8c6008ece635805615426aeedb4217b
 - Branch: fast/2026-10-13-discovery-identity-recovery-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master
 - Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
@@ -30,7 +30,7 @@
 - Repair code head: N/A for current draft; reviewed product remains 3b6f854e64eae0361b86cbb6af9a9b21b0385f13
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: DRAFT_READY; human execute-p approval of the exact current repair for bounded execution, durable handoff and requested aggregate re-review. B-1/B-2 remain unresolved; Initial FK scope remains separately unapproved.
+- Blocker/next action: 19 uncommitted product/test files; no new committed repair candidate. Complete the current exact repair through its authorized execute-p workflow, persist its committed handoff, then resume aggregate review. Historical Epoch 3 FAIL/DIVERGING and manual PENDING remain unchanged.
 
 ## Preflight — 2026-10-14 (Asia/Shanghai)
 
@@ -175,3 +175,37 @@
 - B-1/B-2 remain mandatory missing evidence, excluded as product repair tasks. R-1 contains required actual-entry eligibility-revocation/permission/protection regressions. E01 separately collects truthful complete healthy/competition evidence; known baseline FK failure must remain BLOCKED, never relabeled success or worked around by fake persistence, swallowing exceptions, or a row with id 0. Other in-scope failures cannot be dismissed as FK. The eight-defect repair may return READY_FOR_VERIFICATION when its own completion criteria pass; master PASS/integration still requires complete B-1/B-2 and human acceptance. Initial FK candidate scope is explicitly unapproved and needs its own human decision.
 - Machine verdict remains Epoch 3 FAIL / DIVERGING at product 3b6f854e64eae0361b86cbb6af9a9b21b0385f13; manual acceptance and new draft execution PENDING. No new machine epoch or fabricated acceptance. No automatic repair loop.
 - Controller evidence boundary: only this ledger.md and exact repair.md. Evidence parent before next commit 73ba58f6e1f50eb03f61fcdb30c51e4ab97743c4. No product changes, push, merge, deployment or history rewrite.
+
+## Resume preflight — 2026-10-15T17:27:21.129013+08:00
+
+- Outcome: BLOCKED_PREFLIGHT. Materially new blocker since the last REPAIR_PLAN_READY ledger: uncommitted product/test repair changes, with no new committed product candidate. No new machine-review epoch or reviewer dispatch.
+- Required discovery command rerun from the invoked repository: `python3 /Users/lukai/.agents/skills/review-fast-p/scripts/discover_fast_p.py --repo /Users/lukai/IdeaProjects/weibo-talent-introduction --master-plan docs/plans/2026-10-13/discovery-identity-recovery-master.md`; exit 0, SELECTED exactly one registered worktree, resolution DISCOVERED_FROM_GIT_WORKTREES. Selected worktree, branch, master/base/fast-final identities match the discovery record above. Governing and invoked master SHA256 f69d8135ce0019ad36cc8939cf8101a6f584aac9983dec3dfc78eb2ae37ce238; recorded commit 36075ec06c5e4382f13606c995e24a13ec4470ce; CONSISTENT; governing A1 unchanged. Fast ledger/handoff remain READY_FOR_HUMAN_REVIEW with ten terminal children.
+- Current evidence HEAD 509330a2a8c6008ece635805615426aeedb4217b; branch fast/2026-10-13-discovery-identity-recovery-master; selected worktree /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master. Base 9d353934b82ed3e36a193c70748e5efccb3d9e82, fast code cd6a38d662da881ec453839921922a30602eacb3, last reviewed code 3b6f854e64eae0361b86cbb6af9a9b21b0385f13 and recorded master commit all freshly confirmed ancestors of HEAD. Last reviewed code..HEAD contains only repair/review evidence files, no product commit.
+- Current repair SHA256 23d72492384dd6230800fd5efcbde74eb937ae1cf3c3b1b7e9e4b4624cb98424. No handoff for this repair identity is present; prior durable handoff belongs to the previous repair. Missing historical approval/executor prose is not the blocker; dirty product state and absence of a committed candidate are.
+- Index CLEAN before controller evidence edit; 19 unstaged product/test paths. Snapshot follows; changes may belong to an ongoing executor and were not edited, reset, staged or committed by this review controller.
+
+```text
+ M src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardService.kt
+ M src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonRecipientService.kt
+ M src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPersonRepository.kt
+ M src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt
+ M src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt
+ M src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryService.kt
+ M src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt
+ M src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt
+ M src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt
+ M src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt
+ M src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardServiceTest.kt
+ M src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonRecipientServiceTest.kt
+ M src/test/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachServiceTest.kt
+ M src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt
+ M src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt
+ M src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceServiceTest.kt
+ M src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonServiceTest.kt
+ M src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt
+ M src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt
+```
+
+- Historical machine verdict remains Epoch 3 FAIL / DIVERGING, report SHA256 d960eb47e743b025e654ebd36a907eb0d8e8d926164b3b821f0f1bb20475a7ac. No verdict on current uncommitted changes; no tests rerun. Manual acceptance/sign-off PENDING. B-1/B-2 and the separate unapproved Initial FK scope remain as previously recorded.
+- Required next action: complete the current exact repair through its authorized execution workflow, including a committed product boundary and durable handoff, then resume this aggregate review. This invocation grants no product/test changes or repair execution.
+- Evidence parent before next commit: 509330a2a8c6008ece635805615426aeedb4217b. Controller may commit only this ledger; no repeated blocker commit unless material cause changes.
