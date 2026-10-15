@@ -246,3 +246,67 @@ Retained failures during this round (kept, not erased): the first C17 attempt fa
 - `git status --porcelain` empty before and after the product commit; `git diff --check` clean; HEAD `1ab2881` on `fast/2026-10-13-discovery-identity-recovery-master` with `509330a` as ancestor.
 - Plan identity re-read at handoff: `23d72492…` unchanged. Worktree identity re-checked (`--expect-root/--expect-branch/--expect-git-dir`, exit 0).
 - No push, merge, deploy, real SMTP, production apply or switch-configuration change.
+
+---
+
+# Epoch-four repair execution — 2026-10-16
+
+## Execution identity
+
+- Approval source (exact human invocations): `$execute-p /Users/lukai/…/docs/plans/fix/discovery-identity-recovery-master/repair.md` (the epoch-four revision, per the plan's Human Approval section) followed by the human continuation "批准 继续 修复".
+- Repair identity: `docs/plans/fix/discovery-identity-recovery-master/repair.md`, SHA-256 `67af76b4007aa92af3cee98eb3a6c1568071db13c2ea14cca74d5008c6120c41` (28,387 bytes) — unchanged at handoff. Prior identities (`845500de…`, `1c373614…`, `23d72492…`) are superseded; their records above remain historical evidence only.
+- Execution epoch: NEW for the revised bytes (prior task statuses/evidence reset).
+- Target worktree / branch: unchanged (`…-fast-2026-10-13-discovery-identity-recovery-master` @ `fast/2026-10-13-discovery-identity-recovery-master`).
+- Executor: `execute-p` main integrator session (inline; no delegation).
+- Pre-execution code SHA: `86e03e4` (`docs(review-fast-p): record fourth aggregate review and repair plan`; worktree clean at it).
+- Post-execution code SHA: `a585fd7698f20067a3394e218e57fe322090ed38` — subject `fix(discovery): bind current identity and admission evidence`.
+- Implementation boundary (this round): `86e03e4..a585fd7`.
+
+## Tasks (R-1…R-6, findings V-3/V-5/V-13/V-12/V-29/V-30/V-31)
+
+| Task | Status | Files | Evidence |
+|---|---|---|---|
+| R-1 V-3 revision bound to the verified facts | IMPLEMENTED | P (PT/RT untouched) | root revision is read **before** the whole-root re-verification and re-read **after**; any change ⇒ explicit STALE `ROOT_REVISION_CHANGED_DURING_VERIFICATION` with zero writes; the attach decision carries exactly that re-read revision into `attachToPersonVerified`. |
+| R-2 V-5/V-13 strict batch-read integrity + strict query | IMPLEMENTED | ES, Q + EST/QT/SELT/CCT | `findByDocumentIdsStrict` now validates each `docs` item (error, missing `found`, duplicate/out-of-set `_id`, `found=true` without `_source`, missing requested ids ⇒ `ExpertSearchUnavailableException`; only `found=false` is legal absence); `DiscoveryPersonQueryService.loadProfilesByDoc` (person detail + verified-relation re-check) uses the strict boundary, so unknown never degrades into a false stale/independent-contact count. |
+| R-3 V-12 invalid-email projection | IMPLEMENTED | Q + QT | the permission projection uses the **effective** operator status (`contact ?: ES`): an ES `EMAIL_INVALID` with no contact row can no longer project `ADMITTED`. |
+| R-4 V-29 in-recovery continuation | IMPLEMENTED | REC (RECT untouched, existing suite green) | mixed-name resumes stay in 02 when at least one present layer already holds this request's target proof; only the initial full-name/no-target-proof 01 case still routes to repair. |
+| R-5 V-30 current-policy first | IMPLEMENTED | REV + REVT | `ExpertRevalidationService` now injects `DiscoveryAdmissionPolicy` and, before reusing a same-identity old AUTO_PASSED admission, forms the current policy conclusion; current hard blocking (incl. `INSTITUTION_EVIDENCE_INVALID`) goes through the reconcile path with the current reason codes and is recorded automatically — the old decision is never re-projected over a current block. |
+| R-6 V-31 test contract | PARTIAL — see deviations | GT (+ INITT/MIT/MEMT unchanged) | no hardcoded `admitted` short-circuit remains; the EMAIL_INVALID denial and the own-contact positive control are real-DB regressions; E01's four methods are reworked (b2HealthyInitial now asserts honest success and fails on the known FK; competition asserts exactly 1 SMTP). The reserve→revoke-admission claim regression remains unresolved (see deviation 1). |
+
+## Commands (fresh, final code state)
+
+| Command | Result | Counts |
+|---|---|---|
+| C01–C08, C10 | PASS | 149 / 230 / 310 / 48 / 164 / 15 OK / 6 / 24 / 283 |
+| C09 (real migrations) | PASS | 46 / 0 / 0 / 0 |
+| C11 (real MySQL) | PASS | 30 / 0 / 0 / 0 |
+| C12 | PASS | 151 / 0 / 0 / 0 |
+| C13 / C14 / C15 | PASS | clean / 23 / 1680 |
+| C16 | PASS | 260 / 0 / 0 / 0 |
+| C17 (real MySQL) | PASS | 294 / 0F / 0E / 4S (the 4 skips are the E01-gated methods) |
+| C18 | PASS | 33 / 0 / 0 / 0 |
+| C19 | PASS | 18 OK |
+| C22 | PASS | 1 / 0 / 0 / 0 |
+| C21 `clean package` | PASS | **5089 / 0F / 0E / 20S** |
+| C20 | NOT RUN | approved old-JDK tzdb exception |
+| **E01** | RAN; 3 of 4 green + 1 honest error | `b2HealthyInitial` fails on the known FK chain (`mail_send_attempt_id=0` → `fk_mail_record_send_attempt`, SMTP=1, delivery right preserved as SENDING); `b2HealthyManualInitial`, `b2HealthyManualExpert`, `b2SamePersonCompetition` pass (SMTP total 1 in the competition). |
+
+Retained failures kept: the first suite sweep hit three Docker-boot failures (C09/C11/C17: `Docker is required…` — OrbStack had stopped, socket missing) and one QT fixture (missing strict-mirror stub); after restarting OrbStack and fixing the QT stub, every command above passed. E01's FK failure is recorded, not relabeled.
+
+## B-1 / B-2 / Initial FK status (unchanged by this repair)
+
+- **B-1: BLOCKED** — no 51,829-row real-shape performance measurement exists.
+- **B-2: BLOCKED — Initial FK prerequisite / remaining evidence.** E01 executed and is recorded; the healthy Initial experiment honestly fails on the known FK chain, and the MI/MEM methods remain at the entry seam (real guard/repositories/transaction + fake SMTP) rather than full service objects.
+- **Initial FK**: excluded (`NEW_SCOPE_REQUIRED`); not fixed, not mocked, not deleted.
+
+## Deviations
+
+1. **R-6 revocation regression unresolved (carried from epoch three, re-reported).** The guard's claim did not observe an admission flipped from AUTO_PASSED to HOLD after a successful reserve in the GT fixture (both via a mutable stub and an explicit second stub on `resolveAdmissionBatch`, which `selectProtection` provably calls). The GT test carries an explicit open-question comment; no assertion masks it. Admission revocation at *reserve* is covered by the existing V-26/SELT HOLD cases. This is the known V-27/V-31 residual.
+2. E01's MI/MEM methods exercise the entry seam, not the full 27/11-collaborator service objects; disclosed, not claimed as full-entry evidence.
+3. INITT/MIT/MEMT were not modified this round (their epoch-three contract tests already assert the guard interactions); the plan's "actual-entry" revocation regressions were added to GT instead, within the authorized set.
+
+## Worktree / index state
+
+- `git status --porcelain` empty before and after the product commit; `git diff --check` clean; HEAD `a585fd7` on `fast/2026-10-13-discovery-identity-recovery-master` with `86e03e4` as ancestor.
+- Plan identity re-read at handoff: `67af76b4…` unchanged. Worktree identity re-checked (`--expect-root/--expect-branch/--expect-git-dir`, exit 0).
+- No push, merge, deploy, real SMTP, production apply or switch-configuration change.
