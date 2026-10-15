@@ -1,6 +1,6 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-10-13/discovery-identity-recovery-master.md
 
-- Status: MACHINE_BLOCKED
+- Status: REPAIR_PLAN_READY
 - Review epoch: 3
 - Master plan: docs/plans/2026-10-13/discovery-identity-recovery-master.md (sha256 f69d8135ce0019ad36cc8939cf8101a6f584aac9983dec3dfc78eb2ae37ce238)
 - Governing master identity: f69d8135ce0019ad36cc8939cf8101a6f584aac9983dec3dfc78eb2ae37ce238; commit 36075ec06c5e4382f13606c995e24a13ec4470ce
@@ -12,8 +12,8 @@
 - Fast-p handoff: docs/plans/fast/2026-10-13-discovery-identity-recovery-master/human-review-handoff.md (sha256 ff9fa89083d24f9a3f6b37f798a8f201273df9c7b543d8a572316e7c4a390a64)
 - Master base: 9d353934b82ed3e36a193c70748e5efccb3d9e82
 - Final code head: 3b6f854e64eae0361b86cbb6af9a9b21b0385f13
-- Evidence parent before next commit: 038da49677c1893460d01f0d5b34cc7795c59b12
-- Previous evidence commit: 038da49677c1893460d01f0d5b34cc7795c59b12
+- Evidence parent before next commit: 73ba58f6e1f50eb03f61fcdb30c51e4ab97743c4
+- Previous evidence commit: 73ba58f6e1f50eb03f61fcdb30c51e4ab97743c4
 - Branch: fast/2026-10-13-discovery-identity-recovery-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master
 - Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
@@ -23,14 +23,14 @@
 - Reviewer attempt: 1
 - Machine result: FAIL
 - Machine report epoch: machine-verification.md — Epoch 3; FAIL / DIVERGING; Epochs 1 and 2 preserved append-only
-- Repair artifact: docs/plans/fix/discovery-identity-recovery-master/repair.md (sha256 1c3736141987d41bdbc1737bcd0756cf35f4a8fca0e97bc8cd661586dbeb1f59)
-- Repair evidence mode: DURABLE_HANDOFF
-- Repair approval source: repair-execution.md revised round 2 records human execute-p invocation of this exact repair path and hash
-- Repair executor: Canonical identity UNAVAILABLE; execute-p main integrator; Round2SendPath, Round2IdentityScope, Round2QueryMaint, Round2Acceptance labels recorded
-- Repair code head: 3b6f854e64eae0361b86cbb6af9a9b21b0385f13
+- Repair artifact: docs/plans/fix/discovery-identity-recovery-master/repair.md (sha256 23d72492384dd6230800fd5efcbde74eb937ae1cf3c3b1b7e9e4b4624cb98424); current draft after Epoch 3 human adjudication
+- Repair evidence mode: N/A for current draft; prior durable execution evidence preserved unchanged
+- Repair approval source: Human approved materially different strategy and same-path planning: 「好的 你来更新repair吧」; current draft execution PENDING
+- Repair executor: N/A for current draft; prior executor metadata preserved in repair-execution.md
+- Repair code head: N/A for current draft; reviewed product remains 3b6f854e64eae0361b86cbb6af9a9b21b0385f13
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: Human adjudication of new repair strategy/scope after FAIL / DIVERGING; current eight P1 and B-1/B-2 remain. No repair planning/execution or integration authorized by this review.
+- Blocker/next action: DRAFT_READY; human execute-p approval of the exact current repair for bounded execution, durable handoff and requested aggregate re-review. B-1/B-2 remain unresolved; Initial FK scope remains separately unapproved.
 
 ## Preflight — 2026-10-14 (Asia/Shanghai)
 
@@ -164,3 +164,14 @@
 - Controller completeness checks: exact full boundary, governing/amendment identities, 69-file cumulative authority matrix, 33-file repair scope/29 changed files, master/child/repair contract matrices, V-1–V-29 lineage, all eight detailed P1, RECORD_ONLY mapping, B-1/B-2, complete 22-row command table (21 executions plus C20 exception), exact command strings matched results.jsonl, actual exits/counts, retained diagnostic failure and no-product-modification statement.
 - Returned complete report SHA256 80e97772c3900c3bf91797d497808daf5f2ea9f6deba68635dc9a46073b45590 appended verbatim. Prior machine report prefix preserved byte-for-byte, SHA256 7997793ff45408ea4a83cbb023b70e0f36c96b8e31f4f78170bc7af2d9141dd7. Durable repair-execution.md remains unchanged, SHA256 702bfbbfe66a77c9c83f0fe5a77dd5f1cd1bc5fba2fb2306f1bc248a7280ad5e.
 - Product/test/index verified unchanged before evidence persistence. Evidence parent before next commit 038da49677c1893460d01f0d5b34cc7795c59b12; final_code_head remains 3b6f854e64eae0361b86cbb6af9a9b21b0385f13. This phase stages only selected ledger.md and machine-verification.md; no push, merge, deployment or history rewrite.
+
+## Epoch 3 human adjudication and revised repair — 2026-10-15T15:03:36.424546+08:00
+
+- Human asked recommended repair strategy. Proposed materially different approach: preserve verified repairs; limit own-contact exemption to history only and re-check all current concrete-email eligibility; validate full root/revision under lock; fail closed on incomplete layer/uniqueness/aggregation reads; bind all existing layer versions in maintenance expected and refuse unproven own-resume/import; complete every existing layer proof and prevent invalid-email sendable projection. Use actual three-entry/shared-MySQL/real-guard/fake-SMTP regressions; performance evidence and baseline Initial FK prerequisite are separately recorded. Explicitly include Writer for V-28 rather than reusing the old file scope.
+- Explicit human reply: 「好的 你来更新repair吧」. This approves the different approach and updating the same repair artifact, satisfying the DIVERGING human-adjudication planning stop. It does not approve execution of the new draft, unrelated FK repair, schema changes, or weaker master acceptance.
+- Planner /root/aggregate_review_epoch3 continued from its independent completed report using repair-p. Result DRAFT_READY: 8 root-cause tasks, 28 exact existing files; included V-3/V-5/V-12/V-13/V-14/V-27/V-28/V-29. V-27 remains the actual new regression; V-28/V-29 are newly found in the cumulative boundary, not falsely attributed to the latest repair. Resolved findings and nonmandatory P2 excluded.
+- New repair SHA256 23d72492384dd6230800fd5efcbde74eb937ae1cf3c3b1b7e9e4b4624cb98424. Prior repair SHA256 1c3736141987d41bdbc1737bcd0756cf35f4a8fca0e97bc8cd661586dbeb1f59 remains recoverable at 73ba58f6e1f50eb03f61fcdb30c51e4ab97743c4. Current full report SHA256 d960eb47e743b025e654ebd36a907eb0d8e8d926164b3b821f0f1bb20475a7ac and historical repair-execution SHA256 702bfbbfe66a77c9c83f0fe5a77dd5f1cd1bc5fba2fb2306f1bc248a7280ad5e unchanged.
+- Controller verified 28 unique existing Authorized Files, all 8 tasks, unchanged exact C01–C22 command strings (C20 approved exception), resolved future execution/handoff paths and concrete commit subjects. No product/test/full verification run this planning turn. Product/index/HEAD remained unchanged before controller evidence staging.
+- B-1/B-2 remain mandatory missing evidence, excluded as product repair tasks. R-1 contains required actual-entry eligibility-revocation/permission/protection regressions. E01 separately collects truthful complete healthy/competition evidence; known baseline FK failure must remain BLOCKED, never relabeled success or worked around by fake persistence, swallowing exceptions, or a row with id 0. Other in-scope failures cannot be dismissed as FK. The eight-defect repair may return READY_FOR_VERIFICATION when its own completion criteria pass; master PASS/integration still requires complete B-1/B-2 and human acceptance. Initial FK candidate scope is explicitly unapproved and needs its own human decision.
+- Machine verdict remains Epoch 3 FAIL / DIVERGING at product 3b6f854e64eae0361b86cbb6af9a9b21b0385f13; manual acceptance and new draft execution PENDING. No new machine epoch or fabricated acceptance. No automatic repair loop.
+- Controller evidence boundary: only this ledger.md and exact repair.md. Evidence parent before next commit 73ba58f6e1f50eb03f61fcdb30c51e4ab97743c4. No product changes, push, merge, deployment or history rewrite.
