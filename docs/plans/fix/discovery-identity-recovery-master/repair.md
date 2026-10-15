@@ -4,222 +4,168 @@ Status: DRAFT — HUMAN APPROVAL REQUIRED
 Baseline plan: docs/plans/2026-10-13/discovery-identity-recovery-master.md
 Baseline SHA256: f69d8135ce0019ad36cc8939cf8101a6f584aac9983dec3dfc78eb2ae37ce238
 Baseline recorded commit: 36075ec06c5e4382f13606c995e24a13ec4470ce
-Verification report: docs/plans/review/2026-10-13-discovery-identity-recovery-master/machine-verification.md — Epoch 3（2026-10-15T13:43:21+08:00），FAIL / DIVERGING
-Verification report SHA256 at planning: d960eb47e743b025e654ebd36a907eb0d8e8d926164b3b821f0f1bb20475a7ac（已提交的完整三epoch报告，不是/tmp单epoch副本）
-Implementation boundary reviewed: 9d353934b82ed3e36a193c70748e5efccb3d9e82..3b6f854e64eae0361b86cbb6af9a9b21b0385f13
-Reviewed code / next repair base: 3b6f854e64eae0361b86cbb6af9a9b21b0385f13
-Evidence HEAD at planning: 73ba58f6e1f50eb03f61fcdb30c51e4ab97743c4
-Prior repair SHA256: 1c3736141987d41bdbc1737bcd0756cf35f4a8fca0e97bc8cd661586dbeb1f59（旧执行批准不适用于本修订）
-Prior repair execution: docs/plans/review/2026-10-13-discovery-identity-recovery-master/repair-execution.md，SHA256 702bfbbfe66a77c9c83f0fe5a77dd5f1cd1bc5fba2fb2306f1bc248a7280ad5e
+Verification report: docs/plans/review/2026-10-13-discovery-identity-recovery-master/machine-verification.md — Epoch 4, independent reviewer /root/aggregate_review_epoch4, FAIL / PROGRESSING
+Verification payload identity: /tmp/aggregate-epoch4/verification-complete.md SHA256 550e01a7c5313a41e33719d208a3e82752c1117af16dfbb7b019e72af251961a (controller appends complete report to the exact destination; reviewer does not edit review evidence)
+Implementation boundary reviewed: 9d353934b82ed3e36a193c70748e5efccb3d9e82..1ab288125b4e00b1237a69c48320d315741eaf76
+Reviewed code / next repair base: 1ab288125b4e00b1237a69c48320d315741eaf76
+Evidence HEAD at planning: e3169cfa3c6657a6b479f3ccbcaf91bdcfd007c6
+Prior repair SHA256: 23d72492384dd6230800fd5efcbde74eb937ae1cf3c3b1b7e9e4b4624cb98424
+Prior repair execution: docs/plans/review/2026-10-13-discovery-identity-recovery-master/repair-execution.md, SHA256 441918d8bb5fb424506695ac79d0d93fa97ebf0a13c06b8532369fa2d980dbdf, Epoch-three
 Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master
 Branch: fast/2026-10-13-discovery-identity-recovery-master
 
-所有仓库相对路径只在上述worktree解析。规划开始时HEAD/index/worktree干净；不存在上版计划所记的待归属产品diff。本次规划仅更新本文件，不运行新一轮审查/测试，不改产品、测试、review证据、index或HEAD。历史版本保留于Git。
+所有相对路径仅在上述worktree解析。旧repair执行批准不适用于本修订。规划前唯一既有dirty为controller review ledger；产品/index/HEAD未改。此次仅更新本文件，历史版本由Git保留。
 
 ## Objective
 
-保留已验证修复，以真实业务边界闭合8个当前P1：发送前当前具体邮箱资格、并发人物根不变量、读取完整性、维护expected及执行归属、现存层proof完成条件、邮箱状态展示。完成本8项可返回READY_FOR_VERIFICATION；这不等于B-1/B-2补齐，也不等于master机器PASS或人工验收通过。
+闭合原revision绑定、人物读取完整性、已知无效邮箱展示、部分恢复续跑、重验当前policy五个产品根因，以及已批准真实入口测试合同。共6个根因任务，解决6个P1及1个mandatory P2；保留本轮已解决行为。完成仅可送独立aggregate复审，不等于B-1/B-2或master验收通过。
 
-## Authority and Convergence Decision
+## Authority and Convergence
 
-- governing master identity：CONSISTENT；master、十个ordered child、A1—A14均不修改。精确子计划身份及各amendment的规则/原因/人源批准，继续使用 `docs/plans/fast/2026-10-13-discovery-identity-recovery-master/ledger.md` §Children/§Amendments，SHA256 `2bbeec0ca9bbaf2008aed29b4265862a089a84cdbc25f20160a3e6ef5fe361e2`；同目录 `human-review-handoff.md` SHA256 `ff9fa89083d24f9a3f6b37f798a8f201273df9c7b543d8a572316e7c4a390a64`。Epoch3授权矩阵已逐文件核实，master governing diff为空。
-- Epoch3的FAIL / DIVERGING与反例原样保留，不改判PROGRESSING。本次人裁定之前禁止自动继续repair。
-- 控制器向人提出实质不同策略：自身contact只豁免历史重复、必须重新验证全部当前具体邮箱资格；锁后检查根revision和完整作者键；不存在与读取失败分离；身份补证/统计必要响应结构失败关闭；expected绑定每个现存层真实版本、无执行证明不认自身续跑；完整姓名不等于proof、EMAIL_INVALID不等于可发送；先实际三入口/共享真库/真实guard/假SMTP辨别测试。性能另列；Initial的0L外键问题另求人裁定；V-28明确增列Writer，不沿旧授权反复打补丁。
-- 人源回复原文：**「好的 你来更新repair吧」**。此批准不同策略及同路径规划，解除DIVERGING的规划停点；未批准执行本草案、修FK、改schema或降低master门槛。没有未解决的本8项授权冲突。FK另为NEW_SCOPE_REQUIRED前置决策；它阻塞完整B-2正向证明，不阻塞本8项规划与可独立验证的修复。
-- 未来明确批准本计划后，产品授权从上版33文件收敛为28个现有文件：删除三caller产品、维护controller产品、两CLI产品及replay测试等7个无必要修改入口，明确加入Writer/WriterTest两文件。原表外Writer由本次人裁定及01/02原合同支撑；新草案须再经execute-p批准才可实施。
+- Master身份CONSISTENT；invoked hash相同、governing diff空；十child及A1–A14保持。精确身份/规则/原因/批准仍见 docs/plans/fast/2026-10-13-discovery-identity-recovery-master/ledger.md，SHA256 2bbeec0ca9bbaf2008aed29b4265862a089a84cdbc25f20160a3e6ef5fe361e2；human-review-handoff.md SHA256 ff9fa89083d24f9a3f6b37f798a8f201273df9c7b543d8a572316e7c4a390a64。
+- Epoch3 FAIL/DIVERGING及随后人源「好的 你来更新repair吧」不同策略裁定原样保留。Epoch4独立判PROGRESSING：V-14/V-27/V-28根因已解决；V-3/V-5/V-12/V-13/V-29已实质收窄。新V-30来自累计旧Revalidation代码，不是本轮repair回归；V-31是现有明确验收合同未落实。判定不按finding数量。
+- V-30属于原admission I-2/I-3及原Revalidation授权，不改变policy合同或引入新业务范围。V-31仅恢复已经批准的R-1/E01测试合同，不把B-2缺证转成产品修复。
+- 本次授权候选收敛为18个现有文件，替代旧28文件表；Revalidation及其测试明确列入本修订。执行前仍须人源明确批准当前文件；旧表、旧hash及本规划调用都不是实施许可。
 
 ## Findings in Scope
 
-| Finding | Severity / disposition | Requirement | Evidenced root cause / lineage |
+| Finding | Severity / disposition | Requirement | Evidenced root cause |
 |---|---|---|---|
-| V-27 | P1 / REPAIRABLE；NEW REGRESSION | master I-7/I-8；09 I-3；原repair R-1/R-3 | P3E/P3F：自身contact引起ALREADY_CONTACTED早退，guard豁免同时漏掉尚未执行的具体邮箱资格；当前NEEDS_REVIEW仍实际fake SMTP=1。 |
-| V-3 | P1 / REPAIRABLE；PERSISTENT | master I-4；04 I-2 | P3J：service锁前校验与repository锁后提交脱节，两个不同OpenAlex键并发挂同一根。顺序全名/成员校验已修，不能回退。 |
-| V-5 | P1 / REPAIRABLE；PERSISTENT | master I-4/I-7/I-8；08 I-1/I-3 | P3A：RAW失败被当空层，其他层有文档即放行；当前全组事实仍不完整。 |
-| V-28 | P1 / REPAIRABLE；NEW（累计边界中新发现） | master I-3；01 I-1/I-2；02 I-2 | P3G：Writer唯一性搜索timeout/failed shard仍被接受为唯一doc并写proof。不得误写成第二轮repair新增回归。 |
-| V-13 | P1 / REPAIRABLE；PERSISTENT | master I-6/I-8；06 I-3 | P3B：聚合缺aggregations/bucket/buckets仍返回合法空桶。已修count/hits/SQL错误必须保持。 |
-| V-14 | P1 / REPAIRABLE；PERSISTENT | master I-4/I-8；10 I-1；原repair R-6 | P3C/P3D：第三方同形登记被认自身续跑且未import却称true；非RAW seqNo/primaryTerm未进expected。 |
-| V-29 | P1 / REPAIRABLE；NEW（累计边界中新发现） | master I-3/I-8；01 I-3；02 I-3 | P3H：混合姓名层恢复把完整姓名但无proof层标ALREADY_VERIFIED，整体REPAIRED；与已修V-19区分。 |
-| V-12 | P1 / REPAIRABLE；PERSISTENT | master I-5/I-7；06 I-2；07 I-1/S-2 | P3I：当前EMAIL_INVALID仍投影ADMITTED，既有renderer显示“可发送”；stale→UNKNOWN原修复保留。 |
+| V-3 | P1 / REPAIRABLE / PERSISTENT | master I-4/I-8；04 I-2；旧repair R-2 | P4E：核验根成员之后才读expectedRevision，接受未核验新成员所属revision；旧P3J同类键冲突已解决。 |
+| V-5 | P1 / REPAIRABLE / PERSISTENT | master I-4/I-7/I-8；08 I-1/I-3 | P4A/P4C：strict _mget只验证docs数组，条目error/缺条目当不存在，实际Recipient仍INCLUDED。 |
+| V-13 | P1 / REPAIRABLE / PERSISTENT | master I-6/I-8；06 I-3 | P4G：Query仍用宽松_mget，把未知降级为关系失效，跨campaign两contact正常count1变2。必要聚合桶已修。与V-5合并一个读取根因任务。 |
+| V-12 | P1 / REPAIRABLE / PERSISTENT | master I-5/I-7；06 I-2；07 I-1/S-2 | P4D：展示operatorStatus取contact或ES，但许可只检查contact；ES EMAIL_INVALID/no-contact仍ADMITTED。 |
+| V-29 | P1 / REPAIRABLE / PERSISTENT | master I-3/I-8；01 I-3；02 I-3；旧repair R-7 | P4B：首次PARTIAL后全名齐，部分目标proof已存在仍ROUTE_TO_REPAIR，原申请不能闭合。 |
+| V-30 | P1 / REPAIRABLE / NEW cumulative | master I-2；admission I-2/I-3 | P4F：同身份旧AUTO_PASSED跳过当前policy；机构凭证INVALID仍投影。 |
+| V-31 | P2 mandatory / REPAIRABLE / NEW | 已批准repair R-1与E01明确测试合同 | GT admitted硬编码true、撤销断言缺失；三实际入口辨别测试未落实；E01两方法仅guard，竞争顺序模拟，healthyInitial把FK当健康通过。 |
 
 ## Findings Excluded
 
-| Finding / item | Reason / disposition |
+| Finding / item | Reason |
 |---|---|
-| V-1,V-2,V-4,V-6,V-7,V-8,V-9,V-10,V-11,V-15,V-16,V-17,V-18,V-19,V-20,V-22,V-25,V-26 | EXCLUDED：Epoch3原根因RESOLVED；仅作回归约束，不重新开缺陷任务。V-26自阻断解决不代表V-27资格旁路合格。 |
-| V-21,V-23,V-24 | EXCLUDED：非mandatory P2（名称/可选覆盖/注释），无人工扩大授权。 |
-| B-1 | EXCLUDED as product repair：真实形状51,829条、当前代码p95≤2s/额外heap≤128MiB缺证；仍BLOCKED。允许复用/核对合法既有证据，不造数据、不改预算、不自动做性能优化。 |
-| B-2 | EXCLUDED as product repair：三实际入口完整健康/竞争/接受后异常证据缺口，仍BLOCKED。下述R-1只对确证V-27安排直接相关回归，另如实采集B-2正向结果；缺证不是第9个产品修复任务。 |
-| Initial attemptId=0L FK缺陷 | EXCLUDED / NEW_SCOPE_REQUIRED：master base已有；不是V-27，不准顺手修、mock业务持久化、删除FK或接受异常当健康完成。另见前置人决策。 |
-| 其他Observation、环境记账、未发现错误的可选矩阵 | EXCLUDED：不修无关模块、时区、旧标题、知识文档或原历史证据。 |
+| V-1,V-2,V-4,V-6,V-7,V-8,V-9,V-10,V-11,V-14,V-15,V-16,V-17,V-18,V-19,V-20,V-22,V-25,V-26,V-27,V-28 | EXCLUDED：原根因RESOLVED；仅保留回归约束，不重开产品修复。 |
+| V-21,V-23,V-24 | EXCLUDED：非mandatory P2，无可选清理授权。 |
+| B-1 | EXCLUDED as repair：当前51,829真实形状p95≤2s/额外heap≤128MiB证据缺；仍BLOCKED，不伪造数据或降低门槛。 |
+| B-2 | EXCLUDED as product repair：完整三入口健康/竞争/接受后失败运行证据仍BLOCKED。R-6恢复已明确批准的测试真实性并执行E01，不承诺消除所有前置障碍。 |
+| Initial attemptId=0L → fk_mail_record_send_attempt | EXCLUDED / NEW_SCOPE_REQUIRED：base既有且未获修复授权；不改caller/helper/schema，不造id0行，不mock成功业务持久化。 |
+| C02首次Node计时失败 | Observation；JUnit230通过但命令exit1，Node1679/1680。未改文件且聚焦27及全JS对照通过；不授权改无关计时测试。后续仍须如实记录全部失败/重跑并完成必需命令。 |
+| P4H/P4I邻接风险 | 未获得有效运行证据，EXCLUDED；不据此扩大产品任务。 |
+| 其余观察、环境差异、可选矩阵 | EXCLUDED：无已确认合同违约，不做附带清理或新设计。 |
 
 ## Unchanged Contract
 
-- 仅本次当前discovered范围；冻结名单仍须显式授权。A1保留：10,686是参考、03不执行，161待核组/两个根不自动合并，不承诺恢复收益。
-- 原docId、业务键、邮箱、contact/alias/邮件记录、运营/人工/学术事实不覆盖；不猜姓名、不伪人工认可、不造contact解锁、不删历史解锁。仅04写人物关系、09写首发保护；不改SSOT准入规则、来源核验/预算/cookie/私有审计。
-- 身份、准入、具体邮箱发送资格互相独立。当前完整组硬保护、具体地址原scope/验证/抑制全部保留；自身行豁免只能作用于历史重复。SAFE_RETRY仍只原地址；合格primary优先、跨页共享人物集合不回退。
-- 保留默认关闭旧行为、关闭不撤销既有保护；REQUIRES_NEW持久SENDING、成功原事务SENT联动、UNKNOWN不自动重发、未调用SMTP的受限清理。ES/MySQL/SMTP不是单一事务。
-- 保留count/hits/SQL失败明确不可用、原深分页与范围外单位、memberCount、两宿主链接/转义/异步隔离。后端沿用已有DTO/状态值；不改app.js/index.html/CSS/缓存键。
-- 不新增文件、迁移、schema/ES mapping或服务；现有私有类型/方法参数可为本任务有限调整。SEAM只准因授权源码移动同步精确噪声path/line/context，不增真实写入口、不删除断言/失效排除校验。
-- 无生产SMTP、生产apply/迁移/开关操作、删除、清队列、部署、push、merge、amend或历史改写。只用临时MySQL、假SMTP、合法匿名夹具。Master/fast/review报告只读；执行时唯一额外证据写入见末尾handoff。
+- 只处理当前discovered；历史冻结范围仍需单独执行批准；10,686仅参考，03不执行，161待核组及两个已有根不自动合并，不承诺生产收益。
+- 原docId/业务键/邮箱/contact/alias/mail及人工/运营/学术事实保持；不猜名、不伪人工认可、不造contact解锁、不删除历史；仅人物仓储与首发保护既有写入口负责其各自事实。
+- 身份证明、准入、具体地址许可独立；有效同身份人工批准/历史认可例外保持；六个软资料原因继续作为hints；硬无效凭证、验证、抑制、原scope及完整组硬保护保持。
+- 保留默认关闭旧行为、关闭不撤销历史保护、REQUIRES_NEW持久SENDING、UNKNOWN不自动重发、明确未发的受限SAFE_RETRY、原地址限制、合格primary及跨页person去重。
+- 不改共享schema/迁移/ES mapping、classifier、policy规则、来源预算、cookie私有审计、DTO枚举、frontend/CSS/缓存键；不改非人物宽松批读的既有合同。保留全部已修count/hits/SQL/聚合结构失败显式不可用。
+- 不新增文件。只在18个现有文件内做必要修改。SEAM仅授权源码移动导致的精确噪声path/line/context同步，不新增真实写入口、删断言或扩大排除。
+- 无生产SMTP/apply/迁移/开关/回滚/删除/部署/push/merge/amend/历史改写。测试仅临时MySQL、假SMTP、合法夹具；master/fast/review报告只读，唯一额外执行证据路径见末尾handoff。
 
 ## Authorized Files
 
-本表28个现有文件是未来批准后的精确产品/测试边界，不授权同目录其他文件。文件ID仅为路径别名；每任务按ID明确引用本表精确路径。仅为运行测试而读取其他文件不产生写授权。未实际需要改动的授权文件保持不变。
+18个现有文件，未实际需要修改的保持不变。ID只作为下文精确路径别名；本表不授权同目录其他文件。
 
-| File ID | Exact file | Purpose / authority |
+| ID | Exact file | Purpose |
 |---|---|---|
-| G | src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardService.kt | R-1：自身历史归因与当前邮箱许可分离；09/A7 |
-| GT | src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardServiceTest.kt | R-1/R-3：真实三入口、共享MySQL、真实guard回归；09/A7 |
-| INITT | src/test/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachServiceTest.kt | R-1：实际Initial调用契约及撤销资格回归；09/A7；不授权Initial产品/FK修改 |
-| MIT | src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt | R-1：实际ManualInitial调用契约及撤销资格回归；08/A6、09/A7 |
-| MEMT | src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceTest.kt | R-1：实际ManualExpert调用契约及撤销资格回归；09/A7 |
-| P | src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt | R-2：校验快照与锁后revision衔接；04/A2 |
-| IR | src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt | R-4/R-7：不完整唯一性禁止补证、现存层目标proof闭合；01/02/05/A3 |
-| R | src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPersonRepository.kt | R-2：锁内核验完整根及条件提交；04/A2 |
-| SEL | src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonRecipientService.kt | R-1/R-3：当前具体邮箱许可、分层读取失败传播；08/A6 |
-| PT | src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonServiceTest.kt | R-2：实际服务并发交错与重读回归；04/A2 |
-| IRT | src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairServiceTest.kt | R-4/R-7：真实Writer边界下零写及混合姓名层回归；01/02/05/A3 |
-| RT | src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPersonRepositoryTest.kt | R-2：真实事务仓储不相容挂接回归；04/A2 |
-| SELT | src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonRecipientServiceTest.kt | R-1/R-3：自身contact与当前许可、失败/不存在对照；08/A6 |
-| REC | src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt | R-4/R-7：唯一性失败传播及同申请目标续跑完成条件；02/05/A3 |
-| RECT | src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt | R-4/R-7：preview/apply/续跑辨别回归；02/05/A3 |
-| MAINT | src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt | R-6：全层实际版本expected、无归属证据不得假续跑；10/A8 |
-| MAT | src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceServiceTest.kt | R-6：独立登记与非RAW版本变化反例；10/A8 |
-| MCT | src/test/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryPersonMaintenanceControllerTest.kt | R-6：现有HTTP请求/响应的保守拒绝和版本摘要往返；10/A8；仅测试 |
-| CPT | tools/discovery-person-recovery/test_reconcile.py | R-6：现有CLI审计保留全层版本、失败非完成；10/A8；仅测试 |
-| Q | src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryService.kt | R-5/R-8：既有邮箱展示投影不把EMAIL_INVALID标作许可；06/A4、07/A5 |
-| ES | src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt | R-3/R-5：人物读取失败和必要聚合结构完整性；06/A4 |
-| QT | src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryServiceTest.kt | R-5/R-8：统计不可用及已知邮箱异常投影；06/A4 |
-| EST | src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt | R-3/R-5：分层批读与聚合响应辨别性夹具；06/A4 |
-| ECT | src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexControllerTest.kt | R-5：ES列表统计错误传播，不伪200空结果；06/A4 |
-| CCT | src/test/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementControllerTest.kt | R-5：DB列表人物统计错误传播；06/A4 |
-| SEAM | src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt | R-5/R-8：仅授权源码移动必要的精确噪声path/line/context同步；保留V-25闭包 |
-| W | src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt | R-4/R-7：唯一性响应完整性及现有proof CAS；01/02；明确新增至本修订授权表 |
-| WT | src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt | R-4/R-7：真实HTTP响应/局部proof CAS回归；01/02；明确新增至本修订授权表 |
+| P | src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt | R-1 原revision与完整根核验绑定 |
+| PT | src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonServiceTest.kt | R-1 service交错/复读回归 |
+| RT | src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPersonRepositoryTest.kt | R-1 实际service+真实事务仓储辨别回归 |
+| ES | src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt | R-2 strict人物批读完整性 |
+| EST | src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt | R-2 HTTP响应错误/缺失与合法不存在对照 |
+| Q | src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryService.kt | R-2 查询使用严格事实；R-3有效邮箱状态 |
+| QT | src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryServiceTest.kt | R-2/R-3 查询完整性和状态回归 |
+| SELT | src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonRecipientServiceTest.kt | R-2 实际Search→Recipient拒绝未知 |
+| CCT | src/test/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementControllerTest.kt | R-2 人物关系未知不伪确定计数 |
+| SEAM | src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt | 仅Q源码移动必要精确噪声位置维护 |
+| REC | src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt | R-4 同目标PARTIAL继续proof/登记/准入 |
+| RECT | src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt | R-4 mixed层首次部分后安全续跑 |
+| REV | src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt | R-5 自动重验先当前policy后投影；原admission授权 |
+| REVT | src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceTest.kt | R-5 当前硬凭证失败与软资料/人工对照 |
+| GT | src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardServiceTest.kt | R-6 真实三入口/真库/资格撤销/精确失败与E01 |
+| INITT | src/test/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachServiceTest.kt | R-6 实际Initial入口辨别回归 |
+| MIT | src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt | R-6 实际ManualInitial入口辨别回归 |
+| MEMT | src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceTest.kt | R-6 实际ManualExpert入口辨别回归 |
 
-三caller产品文件（InitialOutreachService.kt、ManualInitialOutreachService.kt、ManualExpertMailService.kt）、ManualOutreachTxHelper.kt、维护controller产品、两CLI产品及domain/schema均不在表内。现有caller已经传实际contact/attempt归因，本轮在guard/recipient闭合许可，实际caller测试检验接线；若确有必要新增产品修改，带具体证据停在该项请求范围决定，不自行扩表。
+不授权Guard/Recipient/Repository/Writer/RepairService产品、三caller产品、ManualOutreachTxHelper、controller产品、CLI、domain/schema或旧28表的其他文件。现有实现有足够接缝完成本有界任务；若实际证明需要表外修改，保留证据并停在该项请求决定，不自扩表。
 
 ## Repair Tasks
 
-8个任务按根因分组，先写能暴露当前反例的测试，再改行为；先完成R-1实际入口测试骨架及首发资格边界，再R-2→R-3→R-4→R-5→R-6→R-7→R-8。共享文件顺序接续，不覆盖已有修复。每项均受Unchanged Contract限制；不以增加相似单测替代实际反例。C命令下一节完整展开。
+按R-1→R-2→R-3→R-4→R-5→R-6顺序，共享文件接续修改；先建立区分当前失败与正向对照的回归，不能以删断言、全阻断或mock被验证决策使测试绿。各任务都受Unchanged Contract限制。
 
-### R-1: 自身历史豁免不得跳过当前具体邮箱许可
+### R-1: 原根revision绑定完整核验事实
 
-- Resolves: V-27（真实repair回归）。
-- Root cause: Recipient:235先ALREADY_CONTACTED返回；Guard:538–558的ownContactOnly跳过剩余选址/许可。已验证自身contact的所有权并不证明当前邮箱可发。
-- Files: `G`, `SEL`, `GT`, `SELT`, `INITT`, `MIT`, `MEMT`。
-- Change: 从服务端真实归因证明中，仅剔除本次绑定contact/attempt的历史重复影响；仍执行完整组当前事实和硬保护，并对ticket的具体地址重跑当前准入、原scope、验证、抑制及地址一致性。own-contact分支必须产生与普通合格路径同等的具体邮箱资格证据，不能把ALREADY_CONTACTED理由列表当成其他资格通过证据。实际接口边界兼容现有三caller，不改其产品代码。
-- Discriminating regression: 将P3E/P3F固化：reserve合格→本次NEW contact→compose前后将当前准入改NEEDS_REVIEW，真实Initial/ManualInitial/ManualExpert入口、同一真实MySQL体系、实际guard/recipient/selector/事务/相关仓储、假SMTP；三入口各资格撤销时SMTP=0，且无错误SENT。用同一边界验证抑制/验证失效不因自身contact而跳过，safe retry资格撤销不得换址。该必需负向回归不是“所有条件都阻断”的伪修复：实际recipient+guard未撤销对照必须获得claim；真实入口许可对照记录SMTP恰1及后续真实结果。Initial许可对照若命中已证FK，只作为“SMTP已发生、业务失败”证据，严格断言该已知因果链和持久SENDING，不称健康完成。
-- Preserve/test: 冒用或其他contact/attempt、既有SENT/UNKNOWN/SENDING仍阻断；实际三个入口接受后业务事务失败/不明结果，跨另两入口再次请求SMTP累计仍1，须检查持久保护而非mock guard。原正常路径不得退回V-26自阻断，已证明未交付才允许原址SAFE_RETRY。现有误名healthy测试改为准确的接受后持久化失败用例，并将宽泛catch改成已知异常/约束与状态的精确断言；不吞未知异常。
-- Existing verification: C02,C16,C17,C21,C22；B-2独立正向实验E01另列，不混作本项通过证据。
-- Must not change: 真实身份归因、原业务事务、旧资格SSOT及全部既有保护；保留R-1负例后续状态可解释。
-- Prohibited: 删除contact、伪造attemptId=0对应行、mock被验证guard/事务/业务持久化、吞异常、全局忽略历史、跳过具体资格、修FK、用SMTP≤1且全零代替许可正向对照。
-- Machine completion: P3E/P3F及三个真实入口撤销资格均拒绝；许可的真实recipient/guard对照可claim，入口SMTP/事务结果分开记录；未知/已接受不能再发。Initial完整健康事务仍按B-2/FK状态保留，不要求本任务越权修复。
-
-### R-2: 已有根在锁后仍满足同类作者键和原revision约束
-
-- Resolves: V-3。
-- Root cause: PersonService:113/371–388锁前已验证事实未绑定Repository:115–137锁后状态；A/B不同OpenAlex互不触发唯一键冲突却可同根提交。
-- Files: `P`, `R`, `PT`, `RT`。
-- Change: 把已核验根的revision/完整成员与作者键依据绑定到挂接决策；锁定根后重读当前完整键并验证条件，原revision变化不得依据旧结果直接写。冲突后沿现有有限重试重新读取全部当前事实，再决定STALE/NEEDS_REVIEW或合法提交。保持每一类别唯一可信作者键及完整规范全名/现存成员一致；不把CAS失败当成功。
-- Discriminating regression: P3J原交错真实MySQL+实际service/repository：根仅ORCID；A含A100校验后暂停，B含A200提交，A继续。最终不得同根有A100/A200；失配方无新成员/键半提交且返回明确结果。相容同键对照可正常挂接；调度仅在真实调用边界安排，不以mock APPLIED/冲突替代数据库锁。检验revision与实际插入一致，原成员未改。
+- Resolves: V-3。Root cause: PersonService先verifyRootGroup后读revision，P4E采纳较新revision掩盖未核验成员。
+- Files: P, PT, RT。
+- Change: 挂接条件必须对应被完整核验的原根revision与成员/键事实。核验期间SQL关系revision改变，不能将后读的新revision配旧核验结果直接提交；沿既有有限重试重新读取完整当前事实，失配明确拒绝/STALE且零部分写。
+- Discriminating regression: 实际PersonService+真实MySQL repository/事务：A核验仅root后暂停；B同ORCID合法挂入，B当前discovered标签移除；A继续，不得未经B复验ATTACHED。相同调度但B仍当前有效为许可对照；既有P3J不同OpenAlex竞争仍拒冲突方。
 - Existing verification: C07,C08,C10,C11,C18,C21。
-- Must not change: 原顺序全名、旧成员当前标签/指纹验证、稳定UUID/作者键唯一、排序锁与有限冲突重读；两个根仍待核。
-- Prohibited: 全局锁、禁用全部挂接、把每类冲突仅作日志、迁移/schema变更或伪造服务事实。
-- Machine completion: P3J无法产生冲突根；真事务相容对照通过；失败无部分写入，原解决V-2/V-22不回归。
+- Must not change: 稳定UUID、同类键唯一、完整规范名/标签/指纹核验、两个根待核、锁顺序/有限重读。
+- Prohibited: 全局锁、禁止全部挂接、修改schema/仓储产品、伪造锁或APPLIED结果。
+- Completion: P4E无未核验新成员挂接；相容对照成功；失败成员/键均无半提交。
 
-### R-3: 分层读取明确区分不存在与失败
+### R-2: 人物批读失败与合法不存在不可混淆
 
-- Resolves: V-5。
-- Root cause: Recipient:323吞异常为空层；其他层存在即通过完整组核验。Search的批读接口也不能把必需响应失败伪装为合法缺档。
-- Files: `SEL`, `SELT`, `ES`, `EST`, `GT`。
-- Change: 当前完整组读取保留各层“成功/明确不存在/失败或不完整”语义；任一必需层查询失败、缺必要结构/条目或条目错误时整组不可验证，不从其他层/缓存替代。合法found=false与失败分开；原本允许缺失的层不被强制创建。对共享Search方法限定人物调用所需的严格读取边界，非人物旧API合同不扩大。
-- Discriminating regression: P3A中RAW抛错而另两层有效必须排除；真实HTTP批读夹具的错误/不完整响应同样不可许可；对照为完整响应明确found=false、其余合法现存层，可按原合同判断。estimate/selection/reserve/claim均经当前同源结果；claim前再失读时SMTP=0，日志/排除状态可区分无记录与未知。
+- Resolves: V-5,V-13。Root cause: strict接口只检查docs数组，Query又仍走宽松接口。
+- Files: ES, EST, Q, QT, SELT, CCT；仅必要位置同步SEAM。
+- Change: strict人物批读必须确认请求ID的完整响应，逐项error、缺项、重复/错ID、缺必要found或found=true却缺必要source均明确不可用；明确found=false才可当不存在。Query人物关系核验/详情使用该完整性语义；读取未知不能转成关系失效、独立contact或精确count。保留现有异常/响应契约，非人物宽松接口不改。
+- Discriminating regression: 实际Search HTTP边界分别error与空docs，对照合法found=false；实际Search→Recipient有其他层可读时仍排除未知；实际Query→联系人controller跨campaign1/2同person两contact，完整读取count1、条目错误明确失败而非count2。合法不存在/当前真实失效仍按原合同处理。
 - Existing verification: C12,C16,C17,C21,C22。
-- Must not change: 当前层选址、全组隐藏HOLD/冲突保护、inBatch必须重读、原标签/指纹检查及范围外零写。
-- Prohibited: runCatching失败默认empty/null后许可、只读当前页、回退缓存、靠一层存在推断其他读取成功、无差别阻断合法缺层。
-- Machine completion: P3A不再included；异常传播明确且合法缺层对照保持；持久化与发送零越权。
+- Must not change: 深分页/同成员筛选/层范围/memberCount、合法空聚合、既有原始单位/旧链接、读操作零业务写。
+- Prohibited: 全部异常吞成空、仅加日志、对未知给猜测total、改变所有非人物搜索调用行为。
+- Completion: P4A/P4C/P4G反例不成立；正向与合法缺档对照成立；必需失败可观察且无伪count。
 
-### R-4: 唯一性搜索未完整结束不得签发proof
+### R-3: 当前已知邮箱失效不得投影许可
 
-- Resolves: V-28（累计边界新发现，非声明repair回归）。
-- Root cause: Writer:727–749仅解析hits，Repair:72–89/Recovery:244把不完整结果当全集。
-- Files: `W`, `WT`, `IR`, `IRT`, `REC`, `RECT`。
-- Change: Writer的该唯一性用途搜索必须确认正常完整结束并有必要结构；timeout、failed shard、畸形/丢失必要hit身份/层信息、无法证明返回集合完整均明确不可用，不能悄悄mapNotNull收窄成一个doc。完整零命中与失败区分；保留现有命中上限下的保守拒绝。Repair/Recovery遇不可用不得补姓名/proof、登记或准入，不产生REPAIRED/APPLIED；返回已有失败/可恢复语义。
-- Discriminating regression: P3G实际Writer HTTP返回timeout=true/failed=1且唯一可见a，Repair与Recovery关键入口均零proof写、零关系/准入成功；完整同doc跨层命中正向仍能原CAS补证，两个doc仍CONFLICT，合法零命中不冒充失败。缺必要结构作为同一完整性门禁的最小对照，不开无关ES矩阵。
-- Existing verification: C03,C04,C05,C10,C21。
-- Must not change: 真实docId、来源唯一对应、三层CAS、来源编号/JATS绑定、既有姓名/人工事实不可覆盖，未存在层不新建。
-- Prohibited: 仅加强调用方计数但仍信partial search、从一个可见hit推唯一、放宽proof、改ES mapping/通用SMTP/新schema。
-- Machine completion: P3G在任何proof写前失败关闭；完整唯一命中对照仍成功；错误具备可审计原因。
-
-### R-5: 精确聚合必须具备必要桶结构
-
-- Resolves: V-13。
-- Root cause: Search:1406–1421缺聚合结构时MissingNode.map输出[]。
-- Files: `ES`, `EST`, `Q`, `QT`, `ECT`, `CCT`, `SEAM`。
-- Change: 人物查询所用聚合除已有完整性检查外，要求aggregations/bucket/buckets类型及被消费桶的必要key/doc_count结构有效，缺失/畸形明确查询不可用；合法空数组仍为零。通过实际Query和两列表消费链传播，不把失败转为200精确空桶/零人。共享Search变更保持非人物既有调用合同，必要时显式区分严格调用。
-- Discriminating regression: P3B原响应经实际Search及人物统计调用链不可作为合法[]；正常空buckets返回空，正常计数/标签/地区/域名仍正确。沿既有controller测试验证失败外显；不添加新UI。
-- Existing verification: C12,C21,C22。
-- Must not change: 已修count/hits/scroll/SQL完整性、深页分块、原筛选语义和范围外计量单位；真实写入口白名单不变。
-- Prohibited: 猜零、近似计数、只当前页去重、放宽必要结构或调整共享mapping、扩大SEAM白名单。
-- Machine completion: P3B明确失败、合法空统计正常；两入口不伪精确成功；精确守卫通过。
-
-### R-6: 完整expected及可证明归属决定维护结果
-
-- Resolves: V-14。
-- Root cause: Maintenance:309–365用同根/同成员/revision0猜自身续跑；:596只绑定source.updatedAt及RAW版本。
-- Files: `MAINT`, `MAT`, `MCT`, `CPT`。
-- Change: 使用现有layerVersions及expected摘要表达每个现存RAW/CANDIDATE/APPLICATION真实seqNo/primaryTerm（并保留既有受保护事实），层存在集合也进入比较；不把updatedAt作为ES版本替代。保留当前SQL根/成员revision、proof/标签/身份、人工准入/历史保护读取与复核。缺本次执行的可信归属凭据时，不得根据同形目标状态推断自己执行或protectionImported；返回既有CHANGED_OR_FAILED/明确变化原因，要求原流程重新预览。不得归零第三方变化后“复原”预期以假认完成。本轮不新增receipt持久化/schema；现有接口无可信凭据的响应丢失重试应保守拒绝，不能凭客户端声明证明归属。
-- Discriminating regression: P3C预览→独立登记同a,b→旧apply不得UNCHANGED/RESUMED_TARGET_STATE或protectionImported=true，且不新写；P3D仅改CANDIDATE或APPLICATION seqNo/primaryTerm、source/updatedAt不变，旧expected必须拒绝。完整未变预览的真实apply仍成功；返回protectionImported必须来自实际成功的09导入结果。通过现有controller和CLI测试确认版本摘要/审计字段保留、变化结果不计成功，重新预览后可按新事实执行；不要求修改这些产品接口。
-- Existing verification: C18,C19,C17,C21。
-- Must not change: 冻结子集51→50+1、互斥分母、cookie/私有审计、同库TransactionTemplate整组原子性、历史不变、rollback expectedRevision规则。
-- Prohibited: 新建schema/receipt表、扩大HTTP/CLI产品范围、revision0即归属、抹去保护字段再比对、未知import写true、执行实际rollback或弱化expected。
-- Machine completion: P3C/P3D被拒且零新关系/保护写；正常新预览apply成立；existing rollback与原子导入测试通过。缺归属证据的旧请求保守停止是允许行为，不虚构无凭据幂等完成。
-
-### R-7: 完成必须覆盖所有现存层的目标proof
-
-- Resolves: V-29（累计边界新发现）。
-- Root cause: Repair:256把完整姓名直接当ALREADY_VERIFIED；Recovery混合姓名场景把上游结果当完整完成。
-- Files: `IR`, `IRT`, `REC`, `RECT`, `W`, `WT`。
-- Change: 混合姓名层的同一已授权恢复中，逐现存层判断目标姓名及目标proof；完整姓名但缺proof层仍须按现有版本CAS补proof，不能覆盖非空姓名/第三方proof。仅当前层真实已等于本次目标才ALREADY_VERIFIED；整体REPAIRED/APPLIED必须所有应完成现存层达到目标且原登记/准入后续完成。中途失败明确PARTIAL/冲突并保留原申请可验证续跑；不得因上一轮已补姓名而把同申请剩余目标proof的工作永久路由离开。初次全名仅缺proof的01路由保持。
-- Discriminating regression: P3H RAW缺given无proof、CANDIDATE/APPLICATION完整相同姓名无proof，实际Writer+Repair/Recovery链最终各现存层目标proof齐全、名字/原ID不变；对其中一个层注入版本冲突，首次不得完整成功，解除后原目标续跑不重写已完成层且闭合登记/准入。第三种proof/姓名冲突仍停止，不从旧目标扩大为任意proof覆盖。
-- Existing verification: C03,C04,C05,C06,C10,C21。
-- Must not change: V-4准入失败PARTIAL、V-19原目标proof续跑、V-20来源绑定、预算/保护读取失败关闭、未存在层不新建。
-- Prohibited: 全名等于已验证、仅RAW成功判总体成功、伪造proof、改学术事实、删除失败层/审计或修改CLI终态来掩盖服务完成错误。
-- Machine completion: P3H不再存在null proof的ALREADY_VERIFIED；整体成功逐层可核对，PARTIAL可安全续跑，第三方冲突零覆盖。
-
-### R-8: 已知邮箱不合格不得投影为可发送
-
-- Resolves: V-12。
-- Root cause: Query:279–285/367–382已读取EMAIL_INVALID却未参与许可投影。
-- Files: `Q`, `QT`, `SEAM`。
-- Change: 现有逐邮箱后端投影综合当前已知邮箱验证/运营异常及必需真值，明确EMAIL_INVALID或真值不可得不得输出会被现renderer解释为可发送的ADMITTED；沿用已有非许可状态，保留独立operatorStatus/contactStatus/admission事实语义，不改持久V148准入结论。现有真实selector/状态服务为真值，不再复制一套准入规则。
-- Discriminating regression: P3I实际Query+BatchSelector，准入AUTO_PASSED、非stale、未抑制但当前contact EMAIL_INVALID，返回非许可状态；有效邮箱对照保持正确、stale/未知/HOLD/抑制仍不许可，持久准入不变。两现有详情宿主在既有DTO下不出现可发送误标。
+- Resolves: V-12。Root cause: 输出operatorStatus有ES回退，而许可辅助函数只看contact。
+- Files: Q, QT；仅必要精确位置同步SEAM。
+- Change: 现有DTO对同一邮箱使用一致的当前有效状态依据。无contact但ES当前EMAIL_INVALID时，不能输出ADMITTED；沿用UNKNOWN及既有抑制/人工状态语义。
+- Discriminating regression: P4D无contact、同指纹非stale、AUTO_PASSED、未抑制、ES EMAIL_INVALID→非ADMITTED；contact invalid、正常有效邮箱对照与contact真值不可读均覆盖同一边界。
 - Existing verification: C12,C13,C14,C15,C21,C22。
-- Must not change: 原docId/contactId链接、memberCount、前端两宿主布局/缓存合同、只读GET与逐邮箱独立状态。
-- Prohibited: 改app.js或新增状态、把持久准入直接改拒绝、用另一个成员资格代替、扩大operatorStatus真实写入口。
-- Machine completion: P3I不再ADMITTED；有效对照通过；当前JS测试及精确守卫通过，持久事实零改动。
+- Must not change: 准入不等于发送许可、stale/抑制UNKNOWN保护、原links/DTO字段；frontend保持。
+- Prohibited: 新状态枚举、改UI掩盖后端矛盾、把所有成员均置不可用。
+- Completion: P4D负例不显示可发送，正常有效邮箱对照保持。
 
-## Evidence Prerequisite — B-1 / B-2 / Initial FK
+### R-4: 部分目标proof完成后仍可原恢复链续跑
 
-这不是新增修复任务，也不是对master门槛的豁免。
+- Resolves: V-29。Root cause: !anyBlank&&!allAtTarget一律ROUTE_TO_REPAIR。
+- Files: REC, RECT。
+- Change: 经当前重新回源/唯一身份/保护核验，部分现存层已是同一目标proof而其他层仍缺该proof的恢复申请，不能仅因姓名已齐被路由出02；继续现有按层CAS补齐，再完成登记/准入，最后才APPLIED。初始全名且没有本次目标proof的纯01场景、第三proof/姓名冲突仍保守按原合同处理。
+- Discriminating regression: P4B RAW空名、Candidate全名缺proof；首次Candidate写500导致PARTIAL且RAW完成；解除失败重新preview/apply，剩余proof闭合，人员登记/准入正常结束。第三proof/来源或版本变动对照不得强写。
+- Existing verification: C03,C04,C05,C06,C10,C21。
+- Must not change: 原文locator/字节绑定、人工/学术/contact保护、真实ID、各层seq/term CAS、不创建缺失层。
+- Prohibited: 名字齐当proof齐、略过失败层、允许第三proof、放宽初始02范围或绕过准入。
+- Completion: P4B同恢复流程安全闭合；重跑幂等，非目标字段与缺层保持。
 
-1. B-1：当前实现的51,829真实形状匿名数据性能报告仍欠缺。小样本、常量、旧代码测量均不替代。若没有现成合法输入/报告，handoff明确BLOCKED；不得为了本修复完成而虚构结果或增性能产品改造。
-2. B-2：最终仍须三个实际入口各健康首发恰1且原成功业务事务完成、同一真库同人跨入口竞争总数恰1、接受后业务失败/未知跨入口不再发。R-1真实资格撤销0与保护异常测试可补部分证据，但不替代健康正向。既有Initial测试宽泛catch不是健康通过。
-3. 精确前置证据：当前 `src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:180–184`调用 `ManualOutreachTxHelper.recordSuccess(... attemptId=0L)`；helper:35/85的非空attemptId直接成为mail_record.mail_send_attempt_id，触发`fk_mail_record_send_attempt`。Epoch3 P3F及C17实际库均保留DbActionExecutionException，SMTP已经1次，SENDING保持。base `9d353934b82ed3e36a193c70748e5efccb3d9e82`同文件原118行已传0L；故属于无关既有缺陷，不纳入8个P1。
-4. 单独需人裁定的最小候选范围（**未授权**）：`src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt`、`src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt`、`src/test/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachServiceTest.kt`、`src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt`、`src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardServiceTest.kt`。候选目标为真实“无attempt”语义与成功持久化契约一致：现有MailRecord.mailSendAttemptId为Long?，可评估显式null及helper仅对存在attempt更新；不能将0伪造成有效记录。该方案涉及共享helper，须另行明确批准并评估已有ManualInitial有效attempt行为，不能凭本计划执行。这里只列决策边界，不新增第二份repair或默认拆分执行。
-5. 本次用户批准的是先独立修8项、保留B-2阻塞的策略。此草案执行批准也不会顺带批准FK候选范围。若将来另批FK，独立验证其准确提交边界后才能用完整健康结果关闭B-2；本草案不预先断言该修复足够。
+### R-5: 自动重验先形成当前policy结论
+
+- Resolves: V-30。Root cause: 基础硬理由空时复用旧AUTO_PASSED并提前投影。
+- Files: REV, REVT。
+- Change: 非有效人工例外的发现重验必须先经现有DiscoveryReview/AdmissionPolicy形成当前结论，再决定既有候选投影；不能用同身份旧自动准入替代当前机构/身份等硬事实。按现有CAS/共享写接缝更新，不改变policy本身。
+- Discriminating regression: 实际policy+Revalidation+Review解析，同身份旧AUTO_PASSED，当前机构凭证INVALID且基础eligibility通过：得到当前NEEDS_REVIEW/硬原因，不据旧AUTO_PASSED晋升。有效凭证、仅六软资料缺失、同身份人工批准/历史认可和HOLD/REJECTED对照保持。
+- Existing verification: C01,C02,C03,C10,C21。
+- Must not change: 原有效人工例外、身份变化规则、六软原因hints、APPLICATION/人工字段保护、classifier和基础资格SSOT。
+- Prohibited: 仅修改测试期望、把INVALID降软、对全部旧批准强制人工、另建policy来源。
+- Completion: P4F不再用旧AUTO_PASSED投影；当前结论/候选结果一致，正常及人工对照仍合法。
+
+### R-6: 恢复已批准真实入口测试合同
+
+- Resolves: V-31（mandatory P2）；不重开已解决V-27产品任务。
+- Files: GT, INITT, MIT, MEMT。必要用例可集中在现有GT，其他授权测试未需要则不改。
+- Change: 取消admitted恒true与撤销断言缺失造成的伪结论。持久回归使用实际Initial/ManualInitial/ManualExpert、实际guard/recipient/selector、真实共享MySQL/事务/相关仓储、假SMTP，保留当前准入DTO语义一致；只替代外部依赖，不mock被验证决策/业务持久化。
+- Discriminating regression: reserve合格→本次NEW contact/PREPARED attempt→compose前后当前准入撤销，三个实际入口各SMTP0且非SENT；抑制/邮箱验证失效也不能因自身行豁免。实际recipient/guard未撤销对照可claim，实际入口许可对照SMTP恰1并分别记录真实业务结果，不能用全0代替。
+- Preserve/test: 接受后业务失败/不明结果时持久保护仍在，另两个实际入口再次请求不能再发。已知Initial FK负向测试改准确名称并精确断言异常约束链、SMTP1、SENDING；删除宽泛catch掩盖未知异常的模式。SAFE_RETRY仍仅明确未发/原地址。
+- E01 fidelity: 保留四个精确方法名和显式b2Acceptance门禁，但内容须各调用对应实际服务；前三项检查SMTP和成功业务持久化，第四项三实际入口共享同人真库并竞争。已知Initial FK应使完整健康实验如实失败，保存精确链/SMTP/保护证据；不可把expected FK或guard-only改称healthy PASS。R-6强制回归不能放在b2Acceptance条件后。
+- Existing verification: C02,C16,C17,C21,C22；E01按下述非产品修复证据规则实际执行。
+- Must not change: 原业务成功/事务合同、既有保护、不增加生产写权限。
+- Prohibited: 修FK、造id0行、mock成功helper/事务、降低断言、以仅guard或顺序调用冒充三真实入口并发、放宽SMTP精确计数。
+- Completion: 已批准负向/许可/失败保护回归真实且通过；E01真实执行并如实分类。已知FK造成健康失败不反向成为本任务越权修产品的许可。
 
 ## Verification Commands
 
-本轮仅规划，未重新运行测试。Epoch3的21条验收命令均首次exit0（C21 JUnit5085/0F/0E/20S、JS1680全过），仅为已审基线，不能证明下次实现。
+下列命令均在指定worktree、最终可辨认产品边界新鲜执行，Maven串行。C01—C19/C21/C22共21条为必需PASS集合；全部失败、重跑、counts/skips完整保留。C02本次JUnit通过但Node失败不是下次豁免，不改无关测试强行绿。C20仅已批准旧Zulu11.0.15/tzdb例外；C21现有Zulu11.0.32.1执行完整JDK11 clean package。C21条件skip不能替代C07/C09/C11/C17真库执行。
 
-未来执行分两类，不能混淆：
-
-- **修复验收必需PASS集合**：C01—C19、C21、C22，共21条；最终修复边界新鲜执行，Maven串行。每条保留真实exit/测试计数/skips/失败及重跑日志。真MySQL必需用例须实际执行，不能让C21条件skip代替C07/C09/C11/C17。既有强制用例不能新加条件跳过；不得吞错或放宽断言以使命令绿。
-- **必需采集、非本8项PASS门槛**：E01的B-2完整健康/竞争诊断；真实失败必须原样记录BLOCKED，不因exit非零把已独立完成的8项重新定义为未执行，也不把它当PASS。新B-2正向病例仅通过显式b2Acceptance开关隔离，必须实际执行E01且报告skips；开关不得用于R-1强制辨别回归或已有测试。若E01暴露本8项相关新失败而非已知FK/缺证，仍属于修复未完成，不得排除。
-
-C20保留为已批准的旧Zulu11.0.15/tzdb2021e例外，不要求执行；C21现有Zulu11.0.32.1履行JDK11 clean package。C01—C19若出现同一时区环境限制，仅可用C21 JAVA_HOME对照并保留原失败，不改时区产品/删用例。临时Docker、假SMTP授权只限测试。以下全部在指定worktree运行：
+E01为必需实际采集、非6任务无条件PASS门槛；四个测试必须按R-6真实实现。只因已知Initial FK使健康实验失败时保留B-2 BLOCKED，不能称通过。其他新失败须按具体证据分类，不能统一归FK，也不能抹去本6任务相关失败。
 
 - C01: `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=DiscoveryAdmissionPolicyTest,DiscoveryReviewServiceTest,DiscoveryReviewAllPagesTest,DiscoveryReviewControllerTest,ExpertRevalidationServiceTest,ExpertRevalidationServiceBehaviorTest test`
 - C02: `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=BatchRecipientSelectionServiceTest,ManualInitialOutreachServiceTest,InitialOutreachServiceTest test`
@@ -243,45 +189,37 @@ C20保留为已批准的旧Zulu11.0.15/tzdb2021e例外，不要求执行；C21�
 - C20: `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn clean package`
 - C21: `JAVA_HOME=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home mvn clean package`
 - C22: `JAVA_HOME=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home mvn -Dtest=OperatorStatusWriteSeamGuardTest test`
-
 - E01: `DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock JAVA_HOME=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home mvn -Dapi.version=1.41 '-DargLine=-Dapi.version=1.41' -DmysqlIt=true -Db2Acceptance=true '-Dtest=DiscoveryPersonOutreachGuardServiceTest#b2HealthyInitial+b2HealthyManualInitial+b2HealthyManualExpert+b2SamePersonCompetition' test`
-
-E01四个明确方法在既有GT文件中承载R-1许可对照的完整业务验收实验：各方法调用对应实际入口/真实guard及业务仓储/事务，SMTP替身只记录交付；前三项分别独立健康完成，第四项三入口共享同一个真实MySQL/person并竞争。断言必须包括SMTP精确次数和原业务成功持久化，不捕获后继续报告成功。已知Initial FK预期使其完整健康项失败；保留异常链/库约束/SMTP与保护状态，不改变生产逻辑绕过。C17仍执行所有R-1实际入口资格撤销、实际guard许可对照和接受后失败保护回归。E01不承担产品修复、不授予表外修改；不得为了让它绿构造id=0历史行或省略真实helper。
 
 ## Completion Criteria
 
-- 8项included P1、8个根因任务均有对应机器辨别证据，P3A—P3J相关反例不再成立；所有RESOLVED根因保持，无本边界已知缺陷未处理。正常许可claim与实际SMTP对照不能被全阻断替代。
-- C01—C19/C21/C22在最终可辨认产品边界通过；全部失败/重跑/skips完整保留。C20例外仅覆盖既有环境，不覆盖产品缺陷、B-1/B-2或FK。
-- E01实际执行并如实逐项记录结果。若只因已知FK导致B-2完整正向失败，而本8项及21条修复验收通过，可对本有界修复提交并输出 `READY_FOR_VERIFICATION`，同时明确 `B-1: BLOCKED`、`B-2: BLOCKED — Initial FK prerequisite / remaining evidence`。不得输出master PASS、完整端到端PASS或READY_TO_INTEGRATE。其他非已知失败需按证据分类，不能统一归FK。
-- 新产品/测试diff为28文件集合子集、每hunk对应本任务；没有schema/新文件/无关FK修复。执行前重新确认worktree/branch、产品3b6f854 ancestry、master及amendment身份和已有diff归属；若外部产品变化，保留并报告，不reset/stash覆盖、不把混合工作区结果写成精确提交证据。
-- 允许独立修复完成与master门禁仍未满足同时存在：前者仅送独立复审，后者还需B-1/B-2充分证据、全master aggregate机器PASS及同code SHA人源验收。人工状态仍PENDING。
-- 不产生自动下一轮、continuation、并行current repair或另一个产品计划。只有后续显式execute-p授权才实施。
+- R-1—R-6全部完成；V-3/V-5/V-12/V-13/V-29/V-30及mandatory V-31有对应辨别证据，原已解决根因保持。五产品根因与一个测试合同任务不能互相替代。
+- 21条必需PASS命令在最终产品边界通过；E01真实实现、执行并逐项记录。若仅已知FK/原B-2前置条件导致E01健康失败，而本6任务与21命令均通过，可以有界提交并输出READY_FOR_VERIFICATION，同时明确B-1/B-2 BLOCKED。不得称master PASS/完整端到端PASS/READY_TO_INTEGRATE。
+- Diff为18文件子集，每hunk映射本任务；无新文件/schema/FK/caller产品/无关清理。执行前核对worktree/branch、master与amendments、1ab2881产品祖先及已有diff归属；证据提交可推进HEAD，必须记录实际SHA。不得reset/stash覆盖其他工作。
+- B-1/B-2缺证和人工验收仍独立门禁；本草案不降低master阈值、不接受人工结果、不操作生产。没有自动下一轮、continuation、并行repair或默认拆分计划。
 
 ## Human Approval
 
 Execution is prohibited until the human explicitly approves this plan.
-本次「好的 你来更新repair吧」仅授权上述策略与草案更新。旧hash的execute-p不能授权本修订。后续人源明确调用以下精确路径，才批准该时刻当前内容及下列有限交付：
+后续人源明确调用当前精确文件才批准其当时内容及下列有限交付。旧hash的execute-p与本次review-p规划均不构成执行批准：
 
 `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/docs/plans/fix/discovery-identity-recovery-master/repair.md`
-
-无需把B-1/B-2变成已通过才能批准此有界修复；也不得把该批准误读为FK范围批准或降低master最终验收标准。
 
 ## Review-Fast-P Execution Handoff
 
 An explicit human-originated `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/docs/plans/fix/discovery-identity-recovery-master/repair.md` invocation authorizes:
 
-1. Only the 28 Authorized Files and the required verification/evidence commands in this plan. The Initial FK proposed boundary remains unapproved even where its test files overlap this table.
-2. After all eight repair tasks and all 21 required PASS commands succeed, and E01 evidence is collected/classified under Completion Criteria, exactly one local product commit before emitting `READY_FOR_VERIFICATION`, staging only in-scope changes in Authorized Files. Product commit subject: `fix(discovery): enforce current eligibility and identity write contracts`. Known B-1/B-2 blockers remain explicitly recorded; E01 known-FK failure is not relabeled success.
-3. Appending `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/docs/plans/review/2026-10-13-discovery-identity-recovery-master/repair-execution.md` with exact human approval source, repair path/hash, pre/post code SHAs, evidence parent, authorized changed files, every command/exit/count/skip, all E01 failures and B-1/B-2/FK status, deviations, executor identity when exposed, and clean product/index evidence. Record honest unrelated dirty state if present. This is the only extra authorized execution-evidence file.
-4. Exactly one docs-only evidence commit containing only that execution handoff. Evidence commit subject: `docs(review-fast-p): record identity contract repair execution`.
-5. Returning to the already authorized review-fast-p aggregate re-review in the same task when the human invocation requests it. Aggregate review remains full `9d353934b82ed3e36a193c70748e5efccb3d9e82..new committed code head`, not only repair delta; preserve stable finding IDs and prior epochs.
+1. Only the 18 Authorized Files and required verification/evidence commands in this plan.
+2. After all six repair tasks and all 21 required PASS commands succeed, and E01 is honestly classified under Completion Criteria, exactly one local product commit before emitting READY_FOR_VERIFICATION, staging only Authorized Files. Product commit subject: `fix(discovery): bind current identity and admission evidence`.
+3. Appending `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/docs/plans/review/2026-10-13-discovery-identity-recovery-master/repair-execution.md` with exact human approval source, current repair path/hash, prior/new product SHAs, evidence parent, authorized changed files, every command/exit/count/skip/failure/retry, E01 interpretation, B-1/B-2/FK status, deviations, executor identity when available, and clean product/index evidence. Disclose unrelated dirty files honestly. This is the only extra authorized execution-evidence file.
+4. Exactly one docs-only evidence commit containing only that execution handoff. Evidence commit subject: `docs(review-fast-p): record current evidence repair execution`.
+5. Returning to the already authorized review-fast-p aggregate re-review in the same task when the human invocation requests it; review full 9d353934b82ed3e36a193c70748e5efccb3d9e82..new committed product head, preserve prior epochs/IDs.
 
-This authorizes no extra files, amend, history rewrite, push, merge, deployment, FK repair, schema change, or product repair beyond this plan. Executor does not edit master/fast evidence/review ledger/machine-verification/manual-acceptance/final-decision. Evidence commits may advance HEAD since planning; verify exact product ancestry and record actual SHAs, not the stale planning HEAD. Drafting authorizes no implementation or commit.
+This authorizes no extra files, amend, history rewrite, push, merge, deployment, FK/schema repair, or product repair beyond this plan. Executor does not edit master/fast/review ledger/machine-verification/manual-acceptance/final-decision. Drafting authorizes no implementation or commit.
 
 ## Self-Review
 
-- 8个current P1均REPAIRABLE，8任务逐项根因/精确文件/辨别回归/命令/禁止项/完成标准齐全；V-27为新回归，V-28/V-29仅为累计边界新发现，stable IDs不改。
-- 28文件全部现存；原33删7加Writer/WriterTest两项。必要测试覆盖实际caller；产品caller/FK/helper、CLI、controller、schema均未偷偷扩权。SEAM仅必要精确位置维护。
-- B-1/B-2、无关既有FK、optional P2和resolved任务排除；B-2采集与R-1确证回归分开。21条必需修复验收PASS与E01真实B-2失败可并存，READY_FOR_VERIFICATION不声称master合格；没有排除项反向成为本8项的无条件成功前提。
-- 人裁定解除的是DIVERGING规划停点；未改写Epoch3结论，也未复用旧执行批准。无额外未决本8项authority conflict；FK需另行人源范围决策。
-- 仅一个当前repair.md，后续一次有界产品commit与一次durable handoff commit；没有自动修复循环。本轮只读源码和既有报告，未执行产品修改或验证测试。
+- 七个included findings均为已证合同内mandatory违约；V-5/V-13同根合为R-2，6任务均有精确文件、行为、辨别回归、现有命令、保持/禁止项与完成标准。
+- 18个现有文件只覆盖上述根因。新增REV/REVT来自原admission合同；不借文件授权修旧FK。旧28表不继承。
+- B-1/B-2、无关既有FK、可选P2、已解决项、瞬时计时观察及未证风险均排除；R-6仅落实既有必需实验真实性，E01已知前提失败不会被改写为绿或迫使越权产品修复。
+- 本轮verify-p为FAIL/PROGRESSING，故一次repair-p规划eligible；未把Epoch3 DIVERGING追改或复用旧人源批准。只维护一个当前repair.md，无自动执行/修复循环。
