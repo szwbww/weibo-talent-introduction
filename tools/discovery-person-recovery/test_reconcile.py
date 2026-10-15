@@ -41,11 +41,12 @@ def _group(doc_ids, disposition="MERGE_READY", digest="d1"):
 
 
 class FakeClient:
-    def __init__(self, status_override=None):
+    def __init__(self, status_override=None, person_revision=0):
         self.preview_calls = []
         self.apply_calls = []
         self.rollback_calls = []
         self.status_override = status_override
+        self.person_revision = person_revision
 
     def preview(self, frozen_ids, groups):
         self.preview_calls.append((frozen_ids, groups))
@@ -73,6 +74,7 @@ class FakeClient:
                 "memberCount": len(group["memberDocIds"]),
                 "protectionImported": False,
                 "reason": None,
+                "personRevision": self.person_revision,
             }
             for group in groups
         ]
@@ -81,14 +83,14 @@ class FakeClient:
         self.rollback_calls.append(groups)
         return 200, [
             {
-                "groupKey": reconcile.group_key(members),
-                "memberDocIds": members,
+                "groupKey": reconcile.group_key(group["memberDocIds"]),
+                "memberDocIds": group["memberDocIds"],
                 "personId": "p",
-                "safeToRollback": True,
-                "affectedCount": len(members),
-                "reason": None,
+                "safeToRollback": group.get("expectedRevision") is not None,
+                "affectedCount": len(group["memberDocIds"]),
+                "reason": None if group.get("expectedRevision") is not None else "ROLLBACK_UNSAFE",
             }
-            for members in groups
+            for group in groups
         ]
 
 
@@ -306,13 +308,35 @@ class ReconcileCliTest(unittest.TestCase):
         self.assertTrue(all(proposal["safeToRollback"] for proposal in result["proposals"]))
         proposals = reconcile.read_jsonl(os.path.join(self.out_dir, reconcile.ROLLBACK_FILE))
         self.assertEqual(2, len(proposals))
+        # R-6：往返必须携带 apply 落库时的人物 revision 凭据。
+        self.assertEqual(
+            {0},
+            {group["expectedRevision"] for group in client.rollback_calls[0]},
+            "回滚请求必须携带 apply 结果凭据",
+        )
+        self.assertEqual(
+            {("doc-a", "doc-b"), ("doc-c",)},
+            {tuple(group["memberDocIds"]) for group in client.rollback_calls[0]},
+        )
 
-    def test_rollback_preview_without_apply_proposes_merge_groups(self):
+    def test_rollback_preview_without_apply_evidence_is_refused(self):
         client = FakeClient()
         reconcile.run_preview(client, self.frozen, self.groups, self.out_dir)
         result = reconcile.run_rollback_preview(client, self.out_dir)
-        self.assertEqual(200, result["status"])
-        self.assertEqual(1, len(client.rollback_calls[0]), "仅对 MERGE_READY 出提案")
+        # R-6：无 apply 结果凭据不得默认安全 → 保守拒绝且不发请求。
+        self.assertNotEqual(200, result["status"])
+        self.assertIn("REFUSED", result["error"])
+        self.assertEqual([], client.rollback_calls)
+
+    def test_rollback_preview_without_revision_credential_is_refused(self):
+        client = FakeClient(person_revision=None)
+        reconcile.run_preview(client, self.frozen, self.groups, self.out_dir)
+        reconcile.run_apply(client, self.out_dir, confirm=True)
+        result = reconcile.run_rollback_preview(client, self.out_dir)
+        # R-6：apply 记录缺 personRevision（响应丢失/旧账本）同样不得默认安全。
+        self.assertNotEqual(200, result["status"])
+        self.assertIn("REFUSED", result["error"])
+        self.assertEqual([], client.rollback_calls)
 
 
 if __name__ == "__main__":

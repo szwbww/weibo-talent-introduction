@@ -69,6 +69,8 @@ class DiscoveryIdentityRecoveryService(
      * I-3：受控应用。只接受服务端重新取证重算出的两项 hash；不一致返回 [RecoveryApplyStatus.STALE]。
      * 落地走受限补证路径；[RecoveryApplyStatus.APPLIED] 时才以既有 `recordAutomatic` 接缝刷新自动准入
      * （名字补齐改变 `identity_hash`，旧人工决定自然作废）；[RecoveryApplyStatus.PARTIAL] 不刷新。
+     * 层写入之后的**人物登记失败**与**准入重验失败**都返回可续跑的 `PARTIAL`（不谎报完整成功），
+     * 同一原申请在故障解除后重跑时只补剩余步骤。
      */
     fun apply(docId: String, snapshotHash: String?, proposalHash: String?): RecoveryApplyResult {
         val inspection = inspect(docId)
@@ -141,9 +143,10 @@ class DiscoveryIdentityRecoveryService(
             decision = outcome.decision
             identityChanged = outcome.identityChanged
         } catch (e: Exception) {
-            // I-3：补证后原有准入重验失败单列、可重跑；名字已落地，不算整体失败。
+            // V-4：补证后准入重验失败**不得**报完整 APPLIED（会被 CLI 当终态永久跳过）——名字已落地但
+            // 准入链未闭合，返回可续跑的 PARTIAL：同一原申请重跑时只补登记与准入重验。
             log.warn("补证后准入重验失败 docId={}: {}", docId, e.message)
-            return finished(docId, RecoveryApplyStatus.APPLIED, "ADMISSION_REVERIFY_FAILED", repair.layers, null, null)
+            return finished(docId, RecoveryApplyStatus.PARTIAL, "ADMISSION_REVERIFY_FAILED", repair.layers, null, null)
         }
         return finished(docId, RecoveryApplyStatus.APPLIED, repair.outcome.name, repair.layers, decision, identityChanged)
     }

@@ -706,7 +706,31 @@ class ExpertSearchService(
     fun countExperts(
         level: ExpertIndexLevel,
         filters: List<Map<String, Any>> = emptyList()
+    ): Long = countExpertsResponse(level, filters)?.path("count")?.asLong(0L) ?: 0L
+
+    /**
+     * R-8（**人物查询专用**调用边界）：与 [countExperts] 完全同一请求，但只在**完整**响应上
+     * 发布精确计数 —— 缺响应体/超时/失败分片一律 [ExpertSearchUnavailableException]（明确查询不可用），
+     * 绝不把不完整响应退成合法 0 或某个精确数（`count=123,failed=1` 不得返回 123）。
+     *
+     * 既有 [countExperts] 的非人物调用方（发现面板、批量首发预估）保持原响应/错误合同不变。
+     */
+    fun countExpertsComplete(
+        level: ExpertIndexLevel,
+        filters: List<Map<String, Any>> = emptyList()
     ): Long {
+        val body = requireCompleteResponse(countExpertsResponse(level, filters))
+        // 缺/畸形 count 同样不表示 0：一律明确查询不可用。
+        if (!body.path("count").isNumber) {
+            throw ExpertSearchUnavailableException("ES 计数响应缺少 count 字段，查询结果不可用")
+        }
+        return body.path("count").asLong(0L)
+    }
+
+    private fun countExpertsResponse(
+        level: ExpertIndexLevel,
+        filters: List<Map<String, Any>>
+    ): JsonNode? {
         val query = if (filters.isEmpty()) {
             mapOf("match_all" to emptyMap<String, Any>())
         } else {
@@ -714,13 +738,12 @@ class ExpertSearchService(
         }
         val requestBody = mapOf("query" to query)
         val index = expertIndexService.indexName(level)
-        val response = restTemplate.exchange(
+        return restTemplate.exchange(
             "${properties.baseUrl}/$index/_count",
             HttpMethod.POST,
             HttpEntity(requestBody, headers()),
             JsonNode::class.java
         ).body
-        return response?.path("count")?.asLong(0L) ?: 0L
     }
 
     fun scrollExpertsFiltered(
@@ -1278,8 +1301,8 @@ class ExpertSearchService(
             HttpEntity(requestBody, headers()),
             JsonNode::class.java
         ).body
-        // R-10：超时/失败分片/缺 body 都不是「完整结果」，绝不返回空页冒充精确结果。
-        val body = requireCompleteResponse(response)
+        // R-10/V-13：超时/失败分片/缺 body/缺 hits 结构都不是「完整结果」，绝不返回空页冒充精确结果。
+        val body = requireCompleteHitsResponse(response)
 
         return body.path("hits").path("hits").map { hit ->
             ExpertHitWithSort(toExpertProfile(hit), sortTokens(hit))
@@ -1319,7 +1342,7 @@ class ExpertSearchService(
             ).body
             // R-10：先记住 scroll_id，任何完整性失败都要在 finally 里关闭游标。
             scrollId = initial?.path("_scroll_id")?.asText()?.takeIf { it.isNotBlank() } ?: scrollId
-            var response = requireCompleteResponse(initial)
+            var response = requireCompleteHitsResponse(initial)
             do {
                 val hits = response.path("hits").path("hits")
                 if (hits.isEmpty) break
@@ -1336,8 +1359,8 @@ class ExpertSearchService(
                 ).body
                 val nextScrollId = next?.path("_scroll_id")?.asText()?.takeIf { it.isNotBlank() }
                 if (nextScrollId != null) scrollId = nextScrollId
-                // R-10：缺 body / 超时 / 失败分片 → 明确不可用；缺 scroll_id 且仍有下一页 → 遍历无法完整继续。
-                val validated = requireCompleteResponse(next)
+                // R-10/V-13：缺 body / 超时 / 失败分片 / 缺 hits 结构 → 明确不可用；缺 scroll_id 且仍有下一页 → 遍历无法完整继续。
+                val validated = requireCompleteHitsResponse(next)
                 if (nextScrollId == null && validated.path("hits").path("hits").size() >= batchSize) {
                     throw ExpertSearchUnavailableException(
                         "ES scroll 未返回 scroll_id，遍历无法完整继续，查询结果不可用"
@@ -1417,6 +1440,20 @@ class ExpertSearchService(
             )
         }
         return response
+    }
+
+    /**
+     * R-10/V-13：搜索/滚动响应除完整性外，还须带**结构完整**的 `hits` —— `hits` 为对象且
+     * `hits.hits` 为数组。缺 `hits`、缺 `hits.hits` 或类型不对都不表示「0 条」：一律明确
+     * [ExpertSearchUnavailableException]，绝不把缺失结构读成空页，也不让滚动当成完整遍历结束。
+     */
+    private fun requireCompleteHitsResponse(response: JsonNode?): JsonNode {
+        val body = requireCompleteResponse(response)
+        val hits = body.path("hits")
+        if (!hits.isObject || !hits.path("hits").isArray) {
+            throw ExpertSearchUnavailableException("ES 响应缺少完整的 hits 结构，查询结果不可用")
+        }
+        return body
     }
 
     private fun displaySort(level: ExpertIndexLevel, sortBy: String?): List<Map<String, Any>> =

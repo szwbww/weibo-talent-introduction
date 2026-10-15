@@ -588,6 +588,34 @@ class DiscoveryIdentityRecoveryServiceTest {
         Mockito.verify(reviewService).recordAutomaticConclusion(eqNonNull(id), anyNonNull(profilePlaceholder), anyNonNull(automaticPassed()))
     }
 
+    @Test
+    fun `an admission reverify failure is resumable instead of a complete apply (V-4)`() {
+        val id = "EMAIL-jane@uni.edu"
+        put(ExpertIndexLevel.RAW, id, discoveredSource())
+        put(ExpertIndexLevel.CANDIDATE, id, discoveredSource())
+        Mockito.doThrow(RuntimeException("admission service down"))
+            .`when`(reviewService)
+            .recordAutomaticConclusion(Mockito.anyString(), anyNonNull(profilePlaceholder), anyNonNull(automaticPassed()))
+        val firstPreview = previewOf()
+
+        val first = service.apply(id, firstPreview.snapshotHash, firstPreview.proposalHash)
+
+        assertEquals(RecoveryApplyStatus.PARTIAL, first.status, "准入重验失败不得报完整 APPLIED")
+        assertEquals("ADMISSION_REVERIFY_FAILED", first.reason)
+        assertNotNull(docs[key(ExpertIndexLevel.RAW, id)]!!.source["identityVerification"])
+        assertNotNull(docs[key(ExpertIndexLevel.CANDIDATE, id)]!!.source["identityVerification"])
+
+        // 准入故障解除后按同一原申请续跑：层事实已在 ES，只补登记与准入重验。
+        Mockito.doReturn(DiscoveryReviewAdmissionOutcome("", "AUTO_PASSED", true, false, true, 1L, emptyList()))
+            .`when`(reviewService)
+            .recordAutomaticConclusion(Mockito.anyString(), anyNonNull(profilePlaceholder), anyNonNull(automaticPassed()))
+        val resumedPreview = previewOf()
+        val applied = service.apply(id, resumedPreview.snapshotHash, resumedPreview.proposalHash)
+
+        assertEquals(RecoveryApplyStatus.APPLIED, applied.status, "reason=${applied.reason}")
+        assertEquals("AUTO_PASSED", applied.admissionDecision)
+    }
+
     // ── I-1/V-20 §PMCID 与原文编号绑定 ─────────────────────────────────────
 
     @Test

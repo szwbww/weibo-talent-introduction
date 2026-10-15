@@ -17,6 +17,7 @@ import com.weibo.talentintroduction.discovery.service.MaintenancePreview
 import com.weibo.talentintroduction.discovery.service.MaintenancePreviewOutcome
 import com.weibo.talentintroduction.discovery.service.MaintenancePreviewRequest
 import com.weibo.talentintroduction.discovery.service.MaintenanceReasonCodes
+import com.weibo.talentintroduction.discovery.service.MaintenanceRollbackGroup
 import com.weibo.talentintroduction.discovery.service.MaintenanceRollbackOutcome
 import com.weibo.talentintroduction.discovery.service.MaintenanceRollbackProposal
 import com.weibo.talentintroduction.discovery.service.MaintenanceRollbackRequest
@@ -187,17 +188,41 @@ class DiscoveryPersonMaintenanceControllerTest {
     }
 
     @Test
-    fun `rollback preview returns proposals only`() {
+    fun `rollback preview returns proposals only and carries the expected revision`() {
         Mockito.`when`(
-            service.rollbackPreview(MaintenanceRollbackRequest(1, listOf(listOf("doc-a"))))
+            service.rollbackPreview(
+                MaintenanceRollbackRequest(1, listOf(MaintenanceRollbackGroup(listOf("doc-a"), 7L)))
+            )
         ).thenReturn(MaintenanceRollbackOutcome.Ok(listOf(sampleProposal())))
 
         mockMvc.perform(
             post("/api/expert-discovery/person-maintenance/rollback-preview")
                 .session(sessionOf("op1"))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""{"ruleVersion":1,"groups":[["doc-a"]]}""")
+                .content("""{"ruleVersion":1,"groups":[{"memberDocIds":["doc-a"],"expectedRevision":7}]}""")
         ).andExpect(status().isOk)
             .andExpect(jsonPath("$[0].safeToRollback").value(true))
+    }
+
+    @Test
+    fun `rollback preview without the expected revision reaches the service as unproven`() {
+        Mockito.`when`(
+            service.rollbackPreview(
+                MaintenanceRollbackRequest(1, listOf(MaintenanceRollbackGroup(listOf("doc-a"), null)))
+            )
+        ).thenReturn(
+            MaintenanceRollbackOutcome.Ok(
+                listOf(MaintenanceRollbackProposal("k", listOf("doc-a"), "p", false, 1, MaintenanceReasonCodes.ROLLBACK_UNSAFE))
+            )
+        )
+
+        mockMvc.perform(
+            post("/api/expert-discovery/person-maintenance/rollback-preview")
+                .session(sessionOf("op1"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"ruleVersion":1,"groups":[{"memberDocIds":["doc-a"]}]}""")
+        ).andExpect(status().isOk)
+            .andExpect(jsonPath("$[0].safeToRollback").value(false))
+            .andExpect(jsonPath("$[0].reason").value(MaintenanceReasonCodes.ROLLBACK_UNSAFE))
     }
 }

@@ -416,7 +416,8 @@ data class IdentityRepairResult(
  * 绝不从无凭证 externalIds 猜身份，也不据同名归组。
  *
  * 刷新只对**实时 discovered 成员**生效：非 discovered、无档案的 docId 直接 SKIPPED；已有关系的
- * 整组会一并重新核实（指纹变化返回 STALE，不借旧关系通过；跨根连接返回 NEEDS_REVIEW），
+ * 整组会一并重新核实（指纹变化返回 STALE，不借旧关系通过；跨根连接返回 NEEDS_REVIEW）；既有成员
+ * 读不到或已不属实时范围时整组 fail-closed（STALE，零写入），绝不把新成员挂到无法完整复验的根上。
  * 这保证「不抢先合并、冲突保持独立」由 04 服务端复验落实。
  */
 @Service
@@ -440,12 +441,21 @@ class DiscoveryPersonRegistrationService(
             return DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.SKIPPED, FEATURE_DISABLED)
         }
         if (docId.isBlank()) return DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.SKIPPED, "DOC_ID_BLANK")
-        val members = try {
+        val group = try {
             buildMembers(docId)
         } catch (e: Exception) {
             log.warn("人物登记刷新读取档案失败 docId={}: {}", docId, e.message)
             return DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.STALE, "SOURCE_UNAVAILABLE")
-        } ?: return DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.SKIPPED, "NOT_DISCOVERY")
+        }
+        val members = when (group) {
+            is GroupSnapshot.NotDiscovery ->
+                return DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.SKIPPED, "NOT_DISCOVERY")
+            is GroupSnapshot.Unverifiable -> {
+                log.warn("人物登记整组不可复验，保持不写关系 docId={}: {}", docId, group.reason)
+                return DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.STALE, group.reason)
+            }
+            is GroupSnapshot.Built -> group.members
+        }
         val result = try {
             personService.register(DiscoveryPersonSnapshot(source, members))
         } catch (e: Exception) {
@@ -463,12 +473,29 @@ class DiscoveryPersonRegistrationService(
     }
 
     /**
+     * V-2/I-1：整组快照构造结果。不可复验的既有成员**绝不**从快照里丢掉——残缺快照会把新成员
+     * 挂到无法完整复验的根上（旧成员的实时标签/档案变化被静默绕过）。
+     */
+    private sealed interface GroupSnapshot {
+        data class Built(val members: List<DiscoveryPersonMemberSnapshot>) : GroupSnapshot
+
+        /** 目标自身不是当前 discovered 档案（含无档案）：跳过，不是失败。 */
+        object NotDiscovery : GroupSnapshot
+
+        /** 既有成员读不到或已不属实时 discovered 范围：整组 fail-closed，零写入。 */
+        data class Unverifiable(val reason: String) : GroupSnapshot
+    }
+
+    /**
      * 构造登记快照：目标 docId 已在注册表中时，把整组现存成员一并带上（复验完整组）；
      * 未注册或跨多个根时只带目标成员（跨根由 04 复验为 NEEDS_REVIEW）。
+     *
+     * V-2：既有成员读不到（[GroupSnapshot.Unverifiable] `MEMBER_UNREADABLE`）或已不属实时
+     * discovered 范围（`MEMBER_NOT_LIVE`）时**不登记任何关系**——整组无法完整复验即 fail-closed。
      */
-    private fun buildMembers(docId: String): List<DiscoveryPersonMemberSnapshot>? {
-        val target = facts(docId) ?: return null
-        if (!target.discovered) return null
+    private fun buildMembers(docId: String): GroupSnapshot {
+        val target = facts(docId) ?: return GroupSnapshot.NotDiscovery
+        if (!target.discovered) return GroupSnapshot.NotDiscovery
         val related = LinkedHashSet<String>()
         related += personRepository.findPersonIdsByDocIds(listOf(docId)).values
         if (target.authorKeys.isNotEmpty()) {
@@ -480,14 +507,17 @@ class DiscoveryPersonRegistrationService(
             emptyList()
         }
         val ids = (groupDocIds + docId).distinct()
-        val members = ids.mapNotNull { id ->
+        val members = mutableListOf<DiscoveryPersonMemberSnapshot>()
+        for (id in ids) {
             if (id == docId) {
-                DiscoveryPersonMemberSnapshot(docId, target.fingerprint)
-            } else {
-                facts(id)?.takeIf { it.discovered }?.let { DiscoveryPersonMemberSnapshot(id, it.fingerprint) }
+                members += DiscoveryPersonMemberSnapshot(docId, target.fingerprint)
+                continue
             }
+            val existing = facts(id) ?: return GroupSnapshot.Unverifiable("MEMBER_UNREADABLE")
+            if (!existing.discovered) return GroupSnapshot.Unverifiable("MEMBER_NOT_LIVE")
+            members += DiscoveryPersonMemberSnapshot(id, existing.fingerprint)
         }
-        return members.ifEmpty { listOf(DiscoveryPersonMemberSnapshot(docId, target.fingerprint)) }
+        return GroupSnapshot.Built(members)
     }
 
     private class Facts(val discovered: Boolean, val fingerprint: String, val authorKeys: List<String>)

@@ -61,6 +61,9 @@ class DiscoveryPersonFeatureGate(
  * - 不据同名归组、不做模糊匹配、不迁移范围外对象：email/作者键/联系人别名命中范围外对象时
  *   返回 [DiscoveryPersonOutcome.SCOPE_CONFLICT]。
  * - 两个已有人物根被新证据连接时返回 [DiscoveryPersonOutcome.NEEDS_REVIEW]，不自动吞并根。
+ * - 挂接既有根前必须复验该根**全部当前成员**（不只本次请求快照）：任一成员读不到、已不属实时
+ *   discovered 范围或与登记指纹不符即零写入（[DiscoveryPersonOutcome.STALE]）；规范全名与本次组
+ *   不一致即待人工复核，绝不以新成员绕过根上无法复验的旧关系。
  * - 并发下「只产生一个主档」由作者键主键唯一约束 + 排序锁保证；唯一键冲突后重新读并复验，
  *   绝不把冲突当成功。
  * - 默认关闭：本服务是**纯登记入口**，不实现任何全表回填/扫描，也不做 GET 或发送预估；
@@ -327,6 +330,11 @@ class DiscoveryPersonService(
 
     // ── 决策（每次冲突都重新读一遍仓储状态） ───────────────────────────────────
 
+    private sealed interface RootGroupVerification {
+        data class Verified(val members: List<DiscoveryPersonVerifiedMember>) : RootGroupVerification
+        data class Rejected(val result: DiscoveryPersonRegistrationResult) : RootGroupVerification
+    }
+
     private sealed interface Resolution {
         data class Create(val primaryDocId: String) : Resolution
         data class Attach(
@@ -358,10 +366,16 @@ class DiscoveryPersonService(
             return Resolution.Create(verified.map { it.docId }.min())
         }
         val personId = roots.single()
-        // I-2：附加成员必须与既有根**全部当前作者键**同类唯一——同 ORCID 但不同 OpenAlex
-        // 键（或反之）不是同一人，绝不静默挂接；冲突即待核，不写关系。
+        // I-2/V-3：挂接前复验该根**全部当前成员**（不只本次请求快照里的那几个）——任一成员不可
+        // 复验即零写入，绝不把新成员挂到无法完整复验的根上。
+        val rootGroup = when (val verification = verifyRootGroup(personId, verified)) {
+            is RootGroupVerification.Rejected -> return Resolution.Reject(verification.result)
+            is RootGroupVerification.Verified -> verification
+        }
+        // I-2：附加成员必须与既有根**全部当前作者键**（含已复验成员的当前键）同类唯一——同 ORCID 但
+        // 不同 OpenAlex 键（或反之）不是同一人，绝不静默挂接；冲突即待核，不写关系。
         val existingKeys = repository.findAuthorKeysByPerson(personId).map { it.authorKey }
-        val combined = (existingKeys + groupKeys).distinct()
+        val combined = (existingKeys + rootGroup.members.flatMap { it.authorKeys } + groupKeys).distinct()
         val combinedOrcid = combined.filter { it.startsWith(DiscoveryPersonIdentity.ORCID_PREFIX) }.distinct()
         val combinedOpenAlex = combined.filter { it.startsWith(DiscoveryPersonIdentity.OPENALEX_PREFIX) }.distinct()
         if (combinedOrcid.size > 1 || combinedOpenAlex.size > 1) {
@@ -381,6 +395,40 @@ class DiscoveryPersonService(
             )
         }
         return Resolution.Attach(personId, newMembers, newKeys)
+    }
+
+    /**
+     * I-2/V-3：挂接既有根前的**整组**复验。
+     *
+     * 该根的全部当前成员（除本次请求已核实的 docId）都按**当前 ES 档案**重核一次——实时 discovered
+     * 范围、层间身份一致、规范邮箱/全名与作者键，且必须与登记时留存的成员指纹一致。任一成员不可读、
+     * 已失效或指纹变化即 [RootGroupVerification.Rejected]（零写入）；规范全名与本次组不一致即待人工复核
+     * （同名比较覆盖整根成员，不只请求快照）。既有成员不会重新写 evidence_json，故来源标记仅占位。
+     */
+    private fun verifyRootGroup(
+        personId: String,
+        verified: List<DiscoveryPersonVerifiedMember>
+    ): RootGroupVerification {
+        val requestDocIds = verified.map { it.docId }.toSet()
+        val rootMembers = mutableListOf<DiscoveryPersonVerifiedMember>()
+        for (record in repository.findMembersByPerson(personId)) {
+            if (record.expertDocId in requestDocIds) continue
+            val snapshot = DiscoveryPersonMemberSnapshot(record.expertDocId, record.identityFingerprint)
+            when (val verification = verifyMember(ROOT_GROUP_SOURCE, snapshot)) {
+                is MemberVerification.Rejected ->
+                    return RootGroupVerification.Rejected(result(verification.outcome, reason = verification.reason))
+                is MemberVerification.Verified -> rootMembers += verification.member
+            }
+        }
+        val fullNames = (verified + rootMembers)
+            .map { DiscoveryPersonIdentity.normalizedFullName(it.givenNames, it.familyNames) }
+            .distinct()
+        if (fullNames.size > 1) {
+            return RootGroupVerification.Rejected(
+                result(DiscoveryPersonOutcome.NEEDS_REVIEW, reason = "GROUP_NAME_MISMATCH")
+            )
+        }
+        return RootGroupVerification.Verified(rootMembers)
     }
 
     private inline fun write(block: () -> DiscoveryPersonWriteStatus): DiscoveryPersonWriteStatus? =
@@ -410,6 +458,9 @@ class DiscoveryPersonService(
         val LAYERS = listOf(ExpertIndexLevel.RAW, ExpertIndexLevel.CANDIDATE, ExpertIndexLevel.APPLICATION)
         const val MAX_CONFLICT_ATTEMPTS = 3
         const val RULE_VERSION = 1
+
+        /** I-2/V-3：既有根成员复验的来源占位——这些成员已在关系里，不会重新写 `evidence_json`。 */
+        const val ROOT_GROUP_SOURCE = "EXISTING_PERSON_MEMBER"
         private val LAYER_IDENTITY_KEYS =
             listOf("orcidId", "email", "givenNames", "familyNames", "externalIds", "identityVerification")
     }

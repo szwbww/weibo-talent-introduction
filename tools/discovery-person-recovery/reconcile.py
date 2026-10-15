@@ -224,7 +224,16 @@ class ApiClient:
         })
 
     def rollback(self, groups: list):
-        return self._post(ROLLBACK_ENDPOINT, {"ruleVersion": RULE_VERSION, "groups": groups})
+        return self._post(ROLLBACK_ENDPOINT, {
+            "ruleVersion": RULE_VERSION,
+            "groups": [
+                {
+                    "memberDocIds": group["memberDocIds"],
+                    "expectedRevision": group.get("expectedRevision"),
+                }
+                for group in groups
+            ],
+        })
 
     def _post(self, endpoint: str, payload):
         if self._transport is not None:
@@ -303,6 +312,8 @@ def apply_record(result: dict, observed_at: str = None) -> dict:
         "memberCount": result.get("memberCount"),
         "protectionImported": result.get("protectionImported"),
         "reason": result.get("reason"),
+        # R-6：落库后的人物 revision 是回滚提案核对原版本的**结果凭据**；缺失即不得默认安全。
+        "personRevision": result.get("personRevision"),
         "observedAt": observed_at or _now(),
     }
 
@@ -425,15 +436,33 @@ def run_apply(client, out_dir: str, confirm: bool, preview_digest: str = None, l
 
 def run_rollback_preview(client, out_dir: str) -> dict:
     ensure_private_dir(out_dir)
-    previews = read_jsonl(os.path.join(out_dir, PREVIEW_FILE))
-    applied_keys = {
-        record.get("groupKey") for record in read_jsonl(os.path.join(out_dir, APPLY_FILE))
+    previews = {record.get("groupKey"): record for record in read_jsonl(os.path.join(out_dir, PREVIEW_FILE))}
+    applied = {
+        record.get("groupKey"): record
+        for record in read_jsonl(os.path.join(out_dir, APPLY_FILE))
         if record.get("status") in {"APPLIED", "UNCHANGED"}
     }
-    if applied_keys:
-        groups = [record["memberDocIds"] for record in previews if record.get("groupKey") in applied_keys]
-    else:
-        groups = [record["memberDocIds"] for record in previews if record.get("disposition") == "MERGE_READY"]
+    if not applied:
+        # R-6：没有 apply 结果凭据就无从证明原版本 → 保守拒绝，绝不默认安全。
+        return {
+            "status": 0,
+            "error": "REFUSED：缺少 apply 结果凭据（先 apply 并记录 personRevision），回滚提案不得默认安全",
+        }
+    groups = []
+    for key, record in applied.items():
+        preview = previews.get(key)
+        if preview is None:
+            continue
+        # R-6：缺原版本凭据（响应丢失/旧账本）同样不得默认安全 —— 直接拒绝而非按不安全提案继续。
+        if record.get("personRevision") is None:
+            return {
+                "status": 0,
+                "error": "REFUSED：apply 记录缺少 personRevision，无法核对原版本，回滚提案不得默认安全",
+            }
+        groups.append({
+            "memberDocIds": preview["memberDocIds"],
+            "expectedRevision": record.get("personRevision"),
+        })
     if not groups:
         return {"status": 200, "proposals": []}
     status, body = client.rollback(groups)

@@ -8,13 +8,16 @@ import com.weibo.talentintroduction.campaign.service.BatchRecipientSelectionServ
 import com.weibo.talentintroduction.campaign.service.ConversationStateService
 import com.weibo.talentintroduction.campaign.service.DiscoveryPersonOutreachGuardService
 import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
+import com.weibo.talentintroduction.campaign.service.OutreachAttemptIdentity
 import com.weibo.talentintroduction.campaign.service.OutreachClaimOutcome
 import com.weibo.talentintroduction.campaign.service.OutreachGuardTicket
 import com.weibo.talentintroduction.campaign.service.OutreachReserveOutcome
 import com.weibo.talentintroduction.common.domain.ConversationStatus
+import com.weibo.talentintroduction.discovery.service.DiscoveryPersonFeatureGate
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailRecordQaRule
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+import com.weibo.talentintroduction.mail.domain.SmtpErrorCategory
 import com.weibo.talentintroduction.mail.domain.TriggeredBy
 import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
@@ -42,7 +45,12 @@ class ManualExpertMailService(
     private val personalizationGateService: PersonalizationGateService = PersonalizationGateService(),
     private val mailVariableService: MailVariableService? = null,
     /** 09 (I-1/I-2/I-3): 人物级首发原子门禁 —— 仅实际 INTRODUCTION 且 discovered 时启用。 */
-    private val outreachGuardService: DiscoveryPersonOutreachGuardService? = null
+    private val outreachGuardService: DiscoveryPersonOutreachGuardService? = null,
+    /**
+     * V-1（master I-8/发布段、04 开关）：人物能力总开关。默认关闭时必须保持本轮引入前的
+     * 旧发送行为 —— 只有**已存在人物映射/保护**的目标才继续走 guard（保护不可被开关撤销）。
+     */
+    private val discoveryPersonFeatureGate: DiscoveryPersonFeatureGate = DiscoveryPersonFeatureGate()
 ) {
     fun listSendOptions(): List<ManualMailOption> {
         return mailComposeTemplateService.listEnabled()
@@ -111,11 +119,13 @@ class ManualExpertMailService(
         if (guardTicket != null) {
             if (delivered.status == "SENT") {
                 outreachGuardService?.markSent(guardTicket, delivered.messageId, null)
-            } else if (delivered.smtpResponseCode != null) {
-                // SMTP 明确未接受（有响应码）→ 证明未交付，安全重试（绑定原地址）。
+            } else if (delivered.smtpResponseCode != null &&
+                delivered.errorCategory != SmtpErrorCategory.SUCCESS
+            ) {
+                // V-8（09 I-2）：SMTP 明确拒绝（4xx/5xx，非 SUCCESS 分类）→ 证明未接受，安全重试（绑定原地址）。
                 outreachGuardService?.markSafeRetry(guardTicket)
             } else {
-                // 无响应码（网络/认证等）→ 结果不明，不可自动重发。
+                // 250/SUCCESS（服务端已接受、之后连接中断）或无响应码（网络/认证等）→ 结果不明，不可自动重发。
                 outreachGuardService?.markUnknown(guardTicket)
             }
         }
@@ -191,8 +201,9 @@ class ManualExpertMailService(
     }
 
     /**
-     * 09 (I-1/I-2/I-3): 详情手动发送的介绍邮件首发门禁。仅当 guard 已注入且实际 mailType=INTRODUCTION
-     * 时启用：占位 → 发送前 CAS SENDING。未获许可抛 IllegalStateException（外发事务回滚，绝不调用 SMTP）。
+     * 09 (I-1/I-2/I-3): 详情手动发送的介绍邮件首发门禁。仅当 guard 已注入、实际 mailType=INTRODUCTION
+     * 且目标适用（V-1：总开关开启，或该 docId 已登记到人物）时启用：占位 → 发送前 CAS SENDING。
+     * 未获许可抛 IllegalStateException（外发事务回滚，绝不调用 SMTP）。
      * 已知人物画像不可读时 fail-closed —— 绝不退化为无 guard 的普通邮件；非人物 / 非 INTRODUCTION
      * 返回 null（保持原路径逐字不变）。
      */
@@ -211,13 +222,17 @@ class ManualExpertMailService(
         }
         if (!RecipientScope.isDiscoveryOutreach(profile)) return null
         val docId = BatchRecipientSelectionService.docIdOf(profile)
-        val ticket = when (val outcome = guard.reserveIntroduction(docId, recipient, profile)) {
+        // V-1：总开关关闭且该目标无人物映射/保护 → 逐字保持旧路径（不调 guard、不写 guard 状态）。
+        if (!discoveryPersonFeatureGate.enabled && !guard.isKnownPerson(docId)) return null
+        // V-26：本次发送对象就是自己的 contact 行（建行即固化绑定），历史复核不得把它当旧历史。
+        val attempt = OutreachAttemptIdentity(contactId = contact.id)
+        val ticket = when (val outcome = guard.reserveIntroduction(docId, recipient, profile, attempt)) {
             is OutreachReserveOutcome.Granted -> outcome.ticket
             is OutreachReserveOutcome.Denied -> throw IllegalStateException(
                 "人物级首发保护拒绝发送：${outcome.code}（contactId=${contact.id}）"
             )
         }
-        return when (val claim = guard.claimSending(ticket, profile, recipient)) {
+        return when (val claim = guard.claimSending(ticket, profile, recipient, attempt)) {
             is OutreachClaimOutcome.Claimed -> ticket
             is OutreachClaimOutcome.Denied -> {
                 // 未取得交付权 = 未调用 SMTP，证明未交付 → 允许原址安全重试，绝不留 RESERVED 占位。

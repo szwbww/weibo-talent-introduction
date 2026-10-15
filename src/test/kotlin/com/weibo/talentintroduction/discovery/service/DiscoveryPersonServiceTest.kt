@@ -338,6 +338,74 @@ class DiscoveryPersonServiceTest {
         assertEquals(1, repository.persons.size)
     }
 
+    @Test
+    fun `an existing root member with a conflicting full name is never silently attached (V-3)`() {
+        put("doc-a", source = discoveredSource(email = "a@uni.edu", given = "Jane", family = "Doe", orcid = "0000-0002-1825-0097"))
+        val key = orcidKey("0000-0002-1825-0097")
+        val first = register(member("doc-a", "a@uni.edu", given = "Jane", family = "Doe", keys = listOf(key)))
+        assertEquals(DiscoveryPersonOutcome.CREATED, first.outcome, first.reason)
+
+        // 同 ORCID 但规范全名不同：既有根的**全部当前成员**与新成员必须同名才可归组。
+        put("doc-b", source = discoveredSource(email = "b@uni.edu", given = "John", family = "Smith", orcid = "0000-0002-1825-0097"))
+        val second = register(member("doc-b", "b@uni.edu", given = "John", family = "Smith", keys = listOf(key)))
+
+        assertEquals(DiscoveryPersonOutcome.NEEDS_REVIEW, second.outcome)
+        assertEquals("GROUP_NAME_MISMATCH", second.reason)
+        assertNull(repository.members["doc-b"], "既有根全部成员姓名都参与核验")
+        assertEquals(1, repository.members.size)
+    }
+
+    @Test
+    fun `an existing root member that lost the live tag blocks new attachments (V-3)`() {
+        put("doc-a", source = discoveredSource(email = "a@uni.edu", orcid = "0000-0002-1825-0097"))
+        val key = orcidKey("0000-0002-1825-0097")
+        assertEquals(DiscoveryPersonOutcome.CREATED, register(member("doc-a", "a@uni.edu", keys = listOf(key))).outcome)
+
+        // 既有成员当前档案移除字面 discovered 标签（保留 proof/来源）→ 根无法完整复验，零写入。
+        put("doc-a", source = discoveredSource(email = "a@uni.edu", orcid = "0000-0002-1825-0097").apply { remove("tags") })
+        put("doc-b", source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097"))
+        val second = register(member("doc-b", "b@uni.edu", keys = listOf(key)))
+
+        assertEquals(DiscoveryPersonOutcome.STALE, second.outcome)
+        assertEquals("NOT_DISCOVERY", second.reason)
+        assertNull(repository.members["doc-b"], "根不可复验时不挂接新成员")
+        assertEquals(1, repository.members.size)
+        assertEquals(setOf(key), repository.keys.keys)
+    }
+
+    @Test
+    fun `an unreadable existing root member blocks new attachments (V-3)`() {
+        put("doc-a", source = discoveredSource(email = "a@uni.edu", orcid = "0000-0002-1825-0097"))
+        val key = orcidKey("0000-0002-1825-0097")
+        assertEquals(DiscoveryPersonOutcome.CREATED, register(member("doc-a", "a@uni.edu", keys = listOf(key))).outcome)
+
+        docs.remove("${ExpertIndexLevel.RAW.name}/doc-a")
+        put("doc-b", source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097"))
+        val second = register(member("doc-b", "b@uni.edu", keys = listOf(key)))
+
+        assertEquals(DiscoveryPersonOutcome.STALE, second.outcome)
+        assertEquals("DOCUMENT_MISSING", second.reason)
+        assertNull(repository.members["doc-b"])
+        assertEquals(1, repository.members.size)
+    }
+
+    @Test
+    fun `an existing root member whose current facts changed is re-read and rejects the new member (V-3)`() {
+        put("doc-a", source = discoveredSource(email = "a@uni.edu", orcid = "0000-0002-1825-0097"))
+        val key = orcidKey("0000-0002-1825-0097")
+        assertEquals(DiscoveryPersonOutcome.CREATED, register(member("doc-a", "a@uni.edu", keys = listOf(key))).outcome)
+
+        // 既有成员档案事实已改动（邮箱）：复验必须以**当前** ES 事实为准，不沿用第一次验证缓存。
+        put("doc-a", source = discoveredSource(email = "a2@uni.edu", orcid = "0000-0002-1825-0097"))
+        put("doc-b", source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097"))
+        val second = register(member("doc-b", "b@uni.edu", keys = listOf(key)))
+
+        assertEquals(DiscoveryPersonOutcome.STALE, second.outcome)
+        assertEquals("FINGERPRINT_MISMATCH", second.reason)
+        assertNull(repository.members["doc-b"])
+        assertEquals(1, repository.members.size)
+    }
+
     // ── I-3：范围/事实有效性 ────────────────────────────────────────────────
 
     @Test

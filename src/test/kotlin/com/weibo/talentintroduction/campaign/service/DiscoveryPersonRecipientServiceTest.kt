@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.campaign.service
 
 import com.weibo.talentintroduction.campaign.domain.RecipientScope
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonIdentity
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonMemberRecord
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonRecord
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonScope
@@ -11,6 +12,7 @@ import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewDecision
 import com.weibo.talentintroduction.discovery.service.DiscoveryReviewAdmissionKey
 import com.weibo.talentintroduction.discovery.service.DiscoveryReviewResolvedAdmission
 import com.weibo.talentintroduction.discovery.service.DiscoveryReviewService
+import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
@@ -72,15 +74,25 @@ class DiscoveryPersonRecipientServiceTest {
         keyword = "kw",
         employment = "Employment",
         emailSource = if (discovery) "PAPER_FULLTEXT" else null,
-        emailVerifiedLevel = level
+        emailVerifiedLevel = level,
+        // V-5：人物成员必须能按**当前**档案复现实时 discovered 范围（发现来源 + 字面标签）。
+        tags = if (discovery) listOf(DiscoveryPersonScope.DISCOVERED_TAG) else emptyList()
     )
 
-    private fun member(docId: String, personId: String, defaultEmail: String? = null) =
+    /** V-5：登记指纹按「当前档案事实」签发（docId + 规范邮箱 + 规范全名 + 作者键），与 [expert] 同源。 */
+    private fun member(
+        docId: String,
+        personId: String,
+        defaultEmail: String? = null,
+        email: String = "$docId@example.org"
+    ) =
         DiscoveryPersonMemberRecord(
             expertDocId = docId,
             personId = personId,
             normalizedEmail = defaultEmail,
-            identityFingerprint = "fp-$docId",
+            identityFingerprint = DiscoveryPersonIdentity.fingerprint(
+                docId, DiscoveryIdentity.normalizedEmail(email), "Given", "Family", emptyList()
+            ),
             evidenceJson = null,
             createdAt = LocalDateTime.of(2026, 8, 1, 12, 0),
             updatedAt = LocalDateTime.of(2026, 8, 1, 12, 0)
@@ -110,6 +122,25 @@ class DiscoveryPersonRecipientServiceTest {
 
     private fun anyLevel(): ExpertIndexLevel =
         Mockito.any(ExpertIndexLevel::class.java) ?: ExpertIndexLevel.CANDIDATE
+
+    /** 按层给出**当前**档案（成员可能只存在于某一层时使用）。 */
+    private fun stubLevelSearch(
+        raw: List<ExpertProfile>,
+        candidate: List<ExpertProfile>,
+        application: List<ExpertProfile>
+    ) {
+        val byLevel = mapOf(
+            ExpertIndexLevel.RAW to raw,
+            ExpertIndexLevel.CANDIDATE to candidate,
+            ExpertIndexLevel.APPLICATION to application
+        )
+        Mockito.`when`(expertSearchService.findByDocumentIds(anyLevel(), Mockito.anyList()))
+            .thenAnswer { invocation ->
+                val level = invocation.getArgument<ExpertIndexLevel>(0)
+                val ids = invocation.getArgument<List<String>>(1)
+                byLevel[level].orEmpty().filter { (it.esDocId ?: it.orcidId) in ids }
+            }
+    }
 
     private fun stubAdmissions(vararg decisions: Pair<String, String>) {
         val byDoc = decisions.toMap()
@@ -175,7 +206,10 @@ class DiscoveryPersonRecipientServiceTest {
         // 默认 d1 显式条件不合格（scope 邮箱域限制），d2 合格 → 选 d2。
         val d1 = expert("d1", email = "a@blocked.com", level = 5)
         val d2 = expert("d2", email = "b@allowed.com", level = 1)
-        stubPerson("P1", listOf(member("d1", "P1", defaultEmail = "a@blocked.com"), member("d2", "P1")))
+        stubPerson(
+            "P1",
+            listOf(member("d1", "P1", defaultEmail = "a@blocked.com", email = "a@blocked.com"), member("d2", "P1", email = "b@allowed.com"))
+        )
         stubExpertSearch(listOf(d1, d2))
         admitAll("d1", "d2")
         Mockito.`when`(contacts.findByOrcidIdIn(Mockito.anyList())).thenReturn(emptyList())
@@ -297,12 +331,13 @@ class DiscoveryPersonRecipientServiceTest {
 
         service.select(scope(funnelLevels = setOf("CANDIDATE", "APPLICATION")), listOf(d1))
 
-        // 未出现在本批的成员 d2 按 scope 的 funnelLevels 逐层读取。
+        // 未出现在本批的成员 d2 与本批成员 d1 一起按 scope 的 funnelLevels 逐层重读**当前**档案
+        // （V-5：页面快照不再被当作当前事实）。
         Mockito.verify(expertSearchService).findByDocumentIds(
-            com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.CANDIDATE, listOf("d2")
+            com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.CANDIDATE, listOf("d1", "d2")
         )
         Mockito.verify(expertSearchService).findByDocumentIds(
-            com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.APPLICATION, listOf("d2")
+            com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.APPLICATION, listOf("d1", "d2")
         )
     }
 
@@ -312,12 +347,7 @@ class DiscoveryPersonRecipientServiceTest {
         val d1 = expert("d1")
         val d2 = expert("d2")
         stubPerson("P1", listOf(member("d1", "P1"), member("d2", "P1")))
-        Mockito.`when`(expertSearchService.findByDocumentIds(ExpertIndexLevel.RAW, listOf("d1")))
-            .thenReturn(listOf(d1))
-        Mockito.`when`(expertSearchService.findByDocumentIds(ExpertIndexLevel.CANDIDATE, listOf("d1")))
-            .thenReturn(emptyList())
-        Mockito.`when`(expertSearchService.findByDocumentIds(ExpertIndexLevel.APPLICATION, listOf("d1")))
-            .thenReturn(emptyList())
+        stubLevelSearch(raw = listOf(d1, d2), candidate = listOf(d2), application = emptyList())
         stubAdmissions("d1" to DiscoveryReviewDecision.HOLD.name, "d2" to DiscoveryReviewDecision.AUTO_PASSED.name)
         Mockito.`when`(contacts.findByOrcidIdIn(Mockito.anyList())).thenReturn(emptyList())
 
@@ -346,6 +376,58 @@ class DiscoveryPersonRecipientServiceTest {
             listOf(PersonRecipientReasonKeys.PERSON_UNREADABLE),
             selection.excluded.single().exclusionReasons
         )
+    }
+
+    @Test
+    fun `a cached batch profile whose current document lost the live tag is not selected (V-5)`() {
+        // 本批档案（页面快照）看起来仍实时 discovered，但**当前 ES 档案**已移除 discovered 标签：
+        // 旧关系立即失效，不得靠缓存档案继续入选。
+        val d1 = expert("d1", level = 1)
+        val d2 = expert("d2", level = 5)
+        stubPerson("P1", listOf(member("d1", "P1"), member("d2", "P1")))
+        stubExpertSearch(listOf(d1.copy(tags = emptyList()), d2))
+        admitAll("d1", "d2")
+        Mockito.`when`(contacts.findByOrcidIdIn(Mockito.anyList())).thenReturn(emptyList())
+
+        val selection = service.select(scope(), listOf(d1))
+
+        assertTrue(selection.included.isEmpty(), "缓存档案不得覆盖当前标签失效")
+        assertEquals(
+            listOf(PersonRecipientReasonKeys.PERSON_NOT_LIVE),
+            selection.excluded.single().exclusionReasons
+        )
+    }
+
+    @Test
+    fun `a member whose current document no longer matches the registered fingerprint is not selected (V-5)`() {
+        // 当前档案邮箱与登记指纹不符（档案事实已改动）→ 旧关系待重核，整组排除。
+        val current = expert("d1", email = "changed@example.org", level = 1)
+        stubPerson("P1", listOf(member("d1", "P1")))
+        stubExpertSearch(listOf(current))
+        admitAll("d1")
+        Mockito.`when`(contacts.findByOrcidIdIn(Mockito.anyList())).thenReturn(emptyList())
+
+        val selection = service.select(scope(), listOf(expert("d1", level = 1)))
+
+        assertTrue(selection.included.isEmpty())
+        assertEquals(
+            listOf(PersonRecipientReasonKeys.PERSON_RELATION_STALE),
+            selection.excluded.single().exclusionReasons
+        )
+    }
+
+    @Test
+    fun `a live member with an unchanged fingerprint is still selected (V-5)`() {
+        val d1 = expert("d1", level = 1)
+        stubPerson("P1", listOf(member("d1", "P1")))
+        stubExpertSearch(listOf(d1))
+        admitAll("d1")
+        Mockito.`when`(contacts.findByOrcidIdIn(Mockito.anyList())).thenReturn(emptyList())
+
+        val selection = service.select(scope(), listOf(d1))
+
+        assertEquals(setOf("d1"), selection.selectedDocIds)
+        assertEquals("d1@example.org", selection.included.single().selectedEmail)
     }
 
     @Test
@@ -391,10 +473,10 @@ class DiscoveryPersonRecipientServiceTest {
 
     @Test
     fun `non-person records keep per-email behaviour without member loading (I-3)`() {
-        // 无 04 映射：逐邮箱选择，不触发人物/ES/抑制/联系人读取。
-        Mockito.`when`(personRepository.findPersonIdsByDocIds(Mockito.anyCollection())).thenReturn(emptyMap())
+        // 无 04 映射的非发现档案：逐邮箱选择，不触发人物/ES/抑制/联系人读取。
+        Mockito.`when`(personRepository.findPersonIdsByDocIds(Mockito.anyCollection<String>())).thenReturn(emptyMap())
         admitAll("X")
-        val x = expert("X")
+        val x = expert("X", discovery = false)
 
         val selection = service.select(scope(), listOf(x))
 

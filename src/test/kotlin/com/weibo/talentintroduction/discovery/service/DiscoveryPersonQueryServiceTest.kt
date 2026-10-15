@@ -146,7 +146,7 @@ class DiscoveryPersonQueryServiceTest {
     }
 
     private fun stubCount(total: Long) {
-        Mockito.`when`(search.countExperts(anyLevel(), anyList())).thenAnswer { invocation ->
+        Mockito.`when`(search.countExpertsComplete(anyLevel(), anyList())).thenAnswer { invocation ->
             @Suppress("UNCHECKED_CAST")
             capturedCountFilters = invocation.arguments[1] as List<Map<String, Any>>
             total
@@ -441,6 +441,16 @@ class DiscoveryPersonQueryServiceTest {
     // ── R-11（V-11）：DB 联系人只用当前有效关系聚合 ──────────────────────────────
 
     @Test
+    fun `relation read failure surfaces as unavailable instead of an empty mapping`() {
+        Mockito.`when`(repository.findMembers(anyList())).thenThrow(RuntimeException("relations down"))
+
+        // V-13：关系读取失败不得返回空映射冒充「无人映射」—— 必须明确「关系未知/查询不可用」。
+        assertThrows(DiscoveryPersonQueryUnavailableException::class.java) {
+            service().resolveVerifiedPersonRelations(listOf("d1", "d6"))
+        }
+    }
+
+    @Test
     fun `verified relations are returned while a changed fingerprint falls back and needs review`() {
         val live = Doc("d1")
         val changed = Doc("d6", email = "old@example.com")
@@ -643,6 +653,33 @@ class DiscoveryPersonQueryServiceTest {
         val detail = service().personDetail("d1", ExpertIndexLevel.CANDIDATE)!!
         assertEquals("UNKNOWN", detail.members.single().admissionStatus)
         assertTrue(detail.members.none { it.admissionStatus == "PASSED" })
+    }
+
+    @Test
+    fun `detail never reports a stale member as sendable even when the persistent admission is ADMITTED`() {
+        val d1 = Doc("d1", email = "ada@example.com")
+        stubDetail(d1)
+        // 关系已登记但当前指纹不符 → 失效成员（移标/证据变化）。
+        Mockito.`when`(repository.findMembersByPerson("P1")).thenReturn(
+            listOf(memberRow(d1, "P1", fingerprint = "deadbeef"))
+        )
+        val selection = Mockito.mock(BatchRecipientSelectionService::class.java)
+        Mockito.`when`(selection.selectAdmission(anyList())).thenReturn(
+            RecipientSelection(
+                included = listOf(admission("d1", RecipientAdmissionState.ADMITTED)),
+                excluded = emptyList(),
+                reasonHits = emptyMap()
+            )
+        )
+        val suppression = Mockito.mock(EmailSuppressionService::class.java)
+        Mockito.`when`(suppression.isSuppressed(anyString())).thenReturn(false)
+
+        val member = service(selection = selection, suppressionService = suppression)
+            .personDetail("d1", ExpertIndexLevel.CANDIDATE)!!.members.single()
+
+        // V-12：失效关系即使持久准入标 ADMITTED，也绝不能显示成可发送。
+        assertTrue(member.stale, "移标/指纹变化的关系必须标失效")
+        assertEquals("UNKNOWN", member.admissionStatus)
     }
 
     @Test

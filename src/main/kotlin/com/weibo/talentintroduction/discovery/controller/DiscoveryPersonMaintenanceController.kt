@@ -9,6 +9,7 @@ import com.weibo.talentintroduction.discovery.service.MaintenanceApplyRequest
 import com.weibo.talentintroduction.discovery.service.MaintenancePreviewOutcome
 import com.weibo.talentintroduction.discovery.service.MaintenancePreviewRequest
 import com.weibo.talentintroduction.discovery.service.MaintenanceReasonCodes
+import com.weibo.talentintroduction.discovery.service.MaintenanceRollbackGroup
 import com.weibo.talentintroduction.discovery.service.MaintenanceRollbackOutcome
 import com.weibo.talentintroduction.discovery.service.MaintenanceRollbackRequest
 import org.springframework.http.HttpStatus
@@ -44,7 +45,16 @@ data class MaintenanceApplyHttpRequest(
 /** 10：回滚预览请求（只提案，不执行）。 */
 data class MaintenanceRollbackHttpRequest(
     val ruleVersion: Int? = null,
-    val groups: List<List<String>> = emptyList()
+    val groups: List<MaintenanceRollbackHttpGroup> = emptyList()
+)
+
+/**
+ * R-6：回滚预览单组 —— 成员 ID + apply 落库时的人物 revision 凭据。
+ * 缺凭据时服务端按不安全处理（调用方必须保守，不得默认安全）。
+ */
+data class MaintenanceRollbackHttpGroup(
+    val memberDocIds: List<String> = emptyList(),
+    val expectedRevision: Long? = null
 )
 
 /**
@@ -106,7 +116,12 @@ class DiscoveryPersonMaintenanceController(private val service: DiscoveryPersonM
     fun rollbackPreview(request: HttpServletRequest, @RequestBody body: MaintenanceRollbackHttpRequest): ResponseEntity<Any> {
         sessionUsername(request) ?: return unauthorized()
         return when (val outcome = service.rollbackPreview(
-            MaintenanceRollbackRequest(ruleVersion = body.ruleVersion, groups = body.groups)
+            MaintenanceRollbackRequest(
+                ruleVersion = body.ruleVersion,
+                groups = body.groups.map {
+                    MaintenanceRollbackGroup(memberDocIds = it.memberDocIds, expectedRevision = it.expectedRevision)
+                }
+            )
         )) {
             is MaintenanceRollbackOutcome.Ok -> ResponseEntity.ok(outcome.proposals)
             is MaintenanceRollbackOutcome.Rejected -> badRequest(outcome.reason)

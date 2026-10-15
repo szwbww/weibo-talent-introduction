@@ -491,6 +491,57 @@ class DiscoveryIdentityRepairServiceTest {
         assertEquals(1, repo.persons.size)
     }
 
+    @Test
+    fun `an existing member that lost the live tag makes the whole group unverifiable (V-2)`() {
+        val repo = FakeRepository()
+        val registrar = personRegistrar(repo)
+        val orcid = "0000-0002-1825-0097"
+        val emailA = "a@uni.edu"
+        val emailB = "b@uni.edu"
+        put(ExpertIndexLevel.RAW, "EMAIL-$emailA",
+            source(emailA, proof = DiscoveryIdentity.verified(emailA, "Jane", "Doe", evidence, orcid, null),
+                externalIds = mapOf("orcid" to orcid)))
+        put(ExpertIndexLevel.RAW, "EMAIL-$emailB",
+            source(emailB, proof = DiscoveryIdentity.verified(emailB, "Jane", "Doe", evidence, orcid, null),
+                externalIds = mapOf("orcid" to orcid)))
+        assertEquals(DiscoveryPersonRefreshStatus.CREATED, registrar.refresh("TEST", "EMAIL-$emailA").status)
+
+        // 既有成员移除字面 discovered 标签（保留 proof/来源）：整组不可复验 → 不挂接新成员。
+        docs[key(ExpertIndexLevel.RAW, "EMAIL-$emailA")]!!.source["tags"] = listOf("superseded")
+
+        val second = registrar.refresh("TEST", "EMAIL-$emailB")
+
+        assertEquals(DiscoveryPersonRefreshStatus.STALE, second.status, "既有成员失效时不得登记新成员")
+        assertEquals("MEMBER_NOT_LIVE", second.reason)
+        assertEquals(1, repo.members.size, "新成员不得挂到无法完整复验的根上")
+        assertEquals(1, repo.persons.size)
+    }
+
+    @Test
+    fun `an unreadable existing member makes the whole group unverifiable (V-2)`() {
+        val repo = FakeRepository()
+        val registrar = personRegistrar(repo)
+        val orcid = "0000-0002-1825-0097"
+        val emailA = "a@uni.edu"
+        val emailB = "b@uni.edu"
+        put(ExpertIndexLevel.RAW, "EMAIL-$emailA",
+            source(emailA, proof = DiscoveryIdentity.verified(emailA, "Jane", "Doe", evidence, orcid, null),
+                externalIds = mapOf("orcid" to orcid)))
+        put(ExpertIndexLevel.RAW, "EMAIL-$emailB",
+            source(emailB, proof = DiscoveryIdentity.verified(emailB, "Jane", "Doe", evidence, orcid, null),
+                externalIds = mapOf("orcid" to orcid)))
+        assertEquals(DiscoveryPersonRefreshStatus.CREATED, registrar.refresh("TEST", "EMAIL-$emailA").status)
+
+        // 既有成员档案不再可读：残缺快照必须 fail-closed，绝不静默丢掉旧成员。
+        docs.remove(key(ExpertIndexLevel.RAW, "EMAIL-$emailA"))
+
+        val second = registrar.refresh("TEST", "EMAIL-$emailB")
+
+        assertEquals(DiscoveryPersonRefreshStatus.STALE, second.status)
+        assertEquals("MEMBER_UNREADABLE", second.reason)
+        assertEquals(1, repo.members.size)
+    }
+
     private class FakeRepository : DiscoveryPersonRepository(JdbcTemplate()) {
         val persons = linkedMapOf<String, DiscoveryPersonRecord>()
         val members = linkedMapOf<String, DiscoveryPersonMemberRecord>()

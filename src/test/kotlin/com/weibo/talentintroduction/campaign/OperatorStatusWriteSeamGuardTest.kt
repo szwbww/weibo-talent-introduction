@@ -84,7 +84,9 @@ class OperatorStatusWriteSeamGuardTest {
         NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 108, "operatorStatus = contact?.operatorStatus ?: expert.operatorStatus"),
         // 人物详情响应 DTO 构造：只读投影（读 contact/档案字段写入 DTO，非 DB 写入）
         // （repair R-12：逐邮箱真值投影改动使该投影落在 :282）
-        NoiseSite("com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryService.kt", 282, "operatorStatus = contact?.operatorStatus ?: raw?.operatorStatus"),
+        // （revised repair R-9：失效关系不得投影为可发送，新增 1 行注释 + 1 行 stale 局部变量，
+        //   :282 平移至 :284，path/context 不变）
+        NoiseSite("com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryService.kt", 284, "operatorStatus = contact?.operatorStatus ?: raw?.operatorStatus"),
         // ES 文档 → 响应 DTO 映射：读取 ES 字段写入 DTO，非 DB 写入
         // （05 P-E 新增 operatorStatusFilter 使钉死点 :332 偏移至 :345，A5 授权行号修正；
         //   fast-p 01 A1：T3 分类解析/logger 导入使 :431 偏移至 :445，A1 授权行号修正，context 不变；

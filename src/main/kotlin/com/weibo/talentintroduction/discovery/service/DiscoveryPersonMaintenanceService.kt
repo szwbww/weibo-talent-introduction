@@ -257,6 +257,12 @@ class DiscoveryPersonMaintenanceService(
                     MaintenanceReasonCodes.EMPTY_FROZEN_LIST)
                 return@forEach
             }
+            // R-6：缺关系预期凭据的请求无从证明预览时的关系状态 → 保守拒绝，绝不默认安全。
+            if (requested.expectedRelationFingerprint.isNullOrBlank()) {
+                results += MaintenanceGroupApplyResult(key, ApplyStatus.CHANGED_OR_FAILED, null, 0, false,
+                    MaintenanceReasonCodes.RELATION_EXPECTATION_REQUIRED)
+                return@forEach
+            }
             // 服务端重读证据（不接受客户端结论）；expected 只用于比对，绝不覆盖预期。
             val review = reviewGroup(members, frozenSet)
             if (review.evidenceDigest != requested.expectedFingerprint) {
@@ -286,21 +292,38 @@ class DiscoveryPersonMaintenanceService(
     }
 
     /**
-     * I-3（断点续跑）：组关系已是**本申请的目标状态**时识别为 UNCHANGED —— 同一人物根、成员集合恰好
-     * 等于本组、每个成员当前指纹与实时范围仍成立，且没有第三方追加成员/改根。
-     * 该识别绝不把第三方版本或身份变化当作自己的写入：身份事实不一致时由调用方按 FINGERPRINT_MISMATCH 拒绝。
+     * I-3（断点续跑）：组关系已是**本申请自己的目标状态**时识别为 UNCHANGED。
+     *
+     * 仅凭「同一人物根 + 成员集合恰好等于本组」不足以免受第三方改动 —— 那只能证明「有人做过一次同形登记」。
+     * 因此这里额外要求（全部可证）：
+     * - 把**本次 apply 自己会产生**的可变成分（关系行 personId/revision、历史保护 sendBlockReason/historyReference）
+     *   归零后，身份/证据/人工准入/RAW 层版本等事实必须与预览预期 `expectedFingerprint` 逐字一致
+     *   → 第三方改 proof/准入/层版本即失配；
+     * - 预览预期 `expectedRelationFingerprint` 必须等于「整组尚未登记」的关系摘要
+     *   → 本申请的原子新建是本组唯一可能来源；
+     * - 人物根 `revision` 必须为 0（原子新建只写一次；此后任何关系新增都会递增）
+     *   → 第三方改版本即被拒。
+     *
+     * 只要任一条件不成立即返回 null，由调用方按 FINGERPRINT_MISMATCH / RELATION_CHANGED 拒绝并**零写**。
      */
     private fun resumedTargetResult(
         review: MaintenanceGroupReview,
         requested: MaintenanceApplyGroup
     ): MaintenanceGroupApplyResult? {
-        if (requested.expectedRelationFingerprint == null) return null
+        val expectedRelation = requested.expectedRelationFingerprint ?: return null
         val members = review.memberDocIds
         val roots = review.members.mapNotNull { it.relationPersonId }.distinct()
         if (roots.size != 1) return null
         val personId = roots.single()
         if (review.members.any { it.relationPersonId != personId }) return null
         if (review.members.any { it.sourceFingerprint == null }) return null
+        if (review.members.any { !it.liveDiscovered }) return null
+        if (review.disposition == MaintenanceDisposition.CHANGED_OR_FAILED) return null
+        // 第三方身份/证据/准入/层版本变化：归零本申请的写入后仍须与预览预期逐字一致。
+        val blanked = applyMutableBlanked(review.members)
+        if (identityDigest(blanked) != requested.expectedFingerprint) return null
+        // 预览预期必须是「整组尚未登记」，否则无法证明本组单根是本申请的原子新建。
+        if (relationDigest(blanked) != expectedRelation) return null
         val registered = try {
             discoveryPersonRepository.findMembersByPerson(personId).map { it.expertDocId }
         } catch (e: Exception) {
@@ -308,16 +331,38 @@ class DiscoveryPersonMaintenanceService(
             return null
         }
         if (registered.toSet() != members.toSet()) return null
-        if (review.disposition == MaintenanceDisposition.CHANGED_OR_FAILED) return null
+        // 原子新建只写一次（revision=0）；任何后续关系新增/版本改动都会使其 >0 —— 版本变化即第三方改动。
+        val revision = try {
+            discoveryPersonRepository.findPerson(personId)?.revision
+        } catch (e: Exception) {
+            log.warn("10 断点续跑读取人物版本失败 personId={}: {}", personId, e.message)
+            return null
+        }
+        if (revision != 0L) return null
         return MaintenanceGroupApplyResult(
             review.groupKey,
             ApplyStatus.UNCHANGED,
             personId,
             registered.size,
             true,
-            MaintenanceReasonCodes.RESUMED_TARGET_STATE
+            MaintenanceReasonCodes.RESUMED_TARGET_STATE,
+            revision
         )
     }
+
+    /**
+     * 归零**本次 apply 自己会产生**的可变成分：关系行（personId/revision）与历史保护
+     * （sendBlockReason/historyReference）。仅用于「本次已完成」比对 —— 第三方不可改的事实原样保留。
+     */
+    private fun applyMutableBlanked(evidences: List<MaintenanceMemberEvidence>): List<MaintenanceMemberEvidence> =
+        evidences.map {
+            it.copy(
+                relationPersonId = null,
+                relationRevision = null,
+                sendBlockReason = null,
+                historyReference = false
+            )
+        }
 
     /**
      * I-2：整组成员检查完整后**一次提交**——登记关系（04）与导入历史保护（09）在同一事务；
@@ -390,9 +435,20 @@ class DiscoveryPersonMaintenanceService(
             personId,
             registration.memberCount,
             protection == ProtectionImport.IMPORTED,
-            registration.reason
+            registration.reason,
+            // R-6：落库后的人物 revision 是本申请的结果凭据，供回滚提案核对原版本。
+            personId?.let { currentRevision(it) }
         )
     }
+
+    /** R-6：读取人物关系 revision（读失败 → null，回滚侧缺凭据一律不得默认安全）。 */
+    private fun currentRevision(personId: String): Long? =
+        try {
+            discoveryPersonRepository.findPerson(personId)?.revision
+        } catch (e: Exception) {
+            log.warn("10 读取人物版本失败 personId={}: {}", personId, e.message)
+            null
+        }
 
     /** 整组提交失败信号：由显式事务模板回滚整组关系与保护导入。 */
     private class GroupRollbackSignal(val reason: String) : RuntimeException(reason)
@@ -429,7 +485,8 @@ class DiscoveryPersonMaintenanceService(
         if (request.ruleVersion != RULE_VERSION) {
             return MaintenanceRollbackOutcome.Rejected(MaintenanceReasonCodes.RULE_VERSION_MISMATCH)
         }
-        val proposals = request.groups.map { members ->
+        val proposals = request.groups.map { requested ->
+            val members = requested.memberDocIds.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
             val key = groupKey(members)
             val existing = discoveryPersonRepository.findMembers(members)
             val roots = existing.map { it.personId }.distinct()
@@ -440,18 +497,29 @@ class DiscoveryPersonMaintenanceService(
                 val personId = roots.single()
                 val memberRecords = discoveryPersonRepository.findMembersByPerson(personId)
                 val laterMembers = memberRecords.map { it.expertDocId }.filter { it !in members }
-                // I-3：任何进行中或不确定的保护（SENT/UNKNOWN/SENDING/RESERVED）、后续成员、关系版本
-                // 变化都不得标为可回滚 —— 只提案，绝不执行。
+                // I-3/V-15：任何进行中或不确定的保护（SENT/UNKNOWN/SENDING/RESERVED）、后续成员、
+                // **关系版本变化或缺失原版本凭据**都不得标为可回滚 —— 只提案，绝不执行。
+                // 版本证明必须对照 apply 时落库的结果凭据（[MaintenanceGroupApplyResult.personRevision]）：
+                // 缺凭据、读不到版本或与当前版本不一致一律不安全。
+                // （旧实现按 personId 读出的成员行再比对 personId 恒等，判据恒真、无效。）
                 val state = guardState(personId)
                 val unsafeState = state != null && state in OutreachGuardStates.PROTECTED_STATES
-                val versionChanged = memberRecords.any { it.personId != personId }
-                val blocked = laterMembers.isNotEmpty() || unsafeState || versionChanged
+                val current = try {
+                    discoveryPersonRepository.findPerson(personId)?.revision
+                } catch (e: Exception) {
+                    log.warn("10 回滚提案读取人物版本失败 personId={}: {}", personId, e.message)
+                    null
+                }
+                val revisionUnproven = requested.expectedRevision == null ||
+                    current == null ||
+                    current != requested.expectedRevision
+                val blocked = laterMembers.isNotEmpty() || unsafeState || revisionUnproven
                 MaintenanceRollbackProposal(
                     key, members, personId, !blocked, memberRecords.size,
                     when {
                         laterMembers.isNotEmpty() -> MaintenanceReasonCodes.ROLLBACK_UNSAFE
                         unsafeState -> MaintenanceReasonCodes.ROLLBACK_UNSAFE
-                        versionChanged -> MaintenanceReasonCodes.ROLLBACK_UNSAFE
+                        revisionUnproven -> MaintenanceReasonCodes.ROLLBACK_UNSAFE
                         else -> null
                     }
                 )
@@ -741,6 +809,7 @@ object MaintenanceReasonCodes {
     const val ADMISSION_READ_FAILED = "ADMISSION_READ_FAILED"
     const val HISTORY_READ_FAILED = "HISTORY_READ_FAILED"
     const val RELATION_CHANGED = "RELATION_CHANGED"
+    const val RELATION_EXPECTATION_REQUIRED = "RELATION_EXPECTATION_REQUIRED"
     const val PROTECTION_IMPORT_FAILED = "PROTECTION_IMPORT_FAILED"
     const val RESUMED_TARGET_STATE = "RESUMED_TARGET_STATE"
     const val PREVIEW_DIGEST_REQUIRED = "PREVIEW_DIGEST_REQUIRED"
@@ -834,7 +903,12 @@ data class MaintenanceGroupApplyResult(
     val personId: String?,
     val memberCount: Int,
     val protectionImported: Boolean,
-    val reason: String?
+    val reason: String?,
+    /**
+     * R-6：本次 apply 落库后的人物关系 revision —— 供回滚提案核对的**结果凭据**。
+     * `null` 表示未证明落库（失败/未变更无凭据），回滚侧缺该凭据一律不得默认安全。
+     */
+    val personRevision: Long? = null
 )
 
 sealed class MaintenanceApplyOutcome {
@@ -844,7 +918,16 @@ sealed class MaintenanceApplyOutcome {
 
 data class MaintenanceRollbackRequest(
     val ruleVersion: Int? = null,
-    val groups: List<List<String>> = emptyList()
+    val groups: List<MaintenanceRollbackGroup> = emptyList()
+)
+
+/**
+ * R-6：回滚提案的单组请求 —— 成员 ID + **apply 落库时的人物 revision 凭据**。
+ * 缺该凭据（旧请求/响应丢失）一律不得默认安全：服务端按 `ROLLBACK_UNSAFE` 拒绝。
+ */
+data class MaintenanceRollbackGroup(
+    val memberDocIds: List<String> = emptyList(),
+    val expectedRevision: Long? = null
 )
 
 data class MaintenanceRollbackProposal(

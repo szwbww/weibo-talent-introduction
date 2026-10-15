@@ -104,7 +104,7 @@ class DiscoveryPersonQueryService(
         )
         // 默认关闭：逐档案口径（与 04 引入前一致），不做任何人物归并。
         if (!featureGate.enabled) {
-            val total = expertSearchService.countExperts(level, filters)
+            val total = expertSearchService.countExpertsComplete(level, filters)
             val page = if (total == 0L) emptyList()
             else expertSearchService.searchExpertsWithSort(level, filters, from, size, sortBy)
             return PersonSearchResult(page.map { PersonListEntry(it.profile, 1) }, total)
@@ -112,7 +112,7 @@ class DiscoveryPersonQueryService(
         val discoveredFilter = filters + discoveredFilter()
         val othersFilter = filters + notDiscoveredFilter()
 
-        val othersTotal = expertSearchService.countExperts(level, othersFilter)
+        val othersTotal = expertSearchService.countExpertsComplete(level, othersFilter)
         val scan = scanDiscovered(level, discoveredFilter, sortBy)
         // 「其他」分区只需归并排序所需的前 from+size 条；无其他匹配时跳过 ES 前缀读取。
         // R-9：单次 `_search` 读页上限 1000，故按上限分页读取——绝不把 from+size 当单页 size。
@@ -150,8 +150,8 @@ class DiscoveryPersonQueryService(
             tag, operatorStatus, emailDomain, region,
             hIndexMin, citationCountMin, recentYears, hasField, discipline, expertTypes
         )
-        if (!featureGate.enabled) return expertSearchService.countExperts(level, filters)
-        val othersTotal = expertSearchService.countExperts(level, filters + notDiscoveredFilter())
+        if (!featureGate.enabled) return expertSearchService.countExpertsComplete(level, filters)
+        val othersTotal = expertSearchService.countExpertsComplete(level, filters + notDiscoveredFilter())
         val scan = scanDiscovered(level, filters + discoveredFilter(), null)
         return othersTotal + scan.personCount
     }
@@ -273,6 +273,8 @@ class DiscoveryPersonQueryService(
             val raw = profiles.firstOrNull()?.second
             val stored = rowByDoc[id]
             val contact = contacts[id]?.maxByOrNull { it.updatedAt ?: java.time.LocalDateTime.MIN }
+            // V-12：关系失效（当前标签/证据指纹不成立）的成员，其准入 token 一律不可信。
+            val stale = stored != null && isStale(stored.identityFingerprint, id, profiles)
             DiscoveryPersonMember(
                 docId = id,
                 levels = levels,
@@ -280,9 +282,9 @@ class DiscoveryPersonQueryService(
                 contactId = contact?.id,
                 contactStatus = contact?.currentStatus,
                 operatorStatus = contact?.operatorStatus ?: raw?.operatorStatus,
-                admissionStatus = perEmailAdmissionStatus(raw?.email, admissionStates[id]),
+                admissionStatus = perEmailAdmissionStatus(raw?.email, admissionStates[id], stale),
                 representative = id == representativeDocId,
-                stale = stored != null && isStale(stored.identityFingerprint, id, profiles),
+                stale = stale,
                 evidenceSource = evidenceSource(stored?.evidenceJson, raw)
             )
         }
@@ -303,7 +305,8 @@ class DiscoveryPersonQueryService(
      * 只有**当前核验通过**的关系才给出 `personId`（实时 discovered 范围 + 成员身份指纹与登记
      * 快照一致）。已登记但当前核验失败（移标、指纹变化、档案不可读）的关系回退原联系人单位并
      * 标记 [VerifiedPersonRelation.needsReview]；无关系即范围外，不参与人物聚合。
-     * 关系读取本身失败时不产出任何映射（既不归并、也不虚报待核）。
+     * 关系读取本身失败时抛 [DiscoveryPersonQueryUnavailableException]（明确「关系未知」），
+     * 绝不返回空映射冒充「无人映射」——调用方宁可报告不可用，也不得据此错误归并/展示。
      */
     fun resolveVerifiedPersonRelations(docIds: Collection<String>): Map<String, VerifiedPersonRelation> {
         if (!featureGate.enabled) return emptyMap()
@@ -313,7 +316,7 @@ class DiscoveryPersonQueryService(
             personRepository.findMembers(ids)
         } catch (e: Exception) {
             log.warn("关系核验读取失败，本次不归并人物: {}", e.message)
-            return emptyMap()
+            throw DiscoveryPersonQueryUnavailableException("关系核验读取失败，关系未知，查询暂不可用")
         }
         if (memberRows.isEmpty()) return emptyMap()
         val profilesByDoc = loadProfilesByDoc(memberRows.map { it.expertDocId })
@@ -359,11 +362,17 @@ class DiscoveryPersonQueryService(
     }
 
     /**
-     * R-12：单个成员邮箱的展示状态。抑制（退订）= [STATUS_SUPPRESSED]，其余取持久准入结论；
-     * 邮箱为空、准入真值或抑制真值不可得、非人物档案一律 `UNKNOWN`（绝不显示可发送）。
+     * R-12/V-12：单个成员邮箱的展示状态。关系失效（[stale]）时准入 token 一律不可信 → `UNKNOWN`；
+     * 抑制（退订）= [STATUS_SUPPRESSED]，其余取持久准入结论；邮箱为空、准入真值或抑制真值不可得、
+     * 非人物档案一律 `UNKNOWN`（绝不显示可发送）。
      */
-    private fun perEmailAdmissionStatus(email: String?, admissionState: RecipientAdmissionState?): String {
+    private fun perEmailAdmissionStatus(
+        email: String?,
+        admissionState: RecipientAdmissionState?,
+        stale: Boolean
+    ): String {
         if (email.isNullOrBlank()) return STATUS_UNKNOWN
+        if (stale) return STATUS_UNKNOWN
         val suppressed = isSuppressed(email) ?: return STATUS_UNKNOWN
         if (suppressed) return STATUS_SUPPRESSED
         if (admissionState == null || admissionState == RecipientAdmissionState.NOT_DISCOVERY) return STATUS_UNKNOWN
@@ -634,9 +643,10 @@ data class DiscoveryPersonMember(
     val contactStatus: String?,
     val operatorStatus: String?,
     /**
-     * R-12：逐邮箱准入/邮箱状态真值 token —— `ADMITTED`（可发送）/
+     * R-12/V-12：逐邮箱准入/邮箱状态真值 token —— `ADMITTED`（可发送）/
      * `NEEDS_REVIEW`/`MANUAL_REJECTED`/`IDENTITY_CHANGED`/`UNINITIALIZED` 取统一 selector 的持久准入；
-     * `SUPPRESSED` = 邮箱在抑制名单；`UNKNOWN` = 真值不可得。**绝不**是旧 ES `filterResult`。
+     * `SUPPRESSED` = 邮箱在抑制名单；`UNKNOWN` = 真值不可得，**或**关系失效（[stale]）致准入不可信。
+     * **绝不**是旧 ES `filterResult`；失效关系的成员一律不显示 `ADMITTED`。
      */
     val admissionStatus: String?,
     val representative: Boolean,

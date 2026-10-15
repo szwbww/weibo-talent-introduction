@@ -2916,6 +2916,138 @@ class ExpertSearchServiceTest {
         }
     }
 
+    @Test
+    fun `searchExpertsWithSort rejects a response with a total but no hits structure`() {
+        val body = mapper.readTree(
+            """
+            {
+              "timed_out": false,
+              "_shards": {"total": 2, "successful": 2, "skipped": 0, "failed": 0},
+              "total": 100
+            }
+            """.trimIndent()
+        )
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST), any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        // 缺 hits 结构不得被读成「0 条」：必须显式不可用。
+        val ex = assertThrows(ExpertSearchUnavailableException::class.java) {
+            service.searchExpertsWithSort(ExpertIndexLevel.CANDIDATE, emptyList(), 0, 10)
+        }
+        assertTrue(ex.message!!.contains("hits"), "必须显式说明缺 hits 结构: ${ex.message}")
+    }
+
+    @Test
+    fun `scrollExpertsFilteredWithSort fails and closes the cursor when the first page lacks hits`() {
+        val body = mapper.readTree(
+            """
+            {
+              "_scroll_id": "s1",
+              "timed_out": false,
+              "_shards": {"total": 2, "successful": 2, "skipped": 0, "failed": 0},
+              "total": 100
+            }
+            """.trimIndent()
+        )
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search?scroll=5m"),
+                eq(HttpMethod.POST), any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/_search/scroll"),
+                eq(HttpMethod.DELETE), any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(mapper.createObjectNode(), HttpStatus.OK))
+
+        val batches = mutableListOf<List<String>>()
+        assertThrows(ExpertSearchUnavailableException::class.java) {
+            service.scrollExpertsFilteredWithSort(ExpertIndexLevel.CANDIDATE, emptyList(), batchSize = 2) { batch ->
+                batches.add(batch.map { it.profile.esDocId!! })
+                true
+            }
+        }
+        assertEquals(emptyList<List<String>>(), batches, "缺 hits 的首页不得被当成完整遍历结束")
+        Mockito.verify(restTemplate, times(1)).exchange(
+            eq("https://es.example.com:9200/_search/scroll"),
+            eq(HttpMethod.DELETE), any(),
+            eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+    }
+
+    @Test
+    fun `countExpertsComplete rejects an incomplete count response instead of publishing an exact number`() {
+        val body = mapper.readTree(
+            """
+            {
+              "count": 123,
+              "_shards": {"total": 5, "successful": 4, "skipped": 0, "failed": 1}
+            }
+            """.trimIndent()
+        )
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_count"),
+                eq(HttpMethod.POST), any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        // 失败分片下的 123 不是精确人数：人物查询专用边界绝不发布，必须显式不可用。
+        val ex = assertThrows(ExpertSearchUnavailableException::class.java) {
+            service.countExpertsComplete(ExpertIndexLevel.CANDIDATE, emptyList())
+        }
+        assertTrue(ex.message!!.contains("_shards.failed=1"), "必须显式说明失败分片: ${ex.message}")
+    }
+
+    @Test
+    fun `countExpertsComplete rejects a malformed count response instead of zero`() {
+        val body = mapper.readTree("""{"_shards": {"total": 2, "successful": 2, "skipped": 0, "failed": 0}}""")
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_count"),
+                eq(HttpMethod.POST), any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val ex = assertThrows(ExpertSearchUnavailableException::class.java) {
+            service.countExpertsComplete(ExpertIndexLevel.CANDIDATE, emptyList())
+        }
+        assertTrue(ex.message!!.contains("count"), "必须显式说明缺 count: ${ex.message}")
+    }
+
+    @Test
+    fun `countExperts keeps the legacy contract for non-person callers`() {
+        val body = mapper.readTree(
+            """
+            {
+              "count": 123,
+              "_shards": {"total": 5, "successful": 4, "skipped": 0, "failed": 1}
+            }
+            """.trimIndent()
+        )
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_count"),
+                eq(HttpMethod.POST), any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        // R-8 限定严格性只在人物查询调用链：非人物调用方（发现面板/批量首发预估）合同不变。
+        assertEquals(123L, service.countExperts(ExpertIndexLevel.CANDIDATE, emptyList()))
+    }
+
     private fun serviceIndexName(level: ExpertIndexLevel): String = when (level) {
         ExpertIndexLevel.RAW -> properties.rawIndexName
         ExpertIndexLevel.CANDIDATE -> properties.candidateIndexName

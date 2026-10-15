@@ -284,6 +284,22 @@ class DiscoveryPersonMaintenanceServiceTest {
     }
 
     @Test
+    fun `apply without the relation expectation is refused instead of applied`() {
+        put("doc-a", source = discoveredSource(email = "a@uni.edu", orcid = "0000-0002-1825-0097"))
+        put("doc-b", source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097"))
+        val (_, request) = mergeReadyRequest(listOf("doc-a", "doc-b"))
+        // R-6：缺原关系预期凭据的请求不得默认安全。
+        val group = request.groups.single().copy(expectedRelationFingerprint = null)
+
+        val result = (service.apply(request.copy(groups = listOf(group))) as MaintenanceApplyOutcome.Ok)
+            .results.single()
+
+        assertEquals(ApplyStatus.CHANGED_OR_FAILED, result.status)
+        assertEquals(MaintenanceReasonCodes.RELATION_EXPECTATION_REQUIRED, result.reason)
+        assertTrue(repository.persons.isEmpty(), "缺证据不得写关系")
+    }
+
+    @Test
     fun `apply of a single unbound document registers a singleton without author keys`() {
         put("doc-weak", source = discoveredSource(email = "weak@uni.edu", withProof = false))
         val (_, request) = mergeReadyRequest(listOf("doc-weak"))
@@ -335,10 +351,14 @@ class DiscoveryPersonMaintenanceServiceTest {
         put("doc-a", source = discoveredSource(email = "a@uni.edu", orcid = "0000-0002-1825-0097"))
         put("doc-b", source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097"))
         val (_, request) = mergeReadyRequest(listOf("doc-a", "doc-b"))
-        service.apply(request)
+        val applied = (service.apply(request) as MaintenanceApplyOutcome.Ok).results.single()
         val personId = repository.persons.keys.single()
+        val revision = applied.personRevision
+        assertNotNull(revision, "apply 必须返回可用于回滚核对的人物版本凭据")
 
-        val safe = service.rollbackPreview(MaintenanceRollbackRequest(1, listOf(listOf("doc-a", "doc-b"))))
+        val safe = service.rollbackPreview(
+            MaintenanceRollbackRequest(1, listOf(MaintenanceRollbackGroup(listOf("doc-a", "doc-b"), revision)))
+        )
         val proposal = (safe as MaintenanceRollbackOutcome.Ok).proposals.single()
         assertEquals(personId, proposal.personId)
         assertTrue(proposal.safeToRollback)
@@ -346,16 +366,59 @@ class DiscoveryPersonMaintenanceServiceTest {
 
         // 后续成员加入 → 不可自动拆组。
         repository.members["doc-c"] = memberRecord("doc-c", personId)
-        val unsafe = service.rollbackPreview(MaintenanceRollbackRequest(1, listOf(listOf("doc-a", "doc-b"))))
+        val unsafe = service.rollbackPreview(
+            MaintenanceRollbackRequest(1, listOf(MaintenanceRollbackGroup(listOf("doc-a", "doc-b"), revision)))
+        )
         val unsafeProposal = (unsafe as MaintenanceRollbackOutcome.Ok).proposals.single()
         assertFalse(unsafeProposal.safeToRollback)
         assertEquals(MaintenanceReasonCodes.ROLLBACK_UNSAFE, unsafeProposal.reason)
 
         // 已有成功首发 → 不可恢复。
         guard.state = OutreachGuardStates.SENT
-        val sent = service.rollbackPreview(MaintenanceRollbackRequest(1, listOf(listOf("doc-c"))))
+        val sent = service.rollbackPreview(
+            MaintenanceRollbackRequest(1, listOf(MaintenanceRollbackGroup(listOf("doc-c"), revision)))
+        )
         val sentProposal = (sent as MaintenanceRollbackOutcome.Ok).proposals.single()
         assertFalse(sentProposal.safeToRollback)
+    }
+
+    @Test
+    fun `rollback refuses when the person revision changed after apply`() {
+        put("doc-a", source = discoveredSource(email = "a@uni.edu", orcid = "0000-0002-1825-0097"))
+        put("doc-b", source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097"))
+        val (_, request) = mergeReadyRequest(listOf("doc-a", "doc-b"))
+        val applied = (service.apply(request) as MaintenanceApplyOutcome.Ok).results.single()
+        val personId = repository.persons.keys.single()
+        val revision = applied.personRevision
+        // V-15：成员集合未变、根未变，但人物关系版本被第三方改动 → 不得标为可回滚。
+        repository.persons[personId] = repository.persons.getValue(personId).copy(revision = 42)
+
+        val proposal = (
+            service.rollbackPreview(
+                MaintenanceRollbackRequest(1, listOf(MaintenanceRollbackGroup(listOf("doc-a", "doc-b"), revision)))
+            ) as MaintenanceRollbackOutcome.Ok
+            ).proposals.single()
+
+        assertFalse(proposal.safeToRollback, "关系版本变化后不得标为可回滚")
+        assertEquals(MaintenanceReasonCodes.ROLLBACK_UNSAFE, proposal.reason)
+    }
+
+    @Test
+    fun `rollback without the apply revision credential is never safe`() {
+        put("doc-a", source = discoveredSource(email = "a@uni.edu", orcid = "0000-0002-1825-0097"))
+        put("doc-b", source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097"))
+        val (_, request) = mergeReadyRequest(listOf("doc-a", "doc-b"))
+        service.apply(request)
+
+        // V-15/R-6：缺 apply 结果凭据（旧请求/响应丢失）不得默认安全。
+        val proposal = (
+            service.rollbackPreview(
+                MaintenanceRollbackRequest(1, listOf(MaintenanceRollbackGroup(listOf("doc-a", "doc-b"), null)))
+            ) as MaintenanceRollbackOutcome.Ok
+            ).proposals.single()
+
+        assertFalse(proposal.safeToRollback, "缺原版本凭据不得标为可回滚")
+        assertEquals(MaintenanceReasonCodes.ROLLBACK_UNSAFE, proposal.reason)
     }
 
     @Test
@@ -509,8 +572,76 @@ class DiscoveryPersonMaintenanceServiceTest {
         assertEquals(3, repository.members.size, "拒绝时零新增成员")
     }
 
-    // ── I-3：必需事实读取失败不得当作「无事实」 ─────────────────────────────────
+    // ── V-14：第三方身份/proof/revision/准入变化不得被当成本次完成 ───────────────
 
+    @Test
+    fun `a third party proof change after apply is refused instead of resumed`() {
+        put("doc-a", source = discoveredSource(email = "a@uni.edu", orcid = "0000-0002-1825-0097"))
+        put("doc-b", source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097"))
+        val (_, request) = mergeReadyRequest(listOf("doc-a", "doc-b"))
+        assertEquals(
+            ApplyStatus.APPLIED,
+            (service.apply(request) as MaintenanceApplyOutcome.Ok).results.single().status
+        )
+
+        // 第三方改 doc-b 的 proof 摘要（身份字段不变）→ 旧请求必须拒绝，零新增。
+        put(
+            "doc-b",
+            source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097").apply {
+                put(
+                    "identityVerification",
+                    IdentityVerification(
+                        "VERIFIED", DiscoveryIdentity.VERSION, "b@uni.edu", "Jane", "Doe",
+                        "JATS_SHA256", "b".repeat(64), "0000-0002-1825-0097", null
+                    )
+                )
+            }
+        )
+        val retry = (service.apply(request) as MaintenanceApplyOutcome.Ok).results.single()
+        assertEquals(ApplyStatus.CHANGED_OR_FAILED, retry.status)
+        assertEquals(MaintenanceReasonCodes.FINGERPRINT_MISMATCH, retry.reason)
+        assertEquals(2, repository.members.size, "拒绝时零新增成员")
+    }
+
+    @Test
+    fun `a third party revision change after apply is refused instead of resumed`() {
+        put("doc-a", source = discoveredSource(email = "a@uni.edu", orcid = "0000-0002-1825-0097"))
+        put("doc-b", source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097"))
+        val (_, request) = mergeReadyRequest(listOf("doc-a", "doc-b"))
+        assertEquals(
+            ApplyStatus.APPLIED,
+            (service.apply(request) as MaintenanceApplyOutcome.Ok).results.single().status
+        )
+        val personId = repository.persons.keys.single()
+        // 第三方把人物行版本加 42（成员集合与根不变）。
+        repository.persons[personId] = repository.persons.getValue(personId).copy(revision = 42)
+
+        val retry = (service.apply(request) as MaintenanceApplyOutcome.Ok).results.single()
+        assertEquals(ApplyStatus.CHANGED_OR_FAILED, retry.status)
+        assertEquals(MaintenanceReasonCodes.RELATION_CHANGED, retry.reason)
+        assertEquals(42L, repository.persons.getValue(personId).revision, "拒绝时不改写版本")
+        assertEquals(2, repository.members.size)
+    }
+
+    @Test
+    fun `a third party admission change after apply is refused instead of resumed`() {
+        put("doc-a", source = discoveredSource(email = "a@uni.edu", orcid = "0000-0002-1825-0097"))
+        put("doc-b", source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097"))
+        val (_, request) = mergeReadyRequest(listOf("doc-a", "doc-b"))
+        assertEquals(
+            ApplyStatus.APPLIED,
+            (service.apply(request) as MaintenanceApplyOutcome.Ok).results.single().status
+        )
+        // 第三方改变持久人工准入决定 → 旧请求必须拒绝。
+        recipient.excludedEmail = "b@uni.edu"
+
+        val retry = (service.apply(request) as MaintenanceApplyOutcome.Ok).results.single()
+        assertEquals(ApplyStatus.CHANGED_OR_FAILED, retry.status)
+        assertEquals(MaintenanceReasonCodes.FINGERPRINT_MISMATCH, retry.reason)
+        assertEquals(2, repository.members.size)
+    }
+
+    // ── I-3：必需事实读取失败不得当作「无事实」 ─────────────────────────────────
     @Test
     fun `a protection read failure fails the group instead of reporting sendable`() {
         put("doc-a", source = discoveredSource(email = "a@uni.edu", orcid = "0000-0002-1825-0097"))
@@ -555,10 +686,12 @@ class DiscoveryPersonMaintenanceServiceTest {
         put("doc-a", source = discoveredSource(email = "a@uni.edu", orcid = "0000-0002-1825-0097"))
         put("doc-b", source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097"))
         val (_, request) = mergeReadyRequest(listOf("doc-a", "doc-b"))
-        service.apply(request)
+        val applied = (service.apply(request) as MaintenanceApplyOutcome.Ok).results.single()
 
         guard.state = OutreachGuardStates.SENDING
-        val inflight = service.rollbackPreview(MaintenanceRollbackRequest(1, listOf(listOf("doc-a", "doc-b"))))
+        val inflight = service.rollbackPreview(
+            MaintenanceRollbackRequest(1, listOf(MaintenanceRollbackGroup(listOf("doc-a", "doc-b"), applied.personRevision)))
+        )
         val proposal = (inflight as MaintenanceRollbackOutcome.Ok).proposals.single()
         assertFalse(proposal.safeToRollback, "SENDING 进行中不得标为可回滚")
         assertEquals(MaintenanceReasonCodes.ROLLBACK_UNSAFE, proposal.reason)

@@ -45,9 +45,10 @@ UNAUTHORIZED_HINT = (
 )
 SESSION_ENV = "TALENT_SESSION_COOKIE"
 
-# I-3：PARTIAL（部分层已落地）与 STALE（旧 hash 已过期）都不是终态 —— 同一 ID 可先重新预览
-# 取得服务端新检查点，再按同一原申请续跑剩余层；只有终态才永久跳过。
-APPLY_RESUMABLE = {"PARTIAL", "STALE"}
+# I-3/V-4：PARTIAL（部分层已落地）、STALE（旧 hash 已过期）以及服务端新增的**非完整恢复** token
+# （准入未验证/可重试等）都不是终态 —— 同一 ID 可先重新预览取得服务端新检查点，再按同一原申请
+# 续跑剩余层；只有终态才永久跳过。run_apply 的实际判据是「非终态」，本集合列已知 token 供阅读与兼容。
+APPLY_RESUMABLE = {"PARTIAL", "STALE", "ADMISSION_UNVERIFIED", "ADMISSION_REVERIFY_FAILED", "NEEDS_RETRY", "RETRYABLE"}
 
 
 def normalize_doc_id(raw: str) -> str:
@@ -134,6 +135,18 @@ def completed_ids(path: str, terminal=APPLY_TERMINAL) -> set:
         if record.get("docId") and record.get("status") in terminal:
             done.add(record["docId"])
     return done
+
+
+def resumable_ids(path: str, terminal=APPLY_TERMINAL) -> set:
+    """V-4：apply 日志里**非完整恢复**的条目 —— 判据取「非空且非终态」，
+    故服务端新增的非完整 token（见 [APPLY_RESUMABLE]）不会被 CLI 静默永久跳过；
+    完整 APPLIED 仍为终态、永久跳过。"""
+    resumable = set()
+    for record in read_jsonl(path):
+        status = record.get("status")
+        if record.get("docId") and status and status not in terminal:
+            resumable.add(record["docId"])
+    return resumable
 
 
 def _now() -> str:
@@ -297,7 +310,7 @@ def run_apply(client, ids: list, out_dir: str) -> dict:
     apply_path = os.path.join(out_dir, APPLY_FILE)
     backups = {record.get("docId") for record in read_jsonl(os.path.join(out_dir, BACKUP_FILE))}
     applied = completed_ids(apply_path, terminal=APPLY_TERMINAL)
-    resumable = completed_ids(apply_path, terminal=APPLY_RESUMABLE)
+    resumable = resumable_ids(apply_path)
     previews = {record.get("docId"): record for record in read_jsonl(preview_path)}
     summary = {"total": len(ids), "applied": 0, "skipped": 0, "backupFailures": 0, "repreviewed": 0}
     for doc_id in ids:
@@ -338,7 +351,7 @@ def run_apply(client, ids: list, out_dir: str) -> dict:
         append_jsonl(os.path.join(out_dir, APPLY_FILE), apply_record(doc_id, status, body))
         if body.get("status") == "APPLIED":
             summary["applied"] += 1
-        elif body.get("status") == "PARTIAL":
+        elif body.get("status") and body.get("status") not in APPLY_TERMINAL:
             resumable.add(doc_id)
     return summary
 

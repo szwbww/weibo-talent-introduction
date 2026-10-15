@@ -4,9 +4,11 @@ import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.RecipientScope
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.config.MailSchedulingProperties
+import com.weibo.talentintroduction.discovery.service.DiscoveryPersonFeatureGate
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.mail.domain.SmtpErrorCategory
 import com.weibo.talentintroduction.mail.service.EmailSuppressionService
 import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
 import com.weibo.talentintroduction.mail.service.MailDeliveryService
@@ -36,7 +38,12 @@ class InitialOutreachService(
     private val discoveryPersonRecipientService: DiscoveryPersonRecipientService =
         DiscoveryPersonRecipientService(batchRecipientSelectionService),
     /** 09 (I-1/I-2/I-3): 人物级首发原子门禁 —— 仅 discovered INTRODUCTION 使用。 */
-    private val outreachGuardService: DiscoveryPersonOutreachGuardService? = null
+    private val outreachGuardService: DiscoveryPersonOutreachGuardService? = null,
+    /**
+     * V-1（master I-8/发布段、04 开关）：人物能力总开关。默认关闭时必须保持本轮引入前的
+     * 旧发送行为 —— 只有**已存在人物映射/保护**的目标才继续走 guard（保护不可被开关撤销）。
+     */
+    private val discoveryPersonFeatureGate: DiscoveryPersonFeatureGate = DiscoveryPersonFeatureGate()
 ) {
     fun sendInitialBatch(campaignId: Long, size: Int, taskExecutionId: Long? = null): InitialOutreachBatchResult {
         // I2-2: 未配置即快速失败，绝不退化成"不限"。
@@ -79,10 +86,11 @@ class InitialOutreachService(
                 return@forEachIndexed
             }
 
-            // 09 (I-1/I-2/I-3): discovered INTRODUCTION 先占人物级首发许可 —— 未获许可绝不建 contact/发信。
+            // 09 (I-1/I-2/I-3) + V-1：discovered INTRODUCTION 先占人物级首发许可 —— 未获许可绝不建 contact/发信。
+            // 总开关关闭且**无人物映射/保护**时逐字保持旧路径：不调 guard、不写任何 guard 状态。
             val guard = outreachGuardService
             var guardTicket: OutreachGuardTicket? = null
-            if (guard != null && RecipientScope.isDiscoveryOutreach(expert)) {
+            if (guard != null && personGuardApplies(guard, expert)) {
                 when (val outcome = guard.reserveIntroduction(
                     selectedDocId = BatchRecipientSelectionService.docIdOf(expert),
                     recipient = email,
@@ -136,7 +144,10 @@ class InitialOutreachService(
                 throw e
             }
             if (guardTicket != null) {
-                when (val claim = guard!!.claimSending(guardTicket, expert, mail.to)) {
+                // V-26：本次尝试自己的 contact 行不是旧历史（建行即固化绑定），随 claim 声明。
+                when (val claim = guard!!.claimSending(
+                    guardTicket, expert, mail.to, OutreachAttemptIdentity(contactId = contact.id)
+                )) {
                     is OutreachClaimOutcome.Denied -> {
                         // 未取得交付权（revision 变化/地址不合格等）→ 未调用 SMTP，安全重试后跳过。
                         guard.markSafeRetry(guardTicket)
@@ -174,9 +185,10 @@ class InitialOutreachService(
                     outreachGuardTicket = guardTicket
                 )
             } else {
-                // 只有 SMTP 明确未接受（有响应码）才证明未交付 → SAFE_RETRY；
-                // 无响应码（网络/认证等）结果不明 → UNKNOWN，绝不据此重试。
-                if (delivered.smtpResponseCode != null) {
+                // V-8（09 I-2）：只有**明确拒绝、未接受**才证明未交付 → SAFE_RETRY：
+                // 非空响应码 + 分类非 SUCCESS（4xx/5xx 拒绝）。250/SUCCESS（服务端已接受、
+                // 之后连接中断）与无响应码（网络/认证等）都属结果不明 → UNKNOWN，绝不自动重发。
+                if (delivered.smtpResponseCode != null && delivered.errorCategory != SmtpErrorCategory.SUCCESS) {
                     guardTicket?.let { guard?.markSafeRetry(it) }
                 } else {
                     guardTicket?.let { guard?.markUnknown(it) }
@@ -245,6 +257,24 @@ class InitialOutreachService(
             if (raw.size < size || offset >= result.totalHits) break
         }
         return eligible.take(size)
+    }
+
+    /**
+     * V-1（master I-8/发布段、04 开关、09 I-1）：人物级首发门禁是否适用于该目标。
+     *
+     * - 非 discovered 目标：不适用（保持旧普通路径）。
+     * - 总开关**开启**：适用（当前行为，映射缺失即 fail-closed）。
+     * - 总开关**关闭**：只对**已登记到人物**（存在映射/保护行）的目标适用 —— 已建立的
+     *   SENT/UNKNOWN/SENDING 保护不因关闭而撤销；未登记目标逐字保持本轮引入前的旧行为
+     *   （不调 guard、不写任何 guard 状态，绝不因 PERSON_MISSING 被拒）。
+     */
+    private fun personGuardApplies(
+        guard: DiscoveryPersonOutreachGuardService,
+        expert: ExpertProfile
+    ): Boolean {
+        if (!RecipientScope.isDiscoveryOutreach(expert)) return false
+        return discoveryPersonFeatureGate.enabled ||
+            guard.isKnownPerson(BatchRecipientSelectionService.docIdOf(expert))
     }
 
     private fun sleepBeforeNextSend() {

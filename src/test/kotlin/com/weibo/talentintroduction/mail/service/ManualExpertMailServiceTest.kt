@@ -6,11 +6,13 @@ import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ConversationStateService
 import com.weibo.talentintroduction.campaign.service.DiscoveryPersonOutreachGuardService
 import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
+import com.weibo.talentintroduction.campaign.service.OutreachAttemptIdentity
 import com.weibo.talentintroduction.campaign.service.OutreachClaimOutcome
 import com.weibo.talentintroduction.campaign.service.OutreachGuardReasonCodes
 import com.weibo.talentintroduction.campaign.service.OutreachGuardTicket
 import com.weibo.talentintroduction.campaign.service.OutreachReserveOutcome
 import com.weibo.talentintroduction.common.domain.ConversationStatus
+import com.weibo.talentintroduction.discovery.service.DiscoveryPersonFeatureGate
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
@@ -61,7 +63,7 @@ class ManualExpertMailServiceTest {
         expertOperatorStatusService
     )
 
-    /** 09：接入人物级首发门禁 + 可解析画像的详情发送 service。 */
+    /** 09：接入人物级首发门禁 + 可解析画像的详情发送 service（V-1：显式开启总开关）。 */
     private fun guardedService() = ManualExpertMailService(
         expertContactRepository,
         mailRecordRepository,
@@ -75,7 +77,26 @@ class ManualExpertMailServiceTest {
         senderAccountBindingService,
         expertOperatorStatusService,
         mailVariableService = mailVariableService,
-        outreachGuardService = outreachGuardService
+        outreachGuardService = outreachGuardService,
+        discoveryPersonFeatureGate = DiscoveryPersonFeatureGate(enabled = true)
+    )
+
+    /** V-1：门禁在总开关**关闭**下的详情发送 service（只对已登记人物生效）。 */
+    private fun gateOffService() = ManualExpertMailService(
+        expertContactRepository,
+        mailRecordRepository,
+        mailRecordQaRuleRepository,
+        mailSenderAccountService,
+        mailSenderAccountRepository,
+        mailDeliveryService,
+        mailComposeTemplateService,
+        mailContentService,
+        conversationStateService,
+        senderAccountBindingService,
+        expertOperatorStatusService,
+        mailVariableService = mailVariableService,
+        outreachGuardService = outreachGuardService,
+        discoveryPersonFeatureGate = DiscoveryPersonFeatureGate(enabled = false)
     )
 
     private fun discoveryProfile() = ExpertProfile(
@@ -284,7 +305,9 @@ class ManualExpertMailServiceTest {
             )
         ).thenReturn(mapOf("senderEmail" to account.senderEmail, "senderName" to account.senderName))
         Mockito.`when`(
-            outreachGuardService.reserveIntroduction(anyValue("orcid-1"), anyValue("expert@test.com"), anyValue(profile))
+            outreachGuardService.reserveIntroduction(
+                anyValue("orcid-1"), anyValue("expert@test.com"), anyValue(profile), anyValue(OutreachAttemptIdentity())
+            )
         ).thenReturn(OutreachReserveOutcome.Denied(OutreachGuardReasonCodes.ALREADY_SENT))
 
         val ex = assertThrows<IllegalStateException> {
@@ -293,7 +316,9 @@ class ManualExpertMailServiceTest {
 
         assertTrue(ex.message!!.contains("人物级首发保护"))
         Mockito.verify(outreachGuardService)
-            .reserveIntroduction(anyValue("orcid-1"), anyValue("expert@test.com"), anyValue(profile))
+            .reserveIntroduction(
+                anyValue("orcid-1"), anyValue("expert@test.com"), anyValue(profile), anyValue(OutreachAttemptIdentity())
+            )
         Mockito.verify(mailDeliveryService, Mockito.never()).send(anyValue(account), anyValue(ComposedMail("", "", "")))
     }
 
@@ -315,8 +340,9 @@ class ManualExpertMailServiceTest {
 
         assertTrue(ex.message!!.contains("画像不可读"))
         Mockito.verify(mailDeliveryService, Mockito.never()).send(anyValue(account), anyValue(ComposedMail("", "", "")))
-        Mockito.verify(outreachGuardService, Mockito.never())
-            .reserveIntroduction(Mockito.anyString(), Mockito.anyString(), Mockito.any())
+        Mockito.verify(outreachGuardService, Mockito.never()).reserveIntroduction(
+            Mockito.anyString(), Mockito.anyString(), Mockito.any(), anyValue(OutreachAttemptIdentity())
+        )
     }
 
     @Test
@@ -347,6 +373,69 @@ class ManualExpertMailServiceTest {
         Mockito.verify(outreachGuardService, Mockito.never()).markUnknown(anyValue(ticket))
     }
 
+    @Test
+    fun `detail introduction with a SUCCESS-classified reply code marks the guard unknown (V-8)`() {
+        val account = stubAccount()
+        stubTemplateSend(account)
+        val ticket = stubIntroductionGuardGranted(account)
+        // 250 表示服务端已接受（其后连接中断）—— 结果不明，绝不 SAFE_RETRY 重发。
+        Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("", "", ""))))
+            .thenReturn(
+                DeliveredMail("msg-lost", "FAILED", SmtpErrorCategory.SUCCESS, 250, "queued, connection then lost")
+            )
+
+        guardedService().sendManualMail(1L, ManualMailSendCommand("COMPOSE_TEMPLATE", "10", null))
+
+        Mockito.verify(outreachGuardService).markUnknown(ticket)
+        Mockito.verify(outreachGuardService, Mockito.never()).markSafeRetry(anyValue(ticket))
+    }
+
+    @Test
+    fun `gate off keeps the legacy detail send for an unmapped target (V-1)`() {
+        val account = stubAccount()
+        stubTemplateSend(account)
+        stubVariables(account, discoveryProfile())
+        Mockito.`when`(outreachGuardService.isKnownPerson("orcid-1")).thenReturn(false)
+
+        gateOffService().sendManualMail(1L, ManualMailSendCommand("COMPOSE_TEMPLATE", "10", null))
+
+        // 未开启且无人物保护：保持旧路径 —— 正常发送，guard 只被读一次映射、无任何占位/状态写入。
+        Mockito.verify(mailDeliveryService).send(anyValue(account), anyValue(ComposedMail("", "", "")))
+        Mockito.verify(outreachGuardService).isKnownPerson("orcid-1")
+        Mockito.verifyNoMoreInteractions(outreachGuardService)
+    }
+
+    @Test
+    fun `gate off still denies a mapped target that carries person protection (V-1)`() {
+        val account = stubAccount()
+        stubTemplateSend(account)
+        val profile = discoveryProfile()
+        stubVariables(account, profile)
+        Mockito.`when`(outreachGuardService.isKnownPerson("orcid-1")).thenReturn(true)
+        Mockito.`when`(
+            outreachGuardService.reserveIntroduction(
+                anyValue("orcid-1"), anyValue("expert@test.com"), anyValue(profile), anyValue(OutreachAttemptIdentity())
+            )
+        ).thenReturn(OutreachReserveOutcome.Denied(OutreachGuardReasonCodes.UNKNOWN_PENDING))
+
+        val ex = assertThrows<IllegalStateException> {
+            gateOffService().sendManualMail(1L, ManualMailSendCommand("COMPOSE_TEMPLATE", "10", null))
+        }
+
+        assertTrue(ex.message!!.contains("人物级首发保护"))
+        Mockito.verify(mailDeliveryService, Mockito.never()).send(anyValue(account), anyValue(ComposedMail("", "", "")))
+    }
+
+    /** 09：可解析画像 + 渲染变量的 stub（不涉及 guard 结论）。 */
+    private fun stubVariables(account: MailSenderAccount, profile: ExpertProfile) {
+        Mockito.`when`(mailVariableService.resolveExpertProfileFor(contact)).thenReturn(profile)
+        Mockito.`when`(
+            mailVariableService.buildVariables(
+                anyValue(account), anyValue(profile), anyValue("expert@test.com"), eqValue(false), anyValue(contact)
+            )
+        ).thenReturn(mapOf("senderEmail" to account.senderEmail, "senderName" to account.senderName))
+    }
+
     /** 09：把详情入口的人物级门禁铺成「占位 + 交付权」成功，供 SMTP 结果分类断言。 */
     private fun stubIntroductionGuardGranted(account: MailSenderAccount): OutreachGuardTicket {
         val profile = discoveryProfile()
@@ -360,11 +449,16 @@ class ManualExpertMailServiceTest {
             personId = "person-1", mailType = "INTRODUCTION", revision = 1L,
             ownerToken = "token-1", selectedDocId = "orcid-1", recipient = "expert@test.com"
         )
+        // V-26：调用方必须声明本次自己的 contact 行（contact.id=1），否则历史复核会把它当旧联系人。
         Mockito.`when`(
-            outreachGuardService.reserveIntroduction(anyValue("orcid-1"), anyValue("expert@test.com"), anyValue(profile))
+            outreachGuardService.reserveIntroduction(
+                anyValue("orcid-1"), anyValue("expert@test.com"), anyValue(profile), anyValue(OutreachAttemptIdentity())
+            )
         ).thenReturn(OutreachReserveOutcome.Granted(ticket))
         Mockito.`when`(
-            outreachGuardService.claimSending(anyValue(ticket), anyValue(profile), anyValue("expert@test.com"))
+            outreachGuardService.claimSending(
+                anyValue(ticket), anyValue(profile), anyValue("expert@test.com"), anyValue(OutreachAttemptIdentity())
+            )
         ).thenReturn(OutreachClaimOutcome.Claimed)
         return ticket
     }

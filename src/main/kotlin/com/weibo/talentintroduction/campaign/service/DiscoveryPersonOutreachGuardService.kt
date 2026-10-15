@@ -62,6 +62,19 @@ data class OutreachGuardTicket(
     val recipient: String
 )
 
+/**
+ * V-26: **本次尝试自己的**行身份（调用方在建行/复用行之后声明）。
+ *
+ * 健康首发先建 contact（建行即固化发件账号绑定）与 PREPARED attempt，再 claim；
+ * 历史复核必须把这两行视为「本次写入」而非旧历史，否则正常首发把自己判成已联系并永久阻断。
+ * 只排除**恰好这些 id**的行 —— 同人其他联系人/在途 attempt/已发信/别名仍一律阻断。
+ * 未提供（null）时不做任何排除，语义与引入前逐字一致。
+ */
+data class OutreachAttemptIdentity(
+    val contactId: Long? = null,
+    val attemptId: Long? = null
+)
+
 /** I-1: `reserve` 结论 —— [Granted] 携带凭据；[Denied] 表示不获首发许可。 */
 sealed class OutreachReserveOutcome {
     data class Granted(val ticket: OutreachGuardTicket) : OutreachReserveOutcome()
@@ -100,6 +113,9 @@ data class OutreachProtectionImport(
  *   已知人物画像不可读绝不退化为无 guard 普通邮件。
  * - [claimSending] 在发送前复核人物 revision、地址、实时标签、整组当前资格与历史，再用
  *   expected revision/owner_token CAS RESERVED→SENDING；失败即不发送。
+ * - 历史复核按**本次尝试身份**（[OutreachAttemptIdentity]）排除调用方自己刚建/复用的
+ *   contact 与 attempt 行：健康首发在建行后才 claim，自己的行不得被当成旧历史；同人**其他**
+ *   联系人/在途 attempt/已发信/别名照旧阻断。
  * - [markSent] 供成功的原事务联动（与 mail_record 同事务）；[markUnknown] 标记不可重发；
  *   [markSafeRetry] 仅在明确未交付（未调用 SMTP 或 SMTP 明确未接受）时使用，且不改变绑定地址。
  *
@@ -120,14 +136,17 @@ class DiscoveryPersonOutreachGuardService(
      *
      * [selectedDocId] 是 08 选中的真实 docId；未登记到人物（映射未就绪）即
      * [OutreachGuardReasonCodes.PERSON_MISSING]（fail-closed，绝不静默放行）。
+     * [attempt] 是本次尝试自己的行身份（V-26）：重试复用既有 NEW 联系人时必须声明，
+     * 该行不参与「旧历史」判定。
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun reserveIntroduction(
         selectedDocId: String,
         recipient: String,
-        profile: ExpertProfile?
+        profile: ExpertProfile?,
+        attempt: OutreachAttemptIdentity = OutreachAttemptIdentity()
     ): OutreachReserveOutcome {
-        return reserve(selectedDocId, INTRODUCTION, recipient, profile, null)
+        return reserve(selectedDocId, INTRODUCTION, recipient, profile, null, attempt)
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -136,7 +155,8 @@ class DiscoveryPersonOutreachGuardService(
         mailType: String,
         recipient: String,
         profile: ExpertProfile?,
-        historyReference: String? = null
+        historyReference: String? = null,
+        attempt: OutreachAttemptIdentity = OutreachAttemptIdentity()
     ): OutreachReserveOutcome {
         val docId = selectedDocId.trim()
         if (docId.isEmpty()) return denied(OutreachGuardReasonCodes.PERSON_MISSING, "empty docId")
@@ -172,7 +192,9 @@ class DiscoveryPersonOutreachGuardService(
                     } else {
                         // SAFE_RETRY 也必须重跑整组历史检查：重授期间新增人工拒绝、身份冲突、
                         // 已联系、别名或已发信事实一律阻断，不因「上次证明未交付」而绕过。
-                        val history = collectHistory(personId, docId, normalizedRecipient, profile, historyReference)
+                        val history = collectHistory(
+                            personId, mailType, docId, normalizedRecipient, profile, historyReference, attempt
+                        )
                         if (history.blocked) {
                             denied(history.code ?: OutreachGuardReasonCodes.HISTORY_PROTECTED, history.detail)
                         } else {
@@ -200,7 +222,9 @@ class DiscoveryPersonOutreachGuardService(
             }
         }
 
-        val history = collectHistory(personId, docId, normalizedRecipient, profile, historyReference)
+        val history = collectHistory(
+            personId, mailType, docId, normalizedRecipient, profile, historyReference, attempt
+        )
         if (history.blocked) {
             return denied(history.code ?: OutreachGuardReasonCodes.HISTORY_PROTECTED, history.detail)
         }
@@ -231,12 +255,16 @@ class DiscoveryPersonOutreachGuardService(
      * I-2/I-3: 发送前取得唯一交付权。复核当前人物 revision、地址、实时 discovered 标签与
      * 整组当前资格/历史后，以 expected revision/owner_token CAS RESERVED→SENDING。
      * 只有 [OutreachClaimOutcome.Claimed] 允许调用 SMTP；任何失败都保持占位不释放。
+     *
+     * [attempt] 是本次尝试自己的行身份（V-26）：调用方建行/复用行之后才 claim，历史复核必须
+     * 排除这两行，否则健康首发会被自己的 NEW 联系人（建行即固化绑定）判成旧历史而永久阻断。
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun claimSending(
         ticket: OutreachGuardTicket,
         profile: ExpertProfile?,
-        recipient: String
+        recipient: String,
+        attempt: OutreachAttemptIdentity = OutreachAttemptIdentity()
     ): OutreachClaimOutcome {
         val lockedRevision = lockPersonRevision(ticket.personId)
             ?: return OutreachClaimOutcome.Denied(OutreachGuardReasonCodes.PERSON_MISSING)
@@ -261,7 +289,9 @@ class DiscoveryPersonOutreachGuardService(
             return OutreachClaimOutcome.Denied(OutreachGuardReasonCodes.ADDRESS_INELIGIBLE, "suppressed")
         }
         // 当前整组资格与历史复核：人工拒绝、身份冲突、已联系、别名、已发信任一命中即不发送。
-        val history = collectHistory(ticket.personId, ticket.selectedDocId, normalized, profile, null)
+        val history = collectHistory(
+            ticket.personId, ticket.mailType, ticket.selectedDocId, normalized, profile, null, attempt
+        )
         if (history.blocked) {
             return OutreachClaimOutcome.Denied(history.code ?: OutreachGuardReasonCodes.HISTORY_PROTECTED, history.detail)
         }
@@ -366,8 +396,12 @@ class DiscoveryPersonOutreachGuardService(
         }
         val members = discoveryPersonRepository.findMembersByPerson(personId)
         val memberDocIds = members.map { it.expertDocId }
-        val state = historicalDeliveryState(memberDocIds) ?: return OutreachProtectionImport("", false, null)
-        val recipient = historicalRecipient(memberDocIds, members.mapNotNull { it.normalizedEmail })
+        val memberEmails = members.mapNotNull { it.normalizedEmail }
+        // I-3（V-15）：历史事实的业务键不等于 ES docId —— 以 docId / 邮箱 / 别名命中的**联系人业务
+        // orcid_id** 必须一并纳入，否则「同邮箱不同业务键」的既有 SENT/attempt 会漏导入（guard 行保持 null）。
+        val historyKeys = historyKeys(memberDocIds, memberEmails)
+        val state = historicalDeliveryState(historyKeys) ?: return OutreachProtectionImport("", false, null)
+        val recipient = historicalRecipient(historyKeys, memberEmails)
         val selectedDocId = memberDocIds.minOrNull() ?: personId
         val now = LocalDateTime.now()
         try {
@@ -389,6 +423,32 @@ class DiscoveryPersonOutreachGuardService(
                 ?: throw IllegalStateException("guard import raced without visible row for $personId", ex)
         }
         return OutreachProtectionImport(state, true, recipient)
+    }
+
+    /**
+     * 只读：已有历史事实的完整业务键集合 —— 成员 ES docId，加上以 docId / 成员邮箱 / 别名邮箱命中的
+     * **联系人业务 orcid_id**（业务键允许与 ES docId 不同；同邮箱/别名关联必须一并覆盖）。
+     */
+    private fun historyKeys(memberDocIds: List<String>, memberEmails: List<String>): List<String> {
+        val keys = LinkedHashSet<String>()
+        keys += memberDocIds.filter { it.isNotBlank() }
+        val emails = memberEmails.map { normalize(it) }.filter { it.isNotBlank() }.distinct()
+        if (emails.isNotEmpty()) {
+            val placeholders = emails.joinToString(", ") { "?" }
+            jdbcTemplate.query(
+                "SELECT orcid_id FROM expert_contact WHERE expert_email IN ($placeholders)",
+                { rs: ResultSet, _: Int -> rs.getString("orcid_id") }, *emails.toTypedArray()
+            ).forEach { if (!it.isNullOrBlank()) keys += it }
+            jdbcTemplate.query(
+                """
+                SELECT ec.orcid_id FROM expert_email_alias a
+                  JOIN expert_contact ec ON ec.id = a.expert_contact_id
+                 WHERE a.normalized_email IN ($placeholders)
+                """.trimIndent(),
+                { rs: ResultSet, _: Int -> rs.getString("orcid_id") }, *emails.toTypedArray()
+            ).forEach { if (!it.isNullOrBlank()) keys += it }
+        }
+        return keys.filter { it.isNotBlank() }.distinct()
     }
 
     /** 只读：已有成功/未知交付历史（mail_record / mail_send_attempt 事实），无则 null。 */
@@ -443,13 +503,19 @@ class DiscoveryPersonOutreachGuardService(
      * I-3: 占位前的只读历史检查（全部成员）。先复用 08 的人物级准入/抑制/已联系判定，
      * 再补直连 SQL 的 mail_record / mail_send_attempt / alias 事实。任一命中即阻断，
      * 且不暴露/重写原历史。
+     *
+     * V-26/R-1：调用方声明的本次尝试行（[attempt]）**必须经服务端核实**后才允许从历史里排除 ——
+     * 只认确实存在、且与本 ticket 的选中地址/发信类型/人物当前键空间真实关联的那一行；
+     * 任意 id 不能解锁其他历史。区分「本次尝试」不依赖任何行状态（NEW/PREPARED），也不全局忽略联系人。
      */
     private fun collectHistory(
         personId: String,
+        mailType: String,
         selectedDocId: String,
         recipient: String,
         profile: ExpertProfile?,
-        historyReference: String?
+        historyReference: String?,
+        attempt: OutreachAttemptIdentity = OutreachAttemptIdentity()
     ): HistoryFindings {
         val members = discoveryPersonRepository.findMembersByPerson(personId)
         val memberDocIds = (members.map { it.expertDocId } + selectedDocId).distinct()
@@ -458,6 +524,10 @@ class DiscoveryPersonOutreachGuardService(
         val lookupIds = (memberDocIds + listOfNotNull(profile?.orcidId?.takeIf { it.isNotBlank() })).distinct()
         val memberEmails = (members.mapNotNull { it.normalizedEmail }
             .map { normalize(it) } + listOfNotNull(profile?.email?.let { normalize(it) }, recipient)).distinct()
+        // V-26/R-1：核实后的「本次尝试自己的行」——未通过核实（不存在/不属于本 ticket 的选中地址与键空间）
+        // 即视为没有声明，一切历史照旧阻断。
+        val ownContactId = verifiedOwnContactId(lookupIds, recipient, attempt.contactId)
+        val ownAttemptId = verifiedOwnAttemptId(lookupIds, mailType, attempt.attemptId)
 
         // 1. 08 人物级准入/抑制/已联系（单一权威）。
         val recipientService = discoveryPersonRecipientService
@@ -465,7 +535,11 @@ class DiscoveryPersonOutreachGuardService(
             val selection = recipientService.selectAdmission(listOf(profile))
             val target = (selection.included + selection.excluded).firstOrNull()
             if (target != null) {
-                if (target.exclusionReasons.isNotEmpty()) {
+                val ownContactOnly = ownContactId != null &&
+                    target.exclusionReasons.isNotEmpty() &&
+                    target.exclusionReasons.all { it == PersonRecipientReasonKeys.ALREADY_CONTACTED } &&
+                    isOwnBoundContactTheOnlyOne(ownContactId, lookupIds, memberEmails)
+                if (target.exclusionReasons.isNotEmpty() && !ownContactOnly) {
                     return HistoryFindings(
                         blocked = true,
                         code = OutreachGuardReasonCodes.HISTORY_PROTECTED,
@@ -473,14 +547,18 @@ class DiscoveryPersonOutreachGuardService(
                         json = jsonSummary(target.exclusionReasons, lookupIds, memberEmails, historyReference)
                     )
                 }
-                val selectedEmail = target.selectedEmail?.let { normalize(it) }
-                if (selectedEmail == null || selectedEmail != recipient) {
-                    return HistoryFindings(
-                        blocked = true,
-                        code = OutreachGuardReasonCodes.ADDRESS_INELIGIBLE,
-                        detail = "current qualified address differs",
-                        json = jsonSummary(listOf("ADDRESS_INELIGIBLE"), lookupIds, memberEmails, historyReference)
-                    )
+                // 本次自己的行已核实为**唯一**绑定联系人时，被排除的选择结果不带选中地址 ——
+                // 此时以 ticket 绑定的地址为准（该地址已在 verifiedOwnContactId 中与自己的行核对过）。
+                if (!ownContactOnly) {
+                    val selectedEmail = target.selectedEmail?.let { normalize(it) }
+                    if (selectedEmail == null || selectedEmail != recipient) {
+                        return HistoryFindings(
+                            blocked = true,
+                            code = OutreachGuardReasonCodes.ADDRESS_INELIGIBLE,
+                            detail = "current qualified address differs",
+                            json = jsonSummary(listOf("ADDRESS_INELIGIBLE"), lookupIds, memberEmails, historyReference)
+                        )
+                    }
                 }
             }
         }
@@ -495,8 +573,8 @@ class DiscoveryPersonOutreachGuardService(
             )
         }
 
-        // 3. mail_send_attempt：在途/成功/未知均阻断。
-        val attemptStatus = ambiguousAttemptStatus(lookupIds)
+        // 3. mail_send_attempt：在途/成功/未知均阻断（核实后的本次尝试行除外）。
+        val attemptStatus = ambiguousAttemptStatus(lookupIds, ownAttemptId)
         if (attemptStatus != null) {
             val code = if (attemptStatus == "SENT") OutreachGuardReasonCodes.ALREADY_SENT
             else OutreachGuardReasonCodes.UNKNOWN_PENDING
@@ -508,8 +586,8 @@ class DiscoveryPersonOutreachGuardService(
             )
         }
 
-        // 4. 原联系人（绑定 / 同邮箱）。
-        if (anyContactExists(lookupIds, memberEmails)) {
+        // 4. 原联系人（绑定 / 同邮箱），核实后的本次尝试行除外。
+        if (anyContactExists(lookupIds, memberEmails, ownContactId)) {
             return HistoryFindings(
                 blocked = true,
                 code = OutreachGuardReasonCodes.HISTORY_PROTECTED,
@@ -536,18 +614,93 @@ class DiscoveryPersonOutreachGuardService(
         )
     }
 
-    private fun anyContactExists(lookupIds: List<String>, memberEmails: List<String>): Boolean {
+    private fun anyContactExists(
+        lookupIds: List<String>,
+        memberEmails: List<String>,
+        ownContactId: Long? = null
+    ): Boolean {
         val byDoc = countIn(
             "SELECT COUNT(*) FROM expert_contact WHERE orcid_id IN (%s)",
-            lookupIds
+            lookupIds,
+            ownContactId
         )
         if (byDoc > 0) return true
         val byEmail = countIn(
             "SELECT COUNT(*) FROM expert_contact WHERE expert_email IN (%s)",
-            memberEmails
+            memberEmails,
+            ownContactId
         )
         return byEmail > 0
     }
+
+    /**
+     * V-26/R-1: 核实调用方声明的「本次尝试自己的 contact 行」—— 必须**确实存在**、其地址等于本
+     * ticket 的选中地址（[recipient]，服务端持有于占位行），且其业务键属于该人物当前键空间
+     * （[lookupIds]）。未通过核实返回 null：任意 contactId 不得解锁其他历史。
+     */
+    private fun verifiedOwnContactId(lookupIds: List<String>, recipient: String, declaredContactId: Long?): Long? {
+        if (declaredContactId == null) return null
+        val ids = lookupIds.filter { it.isNotBlank() }.distinct()
+        if (ids.isEmpty()) return null
+        val placeholders = ids.joinToString(", ") { "?" }
+        return jdbcTemplate.query(
+            "SELECT id FROM expert_contact WHERE id = ? AND expert_email = ? AND orcid_id IN ($placeholders)",
+            { rs: ResultSet, _: Int -> rs.getLong("id") },
+            *arrayOf<Any>(declaredContactId, normalize(recipient), *ids.toTypedArray())
+        ).firstOrNull()
+    }
+
+    /**
+     * V-26/R-1: 核实调用方声明的「本次尝试自己的 attempt 行」—— 必须**确实存在**、其 mail_type
+     * 等于本 ticket 的发信类型，且其 orcid_id 属于该人物当前键空间。未通过核实返回 null。
+     */
+    private fun verifiedOwnAttemptId(lookupIds: List<String>, mailType: String, declaredAttemptId: Long?): Long? {
+        if (declaredAttemptId == null) return null
+        val ids = lookupIds.filter { it.isNotBlank() }.distinct()
+        if (ids.isEmpty()) return null
+        val placeholders = ids.joinToString(", ") { "?" }
+        return jdbcTemplate.query(
+            "SELECT id FROM mail_send_attempt WHERE id = ? AND mail_type = ? AND orcid_id IN ($placeholders)",
+            { rs: ResultSet, _: Int -> rs.getLong("id") },
+            *arrayOf<Any>(declaredAttemptId, mailType, *ids.toTypedArray())
+        ).firstOrNull()
+    }
+
+    /**
+     * V-26: 本次尝试自己的 [ownContactId] 是否**确实**是绑定联系人、且除它之外没有其他绑定联系人。
+     * 只有在这种正向归因成立时，08 的 ALREADY_CONTACTED 命中才允许被忽略 —— 自己的行不构成旧历史。
+     */
+    private fun isOwnBoundContactTheOnlyOne(
+        ownContactId: Long,
+        lookupIds: List<String>,
+        memberEmails: List<String>
+    ): Boolean {
+        val ownBound = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM expert_contact WHERE id = ? AND bound_sender_account_code IS NOT NULL",
+            Long::class.java,
+            ownContactId
+        ) ?: 0L
+        if (ownBound == 0L) return false
+        return !hasBoundContactOtherThan(lookupIds, memberEmails, ownContactId)
+    }
+
+    /**
+     * V-26: 除本次尝试自己的 [ownContactId] 外，是否还存在**绑定**发件账号的联系人。
+     */
+    private fun hasBoundContactOtherThan(
+        lookupIds: List<String>,
+        memberEmails: List<String>,
+        ownContactId: Long
+    ): Boolean =
+        countIn(
+            "SELECT COUNT(*) FROM expert_contact WHERE orcid_id IN (%s) AND bound_sender_account_code IS NOT NULL",
+            lookupIds,
+            ownContactId
+        ) > 0 || countIn(
+            "SELECT COUNT(*) FROM expert_contact WHERE expert_email IN (%s) AND bound_sender_account_code IS NOT NULL",
+            memberEmails,
+            ownContactId
+        ) > 0
 
     private fun anyAliasExists(memberEmails: List<String>): Boolean =
         countIn("SELECT COUNT(*) FROM expert_email_alias WHERE normalized_email IN (%s)", memberEmails) > 0
@@ -566,27 +719,46 @@ class DiscoveryPersonOutreachGuardService(
         return jdbcTemplate.queryForObject(sql, Long::class.java, *memberDocIds.toTypedArray())!! > 0
     }
 
-    private fun ambiguousAttemptStatus(memberDocIds: List<String>): String? {
+    private fun ambiguousAttemptStatus(memberDocIds: List<String>, ownAttemptId: Long? = null): String? {
         if (memberDocIds.isEmpty()) return null
         val placeholders = memberDocIds.joinToString(", ") { "?" }
+        // V-26：本次尝试自己的 attempt 行（PREPARED）不是旧历史，按 id 排除；其余行照旧阻断。
+        val exclusion = if (ownAttemptId != null) " AND id <> ?" else ""
+        val args: Array<Any> = if (ownAttemptId != null) {
+            arrayOf<Any>(
+                "INTRODUCTION", *memberDocIds.toTypedArray(),
+                "SENT", "DELIVERY_IN_PROGRESS", "DELIVERY_UNKNOWN", ownAttemptId
+            )
+        } else {
+            arrayOf<Any>(
+                "INTRODUCTION", *memberDocIds.toTypedArray(),
+                "SENT", "DELIVERY_IN_PROGRESS", "DELIVERY_UNKNOWN"
+            )
+        }
         return jdbcTemplate.query(
             """
             SELECT status FROM mail_send_attempt
              WHERE mail_type = ? AND orcid_id IN ($placeholders)
-               AND status IN (?, ?, ?)
+               AND status IN (?, ?, ?)$exclusion
             """.trimIndent(),
             { rs: ResultSet, _: Int -> rs.getString("status") },
-            "INTRODUCTION", *memberDocIds.toTypedArray(),
-            "SENT", "DELIVERY_IN_PROGRESS", "DELIVERY_UNKNOWN"
+            *args
         ).firstOrNull()
     }
 
-    private fun countIn(sqlTemplate: String, values: List<String>): Long {
+    private fun countIn(sqlTemplate: String, values: List<String>, excludeId: Long? = null): Long {
         val distinct = values.filter { it.isNotBlank() }.distinct()
         if (distinct.isEmpty()) return 0L
         val placeholders = distinct.joinToString(", ") { "?" }
-        val sql = sqlTemplate.replace("%s", placeholders)
-        return jdbcTemplate.queryForObject(sql, Long::class.java, *distinct.toTypedArray()) ?: 0L
+        val exclusion = if (excludeId != null) " AND id <> ?" else ""
+        val args: Array<Any> = if (excludeId != null) {
+            arrayOf<Any>(*distinct.toTypedArray(), excludeId)
+        } else {
+            arrayOf<Any>(*distinct.toTypedArray())
+        }
+        return jdbcTemplate.queryForObject(
+            sqlTemplate.replace("%s", placeholders) + exclusion, Long::class.java, *args
+        ) ?: 0L
     }
 
     private fun lockPersonRevision(personId: String): Long? =

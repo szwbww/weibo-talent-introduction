@@ -2,9 +2,12 @@ package com.weibo.talentintroduction.campaign.service
 
 import com.weibo.talentintroduction.campaign.domain.RecipientScope
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonIdentity
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonMemberRecord
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonScope
 import com.weibo.talentintroduction.discovery.repository.DiscoveryPersonRepository
 import com.weibo.talentintroduction.discovery.service.DiscoveryPersonFeatureGate
+import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.ExpertIdNormalizer
@@ -12,6 +15,12 @@ import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.mail.service.EmailSuppressionService
 import org.springframework.stereotype.Service
 import java.util.Locale
+
+/**
+ * I-2/V-5：成员档案的层顺序 —— 与服务端 [com.weibo.talentintroduction.discovery.service.DiscoveryPersonService]
+ * 登记时的核实顺序一致，代表成员档案取第一个存在的层。
+ */
+private val MEMBER_LAYERS = listOf(ExpertIndexLevel.RAW, ExpertIndexLevel.CANDIDATE, ExpertIndexLevel.APPLICATION)
 
 /**
  * I-1/I-2/I-3: 一个人物（[personId]）在本次目标里的唯一选择结果。非人物档案（无 04 映射）
@@ -59,6 +68,10 @@ object PersonRecipientReasonKeys {
     const val PREFERRED_ADDRESS_INELIGIBLE = "PREFERRED_ADDRESS_INELIGIBLE"
     /** 人物整组档案缺失/不可读（缺失/失效/不可读的成员）—— fail-closed，绝不静默发信。 */
     const val PERSON_UNREADABLE = "PERSON_UNREADABLE"
+    /** V-5：成员**当前**档案已不在实时 discovered 范围（标签/来源失效）—— 旧关系失效，整组排除。 */
+    const val PERSON_NOT_LIVE = "PERSON_NOT_LIVE_SCOPE"
+    /** V-5：成员**当前**档案事实与登记指纹不一致（档案已改动）—— 关系待重核，整组排除。 */
+    const val PERSON_RELATION_STALE = "PERSON_RELATION_STALE"
     /** 已发现（实时 discovered）但未登记到人物 —— fail-closed，绝不逐档案静默发信。 */
     const val PERSON_MAPPING_MISSING = "PERSON_MAPPING_MISSING"
 }
@@ -74,6 +87,8 @@ object PersonRecipientReasonKeys {
  *   否则按现有验证可信级别（[ExpertProfile.emailVerifiedLevel]）降序、docId 升序确定；
  * - 人物保护先读**整个有效组**：包括不满足当前筛选或不在当前层的成员；任一成员缺失/不可读、
  *   被人工 HOLD/REJECTED 或身份冲突、或已存在绑定联系人，整组排除，不能用另一成员绕过。
+ *   V-5：每个被考虑成员都以**当前持久化档案**（`_mget` 重读）复验实时 discovered 范围与登记指纹，
+ *   调用方传入的页面快照/缓存档案不作数；读不到/范围失效/指纹不符一律 fail-closed 并给出显式原因。
  *   已发现（实时 discovered）但未登记人物映射的档案同样 fail-closed，绝不逐档案静默发信；
  * - 纯计算：不写库、不建 contact/campaign、不发 HTTP 写请求（ES 仅 `_mget` 读）。预估与执行共用本函数。
  *
@@ -181,21 +196,29 @@ class DiscoveryPersonRecipientService(
         // 非人物档案：保持逐邮箱选择（不含抑制/联系人判定 —— 由下游原流程负责），范围外行为不变。
         if (personId == null) return decideNonPerson(scope, inBatch.single(), onPerEmailSelection)
 
-        val memberDocIds = allMemberDocIds(personId, inBatch)
-
-        // 1. 人物硬保护：先读**整个有效组**（含不满足当前筛选或不在当前层的成员）。
-        //    任一成员缺失/不可读（读不到档案）即 fail-closed，绝不因「本页看不到」而放行。
-        val group = loadGroupProfiles(scope, memberDocIds, inBatch)
-        if (group.profiles.size < memberDocIds.size) {
-            return PersonRecipientTarget(
-                personId, selectedDocIdPlaceholder(memberDocIds), null, memberDocIds,
-                listOf(PersonRecipientReasonKeys.PERSON_UNREADABLE)
-            )
+        // I-2/V-5：当前整组成员 = 04 关系 + 本批；关系读取失败即整组不可复验，fail-closed。
+        val records = try {
+            personRepository?.findMembersByPerson(personId).orEmpty()
+        } catch (e: Exception) {
+            return excluded(personId, inBatch.map { docIdOf(it) }, PersonRecipientReasonKeys.PERSON_UNREADABLE)
         }
+        val memberDocIds = LinkedHashSet<String>().apply {
+            records.forEach { add(it.expertDocId) }
+            inBatch.forEach { add(docIdOf(it)) }
+        }.toList()
 
-        // 1a. 人物级准入：用**不带本次筛选**的准入 scope 读取整组持久结论 —— 不满足当前筛选
+        // 1. 人物硬保护：先读**整个有效组**的**当前**档案（含不满足当前筛选或不在当前层的成员）。
+        val group = loadGroupProfiles(scope, memberDocIds)
+        // 1a. V-5/V-2：逐个成员按当前持久化档案复验（实时 discovered 范围 + 登记指纹）；调用方传入的
+        //     页面快照不作数。读不到/范围失效/指纹不符 → 整组 fail-closed 并给出显式原因。
+        currentFactsFailure(group, records.associateBy { it.expertDocId })?.let { reason ->
+            return excluded(personId, memberDocIds, reason)
+        }
+        val profiles = memberDocIds.mapNotNull { group.primary(it) }
+
+        // 1b. 人物级准入：用**不带本次筛选**的准入 scope 读取整组持久结论 —— 不满足当前筛选
         //     （如邮箱域/研发类型）或不在当前层的成员的人工 HOLD/身份冲突同样可见，不能用另一成员绕过。
-        val protection = batchRecipientSelectionService.selectProtection(group.profiles)
+        val protection = batchRecipientSelectionService.selectProtection(profiles)
         val hardReasons = protection.excluded.mapNotNull { decision ->
             when (decision.admissionState) {
                 RecipientAdmissionState.MANUAL_REJECTED -> RecipientAdmissionReasonKeys.MANUAL_REJECTED
@@ -207,16 +230,13 @@ class DiscoveryPersonRecipientService(
             return PersonRecipientTarget(personId, selectedDocIdPlaceholder(memberDocIds), null, memberDocIds, hardReasons)
         }
 
-        // 1b. 人物级历史保护：整个有效组任一成员已有绑定联系人（历史首封已发/已联系）→ 整组排除。
-        if (hasBoundMemberContact(group.profiles)) {
-            return PersonRecipientTarget(
-                personId, selectedDocIdPlaceholder(memberDocIds), null, memberDocIds,
-                listOf(PersonRecipientReasonKeys.ALREADY_CONTACTED)
-            )
+        // 1c. 人物级历史保护：整个有效组任一成员已有绑定联系人（历史首封已发/已联系）→ 整组排除。
+        if (hasBoundMemberContact(profiles)) {
+            return excluded(personId, memberDocIds, PersonRecipientReasonKeys.ALREADY_CONTACTED)
         }
 
         // 2. 具体邮箱：只对**当前 scope 层**的成员执行原 scope、准入、验证与抑制。
-        val candidates = group.profiles.filter { docIdOf(it) in group.candidateDocIds }
+        val candidates = memberDocIds.filter { it in group.candidateDocIds }.mapNotNull { group.primary(it) }
         val selection = batchRecipientSelectionService.select(scope, candidates)
         onPerEmailSelection?.invoke(selection)
         val includedDocIds = selection.includedDocIds
@@ -287,48 +307,66 @@ class DiscoveryPersonRecipientService(
     }
 
     /**
-     * I-2: 首次遇到人物时批量加载该人物当前全部成员 docId（04 关系，按 docId 升序），
-     * 并与本批出现的成员合并（关系读取失败时至少保留本批成员，不丢人）。
+     * I-2/V-5: 加载该人物**整个有效组**的**当前**档案 —— 每个成员都通过 ES `_mget`（[ExpertSearchService.
+     * findByDocumentIds]）按层重读，调用方传入的页面快照/缓存档案不再被当作当前事实。
+     * [LoadedGroup.candidateDocIds] 只含命中当前 scope 层的成员，用于具体邮箱选址；
+     * 读不到的成员保留空档案（由 [currentFactsFailure] 判定 fail-closed，绝不静默放行）。
      */
-    private fun allMemberDocIds(personId: String, inBatch: List<ExpertProfile>): List<String> {
-        val ordered = LinkedHashSet<String>()
-        personRepository?.findMembersByPerson(personId)?.forEach { ordered += it.expertDocId }
-        inBatch.forEach { ordered += docIdOf(it) }
-        return ordered.toList()
-    }
-
-    /**
-     * I-2: 加载该人物**整个有效组**的当前档案（本批已有者直接复用；其余逐层经 ES `_mget` 读取）。
-     * scope 层优先（保持既有选址层级），其余层补齐硬保护所需的整组事实；
-     * [LoadedGroup.candidateDocIds] 只含命中当前 scope 层（或本批）的成员，用于具体邮箱选址。
-     * ES 不可用或读不到的成员不出现在 [LoadedGroup.profiles] —— 由调用方按缺失 fail-closed。
-     */
-    private fun loadGroupProfiles(
-        scope: RecipientScope,
-        memberDocIds: List<String>,
-        inBatch: List<ExpertProfile>
-    ): LoadedGroup {
-        val byDocId = LinkedHashMap<String, ExpertProfile>(memberDocIds.size)
+    private fun loadGroupProfiles(scope: RecipientScope, memberDocIds: List<String>): LoadedGroup {
+        val byDocId = LinkedHashMap<String, MutableMap<ExpertIndexLevel, ExpertProfile>>(memberDocIds.size)
+        memberDocIds.forEach { byDocId[it] = LinkedHashMap() }
         val candidateDocIds = LinkedHashSet<String>()
-        inBatch.forEach { profile ->
-            val docId = docIdOf(profile)
-            if (byDocId.putIfAbsent(docId, profile) == null) candidateDocIds += docId
-        }
-        val missing = memberDocIds.filter { it !in byDocId }
-        if (missing.isNotEmpty() && expertSearchService != null) {
+        val search = expertSearchService
+        if (search != null) {
             val levelNames = (scope.funnelLevels + ExpertIndexLevel.values().map { it.name }).distinct()
             for (levelName in levelNames) {
                 val level = runCatching { ExpertIndexLevel.valueOf(levelName) }.getOrNull() ?: continue
-                expertSearchService.findByDocumentIds(level, missing).forEach { profile ->
+                // 读取异常按「该层读不到」处理：成员缺档案会被 fail-closed 排除，绝不退回旧快照。
+                val current = runCatching { search.findByDocumentIds(level, memberDocIds) }.getOrDefault(emptyList())
+                current.forEach { profile ->
                     val docId = docIdOf(profile)
-                    if (byDocId.putIfAbsent(docId, profile) == null && levelName in scope.funnelLevels) {
-                        candidateDocIds += docId
-                    }
+                    byDocId.getOrPut(docId) { LinkedHashMap() }[level] = profile
+                    if (levelName in scope.funnelLevels) candidateDocIds += docId
                 }
             }
         }
-        return LoadedGroup(memberDocIds.mapNotNull { byDocId[it] }, candidateDocIds)
+        return LoadedGroup(byDocId, candidateDocIds)
     }
+
+    /**
+     * I-2/V-5: 整组「当前事实」复验 —— 每个被考虑成员都必须能用**当前**档案复现实时 discovered 范围
+     * 与登记指纹；否则整组不可复验，返回显式排除原因（读不到 / 范围失效 / 关系指纹不符）。
+     */
+    private fun currentFactsFailure(
+        group: LoadedGroup,
+        records: Map<String, DiscoveryPersonMemberRecord>
+    ): String? {
+        for ((docId, byLevel) in group.membersByDocId) {
+            val layers = MEMBER_LAYERS.mapNotNull { byLevel[it] }
+            if (layers.isEmpty()) return PersonRecipientReasonKeys.PERSON_UNREADABLE
+            // R-2：三层任一失去实时 discovered 范围（标签/来源）即关系失效，不留半可信组。
+            if (layers.any { !DiscoveryPersonScope.isLiveDiscovered(it) }) {
+                return PersonRecipientReasonKeys.PERSON_NOT_LIVE
+            }
+            val record = records[docId] ?: return PersonRecipientReasonKeys.PERSON_UNREADABLE
+            val primary = layers.first()
+            val fingerprint = DiscoveryPersonIdentity.fingerprint(
+                docId,
+                DiscoveryIdentity.normalizedEmail(primary.email).takeIf { it.isNotEmpty() },
+                primary.givenNames,
+                primary.familyNames,
+                DiscoveryPersonIdentity.authorKeys(layers)
+            )
+            if (fingerprint != record.identityFingerprint) {
+                return PersonRecipientReasonKeys.PERSON_RELATION_STALE
+            }
+        }
+        return null
+    }
+
+    /** I-2/V-5: 整组排除结果 —— 没有单一可信选中地址，占位 docId 只作可见展示，绝不用于发送。 */
+    private fun excluded(personId: String, memberDocIds: List<String>, reason: String): PersonRecipientTarget =
+        PersonRecipientTarget(personId, selectedDocIdPlaceholder(memberDocIds), null, memberDocIds, listOf(reason))
 
     private fun hasBoundMemberContact(memberProfiles: List<ExpertProfile>): Boolean {
         val repository = expertContactRepository ?: return false
@@ -350,11 +388,18 @@ class DiscoveryPersonRecipientService(
         ).first()
     }
 
-    /** I-2: 一次整组加载的产物：全部可读成员 + 命中当前 scope 层的成员 docId。 */
+    /**
+     * I-2/V-5: 一次整组加载的产物：每个成员**当前**各层档案 + 命中当前 scope 层的成员 docId。
+     * 层顺序按 [MEMBER_LAYERS]（与服务端登记同序），因此 [primary] 与登记时的代表层一致。
+     */
     private data class LoadedGroup(
-        val profiles: List<ExpertProfile>,
+        val membersByDocId: Map<String, Map<ExpertIndexLevel, ExpertProfile>>,
         val candidateDocIds: Set<String>
-    )
+    ) {
+        fun primary(docId: String): ExpertProfile? = membersByDocId[docId]?.let { byLevel ->
+            MEMBER_LAYERS.firstNotNullOfOrNull { byLevel[it] }
+        }
+    }
 
     private fun qualifies(profile: ExpertProfile): Boolean =
         !profile.email.isNullOrBlank() && !isSuppressedEmail(profile.email)

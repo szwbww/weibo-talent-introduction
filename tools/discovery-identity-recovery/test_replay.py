@@ -190,8 +190,28 @@ class ReplayCliTest(unittest.TestCase):
         self.assertEqual(1, summary["repreviewed"])
         self.assertEqual(("a", "snap2-a", "prop2-a"), client.apply_calls[-1])
 
-    # ── 回滚提案 ────────────────────────────────────────────────────────────
+    def test_new_non_complete_apply_status_stays_resumable(self):
+        # V-4：服务端新增的准入未验证/可重试 token 不是终态，必须与 PARTIAL/STALE 一样可续跑。
+        self.assertIn("ADMISSION_UNVERIFIED", replay.APPLY_RESUMABLE)
+        client = FakeClient(apply_status="ADMISSION_UNVERIFIED")
+        replay.run_preview(client, ["a"], self.out_dir)
 
+        first = replay.run_apply(client, ["a"], self.out_dir)
+        self.assertEqual(0, first["applied"])
+        self.assertEqual([("a", "snap-a", "prop-a")], client.apply_calls)
+
+        # 故障解除：下一轮重新预览取新检查点并按同一申请续跑。
+        client.apply_status = "APPLIED"
+        client.hash_suffix = "2"
+        second = replay.run_apply(client, ["a"], self.out_dir)
+
+        self.assertEqual(1, second["applied"])
+        self.assertEqual(1, second["repreviewed"])
+        self.assertEqual(("a", "snap2-a", "prop2-a"), client.apply_calls[-1])
+        self.assertEqual("APPLIED", replay.read_jsonl(
+            os.path.join(self.out_dir, replay.APPLY_FILE))[-1]["status"])
+
+    # ── 回滚提案 ────────────────────────────────────────────────────────────
     def test_rollback_proposal_is_advisory_only(self):
         client = FakeClient()
         replay.run_preview(client, ["a"], self.out_dir)
