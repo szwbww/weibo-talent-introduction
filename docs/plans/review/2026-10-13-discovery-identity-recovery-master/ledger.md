@@ -1,7 +1,7 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-10-13/discovery-identity-recovery-master.md
 
 - Status: REPAIR_PLAN_READY
-- Review epoch: 4
+- Review epoch: 5
 - Master plan: docs/plans/2026-10-13/discovery-identity-recovery-master.md (sha256 f69d8135ce0019ad36cc8939cf8101a6f584aac9983dec3dfc78eb2ae37ce238)
 - Governing master identity: f69d8135ce0019ad36cc8939cf8101a6f584aac9983dec3dfc78eb2ae37ce238; commit 36075ec06c5e4382f13606c995e24a13ec4470ce
 - Invoked master identity: f69d8135ce0019ad36cc8939cf8101a6f584aac9983dec3dfc78eb2ae37ce238
@@ -11,26 +11,26 @@
 - Fast-p ledger: docs/plans/fast/2026-10-13-discovery-identity-recovery-master/ledger.md (sha256 2bbeec0ca9bbaf2008aed29b4265862a089a84cdbc25f20160a3e6ef5fe361e2)
 - Fast-p handoff: docs/plans/fast/2026-10-13-discovery-identity-recovery-master/human-review-handoff.md (sha256 ff9fa89083d24f9a3f6b37f798a8f201273df9c7b543d8a572316e7c4a390a64)
 - Master base: 9d353934b82ed3e36a193c70748e5efccb3d9e82
-- Final code head: 1ab288125b4e00b1237a69c48320d315741eaf76
-- Evidence parent before next commit: e3169cfa3c6657a6b479f3ccbcaf91bdcfd007c6
-- Previous evidence commit: e3169cfa3c6657a6b479f3ccbcaf91bdcfd007c6
+- Final code head: a585fd7698f20067a3394e218e57fe322090ed38
+- Evidence parent before next commit: 0cb2fe947b467f65f3762e90d13842f89a8084c1
+- Previous evidence commit: 0cb2fe947b467f65f3762e90d13842f89a8084c1
 - Branch: fast/2026-10-13-discovery-identity-recovery-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master
 - Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
 - Discovery evidence: SELECTED, one candidate, exact script result below.
 - Misdirected review evidence: N/A; invoked worktree same-slug ledger absent.
-- Reviewer: /root/aggregate_review_epoch4 (fresh fork_turns=none; created after 1ab288125b4e00b1237a69c48320d315741eaf76)
-- Reviewer attempt: 1
-- Machine result: FAIL
-- Machine report epoch: machine-verification.md — Epoch 4; FAIL / PROGRESSING; Epochs 1–3 preserved append-only
-- Repair artifact: docs/plans/fix/discovery-identity-recovery-master/repair.md (sha256 67af76b4007aa92af3cee98eb3a6c1568071db13c2ea14cca74d5008c6120c41); DRAFT_READY; 18 Authorized Files / 6 root-cause tasks
-- Repair evidence mode: N/A for new draft; DURABLE_HANDOFF for reviewed previous repair preserved
-- Repair approval source: Current draft execution PENDING; prior repair approval remains in immutable execution handoff
-- Repair executor: N/A for current draft; reviewed prior executor canonical identity UNAVAILABLE
-- Repair code head: N/A for current draft; reviewed code 1ab288125b4e00b1237a69c48320d315741eaf76
+- Reviewer: /root/aggregate_review_epoch5_retry (fresh fork_turns=none; created after a585fd7698f20067a3394e218e57fe322090ed38)
+- Reviewer attempt: 2
+- Machine result: FAIL / PROGRESSING
+- Machine report epoch: Epoch 5; Epochs 1–4 preserved append-only
+- Repair artifact: docs/plans/fix/discovery-identity-recovery-master/repair.md (sha256 67af76b4007aa92af3cee98eb3a6c1568071db13c2ea14cca74d5008c6120c41); DRAFT_READY, unchanged in Epoch 5
+- Repair evidence mode: DURABLE_HANDOFF for Epoch-4 execution; a new draft requires a new explicit approval.
+- Repair approval source: Epoch-four repair-execution.md is historical only; Epoch-5 draft has no execution approval.
+- Repair executor: N/A for current draft; historical Epoch-4 executor recorded in repair-execution.md
+- Repair code head: a585fd7698f20067a3394e218e57fe322090ed38 (reviewed candidate)
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: Approve current exact repair.md through human execute-p; required bounded product/evidence commits and return to aggregate review per handoff. Manual acceptance PENDING; B-1/B-2 remain BLOCKED.
+- Blocker/next action: mandatory contract gaps V-31 and V-32. Human must explicitly authorize the current repair draft with `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/docs/plans/fix/discovery-identity-recovery-master/repair.md`; manual acceptance remains PENDING.
 
 ## Preflight — 2026-10-14 (Asia/Shanghai)
 
@@ -232,3 +232,25 @@
 - Controller checked exact boundary, full contract/scope/amendment matrices, stable finding lineage, every RECORD_ONLY mapping, complete 22 execution exits/counts/skips plus C20 exception, report integrity and resolved one-approval handoff. A controller structural-check regex initially expected a bare finding cell instead of the returned finding/severity cell; corrected only the local checker, no report content changed.
 - Manual acceptance/sign-off PENDING. No manual-acceptance.md or final-decision.md generated on FAIL. Next action is human execute-p approval of the current repair, its bounded local product/evidence commits, durable handoff and same-task return to aggregate review.
 - Product HEAD remains 1ab288125b4e00b1237a69c48320d315741eaf76. Evidence parent before next commit e3169cfa3c6657a6b479f3ccbcaf91bdcfd007c6. Controller stages only this ledger, machine-verification.md and exact repair.md. No product changes, push, merge, deployment or history rewrite.
+
+## Epoch 5 preflight — 2026-10-16 (Asia/Shanghai)
+
+- Required discovery command completed exit 0: `SELECTED` exactly one registered worktree; selected identity, branch, fast-p ledger/handoff, ten terminal children, master identity `CONSISTENT`, and A1–A14 match the recorded run.
+- Post-repair evidence mode: `DURABLE_HANDOFF`. Current repair SHA256 is `67af76b4007aa92af3cee98eb3a6c1568071db13c2ea14cca74d5008c6120c41`; Epoch-four repair execution records the exact human `$execute-p` approval and resulting code commit `a585fd7698f20067a3394e218e57fe322090ed38`.
+- Git proves `1ab288125b4e00b1237a69c48320d315741eaf76` is an ancestor of `a585fd7698f20067a3394e218e57fe322090ed38`, and the candidate is an ancestor of evidence HEAD `0cb2fe947b467f65f3762e90d13842f89a8084c1`. Candidate-to-HEAD changes only `repair-execution.md`.
+- The candidate product/test delta contains exactly seven files, all within the current repair's 18 Authorized Files: DiscoveryIdentityRecoveryService.kt, DiscoveryPersonQueryService.kt, DiscoveryPersonService.kt, ExpertRevalidationService.kt, ExpertSearchService.kt, DiscoveryPersonOutreachGuardServiceTest.kt, and DiscoveryPersonQueryServiceTest.kt. No product/test/index changes are pending; worktree and index are clean before this ledger evidence edit.
+- Prior finding/report lineage is Epochs 1–4 in machine-verification.md; repair-execution.md has the current durable handoff. Baseline environment and required command set remain the repair plan's C01–C22/E01, including its recorded C20 exception. Manual status/sign-off remain PENDING.
+- A fresh reviewer must be created after `a585fd7698f20067a3394e218e57fe322090ed38`, with no inherited implementation/light-verification context, and must run complete `review-p` aggregate/master verification against `9d353934b82ed3e36a193c70748e5efccb3d9e82..a585fd7698f20067a3394e218e57fe322090ed38`.
+- Epoch-5 reviewer dispatch attempt 1 succeeded: `/root/aggregate_review_epoch5`, fork_turns=none. Identity differs from all recorded fast-p writers/verifiers and the recorded repair executor; it was created after the candidate commit with no inherited execution context.
+- Epoch-5 reviewer attempt 1 ended without a review result because the parent review turn was interrupted while its C09 command was executing; product head remained `a585fd7698f20067a3394e218e57fe322090ed38`, and no product/test/report/repair artifact changed. Action: `RETRY` with a new fresh reviewer.
+- Epoch-5 reviewer dispatch attempt 2 succeeded: `/root/aggregate_review_epoch5_retry`, fork_turns=none. It was created after the candidate commit and has no inherited execution context.
+
+## Epoch 5 result — 2026-10-16 (Asia/Shanghai)
+
+- Independent reviewer `/root/aggregate_review_epoch5_retry` completed `review-p`: **FAIL / PROGRESSING**. Fresh boundary: `9d353934b82ed3e36a193c70748e5efccb3d9e82..a585fd7698f20067a3394e218e57fe322090ed38`; current evidence HEAD `0cb2fe947b467f65f3762e90d13842f89a8084c1`. Candidate is an ancestor; candidate-to-HEAD contains only `repair-execution.md`.
+- Fresh repair verification: C01–C19, C21 and C22 all exit 0; C20 is the approved old-Zulu/tzdb exception. C01 149, C02 259, C03 310, C04 48, C05 164, C07 6 real-MySQL, C08 24, C09 46 migration-MySQL, C10 283, C11 30 real-MySQL, C12 151, C14 23, C15 JS 1,680, C16 289, C17 294/0F/0E/4S (E01-gated), C18 33, C21 5,092/0F/0E/23S before E01, C22 1; C06/C19 Python 16/19. C13 syntax clean. E01 ran but exits 1: 4/0F/1E/0S, known base Initial `mail_send_attempt_id=0` FK chain; it is excluded/unapproved and does not excuse required contract regressions.
+- Master matrix: I1/I5/I8 PASS. I2/I3/I4/I6 are product-correct but their required discriminating regressions are incomplete (V-32). I7 FAIL (V-31). Manual acceptance PENDING; B-1/B-2 remain BLOCKED.
+- V-3/V-5/V-12/V-13/V-29/V-30 remain resolved. Mandatory persistent V-31: actual Initial/Manual/Expert callers are not covered; existing tests exercise guard seams rather than service entry points; competition then Initial is sequential; revoke-after-admission is unasserted; INITT/MIT/MEMT have no repair delta. Mandatory new V-32: the candidate changes only QT/GT tests, leaving R1–R5 required discriminators unproved (member/current-label interleaving; HTTP item-error/missing-vs-found-false recipient projection; PT/RT partial-resume mixed-layer behavior; current invalid-institution versus historical automatic pass).
+- Child mapping: 01 and 05 pass; 02 lacks partial-then-resume RECT proof; 04 lacks PT/RT proof; 06 lacks strict HTTP/recipient/controller discriminators; 08 lacks Search-recipient proof; 09 fails V-31 because actual callers are absent. A1–A14 and governing A1 remain aligned. Nonmandatory V-21/V-23/V-24 remain observations; B-1/B-2 are evidence obligations, not fabricated product defects.
+- `repair-p`: DRAFT_READY. Existing repair artifact already contains the exact six root-cause tasks and 18 authorized existing files needed for V-31/V-32; no material scope change, product/test edit, artifact edit, staging, or commit by the reviewer. A fresh explicit human execution approval is required.
+- Controller checked that only controller-owned review evidence is dirty; no product/test/index change was introduced by review. No manual-acceptance.md or final-decision.md is generated on FAIL. Terminal outcome: `REPAIR_PLAN_READY`.

@@ -970,6 +970,85 @@ P2E真MySQL：reserve Granted→加入本次NEW联系人→claim `OUTREACH_HISTO
 
 No product code was modified.
 
+## Epoch 5 — 2026-10-16 (Asia/Shanghai)
+
+**Master plan:** `docs/plans/2026-10-13/discovery-identity-recovery-master.md`
+**Governing identity:** `f69d8135ce0019ad36cc8939cf8101a6f584aac9983dec3dfc78eb2ae37ce238` at `36075ec06c5e4382f13606c995e24a13ec4470ce` (CONSISTENT)
+**Boundary:** `9d353934b82ed3e36a193c70748e5efccb3d9e82..a585fd7698f20067a3394e218e57fe322090ed38`
+**Reviewer:** `/root/aggregate_review_epoch5_retry` (fresh, no inherited implementation/light-verification context)
+**Result:** FAIL / PROGRESSING
+**Repair:** `docs/plans/fix/discovery-identity-recovery-master/repair.md`, SHA256 `67af76b4007aa92af3cee98eb3a6c1568071db13c2ea14cca74d5008c6120c41`, DRAFT_READY and unchanged.
+
+### Boundary and scope
+
+- Candidate `a585fd7698f20067a3394e218e57fe322090ed38` is an ancestor of evidence HEAD `0cb2fe947b467f65f3762e90d13842f89a8084c1`; candidate-to-HEAD changes only `repair-execution.md`.
+- Repair product delta `1ab288125b4e00b1237a69c48320d315741eaf76..a585fd7698f20067a3394e218e57fe322090ed38` contains exactly seven authorized files: `DiscoveryIdentityRecoveryService.kt`, `DiscoveryPersonQueryService.kt`, `DiscoveryPersonService.kt`, `ExpertRevalidationService.kt`, `ExpertSearchService.kt`, `DiscoveryPersonOutreachGuardServiceTest.kt`, and `DiscoveryPersonQueryServiceTest.kt`.
+- `git diff --check` is clean. The only dirty file before controller evidence persistence is controller-owned `ledger.md`.
+
+### Fresh verification
+
+| Command | Exit | Evidence |
+|---|---:|---|
+| C01 | 0 | 149 / 0F / 0E / 0S |
+| C02 | 0 | 259 / 0F / 0E / 0S |
+| C03 | 0 | 310 / 0F / 0E / 0S |
+| C04 | 0 | 48 / 0F / 0E / 0S |
+| C05 | 0 | 164 / 0F / 0E / 0S |
+| C06 | 0 | 16 Python tests OK |
+| C07 | 0 | 6 / 0F / 0E / 0S; real MySQL |
+| C08 | 0 | 24 / 0F / 0E / 0S |
+| C09 | 0 | 46 / 0F / 0E / 0S; migration MySQL |
+| C10 | 0 | 283 / 0F / 0E / 0S |
+| C11 | 0 | 30 / 0F / 0E / 0S; real MySQL |
+| C12 | 0 | 151 / 0F / 0E / 0S |
+| C13 | 0 | syntax clean |
+| C14 | 0 | 23 pass |
+| C15 | 0 | 1,680 pass |
+| C16 | 0 | 289 / 0F / 0E / 0S |
+| C17 | 0 | 294 / 0F / 0E / 4S; E01-gated skips |
+| C18 | 0 | 33 / 0F / 0E / 0S |
+| C19 | 0 | 19 Python tests OK |
+| C20 | N/R | approved old-Zulu/tzdb exception only |
+| C21 | 0 | clean package/WAR; 5,092 / 0F / 0E / 23S before E01 |
+| C22 | 0 | 1 / 0F / 0E / 0S |
+| E01 | 1 | 4 / 0F / 1E / 0S; known Initial `mail_send_attempt_id=0` FK chain |
+
+E01's FK chain is known base/unapproved scope. It remains truthfully failed and cannot waive R6 or the new regression obligations.
+
+### Contract assessment
+
+| Area | Result | Basis |
+|---|---|---|
+| I1 | PASS | Existing behavior retained. |
+| I2 | Product PASS / proof incomplete | V-32: missing R1/R5 discriminator regressions. |
+| I3 | Product PASS / proof incomplete | V-32: REVT discriminator absent. |
+| I4 | Product PASS / proof incomplete | V-32: PT/RT interleaving absent. |
+| I5 | PASS | Existing behavior retained. |
+| I6 | Product PASS / proof incomplete | V-32: R2 boundary regressions absent. |
+| I7 | FAIL | V-31 mandatory actual-entry test contract absent. |
+| I8 | PASS | Existing behavior retained. |
+| Manual | PENDING | No human results or sign-off. |
+| B-1/B-2 | BLOCKED | Required performance/concurrent-entry evidence remains absent. |
+
+Resolved product roots remain V-3 (verified root revision binding), V-5/V-13 (strict mget), V-12 (raw/contact-status consistency), V-29 (same-target partial resume), and V-30 (current policy before automatic projection). Findings V-1, V-2, V-3, V-4, V-5, V-6, V-7, V-8, V-9, V-10, V-11, V-12, V-13, V-14, V-15, V-16, V-17, V-18, V-19, V-20, V-22, V-25, V-26, V-27, V-28, V-29, and V-30 retain their resolved lineage; V-21/V-23/V-24 remain nonmandatory observations.
+
+### Mandatory findings
+
+- **V-31 — persistent mandatory P2:** `b2HealthyManualInitial`/Expert cover guard seams, not actual service entry points; competition then Initial is only sequential; revoke-after-admission is explicitly unasserted; required INITT/MIT/MEMT scenarios have no repair delta. Child 09 therefore fails its actual-caller contract.
+- **V-32 — new mandatory P2:** candidate tests change only QT/GT. Required R1–R5 discriminating regressions are still absent: late member/current-label interleaving; HTTP item-error/missing versus found-false Search recipient controller count; partial failure then resume across mixed layers; and old automatic pass versus current invalid institution.
+
+Child result: 01 and 05 pass; 02 lacks partial-then-resume RECT proof; 04 lacks PT/RT proof; 06 lacks strict HTTP/recipient/controller discriminators; 08 lacks Search-recipient proof; 09 fails V-31. A1–A14 and governing amendment A1 remain aligned. This is RECORD_ONLY for prior historical claims; no product behavior is inferred without the current boundary proof.
+
+### Routing
+
+All active P1 roots are resolved; V-31/V-32 are bounded mandatory contract gaps, so convergence is PROGRESSING. `repair-p` returned DRAFT_READY without modifying the existing repair artifact: its six tasks and 18 authorized files already cover exactly these gaps. No product/test file, review artifact, index, or commit was modified by the reviewer.
+
+Required human action:
+
+```text
+$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-13-discovery-identity-recovery-master/docs/plans/fix/discovery-identity-recovery-master/repair.md
+```
+
 
 ## Epoch 3 — 2026-10-15T13:43:21+08:00
 
