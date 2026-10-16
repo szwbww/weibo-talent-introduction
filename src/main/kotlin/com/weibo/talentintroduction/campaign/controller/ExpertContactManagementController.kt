@@ -32,6 +32,7 @@ import com.weibo.talentintroduction.mail.service.RebindCommand
 import com.weibo.talentintroduction.mail.service.SenderAccountBindingService
 import com.weibo.talentintroduction.campaign.service.AutoReplySummary
 import com.weibo.talentintroduction.campaign.service.BulkAutoReplyResult
+import com.weibo.talentintroduction.discovery.service.DiscoveryPersonQueryService
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -41,6 +42,7 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
+import java.time.LocalDateTime
 
 @RestController
 @RequestMapping("/api/expert-contacts")
@@ -51,7 +53,9 @@ class ExpertContactManagementController(
     private val expertOperatorStatusService: ExpertOperatorStatusService,
     private val expertIndexLevelOperationService: ExpertIndexLevelOperationService,
     private val senderAccountBindingService: SenderAccountBindingService,
-    private val expertMaterialService: ExpertMaterialService
+    private val expertMaterialService: ExpertMaterialService,
+    // 06：人物聚合分支的只读关系解析服务；默认 null 保持既有直接构造测试不变，分支内 requireNotNull 兜底。
+    private val personQueryService: DiscoveryPersonQueryService? = null
 ) {
     @GetMapping
     fun listContacts(
@@ -60,17 +64,60 @@ class ExpertContactManagementController(
         @RequestParam(required = false) operatorStatus: String?,
         @RequestParam(required = false) needsAttention: Boolean?,
         @RequestParam(required = false) replyMode: String?,
-        @RequestParam(required = false) followUpMarked: Boolean?
+        @RequestParam(required = false) followUpMarked: Boolean?,
+        // 06：可选人物聚合分支；默认 false 保持旧客户端契约逐字不变。
+        @RequestParam(required = false, defaultValue = "false") groupDiscoveredPersons: Boolean = false,
+        // 仅在 groupDiscoveredPersons=true 时于成员级生效的邮箱域名条件（旧分支不读该参数）。
+        @RequestParam(required = false) emailDomain: String? = null
     ): ExpertContactListResponse {
         val normalizedReplyMode = replyMode?.takeIf { it == "AUTO" || it == "MANUAL" }
         val contacts = service.listContacts(
             campaignId, status, operatorStatus, needsAttention, normalizedReplyMode, followUpMarked
         )
+        if (!groupDiscoveredPersons) {
+            return ExpertContactListResponse(
+                contacts = contacts.map { it.toResponse() },
+                totalCount = contacts.size.toLong()
+            )
+        }
+
+        // I-1/I-3：成员级完成既有状态/域名条件后按人物聚合。域名条件在此处以成员 expertEmail 判定，
+        // 故非代表邮箱也能命中；聚合只读关系，不登记、不创建联系人。
+        val domain = emailDomain?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+        val members = if (domain == null) {
+            contacts
+        } else {
+            contacts.filter { it.expertEmail.substringAfter('@', "").lowercase() == domain }
+        }
+        // R-11：只有当前核验通过的关系才并入人物聚合。普通/核验失败的联系人保持 **原 contactId 单位**，
+        // 绝不按 orcidId 合并两个不同 contactId 的联系人；分组顺序沿用原列表顺序（不再按 key 重排）。
+        val relations = requirePersonQuery().resolveVerifiedPersonRelations(members.map { it.orcidId }.distinct())
+        val grouped = members
+            .groupBy { contact ->
+                val personId = relations[contact.orcidId]?.personId
+                if (personId != null) "person:$personId" else "contact:${contact.id ?: contact.orcidId}"
+            }
+            .map { (personKey, group) ->
+                val representative = group.maxByOrNull { it.updatedAt ?: LocalDateTime.MIN } ?: group.first()
+                GroupedContactPerson(
+                    personId = relations[representative.orcidId]?.personId,
+                    personKey = personKey,
+                    representativeContactId = representative.id,
+                    contactIds = group.mapNotNull { it.id },
+                    memberCount = group.size,
+                    needsReview = group.any { relations[it.orcidId]?.needsReview == true }
+                )
+            }
         return ExpertContactListResponse(
-            contacts = contacts.map { it.toResponse() },
-            totalCount = contacts.size.toLong()
+            contacts = members.map { it.toResponse() },
+            totalCount = grouped.size.toLong(),
+            groupDiscoveredPersons = true,
+            groupedPersons = grouped
         )
     }
+
+    private fun requirePersonQuery(): DiscoveryPersonQueryService =
+        requireNotNull(personQueryService) { "DiscoveryPersonQueryService 未注入" }
 
     @GetMapping("/{contactId}")
     fun getContactDetail(@PathVariable contactId: Long): ExpertContactDetailResponse =
@@ -448,7 +495,26 @@ data class MeetingScheduleResponse(
 
 data class ExpertContactListResponse(
     val contacts: List<ExpertContactResponse>,
-    val totalCount: Long
+    val totalCount: Long,
+    // 06：默认 false 保持旧客户端契约；true 时 totalCount 为人数、groupedPersons 为分页/展示单元。
+    val groupDiscoveredPersons: Boolean = false,
+    val groupedPersons: List<GroupedContactPerson> = emptyList()
+)
+
+/**
+ * 06（I-1）：按人物聚合后的联系人分组。
+ *
+ * R-11：[personId] 只在关系**当前核验通过**时非空；范围外或无有效关系的联系人保持原
+ * `contactId` 单位（[personKey] = `contact:<contactId>`），两个同 orcidId 不同 contactId 的普通
+ * 联系人绝不合并。已登记但核验失败的关系回退原单位并置 [needsReview]。
+ */
+data class GroupedContactPerson(
+    val personId: String?,
+    val personKey: String,
+    val representativeContactId: Long?,
+    val contactIds: List<Long>,
+    val memberCount: Int,
+    val needsReview: Boolean = false
 )
 
 data class ExpertContactResponse(

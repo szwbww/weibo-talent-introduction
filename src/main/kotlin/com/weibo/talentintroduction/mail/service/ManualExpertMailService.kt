@@ -2,13 +2,22 @@ package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.OperatorStatus
+import com.weibo.talentintroduction.campaign.domain.RecipientScope
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.campaign.service.BatchRecipientSelectionService
 import com.weibo.talentintroduction.campaign.service.ConversationStateService
+import com.weibo.talentintroduction.campaign.service.DiscoveryPersonOutreachGuardService
 import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
+import com.weibo.talentintroduction.campaign.service.OutreachAttemptIdentity
+import com.weibo.talentintroduction.campaign.service.OutreachClaimOutcome
+import com.weibo.talentintroduction.campaign.service.OutreachGuardTicket
+import com.weibo.talentintroduction.campaign.service.OutreachReserveOutcome
 import com.weibo.talentintroduction.common.domain.ConversationStatus
+import com.weibo.talentintroduction.discovery.service.DiscoveryPersonFeatureGate
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailRecordQaRule
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+import com.weibo.talentintroduction.mail.domain.SmtpErrorCategory
 import com.weibo.talentintroduction.mail.domain.TriggeredBy
 import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
@@ -34,7 +43,14 @@ class ManualExpertMailService(
     private val senderAccountBindingService: SenderAccountBindingService,
     private val expertOperatorStatusService: ExpertOperatorStatusService,
     private val personalizationGateService: PersonalizationGateService = PersonalizationGateService(),
-    private val mailVariableService: MailVariableService? = null
+    private val mailVariableService: MailVariableService? = null,
+    /** 09 (I-1/I-2/I-3): 人物级首发原子门禁 —— 仅实际 INTRODUCTION 且 discovered 时启用。 */
+    private val outreachGuardService: DiscoveryPersonOutreachGuardService? = null,
+    /**
+     * V-1（master I-8/发布段、04 开关）：人物能力总开关。默认关闭时必须保持本轮引入前的
+     * 旧发送行为 —— 只有**已存在人物映射/保护**的目标才继续走 guard（保护不可被开关撤销）。
+     */
+    private val discoveryPersonFeatureGate: DiscoveryPersonFeatureGate = DiscoveryPersonFeatureGate()
 ) {
     fun listSendOptions(): List<ManualMailOption> {
         return mailComposeTemplateService.listEnabled()
@@ -94,7 +110,25 @@ class ManualExpertMailService(
             composed.mail.text,
             composed.mail.body
         )
+
+        // 09 (I-1/I-2/I-3): 仅对**实际** INTRODUCTION 且目标为 discovered 的介绍邮件启用人物级首发门禁；
+        // 非 INTRODUCTION / 非 discovered / 无法解析画像时保持原路径逐字不变。
+        val guardTicket = reserveAndClaimIntroductionGuard(contact, composed.mailType)
+
         val delivered = mailDeliveryService.send(account, composed.mail)
+        if (guardTicket != null) {
+            if (delivered.status == "SENT") {
+                outreachGuardService?.markSent(guardTicket, delivered.messageId, null)
+            } else if (delivered.smtpResponseCode != null &&
+                delivered.errorCategory != SmtpErrorCategory.SUCCESS
+            ) {
+                // V-8（09 I-2）：SMTP 明确拒绝（4xx/5xx，非 SUCCESS 分类）→ 证明未接受，安全重试（绑定原地址）。
+                outreachGuardService?.markSafeRetry(guardTicket)
+            } else {
+                // 250/SUCCESS（服务端已接受、之后连接中断）或无响应码（网络/认证等）→ 结果不明，不可自动重发。
+                outreachGuardService?.markUnknown(guardTicket)
+            }
+        }
         val now = LocalDateTime.now()
 
         val saved = mailRecordRepository.save(
@@ -164,6 +198,48 @@ class ManualExpertMailService(
             sendStatus = delivered.status,
             messageId = delivered.messageId
         )
+    }
+
+    /**
+     * 09 (I-1/I-2/I-3): 详情手动发送的介绍邮件首发门禁。仅当 guard 已注入、实际 mailType=INTRODUCTION
+     * 且目标适用（V-1：总开关开启，或该 docId 已登记到人物）时启用：占位 → 发送前 CAS SENDING。
+     * 未获许可抛 IllegalStateException（外发事务回滚，绝不调用 SMTP）。
+     * 已知人物画像不可读时 fail-closed —— 绝不退化为无 guard 的普通邮件；非人物 / 非 INTRODUCTION
+     * 返回 null（保持原路径逐字不变）。
+     */
+    private fun reserveAndClaimIntroductionGuard(contact: ExpertContact, mailType: String): OutreachGuardTicket? {
+        val guard = outreachGuardService ?: return null
+        if (mailType != "INTRODUCTION") return null
+        val recipient = contact.expertEmail
+        val profile = mailVariableService?.resolveExpertProfileFor(contact)
+        if (profile == null) {
+            // 画像不可读：已知人物必须 fail-closed；未登记人物的普通联系人保持原路径。
+            val docId = contact.orcidId.takeIf { it.isNotBlank() }
+            if (docId != null && guard.isKnownPerson(docId)) {
+                throw IllegalStateException("人物画像不可读，首发保护拒绝发送（contactId=${contact.id}）")
+            }
+            return null
+        }
+        if (!RecipientScope.isDiscoveryOutreach(profile)) return null
+        val docId = BatchRecipientSelectionService.docIdOf(profile)
+        // V-1：总开关关闭且该目标无人物映射/保护 → 逐字保持旧路径（不调 guard、不写 guard 状态）。
+        if (!discoveryPersonFeatureGate.enabled && !guard.isKnownPerson(docId)) return null
+        // V-26：本次发送对象就是自己的 contact 行（建行即固化绑定），历史复核不得把它当旧历史。
+        val attempt = OutreachAttemptIdentity(contactId = contact.id)
+        val ticket = when (val outcome = guard.reserveIntroduction(docId, recipient, profile, attempt)) {
+            is OutreachReserveOutcome.Granted -> outcome.ticket
+            is OutreachReserveOutcome.Denied -> throw IllegalStateException(
+                "人物级首发保护拒绝发送：${outcome.code}（contactId=${contact.id}）"
+            )
+        }
+        return when (val claim = guard.claimSending(ticket, profile, recipient, attempt)) {
+            is OutreachClaimOutcome.Claimed -> ticket
+            is OutreachClaimOutcome.Denied -> {
+                // 未取得交付权 = 未调用 SMTP，证明未交付 → 允许原址安全重试，绝不留 RESERVED 占位。
+                guard.markSafeRetry(ticket)
+                throw IllegalStateException("首发交付权未取得：${claim.code}（contactId=${contact.id}）")
+            }
+        }
     }
 
     fun sendBatchMail(contactIds: List<Long>, command: ManualMailSendCommand): BatchMailSendResult {

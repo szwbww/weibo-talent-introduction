@@ -331,7 +331,10 @@ class DiscoveryReviewScanService(
             "orcidId", "email", "givenNames", "familyNames", "country", "age", "degree", "nationality",
             "hIndex", "citationCount", "lastPublicationYear", "researchFields", "researchFieldIds",
             "disciplineCategory", "institution", "institutionType", "emailSource", "externalIds",
-            "identityVerification", "institutionEvidence", "filterResult", "tags", "expertClassification"
+            "identityVerification", "institutionEvidence", "filterResult", "tags", "expertClassification",
+            // I-7：研发分类器与 policy 消费的输入字段必须与完整档案一致，缺一个都会让审核投影误判
+            // （线上实测 4,642 条已初始化档案中 1 条因此多出「研发证据不足」）。
+            "keyword", "employment", "worksCount", "recentWorkTitles", "patentTitles"
         )
     }
 }

@@ -31,6 +31,9 @@ import com.weibo.talentintroduction.expert.domain.ExpertType
 import com.weibo.talentintroduction.expert.domain.IdentityVerification
 import com.weibo.talentintroduction.expert.service.ExpertClassificationService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonIdentity
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonScope
+import com.weibo.talentintroduction.discovery.service.DiscoveryPersonFeatureGate
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
@@ -2161,7 +2164,8 @@ class ManualInitialOutreachServiceTest {
         Mockito.verify(txHelper, Mockito.times(20)).recordSuccess(
             anyValue(ExpertContact(campaignId = 10L, orcidId = "", expertEmail = "", expertName = null, currentStatus = "NEW")),
             Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(),
-            Mockito.anyLong(), Mockito.anyLong(), Mockito.isNull()
+            Mockito.anyLong(), Mockito.anyLong(), Mockito.isNull(),
+            Mockito.nullable(OutreachGuardTicket::class.java)
         )
     }
 
@@ -2769,6 +2773,365 @@ class ManualInitialOutreachServiceTest {
     }
 
     @Test
+    fun `countBySnapshot counts one person once and picks one qualified address (I-1 I-2 I-3)`() {
+        // 同人 P1 三成员：d1 默认被抑制、d2/d3 合格；另有普通专家 D9。
+        val d1 = discoveredExpert("D1", "d1@test.com")
+        val d2 = discoveredExpert("D2", "d2@test.com")
+        val d3 = discoveredExpert("D3", "d3@test.com")
+        val d9 = expert("D9", "d9@test.com")
+        stubIntroSendPipeline(account("chen"), listOf(d1, d2, d3, d9))
+        // V-5：整组当前事实按层从 ES 重读（抑制/合格按当前档案判定）。
+        stubPersonMemberProfiles(listOf(d1, d2, d3))
+        Mockito.`when`(emailSuppressionService.isSuppressed("d1@test.com")).thenReturn(true)
+
+        val personAware = serviceWithPersonSelection(personMembers(listOf(d1, d2, d3)))
+        stubAdmissions(
+            "D1" to "AUTO_PASSED", "D2" to "AUTO_PASSED", "D3" to "AUTO_PASSED", "D9" to "AUTO_PASSED"
+        )
+
+        val summary = personAware.countBySnapshot(introSnapshot(roundSize = 10, roundsPerRun = 1))
+
+        // 同人只计 1 个目标，另加普通专家 1 个：预估与该时点目标数相同（I-3）。
+        assertEquals(2, summary.pending)
+        assertEquals(2, summary.totalSendable)
+    }
+
+    /** 用同一批 mock 构造一个接入人物级选择层的 service（其余参数与 [service] 一致）。 */
+    private fun serviceWithPersonSelection(
+        personRepo: com.weibo.talentintroduction.discovery.repository.DiscoveryPersonRepository,
+        guard: DiscoveryPersonOutreachGuardService? = null,
+        gateEnabled: Boolean = true
+    ): ManualInitialOutreachService {
+        val personRecipientService = DiscoveryPersonRecipientService(
+            batchRecipientSelectionService = batchRecipientSelectionService,
+            discoveryPersonRepository = personRepo,
+            expertSearchService = expertSearchService,
+            emailSuppressionService = emailSuppressionService,
+            expertContactRepository = expertContactRepository,
+            // I-3（R-1）：总开关默认关闭；本用例显式开启以覆盖人物归并的**启用路径**。
+            featureGate = DiscoveryPersonFeatureGate(enabled = gateEnabled)
+        )
+        return ManualInitialOutreachService(
+            expertSearchService = expertSearchService,
+            senderAccountAssignmentService = senderAccountAssignmentService,
+            introductionMailComposer = introductionMailComposer,
+            mailDeliveryService = mailDeliveryService,
+            expertContactRepository = expertContactRepository,
+            campaignRepository = campaignRepository,
+            mailRecordRepository = mailRecordRepository,
+            mailSenderAccountRepository = mailSenderAccountRepository,
+            mailSendAttemptRepository = mailSendAttemptRepository,
+            progressStore = progressStore,
+            properties = properties,
+            txHelper = txHelper,
+            batchSendSettingService = batchSendSettingService,
+            mailSenderAccountService = mailSenderAccountService,
+            selfCheckService = selfCheckService,
+            expertIndexWriterService = expertIndexWriterService,
+            accountRateLimiter = accountRateLimiter,
+            emailSuppressionService = emailSuppressionService,
+            providerResolver = providerResolver,
+            senderWarmupService = senderWarmupService,
+            autoReplySettingService = autoReplySettingService,
+            manualExpertMailService = manualExpertMailService,
+            taskExecutionService = taskExecutionService,
+            senderAccountBindingService = senderAccountBindingService,
+            mailComposeTemplateService = mailComposeTemplateService,
+            batchEmailVerificationService = batchEmailVerificationService,
+            expertOperatorStatusService = expertOperatorStatusService,
+            batchRecipientSelectionService = batchRecipientSelectionService,
+            discoveryPersonRecipientService = personRecipientService,
+            outreachGuardService = guard,
+            // V-1：总开关与人物选择层保持同一取值（本 helper 覆盖门禁启用/关闭两条路径）。
+            discoveryPersonFeatureGate = DiscoveryPersonFeatureGate(enabled = gateEnabled)
+        )
+    }
+
+    @Test
+    fun `person-level guard denies discovered introduction before contact creation (I-1 I-2 I-3)`() {
+        val acc = account("chen")
+        val candidate = signedDiscoveryExpert("D-GUARD", "guard@example.org")
+        stubIntroSendPipeline(acc, listOf(candidate))
+        stubAdmissions("D-GUARD" to "AUTO_PASSED")
+        stubPersonMemberProfiles(listOf(candidate))
+        val guard = Mockito.mock(DiscoveryPersonOutreachGuardService::class.java)
+        Mockito.`when`(
+            guard.reserveIntroduction(
+                anyValue("D-GUARD"), anyValue("guard@example.org"), anyValue(candidate), anyValue(OutreachAttemptIdentity())
+            )
+        ).thenReturn(OutreachReserveOutcome.Denied(OutreachGuardReasonCodes.IN_FLIGHT))
+        val guarded = serviceWithPersonSelection(personMembers(listOf(candidate)), guard)
+        val snapshot = introSnapshot(roundSize = 1, roundsPerRun = 1)
+
+        val result = guarded.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = true)
+
+        // 未获人物级首发许可：不建 contact、不调 SMTP，目标记 skipped。
+        assertEquals(0, result.sent)
+        assertEquals(0, result.failed)
+        assertEquals(1, result.skipped)
+        Mockito.verify(guard).reserveIntroduction(
+            anyValue("D-GUARD"), anyValue("guard@example.org"), anyValue(candidate), anyValue(OutreachAttemptIdentity())
+        )
+        Mockito.verify(expertContactRepository, Mockito.never()).save(
+            anyValue(ExpertContact(campaignId = 0L, orcidId = "", expertEmail = "", expertName = null))
+        )
+        Mockito.verify(mailDeliveryService, Mockito.never()).send(anyValue(acc), anyValue(ComposedMail("", "", "")))
+    }
+
+    // ── V-26 正常首发不被自己的 contact/attempt 行阻断 ───────────────────────
+
+    @Test
+    fun `healthy first send reaches SMTP once and declares its own contact and attempt rows (V-26)`() {
+        val acc = account("chen")
+        val candidate = signedDiscoveryExpert("D-V26", "v26@example.org")
+        stubIntroSendPipeline(acc, listOf(candidate))
+        stubAdmissions("D-V26" to "AUTO_PASSED")
+        stubPersonMemberProfiles(listOf(candidate))
+        val guard = Mockito.mock(DiscoveryPersonOutreachGuardService::class.java)
+        val ticket = OutreachGuardTicket(
+            personId = "P1", mailType = "INTRODUCTION", revision = 1L,
+            ownerToken = "token", selectedDocId = "D-V26", recipient = "v26@example.org"
+        )
+        Mockito.`when`(
+            guard.reserveIntroduction(
+                anyValue("D-V26"), anyValue("v26@example.org"), anyValue(candidate), anyValue(OutreachAttemptIdentity())
+            )
+        ).thenReturn(OutreachReserveOutcome.Granted(ticket))
+        // 模拟 guard 的 claim 历史复核：只有调用方声明了本次自己的 contact(999)/attempt(77) 才获准。
+        Mockito.`when`(
+            guard.claimSending(
+                anyValue(ticket), anyValue(candidate), anyValue("a@b.com"), anyValue(OutreachAttemptIdentity())
+            )
+        ).thenAnswer { invocation ->
+            val attempt = invocation.getArgument<OutreachAttemptIdentity>(3)
+            if (attempt.contactId == 999L && attempt.attemptId == 77L) OutreachClaimOutcome.Claimed
+            else OutreachClaimOutcome.Denied(OutreachGuardReasonCodes.HISTORY_PROTECTED)
+        }
+        val guarded = serviceWithPersonSelection(personMembers(listOf(candidate)), guard)
+
+        val result = guarded.run(introSnapshot(roundSize = 1, roundsPerRun = 1), 12345L, ExecutionMode.MANUAL, oneRoundOnly = true)
+
+        assertEquals(1, result.sent)
+        assertEquals(0, result.skipped)
+        assertEquals(0, result.failed)
+        Mockito.verify(mailDeliveryService, Mockito.times(1)).send(anyValue(acc), anyValue(ComposedMail("", "", "")))
+    }
+
+    // ── V-1 默认关闭总开关不改变旧发送行为 ───────────────────────────────────
+
+    @Test
+    fun `gate off sends an unmapped discovered candidate without touching the guard (V-1)`() {
+        val acc = account("chen")
+        val candidate = signedDiscoveryExpert("D-OFF", "off@example.org")
+        stubIntroSendPipeline(acc, listOf(candidate))
+        stubAdmissions("D-OFF" to "AUTO_PASSED")
+        stubPersonMemberProfiles(listOf(candidate))
+        val guard = Mockito.mock(DiscoveryPersonOutreachGuardService::class.java)
+        Mockito.`when`(guard.isKnownPerson("D-OFF")).thenReturn(false)
+        val legacy = serviceWithPersonSelection(personMembers(listOf(candidate)), guard, gateEnabled = false)
+
+        val result = legacy.run(introSnapshot(roundSize = 1, roundsPerRun = 1), 12345L, ExecutionMode.MANUAL, oneRoundOnly = true)
+
+        // 未开启且无人物保护：逐字保持旧行为 —— 正常发送，guard 只被读一次映射、无任何占位/状态写入。
+        assertEquals(1, result.sent)
+        assertEquals(0, result.skipped)
+        Mockito.verify(mailDeliveryService, Mockito.times(1)).send(anyValue(acc), anyValue(ComposedMail("", "", "")))
+        Mockito.verify(guard).isKnownPerson("D-OFF")
+        Mockito.verifyNoMoreInteractions(guard)
+    }
+
+    @Test
+    fun `gate off still denies a mapped target that carries person protection (V-1)`() {
+        val acc = account("chen")
+        val candidate = signedDiscoveryExpert("D-MAP", "mapped@example.org")
+        stubIntroSendPipeline(acc, listOf(candidate))
+        stubAdmissions("D-MAP" to "AUTO_PASSED")
+        stubPersonMemberProfiles(listOf(candidate))
+        val guard = Mockito.mock(DiscoveryPersonOutreachGuardService::class.java)
+        Mockito.`when`(guard.isKnownPerson("D-MAP")).thenReturn(true)
+        Mockito.`when`(
+            guard.reserveIntroduction(
+                anyValue("D-MAP"), anyValue("mapped@example.org"), anyValue(candidate), anyValue(OutreachAttemptIdentity())
+            )
+        ).thenReturn(OutreachReserveOutcome.Denied(OutreachGuardReasonCodes.UNKNOWN_PENDING))
+        val legacy = serviceWithPersonSelection(personMembers(listOf(candidate)), guard, gateEnabled = false)
+
+        val result = legacy.run(introSnapshot(roundSize = 1, roundsPerRun = 1), 12345L, ExecutionMode.MANUAL, oneRoundOnly = true)
+
+        // 已登记人物的首发保护不因总开关关闭而撤销。
+        assertEquals(0, result.sent)
+        assertEquals(1, result.skipped)
+        Mockito.verify(mailDeliveryService, Mockito.never()).send(anyValue(acc), anyValue(ComposedMail("", "", "")))
+    }
+
+    // ── V-8 SMTP 结果分类 ────────────────────────────────────────────────────
+
+    @Test
+    fun `accepted-then-lost connection (250 SUCCESS) marks the guard unknown (V-8)`() {
+        val (guard, ticket) = runGuardedFailedDelivery(
+            DeliveredMail("msg-lost", "FAILED", SmtpErrorCategory.SUCCESS, 250, "queued, connection then lost")
+        )
+
+        Mockito.verify(guard).markUnknown(anyValue(ticket))
+        Mockito.verify(guard, Mockito.never()).markSafeRetry(anyValue(ticket))
+    }
+
+    @Test
+    fun `explicit pre-acceptance rejection marks the guard safe retry (V-8)`() {
+        val (guard, ticket) = runGuardedFailedDelivery(
+            DeliveredMail("msg-rejected", "FAILED", SmtpErrorCategory.PERMANENT, 550, "recipient rejected")
+        )
+
+        Mockito.verify(guard).markSafeRetry(anyValue(ticket))
+        Mockito.verify(guard, Mockito.never()).markUnknown(anyValue(ticket))
+    }
+
+    /** V-8：一次受门禁约束的失败投递，返回本用例的 guard mock 与本次占位凭据。 */
+    private fun runGuardedFailedDelivery(
+        delivered: DeliveredMail
+    ): Pair<DiscoveryPersonOutreachGuardService, OutreachGuardTicket> {
+        val acc = account("chen")
+        val candidate = signedDiscoveryExpert("D-FAIL", "fail@example.org")
+        stubIntroSendPipeline(acc, listOf(candidate))
+        Mockito.`when`(mailDeliveryService.send(anyValue(acc), anyValue(ComposedMail("", "", ""))))
+            .thenReturn(delivered)
+        stubAdmissions("D-FAIL" to "AUTO_PASSED")
+        stubPersonMemberProfiles(listOf(candidate))
+        val guard = Mockito.mock(DiscoveryPersonOutreachGuardService::class.java)
+        val ticket = OutreachGuardTicket(
+            personId = "P1", mailType = "INTRODUCTION", revision = 1L,
+            ownerToken = "token", selectedDocId = "D-FAIL", recipient = "fail@example.org"
+        )
+        Mockito.`when`(
+            guard.reserveIntroduction(
+                anyValue("D-FAIL"), anyValue("fail@example.org"), anyValue(candidate), anyValue(OutreachAttemptIdentity())
+            )
+        ).thenReturn(OutreachReserveOutcome.Granted(ticket))
+        Mockito.`when`(
+            guard.claimSending(
+                anyValue(ticket), anyValue(candidate), anyValue("a@b.com"), anyValue(OutreachAttemptIdentity())
+            )
+        ).thenReturn(OutreachClaimOutcome.Claimed)
+        val guarded = serviceWithPersonSelection(personMembers(listOf(candidate)), guard)
+
+        val result = guarded.run(introSnapshot(roundSize = 1, roundsPerRun = 1), 12345L, ExecutionMode.MANUAL, oneRoundOnly = true)
+
+        assertEquals(1, result.failed)
+        assertEquals(0, result.sent)
+        return guard to ticket
+    }
+
+    /** 构造一个人物 P1 + 指定成员关系的只读仓储 mock（V-5：指纹按当前档案事实签发）。 */
+    private fun personMembers(
+        profiles: List<ExpertProfile>,
+        personId: String = "P1"
+    ): com.weibo.talentintroduction.discovery.repository.DiscoveryPersonRepository {
+        val repo = Mockito.mock(com.weibo.talentintroduction.discovery.repository.DiscoveryPersonRepository::class.java)
+        val members = profiles.map { profile ->
+            val docId = profile.esDocId ?: profile.orcidId
+            val email = DiscoveryIdentity.normalizedEmail(profile.email).takeIf { it.isNotEmpty() }
+            com.weibo.talentintroduction.discovery.domain.DiscoveryPersonMemberRecord(
+                expertDocId = docId,
+                personId = personId,
+                normalizedEmail = email,
+                identityFingerprint = DiscoveryPersonIdentity.fingerprint(
+                    docId, email, profile.givenNames, profile.familyNames,
+                    DiscoveryPersonIdentity.authorKeys(listOf(profile))
+                ),
+                evidenceJson = null,
+                createdAt = LocalDateTime.of(2026, 8, 1, 12, 0),
+                updatedAt = LocalDateTime.of(2026, 8, 1, 12, 0)
+            )
+        }
+        Mockito.`when`(repo.findPersonIdsByDocIds(Mockito.anyCollection<String>())).thenAnswer { invocation ->
+            val ids = invocation.getArgument<Collection<String>>(0)
+            members.filter { it.expertDocId in ids }.associate { it.expertDocId to it.personId }
+        }
+        Mockito.`when`(repo.findMembersByPerson(personId)).thenReturn(members)
+        members.forEach { Mockito.`when`(repo.findMember(it.expertDocId)).thenReturn(it) }
+        return repo
+    }
+
+    /** R-7：retry D2 与新页 D1 属同一人物 —— 预估只计一次。 */
+    @Test
+    fun `retry and same-person ES target share one person set in estimate (I-2 I-3)`() {
+        val d1 = discoveredExpert("D1", "d1@test.com")
+        val d2 = discoveredExpert("D2", "d2@test.com")
+        stubCampaignWithRetryContact(retryContact(55L, "D2", "d2@test.com"))
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("D2"), ExpertIndexLevel.CANDIDATE)).thenReturn(listOf(d2))
+        stubPersonMemberProfiles(listOf(d1, d2))
+        stubScrolledExperts(listOf(d1))
+        stubAdmissions("D1" to "AUTO_PASSED", "D2" to "AUTO_PASSED")
+
+        val personAware = serviceWithPersonSelection(personMembers(listOf(d1, d2)))
+        val summary = personAware.countBySnapshot(introSnapshot(roundSize = 10, roundsPerRun = 1))
+
+        assertEquals(1, summary.retryable)
+        assertEquals(0, summary.pending, "同人 ES 目标不再重复计数")
+        assertEquals(1, summary.totalSendable)
+    }
+
+    /** R-7：retry D2 与新页 D1 属同一人物 —— 执行只发一次。 */
+    @Test
+    fun `retry and same-person ES target send exactly once (I-2 I-3)`() {
+        val acc = account("chen")
+        val d1 = discoveredExpert("D1", "d1@test.com")
+        val d2 = discoveredExpert("D2", "d2@test.com")
+        stubCampaignWithRetryContact(retryContact(55L, "D2", "d2@test.com"))
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("D2"), ExpertIndexLevel.CANDIDATE)).thenReturn(listOf(d2))
+        stubPersonMemberProfiles(listOf(d1, d2))
+        stubScrolledExperts(listOf(d1))
+        stubAdmissions("D1" to "AUTO_PASSED", "D2" to "AUTO_PASSED")
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(55L)).thenReturn(emptyList())
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(
+            anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY)
+        )).thenReturn(acc)
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("", "")), Mockito.isNull(), anyBooleanValue()))
+            .thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(mailDeliveryService.send(anyValue(acc), anyValue(ComposedMail("", "", ""))))
+            .thenReturn(DeliveredMail("msg", "SENT"))
+
+        val personAware = serviceWithPersonSelection(personMembers(listOf(d1, d2)))
+        val result = personAware.run(
+            introSnapshot(roundSize = 10, roundsPerRun = 1), 12345L, ExecutionMode.MANUAL, oneRoundOnly = true
+        )
+
+        assertEquals(1, result.total)
+        assertEquals(1, result.sent)
+        Mockito.verify(mailDeliveryService, Mockito.times(1)).send(anyValue(acc), anyValue(ComposedMail("", "", "")))
+    }
+
+    private fun retryContact(id: Long, orcidId: String, email: String) = ExpertContact(
+        id = id, campaignId = 10L, orcidId = orcidId, expertEmail = email,
+        expertName = "Given Family", currentStatus = "NEW", operatorStatus = "NOT_CONTACTED"
+    )
+
+    private fun stubCampaignWithRetryContact(contact: ExpertContact) {
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(
+            Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        )
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(contact))
+        Mockito.`when`(expertContactRepository.findByOrcidIdIn(Mockito.anyList())).thenReturn(emptyList())
+    }
+
+    /** R-7：`findByDocumentIds` 只返回给定 docId 集合命中的成员档案（其余层返回空）。 */
+    private fun stubPersonMemberProfiles(profiles: List<ExpertProfile>) {
+        Mockito.`when`(expertSearchService.findByDocumentIdsStrict(anyIndexLevel(), Mockito.anyList()))
+            .thenAnswer { invocation ->
+                expertSearchService.findByDocumentIds(invocation.getArgument(0), invocation.getArgument(1))
+            }
+        Mockito.`when`(expertSearchService.findByDocumentIds(anyIndexLevel(), Mockito.anyList()))
+            .thenAnswer { invocation ->
+                val ids = invocation.getArgument<List<String>>(1)
+                profiles.filter { (it.esDocId ?: it.orcidId) in ids }
+            }
+    }
+
+    private fun anyIndexLevel(): ExpertIndexLevel =
+        Mockito.any(ExpertIndexLevel::class.java) ?: ExpertIndexLevel.CANDIDATE
+
+    @Test
     fun `roundsPerRun bounds a single execution at rounds times round size`() {
         val account = account("chen")
         val experts = (1..100).map { expert("E%04d".format(it), "e$it@test.com") }
@@ -2994,7 +3357,8 @@ class ManualInitialOutreachServiceTest {
             Mockito.verify(txHelper, Mockito.never()).recordSuccess(
                 anyValue(ExpertContact(campaignId = 0, orcidId = "", expertEmail = "", expertName = null)),
                 Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyLong(), Mockito.any(),
-                Mockito.nullable(Long::class.javaObjectType)
+                Mockito.nullable(Long::class.javaObjectType),
+                Mockito.nullable(OutreachGuardTicket::class.java)
             )
         }
 
@@ -7318,8 +7682,20 @@ class ManualInitialOutreachServiceTest {
         )
         val token = DiscoveryIdentity.institutionEvidence(base, DiscoveryIdentity.EVIDENCE_SOURCE_JATS)
             ?: error("fixture 必须能签发机构证据 token: $orcidId")
-        return base.copy(institutionEvidence = token, filterResult = "PASSED")
+        return base.copy(
+            institutionEvidence = token,
+            filterResult = "PASSED",
+            // V-5：人物成员的当前档案必须能复现实时 discovered 范围（来源证据 + 字面标签）。
+            tags = listOf(DiscoveryPersonScope.DISCOVERED_TAG)
+        )
     }
+
+    /** V-5：可复现实时 discovered 范围的人物成员档案（发现来源 + 字面标签）。 */
+    private fun discoveredExpert(orcidId: String, email: String): ExpertProfile =
+        expert(orcidId, email).copy(
+            emailSource = "PAPER_FULLTEXT",
+            tags = listOf(DiscoveryPersonScope.DISCOVERED_TAG)
+        )
 
     /** I-1/I-3: stub 持久准入结论（docId → decision）。未列出的 docId 视为未初始化。 */
     private fun stubAdmissions(vararg decisions: Pair<String, String>) {

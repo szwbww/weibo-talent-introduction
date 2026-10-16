@@ -9020,17 +9020,41 @@ async function loadContacts() {
         if (operatorStatus) params.set("operatorStatus", operatorStatus);
         if (needsAttention) params.set("needsAttention", needsAttention);
         if (replyMode) params.set("replyMode", replyMode);
+        // 07（I-1）：请求 06 的人物聚合分支，并由服务器在成员级执行邮箱域名筛选；
+        // 未返回新分组模式的旧响应保持既有前端过滤/切片行为。
+        params.set("groupDiscoveredPersons", "true");
+        if (emailDomain) params.set("emailDomain", emailDomain);
         const data = await api(`/api/expert-contacts?${params}`);
-        let rawContacts = data.contacts || data;
-        if (emailDomain) {
-            rawContacts = rawContacts.filter(c => (c.expertEmail || "").endsWith(`@${emailDomain}`));
-            totalHits = rawContacts.length;
+        const groupedPersons = Array.isArray(data.groupedPersons) ? data.groupedPersons : null;
+        let rows;
+        if (data.groupDiscoveredPersons === true && groupedPersons) {
+            // 按人分组：列表一行一人，人数口径取响应；分页在人物层，不在成员层运行。
+            const membersById = new Map((Array.isArray(data.contacts) ? data.contacts : []).map(c => [c.id, c]));
+            const persons = groupedPersons.map(g => {
+                const contactIds = Array.isArray(g.contactIds) ? g.contactIds : [];
+                const representative = membersById.get(g.representativeContactId)
+                    || (contactIds.length ? membersById.get(contactIds[0]) : null);
+                if (!representative) return null;
+                return { representative, memberCount: Number(g.memberCount) || contactIds.length };
+            }).filter(Boolean);
+            totalHits = Number(data.totalCount ?? persons.length);
+            rows = persons
+                .slice(state.contactsPage * size, (state.contactsPage + 1) * size)
+                .map(p => ({ c: p.representative, memberCount: p.memberCount }));
         } else {
-            totalHits = data.totalCount ?? rawContacts.length;
+            // 旧响应（无人物分组）：维持原前端过滤与切片。
+            let rawContacts = data.contacts || data;
+            if (emailDomain) {
+                rawContacts = rawContacts.filter(c => (c.expertEmail || "").endsWith(`@${emailDomain}`));
+                totalHits = rawContacts.length;
+            } else {
+                totalHits = data.totalCount ?? rawContacts.length;
+            }
+            rows = rawContacts
+                .slice(state.contactsPage * size, (state.contactsPage + 1) * size)
+                .map(c => ({ c, memberCount: 0 }));
         }
-        // MySQL 接口暂无分页，前端切片
-        rawContacts = rawContacts.slice(state.contactsPage * size, (state.contactsPage + 1) * size);
-        contacts = rawContacts.map(c => ({
+        contacts = rows.map(({ c, memberCount }) => ({
             orcidId: c.orcidId,
             email: c.expertEmail,
             displayName: c.expertName,
@@ -9053,7 +9077,8 @@ async function loadContacts() {
             researchFields: "",
             institution: "",
             worksCount: null,
-            enrichedAt: null
+            enrichedAt: null,
+            discoveryEmailCount: memberCount
         }));
     } else {
         const params = new URLSearchParams();
@@ -9108,7 +9133,10 @@ async function loadContacts() {
             enrichedAt: e.enrichedAt || null,
             expertType: e.expertType ?? null,
             expertProductionScore: e.expertProductionScore ?? null,
-            expertResearchScore: e.expertResearchScore ?? null
+            expertResearchScore: e.expertResearchScore ?? null,
+            // 07 epoch2（S-1）：消费 06 ES 列表每行的 memberCount；<=1/缺失时
+            // discoveryEmailCount 非 >1，渲染侧回落原邮箱文本（与 DB 分支同一 S-1 规则）。
+            discoveryEmailCount: Number.isFinite(Number(e.memberCount)) ? Number(e.memberCount) : 0
         }));
     }
     } catch (e) {
@@ -9210,7 +9238,7 @@ function renderContactListItems() {
                         <div class="list-item-meta expert-meta">
                             <span>${escapeHtml(indexLevelLabels[contact.indexLevel] || contact.indexLevelName || contact.indexLevel)}</span>
                             <span>${escapeHtml(contact.country || "国家未知")}</span>
-                            <span>${escapeHtml(contact.email || "邮箱未知")}</span>
+                            <span>${escapeHtml(contact.discoveryEmailCount > 1 ? `${contact.email || "邮箱未知"} · 共 ${contact.discoveryEmailCount} 个邮箱` : (contact.email || "邮箱未知"))}</span>
                         </div>
                     </div>
                     ${badge(status, statusType)}
@@ -13474,6 +13502,95 @@ function unmountExpertMeetingVideos(session) {
 }
 /* contact-profile-05-video:end */
 
+// ── 07（I-1/I-2/S-1/S-2）：一人多邮箱展示 · 共享只读片段 ──────────────────
+// 复用既有 class/CSS（metadata-card* / link-btn），不新增样式；两个详情宿主共用本片段。
+// R-12：逐邮箱状态只认服务端真值 token（统一 selector 的持久准入 + 抑制名单 + UNKNOWN）。
+// 只有 ADMITTED 才是「可发送」；旧 ES filterResult（PASSED/REJECTED）与未知 token 一律不显示为可发送。
+function discoveryAdmissionLabel(admissionStatus) {
+    if (admissionStatus === "ADMITTED") return "可发送";
+    if (admissionStatus === "MANUAL_REJECTED") return "不合格";
+    if (admissionStatus === "NEEDS_REVIEW") return "待复核";
+    if (admissionStatus === "IDENTITY_CHANGED") return "身份已变更";
+    if (admissionStatus === "UNINITIALIZED") return "准入未取得";
+    if (admissionStatus === "SUPPRESSED") return "已退订";
+    if (!admissionStatus || admissionStatus === "UNKNOWN") return "准入未取得";
+    return "准入状态未知";
+}
+
+// S-2：成员行按响应重复；无 contactId 时不渲染历史入口；确有冲突时追加差异行。
+function renderDiscoveryPersonEmailsCard(person) {
+    if (!person || !Array.isArray(person.members) || person.members.length === 0) return "";
+    const rows = person.members.map((member) => {
+        if (!member || !member.docId) return "";
+        const parts = [member.email ? String(member.email) : "邮箱未知"];
+        if (member.representative) parts.push("主邮箱");
+        parts.push(`准入：${discoveryAdmissionLabel(member.admissionStatus)}`);
+        const statusText = member.operatorStatus
+            ? (operatorStatusLabels[member.operatorStatus] || member.operatorStatus)
+            : (member.contactStatus ? labelStatus(member.contactStatus) : "");
+        if (statusText) parts.push(`状态：${statusText}`);
+        if (member.evidenceSource) parts.push(`来源：${member.evidenceSource}`);
+        const button = member.contactId
+            ? `<button type="button" class="link-btn" data-action="open-person-member-history" data-contact-id="${member.contactId}" data-member-email="${escapeHtml(member.email || "")}">查看该邮箱历史</button>`
+            : "";
+        return `<div class="metadata-card-value" data-member-doc-id="${escapeHtml(member.docId)}"><span>${escapeHtml(parts.join(" · "))}</span>${button}</div>`;
+    }).join("");
+    const conflictRow = (Array.isArray(person.conflicts) && person.conflicts.length)
+        ? `<div class="metadata-card-value"><span>成员资料存在差异，请查看对应邮箱档案</span></div>`
+        : "";
+    return `<div class="metadata-card span-all" data-role="discovery-person-emails"><div class="metadata-card-header"><span>联系方式</span></div>${rows}${conflictRow}</div>`;
+}
+
+// S-2：无法读取人物详情（非 404）时的状态占位；不改变任何发送许可。
+function renderDiscoveryPersonEmailsUnavailable() {
+    return `<div class="metadata-card span-all" data-role="discovery-person-emails"><div class="metadata-card-header"><span>联系方式</span></div><div class="metadata-card-value"><span>状态未取得</span></div></div>`;
+}
+
+// I-2：捕获 generation，旧响应不覆盖新页面；personId 为空（非 discovered）保持原 UI。
+async function loadDiscoveryPersonEmails(root, docId, level, generation) {
+    const host = root && typeof root.querySelector === "function"
+        ? root.querySelector('[data-role="discovery-person-emails-host"]')
+        : null;
+    if (!host || !docId) return null;
+    const params = new URLSearchParams();
+    params.set("docId", docId);
+    if (level) params.set("level", level);
+    let person = null;
+    let missing = false;
+    try {
+        person = await api(`/api/experts/person?${params}`);
+    } catch (error) {
+        missing = !!(error && error.status === 404);
+        person = null;
+    }
+    if (typeof isCurrentContactDetailPresentation === "function"
+        && !isCurrentContactDetailPresentation(generation)) return null;
+    if (missing) {
+        host.innerHTML = "";
+        return null;
+    }
+    if (!person) {
+        host.innerHTML = renderDiscoveryPersonEmailsUnavailable();
+        return null;
+    }
+    if (!person.personId) {
+        host.innerHTML = "";
+        return person;
+    }
+    host.innerHTML = renderDiscoveryPersonEmailsCard(person);
+    if (Array.isArray(person.members) && person.members.length > 1
+        && typeof root.querySelector === "function") {
+        const span = root.querySelector('[data-role="detail-email-summary"]');
+        if (span) {
+            const representative = person.members.find((m) => m && m.representative && m.email)
+                || person.members.find((m) => m && m.email);
+            const repEmail = representative ? String(representative.email) : "";
+            span.textContent = `${repEmail || "邮箱未知"} · 共 ${person.members.length} 个邮箱`;
+        }
+    }
+    return person;
+}
+
 async function showExpertDetail(expert, generation) {
     if (generation === undefined) generation = beginContactDetailPresentation();
     try {
@@ -13514,7 +13631,7 @@ async function showExpertDetail(expert, generation) {
                     <p>
                         <span>${escapeHtml(indexLevelLabels[expert.indexLevel] || expert.indexLevelName || expert.indexLevel)}</span>
                         <span class="divider">·</span>
-                        <span>${escapeHtml(expert.email || "邮箱未知")}</span>
+                        <span data-role="detail-email-summary">${escapeHtml(expert.email || "邮箱未知")}</span>
                     </p>
                 </div>
                 ${expert.orcidId ? renderExpertTagEditor(expertTags.tags, expert.orcidId, tagLevel, "expertTagEditor", expertTags.found === false, "inline") : ""}
@@ -13587,6 +13704,7 @@ async function showExpertDetail(expert, generation) {
                         ${renderKeywords(expert.keyword)}
                     </div>
                 </div>
+                <div data-role="discovery-person-emails-host"></div>
                 </div>
 
                 ${expert.contactId ? `
@@ -13608,6 +13726,10 @@ async function showExpertDetail(expert, generation) {
         </div>
     `;
     finishContactDetailPresentation(generation);
+    // 07（I-2）：两个详情宿主共用只读邮箱片段；捕获 generation，旧响应不覆盖新页面。
+    if (typeof loadDiscoveryPersonEmails === "function") {
+        loadDiscoveryPersonEmails(contactDetail, expert.orcidId || "", expert.indexLevel || "", generation);
+    }
     // 02（I-1）：与 loadContactDetail 共用同一挂载入口；无 contact 分支用 ES 专家身份。
     // typeof 守卫沿用本文件既有的组件挂载约定（unmountExpertMaterialsHosts / mountExpertMaterialsInline），
     // 使按函数抽取执行的既有前端测试在缺少该函数时保持原行为。
@@ -14079,7 +14201,7 @@ async function loadContactDetail(contactId, generation) {
                 <div class="expert-header-info">
                     <h2>${escapeHtml(name)}</h2>
                     <p>
-                        <span>${escapeHtml(contact.expertEmail)}</span>
+                        <span data-role="detail-email-summary">${escapeHtml(contact.expertEmail)}</span>
                     </p>
                 </div>
                 ${renderExpertTagEditor(expertTags.tags, orcidId, tagLevel, "expertTagEditor", expertTags.found === false, "inline")}
@@ -14228,6 +14350,7 @@ async function loadContactDetail(contactId, generation) {
                 <div class="metadata-card span-all" id="expertOperatorLogsSection">
                     ${renderOperatorLogs(logs)}
                 </div>
+                <div data-role="discovery-person-emails-host"></div>
             </div>
             </div>
             <div class="detail-tab-panel" data-panel="template" hidden>
@@ -14240,6 +14363,10 @@ async function loadContactDetail(contactId, generation) {
         </div>
     `;
     finishContactDetailPresentation(generation);
+    // 07（I-2）：两个详情宿主共用只读邮箱片段（docId 用原专家/联系人标识，不冒充 ORCID）。
+    if (typeof loadDiscoveryPersonEmails === "function") {
+        loadDiscoveryPersonEmails(contactDetail, orcidId || contact.orcidId || "", contact.currentIndexLevel || expert.indexLevel || "", generation);
+    }
     requestAnimationFrame(() => {
         if (!isCurrentContactDetailPresentation(generation)) return;
         contactDetail.scrollTop = 0;
@@ -16283,6 +16410,11 @@ async function handleContactAction(element) {
         const toggle = $("#contactHeadMoreToggle");
         if (row) row.hidden = !state.contactHeadExpanded;
         if (toggle) toggle.setAttribute("aria-expanded", String(state.contactHeadExpanded));
+        return;
+    }
+    // 07（S-2）：邮箱成员历史入口沿用它原有的 contactId + 邮箱，切换到该邮箱的历史视图。
+    if (action === "open-person-member-history") {
+        openExpertMailbox(element.dataset.contactId, element.dataset.memberEmail || "");
         return;
     }
     // Business completion may refresh only the presentation that initiated it.

@@ -32,6 +32,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mockito
+import org.springframework.http.HttpEntity
 import org.springframework.http.HttpMethod
 import org.springframework.http.ResponseEntity
 import org.springframework.jdbc.core.JdbcTemplate
@@ -123,6 +124,7 @@ class DiscoveryReviewAllPagesTest {
                 }
                 else -> {
                     fixture.searchCalls++
+                    fixture.beginRun(inv.getArgument<HttpEntity<*>>(2).body)
                     ResponseEntity.ok(fixture.nextBatchNode())
                 }
             }
@@ -192,7 +194,76 @@ class DiscoveryReviewAllPagesTest {
         assertEquals(0, service.prepareAllMatching(approveRequest(), null, null, null, null, "op1").total)
     }
 
-    // ── I-1：10005 全量完整扫描 ──────────────────────────────────────────────
+    // ── I-7：完整字段读取 ───────────────────────────────────────────────────
+
+    @Test
+    fun `the scan requests every field the classifier and policy consume`() {
+        fixture.reset(listOf("doc-00001"))
+
+        scan.listPage(ExpertIndexLevel.RAW, null, 0, 20, null, null, null)
+
+        val requested = fixture.lastSourceFields
+        assertNotNull(requested)
+        // 线上实测：少这五个字段时同一条已初始化档案会凭空多出「研发证据不足」（I-7）。
+        listOf("employment", "keyword", "worksCount", "recentWorkTitles", "patentTitles").forEach { field ->
+            assertTrue(requested!!.contains(field), "$field 未出现在 _source 请求中：$requested")
+        }
+        // 完整档案读取共用的字段清单也必须包含它们（策略与分类器消费同一份事实）。
+        assertTrue(requested!!.contains("institutionEvidence"))
+        assertTrue(requested!!.contains("filterResult"))
+    }
+
+    @Test
+    fun `scan build profiles from the complete source including the classifier inputs`() {
+        fixture.reset(listOf("doc-00001"))
+        var capturedSource: Map<String, Any?>? = null
+        Mockito.`when`(writer.discoveryProfile(anyString(), Mockito.any<Map<String, Any?>>() ?: emptyMap()))
+            .thenAnswer { inv ->
+                val docId = inv.getArgument<String>(0)
+                val source = inv.getArgument<Map<String, Any?>>(1)
+                capturedSource = source
+                profileOf(docId, source["email"] as? String)
+            }
+
+        scan.scanAll(
+            DiscoveryReviewScanService.DiscoveryReviewFilter(ExpertIndexLevel.RAW, null, null, null, null)
+        ) { true }
+
+        val source = capturedSource
+        assertNotNull(source)
+        assertEquals("Acme GmbH", source!!["employment"])
+        assertEquals(42, source!!["worksCount"])
+        assertEquals(listOf("Synthetic recent work"), source!!["recentWorkTitles"])
+        assertEquals(listOf("Synthetic patent"), source!!["patentTitles"])
+        assertEquals("synthetic", source!!["keyword"])
+    }
+
+    // ── 阶段 2：存量刷新逐层读取与去重（I-4） ───────────────────────────────
+
+    @Test
+    fun `refresh preview walks three layers dedupes real ids and flags cross layer conflicts`() {
+        fixture.reset(listOf("doc-00001", "doc-00002"))
+        fixture.emailOverride = { docId, run -> if (docId == "doc-00002" && run == 2) "other-person@example.org" else null }
+
+        val outcome = service.runRefreshWorker(
+            "refresh-1",
+            listOf(ExpertIndexLevel.RAW, ExpertIndexLevel.CANDIDATE, ExpertIndexLevel.APPLICATION),
+            dryRun = true
+        )
+
+        // 2 个真实 _id（跨层同名同身份只计 1 人），doc-00002 在 CANDIDATE 层身份不一致 → 冲突单列。
+        assertEquals(2, outcome.total)
+        assertEquals(1, outcome.admitted)
+        assertEquals(1, outcome.conflicts)
+        assertEquals(3, outcome.duplicates)
+        assertEquals(3, fixture.scrollBatches, "三层各扫一遍（每层 1 批）")
+        assertEquals(3, repository.admissionBatchReads, "每批只读一次 admission，绝不逐人查库")
+        assertEquals(3, fixture.scrollDeleteCount, "每层 scanAll 的 finally 都必须清理 scroll 上下文")
+        assertTrue(outcome.samples.contains("CONFLICT:doc-00002"), outcome.samples.toString())
+        // dryRun：业务表零写入。
+        assertTrue(repository.admissions.isEmpty(), repository.admissions.toString())
+        assertTrue(repository.items.isEmpty())
+    }
 
     @Test
     fun `all-page prepare captures every one of 10005 matches and only then becomes READY`() {
@@ -482,6 +553,15 @@ class DiscoveryReviewAllPagesTest {
         var scrollDeleteCount = 0
         var scrollBatches = 0
 
+        /** 第几次 scroll 序列（1 起）：refresh 逐层扫描时用它区分 RAW / CANDIDATE / APPLICATION。 */
+        var runIndex = 0
+
+        /** 最近一次 `_search` 请求体里的 `_source` 字段清单（I-7：扫描投影完整性）。 */
+        var lastSourceFields: List<String>? = null
+
+        /** 逐层覆盖邮箱（跨层身份不一致用）；返回 null 表示用默认 `emailOf`。 */
+        var emailOverride: ((String, Int) -> String?)? = null
+
         fun reset(docIds: List<String>) {
             docs.clear()
             docs += docIds
@@ -491,9 +571,22 @@ class DiscoveryReviewAllPagesTest {
             searchCalls = 0
             scrollDeleteCount = 0
             scrollBatches = 0
+            runIndex = 0
+            lastSourceFields = null
+            emailOverride = null
+        }
+
+        fun beginRun(body: Any?) {
+            runIndex++
+            // 每次 `_search?scroll` 都是新的 scroll 序列（refresh 逐层扫描时每层都会重新从头读）。
+            cursor = 0
+            val node = body?.let { mapper.valueToTree<JsonNode>(it) }
+            lastSourceFields = node?.path("_source")?.takeIf { it.isArray }?.map { it.asText("") }
         }
 
         fun emailOf(docId: String): String = "ada-$docId@example.org"
+
+        fun sourceEmailOf(docId: String): String = emailOverride?.invoke(docId, runIndex) ?: emailOf(docId)
 
         fun nextBatchNode(): JsonNode {
             val from = cursor
@@ -507,7 +600,12 @@ class DiscoveryReviewAllPagesTest {
                 hit.put("_seq_no", 1L)
                 hit.put("_primary_term", 1L)
                 val source = mapper.createObjectNode()
-                source.put("email", emailOf(docId))
+                source.put("email", sourceEmailOf(docId))
+                source.put("employment", "Acme GmbH")
+                source.put("keyword", "synthetic")
+                source.put("worksCount", 42)
+                source.putArray("recentWorkTitles").add("Synthetic recent work")
+                source.putArray("patentTitles").add("Synthetic patent")
                 source.putArray("tags").add("discovered")
                 hit.set<JsonNode>("_source", source)
                 arr.add(hit)

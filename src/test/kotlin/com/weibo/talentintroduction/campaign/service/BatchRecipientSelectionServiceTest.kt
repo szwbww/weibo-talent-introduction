@@ -301,6 +301,19 @@ class BatchRecipientSelectionServiceTest {
     }
 
     @Test
+    fun `admission-only scope judges admission only and ignores introduction expert type (I-3)`() {
+        // 08 人物级选择层复用本 scope：非 INTRODUCTION 不判研发类型，UNCLASSIFIED 不应被类型门禁排除。
+        stubAdmissions("A" to DiscoveryReviewDecision.AUTO_PASSED.name)
+        val unclassified = expert("A", type = null)
+
+        val selection = service.selectAdmission(listOf(unclassified))
+
+        assertEquals(1, selection.included.size)
+        assertEquals(RecipientAdmissionState.ADMITTED, selection.included.single().admissionState)
+        assertTrue(selection.included.single().filterKeys.isEmpty())
+    }
+
+    @Test
     fun `reason keys mirror the selection口径 exactly (A3 I-3)`() {
         // 显式条件排除（filterKeys 非空）只计 filterKeys，绝不叠加准入状态原因。
         val filterExcluded = RecipientDecision(
@@ -339,6 +352,29 @@ class BatchRecipientSelectionServiceTest {
         assertEquals(listOf(RecipientFilterKeys.REGION), decision.filterKeys)
         // 显式条件命中只贡献条件原因，不叠加准入原因（原因命中口径不变）。
         assertEquals(listOf(RecipientFilterKeys.REGION), BatchRecipientSelectionService.reasonKeysOf(decision))
+    }
+
+    @Test
+    fun `protection selection ignores the current explicit filters and layers (I-3)`() {
+        // 08 人物硬保护：不满足当前筛选（邮箱域/研发类型）的成员的人工 HOLD 必须仍然可见。
+        stubAdmissions("A" to DiscoveryReviewDecision.HOLD.name, "B" to DiscoveryReviewDecision.AUTO_PASSED.name)
+        val filteredOut = expert("A", email = "a@blocked.com", type = null)
+
+        // The current selector reports durable admission even when these explicit filters exclude the member.
+        val scoped = service.select(
+            scope(emailDomains = listOf("allowed.com")),
+            listOf(filteredOut)
+        )
+        assertEquals(1, scoped.excluded.size)
+        assertEquals(RecipientAdmissionState.MANUAL_REJECTED, scoped.excluded.single().admissionState)
+
+        // 保护读取不带任何本次筛选/层限制：A 的人工 HOLD 必须可见。
+        val protection = service.selectProtection(listOf(filteredOut))
+        assertEquals(RecipientAdmissionState.MANUAL_REJECTED, protection.excluded.single().admissionState)
+        assertEquals(
+            listOf(RecipientAdmissionReasonKeys.MANUAL_REJECTED),
+            BatchRecipientSelectionService.reasonKeysOf(protection.excluded.single())
+        )
     }
 
     private fun resolved(

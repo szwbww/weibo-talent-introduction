@@ -9,6 +9,7 @@ import com.weibo.talentintroduction.config.ElasticsearchProperties
 import com.weibo.talentintroduction.expert.domain.ExpertApplicationPromotion
 import com.weibo.talentintroduction.expert.domain.ExpertClassification
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
+import com.weibo.talentintroduction.expert.domain.IdentityVerification
 import com.weibo.talentintroduction.mail.domain.TriggeredBy
 import com.weibo.talentintroduction.task.service.TaskExecutionSummaryProvider
 import org.slf4j.LoggerFactory
@@ -50,6 +51,9 @@ class ExpertIndexWriterService(
         val ADMITTED_DECISIONS = setOf("AUTO_PASSED", "MANUAL_APPROVED", "LEGACY_APPROVED")
 
         private const val DISCOVERY_TAG = "discovered"
+
+        /** I-2：规范邮箱全量命中的单次查询上限；补证全集必须来自这里，不是去重时的 `size=1`。 */
+        const val EMAIL_HIT_LIMIT = 100
     }
 
     fun markApplicationClosed(contact: ExpertContact) {
@@ -714,6 +718,53 @@ class ExpertIndexWriterService(
         return DiscoverySnapshot(toStringMap(source), response.path("_seq_no").asLong(), response.path("_primary_term").asLong())
     }
 
+    /**
+     * I-2：按规范邮箱查询三层**全量**命中（不是去重用的 `size=1`）。补证前必须据此确认
+     * 「该邮箱只对应唯一业务 `_id`」：原 `size=1` 去重结果只能用于发现重复，不能作为修复全集。
+     *
+     * 传输/解析失败**抛出**，绝不返回空表 —— 调用方必须能区分「没有命中」与「查询失败」。
+     */
+    fun findDiscoveryHitsByEmail(email: String): List<DiscoveryEmailHit> {
+        val levels = ExpertIndexLevel.values()
+        val indices = levels.joinToString(",") { expertIndexService.indexName(it) }
+        val levelByIndex = levels.associateBy { expertIndexService.indexName(it) }
+        val query = mapOf(
+            "query" to mapOf("term" to mapOf("email" to DiscoveryIdentity.normalizedEmail(email))),
+            "size" to EMAIL_HIT_LIMIT,
+            "_source" to listOf(
+                "email", "givenNames", "familyNames", "identityVerification",
+                "externalIds", "emailSource", "tags", "orcidId"
+            )
+        )
+        val response = restTemplate.exchange(
+            "${properties.baseUrl}/$indices/_search?ignore_unavailable=true",
+            HttpMethod.POST, HttpEntity(query, headers()), JsonNode::class.java
+        ).body ?: error("Empty ES _search response for email lookup")
+        // R-4（V-28）：唯一性用途的搜索必须确认**正常完整结束** —— timeout / failed shard / 缺必要结构
+        // 一律不可用，绝不从一个可见 hit 推断「唯一 doc」后写 proof。
+        if (response.isNull || response.isMissingNode) {
+            throw IllegalStateException("ES email lookup returned no usable body")
+        }
+        if (response.path("timed_out").asBoolean(false)) {
+            throw IllegalStateException("ES email lookup timed out")
+        }
+        val failedShards = response.path("_shards").path("failed").asInt(0)
+        if (failedShards > 0) {
+            throw IllegalStateException("ES email lookup had $failedShards failed shard(s)")
+        }
+        val hits = response.path("hits").path("hits")
+        require(hits.isArray) { "Malformed ES _search response for email lookup" }
+        return hits.map { hit ->
+            val id = hit.path("_id").asText().takeIf { it.isNotBlank() }
+                ?: error("ES email lookup hit without _id")
+            val level = levelByIndex[hit.path("_index").asText()]
+                ?: error("ES email lookup hit with unknown _index")
+            val source = hit.path("_source")
+            require(source.isObject) { "ES email lookup hit without _source" }
+            DiscoveryEmailHit(id, level, toStringMap(source))
+        }
+    }
+
     private fun sameDiscoveryIdentity(raw: Map<String, Any?>, candidate: Map<String, Any?>): Boolean =
         listOf("orcidId", "email", "givenNames", "familyNames", "externalIds", "identityVerification")
             .all { raw[it] == candidate[it] }
@@ -901,6 +952,84 @@ class ExpertIndexWriterService(
         }
     }
 
+    /**
+     * I-2/I-3：只写 `identityVerification` 的条件补丁 —— 带 `if_seq_no/if_primary_term`，
+     * 其他字段（运营状态、学术事实、姓名、邮箱、作者编号）逐字不动；缺层由调用方跳过，绝不创建。
+     *
+     * 409（版本被并发改动）单独回报，调用方**不得**用旧快照盲目重试（不自动覆盖另一人的并发改动）。
+     */
+    fun writeIdentityProofIfVersionMatches(
+        level: ExpertIndexLevel,
+        docId: String,
+        seqNo: Long,
+        primaryTerm: Long,
+        proof: IdentityVerification
+    ): IdentityProofWriteResult {
+        val index = expertIndexService.indexName(level)
+        val url = "${properties.baseUrl}/$index/_update/$docId?if_seq_no=$seqNo&if_primary_term=$primaryTerm"
+        val body = mapOf("doc" to mapOf("identityVerification" to proof))
+        return try {
+            val response = restTemplate.exchange(
+                url, HttpMethod.POST, HttpEntity(body, headers()), JsonNode::class.java
+            ).body ?: return IdentityProofWriteResult.FAILED
+            if (response.path("result").asText() == "updated") IdentityProofWriteResult.UPDATED
+            else IdentityProofWriteResult.FAILED
+        } catch (e: HttpClientErrorException) {
+            when (e.statusCode) {
+                HttpStatus.CONFLICT -> IdentityProofWriteResult.VERSION_CONFLICT
+                HttpStatus.NOT_FOUND -> IdentityProofWriteResult.MISSING
+                else -> {
+                    log.warn("Failed to write identity proof for {} in {} (HTTP {})", docId, level, e.statusCode)
+                    IdentityProofWriteResult.FAILED
+                }
+            }
+        } catch (e: Exception) {
+            log.warn("Failed to write identity proof for {} in {}", docId, level, e)
+            IdentityProofWriteResult.FAILED
+        }
+    }
+
+    /**
+     * 02（I-2）：受限「填空姓名 + proof」条件补丁 —— 只补调用方确认**为空**的姓名字段
+     * （`null` = 不写该字段，已填姓名逐字不覆盖），并写入身份凭证；带 `if_seq_no/if_primary_term`，
+     * 邮箱/作者编号/学术/运营字段一律不动。缺层（404）与 409 语义与
+     * [writeIdentityProofIfVersionMatches] 一致：绝不创建缺层，也绝不用旧快照盲目重试。
+     */
+    fun writeDiscoveryNameAndProofIfVersionMatches(
+        level: ExpertIndexLevel,
+        docId: String,
+        seqNo: Long,
+        primaryTerm: Long,
+        givenNames: String?,
+        familyNames: String?,
+        proof: IdentityVerification
+    ): IdentityProofWriteResult {
+        val doc = linkedMapOf<String, Any?>("identityVerification" to proof)
+        givenNames?.let { doc["givenNames"] = it }
+        familyNames?.let { doc["familyNames"] = it }
+        val index = expertIndexService.indexName(level)
+        val url = "${properties.baseUrl}/$index/_update/$docId?if_seq_no=$seqNo&if_primary_term=$primaryTerm"
+        return try {
+            val response = restTemplate.exchange(
+                url, HttpMethod.POST, HttpEntity(mapOf("doc" to doc), headers()), JsonNode::class.java
+            ).body ?: return IdentityProofWriteResult.FAILED
+            if (response.path("result").asText() == "updated") IdentityProofWriteResult.UPDATED
+            else IdentityProofWriteResult.FAILED
+        } catch (e: HttpClientErrorException) {
+            when (e.statusCode) {
+                HttpStatus.CONFLICT -> IdentityProofWriteResult.VERSION_CONFLICT
+                HttpStatus.NOT_FOUND -> IdentityProofWriteResult.MISSING
+                else -> {
+                    log.warn("Failed to write name/proof for {} in {} (HTTP {})", docId, level, e.statusCode)
+                    IdentityProofWriteResult.FAILED
+                }
+            }
+        } catch (e: Exception) {
+            log.warn("Failed to write name/proof for {} in {}", docId, level, e)
+            IdentityProofWriteResult.FAILED
+        }
+    }
+
     fun demoteToRaw(orcid: String, contact: ExpertContact): Boolean {
         val normalizedOrcid = ExpertIdNormalizer.normalize(orcid)
         val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
@@ -976,6 +1105,22 @@ class ExpertIndexWriterService(
         return "Basic $encoded"
     }
 
+}
+
+/** I-2：规范邮箱全量命中里的一条 —— 真实业务 `_id` 及所在层与源快照。 */
+data class DiscoveryEmailHit(
+    val docId: String,
+    val level: ExpertIndexLevel,
+    val source: Map<String, Any?>
+)
+
+/** I-2/I-3：按版本条件仅写 proof 的结果；[VERSION_CONFLICT] 绝不允许用旧快照盲目重试。 */
+sealed class IdentityProofWriteResult {
+    object UPDATED : IdentityProofWriteResult()
+    /** 目标层已不存在（404）—— 视为缺层，绝不创建。 */
+    object MISSING : IdentityProofWriteResult()
+    object VERSION_CONFLICT : IdentityProofWriteResult()
+    object FAILED : IdentityProofWriteResult()
 }
 
 data class SingleSyncResult(

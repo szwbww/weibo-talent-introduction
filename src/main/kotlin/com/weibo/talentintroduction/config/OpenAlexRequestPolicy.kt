@@ -1013,6 +1013,9 @@ class OpenAlexRequestPolicy(
         return when {
             path == "/rate-limit" -> Operation.RATE_LIMIT
             SINGLETON_AUTHOR_PATH.matches(path) -> Operation.SINGLETON
+            // A10：`/works/{id}` 单实体读取与 `/authors/{id}` 同属 SINGLETON（0 credit）语义。
+            // 只认 OpenAlex 支持的三种单实体定位形态（`W…` / `pmid:…` / `doi:…`），列表/检索形态不受影响。
+            SINGLETON_WORK_PATH.matches(path) -> Operation.SINGLETON
             path.startsWith("/works") || path.startsWith("/authors") ->
                 if (query.contains("search=") || query.contains("search:")) Operation.SEARCH else Operation.LIST
             host == OpenAlexMeteredDestinations.API_HOST -> Operation.SINGLETON
@@ -1106,5 +1109,11 @@ class OpenAlexRequestPolicy(
         const val RETRY_AFTER_HEADER = "Retry-After"
 
         private val SINGLETON_AUTHOR_PATH = Regex("^/authors/[^/]+$")
+
+        /**
+         * A10：`/works/{id}` 单实体形态。DOI 定位串自带 `/`（`doi:10.7717/peerj.4375`），
+         * 因此不能用 `[^/]+`；PMID 与 OpenAlex work id 都是无斜杠的固定形状。
+         */
+        private val SINGLETON_WORK_PATH = Regex("^/works/(?:W[0-9]+|pmid:[0-9]+|doi:.+)$")
     }
 }

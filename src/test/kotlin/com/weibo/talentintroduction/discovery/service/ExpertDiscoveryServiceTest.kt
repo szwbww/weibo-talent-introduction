@@ -265,7 +265,9 @@ class ExpertDiscoveryServiceTest {
         executor: Executor = Executor { it.run() },
         openAlexProps: OpenAlexProperties = openAlexProperties,
         europePmcProps: EuropePmcProperties = EuropePmcProperties(),
-        timeSource: PolicyTimeSource = PolicyTimeSource.SYSTEM
+        timeSource: PolicyTimeSource = PolicyTimeSource.SYSTEM,
+        identityRepairService: DiscoveryIdentityRepairService? = null,
+        personRegistrationService: DiscoveryPersonRegistrationService? = null
     ): ExpertDiscoveryService {
         // 04：真实准入服务（判定走上面的策略桩；写入经 mock repository；投影经当前 indexWriterService）。
         discoveryReviewService = DiscoveryReviewService(
@@ -279,7 +281,8 @@ class ExpertDiscoveryServiceTest {
             emailValidationService, eligibilityService,
             indexWriterService, indexService, revalidationService, expertSearchService, expertClassificationService, restTemplate, esProperties,
             props, openAlexProps, objectMapper, progressStore, cursorRepository, enrichmentJobService,
-            enrichmentJobRepository, executor, europePmcProps, timeSource, discoveryReviewService
+            enrichmentJobRepository, executor, europePmcProps, timeSource, discoveryReviewService,
+            identityRepairService, personRegistrationService
         )
     }
 
@@ -1843,9 +1846,22 @@ class ExpertDiscoveryServiceTest {
     @Test
     fun `published HTML through parser consumer and writer admits two owned emails and zero shared ones`() {
         val docs = installOwnershipStorage()
-        val svc = createService()
+        // 05（I-1/I-3）：原多邮箱 HTML 夹具 —— 同一位作者两个邮箱，登记为 1 人物 2 邮箱证据。
+        var registrationCalls = 0
+        val registrar = Mockito.mock(DiscoveryPersonRegistrationService::class.java)
+        Mockito.doAnswer {
+            registrationCalls++
+            if (registrationCalls == 1) {
+                DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.CREATED, "p-raff")
+            } else {
+                DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.ATTACHED, "p-raff")
+            }
+        }.`when`(registrar).refresh(Mockito.anyString(), Mockito.anyString())
+        val svc = createService(personRegistrationService = registrar)
         var indexed = 0
         var promoted = 0
+        var created = 0
+        var attached = 0
         for (case in sourceOwnershipCases()) {
             val authors = sourceOwnershipAuthors(case)
             val parsed = extractOwnershipContent(case.path("html").asText().toByteArray(), org.springframework.http.MediaType.TEXT_HTML, authors)
@@ -1856,13 +1872,18 @@ class ExpertDiscoveryServiceTest {
             assertTrue(result.succeeded)
             indexed += result.indexedExperts
             promoted += result.promoted
+            created += result.personCreated
+            attached += result.personAttached
             assertFalse(result.failureReasons.containsKey("EMAIL_INVALID"))
         }
         assertEquals(2, indexed)
         assertEquals(2, promoted)
-        assertEquals(4, docs.size)
+        assertEquals(4, docs.size, "两个邮箱各保留 RAW+CANDIDATE 技术记录，第二个邮箱不被删除")
         assertEquals(setOf("edward.raff@crowdstrike.com", "raff.edward@umbc.edu"), docs.values.map { it["email"] }.toSet())
         assertTrue(docs.values.all { it["givenNames"] == "Edward" && it["familyNames"] == "Raff" })
+        assertEquals(1, created, "同一作者只新增一个人物")
+        assertEquals(1, attached, "第二个邮箱作为追加证据挂接到同一人物")
+        Mockito.verify(registrar, Mockito.times(2)).refresh(Mockito.anyString(), Mockito.anyString())
     }
 
     @Test
@@ -1893,6 +1914,260 @@ class ExpertDiscoveryServiceTest {
         Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
         assertTrue(svc.enrichProfiles(noIdProfiles).values.all { it is ProfileEnrichmentOutcome.NoId })
         Mockito.verifyNoInteractions(openAlex)
+    }
+
+    // ── 01（I-1/I-3）：重复发现补证接缝与计数 ──────────────────────────────
+
+    private fun repairStub(outcome: IdentityRepairOutcome): DiscoveryIdentityRepairService {
+        val repair = Mockito.mock(DiscoveryIdentityRepairService::class.java)
+        Mockito.doReturn(IdentityRepairResult(outcome)).`when`(repair).repairDuplicateIdentity(
+            Mockito.anyString(),
+            Mockito.any(AuthorEmail::class.java)
+                ?: verifiedAuthorEmail("any@example.com", "A", "B", false, null, null)
+        )
+        return repair
+    }
+
+    private fun duplicateExtraction(): String = objectMapper.writeValueAsString(
+        EmailExtractionOutcome(
+            listOf(verifiedAuthorEmail("replay@example.com", "A", "B", false, null, null)),
+            "FULLTEXT", null, 0, null, null, DiscoveryIdentity.EXTRACTION_VERSION
+        )
+    )
+
+    private fun stubDuplicateValidation() =
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "replay@example.com", EmailValidationResult(3, true))
+
+    @Test
+    fun `a completed repair is counted and the enrichment job is still enqueued (I-1)`() {
+        val svc = createService(identityRepairService = repairStub(IdentityRepairOutcome.REPAIRED))
+        stubDedupHitFor("EMAIL-replay@example.com", "replay@example.com", "A", "B", withProof = false)
+        stubDuplicateValidation()
+
+        val result = svc.consumeQueuedItem(ownershipEnvelope(paper("replay", "Replay")), duplicateExtraction(), 7L)
+
+        assertTrue(result.succeeded)
+        assertFalse(result.identityRepairFailed)
+        assertEquals(1, result.duplicateExperts)
+        assertEquals(0, result.indexedExperts)
+        assertEquals(1, result.failureReasons["IDENTITY_REPAIR_REPAIRED"])
+        Mockito.verify(enrichmentJobService).enqueue(Mockito.anyString(), Mockito.anyString(), eqValue(7L))
+    }
+
+    @Test
+    fun `a partial repair keeps the consumption retryable and never enqueues (I-3)`() {
+        val svc = createService(identityRepairService = repairStub(IdentityRepairOutcome.PARTIAL))
+        stubDedupHitFor("EMAIL-replay@example.com", "replay@example.com", "A", "B", withProof = false)
+        stubDuplicateValidation()
+
+        val result = svc.consumeQueuedItem(ownershipEnvelope(paper("replay", "Replay")), duplicateExtraction(), null)
+
+        assertFalse(result.succeeded, "部分失败不得推进为修复成功")
+        assertTrue(result.identityRepairFailed)
+        assertEquals(1, result.duplicateExperts)
+        assertEquals(1, result.failureReasons["IDENTITY_REPAIR_PARTIAL"])
+        Mockito.verify(enrichmentJobService, Mockito.never()).enqueue(Mockito.anyString(), Mockito.anyString(), Mockito.any())
+    }
+
+    @Test
+    fun `a conflicting duplicate is a distinct reason with no enqueue and no retry (I-1)`() {
+        val svc = createService(identityRepairService = repairStub(IdentityRepairOutcome.CONFLICT))
+        stubDedupHitFor("EMAIL-replay@example.com", "replay@example.com", "A", "B", withProof = false)
+        stubDuplicateValidation()
+
+        val result = svc.consumeQueuedItem(ownershipEnvelope(paper("replay", "Replay")), duplicateExtraction(), null)
+
+        assertTrue(result.succeeded)
+        assertFalse(result.identityRepairFailed)
+        assertEquals(1, result.failureReasons["IDENTITY_REPAIR_CONFLICT"])
+        Mockito.verify(enrichmentJobService, Mockito.never()).enqueue(Mockito.anyString(), Mockito.anyString(), Mockito.any())
+    }
+
+    @Test
+    fun `a missing stored name is an independent reason and never auto-fills (I-1)`() {
+        val svc = createService(identityRepairService = repairStub(IdentityRepairOutcome.MISSING_NAME_NEEDS_RECOVERY))
+        stubDedupHitFor("EMAIL-replay@example.com", "replay@example.com", "A", "B", withProof = false)
+        stubDuplicateValidation()
+
+        val result = svc.consumeQueuedItem(ownershipEnvelope(paper("replay", "Replay")), duplicateExtraction(), null)
+
+        assertTrue(result.succeeded)
+        assertFalse(result.identityRepairFailed)
+        assertEquals(1, result.failureReasons["IDENTITY_REPAIR_MISSING_NAME_NEEDS_RECOVERY"])
+        Mockito.verify(enrichmentJobService, Mockito.never()).enqueue(Mockito.anyString(), Mockito.anyString(), Mockito.any())
+    }
+
+    @Test
+    fun `a synchronous page with an incomplete repair stops without advancing the page (I-3)`() {
+        val svc = createService(identityRepairService = repairStub(IdentityRepairOutcome.FAILED))
+        DiscoveryMockHelper.stubSearchPapers(
+            europePmc, PaperSearchResult(listOf(paper("PMC1", "Paper 1")), "C2", 4)
+        )
+        DiscoveryMockHelper.stubExtractAuthorEmails(
+            europePmc, listOf(verifiedAuthorEmail("dup@example.com", "A", "B", false, null, null))
+        )
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "dup@example.com", EmailValidationResult(3, true))
+        stubDedupHitFor("EMAIL-dup@example.com", "dup@example.com", "A", "B", withProof = false)
+
+        val result = svc.discover(PaperSearchCriteria(), "TEST")
+
+        val sourceStats = result.stats.bySource["EUROPE_PMC"]
+        assertEquals(1, sourceStats?.duplicates)
+        assertEquals(0, result.stats.indexed)
+        assertEquals(
+            DiscoveryStopReason.IDENTITY_REPAIR_INCOMPLETE,
+            sourceStats?.stopReason,
+            "补证未完成的页必须保留进入该页的游标"
+        )
+        assertTrue(sourceStats?.pendingWork == true)
+        assertEquals(1, result.stats.pendingSources)
+    }
+
+    // ── 05（I-1/I-2/I-3）：发现事实成功出口的统一人物登记 ────────────────────────
+
+    private fun personRegistrar(result: DiscoveryPersonRefreshResult): DiscoveryPersonRegistrationService {
+        val registrar = Mockito.mock(DiscoveryPersonRegistrationService::class.java)
+        Mockito.doReturn(result).`when`(registrar).refresh(Mockito.anyString(), Mockito.anyString())
+        return registrar
+    }
+
+    private fun freshEmailConsumption(
+        svc: ExpertDiscoveryService,
+        email: String,
+        docId: String = "EMAIL-$email"
+    ): QueuedItemConsumption {
+        val authors = listOf(PaperAuthor("Jane", "Doe", null, "Lab", true))
+        val parsed = extractOwnershipContent(
+            ownershipPdf("Jane Doe: $email"), MediaType.APPLICATION_PDF, authors
+        )
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, email, EmailValidationResult(3, true))
+        val payload = objectMapper.writeValueAsString(
+            parsed.copy(
+                emails = parsed.emails.map { it.copy(email = email) },
+                identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION
+            )
+        )
+        return svc.consumeQueuedItem(
+            ownershipEnvelope(paper(docId, "Fresh").copy(authors = authors)), payload, 5L
+        )
+    }
+
+    @Test
+    fun `a new discovered email registers a person with unit-separated counts (I-1 I-3)`() {
+        installOwnershipStorage()
+        val registrar = personRegistrar(DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.CREATED, "p-1"))
+        val svc = createService(personRegistrationService = registrar)
+
+        val result = freshEmailConsumption(svc, "fresh@uni.edu")
+
+        assertTrue(result.succeeded)
+        assertEquals(1, result.indexedExperts)
+        assertEquals(1, result.personCreated, "新增人物按人数计")
+        assertEquals(0, result.personAttached, "首次登记不是追加邮箱")
+        Mockito.verify(registrar).refresh(Mockito.anyString(), Mockito.anyString())
+    }
+
+    @Test
+    fun `a second email of the same author attaches to the existing person (I-1 I-3)`() {
+        installOwnershipStorage()
+        var call = 0
+        val registrar = Mockito.mock(DiscoveryPersonRegistrationService::class.java)
+        Mockito.doAnswer {
+            call++
+            if (call == 1) {
+                DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.CREATED, "p-1")
+            } else {
+                DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.ATTACHED, "p-1")
+            }
+        }.`when`(registrar).refresh(Mockito.anyString(), Mockito.anyString())
+        val svc = createService(personRegistrationService = registrar)
+
+        val first = freshEmailConsumption(svc, "first@uni.edu", "EMAIL-first")
+        val second = freshEmailConsumption(svc, "second@uni.edu", "EMAIL-second")
+
+        assertEquals(1, first.personCreated, "首位邮箱建立人物")
+        assertEquals(1, second.personAttached, "同作者后续邮箱只追加关系，不新增人物")
+        assertEquals(0, second.personCreated)
+        Mockito.verify(registrar, Mockito.times(2)).refresh(Mockito.anyString(), Mockito.anyString())
+    }
+
+    @Test
+    fun `a retryable registration failure keeps the consumption incomplete (I-2 I-3)`() {
+        installOwnershipStorage()
+        val registrar = personRegistrar(
+            DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.STALE, "FINGERPRINT_MISMATCH")
+        )
+        val svc = createService(personRegistrationService = registrar)
+
+        val result = freshEmailConsumption(svc, "stale@uni.edu")
+
+        assertFalse(result.succeeded, "可重试登记失败不得报完整成功")
+        assertTrue(result.registrationFailed)
+        assertEquals(1, result.failureReasons["PERSON_REGISTRATION_FAILED"])
+    }
+
+    @Test
+    fun `a needs-review registration is recorded without failing the item (I-3)`() {
+        installOwnershipStorage()
+        val registrar = personRegistrar(
+            DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.NEEDS_REVIEW, "BRIDGE_EXISTING_ROOTS")
+        )
+        val svc = createService(personRegistrationService = registrar)
+
+        val result = freshEmailConsumption(svc, "review@uni.edu")
+
+        assertTrue(result.succeeded, "语义需复核不是可重试失败")
+        assertFalse(result.registrationFailed)
+        assertEquals(1, result.personNeedsReview)
+        assertEquals(1, result.failureReasons["PERSON_NEEDS_REVIEW"])
+    }
+
+    @Test
+    fun `a repaired duplicate surfaces the person registration result (I-1)`() {
+        val registration = DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.CREATED, "p-9")
+        val repair = Mockito.mock(DiscoveryIdentityRepairService::class.java)
+        Mockito.doReturn(IdentityRepairResult(IdentityRepairOutcome.REPAIRED, personRegistration = registration))
+            .`when`(repair).repairDuplicateIdentity(
+                Mockito.anyString(),
+                Mockito.any(AuthorEmail::class.java) ?: verifiedAuthorEmail("any@example.com", "A", "B", false, null, null)
+            )
+        val svc = createService(identityRepairService = repair)
+        stubDedupHitFor("EMAIL-replay@example.com", "replay@example.com", "A", "B", withProof = false)
+        stubDuplicateValidation()
+
+        val result = svc.consumeQueuedItem(ownershipEnvelope(paper("replay", "Replay")), duplicateExtraction(), 7L)
+
+        assertTrue(result.succeeded)
+        assertEquals(1, result.personCreated, "补证出口的人物登记结果并入本次消费计数")
+    }
+
+    @Test
+    fun `a synchronous page with an incomplete registration stops without advancing the page (I-3)`() {
+        val registrar = personRegistrar(
+            DiscoveryPersonRefreshResult(DiscoveryPersonRefreshStatus.FAILED, "REGISTRATION_EXCEPTION")
+        )
+        val svc = createService(personRegistrationService = registrar)
+        DiscoveryMockHelper.stubSearchPapers(
+            europePmc, PaperSearchResult(listOf(paper("PMC1", "Paper 1")), "C2", 4)
+        )
+        DiscoveryMockHelper.stubExtractAuthorEmails(
+            europePmc, listOf(verifiedAuthorEmail("reg@example.com", "A", "B", false, null, null))
+        )
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "reg@example.com", EmailValidationResult(3, true))
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
+
+        val result = svc.discover(PaperSearchCriteria(), "TEST")
+
+        val sourceStats = result.stats.bySource["EUROPE_PMC"]
+        assertEquals(
+            DiscoveryStopReason.PERSON_REGISTRATION_INCOMPLETE,
+            sourceStats?.stopReason,
+            "登记未完成的页必须保留进入该页的游标"
+        )
+        assertTrue(sourceStats?.pendingWork == true)
     }
 
     @Test
@@ -6597,6 +6872,30 @@ class ExpertDiscoveryServiceTest {
             "email" to "replay@example.com", "givenNames" to "A", "familyNames" to "B",
             "identityVerification" to com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.verified(
                 "replay@example.com", "A", "B", "JATS_SHA256:" + "a".repeat(64), null, null))))
+        Mockito.doReturn(ResponseEntity.ok(body) as ResponseEntity<*>)
+            .`when`(restTemplate).exchange(
+                Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST), Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+    }
+
+    /** 01（I-1）：让去重命中带走可控的 `_id`/姓名/邮箱与（可选的）已有 proof。 */
+    private fun stubDedupHitFor(docId: String, email: String, given: String, family: String, withProof: Boolean) {
+        val source = mutableMapOf<String, Any?>(
+            "email" to email, "givenNames" to given, "familyNames" to family,
+            // 发现来源标记：既有发现档案都带 emailSource，重复处置才会进入补证分支。
+            "emailSource" to "PAPER_FULLTEXT"
+        )
+        if (withProof) {
+            source["identityVerification"] = com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
+                .verified(email, given, family, "JATS_SHA256:" + "a".repeat(64), null, null)
+        }
+        val body = objectMapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(mapOf(
+            "hits" to mapOf(
+                "total" to mapOf("value" to 1),
+                "hits" to listOf(mapOf("_id" to docId, "_source" to source))
+            )
+        ))
         Mockito.doReturn(ResponseEntity.ok(body) as ResponseEntity<*>)
             .`when`(restTemplate).exchange(
                 Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST), Mockito.any(),

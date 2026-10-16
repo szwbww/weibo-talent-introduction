@@ -2,6 +2,8 @@ package com.weibo.talentintroduction.expert.controller
 
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.OperatorStatusReconcileService
+import com.weibo.talentintroduction.discovery.service.DiscoveryPersonDetail
+import com.weibo.talentintroduction.discovery.service.DiscoveryPersonQueryService
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.domain.PromotionScanResult
@@ -48,7 +50,9 @@ class ExpertIndexController(
     // 尾部可空默认参数（照 ManualExpertMailService.mailVariableService 先例）：
     // 生产由 Spring 注入 @Service bean；既有 ExpertIndexControllerTest 以 9 个位置参数直接构造，
     // 加默认值后无需改动该未授权测试文件。端点内 requireNotNull 兜底（生产必非空）。
-    private val operatorStatusReconcileService: OperatorStatusReconcileService? = null
+    private val operatorStatusReconcileService: OperatorStatusReconcileService? = null,
+    // 06：人物口径只读查询服务（列表/计数/聚合与人物详情）。尾部可空默认，端点内 requireNotNull 兜底。
+    private val personQueryService: DiscoveryPersonQueryService? = null
 ) {
     @GetMapping
     fun listExperts(
@@ -67,17 +71,30 @@ class ExpertIndexController(
         @RequestParam(required = false) discipline: String? = null,
         @RequestParam(required = false) expertType: List<String>? = null
     ): ExpertListResponse {
-        val result = expertSearchService.searchExperts(
-            size, level, tag, sortBy, from, operatorStatus, emailDomain, region,
-            hIndexMin, citationCountMin, recentYears, hasField, discipline, expertType.orEmpty()
+        val result = requirePersonQuery().searchPersons(
+            level = level,
+            size = size,
+            tag = tag,
+            sortBy = sortBy,
+            from = from,
+            operatorStatus = operatorStatus,
+            emailDomain = emailDomain,
+            region = region,
+            hIndexMin = hIndexMin,
+            citationCountMin = citationCountMin,
+            recentYears = recentYears,
+            hasField = hasField,
+            discipline = discipline,
+            expertTypes = expertType.orEmpty()
         )
-        val orcidIds = result.experts.map { it.orcidId }.filter { it.isNotBlank() }
+        val orcidIds = result.experts.map { it.profile.orcidId }.filter { it.isNotBlank() }
         val contactMap = if (orcidIds.isEmpty()) emptyMap() else expertContactRepository
             .findByOrcidIdIn(orcidIds)
             .groupBy { ExpertIdNormalizer.normalize(it.orcidId) }
             .mapValues { (_, contacts) -> contacts.maxByOrNull { it.updatedAt ?: java.time.LocalDateTime.MIN } }
 
-        val experts = result.experts.map { expert ->
+        val experts = result.experts.map { entry ->
+            val expert = entry.profile
             val contact = contactMap[ExpertIdNormalizer.normalize(expert.orcidId)]
             ExpertIndexResponse.from(
                 expert = expert,
@@ -88,7 +105,8 @@ class ExpertIndexController(
                 autoReplyEnabled = contact?.autoReplyEnabled ?: true,
                 boundSenderAccountCode = contact?.boundSenderAccountCode,
                 senderAccountChanged = contact?.senderAccountChanged ?: false,
-                operatorStatus = contact?.operatorStatus ?: expert.operatorStatus ?: "NOT_CONTACTED"
+                operatorStatus = contact?.operatorStatus ?: expert.operatorStatus ?: "NOT_CONTACTED",
+                memberCount = entry.memberCount
             )
         }
         return ExpertListResponse(experts = experts, totalHits = result.totalHits)
@@ -255,7 +273,7 @@ class ExpertIndexController(
         @RequestParam(required = false) operatorStatus: String? = null,
         @RequestParam(required = false) region: String? = null
     ): List<EmailDomainCount> {
-        return expertSearchService.aggregateEmailDomains(level, tag, operatorStatus, region)
+        return requirePersonQuery().aggregateEmailDomainsPersons(level, tag, operatorStatus, region)
     }
 
     @GetMapping("/regions")
@@ -265,7 +283,7 @@ class ExpertIndexController(
         @RequestParam(required = false) operatorStatus: String? = null,
         @RequestParam(required = false) emailDomain: String? = null
     ): List<RegionCount> {
-        return expertSearchService.aggregateRegions(level, tag, operatorStatus, emailDomain)
+        return requirePersonQuery().aggregateRegionsPersons(level, tag, operatorStatus, emailDomain)
     }
 
     @PostMapping("/tags/add")
@@ -303,7 +321,24 @@ class ExpertIndexController(
         @RequestParam(required = false) emailDomain: String? = null,
         @RequestParam(required = false) region: String? = null
     ): List<TagCount> {
-        return expertSearchService.aggregateTags(level, operatorStatus, emailDomain, region)
+        return requirePersonQuery().aggregateTagsPersons(level, operatorStatus, emailDomain, region)
+    }
+
+    /**
+     * 06（I-2/I-3）：只读人物详情。原 docId 输入直接定位到人物并标出原邮箱；无关系时按独立
+     * 档案返回。GET 不登记、不修复、不创建联系人；缺失的 docId 返回 404。
+     */
+    @GetMapping("/person")
+    fun getPerson(
+        @RequestParam docId: String,
+        @RequestParam(defaultValue = "CANDIDATE") level: ExpertIndexLevel
+    ): DiscoveryPersonDetail {
+        require(docId.isNotBlank()) { "docId is required" }
+        return requirePersonQuery().personDetail(docId, level)
+            ?: throw org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.NOT_FOUND,
+                "Person not found for docId: $docId"
+            )
     }
 
     @GetMapping("/template-variables")
@@ -334,6 +369,10 @@ class ExpertIndexController(
             tags = profile?.tags.orEmpty()
         )
     }
+
+    // 06：人物口径查询服务仅在注入缺失（既有直接构造测试）时为 null；生产必非空。
+    private fun requirePersonQuery(): DiscoveryPersonQueryService =
+        requireNotNull(personQueryService) { "DiscoveryPersonQueryService 未注入" }
 }
 
 data class ExpertListResponse(
@@ -386,6 +425,8 @@ data class ExpertIndexResponse(
     val operatorStatus: String?,
     val contactId: Long?,
     val contactStatus: String?,
+    // A13：该人物成员数（discovered 行 = 该人全部命中邮箱成员数；非 discovered 行 = 1）。
+    val memberCount: Int = 1,
     val needsManualAttention: Boolean = false,
     val autoReplyEnabled: Boolean = true,
     val boundSenderAccountCode: String? = null,
@@ -414,7 +455,8 @@ data class ExpertIndexResponse(
             autoReplyEnabled: Boolean = true,
             boundSenderAccountCode: String? = null,
             senderAccountChanged: Boolean = false,
-            operatorStatus: String? = null
+            operatorStatus: String? = null,
+            memberCount: Int = 1
         ): ExpertIndexResponse =
             ExpertIndexResponse(
                 indexLevel = level.name,
@@ -435,6 +477,7 @@ data class ExpertIndexResponse(
                 operatorStatus = operatorStatus ?: expert.operatorStatus ?: "NOT_CONTACTED",
                 contactId = contactId,
                 contactStatus = contactStatus,
+                memberCount = memberCount,
                 needsManualAttention = needsManualAttention,
                 autoReplyEnabled = autoReplyEnabled,
                 boundSenderAccountCode = boundSenderAccountCode,

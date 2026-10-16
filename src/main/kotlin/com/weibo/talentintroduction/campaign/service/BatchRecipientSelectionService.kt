@@ -150,8 +150,15 @@ class BatchRecipientSelectionService(
      * 这里不发信类型，故不追加研发类型判定（类型由旧首发的查询与内存门禁另行负责）。
      */
     fun selectAdmission(profiles: List<ExpertProfile>): RecipientSelection =
-        select(RecipientScope(mailType = ADMISSION_ONLY_MAIL_TYPE, funnelLevels = setOf("CANDIDATE"),
-            tags = emptyList(), regions = emptyList(), emailDomains = emptyList(), discipline = null), profiles)
+        select(admissionOnlyScope(), profiles)
+
+    /**
+     * I-3（08 人物硬保护）：读取**整组**持久准入，不施加本次显式筛选/层限制。
+     * 不满足当前筛选（如邮箱域/研发类型）的成员的人工 HOLD/身份冲突同样必须可见 ——
+     * 硬保护只按准入状态判定，绝不因本页/本次条件而隐藏保护。
+     */
+    fun selectProtection(profiles: List<ExpertProfile>): RecipientSelection =
+        select(admissionOnlyScope(), profiles)
 
     private fun resolveAdmissions(
         profiles: List<ExpertProfile>
@@ -213,5 +220,18 @@ class BatchRecipientSelectionService(
 
         /** 只判准入、不判研发类型的哨兵 mailType（不是任何真实发信类型）。 */
         private const val ADMISSION_ONLY_MAIL_TYPE = "ADMISSION_ONLY"
+
+        /**
+         * I-1/I-3: 只判准入（无本次页面条件）的 scope。旧首发与人物级准入读取共用，
+         * 保证同一持久结论被同一 [RecipientScope] 语义消费。
+         */
+        fun admissionOnlyScope(): RecipientScope = RecipientScope(
+            mailType = ADMISSION_ONLY_MAIL_TYPE,
+            funnelLevels = setOf("CANDIDATE"),
+            tags = emptyList(),
+            regions = emptyList(),
+            emailDomains = emptyList(),
+            discipline = null
+        )
     }
 }

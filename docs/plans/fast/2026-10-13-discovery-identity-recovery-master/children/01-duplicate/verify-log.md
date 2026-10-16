@@ -1,0 +1,23 @@
+# Child 01-duplicate — Verify Log
+
+## Light Verification: LIGHT_PASS_WITH_NOTES
+Child: 01-duplicate (docs/plans/2026-10-13/discovery-identity-recovery-01-duplicate.md)
+Boundary: d8ca3ca28fc94c26ec796a04c6ee332c1e760533..bc294d2e991e58346ce456f4e5eeb7525a2b5771
+Verifier: Verify01-2
+
+### Four Gates
+| Gate | Result | Evidence |
+|---|---|---|
+| Authorized scope | PASS | `git diff --name-status d8ca3ca..bc294d2` yields exactly the 8 authorized files (M/A: ExpertDiscoveryService.kt, DiscoveryIdentityRepairService.kt, ExpertIndexWriterService.kt, DiscoveryPipelineService.kt + the 4 test files); remaining entries are docs/plans/fast/** bookkeeping. No 9th product/test file. |
+| Plan and invariants | PASS | I-1: DiscoveryIdentityRepairService.kt:48-53 (blank name → MISSING_NAME_NEEDS_RECOVERY; invalid evidence refused), :78-91 (canonical email/stored-name exact match, empty stored name → MISSING_NAME_NEEDS_RECOVERY), :115-118 + test `a stored name conflict writes nothing`/`an empty stored name is an independent recovery reason with zero writes`/`an incoming without a complete name never generates a proof`. I-2: :61 findDiscoveryHitsByEmail full-hit, :69 `ids.size != 1` conflict, :74-84 three-layer snapshot, :98 authorIdsConflict, :119 per-layer writeIdentityProofIfVersionMatches (ExpertIndexWriterService.kt:945-972, body = `{doc:{identityVerification}}` only, URL carries if_seq_no/if_primary_term), :128-137 existing proof not overwritten; tests `two business ids sharing one canonical email are a conflict with zero writes`, `conflicting author ids across layers or with the incoming block every write`, `a missing layer is never created`, `an email lookup failure is never treated as no duplicate`. I-3: :150-156 outcome logic + retryableFailure :239-241, read-back match ; test `a layer write failure is not success and a retry only fills the remaining layer`, `a version conflict never retries the stale snapshot and the other layer still lands`. Propagation: ExpertDiscoveryService.kt:3623 default-false field, :3628-3630 `succeeded` includes it; :2278 `IDENTITY_REPAIR_<OUTCOME>` counters, :2279-2289 REPAIRED/ALREADY_VERIFIED enqueue, MISSING_NAME/CONFLICT distinct no-enqueue, PARTIAL/FAILED → true; sync-page checks :945/:1423 + stop reason :1021/:1501 IDENTITY_REPAIR_INCOMPLETE; DiscoveryPipelineService.kt:1108 `IDENTITY_REPAIR_FAILED` → handleRetryableFailure (retryable=true, 5-attempt cap); tests `a partial repair keeps the consumption retryable and never enqueues`, `a synchronous page with an incomplete repair stops without advancing the page`, `an identity repair failure stays retryable and terminates only after the fifth attempt`. |
+| Required commands | PASS | C1 `mvn -Dtest=ExpertDiscoveryServiceTest,DiscoveryIdentityRepairServiceTest,ExpertIndexWriterServiceTest,DiscoveryPipelineServiceTest test` exit 0, `Tests run: 294, Failures: 0, Errors: 0` (ExpertDiscoveryServiceTest 184, DiscoveryPipelineServiceTest 48, DiscoveryIdentityRepairServiceTest 13, ExpertIndexWriterServiceTest 49); JS gate 1657 tests / 1657 pass / 0 fail. C2 `mvn -Dtest=DiscoveryIdentityTest,DiscoveryReviewServiceTest test` exit 0, `Tests run: 48, Failures: 0, Errors: 0` (DiscoveryReviewServiceTest 35, DiscoveryIdentityTest 13); JS gate 1657/1657/0. Java/Kotlin deltas vs baseline.md are additive only (ExpertDiscoveryServiceTest +5, ExpertIndexWriterServiceTest +4, DiscoveryPipelineServiceTest +1, new DiscoveryIdentityRepairServiceTest 13); no new failures. |
+| Downstream interfaces | PASS | Repair service signature `repairDuplicateIdentity(docId: String, incoming: AuthorEmail): IdentityRepairResult` and enum IdentityRepairOutcome{REPAIRED,ALREADY_VERIFIED,MISSING_NAME_NEEDS_RECOVERY,CONFLICT,PARTIAL,FAILED} as per brief (DiscoveryIdentityRepairService.kt:47,205-212); ExpertIndexWriterService.kt:727 `findDiscoveryHitsByEmail`, :945 `writeIdentityProofIfVersionMatches` (DiscoveryEmailHit :1054, IdentityProofWriteResult :1061-1066); DiscoveryPipelineService.kt:1108 IDENTITY_REPAIR_FAILED propagation semantics retained. |
+
+### AUTO_FIX
+- N/A
+
+### RECORD_ONLY
+- O-1: C2 observes DiscoveryReviewServiceTest = 35, whereas the master-base baseline (baseline.md; and the run brief's pre-change list) records 27. Not attributable to this child: `git diff --name-only d8ca3ca..bc294d2` for that file is empty, and `git show <rev>:...DiscoveryReviewServiceTest.kt | grep -c @Test` is 35 at child base d8ca3ca vs 27 at master base 9d35393 → the +8 predates this boundary (from prior child admission-relaxation, commit cf08a69). 0 failures/errors; the file is outside this child's authorized scope. Not a light-gate violation.
+
+### Required Action
+- COMPLETE_CHILD

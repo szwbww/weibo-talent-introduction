@@ -15,12 +15,12 @@ class OutreachTargetIteratorTest {
             Pair(contact("0001"), expert("0001")),
             Pair(contact("0002"), expert("0002"))
         )
-        val seenOrcids = mutableSetOf("0001", "0002")
+        val seenKeys = mutableSetOf("0001", "0002")
         var fetchCalled = false
         val iterator = OutreachTargetIterator(
             retryableTargets = retryable,
             pageSize = 5,
-            seenOrcids = seenOrcids,
+            seenKeys = seenKeys,
             fetchNextPage = { _, _ ->
                 fetchCalled = true
                 listOf(expert("0003"))
@@ -47,7 +47,7 @@ class OutreachTargetIteratorTest {
         val iterator = OutreachTargetIterator(
             retryableTargets = emptyList(),
             pageSize = 5,
-            seenOrcids = mutableSetOf(),
+            seenKeys = mutableSetOf(),
             fetchNextPage = { offset, size -> esExperts.drop(offset).take(size) }
         )
 
@@ -60,13 +60,13 @@ class OutreachTargetIteratorTest {
     }
 
     @Test
-    fun `deduplicates across retryable and ES pages using seenOrcids`() {
+    fun `deduplicates across retryable and ES pages using seenKeys`() {
         val retryable = listOf(Pair(contact("0001"), expert("0001")))
-        val seenOrcids = mutableSetOf("0001")
+        val seenKeys = mutableSetOf("0001")
         val iterator = OutreachTargetIterator(
             retryableTargets = retryable,
             pageSize = 5,
-            seenOrcids = seenOrcids,
+            seenKeys = seenKeys,
             fetchNextPage = { _, _ ->
                 listOf(expert("0001"), expert("0002"))
             }
@@ -82,11 +82,11 @@ class OutreachTargetIteratorTest {
 
     @Test
     fun `deduplicates generated email ids without uppercasing ES id`() {
-        val seenOrcids = mutableSetOf("EMAIL-f07688e64d3dc212a4d")
+        val seenKeys = mutableSetOf("EMAIL-f07688e64d3dc212a4d")
         val iterator = OutreachTargetIterator(
             retryableTargets = emptyList(),
             pageSize = 5,
-            seenOrcids = seenOrcids,
+            seenKeys = seenKeys,
             fetchNextPage = { _, _ ->
                 listOf(expert("EMAIL-f07688e64d3dc212a4d"), expert("EMAIL-abc123"))
             }
@@ -101,13 +101,13 @@ class OutreachTargetIteratorTest {
     }
 
     @Test
-    fun `loads next ES page when entire page is filtered by seenOrcids`() {
-        val seenOrcids = mutableSetOf("0001", "0002")
+    fun `loads next ES page when entire page is filtered by seenKeys`() {
+        val seenKeys = mutableSetOf("0001", "0002")
         var fetchCount = 0
         val iterator = OutreachTargetIterator(
             retryableTargets = emptyList(),
             pageSize = 2,
-            seenOrcids = seenOrcids,
+            seenKeys = seenKeys,
             fetchNextPage = { offset, _ ->
                 fetchCount++
                 when (offset) {
@@ -126,14 +126,14 @@ class OutreachTargetIteratorTest {
     @Test
     fun `does not skip candidates when ES result set shrinks between pages`() {
         val allExperts = listOf(expert("0001"), expert("0002"), expert("0003"), expert("0004"))
-        val seenOrcids = mutableSetOf<String>()
+        val seenKeys = mutableSetOf<String>()
         val iterator = OutreachTargetIterator(
             retryableTargets = emptyList(),
             pageSize = 2,
-            seenOrcids = seenOrcids,
+            seenKeys = seenKeys,
             fetchNextPage = { offset, size ->
                 allExperts
-                    .filterNot { seenOrcids.contains(it.orcidId) }
+                    .filterNot { seenKeys.contains(it.orcidId) }
                     .drop(offset)
                     .take(size)
             }
@@ -152,19 +152,20 @@ class OutreachTargetIteratorTest {
         val iterator = OutreachTargetIterator(
             retryableTargets = emptyList(),
             pageSize = 5,
-            seenOrcids = mutableSetOf(),
+            seenKeys = mutableSetOf(),
             fetchNextPage = { _, _ -> emptyList() }
         )
 
         assertFalse(iterator.hasNext())
     }
+
     @Test
     fun `fully excluded raw page advances offset and preserves later sendable candidates`() {
         val offsets = mutableListOf<Int>()
         val iterator = OutreachTargetIterator(
             retryableTargets = emptyList(),
             pageSize = 2,
-            seenOrcids = mutableSetOf(),
+            seenKeys = mutableSetOf(),
             fetchNextPage = { offset, _ ->
                 offsets += offset
                 when (offset) {
@@ -189,7 +190,7 @@ class OutreachTargetIteratorTest {
         val iterator = OutreachTargetIterator(
             retryableTargets = emptyList(),
             pageSize = 2,
-            seenOrcids = mutableSetOf(),
+            seenKeys = mutableSetOf(),
             fetchNextPage = { _, _ ->
                 fetchCount++
                 listOf(expert("0001"))
@@ -208,7 +209,7 @@ class OutreachTargetIteratorTest {
         val iterator = OutreachTargetIterator(
             retryableTargets = emptyList(),
             pageSize = 2,
-            seenOrcids = mutableSetOf(),
+            seenKeys = mutableSetOf(),
             fetchNextPage = { offset, _ ->
                 offsets += offset
                 listOf(expert("0001"), expert("0002"))
@@ -230,7 +231,7 @@ class OutreachTargetIteratorTest {
         val iterator = OutreachTargetIterator(
             retryableTargets = emptyList(),
             pageSize = 2,
-            seenOrcids = mutableSetOf(),
+            seenKeys = mutableSetOf(),
             fetchNextPage = { offset, _ ->
                 offsets += offset
                 if (offset == 0) listOf(expert("0001")) else emptyList()
@@ -242,6 +243,49 @@ class OutreachTargetIteratorTest {
         assertEquals(listOf(0), offsets)
     }
 
+    @Test
+    fun `caller-provided dedupe key is registered after the decision and dedupes across pages (I-2)`() {
+        // 调用方按人物键在完整判定（filterPage）后只保留每人的一个成员；去重键在判定后登记，
+        // 后续页的同人成员不再进入判定（先判定后登记，不丢同人后续合格成员）。
+        val personKeyByDocId = mapOf("d1" to "P1", "d2" to "P1", "d3" to "P2")
+        val seenKeys = mutableSetOf<String>()
+        val reviewed = mutableListOf<String>()
+        val iterator = OutreachTargetIterator(
+            retryableTargets = emptyList(),
+            pageSize = 3,
+            seenKeys = seenKeys,
+            fetchNextPage = { offset, _ ->
+                if (offset == 0) listOf(docExpert("d1"), docExpert("d2"), docExpert("d3")) else emptyList()
+            },
+            filterPage = { page ->
+                reviewed += page.map { it.esDocId!! }
+                page.distinctBy { personKeyByDocId[it.esDocId] ?: it.orcidId }
+            },
+            dedupeKey = { personKeyByDocId[it.esDocId] ?: it.orcidId }
+        )
+
+        val collected = mutableListOf<String>()
+        while (iterator.hasNext()) {
+            collected += iterator.next().second.esDocId!!
+        }
+
+        assertEquals(listOf("d1", "d3"), collected, "同一 person key 只保留一个成员")
+        assertEquals(listOf("d1", "d2", "d3"), reviewed, "整页成员都进入调用方的完整判定")
+        assertEquals(setOf("P1", "P2"), seenKeys)
+    }
+
+
+    private fun docExpert(docId: String): ExpertProfile =
+        ExpertProfile(
+            esDocId = docId,
+            orcidId = "EMAIL-$docId",
+            email = "$docId@example.com",
+            givenNames = "Given",
+            familyNames = "Family",
+            country = "China",
+            keyword = "keyword",
+            employment = "University"
+        )
 
     private fun expert(orcidId: String): ExpertProfile =
         ExpertProfile(

@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.discovery.service
 
 import com.weibo.talentintroduction.config.AcademicFilterProperties
 import com.weibo.talentintroduction.config.CandidateFilterProperties
+import com.weibo.talentintroduction.campaign.domain.RecipientScope
 import com.weibo.talentintroduction.discovery.domain.AdmissionReason
 import com.weibo.talentintroduction.discovery.domain.AdmissionReasonCodes
 import com.weibo.talentintroduction.discovery.domain.DiscoveryAdmissionStatus
@@ -147,38 +148,50 @@ class DiscoveryAdmissionPolicyTest {
     }
 
     @Test
-    fun `missing institution produces INSTITUTION_MISSING`() {
+    fun `missing institution only hints and keeps the original fact`() {
         val result = policy().evaluate(complete.copy(institution = null, institutionEvidence = null))
 
-        assertEquals(DiscoveryAdmissionStatus.NEEDS_REVIEW, result.status)
-        assertTrue(codes(result.blockingReasons).contains(AdmissionReasonCodes.INSTITUTION_MISSING))
-        val reason = result.blockingReasons.first { it.code == AdmissionReasonCodes.INSTITUTION_MISSING }
+        assertEquals(DiscoveryAdmissionStatus.AUTO_PASSED, result.status, result.blockingReasons.toString())
+        assertTrue(codes(result.blockingReasons).isEmpty(), result.blockingReasons.toString())
+        val reason = result.hints.first { it.code == AdmissionReasonCodes.INSTITUTION_MISSING }
         assertEquals("institution", reason.field)
         assertNull(reason.observed)
+        assertEquals("非空机构名", reason.expected)
     }
 
     @Test
-    fun `blank and unmapped country produce their own codes`() {
-        val blank = policy().evaluate(complete.copy(country = null))
-        assertTrue(codes(blank.blockingReasons).contains(AdmissionReasonCodes.COUNTRY_MISSING))
-        assertEquals("country", blank.blockingReasons.first { it.code == AdmissionReasonCodes.COUNTRY_MISSING }.field)
+    fun `blank and unmapped country only hint with their own codes`() {
+        // 机构来源凭证绑定了国家：改国家后必须重算 token，否则测到的是「凭证不一致」而不是「国家缺失」。
+        val blank = complete.copy(country = null)
+            .let { it.copy(institutionEvidence = DiscoveryIdentity.institutionEvidence(it, DiscoveryIdentity.EVIDENCE_SOURCE_JATS)) }
+        val blankResult = policy().evaluate(blank)
+        assertEquals(DiscoveryAdmissionStatus.AUTO_PASSED, blankResult.status, blankResult.blockingReasons.toString())
+        assertTrue(codes(blankResult.blockingReasons).isEmpty())
+        assertEquals("country", blankResult.hints.first { it.code == AdmissionReasonCodes.COUNTRY_MISSING }.field)
+        assertNull(blankResult.hints.first { it.code == AdmissionReasonCodes.COUNTRY_MISSING }.observed)
 
-        val unmapped = policy().evaluate(complete.copy(country = "Atlantis"))
-        assertTrue(codes(unmapped.blockingReasons).contains(AdmissionReasonCodes.COUNTRY_UNMAPPED))
+        val unmapped = complete.copy(country = "Atlantis")
+            .let { it.copy(institutionEvidence = DiscoveryIdentity.institutionEvidence(it, DiscoveryIdentity.EVIDENCE_SOURCE_JATS)) }
+        val unmappedResult = policy().evaluate(unmapped)
+        assertEquals(DiscoveryAdmissionStatus.AUTO_PASSED, unmappedResult.status, unmappedResult.blockingReasons.toString())
+        assertTrue(codes(unmappedResult.blockingReasons).isEmpty())
         assertEquals("Atlantis",
-            unmapped.blockingReasons.first { it.code == AdmissionReasonCodes.COUNTRY_UNMAPPED }.observed)
+            unmappedResult.hints.first { it.code == AdmissionReasonCodes.COUNTRY_UNMAPPED }.observed)
     }
 
     @Test
-    fun `missing evidence token is reported as missing not as mismatch`() {
+    fun `missing evidence token only hints as missing not as mismatch`() {
         val result = policy().evaluate(complete.copy(institutionEvidence = null))
 
-        assertEquals(DiscoveryAdmissionStatus.NEEDS_REVIEW, result.status)
-        assertEquals(listOf(AdmissionReasonCodes.INSTITUTION_EVIDENCE_MISSING), codes(result.blockingReasons))
-        val reason = result.blockingReasons.single()
+        assertEquals(DiscoveryAdmissionStatus.AUTO_PASSED, result.status, result.blockingReasons.toString())
+        assertTrue(codes(result.blockingReasons).isEmpty())
+        val hintCodes = codes(result.hints)
+        assertTrue(hintCodes.contains(AdmissionReasonCodes.INSTITUTION_EVIDENCE_MISSING), hintCodes.toString())
+        assertFalse(hintCodes.contains(AdmissionReasonCodes.INSTITUTION_EVIDENCE_INVALID), hintCodes.toString())
+        assertFalse(hintCodes.contains(AdmissionReasonCodes.IDENTITY_SOURCE_INVALID), hintCodes.toString())
+        val reason = result.hints.first { it.code == AdmissionReasonCodes.INSTITUTION_EVIDENCE_MISSING }
         assertNull(reason.observed)
         assertEquals("institutionEvidence", reason.field)
-        assertFalse(codes(result.blockingReasons).contains(AdmissionReasonCodes.IDENTITY_SOURCE_INVALID))
     }
 
     @Test
@@ -259,11 +272,119 @@ class DiscoveryAdmissionPolicyTest {
     @Test
     fun `candidate rule vocabulary is explained with real fields`() {
         AdmissionReasonCodes.CANDIDATE_RULE_CODES.forEach { code ->
-            val reason = policy().evaluate(complete, EligibilityResult(false, listOf(code))).blockingReasons.single()
+            val result = policy().evaluate(complete, EligibilityResult(false, listOf(code)))
+            val soft = code in DiscoveryAdmissionPolicy.SOFT_REASON_CODES
+            val reason = (if (soft) result.hints else result.blockingReasons).first { it.code == code }
             assertEquals(code, reason.code)
             assertNotEquals(AdmissionReason.UNKNOWN_FIELD, reason.field, code)
             assertEquals("CandidateEligibilityService.evaluateEligibility()", reason.sourceLocation)
+            if (soft) {
+                // I-1：研发范围「未确认/证据不足」只提示，明确不符（OUT_OF_SCOPE/SERVICE_ONLY）仍阻断。
+                assertEquals(DiscoveryAdmissionStatus.AUTO_PASSED, result.status, code)
+                assertFalse(codes(result.blockingReasons).contains(code), code)
+            } else {
+                assertEquals(DiscoveryAdmissionStatus.NEEDS_REVIEW, result.status, code)
+                assertTrue(codes(result.blockingReasons).contains(code), code)
+            }
         }
+    }
+
+    @Test
+    fun `policy version and the soft reason set are the admission relaxation release`() {
+        assertEquals("2026-10-13.1", DiscoveryAdmissionPolicy.POLICY_VERSION)
+        assertEquals("2026-10-13.1", policy().evaluate(complete).policyVersion)
+        assertEquals(
+            setOf(
+                AdmissionReasonCodes.COUNTRY_MISSING,
+                AdmissionReasonCodes.COUNTRY_UNMAPPED,
+                AdmissionReasonCodes.INSTITUTION_MISSING,
+                AdmissionReasonCodes.INSTITUTION_EVIDENCE_MISSING,
+                "RND_SCOPE_UNCONFIRMED",
+                "RND_EVIDENCE_INSUFFICIENT"
+            ),
+            DiscoveryAdmissionPolicy.SOFT_REASON_CODES
+        )
+    }
+
+    @Test
+    fun `soft missing data reasons alone auto pass and are all reported as hints`() {
+        val soft = complete.copy(
+            institution = null, institutionEvidence = null, country = null, researchFields = null
+        )
+        val result = policy().evaluate(soft)
+
+        assertEquals(DiscoveryAdmissionStatus.AUTO_PASSED, result.status, result.blockingReasons.toString())
+        assertTrue(result.blockingReasons.isEmpty(), result.blockingReasons.toString())
+        assertEquals(
+            setOf(
+                AdmissionReasonCodes.RESEARCH_DIRECTION_MISSING,
+                AdmissionReasonCodes.INSTITUTION_MISSING,
+                AdmissionReasonCodes.COUNTRY_MISSING,
+                AdmissionReasonCodes.INSTITUTION_EVIDENCE_MISSING
+            ),
+            codes(result.hints).toSet()
+        )
+    }
+
+    @Test
+    fun `soft and hard reasons coexist without hiding the hard one`() {
+        val profile = complete.copy(country = null, institutionEvidence = null, identityVerification = null)
+        val result = policy().evaluate(profile)
+
+        assertEquals(DiscoveryAdmissionStatus.NEEDS_REVIEW, result.status)
+        val blocking = codes(result.blockingReasons)
+        assertTrue(blocking.contains(AdmissionReasonCodes.IDENTITY_MISSING), blocking.toString())
+        assertFalse(blocking.contains(AdmissionReasonCodes.COUNTRY_MISSING), blocking.toString())
+        assertFalse(blocking.contains(AdmissionReasonCodes.INSTITUTION_EVIDENCE_MISSING), blocking.toString())
+        val hintCodes = codes(result.hints)
+        assertTrue(hintCodes.contains(AdmissionReasonCodes.COUNTRY_MISSING), hintCodes.toString())
+        assertTrue(hintCodes.contains(AdmissionReasonCodes.INSTITUTION_EVIDENCE_MISSING), hintCodes.toString())
+        // 事实逐字保留：软原因是缺项事实，不是「数据已补齐」。
+        val countryHint = result.hints.first { it.code == AdmissionReasonCodes.COUNTRY_MISSING }
+        assertNull(countryHint.observed)
+        assertEquals("非空国家", countryHint.expected)
+    }
+
+    @Test
+    fun `pending tag only profile without an identity object is blocked explicitly`() {
+        val pending = ExpertProfile(
+            orcidId = "0000-0002-0000-0009", email = "synthetic.pending@example.org",
+            givenNames = "Sample", familyNames = "Pending", country = "Germany", keyword = null,
+            employment = null, institution = "Synthetic University",
+            tags = listOf(RecipientScope.DISCOVERY_PENDING_TAG)
+        )
+        assertFalse(DiscoveryIdentity.isDiscovery(pending))
+        assertTrue(RecipientScope.isDiscoveryOutreach(pending))
+
+        val result = policy().evaluate(pending)
+
+        assertEquals(DiscoveryAdmissionStatus.NEEDS_REVIEW, result.status)
+        assertEquals(listOf(AdmissionReasonCodes.IDENTITY_MISSING), codes(result.blockingReasons))
+        assertEquals("identityVerification", result.blockingReasons.single().field)
+        // 非发现档案（无标签、无身份）仍走原入口，不产生任何原因。
+        val business = pending.copy(tags = emptyList())
+        assertEquals(DiscoveryAdmissionStatus.AUTO_PASSED, policy().evaluate(business).status)
+        assertTrue(policy().evaluate(business).blockingReasons.isEmpty())
+    }
+
+    @Test
+    fun `classifier inputs added to the scan projection change the admission facts`() {
+        // I-7：扫描投影必须带 employment/keyword/worksCount/recentWorkTitles/patentTitles，
+        // 否则同一档案会凭空多出研发证据原因（线上 4,642 条对照中命中 1 条）。
+        val base = syntheticProfile().copy(
+            institution = null, institutionEvidence = null, researchFields = null,
+            hIndex = null, lastPublicationYear = null, researchFieldIds = listOf("22"),
+            employment = null, keyword = null, worksCount = null, recentWorkTitles = null, patentTitles = null
+        )
+        val truncated = policy().evaluate(base)
+        val full = policy().evaluate(
+            base.copy(worksCount = 30, recentWorkTitles = listOf("Synthetic recent work"), lastPublicationYear = 2026)
+        )
+
+        assertEquals(DiscoveryAdmissionStatus.AUTO_PASSED, truncated.status, truncated.blockingReasons.toString())
+        assertTrue(codes(truncated.hints).contains("RND_EVIDENCE_INSUFFICIENT"), codes(truncated.hints).toString())
+        assertEquals(DiscoveryAdmissionStatus.AUTO_PASSED, full.status, full.blockingReasons.toString())
+        assertFalse(codes(full.hints).contains("RND_EVIDENCE_INSUFFICIENT"), codes(full.hints).toString())
     }
 
     @Test

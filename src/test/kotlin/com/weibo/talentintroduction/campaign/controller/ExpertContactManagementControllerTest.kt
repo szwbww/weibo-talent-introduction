@@ -6,9 +6,12 @@ import com.weibo.talentintroduction.campaign.service.ExpertContactManagementServ
 import com.weibo.talentintroduction.campaign.service.ExpertMaterialItem
 import com.weibo.talentintroduction.campaign.service.ExpertMaterialRequestItem
 import com.weibo.talentintroduction.campaign.service.ExpertMaterialService
+import com.weibo.talentintroduction.discovery.service.DiscoveryPersonQueryService
+import com.weibo.talentintroduction.discovery.service.VerifiedPersonRelation
 import com.weibo.talentintroduction.mail.service.SenderAccountBindingService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -26,6 +29,7 @@ import java.util.Optional
 class ExpertContactManagementControllerTest {
     private val service = Mockito.mock(ExpertContactManagementService::class.java)
     private val expertMaterialService = Mockito.mock(ExpertMaterialService::class.java)
+    private val personQueryService = Mockito.mock(DiscoveryPersonQueryService::class.java)
     private val controller = ExpertContactManagementController(
         service = service,
         manualExpertMailService = Mockito.mock(com.weibo.talentintroduction.mail.service.ManualExpertMailService::class.java),
@@ -33,9 +37,137 @@ class ExpertContactManagementControllerTest {
         expertOperatorStatusService = Mockito.mock(com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService::class.java),
         expertIndexLevelOperationService = Mockito.mock(com.weibo.talentintroduction.campaign.service.ExpertIndexLevelOperationService::class.java),
         senderAccountBindingService = Mockito.mock(SenderAccountBindingService::class.java),
-        expertMaterialService = expertMaterialService
+        expertMaterialService = expertMaterialService,
+        personQueryService = personQueryService
     )
     private val mockMvc: MockMvc = MockMvcBuilders.standaloneSetup(controller).build()
+
+    // ── 06：可选 groupDiscoveredPersons 分支（默认契约不变）────────────────────────
+
+    @Test
+    fun `listContacts default branch keeps the legacy flat contract`() {
+        val contacts = listOf(
+            sampleContact().copy(id = 1L, orcidId = "d1", expertEmail = "a@x.com"),
+            sampleContact().copy(id = 2L, orcidId = "d2", expertEmail = "b@x.com")
+        )
+        Mockito.`when`(
+            service.listContacts(null, null, null, null, null, null)
+        ).thenReturn(contacts)
+
+        val response = controller.listContacts(null, null, null, null, null, null)
+        assertFalse(response.groupDiscoveredPersons)
+        assertTrue(response.groupedPersons.isEmpty())
+        assertEquals(2L, response.totalCount)
+        assertEquals(2, response.contacts.size)
+    }
+
+    @Test
+    fun `groupDiscoveredPersons aggregates members into one person with all contact ids`() {
+        val contacts = listOf(
+            sampleContact().copy(id = 1L, orcidId = "d1", expertEmail = "a@x.com"),
+            sampleContact().copy(id = 2L, orcidId = "d2", expertEmail = "b@x.com"),
+            sampleContact().copy(id = 3L, orcidId = "d9", expertEmail = "other@x.com")
+        )
+        Mockito.`when`(
+            service.listContacts(null, null, null, null, null, null)
+        ).thenReturn(contacts)
+        Mockito.`when`(personQueryService.resolveVerifiedPersonRelations(listOf("d1", "d2", "d9")))
+            .thenReturn(
+                mapOf(
+                    "d1" to VerifiedPersonRelation("P1", false),
+                    "d2" to VerifiedPersonRelation("P1", false)
+                )
+            )
+
+        val response = controller.listContacts(
+            null, null, null, null, null, null, groupDiscoveredPersons = true
+        )
+
+        assertTrue(response.groupDiscoveredPersons)
+        // 两人：P1（d1+d2）与范围外 d9（保持原 contactId 单位）。
+        assertEquals(2L, response.totalCount)
+        val p1 = response.groupedPersons.first { it.personId == "P1" }
+        assertEquals(listOf(1L, 2L), p1.contactIds)
+        assertEquals(2, p1.memberCount)
+        assertFalse(p1.needsReview)
+        assertTrue(response.groupedPersons.any { it.personId == null && it.personKey == "contact:3" })
+    }
+
+    @Test
+    fun `ordinary contacts sharing one orcidId stay two contact units and are never merged`() {
+        val contacts = listOf(
+            sampleContact().copy(id = 1L, orcidId = "d9", expertEmail = "a@x.com"),
+            sampleContact().copy(id = 2L, orcidId = "d9", expertEmail = "b@x.com")
+        )
+        Mockito.`when`(
+            service.listContacts(null, null, null, null, null, null)
+        ).thenReturn(contacts)
+        // 无有效关系：绝不按 orcidId 合并两个不同 contactId 的普通联系人。
+        Mockito.`when`(personQueryService.resolveVerifiedPersonRelations(listOf("d9")))
+            .thenReturn(emptyMap())
+
+        val response = controller.listContacts(
+            null, null, null, null, null, null, groupDiscoveredPersons = true
+        )
+
+        assertEquals(2L, response.totalCount)
+        assertEquals(2, response.groupedPersons.size)
+        assertEquals(listOf(listOf(1L), listOf(2L)), response.groupedPersons.map { it.contactIds })
+        assertTrue(response.groupedPersons.all { it.personId == null })
+        assertTrue(response.groupedPersons.all { !it.needsReview })
+    }
+
+    @Test
+    fun `a member whose relation no longer verifies falls back to its contact unit and is marked for review`() {
+        val contacts = listOf(
+            sampleContact().copy(id = 1L, orcidId = "d1", expertEmail = "a@x.com"),
+            sampleContact().copy(id = 2L, orcidId = "d6", expertEmail = "b@x.com")
+        )
+        Mockito.`when`(
+            service.listContacts(null, null, null, null, null, null)
+        ).thenReturn(contacts)
+        Mockito.`when`(personQueryService.resolveVerifiedPersonRelations(listOf("d1", "d6")))
+            .thenReturn(
+                mapOf(
+                    "d1" to VerifiedPersonRelation("P1", false),
+                    "d6" to VerifiedPersonRelation(null, true)
+                )
+            )
+
+        val response = controller.listContacts(
+            null, null, null, null, null, null, groupDiscoveredPersons = true
+        )
+
+        assertEquals(2L, response.totalCount)
+        val verified = response.groupedPersons.first { it.personId == "P1" }
+        assertEquals(listOf(1L), verified.contactIds)
+        val review = response.groupedPersons.first { it.needsReview }
+        assertNull(review.personId)
+        assertEquals(listOf(2L), review.contactIds)
+        assertEquals("contact:2", review.personKey)
+    }
+
+    @Test
+    fun `groupDiscoveredPersons filters by member email domain before aggregating`() {
+        val contacts = listOf(
+            sampleContact().copy(id = 1L, orcidId = "d1", expertEmail = "a@gmail.com"),
+            sampleContact().copy(id = 2L, orcidId = "d2", expertEmail = "b@outlook.com")
+        )
+        Mockito.`when`(
+            service.listContacts(null, null, null, null, null, null)
+        ).thenReturn(contacts)
+        // 仅 gmail 成员进入聚合：非代表邮箱也能按域名命中。
+        Mockito.`when`(personQueryService.resolveVerifiedPersonRelations(listOf("d1")))
+            .thenReturn(mapOf("d1" to VerifiedPersonRelation("P1", false)))
+
+        val response = controller.listContacts(
+            null, null, null, null, null, null, groupDiscoveredPersons = true, emailDomain = "gmail.com"
+        )
+
+        assertEquals(1L, response.totalCount)
+        assertEquals(1, response.contacts.size)
+        assertEquals("d1", response.contacts.first().orcidId)
+    }
 
     @Test
     fun `listMaterials delegates contactId to service and returns catalog items`() {

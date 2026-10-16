@@ -111,8 +111,12 @@ class DiscoveryReviewController(private val service: DiscoveryReviewService) {
     }
 
     /**
-     * 04（I-4）：`POST /initialize` —— 由已登录运营明确触发的存量准入初始化（异步固定批次扫描）。
-     * 相同 `requestKey` 幂等；不删文档、不发邮件、不覆盖已有结论。
+     * 04（I-4）+ 阶段 2：`POST /initialize` —— 由已登录运营明确触发的存量准入初始化/刷新（异步固定批次扫描）。
+     * 相同 `requestKey` 幂等（模式/`dryRun`/范围不同 → 409）。
+     *
+     * `mode` 与 `dryRun` 的组合在进入服务前先校验：非法 `mode`、或把 `dryRun` 用在旧模式上 → 400
+     * （沿用 [DiscoveryReviewService.normalizeMode]/[DiscoveryReviewService.normalizeDryRun] 的唯一实现）。
+     * 不删文档、不发邮件、不覆盖人工结论。
      */
     @PostMapping("/initialize")
     fun initialize(
@@ -120,8 +124,11 @@ class DiscoveryReviewController(private val service: DiscoveryReviewService) {
         @RequestBody(required = false) body: DiscoveryReviewInitializeRequest?
     ): ResponseEntity<Any> {
         val actor = sessionUsername(request) ?: return unauthorized()
+        val normalized = body ?: DiscoveryReviewInitializeRequest()
+        val mode = DiscoveryReviewService.normalizeMode(normalized.mode)
+        DiscoveryReviewService.normalizeDryRun(mode, normalized.dryRun)
         return ResponseEntity.status(HttpStatus.ACCEPTED)
-            .body(service.initializeExistingAdmissions(body ?: DiscoveryReviewInitializeRequest(), actor))
+            .body(service.initializeExistingAdmissions(normalized, actor))
     }
 
     /** 04（I-4）：`GET /initialize/{key}` —— 初始化状态（由任务行派生，无新表）。 */
