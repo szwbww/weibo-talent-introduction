@@ -1,6 +1,29 @@
 package com.weibo.talentintroduction.discovery.repository
 
+import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
+import com.weibo.talentintroduction.config.ElasticsearchProperties
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonIdentity
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonMemberSnapshot
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonMemberWrite
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonOutcome
+import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonSnapshot
+import com.weibo.talentintroduction.discovery.service.DiscoveryPersonService
+import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
+import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
+import com.weibo.talentintroduction.expert.domain.IdentityVerification
+import com.weibo.talentintroduction.expert.service.ExpertIndexService
+import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
+import com.weibo.talentintroduction.expert.service.ExpertPromotionAuditService
+import org.mockito.Mockito
+import org.springframework.http.HttpMethod
+import org.springframework.http.HttpStatus
+import org.springframework.http.ResponseEntity
+import org.springframework.boot.test.mock.mockito.SpyBean
+import org.springframework.web.client.HttpClientErrorException
+import org.springframework.web.client.RestTemplate
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -60,16 +83,111 @@ class DiscoveryPersonRepositoryTest {
     }
 
     @Autowired lateinit var jdbc: JdbcTemplate
-    @Autowired lateinit var repository: DiscoveryPersonRepository
+    @SpyBean lateinit var repository: DiscoveryPersonRepository
     @Autowired lateinit var transactions: PlatformTransactionManager
 
     private val now = LocalDateTime.of(2026, 10, 14, 9, 30)
+    private val mapper = ObjectMapper()
+    private val restTemplate = Mockito.mock(RestTemplate::class.java)
+    private val properties = ElasticsearchProperties(
+        baseUrl = "https://es.example.com:9200",
+        username = "elastic", password = "secret",
+        rawIndexName = "orcid_info",
+        candidateIndexName = "orcid_info_candidate",
+        applicationIndexName = "orcid_info_application"
+    )
+    private val indexService = ExpertIndexService(properties, restTemplate, mapper)
+    private val writer = ExpertIndexWriterService(
+        restTemplate, properties, indexService, mapper,
+        Mockito.mock(ExpertPromotionAuditService::class.java),
+        Mockito.mock(ExpertContactRepository::class.java)
+    )
+    private val contactRepository = Mockito.mock(ExpertContactRepository::class.java)
+    private val aliasService = Mockito.mock(ExpertEmailAliasService::class.java)
+    private val docs = linkedMapOf<String, MutableMap<String, Any?>>()
+    private val evidenceHash = "a".repeat(64)
+    private var afterRootRead: ((String) -> Unit)? = null
 
     @BeforeEach fun setup() {
+        docs.clear()
+        afterRootRead = null
         jdbc.update("DELETE FROM discovery_person_author_key")
         jdbc.update("DELETE FROM discovery_person_member")
         jdbc.update("DELETE FROM discovery_person")
     }
+    init {
+        Mockito.doAnswer { invocation ->
+            val url = invocation.getArgument<String>(0)
+            val method = invocation.getArgument<HttpMethod>(1)
+            if (method == HttpMethod.GET && url.contains("/_doc/")) getResponse(url)
+            else throw IllegalStateException("unexpected request $method $url")
+        }.`when`(restTemplate).exchange(
+            Mockito.anyString(), Mockito.any(HttpMethod::class.java), Mockito.any(),
+            Mockito.eq(JsonNode::class.java)
+        )
+    }
+
+    private fun getResponse(url: String): ResponseEntity<JsonNode> {
+        val indexName = url.removePrefix("${properties.baseUrl}/").substringBefore("/_doc/")
+        val docId = url.substringAfter("/_doc/").substringBefore('?')
+        val level = ExpertIndexLevel.values().firstOrNull { indexService.indexName(it) == indexName }
+            ?: throw IllegalStateException("unknown index $indexName")
+        val source = docs["${level.name}/$docId"] ?: throw HttpClientErrorException(HttpStatus.NOT_FOUND)
+        return ResponseEntity.ok(mapper.valueToTree(mapOf("_source" to source, "_seq_no" to 1L, "_primary_term" to 1L)))
+    }
+
+    private fun service() = DiscoveryPersonService(repository, writer, contactRepository, aliasService)
+
+    private fun discoveredSource(email: String, given: String = "Jane", family: String = "Doe") =
+        mutableMapOf<String, Any?>(
+            "email" to email,
+            "givenNames" to given,
+            "familyNames" to family,
+            "emailSource" to "PAPER_FULLTEXT",
+            "tags" to listOf("discovered"),
+            "identityVerification" to IdentityVerification(
+                "VERIFIED",
+                DiscoveryIdentity.VERSION,
+                DiscoveryIdentity.normalizedEmail(email),
+                given,
+                family,
+                "JATS_SHA256",
+                evidenceHash,
+                "0000-0002-1825-0097",
+                null
+            )
+        )
+
+    private fun put(docId: String, email: String, given: String = "Jane", family: String = "Doe") {
+        docs["${ExpertIndexLevel.RAW.name}/$docId"] = discoveredSource(email, given, family)
+    }
+
+    private val authorKey = "ORCID:0000-0002-1825-0097"
+
+    private fun snapshot(docId: String, email: String) =
+        DiscoveryPersonMemberSnapshot(
+            docId,
+            DiscoveryPersonIdentity.fingerprint(
+                docId, DiscoveryIdentity.normalizedEmail(email), "Jane", "Doe", listOf(authorKey)
+            )
+        )
+
+    private fun register(service: DiscoveryPersonService, docId: String, email: String) =
+        service.register(DiscoveryPersonSnapshot("ORCID", listOf(snapshot(docId, email))))
+
+    private fun afterNextRootRead(action: (String) -> Unit) {
+        afterRootRead = action
+        Mockito.doAnswer { invocation ->
+            val person = invocation.callRealMethod()
+            val personId = invocation.getArgument<String>(0)
+            afterRootRead?.let { callback ->
+                afterRootRead = null
+                callback(personId)
+            }
+            person
+        }.`when`(repository).findPerson(Mockito.anyString())
+    }
+
 
     private fun member(docId: String, email: String? = "$docId@example.test", fingerprint: String = "f".repeat(64)) =
         DiscoveryPersonMemberWrite(docId, email, fingerprint, """{"docId":"$docId"}""")
@@ -178,6 +296,60 @@ class DiscoveryPersonRepositoryTest {
         assertNull(repository.findMember("doc-r"))
         assertEquals(0, count("discovery_person"))
         assertEquals(0, count("discovery_person_author_key"))
+    }
+
+    @Test
+    fun `real service rejects a concurrent invalid root member on MySQL without writing A`() {
+        docs.clear()
+        val service = service()
+        put("doc-a", "a@uni.edu")
+        val root = register(service, "doc-a", "a@uni.edu")
+        assertEquals(DiscoveryPersonOutcome.CREATED, root.outcome, root.reason)
+
+        put("doc-b", "b@uni.edu")
+        put("doc-c", "c@uni.edu")
+        afterNextRootRead { personId ->
+            assertEquals(DiscoveryPersonOutcome.ATTACHED, register(service(), "doc-b", "b@uni.edu").outcome)
+            put("doc-b", "b@uni.edu", given = "John", family = "Smith")
+            assertEquals(1L, repository.findPerson(personId)!!.revision)
+        }
+
+        val result = register(service, "doc-c", "c@uni.edu")
+
+        assertEquals(DiscoveryPersonOutcome.STALE, result.outcome, result.reason)
+        assertEquals("FINGERPRINT_MISMATCH", result.reason)
+        assertNull(repository.findMember("doc-c"), "A must not write after the concurrent member fails full-group verification")
+        assertEquals(setOf("doc-a", "doc-b"), repository.findMembersByPerson(root.personId!!).map { it.expertDocId }.toSet())
+        assertEquals(1L, repository.findPerson(root.personId!!)!!.revision)
+        assertEquals(1, count("discovery_person"))
+        assertEquals(2, count("discovery_person_member"))
+        assertEquals(1, count("discovery_person_author_key"))
+    }
+
+
+    @Test
+    fun `real service attaches a compatible concurrent root member after fresh verification on MySQL`() {
+        docs.clear()
+        val service = service()
+        put("doc-a", "a@uni.edu")
+        val root = register(service, "doc-a", "a@uni.edu")
+        assertEquals(DiscoveryPersonOutcome.CREATED, root.outcome, root.reason)
+        put("doc-b", "b@uni.edu")
+        put("doc-c", "c@uni.edu")
+        afterNextRootRead { personId ->
+            assertEquals(DiscoveryPersonOutcome.ATTACHED, register(service(), "doc-b", "b@uni.edu").outcome)
+            assertEquals(1L, repository.findPerson(personId)!!.revision)
+        }
+
+        val result = register(service, "doc-c", "c@uni.edu")
+
+        assertEquals(DiscoveryPersonOutcome.ATTACHED, result.outcome, result.reason)
+        assertEquals(root.personId, result.personId)
+        assertEquals(setOf("doc-a", "doc-b", "doc-c"), repository.findMembersByPerson(root.personId!!).map { it.expertDocId }.toSet())
+        assertEquals(2L, repository.findPerson(root.personId!!)!!.revision)
+        assertEquals(1, count("discovery_person"))
+        assertEquals(3, count("discovery_person_member"))
+        assertEquals(1, count("discovery_person_author_key"))
     }
 
     @Test

@@ -339,6 +339,91 @@ class DiscoveryPersonServiceTest {
     }
 
     @Test
+    fun `a concurrent invalid root member discovered during group verification makes registration stale without its write`() {
+        put("doc-a", source = discoveredSource(email = "a@uni.edu", orcid = "0000-0002-1825-0097"))
+        val key = orcidKey("0000-0002-1825-0097")
+        val root = register(member("doc-a", "a@uni.edu", keys = listOf(key)))
+        assertEquals(DiscoveryPersonOutcome.CREATED, root.outcome, root.reason)
+        put("doc-b", source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097"))
+        put("doc-c", source = discoveredSource(email = "c@uni.edu", orcid = "0000-0002-1825-0097"))
+
+        repository.afterFindPerson = { personId ->
+            repository.afterFindPerson = null
+            assertEquals(
+                com.weibo.talentintroduction.discovery.repository.DiscoveryPersonWriteStatus.APPLIED,
+                repository.attachToPerson(
+                    personId,
+                    listOf(
+                        DiscoveryPersonMemberWrite(
+                            "doc-b", "b@uni.edu",
+                            fingerprint("doc-b", "b@uni.edu", "Jane", "Doe", listOf(key)),
+                            """{"docId":"doc-b"}"""
+                        )
+                    ),
+                    emptyList(),
+                    LocalDateTime.of(2026, 10, 14, 9, 30)
+                )
+            )
+            put("doc-b", source = discoveredSource(email = "b@uni.edu", given = "John", family = "Smith", orcid = "0000-0002-1825-0097"))
+        }
+
+        val result = register(member("doc-c", "c@uni.edu", keys = listOf(key)))
+
+        assertEquals(DiscoveryPersonOutcome.STALE, result.outcome, result.reason)
+        assertEquals("FINGERPRINT_MISMATCH", result.reason)
+        assertNull(repository.members["doc-c"], "invalid concurrent root member rejects A before A writes")
+        assertEquals(setOf("doc-a", "doc-b"), repository.members.keys, "only the interleaved member write remains")
+        assertEquals(1L, repository.findPerson(root.personId!!)!!.revision)
+    }
+
+
+    @Test
+    fun `a compatible concurrent root member is reverified before attachment`() {
+        val key = orcidKey("0000-0002-1825-0097")
+        put("doc-a", source = discoveredSource(email = "a@uni.edu", orcid = "0000-0002-1825-0097"))
+        val root = register(member("doc-a", "a@uni.edu", keys = listOf(key)))
+        put("doc-b", source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097"))
+        put("doc-c", source = discoveredSource(email = "c@uni.edu", orcid = "0000-0002-1825-0097"))
+
+        repository.afterFindPerson = { personId ->
+            repository.afterFindPerson = null
+            assertEquals(DiscoveryPersonOutcome.ATTACHED, register(member("doc-b", "b@uni.edu", keys = listOf(key))).outcome)
+        }
+        val result = register(member("doc-c", "c@uni.edu", keys = listOf(key)))
+
+        assertEquals(DiscoveryPersonOutcome.ATTACHED, result.outcome, result.reason)
+        assertEquals(root.personId, result.personId)
+        assertEquals(setOf("doc-a", "doc-b", "doc-c"), repository.members.keys)
+        assertEquals(2L, repository.findPerson(root.personId!!)!!.revision)
+    }
+
+    @Test
+    fun `a second root revision change during fresh verification remains stale without writing`() {
+        val key = orcidKey("0000-0002-1825-0097")
+        put("doc-a", source = discoveredSource(email = "a@uni.edu", orcid = "0000-0002-1825-0097"))
+        val root = register(member("doc-a", "a@uni.edu", keys = listOf(key)))
+        put("doc-b", source = discoveredSource(email = "b@uni.edu", orcid = "0000-0002-1825-0097"))
+        put("doc-c", source = discoveredSource(email = "c@uni.edu", orcid = "0000-0002-1825-0097"))
+        put("doc-d", source = discoveredSource(email = "d@uni.edu", orcid = "0000-0002-1825-0097"))
+
+        repository.afterFindPerson = { personId ->
+            repository.afterFindPerson = null
+            assertEquals(DiscoveryPersonOutcome.ATTACHED, register(member("doc-b", "b@uni.edu", keys = listOf(key))).outcome)
+            repository.afterFindPerson = {
+                repository.afterFindPerson = null
+                assertEquals(DiscoveryPersonOutcome.ATTACHED, register(member("doc-d", "d@uni.edu", keys = listOf(key))).outcome)
+            }
+        }
+        val result = register(member("doc-c", "c@uni.edu", keys = listOf(key)))
+
+        assertEquals(DiscoveryPersonOutcome.STALE, result.outcome, result.reason)
+        assertEquals("ROOT_REVISION_CHANGED_DURING_VERIFICATION", result.reason)
+        assertNull(repository.members["doc-c"])
+        assertEquals(setOf("doc-a", "doc-b", "doc-d"), repository.members.keys)
+        assertEquals(2L, repository.findPerson(root.personId!!)!!.revision)
+    }
+
+    @Test
     fun `an existing root member with a conflicting full name is never silently attached (V-3)`() {
         put("doc-a", source = discoveredSource(email = "a@uni.edu", given = "Jane", family = "Doe", orcid = "0000-0002-1825-0097"))
         val key = orcidKey("0000-0002-1825-0097")
@@ -523,7 +608,13 @@ class DiscoveryPersonServiceTest {
         /** 模拟「首次写入被并发抢占、随后档案事实被改动」的竞争间隙。 */
         var onCreateConflict: (() -> Unit)? = null
 
-        override fun findPerson(personId: String): DiscoveryPersonRecord? = persons[personId]
+        var afterFindPerson: ((String) -> Unit)? = null
+
+        override fun findPerson(personId: String): DiscoveryPersonRecord? {
+            val result = persons[personId]
+            afterFindPerson?.invoke(personId)
+            return result
+        }
 
         override fun findMember(expertDocId: String): DiscoveryPersonMemberRecord? = members[expertDocId]
 

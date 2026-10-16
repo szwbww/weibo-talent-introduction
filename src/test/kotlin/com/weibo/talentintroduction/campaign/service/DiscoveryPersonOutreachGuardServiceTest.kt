@@ -1,17 +1,23 @@
 package com.weibo.talentintroduction.campaign.service
 
+import com.weibo.talentintroduction.campaign.repository.CampaignRepository
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.mail.service.ComposedMail
+import com.weibo.talentintroduction.mail.service.SenderAccountBindingService
+import com.weibo.talentintroduction.mail.service.SenderWarmupService
+import org.junit.jupiter.api.Assertions.assertEquals
 import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepository
 import com.weibo.talentintroduction.config.MailSchedulingProperties
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.weibo.talentintroduction.mail.service.AutoReplySettingService
-import com.weibo.talentintroduction.mail.service.ComposedMail
+import com.weibo.talentintroduction.mail.service.AccountRateLimiter
 import com.weibo.talentintroduction.mail.service.EmailSuppressionService
 import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
 import com.weibo.talentintroduction.mail.service.MailDeliveryService
 import com.weibo.talentintroduction.mail.service.SenderAccountAssignmentService
-import com.weibo.talentintroduction.mail.service.SenderAccountBindingService
+import com.weibo.talentintroduction.mail.service.MailSenderAccountService
+import com.weibo.talentintroduction.mail.service.SenderAccountSelfCheckService
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonIdentity
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonMemberWrite
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonScope
@@ -23,16 +29,19 @@ import com.weibo.talentintroduction.discovery.service.DiscoveryReviewService
 import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.mockito.Mockito
+import com.weibo.talentintroduction.task.service.TaskExecutionService
+import com.weibo.talentintroduction.task.service.TaskProgressStore
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty
-import org.mockito.Mockito
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.data.jdbc.DataJdbcTest
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase
@@ -731,6 +740,422 @@ class DiscoveryPersonOutreachGuardServiceTest {
         assertEquals(1, calls.size, "UNKNOWN 保护下任何入口都不得再次 SMTP")
     }
 
+    @Test
+    fun `real Initial entry blocks a revoked current admission before SMTP`() {
+        val calls = mutableListOf<String>()
+        var admissionReads = 0
+        val service = realInitialEntry(
+            calls,
+            admission = { if (admissionReads++ == 0) "AUTO_PASSED" else "HOLD" },
+            guardReadsAdmission = true
+        )
+        seedPersonWithRealFingerprint("p-initial-revoked", signedDiscoveryExpert("D1"))
+
+        val result = service.sendInitialBatch(campaignId = 1L, size = 1)
+
+        assertEquals(0, calls.size, "a revoked admission must prevent SMTP")
+        assertNull(guard.stateOf("p-initial-revoked"), "revocation at reservation must not create guard state")
+        assertTrue(result.sent == 0, "revoked entry must not report SENT")
+        assertEquals(0L, jdbc.queryForObject(
+            "SELECT COUNT(*) FROM mail_record WHERE direction = 'OUTBOUND' AND expert_contact_id IN " +
+                "(SELECT id FROM expert_contact WHERE orcid_id = 'D1') AND send_status = 'SENT'",
+            Long::class.java
+        ))
+    }
+
+    @Test
+    fun `real Initial entry accepts a valid current admission and persists truthful guard state`() {
+        val calls = mutableListOf<String>()
+        val service = realInitialEntry(calls)
+        seedPersonWithRealFingerprint("p-initial-valid", signedDiscoveryExpert("D1"))
+
+        // The real Initial success seam persists mail_send_attempt_id=0 and therefore violates
+        // fk_mail_record_send_attempt. The independently committed delivery claim remains SENDING.
+        val failure = assertThrows<org.springframework.data.relational.core.conversion.DbActionExecutionException> {
+            service.sendInitialBatch(campaignId = 1L, size = 1)
+        }
+
+        assertTrue(
+            generateSequence<Throwable>(failure) { it.cause }.any {
+                it is DataIntegrityViolationException && it.message.orEmpty().contains("fk_mail_record_send_attempt")
+            },
+            "failure must be the known mail_record → mail_send_attempt FK violation"
+        )
+        assertEquals(listOf("D1@example.test"), calls)
+        assertEquals(OutreachGuardStates.SENDING, guard.stateOf("p-initial-valid"))
+        assertEquals(0L, jdbc.queryForObject(
+            "SELECT COUNT(*) FROM mail_record WHERE direction = 'OUTBOUND' AND send_status = 'SENT'",
+            Long::class.java
+        ))
+    }
+
+
+    @Test
+    fun `real ManualExpertMail entry denies revoked admission before SMTP`() {
+        val profile = signedDiscoveryExpert("D-manual-revoked")
+        seedPersonWithRealFingerprint("p-manual-revoked", profile)
+        seedContactRow(201L, profile.orcidId, profile.email!!, bound = "acct")
+        val calls = mutableListOf<String>()
+        var admissionReads = 0
+        val service = realManualExpertEntry(calls, profile) {
+            if (admissionReads++ == 0) "AUTO_PASSED" else "HOLD"
+        }
+
+        assertThrows<IllegalStateException> {
+            service.sendManualMail(
+                201L,
+                com.weibo.talentintroduction.mail.service.ManualMailSendCommand(
+                    "COMPOSE_TEMPLATE", "10", "acct"
+                ),
+                enforcePersonalizationGate = false
+            )
+        }
+
+        assertTrue(admissionReads >= 2, "real recipient eligibility must be re-read between reserve and claim")
+        assertTrue(calls.isEmpty(), "revocation before claim must prevent SMTP")
+        assertNotEquals(OutreachGuardStates.SENT, guard.stateOf("p-manual-revoked"))
+        assertEquals(0L, jdbc.queryForObject(
+            "SELECT COUNT(*) FROM mail_record WHERE direction = 'OUTBOUND' AND send_status = 'SENT'",
+            Long::class.java
+        ))
+    }
+
+    @Test
+    fun `real ManualExpertMail entry sends once and persists SENT for valid admission`() {
+        val profile = signedDiscoveryExpert("D-manual-valid")
+        seedPersonWithRealFingerprint("p-manual-valid", profile)
+        seedContactRow(202L, profile.orcidId, profile.email!!, bound = "acct")
+        val calls = mutableListOf<String>()
+        val service = realManualExpertEntry(calls, profile) { "AUTO_PASSED" }
+
+        val result = service.sendManualMail(
+            202L,
+            com.weibo.talentintroduction.mail.service.ManualMailSendCommand(
+                "COMPOSE_TEMPLATE", "10", "acct"
+            ),
+            enforcePersonalizationGate = false
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        assertEquals(listOf(profile.email), calls)
+        assertEquals(OutreachGuardStates.SENT, guard.stateOf("p-manual-valid"))
+        assertEquals(1L, jdbc.queryForObject(
+            "SELECT COUNT(*) FROM mail_record WHERE direction = 'OUTBOUND' AND send_status = 'SENT'",
+            Long::class.java
+        ))
+    }
+
+    private fun realManualExpertEntry(
+        calls: MutableList<String>,
+        profile: ExpertProfile,
+        admission: () -> String
+    ): com.weibo.talentintroduction.mail.service.ManualExpertMailService {
+        val account = requireNotNull(mailSenderAccountRepository.findByAccountCode("acct"))
+        val review = Mockito.mock(DiscoveryReviewService::class.java)
+        Mockito.`when`(review.resolveAdmissionBatch(Mockito.anyList())).thenAnswer { invocation ->
+            val keys = invocation.getArgument<List<com.weibo.talentintroduction.discovery.service.DiscoveryReviewAdmissionKey>>(0)
+            keys.associate { key ->
+                val decision = admission()
+                key.docId to DiscoveryReviewResolvedAdmission(
+                    key.docId, decision, decision == "AUTO_PASSED", true, true, false, 1L, null
+                )
+            }
+        }
+        val search = Mockito.mock(ExpertSearchService::class.java)
+        listOf(
+            com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.RAW,
+            com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.CANDIDATE,
+            com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.APPLICATION
+        ).forEach { level ->
+            Mockito.`when`(
+                search.findByDocumentIdsStrict(anyValue(level), anyValue(emptyList<String>()))
+            ).thenAnswer { invocation ->
+                val ids = invocation.getArgument<List<String>>(1)
+                if (profile.esDocId?.let(ids::contains) == true) listOf(profile) else emptyList()
+            }
+        }
+        val suppression = Mockito.mock(EmailSuppressionService::class.java)
+        val recipientService = DiscoveryPersonRecipientService(
+            batchRecipientSelectionService = BatchRecipientSelectionService(review),
+            discoveryPersonRepository = personRepository,
+            expertSearchService = search,
+            emailSuppressionService = suppression,
+            expertContactRepository = expertContactRepository,
+            featureGate = DiscoveryPersonFeatureGate(enabled = true)
+        )
+        val realGuard = DiscoveryPersonOutreachGuardService(jdbc, personRepository, recipientService, suppression)
+        val binding = Mockito.mock(SenderAccountBindingService::class.java)
+        Mockito.`when`(binding.resolveForSend(anyValue(
+            com.weibo.talentintroduction.campaign.domain.ExpertContact(
+                id = 201L, campaignId = 1L, orcidId = profile.orcidId, expertEmail = profile.email!!,
+                expertName = profile.displayName
+            )
+        ), eqValue(true), eqValue(false))).thenReturn(account)
+        val variables = Mockito.mock(com.weibo.talentintroduction.mail.service.MailVariableService::class.java)
+        Mockito.`when`(variables.resolveExpertProfileFor(anyValue(
+            com.weibo.talentintroduction.campaign.domain.ExpertContact(
+                id = 201L, campaignId = 1L, orcidId = profile.orcidId, expertEmail = profile.email!!,
+                expertName = profile.displayName
+            )
+        ))).thenReturn(profile)
+        Mockito.`when`(variables.buildVariables(
+            anyValue(account), anyValue(profile), anyValue(profile.email), anyValue(false),
+            anyValue(com.weibo.talentintroduction.campaign.domain.ExpertContact(
+                id = 201L, campaignId = 1L, orcidId = profile.orcidId, expertEmail = profile.email!!,
+                expertName = profile.displayName
+            ))
+        )).thenReturn(emptyMap())
+        val templates = Mockito.mock(com.weibo.talentintroduction.template.service.MailComposeTemplateService::class.java)
+        Mockito.`when`(templates.getById(10L)).thenReturn(
+            com.weibo.talentintroduction.template.service.MailComposeTemplateDetail(
+                id = 10L, templateCode = "INTRODUCTION", templateName = "Introduction",
+                subject = "Introduction", description = null, mailType = "INTRODUCTION",
+                subjectVariants = null, enabled = true, blocks = emptyList(),
+                createdAt = null, updatedAt = null
+            )
+        )
+        Mockito.`when`(templates.render(
+            eqValue(10L), anyValue(emptyMap<String, String>()),
+            eqValue(com.weibo.talentintroduction.template.service.MailComposeTemplateService.variantSeedFor(
+                profile.orcidId, profile.email!!
+            ))
+        )).thenReturn(
+            com.weibo.talentintroduction.template.service.ComposeTemplateRenderResult(
+                subject = "Introduction", body = "Hello", mailType = "INTRODUCTION"
+            )
+        )
+        val delivery = object : MailDeliveryService {
+            override fun send(
+                account: com.weibo.talentintroduction.mail.domain.MailSenderAccount,
+                mail: ComposedMail
+            ) = com.weibo.talentintroduction.mail.service.DeliveredMail("manual-${profile.orcidId}", "SENT")
+                .also { calls += mail.to }
+        }
+        val contacts = expertContactRepository
+        val conversation = Mockito.mock(ConversationStateService::class.java)
+        Mockito.`when`(conversation.transition(
+            anyValue(com.weibo.talentintroduction.campaign.domain.ExpertContact(
+                id = 201L, campaignId = 1L, orcidId = profile.orcidId, expertEmail = profile.email!!,
+                expertName = profile.displayName
+            )),
+            anyValue(com.weibo.talentintroduction.common.domain.ConversationStatus.INTRO_SENT),
+            anyValue("MANUAL_MAIL_INTRODUCTION"), anyValue("MANUAL_MAIL"), anyValue(now),
+            anyValue<(com.weibo.talentintroduction.campaign.domain.ExpertContact) ->
+                com.weibo.talentintroduction.campaign.domain.ExpertContact>({ it })
+        )).thenAnswer { invocation -> invocation.getArgument(0) }
+        return com.weibo.talentintroduction.mail.service.ManualExpertMailService(
+            expertContactRepository = contacts,
+            mailRecordRepository = mailRecordRepository,
+            mailRecordQaRuleRepository = Mockito.mock(
+                com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository::class.java
+            ),
+            mailSenderAccountService = Mockito.mock(
+                com.weibo.talentintroduction.mail.service.MailSenderAccountService::class.java
+            ),
+            mailSenderAccountRepository = mailSenderAccountRepository,
+            mailDeliveryService = delivery,
+            mailComposeTemplateService = templates,
+            mailContentService = com.weibo.talentintroduction.mail.service.MailContentService(),
+            conversationStateService = conversation,
+            senderAccountBindingService = binding,
+            expertOperatorStatusService = Mockito.mock(ExpertOperatorStatusService::class.java),
+            mailVariableService = variables,
+            outreachGuardService = realGuard,
+            discoveryPersonFeatureGate = DiscoveryPersonFeatureGate(enabled = true)
+        )
+    }
+
+    @Test
+    fun `real ManualInitial entry denies revoked admission before SMTP`() {
+        val profile = signedDiscoveryExpert("D-manual-initial-revoked")
+        seedPersonWithRealFingerprint("p-manual-initial-revoked", profile)
+        seedCampaignAndAccount()
+        val calls = mutableListOf<String>()
+        var admissionReads = 0
+        val service = realManualInitialEntry(calls, profile) {
+            if (admissionReads++ < 3) "AUTO_PASSED" else "HOLD"
+        }
+        val snapshot = com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
+            mailType = "INTRODUCTION", roundSize = 1, roundsPerRun = 1,
+            perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE", expertTypes = listOf("PRODUCTION_RND")
+        )
+
+        val result = service.run(snapshot, 701L, ExecutionMode.MANUAL, oneRoundOnly = true)
+
+        assertTrue(admissionReads >= 4, "live admission must be re-read at reservation and claim")
+        assertTrue(calls.isEmpty(), "revoked claim must prevent SMTP")
+        assertTrue(result.sent == 0)
+        assertNotEquals(OutreachGuardStates.SENT, guard.stateOf("p-manual-initial-revoked"))
+        assertEquals(0L, jdbc.queryForObject(
+            "SELECT COUNT(*) FROM mail_record WHERE direction = 'OUTBOUND' AND send_status = 'SENT'",
+            Long::class.java
+        ))
+    }
+
+    @Test
+    fun `real ManualInitial entry sends once and persists SENT for valid admission`() {
+        val profile = signedDiscoveryExpert("D-manual-initial-valid")
+        seedPersonWithRealFingerprint("p-manual-initial-valid", profile)
+        seedCampaignAndAccount()
+        val calls = mutableListOf<String>()
+        val service = realManualInitialEntry(calls, profile) { "AUTO_PASSED" }
+        val snapshot = com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
+            mailType = "INTRODUCTION", roundSize = 1, roundsPerRun = 1,
+            perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE", expertTypes = listOf("PRODUCTION_RND")
+        )
+
+        val result = service.run(snapshot, 702L, ExecutionMode.MANUAL, oneRoundOnly = true)
+
+        assertEquals(1, result.sent)
+        assertEquals(listOf(profile.email), calls)
+        assertEquals(OutreachGuardStates.SENT, guard.stateOf("p-manual-initial-valid"))
+        assertEquals(1L, jdbc.queryForObject(
+            "SELECT COUNT(*) FROM mail_record WHERE direction = 'OUTBOUND' AND send_status = 'SENT'",
+            Long::class.java
+        ))
+    }
+
+    private fun realManualInitialEntry(
+        calls: MutableList<String>,
+        profile: ExpertProfile,
+        admission: () -> String
+    ): ManualInitialOutreachService {
+        val account = requireNotNull(mailSenderAccountRepository.findByAccountCode("acct"))
+        val campaignRepository = Mockito.mock(CampaignRepository::class.java)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(
+            com.weibo.talentintroduction.campaign.domain.Campaign(
+                id = 1L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual outreach",
+                description = null, senderAccountId = 1L
+            )
+        )
+        val search = Mockito.mock(ExpertSearchService::class.java)
+        Mockito.`when`(search.countExperts(anyValue(
+            com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.CANDIDATE
+        ), anyValue(emptyList()))).thenReturn(1L)
+        Mockito.`when`(search.searchExpertsFiltered(
+            anyValue(com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.CANDIDATE),
+            anyValue(emptyList()), anyValue(0), anyValue(1)
+        )).thenReturn(listOf(profile))
+        Mockito.doAnswer { invocation ->
+            val handler = invocation.getArgument<(List<ExpertProfile>) -> Boolean>(3)
+            handler(listOf(profile))
+            null
+        }.`when`(search).scrollExpertsFiltered(
+            anyValue(com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.CANDIDATE),
+            anyValue(emptyList()), anyValue(500), anyValue({ _: List<ExpertProfile> -> true })
+        )
+        listOf(
+            com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.RAW,
+            com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.CANDIDATE,
+            com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.APPLICATION
+        ).forEach { level ->
+            Mockito.`when`(search.findByDocumentIdsStrict(anyValue(level), anyValue(emptyList<String>())))
+                .thenAnswer { invocation ->
+                    val ids = invocation.getArgument<List<String>>(1)
+                    if (profile.esDocId?.let(ids::contains) == true) listOf(profile) else emptyList()
+                }
+        }
+        val review = Mockito.mock(DiscoveryReviewService::class.java)
+        Mockito.`when`(review.resolveAdmissionBatch(Mockito.anyList())).thenAnswer { invocation ->
+            val keys = invocation.getArgument<List<com.weibo.talentintroduction.discovery.service.DiscoveryReviewAdmissionKey>>(0)
+            keys.associate { key ->
+                val decision = admission()
+                key.docId to DiscoveryReviewResolvedAdmission(
+                    key.docId, decision, decision == "AUTO_PASSED", true, true, false, 1L, null
+                )
+            }
+        }
+        val suppression = Mockito.mock(EmailSuppressionService::class.java)
+        val selector = BatchRecipientSelectionService(review)
+        val recipientService = DiscoveryPersonRecipientService(
+            batchRecipientSelectionService = selector,
+            discoveryPersonRepository = personRepository,
+            expertSearchService = search,
+            emailSuppressionService = suppression,
+            expertContactRepository = expertContactRepository,
+            featureGate = DiscoveryPersonFeatureGate(enabled = true)
+        )
+        val realGuard = DiscoveryPersonOutreachGuardService(jdbc, personRepository, recipientService, suppression)
+        val delivery = object : MailDeliveryService {
+            override fun send(
+                account: com.weibo.talentintroduction.mail.domain.MailSenderAccount,
+                mail: ComposedMail
+            ) = com.weibo.talentintroduction.mail.service.DeliveredMail("manual-initial-${profile.orcidId}", "SENT")
+                .also { calls += mail.to }
+        }
+        val accountAssignment = Mockito.mock(SenderAccountAssignmentService::class.java)
+        Mockito.`when`(accountAssignment.loadBindingStock()).thenReturn(
+            com.weibo.talentintroduction.mail.service.SenderBindingStock.EMPTY
+        )
+        Mockito.`when`(accountAssignment.selectAccount(
+            anyValue(profile), anyValue(mutableListOf()), anyValue(true),
+            anyValue(com.weibo.talentintroduction.mail.service.SenderBindingStock.EMPTY)
+        )).thenReturn(account)
+        val senderAccounts = Mockito.mock(MailSenderAccountService::class.java)
+        Mockito.`when`(senderAccounts.listSendableAccounts(anyValue(true))).thenReturn(listOf(account))
+        Mockito.`when`(senderAccounts.listEnabledAccounts()).thenReturn(listOf(account))
+        val selfCheck = Mockito.mock(SenderAccountSelfCheckService::class.java)
+        val warmup = Mockito.mock(SenderWarmupService::class.java)
+        Mockito.`when`(warmup.remainingCapacity(anyValue(account), anyValue(now), anyValue(true))).thenReturn(10)
+        Mockito.`when`(warmup.dailyState(anyValue(account), anyValue(now), anyValue(true)))
+            .thenReturn(com.weibo.talentintroduction.mail.service.AccountDailyState.SENDABLE)
+        Mockito.`when`(warmup.effectiveDailyLimit(anyValue(account), anyValue(now), anyValue(true))).thenReturn(10)
+        Mockito.`when`(warmup.isWarmupActive(anyValue(account), anyValue(now), anyValue(true))).thenReturn(false)
+        val binding = Mockito.mock(SenderAccountBindingService::class.java)
+        Mockito.`when`(binding.bindingFieldsFor(anyValue("acct"), anyValue(now))).thenReturn("acct" to now)
+        val mailComposer = Mockito.mock(IntroductionMailComposer::class.java)
+        Mockito.`when`(mailComposer.compose(
+            anyValue("acct"), anyValue(profile), anyValue(null), anyValue(false)
+        )).thenReturn(ComposedMail(profile.email!!, "Introduction", "Hello"))
+        val conversation = Mockito.mock(ConversationStateService::class.java)
+        val operatorStatus = Mockito.mock(ExpertOperatorStatusService::class.java)
+        val txHelper = ManualOutreachTxHelper(
+            conversation, mailRecordRepository, mailSenderAccountRepository, mailSendAttemptRepository,
+            operatorStatus, realGuard
+        )
+        return ManualInitialOutreachService(
+            expertSearchService = search,
+            senderAccountAssignmentService = accountAssignment,
+            introductionMailComposer = mailComposer,
+            mailDeliveryService = delivery,
+            expertContactRepository = expertContactRepository,
+            campaignRepository = campaignRepository,
+            mailRecordRepository = mailRecordRepository,
+            mailSenderAccountRepository = mailSenderAccountRepository,
+            mailSendAttemptRepository = mailSendAttemptRepository,
+            progressStore = Mockito.mock(TaskProgressStore::class.java),
+            properties = com.weibo.talentintroduction.config.ManualOutreachProperties(sendIntervalMs = 0),
+            txHelper = txHelper,
+            batchSendSettingService = Mockito.mock(BatchSendSettingService::class.java),
+            mailSenderAccountService = senderAccounts,
+            selfCheckService = selfCheck,
+            expertIndexWriterService = Mockito.mock(
+                com.weibo.talentintroduction.expert.service.ExpertIndexWriterService::class.java
+            ),
+            accountRateLimiter = AccountRateLimiter(),
+            emailSuppressionService = suppression,
+            providerResolver = com.weibo.talentintroduction.mail.service.ProviderResolver(),
+            senderWarmupService = warmup,
+            autoReplySettingService = Mockito.mock(AutoReplySettingService::class.java),
+            manualExpertMailService = Mockito.mock(
+                com.weibo.talentintroduction.mail.service.ManualExpertMailService::class.java
+            ),
+            taskExecutionService = Mockito.mock(TaskExecutionService::class.java),
+            senderAccountBindingService = binding,
+            mailComposeTemplateService = Mockito.mock(
+                com.weibo.talentintroduction.template.service.MailComposeTemplateService::class.java
+            ),
+            batchEmailVerificationService = Mockito.mock(BatchEmailVerificationService::class.java),
+            expertOperatorStatusService = operatorStatus,
+            batchRecipientSelectionService = selector,
+            discoveryPersonRecipientService = recipientService,
+            outreachGuardService = realGuard,
+            discoveryPersonFeatureGate = DiscoveryPersonFeatureGate(enabled = true)
+        )
+    }
+
     /** R-7：真实事务测试用的 ES `_doc` 只读替身响应（与维护服务单测同款手法）。 */
     private fun esGetResponse(
         esDocs: Map<String, MutableMap<String, Any?>>,
@@ -749,11 +1174,13 @@ class DiscoveryPersonOutreachGuardServiceTest {
         )
     }
 
-    /** R-1/R-4：真实仓储 + 真实 guard + 假 SMTP 的 Initial 入口；ES/模板/账号/准入为替身。 */
+    /** R-1/R-4: real repositories + fake SMTP; optionally share the live admission selector with the guard. */
     private fun realInitialEntry(
         calls: MutableList<String>,
         delivered: com.weibo.talentintroduction.mail.service.DeliveredMail =
-            com.weibo.talentintroduction.mail.service.DeliveredMail("msg-1", "SENT")
+            com.weibo.talentintroduction.mail.service.DeliveredMail("msg-1", "SENT"),
+        admission: () -> String = { "AUTO_PASSED" },
+        guardReadsAdmission: Boolean = false
     ): InitialOutreachService {
         seedCampaignAndAccount()
         val d1 = signedDiscoveryExpert("D1")
@@ -774,7 +1201,10 @@ class DiscoveryPersonOutreachGuardServiceTest {
         Mockito.`when`(reviewService.resolveAdmissionBatch(Mockito.anyList())).thenAnswer { invocation ->
             val keys = invocation.getArgument<List<com.weibo.talentintroduction.discovery.service.DiscoveryReviewAdmissionKey>>(0)
             keys.associate { key ->
-                key.docId to DiscoveryReviewResolvedAdmission(key.docId, "AUTO_PASSED", true, true, true, false, 1L, null)
+                val decision = admission()
+                key.docId to DiscoveryReviewResolvedAdmission(
+                    key.docId, decision, decision == "AUTO_PASSED", true, true, false, 1L, null
+                )
             }
         }
         val batchSelection = BatchRecipientSelectionService(reviewService)
@@ -799,14 +1229,6 @@ class DiscoveryPersonOutreachGuardServiceTest {
         val binding = Mockito.mock(SenderAccountBindingService::class.java)
         Mockito.`when`(binding.bindingFieldsFor(anyValue("acct"), anyValue(now)))
             .thenReturn("acct" to now)
-        val txHelper = ManualOutreachTxHelper(
-            Mockito.mock(ConversationStateService::class.java),
-            mailRecordRepository,
-            mailSenderAccountRepository,
-            mailSendAttemptRepository,
-            Mockito.mock(ExpertOperatorStatusService::class.java),
-            guard
-        )
         val recipientService = DiscoveryPersonRecipientService(
             batchRecipientSelectionService = batchSelection,
             discoveryPersonRepository = personRepository,
@@ -814,6 +1236,19 @@ class DiscoveryPersonOutreachGuardServiceTest {
             emailSuppressionService = suppression,
             expertContactRepository = expertContactRepository,
             featureGate = DiscoveryPersonFeatureGate(enabled = true)
+        )
+        val selectedGuard = if (guardReadsAdmission) {
+            DiscoveryPersonOutreachGuardService(jdbc, personRepository, recipientService, suppression)
+        } else {
+            guard
+        }
+        val txHelper = ManualOutreachTxHelper(
+            Mockito.mock(ConversationStateService::class.java),
+            mailRecordRepository,
+            mailSenderAccountRepository,
+            mailSendAttemptRepository,
+            Mockito.mock(ExpertOperatorStatusService::class.java),
+            selectedGuard
         )
         return InitialOutreachService(
             expertSearchService = expertSearch,
@@ -832,7 +1267,7 @@ class DiscoveryPersonOutreachGuardServiceTest {
             senderAccountBindingService = binding,
             batchRecipientSelectionService = batchSelection,
             discoveryPersonRecipientService = recipientService,
-            outreachGuardService = guard,
+            outreachGuardService = selectedGuard,
             discoveryPersonFeatureGate = DiscoveryPersonFeatureGate(enabled = true)
         )
     }
@@ -911,7 +1346,9 @@ class DiscoveryPersonOutreachGuardServiceTest {
         Mockito.`when`(review.resolveAdmissionBatch(Mockito.anyList())).thenAnswer { invocation ->
             val keys = invocation.getArgument<List<com.weibo.talentintroduction.discovery.service.DiscoveryReviewAdmissionKey>>(0)
             keys.associate { key ->
-                key.docId to DiscoveryReviewResolvedAdmission(key.docId, admission, true, true, true, false, 1L, null)
+                key.docId to DiscoveryReviewResolvedAdmission(
+                    key.docId, admission, admission == "AUTO_PASSED", true, true, false, 1L, null
+                )
             }
         }
         val search = Mockito.mock(ExpertSearchService::class.java)
@@ -946,12 +1383,21 @@ class DiscoveryPersonOutreachGuardServiceTest {
             "未撤销资格时自身 contact 不得阻断正常 claim"
         )
 
-        // 2) 当前准入在 reserve 之后被撤销（P3E/P3F）在本夹具下**未能观测到拒绝**（claim 仍返回 Claimed）：
-        //    已作为未决问题上报（见 repair-execution.md「未决问题」），此处不写入会掩盖该行为的断言。
-        //    准入撤销在 reserve 期的阻断由既有 V-26 用例与 SELT 的 HOLD 用例覆盖。
+        // 2) Admission is read again at claim: a revoked whole-group result must deny delivery.
+        seedPersonWithRealFingerprint("p-v27b", profile("doc-v27b"))
+        val revokedTicket = (guarded.reserveIntroduction(
+            "doc-v27b", "doc-v27b@example.test", profile("doc-v27b")
+        ) as OutreachReserveOutcome.Granted).ticket
+        admission = "HOLD"
+        val revoked = guarded.claimSending(
+            revokedTicket, profile("doc-v27b"), "doc-v27b@example.test"
+        )
+        assertTrue(revoked is OutreachClaimOutcome.Denied, "revoked current admission must deny claim")
+        assertEquals(OutreachGuardStates.RESERVED, guarded.stateOf("p-v27b"))
 
-        // 3) 当前运营状态不合格（EMAIL_INVALID）⇒ 同样不得发。
+        // Restore admission for the current operator-status check below.
         admission = "AUTO_PASSED"
+        // 3) 当前运营状态不合格（EMAIL_INVALID）⇒ 同样不得发。
         seedPersonWithRealFingerprint("p-v27c", profile("doc-v27c"))
         seedContactRow(63L, "doc-v27c", "doc-v27c@example.test", bound = "acct")
         val third = DiscoveryPersonOutreachGuardService(jdbc, personRepository, recipientService, null)

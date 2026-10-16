@@ -393,16 +393,30 @@ class DiscoveryPersonService(
             log.warn("人物登记复读根 revision 失败 personId={}: {}", personId, e.message)
             null
         } ?: return Resolution.Reject(result(DiscoveryPersonOutcome.STALE, reason = "ROOT_REVISION_UNAVAILABLE"))
+        var verifiedRootGroup = rootGroup
+        var stableRevision = revisionAfter
         if (revisionAfter != revisionBefore) {
-            // R-1：核验期间根被并发改动 —— 旧核验结果不得配新 revision 提交，明确拒绝且零部分写。
-            return Resolution.Reject(
-                result(DiscoveryPersonOutcome.STALE, reason = "ROOT_REVISION_CHANGED_DURING_VERIFICATION")
-            )
+            // 仅允许一次新整组核验，以吸收已完成且仍稳定的兼容并发挂接。
+            verifiedRootGroup = when (val verification = verifyRootGroup(personId, verified)) {
+                is RootGroupVerification.Rejected -> return Resolution.Reject(verification.result)
+                is RootGroupVerification.Verified -> verification
+            }
+            stableRevision = try {
+                repository.findPerson(personId)?.revision
+            } catch (e: Exception) {
+                log.warn("人物登记复读根 revision 失败 personId={}: {}", personId, e.message)
+                null
+            } ?: return Resolution.Reject(result(DiscoveryPersonOutcome.STALE, reason = "ROOT_REVISION_UNAVAILABLE"))
+            if (stableRevision != revisionAfter) {
+                return Resolution.Reject(
+                    result(DiscoveryPersonOutcome.STALE, reason = "ROOT_REVISION_CHANGED_DURING_VERIFICATION")
+                )
+            }
         }
         // I-2：附加成员必须与既有根**全部当前作者键**（含已复验成员的当前键）同类唯一——同 ORCID 但
         // 不同 OpenAlex 键（或反之）不是同一人，绝不静默挂接；冲突即待核，不写关系。
         val existingKeys = repository.findAuthorKeysByPerson(personId).map { it.authorKey }
-        val combined = (existingKeys + rootGroup.members.flatMap { it.authorKeys } + groupKeys).distinct()
+        val combined = (existingKeys + verifiedRootGroup.members.flatMap { it.authorKeys } + groupKeys).distinct()
         val combinedOrcid = combined.filter { it.startsWith(DiscoveryPersonIdentity.ORCID_PREFIX) }.distinct()
         val combinedOpenAlex = combined.filter { it.startsWith(DiscoveryPersonIdentity.OPENALEX_PREFIX) }.distinct()
         if (combinedOrcid.size > 1 || combinedOpenAlex.size > 1) {
@@ -421,8 +435,8 @@ class DiscoveryPersonService(
                 )
             )
         }
-        // R-1：挂接依据的 revision 即「与完整核验事实同源」的复读值，不再事后另读。
-        return Resolution.Attach(personId, newMembers, newKeys, revisionAfter)
+        // R-1：挂接依据的 revision 即与最终完整核验事实同源的稳定复读值。
+        return Resolution.Attach(personId, newMembers, newKeys, stableRevision)
     }
 
     /**
