@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-18/apollo-verification-master.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-10-18/apollo-verification-master.md (commit 1793d335cec0c73f10e1b26c1d0652b11c63c0a7)
 - Amendments: A1,A2
 - Master base: 3efc192faf043badc1ef27bef124a71d3120c4c5
@@ -9,12 +9,12 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-18T19:18:14.142629+08:00
-- Current child: 03
+- Current child: 04
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: 69a236aa0b15b07755d42c713f24da944a7727e6
+- Pause reason: Child04 ORCID client has no per-endpoint completion/resume seam required for durable request recovery; client and client tests are outside authorized scope. Human-approved amendment required.
+- Resume from: 98c7b78fde54f69b72f175b94b2ab0eed25d86ab
 
 ## Baseline
 - Invocation authorizes exact untracked plan snapshots, copied byte-for-byte into isolated worktree. Original user worktree untouched.
@@ -32,7 +32,7 @@
 | 01 | docs/plans/2026-10-18/apollo-01-ledger.md | sha256:72c5e37ba421270d7089a4702b2e019e206c8af4a6f0166882da0d77b86e917a | none | 1 | LIGHT_PASS_WITH_NOTES | 3efc192faf043badc1ef27bef124a71d3120c4c5 | 772429192fdab1fd7ac75cb084f08f45aec5c965 | 0 | — | 772429192fdab1fd7ac75cb084f08f45aec5c965 | 045c028426bbca4df579136be507d41a103e9876 | Writer ApolloLedgerImplementer; verifier ApolloLedgerVerifier; O-01 existing Node failures |
 | 02 | docs/plans/2026-10-18/apollo-02-evidence.md | sha256:0dca87e1a9e6b61b247f78e54ebf60e71afde280556c50e6f06a07921d6b4b3f | 01 | 1 | LIGHT_PASS_WITH_NOTES | 772429192fdab1fd7ac75cb084f08f45aec5c965 | 5c05491b963c4d1d9793ebdc1f8469b175f170d8 | 1 | 69a236aa0b15b07755d42c713f24da944a7727e6 | 69a236aa0b15b07755d42c713f24da944a7727e6 | 4a05d7e4a7c16eb2d4b12819672ce2233b33f523 | Writers ApolloEvidenceImplementer ApolloEvidenceFixer1; verifier ApolloEvidenceReverifier1; findings CLOSED; O-02-01 existing Node failures |
 | 03 | docs/plans/2026-10-18/apollo-03-admission.md | commit:1793d335cec0c73f10e1b26c1d0652b11c63c0a7 | 01,02 | 2 | LIGHT_PASS_WITH_NOTES | 69a236aa0b15b07755d42c713f24da944a7727e6 | 98c7b78fde54f69b72f175b94b2ab0eed25d86ab | 0 | — | 98c7b78fde54f69b72f175b94b2ab0eed25d86ab | 61f0e39acff1ab7acfe93c834db839e9ff5e175c | Writer ApolloAdmissionImplementerE2; verifier ApolloAdmissionVerifierE2; O-03-E2-01/02 record only |
-| 04 | docs/plans/2026-10-18/apollo-04-worker.md | sha256:8507e21e882539d54f908732dc58095129f9a3f2538f3b4c8b8a003926fa487a | 01,02,03 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
+| 04 | docs/plans/2026-10-18/apollo-04-worker.md | sha256:8507e21e882539d54f908732dc58095129f9a3f2538f3b4c8b8a003926fa487a | 01,02,03 | 1 | PAUSED_FOR_HUMAN | 98c7b78fde54f69b72f175b94b2ab0eed25d86ab | — | 0 | — | 98c7b78fde54f69b72f175b94b2ab0eed25d86ab | 60e09c74f3d7826a156a33f3b5d9574edb988871 | Implementer ApolloWorkerImplementer PLAN_CONFLICT before product edits; ORCID aggregate client cannot persist/replay each endpoint |
 | 05 | docs/plans/2026-10-18/apollo-05-integration.md | sha256:ddcb578f31c657cdfbbfef55b6b603c17abc508b0a84e1dbd5323e74cc14c714 | 01,02,03,04 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 | 06 | docs/plans/2026-10-18/apollo-06-reporting.md | sha256:43a207d15adfa9e488780fd70ce8656a15e1bd50aa121984f01efff244cdb9de | 01,02,03,04,05 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 | 07 | docs/plans/2026-10-18/apollo-07-frontend.md | sha256:efce42d320a64915768fc6277257fab928090d2d7b64c0a40b6503d88d773f4d | 01,02,03,04,05,06 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
@@ -56,3 +56,9 @@
 - Extra current-HEAD `--through-child 02` check returned INVALID solely because its tail rule rejects plan-only amendment commit 1793d335cec0c73f10e1b26c1d0652b11c63c0a7 after child02 code head; A1/A2 themselves validated with no identity/ancestry/artifact errors.
 - This is a mid-child03 authority-pause resume, not advancement from a newly terminal child02: child03 was already dispatched and reported PLAN_CONFLICT in Epoch1. Fast-p Set Up Once step5 directs resuming the recorded active role/boundary in this case. Historical child02 clean checkpoint passed before that dispatch and its artifacts remain untouched. Resume child03 IMPLEMENTER only; do not claim this extra check passed or change prior product boundaries.
 - The mandatory child03 terminal checkpoint will validate the complete prefix through03 before child04 dispatch; by then the approved plan-only amendment is inside the reviewed child03 boundary, not after terminal code.
+
+## Child04 pause / required authority
+- Child03 terminal checkpoint passed VALID in both dirty-artifact and clean modes with complete seven-child manifest and A1/A2; child01/02 were not rerun. Clean checkpoint evidence HEAD: ccdaad239792d33089e0dfea5f048e33acc3c26a.
+- Child04 was dispatched only after that gate; its execution report proves missing per-request ORCID response persistence/resume access. No product files changed for04; no tests/smoke/independent verification claimed.
+- Smallest proposed amendment, not approved: add OrcidVerificationEvidenceClient.kt and OrcidVerificationEvidenceClientTest.kt to04 (7→9), expose durable endpoint completion and saved-result/cursor resume using the existing client. Preserve permit/cap/allowlist semantics; no duplicated HTTP implementation or full-read replay workaround.
+- Await explicit approval, then record separate plan-only amendment commit and ledger amendment rows, resume04 in a new epoch with zero repair rounds. Completed01–03 remain closed. No whole-system verification performed.
