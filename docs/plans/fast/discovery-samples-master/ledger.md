@@ -10,7 +10,7 @@
 - Finalization repair parent: N/A
 - Started: 2026-10-18T20:14:56+08:00
 - Current child: 02
-- Waiting role: IMPLEMENTER
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -20,7 +20,7 @@
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | 01 | docs/plans/2026-10-18/discovery-samples-01-store.md | sha256:34c941c52e1c85ba139b0c94a677743acd90333948913399fc14a582c512fc7b | none | 1 | LIGHT_PASS_WITH_NOTES | 3efc192faf043badc1ef27bef124a71d3120c4c5 | 4613777f8605a15e4d97980de58198ffb8c0bc4d | 1 | 115049811a715404674f02d03bcd4dcf7c0b723f | 115049811a715404674f02d03bcd4dcf7c0b723f | 988b04411ccdeaa2687e26683ce667cd9f03c32d | Writers SampleStoreImplementer SampleStoreFixer1; verifier SampleStoreLightVerifier; reverifier SampleStoreReverifier1; F-01/F-02 closed, O-01/O-02 RECORD_ONLY. |
-| 02 | docs/plans/2026-10-18/discovery-samples-02-capture.md | commit:cd6189360196700cf65c5e21ab3512ddedb98abc | 01 | 2 | WAITING_FOR_AGENT | 115049811a715404674f02d03bcd4dcf7c0b723f | — | 0 | — | — | — | User authorized frozen Apollo05 local import and continuation; epoch2 resets fix_round; waiting isolated writer. |
+| 02 | docs/plans/2026-10-18/discovery-samples-02-capture.md | commit:cd6189360196700cf65c5e21ab3512ddedb98abc | 01 | 2 | LIGHT_PASS_WITH_NOTES | 115049811a715404674f02d03bcd4dcf7c0b723f | e40863f6d5864ac5c882e7cb83f49e639a84396e | 0 | — | e40863f6d5864ac5c882e7cb83f49e639a84396e | 20a6d36cde309c09608d30182a042030b507eff5 | Writer SampleCaptureImplementerE2; verifier SampleCaptureLightVerifierE2; 42 import blobs/7 diffs matched; sample/Apollo scenarios passed baseline-relative; O-1 existing53 errors/optional skip RECORD_ONLY. |
 | 03 | docs/plans/2026-10-18/discovery-samples-03-replay.md | sha256:33d8fc1e3b2e00a2a865c683b8c8677ba2655cdaa4af30aea6a7eb7ef8a429b0 | 01 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 
 ## Amendments
