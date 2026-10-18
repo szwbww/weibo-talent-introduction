@@ -256,5 +256,8 @@ All three exact F-IDs CLOSED; no new AUTO_FIX or evidence/authority blocker. O-0
 ### Controller evidence-format correction 1
 - Round1 closing metadata formatting corrected after artifact-only gate rejection; this does not change or repeat the independent epoch2/attempt2 verdict or its exercised commands.
 
-### Required Action
-- COMPLETE_CHILD
+### Controller action reaffirmation
+- Existing independent action remains COMPLETE_CHILD; no new verifier action block or verdict.
+
+### Controller evidence-format correction 2
+- The first correction redundantly restated a canonical action that the verifier had already supplied. Removed only that controller-added duplicate action-block formatting; original independent verdict/action and all verification evidence remain unchanged. No commands rerun.

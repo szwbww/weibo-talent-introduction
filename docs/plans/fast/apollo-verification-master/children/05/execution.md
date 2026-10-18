@@ -255,3 +255,6 @@ Paths below are relative to this worktree:
 
 ### Controller evidence-format correction 1
 - Initial artifact checkpoint rejected only round1 SHA binding format. Original fixer report preserved; controller closing heading was normalized so the appended canonical SHA remains within round1. No product/test changes, new verification or extra repair round. Replacement docs-only evidence commit will bind these corrected closing records.
+
+### Controller evidence-format correction 2
+- Corrected the controller-added duplicate action-block formatting in verify-log; original verifier action is untouched. Artifact-only correction, no product changes, repair or new verification.

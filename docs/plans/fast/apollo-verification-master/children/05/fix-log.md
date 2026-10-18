@@ -28,3 +28,6 @@
 
 ### Controller evidence-format correction 1
 - Checkpoint rejected round1 binding because the original fixer line includes a commit subject and the controller-added closing heading terminated the parser's round section before its canonical SHA. Adjusted only that controller closing heading's level, leaving the original fixer report unchanged; the canonical closing SHA now belongs to its original round. No product/test change, new repair, test run or verifier verdict.
+
+### Controller evidence-format correction 2
+- Round1 binding now validates; only controller-added duplicate verifier action formatting required correction. Same single repair commit, same independent CLOSED findings; no extra repair/test run.
