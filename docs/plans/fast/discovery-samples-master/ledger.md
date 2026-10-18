@@ -10,7 +10,7 @@
 - Finalization repair parent: N/A
 - Started: 2026-10-18T20:14:56+08:00
 - Current child: 01
-- Waiting role: IMPLEMENTER
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -19,7 +19,7 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| 01 | docs/plans/2026-10-18/discovery-samples-01-store.md | sha256:34c941c52e1c85ba139b0c94a677743acd90333948913399fc14a582c512fc7b | none | 1 | PENDING | — | — | 0 | — | — | — | N/A |
+| 01 | docs/plans/2026-10-18/discovery-samples-01-store.md | sha256:34c941c52e1c85ba139b0c94a677743acd90333948913399fc14a582c512fc7b | none | 1 | LIGHT_PASS_WITH_NOTES | 3efc192faf043badc1ef27bef124a71d3120c4c5 | 4613777f8605a15e4d97980de58198ffb8c0bc4d | 1 | 115049811a715404674f02d03bcd4dcf7c0b723f | 115049811a715404674f02d03bcd4dcf7c0b723f | 988b04411ccdeaa2687e26683ce667cd9f03c32d | Writers SampleStoreImplementer SampleStoreFixer1; verifier SampleStoreLightVerifier; reverifier SampleStoreReverifier1; F-01/F-02 closed, O-01/O-02 RECORD_ONLY. |
 | 02 | docs/plans/2026-10-18/discovery-samples-02-capture.md | sha256:54e32195d75aa9daa3b7e7b69c23a25245e104cf5c09dac5a66d65054d2e9fec | 01 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 | 03 | docs/plans/2026-10-18/discovery-samples-03-replay.md | sha256:33d8fc1e3b2e00a2a865c683b8c8677ba2655cdaa4af30aea6a7eb7ef8a429b0 | 01 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 
@@ -31,4 +31,4 @@
 - Source worktree has unrelated unstaged/untracked changes; retained unchanged. Execution starts from the exact master code baseline in a separate worktree.
 - Validator --help: exit 0; --through-child supported.
 - Apollo branch observation: HEAD 69a236aa0b15b07755d42c713f24da944a7727e6, latest implementation is child 02; merge-base --is-ancestor against master base exited 1. Apollo05 prerequisite is not yet established. Recheck before child 02; no merge authorized.
-- Product baseline commands: delegated to implementer before authorized changes; results must be recorded in execution.md.
+- Product baseline: SampleStoreImplementer recorded JDK11 `mvn -DskipTests -DskipNodeTests=true test-compile` exit 0 before edits; full results in children/01/execution.md. Required final sample tests each exit 0 (8 tests, 0 failures/errors/skips), pending independent light verification.
