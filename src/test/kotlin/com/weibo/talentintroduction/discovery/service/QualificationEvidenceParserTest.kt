@@ -36,6 +36,20 @@ class QualificationEvidenceParserTest {
         assertFalse(mapper.readTree(fact.value).path("completed").asBoolean())
         assertEquals(VerificationQualification.UNKNOWN, DiscoveryVerificationRules(ruleClock).evaluate(ruleSnapshot(), listOf(fact)).qualification)
     }
+    @Test fun `negated completion or award cannot establish a doctorate even at age 39`() {
+        listOf("PhD not completed", "PhD not yet awarded", "Doctor of Philosophy has not been conferred",
+            "DPhil never completed", "PhD incomplete", "未获博士学位", "博士尚未毕业").forEach { role ->
+            assertFalse(parser.completedDoctorate(role), role)
+            val fact = parser.parse(ruleSnapshot(), OrcidEvidenceRead(
+                listOf(document("education/1", affiliation(role))), true, emptyList())).single()
+            assertFalse(mapper.readTree(fact.value).path("completed").asBoolean(), role)
+            val result = DiscoveryVerificationRules(ruleClock).evaluate(ruleSnapshot(),
+                listOf(fact, ruleFact("birthDate", "1987-10-18")))
+            assertEquals(VerificationQualification.UNKNOWN, result.qualification, role)
+            assertEquals(VerificationOutcome.PENDING, result.outcome, role)
+            assertTrue(result.missingFields.contains("completedDoctorate"), role)
+        }
+    }
     @Test fun `name aliases stay tied to bound public person and missing fields do not become facts`() {
         val doc = document("person", """{"name":{"given-names":{"value":"Ada"},"family-name":{"value":"Lee"},"visibility":"PUBLIC"},"other-names":{"other-name":[{"content":"Ada M Lee","visibility":"PUBLIC"},{"content":"Private Name","visibility":"PRIVATE"}]},"emails":{"email":[{"email":"never-retained@example.invalid"}]}}""")
         val facts = parser.parse(ruleSnapshot(), OrcidEvidenceRead(listOf(doc), true, emptyList()))

@@ -86,4 +86,38 @@ class DiscoveryVerificationRulesTest {
         val self = ruleJob("Professor", AssertionSource.SELF)
         assertEquals(VerificationQualification.UNKNOWN, rules.evaluate(ruleSnapshot(), listOf(self, self)).qualification)
     }
+    @Test fun `matching primary name cannot mask conflicting primary name while aliases remain supported`() {
+        val facts = listOf(ruleJob("Professor"), ruleFact("name", "Ada Lee"), ruleFact("name", "Other Person"))
+        listOf(null, ruleSearch()).forEach { search ->
+            val result = rules.evaluate(ruleSnapshot(), facts, search)
+            assertEquals(VerificationQualification.CONFLICT, result.qualification)
+            assertEquals(VerificationOutcome.PENDING, result.outcome)
+            assertEquals(listOf("NAME_CONFLICT"), result.reasonCodes)
+        }
+        assertEquals(VerificationOutcome.DIRECT_CLEAR, rules.evaluate(ruleSnapshot(),
+            listOf(ruleJob("Professor"), ruleFact("name", "ＡＤＡ, Lee"), ruleFact("otherName", "Other Person"))).outcome)
+        val snapshot = ruleSnapshot()
+        val proof = DiscoveryIdentity.verified("ada@example.invalid", "Ada M", "Lee",
+            "ORCID_RECORD_SHA256:" + "a".repeat(64), "0000-0002-1825-0097", null)
+        val middleName = snapshot.copy(profile = snapshot.profile.copy(givenNames = "Ada M", identityVerification = proof))
+        assertEquals(VerificationOutcome.DIRECT_CLEAR, rules.evaluate(middleName,
+            listOf(ruleJob("Professor"), ruleFact("name", "Ada Lee"), ruleFact("name", "Ada M Lee"))).outcome)
+        val aliasCandidate = ruleSearch().candidates.single().copy(firstName = "Other", lastName = "Person", fullName = "Other Person")
+        assertEquals(VerificationOutcome.APOLLO_UNCLEAR, rules.evaluate(snapshot,
+            listOf(ruleJob(), ruleFact("name", "Ada Lee"), ruleFact("otherName", "Other Person")),
+            ruleSearch().copy(candidates = listOf(aliasCandidate))).outcome)
+    }
+    @Test fun `contradictory ORCID is identical for full and split explicit names`() {
+        val search = ruleSearch()
+        val wrong = search.candidates.single().copy(id = "wrong-orcid", orcid = "0000-0001-5109-3700")
+        val results = listOf(wrong, wrong.copy(fullName = null)).map { candidate ->
+            rules.evaluate(ruleSnapshot(), listOf(ruleJob()), search.copy(candidates = search.candidates + candidate))
+        }
+        assertEquals(results.first(), results.last())
+        results.forEach { result ->
+            assertEquals(VerificationQualification.CONFLICT, result.qualification)
+            assertEquals(VerificationOutcome.PENDING, result.outcome)
+            assertEquals(listOf("ORCID_CONFLICT"), result.reasonCodes)
+        }
+    }
 }
