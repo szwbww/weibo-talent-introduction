@@ -43,7 +43,8 @@ import java.time.Instant
 class DiscoveryAdmissionPolicy(
     private val candidateEligibilityService: CandidateEligibilityService,
     private val eligibilityFilterService: EligibilityFilterService,
-    private val clock: Clock = Clock.systemUTC()
+    private val clock: Clock = Clock.systemUTC(),
+    private val verificationGate: DiscoveryVerificationAdmissionGate? = null
 ) {
 
     /** 实时重算候选资格后判定（I-1：不把缺少 `PASSED` 当不可自愈的循环条件）。 */
@@ -52,6 +53,33 @@ class DiscoveryAdmissionPolicy(
 
     /** 用调用方已有的资格结果判定（同一 profile 的实时结论或调用链上游刚算出的结论）。 */
     fun evaluate(profile: ExpertProfile, eligibility: EligibilityResult): AutomaticAdmissionResult {
+        val docId = profile.esDocId?.takeIf { it.isNotBlank() }
+        return if (docId != null) evaluate(docId, profile, eligibility)
+        else evaluateBase(profile, eligibility)
+    }
+
+    fun evaluate(docId: String, profile: ExpertProfile): AutomaticAdmissionResult =
+        evaluate(docId, profile, candidateEligibilityService.evaluateEligibility(profile))
+
+    fun evaluate(docId: String, profile: ExpertProfile, context: VerificationAdmissionContext): AutomaticAdmissionResult =
+        evaluate(docId, profile, candidateEligibilityService.evaluateEligibility(profile), context)
+
+    fun evaluate(docId: String, profile: ExpertProfile, eligibility: EligibilityResult): AutomaticAdmissionResult =
+        evaluate(docId, profile, eligibility, null)
+
+    fun evaluate(
+        docId: String, profile: ExpertProfile, eligibility: EligibilityResult,
+        context: VerificationAdmissionContext?
+    ): AutomaticAdmissionResult {
+        require(docId.isNotBlank())
+        val base = evaluateBase(profile, eligibility)
+        if (verificationGate == null) return base
+        val loaded = context ?: verificationGate.findContext(docId, profile)
+        require(loaded.docId == docId && loaded.profile == profile) { "Verification context does not match RAW input" }
+        return verificationGate.evaluateManaged(base, loaded)
+    }
+
+    private fun evaluateBase(profile: ExpertProfile, eligibility: EligibilityResult): AutomaticAdmissionResult {
         val snapshot = configSnapshot()
         val checkedAt = Instant.now(clock)
         if (!RecipientScope.isDiscoveryOutreach(profile)) {

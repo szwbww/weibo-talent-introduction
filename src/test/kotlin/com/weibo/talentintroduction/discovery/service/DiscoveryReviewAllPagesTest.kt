@@ -8,6 +8,7 @@ import com.weibo.talentintroduction.config.MailSchedulingProperties
 import com.weibo.talentintroduction.discovery.domain.AdmissionConfigSnapshot
 import com.weibo.talentintroduction.discovery.domain.AutomaticAdmissionResult
 import com.weibo.talentintroduction.discovery.domain.DiscoveryAdmissionStatus
+import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewExpertRow
 import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewIdentity
 import com.weibo.talentintroduction.discovery.domain.DiscoveryReviewPrepareRequest
 import com.weibo.talentintroduction.discovery.domain.ExpertDiscoveryAdmission
@@ -92,7 +93,7 @@ class DiscoveryReviewAllPagesTest {
             val source = inv.getArgument<Map<String, Any?>>(1)
             profileOf(docId, source["email"] as? String)
         }
-        Mockito.`when`(policy.evaluate(Mockito.any(ExpertProfile::class.java) ?: profileOf("doc", null)))
+        Mockito.`when`(policy.evaluate(anyString(), Mockito.any(ExpertProfile::class.java) ?: profileOf("doc", null)))
             .thenReturn(needsReview())
         Mockito.`when`(
             writer.readDiscoveryDocument(Mockito.any(ExpertIndexLevel::class.java) ?: ExpertIndexLevel.RAW, anyString())
@@ -183,7 +184,7 @@ class DiscoveryReviewAllPagesTest {
 
     @Test
     fun `missing admission retains automatic pass rather than becoming failed eligibility`() {
-        Mockito.`when`(policy.evaluate(Mockito.any(ExpertProfile::class.java) ?: profileOf("doc", null)))
+        Mockito.`when`(policy.evaluate(anyString(), Mockito.any(ExpertProfile::class.java) ?: profileOf("doc", null)))
             .thenReturn(needsReview().copy(status = DiscoveryAdmissionStatus.AUTO_PASSED))
         fixture.reset(listOf("automatic"))
         val row = scan.listPage(ExpertIndexLevel.RAW, null, 0, 20, null, null, null).experts.single()
@@ -835,6 +836,44 @@ class DiscoveryReviewAllPagesTest {
                 result.taskSuccessCount, result.taskFailureCount
             )
             else -> Triple("SUCCESS", 0, 0)
+        }
+    }
+
+    @Test
+    fun `managed five hundred hit ids share one evidence read and list the same automatic reasons`() {
+        val f = AdmissionGateFixture()
+        val ids = (1..500).map { "actual-$it" }
+        fixture.reset(ids)
+        val profiles = ids.associateWith { f.profile.copy(esDocId = it) }
+        val items = profiles.map { (id, profile) ->
+            f.item(profile, id, facts = listOf(ruleJob()), search = ruleSearch())
+        }
+        f.load(*items.toTypedArray())
+        Mockito.`when`(writer.discoveryProfile(anyString(), Mockito.any<Map<String, Any?>>() ?: emptyMap())).thenAnswer {
+            profiles.getValue(it.getArgument(0))
+        }
+        val managedScan = DiscoveryReviewScanService(repository, f.policy, writer, restTemplate, properties, expertIndexService, mapper, f.gate)
+        val rows = mutableListOf<DiscoveryReviewExpertRow>()
+        managedScan.scanAll(DiscoveryReviewScanService.DiscoveryReviewFilter(ExpertIndexLevel.RAW, null, null, null, null)) { batch ->
+            rows += batch.map { it.row }
+            true
+        }
+        assertEquals(500, rows.size)
+        assertTrue(rows.all { it.automaticStatus == "AUTO_PASSED" && it.automaticReasons.isEmpty() })
+        assertTrue(rows.all { it.docId != it.orcidId })
+        Mockito.verify(f.repository).findItemsByDocIds(profiles.keys)
+        Mockito.verifyNoMoreInteractions(f.repository)
+        val changed = profiles.getValue(ids.first()).copy(email = "changed@example.invalid")
+        Mockito.`when`(writer.discoveryProfile(Mockito.eq(ids.first()) ?: ids.first(), Mockito.any<Map<String, Any?>>() ?: emptyMap())).thenReturn(changed)
+        fixture.reset(listOf(ids.first()))
+        val row = managedScan.listPage(ExpertIndexLevel.RAW, null, 0, 20, null, null, null).experts.single()
+        assertEquals("NEEDS_REVIEW", row.automaticStatus)
+        assertTrue(row.automaticReasons.any { it.code == "IDENTITY_CHANGED" })
+        Mockito.`when`(f.repository.findItemsByDocIds(Mockito.anyCollection<String>() ?: emptyList()))
+            .thenThrow(org.springframework.dao.DataAccessResourceFailureException("offline"))
+        fixture.reset(listOf(ids.first()))
+        assertThrows(org.springframework.dao.DataAccessResourceFailureException::class.java) {
+            managedScan.listPage(ExpertIndexLevel.RAW, null, 0, 20, null, null, null)
         }
     }
 }

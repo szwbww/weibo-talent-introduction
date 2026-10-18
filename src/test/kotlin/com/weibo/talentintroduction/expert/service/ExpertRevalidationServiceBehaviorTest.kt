@@ -484,4 +484,105 @@ class ExpertRevalidationServiceBehaviorTest {
         verify(writerService, never()).readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, "APP")
     }
 
+    @Test
+    fun `managed direct and Apollo unclear survive candidate revalidation without delete HTTP`() {
+        for (apollo in listOf(false, true)) {
+            val f = com.weibo.talentintroduction.discovery.service.AdmissionGateFixture()
+            val rest = org.springframework.web.client.RestTemplate()
+            val server = org.springframework.test.web.client.MockRestServiceServer.bindTo(rest).build()
+            val props = com.weibo.talentintroduction.config.ElasticsearchProperties("http://es", "u", "p", "raw", "cand", "app")
+            val indices = mock(ExpertIndexService::class.java)
+            `when`(indices.indexName(ExpertIndexLevel.RAW)).thenReturn("raw")
+            `when`(indices.indexName(ExpertIndexLevel.CANDIDATE)).thenReturn("cand")
+            `when`(indices.indexName(ExpertIndexLevel.APPLICATION)).thenReturn("app")
+            val writer = ExpertIndexWriterService(rest, props, indices, f.mapper,
+                mock(ExpertPromotionAuditService::class.java),
+                mock(com.weibo.talentintroduction.campaign.repository.ExpertContactRepository::class.java))
+            @Suppress("UNCHECKED_CAST")
+            val source = f.mapper.convertValue(f.profile, Map::class.java) as Map<String, Any?>
+            val profile = writer.discoveryProfile(f.docId, source)
+            val item = f.item(profile, facts = listOf(com.weibo.talentintroduction.discovery.service.ruleJob(if (apollo) "Researcher" else "Professor")),
+                search = if (apollo) com.weibo.talentintroduction.discovery.service.ruleSearch() else null)
+            f.load(item)
+            val repo = mock(com.weibo.talentintroduction.discovery.repository.DiscoveryReviewRepository::class.java)
+            val now = java.time.LocalDateTime.ofInstant(com.weibo.talentintroduction.discovery.service.ruleClock.instant(), java.time.ZoneOffset.UTC)
+            val admission = com.weibo.talentintroduction.discovery.domain.ExpertDiscoveryAdmission(
+                f.docId, item.identityHash, "AUTO_PASSED", 1L, null,
+                com.weibo.talentintroduction.discovery.service.DiscoveryVerificationAdmissionGate.POLICY_VERSION, now, now)
+            `when`(repo.findAdmission(f.docId)).thenReturn(admission)
+            `when`(repo.findAdmissions(anyCollection<String>() ?: emptyList())).thenReturn(listOf(admission))
+            val review = com.weibo.talentintroduction.discovery.service.DiscoveryReviewService(
+                repo, f.policy, writer, rest, props, indices, f.mapper)
+            val svc = ExpertRevalidationService(searchService, f.eligibility, f.email, writer, progressStore, f.filters,
+                discoveryReviewService = review, admissionPolicy = f.policy, verificationGate = f.gate)
+            fun expectHead() {
+                server.expect(org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo("http://es/app/_doc/${f.docId}"))
+                    .andExpect(org.springframework.test.web.client.match.MockRestRequestMatchers.method(org.springframework.http.HttpMethod.HEAD))
+                    .andRespond(org.springframework.test.web.client.response.MockRestResponseCreators.withStatus(org.springframework.http.HttpStatus.NOT_FOUND))
+            }
+            fun expectGet(index: String) {
+                server.expect(org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo("http://es/$index/_doc/${f.docId}"))
+                    .andExpect(org.springframework.test.web.client.match.MockRestRequestMatchers.method(org.springframework.http.HttpMethod.GET))
+                    .andRespond(org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess(
+                        f.mapper.writeValueAsString(mapOf("_source" to source, "_seq_no" to 1, "_primary_term" to 1)), org.springframework.http.MediaType.APPLICATION_JSON))
+            }
+            expectHead()
+            expectGet("raw")
+            expectHead()
+            expectGet("cand")
+            assertEquals(PromotionOutcome.AlreadyPresent, svc.revalidateDiscovery(f.docId))
+            server.verify() // Strict ordered expectations: any candidate DELETE/PUT is an unexpected HTTP failure.
+            verify(f.repository).findItemsByDocIds(setOf(f.docId))
+            assertEquals("AUTO_PASSED", review.resolveAdmission(f.docId, profile).decision)
+        }
+    }
+
+    @Test
+    fun `managed ledger failure never falls through to old candidate reconciliation`() {
+        val f = com.weibo.talentintroduction.discovery.service.AdmissionGateFixture()
+        val source = discoverySource()
+        `when`(writerService.readDiscoveryDocument(ExpertIndexLevel.RAW, f.docId))
+            .thenReturn(ExpertIndexWriterService.DiscoverySnapshot(source, 1, 1))
+        `when`(writerService.discoveryProfile(f.docId, source)).thenReturn(f.profile)
+        `when`(f.repository.findItemsByDocIds(setOf(f.docId)))
+            .thenThrow(org.springframework.dao.DataAccessResourceFailureException("offline"))
+        val svc = ExpertRevalidationService(searchService, f.eligibility, f.email, writerService, progressStore, f.filters,
+            admissionPolicy = f.policy, verificationGate = f.gate)
+        assertEquals(PromotionOutcome.WriteFailed, svc.revalidateDiscovery(f.docId))
+        verify(writerService, never()).reconcileDiscoveryCandidate(anyString(), anySnapshot(), anyClassification(), anyReasons(), anyBoolean())
+        verify(writerService, never()).projectDiscoveryCandidate(anyString(), anyMap<String, Any?>() ?: emptyMap(), anyString())
+    }
+
+    @Test
+    fun `managed pending and new hard blockers cannot create a candidate`() {
+        for (hardBlock in listOf(false, true)) {
+            val f = com.weibo.talentintroduction.discovery.service.AdmissionGateFixture()
+            val profile = if (hardBlock) f.profile.copy(institutionEvidence = "INVALID") else f.profile
+            val item = f.item(profile, facts = if (hardBlock) listOf(com.weibo.talentintroduction.discovery.service.ruleJob("Professor")) else emptyList())
+            f.load(item)
+            val repo = mock(com.weibo.talentintroduction.discovery.repository.DiscoveryReviewRepository::class.java)
+            val now = java.time.LocalDateTime.ofInstant(com.weibo.talentintroduction.discovery.service.ruleClock.instant(), java.time.ZoneOffset.UTC)
+            val admission = com.weibo.talentintroduction.discovery.domain.ExpertDiscoveryAdmission(
+                f.docId, item.identityHash, "NEEDS_REVIEW", 1, null,
+                com.weibo.talentintroduction.discovery.service.DiscoveryVerificationAdmissionGate.POLICY_VERSION, now, now)
+            `when`(repo.findAdmission(f.docId)).thenReturn(admission)
+            `when`(repo.findAdmissions(anyCollection<String>() ?: emptyList())).thenReturn(listOf(admission))
+            val source = discoverySource()
+            `when`(writerService.readDiscoveryDocument(ExpertIndexLevel.RAW, f.docId))
+                .thenReturn(ExpertIndexWriterService.DiscoverySnapshot(source, 1, 1))
+            `when`(writerService.discoveryProfile(f.docId, source)).thenReturn(profile)
+            `when`(writerService.reconcileDiscoveryCandidate(match(f.docId), anySnapshot(), anyClassification(), anyReasons(), match(false))).thenReturn(true)
+            val rest = mock(org.springframework.web.client.RestTemplate::class.java)
+            val props = com.weibo.talentintroduction.config.ElasticsearchProperties("http://es", "u", "p", "raw", "cand", "app")
+            val indices = mock(ExpertIndexService::class.java)
+            val review = com.weibo.talentintroduction.discovery.service.DiscoveryReviewService(repo, f.policy, writerService, rest, props, indices, f.mapper)
+            val svc = ExpertRevalidationService(searchService, f.eligibility, f.email, writerService, progressStore, f.filters,
+                discoveryReviewService = review, admissionPolicy = f.policy, verificationGate = f.gate)
+            val outcome = svc.revalidateDiscovery(f.docId)
+            assertTrue(outcome is PromotionOutcome.Rejected, outcome.toString())
+            val codes = (outcome as PromotionOutcome.Rejected).reasons
+            assertTrue(codes.contains(if (hardBlock) "INSTITUTION_EVIDENCE_INVALID" else "QUALIFICATION_EVIDENCE_MISSING"), codes.toString())
+            verify(writerService, never()).projectDiscoveryCandidate(anyString(), anyMap<String, Any?>() ?: emptyMap(), anyString())
+        }
+    }
 }

@@ -95,6 +95,17 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         return result
     }
 
+    /** One evidence read for a bounded batch of real ES document IDs, including old identities. */
+    fun findItemsByDocIds(docIds: Collection<String>): List<VerificationItem> {
+        require(docIds.size <= 500)
+        docIds.forEach { verificationText(it, 128) }
+        if (docIds.isEmpty()) return emptyList()
+        return jdbc.query(
+            "SELECT * FROM discovery_verification_item WHERE expert_doc_id IN (${docIds.joinToString(",") { "?" }}) ORDER BY id",
+            itemMapper, *docIds.toTypedArray()
+        )
+    }
+
     @Transactional
     fun claimDue(now: Instant, leaseSeconds: Long): VerificationItem? {
         require(leaseSeconds > 0)

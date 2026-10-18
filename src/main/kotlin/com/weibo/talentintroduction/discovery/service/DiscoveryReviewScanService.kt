@@ -39,7 +39,8 @@ class DiscoveryReviewScanService(
     private val restTemplate: RestTemplate,
     private val properties: ElasticsearchProperties,
     private val expertIndexService: ExpertIndexService,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    private val verificationGate: DiscoveryVerificationAdmissionGate? = null
 ) {
 
     /** 统一筛选条件：列表与全页快照共用（`decision` 为 null 表示不限）。 */
@@ -67,7 +68,8 @@ class DiscoveryReviewScanService(
         val seqNo: Long,
         val primaryTerm: Long,
         val profile: ExpertProfile,
-        val row: DiscoveryReviewExpertRow
+        val row: DiscoveryReviewExpertRow,
+        val verificationContext: VerificationAdmissionContext? = null
     )
 
     private data class EsPage(val hits: List<ScanHit>, val total: Long)
@@ -239,9 +241,13 @@ class DiscoveryReviewScanService(
         val admissions = repository.findAdmissions(hits.map { it.docId }).associateBy { it.expertDocId }
         val reviewedItemIds = admissions.values.mapNotNull { it.decisionItemId }
         val reviewedItems = repository.findItemsByIds(reviewedItemIds).associateBy { it.id }
+        val profiles = hits.associate { it.docId to writer.discoveryProfile(it.docId, it.source) }
+        val contexts = verificationGate?.findContexts(profiles)
         return hits.map { hit ->
-            val profile = writer.discoveryProfile(hit.docId, hit.source)
-            val automatic = policy.evaluate(profile)
+            val profile = profiles.getValue(hit.docId)
+            val context = contexts?.getValue(hit.docId)
+            val automatic = context?.let { policy.evaluate(hit.docId, profile, it) }
+                ?: policy.evaluate(hit.docId, profile)
             val currentIdentity = identityHashOf(hit.docId, profile)
             val stored = admissions[hit.docId]
             val identityChanged = stored != null && stored.identityHash != currentIdentity
@@ -250,6 +256,7 @@ class DiscoveryReviewScanService(
             val decisionManual = useStored && stored!!.decisionEnum.manual
             val reviewedItem = if (decisionManual) stored!!.decisionItemId?.let { reviewedItems[it] } else null
             ScanExpert(
+                verificationContext = context,
                 docId = hit.docId,
                 level = level,
                 source = hit.source,
