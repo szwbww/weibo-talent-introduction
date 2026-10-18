@@ -76,4 +76,54 @@ class OrcidVerificationEvidenceClientTest {
         assertEquals(12, count)
         server.verify()
     }
+
+    @Test fun `durable endpoint completion resumes details after client reconstruction without repeating completed HTTP`() {
+        val props = DiscoveryVerificationProperties()
+        val http = verificationRestTemplate(props)
+        val server = MockRestServiceServer.bindTo(http).build()
+        fun expect(endpoint: String, body: String) = server.expect(requestTo("https://pub.orcid.org/v3.0/0000-0002-1825-0097/$endpoint"))
+            .andRespond(withSuccess(body, MediaType.APPLICATION_JSON))
+        expect("person", """{"biography":"must-not-persist","name":{"given-names":{"value":"Ada"}}}""")
+        expect("employments", """{"affiliation-group":[{"summaries":[{"employment-summary":{"put-code":42}}]}]}""")
+        server.expect(requestTo("https://pub.orcid.org/v3.0/0000-0002-1825-0097/educations")).andRespond(withServerError())
+        val saved = mutableListOf<OrcidEndpointCompletion>()
+        var requests = 0
+        val first = OrcidVerificationEvidenceClient(props, http).read(ruleSnapshot(), saved, { endpoint, _, document, result ->
+            if (result is VerificationHttpResult.Success) saved += OrcidEndpointCompletion(endpoint, document)
+        }) { requests++; RequestPermit(requests.toLong(), VerificationProvider.ORCID) }
+        assertFalse(first.complete)
+        assertEquals(listOf("person", "employments"), saved.map { it.endpoint })
+        assertFalse(saved.first().document!!.body.has("biography"))
+        server.verify()
+        val resumedHttp = verificationRestTemplate(props)
+        val resumed = MockRestServiceServer.bindTo(resumedHttp).build()
+        listOf("educations", "employment/42").forEach { endpoint ->
+            resumed.expect(requestTo("https://pub.orcid.org/v3.0/0000-0002-1825-0097/$endpoint")).andRespond(withSuccess("{}", MediaType.APPLICATION_JSON))
+        }
+        val result = OrcidVerificationEvidenceClient(props, resumedHttp).read(ruleSnapshot(), saved, { endpoint, _, document, _ ->
+            saved += OrcidEndpointCompletion(endpoint, document)
+        }) { requests++; RequestPermit(requests.toLong(), VerificationProvider.ORCID) }
+        assertTrue(result.complete)
+        assertEquals(5, requests)
+        assertEquals(listOf("person", "employments", "educations", "employment/42"), result.documents.map { it.endpoint })
+        resumed.verify()
+    }
+
+    @Test fun `completion persistence failure prevents the next request including after missing evidence`() {
+        listOf(200, 404).forEach { status ->
+            val props = DiscoveryVerificationProperties()
+            val http = verificationRestTemplate(props)
+            val server = MockRestServiceServer.bindTo(http).build()
+            server.expect(requestTo("https://pub.orcid.org/v3.0/0000-0002-1825-0097/person"))
+                .andRespond(if (status == 200) withSuccess("{}", MediaType.APPLICATION_JSON) else withStatus(HttpStatus.NOT_FOUND))
+            var count = 0
+            assertThrows(IllegalStateException::class.java) {
+                OrcidVerificationEvidenceClient(props, http).read(ruleSnapshot(), emptyList(), { _, _, _, _ -> error("SQL failure") }) {
+                    count++; RequestPermit(count.toLong(), VerificationProvider.ORCID)
+                }
+            }
+            assertEquals(1, count)
+            server.verify()
+        }
+    }
 }

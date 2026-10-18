@@ -214,8 +214,21 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     }
 
     @Transactional
+    fun saveFailure(itemId: Long, token: String, generation: Long, result: VerificationResult,
+        transientAttempts: Int, now: Instant): Boolean {
+        require(result.state == VerificationState.ERROR)
+        val item = lockItem(itemId)
+        if (!owns(item, token, generation, now)) return false
+        require(transientAttempts >= item.transientAttempts)
+        jdbc.update("UPDATE discovery_verification_item SET transient_attempts=? WHERE id=? AND lease_token=? AND generation=? AND state='RUNNING'",
+            transientAttempts, itemId, token, generation)
+        check(saveEvidenceAndOutcome(itemId, token, generation, result, now))
+        return true
+    }
+
+    @Transactional
     fun markProjection(itemId: Long, admissionRevision: Long, projection: VerificationProjection, error: String?, now: Instant): Boolean {
-        require(admissionRevision > 0)
+        require(admissionRevision >= 0)
         require(error == null || error.length <= 128)
         require(projection != VerificationProjection.NOT_REQUIRED)
         val item = lockItem(itemId)
@@ -255,6 +268,65 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         return true
     }
 
+
+    /** Called by the separate commit bean: no ES/HTTP while the fixed SQL lock order is held. */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    fun lockForCommit(itemId: Long): VerificationItem {
+        val item = findItem(itemId) ?: error("Verification item not found")
+        lockRun(item.ownerExecutionId)
+        jdbc.query("SELECT expert_doc_id FROM expert_discovery_admission WHERE expert_doc_id=? FOR UPDATE",
+            RowMapper { rs, _ -> rs.getString(1) }, item.expertDocId)
+        return lockedItem(itemId)
+    }
+
+    @Transactional
+    fun saveProgress(itemId: Long, token: String, generation: Long, evidenceJson: String,
+        enteredAt: Instant?, searchedAt: Instant?, candidatesAt: Instant?, now: Instant): Boolean {
+        val item = lockItem(itemId)
+        if (!owns(item, token, generation, now)) return false
+        jdbc.update("""UPDATE discovery_verification_item SET evidence_json=?,apollo_entered_at=COALESCE(apollo_entered_at,?),
+            search_completed_at=COALESCE(search_completed_at,?),candidate_found_at=COALESCE(candidate_found_at,?),updated_at=?
+            WHERE id=? AND lease_token=? AND generation=? AND state='RUNNING'""",
+            evidenceJson, enteredAt?.verificationUtc(), searchedAt?.verificationUtc(), candidatesAt?.verificationUtc(),
+            now.verificationUtc(), itemId, token, generation)
+        bump(item.ownerExecutionId, now)
+        return true
+    }
+
+    /** Completion and cursor are one commit, acknowledged before any subsequent wire request. */
+    @Transactional
+    fun completeAttemptAndProgress(itemId: Long, token: String, generation: Long, attemptId: Long,
+        httpStatus: Int?, resultCode: String, responseJson: String?, responseSha256: String?,
+        evidenceJson: String, enteredAt: Instant?, searchedAt: Instant?, candidatesAt: Instant?, now: Instant): Boolean {
+        if (!completeAttempt(itemId, token, generation, attemptId, httpStatus, resultCode, responseJson, responseSha256, now)) return false
+        check(saveProgress(itemId, token, generation, evidenceJson, enteredAt, searchedAt, candidatesAt, now))
+        return true
+    }
+
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    fun attachAdmission(itemId: Long, revision: Long, now: Instant) {
+        require(revision >= 0)
+        check(jdbc.update("""UPDATE discovery_verification_item SET admission_revision=?,projection_state='PENDING',updated_at=?
+            WHERE id=? AND state='COMPLETED' AND admission_revision IS NULL
+            AND policy_version=? AND outcome IN ('DIRECT_CLEAR','APOLLO_CLEAR','APOLLO_UNCLEAR')""",
+            revision, now.verificationUtc(), itemId, VerificationMode.ENFORCE.policyVersion) == 1)
+        bump(findItem(itemId)!!.ownerExecutionId, now)
+    }
+
+    fun listProjectionDue(limit: Int): List<VerificationItem> {
+        require(limit in 1..100)
+        return jdbc.query("""SELECT * FROM discovery_verification_item WHERE state='COMPLETED' AND admission_revision IS NOT NULL
+            AND projection_state IN ('PENDING','ERROR') AND (projection_error IS NULL OR projection_error<>'SUPERSEDED_BY_REVIEW')
+            ORDER BY updated_at,id LIMIT ?""", itemMapper, limit)
+    }
+
+    fun findAttempts(itemId: Long): List<VerificationAttempt> = jdbc.query(
+        "SELECT * FROM discovery_verification_attempt WHERE item_id=? ORDER BY id",
+        RowMapper { rs, _ -> VerificationAttempt(rs.getLong("id"), rs.getLong("item_id"), rs.getString("request_key"),
+            VerificationProvider.valueOf(rs.getString("provider")), VerificationQueryKind.valueOf(rs.getString("query_kind")),
+            rs.getInt("page_number"), rs.getInt("attempt_number"), rs.time("requested_at")!!, rs.time("completed_at"),
+            rs.getInt("http_status").let { if (rs.wasNull()) null else it }, rs.getString("result_code"),
+            rs.getString("request_json"), rs.getString("response_json"), rs.getString("response_sha256")) }, itemId)
     private fun identity(input: VerificationReservation) = jdbc.query("SELECT * FROM discovery_verification_item WHERE expert_doc_id=? AND identity_hash=? AND policy_version=?",
         itemMapper, input.expertDocId, input.identityHash, input.policyVersion).singleOrNull()
     private fun checkedIdentity(item: VerificationItem, input: VerificationReservation): VerificationItem {
