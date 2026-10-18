@@ -39,6 +39,70 @@ class DiscoverySampleStoreTest {
         System.getProperty("sample.acceptanceDir")?.let { val path = Paths.get(it, "store", "cases.json"); Files.createDirectories(path.parent)
             Files.write(path, DiscoverySampleJson.mapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(cases)) }
     }
+    @Test fun `URL scrubbing preserves raw reserved escapes and canonical input`() {
+        val raw = "https://user:p%40ss@exa%6Dple.org:443/paper%2Fpart%3Fname%23section%25.pdf?token=secret#fragment"
+        val expected = "https://exa%6Dple.org:443/paper%2Fpart%3Fname%23section%25.pdf"
+        assertEquals(expected, DiscoverySampleJson.scrub(raw))
+        assertEquals(expected, DiscoverySampleJson.scrub(expected))
+        val original = paper("escaped").copy(downloadUrl = raw, candidateDownloadUrls = listOf(raw))
+        val retained = DiscoverySampleJson.paper(original)
+        assertEquals(expected, retained.downloadUrl)
+        assertEquals(listOf(expected), retained.candidateDownloadUrls)
+        assertArrayEquals(DiscoverySampleJson.canonical(original.copy(downloadUrl = expected,
+            candidateDownloadUrls = listOf(expected))), DiscoverySampleJson.canonical(retained))
+        assertArrayEquals(DiscoverySampleJson.canonical(retained),
+            DiscoverySampleJson.canonical(DiscoverySampleJson.paper(retained)))
+    }
+    @Test fun `distinct execution expiry eviction and restart do not accumulate empty parents`() {
+        fun execution(id: Long, at: Instant): DiscoverySampleManifest {
+            val manifest = sample("retention")
+            return manifest.copy(context = manifest.context.copy(executionId = id), capturedAt = at.toString(),
+                sampleId = DiscoverySampleJson.hash("$id\nOPENALEX\n${manifest.inputSha256}"))
+        }
+        for (expire in listOf(false, true)) {
+            val path = canonical(temp.resolve(if (expire) "repeated-expiry" else "repeated-eviction"))
+            val p = properties(path).copy(maxTotalSamples = 1)
+            // More distinct executions than the unchanged 1028-entry scan ceiling.
+            for (id in 1L..1030L) {
+                val at = now.plusSeconds(if (expire) id * 8 * 86400 else id)
+                val store = DiscoverySampleStore(p, Clock.fixed(at, ZoneOffset.UTC))
+                store.startup()
+                assertEquals(DiscoverySampleDecision.SAVED, store.commit(execution(id, at), emptyMap()))
+                Files.newDirectoryStream(path).use { entries ->
+                    assertEquals(setOf(".writer.lock", id.toString()), entries.map { it.fileName.toString() }.toSet())
+                }
+            }
+            val restarted = DiscoverySampleStore(p, Clock.fixed(now.plusSeconds(1031L * 8 * 86400), ZoneOffset.UTC))
+            restarted.cleanup()
+            assertTrue(packages(path).isEmpty())
+            assertFalse(Files.exists(path.resolve("1030")))
+        }
+    }
+    @Test fun `empty execution recovery is bounded and never deletes unknown or nonempty directories`() {
+        val path = canonical(temp.resolve("empty-recovery")); val p = properties(path).copy(maxTotalSamples = 1)
+        Files.createDirectory(path)
+        for (id in 1..100) Files.createDirectory(path.resolve(id.toString()))
+        DiscoverySampleStore(p).startup()
+        Files.newDirectoryStream(path).use { assertEquals(listOf(".writer.lock"), it.map { entry -> entry.fileName.toString() }) }
+        val failed = DiscoverySampleStore(p)
+        failed.atomicMove = { _, _ -> throw java.io.IOException("injected") }
+        for (id in 1L..20L) {
+            val manifest = sample("failed")
+            assertEquals(DiscoverySampleDecision.IO_ERROR, failed.commit(manifest.copy(
+                context = manifest.context.copy(executionId = id),
+                sampleId = DiscoverySampleJson.hash("$id\nOPENALEX\n${manifest.inputSha256}")), emptyMap()))
+            assertFalse(Files.exists(path.resolve(id.toString())))
+        }
+        assertEquals(DiscoverySampleDecision.SAVED, DiscoverySampleStore(p).commit(sample("restart"), emptyMap()))
+        val unknown = path.resolve("unknown"); Files.createDirectory(unknown)
+        assertEquals(DiscoverySampleDecision.STORE_INVALID, DiscoverySampleStore(p).commit(sample("unknown"), emptyMap()))
+        assertTrue(Files.isDirectory(unknown))
+        Files.delete(unknown)
+        val nonempty = path.resolve("2"); Files.createDirectory(nonempty); Files.writeString(nonempty.resolve("untouched"), "keep")
+        assertEquals(DiscoverySampleDecision.STORE_INVALID, DiscoverySampleStore(p).commit(sample("nonempty"), emptyMap()))
+        assertEquals("keep", Files.readString(nonempty.resolve("untouched")))
+        assertEquals(1, packages(path).size)
+    }
     @Test fun `store acceptance cases`() {
         listOf("saved", "missing-body", "quota", "expiry", "capacity", "atomic-failure", "unwritable", "io-error").forEach { name ->
             val path = root(name)

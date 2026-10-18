@@ -68,7 +68,11 @@ object DiscoverySampleJson {
     fun scrub(url: String): String = try {
         val uri = URI(url)
         if (uri.isOpaque) uri.scheme + ":" + uri.rawSchemeSpecificPart.substringBefore('?').substringBefore('#')
-        else URI(uri.scheme, null, uri.host, uri.port, uri.path, null, null).toASCIIString()
+        else buildString {
+            uri.scheme?.let { append(it).append(':') }
+            uri.rawAuthority?.let { append("//").append(it.substringAfterLast('@')) }
+            append(uri.rawPath.orEmpty())
+        }
     } catch (_: Exception) { "" }
     fun paper(paper: PaperMetadata) = paper.copy(downloadUrl = paper.downloadUrl?.let(::scrub),
         candidateDownloadUrls = paper.candidateDownloadUrls.map(::scrub))

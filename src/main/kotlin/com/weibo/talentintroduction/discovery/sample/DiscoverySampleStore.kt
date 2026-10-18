@@ -69,6 +69,14 @@ class DiscoverySampleStore(val properties: DiscoverySampleProperties, private va
         }
         Files.delete(path)
     }
+    private fun reclaimEmptyExecution(path: Path) {
+        val name = path.fileName.toString()
+        if (path.parent != root || !name.matches(Regex("[1-9][0-9]*")) ||
+            name.toLongOrNull()?.let { it > 0 } != true || Files.isSymbolicLink(path) ||
+            !Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) return
+        Files.newDirectoryStream(path).use { if (it.iterator().hasNext()) return }
+        Files.delete(path)
+    }
     private fun scan(): MutableList<Package> {
         val result = mutableListOf<Package>()
         var entries = 0
@@ -102,6 +110,7 @@ class DiscoverySampleStore(val properties: DiscoverySampleProperties, private va
                 Files.newDirectoryStream(path).use { files -> files.forEach { if (it.fileName.toString() !in expected) throw InvalidStore() } }
                 result.add(Package(path, manifest, bytes))
             } }
+            reclaimEmptyExecution(execution)
         } }
         return result
     }
@@ -128,7 +137,7 @@ class DiscoverySampleStore(val properties: DiscoverySampleProperties, private va
         val packages = scan()
         val cutoff = clock.instant().minus(properties.retentionDays.toLong(), ChronoUnit.DAYS)
         val expired = packages.filter { Instant.parse(it.manifest.capturedAt).isBefore(cutoff) }
-        expired.forEach { remove(it.path) }; packages.removeAll(expired.toSet())
+        expired.forEach { remove(it.path); reclaimEmptyExecution(it.path.parent) }; packages.removeAll(expired.toSet())
         return packages
     }
     @PostConstruct
@@ -172,20 +181,24 @@ class DiscoverySampleStore(val properties: DiscoverySampleProperties, private va
         val needed = json.size + manifest.bodyBytesRetained
         for (old in packages.sortedBy { Instant.parse(it.manifest.capturedAt) }) {
             if (packages.size < properties.maxTotalSamples && packages.sumOf { it.bytes } + needed <= properties.maxTotalBytes) break
-            remove(old.path); packages.remove(old)
+            remove(old.path); reclaimEmptyExecution(old.path.parent); packages.remove(old)
         }
         if (Files.getFileStore(root).usableSpace < needed) return@locked DiscoverySampleDecision.IO_ERROR
         val execution = root.resolve(manifest.context.executionId.toString())
         if (!Files.exists(execution)) privateDirectory(execution)
         val temporary = root.resolve(".tmp-${UUID.randomUUID()}")
-        privateDirectory(temporary)
         try {
+            privateDirectory(temporary)
+            // The execution parent is reclaimed even if temporary-directory creation fails.
             bodies.forEach { (name, bytes) -> write(temporary.resolve(name), bytes) }
             write(temporary.resolve("sample.json"), json)
             bodies.forEach { (name, bytes) -> if (DiscoverySampleJson.hash(Files.readAllBytes(temporary.resolve(name))) != DiscoverySampleJson.hash(bytes)) throw InvalidStore() }
             atomicMove(temporary, execution.resolve(manifest.sampleId))
             logger.info("event=DISCOVERY_SAMPLE_CAPTURE decision=SAVED executionId={} sampleId={} bucket={}", manifest.context.executionId, manifest.sampleId, manifest.bucket)
             DiscoverySampleDecision.SAVED
-        } finally { if (Files.exists(temporary, LinkOption.NOFOLLOW_LINKS)) remove(temporary) }
+        } finally {
+            try { if (Files.exists(temporary, LinkOption.NOFOLLOW_LINKS)) remove(temporary) }
+            finally { reclaimEmptyExecution(execution) }
+        }
     }
 }
