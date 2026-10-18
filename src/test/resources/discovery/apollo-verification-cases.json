@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "description": "Synthetic anonymous field-shape replay; optional complete fields are schema compatibility, not a promise of account access.",
+  "apolloShapes": {
+    "masked": {"people":[{"id":"synthetic-masked","first_name":"Ada","last_name_obfuscated":"L**","title":"Researcher","organization":{"name":"Example University"}}],"total_entries":1},
+    "completeOptional": {"people":[{"id":"synthetic-complete","first_name":"Ada","last_name":"Lee","name":"Ada Lee","title":"Professor","organization":{"name":"Example University"}}],"total_entries":1}
+  },
+  "cases": [
+    {"caseId":"current-official-professor","role":"Professor","qualification":"MET","outcome":"DIRECT_CLEAR","reason":"QUALIFICATION_MET"},
+    {"caseId":"full-person-missing-age-degree","apollo":true,"qualification":"UNKNOWN","outcome":"APOLLO_UNCLEAR","reason":"APOLLO_PERSON_MATCHED"},
+    {"caseId":"closed-loop-masked","apollo":true,"masked":true,"qualification":"UNKNOWN","outcome":"APOLLO_UNCLEAR","reason":"APOLLO_PERSON_MATCHED"},
+    {"caseId":"masked-alone","apollo":true,"masked":true,"job":false,"qualification":"UNKNOWN","outcome":"PENDING","reason":"CURRENT_INSTITUTION_EVIDENCE_MISSING"},
+    {"caseId":"completed-phd-age39","apollo":true,"doctorate":true,"age":39,"qualification":"MET","outcome":"APOLLO_CLEAR","reason":"QUALIFICATION_MET"},
+    {"caseId":"completed-phd-age40","apollo":true,"doctorate":true,"age":40,"qualification":"NOT_MET","outcome":"PENDING","reason":"AGE_REQUIREMENT_NOT_MET"},
+    {"caseId":"associate-at40","apollo":true,"doctorate":true,"age":40,"role":"Associate Professor","qualification":"MET","outcome":"APOLLO_CLEAR","reason":"QUALIFICATION_MET"},
+    {"caseId":"phd-student","apollo":true,"role":"PhD student","qualification":"UNKNOWN","outcome":"APOLLO_UNCLEAR","reason":"QUALIFICATION_EVIDENCE_MISSING"},
+    {"caseId":"historical-professor","role":"Professor","scope":"HISTORICAL","qualification":"UNKNOWN","outcome":"PENDING","reason":"QUALIFICATION_EVIDENCE_MISSING"},
+    {"caseId":"historical-professor-no-identity-loop","apollo":true,"role":"Professor","scope":"HISTORICAL","qualification":"UNKNOWN","outcome":"PENDING","reason":"CURRENT_INSTITUTION_EVIDENCE_MISSING"},
+    {"caseId":"self-professor-only","role":"Professor","source":"SELF","qualification":"UNKNOWN","outcome":"PENDING","reason":"QUALIFICATION_EVIDENCE_MISSING"},
+    {"caseId":"same-name-two-candidates","apollo":true,"count":2,"qualification":"UNKNOWN","outcome":"PENDING","reason":"IDENTITY_AMBIGUOUS"},
+    {"caseId":"different-institution","apollo":true,"institution":"Other University","qualification":"UNKNOWN","outcome":"PENDING","reason":"IDENTITY_NOT_MATCHED"},
+    {"caseId":"no-candidates","apollo":true,"count":0,"qualification":"UNKNOWN","outcome":"PENDING","reason":"APOLLO_NO_MATCH"},
+    {"caseId":"search-incomplete","apollo":true,"complete":false,"qualification":"UNKNOWN","outcome":"PENDING","reason":"SEARCH_INCOMPLETE"},
+    {"caseId":"age-unknown","doctorate":true,"qualification":"UNKNOWN","outcome":"PENDING","reason":"QUALIFICATION_EVIDENCE_MISSING"}
+  ]
+}
