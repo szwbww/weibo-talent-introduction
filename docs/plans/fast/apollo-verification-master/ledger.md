@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-10-18/apollo-verification-master.md
 
-- Status: PAUSED_FOR_HUMAN
-- Master plan: docs/plans/2026-10-18/apollo-verification-master.md (sha256 fc28852df883c419768777091138f16aa811bf23134f9700450cd35a02568caf)
-- Amendments: N/A
+- Status: RUNNING
+- Master plan: docs/plans/2026-10-18/apollo-verification-master.md (commit 1793d335cec0c73f10e1b26c1d0652b11c63c0a7)
+- Amendments: A1,A2
 - Master base: 3efc192faf043badc1ef27bef124a71d3120c4c5
 - Branch: fast/apollo-verification-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-apollo-verification-master
@@ -13,7 +13,7 @@
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: Child03 requires document-keyed bulk ledger evidence but repository exposes only management enums; DiscoveryVerificationRepository.kt is outside child03 authorized files. Human-approved scope amendment required.
+- Pause reason: N/A
 - Resume from: 69a236aa0b15b07755d42c713f24da944a7727e6
 
 ## Baseline
@@ -31,7 +31,7 @@
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | 01 | docs/plans/2026-10-18/apollo-01-ledger.md | sha256:72c5e37ba421270d7089a4702b2e019e206c8af4a6f0166882da0d77b86e917a | none | 1 | LIGHT_PASS_WITH_NOTES | 3efc192faf043badc1ef27bef124a71d3120c4c5 | 772429192fdab1fd7ac75cb084f08f45aec5c965 | 0 | — | 772429192fdab1fd7ac75cb084f08f45aec5c965 | 045c028426bbca4df579136be507d41a103e9876 | Writer ApolloLedgerImplementer; verifier ApolloLedgerVerifier; O-01 existing Node failures |
 | 02 | docs/plans/2026-10-18/apollo-02-evidence.md | sha256:0dca87e1a9e6b61b247f78e54ebf60e71afde280556c50e6f06a07921d6b4b3f | 01 | 1 | LIGHT_PASS_WITH_NOTES | 772429192fdab1fd7ac75cb084f08f45aec5c965 | 5c05491b963c4d1d9793ebdc1f8469b175f170d8 | 1 | 69a236aa0b15b07755d42c713f24da944a7727e6 | 69a236aa0b15b07755d42c713f24da944a7727e6 | 4a05d7e4a7c16eb2d4b12819672ce2233b33f523 | Writers ApolloEvidenceImplementer ApolloEvidenceFixer1; verifier ApolloEvidenceReverifier1; findings CLOSED; O-02-01 existing Node failures |
-| 03 | docs/plans/2026-10-18/apollo-03-admission.md | sha256:5499d4c166004fb181981d14ef05127386620bcf551bc3cc331478793b4e917c | 01,02 | 1 | PAUSED_FOR_HUMAN | 69a236aa0b15b07755d42c713f24da944a7727e6 | — | 0 | — | 69a236aa0b15b07755d42c713f24da944a7727e6 | 4f8ac0885a1ecb6e948deb79db8bb691db136ef1 | Implementer ApolloAdmissionImplementer PLAN_CONFLICT before product edits; bulk evidence repository API missing and file unauthorized |
+| 03 | docs/plans/2026-10-18/apollo-03-admission.md | commit:1793d335cec0c73f10e1b26c1d0652b11c63c0a7 | 01,02 | 2 | PENDING | 69a236aa0b15b07755d42c713f24da944a7727e6 | — | 0 | — | — | — | Epoch1 pause retained in execution log; human approved A1/A2; preparing Epoch2 |
 | 04 | docs/plans/2026-10-18/apollo-04-worker.md | sha256:8507e21e882539d54f908732dc58095129f9a3f2538f3b4c8b8a003926fa487a | 01,02,03 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 | 05 | docs/plans/2026-10-18/apollo-05-integration.md | sha256:ddcb578f31c657cdfbbfef55b6b603c17abc508b0a84e1dbd5323e74cc14c714 | 01,02,03,04 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 | 06 | docs/plans/2026-10-18/apollo-06-reporting.md | sha256:43a207d15adfa9e488780fd70ce8656a15e1bd50aa121984f01efff244cdb9de | 01,02,03,04,05 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
@@ -40,9 +40,14 @@
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
 |---|---|---|---|---|---|---|
+| A1 | docs/plans/2026-10-18/apollo-03-admission.md | commit:3f4ba12b8a1d04c1cc00cf1788dbb4f627e3ec26 | commit:1793d335cec0c73f10e1b26c1d0652b11c63c0a7 | I-6/I-13 | Authorize repository bulk item/evidence read to satisfy <=500-doc identity and evidence parity without N+1 | HUMAN:批准该计划并执行 (2026-10-18T20:27:54+08:00) |
+| A2 | docs/plans/2026-10-18/apollo-verification-master.md | commit:3f4ba12b8a1d04c1cc00cf1788dbb4f627e3ec26 | commit:1793d335cec0c73f10e1b26c1d0652b11c63c0a7 | 实现方案 / I-6/I-13 | Synchronize child03 authorized file limit from 9 to 10 for the approved repository seam | HUMAN:批准该计划并执行 (2026-10-18T20:27:54+08:00) |
 
 ## Pause / Resume Authority
 - Child03 execution report records exact missing seam and rejected workarounds; no product file was changed for child03 and no verification was fabricated.
-- Smallest proposed amendment (not approved): add DiscoveryVerificationRepository.kt to child03 authorized scope, define one document-keyed bulk item/evidence read for <=500 doc IDs, retain identity/fingerprint/state validation and no-N+1 invariant. This brings the listed implementation files from 9 to 10.
-- After human approval, amend the exact plan in a separate plan-only commit, record machine-readable amendment row with exact Before/After commit identities and approving instruction, then resume child03 in a new epoch. Do not replay child01/02.
+- Prior proposed amendment approved by user “批准该计划并执行”; A1/A2 and plan-only commit 1793d335cec0c73f10e1b26c1d0652b11c63c0a7 record exact authority. Child03 restarts at Epoch2 with zero repairs; Epoch1 reports retained.
+- Resume identity checks: retained HEAD 3f4ba12b8a1d04c1cc00cf1788dbb4f627e3ec26 before amendment, branch/root matched, product/index clean, prior product head an ancestor. No replay of child01/02.
 - Child01 and child02 completed-prefix checkpoint validation returned VALID, both dirty-artifact and clean modes, before child03 dispatch. No aggregate/final verification performed.
+
+## Approved amendment scope receipt
+- `grep pattern="\|[0-9]+\|`.*DiscoveryVerificationRepository.kt`" path=apollo-01-ledger.md;apollo-03-admission.md;apollo-04-worker.md;apollo-06-reporting.md` returned repository entries at 01:56, 03:65, 04:57, 06:56. The approved child03 addition reuses an existing union path; no new union file.

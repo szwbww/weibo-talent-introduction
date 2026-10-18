@@ -39,3 +39,16 @@ Use execute-p with target worktree bound to this worktree. The fast-p loop repla
 
 ## Required outputs
 Use execution report schema from execute-p. Record task/invariant evidence, exact commands/exit codes/counts, smoke observations, plan hash recheck, worktree identity, product commit SHA, and remaining blockers. Commit only authorized implementation files as `feat(fast-p): implement 03`. Report path is this directory's execution.md; controller commits all evidence separately.
+
+## Epoch 2 — Approved amendment authority (supersedes Epoch 1 identity/scope)
+- Approved plan: docs/plans/2026-10-18/apollo-03-admission.md
+- Plan identity: commit:1793d335cec0c73f10e1b26c1d0652b11c63c0a7
+- Plan SHA-256: f44a965075b62451b10a49168636081dca72b365561fcc0e3a9d1f9f4dc15287
+- Master identity: commit:1793d335cec0c73f10e1b26c1d0652b11c63c0a7
+- Human approval: “批准该计划并执行”, recorded 2026-10-18T20:27:54+08:00.
+- Amendments A1/A2 in ledger are authoritative; original Epoch1 identity/scope above is retained history, not the current contract.
+- Authorized Files: all nine original entries above, plus `src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt` (10 total, exact amended plan table).
+- Implement the amended solution1 repository seam: one bulk item/evidence read per <=500 actual docIds; preserve managed status despite identity changes, no N+1, gate does not introduce JDBC or depend on review. Reuse existing item model; no unlisted domain/test edits.
+- Product base: 69a236aa0b15b07755d42c713f24da944a7727e6. Prior01/02 completion is retained; no implementation work was done in Epoch1 of03.
+- Execution epoch: NEW, controller epoch2; append execution evidence after historical report.
+- All other global invariants, required commands, smoke, worktree binding and product-only commit rules above remain applicable.
