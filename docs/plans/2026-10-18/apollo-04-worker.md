@@ -41,6 +41,7 @@ O-1：已登记档案可靠完成证据读取/直接或Apollo判定，并可在�
 ## 实现方案
 
 1. **worker（I-1/I-4）**：通过`ObjectProvider<RegistrationRecovery>`执行已存在恢复实现（无实现时跳过）；独立`@Scheduled(fixedDelayString=...)`只领取有限批次（每轮10、并发1为首版），业务线程不阻塞discovery PDF consumer。使用专用Clock和HTTP client，不复用可带其他服务认证的RestTemplate；守住workerEnabled。每个HTTP请求前领取permit、记录request_key，每页完成持久化候选并集和游标，再安排下一次；重启读取同attempt结果，不把查询从第一页无限重跑。
+   **已批准的ORCID接缝修订**：在既有OrcidVerificationEvidenceClient中暴露逐端点完成及已完成结果/游标恢复入口。worker每次成功响应先持久化attempt结果和进度，再允许后续HTTP；恢复时复用已持久化端点结果，不重复已完成端点。保留原端点白名单、身份绑定、RequestPermit、累计请求上限及专用HTTP边界，不复制另一套HTTP/ORCID编排。客户端回归覆盖中途失败/进程重建后跳过已完成端点、完成结果落库失败不得继续下一请求。实现与回归仅在本片新增授权的既有client及其test中调整，不扩写其他未授权文件。
 2. **提交服务（I-2/I-4）**：先在事务外读取新RAW/三层和联系保护，校验factFingerprint；事务中锁run/admission/item，检查lease和expectedRevision，保存结构化evidence，使03gate可在同事务读到；调用Review.recordAutomatic并确认返回的真实持久row/revision与expectedAutomatic一致，再标outcome。禁止依赖Review.insertOutcome的revision=0 fallback把“没有读到行”当成功；新接缝需明确行已存在。保护变化→PROTECTED，identity变化→PENDING，保留理由；不可写人工review_item。
 3. **事务外候选同步（I-3）**：只有ENFORCE且AUTO_PASSED事务已提交才同步；同步前后复查current admission的revision/identity；允许PROJECTED/ALREADY_PRESENT/APPLICATION_PRESENT三个可用结果，其他状态单列。现存候选/应用源不覆盖；源缺失/ES读失败重试投影，不重新核验；计数auto是本次提交的事件，candidateCreated只在PROJECTED时计，后续人工改变不改历史事件。
 4. **恢复（I-1～I-4）**：RESERVED恢复见05；本片恢复超期RUNNING/RETRY_WAIT与投影PENDING/ERROR；错误达到上限保留ERROR给人工，不新增“重试全部”写API。重启恢复不创建新的execution。新增验证用端到端fixture服务在test包，不生产公开。
@@ -48,7 +49,7 @@ O-1：已登记档案可靠完成证据读取/直接或Apollo判定，并可在�
 
 ## 变更文件清单
 
-共7个文件；一个发现核验子系统（与既有准入/前端的交互按文中说明）；无清单外授权。
+共9个文件；一个发现核验子系统（与既有准入/前端的交互按文中说明）；无清单外授权。
 
 |#|文件|动作|
 |---|---|---|
@@ -59,6 +60,8 @@ O-1：已登记档案可靠完成证据读取/直接或Apollo判定，并可在�
 |5|`src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt`|新增|
 |6|`src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitServiceTest.kt`|新增|
 |7|`src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationFlowIT.kt`|新增隔离MySQL/HTTP fixture驱动|
+|8|`src/main/kotlin/com/weibo/talentintroduction/discovery/service/OrcidVerificationEvidenceClient.kt`|修改逐端点完成/持久结果恢复接缝|
+|9|`src/test/kotlin/com/weibo/talentintroduction/discovery/service/OrcidVerificationEvidenceClientTest.kt`|修改端点持久化/恢复回归|
 
 ## 验收标准
 
@@ -89,3 +92,6 @@ I-1：完整/截断分页、429/403/5xx、请求预算、零候选；I-2：SQL�
 - 操作步骤：运行AUDIT并比较原准入/候选快照。
 - 预期结果：AUDIT建议有值，autoAdmitted=0；原准入与候选不变；不会自动把AUDIT转ENFORCE。
 - 覆盖：N-2，I-2
+
+## 修正记录
+- 2026-10-18，用户“批准该计划并执行”：批准暂停交接提出的ORCID既有client与client test授权补充（7→9文件），满足总计划I-6/I-9及本片I-1的逐请求持久化和恢复要求；不改变资格口径、外部端点、费用或业务保护边界。修订提交与批准依据记录于 `docs/plans/fast/apollo-verification-master/ledger.md` Amendments。
