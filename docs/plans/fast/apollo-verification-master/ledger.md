@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-10-18/apollo-verification-master.md
 
-- Status: PAUSED_FOR_HUMAN
-- Master plan: docs/plans/2026-10-18/apollo-verification-master.md (commit a58d457ec2921759c455b6f6edae0e6d94b85220)
-- Amendments: A1,A2,A3,A4,A5,A6
+- Status: RUNNING
+- Master plan: docs/plans/2026-10-18/apollo-verification-master.md (commit f9435ee70c585a158b3a3414c3bf549c35c7044b)
+- Amendments: A1,A2,A3,A4,A5,A6,A7,A8
 - Master base: 3efc192faf043badc1ef27bef124a71d3120c4c5
 - Branch: fast/apollo-verification-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-apollo-verification-master
@@ -13,7 +13,7 @@
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: C06-CAPABILITY-AUTH — capabilities requires current CONFIG_AUTH latch, but existing worker read-only accessor/test are outside06 authority
+- Pause reason: N/A
 - Resume from: bcc031775d112e1d67f20441e1c321d4b6a08967
 
 ## Baseline
@@ -34,7 +34,7 @@
 | 03 | docs/plans/2026-10-18/apollo-03-admission.md | commit:1793d335cec0c73f10e1b26c1d0652b11c63c0a7 | 01,02 | 2 | LIGHT_PASS_WITH_NOTES | 69a236aa0b15b07755d42c713f24da944a7727e6 | 98c7b78fde54f69b72f175b94b2ab0eed25d86ab | 0 | — | 98c7b78fde54f69b72f175b94b2ab0eed25d86ab | 61f0e39acff1ab7acfe93c834db839e9ff5e175c | Writer ApolloAdmissionImplementerE2; verifier ApolloAdmissionVerifierE2; O-03-E2-01/02 record only |
 | 04 | docs/plans/2026-10-18/apollo-04-worker.md | commit:bb9eda7df6fde5f4eb0a5d433a1058f008d42b16 | 01,02,03 | 2 | LIGHT_PASS_WITH_NOTES | 98c7b78fde54f69b72f175b94b2ab0eed25d86ab | a0103c2ea9284c030ad0b0b10c4177474c4f4d47 | 0 | — | a0103c2ea9284c030ad0b0b10c4177474c4f4d47 | 5a3482bf5dca311e1a25b30d46a2c75db8caf6ac | Writer ApolloWorkerImplementerE2; verifier ApolloWorkerVerifierE2; evidence closing correction1; O-04-E2-01/02 |
 | 05 | docs/plans/2026-10-18/apollo-05-integration.md | commit:a58d457ec2921759c455b6f6edae0e6d94b85220 | 01,02,03,04 | 2 | LIGHT_PASS_WITH_NOTES | a0103c2ea9284c030ad0b0b10c4177474c4f4d47 | 083fce2f4b97c88b89a226394ebbf1342001a2d4 | 1 | 1cef08bd7e8bedc47cd2ca6d3f9823c2465e8848 | 1cef08bd7e8bedc47cd2ca6d3f9823c2465e8848 | 6f6b75ed311ef111d91775c51d02ae41a515f5c8 | Writers ApolloIntegrationImplementerE2/ApolloIntegrationFixerE2R1; verifier ApolloIntegrationReverifierE2R1; F01/02/03 CLOSED; O-05-E2-01/02/03 record only; evidence correction2 |
-| 06 | docs/plans/2026-10-18/apollo-06-reporting.md | sha256:43a207d15adfa9e488780fd70ce8656a15e1bd50aa121984f01efff244cdb9de | 01,02,03,04,05 | 1 | PAUSED_FOR_HUMAN | 1cef08bd7e8bedc47cd2ca6d3f9823c2465e8848 | bcc031775d112e1d67f20441e1c321d4b6a08967 | 0 | — | bcc031775d112e1d67f20441e1c321d4b6a08967 | 790e71c0f831a8aca83ed488d1592dcda57053af | Writer ApolloReportingImplementer; C06-CAPABILITY-AUTH; executed backend236 passed, no independent light verdict |
+| 06 | docs/plans/2026-10-18/apollo-06-reporting.md | commit:f9435ee70c585a158b3a3414c3bf549c35c7044b | 01,02,03,04,05 | 2 | LIGHT_PASS_WITH_NOTES | 1cef08bd7e8bedc47cd2ca6d3f9823c2465e8848 | 096d21504bcfbaea321bd2b535ee6c62beef31a8 | 1 | cd105de17d7100466543675727a68fe1370008cb | cd105de17d7100466543675727a68fe1370008cb | 8e81e6ed6e25ff63f934dc627888c9f2f7c33ceb | Writers ApolloReportingImplementer/E2/FixerE2R1; verifier ApolloReportingReverifierE2R1; F06-01/02 CLOSED; O06-01/02 record only |
 | 07 | docs/plans/2026-10-18/apollo-07-frontend.md | sha256:efce42d320a64915768fc6277257fab928090d2d7b64c0a40b6503d88d773f4d | 01,02,03,04,05,06 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 
 ## Amendments
@@ -46,6 +46,8 @@
 | A4 | docs/plans/2026-10-18/apollo-verification-master.md | commit:1793d335cec0c73f10e1b26c1d0652b11c63c0a7 | commit:bb9eda7df6fde5f4eb0a5d433a1058f008d42b16 | 实现方案 / I-6/I-9 | Synchronize child04 file limit 7 to 9 for the approved ORCID persistence/resume seam | HUMAN:批准该计划并执行 (2026-10-18T21:06:49+08:00) |
 | A5 | docs/plans/2026-10-18/apollo-05-integration.md | commit:0a0bb9c722f57a10462a8031a0e4e4f62f8ae143 | commit:a58d457ec2921759c455b6f6edae0e6d94b85220 | I-1/I-2 / C05-EXECUTION-CALLERS | Authorize three existing caller tests for explicit real execution/context contract migration,10→13; no production scope change | HUMAN:批准该计划并执行 (recorded2026-10-18T22:00:25+08:00) |
 | A6 | docs/plans/2026-10-18/apollo-verification-master.md | commit:bb9eda7df6fde5f4eb0a5d433a1058f008d42b16 | commit:a58d457ec2921759c455b6f6edae0e6d94b85220 | 实现方案 / I-6/I-11 | Synchronize05 cap10→13 as caller-test-only exception to <=10; production scope unchanged | HUMAN:批准该计划并执行 (recorded2026-10-18T22:00:25+08:00) |
+| A7 | docs/plans/2026-10-18/apollo-06-reporting.md | commit:85a2c24ac82991c06c081437ca618bb9e9cc13ba | commit:f9435ee70c585a158b3a3414c3bf549c35c7044b | I-10/I-11/I-12 / C-3:123 | Authorize existing worker read-only auth-latch accessor and test,7→9, so capabilities reports current CONFIG_AUTH without inference/reset | HUMAN:批准该计划并执行 后续也都授权 执行完所有子计划 (recorded2026-10-18T23:56:38+08:00) |
+| A8 | docs/plans/2026-10-18/apollo-verification-master.md | commit:a58d457ec2921759c455b6f6edae0e6d94b85220 | commit:f9435ee70c585a158b3a3414c3bf549c35c7044b | 实现方案 / I-10/I-11/I-12 | Synchronize06 cap7→9 and record advance authority for necessary direct dependency/caller/test scope amendments without changing business goals | HUMAN:批准该计划并执行 后续也都授权 执行完所有子计划 (recorded2026-10-18T23:56:38+08:00) |
 
 ## Pause / Resume Authority
 - Child03 execution report records exact missing seam and rejected workarounds; no product file was changed for child03 and no verification was fabricated.
@@ -96,3 +98,8 @@
 - C-3:123 requires capabilities to show current CONFIG_AUTH block; private process-local worker authBlocked has no authorized reader. Exact source/reference receipts and rejected historical-inference/reset workarounds in children/06/execution.md.
 - Proposed amendment, not approved: authorize existing DiscoveryVerificationWorker.kt and DiscoveryVerificationWorkerTest.kt for a read-only current auth-latch accessor and regression coverage; consume via already-authorized query/controller.06 file cap7→9, no new state/table/reset/retry/inference or changed worker behavior.
 - Keep authorized committed06 workbcc031775d112e1d67f20441e1c321d4b6a08967. Executor's final backend236 passed and actual HTTP/MySQL/F123/10000-row EXPLAIN smoke are evidence, not independent acceptance. Full Node41 failures remain recorded; no global-green or06terminal checkpoint claimed. Await approval, then plan-only amendment/ledger authority and epoch2 resume;07 PENDING.
+
+## Child06 Epoch2 approved resume
+- User approved exact auth-latch proposal and all remaining child execution, including necessary direct dependency/caller/test scope amendments. Every later concrete amendment must still have exact plan-only commit and ledger row citing this instruction before product changes; no new business goals, unrelated fixes, destructive history operations or deployment.
+- Resume identity: clean retained HEAD85a2c24ac82991c06c081437ca618bb9e9cc13ba, matching root/branch, productbcc031775d112e1d67f20441e1c321d4b6a08967 ancestor. Plan-only amendmentf9435ee70c585a158b3a3414c3bf549c35c7044b recordsA7/A8. Existing06 work retained, not reimplemented.
+- Resume already-active06 epoch2 with fix_round0 under Set Up Once step5. Prior through05 checkpoint remains closed/VALID; mandatory through06 checkpoint precedes07. No completed child replay or current-tail checkpoint substitution.
