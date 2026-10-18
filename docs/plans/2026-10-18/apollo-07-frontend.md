@@ -583,7 +583,7 @@ O-1：原深度发现配置区可启用Apollo，仍保留关键词、七个平�
 
 ## 变更文件清单
 
-共11个文件：原7个前端及验证文件，加4个S-5所必需的既有只读API/聚合及其测试，作为每片≤10的直接依赖专项例外。无新增业务目标，以下之外无实施授权。
+共13个文件：原7个前端及验证文件，加4个S-5必需的既有只读API/聚合及测试，以及2个因强制追加CSS而须移除旧文件尾部位置断言的现有测试；作为每片≤10的直接依赖/测试专项例外。生产范围不再增加，无新增业务目标，以下之外无实施授权。
 
 |#|文件|动作|
 |---|---|---|
@@ -598,6 +598,8 @@ O-1：原深度发现配置区可启用Apollo，仍保留关键词、七个平�
 |9|`src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt`|修改只读批次聚合，保持写路径不变|
 |10|`src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryServiceTest.kt`|修改批次DTO语义回归|
 |11|`src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationReportingIT.kt`|修改真实MySQL批次跨页累计/原因/时间回归|
+|12|`src/test/js/expertManualProfile.test.js`|移除与强制追加CSS冲突的旧样式块必须在文件末尾断言；保留其他行为回归|
+|13|`src/test/js/expertMeetingVideo.test.js`|移除同类旧样式块文件尾部位置断言；保留其他行为回归|
 
 ## 验收标准
 
@@ -655,3 +657,4 @@ O-1：原深度发现配置区可启用Apollo，仍保留关键词、七个平�
 
 ## 修正记录
 - C07-BATCH-READ-SHAPE：冻结S-5需要累计档案/完整批次原因/时间，现有06批次DTO仅有batchNumber/counts/suggested，不能由当前分页可靠还原。依据用户“批准该计划并执行 后续也都授权 执行完所有子计划”的后续必要依赖授权，增加上述4个既有只读生产/测试文件，上限7→11为直接依赖专项例外；不重开06、不变CSS/DOM或统计真值，精确身份与依据见fast-p ledger Amendments。
+- C07-CSS-TRAILING-TESTS：真实全量Node发现expertManualProfile.test.js:911–915及expertMeetingVideo.test.js:977–982仍断言各自旧STYLE_S2位于styles.css末尾，与S-1强制追加Apollo契约矛盾。按同一后续授权增加这两个现有测试，上限11→13，仅删除过时位置/实现断言及随之无用的测试常量，不将其重新钉在新位置；其他功能行为断言保留，既有41个无关失败不在修复范围。
