@@ -854,6 +854,19 @@ class DiscoveryReviewService(
     ): DiscoveryReviewAdmissionOutcome =
         recordAutomaticConclusion(docId, profile, policy.evaluate(docId, profile, eligibility, context))
 
+    /** Verification commits require the real persisted row, never insertOutcome's compatibility fallback. */
+    fun recordAutomaticPersisted(docId: String, profile: ExpertProfile,
+        expectedAutomatic: AutomaticAdmissionResult): ExpertDiscoveryAdmission {
+        val outcome = recordAutomaticConclusion(docId, profile, expectedAutomatic)
+        val stored = repository.findAdmission(docId) ?: error("Automatic admission was not persisted")
+        check(stored.identityHash == identityHashOf(docId, profile) &&
+            stored.decision == expectedAutomatic.status.name && stored.revision == outcome.revision &&
+            stored.policyVersion == expectedAutomatic.policyVersion && !outcome.manual && !outcome.identityChanged) {
+            "Automatic admission changed during verification commit"
+        }
+        return stored
+    }
+
     /**
      * 阶段 2：调用方已按新政策现算结论（`policy.evaluate(profile)`）时复用同一条写入路径，
      * 避免在存量刷新里重算或传入不同口径的结论。
