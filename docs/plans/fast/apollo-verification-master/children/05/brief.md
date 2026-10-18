@@ -40,3 +40,16 @@ Use execute-p with target worktree bound to this worktree. The fast-p loop repla
 
 ## Required outputs
 Use execution report schema from execute-p. Record task/invariant evidence, exact commands/exit codes/counts, smoke observations, plan hash recheck, worktree identity, product commit SHA, and remaining blockers. Commit only authorized implementation files as `feat(fast-p): implement 05`. Report path is this directory's execution.md; controller commits all evidence separately.
+
+## Epoch2 — Approved caller-test scope amendment
+- Current approved plan identity: commit:a58d457ec2921759c455b6f6edae0e6d94b85220 (supersedes original snapshot for epoch2 only).
+- User “批准该计划并执行” approved the exact preceding C05-EXECUTION-CALLERS proposal; ledgerA5/A6 and plan-only commit record authority.
+- Additional authorized files, solely for explicit real execution/context callable migration and related existing regression assertions:
+  - `src/test/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryControllerMvcTest.kt`
+  - `src/test/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryControllerTest.kt`
+  - `src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt`
+- Total05 scope13 is the approved test-only exception to master's <=10 cap. Original production scope unchanged. Required regressions include both controller test classes.
+- Product base:a0103c2ea9284c030ad0b0b10c4177474c4f4d47; fix_round=0. Completed01–04 remain closed, through04 checkpoint VALID; no product edits from05 epoch1 remain.
+- Docker: DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock and Maven -Dapi.version=1.44; legacy optional shared-DB DiscoveryReviewRepositoryIT must stay skipped, never count skip as pass. Mandatory isolated MySQL tests must actually execute.
+- Current full Node baseline1694,total/pass1653/fail41; fresh separate Node evidence required if Maven -DskipNodeTests=true. Do not repair unrelated baseline or claim historical evidence current.
+- Interpretation receipt from epoch1: `run.settings另存mode/policy/limits` mandates recording configured caps; C-1/C-3 and04 contain no explicit requirement to consume historical limits instead of live safety caps. No worker/client scope is granted. Preserve exact contract rather than inventing additional requirements.
