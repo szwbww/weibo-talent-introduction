@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-18/apollo-verification-master.md
 
-- Status: RUNNING
+- Status: READY_FOR_HUMAN_REVIEW
 - Master plan: docs/plans/2026-10-18/apollo-verification-master.md (commit 00c0c9e75926ec9a8a9487fccf40d35d6275df3f)
 - Amendments: A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12
 - Master base: 3efc192faf043badc1ef27bef124a71d3120c4c5
@@ -9,12 +9,12 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-18T19:18:14.142629+08:00
-- Current child: 07
+- Current child: N/A
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
-- Resume from: cd105de17d7100466543675727a68fe1370008cb
+- Resume from: N/A
 
 ## Baseline
 - Invocation authorizes exact untracked plan snapshots, copied byte-for-byte into isolated worktree. Original user worktree untouched.
@@ -118,3 +118,8 @@
 ## Child07 verifier availability event
 - Role VERIFIER, attempt1: ApolloFrontendVerifier returned cancelled/aborted because its reviewer sandbox allowed only read-only Git and xd transport, not required command/browser execution or report append. No report was written and no fresh command/browser verification was completed; source-only F07-01/F07-02 are candidates, not exercised findings.
 - Action RETRY: acquired fresh capability-complete independent ApolloFrontendVerifierCapable with report-only repository authority and necessary command/browser tools; reset agent_attempt0. Product head unchanged70f438d2bd529aaca60b2b28d66874354171705b, fix_round0. Controller did not verify/fix inline or pause user.
+
+## Final artifact closing
+- All children01–07 terminal LIGHT_PASS_WITH_NOTES; current child07 clean through-child checkpoint VALID at b216cb8a2a4aac60e7c387db5d4fabc4c5b01c82. Final code head e473ffc714b840a2f42c9ca826da7c37e36ab9d7.
+- Handoff compiled only from recorded child execution/verification/repair artifacts. Independent07 screenshots/JSON copied without rerun into children/07/browser/independent-r1/. No new aggregate diff review, product check, test suite or whole-system verification.
+- Final-mode validation (no through-child) must be VALID before handoff is emitted: dirty-artifact validation, docs-only ledger/handoff commit, then clean validation. All local product/evidence commits and the worktree retained; no merge, push or deployment.

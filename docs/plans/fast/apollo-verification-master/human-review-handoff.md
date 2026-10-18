@@ -1,12 +1,14 @@
 # Fast-P Human Review Handoff
 
-- Outcome: PAUSED_FOR_HUMAN
+- Outcome: READY_FOR_HUMAN_REVIEW
 - Master base: 3efc192faf043badc1ef27bef124a71d3120c4c5
-- Current/final code head: bcc031775d112e1d67f20441e1c321d4b6a08967
+- Current/final code head: e473ffc714b840a2f42c9ca826da7c37e36ab9d7
 - Branch/worktree: fast/apollo-verification-master / /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-apollo-verification-master
 - Master plan: docs/plans/2026-10-18/apollo-verification-master.md
-- Master identity: commit:a58d457ec2921759c455b6f6edae0e6d94b85220
-- Approved amendments: A1,A2,A3,A4,A5,A6 in ledger; user approvals released prior03/04/05 authority pauses.
+- Master identity: commit:00c0c9e75926ec9a8a9487fccf40d35d6275df3f
+- Approved amendments: A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12; exact Before/After, governing rules and user approvals in ledger.md.
+- Finalization mode: NORMAL
+- Finalization repair parent: N/A
 
 ## Child Status
 | Child | Status | Code boundary | Fix rounds | Evidence commit |
@@ -16,41 +18,68 @@
 | 03 | LIGHT_PASS_WITH_NOTES | 69a236aa0b15b07755d42c713f24da944a7727e6..98c7b78fde54f69b72f175b94b2ab0eed25d86ab | 0 | 61f0e39acff1ab7acfe93c834db839e9ff5e175c |
 | 04 | LIGHT_PASS_WITH_NOTES | 98c7b78fde54f69b72f175b94b2ab0eed25d86ab..a0103c2ea9284c030ad0b0b10c4177474c4f4d47 | 0 | 5a3482bf5dca311e1a25b30d46a2c75db8caf6ac |
 | 05 | LIGHT_PASS_WITH_NOTES | a0103c2ea9284c030ad0b0b10c4177474c4f4d47..1cef08bd7e8bedc47cd2ca6d3f9823c2465e8848 | 1 | 6f6b75ed311ef111d91775c51d02ae41a515f5c8 |
-| 06 | PAUSED_FOR_HUMAN | 1cef08bd7e8bedc47cd2ca6d3f9823c2465e8848..bcc031775d112e1d67f20441e1c321d4b6a08967 | 0 | 790e71c0f831a8aca83ed488d1592dcda57053af |
-| 07 | PENDING | — | 0 | — |
+| 06 | LIGHT_PASS_WITH_NOTES | 1cef08bd7e8bedc47cd2ca6d3f9823c2465e8848..cd105de17d7100466543675727a68fe1370008cb | 1 | 8e81e6ed6e25ff63f934dc627888c9f2f7c33ceb |
+| 07 | LIGHT_PASS_WITH_NOTES | cd105de17d7100466543675727a68fe1370008cb..e473ffc714b840a2f42c9ca826da7c37e36ab9d7 | 1 | 647dc51ba60bad442c9922251693565553177349 |
 
 ## RECORD_ONLY Index
 | Observation | Child | Evidence | Source report |
 |---|---|---|---|
-| O-01 | 01 | Existing full Node baseline:1694 total,1653 pass,41 fail; no changed frontend files | children/01/verify-log.md |
-| O-02-01 | 02 | Same existing full Node baseline; no unauthorized frontend repair | children/02/verify-log.md, Attempt2 |
-| O-03-E2-01 | 03 | Fresh full Node suite matches existing1694/1653/41 baseline | children/03/verify-log.md |
-| O-03-E2-02 | 03 | Optional legacy shared-DB IT has one excluded skip; mandatory isolated MySQL8 IT8/8 passed | children/03/verify-log.md |
-| O-04-E2-01 | 04 | Fresh full Node suite retains existing41 failures | children/04/verify-log.md |
-| O-04-E2-02 | 04 | One optional legacy shared-DB IT skipped; mandatory isolated MySQL FlowIT11/11 and repositoryIT8/8 passed | children/04/verify-log.md |
-| O-05-E2-01 | 05 | 53 pre-existing policy-overload fixture errors statically attributed against base source; not baseline-rerun-confirmed or repaired | children/05/verify-log.md epoch2/attempt2 |
-| O-05-E2-02 | 05 | Full Node retains1694/1653 pass/41 fail | children/05/verify-log.md epoch2/attempt2 |
-| O-05-E2-03 | 05 | One optional legacy shared-DB IT skipped, mandatory isolated tests actually executed | children/05/verify-log.md epoch2/attempt2 |
+| O-01 | 01 | Original full Node baseline1694 total/1653 pass/41 fail; no frontend changes then | children/01/verify-log.md |
+| O-02-01 | 02 | Existing Node baseline failures retained, no unrelated repair | children/02/verify-log.md |
+| O-03-E2-01 | 03 | Fresh full Node1694/1653/41 | children/03/verify-log.md |
+| O-03-E2-02 | 03 | Optional legacy shared-DB skip not pass; mandatory isolated MySQL actually executed | children/03/verify-log.md |
+| O-04-E2-01 | 04 | Existing41 Node failures retained | children/04/verify-log.md |
+| O-04-E2-02 | 04 | One optional legacy shared-DB skip excluded; FlowIT11 and repositoryIT8 actually passed | children/04/verify-log.md |
+| O-05-E2-01 | 05 | 53 pre-existing policy-overload fixture errors statically attributed against base source, not baseline-rerun-confirmed or repaired | children/05/verify-log.md epoch2/attempt2 |
+| O-05-E2-02 | 05 | Existing Node41 baseline failures retained | children/05/verify-log.md epoch2/attempt2 |
+| O-05-E2-03 | 05 | Optional legacy shared-DB IT skip not pass; mandatory isolated tests executed | children/05/verify-log.md epoch2/attempt2 |
+| O06-01 | 06 | Fresh full Node1694/1653/41 remained failing | children/06/verify-log.md epoch2/attempt2 |
+| O06-02 | 06 | Known53 closed-child05 fixture errors not rerun for confirmation or changed | children/06/verify-log.md epoch2/attempt2 |
+| O07-01 | 07 | Final full Node1725/1685 pass/40 known recipient-preview sandbox failures; full suite is not green | children/07/verify-log.md epoch1/attempt3 |
 
 ## Recorded Verification
-- Child01: independent Kotlin261 passed; targeted Node70 passed; syntax passed; real isolated MySQL concurrency/CAS/budget and runtime driver exercised. Checkpoint VALID.
-- Child02: independent re-verifier Kotlin270 passed; targeted Node70 passed; syntax passed. F-02-01/F-02-02/F-02-03 independently CLOSED after one repair; runtime positive/negative paths exercised. Checkpoint VALID.
-- Child03 Epoch2: independent verifier Kotlin271 executed/passed (212 required plus59 adjacent), including isolated MySQL8 IT8/8 without skips; targeted Node70 passed; syntax passed. Independent real MySQL runtime: bulk500, evidenceSqlReads1, direct250, ApolloUnclear250, admitted500; changed identity NEEDS_REVIEW/IDENTITY_CHANGED; database outage explicit failure/no unmanaged fallback. Product commit98c7b78fde54f69b72f175b94b2ab0eed25d86ab.
-- Child03 completed-prefix checkpoint with all seven children and A1/A2: VALID in dirty-artifact and clean modes. Clean checkpoint evidence HEAD ccdaad239792d33089e0dfea5f048e33acc3c26a. Earlier extra through02 check after plan amendment failed only because of the validator tail restriction; this was recorded, not represented as passed. Mandatory through03 gate subsequently passed before04 dispatch.
-- Full Node suite is not globally green: existing41 failures remain. Optional shared-DB IT skip is not counted as pass.
-- Child04 Epoch2 independent verifier:263 executed backend passed, with one optional legacy shared-DB IT excluded skip; focused Node70 passed and syntax passed. External JVM real isolated MySQL/mock-HTTP runtime: auto=1, projection=PROJECTED, apolloRequests=2, no-provider-replay=true, candidates=1 after injected ES failure and reconstructed-worker recovery.
-- Child04 complete-manifest checkpoint through04: VALID in dirty-artifact and clean modes; clean checkpoint HEAD6ff5989012605e810daa5f1d926c359a3563e36d before05 dispatch. Deterministic evidence correction1 did not rerun or change product work.
-- Child05 epoch2 independently LIGHT_PASS_WITH_NOTES after one repair: F-05-E2-01/02/03 CLOSED. Backend418 total/364 pass/0 assertion failures/53 statically attributed existing errors/1 optional skip; focused Node70 and syntax passed, full Node41 baseline failures. Actual isolated runtime verifies canonical RAW fingerprint/original owner through replay and worker commit, and active-window changed-query+option409 without cursor mutation.
-- Through05 complete-manifest artifact gate passed VALID in dirty-artifact and clean modes; clean checkpoint HEADdf04e9c4737a61a0d859d21753e77a2bb9401740 preceded06 dispatch. Two deterministic controller metadata corrections did not rerun or modify product work.
-- Child06 executor evidence only, not independent acceptance:236 selected backend tests passed, all3 new reporting classes executed against isolated MySQL; F123 exact123/55/15/40/36/19/45/5/18,10000-row owner-index EXPLAIN and page100. Actual embedded Tomcat/HTTP/MySQL exercised null/zero, filters, HOLD, evidence,400/404/503, twenty read-only cycles and EXPIRED. Focused Node70/syntax passed; full Node41 retained failures. Missing CONFIG_AUTH capability reader prevents complete06 or verifier/checkpoint claim.
+
+Only recorded independent child evidence is indexed here; these are not freshly rerun aggregate checks.
+
+- **01:** Kotlin261 passed; focused Node70 and syntax passed. Actual isolated MySQL concurrency/CAS/budget checks and runtime stale-lease rejection exercised.
+- **02:** Independent re-verification Kotlin270 passed; focused Node70/syntax passed. F-02-01/F-02-02/F-02-03 CLOSED after one repair; runtime positive/negative qualification and identity paths exercised.
+- **03:** Independent Kotlin271 passed (212 required plus59 adjacent); mandatory isolated MySQL8 IT8/8, focused Node70/syntax passed. Actual runtime bulk500/evidenceSQL1/direct250/ApolloUnclear250/admitted500; changed identity blocked and DB outage propagated without unmanaged fallback.
+- **04:** Independent263 backend passed with one optional legacy skip excluded; FlowIT11/11 and repositoryIT8/8, focused Node70/syntax passed. Actual isolated MySQL/mock-HTTP JVM runtime auto1/projected/APOLLOrequests2/no-provider-replay after ES failure and reconstructed-worker projection recovery.
+- **05:** Independent418 total/364 pass/0 assertion failures/53 statically attributed existing fixture errors/1 optional skip; focused Node70/syntax passed, full Node41 baseline failures. F-05-E2-01/02/03 CLOSED after one repair. Actual consume/RAW interruption/replay/worker commit retains one activation/original owner and matching canonical RAW fingerprint. Active-window/zero-backlog changed-query+option returns409 VERIFICATION_OPTIONS_CONFLICT without pipeline/cursor mutation.
+- **06:** Independent239 backend passed, reporting IT9/9 on actual isolated MySQL; focused Node70/syntax passed. F06-01/F06-02 CLOSED after one repair. Authenticated HTTP verifies F123123/55/15/40/36/19/45/5/18, Apollo participation108/45/5/18 versus admitted40, matched person-1/four timestamps, both401/403 current CONFIG_AUTH/no replay, null/zero/HOLD/EXPIRED/503 and repeated GET no writes. Fixture guards, RR snapshots and123/10000-row owner-index EXPLAIN passed.
+- **07:** Independent101 discovery Node and50 amended CSS Node passed, app syntax passed;21 backend passed with zero skips, including actual MySQL ReportingIT10/10. Final full Node1725/1685 pass/40 fail. Frozen appended CSS byte comparison SHA256cffaffcce6ab26ed02e24f913e3b58572e6ced010b75169b5eda4e8d3f9dee35; unchanged original CSS prefix and recipient-preview functions recorded by verifier. Batch read seam has cross-page cumulative40/80/123, complete deduplicated/unknown reasons and activated MAX(updated_at) within RR; F123 and10000-row EXPLAIN freshly exercised.
+- **07 actual browser:** index/app/styles at1366×900,1920×1080,700×900,390×844, with configuration/log/evidence screenshots, computed sizing, original source controls, nonsticky opaque headers, modal scrolling, keyboard/ARIA, counts/drilldown/pages/errors/old snapshots, both launch transports and other-task restoration. F07-01/F07-02 CLOSED after one repair: pending evidence collapse/reopen performs fresh read and rejects stale ownership; pause/resume/cancel keeps independent verification polling after collection SUCCESS; terminal/hidden/closed/other-task contexts remain stopped.
+
+## Browser Evidence and Integration Limits
+
+- Retained independent final browser artifacts: [observations](children/07/browser/independent-r1/observations.json), [HTTP receipts](children/07/browser/independent-r1/http-requests.json).
+- [1366 configuration](children/07/browser/independent-r1/1366-config.png), [1366 logs](children/07/browser/independent-r1/1366-logs.png), [1366 evidence](children/07/browser/independent-r1/1366-evidence.png).
+- [390 configuration](children/07/browser/independent-r1/390-config.png), [390 logs](children/07/browser/independent-r1/390-logs.png), [390 evidence](children/07/browser/independent-r1/390-evidence.png);1920/700 screenshots in the same directory.
+- Browser screenshot codec returned WebP despite requested .png filenames; original bytes retained. CSS viewport dimensions are recorded independently of deviceScaleFactor1.25.
+- Browser used actual application DOM/code with isolated typed HTTP fixtures, **not authenticated browser-to-Spring/provider end-to-end deployment**. Actual authenticated Spring/MySQL checks were separate backend runtime smokes. No actual Apollo/ORCID credentials/requests, shared database, mail sends or production mutation.
+- Original mobile390 max-height override remains828; desktop/tablet720/864/720 and14px Apollo/34px existing source checkboxes are the exercised values, not a false universal80vh assertion.
+- Browser tabs and throwaway servers/harnesses were closed/removed; only evidence artifacts retained.
+
+## Scope and Authority
+
+- A1/A2:03 repository bulk evidence seam; A3/A4:04 existing ORCID client durable per-endpoint resume; A5/A6:05 explicit-execution controller/scheduler test migration and test-only cap13.
+- A7/A8:06 existing worker read-only auth-latch getter/test, cap9; user also preauthorized necessary remaining direct dependency/caller/test amendments while retaining business scope and all invariants.
+- A9/A10:07 frozenS5 batch cumulative/time/full-reason read seam in existing query/repository/tests, cap11. A11/A12:retire obsolete CSS-at-EOF assertions in two existing tests, cap13; no new production scope or re-pinning of incidental source positions.
+- Every concrete revision was committed plan-only and recorded before corresponding newly authorized product edits. No unrecorded scope expansion, unrelated baseline repair, push/merge/rebase/reset/amend/deploy or worktree deletion.
 
 ## Pause/Resume
-- Prior child03 pause resolved: user approved repository bulk evidence seam; plan-only commit1793d335cec0c73f10e1b26c1d0652b11c63c0a7 and ledgerA1/A2 record exact changed plans/authority. Child03 Epoch1 logs preserved; Epoch2 completed. Do not replay01–03.
-- Prior04 pause resolved by approved A3/A4 and plan-only commitbb9eda7df6fde5f4eb0a5d433a1058f008d42b16; completed04 epoch2 independently passed. Do not replay01–04.
-- Prior05 caller-test pause resolved by approved A5/A6 and plan-only commita58d457ec2921759c455b6f6edae0e6d94b85220;05 epoch2 completed with one independent repair/verification cycle. Do not replay01–05.
-- Current reason C06-CAPABILITY-AUTH: normative C-3:123 requires capabilities to show current auth failure, but worker's private process-local authBlocked latch has no authorized reader. Existing attempts are historical and cannot substitute for current state without an unapproved inference/reset policy. Exact contract/reference receipts: children/06/execution.md.
-- Proposed decision, not approved: add existing src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt and src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt to06 solely for a read-only current auth-latch accessor and regression coverage, consumed through existing authorized query/controller. Cap7→9 remains within10; no new states/tables, reset/retry/inference or changed worker behavior.
-- Resume06 epoch2 after explicit approval, separate plan-only amendment commit and exact Before/After ledger authority. Retain existing06 commitbcc031775d112e1d67f20441e1c321d4b6a08967, product base1cef08bd7e8bedc47cd2ca6d3f9823c2465e8848 and all prior logs; zero repairs. Do not dispatch07 until independent06 acceptance and checkpoint.
-- Original user worktree and unrelated changes preserved. No push, merge, deployment, shared-database access or real provider requests. Real credentials/account-limit compatibility and deployment/manual acceptance remain rollout prerequisites.
+
+- Reason: N/A — all child authority pauses resolved by explicit user approvals; all seven children terminal.
+- Resume from: N/A — proceed to deferred human whole-system review, not another implementation epoch.
+- Completed children were not replayed. Prior epochs, findings, bounded repairs, capability retry and artifact-format corrections remain in append-only child evidence/ledger.
+- Child07's first reviewer sandbox lacked command/browser/report-write capabilities; a fresh capability-complete independent verifier was acquired without inline controller verification. No repair round consumed for capability retry.
+- Every child terminal prefix checkpoint passed VALID in dirty-artifact and clean modes before advancement; final through07 clean checkpoint HEADb216cb8a2a4aac60e7c387db5d4fabc4c5b01c82. Final-mode artifact validation is a separate release-of-handoff gate, not product verification.
+
+## Human Review / Rollout Boundary
+
+- Review the recorded product boundaries and explicit amendments together. Full Node is not green; the known53 backend fixture errors remain documented rather than silently suppressed.
+- Feature defaults remain disabled. Provider credentials/actual account caps and real-world eligibility accuracy remain unmeasured rollout prerequisites; no claimed auto-admission rate.
+- Follow approved AUDIT shadow run, fixed-sample human comparison, then ENFORCE only after human rollout approval. Deployment was not requested or performed.
+- Existing user worktree/unrelated changes remain preserved. Retained worktree/branch/local product and evidence commits support human review.
 
 No whole-system verification was performed.
