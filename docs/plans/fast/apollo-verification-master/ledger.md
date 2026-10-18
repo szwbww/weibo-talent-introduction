@@ -10,7 +10,7 @@
 - Finalization repair parent: N/A
 - Started: 2026-10-18T19:18:14.142629+08:00
 - Current child: 01
-- Waiting role: N/A
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -24,12 +24,12 @@
 - Docker info initially failed because OrbStack stopped; `orbctl start` exit 0; subsequent `docker info --format '{{.ServerVersion}}'` exit 0, engine 29.8.2.
 - JDK11 java -version exit 0: Zulu 11.0.15. Maven 3.9.11 available; JAVA_HOME explicitly set for all Maven commands.
 - No actual provider secrets/account limits read; default-disabled offline implementation only. Runtime enabling and real-account limits remain human rollout checks, not inferred from design caps.
-- Baseline admission test command running; result to be appended before product dispatch.
+- Baseline `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=DiscoveryAdmissionPolicyTest`: exit 1. Kotlin: 22 run, 0 failures/errors/skipped. Bound Node suite: 1694 tests, 1653 pass, 41 fail, 0 skipped; Maven fails at exec:node-test. Raw session output: artifact://16. Failures include missing resetRecipientPreview/setRecipientPreviewState in extraction sandboxes and old debounce expectations; meetingConfirmationAssets rejects cache key containing preview. These are pre-existing baseline failures, not authorized unrelated repairs.
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| 01 | docs/plans/2026-10-18/apollo-01-ledger.md | sha256:72c5e37ba421270d7089a4702b2e019e206c8af4a6f0166882da0d77b86e917a | none | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
+| 01 | docs/plans/2026-10-18/apollo-01-ledger.md | sha256:72c5e37ba421270d7089a4702b2e019e206c8af4a6f0166882da0d77b86e917a | none | 1 | WAITING_FOR_AGENT | 3efc192faf043badc1ef27bef124a71d3120c4c5 | — | 0 | — | — | — | Preflight complete; acquiring implementer |
 | 02 | docs/plans/2026-10-18/apollo-02-evidence.md | sha256:0dca87e1a9e6b61b247f78e54ebf60e71afde280556c50e6f06a07921d6b4b3f | 01 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 | 03 | docs/plans/2026-10-18/apollo-03-admission.md | sha256:5499d4c166004fb181981d14ef05127386620bcf551bc3cc331478793b4e917c | 01,02 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 | 04 | docs/plans/2026-10-18/apollo-04-worker.md | sha256:8507e21e882539d54f908732dc58095129f9a3f2538f3b4c8b8a003926fa487a | 01,02,03 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
