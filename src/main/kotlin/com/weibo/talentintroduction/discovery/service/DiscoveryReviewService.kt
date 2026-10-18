@@ -323,7 +323,7 @@ class DiscoveryReviewService(
             val snapshot = writer.readDiscoveryDocument(level, docId)
                 ?: throw IllegalArgumentException("ES 文档不存在：$docId")
             val profile = writer.discoveryProfile(docId, snapshot.source)
-            val automatic = policy.evaluate(profile)
+            val automatic = policy.evaluate(docId, profile)
             val identityHash = identityHashOf(docId, profile)
             repository.initializeAdmission(docId, identityHash, automatic.status.name, automatic.policyVersion, now)
             val currentRevision = repository.findAdmission(docId)?.revision ?: 0L
@@ -797,7 +797,7 @@ class DiscoveryReviewService(
         val snapshot = writer.readDiscoveryDocument(level, item.expertDocId)
             ?: throw IllegalStateException("ES 文档不存在，无法重新运行自动校验：${item.expertDocId}")
         val profile = writer.discoveryProfile(item.expertDocId, snapshot.source)
-        val automatic = policy.evaluate(profile)
+        val automatic = policy.evaluate(item.expertDocId, profile)
         val identityHash = identityHashOf(item.expertDocId, profile)
         val now = LocalDateTime.now(clock)
         val snapshotJson = snapshotJson(level, item.expertDocId, profile, snapshot.seqNo, snapshot.primaryTerm, now)
@@ -846,7 +846,13 @@ class DiscoveryReviewService(
         profile: ExpertProfile,
         eligibility: EligibilityResult
     ): DiscoveryReviewAdmissionOutcome =
-        recordAutomaticConclusion(docId, profile, policy.evaluate(profile, eligibility))
+        recordAutomaticConclusion(docId, profile, policy.evaluate(docId, profile, eligibility))
+
+    fun recordAutomatic(
+        docId: String, profile: ExpertProfile, eligibility: EligibilityResult,
+        context: VerificationAdmissionContext
+    ): DiscoveryReviewAdmissionOutcome =
+        recordAutomaticConclusion(docId, profile, policy.evaluate(docId, profile, eligibility, context))
 
     /**
      * 阶段 2：调用方已按新政策现算结论（`policy.evaluate(profile)`）时复用同一条写入路径，
@@ -1194,7 +1200,8 @@ class DiscoveryReviewService(
                         unchanged++
                         continue
                     }
-                    val automatic = policy.evaluate(expert.profile)
+                    val automatic = expert.verificationContext?.let { policy.evaluate(expert.docId, expert.profile, it) }
+                        ?: policy.evaluate(expert.docId, expert.profile)
                     repository.initializeAdmission(
                         expert.docId, identityHashOf(expert.docId, expert.profile),
                         automatic.status.name, automatic.policyVersion, now
@@ -1332,7 +1339,8 @@ class DiscoveryReviewService(
                             applySkipped++
                             continue
                         }
-                        val automatic = policy.evaluate(profile)
+                        val automatic = expert.verificationContext?.let { policy.evaluate(docId, profile, it) }
+                            ?: policy.evaluate(docId, profile)
                         if (automatic.blockingReasons.isNotEmpty()) {
                             applySkipped++
                             continue

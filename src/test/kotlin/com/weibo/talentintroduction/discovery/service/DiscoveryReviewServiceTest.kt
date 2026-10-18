@@ -138,7 +138,7 @@ class DiscoveryReviewServiceTest {
     fun `prepare persists admission and a staged item and returns a reproducible batch hash`() {
         Mockito.`when`(writer.readDiscoveryDocument(ExpertIndexLevel.RAW, "doc1")).thenReturn(snapshot())
         Mockito.`when`(writer.discoveryProfile(anyString(), Mockito.any<Map<String, Any?>>() ?: emptyMap())).thenReturn(profile())
-        Mockito.`when`(policy.evaluate(Mockito.any(ExpertProfile::class.java) ?: profile())).thenReturn(auto())
+        Mockito.`when`(policy.evaluate(anyString(), Mockito.any(ExpertProfile::class.java) ?: profile())).thenReturn(auto())
         Mockito.`when`(repository.findAdmission("doc1")).thenReturn(null)
         Mockito.`when`(repository.insertItem(anyString(), anyString(), anyString(), anyString(), anyString(),
             anyLong(), anyString(), anyString(), anyString(), any(), anyString(), any(), any(), any(), anyTime()))
@@ -235,7 +235,7 @@ class DiscoveryReviewServiceTest {
         Mockito.`when`(repository.findItem(9L)).thenReturn(item)
         Mockito.`when`(writer.readDiscoveryDocument(ExpertIndexLevel.RAW, "doc1")).thenReturn(snapshot())
         Mockito.`when`(writer.discoveryProfile(anyString(), Mockito.any<Map<String, Any?>>() ?: emptyMap())).thenReturn(profile())
-        Mockito.`when`(policy.evaluate(Mockito.any(ExpertProfile::class.java) ?: profile()))
+        Mockito.`when`(policy.evaluate(anyString(), Mockito.any(ExpertProfile::class.java) ?: profile()))
             .thenReturn(auto(DiscoveryAdmissionStatus.NEEDS_REVIEW))
         Mockito.`when`(repository.revokeCurrent(anyLong(), anyString(), any(), anyString(), anyString(), any(),
             anyString(), anyString(), anyString(), any(), anyTime()))
@@ -259,7 +259,7 @@ class DiscoveryReviewServiceTest {
         Mockito.`when`(repository.findItem(10L)).thenReturn(stagedItem(id = 10L, state = DiscoveryReviewItemState.APPLIED.name))
         Mockito.`when`(writer.readDiscoveryDocument(ExpertIndexLevel.RAW, "doc1")).thenReturn(snapshot())
         Mockito.`when`(writer.discoveryProfile(anyString(), Mockito.any<Map<String, Any?>>() ?: emptyMap())).thenReturn(profile())
-        Mockito.`when`(policy.evaluate(Mockito.any(ExpertProfile::class.java) ?: profile())).thenReturn(auto())
+        Mockito.`when`(policy.evaluate(anyString(), Mockito.any(ExpertProfile::class.java) ?: profile())).thenReturn(auto())
         Mockito.`when`(repository.revokeCurrent(anyLong(), anyString(), any(), anyString(), anyString(), any(),
             anyString(), anyString(), anyString(), any(), anyTime()))
             .thenReturn(DiscoveryReviewRevokeOutcome.NOT_CURRENT to null)
@@ -287,11 +287,12 @@ class DiscoveryReviewServiceTest {
     private fun stubAutomatic(result: AutomaticAdmissionResult) {
         Mockito.`when`(
             policy.evaluate(
+                anyString(),
                 Mockito.any(ExpertProfile::class.java) ?: profile(),
                 Mockito.any(EligibilityResult::class.java) ?: eligibility()
             )
         ).thenReturn(result)
-        Mockito.`when`(policy.evaluate(Mockito.any(ExpertProfile::class.java) ?: profile())).thenReturn(result)
+        Mockito.`when`(policy.evaluate(anyString(), Mockito.any(ExpertProfile::class.java) ?: profile())).thenReturn(result)
     }
 
     @Test
@@ -883,5 +884,70 @@ class DiscoveryReviewServiceTest {
         assertEquals(1, outcome.recorded)
         assertEquals(1, outcome.skipped)
         Mockito.verify(repository, Mockito.times(1)).initializeAdmission(anyString(), anyString(), anyString(), any(), anyTime())
+    }
+
+    @Test
+    fun `managed automatic writes real doc id evidence and preserves all protected decisions`() {
+        val f = AdmissionGateFixture()
+        val svc = DiscoveryReviewService(repository, f.policy, writer, restTemplate, properties, expertIndexService, objectMapper, clock)
+        val qualification = f.eligibility.evaluateEligibility(f.profile)
+        listOf(f.item(), f.item(facts = listOf(ruleJob()), search = ruleSearch())).forEach { item ->
+            f.load(item)
+            Mockito.`when`(repository.findAdmission(f.docId)).thenReturn(null)
+            val result = svc.recordAutomatic(f.docId, f.profile.copy(esDocId = null), qualification)
+            assertEquals("AUTO_PASSED", result.decision)
+            assertTrue(result.admitted)
+        }
+        Mockito.verify(repository, Mockito.times(2)).initializeAdmission(
+            eqValue(f.docId), eqValue(f.item().identityHash), eqValue("AUTO_PASSED"),
+            eqValue(DiscoveryVerificationAdmissionGate.POLICY_VERSION), anyTime())
+        for (decision in listOf("MANUAL_APPROVED", "LEGACY_APPROVED", "HOLD", "REJECTED")) {
+            f.load(f.item(facts = emptyList()))
+            Mockito.`when`(repository.findAdmission(f.docId)).thenReturn(
+                admission(decision, f.docId, f.item().identityHash))
+            assertEquals(decision, svc.recordAutomatic(f.docId, f.profile, qualification).decision)
+        }
+        Mockito.verify(repository, Mockito.never()).initializeAdmission(
+            eqValue(f.profile.orcidId), anyString(), anyString(), anyString(), anyTime())
+    }
+
+    @Test
+    fun `managed revoke recomputes the same gate after manual approval`() {
+        val f = AdmissionGateFixture()
+        f.load(f.item(facts = listOf(ruleJob()), search = ruleSearch()))
+        val item = stagedItem(docId = f.docId, identityHash = f.item().identityHash, state = "APPLIED")
+        Mockito.`when`(repository.findItem(5L)).thenReturn(item)
+        Mockito.`when`(writer.readDiscoveryDocument(ExpertIndexLevel.RAW, f.docId)).thenReturn(snapshot())
+        Mockito.`when`(writer.discoveryProfile(eqValue(f.docId), Mockito.any<Map<String, Any?>>() ?: emptyMap())).thenReturn(f.profile)
+        Mockito.`when`(repository.revokeCurrent(anyLong(), anyString(), any(), anyString(), anyString(), any(),
+            anyString(), anyString(), anyString(), any(), anyTime())).thenReturn(DiscoveryReviewRevokeOutcome.APPLIED to 77L)
+        val svc = DiscoveryReviewService(repository, f.policy, writer, restTemplate, properties, expertIndexService, objectMapper, clock)
+        svc.revoke(5L, "op1", null)
+        val call = Mockito.mockingDetails(repository).invocations.single { it.method.name == "revokeCurrent" }
+        assertTrue(call.arguments.contains("AUTO_PASSED"))
+        assertTrue(call.arguments.contains(DiscoveryVerificationAdmissionGate.POLICY_VERSION))
+        Mockito.verify(f.repository).findItemsByDocIds(setOf(f.docId))
+    }
+
+    @Test
+    fun `managed initialize and refresh reuse batch contexts without another evidence read`() {
+        val f = AdmissionGateFixture()
+        f.load(f.item(facts = listOf(ruleJob()), search = ruleSearch()))
+        val context = f.gate.findContext(f.docId, f.profile)
+        val scan = Mockito.mock(DiscoveryReviewScanService::class.java)
+        val row = scanExpert(f.docId, f.profile).copy(verificationContext = context)
+        stubScan(scan, listOf(row))
+        val svc = DiscoveryReviewService(repository, f.policy, writer, restTemplate, properties, expertIndexService,
+            objectMapper, clock, scanService = scan)
+        Mockito.`when`(repository.findAdmissions(Mockito.anyCollection<String>() ?: emptyList())).thenReturn(emptyList())
+        assertEquals(1, svc.runInitializeWorker("managed-init", listOf(ExpertIndexLevel.RAW)).recorded)
+        Mockito.`when`(repository.findAdmission(f.docId)).thenReturn(
+            admission("AUTO_PASSED", f.docId, f.item().identityHash).copy(policyVersion = DiscoveryVerificationAdmissionGate.POLICY_VERSION))
+        Mockito.`when`(writer.projectDiscoveryCandidate(eqValue(f.docId), Mockito.any<Map<String, Any?>>() ?: emptyMap(), eqValue("AUTO_PASSED")))
+            .thenReturn(ExpertIndexWriterService.DiscoveryCandidateProjection.ALREADY_PRESENT)
+        val refresh = svc.runRefreshWorker("managed-refresh", listOf(ExpertIndexLevel.RAW), false)
+        assertEquals(1, refresh.admitted)
+        assertEquals(1, refresh.candidateAlreadyPresent)
+        Mockito.verify(f.repository, Mockito.times(1)).findItemsByDocIds(setOf(f.docId))
     }
 }
