@@ -41,6 +41,7 @@ audit§1/2列全部自动写入及reader。ReviewService:844/855/874负责自动
 ## 实现方案
 
 1. **独立gate（I-1/I-2/I-3）**：DiscoveryVerificationAdmissionGate只依赖01repository和02纯rules，不依赖DiscoveryReviewService，避免policy→gate→review循环。提供findContext(docId,profile)、findContexts(keys)、evaluateManaged(baseAutomatic,evidenceContext)。输入上下文区分“未加载”与“已加载但无账本”，支持批量加载后纯计算。managed但证据未完成返回NEEDS_REVIEW/VERIFICATION_PENDING；证据不匹配FACT_CHANGED/IDENTITY_CHANGED。
+   **已批准的 repository 补充接缝**：在 DiscoveryVerificationRepository.kt 增加按真实 `expert_doc_id` 批量读取账本 item/evidence 的只读接口，每批最多500个docId、一次证据SQL读取。结果保留身份哈希、事实指纹、snapshot、state、qualification、outcome、evidence及管理态判定所需的policy/mode信息；同docId旧身份ENFORCE记录仍代表纳管，不因找不到当前身份证据退回UNMANAGED。gate在批量载入后纯计算，不增加逐档案查询、不直接引入JDBC、不改变原管理态枚举接口的旧调用语义。返回结构复用已有item模型，所需紧密相关读取结构可在已授权repository/gate文件内定义；不得因此扩写未授权domain或测试文件。
 2. **policy入口（I-1～I-4）**：保留原evaluate签名给旧调用者；增加显式docId/context重载；现有入口只在能获得真实esDocId时读gate，缺真实ID的纳管调用必须由上层补齐而不是猜ORCID。基于纯旧结论调用overlay，不重复构建有副作用的新profile。保留6类soft和其他配置硬否决；新学历/年龄资格不靠旧rejectCodes推断“确定不符合”。
 3. **review/readers（I-3/I-4）**：recordAutomatic和撤销/initialize/refresh传入实际docId；ScanService一次findContexts并逐人计算。initialize遇旧无账本保持旧策略，不自动拉Apollo；GET审核列表不触发网络。输入ledger evidence已COMPLETED或处于本事务可用阶段，未提交的其他事务不可见。
 4. **重验（I-2/I-4）**：在reconcile前选择managed/nonmanaged分支。managed分支使用gate的当前硬阻断；通过走projectAdmission；未完成或缺资格NEEDS_REVIEW不得新建候选。已有效Apollo未明确不因旧NO_DOCTORAL/AGE_EXCEEDED删除；真实新增硬阻断仍按当前policy处理，人工路径先返回。不得修改非发现分支或通用CandidateEligibilityService。
@@ -48,7 +49,7 @@ audit§1/2列全部自动写入及reader。ReviewService:844/855/874负责自动
 
 ## 变更文件清单
 
-共9个文件；一个发现核验子系统（与既有准入/前端的交互按文中说明）；无清单外授权。
+共10个文件；一个发现核验子系统（与既有准入/前端的交互按文中说明）；无清单外授权。
 
 |#|文件|动作|
 |---|---|---|
@@ -61,6 +62,7 @@ audit§1/2列全部自动写入及reader。ReviewService:844/855/874负责自动
 |7|`src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewServiceTest.kt`|修改|
 |8|`src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewAllPagesTest.kt`|修改|
 |9|`src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceBehaviorTest.kt`|修改|
+|10|`src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt`|修改：增加<=500真实docId的批量item/evidence只读接缝|
 
 ## 验收标准
 
@@ -85,3 +87,6 @@ I-1：缺失/损坏/identity变更/DB失败/500批读断言；I-2：总矩阵全
 - 操作步骤：执行重验/审核查询。
 - 预期结果：身份变更不能复用旧Apollo准入；DB故障返回明确失败，没有新候选写入，没有把该档案当旧未纳管放行。
 - 覆盖：I-1/I-3，IP-4
+
+## 修正记录
+- 2026-10-18，用户“批准该计划并执行”：批准暂停交接提出的最小修订，将repository批量证据读取纳入本片授权（9→10文件），保持总计划I-6/I-13及本片I-1/I-3的一致证据和禁止N+1要求；不改变准入口径。修订依据及提交身份记录于 `docs/plans/fast/apollo-verification-master/ledger.md` 的 Amendments。
