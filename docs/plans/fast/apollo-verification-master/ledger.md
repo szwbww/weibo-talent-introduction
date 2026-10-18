@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-10-18/apollo-verification-master.md
 
-- Status: PAUSED_FOR_HUMAN
-- Master plan: docs/plans/2026-10-18/apollo-verification-master.md (commit bb9eda7df6fde5f4eb0a5d433a1058f008d42b16)
-- Amendments: A1,A2,A3,A4
+- Status: RUNNING
+- Master plan: docs/plans/2026-10-18/apollo-verification-master.md (commit a58d457ec2921759c455b6f6edae0e6d94b85220)
+- Amendments: A1,A2,A3,A4,A5,A6
 - Master base: 3efc192faf043badc1ef27bef124a71d3120c4c5
 - Branch: fast/apollo-verification-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-apollo-verification-master
@@ -10,10 +10,10 @@
 - Finalization repair parent: N/A
 - Started: 2026-10-18T19:18:14.142629+08:00
 - Current child: 05
-- Waiting role: HUMAN_SCOPE_APPROVAL
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: C05-EXECUTION-CALLERS — explicit execution/context callable migration requires three unlisted existing caller-test files
+- Pause reason: N/A
 - Resume from: a0103c2ea9284c030ad0b0b10c4177474c4f4d47
 
 ## Baseline
@@ -33,7 +33,7 @@
 | 02 | docs/plans/2026-10-18/apollo-02-evidence.md | sha256:0dca87e1a9e6b61b247f78e54ebf60e71afde280556c50e6f06a07921d6b4b3f | 01 | 1 | LIGHT_PASS_WITH_NOTES | 772429192fdab1fd7ac75cb084f08f45aec5c965 | 5c05491b963c4d1d9793ebdc1f8469b175f170d8 | 1 | 69a236aa0b15b07755d42c713f24da944a7727e6 | 69a236aa0b15b07755d42c713f24da944a7727e6 | 4a05d7e4a7c16eb2d4b12819672ce2233b33f523 | Writers ApolloEvidenceImplementer ApolloEvidenceFixer1; verifier ApolloEvidenceReverifier1; findings CLOSED; O-02-01 existing Node failures |
 | 03 | docs/plans/2026-10-18/apollo-03-admission.md | commit:1793d335cec0c73f10e1b26c1d0652b11c63c0a7 | 01,02 | 2 | LIGHT_PASS_WITH_NOTES | 69a236aa0b15b07755d42c713f24da944a7727e6 | 98c7b78fde54f69b72f175b94b2ab0eed25d86ab | 0 | — | 98c7b78fde54f69b72f175b94b2ab0eed25d86ab | 61f0e39acff1ab7acfe93c834db839e9ff5e175c | Writer ApolloAdmissionImplementerE2; verifier ApolloAdmissionVerifierE2; O-03-E2-01/02 record only |
 | 04 | docs/plans/2026-10-18/apollo-04-worker.md | commit:bb9eda7df6fde5f4eb0a5d433a1058f008d42b16 | 01,02,03 | 2 | LIGHT_PASS_WITH_NOTES | 98c7b78fde54f69b72f175b94b2ab0eed25d86ab | a0103c2ea9284c030ad0b0b10c4177474c4f4d47 | 0 | — | a0103c2ea9284c030ad0b0b10c4177474c4f4d47 | 5a3482bf5dca311e1a25b30d46a2c75db8caf6ac | Writer ApolloWorkerImplementerE2; verifier ApolloWorkerVerifierE2; evidence closing correction1; O-04-E2-01/02 |
-| 05 | docs/plans/2026-10-18/apollo-05-integration.md | sha256:ddcb578f31c657cdfbbfef55b6b603c17abc508b0a84e1dbd5323e74cc14c714 | 01,02,03,04 | 1 | PAUSED_FOR_HUMAN | a0103c2ea9284c030ad0b0b10c4177474c4f4d47 | — | 0 | — | a0103c2ea9284c030ad0b0b10c4177474c4f4d47 | a83e2d4a8927227fd8335a72e8f2e27e7861e26a | Writer ApolloIntegrationImplementer; PLAN_CONFLICT C05-EXECUTION-CALLERS; no retained product edits or regression/smoke run |
+| 05 | docs/plans/2026-10-18/apollo-05-integration.md | commit:a58d457ec2921759c455b6f6edae0e6d94b85220 | 01,02,03,04 | 2 | LIGHT_PASS_WITH_NOTES | a0103c2ea9284c030ad0b0b10c4177474c4f4d47 | 083fce2f4b97c88b89a226394ebbf1342001a2d4 | 1 | 1cef08bd7e8bedc47cd2ca6d3f9823c2465e8848 | 1cef08bd7e8bedc47cd2ca6d3f9823c2465e8848 | 6f6b75ed311ef111d91775c51d02ae41a515f5c8 | Writers ApolloIntegrationImplementerE2/ApolloIntegrationFixerE2R1; verifier ApolloIntegrationReverifierE2R1; F01/02/03 CLOSED; O-05-E2-01/02/03 record only; evidence correction2 |
 | 06 | docs/plans/2026-10-18/apollo-06-reporting.md | sha256:43a207d15adfa9e488780fd70ce8656a15e1bd50aa121984f01efff244cdb9de | 01,02,03,04,05 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 | 07 | docs/plans/2026-10-18/apollo-07-frontend.md | sha256:efce42d320a64915768fc6277257fab928090d2d7b64c0a40b6503d88d773f4d | 01,02,03,04,05,06 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 
@@ -44,6 +44,8 @@
 | A2 | docs/plans/2026-10-18/apollo-verification-master.md | commit:3f4ba12b8a1d04c1cc00cf1788dbb4f627e3ec26 | commit:1793d335cec0c73f10e1b26c1d0652b11c63c0a7 | 实现方案 / I-6/I-13 | Synchronize child03 authorized file limit from 9 to 10 for the approved repository seam | HUMAN:批准该计划并执行 (2026-10-18T20:27:54+08:00) |
 | A3 | docs/plans/2026-10-18/apollo-04-worker.md | commit:62f2ba3d9235f2257dcdd4bfc32c70da2ec19b8e | commit:bb9eda7df6fde5f4eb0a5d433a1058f008d42b16 | I-6/I-9 | Authorize existing ORCID client and regression tests for durable per-endpoint completion and resume | HUMAN:批准该计划并执行 (2026-10-18T21:06:49+08:00) |
 | A4 | docs/plans/2026-10-18/apollo-verification-master.md | commit:1793d335cec0c73f10e1b26c1d0652b11c63c0a7 | commit:bb9eda7df6fde5f4eb0a5d433a1058f008d42b16 | 实现方案 / I-6/I-9 | Synchronize child04 file limit 7 to 9 for the approved ORCID persistence/resume seam | HUMAN:批准该计划并执行 (2026-10-18T21:06:49+08:00) |
+| A5 | docs/plans/2026-10-18/apollo-05-integration.md | commit:0a0bb9c722f57a10462a8031a0e4e4f62f8ae143 | commit:a58d457ec2921759c455b6f6edae0e6d94b85220 | I-1/I-2 / C05-EXECUTION-CALLERS | Authorize three existing caller tests for explicit real execution/context contract migration,10→13; no production scope change | HUMAN:批准该计划并执行 (recorded2026-10-18T22:00:25+08:00) |
+| A6 | docs/plans/2026-10-18/apollo-verification-master.md | commit:bb9eda7df6fde5f4eb0a5d433a1058f008d42b16 | commit:a58d457ec2921759c455b6f6edae0e6d94b85220 | 实现方案 / I-6/I-11 | Synchronize05 cap10→13 as caller-test-only exception to <=10; production scope unchanged | HUMAN:批准该计划并执行 (recorded2026-10-18T22:00:25+08:00) |
 
 ## Pause / Resume Authority
 - Child03 execution report records exact missing seam and rejected workarounds; no product file was changed for child03 and no verification was fabricated.
@@ -79,3 +81,12 @@
 - Exact caller-reference receipts, governing requirements and inferred matcher incompatibility are in children/05/execution.md. No tests were run for05; no failure or pass fabricated.
 - Proposed amendment, not approved: authorize existing ExpertDiscoveryControllerMvcTest.kt, ExpertDiscoveryControllerTest.kt and ExpertDiscoverySchedulerTest.kt solely for migration of the explicit real execution/context callable contract. Child05 scope10→13 requires an explicit test-only exception to the master's per-child <=10 cap; production file scope unchanged.
 - Child05 provisional authorized edits were surgically removed; no product commit. Await approval, then amend plans in a separate commit, record Before/After master/child identities and exact approval, and resume05 epoch2 with zero repair rounds. Do not replay01–04 or dispatch06/07 now.
+
+## Child05 Epoch2 approved resume
+- User “批准该计划并执行” approves the exact preceding test-only exception; plan-only commita58d457ec2921759c455b6f6edae0e6d94b85220 andA5/A6 record its identities/authority. Retained HEAD0a0bb9c722f57a10462a8031a0e4e4f62f8ae143 was clean with matching root/branch and prior product ancestor.
+- Resume already-active05 under Set Up Once step5; completed through04 clean checkpoint remains VALID and untouched. Do not rerun closed children or add current-tail validation after an in-flight plan amendment; mandatory through05 gate precedes06 dispatch.
+- New epoch2 resets fix_round=0; epoch1 conflict retained. Production scope unchanged; only three enumerated existing caller-test migrations added.
+
+## Child05 checkpoint evidence correction1
+- Initial checkpoint INVALID only because fixer round1 SHA line included subject text and controller closing heading isolated its canonical SHA. Original fixer/verifier reports unchanged; normalized the controller-added heading level and appended truthful correction records in replacement docs-only evidencec84abc228b1b3dca11da9d222c8924d8746478df. No product/test changes, rerun or new repair.
+- Correction2: first correction added a redundant canonical action block; normalized only that controller closing format, preserving original independent action. Replacement docs-only evidence6f6b75ed311ef111d91775c51d02ae41a515f5c8. No product/verification changes.
