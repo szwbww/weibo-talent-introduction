@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-18/discovery-samples-master.md
 
-- Status: RUNNING
+- Status: READY_FOR_HUMAN_REVIEW
 - Master plan: docs/plans/2026-10-18/discovery-samples-master.md (commit cd6189360196700cf65c5e21ab3512ddedb98abc)
 - Amendments: A1,A2
 - Master base: 3efc192faf043badc1ef27bef124a71d3120c4c5
@@ -9,12 +9,12 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-18T20:14:56+08:00
-- Current child: 03
+- Current child: N/A
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
-- Resume from: a233aeaa7203086dd593968157e73065801bb0d6
+- Resume from: N/A
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
@@ -32,19 +32,26 @@
 ## Baseline
 - Source worktree has unrelated unstaged/untracked changes; retained unchanged. Execution starts from the exact master code baseline in a separate worktree.
 - Validator --help: exit 0; --through-child supported.
-- Apollo branch observation: HEAD 69a236aa0b15b07755d42c713f24da944a7727e6, latest implementation is child 02; merge-base --is-ancestor against master base exited 1. Apollo05 prerequisite is not yet established. Recheck before child 02; no merge authorized.
+- Historical preflight observation: Apollo HEAD69a236aa0b15b07755d42c713f24da944a7727e6 had only child02 implemented, not ancestor of this execution base. The resulting I-5 pause was resolved under A1/A2 and epoch2 below.
 - Product baseline: SampleStoreImplementer recorded JDK11 `mvn -DskipTests -DskipNodeTests=true test-compile` exit 0 before edits; original implementation commands passed 8 tests. After round 1, SampleStoreReverifier1 freshly passed both required variants with 11 tests, 0 failures/errors/skips; see child01 reports.
 
-## Checkpoint and pause evidence
+## Historical epoch1 checkpoint and pause evidence
 - Child 01 evidence commit: 988b04411ccdeaa2687e26683ce667cd9f03c32d. Checkpoint commit: c577b8a4c08f42147c9e465806cfe755e5f68f53.
 - Complete three-child manifest validator through 01 returned exit 0, result VALID, validation_scope CHILD_CHECKPOINT, first with --allow-dirty-artifacts and then clean without it.
 - Before child 02 dispatch, Apollo ledger still reported Current child 03 / LIGHT_VERIFYING and Apollo05 PENDING. Exact observed external ledger: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-apollo-verification-master/docs/plans/fast/apollo-verification-master/ledger.md, lines 12,34-36.
 - `git rev-parse HEAD fast/apollo-verification-master` returned c577b8a4c08f42147c9e465806cfe755e5f68f53 and 98c7b78fde54f69b72f175b94b2ab0eed25d86ab; `git merge-base --is-ancestor fast/apollo-verification-master HEAD` exited 1.
-- No merge/rebase/cherry-pick or substitute pre-Apollo integration was attempted. Ordered child 03 remains PENDING under fast-p's whole-workflow pause rule.
-- Resume requires completed Apollo05 regression evidence and explicit integration authority/approved boundary compatible with retained product-chain ancestry; recheck exact plan identities and clean product index before acquiring child 02 implementer.
+- At that pause no merge/rebase/cherry-pick or substitute pre-Apollo integration was attempted; ordered child03 remained PENDING.
+- The pause required Apollo05 evidence and explicit integration authority; user approval and A1/A2 resolved it in epoch2 without changing completed child01 boundaries.
 
 ## Epoch2 authorized resume
 - Apollo05 now LIGHT_PASS_WITH_NOTES, F-05-E2-01/02/03 CLOSED; source code 1cef08bd7e8bedc47cd2ca6d3f9823c2465e8848, evidence 6f6b75ed311ef111d91775c51d02ae41a515f5c8, checkpoint df04e9c4737a61a0d859d21753e77a2bb9401740. No old command output is substituted for target-worktree regression.
 - User explicitly approved frozen local linear integration and continuation via ask selection. Plan-only commit cd6189360196700cf65c5e21ab3512ddedb98abc records exact manifest and boundaries; no merge/rebase/main/push/deployment authorized.
-- Resume retained active child02 after its prerequisite pause, rather than replaying completed child01; epoch1 pause and child01 checkpoint/evidence remain unchanged. Required through02 checkpoint will validate complete amended manifest before child03.
+- Resumed retained active child02 after its prerequisite pause, rather than replaying completed child01; epoch1 pause and child01 checkpoint/evidence remain unchanged. Required through02 checkpoint passed with complete amended manifest in dirty-artifact and clean modes before child03 dispatch.
 - Imported upstream files are mechanically bound to exact manifest/source blobs; only the original eight files may receive new sampling implementation. Source06/07 and source docs/ledger are excluded from import.
+
+## Final recorded artifact checkpoints
+- Child02 clean complete-manifest checkpoint: 5607e5024128b16608dca28f2e310e3f3be4323e; result VALID / CHILD_CHECKPOINT through02.
+- Child03 clean complete-manifest checkpoint: c313342a91f71c01a44b18b4d54c9ced26acddd2; result VALID / CHILD_CHECKPOINT through03. All three approved children and A1/A2 included; child artifacts committed and unchanged after their evidence commits.
+- Terminal code head: eb6080147141bc3d7dd00054705ba8973ea2b270. Finalization mode NORMAL; no repair parent.
+- Final handoff is derived only from child reports and recorded Git/command evidence. No aggregate diff review, full-system suite, final reviewer, deployment or optimization claim.
+- Human review and controlled real new-sample collection remain outstanding; only synthetic capture plus existing real PDF parser fixtures were exercised.
