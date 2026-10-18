@@ -1,20 +1,20 @@
 # Fast-P Ledger — master: docs/plans/2026-10-18/apollo-verification-master.md
 
 - Status: RUNNING
-- Master plan: docs/plans/2026-10-18/apollo-verification-master.md (commit f9435ee70c585a158b3a3414c3bf549c35c7044b)
-- Amendments: A1,A2,A3,A4,A5,A6,A7,A8
+- Master plan: docs/plans/2026-10-18/apollo-verification-master.md (commit 00c0c9e75926ec9a8a9487fccf40d35d6275df3f)
+- Amendments: A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12
 - Master base: 3efc192faf043badc1ef27bef124a71d3120c4c5
 - Branch: fast/apollo-verification-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-apollo-verification-master
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-18T19:18:14.142629+08:00
-- Current child: 06
+- Current child: 07
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
-- Resume from: bcc031775d112e1d67f20441e1c321d4b6a08967
+- Resume from: cd105de17d7100466543675727a68fe1370008cb
 
 ## Baseline
 - Invocation authorizes exact untracked plan snapshots, copied byte-for-byte into isolated worktree. Original user worktree untouched.
@@ -35,7 +35,7 @@
 | 04 | docs/plans/2026-10-18/apollo-04-worker.md | commit:bb9eda7df6fde5f4eb0a5d433a1058f008d42b16 | 01,02,03 | 2 | LIGHT_PASS_WITH_NOTES | 98c7b78fde54f69b72f175b94b2ab0eed25d86ab | a0103c2ea9284c030ad0b0b10c4177474c4f4d47 | 0 | — | a0103c2ea9284c030ad0b0b10c4177474c4f4d47 | 5a3482bf5dca311e1a25b30d46a2c75db8caf6ac | Writer ApolloWorkerImplementerE2; verifier ApolloWorkerVerifierE2; evidence closing correction1; O-04-E2-01/02 |
 | 05 | docs/plans/2026-10-18/apollo-05-integration.md | commit:a58d457ec2921759c455b6f6edae0e6d94b85220 | 01,02,03,04 | 2 | LIGHT_PASS_WITH_NOTES | a0103c2ea9284c030ad0b0b10c4177474c4f4d47 | 083fce2f4b97c88b89a226394ebbf1342001a2d4 | 1 | 1cef08bd7e8bedc47cd2ca6d3f9823c2465e8848 | 1cef08bd7e8bedc47cd2ca6d3f9823c2465e8848 | 6f6b75ed311ef111d91775c51d02ae41a515f5c8 | Writers ApolloIntegrationImplementerE2/ApolloIntegrationFixerE2R1; verifier ApolloIntegrationReverifierE2R1; F01/02/03 CLOSED; O-05-E2-01/02/03 record only; evidence correction2 |
 | 06 | docs/plans/2026-10-18/apollo-06-reporting.md | commit:f9435ee70c585a158b3a3414c3bf549c35c7044b | 01,02,03,04,05 | 2 | LIGHT_PASS_WITH_NOTES | 1cef08bd7e8bedc47cd2ca6d3f9823c2465e8848 | 096d21504bcfbaea321bd2b535ee6c62beef31a8 | 1 | cd105de17d7100466543675727a68fe1370008cb | cd105de17d7100466543675727a68fe1370008cb | 8e81e6ed6e25ff63f934dc627888c9f2f7c33ceb | Writers ApolloReportingImplementer/E2/FixerE2R1; verifier ApolloReportingReverifierE2R1; F06-01/02 CLOSED; O06-01/02 record only |
-| 07 | docs/plans/2026-10-18/apollo-07-frontend.md | sha256:efce42d320a64915768fc6277257fab928090d2d7b64c0a40b6503d88d773f4d | 01,02,03,04,05,06 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
+| 07 | docs/plans/2026-10-18/apollo-07-frontend.md | commit:00c0c9e75926ec9a8a9487fccf40d35d6275df3f | 01,02,03,04,05,06 | 1 | LIGHT_PASS_WITH_NOTES | cd105de17d7100466543675727a68fe1370008cb | 70f438d2bd529aaca60b2b28d66874354171705b | 1 | e473ffc714b840a2f42c9ca826da7c37e36ab9d7 | e473ffc714b840a2f42c9ca826da7c37e36ab9d7 | 647dc51ba60bad442c9922251693565553177349 | Writers ApolloFrontendImplementer/ApolloFrontendFixerR1; verifier ApolloFrontendReverifierR1; F07-01/02 CLOSED; independent browser retained; baseline40/fixture-transport limits record only |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
@@ -48,6 +48,10 @@
 | A6 | docs/plans/2026-10-18/apollo-verification-master.md | commit:bb9eda7df6fde5f4eb0a5d433a1058f008d42b16 | commit:a58d457ec2921759c455b6f6edae0e6d94b85220 | 实现方案 / I-6/I-11 | Synchronize05 cap10→13 as caller-test-only exception to <=10; production scope unchanged | HUMAN:批准该计划并执行 (recorded2026-10-18T22:00:25+08:00) |
 | A7 | docs/plans/2026-10-18/apollo-06-reporting.md | commit:85a2c24ac82991c06c081437ca618bb9e9cc13ba | commit:f9435ee70c585a158b3a3414c3bf549c35c7044b | I-10/I-11/I-12 / C-3:123 | Authorize existing worker read-only auth-latch accessor and test,7→9, so capabilities reports current CONFIG_AUTH without inference/reset | HUMAN:批准该计划并执行 后续也都授权 执行完所有子计划 (recorded2026-10-18T23:56:38+08:00) |
 | A8 | docs/plans/2026-10-18/apollo-verification-master.md | commit:a58d457ec2921759c455b6f6edae0e6d94b85220 | commit:f9435ee70c585a158b3a3414c3bf549c35c7044b | 实现方案 / I-10/I-11/I-12 | Synchronize06 cap7→9 and record advance authority for necessary direct dependency/caller/test scope amendments without changing business goals | HUMAN:批准该计划并执行 后续也都授权 执行完所有子计划 (recorded2026-10-18T23:56:38+08:00) |
+| A9 | docs/plans/2026-10-18/apollo-07-frontend.md | commit:2ddf49514057f4a274441bd74c1a72c46a231715 | commit:d0c1e1a74fc337c93cba9df1db35b67732abb0b4 | I-8/I-10/I-14 / S-5 | Authorize four existing read-only batch API/SQL/test dependencies for cumulativeProfiles/updatedAt/full reasons required by frozen DOM,7→11 | HUMAN:批准该计划并执行 后续也都授权 执行完所有子计划 (recorded2026-10-18T23:56:38+08:00; concrete mapping2026-10-19T00:50:59+08:00) |
+| A10 | docs/plans/2026-10-18/apollo-verification-master.md | commit:f9435ee70c585a158b3a3414c3bf549c35c7044b | commit:d0c1e1a74fc337c93cba9df1db35b67732abb0b4 | 实现方案 / I-14 / S-5 | Synchronize07 cap7→11 as necessary read-only dependency exception, preserving frozen visual/business contract | HUMAN:批准该计划并执行 后续也都授权 执行完所有子计划 (recorded2026-10-18T23:56:38+08:00; concrete mapping2026-10-19T00:50:59+08:00) |
+| A11 | docs/plans/2026-10-18/apollo-07-frontend.md | commit:d0c1e1a74fc337c93cba9df1db35b67732abb0b4 | commit:00c0c9e75926ec9a8a9487fccf40d35d6275df3f | I-14 / S-1/S-8 | Authorize two existing tests solely to retire obsolete CSS-at-EOF assertions conflicting with mandated append;11→13; no new production scope | HUMAN:批准该计划并执行 后续也都授权 执行完所有子计划 (recorded2026-10-18T23:56:38+08:00; concrete mapping2026-10-19T01:00:37+08:00) |
+| A12 | docs/plans/2026-10-18/apollo-verification-master.md | commit:d0c1e1a74fc337c93cba9df1db35b67732abb0b4 | commit:00c0c9e75926ec9a8a9487fccf40d35d6275df3f | 实现方案 / I-14 | Synchronize07 cap11→13 for two required obsolete CSS-position test retirements, no production expansion | HUMAN:批准该计划并执行 后续也都授权 执行完所有子计划 (recorded2026-10-18T23:56:38+08:00; concrete mapping2026-10-19T01:00:37+08:00) |
 
 ## Pause / Resume Authority
 - Child03 execution report records exact missing seam and rejected workarounds; no product file was changed for child03 and no verification was fabricated.
@@ -103,3 +107,14 @@
 - User approved exact auth-latch proposal and all remaining child execution, including necessary direct dependency/caller/test scope amendments. Every later concrete amendment must still have exact plan-only commit and ledger row citing this instruction before product changes; no new business goals, unrelated fixes, destructive history operations or deployment.
 - Resume identity: clean retained HEAD85a2c24ac82991c06c081437ca618bb9e9cc13ba, matching root/branch, productbcc031775d112e1d67f20441e1c321d4b6a08967 ancestor. Plan-only amendmentf9435ee70c585a158b3a3414c3bf549c35c7044b recordsA7/A8. Existing06 work retained, not reimplemented.
 - Resume already-active06 epoch2 with fix_round0 under Set Up Once step5. Prior through05 checkpoint remains closed/VALID; mandatory through06 checkpoint precedes07. No completed child replay or current-tail checkpoint substitution.
+
+## Child07 necessary read-dependency authority
+- Writer found existing VerificationBatch exposes only batchNumber/counts/suggested; frozenS5 requires reliable full cumulative/updated time/reasons despite server paging. Reference receipts in writer message: QueryService batches51–64 andDTO166; existingreasons only records173/item176. No authorized workaround can synthesize full values from current page.
+- A9/A10 apply user's advance authority to exact four existing read-only backend/test files; plan-only commit precedes their product edits. Child07 retains epoch1/fix0; no human pause or completed06 replay. Frozen CSS/DOM and statistics/writer behavior unchanged.
+
+## Child07 obsolete CSS assertion authority
+- Fresh full Node1712/1669pass/43fail exposed two new failures beyond existing41: expertManualProfile.test.js:911–915 andexpertMeetingVideo.test.js:977–982 require previousCSSblocks atEOF, incompatible with mandated frozenApolloappend. A11/A12 authorize retiring only obsolete implementation-position assertions and any resulting unused test constants; do not repin at a new source location. Production scope unchanged; other behavior checks retained.
+
+## Child07 verifier availability event
+- Role VERIFIER, attempt1: ApolloFrontendVerifier returned cancelled/aborted because its reviewer sandbox allowed only read-only Git and xd transport, not required command/browser execution or report append. No report was written and no fresh command/browser verification was completed; source-only F07-01/F07-02 are candidates, not exercised findings.
+- Action RETRY: acquired fresh capability-complete independent ApolloFrontendVerifierCapable with report-only repository authority and necessary command/browser tools; reset agent_attempt0. Product head unchanged70f438d2bd529aaca60b2b28d66874354171705b, fix_round0. Controller did not verify/fix inline or pause user.
