@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-18/apollo-verification-master.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-10-18/apollo-verification-master.md (commit bb9eda7df6fde5f4eb0a5d433a1058f008d42b16)
 - Amendments: A1,A2,A3,A4
 - Master base: 3efc192faf043badc1ef27bef124a71d3120c4c5
@@ -9,12 +9,12 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-18T19:18:14.142629+08:00
-- Current child: 04
-- Waiting role: N/A
+- Current child: 05
+- Waiting role: HUMAN_SCOPE_APPROVAL
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: 98c7b78fde54f69b72f175b94b2ab0eed25d86ab
+- Pause reason: C05-EXECUTION-CALLERS — explicit execution/context callable migration requires three unlisted existing caller-test files
+- Resume from: a0103c2ea9284c030ad0b0b10c4177474c4f4d47
 
 ## Baseline
 - Invocation authorizes exact untracked plan snapshots, copied byte-for-byte into isolated worktree. Original user worktree untouched.
@@ -33,7 +33,7 @@
 | 02 | docs/plans/2026-10-18/apollo-02-evidence.md | sha256:0dca87e1a9e6b61b247f78e54ebf60e71afde280556c50e6f06a07921d6b4b3f | 01 | 1 | LIGHT_PASS_WITH_NOTES | 772429192fdab1fd7ac75cb084f08f45aec5c965 | 5c05491b963c4d1d9793ebdc1f8469b175f170d8 | 1 | 69a236aa0b15b07755d42c713f24da944a7727e6 | 69a236aa0b15b07755d42c713f24da944a7727e6 | 4a05d7e4a7c16eb2d4b12819672ce2233b33f523 | Writers ApolloEvidenceImplementer ApolloEvidenceFixer1; verifier ApolloEvidenceReverifier1; findings CLOSED; O-02-01 existing Node failures |
 | 03 | docs/plans/2026-10-18/apollo-03-admission.md | commit:1793d335cec0c73f10e1b26c1d0652b11c63c0a7 | 01,02 | 2 | LIGHT_PASS_WITH_NOTES | 69a236aa0b15b07755d42c713f24da944a7727e6 | 98c7b78fde54f69b72f175b94b2ab0eed25d86ab | 0 | — | 98c7b78fde54f69b72f175b94b2ab0eed25d86ab | 61f0e39acff1ab7acfe93c834db839e9ff5e175c | Writer ApolloAdmissionImplementerE2; verifier ApolloAdmissionVerifierE2; O-03-E2-01/02 record only |
 | 04 | docs/plans/2026-10-18/apollo-04-worker.md | commit:bb9eda7df6fde5f4eb0a5d433a1058f008d42b16 | 01,02,03 | 2 | LIGHT_PASS_WITH_NOTES | 98c7b78fde54f69b72f175b94b2ab0eed25d86ab | a0103c2ea9284c030ad0b0b10c4177474c4f4d47 | 0 | — | a0103c2ea9284c030ad0b0b10c4177474c4f4d47 | 5a3482bf5dca311e1a25b30d46a2c75db8caf6ac | Writer ApolloWorkerImplementerE2; verifier ApolloWorkerVerifierE2; evidence closing correction1; O-04-E2-01/02 |
-| 05 | docs/plans/2026-10-18/apollo-05-integration.md | sha256:ddcb578f31c657cdfbbfef55b6b603c17abc508b0a84e1dbd5323e74cc14c714 | 01,02,03,04 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
+| 05 | docs/plans/2026-10-18/apollo-05-integration.md | sha256:ddcb578f31c657cdfbbfef55b6b603c17abc508b0a84e1dbd5323e74cc14c714 | 01,02,03,04 | 1 | PAUSED_FOR_HUMAN | a0103c2ea9284c030ad0b0b10c4177474c4f4d47 | — | 0 | — | a0103c2ea9284c030ad0b0b10c4177474c4f4d47 | a83e2d4a8927227fd8335a72e8f2e27e7861e26a | Writer ApolloIntegrationImplementer; PLAN_CONFLICT C05-EXECUTION-CALLERS; no retained product edits or regression/smoke run |
 | 06 | docs/plans/2026-10-18/apollo-06-reporting.md | sha256:43a207d15adfa9e488780fd70ce8656a15e1bd50aa121984f01efff244cdb9de | 01,02,03,04,05 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 | 07 | docs/plans/2026-10-18/apollo-07-frontend.md | sha256:efce42d320a64915768fc6277257fab928090d2d7b64c0a40b6503d88d773f4d | 01,02,03,04,05,06 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 
@@ -73,3 +73,9 @@
 ## Child04 checkpoint evidence correction 1
 - Initial artifact gate rejected A4 Before as not continuing the master amendment chain and Required Action with trailing prose. Corrected A4 Before to A2 After1793d335cec0c73f10e1b26c1d0652b11c63c0a7, the same actual pre-amendment master content; preserved actual approval/After and appended an exact canonical action line to the existing verifier report. No product changes, new test run or new verifier verdict; no repair round consumed.
 - A4 Before content receipt: `git rev-parse 1793d335cec0c73f10e1b26c1d0652b11c63c0a7:docs/plans/2026-10-18/apollo-verification-master.md 62f2ba3d9235f2257dcdd4bfc32c70da2ec19b8e:docs/plans/2026-10-18/apollo-verification-master.md` returned identical blob IDs `da924a07c9b00efe4276515f4f9e2744c6dce703`.
+
+## Child05 pause / required authority
+- Child04 checkpoint passed VALID with complete manifest in dirty-artifact and clean modes before05 dispatch; clean checkpoint HEAD6ff5989012605e810daa5f1d926c359a3563e36d. No completed child replay.
+- Exact caller-reference receipts, governing requirements and inferred matcher incompatibility are in children/05/execution.md. No tests were run for05; no failure or pass fabricated.
+- Proposed amendment, not approved: authorize existing ExpertDiscoveryControllerMvcTest.kt, ExpertDiscoveryControllerTest.kt and ExpertDiscoverySchedulerTest.kt solely for migration of the explicit real execution/context callable contract. Child05 scope10→13 requires an explicit test-only exception to the master's per-child <=10 cap; production file scope unchanged.
+- Child05 provisional authorized edits were surgically removed; no product commit. Await approval, then amend plans in a separate commit, record Before/After master/child identities and exact approval, and resume05 epoch2 with zero repair rounds. Do not replay01–04 or dispatch06/07 now.
