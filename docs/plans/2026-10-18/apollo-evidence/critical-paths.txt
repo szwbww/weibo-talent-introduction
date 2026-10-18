@@ -1,0 +1,1124 @@
+
+### src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicy.kt:1-242
+1: package com.weibo.talentintroduction.discovery.service
+2: 
+3: import com.weibo.talentintroduction.campaign.domain.RecipientScope
+4: import com.weibo.talentintroduction.discovery.domain.AdmissionConfigSnapshot
+5: import com.weibo.talentintroduction.discovery.domain.AdmissionReason
+6: import com.weibo.talentintroduction.discovery.domain.AdmissionReasonCodes
+7: import com.weibo.talentintroduction.discovery.domain.AutomaticAdmissionResult
+8: import com.weibo.talentintroduction.discovery.domain.DiscoveryAdmissionStatus
+9: import com.weibo.talentintroduction.expert.domain.CountryContinentMapping
+10: import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
+11: import com.weibo.talentintroduction.expert.domain.EligibilityResult
+12: import com.weibo.talentintroduction.expert.domain.ExpertProfile
+13: import com.weibo.talentintroduction.expert.service.CandidateEligibilityService
+14: import com.weibo.talentintroduction.expert.service.EligibilityFilterService
+15: import org.springframework.stereotype.Service
+16: import java.time.Clock
+17: import java.time.Instant
+18: 
+19: /**
+20:  * 01（I-1/I-2/I-3）：新发现/待确认档案的自动准入解释器。
+21:  *
+22:  * 只读：不写 ES、不写库、不签发人工批准、不改任何来源凭证。规则**逐条搬用**现有判定：
+23:  * [CandidateEligibilityService] 当前生效的候选规则（由调用方传入的 [EligibilityResult] 表达，
+24:  * 或在 [evaluate] 单参版本里实时重算）+ [DiscoveryIdentity.allowed] 身份 + 机构非空 +
+25:  * 国家可由 [CountryContinentMapping] 映射 + [DiscoveryIdentity.validInstitutionEvidence] 机构来源凭证。
+26:  * 本子计划不新增任何阈值，[AdmissionConfigSnapshot] 只回显判定时生效的既有配置。
+27:  *
+28:  * I-1（`2026-10-13.1`）：**缺资料不再阻断首发** —— [SOFT_REASON_CODES] 的六类原因逐字保留原码与事实，
+29:  * 只从 `blockingReasons` 移入 `hints`；明确不合格（研发范围/服务性工作/学历/年龄/国籍/指标/邮箱）、
+30:  * 身份不可信、来源 ID 冲突与机构来源凭证 INVALID 继续留在 `blockingReasons`。
+31:  * 提示只陈述缺失事实，绝不标成「数据已补齐」，也不得把明确不合格混为未知。
+32:  *
+33:  * 判定范围与发送门禁同定义（[RecipientScope.isDiscoveryOutreach]：身份凭证或 `待确认` 标签）。
+34:  * 仅带 `待确认` 标签、没有身份对象的档案也必须显式阻断（I-2）——[DiscoveryIdentity.allowed]
+35:  * 对非发现档案恒为 true，不能据此放行。非新发现档案保留原入口：
+36:  * 直接 [DiscoveryAdmissionStatus.AUTO_PASSED]，不产生任何原因。
+37:  *
+38:  * 有效历史人工认可（[DiscoveryIdentity.legacyOutreachApproved]）单独返回
+39:  * [DiscoveryAdmissionStatus.LEGACY_APPROVED]：机构/国家/凭证/资格问题只进 `hints`，
+40:  * 不再强制送回审核；[DiscoveryIdentity.allowed] 的 source-verified 语义不变（I-2）。
+41:  */
+42: @Service
+43: class DiscoveryAdmissionPolicy(
+44:     private val candidateEligibilityService: CandidateEligibilityService,
+45:     private val eligibilityFilterService: EligibilityFilterService,
+46:     private val clock: Clock = Clock.systemUTC()
+47: ) {
+48: 
+49:     /** 实时重算候选资格后判定（I-1：不把缺少 `PASSED` 当不可自愈的循环条件）。 */
+50:     fun evaluate(profile: ExpertProfile): AutomaticAdmissionResult =
+51:         evaluate(profile, candidateEligibilityService.evaluateEligibility(profile))
+52: 
+53:     /** 用调用方已有的资格结果判定（同一 profile 的实时结论或调用链上游刚算出的结论）。 */
+54:     fun evaluate(profile: ExpertProfile, eligibility: EligibilityResult): AutomaticAdmissionResult {
+55:         val snapshot = configSnapshot()
+56:         val checkedAt = Instant.now(clock)
+57:         if (!RecipientScope.isDiscoveryOutreach(profile)) {
+58:             return AutomaticAdmissionResult(DiscoveryAdmissionStatus.AUTO_PASSED, emptyList(), emptyList(),
+59:                 POLICY_VERSION, checkedAt, snapshot)
+60:         }
+61:         val researchHint = researchDirectionHint(profile)
+62:         val identityReasons = identityReasons(profile)
+63:         val institutionReasons = institutionReasons(profile)
+64:         val countryReasons = countryReasons(profile)
+65:         val evidenceReasons = DiscoveryIdentity.explainInstitutionEvidence(profile)
+66:         val eligibilityReasons = eligibility.rejectReasons.map { candidateReason(profile, it) }
+67:         if (DiscoveryIdentity.legacyOutreachApproved(profile)) {
+68:             // I-2：人工认可即准入，事实提示保留但不阻断；不签发也不升级任何凭证。
+69:             val hints = buildList {
+70:                 researchHint?.let { add(it) }
+71:                 addAll(identityReasons)
+72:                 addAll(institutionReasons)
+73:                 addAll(countryReasons)
+74:                 addAll(evidenceReasons)
+75:                 addAll(eligibilityReasons)
+76:             }
+77:             return AutomaticAdmissionResult(DiscoveryAdmissionStatus.LEGACY_APPROVED, emptyList(), hints,
+78:                 POLICY_VERSION, checkedAt, snapshot)
+79:         }
+80:         // I-1：六类缺资料原因只进 hints；身份、SOURCE_ID_*、INSTITUTION_EVIDENCE_INVALID 与
+81:         //       明确不合格（含邮箱/研发范围）继续阻断。
+82:         val blockingReasons = buildList {
+83:             addAll(eligibilityReasons.blockingOnly())
+84:             addAll(identityReasons)
+85:             addAll(institutionReasons.blockingOnly())
+86:             addAll(countryReasons.blockingOnly())
+87:             addAll(evidenceReasons.blockingOnly())
+88:         }
+89:         val hints = buildList {
+90:             researchHint?.let { add(it) }
+91:             addAll(eligibilityReasons.softOnly())
+92:             addAll(institutionReasons.softOnly())
+93:             addAll(countryReasons.softOnly())
+94:             addAll(evidenceReasons.softOnly())
+95:         }
+96:         val status = if (blockingReasons.isEmpty()) DiscoveryAdmissionStatus.AUTO_PASSED
+97:         else DiscoveryAdmissionStatus.NEEDS_REVIEW
+98:         return AutomaticAdmissionResult(status, blockingReasons, hints, POLICY_VERSION, checkedAt, snapshot)
+99:     }
+100: 
+101:     /** I-1：留在 `blockingReasons` 的原因（六类软原因之外的一切）。 */
+102:     private fun List<AdmissionReason>.blockingOnly(): List<AdmissionReason> =
+103:         filter { it.code !in SOFT_REASON_CODES }
+104: 
+105:     /** I-1：只进 `hints` 的六类缺资料原因；原码与事实逐字保留，只改展示位置。 */
+106:     private fun List<AdmissionReason>.softOnly(): List<AdmissionReason> =
+107:         filter { it.code in SOFT_REASON_CODES }
+108: 
+109:     /**
+110:      * I-2：身份原因。发现档案（[DiscoveryIdentity.isDiscovery]）逐项解释；
+111:      * 仅带 `待确认` 标签、没有身份对象的存量档案也必须显式阻断 ——
+112:      * [DiscoveryIdentity.allowed] 对非发现档案恒为 true，不能据此放行。
+113:      */
+114:     private fun identityReasons(profile: ExpertProfile): List<AdmissionReason> {
+115:         val explained = DiscoveryIdentity.explainIdentity(profile)
+116:         if (explained.isNotEmpty() || DiscoveryIdentity.isDiscovery(profile)) return explained
+117:         return listOf(AdmissionReason(
+118:             AdmissionReasonCodes.IDENTITY_MISSING,
+119:             "身份凭证缺失（仅有 `待确认` 标签，没有 VERIFIED 身份对象）",
+120:             "identityVerification", null, "VERIFIED 身份凭证", "RecipientScope.DISCOVERY_PENDING_TAG"))
+121:     }
+122: 
+123:     private fun configSnapshot(): AdmissionConfigSnapshot {
+124:         val candidate = eligibilityFilterService.getCandidateFilter()
+125:         val academic = eligibilityFilterService.getAcademicFilter()
+126:         return AdmissionConfigSnapshot(
+127:             requireOrcid = candidate.requireOrcid,
+128:             requireValidEmail = candidate.requireValidEmail,
+129:             requireDoctoralDegree = candidate.requireDoctoralDegree,
+130:             excludeChineseNationality = candidate.excludeChineseNationality,
+131:             enableAgeFilter = candidate.enableAgeFilter,
+132:             maxAgeExclusive = candidate.maxAgeExclusive,
+133:             enableHIndexFilter = academic.enableHIndexFilter,
+134:             minHIndex = academic.minHIndex,
+135:             enableCitationFilter = academic.enableCitationFilter,
+136:             minCitationCount = academic.minCitationCount,
+137:             enableActivityFilter = academic.enableActivityFilter,
+138:             recentYearsThreshold = academic.recentYearsThreshold
+139:         )
+140:     }
+141: 
+142:     /** 机构非空；空记为缺项，不推断机构来源或数量（零机构/多机构在存储时已合并为 null）。 */
+143:     private fun institutionReasons(profile: ExpertProfile): List<AdmissionReason> =
+144:         if (!profile.institution.isNullOrBlank()) emptyList()
+145:         else listOf(AdmissionReason(AdmissionReasonCodes.INSTITUTION_MISSING, "机构缺失",
+146:             "institution", profile.institution, "非空机构名", "profile.institution"))
+147: 
+148:     /** 国家非空且可映射到 [CountryContinentMapping] 的大区；`Other` 表示未映射，不等于通过。 */
+149:     private fun countryReasons(profile: ExpertProfile): List<AdmissionReason> = when {
+150:         profile.country.isNullOrBlank() -> listOf(AdmissionReason(AdmissionReasonCodes.COUNTRY_MISSING,
+151:             "国家缺失", "country", profile.country, "非空国家", "profile.country"))
+152:         CountryContinentMapping.toRegion(profile.country) == CountryContinentMapping.REGION_OTHER ->
+153:             listOf(AdmissionReason(AdmissionReasonCodes.COUNTRY_UNMAPPED, "国家无法映射到大区",
+154:                 "country", profile.country, "9 个大区之一（Other 表示未映射）", "CountryContinentMapping.toRegion()"))
+155:         else -> emptyList()
+156:     }
+157: 
+158:     /**
+159:      * 研究方向缺失只作资料提示（I-1）：不产生资格原因，也不影响状态。
+160:      * 独立于 [SOFT_REASON_CODES]（那六类来自候选资格/机构/国家/凭证原因），但同为「缺资料」提示。
+161:      */
+162:     private fun researchDirectionHint(profile: ExpertProfile): AdmissionReason? =
+163:         if (!profile.researchFields.isNullOrBlank()) null
+164:         else AdmissionReason(AdmissionReasonCodes.RESEARCH_DIRECTION_MISSING,
+165:             "研究方向缺失（资料提示，不参与自动准入）", "researchFields", profile.researchFields,
+166:             "非空研究方向", "profile.researchFields")
+167: 
+168:     /** I-3：逐字保留 [EligibilityResult.rejectReasons] 的原码，只补事实字段与位置。 */
+169:     private fun candidateReason(profile: ExpertProfile, code: String): AdmissionReason {
+170:         val fact = CANDIDATE_FACTS[code]
+171:             ?: return AdmissionReason(code, code, AdmissionReason.UNKNOWN_FIELD, null, null,
+172:                 "CandidateEligibilityService.evaluateEligibility()")
+173:         return AdmissionReason(code, fact.label, fact.field, fact.observed(profile), fact.expected,
+174:             "CandidateEligibilityService.evaluateEligibility()")
+175:     }
+176: 
+177:     private data class CandidateFact(
+178:         val label: String,
+179:         val field: String,
+180:         val expected: String,
+181:         val observed: (ExpertProfile) -> String?
+182:     )
+183: 
+184:     companion object {
+185:         /** 解释器版本：判定规则或原因词表变化时递增；持久化结论必须带此版本。 */
+186:         const val POLICY_VERSION = "2026-10-13.1"
+187: 
+188:         private const val RND_TYPES = "PRODUCTION_RND / ACADEMIC_RND / HYBRID_RND"
+189: 
+190:         /** 研发范围/证据只听「未确认/不足」两种，明确不符（OUT_OF_SCOPE/SERVICE_ONLY）继续阻断。 */
+191:         private const val RND_SCOPE_UNCONFIRMED = "RND_SCOPE_UNCONFIRMED"
+192:         private const val RND_EVIDENCE_INSUFFICIENT = "RND_EVIDENCE_INSUFFICIENT"
+193: 
+194:         /**
+195:          * I-1：缺资料类原因码 —— 这些原因逐字保留原码与事实，但只出现在 `hints`，不再阻断自动准入。
+196:          * 未列入本集合的原因（身份、`SOURCE_ID_*`、`INSTITUTION_EVIDENCE_INVALID`、研发范围明确不符、
+197:          * 学历/年龄/国籍/指标/邮箱…）继续留在 `blockingReasons`。
+198:          */
+199:         val SOFT_REASON_CODES: Set<String> = setOf(
+200:             AdmissionReasonCodes.COUNTRY_MISSING,
+201:             AdmissionReasonCodes.COUNTRY_UNMAPPED,
+202:             AdmissionReasonCodes.INSTITUTION_MISSING,
+203:             AdmissionReasonCodes.INSTITUTION_EVIDENCE_MISSING,
+204:             RND_SCOPE_UNCONFIRMED,
+205:             RND_EVIDENCE_INSUFFICIENT
+206:         )
+207: 
+208:         /**
+209:          * 现有候选规则码 → 可展示事实。键与 [AdmissionReasonCodes.CANDIDATE_RULE_CODES] 一致；
+210:          * 未收录的码原样透传（`observed`/`expected` 留空，不虚构）。
+211:          */
+212:         private val CANDIDATE_FACTS: Map<String, CandidateFact> = mapOf(
+213:             "MISSING_ORCID" to CandidateFact("缺少 ORCID", "orcidId", "非空 ORCID") { it.orcidId.ifBlank { null } },
+214:             "INVALID_EMAIL_FORMAT" to CandidateFact("邮箱格式无效", "email", "合法邮箱格式") { it.email },
+215:             "DISPOSABLE_EMAIL" to CandidateFact("邮箱为一次性邮箱", "email", "非一次性邮箱") { it.email },
+216:             "NO_DOCTORAL_DEGREE" to CandidateFact("学历未达博士", "degree", "博士学历") { it.degree },
+217:             "AGE_EXCEEDED" to CandidateFact("年龄超出配置范围", "age", "在配置的年龄范围内") { it.age?.toString() },
+218:             "CHINESE_NATIONALITY" to CandidateFact("国籍为受限的中国籍", "nationality", "非中国籍") { it.nationality },
+219:             "H_INDEX_TOO_LOW" to CandidateFact("h-index 低于配置阈值", "hIndex", "不低于配置的最小 h-index") {
+220:                 it.hIndex?.toString()
+221:             },
+222:             "CITATION_COUNT_TOO_LOW" to CandidateFact("引用数低于配置阈值", "citationCount", "不低于配置的最小引用数") {
+223:                 it.citationCount?.toString()
+224:             },
+225:             "INACTIVE" to CandidateFact("最近年限内无发表", "lastPublicationYear", "在配置的最近年限内有发表") {
+226:                 it.lastPublicationYear?.toString()
+227:             },
+228:             RND_SCOPE_UNCONFIRMED to CandidateFact("研发范围未确认", "expertClassification.type", RND_TYPES) {
+229:                 it.expertClassification?.type?.name
+230:             },
+231:             RND_EVIDENCE_INSUFFICIENT to CandidateFact("研发证据不足", "expertClassification.type", RND_TYPES) {
+232:                 it.expertClassification?.type?.name
+233:             },
+234:             "RND_OUT_OF_SCOPE" to CandidateFact("不在研发范围内", "expertClassification.type", RND_TYPES) {
+235:                 it.expertClassification?.type?.name
+236:             },
+237:             "RND_SERVICE_ONLY" to CandidateFact("仅有服务性工作", "expertClassification.type", RND_TYPES) {
+238:                 it.expertClassification?.type?.name
+239:             }
+240:         )
+241:     }
+242: }
+
+### src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1735-1810
+1735:         var rawWriteFailed = false
+1736:         var enqueueFailed = false
+1737:         var dedupFailed = false
+1738:         var identityRepairFailed = false
+1739:         val personCounts = PersonRegistrationCounts()
+1740:         val enqueueFailedBefore = sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0
+1741: 
+1742:         for (authorEmail in authorEmails) {
+1743:             stats.refreshGlobalCounts()
+1744:             if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
+1745:             sourceStats.authorsExtracted++
+1746: 
+1747:             val identityReject = identityRejection(authorEmail)
+1748:             if (identityReject != null) {
+1749:                 sourceStats.filterReasons.merge(identityReject, 1) { a, b -> a + b }
+1750:                 sourceStats.filtered++
+1751:                 continue
+1752:             }
+1753:             val emailResult = emailValidationService.validate(authorEmail.email)
+1754:             if (!emailResult.valid) { sourceStats.emailsRejected++; continue }
+1755:             sourceStats.emailsValid++
+1756:             emailsValid++
+1757: 
+1758:             // I-1（08）：重复命中时只按匹配文档的真实 `_id` 补建缺失任务，不重写整份专家、不算新增。
+1759:             val duplicate = when (val emailDedup = existsInRawIndexByEmail(authorEmail.email)) {
+1760:                 is DedupResult.Exists -> emailDedup
+1761:                 DedupResult.Error -> { sourceStats.dedupErrors++; dedupFailed = true; continue }
+1762:                 DedupResult.NotFound -> null
+1763:             }
+1764:             if (duplicate != null) {
+1765:                 sourceStats.duplicates++
+1766:                 duplicates++
+1767:                 val disposition = recordIdentityDuplicate(duplicate, authorEmail, sourceStats, sourceName, executionId)
+1768:                 if (disposition.retryable) identityRepairFailed = true
+1769:                 personCounts.fold(disposition.person)
+1770:                 continue
+1771:             }
+1772: 
+1773:             val identity = identityFactory.create(authorEmail, emailResult.level)
+1774:             val eligibility = eligibilityService.evaluateEligibility(identity.profile)
+1775:             val filterResult = if (eligibility.eligible) "PASSED" else "REJECTED"
+1776:             val rejectReasons = if (eligibility.eligible) emptyList() else eligibility.rejectReasons
+1777: 
+1778:             val profileMap = toIndexMap(identity.profile, identity.paper, identity.esDocId, filterResult, rejectReasons)
+1779:             if (!expertIndexWriterService.indexToRaw(identity.esDocId, profileMap)) {
+1780:                 sourceStats.rawWriteFailed++
+1781:                 rawWriteFailed = true
+1782:                 continue
+1783:             }
+1784:             sourceStats.indexed++
+1785:             indexed++
+1786:             // I-1（08）：RAW 落库成功后才入队；入队失败不推进本页（见 enqueueEnrichmentJob）。
+1787:             enqueueEnrichmentJob(identity.esDocId, sourceName, executionId, sourceStats)
+1788: 
+1789:             // 04（I-1/I-2）：统一准入在 RAW 成功后决定晋升。
+1790:             if (admitDiscoveryExpert(identity.esDocId, identity.profile, eligibility, profileMap, sourceStats) ==
+1791:                 AdmissionDisposition.PROMOTED
+1792:             ) {
+1793:                 promoted++
+1794:             }
+1795: 
+1796:             // 05（I-1/I-2）：ES 事实已持久化后统一登记人物关系（同 ORCID 的后续邮箱挂接同一人物）。
+1797:             personCounts.fold(registerPerson(sourceName, identity.esDocId, sourceStats))
+1798:         }
+1799: 
+1800:         enqueueFailed = (sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0) > enqueueFailedBefore
+1801:         return ConsumeOutcomeResult(
+1802:             fulltextAttempted = true,
+1803:             fulltextObtained = true,
+1804:             noEligibleEmail = false,
+1805:             emailsValid = emailsValid,
+1806:             indexedExperts = indexed,
+1807:             duplicateExperts = duplicates,
+1808:             promoted = promoted,
+1809:             rawWriteFailed = rawWriteFailed,
+1810:             enqueueFailed = enqueueFailed,
+
+### src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2270-2343
+2270:     private fun identityRejection(author: AuthorEmail): String? = when {
+2271:         author.givenNames.isNullOrBlank() || author.familyNames.isNullOrBlank() -> "IDENTITY_UNRESOLVED"
+2272:         else -> null
+2273:     }
+2274: 
+2275:     private fun proofFor(author: AuthorEmail) = author.identityEvidence?.takeIf { identityRejection(author) == null && DiscoveryIdentity.validEvidence(it) }?.let {
+2276:         DiscoveryIdentity.verified(author.email, author.givenNames, author.familyNames, it, author.orcidId, author.openAlexAuthorId)
+2277:     }
+2278: 
+2279:     /**
+2280:      * 01/05（I-1/I-2/I-3）：重复命中的处置。[DuplicateDisposition.retryable] 为 true 表示本轮必须
+2281:      * 保留可重试错误（部分/失败补证或可重试登记失败），消费入口据此不推进当前页、不把 job 记成功。
+2282:      * [DuplicateDisposition.person] 是本出口触发的人物登记刷新结果（未触发时为 null）。
+2283:      * 仍只计 duplicate、不计 indexed。
+2284:      */
+2285:     private fun recordIdentityDuplicate(existing: DedupResult.Exists, incoming: AuthorEmail, stats: SourceStats,
+2286:         sourceName: String, executionId: Long?): DuplicateDisposition {
+2287:         val source = existing.source
+2288:         val proof = source?.let { DiscoveryIdentity.read(it.path("identityVerification")) }
+2289:         val externalIds = source?.path("externalIds")?.let {
+2290:             if (it.isTextual) try { objectMapper.readTree(it.asText()) } catch (_: Exception) { null } else it
+2291:         }
+2292:         fun conflictingId(stored: String?, incomingId: String?) =
+2293:             !stored.isNullOrBlank() && !incomingId.isNullOrBlank() && stored != incomingId
+2294:         val mismatch = source != null && (source.path("givenNames").asText(null) != incoming.givenNames ||
+2295:             source.path("familyNames").asText(null) != incoming.familyNames ||
+2296:             DiscoveryIdentity.normalizedEmail(source.path("email").asText(null)) != DiscoveryIdentity.normalizedEmail(incoming.email) ||
+2297:             (proof?.orcid != null && incoming.orcidId != null && proof.orcid != incoming.orcidId) ||
+2298:             (proof?.openAlexAuthorId != null && incoming.openAlexAuthorId != null && proof.openAlexAuthorId != incoming.openAlexAuthorId) ||
+2299:             conflictingId(externalIds?.path("orcid")?.asText(null), incoming.orcidId) ||
+2300:             conflictingId(externalIds?.path("openAlexAuthorId")?.asText(null), incoming.openAlexAuthorId))
+2301:         // A matching retry can recover a missing job without rewriting the profile. The enrichment
+2302:         // worker independently requires bound author IDs; no proof means no academic author query.
+2303:         if (mismatch || source == null || !DiscoveryIdentity.isDiscoverySource(source)) {
+2304:             stats.failureReasons.merge(if (mismatch) "IDENTITY_EXISTING_CONFLICT" else "IDENTITY_EXISTING_UNVERIFIED", 1) { a, b -> a + b }
+2305:             return DuplicateDisposition(retryable = false, person = null)
+2306:         }
+2307:         val docId = existing.docId
+2308:         // 01（I-1）：只有带完整姓名与有效证据的合法 incoming 才进入补证；否则沿用原入队行为。
+2309:         val repair = if (docId != null && proofFor(incoming) != null) {
+2310:             identityRepairService?.repairDuplicateIdentity(docId, incoming)
+2311:         } else {
+2312:             null
+2313:         }
+2314:         if (repair != null && docId != null) {
+2315:             stats.failureReasons.merge("IDENTITY_REPAIR_${repair.outcome.name}", 1) { a, b -> a + b }
+2316:             return when (repair.outcome) {
+2317:                 // 补证成功或本就已有 proof：入队并沿用既有准入/重验接缝；登记由补证内统一刷新。
+2318:                 IdentityRepairOutcome.REPAIRED, IdentityRepairOutcome.ALREADY_VERIFIED -> {
+2319:                     ensureEnrichmentJob(docId, sourceName, executionId, stats)
+2320:                     DuplicateDisposition(retryable = false, person = repair.personRegistration)
+2321:                 }
+2322:                 // 缺姓名/冲突：独立原因、零写入，交给 02 定向恢复；不补建学术任务、不登记关系。
+2323:                 IdentityRepairOutcome.MISSING_NAME_NEEDS_RECOVERY, IdentityRepairOutcome.CONFLICT ->
+2324:                     DuplicateDisposition(retryable = false, person = null)
+2325:                 // 部分/整体失败：保留可重试错误，绝不推进为修复成功，也不先行入队/登记。
+2326:                 IdentityRepairOutcome.PARTIAL, IdentityRepairOutcome.FAILED ->
+2327:                     DuplicateDisposition(retryable = true, person = null)
+2328:             }
+2329:         }
+2330:         // 05（I-1）：无补证可走的重复命中（已有可信 discovered 事实但 incoming 无凭证）——仍按当前
+2331:         // 持久化事实登记一次，确保重复出口归人；登记失败按可重试语义传播。
+2332:         if (docId == null) return DuplicateDisposition(retryable = false, person = null)
+2333:         ensureEnrichmentJob(docId, sourceName, executionId, stats)
+2334:         val person = registerPerson(sourceName, docId, stats)
+2335:         return DuplicateDisposition(retryable = person?.retryable == true, person = person)
+2336:     }
+2337: 
+2338:     /** 05（I-1/I-3）：重复出口的处置结果（补证可重试标记 + 人物登记刷新结果）。 */
+2339:     private data class DuplicateDisposition(val retryable: Boolean, val person: DiscoveryPersonRefreshResult?)
+2340: 
+2341:     /**
+2342:      * 05（I-1/I-3）：一次消费/一页内的人物登记计数口径（新增人物、追加邮箱、需复核、范围冲突、登记失败）。
+2343:      * 单位相互独立：新增人物 ≠ 追加邮箱 ≠ 重复事实；[failed] 表示存在可重试登记失败。
+
+### src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2452-2490
+2452:     private fun admitDiscoveryExpert(
+2453:         docId: String,
+2454:         profile: ExpertProfile,
+2455:         eligibility: EligibilityResult,
+2456:         rawSource: Map<String, Any?>,
+2457:         sourceStats: SourceStats
+2458:     ): AdmissionDisposition {
+2459:         val review = discoveryReviewService
+2460:         if (review == null) {
+2461:             sourceStats.filtered++
+2462:             sourceStats.filterReasons.merge(ADMISSION_SERVICE_UNAVAILABLE, 1) { a, b -> a + b }
+2463:             return AdmissionDisposition.FILTERED
+2464:         }
+2465:         val admission = review.recordAutomatic(docId, profile, eligibility)
+2466:         if (!admission.admitted) {
+2467:             sourceStats.filtered++
+2468:             val reasons = admission.reasons.map { it.code }.ifEmpty { eligibility.rejectReasons }
+2469:             for (reason in reasons) sourceStats.filterReasons.merge(reason, 1) { a, b -> a + b }
+2470:             return AdmissionDisposition.FILTERED
+2471:         }
+2472:         val sync = review.projectApprovedCandidate(docId, rawSource, admission.decision)
+2473:         return if (sync.ok) {
+2474:             sourceStats.promoted++
+2475:             AdmissionDisposition.PROMOTED
+2476:         } else {
+2477:             sourceStats.promotionFailed++
+2478:             AdmissionDisposition.PROMOTION_FAILED
+2479:         }
+2480:     }
+2481: 
+2482:     fun getEnrichmentStats(): EnrichmentStats {
+2483:         val cutoff = LocalDateTime.now().minusDays(30).format(dateFormatter)
+2484:         val total = expertSearchService.countExperts(ExpertIndexLevel.CANDIDATE)
+2485:         val pending = expertSearchService.countExperts(ExpertIndexLevel.CANDIDATE, buildEnrichmentFilters(cutoff))
+2486:         val enrichedRecently = expertSearchService.countExperts(
+2487:             ExpertIndexLevel.CANDIDATE,
+2488:             listOf(mapOf("range" to mapOf("enrichedAt" to mapOf("gte" to cutoff))))
+2489:         )
+2490:         val institutionTypePending = expertSearchService.countExperts(
+
+### src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:844-1027
+844:     fun recordAutomatic(
+845:         docId: String,
+846:         profile: ExpertProfile,
+847:         eligibility: EligibilityResult
+848:     ): DiscoveryReviewAdmissionOutcome =
+849:         recordAutomaticConclusion(docId, profile, policy.evaluate(profile, eligibility))
+850: 
+851:     /**
+852:      * 阶段 2：调用方已按新政策现算结论（`policy.evaluate(profile)`）时复用同一条写入路径，
+853:      * 避免在存量刷新里重算或传入不同口径的结论。
+854:      */
+855:     internal fun recordAutomaticConclusion(
+856:         docId: String,
+857:         profile: ExpertProfile,
+858:         automatic: AutomaticAdmissionResult
+859:     ): DiscoveryReviewAdmissionOutcome {
+860:         require(docId.isNotBlank()) { "docId 必填" }
+861:         val identityHash = identityHashOf(docId, profile)
+862:         val now = LocalDateTime.now(clock)
+863:         val found = repository.findAdmission(docId)
+864:         if (found == null) {
+865:             repository.initializeAdmission(docId, identityHash, automatic.status.name, automatic.policyVersion, now)
+866:             // I-4：初始化竞争后复读真实结论 —— 竞争者的结论（可能是人工决定）就是当前结论。
+867:             val stored = repository.findAdmission(docId)
+868:                 ?: return insertOutcome(docId, automatic)
+869:             return recordAutomaticAgainst(docId, identityHash, automatic, stored, now)
+870:         }
+871:         return recordAutomaticAgainst(docId, identityHash, automatic, found, now)
+872:     }
+873: 
+874:     private fun recordAutomaticAgainst(
+875:         docId: String,
+876:         identityHash: String,
+877:         automatic: AutomaticAdmissionResult,
+878:         existing: ExpertDiscoveryAdmission,
+879:         now: LocalDateTime
+880:     ): DiscoveryReviewAdmissionOutcome {
+881:         val legacy = DiscoveryReviewDecision.LEGACY_APPROVED.name
+882:         val identityChanged = existing.identityHash != identityHash
+883:         if (!identityChanged && (existing.decisionEnum.manual || existing.decision == legacy)) {
+884:             return DiscoveryReviewAdmissionOutcome(
+885:                 docId, existing.decision, admittedDecision(existing.decision), existing.decisionEnum.manual,
+886:                 false, existing.revision, emptyList()
+887:             )
+888:         }
+889:         if (!identityChanged && sameAutomaticConclusion(existing, automatic)) {
+890:             return DiscoveryReviewAdmissionOutcome(
+891:                 docId, existing.decision, admittedDecision(existing.decision), false, false,
+892:                 existing.revision, automatic.blockingReasons
+893:             )
+894:         }
+895:         updateAutomaticAdmission(existing, identityHash, automatic, now)?.let { revision ->
+896:             return DiscoveryReviewAdmissionOutcome(
+897:                 docId, automatic.status.name, admittedDecision(automatic.status.name), false, identityChanged,
+898:                 revision, automatic.blockingReasons
+899:             )
+900:         }
+901:         // CAS 未命中：复读当前身份/结论；已是同一自动结论即视为达成，否则按最新版本重试一次。
+902:         val fresh = repository.findAdmission(docId)
+903:             ?: return conflictOutcome(docId, null, identityHash, automatic)
+904:         if (fresh.identityHash == identityHash && sameAutomaticConclusion(fresh, automatic)) {
+905:             return DiscoveryReviewAdmissionOutcome(
+906:                 docId, fresh.decision, admittedDecision(fresh.decision), false, false,
+907:                 fresh.revision, automatic.blockingReasons
+908:             )
+909:         }
+910:         if (fresh.identityHash == identityHash && !fresh.decisionEnum.manual && fresh.decision != legacy) {
+911:             updateAutomaticAdmission(fresh, identityHash, automatic, LocalDateTime.now(clock))?.let { revision ->
+912:                 return DiscoveryReviewAdmissionOutcome(
+913:                     docId, automatic.status.name, admittedDecision(automatic.status.name), false, false,
+914:                     revision, automatic.blockingReasons
+915:                 )
+916:             }
+917:         }
+918:         return conflictOutcome(docId, repository.findAdmission(docId), identityHash, automatic)
+919:     }
+920: 
+921:     /** 同一自动结论：同身份 + 同 decision + 同政策版本。 */
+922:     private fun sameAutomaticConclusion(
+923:         existing: ExpertDiscoveryAdmission,
+924:         automatic: AutomaticAdmissionResult
+925:     ): Boolean = existing.decision == automatic.status.name &&
+926:         existing.policyVersion == automatic.policyVersion
+927: 
+928:     /** 初始化后仍读不到行（并发删除/极端读失败）时的保守回显：按本次自动判定报告，不声称已落库版本。 */
+929:     private fun insertOutcome(
+930:         docId: String,
+931:         automatic: AutomaticAdmissionResult
+932:     ): DiscoveryReviewAdmissionOutcome = DiscoveryReviewAdmissionOutcome(
+933:         docId, automatic.status.name, admittedDecision(automatic.status.name), false, false,
+934:         0L, automatic.blockingReasons
+935:     )
+936: 
+937:     /**
+938:      * I-4：CAS 未命中且复读后仍冲突 —— 显式报告**复读到的当前结论**（`decision` 为库里现值，
+939:      * `identityChanged` 表示该结论已不适用于当前身份）；绝不把竞争前快照里的批准、
+940:      * 也不把本次自动判定当成当前结论去投影候选。
+941:      */
+942:     private fun conflictOutcome(
+943:         docId: String,
+944:         fresh: ExpertDiscoveryAdmission?,
+945:         identityHash: String,
+946:         automatic: AutomaticAdmissionResult
+947:     ): DiscoveryReviewAdmissionOutcome {
+948:         if (fresh == null) {
+949:             // 复读都读不到行：只能显式报告「本次自动判定未确认落库」，绝不声称已准入。
+950:             return DiscoveryReviewAdmissionOutcome(
+951:                 docId, automatic.status.name, false, false, true, 0L, emptyList()
+952:             )
+953:         }
+954:         val currentIdentityChanged = fresh.identityHash != identityHash
+955:         return DiscoveryReviewAdmissionOutcome(
+956:             docId = docId,
+957:             decision = fresh.decision,
+958:             admitted = !currentIdentityChanged && admittedDecision(fresh.decision),
+959:             manual = !currentIdentityChanged &&
+960:                 (fresh.decisionEnum.manual || fresh.decision == DiscoveryReviewDecision.LEGACY_APPROVED.name),
+961:             identityChanged = currentIdentityChanged,
+962:             revision = fresh.revision,
+963:             reasons = emptyList()
+964:         )
+965:     }
+966: 
+967:     /** 04（I-1）：单文档准入解析（重验等内部读取共用同一身份语义）。 */
+968:     fun resolveAdmission(docId: String, profile: ExpertProfile): DiscoveryReviewResolvedAdmission {
+969:         require(docId.isNotBlank()) { "docId 必填" }
+970:         val key = DiscoveryReviewAdmissionKey(docId, identityHashOf(docId, profile))
+971:         return resolveAdmissionBatch(listOf(key))[docId]
+972:             ?: DiscoveryReviewResolvedAdmission(docId, null, false, false, false, false, 0L, null)
+973:     }
+974: 
+975:     /**
+976:      * 04（I-1）：批量解析当前准入结论（05 消费）。一次最多 500 个 docId 的批量读取，
+977:      * 身份不一致 → `decision == null`（原结论不适用），绝不把旧批准当成新身份的批准。
+978:      */
+979:     fun resolveAdmissionBatch(
+980:         keys: List<DiscoveryReviewAdmissionKey>
+981:     ): Map<String, DiscoveryReviewResolvedAdmission> {
+982:         if (keys.isEmpty()) return emptyMap()
+983:         val admissions = repository.findAdmissions(keys.map { it.docId }).associateBy { it.expertDocId }
+984:         val items = repository.findItemsByIds(admissions.values.mapNotNull { it.decisionItemId })
+985:             .associateBy { it.id }
+986:         return keys.associate { key ->
+987:             val stored = admissions[key.docId]
+988:             if (stored == null) {
+989:                 key.docId to DiscoveryReviewResolvedAdmission(
+990:                     key.docId, null, false, false, false, false, 0L, null
+991:                 )
+992:             } else {
+993:                 val identityChanged = stored.identityHash != key.identityHash
+994:                 val decision = stored.decision.takeUnless { identityChanged }
+995:                 val manual = !identityChanged &&
+996:                     (stored.decisionEnum.manual || stored.decision == DiscoveryReviewDecision.LEGACY_APPROVED.name)
+997:                 val syncError = stored.decisionItemId?.let { items[it] }
+998:                     ?.takeIf { it.state == DiscoveryReviewItemState.APPLIED.name }
+999:                     ?.errorCode
+1000:                 key.docId to DiscoveryReviewResolvedAdmission(
+1001:                     key.docId, decision, decision != null && admittedDecision(decision), manual,
+1002:                     true, identityChanged, stored.revision, syncError
+1003:                 )
+1004:             }
+1005:         }
+1006:     }
+1007: 
+1008:     // ── 04：候选投影（I-2） ───────────────────────────────────────────────────
+1009: 
+1010:     /**
+1011:      * 04（I-2）：人工批准与自动晋升共用的候选投影。真实 `_id` create；已存在候选/有效不覆盖；
+1012:      * 失败时返回独立错误码 `CANDIDATE_SYNC_FAILED`（审核已保存、投影可重试）。
+1013:      */
+1014:     fun projectApprovedCandidate(
+1015:         docId: String,
+1016:         source: Map<String, Any?>,
+1017:         decision: String
+1018:     ): DiscoveryReviewCandidateSync {
+1019:         val result = writer.projectDiscoveryCandidate(docId, source, decision)
+1020:         return when (result) {
+1021:             ExpertIndexWriterService.DiscoveryCandidateProjection.PROJECTED,
+1022:             ExpertIndexWriterService.DiscoveryCandidateProjection.ALREADY_PRESENT,
+1023:             ExpertIndexWriterService.DiscoveryCandidateProjection.APPLICATION_PRESENT,
+1024:             ExpertIndexWriterService.DiscoveryCandidateProjection.NOT_ADMITTED ->
+1025:                 DiscoveryReviewCandidateSync(result.name, true, null)
+1026:             else -> DiscoveryReviewCandidateSync(result.name, false, CANDIDATE_SYNC_FAILED)
+1027:         }
+
+### src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1435-1498
+1435:         existing: ExpertDiscoveryAdmission,
+1436:         identityHash: String,
+1437:         automatic: AutomaticAdmissionResult,
+1438:         now: LocalDateTime
+1439:     ): Long? {
+1440:         val jdbc = jdbcTemplate ?: return null
+1441:         val newRevision = existing.revision + 1
+1442:         val affected = jdbc.update(
+1443:             """
+1444:             UPDATE expert_discovery_admission
+1445:             SET identity_hash = ?, decision = ?, revision = ?, decision_item_id = NULL,
+1446:                 policy_version = ?, checked_at = ?, updated_at = ?
+1447:             WHERE expert_doc_id = ? AND revision = ? AND identity_hash = ?
+1448:             """.trimIndent(),
+1449:             identityHash, automatic.status.name, newRevision, automatic.policyVersion,
+1450:             Timestamp.valueOf(now), Timestamp.valueOf(now),
+1451:             existing.expertDocId, existing.revision, existing.identityHash
+1452:         )
+1453:         return if (affected == 1) newRevision else null
+1454:     }
+1455: 
+1456:     private fun markCandidateSyncFailed(itemId: Long, errorCode: String) {
+1457:         jdbcTemplate?.update(
+1458:             "UPDATE expert_discovery_review_item SET error_code = ? WHERE id = ? AND state = ?",
+1459:             errorCode, itemId, DiscoveryReviewItemState.APPLIED.name
+1460:         )
+1461:     }
+1462: 
+1463:     private fun clearCandidateSyncFailure(itemId: Long) {
+1464:         jdbcTemplate?.update(
+1465:             "UPDATE expert_discovery_review_item SET error_code = NULL WHERE id = ? AND state = ? AND error_code = ?",
+1466:             itemId, DiscoveryReviewItemState.APPLIED.name, CANDIDATE_SYNC_FAILED
+1467:         )
+1468:     }
+1469: 
+1470:     /**
+1471:      * 04（I-2）：审核保存（APPLIED）之后单独投影候选；失败只在 `error_code` 记
+1472:      * `CANDIDATE_SYNC_FAILED`，绝不把审核本身标失败、也不重签批准。
+1473:      */
+1474:     private fun syncCandidateAfterApproval(
+1475:         itemId: Long,
+1476:         docId: String,
+1477:         source: Map<String, Any?>,
+1478:         decision: String
+1479:     ) {
+1480:         val sync = try {
+1481:             projectApprovedCandidate(docId, source, decision)
+1482:         } catch (ex: Exception) {
+1483:             // 04（I-2）回归修复：投影抛错绝不能把已 APPLIED 的审核项翻成 FAILED
+1484:             // （runApplyWorker 的 catch 会调用 markItemFailed 覆盖 APPLIED）。投影失败只以
+1485:             // 独立错误码记录，供 retryBatchCandidateSync 补投影 —— 与本节 KDoc 的承诺一致。
+1486:             markCandidateSyncFailed(itemId, CANDIDATE_SYNC_FAILED)
+1487:             return
+1488:         }
+1489:         if (sync.errorCode != null) markCandidateSyncFailed(itemId, sync.errorCode) else clearCandidateSyncFailure(itemId)
+1490:     }
+1491: 
+1492:     private fun admittedDecision(decision: String): Boolean =
+1493:         decision in ExpertIndexWriterService.ADMITTED_DECISIONS
+1494: 
+1495:     private fun initializePhase(taskStatus: String): String = when (taskStatus) {
+1496:         "RUNNING", "CANCELLING" -> DiscoveryReviewBatchPhase.PREPARING
+1497:         "SUCCESS", "PARTIAL_SUCCESS" -> DiscoveryReviewBatchPhase.APPLIED
+1498:         "CANCELLED" -> DiscoveryReviewBatchPhase.CANCELLED
+
+### src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewScanService.kt:237-281
+237:     private fun enrich(hits: List<ScanHit>, level: ExpertIndexLevel): List<ScanExpert> {
+238:         if (hits.isEmpty()) return emptyList()
+239:         val admissions = repository.findAdmissions(hits.map { it.docId }).associateBy { it.expertDocId }
+240:         val reviewedItemIds = admissions.values.mapNotNull { it.decisionItemId }
+241:         val reviewedItems = repository.findItemsByIds(reviewedItemIds).associateBy { it.id }
+242:         return hits.map { hit ->
+243:             val profile = writer.discoveryProfile(hit.docId, hit.source)
+244:             val automatic = policy.evaluate(profile)
+245:             val currentIdentity = identityHashOf(hit.docId, profile)
+246:             val stored = admissions[hit.docId]
+247:             val identityChanged = stored != null && stored.identityHash != currentIdentity
+248:             val useStored = stored != null && !identityChanged
+249:             val decision = if (useStored) stored!!.decision else automatic.status.name
+250:             val decisionManual = useStored && stored!!.decisionEnum.manual
+251:             val reviewedItem = if (decisionManual) stored!!.decisionItemId?.let { reviewedItems[it] } else null
+252:             ScanExpert(
+253:                 docId = hit.docId,
+254:                 level = level,
+255:                 source = hit.source,
+256:                 seqNo = hit.seqNo,
+257:                 primaryTerm = hit.primaryTerm,
+258:                 profile = profile,
+259:                 row = DiscoveryReviewExpertRow(
+260:                     docId = hit.docId,
+261:                     level = level.name,
+262:                     orcidId = profile.orcidId,
+263:                     email = profile.email,
+264:                     givenNames = profile.givenNames,
+265:                     familyNames = profile.familyNames,
+266:                     institution = profile.institution,
+267:                     country = profile.country,
+268:                     researchFields = profile.researchFields,
+269:                     disciplineCategory = profile.disciplineCategory,
+270:                     institutionEvidence = profile.institutionEvidence,
+271:                     filterResult = profile.filterResult,
+272:                     tags = profile.tags.orEmpty(),
+273:                     automaticStatus = automatic.status.name,
+274:                     automaticReasons = automatic.blockingReasons,
+275:                     automaticHints = automatic.hints,
+276:                     revision = stored?.revision ?: 0L,
+277:                     initialized = stored != null,
+278:                     decision = decision,
+279:                     decisionManual = decisionManual,
+280:                     identityChanged = identityChanged,
+281:                     reviewedActor = reviewedItem?.actor,
+
+### src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:340-440
+340:         val applied = try {
+341:             expertIndexWriterService.documentExistsInIndex(ExpertIndexLevel.APPLICATION, docId)
+342:         } catch (e: Exception) {
+343:             return PromotionOutcome.ExistenceCheckFailed
+344:         }
+345:         return try {
+346:             val snapshot = expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.RAW, docId)
+347:                 ?: return PromotionOutcome.RawMissing
+348:             val profile = expertIndexWriterService.discoveryProfile(docId, snapshot.source)
+349: 
+350:             // I-3：先读当前准入结论。有效人工批准（含历史认可）跳过基础重新拒绝，且不按基础失败删候选；
+351:             // 人工暂缓/拒绝不自动晋升。身份变化（decision == null）按无有效批准处理。
+352:             val review = discoveryReviewService
+353:             val admission = review?.resolveAdmission(docId, profile)
+354:             if (review != null && admission != null && admission.manual) {
+355:                 val decision = admission.decision
+356:                 if (decision == DiscoveryReviewDecision.HOLD.name || decision == DiscoveryReviewDecision.REJECTED.name) {
+357:                     return PromotionOutcome.AlreadyPresent
+358:                 }
+359:                 return projectAdmission(review, docId, snapshot.source, decision!!)
+360:             }
+361: 
+362:             if (!DiscoveryIdentity.allowedMap(snapshot.source))
+363:                 return PromotionOutcome.WriteFailed
+364:             // I-1/I-3：只有硬否决与独立邮箱验证失败参与候选投影；六类缺资料原因不再撤候选。
+365:             val eligibility = eligibilityService.evaluateEligibility(profile)
+366:             val reasons = hardBlockingReasons(profile, eligibility)
+367:             // R-5（V-30）：先形成当前 policy 结论 —— 当前硬阻断（如机构凭证 INVALID）时，同身份的旧
+368:             // AUTO_PASSED 不得被复用投影；按当前硬原因进入 reconcile，绝不据旧结论晋升。
+369:             val currentPolicy = admissionPolicy?.evaluate(profile, eligibility)
+370:             if (reasons.isEmpty() && currentPolicy != null && currentPolicy.blockingReasons.isNotEmpty()) {
+371:                 review?.recordAutomatic(docId, profile, eligibility)
+372:                 val policyCodes = currentPolicy.blockingReasons.map { it.code }
+373:                 val candidateBefore = if (applied) null
+374:                     else expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+375:                 val classification = expertClassificationService.classify(profile)
+376:                 if (!expertIndexWriterService.reconcileDiscoveryCandidate(
+377:                         docId, snapshot, classification, policyCodes, preserveApplication = applied
+378:                     )) return PromotionOutcome.WriteFailed
+379:                 return if (applied || candidateBefore != null) PromotionOutcome.AlreadyPresent
+380:                 else PromotionOutcome.Rejected(policyCodes)
+381:             }
+382:             if (reasons.isEmpty() && review != null && admission != null && admission.admitted &&
+383:                 admission.decision != null
+384:             ) {
+385:                 // 有效自动准入：复用同一条共享候选投影，缺资料不再回撤（不再走 reconcile 删除候选）。
+386:                 return projectAdmission(review, docId, snapshot.source, admission.decision)
+387:             }
+388:             val candidateBefore = if (applied) null
+389:                 else expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+390:             val classification = expertClassificationService.classify(profile)
+391:             if (!expertIndexWriterService.reconcileDiscoveryCandidate(
+392:                     docId, snapshot, classification, reasons, preserveApplication = applied
+393:                 )) return PromotionOutcome.WriteFailed
+394:             // I-1：补全/重验后刷新自动结论（同身份人工决定不被覆盖；身份变化生成新自动结论）。
+395:             discoveryReviewService?.recordAutomatic(docId, profile, eligibility)
+396:             if (applied) PromotionOutcome.AlreadyPresent
+397:             else if (reasons.isNotEmpty()) PromotionOutcome.Rejected(reasons)
+398:             else if (candidateBefore != null) PromotionOutcome.AlreadyPresent
+399:             else PromotionOutcome.Promoted
+400:         } catch (e: Exception) {
+401:             log.warn("Discovery revalidation failed for {}: {}", docId, e.message)
+402:             PromotionOutcome.WriteFailed
+403:         }
+404:     }
+405: 
+406:     /**
+407:      * I-1：候选投影用的阻断原因 —— 六类缺资料原因（[DiscoveryAdmissionPolicy.SOFT_REASON_CODES]）
+408:      * 之外的一切资格原因，加上独立邮箱验证失败（含 `EMAIL:` 词汇，与既有流程逐字一致）。
+409:      */
+410:     private fun hardBlockingReasons(profile: ExpertProfile, eligibility: EligibilityResult): List<String> {
+411:         val reasons = eligibility.rejectReasons.filter { it !in DiscoveryAdmissionPolicy.SOFT_REASON_CODES }
+412:         if (!eligibilityFilterService.getCandidateFilter().requireValidEmail) return reasons
+413:         val emailResult = emailValidationService.validate(profile.email.orEmpty())
+414:         return if (emailResult.valid) reasons else reasons + "EMAIL:${emailResult.rejectReason}"
+415:     }
+416: 
+417:     /** I-3：人工批准与有效自动准入共用的候选投影（复用同一 seam，不另写晋升/删除逻辑）。 */
+418:     private fun projectAdmission(
+419:         review: DiscoveryReviewService,
+420:         docId: String,
+421:         source: Map<String, Any?>,
+422:         decision: String
+423:     ): PromotionOutcome {
+424:         val sync = review.projectApprovedCandidate(docId, source, decision)
+425:         return when (sync.result) {
+426:             ExpertIndexWriterService.DiscoveryCandidateProjection.PROJECTED.name -> PromotionOutcome.Promoted
+427:             ExpertIndexWriterService.DiscoveryCandidateProjection.ALREADY_PRESENT.name,
+428:             ExpertIndexWriterService.DiscoveryCandidateProjection.APPLICATION_PRESENT.name ->
+429:                 PromotionOutcome.AlreadyPresent
+430:             else -> PromotionOutcome.WriteFailed
+431:         }
+432:     }
+433: 
+434:     /**
+435:      * Single-RAW revalidation: discovery follows the CAS qualification/replica path, while
+436:      * non-discovery retains the historical promotion behavior and outcome vocabulary.
+437:      */
+438:     fun revalidateEnrichedRaw(docId: String): PromotionOutcome {
+439:         require(docId.isNotBlank()) { "docId must not be blank" }
+440: 
+
+### src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:803-947
+803:     fun reconcileDiscoveryCandidate(
+804:         docId: String, snapshot: DiscoverySnapshot, classification: ExpertClassification,
+805:         reasons: List<String>, preserveApplication: Boolean = false
+806:     ): Boolean {
+807:         val rawIndex = expertIndexService.indexName(ExpertIndexLevel.RAW)
+808:         val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
+809:         val current = readDiscoveryDocument(ExpertIndexLevel.RAW, docId) ?: return false
+810:         if (current != snapshot || !DiscoveryIdentity.isDiscoveryMap(current.source) ||
+811:             !DiscoveryIdentity.allowedMap(current.source)) return false
+812:         val candidate = if (preserveApplication) null else readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+813:         if (candidate != null && !sameDiscoveryIdentity(current.source, candidate.source)) return false
+814:         val qualification = mapOf(
+815:             "filterResult" to if (reasons.isEmpty()) "PASSED" else "REJECTED",
+816:             "filterRejectReason" to reasons.takeIf { it.isNotEmpty() }?.joinToString("; "),
+817:             "expertClassification" to classificationNode(classification)
+818:         )
+819:         val update = restTemplate.exchange(
+820:             "${properties.baseUrl}/$rawIndex/_update/$docId?if_seq_no=${snapshot.seqNo}&if_primary_term=${snapshot.primaryTerm}",
+821:             HttpMethod.POST, HttpEntity(mapOf("doc" to qualification), headers()), JsonNode::class.java
+822:         ).body ?: return false
+823:         if (update.path("result").asText() == "noop") return false
+824:         val stableRaw = readDiscoveryDocument(ExpertIndexLevel.RAW, docId) ?: return false
+825:         if (stableRaw.seqNo != update.path("_seq_no").asLong(-1) ||
+826:             stableRaw.primaryTerm != update.path("_primary_term").asLong(-1) ||
+827:             !sameDiscoveryIdentity(snapshot.source, stableRaw.source)) return false
+828:         if (preserveApplication) return true
+829:         if (reasons.isEmpty()) {
+830:             if (candidate != null) return true // never overwrite operator-owned candidate fields
+831:             val candidateDoc = stableRaw.source.toMutableMap().apply {
+832:                 put("candidateValidatedAt", LocalDateTime.now().format(dateFormatter))
+833:                 put("tags", ((this["tags"] as? List<*>)?.filterIsInstance<String>().orEmpty() + "auto_promoted").distinct())
+834:             }
+835:             return writeCandidateDocument(docId, candidateDoc)
+836:         }
+837:         if (candidate == null) return true
+838:         return try {
+839:             restTemplate.exchange(
+840:                 "${properties.baseUrl}/$candidateIndex/_doc/$docId?if_seq_no=${candidate.seqNo}&if_primary_term=${candidate.primaryTerm}",
+841:                 HttpMethod.DELETE, HttpEntity(null, headers()), JsonNode::class.java
+842:             )
+843:             true
+844:         } catch (e: HttpClientErrorException) {
+845:             if (e.statusCode == HttpStatus.NOT_FOUND) true else throw e
+846:         }
+847:     }
+848: 
+849:     /**
+850:      * 04（I-2）：RAW-only 准入通过后的候选投影结果。区分「真的创建」「已存在/已进有效层（不覆盖）」
+851:      * 「身份冲突（同一 `_id` 却是别人）」「未准入」「源缺失」「写入失败」；调用方据此把失败单独记
+852:      * `CANDIDATE_SYNC_FAILED`，绝不把失败当成功。
+853:      */
+854:     enum class DiscoveryCandidateProjection {
+855:         PROJECTED,
+856:         ALREADY_PRESENT,
+857:         APPLICATION_PRESENT,
+858:         IDENTITY_CONFLICT,
+859:         NOT_ADMITTED,
+860:         SOURCE_MISSING,
+861:         WRITE_FAILED
+862:     }
+863: 
+864:     /**
+865:      * 04（I-2）：人工批准与自动晋升共用的发现候选投影接缝。
+866:      *
+867:      * 以**真实 `_id`**（[docId]）和调用方手里的 RAW 源快照 [source] 执行 create：
+868:      * 有效层已存在时不反向复制候选；候选已存在时不覆盖任何运营字段；`op_type=create` 的 409
+869:      * 只有复读身份一致才算「已存在」，否则身份冲突。**绝不**写 `filterResult`/`identityVerification`/
+870:      * 机构/国家来伪装自动通过 —— 正文逐字来自 RAW 源。
+871:      */
+872:     fun projectDiscoveryCandidate(
+873:         docId: String,
+874:         source: Map<String, Any?>,
+875:         decision: String
+876:     ): DiscoveryCandidateProjection {
+877:         if (docId.isBlank()) return DiscoveryCandidateProjection.SOURCE_MISSING
+878:         if (decision !in ADMITTED_DECISIONS) return DiscoveryCandidateProjection.NOT_ADMITTED
+879:         if (source.isEmpty()) return DiscoveryCandidateProjection.SOURCE_MISSING
+880: 
+881:         val alreadyApplied = try {
+882:             documentExistsInIndex(ExpertIndexLevel.APPLICATION, docId)
+883:         } catch (e: Exception) {
+884:             log.warn("Failed to check APPLICATION existence for esDocId={} during projection", docId, e)
+885:             return DiscoveryCandidateProjection.WRITE_FAILED
+886:         }
+887:         if (alreadyApplied) return DiscoveryCandidateProjection.APPLICATION_PRESENT
+888: 
+889:         val candidate = try {
+890:             readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+891:         } catch (e: Exception) {
+892:             log.warn("Failed to read CANDIDATE for esDocId={} during projection", docId, e)
+893:             return DiscoveryCandidateProjection.WRITE_FAILED
+894:         }
+895:         if (candidate != null) {
+896:             return if (sameDiscoveryIdentity(source, candidate.source)) {
+897:                 DiscoveryCandidateProjection.ALREADY_PRESENT
+898:             } else {
+899:                 DiscoveryCandidateProjection.IDENTITY_CONFLICT
+900:             }
+901:         }
+902: 
+903:         val now = LocalDateTime.now().format(dateFormatter)
+904:         val candidateDoc = source.toMutableMap().apply {
+905:             put("candidateValidatedAt", now)
+906:             put("updatedAt", now)
+907:             val existingTags = (get("tags") as? List<*>)?.filterIsInstance<String>().orEmpty()
+908:             put("tags", (existingTags + DISCOVERY_TAG).distinct())
+909:         }
+910:         val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
+911:         val putUrl = "${properties.baseUrl}/$candidateIndex/_doc/$docId?op_type=create"
+912:         return try {
+913:             restTemplate.exchange(putUrl, HttpMethod.PUT, HttpEntity(candidateDoc, headers()), JsonNode::class.java)
+914:             DiscoveryCandidateProjection.PROJECTED
+915:         } catch (e: HttpClientErrorException) {
+916:             if (e.statusCode == HttpStatus.CONFLICT) {
+917:                 val raced = try {
+918:                     readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+919:                 } catch (_: Exception) {
+920:                     null
+921:                 }
+922:                 if (raced != null && sameDiscoveryIdentity(source, raced.source)) {
+923:                     DiscoveryCandidateProjection.ALREADY_PRESENT
+924:                 } else {
+925:                     DiscoveryCandidateProjection.IDENTITY_CONFLICT
+926:                 }
+927:             } else {
+928:                 log.warn("Failed to project candidate for esDocId={} (HTTP {})", docId, e.statusCode)
+929:                 DiscoveryCandidateProjection.WRITE_FAILED
+930:             }
+931:         } catch (e: Exception) {
+932:             log.warn("Failed to project candidate for esDocId={}", docId, e)
+933:             DiscoveryCandidateProjection.WRITE_FAILED
+934:         }
+935:     }
+936: 
+937:     fun writeCandidateDocument(docId: String, doc: Map<String, Any?>): Boolean {
+938:         val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
+939:         val putUrl = "${properties.baseUrl}/$candidateIndex/_doc/$docId" +
+940:             if (doc["identityVerification"] != null) "?op_type=create" else ""
+941:         return try {
+942:             restTemplate.exchange(
+943:                 putUrl,
+944:                 HttpMethod.PUT,
+945:                 HttpEntity(doc, headers()),
+946:                 JsonNode::class.java
+947:             )
+
+### src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPromotionProgressService.kt:1-134
+1: package com.weibo.talentintroduction.discovery.service
+2: 
+3: import com.fasterxml.jackson.databind.JsonNode
+4: import com.fasterxml.jackson.databind.ObjectMapper
+5: import com.fasterxml.jackson.databind.node.ObjectNode
+6: import com.weibo.talentintroduction.config.ElasticsearchProperties
+7: import com.weibo.talentintroduction.discovery.repository.ExpertAcademicEnrichmentJobRepository
+8: import com.weibo.talentintroduction.task.domain.TaskExecution
+9: import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
+10: import com.weibo.talentintroduction.task.repository.TaskProgressLogRepository
+11: import com.weibo.talentintroduction.task.service.TaskProgress
+12: import org.slf4j.LoggerFactory
+13: import org.springframework.http.HttpEntity
+14: import org.springframework.http.HttpHeaders
+15: import org.springframework.http.HttpMethod
+16: import org.springframework.http.MediaType
+17: import org.springframework.stereotype.Service
+18: import org.springframework.web.client.RestTemplate
+19: import java.time.LocalDateTime
+20: import java.time.format.DateTimeFormatter
+21: import java.time.temporal.ChronoUnit
+22: 
+23: /** Read projection only: asynchronous admission must not overwrite discovery's progress writer. */
+24: @Service
+25: class DiscoveryPromotionProgressService(
+26:     private val jobs: ExpertAcademicEnrichmentJobRepository,
+27:     private val executions: TaskExecutionRepository,
+28:     private val logs: TaskProgressLogRepository,
+29:     private val restTemplate: RestTemplate,
+30:     private val properties: ElasticsearchProperties,
+31:     private val mapper: ObjectMapper
+32: ) {
+33:     private val log = LoggerFactory.getLogger(javaClass)
+34: 
+35:     fun refresh(progress: TaskProgress): TaskProgress {
+36:         if (progress.taskType != "EXPERT_DISCOVERY" || progress.details?.get("bySource") == null) return progress
+37:         return safely(progress) {
+38:             val id = progress.executionId ?: logs.findTopByTaskTypeOrderByIdDesc(progress.taskType)?.taskExecutionId
+39:                 ?: return@safely progress
+40:             val execution = executions.findById(id).orElse(null) ?: return@safely progress
+41:             val details = mapper.valueToTree<ObjectNode>(progress.details)
+42:             val counts = counts(execution)
+43:             merge(details, counts)
+44:             @Suppress("UNCHECKED_CAST")
+45:             progress.copy(
+46:                 details = mapper.convertValue(details, Map::class.java) as Map<String, Any>,
+47:                 message = progress.message?.let { message ->
+48:                     val currentSource = details.path("currentSource").asText()
+49:                     val promoted = if (currentSource.isBlank()) details.path("promoted")
+50:                     else details.path("bySource").path(currentSource).path("promoted")
+51:                     if (promoted.isNumber) message.replace(Regex("晋升 \\d+"), "晋升 ${promoted.asInt()}") else message
+52:                 }
+53:             )
+54:         }
+55:     }
+56: 
+57:     /** Completed tasks also gain asynchronous promotions on subsequent reads, including after restart. */
+58:     fun refresh(execution: TaskExecution): TaskExecution {
+59:         if (execution.taskType != "EXPERT_DISCOVERY" || execution.resultSummary.isNullOrBlank()) return execution
+60:         return safely(execution) {
+61:             val root = mapper.readTree(execution.resultSummary) as? ObjectNode ?: return@safely execution
+62:             val stats = (root.get("stats") as? ObjectNode) ?: root
+63:             if (!stats.path("bySource").isObject) return@safely execution
+64:             if (!stats.has("summaryText") && root.has("summaryText")) stats.set<JsonNode>("summaryText", root.get("summaryText"))
+65:             merge(stats, counts(execution))
+66:             root.put("summaryText", stats.path("summaryText").asText())
+67:             execution.copy(resultSummary = mapper.writeValueAsString(root))
+68:         }
+69:     }
+70: 
+71:     internal fun counts(execution: TaskExecution): Map<String, Int> {
+72:         val id = execution.id ?: return emptyMap()
+73:         val documents = jobs.findDiscoveryDocuments(id).associate { it.expertDocId to it.source }
+74:         val admitted = mutableSetOf<String>()
+75:         val start = execution.startedAt.truncatedTo(ChronoUnit.SECONDS)
+76:         val end = execution.finishedAt
+77:         val headers = HttpHeaders().apply {
+78:             contentType = MediaType.APPLICATION_JSON
+79:             setBasicAuth(properties.username, properties.password)
+80:         }
+81:         for (chunk in documents.keys.chunked(200)) {
+82:             val requests = listOf(properties.candidateIndexName, properties.applicationIndexName).flatMap { index ->
+83:                 chunk.map { docId -> mapOf("_index" to index, "_id" to docId,
+84:                     "_source" to listOf("discoveredAt", "tags")) }
+85:             }
+86:             val response = restTemplate.exchange("${properties.baseUrl}/_mget", HttpMethod.POST,
+87:                 HttpEntity(mapOf("docs" to requests), headers), JsonNode::class.java).body
+88:                 ?: error("Missing promotion lookup response")
+89:             val docs = response.path("docs")
+90:             check(docs.isArray && docs.size() == requests.size) { "Incomplete promotion lookup response" }
+91:             for (doc in docs) {
+92:                 check(!doc.has("error")) { "Promotion document lookup failed" }
+93:                 if (!doc.path("found").asBoolean()) continue
+94:                 val source = doc.path("_source")
+95:                 if (source.path("tags").none { it.asText() == "discovered" }) continue
+96:                 val discovered = parseDate(source.path("discoveredAt").asText()) ?: continue
+97:                 // Duplicate encounters also enqueue old experts. They are not this run's new admissions.
+98:                 if (discovered.isBefore(start) || (end != null && discovered.isAfter(end))) continue
+99:                 val docId = doc.path("_id").asText()
+100:                 if (docId in documents) admitted.add(docId)
+101:             }
+102:         }
+103:         return admitted.groupingBy { documents.getValue(it) }.eachCount()
+104:     }
+105: 
+106:     private fun merge(details: ObjectNode, counts: Map<String, Int>) {
+107:         val sources = details.path("bySource") as? ObjectNode ?: return
+108:         var total = 0
+109:         var summary = details.path("summaryText").asText()
+110:         sources.fields().forEach { (source, value) ->
+111:             if (value is ObjectNode) {
+112:                 // Actual layer membership already includes synchronous admissions: never add the two.
+113:                 val promoted = maxOf(value.path("promoted").asInt(), counts[source] ?: 0)
+114:                 value.put("promoted", promoted)
+115:                 total += promoted
+116:                 summary = summary.replace(Regex("(${Regex.escape(source)} 收录 \\d+/晋升 )\\d+")) { "${it.groupValues[1]}$promoted" }
+117:             }
+118:         }
+119:         details.put("promoted", total)
+120:         summary = summary.replace(Regex("(合计:.*?晋升 )\\d+")) { "${it.groupValues[1]}$total" }
+121:         details.put("summaryText", summary.ifBlank { "收录 ${details.path("indexed").asInt()}，晋升 $total（含异步补全，按专家去重）" })
+122:     }
+123: 
+124:     private fun parseDate(value: String): LocalDateTime? = runCatching {
+125:         LocalDateTime.parse(value.replace(' ', 'T'), DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+126:     }.getOrNull()
+127: 
+128:     private fun <T> safely(original: T, action: () -> T): T = try {
+129:         action()
+130:     } catch (e: Exception) {
+131:         log.warn("Discovery promotion statistics unavailable: {}", e.javaClass.simpleName)
+132:         original
+133:     }
+134: }

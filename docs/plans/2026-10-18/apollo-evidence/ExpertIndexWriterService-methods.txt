@@ -1,0 +1,36 @@
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt
+59: fun markApplicationClosed(contact: ExpertContact) {
+84: fun syncOperatorStatus(orcidId: String, operatorStatus: String): SingleSyncResult {
+131: fun syncOperatorStatusBatch(updates: List<Pair<String, String>>): BulkSyncResult {
+243: fun bulkUpdateExpertClassifications(
+332: fun checkExpertClassificationMapping(level: ExpertIndexLevel): Boolean {
+361: fun classificationNode(classification: ExpertClassification): JsonNode =
+373: private fun recordClassificationFailure(
+385: private fun resolveOrcidToDocIds(index: String, orcidIds: List<String>): Map<String, String> {
+413: fun promoteToApplication(
+487: fun retryFailedPromotion(promotionId: Long): ExpertApplicationPromotion {
+508: fun syncApplicationStatus(contact: ExpertContact, intent: String? = null) {
+540: fun promoteToCandidate(orcid: String, contact: ExpertContact): Boolean {
+586: fun removeFromCandidateIndex(esDocId: String): Boolean {
+611: fun indexToRaw(orcid: String, profile: Map<String, Any?>): Boolean {
+630: fun documentExistsInIndex(indexLevel: ExpertIndexLevel, esDocId: String): Boolean {
+646: fun addTag(docId: String, tag: String, level: ExpertIndexLevel): Boolean {
+664: fun removeTag(docId: String, tag: String, level: ExpertIndexLevel): Boolean {
+682: fun readRawDocument(docId: String): Map<String, Any?>? {
+704: fun readDiscoveryDocument(level: ExpertIndexLevel, docId: String): DiscoverySnapshot? {
+727: fun findDiscoveryHitsByEmail(email: String): List<DiscoveryEmailHit> {
+768: private fun sameDiscoveryIdentity(raw: Map<String, Any?>, candidate: Map<String, Any?>): Boolean =
+771: fun discoveryProfile(docId: String, source: Map<String, Any?>): com.weibo.talentintroduction.expert.domain.ExpertProfile {
+772: fun text(key: String) = source[key] as? String
+773: fun number(key: String) = (source[key] as? Number)?.toInt()
+774: fun strings(key: String) = (source[key] as? List<*>)?.filterIsInstance<String>()
+803: fun reconcileDiscoveryCandidate(
+872: fun projectDiscoveryCandidate(
+937: fun writeCandidateDocument(docId: String, doc: Map<String, Any?>): Boolean {
+961: fun writeIdentityProofIfVersionMatches(
+998: fun writeDiscoveryNameAndProofIfVersionMatches(
+1033: fun demoteToRaw(orcid: String, contact: ExpertContact): Boolean {
+1076: private fun toStringMap(node: JsonNode): Map<String, Any?> {
+1084: private fun toAny(node: JsonNode): Any? = when {
+1096: private fun headers(): HttpHeaders =
+1102: private fun basicAuthHeader(): String {

@@ -1,0 +1,79 @@
+admission-store
+src/main/resources/db/migration/V148__create_expert_discovery_review.sql: 5,10,16,29
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepositoryIT.kt: 52,53
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryReview.kt: 19,57,71
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt: 53,1444,1458,1465
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt: 22,46,57,68,98,128,137,146,152,158,165,175,182,206,216,227,265,328,348,360,365,371,378,389
+
+queue-store
+src/main/kotlin/com/weibo/talentintroduction/config/OpenAlexRequestPolicy.kt: 361
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoverySourceCursor.kt: 7
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt: 146
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/ExpertAcademicEnrichmentJob.kt: 8,26
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt: 536
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCheckpointCodec.kt: 10,39
+src/main/resources/db/migration/V131__create_expert_academic_enrichment_job.sql: 29,44,45,46
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepository.kt: 10,26,31,34,44,64,86,102,123,145,174
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoverySourceCursorRepository.kt: 9
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/OpenAlexBudgetRepository.kt: 319
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt: 355,356,373,402,420,444,464,479,498,517,535,544,557,577,587,600,609,616,622,629,651,659,694,705,717,733,744,755,786,816,848,874,892,910,975,981,995,1024,1036,1076,1092,1104,1108,1139,1153,1165,1169,1195,1222,1239,1267,1273,1290,1299,1320,1338,1356,1373,1378,1396,1409,1412,1526,1532,1537
+src/main/resources/db/migration/V133__create_discovery_paper_queue.sql: 43,72,74,76,84,107,108,109,111,118,141,142,143,144,146,148,150
+src/main/resources/db/migration/V32__create_discovery_source_cursor.sql: 1
+
+task-store-full
+src/main/kotlin/com/weibo/talentintroduction/task/domain/TaskExecution.kt: 7
+src/main/kotlin/com/weibo/talentintroduction/task/domain/TaskProgressLog.kt: 7
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryReview.kt: 134
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/ExpertAcademicEnrichmentJob.kt: 34
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt: 2990,3846,3879
+src/main/resources/db/migration/V138__create_batch_email_verification.sql: 5,10,14,15,35,41,59,60,62
+src/main/resources/db/migration/V102__add_task_progress_log_created_at_index.sql: 1,2,4
+src/main/resources/db/migration/V131__create_expert_academic_enrichment_job.sql: 23
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt: 19,152
+src/main/resources/db/migration/V100__add_task_execution_indexes.sql: 3,4,5
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt: 53,87,176,436,717,1103,1233,1554,1858
+src/main/resources/db/migration/V73__add_batch_config_id_to_task_execution.sql: 1,4,5,7,8
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionService.kt: 13,17,19,45,52
+src/main/resources/db/migration/V22__create_task_progress_log.sql: 1,4,18,19
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt: 88,107
+src/main/resources/db/migration/V133__create_discovery_paper_queue.sql: 37
+src/main/kotlin/com/weibo/talentintroduction/task/service/MailAutomationScheduler.kt: 55,90
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt: 43,357,472,1183
+src/main/resources/db/migration/V35__add_task_progress_batch_reject_reasons.sql: 1
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt: 434
+src/main/resources/db/migration/V137__task_execution_interruption_recovery.sql: 1,9
+src/main/resources/db/migration/V4__create_task_execution.sql: 1
+src/main/resources/db/migration/V101__add_task_execution_id_to_mail_record.sql: 1,4,6,7
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt: 75
+src/main/resources/db/migration/V148__create_expert_discovery_review.sql: 13
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskProgressLogRepository.kt: 16,21,26
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt: 57,62,72,87,96,111,122,129,141,155,180,184,202,214,227,240,263,271,274,285,291,294,297
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchEmailVerificationRepository.kt: 15,20,197,261,265,286,312
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt: 183,185
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt: 859
+
+es-write-read
+scripts/test_build_sbir_expert_import.py: 261,265
+scripts/import_contactout_visible_candidates.py: 205
+scripts/apply_legacy_discovery_approval.py: 91,98
+scripts/update_sbir_employment.py: 47,52,89
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewScanService.kt: 134,243
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt: 403,408,411,749,895,903,912,915,919,923,929,935,949,1367,1369
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt: 85,135,207,268,532,537,538
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPromotionProgressService.kt: 86
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt: 249,323,325,558,565,753,758,797,799,1019,1042
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryService.kt: 434
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt: 493,506,507
+scripts/build_contactout_enterprise_es_import.py: 281
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt: 51,54,172,176,221,279,298,346,348,374,376,389,391,449,471
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt: 1450,1779,3229,3242,3411,3493,3504,3508,3526,3546,3561,3562,3563,3583
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt: 131,140,186,233
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt: 215,231,232
+scripts/build_sbir_expert_import.py: 571,621
+scripts/expert_discovery/enterprise_batch/enrich_engineer_emails.py: 96,250
+scripts/expert_discovery/enterprise_batch/import_candidate_es.py: 231
+scripts/expert_discovery/enterprise_batch/import_personal_email_candidates.py: 172
+scripts/expert_discovery/enterprise_batch/test_enrich_engineer_emails.py: 8,44,45
+scripts/expert_discovery/enterprise_batch/import_es_documents.py: 74
+scripts/expert_discovery/enterprise_batch/update_es_research_fields.py: 44,67,73
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt: 72,110,182,263,426,465,528,545,570,588,611,614,632,654,672,684,704,708,771,803,809,812,820,824,835,840,872,890,911,918,937,939,969,1011

@@ -1,0 +1,134 @@
+$ rg -n indexToRaw|writeCandidateDocument|projectDiscoveryCandidate|reconcileDiscoveryCandidate|promoteRawToCandidate|readDiscoveryDocument|discoveryProfile|scrollExperts|_bulk|_mget|_update/|_doc/ src/main/kotlin/com/weibo/talentintroduction/expert src/main/kotlin/com/weibo/talentintroduction/discovery scripts
+exit=0
+scripts/test_build_sbir_expert_import.py:261:    def test_bulk_file_create_writes_raw_and_candidate_with_same_tagged_document(self) -> None:
+scripts/test_build_sbir_expert_import.py:265:        lines = (self.output / "experts_bulk.ndjson").read_text(encoding="utf-8").splitlines()
+scripts/import_contactout_visible_candidates.py:205:    response = client.request("POST", f"/{index}/_mget", {
+scripts/apply_legacy_discovery_approval.py:91:        result = self.request('/_mget', {'docs': docs})['docs']
+scripts/apply_legacy_discovery_approval.py:98:        result = self.request('/_bulk', '\n'.join(lines) + '\n', ndjson=True)
+scripts/update_sbir_employment.py:47:def run_bulk(args: argparse.Namespace, body: bytes) -> dict[str, object]:
+scripts/update_sbir_employment.py:52:        f"'{args.es_url.rstrip('/')}/_bulk?refresh=false' --data-binary @-"
+scripts/update_sbir_employment.py:89:            run_bulk(args, bulk_body(index, batch))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewScanService.kt:134:     * `ExpertSearchService.scrollExpertsFiltered` 同款 5m scroll + finally clear）。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewScanService.kt:243:            val profile = writer.discoveryProfile(hit.docId, hit.source)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:403:    fun scrollExperts(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:408:        scrollExperts(level, batchSize) { batch, _, _ -> handler(batch) }
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:411:    fun scrollExperts(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:749:    fun scrollExpertsFiltered(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:895:            "${properties.baseUrl}/_mget",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:903:            throw ExpertSearchUnavailableException("ES _mget 响应缺少 docs 数组，批量读取不可用")
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:912:                throw ExpertSearchUnavailableException("ES _mget 条目返回错误，批量读取不可用")
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:915:                throw ExpertSearchUnavailableException("ES _mget 条目缺少 found 字段，批量读取不可用")
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:919:                throw ExpertSearchUnavailableException("ES _mget 条目 _id 缺失/重复/不在请求集内，批量读取不可用")
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:923:                    throw ExpertSearchUnavailableException("ES _mget found=true 条目缺少 _source，批量读取不可用")
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:929:            throw ExpertSearchUnavailableException("ES _mget 响应缺少请求中的条目，批量读取不可用")
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:935:     * I-1/I-3：按真实 `_id` 批量读取（`_mget`），结果复用 [toExpertProfile]，因此与列表/详情读到同一批字段。
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:949:            "${properties.baseUrl}/_mget",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:1367:     * 既有 [scrollExpertsFiltered]（`_doc` 序、无排序键）保持不动。
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:1369:    fun scrollExpertsFilteredWithSort(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:85:                expertIndexWriterService.readDiscoveryDocument(level, docId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:135:                        expertIndexWriterService.readDiscoveryDocument(level, docId)?.let { proofOf(it.source) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:207:                expertIndexWriterService.readDiscoveryDocument(level, docId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:268:                        expertIndexWriterService.readDiscoveryDocument(level, docId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:532:            val document = expertIndexWriterService.readDiscoveryDocument(level, docId) ?: continue
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:537:        val profiles = snapshots.values.map { expertIndexWriterService.discoveryProfile(docId, it.source) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:538:        val rawProfile = expertIndexWriterService.discoveryProfile(docId, raw.source)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPromotionProgressService.kt:86:            val response = restTemplate.exchange("${properties.baseUrl}/_mget", HttpMethod.POST,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:249: * 边界：读取真实 ES source（[ExpertIndexWriterService.readDiscoveryDocument]）用于展示事实与身份
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:323:            val snapshot = writer.readDiscoveryDocument(level, docId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:325:            val profile = writer.discoveryProfile(docId, snapshot.source)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:558:            val snapshot = writer.readDiscoveryDocument(level, item.expertDocId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:565:            val profile = writer.discoveryProfile(item.expertDocId, snapshot.source)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:753:        val snapshot = writer.readDiscoveryDocument(level, item.expertDocId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:758:        val profile = writer.discoveryProfile(item.expertDocId, snapshot.source)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:797:        val snapshot = writer.readDiscoveryDocument(level, item.expertDocId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:799:        val profile = writer.discoveryProfile(item.expertDocId, snapshot.source)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1019:        val result = writer.projectDiscoveryCandidate(docId, source, decision)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1042:                writer.readDiscoveryDocument(parseLevel(item.sourceLevel), item.expertDocId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryService.kt:434:        expertSearchService.scrollExpertsFilteredWithSort(level, filters, RELATION_BATCH_SIZE, sortBy) { batch ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:493:                expertIndexWriterService.readDiscoveryDocument(level, docId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:506:        val profiles = snapshots.values.map { expertIndexWriterService.discoveryProfile(docId, it.source) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:507:        val rawProfile = expertIndexWriterService.discoveryProfile(docId, raw.source)
+scripts/build_contactout_enterprise_es_import.py:281:    response = client.request("POST", f"/{index}/_mget", {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:51:            expertSearchService.scrollExperts(ExpertIndexLevel.CANDIDATE) { batch, batchNumber, totalHits ->
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:54:                    return@scrollExperts false
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:172:            expertSearchService.scrollExperts(ExpertIndexLevel.RAW) { batch, batchNumber, totalHits ->
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:176:                    return@scrollExperts false
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:221:                            val success = promoteRawToCandidate(profile, gate.classification)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:279:    private fun promoteRawToCandidate(profile: ExpertProfile, classification: ExpertClassification): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:298:        return expertIndexWriterService.writeCandidateDocument(docId, doc)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:346:            val snapshot = expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.RAW, docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:348:            val profile = expertIndexWriterService.discoveryProfile(docId, snapshot.source)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:374:                    else expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:376:                if (!expertIndexWriterService.reconcileDiscoveryCandidate(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:389:                else expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:391:            if (!expertIndexWriterService.reconcileDiscoveryCandidate(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:449:            expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.RAW, docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:471:                return if (promoteRawToCandidate(raw, gate.classification)) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1450:                    if (!expertIndexWriterService.indexToRaw(esDocId, profileMap)) { sourceStats.rawWriteFailed++; continue }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1779:            if (!expertIndexWriterService.indexToRaw(identity.esDocId, profileMap)) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3229:                "${esProperties.baseUrl}/$index/_doc/$docId", HttpMethod.HEAD, HttpEntity(null, esHeaders()),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3242:                "${esProperties.baseUrl}/$index/_update/$docId", HttpMethod.POST,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3411:        val url = "${esProperties.baseUrl}/${expertIndexService.indexName(ExpertIndexLevel.RAW)}/_doc/$orcid"
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3493:        val updateUrl = "${esProperties.baseUrl}/$rawIndex/_update/$orcidId"
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3504:    private fun promoteRawToCandidateWithEmail(profile: ExpertProfile): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3508:                "${esProperties.baseUrl}/$candidateIndex/_doc/${profile.orcidId}",
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3526:        val getUrl = "${esProperties.baseUrl}/$rawIndex/_doc/${profile.orcidId}"
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3546:        val putUrl = "${esProperties.baseUrl}/$candidateIndex/_doc/${profile.orcidId}" +
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3561:        expertSearchService.scrollExperts(ExpertIndexLevel.RAW) { batch, batchNumber, totalHits ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3562:            if (progressStore.isCancelled("EXPERT_DISCOVERY")) return@scrollExperts false
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3563:            if (attemptedCount >= limit) return@scrollExperts false
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3583:                                        if (promoteRawToCandidateWithEmail(profile.copy(email = validEmail))) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:131:            expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.RAW, docId)?.source
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:140:            val profile = expertIndexWriterService.discoveryProfile(docId, rawAfter)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:186:                expertIndexWriterService.readDiscoveryDocument(level, docId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:233:        val profileBefore = expertIndexWriterService.discoveryProfile(docId, rawSource)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt:215:                expertIndexWriterService.readDiscoveryDocument(level, docId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt:231:        val profiles = snapshots.values.map { expertIndexWriterService.discoveryProfile(docId, it.source) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt:232:        val rawProfile = expertIndexWriterService.discoveryProfile(docId, raw.source)
+scripts/build_sbir_expert_import.py:571:    with (output_dir / "experts_bulk.ndjson").open("w", encoding="utf-8") as handle:
+scripts/build_sbir_expert_import.py:621:            "bulk": str(output_dir / "experts_bulk.ndjson"),
+scripts/expert_discovery/enterprise_batch/enrich_engineer_emails.py:96:def build_bulk_request(person_ids: list[str]) -> tuple[str, dict]:
+scripts/expert_discovery/enterprise_batch/enrich_engineer_emails.py:250:        url, body = build_bulk_request(ids)
+scripts/expert_discovery/enterprise_batch/import_candidate_es.py:231:    response = client.request("POST", "/_bulk?refresh=wait_for", ("\n".join(lines) + "\n").encode(), "application/x-ndjson")
+scripts/expert_discovery/enterprise_batch/import_personal_email_candidates.py:172:    response = client.request("POST", "/" + index + "/_mget", {
+scripts/expert_discovery/enterprise_batch/test_enrich_engineer_emails.py:8:    build_bulk_request,
+scripts/expert_discovery/enterprise_batch/test_enrich_engineer_emails.py:44:    def test_bulk_request_can_only_request_native_work_email(self):
+scripts/expert_discovery/enterprise_batch/test_enrich_engineer_emails.py:45:        url, body = build_bulk_request(["p-1", "p-2"])
+scripts/expert_discovery/enterprise_batch/import_es_documents.py:74:    response = client.request("POST", "/_bulk?refresh=wait_for", ("\n".join(lines) + "\n").encode(), "application/x-ndjson")
+scripts/expert_discovery/enterprise_batch/update_es_research_fields.py:44:    lookup = client.request("POST", f"/{args.index}/_mget", {
+scripts/expert_discovery/enterprise_batch/update_es_research_fields.py:67:        "POST", "/_bulk?refresh=wait_for", ("\n".join(lines) + "\n").encode(), "application/x-ndjson"
+scripts/expert_discovery/enterprise_batch/update_es_research_fields.py:73:    verify = client.request("POST", f"/{args.index}/_mget", {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:72:            val updateUrl = "${properties.baseUrl}/$applicationIndex/_update/$orcid"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:110:                val updateUrl = "${properties.baseUrl}/$index/_update/$normalizedOrcidId"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:182:                    val bulkUrl = "${properties.baseUrl}/_bulk"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:263:                val bulkUrl = "${properties.baseUrl}/_bulk"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:426:        val getUrl = "${properties.baseUrl}/$candidateIndex/_doc/$normalizedOrcid"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:465:        val putUrl = "${properties.baseUrl}/$applicationIndex/_doc/$normalizedOrcid" +
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:528:            val updateUrl = "${properties.baseUrl}/$applicationIndex/_update/$orcid"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:545:        val getUrl = "${properties.baseUrl}/$rawIndex/_doc/$normalizedOrcid"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:570:        val putUrl = "${properties.baseUrl}/$candidateIndex/_doc/$normalizedOrcid" +
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:588:        val deleteUrl = "${properties.baseUrl}/$candidateIndex/_doc/$esDocId"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:611:    fun indexToRaw(orcid: String, profile: Map<String, Any?>): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:614:        val putUrl = "${properties.baseUrl}/$rawIndex/_doc/$normalizedOrcid" +
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:632:        val headUrl = "${properties.baseUrl}/$index/_doc/$esDocId"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:654:        val url = "${properties.baseUrl}/$index/_update/$docId"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:672:        val url = "${properties.baseUrl}/$index/_update/$docId"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:684:        val getUrl = "${properties.baseUrl}/$rawIndex/_doc/$docId"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:704:    fun readDiscoveryDocument(level: ExpertIndexLevel, docId: String): DiscoverySnapshot? {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:708:                "${properties.baseUrl}/$index/_doc/$docId", HttpMethod.GET,
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:771:    fun discoveryProfile(docId: String, source: Map<String, Any?>): com.weibo.talentintroduction.expert.domain.ExpertProfile {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:803:    fun reconcileDiscoveryCandidate(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:809:        val current = readDiscoveryDocument(ExpertIndexLevel.RAW, docId) ?: return false
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:812:        val candidate = if (preserveApplication) null else readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:820:            "${properties.baseUrl}/$rawIndex/_update/$docId?if_seq_no=${snapshot.seqNo}&if_primary_term=${snapshot.primaryTerm}",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:824:        val stableRaw = readDiscoveryDocument(ExpertIndexLevel.RAW, docId) ?: return false
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:835:            return writeCandidateDocument(docId, candidateDoc)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:840:                "${properties.baseUrl}/$candidateIndex/_doc/$docId?if_seq_no=${candidate.seqNo}&if_primary_term=${candidate.primaryTerm}",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:872:    fun projectDiscoveryCandidate(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:890:            readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:911:        val putUrl = "${properties.baseUrl}/$candidateIndex/_doc/$docId?op_type=create"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:918:                    readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:937:    fun writeCandidateDocument(docId: String, doc: Map<String, Any?>): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:939:        val putUrl = "${properties.baseUrl}/$candidateIndex/_doc/$docId" +
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:969:        val url = "${properties.baseUrl}/$index/_update/$docId?if_seq_no=$seqNo&if_primary_term=$primaryTerm"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:1011:        val url = "${properties.baseUrl}/$index/_update/$docId?if_seq_no=$seqNo&if_primary_term=$primaryTerm"

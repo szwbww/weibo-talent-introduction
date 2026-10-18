@@ -1,0 +1,135 @@
+$ rg -n @PostMapping|@RequestBody|@RequestParam|URLSearchParams|params.append|body: JSON.stringify src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt src/main/resources/static/app.js
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:101:    @PostMapping("/run")
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:103:        @RequestBody(required = false) criteria: PaperSearchCriteria?,
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:104:        @RequestParam(required = false) includeRawScan: Boolean? = null
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:178:    @PostMapping("/run/by-keyword")
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:180:        @RequestParam keywords: List<String>,
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:181:        @RequestParam(defaultValue = "2020") yearFrom: Int,
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:182:        @RequestParam(defaultValue = "2026") yearTo: Int,
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:183:        @RequestParam(required = false) sources: List<String>? = null,
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:184:        @RequestParam(required = false) includeRawScan: Boolean? = null
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:303:    @PostMapping("/pipeline/resume")
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:323:    @PostMapping("/enrich")
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:325:        @RequestParam(required = false) scope: EnrichmentScope? = null
+src/main/resources/static/app.js:500:        body: JSON.stringify(Object.fromEntries(Object.entries(body).filter(([key]) => !key.startsWith("_")))),
+src/main/resources/static/app.js:1444:            method: "POST", body: JSON.stringify({ reasonCode, detail })
+src/main/resources/static/app.js:2229:            body: JSON.stringify({ intervalHours: hours }),
+src/main/resources/static/app.js:2957:    const params = new URLSearchParams();
+src/main/resources/static/app.js:3030:    const params = new URLSearchParams();
+src/main/resources/static/app.js:3557:        const params = new URLSearchParams();
+src/main/resources/static/app.js:3567:                body: JSON.stringify({
+src/main/resources/static/app.js:3599:            body: JSON.stringify({
+src/main/resources/static/app.js:3669:            body: JSON.stringify({ batchHash: confirm.batchHash })
+src/main/resources/static/app.js:4056:            body: JSON.stringify({})
+src/main/resources/static/app.js:4086:            method: "POST", body: JSON.stringify({}), timeoutMs: DISCOVERY_REVIEW_TIMEOUT_MS
+src/main/resources/static/app.js:4860:            body: JSON.stringify({ text })
+src/main/resources/static/app.js:5457:            body: JSON.stringify(payload)
+src/main/resources/static/app.js:5462:            body: JSON.stringify(payload)
+src/main/resources/static/app.js:6639:        body: JSON.stringify(payload)
+src/main/resources/static/app.js:6668:        body: JSON.stringify({ text, level, mode })
+src/main/resources/static/app.js:6768:    await api(path, { method: state.selectedRuleId ? "PUT" : "POST", body: JSON.stringify(payload) });
+src/main/resources/static/app.js:7110:        body: JSON.stringify(payload)
+src/main/resources/static/app.js:7127:        body: JSON.stringify({ operator: window.localStorage.getItem("operatorName") || "console" })
+src/main/resources/static/app.js:7195:    const params = new URLSearchParams();
+src/main/resources/static/app.js:7374:        body: JSON.stringify({ freeFormSystemPrompt: null, constraints: null })
+src/main/resources/static/app.js:7581:        body: JSON.stringify({
+src/main/resources/static/app.js:7676:    const params = new URLSearchParams();
+src/main/resources/static/app.js:7708:        body: JSON.stringify(payload)
+src/main/resources/static/app.js:7892:        body: JSON.stringify(payload)
+src/main/resources/static/app.js:7901:        body: JSON.stringify({ operator: ragPromptOperator() })
+src/main/resources/static/app.js:8065:            body: JSON.stringify(payload)
+src/main/resources/static/app.js:8070:            body: JSON.stringify({ snippetType: values.snippetType, ...payload })
+src/main/resources/static/app.js:8129:    const params = new URLSearchParams();
+src/main/resources/static/app.js:8178:    const result = await api("/api/suppressions", { method: "POST", body: JSON.stringify(payload) });
+src/main/resources/static/app.js:8242:        const params = new URLSearchParams({ level });
+src/main/resources/static/app.js:8294:        const params = new URLSearchParams({ level });
+src/main/resources/static/app.js:8322:        const params = new URLSearchParams({ level });
+src/main/resources/static/app.js:8450:    const params = new URLSearchParams({ orcidId, level });
+src/main/resources/static/app.js:8463:        body: JSON.stringify({ orcidId, tag, level })
+src/main/resources/static/app.js:9019:        const params = new URLSearchParams();
+src/main/resources/static/app.js:9084:        const params = new URLSearchParams();
+src/main/resources/static/app.js:9093:        expertTypes.forEach((v) => params.append("expertType", v));
+src/main/resources/static/app.js:9106:        hasField.forEach((f) => params.append("hasField", f));
+src/main/resources/static/app.js:9321:            body: JSON.stringify(payload)
+src/main/resources/static/app.js:9447:        body: JSON.stringify(payload)
+src/main/resources/static/app.js:10147:        const params = new URLSearchParams();
+src/main/resources/static/app.js:10148:        keywords.split(",").map(k => k.trim()).filter(k => k).forEach(k => params.append("keywords", k));
+src/main/resources/static/app.js:10149:        if (selectedSources.length > 0) selectedSources.forEach(s => params.append("sources", s));
+src/main/resources/static/app.js:10150:        if (includeRawScan) params.append("includeRawScan", "true");
+src/main/resources/static/app.js:10153:    const params = new URLSearchParams();
+src/main/resources/static/app.js:10154:    if (includeRawScan) params.append("includeRawScan", "true");
+src/main/resources/static/app.js:10160:        body: JSON.stringify(body),
+src/main/resources/static/app.js:10552:        const saved = await api(`${batchSendTypeBase()}/config`, { method: "PUT", body: JSON.stringify(payload) });
+src/main/resources/static/app.js:10681:    const saved = await api(`${batchSendTypeBase()}/config`, { method: "PUT", body: JSON.stringify(payload) });
+src/main/resources/static/app.js:11861:        data = await api(EXPERT_MANUAL_PROFILE_URL, { method: "PATCH", body: JSON.stringify(body) });
+src/main/resources/static/app.js:12769:    const params = new URLSearchParams();
+src/main/resources/static/app.js:13270:            { method: "PATCH", body: JSON.stringify({ nameStem: stem, expectedVersion: Number(target.version) }) }
+src/main/resources/static/app.js:13555:    const params = new URLSearchParams();
+src/main/resources/static/app.js:13923:        body: JSON.stringify({
+src/main/resources/static/app.js:14047:            body: JSON.stringify({ status })
+src/main/resources/static/app.js:14776:                body: JSON.stringify({ attachmentIds: checked })
+src/main/resources/static/app.js:14839:            body: JSON.stringify({ value })
+src/main/resources/static/app.js:14861:            body: JSON.stringify({ fieldKey, fieldLabel, value })
+src/main/resources/static/app.js:15195:            body: JSON.stringify({ attachmentIds: run.ids })
+src/main/resources/static/app.js:15721:            body: JSON.stringify(payload)
+src/main/resources/static/app.js:16193:            body: JSON.stringify(payload)
+src/main/resources/static/app.js:16216:        body: JSON.stringify({ text, level: "CANDIDATE", mode: "SATISFY_ALL" })
+src/main/resources/static/app.js:16287:            body: JSON.stringify(payload)
+src/main/resources/static/app.js:16294:            body: JSON.stringify({ ...payload, mailType: "INTRODUCTION" })
+src/main/resources/static/app.js:16453:            body: JSON.stringify({
+src/main/resources/static/app.js:16468:            body: JSON.stringify({ senderAccountCode: code, operatorName: null, note: null })
+src/main/resources/static/app.js:16478:            body: JSON.stringify({ operatorName: null, note: null })
+src/main/resources/static/app.js:16548:                body: JSON.stringify({ reason: payload.reason, note: payload.note })
+src/main/resources/static/app.js:16556:                body: JSON.stringify({ note: payload.note })
+src/main/resources/static/app.js:16593:            body: JSON.stringify({
+src/main/resources/static/app.js:16614:            body: JSON.stringify({
+src/main/resources/static/app.js:16682:        body: JSON.stringify({ operatorStatus: newStatus, operatorName })
+src/main/resources/static/app.js:16691:        body: JSON.stringify({ targetLevel: newLevel, operatorName })
+src/main/resources/static/app.js:16797:    const params = new URLSearchParams();
+src/main/resources/static/app.js:17345:            body: JSON.stringify({
+src/main/resources/static/app.js:17788:            body: JSON.stringify(payload)
+src/main/resources/static/app.js:17803:            body: JSON.stringify(payload)
+src/main/resources/static/app.js:17816:            body: JSON.stringify({ contactId: Number(contactId), resolvedBy, promoteToApplication })
+src/main/resources/static/app.js:17857:            body: JSON.stringify({ contactId: Number(contactId), resolvedBy, promoteToApplication: promote })
+src/main/resources/static/app.js:17884:                    body: JSON.stringify({ operatorStatus: newStatus, operatorName })
+src/main/resources/static/app.js:17890:                    body: JSON.stringify({ targetLevel: newLevel, operatorName })
+src/main/resources/static/app.js:17911:                body: JSON.stringify({ operatorStatus: newStatus, operatorName })
+src/main/resources/static/app.js:17931:                body: JSON.stringify({ targetLevel: newLevel, operatorName })
+src/main/resources/static/app.js:18014:                body: JSON.stringify(body)
+src/main/resources/static/app.js:18146:                body: JSON.stringify(requestBody)
+src/main/resources/static/app.js:18332:    const dateParams = new URLSearchParams();
+src/main/resources/static/app.js:18361:    const params = new URLSearchParams();
+src/main/resources/static/app.js:18571:    const params = new URLSearchParams({ days: String(days) });
+src/main/resources/static/app.js:18746:            method: "PUT", body: JSON.stringify({ enabled })
+src/main/resources/static/app.js:18925:        const pendingParams = new URLSearchParams();
+src/main/resources/static/app.js:18931:        const bounceParams = new URLSearchParams();
+src/main/resources/static/app.js:19044:            const dateParams = new URLSearchParams();
+src/main/resources/static/app.js:19579:                            body: JSON.stringify({ reason: "OPERATOR_MANUAL", note: "控制台手动切换" })
+src/main/resources/static/app.js:19584:                            body: JSON.stringify({ note: "控制台手动切换" })
+src/main/resources/static/app.js:20039:                body: JSON.stringify({ email, source: "MANUAL_ADD" })
+src/main/resources/static/app.js:20167:        const params = new URLSearchParams();
+src/main/resources/static/app.js:20186:        (typeof expertTypeActiveValues === "function" ? expertTypeActiveValues() : []).forEach((v) => params.append("expertType", v));
+src/main/resources/static/app.js:20202:        const filtered = new URLSearchParams(base);
+src/main/resources/static/app.js:20520:            body: JSON.stringify({ enabled: !confirmedEnabled }),
+src/main/resources/static/app.js:20601:                body: JSON.stringify({ enabled: targetEnabled, operatorName })
+src/main/resources/static/app.js:20971:                body: JSON.stringify({ username, password })
+src/main/resources/static/app.js:21016:                body: JSON.stringify({ oldPassword, newPassword })
+src/main/resources/static/app.js:21256:                body: JSON.stringify(body)
+src/main/resources/static/app.js:21344:        body: JSON.stringify({ attachmentIds })
+src/main/resources/static/app.js:21471:    const params = new URLSearchParams();
+src/main/resources/static/app.js:21716:    const params = new URLSearchParams();
+src/main/resources/static/app.js:21999:            body: JSON.stringify(operatorName ? { operatorName } : {})
+src/main/resources/static/app.js:22154:            body: JSON.stringify(operatorName ? { operatorName } : {})
+src/main/resources/static/app.js:22232:        body: JSON.stringify(payload)
+src/main/resources/static/app.js:22656:            body: JSON.stringify({ enabled: enabled })
+src/main/resources/static/app.js:23365:            method: "POST", body: JSON.stringify({ cron: input.value, count: 5 })
+src/main/resources/static/app.js:23873:            body: JSON.stringify(Object.assign({}, snapshot, { gateFilterEnabled: gateOn }))
+src/main/resources/static/app.js:23989:                method: "PUT", body: JSON.stringify(payload)
+src/main/resources/static/app.js:23993:                method: "POST", body: JSON.stringify(payload)
+src/main/resources/static/app.js:24489:            body: JSON.stringify({
+src/main/resources/static/app.js:25697:        const params = new URLSearchParams();
+src/main/resources/static/app.js:25725:    return api("/api/meeting-calendar/events", { method: "POST", body: JSON.stringify(payload) });
+src/main/resources/static/app.js:25731:        body: JSON.stringify(payload)
+src/main/resources/static/app.js:25738:        body: JSON.stringify(payload)
+src/main/resources/static/app.js:26702:    const params = new URLSearchParams();

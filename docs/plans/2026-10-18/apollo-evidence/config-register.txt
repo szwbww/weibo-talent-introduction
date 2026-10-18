@@ -1,0 +1,70 @@
+$ rg -n ConfigurationProperties|EnableConfigurationProperties|ConfigurationPropertiesScan src/main/kotlin
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionScheduler.kt:4:import org.springframework.boot.context.properties.EnableConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionScheduler.kt:17: * - 配置类在此经 [EnableConfigurationProperties] 注册（与 MailSchedulingProperties
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionScheduler.kt:22:@EnableConfigurationProperties(TaskRetentionProperties::class)
+src/main/kotlin/com/weibo/talentintroduction/config/UnsubscribeProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/UnsubscribeProperties.kt:7:@ConfigurationProperties(prefix = "talent-introduction.unsubscribe")
+src/main/kotlin/com/weibo/talentintroduction/config/CoreProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/CoreProperties.kt:7:@ConfigurationProperties(prefix = "talent-introduction.expert-discovery.core")
+src/main/kotlin/com/weibo/talentintroduction/config/RestTemplateConfig.kt:5:import org.springframework.boot.context.properties.EnableConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/RestTemplateConfig.kt:33:@EnableConfigurationProperties(
+src/main/kotlin/com/weibo/talentintroduction/config/OpenAlexProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/OpenAlexProperties.kt:8:@ConfigurationProperties(prefix = "talent-introduction.expert-discovery.openalex")
+src/main/kotlin/com/weibo/talentintroduction/config/UnpaywallProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/UnpaywallProperties.kt:7:@ConfigurationProperties(prefix = "talent-introduction.expert-discovery.unpaywall")
+src/main/kotlin/com/weibo/talentintroduction/config/ManualOutreachProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/ManualOutreachProperties.kt:7:@ConfigurationProperties(prefix = "talent-introduction.manual-outreach")
+src/main/kotlin/com/weibo/talentintroduction/config/CrossrefProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/CrossrefProperties.kt:7:@ConfigurationProperties(prefix = "talent-introduction.expert-discovery.crossref")
+src/main/kotlin/com/weibo/talentintroduction/config/MailAttachmentStorageProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/MailAttachmentStorageProperties.kt:7:@ConfigurationProperties(prefix = "talent-introduction.mail-attachment-storage")
+src/main/kotlin/com/weibo/talentintroduction/config/TranslationProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/TranslationProperties.kt:7:@ConfigurationProperties(prefix = "talent-introduction.translation")
+src/main/kotlin/com/weibo/talentintroduction/config/PmcOaProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/PmcOaProperties.kt:7:@ConfigurationProperties(prefix = "talent-introduction.expert-discovery.pmc-oa")
+src/main/kotlin/com/weibo/talentintroduction/config/MailQueueProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/MailQueueProperties.kt:7:@ConfigurationProperties(prefix = "talent-introduction.mail-queue")
+src/main/kotlin/com/weibo/talentintroduction/config/MailSchedulingProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/MailSchedulingProperties.kt:7:@ConfigurationProperties(prefix = "talent-introduction.scheduling")
+src/main/kotlin/com/weibo/talentintroduction/config/TaskRetentionProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/TaskRetentionProperties.kt:13:@ConfigurationProperties(prefix = "talent-introduction.task-retention")
+src/main/kotlin/com/weibo/talentintroduction/config/ExpertDiscoveryProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/ExpertDiscoveryProperties.kt:8:@ConfigurationProperties(prefix = "talent-introduction.expert-discovery")
+src/main/kotlin/com/weibo/talentintroduction/config/ExpertClassificationProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/ExpertClassificationProperties.kt:17:@ConfigurationProperties(prefix = "talent-introduction.expert-classification")
+src/main/kotlin/com/weibo/talentintroduction/config/ArxivProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/ArxivProperties.kt:7:@ConfigurationProperties(prefix = "talent-introduction.expert-discovery.arxiv")
+src/main/kotlin/com/weibo/talentintroduction/config/WarmupProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/WarmupProperties.kt:5:@ConfigurationProperties(prefix = "talent-introduction.warmup")
+src/main/kotlin/com/weibo/talentintroduction/config/OrcidProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/OrcidProperties.kt:7:@ConfigurationProperties(prefix = "talent-introduction.expert-discovery.orcid")
+src/main/kotlin/com/weibo/talentintroduction/config/PostmasterProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/PostmasterProperties.kt:7:@ConfigurationProperties(prefix = "talent-introduction.postmaster")
+src/main/kotlin/com/weibo/talentintroduction/config/EmailValidationProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/EmailValidationProperties.kt:7:@ConfigurationProperties(prefix = "talent-introduction.email-validation")
+src/main/kotlin/com/weibo/talentintroduction/config/EuropePmcProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/EuropePmcProperties.kt:7:@ConfigurationProperties(prefix = "talent-introduction.expert-discovery.europe-pmc")
+src/main/kotlin/com/weibo/talentintroduction/config/ElasticsearchProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/ElasticsearchProperties.kt:7:@ConfigurationProperties(prefix = "talent-introduction.elasticsearch")
+src/main/kotlin/com/weibo/talentintroduction/config/PdfExtractionProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/PdfExtractionProperties.kt:7:@ConfigurationProperties(prefix = "talent-introduction.expert-discovery.pdf-extraction")
+src/main/kotlin/com/weibo/talentintroduction/config/LlmProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/LlmProperties.kt:7:@ConfigurationProperties(prefix = "talent-introduction.llm")
+src/main/kotlin/com/weibo/talentintroduction/config/CandidateFilterProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/CandidateFilterProperties.kt:7:@ConfigurationProperties(prefix = "talent-introduction.candidate-filter")
+src/main/kotlin/com/weibo/talentintroduction/config/AcademicFilterProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/AcademicFilterProperties.kt:7:@ConfigurationProperties(prefix = "talent-introduction.academic-filter")
+src/main/kotlin/com/weibo/talentintroduction/rag/config/RagProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/rag/config/RagProperties.kt:5:import org.springframework.boot.context.properties.EnableConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/rag/config/RagProperties.kt:20:@ConfigurationProperties(prefix = "talent-introduction.rag")
+src/main/kotlin/com/weibo/talentintroduction/rag/config/RagProperties.kt:39:@EnableConfigurationProperties(RagProperties::class)
+src/main/kotlin/com/weibo/talentintroduction/llm/config/FactRetrieverProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/llm/config/FactRetrieverProperties.kt:5:import org.springframework.boot.context.properties.EnableConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/llm/config/FactRetrieverProperties.kt:19:@ConfigurationProperties(prefix = "talent-introduction.llm.fact-retriever")
+src/main/kotlin/com/weibo/talentintroduction/llm/config/FactRetrieverProperties.kt:33:@EnableConfigurationProperties(FactRetrieverProperties::class)
+src/main/kotlin/com/weibo/talentintroduction/llm/config/AskEnumeratorProperties.kt:3:import org.springframework.boot.context.properties.ConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/llm/config/AskEnumeratorProperties.kt:5:import org.springframework.boot.context.properties.EnableConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/llm/config/AskEnumeratorProperties.kt:20:@ConfigurationProperties(prefix = "talent-introduction.llm.ask-enumerator")
+src/main/kotlin/com/weibo/talentintroduction/llm/config/AskEnumeratorProperties.kt:28: * [EnableConfigurationProperties] for the same reason).
+src/main/kotlin/com/weibo/talentintroduction/llm/config/AskEnumeratorProperties.kt:31:@EnableConfigurationProperties(AskEnumeratorProperties::class)

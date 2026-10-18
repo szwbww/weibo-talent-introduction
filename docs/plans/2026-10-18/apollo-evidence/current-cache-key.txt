@@ -1,0 +1,18 @@
+$ rg -n 20261018-recipient-preview-manual src/test src/main/resources/static/index.html
+exit=0
+src/main/resources/static/index.html:11:    <link rel="stylesheet" href="styles.css?v=20261018-recipient-preview-manual">
+src/main/resources/static/index.html:12:    <link rel="stylesheet" href="expert-materials.css?v=20261018-recipient-preview-manual">
+src/main/resources/static/index.html:13:    <link rel="stylesheet" href="mailbox-chat.css?v=20261018-recipient-preview-manual">
+src/main/resources/static/index.html:14:    <link rel="stylesheet" href="meeting-confirmation.css?v=20261018-recipient-preview-manual">
+src/main/resources/static/index.html:15:    <link rel="stylesheet" href="world-clock.css?v=20261018-recipient-preview-manual">
+src/main/resources/static/index.html:16:<link rel="stylesheet" href="meeting-records.css?v=20261018-recipient-preview-manual">
+src/main/resources/static/index.html:17:<link rel="stylesheet" href="contact-details.css?v=20261018-recipient-preview-manual">
+src/main/resources/static/index.html:2415:<script src="trust-reply-workbench.js?v=20261018-recipient-preview-manual"></script>
+src/main/resources/static/index.html:2416:<script src="expert-materials.js?v=20261018-recipient-preview-manual"></script>
+src/main/resources/static/index.html:2417:<script src="meeting-confirmation.js?v=20261018-recipient-preview-manual"></script>
+src/main/resources/static/index.html:2418:<script src="mailbox-chat.js?v=20261018-recipient-preview-manual"></script>
+src/main/resources/static/index.html:2419:<script src="contact-history.js?v=20261018-recipient-preview-manual"></script>
+src/main/resources/static/index.html:2420:<script src="meeting-records.js?v=20261018-recipient-preview-manual"></script>
+src/main/resources/static/index.html:2421:<script src="contact-details.js?v=20261018-recipient-preview-manual"></script>
+src/main/resources/static/index.html:2422:<script src="app.js?v=20261018-recipient-preview-manual"></script>
+src/main/resources/static/index.html:2423:<script src="world-clock.js?v=20261018-recipient-preview-manual"></script>

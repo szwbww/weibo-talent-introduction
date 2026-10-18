@@ -1,0 +1,70 @@
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt
+287: fun listExperts(
+298: fun history(docId: String, limit: Int = HISTORY_LIMIT): List<ExpertDiscoveryReviewItem> {
+305: fun prepare(request: DiscoveryReviewPrepareRequest, actor: String): DiscoveryReviewPrepareResult {
+387: fun prepareAllMatching(
+445: private fun runPrepareWorker(
+526: fun confirm(batchKey: String, batchHash: String?, actor: String): DiscoveryReviewConfirmResult {
+533: private fun confirmItems(batchKey: String, batchHash: String, actor: String): DiscoveryReviewConfirmResult {
+605: private fun confirmAllMatching(
+640: fun retryBatch(batchKey: String, actor: String): DiscoveryReviewBatchStatus {
+656: fun cancelBatch(batchKey: String, actor: String): DiscoveryReviewBatchStatus {
+667: fun batchStatus(batchKey: String, afterId: Long = 0L, limit: Int = STATUS_PAGE_SIZE): DiscoveryReviewBatchStatus {
+682: private fun statusAfterSubmit(batchKey: String): DiscoveryReviewBatchStatus =
+698: private fun startApply(batchKey: String, actor: String, includeFailed: Boolean) {
+725: private fun runApplyWorker(
+751: private fun applyItemAndView(item: ExpertDiscoveryReviewItem): DiscoveryReviewConfirmItemView {
+787: fun revoke(itemId: Long, actor: String, note: String?): DiscoveryReviewRevokeResult {
+844: fun recordAutomatic(
+855: internal fun recordAutomaticConclusion(
+874: private fun recordAutomaticAgainst(
+922: private fun sameAutomaticConclusion(
+929: private fun insertOutcome(
+942: private fun conflictOutcome(
+968: fun resolveAdmission(docId: String, profile: ExpertProfile): DiscoveryReviewResolvedAdmission {
+979: fun resolveAdmissionBatch(
+1014: fun projectApprovedCandidate(
+1031: fun retryBatchCandidateSync(batchKey: String, actor: String): DiscoveryReviewSyncRetryResult {
+1074: fun initializeExistingAdmissions(
+1113: private fun initializePayload(
+1130: fun initializeStatus(key: String): DiscoveryReviewInitializeStatus {
+1164: internal fun runInitializeWorker(
+1236: internal fun runRefreshWorker(
+1414: private fun refreshBucket(expert: DiscoveryReviewScanService.ScanExpert): RefreshBucket {
+1429: private fun sample(samples: MutableList<String>, bucket: RefreshBucket, docId: String) {
+1434: private fun updateAutomaticAdmission(
+1456: private fun markCandidateSyncFailed(itemId: Long, errorCode: String) {
+1463: private fun clearCandidateSyncFailure(itemId: Long) {
+1474: private fun syncCandidateAfterApproval(
+1492: private fun admittedDecision(decision: String): Boolean =
+1495: private fun initializePhase(taskStatus: String): String = when (taskStatus) {
+1502: private fun parseInitializeOutcome(task: TaskExecution): DiscoveryReviewInitializeOutcome? {
+1543: private fun statusAfterInitializeSubmit(key: String): DiscoveryReviewInitializeStatus =
+1556: private fun findPrepareTask(batchKey: String): TaskExecution? =
+1559: private fun findApplyTask(batchKey: String): TaskExecution? =
+1562: private fun findTask(taskType: String, batchKey: String): TaskExecution? {
+1568: private fun payloadBatchKey(requestPayload: String?): String? {
+1578: private fun payloadMode(task: TaskExecution): String? =
+1582: private fun payloadDryRun(task: TaskExecution): Boolean? =
+1585: private fun payloadNode(task: TaskExecution): com.fasterxml.jackson.databind.JsonNode? {
+1595: private fun prepareResultBatchHash(task: TaskExecution): String? {
+1606: private fun applyResultPhase(task: TaskExecution): String? {
+1615: private fun buildBatchStatus(
+1650: private fun derivePhase(prepareTask: TaskExecution?, applyTask: TaskExecution?, cancelled: Int, pending: Int): String {
+1668: private fun confirmResultFromCounts(batchKey: String, total: Int): DiscoveryReviewConfirmResult {
+1688: private fun emptyApplyOutcome(batchKey: String): DiscoveryReviewApplyOutcomeSummary =
+1691: private fun applyOutcomeFromCounts(batchKey: String): DiscoveryReviewApplyOutcomeSummary {
+1723: private fun snapshotJson(
+1750: private fun stagedItem(
+1762: private fun normalizedNote(note: String?, action: DiscoveryReviewAction): String? {
+1771: private fun resolveBatchKey(requestKey: String?): String {
+1779: private fun preparePayload(
+1797: private fun samePayload(existingJson: String?, payload: Map<String, Any?>): Boolean {
+1806: private fun requireTaskExecutions(): TaskExecutionService =
+1809: private fun requireExecutor(): Executor =
+1812: private fun identityHashOf(docId: String, profile: ExpertProfile): String =
+1815: private fun computeBatchHash(items: List<ExpertDiscoveryReviewItem>): String =
+1821: private fun parseLevel(raw: String?): ExpertIndexLevel {
+1830: private fun parseAction(raw: String?): DiscoveryReviewAction {
+1865: fun normalizeMode(raw: String?): String {
+1877: fun normalizeDryRun(mode: String, raw: Boolean?): Boolean {

@@ -1,0 +1,48 @@
+$ rg -n recordAutomatic|recordAutomaticConclusion|policy.evaluate|admissionPolicy.*evaluate|resolveAdmission|projectApprovedCandidate|revalidateDiscovery src/main/kotlin
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:63:                        when (val outcome = revalidateDiscovery(profile.esDocId ?: profile.orcidId)) {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:183:                        when (val outcome = revalidateDiscovery(profile.esDocId ?: profile.orcidId)) {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:302:     * Historical non-discovery RAW gate. Discovery always uses revalidateDiscovery and its
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:339:    fun revalidateDiscovery(docId: String): PromotionOutcome {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:353:            val admission = review?.resolveAdmission(docId, profile)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:369:            val currentPolicy = admissionPolicy?.evaluate(profile, eligibility)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:371:                review?.recordAutomatic(docId, profile, eligibility)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:395:            discoveryReviewService?.recordAutomatic(docId, profile, eligibility)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:424:        val sync = review.projectApprovedCandidate(docId, source, decision)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:454:            return revalidateDiscovery(docId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchRecipientSelectionService.kt:74: * - 发现/待确认档案按 500 一批经 [DiscoveryReviewService.resolveAdmissionBatch] 读取持久准入，
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchRecipientSelectionService.kt:112:        val admissions = resolveAdmissions(discoveryProfiles)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchRecipientSelectionService.kt:163:    private fun resolveAdmissions(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchRecipientSelectionService.kt:177:            out.putAll(review.resolveAdmissionBatch(keys))
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchRecipientSelectionService.kt:198:        /** 04（I-1）：批量读取准入的上限，与 [DiscoveryReviewService.resolveAdmissionBatch] 契约一致。 */
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewScanService.kt:244:            val automatic = policy.evaluate(profile)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:70:     * 落地走受限补证路径；[RecoveryApplyStatus.APPLIED] 时才以既有 `recordAutomatic` 接缝刷新自动准入
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:141:            val automatic = admissionPolicy.evaluate(profile)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:142:            val outcome = reviewService.recordAutomaticConclusion(docId, profile, automatic)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:235:            reviewService.resolveAdmission(docId, profileBefore)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:274:     * 04（I-1/I-2）：admission 表写入口收敛到本服务的 `recordAutomatic`/`applyManual`。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:326:            val automatic = policy.evaluate(profile)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:800:        val automatic = policy.evaluate(profile)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:844:    fun recordAutomatic(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:849:        recordAutomaticConclusion(docId, profile, policy.evaluate(profile, eligibility))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:852:     * 阶段 2：调用方已按新政策现算结论（`policy.evaluate(profile)`）时复用同一条写入路径，
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:855:    internal fun recordAutomaticConclusion(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:869:            return recordAutomaticAgainst(docId, identityHash, automatic, stored, now)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:871:        return recordAutomaticAgainst(docId, identityHash, automatic, found, now)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:874:    private fun recordAutomaticAgainst(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:968:    fun resolveAdmission(docId: String, profile: ExpertProfile): DiscoveryReviewResolvedAdmission {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:971:        return resolveAdmissionBatch(listOf(key))[docId]
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:979:    fun resolveAdmissionBatch(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1014:    fun projectApprovedCandidate(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1051:            val sync = projectApprovedCandidate(item.expertDocId, snapshot.source, decision)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1197:                    val automatic = policy.evaluate(expert.profile)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1335:                        val automatic = policy.evaluate(profile)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1345:                        val outcome = recordAutomaticConclusion(docId, profile, automatic)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1356:                            projectApprovedCandidate(docId, expert.source, automatic.status.name)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1411:     * [recordAutomaticConclusion] 一致：身份变化单列，人工/历史认可按原授权保留，
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1481:            projectApprovedCandidate(docId, source, decision)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2447:     * 由 01 的 [DiscoveryAdmissionPolicy]（经 [DiscoveryReviewService.recordAutomatic]）持久
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2465:        val admission = review.recordAutomatic(docId, profile, eligibility)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2472:        val sync = review.projectApprovedCandidate(docId, rawSource, admission.decision)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3371:                                    revalidationService.revalidateDiscovery(docId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/DmarcReportParser.kt:91:            val policyEvaluated = record.getElementsByTagName("policy_evaluated").item(0) as? Element

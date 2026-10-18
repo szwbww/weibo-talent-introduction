@@ -1,0 +1,520 @@
+
+### src/main/resources/db/migration/V148__create_expert_discovery_review.sql:1-53
+1: -- ============================================================================
+2: -- V148 expert_discovery_review：深度发现审核的当前结论与快照历史（fast-p 02）
+3: --
+4: -- I-1：两张表各司其职，不再另建任务表 / 事件总线 / ES 字段。
+5: --   expert_discovery_admission —— 每个真实 docId 一行「当前结论/版本」，支持事务行锁
+6: --     （SELECT ... FOR UPDATE）与版本 CAS（revision）。没有第二个 eligible 布尔：
+7: --     是否准入由 decision 派生。identity_hash 绑定真实 docId + 规范化邮箱 +
+8: --     givenNames/familyNames（I-2）：同身份的人工批准在研究方向/机构/国家/指标/分类
+9: --     变化后仍然有效，身份改变则原审核不适用。
+10: --   expert_discovery_review_item —— 每次 prepare 快照的每个目标一行，保存决策、应用
+11: --     状态与历史。UNIQUE(batch_key, expert_doc_id) 保证同一批同一专家只有一行；
+12: --     (expert_doc_id, id) 支撑按专家的历史查询。
+13: -- 任务头复用 task_execution：execution_id 不设外键，避免任务清理删除审核历史。
+14: -- ============================================================================
+15: 
+16: CREATE TABLE expert_discovery_admission (
+17:     expert_doc_id VARCHAR(128) COLLATE utf8mb4_bin NOT NULL,
+18:     identity_hash CHAR(64) NOT NULL,
+19:     decision VARCHAR(24) NOT NULL,
+20:     revision BIGINT NOT NULL,
+21:     decision_item_id BIGINT NULL,
+22:     policy_version VARCHAR(32) NULL,
+23:     checked_at DATETIME(3) NULL,
+24:     updated_at DATETIME(3) NOT NULL,
+25:     PRIMARY KEY (expert_doc_id),
+26:     INDEX idx_discovery_admission_decision (decision)
+27: ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+28: 
+29: CREATE TABLE expert_discovery_review_item (
+30:     id BIGINT NOT NULL AUTO_INCREMENT,
+31:     batch_key VARCHAR(64) NOT NULL,
+32:     expert_doc_id VARCHAR(128) COLLATE utf8mb4_bin NOT NULL,
+33:     source_level VARCHAR(16) NOT NULL,
+34:     identity_hash CHAR(64) NOT NULL,
+35:     snapshot_hash CHAR(64) NOT NULL,
+36:     expected_revision BIGINT NOT NULL,
+37:     action VARCHAR(16) NOT NULL,
+38:     state VARCHAR(16) NOT NULL,
+39:     snapshot_json LONGTEXT NOT NULL,
+40:     reason_snapshot_json TEXT NULL,
+41:     actor VARCHAR(100) NOT NULL,
+42:     note VARCHAR(1000) NULL,
+43:     previous_item_id BIGINT NULL,
+44:     execution_id BIGINT NULL,
+45:     error_code VARCHAR(64) NULL,
+46:     created_at DATETIME(3) NOT NULL,
+47:     confirmed_at DATETIME(3) NULL,
+48:     applied_at DATETIME(3) NULL,
+49:     PRIMARY KEY (id),
+50:     CONSTRAINT uk_discovery_review_batch_doc UNIQUE (batch_key, expert_doc_id),
+51:     INDEX idx_discovery_review_doc (expert_doc_id, id),
+52:     INDEX idx_discovery_review_batch_state (batch_key, state, id)
+53: ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+### src/main/resources/db/migration/V131__create_expert_academic_enrichment_job.sql:1-49
+1: -- ============================================================================
+2: -- V131 可恢复的补全任务存储（fast-p 07：待补全/限流待重试/失败任务持久化）
+3: --
+4: -- 一行 = 一个专家文档（真实 ES `_id`）的学术补全生命周期。本表是补全任务的
+5: -- **唯一**生命周期存储：不新增 ES 根级状态字段，不建第二套队列/索引表。
+6: --
+7: -- 关键不变量：
+8: --   I-1 UNIQUE(expert_doc_id)：同专家多次入队合并成一行；status 仅
+9: --       PENDING/RUNNING/RETRY_WAIT/SUCCEEDED/UNMATCHED/FAILED；
+10: --       SUCCEEDED 且 updated_at 在 30 天内不重入；UNMATCHED 可被可靠身份
+11: --       变更后的再次入队重开。expert_doc_id 用列级 utf8mb4_bin：ES `_id`
+12: --       区分大小写，唯一键绝不能把两个不同文档合并（M-1 真实专家身份）。
+13: --   I-2 claim/续租/完成全部是 status + lease_token + 租约条件 CAS（代码层
+14: --       WHERE，本迁移不引入触发器）：claim 条件与
+15: --       `(status, next_attempt_at, lease_until)` 一致，租期 10 分钟；进程崩溃后
+16: --       过期 RUNNING 重新可领，旧 token 不能覆盖新结果；不依赖 SKIP LOCKED。
+17: --   I-3 attempts 只计故障尝试（429/日额度延期不消耗、可无限延期）；
+18: --       last_error 只存脱敏原因码，绝不写 API Key 或明文邮箱。
+19: --   I-4 仅新增本迁移，不改写任何已应用迁移，不启用 out-of-order。
+20: --
+21: -- 队列索引 (status, next_attempt_at, id) 与 claim 谓词同形；
+22: -- discovery_execution_id 可空且**不设外键**：它只是审计归属（08 记录发现的
+23: -- task_execution），而 task_execution 有保留期清理，外键会让清理失败。
+24: -- 时间列沿用本仓 DATETIME(3) 约定（V119/V130）。
+25: -- MySQL 兼容性：DATETIME(3)/utf8mb4_bin/命名 CHECK 在 5.7 均可解析（5.7 忽略
+26: -- CHECK 谓词，8.0.16+ 真实生效）；不使用 `DEFAULT (...)` 与 `DROP CHECK` 等
+27: -- 8.0.13+/8.0.16+ 专属语法。
+28: -- ============================================================================
+29: CREATE TABLE expert_academic_enrichment_job (
+30:     id                     BIGINT        NOT NULL AUTO_INCREMENT,
+31:     expert_doc_id          VARCHAR(128)  CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+32:     source                 VARCHAR(32)   NOT NULL,
+33:     discovery_execution_id BIGINT        NULL,
+34:     status                 VARCHAR(24)   NOT NULL DEFAULT 'PENDING',
+35:     attempts               INT           NOT NULL DEFAULT 0,
+36:     next_attempt_at        DATETIME(3)   NOT NULL,
+37:     lease_token            VARCHAR(64)   NULL,
+38:     lease_until            DATETIME(3)   NULL,
+39:     last_error             VARCHAR(1000) NULL,
+40:     result_json            TEXT          NULL,
+41:     created_at             DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+42:     updated_at             DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+43:     PRIMARY KEY (id),
+44:     UNIQUE KEY uk_expert_academic_enrichment_job_doc (expert_doc_id),
+45:     KEY idx_expert_academic_enrichment_job_due (status, next_attempt_at, id),
+46:     CONSTRAINT chk_expert_academic_enrichment_job_status
+47:         CHECK (status IN ('PENDING', 'RUNNING', 'RETRY_WAIT', 'SUCCEEDED', 'UNMATCHED', 'FAILED'))
+48: ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4
+49:   COMMENT = '专家学术补全任务生命周期（fast-p 07，可恢复/可跨进程领取）';
+
+### src/main/resources/db/migration/V133__create_discovery_paper_queue.sql:1-153
+1: -- ============================================================================
+2: -- V133 持久化采集队列与窗口控制（fast-p 02：队列、恢复、窗口服务）
+3: --
+4: -- 三张表 = 深度发现的唯一持久化事实源：pipeline（单例控制 + 计数 + 容量）、
+5: -- collection_stream（每来源的查询位置）、paper_job（每条工作的生命周期）。
+6: -- 采集/抽取位置与处理完成彻底解耦：整页入队与 cursor 推进在同一事务，处理进度只落在 job 行。
+7: --
+8: -- 关键不变量（子计划 02 I-1 至 I-8）：
+9: --   I-1 pipeline 只保存控制与累计计数；每个来源自己的查询位置在 collection_stream：
+10: --       UNIQUE(query_hash, source, epoch)，cursor 仅在**整页入队同一事务**提交后才推进，
+11: --       cursor_state 只允许 ACTIVE/EXHAUSTED；EXHAUSTED 不因重启/次日/新窗口重置。
+12: --       query_hash 由「本源规范化有效条件」算出（关键词、机构、国家排除、年份、OA、scope、
+13: --       页大小、本源自己的名字），不含其他 sources 的排列/省略方式。
+14: --   I-2 paper_job UNIQUE(stream_id, item_key)：item_key 是带类型前缀的 SHA-256（DOI/PMCID/PMID/
+15: --       ORCID），无 ID 时是规范序列化元数据的 SHA-256 且 identity_quality=PAYLOAD_HASH
+16: --       （绝不用标题模糊合并）。unit 显式区分 PAPER/RECORD，payload_version 未知版本不得消费。
+17: --   I-3 job 状态机 PENDING→RUNNING→{SUCCEEDED|RETRY_WAIT|FAILED}；claim/heartbeat/finish/
+18: --       saveExtraction 全部是 lease_token + generation 条件 CAS（代码层 WHERE，本迁移不引入触发器）；
+19: --       租约过期的 RETRY_WAIT/RUNNING 可重新领取，旧 token 的终态更新影响 0 行。
+20: --       generation 记录「领取时的 pipeline.generation」：人工暂停递增 pipeline.generation 后，
+21: --       未重新领取且租约仍有效的旧 job 仍可保存抽取结果并退回 PENDING，但不能 complete。
+22: --   I-5 active_count/payload_bytes/reserved_result_bytes 由入队与状态 CAS 同事务维护；
+23: --       未抽取的活跃 job 在入队时预留 reserved_result_bytes，保存抽取结果时转成实际
+24: --       payload_bytes。PDF 二进制永不入库（本表只存元数据与抽取出的邮箱结构）。
+25: --   I-6 paper_job.priority 记录「该条是否可公开下载」，消费者在来源内优先高优先任务，
+26: --       同时每 10 个高优先任务至少取 1 个最老普通任务。
+27: --   I-7 pipeline 是**单例**（id=1）：desired_state 只允许 PAUSED/RUNNING，phase 只允许
+28: --       QUEUED/RUNNING/WAITING/DRAINED/FAULTED；初始 PAUSED；owner_token/owner_until 是
+29: --       30 秒窗口属主租约，window_until 是 4 小时窗口截止；next_wake_at/wait_reason 表达
+30: --       可进展时间；raw_scan_done 保证 RAW 扫描不重复。
+31: --   I-8 七个计数分别累加、一次 CAS 最多累加一次；queueDepth 只计活跃 job；
+32: --       已终态负载 7 天后可清空（completed_at），去重键/状态 90 天保留。
+33: --
+34: -- 锁序固定 pipeline → collection_stream → paper_job；网络与 ES 调用一律不持锁。
+35: -- 时间列一律 DATETIME(3) 且按 UTC 写入（本仓 V119/V130/V131/V132 约定），
+36: -- 计数与字节列一律 BIGINT/INT，租约 token 用 VARCHAR(64)（UUID）。
+37: -- 不加外键：task_execution 与 expert 相关表都有各自的清理/保留语义，外键会让清理失败；
+38: -- 清理顺序由 repository 显式保证（先 job 后 stream 后 pipeline）。
+39: -- MySQL 兼容性：DATETIME(3)/utf8mb4_bin/命名 CHECK 在 5.7 均可解析（5.7 忽略 CHECK 谓词，
+40: -- 8.0.16+ 真实生效）；不使用 `DEFAULT (...)` 等 8.0.13+ 专属语法。
+41: -- ============================================================================
+42: 
+43: CREATE TABLE discovery_pipeline (
+44:     id                    BIGINT       NOT NULL,
+45:     desired_state         VARCHAR(16)  NOT NULL DEFAULT 'PAUSED',
+46:     phase                 VARCHAR(16)  NOT NULL DEFAULT 'QUEUED',
+47:     criteria_json         MEDIUMTEXT   NULL,
+48:     criteria_version      INT          NOT NULL DEFAULT 0,
+49:     query_hash            CHAR(64)     NULL,
+50:     generation            BIGINT       NOT NULL DEFAULT 0,
+51:     owner_token           VARCHAR(64)  NULL,
+52:     owner_until           DATETIME(3)  NULL,
+53:     execution_id          BIGINT       NULL,
+54:     window_until          DATETIME(3)  NULL,
+55:     next_wake_at          DATETIME(3)  NULL,
+56:     wait_reason           VARCHAR(32)  NULL,
+57:     raw_scan_done         TINYINT(1)   NOT NULL DEFAULT 0,
+58:     queued_papers         BIGINT       NOT NULL DEFAULT 0,
+59:     queued_records        BIGINT       NOT NULL DEFAULT 0,
+60:     processed_papers      BIGINT       NOT NULL DEFAULT 0,
+61:     processed_records     BIGINT       NOT NULL DEFAULT 0,
+62:     indexed_experts       BIGINT       NOT NULL DEFAULT 0,
+63:     duplicate_experts     BIGINT       NOT NULL DEFAULT 0,
+64:     failed_items          BIGINT       NOT NULL DEFAULT 0,
+65:     active_count          BIGINT       NOT NULL DEFAULT 0,
+66:     payload_bytes         BIGINT       NOT NULL DEFAULT 0,
+67:     reserved_result_bytes BIGINT       NOT NULL DEFAULT 0,
+68:     capacity_paused       TINYINT(1)   NOT NULL DEFAULT 0,
+69:     created_at            DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+70:     updated_at            DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+71:     PRIMARY KEY (id),
+72:     CONSTRAINT chk_discovery_pipeline_desired_state
+73:         CHECK (desired_state IN ('PAUSED', 'RUNNING')),
+74:     CONSTRAINT chk_discovery_pipeline_phase
+75:         CHECK (phase IN ('QUEUED', 'RUNNING', 'WAITING', 'DRAINED', 'FAULTED')),
+76:     CONSTRAINT chk_discovery_pipeline_counters
+77:         CHECK (queued_papers >= 0 AND queued_records >= 0 AND processed_papers >= 0
+78:                AND processed_records >= 0 AND indexed_experts >= 0 AND duplicate_experts >= 0
+79:                AND failed_items >= 0 AND active_count >= 0 AND payload_bytes >= 0
+80:                AND reserved_result_bytes >= 0)
+81: ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4
+82:   COMMENT = '深度发现流水线单例：持久化控制、窗口属主租约、I-8 计数与 I-5 容量';
+83: 
+84: CREATE TABLE discovery_collection_stream (
+85:     id                 BIGINT       NOT NULL AUTO_INCREMENT,
+86:     pipeline_id        BIGINT       NOT NULL,
+87:     query_hash         CHAR(64)     CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+88:     source             VARCHAR(50)  NOT NULL,
+89:     epoch              BIGINT       NOT NULL,
+90:     criteria_json      MEDIUMTEXT   NULL,
+91:     cursor_value       TEXT         NULL,
+92:     cursor_state       VARCHAR(16)  NOT NULL DEFAULT 'ACTIVE',
+93:     next_attempt_at    DATETIME(3)  NULL,
+94:     lease_token        VARCHAR(64)  NULL,
+95:     lease_until        DATETIME(3)  NULL,
+96:     source_error       VARCHAR(1000) NULL,
+97:     queued_papers      BIGINT       NOT NULL DEFAULT 0,
+98:     queued_records     BIGINT       NOT NULL DEFAULT 0,
+99:     processed_papers   BIGINT       NOT NULL DEFAULT 0,
+100:     processed_records  BIGINT       NOT NULL DEFAULT 0,
+101:     indexed_experts    BIGINT       NOT NULL DEFAULT 0,
+102:     duplicate_experts  BIGINT       NOT NULL DEFAULT 0,
+103:     failed_items       BIGINT       NOT NULL DEFAULT 0,
+104:     created_at         DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+105:     updated_at         DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+106:     PRIMARY KEY (id),
+107:     UNIQUE KEY uk_discovery_collection_stream_identity (query_hash, source, epoch),
+108:     KEY idx_discovery_collection_stream_pipeline (pipeline_id, id),
+109:     CONSTRAINT chk_discovery_collection_stream_cursor_state
+110:         CHECK (cursor_state IN ('ACTIVE', 'EXHAUSTED')),
+111:     CONSTRAINT chk_discovery_collection_stream_counters
+112:         CHECK (queued_papers >= 0 AND queued_records >= 0 AND processed_papers >= 0
+113:                AND processed_records >= 0 AND indexed_experts >= 0 AND duplicate_experts >= 0
+114:                AND failed_items >= 0)
+115: ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4
+116:   COMMENT = '每来源的采集位置：query_hash 独立、cursor 仅在整页入队同一事务提交后推进';
+117: 
+118: CREATE TABLE discovery_paper_job (
+119:     id                    BIGINT       NOT NULL AUTO_INCREMENT,
+120:     stream_id             BIGINT       NOT NULL,
+121:     item_key              VARCHAR(160) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+122:     identity_quality      VARCHAR(24)  NOT NULL,
+123:     unit                  VARCHAR(16)  NOT NULL,
+124:     payload_version       INT          NOT NULL,
+125:     priority              TINYINT      NOT NULL DEFAULT 0,
+126:     metadata_json         MEDIUMTEXT   NOT NULL,
+127:     extraction_json       MEDIUMTEXT   NULL,
+128:     payload_bytes         BIGINT       NOT NULL DEFAULT 0,
+129:     reserved_result_bytes BIGINT       NOT NULL DEFAULT 0,
+130:     status                VARCHAR(16)  NOT NULL DEFAULT 'PENDING',
+131:     attempts              INT          NOT NULL DEFAULT 0,
+132:     next_attempt_at       DATETIME(3)  NOT NULL,
+133:     lease_token           VARCHAR(64)  NULL,
+134:     lease_until           DATETIME(3)  NULL,
+135:     generation            BIGINT       NOT NULL DEFAULT 0,
+136:     last_error            VARCHAR(1000) NULL,
+137:     created_at            DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+138:     updated_at            DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+139:     completed_at          DATETIME(3)  NULL,
+140:     PRIMARY KEY (id),
+141:     UNIQUE KEY uk_discovery_paper_job_item (stream_id, item_key),
+142:     KEY idx_discovery_paper_job_due (status, next_attempt_at, stream_id, id),
+143:     KEY idx_discovery_paper_job_terminal (completed_at, id),
+144:     CONSTRAINT chk_discovery_paper_job_status
+145:         CHECK (status IN ('PENDING', 'RUNNING', 'SUCCEEDED', 'RETRY_WAIT', 'FAILED')),
+146:     CONSTRAINT chk_discovery_paper_job_unit
+147:         CHECK (unit IN ('PAPER', 'RECORD')),
+148:     CONSTRAINT chk_discovery_paper_job_identity_quality
+149:         CHECK (identity_quality IN ('DOI', 'PMCID', 'PMID', 'ORCID', 'PAYLOAD_HASH')),
+150:     CONSTRAINT chk_discovery_paper_job_amounts
+151:         CHECK (payload_bytes >= 0 AND reserved_result_bytes >= 0 AND attempts >= 0 AND priority >= 0)
+152: ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4
+153:   COMMENT = '采集队列条目（PAPER/RECORD）：租约 + generation CAS 的可恢复工作单元';
+
+### src/main/resources/db/migration/V22__create_task_progress_log.sql:1-19
+1: CREATE TABLE task_progress_log (
+2:     id BIGINT PRIMARY KEY AUTO_INCREMENT,
+3:     task_type VARCHAR(64) NOT NULL,
+4:     task_execution_id BIGINT,
+5:     batch_number INT NOT NULL,
+6:     status VARCHAR(32) NOT NULL COMMENT 'RUNNING, COMPLETED, FAILED, CANCELLED',
+7:     processed_count BIGINT NOT NULL DEFAULT 0,
+8:     total_count BIGINT NOT NULL DEFAULT 0,
+9:     batch_processed INT NOT NULL DEFAULT 0 COMMENT '本批次处理数量',
+10:     batch_passed INT NOT NULL DEFAULT 0 COMMENT '本批次通过/成功数量',
+11:     batch_rejected INT NOT NULL DEFAULT 0 COMMENT '本批次拒绝/降级数量',
+12:     message TEXT,
+13:     details_json TEXT COMMENT 'JSON 格式的详细统计',
+14:     errors_json TEXT COMMENT 'JSON 格式的错误列表',
+15:     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+16: );
+17: 
+18: CREATE INDEX idx_tpl_task_type ON task_progress_log(task_type);
+19: CREATE INDEX idx_tpl_execution_id ON task_progress_log(task_execution_id);
+
+### src/main/resources/db/migration/V4__create_task_execution.sql:1-15
+1: CREATE TABLE task_execution (
+2:     id BIGINT PRIMARY KEY AUTO_INCREMENT,
+3:     task_type VARCHAR(64) NOT NULL,
+4:     trigger_type VARCHAR(32) NOT NULL,
+5:     status VARCHAR(32) NOT NULL,
+6:     request_payload TEXT,
+7:     result_summary TEXT,
+8:     success_count INT NOT NULL DEFAULT 0,
+9:     failure_count INT NOT NULL DEFAULT 0,
+10:     error_message TEXT,
+11:     started_at DATETIME NOT NULL,
+12:     finished_at DATETIME,
+13:     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+14:     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+15: );
+
+### src/main/resources/es/orcid_info_raw.json:1-67
+1: {
+2:   "settings": {
+3:     "number_of_shards": 1,
+4:     "number_of_replicas": 1
+5:   },
+6:   "mappings": {
+7:     "dynamic": false,
+8:     "properties": {
+9:       "orcidId": { "type": "keyword" },
+10:       "orcid": { "type": "keyword" },
+11:       "id": { "type": "keyword" },
+12:       "email": { "type": "keyword" },
+13:       "givenNames": { "type": "keyword" },
+14:       "familyNames": { "type": "keyword" },
+15:       "country": { "type": "keyword" },
+16:       "keyword": { "type": "keyword" },
+17:       "employment": { "type": "keyword" },
+18:       "age": { "type": "integer" },
+19:       "degree": { "type": "keyword" },
+20:       "nationality": { "type": "keyword" },
+21:       "hIndex": { "type": "integer" },
+22:       "citationCount": { "type": "integer" },
+23:       "lastPublicationYear": { "type": "integer" },
+24:       "researchFields": { "type": "keyword" },
+25:       "researchFieldIds": { "type": "keyword" },
+26:       "disciplineCategory": { "type": "keyword" },
+27:       "institution": { "type": "text" },
+28:       "institutionType": { "type": "keyword" },
+29:       "institutionEvidence": { "type": "keyword" },
+30:       "emailSource": { "type": "keyword" },
+31:       "emailVerifiedLevel": { "type": "integer" },
+32:       "dataSource": { "type": "keyword" },
+33:       "identityVerification": { "type": "object", "dynamic": false, "properties": {
+34:         "status": { "type": "keyword" }, "version": { "type": "integer" },
+35:         "email": { "type": "keyword", "index": false }, "givenNames": { "type": "keyword", "index": false },
+36:         "familyNames": { "type": "keyword", "index": false }, "source": { "type": "keyword" },
+37:         "evidenceHash": { "type": "keyword", "index": false }, "orcid": { "type": "keyword", "index": false },
+38:         "openAlexAuthorId": { "type": "keyword", "index": false }
+39:       } },
+40:       "externalIds": { "type": "object", "enabled": false },
+41:       "worksCount": { "type": "integer" },
+42:       "discoveredAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" },
+43:       "filterResult": { "type": "keyword" },
+44:       "filterRejectReason": { "type": "keyword" },
+45:       "tags": { "type": "keyword" },
+46:       "recentWorkTitles": { "type": "keyword" },
+47:       "patentTitles": { "type": "keyword" },
+48:       "enrichedAt": { "type": "keyword" },
+49:       "enrichmentSource": { "type": "keyword" },
+50:       "expertClassification": {
+51:         "type": "object",
+52:         "properties": {
+53:           "type": { "type": "keyword" },
+54:           "sendable": { "type": "boolean" },
+55:           "productionScore": { "type": "integer" },
+56:           "researchScore": { "type": "integer" },
+57:           "positiveEvidence": { "type": "keyword" },
+58:           "negativeEvidence": { "type": "keyword" },
+59:           "version": { "type": "keyword" },
+60:           "sourceFingerprint": { "type": "keyword" },
+61:           "classifiedAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" }
+62:         }
+63:       },
+64:       "updatedAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" }
+65:     }
+66:   }
+67: }
+
+### src/main/resources/es/orcid_info_candidate.json:1-69
+1: {
+2:   "settings": {
+3:     "number_of_shards": 1,
+4:     "number_of_replicas": 1
+5:   },
+6:   "mappings": {
+7:     "dynamic": false,
+8:     "properties": {
+9:       "orcidId": { "type": "keyword" },
+10:       "orcid": { "type": "keyword" },
+11:       "id": { "type": "keyword" },
+12:       "email": { "type": "keyword" },
+13:       "givenNames": { "type": "keyword" },
+14:       "familyNames": { "type": "keyword" },
+15:       "country": { "type": "keyword" },
+16:       "keyword": { "type": "keyword" },
+17:       "employment": { "type": "keyword" },
+18:       "age": { "type": "integer" },
+19:       "degree": { "type": "keyword" },
+20:       "nationality": { "type": "keyword" },
+21:       "candidateValidatedAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" },
+22:       "hIndex": { "type": "integer" },
+23:       "citationCount": { "type": "integer" },
+24:       "lastPublicationYear": { "type": "integer" },
+25:       "researchFields": { "type": "keyword" },
+26:       "researchFieldIds": { "type": "keyword" },
+27:       "disciplineCategory": { "type": "keyword" },
+28:       "institution": { "type": "text" },
+29:       "institutionType": { "type": "keyword" },
+30:       "institutionEvidence": { "type": "keyword" },
+31:       "emailSource": { "type": "keyword" },
+32:       "emailVerifiedLevel": { "type": "integer" },
+33:       "dataSource": { "type": "keyword" },
+34:       "identityVerification": { "type": "object", "dynamic": false, "properties": {
+35:         "status": { "type": "keyword" }, "version": { "type": "integer" },
+36:         "email": { "type": "keyword", "index": false }, "givenNames": { "type": "keyword", "index": false },
+37:         "familyNames": { "type": "keyword", "index": false }, "source": { "type": "keyword" },
+38:         "evidenceHash": { "type": "keyword", "index": false }, "orcid": { "type": "keyword", "index": false },
+39:         "openAlexAuthorId": { "type": "keyword", "index": false }
+40:       } },
+41:       "externalIds": { "type": "object", "enabled": false },
+42:       "worksCount": { "type": "integer" },
+43:       "discoveredAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" },
+44:       "updatedAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" },
+45:       "filterResult": { "type": "keyword" },
+46:       "filterRejectReason": { "type": "keyword" },
+47:       "tags": { "type": "keyword" },
+48:       "operatorStatus": { "type": "keyword" },
+49:       "recentWorkTitles": { "type": "keyword" },
+50:       "patentTitles": { "type": "keyword" },
+51:       "enrichedAt": { "type": "keyword" },
+52:       "enrichmentSource": { "type": "keyword" },
+53:       "expertClassification": {
+54:         "type": "object",
+55:         "properties": {
+56:           "type": { "type": "keyword" },
+57:           "sendable": { "type": "boolean" },
+58:           "productionScore": { "type": "integer" },
+59:           "researchScore": { "type": "integer" },
+60:           "positiveEvidence": { "type": "keyword" },
+61:           "negativeEvidence": { "type": "keyword" },
+62:           "version": { "type": "keyword" },
+63:           "sourceFingerprint": { "type": "keyword" },
+64:           "classifiedAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" }
+65:         }
+66:       }
+67:     }
+68:   }
+69: }
+
+### src/main/resources/es/orcid_info_application.json:1-79
+1: {
+2:   "settings": {
+3:     "number_of_shards": 1,
+4:     "number_of_replicas": 1
+5:   },
+6:   "mappings": {
+7:     "dynamic": false,
+8:     "properties": {
+9:       "orcidId": { "type": "keyword" },
+10:       "orcid": { "type": "keyword" },
+11:       "id": { "type": "keyword" },
+12:       "email": { "type": "keyword" },
+13:       "givenNames": { "type": "text" },
+14:       "familyNames": { "type": "text" },
+15:       "country": { "type": "keyword" },
+16:       "keyword": { "type": "text" },
+17:       "employment": { "type": "text" },
+18:       "age": { "type": "integer" },
+19:       "degree": { "type": "keyword" },
+20:       "nationality": { "type": "keyword" },
+21:       "candidateValidatedAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" },
+22:       "currentConversationStatus": { "type": "keyword" },
+23:       "applicationStatus": { "type": "keyword" },
+24:       "autoReplyEnabled": { "type": "boolean" },
+25:       "firstReplyAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" },
+26:       "lastReplyAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" },
+27:       "expertContactId": { "type": "long" },
+28:       "campaignId": { "type": "long" },
+29:       "promotionSource": { "type": "keyword" },
+30:       "applicationPromotedAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" },
+31:       "updatedAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" },
+32:       "latestInboundIntent": { "type": "keyword" },
+33:       "hIndex": { "type": "integer" },
+34:       "citationCount": { "type": "integer" },
+35:       "lastPublicationYear": { "type": "integer" },
+36:       "researchFields": { "type": "keyword" },
+37:       "researchFieldIds": { "type": "keyword" },
+38:       "disciplineCategory": { "type": "keyword" },
+39:       "institution": { "type": "text" },
+40:       "institutionType": { "type": "keyword" },
+41:       "institutionEvidence": { "type": "keyword" },
+42:       "emailSource": { "type": "keyword" },
+43:       "emailVerifiedLevel": { "type": "integer" },
+44:       "dataSource": { "type": "keyword" },
+45:       "identityVerification": { "type": "object", "dynamic": false, "properties": {
+46:         "status": { "type": "keyword" }, "version": { "type": "integer" },
+47:         "email": { "type": "keyword", "index": false }, "givenNames": { "type": "keyword", "index": false },
+48:         "familyNames": { "type": "keyword", "index": false }, "source": { "type": "keyword" },
+49:         "evidenceHash": { "type": "keyword", "index": false }, "orcid": { "type": "keyword", "index": false },
+50:         "openAlexAuthorId": { "type": "keyword", "index": false }
+51:       } },
+52:       "externalIds": { "type": "object", "enabled": false },
+53:       "worksCount": { "type": "integer" },
+54:       "discoveredAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" },
+55:       "filterResult": { "type": "keyword" },
+56:       "filterRejectReason": { "type": "keyword" },
+57:       "tags": { "type": "keyword" },
+58:       "operatorStatus": { "type": "keyword" },
+59:       "recentWorkTitles": { "type": "keyword" },
+60:       "patentTitles": { "type": "keyword" },
+61:       "enrichedAt": { "type": "keyword" },
+62:       "enrichmentSource": { "type": "keyword" },
+63:       "expertClassification": {
+64:         "type": "object",
+65:         "properties": {
+66:           "type": { "type": "keyword" },
+67:           "sendable": { "type": "boolean" },
+68:           "productionScore": { "type": "integer" },
+69:           "researchScore": { "type": "integer" },
+70:           "positiveEvidence": { "type": "keyword" },
+71:           "negativeEvidence": { "type": "keyword" },
+72:           "version": { "type": "keyword" },
+73:           "sourceFingerprint": { "type": "keyword" },
+74:           "classifiedAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" }
+75:         }
+76:       }
+77:     }
+78:   }
+79: }

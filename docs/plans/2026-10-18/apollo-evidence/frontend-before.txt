@@ -1,0 +1,1021 @@
+
+### src/main/resources/static/index.html:1129-1260
+1129: <div id="taskProgressModal" class="modal-overlay" hidden>
+1130:     <div class="modal-content task-modal">
+1131:         <div class="modal-header">
+1132:             <h3 id="taskModalTitle">任务管理</h3>
+1133:             <button class="button small" onclick="closeTaskModal()">×</button>
+1134:         </div>
+1135:         <nav id="discoveryReviewTabs" class="batch-send-tabs" role="tablist" aria-label="深度发现功能" hidden>
+1136:           <button class="batch-send-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="discoveryPipelinePane" id="discoveryPipelineTab">采集运行</button>
+1137:           <button class="batch-send-tab" type="button" role="tab" aria-selected="false" aria-controls="discoveryReviewPane" id="discoveryReviewTab" tabindex="-1">专家审核</button>
+1138:           <button class="batch-send-tab" type="button" role="tab" aria-selected="false" aria-controls="discoveryReviewHistoryPane" id="discoveryReviewHistoryTab" tabindex="-1">审核记录</button>
+1139:         </nav>
+1140:         <div id="discoveryPipelinePane" role="tabpanel" aria-labelledby="discoveryPipelineTab">
+1141:         <div id="taskModalToast" class="task-modal-toast" hidden></div>
+1142:         <div class="modal-body" style="gap: 20px;">
+1143:             <div id="discoverySchedulePanel" class="discovery-schedule-panel" hidden>
+1144:                 <div id="discoveryScheduleControls" class="discovery-schedule-row">
+1145:                     <label for="discoveryScheduleHours" class="task-modal-input-label">
+1146:                         执行间隔（小时）
+1147:                         <input id="discoveryScheduleHours" class="task-modal-input-field discovery-schedule-hours"
+1148:                                type="number" min="1" max="168" step="1"
+1149:                                aria-describedby="discoveryScheduleHint" disabled>
+1150:                     </label>
+1151:                     <button id="discoveryScheduleSave" class="button primary discovery-schedule-save"
+1152:                             type="button" disabled>保存定时</button>
+1153:                 </div>
+1154:                 <p id="discoveryScheduleHint" class="discovery-schedule-hint" role="status" aria-live="polite"></p>
+1155:             </div>
+1156:             <!-- Configuration Section (visible when starting task) -->
+1157:             <div id="taskModalConfigSection" class="task-modal-config-section">
+1158:                 <p id="taskLaunchDesc" class="text-muted" style="margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-muted);"></p>
+1159: 
+1160:                 <div id="taskLaunchKeywordRow" hidden>
+1161:                     <label class="task-modal-input-label">
+1162:                         发现关键词 (多个用逗号分隔，留空使用默认条件):
+1163:                         <input type="text" id="taskLaunchKeywordInput" class="task-modal-input-field" placeholder="输入关键词，如: AI, Machine Learning...">
+1164:                     </label>
+1165:                 </div>
+1166: 
+1167:                 <div id="taskLaunchMaxPromotionsRow" hidden>
+1168:                     <label class="task-modal-input-label">
+1169:                         最大晋升数量:
+1170:                         <input type="number" id="taskLaunchMaxPromotions" class="task-modal-input-field" value="1000" min="1" max="10000" style="width: 120px;">
+1171:                     </label>
+1172:                 </div>
+1173: 
+1174:                 <div id="taskLaunchSourcesRow" hidden>
+1175:                     <label class="task-modal-input-label">数据源平台:</label>
+1176:                     <div id="taskLaunchSources" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;"></div>
+1177:                 </div>
+1178: 
+1179:                 <div id="taskLaunchAdvancedRow" hidden>
+1180:                     <details class="task-launch-advanced">
+1181:                         <summary style="font-size:12px;color:var(--text-muted);cursor:pointer;user-select:none;">高级选项</summary>
+1182:                         <div style="margin-top:6px;">
+1183:                             <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+1184:                                 <input type="checkbox" id="taskLaunchIncludeRawScan">
+1185:                                 启动前扫描 RAW 索引并晋升（耗时较长）
+1186:                             </label>
+1187:                         </div>
+1188:                     </details>
+1189:                 </div>
+1190: 
+1191:                 <div id="taskLaunchFiltersRow" hidden>
+1192:                     <p style="font-size:11px;color:var(--text-muted);margin:0 0 6px;">以下配置修改后立即生效，影响所有后续任务。</p>
+1193:                     <div class="task-modal-filters-panel" id="taskLaunchFiltersPanel"></div>
+1194:                 </div>
+1195: 
+1196:                 <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px;">
+1197:                     <button class="button secondary" onclick="closeTaskModal()">取消</button>
+1198:                     <button class="button primary" id="taskLaunchRunBtn" style="background: linear-gradient(135deg, var(--primary) 0%, var(--info) 100%); border: none; color: white;">开始执行</button>
+1199:                 </div>
+1200:             </div>
+1201: 
+1202:             <!-- Progress Section (visible when task is running) -->
+1203:             <div id="taskModalProgressSection" class="task-modal-progress-section" hidden>
+1204:                 <div class="task-modal-progress">
+1205:                     <div class="task-progress-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+1206:                         <span id="taskModalStatus" class="task-modal-status">RUNNING</span>
+1207:                         <span id="taskModalPercent" class="task-progress-percent" style="font-weight: 600; font-size: 13px;">0%</span>
+1208:                     </div>
+1209:                     <div class="task-progress-track" style="height: 8px; background-color: var(--panel-border); border-radius: 4px; overflow: hidden; position: relative;">
+1210:                         <div id="taskModalFill" class="task-progress-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--primary) 0%, var(--info) 100%); transition: width 0.3s ease;"></div>
+1211:                     </div>
+1212:                     <div id="taskModalMessage" class="task-progress-detail" style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">初始化中...</div>
+1213:                 </div>
+1214:                 <div id="taskModalBySource" hidden style="margin-top: 10px; font-size: 11px;">
+1215:                     <div id="taskModalBySourceContent"></div>
+1216:                 </div>
+1217:                 <div class="task-modal-actions" style="display: flex; justify-content: flex-end;">
+1218:                     <button class="button warn" id="taskModalCancelBtn" onclick="handleCancelTask()">取消任务</button>
+1219:                 </div>
+1220:             </div>
+1221: 
+1222:             <!-- Divider Line -->
+1223:             <div class="task-modal-divider"></div>
+1224: 
+1225:             <!-- Execution Records (Two-level: click to expand batch details) -->
+1226:             <div class="task-modal-logs" style="display: flex; flex-direction: column; gap: 10px;">
+1227:                 <h4 class="task-modal-logs-title">
+1228:                     <span class="task-modal-logs-title-indicator"></span>
+1229:                     执行记录（点击行展开批次明细）
+1230:                 </h4>
+1231:                 <div class="task-modal-log-table-wrapper">
+1232:                     <table class="data-table compact">
+1233:                         <thead>
+1234:                         <tr>
+1235:                             <th style="width: 24px;"></th>
+1236:                             <th>开始时间</th>
+1237:                             <th>触发</th>
+1238:                             <th>状态</th>
+1239:                             <th>总处理</th>
+1240:                             <th>通过</th>
+1241:                             <th>拒绝</th>
+1242:                             <th id="taskModalTrafficHead" style="display:none;" title="本任务实际读取的 HTTP 响应体字节；不含代理协议开销及其他应用流量">下载量</th>
+1243:                             <th>耗时</th>
+1244:                         </tr>
+1245:                         </thead>
+1246:                         <tbody id="taskModalRunBody"></tbody>
+1247:                     </table>
+1248:                 </div>
+1249:             </div>
+1250: 
+1251:             <!-- Error Logs (visible on errors) -->
+1252:             <div class="task-modal-errors" id="taskModalErrors" hidden style="border: 1px solid var(--error-border); border-radius: var(--radius-sm); background-color: var(--error-bg); overflow: hidden; margin-top: 10px;">
+1253:                 <h4 style="margin: 0; padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--error); border-bottom: 1px solid var(--error-border); background-color: var(--error-bg);">错误日志</h4>
+1254:                 <pre id="taskModalErrorContent" class="task-error-log-content" style="margin: 0; padding: 12px; font-size: 11px; max-height: 150px; overflow-y: auto; color: var(--error); white-space: pre-wrap; font-family: var(--font-mono);"></pre>
+1255:             </div>
+1256:         </div>
+1257:         </div>
+1258:         <section id="discoveryReviewPane" class="modal-body dr-review" role="tabpanel" aria-labelledby="discoveryReviewTab" hidden>
+1259:             <div class="dr-counts" id="discoveryReviewCounts" aria-live="polite">
+1260:               <div>自动通过<strong>—</strong></div><div>待人工审核<strong>—</strong></div>
+
+### src/main/resources/static/app.js:4349-4475
+4349: function renderBatchTable(logs) {
+4350:     if (!logs || logs.length === 0) {
+4351:         return `<tr><td colspan="7" class="muted" style="text-align:center;padding:12px;">暂无批次日志</td></tr>`;
+4352:     }
+4353:     const latestByBatch = new Map();
+4354:     logs.forEach(log => {
+4355:         const batchNumber = Number(log.batchNumber);
+4356:         if (!Number.isFinite(batchNumber) || batchNumber <= 0) return;
+4357:         latestByBatch.set(batchNumber, log);
+4358:     });
+4359:     const rows = Array.from(latestByBatch.entries())
+4360:         .sort(([a], [b]) => a - b)
+4361:         .map(([, log]) => log);
+4362:     if (rows.length === 0) {
+4363:         return `<tr><td colspan="7" class="muted" style="text-align:center;padding:12px;">暂无批次日志</td></tr>`;
+4364:     }
+4365:     return rows.map(log => {
+4366:         const time = formatDateTime(log.createdAt);
+4367:         const pct = log.totalCount > 0 ? Math.round((log.processedCount * 100) / log.totalCount) + "%" : "";
+4368:         let rejectReasons = "-";
+4369:         if (log.batchRejectReasonsJson) {
+4370:             try {
+4371:                 const parsed = JSON.parse(log.batchRejectReasonsJson);
+4372:                 rejectReasons = Object.entries(parsed)
+4373:                     .sort((a, b) => b[1] - a[1])
+4374:                     .slice(0, 3)
+4375:                     .map(([reason, count]) => `${reason}:${count}`)
+4376:                     .join(", ") || "-";
+4377:             } catch (e) {
+4378:                 rejectReasons = "-";
+4379:             }
+4380:         }
+4381:         return `
+4382:             <tr>
+4383:                 <td>${log.batchNumber}</td>
+4384:                 <td>${log.batchProcessed}</td>
+4385:                 <td>${log.batchPassed}</td>
+4386:                 <td>${log.batchRejected}</td>
+4387:                 <td>${log.processedCount}/${log.totalCount} ${pct}</td>
+4388:                 <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(rejectReasons)}</td>
+4389:                 <td>${time}</td>
+4390:             </tr>
+4391:         `;
+4392:     }).join("");
+4393: }
+4394: 
+4395: function renderRunRow(run, taskType) {
+4396:     const statusBadge = badge(
+4397:         run.status === "RUNNING" ? "运行中"
+4398:             : run.status === "CANCELLING" ? "取消中"
+4399:             : run.status === "SUCCESS" ? "成功"
+4400:             : run.status === "PARTIAL_SUCCESS" ? "部分成功"
+4401:             : run.status === "CANCELLED" ? "已取消"
+4402:             : run.status === "FAILED" ? "失败" : run.status,
+4403:         run.status === "RUNNING" || run.status === "CANCELLING" ? ""
+4404:             : run.status === "SUCCESS" ? "ok" : run.status === "FAILED" ? "error" : "warn"
+4405:     );
+4406:     const triggerLabel = run.triggerType === "SCHEDULED" ? "定时" : run.triggerType === "MANUAL" ? "手动" : run.triggerType;
+4407:     const duration = run.durationSeconds != null ? run.durationSeconds + "秒" : "-";
+4408:     const expanded = currentTaskModal?.expandedExecutionId === run.executionId;
+4409:     const arrow = expanded ? "▼" : "▶";
+4410:     const trafficCell = taskType === "EXPERT_DISCOVERY"
+4411:         ? `<td title="HTTP 响应体下载量，不等于代理账单流量">${run.traffic != null
+4412:             ? formatFileSize(run.traffic.totalBytes)
+4413:             : (run.status === "RUNNING" ? "统计中" : "未记录")}</td>` : "";
+4414:     return `
+4415:         <tr class="run-row" data-execution-id="${run.executionId}" data-status="${escapeHtml(run.status)}" onclick="toggleRunDetail('${escapeHtml(taskType)}', ${run.executionId})" style="cursor:pointer;">
+4416:             <td style="width:24px;text-align:center;">${arrow}</td>
+4417:             <td>${escapeHtml(run.startedAt)}</td>
+4418:             <td>${escapeHtml(triggerLabel)}</td>
+4419:             <td>${statusBadge}</td>
+4420:             <td>${run.totalProcessed}</td>
+4421:             <td>${run.totalPassed}</td>
+4422:             <td>${run.totalRejected}</td>
+4423:             ${trafficCell}
+4424:             <td>${escapeHtml(duration)}</td>
+4425:         </tr>
+4426:     `;
+4427: }
+4428: 
+4429: function renderBatchDetailRow(executionId) {
+4430:     const showTraffic = currentTaskModal?.taskType === "EXPERT_DISCOVERY";
+4431:     const traffic = currentTaskModal?.runTrafficByExecutionId?.[executionId];
+4432:     const trafficSummary = showTraffic ? (traffic
+4433:         ? `<div style="padding:8px 10px;font-size:11px;line-height:1.7;">
+4434:                HTTP 响应体下载：<strong>${formatFileSize(traffic.totalBytes)}</strong>
+4435:                （元数据 ${formatFileSize(traffic.metadataBytes)}，全文 ${formatFileSize(traffic.fulltextBytes)}）<br>
+4436:                超限下载：${Number(traffic.oversizedDownloads || 0)} 次 / ${formatFileSize(traffic.oversizedBytes || 0)}；
+4437:                关闭或跳转时额外排空：${formatFileSize(traffic.discardedBytes || 0)}<br>
+4438:                来源：${escapeHtml(Object.entries(traffic.bySource || {}).map(([name, bytes]) => `${name} ${formatFileSize(bytes)}`).join("、") || "无")}<br>
+4439:                站点：${escapeHtml(Object.entries(traffic.byHost || {}).map(([host, bytes]) => `${host} ${formatFileSize(bytes)}`).join("、") || "无")}
+4440:                <div class="muted">仅统计本任务实际读取的响应体；不含 TLS、代理开销及其他应用流量。</div>
+4441:            </div>`
+4442:         : `<div class="muted" style="padding:8px 10px;font-size:11px;">本次执行未记录下载量；历史数据无法追溯。</div>`) : "";
+4443:     return `
+4444:         <tr class="run-detail-row" id="detail-row-${executionId}">
+4445:             <td colspan="${showTraffic ? 9 : 8}" style="padding:0;">
+4446:                 ${trafficSummary}
+4447:                 <div style="max-height:200px;overflow-y:auto;margin:4px 0;">
+4448:                     <table class="data-table compact" style="width:100%;border-collapse:collapse;font-size:11px;">
+4449:                         <thead>
+4450:                             <tr style="background-color:var(--panel-bg);">
+4451:                                 <th style="padding:6px;">批次</th>
+4452:                                 <th style="padding:6px;">本批处理</th>
+4453:                                 <th style="padding:6px;">通过</th>
+4454:                                 <th style="padding:6px;">拒绝</th>
+4455:                                 <th style="padding:6px;">累计进度</th>
+4456:                                 <th style="padding:6px;">失败原因</th>
+4457:                                 <th style="padding:6px;">时间</th>
+4458:                             </tr>
+4459:                         </thead>
+4460:                         <tbody id="batch-body-${executionId}">
+4461:                             <tr><td colspan="7" class="muted" style="text-align:center;padding:12px;">加载中...</td></tr>
+4462:                         </tbody>
+4463:                     </table>
+4464:                 </div>
+4465:             </td>
+4466:         </tr>
+4467:     `;
+4468: }
+4469: 
+4470: async function toggleRunDetail(taskType, executionId) {
+4471:     if (!currentTaskModal) return;
+4472:     const prevExpanded = currentTaskModal.expandedExecutionId;
+4473:     const generation = currentTaskModal.generation;
+4474: 
+4475:     if (prevExpanded != null) {
+
+### src/main/resources/static/app.js:9534-9600
+9534: const taskLaunchConfigs = {
+9535:     EXPERT_REVALIDATION: {
+9536:         title: "重新验证候选人",
+9537:         desc: "将扫描所有 CANDIDATE 层专家，不符合条件的将被降级回 RAW。",
+9538:         btnId: "discoverBtn",
+9539:         showKeyword: false,
+9540:         showMaxPromotions: false,
+9541:         showFilters: true,
+9542:         preload: async () => {
+9543:             var filters = await api("/api/experts/eligibility-filters");
+9544:             return { desc: "将扫描所有 CANDIDATE 层专家，不符合条件的将被降级回 RAW。", canRun: true, filters: filters };
+9545:         },
+9546:         run: executeRevalidate
+9547:     },
+9548:     RAW_PROMOTION_SCAN: {
+9549:         title: "快速晋升（扫描 RAW）",
+9550:         desc: "将扫描 RAW 层专家，符合筛选条件的将被晋升到 CANDIDATE 层。",
+9551:         btnId: "discoverBtn",
+9552:         showKeyword: false,
+9553:         showMaxPromotions: false,
+9554:         showFilters: true,
+9555:         preload: async () => {
+9556:             var filters = await api("/api/experts/eligibility-filters");
+9557:             return { desc: "将扫描 RAW 层专家，符合以下筛选条件的将被晋升到 CANDIDATE 层。", canRun: true, filters: filters };
+9558:         },
+9559:         run: executePromoteRaw
+9560:     },
+9561:     EXPERT_DISCOVERY: {
+9562:         title: "深度发现（外部数据源）",
+9563:         desc: "从外部数据源搜索并导入新专家到系统中。",
+9564:         btnId: "discoverBtn",
+9565:         showKeyword: true,
+9566:         showMaxPromotions: false,
+9567:         /**
+9568:          * I-7/S-2（c3）：来源列表 10 秒超时；加载失败时留在配置区显示“加载失败…请重新打开重试”
+9569:          * 且按钮禁用（不另造重试组件），绝不按空列表静默启动所有默认来源。
+9570:          */
+9571:         preload: async () => {
+9572:             try {
+9573:                 await loadDiscoverySources();
+9574:             } catch (e) {
+9575:                 return { desc: e.message, canRun: false };
+9576:             }
+9577:             return {
+9578:                 desc: isContinuousDiscoveryMode() ? CONTINUOUS_DISCOVERY_DESC : (taskLaunchConfigs.EXPERT_DISCOVERY.desc || ""),
+9579:                 canRun: true
+9580:             };
+9581:         },
+9582:         run: executeDiscover
+9583:     },
+9584:     EXPERT_ENRICHMENT: {
+9585:         title: "补充学术数据（OpenAlex）",
+9586:         desc: "正在加载统计信息...",
+9587:         btnId: "discoverBtn",
+9588:         showKeyword: false,
+9589:         showMaxPromotions: false,
+9590:         preload: async () => {
+9591:             const stats = await api("/api/expert-discovery/enrich/stats");
+9592:             const desc = `CANDIDATE 层共 ${stats.total} 人，其中 ${stats.pending} 人待补充学术数据` +
+9593:                 (stats.enrichedLast30d > 0 ? `（${stats.enrichedLast30d} 人已在 30 天内补充）` : '') + '。';
+9594:             return { desc, canRun: stats.pending > 0 };
+9595:         },
+9596:         run: executeEnrichExperts
+9597:     },
+9598:     MANUAL_INITIAL_OUTREACH: {
+9599:         title: "批量发送邮件",
+9600:         desc: "",
+
+### src/main/resources/static/app.js:10040-10118
+10040:  * 失败时清空残留并记录原因，启动入口据此拒绝按空列表意外启动所有默认来源。
+10041:  */
+10042: async function loadDiscoverySources() {
+10043:     discoverySources.status = "loading";
+10044:     discoverySources.error = null;
+10045:     try {
+10046:         const sources = await api("/api/expert-discovery/sources", { timeoutMs: DISCOVERY_SOURCE_TIMEOUT_MS });
+10047:         const container = $("#taskLaunchSources");
+10048:         if (container) {
+10049:             container.innerHTML = sources.map(s => `
+10050:                 <label style="display:flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--panel-border);border-radius:4px;font-size:12px;cursor:pointer;">
+10051:                     <input type="checkbox" value="${escapeHtml(s.sourceName)}"
+10052:                         ${s.enabled ? "checked" : "disabled"}
+10053:                         class="source-cb">
+10054:                     ${escapeHtml(s.sourceName)}
+10055:                     <span class="text-muted" style="font-size:10px;">(${escapeHtml(s.extractionMethod)})</span>
+10056:                 </label>
+10057:             `).join("");
+10058:         }
+10059:         discoverySources.status = "ready";
+10060:         discoverySources.items = sources;
+10061:         return sources;
+10062:     } catch (e) {
+10063:         discoverySources.status = "error";
+10064:         discoverySources.error = e.message || "未知原因";
+10065:         discoverySources.items = [];
+10066:         const container = $("#taskLaunchSources");
+10067:         if (container) container.innerHTML = "";
+10068:         throw new Error("来源加载失败：" + discoverySources.error + "；请重新打开弹窗重试");
+10069:     }
+10070: }
+10071: 
+10072: function getSelectedSources() {
+10073:     const cbs = $$(".source-cb:checked:not([disabled])");
+10074:     if (cbs.length === 0) return [];
+10075:     return cbs.map(cb => cb.value);
+10076: }
+10077: 
+10078: async function executeDiscover() {
+10079:     const taskType = DISCOVERY_TASK_TYPE;
+10080:     // I-7（c3）：关键词/来源/includeRawScan 在切视图之前读取并冻结（切视图后读到的可能是别的任务的选择）。
+10081:     const keywords = ($("#taskLaunchKeywordInput")?.value || "").trim();
+10082:     const selectedSources = getSelectedSources();
+10083:     const includeRawScan = $("#taskLaunchIncludeRawScan")?.checked === true;
+10084:     if (discoverySources.status !== "ready") {
+10085:         // I-7：来源加载失败时禁止按空列表意外启动所有默认来源。
+10086:         showStatus("来源列表未加载成功，请重新打开弹窗后重试", "error");
+10087:         return;
+10088:     }
+10089:     let hasRunning;
+10090:     try {
+10091:         // I-6：按请求任务判断互斥（深度发现与检查回复可并存），状态查询失败必须可见。
+10092:         hasRunning = await progressStoreHasRunningTask(taskType);
+10093:     } catch (e) {
+10094:         showStatus("任务状态检查失败: " + e.message + "，请重试", "error");
+10095:         return;
+10096:     }
+10097:     if (hasRunning) {
+10098:         showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
+10099:         return;
+10100:     }
+10101:     const continuous = isContinuousDiscoveryMode();
+10102:     openTaskModal(taskType, "深度发现（外部数据源）", "discoverBtn", {
+10103:         launchRequested: true,
+10104:         pipelineMode: continuous
+10105:     });
+10106:     const capturedGeneration = currentTaskModal?.generation;
+10107:     try {
+10108:         const response = await postDiscoveryLaunch(keywords, selectedSources, includeRawScan, continuous);
+10109:         if (response && response.mode === "CONTINUOUS") {
+10110:             // I-2：202 只表示已受理 —— 不发完成通知、不据 202 绑定任何历史执行，
+10111:             // 也不交给旧 task-progress watcher（窗口终态不是流水线结束）。
+10112:             applyContinuousLaunch(response, capturedGeneration);
+10113:             return;
+10114:         }
+10115:         if (response && response.executionId != null) {
+10116:             await bindTaskModalExecution(taskType, capturedGeneration, response.executionId);
+10117:         }
+10118:         markTaskWatcherLaunchSucceeded(taskType, capturedGeneration);
+
+### src/main/resources/static/styles.css:1-91
+1: :root {
+2:     /* Brand — modern business blue */
+3:     --primary: #1e40af;
+4:     --primary-hover: #1e3a8a;
+5:     --primary-active: #172554;
+6:     --primary-rgb: 30, 64, 175;
+7:     --primary-light: rgba(var(--primary-rgb), 0.07);
+8:     --primary-tint: rgba(var(--primary-rgb), 0.1);
+9: 
+10:     --bg-main: #f5f7fb;
+11:     --bg-sidebar: #ffffff;
+12:     --bg-sidebar-hover: rgba(var(--primary-rgb), 0.06);
+13:     --bg-sidebar-active: rgba(var(--primary-rgb), 0.09);
+14: 
+15:     --panel-bg: rgba(255, 255, 255, 0.55);
+16:     --panel-border: rgba(15, 23, 42, 0.08);
+17:     --line: rgba(15, 23, 42, 0.055);
+18:     --border: rgba(15, 23, 42, 0.11);
+19:     --surface: rgba(15, 23, 42, 0.022);
+20: 
+21:     --text-main: #1e293b;
+22:     --text-muted: #94a3b8;
+23:     --text-sidebar: #64748b;
+24:     --text-sidebar-active: #1e293b;
+25:     --text-secondary: #475569;
+26:     --text-strong: #334155;
+27:     --ink: #1e293b;
+28:     --bg-subtle: #f8fafc;
+29:     --border-strong: #cbd5e1;
+30:     --primary-bright: #3b82f6;
+31: 
+32:     --success: #059669;
+33:     --success-rgb: 5, 150, 105;
+34:     --success-bg: rgba(var(--success-rgb), 0.08);
+35:     --success-border: rgba(var(--success-rgb), 0.18);
+36:     --green: var(--success);
+37: 
+38:     --error: #e11d48;
+39:     --error-rgb: 225, 29, 72;
+40:     --error-bg: rgba(var(--error-rgb), 0.07);
+41:     --error-border: rgba(var(--error-rgb), 0.16);
+42:     --error-strong: #be123c;
+43:     --red: var(--error);
+44: 
+45:     --warning: #d97706;
+46:     --warning-rgb: 217, 119, 6;
+47:     --warning-bg: rgba(var(--warning-rgb), 0.08);
+48:     --warning-border: rgba(var(--warning-rgb), 0.2);
+49:     --warning-strong: #b45309;
+50:     --warning-bright: #f59e0b;
+51:     --amber: var(--warning);
+52: 
+53:     --info: #0ea5e9;
+54:     --info-rgb: 14, 165, 233;
+55:     --info-bg: rgba(var(--info-rgb), 0.08);
+56:     --info-border: rgba(var(--info-rgb), 0.2);
+57: 
+58:     --z-sticky: 10;
+59:     --z-dropdown: 20;
+60:     --z-overlay: 50;
+61:     --z-drawer: 60;
+62:     --z-modal: 1000;
+63:     --z-confirm: 1200;
+64:     --z-toast: 9999;
+65: 
+66:     --glass-border: rgba(255, 255, 255, 0.5);
+67:     --glass-shadow: 0 8px 32px rgba(var(--primary-rgb), 0.1);
+68:     --glass-blur: blur(16px);
+69: 
+70:     --radius-sm: 7px;
+71:     --radius-md: 10px;
+72:     --radius-lg: 18px;
+73: 
+74:     --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+75:     --shadow-md: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.03);
+76:     --shadow-lg: 0 10px 28px -8px rgba(15, 23, 42, 0.14), 0 2px 6px rgba(15, 23, 42, 0.05);
+77:     --shadow-xl: 0 20px 48px -12px rgba(15, 23, 42, 0.2), 0 4px 12px rgba(15, 23, 42, 0.06);
+78:     --shadow: var(--shadow-md);
+79: 
+80:     --transition: all 0.15s ease;
+81: 
+82:     --font-mono: 'SF Mono', ui-monospace, Menlo, monospace;
+83:     --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+84: 
+85:     --verbatim: #7c3aed;
+86:     --verbatim-bg: rgba(124, 58, 237, 0.06);
+87:     --verbatim-border: rgba(124, 58, 237, 0.24);
+88: }
+89: 
+90: * {
+91:     box-sizing: border-box;
+
+### src/main/resources/static/styles.css:802-879
+802: .button {
+803:     display: inline-flex;
+804:     align-items: center;
+805:     justify-content: center;
+806:     gap: 6px;
+807:     min-height: 32px;
+808:     height: 32px;
+809:     padding: 0 12px;
+810:     border-radius: var(--radius-sm);
+811:     font-weight: 500;
+812:     font-size: 12px;
+813:     cursor: pointer;
+814:     border: 1px solid var(--border);
+815:     background-color: transparent;
+816:     color: var(--text-main);
+817:     transition: transform 0.12s ease, box-shadow 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, opacity 0.1s ease;
+818:     outline: none;
+819:     user-select: none;
+820:     font-family: var(--font-body);
+821:     position: relative;
+822:     overflow: hidden;
+823: }
+824: 
+825: .button:hover {
+826:     border-color: rgba(15, 23, 42, 0.2);
+827:     background-color: var(--surface);
+828:     transform: translateY(-1px);
+829:     box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+830: }
+831: 
+832: .button:active {
+833:     transform: translateY(0) scale(0.97);
+834:     box-shadow: none;
+835:     opacity: 0.85;
+836: }
+837: 
+838: .button.primary {
+839:     background-image: linear-gradient(180deg, var(--primary-bright), var(--primary));
+840:     background-color: var(--primary);
+841:     border-color: transparent;
+842:     color: #ffffff;
+843:     font-weight: 600;
+844:     box-shadow: 0 1px 2px rgba(var(--primary-rgb), 0.4), inset 0 1px 0 rgba(255,255,255,0.18);
+845: }
+846: 
+847: .button.primary:hover {
+848:     background-image: linear-gradient(180deg, #2f7bff, var(--primary-hover));
+849:     box-shadow: 0 4px 14px rgba(var(--primary-rgb), 0.35), inset 0 1px 0 rgba(255,255,255,0.18);
+850: }
+851: 
+852: .button.secondary {
+853:     background-color: var(--primary-light);
+854:     border-color: rgba(var(--primary-rgb), 0.12);
+855:     color: var(--primary);
+856: }
+857: 
+858: .button.secondary:hover {
+859:     background-color: rgba(var(--primary-rgb), 0.1);
+860: }
+861: 
+862: .button.danger {
+863:     background-color: var(--error-bg);
+864:     border-color: var(--error-border);
+865:     color: var(--error);
+866: }
+867: 
+868: .button.danger:hover {
+869:     background-color: rgba(var(--error-rgb), 0.1);
+870: }
+871: 
+872: .icon-button {
+873:     width: 32px;
+874:     height: 32px;
+875:     min-width: 32px;
+876:     border: 1px solid var(--border);
+877:     border-radius: var(--radius-sm);
+878:     background-color: transparent;
+879:     color: var(--text-muted);
+
+### src/main/resources/static/styles.css:1054-1085
+1054: .badge {
+1055:     display: inline-flex;
+1056:     align-items: center;
+1057:     padding: 2px 8px;
+1058:     border-radius: 999px;
+1059:     font-size: 11px;
+1060:     font-weight: 600;
+1061:     font-family: var(--font-body);
+1062:     line-height: 1;
+1063:     background-color: var(--surface);
+1064:     color: var(--text-muted);
+1065:     border: 1px solid transparent;
+1066: }
+1067: 
+1068: .badge.ok {
+1069:     background-color: var(--success-bg);
+1070:     color: var(--success);
+1071:     border-color: var(--success-border);
+1072: }
+1073: 
+1074: .badge.warn {
+1075:     background-color: var(--warning-bg);
+1076:     color: var(--warning);
+1077:     border-color: var(--warning-border);
+1078: }
+1079: 
+1080: .badge.error {
+1081:     background-color: var(--error-bg);
+1082:     color: var(--error);
+1083:     border-color: var(--error-border);
+1084: }
+1085: 
+
+### src/main/resources/static/styles.css:1117-1160
+1117: label {
+1118:     display: flex;
+1119:     flex-direction: column;
+1120:     gap: 4px;
+1121:     color: var(--text-muted);
+1122:     font-size: 11px;
+1123:     font-weight: 600;
+1124:     font-family: var(--font-body);
+1125:     text-transform: uppercase;
+1126:     letter-spacing: 0.3px;
+1127: }
+1128: 
+1129: input, select, textarea {
+1130:     width: 100%;
+1131:     height: 34px;
+1132:     min-height: 34px;
+1133:     border: 1px solid var(--border);
+1134:     border-radius: var(--radius-sm);
+1135:     padding: 6px 10px;
+1136:     color: var(--text-main);
+1137:     background-color: var(--panel-bg);
+1138:     transition: var(--transition);
+1139:     outline: none;
+1140:     font-size: 13px;
+1141: }
+1142: 
+1143: input:hover, select:hover, textarea:hover {
+1144:     border-color: rgba(15, 23, 42, 0.2);
+1145: }
+1146: 
+1147: input:focus, select:focus, textarea:focus {
+1148:     border-color: var(--primary);
+1149:     background-color: var(--panel-bg);
+1150:     box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1), 0 0 12px rgba(var(--primary-rgb), 0.06);
+1151:     transition: border-color 0.2s ease, box-shadow 0.25s ease;
+1152: }
+1153: 
+1154: input:disabled, select:disabled, textarea:disabled {
+1155:     background-color: var(--surface);
+1156:     color: var(--text-muted);
+1157:     cursor: not-allowed;
+1158:     border-color: var(--border);
+1159: }
+1160: 
+
+### src/main/resources/static/styles.css:3421-3456
+3421: .data-table {
+3422:     width: 100%;
+3423:     border-collapse: collapse;
+3424:     font-size: 11px;
+3425: }
+3426: 
+3427: .data-table th,
+3428: .data-table td {
+3429:     padding: 6px 8px;
+3430:     text-align: left;
+3431:     border-bottom: 1px solid var(--line);
+3432: }
+3433: 
+3434: .data-table th {
+3435:     font-weight: 600;
+3436:     color: var(--text-muted);
+3437:     background: rgba(15, 23, 42, 0.02);
+3438:     position: sticky;
+3439:     top: 0;
+3440:     font-family: var(--font-body);
+3441:     font-size: 11px;
+3442:     text-transform: uppercase;
+3443:     letter-spacing: 0.3px;
+3444: }
+3445: 
+3446: .data-table td details {
+3447:     font-size: 11px;
+3448: }
+3449: 
+3450: .data-table td details summary {
+3451:     cursor: pointer;
+3452:     color: var(--primary);
+3453:     font-weight: 600;
+3454:     font-family: var(--font-body);
+3455: }
+3456: 
+
+### src/main/resources/static/styles.css:4483-4574
+4483: .modal-overlay {
+4484:     position: fixed;
+4485:     inset: 0;
+4486:     background-color: rgba(15, 23, 42, 0.4);
+4487:     display: flex;
+4488:     align-items: center;
+4489:     justify-content: center;
+4490:     z-index: var(--z-modal);
+4491:     padding: 24px;
+4492: }
+4493: 
+4494: .modal-content {
+4495:     background-color: var(--bg-sidebar);
+4496:     border-radius: var(--radius-lg);
+4497:     border: 1px solid var(--panel-border);
+4498:     box-shadow: var(--shadow-xl);
+4499:     width: 100%;
+4500:     max-height: 80vh;
+4501:     overflow-y: auto;
+4502:     display: flex;
+4503:     flex-direction: column;
+4504: }
+4505: 
+4506: .modal-content.task-modal {
+4507:     max-width: 700px;
+4508: }
+4509: 
+4510: .modal-header {
+4511:     display: flex;
+4512:     justify-content: space-between;
+4513:     align-items: center;
+4514:     padding: 16px 20px;
+4515:     border-bottom: 1px solid var(--panel-border);
+4516: }
+4517: 
+4518: .modal-header h3 {
+4519:     font-family: var(--font-body);
+4520:     font-size: 15px;
+4521:     font-weight: 600;
+4522:     margin: 0;
+4523: }
+4524: 
+4525: .modal-body {
+4526:     padding: 20px;
+4527:     display: flex;
+4528:     flex-direction: column;
+4529:     gap: 16px;
+4530: }
+4531: 
+4532: .task-modal-progress {
+4533:     display: flex;
+4534:     flex-direction: column;
+4535:     gap: 8px;
+4536: }
+4537: 
+4538: .task-modal-actions {
+4539:     display: flex;
+4540:     justify-content: flex-end;
+4541:     gap: 8px;
+4542: }
+4543: 
+4544: .task-modal-logs {
+4545:     display: flex;
+4546:     flex-direction: column;
+4547:     gap: 8px;
+4548: }
+4549: 
+4550: .task-modal-logs h4 {
+4551:     font-family: var(--font-body);
+4552:     font-size: 12px;
+4553:     font-weight: 600;
+4554:     margin: 0;
+4555:     color: var(--text-main);
+4556: }
+4557: 
+4558: .task-modal-log-table-wrapper {
+4559:     max-height: 300px;
+4560:     overflow-y: auto;
+4561:     overflow-x: auto;
+4562:     border: 1px solid var(--panel-border);
+4563:     border-radius: var(--radius-sm);
+4564:     background-color: var(--surface);
+4565: }
+4566: 
+4567: .task-modal-log-table-wrapper .data-table.compact {
+4568:     font-size: 12px;
+4569: }
+4570: 
+4571: .task-modal-log-table-wrapper table {
+4572:     min-width: 520px;
+4573: }
+4574: 
+
+### src/main/resources/static/styles.css:4658-4770
+4658: .task-modal {
+4659:     max-width: 700px;
+4660: }
+4661: 
+4662: .task-modal-config-section {
+4663:     display: flex;
+4664:     flex-direction: column;
+4665:     gap: 16px;
+4666: }
+4667: 
+4668: .task-modal-input-label {
+4669:     font-size: 12px;
+4670:     font-weight: 600;
+4671:     color: var(--text-main);
+4672:     display: flex;
+4673:     flex-direction: column;
+4674:     gap: 6px;
+4675: }
+4676: 
+4677: .task-modal-input-field {
+4678:     width: 100%;
+4679:     padding: 8px 12px;
+4680:     border: 1px solid var(--panel-border);
+4681:     border-radius: var(--radius-sm);
+4682:     background-color: var(--surface);
+4683:     color: var(--text-main);
+4684:     font-family: inherit;
+4685:     font-size: 13px;
+4686:     transition: border-color 0.2s, box-shadow 0.2s;
+4687: }
+4688: 
+4689: .task-modal-input-field:focus {
+4690:     outline: none;
+4691:     border-color: var(--primary);
+4692:     box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1);
+4693: }
+4694: 
+4695: .discovery-schedule-panel {
+4696:     display: flex;
+4697:     flex-direction: column;
+4698:     gap: 8px;
+4699:     padding: 12px;
+4700:     border: 1px solid var(--panel-border);
+4701:     border-radius: var(--radius-sm);
+4702: }
+4703: .discovery-schedule-row {
+4704:     display: flex;
+4705:     flex-wrap: wrap;
+4706:     align-items: flex-end;
+4707:     gap: 8px;
+4708: }
+4709: .discovery-schedule-hours {
+4710:     width: 120px;
+4711: }
+4712: .discovery-schedule-hint {
+4713:     margin: 0;
+4714:     font-size: 12px;
+4715:     line-height: 1.5;
+4716:     color: var(--text-secondary);
+4717: }
+4718: .discovery-schedule-save:focus-visible {
+4719:     outline: 2px solid var(--primary);
+4720:     outline-offset: 2px;
+4721: }
+4722: .discovery-schedule-save:disabled,
+4723: .discovery-schedule-save:disabled:hover,
+4724: .discovery-schedule-save:disabled:active {
+4725:     opacity: 0.45;
+4726:     cursor: not-allowed;
+4727:     transform: none;
+4728:     box-shadow: none;
+4729:     background-image: linear-gradient(180deg, var(--primary-bright), var(--primary));
+4730: }
+4731: .discovery-schedule-hours:disabled {
+4732:     opacity: 0.65;
+4733:     cursor: not-allowed;
+4734: }
+4735: 
+4736: .task-modal-progress-section {
+4737:     display: flex;
+4738:     flex-direction: column;
+4739:     gap: 16px;
+4740: }
+4741: 
+4742: .task-modal-divider {
+4743:     border-top: 1px solid var(--panel-border);
+4744:     margin: 8px 0;
+4745: }
+4746: 
+4747: .task-modal-logs-title {
+4748:     margin: 0;
+4749:     font-size: 13px;
+4750:     font-weight: 600;
+4751:     color: var(--text-main);
+4752:     display: flex;
+4753:     align-items: center;
+4754:     gap: 8px;
+4755: }
+4756: 
+4757: .task-modal-logs-title-indicator {
+4758:     display: inline-block;
+4759:     width: 4px;
+4760:     height: 12px;
+4761:     background-color: var(--primary);
+4762:     border-radius: 2px;
+4763: }
+4764: 
+4765: /* Expert tags */
+4766: .expert-tag {
+4767:     display: inline-block;
+4768:     font-size: 11px;
+4769:     font-weight: 600;
+4770:     padding: 1px 6px;
+
+### src/main/resources/static/styles.css:5120-5149
+5120: @media (max-width: 600px) {
+5121:     /* Modals nearly full screen */
+5122:     .modal-overlay {
+5123:         padding: 8px;
+5124:     }
+5125: 
+5126:     .modal-content,
+5127:     .modal-content.task-modal {
+5128:         max-width: none;
+5129:         max-height: calc(100vh - 16px);
+5130:     }
+5131: 
+5132:     .modal-header {
+5133:         padding: 12px 14px;
+5134:     }
+5135: 
+5136:     .modal-body {
+5137:         padding: 14px;
+5138:         gap: 12px;
+5139:     }
+5140: 
+5141:     /* iOS focus auto-zoom prevention: form controls >=16px */
+5142:     .toolbar select,
+5143:     .toolbar input,
+5144:     .task-modal-input-field {
+5145:         font-size: 16px;
+5146:     }
+5147: }
+5148: 
+5149: /* Auth Styles */
+
+### src/main/resources/static/styles.css:9150-9187
+9150: .batch-send-tabs {
+9151:   display: flex;
+9152:   gap: 28px;
+9153:   min-height: 48px;
+9154:   padding: 0 28px;
+9155:   border-bottom: 1px solid rgba(15, 23, 42, .08);
+9156:   flex-shrink: 0;
+9157: }
+9158: 
+9159: .batch-send-tab {
+9160:   position: relative;
+9161:   border: 0;
+9162:   background: transparent;
+9163:   color: var(--text-sidebar);
+9164:   padding: 0 2px;
+9165:   font: inherit;
+9166:   font-weight: 600;
+9167:   cursor: pointer;
+9168: }
+9169: 
+9170: .batch-send-tab::after {
+9171:   content: "";
+9172:   position: absolute;
+9173:   right: 0;
+9174:   bottom: -1px;
+9175:   left: 0;
+9176:   height: 2px;
+9177:   background: transparent;
+9178: }
+9179: 
+9180: .batch-send-tab:hover { color: var(--primary); }
+9181: .batch-send-tab.is-active { color: var(--primary); }
+9182: .batch-send-tab.is-active::after { background: var(--primary); }
+9183: 
+9184: .batch-send-tab-panel {
+9185:   flex: 1;
+9186:   min-height: 0;
+9187:   padding: 20px 28px 28px;
+
+### src/main/resources/static/styles.css:12675-12708
+12675: #taskProgressModal[data-discovery-review="true"] .modal-content.task-modal {
+12676:     max-width: 1180px;
+12677:     width: calc(100vw - 48px);
+12678: }
+12679: .dr-review {
+12680:     color: var(--text-main);
+12681:     font-size: 13px;
+12682:     line-height: 1.6;
+12683: }
+12684: .dr-review [role="alert"] {
+12685:     padding: 12px;
+12686:     color: var(--error-strong);
+12687:     background: var(--error-bg);
+12688:     border: 1px solid var(--error-border);
+12689:     border-radius: var(--radius-sm);
+12690: }
+12691: .dr-review button:disabled {
+12692:     opacity: 0.45;
+12693:     cursor: not-allowed;
+12694:     transform: none;
+12695:     box-shadow: none;
+12696: }
+12697: .dr-review :focus-visible,
+12698: #discoveryReviewTabs :focus-visible {
+12699:     outline: 2px solid var(--primary);
+12700:     outline-offset: 3px;
+12701: }
+12702: @media (max-width: 640px) {
+12703:     #taskProgressModal[data-discovery-review="true"] .modal-content.task-modal {
+12704:         width: calc(100vw - 20px);
+12705:     }
+12706: }
+12707: 
+12708: /* ── c5/S-2：统计、工具条、表格、分页 ─────────────────────────────────────── */

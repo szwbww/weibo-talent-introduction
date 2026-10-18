@@ -1,0 +1,2 @@
+$ rg -n -i apollo src/main src/test
+exit=1

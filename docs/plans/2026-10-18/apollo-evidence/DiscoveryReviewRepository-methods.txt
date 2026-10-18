@@ -1,0 +1,23 @@
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt
+37: fun initializeAdmission(
+55: fun findAdmission(expertDocId: String): ExpertDiscoveryAdmission? =
+62: fun findAdmissions(expertDocIds: Collection<String>): List<ExpertDiscoveryAdmission> {
+77: fun insertItem(
+127: fun findItem(id: Long): ExpertDiscoveryReviewItem? =
+131: fun findItemsByIds(ids: Collection<Long>): List<ExpertDiscoveryReviewItem> {
+144: fun findItemsByBatch(batchKey: String): List<ExpertDiscoveryReviewItem> =
+150: fun findHistory(expertDocId: String, limit: Int): List<ExpertDiscoveryReviewItem> =
+156: fun batchStateCounts(batchKey: String): Map<String, Int> =
+163: fun markBatchReady(batchKey: String): Int =
+173: fun findBatchCreatedAt(batchKey: String): LocalDateTime? =
+180: fun findItemsByBatchPage(batchKey: String, afterId: Long, limit: Int): List<ExpertDiscoveryReviewItem> =
+193: fun claimBatchItems(
+225: fun cancelUnappliedItems(batchKey: String): Int =
+239: fun applyItem(
+287: fun revokeCurrent(
+345: fun markItemFailed(itemId: Long, errorCode: String, now: LocalDateTime) {
+358: private fun lockItem(id: Long): ExpertDiscoveryReviewItem? =
+363: private fun lockAdmission(expertDocId: String): ExpertDiscoveryAdmission? =
+369: private fun updateItemState(itemId: Long, state: String) {
+375: private fun markItemApplied(itemId: Long, now: LocalDateTime) {
+386: private fun markStale(itemId: Long, errorCode: String, now: LocalDateTime) {
