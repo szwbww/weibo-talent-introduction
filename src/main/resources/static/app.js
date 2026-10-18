@@ -22388,6 +22388,32 @@ var batchManualSourceRequestToken = 0;
 var recipientPreviewTimers = { editor: null, manual: null };
 var recipientPreviewRequestSeq = { editor: 0, manual: 0 };
 
+function setRecipientPreviewState(kind, state) {
+    var prefix = kind === "editor" ? "batchConfigEditor" : "batchManual";
+    var status = document.getElementById(prefix + "RecipientStatus");
+    var button = document.getElementById(prefix + "RecipientPreviewBtn");
+    if (!status || !button) return;
+    var labels = {
+        idle: ["尚未统计", "统计命中人数"],
+        stale: ["尚未统计或条件已更新", "统计命中人数"],
+        loading: ["正在统计当前条件…", "统计中…"],
+        done: ["统计完成", "重新统计"],
+        error: ["统计失败，可重试", "重新统计"]
+    }[state];
+    status.textContent = labels[0];
+    button.textContent = labels[1];
+    button.disabled = state === "loading";
+}
+
+function resetRecipientPreview(kind) {
+    if (kind !== "editor" && kind !== "manual") return;
+    clearTimeout(recipientPreviewTimers[kind]);
+    recipientPreviewRequestSeq[kind]++;
+    var hint = document.getElementById(recipientPreviewHintId(kind));
+    if (hint) hint.textContent = "";
+    setRecipientPreviewState(kind, "idle");
+}
+
 function openBatchSendTaskModal() {
     var modal = document.getElementById("batchSendTaskModal");
     if (!modal) return;
@@ -22772,7 +22798,7 @@ function showBatchConfigEditor(config) {
     // I-1：历史/未知 code 原样回显（列表未加载时 chip 以 code 原文显示），不静默清空。
     setBatchMultiPickerValue("batchConfigEditorSenderAccounts", config && Array.isArray(config.senderAccountCodes) ? config.senderAccountCodes : []);
     updateBatchConfigVolumeHint();
-    if (typeof scheduleRecipientPreview === "function") scheduleRecipientPreview("editor");
+    resetRecipientPreview("editor");
 }
 
 function fillBatchConfigEditorTemplateSelector(selectedId) {
@@ -23737,9 +23763,9 @@ function recipientPreviewHintId(kind) {
 function scheduleRecipientPreview(kind) {
     if (kind !== "editor" && kind !== "manual") return;
     clearTimeout(recipientPreviewTimers[kind]);
-    recipientPreviewTimers[kind] = setTimeout(function() {
-        refreshRecipientPreview(kind);
-    }, 500);
+    recipientPreviewTimers[kind] = null;
+    recipientPreviewRequestSeq[kind]++;
+    setRecipientPreviewState(kind, "stale");
 }
 
 /* baseHintHtml preserves the original summary and appends the selected response count. */
@@ -23770,6 +23796,7 @@ function refreshRecipientPreview(kind) {
     if (!hint) return;
     var seq = ++recipientPreviewRequestSeq[kind];          // I4b-2：两次请求共用同一 seq
     var snapshot = kind === "editor" ? buildConfigEditorRecipientSnapshot() : buildManualExecutionSnapshot();
+    setRecipientPreviewState(kind, "loading");
     hint.innerHTML = "当前条件命中 <strong>计算中…</strong>";
 
     /* 03/I-1（MAIN M-3）：只有带完整母集字段的响应才渲染 S-1 诊断骨架；缺新字段的旧响应走兼容渲染。
@@ -23864,22 +23891,26 @@ function refreshRecipientPreview(kind) {
         var excludeVerifiedUnavailable = snapshot.excludeVerifiedUnavailableEmails === true;
         if (!gateAvailable) {
             hint.innerHTML = hintHtml(offTotal, off, excludeVerifiedUnavailable);
+            setRecipientPreviewState(kind, "done");
             return;
         }
         var onTotal = totalOf(results[1]);
         var excluded = Math.max(0, offTotal - onTotal);
         hint.innerHTML = hintHtml(selectedTotal, selectedResponse, excludeVerifiedUnavailable,
             { gateOn: gateOn, excluded: excluded });
+        setRecipientPreviewState(kind, "done");
     }).catch(function(error) {
         if (seq !== recipientPreviewRequestSeq[kind]) return;   // I4b-2：失败也要比 seq
         console.warn("Recipient preview failed", error);
         // 03/I-3：HTTP/API 失败显示「预估不可用」且不弹窗；非 API 错误仅保留原文，不伪装成诊断结果。
         if (error && error.status !== null && error.status !== undefined) {
             hint.textContent = "预估不可用";
+            setRecipientPreviewState(kind, "error");
             return;
         }
         var message = error && error.message ? String(error.message) : "请求失败";
         hint.textContent = "预估失败：" + message;
+        setRecipientPreviewState(kind, "error");
     });
 }
 
@@ -24112,7 +24143,7 @@ function fillManualFormFromDraft() {
     if (typeof refreshEmailVerificationState === "function") refreshEmailVerificationState("manual");
 
     computeAndRenderDiffs();
-    scheduleRecipientPreview("manual");
+    resetRecipientPreview("manual");
 }
 
 function fillBatchManualTemplateSelector(selectedId) {
@@ -25396,7 +25427,16 @@ function bindBatchSendTaskEvents() {
     if (roundsInput) roundsInput.addEventListener("input", updateBatchConfigVolumeHint);
     if (roundSizeInput) roundSizeInput.addEventListener("input", updateBatchConfigVolumeHint);
 
-    // Recipient preview (P-F / 06): filter selects → debounced estimate
+    // Recipient preview: filter changes invalidate the displayed estimate; only the explicit buttons run it.
+    var editorRecipientPreviewBtn = document.getElementById("batchConfigEditorRecipientPreviewBtn");
+    if (editorRecipientPreviewBtn) editorRecipientPreviewBtn.addEventListener("click", function() {
+        refreshRecipientPreview("editor");
+    });
+    var manualRecipientPreviewBtn = document.getElementById("batchManualRecipientPreviewBtn");
+    if (manualRecipientPreviewBtn) manualRecipientPreviewBtn.addEventListener("click", function() {
+        refreshRecipientPreview("manual");
+    });
+
     ["batchConfigEditorTemplateId", "batchConfigEditorFunnelLevel",
      "batchConfigEditorDiscipline", "batchConfigEditorResearchDirectionFilter"].forEach(function(id) {
         var el = document.getElementById(id);

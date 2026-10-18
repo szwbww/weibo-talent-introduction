@@ -8,13 +8,13 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20261016-discovery-identity-recovery">
-    <link rel="stylesheet" href="expert-materials.css?v=20261016-discovery-identity-recovery">
-    <link rel="stylesheet" href="mailbox-chat.css?v=20261016-discovery-identity-recovery">
-    <link rel="stylesheet" href="meeting-confirmation.css?v=20261016-discovery-identity-recovery">
-    <link rel="stylesheet" href="world-clock.css?v=20261016-discovery-identity-recovery">
-<link rel="stylesheet" href="meeting-records.css?v=20261016-discovery-identity-recovery">
-<link rel="stylesheet" href="contact-details.css?v=20261016-discovery-identity-recovery">
+    <link rel="stylesheet" href="styles.css?v=20261018-recipient-preview-manual">
+    <link rel="stylesheet" href="expert-materials.css?v=20261018-recipient-preview-manual">
+    <link rel="stylesheet" href="mailbox-chat.css?v=20261018-recipient-preview-manual">
+    <link rel="stylesheet" href="meeting-confirmation.css?v=20261018-recipient-preview-manual">
+    <link rel="stylesheet" href="world-clock.css?v=20261018-recipient-preview-manual">
+<link rel="stylesheet" href="meeting-records.css?v=20261018-recipient-preview-manual">
+<link rel="stylesheet" href="contact-details.css?v=20261018-recipient-preview-manual">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -1556,6 +1556,10 @@
                         </label>
                     </div>
                     <div class="batch-config-editor-hint" id="batchConfigEditorVolumeHint"></div>
+                    <div class="batch-recipient-preview-controls">
+                        <div><strong id="batchConfigEditorRecipientStatus">尚未统计</strong><span>进入页面不会自动计算；点击按钮后按当前条件统计。</span></div>
+                        <button class="button primary" type="button" id="batchConfigEditorRecipientPreviewBtn">统计命中人数</button>
+                    </div>
                     <div class="batch-config-editor-hint" id="batchConfigEditorRecipientHint"></div>
                 </section>
 
@@ -1775,6 +1779,10 @@
                         <span class="batch-config-diff-badge" hidden>已修改</span>
                         <div class="batch-config-diff-original" hidden></div>
                     </div>
+                </div>
+                <div class="batch-recipient-preview-controls">
+                    <div><strong id="batchManualRecipientStatus">尚未统计</strong><span>进入页面不会自动计算；点击按钮后按当前条件统计。</span></div>
+                    <button class="button primary" type="button" id="batchManualRecipientPreviewBtn">统计命中人数</button>
                 </div>
                 <div class="batch-config-editor-hint" id="batchManualRecipientHint"></div>
             </section>
@@ -2404,14 +2412,14 @@
 <dialog id="playerDialog" class="cr-dialog cr-player-dialog"><header class="cr-dialoghead"><h2 id="playerTitle">会议视频</h2><button class="button cr-iconbtn" type="button" data-close="playerDialog" aria-label="关闭视频">×</button></header><video id="player" controls preload="metadata"></video><p class="cr-hint" id="playerHint">若浏览器不支持该编码，可下载原视频观看。</p></dialog>
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20261016-discovery-identity-recovery"></script>
-<script src="expert-materials.js?v=20261016-discovery-identity-recovery"></script>
-<script src="meeting-confirmation.js?v=20261016-discovery-identity-recovery"></script>
-<script src="mailbox-chat.js?v=20261016-discovery-identity-recovery"></script>
-<script src="contact-history.js?v=20261016-discovery-identity-recovery"></script>
-<script src="meeting-records.js?v=20261016-discovery-identity-recovery"></script>
-<script src="contact-details.js?v=20261016-discovery-identity-recovery"></script>
-<script src="app.js?v=20261016-discovery-identity-recovery"></script>
-<script src="world-clock.js?v=20261016-discovery-identity-recovery"></script>
+<script src="trust-reply-workbench.js?v=20261018-recipient-preview-manual"></script>
+<script src="expert-materials.js?v=20261018-recipient-preview-manual"></script>
+<script src="meeting-confirmation.js?v=20261018-recipient-preview-manual"></script>
+<script src="mailbox-chat.js?v=20261018-recipient-preview-manual"></script>
+<script src="contact-history.js?v=20261018-recipient-preview-manual"></script>
+<script src="meeting-records.js?v=20261018-recipient-preview-manual"></script>
+<script src="contact-details.js?v=20261018-recipient-preview-manual"></script>
+<script src="app.js?v=20261018-recipient-preview-manual"></script>
+<script src="world-clock.js?v=20261018-recipient-preview-manual"></script>
 </body>
 </html>
