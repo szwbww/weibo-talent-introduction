@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-10-18/discovery-samples-master.md
 
-- Status: PAUSED_FOR_HUMAN
-- Master plan: docs/plans/2026-10-18/discovery-samples-master.md (sha256 58a2a33c48a909effcf4002bf96844721b2d5d21b156d806b75b960fdc495fdc)
-- Amendments: N/A
+- Status: RUNNING
+- Master plan: docs/plans/2026-10-18/discovery-samples-master.md (commit cd6189360196700cf65c5e21ab3512ddedb98abc)
+- Amendments: A1,A2
 - Master base: 3efc192faf043badc1ef27bef124a71d3120c4c5
 - Branch: fast/discovery-samples-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-samples-master
@@ -13,19 +13,21 @@
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: Master I-5 prerequisite unavailable: Apollo05 remains PENDING in its execution ledger and is not merged/regressed in this worktree; fast-p does not authorize merge or rebase.
-- Resume from: c577b8a4c08f42147c9e465806cfe755e5f68f53
+- Pause reason: N/A
+- Resume from: a233aeaa7203086dd593968157e73065801bb0d6
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | 01 | docs/plans/2026-10-18/discovery-samples-01-store.md | sha256:34c941c52e1c85ba139b0c94a677743acd90333948913399fc14a582c512fc7b | none | 1 | LIGHT_PASS_WITH_NOTES | 3efc192faf043badc1ef27bef124a71d3120c4c5 | 4613777f8605a15e4d97980de58198ffb8c0bc4d | 1 | 115049811a715404674f02d03bcd4dcf7c0b723f | 115049811a715404674f02d03bcd4dcf7c0b723f | 988b04411ccdeaa2687e26683ce667cd9f03c32d | Writers SampleStoreImplementer SampleStoreFixer1; verifier SampleStoreLightVerifier; reverifier SampleStoreReverifier1; F-01/F-02 closed, O-01/O-02 RECORD_ONLY. |
-| 02 | docs/plans/2026-10-18/discovery-samples-02-capture.md | sha256:54e32195d75aa9daa3b7e7b69c23a25245e104cf5c09dac5a66d65054d2e9fec | 01 | 1 | PAUSED_FOR_HUMAN | 115049811a715404674f02d03bcd4dcf7c0b723f | — | 0 | — | — | — | Not dispatched: Apollo05 prerequisite is PENDING and unmerged. No product edits or repair rounds for child 02. |
+| 02 | docs/plans/2026-10-18/discovery-samples-02-capture.md | commit:cd6189360196700cf65c5e21ab3512ddedb98abc | 01 | 2 | WAITING_FOR_AGENT | 115049811a715404674f02d03bcd4dcf7c0b723f | — | 0 | — | — | — | User authorized frozen Apollo05 local import and continuation; epoch2 resets fix_round; waiting isolated writer. |
 | 03 | docs/plans/2026-10-18/discovery-samples-03-replay.md | sha256:33d8fc1e3b2e00a2a865c683b8c8677ba2655cdaa4af30aea6a7eb7ef8a429b0 | 01 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
 |---|---|---|---|---|---|---|
+| A1 | docs/plans/2026-10-18/discovery-samples-02-capture.md | commit:9f8ecfab64146405447abf7a92b4ecea2a666a45 | commit:cd6189360196700cf65c5e21ab3512ddedb98abc | I-4 / master I-5 | Authorize frozen Apollo05 prerequisite imports and provenance checks before unchanged eight-file sampling implementation | HUMAN:用户选择「授权本地集成并继续」，固定1cef08bd及必要依赖、保留历史线性提交、同步计划范围与台账、不改main/不推送/不部署、回归后继续02→03 (recorded 2026-10-18T23:27:56+08:00) |
+| A2 | docs/plans/2026-10-18/discovery-samples-master.md | commit:9f8ecfab64146405447abf7a92b4ecea2a666a45 | commit:cd6189360196700cf65c5e21ab3512ddedb98abc | I-5 / 变更文件清单 | Record exact frozen upstream import exception separately from new sampling development, retaining child01 and ordered product chain | HUMAN:用户选择「授权本地集成并继续」，固定1cef08bd及必要依赖、保留历史线性提交、同步计划范围与台账、不改main/不推送/不部署、回归后继续02→03 (recorded 2026-10-18T23:27:56+08:00) |
 
 ## Baseline
 - Source worktree has unrelated unstaged/untracked changes; retained unchanged. Execution starts from the exact master code baseline in a separate worktree.
@@ -40,3 +42,9 @@
 - `git rev-parse HEAD fast/apollo-verification-master` returned c577b8a4c08f42147c9e465806cfe755e5f68f53 and 98c7b78fde54f69b72f175b94b2ab0eed25d86ab; `git merge-base --is-ancestor fast/apollo-verification-master HEAD` exited 1.
 - No merge/rebase/cherry-pick or substitute pre-Apollo integration was attempted. Ordered child 03 remains PENDING under fast-p's whole-workflow pause rule.
 - Resume requires completed Apollo05 regression evidence and explicit integration authority/approved boundary compatible with retained product-chain ancestry; recheck exact plan identities and clean product index before acquiring child 02 implementer.
+
+## Epoch2 authorized resume
+- Apollo05 now LIGHT_PASS_WITH_NOTES, F-05-E2-01/02/03 CLOSED; source code 1cef08bd7e8bedc47cd2ca6d3f9823c2465e8848, evidence 6f6b75ed311ef111d91775c51d02ae41a515f5c8, checkpoint df04e9c4737a61a0d859d21753e77a2bb9401740. No old command output is substituted for target-worktree regression.
+- User explicitly approved frozen local linear integration and continuation via ask selection. Plan-only commit cd6189360196700cf65c5e21ab3512ddedb98abc records exact manifest and boundaries; no merge/rebase/main/push/deployment authorized.
+- Resume retained active child02 after its prerequisite pause, rather than replaying completed child01; epoch1 pause and child01 checkpoint/evidence remain unchanged. Required through02 checkpoint will validate complete amended manifest before child03.
+- Imported upstream files are mechanically bound to exact manifest/source blobs; only the original eight files may receive new sampling implementation. Source06/07 and source docs/ledger are excluded from import.
