@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-10-18/discovery-samples-master.md
+
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 1
+- Master plan: docs/plans/2026-10-18/discovery-samples-master.md (worktree sha256:b0eb3402f6144f13f4e99de5082ca43eaa27136b2bc96e8f7cab3d676725ed7f)
+- Governing master identity: sha256:b0eb3402f6144f13f4e99de5082ca43eaa27136b2bc96e8f7cab3d676725ed7f; recorded commit cd6189360196700cf65c5e21ab3512ddedb98abc
+- Invoked master identity: sha256:58a2a33c48a909effcf4002bf96844721b2d5d21b156d806b75b960fdc495fdc
+- Master identity state: AMENDMENT_RECORDED
+- Governing amendment: A2; I-5 / 变更文件清单; Record exact frozen upstream import exception separately from new sampling development, retaining child01 and ordered product chain; HUMAN approval recorded 2026-10-18T23:27:56+08:00
+- Amendments: A1 (docs/plans/2026-10-18/discovery-samples-02-capture.md, 9f8ecfab64146405447abf7a92b4ecea2a666a45→cd6189360196700cf65c5e21ab3512ddedb98abc); A2 (master, 9f8ecfab64146405447abf7a92b4ecea2a666a45→cd6189360196700cf65c5e21ab3512ddedb98abc)
+- Fast-p ledger: docs/plans/fast/discovery-samples-master/ledger.md (sha256:e61aa991cd3617aa3081333f33d2bb606466e3a34443728eeba35273f9439f80)
+- Fast-p handoff: docs/plans/fast/discovery-samples-master/human-review-handoff.md (sha256:bedfd6c46c6440ea05b3515ac07ffe32a02b4c65143472cd35bfd80dcf0b1b63)
+- Master base: 3efc192faf043badc1ef27bef124a71d3120c4c5
+- Final code head: eb6080147141bc3d7dd00054705ba8973ea2b270
+- Evidence parent before next commit: 9e2ec5c043bb790ffab04324c007f045c7ff8937
+- Previous evidence commit: N/A
+- Branch: fast/discovery-samples-master
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-samples-master
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: SELECTED; candidate worktree/branch and fast-p identities match; child_count=3; script result 2026-10-19, invoked sha256:58a2a33c48a909effcf4002bf96844721b2d5d21b156d806b75b960fdc495fdc
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_reviewer (fresh, fork_turns=none)
+- Reviewer attempt: 1
+- Machine result: PASS
+- Machine report epoch: machine-verification.md#epoch-1
+- Repair artifact: docs/plans/fix/discovery-samples-master/repair.md (only if review-p creates it)
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: Human runs and reports mandatory A-1, A-2, A-3, then explicitly accepts boundary eb6080147141bc3d7dd00054705ba8973ea2b270 and governing master identity sha256:b0eb3402f6144f13f4e99de5082ca43eaa27136b2bc96e8f7cab3d676725ed7f
