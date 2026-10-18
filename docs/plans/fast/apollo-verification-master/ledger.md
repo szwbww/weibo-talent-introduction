@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-18/apollo-verification-master.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-10-18/apollo-verification-master.md (commit a58d457ec2921759c455b6f6edae0e6d94b85220)
 - Amendments: A1,A2,A3,A4,A5,A6
 - Master base: 3efc192faf043badc1ef27bef124a71d3120c4c5
@@ -9,12 +9,12 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-18T19:18:14.142629+08:00
-- Current child: 05
+- Current child: 06
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: a0103c2ea9284c030ad0b0b10c4177474c4f4d47
+- Pause reason: C06-CAPABILITY-AUTH — capabilities requires current CONFIG_AUTH latch, but existing worker read-only accessor/test are outside06 authority
+- Resume from: bcc031775d112e1d67f20441e1c321d4b6a08967
 
 ## Baseline
 - Invocation authorizes exact untracked plan snapshots, copied byte-for-byte into isolated worktree. Original user worktree untouched.
@@ -34,7 +34,7 @@
 | 03 | docs/plans/2026-10-18/apollo-03-admission.md | commit:1793d335cec0c73f10e1b26c1d0652b11c63c0a7 | 01,02 | 2 | LIGHT_PASS_WITH_NOTES | 69a236aa0b15b07755d42c713f24da944a7727e6 | 98c7b78fde54f69b72f175b94b2ab0eed25d86ab | 0 | — | 98c7b78fde54f69b72f175b94b2ab0eed25d86ab | 61f0e39acff1ab7acfe93c834db839e9ff5e175c | Writer ApolloAdmissionImplementerE2; verifier ApolloAdmissionVerifierE2; O-03-E2-01/02 record only |
 | 04 | docs/plans/2026-10-18/apollo-04-worker.md | commit:bb9eda7df6fde5f4eb0a5d433a1058f008d42b16 | 01,02,03 | 2 | LIGHT_PASS_WITH_NOTES | 98c7b78fde54f69b72f175b94b2ab0eed25d86ab | a0103c2ea9284c030ad0b0b10c4177474c4f4d47 | 0 | — | a0103c2ea9284c030ad0b0b10c4177474c4f4d47 | 5a3482bf5dca311e1a25b30d46a2c75db8caf6ac | Writer ApolloWorkerImplementerE2; verifier ApolloWorkerVerifierE2; evidence closing correction1; O-04-E2-01/02 |
 | 05 | docs/plans/2026-10-18/apollo-05-integration.md | commit:a58d457ec2921759c455b6f6edae0e6d94b85220 | 01,02,03,04 | 2 | LIGHT_PASS_WITH_NOTES | a0103c2ea9284c030ad0b0b10c4177474c4f4d47 | 083fce2f4b97c88b89a226394ebbf1342001a2d4 | 1 | 1cef08bd7e8bedc47cd2ca6d3f9823c2465e8848 | 1cef08bd7e8bedc47cd2ca6d3f9823c2465e8848 | 6f6b75ed311ef111d91775c51d02ae41a515f5c8 | Writers ApolloIntegrationImplementerE2/ApolloIntegrationFixerE2R1; verifier ApolloIntegrationReverifierE2R1; F01/02/03 CLOSED; O-05-E2-01/02/03 record only; evidence correction2 |
-| 06 | docs/plans/2026-10-18/apollo-06-reporting.md | sha256:43a207d15adfa9e488780fd70ce8656a15e1bd50aa121984f01efff244cdb9de | 01,02,03,04,05 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
+| 06 | docs/plans/2026-10-18/apollo-06-reporting.md | sha256:43a207d15adfa9e488780fd70ce8656a15e1bd50aa121984f01efff244cdb9de | 01,02,03,04,05 | 1 | PAUSED_FOR_HUMAN | 1cef08bd7e8bedc47cd2ca6d3f9823c2465e8848 | bcc031775d112e1d67f20441e1c321d4b6a08967 | 0 | — | bcc031775d112e1d67f20441e1c321d4b6a08967 | 790e71c0f831a8aca83ed488d1592dcda57053af | Writer ApolloReportingImplementer; C06-CAPABILITY-AUTH; executed backend236 passed, no independent light verdict |
 | 07 | docs/plans/2026-10-18/apollo-07-frontend.md | sha256:efce42d320a64915768fc6277257fab928090d2d7b64c0a40b6503d88d773f4d | 01,02,03,04,05,06 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 
 ## Amendments
@@ -90,3 +90,9 @@
 ## Child05 checkpoint evidence correction1
 - Initial checkpoint INVALID only because fixer round1 SHA line included subject text and controller closing heading isolated its canonical SHA. Original fixer/verifier reports unchanged; normalized the controller-added heading level and appended truthful correction records in replacement docs-only evidencec84abc228b1b3dca11da9d222c8924d8746478df. No product/test changes, rerun or new repair.
 - Correction2: first correction added a redundant canonical action block; normalized only that controller closing format, preserving original independent action. Replacement docs-only evidence6f6b75ed311ef111d91775c51d02ae41a515f5c8. No product/verification changes.
+
+## Child06 pause / required authority
+- Through05 dirty-artifact and clean checkpoints both VALID; clean checkpoint HEADdf04e9c4737a61a0d859d21753e77a2bb9401740 preceded06 dispatch. Completed01–05 unchanged.
+- C-3:123 requires capabilities to show current CONFIG_AUTH block; private process-local worker authBlocked has no authorized reader. Exact source/reference receipts and rejected historical-inference/reset workarounds in children/06/execution.md.
+- Proposed amendment, not approved: authorize existing DiscoveryVerificationWorker.kt and DiscoveryVerificationWorkerTest.kt for a read-only current auth-latch accessor and regression coverage; consume via already-authorized query/controller.06 file cap7→9, no new state/table/reset/retry/inference or changed worker behavior.
+- Keep authorized committed06 workbcc031775d112e1d67f20441e1c321d4b6a08967. Executor's final backend236 passed and actual HTTP/MySQL/F123/10000-row EXPLAIN smoke are evidence, not independent acceptance. Full Node41 failures remain recorded; no global-green or06terminal checkpoint claimed. Await approval, then plan-only amendment/ledger authority and epoch2 resume;07 PENDING.
