@@ -87,7 +87,8 @@ class QualificationEvidenceParser(private val clock: Clock = Clock.systemUTC()) 
         val doctorate = Regex("(?<![a-z])(?:ph\\.?\\s?d\\.?|dphil|doctorate|doctor of philosophy)(?![a-z])|博士").containsMatchIn(normalized)
         val student = Regex("student|candidate|pursuing|in progress|enrolled|在读|博士生|候选").containsMatchIn(normalized)
         val awarded = Regex("awarded|conferred|completed|graduated|degree obtained|已获|授予|毕业").containsMatchIn(normalized)
-        return doctorate && awarded && !student
+        val negated = Regex("\\b(?:not|never)\\s+(?:(?:yet|been|being|successfully|formally)\\s+)*(?:awarded|conferred|completed|graduated|obtained)\\b|\\b(?:uncompleted|incomplete|unawarded)\\b|(?:未|没有|尚未)(?:获|授予|完成|毕业)").containsMatchIn(normalized)
+        return doctorate && awarded && !student && !negated
     }
 
     private fun date(node: JsonNode): LocalDate? = runCatching {

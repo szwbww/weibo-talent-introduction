@@ -43,7 +43,7 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
         if (!snapshot.identityValid) return decision(VerificationQualification.UNKNOWN, listOf("IDENTITY_EVIDENCE_MISSING"), listOf("identity"))
         if (evidence.any { it.conflicts.isNotEmpty() }) return decision(VerificationQualification.CONFLICT, listOf("EVIDENCE_CONFLICT"))
         val names = evidence.filter { it.field == "name" }.map { normalizeName(it.value) }.distinct()
-        if (names.isNotEmpty() && names.none { sameName(it, snapshot.fullName) })
+        if (names.any { !sameName(it, snapshot.fullName) })
             return decision(VerificationQualification.CONFLICT, listOf("NAME_CONFLICT"))
         val facts = evidence.filter { it.assertionSource == AssertionSource.ORGANIZATION }
         val jobs = facts.filter { it.field == "employment" && it.temporalScope == TemporalScope.CURRENT }
@@ -101,7 +101,8 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
         if (matches.size != 1) return decision(qualification, listOf(if (matches.size > 1) "IDENTITY_AMBIGUOUS" else "IDENTITY_NOT_MATCHED"), missing)
         // An explicit contradictory ORCID on a same-name record must not be discarded as an unrelated candidate.
         if (search.candidates.any { candidate -> candidate.orcid != null && normalizeOrcid(candidate.orcid) != orcid &&
-                candidate.fullName?.let { name -> allowedNames.any { sameName(it, name) } } == true })
+                (candidate.fullName ?: listOfNotNull(candidate.firstName, candidate.lastName).takeIf { candidate.lastName != null }?.joinToString(" "))
+                    ?.let { name -> allowedNames.any { sameName(name, it) } } == true })
             return decision(VerificationQualification.CONFLICT, listOf("ORCID_CONFLICT"), missing)
         val match = matches.single()
         return decision(qualification, listOf("APOLLO_PERSON_MATCHED") + if (qualification == VerificationQualification.MET) listOf("QUALIFICATION_MET") else listOf("QUALIFICATION_EVIDENCE_MISSING"),
