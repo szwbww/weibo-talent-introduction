@@ -37,3 +37,22 @@ Use execute-p with target worktree bound to this worktree. The fast-p loop repla
 
 ## Required outputs
 Use execution report schema from execute-p. Record task/invariant evidence, exact commands/exit codes/counts, smoke observations, plan hash recheck, worktree identity, product commit SHA, and remaining blockers. Commit only authorized implementation files as `feat(fast-p): implement 07`. Report path is this directory's execution.md; controller commits all evidence separately.
+
+## Current execution handoff
+- Master identity commit:f9435ee70c585a158b3a3414c3bf549c35c7044b; original07 plan snapshot remains unchanged until a separately recorded concrete amendment.
+- Through06 clean checkpoint VALID at2ddf49514057f4a274441bd74c1a72c46a231715; product basecd105de17d7100466543675727a68fe1370008cb. All prior children closed.
+- Existing06 real API handoff: Apollo participation filters108/45/5/18 vs admitted40; itemdetail typedapolloPersonId andapolloStages (enteredAt/searchedAt/candidateFoundAt/matchedAt), current auth CONFIG_AUTH capability. Inspect current DTOs, don't infer shape from demo.
+- User instruction “批准该计划并执行 后续也都授权 执行完所有子计划” preauthorizes necessary direct dependency/caller/test scope amendments, not unrecorded modifications or new business goals. Send exact missing-file evidence to controller first; it records concrete plan-only amendment and ledger authority, without a routine user pause. FrozenCSS/DOM and existing feature invariants remain.
+- Save actual browser proof under children/07/browser if retained in repository; controller commits those separately from product. Browser UI may use isolated fixture transport but must be actualindex/app, not frozenpreview; report transport/production integration limits.
+- Mandatory fresh Node four discovery files including newly created discoveryVerification, full suite and app syntax; current baseline1694/1653/41. Other literal cache-key contract tests may require mechanical migration; report exact files before editing, don't claim additional failures baseline without evidence.
+
+## Approved necessary S-5 batch read seam
+- Current07/master identity commit:d0c1e1a74fc337c93cba9df1db35b67732abb0b4 supersedes original07snapshot under A9/A10 and user's recorded advance authorization.
+- Additional authorized existing files: discovery/service/DiscoveryVerificationQueryService.kt, discovery/repository/DiscoveryVerificationRepository.kt under src/main/kotlin/com/weibo/talentintroduction; corresponding src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryServiceTest.kt and discovery/repository/DiscoveryVerificationReportingIT.kt. Exact full paths in amended plan; total07scope11, approved necessary read-dependency exception.
+- Add batches item cumulativeProfiles across all prior/equal activated batches independent of current page; updatedAt=MAX activated-item updated_at in batch; complete deduplicated reason counts, stable unknown codes. Existing same RR snapshot, counts/suggested/runCounts/API shapes and all writer logic unchanged. No unbounded frontend paging to manufacture missing facts.
+- Product base unchangedcd105de17d7100466543675727a68fe1370008cb; epoch1/fix0; no06replay. Fresh amended batch SQL/DTO regressions plus required frontend/browser proof.
+
+## Approved obsolete CSS position-test retirement
+- Current07/master identity commit:00c0c9e75926ec9a8a9487fccf40d35d6275df3f supersedes prior scope under A11/A12.
+- Add exact `src/test/js/expertManualProfile.test.js` and `src/test/js/expertMeetingVideo.test.js` solely to delete obsolete old-CSS-at-EOF source-position assertions and any consequently unused constants, not re-pin an incidental implementation constraint. Preserve all other behavior checks. Total07scope13; no further production files.
+- Authority: same user's advance approval, concrete mismatch observed in actualfullNode1712/1669/43 versusexisting41. Final required Node must freshly exercise corrected state, no unrelated baseline repair.
