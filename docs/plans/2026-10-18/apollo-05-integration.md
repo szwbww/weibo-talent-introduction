@@ -49,7 +49,7 @@ ExpertDiscoveryService:1450/1779写RAW，:1456/1790统一admit，:2286重复处�
 
 ## 变更文件清单
 
-共10个文件；一个发现核验子系统（与既有准入/前端的交互按文中说明）；无清单外授权。
+共13个文件；原10个文件加3个现有调用方测试的执行上下文契约迁移授权，作为总计划每片≤10的测试专项例外；生产文件范围不变，无清单外授权。
 
 |#|文件|动作|
 |---|---|---|
@@ -63,10 +63,13 @@ ExpertDiscoveryService:1450/1779写RAW，:1456/1790统一admit，:2286重复处�
 |8|`src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationIntegrationTest.kt`|新增|
 |9|`src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt`|修改|
 |10|`src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt`|修改|
+|11|`src/test/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryControllerMvcTest.kt`|修改真实execution/context调用契约及相关断言|
+|12|`src/test/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryControllerTest.kt`|修改真实execution/context调用契约及相关断言|
+|13|`src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt`|修改真实execution/context调用契约及相关断言|
 
 ## 验收标准
 
-I-1：四入口冻结、旧JSON/默认/显式false、正ID；I-2：reserve失败零RAW，RAW成功activate前宕机恢复1项，不推进checkpoint；I-3：同源跨源重复、历史重复不计新批、101条→100/1，重放不增；I-4：开关变化409、查询hash不变、原暂停/恢复及cron回归。运行新增IntegrationTest及已有ControllerMvc、Scheduler、Pipeline、ExpertDiscoveryService测试。
+I-1：四入口冻结、旧JSON/默认/显式false、正ID；I-2：reserve失败零RAW，RAW成功activate前宕机恢复1项，不推进checkpoint；I-3：同源跨源重复、历史重复不计新批、101条→100/1，重放不增；I-4：开关变化409、查询hash不变、原暂停/恢复及cron回归。运行新增IntegrationTest及已有ControllerMvc、Controller、Scheduler、Pipeline、ExpertDiscoveryService测试。
 
 ## 人工验收清单
 
@@ -93,3 +96,6 @@ I-1：四入口冻结、旧JSON/默认/显式false、正ID；I-2：reserve失败
 - 操作步骤：运行接入；看账本与原业务快照。
 - 预期结果：仅正常新档案激活进入新资格流程；保护项不覆盖旧字段/准入；不是把存量全库装进本轮。
 - 覆盖：N-2，I-3
+
+## 修正记录
+- 用户“批准该计划并执行”批准 C05-EXECUTION-CALLERS：增加上述三个现有调用方测试，仅用于显式真实execution/context调用迁移及相关回归；文件上限10→13为测试专项例外，生产代码范围不变，不保留旧接口兼容壳或放松执行绑定。授权及Before/After身份见fast-p ledger Amendments。
