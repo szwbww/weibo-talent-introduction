@@ -131,6 +131,43 @@ class DiscoveryVerificationReportingIT {
         }
     }
 
+    @Test fun `successful worker identity and stage events are visible in typed HTTP detail without replay`() {
+        VerificationFlowFixture(jdbc, org.springframework.jdbc.datasource.DataSourceTransactionManager(jdbc.dataSource!!)).use { flow ->
+            val seed = flow.seed("APV-FIXTURE-MATCHED-DETAIL")
+            jdbc.update("UPDATE discovery_verification_item SET state='RETRY_WAIT',next_attempt_at='2099-01-01' WHERE owner_execution_id=3001 AND state='QUEUED'")
+            val worker = flow.worker()
+            worker.process(flow.claim())
+            val stored = flow.item(seed.id)
+            assertEquals("person-1", stored.apolloPersonId)
+            assertNotNull(stored.apolloEnteredAt)
+            assertNotNull(stored.searchCompletedAt)
+            assertNotNull(stored.candidateFoundAt)
+            assertNotNull(stored.personMatchedAt)
+            val before = databaseSnapshot()
+            val requests = flow.apolloRequests.toList() to flow.orcidRequests.toList()
+            val detail = query.item(seed.id)
+            assertEquals(stored.apolloPersonId, detail.apolloPersonId)
+            assertEquals(VerificationApolloStages(stored.apolloEnteredAt, stored.searchCompletedAt,
+                stored.candidateFoundAt, stored.personMatchedAt), detail.apolloStages)
+            val mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(
+                com.weibo.talentintroduction.discovery.controller.DiscoveryVerificationController(query)).build()
+            val response = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
+                "/api/expert-discovery/verification/items/${seed.id}"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk)
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.apolloPersonId").value("person-1"))
+                .andReturn().response.contentAsString
+            val json = flow.mapper.readTree(response)
+            for (stage in listOf("enteredAt", "searchedAt", "candidateFoundAt", "matchedAt")) {
+                assertFalse(json.path("apolloStages").path(stage).isNull, stage)
+                assertFalse(json.path("apolloStages").path(stage).isMissingNode, stage)
+            }
+            assertFalse(response.contains("responseJson"))
+            assertFalse(response.contains("requestJson"))
+            assertEquals(before, databaseSnapshot())
+            assertEquals(requests, flow.apolloRequests.toList() to flow.orcidRequests.toList())
+        }
+    }
+
     @Test fun `F123 every aggregate batch route result filter and page reconciles on MySQL`() {
         assertF123(counts())
         val batches = query.batches(3001,0,100)
@@ -147,10 +184,17 @@ class DiscoveryVerificationReportingIT {
         val all = query.records(VerificationReportFilter(3001),0,100).items + query.records(VerificationReportFilter(3001),1,100).items
         assertEquals(123,all.size); assertEquals(123,all.map { it.itemId }.toSet().size)
         assertEquals(all.map { it.itemId }.sorted(),all.map { it.itemId })
+        val enteredIds = repository.reportingRecords(VerificationReportFilter(3001),0,100)
+            .plus(repository.reportingRecords(VerificationReportFilter(3001),1,100))
+            .filter { it.apolloEnteredAt != null }.map { it.id }.toSet()
+        for ((result, total) in mapOf("ALL" to 108L, "PENDING" to 45L, "ERROR" to 5L, "QUEUED" to 18L)) {
+            assertEquals(total, query.records(VerificationReportFilter(3001,"APOLLO",result),0,100).total)
+        }
         val resultMap = mapOf("CLEAR" to setOf("DIRECT_CLEAR","APOLLO_CLEAR"),"UNCLEAR" to setOf("APOLLO_UNCLEAR"),
             "PENDING" to setOf("PENDING"),"ERROR" to setOf("ERROR"),"QUEUED" to setOf("QUEUED"),"PROTECTED" to setOf("PROTECTED"))
         for (batch in listOf(null,1,2,3)) for (route in listOf("ALL","DIRECT","APOLLO")) for (result in listOf("ALL")+resultMap.keys) {
-            val expectedRows = all.filter { (batch==null || it.batchNumber==batch) && (route=="ALL" || it.route.name==route) &&
+            val expectedRows = all.filter { (batch==null || it.batchNumber==batch) &&
+                (route=="ALL" || if (route=="APOLLO") it.itemId in enteredIds else it.route==VerificationRoute.DIRECT) &&
                 (result=="ALL" || it.resultLabel in resultMap.getValue(result)) }
             val actual = query.records(VerificationReportFilter(3001,route,result,batchNumber=batch),0,100)
             assertEquals(expectedRows.size.toLong(),actual.total,"$batch/$route/$result")

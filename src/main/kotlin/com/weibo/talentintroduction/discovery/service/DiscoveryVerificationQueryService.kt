@@ -96,7 +96,9 @@ class DiscoveryVerificationQueryService(
             payload.evidence, reasonCodes(item).map { VerificationReason(it, reasonLabel(it), 1) },
             repository.findAttempts(itemId).map { VerificationAttemptSummary(it.id, it.provider, it.queryKind,
                 it.pageNumber, it.attemptNumber, it.requestedAt, it.completedAt, it.httpStatus, it.resultCode, it.responseSha256) },
-            item.admissionRevision, item.projectionError, run.mode, run.revision, Instant.now())
+            item.admissionRevision, item.projectionError, run.mode, run.revision, Instant.now(),
+            item.apolloPersonId, VerificationApolloStages(item.apolloEnteredAt, item.searchCompletedAt,
+                item.candidateFoundAt, item.personMatchedAt))
     }
 
     private fun summaryRow(id: Long, run: VerificationRun?, counts: VerificationCounts, status: String?, asOf: Instant,
@@ -182,4 +184,7 @@ data class VerificationItemDetail(val record: VerificationRecord, val executionI
     val identity: com.weibo.talentintroduction.expert.domain.IdentityVerification?, val originalEmployment: String?,
     val institutionEvidence: String?, val boundOrcid: String?, val evidence: List<VerificationEvidence>,
     val reasons: List<VerificationReason>, val attempts: List<VerificationAttemptSummary>, val admissionRevision: Long?,
-    val projectionError: String?, val mode: VerificationMode, val snapshotVersion: Long, val asOf: Instant)
+    val projectionError: String?, val mode: VerificationMode, val snapshotVersion: Long, val asOf: Instant,
+    val apolloPersonId: String?, val apolloStages: VerificationApolloStages)
+data class VerificationApolloStages(val enteredAt: Instant?, val searchedAt: Instant?,
+    val candidateFoundAt: Instant?, val matchedAt: Instant?)

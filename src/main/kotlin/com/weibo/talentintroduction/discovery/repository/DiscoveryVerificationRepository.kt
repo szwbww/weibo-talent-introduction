@@ -119,7 +119,10 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     private fun reportingWhere(filter: VerificationReportFilter): Pair<String, List<Any>> {
         val clauses = mutableListOf("i.owner_execution_id=?")
         val args = mutableListOf<Any>(filter.executionId)
-        if (filter.route != "ALL") { clauses += "i.route=?"; args += filter.route }
+        when (filter.route) {
+            "APOLLO" -> clauses += "i.apollo_entered_at IS NOT NULL"
+            "DIRECT" -> { clauses += "i.route=?"; args += filter.route }
+        }
         when (filter.result) {
             "CLEAR" -> clauses += "i.outcome IN ('DIRECT_CLEAR','APOLLO_CLEAR')"
             "UNCLEAR" -> clauses += "i.outcome='APOLLO_UNCLEAR'"
