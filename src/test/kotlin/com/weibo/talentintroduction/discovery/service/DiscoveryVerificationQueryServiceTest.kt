@@ -49,6 +49,29 @@ class DiscoveryVerificationQueryServiceTest {
         verifyNoInteractions(admissions)
     }
 
+    @Test fun `batch page retains full run cumulative time and complete per profile reason counts`() {
+        val filter = VerificationReportFilter(3001)
+        `when`(repository.findRun(3001)).thenReturn(run(3001))
+        `when`(repository.reportingCounts(filter)).thenReturn(mapOf(0L to VerificationCounts(profiles = 123)))
+        `when`(repository.reportingCounts(filter, batches = true)).thenReturn(linkedMapOf(
+            1L to VerificationCounts(profiles = 40), 2L to VerificationCounts(profiles = 40),
+            3L to VerificationCounts(profiles = 43)))
+        `when`(repository.reportingBatchTimes(3001)).thenReturn(mapOf(2 to now))
+        `when`(repository.reportingBatchReasons(3001)).thenReturn(listOf(
+            Triple(2, """["IDENTITY_AMBIGUOUS","UNKNOWN_LONG_CODE","UNKNOWN_LONG_CODE","R3","R4","R5"]""", 2L),
+            Triple(2, """["UNKNOWN_LONG_CODE"]""", 1L)))
+        val page = service.batches(3001, 1, 1)
+        assertEquals(123L, page.runCounts!!.profiles)
+        assertEquals(80L, page.items.single().cumulativeProfiles)
+        assertEquals(now, page.items.single().updatedAt)
+        assertEquals(5, page.items.single().reasons.size)
+        assertEquals(3L, page.items.single().reasons.single { it.code == "UNKNOWN_LONG_CODE" }.count)
+        assertEquals("UNKNOWN_LONG_CODE", page.items.single().reasons.single { it.code == "UNKNOWN_LONG_CODE" }.label)
+        assertEquals("身份存在歧义", page.items.single().reasons.single { it.code == "IDENTITY_AMBIGUOUS" }.label)
+        assertEquals(17L, page.snapshotVersion)
+        verifyNoInteractions(admissions)
+    }
+
     @Test fun `database error is never changed to zero`() {
         `when`(repository.reportingRuns(listOf(1L))).thenThrow(org.springframework.dao.DataAccessResourceFailureException("offline"))
         assertThrows(org.springframework.dao.DataAccessResourceFailureException::class.java) { service.summary(listOf(1)) }

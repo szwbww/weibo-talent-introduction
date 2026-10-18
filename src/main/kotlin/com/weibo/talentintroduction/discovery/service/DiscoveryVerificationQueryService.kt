@@ -58,8 +58,19 @@ class DiscoveryVerificationQueryService(
         val counts = repository.reportingCounts(filter).getValue(0L)
         val grouped = repository.reportingCounts(filter, batches = true).entries.toList()
         val suggestions = if (run.mode == VerificationMode.AUDIT) repository.reportingSuggestions(filter, batches = true) else emptyMap()
+        val updatedAt = repository.reportingBatchTimes(executionId)
+        val batchReasons = repository.reportingBatchReasons(executionId).groupBy { it.first }
+        var cumulative = 0L
+        val cumulativeProfiles = grouped.associate { (batch, value) ->
+            cumulative += value.profiles
+            batch to cumulative
+        }
         val start = (page.toLong() * size).coerceAtMost(grouped.size.toLong()).toInt()
-        val items = grouped.drop(start).take(size).map { (batch, value) -> VerificationBatch(batch.toInt(), value, suggested(run, suggestions[batch])) }
+        val items = grouped.drop(start).take(size).map { (batch, value) ->
+            VerificationBatch(batch.toInt(), value, suggested(run, suggestions[batch]),
+                cumulativeProfiles.getValue(batch), updatedAt[batch.toInt()],
+                aggregateReasons(batchReasons[batch.toInt()].orEmpty().map { it.second to it.third }))
+        }
         return VerificationBatches("RECORDED", grouped.size.toLong(), items, counts, run.revision, asOf,
             run.mode, status ?: "EXPIRED", lifecycle(run, counts), suggested(run, repository.reportingSuggestions(filter)[0L]))
     }
@@ -130,9 +141,12 @@ class DiscoveryVerificationQueryService(
     }
 
     private fun reasonCodes(item: VerificationItem): List<String> = item.reasonsJson?.let { mapper.readValue<List<String>>(it).distinct() } ?: emptyList()
-    private fun reasons(filter: VerificationReportFilter): List<VerificationReason> {
+    private fun reasons(filter: VerificationReportFilter): List<VerificationReason> =
+        aggregateReasons(repository.reportingReasons(filter))
+
+    private fun aggregateReasons(rows: List<Pair<String, Long>>): List<VerificationReason> {
         val totals = sortedMapOf<String, Long>()
-        repository.reportingReasons(filter).forEach { (json, count) ->
+        rows.forEach { (json, count) ->
             mapper.readValue<List<String>>(json).distinct().forEach { totals[it] = (totals[it] ?: 0) + count }
         }
         return totals.map { (code, count) -> VerificationReason(code, reasonLabel(code), count) }
@@ -163,7 +177,8 @@ data class VerificationReason(val code: String, val label: String, val count: Lo
 data class VerificationSummary(val executionId: Long, val coverage: String, val counts: VerificationCounts?,
     val lifecycle: String?, val snapshotVersion: Long?, val asOf: Instant, val mode: VerificationMode?,
     val collectionStatus: String?, val suggested: VerificationSuggestions?)
-data class VerificationBatch(val batchNumber: Int, val counts: VerificationCounts, val suggested: VerificationSuggestions?)
+data class VerificationBatch(val batchNumber: Int, val counts: VerificationCounts, val suggested: VerificationSuggestions?,
+    val cumulativeProfiles: Long, val updatedAt: Instant?, val reasons: List<VerificationReason>)
 data class VerificationBatches(val coverage: String, val totalBatches: Long?, val items: List<VerificationBatch>,
     val runCounts: VerificationCounts?, val snapshotVersion: Long?, val asOf: Instant, val mode: VerificationMode?,
     val collectionStatus: String?, val lifecycle: String? = null, val suggested: VerificationSuggestions? = null)

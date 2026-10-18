@@ -102,6 +102,17 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
             RowMapper { rs, _ -> rs.getString("reasons_json") to rs.getLong("n") }, *args.toTypedArray())
     }
 
+    fun reportingBatchTimes(executionId: Long): Map<Int, Instant> =
+        jdbc.query("""SELECT batch_number,MAX(updated_at) AS updated_at FROM discovery_verification_item
+            WHERE owner_execution_id=? AND activated_at IS NOT NULL GROUP BY batch_number ORDER BY batch_number""",
+            RowMapper { rs, _ -> rs.getInt("batch_number") to rs.time("updated_at")!! }, executionId).toMap()
+
+    fun reportingBatchReasons(executionId: Long): List<Triple<Int, String, Long>> =
+        jdbc.query("""SELECT batch_number,MAX(reasons_json) AS reasons_json,COUNT(*) AS n
+            FROM discovery_verification_item WHERE owner_execution_id=? AND activated_at IS NOT NULL
+            AND reasons_json IS NOT NULL GROUP BY batch_number,SHA2(reasons_json,256) ORDER BY batch_number""",
+            RowMapper { rs, _ -> Triple(rs.getInt("batch_number"), rs.getString("reasons_json"), rs.getLong("n")) }, executionId)
+
     fun reportingRecordTotal(filter: VerificationReportFilter): Long {
         val (where, args) = reportingWhere(filter)
         return jdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_item i WHERE $where AND i.activated_at IS NOT NULL",

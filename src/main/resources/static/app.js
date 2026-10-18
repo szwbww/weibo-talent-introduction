@@ -2330,6 +2330,7 @@ function openTaskModal(taskType, label, btnId, options = {}) {
         initDiscoverySchedulePanel(taskType, capturedGeneration);
         // c5/I-1：审核页签同样只挂 EXPERT_DISCOVERY；其他任务隐藏并作废旧响应。
         if (typeof initDiscoveryReview === "function") initDiscoveryReview(taskType, capturedGeneration);
+        if (typeof apvInit === "function") apvInit(taskType, capturedGeneration);
 
     // 启动进度轮询（每 1s）—— 连续模式改由 GET /pipeline 轮询，绝不用旧 task 记录冒充流水线状态。
     const progressTimer = pipelineMode ? null : setInterval(async () => {
@@ -2398,6 +2399,8 @@ function closeTaskModal() {
     resetDiscoverySchedulePanel();
     // c5/I-3：关闭只停本弹窗轮询与在途审核请求；后台审核任务继续（不发送取消）。
     if (typeof resetDiscoveryReviewPanel === "function") resetDiscoveryReviewPanel();
+    if (typeof apvDispose === "function") apvDispose();
+    if (typeof apvLaunchSequence !== "undefined") apvLaunchSequence += 1;
     $("#taskProgressModal").hidden = true;
     document.body.classList.remove("modal-open");
     currentTaskModal = null;
@@ -2789,6 +2792,7 @@ function selectDiscoveryReviewTab(name, options) {
     }
     discoveryReviewBumpAll();
     discoveryReviewState.tab = name;
+    if (typeof apvSetVisible === "function") apvSetVisible(name === "pipeline");
     const buttons = discoveryReviewTabButtons();
     const panes = discoveryReviewPanes();
     DISCOVERY_REVIEW_TABS.forEach(function (key) {
@@ -4149,6 +4153,7 @@ async function handleCancelTask() {
             : "确定要暂停深度发现吗？人工暂停后不会自动恢复。")
         : "确定要取消正在执行的任务吗？";
     if (!confirm(confirmText)) return;
+    if (taskType === "EXPERT_DISCOVERY" && typeof apvSuspend === "function") apvSuspend();
     const cancelBtn = $("#taskModalCancelBtn");
     const generation = currentTaskModal.generation;
     if (cancelBtn) {
@@ -4185,6 +4190,10 @@ async function handleCancelTask() {
 
 function renderRunList(runs, taskType, generation) {
     if (!isCurrentTaskModal(taskType, generation)) return;
+    if (taskType === "EXPERT_DISCOVERY") {
+        apvReceiveRuns(runs, taskType, generation);
+        return;
+    }
     const runBody = $("#taskModalRunBody");
     if (!runBody) return;
     if (currentTaskModal) {
@@ -4207,6 +4216,7 @@ function renderRunList(runs, taskType, generation) {
 
 function updateExpandedFromCache(taskType, generation) {
     if (!isCurrentTaskModal(taskType, generation)) return;
+    if (taskType === "EXPERT_DISCOVERY") return;
     const expandedExecId = currentTaskModal?.expandedExecutionId;
     if (expandedExecId == null) return;
     const detailRow = document.getElementById(`detail-row-${expandedExecId}`);
@@ -4336,6 +4346,10 @@ function updateTaskModalFromProgress(progress, generation) {
 }
 
 function updateTaskModalLogs(executionId, logs) {
+    if (currentTaskModal?.taskType === "EXPERT_DISCOVERY") {
+        apvCollectionLogs(executionId, logs);
+        return;
+    }
     // 刷新第一层执行行的内嵌批次表
     const batchBody = document.getElementById(`batch-body-${executionId}`);
     if (!batchBody) return;
@@ -9568,9 +9582,9 @@ const taskLaunchConfigs = {
          * I-7/S-2（c3）：来源列表 10 秒超时；加载失败时留在配置区显示“加载失败…请重新打开重试”
          * 且按钮禁用（不另造重试组件），绝不按空列表静默启动所有默认来源。
          */
-        preload: async () => {
+        preload: async (generation) => {
             try {
-                await loadDiscoverySources();
+                await Promise.all([loadDiscoverySources(generation), apvLoadCapabilities(generation)]);
             } catch (e) {
                 return { desc: e.message, canRun: false };
             }
@@ -9653,6 +9667,12 @@ async function openTaskLaunchModal(taskType) {
         openBatchSendTaskModal();
         return;
     }
+    const launchSequence = ++apvLaunchSequence;
+    if (typeof apvDispose === "function") apvDispose();
+    stopTaskModalPolling();
+    currentTaskModal = createTaskModalContext(taskType, config.title, config.btnId, "CONFIG");
+    const capturedGeneration = currentTaskModal.generation;
+    if (typeof apvInit === "function") apvInit(taskType, capturedGeneration);
 
     const modal = $("#taskProgressModal");
     $("#taskModalTitle").textContent = config.title;
@@ -9677,7 +9697,9 @@ async function openTaskLaunchModal(taskType) {
         let info = null;
         try {
             info = await fetchDiscoveryPipelineInfo();
+            if (launchSequence !== apvLaunchSequence || !isCurrentTaskModal(taskType, capturedGeneration)) return;
         } catch (e) {
+            if (launchSequence !== apvLaunchSequence || !isCurrentTaskModal(taskType, capturedGeneration)) return;
             // 修复 V-1：配置区此时还藏在未展开的弹窗里（#taskLaunchDesc 不可见），
             // 因此失败必须同时落到**页面级**可见状态条，否则操作端只看到“点击无反应”。
             $("#taskLaunchDesc").textContent = "加载失败：" + e.message + "；请重新打开弹窗重试";
@@ -9700,7 +9722,8 @@ async function openTaskLaunchModal(taskType) {
         $("#taskLaunchDesc").textContent = "正在准备任务信息...";
         runBtn.disabled = true;
         try {
-            pre = await config.preload();
+            pre = await config.preload(capturedGeneration);
+            if (launchSequence !== apvLaunchSequence || !isCurrentTaskModal(taskType, capturedGeneration)) return;
             $("#taskLaunchDesc").textContent = pre.desc;
             runBtn.disabled = !pre.canRun;
             if (pre.filters && config.showFilters) {
@@ -9709,6 +9732,7 @@ async function openTaskLaunchModal(taskType) {
                 bindFilterToggleEvents();
             }
         } catch (e) {
+            if (launchSequence !== apvLaunchSequence || !isCurrentTaskModal(taskType, capturedGeneration)) return;
             $("#taskLaunchDesc").textContent = "加载任务信息失败: " + e.message;
             runBtn.disabled = true;
             return;
@@ -9757,16 +9781,15 @@ async function openTaskLaunchModal(taskType) {
         }
     };
 
-    $("#taskModalRunBody").innerHTML = `<tr><td colspan="${taskType === "EXPERT_DISCOVERY" ? 9 : 8}" class="muted" style="text-align:center;padding:12px;">正在加载最近执行记录...</td></tr>`;
+    $("#taskModalRunBody").innerHTML = taskType === "EXPERT_DISCOVERY"
+        ? apvEmpty(11, "正在加载最近执行记录…")
+        : `<tr><td colspan="8" class="muted" style="text-align:center;padding:12px;">正在加载最近执行记录...</td></tr>`;
     $("#taskModalErrors").hidden = true;
     $("#taskModalErrorContent").textContent = "";
 
     modal.hidden = false;
     document.body.classList.add("modal-open");
 
-    // Initialize currentTaskModal structure to fetch logs
-    currentTaskModal = createTaskModalContext(taskType, config.title, config.btnId, "CONFIG");
-    const capturedGeneration = currentTaskModal.generation;
 
     // c4/I-2：设置面板跟随刚建立的弹窗代次（其他任务立即隐藏并作废旧响应）。
     initDiscoverySchedulePanel(taskType, capturedGeneration);
@@ -10039,11 +10062,12 @@ async function executePromoteRaw() {
  * I-7（c3）：来源列表的加载结果必须可区分「没选来源」与「没加载成功」——
  * 失败时清空残留并记录原因，启动入口据此拒绝按空列表意外启动所有默认来源。
  */
-async function loadDiscoverySources() {
+async function loadDiscoverySources(generation) {
     discoverySources.status = "loading";
     discoverySources.error = null;
     try {
         const sources = await api("/api/expert-discovery/sources", { timeoutMs: DISCOVERY_SOURCE_TIMEOUT_MS });
+        if (generation != null && !isCurrentTaskModal("EXPERT_DISCOVERY", generation)) return sources;
         const container = $("#taskLaunchSources");
         if (container) {
             container.innerHTML = sources.map(s => `
@@ -10060,6 +10084,7 @@ async function loadDiscoverySources() {
         discoverySources.items = sources;
         return sources;
     } catch (e) {
+        if (generation != null && !isCurrentTaskModal("EXPERT_DISCOVERY", generation)) throw e;
         discoverySources.status = "error";
         discoverySources.error = e.message || "未知原因";
         discoverySources.items = [];
@@ -10081,6 +10106,8 @@ async function executeDiscover() {
     const keywords = ($("#taskLaunchKeywordInput")?.value || "").trim();
     const selectedSources = getSelectedSources();
     const includeRawScan = $("#taskLaunchIncludeRawScan")?.checked === true;
+    const apolloAssist = $("#taskLaunchApolloAssist")?.checked === true;
+    if (typeof apvCanLaunch === "function" && !apvCanLaunch(apolloAssist)) return;
     if (discoverySources.status !== "ready") {
         // I-7：来源加载失败时禁止按空列表意外启动所有默认来源。
         showStatus("来源列表未加载成功，请重新打开弹窗后重试", "error");
@@ -10105,7 +10132,7 @@ async function executeDiscover() {
     });
     const capturedGeneration = currentTaskModal?.generation;
     try {
-        const response = await postDiscoveryLaunch(keywords, selectedSources, includeRawScan, continuous);
+        const response = await postDiscoveryLaunch(keywords, selectedSources, includeRawScan, continuous, apolloAssist);
         if (response && response.mode === "CONTINUOUS") {
             // I-2：202 只表示已受理 —— 不发完成通知、不据 202 绑定任何历史执行，
             // 也不交给旧 task-progress watcher（窗口终态不是流水线结束）。
@@ -10141,20 +10168,21 @@ async function executeDiscover() {
 }
 
 /** I-7（c3）：只有新模式（连续）的 POST 有 15 秒超时；旧模式耗时请求沿用原机制。 */
-async function postDiscoveryLaunch(keywords, selectedSources, includeRawScan, continuous) {
+async function postDiscoveryLaunch(keywords, selectedSources, includeRawScan, continuous, apolloAssist = false) {
     const timeout = continuous ? { timeoutMs: PIPELINE_LAUNCH_TIMEOUT_MS } : {};
     if (keywords) {
         const params = new URLSearchParams();
         keywords.split(",").map(k => k.trim()).filter(k => k).forEach(k => params.append("keywords", k));
         if (selectedSources.length > 0) selectedSources.forEach(s => params.append("sources", s));
         if (includeRawScan) params.append("includeRawScan", "true");
+        params.append("apolloAssist", String(apolloAssist));
         return await api(`/api/expert-discovery/run/by-keyword?${params}`, { method: "POST", ...timeout });
     }
     const params = new URLSearchParams();
     if (includeRawScan) params.append("includeRawScan", "true");
     const query = params.toString();
     const url = query ? `/api/expert-discovery/run?${query}` : "/api/expert-discovery/run";
-    const body = selectedSources.length > 0 ? { sources: selectedSources } : {};
+    const body = { ...(selectedSources.length > 0 ? { sources: selectedSources } : {}), apolloAssist };
     return await api(url, {
         method: "POST",
         body: JSON.stringify(body),
@@ -26715,3 +26743,610 @@ document.addEventListener("DOMContentLoaded", function() {
 initContactDetailsLayout();
 initMailboxGroupPush();
 bootstrap();
+
+// apollo-verification-ui:start
+// S-1–S-8: read-only ledger views, scoped to one modal generation and execution.
+let apvState = null;
+let apvOriginalHead = null;
+let apvLaunchSequence = 0;
+const APV_PATH = "/api/expert-discovery/verification";
+const APV_TABS = ["batches", "records", "collection"];
+const APV_COUNT_KEYS = ["profiles", "autoAdmitted", "directAdmitted", "apolloAdmitted", "clear", "unclear", "pending", "errors", "queued"];
+
+function apvEmpty(columns, message) {
+    return `<tr><td class="apv-empty" colspan="${columns}">${escapeHtml(message)}</td></tr>`;
+}
+
+function apvNumber(value) {
+    return value == null ? "未记录" : escapeHtml(value);
+}
+
+function apvTime(value) {
+    return value == null ? "未记录" : escapeHtml(formatBeijingInstant(value));
+}
+
+function apvButton(action, text, disabled = false, extra = "") {
+    return `<button class="apv-link" type="button" data-action="${action}"${disabled ? " disabled" : ""}${extra}>${escapeHtml(text)}</button>`;
+}
+
+function apvPatch(element, html) {
+    if (!element || element.__apvHtml === html) return;
+    const active = document.activeElement;
+    const action = element.contains(active) ? active?.dataset?.action : null;
+    const item = active?.dataset?.itemId;
+    const batch = active?.dataset?.batch;
+    element.innerHTML = html;
+    element.__apvHtml = html;
+    if (action) element.querySelector(`[data-action="${action}"]${item ? `[data-item-id="${item}"]` : ""}${batch ? `[data-batch="${batch}"]` : ""}`)?.focus();
+}
+
+function apvSuspend() {
+    const state = apvState;
+    if (!state) return;
+    state.filterSequence += 1;
+    clearTimeout(state.timer);
+    clearTimeout(state.searchTimer);
+    state.timer = null;
+    state.searchTimer = null;
+    state.controllers.forEach(controller => controller.abort());
+    state.controllers.clear();
+    state.refreshing = false;
+}
+
+function apvDispose() {
+    apvSuspend();
+    const host = $("#discoveryVerificationLogHost");
+    if (host && apvState) {
+        ["click", "change", "input", "keydown"].forEach(type => host.removeEventListener(type, apvEvent));
+    }
+    if (host) host.classList.remove("apv-logs");
+    const head = $("#taskModalRunHead");
+    if (head && apvOriginalHead != null) head.innerHTML = apvOriginalHead;
+    const table = head?.closest("table");
+    if (table) table.classList.remove("apv-runs");
+    const body = $("#taskModalRunBody");
+    if (body) {
+        if (apvState) body.innerHTML = "";
+        body.__lastHtml = null; body.__apvHtml = null;
+    }
+    const option = $("#taskLaunchApolloRow");
+    if (option) option.hidden = true;
+    apvState = null;
+}
+
+function apvInit(taskType, generation) {
+    apvDispose();
+    if (taskType !== "EXPERT_DISCOVERY") return;
+    const host = $("#discoveryVerificationLogHost");
+    const head = $("#taskModalRunHead");
+    if (!host || !head) return;
+    if (apvOriginalHead == null) apvOriginalHead = head.innerHTML;
+    head.innerHTML = '<tr><th class="apv-arrow-cell"></th>' + ["开始时间", "触发", "状态", "档案数", "自动准入", "其中 Apollo", "已明确", "未明确", "下载量", "耗时"].map(label => `<th>${label}</th>`).join("") + '</tr>';
+    host.classList.add("apv-logs");
+    head.closest("table").classList.add("apv-runs");
+    apvState = { taskType, generation, executionId: null, filterSequence: 0, visible: true,
+        runs: [], summaries: new Map(), controllers: new Set(), timer: null, refreshing: false,
+        tab: "batches", route: "ALL", result: "ALL", q: "", batchNumber: null,
+        batchPage: 0, recordPage: 0, batches: null, records: null, pageKey: null,
+        openBatches: new Set(), openEvidence: new Set(), evidence: new Map(), error: null,
+        capability: null, capabilityStatus: "loading", collectionError: null };
+    ["click", "change", "input", "keydown"].forEach(type => host.addEventListener(type, apvEvent));
+    const option = $("#taskLaunchApolloRow");
+    const checkbox = $("#taskLaunchApolloAssist");
+    if (option) option.hidden = false;
+    if (checkbox) { checkbox.disabled = true; checkbox.checked = false; }
+    const hint = $("#taskLaunchApolloHint");
+    if (hint) hint.textContent = "正在读取资格核验能力…";
+    apvPatch($("#taskModalRunBody"), apvEmpty(11, "正在加载最近执行记录…"));
+}
+
+function apvToken() {
+    const s = apvState;
+    return s && { taskType: s.taskType, generation: s.generation, executionId: s.executionId, filterSequence: s.filterSequence };
+}
+
+function apvIsCurrent(token) {
+    const s = apvState;
+    return !!(s && token && s.visible && isCurrentTaskModal(token.taskType, token.generation)
+        && s.taskType === token.taskType && s.generation === token.generation
+        && s.executionId === token.executionId && s.filterSequence === token.filterSequence);
+}
+
+async function apvGet(path, token) {
+    if (!apvIsCurrent(token)) return null;
+    const s = apvState;
+    const controller = new AbortController();
+    s.controllers.add(controller);
+    try {
+        const data = await api(path, { signal: controller.signal });
+        return apvIsCurrent(token) ? data : null;
+    } finally {
+        s.controllers.delete(controller);
+    }
+}
+
+async function apvLoadCapabilities(generation) {
+    const token = apvToken();
+    if (!token || token.generation !== generation) return;
+    try {
+        const capability = await apvGet(APV_PATH + "/capabilities", token);
+        if (!capability || !apvIsCurrent(token)) return;
+        apvState.capability = capability;
+        apvState.capabilityStatus = "ready";
+        const checkbox = $("#taskLaunchApolloAssist");
+        checkbox.disabled = !capability.enabled || !capability.ready;
+        checkbox.checked = capability.enabled && capability.ready && capability.apolloDefault === true;
+        const reasons = (capability.reasonCodes || []).join("、");
+        $("#taskLaunchApolloHint").textContent = !capability.enabled ? "资格核验未启用"
+            : !capability.ready ? "Apollo 辅助核验不可用：" + reasons
+            : "已有可靠证据足够的直接准入；其余进入辅助核验。确认本人后，资格结论分别标记为「已明确」或「未明确」。";
+    } catch (error) {
+        if (!apvIsCurrent(token)) return;
+        apvState.capabilityStatus = "error";
+        $("#taskLaunchApolloHint").textContent = "资格核验能力读取失败：" + error.message + "；请重新打开弹窗重试";
+        throw error;
+    }
+}
+
+function apvCanLaunch(requested) {
+    const s = apvState;
+    if (!s || s.capabilityStatus !== "ready" || (requested && (!s.capability?.enabled || !s.capability?.ready))) {
+        showStatus("资格核验能力未就绪，请重新打开弹窗检查配置", "error");
+        return false;
+    }
+    return true;
+}
+
+function apvSetVisible(visible) {
+    if (!apvState) return;
+    apvSuspend();
+    apvState.visible = visible;
+    if (visible) apvRefresh();
+}
+
+function apvReceiveRuns(runs, taskType, generation) {
+    if (!apvState || apvState.generation !== generation) apvInit(taskType, generation);
+    const s = apvState;
+    if (!s || !isCurrentTaskModal(taskType, generation)) return;
+    s.runs = runs.filter(run => Number.isSafeInteger(Number(run.executionId)) && Number(run.executionId) > 0);
+    currentTaskModal.runStatusByExecutionId = Object.fromEntries(s.runs.map(run => [run.executionId, run.status]));
+    currentTaskModal.runTrafficByExecutionId = Object.fromEntries(s.runs.map(run => [run.executionId, run.traffic || null]));
+    let requiresRefresh = s.runs.some(run => {
+        const summary = s.summaries.get(Number(run.executionId));
+        return !summary || summary.collectionStatus !== run.status;
+    });
+    if (currentTaskModal.expandedExecutionId != null && s.executionId !== currentTaskModal.expandedExecutionId) {
+        apvSuspend();
+        s.executionId = currentTaskModal.expandedExecutionId;
+        s.batches = null; s.records = null; s.pageKey = null;
+        requiresRefresh = true;
+    }
+    if (!s.visible) return;
+    apvRenderRuns();
+    if (requiresRefresh) apvRefresh();
+}
+
+function apvRunHtml(run, summary) {
+    const s = apvState;
+    const id = Number(run.executionId);
+    const expanded = s.executionId === id;
+    const count = key => summary ? apvNumber(summary.counts?.[key]) : s.error ? "读取失败" : "加载中…";
+    const collection = { RUNNING: "运行中", CANCELLING: "取消中", SUCCESS: "成功", PARTIAL_SUCCESS: "部分成功", CANCELLED: "已取消", FAILED: "失败" };
+    const statusClass = run.status === "SUCCESS" ? "ok" : run.status === "FAILED" ? "error" : ["RUNNING", "CANCELLING"].includes(run.status) ? "" : "warn";
+    const lifecycle = !summary ? (s.error ? "统计读取失败" : "核验统计加载中…") : summary.coverage === "NOT_RECORDED" ? "核验未记录"
+        : summary.lifecycle === "COMPLETED" ? "核验已结束" : summary.lifecycle === "COLLECTING" ? "核验等待采集" : "核验中";
+    return `<tr class="run-row apv-run" data-execution-id="${id}"><td class="apv-arrow-cell">${apvButton("toggle-run", expanded ? "▼" : "▶", false, ` aria-expanded="${expanded}" aria-controls="detail-row-${id}" aria-label="${expanded ? "收起" : "展开"}执行记录"`)}</td>
+        <td>${escapeHtml(run.startedAt)}</td><td>${escapeHtml(run.triggerType === "SCHEDULED" ? "定时" : run.triggerType === "MANUAL" ? "手动" : run.triggerType)}</td>
+        <td><span class="badge ${statusClass}">${escapeHtml(collection[run.status] || run.status)}</span><small class="apv-small apv-block">${summary?.mode === "AUDIT" ? "影子核验建议 · " : ""}${lifecycle}</small></td>
+        <td>${count("profiles")}</td><td class="apv-number">${count("autoAdmitted")}</td><td>${count("apolloAdmitted")}</td><td class="apv-green">${count("clear")}</td><td class="apv-amber">${count("unclear")}</td>
+        <td>${run.traffic == null ? "未记录" : escapeHtml(formatFileSize(run.traffic.totalBytes))}</td><td>${run.durationSeconds == null ? "—" : escapeHtml(run.durationSeconds + "秒")}</td></tr>`;
+}
+
+function apvRenderRuns() {
+    const s = apvState;
+    const body = $("#taskModalRunBody");
+    if (!s || !body || !s.visible) return;
+    const alert = $("#discoveryVerificationLogHost").querySelector(":scope > .apv-alert");
+    if (alert) alert.remove();
+    if (s.error && s.executionId == null) $("#discoveryVerificationLogHost").insertAdjacentHTML("beforeend", apvAlert(s.error, s.summaries.values().next().value?.asOf));
+    if (!s.runs.length) { apvPatch(body, apvEmpty(11, "暂无执行记录")); return; }
+    body.querySelectorAll(".run-row").forEach(row => {
+        if (!s.runs.some(run => String(run.executionId) === row.dataset.executionId)) row.remove();
+    });
+    if (!body.querySelector(".run-row")) body.innerHTML = "";
+    s.runs.forEach(run => {
+        const html = apvRunHtml(run, s.summaries.get(Number(run.executionId)));
+        const row = body.querySelector(`.run-row[data-execution-id="${Number(run.executionId)}"]`);
+        if (!row) body.insertAdjacentHTML("beforeend", html);
+        else if (row.__apvHtml !== html) {
+            const focused = row.contains(document.activeElement);
+            row.outerHTML = html;
+            if (focused) body.querySelector(`.run-row[data-execution-id="${Number(run.executionId)}"] button`)?.focus();
+        }
+        const rendered = body.querySelector(`.run-row[data-execution-id="${Number(run.executionId)}"]`);
+        rendered.__apvHtml = html;
+    });
+    body.querySelectorAll(".run-detail-row").forEach(row => {
+        if (row.id !== `detail-row-${s.executionId}`) row.remove();
+    });
+    if (s.executionId != null && !document.getElementById(`detail-row-${s.executionId}`)) {
+        const row = body.querySelector(`.run-row[data-execution-id="${s.executionId}"]`);
+        if (row) row.insertAdjacentHTML("afterend", apvDetailHtml(s.executionId));
+    }
+    let cursor = body.firstElementChild;
+    s.runs.forEach(run => {
+        const row = body.querySelector(`.run-row[data-execution-id="${Number(run.executionId)}"]`);
+        if (row !== cursor) body.insertBefore(row, cursor);
+        cursor = row.nextElementSibling;
+        if (Number(run.executionId) === s.executionId) {
+            const detail = document.getElementById(`detail-row-${s.executionId}`);
+            if (detail) {
+                if (detail !== cursor) body.insertBefore(detail, cursor);
+                cursor = detail.nextElementSibling;
+            }
+        }
+    });
+    apvRenderDetail();
+}
+
+function apvDetailHtml(id) {
+    const tabs = APV_TABS.map((tab, i) => `<button class="apv-subtab" type="button" role="tab" id="apv-tab-${tab}-${id}" aria-controls="apv-${tab}-${id}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}" data-action="tab-${tab}">${["准入批次", "逐条核验", "采集日志"][i]}</button>`).join("");
+    return `<tr class="run-detail-row apv-run-detail" id="detail-row-${id}"><td colspan="11">
+        <div class="apv-summary" aria-live="polite"></div><nav class="apv-subtabs" role="tablist" aria-label="核验日志">${tabs}</nav>
+        <section class="apv-inner" role="tabpanel" id="apv-batches-${id}" aria-labelledby="apv-tab-batches-${id}"><p class="apv-inner-note">按本次激活档案每 100 条分批；与论文采集批次独立。理由可能一条档案多项命中。</p>
+        <div class="apv-scrollarea"><table class="data-table compact apv-batches"><thead><tr>${["批次", "本批档案", "自动准入", "直接", "Apollo", "已明确", "未明确", "待核验", "错误", "排队", "累计档案", "原因", "时间"].map(x => `<th>${x}</th>`).join("")}</tr></thead><tbody>${apvEmpty(13, "加载中…")}</tbody><tfoot></tfoot></table></div>${apvPaginationHtml("batch")}</section>
+        <section class="apv-inner" role="tabpanel" id="apv-records-${id}" aria-labelledby="apv-tab-records-${id}" hidden><div class="apv-toolbar">
+        <label>路径<select data-filter="route" aria-label="核验路径">${[["ALL", "全部"], ["DIRECT", "直接准入"], ["APOLLO", "Apollo 辅助"]].map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}</select></label>
+        <label>结果<select data-filter="result" aria-label="核验结果">${[["ALL", "全部"], ["CLEAR", "已明确"], ["UNCLEAR", "未明确"], ["PENDING", "待核验"], ["ERROR", "错误"], ["QUEUED", "排队/核验中"], ["PROTECTED", "保护跳过"]].map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}</select></label>
+        <label>搜索<input type="search" data-filter="q" maxlength="100" placeholder="姓名 / 邮箱 / 机构" aria-label="搜索核验档案"></label><button class="button small secondary" type="button" data-action="clear-filters">清除筛选</button><span class="apv-count"></span></div>
+        <div class="apv-scrollarea"><table class="data-table compact apv-records"><thead><tr>${["姓名 / 邮箱", "机构", "核验路径", "本次结论", "缺失信息 / 原因", "当前审核 / 同步", "更新时间", "证据"].map(x => `<th>${x}</th>`).join("")}</tr></thead><tbody>${apvEmpty(8, "加载中…")}</tbody></table></div>${apvPaginationHtml("record")}</section>
+        <section class="apv-inner" role="tabpanel" id="apv-collection-${id}" aria-labelledby="apv-tab-collection-${id}" hidden><p class="apv-inner-note">原采集统计：论文/记录处理与 RAW 收录，不等于资格准入。</p><div class="apv-scrollarea"><table class="data-table compact"><thead><tr>${["批次", "本批处理", "收录", "未收录", "累计进度", "原因", "时间"].map(x => `<th>${x}</th>`).join("")}</tr></thead><tbody id="batch-body-${id}">${apvEmpty(7, "加载中…")}</tbody></table></div></section>
+        ${apvTrafficHtml(id)}<p class="apv-footnote">按本次核验结论统计；当前审核状态见逐条详情。自动准入不代表已发信。未明确表示资格缺证，待核验表示尚未获自动准入。采集取消/暂停后，已入队的学术补全与资格核验可继续。</p></td></tr>`;
+}
+
+function apvPaginationHtml(prefix) {
+    return `<div class="apv-pagination"><button class="button small secondary" type="button" data-action="${prefix}-prev" disabled>上一页</button><span></span><button class="button small secondary" type="button" data-action="${prefix}-next" disabled>下一页</button></div>`;
+}
+
+function apvSummaryHtml(summary) {
+    if (!summary) return '<p class="apv-small">核验统计加载中…</p>';
+    const c = summary.counts;
+    const absent = summary.coverage !== "RECORDED" || c == null;
+    const n = key => apvNumber(c?.[key]);
+    const link = (action, key, label = "") => apvButton("filter-" + action, label + n(key), absent);
+    return `${summary.mode === "AUDIT" ? `<p class="apv-small">影子核验建议：建议准入 ${apvNumber(summary.suggested?.autoAdmitted)}（直接 ${apvNumber(summary.suggested?.directAdmitted)} / Apollo ${apvNumber(summary.suggested?.apolloAdmitted)}）；以下自动准入为实际提交计数。</p>` : ""}
+        <div class="apv-line"><span>自动准入 <strong class="apv-number">${n("autoAdmitted")}</strong></span><span>直接准入 ${link("direct", "directAdmitted")}</span><span>Apollo 准入 ${link("apollo", "apolloAdmitted")}</span></div>
+        <div class="apv-line"><span>已明确 ${link("clear", "clear")}</span><span>未明确 ${link("unclear", "unclear")}</span></div>
+        <div class="apv-state-row">${link("pending", "pending", "待核验 ")}${link("errors", "errors", "错误 ")}${link("queued", "queued", "排队/核验中 ")}${link("protected", "protected", "保护跳过 ")}</div>
+        <p class="apv-small">已准入，候选同步待处理 ${c == null ? "未记录" : apvNumber(c.projectionPending + c.projectionErrors)}（同步错误 ${n("projectionErrors")}） · 收录登记异常 ${n("registrationErrors")} · 统计更新时间 ${apvTime(summary.asOf)}</p>
+        <div class="apv-flow">Apollo：进入辅助核验 ${n("apolloEntered")} → 已查询 ${n("apolloSearched")} → 返回候选 ${n("apolloCandidates")} → 确认本人 ${n("apolloMatched")}；请求 ${n("apolloHttpAttempts")} 次</div>`;
+}
+
+function apvAlert(error, asOf) {
+    return `<div class="apv-alert" role="alert">统计读取失败：${escapeHtml(error)}。${asOf ? `当前显示上次成功结果（${apvTime(asOf)}）。` : "尚无成功结果。"}${apvButton("reload", "重试读取")}</div>`;
+}
+
+function apvRenderDetail() {
+    const s = apvState;
+    if (!s || s.executionId == null) return;
+    const detail = document.getElementById(`detail-row-${s.executionId}`);
+    if (!detail) return;
+    const summary = s.summaries.get(s.executionId);
+    apvPatch(detail.querySelector(".apv-summary"), apvSummaryHtml(summary) + (s.error ? apvAlert(s.error, summary?.asOf) : ""));
+    APV_TABS.forEach(tab => {
+        const button = document.getElementById(`apv-tab-${tab}-${s.executionId}`);
+        const panel = document.getElementById(`apv-${tab}-${s.executionId}`);
+        button.setAttribute("aria-selected", String(s.tab === tab));
+        button.setAttribute("tabindex", s.tab === tab ? "0" : "-1");
+        panel.hidden = s.tab !== tab;
+    });
+    const recordPanel = document.getElementById(`apv-records-${s.executionId}`);
+    ["route", "result", "q"].forEach(key => {
+        const control = recordPanel.querySelector(`[data-filter="${key}"]`);
+        if (control.value !== s[key]) control.value = s[key];
+    });
+    const traffic = detail.querySelector(".apv-traffic");
+    const trafficHtml = apvTrafficHtml(s.executionId);
+    if (traffic && traffic.__apvHtml !== trafficHtml) {
+        const open = traffic.open;
+        traffic.outerHTML = trafficHtml;
+        const replacement = detail.querySelector(".apv-traffic");
+        replacement.open = open;
+        replacement.__apvHtml = trafficHtml;
+    }
+    if (s.tab === "batches") apvRenderBatches();
+    if (s.tab === "records") apvRenderRecords();
+    if (s.tab === "collection") {
+        const cached = currentTaskModal?.batchLogsByExecutionId?.[s.executionId];
+        if (cached) apvCollectionLogs(s.executionId, cached);
+    }
+}
+
+function apvReasonsHtml(reasons) {
+    return (reasons || []).map(reason => `<p>${escapeHtml(reason.label)} · ${apvNumber(reason.count)} 人</p><p class="apv-code">${escapeHtml(reason.code)}</p>`).join("") || '<p>未记录原因</p>';
+}
+
+function apvRenderBatches() {
+    const s = apvState;
+    const panel = document.getElementById(`apv-batches-${s.executionId}`);
+    const page = s.batches;
+    const absent = page?.coverage === "NOT_RECORDED";
+    const rows = page?.items?.map(item => {
+        const c = item.counts;
+        const number = Number(item.batchNumber);
+        const open = s.openBatches.has(number);
+        const control = ` data-batch="${number}" aria-expanded="${open}" aria-controls="apv-batch-detail-${s.executionId}-${number}"`;
+        return `<tr><td>${apvButton("toggle-batch", number, false, control)}</td>${APV_COUNT_KEYS.map(key => `<td>${apvNumber(c[key])}</td>`).join("")}<td>${apvNumber(item.cumulativeProfiles)}</td><td>${apvButton("toggle-batch", `查看全部（${item.reasons.length} 类）`, false, control)}</td><td>${apvTime(item.updatedAt)}</td></tr>
+            <tr class="apv-batch-detail" id="apv-batch-detail-${s.executionId}-${number}"${open ? "" : " hidden"}><td colspan="13"><div class="apv-detail-grid"><div><strong>准入结果</strong><p>自动准入 ${apvNumber(c.autoAdmitted)} · 直接 ${apvNumber(c.directAdmitted)} · Apollo ${apvNumber(c.apolloAdmitted)}</p><p>保护跳过 ${apvNumber(c.protected)}</p></div><div><strong>待核验原因</strong>${apvReasonsHtml(item.reasons)}</div><div><strong>接口与同步异常</strong><p>核验错误 ${apvNumber(c.errors)} · 候选同步待处理 ${apvNumber(c.projectionPending + c.projectionErrors)}（同步错误 ${apvNumber(c.projectionErrors)}）</p>${apvButton("filter-batch", "查看本批档案", false, ` data-batch="${number}"`)}</div></div></td></tr>`;
+    }).join("");
+    apvPatch(panel.querySelector("tbody"), rows || apvEmpty(13, absent ? "未记录" : !page ? (s.error ? "读取失败" : "加载中…") : "暂无记录"));
+    const c = page?.runCounts;
+    apvPatch(panel.querySelector("tfoot"), c ? `<tr><td>本次合计</td>${APV_COUNT_KEYS.map(key => `<td>${apvNumber(c[key])}</td>`).join("")}<td colspan="3">保护跳过 ${apvNumber(c.protected)}</td></tr>` : "");
+    apvPagination(panel, "batch", s.batchPage, page?.totalBatches);
+}
+
+function apvPagination(panel, prefix, page, total) {
+    const pages = total == null ? null : Math.max(1, Math.ceil(total / 20));
+    panel.querySelector(`[data-action="${prefix}-prev"]`).disabled = page <= 0 || pages == null;
+    panel.querySelector(`[data-action="${prefix}-next"]`).disabled = pages == null || page + 1 >= pages;
+    panel.querySelector(".apv-pagination span").textContent = pages == null ? "未记录" : `第 ${page + 1} / ${pages} 页 · 每页 20 条`;
+}
+
+function apvResult(record) {
+    const labels = { DIRECT_CLEAR: "已明确", APOLLO_CLEAR: "已明确", APOLLO_UNCLEAR: "未明确", PENDING: "待核验", ERROR: "错误", QUEUED: "排队/核验中", PROTECTED: "保护跳过" };
+    return labels[record.resultLabel] || record.resultLabel;
+}
+
+function apvRenderRecords() {
+    const s = apvState;
+    const panel = document.getElementById(`apv-records-${s.executionId}`);
+    const page = s.records;
+    panel.querySelector(".apv-count").textContent = `共 ${page?.total == null ? "未记录" : page.total} 条档案${s.batchNumber == null ? "" : ` · 批次 ${s.batchNumber}`}`;
+    const rows = page?.items?.map(record => {
+        const id = Number(record.itemId);
+        const open = s.openEvidence.has(id);
+        const resultClass = ["DIRECT_CLEAR", "APOLLO_CLEAR"].includes(record.resultLabel) ? "ok" : record.resultLabel === "ERROR" ? "error" : "warn";
+        const projection = ["ERROR", "PENDING"].includes(record.projectionState) ? "候选同步待处理（" + record.projectionState + "）" : record.projectionState;
+        return `<tr><td>${escapeHtml(record.name)}<small class="apv-block">${escapeHtml(record.email || "未记录")}</small></td><td>${escapeHtml(record.institution || "未记录")}</td><td>${escapeHtml({ DIRECT: "直接准入", APOLLO: "Apollo 辅助", NONE: "未直接准入" }[record.route] || record.route)}</td><td><span class="badge ${resultClass}">${escapeHtml(apvResult(record))}</span></td><td>${escapeHtml([...(record.missingFields || []), ...(record.reasonCodes || [])].join("、") || "无")}</td><td>${escapeHtml(record.currentAdmissionDecision || "未记录")} / ${escapeHtml(projection)}<small class="apv-block">审核版本 ${apvNumber(record.currentAdmissionRevision)}</small></td><td>${apvTime(record.updatedAt)}</td><td>${apvButton("toggle-evidence", "查看依据", false, ` data-item-id="${id}" aria-expanded="${open}" aria-controls="apv-evidence-${id}"`)}</td></tr>
+            <tr id="apv-evidence-${id}"${open ? "" : " hidden"}><td colspan="8">${open ? apvEvidenceHtml(s.evidence.get(id), record) : ""}</td></tr>`;
+    }).join("");
+    const body = panel.querySelector("tbody");
+    const focused = body.contains(document.activeElement) ? document.activeElement?.dataset?.itemId : null;
+    apvPatch(body, rows || apvEmpty(8, page?.coverage === "NOT_RECORDED" ? "未记录" : !page ? (s.error ? "读取失败" : "加载中…") : "暂无符合筛选的档案"));
+    if (focused) body.querySelector(`[data-item-id="${focused}"]`)?.focus();
+    apvPagination(panel, "record", s.recordPage, page?.total);
+}
+
+function apvSourceHtml(evidence) {
+    const url = String(evidence.sourceUrl || "").trim();
+    const safe = /^https?:\/\//i.test(url);
+    return `<p>来源：${escapeHtml(evidence.provider || "未记录")} · ${escapeHtml(evidence.assertionSource || "UNKNOWN")} · ${escapeHtml({ CURRENT: "当前", HISTORICAL: "历史", UNKNOWN: "时效未知" }[evidence.temporalScope] || "时效未知")}</p>${safe ? `<a class="apv-link" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>` : '<p>未取得可靠证据链接</p>'}<p>采集日期 ${apvTime(evidence.fetchedAt)} · 来源更新 ${apvTime(evidence.sourceUpdatedAt)}</p>`;
+}
+
+function apvEvidenceHtml(detail, record) {
+    if (!detail) return '<div class="apv-evidence">正在读取依据…</div>';
+    if (detail.error) return apvAlert(detail.error, detail.asOf);
+    const fields = detail.evidence || [];
+    const block = (title, matcher, extra = "") => `<div class="apv-evidence-item"><b>${title}</b>${extra}${fields.filter(e => matcher.test(e.field)).map(e => `<p>${escapeHtml(e.field)}：${escapeHtml(e.value)}</p>${e.excerpt ? `<p>${escapeHtml(e.excerpt)}</p>` : ""}${apvSourceHtml(e)}${e.conflicts?.length ? `<p>冲突：${escapeHtml(e.conflicts.join("、"))}</p>` : ""}`).join("") || '<p>未取得可靠证据</p>'}</div>`;
+    const stages = detail.apolloStages || {};
+    const identity = detail.identity ? JSON.stringify(detail.identity) : "未记录";
+    return `<div class="apv-evidence"><div class="apv-evidence-head"><strong>${escapeHtml(record.name)} · 核验依据</strong><button class="button small secondary" type="button" data-action="close-evidence" data-item-id="${Number(record.itemId)}">收起</button></div><div class="apv-evidence-grid">
+        ${block("身份对应", /identity|institution|name|orcid/i, `<p>本次结论 ${escapeHtml(apvResult(record))} · 资格 ${escapeHtml(detail.qualification)}</p><p>原始身份 ${escapeHtml(identity)}</p><p>原任职线索 ${escapeHtml(detail.originalEmployment || "未记录")} · 机构依据 ${escapeHtml(detail.institutionEvidence || "未记录")} · ORCID ${escapeHtml(detail.boundOrcid || "未记录")}</p>`)}
+        ${block("博士学位", /degree|education|doctoral|phd/i)}${block("年龄与当前职称", /age|birth|title|employment|professor/i)}
+        <div class="apv-evidence-item"><b>Apollo 与处理记录</b><p>Apollo person ID：${escapeHtml(detail.apolloPersonId || "未记录")}</p><p>进入辅助 ${apvTime(stages.enteredAt)} · 已查询 ${apvTime(stages.searchedAt)} · 返回候选 ${apvTime(stages.candidateFoundAt)} · 确认本人 ${apvTime(stages.matchedAt)}</p>
+        ${(detail.attempts || []).map(a => `<p>${escapeHtml(a.provider)} / ${escapeHtml(a.queryKind)} · 页 ${apvNumber(a.pageNumber)} · 尝试 ${apvNumber(a.attemptNumber)} · HTTP ${apvNumber(a.httpStatus)} · ${escapeHtml(a.resultCode)} · ${apvTime(a.requestedAt)} → ${apvTime(a.completedAt)}</p>`).join("") || '<p>未记录请求</p>'}${apvReasonsHtml(detail.reasons)}<p>当前审核 ${escapeHtml(record.currentAdmissionDecision || "未记录")} · 候选同步 ${escapeHtml(record.projectionState)} · ${escapeHtml(detail.projectionError || "无同步异常")}</p><p>统计更新时间 ${apvTime(detail.asOf)}</p></div></div></div>`;
+}
+
+function apvTrafficHtml(executionId) {
+    const traffic = apvState?.runs.find(run => Number(run.executionId) === executionId)?.traffic;
+    const size = value => value == null ? "未记录" : escapeHtml(formatFileSize(value));
+    return `<details class="apv-traffic"><summary>HTTP 下载量 ${size(traffic?.totalBytes)} · 展开详情</summary>${traffic ? `<p>元数据 ${size(traffic.metadataBytes)} · 全文 ${size(traffic.fulltextBytes)}</p><p>超限下载 ${apvNumber(traffic.oversizedDownloads)} 次 / ${size(traffic.oversizedBytes)} · 额外排空 ${size(traffic.discardedBytes)}</p><p>来源：${escapeHtml(Object.entries(traffic.bySource || {}).map(([name, bytes]) => name + " " + formatFileSize(bytes)).join("、") || "无")}</p><p>站点：${escapeHtml(Object.entries(traffic.byHost || {}).map(([name, bytes]) => name + " " + formatFileSize(bytes)).join("、") || "无")}</p>` : '<p>本次执行未记录下载量；历史数据无法追溯。</p>'}<p class="apv-small">仅统计采集任务实际读取的响应体；不含 TLS、代理开销、其他应用及 Apollo/ORCID 核验请求流量。</p></details>`;
+}
+
+function apvCollectionHtml(logs) {
+    const batches = new Map();
+    (logs || []).forEach(log => { if (Number(log.batchNumber) > 0) batches.set(Number(log.batchNumber), log); });
+    return Array.from(batches.entries()).sort(([a], [b]) => a - b).map(([, log]) => {
+        let reasons = {};
+        try { reasons = JSON.parse(log.batchRejectReasonsJson || "{}"); } catch (_) { /* Original log is unavailable, not an admission decision. */ }
+        return `<tr><td>${apvNumber(log.batchNumber)}</td><td>${apvNumber(log.batchProcessed)}</td><td>${apvNumber(log.batchPassed)}</td><td>${apvNumber(log.batchRejected)}</td><td>${apvNumber(log.processedCount)} / ${apvNumber(log.totalCount)}（论文/记录）</td><td><details class="apv-rules"><summary>查看全部原因</summary>${Object.entries(reasons).map(([code, count]) => `<p>${escapeHtml(code)}：${apvNumber(count)}</p>`).join("") || '<p>未记录原因</p>'}</details></td><td>${apvTime(log.createdAt)}</td></tr>`;
+    }).join("") || apvEmpty(7, "暂无记录");
+}
+
+function apvCollectionLogs(executionId, logs) {
+    const s = apvState;
+    if (!s || !s.visible || s.executionId !== executionId || !isCurrentTaskModal(s.taskType, s.generation)) return;
+    const body = document.getElementById(`batch-body-${executionId}`);
+    apvPatch(body, apvCollectionHtml(logs));
+}
+
+function apvPageKey() {
+    const s = apvState;
+    return JSON.stringify([s.executionId, s.tab, s.batchPage, s.recordPage, s.route, s.result, s.q, s.batchNumber]);
+}
+
+function apvRecordsPath() {
+    const s = apvState;
+    const params = new URLSearchParams({ route: s.route, result: s.result, q: s.q, page: String(s.recordPage), size: "20" });
+    if (s.batchNumber != null) params.set("batchNumber", String(s.batchNumber));
+    return `${APV_PATH}/executions/${s.executionId}/records?${params}`;
+}
+
+async function apvRefresh() {
+    const s = apvState;
+    const token = apvToken();
+    if (!apvIsCurrent(token) || s.refreshing || !s.runs.length) return;
+    clearTimeout(s.timer); s.timer = null;
+    s.refreshing = true;
+    const key = apvPageKey();
+    const ids = s.runs.map(run => Number(run.executionId));
+    try {
+        const pagePath = token.executionId == null || s.tab === "collection" ? null : s.tab === "batches"
+            ? `${APV_PATH}/executions/${token.executionId}/batches?page=${s.batchPage}&size=20` : apvRecordsPath();
+        const [summaries, page] = await Promise.all([
+            apvGet(APV_PATH + "/summary?executionIds=" + ids.join(","), token),
+            pagePath ? apvGet(pagePath, token) : null
+        ]);
+        if (!apvIsCurrent(token) || summaries == null) return;
+        const selected = summaries.find(row => Number(row.executionId) === token.executionId);
+        if (page && (!selected || page.snapshotVersion !== selected.snapshotVersion)) {
+            s.error = "快照已变化，正在整块刷新；未混合不同版本的统计与明细";
+            apvRenderDetail();
+            s.timer = setTimeout(() => { if (apvIsCurrent(token)) apvRefresh(); }, 5000);
+            return;
+        }
+        const previous = s.summaries.get(token.executionId);
+        if (previous?.snapshotVersion !== selected?.snapshotVersion) s.evidence.clear();
+        summaries.forEach(row => s.summaries.set(Number(row.executionId), row));
+        if (page) { s[s.tab] = page; s.pageKey = key; }
+        s.error = null;
+        apvRenderRuns();
+        if (s.tab === "records") s.openEvidence.forEach(id => { if (s.records?.items.some(row => Number(row.itemId) === id)) apvLoadEvidence(id); });
+        if (s.tab === "collection" && token.executionId != null) await apvLoadCollection(token);
+    } catch (error) {
+        if (!apvIsCurrent(token) || error.name === "AbortError") return;
+        s.error = (error.status ? error.status + " " : "") + error.message;
+        apvRenderRuns();
+    } finally {
+        if (apvIsCurrent(token)) {
+            s.refreshing = false;
+            const active = s.runs.some(run => {
+                const summary = s.summaries.get(Number(run.executionId));
+                return !summary || ["ACTIVE", "COLLECTING"].includes(summary.lifecycle);
+            });
+            if (!s.timer && (active || s.error)) s.timer = setTimeout(() => { if (apvIsCurrent(token)) apvRefresh(); }, 5000);
+        }
+    }
+}
+
+async function apvLoadCollection(token) {
+    try {
+        const logs = await apvGet(`/api/task-progress/${token.taskType}/logs?executionId=${token.executionId}&batchOnly=true`, token);
+        if (!apvIsCurrent(token) || logs == null) return;
+        document.getElementById(`apv-collection-${token.executionId}`)?.querySelector(".apv-alert")?.remove();
+        currentTaskModal.batchLogsByExecutionId[token.executionId] = logs;
+        apvCollectionLogs(token.executionId, logs);
+    } catch (error) {
+        if (!apvIsCurrent(token) || error.name === "AbortError") return;
+        const panel = document.getElementById(`apv-collection-${token.executionId}`);
+        const old = panel.querySelector(".apv-alert");
+        if (old) old.remove();
+        panel.insertAdjacentHTML("beforeend", apvAlert(error.message, apvState.summaries.get(token.executionId)?.asOf));
+    }
+}
+
+async function apvLoadEvidence(itemId) {
+    const s = apvState;
+    const token = apvToken();
+    if (s.evidence.has(itemId)) return;
+    s.evidence.set(itemId, null);
+    try {
+        const detail = await apvGet(`${APV_PATH}/items/${itemId}`, token);
+        if (!apvIsCurrent(token) || !s.openEvidence.has(itemId) || !detail || detail.executionId !== token.executionId) return;
+        if (detail.snapshotVersion !== s.summaries.get(token.executionId)?.snapshotVersion) {
+            s.evidence.delete(itemId);
+            apvRefresh();
+            return;
+        }
+        s.evidence.set(itemId, detail);
+    } catch (error) {
+        if (!apvIsCurrent(token) || error.name === "AbortError") return;
+        s.evidence.set(itemId, { error: error.message, asOf: s.summaries.get(token.executionId)?.asOf });
+    }
+    if (apvIsCurrent(token)) apvRenderRecords();
+}
+
+function apvChangeView() {
+    const s = apvState;
+    apvSuspend();
+    s.batches = null; s.records = null; s.pageKey = null;
+    s.evidence.clear(); s.openEvidence.clear();
+    apvRenderRuns();
+    apvRefresh();
+}
+
+function apvEvent(event) {
+    const s = apvState;
+    if (!s || !s.visible) return;
+    const target = event.target;
+    if (event.type === "keydown") {
+        const tab = target.closest('[role="tab"]');
+        if (!tab) return;
+        let index = APV_TABS.indexOf(s.tab);
+        if (event.key === "ArrowRight") index = (index + 1) % 3;
+        else if (event.key === "ArrowLeft") index = (index + 2) % 3;
+        else if (event.key === "Home") index = 0;
+        else if (event.key === "End") index = 2;
+        else return;
+        event.preventDefault();
+        s.tab = APV_TABS[index];
+        apvChangeView();
+        document.getElementById(`apv-tab-${s.tab}-${s.executionId}`).focus();
+        return;
+    }
+    if (event.type === "input" || event.type === "change") {
+        const key = target.dataset.filter;
+        if (!key || (key === "q" ? event.type !== "input" : event.type !== "change")) return;
+        s[key] = target.value;
+        s.recordPage = 0;
+        apvSuspend();
+        s.records = null; s.openEvidence.clear(); s.evidence.clear();
+        if (key === "q") s.searchTimer = setTimeout(() => { s.searchTimer = null; apvChangeView(); }, 300);
+        else apvChangeView();
+        return;
+    }
+    const button = target.closest("button[data-action]");
+    if (!button) {
+        if (target.closest("button, a, input, select, summary, details")) return;
+        const row = target.closest(".run-row");
+        if (row) apvToggleRun(Number(row.dataset.executionId));
+        return;
+    }
+    event.stopPropagation();
+    if (button.disabled) return;
+    const action = button.dataset.action;
+    if (action === "toggle-run") { apvToggleRun(Number(button.closest(".run-row").dataset.executionId)); return; }
+    if (action === "reload") { s.evidence.clear(); apvSuspend(); apvRefresh(); return; }
+    if (action.startsWith("tab-")) { s.tab = action.slice(4); apvChangeView(); return; }
+    if (action === "toggle-batch") {
+        const number = Number(button.dataset.batch);
+        if (s.openBatches.has(number)) s.openBatches.delete(number); else s.openBatches.add(number);
+        apvRenderBatches();
+        document.getElementById(`apv-batches-${s.executionId}`).querySelector(`[data-batch="${number}"]`)?.focus();
+        return;
+    }
+    if (action === "toggle-evidence" || action === "close-evidence") {
+        const id = Number(button.dataset.itemId);
+        if (action === "close-evidence" || s.openEvidence.has(id)) s.openEvidence.delete(id); else s.openEvidence.add(id);
+        apvRenderRecords();
+        if (!s.openEvidence.has(id)) document.getElementById(`apv-records-${s.executionId}`).querySelector(`[data-action="toggle-evidence"][data-item-id="${id}"]`)?.focus();
+        if (s.openEvidence.has(id)) apvLoadEvidence(id);
+        return;
+    }
+    if (action === "clear-filters" || action.startsWith("filter-")) {
+        s.route = "ALL"; s.result = "ALL"; s.q = ""; s.batchNumber = null; s.recordPage = 0; s.tab = "records";
+        if (action === "filter-direct") s.route = "DIRECT";
+        if (action === "filter-apollo") s.route = "APOLLO";
+        const results = { "filter-clear": "CLEAR", "filter-unclear": "UNCLEAR", "filter-pending": "PENDING", "filter-errors": "ERROR", "filter-queued": "QUEUED", "filter-protected": "PROTECTED" };
+        if (results[action]) s.result = results[action];
+        if (action === "filter-batch") s.batchNumber = Number(button.dataset.batch);
+        apvChangeView();
+        return;
+    }
+    if (["batch-prev", "batch-next", "record-prev", "record-next"].includes(action)) {
+        const key = action.startsWith("batch") ? "batchPage" : "recordPage";
+        s[key] += action.endsWith("next") ? 1 : -1;
+        apvChangeView();
+    }
+}
+
+function apvToggleRun(executionId) {
+    const s = apvState;
+    const previous = s.executionId;
+    s.executionId = previous === executionId ? null : executionId;
+    currentTaskModal.expandedExecutionId = s.executionId;
+    s.tab = "batches"; s.batchPage = 0; s.recordPage = 0; s.route = "ALL"; s.result = "ALL"; s.q = ""; s.batchNumber = null;
+    s.openBatches.clear();
+    apvChangeView();
+}
+// apollo-verification-ui:end

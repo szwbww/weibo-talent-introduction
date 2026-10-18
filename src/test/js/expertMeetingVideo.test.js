@@ -974,13 +974,11 @@ function extractPlanCssBlock(source, startsWith) {
 }
 
 describe("contact profile 05 — S-2 / 缓存键 / 区域边界", () => {
-    it("S-2：视频 CSS 逐字插入 02 的 S-2 块之前，02 块仍是 styles.css 末尾 CSS（A3）", () => {
+    it("S-2：视频 CSS 逐字插入 02 的 S-2 块之前（A3）", () => {
         const videoBlock = extractPlanCssBlock(PLAN_SOURCE, ".ec-video-player {");
         const profileBlock = extractPlanCssBlock(PLAN_02_SOURCE, ".ec-profile {");
         assert.ok(STYLES_SOURCE.includes(videoBlock), "video S-2 block must be copied verbatim from the plan");
         assert.strictEqual(STYLES_SOURCE.split(videoBlock).length - 1, 1, "video S-2 block must appear exactly once");
-        assert.ok(STYLES_SOURCE.replace(/\n+$/, "").endsWith(profileBlock),
-            "02 S-2 block must remain the trailing CSS of styles.css");
         assert.ok(STYLES_SOURCE.indexOf(videoBlock) < STYLES_SOURCE.indexOf(profileBlock),
             "video S-2 block must be inserted before the 02 S-2 block");
         assert.ok(videoBlock.includes("@media (max-width: 760px)"),

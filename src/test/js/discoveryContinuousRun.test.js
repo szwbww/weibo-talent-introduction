@@ -7,6 +7,7 @@ const { describe, it } = require("node:test");
 const staticDir = path.join(__dirname, "..", "..", "main", "resources", "static");
 const appJsSource = fs.readFileSync(path.join(staticDir, "app.js"), "utf-8");
 const html = fs.readFileSync(path.join(staticDir, "index.html"), "utf-8");
+const modalRuntime = fs.readFileSync(path.join(staticDir, "task-modal-runtime.js"), "utf-8");
 
 // vm 沙箱单测以函数为单位抽取源码（与既有 taskModalStateMachine.test.js 同惯例）。
 function extractFn(name) {
@@ -67,6 +68,8 @@ function createSandbox(overrides = {}) {
             CHECK_REPLIES: { label: "检查回复", btnId: "checkRepliesBtn" }
         },
         currentTaskModal: null,
+        apvLaunchSequence: 0,
+        taskModalGenerationSequence: 0,
         confirm: () => true,
         showStatus: (message, level) => statuses.push({ message, level }),
         escapeHtml: (value) => String(value ?? ""),
@@ -153,6 +156,9 @@ function loadSandbox(overrides = {}, fnNames = []) {
         c3Section(),
         c4ScheduleSection(),
         ...fnNames.map(extractFn),
+        extractFn("apvEmpty"),
+        ...["nextTaskModalGeneration", "createTaskModalContext"].map(name =>
+            modalRuntime.match(new RegExp("function\\s+" + name + "\\s*\\([^)]*\\)\\s*\\{[\\s\\S]*?\\n\\}"))[0]),
         epilogue
     ].join("\n");
     vm.runInContext(source, sandbox);
@@ -237,11 +243,13 @@ describe("c3 deep discovery continuous run (frontend)", () => {
             sandbox.__c3.setMode("CONTINUOUS");
             sandbox.$( "#taskLaunchKeywordInput" ).value = " ai , ml ";
             sandbox.$( "#taskLaunchIncludeRawScan" ).checked = true;
+            sandbox.$("#taskLaunchApolloAssist").checked = true;
             sandbox.sourceCheckboxes = [{ value: "OPENALEX" }];
             const keyboardInput = sandbox.$("#taskLaunchKeywordInput");
             sandbox.openTaskModal = () => {
                 // 切视图会重置配置区：冻结后必须仍然用启动前的选择。
                 keyboardInput.value = "";
+                sandbox.$("#taskLaunchApolloAssist").checked = false;
                 sandbox.sourceCheckboxes = [];
                 sandbox.currentTaskModal = {
                     taskType: "EXPERT_DISCOVERY", generation: 1, mode: "PROGRESS",
@@ -264,6 +272,7 @@ describe("c3 deep discovery continuous run (frontend)", () => {
                 "frozen keywords must be submitted, got: " + launch.path);
             assert.ok(launch.path.includes("sources=OPENALEX"), "frozen sources must be submitted");
             assert.ok(launch.path.includes("includeRawScan=true"), "includeRawScan must be explicit");
+            assert.ok(launch.path.includes("apolloAssist=true"), "Apollo selection is frozen before view switching");
             assert.strictEqual(launch.options.timeoutMs, sandbox.__c3.launchTimeoutMs);
             assert.strictEqual(sandbox.notifications.length, 0, "a 202 acceptance is not a completion");
         });

@@ -209,6 +209,28 @@ class DiscoveryVerificationReportingIT {
         assertEquals("APV-FIXTURE-REASON-4",unclear.reasons.first { it.code=="APV-FIXTURE-REASON-4" }.label)
     }
 
+    @Test fun `batch page cumulative timestamps and all reason counts come from activated full run`() {
+        val id = query.records(VerificationReportFilter(3001, batchNumber = 2), 0, 1).items.single().itemId
+        val codes = listOf("IDENTITY_AMBIGUOUS", "APV-FIXTURE-UNKNOWN-" + "X".repeat(1100), "R3", "R4", "R5")
+        val mapper = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper()
+        jdbc.update("UPDATE discovery_verification_item SET reasons_json=?,updated_at='2026-10-19 12:34:56.789' WHERE id=?",
+            mapper.writeValueAsString(codes + codes.first()), id)
+        val before = databaseSnapshot()
+        val page = query.batches(3001, 1, 1)
+        val batch = page.items.single()
+        assertEquals(2, batch.batchNumber)
+        assertEquals(80L, batch.cumulativeProfiles)
+        assertEquals(123L, page.runCounts!!.profiles)
+        assertEquals(java.time.Instant.parse("2026-10-19T12:34:56.789Z"), batch.updatedAt)
+        val all = query.records(VerificationReportFilter(3001, batchNumber = 2), 0, 100)
+        val expected = all.items.flatMap { it.reasonCodes.distinct() }.groupingBy { it }.eachCount().mapValues { it.value.toLong() }
+        assertEquals(expected, batch.reasons.associate { it.code to it.count })
+        assertEquals(codes[1], batch.reasons.single { it.code == codes[1] }.label)
+        assertTrue(batch.reasons.size >= 5)
+        assertEquals(listOf(40L, 80L, 123L), query.batches(3001, 0, 20).items.map { it.cumulativeProfiles })
+        assertEquals(before, databaseSnapshot())
+    }
+
     @Test fun `actual admission history projection registration and audit remain independent`() {
         val first=query.records(VerificationReportFilter(3001),0,1).items.single()
         assertEquals("HOLD",first.currentAdmissionDecision); assertEquals(2L,first.currentAdmissionRevision)
