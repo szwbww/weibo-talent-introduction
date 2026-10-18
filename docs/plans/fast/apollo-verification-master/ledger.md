@@ -10,7 +10,7 @@
 - Finalization repair parent: N/A
 - Started: 2026-10-18T19:18:14.142629+08:00
 - Current child: 01
-- Waiting role: IMPLEMENTER
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -29,7 +29,7 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| 01 | docs/plans/2026-10-18/apollo-01-ledger.md | sha256:72c5e37ba421270d7089a4702b2e019e206c8af4a6f0166882da0d77b86e917a | none | 1 | WAITING_FOR_AGENT | 3efc192faf043badc1ef27bef124a71d3120c4c5 | — | 0 | — | — | — | Preflight complete; acquiring implementer |
+| 01 | docs/plans/2026-10-18/apollo-01-ledger.md | sha256:72c5e37ba421270d7089a4702b2e019e206c8af4a6f0166882da0d77b86e917a | none | 1 | LIGHT_PASS_WITH_NOTES | 3efc192faf043badc1ef27bef124a71d3120c4c5 | 772429192fdab1fd7ac75cb084f08f45aec5c965 | 0 | — | 772429192fdab1fd7ac75cb084f08f45aec5c965 | 045c028426bbca4df579136be507d41a103e9876 | Writer ApolloLedgerImplementer; verifier ApolloLedgerVerifier; O-01 existing Node failures |
 | 02 | docs/plans/2026-10-18/apollo-02-evidence.md | sha256:0dca87e1a9e6b61b247f78e54ebf60e71afde280556c50e6f06a07921d6b4b3f | 01 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 | 03 | docs/plans/2026-10-18/apollo-03-admission.md | sha256:5499d4c166004fb181981d14ef05127386620bcf551bc3cc331478793b4e917c | 01,02 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 | 04 | docs/plans/2026-10-18/apollo-04-worker.md | sha256:8507e21e882539d54f908732dc58095129f9a3f2538f3b4c8b8a003926fa487a | 01,02,03 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
