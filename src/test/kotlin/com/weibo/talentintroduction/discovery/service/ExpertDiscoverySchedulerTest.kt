@@ -83,11 +83,7 @@ class ExpertDiscoverySchedulerTest {
 
         scheduler.scheduleDiscovery()
 
-        Mockito.verify(discoveryService, Mockito.never()).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        Mockito.verify(discoveryService, Mockito.never()).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
         // I-6：抢不到运行槽时没有新 task_execution、不发请求、也不排队补跑。
         Mockito.verify(repository, Mockito.never()).save(Mockito.any(TaskExecution::class.java))
     }
@@ -106,21 +102,13 @@ class ExpertDiscoverySchedulerTest {
                 val execution = invocation.arguments[0] as TaskExecution
                 execution.copy(id = execution.id ?: 1L)
             }
-        Mockito.doReturn(DiscoveryResult("SCHEDULED", DiscoveryStats())).`when`(discoveryService).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        Mockito.doReturn(DiscoveryResult("SCHEDULED", DiscoveryStats())).`when`(discoveryService).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
 
         scheduler.scheduleDiscovery()
 
         Mockito.verify(progressStore).tryStartWithToken(Mockito.anyString(), anyTaskProgress())
         Mockito.verify(repository).save(Mockito.any(TaskExecution::class.java))
-        Mockito.verify(discoveryService).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        Mockito.verify(discoveryService).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
     }
 
     @Test
@@ -132,19 +120,11 @@ class ExpertDiscoverySchedulerTest {
                 val execution = invocation.arguments[0] as TaskExecution
                 execution.copy(id = execution.id ?: 1L)
             }
-        Mockito.doReturn(DiscoveryResult("SCHEDULED", DiscoveryStats())).`when`(discoveryService).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        Mockito.doReturn(DiscoveryResult("SCHEDULED", DiscoveryStats())).`when`(discoveryService).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
 
         scheduler.scheduleDiscovery()
 
-        Mockito.verify(discoveryService).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        Mockito.verify(discoveryService).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
     }
 
     @Test
@@ -172,19 +152,11 @@ class ExpertDiscoverySchedulerTest {
                 val execution = invocation.arguments[0] as TaskExecution
                 execution.copy(id = execution.id ?: 1L)
             }
-        Mockito.doReturn(DiscoveryResult("SCHEDULED", DiscoveryStats())).`when`(discoveryService).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        Mockito.doReturn(DiscoveryResult("SCHEDULED", DiscoveryStats())).`when`(discoveryService).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
 
         scheduler.scheduleDiscovery()
 
-        Mockito.verify(discoveryService).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        Mockito.verify(discoveryService).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
     }
 
     @Test
@@ -196,11 +168,7 @@ class ExpertDiscoverySchedulerTest {
                 val execution = invocation.arguments[0] as TaskExecution
                 execution.copy(id = 99L)
             }
-        Mockito.doReturn(DiscoveryResult("SCHEDULED", DiscoveryStats())).`when`(discoveryService).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        Mockito.doReturn(DiscoveryResult("SCHEDULED", DiscoveryStats())).`when`(discoveryService).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
 
         scheduler.scheduleDiscovery()
 
@@ -229,20 +197,12 @@ class ExpertDiscoverySchedulerTest {
                 val execution = invocation.arguments[0] as TaskExecution
                 execution.copy(id = execution.id ?: 1L)
             }
-        Mockito.doReturn(DiscoveryResult("SCHEDULED", DiscoveryStats())).`when`(discoveryService).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        Mockito.doReturn(DiscoveryResult("SCHEDULED", DiscoveryStats())).`when`(discoveryService).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
 
         scheduler.scheduleDiscovery()
 
         val captor = ArgumentCaptor.forClass(PaperSearchCriteria::class.java)
-        Mockito.verify(discoveryService).discover(
-            captor.capture() ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        Mockito.verify(discoveryService).discover(captor.capture() ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
         assertEquals(com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog.RND_TARGET, captor.value.subjectScope)
     }
 
@@ -281,11 +241,7 @@ class ExpertDiscoverySchedulerTest {
         // 日内多窗口：两次触发都派发，没有「今天已跑一次」闸门。
         Mockito.verify(pipeline, Mockito.times(2)).tick()
         // 新入口绝不同步 discover、也绝不占用进度槽。
-        Mockito.verify(discoveryService, Mockito.never()).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        Mockito.verify(discoveryService, Mockito.never()).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
         Mockito.verify(progressStore, Mockito.never()).tryStartWithToken(Mockito.anyString(), anyTaskProgress())
     }
 
@@ -310,11 +266,7 @@ class ExpertDiscoverySchedulerTest {
             Mockito.anyBoolean()
         )
         Mockito.verify(pipeline, Mockito.never()).resume()
-        Mockito.verify(discoveryService, Mockito.never()).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        Mockito.verify(discoveryService, Mockito.never()).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
     }
 
     @Test
@@ -357,11 +309,7 @@ class ExpertDiscoverySchedulerTest {
 
         scheduler.recoverPipelineTick()
 
-        Mockito.verify(discoveryService, Mockito.never()).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        Mockito.verify(discoveryService, Mockito.never()).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
         Mockito.verify(progressStore, Mockito.never()).tryStartWithToken(Mockito.anyString(), anyTaskProgress())
     }
 
@@ -442,11 +390,7 @@ class ExpertDiscoverySchedulerTest {
         assertEquals(Date.from(at16), nextAfter(task, at13))
         assertEquals(Date.from(at19), nextAfter(task, at16))
         // 保存动作本身绝不启动发现。
-        Mockito.verify(discoveryService, Mockito.never()).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        Mockito.verify(discoveryService, Mockito.never()).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
         val snapshot = scheduler.snapshot()
         assertEquals(DiscoveryScheduleSpec.SOURCE_OVERRIDE, snapshot.source)
         assertEquals(3, snapshot.intervalHours)
@@ -483,11 +427,7 @@ class ExpertDiscoverySchedulerTest {
         val next = taskScheduler.latest.trigger.nextExecutionTime(at10Context())
         assertEquals(Date.from(at19), next)
         assertTrue(next.toInstant().isAfter(Instant.parse("2026-09-29T09:00:00Z")))
-        Mockito.verify(discoveryService, Mockito.never()).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        Mockito.verify(discoveryService, Mockito.never()).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
     }
 
     @Test
@@ -550,11 +490,7 @@ class ExpertDiscoverySchedulerTest {
                 val execution = invocation.arguments[0] as TaskExecution
                 execution.copy(id = execution.id ?: 1L)
             }
-        Mockito.doReturn(DiscoveryResult("SCHEDULED", DiscoveryStats())).`when`(discoveryService).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        Mockito.doReturn(DiscoveryResult("SCHEDULED", DiscoveryStats())).`when`(discoveryService).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
 
         assertTrue(scheduler.reload())
         val stale = taskScheduler.latest.task
@@ -562,20 +498,12 @@ class ExpertDiscoverySchedulerTest {
 
         stale.run()
 
-        Mockito.verify(discoveryService, Mockito.never()).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        Mockito.verify(discoveryService, Mockito.never()).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
         Mockito.verify(progressStore, Mockito.never()).tryStartWithToken(Mockito.anyString(), anyTaskProgress())
 
         // 新代次的回调仍然正常启动。
         taskScheduler.latest.task.run()
-        Mockito.verify(discoveryService).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.eq("SCHEDULED") ?: "SCHEDULED",
-            Mockito.anyBoolean()
-        )
+        Mockito.verify(discoveryService).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.eq("SCHEDULED") ?: "SCHEDULED", Mockito.any<Long>(), Mockito.anyBoolean())
     }
 
     @Test
@@ -588,11 +516,7 @@ class ExpertDiscoverySchedulerTest {
         assertTrue(scheduler.reload())
         taskScheduler.latest.task.run()
 
-        Mockito.verify(discoveryService, Mockito.never()).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        Mockito.verify(discoveryService, Mockito.never()).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
         Mockito.verify(repository, Mockito.never()).save(Mockito.any(TaskExecution::class.java))
     }
 
@@ -607,22 +531,14 @@ class ExpertDiscoverySchedulerTest {
                 val execution = invocation.arguments[0] as TaskExecution
                 execution.copy(id = execution.id ?: 1L)
             }
-        Mockito.doReturn(DiscoveryResult("SCHEDULED", DiscoveryStats())).`when`(discoveryService).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        Mockito.doReturn(DiscoveryResult("SCHEDULED", DiscoveryStats())).`when`(discoveryService).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
 
         assertTrue(scheduler.reload())
         taskScheduler.latest.task.run()
 
         val captor = ArgumentCaptor.forClass(PaperSearchCriteria::class.java)
         val scanCaptor = ArgumentCaptor.forClass(Boolean::class.java)
-        Mockito.verify(discoveryService).discover(
-            captor.capture() ?: PaperSearchCriteria(),
-            Mockito.eq("SCHEDULED") ?: "SCHEDULED",
-            scanCaptor.capture() ?: false
-        )
+        Mockito.verify(discoveryService).discover(captor.capture() ?: PaperSearchCriteria(), Mockito.eq("SCHEDULED") ?: "SCHEDULED", Mockito.any<Long>(), scanCaptor.capture() ?: false)
         val criteria = captor.value
         assertEquals(listOf("CN"), criteria.excludeCountries, "定时发现仍排除中国")
         assertEquals(true, criteria.openAccessOnly)
@@ -651,11 +567,7 @@ class ExpertDiscoverySchedulerTest {
             entered.countDown()
             release.await(10, TimeUnit.SECONDS)
             DiscoveryResult("SCHEDULED", DiscoveryStats())
-        }.`when`(discoveryService).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        }.`when`(discoveryService).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
 
         assertTrue(scheduler.reload())
         val first = taskScheduler.latest
@@ -673,11 +585,7 @@ class ExpertDiscoverySchedulerTest {
         release.countDown()
         runner.join(10_000)
         assertFalse(runner.isAlive, "运行中的发现必须能跑完（cancel(false) 不打断）")
-        Mockito.verify(discoveryService).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        Mockito.verify(discoveryService).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
     }
 
     @Test

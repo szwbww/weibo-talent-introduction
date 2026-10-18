@@ -1059,7 +1059,7 @@ class DiscoveryPipelineServiceTest {
             .thenReturn(QueuedSourcePage("OPENALEX", QueueItemUnit.PAPER, emptyList(), null, true))
         Mockito.`when`(discovery.extractQueuedItem(anyEnvelope(), anyCriteria(), Mockito.anyInt(), Mockito.anyInt()))
             .thenReturn(QueuedItemExtraction.Extracted("{}", true, 0, false, null))
-        Mockito.`when`(discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))
+        Mockito.`when`(discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any(DiscoveryVerificationExecution::class.java) ?: DiscoveryVerificationExecution(42L)))
             .thenReturn(QueuedItemConsumption())
         return discovery
     }
@@ -1462,7 +1462,7 @@ class DiscoveryPipelineServiceTest {
         val unknown = envelope.copy(payloadVersion = 99)
         assertEquals(
             QUEUE_UNKNOWN_PAYLOAD_VERSION,
-            discovery.consumeQueuedItem(unknown, "{}", null).unrecoverableReason
+            discovery.consumeQueuedItem(unknown, "{}", DiscoveryVerificationExecution(null)).unrecoverableReason
         )
         val extraction = discovery.extractQueuedItem(unknown, criteria(), 2, 1_024)
         assertTrue(extraction is QueuedItemExtraction.Failed)
@@ -1560,7 +1560,7 @@ class DiscoveryPipelineServiceTest {
         val stream = streamFor(h)
         stream.cursorState = StreamCursorState.EXHAUSTED
         val job = h.store.seedJob(stream.id, "DOI:x", extractionJson = extractionJson())
-        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))
+        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any(DiscoveryVerificationExecution::class.java) ?: DiscoveryVerificationExecution(42L)))
             .thenReturn(QueuedItemConsumption(identityRepairFailed = true, duplicateExperts = 1))
 
         repeat(4) { round ->
@@ -1584,7 +1584,7 @@ class DiscoveryPipelineServiceTest {
         val stream = streamFor(h)
         stream.cursorState = StreamCursorState.EXHAUSTED
         val job = h.store.seedJob(stream.id, "DOI:x", extractionJson = extractionJson())
-        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))
+        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any(DiscoveryVerificationExecution::class.java) ?: DiscoveryVerificationExecution(42L)))
             .thenReturn(QueuedItemConsumption(registrationFailed = true, personCreated = 1))
 
         repeat(4) { round ->
@@ -1625,8 +1625,7 @@ class DiscoveryPipelineServiceTest {
         assertEquals(0L, h.store.pipeline.indexedExperts, "暂停后不得新增专家")
         assertEquals(PipelineTerminationReason.MANUAL_PAUSE, result.terminationReason)
         assertEquals(DiscoveryTerminalStatus.CANCELLED, result.taskFinalStatus, "人工暂停必须记 CANCELLED")
-        Mockito.verify(h.discovery, Mockito.never())
-            .consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any())
+        Mockito.verify(h.discovery, Mockito.never()).consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any(DiscoveryVerificationExecution::class.java) ?: DiscoveryVerificationExecution(42L))
     }
 
     @Test
@@ -1760,7 +1759,7 @@ class DiscoveryPipelineServiceTest {
         val stream = streamFor(h)
         stream.cursorState = StreamCursorState.EXHAUSTED
         h.store.seedJob(stream.id, "DOI:x", extractionJson = "{}")
-        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))
+        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any(DiscoveryVerificationExecution::class.java) ?: DiscoveryVerificationExecution(42L)))
             .thenReturn(QueuedItemConsumption())
         launch(h)
         val result = runWindow(h)
@@ -1833,7 +1832,7 @@ class DiscoveryPipelineServiceTest {
             val stream = streamFor(h)
             stream.cursorState = StreamCursorState.EXHAUSTED
             h.store.seedJob(stream.id, "DOI:deadline", extractionJson = "{}")
-            Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))
+            Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any(DiscoveryVerificationExecution::class.java) ?: DiscoveryVerificationExecution(42L)))
                 .thenAnswer {
                     // 处理最后一条工作时窗口恰好到点：收尾原因因此是 WINDOW_END，但流水线已经排空。
                     h.clock.current = h.clock.current.plus(Duration.ofMinutes(2))
@@ -1991,7 +1990,7 @@ class DiscoveryPipelineServiceTest {
         val stream = streamFor(h)
         stream.cursorState = StreamCursorState.EXHAUSTED
         h.store.seedJob(stream.id, "DOI:x", extractionJson = extractionJson())
-        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))
+        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any(DiscoveryVerificationExecution::class.java) ?: DiscoveryVerificationExecution(42L)))
             .thenReturn(QueuedItemConsumption(indexedExperts = 1))
         Mockito.`when`(h.discovery.extractQueuedItem(anyEnvelope(), anyCriteria(), Mockito.anyInt(), Mockito.anyInt()))
             .thenThrow(IllegalStateException("已保存的抽取结果不得再次下载"))
@@ -2009,7 +2008,7 @@ class DiscoveryPipelineServiceTest {
         val stream = streamFor(h)
         stream.cursorState = StreamCursorState.EXHAUSTED
         val job = h.store.seedJob(stream.id, "DOI:x", extractionJson = "{}")
-        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))
+        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any(DiscoveryVerificationExecution::class.java) ?: DiscoveryVerificationExecution(42L)))
             .thenReturn(QueuedItemConsumption(rawWriteFailed = true, emailsValid = 1))
 
         launch(h)
@@ -2019,7 +2018,7 @@ class DiscoveryPipelineServiceTest {
         assertEquals(0, first.failedItems)
 
         // 「明确无合格邮箱」可以 SUCCEEDED 但新增 0。
-        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))
+        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any(DiscoveryVerificationExecution::class.java) ?: DiscoveryVerificationExecution(42L)))
             .thenReturn(QueuedItemConsumption())
         h.clock.current = h.store.jobs[job.id]!!.nextAttemptAt
         val second = runWindow(h)
@@ -2037,7 +2036,7 @@ class DiscoveryPipelineServiceTest {
         stubEmailDedup(existingDocId = "existing-doc")
         val envelope = discovery.collectQueuePage("OPENALEX", criteria(), null, 4_096).items.single()
 
-        val consumption = discovery.consumeQueuedItem(envelope, extractionJson(), 42L)
+        val consumption = discovery.consumeQueuedItem(envelope, extractionJson(), DiscoveryVerificationExecution(42L))
 
         assertTrue(consumption.succeeded)
         assertEquals(0, consumption.indexedExperts, "已有专家不得重复计新增")
@@ -2055,7 +2054,7 @@ class DiscoveryPipelineServiceTest {
         stubEmailDedup()
         val envelope = discovery.collectQueuePage("OPENALEX", criteria(), null, 4_096).items.single()
 
-        val consumption = discovery.consumeQueuedItem(envelope, extractionJson(), 7L)
+        val consumption = discovery.consumeQueuedItem(envelope, extractionJson(), DiscoveryVerificationExecution(7L))
 
         assertTrue(consumption.succeeded)
         assertEquals(1, consumption.indexedExperts)
@@ -2077,7 +2076,7 @@ class DiscoveryPipelineServiceTest {
             .enqueue(Mockito.anyString(), Mockito.anyString(), Mockito.any())
         val envelope = discovery.collectQueuePage("OPENALEX", criteria(), null, 4_096).items.single()
 
-        val consumption = discovery.consumeQueuedItem(envelope, extractionJson(), null)
+        val consumption = discovery.consumeQueuedItem(envelope, extractionJson(), DiscoveryVerificationExecution(null))
 
         assertFalse(consumption.succeeded, "补全入队失败不得算成功")
         assertTrue(consumption.enqueueFailed)
@@ -2138,7 +2137,7 @@ class DiscoveryPipelineServiceTest {
         assertEquals(job.payloadBytes, metadataBytes)
 
         stream.cursorState = StreamCursorState.EXHAUSTED
-        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))
+        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any(DiscoveryVerificationExecution::class.java) ?: DiscoveryVerificationExecution(42L)))
             .thenReturn(QueuedItemConsumption())
         launch(h)
         runWindow(h)
@@ -2355,7 +2354,7 @@ class DiscoveryPipelineServiceTest {
         h.store.seedJob(stream.id, "ORDINARY", priority = 0, extractionJson = "{}")
 
         val claimed = Collections.synchronizedList(mutableListOf<String>())
-        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))
+        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any(DiscoveryVerificationExecution::class.java) ?: DiscoveryVerificationExecution(42L)))
             .thenAnswer { invocation ->
                 claimed += invocation.getArgument<QueuedItemEnvelope>(0).itemKey
                 QueuedItemConsumption()
@@ -2402,7 +2401,7 @@ class DiscoveryPipelineServiceTest {
         Mockito.`when`(h.discovery.queueSourceNames(anyCriteria())).thenReturn(listOf("OPENALEX", "ORCID"))
         h.store.seedJob(paperStream.id, "DOI:a", unit = QueueItemUnit.PAPER, extractionJson = "{}")
         h.store.seedJob(recordStream.id, "0000-0002-1825-0097", unit = QueueItemUnit.RECORD, extractionJson = "{}")
-        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))
+        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any(DiscoveryVerificationExecution::class.java) ?: DiscoveryVerificationExecution(42L)))
             .thenReturn(QueuedItemConsumption(indexedExperts = 1))
         runWindow(h)
 
@@ -2423,7 +2422,7 @@ class DiscoveryPipelineServiceTest {
         val stream = streamFor(h)
         stream.cursorState = StreamCursorState.EXHAUSTED
         h.store.seedJob(stream.id, "DOI:x", extractionJson = "{}")
-        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))
+        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any(DiscoveryVerificationExecution::class.java) ?: DiscoveryVerificationExecution(42L)))
             .thenReturn(QueuedItemConsumption())
         launch(h)
         val windowResult = runWindow(h)

@@ -133,7 +133,8 @@ class ExpertDiscoveryService(
      * 05（I-1/I-2/I-3）：发现事实持久化后的统一人物登记刷新接缝。为空（历史单测/未装配）时保持
      * 原行为：只写 ES 事实、不建立人物关系；生产恒由 Spring 注入。
      */
-    private val personRegistrationService: DiscoveryPersonRegistrationService? = null
+    private val personRegistrationService: DiscoveryPersonRegistrationService? = null,
+    private val verificationRegistration: DiscoveryVerificationRegistrationService? = null
 ) {
     private val log = LoggerFactory.getLogger(ExpertDiscoveryService::class.java)
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
@@ -406,15 +407,16 @@ class ExpertDiscoveryService(
         return sources
     }
 
-    @JvmOverloads
+    /** Execution identity is supplied by the task owner, never by the mutable progress slot. */
     fun discover(
         criteria: PaperSearchCriteria,
         triggeredBy: String,
+        executionId: Long?,
         includeRawScan: Boolean = discoveryProperties.includeRawScan
     ): DiscoveryResult {
         val stats = DiscoveryStats()
         val trafficSession = DiscoveryTrafficMeter.newSession()
-        val execId = progressStore.getCurrentExecutionId("EXPERT_DISCOVERY")
+        val execId = executionId
         val sources = resolveEnabledSources(criteria)
         // I-1（09）：启动校验 —— 全局 cap 必须覆盖各启用来源的基础份额，否则直接报配置错误，
         // 不静默饿死后来源，也不把 0 当成无限量。
@@ -429,6 +431,7 @@ class ExpertDiscoveryService(
             "年份=${criteria.publicationYearFrom}-${criteria.publicationYearTo}, " +
             "全局限额: 论文 ${discoveryProperties.maxPapersPerRun} / 作者 ${discoveryProperties.maxAuthorsPerRun}, " +
             "时间预算 ${discoveryProperties.timeBudget}")
+        val verification = verificationRegistration?.begin(execId, criteria) ?: DiscoveryVerificationExecution(execId)
 
         try {
             progressStore.update("EXPERT_DISCOVERY", TaskProgress(
@@ -461,7 +464,7 @@ class ExpertDiscoveryService(
                 val runQuota = allocateSourceQuota(sources, index, criteria.pageSize, papersUsedForGlobalCap(stats))
                 val outcome = DiscoveryTrafficMeter.measure(
                     trafficSession, source.sourceName, DiscoveryTrafficMeter.Category.METADATA
-                ) { discoverFromSource(source, criteria, stats, runQuota, deadline) }
+                ) { discoverFromSource(source, criteria, stats, runQuota, deadline, verification) }
                 log.info("[{}] 本次运行结束: stopReason={}, exhausted={}, resumeCursor={}",
                     source.sourceName, outcome.stopReason, outcome.exhausted,
                     outcome.resumeCursor?.take(50) ?: "null")
@@ -475,11 +478,11 @@ class ExpertDiscoveryService(
             }
 
             DiscoveryTrafficMeter.measure(trafficSession, "ORCID", DiscoveryTrafficMeter.Category.METADATA) {
-                discoverFromOrcid(criteria, stats, deadline)
+                discoverFromOrcid(criteria, stats, deadline, verification)
             }
             // I-1/I-2：其他来源已经耗过的等待时间就是等待时间，回访时不重复睡；这里也可能因取消/超时
             // 而一个请求都不发（保留游标并给真实停止原因）。
-            consumeDeferredRecoveries(deferredRecoveries, criteria, stats, deadline, trafficSession, execId)
+            consumeDeferredRecoveries(deferredRecoveries, criteria, stats, deadline, trafficSession, execId, verification)
             // I-5：本轮结束时清空「仍待执行」的计划时间；轮次与原因保留用于审计。
             clearRetryWait(stats)
             stats.refreshGlobalCounts()
@@ -548,6 +551,8 @@ class ExpertDiscoveryService(
                 details = details, errors = snapshotErrors(stats)
             ), execId)
             throw e
+        } finally {
+            verificationRegistration?.closeInput(verification)
         }
         stats.refreshGlobalCounts()
         val finalElapsed = System.currentTimeMillis() - startTime
@@ -665,12 +670,13 @@ class ExpertDiscoveryService(
         stats: DiscoveryStats,
         runQuota: Int,
         deadline: Instant,
+        verification: DiscoveryVerificationExecution,
         /** I-1/I-3：同轮延迟恢复的入口上下文；null = 首次进入本源（既有行为逐字保持）。 */
         resume: SourceRetryPending? = null
     ): SourceRunOutcome {
         val sourceStats = stats.getOrCreateSourceStats(source.sourceName, source.emailExtractionMethod)
         val sourceStartTime = System.currentTimeMillis()
-        val execId = progressStore.getCurrentExecutionId("EXPERT_DISCOVERY")
+        val execId = verification.executionId
         val sourceLimit = runQuota.coerceAtLeast(0)
         // 运行额度小于本源上限 = 本次是全局 cap 在约束本源，停止原因必须按全局 cap 命名。
         val quotaBoundByGlobalCap = sourceLimit < source.maxPapersPerSource
@@ -948,7 +954,8 @@ class ExpertDiscoveryService(
                 sourceStats.papersSearched++
                 sourcePapersProcessed++
                 consumedInBatch++
-                consumeOutcome(paper, extraction, source, stats, sourceStats, execId).let {
+                consumeOutcome(paper, extraction, source, stats, sourceStats, verification,
+                    envelopeForPaper(source.sourceName, paper, Int.MAX_VALUE).itemKey).let {
                     if (it.identityRepairFailed) identityRepairFailedInPage = true
                     if (it.registrationFailed) personRegistrationFailedInPage = true
                 }
@@ -1101,7 +1108,8 @@ class ExpertDiscoveryService(
         stats: DiscoveryStats,
         deadline: Instant,
         trafficSession: DiscoveryTrafficMeter.Session,
-        execId: Long?
+        execId: Long?,
+        verification: DiscoveryVerificationExecution
     ) {
         if (deferred.isEmpty()) return
         for (round in 1..discoveryProperties.openAlexSearchRecoveryDelays.size) {
@@ -1132,7 +1140,7 @@ class ExpertDiscoveryService(
                 val outcome = DiscoveryTrafficMeter.measure(
                     trafficSession, item.source.sourceName, DiscoveryTrafficMeter.Category.METADATA
                 ) {
-                    discoverFromSource(item.source, criteria, stats, item.runBudget, deadline, resume = item.pending)
+                    discoverFromSource(item.source, criteria, stats, item.runBudget, deadline, verification, resume = item.pending)
                 }
                 log.info("[{}] 恢复回访结束: stopReason={}, exhausted={}, resumeCursor={}",
                     item.source.sourceName, outcome.stopReason, outcome.exhausted,
@@ -1285,12 +1293,13 @@ class ExpertDiscoveryService(
      * 也会前进而不是原地打转；只有所有主题分片遍历完（`nextCursor == null`）才判穷尽，
      * EXHAUSTED 允许下一个扫描周期重开并靠去重避免重复收录。
      */
-    private fun discoverFromOrcid(criteria: PaperSearchCriteria, stats: DiscoveryStats, deadline: Instant): SourceRunOutcome? {
+    private fun discoverFromOrcid(criteria: PaperSearchCriteria, stats: DiscoveryStats, deadline: Instant,
+                                  verification: DiscoveryVerificationExecution): SourceRunOutcome? {
         val orcid = orcidProvider.getIfAvailable() ?: return null
         if (criteria.sources.isNotEmpty() && !criteria.sources.contains(orcid.sourceName)) return null
 
         val sourceStats = stats.getOrCreateSourceStats(orcid.sourceName, "API_FIELD")
-        val execId = progressStore.getCurrentExecutionId("EXPERT_DISCOVERY")
+        val execId = verification.executionId
         val sourceStartTime = System.currentTimeMillis()
 
         val checkpoint = loadSourceCheckpoint(orcid.sourceName, criteria)
@@ -1434,7 +1443,8 @@ class ExpertDiscoveryService(
                     }
                     if (duplicate != null) {
                         sourceStats.duplicates++
-                        val disposition = recordIdentityDuplicate(duplicate, authorEmail, sourceStats, orcid.sourceName, execId)
+                        val disposition = recordIdentityDuplicate(duplicate, authorEmail, sourceStats, orcid.sourceName, execId,
+                            record.orcidId)
                         if (disposition.retryable) identityRepairFailedInPage = true
                         if (disposition.person?.retryable == true) personRegistrationFailedInPage = true
                         continue
@@ -1447,13 +1457,29 @@ class ExpertDiscoveryService(
                     val rejectReasons = if (eligibility.eligible) emptyList() else eligibility.rejectReasons
 
                     val profileMap = toIndexMap(profile, null, esDocId, filterResult, rejectReasons)
+                    val registration = try {
+                        verificationRegistration?.reserve(verification, esDocId, profile, orcid.sourceName, record.orcidId)
+                            ?: DiscoveryRegistration()
+                    } catch (e: DiscoveryRegistrationException) {
+                        sourceStats.failureReasons.merge("VERIFICATION_REGISTRATION_FAILED", 1, Int::plus)
+                        personRegistrationFailedInPage = true
+                        continue
+                    }
+                    if (registration.protected) continue
                     if (!expertIndexWriterService.indexToRaw(esDocId, profileMap)) { sourceStats.rawWriteFailed++; continue }
                     sourceStats.indexed++
                     // I-1（08）：RAW 落库成功后才入队；入队失败不推进本页。
                     enqueueEnrichmentJob(esDocId, orcid.sourceName, execId, sourceStats)
+                    try {
+                        verificationRegistration?.activate(registration)
+                    } catch (e: DiscoveryRegistrationException) {
+                        sourceStats.failureReasons.merge("VERIFICATION_REGISTRATION_FAILED", 1, Int::plus)
+                        personRegistrationFailedInPage = true
+                        continue
+                    }
 
                     // 04（I-1/I-2）：统一准入在 RAW 成功后决定晋升，不再由旧 eligibility 单独决定。
-                    admitDiscoveryExpert(esDocId, profile, eligibility, profileMap, sourceStats)
+                    if (registration.item == null) admitDiscoveryExpert(esDocId, profile, eligibility, profileMap, sourceStats)
 
                     // 05（I-1/I-2）：ES 事实持久化后统一登记人物关系；登记失败按可重试语义传播。
                     val person = registerPerson(orcid.sourceName, esDocId, sourceStats)
@@ -1653,7 +1679,8 @@ class ExpertDiscoveryService(
         source: AcademicDataSource,
         stats: DiscoveryStats,
         sourceStats: SourceStats,
-        executionId: Long?
+        verification: DiscoveryVerificationExecution,
+        sourceItemKey: String
     ): ConsumeOutcomeResult {
         if (extraction.extractionError != null) {
             stats.errors += "[${source.sourceName}] 提取失败: ${extraction.extractionError}"
@@ -1670,7 +1697,8 @@ class ExpertDiscoveryService(
             sourceName = source.sourceName,
             stats = stats,
             sourceStats = sourceStats,
-            executionId = executionId,
+            verification = verification,
+            sourceItemKey = sourceItemKey,
             identityFactory = paperIdentityFactory(paper)
         )
     }
@@ -1690,9 +1718,11 @@ class ExpertDiscoveryService(
         sourceName: String,
         stats: DiscoveryStats,
         sourceStats: SourceStats,
-        executionId: Long?,
+        verification: DiscoveryVerificationExecution,
+        sourceItemKey: String,
         identityFactory: ConsumeIdentityFactory
     ): ConsumeOutcomeResult {
+        val executionId = verification.executionId
         sourceStats.fulltextAttempted++
         sourceStats.apiRequests += httpRequests
 
@@ -1736,6 +1766,7 @@ class ExpertDiscoveryService(
         var enqueueFailed = false
         var dedupFailed = false
         var identityRepairFailed = false
+        var verificationFailed = false
         val personCounts = PersonRegistrationCounts()
         val enqueueFailedBefore = sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0
 
@@ -1764,7 +1795,7 @@ class ExpertDiscoveryService(
             if (duplicate != null) {
                 sourceStats.duplicates++
                 duplicates++
-                val disposition = recordIdentityDuplicate(duplicate, authorEmail, sourceStats, sourceName, executionId)
+                val disposition = recordIdentityDuplicate(duplicate, authorEmail, sourceStats, sourceName, executionId, sourceItemKey)
                 if (disposition.retryable) identityRepairFailed = true
                 personCounts.fold(disposition.person)
                 continue
@@ -1776,6 +1807,15 @@ class ExpertDiscoveryService(
             val rejectReasons = if (eligibility.eligible) emptyList() else eligibility.rejectReasons
 
             val profileMap = toIndexMap(identity.profile, identity.paper, identity.esDocId, filterResult, rejectReasons)
+            val registration = try {
+                verificationRegistration?.reserve(verification, identity.esDocId, identity.profile, sourceName, sourceItemKey)
+                    ?: DiscoveryRegistration()
+            } catch (e: DiscoveryRegistrationException) {
+                sourceStats.failureReasons.merge("VERIFICATION_REGISTRATION_FAILED", 1, Int::plus)
+                verificationFailed = true
+                continue
+            }
+            if (registration.protected) continue
             if (!expertIndexWriterService.indexToRaw(identity.esDocId, profileMap)) {
                 sourceStats.rawWriteFailed++
                 rawWriteFailed = true
@@ -1785,9 +1825,16 @@ class ExpertDiscoveryService(
             indexed++
             // I-1（08）：RAW 落库成功后才入队；入队失败不推进本页（见 enqueueEnrichmentJob）。
             enqueueEnrichmentJob(identity.esDocId, sourceName, executionId, sourceStats)
+            try {
+                verificationRegistration?.activate(registration)
+            } catch (e: DiscoveryRegistrationException) {
+                sourceStats.failureReasons.merge("VERIFICATION_REGISTRATION_FAILED", 1, Int::plus)
+                verificationFailed = true
+                continue
+            }
 
             // 04（I-1/I-2）：统一准入在 RAW 成功后决定晋升。
-            if (admitDiscoveryExpert(identity.esDocId, identity.profile, eligibility, profileMap, sourceStats) ==
+            if (registration.item == null && admitDiscoveryExpert(identity.esDocId, identity.profile, eligibility, profileMap, sourceStats) ==
                 AdmissionDisposition.PROMOTED
             ) {
                 promoted++
@@ -1809,7 +1856,7 @@ class ExpertDiscoveryService(
             rawWriteFailed = rawWriteFailed,
             enqueueFailed = enqueueFailed,
             dedupFailed = dedupFailed,
-            identityRepairFailed = identityRepairFailed,
+            identityRepairFailed = identityRepairFailed || verificationFailed,
             personCreated = personCounts.created,
             personAttached = personCounts.attached,
             personNeedsReview = personCounts.needsReview,
@@ -1819,15 +1866,6 @@ class ExpertDiscoveryService(
         )
     }
 
-    private fun processPaper(
-        paper: PaperMetadata,
-        source: AcademicDataSource,
-        stats: DiscoveryStats,
-        sourceStats: SourceStats,
-        executionId: Long?
-    ) {
-        consumeOutcome(paper, extractOutcome(paper, source), source, stats, sourceStats, executionId)
-    }
 
     // ------------------------------------------------------------------
     // c2（I-1/I-2/I-4/I-6）：持久化队列的采集 / 抽取 / 消费接缝
@@ -2077,7 +2115,7 @@ class ExpertDiscoveryService(
     fun consumeQueuedItem(
         envelope: QueuedItemEnvelope,
         extractionJson: String,
-        executionId: Long?
+        verification: DiscoveryVerificationExecution
     ): QueuedItemConsumption {
         if (envelope.payloadVersion != QUEUED_PAYLOAD_VERSION_V1) {
             return QueuedItemConsumption(unrecoverableReason = QUEUE_UNKNOWN_PAYLOAD_VERSION)
@@ -2109,7 +2147,8 @@ class ExpertDiscoveryService(
             sourceName = envelope.sourceName,
             stats = stats,
             sourceStats = sourceStats,
-            executionId = executionId,
+            verification = verification,
+            sourceItemKey = envelope.itemKey,
             identityFactory = identityFactory
         )
         return QueuedItemConsumption(
@@ -2283,7 +2322,15 @@ class ExpertDiscoveryService(
      * 仍只计 duplicate、不计 indexed。
      */
     private fun recordIdentityDuplicate(existing: DedupResult.Exists, incoming: AuthorEmail, stats: SourceStats,
-        sourceName: String, executionId: Long?): DuplicateDisposition {
+        sourceName: String, executionId: Long?, sourceItemKey: String): DuplicateDisposition {
+        if (existing.docId != null) {
+            try {
+                verificationRegistration?.recoverDuplicate(existing.docId, sourceName, sourceItemKey)
+            } catch (e: DiscoveryRegistrationException) {
+                stats.failureReasons.merge("VERIFICATION_REGISTRATION_FAILED", 1, Int::plus)
+                return DuplicateDisposition(retryable = true, person = null)
+            }
+        }
         val source = existing.source
         val proof = source?.let { DiscoveryIdentity.read(it.path("identityVerification")) }
         val externalIds = source?.path("externalIds")?.let {

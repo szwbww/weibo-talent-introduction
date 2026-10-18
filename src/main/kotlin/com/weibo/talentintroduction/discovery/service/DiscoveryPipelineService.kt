@@ -66,6 +66,7 @@ interface PipelineTimeSource {
  */
 object PipelineRejectionReason {
     const val QUERY_CONFLICT = "QUERY_CONFLICT"
+    const val VERIFICATION_OPTIONS_CONFLICT = "VERIFICATION_OPTIONS_CONFLICT"
     const val NOT_CONFIGURED = "NOT_CONFIGURED"
 }
 
@@ -290,7 +291,8 @@ class DiscoveryPipelineService(
     @Qualifier("pipelineCoordinatorExecutor") private val coordinatorExecutor: Executor,
     @Qualifier("pipelineCollectionExecutor") private val collectionExecutor: Executor,
     @Qualifier("pipelineFetchExecutor") private val fetchExecutor: Executor,
-    private val time: PipelineTimeSource = PipelineTimeSource.SYSTEM
+    private val time: PipelineTimeSource = PipelineTimeSource.SYSTEM,
+    private val verificationRegistration: DiscoveryVerificationRegistrationService? = null
 ) {
     private val log = LoggerFactory.getLogger(DiscoveryPipelineService::class.java)
 
@@ -311,7 +313,11 @@ class DiscoveryPipelineService(
         includeRawScan: Boolean
     ): PipelineLaunchResult {
         repository.ensurePipeline(now())
-        val normalized = criteria.copy(cursor = null)
+        val requested = criteria.copy(cursor = null)
+        val normalized = verificationRegistration?.resolveOptions(requested) ?: requested.copy(apolloAssist = false).also {
+            if (requested.apolloAssist == true) throw org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, "Apollo verification is not ready")
+        }
         val criteriaJson = objectMapper.writeValueAsString(normalized)
         val outcome = repository.launch(
             criteriaJson = criteriaJson,
@@ -331,7 +337,7 @@ class DiscoveryPipelineService(
                 queryHash = null,
                 executionId = null,
                 resumed = false,
-                rejection = PipelineRejection(PipelineRejectionReason.QUERY_CONFLICT, outcome.message)
+                rejection = PipelineRejection(outcome.reason, outcome.message)
             )
             is LaunchOutcome.Applied -> {
                 val row = outcome.pipeline
@@ -633,7 +639,9 @@ class DiscoveryPipelineService(
                 request = mapOf("pipelineId" to PIPELINE_ID, "windowStartedAt" to startedAt.toString()),
                 onStarted = { executionId ->
                     state.executionId.set(executionId)
-                    repository.bindExecutionId(ownerToken, executionId, now())
+                    check(repository.bindExecutionId(ownerToken, executionId, now()) == 1) { "Window execution binding failed" }
+                    state.verification = verificationRegistration?.begin(executionId, requireNotNull(state.criteria), historical = true)
+                        ?: DiscoveryVerificationExecution(executionId)
                 },
                 block = { windowLoop(state, initial) }
             ).second
@@ -650,6 +658,8 @@ class DiscoveryPipelineService(
             log.error("深度发现窗口异常终止: {}, 已读取响应体={} 字节, 来源={}, 站点={}",
                 e.message, traffic.totalBytes, traffic.bySource, traffic.byHost, e)
             runCatching { repository.markFaulted(ownerToken, PipelineWaitReason.SOURCE_ERROR, now()) }
+        } finally {
+            state.verification?.let { verificationRegistration?.closeInput(it) }
         }
     }
 
@@ -1070,8 +1080,8 @@ class DiscoveryPipelineService(
                 return
             }
 
-            val executionId = state.executionId.get().takeIf { it > 0L }
-            val consumption = expertDiscoveryService.consumeQueuedItem(envelope, extractionJson!!, executionId)
+            val verification = requireNotNull(state.verification) { "Window execution has not been bound" }
+            val consumption = expertDiscoveryService.consumeQueuedItem(envelope, extractionJson!!, verification)
             val at = now()
             if (consumption.unrecoverableReason != null) {
                 repository.completeJob(
@@ -1334,6 +1344,7 @@ class DiscoveryPipelineService(
         val collectionInFlight = ConcurrentHashMap<Long, Boolean>()
         val completions = ArrayBlockingQueue<Int>(COMPLETION_QUEUE_CAPACITY)
         val executionId = AtomicLong(0L)
+        @Volatile var verification: DiscoveryVerificationExecution? = null
         val trafficSession = DiscoveryTrafficMeter.newSession()
         val waitReasons = ConcurrentLinkedQueue<String>()
         val failureReasons = ConcurrentHashMap<String, Int>()

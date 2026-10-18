@@ -18,6 +18,8 @@ import com.weibo.talentintroduction.discovery.service.EnrichmentStats
 import com.weibo.talentintroduction.discovery.service.ExpertDiscoveryService
 import com.weibo.talentintroduction.discovery.service.OpenAlexDataSource
 import com.weibo.talentintroduction.discovery.service.OrcidDataSource
+import com.weibo.talentintroduction.discovery.service.DiscoveryVerificationRegistrationService
+import org.springframework.web.server.ResponseStatusException
 import com.weibo.talentintroduction.discovery.service.PipelineLaunchResult
 import com.weibo.talentintroduction.discovery.service.PipelineRejectionReason
 import com.weibo.talentintroduction.discovery.service.PmcOaDataSource
@@ -71,7 +73,8 @@ class ExpertDiscoveryController(
      * I-1（c3）：02 协调者。末尾可选参数 —— 既有构造测试调用逐字兼容；生产装配（`@Service`）永远存在，
      * `pipeline-enabled=false` 时入口仍走原同步逻辑。
      */
-    private val pipelineService: DiscoveryPipelineService? = null
+    private val pipelineService: DiscoveryPipelineService? = null,
+    private val verificationRegistration: DiscoveryVerificationRegistrationService? = null
 ) {
     private val log = LoggerFactory.getLogger(ExpertDiscoveryController::class.java)
 
@@ -103,12 +106,13 @@ class ExpertDiscoveryController(
         @RequestBody(required = false) criteria: PaperSearchCriteria?,
         @RequestParam(required = false) includeRawScan: Boolean? = null
     ): ResponseEntity<Any> {
+        val effectiveCriteria = normalizeDiscoveryCriteria(criteria)
         // I-1（c3）：开关打开时两个手动入口都只调用 02.launch —— 同一份已保存配置、同一份规范化查询。
         val pipeline = continuousPipeline()
         if (pipeline != null) {
             return launchContinuousPipeline(
                 pipeline,
-                normalizeDiscoveryCriteria(criteria),
+                effectiveCriteria,
                 includeRawScan ?: discoveryProperties.includeRawScan
             )
         }
@@ -123,10 +127,6 @@ class ExpertDiscoveryController(
         var execution: TaskExecution? = null
         var executionId: Long? = null
         try {
-            val effectiveCriteria = (criteria ?: PaperSearchCriteria(
-                excludeCountries = listOf("CN"),
-                openAccessOnly = true
-            )).copy(subjectScope = SubjectScopeCatalog.RND_TARGET)
             execution = taskExecutionService.runAndRecord(
                 "EXPERT_DISCOVERY", "MANUAL", effectiveCriteria,
                 onStarted = { id ->
@@ -137,6 +137,7 @@ class ExpertDiscoveryController(
                 discoveryService.discover(
                     effectiveCriteria,
                     "MANUAL",
+                    executionId = executionId,
                     includeRawScan = includeRawScan ?: discoveryProperties.includeRawScan
                 )
             }
@@ -181,23 +182,20 @@ class ExpertDiscoveryController(
         @RequestParam(defaultValue = "2020") yearFrom: Int,
         @RequestParam(defaultValue = "2026") yearTo: Int,
         @RequestParam(required = false) sources: List<String>? = null,
-        @RequestParam(required = false) includeRawScan: Boolean? = null
+        @RequestParam(required = false) includeRawScan: Boolean? = null,
+        @RequestParam(required = false) apolloAssist: Boolean? = null
     ): ResponseEntity<Any> {
+        val criteria = normalizeDiscoveryCriteria(PaperSearchCriteria(
+            keywords = keywords, publicationYearFrom = yearFrom, publicationYearTo = yearTo,
+            excludeCountries = listOf("CN"), openAccessOnly = true,
+            sources = sources ?: emptyList(), apolloAssist = apolloAssist
+        ))
         // I-1（c3）：与 /run 完全相同的规范化与同一份已保存配置（关键词只是条件的一部分）。
         val pipeline = continuousPipeline()
         if (pipeline != null) {
             return launchContinuousPipeline(
                 pipeline,
-                normalizeDiscoveryCriteria(
-                    PaperSearchCriteria(
-                        keywords = keywords,
-                        publicationYearFrom = yearFrom,
-                        publicationYearTo = yearTo,
-                        excludeCountries = listOf("CN"),
-                        openAccessOnly = true,
-                        sources = sources ?: emptyList()
-                    )
-                ),
+                criteria,
                 includeRawScan ?: discoveryProperties.includeRawScan
             )
         }
@@ -212,15 +210,6 @@ class ExpertDiscoveryController(
         var execution: TaskExecution? = null
         var executionId: Long? = null
         try {
-            val criteria = PaperSearchCriteria(
-                keywords = keywords,
-                publicationYearFrom = yearFrom,
-                publicationYearTo = yearTo,
-                excludeCountries = listOf("CN"),
-                openAccessOnly = true,
-                sources = sources ?: emptyList(),
-                subjectScope = SubjectScopeCatalog.RND_TARGET
-            )
             execution = taskExecutionService.runAndRecord(
                 "EXPERT_DISCOVERY", "MANUAL", criteria,
                 onStarted = { id ->
@@ -231,6 +220,7 @@ class ExpertDiscoveryController(
                 discoveryService.discover(
                     criteria,
                     "MANUAL",
+                    executionId = executionId,
                     includeRawScan = includeRawScan ?: discoveryProperties.includeRawScan
                 )
             }
@@ -404,9 +394,17 @@ class ExpertDiscoveryController(
      * I-1（c3）：两个手动入口的**同一**规范化 —— 固定 `scope=RND_TARGET`（与定时发现、队列同一学科范围）、
      * 清空临时游标。来源由 02 按同一套「已启用 + 未被学科范围排除」规则解析，因此两个 POST 的有效条件相同。
      */
-    private fun normalizeDiscoveryCriteria(criteria: PaperSearchCriteria?): PaperSearchCriteria =
-        (criteria ?: PaperSearchCriteria(excludeCountries = listOf("CN"), openAccessOnly = true))
+    private fun normalizeDiscoveryCriteria(criteria: PaperSearchCriteria?): PaperSearchCriteria {
+        val normalized = (criteria ?: PaperSearchCriteria(excludeCountries = listOf("CN"), openAccessOnly = true))
             .copy(subjectScope = SubjectScopeCatalog.RND_TARGET, cursor = null)
+        return verificationRegistration?.resolveOptions(normalized) ?: normalized.copy(apolloAssist = false).also {
+            if (normalized.apolloAssist == true) throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Apollo verification is not ready")
+        }
+    }
+
+    @ExceptionHandler(ResponseStatusException::class)
+    fun verificationUnavailable(ex: ResponseStatusException): ResponseEntity<Any> =
+        ResponseEntity.status(ex.status).body(mapOf("message" to (ex.reason ?: "资格核验不可用")))
 
     /** I-2（c3）：HTTP 受理与实际完成严格分开 —— 只有配置真正持久化后才回 202。 */
     private fun launchContinuousPipeline(
@@ -434,6 +432,7 @@ class ExpertDiscoveryController(
             return ResponseEntity.status(HttpStatus.CONFLICT).body(
                 mapOf(
                     "mode" to CONTINUOUS_MODE,
+                    "code" to (result.rejection?.reason ?: PipelineRejectionReason.QUERY_CONFLICT),
                     "reason" to (result.rejection?.reason ?: PipelineRejectionReason.QUERY_CONFLICT),
                     "message" to (result.rejection?.message ?: "已有不同的深度发现查询在运行"),
                     "pipelineId" to result.pipelineId,
@@ -466,7 +465,7 @@ class ExpertDiscoveryController(
         PipelinePhase.WAITING -> "等待下一轮调度"
         PipelinePhase.DRAINED -> "已排空，没有待处理工作"
         PipelinePhase.FAULTED -> "运行失败，请查看等待原因与来源明细"
-        PipelineDesiredState.PAUSED -> "已暂停，需手动恢复"
+        PipelineDesiredState.PAUSED -> "已暂停采集，已入队的学术补全与资格核验可继续；需手动恢复采集"
         else -> "持续运行"
     }
 

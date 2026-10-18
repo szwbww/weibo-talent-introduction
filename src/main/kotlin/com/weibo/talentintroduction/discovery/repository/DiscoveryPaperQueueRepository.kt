@@ -200,7 +200,7 @@ data class CompletionOutcome(val applied: Boolean, val failedItems: Int, val ind
 /** I-7：`launch` 的两种结局（冲突由控制层映射为 409）。 */
 sealed class LaunchOutcome {
     data class Applied(val pipeline: PipelineRow, val resumed: Boolean) : LaunchOutcome()
-    data class Conflict(val message: String) : LaunchOutcome()
+    data class Conflict(val message: String, val reason: String = "QUERY_CONFLICT") : LaunchOutcome()
 }
 
 /**
@@ -395,8 +395,26 @@ class DiscoveryPaperQueueRepository(private val jdbcTemplate: JdbcTemplate) : Di
         ensurePipeline(now)
         val current = lockPipeline() ?: return LaunchOutcome.Conflict("pipeline 行缺失（应在 ensurePipeline 后存在）")
         val sameQuery = current.queryHash != null && current.queryHash == queryHash
+        val backlog = current.activeCount > 0 || countBacklogJobs() > 0
+        val activeWindow = current.ownerToken != null && current.ownerUntil?.isAfter(now) == true
+        val mapper = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper()
+        fun apollo(json: String?): Boolean {
+            if (json == null) return false
+            val value = mapper.readTree(json).get("apolloAssist") ?: return false
+            if (value.isNull) return false
+            require(value.isBoolean) { "Invalid verification option snapshot" }
+            return value.booleanValue()
+        }
+        val optionsChanged = apollo(current.criteriaJson) != apollo(criteriaJson)
+        if (sameQuery && optionsChanged && (backlog || activeWindow)) {
+            return LaunchOutcome.Conflict("已有活跃窗口或积压，不能更改资格核验选项", "VERIFICATION_OPTIONS_CONFLICT")
+        }
         if (sameQuery) {
             // I-7：同查询幂等 —— 只把 PAUSED 解释为显式恢复；绝不新建 epoch、绝不清空队列。
+            if (optionsChanged || current.criteriaJson != criteriaJson && !backlog && !activeWindow) {
+                jdbcTemplate.update("UPDATE discovery_pipeline SET criteria_json=?,criteria_version=? WHERE id=?",
+                    criteriaJson, criteriaVersion, PIPELINE_ID)
+            }
             jdbcTemplate.update(
                 """
                 UPDATE discovery_pipeline
@@ -408,7 +426,6 @@ class DiscoveryPaperQueueRepository(private val jdbcTemplate: JdbcTemplate) : Di
             return LaunchOutcome.Applied(requireNotNull(findPipeline()), resumed = true)
         }
         // I-7：不同查询且仍有活跃工作/积压 → 409，绝不静默丢弃在手工作。
-        val backlog = current.activeCount > 0 || countBacklogJobs() > 0
         if (current.queryHash != null && backlog) {
             return LaunchOutcome.Conflict(
                 "已有查询（queryHash=${current.queryHash}）仍有 $backlog 条未完成工作，不能切换查询；" +

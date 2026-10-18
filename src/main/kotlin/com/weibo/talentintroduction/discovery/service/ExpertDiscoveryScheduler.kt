@@ -84,7 +84,8 @@ class ExpertDiscoveryScheduler(
     /** I-2（03）：复用 `SchedulingConfig.taskScheduler`；不新建线程池，也不改发信调度。 */
     @Qualifier("taskScheduler") private val taskScheduler: TaskScheduler? = null,
     /** I-1（03）：周期锚点运算的可控时钟（测试用固定时钟，不用 sleep 等小时）。 */
-    private val clock: Clock = Clock.systemUTC()
+    private val clock: Clock = Clock.systemUTC(),
+    private val verificationRegistration: DiscoveryVerificationRegistrationService? = null
 ) : SchedulingConfigurer {
 
     private val log = LoggerFactory.getLogger(ExpertDiscoveryScheduler::class.java)
@@ -392,18 +393,19 @@ class ExpertDiscoveryScheduler(
         }
         var executionId: Long? = null
         try {
-            val criteria = PaperSearchCriteria(
+            val requested = PaperSearchCriteria(
                 excludeCountries = listOf("CN"),
                 openAccessOnly = true,
                 subjectScope = SubjectScopeCatalog.RND_TARGET
             )
+            val criteria = verificationRegistration?.resolveOptions(requested) ?: requested.copy(apolloAssist = false)
             taskExecutionService.runAndRecord("EXPERT_DISCOVERY", "SCHEDULED", criteria,
                 onStarted = { id ->
                     executionId = id
                     progressStore.bindExecutionId("EXPERT_DISCOVERY", pendingToken, id)
                 }
             ) {
-                discoveryService.discover(criteria, "SCHEDULED", discoveryProperties.includeRawScan)
+                discoveryService.discover(criteria, "SCHEDULED", executionId, discoveryProperties.includeRawScan)
             }
         } catch (ex: Exception) {
             progressStore.update("EXPERT_DISCOVERY", TaskProgress(

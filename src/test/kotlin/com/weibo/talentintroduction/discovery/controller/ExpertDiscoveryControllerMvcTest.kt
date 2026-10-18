@@ -342,8 +342,7 @@ class ExpertDiscoveryContinuousMvcTest {
         assertEquals(2, captured.size)
         assertEquals(SubjectScopeCatalog.RND_TARGET, captured[0].subjectScope)
         assertEquals(captured[0], captured[1])
-        Mockito.verify(discoveryService, Mockito.never())
-            .discover(anyCriteria(), anyValue("MANUAL"), Mockito.anyBoolean())
+        Mockito.verify(discoveryService, Mockito.never()).discover(anyCriteria(), anyValue("MANUAL"), Mockito.any<Long>(), Mockito.anyBoolean())
         Mockito.verify(progressStore, Mockito.never())
             .tryStartWithToken(anyValue("EXPERT_DISCOVERY"), anyValue(TaskProgress("", "", 0, 0, 0)))
     }
@@ -521,8 +520,7 @@ class ExpertDiscoveryPipelineUnavailableMvcTest {
         mockMvc.perform(get("/api/expert-discovery/pipeline"))
             .andExpect(status().isServiceUnavailable)
 
-        Mockito.verify(discoveryService, Mockito.never())
-            .discover(anyValue(PaperSearchCriteria()), anyValue("MANUAL"), Mockito.anyBoolean())
+        Mockito.verify(discoveryService, Mockito.never()).discover(anyValue(PaperSearchCriteria()), anyValue("MANUAL"), Mockito.any<Long>(), Mockito.anyBoolean())
         Mockito.verify(progressStore, Mockito.never())
             .tryStartWithToken(anyValue("EXPERT_DISCOVERY"), anyValue(TaskProgress("", "", 0, 0, 0)))
     }
