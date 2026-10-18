@@ -406,7 +406,7 @@ class DiscoveryPaperQueueRepository(private val jdbcTemplate: JdbcTemplate) : Di
             return value.booleanValue()
         }
         val optionsChanged = apollo(current.criteriaJson) != apollo(criteriaJson)
-        if (sameQuery && optionsChanged && (backlog || activeWindow)) {
+        if (optionsChanged && (backlog || activeWindow)) {
             return LaunchOutcome.Conflict("已有活跃窗口或积压，不能更改资格核验选项", "VERIFICATION_OPTIONS_CONFLICT")
         }
         if (sameQuery) {

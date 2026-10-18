@@ -63,8 +63,8 @@ class DiscoveryVerificationIntegrationTest {
             "discovery_verification_run", "expert_discovery_admission", "task_execution").forEach { jdbc.update("DELETE FROM $it") }
     }
 
-    class Fixture : AutoCloseable {
-        val properties = DiscoveryVerificationProperties(enabled = true, mode = VerificationMode.ENFORCE, apolloApiKey = "offline-fixture")
+    class Fixture(workerEnabled: Boolean = false) : AutoCloseable {
+        val properties = DiscoveryVerificationProperties(enabled = true, workerEnabled = workerEnabled, mode = VerificationMode.ENFORCE, apolloApiKey = "offline-fixture")
         val flow = VerificationFlowFixture(jdbc, manager, properties)
         val registration = DiscoveryVerificationRegistrationService(properties, flow.repository, flow.writer, flow.policy,
             flow.admissions, jdbc, TransactionTemplate(manager), flow.clock)
@@ -233,6 +233,22 @@ class DiscoveryVerificationIntegrationTest {
             assertEquals(1L, f.itemCount())
             Mockito.verify(f.enrichment, Mockito.atLeast(2)).enqueue(Mockito.eq(doc.key) ?: doc.key, Mockito.eq("CROSSREF") ?: "CROSSREF", Mockito.any())
             Mockito.verify(f.persons, Mockito.atLeastOnce()).refresh(Mockito.eq("CROSSREF") ?: "CROSSREF", Mockito.eq(doc.key) ?: doc.key)
+            val item = f.flow.repository.findItemsByDocIds(listOf(doc.key)).single()
+            val snapshot = f.flow.mapper.copy().disable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                .readValue(item.snapshotJson, VerificationSnapshot::class.java)
+            assertEquals(doc.key, snapshot.profile.orcidId)
+            assertEquals(doc.key, snapshot.profile.esDocId)
+            assertEquals(item.factFingerprint, f.flow.commits.prepare(item).snapshot!!.factFingerprint)
+            f.registration.closeInput(first)
+            f.registration.closeInput(next)
+            f.flow.worker().process(f.flow.claim())
+            val completed = f.flow.item(item.id)
+            assertEquals(VerificationState.COMPLETED, completed.state)
+            assertEquals(VerificationOutcome.PENDING, completed.outcome)
+            assertEquals(VerificationQualification.UNKNOWN, completed.qualification)
+            assertEquals("[\"IDENTITY_EVIDENCE_MISSING\"]", completed.reasonsJson)
+            assertEquals(31L, completed.ownerExecutionId)
+            assertEquals(1L, f.itemCount())
             assertTrue(f.flow.apolloRequests.isEmpty())
         }
     }
@@ -354,8 +370,43 @@ class DiscoveryVerificationIntegrationTest {
         }
     }
 
-    @Test fun `ORCID reserves before RAW and replay preserves enrichment and person registration`() {
+    @Test fun `active window without backlog rejects changed options even for a different query`() {
         Fixture().use { f ->
+            val pipeline = f.pipeline()
+            val criteria = PaperSearchCriteria(keywords = listOf("original"), sources = listOf("CROSSREF"),
+                subjectScope = SubjectScopeCatalog.RND_TARGET, apolloAssist = true)
+            assertTrue(pipeline.launch(criteria, "MANUAL", false).applied)
+            val stream = f.queue.ensureStream(1, f.service.queueQueryHash("CROSSREF", criteria), "CROSSREF", 1,
+                f.flow.mapper.writeValueAsString(criteria), f.flow.clock.instant())
+            jdbc.update("UPDATE discovery_collection_stream SET cursor_value='active-window-cursor' WHERE id=?", stream.id)
+            jdbc.update("UPDATE discovery_pipeline SET active_count=0,owner_token='live-owner',owner_until='2030-01-01 00:00:00'")
+            assertEquals(0L, jdbc.queryForObject("SELECT COUNT(*) FROM discovery_paper_job", Long::class.java))
+            val before = f.queue.findPipeline()!!
+            val changed = criteria.copy(keywords = listOf("different"), apolloAssist = false)
+            assertNotEquals(DiscoveryCheckpointCodec.canonicalCriteria(criteria), DiscoveryCheckpointCodec.canonicalCriteria(changed))
+            val conflict = pipeline.launch(changed, "MANUAL", false)
+            assertFalse(conflict.applied)
+            assertEquals("VERIFICATION_OPTIONS_CONFLICT", conflict.rejection!!.reason)
+            val mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(f.controller(pipeline)).build()
+            mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/expert-discovery/run")
+                .contentType(MediaType.APPLICATION_JSON).content(f.flow.mapper.writeValueAsString(changed)))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isConflict)
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code").value("VERIFICATION_OPTIONS_CONFLICT"))
+            assertEquals(before, f.queue.findPipeline())
+            assertEquals("active-window-cursor", f.queue.findStreams(1).single().cursorValue)
+            // The existing academic-query conflict keeps its authority when options are unchanged.
+            jdbc.update("UPDATE discovery_pipeline SET active_count=1")
+            val withBacklog = f.queue.findPipeline()
+            val queryConflict = pipeline.launch(changed.copy(apolloAssist = true), "MANUAL", false)
+            assertFalse(queryConflict.applied)
+            assertEquals("QUERY_CONFLICT", queryConflict.rejection!!.reason)
+            assertEquals(withBacklog, f.queue.findPipeline())
+            assertEquals("active-window-cursor", f.queue.findStreams(1).single().cursorValue)
+        }
+    }
+
+    @Test fun `ORCID reserves before RAW and replay preserves enrichment and person registration`() {
+        Fixture(workerEnabled = true).use { f ->
             f.beans.registerSingleton("orcid", f.orcid)
             Mockito.doReturn("ORCID").`when`(f.orcid).sourceName
             Mockito.doReturn(10).`when`(f.orcid).maxRecordsPerRun
@@ -363,7 +414,7 @@ class DiscoveryVerificationIntegrationTest {
                 listOf("orcid@example.invalid"), "Example University", "GB")
             Mockito.doReturn(OrcidDataSource.OrcidSearchPage(listOf(record), null, 1)).`when`(f.orcid)
                 .searchOrcidPage(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
-            Mockito.doReturn(listOf(AuthorEmail("orcid@example.invalid", "Ada", "Lee", false, null, record.orcidId))).`when`(f.orcid).orcidRecordToAuthorEmails(record)
+            Mockito.doCallRealMethod().`when`(f.orcid).orcidRecordToAuthorEmails(record)
             val criteria = f.registration.resolveOptions(PaperSearchCriteria(sources = listOf("ORCID"), apolloAssist = false))
             f.task(71)
             jdbc.execute("CREATE TRIGGER fail_registration_reserve BEFORE INSERT ON discovery_verification_item FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='injected reserve failure'")
@@ -379,6 +430,24 @@ class DiscoveryVerificationIntegrationTest {
             assertFalse(f.flow.repository.findRun(72)!!.apolloRequested)
             Mockito.verify(f.enrichment).enqueue(Mockito.anyString(), Mockito.eq("ORCID") ?: "ORCID", Mockito.eq(72L))
             Mockito.verify(f.persons).refresh(Mockito.eq("ORCID") ?: "ORCID", Mockito.anyString())
+            val doc = f.flow.raws.entries.single()
+            assertEquals(doc.key, doc.value["orcidId"], "Preserve the existing RAW identity convention")
+            val item = f.flow.repository.findItemsByDocIds(listOf(doc.key)).single()
+            val snapshot = f.flow.mapper.copy().disable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                .readValue(item.snapshotJson, VerificationSnapshot::class.java)
+            assertEquals(doc.key, snapshot.profile.orcidId)
+            assertEquals(record.orcidId, f.flow.mapper.readTree(snapshot.profile.externalIds).path("orcid").asText())
+            assertTrue(snapshot.identityValid)
+            assertEquals(record.orcidId, snapshot.boundOrcid)
+            assertEquals(item.factFingerprint, f.flow.commits.prepare(item).snapshot!!.factFingerprint)
+            f.flow.worker().process(f.flow.claim())
+            val completed = f.flow.item(item.id)
+            assertEquals(VerificationState.COMPLETED, completed.state)
+            assertEquals(VerificationOutcome.PENDING, completed.outcome)
+            assertEquals(VerificationQualification.UNKNOWN, completed.qualification)
+            assertEquals("[\"QUALIFICATION_EVIDENCE_MISSING\"]", completed.reasonsJson)
+            assertTrue(f.flow.orcidRequests.isNotEmpty(), "Bound ORCID remains available to the worker")
+            assertTrue(f.flow.apolloRequests.isEmpty())
         }
     }
 }

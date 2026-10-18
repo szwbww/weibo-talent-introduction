@@ -431,7 +431,7 @@ class ExpertDiscoveryContinuousMvcTest {
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.configured").value(false))
             .andExpect(jsonPath("$.state").value("PAUSED"))
-            .andExpect(jsonPath("$.stateText").value("已暂停，需手动恢复"))
+            .andExpect(jsonPath("$.stateText").value("已暂停采集，已入队的学术补全与资格核验可继续；需手动恢复采集"))
             .andExpect(jsonPath("$.status.queryHash").doesNotExist())
             .andExpect(jsonPath("$.status.currentExecutionId").doesNotExist())
     }
