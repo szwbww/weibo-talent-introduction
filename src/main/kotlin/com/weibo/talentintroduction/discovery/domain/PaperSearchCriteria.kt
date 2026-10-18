@@ -10,5 +10,6 @@ data class PaperSearchCriteria(
     val pageSize: Int = 100,
     val cursor: String? = null,
     val sources: List<String> = emptyList(),
-    val subjectScope: String? = null
+    val subjectScope: String? = null,
+    val apolloAssist: Boolean? = null
 )

@@ -392,7 +392,7 @@ class ExpertDiscoveryServiceTest {
         criteria: PaperSearchCriteria = PaperSearchCriteria()
     ): Pair<DiscoveryResult, List<DiscoverySourceCursor>> {
         val captor = ArgumentCaptor.forClass(DiscoverySourceCursor::class.java)
-        val result = svc.discover(criteria, "TEST")
+        val result = svc.discover(criteria, "TEST", 42L)
         Mockito.verify(cursorRepository, Mockito.atLeastOnce()).save(captor.capture())
         return result to captor.allValues
     }
@@ -588,7 +588,7 @@ class ExpertDiscoveryServiceTest {
         val candidateDocs = mutableListOf<Map<String, Any?>>()
         captureProjectedCandidate(candidateDocs)
 
-        val result = createService(c4Props()).discover(criteria, "TEST")
+        val result = createService(c4Props()).discover(criteria, "TEST", 42L)
         assertEquals(1, result.stats.bySource["ORCID"]?.indexed, "该页的 1 位专家必须被收录")
         assertEquals(1, result.stats.bySource["ORCID"]?.promoted, "资格通过后必须晋升候选")
         return Triple(result, rawDocs.single(), candidateDocs.single())
@@ -614,7 +614,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
         DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
         DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
         assertEquals(1, result.stats.indexed)
         assertEquals(1, result.stats.promoted)
         assertEquals(1, result.stats.bySource.getValue("EUROPE_PMC").filterReasons["IDENTITY_UNRESOLVED"])
@@ -737,7 +737,7 @@ class ExpertDiscoveryServiceTest {
         }
         val envelope = ownershipEnvelope(paper.copy(source = "OPENALEX"))
         val consumed = service.consumeQueuedItem(envelope, objectMapper.writeValueAsString(
-            enriched.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)), null)
+            enriched.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)), DiscoveryVerificationExecution(null))
         assertTrue(consumed.succeeded)
         assertEquals(3, consumed.indexedExperts)
         assertEquals(3, consumed.promoted)
@@ -750,8 +750,7 @@ class ExpertDiscoveryServiceTest {
 
         val rawWritesBeforeOldVersion = docs.keys.count { it.contains("/orcid_info/") }
 
-        val old = service.consumeQueuedItem(envelope,
-            """{"emails":[],"methodUsed":"FULLTEXT_XML","identityRuleVersion":20260927}""", null)
+        val old = service.consumeQueuedItem(envelope, """{"emails":[],"methodUsed":"FULLTEXT_XML","identityRuleVersion":20260927}""", DiscoveryVerificationExecution(null))
         assertEquals("IDENTITY_EXTRACTION_VERSION_UNSUPPORTED", old.unrecoverableReason)
         assertEquals(rawWritesBeforeOldVersion, docs.keys.count { it.contains("/orcid_info/") })
         val report = objectMapper.createObjectNode().apply {
@@ -829,11 +828,10 @@ class ExpertDiscoveryServiceTest {
             val payload = objectMapper.writeValueAsString(currentExtraction(contacts, "FULLTEXT_XML"))
             val envelope = ownershipEnvelope(paper.copy(source = "OPENALEX",
                 doi = "10.04/$name", authors = emptyList()))
-            val first = service.consumeQueuedItem(envelope, payload, null)
+            val first = service.consumeQueuedItem(envelope, payload, DiscoveryVerificationExecution(null))
             val original = docs.toMap()
-            val second = if (name == "duplicate") service.consumeQueuedItem(envelope,
-                objectMapper.writeValueAsString(currentExtraction(
-                    listOf(owner.copy(givenNames = "Changed")), "FULLTEXT_XML")), null) else null
+            val second = if (name == "duplicate") service.consumeQueuedItem(envelope, objectMapper.writeValueAsString(currentExtraction(
+                listOf(owner.copy(givenNames = "Changed")), "FULLTEXT_XML")), DiscoveryVerificationExecution(null)) else null
             val validationCalls = Mockito.mockingDetails(emailValidationService).invocations.count { it.method.name == "validate" }
             val rawRequests = Mockito.mockingDetails(restTemplate).invocations.count {
                 it.method.name == "exchange" && it.arguments.getOrNull(1) == HttpMethod.PUT &&
@@ -1112,8 +1110,7 @@ class ExpertDiscoveryServiceTest {
                 }
                 qualifiedPaper = paper
                 qualifiedExtraction = parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)
-                val result = service.consumeQueuedItem(ownershipEnvelope(paper),
-                    objectMapper.writeValueAsString(qualifiedExtraction), null)
+                val result = service.consumeQueuedItem(ownershipEnvelope(paper), objectMapper.writeValueAsString(qualifiedExtraction), DiscoveryVerificationExecution(null))
                 assertTrue(result.succeeded)
                 assertEquals(5, result.indexedExperts)
                 assertEquals(5, result.promoted)
@@ -1134,8 +1131,7 @@ class ExpertDiscoveryServiceTest {
                     val validationBefore = Mockito.mockingDetails(emailValidationService).invocations.count {
                         it.method.name == "validate"
                     }
-                    val rejected = service.consumeQueuedItem(ownershipEnvelope(paper),
-                        objectMapper.writeValueAsString(parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)), null)
+                    val rejected = service.consumeQueuedItem(ownershipEnvelope(paper), objectMapper.writeValueAsString(parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)), DiscoveryVerificationExecution(null))
                     mismatchedIndexed = rejected.indexedExperts
                     assertEquals(0, rejected.indexedExperts)
                     assertEquals(docsBefore, docs)
@@ -1158,12 +1154,10 @@ class ExpertDiscoveryServiceTest {
             .map { it.arguments.first() as String }
         assertEquals(5, validated.size)
         val before = docs.toMap()
-        val replay = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(qualifiedPaper)),
-            objectMapper.writeValueAsString(requireNotNull(qualifiedExtraction)), null)
+        val replay = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(qualifiedPaper)), objectMapper.writeValueAsString(requireNotNull(qualifiedExtraction)), DiscoveryVerificationExecution(null))
         assertEquals(0, replay.indexedExperts)
         assertEquals(before, docs)
-        val previous = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(qualifiedPaper)),
-            objectMapper.writeValueAsString(requireNotNull(qualifiedExtraction).copy(identityRuleVersion = 20260929)), null)
+        val previous = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(qualifiedPaper)), objectMapper.writeValueAsString(requireNotNull(qualifiedExtraction).copy(identityRuleVersion = 20260929)), DiscoveryVerificationExecution(null))
         assertEquals("IDENTITY_EXTRACTION_VERSION_UNSUPPORTED", previous.unrecoverableReason)
         assertEquals(before, docs)
         val previousNewRaw = docs.keys.count { it.contains("/orcid_info/") } -
@@ -1264,8 +1258,7 @@ class ExpertDiscoveryServiceTest {
             }
             relations += expected.size
             val cached = parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)
-            val outcome = service.consumeQueuedItem(ownershipEnvelope(paper),
-                objectMapper.writeValueAsString(cached), null)
+            val outcome = service.consumeQueuedItem(ownershipEnvelope(paper), objectMapper.writeValueAsString(cached), DiscoveryVerificationExecution(null))
             assertTrue(outcome.succeeded, "$id: ${outcome.failureReasons}")
             assertEquals(if (id == "W3194730353") 0 else 1, outcome.indexedExperts, id)
             assertEquals(outcome.indexedExperts, outcome.promoted, id)
@@ -1290,12 +1283,10 @@ class ExpertDiscoveryServiceTest {
         assertEquals(3, validated.size, "the repeated paper is validated but never rewritten")
         assertEquals(2, validated.toSet().size)
         val unchanged = docs.toMap()
-        val replay = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(firstPaper)),
-            objectMapper.writeValueAsString(requireNotNull(firstExtraction)), null)
+        val replay = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(firstPaper)), objectMapper.writeValueAsString(requireNotNull(firstExtraction)), DiscoveryVerificationExecution(null))
         assertEquals(0, replay.indexedExperts)
         assertEquals(unchanged, docs)
-        val previous = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(firstPaper)),
-            objectMapper.writeValueAsString(requireNotNull(firstExtraction).copy(identityRuleVersion = 20260930)), null)
+        val previous = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(firstPaper)), objectMapper.writeValueAsString(requireNotNull(firstExtraction).copy(identityRuleVersion = 20260930)), DiscoveryVerificationExecution(null))
         assertEquals("IDENTITY_EXTRACTION_VERSION_UNSUPPORTED", previous.unrecoverableReason)
         assertEquals(unchanged, docs)
         val rawRequests = Mockito.mockingDetails(restTemplate).invocations.count {
@@ -1418,8 +1409,7 @@ class ExpertDiscoveryServiceTest {
             for (email in parsed.emails.filter { it.givenNames != null }) {
                 DiscoveryMockHelper.stubValidateEmail(emailValidationService, email.email, EmailValidationResult(3, true))
             }
-            val outcome = service.consumeQueuedItem(ownershipEnvelope(paper),
-                objectMapper.writeValueAsString(cached), null)
+            val outcome = service.consumeQueuedItem(ownershipEnvelope(paper), objectMapper.writeValueAsString(cached), DiscoveryVerificationExecution(null))
             assertTrue(outcome.succeeded, "$id: ${outcome.failureReasons}")
             assertEquals(explicit.size, outcome.indexedExperts, id)
             assertEquals(explicit.size, outcome.promoted, id)
@@ -1468,8 +1458,7 @@ class ExpertDiscoveryServiceTest {
         assertEquals(4, validations, "shared/unknown addresses must not reach validation")
         assertEquals(expected.keys, validatedAddresses.toSet())
         val originalDocs = docs.toMap()
-        val duplicate = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(firstPaper)),
-            objectMapper.writeValueAsString(requireNotNull(firstExtraction)), null)
+        val duplicate = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(firstPaper)), objectMapper.writeValueAsString(requireNotNull(firstExtraction)), DiscoveryVerificationExecution(null))
         assertEquals(0, duplicate.indexedExperts)
         assertEquals(originalDocs, docs, "replay must not overwrite existing identity")
         val rawRequests = Mockito.mockingDetails(restTemplate).invocations.count {
@@ -1482,8 +1471,7 @@ class ExpertDiscoveryServiceTest {
         }
         assertEquals(4, rawRequests)
         assertEquals(4, candidateRequests)
-        val oldVersion = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(firstPaper)),
-            objectMapper.writeValueAsString(requireNotNull(firstExtraction).copy(identityRuleVersion = 20260928)), null)
+        val oldVersion = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(firstPaper)), objectMapper.writeValueAsString(requireNotNull(firstExtraction).copy(identityRuleVersion = 20260928)), DiscoveryVerificationExecution(null))
         assertEquals("IDENTITY_EXTRACTION_VERSION_UNSUPPORTED", oldVersion.unrecoverableReason)
         assertEquals(originalDocs, docs)
         // Reuse the established isolated consumer/writer boundary matrix; these XML controls
@@ -1572,7 +1560,7 @@ class ExpertDiscoveryServiceTest {
             val paper = PaperMetadata(null, null, case.path("doi").asText(), id, 2021, null, authors, "OPENALEX")
             val payload = objectMapper.writeValueAsString(
                 parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION))
-            val outcome = service.consumeQueuedItem(ownershipEnvelope(paper), payload, null)
+            val outcome = service.consumeQueuedItem(ownershipEnvelope(paper), payload, DiscoveryVerificationExecution(null))
             assertTrue(outcome.succeeded, "$id ${outcome.failureReasons}")
             if (outcome.indexedExperts > 0 && firstPaper == null) {
                 firstPaper = paper
@@ -1643,8 +1631,7 @@ class ExpertDiscoveryServiceTest {
 
         // 邮箱去重：同一缓存再消费一次不新建档案。
         val before = docs.toMap()
-        val replay = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(firstPaper)),
-            requireNotNull(firstPayload), null)
+        val replay = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(firstPaper)), requireNotNull(firstPayload), DiscoveryVerificationExecution(null))
         assertEquals(0, replay.indexedExperts)
         assertEquals(before, docs)
 
@@ -1663,8 +1650,7 @@ class ExpertDiscoveryServiceTest {
         }
         val kumarPaper = PaperMetadata(null, null, kumar.path("doi").asText(), "kumar", 2023, null,
             kumarAuthors, "OPENALEX")
-        rejectionService.consumeQueuedItem(ownershipEnvelope(kumarPaper),
-            objectMapper.writeValueAsString(kumarParsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)), null)
+        rejectionService.consumeQueuedItem(ownershipEnvelope(kumarPaper), objectMapper.writeValueAsString(kumarParsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)), DiscoveryVerificationExecution(null))
         assertTrue(rejectionDocs.values.none { it["email"] == "jitendra@nitt.edu" }, "被拒邮箱不得落档")
         assertTrue(rejectionDocs.values.none { "${it["givenNames"]} ${it["familyNames"]}" == "Jitendra Kumar" },
             "正确主人被拒时不得把解析结果转给错误作者")
@@ -1707,7 +1693,7 @@ class ExpertDiscoveryServiceTest {
             val validationBefore = ownershipValidateCalls()
             val paper = PaperMetadata(null, null, "10.9/$case", case, 2020, null, authors, "OPENALEX")
             val outcome = service.consumeQueuedItem(ownershipEnvelope(paper), objectMapper.writeValueAsString(
-                parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)), null)
+                parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)), DiscoveryVerificationExecution(null))
             val created = docs.values.filter { it["email"] in parsed.emails.map { email -> email.email } }
             cases += mapOf(
                 "case" to case, "designation" to "REAL_ORIGINAL",
@@ -1729,7 +1715,7 @@ class ExpertDiscoveryServiceTest {
             val before = docs.toMap()
             val payload = if (version == null) """{"emails":[],"methodUsed":"PDF_PARSE"}"""
             else """{"emails":[],"methodUsed":"PDF_PARSE","identityRuleVersion":$version}"""
-            val outcome = service.consumeQueuedItem(ownershipEnvelope(paper("stale", "Stale")), payload, null)
+            val outcome = service.consumeQueuedItem(ownershipEnvelope(paper("stale", "Stale")), payload, DiscoveryVerificationExecution(null))
             mapOf("consumer" to "direct", "version" to version,
                 "unrecoverableReason" to outcome.unrecoverableReason,
                 "indexedExperts" to outcome.indexedExperts,
@@ -1756,7 +1742,7 @@ class ExpertDiscoveryServiceTest {
             val controlPaper = paper(control.label, control.label)
                 .copy(source = "OPENALEX", doi = "10.9/${control.label}", authors = control.authors)
             val outcome = service.consumeQueuedItem(ownershipEnvelope(controlPaper), objectMapper.writeValueAsString(
-                control.parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)), null)
+                control.parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)), DiscoveryVerificationExecution(null))
             val created = docs.values.filter { it["email"] in emails }
             mapOf(
                 "label" to control.label, "designation" to control.designation, "emails" to emails,
@@ -1868,7 +1854,7 @@ class ExpertDiscoveryServiceTest {
             for (email in parsed.emails) DiscoveryMockHelper.stubValidateEmail(emailValidationService, email.email, EmailValidationResult(3, true))
             val paper = paper("source", "Source block").copy(authors = authors, source = "OPENALEX", doi = case.path("id").asText())
             val result = svc.consumeQueuedItem(ownershipEnvelope(paper), objectMapper.writeValueAsString(
-                parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)), 12L)
+                parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)), DiscoveryVerificationExecution(12L))
             assertTrue(result.succeeded)
             indexed += result.indexedExperts
             promoted += result.promoted
@@ -1899,7 +1885,7 @@ class ExpertDiscoveryServiceTest {
         for (parsed in outcomes) {
             for (email in parsed.emails) DiscoveryMockHelper.stubValidateEmail(emailValidationService, email.email, EmailValidationResult(3, true))
             val noProof = parsed.copy(emails = parsed.emails.map { it.copy(identityEvidence = null) }, identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)
-            val result = svc.consumeQueuedItem(ownershipEnvelope(paper), objectMapper.writeValueAsString(noProof), null)
+            val result = svc.consumeQueuedItem(ownershipEnvelope(paper), objectMapper.writeValueAsString(noProof), DiscoveryVerificationExecution(null))
             assertEquals(1, result.indexedExperts)
             assertEquals(1, result.promoted)
         }
@@ -1944,7 +1930,7 @@ class ExpertDiscoveryServiceTest {
         stubDedupHitFor("EMAIL-replay@example.com", "replay@example.com", "A", "B", withProof = false)
         stubDuplicateValidation()
 
-        val result = svc.consumeQueuedItem(ownershipEnvelope(paper("replay", "Replay")), duplicateExtraction(), 7L)
+        val result = svc.consumeQueuedItem(ownershipEnvelope(paper("replay", "Replay")), duplicateExtraction(), DiscoveryVerificationExecution(7L))
 
         assertTrue(result.succeeded)
         assertFalse(result.identityRepairFailed)
@@ -1960,7 +1946,7 @@ class ExpertDiscoveryServiceTest {
         stubDedupHitFor("EMAIL-replay@example.com", "replay@example.com", "A", "B", withProof = false)
         stubDuplicateValidation()
 
-        val result = svc.consumeQueuedItem(ownershipEnvelope(paper("replay", "Replay")), duplicateExtraction(), null)
+        val result = svc.consumeQueuedItem(ownershipEnvelope(paper("replay", "Replay")), duplicateExtraction(), DiscoveryVerificationExecution(null))
 
         assertFalse(result.succeeded, "部分失败不得推进为修复成功")
         assertTrue(result.identityRepairFailed)
@@ -1975,7 +1961,7 @@ class ExpertDiscoveryServiceTest {
         stubDedupHitFor("EMAIL-replay@example.com", "replay@example.com", "A", "B", withProof = false)
         stubDuplicateValidation()
 
-        val result = svc.consumeQueuedItem(ownershipEnvelope(paper("replay", "Replay")), duplicateExtraction(), null)
+        val result = svc.consumeQueuedItem(ownershipEnvelope(paper("replay", "Replay")), duplicateExtraction(), DiscoveryVerificationExecution(null))
 
         assertTrue(result.succeeded)
         assertFalse(result.identityRepairFailed)
@@ -1989,7 +1975,7 @@ class ExpertDiscoveryServiceTest {
         stubDedupHitFor("EMAIL-replay@example.com", "replay@example.com", "A", "B", withProof = false)
         stubDuplicateValidation()
 
-        val result = svc.consumeQueuedItem(ownershipEnvelope(paper("replay", "Replay")), duplicateExtraction(), null)
+        val result = svc.consumeQueuedItem(ownershipEnvelope(paper("replay", "Replay")), duplicateExtraction(), DiscoveryVerificationExecution(null))
 
         assertTrue(result.succeeded)
         assertFalse(result.identityRepairFailed)
@@ -2009,7 +1995,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "dup@example.com", EmailValidationResult(3, true))
         stubDedupHitFor("EMAIL-dup@example.com", "dup@example.com", "A", "B", withProof = false)
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         val sourceStats = result.stats.bySource["EUROPE_PMC"]
         assertEquals(1, sourceStats?.duplicates)
@@ -2047,9 +2033,7 @@ class ExpertDiscoveryServiceTest {
                 identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION
             )
         )
-        return svc.consumeQueuedItem(
-            ownershipEnvelope(paper(docId, "Fresh").copy(authors = authors)), payload, 5L
-        )
+        return svc.consumeQueuedItem(ownershipEnvelope(paper(docId, "Fresh").copy(authors = authors)), payload, DiscoveryVerificationExecution(5L))
     }
 
     @Test
@@ -2135,7 +2119,7 @@ class ExpertDiscoveryServiceTest {
         stubDedupHitFor("EMAIL-replay@example.com", "replay@example.com", "A", "B", withProof = false)
         stubDuplicateValidation()
 
-        val result = svc.consumeQueuedItem(ownershipEnvelope(paper("replay", "Replay")), duplicateExtraction(), 7L)
+        val result = svc.consumeQueuedItem(ownershipEnvelope(paper("replay", "Replay")), duplicateExtraction(), DiscoveryVerificationExecution(7L))
 
         assertTrue(result.succeeded)
         assertEquals(1, result.personCreated, "补证出口的人物登记结果并入本次消费计数")
@@ -2159,7 +2143,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
         DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         val sourceStats = result.stats.bySource["EUROPE_PMC"]
         assertEquals(
@@ -2181,24 +2165,24 @@ class ExpertDiscoveryServiceTest {
         val envelope = ownershipEnvelope(paper("retry", "Retry").copy(authors = listOf(author)))
         Mockito.doThrow(IllegalStateException("queue unavailable")).doNothing().`when`(enrichmentJobService)
             .enqueue(Mockito.anyString(), Mockito.anyString(), Mockito.any())
-        assertTrue(svc.consumeQueuedItem(envelope, payload, null).enqueueFailed)
+        assertTrue(svc.consumeQueuedItem(envelope, payload, DiscoveryVerificationExecution(null)).enqueueFailed)
         docs.keys.filter { it.contains("/orcid_info_candidate/") }.toList().forEach { docs.remove(it) }
         val before = docs.toMap()
-        val retry = svc.consumeQueuedItem(envelope, payload, null)
+        val retry = svc.consumeQueuedItem(envelope, payload, DiscoveryVerificationExecution(null))
         assertTrue(retry.succeeded)
         assertEquals(0, retry.indexedExperts)
         assertEquals(1, retry.duplicateExperts)
         assertEquals(before, docs)
         Mockito.verify(enrichmentJobService, Mockito.times(2)).enqueue(Mockito.anyString(), Mockito.anyString(), Mockito.any())
         val conflicting = parsed.copy(emails = listOf(parsed.emails.single().copy(givenNames = "Other")), identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)
-        val conflict = svc.consumeQueuedItem(envelope, objectMapper.writeValueAsString(conflicting), null)
+        val conflict = svc.consumeQueuedItem(envelope, objectMapper.writeValueAsString(conflicting), DiscoveryVerificationExecution(null))
         assertEquals(1, conflict.failureReasons["IDENTITY_EXISTING_CONFLICT"])
         assertEquals(before, docs)
         Mockito.verify(enrichmentJobService, Mockito.times(2)).enqueue(Mockito.anyString(), Mockito.anyString(), Mockito.any())
         // Matching a legacy import must not create a new path into its business-key fallback.
         val key = docs.keys.single()
         docs[key] = docs.getValue(key) - "identityVerification" - "emailSource" - "tags"
-        val legacyRetry = svc.consumeQueuedItem(envelope, payload, null)
+        val legacyRetry = svc.consumeQueuedItem(envelope, payload, DiscoveryVerificationExecution(null))
         assertEquals(1, legacyRetry.failureReasons["IDENTITY_EXISTING_UNVERIFIED"])
         Mockito.verify(enrichmentJobService, Mockito.times(2)).enqueue(Mockito.anyString(), Mockito.anyString(), Mockito.any())
     }
@@ -2207,8 +2191,7 @@ class ExpertDiscoveryServiceTest {
     fun `legacy extraction cache is rejected before interpreting old author identities`() {
         val svc = createService()
         val envelope = QueuedItemEnvelope("EUROPE_PMC", "old-key", "PMCID", "PAPER", 1, "{}", 2, true)
-        val outcome = svc.consumeQueuedItem(envelope,
-            """{"emails":[],"methodUsed":"FULLTEXT_XML","identityRuleVersion":20260926}""", null)
+        val outcome = svc.consumeQueuedItem(envelope, """{"emails":[],"methodUsed":"FULLTEXT_XML","identityRuleVersion":20260926}""", DiscoveryVerificationExecution(null))
         assertEquals("IDENTITY_EXTRACTION_VERSION_UNSUPPORTED", outcome.unrecoverableReason)
         Mockito.verify(indexWriterService, Mockito.never()).indexToRaw(Mockito.anyString(), Mockito.anyMap())
     }
@@ -2223,8 +2206,7 @@ class ExpertDiscoveryServiceTest {
         val parsed = extractOwnershipContent(ownershipPdf(source), org.springframework.http.MediaType.APPLICATION_PDF, emptyList())
         assertEquals(6, parsed.emails.size)
         val paper = paper("unbound-brace", "Unbound brace source").copy(authors = emptyList(), source = "CORE")
-        val result = svc.consumeQueuedItem(ownershipEnvelope(paper),
-            objectMapper.writeValueAsString(parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)), null)
+        val result = svc.consumeQueuedItem(ownershipEnvelope(paper), objectMapper.writeValueAsString(parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)), DiscoveryVerificationExecution(null))
         assertEquals(6, result.failureReasons["IDENTITY_UNRESOLVED"])
         assertTrue(docs.isEmpty())
         Mockito.verifyNoInteractions(emailValidationService)
@@ -2236,7 +2218,7 @@ class ExpertDiscoveryServiceTest {
         // 时，Europe PMC 不得加入启用源列表。修复前 :209 的 add 从不读 enabled，此处必含 EUROPE_PMC。
         val svc = createService(europePmcProps = EuropePmcProperties(enabled = false))
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         assertFalse(result.stats.bySource.containsKey("EUROPE_PMC"),
             "Europe PMC must not run when europePmcProperties.enabled=false")
@@ -2267,7 +2249,7 @@ class ExpertDiscoveryServiceTest {
                 enabled = true, maxPapersPerRun = 1_000, maxAuthorsPerRun = 1_000, includeRawScan = false
             )
         )
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         val sourceNames = result.stats.bySource.keys
         assertTrue(sourceNames.containsAll(listOf("EUROPE_PMC", "PMC_OA", "OPENALEX", "CROSSREF", "CORE", "ARXIV")),
@@ -2294,10 +2276,7 @@ class ExpertDiscoveryServiceTest {
         Mockito.doReturn(core).`when`(coreProvider).getIfAvailable()
 
         val svc = createService()
-        val result = svc.discover(
-            PaperSearchCriteria(subjectScope = SubjectScopeCatalog.RND_TARGET),
-            "TEST"
-        )
+        val result = svc.discover(PaperSearchCriteria(subjectScope = SubjectScopeCatalog.RND_TARGET), "TEST", 42L)
 
         val sourceNames = result.stats.bySource.keys
         assertFalse(sourceNames.contains("EUROPE_PMC"), "RND_TARGET must exclude EUROPE_PMC, got: $sourceNames")
@@ -2311,10 +2290,7 @@ class ExpertDiscoveryServiceTest {
         // I4-3 语义固定：手动指定 sources=["EUROPE_PMC"] 且 enabled=true 时，
         // subjectScope=RND_TARGET 仍排除 Europe PMC —— scope 排除优先于手动指定。
         val svc = createService()
-        val result = svc.discover(
-            PaperSearchCriteria(sources = listOf("EUROPE_PMC"), subjectScope = "RND_TARGET"),
-            "TEST"
-        )
+        val result = svc.discover(PaperSearchCriteria(sources = listOf("EUROPE_PMC"), subjectScope = "RND_TARGET"), "TEST", 42L)
 
         assertFalse(result.stats.bySource.containsKey("EUROPE_PMC"),
             "scope exclusion must override manual sources selection")
@@ -2334,7 +2310,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
         DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         assertEquals(1, result.stats.totalPapers)
         assertEquals(0, result.stats.noEmailPapers)
@@ -2360,7 +2336,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
         DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         assertEquals(1, result.stats.indexed)
         assertEquals(1, result.stats.promoted)
@@ -2393,7 +2369,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
         DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         assertEquals(1, result.stats.indexed)
         assertEquals(0, result.stats.promoted)
@@ -2436,7 +2412,7 @@ class ExpertDiscoveryServiceTest {
                 ?: expertClassificationService.classify(c6Expert("fallback"))
         )
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
         assertEquals(1, result.stats.indexed)
         assertEquals(0, result.stats.promoted)
         assertEquals("REJECTED", captured.single()["filterResult"])
@@ -2490,7 +2466,7 @@ class ExpertDiscoveryServiceTest {
             true
         }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
 
-        svc.discover(PaperSearchCriteria(), "TEST")
+        svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         val map = capturedMaps.single()
         assertEquals("education", map["institutionType"])
@@ -2523,7 +2499,7 @@ class ExpertDiscoveryServiceTest {
             true
         }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
 
-        svc.discover(PaperSearchCriteria(), "TEST")
+        svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         val map = capturedMaps.single()
         // I-1/I-2: 缺结构证据 → 展示字段为空；署名绝不复制成 employment，逗号末段绝不猜国籍。
@@ -2554,7 +2530,7 @@ class ExpertDiscoveryServiceTest {
             true
         }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
 
-        svc.discover(PaperSearchCriteria(), "TEST")
+        svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         val map = capturedMaps.single()
         // I-1/I-2：机构名与国籍都来自同一结构机构，原文署名（含逗号）一个都不进展示值。
@@ -2587,7 +2563,7 @@ class ExpertDiscoveryServiceTest {
             true
         }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
 
-        svc.discover(PaperSearchCriteria(), "TEST")
+        svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         assertEquals(ExpertIdGenerator.generate(null, "john@oxford.ac.uk"), capturedIds.single(), "新记录用邮箱键；真实ORCID独立保存")
         assertEquals(
@@ -2625,7 +2601,7 @@ class ExpertDiscoveryServiceTest {
         val candidateDocs = mutableListOf<Map<String, Any?>>()
         captureProjectedCandidate(candidateDocs)
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         assertEquals(1, result.stats.promoted, "资格通过后必须真的晋升，否则下面的 CANDIDATE 断言会漏掉")
         assertTrue(capturedIds.single().startsWith("EMAIL-"), "无 ORCID 时主键必须是 EMAIL-*")
@@ -2659,7 +2635,7 @@ class ExpertDiscoveryServiceTest {
             true
         }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
 
-        svc.discover(PaperSearchCriteria(), "TEST")
+        svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         val externalIds = capturedMaps.single()["externalIds"] as Map<*, *>
         assertFalse(externalIds.containsKey("openAlexAuthorId"), "非 A+数字 的作者 ID 不得入库")
@@ -2674,7 +2650,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(europePmc, "NO_PMC_ID")
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         assertEquals(1, result.stats.totalPapers)
         assertEquals(1, result.stats.noEmailPapers)
@@ -2692,7 +2668,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "dup@example.com", EmailValidationResult(2, true))
         DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 1)
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
         assertEquals(1, result.stats.duplicates)
         assertEquals(0, result.stats.indexed)
     }
@@ -2711,7 +2687,7 @@ class ExpertDiscoveryServiceTest {
         val epmcRequests = stubPaperSourceRuns(europePmc, 500, pageOf(100, "NEXT-EPMC"))
         stubPaperSourceRuns(openAlex, 500, pageOf(100, "NEXT-OPENALEX", offset = 100))
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST", includeRawScan = false)
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L, includeRawScan = false)
 
         assertEquals(200, result.stats.totalPapers)
         assertEquals(100, result.stats.bySource["EUROPE_PMC"]?.papersSearched)
@@ -2731,7 +2707,7 @@ class ExpertDiscoveryServiceTest {
             listOf(verifiedAuthorEmail("bad-email", "X", "Y", false, null, null)))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "bad-email", EmailValidationResult(0, false, "INVALID_FORMAT"))
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
         assertEquals(1, result.stats.emailRejected)
         assertEquals(0, result.stats.indexed)
     }
@@ -2748,7 +2724,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
         DiscoveryMockHelper.stubEligibilityFalse(eligibilityService, listOf("CHINESE_NATIONALITY"))
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
         assertEquals(1, result.stats.indexed)
         assertEquals(1, result.stats.filtered)
         assertEquals(0, result.stats.promoted)
@@ -2772,7 +2748,7 @@ class ExpertDiscoveryServiceTest {
                 Mockito.anyString(), Mockito.any<Map<String, Any?>>() ?: emptyMap(), Mockito.anyString()
             )
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
         assertEquals(1, result.stats.indexed)
         assertEquals(0, result.stats.promoted)
         assertEquals(1, result.stats.promotionFailed)
@@ -2797,7 +2773,7 @@ class ExpertDiscoveryServiceTest {
             Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
         )
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
         val source = result.stats.bySource["EUROPE_PMC"]!!
         val checkpoint = storedCheckpointFor("EUROPE_PMC")
         assertEquals(0, result.stats.indexed)
@@ -2849,7 +2825,7 @@ class ExpertDiscoveryServiceTest {
                         Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
                     )
 
-                val result = createService().discover(criteria, "TEST")
+                val result = createService().discover(criteria, "TEST", 42L)
                 val source = result.stats.bySource["EUROPE_PMC"]!!
                 val checkpoint = storedCheckpointFor("EUROPE_PMC", criteria)
                 assertEquals(entering, checkpoint.cursor)
@@ -2906,10 +2882,10 @@ class ExpertDiscoveryServiceTest {
         )
 
         val svc = createService()
-        val first = svc.discover(criteria, "TEST")
+        val first = svc.discover(criteria, "TEST", 42L)
         assertEquals(1, first.stats.bySource["EUROPE_PMC"]?.indexed)
         assertEquals(DiscoveryStopReason.DEDUP_INCOMPLETE, first.stats.bySource["EUROPE_PMC"]?.stopReason)
-        val replay = svc.discover(criteria, "TEST")
+        val replay = svc.discover(criteria, "TEST", 42L)
         assertEquals(1, replay.stats.bySource["EUROPE_PMC"]?.duplicates)
         assertEquals(1, replay.stats.bySource["EUROPE_PMC"]?.indexed)
         assertEquals(2, rawIds.size, "first author is written once; only second author is added on replay")
@@ -2945,7 +2921,7 @@ class ExpertDiscoveryServiceTest {
                 Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
             )
 
-        val result = createService(c4Props()).discover(criteria, "TEST")
+        val result = createService(c4Props()).discover(criteria, "TEST", 42L)
         val source = result.stats.bySource["ORCID"]!!
         val checkpoint = storedCheckpointFor("ORCID", criteria)
         assertEquals(1, source.dedupErrors)
@@ -2996,13 +2972,13 @@ class ExpertDiscoveryServiceTest {
         val source = OrcidDataSource(template, OrcidProperties(enabled = true, requestDelayMs = 0, maxRecordsPerRun = 1))
         Mockito.doReturn(source).`when`(orcidProvider).getIfAvailable()
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "found@ox.ac.uk", EmailValidationResult(0, false))
-        val first = service.discover(criteria, "TEST")
+        val first = service.discover(criteria, "TEST", 42L)
         val firstCursor = storedCheckpoint(newKey)
         assertEquals("0|1", firstCursor.cursor)
         assertEquals(CheckpointState.ACTIVE, firstCursor.state)
         val firstQueueSeed = service.queueLegacySeedCursor("ORCID", criteria)
         assertEquals("0|1", firstQueueSeed)
-        val second = service.discover(criteria, "TEST")
+        val second = service.discover(criteria, "TEST", 42L)
         val secondCursor = storedCheckpoint(newKey)
         assertEquals("0|2", secondCursor.cursor)
         assertEquals("0|2", service.queueLegacySeedCursor("ORCID", criteria))
@@ -3059,7 +3035,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
         DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
         assertEquals(1, result.stats.indexed)
     }
 
@@ -3083,7 +3059,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
         DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
         assertEquals(2, result.stats.indexed)
     }
 
@@ -3099,7 +3075,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
         DiscoveryMockHelper.stubEligibilityFalse(eligibilityService, listOf("MISSING_ORCID"))
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         assertEquals(1, result.stats.indexed)
         assertEquals(0, result.stats.promoted)
@@ -3113,7 +3089,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubSearchPapersThrows(europePmc,
             org.springframework.web.client.HttpClientErrorException(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS))
 
-        val result = svc.discover(PaperSearchCriteria(cursor = "0"), "TEST")
+        val result = svc.discover(PaperSearchCriteria(cursor = "0"), "TEST", 42L)
         val sourceStats = result.stats.bySource["EUROPE_PMC"]
         assertEquals(5, sourceStats?.apiRequests)
         assertEquals(1, sourceStats?.failureReasons?.get("CIRCUIT_BREAKER"))
@@ -3125,7 +3101,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubSearchPapersThrows(europePmc,
             org.springframework.web.client.HttpClientErrorException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE))
 
-        val result = svc.discover(PaperSearchCriteria(cursor = "0"), "TEST")
+        val result = svc.discover(PaperSearchCriteria(cursor = "0"), "TEST", 42L)
         val sourceStats = result.stats.bySource["EUROPE_PMC"]
         assertEquals(5, sourceStats?.apiRequests)
         assertEquals(1, sourceStats?.failureReasons?.get("CIRCUIT_BREAKER"))
@@ -3136,7 +3112,7 @@ class ExpertDiscoveryServiceTest {
         val svc = createService()
         DiscoveryMockHelper.stubSearchPapersThrows(europePmc, RuntimeException("timeout"))
 
-        val result = svc.discover(PaperSearchCriteria(cursor = "0"), "TEST")
+        val result = svc.discover(PaperSearchCriteria(cursor = "0"), "TEST", 42L)
         val sourceStats = result.stats.bySource["EUROPE_PMC"]
         assertEquals(1, sourceStats?.apiRequests)
         assertEquals(1, sourceStats?.failureReasons?.get("SEARCH_FAILED"))
@@ -3151,7 +3127,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(papers, null, 5))
         DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(europePmc, "NO_EMAIL_IN_FULLTEXT")
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
         assertEquals(3, result.stats.totalPapers)
         val sourceStats = result.stats.bySource["EUROPE_PMC"]
         assertEquals(3, sourceStats?.papersSearched)
@@ -3164,7 +3140,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(europePmc, "NO_EMAIL_IN_FULLTEXT")
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
         val sourceStats = result.stats.bySource["EUROPE_PMC"]
         assertEquals(1, sourceStats?.fulltextObtained)
         assertEquals(1, sourceStats?.noEmailInFulltext)
@@ -3178,7 +3154,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubExtractAuthorEmailsOutcome(europePmc,
             currentExtraction(emptyList(), "FULLTEXT_XML", "FULLTEXT_FETCH_FAILED", httpRequests = 1))
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
         val sourceStats = result.stats.bySource["EUROPE_PMC"]
         assertEquals(0, sourceStats?.fulltextObtained)
         assertEquals(1, sourceStats?.failureReasons?.get("FULLTEXT_FETCH_FAILED"))
@@ -3214,7 +3190,7 @@ class ExpertDiscoveryServiceTest {
         val captured = mutableListOf<TaskProgress>()
         DiscoveryMockHelper.captureProgressUpdates(progressStore, captured)
 
-        svc.discover(PaperSearchCriteria(), "TEST")
+        svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         val batchProgress = captured.filter {
             it.status == "RUNNING" && it.details?.get("currentSource") == "EUROPE_PMC"
@@ -3233,7 +3209,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubExtractAuthorEmailsOutcome(europePmc,
             currentExtraction(emptyList(), "PDF_PARSE", "PDF_DOWNLOAD_FAILED", httpRequests = 1))
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
         val sourceStats = result.stats.bySource["EUROPE_PMC"]
         assertEquals(0, sourceStats?.fulltextObtained)
         assertEquals(1, sourceStats?.pdfDownloadFailed)
@@ -3251,7 +3227,7 @@ class ExpertDiscoveryServiceTest {
                 httpRequests = 1, fulltextObtained = true
             ))
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
         val sourceStats = result.stats.bySource["EUROPE_PMC"]
         assertEquals(1, sourceStats?.fulltextObtained)
         assertEquals(1, sourceStats?.noEmailInFulltext)
@@ -3267,7 +3243,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubExtractAuthorEmailsOutcome(europePmc,
             currentExtraction(emptyList(), "PDF_PARSE", null, httpRequests = 1, fulltextObtained = false))
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
         val sourceStats = result.stats.bySource["EUROPE_PMC"]
         assertEquals(0, sourceStats?.fulltextObtained)
         assertEquals(0, sourceStats?.noEmailInFulltext)
@@ -3282,7 +3258,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubExtractAuthorEmailsOutcome(europePmc,
             currentExtraction(emptyList(), "FULLTEXT_XML", null))
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
         val sourceStats = result.stats.bySource["EUROPE_PMC"]
         assertEquals(1, sourceStats?.fulltextObtained)
         assertEquals(1, sourceStats?.noEmailInFulltext)
@@ -3303,7 +3279,7 @@ class ExpertDiscoveryServiceTest {
         val captured = mutableListOf<TaskProgress>()
         DiscoveryMockHelper.captureProgressUpdates(progressStore, captured)
 
-        svc.discover(PaperSearchCriteria(), "TEST")
+        svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         val sourceDetails = (captured.last().details?.get("bySource") as Map<*, *>)["EUROPE_PMC"] as Map<*, *>
         val failureReasons = sourceDetails["failureReasons"] as Map<*, *>
@@ -3330,7 +3306,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
         DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
         val sourceStats = result.stats.bySource["EUROPE_PMC"]
         assertEquals(1, sourceStats?.papersSearched)
         assertEquals(1, sourceStats?.fulltextAttempted)
@@ -3365,7 +3341,7 @@ class ExpertDiscoveryServiceTest {
         val captured = mutableListOf<TaskProgress>()
         DiscoveryMockHelper.captureProgressUpdates(progressStore, captured)
 
-        svc.discover(PaperSearchCriteria(), "TEST")
+        svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         val orcidProgress = captured.find {
             it.status == "RUNNING" && it.details?.get("currentSource") == "ORCID"
@@ -3402,7 +3378,7 @@ class ExpertDiscoveryServiceTest {
         val captured = mutableListOf<TaskProgress>()
         DiscoveryMockHelper.captureProgressUpdates(progressStore, captured)
 
-        svc.discover(PaperSearchCriteria(), "TEST")
+        svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         val orcidProgress = captured.find {
             it.status == "RUNNING" && it.details?.get("currentSource") == "ORCID"
@@ -3441,7 +3417,7 @@ class ExpertDiscoveryServiceTest {
         val captured = mutableListOf<TaskProgress>()
         DiscoveryMockHelper.captureProgressUpdates(progressStore, captured)
 
-        svc.discover(PaperSearchCriteria(), "TEST")
+        svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         val orcidProgress = captured.find {
             it.status == "RUNNING" && it.details?.get("currentSource") == "ORCID"
@@ -3488,7 +3464,7 @@ class ExpertDiscoveryServiceTest {
         val captured = mutableListOf<TaskProgress>()
         DiscoveryMockHelper.captureProgressUpdates(progressStore, captured)
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
         assertEquals(13, result.stats.totalPapers)
 
         val orcidProgress = captured.find {
@@ -3528,7 +3504,7 @@ class ExpertDiscoveryServiceTest {
         val captured = mutableListOf<TaskProgress>()
         DiscoveryMockHelper.captureProgressUpdates(progressStore, captured)
 
-        svc.discover(PaperSearchCriteria(), "TEST")
+        svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         val orcidProgress = captured.find {
             it.status == "RUNNING" && it.details?.get("currentSource") == "ORCID"
@@ -4405,7 +4381,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test@example.com", EmailValidationResult(2, true))
         DiscoveryMockHelper.stubEsRawDocGet(restTemplate)
 
-        svc.discover(PaperSearchCriteria(), "TEST")
+        svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         Mockito.verify(restTemplate, Mockito.never()).exchange(
             Mockito.contains("orcid_info_candidate/_doc/"),
@@ -4438,7 +4414,7 @@ class ExpertDiscoveryServiceTest {
         )
         stubOrcid(orcid, listOf(mismatchedRecord))
 
-        svc.discover(PaperSearchCriteria(), "TEST")
+        svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         Mockito.verify(restTemplate, Mockito.never()).exchange(
             Mockito.contains("orcid_info/_update/"),
@@ -4474,7 +4450,7 @@ class ExpertDiscoveryServiceTest {
         stubOrcid(orcid, listOf(record))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test@example.com", EmailValidationResult(2, true))
 
-        svc.discover(PaperSearchCriteria(), "TEST")
+        svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         DiscoveryMockHelper.verifyOrcidSearchRecordsCalled(orcid, 100)
     }
@@ -4506,7 +4482,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
         DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
 
-        svc.discover(PaperSearchCriteria(), "TEST")
+        svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         DiscoveryMockHelper.verifyCandidatePutCalled(restTemplate, 1)
     }
@@ -4536,7 +4512,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test@example.com", EmailValidationResult(2, true))
         DiscoveryMockHelper.stubEsRawUpdate(restTemplate)
 
-        svc.discover(PaperSearchCriteria(), "TEST")
+        svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         DiscoveryMockHelper.verifyCandidatePutNeverCalled(restTemplate)
     }
@@ -4564,7 +4540,7 @@ class ExpertDiscoveryServiceTest {
         stubOrcid(orcid, listOf(matchedRecord))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test@example.com", EmailValidationResult(2, true))
 
-        svc.discover(PaperSearchCriteria(), "TEST")
+        svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         DiscoveryMockHelper.verifyRawUpdateCalled(restTemplate, 1)
     }
@@ -4595,7 +4571,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "valid@uni.edu", EmailValidationResult(2, true))
         DiscoveryMockHelper.stubEsRawUpdate(restTemplate)
 
-        svc.discover(PaperSearchCriteria(), "TEST")
+        svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         DiscoveryMockHelper.verifyRawUpdateCalled(restTemplate, 1)
     }
@@ -4625,7 +4601,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test@example.com", EmailValidationResult(2, true))
         DiscoveryMockHelper.stubEsRawUpdate(restTemplate)
 
-        svc.discover(PaperSearchCriteria(), "TEST")
+        svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         DiscoveryMockHelper.verifyRawUpdateCalled(restTemplate, 0)
     }
@@ -4658,7 +4634,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
         DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
 
-        svc.discover(PaperSearchCriteria(), "TEST")
+        svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         DiscoveryMockHelper.verifyCandidatePutNeverCalled(restTemplate)
     }
@@ -4686,7 +4662,7 @@ class ExpertDiscoveryServiceTest {
         stubOrcid(orcid, listOf(matchedRecord))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test@example.com", EmailValidationResult(2, true))
 
-        svc.discover(PaperSearchCriteria(), "TEST")
+        svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         DiscoveryMockHelper.verifyRawUpdateCalled(restTemplate, 1)
     }
@@ -4714,7 +4690,7 @@ class ExpertDiscoveryServiceTest {
         stubOrcid(orcid, listOf(matchedRecord))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test@example.com", EmailValidationResult(2, true))
 
-        svc.discover(PaperSearchCriteria(), "TEST")
+        svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         DiscoveryMockHelper.verifyRawUpdateCalled(restTemplate, 1)
     }
@@ -4826,7 +4802,7 @@ class ExpertDiscoveryServiceTest {
         )
         DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(europePmc, "NO_EMAIL_IN_FULLTEXT")
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         assertEquals(2, result.stats.totalPapers, "空页带 nextCursor 时必须继续翻页到下一批记录")
         val decoded = storedCheckpointFor("EUROPE_PMC")
@@ -4842,7 +4818,7 @@ class ExpertDiscoveryServiceTest {
         installInMemoryCursorStore()
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(emptyList(), null, 0))
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         val decoded = storedCheckpointFor("EUROPE_PMC")
         assertTrue(decoded.exhausted)
@@ -5096,7 +5072,7 @@ class ExpertDiscoveryServiceTest {
         stubLogged(arxiv, "ARXIV", 200, pageOf(100, null, offset = 200))
         DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
 
-        val result = svc.discover(fourSourceCriteria, "TEST", includeRawScan = false)
+        val result = svc.discover(fourSourceCriteria, "TEST", 42L, includeRawScan = false)
 
         assertEquals(
             listOf(
@@ -5198,7 +5174,7 @@ class ExpertDiscoveryServiceTest {
         }.`when`(crossref).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
         DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
 
-        val result = svc.discover(criteria, "TEST", includeRawScan = false)
+        val result = svc.discover(criteria, "TEST", 42L, includeRawScan = false)
 
         assertEquals(3, openAlexRequests.size, "全局论文上限已满时不得发出恢复回访请求")
         assertEquals(200, result.stats.totalPapers)
@@ -5238,7 +5214,7 @@ class ExpertDiscoveryServiceTest {
             )
         }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
         val resultRef = AtomicReference<DiscoveryResult>()
-        val worker = Thread { resultRef.set(svc.discover(criteria, "TEST")) }
+        val worker = Thread { resultRef.set(svc.discover(criteria, "TEST", 42L)) }
         worker.start()
         Thread.sleep(400)
         cancelled.set(true)
@@ -5549,7 +5525,7 @@ class ExpertDiscoveryServiceTest {
             throw ResourceAccessException("Read timed out", SocketTimeoutException("Read timed out"))
         }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
         val resultRef = AtomicReference<DiscoveryResult>()
-        val worker = Thread { resultRef.set(svc.discover(criteria, "TEST")) }
+        val worker = Thread { resultRef.set(svc.discover(criteria, "TEST", 42L)) }
         worker.start()
         assertTrue(firstFailure.await(2, TimeUnit.SECONDS), "first page request should fail")
         Thread.sleep(150)
@@ -5580,7 +5556,7 @@ class ExpertDiscoveryServiceTest {
         val resultRef = AtomicReference<DiscoveryResult>()
         val interrupted = AtomicBoolean(false)
         val worker = Thread {
-            resultRef.set(svc.discover(criteria, "TEST"))
+            resultRef.set(svc.discover(criteria, "TEST", 42L))
             interrupted.set(Thread.currentThread().isInterrupted)
         }
         worker.start()
@@ -5608,9 +5584,9 @@ class ExpertDiscoveryServiceTest {
         assertTrue(keyA.length <= 50 && keyB.length <= 50, "I-2: key 必须放下 VARCHAR(50)")
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(emptyList(), null, 0))
 
-        svc.discover(criteriaA, "TEST")
+        svc.discover(criteriaA, "TEST", 42L)
         val stateA = storedCheckpoint(keyA)
-        svc.discover(criteriaB, "TEST")
+        svc.discover(criteriaB, "TEST", 42L)
 
         assertTrue(storedCheckpoints.containsKey(keyA), "关键词 A 的检查点必须写在自己的 key 上")
         assertTrue(storedCheckpoints.containsKey(keyB), "关键词 B 的检查点必须写在自己的 key 上")
@@ -5627,7 +5603,7 @@ class ExpertDiscoveryServiceTest {
         )
         val seen = stubAndRecordRequests(europePmc, PaperSearchResult(emptyList(), null, 0))
 
-        svc.discover(PaperSearchCriteria(), "TEST")
+        svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         assertTrue(seen.isNotEmpty(), "来源必须被请求过")
         assertNull(seen.first().cursor, "旧 source_name 行的游标不得被挪用")
@@ -5648,7 +5624,7 @@ class ExpertDiscoveryServiceTest {
         storedCheckpoints[key] = DiscoverySourceCursor(id = 3L, sourceName = key, cursorValue = "C7")
         val seen = stubAndRecordRequests(europePmc, PaperSearchResult(emptyList(), null, 0))
 
-        svc.discover(criteria, "TEST")
+        svc.discover(criteria, "TEST", 42L)
 
         assertTrue(seen.isNotEmpty(), "来源必须被请求过")
         assertNull(seen.first().cursor, "裸游标值不是 v2 envelope，不得作为检查点使用")
@@ -5665,7 +5641,7 @@ class ExpertDiscoveryServiceTest {
             .`when`(orcid).searchOrcidPage(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
         DiscoveryMockHelper.stubSearchPapersThrows(europePmc, ResourceAccessException("TLS handshake failed"))
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         assertEquals(2, result.stats.attemptedSources)
         assertEquals(2, result.stats.failedSources)
@@ -5699,7 +5675,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
         DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         assertEquals(2, result.stats.attemptedSources)
         assertEquals(1, result.stats.failedSources)
@@ -5801,7 +5777,7 @@ class ExpertDiscoveryServiceTest {
         val captured = mutableListOf<TaskProgress>()
         DiscoveryMockHelper.captureProgressUpdates(progressStore, captured)
 
-        svc.discover(PaperSearchCriteria(), "TEST", includeRawScan = false)
+        svc.discover(PaperSearchCriteria(), "TEST", 42L, includeRawScan = false)
 
         val batchProgress = captured.filter { it.status == "RUNNING" && it.batchNumber > 0 }
         val batchNumbers = batchProgress.map { it.batchNumber }
@@ -5857,7 +5833,7 @@ class ExpertDiscoveryServiceTest {
             DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
             DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
 
-            return svc.discover(PaperSearchCriteria(), "TEST", includeRawScan = false).stats
+            return svc.discover(PaperSearchCriteria(), "TEST", 42L, includeRawScan = false).stats
         }
 
         val serial = runWithConcurrency(1)
@@ -5915,7 +5891,7 @@ class ExpertDiscoveryServiceTest {
             DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
             DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
             DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
-            return svc.discover(PaperSearchCriteria(), "TEST", includeRawScan = false).stats
+            return svc.discover(PaperSearchCriteria(), "TEST", 42L, includeRawScan = false).stats
         }
 
         val serial = runDiscovery(Executor { it.run() })
@@ -5948,7 +5924,7 @@ class ExpertDiscoveryServiceTest {
             DiscoveryMockHelper.stubMaxPapersPerSource(europePmc, maxPapers)
             DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(papers, null, batchSize.toLong()))
             DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(europePmc, "NO_EMAIL_IN_FULLTEXT")
-            return svc.discover(PaperSearchCriteria(), "TEST", includeRawScan = false).stats
+            return svc.discover(PaperSearchCriteria(), "TEST", 42L, includeRawScan = false).stats
         }
 
         val serial = runDiscovery(Executor { it.run() })
@@ -6002,7 +5978,7 @@ class ExpertDiscoveryServiceTest {
             DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
             DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
             DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
-            return svc.discover(PaperSearchCriteria(), "TEST", includeRawScan = false).stats
+            return svc.discover(PaperSearchCriteria(), "TEST", 42L, includeRawScan = false).stats
         }
 
         val serial = runDiscovery(Executor { it.run() })
@@ -6117,8 +6093,8 @@ class ExpertDiscoveryServiceTest {
         Mockito.doReturn(core.source).`when`(coreProvider).getIfAvailable()
 
         val svc = createService(c4Props())
-        svc.discover(criteria2020, "TEST")
-        svc.discover(criteria2021, "TEST")
+        svc.discover(criteria2020, "TEST", 42L)
+        svc.discover(criteria2021, "TEST", 42L)
 
         assertEquals("0|2020|100", storedCheckpointFor("CORE", criteria2020).cursor)
         assertEquals("0|2021|100", storedCheckpointFor("CORE", criteria2021).cursor,
@@ -6192,7 +6168,7 @@ class ExpertDiscoveryServiceTest {
         Mockito.doReturn(OrcidDataSource(template, OrcidProperties(enabled = true, requestDelayMs = 0)))
             .`when`(orcidProvider).getIfAvailable()
 
-        val result = createService(c4Props()).discover(criteria, "TEST")
+        val result = createService(c4Props()).discover(criteria, "TEST", 42L)
 
         Mockito.verify(template, Mockito.never())
             .getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
@@ -6919,13 +6895,14 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
         DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
         DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
-        Mockito.doReturn(77L).`when`(progressStore).getCurrentExecutionId("EXPERT_DISCOVERY")
+        Mockito.doReturn(999L).`when`(progressStore).getCurrentExecutionId("EXPERT_DISCOVERY")
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST", includeRawScan = false)
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 77L, includeRawScan = false)
 
         assertEquals(1, result.stats.indexed)
         assertEquals(0, result.stats.duplicates)
         Mockito.verify(enrichmentJobService).enqueue(eqValue(ExpertIdGenerator.generate(null, "enqueue@example.com")), eqValue("EUROPE_PMC"), eqValue(77L))
+        Mockito.verify(progressStore, Mockito.never()).getCurrentExecutionId("EXPERT_DISCOVERY")
     }
 
     @Test
@@ -6952,12 +6929,13 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
         DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
         DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
-        Mockito.doReturn(77L).`when`(progressStore).getCurrentExecutionId("EXPERT_DISCOVERY")
+        Mockito.doReturn(999L).`when`(progressStore).getCurrentExecutionId("EXPERT_DISCOVERY")
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST", includeRawScan = false)
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 77L, includeRawScan = false)
 
         assertEquals(1, result.stats.bySource["ORCID"]?.indexed)
         Mockito.verify(enrichmentJobService).enqueue(eqValue(ExpertIdGenerator.generate(null, "orcid-job@example.com")), eqValue("ORCID"), eqValue(77L))
+        Mockito.verify(progressStore, Mockito.never()).getCurrentExecutionId("EXPERT_DISCOVERY")
     }
 
     @Test
@@ -7294,7 +7272,7 @@ class ExpertDiscoveryServiceTest {
         val captured = mutableListOf<TaskProgress>()
         DiscoveryMockHelper.captureProgressUpdates(progressStore, captured)
 
-        val result = svc.discover(fourSourceCriteria, "TEST", includeRawScan = false)
+        val result = svc.discover(fourSourceCriteria, "TEST", 42L, includeRawScan = false)
 
         assertEquals(400, result.stats.totalPapers, "运行级目标 400 与单页 100 是两件事（I-1）")
         assertEquals(100, result.stats.bySource["OPENALEX"]?.papersSearched, "主源必须让出后来源的基础份额")
@@ -7333,7 +7311,7 @@ class ExpertDiscoveryServiceTest {
         stubPaperSourceRuns(crossref, 200, pageOf(100, "NEXT-CROSSREF", offset = 200))
         stubPaperSourceRuns(arxiv, 200, pageOf(100, "NEXT-ARXIV", offset = 300))
 
-        val result = svc.discover(fourSourceCriteria, "TEST", includeRawScan = false)
+        val result = svc.discover(fourSourceCriteria, "TEST", 42L, includeRawScan = false)
 
         assertEquals(400, result.stats.totalPapers, "释放的额度必须被用尽，且不得越过全局上限")
         assertEquals(40, result.stats.bySource["EUROPE_PMC"]?.papersSearched)
@@ -7359,7 +7337,7 @@ class ExpertDiscoveryServiceTest {
         val requests = enableFourPaperSources(cap = 200, page = pageOf(100, "NEXT"))
 
         val error = assertThrows(IllegalArgumentException::class.java) {
-            svc.discover(fourSourceCriteria, "TEST", includeRawScan = false)
+            svc.discover(fourSourceCriteria, "TEST", 42L, includeRawScan = false)
         }
 
         assertTrue(error.message!!.contains("EXPERT_DISCOVERY_MAX_PAPERS"),
@@ -7384,7 +7362,7 @@ class ExpertDiscoveryServiceTest {
         Mockito.doReturn(arxiv).`when`(arxivProvider).getIfAvailable()
         val arxivRequests = stubPaperSourceRuns(arxiv, 2_000, pageOf(100, "NEXT-ARXIV"))
 
-        val result = svc.discover(PaperSearchCriteria(sources = listOf("ARXIV")), "TEST", includeRawScan = false)
+        val result = svc.discover(PaperSearchCriteria(sources = listOf("ARXIV")), "TEST", 42L, includeRawScan = false)
 
         assertEquals(setOf("ARXIV"), result.stats.bySource.keys, "人工少源任务只分配所选来源")
         assertEquals(400, result.stats.bySource["ARXIV"]?.runBudget)
@@ -7430,7 +7408,7 @@ class ExpertDiscoveryServiceTest {
             ExpertDiscoveryProperties(enabled = true, maxPapersPerRun = 0, maxAuthorsPerRun = 200, includeRawScan = false)
         )
         val globalError = assertThrows(IllegalArgumentException::class.java) {
-            zeroGlobal.discover(PaperSearchCriteria(), "TEST")
+            zeroGlobal.discover(PaperSearchCriteria(), "TEST", 42L)
         }
         assertTrue(globalError.message!!.contains("全局论文上限"), "必须报清楚是哪个旋钮：${globalError.message}")
 
@@ -7441,7 +7419,7 @@ class ExpertDiscoveryServiceTest {
             )
         )
         val timeError = assertThrows(IllegalArgumentException::class.java) {
-            zeroTime.discover(PaperSearchCriteria(), "TEST")
+            zeroTime.discover(PaperSearchCriteria(), "TEST", 42L)
         }
         assertTrue(timeError.message!!.contains("时间预算"), "必须报清楚是哪个旋钮：${timeError.message}")
         Mockito.verify(europePmc, Mockito.never())
@@ -7456,7 +7434,7 @@ class ExpertDiscoveryServiceTest {
         val svc = createService(props)
         val requests = stubPaperSourceRuns(europePmc, 0, pageOf(1, "NEXT"))
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST", includeRawScan = false)
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L, includeRawScan = false)
 
         assertEquals(0, result.stats.bySource["EUROPE_PMC"]?.runBudget)
         assertEquals(0, result.stats.totalPapers, "0 不是无限量")
@@ -7493,9 +7471,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
         DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
 
-        val result = svc.discover(
-            PaperSearchCriteria(sources = listOf("EUROPE_PMC", "ORCID")), "TEST", includeRawScan = false
-        )
+        val result = svc.discover(PaperSearchCriteria(sources = listOf("EUROPE_PMC", "ORCID")), "TEST", 42L, includeRawScan = false)
 
         val orcidStats = result.stats.bySource["ORCID"]!!
         assertEquals(SourceUnit.RECORD, orcidStats.unit)
@@ -7549,7 +7525,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
         val (rawDocs, candidateDocs) = captureRawAndCandidate()
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val result = svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         assertEquals(1, result.stats.promoted, "资格通过后必须真的晋升，否则下面的 CANDIDATE 断言会漏掉")
         val token = rawDocs.single()["institutionEvidence"]
@@ -7575,7 +7551,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
         val (rawDocs, candidateDocs) = captureRawAndCandidate()
 
-        svc.discover(PaperSearchCriteria(), "TEST")
+        svc.discover(PaperSearchCriteria(), "TEST", 42L)
 
         // I-1：没有内部来源证据就不写这个键（不是写 null / false / UNVERIFIED）。
         assertFalse(rawDocs.single().containsKey("institutionEvidence"), "无结构来源不得签发证据")

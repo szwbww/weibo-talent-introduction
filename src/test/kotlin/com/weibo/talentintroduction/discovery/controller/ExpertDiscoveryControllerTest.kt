@@ -109,11 +109,7 @@ class ExpertDiscoveryControllerTest {
                 val execution = invocation.arguments[0] as TaskExecution
                 execution.copy(id = execution.id ?: 1L)
             }
-        Mockito.doThrow(RuntimeException("Europe PMC unavailable")).`when`(discoveryService).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        Mockito.doThrow(RuntimeException("Europe PMC unavailable")).`when`(discoveryService).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
 
         val result = controller.triggerDiscovery(null)
         assertEquals(500, result.statusCodeValue)
@@ -130,11 +126,7 @@ class ExpertDiscoveryControllerTest {
                 val execution = invocation.arguments[0] as TaskExecution
                 execution.copy(id = execution.id ?: 1L)
             }
-        Mockito.doThrow(RuntimeException("OpenAlex timeout")).`when`(discoveryService).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        Mockito.doThrow(RuntimeException("OpenAlex timeout")).`when`(discoveryService).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
 
         val result = controller.triggerDiscoveryByKeyword(listOf("ml"), 2020, 2026)
         assertEquals(500, result.statusCodeValue)
@@ -169,11 +161,7 @@ class ExpertDiscoveryControllerTest {
                 val execution = invocation.arguments[0] as TaskExecution
                 execution.copy(id = execution.id ?: 1L)
             }
-        Mockito.doReturn(DiscoveryResult("MANUAL", DiscoveryStats())).`when`(discoveryService).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        Mockito.doReturn(DiscoveryResult("MANUAL", DiscoveryStats())).`when`(discoveryService).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
 
         val result = controller.triggerDiscovery(null)
         assertEquals(200, result.statusCodeValue)
@@ -192,20 +180,12 @@ class ExpertDiscoveryControllerTest {
                 val execution = invocation.arguments[0] as TaskExecution
                 execution.copy(id = execution.id ?: 1L)
             }
-        Mockito.doReturn(DiscoveryResult("MANUAL", DiscoveryStats())).`when`(discoveryService).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        Mockito.doReturn(DiscoveryResult("MANUAL", DiscoveryStats())).`when`(discoveryService).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
 
         controller.triggerDiscovery(PaperSearchCriteria(subjectScope = "UNSCOPED"))
 
         val captor = ArgumentCaptor.forClass(PaperSearchCriteria::class.java)
-        Mockito.verify(discoveryService).discover(
-            captor.capture() ?: PaperSearchCriteria(),
-            Mockito.eq("MANUAL") ?: "MANUAL",
-            Mockito.eq(discoveryProperties.includeRawScan)
-        )
+        Mockito.verify(discoveryService).discover(captor.capture() ?: PaperSearchCriteria(), Mockito.eq("MANUAL") ?: "MANUAL", Mockito.any<Long>(), Mockito.eq(discoveryProperties.includeRawScan))
         assertEquals(SubjectScopeCatalog.RND_TARGET, captor.value.subjectScope)
     }
 
@@ -218,20 +198,12 @@ class ExpertDiscoveryControllerTest {
                 val execution = invocation.arguments[0] as TaskExecution
                 execution.copy(id = execution.id ?: 1L)
             }
-        Mockito.doReturn(DiscoveryResult("MANUAL", DiscoveryStats())).`when`(discoveryService).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        Mockito.doReturn(DiscoveryResult("MANUAL", DiscoveryStats())).`when`(discoveryService).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
 
         controller.triggerDiscoveryByKeyword(listOf("machine learning"), 2020, 2026)
 
         val captor = ArgumentCaptor.forClass(PaperSearchCriteria::class.java)
-        Mockito.verify(discoveryService).discover(
-            captor.capture() ?: PaperSearchCriteria(),
-            Mockito.eq("MANUAL") ?: "MANUAL",
-            Mockito.eq(discoveryProperties.includeRawScan)
-        )
+        Mockito.verify(discoveryService).discover(captor.capture() ?: PaperSearchCriteria(), Mockito.eq("MANUAL") ?: "MANUAL", Mockito.any<Long>(), Mockito.eq(discoveryProperties.includeRawScan))
         assertEquals(SubjectScopeCatalog.RND_TARGET, captor.value.subjectScope)
     }
 
@@ -260,11 +232,7 @@ class ExpertDiscoveryControllerTest {
                 val execution = invocation.arguments[0] as TaskExecution
                 execution.copy(id = execution.id ?: 1L)
             }
-        Mockito.doThrow(RuntimeException("Europe PMC down")).`when`(discoveryService).discover(
-            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
-            Mockito.anyString(),
-            Mockito.anyBoolean()
-        )
+        Mockito.doThrow(RuntimeException("Europe PMC down")).`when`(discoveryService).discover(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(), Mockito.anyString(), Mockito.any<Long>(), Mockito.anyBoolean())
 
         val result = controller.triggerDiscovery(null)
         assertEquals(500, result.statusCodeValue)
