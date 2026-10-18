@@ -141,7 +141,7 @@ O-2：同一线上深度发现弹窗，清楚展示“自动准入、直接准�
 |03|[统一准入门禁](apollo-03-admission.md)|10|新批次 gate；旧批次回归|
 |04|[异步核验与可靠提交](apollo-04-worker.md)|9|已登记任务完整处理/恢复；默认停用|
 |05|[深度发现接入与启动快照](apollo-05-integration.md)|13（测试专项例外）|真实新任务登记；手动/定时/连续一致|
-|06|[只读日志 API](apollo-06-reporting.md)|7|唯一统计口径及逐条分页|
+|06|[只读日志 API](apollo-06-reporting.md)|9|唯一统计口径及逐条分页；只读暴露既有认证阻断|
 |07|[线上弹窗与完整样式](apollo-07-frontend.md)|7|批准的布局、真实接口、交互完整|
 
 数据契约：[表、状态、接口与样本](apollo-contracts.md)。07内嵌完整CSS，不以预览文件里的零散样式代替。
@@ -205,3 +205,4 @@ O-2：同一线上深度发现弹窗，清楚展示“自动准入、直接准�
 - 2026-10-18，用户“批准该计划并执行”：批准03增加DiscoveryVerificationRepository.kt批量证据读取授权，文件上限同步9→10；该文件已在原并集中，实施文件并集不增加。依据I-6/I-13，保持真实docId证据一致及每500档案一次读取。修订身份和批准依据见 `docs/plans/fast/apollo-verification-master/ledger.md` Amendments。
 - 2026-10-18，用户“批准该计划并执行”：批准04纳入既有OrcidVerificationEvidenceClient及其测试，文件上限同步7→9，补齐逐端点持久化/恢复接缝；原总计划I-6/I-9与请求许可、费用边界不变。修订身份和批准依据见 `docs/plans/fast/apollo-verification-master/ledger.md` Amendments。
 - 用户“批准该计划并执行”批准05的C05-EXECUTION-CALLERS：仅增加ExpertDiscoveryControllerMvcTest、ExpertDiscoveryControllerTest、ExpertDiscoverySchedulerTest的真实execution/context调用迁移，文件上限10→13作为测试专项例外；生产文件清单、执行绑定与其他不变量不变。精确身份及批准依据见fast-p ledger Amendments。
+- 用户“批准该计划并执行 后续也都授权 执行完所有子计划”：批准06的C06-CAPABILITY-AUTH既有worker只读状态接缝及测试，上限7→9；并预先授权后续为完成各子计划既定行为必需的直接依赖/调用方/测试范围修订。每次仍须先记录精确文件、依据、Before/After身份及本次授权，再实施；不授权新增业务目标、无关修复、部署、推送或改写历史，所有原不变量和独立验证保持。

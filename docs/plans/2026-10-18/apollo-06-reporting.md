@@ -42,12 +42,13 @@ O-1：提供真实汇总/批次/逐条/证据API，准确区分自动准入来�
 
 1. **query DTO/service（I-1～I-4）**：在新QueryService实现C-5契约，复用01domain DTO；summary按execution批量GROUP BY，batches按激活批次归组，records返回筛选后精确total。尽量单SQL条件聚合，同一事务的COUNT和page保持一致；避免每个档案单查admission。run input_closed与active推核验状态，不修改原采集状态。
 2. **controller（I-2/I-3/I-4）**：新增GET端点逐字C-5，参数显式验证，400/404/503分类；capabilities无secret。批次/records不存在账本也返回NOT_RECORDED，不把旧采集数据塞入新结果。已有执行ID被清理时若新run仍存在可以从账本读取，collectionStatus=EXPIRED而不伪造采集状态。
+   **C06-CAPABILITY-AUTH已批准修正**：通过既有worker的只读accessor读取本进程当前authBlocked锁存状态，capabilities返回ready=false及CONFIG_AUTH；可选worker未创建时保持配置能力语义。GET仅读取，不重置锁存、不重试、不从历史attempt推断当前状态，不改worker领取/失败策略。401/403后的能力响应与不继续领取由既有及查询/controller回归覆盖。
 3. **SQL视图（I-1/I-3）**：01repository新增聚合/分页只读方法；不新增物化统计表。owner_execution固定；auto是本次已经提交过的自动事件；currentAdmissionDecision是当前快照，后续人工变更不会重写本次历史事实。
 4. **夹具与实测（I-1～I-4）**：交付清单内SQL夹具，仅允许导入名称带`_verification_fixture`的独立开发库，文件开头校验`DATABASE()`不符合则SIGNAL拒绝；合成ID统一`APV-FIXTURE-`前缀，使用固定executionId=3001/3002/3003，插入task_execution最小合法行便于原执行列表看见，不删除任何非fixture数据；F123重复导入幂等。给验收者明确命令 `mysql -h 127.0.0.1 -u <测试用户> -p <独立库名_verification_fixture> < src/test/resources/discovery/apollo-verification-manual-fixture.sql`，该命令由验收者在测试环境执行，计划阶段不执行。使用01/04测试helper构造C-6的F123和投影错误、人改状态、AUDIT变体；真实MySQL聚合验证等式，controller测试认证/异常与空历史语义；对每GET做SQL写调用及外部client零调用断言。
 
 ## 变更文件清单
 
-共7个文件；一个发现核验子系统（与既有准入/前端的交互按文中说明）；无清单外授权。
+共9个文件；原7个加既有worker只读认证阻断状态接缝及其现有回归测试；无清单外授权。
 
 |#|文件|动作|
 |---|---|---|
@@ -58,6 +59,8 @@ O-1：提供真实汇总/批次/逐条/证据API，准确区分自动准入来�
 |5|`src/test/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryVerificationControllerTest.kt`|新增|
 |6|`src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationReportingIT.kt`|新增隔离MySQL聚合|
 |7|`src/test/resources/discovery/apollo-verification-manual-fixture.sql`|新增仅手动验收夹具|
+|8|`src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt`|修改只读暴露当前authBlocked，不改变领取/失败/重置策略|
+|9|`src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt`|修改覆盖只读认证阻断接缝|
 
 ## 验收标准
 
@@ -82,3 +85,6 @@ I-1：F123每列/每批/过滤total精确断言；I-2：旧null、新0、异常5
 - 操作步骤：连续GET明细/汇总20次。
 - 预期结果：本次auto55仍是历史事实；该条currentAdmissionDecision=HOLD；20次GET没有新表写入、没有Apollo请求，原task接口不变。
 - 覆盖：N-1/N-2，I-4，IP-2/IP-5
+
+## 修正记录
+- 用户“批准该计划并执行 后续也都授权 执行完所有子计划”批准C06-CAPABILITY-AUTH最小修正：新增以上既有worker及测试授权，上限7→9；仅将当前认证阻断状态传给既定capabilities接口，无新状态/表/重置/重试/历史推断。精确Before/After与批准记录见fast-p ledger Amendments。
