@@ -79,7 +79,9 @@ class DiscoveryVerificationRegistrationService(
                 check(!properties.enabled) { "Verification execution context is missing" }
                 return DiscoveryRegistration()
             }
-            val snapshot = DiscoveryVerificationAdmissionGate.snapshot(docId, profile, policy.evaluate(docId, profile).configSnapshot)
+            // Match toIndexMap's RAW identity convention; real ORCID remains in externalIds/provenance.
+            val rawProfile = profile.copy(esDocId = docId, orcidId = docId)
+            val snapshot = DiscoveryVerificationAdmissionGate.snapshot(docId, rawProfile, policy.evaluate(docId, rawProfile).configSnapshot)
             // Read every business protection before the first RAW write; read failures propagate.
             val layers = ExpertIndexLevel.values().associateWith { writer.readDiscoveryDocument(it, docId) }
             val admission = admissions.findAdmission(docId)
@@ -93,7 +95,7 @@ class DiscoveryVerificationRegistrationService(
                 return DiscoveryRegistration(protected = true)
             }
             val saved = mapper.writeValueAsString(linkedMapOf("docId" to docId, "identityHash" to snapshot.identityHash,
-                "factFingerprint" to snapshot.factFingerprint, "profile" to profile, "admissionRevision" to admission?.revision,
+                "factFingerprint" to snapshot.factFingerprint, "profile" to rawProfile, "admissionRevision" to admission?.revision,
                 "sourceName" to sourceName, "sourceItemKey" to sourceItemKey, "constructedAt" to clock.instant().toString()))
             val item = repository.reserveItem(VerificationReservation(run.executionId, docId, snapshot.identityHash,
                 run.policyVersion, sourceName, sourceItemKey, saved, snapshot.factFingerprint), clock.instant())
