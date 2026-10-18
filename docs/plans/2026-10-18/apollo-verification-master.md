@@ -142,7 +142,7 @@ O-2：同一线上深度发现弹窗，清楚展示“自动准入、直接准�
 |04|[异步核验与可靠提交](apollo-04-worker.md)|9|已登记任务完整处理/恢复；默认停用|
 |05|[深度发现接入与启动快照](apollo-05-integration.md)|13（测试专项例外）|真实新任务登记；手动/定时/连续一致|
 |06|[只读日志 API](apollo-06-reporting.md)|9|唯一统计口径及逐条分页；只读暴露既有认证阻断|
-|07|[线上弹窗与完整样式](apollo-07-frontend.md)|7|批准的布局、真实接口、交互完整|
+|07|[线上弹窗与完整样式](apollo-07-frontend.md)|11（只读依赖专项例外）|批准的布局、真实接口、交互完整；补齐既有批次只读DTO|
 
 数据契约：[表、状态、接口与样本](apollo-contracts.md)。07内嵌完整CSS，不以预览文件里的零散样式代替。
 
@@ -156,7 +156,7 @@ O-2：同一线上深度发现弹窗，清楚展示“自动准入、直接准�
 
 ## 变更文件清单
 
-本文件是编排计划，实施文件数0；允许实施文件逐条列在01～07。公共契约/审计/证据为计划材料，不是额外实施授权。[结构自检回执](apollo-evidence/plan-self-review.json)记录原始计划文件并集、CSS摘要与逐片条目数；这些是原始计划检查，不是修订后范围或应用测试通过。总范围按当前子计划清单并集计算；每片≤10，05因三个现有调用方测试迁移获批上限13的专项例外；其他超出仍需修订对应子计划。
+本文件是编排计划，实施文件数0；允许实施文件逐条列在01～07。公共契约/审计/证据为计划材料，不是额外实施授权。[结构自检回执](apollo-evidence/plan-self-review.json)记录原始计划文件并集、CSS摘要与逐片条目数；这些是原始计划检查，不是修订后范围或应用测试通过。总范围按当前子计划清单并集计算；每片≤10，05因三个现有调用方测试迁移上限13、07因S-5必要只读批次依赖上限11为已批准专项例外；其他超出仍须先修订对应子计划并记录具体授权。
 
 ## 验收标准
 
@@ -206,3 +206,4 @@ O-2：同一线上深度发现弹窗，清楚展示“自动准入、直接准�
 - 2026-10-18，用户“批准该计划并执行”：批准04纳入既有OrcidVerificationEvidenceClient及其测试，文件上限同步7→9，补齐逐端点持久化/恢复接缝；原总计划I-6/I-9与请求许可、费用边界不变。修订身份和批准依据见 `docs/plans/fast/apollo-verification-master/ledger.md` Amendments。
 - 用户“批准该计划并执行”批准05的C05-EXECUTION-CALLERS：仅增加ExpertDiscoveryControllerMvcTest、ExpertDiscoveryControllerTest、ExpertDiscoverySchedulerTest的真实execution/context调用迁移，文件上限10→13作为测试专项例外；生产文件清单、执行绑定与其他不变量不变。精确身份及批准依据见fast-p ledger Amendments。
 - 用户“批准该计划并执行 后续也都授权 执行完所有子计划”：批准06的C06-CAPABILITY-AUTH既有worker只读状态接缝及测试，上限7→9；并预先授权后续为完成各子计划既定行为必需的直接依赖/调用方/测试范围修订。每次仍须先记录精确文件、依据、Before/After身份及本次授权，再实施；不授权新增业务目标、无关修复、部署、推送或改写历史，所有原不变量和独立验证保持。
+- C07-BATCH-READ-SHAPE依据前述后续必要依赖授权：07增列既有QueryService/Repository及其既有service/ReportingIT测试，补齐冻结S-5要求的批次cumulativeProfiles/updatedAt/reasons；上限7→11作为只读直接依赖专项例外，不增加业务目标、不修改06写路径或冻结视觉契约。具体Before/After和用户授权见fast-p ledger Amendments。

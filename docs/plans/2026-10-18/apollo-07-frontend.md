@@ -579,10 +579,11 @@ O-1：原深度发现配置区可启用Apollo，仍保留关键词、七个平�
 4. **S-4/S-6/S-7 / I-2/I-3**：仅在logHost绑定一个delegated click/change/input/keydown；不要全document listener。事件侦听一次、关闭释放；tab/筛选/page/detail/openBatch状态存在当前modal generation下。列表轮询不重建正在输入的select/input，不失焦；使用snapshotVersion判变化，展开状态保留。
 5. **I-1/I-2 / S-8**：每5秒汇总+当前可见页更新，采集终态但queued>0继续；全部核验终态停止定时器，用户“重试读取”可手动刷新；关闭/切主tab/换task取消timer和AbortController，重开拉最新。新统计错误时保留旧data并显示旧asOf，不用空数组覆盖。未记录选项不下钻空历史“0”；保留采集tab可读。
 6. **I-1～I-4 / S-1～S-8**：新测试内嵌匿名F123 JSON，模拟已完成采集仍在核验、request乱序、分页、错误和null。增加源文本真实DOM id检查、完整CSS块SHA256比对及新markup无inline样式检查；使用真实浏览器检查截图，不能仅用Node stub。调整列出的3个旧测试fixture新参数/页面节点，禁止放宽其非发现/审核断言。所有新函数运行路径都纳入新test sandbox。
+7. **C07-BATCH-READ-SHAPE / S-5必要接缝**：既有batches只读响应每项增补`cumulativeProfiles`（该run批次号≤本批的已激活档案数，不限当前页）、`updatedAt`（该批已激活档案的MAX(updated_at)）及完整`reasons:{code,label,count}[]`（每档案每原因去重，未知code保留）；同REPEATABLE_READ与snapshotVersion，不写库或访问provider。服务端聚合，不以前端无限翻records补齐。既有counts/suggested/runCounts及其他API字段语义不变；回归覆盖跨页累计、完整原因和批次更新时间。
 
 ## 变更文件清单
 
-共7个文件，2个子系统（静态前端及其验证）。以下之外无实施授权。
+共11个文件：原7个前端及验证文件，加4个S-5所必需的既有只读API/聚合及其测试，作为每片≤10的直接依赖专项例外。无新增业务目标，以下之外无实施授权。
 
 |#|文件|动作|
 |---|---|---|
@@ -593,6 +594,10 @@ O-1：原深度发现配置区可启用Apollo，仍保留关键词、七个平�
 |5|`src/test/js/discoveryContinuousRun.test.js`|修改启动参数fixture|
 |6|`src/test/js/discoveryScheduleSetting.test.js`|修改启动参数fixture|
 |7|`src/test/js/discoveryReview.test.js`|补审核页签和缓存回归|
+|8|`src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryService.kt`|修改batches只读DTO累计/更新时间/完整原因|
+|9|`src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt`|修改只读批次聚合，保持写路径不变|
+|10|`src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryServiceTest.kt`|修改批次DTO语义回归|
+|11|`src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationReportingIT.kt`|修改真实MySQL批次跨页累计/原因/时间回归|
 
 ## 验收标准
 
@@ -647,3 +652,6 @@ O-1：原深度发现配置区可启用Apollo，仍保留关键词、七个平�
 - 操作步骤：比对冻结截图；滚动；Tab遍历开关、tab、筛选、页码和证据链接。
 - 预期结果：最大宽1180、圆角18；主色#1e40af；表头#f8fafc不与下载文字叠；只有modal纵向scroll、表格可横向scroll；≤700证据单列；focus2px offset3；disabled透明度.45。
 - 覆盖：N-1，I-3，S-1～S-8
+
+## 修正记录
+- C07-BATCH-READ-SHAPE：冻结S-5需要累计档案/完整批次原因/时间，现有06批次DTO仅有batchNumber/counts/suggested，不能由当前分页可靠还原。依据用户“批准该计划并执行 后续也都授权 执行完所有子计划”的后续必要依赖授权，增加上述4个既有只读生产/测试文件，上限7→11为直接依赖专项例外；不重开06、不变CSS/DOM或统计真值，精确身份与依据见fast-p ledger Amendments。
