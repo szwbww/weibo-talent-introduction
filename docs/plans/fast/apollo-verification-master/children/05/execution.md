@@ -252,3 +252,6 @@ Paths below are relative to this worktree:
 - Fresh independent backend418 total/364 pass/0 assertion failures/53 statically attributed pre-existing fixture errors/1 optional legacy skip; focused Node70 pass and syntax pass, full Node41 existing failures. No global-green claim.
 - Actual independent MySQL runtime confirms canonical RAW fingerprint, one activation/original execution owner through replay and real worker commit; active-window/zero-backlog changed-query+option returns409 with pipeline/cursor unchanged.
 - Evidence checkpoint follows before06; no whole-system verification or later-child acceptance claimed.
+
+### Controller evidence-format correction 1
+- Initial artifact checkpoint rejected only round1 SHA binding format. Original fixer report preserved; controller closing heading was normalized so the appended canonical SHA remains within round1. No product/test changes, new verification or extra repair round. Replacement docs-only evidence commit will bind these corrected closing records.

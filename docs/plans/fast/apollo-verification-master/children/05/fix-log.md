@@ -21,7 +21,10 @@
 - Result: FIXED
 - Notes: Approved identity commit:a58d457ec2921759c455b6f6edae0e6d94b85220; unchanged13-file authority, only4 used. F01 freezes canonical RAW `esDocId/orcidId=docId`, retaining real ORCID/proof/externalIds and the unchanged fingerprint guard; integration covers PAPER crash/replay→worker commit and valid ORCID registration→worker commit with genuine missing-qualification result rather than FACT_CHANGED. F02 removes only `sameQuery` from the options guard; live-owner/zero-backlog/different-query409, unchanged pipeline/cursor and unchanged-option QUERY_CONFLICT are covered. F03 migrates the exact approved pause wording without reverting production and includes every top-level MVC class. O-05-E2-01/02/03 remain RECORD_ONLY, not suppressed/repaired; no global-green claim, child03 replay, scope expansion, real providers, shared/production DB, push/merge/history rewrite or deployment. Evidence files remain uncommitted for controller ownership; independent verification must judge the repaired boundary.
 
-## Epoch 2 — Repair terminal closing
+### Repair terminal closing — Epoch 2
 - Round 1/3 independently reverified by ApolloIntegrationReverifierE2R1; F-05-E2-01/02/03 CLOSED.
 - Fix commit: 1cef08bd7e8bedc47cd2ca6d3f9823c2465e8848
 - Final child verdict: LIGHT_PASS_WITH_NOTES; COMPLETE_CHILD. No additional repair round or product change performed for evidence finalization.
+
+### Controller evidence-format correction 1
+- Checkpoint rejected round1 binding because the original fixer line includes a commit subject and the controller-added closing heading terminated the parser's round section before its canonical SHA. Adjusted only that controller closing heading's level, leaving the original fixer report unchanged; the canonical closing SHA now belongs to its original round. No product/test change, new repair, test run or verifier verdict.
