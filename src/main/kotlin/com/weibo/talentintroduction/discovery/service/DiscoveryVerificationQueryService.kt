@@ -8,6 +8,7 @@ import com.weibo.talentintroduction.discovery.domain.*
 import com.weibo.talentintroduction.discovery.repository.DiscoveryReviewRepository
 import com.weibo.talentintroduction.discovery.repository.DiscoveryVerificationRepository
 import com.weibo.talentintroduction.discovery.repository.VerificationReportFilter
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Isolation
@@ -15,13 +16,14 @@ import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
 import java.time.Instant
 
-/** No provider, ES, task progress, or write service is available to this reader. */
+/** Reads SQL/configuration and the optional worker's current authentication latch only. */
 @Service
 @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
 class DiscoveryVerificationQueryService(
     private val repository: DiscoveryVerificationRepository,
     private val admissions: DiscoveryReviewRepository,
-    private val properties: DiscoveryVerificationProperties
+    private val properties: DiscoveryVerificationProperties,
+    private val worker: ObjectProvider<DiscoveryVerificationWorker>? = null
 ) {
     private val mapper = jacksonObjectMapper().findAndRegisterModules().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
     private val rules = DiscoveryVerificationRules()
@@ -30,6 +32,7 @@ class DiscoveryVerificationQueryService(
         val reasons = mutableListOf<String>()
         if (!properties.enabled) reasons += "VERIFICATION_DISABLED"
         if (properties.apolloApiKey.isBlank()) reasons += "APOLLO_API_KEY_MISSING"
+        if (worker?.getIfAvailable()?.isAuthBlocked() == true) reasons += "CONFIG_AUTH"
         return VerificationCapabilities(properties.enabled, properties.workerEnabled, properties.mode,
             reasons.isEmpty(), properties.apolloDefault, reasons)
     }

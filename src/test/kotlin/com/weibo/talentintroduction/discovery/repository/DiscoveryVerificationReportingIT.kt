@@ -83,6 +83,54 @@ class DiscoveryVerificationReportingIT {
         assertEquals(0L,c.projectionPending); assertEquals(0L,c.projectionErrors); assertEquals(0L,c.registrationErrors)
     }
 
+    @Test fun `actual 401 and 403 worker failures reach HTTP capabilities without more claims or writes`() {
+        for (status in listOf(401, 403)) {
+            VerificationFlowFixture(jdbc, org.springframework.jdbc.datasource.DataSourceTransactionManager(jdbc.dataSource!!),
+                DiscoveryVerificationProperties(enabled = true, workerEnabled = true, apolloApiKey = "fixture-secret",
+                    requestsPerMinute = 1000)).use { flow ->
+                flow.apolloStatus = status
+                val item = flow.seed("APV-FIXTURE-AUTH-$status")
+                // Keep F123's queued records away from this worker's claim loop.
+                jdbc.update("UPDATE discovery_verification_item SET state='RETRY_WAIT',next_attempt_at='2099-01-01' WHERE owner_execution_id=3001 AND state='QUEUED'")
+                val worker = flow.worker()
+                val factory = org.springframework.beans.factory.support.DefaultListableBeanFactory()
+                factory.registerSingleton("worker", worker)
+                val reader = DiscoveryVerificationQueryService(repository, DiscoveryReviewRepository(jdbc), flow.props,
+                    factory.getBeanProvider(DiscoveryVerificationWorker::class.java))
+                val mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(
+                    com.weibo.talentintroduction.discovery.controller.DiscoveryVerificationController(reader)).build()
+                assertTrue(reader.capabilities().ready)
+                worker.tick()
+                assertTrue(worker.isAuthBlocked())
+                assertEquals(VerificationState.ERROR, flow.item(item.id).state)
+                assertTrue(flow.item(item.id).reasonsJson!!.contains("CONFIG_AUTH"))
+                val attempts = repository.findAttempts(item.id)
+                assertEquals(status, attempts.last().httpStatus)
+                val requests = flow.apolloRequests.size
+                val before = databaseSnapshot()
+                Mockito.clearInvocations(jdbc)
+                repeat(20) {
+                    mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
+                        "/api/expert-discovery/verification/capabilities"))
+                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk)
+                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.ready").value(false))
+                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.reasonCodes[0]").value("CONFIG_AUTH"))
+                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().string(
+                            org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("fixture-secret"))))
+                    worker.tick()
+                }
+                assertEquals(before, databaseSnapshot())
+                assertEquals(requests, flow.apolloRequests.size)
+                assertEquals(attempts, repository.findAttempts(item.id))
+                assertFalse(Mockito.mockingDetails(jdbc).invocations.any {
+                    it.method.name in setOf("update", "batchUpdate", "execute")
+                })
+                // A new process-local worker does not infer its latch from historical failures.
+                assertFalse(flow.worker().isAuthBlocked())
+            }
+        }
+    }
+
     @Test fun `F123 every aggregate batch route result filter and page reconciles on MySQL`() {
         assertF123(counts())
         val batches = query.batches(3001,0,100)
