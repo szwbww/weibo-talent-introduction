@@ -57,6 +57,27 @@ function isolateViews(s) {
 }
 function seed(s) { s.state().runs = [run]; s.state().executionId = 3001; s.currentTaskModal.expandedExecutionId = 3001; }
 function page(version = 17) { return { coverage: "RECORDED", items: [], runCounts: counts, totalBatches: 3, snapshotVersion: version }; }
+function evidenceView(s) {
+    seed(s);
+    s.state().tab = "records";
+    s.state().summaries.set(3001, F123);
+    s.state().records = { total: 1, items: [{ itemId: 1, name: "Fixture", route: "APOLLO", resultLabel: "APOLLO_UNCLEAR" }] };
+    const panel = node();
+    s.elements.set("apv-records-3001", panel);
+    return panel.querySelector("tbody");
+}
+function evidenceClick(s) {
+    const button = { dataset: { action: "toggle-evidence", itemId: "1" }, closest() { return this; } };
+    s.apvEvent({ type: "click", target: button, stopPropagation() {} });
+}
+function cancelHandler(s, pipelineState) {
+    s.confirm = () => true;
+    s.PIPELINE_LAUNCH_TIMEOUT_MS = 15000;
+    s.currentTaskModal.pipelineMode = pipelineState != null;
+    s.currentTaskModal.pipelineState = pipelineState;
+    s.elements.set("taskModalCancelBtn", node());
+    vm.runInContext(extractFn("handleCancelTask"), s);
+}
 
 test("S1/S2 real IDs, static head, original controls and exact CSS bytes", () => {
     const contract = css.slice(css.indexOf("/* apollo-verification-contract:start */"));
@@ -159,6 +180,141 @@ test("I2 collection SUCCESS keeps 5s verification polling and stops on ledger te
     s.apvDispose(); const calls = s.calls.length;
     await timer.fn(); assert.equal(s.calls.length, calls);
 });
+
+test("F07-01 collapse during GET then reopen requests and renders fresh evidence", async () => {
+    const pending = [];
+    const s = sandbox(() => new Promise(resolve => pending.push(resolve)));
+    const body = evidenceView(s);
+    evidenceClick(s);
+    assert.equal(s.calls.length, 1);
+    assert.match(body.innerHTML, /正在读取依据/);
+    evidenceClick(s);
+    pending[0]({ executionId: 3001, snapshotVersion: 17, apolloPersonId: "discarded" });
+    await flush();
+    assert.equal(s.state().evidence.has(1), false);
+    evidenceClick(s);
+    assert.equal(s.calls.length, 2);
+    pending[1]({ executionId: 3001, snapshotVersion: 17, apolloPersonId: "fresh-evidence" });
+    await flush();
+    assert.match(body.innerHTML, /fresh-evidence/);
+    assert.doesNotMatch(body.innerHTML, /正在读取依据|discarded/);
+    evidenceClick(s); evidenceClick(s);
+    assert.equal(s.calls.length, 2, "successful evidence remains cached");
+});
+
+test("F07-01 reopen before old GET finishes cannot let its late response overwrite the new read", async () => {
+    const pending = [];
+    const s = sandbox(() => new Promise(resolve => pending.push(resolve)));
+    const body = evidenceView(s);
+    evidenceClick(s); evidenceClick(s); evidenceClick(s);
+    assert.equal(s.calls.length, 2);
+    pending[1]({ executionId: 3001, snapshotVersion: 17, apolloPersonId: "current-person" });
+    await flush();
+    pending[0]({ executionId: 3001, snapshotVersion: 17, apolloPersonId: "old-person" });
+    await flush();
+    assert.equal(s.state().evidence.get(1).apolloPersonId, "current-person");
+    assert.match(body.innerHTML, /current-person/);
+    assert.doesNotMatch(body.innerHTML, /old-person/);
+});
+
+test("F07-01 suspended evidence is aborted and cannot overwrite the reopened current filter", async () => {
+    const pending = [];
+    const s = sandbox(() => new Promise(resolve => pending.push(resolve)));
+    const body = evidenceView(s);
+    evidenceClick(s);
+    s.apvSetVisible(false);
+    assert.equal(s.calls[0].options.signal.aborted, true);
+    assert.equal(s.state().evidence.has(1), false);
+    s.state().visible = true;
+    s.state().route = "APOLLO"; s.state().result = "UNCLEAR"; s.state().q = "Fixture";
+    const current = s.apvLoadEvidence(1);
+    pending[1]({ executionId: 3001, snapshotVersion: 17, apolloPersonId: "current-filter" });
+    await current;
+    pending[0]({ executionId: 3001, snapshotVersion: 17, apolloPersonId: "hidden-filter" });
+    await flush();
+    assert.match(body.innerHTML, /current-filter/);
+    assert.doesNotMatch(body.innerHTML, /hidden-filter/);
+    assert.equal(s.state().route, "APOLLO");
+    assert.equal(s.state().result, "UNCLEAR");
+    assert.equal(s.state().q, "Fixture");
+});
+
+for (const [operation, pipelineState, endpoint] of [
+    ["pause", "RUNNING", "/api/task-progress/EXPERT_DISCOVERY/cancel"],
+    ["resume", "PAUSED", "/api/expert-discovery/pipeline/resume"],
+    ["cancel", null, "/api/task-progress/EXPERT_DISCOVERY/cancel"]
+]) {
+    test(`F07-02 ${operation} restarts ACTIVE verification despite unchanged collection, then stops at terminal`, async () => {
+        let finishOperation, terminal = false;
+        const s = sandbox(async (url, options) => {
+            if (options?.method === "POST") return new Promise(resolve => { finishOperation = resolve; });
+            return url.includes("/summary") ? [{ ...F123, lifecycle: terminal ? "COMPLETED" : "ACTIVE" }] : page();
+        });
+        seed(s); isolateViews(s); cancelHandler(s, pipelineState);
+        s.state().route = "APOLLO"; s.state().result = "PENDING"; s.state().recordPage = 2;
+        await s.apvRefresh();
+        const originalTimer = s.state().timer;
+        const operationRequest = s.handleCancelTask();
+        assert.equal(originalTimer.cancelled, true);
+        assert.equal(s.state().timer, null);
+        assert.equal(s.calls.find(call => call.options?.method === "POST").url, endpoint);
+        finishOperation({});
+        await operationRequest; await flush();
+        const refreshed = s.calls.filter(call => call.url.includes("/summary")).length;
+        assert.equal(refreshed, 2);
+        assert.equal(s.state().timer.ms, 5000);
+        s.apvReceiveRuns([{ ...run }], "EXPERT_DISCOVERY", 1);
+        await flush();
+        assert.equal(s.calls.filter(call => call.url.includes("/summary")).length, refreshed);
+        await s.state().timer.fn(); await flush();
+        assert.equal(s.calls.filter(call => call.url.includes("/summary")).length, refreshed + 1);
+        assert.equal(s.state().executionId, 3001);
+        assert.equal(s.state().route, "APOLLO");
+        assert.equal(s.state().result, "PENDING");
+        assert.equal(s.state().recordPage, 2);
+        terminal = true;
+        await s.state().timer.fn(); await flush();
+        assert.equal(s.state().timer, null);
+        const calls = s.calls.length;
+        s.apvReceiveRuns([{ ...run }], "EXPERT_DISCOVERY", 1);
+        await flush();
+        assert.equal(s.calls.length, calls);
+    });
+}
+
+test("F07-02 failed collection operation also restores current verification polling", async () => {
+    const s = sandbox(async (url, options) => {
+        if (options?.method === "POST") throw Error("operation unavailable");
+        return url.includes("/summary") ? [F123] : page();
+    });
+    seed(s); isolateViews(s); cancelHandler(s, "RUNNING");
+    await s.apvRefresh();
+    await s.handleCancelTask(); await flush();
+    assert.equal(s.calls.filter(call => call.url.includes("/summary")).length, 2);
+    assert.equal(s.state().timer.ms, 5000);
+});
+
+for (const transition of ["closed", "other task", "new generation", "main review tab"]) {
+    test(`F07-02 operation finishing after ${transition} leaves verification stopped`, async () => {
+        let finishOperation;
+        const s = sandbox(async (url, options) => {
+            if (options?.method === "POST") return new Promise(resolve => { finishOperation = resolve; });
+            return url.includes("/summary") ? [F123] : page();
+        });
+        seed(s); isolateViews(s); cancelHandler(s, "RUNNING");
+        await s.apvRefresh();
+        const operation = s.handleCancelTask();
+        if (transition === "closed") { s.apvDispose(); s.currentTaskModal = null; }
+        else if (transition === "other task") { s.apvDispose(); s.currentTaskModal.taskType = "EXPERT_REVALIDATION"; }
+        else if (transition === "new generation") { s.apvInit("EXPERT_DISCOVERY", 2); s.currentTaskModal.generation = 2; }
+        else s.apvSetVisible(false);
+        const calls = s.calls.length;
+        finishOperation({});
+        await operation; await flush();
+        assert.equal(s.calls.length, calls);
+        assert.equal(s.state()?.timer ?? null, null);
+    });
+}
 
 test("I2 unchanged terminal collection lists do not restart verification polling", async () => {
     const s = sandbox(async url => url.includes("/summary") ? [F123] : page());

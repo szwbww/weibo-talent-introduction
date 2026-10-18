@@ -4183,6 +4183,7 @@ async function handleCancelTask() {
                     : (taskType === "EXPERT_ENRICHMENT" ? "暂停" : "取消任务");
             }
         }
+        if (taskType === "EXPERT_DISCOVERY" && isCurrentTaskModal(taskType, generation) && typeof apvRefresh === "function") apvRefresh();
     }
 }
 
@@ -26790,6 +26791,7 @@ function apvSuspend() {
     state.searchTimer = null;
     state.controllers.forEach(controller => controller.abort());
     state.controllers.clear();
+    state.evidence.forEach((entry, id) => { if (entry?.pending) state.evidence.delete(id); });
     state.refreshing = false;
 }
 
@@ -27124,7 +27126,7 @@ function apvSourceHtml(evidence) {
 }
 
 function apvEvidenceHtml(detail, record) {
-    if (!detail) return '<div class="apv-evidence">正在读取依据…</div>';
+    if (!detail || detail.pending) return '<div class="apv-evidence">正在读取依据…</div>';
     if (detail.error) return apvAlert(detail.error, detail.asOf);
     const fields = detail.evidence || [];
     const block = (title, matcher, extra = "") => `<div class="apv-evidence-item"><b>${title}</b>${extra}${fields.filter(e => matcher.test(e.field)).map(e => `<p>${escapeHtml(e.field)}：${escapeHtml(e.value)}</p>${e.excerpt ? `<p>${escapeHtml(e.excerpt)}</p>` : ""}${apvSourceHtml(e)}${e.conflicts?.length ? `<p>冲突：${escapeHtml(e.conflicts.join("、"))}</p>` : ""}`).join("") || '<p>未取得可靠证据</p>'}</div>`;
@@ -27238,11 +27240,12 @@ async function apvLoadCollection(token) {
 async function apvLoadEvidence(itemId) {
     const s = apvState;
     const token = apvToken();
-    if (s.evidence.has(itemId)) return;
-    s.evidence.set(itemId, null);
+    if (!apvIsCurrent(token) || !s.openEvidence.has(itemId) || s.evidence.has(itemId)) return;
+    const pending = { pending: true };
+    s.evidence.set(itemId, pending);
     try {
         const detail = await apvGet(`${APV_PATH}/items/${itemId}`, token);
-        if (!apvIsCurrent(token) || !s.openEvidence.has(itemId) || !detail || detail.executionId !== token.executionId) return;
+        if (!apvIsCurrent(token) || s.evidence.get(itemId) !== pending || !s.openEvidence.has(itemId) || !detail || detail.executionId !== token.executionId) return;
         if (detail.snapshotVersion !== s.summaries.get(token.executionId)?.snapshotVersion) {
             s.evidence.delete(itemId);
             apvRefresh();
@@ -27250,8 +27253,10 @@ async function apvLoadEvidence(itemId) {
         }
         s.evidence.set(itemId, detail);
     } catch (error) {
-        if (!apvIsCurrent(token) || error.name === "AbortError") return;
+        if (!apvIsCurrent(token) || s.evidence.get(itemId) !== pending || !s.openEvidence.has(itemId) || error.name === "AbortError") return;
         s.evidence.set(itemId, { error: error.message, asOf: s.summaries.get(token.executionId)?.asOf });
+    } finally {
+        if (s.evidence.get(itemId) === pending) s.evidence.delete(itemId);
     }
     if (apvIsCurrent(token)) apvRenderRecords();
 }
@@ -27318,6 +27323,7 @@ function apvEvent(event) {
     if (action === "toggle-evidence" || action === "close-evidence") {
         const id = Number(button.dataset.itemId);
         if (action === "close-evidence" || s.openEvidence.has(id)) s.openEvidence.delete(id); else s.openEvidence.add(id);
+        if (!s.openEvidence.has(id) && s.evidence.get(id)?.pending) s.evidence.delete(id);
         apvRenderRecords();
         if (!s.openEvidence.has(id)) document.getElementById(`apv-records-${s.executionId}`).querySelector(`[data-action="toggle-evidence"][data-item-id="${id}"]`)?.focus();
         if (s.openEvidence.has(id)) apvLoadEvidence(id);
