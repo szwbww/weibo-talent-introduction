@@ -37,3 +37,13 @@ Use execute-p with target worktree bound to this worktree. The fast-p loop repla
 
 ## Required outputs
 Use execution report schema from execute-p. Record task/invariant evidence, exact commands/exit codes/counts, smoke observations, plan hash recheck, worktree identity, product commit SHA, and remaining blockers. Commit only authorized implementation files as `feat(fast-p): implement 04`. Report path is this directory's execution.md; controller commits all evidence separately.
+
+## Epoch 2 — Approved ORCID amendment (supersedes Epoch1 identity/scope)
+- Exact plan identity: commit:bb9eda7df6fde5f4eb0a5d433a1058f008d42b16
+- Exact plan SHA-256: 9b8d742b37fefd332cf9799db5f479c9b24653f5e3ce945d6b01727591e25819
+- Exact master identity: commit:bb9eda7df6fde5f4eb0a5d433a1058f008d42b16
+- Human approval: “批准该计划并执行”, recorded2026-10-18T21:06:49+08:00; ledgerA3/A4.
+- Authorized Files: original seven entries above plus `src/main/kotlin/com/weibo/talentintroduction/discovery/service/OrcidVerificationEvidenceClient.kt` and `src/test/kotlin/com/weibo/talentintroduction/discovery/service/OrcidVerificationEvidenceClientTest.kt` (nine total; exact amended plan table is authoritative).
+- Add per-endpoint completion and persisted-result/cursor resume to the existing client. Worker persists successful response/attempt/progress before allowing next HTTP; restart skips completed endpoints. Persistence failure prevents subsequent request. Preserve binding, allowlist, permits, cumulative caps and dedicated HTTP. No duplicate ORCID/HTTP implementation.
+- Product base:98c7b78fde54f69b72f175b94b2ab0eed25d86ab. Prior01–03 completed; child04 Epoch1 made no product changes. Controller epoch2 is a new execution identity; append report after history.
+- All other invariants, required commands, smoke/worktree binding and product-only commit rules above remain applicable. Run client regression plus worker/commit/real-MySQL FlowIT and planned related regressions; no fake Docker PASS.
