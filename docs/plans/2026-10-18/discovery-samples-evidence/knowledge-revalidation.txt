@@ -1,0 +1,63 @@
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt
+103:     fun executionDetail(@PathVariable id: Long): TaskExecutionDetailResponse {
+104:         val stored = taskExecutionRepository.findById(id)
+105:             .orElseThrow { NoSuchElementException("Task execution not found: $id") }
+106:         val exec = promotionProgress?.refresh(stored) ?: stored
+107:         val totals: ExecutionTotals = extractor.extract(exec.taskType, exec)
+108:         val (requestRaw, requestTruncated) = truncateRaw(exec.requestPayload)
+109:         val (summaryRaw, summaryTruncated) = truncateRaw(exec.resultSummary)
+110:         val drilldown = TaskTypeCatalog.byCode(exec.taskType)?.drilldown
+111:         val (drilldownState, drilldownCount, experts) = computeDrilldown(exec, drilldown)
+112:         return TaskExecutionDetailResponse(
+113:             id = exec.id,
+114:             taskType = exec.taskType,
+115:             taskTypeLabel = TaskTypeCatalog.byCode(exec.taskType)?.label ?: exec.taskType,
+116:             status = exec.status,
+117:             startedAt = exec.startedAt.format(DATE_FMT),
+118:             finishedAt = exec.finishedAt?.format(DATE_FMT),
+119:             durationSeconds = exec.finishedAt?.let { finish ->
+120:                 java.time.Duration.between(exec.startedAt, finish).seconds
+121:             },
+122:             totals = totals,
+123:             metricLabel = TaskTypeCatalog.byCode(exec.taskType)?.metricLabel,
+124:             rawRequestPayload = requestRaw,
+125:             rawResultSummary = summaryRaw,
+126:             rawTruncated = requestTruncated || summaryTruncated,
+127:             drilldown = drilldown?.name,
+128:             drilldownState = drilldownState,
+129:             drilldownCount = drilldownCount,
+130:             experts = experts,
+131:             interruptionReasonCode = exec.interruptionReasonCode,
+132:             interruptionReasonDetail = exec.interruptionReasonDetail,
+133:             handledBy = exec.handledBy,
+134:             handledAt = exec.handledAt?.format(DATE_FMT),
+135:             errorMessage = exec.errorMessage
+136:         )
+137:     }
+405: data class TaskExecutionDetailResponse(
+406:     val id: Long?,
+407:     val taskType: String,
+408:     val taskTypeLabel: String,
+409:     val status: String,
+410:     val startedAt: String,
+411:     val finishedAt: String?,
+412:     val durationSeconds: Long?,
+413:     val totals: ExecutionTotals,
+414:     val metricLabel: String?,
+415:     val rawRequestPayload: String?,
+416:     val rawResultSummary: String?,
+417:     val rawTruncated: Boolean,
+418:     /** B4：MAIL_BY_EXECUTION / EXPERT_BY_POLL_DETAIL / null（枚举名，与 catalog.drilldown 同源）。 */
+419:     val drilldown: String? = null,
+420:     /** B4（I2b-2）：AVAILABLE / NONE / PRE_FEATURE / QUEUE_DISPATCHED。 */
+421:     val drilldownState: String = "NONE",
+422:     /** B4：邮件类为该执行发出的邮件数；专家类为明细中专家总数。 */
+423:     val drilldownCount: Int = 0,
+424:     /** B4：仅 EXPERT_BY_POLL_DETAIL 附带（复用 PollDetailRaw 解析）；其余为 null。 */
+425:     val experts: List<PollRepliedExpert>? = null,
+426:     val interruptionReasonCode: String? = null,
+427:     val interruptionReasonDetail: String? = null,
+428:     val handledBy: String? = null,
+429:     val handledAt: String? = null,
+430:     val errorMessage: String? = null
+431: )

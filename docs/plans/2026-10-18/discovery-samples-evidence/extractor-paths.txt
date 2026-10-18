@@ -1,0 +1,208 @@
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:26:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:55:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:76:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:102:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:128:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:153:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:187:        val result = JatsXmlEmailParser.parse(xml).single()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:216:        val result = JatsXmlEmailParser.parse(xml).single()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:243:        val result = JatsXmlEmailParser.parse(xml).single()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:261:        val edu = JatsXmlEmailParser.parse(xml(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:268:        val ambiguous = JatsXmlEmailParser.parse(xml(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:288:        val unknown = JatsXmlEmailParser.parse(xml("<country>Mars Colony</country>")).single()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:293:        val ambiguous = JatsXmlEmailParser.parse(xml("<country>Japan</country><country>France</country>")).single()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:315:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:322:            JatsXmlEmailParser.parse("not xml at all")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:344:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:369:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:396:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:419:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:442:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:463:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:485:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:514:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:541:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:571:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:597:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:625:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:637:        val result = JatsXmlEmailParser.parse(sharedXml(listOf("John" to "Smith", "Jane" to "Doe"),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:648:            val result = JatsXmlEmailParser.parse(sharedXml(order, text)).associateBy { it.email }
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:657:        val result = JatsXmlEmailParser.parse(sharedXml(listOf("Fuqiang" to "Gao", "Sébastien" to "Lustig", "Weiguo" to "Wang"),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:664:        val result = JatsXmlEmailParser.parse(sharedXml(listOf("Sajjad" to "Abbasi", "Ali Akbar" to "Moosavi"),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:672:            val result = JatsXmlEmailParser.parse(sharedXml(names, "contact@example.org (JS)"))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:679:        val result = JatsXmlEmailParser.parse(sharedXml(listOf("John" to "Smith"), "Correspondence: Jane Doe, other@example.org"))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:686:        assertEquals("John", JatsXmlEmailParser.parse(xml).single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:688:        assertTrue(JatsXmlEmailParser.parse(duplicate).all { it.givenNames == null })
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:695:        assertNull(JatsXmlEmailParser.parse(xml).single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:704:        val result = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:711:        val result = JatsXmlEmailParser.parse(sharedXml(listOf("John" to "Smith", "Jane" to "Doe"),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:732:        val alt = JatsXmlEmailParser.parse(alternatives).single()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:735:        val numbered = JatsXmlEmailParser.parse(numeric).single()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:769:        val results = JatsXmlEmailParser.parse(xml).associateBy { it.email }
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:798:        val results = JatsXmlEmailParser.parse(xml).associateBy { it.email }
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:816:        val contact = JatsXmlEmailParser.parse(xml).single()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:831:        val result = JatsXmlEmailParser.parse(xml).single()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:44:import com.weibo.talentintroduction.config.BoundedFulltextHttp
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:877:        ).`when`(europePmc).extractAuthorEmails(eqValue(paper), Mockito.any())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:879:        val email = dataSource.extractAuthorEmails(paper).emails.single()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:904:        ).`when`(europePmc).extractAuthorEmails(eqValue(paper), Mockito.any())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:906:        val email = dataSource.extractAuthorEmails(paper).emails.single()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:932:        ).`when`(europePmc).extractAuthorEmails(eqValue(paper), Mockito.any())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:934:        val email = dataSource.extractAuthorEmails(paper).emails.single()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1086:        ).`when`(europePmc).extractAuthorEmails(eqValue(paper), Mockito.any())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1088:        val outcome = dataSource.extractAuthorEmails(paper)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1109:        ).`when`(europePmc).extractAuthorEmails(eqValue(paper), Mockito.any())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1111:        val outcome = dataSource.extractAuthorEmails(paper)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1132:        ).`when`(europePmc).extractAuthorEmails(eqValue(paper), Mockito.any())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1134:        val outcome = dataSource.extractAuthorEmails(paper)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1227:        val outcome = chain.extractAuthorEmails(paper, deadline)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1240:        val readable = chain.extractAuthorEmails(paper, deadline)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1266:        val outcome = dataSource.extractAuthorEmails(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1287:        val outcome = dataSource.extractAuthorEmails(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1311:        val outcome = dataSource.extractAuthorEmails(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1326:        dataSource.extractAuthorEmails(openAlexPaper(downloadUrl = primary, doi = "10.1/x"))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1338:        val outcome = dataSource.extractAuthorEmails(openAlexPaper(downloadUrl = primary, doi = "10.1/x"))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1348:        val outcome = dataSource.extractAuthorEmails(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1376:        }.`when`(europePmc).extractAuthorEmails(eqValue(paper), Mockito.any())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1378:        val outcome = dataSource.extractAuthorEmails(paper, fixedDeadline)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1403:        val outcome = dataSource.extractAuthorEmails(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1416:        val outcome = dataSource.extractAuthorEmails(openAlexPaper(doi = "10.1/x"), Instant.now().minusSeconds(1))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1426:        val outcome = dataSource.extractAuthorEmails(openAlexPaper())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1438:        val outcome = dataSource.extractAuthorEmails(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1457:        val outcome = dataSource.extractAuthorEmails(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1479:        dataSource.extractAuthorEmails(openAlexPaper(downloadUrl = "https://repo.example/copy.pdf"))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1538:        val outcome = chainDataSource.extractAuthorEmails(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1620:                BoundedFulltextHttp.getForObject(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1627:                    .any { it is BoundedFulltextHttp.MeteredRedirectException },
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1633:            val body = BoundedFulltextHttp.getForObject(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:2231:            val outcome = chain.extractAuthorEmails(openAlexPaper(doi = "10.1/x"), Instant.now().plusMillis(400))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:2249:                BoundedFulltextHttp
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:2255:            val outcome = chain.extractAuthorEmails(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryTrafficMeterTest.kt:3:import com.weibo.talentintroduction.config.BoundedFulltextHttp
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryTrafficMeterTest.kt:38:                BoundedFulltextHttp.execute(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1575:            PaperExtraction(source.extractAuthorEmails(paper), null)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2044:                    else -> requireNotNull(paperSource).extractAuthorEmails(readPaper(envelope.payloadJson))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:101:    override fun extractAuthorEmails(paper: PaperMetadata): EmailExtractionOutcome =
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:102:        extractAuthorEmails(paper, Instant.now().plusMillis(FULLTEXT_PER_PAPER_DEADLINE_MS))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:105:    internal fun extractAuthorEmails(paper: PaperMetadata, deadline: Instant): EmailExtractionOutcome {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:112:            val europePmcOutcome = europePmc.extractAuthorEmails(paper, deadline)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:201:    fun `extractAuthorEmails uses fullText field`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:207:        val result = dataSource.extractAuthorEmails(paper)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:214:    fun `extractAuthorEmails returns NO_FULLTEXT when no fullText or downloadUrl`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:219:        val result = dataSource.extractAuthorEmails(paper)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:224:    fun `extractAuthorEmails does not bind identity on a first-initial match (I-2)`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:234:        val email = dataSource.extractAuthorEmails(paper).emails.single()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:244:    fun `extractAuthorEmails binds an explicit full-name contact entry (I-2)`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:253:        val email = dataSource.extractAuthorEmails(paper).emails.single()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:262:    fun `extractAuthorEmails does not infer sole-author mailbox ownership (I-2)`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:268:        val email = dataSource.extractAuthorEmails(paper).emails.single()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:282:        val result = dataSource.extractAuthorEmails(paper)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:295:        val result = core.extractAuthorEmails(corePaper("No email here", listOf(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt:132:        Mockito.`when`(europePmc.fetchFullTextXml(anyNonNull("PMC1234567")))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt:436:        Mockito.`when`(europePmc.fetchFullTextXml(anyNonNull("PMC1234567")))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt:458:        Mockito.`when`(europePmc.fetchFullTextXml(anyNonNull("PMC1234567")))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt:470:        Mockito.`when`(europePmc.fetchFullTextXml(anyNonNull("PMC1234567")))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt:481:        Mockito.`when`(europePmc.fetchFullTextXml(anyNonNull("PMC1234567")))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PmcOaDataSource.kt:47:    override fun extractAuthorEmails(paper: PaperMetadata): EmailExtractionOutcome {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PmcOaDataSource.kt:53:        val xml = fetchFullTextXml(pmcId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PmcOaDataSource.kt:59:            val emails = JatsXmlEmailParser.parse(xml)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PmcOaDataSource.kt:71:    private fun fetchFullTextXml(pmcId: String): ByteArray? {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:238:    fun `fetchFullTextXml returns null when disabled`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:243:        val result = dataSource.fetchFullTextXml("PMC123")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:260:    fun `fetchFullTextXml returns null on HTTP error`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:268:        val result = dataSource.fetchFullTextXml("PMC9876543")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:273:    fun `fetchFullTextXml retries on recoverable IO then succeeds`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:296:        val result = dataSource.fetchFullTextXml("PMC9876543")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:304:    fun `fetchFullTextXml does not retry on 404`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:322:        val result = dataSource.fetchFullTextXml("PMC9876543")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:330:    fun `fetchFullTextXml returns bytes on success`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:340:        val result = dataSource.fetchFullTextXml("PMC9876543")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:461:    fun `extractAuthorEmails returns FULLTEXT_FETCH_FAILED when fetch fails`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:469:        val outcome = dataSource.extractAuthorEmails(PaperMetadata(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:480:    fun `extractAuthorEmails returns XML_PARSE_FAILED when parse throws`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:488:        val outcome = dataSource.extractAuthorEmails(PaperMetadata(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:498:    fun `extractAuthorEmails issues no XML request once the shared deadline expired (R-4, V-4)`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:504:        val outcome = dataSource.extractAuthorEmails(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:520:    fun `extractAuthorEmails with a live deadline still fetches the XML (R-4 compatibility)`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:532:        assertEquals(1, dataSource.extractAuthorEmails(paper, java.time.Instant.now().plusSeconds(30)).httpRequests)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:533:        assertEquals(1, dataSource.extractAuthorEmails(paper).httpRequests)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:537:    fun `extractAuthorEmails returns NO_EMAIL_IN_FULLTEXT when XML has no email`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:547:        val outcome = dataSource.extractAuthorEmails(PaperMetadata(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:557:    fun `extractAuthorEmails returns emails when XML contains email`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:586:        val outcome = dataSource.extractAuthorEmails(PaperMetadata(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:602:        val outcome = dataSource.extractAuthorEmails(PaperMetadata(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:616:        val outcome = dataSource.extractAuthorEmails(PaperMetadata(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:647:    fun `extractAuthorEmails falls back to fulltext when authors have no email`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:676:        val outcome = dataSource.extractAuthorEmails(PaperMetadata(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:720:            val outcome = dataSource.extractAuthorEmails(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:749:            val outcome = dataSource.extractAuthorEmails(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ArxivDataSourceTest.kt:260:    fun `extractAuthorEmails delegates to PDF extractor`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ArxivDataSourceTest.kt:268:        val result = harness().dataSource.extractAuthorEmails(paper)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ArxivDataSourceTest.kt:273:    fun `extractAuthorEmails returns NO_DOI when no arxiv id`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ArxivDataSourceTest.kt:275:        val result = harness().dataSource.extractAuthorEmails(paper)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ArxivDataSource.kt:76:    override fun extractAuthorEmails(paper: PaperMetadata): EmailExtractionOutcome {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PmcOaDataSourceTest.kt:40:    fun `extractAuthorEmails returns NO_PMC_ID when pmcId null`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PmcOaDataSourceTest.kt:44:        val result = dataSource.extractAuthorEmails(paper)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSource.kt:159:    override fun extractAuthorEmails(paper: PaperMetadata): EmailExtractionOutcome {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CrossrefDataSourceTest.kt:191:    fun `extractAuthorEmails returns NO_DOI when doi is null`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CrossrefDataSourceTest.kt:197:        val result = dataSource.extractAuthorEmails(paper)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CrossrefDataSourceTest.kt:202:    fun `extractAuthorEmails returns NO_OA_LOCATION when Unpaywall finds no PDF`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CrossrefDataSourceTest.kt:211:        val result = dataSource.extractAuthorEmails(paper)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CrossrefDataSourceTest.kt:216:    fun `extractAuthorEmails delegates to PDF extractor when PDF url found`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CrossrefDataSourceTest.kt:236:        val result = dataSource.extractAuthorEmails(paper)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:6:import com.weibo.talentintroduction.config.BoundedFulltextHttp
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1895:        Mockito.verify(openAlex, Mockito.never()).extractAuthorEmails(Mockito.any(PaperMetadata::class.java) ?: paper())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1947:        Mockito.verify(openAlex, Mockito.never()).extractAuthorEmails(Mockito.any(PaperMetadata::class.java) ?: paper())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1956:        Mockito.verify(openAlex, Mockito.never()).extractAuthorEmails(Mockito.any(PaperMetadata::class.java) ?: paper())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1983:        .count { it.method.name == "extractAuthorEmails" }
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:2237:                            BoundedFulltextHttp.getForObject(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:2280:                BoundedFulltextHttp.getForObject(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:4:import com.weibo.talentintroduction.config.BoundedFulltextHttp
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:64:    fun fetchFullTextXml(pmcId: String): ByteArray? {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:69:        return (fetchFullTextXml(pmcId, null) as? XmlFetchResult.Bytes)?.payload
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:84:    private fun fetchFullTextXml(pmcId: String, deadline: Instant?): XmlFetchResult {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:89:                val remaining = BoundedFulltextHttp.remainingMsOrUnbounded(deadline)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:90:                if (remaining != BoundedFulltextHttp.UNBOUNDED_REMAINING_MS && remaining <= properties.requestDelayMs) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:99:                val remaining = BoundedFulltextHttp.remainingMsOrUnbounded(deadline)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:104:                BoundedFulltextHttp.getForObject(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:126:        val bytes = fetchFullTextXml(pmcId) ?: return emptyList()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:128:            JatsXmlEmailParser.parse(bytes)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:135:    override fun extractAuthorEmails(paper: PaperMetadata): EmailExtractionOutcome =
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:136:        extractAuthorEmails(paper, null)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:143:     * 传 `null` 时行为与原来的 [extractAuthorEmails] 完全一致。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:145:    fun extractAuthorEmails(paper: PaperMetadata, deadline: Instant?): EmailExtractionOutcome {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:173:        val xml = when (val fetched = fetchFullTextXml(pmcId, deadline)) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:187:            val emails = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:3:import com.weibo.talentintroduction.config.BoundedFulltextHttp
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:43:     * 真正「在飞」的连接/响应头/响应体约束由本文件末尾基于 [BoundedFulltextHttp] 的用例覆盖。
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:901:                BoundedFulltextHttp
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:924:                BoundedFulltextHttp
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:945:                BoundedFulltextHttp
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/UnpaywallClient.kt:4:import com.weibo.talentintroduction.config.BoundedFulltextHttp
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/UnpaywallClient.kt:44:                val remaining = BoundedFulltextHttp.remainingMsOrUnbounded(deadline)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/UnpaywallClient.kt:45:                if (remaining != BoundedFulltextHttp.UNBOUNDED_REMAINING_MS && remaining <= properties.requestDelayMs) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/UnpaywallClient.kt:58:            val remainingMs = BoundedFulltextHttp.remainingMsOrUnbounded(deadline)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/UnpaywallClient.kt:63:            val response = BoundedFulltextHttp.getForObject(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/UnpaywallClient.kt:92:        const val UNPAYWALL_CONNECT_TIMEOUT_CAP_MS: Long = BoundedFulltextHttp.UNBOUNDED_REMAINING_MS
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/UnpaywallClient.kt:93:        const val UNPAYWALL_READ_TIMEOUT_CAP_MS: Long = BoundedFulltextHttp.UNBOUNDED_REMAINING_MS
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/CrossrefDataSource.kt:89:    override fun extractAuthorEmails(paper: PaperMetadata): EmailExtractionOutcome {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:36:     * [com.weibo.talentintroduction.config.BoundedFulltextHttp]，由 `boundedHttpExecutor` bean 注入）。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:86:                downloadWithStreamLimit(uri, deadline, onResponseHeaders)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:200:                is com.weibo.talentintroduction.config.BoundedFulltextHttp.FulltextBodyDeadlineExceededException ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:222:    private fun downloadWithStreamLimit(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:230:        if (com.weibo.talentintroduction.config.BoundedFulltextHttp.remainingMsOrUnbounded(deadline) <= 0L) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/AcademicDataSource.kt:13:    fun extractAuthorEmails(paper: PaperMetadata): EmailExtractionOutcome
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:702:        val parsed = JatsXmlEmailParser.parse(xmlBytes)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:721:            routed.extractAuthorEmails(paper, Instant.now().plusSeconds(30))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:801:        val sameName = JatsXmlEmailParser.parse("""<article><front><article-meta><contrib-group>
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:805:        val twoEmails = JatsXmlEmailParser.parse("""<article><front><article-meta><contrib-group>
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1006:                "sourceExtractionCalls" to Mockito.mockingDetails(source).invocations.count { it.method.name == "extractAuthorEmails" },
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1007:                "xmlExtractionCalls" to Mockito.mockingDetails(source).invocations.count { it.method.name == "extractAuthorEmails" }
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1030:            Mockito.verify(source, Mockito.never()).extractAuthorEmails(Mockito.any(PaperMetadata::class.java) ?: metadata)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1057:            com.weibo.talentintroduction.config.BoundedFulltextHttp)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1194:                    com.weibo.talentintroduction.config.BoundedFulltextHttp).selectedPages(62)),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1898:        val outcomes = listOf(pdf, core.extractAuthorEmails(paper))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:413:                val xml = europePmcDataSource.fetchFullTextXml(locator.pmcId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:418:                JatsXmlEmailParser.parse(xml)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:424:                openAlex.extractAuthorEmails(work).emails
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:430:                openAlex.extractAuthorEmails(work).emails

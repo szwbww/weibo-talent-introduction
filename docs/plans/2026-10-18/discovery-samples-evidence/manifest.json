@@ -1,0 +1,184 @@
+{
+  "head": "3efc192faf043badc1ef27bef124a71d3120c4c5",
+  "date": "2026-10-18",
+  "commands": [
+    {
+      "file": "capture-paths.txt",
+      "argv": [
+        "rg",
+        "-n",
+        "parallelExtractOutcomes|extractOutcome\\(|processPaper\\(|extractQueuedItem\\(|consumeQueuedItem\\(",
+        "src/main",
+        "src/test",
+        "scripts"
+      ],
+      "exitCode": 0,
+      "bytes": 13314,
+      "sha256": "5e601f2ea12ac9a4e25615e2d2a8c74ccc990ac8ae1791029e78bba1a8a56664"
+    },
+    {
+      "file": "queue-paths.txt",
+      "argv": [
+        "rg",
+        "-n",
+        "discovery_paper_job|metadata_json|extraction_json|saveExtraction\\(|clearTerminalPayloads\\(|deleteTerminalJobs\\(",
+        "src/main",
+        "src/test",
+        "scripts"
+      ],
+      "exitCode": 0,
+      "bytes": 12594,
+      "sha256": "0eceb5ac8d916a35372a9799d47ffad3e8395f53c37a5620b22836f008d9a4b7"
+    },
+    {
+      "file": "sample-store-absence.txt",
+      "argv": [
+        "rg",
+        "-n",
+        "DiscoverySample|discovery-samples|sample-retention|sampleRetention",
+        "src/main",
+        "src/test",
+        "scripts"
+      ],
+      "exitCode": 1,
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "task-identity.txt",
+      "argv": [
+        "rg",
+        "-n",
+        "heartbeatOwned|ownerToken|heartbeatAt|fun peek",
+        "src/main/kotlin/com/weibo/talentintroduction/task"
+      ],
+      "exitCode": 0,
+      "bytes": 1959,
+      "sha256": "2eb636d3ab36fa34dd6c9fb4c7671e50b7126b4164f1275af9943736f8afeace"
+    },
+    {
+      "file": "extractor-paths.txt",
+      "argv": [
+        "rg",
+        "-n",
+        "fetchFullTextXml|extractAuthorEmails|downloadWithStreamLimit|pdfExtractor.extract|JatsXmlEmailParser.parse|BoundedFulltextHttp",
+        "src/main/kotlin/com/weibo/talentintroduction/discovery",
+        "src/test/kotlin/com/weibo/talentintroduction/discovery"
+      ],
+      "exitCode": 0,
+      "bytes": 34498,
+      "sha256": "9f7200c36ad2e7f5ea5309304175042225b6d18ed1fe12019f03da9d5c622d91"
+    },
+    {
+      "file": "constructors-tests.txt",
+      "argv": [
+        "rg",
+        "-n",
+        "PdfEmailExtractor\\(|EuropePmcDataSource\\(|ExpertDiscoveryService\\(|exec-maven-plugin|surefire|EnableConfigurationProperties",
+        "src/main",
+        "src/test",
+        "pom.xml"
+      ],
+      "exitCode": 0,
+      "bytes": 12379,
+      "sha256": "8970ebb140fab8847c761623c2e9f6abbe30067602054b67e9c87c01c045ba94"
+    }
+  ],
+  "files": [
+    {
+      "file": "DiscoveryPipelineService.kt.txt",
+      "bytes": 6522,
+      "sha256": "df1a5331aa7859cf479c1c008f40a00ef0a3fa52d71585ea3f0765476f1273d5"
+    },
+    {
+      "file": "EmailExtractionOutcome.kt.txt",
+      "bytes": 2132,
+      "sha256": "92047cb3c4f2143ba197aa9a6ded1c54a92b58cce6fd6ba094a2f4649ba514d0"
+    },
+    {
+      "file": "EuropePmcDataSource.kt.txt",
+      "bytes": 10807,
+      "sha256": "ae2c1e73027f13a43a3ac6d5757ee157e30ff8a5228ef38427f4a66bb7bc065b"
+    },
+    {
+      "file": "ExpertDiscoveryService.kt.txt",
+      "bytes": 14984,
+      "sha256": "0e97d5e24760e75ccb5bf02744636f238b2d20e495cab6b886af3c13dc1ab6c6"
+    },
+    {
+      "file": "OpenAlexDataSource.kt.txt",
+      "bytes": 6141,
+      "sha256": "352a91f63950fedeaa6fa637d3fe52364fce102193fda8507815f76d85ff085f"
+    },
+    {
+      "file": "PaperAuthor.kt.txt",
+      "bytes": 1205,
+      "sha256": "de9a1df6c22652bb056ac454adf912b9185454c088ccee7204a47e9755aeb5a2"
+    },
+    {
+      "file": "PaperMetadata.kt.txt",
+      "bytes": 678,
+      "sha256": "83ce9a8092099804ab7a9352da4f93a806a989b5294340ee6ba9507844d342dc"
+    },
+    {
+      "file": "PdfEmailExtractor.kt.txt",
+      "bytes": 15358,
+      "sha256": "fcbd5d2c2a605926b2c3405f0cf745f710299444d13bdc755bfc1d39767cf86a"
+    },
+    {
+      "file": "V133.sql.txt",
+      "bytes": 10262,
+      "sha256": "9aa7b6d5c490990bc72474648984e69be4288c423ce2948ff54a5cc255089bc1"
+    },
+    {
+      "file": "capture-paths.txt",
+      "bytes": 13314,
+      "sha256": "5e601f2ea12ac9a4e25615e2d2a8c74ccc990ac8ae1791029e78bba1a8a56664"
+    },
+    {
+      "file": "constructors-tests.txt",
+      "bytes": 12379,
+      "sha256": "8970ebb140fab8847c761623c2e9f6abbe30067602054b67e9c87c01c045ba94"
+    },
+    {
+      "file": "extractor-paths.txt",
+      "bytes": 34498,
+      "sha256": "9f7200c36ad2e7f5ea5309304175042225b6d18ed1fe12019f03da9d5c622d91"
+    },
+    {
+      "file": "historical-sample-verification.json",
+      "bytes": 2045,
+      "sha256": "449b5ca4f4d1b4d360bd2959bd9a4087d0a890c8094cf579070223d35907e2b4"
+    },
+    {
+      "file": "queue-paths.txt",
+      "bytes": 12594,
+      "sha256": "0eceb5ac8d916a35372a9799d47ffad3e8395f53c37a5620b22836f008d9a4b7"
+    },
+    {
+      "file": "run-26127-logs.json",
+      "bytes": 65146,
+      "sha256": "5ddf07ebcf483f25fbc2f0beba501095f9b443e9434b84dd9f57569a3c860ad4"
+    },
+    {
+      "file": "sample-store-absence.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "summary.json",
+      "bytes": 4291,
+      "sha256": "577457e8d6e268806e79be632cc5083bacb062e5e34b91f0d6517fa76d95d640"
+    },
+    {
+      "file": "task-identity.txt",
+      "bytes": 1959,
+      "sha256": "2eb636d3ab36fa34dd6c9fb4c7671e50b7126b4164f1275af9943736f8afeace"
+    },
+    {
+      "file": "knowledge-revalidation.txt",
+      "bytes": 3448,
+      "sha256": "522c5154683eef788f61fd0c52cb310347637bbe73c0abd6b9bf3575529c00c8"
+    }
+  ]
+}

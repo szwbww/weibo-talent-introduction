@@ -1,0 +1,212 @@
+SOURCE src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt
+
+1: package com.weibo.talentintroduction.discovery.service
+2: 
+3: import com.fasterxml.jackson.databind.JsonNode
+4: import com.weibo.talentintroduction.config.BoundedFulltextHttp
+5: import com.weibo.talentintroduction.config.EuropePmcProperties
+6: import com.weibo.talentintroduction.config.FetchRetry
+7: import com.weibo.talentintroduction.discovery.domain.AuthorEmail
+8: import com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome
+9: import com.weibo.talentintroduction.discovery.domain.PaperAuthor
+10: import com.weibo.talentintroduction.discovery.domain.PaperMetadata
+11: import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
+12: import com.weibo.talentintroduction.discovery.domain.PaperSearchResult
+13: import org.slf4j.LoggerFactory
+14: import org.springframework.beans.factory.annotation.Qualifier
+15: import org.springframework.stereotype.Service
+16: import org.springframework.web.client.RestTemplate
+17: import org.springframework.web.util.UriComponentsBuilder
+18: import java.time.Instant
+19: 
+20: @Service
+21: class EuropePmcDataSource(
+22:     @Qualifier("europePmcRestTemplate")
+23:     private val restTemplate: RestTemplate,
+24:     private val properties: EuropePmcProperties
+25: ) : AcademicDataSource {
+26: 
+27:     private val log = LoggerFactory.getLogger(EuropePmcDataSource::class.java)
+28: 
+29:     override val sourceName = "EUROPE_PMC"
+30:     override val emailExtractionMethod = "FULLTEXT_XML"
+31:     override val maxPapersPerSource: Int
+32:         get() = properties.maxPapersPerSource
+33: 
+34:     override fun searchPapers(criteria: PaperSearchCriteria): PaperSearchResult {
+35:         if (!properties.enabled) {
+36:             log.debug("Europe PMC data source is disabled, returning empty result")
+37:             return PaperSearchResult(emptyList(), null, 0)
+38:         }
+39: 
+40:         val query = buildQuery(criteria)
+41:         val uri = UriComponentsBuilder.fromHttpUrl("${properties.baseUrl}/search")
+42:             .queryParam("query", query)
+43:             .queryParam("resultType", "core")
+44:             .queryParam("pageSize", criteria.pageSize.toString())
+45:             .queryParam("cursorMark", criteria.cursor ?: "*")
+46:             .queryParam("format", "json")
+47:             .build()
+48:             .encode()
+49:             .toUri()
+50: 
+51:         val response = try {
+52:             if (properties.requestDelayMs > 0) {
+53:                 Thread.sleep(properties.requestDelayMs)
+54:             }
+55:             restTemplate.getForObject(uri, JsonNode::class.java)
+56:         } catch (e: Exception) {
+57:             log.error("Europe PMC search failed: {}", e.message)
+58:             throw e
+59:         }
+60: 
+61:         return parsePaperSearchResult(response)
+62:     }
+63: 
+64:     fun fetchFullTextXml(pmcId: String): ByteArray? {
+65:         if (!properties.enabled) {
+66:             log.debug("Europe PMC data source is disabled, returning null")
+67:             return null
+68:         }
+69:         return (fetchFullTextXml(pmcId, null) as? XmlFetchResult.Bytes)?.payload
+70:     }
+71: 
+72:     /** R-1（V-4）：XML 抓取结果 —— 区分「没取到内容」与「预算已尽、根本没发请求」，计数因此不会撒谎。 */
+73:     private sealed class XmlFetchResult {
+74:         class Bytes(val payload: ByteArray) : XmlFetchResult()
+75:         class Failed(val requestsIssued: Int) : XmlFetchResult()
+76:         class BudgetExhausted(val requestsIssued: Int) : XmlFetchResult()
+77:     }
+78: 
+79:     /**
+80:      * R-1（V-4）：XML 阶段在**同一个**单篇共享预算内完成 —— 已过期不发请求；真实请求的连接/读取超时
+81:      * 取 `min(既有配置, 当时剩余预算)`，所以一个慢响应（连接、响应头或响应体）都只会被截断到剩余预算，
+82:      * 不会把调用方拖过总时限；重试前同样重新判断预算，过期即停手（不再发多余请求）。
+83:      */
+84:     private fun fetchFullTextXml(pmcId: String, deadline: Instant?): XmlFetchResult {
+85:         val url = "${properties.baseUrl}/$pmcId/fullTextXML"
+86:         var requestsIssued = 0
+87:         return try {
+88:             if (properties.requestDelayMs > 0) {
+89:                 val remaining = BoundedFulltextHttp.remainingMsOrUnbounded(deadline)
+90:                 if (remaining != BoundedFulltextHttp.UNBOUNDED_REMAINING_MS && remaining <= properties.requestDelayMs) {
+91:                     return XmlFetchResult.BudgetExhausted(requestsIssued)
+92:                 }
+93:                 Thread.sleep(properties.requestDelayMs)
+94:             }
+95:             val payload = FetchRetry.retryOnRecoverableIo<ByteArray?>(
+96:                 maxRetries = properties.maxRetries,
+97:                 initialBackoffMs = properties.retryBackoffMs
+98:             ) {
+99:                 val remaining = BoundedFulltextHttp.remainingMsOrUnbounded(deadline)
+100:                 if (remaining <= 0L) return@retryOnRecoverableIo null
+101:                 requestsIssued++
+102:                 // R-1（V-4）：连接/读取超时取 min(既有配置, 剩余预算)，响应体也在同一个绝对 deadline
+103:                 // 内读完 —— 细水长流的 XML 会被截断，而不是永远读下去。
+104:                 BoundedFulltextHttp.getForObject(
+105:                     restTemplate, url, ByteArray::class.java,
+106:                     properties.connectTimeoutMs.toLong(), properties.readTimeoutMs.toLong(), deadline
+107:                 )
+108:             }
+109:             if (payload == null) XmlFetchResult.BudgetExhausted(requestsIssued) else XmlFetchResult.Bytes(payload)
+110:         } catch (e: Exception) {
+111:             log.debug("Failed to fetch full text XML for {}: {}", pmcId, e.message)
+112:             val expired = deadline != null && !Instant.now().isBefore(deadline)
+113:             if (expired) {
+114:                 XmlFetchResult.BudgetExhausted(requestsIssued)
+115:             } else {
+116:                 XmlFetchResult.Failed(requestsIssued.coerceAtLeast(1))
+117:             }
+118:         }
+119:     }
+120: 
+121:     fun extractEmailsFromFullText(pmcId: String): List<AuthorEmail> {
+122:         if (!properties.enabled) {
+123:             log.debug("Europe PMC data source is disabled, returning empty")
+124:             return emptyList()
+125:         }
+126:         val bytes = fetchFullTextXml(pmcId) ?: return emptyList()
+127:         return try {
+128:             JatsXmlEmailParser.parse(bytes)
+129:         } catch (e: Exception) {
+130:             log.debug("Failed to parse JATS XML for {}: {}", pmcId, e.message)
+131:             emptyList()
+132:         }
+133:     }
+134: 
+135:     override fun extractAuthorEmails(paper: PaperMetadata): EmailExtractionOutcome =
+136:         extractAuthorEmails(paper, null)
+137: 
+138:     /**
+139:      * R-4（V-4）：带共享剩余时限的 XML 阶段入口（OpenAlex 全文回退链传入单篇总时限）。
+140:      *
+141:      * 时限已过时**一个请求都不发**，并按既有的 `TIMEOUT` 类别上报（不是新的失败类别、也不是
+142:      * `FULLTEXT_FETCH_FAILED`）—— 调用方据此停止后续 URL / Unpaywall 阶段。
+143:      * 传 `null` 时行为与原来的 [extractAuthorEmails] 完全一致。
+144:      */
+145:     fun extractAuthorEmails(paper: PaperMetadata, deadline: Instant?): EmailExtractionOutcome {
+146:         if (!properties.enabled) {
+147:             return EmailExtractionOutcome(emptyList(), emailExtractionMethod, "SOURCE_DISABLED")
+148:         }
+149: 
+150:         val searchEmails = paper.authors.mapNotNull { author ->
+151:             val email = author.email?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+152:             AuthorEmail(email, null, null, false, null, null)
+153:         }
+154:         // Search metadata alone remains an unverified clue; prefer explicit fulltext ownership.
+155:         if (searchEmails.isNotEmpty() && paper.pmcId == null) {
+156:             return EmailExtractionOutcome(searchEmails, "SEARCH_FIELD", null, httpRequests = 0)
+157:         }
+158: 
+159:         val pmcId = paper.pmcId
+160:         if (pmcId == null) {
+161:             return EmailExtractionOutcome(emptyList(), emailExtractionMethod, "NO_PMC_ID")
+162:         }
+163: 
+164:         if (deadline != null && !Instant.now().isBefore(deadline)) {
+165:             log.debug("[{}] shared fulltext deadline expired before the XML stage for {}", sourceName, pmcId)
+166:             return EmailExtractionOutcome(
+167:                 emptyList(), emailExtractionMethod, "FULLTEXT_FETCH_FAILED",
+168:                 httpRequests = 0, fulltextObtained = false,
+169:                 downloadFailureCategory = FULLTEXT_FAILURE_TIMEOUT
+170:             )
+171:         }
+172: 
+173:         val xml = when (val fetched = fetchFullTextXml(pmcId, deadline)) {
+174:             is XmlFetchResult.Bytes -> fetched.payload
+175:             is XmlFetchResult.BudgetExhausted -> return EmailExtractionOutcome(
+176:                 emptyList(), emailExtractionMethod, "FULLTEXT_FETCH_FAILED",
+177:                 httpRequests = fetched.requestsIssued, fulltextObtained = false,
+178:                 downloadFailureCategory = FULLTEXT_FAILURE_TIMEOUT
+179:             )
+180:             is XmlFetchResult.Failed -> return EmailExtractionOutcome(
+181:                 emptyList(), emailExtractionMethod, "FULLTEXT_FETCH_FAILED",
+182:                 httpRequests = fetched.requestsIssued, fulltextObtained = false
+183:             )
+184:         }
+185: 
+186:         return try {
+187:             val emails = JatsXmlEmailParser.parse(xml)
+188:             if (emails.isEmpty()) {
+189:                 EmailExtractionOutcome(emptyList(), emailExtractionMethod, "NO_EMAIL_IN_FULLTEXT", httpRequests = 1)
+190:             } else {
+191:                 EmailExtractionOutcome(emails, emailExtractionMethod, null, httpRequests = 1)
+192:             }
+193:         } catch (e: Exception) {
+194:             log.debug("Failed to parse JATS XML for {}: {}", pmcId, e.message)
+195:             EmailExtractionOutcome(emptyList(), emailExtractionMethod, "XML_PARSE_FAILED", httpRequests = 1)
+196:         }
+197:     }
+198: 
+199:     private fun buildQuery(criteria: PaperSearchCriteria): String {
+200:         val parts = mutableListOf<String>()
+201: 
+202:         parts += "IN_EPMC:y"
+203: 
+204:         if (criteria.openAccessOnly) {
+205:             parts += "OPEN_ACCESS:y"
+206:         }
+207: 
+208:         parts += "PUB_YEAR:[${criteria.publicationYearFrom} TO ${criteria.publicationYearTo}]"
+209: 
+210:         if (criteria.keywords.isNotEmpty()) {

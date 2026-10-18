@@ -1,0 +1,55 @@
+{
+  "kind": "PLAN_SELF_REVIEW_NOT_IMPLEMENTATION_TEST",
+  "date": "2026-10-18",
+  "head": "3efc192faf043badc1ef27bef124a71d3120c4c5",
+  "plans": [
+    {
+      "plan": "discovery-samples-01-store.md",
+      "files": 6,
+      "invariants": [
+        "I-1",
+        "I-2",
+        "I-3"
+      ],
+      "manualCases": 3,
+      "headings": "PASS",
+      "scopePaths": "PASS",
+      "manualCoverage": "PASS"
+    },
+    {
+      "plan": "discovery-samples-02-capture.md",
+      "files": 8,
+      "invariants": [
+        "I-1",
+        "I-2",
+        "I-3",
+        "I-4"
+      ],
+      "manualCases": 3,
+      "headings": "PASS",
+      "scopePaths": "PASS",
+      "manualCoverage": "PASS"
+    },
+    {
+      "plan": "discovery-samples-03-replay.md",
+      "files": 4,
+      "invariants": [
+        "I-1",
+        "I-2",
+        "I-3"
+      ],
+      "manualCases": 3,
+      "headings": "PASS",
+      "scopePaths": "PASS",
+      "manualCoverage": "PASS"
+    }
+  ],
+  "distinctImplementationFiles": 18,
+  "newFiles": 10,
+  "modifiedFiles": 8,
+  "sharedStoreNewFields": 0,
+  "frontendFiles": 0,
+  "evidenceHashes": "PASS",
+  "relativeLinks": "PASS",
+  "implementationTestsRun": false
+}

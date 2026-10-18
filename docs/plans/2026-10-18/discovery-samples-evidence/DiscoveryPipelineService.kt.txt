@@ -1,0 +1,113 @@
+SOURCE src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt
+
+975:         return null
+976:     }
+977: 
+978:     /**
+979:      * I-3/I-4：单条工作的抽取与消费。
+980:      *
+981:      * 已保存的抽取结果（`extraction_json` 非空）**直接消费、不再下载**；消费前重新读取 pipeline 的
+982:      * `generation` —— 人工暂停之后不再消费专家，只把可靠抽取结果退回 `PENDING`。
+983:      */
+984:     private fun processJob(state: WindowState, job: JobRow, leaseToken: String) {
+985:         try {
+986:             val stream = state.streamsById[job.streamId] ?: repository.findStreamById(job.streamId)
+987:             if (stream == null) {
+988:                 repository.completeJob(
+989:                     job.id, leaseToken, job.generation, QueueJobStatus.FAILED,
+990:                     job.attempts, now(), QUEUE_PAYLOAD_UNREADABLE, now()
+991:                 )
+992:                 synchronized(state) { state.failedItems++ }
+993:                 return
+994:             }
+995:             val envelope = QueuedItemEnvelope(
+996:                 sourceName = stream.source,
+997:                 itemKey = job.itemKey,
+998:                 identityQuality = job.identityQuality,
+999:                 unit = job.unit,
+1000:                 payloadVersion = job.payloadVersion,
+1001:                 payloadJson = job.metadataJson,
+1002:                 payloadBytes = job.payloadBytes,
+1003:                 publiclyDownloadable = job.priority > 0
+1004:             )
+1005:             var extractionJson = job.extractionJson
+1006:             if (extractionJson.isNullOrEmpty()) {
+1007:                 val criteria = state.criteria
+1008:                 if (criteria == null) {
+1009:                     releaseWindow(state, PipelineWaitReason.SOURCE_ERROR, null)
+1010:                     return
+1011:                 }
+1012:                 when (val extraction = DiscoveryTrafficMeter.measure(
+1013:                     state.trafficSession, stream.source, DiscoveryTrafficMeter.Category.FULLTEXT
+1014:                 ) { expertDiscoveryService.extractQueuedItem(
+1015:                     envelope = envelope,
+1016:                     criteria = criteria,
+1017:                     perHostConcurrency = properties.perHostConcurrency,
+1018:                     extractionMaxBytes = properties.extractionMaxBytes
+1019:                 ) }) {
+1020:                     is QueuedItemExtraction.Extracted -> {
+1021:                         val bytes = extraction.extractionJson.toByteArray(Charsets.UTF_8).size.toLong()
+1022:                         val saved = repository.saveExtraction(
+1023:                             jobId = job.id, leaseToken = leaseToken, generation = job.generation,
+1024:                             extractionJson = extraction.extractionJson, extractionBytes = bytes, now = now()
+1025:                         )
+1026:                         if (!saved) {
+1027:                             // 租约/generation 已失效（已被重新领取）：绝不消费。
+1028:                             log.info("job {} 抽取结果未保存（租约/generation 失效），留给下一次尝试", job.id)
+1029:                             return
+1030:                         }
+1031:                         extractionJson = extraction.extractionJson
+1032:                         synchronized(state) { state.extractionDownloads += extraction.httpRequests }
+1033:                     }
+1034:                     QueuedItemExtraction.HostBusy -> {
+1035:                         // I-6：域名许可不可得 —— 延期，不消耗 attempts、不记永久失败。
+1036:                         val at = now()
+1037:                         repository.returnToPending(
+1038:                             job.id, leaseToken, job.generation, at.plus(HOST_BUSY_BACKOFF),
+1039:                             FulltextRequestGate.HOST_BUSY, at
+1040:                         )
+1041:                         state.waitReasons.add(FulltextRequestGate.HOST_BUSY)
+1042:                         return
+1043:                     }
+1044:                     QueuedItemExtraction.TooLarge -> {
+1045:                         val at = now()
+1046:                         repository.completeJob(
+1047:                             job.id, leaseToken, job.generation, QueueJobStatus.FAILED,
+1048:                             job.attempts, at, QUEUE_EXTRACTION_TOO_LARGE, at
+1049:                         )
+1050:                         synchronized(state) { state.failedItems++ }
+1051:                         return
+1052:                     }
+1053:                     is QueuedItemExtraction.Failed -> {
+1054:                         handleRetryableFailure(state, job, leaseToken, extraction.reason, extraction.retryable)
+1055:                         return
+1056:                     }
+1057:                 }
+1058:             }
+1059: 
+1060:             // I-3 唯一例外：人工暂停（generation 递增）后**不再消费专家**，但上面刚保存的可靠抽取结果保留，
+1061:             // job 退回 PENDING —— 不 complete、不消耗 attempts，恢复后由新的 generation 重新领取。
+1062:             val current = repository.findPipeline()
+1063:             if (current == null || current.generation != job.generation) {
+1064:                 val at = now()
+1065:                 repository.returnToPending(
+1066:                     job.id, leaseToken, job.generation, at.plus(PAUSE_BACKOFF),
+1067:                     PipelineWaitReason.MANUAL_PAUSE, at
+1068:                 )
+1069:                 state.waitReasons.add(PipelineWaitReason.MANUAL_PAUSE)
+1070:                 return
+1071:             }
+1072: 
+1073:             val executionId = state.executionId.get().takeIf { it > 0L }
+1074:             val consumption = expertDiscoveryService.consumeQueuedItem(envelope, extractionJson!!, executionId)
+1075:             val at = now()
+1076:             if (consumption.unrecoverableReason != null) {
+1077:                 repository.completeJob(
+1078:                     job.id, leaseToken, job.generation, QueueJobStatus.FAILED,
+1079:                     job.attempts, at, consumption.unrecoverableReason, at
+1080:                 )
+1081:                 synchronized(state) { state.failedItems++ }
+1082:                 return
+1083:             }
+1084:             if (consumption.succeeded) {
+1085:                 val outcome = repository.completeJobWithExperts(

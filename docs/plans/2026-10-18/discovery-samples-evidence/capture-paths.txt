@@ -1,0 +1,71 @@
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:928:            val extractions = parallelExtractOutcomes(batch.papers, source)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1573:    private fun extractOutcome(paper: PaperMetadata, source: AcademicDataSource): PaperExtraction {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1628:    private fun parallelExtractOutcomes(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1635:            extractOutcome(paper, source)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1638:                extractOutcome(paper, source)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1822:    private fun processPaper(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1829:        consumeOutcome(paper, extractOutcome(paper, source), source, stats, sourceStats, executionId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2008:    fun extractQueuedItem(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2077:    fun consumeQueuedItem(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:1014:                ) { expertDiscoveryService.extractQueuedItem(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:1074:            val consumption = expertDiscoveryService.consumeQueuedItem(envelope, extractionJson!!, executionId)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:739:        val consumed = service.consumeQueuedItem(envelope, objectMapper.writeValueAsString(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:753:        val old = service.consumeQueuedItem(envelope,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:832:            val first = service.consumeQueuedItem(envelope, payload, null)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:834:            val second = if (name == "duplicate") service.consumeQueuedItem(envelope,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1115:                val result = service.consumeQueuedItem(ownershipEnvelope(paper),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1137:                    val rejected = service.consumeQueuedItem(ownershipEnvelope(paper),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1161:        val replay = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(qualifiedPaper)),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1165:        val previous = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(qualifiedPaper)),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1267:            val outcome = service.consumeQueuedItem(ownershipEnvelope(paper),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1293:        val replay = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(firstPaper)),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1297:        val previous = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(firstPaper)),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1421:            val outcome = service.consumeQueuedItem(ownershipEnvelope(paper),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1471:        val duplicate = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(firstPaper)),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1485:        val oldVersion = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(firstPaper)),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1575:            val outcome = service.consumeQueuedItem(ownershipEnvelope(paper), payload, null)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1646:        val replay = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(firstPaper)),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1666:        rejectionService.consumeQueuedItem(ownershipEnvelope(kumarPaper),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1709:            val outcome = service.consumeQueuedItem(ownershipEnvelope(paper), objectMapper.writeValueAsString(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1732:            val outcome = service.consumeQueuedItem(ownershipEnvelope(paper("stale", "Stale")), payload, null)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1745:        val extraction = createService().extractQueuedItem(producerEnvelope, PaperSearchCriteria(), 2, 1_048_576)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1758:            val outcome = service.consumeQueuedItem(ownershipEnvelope(controlPaper), objectMapper.writeValueAsString(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1870:            val result = svc.consumeQueuedItem(ownershipEnvelope(paper), objectMapper.writeValueAsString(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1902:            val result = svc.consumeQueuedItem(ownershipEnvelope(paper), objectMapper.writeValueAsString(noProof), null)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1947:        val result = svc.consumeQueuedItem(ownershipEnvelope(paper("replay", "Replay")), duplicateExtraction(), 7L)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1963:        val result = svc.consumeQueuedItem(ownershipEnvelope(paper("replay", "Replay")), duplicateExtraction(), null)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1978:        val result = svc.consumeQueuedItem(ownershipEnvelope(paper("replay", "Replay")), duplicateExtraction(), null)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1992:        val result = svc.consumeQueuedItem(ownershipEnvelope(paper("replay", "Replay")), duplicateExtraction(), null)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2050:        return svc.consumeQueuedItem(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2138:        val result = svc.consumeQueuedItem(ownershipEnvelope(paper("replay", "Replay")), duplicateExtraction(), 7L)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2184:        assertTrue(svc.consumeQueuedItem(envelope, payload, null).enqueueFailed)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2187:        val retry = svc.consumeQueuedItem(envelope, payload, null)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2194:        val conflict = svc.consumeQueuedItem(envelope, objectMapper.writeValueAsString(conflicting), null)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2201:        val legacyRetry = svc.consumeQueuedItem(envelope, payload, null)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2210:        val outcome = svc.consumeQueuedItem(envelope,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2226:        val result = svc.consumeQueuedItem(ownershipEnvelope(paper),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1060:        Mockito.`when`(discovery.extractQueuedItem(anyEnvelope(), anyCriteria(), Mockito.anyInt(), Mockito.anyInt()))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1062:        Mockito.`when`(discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1465:            discovery.consumeQueuedItem(unknown, "{}", null).unrecoverableReason
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1467:        val extraction = discovery.extractQueuedItem(unknown, criteria(), 2, 1_024)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1499:        Mockito.`when`(h.discovery.extractQueuedItem(anyEnvelope(), anyCriteria(), Mockito.anyInt(), Mockito.anyInt()))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1516:        Mockito.`when`(h.discovery.extractQueuedItem(anyEnvelope(), anyCriteria(), Mockito.anyInt(), Mockito.anyInt()))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1547:        Mockito.`when`(h.discovery.extractQueuedItem(anyEnvelope(), anyCriteria(), Mockito.anyInt(), Mockito.anyInt()))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1563:        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1587:        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1612:        Mockito.`when`(h.discovery.extractQueuedItem(anyEnvelope(), anyCriteria(), Mockito.anyInt(), Mockito.anyInt()))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1629:            .consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1763:        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1836:            Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1994:        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1996:        Mockito.`when`(h.discovery.extractQueuedItem(anyEnvelope(), anyCriteria(), Mockito.anyInt(), Mockito.anyInt()))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:2002:            .extractQueuedItem(anyEnvelope(), anyCriteria(), Mockito.anyInt(), Mockito.anyInt())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:2012:        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:2022:        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:2040:        val consumption = discovery.consumeQueuedItem(envelope, extractionJson(), 42L)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:2058:        val consumption = discovery.consumeQueuedItem(envelope, extractionJson(), 7L)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:2080:        val consumption = discovery.consumeQueuedItem(envelope, extractionJson(), null)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:2141:        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:2358:        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:2405:        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:2426:        Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))

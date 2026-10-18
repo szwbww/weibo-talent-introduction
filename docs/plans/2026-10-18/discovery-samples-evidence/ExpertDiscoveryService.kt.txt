@@ -1,0 +1,272 @@
+SOURCE src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt
+
+662:     private fun discoverFromSource(
+663:         source: AcademicDataSource,
+664:         criteria: PaperSearchCriteria,
+665:         stats: DiscoveryStats,
+666:         runQuota: Int,
+667:         deadline: Instant,
+668:         /** I-1/I-3：同轮延迟恢复的入口上下文；null = 首次进入本源（既有行为逐字保持）。 */
+669:         resume: SourceRetryPending? = null
+670:     ): SourceRunOutcome {
+671:         val sourceStats = stats.getOrCreateSourceStats(source.sourceName, source.emailExtractionMethod)
+672:         val sourceStartTime = System.currentTimeMillis()
+673:         val execId = progressStore.getCurrentExecutionId("EXPERT_DISCOVERY")
+674:         val sourceLimit = runQuota.coerceAtLeast(0)
+675:         // 运行额度小于本源上限 = 本次是全局 cap 在约束本源，停止原因必须按全局 cap 命名。
+676:         val quotaBoundByGlobalCap = sourceLimit < source.maxPapersPerSource
+
+904:                 cursor = next
+905:                 persistCheckpoint(next, DiscoveryStopReason.EMPTY_PAGE, false)
+906:                 continue
+907:             }
+908:             batchNumber++
+909: 
+910:             val papersBefore = sourceStats.papersSearched
+911:             val indexedBefore = sourceStats.indexed
+912:             val rawWriteFailedBefore = sourceStats.rawWriteFailed
+913:             val enqueueFailedBefore = sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0
+914:             val dedupErrorsBefore = sourceStats.dedupErrors
+915:             val rejectReasonsBefore = snapshotRejectReasons(sourceStats)
+916: 
+917:             var limitReached = false
+918:             // c9（I-3）：页内到点单独标记 —— 半页按「进入该页」落盘，且停止原因必须是 TIME_BUDGET。
+919:             var timeBudgetExpired = false
+920:             // c9（I-3）：到界的哪个约束自己命名（全局论文上限 / 作者防护 / 本源额度）。
+921:             var limitReason: String? = null
+922:             var consumedInBatch = 0
+923:             // 01（I-3）：本页是否有补证未完成（部分/失败）；有则本页不推进、不记成功。
+924:             var identityRepairFailedInPage = false
+925:             // 05（I-3）：本页是否有可重试登记失败（STALE/FAILED）；有则本页不推进、不记成功。
+926:             var personRegistrationFailedInPage = false
+927: 
+928:             val extractions = parallelExtractOutcomes(batch.papers, source)
+929:             for ((paper, extraction) in extractions) {
+930:                 if (consumedInBatch % 10 == 0 && progressStore.isCancelled("EXPERT_DISCOVERY")) { limitReached = true; break }
+931:                 if (timeBudgetReached(deadline)) { timeBudgetExpired = true; break }
+932:                 stats.refreshGlobalCounts()
+933:                 if (stats.totalPapers >= discoveryProperties.maxPapersPerRun) {
+934:                     limitReached = true; limitReason = DiscoveryStopReason.GLOBAL_PAPER_LIMIT; break
+935:                 }
+936:                 if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) {
+937:                     limitReached = true; limitReason = DiscoveryStopReason.GLOBAL_AUTHOR_LIMIT; break
+938:                 }
+939:                 if (sourcePapersProcessed >= sourceLimit) {
+940:                     limitReached = true
+941:                     limitReason = if (quotaBoundByGlobalCap) {
+942:                         DiscoveryStopReason.GLOBAL_PAPER_LIMIT
+943:                     } else {
+944:                         DiscoveryStopReason.SOURCE_LIMIT
+945:                     }
+946:                     break
+947:                 }
+948:                 sourceStats.papersSearched++
+949:                 sourcePapersProcessed++
+950:                 consumedInBatch++
+951:                 consumeOutcome(paper, extraction, source, stats, sourceStats, execId).let {
+952:                     if (it.identityRepairFailed) identityRepairFailedInPage = true
+953:                     if (it.registrationFailed) personRegistrationFailedInPage = true
+954:                 }
+955:             }
+956: 
+957:             val rawWriteFailedInPage = sourceStats.rawWriteFailed - rawWriteFailedBefore
+958:             val enqueueFailedInPage = (sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0) - enqueueFailedBefore
+959:             // I-1: dedup lookup failures also make this page incomplete and replayable.
+960:             val dedupErrorsInPage = sourceStats.dedupErrors - dedupErrorsBefore
+961:             if (rawWriteFailedInPage > 0) {
+962:                 log.warn("[{}] 批次 {} 内有 {} 篇 RAW 写入失败，保留进入该页的 cursor 以便重放",
+963:                     source.sourceName, batchNumber, rawWriteFailedInPage)
+964:             }
+965:             if (enqueueFailedInPage > 0) {
+
+1566:     }
+1567: 
+1568:     private data class PaperExtraction(
+1569:         val outcome: EmailExtractionOutcome?,
+1570:         val extractionError: String?
+1571:     )
+1572: 
+1573:     private fun extractOutcome(paper: PaperMetadata, source: AcademicDataSource): PaperExtraction {
+1574:         return try {
+1575:             PaperExtraction(source.extractAuthorEmails(paper), null)
+1576:         } catch (e: Exception) {
+1577:             PaperExtraction(null, e.message ?: e.javaClass.simpleName)
+1578:         }
+1579:     }
+1580: 
+1581:     /** I-7（c2）：RAW 晋升扫描 + 邮箱补全的**唯一**入口（旧 `discover(includeRawScan=true)` 与队列窗口共用同一门禁）。 */
+1582:     fun runRawScan(backfillLimit: Int = 100) {
+1583:         try {
+1584:             revalidationService.promoteEligibleRawExperts()
+
+1628:     private fun parallelExtractOutcomes(
+1629:         papers: List<PaperMetadata>,
+1630:         source: AcademicDataSource
+1631:     ): List<Pair<PaperMetadata, PaperExtraction>> {
+1632:         if (papers.isEmpty()) return emptyList()
+1633:         val trafficSession = DiscoveryTrafficMeter.currentSession()
+1634:         fun extract(paper: PaperMetadata): PaperExtraction = if (trafficSession == null) {
+1635:             extractOutcome(paper, source)
+1636:         } else {
+1637:             DiscoveryTrafficMeter.measure(trafficSession, source.sourceName, DiscoveryTrafficMeter.Category.FULLTEXT) {
+1638:                 extractOutcome(paper, source)
+1639:             }
+1640:         }
+1641:         if (discoveryProperties.fetchConcurrency <= 1) {
+1642:             return papers.map { it to extract(it) }
+1643:         }
+1644:         val futures = papers.map { paper ->
+1645:             paper to CompletableFuture.supplyAsync({ extract(paper) }, discoveryFetchExecutor)
+1646:         }
+1647:         return futures.map { (paper, future) -> paper to future.join() }
+1648:     }
+1649: 
+1650:     private fun consumeOutcome(
+
+1728: 
+1729:         sourceStats.fulltextObtained++
+1730: 
+1731:         var emailsValid = 0
+1732:         var indexed = 0
+1733:         var duplicates = 0
+1734:         var promoted = 0
+1735:         var rawWriteFailed = false
+1736:         var enqueueFailed = false
+1737:         var dedupFailed = false
+1738:         var identityRepairFailed = false
+1739:         val personCounts = PersonRegistrationCounts()
+1740:         val enqueueFailedBefore = sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0
+1741: 
+1742:         for (authorEmail in authorEmails) {
+1743:             stats.refreshGlobalCounts()
+1744:             if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
+1745:             sourceStats.authorsExtracted++
+1746: 
+1747:             val identityReject = identityRejection(authorEmail)
+1748:             if (identityReject != null) {
+1749:                 sourceStats.filterReasons.merge(identityReject, 1) { a, b -> a + b }
+1750:                 sourceStats.filtered++
+1751:                 continue
+1752:             }
+1753:             val emailResult = emailValidationService.validate(authorEmail.email)
+1754:             if (!emailResult.valid) { sourceStats.emailsRejected++; continue }
+1755:             sourceStats.emailsValid++
+1756:             emailsValid++
+1757: 
+1758:             // I-1（08）：重复命中时只按匹配文档的真实 `_id` 补建缺失任务，不重写整份专家、不算新增。
+1759:             val duplicate = when (val emailDedup = existsInRawIndexByEmail(authorEmail.email)) {
+1760:                 is DedupResult.Exists -> emailDedup
+1761:                 DedupResult.Error -> { sourceStats.dedupErrors++; dedupFailed = true; continue }
+1762:                 DedupResult.NotFound -> null
+1763:             }
+1764:             if (duplicate != null) {
+1765:                 sourceStats.duplicates++
+1766:                 duplicates++
+1767:                 val disposition = recordIdentityDuplicate(duplicate, authorEmail, sourceStats, sourceName, executionId)
+1768:                 if (disposition.retryable) identityRepairFailed = true
+1769:                 personCounts.fold(disposition.person)
+1770:                 continue
+1771:             }
+1772: 
+1773:             val identity = identityFactory.create(authorEmail, emailResult.level)
+1774:             val eligibility = eligibilityService.evaluateEligibility(identity.profile)
+1775:             val filterResult = if (eligibility.eligible) "PASSED" else "REJECTED"
+1776:             val rejectReasons = if (eligibility.eligible) emptyList() else eligibility.rejectReasons
+1777: 
+1778:             val profileMap = toIndexMap(identity.profile, identity.paper, identity.esDocId, filterResult, rejectReasons)
+1779:             if (!expertIndexWriterService.indexToRaw(identity.esDocId, profileMap)) {
+1780:                 sourceStats.rawWriteFailed++
+1781:                 rawWriteFailed = true
+1782:                 continue
+1783:             }
+1784:             sourceStats.indexed++
+1785:             indexed++
+1786:             // I-1（08）：RAW 落库成功后才入队；入队失败不推进本页（见 enqueueEnrichmentJob）。
+1787:             enqueueEnrichmentJob(identity.esDocId, sourceName, executionId, sourceStats)
+1788: 
+1789:             // 04（I-1/I-2）：统一准入在 RAW 成功后决定晋升。
+1790:             if (admitDiscoveryExpert(identity.esDocId, identity.profile, eligibility, profileMap, sourceStats) ==
+1791:                 AdmissionDisposition.PROMOTED
+1792:             ) {
+1793:                 promoted++
+1794:             }
+1795: 
+
+2008:     fun extractQueuedItem(
+2009:         envelope: QueuedItemEnvelope,
+2010:         criteria: PaperSearchCriteria,
+2011:         perHostConcurrency: Int,
+2012:         extractionMaxBytes: Int
+2013:     ): QueuedItemExtraction {
+2014:         if (envelope.payloadVersion != QUEUED_PAYLOAD_VERSION_V1) {
+2015:             return QueuedItemExtraction.Failed(QUEUE_UNKNOWN_PAYLOAD_VERSION, retryable = false)
+2016:         }
+2017:         val orcidSource = if (isQueueOrcidSource(criteria, envelope.sourceName)) {
+2018:             orcidProvider.getIfAvailable()
+2019:         } else {
+2020:             null
+2021:         }
+2022:         val paperSource = if (orcidSource == null) {
+2023:             resolveEnabledSources(queueCriteria(criteria)).firstOrNull { it.sourceName == envelope.sourceName }
+2024:         } else {
+2025:             null
+2026:         }
+2027:         if (orcidSource == null && paperSource == null) {
+2028:             return QueuedItemExtraction.Failed(QUEUE_SOURCE_NOT_ENABLED, retryable = false)
+2029:         }
+2030:         val deadline = Instant.now().plusMillis(FulltextRequestGate.PAPER_DEADLINE_MS)
+2031:         return FulltextRequestGate.inQueueExtractionScope(perHostConcurrency, deadline) {
+2032:             try {
+2033:                 val outcome = when (envelope.unit) {
+2034:                     QueueItemUnit.RECORD -> {
+2035:                         val orcid = orcidSource
+2036:                             ?: return@inQueueExtractionScope QueuedItemExtraction.Failed(
+2037:                                 QUEUE_SOURCE_NOT_ENABLED, retryable = false
+2038:                             )
+2039:                         EmailExtractionOutcome(
+2040:                             emails = orcid.orcidRecordToAuthorEmails(readOrcidRecord(envelope.payloadJson)),
+2041:                             methodUsed = "API_FIELD"
+2042:                         )
+2043:                     }
+2044:                     else -> requireNotNull(paperSource).extractAuthorEmails(readPaper(envelope.payloadJson))
+2045:                 }
+2046:                 if (FulltextRequestGate.hostBusyInScope()) {
+2047:                     QueuedItemExtraction.HostBusy
+2048:                 } else {
+2049:                     val json = objectMapper.writeValueAsString(outcome.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION))
+2050:                     if (utf8Bytes(json) > extractionMaxBytes) {
+2051:                         QueuedItemExtraction.TooLarge
+2052:                     } else {
+2053:                         QueuedItemExtraction.Extracted(
+2054:                             extractionJson = json,
+2055:                             emailsEmpty = outcome.emails.isEmpty(),
+2056:                             httpRequests = outcome.httpRequests,
+2057:                             contentObtained = outcome.resolvedFulltextObtained(),
+2058:                             failureReason = outcome.failureReason
+2059:                         )
+2060:                     }
+2061:                 }
+2062:             } catch (e: FulltextRequestGate.HostBusyException) {
+2063:                 QueuedItemExtraction.HostBusy
+2064:             } catch (e: Exception) {
+2065:                 QueuedItemExtraction.Failed(e.message ?: e.javaClass.simpleName, retryable = true)
+2066:             }
+2067:         }
+2068:     }
+2069: 
+2070:     /**
+2071:      * I-4：幂等消费已保存的抽取结果 —— 专家写入仍走原来的门禁与补全入队，
+2072:      * 只有必要写入全部成功（或明确「无合格邮箱」）才返回 `succeeded = true`。
+2073:      *
+2074:      * 计数与门禁使用的 `stats` 是**每次调用的临时对象**：它是门禁的输入（作者防护等），
+2075:      * 不是队列的权威计数（I-8 的计数在 pipeline/stream 行上按终态 CAS 累加）。
+
+2270:     private fun identityRejection(author: AuthorEmail): String? = when {
+2271:         author.givenNames.isNullOrBlank() || author.familyNames.isNullOrBlank() -> "IDENTITY_UNRESOLVED"
+2272:         else -> null
+2273:     }
+2274: 
+2275:     private fun proofFor(author: AuthorEmail) = author.identityEvidence?.takeIf { identityRejection(author) == null && DiscoveryIdentity.validEvidence(it) }?.let {
+2276:         DiscoveryIdentity.verified(author.email, author.givenNames, author.familyNames, it, author.orcidId, author.openAlexAuthorId)
+2277:     }
+2278: 

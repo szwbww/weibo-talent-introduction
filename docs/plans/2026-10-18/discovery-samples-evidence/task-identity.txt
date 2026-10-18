@@ -1,0 +1,14 @@
+src/main/kotlin/com/weibo/talentintroduction/task/domain/TaskExecution.kt:25:    val ownerToken: String? = null,
+src/main/kotlin/com/weibo/talentintroduction/task/domain/TaskExecution.kt:26:    val heartbeatAt: LocalDateTime? = null,
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStore.kt:54:    fun peek(taskType: String): TaskProgress? = store[taskType]
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:21:    private val ownerToken = UUID.randomUUID().toString()
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:26:        repository.heartbeatOwned(ownerToken, now)
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:158:                ownerToken = ownerToken,
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:159:                heartbeatAt = startedAt
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:237:                ownerToken = ownerToken,
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:238:                heartbeatAt = startedAt
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:296:            id, ownerToken, next.status, next.resultSummary,
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:123:        WHERE owner_token = :ownerToken AND status IN ('RUNNING', 'CANCELLING')
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:125:    fun heartbeatOwned(ownerToken: String, now: LocalDateTime): Int
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:145:        WHERE id = :id AND owner_token = :ownerToken
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:149:        id: Long, ownerToken: String, status: String, resultSummary: String?,

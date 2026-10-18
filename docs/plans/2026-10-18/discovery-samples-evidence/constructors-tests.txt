@@ -1,0 +1,76 @@
+pom.xml:173:                <artifactId>maven-surefire-plugin</artifactId>
+pom.xml:186:                <artifactId>exec-maven-plugin</artifactId>
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:55:import org.springframework.boot.context.properties.EnableConfigurationProperties
+src/test/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingSimulateTest.kt:81:@EnableConfigurationProperties(LlmProperties::class)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1209:        val actualExtractor = PdfEmailExtractor(transport, PlainTextEmailExtractor(), PdfExtractionProperties(), bounded)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1491:        val realExtractor = PdfEmailExtractor(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:2246:            val realExtractor = PdfEmailExtractor(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:278:        return ExpertDiscoveryService(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:717:            val xmlSource = EuropePmcDataSource(RestTemplate(), EuropePmcProperties(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1055:        val pageSelector = PdfEmailExtractor(restTemplate, PlainTextEmailExtractor(),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:1192:                "tailDisabled62" to PdfEmailExtractor(restTemplate, PlainTextEmailExtractor(),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryServiceTest.kt:227:        return EuropePmcDataSource(http, EuropePmcProperties(requestDelayMs = 0, maxRetries = 0))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:761:    val result = PdfEmailExtractor(template, PlainTextEmailExtractor(),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:937:        return ExpertDiscoveryService(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:38:        val dataSource = EuropePmcDataSource(restTemplate, properties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:72:        val dataSource = EuropePmcDataSource(restTemplate, properties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:97:        val dataSource = EuropePmcDataSource(restTemplate, properties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:145:        val dataSource = EuropePmcDataSource(restTemplate, properties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:172:        val dataSource = EuropePmcDataSource(restTemplate, properties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:188:        val dataSource = EuropePmcDataSource(restTemplate, properties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:208:        val dataSource = EuropePmcDataSource(restTemplate, properties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:225:        val dataSource = EuropePmcDataSource(restTemplate, disabledProperties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:241:        val dataSource = EuropePmcDataSource(restTemplate, disabledProperties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:253:        val dataSource = EuropePmcDataSource(restTemplate, disabledProperties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:262:        val dataSource = EuropePmcDataSource(restTemplate, properties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:281:        val dataSource = EuropePmcDataSource(restTemplate, retryProperties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:312:        val dataSource = EuropePmcDataSource(restTemplate, retryProperties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:332:        val dataSource = EuropePmcDataSource(restTemplate, properties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:348:        val dataSource = EuropePmcDataSource(restTemplate, properties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:361:        val dataSource = EuropePmcDataSource(restTemplate, properties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:402:        val dataSource = EuropePmcDataSource(restTemplate, properties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:443:        val dataSource = EuropePmcDataSource(restTemplate, properties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:463:        val dataSource = EuropePmcDataSource(restTemplate, properties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:482:        val dataSource = EuropePmcDataSource(restTemplate, properties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:502:        val dataSource = EuropePmcDataSource(restTemplate, properties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:526:        val dataSource = EuropePmcDataSource(restTemplate, properties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:539:        val dataSource = EuropePmcDataSource(restTemplate, properties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:559:        val dataSource = EuropePmcDataSource(restTemplate, properties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:599:        val dataSource = EuropePmcDataSource(restTemplate, properties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:614:        val dataSource = EuropePmcDataSource(restTemplate, properties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:649:        val dataSource = EuropePmcDataSource(restTemplate, properties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:694:        val dataSource = EuropePmcDataSource(restTemplate, properties)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:717:            val dataSource = EuropePmcDataSource(RestTemplate(), props)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:746:            val dataSource = EuropePmcDataSource(RestTemplate(), props)
+src/test/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryControllerMvcTest.kt:33:import org.springframework.boot.context.properties.EnableConfigurationProperties
+src/test/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryControllerMvcTest.kt:46:@EnableConfigurationProperties(EuropePmcProperties::class, ExpertDiscoveryProperties::class)
+src/test/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryControllerMvcTest.kt:200:@EnableConfigurationProperties(EuropePmcProperties::class, ExpertDiscoveryProperties::class)
+src/test/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryControllerMvcTest.kt:472:@EnableConfigurationProperties(EuropePmcProperties::class, ExpertDiscoveryProperties::class)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:65:    private val extractor = PdfEmailExtractor(restTemplate, plainTextExtractor, properties, passThroughBoundedHttp)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:103:        assertEquals(listOf(1, 2), PdfEmailExtractor(restTemplate, plainTextExtractor,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:106:        val withoutTail = PdfEmailExtractor(restTemplate, plainTextExtractor,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:528:        val disabledExtractor = PdfEmailExtractor(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:564:        val retryExtractor = PdfEmailExtractor(restTemplate, plainTextExtractor, retryProperties, passThroughBoundedHttp)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:602:        val retryExtractor = PdfEmailExtractor(restTemplate, plainTextExtractor, retryProperties, passThroughBoundedHttp)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:898:            val boundedExtractor = PdfEmailExtractor(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:921:            val boundedExtractor = PdfEmailExtractor(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt:942:            val boundedExtractor = PdfEmailExtractor(
+src/main/kotlin/com/weibo/talentintroduction/rag/config/RagProperties.kt:5:import org.springframework.boot.context.properties.EnableConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/rag/config/RagProperties.kt:39:@EnableConfigurationProperties(RagProperties::class)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:81:class ExpertDiscoveryService(
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionScheduler.kt:4:import org.springframework.boot.context.properties.EnableConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionScheduler.kt:17: * - 配置类在此经 [EnableConfigurationProperties] 注册（与 MailSchedulingProperties
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionScheduler.kt:22:@EnableConfigurationProperties(TaskRetentionProperties::class)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorkerLifecycleTest.kt:12:import org.springframework.boot.context.properties.EnableConfigurationProperties
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorkerLifecycleTest.kt:39:@EnableConfigurationProperties(MailAttachmentStorageProperties::class)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:29:class PdfEmailExtractor(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:21:class EuropePmcDataSource(
+src/main/kotlin/com/weibo/talentintroduction/config/RestTemplateConfig.kt:5:import org.springframework.boot.context.properties.EnableConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/config/RestTemplateConfig.kt:33:@EnableConfigurationProperties(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorkerIT.kt:16:import org.springframework.boot.context.properties.EnableConfigurationProperties
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorkerIT.kt:1380:@EnableConfigurationProperties(MailAttachmentStorageProperties::class)
+src/main/kotlin/com/weibo/talentintroduction/llm/config/FactRetrieverProperties.kt:5:import org.springframework.boot.context.properties.EnableConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/llm/config/FactRetrieverProperties.kt:33:@EnableConfigurationProperties(FactRetrieverProperties::class)
+src/main/kotlin/com/weibo/talentintroduction/llm/config/AskEnumeratorProperties.kt:5:import org.springframework.boot.context.properties.EnableConfigurationProperties
+src/main/kotlin/com/weibo/talentintroduction/llm/config/AskEnumeratorProperties.kt:28: * [EnableConfigurationProperties] for the same reason).
+src/main/kotlin/com/weibo/talentintroduction/llm/config/AskEnumeratorProperties.kt:31:@EnableConfigurationProperties(AskEnumeratorProperties::class)

@@ -1,0 +1,286 @@
+SOURCE src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt
+
+1: package com.weibo.talentintroduction.discovery.service
+2: 
+3: import com.weibo.talentintroduction.config.BoundedHttpExecutor
+4: import com.weibo.talentintroduction.config.FetchRetry
+5: import com.weibo.talentintroduction.config.PDF_DOWNLOAD_CONNECT_TIMEOUT_MS
+6: import com.weibo.talentintroduction.config.PdfExtractionProperties
+7: import com.weibo.talentintroduction.discovery.domain.AuthorEmail
+8: import com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome
+9: import com.weibo.talentintroduction.discovery.domain.PaperAuthor
+10: import org.apache.pdfbox.pdmodel.PDDocument
+11: import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink
+12: import org.apache.pdfbox.pdmodel.interactive.action.PDActionURI
+13: import org.slf4j.LoggerFactory
+14: import org.springframework.beans.factory.annotation.Qualifier
+15: import org.springframework.http.HttpHeaders
+16: import org.springframework.http.MediaType
+17: import org.springframework.stereotype.Component
+18: import org.springframework.web.client.HttpStatusCodeException
+19: import org.springframework.web.client.RestTemplate
+20: import java.io.ByteArrayInputStream
+21: import java.net.SocketTimeoutException
+22: import java.net.URI
+23: import java.nio.charset.StandardCharsets
+24: import java.security.cert.CertificateException
+25: import java.time.Instant
+26: import javax.net.ssl.SSLException
+27: 
+28: @Component
+29: class PdfEmailExtractor(
+30:     @Qualifier("pdfDownloadRestTemplate")
+31:     private val restTemplate: RestTemplate,
+32:     private val plainTextExtractor: PlainTextEmailExtractor,
+33:     private val properties: PdfExtractionProperties,
+34:     /**
+35:      * R-1（V-4）：把剩余预算变成一次尝试的连接/读取超时的执行器（生产实现是
+36:      * [com.weibo.talentintroduction.config.BoundedFulltextHttp]，由 `boundedHttpExecutor` bean 注入）。
+37:      */
+38:     private val boundedHttp: BoundedHttpExecutor
+39: ) {
+40:     private val log = LoggerFactory.getLogger(PdfEmailExtractor::class.java)
+41:     private val magicBytes = byteArrayOf(0x25, 0x50, 0x44, 0x46)
+42:     private val mailboxUri = Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}")
+43:     private val anubisScript = Regex("""<script\b[^>]*\bid\s*=\s*["']anubis_challenge["']""",
+44:         RegexOption.IGNORE_CASE)
+45:     private val anubisTitle = Regex(
+46:         """<title\b[^>]*>\s*Making sure you(?:'|&#39;|&#x27;|&apos;)re not a bot!\s*</title>""",
+47:         RegexOption.IGNORE_CASE)
+48: 
+49:     /**
+50:      * c10（I-1/I-3）：单个全文地址的提取。
+51:      *
+52:      * [deadline] 是**单篇论文全部全文地址共享**的总时限（不是每个地址各给一份）：进入下载前先看是否已过期，
+53:      * 流式下载途中每读一段再检查一次，越过即放弃并归入 [FULLTEXT_FAILURE_TIMEOUT]，绝不在这里重新计时。
+54:      * [onResponseHeaders] 让调用方（OpenAlex 全文路径）在下载真正发生时读取 provider 响应头写入共享额度口径。
+55:      *
+56:      * 返回值的 [EmailExtractionOutcome.fulltextObtained] 区分「取到内容但没有邮箱」与「根本没取到内容」。
+57:      */
+58:     fun extract(
+59:         pdfUrl: String,
+60:         knownAuthors: List<PaperAuthor>,
+61:         sourceName: String,
+62:         deadline: Instant? = null,
+63:         onResponseHeaders: ((HttpHeaders) -> Unit)? = null
+64:     ): EmailExtractionOutcome {
+65:         val trafficBefore = DiscoveryTrafficMeter.currentScopeBytes()
+66:         val uri = try {
+67:             URI.create(pdfUrl)
+68:         } catch (e: IllegalArgumentException) {
+69:             log.debug("[{}] Invalid PDF URL: {}", sourceName, pdfUrl)
+70:             return EmailExtractionOutcome(
+71:                 emails = emptyList(),
+72:                 methodUsed = "PDF_PARSE",
+73:                 failureReason = "PDF_DOWNLOAD_FAILED",
+74:                 httpRequests = 0,
+75:                 fulltextObtained = false
+76:             )
+77:         }
+78: 
+79:         val downloaded = try {
+80:             FetchRetry.retryOnRecoverableIo(
+81:                 maxRetries = properties.maxRetries,
+82:                 initialBackoffMs = properties.retryBackoffMs
+83:             ) {
+84:                 // 重试也不重新计时：共享 deadline 已过期就不再发新的请求。
+85:                 if (deadlineExpired(deadline)) throw FulltextDeadlineExceededException(requestIssued = false)
+86:                 downloadWithStreamLimit(uri, deadline, onResponseHeaders)
+87:             }
+88:         } catch (e: FulltextDeadlineExceededException) {
+89:             log.debug("[{}] Fulltext download of {} exceeded the shared per-paper deadline", sourceName, pdfUrl)
+90:             return EmailExtractionOutcome(
+91:                 emptyList(), "PDF_PARSE", "PDF_DOWNLOAD_FAILED",
+92:                 httpRequests = if (e.requestIssued) 1 else 0,
+93:                 fulltextObtained = false,
+94:                 downloadFailureCategory = FULLTEXT_FAILURE_TIMEOUT
+95:             )
+96:         } catch (e: PdfTooLargeException) {
+97:             DiscoveryTrafficMeter.recordOversized(DiscoveryTrafficMeter.currentScopeBytes() - trafficBefore)
+98:             log.debug("[{}] PDF {} too large", sourceName, pdfUrl)
+99:             return EmailExtractionOutcome(
+100:                 emptyList(), "PDF_PARSE", "PDF_TOO_LARGE", httpRequests = 1, fulltextObtained = false
+101:             )
+102:         } catch (e: Exception) {
+103:             log.debug("[{}] Failed to download PDF {}: {}", sourceName, pdfUrl, e.message)
+104:             return EmailExtractionOutcome(
+105:                 emptyList(), "PDF_PARSE", "PDF_DOWNLOAD_FAILED",
+106:                 httpRequests = 1,
+107:                 fulltextObtained = false,
+108:                 downloadFailureCategory = classifyDownloadFailure(e)
+109:             )
+110:         }
+111: 
+112:         return when (downloaded.kind) {
+113:             ContentKind.PDF -> extractFromPdf(downloaded.bytes, knownAuthors, pdfUrl, sourceName, deadline)
+114:             ContentKind.HTML -> extractFromHtml(downloaded.bytes, knownAuthors)
+115:             ContentKind.OTHER -> EmailExtractionOutcome(
+116:                 emptyList(), "PDF_PARSE", "PDF_DOWNLOAD_FAILED",
+117:                 httpRequests = 1,
+118:                 fulltextObtained = false,
+119:                 downloadFailureCategory = FULLTEXT_FAILURE_INVALID_CONTENT
+120:             )
+121:         }
+122:     }
+123: 
+124:     private fun extractFromPdf(
+125:         bytes: ByteArray,
+126:         knownAuthors: List<PaperAuthor>,
+127:         pdfUrl: String,
+128:         sourceName: String,
+129:         deadline: Instant?
+130:     ): EmailExtractionOutcome {
+131:         val emails = try {
+132:             extractEmailsFromBytes(bytes, knownAuthors, deadline)
+133:         } catch (e: FulltextDeadlineExceededException) {
+134:             return EmailExtractionOutcome(
+135:                 emptyList(), "PDF_PARSE", "PDF_PARSE_FAILED",
+136:                 httpRequests = 1, fulltextObtained = false,
+137:                 downloadFailureCategory = FULLTEXT_FAILURE_TIMEOUT
+138:             )
+139:         } catch (e: Exception) {
+140:             log.debug("[{}] Failed to parse PDF {}: {}", sourceName, pdfUrl, e.message)
+141:             return EmailExtractionOutcome(
+142:                 emptyList(), "PDF_PARSE", "PDF_PARSE_FAILED",
+143:                 httpRequests = 1,
+144:                 fulltextObtained = false,
+145:                 downloadFailureCategory = FULLTEXT_FAILURE_INVALID_CONTENT
+146:             )
+147:         }
+148: 
+149:         if (emails.isEmpty()) {
+150:             return EmailExtractionOutcome(
+151:                 emptyList(), "PDF_PARSE", "NO_EMAIL_IN_TEXT", httpRequests = 1, fulltextObtained = true
+152:             )
+153:         }
+154:         return EmailExtractionOutcome(emails, "PDF_PARSE", null, httpRequests = 1, fulltextObtained = true)
+155:     }
+156: 
+157:     /**
+158:      * A known challenge or truly empty page is not obtained fulltext; ordinary readable HTML
+159:      * without an address still ends this source's existing fallback chain.
+160:      */
+161:     private fun extractFromHtml(bytes: ByteArray, knownAuthors: List<PaperAuthor>): EmailExtractionOutcome {
+162:         val html = String(bytes, StandardCharsets.UTF_8)
+163:         if (anubisScript.containsMatchIn(html) && anubisTitle.containsMatchIn(html)) {
+164:             return invalidHtml()
+165:         }
+166:         val (visible, emails) = SourceAuthorEmailResolver.resolveHtmlWithVisibility(
+167:             html, knownAuthors, properties.blacklistPrefixes)
+168:         if (!visible) return invalidHtml()
+169:         if (emails.isEmpty()) {
+170:             return EmailExtractionOutcome(
+171:                 emptyList(), "HTML_FALLBACK", "NO_EMAIL_IN_HTML", httpRequests = 1, fulltextObtained = true
+172:             )
+173:         }
+174:         return EmailExtractionOutcome(emails, "HTML_FALLBACK", null, httpRequests = 1, fulltextObtained = true)
+175:     }
+176: 
+177:     private fun invalidHtml() = EmailExtractionOutcome(
+178:         emptyList(), "HTML_FALLBACK", "PDF_DOWNLOAD_FAILED", httpRequests = 1,
+179:         fulltextObtained = false, downloadFailureCategory = FULLTEXT_FAILURE_INVALID_CONTENT
+180:     )
+
+224:         deadline: Instant?,
+225:         onResponseHeaders: ((HttpHeaders) -> Unit)?
+226:     ): DownloadedContent {
+227:         // R-1（V-4）：连接与响应头读取都在同一个剩余预算内 —— 有界 client 的连接/读取超时都取
+228:         // min(既有配置, 剩余预算)，响应体读取仍由下面的分片 deadline 检查把关，两处都不重新计时。
+229:         // R-1（V-4）：dispatch 前再判一次 —— 预算已尽就不发这次请求（0 请求，不是「发出去再超时」）。
+230:         if (com.weibo.talentintroduction.config.BoundedFulltextHttp.remainingMsOrUnbounded(deadline) <= 0L) {
+231:             throw FulltextDeadlineExceededException(requestIssued = false)
+232:         }
+233:         return boundedHttp.execute<DownloadedContent>(
+234:             restTemplate, uri,
+235:             PDF_DOWNLOAD_CONNECT_TIMEOUT_MS, properties.downloadTimeoutMs, deadline
+236:         ) { response ->
+237:             onResponseHeaders?.invoke(response.headers)
+238:             val contentType = response.headers.contentType
+239:             val isPdfContentType = contentType != null &&
+240:                 (contentType.isCompatibleWith(MediaType.APPLICATION_PDF) ||
+241:                  contentType.subtype?.lowercase() == "pdf")
+242: 
+243:             val maxSize = properties.maxPdfSizeBytes
+244:             val buffer = java.io.ByteArrayOutputStream()
+245:             val chunk = ByteArray(8192)
+246:             var totalRead = 0L
+247: 
+248:             response.body.use { input ->
+249:                 while (true) {
+250:                     // R-1（V-4）：每次分片读取前后都对照绝对时限 —— 服务端只要在单次读超时前吐一点数据
+251:                     // 就能让「按次读超时」永远不到期，因此这里必须按绝对 deadline 截断。
+252:                     if (deadlineExpired(deadline)) throw FulltextDeadlineExceededException(requestIssued = true)
+253:                     val n = input.read(chunk)
+254:                     if (n == -1) break
+255:                     totalRead += n
+256:                     if (totalRead > maxSize) {
+257:                         throw PdfTooLargeException()
+258:                     }
+259:                     buffer.write(chunk, 0, n)
+260:                     if (deadlineExpired(deadline)) throw FulltextDeadlineExceededException(requestIssued = true)
+261:                 }
+262:             }
+263: 
+264:             val bytes = buffer.toByteArray()
+265:             if (bytes.isEmpty()) throw RuntimeException("Empty body")
+266: 
+267:             val hasMagic = bytes.size >= 4 && bytes.take(4).toByteArray().contentEquals(magicBytes)
+268:             if (isPdfContentType || hasMagic) {
+269:                 return@execute DownloadedContent(bytes, ContentKind.PDF)
+270:             }
+271: 
+272:             if (properties.htmlFallbackEnabled && isHtmlContent(contentType, bytes)) {
+273:                 return@execute DownloadedContent(bytes, ContentKind.HTML)
+274:             }
+275: 
+276:             DownloadedContent(bytes, ContentKind.OTHER)
+277:         } ?: throw RuntimeException("Empty response")
+278:     }
+279: 
+280:     private fun isHtmlContent(contentType: MediaType?, bytes: ByteArray): Boolean {
+281:         if (contentType != null && contentType.isCompatibleWith(MediaType.TEXT_HTML)) {
+282:             return true
+283:         }
+284:         val prefix = String(bytes, 0, minOf(bytes.size, 512), StandardCharsets.UTF_8)
+285:             .trimStart()
+286:             .lowercase()
+287:         return prefix.startsWith("<!doctype html") || prefix.startsWith("<html")
+288:     }
+289: 
+290:     internal fun selectedPages(pageCount: Int): List<Int> =
+291:         PdfAuthorContactLayout.selectedPages(pageCount, properties.maxPages, properties.tailPages)
+292: 
+293:     private fun extractEmailsFromBytes(bytes: ByteArray, knownAuthors: List<PaperAuthor>, deadline: Instant?): List<AuthorEmail> {
+294:         ByteArrayInputStream(bytes).use { stream ->
+295:             PDDocument.load(stream).use { doc ->
+296:                 val text = StringBuilder()
+297:                 val clues = linkedSetOf<String>()
+298:                 val contacts = PdfAuthorContactLayout.collect(
+299:                     doc, properties.maxPages, knownAuthors, properties.tailPages,
+300:                     beforePage = {
+301:                         if (deadlineExpired(deadline)) throw FulltextDeadlineExceededException(requestIssued = true)
+302:                     },
+303:                     onPage = { page, pageText ->
+304:                         if (page <= properties.maxPages) text.append(pageText).append('\n')
+305:                         else clues += plainTextExtractor.extract(pageText, properties.blacklistPrefixes)
+306:                         for (annotation in doc.getPage(page - 1).annotations) {
+307:                             val uri = ((annotation as? PDAnnotationLink)?.action as? PDActionURI)?.uri ?: continue
+308:                             if (!uri.startsWith("mailto:", ignoreCase = true)) continue
+309:                             val address = uri.substring(7).substringBefore('?').trim()
+310:                             if (!mailboxUri.matches(address)) continue
+311:                             if (plainTextExtractor.extract(address, properties.blacklistPrefixes).singleOrNull() ==
+312:                                 address.lowercase()) clues += address.lowercase()
+313:                         }
+314:                     }
+315:                 )
+316:                 return SourceAuthorEmailResolver.resolvePdf(
+317:                     text.append('\n').append(clues.joinToString("\n")).toString(),
+318:                     knownAuthors, contacts, properties.blacklistPrefixes
+319:                 )
+320:             }
+321:         }
+322:     }
+323: 
+324: 
+325: }
+326: 

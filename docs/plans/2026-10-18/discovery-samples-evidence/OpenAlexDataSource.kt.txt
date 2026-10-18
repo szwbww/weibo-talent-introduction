@@ -1,0 +1,98 @@
+SOURCE src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt
+
+100:      */
+101:     override fun extractAuthorEmails(paper: PaperMetadata): EmailExtractionOutcome =
+102:         extractAuthorEmails(paper, Instant.now().plusMillis(FULLTEXT_PER_PAPER_DEADLINE_MS))
+103: 
+104:     /** 直接传 deadline 的入口：测试用它验证「共享总时限」而不是每个地址各给一份。 */
+105:     internal fun extractAuthorEmails(paper: PaperMetadata, deadline: Instant): EmailExtractionOutcome {
+106:         var requests = 0
+107:         var lastFailure: EmailExtractionOutcome? = null
+108: 
+109:         if (paper.pmcId != null) {
+110:             // R-4（V-4）：XML 阶段也在同一个共享总时限内 —— 时限已过就整段按 TIMEOUT 收口
+111:             // （0 次请求），不再接着走 URL / Unpaywall。
+112:             val europePmcOutcome = europePmc.extractAuthorEmails(paper, deadline)
+113:             // I-2: PMC/JATS 是另一来源的提取结果，姓名/邮箱相似都不算证据 ——
+114:             // 只有 ORCID 精确等值到一个唯一作者时才允许补接该作者的 OpenAlex ID。
+115:             // I-1/I-2: 机构同理 —— JATS 没取到机构、且该唯一 ORCID 绑定到的作者身上恰有一个
+116:             // 结构化 OpenAlex 机构时，才整条（名/类型/国家/来源）取自那个对象；两源矛盾保持 null。
+117:             val xmlOutcome = europePmcOutcome.copy(
+118:                 emails = europePmcOutcome.emails.map { email ->
+119:                     val boundAuthorId = verifiedAuthorIdByOrcid(email, paper.authors)
+120:                     val institution = if (boundAuthorId != null && email.institutionName == null) {
+121:                         boundOpenAlexInstitution(email, paper.authors)
+122:                     } else {
+123:                         null
+124:                     }
+125:                     email.copy(
+126:                         openAlexAuthorId = boundAuthorId,
+127:                         institutionName = institution?.name ?: email.institutionName,
+128:                         institutionCountry = institution?.country ?: email.institutionCountry,
+129:                         institutionType = institution?.type ?: email.institutionType,
+130:                         institutionSource = institution?.source ?: email.institutionSource
+131:                     )
+132:                 },
+133:                 methodUsed = "FULLTEXT_XML"
+134:             )
+135:             requests += xmlOutcome.httpRequests
+136:             if (xmlOutcome.resolvedFulltextObtained()) return xmlOutcome.copy(httpRequests = requests)
+137:             // XML 没取到内容才继续回退；取到内容但没有邮箱按 I-3 算成功，不再重复下载。
+138:             lastFailure = xmlOutcome
+139:         }
+140: 
+141:         val attemptedUrls = LinkedHashSet<String>()
+142:         val queue = ArrayDeque<String>()
+143:         (listOfNotNull(paper.downloadUrl) + paper.candidateDownloadUrls)
+144:             .mapNotNullTo(queue) { publicCandidateUrl(it) }
+145:         var unpaywallConsulted = false
+146: 
+147:         while (attemptedUrls.size < MAX_FULLTEXT_ADDRESSES) {
+148:             if (deadlineExpired(deadline)) {
+149:                 // I-1：总时限是单篇自己的约束，不是来源耗尽 —— 没有拿到内容时单列 TIMEOUT。
+150:                 if (lastFailure == null) lastFailure = timeoutOutcome()
+151:                 break
+152:             }
+153:             if (queue.isEmpty()) {
+154:                 if (unpaywallConsulted) break
+155:                 unpaywallConsulted = true
+156:                 val doi = paper.doi
+157:                 if (doi != null && unpaywallClient.isConfigured()) {
+158:                     // R-4（V-4）：Unpaywall 查询也是这一篇的全文阶段，同样受共享总时限约束；
+159:                     // 时限已过就不再发这次查询，并按已有的 TIMEOUT 类别收口。
+160:                     if (deadlineExpired(deadline)) {
+161:                         if (lastFailure == null) lastFailure = timeoutOutcome()
+162:                         break
+163:                     }
+164:                     requests++
+165:                     unpaywallClient.findPdfUrls(doi, deadline).mapNotNullTo(queue) { publicCandidateUrl(it) }
+166:                     // R-1（V-4）：查询被共享预算截断（客户端按剩余时间中止）且没拿到地址 → 按 TIMEOUT 收口，
+167:                     // 不再对同一篇发起后续下载。
+168:                     if (queue.isEmpty() && deadlineExpired(deadline)) {
+169:                         if (lastFailure == null) lastFailure = timeoutOutcome()
+170:                         break
+171:                     }
+172:                 }
+173:                 if (queue.isEmpty()) break
+174:             }
+175:             val url = queue.removeFirst()
+176:             if (!attemptedUrls.add(url)) continue
+177:             // I-1 防御：计量主机绝不被下载（候选构建已过滤，这里再挡一次，未来调用方也不会误入）。
+178:             if (OpenAlexMeteredDestinations.isMetered(url)) continue
+179:             val outcome = pdfEmailExtractor.extract(url, paper.authors, sourceName, deadline) { }
+180:             requests += outcome.httpRequests
+181:             if (outcome.resolvedFulltextObtained()) return outcome.copy(httpRequests = requests)
+182:             lastFailure = outcome
+183:         }
+184: 
+185:         lastFailure?.let { return it.copy(httpRequests = requests) }
+186:         // 一个地址都没有：保持改动前的语义（下游按 papersSkippedNoId 计数）。
+187:         return EmailExtractionOutcome(emptyList(), emailExtractionMethod, "NO_PMC_ID")
+188:     }
+189: 
+190:     private fun timeoutOutcome(): EmailExtractionOutcome = EmailExtractionOutcome(
+191:         emptyList(), "PDF_PARSE", "PDF_DOWNLOAD_FAILED", httpRequests = 0,
+192:         fulltextObtained = false, downloadFailureCategory = FULLTEXT_FAILURE_TIMEOUT
+193:     )
+194: 
+195:     /**
