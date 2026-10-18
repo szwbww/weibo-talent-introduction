@@ -45,6 +45,7 @@ import com.weibo.talentintroduction.discovery.repository.QueueJobInsert
 import com.weibo.talentintroduction.discovery.repository.QueueJobStatus
 import com.weibo.talentintroduction.discovery.repository.StreamCursorState
 import com.weibo.talentintroduction.discovery.repository.StreamRow
+import com.weibo.talentintroduction.discovery.sample.*
 import com.weibo.talentintroduction.expert.domain.EmailValidationResult
 import com.weibo.talentintroduction.expert.domain.EligibilityResult
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
@@ -927,7 +928,11 @@ class DiscoveryPipelineServiceTest {
         Mockito.`when`(indexWriterService.indexToRaw(Mockito.anyString(), Mockito.anyMap())).thenReturn(true)
     }
 
-    private fun realDiscoveryService(orcidAvailable: Boolean = false): ExpertDiscoveryService {
+    private fun realDiscoveryService(
+        orcidAvailable: Boolean = false,
+        sampleCapture: DiscoverySampleCapture? = null,
+        verificationRegistration: DiscoveryVerificationRegistrationService? = null
+    ): ExpertDiscoveryService {
         Mockito.`when`(orcidProvider.getIfAvailable()).thenReturn(if (orcidAvailable) orcid else null)
         // I-1：队列固定 scope=RND_TARGET，因此 EUROPE_PMC/PMC_OA 不参与；本夹具只用 OPENALEX（必要时 + ORCID）。
         Mockito.`when`(openAlexProvider.getIfAvailable()).thenReturn(openAlex)
@@ -947,7 +952,8 @@ class DiscoveryPipelineServiceTest {
             testProperties(), OpenAlexProperties(enabled = false), objectMapper,
             Mockito.mock(TaskProgressStore::class.java), cursorRepository,
             enrichmentJobService, enrichmentJobRepository, Executor { it.run() },
-            EuropePmcProperties(enabled = true)
+            EuropePmcProperties(enabled = true), verificationRegistration = verificationRegistration,
+            sampleCapture = sampleCapture
         )
     }
 
@@ -1057,7 +1063,7 @@ class DiscoveryPipelineServiceTest {
         }
         Mockito.`when`(discovery.collectQueuePage(anyText(), anyCriteria(), Mockito.any(), Mockito.anyInt()))
             .thenReturn(QueuedSourcePage("OPENALEX", QueueItemUnit.PAPER, emptyList(), null, true))
-        Mockito.`when`(discovery.extractQueuedItem(anyEnvelope(), anyCriteria(), Mockito.anyInt(), Mockito.anyInt()))
+        Mockito.`when`(discovery.extractQueuedItem(anyEnvelope(), anyCriteria(), Mockito.anyInt(), Mockito.anyInt(), Mockito.any()))
             .thenReturn(QueuedItemExtraction.Extracted("{}", true, 0, false, null))
         Mockito.`when`(discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any(DiscoveryVerificationExecution::class.java) ?: DiscoveryVerificationExecution(42L)))
             .thenReturn(QueuedItemConsumption())
@@ -1070,7 +1076,8 @@ class DiscoveryPipelineServiceTest {
         discovery: ExpertDiscoveryService? = null,
         coordinator: Executor = Executor { it.run() },
         collection: Executor = Executor { it.run() },
-        fetch: Executor = Executor { it.run() }
+        fetch: Executor = Executor { it.run() },
+        executionId: Long = 77L
     ): Harness {
         val clock = FakeClock(Instant.parse("2026-09-22T00:00:00Z"))
         val queueStore = store ?: InMemoryQueueStore(clock)
@@ -1089,12 +1096,12 @@ class DiscoveryPipelineServiceTest {
         ).thenAnswer { invocation ->
             val onStarted = invocation.getArgument<((Long) -> Unit)?>(3)
             val block = invocation.getArgument<() -> PipelineWindowResult>(5)
-            onStarted?.invoke(77L)
+            onStarted?.invoke(executionId)
             val result = block()
             results += result
             Pair(
                 TaskExecution(
-                    id = 77L, taskType = DISCOVERY_PIPELINE_TASK_TYPE, triggerType = "PIPELINE",
+                    id = executionId, taskType = DISCOVERY_PIPELINE_TASK_TYPE, triggerType = "PIPELINE",
                     status = result.taskFinalStatus ?: DiscoveryTerminalStatus.SUCCESS,
                     requestPayload = null, resultSummary = null,
                     successCount = result.taskSuccessCount, failureCount = result.taskFailureCount,
@@ -1496,7 +1503,7 @@ class DiscoveryPipelineServiceTest {
         // 域名许可不可得：job 退回 PENDING 且 attempts 不变。
         val job = h.store.seedJob(stream.id, "DOI:x", priority = 0, extractionJson = null)
         stream.nextAttemptAt = null
-        Mockito.`when`(h.discovery.extractQueuedItem(anyEnvelope(), anyCriteria(), Mockito.anyInt(), Mockito.anyInt()))
+        Mockito.`when`(h.discovery.extractQueuedItem(anyEnvelope(), anyCriteria(), Mockito.anyInt(), Mockito.anyInt(), Mockito.any()))
             .thenReturn(QueuedItemExtraction.HostBusy)
         // I-4/I-7：上一次的来源延期（本用例 fixture 为 3 小时）把唤醒时间推到了未来，这里必须越过它，
         // 否则 tick 会（正确地）跳过窗口。
@@ -1513,7 +1520,7 @@ class DiscoveryPipelineServiceTest {
         val stream = streamFor(h)
         stream.cursorState = StreamCursorState.EXHAUSTED
         val job = h.store.seedJob(stream.id, "DOI:x")
-        Mockito.`when`(h.discovery.extractQueuedItem(anyEnvelope(), anyCriteria(), Mockito.anyInt(), Mockito.anyInt()))
+        Mockito.`when`(h.discovery.extractQueuedItem(anyEnvelope(), anyCriteria(), Mockito.anyInt(), Mockito.anyInt(), Mockito.any()))
             .thenReturn(QueuedItemExtraction.Failed("NETWORK_ERROR", retryable = true))
 
         val backoffs = mutableListOf<Duration>()
@@ -1544,7 +1551,7 @@ class DiscoveryPipelineServiceTest {
         val stream = streamFor(h)
         stream.cursorState = StreamCursorState.EXHAUSTED
         val job = h.store.seedJob(stream.id, "DOI:x")
-        Mockito.`when`(h.discovery.extractQueuedItem(anyEnvelope(), anyCriteria(), Mockito.anyInt(), Mockito.anyInt()))
+        Mockito.`when`(h.discovery.extractQueuedItem(anyEnvelope(), anyCriteria(), Mockito.anyInt(), Mockito.anyInt(), Mockito.any()))
             .thenReturn(QueuedItemExtraction.Failed("AUTH_REJECTED", retryable = false))
 
         runWindow(h)
@@ -1609,7 +1616,7 @@ class DiscoveryPipelineServiceTest {
         stream.cursorState = StreamCursorState.EXHAUSTED
         val job = h.store.seedJob(stream.id, "DOI:x")
         val payload = extractionJson()
-        Mockito.`when`(h.discovery.extractQueuedItem(anyEnvelope(), anyCriteria(), Mockito.anyInt(), Mockito.anyInt()))
+        Mockito.`when`(h.discovery.extractQueuedItem(anyEnvelope(), anyCriteria(), Mockito.anyInt(), Mockito.anyInt(), Mockito.any()))
             .thenAnswer {
                 // 人工暂停发生在 job **已经领取之后**：已领取工作允许保存可靠抽取结果。
                 h.service.pause()
@@ -1992,13 +1999,13 @@ class DiscoveryPipelineServiceTest {
         h.store.seedJob(stream.id, "DOI:x", extractionJson = extractionJson())
         Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any(DiscoveryVerificationExecution::class.java) ?: DiscoveryVerificationExecution(42L)))
             .thenReturn(QueuedItemConsumption(indexedExperts = 1))
-        Mockito.`when`(h.discovery.extractQueuedItem(anyEnvelope(), anyCriteria(), Mockito.anyInt(), Mockito.anyInt()))
+        Mockito.`when`(h.discovery.extractQueuedItem(anyEnvelope(), anyCriteria(), Mockito.anyInt(), Mockito.anyInt(), Mockito.any()))
             .thenThrow(IllegalStateException("已保存的抽取结果不得再次下载"))
         launch(h)
         runWindow(h)
 
         Mockito.verify(h.discovery, Mockito.never())
-            .extractQueuedItem(anyEnvelope(), anyCriteria(), Mockito.anyInt(), Mockito.anyInt())
+            .extractQueuedItem(anyEnvelope(), anyCriteria(), Mockito.anyInt(), Mockito.anyInt(), Mockito.any())
         assertEquals(1L, h.store.pipeline.indexedExperts)
     }
 
@@ -2488,5 +2495,155 @@ class DiscoveryPipelineServiceTest {
         assertThrows(IllegalArgumentException::class.java) {
             ExpertDiscoveryProperties(pipelineTick = Duration.ZERO)
         }
+    }
+    @Test
+    fun `sample queue fresh cache pause and failed save keep extraction separate from consumption`() {
+        val rows = linkedMapOf<String, Any?>()
+        for (scenario in listOf("fresh", "cache-hit", "pause-after-extraction", "save-extraction-lost")) {
+            val observations = mutableListOf<Map<String, Any?>>()
+            for (enabled in listOf(false, true)) {
+                val root = if (scenario == "fresh" && enabled) SampleCaptureAcceptance.area("samples")
+                    else SampleCaptureAcceptance.area("queue-$scenario-$enabled")
+                val http = SampleCaptureAcceptance.FulltextFixture()
+                val service = realDiscoveryService(sampleCapture = SampleCaptureAcceptance.capture(root, enabled))
+                val h = harness(discovery = service, executionId = 9002)
+                val stream = streamFor(h)
+                stream.cursorState = StreamCursorState.EXHAUSTED
+                val papers = if (scenario == "fresh") listOf("pdf", "html", "xml", "403") else listOf("html")
+                val jobs = papers.map { kind ->
+                    val paper = SampleCaptureAcceptance.paper("queue-$scenario-$kind")
+                    val cached = if (scenario == "cache-hit") objectMapper.writeValueAsString(
+                        EmailExtractionOutcome(emptyList(), "HTML_FALLBACK", "NO_EMAIL_IN_HTML", 1, true,
+                            identityRuleVersion = com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.EXTRACTION_VERSION)) else null
+                    h.store.seedJob(stream.id, "DOI:${paper.doi}", extractionJson = cached).also {
+                        it.metadataJson = objectMapper.writeValueAsString(paper)
+                    }
+                }
+                Mockito.doAnswer { invocation ->
+                    val outcome = http.extract(invocation.getArgument(0))
+                    if (scenario == "save-extraction-lost") h.store.jobs.getValue(jobs.single().id).generation++
+                    if (scenario == "pause-after-extraction" || scenario == "save-extraction-lost") h.service.pause()
+                    outcome
+                }.`when`(openAlex).extractAuthorEmails(anyArg(PaperMetadata::class.java, paper()))
+                val result = runWindow(h)
+                val packages = SampleCaptureAcceptance.manifests(root)
+                    .filter { it.second.context.entry == DiscoverySampleEntry.QUEUE }
+                val consumed = h.store.jobs.values.count { it.status == QueueJobStatus.SUCCEEDED }
+                val stamps = h.store.jobs.values.mapNotNull { it.extractionJson }.map {
+                    objectMapper.readTree(it).path("identityRuleVersion").asInt()
+                }
+                assertTrue(stamps.all { it == com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.EXTRACTION_VERSION })
+                if (enabled && scenario != "cache-hit") {
+                    assertEquals(papers.size, packages.size)
+                    assertTrue(packages.all { it.second.context.executionId == 9002L && it.second.context.queueJobId in jobs.map { job -> job.id } })
+                    assertTrue(packages.all { it.second.stage == "EXTRACTION" })
+                    for ((path, manifest) in packages) {
+                        val kind = manifest.paper.title.substringAfterLast('-')
+                        val attempt = manifest.attempts.single()
+                        if (kind == "403") {
+                            assertEquals(403, attempt.httpStatus)
+                            assertEquals(DiscoverySampleBodyStatus.NOT_AVAILABLE, attempt.bodyStatus)
+                        } else {
+                            assertEquals(DiscoverySampleJson.hash(http.bodies.getValue(kind)), attempt.bodySha256)
+                            assertTrue(http.bodies.getValue(kind).contentEquals(java.nio.file.Files.readAllBytes(path.resolve(attempt.bodyFile!!))))
+                            if (kind == "xml") { assertNull(attempt.httpStatus); assertNull(attempt.contentType) }
+                        }
+                    }
+                } else assertTrue(packages.isEmpty())
+                if (scenario == "cache-hit") assertTrue(http.requests.isEmpty())
+                if (scenario.contains("extraction")) assertEquals(0, consumed)
+                if (scenario == "pause-after-extraction") assertNotNull(h.store.jobs.values.single().extractionJson)
+                if (scenario == "save-extraction-lost") assertNull(h.store.jobs.values.single().extractionJson)
+                observations += mapOf("downloads" to http.requests.size, "requests" to http.requests.toList(),
+                    "samples" to packages.size, "sampleDirectories" to packages.map { it.first.toString() },
+                    "consumed" to consumed, "processedPapers" to h.store.pipeline.processedPapers,
+                    "indexedExperts" to h.store.pipeline.indexedExperts, "failedItems" to h.store.pipeline.failedItems,
+                    "statuses" to h.store.jobs.values.map { it.status }, "attempts" to h.store.jobs.values.map { it.attempts },
+                    "terminationReason" to result.terminationReason, "identityVersions" to stamps,
+                    "retainedStage" to packages.map { it.second.stage }.distinct().singleOrNull())
+            }
+            val disabled = observations.first()
+            val enabled = observations.last()
+            val businessKeys = listOf("downloads", "requests", "consumed", "processedPapers", "indexedExperts",
+                "failedItems", "statuses", "attempts", "terminationReason", "identityVersions")
+            val equal = businessKeys.all { disabled[it] == enabled[it] }
+            assertTrue(equal, "$scenario: $observations")
+            rows[scenario] = enabled + mapOf("equal" to equal,
+                "newDownloads" to enabled["downloads"], "newSamples" to enabled["samples"])
+        }
+        SampleCaptureAcceptance.record("queue", mapOf("executionId" to 9002, "cases" to rows))
+    }
+
+    @Test
+    fun `sample busy host postpones original job without retaining a failure package`() {
+        val root = SampleCaptureAcceptance.area("host-busy")
+        val service = realDiscoveryService(sampleCapture = SampleCaptureAcceptance.capture(root))
+        val h = harness(discovery = service, executionId = 9002)
+        val stream = streamFor(h)
+        stream.cursorState = StreamCursorState.EXHAUSTED
+        val job = h.store.seedJob(stream.id, "DOI:busy")
+        job.metadataJson = objectMapper.writeValueAsString(SampleCaptureAcceptance.paper("busy"))
+        Mockito.doThrow(FulltextRequestGate.HostBusyException("example.invalid")).`when`(openAlex)
+            .extractAuthorEmails(anyArg(PaperMetadata::class.java, paper()))
+        runWindow(h)
+        assertEquals(QueueJobStatus.PENDING, job.status)
+        assertEquals(FulltextRequestGate.HOST_BUSY, job.lastError)
+        assertEquals(0, job.attempts)
+        assertTrue(SampleCaptureAcceptance.manifests(root).isEmpty())
+        SampleCaptureAcceptance.record("host-busy", mapOf("status" to job.status, "reason" to job.lastError,
+            "attempts" to job.attempts, "newSamples" to SampleCaptureAcceptance.manifests(root).size))
+    }
+    @Test
+    fun `sample IO failure leaves Apollo queue reserve and activation failures retryable with cached extraction`() {
+        val rows = linkedMapOf<String, Any?>()
+        for (failure in listOf("reserve-failure", "activate-failure")) {
+            val results = mutableListOf<Map<String, Any?>>()
+            for (sampling in listOf(false, true)) {
+                val fault = SampleCaptureAcceptance.ApolloFault(failure, 9002)
+                val store = SampleCaptureAcceptance.failingStore("apollo-queue-$failure-$sampling")
+                val real = realDiscoveryService(sampleCapture = if (sampling) DiscoverySampleCapture(store) else null,
+                    verificationRegistration = fault.registration)
+                val h = harness(discovery = real, executionId = 9002)
+                val stream = streamFor(h)
+                stream.cursorState = StreamCursorState.EXHAUSTED
+                val enteringCursor = "ENTERING-CURSOR"
+                stream.cursorValue = enteringCursor
+                val job = h.store.seedJob(stream.id, "DOI:apollo-$failure")
+                job.metadataJson = objectMapper.writeValueAsString(SampleCaptureAcceptance.paper("queue-apollo-$failure"))
+                Mockito.doReturn(EmailExtractionOutcome(listOf(
+                    AuthorEmail("ada@example.invalid", "Ada", "Lee", false, null, null)), "TEST"))
+                    .`when`(openAlex).extractAuthorEmails(anyArg(PaperMetadata::class.java, paper()))
+                stubEmailDedup()
+                var rawWrites = 0
+                Mockito.doAnswer {
+                    rawWrites++
+                    fault.events += "RAW"
+                    true
+                }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+                runWindow(h)
+                val checkpointCommitted = stream.cursorValue != enteringCursor || job.status == QueueJobStatus.SUCCEEDED
+                assertFalse(checkpointCommitted)
+                assertEquals(QueueJobStatus.RETRY_WAIT, job.status)
+                assertEquals(1, job.attempts)
+                assertNotNull(job.extractionJson)
+                assertEquals(if (sampling) 1 else 0, SampleCaptureAcceptance.ioErrors(store))
+                assertEquals(if (failure == "reserve-failure") listOf("reserve") else listOf("reserve", "RAW", "activate"), fault.events)
+                if (failure == "reserve-failure") assertEquals(0, rawWrites)
+                else { assertEquals(1, rawWrites); assertTrue(fault.recoverable()) }
+                results += mapOf("rawWrites" to rawWrites, "activated" to
+                    (fault.reserved?.item?.activatedAt?.let { 1 } ?: 0),
+                    "reservedRecoverable" to fault.recoverable(), "checkpointCommitted" to checkpointCommitted,
+                    "jobStatus" to job.status, "jobReason" to job.lastError, "attempts" to job.attempts,
+                    "processedPapers" to h.store.pipeline.processedPapers, "indexedExperts" to h.store.pipeline.indexedExperts,
+                    "failedItems" to h.store.pipeline.failedItems, "events" to fault.events.toList(),
+                    "diagnosticIoErrors" to SampleCaptureAcceptance.ioErrors(store))
+            }
+            val disabled = results.first().filterKeys { it != "diagnosticIoErrors" }
+            val enabled = results.last().filterKeys { it != "diagnosticIoErrors" }
+            assertEquals(disabled, enabled)
+            rows[failure] = results.last() + mapOf("equal" to (disabled == enabled), "decision" to
+                if ((results.last()["diagnosticIoErrors"] as Int) > 0) DiscoverySampleDecision.IO_ERROR else null)
+        }
+        SampleCaptureAcceptance.recordApollo("queue", rows)
     }
 }

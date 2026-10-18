@@ -25,6 +25,7 @@ import com.weibo.talentintroduction.discovery.domain.PaperAuthor
 import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.domain.PaperSearchResult
+import com.weibo.talentintroduction.discovery.sample.*
 import com.weibo.talentintroduction.discovery.domain.SourceUnit
 import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
 import com.weibo.talentintroduction.expert.domain.EmailValidationResult
@@ -267,7 +268,9 @@ class ExpertDiscoveryServiceTest {
         europePmcProps: EuropePmcProperties = EuropePmcProperties(),
         timeSource: PolicyTimeSource = PolicyTimeSource.SYSTEM,
         identityRepairService: DiscoveryIdentityRepairService? = null,
-        personRegistrationService: DiscoveryPersonRegistrationService? = null
+        personRegistrationService: DiscoveryPersonRegistrationService? = null,
+        verificationRegistration: DiscoveryVerificationRegistrationService? = null,
+        sampleCapture: DiscoverySampleCapture? = null
     ): ExpertDiscoveryService {
         // 04：真实准入服务（判定走上面的策略桩；写入经 mock repository；投影经当前 indexWriterService）。
         discoveryReviewService = DiscoveryReviewService(
@@ -282,7 +285,7 @@ class ExpertDiscoveryServiceTest {
             indexWriterService, indexService, revalidationService, expertSearchService, expertClassificationService, restTemplate, esProperties,
             props, openAlexProps, objectMapper, progressStore, cursorRepository, enrichmentJobService,
             enrichmentJobRepository, executor, europePmcProps, timeSource, discoveryReviewService,
-            identityRepairService, personRegistrationService
+            identityRepairService, personRegistrationService, verificationRegistration, sampleCapture
         )
     }
 
@@ -7709,5 +7712,208 @@ class ExpertDiscoveryServiceTest {
         // 旧文档 / 无证据档案：null 或空值都是不合格，绝不默认通过。
         assertFalse(DiscoveryIdentity.validInstitutionEvidence(profile), "无证据档案不得默认通过")
         assertFalse(DiscoveryIdentity.validInstitutionEvidence(profile.copy(institutionEvidence = "")))
+    }
+    @Test
+    fun `sample sync binds real execution inside reused workers and preserves extraction business results`() {
+        val samples = SampleCaptureAcceptance.area("samples")
+        val http = SampleCaptureAcceptance.FulltextFixture()
+        val source = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(source).`when`(openAlexProvider).getIfAvailable()
+        Mockito.doReturn("OPENALEX").`when`(source).sourceName
+        Mockito.doReturn("FULLTEXT").`when`(source).emailExtractionMethod
+        Mockito.doReturn(100).`when`(source).maxPapersPerSource
+        val papers = listOf("pdf", "html", "xml", "403").map { SampleCaptureAcceptance.paper("sync-$it") }
+        Mockito.doReturn(PaperSearchResult(papers, null, papers.size.toLong())).`when`(source)
+            .searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        Mockito.doAnswer { invocation -> http.extract(invocation.getArgument(0)) }.`when`(source)
+            .extractAuthorEmails(Mockito.any(PaperMetadata::class.java) ?: papers.first())
+        Mockito.doReturn(777777L).`when`(progressStore).getCurrentExecutionId(Mockito.anyString())
+        val criteria = PaperSearchCriteria(sources = listOf("OPENALEX"))
+        val pool = Executors.newFixedThreadPool(2)
+        val rows = mutableListOf<Map<String, Any?>>()
+        try {
+            for (concurrency in listOf(1, 2)) {
+                val props = discoveryProperties.copy(fetchConcurrency = concurrency, includeRawScan = false)
+                val start = http.requests.size
+                val disabledStarted = System.nanoTime()
+                val disabled = createService(props, pool).discover(criteria, "TEST", 9001, false)
+                val disabledNanos = System.nanoTime() - disabledStarted
+                val disabledRequests = http.requests.drop(start)
+                val before = http.requests.size
+                val enabledStarted = System.nanoTime()
+                val enabled = createService(props, pool, sampleCapture = SampleCaptureAcceptance.capture(samples))
+                    .discover(criteria, "TEST", 9001, false)
+                val enabledNanos = System.nanoTime() - enabledStarted
+                val enabledRequests = http.requests.drop(before)
+                val expected = disabled.stats.bySource.getValue("OPENALEX")
+                val actual = enabled.stats.bySource.getValue("OPENALEX")
+                // Timings are deliberately excluded; every business funnel and failure field is compared.
+                val expectedJson = objectMapper.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(expected).apply { remove("elapsedMs") }
+                val actualJson = objectMapper.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(actual).apply { remove("elapsedMs") }
+                assertEquals(expectedJson, actualJson)
+                assertEquals(disabledRequests.sorted(), enabledRequests.sorted())
+                assertEquals(4, enabledRequests.size)
+                rows += mapOf("concurrency" to concurrency, "equal" to (expectedJson == actualJson),
+                    "requestsEqual" to (disabledRequests.sorted() == enabledRequests.sorted()),
+                    "newNetworkRequests" to (enabledRequests.size - disabledRequests.size),
+                    "disabledElapsedNanos" to disabledNanos, "enabledElapsedNanos" to enabledNanos)
+            }
+            val capture = SampleCaptureAcceptance.capture(samples)
+            // Reuse those same executor threads with another execution, then no execution at all.
+            val service = createService(discoveryProperties.copy(fetchConcurrency = 2), pool, sampleCapture = capture)
+            service.discover(criteria, "TEST", 9011, false)
+            val sampleCount = SampleCaptureAcceptance.manifests(samples).size
+            service.discover(criteria, "TEST", null, false)
+            assertEquals(sampleCount, SampleCaptureAcceptance.manifests(samples).size)
+            assertNull(pool.submit<Any?> {
+                DiscoverySampleCapture.beginAttempt(DiscoverySampleAttemptKind.PDF_URL, "outside")
+            }.get(5, TimeUnit.SECONDS))
+        } finally { pool.shutdownNow() }
+        val manifests = SampleCaptureAcceptance.manifests(samples).filter { it.second.context.entry == DiscoverySampleEntry.SYNC }
+        val mismatches = manifests.count { (path, sample) ->
+            path.parent.fileName.toString() != sample.context.executionId.toString() ||
+                sample.context.executionId !in listOf(9001L, 9011L) || sample.context.sourceBatchNumber != 1
+        }
+        assertEquals(0, mismatches)
+        assertEquals(setOf(9001L, 9011L), manifests.map { it.second.context.executionId }.toSet())
+        // Concurrent store contention may skip observations; it must never relabel the ones retained.
+        assertTrue(manifests.size in 5..8)
+        val bytes = manifests.map { (path, sample) ->
+            val attempt = sample.attempts.single()
+            val expected = http.bodies[sample.paper.title.substringAfterLast('-')]
+            val equal = expected?.let {
+                it.contentEquals(Files.readAllBytes(path.resolve(attempt.bodyFile!!))) &&
+                    DiscoverySampleJson.hash(it) == attempt.bodySha256
+            }
+            if (expected != null) assertEquals(true, equal)
+            else {
+                assertEquals(403, attempt.httpStatus)
+                assertEquals(DiscoverySampleBodyStatus.NOT_AVAILABLE, attempt.bodyStatus)
+            }
+            assertEquals("EXTRACTION", sample.stage)
+            mapOf("executionId" to sample.context.executionId, "sample" to path.toString(),
+                "kind" to attempt.kind, "httpStatus" to attempt.httpStatus, "bodyStatus" to attempt.bodyStatus,
+                "bodyHashEqual" to equal, "stage" to sample.stage)
+        }
+        Mockito.verify(progressStore, Mockito.never()).getCurrentExecutionId(Mockito.anyString())
+        SampleCaptureAcceptance.record("sync", mapOf("executionId" to 9001, "crossExecutionMixups" to mismatches,
+            "businessComparisons" to rows, "samples" to bytes, "identityExtractionVersion" to DiscoveryIdentity.EXTRACTION_VERSION))
+    }
+
+    @Test
+    fun `sample scope rejects other sources invalid queue context and preserves business exceptions`() {
+        val root = SampleCaptureAcceptance.area("source-separation")
+        val capture = SampleCaptureAcceptance.capture(root)
+        val service = createService(sampleCapture = capture)
+        val paper = SampleCaptureAcceptance.paper("other-source").copy(source = "EUROPE_PMC")
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(paper), null, 1))
+        DiscoveryMockHelper.stubExtractAuthorEmails(europePmc, emptyList())
+        val otherCriteria = PaperSearchCriteria(sources = listOf("EUROPE_PMC"))
+        val disabledOther = createService().discover(otherCriteria, "TEST", 9001, false)
+        val enabledOther = service.discover(otherCriteria, "TEST", 9001, false)
+        val otherEqual = disabledOther.stats.bySource.getValue("EUROPE_PMC").copy(elapsedMs = 0) ==
+            enabledOther.stats.bySource.getValue("EUROPE_PMC").copy(elapsedMs = 0)
+        assertTrue(otherEqual)
+        assertTrue(SampleCaptureAcceptance.manifests(root).isEmpty())
+        val source = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(source).`when`(openAlexProvider).getIfAvailable()
+        Mockito.doReturn("OPENALEX").`when`(source).sourceName
+        Mockito.doReturn("FULLTEXT").`when`(source).emailExtractionMethod
+        val outcome = EmailExtractionOutcome(listOf(
+            AuthorEmail("one@example.invalid", null, "Lee", true, null, null),
+            AuthorEmail("two@example.invalid", "Ada", null, false, null, null)), "TEST")
+        Mockito.doReturn(outcome).`when`(source)
+            .extractAuthorEmails(Mockito.any(PaperMetadata::class.java) ?: paper)
+        val envelope = ownershipEnvelope(paper.copy(source = "OPENALEX"))
+        for (context in listOf(null, DiscoverySampleContext(-1, "OPENALEX", DiscoverySampleEntry.QUEUE, null, 1),
+            DiscoverySampleContext(0, "OPENALEX", DiscoverySampleEntry.QUEUE, null, 1),
+            DiscoverySampleContext(9002, "EUROPE_PMC", DiscoverySampleEntry.QUEUE, null, 1))) {
+            assertTrue(service.extractQueuedItem(envelope, PaperSearchCriteria(), 2, 1048576, context) is QueuedItemExtraction.Extracted)
+        }
+        assertTrue(SampleCaptureAcceptance.manifests(root).isEmpty())
+        val valid = DiscoverySampleContext(9002, "OPENALEX", DiscoverySampleEntry.QUEUE, null, 1)
+        service.extractQueuedItem(envelope, PaperSearchCriteria(), 2, 1048576, valid)
+        val sample = SampleCaptureAcceptance.manifests(root).single().second
+        assertEquals(2, sample.unresolvedAuthorEmailCount)
+        assertEquals(1, SampleCaptureAcceptance.manifests(root).size, "multiple authors still represent one paper")
+        assertEquals(outcome, sample.outcome, "capture precedes, and must not change, queue identity stamping")
+        Mockito.doThrow(IllegalStateException("original-business-failure")).`when`(source)
+            .extractAuthorEmails(Mockito.any(PaperMetadata::class.java) ?: paper)
+        val failedEnvelope = ownershipEnvelope(paper.copy(source = "OPENALEX", title = "business-error"))
+        val failed = service.extractQueuedItem(failedEnvelope, PaperSearchCriteria(), 2, 1048576, valid) as QueuedItemExtraction.Failed
+        assertEquals("original-business-failure", failed.reason)
+        assertTrue(failed.retryable)
+        assertEquals(IllegalStateException::class.java.name,
+            SampleCaptureAcceptance.manifests(root).single { it.second.paper.title == "business-error" }.second.extractionExceptionClass)
+        SampleCaptureAcceptance.record("other-source", mapOf("newSamples" to
+            SampleCaptureAcceptance.manifests(root).count { it.second.paper.source != "OPENALEX" }, "equal" to otherEqual))
+        SampleCaptureAcceptance.record("invalid-context-and-exceptions", mapOf("unresolvedAuthorEmailCount" to sample.unresolvedAuthorEmailCount,
+            "paperSamples" to 1, "businessFailure" to failed.reason, "retryable" to failed.retryable))
+    }
+    @Test
+    fun `sample IO failure cannot commit synchronous checkpoint over Apollo reserve or activate failure`() {
+        val rows = linkedMapOf<String, Any?>()
+        for (failure in listOf("reserve-failure", "activate-failure")) {
+            val results = mutableListOf<Map<String, Any?>>()
+            for (sampling in listOf(false, true)) {
+                val fault = SampleCaptureAcceptance.ApolloFault(failure, 9001)
+                val store = SampleCaptureAcceptance.failingStore("apollo-sync-$failure-$sampling")
+                val source = Mockito.mock(OpenAlexDataSource::class.java)
+                Mockito.doReturn(source).`when`(openAlexProvider).getIfAvailable()
+                Mockito.doReturn("OPENALEX").`when`(source).sourceName
+                Mockito.doReturn("FULLTEXT").`when`(source).emailExtractionMethod
+                Mockito.doReturn(100).`when`(source).maxPapersPerSource
+                val paper = SampleCaptureAcceptance.paper("apollo-sync-$failure")
+                Mockito.doReturn(PaperSearchResult(listOf(paper), "NEXT-UNCOMMITTED", 1)).`when`(source)
+                    .searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+                Mockito.doReturn(EmailExtractionOutcome(listOf(
+                    AuthorEmail("ada@example.invalid", "Ada", "Lee", false, null, null)), "TEST"))
+                    .`when`(source).extractAuthorEmails(Mockito.any(PaperMetadata::class.java) ?: paper)
+                DiscoveryMockHelper.stubValidateEmail(emailValidationService, "ada@example.invalid", EmailValidationResult(3, true))
+                DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+                DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+                val rawDocuments = mutableListOf<Map<String, Any?>>()
+                Mockito.doAnswer { invocation ->
+                    fault.events += "RAW"
+                    rawDocuments += invocation.getArgument<Map<String, Any?>>(1)
+                    true
+                }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+                val service = createService(verificationRegistration = fault.registration,
+                    sampleCapture = if (sampling) DiscoverySampleCapture(store) else null)
+                installInMemoryCursorStore()
+                storedCheckpoints.clear()
+                val criteria = PaperSearchCriteria(sources = listOf("OPENALEX"))
+                val result = service.discover(criteria, "TEST", 9001, false)
+                val stats = result.stats.bySource.getValue("OPENALEX")
+                val checkpoint = storedCheckpointFor("OPENALEX", criteria)
+                val committed = checkpoint.cursor == "NEXT-UNCOMMITTED" || checkpoint.exhausted
+                assertFalse(committed)
+                assertEquals(1, stats.failureReasons["VERIFICATION_REGISTRATION_FAILED"])
+                assertFalse(stats.failureReasons.containsKey("IO_ERROR"))
+                assertEquals(if (sampling) 1 else 0, SampleCaptureAcceptance.ioErrors(store))
+                assertEquals(if (failure == "reserve-failure") listOf("reserve") else listOf("reserve", "RAW", "activate"), fault.events)
+                if (failure == "reserve-failure") {
+                    assertTrue(rawDocuments.isEmpty())
+                    assertNull(fault.reserved)
+                } else {
+                    assertEquals(1, rawDocuments.size)
+                    assertTrue(fault.recoverable())
+                    assertEquals(9001L, fault.reserved!!.item!!.ownerExecutionId)
+                    assertEquals("OPENALEX", fault.reserved!!.item!!.sourceName)
+                }
+                results += mapOf("rawWrites" to rawDocuments.size, "activated" to
+                    (fault.reserved?.item?.activatedAt?.let { 1 } ?: 0), "checkpointCommitted" to committed,
+                    "reservedRecoverable" to fault.recoverable(), "events" to fault.events.toList(),
+                    "failureReasons" to stats.failureReasons.toMap(), "processed" to stats.papersSearched,
+                    "indexed" to stats.indexed, "stopReason" to stats.stopReason,
+                    "diagnosticIoErrors" to SampleCaptureAcceptance.ioErrors(store))
+            }
+            val disabled = results.first().filterKeys { it != "diagnosticIoErrors" }
+            val enabled = results.last().filterKeys { it != "diagnosticIoErrors" }
+            assertEquals(disabled, enabled)
+            rows[failure] = results.last() + mapOf("equal" to (disabled == enabled), "decision" to
+                if ((results.last()["diagnosticIoErrors"] as Int) > 0) DiscoverySampleDecision.IO_ERROR else null)
+        }
+        SampleCaptureAcceptance.recordApollo("sync", rows)
     }
 }

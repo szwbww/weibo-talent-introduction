@@ -5,6 +5,7 @@ import com.weibo.talentintroduction.config.EuropePmcProperties
 import com.weibo.talentintroduction.discovery.domain.PaperAuthor
 import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
+import com.weibo.talentintroduction.discovery.sample.*
 import org.hamcrest.CoreMatchers.containsString
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -760,5 +761,68 @@ class EuropePmcDataSourceTest {
             assertTrue(elapsedMs < 5_000, "500ms 预算内必须结束（实际 ${elapsedMs}ms）")
             assertEquals(1, server.acceptedCount)
         }
+    }
+    @Test
+    fun `sample XML observes each original retry with unknown successful headers and no response reread`() {
+        val root = SampleCaptureAcceptance.area("xml-hooks")
+        val capture = SampleCaptureAcceptance.capture(root)
+        val context = DiscoverySampleContext(9001, "OPENALEX", DiscoverySampleEntry.SYNC, 1, null)
+        val paper = SampleCaptureAcceptance.paper("xml-retry").copy(pmcId = "PMC123")
+        val bytes = """<article><front><article-meta><contrib-group>
+            <contrib contrib-type="author"><name><surname>Lee</surname><given-names>Ada</given-names></name>
+            <email>ada@example.invalid</email></contrib></contrib-group></article-meta></front></article>""".toByteArray()
+        val rest = Mockito.mock(RestTemplate::class.java)
+        var requests = 0
+        val urls = mutableListOf<String>()
+        Mockito.doAnswer { invocation ->
+            urls += invocation.getArgument<String>(0)
+            requests++
+            if (requests % 2 == 1) throw org.springframework.web.client.ResourceAccessException(
+                "original connection failure", java.net.SocketException("original reset"))
+            bytes
+        }.`when`(rest).getForObject(Mockito.anyString(), Mockito.eq(ByteArray::class.java))
+        val source = EuropePmcDataSource(rest, properties.copy(maxRetries = 1, retryBackoffMs = 0))
+        val disabled = source.extractAuthorEmails(paper)
+        val baselineRequests = urls.toList()
+        urls.clear()
+        val enabled = capture.capture(context, paper) { source.extractAuthorEmails(paper) }
+        assertEquals(disabled, enabled)
+        assertEquals(baselineRequests, urls)
+        val enabledRequests = urls.toList()
+        val enabledRequestCount = requests - baselineRequests.size
+        assertEquals(4, requests)
+        val saved = SampleCaptureAcceptance.manifests(root).single()
+        assertEquals(2, saved.second.attempts.size)
+        val failed = saved.second.attempts.first()
+        val complete = saved.second.attempts.last()
+        assertEquals(DiscoverySampleBodyStatus.NOT_AVAILABLE, failed.bodyStatus)
+        assertEquals(org.springframework.web.client.ResourceAccessException::class.java.name, failed.exceptionClass)
+        assertEquals(DiscoverySampleBodyStatus.SAVED, complete.bodyStatus)
+        assertEquals(DiscoverySampleAttemptKind.PMC_XML, complete.kind)
+        assertNull(complete.httpStatus)
+        assertNull(complete.contentType)
+        assertNull(complete.pdfSettings)
+        assertEquals(DiscoverySampleJson.hash(bytes), complete.bodySha256)
+        assertTrue(bytes.contentEquals(java.nio.file.Files.readAllBytes(saved.first.resolve(complete.bodyFile!!))))
+        assertTrue(saved.second.attempts.all { it.elapsedMs >= 0 })
+        // A direct EUROPE_PMC call after the OPENALEX scope must neither create a package nor leak an attempt.
+        source.extractAuthorEmails(paper.copy(source = "EUROPE_PMC"))
+        assertEquals(1, SampleCaptureAcceptance.manifests(root).size)
+        assertNull(DiscoverySampleCapture.beginAttempt(DiscoverySampleAttemptKind.PMC_XML, "outside"))
+
+        Mockito.doThrow(org.springframework.web.client.HttpClientErrorException(org.springframework.http.HttpStatus.FORBIDDEN))
+            .`when`(rest).getForObject(Mockito.anyString(), Mockito.eq(ByteArray::class.java))
+        val rejected = capture.capture(context, paper.copy(title = "xml-403")) { source.extractAuthorEmails(paper) }
+        val forbidden = SampleCaptureAcceptance.manifests(root).single { it.second.paper.title == "xml-403" }.second.attempts.single()
+        assertEquals("FULLTEXT_FETCH_FAILED", rejected.failureReason)
+        assertEquals(403, forbidden.httpStatus)
+        assertEquals(DiscoverySampleBodyStatus.NOT_AVAILABLE, forbidden.bodyStatus)
+        assertNull(forbidden.bodyFile)
+        SampleCaptureAcceptance.record("xml-hooks", mapOf("equal" to (disabled == enabled),
+            "requestSequenceEqual" to (baselineRequests == enabledRequests),
+            "newNetworkRequests" to (enabledRequestCount - baselineRequests.size),
+            "bodyHashEqual" to (DiscoverySampleJson.hash(bytes) == complete.bodySha256),
+            "httpStatus" to complete.httpStatus, "contentType" to complete.contentType,
+            "attempts" to saved.second.attempts, "forbiddenStatus" to forbidden.httpStatus))
     }
 }

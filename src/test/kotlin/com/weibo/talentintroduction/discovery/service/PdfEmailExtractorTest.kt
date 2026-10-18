@@ -5,6 +5,12 @@ import com.weibo.talentintroduction.config.BoundedHttpExecutor
 import com.weibo.talentintroduction.config.PdfExtractionProperties
 import com.weibo.talentintroduction.config.SlowHttpServer
 import com.weibo.talentintroduction.discovery.domain.PaperAuthor
+import com.weibo.talentintroduction.config.DiscoverySampleProperties
+import com.weibo.talentintroduction.discovery.domain.PaperMetadata
+import com.weibo.talentintroduction.discovery.sample.*
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.Paths
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -955,5 +961,275 @@ class PdfEmailExtractorTest {
             assertEquals(false, outcome.fulltextObtained)
             assertTrue(elapsedMs < 5_000, "500ms 预算内必须结束（实际 ${elapsedMs}ms）")
         }
+    }
+    @Test
+    fun `sample hooks observe complete original responses without changing downloads or results`() {
+        val root = SampleCaptureAcceptance.area("pdf-hooks")
+        val capture = SampleCaptureAcceptance.capture(root)
+        val context = DiscoverySampleContext(9001, "OPENALEX", DiscoverySampleEntry.SYNC, 1, null)
+        val rows = linkedMapOf<String, Any?>()
+        val fixtures = listOf(
+            Triple("pdf", readPdfFixture("pdf/no_email.pdf"), MediaType.APPLICATION_PDF),
+            Triple("html", "<html><body>Original readable paper</body></html>".toByteArray(), MediaType.TEXT_HTML)
+        )
+        for ((name, bytes, type) in fixtures) {
+            var calls = 0
+            var reads = 0
+            var callbacks = 0
+            val order = mutableListOf<String>()
+            Mockito.doAnswer { invocation: InvocationOnMock ->
+                calls++
+                order += "request"
+                val response = org.springframework.mock.http.client.MockClientHttpResponse(bytes, HttpStatus.OK)
+                response.headers.contentType = type
+                val observed = object : ClientHttpResponse by response {
+                    override fun getBody(): java.io.InputStream {
+                        reads++
+                        order += "body"
+                        return response.body
+                    }
+                }
+                invocation.getArgument<ResponseExtractor<*>>(3).extractData(observed)
+            }.`when`(restTemplate).execute(Mockito.any(URI::class.java), Mockito.eq(HttpMethod.GET),
+                Mockito.any(), Mockito.any(ResponseExtractor::class.java))
+            fun download() = extractor.extract("https://paper.invalid/$name", emptyList(), "OPENALEX",
+                onResponseHeaders = { callbacks++; order += "callback" })
+            val before = download()
+            val baselineOrder = order.toList()
+            order.clear()
+            val after = capture.capture(context, SampleCaptureAcceptance.paper(name)) { download() }
+            val sample = SampleCaptureAcceptance.manifests(root).single { it.second.paper.title == name }
+            val attempt = sample.second.attempts.single()
+            assertEquals(before, after)
+            assertEquals(baselineOrder, order)
+            assertEquals(2, calls)
+            assertEquals(2, reads, "sampling must not reopen the stream")
+            assertEquals(2, callbacks)
+            assertEquals(200, attempt.httpStatus)
+            assertEquals(type.toString(), attempt.contentType)
+            assertEquals(properties, attempt.pdfSettings)
+            assertEquals(DiscoverySampleBodyStatus.SAVED, attempt.bodyStatus)
+            assertTrue(bytes.contentEquals(Files.readAllBytes(sample.first.resolve(attempt.bodyFile!!))))
+            assertEquals(DiscoverySampleJson.hash(bytes), attempt.bodySha256)
+            rows[name] = mapOf("equal" to (before == after), "requestOrderEqual" to (baselineOrder == order),
+                "bodyHashEqual" to (DiscoverySampleJson.hash(bytes) == attempt.bodySha256),
+                "newNetworkRequests" to (calls - 2), "streamOpens" to reads, "callbacks" to callbacks)
+        }
+        stubDownloadFailure(HttpClientErrorException(HttpStatus.FORBIDDEN))
+        val forbidden = capture.capture(context, SampleCaptureAcceptance.paper("403")) {
+            extractor.extract("https://paper.invalid/403", emptyList(), "OPENALEX")
+        }
+        val rejected = SampleCaptureAcceptance.manifests(root).single { it.second.paper.title == "403" }.second.attempts.single()
+        assertEquals("HTTP_403", forbidden.downloadFailureCategory)
+        assertEquals(403, rejected.httpStatus)
+        assertEquals(DiscoverySampleBodyStatus.NOT_AVAILABLE, rejected.bodyStatus)
+        assertNull(rejected.bodyFile)
+        assertNull(rejected.bodyBytes)
+        rows["403"] = mapOf("httpStatus" to rejected.httpStatus, "bodyStatus" to rejected.bodyStatus)
+
+        val body = fixtures.last().second
+        stubPdfDownload(body, MediaType.TEXT_HTML)
+        val small = PdfEmailExtractor(restTemplate, plainTextExtractor,
+            PdfExtractionProperties(maxPdfSizeBytes = 8), passThroughBoundedHttp)
+        capture.capture(context, SampleCaptureAcceptance.paper("oversized")) {
+            small.extract("https://paper.invalid/oversized", emptyList(), "OPENALEX")
+        }
+        val oversized = SampleCaptureAcceptance.manifests(root).single { it.second.paper.title == "oversized" }.second
+        assertEquals("PDF_TOO_LARGE", oversized.outcome!!.failureReason)
+        assertEquals(DiscoverySampleBodyStatus.NOT_AVAILABLE, oversized.attempts.single().bodyStatus)
+        assertEquals(0L, oversized.bodyBytesRetained)
+
+        val limitedRoot = SampleCaptureAcceptance.area("pdf-body-limit")
+        val limited = SampleCaptureAcceptance.capture(limitedRoot, maxBodyBytes = 8)
+        limited.capture(context, SampleCaptureAcceptance.paper("body-limit")) {
+            extractor.extract("https://paper.invalid/body-limit", emptyList(), "OPENALEX")
+        }
+        val limitedAttempt = SampleCaptureAcceptance.manifests(limitedRoot).single().second.attempts.single()
+        assertEquals(DiscoverySampleBodyStatus.BODY_LIMIT, limitedAttempt.bodyStatus)
+        assertEquals(body.size.toLong(), limitedAttempt.bodyBytes)
+        assertNull(limitedAttempt.bodyFile)
+        SampleCaptureAcceptance.record("download-hooks", rows + mapOf(
+            "oversized" to mapOf("bodyStatus" to oversized.attempts.single().bodyStatus,
+                "retainedBytes" to oversized.bodyBytesRetained),
+            "body-limit" to mapOf("bodyStatus" to limitedAttempt.bodyStatus, "bodyBytes" to limitedAttempt.bodyBytes)))
+    }
+    @Test
+    fun `sample PDF attempts retain retry and callback exception semantics and ignore diagnostic header errors`() {
+        val root = SampleCaptureAcceptance.area("pdf-retry")
+        val capture = SampleCaptureAcceptance.capture(root)
+        val context = DiscoverySampleContext(9001, "OPENALEX", DiscoverySampleEntry.SYNC, 1, null)
+        val bytes = readPdfFixture("pdf/no_email.pdf")
+        val sequence = mutableListOf<String>()
+        var dispatches = 0
+        var callbackFailure = false
+        val original = IllegalStateException("original header callback")
+        val transport = object : BoundedHttpExecutor {
+            override fun <T : Any> getForObject(base: RestTemplate, url: String, responseType: Class<T>,
+                connectCapMs: Long, readCapMs: Long, deadline: Instant?): T? = error("unexpected transport")
+            override fun <T> execute(base: RestTemplate, uri: URI, connectCapMs: Long, readCapMs: Long,
+                deadline: Instant?, responseExtractor: ResponseExtractor<T>): T? {
+                dispatches++
+                sequence += "dispatch"
+                if (dispatches % 2 == 1 && !callbackFailure) throw ResourceAccessException(
+                    "original reset", java.net.SocketException("reset"))
+                val response = org.springframework.mock.http.client.MockClientHttpResponse(bytes, HttpStatus.OK)
+                response.headers.contentType = MediaType.APPLICATION_PDF
+                val observed = object : ClientHttpResponse by response {
+                    override fun getRawStatusCode(): Int = throw java.io.IOException("diagnostic status unavailable")
+                }
+                return responseExtractor.extractData(observed)
+            }
+        }
+        val parser = PdfEmailExtractor(RestTemplate(), plainTextExtractor,
+            PdfExtractionProperties(maxRetries = 1, retryBackoffMs = 0), transport)
+        fun extract() = parser.extract("https://paper.invalid/retry", emptyList(), "OPENALEX", onResponseHeaders = {
+            sequence += "callback"
+            if (callbackFailure) throw original
+        })
+        val disabled = extract()
+        val disabledSequence = sequence.toList()
+        sequence.clear()
+        val enabled = capture.capture(context, SampleCaptureAcceptance.paper("pdf-retry")) { extract() }
+        assertEquals(disabled, enabled)
+        assertEquals(disabledSequence, sequence)
+        assertEquals(4, dispatches)
+        val attempts = SampleCaptureAcceptance.manifests(root).single().second.attempts
+        assertEquals(2, attempts.size)
+        assertEquals(ResourceAccessException::class.java.name, attempts.first().exceptionClass)
+        assertEquals(DiscoverySampleBodyStatus.NOT_AVAILABLE, attempts.first().bodyStatus)
+        assertEquals(DiscoverySampleBodyStatus.SAVED, attempts.last().bodyStatus)
+        assertNull(attempts.last().httpStatus, "diagnostic getter failure cannot invalidate a business response")
+        assertEquals(DiscoverySampleJson.hash(bytes), attempts.last().bodySha256)
+        callbackFailure = true
+        val disabledCallbackFailure = extract()
+        val capturedFailure = capture.capture(context, SampleCaptureAcceptance.paper("callback-failure")) { extract() }
+        assertEquals(disabledCallbackFailure, capturedFailure)
+        val failed = SampleCaptureAcceptance.manifests(root).single { it.second.paper.title == "callback-failure" }.second.attempts.single()
+        assertEquals(original.javaClass.name, failed.exceptionClass)
+        assertEquals(DiscoverySampleBodyStatus.NOT_AVAILABLE, failed.bodyStatus)
+        assertNull(DiscoverySampleCapture.beginAttempt(DiscoverySampleAttemptKind.PDF_URL, "outside"))
+        SampleCaptureAcceptance.record("pdf-retry", mapOf("equal" to (disabled == enabled),
+            "requestSequenceEqual" to (disabledSequence == sequence.take(disabledSequence.size)),
+            "attempts" to attempts, "callbackFailureEqual" to (disabledCallbackFailure == capturedFailure)))
+    }
+}
+
+/** Shared only by the four capture integration suites; all providers and persistence are disposable fakes. */
+internal object SampleCaptureAcceptance {
+    val base: Path = System.getProperty("sample.acceptanceDir")?.let { Paths.get(it, "capture") }
+        ?: Files.createTempDirectory("discovery-capture-")
+    private val cases = linkedMapOf<String, Any?>()
+    init {
+        if (Files.exists(base)) Files.walk(base).use { paths ->
+            paths.sorted(Comparator.reverseOrder()).forEach { Files.delete(it) }
+        }
+        Files.createDirectories(base)
+    }
+    fun area(name: String): Path = Files.createDirectories(base.resolve(name))
+    fun capture(root: Path, enabled: Boolean = true, maxBodyBytes: Long = 10485760): DiscoverySampleCapture =
+        DiscoverySampleCapture(DiscoverySampleStore(DiscoverySampleProperties(
+            enabled = enabled, directory = root.toRealPath().toString(), maxBodyBytes = maxBodyBytes)))
+    fun failingStore(name: String): DiscoverySampleStore {
+        val store = Mockito.spy(DiscoverySampleStore(DiscoverySampleProperties(
+            enabled = true, directory = area(name).toRealPath().toString())))
+        store.atomicMove = { _, _ -> throw java.io.IOException("injected diagnostic commit failure") }
+        return store
+    }
+    fun ioErrors(store: DiscoverySampleStore): Int = Mockito.mockingDetails(store).invocations.count {
+        it.method.name == "decision" && it.arguments.firstOrNull() == DiscoverySampleDecision.IO_ERROR
+    }
+    /** Mock transaction/ES seam: a real RESERVED value survives the injected activate exception. */
+    class ApolloFault(val stage: String, val executionId: Long) {
+        val registration = Mockito.mock(DiscoveryVerificationRegistrationService::class.java)
+        val events = mutableListOf<String>()
+        var reserved: DiscoveryRegistration? = null
+        init {
+            Mockito.doReturn(DiscoveryVerificationExecution(executionId)).`when`(registration).begin(
+                Mockito.any(), Mockito.any(com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria::class.java)
+                    ?: com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria(), Mockito.anyBoolean())
+            Mockito.doAnswer { invocation ->
+                check(DiscoverySampleCapture.beginAttempt(DiscoverySampleAttemptKind.PMC_XML, "reserve-outside-scope") == null)
+                events += "reserve"
+                if (stage == "reserve-failure") throw DiscoveryRegistrationException(java.io.IOException("reserve failure"))
+                val now = Instant.now()
+                val item = com.weibo.talentintroduction.discovery.domain.VerificationItem(
+                    id = 1, ownerExecutionId = executionId, expertDocId = invocation.getArgument(1),
+                    identityHash = "a".repeat(64), policyVersion = com.weibo.talentintroduction.discovery.domain.VerificationMode.ENFORCE.policyVersion,
+                    sourceName = invocation.getArgument(3), sourceItemKey = invocation.getArgument(4),
+                    batchNumber = 0, snapshotJson = DiscoverySampleJson.mapper.writeValueAsString(invocation.getArgument<Any>(2)),
+                    factFingerprint = "b".repeat(64), state = com.weibo.talentintroduction.discovery.domain.VerificationState.RESERVED,
+                    outcome = null, qualification = com.weibo.talentintroduction.discovery.domain.VerificationQualification.UNKNOWN,
+                    route = com.weibo.talentintroduction.discovery.domain.VerificationRoute.NONE,
+                    apolloEnteredAt = null, searchCompletedAt = null, candidateFoundAt = null, personMatchedAt = null,
+                    apolloPersonId = null, evidenceJson = null, reasonsJson = null, requestCount = 0, transientAttempts = 0,
+                    generation = 0, leaseToken = null, leaseUntil = null, nextAttemptAt = null, admissionRevision = null,
+                    projectionState = com.weibo.talentintroduction.discovery.domain.VerificationProjection.NOT_REQUIRED,
+                    projectionError = null, activatedAt = null, completedAt = null, createdAt = now, updatedAt = now)
+                DiscoveryRegistration(item).also { reserved = it }
+            }.`when`(registration).reserve(Mockito.any(DiscoveryVerificationExecution::class.java) ?: DiscoveryVerificationExecution(executionId),
+                Mockito.anyString(), Mockito.any(com.weibo.talentintroduction.expert.domain.ExpertProfile::class.java)
+                    ?: com.weibo.talentintroduction.expert.domain.ExpertProfile(orcidId = "unused", email = null,
+                        givenNames = null, familyNames = null, country = null, keyword = null, employment = null),
+                Mockito.anyString(), Mockito.anyString())
+            Mockito.doAnswer {
+                check(DiscoverySampleCapture.beginAttempt(DiscoverySampleAttemptKind.PMC_XML, "activate-outside-scope") == null)
+                events += "activate"
+                throw DiscoveryRegistrationException(java.io.IOException("activate failure"))
+            }.`when`(registration).activate(Mockito.any(DiscoveryRegistration::class.java) ?: DiscoveryRegistration())
+        }
+        fun recoverable() = reserved?.item?.let {
+            it.state == com.weibo.talentintroduction.discovery.domain.VerificationState.RESERVED && it.activatedAt == null
+        } == true
+    }
+    class FulltextFixture {
+        val bodies = mapOf(
+            "pdf" to requireNotNull(javaClass.getResourceAsStream("/pdf/no_email.pdf")).use { it.readBytes() },
+            "html" to "<html><body>Original readable paper text.</body></html>".toByteArray(),
+            "xml" to "<article><body><p>Original JATS paper text.</p></body></article>".toByteArray())
+        val requests: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
+        private val transport = object : BoundedHttpExecutor {
+            override fun <T : Any> getForObject(base: RestTemplate, url: String, responseType: Class<T>,
+                connectCapMs: Long, readCapMs: Long, deadline: Instant?): T? = error("unexpected transport")
+            override fun <T> execute(base: RestTemplate, uri: URI, connectCapMs: Long, readCapMs: Long,
+                deadline: Instant?, responseExtractor: ResponseExtractor<T>): T? {
+                val kind = uri.path.substringAfterLast('-')
+                requests += uri.toString()
+                if (kind == "403") throw HttpClientErrorException(HttpStatus.FORBIDDEN)
+                val response = org.springframework.mock.http.client.MockClientHttpResponse(bodies.getValue(kind), HttpStatus.OK)
+                response.headers.contentType = if (kind == "pdf") MediaType.APPLICATION_PDF else MediaType.TEXT_HTML
+                return responseExtractor.extractData(response)
+            }
+        }
+        private val pdf = PdfEmailExtractor(RestTemplate(), PlainTextEmailExtractor(), PdfExtractionProperties(maxRetries = 0), transport)
+        private val xmlRest = Mockito.mock(RestTemplate::class.java)
+        private val xml = EuropePmcDataSource(xmlRest, com.weibo.talentintroduction.config.EuropePmcProperties(
+            baseUrl = "https://xml.invalid", enabled = true, requestDelayMs = 0, maxRetries = 0))
+        init {
+            Mockito.doAnswer { invocation ->
+                requests += invocation.getArgument<String>(0)
+                bodies.getValue("xml")
+            }.`when`(xmlRest).getForObject(Mockito.anyString(), Mockito.eq(ByteArray::class.java))
+        }
+        fun extract(paper: PaperMetadata): com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome =
+            if (paper.title.endsWith("-xml")) xml.extractAuthorEmails(paper.copy(pmcId = "PMC${paper.title}"))
+            else pdf.extract("https://paper.invalid/${paper.title}", paper.authors, "OPENALEX")
+    }
+    fun paper(title: String) = PaperMetadata(null, null, "10.fixture/$title", title, 2026,
+        null, emptyList(), "OPENALEX")
+    fun manifests(root: Path): List<Pair<Path, DiscoverySampleManifest>> =
+        Files.walk(root).use { paths ->
+            paths.filter { it.fileName.toString() == "sample.json" }.toArray().map {
+                val path = it as Path
+                path.parent to DiscoverySampleJson.mapper.readValue(Files.readAllBytes(path), DiscoverySampleManifest::class.java)
+            }
+        }
+    @Synchronized fun record(name: String, data: Any?) {
+        cases[name] = data
+        Files.write(base.resolve("cases.json"), DiscoverySampleJson.mapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(cases))
+    }
+    private val apollo = linkedMapOf<String, Any?>()
+    @Synchronized fun recordApollo(entry: String, data: Any?) {
+        apollo[entry] = data
+        Files.write(base.resolve("apollo.json"), DiscoverySampleJson.mapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(apollo))
     }
 }

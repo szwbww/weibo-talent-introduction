@@ -10,6 +10,9 @@ import com.weibo.talentintroduction.discovery.domain.PaperAuthor
 import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.domain.PaperSearchResult
+import com.weibo.talentintroduction.discovery.sample.DiscoverySampleAttemptKind
+import com.weibo.talentintroduction.discovery.sample.DiscoverySampleCapture
+import org.springframework.web.client.HttpStatusCodeException
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
@@ -101,10 +104,24 @@ class EuropePmcDataSource(
                 requestsIssued++
                 // R-1（V-4）：连接/读取超时取 min(既有配置, 剩余预算)，响应体也在同一个绝对 deadline
                 // 内读完 —— 细水长流的 XML 会被截断，而不是永远读下去。
-                BoundedFulltextHttp.getForObject(
-                    restTemplate, url, ByteArray::class.java,
-                    properties.connectTimeoutMs.toLong(), properties.readTimeoutMs.toLong(), deadline
-                )
+                val attempt = DiscoverySampleCapture.beginAttempt(DiscoverySampleAttemptKind.PMC_XML, url)
+                var attemptError: Throwable? = null
+                try {
+                    BoundedFulltextHttp.getForObject(
+                        restTemplate, url, ByteArray::class.java,
+                        properties.connectTimeoutMs.toLong(), properties.readTimeoutMs.toLong(), deadline
+                    ).also { bytes -> if (bytes != null) DiscoverySampleCapture.fullBody(attempt, bytes) }
+                } catch (error: Throwable) {
+                    attemptError = error
+                    if (attempt != null && error is HttpStatusCodeException) {
+                        try {
+                            DiscoverySampleCapture.headers(attempt, error.statusCode.value(), error.responseHeaders?.contentType?.toString())
+                        } catch (_: Exception) { /* Preserve the original transport exception. */ }
+                    }
+                    throw error
+                } finally {
+                    DiscoverySampleCapture.endAttempt(attempt, attemptError)
+                }
             }
             if (payload == null) XmlFetchResult.BudgetExhausted(requestsIssued) else XmlFetchResult.Bytes(payload)
         } catch (e: Exception) {

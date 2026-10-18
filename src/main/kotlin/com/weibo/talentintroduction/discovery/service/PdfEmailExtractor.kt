@@ -7,6 +7,8 @@ import com.weibo.talentintroduction.config.PdfExtractionProperties
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail
 import com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome
 import com.weibo.talentintroduction.discovery.domain.PaperAuthor
+import com.weibo.talentintroduction.discovery.sample.DiscoverySampleAttemptKind
+import com.weibo.talentintroduction.discovery.sample.DiscoverySampleCapture
 import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink
 import org.apache.pdfbox.pdmodel.interactive.action.PDActionURI
@@ -230,51 +232,71 @@ class PdfEmailExtractor(
         if (com.weibo.talentintroduction.config.BoundedFulltextHttp.remainingMsOrUnbounded(deadline) <= 0L) {
             throw FulltextDeadlineExceededException(requestIssued = false)
         }
-        return boundedHttp.execute<DownloadedContent>(
-            restTemplate, uri,
-            PDF_DOWNLOAD_CONNECT_TIMEOUT_MS, properties.downloadTimeoutMs, deadline
-        ) { response ->
-            onResponseHeaders?.invoke(response.headers)
-            val contentType = response.headers.contentType
-            val isPdfContentType = contentType != null &&
-                (contentType.isCompatibleWith(MediaType.APPLICATION_PDF) ||
-                 contentType.subtype?.lowercase() == "pdf")
-
-            val maxSize = properties.maxPdfSizeBytes
-            val buffer = java.io.ByteArrayOutputStream()
-            val chunk = ByteArray(8192)
-            var totalRead = 0L
-
-            response.body.use { input ->
-                while (true) {
-                    // R-1（V-4）：每次分片读取前后都对照绝对时限 —— 服务端只要在单次读超时前吐一点数据
-                    // 就能让「按次读超时」永远不到期，因此这里必须按绝对 deadline 截断。
-                    if (deadlineExpired(deadline)) throw FulltextDeadlineExceededException(requestIssued = true)
-                    val n = input.read(chunk)
-                    if (n == -1) break
-                    totalRead += n
-                    if (totalRead > maxSize) {
-                        throw PdfTooLargeException()
-                    }
-                    buffer.write(chunk, 0, n)
-                    if (deadlineExpired(deadline)) throw FulltextDeadlineExceededException(requestIssued = true)
+        val attempt = DiscoverySampleCapture.beginAttempt(DiscoverySampleAttemptKind.PDF_URL, uri.toString(), properties)
+        var attemptError: Throwable? = null
+        return try {
+            boundedHttp.execute<DownloadedContent>(
+                restTemplate, uri,
+                PDF_DOWNLOAD_CONNECT_TIMEOUT_MS, properties.downloadTimeoutMs, deadline
+            ) { response ->
+                onResponseHeaders?.invoke(response.headers)
+                val contentType = response.headers.contentType
+                if (attempt != null) {
+                    try {
+                        DiscoverySampleCapture.headers(attempt, response.rawStatusCode, contentType?.toString())
+                    } catch (_: Exception) { /* Diagnostic header observation is not a business read. */ }
                 }
+                val isPdfContentType = contentType != null &&
+                    (contentType.isCompatibleWith(MediaType.APPLICATION_PDF) ||
+                     contentType.subtype?.lowercase() == "pdf")
+
+                val maxSize = properties.maxPdfSizeBytes
+                val buffer = java.io.ByteArrayOutputStream()
+                val chunk = ByteArray(8192)
+                var totalRead = 0L
+
+                response.body.use { input ->
+                    while (true) {
+                        // R-1（V-4）：每次分片读取前后都对照绝对时限 —— 服务端只要在单次读超时前吐一点数据
+                        // 就能让「按次读超时」永远不到期，因此这里必须按绝对 deadline 截断。
+                        if (deadlineExpired(deadline)) throw FulltextDeadlineExceededException(requestIssued = true)
+                        val n = input.read(chunk)
+                        if (n == -1) break
+                        totalRead += n
+                        if (totalRead > maxSize) {
+                            throw PdfTooLargeException()
+                        }
+                        buffer.write(chunk, 0, n)
+                        if (deadlineExpired(deadline)) throw FulltextDeadlineExceededException(requestIssued = true)
+                    }
+                }
+
+                val bytes = buffer.toByteArray()
+                if (bytes.isEmpty()) throw RuntimeException("Empty body")
+                DiscoverySampleCapture.fullBody(attempt, bytes)
+
+                val hasMagic = bytes.size >= 4 && bytes.take(4).toByteArray().contentEquals(magicBytes)
+                if (isPdfContentType || hasMagic) {
+                    return@execute DownloadedContent(bytes, ContentKind.PDF)
+                }
+
+                if (properties.htmlFallbackEnabled && isHtmlContent(contentType, bytes)) {
+                    return@execute DownloadedContent(bytes, ContentKind.HTML)
+                }
+
+                DownloadedContent(bytes, ContentKind.OTHER)
+            } ?: throw RuntimeException("Empty response")
+        } catch (error: Throwable) {
+            attemptError = error
+            if (attempt != null && error is HttpStatusCodeException) {
+                try {
+                    DiscoverySampleCapture.headers(attempt, error.statusCode.value(), error.responseHeaders?.contentType?.toString())
+                } catch (_: Exception) { /* Preserve the original transport exception. */ }
             }
-
-            val bytes = buffer.toByteArray()
-            if (bytes.isEmpty()) throw RuntimeException("Empty body")
-
-            val hasMagic = bytes.size >= 4 && bytes.take(4).toByteArray().contentEquals(magicBytes)
-            if (isPdfContentType || hasMagic) {
-                return@execute DownloadedContent(bytes, ContentKind.PDF)
-            }
-
-            if (properties.htmlFallbackEnabled && isHtmlContent(contentType, bytes)) {
-                return@execute DownloadedContent(bytes, ContentKind.HTML)
-            }
-
-            DownloadedContent(bytes, ContentKind.OTHER)
-        } ?: throw RuntimeException("Empty response")
+            throw error
+        } finally {
+            DiscoverySampleCapture.endAttempt(attempt, attemptError)
+        }
     }
 
     private fun isHtmlContent(contentType: MediaType?, bytes: ByteArray): Boolean {

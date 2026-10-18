@@ -45,6 +45,9 @@ import com.weibo.talentintroduction.discovery.repository.DiscoverySourceCursorRe
 import com.weibo.talentintroduction.discovery.repository.ExpertAcademicEnrichmentJobRepository
 import com.weibo.talentintroduction.discovery.repository.QueueIdentityQuality
 import com.weibo.talentintroduction.discovery.repository.QueueItemUnit
+import com.weibo.talentintroduction.discovery.sample.DiscoverySampleCapture
+import com.weibo.talentintroduction.discovery.sample.DiscoverySampleContext
+import com.weibo.talentintroduction.discovery.sample.DiscoverySampleEntry
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Qualifier
@@ -134,7 +137,8 @@ class ExpertDiscoveryService(
      * 原行为：只写 ES 事实、不建立人物关系；生产恒由 Spring 注入。
      */
     private val personRegistrationService: DiscoveryPersonRegistrationService? = null,
-    private val verificationRegistration: DiscoveryVerificationRegistrationService? = null
+    private val verificationRegistration: DiscoveryVerificationRegistrationService? = null,
+    private val sampleCapture: DiscoverySampleCapture? = null
 ) {
     private val log = LoggerFactory.getLogger(ExpertDiscoveryService::class.java)
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
@@ -931,7 +935,10 @@ class ExpertDiscoveryService(
             // 05（I-3）：本页是否有可重试登记失败（STALE/FAILED）；有则本页不推进、不记成功。
             var personRegistrationFailedInPage = false
 
-            val extractions = parallelExtractOutcomes(batch.papers, source)
+            val sampleContext = execId?.takeIf { it > 0 }?.let {
+                DiscoverySampleContext(it, source.sourceName, DiscoverySampleEntry.SYNC, batchNumber, null)
+            }
+            val extractions = parallelExtractOutcomes(batch.papers, source, sampleContext)
             for ((paper, extraction) in extractions) {
                 if (consumedInBatch % 10 == 0 && progressStore.isCancelled("EXPERT_DISCOVERY")) { limitReached = true; break }
                 if (timeBudgetReached(deadline)) { timeBudgetExpired = true; break }
@@ -1596,9 +1603,16 @@ class ExpertDiscoveryService(
         val extractionError: String?
     )
 
-    private fun extractOutcome(paper: PaperMetadata, source: AcademicDataSource): PaperExtraction {
+    private fun extractOutcome(
+        paper: PaperMetadata,
+        source: AcademicDataSource,
+        sampleContext: DiscoverySampleContext?
+    ): PaperExtraction {
         return try {
-            PaperExtraction(source.extractAuthorEmails(paper), null)
+            val outcome = if (source.sourceName == "OPENALEX" && sampleContext?.valid() == true && sampleCapture != null) {
+                sampleCapture.capture(sampleContext, paper) { source.extractAuthorEmails(paper) }
+            } else source.extractAuthorEmails(paper)
+            PaperExtraction(outcome, null)
         } catch (e: Exception) {
             PaperExtraction(null, e.message ?: e.javaClass.simpleName)
         }
@@ -1653,15 +1667,16 @@ class ExpertDiscoveryService(
 
     private fun parallelExtractOutcomes(
         papers: List<PaperMetadata>,
-        source: AcademicDataSource
+        source: AcademicDataSource,
+        sampleContext: DiscoverySampleContext?
     ): List<Pair<PaperMetadata, PaperExtraction>> {
         if (papers.isEmpty()) return emptyList()
         val trafficSession = DiscoveryTrafficMeter.currentSession()
         fun extract(paper: PaperMetadata): PaperExtraction = if (trafficSession == null) {
-            extractOutcome(paper, source)
+            extractOutcome(paper, source, sampleContext)
         } else {
             DiscoveryTrafficMeter.measure(trafficSession, source.sourceName, DiscoveryTrafficMeter.Category.FULLTEXT) {
-                extractOutcome(paper, source)
+                extractOutcome(paper, source, sampleContext)
             }
         }
         if (discoveryProperties.fetchConcurrency <= 1) {
@@ -2047,7 +2062,8 @@ class ExpertDiscoveryService(
         envelope: QueuedItemEnvelope,
         criteria: PaperSearchCriteria,
         perHostConcurrency: Int,
-        extractionMaxBytes: Int
+        extractionMaxBytes: Int,
+        sampleContext: DiscoverySampleContext? = null
     ): QueuedItemExtraction {
         if (envelope.payloadVersion != QUEUED_PAYLOAD_VERSION_V1) {
             return QueuedItemExtraction.Failed(QUEUE_UNKNOWN_PAYLOAD_VERSION, retryable = false)
@@ -2079,7 +2095,14 @@ class ExpertDiscoveryService(
                             methodUsed = "API_FIELD"
                         )
                     }
-                    else -> requireNotNull(paperSource).extractAuthorEmails(readPaper(envelope.payloadJson))
+                    else -> {
+                        val source = requireNotNull(paperSource)
+                        val paper = readPaper(envelope.payloadJson)
+                        if (envelope.unit == QueueItemUnit.PAPER && source.sourceName == "OPENALEX" &&
+                            sampleContext?.valid() == true && sampleCapture != null) {
+                            sampleCapture.capture(sampleContext, paper) { source.extractAuthorEmails(paper) }
+                        } else source.extractAuthorEmails(paper)
+                    }
                 }
                 if (FulltextRequestGate.hostBusyInScope()) {
                     QueuedItemExtraction.HostBusy
