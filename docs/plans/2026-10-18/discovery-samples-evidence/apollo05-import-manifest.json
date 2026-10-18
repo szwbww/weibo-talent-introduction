@@ -1,0 +1,234 @@
+{
+  "sourceBase": "3efc192faf043badc1ef27bef124a71d3120c4c5",
+  "sourceCodeHead": "1cef08bd7e8bedc47cd2ca6d3f9823c2465e8848",
+  "sourceCheckpoint": "df04e9c4737a61a0d859d21753e77a2bb9401740",
+  "sourceEvidence": "6f6b75ed311ef111d91775c51d02ae41a515f5c8",
+  "sourceProductCommits": [
+    "772429192fdab1fd7ac75cb084f08f45aec5c965",
+    "5c05491b963c4d1d9793ebdc1f8469b175f170d8",
+    "69a236aa0b15b07755d42c713f24da944a7727e6",
+    "98c7b78fde54f69b72f175b94b2ab0eed25d86ab",
+    "a0103c2ea9284c030ad0b0b10c4177474c4f4d47",
+    "083fce2f4b97c88b89a226394ebbf1342001a2d4",
+    "1cef08bd7e8bedc47cd2ca6d3f9823c2465e8848"
+  ],
+  "approval": "User selected 授权本地集成并继续: 固定1cef08bd及必要依赖；保留历史的线性提交；同步记录计划授权范围与台账边界；不改main、不推送、不部署；回归后继续02→03。",
+  "recordedAt": "2026-10-18T23:27:56.471032+08:00",
+  "receipt": {
+    "command": "git diff --name-status 3efc192faf043badc1ef27bef124a71d3120c4c5 1cef08bd7e8bedc47cd2ca6d3f9823c2465e8848 -- src pom.xml scripts",
+    "paths": [
+      "src/main/kotlin/com/weibo/talentintroduction/config/DiscoveryVerificationProperties.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryVerification.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/domain/PaperSearchCriteria.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/ApolloPeopleSearchClient.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicy.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewScanService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGate.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/OrcidVerificationEvidenceClient.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/QualificationEvidenceParser.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt",
+      "src/main/resources/db/migration/V158__create_discovery_verification.sql",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryControllerMvcTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryControllerTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryVerificationContractTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/ApolloPeopleSearchClientTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewAllPagesTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGateTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationFlowIT.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationIntegrationTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRulesTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/OrcidVerificationEvidenceClientTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/QualificationEvidenceParserTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceBehaviorTest.kt",
+      "src/test/resources/discovery/apollo-verification-cases.json"
+    ]
+  },
+  "files": [
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/config/DiscoveryVerificationProperties.kt",
+      "sourceBlob": "28e2d7629086ebd4eb85cb89d2eb924ab427fb43"
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt",
+      "sourceBlob": "df0b3785fec157513e5f0ee77512289c17af9bf0"
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryVerification.kt",
+      "sourceBlob": "3bad08c0a822dfdc26f0a2112a5eeb15cc7afd52"
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/domain/PaperSearchCriteria.kt",
+      "sourceBlob": "12aca91f46462aac836624a6d1d6d1c83bb887ae"
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt",
+      "sourceBlob": "e48dc10c88676a903e8343e66f23036a5808c9ea"
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt",
+      "sourceBlob": "4005f3f6f0dcd4f4f6d2e3b739dea78bc401653c"
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/service/ApolloPeopleSearchClient.kt",
+      "sourceBlob": "2cae497e039d739d1a214916bcd53f1f63a77174"
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicy.kt",
+      "sourceBlob": "c82a10dfa6146da8e30e99031aa6ad4fdbf71dd2"
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt",
+      "sourceBlob": "295e2eb6b3bc57e4a4527cc53d761d18579baf43"
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewScanService.kt",
+      "sourceBlob": "1c998b72f6fc30e9d158876aee631d336d00d769"
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt",
+      "sourceBlob": "fca459edd237fef2454e60dd7443ab170730d9e9"
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGate.kt",
+      "sourceBlob": "fb857864764ec0622b318b93127aad255be44c88"
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt",
+      "sourceBlob": "1fb3685ddbd5277a69756735bf0e50cfd3ac6388"
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt",
+      "sourceBlob": "2c371e072b4ab571262e5d1882d95e0a6771990e"
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt",
+      "sourceBlob": "07a8bcda0e068ad3296c478e59e67c7464c2fd4d"
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt",
+      "sourceBlob": "592868d607c46bd7067c8eed053b76a71dbd0162"
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt",
+      "sourceBlob": "1b24a3f16e4ceffbf6f2aab84674072a198fb26a"
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt",
+      "sourceBlob": "1d9d30aece51dc0f67a4e83d3d6634cce190dc91"
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/service/OrcidVerificationEvidenceClient.kt",
+      "sourceBlob": "92776ab3f003d4e41715f43c0a0a20698dd86285"
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/discovery/service/QualificationEvidenceParser.kt",
+      "sourceBlob": "a8faf6d8aded73705414f83ae8ea5975c8ab64a5"
+    },
+    {
+      "path": "src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt",
+      "sourceBlob": "8710bd2e4b16f3bfbd38b9f9c4df854dd1c8b8ac"
+    },
+    {
+      "path": "src/main/resources/db/migration/V158__create_discovery_verification.sql",
+      "sourceBlob": "a4eb656f0cc4e8e31196ae257fc254db6a13dd47"
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryControllerMvcTest.kt",
+      "sourceBlob": "e6833730165d03a58e633d43f9c0effae2356446"
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryControllerTest.kt",
+      "sourceBlob": "c09ab05b431cd1fab0682be3148a48d06f6bf5f4"
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryVerificationContractTest.kt",
+      "sourceBlob": "bc96f37a78e57dcfba8016101e48bc825d6f1e98"
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt",
+      "sourceBlob": "1fccfe4b4364c8070b09d47f8df592225c584e59"
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/service/ApolloPeopleSearchClientTest.kt",
+      "sourceBlob": "80fab6d792066135e3c4d939ce68798274ed2cdf"
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt",
+      "sourceBlob": "bdc846eae0551abc24923580b2f10cb865223343"
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewAllPagesTest.kt",
+      "sourceBlob": "0bd364d07f6f11ba10a6963cda79e75171f106b6"
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewServiceTest.kt",
+      "sourceBlob": "54c3b932fdcc29bc72753deadc77d502c80754fb"
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGateTest.kt",
+      "sourceBlob": "4bc44d824a3f63507a494967089a72e36b9bacf3"
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitServiceTest.kt",
+      "sourceBlob": "7aadf8433183861d4d0fd01cb532dc841a29cff6"
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationFlowIT.kt",
+      "sourceBlob": "9d90766d6c42a4aa3fbd4dd612d109cac9da2a73"
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationIntegrationTest.kt",
+      "sourceBlob": "5f7893bf492182979a19e48e647c53a5a63c9afa"
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRulesTest.kt",
+      "sourceBlob": "8663c850e81ffea62e451c436dd88b97852b0c8a"
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt",
+      "sourceBlob": "576f17d0383ac9f74940ea6517dbaa6f69f5ecbe"
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt",
+      "sourceBlob": "73e3b4c3054880cce9bb771be9438694f811ce00"
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt",
+      "sourceBlob": "9801d0c0d81416464711224f566312361d3c572f"
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/service/OrcidVerificationEvidenceClientTest.kt",
+      "sourceBlob": "f71f151e2f0f1ecca6fc9124590afc62710e8621"
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/discovery/service/QualificationEvidenceParserTest.kt",
+      "sourceBlob": "ca96d93c9905ede7bac16bb1650baf46abc9329e"
+    },
+    {
+      "path": "src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceBehaviorTest.kt",
+      "sourceBlob": "517f8ea6dee8f01b876d4bd5a61601af7203448e"
+    },
+    {
+      "path": "src/test/resources/discovery/apollo-verification-cases.json",
+      "sourceBlob": "025bbffb822eef79156673e5bc38cf620a1792d6"
+    }
+  ]
+}

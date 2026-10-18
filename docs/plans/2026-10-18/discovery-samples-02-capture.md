@@ -91,3 +91,15 @@ O-1：同步及队列fresh抽取都可留下关联真实execution的OPENALEX样�
 - 操作步骤：1. 执行服务测试并输出 `capture/apollo.json`。2. 查看reserve-failure与activate-failure结果。3. 查看对应采样IO日志。
 - 预期结果：reserve-failure rawWrites=0、activated=0、checkpointCommitted=false；activate-failure reservedRecoverable=true、checkpointCommitted=false；采样错误decision=IO_ERROR，不能改变上述结果。旧任务业务计数对照equal=true。
 - 覆盖：N-2/N-3/N-4、I-3/I-4、IP-5。
+
+## 修正记录
+
+### 2026-10-18 · Epoch2 冻结Apollo05前置导入
+- 批准依据：用户选择「授权本地集成并继续」，含固定05及必要依赖的保留历史线性导入、计划范围/台账同步；总I-5。该授权不允许改main、推送、部署、重写历史或引入06/07。
+- 本次新增开发仍只限原清单八文件。另允许先按 [apollo05-import-manifest.json](discovery-samples-evidence/apollo05-import-manifest.json) 的精确源提交顺序原样迁入冻结上游代码；每个迁入提交保留原始来源SHA。这是既有批准实现的机械导入，不是重新开发上游或扩展采样设计。源代码上限 `1cef08bd7e8bedc47cd2ca6d3f9823c2465e8848`，其他上游变更禁止导入。
+- 导入前核对目标工作树/分支与干净product index；导入后在采样改动前核对manifest各路径与源blob一致，并记录实际本地SHA映射。Apollo05及依赖的原始源证据可只读参考，但不得将旧测试当成本次测试。
+- 导入完成、采样改动前运行基线：`mvn -Dtest=ExpertDiscoveryServiceTest,DiscoveryPipelineServiceTest,ExpertDiscoveryControllerMvcTest,ExpertDiscoveryContinuousMvcTest,ExpertDiscoveryPipelineUnavailableMvcTest,ExpertDiscoveryControllerTest,ExpertDiscoverySchedulerTest,DiscoveryVerificationIntegrationTest -DskipNodeTests=true -Dapi.version=1.44 test`。使用JDK11及隔离MySQL Testcontainers，Docker socket可设 `DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock`；不使用共享/生产DB或真实Apollo。
+- 最终必须新运行原02采样回归命令（加 `-Dsample.acceptanceDir=/tmp/discovery-sample-acceptance` 输出验收产物），以及上述Apollo集成回归命令。新02行为必须通过；原有fixture错误只可逐项记录/归类，不得虚报整体命令成功或偷偷修复无关代码。
+- 入口参数、Mockito stub与catch边界按冻结05实际签名核对后接入；保留reserve→RAW→activate、真实execution、重试/检查点语义。原A-1/A-2/A-3完整保留，两个原服务测试文件内完成采样+Apollo共同故障场景，不修改冻结导入的Apollo专属实现/测试。
+- 02仍以01末态代码为产品Base，所有机械导入在单独提交中，最终新采样实现提交仍用 `feat(fast-p): implement 02`；导入不是fix round。独立轻量验证应同时核对来源blob和新八文件改动，不将源代码当作额外新功能开发。
+
