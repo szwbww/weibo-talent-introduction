@@ -182,3 +182,7 @@ env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home DOCKER
 - Fix commits: —
 - RECORD_ONLY: O-04-E2-01 existing Node baseline; O-04-E2-02 optional shared-DB IT skip, not pass.
 - No whole-system verification was performed.
+
+## Epoch 2 — Evidence closing correction 1
+- Child04 artifact checkpoint required a bare COMPLETE_CHILD token; appended the actual verifier action canonically without changing the verdict or product.
+- A4 master Before canonicalized to preceding master amendment After, whose master bytes equal the pre-amendment pause HEAD. Implementation remains a0103c2ea9284c030ad0b0b10c4177474c4f4d47; Fix round remains0.

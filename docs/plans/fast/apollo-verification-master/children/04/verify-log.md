@@ -115,3 +115,9 @@ Exit 1; tests1694, pass1653, fail41, skipped0 (artifact://202); unchanged baseli
 - A-1 through A-4: collection completion/retry, ES failure/recovery, HOLD before response and after admission, and AUDIT are directly exercised by those fresh FlowIT tests. Later child06 API/browser rollout checks are not claimed as executed by child04.
 
 Only this verify-log was appended; prior history preserved. No AUTO_FIX applied or requested. Real provider credentials/account-specific caps and later frontend browser acceptance remain rollout/later-child matters, not part of this four-gate result.
+
+### Controller artifact closing correction
+The existing independent verdict above remains LIGHT_PASS_WITH_NOTES. Its action line included explanatory prose; the artifact parser requires the exact token below. This closing record restates ApolloWorkerVerifierE2's actual COMPLETE_CHILD action, without any new verification or test claim.
+
+### Required Action
+- COMPLETE_CHILD
