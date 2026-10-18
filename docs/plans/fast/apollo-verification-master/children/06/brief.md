@@ -37,3 +37,11 @@ Use execute-p with target worktree bound to this worktree. The fast-p loop repla
 
 ## Required outputs
 Use execution report schema from execute-p. Record task/invariant evidence, exact commands/exit codes/counts, smoke observations, plan hash recheck, worktree identity, product commit SHA, and remaining blockers. Commit only authorized implementation files as `feat(fast-p): implement 06`. Report path is this directory's execution.md; controller commits all evidence separately.
+
+## Epoch2 — Approved CONFIG_AUTH seam
+- Current approved child/master identity: commit:f9435ee70c585a158b3a3414c3bf549c35c7044b; A7/A8 record user instruction “批准该计划并执行 后续也都授权 执行完所有子计划”.
+- Add existing `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt` and `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt` solely for read-only current auth-latch accessor and tests. Total06 scope9; no changed worker policy/state/table/reset/retry/historical inference.
+- Existing06 commitbcc031775d112e1d67f20441e1c321d4b6a08967 retained; complete remaining auth capability using existing query/controller. Product base remains1cef08bd7e8bedc47cd2ca6d3f9823c2465e8848. No independent verifier has run for06; do not call prior236 executor passes acceptance.
+- Fresh final06/C-7 commands and actual HTTP/MySQL smoke including 401/403→capabilities CONFIG_AUTH without side effects required. JDK11; DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock; Maven -Dapi.version=1.44.
+- Full Node baseline1694/1653pass/41fail; no unrelated fixes. Existing53 ExpertDiscoveryServiceTest fixture errors independently statically attributed in05; optional shared-DB ITs not pass or authorized real DB access. Mandatory new reporting IT must actually execute.
+- If a further necessary direct dependency/caller/test file is identified, report its precise evidence to controller before editing. User advance approval permits controller to record concrete amendment without another user prompt; it does not permit unrecorded expansion/new business behavior. Original01–05 closed; do not replay them.
