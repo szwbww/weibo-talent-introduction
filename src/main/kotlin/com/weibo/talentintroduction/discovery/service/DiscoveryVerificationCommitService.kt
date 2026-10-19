@@ -131,9 +131,12 @@ class DiscoveryVerificationCommitService(
     private fun contacted(snapshot: VerificationSnapshot): Boolean {
         val profile = snapshot.profile
         val email = DiscoveryIdentity.normalizedEmail(profile.email)
+        // RAW's primary orcidId is the ES document key, not the bound external identity.
+        val orcid = profile.externalIds?.let { runCatching { mapper.readTree(it) }.getOrNull() }
+            ?.path("orcid")?.takeIf { it.isTextual }?.asText()?.let(::normalizeOrcid)
         return jdbc.queryForObject("""SELECT (EXISTS(SELECT 1 FROM expert_contact WHERE LOWER(TRIM(expert_email))=? OR orcid_id=?)
             OR EXISTS(SELECT 1 FROM expert_email_alias WHERE normalized_email=?))""", Boolean::class.java,
-            email, profile.orcidId.takeIf { it.isNotBlank() }, email) == true
+            email, orcid, email) == true
     }
 
     companion object {
