@@ -188,7 +188,7 @@ class ExpertDiscoveryServiceTest {
         reviewRepository = Mockito.mock(DiscoveryReviewRepository::class.java)
         // 04：准入判定与既有 eligibility 语义对齐（全过 → AUTO_PASSED；不过 → NEEDS_REVIEW + 原码）。
         Mockito.doAnswer { invocation ->
-            val eligibility = invocation.getArgument<EligibilityResult>(1)
+            val eligibility = invocation.getArgument<EligibilityResult>(2)
             if (eligibility.eligible) {
                 automaticAdmission(DiscoveryAdmissionStatus.AUTO_PASSED, emptyList())
             } else {
@@ -200,10 +200,8 @@ class ExpertDiscoveryServiceTest {
                 )
             }
         }.`when`(admissionPolicy).evaluate(
-            anyProfile(), anyEligibilityResult()
+            Mockito.anyString(), anyProfile(), anyEligibilityResult()
         )
-        Mockito.doReturn(automaticAdmission(DiscoveryAdmissionStatus.AUTO_PASSED, emptyList()))
-            .`when`(admissionPolicy).evaluate(anyProfile())
         // 04：未替换成真实 writer 的用例（无 ES 交互）把投影视为成功。
         Mockito.doReturn(ExpertIndexWriterService.DiscoveryCandidateProjection.PROJECTED)
             .`when`(indexWriterService).projectDiscoveryCandidate(
@@ -935,6 +933,10 @@ class ExpertDiscoveryServiceTest {
             Mockito.doReturn(true).`when`(store).claimOwner(Mockito.anyString(),
                 Mockito.any(Instant::class.java) ?: now, Mockito.any(Instant::class.java) ?: now,
                 Mockito.any(Instant::class.java) ?: now)
+            Mockito.doAnswer { call ->
+                pipelineRow = pipelineRow.copy(executionId = call.getArgument(1))
+                1
+            }.`when`(store).bindExecutionId(Mockito.anyString(), Mockito.anyLong(), Mockito.any(Instant::class.java) ?: now)
             Mockito.doReturn(true).`when`(store).claimJob(Mockito.anyLong(), Mockito.anyString(),
                 Mockito.any(Instant::class.java) ?: now, Mockito.anyLong(), Mockito.any(Instant::class.java) ?: now)
             Mockito.doAnswer { call ->
@@ -2362,7 +2364,7 @@ class ExpertDiscoveryServiceTest {
                 listOf(AdmissionReason("INSTITUTION_MISSING", "机构缺失", "institution", null, "非空机构名", "profile.institution"))
             )
         ).`when`(admissionPolicy).evaluate(
-            anyProfile(), anyEligibilityResult()
+            Mockito.anyString(), anyProfile(), anyEligibilityResult()
         )
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(paper("PMC1", "Test")), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
@@ -6959,11 +6961,10 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
         DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
         DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
-        Mockito.doReturn(77L).`when`(progressStore).getCurrentExecutionId("EXPERT_DISCOVERY")
         Mockito.doThrow(RuntimeException("MySQL down"))
             .`when`(enrichmentJobService).enqueue(Mockito.anyString(), Mockito.anyString(), Mockito.any())
 
-        val (firstResult, _) = runAndCapture(first, criteria)
+        val firstResult = first.discover(criteria, "TEST", 77L)
 
         val writtenDocId = ExpertIdGenerator.generate(null, "replay@example.com")
         assertEquals(1, firstResult.stats.indexed, "RAW 落库成功：第一轮新增 1 人")
@@ -6994,9 +6995,8 @@ class ExpertDiscoveryServiceTest {
         Mockito.doNothing().`when`(enrichmentJobService)
             .enqueue(Mockito.anyString(), Mockito.anyString(), Mockito.any())
         DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
-        Mockito.doReturn(77L).`when`(progressStore).getCurrentExecutionId("EXPERT_DISCOVERY")
 
-        val (replayResult, _) = runAndCapture(replay, criteria)
+        val replayResult = replay.discover(criteria, "TEST", 77L)
 
         assertEquals(0, replayResult.stats.indexed, "重放不得重复计新增")
         assertEquals(1, replayResult.stats.duplicates)

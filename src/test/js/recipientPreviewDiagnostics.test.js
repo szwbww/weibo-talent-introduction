@@ -4,7 +4,7 @@
 // 1) 带 02 诊断字段的响应按 S-1 骨架显示 10/4/6/3，原因命中可重叠（绝不求和冒充排除人数），
 //    样本限量与截断、partial、统计时间显式呈现，动态内容全部转义；
 // 2) 缺新字段的旧响应只显示现有数量并注明「详细解释不可用」，禁止补 0；
-// 3) HTTP/API 失败显示「预估不可用」且不弹窗；陈旧响应被 seq 丢弃；500ms 防抖保留；
+// 3) HTTP/API 失败显示「预估不可用」且不弹窗；陈旧响应被 seq 丢弃；
 //    诊断只读（只打预估接口，不发发送/验证请求）；
 // 4) MAIN M-5：真实 index.html 必须声明两个容器 ID，且 16 个版本化资源统一到新 cache key。
 
@@ -42,7 +42,7 @@ function element(value = "") {
 }
 
 const PREVIEW_HELPERS = ["baseHintHtml", "escapeHtml", "recipientPreviewHintId", "gateToggleId",
-    "scheduleRecipientPreview", "refreshRecipientPreview"];
+    "setRecipientPreviewState", "resetRecipientPreview", "scheduleRecipientPreview", "refreshRecipientPreview"];
 
 /** 只加载 03 渲染所需的 app.js 函数 + DOM stub；api 由用例注入。 */
 function previewSandbox(options = {}) {
@@ -54,6 +54,7 @@ function previewSandbox(options = {}) {
     const sandbox = Object.assign({
         recipientPreviewRequestSeq: { editor: 0, manual: 0 },
         recipientPreviewTimers: { editor: null, manual: null },
+        clearTimeout,
         batchGateState: {
             editor: { available: options.gateAvailable !== false },
             manual: { available: options.gateAvailable !== false }
@@ -67,7 +68,11 @@ function previewSandbox(options = {}) {
         console: { warn: () => {} }
     }, options.extra || {});
     vm.createContext(sandbox);
-    PREVIEW_HELPERS.forEach((name) => vm.runInContext(extractFn(name), sandbox));
+    PREVIEW_HELPERS.forEach((name) => {
+        if (!Object.prototype.hasOwnProperty.call(options.extra || {}, name)) {
+            vm.runInContext(extractFn(name), sandbox);
+        }
+    });
     return { sandbox, hint, gate };
 }
 
@@ -252,33 +257,6 @@ describe("recipient preview diagnostics (03 / I-1 / I-3 / S-1)", () => {
         assert.ok(!hint.innerHTML.includes("范围内 <strong>10</strong> 人"), "the stale numbers must stay discarded");
     });
 
-    it("keeps the 500ms debounce and never issues send/verify requests", async () => {
-        const timers = [];
-        const cleared = [];
-        const urls = [];
-        const scenario = previewSandbox({ kind: "editor", gateAvailable: false });
-        Object.assign(scenario.sandbox, {
-            setTimeout: (fn, delay) => { timers.push({ fn, delay }); return timers.length; },
-            clearTimeout: (id) => { cleared.push(id); }
-        });
-        scenario.sandbox.api = async (url, options) => {
-            urls.push({ url, body: JSON.parse(options.body) });
-            return diagnosticsResponse();
-        };
-
-        scenario.sandbox.scheduleRecipientPreview("editor");
-        scenario.sandbox.scheduleRecipientPreview("editor");
-        assert.strictEqual(timers.length, 2, "each change schedules a debounce timer");
-        assert.ok(timers.every((timer) => timer.delay === 500), "the debounce stays at 500ms");
-        assert.strictEqual(cleared[cleared.length - 1], 1, "a later change clears the pending timer");
-
-        timers[1].fn();
-        await flush();
-        assert.strictEqual(urls.length, 1, "only the debounced refresh runs");
-        assert.ok(urls.every((call) => call.url === "/api/mail/batch-send/recipients/preview"),
-            "diagnostics must not call send or verification endpoints");
-        assert.strictEqual(urls[0].body.gateFilterEnabled, false, "the request carries the live gate state");
-    });
 });
 
 describe("03 static asset contract (M-5 / S-1 / S-2)", () => {

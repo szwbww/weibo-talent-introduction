@@ -31,6 +31,12 @@ const EMAIL_POLICY_HELPERS = [
 
 function loadEmailPolicyHelpers(target) {
     EMAIL_POLICY_HELPERS.forEach((name) => vm.runInContext(extractFn(name), target));
+    if (!target.clearTimeout) target.clearTimeout = clearTimeout;
+    if (!target.recipientPreviewTimers) target.recipientPreviewTimers = { editor: null, manual: null };
+    if (!target.recipientPreviewRequestSeq) target.recipientPreviewRequestSeq = { editor: 0, manual: 0 };
+    ["recipientPreviewHintId", "setRecipientPreviewState", "resetRecipientPreview"].forEach((name) => {
+        if (!target[name]) vm.runInContext(extractFn(name), target);
+    });
     return target;
 }
 
@@ -1169,7 +1175,7 @@ describe("batch send task console interactions", () => {
             gateToggleId: () => "batchManualGateFilter",
             buildManualRecipientSnapshot: () => ({}),
             buildManualExecutionSnapshot: () => ({}),
-            document: { getElementById: () => hint },
+            document: { getElementById: (id) => id === "batchManualRecipientHint" ? hint : null },
             api: () => new Promise((resolve, reject) => { rejectRequest = reject; }),
             console: { warn: () => {} }
         };

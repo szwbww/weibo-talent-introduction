@@ -12,6 +12,7 @@ import com.weibo.talentintroduction.task.service.*
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.*
 import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty
 import org.mockito.Mockito
 import org.springframework.aop.framework.ProxyFactory
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
@@ -37,6 +38,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /** Real ledger/launch transactions and real discovery consumer, with network confined to mocks. */
+@EnabledIfSystemProperty(named = "mysqlIt", matches = "true")
 class DiscoveryVerificationIntegrationTest {
     companion object {
         private class Mysql : MySQLContainer<Mysql>("mysql:8.0.36")

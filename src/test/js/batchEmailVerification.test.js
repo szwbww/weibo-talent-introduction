@@ -68,6 +68,16 @@ function loadEmailPolicyHelpers(sandbox) {
     return sandbox;
 }
 
+function loadRecipientPreviewHelpers(sandbox) {
+    if (sandbox.recipientPreviewRequestSeq === undefined) sandbox.recipientPreviewRequestSeq = { editor: 0, manual: 0 };
+    if (sandbox.recipientPreviewTimers === undefined) sandbox.recipientPreviewTimers = { editor: null, manual: null };
+    if (sandbox.clearTimeout === undefined) sandbox.clearTimeout = clearTimeout;
+    ["recipientPreviewHintId", "setRecipientPreviewState", "resetRecipientPreview"].forEach((name) => {
+        if (sandbox[name] === undefined) vm.runInContext(extractFn(name), sandbox);
+    });
+    return sandbox;
+}
+
 const VERIFICATION_FUNCTIONS = [
     "emailVerificationFieldId",
     "emailVerificationToggleId",
@@ -999,6 +1009,7 @@ function exclusionFilterSandbox(extra = {}) {
         "refreshRecipientPreview"
     ].forEach((name) => vm.runInContext(extractFn(name), sandbox));
     loadEmailPolicyHelpers(sandbox);
+    loadRecipientPreviewHelpers(sandbox);
     return { sandbox, elements };
 }
 
@@ -1116,6 +1127,7 @@ describe("verified-unavailable email filter UI (04-filter-ui)", () => {
             console: { warn: () => {} }
         }, {});
         vm.createContext(sandbox);
+        loadRecipientPreviewHelpers(sandbox);
         vm.runInContext(extractFn("baseHintHtml"), sandbox);
         vm.runInContext(extractFn("refreshRecipientPreview"), sandbox);
         elements.get("gate").checked = true;
@@ -1146,6 +1158,7 @@ describe("verified-unavailable email filter UI (04-filter-ui)", () => {
             console: { warn: () => {} }
         };
         vm.createContext(sandbox);
+        loadRecipientPreviewHelpers(sandbox);
         vm.runInContext(extractFn("baseHintHtml"), sandbox);
         vm.runInContext(extractFn("refreshRecipientPreview"), sandbox);
         sandbox.refreshRecipientPreview("manual");
@@ -1173,6 +1186,7 @@ describe("verified-unavailable email filter UI (04-filter-ui)", () => {
             console: { warn: () => {} }
         };
         vm.createContext(sandbox);
+        loadRecipientPreviewHelpers(sandbox);
         vm.runInContext(extractFn("baseHintHtml"), sandbox);
         vm.runInContext(extractFn("refreshRecipientPreview"), sandbox);
 
@@ -1226,6 +1240,7 @@ describe("verified-unavailable email filter UI (04-filter-ui)", () => {
                 console: { warn: () => {} }
             };
             vm.createContext(sandbox);
+            loadRecipientPreviewHelpers(sandbox);
             ["baseHintHtml", "escapeHtml", "refreshRecipientPreview"]
                 .forEach((name) => vm.runInContext(extractFn(name), sandbox));
             sandbox.refreshRecipientPreview("editor");
