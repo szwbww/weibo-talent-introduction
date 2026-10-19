@@ -120,4 +120,30 @@ class DiscoveryVerificationRulesTest {
             assertEquals(listOf("ORCID_CONFLICT"), result.reasonCodes)
         }
     }
+    @Test fun `self current employment confirms identity but never qualification even with self doctorate and title`() {
+        val facts = listOf(ruleJob("Professor", AssertionSource.SELF),
+            ruleFact("education", """{"role":"PhD awarded","completed":true}""", AssertionSource.SELF),
+            ruleFact("birthDate", "1987-10-18", AssertionSource.SELF))
+        val result = rules.evaluate(ruleSnapshot(), facts, ruleSearch())
+        assertEquals(VerificationQualification.UNKNOWN, result.qualification)
+        assertEquals(VerificationOutcome.APOLLO_UNCLEAR, result.outcome)
+        assertEquals("person-1", result.matchedPersonId)
+        assertEquals(listOf("IDENTITY_AMBIGUOUS"), rules.evaluate(ruleSnapshot(), facts, ruleSearch(count = 2)).reasonCodes)
+        assertEquals(listOf("INSTITUTION_CONFLICT"), rules.evaluate(ruleSnapshot(),
+            listOf(ruleJob(source = AssertionSource.SELF, institution = "Different University")), ruleSearch()).reasonCodes)
+    }
+
+    @Test fun `identity employment rejects unbound unknown historical and mismatched evidence`() {
+        val self = ruleJob(source = AssertionSource.SELF)
+        val invalid = listOf(self.copy(provider = "PAPER"), self.copy(assertionSource = AssertionSource.UNKNOWN),
+            self.copy(temporalScope = TemporalScope.HISTORICAL), self.copy(temporalScope = TemporalScope.UNKNOWN),
+            self.copy(identityHash = "e".repeat(64)), self.copy(factFingerprint = "e".repeat(64)),
+            self.copy(value = self.value.replace("0000-0002-1825-0097", "0000-0001-5109-3700")),
+            ruleJob(source = AssertionSource.SELF, institution = ""))
+        invalid.forEach { assertTrue(rules.identityEmployments(ruleSnapshot(), listOf(it)).isEmpty(), it.toString()) }
+        val snapshot = ruleSnapshot().let { it.copy(profile = it.profile.copy(identityVerification = null)) }
+        assertTrue(rules.identityEmployments(snapshot, listOf(self)).isEmpty())
+        assertEquals(2, rules.identityEmployments(ruleSnapshot(), listOf(self,
+            ruleJob(source = AssertionSource.SELF, institution = "Second University"))).size)
+    }
 }

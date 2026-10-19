@@ -65,4 +65,52 @@ class QualificationEvidenceParserTest {
         assertEquals(AssertionSource.UNKNOWN, facts.single().assertionSource)
         assertEquals(VerificationQualification.UNKNOWN, DiscoveryVerificationRules(ruleClock).evaluate(ruleSnapshot(), facts).qualification)
     }
+    @Test fun `public case variants retain provenance and every nonpublic shape fails closed`() {
+        listOf("public", "PUBLIC", "PuBlIc").forEach { visibility ->
+            val person = document("person", """{"name":{"given-names":{"value":"Ada"},"family-name":{"value":"Lee"},"visibility":"$visibility"}}""")
+            val job = document("employment/1", affiliation("Professor", visibility = visibility))
+            val facts = parser.parse(ruleSnapshot(), OrcidEvidenceRead(listOf(person, job), true, emptyList()))
+            assertEquals(listOf("name", "employment"), facts.map { it.field })
+            facts.forEach {
+                assertEquals("d".repeat(64), it.responseSha256)
+                assertEquals(ruleClock.instant(), it.fetchedAt)
+                assertTrue(it.sourceUrl.endsWith(if (it.field == "name") "/person" else "/employment/1"))
+                assertEquals(visibility, mapper.readTree(it.excerpt).path("visibility").asText())
+            }
+            assertEquals("/name", facts.first().jsonPointer)
+        }
+        listOf("\"private\"", "\"limited\"", "null", "12", "{}", "true", null).forEach { visibility ->
+            val job = mapper.readTree(affiliation("Professor")) as com.fasterxml.jackson.databind.node.ObjectNode
+            val name = mapper.readTree("""{"given-names":{"value":"Ada"}}""") as com.fasterxml.jackson.databind.node.ObjectNode
+            if (visibility == null) job.remove("visibility") else {
+                job.set<com.fasterxml.jackson.databind.JsonNode>("visibility", mapper.readTree(visibility))
+                name.set<com.fasterxml.jackson.databind.JsonNode>("visibility", mapper.readTree(visibility))
+            }
+            assertTrue(parser.parse(ruleSnapshot(), OrcidEvidenceRead(listOf(document("employment/1", job.toString()),
+                document("person", """{"name":$name}""")), true, emptyList())).isEmpty(), "$visibility")
+        }
+    }
+
+    @Test fun `endpoint rebuild equals callback accumulation is idempotent and removes rejected cached facts only`() {
+        val first = document("employment/1", affiliation("Researcher", visibility = "public"))
+        val second = first.copy(endpoint = "employment/2")
+        val docs = listOf(first, second)
+        val callback = docs.flatMap { parser.parse(ruleSnapshot(), OrcidEvidenceRead(listOf(it), true, emptyList())) }.distinct()
+        val rebuilt = parser.rebuild(ruleSnapshot(), docs, emptyList())
+        assertEquals(2, rebuilt.size)
+        assertEquals(callback, rebuilt)
+        assertEquals(rebuilt, parser.rebuild(ruleSnapshot(), docs, rebuilt))
+        val uncached = ruleFact("otherName", "Old public alias").copy(sourceUrl = "https://uncached.invalid/person")
+        val external = rebuilt.first().copy(provider = "OTHER")
+        val privateDoc = first.copy(body = mapper.readTree(affiliation("Professor", visibility = "private")))
+        val remaining = parser.rebuild(ruleSnapshot(), listOf(privateDoc), rebuilt + uncached + external)
+        assertEquals(listOf(rebuilt[1], uncached, external), remaining)
+        assertEquals(remaining, parser.rebuild(ruleSnapshot(), emptyList(), remaining))
+        assertThrows(IllegalArgumentException::class.java) {
+            parser.rebuild(ruleSnapshot(), listOf(first.copy(body = mapper.readTree("""{"path":"/0000-0001-5109-3700/employment/1"}"""))), rebuilt)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parser.rebuild(ruleSnapshot(), docs, listOf(uncached.copy(identityHash = "e".repeat(64))))
+        }
+    }
 }

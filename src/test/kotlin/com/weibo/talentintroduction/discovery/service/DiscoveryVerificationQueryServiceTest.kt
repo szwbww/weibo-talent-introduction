@@ -72,6 +72,28 @@ class DiscoveryVerificationQueryServiceTest {
         verifyNoInteractions(admissions)
     }
 
+    @Test fun `specific limits retain old generic label and permit multiple reasons per profile without writes`() {
+        val filter = VerificationReportFilter(3001)
+        `when`(repository.findRun(3001)).thenReturn(run(3001))
+        `when`(repository.reportingCounts(filter)).thenReturn(mapOf(0L to VerificationCounts(profiles = 1)))
+        `when`(repository.reportingCounts(filter, batches = true)).thenReturn(mapOf(1L to VerificationCounts(profiles = 1)))
+        `when`(repository.reportingBatchReasons(3001)).thenReturn(listOf(Triple(1,
+            """["SEARCH_INCOMPLETE","SEARCH_PAGE_LIMIT","ITEM_REQUEST_LIMIT"]""", 1L)))
+        val reasons = service.batches(3001, 0, 20).items.single().reasons.associate { it.code to it.label }
+        assertEquals("查询尚未完成", reasons["SEARCH_INCOMPLETE"])
+        assertEquals("查询未完成：达到单次查询页数上限", reasons["SEARCH_PAGE_LIMIT"])
+        assertEquals("核验未完成：达到单档案请求上限", reasons["ITEM_REQUEST_LIMIT"])
+        assertEquals(3, reasons.size)
+        verifyNoInteractions(admissions)
+        verify(repository).findRun(3001)
+        verify(repository).reportingCounts(filter)
+        verify(repository).reportingCounts(filter, batches = true)
+        verify(repository).reportingBatchTimes(3001)
+        verify(repository).reportingBatchReasons(3001)
+        verify(repository).reportingCollectionStatuses(listOf(3001))
+        verify(repository).reportingSuggestions(filter)
+        verifyNoMoreInteractions(repository)
+    }
     @Test fun `database error is never changed to zero`() {
         `when`(repository.reportingRuns(listOf(1L))).thenThrow(org.springframework.dao.DataAccessResourceFailureException("offline"))
         assertThrows(org.springframework.dao.DataAccessResourceFailureException::class.java) { service.summary(listOf(1)) }

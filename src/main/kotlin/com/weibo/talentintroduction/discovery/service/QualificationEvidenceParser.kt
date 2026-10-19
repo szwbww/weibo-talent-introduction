@@ -18,7 +18,7 @@ class QualificationEvidenceParser(private val clock: Clock = Clock.systemUTC()) 
         val today = LocalDate.now(clock)
         read.documents.forEach { document ->
             fun emit(field: String, value: String?, node: JsonNode, pointer: String, scope: TemporalScope = TemporalScope.UNKNOWN) {
-                if (value.isNullOrBlank() || value.length > 4096 || node.path("visibility").asText("PUBLIC") != "PUBLIC") return
+                if (value.isNullOrBlank() || value.length > 4096 || !isPublic(node)) return
                 val source = node.path("source")
                 val assertion = when {
                     source.path("source-client-id").path("path").asText().isNotBlank() -> AssertionSource.ORGANIZATION
@@ -32,7 +32,7 @@ class QualificationEvidenceParser(private val clock: Clock = Clock.systemUTC()) 
                     field, value, assertion, scope, updated, pointer,
                     excerpt = mapper.writeValueAsString(mapOf("sourceOrcid" to source.path("source-orcid").path("path").asText(null),
                         "sourceClientId" to source.path("source-client-id").path("path").asText(null),
-                        "visibility" to node.path("visibility").asText("PUBLIC"))).take(2048))
+                        "visibility" to node.path("visibility").textValue())).take(2048))
             }
             if (document.endpoint == "person") {
                 val name = document.body.path("name")
@@ -52,7 +52,7 @@ class QualificationEvidenceParser(private val clock: Clock = Clock.systemUTC()) 
                     }
                 }
                 nodes.forEach { (pointer, node) ->
-                    if (!node.isObject || node.path("visibility").asText("PUBLIC") != "PUBLIC") return@forEach
+                    if (!node.isObject || !isPublic(node)) return@forEach
                     val start = date(node.path("start-date"))
                     val endNode = node.path("end-date")
                     val end = date(endNode)
@@ -79,8 +79,30 @@ class QualificationEvidenceParser(private val clock: Clock = Clock.systemUTC()) 
                 }
             }
         }
-        return facts.distinctBy { listOf(it.field, it.value, it.assertionSource.name, it.temporalScope.name, it.sourceUrl.substringBeforeLast('/')) }
+        return facts.distinct()
     }
+
+    /** Replace only facts whose exact endpoint can be recovered; unrelated or uncached evidence survives. */
+    fun rebuild(snapshot: VerificationSnapshot, documents: List<OrcidEvidenceDocument>,
+        existingEvidence: List<VerificationEvidence>): List<VerificationEvidence> {
+        require(existingEvidence.all { it.identityHash == snapshot.identityHash && it.factFingerprint == snapshot.factFingerprint })
+        val orcid = snapshot.boundOrcid ?: return existingEvidence
+        documents.forEach { document ->
+            require(document.endpoint.matches(Regex("person|employments|educations|employment/[0-9]+|education/[0-9]+")))
+            val identifier = document.body.path("orcid-identifier").path("path")
+            if (!identifier.isMissingNode) require(identifier.isTextual && normalizeOrcid(identifier.textValue()) == orcid)
+            val path = document.body.path("path")
+            if (!path.isMissingNode) require(path.isTextual && path.textValue() == "/$orcid/${document.endpoint}")
+        }
+        val urls = documents.map { "https://pub.orcid.org/v3.0/$orcid/${it.endpoint}" }.toSet()
+        val retained = existingEvidence.filterNot {
+            it.provider == "ORCID" && it.sourceUrl in urls && it.field in setOf("name", "otherName", "employment", "education")
+        }
+        return (retained + documents.flatMap { parse(snapshot, OrcidEvidenceRead(listOf(it), true, emptyList())) }).distinct()
+    }
+
+    private fun isPublic(node: JsonNode): Boolean =
+        node.path("visibility").let { it.isTextual && it.textValue().equals("PUBLIC", ignoreCase = true) }
 
     fun completedDoctorate(text: String): Boolean {
         val normalized = text.lowercase(java.util.Locale.ROOT)

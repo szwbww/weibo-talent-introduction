@@ -164,6 +164,8 @@ class DiscoveryVerificationQueryService(
             "NAME_CONFLICT" to "姓名冲突", "AGE_CONFLICT" to "年龄证据冲突", "INSTITUTION_CONFLICT" to "机构冲突",
             "ORCID_CONFLICT" to "ORCID 冲突", "APOLLO_ID_CONFLICT" to "Apollo 标识冲突",
             "FACT_CHANGED" to "输入事实已变化", "PROTECTED" to "保护跳过", "SEARCH_INCOMPLETE" to "查询尚未完成",
+            "SEARCH_PAGE_LIMIT" to "查询未完成：达到单次查询页数上限",
+            "ITEM_REQUEST_LIMIT" to "核验未完成：达到单档案请求上限",
             "EVIDENCE_INCOMPLETE" to "证据尚未完整", "CONFIG_AUTH" to "接口认证配置错误",
             "REQUEST_INVALID" to "接口请求无效", "RESPONSE_INVALID" to "接口响应无效",
             "SUPERSEDED_BY_REVIEW" to "已由人工审核决定取代")

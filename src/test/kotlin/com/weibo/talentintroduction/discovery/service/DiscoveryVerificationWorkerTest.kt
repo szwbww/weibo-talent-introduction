@@ -51,6 +51,18 @@ class DiscoveryVerificationWorkerTest {
         Mockito.verifyNoInteractions(repo, recovery)
     }
 
+    @Test fun `new queries normalize aliases and narrow only one eligible identity institution`() {
+        worker(DiscoveryVerificationProperties(), Mockito.mock(DiscoveryVerificationRepository::class.java)).useWorker { current ->
+            val facts = listOf(ruleJob(source = com.weibo.talentintroduction.discovery.domain.AssertionSource.SELF),
+                ruleFact("otherName", "ＡＤＡ, Lee"), ruleFact("otherName", "Known Alias"), ruleFact("otherName", "known alias"))
+            val queries = current.searchQueries(ruleSnapshot(), facts)
+            assertEquals(listOf("Ada Lee", "Known Alias", "Ada Lee"), queries.map { it.name })
+            assertEquals("Example University", queries.last().institution!!.name)
+            assertEquals(2, current.searchQueries(ruleSnapshot(), facts + ruleJob(
+                source = com.weibo.talentintroduction.discovery.domain.AssertionSource.SELF, institution = "Other University")).size)
+            assertEquals(2, current.searchQueries(ruleSnapshot(), facts).count { it.institution == null })
+        }
+    }
     private fun DiscoveryVerificationWorker.useWorker(action: (DiscoveryVerificationWorker) -> Unit) {
         try { action(this) } finally { close() }
     }

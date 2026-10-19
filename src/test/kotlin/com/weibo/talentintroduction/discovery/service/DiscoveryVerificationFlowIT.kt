@@ -44,7 +44,7 @@ class VerificationFlowClock : Clock() {
 /** Disposable MySQL plus the real worker, clients, policy/gate, CAS writer and transaction proxies. */
 class VerificationFlowFixture(val jdbc: JdbcTemplate, private val manager: DataSourceTransactionManager,
     val props: DiscoveryVerificationProperties = DiscoveryVerificationProperties(workerEnabled = true, apolloApiKey = "fixture-key", requestsPerMinute = 1000)) : AutoCloseable {
-    val mapper = jacksonObjectMapper().findAndRegisterModules()
+    val mapper = jacksonObjectMapper().findAndRegisterModules().disable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
     val clock = VerificationFlowClock()
     private fun <T : Any> transactional(target: T): T {
         val factory = ProxyFactory(target)
@@ -77,6 +77,7 @@ class VerificationFlowFixture(val jdbc: JdbcTemplate, private val manager: DataS
     var apolloStatus = 200
     var apolloBody = """{"people":[{"id":"person-1","name":"Ada Lee","first_name":"Ada","last_name":"Lee","organization":{"name":"Example University"}}],"total_entries":1}"""
     var orcidFailEndpoint: String? = null
+    val orcidBodies = mutableMapOf<String, String>()
     var onApollo: (() -> Unit)? = null
     val orcidRequests = mutableListOf<String>()
     val apolloRequests = mutableListOf<String>()
@@ -112,7 +113,7 @@ class VerificationFlowFixture(val jdbc: JdbcTemplate, private val manager: DataS
                 orcidRequests += endpoint
                 if (endpoint == orcidFailEndpoint) withServerError().createResponse(request)
                 else {
-                    val body = if (endpoint == "employments" && jobRole != null) """{"affiliation-group":[{"summaries":[{"employment-summary":{"role-title":"$jobRole","organization":{"name":"Example University"},"source":{"source-client-id":{"path":"fixture-org"}},"start-date":{"year":{"value":"2020"}},"end-date":null}}]}]}""" else "{}"
+                    val body = orcidBodies[endpoint] ?: if (endpoint == "employments" && jobRole != null) """{"affiliation-group":[{"summaries":[{"employment-summary":{"visibility":"public","role-title":"$jobRole","organization":{"name":"Example University"},"source":{"source-client-id":{"path":"fixture-org"}},"start-date":{"year":{"value":"2020"}},"end-date":null}}]}]}""" else "{}"
                     withSuccess(body, MediaType.APPLICATION_JSON).createResponse(request)
                 }
             }
@@ -139,6 +140,20 @@ class VerificationFlowFixture(val jdbc: JdbcTemplate, private val manager: DataS
             VALUES (?,?,?,1,?) ON DUPLICATE KEY UPDATE decision=VALUES(decision),revision=revision+1""",
             item.expertDocId, item.identityHash, decision, clock.instant().verificationUtc())
     }
+    fun cached(payload: VerificationWorkerEvidence) {
+        val lease = claim()
+        check(repository.reschedule(lease.id, lease.leaseToken!!, lease.generation, clock.instant(), 0,
+            mapper.writeValueAsString(payload), "[]", clock.instant()))
+    }
+    fun selfDocuments(visibility: String = "\"public\"", end: String = "null",
+        source: String = "\"source-orcid\":{\"path\":\"0000-0002-1825-0097\"}"): List<OrcidEndpointCompletion> {
+        val job = """{"visibility":$visibility,"role-title":"Professor","organization":{"name":"Example University"},
+            "source":{$source},"start-date":{"year":{"value":"2020"}},"end-date":$end}"""
+        return listOf("person" to "{}", "employments" to """{"affiliation-group":[{"summaries":[{"employment-summary":$job}]}]}""",
+            "educations" to "{}").map { (endpoint, body) ->
+            OrcidEndpointCompletion(endpoint, OrcidEvidenceDocument(endpoint, mapper.readTree(body), "d".repeat(64), clock.instant()))
+        }
+    }
     override fun close() { workers.forEach { it.close() } }
 }
 
@@ -163,6 +178,7 @@ class DiscoveryVerificationFlowIT {
             try {
                 VerificationFlowFixture(jdbc, manager).use { f ->
                     val item = f.seed(); f.repository.closeInput(2001, f.clock.instant()); f.failProjection = true
+                    f.cached(VerificationWorkerEvidence(orcidCompleted = f.selfDocuments()))
                     f.worker().tick()
                     check(f.item(item.id).projectionState == VerificationProjection.ERROR)
                     val requests = f.apolloRequests.size
@@ -170,7 +186,12 @@ class DiscoveryVerificationFlowIT {
                     f.worker().tick()
                     check(f.autoCount() == 1L && f.item(item.id).projectionState == VerificationProjection.PROJECTED)
                     check(f.apolloRequests.size == requests)
-                    println("RUNTIME_SMOKE auto=1 projection=PROJECTED apolloRequests=$requests no-provider-replay=true candidates=${f.candidates.size}")
+                    val done = f.item(item.id)
+                    check(done.outcome == VerificationOutcome.APOLLO_UNCLEAR && done.qualification == VerificationQualification.UNKNOWN)
+                    check(f.orcidRequests.isEmpty())
+                    val payload = f.mapper.readTree(done.evidenceJson)
+                    check(payload.path("evidence").single().path("assertionSource").asText() == "SELF")
+                    println("RUNTIME_SMOKE runId=${done.ownerExecutionId} itemId=${done.id} outcome=${done.outcome} qualification=${done.qualification} admissionRevision=${done.admissionRevision} auto=1 projection=PROJECTED apolloRequests=$requests orcidRequests=0 no-provider-replay=true candidates=${f.candidates.size} evidenceSource=SELF")
                 }
             } finally { stop() }
         }
@@ -320,6 +341,7 @@ class DiscoveryVerificationFlowIT {
                 if (scenario in listOf("pages", "budget")) {
                     assertEquals(VerificationOutcome.PENDING, done.outcome)
                     assertTrue(done.reasonsJson!!.contains("SEARCH_INCOMPLETE"))
+                    assertTrue(done.reasonsJson!!.contains(if (scenario == "pages") "SEARCH_PAGE_LIMIT" else "ITEM_REQUEST_LIMIT"))
                 } else assertEquals(VerificationState.ERROR, done.state)
                 assertNull(done.searchCompletedAt)
                 if (scenario == "transient") {
@@ -450,6 +472,170 @@ class DiscoveryVerificationFlowIT {
                 assertEquals(before, f.admissions.findAdmission(item.expertDocId), protection)
                 assertEquals(0L, f.autoCount()); assertTrue(f.candidates.isEmpty())
             }
+        }
+    }
+
+    @Test fun `lowercase HTTP self evidence passes gate commit projection without becoming qualification`() {
+        VerificationFlowFixture(jdbc, manager).use { f ->
+            f.orcidBodies["employments"] = f.selfDocuments()[1].document!!.body.toString()
+            val item = f.seed()
+            f.worker().tick()
+            val done = f.item(item.id)
+            assertEquals(VerificationOutcome.APOLLO_UNCLEAR, done.outcome)
+            assertEquals(VerificationQualification.UNKNOWN, done.qualification)
+            assertNotNull(done.admissionRevision)
+            assertEquals(VerificationProjection.PROJECTED, done.projectionState)
+            val payload = f.mapper.readValue(done.evidenceJson, VerificationWorkerEvidence::class.java)
+            assertEquals(AssertionSource.SELF, payload.evidence.single().assertionSource)
+            val snapshot = f.mapper.readValue(done.snapshotJson, VerificationSnapshot::class.java)
+            assertEquals(done.outcome, f.rules.evaluate(snapshot, payload.evidence, payload.search).outcome)
+            val query = DiscoveryVerificationQueryService(f.repository, f.admissions, f.props)
+            val revision = f.repository.findRun(2001)!!.revision
+            val attempts = f.repository.findAttempts(item.id)
+            repeat(2) {
+                query.summary(listOf(2001)); query.batches(2001, 0, 20)
+                query.records(VerificationReportFilter(2001), 0, 20); query.item(item.id)
+            }
+            assertEquals(revision, f.repository.findRun(2001)!!.revision)
+            assertEquals(attempts, f.repository.findAttempts(item.id))
+            assertEquals(1L, f.autoCount()); assertEquals(1, f.candidates.size)
+        }
+    }
+
+    @Test fun `cached local and decide rebuild without ORCID HTTP and rejected visibility removes old professor`() {
+        listOf("LOCAL_EVIDENCE", "DECIDE").forEach { stage ->
+            listOf("public", "private", "missing").forEach { visibility ->
+                clean()
+                VerificationFlowFixture(jdbc, manager).use { f ->
+                    val item = f.seed()
+                    val docs = f.selfDocuments(if (visibility == "public") "\"public\"" else "\"private\"").map { completion ->
+                        if (visibility == "missing" && completion.endpoint == "employments") {
+                            val body = completion.document!!.body.deepCopy<com.fasterxml.jackson.databind.JsonNode>()
+                            (body.path("affiliation-group")[0].path("summaries")[0].path("employment-summary") as com.fasterxml.jackson.databind.node.ObjectNode).remove("visibility")
+                            completion.copy(document = completion.document!!.copy(body = body))
+                        } else completion
+                    }
+                    val stale = ruleJob("Professor").copy(identityHash = item.identityHash, factFingerprint = item.factFingerprint)
+                    f.cached(VerificationWorkerEvidence(evidence = if (visibility == "public") emptyList() else listOf(stale),
+                        search = if (stage == "DECIDE") ruleSearch() else null,
+                        progress = VerificationProgress(stage), orcidCompleted = docs))
+                    f.worker().tick()
+                    val done = f.item(item.id)
+                    val payload = f.mapper.readValue(done.evidenceJson, VerificationWorkerEvidence::class.java)
+                    assertTrue(f.orcidRequests.isEmpty())
+                    if (visibility == "public") {
+                        assertEquals(VerificationOutcome.APOLLO_UNCLEAR, done.outcome)
+                        assertEquals(1, payload.evidence.size); assertEquals(1L, f.autoCount())
+                    } else {
+                        assertTrue(payload.evidence.isEmpty())
+                        assertEquals(VerificationOutcome.PENDING, done.outcome); assertEquals(0L, f.autoCount())
+                    }
+                }
+            }
+        }
+    }
+
+    @Test fun `self identity negatives stay unadmitted through the real worker`() {
+        listOf("ambiguous", "orcid", "name", "historical", "unknown").forEach { scenario ->
+            clean()
+            VerificationFlowFixture(jdbc, manager).use { f ->
+                val item = f.seed()
+                val docs = when (scenario) {
+                    "historical" -> f.selfDocuments(end = """{"year":{"value":"2022"}}""")
+                    "unknown" -> f.selfDocuments(source = "")
+                    else -> f.selfDocuments()
+                }
+                f.orcidBodies.putAll(docs.associate { it.endpoint to it.document!!.body.toString() })
+                when (scenario) {
+                    "ambiguous" -> f.apolloBody = """{"people":[{"id":"p1","name":"Ada Lee","organization":{"name":"Example University"}},{"id":"p2","name":"Ada Lee","organization":{"name":"Example University"}}],"total_entries":2}"""
+                    "orcid" -> f.apolloBody = """{"people":[{"id":"p1","name":"Ada Lee","organization":{"name":"Example University"}},{"id":"p2","name":"Ada Lee","orcid":"0000-0001-5109-3700","organization":{"name":"Example University"}}],"total_entries":2}"""
+                    "name" -> f.orcidBodies["person"] = """{"name":{"given-names":{"value":"Other"},"family-name":{"value":"Person"},"visibility":"public"}}"""
+                }
+                f.worker().tick()
+                assertEquals(0L, f.autoCount(), scenario); assertTrue(f.candidates.isEmpty(), scenario)
+                val reason = when (scenario) {
+                    "ambiguous" -> "IDENTITY_AMBIGUOUS"
+                    "orcid" -> "ORCID_CONFLICT"
+                    "name" -> "NAME_CONFLICT"
+                    else -> "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+                }
+                assertTrue(f.item(item.id).reasonsJson!!.contains(reason), "$scenario ${f.item(item.id).reasonsJson}")
+            }
+        }
+    }
+
+    @Test fun `inflight Apollo query index page and evidence stay frozen despite recoverable aliases`() {
+        listOf(false, true).forEach { legacy ->
+            clean()
+            VerificationFlowFixture(jdbc, manager).use { f ->
+                val item = f.seed()
+                val facts = listOf(ruleJob(source = AssertionSource.SELF), ruleFact("otherName", "Frozen Alias")).map {
+                    it.copy(identityHash = item.identityHash, factFingerprint = item.factFingerprint)
+                }
+                val docs = f.selfDocuments().map { completion ->
+                    if (completion.endpoint == "person") completion.copy(document = completion.document!!.copy(body = f.mapper.readTree(
+                        """{"other-names":{"other-name":[{"content":"New Alias","visibility":"public"}]}}"""))) else completion
+                }
+                val frozen = listOf(ApolloSearchQuery("Ada Lee"), ApolloSearchQuery("Frozen Alias"))
+                f.cached(VerificationWorkerEvidence(facts, ruleSearch().copy(complete = false),
+                    VerificationProgress("APOLLO_SEARCH", 1, 2), docs, queries = if (legacy) null else frozen))
+                f.apolloBody = """{"people":[],"total_entries":0}"""
+                f.worker().tick()
+                assertEquals(1, f.apolloRequests.size)
+                assertTrue(f.apolloRequests.single().contains("page=2"))
+                assertTrue(f.apolloRequests.single().contains("Frozen%20Alias"))
+                assertTrue(f.orcidRequests.isEmpty())
+                val saved = f.mapper.readValue(f.item(item.id).evidenceJson, VerificationWorkerEvidence::class.java)
+                assertEquals(facts, saved.evidence)
+                assertEquals(listOf("person-1"), saved.search!!.candidates.map { it.id })
+                assertEquals(VerificationOutcome.APOLLO_UNCLEAR, f.item(item.id).outcome)
+            }
+        }
+    }
+
+    @Test fun `new public alias requests are deduplicated and narrow empty results retain broad candidates`() {
+        listOf(false, true).forEach { multipleInstitutions ->
+            clean()
+            VerificationFlowFixture(jdbc, manager).use { f ->
+                val item = f.seed()
+                val body = f.selfDocuments()[1].document!!.body.deepCopy<com.fasterxml.jackson.databind.JsonNode>()
+                if (multipleInstitutions) {
+                    val summaries = body.path("affiliation-group")[0].path("summaries") as com.fasterxml.jackson.databind.node.ArrayNode
+                    val other = summaries[0].deepCopy<com.fasterxml.jackson.databind.JsonNode>()
+                    (other.path("employment-summary").path("organization") as com.fasterxml.jackson.databind.node.ObjectNode).put("name", "Other University")
+                    summaries.add(other)
+                }
+                f.orcidBodies["employments"] = body.toString()
+                f.orcidBodies["person"] = """{"other-names":{"other-name":[{"content":"ADA, Lee","visibility":"public"},{"content":"Known Alias","visibility":"public"},{"content":"known alias","visibility":"PUBLIC"},{"content":"Secret Alias","visibility":"private"}]}}"""
+                val broad = f.apolloBody
+                f.onApollo = { f.apolloBody = if (f.apolloRequests.last().contains("q_organization_name")) """{"people":[],"total_entries":0}""" else broad }
+                f.worker().tick()
+                assertEquals(if (multipleInstitutions) 2 else 3, f.apolloRequests.size)
+                assertEquals(1, f.apolloRequests.count { it.contains("q_person_name=Known%20Alias") })
+                assertEquals(if (multipleInstitutions) 0 else 1, f.apolloRequests.count { it.contains("q_organization_name") })
+                assertFalse(f.apolloRequests.any { it.contains("Secret") })
+                val saved = f.mapper.readValue(f.item(item.id).evidenceJson, VerificationWorkerEvidence::class.java)
+                assertEquals(listOf("person-1"), saved.search!!.candidates.map { it.id })
+                assertEquals(VerificationOutcome.APOLLO_UNCLEAR, f.item(item.id).outcome)
+                assertEquals(f.apolloRequests.size + f.orcidRequests.size, f.item(item.id).requestCount)
+                assertEquals(f.item(item.id).requestCount, f.repository.findAttempts(item.id).size)
+            }
+        }
+    }
+
+    @Test fun `missing bound identity cannot be supplied by cached self employment or Apollo`() {
+        VerificationFlowFixture(jdbc, manager).use { f ->
+            val item = f.seed()
+            val snapshot = f.mapper.readValue(item.snapshotJson, VerificationSnapshot::class.java)
+            val unbound = snapshot.copy(profile = snapshot.profile.copy(identityVerification = null))
+            jdbc.update("UPDATE discovery_verification_item SET snapshot_json=? WHERE id=?", f.mapper.writeValueAsString(unbound), item.id)
+            f.cached(VerificationWorkerEvidence(search = ruleSearch(), progress = VerificationProgress("DECIDE"),
+                orcidCompleted = f.selfDocuments()))
+            f.worker().tick()
+            assertEquals(0L, f.autoCount()); assertTrue(f.candidates.isEmpty())
+            assertEquals(VerificationOutcome.PENDING, f.item(item.id).outcome)
+            assertTrue(f.item(item.id).reasonsJson!!.contains("IDENTITY_EVIDENCE_MISSING"))
+            assertTrue(f.orcidRequests.isEmpty()); assertTrue(f.apolloRequests.isEmpty())
         }
     }
 }

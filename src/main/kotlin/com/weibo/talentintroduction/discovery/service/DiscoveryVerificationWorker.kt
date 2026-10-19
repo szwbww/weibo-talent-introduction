@@ -23,7 +23,8 @@ import javax.annotation.PreDestroy
 data class VerificationWorkerEvidence(
     val evidence: List<VerificationEvidence> = emptyList(), val search: ApolloSearchEvidence? = null,
     val progress: VerificationProgress = VerificationProgress(),
-    val orcidCompleted: List<OrcidEndpointCompletion> = emptyList(), val schemaVersion: Int = 1
+    val orcidCompleted: List<OrcidEndpointCompletion> = emptyList(), val schemaVersion: Int = 1,
+    val queries: List<ApolloSearchQuery>? = null
 ) { init { require(schemaVersion == 1) } }
 
 @Service
@@ -150,6 +151,7 @@ class DiscoveryVerificationWorker(
             require(snapshot.identityHash == lease.identityHash && snapshot.factFingerprint == lease.factFingerprint)
             val run = repository.findRun(lease.ownerExecutionId) ?: error("Verification run missing")
             if (payload.progress.stage == "LOCAL_EVIDENCE") {
+                payload = payload.copy(evidence = parser.rebuild(snapshot, payload.orcidCompleted.mapNotNull { it.document }, payload.evidence))
                 val existing = rules.evaluate(snapshot, payload.evidence)
                 if (existing.outcome == VerificationOutcome.DIRECT_CLEAR) { finish(existing); return }
                 val read = orcid.read(snapshot, payload.orcidCompleted, { endpoint, permit, document, result ->
@@ -157,30 +159,32 @@ class DiscoveryVerificationWorker(
                         val completion = OrcidEndpointCompletion(endpoint, document)
                         val saved = payload.orcidCompleted + completion
                         payload = payload.copy(orcidCompleted = saved,
-                            evidence = (payload.evidence + parser.parse(snapshot, OrcidEvidenceRead(listOfNotNull(document), false, emptyList()))).distinct())
+                            evidence = parser.rebuild(snapshot, saved.mapNotNull { it.document }, payload.evidence))
                         completed(permit, result, completion)
                     } else completed(permit, result)
                 }) { path -> reserve(VerificationProvider.ORCID, VerificationQueryKind.ORCID, 1, mapper.writeValueAsString(mapOf("path" to path))) }
                 if (read.failure != null) { retry(read.failure); return }
+                payload = payload.copy(evidence = parser.rebuild(snapshot,
+                    (payload.orcidCompleted.mapNotNull { it.document } + read.documents).distinct(), payload.evidence))
                 val local = rules.evaluate(snapshot, payload.evidence)
                 if (!read.complete && snapshot.boundOrcid != null) {
-                    finish(local.copy(outcome = VerificationOutcome.PENDING, qualification = VerificationQualification.UNKNOWN,
-                        route = VerificationRoute.NONE, reasonCodes = listOf("EVIDENCE_INCOMPLETE"))); return
+                    val reasons = listOf("EVIDENCE_INCOMPLETE") +
+                        if (requestNumber >= properties.maxRequestsPerItem) listOf("ITEM_REQUEST_LIMIT") else emptyList()
+                    finish(local.copy(outcome = VerificationOutcome.PENDING,
+                        route = VerificationRoute.NONE, reasonCodes = reasons)); return
                 }
                 if (local.outcome == VerificationOutcome.DIRECT_CLEAR || !run.apolloRequested || !snapshot.identityValid ||
                     local.qualification in setOf(VerificationQualification.NOT_MET, VerificationQualification.CONFLICT)) {
                     finish(local); return
                 }
-                payload = payload.copy(progress = VerificationProgress(stage = "APOLLO_SEARCH"), search = ApolloSearchEvidence())
+                payload = payload.copy(progress = VerificationProgress(stage = "APOLLO_SEARCH"), search = ApolloSearchEvidence(),
+                    queries = searchQueries(snapshot, payload.evidence))
                 entered = entered ?: clock.instant()
                 save()
             }
             if (payload.progress.stage == "APOLLO_SEARCH") {
-                val names = (listOf(snapshot.fullName) + payload.evidence.filter { it.provider == "ORCID" && it.field == "otherName" }.map { it.value })
-                    .distinctBy(rules::normalizeName)
-                val institution = payload.evidence.firstOrNull { it.field == "employment" && it.assertionSource == AssertionSource.ORGANIZATION && it.temporalScope == TemporalScope.CURRENT }
-                    ?.let { mapper.readTree(it.value).path("institution").asText().takeIf(String::isNotBlank) }?.let(::VerificationInstitution)
-                val queries = names.map { ApolloSearchQuery(it) } + listOfNotNull(institution?.let { ApolloSearchQuery(snapshot.fullName, institution = it) })
+                // Old in-flight payloads retain their original query sequence; new runs persist it before HTTP.
+                val queries = payload.queries ?: legacySearchQueries(snapshot, payload.evidence)
                 while (payload.progress.queryIndex < queries.size) {
                     val index = payload.progress.queryIndex
                     val query = queries[index].copy(page = payload.progress.page)
@@ -198,10 +202,17 @@ class DiscoveryVerificationWorker(
                     if (search.candidates.isNotEmpty()) candidatesAt = candidatesAt ?: clock.instant()
                     if (last) searched = searched ?: clock.instant()
                     completed(permit, result, page)
-                    if (page.hasNext && query.page >= properties.maxPagesPerQuery) break
+                    if (page.hasNext && query.page >= properties.maxPagesPerQuery) {
+                        val decision = rules.evaluate(snapshot, payload.evidence, payload.search)
+                        finish(decision.copy(reasonCodes = (decision.reasonCodes + "SEARCH_INCOMPLETE" + "SEARCH_PAGE_LIMIT").distinct()))
+                        return
+                    }
                 }
                 finish(rules.evaluate(snapshot, payload.evidence, payload.search))
-            } else if (payload.progress.stage == "DECIDE") finish(rules.evaluate(snapshot, payload.evidence, payload.search))
+            } else if (payload.progress.stage == "DECIDE") {
+                payload = payload.copy(evidence = parser.rebuild(snapshot, payload.orcidCompleted.mapNotNull { it.document }, payload.evidence))
+                finish(rules.evaluate(snapshot, payload.evidence, payload.search))
+            }
         } catch (_: LeaseLost) {
             // A replacement token owns recovery; no stale writes.
         } catch (deferred: BudgetDeferred) {
@@ -211,7 +222,9 @@ class DiscoveryVerificationWorker(
                     val snapshot = mapper.readValue<VerificationSnapshot>(lease.snapshotJson)
                     val decision = rules.evaluate(snapshot, payload.evidence, payload.search)
                     finish(decision.copy(outcome = VerificationOutcome.PENDING, route = VerificationRoute.NONE,
-                        reasonCodes = listOf(if (payload.progress.stage == "LOCAL_EVIDENCE") "EVIDENCE_INCOMPLETE" else "SEARCH_INCOMPLETE"), matchedPersonId = null))
+                        reasonCodes = (decision.reasonCodes +
+                            (if (payload.progress.stage == "LOCAL_EVIDENCE") "EVIDENCE_INCOMPLETE" else "SEARCH_INCOMPLETE") +
+                            "ITEM_REQUEST_LIMIT").distinct(), matchedPersonId = null))
                 }
                 else -> {
                     val now = clock.instant()
@@ -226,5 +239,30 @@ class DiscoveryVerificationWorker(
             // Only preflight failures with no unacknowledged HTTP may be recorded as an interface-safe ERROR.
             if (activePermit == null && !lost.get()) fail("VERIFICATION_FAILED")
         } finally { renewal.cancel(false) }
+    }
+
+    internal fun searchQueries(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>): List<ApolloSearchQuery> {
+        val institutions = ArrayList<VerificationInstitution>()
+        rules.identityEmployments(snapshot, evidence).forEach { fact ->
+            val value = mapper.readTree(fact.value)
+            val institution = VerificationInstitution(value.path("institution").asText(),
+                value.path("standardId").asText("").takeIf(String::isNotBlank))
+            if (institutions.none { rules.sameInstitution(it, institution) }) institutions += institution
+        }
+        return nameQueries(snapshot, evidence) + listOfNotNull(institutions.singleOrNull()?.let {
+            ApolloSearchQuery(snapshot.fullName, institution = it)
+        })
+    }
+
+    private fun nameQueries(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>) =
+        (listOf(snapshot.fullName) + evidence.filter { it.provider == "ORCID" && it.field == "otherName" }.map { it.value })
+            .distinctBy(rules::normalizeName).map { ApolloSearchQuery(it) }
+
+    private fun legacySearchQueries(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>): List<ApolloSearchQuery> {
+        val institution = evidence.firstOrNull { it.field == "employment" && it.assertionSource == AssertionSource.ORGANIZATION &&
+            it.temporalScope == TemporalScope.CURRENT }?.let {
+            mapper.readTree(it.value).path("institution").asText().takeIf(String::isNotBlank)
+        }?.let(::VerificationInstitution)
+        return nameQueries(snapshot, evidence) + listOfNotNull(institution?.let { ApolloSearchQuery(snapshot.fullName, institution = it) })
     }
 }

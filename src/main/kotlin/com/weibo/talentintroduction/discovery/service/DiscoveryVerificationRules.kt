@@ -79,7 +79,7 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
         if (search.conflictingIds.isNotEmpty()) return decision(VerificationQualification.CONFLICT, listOf("APOLLO_ID_CONFLICT"), missing)
         if (search.candidates.isEmpty()) return decision(qualification, listOf("APOLLO_NO_MATCH"), missing)
         val orcid = snapshot.boundOrcid ?: return decision(qualification, listOf("IDENTITY_EVIDENCE_MISSING"), missing + "boundOrcid")
-        val employments = jobs.filter { value(it, "orcid") == orcid && value(it, "institution").isNotBlank() }
+        val employments = identityEmployments(snapshot, evidence)
         if (employments.isEmpty()) return decision(qualification, listOf("CURRENT_INSTITUTION_EVIDENCE_MISSING"), missing + "currentInstitution")
         val originalInstitution = snapshot.profile.institution
         val institutions = employments.map { VerificationInstitution(value(it, "institution"), value(it, "standardId").takeIf(String::isNotBlank)) }
@@ -107,6 +107,17 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
         val match = matches.single()
         return decision(qualification, listOf("APOLLO_PERSON_MATCHED") + if (qualification == VerificationQualification.MET) listOf("QUALIFICATION_MET") else listOf("QUALIFICATION_EVIDENCE_MISSING"),
             missing, VerificationRoute.APOLLO, if (qualification == VerificationQualification.MET) VerificationOutcome.APOLLO_CLEAR else VerificationOutcome.APOLLO_UNCLEAR, match.id)
+    }
+
+    /** Identity corroboration is broader than institutional qualification, but never unbound or historical. */
+    fun identityEmployments(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>): List<VerificationEvidence> {
+        val orcid = snapshot.boundOrcid ?: return emptyList()
+        return evidence.filter {
+            it.provider == "ORCID" && it.identityHash == snapshot.identityHash && it.factFingerprint == snapshot.factFingerprint &&
+                it.field == "employment" && it.temporalScope == TemporalScope.CURRENT &&
+                it.assertionSource in setOf(AssertionSource.ORGANIZATION, AssertionSource.SELF) &&
+                value(it, "orcid") == orcid && value(it, "institution").isNotBlank()
+        }
     }
 
     fun normalizeName(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFKC)
