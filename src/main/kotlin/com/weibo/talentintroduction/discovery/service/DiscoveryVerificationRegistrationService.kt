@@ -120,7 +120,26 @@ class DiscoveryVerificationRegistrationService(
             val item = repository.reserveItem(VerificationReservation(run.executionId, docId, finalSnapshot.identityHash,
                 run.policyVersion, sourceName, sourceItemKey, saved, finalSnapshot.factFingerprint), clock.instant())
             return freeze(item, rawProfile, sourceName, sourceItemKey, config)
-        } catch (e: Exception) { throw DiscoveryRegistrationException(e) }
+        } catch (e: InterruptedException) {
+            // I-5: cancellation must stop discovery, never become a retryable registration failure.
+            Thread.currentThread().interrupt()
+            throw e
+        } catch (e: Exception) {
+            if (isCancellation(e)) {
+                Thread.currentThread().interrupt()
+                throw InterruptedException("Verification registration cancelled")
+            }
+            throw DiscoveryRegistrationException(e)
+        }
+    }
+
+    private fun isCancellation(error: Throwable): Boolean {
+        var current: Throwable? = error
+        while (current != null) {
+            if (current is InterruptedException) return true
+            current = current.cause
+        }
+        return Thread.currentThread().isInterrupted
     }
 
     /** Reuses a reservation only when its frozen facts (excluding country and the institution token) still match. */

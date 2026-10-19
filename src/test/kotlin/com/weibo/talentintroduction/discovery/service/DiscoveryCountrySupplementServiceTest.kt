@@ -50,6 +50,7 @@ class DiscoveryCountrySupplementServiceTest {
         val country: String? = null,
         val orcid: String? = null,
         val proofOrcid: String? = null,
+        val pmcId: String? = null,
         val openAlexAuthorId: String? = null,
         val paperSource: String? = null,
         val paperDoi: String? = null,
@@ -75,6 +76,7 @@ class DiscoveryCountrySupplementServiceTest {
     private fun profile(case: Case): ExpertProfile {
         val ids = linkedMapOf<String, String>()
         case.orcid?.let { ids["orcid"] = it }
+        case.pmcId?.let { ids["pmcId"] = it }
         case.paperDoi?.let { ids["doi"] = it }
         case.openAlexAuthorId?.let { ids["openAlexAuthorId"] = it }
         val proof = IdentityVerification(status = "VERIFIED", version = DiscoveryIdentity.VERSION,
@@ -140,6 +142,8 @@ class DiscoveryCountrySupplementServiceTest {
                     assertTrue(DiscoveryIdentity.validInstitutionEvidence(result.profile), case.id)
                     assertEquals(receipt.afterCountry, result.profile.country)
                     assertNull(receipt.beforeCountry)
+                    // I-2: the original evidence source is retained even when the country came from another source.
+                    assertEquals(originalToken!!.substringBefore(':'), result.profile.institutionEvidence!!.substringBefore(':'), case.id)
                 }
                 else -> {
                     assertEquals(originalToken, result.profile.institutionEvidence, case.id)

@@ -17,11 +17,13 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
+import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.web.client.ExpectedCount
+import org.springframework.test.util.ReflectionTestUtils
 import org.springframework.test.web.client.MockRestServiceServer
 import org.springframework.test.web.client.match.MockRestRequestMatchers.anything
 import org.springframework.test.web.client.response.MockRestResponseCreators.withStatus
@@ -96,6 +98,22 @@ class DiscoveryCountryRegistrationTest {
             identityVerification = proof)
         return base.copy(institutionEvidence = DiscoveryIdentity.institutionEvidence(base, "ORCID"))
     }
+
+    private fun jatsProfile(): ExpertProfile {
+        val ids = linkedMapOf("pmcId" to "PMC123456", "orcid" to orcid)
+        val proof = IdentityVerification("VERIFIED", DiscoveryIdentity.VERSION, "ada@example.invalid", "Ada", "Lee",
+            "JATS_SHA256", "a".repeat(64), orcid, null)
+        val base = ExpertProfile(orcidId = orcid, email = "ada@example.invalid", givenNames = "Ada", familyNames = "Lee",
+            country = null, keyword = null, employment = null, institution = "Example University",
+            emailSource = "PAPER_FULLTEXT", dataSource = "JATS", externalIds = mapper.writeValueAsString(ids),
+            identityVerification = proof)
+        return base.copy(institutionEvidence = DiscoveryIdentity.institutionEvidence(base, "JATS"))
+    }
+
+    private fun orcidGbBody() = """{"affiliation-group":[{"summaries":[{"employment-summary":{"put-code":1,
+        |"visibility":"public","role-title":"Professor","organization":{"name":"Example University",
+        |"address":{"country":{"value":"GB"}}},"source":{"source-client-id":{"path":"fixture-org"}},
+        |"start-date":{"year":{"value":"2020"}}}}]}]}""".trimMargin().replace("\n", "")
 
     private fun profileWithCountry(country: String?): ExpertProfile {
         val changed = profile(country = country)
@@ -276,5 +294,57 @@ class DiscoveryCountryRegistrationTest {
             item(VerificationReservation(7, "EMAIL-doc", identity, VerificationMode.ENFORCE.policyVersion, "ORCID", orcid,
                 invalid, fingerprint))))
         assertThrows(DiscoveryRegistrationException::class.java) { service().reserve(context(), "EMAIL-doc", base, "ORCID", orcid) }
+    }
+
+    @Test fun `JATS original token keeps its source after an ORCID fill and registration succeeds`() {
+        var capturedValue: VerificationReservation? = null
+        Mockito.doAnswer { invocation ->
+            capturedValue = invocation.getArgument(0)
+            item(invocation.getArgument(0))
+        }.`when`(repository).reserveItem(anyValue(VerificationReservation(7, "EMAIL-doc", "0".repeat(64),
+            VerificationMode.ENFORCE.policyVersion, "JATS", "PMC123456", "{}", "0".repeat(64))), anyValue(now))
+        server.expect(ExpectedCount.once(), anything()).andRespond(withSuccess(orcidGbBody(), MediaType.APPLICATION_JSON))
+        val base = jatsProfile()
+        val registration = service().reserve(context(), "EMAIL-doc", base, "JATS", "PMC123456")
+        val input = requireNotNull(capturedValue)
+        val root = mapper.readTree(input.snapshotJson)
+        assertEquals("JATS", root.path("profile").path("institutionEvidence").asText().substringBefore(':'))
+        assertEquals("ORCID", root.path("countrySupplement").path("selectedSource").asText())
+        assertEquals("GB", root.path("profile").path("country").asText())
+        assertEquals("GB", registration.preparedProfile!!.country)
+        assertTrue(DiscoveryIdentity.validInstitutionEvidence(registration.preparedProfile!!))
+    }
+
+    @Test fun `the supplement service is a container bean injected into registration`() {
+        AnnotationConfigApplicationContext().use { ctx ->
+            ctx.beanFactory.registerSingleton("properties", properties())
+            ctx.beanFactory.registerSingleton("repository", repository)
+            ctx.beanFactory.registerSingleton("writer", writer)
+            ctx.beanFactory.registerSingleton("policy", policy)
+            ctx.beanFactory.registerSingleton("admissions", admissions)
+            ctx.beanFactory.registerSingleton("jdbc", jdbc)
+            ctx.beanFactory.registerSingleton("transactions", Mockito.mock(TransactionTemplate::class.java))
+            ctx.beanFactory.registerSingleton("clock", clock)
+            ctx.register(DiscoveryCountrySupplementService::class.java, DiscoveryVerificationRegistrationService::class.java)
+            ctx.refresh()
+            assertNotNull(ctx.getBean(DiscoveryCountrySupplementService::class.java))
+            val registration = ctx.getBean(DiscoveryVerificationRegistrationService::class.java)
+            assertNotNull(ReflectionTestUtils.getField(registration, "countrySupplement"))
+        }
+    }
+
+    @Test fun `interrupt during the supplement request stops registration instead of becoming a registration failure`() {
+        val interruptHttp = countrySupplementRestTemplate()
+        val interruptServer = MockRestServiceServer.bindTo(interruptHttp).build()
+        interruptServer.expect(ExpectedCount.once(), anything()).andRespond { throw InterruptedException("fixture") }
+        val props = properties()
+        val interruptRegistration = DiscoveryVerificationRegistrationService(props, repository, writer, policy, admissions,
+            jdbc, Mockito.mock(TransactionTemplate::class.java), clock,
+            DiscoveryCountrySupplementService(props, clock, interruptHttp))
+        assertThrows(InterruptedException::class.java) {
+            interruptRegistration.reserve(context(), "EMAIL-doc", profile(), "ORCID", orcid)
+        }
+        assertTrue(Thread.currentThread().isInterrupted)
+        Thread.interrupted()
     }
 }

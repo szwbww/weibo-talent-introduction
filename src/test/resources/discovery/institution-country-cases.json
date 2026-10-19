@@ -136,6 +136,29 @@
       "expectRequests": 0
     },
     {
+      "id": "JATS_ORCID_MATCH",
+      "source": "JATS",
+      "pmcId": "PMC123456",
+      "institution": "Example University",
+      "country": null,
+      "orcid": "0000-0002-1825-0097",
+      "proofOrcid": "0000-0002-1825-0097",
+      "orcidStatus": 200,
+      "orcidBody": {"affiliation-group": [{"summaries": [{"employment-summary": {
+        "put-code": 21,
+        "visibility": "public",
+        "role-title": "Professor",
+        "organization": {"name": "Example University", "address": {"country": {"value": "GB"}}},
+        "source": {"source-client-id": {"path": "fixture-org"}},
+        "start-date": {"year": {"value": "2020"}},
+        "end-date": null
+      }}]}]},
+      "expectStatus": "FILLED",
+      "expectReason": "MATCHED_BOUND_INSTITUTION",
+      "expectCountry": "GB",
+      "expectRequests": 1
+    },
+    {
       "id": "ORCID_MATCH",
       "source": "ORCID",
       "institution": "Example University",

@@ -273,6 +273,38 @@ class DiscoveryCountrySupplementFlowIT {
         return base.copy(institutionEvidence = DiscoveryIdentity.institutionEvidence(base, "ORCID"))
     }
 
+    private fun jatsProfile(): ExpertProfile {
+        val mapper = jacksonObjectMapper()
+        val proof = IdentityVerification("VERIFIED", DiscoveryIdentity.VERSION, "ada@example.invalid", "Ada", "Lee",
+            "JATS_SHA256", "a".repeat(64), ORCID, null)
+        val base = ExpertProfile(orcidId = ORCID, email = "ada@example.invalid", givenNames = "Ada", familyNames = "Lee",
+            country = null, keyword = null, employment = null, institution = "Example University",
+            emailSource = "PAPER_FULLTEXT", dataSource = "JATS",
+            externalIds = mapper.writeValueAsString(mapOf("pmcId" to "PMC123456", "orcid" to ORCID)),
+            identityVerification = proof)
+        return base.copy(institutionEvidence = DiscoveryIdentity.institutionEvidence(base, "JATS"))
+    }
+
+    @Test fun `JATS original token retains its source in snapshot and RAW after an ORCID fill`() {
+        Fixture().use { f ->
+            f.task(2001)
+            val context = f.begin()
+            f.expectEmployments("GB")
+            val registration = f.registration.reserve(context, "EMAIL-jats-doc", jatsProfile(), "JATS", "PMC123456")
+            f.verifyHttp()
+            val frozen = requireNotNull(registration.preparedProfile)
+            assertEquals("JATS", frozen.institutionEvidence!!.substringBefore(':'))
+            assertEquals("GB", frozen.country)
+            assertTrue(DiscoveryIdentity.validInstitutionEvidence(frozen))
+            f.raw("EMAIL-jats-doc", frozen)
+            assertEquals("GB", f.raws.getValue("EMAIL-jats-doc")["country"])
+            assertEquals(frozen.institutionEvidence, f.raws.getValue("EMAIL-jats-doc")["institutionEvidence"])
+            assertEquals("JATS", f.persistedProfile(registration.item!!).institutionEvidence!!.substringBefore(':'))
+            assertEquals("JATS", f.receipt(registration.item!!).path("originalInstitutionEvidence").asText().substringBefore(':'))
+            assertEquals("ORCID", f.receipt(registration.item!!).path("selectedSource").asText())
+        }
+    }
+
     @Test fun `OPENALEX match freezes country without a request and projects the same value to candidate`() {
         Fixture().use { f ->
             f.task(2001)

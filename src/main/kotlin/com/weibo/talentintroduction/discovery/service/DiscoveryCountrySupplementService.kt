@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.http.HttpMethod
 import org.springframework.http.client.ClientHttpResponse
 import org.springframework.http.client.SimpleClientHttpRequestFactory
+import org.springframework.stereotype.Service
 import org.springframework.web.client.ResponseErrorHandler
 import org.springframework.web.client.RestTemplate
 import java.net.HttpURLConnection
@@ -97,6 +98,7 @@ internal fun countrySupplementRestTemplate(): RestTemplate {
  * [QualificationEvidenceParser] read-only. The only network call is one bounded
  * `GET {orcidPublicBaseUrl}/{boundOrcid}/employments`; the OpenAlex path never issues HTTP.
  */
+@Service
 class DiscoveryCountrySupplementService private constructor(
     private val properties: DiscoveryVerificationProperties,
     private val clock: Clock,
@@ -148,9 +150,11 @@ class DiscoveryCountrySupplementService private constructor(
             effective = Outcome(null, null, REASON_EVIDENCE_TOO_LARGE, effective.observations.take(MAX_OBSERVATIONS))
         }
         var finalProfile = profile
-        val selectedSource = effective.source
-        if (effective.country != null && selectedSource != null) {
-            val signed = DiscoveryIdentity.institutionEvidence(profile.copy(country = effective.country), selectedSource)
+        val supplementSource = effective.source
+        // I-2: the final token keeps the original evidence source (JATS/OPENALEX/ORCID); only its country changes.
+        val tokenSource = profile.institutionEvidence?.substringBefore(':')
+        if (effective.country != null && supplementSource != null && tokenSource != null) {
+            val signed = DiscoveryIdentity.institutionEvidence(profile.copy(country = effective.country), tokenSource)
             if (signed == null) {
                 effective = Outcome(null, null, REASON_IDENTITY_UNRESOLVED, effective.observations)
             } else {
@@ -167,7 +171,7 @@ class DiscoveryCountrySupplementService private constructor(
             afterCountry = finalProfile.country,
             originalInstitutionEvidence = profile.institutionEvidence,
             institution = profile.institution,
-            selectedSource = if (finalProfile.country != profile.country) effective.source else null,
+            selectedSource = if (finalProfile.country != profile.country) supplementSource else null,
             constructedAt = clock.instant().toString(),
             observations = effective.observations.take(MAX_OBSERVATIONS)
         )
