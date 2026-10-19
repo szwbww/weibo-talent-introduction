@@ -11,8 +11,8 @@
 - Started: 2026-10-19T15:17:19.117805+00:00
 - Current child: 01-institution-subject
 - Waiting role: N/A
-- Agent attempt: 0
-- Last agent error: N/A
+- Agent attempt: 1
+- Last agent error: [router_error] model upstream is unavailable
 - Pause reason: N/A
 - Resume from: N/A
 
@@ -25,6 +25,10 @@
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
 |---|---|---|---|---|---|---|
+
+## Agent Availability Events
+
+- 2026-10-19T15:31Z; child 01-institution-subject; role IMPLEMENTER; attempt 1; error `[router_error] model upstream is unavailable`; unchanged code head ea790569ce0726de735586446b93dbf7049398a3; action RETRY.
 
 ## Baseline
 
