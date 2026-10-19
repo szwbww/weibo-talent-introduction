@@ -154,6 +154,27 @@ class VerificationFlowFixture(val jdbc: JdbcTemplate, private val manager: DataS
             OrcidEndpointCompletion(endpoint, OrcidEvidenceDocument(endpoint, mapper.readTree(body), "d".repeat(64), clock.instant()))
         }
     }
+    fun historicalPending(doc: String = "historical", completeSearch: Boolean = true): VerificationItem {
+        val item = seed(doc)
+        val lease = claim()
+        val permit = repository.reserveAttemptWithBudget(lease.id, lease.leaseToken!!, lease.generation,
+            VerificationAttemptRequest("historical-$doc", VerificationProvider.APOLLO, VerificationQueryKind.BROAD, 1, 1, "{}"),
+            1000, 1000, 12, clock.instant()).attemptId!!
+        check(repository.completeAttempt(lease.id, lease.leaseToken!!, lease.generation, permit, 200, "OK",
+            """{"people":[{"id":"person-1"}]}""", "e".repeat(64), clock.instant()))
+        val payload = VerificationWorkerEvidence(search = ruleSearch(complete = completeSearch),
+            progress = VerificationProgress(stage = "DECIDE"), orcidCompleted = selfDocuments())
+        check(repository.saveEvidenceAndOutcome(lease.id, lease.leaseToken!!, lease.generation,
+            VerificationResult(VerificationState.COMPLETED, VerificationOutcome.PENDING, VerificationQualification.UNKNOWN,
+                VerificationRoute.NONE, mapper.writeValueAsString(payload), """["CURRENT_INSTITUTION_EVIDENCE_MISSING"]""",
+                apolloEnteredAt = clock.instant(), searchCompletedAt = clock.instant(), candidateFoundAt = clock.instant()), clock.instant()))
+        return this.item(item.id)
+    }
+    fun settleHistorical() {
+        repository.closeInput(2001, clock.instant())
+        jdbc.update("""INSERT INTO task_execution (id,task_type,trigger_type,status,started_at,finished_at)
+            VALUES (2001,'EXPERT_DISCOVERY','MANUAL','SUCCESS',?,?)""", clock.instant().verificationUtc(), clock.instant().verificationUtc())
+    }
     override fun close() { workers.forEach { it.close() } }
 }
 
@@ -176,6 +197,10 @@ class DiscoveryVerificationFlowIT {
         @JvmStatic fun main(args: Array<String>) {
             start()
             try {
+                if (args.contains("--replay")) {
+                    replaySmoke()
+                    return
+                }
                 VerificationFlowFixture(jdbc, manager).use { f ->
                     val item = f.seed(); f.repository.closeInput(2001, f.clock.instant()); f.failProjection = true
                     f.cached(VerificationWorkerEvidence(orcidCompleted = f.selfDocuments()))
@@ -195,11 +220,153 @@ class DiscoveryVerificationFlowIT {
                 }
             } finally { stop() }
         }
+        private fun replaySmoke() {
+            VerificationFlowFixture(jdbc, manager).use { f ->
+                val item = f.historicalPending(); f.settleHistorical()
+                val root = java.nio.file.Files.createTempDirectory("verification-cli-").toRealPath()
+                java.nio.file.Files.setPosixFilePermissions(root, java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"))
+                val ids = root.resolve("ids.json"); java.nio.file.Files.writeString(ids, "[${item.id}]")
+                val cp = System.getProperty("java.class.path")
+                val old = requireNotNull(System.getenv("REPLAY_BASELINE_CLASSPATH"))
+                fun cli(vararg arguments: String) {
+                    val process = ProcessBuilder(listOf("bash", "scripts/expert_discovery/replay_verification.sh") + arguments)
+                    process.environment().putAll(mapOf("DB_URL" to mysql.jdbcUrl, "DB_USERNAME" to mysql.username,
+                        "DB_PASSWORD" to mysql.password, "REPLAY_CLASSPATH" to cp))
+                    val child = process.inheritIO().start(); check(child.waitFor() == 0)
+                }
+                cli("freeze", "--execution-id", "2001", "--item-ids", ids.toString(), "--output", root.resolve("frozen").toString(),
+                    "--old-classpath", old, "--fixed-classpath", cp)
+                val directory = java.nio.file.Files.list(root.resolve("frozen/2001")).use { it.findFirst().get() }
+                val manifest = directory.resolve("manifest.json")
+                val hash = DiscoveryVerificationReplayTool.sha(java.nio.file.Files.readAllBytes(manifest))
+                cli("evaluate", "--manifest", manifest.toString(), "--manifest-sha256", hash,
+                    "--old-classpath", old, "--fixed-classpath", cp)
+                cli("apply", "--manifest", manifest.toString(), "--manifest-sha256", hash)
+                check(f.item(item.id).state == VerificationState.QUEUED)
+                cli("apply", "--manifest", manifest.toString(), "--manifest-sha256", hash)
+                f.failProjection = true; f.worker().tick()
+                check(f.item(item.id).projectionState == VerificationProjection.ERROR)
+                val revision = f.item(item.id).admissionRevision
+                f.failProjection = false; f.worker().tick()
+                cli("inspect", "--manifest", manifest.toString(), "--manifest-sha256", hash)
+                check(f.item(item.id).outcome == VerificationOutcome.APOLLO_UNCLEAR && f.autoCount() == 1L)
+                check(f.item(item.id).projectionState == VerificationProjection.PROJECTED)
+                check(f.item(item.id).admissionRevision == revision)
+                check(f.repository.findAttempts(item.id).size == 1 && f.item(item.id).requestCount == 1)
+                check(f.apolloRequests.isEmpty() && f.orcidRequests.isEmpty())
+                println("REPLAY_CLI_SMOKE itemId=${item.id} outcome=APOLLO_UNCLEAR admissionRevision=$revision projection=PROJECTED HTTP_DELTA=0 attempts=1 auto=1 repeatApply=0 evidence=$directory")
+            }
+        }
     }
     @BeforeEach fun clean() {
         jdbc.execute("DROP TRIGGER IF EXISTS fail_verification_attach")
         jdbc.execute("DROP TRIGGER IF EXISTS fail_attempt_complete")
         listOf("expert_email_alias", "expert_contact", "discovery_verification_attempt", "discovery_verification_item", "discovery_verification_run", "expert_discovery_admission", "task_execution").forEach { jdbc.update("DELETE FROM $it") }
+    }
+    private fun freezeHistorical(f: VerificationFlowFixture, ids: List<Long>): DiscoveryVerificationReplayTool.Frozen {
+        val root = java.nio.file.Files.createTempDirectory("verification-replay-").toRealPath()
+        java.nio.file.Files.setPosixFilePermissions(root, java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"))
+        val cp = System.getProperty("java.class.path")
+        val directory = DiscoveryVerificationReplayTool.freeze(jdbc, manager, 2001, ids, root.resolve("frozen"),
+            f.clock, mapOf("fixed" to cp))
+        val manifest = directory.resolve("manifest.json")
+        return DiscoveryVerificationReplayTool.load(manifest, DiscoveryVerificationReplayTool.sha(java.nio.file.Files.readAllBytes(manifest)))
+    }
+
+    @Test fun `historical freeze offline evaluate CAS worker commit projection retains all original billing`() {
+        VerificationFlowFixture(jdbc, manager).use { f ->
+            val first = f.historicalPending("historical-1"); val second = f.historicalPending("historical-2")
+            f.settleHistorical()
+            val run = f.repository.findRun(2001)!!
+            val attempts = listOf(first, second).associate { it.id to f.repository.findAttempts(it.id) }
+            val frozen = freezeHistorical(f, listOf(first.id, second.id, 99999L))
+            assertEquals(run, f.repository.findRun(2001))
+            assertEquals(listOf(first, second), listOf(f.item(first.id), f.item(second.id)))
+            val fixed = DiscoveryVerificationReplayTool.evaluate(frozen, mapOf("fixed" to System.getProperty("java.class.path")))
+            assertEquals(listOf("APOLLO_UNCLEAR", "APOLLO_UNCLEAR"), fixed.getValue("fixed").map { it.outcome })
+            assertTrue(f.apolloRequests.isEmpty() && f.orcidRequests.isEmpty())
+            assertThrows(IllegalArgumentException::class.java) {
+                DiscoveryVerificationReplayTool.freeze(jdbc, manager, 2001, frozen.before.itemIds,
+                    frozen.directory.parent.parent, f.clock, mapOf("fixed" to System.getProperty("java.class.path")))
+            }
+            val result = DiscoveryVerificationReplayTool.apply(frozen, jdbc, manager, f.clock)
+            assertEquals(2, result.count { it.status == "QUEUED" })
+            assertTrue(DiscoveryVerificationReplayTool.apply(frozen, jdbc, manager, f.clock).all { it.status != "QUEUED" })
+            f.failProjection = true; f.worker().tick()
+            val revisions = listOf(first, second).map { f.item(it.id).admissionRevision }
+            assertTrue(revisions.all { it != null })
+            f.failProjection = false; f.worker().tick()
+            listOf(first, second).forEachIndexed { index, original ->
+                val done = f.item(original.id)
+                assertEquals(VerificationOutcome.APOLLO_UNCLEAR, done.outcome)
+                assertEquals(VerificationQualification.UNKNOWN, done.qualification)
+                assertEquals(revisions[index], done.admissionRevision)
+                assertEquals(VerificationProjection.PROJECTED, done.projectionState)
+                assertEquals(attempts[original.id], f.repository.findAttempts(original.id))
+                assertEquals(original.requestCount, done.requestCount)
+                assertEquals(original.snapshotJson, done.snapshotJson)
+                val oldPayload = f.mapper.readTree(original.evidenceJson); val next = f.mapper.readTree(done.evidenceJson)
+                assertEquals(oldPayload.path("search"), next.path("search"))
+                assertEquals(oldPayload.path("orcidCompleted"), next.path("orcidCompleted"))
+                assertEquals(original.ownerExecutionId, done.ownerExecutionId); assertEquals(original.batchNumber, done.batchNumber)
+                assertEquals(original.activatedAt, done.activatedAt)
+            }
+            assertEquals(2L, f.autoCount()); assertEquals(2, f.candidates.size)
+            val report = DiscoveryVerificationReplayTool.inspect(frozen, jdbc, manager, f.clock)
+            assertEquals(2, report["durableAdmissions"])
+            assertTrue(f.apolloRequests.isEmpty() && f.orcidRequests.isEmpty())
+            java.nio.file.Files.writeString(frozen.directory.resolve("before.json"), "{}")
+            assertThrows(IllegalArgumentException::class.java) {
+                val path = frozen.directory.resolve("manifest.json")
+                DiscoveryVerificationReplayTool.load(path, DiscoveryVerificationReplayTool.sha(java.nio.file.Files.readAllBytes(path)))
+            }
+        }
+    }
+
+    @Test fun `historical replay rechecks current manual RAW contact application SBIR and incomplete search`() {
+        listOf("HOLD", "RAW", "IDENTITY", "CONTACT", "APPLICATION", "SBIR", "INCOMPLETE").forEach { scenario ->
+            clean()
+            VerificationFlowFixture(jdbc, manager).use { f ->
+                val original = f.historicalPending(completeSearch = scenario != "INCOMPLETE")
+                f.settleHistorical(); val frozen = freezeHistorical(f, listOf(original.id))
+                assertEquals("QUEUED", DiscoveryVerificationReplayTool.apply(frozen, jdbc, manager, f.clock).single().status)
+                when (scenario) {
+                    "HOLD" -> f.manual(original)
+                    "RAW" -> f.raws[original.expertDocId] = f.raws.getValue(original.expertDocId) + ("institution" to "Changed University")
+                    "IDENTITY" -> f.raws[original.expertDocId] = f.raws.getValue(original.expertDocId) + ("email" to "changed@example.invalid")
+                    "APPLICATION" -> f.applications[original.expertDocId] = f.raws.getValue(original.expertDocId)
+                    "SBIR" -> f.raws[original.expertDocId] = f.raws.getValue(original.expertDocId) + ("dataSource" to "SBIR")
+                    "CONTACT" -> jdbc.update("""INSERT INTO expert_contact (campaign_id,orcid_id,expert_email)
+                        SELECT MIN(id),'0000-0002-1825-0097','ada@example.invalid' FROM campaign""")
+                }
+                val admission = f.admissions.findAdmission(original.expertDocId)
+                f.worker().tick()
+                assertNull(f.item(original.id).admissionRevision, scenario)
+                assertEquals(admission, f.admissions.findAdmission(original.expertDocId), scenario)
+                assertTrue(f.candidates.isEmpty(), scenario)
+                assertTrue(f.apolloRequests.isEmpty() && f.orcidRequests.isEmpty(), scenario)
+                assertEquals(1, f.repository.findAttempts(original.id).size, scenario)
+            }
+        }
+    }
+
+    @Test fun `report failure after queue commit preserves before and inspect recovers actual result`() {
+        VerificationFlowFixture(jdbc, manager).use { f ->
+            val original = f.historicalPending(); f.settleHistorical()
+            val frozen = freezeHistorical(f, listOf(original.id))
+            val beforeHash = DiscoveryVerificationReplayTool.sha(java.nio.file.Files.readAllBytes(frozen.directory.resolve("before.json")))
+            java.nio.file.Files.setPosixFilePermissions(frozen.directory, java.nio.file.attribute.PosixFilePermissions.fromString("r-x------"))
+            try {
+                assertThrows(IllegalArgumentException::class.java) { DiscoveryVerificationReplayTool.apply(frozen, jdbc, manager, f.clock) }
+            } finally {
+                java.nio.file.Files.setPosixFilePermissions(frozen.directory, java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"))
+            }
+            assertEquals(VerificationState.QUEUED, f.item(original.id).state)
+            f.worker().tick()
+            assertEquals(1, DiscoveryVerificationReplayTool.inspect(frozen, jdbc, manager, f.clock)["durableAdmissions"])
+            assertEquals(beforeHash, DiscoveryVerificationReplayTool.sha(java.nio.file.Files.readAllBytes(frozen.directory.resolve("before.json"))))
+            assertEquals("STALE_OR_ALREADY_APPLIED", DiscoveryVerificationReplayTool.apply(frozen, jdbc, manager, f.clock).single().status)
+        }
     }
     @Test fun `collection SUCCESS survives 429 and process reconstruction with two actual Apollo attempts`() {
         VerificationFlowFixture(jdbc, manager).use { f ->

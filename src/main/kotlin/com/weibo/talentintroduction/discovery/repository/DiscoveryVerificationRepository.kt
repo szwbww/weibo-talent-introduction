@@ -1,5 +1,8 @@
 package com.weibo.talentintroduction.discovery.repository
 
+import com.fasterxml.jackson.databind.node.ObjectNode
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import java.security.MessageDigest
 import com.weibo.talentintroduction.discovery.domain.*
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.ConnectionCallback
@@ -20,6 +23,78 @@ import java.util.UUID
  */
 @Repository
 class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
+    data class ReplayAdmission(val identityHash: String, val decision: String, val revision: Long, val policyVersion: String?)
+    data class ReplayExpected(val item: VerificationItem, val admission: ReplayAdmission?, val evidenceJson: String,
+        val snapshotSha256: String = replayHash(item.snapshotJson),
+        val evidenceSha256: String = replayHash(item.evidenceJson),
+        val reasonsSha256: String = replayHash(item.reasonsJson))
+    data class ReplayReceipt(val itemId: Long, val status: String)
+
+
+    fun replayAdmission(docId: String, locked: Boolean = false): ReplayAdmission? =
+        jdbc.query("""SELECT identity_hash,decision,revision,policy_version FROM expert_discovery_admission
+            WHERE expert_doc_id=? ${if (locked) "FOR UPDATE" else ""}""",
+            RowMapper { rs, _ -> ReplayAdmission(rs.getString(1), rs.getString(2), rs.getLong(3), rs.getString(4)) }, docId).singleOrNull()
+
+    /** Short database-only CAS. Explicit outer transactions are mandatory for non-Spring CLI callers. */
+    @Transactional
+    fun requeuePendingForEvidenceReplay(executionId: Long, expectedItems: List<ReplayExpected>, now: Instant): List<ReplayReceipt> {
+        require(TransactionSynchronizationManager.isActualTransactionActive()) { "Replay requires a transaction" }
+        require(expectedItems.size in 1..100 && expectedItems.map { it.item.id }.distinct().size == expectedItems.size)
+        require(expectedItems.all { it.item.ownerExecutionId == executionId })
+        val run = lockRun(executionId)
+        val admissions = expectedItems.map { it.item.expertDocId }.distinct().sorted().associateWith { replayAdmission(it, true) }
+        val current = expectedItems.sortedBy { it.item.id }.associate { it.item.id to lockedItem(it.item.id) }
+        fun stale(expected: ReplayExpected): Boolean {
+            val item = current[expected.item.id]
+            return item != expected.item || replayHash(item?.snapshotJson) != expected.snapshotSha256 ||
+                replayHash(item?.evidenceJson) != expected.evidenceSha256 ||
+                replayHash(item?.reasonsJson) != expected.reasonsSha256 || admissions[expected.item.expertDocId] != expected.admission
+        }
+        // A repeated manifest must not be rejected merely because its first application queued work.
+        if (expectedItems.all(::stale)) return expectedItems.map { ReplayReceipt(it.item.id, "STALE_OR_ALREADY_APPLIED") }
+        val finished = jdbc.queryForObject("SELECT COUNT(*) FROM task_execution WHERE id=? AND finished_at IS NOT NULL",
+            Long::class.java, executionId) == 1L
+        val active = jdbc.queryForObject("""SELECT COUNT(*) FROM discovery_verification_item WHERE owner_execution_id=?
+            AND state IN ('RESERVED','QUEUED','RUNNING','RETRY_WAIT')""", Long::class.java, executionId)!!
+        if (!run.inputClosed || !finished || active != 0L)
+            return expectedItems.map { ReplayReceipt(it.item.id, "RUN_NOT_SETTLED") }
+        val mapper = replayMapper
+        val receipts = expectedItems.map { expected ->
+            val item = current[expected.item.id]
+            val admission = admissions[expected.item.expertDocId]
+            val status = when {
+                stale(expected) -> "STALE_OR_ALREADY_APPLIED"
+                item == null || item.ownerExecutionId != executionId -> "WRONG_RUN"
+                admission != null && (admission.decision != "NEEDS_REVIEW" || admission.identityHash != item.identityHash) -> "PROTECTED_ADMISSION"
+                item.state != VerificationState.COMPLETED || item.outcome != VerificationOutcome.PENDING ||
+                    item.activatedAt == null || item.admissionRevision != null ||
+                    item.projectionState != VerificationProjection.NOT_REQUIRED || item.leaseToken != null ||
+                    item.leaseUntil != null || item.personMatchedAt != null || item.apolloPersonId != null -> "INELIGIBLE"
+                mapper.readTree(item.reasonsJson ?: "[]").any {
+                    it.asText() in setOf("IDENTITY_CHANGED", "FACT_CHANGED", "SOURCE_MISSING", "PROTECTED", "APPLICATION_PRESENT") ||
+                        it.asText().startsWith("PROTECTED_") || it.asText().endsWith("_PROTECTED")
+                } -> "PROTECTED_REASON"
+                else -> {
+                    require(mapper.readTree(expected.evidenceJson) == mapper.readTree(replayEvidence(item.evidenceJson))) {
+                        "Only progress.stage may change"
+                    }
+                    "QUEUED"
+                }
+            }
+            ReplayReceipt(expected.item.id, status)
+        }
+        receipts.filter { it.status == "QUEUED" }.forEach { receipt ->
+            val expected = expectedItems.single { it.item.id == receipt.itemId }
+            check(jdbc.update("""UPDATE discovery_verification_item SET state='QUEUED',outcome=NULL,
+                qualification='NOT_EVALUATED',route='NONE',completed_at=NULL,next_attempt_at=NULL,lease_token=NULL,
+                lease_until=NULL,evidence_json=?,reasons_json='[]',generation=generation+1,updated_at=?
+                WHERE id=? AND generation=?""", expected.evidenceJson, now.verificationUtc(), receipt.itemId, expected.item.generation) == 1)
+        }
+        if (receipts.any { it.status == "QUEUED" }) bump(executionId, now)
+        return receipts
+    }
+
     /** Reporting queries deliberately have no locks, writes, or recovery side effects. */
     fun reportingCollectionStatuses(ids: List<Long>): Map<Long, String> {
         require(ids.isNotEmpty() && ids.size <= 50 && ids.all { it > 0 })
@@ -487,6 +562,20 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     }
 
     companion object {
+        private val replayMapper = jacksonObjectMapper()
+        fun replayHash(value: String?): String = MessageDigest.getInstance("SHA-256")
+            .digest((value ?: "\u0000").toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+        /** The caller cannot alter provider evidence, search cursors, or any other progress member. */
+        fun replayEvidence(value: String?): String {
+            val tree = replayMapper.readTree(requireNotNull(value)) as? ObjectNode
+                ?: throw IllegalArgumentException("Replay evidence must be an object")
+            val progress = tree.get("progress")
+            require(progress == null || progress is ObjectNode)
+            val next = (progress?.deepCopy<ObjectNode>() ?: replayMapper.createObjectNode())
+            next.put("stage", "DECIDE")
+            tree.set<ObjectNode>("progress", next)
+            return tree.toString()
+        }
         private fun ResultSet.time(name: String): Instant? = getTimestamp(name)?.toLocalDateTime()?.verificationInstant()
         private fun ResultSet.nullLong(name: String): Long? = getLong(name).let { if (wasNull()) null else it }
         private val runMapper = RowMapper { rs: ResultSet, _: Int -> VerificationRun(rs.getLong("execution_id"), VerificationMode.valueOf(rs.getString("mode")),

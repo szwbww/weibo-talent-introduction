@@ -54,6 +54,8 @@ class DiscoveryVerificationRepositoryIT {
         jdbc.update("DELETE FROM discovery_verification_attempt")
         jdbc.update("DELETE FROM discovery_verification_item")
         jdbc.update("DELETE FROM discovery_verification_run")
+        jdbc.update("DELETE FROM expert_discovery_admission")
+        jdbc.update("DELETE FROM task_execution")
     }
     private fun run(id: Long = 1001, mode: VerificationMode = VerificationMode.ENFORCE) =
         repository.createRun(id, mode, true, "{}", NOW)
@@ -235,5 +237,87 @@ class DiscoveryVerificationRepositoryIT {
         assertEquals(VerificationState.ERROR, failed.state); assertNull(failed.activatedAt); assertNull(failed.outcome)
         assertEquals(0L, jdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_item WHERE activated_at IS NOT NULL", Long::class.java))
         assertEquals("158", jdbc.queryForObject("SELECT version FROM flyway_schema_history WHERE version='158' AND success=1", String::class.java))
+    }
+
+    private fun replayPending(doc: String): DiscoveryVerificationRepository.ReplayExpected {
+        val original = active(doc)
+        val lease = claim()
+        assertTrue(repository.saveEvidenceAndOutcome(original.id, lease.leaseToken!!, lease.generation,
+            result().copy(evidenceJson = """{"evidence":[],"search":{"complete":true},"progress":{"stage":"DONE","page":4},"orcidCompleted":[]}"""), NOW))
+        val item = repository.findItem(original.id)!!
+        return DiscoveryVerificationRepository.ReplayExpected(item, repository.replayAdmission(doc),
+            DiscoveryVerificationRepository.replayEvidence(item.evidenceJson))
+    }
+    private fun settle() {
+        repository.closeInput(1001, NOW)
+        jdbc.update("""INSERT INTO task_execution (id,task_type,trigger_type,status,started_at,finished_at)
+            VALUES (1001,'EXPERT_DISCOVERY','MANUAL','SUCCESS',?,?)
+            ON DUPLICATE KEY UPDATE finished_at=VALUES(finished_at)""", NOW.verificationUtc(), NOW.verificationUtc())
+    }
+    private fun replay(items: List<DiscoveryVerificationRepository.ReplayExpected>) =
+        repository.requeuePendingForEvidenceReplay(1001, items, NOW.plusSeconds(1))
+
+    @Test fun `replay hundred item batch queues once without self blocking and preserves billing and identity`() {
+        run()
+        val expected = (1..100).map { replayPending("replay-$it") }; settle()
+        val beforeRevision = repository.findRun(1001)!!.revision
+        assertThrows(IllegalArgumentException::class.java) { replay(expected + expected.first()) }
+        val receipts = replay(expected)
+        assertEquals(100, receipts.count { it.status == "QUEUED" })
+        expected.forEach { e ->
+            val next = repository.findItem(e.item.id)!!
+            assertEquals(e.item.copy(state = VerificationState.QUEUED, outcome = null,
+                qualification = VerificationQualification.NOT_EVALUATED, route = VerificationRoute.NONE,
+                completedAt = null, evidenceJson = e.evidenceJson, reasonsJson = "[]",
+                generation = e.item.generation + 1, updatedAt = NOW.plusSeconds(1)), next)
+        }
+        assertTrue(repository.findRun(1001)!!.revision > beforeRevision)
+        assertEquals(setOf("STALE_OR_ALREADY_APPLIED"), replay(expected).map { it.status }.toSet())
+        val queued = repository.findItem(expected.first().item.id)!!
+        val claimed = repository.claimDue(NOW.plusSeconds(1), 120)!!
+        assertEquals(queued.generation + 1, claimed.generation)
+        assertFalse(repository.saveEvidenceAndOutcome(claimed.id, "old-token", queued.generation - 1, result(), NOW.plusSeconds(1)))
+    }
+
+    @Test fun `replay rejects unsettled run changed admissions wrong hashes and wrong owners`() {
+        run(); val first = replayPending("cas-1"); val second = replayPending("cas-2")
+        assertEquals(setOf("RUN_NOT_SETTLED"), replay(listOf(first, second)).map { it.status }.toSet())
+        val queued = active("in-flight"); settle()
+        assertEquals("RUN_NOT_SETTLED", replay(listOf(first)).single().status)
+        val lease = claim()
+        repository.saveEvidenceAndOutcome(queued.id, lease.leaseToken!!, lease.generation, result(), NOW)
+        assertEquals("STALE_OR_ALREADY_APPLIED", replay(listOf(first.copy(snapshotSha256 = "0".repeat(64)))).single().status)
+        jdbc.update("""INSERT INTO expert_discovery_admission (expert_doc_id,identity_hash,decision,revision,updated_at)
+            VALUES (?,?, 'HOLD',1,?)""", first.item.expertDocId, first.item.identityHash, NOW.verificationUtc())
+        assertEquals("STALE_OR_ALREADY_APPLIED", replay(listOf(first)).single().status)
+        val held = first.copy(admission = repository.replayAdmission(first.item.expertDocId))
+        assertEquals("PROTECTED_ADMISSION", replay(listOf(held)).single().status)
+        assertThrows(IllegalArgumentException::class.java) { replay(listOf(first.copy(item = first.item.copy(ownerExecutionId = 1002)))) }
+        assertEquals("QUEUED", replay(listOf(second)).single().status)
+    }
+
+    @Test fun `replay validates entire batch before writes and transaction failures roll back`() {
+        run(); val first = replayPending("atomic-1"); val second = replayPending("atomic-2"); settle()
+        val revision = repository.findRun(1001)!!.revision
+        assertThrows(IllegalArgumentException::class.java) { replay(listOf(first, second.copy(evidenceJson = """{"progress":{"stage":"DECIDE"}}"""))) }
+        assertEquals(first.item, repository.findItem(first.item.id))
+        assertThrows(IllegalStateException::class.java) {
+            TransactionTemplate(manager).executeWithoutResult { replay(listOf(first, second)); error("injected") }
+        }
+        assertEquals(revision, repository.findRun(1001)!!.revision)
+        val results = parallel(2) { replay(listOf(first, second)) }
+        assertEquals(2, results.flatten().count { it.status == "QUEUED" })
+        assertEquals(2, results.flatten().count { it.status == "STALE_OR_ALREADY_APPLIED" })
+    }
+
+    @Test fun `known protection reasons and revision changes remain skipped`() {
+        run()
+        val protected = replayPending("protected")
+        jdbc.update("UPDATE discovery_verification_item SET reasons_json='[\"FACT_CHANGED\"]' WHERE id=?", protected.item.id)
+        val changed = repository.findItem(protected.item.id)!!
+        val current = protected.copy(item = changed, reasonsSha256 = DiscoveryVerificationRepository.replayHash(changed.reasonsJson))
+        settle()
+        assertEquals("PROTECTED_REASON", replay(listOf(current)).single().status)
+        assertEquals(current.item, repository.findItem(current.item.id))
     }
 }
