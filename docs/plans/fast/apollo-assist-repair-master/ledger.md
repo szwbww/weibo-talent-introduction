@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-19/apollo-assist-repair-master.md
 
-- Status: RUNNING
+- Status: READY_FOR_HUMAN_REVIEW
 - Master plan: docs/plans/2026-10-19/apollo-assist-repair-master.md (sha256 ecf15cc88cecdf2c3e019285d079935fce8c8ec2492cc88acd5fa60bfd06145d)
 - Amendments: N/A
 - Master base: e33b3cdcd228a6692c7aaeab047e5bafd0e7bd3f
@@ -9,12 +9,12 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-19T09:01:50.592828+00:00
-- Current child: 02
+- Current child: N/A
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
-- Resume from: 3e8beb8841f8c2b42048667874ce61253da5fe5c
+- Resume from: N/A
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
@@ -25,3 +25,15 @@
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
 |---|---|---|---|---|---|---|
+
+## Baseline and terminal evidence
+
+- Baseline: baseline.md records original main worktree and unchanged execution start, passing focused 43 / Docker MySQL 30 tests, and runtime-only Docker API/socket resolution.
+- Both children have terminal independent LIGHT_PASS_WITH_NOTES verdicts, COMPLETE_CHILD actions, and zero automatic repairs. No plan amendments.
+- Child 01 checkpoint passed VALID / CHILD_CHECKPOINT with the complete 01+02 manifest before and after commit 28a1826d25d87e3fef06fdc5fc5cd34f40f2d077.
+- Child 02 checkpoint passed VALID / CHILD_CHECKPOINT with the complete 01+02 manifest before and after commit f93beddb0627df1dd4c64a3bc371d7536b2b0236.
+- Human handoff is generated only from child artifacts. Recorded full Maven execution is a child-02 required command, not final aggregate certification.
+- Child-01 writer DNS interruption was resumed without replaying completed work; original nine-file changes were retained and committed by the resume writer.
+- Child-02 full command passed using isolated current JDK11 after installed Zulu 11.0.15's observed timezone database failure. No unrelated product/test or global JDK modification.
+- Original historical raw input remains UNAVAILABLE; local three-way proof uses explicitly newly frozen isolated data. Deployment, live apply/new external runs, production retention/UI manual acceptance and combined human review remain deferred.
+- No whole-system verification was performed. Branch and worktree are retained; no push, merge or history rewrite.
