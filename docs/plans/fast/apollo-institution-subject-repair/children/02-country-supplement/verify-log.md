@@ -54,3 +54,7 @@ Attempt: Epoch 1 — Attempt 2 (re-verification after fix round 1), 2026-10-20 (
 - COMPLETE_CHILD
 
 Verdict rationale: Gate 1 PASS (boundary and fix commit stay inside the 8 authorized files; only the 4 evidence files are dirty; product/test tree matches the fix commit), Gate 2 PASS (F-1/F-2/F-3 each closed by code plus a dedicated regression test, and the fix introduces no writer, schema, ES, HTTP or contract change beyond the authorized scope), Gate 3 PASS (fresh JDK11 focused suite 83/0/0/0 + JS 1724 pass; fresh Docker/MySQL suite 47/0/0 with zero skips, exactly the recorded post-fix baseline), Gate 4 PASS (child-01 interfaces and VerificationFlowIT/RepositoryIT behavior intact).
+
+## Evidence correction
+
+- The round-1 fix-log field label was normalized to the canonical `- Fix commit: 0953b2f3570725bf1de5cc138422220c1731a48d` form required for checkpoint binding. No verifier verdict, gate result, or evidence content was changed; the latest verdict remains LIGHT_PASS.

@@ -110,3 +110,9 @@ Additional unit coverage in the same class: 429 `Retry-After` pause and clock-ba
 
 - Independent `verify-p` machine verification and the human acceptance list A-1..A-5.
 - The real-cohort effectiveness table (per-document original/new country and evidence) remains to be produced from authorized frozen items; until then it is `NOT_EVALUATED`.
+
+## Post-fix execution correction
+
+- Round 1 fix commit: 0953b2f3570725bf1de5cc138422220c1731a48d.
+- Post-fix verified counts: focused 83 JVM tests (0 failures/errors/skips) plus 1,724 JS tests; Docker/MySQL 47 tests (CountrySupplementFlowIT 8 + VerificationFlowIT 27 + RepositoryIT 12), 0 skipped; runtime smoke preserved snapshot==RAW country/token for OPENALEX/US (0 supplement HTTP) and ORCID/GB (1 supplement HTTP).
+- The round-0 counts above remain the initial implementation record. The fix-log and re-verification report hold the round-1 record. This note was added during deterministic evidence finalization; no product behavior changed.

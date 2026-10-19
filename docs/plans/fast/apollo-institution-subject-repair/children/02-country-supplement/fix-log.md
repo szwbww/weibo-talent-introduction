@@ -9,7 +9,7 @@
 
 **Before**: `842cd66980660a94b2e34baab4aaf6ce98260953`; focused 80 JVM + 1,724 JS pass, Docker 46 tests pass; JATS-original fill and container wiring were not covered.
 
-**Fix commit**: `0953b2f3570725bf1de5cc138422220c1731a48d`
+- Fix commit: 0953b2f3570725bf1de5cc138422220c1731a48d
 
 **Authorized files changed**
 - `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementService.kt` — `@Service`; re-sign with `profile.institutionEvidence.substringBefore(':')`; receipt `selectedSource` still records the supplement source.
