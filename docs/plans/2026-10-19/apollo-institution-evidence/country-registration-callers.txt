@@ -1,0 +1,21 @@
+$ rg -n verificationRegistration.*reserve|fun reserve\(|DiscoveryRegistration\(|readValue<VerificationSnapshot>|FAIL_ON_UNKNOWN_PROPERTIES src/main/kotlin/com/weibo/talentintroduction/discovery
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:41:    private val mapper = jacksonObjectMapper().findAndRegisterModules().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:88:        fun reserve(provider: VerificationProvider, kind: VerificationQueryKind, page: Int, request: String): RequestPermit {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:149:            val snapshot = mapper.readValue<VerificationSnapshot>(lease.snapshotJson)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:211:                    val snapshot = mapper.readValue<VerificationSnapshot>(lease.snapshotJson)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryService.kt:28:    private val mapper = jacksonObjectMapper().findAndRegisterModules().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryService.kt:102:        val snapshot = mapper.readValue<VerificationSnapshot>(item.snapshotJson)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGate.kt:60:            val frozen = mapper.readValue<VerificationSnapshot>(item.snapshotJson)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGate.kt:79:            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1468:                        verificationRegistration?.reserve(verification, esDocId, profile, orcid.sourceName, record.orcidId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1469:                            ?: DiscoveryRegistration()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1826:                verificationRegistration?.reserve(verification, identity.esDocId, identity.profile, sourceName, sourceItemKey)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1827:                    ?: DiscoveryRegistration()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt:29:    private val mapper = jacksonObjectMapper().findAndRegisterModules().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:27:data class DiscoveryRegistration(val item: VerificationItem? = null, val protected: Boolean = false)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:75:    fun reserve(context: DiscoveryVerificationExecution, docId: String, profile: ExpertProfile,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:80:                return DiscoveryRegistration()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:95:                return DiscoveryRegistration(protected = true)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:103:            return DiscoveryRegistration(item)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:156:        activate(DiscoveryRegistration(item))
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/OpenAlexBudgetRepository.kt:89:    override fun reserve(request: BudgetReserveRequest): BudgetReserveResult {

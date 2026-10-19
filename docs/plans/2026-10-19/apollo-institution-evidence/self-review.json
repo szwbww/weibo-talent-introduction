@@ -1,0 +1,15 @@
+{
+  "required_sections_in_order": true,
+  "implementation_files": 10,
+  "subsystems": 1,
+  "new_shared_json_members": 1,
+  "frontend_files": 0,
+  "invariants": 7,
+  "manual_acceptance_cases": 6,
+  "predecessor_and_reaudit_required": true,
+  "acceptance_derivative_not_created": true,
+  "business_tests_run": false,
+  "reason": "Planning-only task; production code not edited by this task.",
+  "audited_source_files_unchanged": 9,
+  "manual_case_fields_checked": 6
+}

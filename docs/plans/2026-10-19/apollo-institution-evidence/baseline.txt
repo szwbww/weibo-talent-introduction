@@ -1,0 +1,30 @@
+e33b3cdcd228a6692c7aaeab047e5bafd0e7bd3f
+
+ M CLAUDE.md
+ M docs/knowledge/audit/K-plan-quantified-claims-need-grep-receipts.md
+ M docs/knowledge/es-index/K-enrichment-write-three-layers.md
+ M docs/knowledge/es-index/K-es-dynamic-false.md
+ M docs/knowledge/es-index/K-es-mapping-single-declaration-source.md
+ M docs/knowledge/es-index/K-expert-profile-source-sync.md
+ M docs/knowledge/es-index/K-promotion-source-passthrough.md
+ M docs/knowledge/es-index/K-sendable-gate-two-implementations.md
+ M docs/knowledge/frontend/K-dom-stub-tests-hide-dangling-refs.md
+ M docs/knowledge/frontend/K-frontend-cache-key-triad.md
+ M docs/knowledge/frontend/K-html-string-truncation-breaks-cells.md
+ M docs/knowledge/frontend/K-js-test-invocation-surface.md
+ M docs/knowledge/frontend/K-panel-bg-token-is-translucent.md
+ M docs/knowledge/frontend/K-task-launch-config-registration.md
+ M docs/knowledge/task/K-execution-detail-running-needs-progress-log.md
+ M docs/knowledge/task/K-progress-log-batchonly-two-readers.md
+ M docs/plans/2026-10-18/apollo-03-admission.md
+ M docs/plans/2026-10-18/apollo-04-worker.md
+ M docs/plans/2026-10-18/apollo-06-reporting.md
+ M docs/plans/2026-10-18/apollo-07-frontend.md
+ M docs/plans/2026-10-18/apollo-verification-master.md
+ M docs/releases.json
+?? docs/mockups/recipient-manual-preview/
+?? docs/plans/2026-10-19/apollo-assist-repair-01-evidence-matching.md
+?? docs/plans/2026-10-19/apollo-assist-repair-02-replay-evaluation.md
+?? docs/plans/2026-10-19/apollo-assist-repair-master.md
+?? docs/plans/2026-10-19/apollo-institution-evidence/
+?? docs/plans/2026-10-19/apollo-repair-evidence/

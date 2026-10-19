@@ -1,0 +1,26 @@
+{
+  "date": "2026-10-19",
+  "kind": "plan_amendment_only",
+  "business_code_changed": false,
+  "business_tests_run": false,
+  "live_coverage": "NOT_EVALUATED",
+  "plans": [
+    {
+      "file": "apollo-institution-subject-repair.md",
+      "implementation_files": 10,
+      "required_sections_in_order": true,
+      "invariants": 7,
+      "manual_cases": 6,
+      "frontend": false
+    },
+    {
+      "file": "discovery-institution-country-supplement.md",
+      "implementation_files": 8,
+      "required_sections_in_order": true,
+      "invariants": 6,
+      "manual_cases": 5,
+      "frontend": false
+    }
+  ],
+  "audited_source_hashes_unchanged": 19
+}

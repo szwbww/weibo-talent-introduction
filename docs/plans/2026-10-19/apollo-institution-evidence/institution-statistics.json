@@ -1,0 +1,106 @@
+{
+  "source": "/Users/lukai/IdeaProjects/weibo-talent-introduction/outputs/apollo-institution-audit-20261017/pending-institution-inventory.json",
+  "sourceSha256": "d2019b7f6532236e1a07f46dde9f95cc2c28ad7ca1294429f099572556ce1150",
+  "snapshotAt": "2026-10-16T03:27:17.424942+00:00",
+  "unit": "unique document ID, not deduplicated natural person; historical snapshot, not live production",
+  "inputNote": "Inventory already trims/collapses whitespace and removes placeholder values; audit does not modify source.",
+  "records": 41844,
+  "hasInstitution": 26134,
+  "missingInstitution": 15710,
+  "distinctInstitutionStrings": 19090,
+  "lengthGreaterThan": {
+    "80": 13181,
+    "100": 9690,
+    "150": 3835,
+    "200": 1822,
+    "500": 45
+  },
+  "lengthPercentiles": {
+    "0.5": 81,
+    "0.9": 175,
+    "0.95": 227,
+    "0.99": 350,
+    "1": 970
+  },
+  "patternCounts": {
+    "subunit_keywords": {
+      "records": 11796,
+      "percentOfNonempty": 45.14
+    },
+    "postal_or_street_clues": {
+      "records": 6094,
+      "percentOfNonempty": 23.32
+    },
+    "semicolon": {
+      "records": 1643,
+      "percentOfNonempty": 6.29
+    },
+    "contact_or_url": {
+      "records": 434,
+      "percentOfNonempty": 1.66
+    },
+    "leading_footnote_like": {
+      "records": 10814,
+      "percentOfNonempty": 41.38
+    },
+    "hospital_and_university_words": {
+      "records": 3126,
+      "percentOfNonempty": 11.96
+    },
+    "non_ascii_letters": {
+      "records": 2500,
+      "percentOfNonempty": 9.57
+    }
+  },
+  "patternRules": {
+    "subunit_keywords": "\\b(?:department|dept|faculty|school|laboratory|lab|division)\\b",
+    "postal_or_street_clues": "\\b\\d{4,}\\b|\\b(?:road|street|avenue|boulevard|lane|rue|strasse|straße|P\\.?\\s*O\\.?\\s*Box)\\b",
+    "semicolon": "[;；]",
+    "contact_or_url": "[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}|https?://|www\\."
+  },
+  "footnoteRule": "^\\s*(?:\\d+\\s*(?=[A-Za-z])|[†‡*]+\\s*|[a-z](?=Department|Institute|School|Faculty|The\\b|Laboratory|College|Center|Centre))",
+  "limitations": [
+    "Pattern categories overlap; not a partition.",
+    "Semicolon can separate email addresses or repeated affiliations, not necessarily distinct institutions.",
+    "Postal/street and footnote matches are clues, not confirmed errors.",
+    "Non-ASCII does not prove an alias or multilingual identity.",
+    "No Apollo replay performed; counts do not measure identity-match improvement."
+  ],
+  "examples": {
+    "subunit_keywords": [
+      "Leidos Research Support Team, Albany, OR, 97321, USA; National Energy Technology Laboratory, Albany, OR, 97321, USA",
+      "2Department of BioNano Technology, Gachon University, 1342 Seongnam-daero, Sujeong-gu, Seongnam-si 13120, Gyeonggi-do, Republic of Korea",
+      "1State Key Laboratory of National Security Specially Needed Medicines, Beijing, 100039, People’s Republic of China"
+    ],
+    "postal_or_street_clues": [
+      "Leidos Research Support Team, Albany, OR, 97321, USA; National Energy Technology Laboratory, Albany, OR, 97321, USA",
+      "2Department of BioNano Technology, Gachon University, 1342 Seongnam-daero, Sujeong-gu, Seongnam-si 13120, Gyeonggi-do, Republic of Korea",
+      "1State Key Laboratory of National Security Specially Needed Medicines, Beijing, 100039, People’s Republic of China"
+    ],
+    "semicolon": [
+      "Leidos Research Support Team, Albany, OR, 97321, USA; National Energy Technology Laboratory, Albany, OR, 97321, USA",
+      "Nanophotonics Centre, Department of Physics, Cavendish Laboratory, University of Cambridge, CB3 0HE Cambridge, United Kingdom; The Faraday Institution, Quad One, Harwell Science and Innovation Campus, Didcot, OX11 0RA Oxford, UK",
+      "Department of Education, Seoul National University, Seoul, South Korea; Department of Education, Seoul National University, 1 Gwanak-ro, Gwanak-gu, Seoul, South Korea"
+    ],
+    "contact_or_url": [
+      "1Escuela de Ingeniería Informática, Pontificia Universidad Católica de Valparaíso, Valparaíso 2362807, Chile; [EMAIL] (L.E.); [EMAIL] (V.G.); [EMAIL] (R.S.)",
+      "1Stricto Sensu Graduate Program in Agricultural Engineering (CPPGEA) of the State University of Goiás (UEG), Central Campus—Headquarters: Anápolis—CET Henrique Santillo, BR-153, nº 3.105, Fazenda Barreiro do Meio, Anápolis CEP 75132-903, GO, Brazil; [EMAIL] (A.M.G.B.); [EMAIL] (I.R.T.)",
+      "2TÜBİTAK UME, 41470 Kocaeli, Türkiye; [EMAIL] (A.K.D.); [EMAIL] (A.C.)"
+    ],
+    "leading_footnote_like": [
+      "2Department of BioNano Technology, Gachon University, 1342 Seongnam-daero, Sujeong-gu, Seongnam-si 13120, Gyeonggi-do, Republic of Korea",
+      "1State Key Laboratory of National Security Specially Needed Medicines, Beijing, 100039, People’s Republic of China",
+      "1Ronald Reagan UCLA Medical Center, 757 Westwood Plaza, Suite 3325, Los Angeles, CA, 90049, United States, 1 (310) 267-6629"
+    ],
+    "hospital_and_university_words": [
+      "4 Department of Infection, Longhua Hospital, Shanghai University of Traditional Chinese Medicine, Shanghai, China, shutcm.edu.cn",
+      "bDepartment of Pain Medicine, Renji Hospital, School of Medicine, Shanghai Jiao Tong University, Shanghai, China",
+      "aDepartment of Radiation Oncology, The Affiliated Hospital of Qingdao University, Qingdao, Shandong, China."
+    ],
+    "non_ascii_letters": [
+      "Agroécologie",
+      "1I-MVET (Research in Veterinary Medicine), Faculty of Veterinary Medicine, 70887Lusófona University – Lisbon University Center, Lisbon, Portugal",
+      "1Department of Health, Medicine and Caring Sciences, Linköping University, Linköping, Sweden"
+    ]
+  }
+}

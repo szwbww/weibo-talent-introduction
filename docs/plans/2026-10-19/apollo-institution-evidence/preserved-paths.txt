@@ -1,0 +1,51 @@
+$ rg -n fun |saveEvidenceAndOutcome|attachAdmission|recordAutomaticPersisted|projectApprovedCandidate src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt src/main/kotlin/com/weibo/talentintroduction/discovery/sample src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:43:    fun resolveOptions(criteria: PaperSearchCriteria): PaperSearchCriteria {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:50:    fun begin(executionId: Long?, criteria: PaperSearchCriteria, historical: Boolean = false): DiscoveryVerificationExecution {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:71:    fun closeInput(context: DiscoveryVerificationExecution) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:75:    fun reserve(context: DiscoveryVerificationExecution, docId: String, profile: ExpertProfile,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:107:    fun activate(registration: DiscoveryRegistration) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:124:    fun recoverDuplicate(docId: String, sourceName: String, sourceItemKey: String) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:132:    private fun recover(item: VerificationItem): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:160:    override fun recoverReserved(limit: Int): Int = repository.listReserved(limit).count { recover(it) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt:31:    fun prepare(item: VerificationItem): VerificationCommitInput {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt:49:    fun commit(lease: VerificationItem, proposed: VerificationResult, input: VerificationCommitInput): VerificationItem? {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt:67:        fun withheld(code: String, protected: Boolean = false) = proposed.copy(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt:93:        check(repository.saveEvidenceAndOutcome(item.id, lease.leaseToken!!, lease.generation, result, now))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt:96:            val persisted = review.recordAutomaticPersisted(item.expertDocId, input.snapshot!!.profile, requireNotNull(automatic))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt:97:            repository.attachAdmission(item.id, persisted.revision, now)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt:103:    fun project(item: VerificationItem) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt:106:        fun current(): Boolean = admissions.findAdmission(item.expertDocId)?.let {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt:109:        fun mark(state: VerificationProjection, code: String? = null) = repository.markProjection(item.id, revision, state, code, clock.instant())
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt:119:            val sync = review.projectApprovedCandidate(item.expertDocId, raw.source, "AUTO_PASSED")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt:131:    private fun contacted(snapshot: VerificationSnapshot): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:16:    fun valid() = executionId > 0 && source == "OPENALEX" && when (entry) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:41:    fun bounded(value: Any, limit: Int): ByteArray? {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:45:            override fun write(value: Int) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:49:            override fun write(buffer: ByteArray, offset: Int, length: Int) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:58:    fun hash(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes)
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:60:    fun hash(text: String) = hash(text.toByteArray(Charsets.UTF_8))
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:61:    private fun sorted(node: JsonNode): JsonNode = when {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:67:    fun canonical(value: Any): ByteArray = mapper.writeValueAsBytes(sorted(mapper.valueToTree(value)))
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:68:    fun scrub(url: String): String = try {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:77:    fun paper(paper: PaperMetadata) = paper.copy(downloadUrl = paper.downloadUrl?.let(::scrub),
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:79:    fun bucket(outcome: EmailExtractionOutcome?, error: Throwable?): DiscoverySampleBucket = when {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:32:    fun decision(value: DiscoverySampleDecision): DiscoverySampleDecision {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:43:    fun active(): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:48:    private fun privateDirectory(path: Path) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:51:    private fun prepareRoot() {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:61:    private fun write(path: Path, bytes: ByteArray) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:65:    private fun remove(path: Path, depth: Int = 0, budget: IntArray = intArrayOf(0)) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:72:    private fun reclaimEmptyExecution(path: Path) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:80:    private fun scan(): MutableList<Package> {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:117:    private fun locked(action: () -> DiscoverySampleDecision): DiscoverySampleDecision {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:136:    private fun retained(): MutableList<Package> {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:144:    fun startup() { cleanup() }
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:146:    fun cleanup() { if (properties.enabled) locked { retained(); DiscoverySampleDecision.SAVED } }
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:148:    fun commit(manifest: DiscoverySampleManifest, bodies: Map<String, ByteArray>): DiscoverySampleDecision = locked {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:32:        fun beginAttempt(kind: DiscoverySampleAttemptKind, url: String, pdfSettings: PdfExtractionProperties? = null): Any? = try {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:38:        private fun attempt(token: Any?, block: (Scope, Attempt) -> Unit) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:44:        fun headers(token: Any?, httpStatus: Int?, contentType: String?) = attempt(token) { _, value ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:47:        fun fullBody(token: Any?, bytes: ByteArray) = attempt(token) { scope, value ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:55:        fun endAttempt(token: Any?, error: Throwable? = null) = attempt(token) { _, value ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:60:    fun capture(context: DiscoverySampleContext?, paper: PaperMetadata, delegate: () -> EmailExtractionOutcome): EmailExtractionOutcome {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:79:    private fun save(context: DiscoverySampleContext, paper: PaperMetadata, scope: Scope, outcome: EmailExtractionOutcome?, error: Throwable?) {

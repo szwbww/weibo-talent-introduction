@@ -1,0 +1,280 @@
+$ rg -n country|institutionEvidence|snapshotJson|snapshot_json src/main/kotlin/com/weibo/talentintroduction src/main/resources/es src/main/resources/db/migration/V158__create_discovery_verification.sql
+src/main/resources/db/migration/V158__create_discovery_verification.sql:23:  snapshot_json MEDIUMTEXT NOT NULL,
+src/main/resources/es/orcid_info_application.json:15:      "country": { "type": "keyword" },
+src/main/resources/es/orcid_info_application.json:41:      "institutionEvidence": { "type": "keyword" },
+src/main/resources/es/orcid_info_raw.json:15:      "country": { "type": "keyword" },
+src/main/resources/es/orcid_info_raw.json:29:      "institutionEvidence": { "type": "keyword" },
+src/main/resources/es/orcid_info_candidate.json:15:      "country": { "type": "keyword" },
+src/main/resources/es/orcid_info_candidate.json:30:      "institutionEvidence": { "type": "keyword" },
+src/main/kotlin/com/weibo/talentintroduction/monitoring/controller/MailMonitoringResponses.kt:142:    val country: String,
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/CountryContinentMapping.kt:254:    fun toRegion(countryOrNationality: String?): String {
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/CountryContinentMapping.kt:255:        val normalized = countryOrNationality
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:326:        val countryRows = mailRecordRepository.aggregateIntroCohortByCountry(start, end, matureBefore)
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:329:            .groupBy { CountryContinentMapping.toRegion(it.country) }
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:331:        val countriesByRegion = countryRows.groupBy { CountryContinentMapping.toRegion(it.country) }
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:353:    // 队列成员的国家展示行：country 为空/空白时显示「未知」；计数即该国家的队列口径四元组。
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:355:        val displayCountry = country?.trim()?.takeIf { it.isNotBlank() } ?: "未知"
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:357:            country = displayCountry,
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertManualProfile.kt:97:    val SOURCE_COUNTRY = ExpertManualProfileField("sourceCountry", "source_country", 100, multiline = false)
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:887:            "countryName"
+src/main/kotlin/com/weibo/talentintroduction/expert/repository/ExpertApplicationPromotionRepository.kt:54:        SELECT ec.country AS country, COUNT(*) AS count
+src/main/kotlin/com/weibo/talentintroduction/expert/repository/ExpertApplicationPromotionRepository.kt:59:         GROUP BY ec.country
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:68:        country = null, keyword = null, employment = null, emailSource = source.path("emailSource").asText(null),
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:79:        profile.givenNames, profile.familyNames, profile.institution, profile.country, profile.institutionType
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:112:    fun institutionEvidence(profile: ExpertProfile, source: String): String? {
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:136:        val token = profile.institutionEvidence ?: return false
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:139:        return token == institutionEvidence(profile, source)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:159:        profile.country.orEmpty(),
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:280:        val token = profile.institutionEvidence
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:282:        if (source != null && source in EVIDENCE_SOURCES && token == institutionEvidence(profile, source)) return emptyList()
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:287:                "institutionEvidence", null, "来源种类:<64位小写SHA256>", "profile.institutionEvidence")
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:290:                "institutionEvidence", source, EVIDENCE_SOURCES.joinToString("|"), EVIDENCE_LOCATION)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:293:                "institutionEvidence", source, "由当前已存字段重算出的同一来源凭证", EVIDENCE_LOCATION)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:322:    /** [source] 凭证签发必需的来源 ID 缺项（与 [institutionEvidence] 的必需 ID 判据逐条对应）。 */
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt:9:    val country: String?,
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt:45:     * 签发与验签的唯一入口是 [DiscoveryIdentity.institutionEvidence] / [DiscoveryIdentity.validInstitutionEvidence]；
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt:48:    val institutionEvidence: String? = null,
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt:233:     * `country` 判（null/空白/未映射值统一归入 `REGION_OTHER` 桶，只有选中 `Other` 时才通过）；
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt:234:     * 非发现档案按 country OR nationality 判（与 ES 粗筛一致，修正重试只判 country 的不一致）。
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt:240:            return CountryContinentMapping.toRegion(profile.country) in regions
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt:243:            regionOf(profile.country) == region || regionOf(profile.nationality) == region
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt:295:         * `country` 能由 [CountryContinentMapping] 映射（空/未映射值不等于 Other）、
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt:296:         * `institutionEvidence` 经 02 的唯一验签函数重算通过（含来源 ID 一致性）、
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt:305:            if (profile.country.isNullOrBlank()) return false
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt:306:            if (CountryContinentMapping.toRegion(profile.country) == CountryContinentMapping.REGION_OTHER) return false
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/ExpertContact.kt:24:    val country: String? = null,
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:54:            "researchFields", "recentWorkTitles", "patentTitles", "degree", "country"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:159:                                    "must" to listOf(mapOf("exists" to mapOf("field" to "country"))),
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:160:                                    "must_not" to listOf(mapOf("terms" to mapOf("country" to knownValues)))
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:175:            val countryValues = CountryContinentMapping.countriesForRegion(region).toList()
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:179:                        mapOf("terms" to mapOf("country" to countryValues)),
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:180:                        mapOf("terms" to mapOf("nationality" to countryValues))
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:483:            country = source.nullableText("country"),
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:516:            institutionEvidence = source.nullableText("institutionEvidence"),
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:597:            "country", "keyword", "employment",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:601:            "filterResult", "institutionEvidence",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:1048:            "country" -> !country.isNullOrBlank()
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:1122:                        "field" to "country",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityService.kt:72:     * I-2: 新发现/待确认档案只读明确 `nationality` —— 机构所在地 `country` 是「机构在哪」，
+src/main/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityService.kt:73:     * 不得当作本人国籍。旧非发现档案保留 `nationality ?: country` 原语义。
+src/main/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityService.kt:77:        else expert.nationality ?: expert.country
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryVerification.kt:45:    val snapshotJson: String, val factFingerprint: String
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryVerification.kt:52:        require(snapshotJson.isNotBlank())
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryVerification.kt:59:    val batchNumber: Int, val snapshotJson: String, val factFingerprint: String,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ContactCountryBackfillService.kt:16:    prefix = "talent-introduction.backfill.contact-country",
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ContactCountryBackfillService.kt:34:        val pending = all.filter { it.country == null }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ContactCountryBackfillService.kt:39:                "Contact country backfill complete: processed=0, matched=0, unmatched=0, skipped={}",
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ContactCountryBackfillService.kt:45:        val countryByOrcid = mutableMapOf<String, String?>()
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ContactCountryBackfillService.kt:55:                                countryByOrcid[ExpertIdNormalizer.normalize(profile.orcidId)] = profile.country
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ContactCountryBackfillService.kt:69:            val country = countryByOrcid[ExpertIdNormalizer.normalize(contact.orcidId)]
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ContactCountryBackfillService.kt:70:            if (country != null) {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ContactCountryBackfillService.kt:75:            expertContactRepository.updateCountryById(contactId, country)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ContactCountryBackfillService.kt:85:            "Contact country backfill complete: processed={}, matched={}, unmatched={}, skipped={}",
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:125:                        country = expert.country,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:174:                    distributionKey = expert.country?.lowercase()?.trim()?.takeIf { it.isNotBlank() } ?: "unknown"
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:211:                distributionKey = expert.country?.lowercase()?.trim()?.takeIf { it.isNotBlank() } ?: "unknown"
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OrcidDataSource.kt:36:        val country: String?
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OrcidDataSource.kt:177:                        country = null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:149:            val snapshot = mapper.readValue<VerificationSnapshot>(lease.snapshotJson)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:211:                    val snapshot = mapper.readValue<VerificationSnapshot>(lease.snapshotJson)
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryReview.kt:82:    val snapshotJson: String,
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryReview.kt:106:    val country: String?,
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryReview.kt:109:    val institutionEvidence: String?,
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryReview.kt:116:/** 02（I-1）：自动结论 + 原因在 prepare 时的快照（`reason_snapshot_json`）。 */
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryReview.kt:200:    val country: String?,
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryReview.kt:203:    val institutionEvidence: String?,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewScanService.kt:274:                    country = profile.country,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewScanService.kt:277:                    institutionEvidence = profile.institutionEvidence,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewScanService.kt:338:            "orcidId", "email", "givenNames", "familyNames", "country", "age", "degree", "nationality",
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewScanService.kt:341:            "identityVerification", "institutionEvidence", "filterResult", "tags", "expertClassification",
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/PaperAuthor.kt:22:    /** I-2：同一个结构机构明确且能被地区表识别的 `country_code`；否则 null。 */
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertManualProfileService.kt:295:            SELECT expert_key, talent_code, chinese_name, birth_date_text, document_number, source_country,
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertManualProfileService.kt:311:                   source_country=:sourceCountry,
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertManualProfileService.kt:358:                expert_key, talent_code, chinese_name, birth_date_text, document_number, source_country,
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertManualProfileService.kt:383:                    sourceCountry = rs.getString("source_country")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryService.kt:102:        val snapshot = mapper.readValue<VerificationSnapshot>(item.snapshotJson)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryService.kt:106:            snapshot.profile.employment, snapshot.profile.institutionEvidence, snapshot.boundOrcid,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryService.kt:132:        snapshot: VerificationSnapshot = mapper.readValue(item.snapshotJson),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryService.kt:200:    val institutionEvidence: String?, val boundOrcid: String?, val evidence: List<VerificationEvidence>,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:128:                        institutionCountry = institution?.country ?: email.institutionCountry,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:220:    private data class BoundInstitution(val name: String, val country: String?, val type: String?, val source: String)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:249:            for (country in criteria.excludeCountries) parts += "authorships.institutions.country_code:!$country"
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:295:            // I-2：国家取同一机构对象的 country_code，且必须能被地区表识别（未知 → null）。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:296:            val institutionCountry = institution?.path("country_code")?.asText(null)?.trim()
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:777:            givenNames = text("givenNames"), familyNames = text("familyNames"), country = text("country"),
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:794:            institutionEvidence = text("institutionEvidence"), filterResult = text("filterResult")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryService.kt:195:            expertSearchService.aggregateTerms(level, filters, "country", 500).forEach { (country, count) ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryService.kt:196:                val regionName = CountryContinentMapping.toRegion(country)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryService.kt:204:        expertSearchService.aggregateTerms(level, filters + notDiscoveredFilter(), "country", 500)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryService.kt:205:            .forEach { (country, count) ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryService.kt:206:                val regionName = CountryContinentMapping.toRegion(country)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryService.kt:471:                    profile.country?.takeIf { it.isNotBlank() }?.let { country ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryService.kt:472:                        regionPersons.getOrPut(CountryContinentMapping.toRegion(country)) { mutableSetOf() }.add(key)
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:419:    val country: String?,
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:471:                country = expert.country,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendControlService.kt:530:                "countryName" to account.countryName.orEmpty()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1591:            country = null,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2465:            country = authorEmail.institutionCountry,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2482:        val evidence = source?.let { DiscoveryIdentity.institutionEvidence(this, it) } ?: return this
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2483:        return copy(institutionEvidence = evidence)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2492:            "country" to profile.country, "keyword" to profile.keyword,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2507:        profile.institutionEvidence?.let { doc["institutionEvidence"] = it }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:469:                    distributionKey = expert.country?.lowercase()?.trim()?.takeIf { it.isNotBlank() } ?: "unknown"
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:536:     * `gateEsFields` 是**不会错误排除**的安全子集；非 ES 字段（familyNames/keyword/country/
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1389:                            country = expert.country,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1639:                    distributionKey = expert.country?.lowercase()?.trim()?.takeIf { it.isNotBlank() } ?: "unknown"
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:2519:     * 「`tags=discovered` 且 `country` 字段不存在」取 OR（`minimum_should_match=1`）。
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:2521:     * `country` 为 null 时 ES 文档没有该字段，既有 `Other` 查询的 `exists country` 前置永远不命中，
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:2538:                            "must_not" to listOf(mapOf("exists" to mapOf("field" to "country")))
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:129:                "countryName" to account.countryName.orEmpty(),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGate.kt:60:            val frozen = mapper.readValue<VerificationSnapshot>(item.snapshotJson)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGate.kt:91:                "identityVerification" to profile.identityVerification, "institutionEvidence" to profile.institutionEvidence,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParser.kt:64:                institutionCountry = institution?.country,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParser.kt:195:    private data class StructuredInstitution(val name: String, val country: String?)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParser.kt:200:     * 国家只取承载该机构名的同一个 `<aff>` 里唯一且地区表认得的 `<country>`。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParser.kt:205:        val country = institutions.filter { it.first == name }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParser.kt:208:        return StructuredInstitution(name, country)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParser.kt:222:        .filter { it.tagName == "country" && it.ancestorsUntil(aff).none { ancestor -> ancestor.tagName == "fn" } }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:332:            val snapshotJson = snapshotJson(level, docId, profile, snapshot.seqNo, snapshot.primaryTerm, now)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:346:                snapshotHash = DiscoveryIdentity.hash(snapshotJson),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:350:                snapshotJson = snapshotJson,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:360:                DiscoveryIdentity.hash(snapshotJson), expectedRevision, action.name,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:361:                snapshotJson, reasonJson, actor, note, request.executionId, now
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:468:                val snapshotJson = snapshotJson(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:479:                val snapshotHash = DiscoveryIdentity.hash(snapshotJson)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:489:                    snapshotJson = snapshotJson,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:499:                    expectedRevision, action.name, snapshotJson, reasonJson, actor, note, prepareExecutionId, now
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:803:        val snapshotJson = snapshotJson(level, item.expertDocId, profile, snapshot.seqNo, snapshot.primaryTerm, now)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:820:            snapshotHash = DiscoveryIdentity.hash(snapshotJson),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:821:            snapshotJson = snapshotJson,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1744:    private fun snapshotJson(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1760:            country = profile.country,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1763:            institutionEvidence = profile.institutionEvidence,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1773:        snapshotHash: String, expectedRevision: Long, action: String, snapshotJson: String,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1778:        action = action, state = DiscoveryReviewItemState.STAGED.name, snapshotJson = snapshotJson,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicy.kt:92:        val countryReasons = countryReasons(profile)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicy.kt:101:                addAll(countryReasons)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicy.kt:114:            addAll(countryReasons.blockingOnly())
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicy.kt:121:            addAll(countryReasons.softOnly())
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicy.kt:177:    private fun countryReasons(profile: ExpertProfile): List<AdmissionReason> = when {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicy.kt:178:        profile.country.isNullOrBlank() -> listOf(AdmissionReason(AdmissionReasonCodes.COUNTRY_MISSING,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicy.kt:179:            "国家缺失", "country", profile.country, "非空国家", "profile.country"))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicy.kt:180:        CountryContinentMapping.toRegion(profile.country) == CountryContinentMapping.REGION_OTHER ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicy.kt:182:                "country", profile.country, "9 个大区之一（Other 表示未映射）", "CountryContinentMapping.toRegion()"))
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:150:                CONCAT_WS(' ',JSON_UNQUOTE(JSON_EXTRACT(i.snapshot_json,'$.profile.givenNames')),
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:151:                    JSON_UNQUOTE(JSON_EXTRACT(i.snapshot_json,'$.profile.familyNames'))) LIKE ? ESCAPE '!' OR
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:152:                JSON_UNQUOTE(JSON_EXTRACT(i.snapshot_json,'$.profile.email')) LIKE ? ESCAPE '!' OR
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:153:                JSON_UNQUOTE(JSON_EXTRACT(i.snapshot_json,'$.profile.institution')) LIKE ? ESCAPE '!')"""
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:177:            (owner_execution_id,expert_doc_id,identity_hash,policy_version,source_name,source_item_key,batch_number,snapshot_json,fact_fingerprint,created_at,updated_at)
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:179:            input.policyVersion, input.sourceName, input.sourceItemKey, input.snapshotJson, input.factFingerprint,
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:496:            rs.getString("source_name"), rs.getString("source_item_key"), rs.getInt("batch_number"), rs.getString("snapshot_json"), rs.getString("fact_fingerprint"),
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:67:    @Query("UPDATE expert_contact SET country = :country WHERE id = :id")
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:68:    fun updateCountryById(id: Long, country: String?): Int
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:126:               COALESCE(LOWER(TRIM(country)), '') AS distribution_key,
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:132:         GROUP BY bound_sender_account_code, COALESCE(LOWER(TRIM(country)), '')
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:86:        snapshotJson: String,
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:100:                     expected_revision, action, state, snapshot_json, reason_snapshot_json,
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:115:            ps.setString(9, snapshotJson)
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:296:        snapshotJson: String,
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:318:            snapshotJson = snapshotJson,
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:433:                snapshotJson = rs.getString("snapshot_json"),
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:434:                reasonSnapshotJson = rs.getString("reason_snapshot_json"),
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/MailSenderAccount.kt:17:    val countryName: String?,
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyContextBuilder.kt:16:        contact.country?.takeIf { it.isNotBlank() }?.let { appendLine("Country: $it") }
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailSenderAccountController.kt:107:            countryName = account.countryName,
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailSenderAccountController.kt:145:    val countryName: String?,
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailSenderAccountController.kt:168:            countryName = countryName,
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailSenderAccountController.kt:190:    val countryName: String?,
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailSenderAccountController.kt:216:            countryName = countryName,
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailSenderAccountController.kt:244:    val countryName: String?,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailPlaceholderService.kt:192:            "countryName" to "发件人国家",
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailPlaceholderService.kt:216:            "countryName" to null,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailPlaceholderService.kt:222:            "expertCountry" to "country",
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailPlaceholderService.kt:240:            "countryName" to "China",
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactLocationController.kt:27: * - `PUT /{contactId}`：body `{countryCode, zoneId:null|string}`，返回已持久化配置；
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailSenderAccountService.kt:164:                countryName = command.countryName,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailSenderAccountService.kt:376:    val countryName: String?,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailSenderAccountService.kt:403:            countryName = countryName,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailSenderAccountService.kt:428:    val countryName: String?,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailVariableService.kt:131:            "countryName" to account?.countryName.orEmpty()
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailVariableService.kt:140:                "expertCountry" to expert.country.orEmpty(),
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationModels.kt:90:    val countryCode: String? = null,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationModels.kt:91:    val countryLabelZh: String? = null,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationModels.kt:92:    val countryLabelEn: String? = null,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:68:            val country = COUNTRY_METADATA[id]
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:75:                countryCode = country?.countryCode,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:76:                countryLabelZh = country?.countryLabelZh,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:77:                countryLabelEn = country?.countryLabelEn,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:78:                canonicalZoneId = country?.canonicalZoneId
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:100:            val country = COUNTRY_METADATA[id]
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:130:                countryCode = country?.countryCode,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:131:                countryLabelZh = country?.countryLabelZh,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:132:                countryLabelEn = country?.countryLabelEn,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:133:                canonicalZoneId = country?.canonicalZoneId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:340:    /** ICS 签名与模板变量同源（senderName/senderTitle、teamName/countryName）。 */
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:346:        val line2 = listOf(value("teamName"), value("countryName"))
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:474:        COUNTRY_METADATA[zoneIdRaw]?.countryLabelEn ?: throw IllegalArgumentException(MSG_ZONE_NO_COUNTRY)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:703:            val countryCode: String,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:704:            val countryLabelZh: String,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:705:            val countryLabelEn: String,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:732:         * 行格式 `zoneId=countryCode\tcountryLabelZh\tcountryLabelEn\tcanonicalZoneId`；
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:17:    val country: String?,
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:22:    val country: String?,
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:366:        SELECT ec.country AS country,
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:393:         GROUP BY ec.country
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt:216:            "countryName" to account.countryName.orEmpty(),
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:21: * `expert_contact.country`、ES、回填、发信、排期或晋级（I-5）。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:47:                countryCode = null,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:48:                countryLabel = null,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:54:        return view(contactId, persisted.countryCode, persisted.zoneId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:63:        val countryCode = request.countryCode.trim().uppercase()
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:64:        val country = catalog.country(countryCode)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:65:            ?: throw IllegalArgumentException("未知国家代码：${request.countryCode}")
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:67:        if (zoneId != null && country.zones.none { it.id == zoneId }) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:68:            throw IllegalArgumentException("国家 ${country.code} 不支持时区：$zoneId")
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:73:            .addValue("countryCode", country.code)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:78:        return view(contactId, persisted.countryCode, persisted.zoneId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:182:            "SELECT country_code, zone_id FROM expert_contact_location WHERE expert_contact_id = :contactId",
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:191:    private fun view(contactId: Long, countryCode: String, zoneId: String?): ContactLocationView {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:192:        val country = catalog.country(countryCode)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:193:            ?: throw IllegalStateException("目录中不存在已保存的国家代码：$countryCode")
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:194:        val effectiveZoneId = zoneId ?: country.defaultZoneId
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:195:        val zoneLabel = country.zones.firstOrNull { it.id == effectiveZoneId }?.labelZh
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:200:            countryCode = country.code,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:201:            countryLabel = country.labelZh,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:209:    private data class PersistedLocation(val countryCode: String, val zoneId: String?)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:212:        PersistedLocation(rs.getString("country_code"), rs.getString("zone_id"))
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:278:            INSERT INTO expert_contact_location (expert_contact_id, country_code, zone_id)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:279:            VALUES (:contactId, :countryCode, :zoneId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:281:                country_code = VALUES(country_code),
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationCatalog.kt:12: * 唯一数据来源是 classpath 上的 `contact-country-timezones.json` 快照（证据目录
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationCatalog.kt:13: * `country-timezones.proposed.json` 的逐字副本）：不联网查位置、不解析
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationCatalog.kt:14: * `expert_contact.country` 文本、不回退 UTC、不静默丢弃无法识别的时区、不新增国家
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationCatalog.kt:29:    fun country(code: String): ContactCountryEntry? = catalog.find(code)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationCatalog.kt:51:        catalog.countries.forEach { country ->
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationCatalog.kt:52:            if (!ISO_ALPHA2.matches(country.code)) configError("国家代码不是大写 ISO 二字码：${country.code}")
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationCatalog.kt:53:            if (!codes.add(country.code)) configError("国家代码重复：${country.code}")
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationCatalog.kt:54:            if (country.labelZh.isBlank()) configError("国家 ${country.code} 缺少展示名")
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationCatalog.kt:55:            if (country.zones.isEmpty()) configError("国家 ${country.code} 没有任何时区")
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationCatalog.kt:57:            country.zones.forEach { zone ->
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationCatalog.kt:58:                if (!zoneIds.add(zone.id)) configError("国家 ${country.code} 时区重复：${zone.id}")
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationCatalog.kt:59:                if (zone.labelZh.isBlank()) configError("国家 ${country.code} 的时区 ${zone.id} 缺少展示名")
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationCatalog.kt:63:                    configError("国家 ${country.code} 的时区 id 无法解析：${zone.id}", ex)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationCatalog.kt:66:            if (country.defaultZoneId !in zoneIds) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationCatalog.kt:67:                configError("国家 ${country.code} 的默认时区 ${country.defaultZoneId} 不在该国的 zones 中")
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationCatalog.kt:76:        const val RESOURCE_PATH = "contact-country-timezones.json"
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountAssignmentService.kt:93:    private fun distributionKey(expert: ExpertProfile): String = normalizeKey(expert.country)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:439:            "countryName" to account.countryName.orEmpty()
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationModels.kt:7:// 绝不以空 country 或「未知国家」占位。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationModels.kt:10:/** PUT 请求体：`{countryCode, zoneId}`；`zoneId` 为 null 表示持续使用该国目录默认时区（I-3）。 */
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationModels.kt:12:    val countryCode: String,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationModels.kt:21: * `countryCode/countryLabel` 是目录权威展示值（不来自 `expert_contact.country`）。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationModels.kt:26:    val countryCode: String?,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationModels.kt:27:    val countryLabel: String?,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:393:        val snapshotJson = payload.calendarAttachment?.let { CalendarAttachmentCodec.serialize(it) }
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:412:                calendarAttachmentJson = snapshotJson,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:433:                calendarAttachmentJson = snapshotJson,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:493:        val snapshotJson = payload.calendarAttachment?.let { CalendarAttachmentCodec.serialize(it) }
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:512:                calendarAttachmentJson = snapshotJson,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:534:                calendarAttachmentJson = snapshotJson,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1295:            "countryName" to account.countryName.orEmpty(),
