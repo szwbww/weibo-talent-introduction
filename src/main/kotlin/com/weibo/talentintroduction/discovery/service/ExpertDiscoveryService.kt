@@ -1459,11 +1459,6 @@ class ExpertDiscoveryService(
 
                     val profile = buildOrcidProfile(record, authorEmail, emailResult.level)
                     val esDocId = ExpertIdGenerator.generate(null, DiscoveryIdentity.normalizedEmail(authorEmail.email))
-                    val eligibility = eligibilityService.evaluateEligibility(profile)
-                    val filterResult = if (eligibility.eligible) "PASSED" else "REJECTED"
-                    val rejectReasons = if (eligibility.eligible) emptyList() else eligibility.rejectReasons
-
-                    val profileMap = toIndexMap(profile, null, esDocId, filterResult, rejectReasons)
                     val registration = try {
                         verificationRegistration?.reserve(verification, esDocId, profile, orcid.sourceName, record.orcidId)
                             ?: DiscoveryRegistration()
@@ -1473,6 +1468,12 @@ class ExpertDiscoveryService(
                         continue
                     }
                     if (registration.protected) continue
+                    // I-2: eligibility, RAW and admission all consume the profile frozen by registration.
+                    val finalProfile = registration.preparedProfile ?: profile
+                    val eligibility = eligibilityService.evaluateEligibility(finalProfile)
+                    val filterResult = if (eligibility.eligible) "PASSED" else "REJECTED"
+                    val rejectReasons = if (eligibility.eligible) emptyList() else eligibility.rejectReasons
+                    val profileMap = toIndexMap(finalProfile, null, esDocId, filterResult, rejectReasons)
                     if (!expertIndexWriterService.indexToRaw(esDocId, profileMap)) { sourceStats.rawWriteFailed++; continue }
                     sourceStats.indexed++
                     // I-1（08）：RAW 落库成功后才入队；入队失败不推进本页。
@@ -1486,7 +1487,7 @@ class ExpertDiscoveryService(
                     }
 
                     // 04（I-1/I-2）：统一准入在 RAW 成功后决定晋升，不再由旧 eligibility 单独决定。
-                    if (registration.item == null) admitDiscoveryExpert(esDocId, profile, eligibility, profileMap, sourceStats)
+                    if (registration.item == null) admitDiscoveryExpert(esDocId, finalProfile, eligibility, profileMap, sourceStats)
 
                     // 05（I-1/I-2）：ES 事实持久化后统一登记人物关系；登记失败按可重试语义传播。
                     val person = registerPerson(orcid.sourceName, esDocId, sourceStats)
@@ -1817,13 +1818,9 @@ class ExpertDiscoveryService(
             }
 
             val identity = identityFactory.create(authorEmail, emailResult.level)
-            val eligibility = eligibilityService.evaluateEligibility(identity.profile)
-            val filterResult = if (eligibility.eligible) "PASSED" else "REJECTED"
-            val rejectReasons = if (eligibility.eligible) emptyList() else eligibility.rejectReasons
-
-            val profileMap = toIndexMap(identity.profile, identity.paper, identity.esDocId, filterResult, rejectReasons)
             val registration = try {
-                verificationRegistration?.reserve(verification, identity.esDocId, identity.profile, sourceName, sourceItemKey)
+                verificationRegistration?.reserve(verification, identity.esDocId, identity.profile, sourceName, sourceItemKey,
+                    identity.paper)
                     ?: DiscoveryRegistration()
             } catch (e: DiscoveryRegistrationException) {
                 sourceStats.failureReasons.merge("VERIFICATION_REGISTRATION_FAILED", 1, Int::plus)
@@ -1831,6 +1828,12 @@ class ExpertDiscoveryService(
                 continue
             }
             if (registration.protected) continue
+            // I-2: eligibility, RAW and admission all consume the profile frozen by registration.
+            val finalProfile = registration.preparedProfile ?: identity.profile
+            val eligibility = eligibilityService.evaluateEligibility(finalProfile)
+            val filterResult = if (eligibility.eligible) "PASSED" else "REJECTED"
+            val rejectReasons = if (eligibility.eligible) emptyList() else eligibility.rejectReasons
+            val profileMap = toIndexMap(finalProfile, identity.paper, identity.esDocId, filterResult, rejectReasons)
             if (!expertIndexWriterService.indexToRaw(identity.esDocId, profileMap)) {
                 sourceStats.rawWriteFailed++
                 rawWriteFailed = true
@@ -1849,7 +1852,7 @@ class ExpertDiscoveryService(
             }
 
             // 04（I-1/I-2）：统一准入在 RAW 成功后决定晋升。
-            if (registration.item == null && admitDiscoveryExpert(identity.esDocId, identity.profile, eligibility, profileMap, sourceStats) ==
+            if (registration.item == null && admitDiscoveryExpert(identity.esDocId, finalProfile, eligibility, profileMap, sourceStats) ==
                 AdmissionDisposition.PROMOTED
             ) {
                 promoted++

@@ -25,6 +25,8 @@ class DiscoveryVerificationProperties(
     val pollMs: Long = 5000,
     val orcidPublicBaseUrl: String = "https://pub.orcid.org/v3.0",
     val orcidAccessToken: String = "",
+    /** Single deployment switch for the frozen-registration institution country supplement. */
+    val countrySupplementEnabled: Boolean = false,
     val httpConnectTimeout: Duration = Duration.ofSeconds(3),
     val httpReadTimeout: Duration = Duration.ofSeconds(15)
 ) {
