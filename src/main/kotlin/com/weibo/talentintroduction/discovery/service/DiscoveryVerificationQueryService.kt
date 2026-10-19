@@ -133,7 +133,13 @@ class DiscoveryVerificationQueryService(
         payload: VerificationWorkerEvidence = item.evidenceJson?.let { mapper.readValue<VerificationWorkerEvidence>(it) } ?: VerificationWorkerEvidence()
     ): VerificationRecord {
         // Use the shared pure rules only for the explanation of missing fields, never to rewrite the recorded result.
-        val missing = rules.evaluate(snapshot, payload.evidence, payload.search).missingFields
+        // A damaged per-item normalization must not fail the whole list: keep the saved state and flag the field.
+        val missing = try {
+            rules.evaluate(snapshot, payload.evidence, payload.search,
+                institutionNormalization = payload.institutionNormalization).missingFields
+        } catch (_: IllegalArgumentException) {
+            listOf("institutionSubject")
+        }
         return VerificationRecord(item.id, item.expertDocId, snapshot.profile.displayName, snapshot.profile.email,
             snapshot.profile.institution, item.sourceName, item.batchNumber, item.route,
             item.outcome?.name ?: if (item.state == VerificationState.ERROR) "ERROR" else "QUEUED",

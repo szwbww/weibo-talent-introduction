@@ -24,7 +24,8 @@ data class VerificationWorkerEvidence(
     val evidence: List<VerificationEvidence> = emptyList(), val search: ApolloSearchEvidence? = null,
     val progress: VerificationProgress = VerificationProgress(),
     val orcidCompleted: List<OrcidEndpointCompletion> = emptyList(), val schemaVersion: Int = 1,
-    val queries: List<ApolloSearchQuery>? = null
+    val queries: List<ApolloSearchQuery>? = null,
+    val institutionNormalization: InstitutionNormalization? = null
 ) { init { require(schemaVersion == 1) } }
 
 @Service
@@ -75,12 +76,24 @@ class DiscoveryVerificationWorker(
             } catch (_: Exception) { lost.set(true) }
         }, 30, 30, TimeUnit.SECONDS)
         var payload = VerificationWorkerEvidence()
+        var rawPayload: String? = null
         var activePermit: RequestPermit? = null
         var requestNumber = lease.requestCount
         var entered = lease.apolloEnteredAt
         var searched = lease.searchCompletedAt
         var candidatesAt = lease.candidateFoundAt
-        fun json() = mapper.writeValueAsString(payload)
+        fun json() = rawPayload ?: mapper.writeValueAsString(payload)
+        fun evaluate(snapshot: VerificationSnapshot): VerificationDecision {
+            val normalization = payload.institutionNormalization
+            return try {
+                rules.evaluate(snapshot, payload.evidence, payload.search, institutionNormalization = normalization)
+            } catch (_: IllegalArgumentException) {
+                // A context that cannot be rebuilt from its own inputs is never trusted as a no-match.
+                rules.evaluate(snapshot, payload.evidence, payload.search).copy(
+                    qualification = VerificationQualification.UNKNOWN, outcome = VerificationOutcome.PENDING,
+                    route = VerificationRoute.NONE, reasonCodes = listOf("EVIDENCE_CONFLICT"), matchedPersonId = null)
+            }
+        }
         fun ensureOwned() { if (lost.get()) throw LeaseLost() }
         fun save() {
             ensureOwned()
@@ -146,13 +159,15 @@ class DiscoveryVerificationWorker(
             }
         }
         try {
+            rawPayload = lease.evidenceJson
             payload = lease.evidenceJson?.let { mapper.readValue<VerificationWorkerEvidence>(it) } ?: payload
+            rawPayload = null
             val snapshot = mapper.readValue<VerificationSnapshot>(lease.snapshotJson)
             require(snapshot.identityHash == lease.identityHash && snapshot.factFingerprint == lease.factFingerprint)
             val run = repository.findRun(lease.ownerExecutionId) ?: error("Verification run missing")
             if (payload.progress.stage == "LOCAL_EVIDENCE") {
                 payload = payload.copy(evidence = parser.rebuild(snapshot, payload.orcidCompleted.mapNotNull { it.document }, payload.evidence))
-                val existing = rules.evaluate(snapshot, payload.evidence)
+                val existing = evaluate(snapshot)
                 if (existing.outcome == VerificationOutcome.DIRECT_CLEAR) { finish(existing); return }
                 val read = orcid.read(snapshot, payload.orcidCompleted, { endpoint, permit, document, result ->
                     if (result is VerificationHttpResult.Success || result is VerificationHttpResult.PermanentFailure && result.code == "EVIDENCE_MISSING") {
@@ -166,7 +181,7 @@ class DiscoveryVerificationWorker(
                 if (read.failure != null) { retry(read.failure); return }
                 payload = payload.copy(evidence = parser.rebuild(snapshot,
                     (payload.orcidCompleted.mapNotNull { it.document } + read.documents).distinct(), payload.evidence))
-                val local = rules.evaluate(snapshot, payload.evidence)
+                val local = evaluate(snapshot)
                 if (!read.complete && snapshot.boundOrcid != null) {
                     val reasons = listOf("EVIDENCE_INCOMPLETE") +
                         if (requestNumber >= properties.maxRequestsPerItem) listOf("ITEM_REQUEST_LIMIT") else emptyList()
@@ -177,8 +192,13 @@ class DiscoveryVerificationWorker(
                     local.qualification in setOf(VerificationQualification.NOT_MET, VerificationQualification.CONFLICT)) {
                     finish(local); return
                 }
+                // Only the first Apollo entry creates the derived context, and it is persisted before any HTTP.
+                val normalization = if (entered == null && payload.search == null && payload.institutionNormalization == null)
+                    DiscoveryInstitutionNormalizer.build(snapshot.profile.institution,
+                        rules.identityEmployments(snapshot, payload.evidence), emptyList())
+                else payload.institutionNormalization
                 payload = payload.copy(progress = VerificationProgress(stage = "APOLLO_SEARCH"), search = ApolloSearchEvidence(),
-                    queries = searchQueries(snapshot, payload.evidence))
+                    institutionNormalization = normalization, queries = searchQueries(snapshot, payload.evidence, normalization))
                 entered = entered ?: clock.instant()
                 save()
             }
@@ -196,22 +216,26 @@ class DiscoveryVerificationWorker(
                     val last = index == queries.lastIndex && !page.hasNext
                     val search = (payload.search ?: ApolloSearchEvidence()).merge(page, query, index == 0, last)
                     val finished = if (!page.hasNext) payload.progress.finishedQueryKeys + index.toString() else payload.progress.finishedQueryKeys
-                    payload = payload.copy(search = search, progress = VerificationProgress("APOLLO_SEARCH",
+                    payload = payload.copy(search = search,
+                        institutionNormalization = payload.institutionNormalization?.let {
+                            DiscoveryInstitutionNormalizer.withCandidates(it, search.candidates)
+                        },
+                        progress = VerificationProgress("APOLLO_SEARCH",
                         if (page.hasNext) index else index + 1, if (page.hasNext) query.page + 1 else 1,
                         last, search.candidates.map { it.id }, finished))
                     if (search.candidates.isNotEmpty()) candidatesAt = candidatesAt ?: clock.instant()
                     if (last) searched = searched ?: clock.instant()
                     completed(permit, result, page)
                     if (page.hasNext && query.page >= properties.maxPagesPerQuery) {
-                        val decision = rules.evaluate(snapshot, payload.evidence, payload.search)
+                        val decision = evaluate(snapshot)
                         finish(decision.copy(reasonCodes = (decision.reasonCodes + "SEARCH_INCOMPLETE" + "SEARCH_PAGE_LIMIT").distinct()))
                         return
                     }
                 }
-                finish(rules.evaluate(snapshot, payload.evidence, payload.search))
+                finish(evaluate(snapshot))
             } else if (payload.progress.stage == "DECIDE") {
                 payload = payload.copy(evidence = parser.rebuild(snapshot, payload.orcidCompleted.mapNotNull { it.document }, payload.evidence))
-                finish(rules.evaluate(snapshot, payload.evidence, payload.search))
+                finish(evaluate(snapshot))
             }
         } catch (_: LeaseLost) {
             // A replacement token owns recovery; no stale writes.
@@ -220,7 +244,7 @@ class DiscoveryVerificationWorker(
                 VerificationBudgetReason.LEASE_LOST -> Unit
                 VerificationBudgetReason.ITEM_LIMIT -> {
                     val snapshot = mapper.readValue<VerificationSnapshot>(lease.snapshotJson)
-                    val decision = rules.evaluate(snapshot, payload.evidence, payload.search)
+                    val decision = evaluate(snapshot)
                     finish(decision.copy(outcome = VerificationOutcome.PENDING, route = VerificationRoute.NONE,
                         reasonCodes = (decision.reasonCodes +
                             (if (payload.progress.stage == "LOCAL_EVIDENCE") "EVIDENCE_INCOMPLETE" else "SEARCH_INCOMPLETE") +
@@ -241,7 +265,14 @@ class DiscoveryVerificationWorker(
         } finally { renewal.cancel(false) }
     }
 
-    internal fun searchQueries(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>): List<ApolloSearchQuery> {
+    internal fun searchQueries(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>,
+        normalization: InstitutionNormalization? = null): List<ApolloSearchQuery> {
+        if (normalization != null) {
+            // The narrow hint is exactly the frozen subject; ambiguity produces no institution query at all.
+            return nameQueries(snapshot, evidence) + listOfNotNull(normalization.queryInstitution?.let {
+                ApolloSearchQuery(snapshot.fullName, institution = VerificationInstitution(it))
+            })
+        }
         val institutions = ArrayList<VerificationInstitution>()
         rules.identityEmployments(snapshot, evidence).forEach { fact ->
             val value = mapper.readTree(fact.value)

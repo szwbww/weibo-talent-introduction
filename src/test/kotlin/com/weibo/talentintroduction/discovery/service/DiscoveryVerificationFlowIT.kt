@@ -74,6 +74,8 @@ class VerificationFlowFixture(val jdbc: JdbcTemplate, private val manager: DataS
     var failEs = false
     var failProjection = false
     var jobRole: String? = "Researcher"
+    var jobInstitution = "Example University"
+    var jobEnd = "null"
     var apolloStatus = 200
     var apolloBody = """{"people":[{"id":"person-1","name":"Ada Lee","first_name":"Ada","last_name":"Lee","organization":{"name":"Example University"}}],"total_entries":1}"""
     var orcidFailEndpoint: String? = null
@@ -113,17 +115,24 @@ class VerificationFlowFixture(val jdbc: JdbcTemplate, private val manager: DataS
                 orcidRequests += endpoint
                 if (endpoint == orcidFailEndpoint) withServerError().createResponse(request)
                 else {
-                    val body = orcidBodies[endpoint] ?: if (endpoint == "employments" && jobRole != null) """{"affiliation-group":[{"summaries":[{"employment-summary":{"visibility":"public","role-title":"$jobRole","organization":{"name":"Example University"},"source":{"source-client-id":{"path":"fixture-org"}},"start-date":{"year":{"value":"2020"}},"end-date":null}}]}]}""" else "{}"
+                    val body = orcidBodies[endpoint] ?: if (endpoint == "employments" && jobRole != null) """{"affiliation-group":[{"summaries":[{"employment-summary":{"visibility":"public","role-title":"$jobRole","organization":{"name":"$jobInstitution"},"source":{"source-client-id":{"path":"fixture-org"}},"start-date":{"year":{"value":"2020"}},"end-date":$jobEnd}}]}]}""" else "{}"
                     withSuccess(body, MediaType.APPLICATION_JSON).createResponse(request)
                 }
             }
         }
     }
+    fun report(name: String, value: Any) {
+        val directory = java.nio.file.Paths.get("target", "institution-subject-flow")
+        java.nio.file.Files.createDirectories(directory)
+        java.nio.file.Files.write(directory.resolve("$name.json"), mapper.writeValueAsBytes(value))
+    }
     fun worker() = DiscoveryVerificationWorker(props, repository, OrcidVerificationEvidenceClient(props, providerHttp, clock),
         ApolloPeopleSearchClient(props, providerHttp, clock), QualificationEvidenceParser(clock), rules, commits,
         DefaultListableBeanFactory().getBeanProvider(RegistrationRecovery::class.java), clock).also { workers += it }
-    fun seed(doc: String = "synthetic-1", mode: VerificationMode = VerificationMode.ENFORCE, apollo: Boolean = true): VerificationItem {
-        val profile = ruleSnapshot().profile.copy(esDocId = doc, researchFieldIds = listOf("22"), lastPublicationYear = 2026)
+    fun seed(doc: String = "synthetic-1", mode: VerificationMode = VerificationMode.ENFORCE, apollo: Boolean = true,
+        institution: String = "Example University"): VerificationItem {
+        val profile = ruleSnapshot().profile.copy(esDocId = doc, researchFieldIds = listOf("22"), lastPublicationYear = 2026,
+            institution = institution)
         val snapshot = DiscoveryVerificationAdmissionGate.snapshot(doc, profile, policy.evaluate(profile).configSnapshot)
         @Suppress("UNCHECKED_CAST") val source = mapper.convertValue(profile, Map::class.java) as Map<String, Any?>
         raws[doc] = source
@@ -201,6 +210,10 @@ class DiscoveryVerificationFlowIT {
                     replaySmoke()
                     return
                 }
+                if (args.contains("--subject-smoke")) {
+                    subjectSmoke()
+                    return
+                }
                 VerificationFlowFixture(jdbc, manager).use { f ->
                     val item = f.seed(); f.repository.closeInput(2001, f.clock.instant()); f.failProjection = true
                     f.cached(VerificationWorkerEvidence(orcidCompleted = f.selfDocuments()))
@@ -219,6 +232,29 @@ class DiscoveryVerificationFlowIT {
                     println("RUNTIME_SMOKE runId=${done.ownerExecutionId} itemId=${done.id} outcome=${done.outcome} qualification=${done.qualification} admissionRevision=${done.admissionRevision} auto=1 projection=PROJECTED apolloRequests=$requests orcidRequests=0 no-provider-replay=true candidates=${f.candidates.size} evidenceSource=SELF")
                 }
             } finally { stop() }
+        }
+        private fun subjectSmoke() {
+            val long = "2Department of BioNano Technology, Gachon University, 1342 Seongnam-daero, " +
+                "Sujeong-gu, Seongnam-si 13120, Gyeonggi-do, Republic of Korea"
+            VerificationFlowFixture(jdbc, manager).use { f ->
+                f.jobInstitution = long
+                f.apolloBody = """{"people":[{"id":"person-1","name":"Ada Lee","first_name":"Ada","last_name":"Lee","organization":{"name":"Gachon University"}}],"total_entries":1}"""
+                val item = f.seed("runtime-subject", institution = long)
+                f.worker().tick()
+                val done = f.item(item.id)
+                val payload = f.mapper.readValue(done.evidenceJson, VerificationWorkerEvidence::class.java)
+                check(done.outcome == VerificationOutcome.APOLLO_UNCLEAR) { "unexpected outcome ${done.outcome}" }
+                check(payload.institutionNormalization?.queryInstitution == "Gachon University") { "unexpected query subject" }
+                check(f.apolloRequests.count { it.contains("q_organization_name=Gachon%20University") } == 1)
+                check(f.autoCount() == 1L)
+                val row = DiscoveryVerificationQueryService(f.repository, f.admissions, f.props)
+                    .records(VerificationReportFilter(2001), 0, 10).items.single { it.itemId == item.id }
+                check(!row.missingFields.contains("institutionSubject"))
+                println("RUNTIME_SUBJECT_SMOKE itemId=${item.id} outcome=${done.outcome} qualification=${done.qualification} " +
+                    "admissionRevision=${done.admissionRevision} projection=${done.projectionState} apolloRequests=${f.apolloRequests.size} " +
+                    "narrow=Gachon%20University queryInstitution=${payload.institutionNormalization?.queryInstitution} " +
+                    "missing=${row.missingFields} auto=${f.autoCount()} candidates=${f.candidates.size}")
+            }
         }
         private fun replaySmoke() {
             VerificationFlowFixture(jdbc, manager).use { f ->
@@ -259,6 +295,7 @@ class DiscoveryVerificationFlowIT {
         }
     }
     @BeforeEach fun clean() {
+        jdbc.execute("DROP TRIGGER IF EXISTS fail_verification_complete")
         jdbc.execute("DROP TRIGGER IF EXISTS fail_verification_attach")
         jdbc.execute("DROP TRIGGER IF EXISTS fail_attempt_complete")
         listOf("expert_email_alias", "expert_contact", "discovery_verification_attempt", "discovery_verification_item", "discovery_verification_run", "expert_discovery_admission", "task_execution").forEach { jdbc.update("DELETE FROM $it") }
@@ -805,4 +842,242 @@ class DiscoveryVerificationFlowIT {
             assertTrue(f.orcidRequests.isEmpty()); assertTrue(f.apolloRequests.isEmpty())
         }
     }
+
+    private data class InstitutionNegative(val id: String, val profile: String, val job: String?, val end: String,
+        val apollo: String, val reason: String, val narrow: Int, val apolloRequested: Boolean = true,
+        val maxPages: Int = 20)
+
+    private val gachonInstitution = "2Department of BioNano Technology, Gachon University, 1342 Seongnam-daero, " +
+        "Sujeong-gu, Seongnam-si 13120, Gyeonggi-do, Republic of Korea"
+
+    private fun person(id: String, institution: String, orcid: String? = null) =
+        """{"id":"$id","name":"Ada Lee","first_name":"Ada","last_name":"Lee"""" +
+            (orcid?.let { ""","orcid":"$it"""" } ?: "") + ""","organization":{"name":"$institution"}}"""
+
+    @Test fun `A2 institution subject narrow query and unclear admission survive real SQL and providers`() {
+        VerificationFlowFixture(jdbc, manager).use { f ->
+            f.jobRole = "Researcher"; f.jobInstitution = gachonInstitution
+            f.apolloBody = """{"people":[${person("person-1", "Gachon University")}],"total_entries":1}"""
+            val item = f.seed("subject-gachon", institution = gachonInstitution)
+            f.worker().tick()
+            val done = f.item(item.id)
+            assertEquals(VerificationOutcome.APOLLO_UNCLEAR, done.outcome)
+            assertEquals(VerificationQualification.UNKNOWN, done.qualification)
+            assertEquals(VerificationProjection.PROJECTED, done.projectionState)
+            assertNotNull(done.admissionRevision); assertEquals(1L, f.autoCount())
+            assertEquals(2, f.apolloRequests.size)
+            val narrow = f.apolloRequests.filter { it.contains("q_organization_name") }
+            assertEquals(1, narrow.size)
+            assertTrue(java.net.URI(narrow.single()).rawQuery.orEmpty().contains("q_organization_name=Gachon%20University"), narrow.single())
+            val payload = f.mapper.readValue(done.evidenceJson, VerificationWorkerEvidence::class.java)
+            val context = payload.institutionNormalization!!
+            assertEquals(DiscoveryInstitutionNormalizer.VERSION, context.version)
+            assertEquals("Gachon University", context.queryInstitution)
+            assertEquals(listOf("PROFILE", "ORCID_EMPLOYMENT", "APOLLO_CANDIDATE"), context.inputs.map { it.source })
+            assertEquals(listOf("Gachon University"), context.inputs.first().subjects)
+            assertEquals(gachonInstitution, context.inputs[1].raw)
+            assertEquals(listOf("Gachon University"), context.inputs.last().subjects)
+            val snapshot = f.mapper.readValue(done.snapshotJson, VerificationSnapshot::class.java)
+            assertEquals(gachonInstitution, snapshot.profile.institution)
+            assertEquals(gachonInstitution, f.raws.getValue(item.expertDocId)["institution"])
+            val narrowAttempt = f.repository.findAttempts(item.id).single { it.requestJson.contains("Gachon University") }
+            assertEquals(VerificationQueryKind.NARROW, narrowAttempt.queryKind)
+            val query = DiscoveryVerificationQueryService(f.repository, f.admissions, f.props)
+            assertEquals(VerificationOutcome.APOLLO_UNCLEAR, query.item(item.id).outcome)
+            val row = query.records(VerificationReportFilter(2001), 0, 20).items.single { it.itemId == item.id }
+            assertFalse(row.missingFields.contains("institutionSubject"))
+            val profile = ruleSnapshot().profile.copy(esDocId = item.expertDocId, researchFieldIds = listOf("22"),
+                lastPublicationYear = 2026, institution = gachonInstitution)
+            val gate = f.policy.evaluate(item.expertDocId, profile)
+            assertEquals(DiscoveryAdmissionStatus.AUTO_PASSED, gate.status)
+            f.report("a2-gachon", mapOf("input" to gachonInstitution, "requests" to f.apolloRequests,
+                "narrowRequestJson" to narrowAttempt.requestJson,
+                "persisted" to mapOf("outcome" to done.outcome?.name, "qualification" to done.qualification.name,
+                    "admissionRevision" to done.admissionRevision, "projection" to done.projectionState.name,
+                    "apolloPersonId" to done.apolloPersonId),
+                "normalization" to context, "queryMissingFields" to row.missingFields, "gateStatus" to gate.status.name,
+                "readOnlyRevision" to f.repository.findRun(2001)!!.revision))
+        }
+    }
+
+    @Test fun `A3 distinct campuses hospitals identities and missing employment never admit`() {
+        val cases = listOf(
+            InstitutionNegative("uc-campus", "University of California, Los Angeles", "University of California, Berkeley",
+                "null", """{"people":[${person("person-1", "University of California, Los Angeles")}],"total_entries":1}""",
+                "INSTITUTION_CONFLICT", 1),
+            InstitutionNegative("hospital-vs-university", "Renji Hospital", "Shanghai Jiao Tong University", "null",
+                """{"people":[${person("person-1", "Renji Hospital")}],"total_entries":1}""", "INSTITUTION_CONFLICT", 1),
+            InstitutionNegative("same-name-two", "Example University", "Example University", "null",
+                """{"people":[${person("person-1", "Example University")},${person("person-2", "Example University")}],"total_entries":2}""",
+                "IDENTITY_AMBIGUOUS", 1),
+            InstitutionNegative("raw-only", "Gachon University", null, "null",
+                """{"people":[${person("person-1", "Gachon University")}],"total_entries":1}""",
+                "CURRENT_INSTITUTION_EVIDENCE_MISSING", 0),
+            InstitutionNegative("historical-only", "Example University", "Example University", """{"year":{"value":"2022"}}""",
+                """{"people":[${person("person-1", "Example University")}],"total_entries":1}""",
+                "CURRENT_INSTITUTION_EVIDENCE_MISSING", 0),
+            InstitutionNegative("orcid-conflict", "Example University", "Example University", "null",
+                """{"people":[${person("person-1", "Example University")},${person("person-2", "Example University", "0000-0001-5109-3700")}],"total_entries":2}""",
+                "ORCID_CONFLICT", 1),
+            InstitutionNegative("incomplete-search", "Example University", "Example University", "null",
+                """{"people":[${person("person-1", "Example University")}],"total_entries":101}""",
+                "SEARCH_INCOMPLETE", 0, maxPages = 1)
+        )
+        for (case in cases) {
+            clean()
+            val props = DiscoveryVerificationProperties(workerEnabled = true, apolloApiKey = "fixture-key",
+                requestsPerMinute = 1000, maxPagesPerQuery = case.maxPages)
+            VerificationFlowFixture(jdbc, manager, props).use { f ->
+                f.jobRole = if (case.job == null) null else "Researcher"
+                f.jobInstitution = case.job ?: "Example University"
+                f.jobEnd = case.end
+                f.apolloBody = case.apollo
+                val item = f.seed("negative-${case.id}", institution = case.profile)
+                f.worker().tick()
+                val done = f.item(item.id)
+                assertEquals(0L, f.autoCount(), case.id)
+                assertTrue(f.candidates.isEmpty(), case.id)
+                assertNull(done.admissionRevision, case.id)
+                assertTrue(done.reasonsJson!!.contains(case.reason), "${case.id}: ${done.reasonsJson}")
+                assertEquals(case.narrow, f.apolloRequests.count { it.contains("q_organization_name") }, case.id)
+                val payload = f.mapper.readValue(done.evidenceJson, VerificationWorkerEvidence::class.java)
+                val expectedQuery = when (case.id) {
+                    "raw-only", "historical-only" -> null
+                    "uc-campus" -> "University of California, Berkeley"
+                    "hospital-vs-university" -> "Shanghai Jiao Tong University"
+                    else -> "Example University"
+                }
+                assertEquals(expectedQuery, payload.institutionNormalization!!.queryInstitution, case.id)
+                f.report("a3-${case.id}", mapOf("input" to mapOf("profile" to case.profile, "employment" to case.job),
+                    "requests" to f.apolloRequests, "persisted" to mapOf("outcome" to done.outcome?.name,
+                        "reasons" to done.reasonsJson, "admissionRevision" to done.admissionRevision),
+                    "normalization" to payload.institutionNormalization, "narrowRequests" to
+                        f.apolloRequests.count { it.contains("q_organization_name") },
+                    "admissions" to f.autoCount(), "candidates" to f.candidates.size))
+            }
+        }
+    }
+
+    @Test fun `A4 legacy records survive and tampered contexts fail closed without breaking reads`() {
+        VerificationFlowFixture(jdbc, manager).use { f ->
+            // This record's outcome is identical under the previous comparison, so removing the member is a real legacy replay.
+            f.apolloBody = """{"people":[${person("person-1", "Example University")}],"total_entries":1}"""
+            val item = f.seed("gate-subject")
+            f.worker().tick()
+            val done = f.item(item.id)
+            assertEquals(1L, f.autoCount())
+            val profile = ruleSnapshot().profile.copy(esDocId = item.expertDocId, researchFieldIds = listOf("22"),
+                lastPublicationYear = 2026)
+            assertEquals(DiscoveryAdmissionStatus.AUTO_PASSED, f.policy.evaluate(item.expertDocId, profile).status)
+            // Old completed evidence without the new member keeps the previous institution semantics.
+            val legacy = f.mapper.readTree(done.evidenceJson) as com.fasterxml.jackson.databind.node.ObjectNode
+            legacy.remove("institutionNormalization")
+            jdbc.update("UPDATE discovery_verification_item SET evidence_json=? WHERE id=?", legacy.toString(), item.id)
+            assertEquals(DiscoveryAdmissionStatus.AUTO_PASSED, f.policy.evaluate(item.expertDocId, profile).status)
+            // Unknown version and a rewritten subject are rejected by the Gate, not downgraded to no-match.
+            val unknown = legacy.deepCopy()
+            (unknown.putObject("institutionNormalization")).put("version", "INST_SUBJECT_V2")
+                .putArray("inputs")
+            jdbc.update("UPDATE discovery_verification_item SET evidence_json=? WHERE id=?", unknown.toString(), item.id)
+            val rejected = f.policy.evaluate(item.expertDocId, profile)
+            assertEquals(DiscoveryAdmissionStatus.NEEDS_REVIEW, rejected.status)
+            assertTrue(rejected.blockingReasons.any { it.code == "VERIFICATION_EVIDENCE_INVALID" }, rejected.blockingReasons.toString())
+            val query = DiscoveryVerificationQueryService(f.repository, f.admissions, f.props)
+            val row = query.records(VerificationReportFilter(2001), 0, 15).items.single { it.itemId == item.id }
+            assertTrue(row.missingFields.contains("institutionSubject"), row.missingFields.toString())
+            assertEquals(VerificationOutcome.APOLLO_UNCLEAR, query.item(item.id).outcome)
+            // A subject rewrite is equally rejected.
+            val tampered = f.mapper.readTree(done.evidenceJson) as com.fasterxml.jackson.databind.node.ObjectNode
+            val inputs = tampered.path("institutionNormalization").path("inputs")
+            (inputs[0] as com.fasterxml.jackson.databind.node.ObjectNode).putArray("subjects").add("Fabricated University")
+            jdbc.update("UPDATE discovery_verification_item SET evidence_json=? WHERE id=?", tampered.toString(), item.id)
+            assertTrue(f.policy.evaluate(item.expertDocId, profile).blockingReasons.any { it.code == "VERIFICATION_EVIDENCE_INVALID" })
+            f.report("a4-gate", mapOf("legacyStatus" to DiscoveryAdmissionStatus.AUTO_PASSED.name,
+                "unknownVersionStatus" to rejected.status.name,
+                "unknownVersionBlockers" to rejected.blockingReasons.map { it.code },
+                "readMissingFields" to row.missingFields, "savedOutcome" to query.item(item.id).outcome?.name))
+        }
+    }
+
+    @Test fun `A4 legacy in flight search resumes its original query sequence without a subject`() {
+        VerificationFlowFixture(jdbc, manager).use { f ->
+            f.apolloBody = """{"people":[],"total_entries":0}"""
+            val item = f.seed("legacy-inflight")
+            val facts = listOf(ruleJob(institution = "Example University").copy(identityHash = item.identityHash,
+                factFingerprint = item.factFingerprint))
+            f.cached(VerificationWorkerEvidence(evidence = facts,
+                search = ApolloSearchEvidence(complete = false, broadComplete = true, queryNames = setOf("Ada Lee")),
+                progress = VerificationProgress("APOLLO_SEARCH", 1, 2)))
+            f.worker().tick()
+            assertEquals(1, f.apolloRequests.size)
+            assertTrue(f.apolloRequests.single().contains("page=2"), f.apolloRequests.single())
+            assertTrue(f.apolloRequests.single().contains("q_organization_name=Example%20University"), f.apolloRequests.single())
+            val saved = f.mapper.readValue(f.item(item.id).evidenceJson, VerificationWorkerEvidence::class.java)
+            assertNull(saved.institutionNormalization)
+            assertEquals(VerificationOutcome.PENDING, f.item(item.id).outcome)
+            assertTrue(f.item(item.id).reasonsJson!!.contains("APOLLO_NO_MATCH"), f.item(item.id).reasonsJson)
+            f.report("a4-legacy-inflight", mapOf("requests" to f.apolloRequests,
+                "normalization" to saved.institutionNormalization, "reasons" to f.item(item.id).reasonsJson,
+                "attempts" to f.repository.findAttempts(item.id).map { it.requestJson }))
+        }
+    }
+
+    @Test fun `A4 rate limited narrow request resumes with the same subject page and billing`() {
+        VerificationFlowFixture(jdbc, manager).use { f ->
+            f.jobInstitution = gachonInstitution
+            f.apolloBody = """{"people":[${person("person-1", "Gachon University")}],"total_entries":1}"""
+            val item = f.seed("subject-retry", institution = gachonInstitution)
+            var failed = false
+            f.onApollo = {
+                val narrow = f.apolloRequests.last().contains("q_organization_name")
+                f.apolloStatus = if (narrow && !failed) 429 else 200
+                if (narrow) failed = true
+            }
+            f.worker().tick()
+            assertEquals(VerificationState.RETRY_WAIT, f.item(item.id).state)
+            val frozen = f.mapper.readValue(f.item(item.id).evidenceJson, VerificationWorkerEvidence::class.java)
+            assertEquals("Gachon University", frozen.institutionNormalization!!.queryInstitution)
+            f.onApollo = null; f.apolloStatus = 200; f.clock.now = f.clock.now.plusSeconds(60)
+            f.worker().tick()
+            val done = f.item(item.id)
+            assertEquals(VerificationOutcome.APOLLO_UNCLEAR, done.outcome)
+            val narrow = f.apolloRequests.filter { it.contains("q_organization_name") }
+            assertEquals(2, narrow.size)
+            assertTrue(narrow.all { java.net.URI(it).rawQuery.orEmpty().contains("q_organization_name=Gachon%20University") })
+            assertTrue(narrow.all { java.net.URI(it).rawQuery.orEmpty().contains("page=1") })
+            assertEquals(done.requestCount, f.repository.findAttempts(item.id).size)
+            assertEquals("Gachon University",
+                f.mapper.readValue(done.evidenceJson, VerificationWorkerEvidence::class.java).institutionNormalization!!.queryInstitution)
+            f.report("a4-retry", mapOf("requests" to f.apolloRequests, "transition" to "RETRY_WAIT->COMPLETED",
+                "requestCount" to done.requestCount, "attempts" to f.repository.findAttempts(item.id).size,
+                "queryInstitution" to done.evidenceJson?.let { f.mapper.readTree(it).path("institutionNormalization").path("queryInstitution").asText() },
+                "outcome" to done.outcome?.name))
+        }
+    }
+
+    @Test fun `A4 completion persistence failure keeps derived evidence and stops the request chain`() {
+        VerificationFlowFixture(jdbc, manager).use { f ->
+            f.jobInstitution = gachonInstitution
+            f.apolloBody = """{"people":[${person("person-1", "Gachon University")}],"total_entries":1}"""
+            val item = f.seed("completion-failure", institution = gachonInstitution)
+            jdbc.execute("""CREATE TRIGGER fail_verification_complete BEFORE UPDATE ON discovery_verification_item FOR EACH ROW
+                BEGIN IF NEW.state='COMPLETED' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='injected completion failure'; END IF; END""")
+            try {
+                f.worker().tick()
+            } finally {
+                jdbc.execute("DROP TRIGGER IF EXISTS fail_verification_complete")
+            }
+            val failed = f.item(item.id)
+            assertEquals(VerificationState.ERROR, failed.state)
+            assertNull(failed.outcome)
+            assertTrue(failed.evidenceJson!!.contains("institutionNormalization"), failed.evidenceJson)
+            assertEquals(gachonInstitution, f.raws.getValue(item.expertDocId)["institution"])
+            assertEquals(2, f.apolloRequests.size)
+            assertEquals(0L, f.autoCount())
+            f.report("a4-completion-failure", mapOf("state" to failed.state.name, "reasons" to failed.reasonsJson,
+                "requests" to f.apolloRequests, "subjectPreserved" to failed.evidenceJson!!.contains("Gachon University"),
+                "admissions" to f.autoCount()))
+        }
+    }
+
 }

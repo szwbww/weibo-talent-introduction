@@ -32,12 +32,19 @@ data class VerificationDecision(val qualification: VerificationQualification, va
 class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
     private val mapper = jacksonObjectMapper()
     fun evaluate(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>,
-        search: ApolloSearchEvidence? = null, protected: Boolean = false): VerificationDecision {
+        search: ApolloSearchEvidence? = null, protected: Boolean = false,
+        institutionNormalization: InstitutionNormalization? = null): VerificationDecision {
         val today = LocalDate.now(clock)
         fun decision(q: VerificationQualification, reasons: List<String>, missing: List<String> = emptyList(),
             route: VerificationRoute = VerificationRoute.NONE, outcome: VerificationOutcome = VerificationOutcome.PENDING,
             id: String? = null) = VerificationDecision(q, route, outcome, reasons.distinct(), missing.distinct(), evidence, today, id)
         if (protected) return decision(VerificationQualification.NOT_EVALUATED, listOf("PROTECTED"), outcome = VerificationOutcome.PROTECTED)
+        if (institutionNormalization != null) {
+            // Recompute the expected context from the original payload; a saved subject is never self-certifying.
+            DiscoveryInstitutionNormalizer.validate(
+                DiscoveryInstitutionNormalizer.build(snapshot.profile.institution,
+                    identityEmployments(snapshot, evidence), search?.candidates), institutionNormalization)
+        }
         if (evidence.any { it.identityHash != snapshot.identityHash || it.factFingerprint != snapshot.factFingerprint })
             return decision(VerificationQualification.CONFLICT, listOf("FACT_CHANGED"))
         if (!snapshot.identityValid) return decision(VerificationQualification.UNKNOWN, listOf("IDENTITY_EVIDENCE_MISSING"), listOf("identity"))
@@ -83,9 +90,33 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
         if (employments.isEmpty()) return decision(qualification, listOf("CURRENT_INSTITUTION_EVIDENCE_MISSING"), missing + "currentInstitution")
         val originalInstitution = snapshot.profile.institution
         val institutions = employments.map { VerificationInstitution(value(it, "institution"), value(it, "standardId").takeIf(String::isNotBlank)) }
-        if (!originalInstitution.isNullOrBlank() && institutions.none { sameInstitution(it, VerificationInstitution(originalInstitution)) })
-            return decision(VerificationQualification.CONFLICT, listOf("INSTITUTION_CONFLICT"), missing)
+        val profileSubject = institutionNormalization?.inputs?.firstOrNull { it.source == InstitutionSource.PROFILE.name }
+        val employmentSubjects = institutionNormalization?.inputs?.filter { it.source == InstitutionSource.ORCID_EMPLOYMENT.name }.orEmpty()
+        val candidateSubjects = institutionNormalization?.inputs
+            ?.filter { it.source == InstitutionSource.APOLLO_CANDIDATE.name }?.associateBy { it.sourceRef }.orEmpty()
+        if (!originalInstitution.isNullOrBlank()) {
+            if (institutionNormalization == null) {
+                if (institutions.none { sameInstitution(it, VerificationInstitution(originalInstitution)) })
+                    return decision(VerificationQualification.CONFLICT, listOf("INSTITUTION_CONFLICT"), missing)
+            } else {
+                // An unclear subject is missing evidence, never a fabricated institution conflict.
+                if (profileSubject?.status != DiscoveryInstitutionNormalizer.RESOLVED ||
+                    employmentSubjects.any { it.status != DiscoveryInstitutionNormalizer.RESOLVED })
+                    return decision(VerificationQualification.UNKNOWN, listOf("IDENTITY_EVIDENCE_MISSING"), missing + "institutionSubject")
+                if (employmentSubjects.none { DiscoveryInstitutionNormalizer.compare(profileSubject, it) == InstitutionComparison.MATCH })
+                    return decision(VerificationQualification.CONFLICT, listOf("INSTITUTION_CONFLICT"), missing)
+            }
+        }
         val allowedNames = setOf(snapshot.fullName) + evidence.filter { it.field == "otherName" && it.provider == "ORCID" }.map { it.value }
+        fun institutionMatches(candidate: ApolloCandidate): Boolean =
+            if (institutionNormalization == null)
+                candidate.institution?.let { institution -> institutions.any { sameInstitution(it, institution) } } == true
+            else {
+                val subject = candidateSubjects[candidate.id]
+                subject != null && subject.status == DiscoveryInstitutionNormalizer.RESOLVED &&
+                    employmentSubjects.any { it.status == DiscoveryInstitutionNormalizer.RESOLVED &&
+                        DiscoveryInstitutionNormalizer.compare(subject, it) == InstitutionComparison.MATCH }
+            }
         val matches = search.candidates.filter { candidate ->
             val explicit = candidate.fullName ?: listOfNotNull(candidate.firstName, candidate.lastName).takeIf { candidate.lastName != null }?.joinToString(" ")
             val strict = explicit != null && allowedNames.any { known ->
@@ -96,7 +127,7 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
                 search.queryNames.any { sameName(it, name) } && maskedCompatible(candidate, name)
             }
             (strict || masked) && (candidate.orcid == null || normalizeOrcid(candidate.orcid) == orcid) &&
-                candidate.institution?.let { institution -> institutions.any { sameInstitution(it, institution) } } == true
+                institutionMatches(candidate)
         }
         if (matches.size != 1) return decision(qualification, listOf(if (matches.size > 1) "IDENTITY_AMBIGUOUS" else "IDENTITY_NOT_MATCHED"), missing)
         // An explicit contradictory ORCID on a same-name record must not be discarded as an unrelated candidate.
