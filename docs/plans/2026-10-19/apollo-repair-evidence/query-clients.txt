@@ -1,0 +1,101 @@
+$ rg -n maxPagesPerQuery|finishedQueryKeys|queryIndex|queryNames|reason.label|r.label|SEARCH_INCOMPLETE|verification/executions|verification/items src/main src/test/js
+src/test/js/expertManualProfile.test.js:1090:                `${name} editor label and card header must share the 01 field label`);
+src/test/js/expertMaterialAnalysisFlow.test.js:637:            const queryIndex = path.indexOf("?");
+src/test/js/expertMaterialAnalysisFlow.test.js:638:            const raw = queryIndex === -1 ? "" : path.slice(queryIndex + 1);
+src/test/js/taskModalTwoLevelUi.test.js:127:        assert.ok(html.includes("手动"), "MANUAL trigger label present");
+src/test/js/taskModalTwoLevelUi.test.js:139:        assert.ok(html.includes("定时"), "SCHEDULED trigger label present");
+src/test/js/expertContactSharedNote.test.js:443:    if (start === -1 || stop === -1 || stop < start) throw new Error(label + " region missing in app.js");
+src/test/js/expertFilterLayout.test.js:37:        assert.match(css, /\.expert-filter-row-primary > \.toolbar-label\s*\{\s*min-width:\s*0;\s*flex-direction:\s*column;\s*align-items:\s*stretch;\s*gap:\s*4px;/);
+src/test/js/expertFilterLayout.test.js:38:        assert.match(css, /\.expert-filter-row-primary > \.toolbar-label select\s*\{\s*width:\s*100%;\s*min-width:\s*0;/);
+src/test/js/checkRepliesRelocation.test.js:197:        assert.ok(css.includes(".toolbar-chip-row > .toolbar-label {\n    flex: 0 0 72px;\n    padding-top: 7px;\n}"),
+src/test/js/checkRepliesRelocation.test.js:198:            ".toolbar-chip-row > .toolbar-label rule block must be present verbatim");
+src/test/js/ragKnowledgeBasePage.test.js:40:.rag-kb-filter-label {
+src/test/js/ragKnowledgeBasePage.test.js:400:        assert.ok(panels.ragKbFilters.innerHTML.includes("rag-kb-filter-label"), "filter group labels");
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:605:            filter.label != null ||
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:612:        if (filter.direction == DIRECTION_OUTBOUND && filter.label != null) {
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:615:        val outboundEligible = filter.label == null && filter.direction != DIRECTION_INBOUND
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:781:            .addValue("label", filter.label?.takeIf { it.isNotBlank() })
+src/test/js/expertMaterialsShared.test.js:604:        const queryIndex = url.indexOf("?");
+src/test/js/expertMaterialsShared.test.js:605:        const raw = queryIndex === -1 ? "" : url.slice(queryIndex + 1);
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryVerification.kt:103:    val stage: String = "LOCAL_EVIDENCE", val queryIndex: Int = 0, val page: Int = 1,
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryVerification.kt:105:    val finishedQueryKeys: List<String> = emptyList(), val schemaVersion: Int = 1
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryVerification.kt:107:    init { require(schemaVersion == 1); require(stage in setOf("LOCAL_EVIDENCE", "APOLLO_SEARCH", "DECIDE", "PROJECT")); require(queryIndex >= 0 && page > 0) }
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryController.kt:172:            else -> throw IllegalArgumentException("Either qaRuleId or label is required")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:184:                while (payload.progress.queryIndex < queries.size) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:185:                    val index = payload.progress.queryIndex
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:194:                    val finished = if (!page.hasNext) payload.progress.finishedQueryKeys + index.toString() else payload.progress.finishedQueryKeys
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:201:                    if (page.hasNext && query.page >= properties.maxPagesPerQuery) break
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:214:                        reasonCodes = listOf(if (payload.progress.stage == "LOCAL_EVIDENCE") "EVIDENCE_INCOMPLETE" else "SEARCH_INCOMPLETE"), matchedPersonId = null))
+src/main/kotlin/com/weibo/talentintroduction/config/DiscoveryVerificationProperties.kt:22:    val maxPagesPerQuery: Int = 5,
+src/main/kotlin/com/weibo/talentintroduction/config/DiscoveryVerificationProperties.kt:33:        require(maxRequestsPerItem in 1..10000 && maxPagesPerQuery in 1..500)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryService.kt:166:            "FACT_CHANGED" to "输入事实已变化", "PROTECTED" to "保护跳过", "SEARCH_INCOMPLETE" to "查询尚未完成",
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParser.kt:98:            // Postfix labels can cover a list of emails, but never cross another label or semicolon.
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:14:    val complete: Boolean = false, val queryNames: Set<String> = emptySet(), val conflictingIds: Set<String> = emptySet()) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:24:            complete = allQueriesComplete && !page.hasNext, queryNames = queryNames + query.name, conflictingIds = ids)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:78:        if (!search.complete || !search.broadComplete) return decision(qualification, listOf("SEARCH_INCOMPLETE"), missing)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:96:                search.queryNames.any { sameName(it, name) } && maskedCompatible(candidate, name)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:64:            "maxRequestsPerItem" to properties.maxRequestsPerItem, "maxPagesPerQuery" to properties.maxPagesPerQuery,
+src/main/resources/static/meeting-records.css:44:.cr-labelhint{color:var(--text-muted);font-weight:400;margin-left:5px}
+src/main/resources/static/app.js:2623:    const label = reason.label ? String(reason.label) : (reason.code ? String(reason.code) : DISCOVERY_REVIEW_MISSING);
+src/main/resources/static/app.js:2952:                discoveryReviewState.issues.set(String(reason.code), String(reason.label || reason.code));
+src/main/resources/static/app.js:6443:                <span class="preview-var-label">${escapeHtml(item.label)}</span>
+src/main/resources/static/app.js:6450:                <span class="preview-var-label">—</span>
+src/main/resources/static/app.js:6970:        `<div class="rag-kb-filter-label">全部</div>` +
+src/main/resources/static/app.js:6972:        (categoryHtml ? `<div class="rag-kb-filter-label">按分类</div>${categoryHtml}` : "") +
+src/main/resources/static/app.js:6973:        `<div class="rag-kb-filter-label">按属性</div>` +
+src/main/resources/static/app.js:16105:            <span class="preview-var-label">${escapeHtml(item.label)}</span>
+src/main/resources/static/app.js:22113:                <span class="tag-bar-label ${inactive ? "inactive" : ""}">${escapeHtml(item.label || "")}</span>
+src/main/resources/static/app.js:22425:    var labels = {
+src/main/resources/static/app.js:22660:    var label = c.autoEnabled ? "已启用" : "已停用";
+src/main/resources/static/app.js:23215:        var label = email ? email + " · " + code : code;
+src/main/resources/static/app.js:23445:    var label = document.getElementById(kind === "editor" ? "batchConfigEditorGateFilterLabel" : "batchManualGateFilterLabel");
+src/main/resources/static/app.js:23593:    var label = document.getElementById(emailVerificationLabelId(kind));
+src/main/resources/static/app.js:23716:    var label = document.getElementById(kind === "editor"
+src/main/resources/static/app.js:24315:        var labels = batchExpertTypeOptions().reduce(function(acc, o) { acc[o.value] = o.label; return acc; }, {});
+src/main/resources/static/app.js:24675:                var label = (e.startedAt ? formatDateTime(e.startedAt) : "") + " | " + statusLabel(e.status) + " | " + triggerTypeLabel(e.triggerType) + (e.batchConfigId == null ? " | 独立执行" : "");
+src/main/resources/static/app.js:24767:                var label = (e.startedAt ? formatDateTime(e.startedAt) : "") + " | " + statusLabel(e.status) + " | " + triggerTypeLabel(e.triggerType) + (e.batchConfigId == null ? " | 独立执行" : "");
+src/main/resources/static/app.js:24927:        return '<div class="batch-reason-row"><span>' + escapeHtml(r.label || "") + '</span><span class="batch-reason-count">' + escapeHtml(String(r.count)) + '</span></div>';
+src/main/resources/static/app.js:25044:        var label = code ? BATCH_EMAIL_VERIFICATION_ERROR_LABELS[code] : "";
+src/main/resources/static/app.js:25053:    var label = BATCH_EMAIL_VERIFICATION_SEND_REASON_LABELS[code];
+src/main/resources/static/app.js:25072:    var label = BATCH_EMAIL_VERIFICATION_TAG_ERROR_LABELS[colon >= 0 ? text.slice(0, colon) : text];
+src/main/resources/static/app.js:27068:    return (reasons || []).map(reason => `<p>${escapeHtml(reason.label)} · ${apvNumber(reason.count)} 人</p><p class="apv-code">${escapeHtml(reason.code)}</p>`).join("") || '<p>未记录原因</p>';
+src/main/resources/static/index.html:394:                        <label class="toolbar-label">从 <input type="date" id="qaAuditFrom"></label>
+src/main/resources/static/index.html:395:                        <label class="toolbar-label">至 <input type="date" id="qaAuditTo"></label>
+src/main/resources/static/index.html:496:                    <label class="toolbar-label">
+src/main/resources/static/index.html:503:                    <label class="toolbar-label">
+src/main/resources/static/index.html:511:                    <label class="toolbar-label">
+src/main/resources/static/index.html:523:                    <label class="toolbar-label">
+src/main/resources/static/index.html:531:                    <label class="toolbar-label">
+src/main/resources/static/index.html:539:                    <label class="toolbar-label">
+src/main/resources/static/index.html:545:                    <label class="toolbar-label">
+src/main/resources/static/index.html:551:                    <label class="toolbar-label">
+src/main/resources/static/index.html:557:                    <label class="toolbar-label">
+src/main/resources/static/index.html:570:                    <span class="toolbar-label">研发类型:</span>
+src/main/resources/static/index.html:584:                    <span class="toolbar-label">数据完整度:</span>
+src/main/resources/static/index.html:597:                    <label class="toolbar-label">
+src/main/resources/static/index.html:601:                    <label class="toolbar-label">
+src/main/resources/static/index.html:605:                    <label class="toolbar-label">
+src/main/resources/static/index.html:614:                    <span class="toolbar-label">
+src/main/resources/static/index.html:2420:<dialog id="meetingEditor" class="cr-dialog cr-meeting-dialog"><form id="meetingForm"><header class="cr-dialoghead"><div><span class="cr-eyebrow">会议记录</span><h2 id="meetingEditorTitle">添加会议记录</h2></div><button class="button cr-iconbtn" type="button" data-close="meetingEditor" aria-label="关闭会议编辑">×</button></header><div class="cr-dialogbody"><div class="cr-editor-expert" id="meetingExpert"></div><div class="cr-formgrid"><label class="cr-full">会议主题 <span class="cr-required">*</span><input name="title" placeholder="例如：企业技术对接会" maxlength="200" required></label><label>会议时间 <span class="cr-labelhint">北京时间</span><input type="datetime-local" name="time"></label><label>参会人<input name="participants" placeholder="填写姓名，多人用逗号分隔" maxlength="500"></label><label class="cr-full">会议纪要<textarea name="minutes" rows="7" placeholder="讨论事项：&#10;会议结论：&#10;后续行动：" maxlength="10000"></textarea></label></div><div class="cr-fileheading"><h3>会议视频 <span id="fileCount" class="cr-count"></span></h3><button class="button cr-btn" id="pickVideo" type="button">＋ 添加视频</button><input id="videoInput" type="file" accept=".mp4,.mov,.webm" multiple hidden></div><p class="cr-hint">MP4 / MOV / WebM · 单个最大 1 GiB · 名称可修改，扩展名固定</p><div id="fileQueue" class="cr-filequeue"></div><p id="meetingError" class="cr-error" role="alert" hidden></p></div><footer class="cr-dialogfoot"><span class="cr-muted cr-footnote">先保存会议记录，再逐个上传视频。</span><button class="button cr-btn" type="button" data-close="meetingEditor">取消</button><button class="button cr-btn primary cr-primary" type="submit">保存并上传</button></footer></form></dialog>
+src/main/resources/static/meeting-confirmation.js:112:            var label = normalizeZoneText(zone.labelZh);
+src/main/resources/static/meeting-confirmation.js:859:                        member.labelZh,
+src/main/resources/static/styles.css:471:.toolbar-label {
+src/main/resources/static/styles.css:553:.contacts-toolbar .toolbar-filters.open .toolbar-label {
+src/main/resources/static/styles.css:557:.contacts-toolbar .toolbar-filters.open .toolbar-label select,
+src/main/resources/static/styles.css:558:.contacts-toolbar .toolbar-filters.open .toolbar-label input {
+src/main/resources/static/styles.css:613:.expert-filter-tag-group > .toolbar-label {
+src/main/resources/static/styles.css:640:.expert-filter-row-metrics > .toolbar-label select,
+src/main/resources/static/styles.css:641:.expert-filter-row-metrics > .toolbar-label input {
+src/main/resources/static/styles.css:651:    .expert-filter-row-primary > .toolbar-label {
+src/main/resources/static/styles.css:658:    .expert-filter-row-primary > .toolbar-label select {
+src/main/resources/static/styles.css:752:.toolbar-chip-row > .toolbar-label {
+src/main/resources/static/styles.css:4124:.tag-bar-label {
+src/main/resources/static/styles.css:4130:.tag-bar-label.inactive {
+src/main/resources/static/styles.css:5054:    .contacts-toolbar .toolbar-label {
+src/main/resources/static/styles.css:5059:    .contacts-toolbar .toolbar-label select {
+src/main/resources/static/styles.css:6810:.variant-switcher .variant-switcher-label {
+src/main/resources/static/styles.css:9056:.preview-var-label { color: var(--text-muted); width: 64px; flex-shrink: 0; }
+src/main/resources/static/styles.css:10834:.rag-kb-filter-label {
+src/main/resources/static/styles.css:12566:    #view-contacts .toolbar-label { min-width: 0; max-width: 100%; }
+src/main/resources/static/styles.css:12943:.ec-editor label { text-transform: none; letter-spacing: 0; color: #475569; }
+src/main/resources/static/styles.css:13189:#taskProgressModal[data-discovery-review="true"] .apv-toolbar label {

@@ -1,0 +1,2455 @@
+{
+  "capturedAt": "2026-10-19T08:16:58.519827Z",
+  "executionId": 26839,
+  "inputSha256": "bfaf4494514a70c9b33a3131d178f3fd23057bf27058e10a807a48eaa50bdaa2",
+  "scope": "PARSER_AND_RULES_ONLY; identical saved Apollo results; no commit/projection/new HTTP; normalization on copied ORCID visibility only",
+  "counts": {
+    "afterFacts": 233,
+    "beforeFacts": 0,
+    "items": 89,
+    "normalizedWithFacts": 63,
+    "withCurrentSelfEmployment": 31,
+    "withUnqueriedAliases": 8
+  },
+  "beforeReasons": {
+    "APOLLO_NO_MATCH": 36,
+    "CURRENT_INSTITUTION_EVIDENCE_MISSING": 34,
+    "IDENTITY_EVIDENCE_MISSING": 16,
+    "SEARCH_INCOMPLETE": 3
+  },
+  "normalizedReasons": {
+    "APOLLO_NO_MATCH": 32,
+    "CURRENT_INSTITUTION_EVIDENCE_MISSING": 32,
+    "IDENTITY_EVIDENCE_MISSING": 16,
+    "NAME_CONFLICT": 6,
+    "SEARCH_INCOMPLETE": 3
+  },
+  "factTypes": {
+    "education:SELF:CURRENT": 2,
+    "education:SELF:HISTORICAL": 44,
+    "education:SELF:UNKNOWN": 3,
+    "employment:ORGANIZATION:UNKNOWN": 2,
+    "employment:SELF:CURRENT": 40,
+    "employment:SELF:HISTORICAL": 44,
+    "employment:SELF:UNKNOWN": 11,
+    "name:UNKNOWN:UNKNOWN": 63,
+    "otherName:SELF:UNKNOWN": 24
+  },
+  "transitions": {
+    "APOLLO_NO_MATCH -> APOLLO_NO_MATCH": 32,
+    "APOLLO_NO_MATCH -> NAME_CONFLICT": 4,
+    "CURRENT_INSTITUTION_EVIDENCE_MISSING -> CURRENT_INSTITUTION_EVIDENCE_MISSING": 32,
+    "CURRENT_INSTITUTION_EVIDENCE_MISSING -> NAME_CONFLICT": 2,
+    "IDENTITY_EVIDENCE_MISSING -> IDENTITY_EVIDENCE_MISSING": 16,
+    "SEARCH_INCOMPLETE -> SEARCH_INCOMPLETE": 3
+  },
+  "baselineStoredDecisionMismatchIds": [
+    88
+  ],
+  "items": [
+    {
+      "itemId": 44,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 6,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 1,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 45,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 7,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 1,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 46,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 1,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 47,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 4,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 1,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 48,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 3,
+        "outcome": "PENDING",
+        "qualification": "CONFLICT",
+        "reasons": [
+          "NAME_CONFLICT"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 49,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 1,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 50,
+      "storedReasons": [
+        "IDENTITY_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 51,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 2,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 52,
+      "storedReasons": [
+        "IDENTITY_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 53,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 7,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 1,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 54,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 1,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 55,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 6,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 2,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 56,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 1,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 57,
+      "storedReasons": [
+        "IDENTITY_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 58,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 3,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 1,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 59,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 2,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 60,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 7,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 1,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 61,
+      "storedReasons": [
+        "IDENTITY_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 62,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 63,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 64,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 8,
+        "outcome": "PENDING",
+        "qualification": "CONFLICT",
+        "reasons": [
+          "NAME_CONFLICT"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 2,
+      "unqueriedAliasCount": 3
+    },
+    {
+      "itemId": 65,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 2,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 1,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 66,
+      "storedReasons": [
+        "IDENTITY_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 67,
+      "storedReasons": [
+        "IDENTITY_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 68,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 69,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 70,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 71,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 72,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 1,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 73,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 74,
+      "storedReasons": [
+        "SEARCH_INCOMPLETE"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "SEARCH_INCOMPLETE"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 1,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "SEARCH_INCOMPLETE"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 75,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 1,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 76,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 77,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 6,
+        "outcome": "PENDING",
+        "qualification": "CONFLICT",
+        "reasons": [
+          "NAME_CONFLICT"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 4
+    },
+    {
+      "itemId": 78,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 4,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 1,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 79,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 1,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 80,
+      "storedReasons": [
+        "IDENTITY_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 81,
+      "storedReasons": [
+        "IDENTITY_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 82,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 2,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 83,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 10,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 2,
+      "unqueriedAliasCount": 4
+    },
+    {
+      "itemId": 84,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 14,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 1,
+      "unqueriedAliasCount": 5
+    },
+    {
+      "itemId": 85,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 1,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 86,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 3,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 1,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 87,
+      "storedReasons": [
+        "IDENTITY_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 88,
+      "storedReasons": [
+        "IDENTITY_CHANGED"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 3,
+        "outcome": "PENDING",
+        "qualification": "CONFLICT",
+        "reasons": [
+          "NAME_CONFLICT"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 89,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 7,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 2,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 90,
+      "storedReasons": [
+        "IDENTITY_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 91,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 1,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 92,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 5,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 1,
+      "unqueriedAliasCount": 2
+    },
+    {
+      "itemId": 93,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 1,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 94,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 4,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 1,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 95,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 1,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 96,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 8,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 1,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 97,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 6,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 1,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 98,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 1,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 99,
+      "storedReasons": [
+        "IDENTITY_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 100,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 1,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 101,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 4,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 1,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 102,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 8,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 2,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 103,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 5,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 1,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 104,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 4,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 2,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 105,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 106,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 1,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 107,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 5,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 1,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 108,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 3,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 109,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 5,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 2,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 110,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 1,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 111,
+      "storedReasons": [
+        "IDENTITY_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 112,
+      "storedReasons": [
+        "IDENTITY_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 113,
+      "storedReasons": [
+        "IDENTITY_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 114,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 1,
+        "outcome": "PENDING",
+        "qualification": "CONFLICT",
+        "reasons": [
+          "NAME_CONFLICT"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 115,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 5,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 2,
+      "unqueriedAliasCount": 1
+    },
+    {
+      "itemId": 116,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 3,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 117,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 10,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 1,
+      "unqueriedAliasCount": 2
+    },
+    {
+      "itemId": 118,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 3,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 119,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 2,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 120,
+      "storedReasons": [
+        "IDENTITY_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 121,
+      "storedReasons": [
+        "SEARCH_INCOMPLETE"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "SEARCH_INCOMPLETE"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "SEARCH_INCOMPLETE"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 122,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 2,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 1,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 123,
+      "storedReasons": [
+        "IDENTITY_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "IDENTITY_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 124,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 6,
+        "outcome": "PENDING",
+        "qualification": "CONFLICT",
+        "reasons": [
+          "NAME_CONFLICT"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 2,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 125,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 1,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 126,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 3,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 127,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 3,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 1,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 128,
+      "storedReasons": [
+        "SEARCH_INCOMPLETE"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "SEARCH_INCOMPLETE"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 3,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "SEARCH_INCOMPLETE"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 129,
+      "storedReasons": [
+        "APOLLO_NO_MATCH"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 2,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "APOLLO_NO_MATCH"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 130,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 2,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 0,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 131,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 4,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 1,
+      "unqueriedAliasCount": 0
+    },
+    {
+      "itemId": 132,
+      "storedReasons": [
+        "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+      ],
+      "before": {
+        "factCount": 0,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "normalized": {
+        "factCount": 4,
+        "outcome": "PENDING",
+        "qualification": "UNKNOWN",
+        "reasons": [
+          "CURRENT_INSTITUTION_EVIDENCE_MISSING"
+        ],
+        "personMatched": false
+      },
+      "currentOrgEmployment": 0,
+      "currentSelfEmployment": 1,
+      "unqueriedAliasCount": 1
+    }
+  ],
+  "repeatIdentical": true
+}

@@ -1,0 +1,78 @@
+$ rg -n fun |http\.(exchange|put|postFor)|restTemplate\.|promoteToCandidate|promoteToApplication|ensureCandidate|deleteCandidate|_update|_bulk src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt
+59:    fun markApplicationClosed(contact: ExpertContact) {
+72:            val updateUrl = "${properties.baseUrl}/$applicationIndex/_update/$orcid"
+73:            restTemplate.exchange(
+84:    fun syncOperatorStatus(orcidId: String, operatorStatus: String): SingleSyncResult {
+87:        // document does not exist (HEAD check), then _update by doc id.
+110:                val updateUrl = "${properties.baseUrl}/$index/_update/$normalizedOrcidId"
+111:                val resp = restTemplate.exchange(
+131:    fun syncOperatorStatusBatch(updates: List<Pair<String, String>>): BulkSyncResult {
+182:                    val bulkUrl = "${properties.baseUrl}/_bulk"
+187:                    val responseNode = restTemplate.exchange(
+237:     * 不写根级 `updatedAt`、不自动创建缺失文档（`doc_as_upsert=false`）、不使用 `_update_by_query`。
+243:    fun bulkUpdateExpertClassifications(
+263:                val bulkUrl = "${properties.baseUrl}/_bulk"
+268:                val responseNode = restTemplate.exchange(
+332:    fun checkExpertClassificationMapping(level: ExpertIndexLevel): Boolean {
+336:            val response = restTemplate.exchange(
+361:    fun classificationNode(classification: ExpertClassification): JsonNode =
+373:    private fun recordClassificationFailure(
+385:    private fun resolveOrcidToDocIds(index: String, orcidIds: List<String>): Map<String, String> {
+393:            val resp = restTemplate.exchange(
+413:    fun promoteToApplication(
+428:            restTemplate.exchange(
+468:            restTemplate.exchange(
+487:    fun retryFailedPromotion(promotionId: Long): ExpertApplicationPromotion {
+493:        promoteToApplication(
+508:    fun syncApplicationStatus(contact: ExpertContact, intent: String? = null) {
+528:            val updateUrl = "${properties.baseUrl}/$applicationIndex/_update/$orcid"
+529:            restTemplate.exchange(
+540:    fun promoteToCandidate(orcid: String, contact: ExpertContact): Boolean {
+547:            restTemplate.exchange(
+573:            restTemplate.exchange(
+586:    fun removeFromCandidateIndex(esDocId: String): Boolean {
+590:            restTemplate.exchange(
+611:    fun indexToRaw(orcid: String, profile: Map<String, Any?>): Boolean {
+617:            restTemplate.exchange(
+630:    fun documentExistsInIndex(indexLevel: ExpertIndexLevel, esDocId: String): Boolean {
+634:            restTemplate.exchange(
+646:    fun addTag(docId: String, tag: String, level: ExpertIndexLevel): Boolean {
+654:        val url = "${properties.baseUrl}/$index/_update/$docId"
+656:            restTemplate.exchange(url, HttpMethod.POST, HttpEntity(script, headers()), JsonNode::class.java)
+664:    fun removeTag(docId: String, tag: String, level: ExpertIndexLevel): Boolean {
+672:        val url = "${properties.baseUrl}/$index/_update/$docId"
+674:            restTemplate.exchange(url, HttpMethod.POST, HttpEntity(script, headers()), JsonNode::class.java)
+682:    fun readRawDocument(docId: String): Map<String, Any?>? {
+686:            val response = restTemplate.exchange(
+704:    fun readDiscoveryDocument(level: ExpertIndexLevel, docId: String): DiscoverySnapshot? {
+707:            restTemplate.exchange(
+727:    fun findDiscoveryHitsByEmail(email: String): List<DiscoveryEmailHit> {
+739:        val response = restTemplate.exchange(
+768:    private fun sameDiscoveryIdentity(raw: Map<String, Any?>, candidate: Map<String, Any?>): Boolean =
+771:    fun discoveryProfile(docId: String, source: Map<String, Any?>): com.weibo.talentintroduction.expert.domain.ExpertProfile {
+772:        fun text(key: String) = source[key] as? String
+773:        fun number(key: String) = (source[key] as? Number)?.toInt()
+774:        fun strings(key: String) = (source[key] as? List<*>)?.filterIsInstance<String>()
+803:    fun reconcileDiscoveryCandidate(
+819:        val update = restTemplate.exchange(
+820:            "${properties.baseUrl}/$rawIndex/_update/$docId?if_seq_no=${snapshot.seqNo}&if_primary_term=${snapshot.primaryTerm}",
+839:            restTemplate.exchange(
+872:    fun projectDiscoveryCandidate(
+913:            restTemplate.exchange(putUrl, HttpMethod.PUT, HttpEntity(candidateDoc, headers()), JsonNode::class.java)
+937:    fun writeCandidateDocument(docId: String, doc: Map<String, Any?>): Boolean {
+942:            restTemplate.exchange(
+961:    fun writeIdentityProofIfVersionMatches(
+969:        val url = "${properties.baseUrl}/$index/_update/$docId?if_seq_no=$seqNo&if_primary_term=$primaryTerm"
+972:            val response = restTemplate.exchange(
+998:    fun writeDiscoveryNameAndProofIfVersionMatches(
+1011:        val url = "${properties.baseUrl}/$index/_update/$docId?if_seq_no=$seqNo&if_primary_term=$primaryTerm"
+1013:            val response = restTemplate.exchange(
+1033:    fun demoteToRaw(orcid: String, contact: ExpertContact): Boolean {
+1039:        val deleteCandidateUrl = "${properties.baseUrl}/$candidateIndex/_delete_by_query"
+1044:            val resp = restTemplate.exchange(
+1045:                deleteCandidateUrl, HttpMethod.POST,
+1059:            val resp = restTemplate.exchange(
+1076:    private fun toStringMap(node: JsonNode): Map<String, Any?> {
+1084:    private fun toAny(node: JsonNode): Any? = when {
+1096:    private fun headers(): HttpHeaders =
+1102:    private fun basicAuthHeader(): String {

@@ -1,0 +1,26 @@
+$ rg -n QualificationEvidenceParser\(|DiscoveryVerificationRules\(|DiscoveryVerificationWorker\(|DiscoveryVerificationRepository\(|DiscoveryVerificationQueryService\( src
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:22:class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:30:class DiscoveryVerificationWorker(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryService.kt:22:class DiscoveryVerificationQueryService(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryService.kt:29:    private val rules = DiscoveryVerificationRules()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/QualificationEvidenceParser.kt:13:class QualificationEvidenceParser(private val clock: Clock = Clock.systemUTC()) {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt:14:        DiscoveryVerificationWorker(props, repo, Mockito.mock(OrcidVerificationEvidenceClient::class.java),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt:16:            DiscoveryVerificationRules(ruleClock), Mockito.mock(DiscoveryVerificationCommitService::class.java),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:32:class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:54:                    QualificationEvidenceParser(clock).completedDoctorate(it.path("role").asText())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGateTest.kt:29:    val rules = DiscoveryVerificationRules(ruleClock)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGateTest.kt:155:        val repo = DiscoveryVerificationRepository(jdbc)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/QualificationEvidenceParserTest.kt:9:    private val parser = QualificationEvidenceParser(ruleClock)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/QualificationEvidenceParserTest.kt:37:        assertEquals(VerificationQualification.UNKNOWN, DiscoveryVerificationRules(ruleClock).evaluate(ruleSnapshot(), listOf(fact)).qualification)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/QualificationEvidenceParserTest.kt:46:            val result = DiscoveryVerificationRules(ruleClock).evaluate(ruleSnapshot(),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/QualificationEvidenceParserTest.kt:66:        assertEquals(VerificationQualification.UNKNOWN, DiscoveryVerificationRules(ruleClock).evaluate(ruleSnapshot(), facts).qualification)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationFlowIT.kt:55:    val repository = transactional(DiscoveryVerificationRepository(jdbc))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationFlowIT.kt:62:    val rules = DiscoveryVerificationRules(clock)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationFlowIT.kt:121:    fun worker() = DiscoveryVerificationWorker(props, repository, OrcidVerificationEvidenceClient(props, providerHttp, clock),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationFlowIT.kt:122:        ApolloPeopleSearchClient(props, providerHttp, clock), QualificationEvidenceParser(clock), rules, commits,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryServiceTest.kt:16:    private val service = DiscoveryVerificationQueryService(repository, admissions,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryServiceTest.kt:87:        val disabled = DiscoveryVerificationQueryService(repository, admissions, DiscoveryVerificationProperties()).capabilities()
+src/test/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryVerificationControllerTest.kt:29:    private val query = DiscoveryVerificationQueryService(repository, admissions, DiscoveryVerificationProperties())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRulesTest.kt:31:    private val rules = DiscoveryVerificationRules(ruleClock)
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationReportingIT.kt:98:                val reader = DiscoveryVerificationQueryService(repository, DiscoveryReviewRepository(jdbc), flow.props,
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt:122:        assertEquals(first, DiscoveryVerificationRepository(jdbc).findItem(first.id))

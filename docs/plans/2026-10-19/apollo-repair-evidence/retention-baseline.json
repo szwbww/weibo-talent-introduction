@@ -1,0 +1,17 @@
+{
+  "observedAt": "2026-10-19T16:12:22+08:00",
+  "executionId": 26839,
+  "samplePackages": 110,
+  "savedBodies": 51,
+  "bodyBytes": 129037672,
+  "bodyHashOrSizeFailures": 0,
+  "buckets": {
+    "IDENTITY_UNRESOLVED": 20,
+    "NO_EMAIL": 20,
+    "DOWNLOAD_FAILED": 20,
+    "NO_FULLTEXT_ADDRESS": 20,
+    "BODY_TOO_LARGE": 20,
+    "SUCCESS_CONTROL": 10
+  },
+  "note": "Prior read-only audit results; recheck at execution; live retention remains 7 days and quota bounded."
+}

@@ -1,0 +1,121 @@
+$ rg -n DiscoverySample|discovery-samples|discovery.samples src/main scripts/expert_discovery
+scripts/expert_discovery/replay_samples.sh:31:    com.weibo.talentintroduction.discovery.sample.DiscoverySampleReplay "$@"
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:13:enum class DiscoverySampleEntry { SYNC, QUEUE }
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:14:data class DiscoverySampleContext(val executionId: Long, val source: String, val entry: DiscoverySampleEntry,
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:17:        DiscoverySampleEntry.SYNC -> (sourceBatchNumber ?: 0) > 0 && queueJobId == null
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:18:        DiscoverySampleEntry.QUEUE -> (queueJobId ?: 0) > 0 && sourceBatchNumber == null
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:21:enum class DiscoverySampleBucket { EXTRACTION_EXCEPTION, IDENTITY_UNRESOLVED, NO_FULLTEXT_ADDRESS, NO_EMAIL,
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:23:enum class DiscoverySampleBodyStatus { SAVED, NOT_AVAILABLE, BODY_LIMIT }
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:24:enum class DiscoverySampleAttemptKind { PDF_URL, PMC_XML }
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:25:enum class DiscoverySampleDecision { SAVED, DISABLED, INVALID_CONTEXT, CONFIG_ERROR, CAPTURE_BUSY, HOST_BUSY,
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:27:data class DiscoverySampleAttempt(val sequence: Int, val kind: DiscoverySampleAttemptKind, val url: String,
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:29:    val exceptionClass: String?, val bodyStatus: DiscoverySampleBodyStatus, val bodyFile: String?,
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:31:data class DiscoverySampleManifest(val schemaVersion: Int = 1, val stage: String = "EXTRACTION",
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:32:    val sampleId: String, val inputSha256: String, val capturedAt: String, val context: DiscoverySampleContext,
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:33:    val paper: PaperMetadata, val urlFingerprints: List<String?>, val bucket: DiscoverySampleBucket,
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:35:    val identityExtractionVersion: Int = DiscoveryIdentity.EXTRACTION_VERSION, val attempts: List<DiscoverySampleAttempt>,
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:38:object DiscoverySampleJson {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:79:    fun bucket(outcome: EmailExtractionOutcome?, error: Throwable?): DiscoverySampleBucket = when {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:80:        error != null -> DiscoverySampleBucket.EXTRACTION_EXCEPTION
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:81:        outcome!!.emails.any { it.givenNames.isNullOrBlank() || it.familyNames.isNullOrBlank() } -> DiscoverySampleBucket.IDENTITY_UNRESOLVED
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:82:        outcome.failureReason == "NO_PMC_ID" -> DiscoverySampleBucket.NO_FULLTEXT_ADDRESS
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:83:        outcome.failureReason?.startsWith("NO_EMAIL_IN_") == true -> DiscoverySampleBucket.NO_EMAIL
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:84:        outcome.failureReason == "PDF_TOO_LARGE" -> DiscoverySampleBucket.BODY_TOO_LARGE
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:85:        outcome.failureReason in listOf("PDF_DOWNLOAD_FAILED", "FULLTEXT_FETCH_FAILED") -> DiscoverySampleBucket.DOWNLOAD_FAILED
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:86:        outcome.failureReason in listOf("PDF_PARSE_FAILED", "XML_PARSE_FAILED") -> DiscoverySampleBucket.PARSE_FAILED
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:87:        !outcome.failureReason.isNullOrEmpty() || outcome.emails.isEmpty() -> DiscoverySampleBucket.OTHER_FAILURE
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:88:        else -> DiscoverySampleBucket.SUCCESS_CONTROL
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:48:import com.weibo.talentintroduction.discovery.sample.DiscoverySampleCapture
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:49:import com.weibo.talentintroduction.discovery.sample.DiscoverySampleContext
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:50:import com.weibo.talentintroduction.discovery.sample.DiscoverySampleEntry
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:141:    private val sampleCapture: DiscoverySampleCapture? = null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:939:                DiscoverySampleContext(it, source.sourceName, DiscoverySampleEntry.SYNC, batchNumber, null)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1609:        sampleContext: DiscoverySampleContext?
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1671:        sampleContext: DiscoverySampleContext?
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2066:        sampleContext: DiscoverySampleContext? = null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:25:import com.weibo.talentintroduction.discovery.sample.DiscoverySampleContext
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:26:import com.weibo.talentintroduction.discovery.sample.DiscoverySampleEntry
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:1032:                        DiscoverySampleContext(it, stream.source, DiscoverySampleEntry.QUEUE, null, job.id)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:13:import com.weibo.talentintroduction.discovery.sample.DiscoverySampleAttemptKind
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:14:import com.weibo.talentintroduction.discovery.sample.DiscoverySampleCapture
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:107:                val attempt = DiscoverySampleCapture.beginAttempt(DiscoverySampleAttemptKind.PMC_XML, url)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:113:                    ).also { bytes -> if (bytes != null) DiscoverySampleCapture.fullBody(attempt, bytes) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:118:                            DiscoverySampleCapture.headers(attempt, error.statusCode.value(), error.responseHeaders?.contentType?.toString())
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:123:                    DiscoverySampleCapture.endAttempt(attempt, attemptError)
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:3:import com.weibo.talentintroduction.config.DiscoverySampleProperties
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:20:class DiscoverySampleStore(val properties: DiscoverySampleProperties, private val clock: Clock = Clock.systemUTC()) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:22:    private val counts = ConcurrentHashMap<DiscoverySampleDecision, AtomicLong>()
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:28:    private data class Package(val path: Path, val manifest: DiscoverySampleManifest, val bytes: Long)
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:32:    fun decision(value: DiscoverySampleDecision): DiscoverySampleDecision {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:33:        if (value == DiscoverySampleDecision.DISABLED) return value
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:35:        if (value != DiscoverySampleDecision.SAVED) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:45:        if (!properties.valid()) { decision(DiscoverySampleDecision.CONFIG_ERROR); return false }
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:96:                    DiscoverySampleJson.mapper.readValue(Files.readAllBytes(json), DiscoverySampleManifest::class.java)
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:102:                for (attempt in manifest.attempts) if (attempt.bodyStatus == DiscoverySampleBodyStatus.SAVED) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:107:                    if (DiscoverySampleJson.hash(Files.readAllBytes(body)) != attempt.bodySha256) throw InvalidStore()
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:117:    private fun locked(action: () -> DiscoverySampleDecision): DiscoverySampleDecision {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:118:        if (!properties.enabled) return DiscoverySampleDecision.DISABLED
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:119:        if (!properties.valid()) return decision(DiscoverySampleDecision.CONFIG_ERROR)
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:121:        if (!lock.tryLock()) return decision(DiscoverySampleDecision.LOCK_BUSY)
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:129:                if (fileLock == null) return decision(DiscoverySampleDecision.LOCK_BUSY)
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:132:        } catch (_: InvalidStore) { return decision(DiscoverySampleDecision.STORE_INVALID) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:133:        catch (_: Exception) { return decision(DiscoverySampleDecision.IO_ERROR) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:146:    fun cleanup() { if (properties.enabled) locked { retained(); DiscoverySampleDecision.SAVED } }
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:148:    fun commit(manifest: DiscoverySampleManifest, bodies: Map<String, ByteArray>): DiscoverySampleDecision = locked {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:149:        if (!manifest.context.valid()) return@locked DiscoverySampleDecision.INVALID_CONTEXT
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:150:        val json = DiscoverySampleJson.bounded(manifest, properties.maxMetadataBytes)
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:151:            ?: return@locked DiscoverySampleDecision.METADATA_LIMIT
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:153:            manifest.inputSha256 != DiscoverySampleJson.hash(DiscoverySampleJson.canonical(manifest.paper)) ||
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:154:            manifest.sampleId != DiscoverySampleJson.hash("${manifest.context.executionId}\n${manifest.context.source}\n${manifest.inputSha256}"))
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:155:            return@locked DiscoverySampleDecision.STORE_INVALID
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:156:        val expected = manifest.attempts.filter { it.bodyStatus == DiscoverySampleBodyStatus.SAVED }
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:159:            return@locked DiscoverySampleDecision.STORE_INVALID
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:162:                attempt.elapsedMs < 0 || attempt.url != DiscoverySampleJson.scrub(attempt.url) ||
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:164:                        DiscoverySampleBodyStatus.SAVED -> attempt.bodyFile == null || attempt.bodySha256 == null || attempt.bodyBytes == null
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:165:                        DiscoverySampleBodyStatus.NOT_AVAILABLE -> attempt.bodyFile != null || attempt.bodySha256 != null || attempt.bodyBytes != null
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:166:                        DiscoverySampleBodyStatus.BODY_LIMIT -> attempt.bodyFile != null || attempt.bodySha256 != null || attempt.bodyBytes == null || attempt.bodyBytes < 0
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:168:            } || manifest.paper != DiscoverySampleJson.paper(manifest.paper))
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:169:            return@locked DiscoverySampleDecision.STORE_INVALID
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:171:            val body = bodies[attempt.bodyFile] ?: return@locked DiscoverySampleDecision.STORE_INVALID
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:173:                body.size.toLong() != attempt.bodyBytes || DiscoverySampleJson.hash(body) != attempt.bodySha256)
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:174:                return@locked DiscoverySampleDecision.STORE_INVALID
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:177:        if (packages.any { it.manifest.sampleId == manifest.sampleId }) return@locked DiscoverySampleDecision.DUPLICATE
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:178:        val limit = if (manifest.bucket == DiscoverySampleBucket.SUCCESS_CONTROL) properties.maxSuccessControlsPerRun else properties.maxSamplesPerBucketPerRun
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:180:            return@locked DiscoverySampleDecision.QUOTA
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:186:        if (Files.getFileStore(root).usableSpace < needed) return@locked DiscoverySampleDecision.IO_ERROR
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:195:            bodies.forEach { (name, bytes) -> if (DiscoverySampleJson.hash(Files.readAllBytes(temporary.resolve(name))) != DiscoverySampleJson.hash(bytes)) throw InvalidStore() }
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:198:            DiscoverySampleDecision.SAVED
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:12:class DiscoverySampleCapture(private val store: DiscoverySampleStore, private val clock: Clock = Clock.systemUTC()) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:14:    private class Attempt(val sequence: Int, val kind: DiscoverySampleAttemptKind, val url: String,
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:20:        var bodyStatus = DiscoverySampleBodyStatus.NOT_AVAILABLE
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:24:    private class Scope(val owner: DiscoverySampleCapture) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:32:        fun beginAttempt(kind: DiscoverySampleAttemptKind, url: String, pdfSettings: PdfExtractionProperties? = null): Any? = try {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:52:                value.bodyStatus = DiscoverySampleBodyStatus.BODY_LIMIT
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:53:            else { value.bytes = bytes.copyOf(); scope.bodies++; value.bodyStatus = DiscoverySampleBodyStatus.SAVED }
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:60:    fun capture(context: DiscoverySampleContext?, paper: PaperMetadata, delegate: () -> EmailExtractionOutcome): EmailExtractionOutcome {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:62:        if (context == null || !context.valid()) { store.decision(DiscoverySampleDecision.INVALID_CONTEXT); return delegate() }
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:63:        if (!permits.tryAcquire()) { store.decision(DiscoverySampleDecision.CAPTURE_BUSY); return delegate() }
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:73:                if (error is FulltextRequestGate.HostBusyException || FulltextRequestGate.hostBusyInScope()) store.decision(DiscoverySampleDecision.HOST_BUSY)
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:75:            } catch (_: Exception) { store.decision(DiscoverySampleDecision.IO_ERROR) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:79:    private fun save(context: DiscoverySampleContext, paper: PaperMetadata, scope: Scope, outcome: EmailExtractionOutcome?, error: Throwable?) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:80:        if (DiscoverySampleJson.bounded(paper, store.properties.maxMetadataBytes) == null) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:81:            store.decision(DiscoverySampleDecision.METADATA_LIMIT)
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:84:        val scrubbed = DiscoverySampleJson.paper(paper)
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:85:        val input = DiscoverySampleJson.hash(DiscoverySampleJson.canonical(scrubbed))
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:89:            DiscoverySampleAttempt(value.sequence, value.kind, DiscoverySampleJson.scrub(value.url), DiscoverySampleJson.hash(value.url),
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:91:                value.bytes?.let(DiscoverySampleJson::hash), value.length, value.settings)
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:93:        store.commit(DiscoverySampleManifest(sampleId = DiscoverySampleJson.hash("${context.executionId}\n${context.source}\n$input"),
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:95:            urlFingerprints = listOf(paper.downloadUrl?.let(DiscoverySampleJson::hash)) + paper.candidateDownloadUrls.map(DiscoverySampleJson::hash),
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:96:            bucket = DiscoverySampleJson.bucket(outcome, error), unresolvedAuthorEmailCount = outcome?.emails?.count {
+src/main/kotlin/com/weibo/talentintroduction/config/DiscoverySampleProperties.kt:8:@ConfigurationProperties("talent-introduction.expert-discovery.samples")
+src/main/kotlin/com/weibo/talentintroduction/config/DiscoverySampleProperties.kt:9:data class DiscoverySampleProperties(
+src/main/kotlin/com/weibo/talentintroduction/config/DiscoverySampleProperties.kt:11:    var directory: String = "/opt/talent/data/discovery-samples",
+src/main/kotlin/com/weibo/talentintroduction/config/DiscoverySampleProperties.kt:34:@EnableConfigurationProperties(DiscoverySampleProperties::class)
+src/main/kotlin/com/weibo/talentintroduction/config/DiscoverySampleProperties.kt:35:class DiscoverySampleConfiguration
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:10:import com.weibo.talentintroduction.discovery.sample.DiscoverySampleAttemptKind
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:11:import com.weibo.talentintroduction.discovery.sample.DiscoverySampleCapture
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:235:        val attempt = DiscoverySampleCapture.beginAttempt(DiscoverySampleAttemptKind.PDF_URL, uri.toString(), properties)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:246:                        DiscoverySampleCapture.headers(attempt, response.rawStatusCode, contentType?.toString())
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:276:                DiscoverySampleCapture.fullBody(attempt, bytes)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:293:                    DiscoverySampleCapture.headers(attempt, error.statusCode.value(), error.responseHeaders?.contentType?.toString())
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:298:            DiscoverySampleCapture.endAttempt(attempt, attemptError)

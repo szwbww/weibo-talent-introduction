@@ -1,0 +1,58 @@
+$ rg -n expert_discovery_(admission|review_item)|findItemsByDocIds|findManagedContexts|findContext[s]?\(|evaluateManaged|recordAutomaticPersisted|projectApprovedCandidate src/main
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryReview.kt:19: * 02（I-1）：`expert_discovery_admission.decision` 的取值域，逐字对应迁移。
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryReview.kt:57:/** 02（I-1）：`expert_discovery_admission` 行。 */
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryReview.kt:71:/** 02（I-1/I-4）：`expert_discovery_review_item` 行（快照名单 + 决策 + 应用状态 + 历史）。 */
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:367:            val context = verificationGate?.findContext(docId, profile)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:455:        val sync = review.projectApprovedCandidate(docId, source, decision)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:53: * 03：批次阶段。没有新列，全部由 `task_execution` 行与 `expert_discovery_review_item` 持久状态派生
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:858:    fun recordAutomaticPersisted(docId: String, profile: ExpertProfile,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1033:    fun projectApprovedCandidate(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1070:            val sync = projectApprovedCandidate(item.expertDocId, snapshot.source, decision)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1377:                            projectApprovedCandidate(docId, expert.source, automatic.status.name)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1465:            UPDATE expert_discovery_admission
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1479:            "UPDATE expert_discovery_review_item SET error_code = ? WHERE id = ? AND state = ?",
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1486:            "UPDATE expert_discovery_review_item SET error_code = NULL WHERE id = ? AND state = ? AND error_code = ?",
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1502:            projectApprovedCandidate(docId, source, decision)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGate.kt:35:    fun findContext(docId: String, profile: ExpertProfile): VerificationAdmissionContext =
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGate.kt:36:        findContexts(mapOf(docId to profile)).getValue(docId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGate.kt:38:    fun findContexts(keys: Map<String, ExpertProfile>): Map<String, VerificationAdmissionContext> {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGate.kt:40:        val items = repository.findItemsByDocIds(keys.keys).groupBy { it.expertDocId }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGate.kt:44:    fun evaluateManaged(baseAutomatic: AutomaticAdmissionResult, context: VerificationAdmissionContext): AutomaticAdmissionResult {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:126:            repository.findItemsByDocIds(listOf(docId)).filter {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt:96:            val persisted = review.recordAutomaticPersisted(item.expertDocId, input.snapshot!!.profile, requireNotNull(automatic))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt:119:            val sync = review.projectApprovedCandidate(item.expertDocId, raw.source, "AUTO_PASSED")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2542:        val sync = review.projectApprovedCandidate(docId, rawSource, admission.decision)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicy.kt:77:        val loaded = context ?: verificationGate.findContext(docId, profile)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicy.kt:79:        return verificationGate.evaluateManaged(base, loaded)
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:216:    fun findManagedContexts(docIds: Collection<String>): Map<String, VerificationContext> {
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:235:    fun findItemsByDocIds(docIds: Collection<String>): List<VerificationItem> {
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:413:        jdbc.query("SELECT expert_doc_id FROM expert_discovery_admission WHERE expert_doc_id=? FOR UPDATE",
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewScanService.kt:245:        val contexts = verificationGate?.findContexts(profiles)
+src/main/resources/db/migration/V148__create_expert_discovery_review.sql:5:--   expert_discovery_admission —— 每个真实 docId 一行「当前结论/版本」，支持事务行锁
+src/main/resources/db/migration/V148__create_expert_discovery_review.sql:10:--   expert_discovery_review_item —— 每次 prepare 快照的每个目标一行，保存决策、应用
+src/main/resources/db/migration/V148__create_expert_discovery_review.sql:16:CREATE TABLE expert_discovery_admission (
+src/main/resources/db/migration/V148__create_expert_discovery_review.sql:29:CREATE TABLE expert_discovery_review_item (
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:22: * 02（I-1/I-2/I-4）：`expert_discovery_admission` + `expert_discovery_review_item` 的唯一访问点。
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:46:            INSERT IGNORE INTO expert_discovery_admission
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:57:            "SELECT * FROM expert_discovery_admission WHERE expert_doc_id = ?",
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:68:                "SELECT * FROM expert_discovery_admission WHERE expert_doc_id IN ($placeholders)",
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:98:                INSERT INTO expert_discovery_review_item
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:128:        jdbcTemplate.query("SELECT * FROM expert_discovery_review_item WHERE id = ?", ITEM_MAPPER, id).firstOrNull()
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:137:                "SELECT * FROM expert_discovery_review_item WHERE id IN ($placeholders)",
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:146:            "SELECT * FROM expert_discovery_review_item WHERE batch_key = ? ORDER BY id ASC",
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:152:            "SELECT * FROM expert_discovery_review_item WHERE expert_doc_id = ? ORDER BY id DESC LIMIT ?",
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:158:            "SELECT state, COUNT(*) AS c FROM expert_discovery_review_item WHERE batch_key = ? GROUP BY state",
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:165:            "UPDATE expert_discovery_review_item SET state = ? WHERE batch_key = ? AND state = ?",
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:175:            "SELECT MIN(created_at) AS created FROM expert_discovery_review_item WHERE batch_key = ?",
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:182:            "SELECT * FROM expert_discovery_review_item WHERE batch_key = ? AND id > ? ORDER BY id ASC LIMIT ?",
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:206:            UPDATE expert_discovery_review_item
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:216:            SELECT * FROM expert_discovery_review_item
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:227:            "UPDATE expert_discovery_review_item SET state = ? WHERE batch_key = ? AND state IN (?, ?, ?)",
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:265:            UPDATE expert_discovery_admission
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:328:            UPDATE expert_discovery_admission
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:348:            UPDATE expert_discovery_review_item
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:360:            "SELECT * FROM expert_discovery_review_item WHERE id = ? FOR UPDATE", ITEM_MAPPER, id
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:365:            "SELECT * FROM expert_discovery_admission WHERE expert_doc_id = ? FOR UPDATE",
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:371:            "UPDATE expert_discovery_review_item SET state = ? WHERE id = ?", state, itemId
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:378:            UPDATE expert_discovery_review_item
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:389:            UPDATE expert_discovery_review_item

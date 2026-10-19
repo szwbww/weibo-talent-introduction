@@ -1,0 +1,68 @@
+$ rg -n indexToRaw|writeCandidateDocument|projectDiscoveryCandidate|promoteToCandidate|promoteToApplication|reconcileDiscoveryCandidate|removeFromCandidateIndex|demoteToRaw|_bulk|_update_by_query|_delete_by_query src/main/kotlin scripts
+scripts/test_build_sbir_expert_import.py:261:    def test_bulk_file_create_writes_raw_and_candidate_with_same_tagged_document(self) -> None:
+scripts/test_build_sbir_expert_import.py:265:        lines = (self.output / "experts_bulk.ndjson").read_text(encoding="utf-8").splitlines()
+scripts/apply_legacy_discovery_approval.py:98:        result = self.request('/_bulk', '\n'.join(lines) + '\n', ndjson=True)
+scripts/update_sbir_employment.py:47:def run_bulk(args: argparse.Namespace, body: bytes) -> dict[str, object]:
+scripts/update_sbir_employment.py:52:        f"'{args.es_url.rstrip('/')}/_bulk?refresh=false' --data-binary @-"
+scripts/update_sbir_employment.py:89:            run_bulk(args, bulk_body(index, batch))
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:80:                            val deleted = expertIndexWriterService.removeFromCandidateIndex(docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:95:                        val deleted = expertIndexWriterService.removeFromCandidateIndex(docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:299:        return expertIndexWriterService.writeCandidateDocument(docId, doc)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:394:                if (!expertIndexWriterService.reconcileDiscoveryCandidate(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:407:                if (!expertIndexWriterService.reconcileDiscoveryCandidate(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:422:            if (!expertIndexWriterService.reconcileDiscoveryCandidate(
+scripts/expert_discovery/enterprise_batch/enrich_engineer_emails.py:96:def build_bulk_request(person_ids: list[str]) -> tuple[str, dict]:
+scripts/expert_discovery/enterprise_batch/enrich_engineer_emails.py:250:        url, body = build_bulk_request(ids)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:261:    fun promoteToApplication(contactId: Long): ExpertContact {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:270:        val ok = expertIndexWriterService.promoteToApplication(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:282:    fun promoteToCandidate(contactId: Long): ExpertContact {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:285:        val ok = expertIndexWriterService.promoteToCandidate(contact.orcidId, contact)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:291:    fun demoteToRaw(contactId: Long): ExpertContact {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:294:        val ok = expertIndexWriterService.demoteToRaw(contact.orcidId, contact)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:182:                    val bulkUrl = "${properties.baseUrl}/_bulk"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:237:     * 不写根级 `updatedAt`、不自动创建缺失文档（`doc_as_upsert=false`）、不使用 `_update_by_query`。
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:263:                val bulkUrl = "${properties.baseUrl}/_bulk"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:413:    fun promoteToApplication(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:474:            val removedFromCandidate = removeFromCandidateIndex(normalizedOrcid)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:493:        promoteToApplication(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:540:    fun promoteToCandidate(orcid: String, contact: ExpertContact): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:586:    fun removeFromCandidateIndex(esDocId: String): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:611:    fun indexToRaw(orcid: String, profile: Map<String, Any?>): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:803:    fun reconcileDiscoveryCandidate(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:835:            return writeCandidateDocument(docId, candidateDoc)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:872:    fun projectDiscoveryCandidate(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:937:    fun writeCandidateDocument(docId: String, doc: Map<String, Any?>): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:1033:    fun demoteToRaw(orcid: String, contact: ExpertContact): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:1039:        val deleteCandidateUrl = "${properties.baseUrl}/$candidateIndex/_delete_by_query"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:1040:        val deleteApplicationUrl = "${properties.baseUrl}/$applicationIndex/_delete_by_query"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:1055:            log.warn("Failed to delete orcid={} from candidate index via _delete_by_query", orcid, e)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:1070:            log.warn("Failed to delete orcid={} from application index via _delete_by_query", orcid, e)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:38:            targetLevel == "RAW" -> demoteToRaw(contact)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:67:        val ok = expertIndexWriterService.promoteToCandidate(contact.orcidId, contact)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:79:        val ok = expertIndexWriterService.promoteToApplication(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:96:        val ok = expertIndexWriterService.promoteToApplication(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:106:    private fun demoteToRaw(contact: ExpertContact): ExpertContact {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:108:        val ok = expertIndexWriterService.demoteToRaw(contact.orcidId, contact)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1476:                    if (!expertIndexWriterService.indexToRaw(esDocId, profileMap)) { sourceStats.rawWriteFailed++; continue }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1834:            if (!expertIndexWriterService.indexToRaw(identity.esDocId, profileMap)) {
+scripts/expert_discovery/enterprise_batch/import_es_documents.py:74:    response = client.request("POST", "/_bulk?refresh=wait_for", ("\n".join(lines) + "\n").encode(), "application/x-ndjson")
+scripts/expert_discovery/enterprise_batch/import_es_documents.py:102:        response = client.request("POST", "/{}/_update_by_query?refresh=true&conflicts=proceed".format(options.index), {
+scripts/expert_discovery/enterprise_batch/update_es_research_fields.py:67:        "POST", "/_bulk?refresh=wait_for", ("\n".join(lines) + "\n").encode(), "application/x-ndjson"
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:177:    fun promoteToApplication(@PathVariable contactId: Long): ExpertContactResponse =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:181:    fun promoteToCandidate(@PathVariable contactId: Long): ExpertContactResponse =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:185:    fun demoteToRaw(@PathVariable contactId: Long): ExpertContactResponse =
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:128:            val ok = expertIndexWriterService.promoteToApplication(
+scripts/expert_discovery/enterprise_batch/test_enrich_engineer_emails.py:8:    build_bulk_request,
+scripts/expert_discovery/enterprise_batch/test_enrich_engineer_emails.py:44:    def test_bulk_request_can_only_request_native_work_email(self):
+scripts/expert_discovery/enterprise_batch/test_enrich_engineer_emails.py:45:        url, body = build_bulk_request(["p-1", "p-2"])
+scripts/build_sbir_expert_import.py:571:    with (output_dir / "experts_bulk.ndjson").open("w", encoding="utf-8") as handle:
+scripts/build_sbir_expert_import.py:621:            "bulk": str(output_dir / "experts_bulk.ndjson"),
+scripts/expert_discovery/enterprise_batch/import_candidate_es.py:231:    response = client.request("POST", "/_bulk?refresh=wait_for", ("\n".join(lines) + "\n").encode(), "application/x-ndjson")
+src/main/kotlin/com/weibo/talentintroduction/llm/service/UnsupportedAnswerIndexService.kt:434:                "${indexUrl()}/_update_by_query",
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutomaticApplicationPromotionService.kt:75:            val ok = expertIndexWriterService.promoteToApplication(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:156:        promoteToApplication: Boolean = false
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:172:        if (promoteToApplication && !contact.applicationIndexed) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:176:            val ok = expertIndexWriterService.promoteToApplication(
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt:168:            promoteToApplication = request.promoteToApplication ?: false
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt:947:    val promoteToApplication: Boolean? = null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1038:        val result = writer.projectDiscoveryCandidate(docId, source, decision)

@@ -1,0 +1,104 @@
+$ rg -n DiscoverySampleCapture|DiscoverySampleStore|sample.json|body-0|samples.enabled|expert-discovery.samples src/main src/test/kotlin/com/weibo/talentintroduction/discovery/sample scripts/expert_discovery
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:14:class DiscoverySampleStoreTest {
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:37:        stream.filter { it.fileName.toString() == "sample.json" }.toArray().map { it as Path } }
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:68:                val store = DiscoverySampleStore(p, Clock.fixed(at, ZoneOffset.UTC))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:75:            val restarted = DiscoverySampleStore(p, Clock.fixed(now.plusSeconds(1031L * 8 * 86400), ZoneOffset.UTC))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:85:        DiscoverySampleStore(p).startup()
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:87:        val failed = DiscoverySampleStore(p)
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:96:        assertEquals(DiscoverySampleDecision.SAVED, DiscoverySampleStore(p).commit(sample("restart"), emptyMap()))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:98:        assertEquals(DiscoverySampleDecision.STORE_INVALID, DiscoverySampleStore(p).commit(sample("unknown"), emptyMap()))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:102:        assertEquals(DiscoverySampleDecision.STORE_INVALID, DiscoverySampleStore(p).commit(sample("nonempty"), emptyMap()))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:112:        val saved = root("saved"); val store = DiscoverySampleStore(properties(saved), Clock.fixed(now, ZoneOffset.UTC))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:117:            DiscoverySampleBodyStatus.SAVED, "body-01.bin", DiscoverySampleJson.hash(body), body.size.toLong(), null)), bodyBytesRetained = body.size.toLong())
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:118:        assertEquals(DiscoverySampleDecision.SAVED, store.commit(manifest, mapOf("body-01.bin" to body)))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:122:        assertArrayEquals(body, Files.readAllBytes(file.parent.resolve("body-01.bin")))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:126:        System.getProperty("sample.acceptanceDir")?.let { Files.copy(file, Paths.get(it, "store", "saved", "sample.json"), StandardCopyOption.REPLACE_EXISTING)
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:127:            Files.copy(file.parent.resolve("body-01.bin"), Paths.get(it, "store", "saved", "body-01.bin"), StandardCopyOption.REPLACE_EXISTING) }
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:131:        assertEquals(DiscoverySampleDecision.SAVED, DiscoverySampleStore(properties(missing)).commit(missingManifest, emptyMap()))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:134:        val qs = DiscoverySampleStore(qp)
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:137:        assertEquals(DiscoverySampleDecision.QUOTA, DiscoverySampleStore(qp).commit(sample("success2", true), emptyMap()))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:140:        DiscoverySampleStore(ep, Clock.fixed(now, ZoneOffset.UTC)).commit(sample("expired"), emptyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:141:        DiscoverySampleStore(ep, Clock.fixed(now.plusSeconds(8 * 86400), ZoneOffset.UTC)).cleanup()
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:144:        val cs = DiscoverySampleStore(cp)
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:149:        val atomic = root("atomic-failure"); val broken = DiscoverySampleStore(properties(atomic))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:154:        val decision = DiscoverySampleStore(properties(unwritable)).commit(sample("unwritable"), emptyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:156:        val ioRoot = root("io-error"); val ioStore = DiscoverySampleStore(properties(ioRoot)); ioStore.atomicMove = { _, _ -> throw java.io.IOException("injected readonly filesystem") }
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:162:        val path = temp.resolve("locked"); val p = properties(path); val store = DiscoverySampleStore(p)
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:167:        DiscoverySampleStore(p).cleanup(); assertFalse(Files.exists(crashed))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:173:        Files.writeString(bad.resolve("1").resolve("a".repeat(64)).resolve("sample.json"), "broken")
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:174:        assertNotEquals(DiscoverySampleDecision.SAVED, DiscoverySampleStore(properties(bad)).commit(sample("bad"), emptyMap()))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:178:        val store = DiscoverySampleStore(properties(path).copy(maxMetadataBytes = 1024))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:182:        assertEquals(DiscoverySampleDecision.DISABLED, DiscoverySampleStore(properties(disabled).copy(enabled = false))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:186:        assertEquals(DiscoverySampleDecision.CONFIG_ERROR, DiscoverySampleStore(properties(invalid).copy(maxBodyBytes = 0))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:191:        val bound = Binder(MapConfigurationPropertySource(mapOf("talent-introduction.expert-discovery.samples.enabled" to "true",
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:192:            "talent-introduction.expert-discovery.samples.max-body-bytes" to "1024")))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt:193:            .bind("talent-introduction.expert-discovery.samples", DiscoverySampleProperties::class.java).get()
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleReplayTest.kt:27:            if (bytes == null) null else "body-01.bin", bytes?.let(DiscoverySampleJson::hash), bytes?.size?.toLong(),
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleReplayTest.kt:34:        Files.write(dir.resolve("sample.json"), mapper.writeValueAsBytes(manifest))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleReplayTest.kt:35:        if (bytes != null) Files.write(dir.resolve("body-01.bin"), bytes)
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleReplayTest.kt:52:        Files.write(bad.resolve("body-01.bin"), "corrupt".toByteArray())
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleReplayTest.kt:54:        val unsupportedJson = json(unsupportedDir.resolve("sample.json")) as com.fasterxml.jackson.databind.node.ObjectNode
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleReplayTest.kt:56:        Files.write(unsupportedDir.resolve("sample.json"), mapper.writeValueAsBytes(unsupportedJson))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleReplayTest.kt:140:        Files.delete(dir.resolve("body-01.bin")); Files.createSymbolicLink(dir.resolve("body-01.bin"), outside)
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleReplayTest.kt:142:        Files.delete(dir.resolve("body-01.bin")); Files.write(dir.resolve("body-01.bin"), xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleReplayTest.kt:147:        val tree = json(dir.resolve("sample.json")) as com.fasterxml.jackson.databind.node.ObjectNode
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleReplayTest.kt:149:        Files.write(dir.resolve("sample.json"), mapper.writeValueAsBytes(tree))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleReplayTest.kt:152:        Files.write(dir.resolve("body-01.bin"), ByteArray(10_485_761))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleReplayTest.kt:155:        val missing = json(dir.resolve("sample.json")) as com.fasterxml.jackson.databind.node.ObjectNode; missing.remove("attempts")
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleReplayTest.kt:156:        Files.write(dir.resolve("sample.json"), mapper.writeValueAsBytes(missing))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleReplayTest.kt:159:        val limited = json(dir.resolve("sample.json")) as com.fasterxml.jackson.databind.node.ObjectNode
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleReplayTest.kt:163:        Files.write(dir.resolve("sample.json"), mapper.writeValueAsBytes(limited))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleReplayTest.kt:166:        Files.write(dir.resolve("sample.json"), ByteArray(1_048_577))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:11:class DiscoverySampleCaptureTest {
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:21:        paths.filter { it.fileName.toString() == "sample.json" }.toArray().map {
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:27:        val disabledCapture = DiscoverySampleCapture(DiscoverySampleStore(DiscoverySampleProperties(directory = disabled.toString())))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:36:        val capture = DiscoverySampleCapture(DiscoverySampleStore(properties))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:44:            val token = DiscoverySampleCapture.beginAttempt(DiscoverySampleAttemptKind.PDF_URL, "https://user:password@example.org/p?secret#x", PdfExtractionProperties())
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:45:            DiscoverySampleCapture.headers(token, 200, "application/pdf")
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:46:            DiscoverySampleCapture.fullBody(token, ByteArray(1025))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:47:            DiscoverySampleCapture.endAttempt(token)
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:64:                    val token = DiscoverySampleCapture.beginAttempt(DiscoverySampleAttemptKind.PMC_XML, "https://example.org/$id")
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:65:                    DiscoverySampleCapture.fullBody(token, "$id".toByteArray()); DiscoverySampleCapture.endAttempt(token); outcome
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:73:        assertNull(DiscoverySampleCapture.beginAttempt(DiscoverySampleAttemptKind.PMC_XML, "outside"))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:88:        val capture = DiscoverySampleCapture(DiscoverySampleStore(DiscoverySampleProperties(enabled = true, directory = canonical(root), maxInFlightCaptures = 1)))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:101:            val token = DiscoverySampleCapture.beginAttempt(DiscoverySampleAttemptKind.PMC_XML, "https://example.org/outer")
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:103:            DiscoverySampleCapture.fullBody(token, "outer".toByteArray()); DiscoverySampleCapture.endAttempt(token)
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:104:            repeat(20) { DiscoverySampleCapture.beginAttempt(DiscoverySampleAttemptKind.PMC_XML, "https://example.org/$it") }
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:113:        val nested = DiscoverySampleCapture(DiscoverySampleStore(DiscoverySampleProperties(enabled = true, directory = canonical(temp.resolve("nested")))))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:115:            val outer = DiscoverySampleCapture.beginAttempt(DiscoverySampleAttemptKind.PMC_XML, "https://example.org/outer")
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:117:                val inner = DiscoverySampleCapture.beginAttempt(DiscoverySampleAttemptKind.PMC_XML, "https://example.org/inner")
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:118:                DiscoverySampleCapture.endAttempt(inner); outcome
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:120:            DiscoverySampleCapture.fullBody(outer, byteArrayOf(1)); DiscoverySampleCapture.endAttempt(outer); outcome
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:125:        val capture = DiscoverySampleCapture(DiscoverySampleStore(DiscoverySampleProperties(enabled = true, directory = canonical(root))))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:127:            val first = DiscoverySampleCapture.beginAttempt(DiscoverySampleAttemptKind.PMC_XML, "https://example.org/1")
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:128:            val second = DiscoverySampleCapture.beginAttempt(DiscoverySampleAttemptKind.PMC_XML, "https://example.org/2")
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:129:            val third = DiscoverySampleCapture.beginAttempt(DiscoverySampleAttemptKind.PMC_XML, "https://example.org/3")
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:130:            DiscoverySampleCapture.fullBody(second, byteArrayOf(2))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:131:            DiscoverySampleCapture.fullBody(first, byteArrayOf(1))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:132:            DiscoverySampleCapture.fullBody(third, byteArrayOf(3))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCaptureTest.kt:133:            listOf(first, second, third).forEach { DiscoverySampleCapture.endAttempt(it) }
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleReplay.kt:207:        val tree = mapper.readTree(readPackageFile(dir, "sample.json", METADATA_LIMIT, "METADATA_LIMIT"))
+src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleReplay.kt:246:                    if (bodyFile == null || !bodyFile.matches(Regex("body-0[12]\\.bin")) || !bodyFiles.add(bodyFile)) throw Invalid("INVALID_PATH", a.sequence)
+src/main/kotlin/com/weibo/talentintroduction/config/DiscoverySampleProperties.kt:8:@ConfigurationProperties("talent-introduction.expert-discovery.samples")
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:20:class DiscoverySampleStore(val properties: DiscoverySampleProperties, private val clock: Clock = Clock.systemUTC()) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:93:                val json = path.resolve("sample.json")
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:101:                val expected = mutableSetOf("sample.json")
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:104:                    if (!file.matches(Regex("body-0[12]\\.bin")) || !expected.add(file)) throw InvalidStore()
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:172:            if (!attempt.bodyFile.orEmpty().matches(Regex("body-0[12]\\.bin")) || body.size > properties.maxBodyBytes ||
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStore.kt:194:            write(temporary.resolve("sample.json"), json)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:11:import com.weibo.talentintroduction.discovery.sample.DiscoverySampleCapture
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:235:        val attempt = DiscoverySampleCapture.beginAttempt(DiscoverySampleAttemptKind.PDF_URL, uri.toString(), properties)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:246:                        DiscoverySampleCapture.headers(attempt, response.rawStatusCode, contentType?.toString())
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:276:                DiscoverySampleCapture.fullBody(attempt, bytes)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:293:                    DiscoverySampleCapture.headers(attempt, error.statusCode.value(), error.responseHeaders?.contentType?.toString())
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:298:            DiscoverySampleCapture.endAttempt(attempt, attemptError)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:48:import com.weibo.talentintroduction.discovery.sample.DiscoverySampleCapture
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:141:    private val sampleCapture: DiscoverySampleCapture? = null
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:12:class DiscoverySampleCapture(private val store: DiscoverySampleStore, private val clock: Clock = Clock.systemUTC()) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:24:    private class Scope(val owner: DiscoverySampleCapture) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleCapture.kt:88:            val file = value.bytes?.let { bytes -> "body-0${bodies.size + 1}.bin".also { bodies[it] = bytes } }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:14:import com.weibo.talentintroduction.discovery.sample.DiscoverySampleCapture
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:107:                val attempt = DiscoverySampleCapture.beginAttempt(DiscoverySampleAttemptKind.PMC_XML, url)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:113:                    ).also { bytes -> if (bytes != null) DiscoverySampleCapture.fullBody(attempt, bytes) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:118:                            DiscoverySampleCapture.headers(attempt, error.statusCode.value(), error.responseHeaders?.contentType?.toString())
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:123:                    DiscoverySampleCapture.endAttempt(attempt, attemptError)
