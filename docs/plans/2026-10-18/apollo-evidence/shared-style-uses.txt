@@ -1,0 +1,109 @@
+$ rg -n task-modal-log-table-wrapper|class="[^"]*(data-table|task-modal|batch-send-tab)|\.data-table|\.task-modal|\.batch-send-tab src/main/resources/static src/test/js
+exit=0
+src/main/resources/static/app.js:1740:// 修复 V-3：一律复用既有 `.data-table` 呈现，不新增 inline 样式、不新增 class。
+src/main/resources/static/app.js:1764:        <table class="data-table">
+src/main/resources/static/app.js:4448:                    <table class="data-table compact" style="width:100%;border-collapse:collapse;font-size:11px;">
+src/main/resources/static/app.js:4593:        <div class="table-wrap"><table class="data-table">
+src/main/resources/static/app.js:22482:    var tabs = $$("#batchSendTaskModal .batch-send-tab");
+src/main/resources/static/app.js:25346:    $$("#batchSendTaskModal .batch-send-tab").forEach(function(tab) {
+src/test/js/discoveryScheduleSetting.test.js:253:                `.task-modal-input-label {
+src/test/js/discoveryScheduleSetting.test.js:261:                `.task-modal-input-field {
+src/test/js/discoveryScheduleSetting.test.js:272:                `.task-modal-input-field:focus {
+src/test/js/discoveryScheduleSetting.test.js:286:                '<label for="discoveryScheduleHours" class="task-modal-input-label">',
+src/test/js/discoveryScheduleSetting.test.js:288:                '<input id="discoveryScheduleHours" class="task-modal-input-field discovery-schedule-hours"',
+src/test/js/discoveryContinuousRun.test.js:683:            assert.ok(content.innerHTML.includes('class="data-table"'),
+src/test/js/discoveryReview.test.js:308:        const s1 = `#taskProgressModal[data-discovery-review="true"] .modal-content.task-modal {
+src/test/js/discoveryReview.test.js:336:    #taskProgressModal[data-discovery-review="true"] .modal-content.task-modal {
+src/test/js/discoveryReview.test.js:452:        assert.ok(stylesCss.includes(".modal-content.task-modal {\n    max-width: 700px;\n}"));
+src/test/js/taskRecordsSemantics.test.js:295:        assert.ok(live.innerHTML.includes('<div class="table-wrap"><table class="data-table">'));
+src/main/resources/static/index.html:669:                    <table class="data-table" style="width: 100%; font-size: 12px;">
+src/main/resources/static/index.html:1130:    <div class="modal-content task-modal">
+src/main/resources/static/index.html:1135:        <nav id="discoveryReviewTabs" class="batch-send-tabs" role="tablist" aria-label="深度发现功能" hidden>
+src/main/resources/static/index.html:1136:          <button class="batch-send-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="discoveryPipelinePane" id="discoveryPipelineTab">采集运行</button>
+src/main/resources/static/index.html:1137:          <button class="batch-send-tab" type="button" role="tab" aria-selected="false" aria-controls="discoveryReviewPane" id="discoveryReviewTab" tabindex="-1">专家审核</button>
+src/main/resources/static/index.html:1138:          <button class="batch-send-tab" type="button" role="tab" aria-selected="false" aria-controls="discoveryReviewHistoryPane" id="discoveryReviewHistoryTab" tabindex="-1">审核记录</button>
+src/main/resources/static/index.html:1141:        <div id="taskModalToast" class="task-modal-toast" hidden></div>
+src/main/resources/static/index.html:1145:                    <label for="discoveryScheduleHours" class="task-modal-input-label">
+src/main/resources/static/index.html:1147:                        <input id="discoveryScheduleHours" class="task-modal-input-field discovery-schedule-hours"
+src/main/resources/static/index.html:1157:            <div id="taskModalConfigSection" class="task-modal-config-section">
+src/main/resources/static/index.html:1161:                    <label class="task-modal-input-label">
+src/main/resources/static/index.html:1163:                        <input type="text" id="taskLaunchKeywordInput" class="task-modal-input-field" placeholder="输入关键词，如: AI, Machine Learning...">
+src/main/resources/static/index.html:1168:                    <label class="task-modal-input-label">
+src/main/resources/static/index.html:1170:                        <input type="number" id="taskLaunchMaxPromotions" class="task-modal-input-field" value="1000" min="1" max="10000" style="width: 120px;">
+src/main/resources/static/index.html:1175:                    <label class="task-modal-input-label">数据源平台:</label>
+src/main/resources/static/index.html:1193:                    <div class="task-modal-filters-panel" id="taskLaunchFiltersPanel"></div>
+src/main/resources/static/index.html:1203:            <div id="taskModalProgressSection" class="task-modal-progress-section" hidden>
+src/main/resources/static/index.html:1204:                <div class="task-modal-progress">
+src/main/resources/static/index.html:1206:                        <span id="taskModalStatus" class="task-modal-status">RUNNING</span>
+src/main/resources/static/index.html:1217:                <div class="task-modal-actions" style="display: flex; justify-content: flex-end;">
+src/main/resources/static/index.html:1223:            <div class="task-modal-divider"></div>
+src/main/resources/static/index.html:1226:            <div class="task-modal-logs" style="display: flex; flex-direction: column; gap: 10px;">
+src/main/resources/static/index.html:1227:                <h4 class="task-modal-logs-title">
+src/main/resources/static/index.html:1228:                    <span class="task-modal-logs-title-indicator"></span>
+src/main/resources/static/index.html:1231:                <div class="task-modal-log-table-wrapper">
+src/main/resources/static/index.html:1232:                    <table class="data-table compact">
+src/main/resources/static/index.html:1252:            <div class="task-modal-errors" id="taskModalErrors" hidden style="border: 1px solid var(--error-border); border-radius: var(--radius-sm); background-color: var(--error-bg); overflow: hidden; margin-top: 10px;">
+src/main/resources/static/index.html:1287:            <div class="dr-table-wrap"><table class="data-table dr-table">
+src/main/resources/static/index.html:1302:    <div class="modal-content task-modal batch-send-task-modal">
+src/main/resources/static/index.html:1310:        <nav class="batch-send-tabs">
+src/main/resources/static/index.html:1311:            <button class="batch-send-tab is-active" data-tab="scheduled">定时任务</button>
+src/main/resources/static/index.html:1312:            <button class="batch-send-tab" id="batchManualTab" data-tab="manual">手动执行</button>
+src/main/resources/static/index.html:1317:        <div id="batchScheduledPanel" class="batch-send-tab-panel">
+src/main/resources/static/index.html:1323:                <table class="data-table batch-task-table">
+src/main/resources/static/index.html:1600:        <div id="batchManualPanel" class="batch-send-tab-panel" hidden>
+src/main/resources/static/index.html:1922:        <div class="task-modal-actions" style="padding:0 24px 16px;">
+src/main/resources/static/styles.css:3421:.data-table {
+src/main/resources/static/styles.css:3427:.data-table th,
+src/main/resources/static/styles.css:3428:.data-table td {
+src/main/resources/static/styles.css:3434:.data-table th {
+src/main/resources/static/styles.css:3446:.data-table td details {
+src/main/resources/static/styles.css:3450:.data-table td details summary {
+src/main/resources/static/styles.css:4506:.modal-content.task-modal {
+src/main/resources/static/styles.css:4532:.task-modal-progress {
+src/main/resources/static/styles.css:4538:.task-modal-actions {
+src/main/resources/static/styles.css:4544:.task-modal-logs {
+src/main/resources/static/styles.css:4550:.task-modal-logs h4 {
+src/main/resources/static/styles.css:4558:.task-modal-log-table-wrapper {
+src/main/resources/static/styles.css:4567:.task-modal-log-table-wrapper .data-table.compact {
+src/main/resources/static/styles.css:4571:.task-modal-log-table-wrapper table {
+src/main/resources/static/styles.css:4575:.task-modal-status {
+src/main/resources/static/styles.css:4585:.task-modal-status.running {
+src/main/resources/static/styles.css:4591:.task-modal-status.completed {
+src/main/resources/static/styles.css:4597:.task-modal-status.failed {
+src/main/resources/static/styles.css:4603:.task-modal-status.cancelled {
+src/main/resources/static/styles.css:4609:.task-modal-errors {
+src/main/resources/static/styles.css:4616:.task-modal-errors h4 {
+src/main/resources/static/styles.css:4626:.task-modal-errors pre {
+src/main/resources/static/styles.css:4658:.task-modal {
+src/main/resources/static/styles.css:4662:.task-modal-config-section {
+src/main/resources/static/styles.css:4668:.task-modal-input-label {
+src/main/resources/static/styles.css:4677:.task-modal-input-field {
+src/main/resources/static/styles.css:4689:.task-modal-input-field:focus {
+src/main/resources/static/styles.css:4736:.task-modal-progress-section {
+src/main/resources/static/styles.css:4742:.task-modal-divider {
+src/main/resources/static/styles.css:4747:.task-modal-logs-title {
+src/main/resources/static/styles.css:4757:.task-modal-logs-title-indicator {
+src/main/resources/static/styles.css:5127:    .modal-content.task-modal {
+src/main/resources/static/styles.css:5144:    .task-modal-input-field {
+src/main/resources/static/styles.css:5269:.task-modal-filters-panel {
+src/main/resources/static/styles.css:5387:.task-modal-toast {
+src/main/resources/static/styles.css:5396:.task-modal-toast[hidden] { display: none; }
+src/main/resources/static/styles.css:5397:.task-modal-toast.ok {
+src/main/resources/static/styles.css:5402:.task-modal-toast.error {
+src/main/resources/static/styles.css:9104:.task-modal.batch-send-task-modal {
+src/main/resources/static/styles.css:9116:.task-modal.batch-send-task-modal:has(#batchScheduledPanel:not([hidden])) {
+src/main/resources/static/styles.css:9150:.batch-send-tabs {
+src/main/resources/static/styles.css:9159:.batch-send-tab {
+src/main/resources/static/styles.css:9170:.batch-send-tab::after {
+src/main/resources/static/styles.css:9180:.batch-send-tab:hover { color: var(--primary); }
+src/main/resources/static/styles.css:9181:.batch-send-tab.is-active { color: var(--primary); }
+src/main/resources/static/styles.css:9182:.batch-send-tab.is-active::after { background: var(--primary); }
+src/main/resources/static/styles.css:9184:.batch-send-tab-panel {
+src/main/resources/static/styles.css:9966:  .task-modal.batch-send-task-modal { width: calc(100vw - 20px); min-height: 0; max-height: calc(100vh - 20px); }
+src/main/resources/static/styles.css:9968:  .batch-send-tabs, .batch-send-tab-panel { padding-right: 16px; padding-left: 16px; }
+src/main/resources/static/styles.css:12675:#taskProgressModal[data-discovery-review="true"] .modal-content.task-modal {
+src/main/resources/static/styles.css:12703:    #taskProgressModal[data-discovery-review="true"] .modal-content.task-modal {
+src/test/js/batchSendTaskConsoleVisualFix.test.js:38:        assert.match(css, /\.task-modal\.batch-send-task-modal\s*\{[\s\S]*?height:\s*auto;/);
+src/test/js/batchSendTaskConsoleVisualFix.test.js:44:        assert.match(css, /\.task-modal\.batch-send-task-modal\s*\{[\s\S]*?width:\s*min\(1180px,\s*calc\(100vw\s*-\s*48px\)\);/);
+src/test/js/batchSendTaskConsoleVisualFix.test.js:45:        assert.match(css, /\.task-modal\.batch-send-task-modal:has\(#batchScheduledPanel:not\(\[hidden\]\)\)\s*\{\s*min-height:\s*0;/);
+src/test/js/batchSendTaskConsoleVisualFix.test.js:75:        const batchModal = css.match(/\.task-modal\.batch-send-task-modal\s*\{[\s\S]*?\n\}/)[0];

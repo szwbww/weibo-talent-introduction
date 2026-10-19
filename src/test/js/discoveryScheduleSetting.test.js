@@ -115,6 +115,7 @@ function makeSandbox(overrides = {}) {
     const intervals = [];
     const sandbox = {
         console,
+        apvLaunchSequence: 0,
         contextPath: "/subpath",
         sourceCheckboxes: [],
         document: { body: { classList: { add() {}, remove() {} } }, querySelector: () => null },
@@ -172,6 +173,7 @@ function loadSandbox(overrides = {}, fnNames = []) {
     vm.runInContext(runtimeSource, sandbox);
     vm.runInContext(DISCOVERY_SECTION, sandbox);
     vm.runInContext(SCHEDULE_SECTION, sandbox);
+    vm.runInContext(extractFn("apvEmpty") + "\n" + extractFn("escapeHtml"), sandbox);
     vm.runInContext(SCHEDULE_FUNCTIONS.concat(fnNames).map(extractFn).join("\n"), sandbox);
     return sandbox;
 }
@@ -533,6 +535,7 @@ describe("c4 discovery schedule setting (frontend)", () => {
             vm.runInContext('discoverySources.status = "ready";', sandbox);
             sandbox.$("#taskLaunchKeywordInput").value = "AI, ML";
             sandbox.$("#taskLaunchIncludeRawScan").checked = false;
+            sandbox.$("#taskLaunchApolloAssist").checked = false;
 
             await sandbox.executeDiscover();
             await flush();
@@ -541,6 +544,7 @@ describe("c4 discovery schedule setting (frontend)", () => {
             assert.ok(launchCalls[0].requestPath.includes("keywords=AI"), "keywords stay frozen into the request");
             assert.ok(launchCalls[0].requestPath.includes("keywords=ML"));
             assert.ok(launchCalls[0].requestPath.includes("sources=OPENALEX"), "运营选中的来源原样发送");
+            assert.ok(launchCalls[0].requestPath.includes("apolloAssist=false"), "the explicit per-run option is preserved");
             assert.strictEqual(openedWith.length, 1);
             assert.deepStrictEqual(sandbox.statuses.map((entry) => entry.level), ["ok"],
                 "the launch succeeds without any failure status (runtime notifyTaskCompletionOnce)");

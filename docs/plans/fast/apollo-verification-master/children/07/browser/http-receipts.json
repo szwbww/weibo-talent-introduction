@@ -1,0 +1,1364 @@
+[
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343090159
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343090160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343095056
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343095056
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343095162
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343095162
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343100162
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343100163
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343105160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343105161
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343110160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343110160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343110225
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=UNCLEAR&q=&page=0&size=20",
+    "body": "",
+    "time": 1792343110225
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343110283
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=APOLLO&result=ALL&q=&page=0&size=20",
+    "body": "",
+    "time": 1792343110283
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343110316
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=APOLLO&result=ALL&q=&page=0&size=20",
+    "body": "",
+    "time": 1792343110316
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343110336
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=APOLLO&result=PENDING&q=&page=0&size=20",
+    "body": "",
+    "time": 1792343110337
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343110348
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=APOLLO&result=ERROR&q=&page=0&size=20",
+    "body": "",
+    "time": 1792343110348
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343110361
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=APOLLO&result=QUEUED&q=&page=0&size=20",
+    "body": "",
+    "time": 1792343110361
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343110372
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=&page=0&size=20",
+    "body": "",
+    "time": 1792343110372
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343110424
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=&page=1&size=20",
+    "body": "",
+    "time": 1792343110424
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343110892
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture1%40&page=0&size=20",
+    "body": "",
+    "time": 1792343110892
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343110912
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture1%40&page=0&size=20",
+    "body": "",
+    "time": 1792343110912
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343115160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture1%40&page=0&size=20",
+    "body": "",
+    "time": 1792343115160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343120157
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture1%40&page=0&size=20",
+    "body": "",
+    "time": 1792343120157
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343125162
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture1%40&page=0&size=20",
+    "body": "",
+    "time": 1792343125163
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343130159
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture1%40&page=0&size=20",
+    "body": "",
+    "time": 1792343130159
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343135159
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture1%40&page=0&size=20",
+    "body": "",
+    "time": 1792343135160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343140160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture1%40&page=0&size=20",
+    "body": "",
+    "time": 1792343140160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/items/1",
+    "body": "",
+    "time": 1792343141133
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343145160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture1%40&page=0&size=20",
+    "body": "",
+    "time": 1792343145160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343145748
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343150159
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343154769
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343154769
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343155160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343155160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343160160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343160160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343165161
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343165161
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343170160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343170160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343175159
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343175159
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343180160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343180160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343185160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343185160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343190161
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343190161
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343195160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343195160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343200174
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343200175
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343205160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343205160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343210160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343210160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343215159
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343215160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343220161
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343220161
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343225160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343225161
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343230159
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343230160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343235160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343235160
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/capabilities",
+    "body": "",
+    "time": 1792343236949
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343236963
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343237954
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343238015
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343238015
+  },
+  {
+    "method": "POST",
+    "url": "/api/expert-discovery/run/by-keyword?keywords=fixture+term&sources=OPENALEX&sources=CROSSREF&sources=CORE&sources=ARXIV&sources=ORCID&apolloAssist=false",
+    "body": "",
+    "time": 1792343238036
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343238042
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343238046
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343238046
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343243040
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343243040
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343248040
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343248040
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343252871
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=UNCLEAR&q=&page=0&size=20",
+    "body": "",
+    "time": 1792343252872
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343252890
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=APOLLO&result=ALL&q=&page=0&size=20",
+    "body": "",
+    "time": 1792343252891
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343253008
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=APOLLO&result=ALL&q=&page=0&size=20",
+    "body": "",
+    "time": 1792343253009
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343253023
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=APOLLO&result=PENDING&q=&page=0&size=20",
+    "body": "",
+    "time": 1792343253024
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343253038
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=APOLLO&result=ERROR&q=&page=0&size=20",
+    "body": "",
+    "time": 1792343253038
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343253058
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=APOLLO&result=QUEUED&q=&page=0&size=20",
+    "body": "",
+    "time": 1792343253064
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343258054
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=APOLLO&result=QUEUED&q=&page=0&size=20",
+    "body": "",
+    "time": 1792343258054
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343263040
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=APOLLO&result=QUEUED&q=&page=0&size=20",
+    "body": "",
+    "time": 1792343263040
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343265842
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=&page=0&size=20",
+    "body": "",
+    "time": 1792343265843
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343265866
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=&page=1&size=20",
+    "body": "",
+    "time": 1792343265866
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343266315
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture15%40&page=0&size=20",
+    "body": "",
+    "time": 1792343266316
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343266342
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture15%40&page=0&size=20",
+    "body": "",
+    "time": 1792343266343
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/items/15",
+    "body": "",
+    "time": 1792343266350
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343268040
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture15%40&page=0&size=20",
+    "body": "",
+    "time": 1792343268041
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343273040
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture15%40&page=0&size=20",
+    "body": "",
+    "time": 1792343273040
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343278040
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture15%40&page=0&size=20",
+    "body": "",
+    "time": 1792343278040
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343283041
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture15%40&page=0&size=20",
+    "body": "",
+    "time": 1792343283041
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343288041
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture15%40&page=0&size=20",
+    "body": "",
+    "time": 1792343288042
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343293041
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture15%40&page=0&size=20",
+    "body": "",
+    "time": 1792343293041
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343298043
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture15%40&page=0&size=20",
+    "body": "",
+    "time": 1792343298043
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343303042
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture15%40&page=0&size=20",
+    "body": "",
+    "time": 1792343303042
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343308045
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture15%40&page=0&size=20",
+    "body": "",
+    "time": 1792343308045
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343313040
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture15%40&page=0&size=20",
+    "body": "",
+    "time": 1792343313041
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/items/15",
+    "body": "",
+    "time": 1792343315379
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343315674
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture1%40&page=0&size=20",
+    "body": "",
+    "time": 1792343315674
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343318041
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture1%40&page=0&size=20",
+    "body": "",
+    "time": 1792343318041
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343323044
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture1%40&page=0&size=20",
+    "body": "",
+    "time": 1792343323044
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343328041
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture1%40&page=0&size=20",
+    "body": "",
+    "time": 1792343328041
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343333041
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture1%40&page=0&size=20",
+    "body": "",
+    "time": 1792343333041
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/items/1",
+    "body": "",
+    "time": 1792343335153
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343338040
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture1%40&page=0&size=20",
+    "body": "",
+    "time": 1792343338040
+  },
+  {
+    "method": "GET",
+    "url": "/__fixture/control?error=true",
+    "body": "",
+    "time": 1792343340616
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343340619
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture1%40&page=0&size=20",
+    "body": "",
+    "time": 1792343340619
+  },
+  {
+    "method": "GET",
+    "url": "/__fixture/control?error=false",
+    "body": "",
+    "time": 1792343340707
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343340709
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture1%40&page=0&size=20",
+    "body": "",
+    "time": 1792343340709
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/items/1",
+    "body": "",
+    "time": 1792343340712
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343343044
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture1%40&page=0&size=20",
+    "body": "",
+    "time": 1792343343044
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343348040
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture1%40&page=0&size=20",
+    "body": "",
+    "time": 1792343348040
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343353042
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture1%40&page=0&size=20",
+    "body": "",
+    "time": 1792343353042
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343358041
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture1%40&page=0&size=20",
+    "body": "",
+    "time": 1792343358041
+  },
+  {
+    "method": "GET",
+    "url": "/__fixture/control?delay=300",
+    "body": "",
+    "time": 1792343358200
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343358202
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture1%40&page=0&size=20",
+    "body": "",
+    "time": 1792343358202
+  },
+  {
+    "method": "GET",
+    "url": "/__fixture/control?version=18&delay=0",
+    "body": "",
+    "time": 1792343358287
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343358523
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture1%40&page=0&size=20",
+    "body": "",
+    "time": 1792343358523
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/items/1",
+    "body": "",
+    "time": 1792343358526
+  },
+  {
+    "method": "GET",
+    "url": "/__fixture/control?delay=10000",
+    "body": "",
+    "time": 1792343358529
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343358531
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=fixture1%40&page=0&size=20",
+    "body": "",
+    "time": 1792343358531
+  },
+  {
+    "method": "GET",
+    "url": "/__fixture/control?delay=0",
+    "body": "",
+    "time": 1792343358653
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343358658
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3003/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343358659
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343358673
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3002/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343358673
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343358688
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3004/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343358689
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343363040
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3004/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343363040
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343368045
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3004/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343368045
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343373041
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3004/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343373041
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343378043
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3004/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343378043
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343383042
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3004/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343383042
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343386581
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343386581
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343386597
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=&page=0&size=20",
+    "body": "",
+    "time": 1792343386597
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343386710
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343392151
+  },
+  {
+    "method": "POST",
+    "url": "/api/task-progress/EXPERT_DISCOVERY/cancel",
+    "body": "",
+    "time": 1792343392156
+  },
+  {
+    "method": "GET",
+    "url": "/__fixture/control?ready=false",
+    "body": "",
+    "time": 1792343412692
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/capabilities",
+    "body": "",
+    "time": 1792343412700
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343412707
+  },
+  {
+    "method": "GET",
+    "url": "/__fixture/control?enabled=false",
+    "body": "",
+    "time": 1792343412710
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/capabilities",
+    "body": "",
+    "time": 1792343412718
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343412725
+  },
+  {
+    "method": "GET",
+    "url": "/__fixture/control?enabled=true&ready=true",
+    "body": "",
+    "time": 1792343412735
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/capabilities",
+    "body": "",
+    "time": 1792343412742
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343412751
+  },
+  {
+    "method": "POST",
+    "url": "/api/expert-discovery/run",
+    "body": "{\"sources\":[\"OPENALEX\",\"CROSSREF\",\"CORE\",\"ARXIV\",\"ORCID\"],\"apolloAssist\":true}",
+    "time": 1792343412761
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343412765
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343412769
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343412769
+  },
+  {
+    "method": "GET",
+    "url": "/__fixture/control?terminal=true",
+    "body": "",
+    "time": 1792343412782
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343412784
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343412785
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343417766
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/executions/3001/batches?page=0&size=20",
+    "body": "",
+    "time": 1792343417766
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343436418
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343436434
+  },
+  {
+    "method": "GET",
+    "url": "/api/expert-discovery/verification/summary?executionIds=3001,3002,3003,3004",
+    "body": "",
+    "time": 1792343441415
+  }
+]

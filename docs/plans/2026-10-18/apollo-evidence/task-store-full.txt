@@ -1,0 +1,106 @@
+$ rg -n task_execution|task_progress_log src/main scripts
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/task/domain/TaskExecution.kt:7:@Table("task_execution")
+src/main/kotlin/com/weibo/talentintroduction/task/domain/TaskProgressLog.kt:7:@Table("task_progress_log")
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryReview.kt:134:    /** 可选任务头（复用 task_execution）；不新建任务表。 */
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/ExpertAcademicEnrichmentJob.kt:34:    /** 触发本次入队的 task_execution id；未知为 NULL。 */
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2990:     * - [taskType] 只决定进度日志归属；`task_execution` 记录由调用方按自己的 triggerType 写入。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3846:     * I-4：来源正在等待有限延迟恢复 —— 这是**运行中**状态，不是终态错误：不新增 task_execution 状态，
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3879:/** I-5：运行中详情里 summaryText 的占位终态（不是 task_execution 状态）。 */
+src/main/resources/db/migration/V138__create_batch_email_verification.sql:5:-- 表存在的原因（子计划 01 I-6/I-9）：现有 task_progress_log 是折叠日志，错误样本最多 20 条，
+src/main/resources/db/migration/V138__create_batch_email_verification.sql:10:--   I-6 task_execution_id + 规范化 ORCID + 规范化邮箱唯一；先插 PENDING，再请求，再写
+src/main/resources/db/migration/V138__create_batch_email_verification.sql:14:--   I-9 外键 task_execution(id) ON DELETE CASCADE，跟随现有 90 天默认保留期清理，不加新清理任务；
+src/main/resources/db/migration/V138__create_batch_email_verification.sql:15:--       分页严格按 (task_execution_id, id) 游标查询，默认 50、最大 100。
+src/main/resources/db/migration/V138__create_batch_email_verification.sql:35:-- 键长：唯一键 (task_execution_id, orcid_id, email) = 8 + (128 + 320) * 4 = 1800 字节 < 3072。
+src/main/resources/db/migration/V138__create_batch_email_verification.sql:41:    task_execution_id BIGINT       NOT NULL,
+src/main/resources/db/migration/V138__create_batch_email_verification.sql:59:    UNIQUE KEY uk_batch_email_verification_target (task_execution_id, orcid_id, email),
+src/main/resources/db/migration/V138__create_batch_email_verification.sql:60:    KEY idx_batch_email_verification_execution (task_execution_id, id),
+src/main/resources/db/migration/V138__create_batch_email_verification.sql:62:        FOREIGN KEY (task_execution_id) REFERENCES task_execution (id) ON DELETE CASCADE
+src/main/resources/db/migration/V102__add_task_progress_log_created_at_index.sql:1:-- 保留清理按 created_at 删除（不按 task_execution_id 关联，见计划 I3-1：
+src/main/resources/db/migration/V102__add_task_progress_log_created_at_index.sql:2:-- tryStartWithToken 落的初始化行 task_execution_id 为负值 pendingToken，
+src/main/resources/db/migration/V102__add_task_progress_log_created_at_index.sql:4:CREATE INDEX idx_tpl_created_at ON task_progress_log (created_at);
+src/main/resources/db/migration/V131__create_expert_academic_enrichment_job.sql:23:-- task_execution），而 task_execution 有保留期清理，外键会让清理失败。
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:19: * ② 该 executionId 最新一条 `task_progress_log.detailsJson` + 该行 `processedCount` →
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:152:     * 第 ② 级：读该 executionId 最新一条 `task_progress_log` 的 `detailsJson`。
+src/main/resources/db/migration/V100__add_task_execution_indexes.sql:3:CREATE INDEX idx_te_started ON task_execution (started_at);
+src/main/resources/db/migration/V100__add_task_execution_indexes.sql:4:CREATE INDEX idx_te_type_started ON task_execution (task_type, started_at);
+src/main/resources/db/migration/V100__add_task_execution_indexes.sql:5:CREATE INDEX idx_te_status_started ON task_execution (status, started_at);
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:53: * 03：批次阶段。没有新列，全部由 `task_execution` 行与 `expert_discovery_review_item` 持久状态派生
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:87:/** 03（I-1）：名单固定任务的持久终态（写进 `task_execution.result_summary`，读回判 READY/PREPARE_FAILED）。 */
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:176:/** 04（I-4）：存量初始化的可见状态（由 task_execution 行与结果摘要派生，无新表）。 */
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:436:                    // 名单固定失败：task_execution 行已置 FAILED（= PREPARE_FAILED），不做任何成功计数。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:717:                    // 应用失败：逐项失败原因已按人保存，task_execution 行已置 FAILED，绝不凭受理伪造成功总数。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1103:                    // 初始化失败：task_execution 行已置 FAILED，绝不凭受理伪造成功计数。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1233:     * `dryRun`（默认 true）对业务表与 ES **零写入**，只留 `task_execution` 执行日志与
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1554:    // ── task_execution 读取（只读；phase/hash 无新列，从此派生） ───────────────
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1858:        /** 阶段 2：`task_execution.result_summary` 里的样本上限（≤48KiB 的持久约束）。 */
+src/main/resources/db/migration/V73__add_batch_config_id_to_task_execution.sql:1:ALTER TABLE task_execution
+src/main/resources/db/migration/V73__add_batch_config_id_to_task_execution.sql:4:CREATE INDEX idx_task_execution_batch_config_started
+src/main/resources/db/migration/V73__add_batch_config_id_to_task_execution.sql:5:    ON task_execution (batch_config_id, started_at);
+src/main/resources/db/migration/V73__add_batch_config_id_to_task_execution.sql:7:ALTER TABLE task_execution
+src/main/resources/db/migration/V73__add_batch_config_id_to_task_execution.sql:8:    ADD CONSTRAINT fk_task_execution_batch_config
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionService.kt:13: * - I3-1：`task_progress_log` 按 `created_at` 删，无 JOIN / EXISTS / task_execution_id 关联
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionService.kt:17: * - I3-3：`task_execution` 按 `started_at` 删（有 idx_te_started）；两表共用同一个
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionService.kt:19: * - I3-4：先子表 `task_progress_log` 后主表 `task_execution`。
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionService.kt:45:            log.warn("purge task_progress_log failed: {}", e.message)
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionService.kt:52:            log.warn("purge task_execution failed: {}", e.message)
+src/main/resources/db/migration/V22__create_task_progress_log.sql:1:CREATE TABLE task_progress_log (
+src/main/resources/db/migration/V22__create_task_progress_log.sql:4:    task_execution_id BIGINT,
+src/main/resources/db/migration/V22__create_task_progress_log.sql:18:CREATE INDEX idx_tpl_task_type ON task_progress_log(task_type);
+src/main/resources/db/migration/V22__create_task_progress_log.sql:19:CREATE INDEX idx_tpl_execution_id ON task_progress_log(task_execution_id);
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt:88:     * 启动前严格校验（含 JSON 绑定）并固定进 `task_execution.request_payload`，本次执行不再读取可变配置。
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt:107:     * null = 旧调用 / 定时路径无预览，不校验。随请求写入 `task_execution.request_payload`。
+src/main/resources/db/migration/V133__create_discovery_paper_queue.sql:37:-- 不加外键：task_execution 与 expert 相关表都有各自的清理/保留语义，外键会让清理失败；
+src/main/kotlin/com/weibo/talentintroduction/task/service/MailAutomationScheduler.kt:55:        // task_execution_id 保持 null（该执行经队列派发，邮件未直接关联）。
+src/main/kotlin/com/weibo/talentintroduction/task/service/MailAutomationScheduler.kt:90:        // 走 runAndRecordWithResult 使对账报告（ReconcileReport）落入 task_execution.result_summary，可在任务面板查看
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:43:/** I-7（c2）：流水线窗口的 `task_execution.task_type`（与既有深度发现任务历史同一类型）。 */
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:357:     * I-7：幂等持久化 `PAUSED`（无需存在 RUNNING 的 task_execution），返回 `phase` 与在途工作数。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:472:        // I-4/I-7：先区分「现在就能跑」与「只是被延期」；两者都不该开窗口，更不该建空 task_execution。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:1183:     * 建一条空 `task_execution`：
+src/main/resources/db/migration/V35__add_task_progress_batch_reject_reasons.sql:1:ALTER TABLE task_progress_log
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:434:     * 不要求存在 RUNNING 的 task_execution；`phase` 保留在途收尾态（对外 state 优先 PAUSED）。
+src/main/resources/db/migration/V137__task_execution_interruption_recovery.sql:1:ALTER TABLE task_execution
+src/main/resources/db/migration/V137__task_execution_interruption_recovery.sql:9:CREATE INDEX idx_te_active_heartbeat ON task_execution (status, heartbeat_at);
+src/main/resources/db/migration/V4__create_task_execution.sql:1:CREATE TABLE task_execution (
+src/main/resources/db/migration/V101__add_task_execution_id_to_mail_record.sql:1:-- 关联邮件到产生它的任务执行。刻意不加外键：task_execution 有 90 天硬删除保留策略
+src/main/resources/db/migration/V101__add_task_execution_id_to_mail_record.sql:4:    ADD COLUMN task_execution_id BIGINT NULL;
+src/main/resources/db/migration/V101__add_task_execution_id_to_mail_record.sql:6:CREATE INDEX idx_mail_record_task_execution
+src/main/resources/db/migration/V101__add_task_execution_id_to_mail_record.sql:7:    ON mail_record (task_execution_id, id);
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:75:     * I-3：`pause()` 幂等且无需存在 RUNNING 的 task_execution；随后只为在途窗口发一次进程内取消请求。
+src/main/resources/db/migration/V148__create_expert_discovery_review.sql:13:-- 任务头复用 task_execution：execution_id 不设外键，避免任务清理删除审核历史。
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskProgressLogRepository.kt:16:    @Query("UPDATE task_progress_log SET task_execution_id = :executionId WHERE task_execution_id = :pendingToken")
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskProgressLogRepository.kt:21:     * **禁止**按 task_execution_id 关联（tryStartWithToken 落的孤儿行 execution_id 为负值，
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskProgressLogRepository.kt:26:    @Query("DELETE FROM task_progress_log WHERE created_at < :cutoff ORDER BY created_at LIMIT :batchSize")
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:57:    @Query("SELECT * FROM task_execution WHERE task_type = :taskType ORDER BY started_at DESC LIMIT :limit")
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:62:        SELECT COUNT(*) FROM task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:72:        SELECT * FROM task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:87:        FROM task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:96:        SELECT COALESCE(SUM(success_count), 0) FROM task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:111:        UPDATE task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:122:        UPDATE task_execution SET heartbeat_at = :now, updated_at = :now
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:129:        UPDATE task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:141:        UPDATE task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:155:        UPDATE task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:180:        DELETE FROM task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:184:                WHERE v.task_execution_id = task_execution.id
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:202:        FROM task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:214:        FROM task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:227:        FROM task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:240:        FROM task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:263:        FROM task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:271:    @Query("SELECT COUNT(*) FROM task_execution WHERE status IN ('RUNNING', 'CANCELLING')")
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:274:    @Query("SELECT COUNT(*) FROM task_execution")
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:285:        FROM task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:291:    @Query("SELECT COUNT(*) FROM task_execution WHERE task_type = :taskType")
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:294:    @Query("SELECT COUNT(*) FROM task_execution WHERE status = :status")
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:297:    @Query("SELECT COUNT(*) FROM task_execution WHERE task_type = :taskType AND status = :status")
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchEmailVerificationRepository.kt:15: * - 只服务发送前验证链路：一次执行一个专家一行；状态/结果汇总一律来自本表，不塞 task_progress_log。
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchEmailVerificationRepository.kt:20: * - 审计分页严格按 (task_execution_id, id) 游标；验证复用另按规范化邮箱读取一年内原始结果。
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchEmailVerificationRepository.kt:197:                (task_execution_id, expert_doc_id, orcid_id, expert_name, email,
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchEmailVerificationRepository.kt:261:            SELECT id, task_execution_id, expert_doc_id, orcid_id, expert_name, email, decision,
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchEmailVerificationRepository.kt:265:             WHERE task_execution_id = ? AND id > ?
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchEmailVerificationRepository.kt:286:             WHERE task_execution_id = ?
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchEmailVerificationRepository.kt:312:            taskExecutionId = getLong("task_execution_id"),
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:183:     * I2b-3（B4）：按 task_execution_id 过滤的收发件箱查询。复用既有行装配
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:185:     * 只在数据来源上多一个 WHERE（仓库派生查询）。不 join task_execution（I2b-4：
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:859:     * 不 join task_execution（P3 保留清理删除执行行后悬垂 id 仍正常返回邮件）。

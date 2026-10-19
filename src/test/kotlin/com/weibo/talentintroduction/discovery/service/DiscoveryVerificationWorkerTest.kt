@@ -41,6 +41,16 @@ class DiscoveryVerificationWorkerTest {
         Mockito.verifyNoMoreInteractions(recovery)
     }
 
+    @Test fun `reading current unblocked latch never claims or recovers work`() {
+        val repo = Mockito.mock(DiscoveryVerificationRepository::class.java)
+        val recovery = Mockito.mock(RegistrationRecovery::class.java)
+        val factory = DefaultListableBeanFactory().also { it.registerSingleton("recovery", recovery) }
+        worker(DiscoveryVerificationProperties(workerEnabled = true), repo, factory).useWorker { current ->
+            repeat(20) { assertFalse(current.isAuthBlocked()) }
+        }
+        Mockito.verifyNoInteractions(repo, recovery)
+    }
+
     private fun DiscoveryVerificationWorker.useWorker(action: (DiscoveryVerificationWorker) -> Unit) {
         try { action(this) } finally { close() }
     }

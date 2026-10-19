@@ -20,6 +20,142 @@ import java.util.UUID
  */
 @Repository
 class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
+    /** Reporting queries deliberately have no locks, writes, or recovery side effects. */
+    fun reportingCollectionStatuses(ids: List<Long>): Map<Long, String> {
+        require(ids.isNotEmpty() && ids.size <= 50 && ids.all { it > 0 })
+        return jdbc.query("SELECT id,status FROM task_execution WHERE id IN (${ids.joinToString(",") { "?" }})",
+            RowMapper { rs, _ -> rs.getLong("id") to rs.getString("status") }, *ids.toTypedArray()).toMap()
+    }
+
+    fun reportingRuns(ids: List<Long>): Map<Long, VerificationRun> {
+        require(ids.isNotEmpty() && ids.size <= 50 && ids.all { it > 0 })
+        return jdbc.query("SELECT * FROM discovery_verification_run WHERE execution_id IN (${ids.joinToString(",") { "?" }})",
+            runMapper, *ids.toTypedArray()).associateBy { it.executionId }
+    }
+
+    fun reportingCounts(filter: VerificationReportFilter, batches: Boolean = false, executionIds: List<Long>? = null): Map<Long, VerificationCounts> {
+        require(executionIds == null || executionIds.isNotEmpty() && executionIds.size <= 50 && executionIds.all { it > 0 })
+        val (where, args) = if (executionIds == null) reportingWhere(filter) else
+            "i.owner_execution_id IN (${executionIds.joinToString(",") { "?" }})" to executionIds
+        fun sum(condition: String, alias: String) = "COALESCE(SUM(CASE WHEN $condition THEN 1 ELSE 0 END),0) AS $alias"
+        val admitted = "i.activated_at IS NOT NULL AND r.mode='ENFORCE' AND i.admission_revision IS NOT NULL"
+        val active = "i.activated_at IS NOT NULL"
+        val columns = listOf(
+            sum(active, "profiles"),
+            sum("$admitted AND i.outcome IN ('DIRECT_CLEAR','APOLLO_CLEAR','APOLLO_UNCLEAR')", "autoAdmitted"),
+            sum("$admitted AND i.outcome='DIRECT_CLEAR'", "directAdmitted"),
+            sum("$admitted AND i.outcome IN ('APOLLO_CLEAR','APOLLO_UNCLEAR')", "apolloAdmitted"),
+            sum("$active AND i.outcome IN ('DIRECT_CLEAR','APOLLO_CLEAR')", "clear"),
+            sum("$active AND i.outcome='APOLLO_UNCLEAR'", "unclear"),
+            sum("$active AND i.outcome='PENDING'", "pending"),
+            sum("$active AND i.state='ERROR'", "errors"),
+            sum("$active AND i.state IN ('QUEUED','RUNNING','RETRY_WAIT')", "queued"),
+            sum("$active AND i.outcome='PROTECTED'", "protected"),
+            sum("$active AND i.projection_state='PENDING'", "projectionPending"),
+            sum("$active AND i.projection_state='ERROR'", "projectionErrors"),
+            sum("$active AND i.apollo_entered_at IS NOT NULL", "apolloEntered"),
+            sum("$active AND i.search_completed_at IS NOT NULL", "apolloSearched"),
+            sum("$active AND i.candidate_found_at IS NOT NULL", "apolloCandidates"),
+            sum("$active AND i.person_matched_at IS NOT NULL", "apolloMatched"),
+            """COALESCE(SUM(CASE WHEN $active THEN
+                (SELECT COUNT(*) FROM discovery_verification_attempt a WHERE a.item_id=i.id AND a.provider='APOLLO')
+                ELSE 0 END),0) AS apolloHttpAttempts""",
+            sum("i.activated_at IS NULL AND i.state='ERROR'", "registrationErrors")
+        ).joinToString(",")
+        val group = when { batches -> "i.batch_number"; executionIds != null -> "i.owner_execution_id"; else -> "0" }
+        val grouping = if (batches || executionIds != null) "GROUP BY $group ORDER BY $group" else ""
+        return jdbc.query("""SELECT $group AS batch,$columns FROM discovery_verification_item i
+            JOIN discovery_verification_run r ON r.execution_id=i.owner_execution_id WHERE $where
+            ${if (batches) "AND i.activated_at IS NOT NULL" else ""} $grouping""",
+            RowMapper { rs, _ -> rs.getLong("batch") to VerificationCounts(
+                rs.getLong("profiles"), rs.getLong("autoAdmitted"), rs.getLong("directAdmitted"),
+                rs.getLong("apolloAdmitted"), rs.getLong("clear"), rs.getLong("unclear"), rs.getLong("pending"),
+                rs.getLong("errors"), rs.getLong("queued"), rs.getLong("protected"), rs.getLong("projectionPending"),
+                rs.getLong("projectionErrors"), rs.getLong("apolloEntered"), rs.getLong("apolloSearched"),
+                rs.getLong("apolloCandidates"), rs.getLong("apolloMatched"), rs.getLong("apolloHttpAttempts"),
+                rs.getLong("registrationErrors"))
+            }, *args.toTypedArray()).toMap()
+    }
+
+    fun reportingSuggestions(filter: VerificationReportFilter, batches: Boolean = false,
+        executionIds: List<Long>? = null): Map<Long, Triple<Long, Long, Long>> {
+        require(executionIds == null || executionIds.isNotEmpty() && executionIds.size <= 50 && executionIds.all { it > 0 })
+        val (where, args) = if (executionIds == null) reportingWhere(filter) else
+            "i.owner_execution_id IN (${executionIds.joinToString(",") { "?" }})" to executionIds
+        val group = when { batches -> "i.batch_number"; executionIds != null -> "i.owner_execution_id"; else -> "0" }
+        return jdbc.query("""SELECT $group AS bucket,
+            COALESCE(SUM(i.outcome IN ('DIRECT_CLEAR','APOLLO_CLEAR','APOLLO_UNCLEAR')),0) AS admitted,
+            COALESCE(SUM(i.outcome='DIRECT_CLEAR'),0) AS direct,
+            COALESCE(SUM(i.outcome IN ('APOLLO_CLEAR','APOLLO_UNCLEAR')),0) AS apollo
+            FROM discovery_verification_item i JOIN discovery_verification_run r ON r.execution_id=i.owner_execution_id
+            WHERE $where AND i.activated_at IS NOT NULL AND r.mode='AUDIT'
+            ${if (batches || executionIds != null) "GROUP BY $group ORDER BY $group" else ""}""",
+            RowMapper { rs, _ -> rs.getLong("bucket") to Triple(rs.getLong("admitted"), rs.getLong("direct"), rs.getLong("apollo")) },
+            *args.toTypedArray()).toMap()
+    }
+
+    /** Hash the complete reason set: grouping TEXT directly can truncate comparisons at MySQL max_sort_length. */
+    fun reportingReasons(filter: VerificationReportFilter): List<Pair<String, Long>> {
+        val (where, args) = reportingWhere(filter)
+        return jdbc.query("""SELECT MAX(i.reasons_json) AS reasons_json,COUNT(*) AS n FROM discovery_verification_item i
+            WHERE $where AND i.activated_at IS NOT NULL AND i.reasons_json IS NOT NULL GROUP BY SHA2(i.reasons_json,256)""",
+            RowMapper { rs, _ -> rs.getString("reasons_json") to rs.getLong("n") }, *args.toTypedArray())
+    }
+
+    fun reportingBatchTimes(executionId: Long): Map<Int, Instant> =
+        jdbc.query("""SELECT batch_number,MAX(updated_at) AS updated_at FROM discovery_verification_item
+            WHERE owner_execution_id=? AND activated_at IS NOT NULL GROUP BY batch_number ORDER BY batch_number""",
+            RowMapper { rs, _ -> rs.getInt("batch_number") to rs.time("updated_at")!! }, executionId).toMap()
+
+    fun reportingBatchReasons(executionId: Long): List<Triple<Int, String, Long>> =
+        jdbc.query("""SELECT batch_number,MAX(reasons_json) AS reasons_json,COUNT(*) AS n
+            FROM discovery_verification_item WHERE owner_execution_id=? AND activated_at IS NOT NULL
+            AND reasons_json IS NOT NULL GROUP BY batch_number,SHA2(reasons_json,256) ORDER BY batch_number""",
+            RowMapper { rs, _ -> Triple(rs.getInt("batch_number"), rs.getString("reasons_json"), rs.getLong("n")) }, executionId)
+
+    fun reportingRecordTotal(filter: VerificationReportFilter): Long {
+        val (where, args) = reportingWhere(filter)
+        return jdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_item i WHERE $where AND i.activated_at IS NOT NULL",
+            Long::class.java, *args.toTypedArray())!!
+    }
+
+    fun reportingRecords(filter: VerificationReportFilter, page: Int, size: Int): List<VerificationItem> {
+        require(page >= 0 && size in 1..100)
+        val (where, args) = reportingWhere(filter)
+        // Prevent ORDER BY id/LIMIT from choosing an unrelated-owner PRIMARY scan on large runs.
+        return jdbc.query("""SELECT i.* FROM discovery_verification_item i FORCE INDEX (idx_dvi_run_batch) WHERE $where AND i.activated_at IS NOT NULL
+            ORDER BY i.id LIMIT ? OFFSET ?""", itemMapper, *(args + listOf(size, page.toLong() * size)).toTypedArray())
+    }
+
+    private fun reportingWhere(filter: VerificationReportFilter): Pair<String, List<Any>> {
+        val clauses = mutableListOf("i.owner_execution_id=?")
+        val args = mutableListOf<Any>(filter.executionId)
+        when (filter.route) {
+            "APOLLO" -> clauses += "i.apollo_entered_at IS NOT NULL"
+            "DIRECT" -> { clauses += "i.route=?"; args += filter.route }
+        }
+        when (filter.result) {
+            "CLEAR" -> clauses += "i.outcome IN ('DIRECT_CLEAR','APOLLO_CLEAR')"
+            "UNCLEAR" -> clauses += "i.outcome='APOLLO_UNCLEAR'"
+            "PENDING" -> clauses += "i.outcome='PENDING'"
+            "ERROR" -> clauses += "i.state='ERROR'"
+            "QUEUED" -> clauses += "i.state IN ('QUEUED','RUNNING','RETRY_WAIT')"
+            "PROTECTED" -> clauses += "i.outcome='PROTECTED'"
+        }
+        filter.batchNumber?.let { clauses += "i.batch_number=?"; args += it }
+        if (filter.q.isNotEmpty()) {
+            // Use ! as SQL escape, escaping literal !, %, _, and backslash explicitly.
+            val q = "%" + filter.q.replace("!", "!!").replace("\\", "!\\").replace("%", "!%").replace("_", "!_") + "%"
+            clauses += """(i.expert_doc_id LIKE ? ESCAPE '!' OR
+                CONCAT_WS(' ',JSON_UNQUOTE(JSON_EXTRACT(i.snapshot_json,'$.profile.givenNames')),
+                    JSON_UNQUOTE(JSON_EXTRACT(i.snapshot_json,'$.profile.familyNames'))) LIKE ? ESCAPE '!' OR
+                JSON_UNQUOTE(JSON_EXTRACT(i.snapshot_json,'$.profile.email')) LIKE ? ESCAPE '!' OR
+                JSON_UNQUOTE(JSON_EXTRACT(i.snapshot_json,'$.profile.institution')) LIKE ? ESCAPE '!')"""
+            repeat(4) { args += q }
+        }
+        return clauses.joinToString(" AND ") to args
+    }
+
     @Transactional
     fun createRun(executionId: Long, mode: VerificationMode, apolloRequested: Boolean, settingsJson: String, now: Instant): VerificationRun {
         require(executionId > 0 && settingsJson.isNotBlank())
@@ -363,5 +499,17 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
             rs.getString("apollo_person_id"), rs.getString("evidence_json"), rs.getString("reasons_json"), rs.getInt("request_count"), rs.getInt("transient_attempts"), rs.getLong("generation"),
             rs.getString("lease_token"), rs.time("lease_until"), rs.time("next_attempt_at"), rs.nullLong("admission_revision"), VerificationProjection.valueOf(rs.getString("projection_state")),
             rs.getString("projection_error"), rs.time("activated_at"), rs.time("completed_at"), rs.time("created_at")!!, rs.time("updated_at")!!) }
+    }
+}
+
+data class VerificationReportFilter(
+    val executionId: Long, val route: String = "ALL", val result: String = "ALL",
+    val q: String = "", val batchNumber: Int? = null
+) {
+    init {
+        require(executionId > 0)
+        require(route in setOf("ALL", "DIRECT", "APOLLO"))
+        require(result in setOf("ALL", "CLEAR", "UNCLEAR", "PENDING", "ERROR", "QUEUED", "PROTECTED"))
+        require(q.length <= 100 && (batchNumber == null || batchNumber > 0))
     }
 }

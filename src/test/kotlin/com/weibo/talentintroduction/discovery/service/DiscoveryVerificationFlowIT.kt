@@ -378,6 +378,57 @@ class DiscoveryVerificationFlowIT {
         }
     }
 
+    @Test fun `late external ORCID contact blocks persisted RAW before prepare and during commit`() {
+        listOf(false, true).forEach { afterPrepare ->
+            listOf("0000-0002-1825-0097", "https://orcid.org/0000-0002-1825-0097").forEach { externalOrcid ->
+                clean()
+                VerificationFlowFixture(jdbc, manager).use { f ->
+                    val doc = "persisted-orcid-contact"
+                    @Suppress("UNCHECKED_CAST")
+                    val source = f.mapper.convertValue(ruleSnapshot().profile.copy(
+                        esDocId = doc, orcidId = doc, researchFieldIds = listOf("22"), lastPublicationYear = 2026),
+                        Map::class.java) as Map<String, Any?>
+                    f.raws[doc] = source + ("externalIds" to mapOf("orcid" to externalOrcid))
+                    val profile = f.writer.discoveryProfile(doc, f.raws.getValue(doc))
+                    val snapshot = DiscoveryVerificationAdmissionGate.snapshot(doc, profile, f.policy.evaluate(doc, profile).configSnapshot)
+                    f.repository.createRun(2001, VerificationMode.ENFORCE, true, "{}", f.clock.instant())
+                    val reserved = f.repository.reserveItem(VerificationReservation(2001, doc, snapshot.identityHash,
+                        VerificationMode.ENFORCE.policyVersion, "ORCID", doc, f.mapper.writeValueAsString(snapshot),
+                        snapshot.factFingerprint), f.clock.instant())
+                    val item = f.repository.activateItem(reserved.id, 1, f.clock.instant())
+                    val lease = f.claim()
+                    val facts = listOf(ruleJob("Professor").copy(identityHash = lease.identityHash, factFingerprint = lease.factFingerprint))
+                    val decision = f.rules.evaluate(snapshot, facts)
+                    assertEquals(VerificationOutcome.DIRECT_CLEAR, decision.outcome)
+                    val proposed = VerificationResult(VerificationState.COMPLETED, decision.outcome, decision.qualification,
+                        decision.route, f.mapper.writeValueAsString(VerificationWorkerEvidence(facts)),
+                        f.mapper.writeValueAsString(decision.reasonCodes))
+                    val prepared = if (afterPrepare) f.commits.prepare(lease).also { assertNull(it.protection) } else null
+                    jdbc.update("""INSERT INTO expert_contact (campaign_id,orcid_id,expert_email)
+                        SELECT MIN(id),'0000-0002-1825-0097','unrelated@example.invalid' FROM campaign""")
+                    val contacts = jdbc.queryForList("SELECT * FROM expert_contact")
+                    val admission = f.admissions.findAdmission(doc)
+                    val input = prepared ?: f.commits.prepare(lease)
+                    val committed = f.commits.commit(lease, proposed, input)!!
+                    f.commits.project(committed)
+                    assertEquals(VerificationOutcome.PROTECTED, committed.outcome, "$afterPrepare/$externalOrcid")
+                    assertEquals(listOf("CONTACT_PROTECTED"), f.mapper.readValue(committed.reasonsJson, List::class.java))
+                    assertEquals(VerificationProjection.NOT_REQUIRED, committed.projectionState)
+                    assertNull(committed.admissionRevision)
+                    assertEquals(admission, f.admissions.findAdmission(doc))
+                    assertEquals(contacts, jdbc.queryForList("SELECT * FROM expert_contact"))
+                    assertEquals(0L, f.autoCount())
+                    assertTrue(f.candidates.isEmpty())
+                    assertEquals(snapshot.factFingerprint, input.snapshot!!.factFingerprint)
+                    assertEquals(snapshot.factFingerprint, f.item(item.id).factFingerprint)
+                    assertEquals(doc, f.raws.getValue(doc)["orcidId"])
+                    assertEquals(source + ("externalIds" to mapOf("orcid" to externalOrcid)), f.raws.getValue(doc))
+                    assertTrue(f.orcidRequests.isEmpty()); assertTrue(f.apolloRequests.isEmpty())
+                }
+            }
+        }
+    }
+
     @Test fun `all protected families retain their admission and never create a candidate`() {
         listOf("HOLD", "REJECTED", "MANUAL_APPROVED", "LEGACY_APPROVED", "SBIR", "CONTACT_ALIAS", "APPLICATION").forEach { protection ->
             clean()

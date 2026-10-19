@@ -1,0 +1,74 @@
+$ rg -n progressLogRepository|taskExecutionRepository|progressStore.update|runAndRecord src/main/kotlin/com/weibo/talentintroduction/discovery src/main/kotlin/com/weibo/talentintroduction/task
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/task/service/DailyCountResetScheduler.kt:28:            taskExecutionService.runAndRecord("DAILY_COUNT_RESET", "SCHEDULED", "daily-count-reset") {
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionScheduler.kt:15: * - 用 `runAndRecordWithResult` 使 [RetentionResult] 落入 result_summary，
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionScheduler.kt:31:        taskExecutionService.runAndRecordWithResult(
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStore.kt:13:    private val progressLogRepository: TaskProgressLogRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStore.kt:184:                progressLogRepository.rebindPendingExecutionId(pendingToken, executionId)
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStore.kt:209:            progressLogRepository.save(logEntry)
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStore.kt:217:            val latestLog = progressLogRepository.findTopByTaskTypeOrderByIdDesc(taskType)
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:27:    private val progressLogRepository: TaskProgressLogRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:158:        val latestLog = progressLogRepository.findTopByTaskExecutionIdOrderByIdDesc(executionId)
+src/main/kotlin/com/weibo/talentintroduction/task/service/BounceCollectionScheduler.kt:32:            taskExecutionService.runAndRecord("BOUNCE_COLLECTION", "SCHEDULED", "bounce-collection") {
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionService.kt:27:    private val progressLogRepository: TaskProgressLogRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionService.kt:42:            progressDeleted = purgeLoop { limit -> progressLogRepository.deleteOlderThan(cutoff, limit) }
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionService.kt:76: * `runAndRecordWithResult` 落正确的 success_count / failure_count / status，
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:138:    fun <T : Any?> runAndRecordWithResult(
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:217:    fun <T : Any?> runAndRecord(
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:38:    private val taskExecutionRepository: TaskExecutionRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:69:        taskExecutionRepository.findTaskTypeCounts()
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:104:        val stored = taskExecutionRepository.findById(id)
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:33:    private val progressLogRepository: TaskProgressLogRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:34:    private val taskExecutionRepository: TaskExecutionRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:51:    private val extractor = TaskExecutionSummaryExtractor(progressLogRepository, objectMapper)
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:111:                val latestLog = progressLogRepository.findTopByTaskTypeOrderByIdDesc(taskType)
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:115:        val logs = progressLogRepository.findAllByTaskExecutionIdOrderByIdAsc(targetExecutionId)
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:134:        val executions = taskExecutionRepository.findRecentByTaskType(taskType, clampedLimit)
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:162:                        ?: exec.id?.let { progressLogRepository.findTopByTaskExecutionIdOrderByIdDesc(it)?.detailsJson }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:630:            val result = taskExecutionService.runAndRecordWithResult(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:1154:        progressStore.update(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:1277:        progressStore.update(
+src/main/kotlin/com/weibo/talentintroduction/task/service/MailAutomationScheduler.kt:31:        taskExecutionService.runAndRecord("AUTO_REPLY_ALL", "SCHEDULED", request) {
+src/main/kotlin/com/weibo/talentintroduction/task/service/MailAutomationScheduler.kt:52:        // 通过 runAndRecord 已有的 onStarted 回调拿到本次执行的 id（I2a-3），传给同步分支。
+src/main/kotlin/com/weibo/talentintroduction/task/service/MailAutomationScheduler.kt:54:        // runAndRecord 上下文里跑，会有自己的 execution 行；队列模式下 mail_record.
+src/main/kotlin/com/weibo/talentintroduction/task/service/MailAutomationScheduler.kt:57:        taskExecutionService.runAndRecord(
+src/main/kotlin/com/weibo/talentintroduction/task/service/MailAutomationScheduler.kt:79:        taskExecutionService.runAndRecord(
+src/main/kotlin/com/weibo/talentintroduction/task/service/MailAutomationScheduler.kt:90:        // 走 runAndRecordWithResult 使对账报告（ReconcileReport）落入 task_execution.result_summary，可在任务面板查看
+src/main/kotlin/com/weibo/talentintroduction/task/service/MailAutomationScheduler.kt:91:        taskExecutionService.runAndRecordWithResult(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorker.kt:95:            taskExecutionService.runAndRecordWithResult(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorker.kt:107:            progressStore.update(TASK_TYPE, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskActivityController.kt:33:    private val taskExecutionRepository: TaskExecutionRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskActivityController.kt:53:        val items = taskExecutionRepository.findActivePage(safeSize, offset)
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskActivityController.kt:55:        val total = taskExecutionRepository.countActive()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:429:                    tasks.runAndRecordWithResult(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:710:                    tasks.runAndRecordWithResult(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1098:                    tasks.runAndRecordWithResult(TASK_INITIALIZE, "MANUAL", payload, onStarted = { executionId = it }) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:400:            taskExecutionService.runAndRecord("EXPERT_DISCOVERY", "SCHEDULED", criteria,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:409:            progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:130:            execution = taskExecutionService.runAndRecord(
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:145:                progressStore.update("EXPERT_DISCOVERY", existing?.copy(
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:159:            progressStore.update("EXPERT_DISCOVERY", existing?.copy(
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:224:            execution = taskExecutionService.runAndRecord(
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:239:                progressStore.update("EXPERT_DISCOVERY", existing?.copy(
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:253:            progressStore.update("EXPERT_DISCOVERY", existing?.copy(
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:342:                    taskExecutionService.runAndRecordWithResult(
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:352:                    progressStore.update(taskType, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:434:            progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:441:                progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:503:                progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:528:            progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:544:            progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:999:            progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1219:        progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1475:            progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2633:        progressStore.update(taskType, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2640:            progressStore.update(taskType, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2758:                        progressStore.update(taskType, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2783:                progressStore.update(taskType, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2808:                progressStore.update(taskType, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2831:                progressStore.update(taskType, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2854:                progressStore.update(taskType, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2873:            progressStore.update(taskType, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2887:            progressStore.update(taskType, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2920:            progressStore.update(taskType, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3095:        progressStore.update(taskType, TaskProgress(

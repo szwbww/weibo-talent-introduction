@@ -1,0 +1,29 @@
+$ rg -n dynamic|identityVerification|institutionEvidence|degree|age|employment src/main/resources/es src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt:1:package com.weibo.talentintroduction.expert.domain
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt:11:    val employment: String?,
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt:12:    val age: Int? = null,
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt:13:    val degree: String? = null,
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt:36:     * - works 路径（发现时）：该专家被发现的那篇论文上的署名机构的类型，与 institution / employment 同源。
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt:41:    val identityVerification: IdentityVerification? = null,
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt:45:     * 签发与验签的唯一入口是 [DiscoveryIdentity.institutionEvidence] / [DiscoveryIdentity.validInstitutionEvidence]；
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt:48:    val institutionEvidence: String? = null,
+src/main/resources/es/trust_reply_unsupported_answer_v1.json:7:    "dynamic": "strict",
+src/main/resources/es/orcid_info_candidate.json:7:    "dynamic": false,
+src/main/resources/es/orcid_info_candidate.json:17:      "employment": { "type": "keyword" },
+src/main/resources/es/orcid_info_candidate.json:18:      "age": { "type": "integer" },
+src/main/resources/es/orcid_info_candidate.json:19:      "degree": { "type": "keyword" },
+src/main/resources/es/orcid_info_candidate.json:30:      "institutionEvidence": { "type": "keyword" },
+src/main/resources/es/orcid_info_candidate.json:34:      "identityVerification": { "type": "object", "dynamic": false, "properties": {
+src/main/resources/es/orcid_info_application.json:7:    "dynamic": false,
+src/main/resources/es/orcid_info_application.json:17:      "employment": { "type": "text" },
+src/main/resources/es/orcid_info_application.json:18:      "age": { "type": "integer" },
+src/main/resources/es/orcid_info_application.json:19:      "degree": { "type": "keyword" },
+src/main/resources/es/orcid_info_application.json:41:      "institutionEvidence": { "type": "keyword" },
+src/main/resources/es/orcid_info_application.json:45:      "identityVerification": { "type": "object", "dynamic": false, "properties": {
+src/main/resources/es/orcid_info_raw.json:7:    "dynamic": false,
+src/main/resources/es/orcid_info_raw.json:17:      "employment": { "type": "keyword" },
+src/main/resources/es/orcid_info_raw.json:18:      "age": { "type": "integer" },
+src/main/resources/es/orcid_info_raw.json:19:      "degree": { "type": "keyword" },
+src/main/resources/es/orcid_info_raw.json:29:      "institutionEvidence": { "type": "keyword" },
+src/main/resources/es/orcid_info_raw.json:33:      "identityVerification": { "type": "object", "dynamic": false, "properties": {

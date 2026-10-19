@@ -979,4 +979,18 @@ describe("c5 discovery review · scope and confirm (I-2)", () => {
         assert.ok(!/batchConfigEditor[A-Za-z]*ReviewFilter/.test(indexHtml),
             "no review filter may be added to the batch editor");
     });
+
+    it("Apollo logs retain the enabled main review tabs and the original other-task head", () => {
+        for (const id of ["discoveryPipelineTab", "discoveryReviewTab", "discoveryReviewHistoryTab"]) {
+            const tag = indexHtml.match(new RegExp("<button[^>]*id=\"" + id + "\"[^>]*>"))[0];
+            assert.ok(!tag.includes("disabled"), "the main tab stays operable: " + id);
+        }
+        assert.ok(indexHtml.includes('id="taskModalRunHead"'));
+        assert.ok(indexHtml.includes('id="taskModalTrafficHead"'));
+        const keys = [...indexHtml.matchAll(/\?v=([^"<>]+)/g)].map(match => match[1]);
+        assert.strictEqual(keys.length, 16);
+        assert.strictEqual(new Set(keys).size, 1);
+        assert.match(keys[0], /^\d{8}-apollo-verification$/);
+        assert.ok(indexHtml.includes('<script src="task-modal-runtime.js"></script>'));
+    });
 });

@@ -1,0 +1,89 @@
+$ rg -n renderBatchTable|renderRunRow|renderBatchDetailRow|postDiscoveryLaunch|taskLaunchConfigs|batchOnly|data-discovery-review|task-modal-log-table-wrapper|20261016-discovery-identity-recovery src/main/resources/static src/test/js
+exit=0
+src/main/resources/static/task-modal-runtime.js:130:    const url = `${contextPath}/api/task-progress/${taskType}/logs?executionId=${executionId}&batchOnly=true`;
+src/test/js/taskActivityCenter.test.js:1308:            "/api/task-progress/EXPERT_ENRICHMENT/logs?executionId=42&batchOnly=true");
+src/main/resources/static/app.js:1503:        const logs = await api(`/api/task-progress/${encodeURIComponent(taskType)}/logs?executionId=${id}&batchOnly=true`);
+src/main/resources/static/app.js:2701:        if (isDiscovery) els.modal.setAttribute("data-discovery-review", "true");
+src/main/resources/static/app.js:2702:        else els.modal.removeAttribute("data-discovery-review");
+src/main/resources/static/app.js:2718:    if (els.modal) els.modal.removeAttribute("data-discovery-review");
+src/main/resources/static/app.js:4200:        ? runs.map(r => renderRunRow(r, taskType)).join("")
+src/main/resources/static/app.js:4218:            runRow.insertAdjacentHTML("afterend", renderBatchDetailRow(expandedExecId));
+src/main/resources/static/app.js:4342:    const html = renderBatchTable(logs);
+src/main/resources/static/app.js:4349:function renderBatchTable(logs) {
+src/main/resources/static/app.js:4395:function renderRunRow(run, taskType) {
+src/main/resources/static/app.js:4429:function renderBatchDetailRow(executionId) {
+src/main/resources/static/app.js:4496:        runRow.insertAdjacentHTML("afterend", renderBatchDetailRow(executionId));
+src/main/resources/static/app.js:9534:const taskLaunchConfigs = {
+src/main/resources/static/app.js:9578:                desc: isContinuousDiscoveryMode() ? CONTINUOUS_DISCOVERY_DESC : (taskLaunchConfigs.EXPERT_DISCOVERY.desc || ""),
+src/main/resources/static/app.js:9649:    const config = taskLaunchConfigs[taskType];
+src/main/resources/static/app.js:10108:        const response = await postDiscoveryLaunch(keywords, selectedSources, includeRawScan, continuous);
+src/main/resources/static/app.js:10144:async function postDiscoveryLaunch(keywords, selectedSources, includeRawScan, continuous) {
+src/test/js/discoveryScheduleSetting.test.js:377:                taskLaunchConfigs: {
+src/test/js/discoveryScheduleSetting.test.js:531:                "executeDiscover", "postDiscoveryLaunch", "getSelectedSources", "handleDiscoveryLaunchFailure"
+src/test/js/expertTagBatchFix.test.js:263:        // The variable assignment exists in taskLaunchConfigs.MANUAL_INITIAL_OUTREACH.preload
+src/test/js/taskModalLifecycleIntegration.test.js:248:        assert.match(init, /removeAttribute\("data-discovery-review"\)/,
+src/main/resources/static/index.html:11:    <link rel="stylesheet" href="styles.css?v=20261016-discovery-identity-recovery">
+src/main/resources/static/index.html:12:    <link rel="stylesheet" href="expert-materials.css?v=20261016-discovery-identity-recovery">
+src/main/resources/static/index.html:13:    <link rel="stylesheet" href="mailbox-chat.css?v=20261016-discovery-identity-recovery">
+src/main/resources/static/index.html:14:    <link rel="stylesheet" href="meeting-confirmation.css?v=20261016-discovery-identity-recovery">
+src/main/resources/static/index.html:15:    <link rel="stylesheet" href="world-clock.css?v=20261016-discovery-identity-recovery">
+src/main/resources/static/index.html:16:<link rel="stylesheet" href="meeting-records.css?v=20261016-discovery-identity-recovery">
+src/main/resources/static/index.html:17:<link rel="stylesheet" href="contact-details.css?v=20261016-discovery-identity-recovery">
+src/main/resources/static/index.html:1231:                <div class="task-modal-log-table-wrapper">
+src/main/resources/static/index.html:2407:<script src="trust-reply-workbench.js?v=20261016-discovery-identity-recovery"></script>
+src/main/resources/static/index.html:2408:<script src="expert-materials.js?v=20261016-discovery-identity-recovery"></script>
+src/main/resources/static/index.html:2409:<script src="meeting-confirmation.js?v=20261016-discovery-identity-recovery"></script>
+src/main/resources/static/index.html:2410:<script src="mailbox-chat.js?v=20261016-discovery-identity-recovery"></script>
+src/main/resources/static/index.html:2411:<script src="contact-history.js?v=20261016-discovery-identity-recovery"></script>
+src/main/resources/static/index.html:2412:<script src="meeting-records.js?v=20261016-discovery-identity-recovery"></script>
+src/main/resources/static/index.html:2413:<script src="contact-details.js?v=20261016-discovery-identity-recovery"></script>
+src/main/resources/static/index.html:2414:<script src="app.js?v=20261016-discovery-identity-recovery"></script>
+src/main/resources/static/index.html:2415:<script src="world-clock.js?v=20261016-discovery-identity-recovery"></script>
+src/test/js/discoveryReview.test.js:308:        const s1 = `#taskProgressModal[data-discovery-review="true"] .modal-content.task-modal {
+src/test/js/discoveryReview.test.js:336:    #taskProgressModal[data-discovery-review="true"] .modal-content.task-modal {
+src/test/js/discoveryReview.test.js:451:        // 只有 data-discovery-review 标记触发宽度；其余任务仍是 700px 基规则。
+src/test/js/discoveryReview.test.js:474:        assert.strictEqual(sandbox.$("#taskProgressModal").getAttribute("data-discovery-review"), null);
+src/test/js/discoveryReview.test.js:479:        assert.strictEqual(sandbox.$("#taskProgressModal").getAttribute("data-discovery-review"), "true");
+src/test/js/discoveryReview.test.js:561:        assert.strictEqual(sandbox.$("#taskProgressModal").getAttribute("data-discovery-review"), null);
+src/test/js/discoveryContinuousRun.test.js:234:                "executeDiscover", "postDiscoveryLaunch", "getSelectedSources",
+src/test/js/discoveryContinuousRun.test.js:273:                "executeDiscover", "postDiscoveryLaunch", "getSelectedSources",
+src/test/js/discoveryContinuousRun.test.js:305:                "executeDiscover", "postDiscoveryLaunch", "getSelectedSources",
+src/test/js/discoveryContinuousRun.test.js:331:                "executeDiscover", "postDiscoveryLaunch", "getSelectedSources",
+src/test/js/discoveryContinuousRun.test.js:625:                taskLaunchConfigs: {
+src/test/js/discoveryContinuousRun.test.js:647:                    "executeDiscover", "postDiscoveryLaunch", "getSelectedSources",
+src/main/resources/static/styles.css:4558:.task-modal-log-table-wrapper {
+src/main/resources/static/styles.css:4567:.task-modal-log-table-wrapper .data-table.compact {
+src/main/resources/static/styles.css:4571:.task-modal-log-table-wrapper table {
+src/main/resources/static/styles.css:12674:/* ── c5/S-1：深度发现审核容器与页签（仅 data-discovery-review 生效） ───────────── */
+src/main/resources/static/styles.css:12675:#taskProgressModal[data-discovery-review="true"] .modal-content.task-modal {
+src/main/resources/static/styles.css:12703:    #taskProgressModal[data-discovery-review="true"] .modal-content.task-modal {
+src/test/js/taskModalTwoLevelUi.test.js:21:vm.runInContext(extractFn("renderBatchTable"), sandbox);
+src/test/js/taskModalTwoLevelUi.test.js:22:vm.runInContext(extractFn("renderRunRow"), sandbox);
+src/test/js/taskModalTwoLevelUi.test.js:23:vm.runInContext(extractFn("renderBatchDetailRow"), sandbox);
+src/test/js/taskModalTwoLevelUi.test.js:30:const renderBatchTable = sandbox.renderBatchTable;
+src/test/js/taskModalTwoLevelUi.test.js:31:const renderRunRow = sandbox.renderRunRow;
+src/test/js/taskModalTwoLevelUi.test.js:32:const renderBatchDetailRow = sandbox.renderBatchDetailRow;
+src/test/js/taskModalTwoLevelUi.test.js:51:        const html = renderBatchDetailRow(7);
+src/test/js/taskModalTwoLevelUi.test.js:60:describe("renderBatchTable (from app.js)", () => {
+src/test/js/taskModalTwoLevelUi.test.js:63:        const html = renderBatchTable([]);
+src/test/js/taskModalTwoLevelUi.test.js:68:        const html = renderBatchTable(null);
+src/test/js/taskModalTwoLevelUi.test.js:77:        const html = renderBatchTable(logs);
+src/test/js/taskModalTwoLevelUi.test.js:92:        const html = renderBatchTable(logs);
+src/test/js/taskModalTwoLevelUi.test.js:103:        const html = renderBatchTable(logs);
+src/test/js/taskModalTwoLevelUi.test.js:112:        const html = renderBatchTable(logs);
+src/test/js/taskModalTwoLevelUi.test.js:117:describe("renderRunRow (from app.js)", () => {
+src/test/js/taskModalTwoLevelUi.test.js:125:        const html = renderRunRow(run, "EXPERT_REVALIDATION");
+src/test/js/taskModalTwoLevelUi.test.js:137:        const html = renderRunRow(run, "EXPERT_REVALIDATION");
+src/test/js/taskModalTwoLevelUi.test.js:152:        const html = renderRunRow(run, "RAW_PROMOTION_SCAN");
+src/test/js/taskModalTwoLevelUi.test.js:162:        const html = renderRunRow(run, "EXPERT_DISCOVERY");
+src/test/js/taskModalTwoLevelUi.test.js:173:        assert.ok(renderRunRow(base, "EXPERT_DISCOVERY").includes("未记录"));
+src/test/js/taskModalTwoLevelUi.test.js:174:        assert.ok(renderRunRow({ ...base, traffic: { totalBytes: 1048576 } }, "EXPERT_DISCOVERY").includes("1.0 MB"));
+src/test/js/taskModalTwoLevelUi.test.js:175:        assert.ok(!renderRunRow(base, "EXPERT_REVALIDATION").includes("未记录"));
+src/test/js/taskModalTwoLevelUi.test.js:184:        const html = renderRunRow(run, "EXPERT_REVALIDATION");
+src/test/js/taskModalTwoLevelUi.test.js:194:        const html = renderRunRow(run, "EXPERT_DISCOVERY");
+src/test/js/taskModalTwoLevelUi.test.js:205:        const html = renderRunRow(run, "EXPERT_REVALIDATION");
+src/test/js/taskModalTwoLevelUi.test.js:215:        const html = renderRunRow(run, "EXPERT_REVALIDATION");
+src/test/js/taskModalTwoLevelUi.test.js:227:        const html = renderRunRow(run, "EXPERT_REVALIDATION");
+src/test/js/taskModalTwoLevelUi.test.js:238:        const html = renderRunRow(run, "EXPERT_REVALIDATION");
+src/test/js/taskModalTwoLevelUi.test.js:250:        const html = renderRunRow(run, "RAW_PROMOTION_SCAN");
+src/test/js/checkRepliesRelocation.test.js:55:            "taskLaunchConfigs entry must stay");

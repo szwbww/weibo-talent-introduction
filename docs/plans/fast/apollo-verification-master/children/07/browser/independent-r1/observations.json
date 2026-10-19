@@ -1,0 +1,1420 @@
+{
+  "visuals": [
+    {
+      "viewport": [
+        1366,
+        900
+      ],
+      "modalWidth": 1180,
+      "radius": "18px",
+      "maxHeight": "720px",
+      "grid": "543px 543px",
+      "head": {
+        "position": "static",
+        "background": "rgb(248, 250, 252)"
+      },
+      "scrolling": [
+        "modal-content task-modal"
+      ],
+      "evidenceBlocks": 4
+    },
+    {
+      "viewport": [
+        1920,
+        1080
+      ],
+      "modalWidth": 1180,
+      "radius": "18px",
+      "maxHeight": "864px",
+      "grid": "543px 543px",
+      "head": {
+        "position": "static",
+        "background": "rgb(248, 250, 252)"
+      },
+      "scrolling": [
+        "modal-content task-modal"
+      ],
+      "evidenceBlocks": 4
+    },
+    {
+      "viewport": [
+        700,
+        900
+      ],
+      "modalWidth": 652,
+      "radius": "18px",
+      "maxHeight": "720px",
+      "grid": "1020px",
+      "head": {
+        "position": "static",
+        "background": "rgb(248, 250, 252)"
+      },
+      "scrolling": [
+        "modal-content task-modal"
+      ],
+      "evidenceBlocks": 4
+    },
+    {
+      "viewport": [
+        390,
+        844
+      ],
+      "modalWidth": 370,
+      "radius": "18px",
+      "maxHeight": "828px",
+      "grid": "1020px",
+      "head": {
+        "position": "static",
+        "background": "rgb(248, 250, 252)"
+      },
+      "scrolling": [
+        "modal-content task-modal"
+      ],
+      "evidenceBlocks": 4
+    }
+  ],
+  "configStyles": [
+    {
+      "w": 1366,
+      "width": "14px",
+      "height": "14px",
+      "minHeight": "14px",
+      "label": "row",
+      "sources": [
+        "34px",
+        "34px",
+        "34px",
+        "34px",
+        "34px",
+        "34px",
+        "34px"
+      ]
+    },
+    {
+      "w": 1920,
+      "width": "14px",
+      "height": "14px",
+      "minHeight": "14px",
+      "label": "row",
+      "sources": [
+        "34px",
+        "34px",
+        "34px",
+        "34px",
+        "34px",
+        "34px",
+        "34px"
+      ]
+    },
+    {
+      "w": 700,
+      "width": "14px",
+      "height": "14px",
+      "minHeight": "14px",
+      "label": "row",
+      "sources": [
+        "34px",
+        "34px",
+        "34px",
+        "34px",
+        "34px",
+        "34px",
+        "34px"
+      ]
+    },
+    {
+      "w": 390,
+      "width": "14px",
+      "height": "14px",
+      "minHeight": "14px",
+      "label": "row",
+      "sources": [
+        "34px",
+        "34px",
+        "34px",
+        "34px",
+        "34px",
+        "34px",
+        "34px"
+      ]
+    }
+  ],
+  "proofs": {
+    "RUNNING": {
+      "before": 7,
+      "mid": 8,
+      "after": 9,
+      "timer": true
+    },
+    "PAUSED": {
+      "before": 9,
+      "mid": 10,
+      "after": 11,
+      "timer": true
+    },
+    "null": {
+      "before": 11,
+      "mid": 12,
+      "after": 13,
+      "timer": true
+    }
+  },
+  "stopped": [
+    {
+      "context": "review",
+      "before": 59,
+      "after": 59,
+      "timer": false
+    },
+    {
+      "context": "history",
+      "before": 61,
+      "after": 61,
+      "timer": false
+    },
+    {
+      "context": "other",
+      "before": 63,
+      "after": 63,
+      "timer": false
+    },
+    {
+      "context": "closed",
+      "before": 65,
+      "after": 65,
+      "timer": false
+    }
+  ],
+  "caps": [
+    {
+      "disabled": true,
+      "hint": "资格核验未启用",
+      "launch": false
+    },
+    {
+      "disabled": true,
+      "hint": "资格核验未启用",
+      "launch": false
+    }
+  ],
+  "receipts": [
+    {
+      "path": "/api/auth/me",
+      "query": "",
+      "method": "GET",
+      "time": 1792345693604
+    },
+    {
+      "path": "/api/expert-discovery/schedule",
+      "query": "",
+      "method": "GET",
+      "time": 1792345706489
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/executions",
+      "query": "?limit=10",
+      "method": "GET",
+      "time": 1792345706491
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792345706492
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792345716531
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/batches",
+      "query": "?page=0&size=20",
+      "method": "GET",
+      "time": 1792345716532
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792345716872
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345716873
+    },
+    {
+      "path": "/api/expert-discovery/verification/items/1",
+      "query": "",
+      "method": "GET",
+      "time": 1792345717175
+    },
+    {
+      "path": "/api/expert-discovery/verification/items/1",
+      "query": "",
+      "method": "GET",
+      "time": 1792345719054
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792345722104
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345722104
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792345727210
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345727211
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792345732407
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345732409
+    },
+    {
+      "path": "/api/expert-discovery/verification/items/1",
+      "query": "",
+      "method": "GET",
+      "time": 1792345735961
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792345737630
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345737630
+    },
+    {
+      "path": "/api/expert-discovery/verification/items/1",
+      "query": "",
+      "method": "GET",
+      "time": 1792345737965
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/cancel",
+      "query": "",
+      "method": "POST",
+      "time": 1792345738569
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792345738577
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345738577
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792345743778
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345743778
+    },
+    {
+      "path": "/api/expert-discovery/pipeline/resume",
+      "query": "",
+      "method": "POST",
+      "time": 1792345744091
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792345744097
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345744098
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792345749295
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345749296
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/cancel",
+      "query": "",
+      "method": "POST",
+      "time": 1792345749614
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792345749618
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345749619
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792345754798
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345754798
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792345759989
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345759989
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792345762065
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345762066
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792345767587
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345767587
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/cancel",
+      "query": "",
+      "method": "POST",
+      "time": 1792345767781
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792345769317
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345769317
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/cancel",
+      "query": "",
+      "method": "POST",
+      "time": 1792345769472
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792345770981
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345770981
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/cancel",
+      "query": "",
+      "method": "POST",
+      "time": 1792345771138
+    },
+    {
+      "path": "/api/expert-discovery/schedule",
+      "query": "",
+      "method": "GET",
+      "time": 1792345791304
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/executions",
+      "query": "?limit=10",
+      "method": "GET",
+      "time": 1792345791305
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792345791578
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792345791765
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/batches",
+      "query": "?page=0&size=20",
+      "method": "GET",
+      "time": 1792345791765
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792345791954
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345791954
+    },
+    {
+      "path": "/api/expert-discovery/verification/items/1",
+      "query": "",
+      "method": "GET",
+      "time": 1792345792191
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792345797170
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345797171
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792345802360
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345802361
+    },
+    {
+      "path": "/api/expert-discovery/pipeline",
+      "query": "",
+      "method": "GET",
+      "time": 1792345804961
+    },
+    {
+      "path": "/api/expert-discovery/verification/capabilities",
+      "query": "",
+      "method": "GET",
+      "time": 1792345804986
+    },
+    {
+      "path": "/api/expert-discovery/schedule",
+      "query": "",
+      "method": "GET",
+      "time": 1792345805023
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/executions",
+      "query": "?limit=10",
+      "method": "GET",
+      "time": 1792345805027
+    },
+    {
+      "path": "/api/expert-discovery/schedule",
+      "query": "",
+      "method": "GET",
+      "time": 1792345861850
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/executions",
+      "query": "?limit=10",
+      "method": "GET",
+      "time": 1792345861853
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345862076
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345867294
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345872494
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345874233
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/batches",
+      "query": "?page=0&size=20",
+      "method": "GET",
+      "time": 1792345874233
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345875411
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=UNCLEAR&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345875411
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345875650
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345875650
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345875884
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=1&size=20",
+      "method": "GET",
+      "time": 1792345875884
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345876107
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=APOLLO&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345876108
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345876346
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345876346
+    },
+    {
+      "path": "/api/expert-discovery/verification/items/1",
+      "query": "",
+      "method": "GET",
+      "time": 1792345876581
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345881554
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345881555
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345886762
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345886762
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345891946
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345891946
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345897085
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345897086
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345901335
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=Fixture&page=0&size=20",
+      "method": "GET",
+      "time": 1792345901335
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345901346
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=Fixture&page=0&size=20",
+      "method": "GET",
+      "time": 1792345901348
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345901578
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=Fixture&page=0&size=20",
+      "method": "GET",
+      "time": 1792345901578
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345901893
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=Fixture&page=0&size=20",
+      "method": "GET",
+      "time": 1792345901893
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345902140
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=Fixture&page=0&size=20",
+      "method": "GET",
+      "time": 1792345902141
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345902361
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/logs",
+      "query": "?executionId=3001&batchOnly=true",
+      "method": "GET",
+      "time": 1792345902379
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345907583
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/logs",
+      "query": "?executionId=3001&batchOnly=true",
+      "method": "GET",
+      "time": 1792345907588
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345912801
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/logs",
+      "query": "?executionId=3001&batchOnly=true",
+      "method": "GET",
+      "time": 1792345912805
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345918000
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/logs",
+      "query": "?executionId=3001&batchOnly=true",
+      "method": "GET",
+      "time": 1792345918006
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345923204
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/logs",
+      "query": "?executionId=3001&batchOnly=true",
+      "method": "GET",
+      "time": 1792345923211
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345928414
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/logs",
+      "query": "?executionId=3001&batchOnly=true",
+      "method": "GET",
+      "time": 1792345928418
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345933622
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/logs",
+      "query": "?executionId=3001&batchOnly=true",
+      "method": "GET",
+      "time": 1792345933631
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345938890
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/logs",
+      "query": "?executionId=3001&batchOnly=true",
+      "method": "GET",
+      "time": 1792345938898
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345945358
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/logs",
+      "query": "?executionId=3001&batchOnly=true",
+      "method": "GET",
+      "time": 1792345952696
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345959451
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/logs",
+      "query": "?executionId=3001&batchOnly=true",
+      "method": "GET",
+      "time": 1792345959463
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345964683
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/logs",
+      "query": "?executionId=3001&batchOnly=true",
+      "method": "GET",
+      "time": 1792345964694
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345969899
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/logs",
+      "query": "?executionId=3001&batchOnly=true",
+      "method": "GET",
+      "time": 1792345969904
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345970590
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=Fixture&page=0&size=20",
+      "method": "GET",
+      "time": 1792345970591
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345970774
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345970774
+    },
+    {
+      "path": "/api/expert-discovery/verification/items/1",
+      "query": "",
+      "method": "GET",
+      "time": 1792345971125
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345971245
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=APOLLO&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345971245
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001,3002,3003,3004",
+      "method": "GET",
+      "time": 1792345973089
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/records",
+      "query": "?route=ALL&result=ALL&q=&page=0&size=20",
+      "method": "GET",
+      "time": 1792345973089
+    },
+    {
+      "path": "/api/expert-discovery/verification/items/1",
+      "query": "",
+      "method": "GET",
+      "time": 1792345973275
+    },
+    {
+      "path": "/api/discovery/review/experts",
+      "query": "?level=RAW&tag=discovered&size=100&decision=AUTO_PASSED&from=0",
+      "method": "GET",
+      "time": 1792345974297
+    },
+    {
+      "path": "/api/discovery/review/experts",
+      "query": "?level=RAW&tag=discovered&size=100&decision=NEEDS_REVIEW&from=0",
+      "method": "GET",
+      "time": 1792345974297
+    },
+    {
+      "path": "/api/discovery/review/experts",
+      "query": "?level=RAW&tag=discovered&size=100&decision=MANUAL_APPROVED&from=0",
+      "method": "GET",
+      "time": 1792345974298
+    },
+    {
+      "path": "/api/discovery/review/experts",
+      "query": "?level=RAW&tag=discovered&size=100&decision=LEGACY_APPROVED&from=0",
+      "method": "GET",
+      "time": 1792345974298
+    },
+    {
+      "path": "/api/discovery/review/experts",
+      "query": "?level=RAW&tag=discovered&size=100&decision=HOLD&from=0",
+      "method": "GET",
+      "time": 1792345974298
+    },
+    {
+      "path": "/api/discovery/review/experts",
+      "query": "?level=RAW&tag=discovered&size=100&decision=REJECTED&from=0",
+      "method": "GET",
+      "time": 1792345974298
+    },
+    {
+      "path": "/api/discovery/review/experts",
+      "query": "?level=RAW&tag=discovered&from=0&size=20",
+      "method": "GET",
+      "time": 1792345974298
+    },
+    {
+      "path": "/api/task-executions",
+      "query": "?page=0&size=50&taskType=DISCOVERY_REVIEW_PREPARE",
+      "method": "GET",
+      "time": 1792345974347
+    },
+    {
+      "path": "/api/task-executions",
+      "query": "?page=0&size=50&taskType=DISCOVERY_REVIEW_APPLY",
+      "method": "GET",
+      "time": 1792345974347
+    },
+    {
+      "path": "/api/task-progress/EXPERT_REVALIDATION/executions",
+      "query": "?limit=10",
+      "method": "GET",
+      "time": 1792345974361
+    },
+    {
+      "path": "/api/expert-discovery/schedule",
+      "query": "",
+      "method": "GET",
+      "time": 1792345991041
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/executions",
+      "query": "?limit=10",
+      "method": "GET",
+      "time": 1792345991041
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792345991250
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/cancel",
+      "query": "",
+      "method": "POST",
+      "time": 1792345991409
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792345992617
+    },
+    {
+      "path": "/api/discovery/review/experts",
+      "query": "?level=RAW&tag=discovered&size=100&decision=AUTO_PASSED&from=0",
+      "method": "GET",
+      "time": 1792345992648
+    },
+    {
+      "path": "/api/discovery/review/experts",
+      "query": "?level=RAW&tag=discovered&size=100&decision=NEEDS_REVIEW&from=0",
+      "method": "GET",
+      "time": 1792345992648
+    },
+    {
+      "path": "/api/discovery/review/experts",
+      "query": "?level=RAW&tag=discovered&size=100&decision=MANUAL_APPROVED&from=0",
+      "method": "GET",
+      "time": 1792345992648
+    },
+    {
+      "path": "/api/discovery/review/experts",
+      "query": "?level=RAW&tag=discovered&size=100&decision=LEGACY_APPROVED&from=0",
+      "method": "GET",
+      "time": 1792345992648
+    },
+    {
+      "path": "/api/discovery/review/experts",
+      "query": "?level=RAW&tag=discovered&size=100&decision=HOLD&from=0",
+      "method": "GET",
+      "time": 1792345992648
+    },
+    {
+      "path": "/api/discovery/review/experts",
+      "query": "?level=RAW&tag=discovered&size=100&decision=REJECTED&from=0",
+      "method": "GET",
+      "time": 1792345992648
+    },
+    {
+      "path": "/api/discovery/review/experts",
+      "query": "?level=RAW&tag=discovered&from=0&size=20",
+      "method": "GET",
+      "time": 1792345992648
+    },
+    {
+      "path": "/api/expert-discovery/schedule",
+      "query": "",
+      "method": "GET",
+      "time": 1792345999360
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/executions",
+      "query": "?limit=10",
+      "method": "GET",
+      "time": 1792345999360
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792345999570
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/cancel",
+      "query": "",
+      "method": "POST",
+      "time": 1792345999731
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792346000944
+    },
+    {
+      "path": "/api/task-executions",
+      "query": "?page=0&size=50&taskType=DISCOVERY_REVIEW_PREPARE",
+      "method": "GET",
+      "time": 1792346000972
+    },
+    {
+      "path": "/api/task-executions",
+      "query": "?page=0&size=50&taskType=DISCOVERY_REVIEW_APPLY",
+      "method": "GET",
+      "time": 1792346000972
+    },
+    {
+      "path": "/api/expert-discovery/schedule",
+      "query": "",
+      "method": "GET",
+      "time": 1792346007699
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/executions",
+      "query": "?limit=10",
+      "method": "GET",
+      "time": 1792346007699
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792346007915
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/cancel",
+      "query": "",
+      "method": "POST",
+      "time": 1792346008069
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792346009275
+    },
+    {
+      "path": "/api/task-progress/EXPERT_REVALIDATION/executions",
+      "query": "?limit=10",
+      "method": "GET",
+      "time": 1792346009281
+    },
+    {
+      "path": "/api/expert-discovery/schedule",
+      "query": "",
+      "method": "GET",
+      "time": 1792346015997
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/executions",
+      "query": "?limit=10",
+      "method": "GET",
+      "time": 1792346015997
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792346016206
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/cancel",
+      "query": "",
+      "method": "POST",
+      "time": 1792346016363
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792346017572
+    },
+    {
+      "path": "/api/expert-discovery/run",
+      "query": "",
+      "method": "POST",
+      "time": 1792346033831
+    },
+    {
+      "path": "/api/expert-discovery/run/by-keyword",
+      "query": "?keywords=AI&keywords=Robotics&sources=ORCID&apolloAssist=false",
+      "method": "POST",
+      "time": 1792346033843
+    },
+    {
+      "path": "/api/expert-discovery/pipeline",
+      "query": "",
+      "method": "GET",
+      "time": 1792346044266
+    },
+    {
+      "path": "/api/expert-discovery/schedule",
+      "query": "",
+      "method": "GET",
+      "time": 1792346044282
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/executions",
+      "query": "?limit=10",
+      "method": "GET",
+      "time": 1792346044283
+    },
+    {
+      "path": "/api/expert-discovery/pipeline",
+      "query": "",
+      "method": "GET",
+      "time": 1792346044454
+    },
+    {
+      "path": "/api/expert-discovery/schedule",
+      "query": "",
+      "method": "GET",
+      "time": 1792346044471
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/executions",
+      "query": "?limit=10",
+      "method": "GET",
+      "time": 1792346044472
+    },
+    {
+      "path": "/api/expert-discovery/pipeline",
+      "query": "",
+      "method": "GET",
+      "time": 1792346044637
+    },
+    {
+      "path": "/api/expert-discovery/verification/capabilities",
+      "query": "",
+      "method": "GET",
+      "time": 1792346044640
+    },
+    {
+      "path": "/api/expert-discovery/schedule",
+      "query": "",
+      "method": "GET",
+      "time": 1792346044644
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/executions",
+      "query": "?limit=10",
+      "method": "GET",
+      "time": 1792346044645
+    },
+    {
+      "path": "/api/discovery/review/experts",
+      "query": "?level=RAW&tag=discovered&size=100&decision=AUTO_PASSED&from=0",
+      "method": "GET",
+      "time": 1792346044909
+    },
+    {
+      "path": "/api/discovery/review/experts",
+      "query": "?level=RAW&tag=discovered&size=100&decision=NEEDS_REVIEW&from=0",
+      "method": "GET",
+      "time": 1792346044909
+    },
+    {
+      "path": "/api/discovery/review/experts",
+      "query": "?level=RAW&tag=discovered&size=100&decision=MANUAL_APPROVED&from=0",
+      "method": "GET",
+      "time": 1792346044910
+    },
+    {
+      "path": "/api/discovery/review/experts",
+      "query": "?level=RAW&tag=discovered&size=100&decision=LEGACY_APPROVED&from=0",
+      "method": "GET",
+      "time": 1792346044910
+    },
+    {
+      "path": "/api/discovery/review/experts",
+      "query": "?level=RAW&tag=discovered&size=100&decision=HOLD&from=0",
+      "method": "GET",
+      "time": 1792346044910
+    },
+    {
+      "path": "/api/discovery/review/experts",
+      "query": "?level=RAW&tag=discovered&size=100&decision=REJECTED&from=0",
+      "method": "GET",
+      "time": 1792346044910
+    },
+    {
+      "path": "/api/discovery/review/experts",
+      "query": "?level=RAW&tag=discovered&from=0&size=20",
+      "method": "GET",
+      "time": 1792346044910
+    },
+    {
+      "path": "/api/expert-discovery/pipeline",
+      "query": "",
+      "method": "GET",
+      "time": 1792346050746
+    },
+    {
+      "path": "/api/expert-discovery/schedule",
+      "query": "",
+      "method": "GET",
+      "time": 1792346050761
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/executions",
+      "query": "?limit=10",
+      "method": "GET",
+      "time": 1792346050761
+    },
+    {
+      "path": "/api/expert-discovery/schedule",
+      "query": "",
+      "method": "GET",
+      "time": 1792346076194
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/executions",
+      "query": "?limit=10",
+      "method": "GET",
+      "time": 1792346076195
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792346076383
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792346076604
+    },
+    {
+      "path": "/api/expert-discovery/verification/executions/3001/batches",
+      "query": "?page=0&size=20",
+      "method": "GET",
+      "time": 1792346076604
+    },
+    {
+      "path": "/api/expert-discovery/verification/summary",
+      "query": "?executionIds=3001",
+      "method": "GET",
+      "time": 1792346076816
+    },
+    {
+      "path": "/api/task-progress/EXPERT_DISCOVERY/logs",
+      "query": "?executionId=3001&batchOnly=true",
+      "method": "GET",
+      "time": 1792346076821
+    }
+  ]
+}

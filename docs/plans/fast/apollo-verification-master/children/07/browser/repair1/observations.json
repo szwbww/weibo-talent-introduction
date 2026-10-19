@@ -1,0 +1,1091 @@
+{
+  "origin": "http://127.0.0.1:57935",
+  "transport": "Actual repository index.html/app.js/styles.css with isolated anonymous HTTP fixture. No Spring HTTP/auth/provider end-to-end claim; actual MySQL is covered separately by required Maven tests.",
+  "viewports": [
+    [
+      1366,
+      900
+    ],
+    [
+      1920,
+      1080
+    ],
+    [
+      700,
+      900
+    ],
+    [
+      390,
+      844
+    ]
+  ],
+  "deviceScaleFactor": 1.25,
+  "observations": [
+    {
+      "case": "F07-01 collapse during GET, wait, reopen",
+      "itemRequests": 2,
+      "result": {
+        "open": true,
+        "person": "repair-person-2",
+        "text": "<img onerror=\"alert(1)\"> Fixture · 核验依据\n收起\n身份对应\n\n本次结论 未明确 · 资格 UNKNOWN\n\n原始身份 未记录\n\n原任职线索 未记录 · 机构依据 未记录 · ORCID 未记录\n\nidentity：<script>safe</script>\n\n来源：ORCID · UNKNOWN · 历史\n\n未取得可靠证据链接\n\n采集日期 2026-10-18 18:00 · 来源更新 未记录\n\n博士学位\n\neducation：PhD\n\n来源：ORCID · UNKNOWN · 当前\n\nhttps://example.invalid/evidence\n\n采集日期 2026-10-18 18:00 · 来源更新 未记录\n\n年龄与当前职称\n\n未取得可靠证据\n\nApollo 与处理记录\n\nApollo person ID：repair-person-2\n\n进入辅助 2026-10-18 18:00 · 已查询 2026-10-18 18:00 · 返回候选 2026-10-18 18:00 · 确认本人 2026-10-18 18:00\n\n未记录请求\n\n年龄缺证 · 1 人\n\nAGE_UNKNOWN\n\n当前审核 AUTO_PASSED · 候选同步 PROJECTED · 无同步异常\n\n统计更新时间 2026-10-18 18:00",
+        "unsafeLinks": 0,
+        "injectedImages": 0
+      }
+    },
+    {
+      "case": "F07-01 reopen while old GET in-flight; old completes last",
+      "itemRequests": 2,
+      "result": {
+        "person": "repair-person-4",
+        "text": "<img onerror=\"alert(1)\"> Fixture · 核验依据\n收起\n身份对应\n\n本次结论 未明确 · 资格 UNKNOWN\n\n原始身份 未记录\n\n原任职线索 未记录 · 机构依据 未记录 · ORCID 未记录\n\nidentity：<script>safe</script>\n\n来源：ORCID · UNKNOWN · 历史\n\n未取得可靠证据链接\n\n采集日期 2026-10-18 18:00 · 来源更新 未记录\n\n博士学位\n\neducation：PhD\n\n来源：ORCID · UNKNOWN · 当前\n\nhttps://example.invalid/evidence\n\n采集日期 2026-10-18 18:00 · 来源更新 未记录\n\n年龄与当前职称\n\n未取得可靠证据\n\nApollo 与处理记录\n\nApollo person ID：repair-person-4\n\n进入辅助 2026-10-18 18:00 · 已查询 2026-10-18 18:00 · 返回候选 2026-10-18 18:00 · 确认本人 2026-10-18 18:00\n\n未记录请求\n\n年龄缺证 · 1 人\n\nAGE_UNKNOWN\n\n当前审核 AUTO_PASSED · 候选同步 PROJECTED · 无同步异常\n\n统计更新时间 2026-10-18 18:00",
+        "open": true
+      }
+    },
+    {
+      "case": "F07-01 filter switch aborts old read and preserves current result",
+      "result": {
+        "route": "APOLLO",
+        "execution": 3001,
+        "person": "repair-person-6",
+        "controllers": 0
+      }
+    },
+    {
+      "case": "F07-02 pause",
+      "before": {
+        "timer": true,
+        "visible": true,
+        "collection": "SUCCESS",
+        "generation": 3
+      },
+      "during": {
+        "timer": false,
+        "disabled": true
+      },
+      "summaryCounts": [
+        27,
+        28,
+        29
+      ],
+      "after": {
+        "timer": true,
+        "visible": true,
+        "lifecycle": "ACTIVE",
+        "collection": "SUCCESS",
+        "button": "暂停发现"
+      },
+      "post": {
+        "method": "POST",
+        "path": "/api/task-progress/EXPERT_DISCOVERY/cancel",
+        "time": 1792345331.5570838
+      }
+    },
+    {
+      "case": "F07-02 resume",
+      "before": {
+        "timer": true,
+        "visible": true,
+        "collection": "SUCCESS",
+        "generation": 4
+      },
+      "during": {
+        "timer": false,
+        "disabled": true
+      },
+      "summaryCounts": [
+        31,
+        32,
+        33
+      ],
+      "after": {
+        "timer": true,
+        "visible": true,
+        "lifecycle": "ACTIVE",
+        "collection": "SUCCESS",
+        "button": "恢复发现"
+      },
+      "post": {
+        "method": "POST",
+        "path": "/api/expert-discovery/pipeline/resume",
+        "time": 1792345338.481781
+      }
+    },
+    {
+      "case": "F07-02 cancel",
+      "before": {
+        "timer": true,
+        "visible": true,
+        "collection": "SUCCESS",
+        "generation": 5
+      },
+      "during": {
+        "timer": false,
+        "disabled": true
+      },
+      "summaryCounts": [
+        35,
+        36,
+        37
+      ],
+      "after": {
+        "timer": true,
+        "visible": true,
+        "lifecycle": "ACTIVE",
+        "collection": "SUCCESS",
+        "button": "取消任务"
+      },
+      "post": {
+        "method": "POST",
+        "path": "/api/task-progress/EXPERT_DISCOVERY/cancel",
+        "time": 1792345345.21419
+      }
+    },
+    {
+      "case": "F07-02 terminal ledger stops despite run-list refresh",
+      "summaryCounts": [
+        41,
+        41
+      ],
+      "result": {
+        "timer": false,
+        "lifecycle": "COMPLETED"
+      }
+    },
+    {
+      "case": "F07-02 operation completes after review",
+      "summaryCounts": [
+        43,
+        43
+      ],
+      "result": {
+        "task": "EXPERT_DISCOVERY",
+        "visible": false,
+        "timer": false,
+        "controllers": 0,
+        "mainTab": "review"
+      }
+    },
+    {
+      "case": "F07-02 operation completes after history",
+      "summaryCounts": [
+        45,
+        45
+      ],
+      "result": {
+        "task": "EXPERT_DISCOVERY",
+        "visible": false,
+        "timer": false,
+        "controllers": 0,
+        "mainTab": "history"
+      }
+    },
+    {
+      "case": "F07-02 operation completes after closed",
+      "summaryCounts": [
+        47,
+        47
+      ],
+      "result": {
+        "task": null,
+        "visible": false,
+        "timer": false,
+        "controllers": 0,
+        "mainTab": "pipeline"
+      }
+    },
+    {
+      "case": "F07-02 operation completes after other task",
+      "summaryCounts": [
+        49,
+        49
+      ],
+      "result": {
+        "task": "EXPERT_REVALIDATION",
+        "visible": false,
+        "timer": false,
+        "controllers": 0,
+        "mainTab": "pipeline"
+      }
+    },
+    {
+      "case": "actual config viewport",
+      "result": {
+        "viewport": [
+          1366,
+          900
+        ],
+        "checkbox": {
+          "width": "14px",
+          "height": "14px",
+          "minHeight": "14px"
+        },
+        "labelDirection": "row",
+        "sourceHeights": [
+          "34px",
+          "34px",
+          "34px",
+          "34px",
+          "34px",
+          "34px",
+          "34px"
+        ],
+        "modalWidth": 1180,
+        "modalRadius": "18px"
+      }
+    },
+    {
+      "case": "actual config viewport",
+      "result": {
+        "viewport": [
+          1920,
+          1080
+        ],
+        "checkbox": {
+          "width": "14px",
+          "height": "14px",
+          "minHeight": "14px"
+        },
+        "labelDirection": "row",
+        "sourceHeights": [
+          "34px",
+          "34px",
+          "34px",
+          "34px",
+          "34px",
+          "34px",
+          "34px"
+        ],
+        "modalWidth": 1180,
+        "modalRadius": "18px"
+      }
+    },
+    {
+      "case": "actual config viewport",
+      "result": {
+        "viewport": [
+          700,
+          900
+        ],
+        "checkbox": {
+          "width": "14px",
+          "height": "14px",
+          "minHeight": "14px"
+        },
+        "labelDirection": "row",
+        "sourceHeights": [
+          "34px",
+          "34px",
+          "34px",
+          "34px",
+          "34px",
+          "34px",
+          "34px"
+        ],
+        "modalWidth": 652,
+        "modalRadius": "18px"
+      }
+    },
+    {
+      "case": "actual config viewport",
+      "result": {
+        "viewport": [
+          390,
+          844
+        ],
+        "checkbox": {
+          "width": "14px",
+          "height": "14px",
+          "minHeight": "14px"
+        },
+        "labelDirection": "row",
+        "sourceHeights": [
+          "34px",
+          "34px",
+          "34px",
+          "34px",
+          "34px",
+          "34px",
+          "34px"
+        ],
+        "modalWidth": 370,
+        "modalRadius": "18px"
+      }
+    },
+    {
+      "case": "actual evidence viewport",
+      "result": {
+        "viewport": [
+          1366,
+          900
+        ],
+        "modal": {
+          "width": 1180,
+          "maxHeight": "720px",
+          "radius": "18px"
+        },
+        "gridColumns": "543px 543px",
+        "evidenceBlocks": 4,
+        "headers": [
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          }
+        ],
+        "verticalScrollers": [
+          "modal-content task-modal"
+        ],
+        "person": "repair-person-7"
+      }
+    },
+    {
+      "case": "actual evidence viewport",
+      "result": {
+        "viewport": [
+          1920,
+          1080
+        ],
+        "modal": {
+          "width": 1180,
+          "maxHeight": "864px",
+          "radius": "18px"
+        },
+        "gridColumns": "543px 543px",
+        "evidenceBlocks": 4,
+        "headers": [
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          }
+        ],
+        "verticalScrollers": [
+          "modal-content task-modal"
+        ],
+        "person": "repair-person-7"
+      }
+    },
+    {
+      "case": "actual evidence viewport",
+      "result": {
+        "viewport": [
+          700,
+          900
+        ],
+        "modal": {
+          "width": 652,
+          "maxHeight": "720px",
+          "radius": "18px"
+        },
+        "gridColumns": "1020px",
+        "evidenceBlocks": 4,
+        "headers": [
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          }
+        ],
+        "verticalScrollers": [
+          "modal-content task-modal"
+        ],
+        "person": "repair-person-7"
+      }
+    },
+    {
+      "case": "actual evidence viewport",
+      "result": {
+        "viewport": [
+          390,
+          844
+        ],
+        "modal": {
+          "width": 370,
+          "maxHeight": "828px",
+          "radius": "18px"
+        },
+        "gridColumns": "1020px",
+        "evidenceBlocks": 4,
+        "headers": [
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          },
+          {
+            "position": "static",
+            "background": "rgb(248, 250, 252)"
+          }
+        ],
+        "verticalScrollers": [
+          "modal-content task-modal"
+        ],
+        "person": "repair-person-7"
+      }
+    },
+    {
+      "case": "actual logs viewport",
+      "result": {
+        "viewport": [
+          1366,
+          900
+        ],
+        "mainColumns": 11,
+        "batchColumns": 13,
+        "summary": "自动准入 55\n直接准入 15\nApollo 准入 40\n已明确 36\n未明确 19\n待核验 45\n错误 5\n排队/核验中 18\n保护跳过 0\n\n已准入，候选同步待处理 1（同步错误 1） · 收录登记异常 0 · 统计更新时间 2026-10-18 18:00\n\nApollo：进入辅助核验 108 → 已查询 85 → 返回候选 66 → 确认本人 40；请求 108 次"
+      }
+    },
+    {
+      "case": "actual logs viewport",
+      "result": {
+        "viewport": [
+          1920,
+          1080
+        ],
+        "mainColumns": 11,
+        "batchColumns": 13,
+        "summary": "自动准入 55\n直接准入 15\nApollo 准入 40\n已明确 36\n未明确 19\n待核验 45\n错误 5\n排队/核验中 18\n保护跳过 0\n\n已准入，候选同步待处理 1（同步错误 1） · 收录登记异常 0 · 统计更新时间 2026-10-18 18:00\n\nApollo：进入辅助核验 108 → 已查询 85 → 返回候选 66 → 确认本人 40；请求 108 次"
+      }
+    },
+    {
+      "case": "actual logs viewport",
+      "result": {
+        "viewport": [
+          700,
+          900
+        ],
+        "mainColumns": 11,
+        "batchColumns": 13,
+        "summary": "自动准入 55\n直接准入 15\nApollo 准入 40\n已明确 36\n未明确 19\n待核验 45\n错误 5\n排队/核验中 18\n保护跳过 0\n\n已准入，候选同步待处理 1（同步错误 1） · 收录登记异常 0 · 统计更新时间 2026-10-18 18:00\n\nApollo：进入辅助核验 108 → 已查询 85 → 返回候选 66 → 确认本人 40；请求 108 次"
+      }
+    },
+    {
+      "case": "actual logs viewport",
+      "result": {
+        "viewport": [
+          390,
+          844
+        ],
+        "mainColumns": 11,
+        "batchColumns": 13,
+        "summary": "自动准入 55\n直接准入 15\nApollo 准入 40\n已明确 36\n未明确 19\n待核验 45\n错误 5\n排队/核验中 18\n保护跳过 0\n\n已准入，候选同步待处理 1（同步错误 1） · 收录登记异常 0 · 统计更新时间 2026-10-18 18:00\n\nApollo：进入辅助核验 108 → 已查询 85 → 返回候选 66 → 确认本人 40；请求 108 次"
+      }
+    }
+  ],
+  "diagnostics": {
+    "entries": [],
+    "nextSeq": 1,
+    "dropped": 0
+  },
+  "setupNotes": [
+    "Initial app.js connection reset recovered by reload before acceptance.",
+    "One pageerror was from a discarded harness page.waitForFunction referencing lexical apvState in isolated world; main-world tab.evaluate was used for all final operation receipts. No product function was patched or substituted.",
+    "Final source fixture uses sourceName/extractionMethod fields; final batches use the exact F123 per-batch result counts.",
+    "390/700 evidence-left images are canonical mobile evidence; preliminary auto-centred images were removed. Wide table horizontal overflow is intentional; desktop four blocks and mobile single-track layout are measured, not claimed to fit as mobile cards."
+  ],
+  "cleanup": {
+    "tabClosed": true,
+    "fixtureServerClosed": true,
+    "harnessFilesCreated": false
+  }
+}

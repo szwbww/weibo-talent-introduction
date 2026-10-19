@@ -1,0 +1,58 @@
+{
+  "outputs/apollo-institution-audit-20261017/apollo-access-response.json": {
+    "sha256": "e1dd5cb25f4c2de11465c238af0515815602f0e7084de6da9bb79b085bdb434b",
+    "objects": 7,
+    "keys": [
+      "first_name",
+      "has_city",
+      "has_country",
+      "has_direct_phone",
+      "has_email",
+      "has_state",
+      "id",
+      "last_name_obfuscated",
+      "last_refreshed_at",
+      "organization",
+      "title"
+    ],
+    "nonempty": {
+      "last_name": 0,
+      "last_name_obfuscated": 7,
+      "name": 0,
+      "email": 0,
+      "title": 7,
+      "organization": 7,
+      "linkedin_url": 0,
+      "education": 0,
+      "birth_date": 0
+    }
+  },
+  "outputs/apollo-pending100-20261017/institution-search/search-results.json": {
+    "sha256": "a18e8b28a0cc46b17da9b4070c53d1067a07db046b05923db2704ea67400e9d3",
+    "objects": 6,
+    "keys": [
+      "first_name",
+      "has_city",
+      "has_country",
+      "has_direct_phone",
+      "has_email",
+      "has_state",
+      "id",
+      "last_name_obfuscated",
+      "last_refreshed_at",
+      "organization",
+      "title"
+    ],
+    "nonempty": {
+      "last_name": 0,
+      "last_name_obfuscated": 6,
+      "name": 0,
+      "email": 0,
+      "title": 6,
+      "organization": 6,
+      "linkedin_url": 0,
+      "education": 0,
+      "birth_date": 0
+    }
+  }
+}

@@ -8,13 +8,13 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20261018-recipient-preview-manual">
-    <link rel="stylesheet" href="expert-materials.css?v=20261018-recipient-preview-manual">
-    <link rel="stylesheet" href="mailbox-chat.css?v=20261018-recipient-preview-manual">
-    <link rel="stylesheet" href="meeting-confirmation.css?v=20261018-recipient-preview-manual">
-    <link rel="stylesheet" href="world-clock.css?v=20261018-recipient-preview-manual">
-<link rel="stylesheet" href="meeting-records.css?v=20261018-recipient-preview-manual">
-<link rel="stylesheet" href="contact-details.css?v=20261018-recipient-preview-manual">
+    <link rel="stylesheet" href="styles.css?v=20261018-apollo-verification">
+    <link rel="stylesheet" href="expert-materials.css?v=20261018-apollo-verification">
+    <link rel="stylesheet" href="mailbox-chat.css?v=20261018-apollo-verification">
+    <link rel="stylesheet" href="meeting-confirmation.css?v=20261018-apollo-verification">
+    <link rel="stylesheet" href="world-clock.css?v=20261018-apollo-verification">
+<link rel="stylesheet" href="meeting-records.css?v=20261018-apollo-verification">
+<link rel="stylesheet" href="contact-details.css?v=20261018-apollo-verification">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -1188,6 +1188,13 @@
                     </details>
                 </div>
 
+                <!-- S-2: Apollo is a per-launch option; existing source controls are unchanged. -->
+                <div class="apv-option" id="taskLaunchApolloRow" hidden>
+                    <label for="taskLaunchApolloAssist"><input type="checkbox" id="taskLaunchApolloAssist" aria-describedby="taskLaunchApolloHint" disabled>启用 Apollo 辅助核验</label>
+                    <p id="taskLaunchApolloHint">正在读取资格核验能力…</p>
+                    <details class="apv-rules"><summary>查看准入口径</summary><p>当前本人教授类职称可明确符合；其他情况核对已取得博士及年龄、职称条件。Apollo 仅返回候选不能直接准入。缺少可靠来源时保留待核验。</p></details>
+                </div>
+
                 <div id="taskLaunchFiltersRow" hidden>
                     <p style="font-size:11px;color:var(--text-muted);margin:0 0 6px;">以下配置修改后立即生效，影响所有后续任务。</p>
                     <div class="task-modal-filters-panel" id="taskLaunchFiltersPanel"></div>
@@ -1223,14 +1230,15 @@
             <div class="task-modal-divider"></div>
 
             <!-- Execution Records (Two-level: click to expand batch details) -->
-            <div class="task-modal-logs" style="display: flex; flex-direction: column; gap: 10px;">
+            <div id="discoveryVerificationLogHost" class="task-modal-logs apv-log-host">
                 <h4 class="task-modal-logs-title">
                     <span class="task-modal-logs-title-indicator"></span>
                     执行记录（点击行展开批次明细）
                 </h4>
                 <div class="task-modal-log-table-wrapper">
+                    <div class="apv-outer-scroll">
                     <table class="data-table compact">
-                        <thead>
+                        <thead id="taskModalRunHead">
                         <tr>
                             <th style="width: 24px;"></th>
                             <th>开始时间</th>
@@ -1245,6 +1253,7 @@
                         </thead>
                         <tbody id="taskModalRunBody"></tbody>
                     </table>
+                    </div>
                 </div>
             </div>
 
@@ -2412,14 +2421,14 @@
 <dialog id="playerDialog" class="cr-dialog cr-player-dialog"><header class="cr-dialoghead"><h2 id="playerTitle">会议视频</h2><button class="button cr-iconbtn" type="button" data-close="playerDialog" aria-label="关闭视频">×</button></header><video id="player" controls preload="metadata"></video><p class="cr-hint" id="playerHint">若浏览器不支持该编码，可下载原视频观看。</p></dialog>
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20261018-recipient-preview-manual"></script>
-<script src="expert-materials.js?v=20261018-recipient-preview-manual"></script>
-<script src="meeting-confirmation.js?v=20261018-recipient-preview-manual"></script>
-<script src="mailbox-chat.js?v=20261018-recipient-preview-manual"></script>
-<script src="contact-history.js?v=20261018-recipient-preview-manual"></script>
-<script src="meeting-records.js?v=20261018-recipient-preview-manual"></script>
-<script src="contact-details.js?v=20261018-recipient-preview-manual"></script>
-<script src="app.js?v=20261018-recipient-preview-manual"></script>
-<script src="world-clock.js?v=20261018-recipient-preview-manual"></script>
+<script src="trust-reply-workbench.js?v=20261018-apollo-verification"></script>
+<script src="expert-materials.js?v=20261018-apollo-verification"></script>
+<script src="meeting-confirmation.js?v=20261018-apollo-verification"></script>
+<script src="mailbox-chat.js?v=20261018-apollo-verification"></script>
+<script src="contact-history.js?v=20261018-apollo-verification"></script>
+<script src="meeting-records.js?v=20261018-apollo-verification"></script>
+<script src="contact-details.js?v=20261018-apollo-verification"></script>
+<script src="app.js?v=20261018-apollo-verification"></script>
+<script src="world-clock.js?v=20261018-apollo-verification"></script>
 </body>
 </html>

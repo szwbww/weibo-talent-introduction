@@ -1,0 +1,3 @@
+$ rg --files -g AGENTS.md -g CLAUDE.md -g agents/*.md -g templates/project-CLAUDE.md
+exit=0
+CLAUDE.md

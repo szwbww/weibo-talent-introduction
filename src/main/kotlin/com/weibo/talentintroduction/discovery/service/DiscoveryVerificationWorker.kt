@@ -44,6 +44,9 @@ class DiscoveryVerificationWorker(
     private val heartbeat = Executors.newSingleThreadScheduledExecutor { runnable -> Thread(runnable, "discovery-verification-lease").apply { isDaemon = true } }
     @PreDestroy fun close() { heartbeat.shutdownNow() }
 
+    /** Process-local current latch; observing it never resumes or claims work. */
+    fun isAuthBlocked(): Boolean = authBlocked.get()
+
     @Scheduled(fixedDelayString = "\${talent-introduction.discovery-verification.poll-ms:5000}")
     fun tick() {
         if (!properties.workerEnabled || authBlocked.get() || !running.compareAndSet(false, true)) return

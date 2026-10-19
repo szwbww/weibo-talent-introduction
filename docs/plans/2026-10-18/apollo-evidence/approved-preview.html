@@ -1,0 +1,245 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>深度发现弹窗 · Apollo 日志预览</title><link rel="stylesheet" href="/talent/styles.css?v=20261016-discovery-identity-recovery"><style>
+.apv-background{padding:24px}.apv-background h2{margin-bottom:15px}.apv-background .panel{padding:20px}.apv-backnote{color:var(--text-secondary);margin:14px 0}.apv-preview-note{margin:12px 20px 0;padding:8px 10px;background:var(--primary-light);border:1px solid var(--primary-tint);border-radius:var(--radius-sm);font-size:11px;color:var(--primary)}
+#discoveryReviewTabs button:disabled{opacity:.45;cursor:default}.apv-option{border:1px solid var(--panel-border);border-radius:var(--radius-sm);padding:10px 12px;background:var(--bg-subtle)}.apv-option label{display:flex;flex-direction:row;justify-content:flex-start;text-transform:none;letter-spacing:normal;color:var(--text-main);align-items:center;gap:7px;font-size:12px;font-weight:600}.apv-option input{width:14px;height:14px;margin:0}.apv-option p{font-size:11px;color:var(--text-secondary);margin:5px 0 0 21px}
+.apv-logs .task-modal-log-table-wrapper{max-height:none;overflow:visible}.apv-outer-scroll{overflow-x:auto}.apv-logs .data-table th{position:static;background:var(--bg-subtle)}.apv-logs .data-table td{font-size:12px}.apv-logs .data-table th{font-size:11px;white-space:nowrap}.apv-run{cursor:pointer;background:#fff}.apv-run:hover{background:var(--bg-subtle)}.apv-number{color:var(--primary);font-weight:600}.apv-green{color:var(--success)}.apv-amber{color:var(--warning-strong)}.apv-red{color:var(--error-strong)}.apv-link{background:none;border:0;padding:0;color:var(--primary);font:inherit;cursor:pointer}.apv-link:hover{text-decoration:underline}.apv-run-detail>td{padding:0!important}.apv-summary{padding:12px 12px 8px;background:#fff;font-size:12px;line-height:1.9}.apv-summary strong{font-size:14px}.apv-summary .apv-line{display:flex;flex-wrap:wrap;gap:6px 22px}.apv-small{font-size:11px;color:var(--text-secondary)}.apv-state-row{display:flex;flex-wrap:wrap;gap:6px 18px;padding:7px 0}.apv-state-row button{border:0;background:none;padding:0;font:inherit;color:var(--text-secondary);cursor:pointer}.apv-state-row button:hover{color:var(--primary)}.apv-flow{border-top:1px solid var(--line);padding-top:5px;font-size:11px;color:var(--text-secondary)}
+.apv-subtabs{display:flex;gap:18px;padding:0 12px;background:#fff;border-top:1px solid var(--line);border-bottom:1px solid var(--panel-border)}.apv-subtab{padding:9px 0;border:0;background:none;color:var(--text-secondary);font-size:12px;cursor:pointer;border-bottom:2px solid transparent}.apv-subtab[aria-selected=true]{color:var(--primary);border-bottom-color:var(--primary);font-weight:600}.apv-inner{background:#fff}.apv-inner-note{padding:8px 12px;font-size:11px;color:var(--text-secondary);background:var(--bg-subtle)}.apv-batches{min-width:1020px!important}.apv-batches th,.apv-batches td{padding:8px 8px}.apv-batches tfoot{background:var(--bg-subtle);font-weight:600}.apv-batches small{display:block;font-size:10px;color:var(--text-muted);font-weight:400}.apv-batch-detail td{padding:10px 12px!important;background:#f8fafc}.apv-detail-grid{display:grid;grid-template-columns:1fr 1fr 1.1fr;gap:15px}.apv-detail-grid p{font-size:11px;color:var(--text-secondary);line-height:1.8}.apv-detail-grid strong{font-size:11px}.apv-code{font:10px/1.6 var(--font-mono);color:var(--text-secondary);overflow-wrap:anywhere}.apv-footnote{padding:9px 12px;border-top:1px solid var(--line);font-size:11px;color:var(--text-secondary)}
+.apv-traffic{border-top:1px solid var(--line);padding:9px 12px;background:var(--bg-subtle);font-size:11px}.apv-traffic summary{cursor:pointer;color:var(--text-secondary);font-weight:500}.apv-traffic p{margin:6px 0}.apv-toolbar{padding:10px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.apv-toolbar label{display:flex;flex-direction:row;align-items:center;gap:5px;margin:0;font-size:11px}.apv-toolbar select,.apv-toolbar input{width:auto;border:1px solid var(--panel-border);border-radius:var(--radius-sm);font-size:11px;padding:5px 7px;background:white}.apv-toolbar input{width:165px}.apv-count{margin-left:auto;font-size:11px;color:var(--text-secondary)}.apv-records{min-width:950px!important}.apv-records .badge{font-size:10px}.apv-records small{font-size:10px;color:var(--text-muted)}.apv-pagination{display:flex;justify-content:flex-end;align-items:center;gap:12px;padding:10px 12px;font-size:11px;color:var(--text-secondary)}.apv-evidence{padding:12px;background:#f8fafc}.apv-evidence-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.apv-evidence-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.apv-evidence-item{padding:9px 11px;border:1px solid var(--panel-border);background:#fff;border-radius:var(--radius-sm);font-size:11px;line-height:1.7}.apv-evidence-item p{color:var(--text-secondary)}.apv-evidence-item b{display:block;font-size:11px;margin-bottom:3px}.apv-live{padding:12px;font-size:12px}.apv-live p{margin:8px 0;color:var(--text-secondary)}.apv-live-grid{display:flex;flex-wrap:wrap;gap:12px;margin:12px 0}.apv-live-metric{padding:8px 12px;border:1px solid var(--panel-border);border-radius:var(--radius-sm);font-size:11px}.apv-live-metric strong{display:block;font-size:18px;color:var(--primary)}.apv-rules{font-size:11px;color:var(--text-secondary);line-height:1.8}.apv-rules summary{color:var(--primary);cursor:pointer}.apv-rules p{margin-top:6px}.apv-empty{padding:20px!important;text-align:center}.apv-scrollarea{overflow-x:auto}
+@media(max-width:700px){.apv-detail-grid,.apv-evidence-grid{grid-template-columns:1fr}.apv-count{margin-left:0}}
+</style></head><body class="modal-open"><div class="app-shell"><header class="topnav task-center-nav">
+        <div class="brand">
+            <div class="brand-mark">
+                <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+            </div>
+            <div>
+                <div class="brand-title">Talent Console</div>
+                <div class="brand-subtitle">专家引进自动化</div>
+            </div>
+        </div>
+        <nav class="nav-tabs" aria-label="Main">
+            <button class="nav-tab" data-view="monitoring">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 6-6"/>
+                </svg>
+                <span>邮件监控</span>
+            </button>
+            <button class="nav-tab active" data-view="accounts">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+                </svg>
+                <span>邮箱账号</span>
+            </button>
+            <button class="nav-tab" data-view="mail-templates">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                </svg>
+                <span>邮件模板</span>
+            </button>
+            <button class="nav-tab" data-view="suppressions">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+                </svg>
+                <span>退订名单</span>
+            </button>
+            <button class="nav-tab" data-view="contacts">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+                <span>专家列表</span>
+            </button>
+            <button class="nav-tab" data-view="mailbox">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                    <polyline points="22,6 12,13 2,6"/>
+                </svg>
+                <span>收发件箱</span>
+                <span id="unmatchedBadgeHigh" class="nav-badge nav-badge-high" hidden>0</span>
+                <span id="unmatchedBadgeNormal" class="nav-badge nav-badge-normal" hidden>0</span>
+            </button>
+            <button class="nav-tab" data-view="meeting-calendar"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg><span>会议日历</span></button>
+            <button class="nav-tab" data-view="inbound-summary">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                    <line x1="7" y1="7" x2="7.01" y2="7"/>
+                </svg>
+                <span>来信汇总</span>
+            </button>
+            <button class="nav-tab" data-view="ai-training">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2a4 4 0 0 1 4 4v2h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h2V6a4 4 0 0 1 4-4z"/>
+                    <circle cx="12" cy="13" r="2"/>
+                    <path d="M9 2h6"/>
+                </svg>
+                <span>AI 训练</span>
+            </button>
+            <button class="nav-tab" data-view="tasks">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/>
+                    <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+                </svg>
+                <span>任务记录</span>
+                <span id="taskActiveNavBadge" class="task-center-pill task-center-nav-count" hidden>
+                    <i class="task-center-dot" aria-hidden="true"></i>
+                    <span id="taskActiveNavCount"></span>
+                </span>
+            </button>
+        </nav>
+        <label class="mobile-core-nav" for="mobileCoreView">切换页面
+            <select id="mobileCoreView" aria-label="切换页面"></select>
+        </label>
+        <div class="topnav-side">
+            <div class="user-info">
+                界面预览 <span id="currentUserDisplay"></span>
+            </div>
+            <button class="nav-tab logout-btn" id="logoutBtn" disabled title="当前为独立界面预览">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                    <polyline points="16 17 21 12 16 7"/>
+                    <line x1="21" y1="12" x2="9" y2="12"/>
+                </svg>
+                <span>预览模式</span>
+            </button>
+        </div>
+    </header><main class="apv-background"><h2>专家列表</h2><section class="panel"><h3>深度发现预览</h3><p class="apv-backnote">使用线上已有任务弹窗，预览 Apollo 辅助核验与日志变化。只展示界面，不启动业务任务。</p><button class="button primary" id="reopenPreview">打开深度发现预览</button> <a class="button secondary" href="/talent/">返回正式系统</a></section></main></div><div id="taskProgressModal" class="modal-overlay" data-discovery-review="true">
+    <div class="modal-content task-modal" role="dialog" aria-modal="true" aria-labelledby="taskModalTitle">
+        <div class="modal-header">
+            <h3 id="taskModalTitle">深度发现（外部数据源） <span class="badge primary">Apollo 日志预览</span></h3>
+            <button class="button small" data-close-preview="true">×</button>
+        </div>
+        <nav id="discoveryReviewTabs" class="batch-send-tabs" role="tablist" aria-label="深度发现功能">
+          <button class="batch-send-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="discoveryPipelinePane" id="discoveryPipelineTab">采集运行</button>
+          <button class="batch-send-tab" type="button" role="tab" aria-selected="false" aria-controls="discoveryReviewPane" id="discoveryReviewTab" tabindex="-1" disabled title="本预览仅覆盖采集运行日志">专家审核</button>
+          <button class="batch-send-tab" type="button" role="tab" aria-selected="false" aria-controls="discoveryReviewHistoryPane" id="discoveryReviewHistoryTab" tabindex="-1" disabled title="本预览仅覆盖采集运行日志">审核记录</button>
+        </nav>
+        <div id="discoveryPipelinePane" role="tabpanel" aria-labelledby="discoveryPipelineTab">
+        <div id="taskModalToast" class="apv-preview-note" role="status">沿用线上深度发现弹窗；新增 Apollo 统计为演示数据，不启动任务、不修改档案。</div>
+        <div class="modal-body" style="gap: 20px;">
+            <div id="discoverySchedulePanel" class="discovery-schedule-panel" hidden>
+                <div id="discoveryScheduleControls" class="discovery-schedule-row">
+                    <label for="discoveryScheduleHours" class="task-modal-input-label">
+                        执行间隔（小时）
+                        <input id="discoveryScheduleHours" class="task-modal-input-field discovery-schedule-hours"
+                               type="number" min="1" max="168" step="1"
+                               aria-describedby="discoveryScheduleHint" disabled>
+                    </label>
+                    <button id="discoveryScheduleSave" class="button primary discovery-schedule-save"
+                            type="button" disabled>保存定时</button>
+                </div>
+                <p id="discoveryScheduleHint" class="discovery-schedule-hint" role="status" aria-live="polite"></p>
+            </div>
+            <!-- Configuration Section (visible when starting task) -->
+            <div id="taskModalConfigSection" class="task-modal-config-section">
+                <p id="taskLaunchDesc" class="text-muted" style="margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-muted);">从外部数据源搜索并导入新专家到系统中。</p>
+
+                <div id="taskLaunchKeywordRow">
+                    <label class="task-modal-input-label">
+                        发现关键词 (多个用逗号分隔，留空使用默认条件):
+                        <input type="text" id="taskLaunchKeywordInput" class="task-modal-input-field" placeholder="输入关键词，如: AI, Machine Learning...">
+                    </label>
+                </div>
+
+                <div id="taskLaunchMaxPromotionsRow" hidden>
+                    <label class="task-modal-input-label">
+                        最大晋升数量:
+                        <input type="number" id="taskLaunchMaxPromotions" class="task-modal-input-field" value="1000" min="1" max="10000" style="width: 120px;">
+                    </label>
+                </div>
+
+                <div id="taskLaunchSourcesRow">
+                    <label class="task-modal-input-label">数据源平台:</label>
+                    <div id="taskLaunchSources" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;"><label style="display:flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--panel-border);border-radius:4px;font-size:12px;cursor:pointer;"><input type="checkbox" value="EUROPE_PMC" disabled class="source-cb">EUROPE_PMC<span class="text-muted" style="font-size:10px;">(FULLTEXT_XML)</span></label><label style="display:flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--panel-border);border-radius:4px;font-size:12px;cursor:pointer;"><input type="checkbox" value="PMC_OA" disabled class="source-cb">PMC_OA<span class="text-muted" style="font-size:10px;">(FULLTEXT_XML)</span></label><label style="display:flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--panel-border);border-radius:4px;font-size:12px;cursor:pointer;"><input type="checkbox" value="OPENALEX" checked class="source-cb">OPENALEX<span class="text-muted" style="font-size:10px;">(FULLTEXT_XML)</span></label><label style="display:flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--panel-border);border-radius:4px;font-size:12px;cursor:pointer;"><input type="checkbox" value="CROSSREF" checked class="source-cb">CROSSREF<span class="text-muted" style="font-size:10px;">(PDF_PARSE)</span></label><label style="display:flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--panel-border);border-radius:4px;font-size:12px;cursor:pointer;"><input type="checkbox" value="CORE" checked class="source-cb">CORE<span class="text-muted" style="font-size:10px;">(FULLTEXT_TEXT)</span></label><label style="display:flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--panel-border);border-radius:4px;font-size:12px;cursor:pointer;"><input type="checkbox" value="ARXIV" checked class="source-cb">ARXIV<span class="text-muted" style="font-size:10px;">(PDF_PARSE)</span></label><label style="display:flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--panel-border);border-radius:4px;font-size:12px;cursor:pointer;"><input type="checkbox" value="ORCID" checked class="source-cb">ORCID<span class="text-muted" style="font-size:10px;">(API_FIELD)</span></label></div>
+                </div>
+
+                <div id="taskLaunchAdvancedRow">
+                    <details class="task-launch-advanced">
+                        <summary style="font-size:12px;color:var(--text-muted);cursor:pointer;user-select:none;">高级选项</summary>
+                        <div style="margin-top:6px;">
+                            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+                                <input type="checkbox" id="taskLaunchIncludeRawScan">
+                                启动前扫描 RAW 索引并晋升（耗时较长）
+                            </label>
+                        </div>
+                    </details>
+                </div>
+
+                <div id="taskLaunchFiltersRow" hidden>
+                    <p style="font-size:11px;color:var(--text-muted);margin:0 0 6px;">以下配置修改后立即生效，影响所有后续任务。</p>
+                    <div class="task-modal-filters-panel" id="taskLaunchFiltersPanel"></div>
+                </div>
+
+<div class="apv-option"><label><input id="apolloEnabled" type="checkbox" checked> 启用 Apollo 辅助核验 <span class="badge primary">新增</span></label><p id="apolloOptionHint">已有证据足够的直接准入；其余进入辅助核验。确认本人后，资格结论分别标记为「已明确」或「未明确」。</p></div>
+                <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px;">
+                    <button class="button secondary" data-close-preview="true">取消</button>
+                    <button class="button primary" id="taskLaunchRunBtn" style="background: linear-gradient(135deg, var(--primary) 0%, var(--info) 100%); border: none; color: white;">开始执行</button>
+                </div>
+            </div>
+
+            <!-- Progress Section (visible when task is running) -->
+            <div id="taskModalProgressSection" class="task-modal-progress-section" hidden>
+                <div class="task-modal-progress">
+                    <div class="task-progress-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span id="taskModalStatus" class="task-modal-status">RUNNING</span>
+                        <span id="taskModalPercent" class="task-progress-percent" style="font-weight: 600; font-size: 13px;">0%</span>
+                    </div>
+                    <div class="task-progress-track" style="height: 8px; background-color: var(--panel-border); border-radius: 4px; overflow: hidden; position: relative;">
+                        <div id="taskModalFill" class="task-progress-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--primary) 0%, var(--info) 100%); transition: width 0.3s ease;"></div>
+                    </div>
+                    <div id="taskModalMessage" class="task-progress-detail" style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">初始化中...</div>
+                </div>
+                <div id="taskModalBySource" hidden style="margin-top: 10px; font-size: 11px;">
+                    <div id="taskModalBySourceContent"></div>
+                </div>
+                <div class="task-modal-actions" style="display: flex; justify-content: flex-end;">
+                    <button class="button warn" id="taskModalCancelBtn" onclick="handleCancelTask()">取消任务</button>
+                </div>
+            </div>
+
+            <!-- Divider Line -->
+            <div class="task-modal-divider"></div>
+
+
+<div class="task-modal-logs apv-logs" style="display:flex;flex-direction:column;gap:10px;">
+<h4 class="task-modal-logs-title"><span class="task-modal-logs-title-indicator"></span>执行记录（点击行展开批次明细） <span class="badge primary">新增统计演示</span></h4>
+<div class="task-modal-log-table-wrapper"><div class="apv-outer-scroll"><table class="data-table compact">
+<thead><tr><th style="width:24px"></th><th>开始时间</th><th>触发</th><th>状态</th><th>档案数</th><th>自动准入</th><th>其中 Apollo</th><th>已明确</th><th>未明确</th><th>下载量</th><th>耗时</th></tr></thead>
+<tbody><tr class="apv-run" id="runRow"><td><button id="toggleRun" class="apv-link" aria-expanded="true" aria-label="收起执行记录">▼</button></td><td>预览示例<br><small class="apv-small">10:00:00</small></td><td>手动</td><td><span class="badge info">核验中</span></td><td>123</td><td class="apv-number">55</td><td class="apv-number">40</td><td class="apv-green">36</td><td class="apv-amber">19</td><td>—</td><td>—</td></tr>
+<tr class="apv-run-detail" id="runDetail"><td colspan="11">
+<div class="apv-summary"><div class="apv-line"><span>自动准入 <strong class="apv-number">55</strong> = 直接准入 <b>15</b> + Apollo 辅助准入 <b>40</b></span><span>资格结论：<span class="apv-green">已明确 <b>36</b></span> / <span class="apv-amber">未明确 <b>19</b></span></span></div><div class="apv-state-row"><button data-filter="pending">待核验 <b>45</b>（身份待确认 26 / 本轮无候选 19）</button><button data-filter="error">技术失败待重试 <b class="apv-red">5</b></button><button data-filter="queued">排队中 <b>18</b></button></div><div class="apv-flow">Apollo 辅助核验：入队 <b>108</b> → 查询完成 <b>85</b> → 返回过候选 <b>66</b> → 确认本人并准入 <b>40</b>（已明确 21 / 未明确 19）。另有 5 条待重试、18 条排队。</div></div>
+<div class="apv-subtabs" role="tablist" aria-label="执行记录明细"><button class="apv-subtab" role="tab" aria-selected="true" aria-controls="panel-batches" id="tab-batches" data-tab="batches">准入批次</button><button class="apv-subtab" role="tab" aria-selected="false" aria-controls="panel-records" id="tab-records" data-tab="records">逐条核验</button><button class="apv-subtab" role="tab" aria-selected="false" aria-controls="panel-live" id="tab-live" data-tab="live">线上历史采集记录</button></div>
+<div class="apv-inner" id="panel-batches" role="tabpanel" aria-labelledby="tab-batches"><div class="apv-inner-note">单位：档案。本批统计与累计准入分别展示；资料不足、未命中、接口错误分别记录。</div><div class="apv-scrollarea"><table class="data-table compact apv-batches"><thead><tr><th>批次 / 输入</th><th>自动准入</th><th>直接准入</th><th>Apollo 准入</th><th>已明确</th><th>未明确</th><th>待核验</th><th>技术失败</th><th>排队中</th><th>累计准入</th><th>原因明细</th><th>时间（示例）</th></tr></thead><tbody id="batchRows"></tbody><tfoot><tr><td>合计 · 123</td><td class="apv-number">55</td><td>15</td><td>40</td><td class="apv-green">36</td><td class="apv-amber">19</td><td>45</td><td class="apv-red">5</td><td>18</td><td>55</td><td colspan="2"></td></tr></tfoot></table></div></div>
+<div class="apv-inner" id="panel-records" role="tabpanel" aria-labelledby="tab-records" hidden><div class="apv-toolbar"><label>结果 <select id="resultFilter" aria-label="筛选结果"><option value="all">全部档案</option><option value="admitted">全部自动准入</option><option value="direct">直接准入</option><option value="apollo">Apollo 辅助准入</option><option value="clear">已明确</option><option value="unclear">未明确</option><option value="pending">待核验</option><option value="error">技术失败待重试</option><option value="queued">排队中</option></select></label><label>批次 <select id="batchFilter" aria-label="筛选批次"><option value="all">全部批次</option><option value="1">第 1 批</option><option value="2">第 2 批</option><option value="3">第 3 批</option></select></label><input id="search" aria-label="搜索演示档案" placeholder="档案编号 / 演示专家"><button class="button small" id="resetFilters">重置</button><span class="apv-count" id="recordCount"></span></div><div class="apv-scrollarea"><table class="data-table compact apv-records"><thead><tr><th>档案 / 批次</th><th>准入来源</th><th>当前结果</th><th>资格结论</th><th>原因 / 缺项</th><th>操作</th></tr></thead><tbody id="recordRows"></tbody></table></div><div class="apv-pagination"><span id="pageInfo"></span><button class="button small" id="prevPage">上一页</button><button class="button small" id="nextPage">下一页</button></div><div class="apv-evidence" id="evidence" hidden></div></div>
+<div class="apv-inner apv-live" id="panel-live" role="tabpanel" aria-labelledby="tab-live" hidden><b>线上历史任务 #26127 · 原始采集汇总</b><p>沿用正式系统登录会话只读获取；与本页演示准入数量独立。</p><button class="button small" id="loadLive">读取线上记录</button> <a href="/talent/" target="_blank" rel="noopener">登录正式系统 ↗</a><p id="liveStatus" role="status">点击读取；尚未记录的新字段显示「未记录」，不补算为 0。</p><div class="apv-live-grid" id="liveMetrics" hidden></div></div>
+<details class="apv-traffic"><summary>下载明细（按需展开）</summary><p>预览未执行下载。真实采集日志独立展示论文量、全文获取量、HTTP 响应体下载及超限字节；不与专家准入数量混算。</p></details>
+<div class="apv-footnote">按 docId 去重：55 已准入 + 45 待核验 + 5 待重试 + 18 排队 = 123。Apollo 准入为自动准入子集；重试不重复计数。</div>
+</td></tr></tbody></table></div></div>
+</div>
+<details class="apv-rules"><summary>准入及日志口径</summary><p>已明确：本人及资格证据充分。未明确：已对应 Apollo 本人，但资格未完全核实，按已确认口径准入。仅同名、无法对应本人或无候选继续待核验；接口失败单独重试。Apollo 辅助准入并非全部「未明确」。</p><p>本页只预览 P1：Apollo 辅助与日志输出；P2：失败优化单独评估，不将本页演示数量当作优化效果。</p></details>
+</div></div></div></div>
+<script>
+const batches=[{id:1,direct:6,clear:8,unclear:6,identity:8,none:5,error:2,queued:5},{id:2,direct:5,clear:7,unclear:6,identity:9,none:6,error:1,queued:6},{id:3,direct:4,clear:6,unclear:7,identity:9,none:8,error:2,queued:7}];
+const configs={direct:{source:'直接准入',result:'已自动准入',qualification:'已明确',reason:'既有本人及资格证据满足规则',code:'EXISTING_EVIDENCE_SUFFICIENT'},clear:{source:'Apollo 辅助',result:'已自动准入',qualification:'已明确',reason:'本人已确认；现任教授职称有依据',code:'APOLLO_IDENTITY_AND_QUALIFICATION_CONFIRMED'},unclear:{source:'Apollo 辅助',result:'已自动准入',qualification:'未明确',reason:'本人已对应；学位、年龄与职称待补证',code:'APOLLO_IDENTITY_CONFIRMED_QUALIFICATION_PENDING'},identity:{source:'—',result:'待核验',qualification:'未判定',reason:'有候选，但现有证据不足以确认本人',code:'APOLLO_IDENTITY_AMBIGUOUS'},none:{source:'—',result:'待核验',qualification:'未判定',reason:'本轮查询无候选；不代表资格不符合',code:'APOLLO_NO_CANDIDATE'},error:{source:'—',result:'技术失败待重试',qualification:'未判定',reason:'接口限流；重试尚未完成',code:'APOLLO_RATE_LIMITED'},queued:{source:'—',result:'排队中',qualification:'未判定',reason:'等待 Apollo 核验任务执行',code:'APOLLO_QUEUED'}};
+const records=[];for(const b of batches)for(const kind of Object.keys(configs))for(let i=0;i<b[kind];i++){const id=String(records.length+1).padStart(3,'0');records.push({id:'DEMO-'+id,name:'演示专家 '+id,batch:b.id,kind,...configs[kind]});}
+const $=s=>document.querySelector(s);const admitted=r=>['direct','clear','unclear'].includes(r.kind);const isClear=r=>['direct','clear'].includes(r.kind);
+function badge(text,type){return '<span class="badge '+({err:'error',apollo:'primary',pending:'',ok:'ok',warn:'warn'}[type]||'')+'">'+text+'</span>';}
+async function loadLive(){const btn=$('#loadLive'),status=$('#liveStatus'),box=$('#liveMetrics');btn.disabled=true;box.hidden=true;status.textContent='正在读取线上任务汇总…';const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),12000);try{const response=await fetch('/talent/api/task-executions/26127/detail',{method:'GET',credentials:'same-origin',signal:ctrl.signal,headers:{Accept:'application/json'}});if(response.status===401||response.status===403){status.textContent='尚未登录或会话已过期。请先在本浏览器登录正式系统，再点「读取线上记录」。';return;}if(!response.ok)throw new Error('HTTP '+response.status);const data=await response.json();let summary=data.rawResultSummary;if(typeof summary==='string')summary=JSON.parse(summary);const sources=(summary?.stats||summary)?.bySource;if(!sources||typeof sources!=='object')throw new Error('该历史记录没有可读取的结构化采集汇总');const sums=key=>{const v=Object.values(sources).map(s=>s?.[key]).filter(x=>typeof x==='number'&&Number.isFinite(x));return v.length?v.reduce((a,b)=>a+b,0).toLocaleString():'未记录';};const cells=[['论文采集量',sums('papersSearched')],['作者提取事件',sums('authorsExtracted')],['新增 RAW 档案',sums('indexed')],['历史晋升记录',sums('promoted')],['Apollo 辅助准入','未记录'],['已明确 / 未明确','未记录']];box.replaceChildren();for(const [label,value]of cells){const d=document.createElement('div');d.className='apv-live-metric';const l=document.createElement('span'),v=document.createElement('strong');l.textContent=label;v.textContent=value;d.append(l,v);box.append(d);}status.textContent='已读取线上任务 #26127 · 原始状态：'+(data.status||'未记录')+' · 获取时间：'+new Date().toLocaleTimeString('zh-CN')+'。以下为真实历史采集记录。';box.hidden=false;}catch(e){status.textContent=e.name==='AbortError'?'请求超时，请稍后重试。':'读取失败：'+e.message+'。未用演示值替代真实记录。';}finally{clearTimeout(timer);btn.disabled=false;}}
+
+function renderBatches(){let cum=0;$('#batchRows').innerHTML=batches.map(b=>{const a=b.direct+b.clear+b.unclear;cum+=a;const n=Object.keys(configs).reduce((s,k)=>s+b[k],0);return `<tr><td>${b.id}<small>${n} 条档案</small></td><td class="apv-number">${a}</td><td>${b.direct}</td><td>${b.clear+b.unclear}</td><td class="apv-green">${b.direct+b.clear}</td><td class="apv-amber">${b.unclear}</td><td>${b.identity+b.none}</td><td class="apv-red">${b.error}</td><td>${b.queued}</td><td>${cum}</td><td><button class="apv-link" data-expand="${b.id}" aria-expanded="false">展开原因</button></td><td>10:0${b.id}:00</td></tr><tr class="apv-batch-detail" id="batch-detail-${b.id}" hidden><td colspan="12"><div class="apv-detail-grid"><div><strong>准入结果</strong><p>直接 ${b.direct}；Apollo 补证已明确 ${b.clear}，未明确 ${b.unclear}。</p><button class="apv-link" data-batch="${b.id}">查看本批 ${n} 条档案 →</button></div><div><strong>待核验 · ${b.identity+b.none}</strong><p>身份无法确认 ${b.identity}；本轮无候选 ${b.none}。<br>均不视为资格不符合。</p></div><div><strong>技术失败待重试 · ${b.error}</strong><p>接口限流 ${b.error}，当前未完成重试。</p><code class="apv-code">APOLLO_RATE_LIMITED / HTTP 429</code></div></div></td></tr>`;}).join('');}
+function showTab(name){document.querySelectorAll('[data-tab]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.tab===name)));document.querySelectorAll('.apv-inner[role=tabpanel]').forEach(p=>p.hidden=p.id!=='panel-'+name);}
+let page=0;const pageSize=5;let filtered=[];
+function renderRecords(){const f=$('#resultFilter').value,b=$('#batchFilter').value,q=$('#search').value.trim().toLowerCase();filtered=records.filter(r=>(b==='all'||r.batch===Number(b))&&(!q||(r.id+' '+r.name).toLowerCase().includes(q))&&(f==='all'||f==='admitted'&&admitted(r)||f==='apollo'&&['clear','unclear'].includes(r.kind)||f==='clear'&&isClear(r)||f==='unclear'&&r.kind==='unclear'||f==='pending'&&['identity','none'].includes(r.kind)||f===r.kind));const pages=Math.max(1,Math.ceil(filtered.length/pageSize));page=Math.min(page,pages-1);$('#recordCount').textContent='当前 '+filtered.length+' 条 / 全部 123 条';$('#pageInfo').textContent=`第 ${page+1} / ${pages} 页`;
+$('#prevPage').disabled=page===0;$('#nextPage').disabled=page===pages-1;$('#recordRows').innerHTML=filtered.slice(page*pageSize,(page+1)*pageSize).map(r=>`<tr><td>${r.name}<br><small>${r.id} · 第 ${r.batch} 批</small></td><td>${r.source==='Apollo 辅助'?badge(r.source,'apollo'):r.source}</td><td>${badge(r.result,admitted(r)?'ok':r.kind==='error'?'err':'pending')}</td><td>${badge(r.qualification,isClear(r)?'ok':r.kind==='unclear'?'warn':'pending')}</td><td style="max-width:260px">${r.reason}</td><td><button class="apv-link" data-record="${r.id}">查看依据</button></td></tr>`).join('')||'<tr><td colspan="6" class="apv-empty">没有符合筛选条件的演示档案。</td></tr>';$('#evidence').hidden=true;}
+function openRecord(id){const r=records.find(x=>x.id===id);const matched=admitted(r);$('#evidence').innerHTML=`<div class="apv-evidence-head"><b>${r.name} · 核验过程（演示）</b><button class="button small" id="closeEvidence">收起依据</button></div><div class="apv-evidence-grid"><div class="apv-evidence-item"><b>1. 候选检索</b><p>${r.kind==='direct'?'既有证据满足规则，未调用 Apollo。':r.kind==='queued'?'排队中，尚未查询。':r.kind==='error'?'HTTP 429，待重试；不记为无候选。':r.kind==='none'?'本轮查询无候选，不推断资格不符合。':'按全名及有依据的姓名变体检索；机构辅助消歧。'}</p></div><div class="apv-evidence-item"><b>2. 本人对应</b><p>${matched?'公开姓名、机构及已有本人绑定证据对应同一人。':'现有材料尚不能确认本人，保留待核验。'}</p></div><div class="apv-evidence-item"><b>3. 资格与缺项</b><p>${isClear(r)?'示例：当前教授职称有依据，标记已明确。':r.kind==='unclear'?'博士学位完成情况、年龄与现任职称待补证，标记未明确。':'身份未确认，资格不作结论。'}</p></div><div class="apv-evidence-item"><b>4. 最终结果：${r.result} / ${r.qualification}</b><p>${r.reason}</p><code class="apv-code">${r.code}</code></div></div><p class="apv-small" style="margin-top:8px">以上人物与证据内容为虚构示例；正式日志需保存来源 URL、原文、查询时间及判断依据。</p>`;$('#evidence').hidden=false;$('#evidence').scrollIntoView({block:'nearest',behavior:'smooth'});}
+function toggleRun(){const d=$('#runDetail');d.hidden=!d.hidden;$('#toggleRun').textContent=d.hidden?'▶':'▼';$('#toggleRun').setAttribute('aria-expanded',String(!d.hidden));$('#toggleRun').setAttribute('aria-label',d.hidden?'展开执行记录':'收起执行记录');}
+document.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.closePreview){$('#taskProgressModal').hidden=true;document.body.classList.remove('modal-open');return;}if(b.id==='reopenPreview'){$('#taskProgressModal').hidden=false;document.body.classList.add('modal-open');return;}if(b.dataset.tab)showTab(b.dataset.tab);if(b.dataset.filter){$('#resultFilter').value=b.dataset.filter;$('#batchFilter').value='all';$('#search').value='';page=0;renderRecords();showTab('records');}if(b.dataset.batch){$('#resultFilter').value='all';$('#batchFilter').value=b.dataset.batch;$('#search').value='';page=0;renderRecords();showTab('records');}if(b.dataset.expand){const row=$('#batch-detail-'+b.dataset.expand);row.hidden=!row.hidden;b.textContent=row.hidden?'展开原因':'收起原因';b.setAttribute('aria-expanded',String(!row.hidden));}if(b.dataset.record)openRecord(b.dataset.record);if(b.id==='closeEvidence')$('#evidence').hidden=true;});
+$('#runRow').onclick=toggleRun;for(const id of ['resultFilter','batchFilter'])$('#'+id).addEventListener('change',()=>{page=0;renderRecords();});$('#search').oninput=()=>{page=0;renderRecords();};$('#resetFilters').onclick=()=>{$('#resultFilter').value='all';$('#batchFilter').value='all';$('#search').value='';page=0;renderRecords();};$('#prevPage').onclick=()=>{page--;renderRecords();};$('#nextPage').onclick=()=>{page++;renderRecords();};$('#loadLive').onclick=loadLive;
+$('#taskLaunchRunBtn').onclick=()=>{$('#taskModalToast').textContent='当前为界面预览，未启动真实任务。下方执行记录均为演示，历史记录仅支持登录后只读获取。';$('#taskModalToast').scrollIntoView({block:'nearest'});};$('#apolloEnabled').onchange=e=>{$('#apolloOptionHint').textContent=e.target.checked?'已有证据足够的直接准入；其余进入辅助核验。确认本人后，资格结论分别标记为「已明确」或「未明确」。':'预览设置：已关闭辅助核验。下方展示的历史演示结果保持不变；此操作未保存线上配置。';};renderBatches();renderRecords();
+
+</script></body></html>

@@ -1,0 +1,60 @@
+$ rg -n selectAdmission|selectProtection|resolveAdmissionBatch|isDiscoveryOutreach|allowedMap|DiscoveryPersonScope|existsByOrcidId|findContactByEmailOrAlias src/main/kotlin
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:72:    fun allowedMap(source: Map<String, Any?>): Boolean = allowedSource(mapper.valueToTree(source))
+src/main/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityService.kt:76:        if (RecipientScope.isDiscoveryOutreach(expert)) expert.nationality
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:811:            !DiscoveryIdentity.allowedMap(current.source)) return false
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertProfileIdentityResolver.kt:67:            lookupKeys.any { expertContactRepository.existsByOrcidId(it) }
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:362:            if (!DiscoveryIdentity.allowedMap(snapshot.source))
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt:237:        if (isDiscoveryOutreach(profile)) {
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt:288:        fun isDiscoveryOutreach(profile: ExpertProfile): Boolean =
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt:301:            if (!isDiscoveryOutreach(profile)) return true
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:223:        if (!RecipientScope.isDiscoveryOutreach(profile)) return null
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:253:            eligible += discoveryPersonRecipientService.selectAdmission(raw)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:275:        if (!RecipientScope.isDiscoveryOutreach(expert)) return false
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:226:        val contact = expertEmailAliasService.findContactByEmailOrAlias(received.from)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchRecipientSelectionService.kt:74: * - 发现/待确认档案按 500 一批经 [DiscoveryReviewService.resolveAdmissionBatch] 读取持久准入，
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchRecipientSelectionService.kt:111:        val discoveryProfiles = distinct.filter { RecipientScope.isDiscoveryOutreach(it) }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchRecipientSelectionService.kt:122:            val decision: RecipientDecision = if (!RecipientScope.isDiscoveryOutreach(profile)) {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchRecipientSelectionService.kt:152:    fun selectAdmission(profiles: List<ExpertProfile>): RecipientSelection =
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchRecipientSelectionService.kt:160:    fun selectProtection(profiles: List<ExpertProfile>): RecipientSelection =
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchRecipientSelectionService.kt:177:            out.putAll(review.resolveAdmissionBatch(keys))
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchRecipientSelectionService.kt:198:        /** 04（I-1）：批量读取准入的上限，与 [DiscoveryReviewService.resolveAdmissionBatch] 契约一致。 */
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardService.kt:3:import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonScope
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardService.kt:112: * - 每次 reserve 与 claim 都要求画像可读且仍属**实时 discovered**（[DiscoveryPersonScope.isLiveDiscovered]）；
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardService.kt:173:        if (!DiscoveryPersonScope.isLiveDiscovered(profile)) {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardService.kt:282:        if (!DiscoveryPersonScope.isLiveDiscovered(profile)) {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardService.kt:535:            val selection = recipientService.selectAdmission(listOf(profile))
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionService.kt:303:                expertEmailAliasService.findContactByEmailOrAlias(recipient)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonRecipientService.kt:7:import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonScope
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonRecipientService.kt:151:    fun selectAdmission(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonRecipientService.kt:235:        val protection = batchRecipientSelectionService.selectProtection(profiles)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonRecipientService.kt:300:        if (personRepository != null && DiscoveryPersonScope.isLiveDiscovered(profile)) {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonRecipientService.kt:370:            if (layers.any { !DiscoveryPersonScope.isLiveDiscovered(it) }) {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertEmailAliasService.kt:27:    fun findContactByEmailOrAlias(email: String): ExpertContact? {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1848:        if (!RecipientScope.isDiscoveryOutreach(expert)) return false
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:11:    fun existsByOrcidId(orcidId: String): Boolean
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:9:import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonScope
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:544:        return Facts(DiscoveryPersonScope.isLiveDiscovered(raw.source), fingerprint, authorKeys)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryService.kt:8:import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonScope
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryService.kt:368:            val selection = service.selectAdmission(profiles)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryService.kt:591:        if (!DiscoveryPersonScope.isLiveDiscovered(profile)) return true
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:9:import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonScope
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:203:        if (!DiscoveryPersonScope.isLiveDiscovered(rawSource)) return blocked(RecoveryStatus.NEEDS_MANUAL, "NOT_DISCOVERY")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:221:            orcidKeys.any { expertContactRepository.existsByOrcidId(it) } ||
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:223:                expertEmailAliasService.findContactByEmailOrAlias(email) != null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:165: *   并对准入者补候选投影；范围按 `isDiscoveryOutreach` 并集、按真实 `_id` 去重，跨层身份冲突单列不写。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:971:        return resolveAdmissionBatch(listOf(key))[docId]
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:979:    fun resolveAdmissionBatch(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1227:     * 1. 只读判定：范围取 `isDiscoveryOutreach` 并集；先把**跨层身份不一致**的人标成冲突，再给其余人分桶 ——
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1253:                    if (docId.isBlank() || !RecipientScope.isDiscoveryOutreach(expert.profile)) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:10:import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonScope
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:502:        if (!DiscoveryPersonScope.isLiveDiscovered(raw.source)) return failed(docId, MaintenanceReasonCodes.NOT_DISCOVERY)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:533:            liveDiscovered = DiscoveryPersonScope.isLiveDiscovered(rawProfile)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:621:            val selection = recipient.selectAdmission(listOf(profile))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicy.kt:33: * 判定范围与发送门禁同定义（[RecipientScope.isDiscoveryOutreach]：身份凭证或 `待确认` 标签）。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicy.kt:57:        if (!RecipientScope.isDiscoveryOutreach(profile)) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt:10:import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonScope
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt:225:        if (!DiscoveryPersonScope.isLiveDiscovered(raw.source)) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt:311:                    expertEmailAliasService.findContactByEmailOrAlias(email)
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPerson.kt:112: * 该判据只收敛人物链，不改既有准入 `isDiscoveryOutreach` 的宽口径，也不改 01/02 的身份门槛。
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPerson.kt:114:object DiscoveryPersonScope {

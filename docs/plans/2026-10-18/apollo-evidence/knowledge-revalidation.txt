@@ -1,0 +1,17 @@
+$ rg -n selectAdmission|selectProtection|matchesDiscoveryOutreach|hardBlockingReasons|institutionEvidence = text|filterResult = text|countScheduledSince|没有「本日已执行」 src/main/kotlin/com/weibo/talentintroduction
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt:300:        fun matchesDiscoveryOutreach(profile: ExpertProfile): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:76:            // 不再调用 matchesDiscoveryOutreach 做机构/国家/凭证二次拒绝。
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:253:            eligible += discoveryPersonRecipientService.selectAdmission(raw)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:366:            val reasons = hardBlockingReasons(profile, eligibility)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:410:    private fun hardBlockingReasons(profile: ExpertProfile, eligibility: EligibilityResult): List<String> {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchRecipientSelectionService.kt:152:    fun selectAdmission(profiles: List<ExpertProfile>): RecipientSelection =
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchRecipientSelectionService.kt:160:    fun selectProtection(profiles: List<ExpertProfile>): RecipientSelection =
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonRecipientService.kt:151:    fun selectAdmission(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonRecipientService.kt:235:        val protection = batchRecipientSelectionService.selectProtection(profiles)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardService.kt:535:            val selection = recipientService.selectAdmission(listOf(profile))
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:794:            institutionEvidence = text("institutionEvidence"), filterResult = text("filterResult")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryService.kt:368:            val selection = service.selectAdmission(profiles)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:621:            val selection = recipient.selectAdmission(listOf(profile))
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:124:    fun countScheduledSince(taskType: String, since: LocalDateTime): Long =
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:57: *   每次触发最多跑一次同步 `discover`。**没有「本日已执行」闸门** —— 日内多轮读取原查询检查点续跑，

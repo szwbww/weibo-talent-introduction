@@ -1,0 +1,623 @@
+{
+  "serverInfo": {
+    "surface": "actual index.html/app.js/styles.css served at context root /",
+    "url": "http://127.0.0.1:18747/",
+    "transport": "isolated Node HTTP fixture, synthetic F123 read/launch/cancel responses; NOT a backend HTTP integration test",
+    "viewports": [
+      [
+        1366,
+        900
+      ],
+      [
+        1920,
+        1080
+      ],
+      [
+        700,
+        844
+      ],
+      [
+        390,
+        844
+      ]
+    ],
+    "deviceScaleFactor": 1,
+    "externalDomainsBlocked": true,
+    "limitations": [
+      "Google Fonts request blocked, system fallback fonts used",
+      "Original app startup account APIs supplied empty fixture values",
+      "Raw no-progress fixture responses and modal changes produce expected AbortError diagnostics",
+      "Native cancellation confirmation accepted by temporary window.confirm hook; application handler and HTTP POST are real"
+    ],
+    "errorCounts": {
+      "requestfailed": 435
+    },
+    "finalFreshErrorCounts": {
+      "requestfailed": 37
+    },
+    "screenshotNote": "1366/390 six principal screenshots recaptured after existing global rowFadeIn opacity=1; secondary isolated typed HTTP fixture, no UI markup replacement"
+  },
+  "observations": [
+    {
+      "name": "1366 configuration",
+      "viewport": [
+        1366,
+        900
+      ],
+      "modalWidth": 1180,
+      "maxWidth": "1180px",
+      "maxHeight": "720px",
+      "radius": "18px",
+      "apollo": [
+        "14px",
+        "14px",
+        "14px"
+      ],
+      "label": "row",
+      "sourceSize": [
+        "92.0781px",
+        "34px"
+      ],
+      "sources": 7,
+      "mainTabs": [
+        {
+          "id": "discoveryReviewTab",
+          "disabled": false
+        },
+        {
+          "id": "discoveryReviewHistoryTab",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "name": "F123 actual rows",
+      "summary": "自动准入 55\n直接准入 15\nApollo 准入 40\n已明确 36\n未明确 19\n待核验 45\n错误 5\n排队/核验中 18\n保护跳过 0\n\n已准入，候选同步待处理 1（同步错误 1） · 收录登记异常 0 · 统计更新时间 2026-10-18 18:00\n\nApollo：进入辅助核验 108 → 已查询 85 → 返回候选 66 → 确认本人 40；请求 108 次",
+      "columns": 13,
+      "rows": [
+        [
+          "40",
+          "40"
+        ],
+        [
+          "40",
+          "80"
+        ],
+        [
+          "43",
+          "123"
+        ]
+      ],
+      "footer": "本次合计\t123\t55\t15\t40\t36\t19\t45\t5\t18\t保护跳过 0",
+      "trafficClosed": true
+    },
+    {
+      "name": "Apollo participation API filter",
+      "participation": [
+        {
+          "route": "APOLLO",
+          "result": "ALL",
+          "total": 108,
+          "page": 0
+        },
+        {
+          "route": "APOLLO",
+          "result": "PENDING",
+          "total": 45,
+          "page": 0
+        },
+        {
+          "route": "APOLLO",
+          "result": "ERROR",
+          "total": 5,
+          "page": 0
+        },
+        {
+          "route": "APOLLO",
+          "result": "QUEUED",
+          "total": 18,
+          "page": 0
+        }
+      ]
+    },
+    {
+      "name": "Same snapshot focus and 300ms search reset",
+      "focused": true,
+      "value": "fixture1@",
+      "page": 0
+    },
+    {
+      "name": "Evidence actual DOM",
+      "blocks": 4,
+      "text": "合成专家 1 · 核验依据\n收起\n身份对应\n\n本次结论 已明确 · 资格 MET\n\n原始身份 {\"status\":\"VERIFIED\",\"name\":\"合成专家\",\"email\":\"fixture1@example.invalid\"}\n\n原任职线索 原始机构线索 · 机构依据 TEST_ORGANIZATION · ORCID 0000-0000-0000-000X\n\nidentity：已绑定本人\n\n来源：ORCID · ORGANIZATION · 当前\n\nhttps://example.invalid/evidence\n\n采集日期 2026-10-18 18:00 · 来源更新 2026-10-18 18:00\n\n博士学位\n\n未取得可靠证据\n\n年龄与当前职称\n\ntitle：Historical Professor\n\n来源：ORCID · SELF · 历史\n\n未取得可靠证据链接\n\n采集日期 2026-10-18 18:00 · 来源更新 未记录\n\nApollo 与处理记录\n\nApollo person ID：fixture-apollo-person-1\n\n进入辅助 2026-10-18 18:00 · 已查询 2026-10-18 18:00 · 返回候选 2026-10-18 18:00 · 确认本人 2026-10-18 18:00\n\nAPOLLO / BROAD · 页 1 · 尝试 1 · HTTP 200 · SUCCESS · 2026-10-18 18:00 → 2026-10-18 18:00\n\n身份存在歧义 · 1 人\n\nIDENTITY_AMBIGUOUS\n\n资格证据缺失 · 2 人\n\nQUALIFICATION_EVIDENCE_MISSING\n\n未找到候选人 · 3 人\n\nAPOLLO_NO_MATCH\n\n接口认证配置错误 · 4 人\n\nCONFIG_AUTH\n\n完整未知原因 · 5 人\n\nAPV-FIXTURE-LONG-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n\n当前审核 HOLD · 候选同步 ERROR · ES_PROJECTION_FAILED\n\n统计更新时间 2026-10-18 18:00",
+      "links": [
+        {
+          "href": "https://example.invalid/evidence",
+          "rel": "noopener noreferrer"
+        }
+      ],
+      "backgrounds": [
+        "rgb(255, 255, 255)",
+        "rgb(255, 255, 255)",
+        "rgb(255, 255, 255)",
+        "rgb(255, 255, 255)"
+      ]
+    },
+    {
+      "name": "Keyboard and collection",
+      "selected": "apv-tab-collection-3001",
+      "tabs": [
+        {
+          "id": "apv-tab-batches-3001",
+          "selected": "false",
+          "tabindex": -1,
+          "controls": "apv-batches-3001"
+        },
+        {
+          "id": "apv-tab-records-3001",
+          "selected": "false",
+          "tabindex": -1,
+          "controls": "apv-records-3001"
+        },
+        {
+          "id": "apv-tab-collection-3001",
+          "selected": "true",
+          "tabindex": 0,
+          "controls": "apv-collection-3001"
+        }
+      ],
+      "columns": 7,
+      "reasons": "查看全部原因IDENTITY_AMBIGUOUS：1QUALIFICATION_EVIDENCE_MISSING：2APOLLO_NO_MATCH：3CONFIG_AUTH：4APV-FIXTURE-LONG-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX：5",
+      "focusStyle": [
+        "2px",
+        "3px"
+      ]
+    },
+    {
+      "name": "Final configuration four viewports after final tests",
+      "values": [
+        {
+          "width": 1366,
+          "height": 900,
+          "modalWidth": 1180,
+          "maxWidth": "1180px",
+          "radius": "18px",
+          "maxHeight": "720px",
+          "checkbox": [
+            "14px",
+            "14px",
+            "14px"
+          ],
+          "direction": "row",
+          "sourceBoxes": 7,
+          "sourceHeight": "34px"
+        },
+        {
+          "width": 1920,
+          "height": 1080,
+          "modalWidth": 1180,
+          "maxWidth": "1180px",
+          "radius": "18px",
+          "maxHeight": "864px",
+          "checkbox": [
+            "14px",
+            "14px",
+            "14px"
+          ],
+          "direction": "row",
+          "sourceBoxes": 7,
+          "sourceHeight": "34px"
+        },
+        {
+          "width": 700,
+          "height": 844,
+          "modalWidth": 652,
+          "maxWidth": "1180px",
+          "radius": "18px",
+          "maxHeight": "675.2px",
+          "checkbox": [
+            "14px",
+            "14px",
+            "14px"
+          ],
+          "direction": "row",
+          "sourceBoxes": 7,
+          "sourceHeight": "34px"
+        },
+        {
+          "width": 390,
+          "height": 844,
+          "modalWidth": 370,
+          "maxWidth": "1180px",
+          "radius": "18px",
+          "maxHeight": "828px",
+          "checkbox": [
+            "14px",
+            "14px",
+            "14px"
+          ],
+          "direction": "row",
+          "sourceBoxes": 7,
+          "sourceHeight": "34px"
+        }
+      ]
+    },
+    {
+      "name": "Final batch responsive logs",
+      "values": [
+        {
+          "width": 1366,
+          "runCols": 11,
+          "batchCols": 13,
+          "detailGrid": "349.031px 349.031px 383.938px",
+          "head": [
+            "static",
+            "rgb(248, 250, 252)"
+          ],
+          "verticalScroll": [
+            "modal-content task-modal"
+          ],
+          "reasonKinds": 5
+        },
+        {
+          "width": 1920,
+          "runCols": 11,
+          "batchCols": 13,
+          "detailGrid": "349.031px 349.031px 383.938px",
+          "head": [
+            "static",
+            "rgb(248, 250, 252)"
+          ],
+          "verticalScroll": [
+            "modal-content task-modal"
+          ],
+          "reasonKinds": 5
+        },
+        {
+          "width": 700,
+          "runCols": 11,
+          "batchCols": 13,
+          "detailGrid": "1036px",
+          "head": [
+            "static",
+            "rgb(248, 250, 252)"
+          ],
+          "verticalScroll": [
+            "modal-content task-modal"
+          ],
+          "reasonKinds": 5
+        },
+        {
+          "width": 390,
+          "runCols": 11,
+          "batchCols": 13,
+          "detailGrid": "1036px",
+          "head": [
+            "static",
+            "rgb(248, 250, 252)"
+          ],
+          "verticalScroll": [
+            "modal-content task-modal"
+          ],
+          "reasonKinds": 5
+        }
+      ]
+    },
+    {
+      "name": "Final current API participation filters",
+      "values": [
+        {
+          "result": "UNCLEAR",
+          "total": 19,
+          "page": 0
+        },
+        {
+          "route": "APOLLO",
+          "result": "ALL",
+          "total": 108,
+          "page": 0
+        },
+        {
+          "route": "APOLLO",
+          "result": "PENDING",
+          "total": 45,
+          "page": 0
+        },
+        {
+          "route": "APOLLO",
+          "result": "ERROR",
+          "total": 5,
+          "page": 0
+        },
+        {
+          "route": "APOLLO",
+          "result": "QUEUED",
+          "total": 18,
+          "page": 0
+        }
+      ]
+    },
+    {
+      "name": "Final server page2",
+      "page": 1,
+      "total": 123,
+      "size": 20,
+      "prevDisabled": false
+    },
+    {
+      "name": "Final search focus",
+      "focused": true,
+      "page": 0,
+      "value": "fixture15@"
+    },
+    {
+      "name": "Final evidence responsive and security",
+      "values": [
+        {
+          "width": 1366,
+          "cols": 8,
+          "grid": "857.453px 857.469px",
+          "blocks": 4,
+          "xssText": true,
+          "injectedImages": 0,
+          "unsafeLinks": 0,
+          "xssRan": false,
+          "safeLinks": [
+            "https://example.invalid/evidence"
+          ]
+        },
+        {
+          "width": 1920,
+          "cols": 8,
+          "grid": "857.453px 857.469px",
+          "blocks": 4,
+          "xssText": true,
+          "injectedImages": 0,
+          "unsafeLinks": 0,
+          "xssRan": false,
+          "safeLinks": [
+            "https://example.invalid/evidence"
+          ]
+        },
+        {
+          "width": 700,
+          "cols": 8,
+          "grid": "1724.92px",
+          "blocks": 4,
+          "xssText": true,
+          "injectedImages": 0,
+          "unsafeLinks": 0,
+          "xssRan": false,
+          "safeLinks": [
+            "https://example.invalid/evidence"
+          ]
+        },
+        {
+          "width": 390,
+          "cols": 8,
+          "grid": "1724.92px",
+          "blocks": 4,
+          "xssText": true,
+          "injectedImages": 0,
+          "unsafeLinks": 0,
+          "xssRan": false,
+          "safeLinks": [
+            "https://example.invalid/evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Real five second polling after collection SUCCESS",
+      "collectionStatus": "SUCCESS",
+      "lifecycle": "ACTIVE",
+      "requestsBefore": 77,
+      "requestsAfter": 78,
+      "timer": true
+    },
+    {
+      "name": "Actual summary 503 retains success",
+      "error": "统计读取失败：503 fixture statistics unavailable。当前显示上次成功结果（2026-10-18 18:00）。重试读取",
+      "retainedTotal": 1,
+      "asOf": "2026-10-18T10:00:00.123Z"
+    },
+    {
+      "name": "GET-only 503 recovery",
+      "error": null,
+      "total": 1
+    },
+    {
+      "name": "Actual concurrent snapshot mismatch",
+      "error": "快照已变化，正在整块刷新；未混合不同版本的统计与明细",
+      "summaryVersion": 17,
+      "pageVersion": 17
+    },
+    {
+      "name": "Ten second A late response after B",
+      "execution": 3003,
+      "detailIds": [
+        "detail-row-3003"
+      ],
+      "summary": "自动准入 0\n直接准入 0\nApollo 准入 0\n已明确 0\n未明确 0\n待核验 0\n错误 0\n排队/核验中 0\n保护跳过 0\n\n已准入，候选同步待处理 0（同步错误 0） · 收录登记异常 0 · 统计更新时间 2026-10-18 18:00\n\nApollo：进入辅助核验 0 → 已查询 0 → 返回候选 0 → 确认本人 0；请求 0 次",
+      "version": 18
+    },
+    {
+      "name": "Old history not zero",
+      "execution": 3002,
+      "text": "自动准入 未记录\n直接准入 未记录\nApollo 准入 未记录\n已明确 未记录\n未明确 未记录\n待核验 未记录\n错误 未记录\n排队/核验中 未记录\n保护跳过 未记录\n\n已准入，候选同步待处理 未记录（同步错误 未记录） · 收录登记异常 未记录 · 统计更新时间 2026-10-18 18:00\n\nApollo：进入辅助核验 未记录 → 已查询 未记录 → 返回候选 未记录 → 确认本人 未记录；请求 未记录 次"
+    },
+    {
+      "name": "AUDIT not actual admissions",
+      "execution": 3004,
+      "summary": "影子核验建议：建议准入 55（直接 15 / Apollo 40）；以下自动准入为实际提交计数。\n\n自动准入 0\n直接准入 0\nApollo 准入 0\n已明确 36\n未明确 19\n待核验 45\n错误 5\n排队/核验中 18\n保护跳过 0\n\n已准入，候选同步待处理 1（同步错误 1） · 收录登记异常 0 · 统计更新时间 2026-10-18 18:00\n\nApollo：进入辅助核验 108 → 已查询 85 → 返回候选 66 → 确认本人 40；请求 108 次"
+    },
+    {
+      "name": "Final keyboard seven columns and all collection reasons",
+      "active": "apv-tab-collection-3001",
+      "selected": [
+        {
+          "id": "apv-tab-batches-3001",
+          "selected": "false",
+          "tabindex": -1
+        },
+        {
+          "id": "apv-tab-records-3001",
+          "selected": "false",
+          "tabindex": -1
+        },
+        {
+          "id": "apv-tab-collection-3001",
+          "selected": "true",
+          "tabindex": 0
+        }
+      ],
+      "columns": 7,
+      "reasons": "查看全部原因IDENTITY_AMBIGUOUS：1QUALIFICATION_EVIDENCE_MISSING：2APOLLO_NO_MATCH：3CONFIG_AUTH：4APV-FIXTURE-LONG-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX：5",
+      "outline": [
+        "2px",
+        "3px"
+      ]
+    },
+    {
+      "name": "Final complete traffic",
+      "text": "HTTP 下载量 10.0 MB · 展开详情\n\n元数据 2.0 MB · 全文 8.0 MB\n\n超限下载 2 次 / 100 B · 额外排空 50 B\n\n来源：OPENALEX 1 B、CROSSREF 2 B、CORE 3 B、ARXIV 4 B、ORCID 5 B\n\n站点：one.example.invalid 1 B、two.example.invalid 2 B、three.example.invalid 3 B、four.example.invalid 4 B、five.example.invalid 5 B\n\n仅统计采集任务实际读取的响应体；不含 TLS、代理开销、其他应用及 Apollo/ORCID 核验请求流量。"
+    },
+    {
+      "name": "Main tab suspends requests and review remains available",
+      "before": 197,
+      "after": 197,
+      "visible": false,
+      "controllers": 0,
+      "activeHistory": "true"
+    },
+    {
+      "name": "Collection cancellation abort seam",
+      "controllers": 0,
+      "timer": false,
+      "sequence": 47
+    },
+    {
+      "name": "Close stops verification transport",
+      "before": 198,
+      "after": 198,
+      "state": null,
+      "modalHidden": true
+    },
+    {
+      "name": "Other-task original table restored",
+      "task": "EXPERT_REVALIDATION",
+      "apvClass": false,
+      "thead": "\t开始时间\t触发\t状态\t总处理\t通过\t拒绝\t耗时\n",
+      "visibleColumns": 8,
+      "trafficHeadExists": true
+    },
+    {
+      "name": "Capability not ready",
+      "disabled": true,
+      "checked": false,
+      "hint": "Apollo 辅助核验不可用：CONFIG_AUTH"
+    },
+    {
+      "name": "Capability disabled",
+      "disabled": true,
+      "hint": "资格核验未启用"
+    },
+    {
+      "name": "Final real HTTP launch receipts",
+      "requests": [
+        {
+          "method": "POST",
+          "url": "/api/expert-discovery/run/by-keyword?keywords=fixture+term&sources=OPENALEX&sources=CROSSREF&sources=CORE&sources=ARXIV&sources=ORCID&apolloAssist=false",
+          "body": "",
+          "time": 1792343238036
+        },
+        {
+          "method": "POST",
+          "url": "/api/task-progress/EXPERT_DISCOVERY/cancel",
+          "body": "",
+          "time": 1792343392156
+        },
+        {
+          "method": "POST",
+          "url": "/api/expert-discovery/run",
+          "body": "{\"sources\":[\"OPENALEX\",\"CROSSREF\",\"CORE\",\"ARXIV\",\"ORCID\"],\"apolloAssist\":true}",
+          "time": 1792343412761
+        }
+      ]
+    },
+    {
+      "name": "Terminal ledgers stop real polling",
+      "before": 105,
+      "after": 106,
+      "timer": false,
+      "lifecycle": "COMPLETED",
+      "queue": 0
+    },
+    {
+      "name": "Settled terminal no repeat polling",
+      "before": 108,
+      "after": 109,
+      "timer": false,
+      "lifecycle": "COMPLETED",
+      "queue": 0
+    },
+    {
+      "name": "FINAL corrected terminal integration no repeat even when original runlist refreshes",
+      "before": 113,
+      "after": 113,
+      "timer": false,
+      "lifecycle": "COMPLETED",
+      "queue": 0
+    },
+    {
+      "name": "Final new runlist integration visual smoke",
+      "count": 1,
+      "cols": [
+        11,
+        8
+      ],
+      "fourEvidence": 4,
+      "grid": "1020px"
+    },
+    {
+      "name": "Stable screenshot recapture after inherited rowFadeIn ends",
+      "opacity": [
+        "1",
+        "1"
+      ],
+      "blocks": 4,
+      "sources": 1,
+      "scrollHosts": [
+        "modal-content task-modal"
+      ],
+      "transport": "Second isolated screenshot-only HTTP fixture; same actual current static page and F123 summaries, single evidence record"
+    },
+    {
+      "name": "Final actual batch2 drill, 20-row server pagination and clear",
+      "drill": {
+        "batchNumber": 2,
+        "tab": "records",
+        "total": 40,
+        "size": 20,
+        "recordsPath": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=&page=0&size=20&batchNumber=2",
+        "page": 0,
+        "prevDisabled": true,
+        "nextDisabled": false
+      },
+      "lastPage": {
+        "batchNumber": 2,
+        "page": 1,
+        "total": 40,
+        "size": 20,
+        "recordsPath": "/api/expert-discovery/verification/executions/3001/records?route=ALL&result=ALL&q=&page=1&size=20&batchNumber=2",
+        "nextDisabled": true
+      },
+      "cleared": {
+        "batchNumber": null,
+        "page": 0,
+        "total": 123
+      },
+      "transport": "isolated typed HTTP fixture, real current app delegated DOM actions"
+    }
+  ]
+}

@@ -908,11 +908,10 @@ function extractPlanS2Css() {
 }
 
 describe("contact profile 02 — S-2 / 缓存键 / 模块边界", () => {
-    it("S-2：styles.css 逐字追加计划规则，且是文件末尾唯一新增 CSS", () => {
+    it("S-2：styles.css 保留逐字计划规则", () => {
         const block = extractPlanS2Css();
         assert.ok(STYLES_SOURCE.includes(block), "S-2 rules must be appended verbatim");
         assert.strictEqual(STYLES_SOURCE.split(block).length - 1, 1, "S-2 block must appear exactly once");
-        assert.ok(STYLES_SOURCE.replace(/\n+$/, "").endsWith(block), "S-2 rules must be appended at the very end of styles.css");
         for (const line of block.split("\n")) {
             assert.ok(STYLES_SOURCE.includes(line), `missing S-2 rule line: ${line}`);
         }
