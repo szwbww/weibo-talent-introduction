@@ -7,6 +7,8 @@ import com.weibo.talentintroduction.variant.domain.ContentVariantOwnerType
 import com.weibo.talentintroduction.variant.service.ContentVariantService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.annotation.Isolation
+import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.time.LocalDateTime
@@ -24,6 +26,76 @@ class ReplySnippetService(
         validateSnippetType(snippetType)
         return repository.findAllBySnippetTypeOrderByDisplayOrderAscIdAsc(snippetType.uppercase())
             .map { toDetail(it) }
+    }
+
+    fun getIdentityDefaults(): IdentityDefaultsResponse =
+        identitySnapshot(repository.findAllByOrderBySnippetTypeAscDisplayOrderAscIdAsc())
+
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
+    fun saveIdentityDefaults(request: IdentityDefaultsSaveRequest): IdentityDefaultsResponse {
+        val rows = repository.lockAllForUpdate()
+        if (identitySnapshot(rows).baseFingerprint != request.baseFingerprint) {
+            throw ReplyIdentityDefaultsChangedException()
+        }
+        fun validate(selection: IdentityDefaultSelection, type: SnippetType): ReplySnippet {
+            require(selection.id > 0) { "id must be positive" }
+            val row = rows.firstOrNull { it.id == selection.id }
+            require(row != null && row.snippetType == type.name && row.enabled) {
+                "Invalid ${type.name} snippet"
+            }
+            val content = selection.content.trim()
+            require(content.isNotEmpty() && content.length <= 10000) { "content must contain 1 to 10000 characters" }
+            mailVariableService.requireValidTemplatePlaceholders(content)
+            val variants = contentVariantService.listByOwner(ContentVariantOwnerType.REPLY_SNIPPET, selection.id)
+            contentVariantService.validateVariantTexts(content, variants.map { it.content }, ContentVariantOwnerType.REPLY_SNIPPET)
+            return row.copy(content = content, isDefault = true)
+        }
+        val salutation = validate(request.salutation, SnippetType.SALUTATION)
+        val signature = validate(request.signature, SnippetType.CLOSING)
+        val now = LocalDateTime.now().withNano(0)
+        val selected = mapOf(salutation.id to salutation, signature.id to signature)
+        val updated = rows.map { row ->
+            val replacement = selected[row.id]
+            when {
+                replacement != null -> repository.save(replacement.copy(updatedAt = now))
+                row.snippetType in IDENTITY_TYPES && row.isDefault ->
+                    repository.save(row.copy(isDefault = false, updatedAt = now))
+                else -> row
+            }
+        }
+        return identitySnapshot(updated)
+    }
+
+    private fun identitySnapshot(allRows: List<ReplySnippet>): IdentityDefaultsResponse {
+        val rows = allRows.filter { it.snippetType in IDENTITY_TYPES }
+        fun options(type: SnippetType) = rows
+            .filter { it.snippetType == type.name && it.enabled && it.content.isNotBlank() }
+            .sortedWith(compareBy({ it.displayOrder }, { it.id }))
+            .map { IdentityDefaultOption(requireNotNull(it.id), it.name, it.content, it.displayOrder, it.isDefault) }
+        val salutations = options(SnippetType.SALUTATION)
+        val signatures = options(SnippetType.CLOSING)
+        val diagnostics = mutableListOf<String>()
+        val salutation = salutations.firstOrNull { it.isDefault }?.selection()
+        val signature = signatures.firstOrNull { it.isDefault }?.selection()
+        if (salutation == null) diagnostics.add("MISSING_SALUTATION_DEFAULT")
+        if (signature == null) diagnostics.add("MISSING_SIGNATURE_DEFAULT")
+        if (salutations.count { it.isDefault } > 1 || signatures.count { it.isDefault } > 1) {
+            diagnostics.add("MULTIPLE_DEFAULTS")
+        }
+        val digest = MessageDigest.getInstance("SHA-256")
+        val lengthPrefix = ByteBuffer.allocate(4)
+        rows.sortedWith(compareBy({ it.snippetType }, { it.id })).forEach { row ->
+            listOf(row.id?.toString(), row.snippetType, row.content, row.displayOrder.toString(),
+                row.isDefault.toString(), row.enabled.toString(), row.name, row.updatedAt?.toString()).forEach { value ->
+                val bytes = value?.toByteArray(StandardCharsets.UTF_8)
+                lengthPrefix.clear()
+                lengthPrefix.putInt(bytes?.size ?: -1)
+                digest.update(lengthPrefix.array())
+                if (bytes != null) digest.update(bytes)
+            }
+        }
+        val fingerprint = digest.digest().joinToString("") { "%02x".format(it) }
+        return IdentityDefaultsResponse(salutation, signature, salutations, signatures, fingerprint, diagnostics)
     }
 
     fun resolveManualFrame(): ManualReplyFrame =
@@ -178,8 +250,9 @@ class ReplySnippetService(
         return digest.digest(input.toByteArray(StandardCharsets.UTF_8)).joinToString("") { "%02x".format(it) }
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
     fun create(command: ReplySnippetCreateCommand): ReplySnippetDetail {
+        repository.lockAllForUpdate()
         val snippetType = command.snippetType.uppercase()
         validateSnippetType(snippetType)
         require(command.content.isNotBlank()) { "content is required" }
@@ -218,8 +291,9 @@ class ReplySnippetService(
         return toDetail(saved)
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
     fun update(id: Long, command: ReplySnippetUpdateCommand): ReplySnippetDetail {
+        repository.lockAllForUpdate()
         val existing = findById(id)
         require(command.content.isNotBlank()) { "content is required" }
         require(command.displayOrder > 0) { "displayOrder must be positive" }
@@ -252,13 +326,16 @@ class ReplySnippetService(
         return toDetail(updated)
     }
 
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
     fun setEnabled(id: Long, enabled: Boolean): ReplySnippetDetail {
+        repository.lockAllForUpdate()
         val existing = findById(id)
         return toDetail(repository.save(existing.copy(enabled = enabled)))
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
     fun setDefault(id: Long): ReplySnippetDetail {
+        repository.lockAllForUpdate()
         val existing = findById(id)
         require(existing.snippetType != SnippetType.ACK.name) { "ACK snippets cannot be default" }
         require(existing.snippetType != SnippetType.CUSTOM.name) { "CUSTOM snippets cannot be default" }
@@ -271,8 +348,9 @@ class ReplySnippetService(
         return toDetail(repository.save(existing.copy(isDefault = true)))
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
     fun delete(id: Long) {
+        repository.lockAllForUpdate()
         findById(id)
         contentVariantService.deleteForOwner(ContentVariantOwnerType.REPLY_SNIPPET, id)
         repository.deleteById(id)
@@ -289,9 +367,9 @@ class ReplySnippetService(
 
     private fun resolveDefaultText(type: SnippetType): String? =
         repository.findBySnippetTypeAndEnabledTrueAndIsDefaultTrue(type.name)
-            .minByOrNull { it.displayOrder }
+            .filter { it.content.isNotBlank() }
+            .minWithOrNull(compareBy({ it.displayOrder }, { it.id }))
             ?.content
-            ?.takeIf { it.isNotBlank() }
 
     private fun clearOtherDefaults(saved: ReplySnippet) {
         repository.findBySnippetTypeAndIsDefaultTrue(saved.snippetType)
@@ -309,6 +387,7 @@ class ReplySnippetService(
     }
 
     companion object {
+        private val IDENTITY_TYPES = setOf(SnippetType.SALUTATION.name, SnippetType.CLOSING.name)
         val FRAME_SLOT_TYPES = listOf(
             SnippetType.SALUTATION,
             SnippetType.GREETING,
@@ -400,3 +479,26 @@ data class ReplySnippetUpdateCommand(
     val enabled: Boolean,
     val variants: List<String> = emptyList()
 )
+
+data class IdentityDefaultSelection(val id: Long, val content: String)
+data class IdentityDefaultValue(val id: Long, val name: String?, val content: String)
+data class IdentityDefaultOption(
+    val id: Long, val name: String?, val content: String, val displayOrder: Int, val isDefault: Boolean
+) {
+    fun selection() = IdentityDefaultValue(id, name, content)
+}
+data class IdentityDefaultsResponse(
+    val salutation: IdentityDefaultValue?,
+    val signature: IdentityDefaultValue?,
+    val salutationOptions: List<IdentityDefaultOption>,
+    val signatureOptions: List<IdentityDefaultOption>,
+    val baseFingerprint: String,
+    val diagnostics: List<String>
+)
+data class IdentityDefaultsSaveRequest(
+    val baseFingerprint: String,
+    val salutation: IdentityDefaultSelection,
+    val signature: IdentityDefaultSelection
+)
+class ReplyIdentityDefaultsChangedException :
+    IllegalStateException("默认设置已被修改，请重新加载后核对")
