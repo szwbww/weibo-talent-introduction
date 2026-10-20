@@ -4,7 +4,7 @@
 编排：create-p；先完成本后端计划，再完成配套文案计划，分别验证。
 本版完整替代此前扩大业务联动的方案；业务规则以本版为准。
 
-配套：[“待匹配”改为“待确认”](./mailbox-pending-confirmation-label.md)。两份可独立验证；后端 10 个实施文件、前端 5 个实施文件，共 15 个：生产代码/资源 7 个、测试 7 个、历史修正脚本 1 个。无数据库结构变更。
+配套：[“待匹配”改为“待确认”](./mailbox-pending-confirmation-label.md)。两份可独立验证；后端 10 个实施文件、前端 7 个实施文件，共 17 个：生产代码/资源 7 个、测试 9 个、历史修正脚本 1 个。无数据库结构变更。
 基线：`5f1e99d4fe024d698759c16ae5e2c9ba40554648`；保留工作区其他未提交改动。
 
 ## 需求描述
@@ -278,7 +278,7 @@ python3 scripts/reclassify-auto-responses.py rollback --audit <写后审计.json
 | 9 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionServiceIT.kt` | 挂起/导航计数回归 |
 | 10 | `scripts/reclassify-auto-responses.py` | 历史扫描/修正/回滚 |
 
-配套文案计划另有 5 个明确文件。不修改 AutoReplyPreviewService、匹配服务和已有 Repository；锁/首封读取集中在新组件，配套回归放既有测试文件。总范围仍为 15 个文件。
+配套文案计划另有 7 个明确文件。不修改 AutoReplyPreviewService、匹配服务和已有 Repository；锁/首封读取集中在新组件，配套回归放既有测试文件。总范围 17 个文件。
 
 ## 验收标准
 
@@ -360,6 +360,6 @@ JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -
 ## 自检
 
 - I-1～I-7覆盖两个条件、首封范围、空值/时间/并发/重试与新写路径；X1～X7都有机器和人工验证。
-- 后端10文件、前端5文件，分别执行；无schema变更，无匹配服务/状态机/通知策略扩改。
+- 后端10文件、前端7文件，分别执行；无schema变更，无匹配服务/状态机/通知策略扩改。
 - UI样式契约及人工验收见配套计划；本计划不改前端。
 - 本轮只完成可执行方案与结构检查，未改业务代码、未运行实现测试、未上线。

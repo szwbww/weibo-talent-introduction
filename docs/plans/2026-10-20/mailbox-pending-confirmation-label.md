@@ -87,14 +87,14 @@ return `<button class="mc-filter" type="button" data-action="mc-filter" data-chi
 #view-mailbox.mc-refined .mc-filter:disabled{opacity:.45;cursor:not-allowed}
 ```
 
-当前 index 缓存键为 `20261020-apollo-matching-v2`；`rg -n -F '20261020-apollo-matching-v2' src/test` 无命中。本次不需凭过往知识扩改固定值测试；实施前重查。（来源：K-frontend-cache-key-triad）
+当前 index 缓存键为 `20261020-apollo-matching-v2`；`rg -n -F '20261020-apollo-matching-v2' src/test` 无命中，但 `rg -n 'apollo-matching-v2' src/test` 命中两个以正则固定旧 slug 的测试：`discoveryVerification.test.js:95` 与 `discoveryReview.test.js:993`（`^\d{8}-apollo-matching-v2$`）。本次经用户批准把这两个测试加入授权清单，仅更新正则中的 slug 字面量；实施前重查。（来源：K-frontend-cache-key-triad）
 
 ## 实现方案
 
 1. 修改 mailbox-chat.js：替换用户可见“待匹配”文案及 aria-label，不改 key/id/接口。遵守 I-1/I-2/S-1。
 2. 修改 app.js：renderMailboxTagBadges 对系统标签 `"待匹配"` 映射显示 `"待确认"`，样式 class 继续用原 key；不改 tags 数组、筛选值或用户自定义标签。遵守 I-1/I-2/S-1。
 3. 修改 index.html：旧 option 仅改 label；已有版本化资源统一 bump 到 `20261020-auto-response-confirmation`。遵守 I-1/I-3/S-1。
-4. 更新 mailboxChatBehavior.test.js / mailboxChatStyle.test.js 的显示断言。追加旧标签显示映射、真实 HTML option 原 value、新 label 的断言；证明请求参数、草稿恢复与分页未变。遵守 I-1～I-3/S-1。
+4. 更新 mailboxChatBehavior.test.js / mailboxChatStyle.test.js 的显示断言。追加旧标签显示映射、真实 HTML option 原 value、新 label 的断言；证明请求参数、草稿恢复与分页未变。同步更新 `discoveryVerification.test.js` 与 `discoveryReview.test.js` 中固定旧缓存 slug 的正则断言。遵守 I-1～I-3/S-1。
 
 ## 变更文件清单
 
@@ -105,14 +105,16 @@ return `<button class="mc-filter" type="button" data-action="mc-filter" data-chi
 | 3 | `src/main/resources/static/index.html` | option 显示、缓存键 |
 | 4 | `src/test/js/mailboxChatBehavior.test.js` | 文案与参数回归 |
 | 5 | `src/test/js/mailboxChatStyle.test.js` | 样式/静态资源契约 |
+| 6 | `src/test/js/discoveryVerification.test.js` | 缓存键正则断言更新 |
+| 7 | `src/test/js/discoveryReview.test.js` | 缓存键正则断言更新 |
 
-5 个文件，单前端子系统。CSS 文件无变更。
+7 个文件，单前端子系统。CSS 文件无变更。
 
 ## 验收标准
 
 - I-1：请求仍为 unmatched-inbound/unmatchedOnly；option value 与 tags 数组仍使用旧值；数据条数、排序、分页与基线一致。
 - I-2：页面各入口显示“待确认”；aria-label 同步；绑定动作仍为绑定专家。
-- I-3：全部版本化资源同键；按旧键检查无残留固定测试；node 全量回归通过。
+- I-3：全部版本化资源同键；按旧键检查无残留固定测试（含正则形式固定旧 slug 的两个测试）；node 全量回归通过。
 - S-1：CSS 无 diff；不新增 class/inline style；DOM 结构和按钮 action 保持；桌面/移动端目测字体、边距、选中状态。
 - 执行 `node --check src/main/resources/static/mailbox-chat.js` 与 app.js，`node --test src/test/js/*.test.js`；不只跑旧 verify.sh。
 
