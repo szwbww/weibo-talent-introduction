@@ -110,3 +110,94 @@ Verification is `FAIL/INITIAL`. `repair-p` produced one bounded `DRAFT_READY` re
 - Required human decision: approve this exact repair plan before execution.
 
 No product code was modified.
+
+## Epoch 2 — 2026-10-20T03:34:32Z
+
+- Master plan: `docs/plans/2026-10-19/apollo-institution-subject-repair.md` (sha256 `49d5870d43c9877f947427c5b22277233fb5bf7f326176be33bc4629c5632397`), with ordered child `docs/plans/2026-10-19/discovery-institution-country-supplement.md` (sha256 `3d746ca5fc357fbf3887af627e967c5ce6f82d3c20c5f3070b029ef109125f67`).
+- Governing master identity: worktree/recorded/invoked sha256 `49d5870d43c9877f947427c5b22277233fb5bf7f326176be33bc4629c5632397`; state `CONSISTENT`; amendments `N/A`.
+- Boundary: `fcd6719ecd03645284c3df0f8a6b95bf4686ba95..8e4e7d7e6cdd4670ccc372cd9ac6e67c2ba72078`; evidence HEAD before this evidence commit: `b8ed6f9ffad047975c2d7cec6de5d56f6188ff48`.
+- Reviewer: `/root/aggregate_reviewer_epoch2`, fresh after repair commit and distinct from recorded fast-p writers/verifiers; worktree resolution `DISCOVERED_FROM_GIT_WORKTREES`.
+- Post-repair evidence: `DURABLE_HANDOFF`; repair `docs/plans/fix/apollo-institution-subject-repair/repair.md` (sha256 `cfd5a2179390fb1c18470c0e2854d27b0df52b8ac37fab1bca6e443574cdab85`); approval/executor recorded in `repair-execution.md`.
+- Result: `PASS`; convergence `PROGRESSING`; repair planning `N/A`; manual acceptance `PENDING`.
+
+### Verification Result: PASS
+
+No product code, review evidence, index, branch, or commit was modified by the reviewer.
+
+### Commands
+
+| Command | Result | Evidence |
+|---|---|---|
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=DiscoveryInstitutionNormalizerTest,DiscoveryVerificationRulesTest,DiscoveryVerificationWorkerTest,DiscoveryVerificationAdmissionGateTest,DiscoveryVerificationQueryServiceTest,ApolloPeopleSearchClientTest,QualificationEvidenceParserTest,DiscoverySampleStoreTest,DiscoverySampleCaptureTest,DiscoverySampleReplayTest test` | PASS | exit 0; 71 JVM, 1,724 JS; 0 failures/errors/skips |
+| `DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dapi.version=1.40 -Dtest=DiscoveryVerificationFlowIT,DiscoveryVerificationRepositoryIT,DiscoveryVerificationReportingIT test` | PASS | exit 0; 51 JVM, 1,724 JS; real Testcontainers MySQL; 0 failures/errors/skips |
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=DiscoveryCountrySupplementServiceTest,DiscoveryCountryRegistrationTest,DiscoveryIdentityTest,CountryContinentMappingTest,QualificationEvidenceParserTest,DiscoveryVerificationWorkerTest,DiscoveryVerificationAdmissionGateTest,DiscoveryVerificationQueryServiceTest,DiscoverySampleStoreTest,DiscoverySampleCaptureTest,DiscoverySampleReplayTest test` | PASS | exit 0; 89 JVM, 1,724 JS; 0 failures/errors/skips |
+| `DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dapi.version=1.40 -Dtest=DiscoveryCountrySupplementFlowIT,DiscoveryVerificationFlowIT,DiscoveryVerificationRepositoryIT test` | PASS | exit 0; 49 JVM, 1,724 JS; real Testcontainers MySQL; 0 failures/errors/skips |
+| `git diff --check fcd6719..8e4e7d7 -- src` | PASS | exit 0 |
+| Repair scope `git diff --name-only 0953b2f..8e4e7d7 -- src` | PASS | Exact 11 repair-authorized product/test paths; no excess path |
+
+### Contract Matrix
+
+| ID | Verdict | Evidence |
+|---|---|---|
+| M-ORDER | PASS | Both approved plans and supplied hashes match; ordered execution/evidence identities consistent. |
+| M-SCOPE / non-goals | PASS | Full combined diff has only 18 authorized implementation/test/resource paths; no schema, migration, UI, ES, provider, or unrelated changes. |
+| S-O1 / I2 / I3 / T1 | PASS | `DiscoveryInstitutionNormalizer.kt:423-433` preserves campus/system qualifiers; `Rules.kt:117-130` uses normalized compare text while retaining source IDs/aliases. |
+| S-O2 / I1 / I6 / I7 | PASS | Worker path preserves frozen payload/recovery semantics; focused + FlowIT suites pass. |
+| S-N1–N4 | PASS | Admission/worker/query runtime paths retain conservative identity, legacy/in-flight protection, budget/CAS behavior, and read-only reporting. |
+| S-I4 | PASS | `Worker.kt:87-123,289-293` rejects invalid normalization protocol, keeps legacy null behavior, makes lawful parser drift PENDING, and fails safely. |
+| S-I5 / T3 | PASS | `QueryService.kt:131-154` localizes malformed optional evidence to a row instead of breaking GET/reporting. |
+| S-T2 | PASS | Fresh institution FlowIT: 29 tests, including persistence, recovery, projection, and cancellation paths. |
+| C-O1 / I1 / I2 / T1 | PASS | `CountrySupplementService.kt:250-268,315-359,452-466` uses bound/current institutional evidence, strict country validation, deduplication, and punctuation-preserving complete-name matching. |
+| C-O2 / I4 | PASS | `RegistrationService.kt:107-122,189-217` freezes receipt with the initial reservation and validates bounded receipt/token invariants. |
+| C-N1–N4 | PASS | Protection reads precede writes (`RegistrationService.kt:89-105`); no legacy overwrite/re-fetch path found; country supplement stays initial-registration scoped. |
+| C-I3 / I5 / I6 | PASS | `CountrySupplementService.kt:138-155,302-311,476-488` and `RegistrationService.kt:123-146` propagate cancellation, bound evidence, release permits, and retain auditable outcomes. |
+| C-T2–T4 | PASS | Fresh country FlowIT: 8 tests; shared verification FlowIT/repository coverage also fresh and passing. |
+| S-A1–S-A6 / C-A1–C-A5 | PENDING | Human/manual acceptance remains pending; not machine-release-blocking under plan. |
+
+### Finding Lineage
+
+| Finding | State | Evidence |
+|---|---|---|
+| V-1 | RESOLVED | Campus/system qualifier no longer treated as address tail; normalizer focused suite passes. |
+| V-2 | RESOLVED | Original standard IDs/aliases retained in comparison metadata at `Rules.kt:121-129`. |
+| V-3 | RESOLVED | Country complete-name normalizer only NFKC/space/case at `CountrySupplementService.kt:451-456`. |
+| V-4 | RESOLVED | Malformed optional evidence becomes row-local missing `institutionSubject` at `QueryService.kt:137-154`. |
+| V-5 | RESOLVED | Direct/nested cancellation is rethrown through supplement and registration paths. |
+| V-6 | RESOLVED | Oversized observations are removed/bounded before receipt validation. |
+| V-7 | RESOLVED | Invalid saved protocol fails safely; parser drift alone remains PENDING at `Worker.kt:87-123`. |
+| V-8 | RESOLVED | Duplicate valid countries deduplicated before cardinality checks in both OpenAlex and ORCID paths. |
+
+### Findings
+
+#### P1
+
+- N/A.
+
+#### P2
+
+- N/A.
+
+#### Observations
+
+- N/A.
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+| Source item | Master requirement | Result | Evidence |
+|---|---|---|---|
+| Child 01 O-1 / V-7 | Institution invalid protocol must fail closed; parser drift may remain pending | RESOLVED | Invalid saved protocol fails safely; lawful parser drift retains the distinct pending disposition. |
+| Child 02 O-1 / V-8 | Valid same-country evidence is deduplicated before ambiguity | RESOLVED | Duplicate valid countries are deduplicated in both OpenAlex and ORCID paths. |
+
+### Evidence Boundaries
+
+- Required Docker/SQL suites ran against real Testcontainers; none skipped.
+- Worktree status showed only the controller-owned modified review ledger.
+- Human/manual acceptance remains pending.
+
+### Repair Planning
+
+N/A.
+
+### Next Action
+
+Perform the pending human acceptance for this exact candidate boundary.
