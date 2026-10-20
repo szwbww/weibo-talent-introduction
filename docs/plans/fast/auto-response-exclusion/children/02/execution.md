@@ -62,3 +62,27 @@ Implementation boundary: c203bd4..86be61d
 
 ### Next Action
 - READY_FOR_VERIFICATION → run `verify-p`
+
+## Epoch 2 — amended I-3 cache-key pin regression
+
+Plan amendment: commit `a73ebf3` (docs: amend plans for cache-key test authorization) authorizes 7 frontend files, adding
+`src/test/js/discoveryVerification.test.js` and `src/test/js/discoveryReview.test.js`. Plan SHA-256 was re-read for this epoch.
+
+- Commit: `aee499b` — `feat(fast-p): implement 02 cache-key pin regression`
+- Changed file: `src/test/js/mailboxChatStyle.test.js` (one new `it` in “待确认显示：文案、option 原值与缓存键”)
+- Regression: asserts both discovery test files contain the exact pinned assertions
+  `assert.match(values[0], /^\d{8}-auto-response-confirmation$/);` and
+  `assert.match(keys[0], /^\d{8}-auto-response-confirmation$/);`, and neither contains `apollo-matching-v2`.
+- Production behavior, CSS, index.html and the two discovery tests are unchanged in this commit.
+
+### Commands (epoch 2, run after the final edit)
+| Command | Result | Evidence |
+|---|---|---|
+| `node --check src/main/resources/static/mailbox-chat.js` | PASS | exit 0 |
+| `node --check src/main/resources/static/app.js` | PASS | exit 0 |
+| `node --test src/test/js/*.test.js` | PASS | exit 0; tests 1733, pass 1733, fail 0 |
+
+### Freshness (epoch 2)
+- Worktree/branch: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-auto-response-exclusion` @ `fast/auto-response-exclusion`, HEAD `aee499b`
+- Required commands run this epoch: YES
+- `docs/plans/**` changes remain uncommitted/controller-owned: YES

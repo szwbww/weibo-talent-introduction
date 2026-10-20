@@ -23,3 +23,25 @@ Verifier: AutoResponseFrontendVerifier
 
 ### Required Action
 - COMPLETE_CHILD
+
+## Light Verification: LIGHT_PASS
+Child: 02 docs/plans/2026-10-20/mailbox-pending-confirmation-label.md
+Boundary: a63376a9129dbcb057ee9277e1bc9347e0b36066..aee499beaaea8c282e6f453d0cecbe863724df01
+Verifier: AutoResponseFrontendReverifier1
+
+### Four Gates
+|Gate|Result|Evidence|
+|---|---|---|
+|Authorized scope|PASS|`git show --stat 86be61d` = exactly the 7 authorized files (app.js 7, index.html 34, mailbox-chat.js 20, discoveryReview.test.js 2, discoveryVerification.test.js 2, mailboxChatBehavior.test.js 92, mailboxChatStyle.test.js 50); `git show --stat aee499b` = only `src/test/js/mailboxChatStyle.test.js` (+17). No CSS/backend/docs product paths (`git diff --stat a63376a..aee499b -- src/main/kotlin src/main/resources/db src/main/resources/static/*.css` empty).|
+|Plan and invariants|PASS|I-1: `mailbox-chat.js:69` label only; `index.html:774` keeps `value="待匹配"` with text `待确认`; `app.js:17045-17047` maps `"待匹配"→"待确认"` for display, `app.js:21668` filter still `tags.includes(tagFilter)`; `CHIP_UNMATCHED`/`unmatchedOnly`/`/api/mail/unmatched-inbound` untouched (diff is text-only: app 6+/1-, chat 10+/10-). I-2: chip, empty, error, load-error, 4 aria-labels and detail placeholders all switched (diff lines 2080/2083/2322/3079/3082-3084/3147-3154/3180); actions `mc-select-unmatched`/`mc-retry-list` preserved. I-3: all 16 `?v=` refs in index.html are `20261020-auto-response-confirmation` (7 CSS + 9 JS); discoveryVerification.test.js:95 and discoveryReview.test.js:993 pin `^\d{8}-auto-response-confirmation$`. S-1: no class/CSS/inline-style change in diff; structure/actions/counts unchanged; no `待匹配` user-visible text remains in mailbox-chat.js (only comments/keys) or index.html. New regression (`mailboxChatStyle.test.js:149-163`) is deterministic file-source assertions: exact new-slug assertion present in both pin tests and `apollo-matching-v2` absent; it codifies test-source consistency, not duplicated production behavior.|
+|Required commands|PASS|`node --check src/main/resources/static/mailbox-chat.js` exit 0; `node --check src/main/resources/static/app.js` exit 0; `node --test src/test/js/*.test.js` exit 0, tests 1733, pass 1733, fail 0, cancelled 0, skipped 0 (prior 1732 + 1 amended regression). `rg -n 'apollo-matching-v2' src/test src/main/resources/static` exit 0 with one intentional hit: `mailboxChatStyle.test.js:162` negative assertion `!entry.source.includes("apollo-matching-v2")`; no stale pinning slug remains.|
+|Downstream interfaces|PASS|Request path/params unchanged: `mailbox-chat.js:1939-1941` `unmatchedOnly=true/pageSize/pageOffset`, `:2274` `/api/mail/unmatched-inbound?…`. DOM ids/classes/actions, draft isolation, pagination and backend tag value untouched (no Kotlin/DB file in diff; `MailboxService` unchanged). No downstream child.|
+
+### AUTO_FIX
+- N/A
+
+### RECORD_ONLY
+- N/A
+
+### Required Action
+- COMPLETE_CHILD

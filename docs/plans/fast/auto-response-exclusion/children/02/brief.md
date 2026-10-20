@@ -31,6 +31,9 @@ Do not modify CSS, backend, API parameters, enums, DB, DOM ids/classes/actions, 
 - I-3: update all existing versioned CSS/JS references in `index.html` to one identical new key `20261020-auto-response-confirmation`; check existing tests for the old key first.
 - S-1: no CSS/class/inline-style changes; preserve structure, button actions, filter keys, counts, and responsive behavior.
 
+## Additional amended regression
+Add a focused assertion in `src/test/js/mailboxChatStyle.test.js` proving the two cache-key pinning tests (`discoveryVerification.test.js`, `discoveryReview.test.js`) contain the new key `20261020-auto-response-confirmation` and no `apollo-matching-v2` slug. This codifies amended I-3 without touching production behavior.
+
 ## Required commands
 - `node --check src/main/resources/static/mailbox-chat.js`
 - `node --check src/main/resources/static/app.js`
