@@ -47,7 +47,7 @@
     "version": "Zulu 11.0.32.1",
     "offsetAssertions": "10/10"
   },
-  "deployment": "PENDING",
+  "deployment": "PUBLISHED — see production.json",
   "notes": [
     "Docker API 1.32 failed preflight; existing repo API 1.44 compatibility option resolved it.",
     "Existing unrelated documentation changes are excluded from commit.",
