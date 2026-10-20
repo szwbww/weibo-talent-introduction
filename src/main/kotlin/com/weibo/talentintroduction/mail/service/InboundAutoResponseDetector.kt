@@ -157,14 +157,15 @@ class InboundAutoResponseDetector(
 object AutoSubmittedHeader {
     const val AUTO_REPLIED = "auto-replied"
 
+    /**
+     * 只有**恰好一次**顶层 `Auto-Submitted` 才返回规范值；重复（即使值相同）或冲突
+     * 头都不构成单值命中，避免重复头被折叠成一个 auto-replied。
+     */
     fun normalize(values: List<String>?): String? {
-        if (values.isNullOrEmpty()) {
+        if (values == null || values.size != 1) {
             return null
         }
-        val normalized = values.map { raw -> raw.substringBefore(';').trim().lowercase(Locale.ROOT) }
-        if (normalized.any { it.isEmpty() }) {
-            return null
-        }
-        return normalized.distinct().singleOrNull()
+        val normalized = values.single().substringBefore(';').trim().lowercase(Locale.ROOT)
+        return normalized.ifEmpty { null }
     }
 }

@@ -689,6 +689,21 @@ class ImapMailReceiveServiceTest {
     }
 
     @Test
+    fun `duplicate identical auto-submitted headers do not collapse into a single hit`() {
+        val duplicated = multipartMessage(parts = listOf(MimeBodyPart().apply { setText("Hello body") }))
+        duplicated.addHeader("Auto-Submitted", "auto-replied")
+        duplicated.addHeader("Auto-Submitted", "auto-replied")
+        assertNull(
+            convert(duplicated, metadataOnly = true).autoSubmitted,
+            "重复（即使值相同）头不得折叠成单值命中"
+        )
+
+        val single = multipartMessage(parts = listOf(MimeBodyPart().apply { setText("Hello body") }))
+        single.setHeader("Auto-Submitted", "auto-replied")
+        assertEquals("auto-replied", convert(single, metadataOnly = true).autoSubmitted)
+    }
+
+    @Test
     fun `real imap received date is converted once and marked reliable`() {
         val date = java.util.Date(1_760_000_000_000L)
         val message = FixedReceivedDateMessage(Session.getDefaultInstance(Properties()), date)
