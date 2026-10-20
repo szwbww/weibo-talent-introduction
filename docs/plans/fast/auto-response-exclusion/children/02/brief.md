@@ -3,7 +3,7 @@
 ## Contract
 - Worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-auto-response-exclusion`
 - Branch: `fast/auto-response-exclusion`
-- Child base: child 01 terminal `Code head` (the controller fills the exact SHA at dispatch)
+- Child base: `a63376a9129dbcb057ee9277e1bc9347e0b36066`
 - Approved plan (complete contract, read first): `docs/plans/2026-10-20/mailbox-pending-confirmation-label.md`
 - Plan identity: `sha256:96de6aeac5609cfb4a049b0c631525fcb5096d91e56f96e292914f7b81bbd9b9`
 - Execution report: `docs/plans/fast/auto-response-exclusion/children/02/execution.md`
@@ -12,12 +12,16 @@
 ## Goal
 Change only user-visible "待匹配" strings to "待确认" in the mailbox unmatched queue (tab, empty states, error, aria-labels, detail placeholder, legacy tag display), and bump all versioned static asset references to the same new key `20261020-auto-response-confirmation`.
 
-## Authorized Files (only these 5)
+## Authorized Files (only these 7; amended by A1/A2 with human approval)
 1. `src/main/resources/static/mailbox-chat.js`
 2. `src/main/resources/static/app.js`
 3. `src/main/resources/static/index.html`
 4. `src/test/js/mailboxChatBehavior.test.js`
 5. `src/test/js/mailboxChatStyle.test.js`
+6. `src/test/js/discoveryVerification.test.js`
+7. `src/test/js/discoveryReview.test.js`
+
+The two added test files may change only the cache-key regex slug assertion.
 
 Do not modify CSS, backend, API parameters, enums, DB, DOM ids/classes/actions, or any other file.
 
