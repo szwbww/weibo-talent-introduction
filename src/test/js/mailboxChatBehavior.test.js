@@ -5,7 +5,7 @@
 // 驱动 mailbox-chat.js 挂载/筛选/专家标签行/管理/翻译/邮件标签/位置缓存/竞态守卫；
 // 另含 app.js 宿主守卫（任务钻取与脚本缺失仍走旧 table/group 分支）。
 // 覆盖：
-//  - S-1/S-2：四 tab（全部/关注/待处理/待匹配）、⋯ popover 高级筛选草稿语义、id 迁移与还原
+//  - S-1/S-2：四 tab（全部/关注/待处理/待确认）、⋯ popover 高级筛选草稿语义、id 迁移与还原
 //  - S-7：列表专家标签单行渲染（[] 无占位 / null 暂不可用 / title 完整 / 无 pending badge）
 //  - I-1：tab 参数无 waitingReply、全部无 pendingOnly/followed；mark 后服务端重查与空页回退
 //  - S-4/I-3/I-4：邮件标签直读/删除/添加 adapter 回调；翻译一次一请求 + 缓存
@@ -1543,7 +1543,7 @@ describe("mailbox chat mount + S-1 skeleton + S-7 expert tag rows", () => {
         assert.deepStrictEqual(chips.map((chip) => chip.dataset.chip), ["all", "drafts", "provided", "followed", "pending", "suspended", "replied", "unmatched"]);
         assert.deepStrictEqual(
             chips.map((chip) => chip.textContent.replace(/\d+/g, "")),
-            ["全部", "草稿", "已提供", "跟进中", "待处理", "已挂起", "已回复", "待匹配"]
+            ["全部", "草稿", "已提供", "跟进中", "待处理", "已挂起", "已回复", "待确认"]
         );
         assert.strictEqual(chips.find((chip) => chip.dataset.chip === "pending").getAttribute("aria-pressed"), "true", "普通首次进入默认待处理（total>0）");
         const popover = ctx.host.querySelector("#mcFilterPopover");
@@ -3529,7 +3529,7 @@ describe("待匹配 Tab：第七 chip、请求契约与邮件级列表", () => {
         assert.deepStrictEqual(chips.map((chip) => chip.dataset.chip), ["all", "drafts", "provided", "followed", "pending", "suspended", "replied", "unmatched"]);
         assert.deepStrictEqual(
             chips.map((chip) => chip.textContent.replace(/\d+/g, "")),
-            ["全部", "草稿", "已提供", "跟进中", "待处理", "已挂起", "已回复", "待匹配"]
+            ["全部", "草稿", "已提供", "跟进中", "待处理", "已挂起", "已回复", "待确认"]
         );
         const pendingChip = chipButton(ctx, "pending");
         const unmatchedChip = chipButton(ctx, "unmatched");
@@ -3553,7 +3553,7 @@ describe("待匹配 Tab：第七 chip、请求契约与邮件级列表", () => {
         const moreBtn = ctx.host.querySelector('[data-action="mc-more-filters"]');
         const searchInput = ctx.host.querySelector('.mc-search-row input[type="search"]');
         assert.strictEqual(moreBtn.hidden, true, "待匹配隐藏高级筛选入口");
-        assert.strictEqual(searchInput.getAttribute("aria-label"), "搜索待匹配来信");
+        assert.strictEqual(searchInput.getAttribute("aria-label"), "搜索待确认来信");
         assert.strictEqual(searchInput.getAttribute("placeholder"), "搜索发件邮箱、主题");
 
         const expertRequestsBefore = conversationsRequests(ctx).length;
@@ -3596,13 +3596,13 @@ describe("待匹配 Tab：第七 chip、请求契约与邮件级列表", () => {
         const emptyCtx = await bootChat({ conversations, unmatched: { records: [], totalCount: 0 } });
         click(chipButton(emptyCtx, "unmatched"));
         await flush();
-        assert.strictEqual(emptyCtx.host.querySelector(".mc-expert-list .mc-empty").textContent, "暂无待匹配来信");
+        assert.strictEqual(emptyCtx.host.querySelector(".mc-expert-list .mc-empty").textContent, "暂无待确认来信");
         assert.match(emptyCtx.host.querySelector(".mc-pager").textContent, /第 1\/1 页 · 共 0 封/);
         const conversation = emptyCtx.host.querySelector(".mc-conversation");
-        assert.strictEqual(conversation.getAttribute("aria-label"), "待匹配来信处理");
-        assert.strictEqual(conversation.querySelector(".mc-empty").textContent, "请选择左侧待匹配来信");
+        assert.strictEqual(conversation.getAttribute("aria-label"), "待确认来信处理");
+        assert.strictEqual(conversation.querySelector(".mc-empty").textContent, "请选择左侧待确认来信");
         const emptyScroll = conversation.querySelector(".mc-scroll");
-        assert.strictEqual(emptyScroll.getAttribute("aria-label"), "待匹配来信详情");
+        assert.strictEqual(emptyScroll.getAttribute("aria-label"), "待确认来信详情");
         assert.strictEqual(emptyScroll.getAttribute("tabindex"), "0");
 
         const failCtx = await bootChat({ conversations, unmatchedError: "boom" });
@@ -3610,7 +3610,7 @@ describe("待匹配 Tab：第七 chip、请求契约与邮件级列表", () => {
         await flush();
         const error = failCtx.host.querySelector(".mc-expert-list .mc-error");
         assert.ok(error, "加载失败显示错误块");
-        assert.match(error.textContent, /待匹配来信加载失败，请重试/);
+        assert.match(error.textContent, /待确认来信加载失败，请重试/);
     });
 
     it("I-8：搜索走服务端 query，切页 offset=page*20；待匹配不做客户端过滤", async () => {
@@ -3688,7 +3688,7 @@ describe("待匹配 Tab：第七 chip、请求契约与邮件级列表", () => {
 
         assert.ok(ctx.calls.unmatchedReleases >= 1, "记录消失先归还 lease");
         assert.strictEqual(dom.panel.parentNode, dom.doc.body, "节点被移出聊天右栏（未被 innerHTML 销毁）");
-        assert.strictEqual(ctx.host.querySelector(".mc-conversation .mc-empty").textContent, "请选择左侧待匹配来信");
+        assert.strictEqual(ctx.host.querySelector(".mc-conversation .mc-empty").textContent, "请选择左侧待确认来信");
         assert.strictEqual(ctx.host.querySelectorAll('.mc-person[data-active="true"]').length, 0, "选中键被清空");
 
         // 重新选中后 unmount：必须先归还再清空宿主
@@ -6804,5 +6804,77 @@ describe("专家备注冻结样式与缓存键", () => {
         assert.equal(new Set(assets.map((match) => match[2])).size, 1);
         assert.match(assets[0][2], /^\d{8}-[a-z0-9-]+$/);
         assert.ok(html.includes('<script src="task-modal-runtime.js"></script>'));
+    });
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// 2026-10-20 · 收发件箱「待匹配」→「待确认」显示改名（I-1/I-2/S-1）
+// 仅改展示：tags 原值、badge class、筛选表达式与 option value 全部保持。
+// ════════════════════════════════════════════════════════════════════════
+
+describe("待确认显示：旧标签映射与数据不变", () => {
+    function tagBadgeHarness() {
+        const start = appSource.indexOf("const MAILBOX_TAG_BADGE_CLASS");
+        const end = appSource.indexOf("function renderMailboxActions");
+        assert.ok(start >= 0 && end > start, "app.js 标签映射块必须存在");
+        const source = appSource.slice(start, end);
+        const ctx = {
+            escapeHtml: (value) => String(value)
+                .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+        };
+        vm.createContext(ctx);
+        vm.runInContext(
+            source
+            + "\nfunction badge(value, type) { return `<span class=\"badge ${type || \"\"}\">${escapeHtml(value)}</span>`; }"
+            + "\nthis.renderMailboxTagBadges = renderMailboxTagBadges; this.MAILBOX_TAG_BADGE_CLASS = MAILBOX_TAG_BADGE_CLASS;",
+            ctx
+        );
+        return ctx;
+    }
+
+    it("I-1/I-2：系统标签「待匹配」显示「待确认」，沿用 warn class；其他标签不变", () => {
+        const ctx = tagBadgeHarness();
+        assert.strictEqual(ctx.renderMailboxTagBadges(["待匹配"]), '<span class="badge warn">待确认</span>');
+        assert.strictEqual(ctx.MAILBOX_TAG_BADGE_CLASS["待匹配"], "warn", "样式 class 仍按原 tags 键查表");
+        assert.strictEqual(ctx.renderMailboxTagBadges(["自动回复"]), '<span class="badge warn">自动回复</span>');
+        assert.strictEqual(ctx.renderMailboxTagBadges(["自定义标签"]), '<span class="badge ">自定义标签</span>');
+        assert.strictEqual(ctx.renderMailboxTagBadges([]), "");
+    });
+
+    it("I-1：旧标签筛选仍按原值 includes 匹配（不改 tags 数组/过滤键）", () => {
+        assert.ok(
+            /return \(row\.tags \|\| \[\]\)\.includes\(tagFilter\);/.test(appSource),
+            "筛选仍直接比对后端原 tags 值"
+        );
+        assert.strictEqual(
+            (appSource.match(/MAILBOX_TAG_BADGE_LABELS/g) || []).length,
+            2,
+            "显示映射只允许声明 + renderMailboxTagBadges 一处使用"
+        );
+    });
+
+    it("I-1/I-2：切到待确认后 tab/空态显示新文案，请求参数与分页仍为原契约", async () => {
+        const conversations = { items: [expertA()], total: 1 };
+        const ctx = await bootChat({
+            conversations,
+            unmatched: { records: [unmatchedMail(901)], totalCount: 21 }
+        });
+        const chip = chipButton(ctx, "unmatched");
+        assert.strictEqual(chip.textContent, "待确认", "tab 显示新名");
+        assert.strictEqual(chip.dataset.chip, "unmatched", "chip key 不变");
+        assert.strictEqual(chip.dataset.action, "mc-filter", "action 不变");
+
+        click(chip);
+        await flush();
+
+        const first = queryOf(lastUnmatchedRequest(ctx).url);
+        assert.strictEqual(first.get("unmatchedOnly"), "true", "仍走未关联队列");
+        assert.strictEqual(first.get("pageOffset"), "0");
+        assert.strictEqual(first.get("pageSize"), "20");
+        assert.match(ctx.host.querySelector(".mc-pager").textContent, /共 21 封/, "计数单位与总数不变");
+
+        click(ctx.host.querySelector('[data-action="mc-page-next"]'));
+        await flush();
+        assert.strictEqual(queryOf(lastUnmatchedRequest(ctx).url).get("pageOffset"), "20", "分页仍为 page*20");
     });
 });

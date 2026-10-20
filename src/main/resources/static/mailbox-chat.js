@@ -66,7 +66,7 @@
         { key: CHIP_PENDING, label: "待处理" },
         { key: CHIP_SUSPENDED, label: "已挂起" },
         { key: CHIP_REPLIED, label: "已回复" },
-        { key: CHIP_UNMATCHED, label: "待匹配" }
+        { key: CHIP_UNMATCHED, label: "待确认" }
     ];
 
     // 02（S-1）：待处理/已挂起各有专家数计数 span；不可用时隐藏，绝不伪造 0。
@@ -2080,12 +2080,12 @@
             const root = expertsRoot();
             if (!root) return;
             if (instance.list.error) {
-                root.innerHTML = `<div class="mc-error" role="alert">待匹配来信加载失败，请重试。<button class="button" type="button" data-action="mc-retry-list">重试</button></div>`;
+                root.innerHTML = `<div class="mc-error" role="alert">待确认来信加载失败，请重试。<button class="button" type="button" data-action="mc-retry-list">重试</button></div>`;
                 return;
             }
             const items = instance.list.items || [];
             if (items.length === 0) {
-                root.innerHTML = `<div class="mc-empty">暂无待匹配来信</div>`;
+                root.innerHTML = `<div class="mc-empty">暂无待确认来信</div>`;
                 return;
             }
             root.innerHTML = items.map(renderUnmatchedPerson).join("");
@@ -2322,7 +2322,7 @@
                 renderPager();
                 hostShowStatus(
                     unmatched
-                        ? `获取待匹配来信失败: ${instance.list.error}`
+                        ? `获取待确认来信失败: ${instance.list.error}`
                         : `获取邮件记录失败: ${instance.list.error}`,
                     "error"
                 );
@@ -3079,9 +3079,9 @@
         function renderUnmatchedEmpty() {
             const body = conversationBody();
             if (!body) return;
-            body.setAttribute("aria-label", "待匹配来信处理");
+            body.setAttribute("aria-label", "待确认来信处理");
             body.innerHTML = `
-                <div class="mc-scroll" tabindex="0" aria-label="待匹配来信详情"><div class="mc-empty">请选择左侧待匹配来信</div></div>
+                <div class="mc-scroll" tabindex="0" aria-label="待确认来信详情"><div class="mc-empty">请选择左侧待确认来信</div></div>
             `;
         }
 
@@ -3144,14 +3144,14 @@
             const body = conversationBody();
             if (!body) return;
             const mount = hostFn("mcHostMountUnmatchedDetail");
-            body.setAttribute("aria-label", "待匹配来信处理");
+            body.setAttribute("aria-label", "待确认来信处理");
             body.innerHTML = `
-                <div class="mc-scroll" tabindex="0" aria-label="待匹配来信详情"><div class="mc-empty">正在加载来信详情…</div></div>
+                <div class="mc-scroll" tabindex="0" aria-label="待确认来信详情"><div class="mc-empty">正在加载来信详情…</div></div>
             `;
             const scrollHost = body.querySelector ? body.querySelector(".mc-scroll") : null;
             if (!mount || !scrollHost) {
                 body.innerHTML = `
-                    <div class="mc-scroll" tabindex="0" aria-label="待匹配来信详情"><div class="mc-empty" role="alert">来信处理面板不可用，请刷新页面重试</div></div>
+                    <div class="mc-scroll" tabindex="0" aria-label="待确认来信详情"><div class="mc-empty" role="alert">来信处理面板不可用，请刷新页面重试</div></div>
                 `;
                 return;
             }
@@ -3177,7 +3177,7 @@
             const unmatched = isUnmatchedChip();
             const input = host.querySelector ? host.querySelector('.mc-search-row input[type="search"]') : null;
             if (input && typeof input.setAttribute === "function") {
-                input.setAttribute("aria-label", unmatched ? "搜索待匹配来信" : "搜索专家");
+                input.setAttribute("aria-label", unmatched ? "搜索待确认来信" : "搜索专家");
                 input.setAttribute("placeholder", unmatched ? "搜索发件邮箱、主题" : "搜索专家姓名、邮箱");
             }
             const toggle = host.querySelector ? host.querySelector('[data-action="mc-more-filters"]') : null;

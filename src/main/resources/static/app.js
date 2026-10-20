@@ -17041,8 +17041,13 @@ const MAILBOX_TAG_BADGE_CLASS = {
     "发件": "ok"
 };
 
+// 显示层改名：后端 tags 仍返回「待匹配」，筛选值与 class 继续用原 key。
+const MAILBOX_TAG_BADGE_LABELS = {
+    "待匹配": "待确认"
+};
+
 function renderMailboxTagBadges(tags) {
-    return (tags || []).map((tag) => badge(tag, MAILBOX_TAG_BADGE_CLASS[tag] || "")).join(" ");
+    return (tags || []).map((tag) => badge(MAILBOX_TAG_BADGE_LABELS[tag] || tag, MAILBOX_TAG_BADGE_CLASS[tag] || "")).join(" ");
 }
 
 function renderMailboxActions(row) {
