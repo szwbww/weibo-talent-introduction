@@ -54,6 +54,21 @@ APPROVED_REASON = "AUTO_RESPONSE_FAST_5M"
 WINDOW_SECONDS = 300
 MODES = ("scan", "apply", "rollback")
 
+# Master-plan I-5 safety fallbacks. These rows are already in MANUAL_REVIEW for a
+# reason that must never be reinterpreted as an auto-response, so scan must not
+# prove them and apply must not update them.
+PROTECTED_REASONS = (
+    "BODY_TRUNCATED",
+    "LEGACY_UID_UNVERIFIABLE",
+    "RECIPIENT_UNRESOLVED",
+    "CONTACT_NOT_FOUND",
+    "INTRODUCTION_NOT_SENT",
+)
+
+
+def is_protected_reason(reason: Optional[str]) -> bool:
+    return reason in PROTECTED_REASONS
+
 LOCK_CONTACT_SQL = "SELECT id FROM expert_contact WHERE id = %s FOR UPDATE"
 
 EARLIEST_PROCESSING_SQL = """
@@ -282,6 +297,13 @@ def scan(output_path: str) -> int:
             cursor.execute(CANDIDATE_SQL)
             candidates = cursor.fetchall()
             for candidate in candidates:
+                if is_protected_reason(candidate["process_reason"]):
+                    skipped.append({
+                        "processingId": candidate["id"],
+                        "expertContactId": candidate["expert_contact_id"],
+                        "diagnosis": "protected-reason",
+                    })
+                    continue
                 proof = prove_first_reply(
                     cursor,
                     candidate["id"],
@@ -377,6 +399,10 @@ def _reclassify_row(cursor: Any, row: Dict[str, Any]) -> Tuple[str, Dict[str, An
         return "conflict", {"processingId": processing_id, "diagnosis": "processing-not-found"}
     if candidate["expert_contact_id"] != contact_id:
         return "conflict", {"processingId": processing_id, "diagnosis": "contact-changed"}
+    # A reviewed manifest may be stale or crafted: never rewrite a row whose
+    # current reason is one of the protected safety fallbacks.
+    if is_protected_reason(candidate["process_reason"]):
+        return "skipped", {"processingId": processing_id, "diagnosis": "protected-reason"}
     if (
         candidate["process_status"] != "MANUAL_REVIEW"
         or candidate["process_reason"] != before.get("processReason")
