@@ -328,6 +328,12 @@ class ImapMailReceiveService(
             messageId = headers.messageId
         )
         val extracted = walkContent(message, context, deadlineNanos)
+        // I-2：同一次读取 receivedDate，既用于时间转换也用于「是否为真实到达时间」判断；
+        // 缺失时保留 now fallback 兼容旧行为，但 reliable=false，绝不参与五分钟窗口。
+        val receivedAt = message.receivedDate
+            ?.toInstant()
+            ?.atZone(ZoneId.systemDefault())
+            ?.toLocalDateTime()
         return ReceivedMail(
             imapUid = imapUid,
             from = extractFromHeader(headers.from) ?: extractFromEnvelope(message),
@@ -336,15 +342,13 @@ class ImapMailReceiveService(
             messageId = headers.messageId,
             inReplyTo = headers.inReplyTo,
             recipientAddresses = parseTopLevelRecipients(headers.to, headers.cc),
-            receivedAt = message.receivedDate
-                ?.toInstant()
-                ?.atZone(ZoneId.systemDefault())
-                ?.toLocalDateTime()
-                ?: LocalDateTime.now(),
+            receivedAt = receivedAt ?: LocalDateTime.now(),
             attachments = extracted.attachments,
             uidValidity = uidValidity,
             bodyTruncated = extracted.bodyTruncated,
-            linkedMaterials = extracted.linkedMaterials
+            linkedMaterials = extracted.linkedMaterials,
+            autoSubmitted = AutoSubmittedHeader.normalize(headers.autoSubmitted),
+            receivedAtReliable = receivedAt != null
         )
     }
 
@@ -356,7 +360,9 @@ class ImapMailReceiveService(
         val inReplyTo: String?,
         /** I-2：原始顶层收件人头（路由依据；BCC 不会出现在这里）。 */
         val to: String?,
-        val cc: String?
+        val cc: String?,
+        /** I-1（首封自动回复）：原始顶层 `Auto-Submitted` 全部值，由规范化统一判定。 */
+        val autoSubmitted: List<String>?
     )
 
     private fun fetchEnvelopeHeaders(message: Message): EnvelopeHeaders =
@@ -371,7 +377,9 @@ class ImapMailReceiveService(
             // I-2：只读顶层 To/Cc（与 From 同一层头读取路径），不预取完整 MIME；
             // 解析失败/缺头返回空列表，绝不阻断收信。
             to = message.getHeader("To")?.firstOrNull(),
-            cc = message.getHeader("Cc")?.firstOrNull()
+            cc = message.getHeader("Cc")?.firstOrNull(),
+            // I-1：顶层 Auto-Submitted 的全部原始值（重复/冲突在规范化时判定为非命中）。
+            autoSubmitted = message.getHeader("Auto-Submitted")?.toList()
         )
 
     /**

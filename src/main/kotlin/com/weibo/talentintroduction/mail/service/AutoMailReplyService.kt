@@ -70,7 +70,9 @@ class AutoMailReplyService(
      *  在确认点核验；本依赖按计划纳入构造，供 05 机器报告登记复用，不另加范围外参数）。 */
     private val attachmentTransferService: AttachmentTransferService,
     /** 单信处理事务边界：实际执行主体（含全部现有 DB 写）显式包裹，覆盖同类与外部调用。 */
-    private val transactionTemplate: TransactionTemplate
+    private val transactionTemplate: TransactionTemplate,
+    /** I-1/I-2/I-7：首封自动回复判断（只读锁/查询；本服务在事务末尾负责唯一写入）。 */
+    private val inboundAutoResponseDetector: InboundAutoResponseDetector
 ) {
     private val log = LoggerFactory.getLogger(AutoMailReplyService::class.java)
     private val duplicateInboundWindowMinutes = 30L
@@ -153,15 +155,27 @@ class AutoMailReplyService(
         }
         val result = try {
             transactionTemplate.execute {
-                val processed = processSingleCore(owner, businessMail, groupMembers)
-                if (notifyGroups && !skipImapAck && processed.expertContactId != null &&
+                // I-4/I-7：本调用局部资格上下文（不用服务字段/ThreadLocal）；回调在
+                // processSingleCore 通过原安全/首发检查、且本封尚未写入时取得首封快照。
+                var firstReplyReason: String? = null
+                val processed = processSingleCore(owner, businessMail, groupMembers) { contactId, accountCode ->
+                    firstReplyReason = inboundAutoResponseDetector.evaluateFirstReply(
+                        contactId,
+                        accountCode,
+                        businessMail
+                    )
+                }
+                // I-3/I-4：原业务流程已完整执行；仅在本封新创建且仍为 MANUAL_REVIEW 时
+                // 于同一事务末尾调整待处理归类，绝不提前 return 绕过晋级/发送/附件/通知。
+                val classified = reclassifyFirstReplyAutoResponse(owner, businessMail, firstReplyReason, processed)
+                if (notifyGroups && !skipImapAck && classified.expertContactId != null &&
                     owner.accountCode != "SIMULATOR_NOOP" && account.accountCode != "SIMULATOR_NOOP" &&
-                    processed.outcome != SinglePipelineOutcome.DUPLICATE_IMAP_UID &&
-                    processed.outcome != SinglePipelineOutcome.DUPLICATE_INBOUND_MESSAGE) {
+                    classified.outcome != SinglePipelineOutcome.DUPLICATE_IMAP_UID &&
+                    classified.outcome != SinglePipelineOutcome.DUPLICATE_INBOUND_MESSAGE) {
                     checkNotNull(inboundNotificationService) { "Expert inbound notification service is required" }
                         .enqueueBestEffort(owner.accountCode, businessMail.uidValidity, businessMail.imapUid)
                 }
-                processed
+                classified
             }
         } catch (e: DataIntegrityViolationException) {
             // I-3：唯一键异常只在确实存在同一物理键时视为并发重复，其余异常向外抛。
@@ -185,6 +199,44 @@ class AutoMailReplyService(
             received.imapUid
         ) != null
 
+    /**
+     * I-3/I-4：仅把本封**新创建**、仍为 MANUAL_REVIEW 的 processing 行改为
+     * PROCESSED/AUTO_RESPONSE；resolved_* 保持原值（新行为 null），其余字段不动。
+     * 原已 PROCESSED、未落行、资格未命中或内容/物理重复一律原样返回。
+     */
+    private fun reclassifyFirstReplyAutoResponse(
+        owner: MailSenderAccount,
+        received: ReceivedMail,
+        reason: String?,
+        result: SinglePipelineResult
+    ): SinglePipelineResult {
+        if (reason == null) return result
+        if (result.outcome == SinglePipelineOutcome.DUPLICATE_IMAP_UID ||
+            result.outcome == SinglePipelineOutcome.DUPLICATE_INBOUND_MESSAGE
+        ) {
+            return result
+        }
+        // 物理键在本事务前已判重为空，因此同键行只可能是本封新行；仍以当前读确认状态。
+        val created = inboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid(
+            owner.accountCode,
+            received.uidValidity,
+            received.imapUid
+        ) ?: return result
+        if (created.processStatus != "MANUAL_REVIEW") return result
+        inboundMailProcessingRepository.save(
+            created.copy(
+                processStatus = "PROCESSED",
+                processReason = reason,
+                reasonType = InboundAutoResponseDetector.REASON_TYPE_AUTO_RESPONSE,
+                updatedAt = LocalDateTime.now()
+            )
+        )
+        return result.copy(
+            outcome = SinglePipelineOutcome.AUTO_RESPONSE_PENDING_EXCLUDED,
+            reason = reason
+        )
+    }
+
     /** I-2：物理组成员（owner + 直接别名账号）——收件人路由、历史指纹核验与同组探针识别的共同口径。 */
     private fun groupMembersOf(owner: MailSenderAccount): List<MailSenderAccount> =
         mailSenderAccountService.listAccounts()
@@ -194,7 +246,8 @@ class AutoMailReplyService(
     private fun processSingleCore(
         owner: MailSenderAccount,
         received: ReceivedMail,
-        groupMembers: List<MailSenderAccount>
+        groupMembers: List<MailSenderAccount>,
+        onEligibleFirstReply: (contactId: Long, accountCode: String) -> Unit
     ): SinglePipelineResult {
         // 历史 0 代际行（V134 之前，组内任意逻辑账号且 mailbox_owner_code IS NULL）：仅当
         // 同 UID 且非空 Message-ID、from、秒级 receivedAt 全部吻合才认领同一代际（视为已
@@ -224,6 +277,9 @@ class AutoMailReplyService(
         val accountCode = account.accountCode
 
         val contact = expertEmailAliasService.findContactByEmailOrAlias(received.from)
+        // I-7：已匹配专家即先锁定既有 contact 行（只锁不改），必须早于本封任何写入；
+        // 未匹配路径不取锁。该锁只串行同一专家的事务，不改变原分支结果。
+        contact?.id?.let { inboundAutoResponseDetector.lockContact(it) }
         // I-4：正文被有界截断（03 元数据模式）→ 一律人工 BODY_TRUNCATED，禁自动回复。
         if (received.bodyTruncated) {
             return reviewManualOnly(
@@ -283,6 +339,10 @@ class AutoMailReplyService(
                 reason = "INTRODUCTION_NOT_SENT"
             )
         }
+
+        // I-1/I-7：已通过原安全/首发检查，且本封尚未写入 processing/mail_record，
+        // 此刻取得首封资格快照；非首封时 detector 立即返回 null，不解析后续规则。
+        onEligibleFirstReply(contactId, accountCode)
 
         if (!autoReplySettingService.isGlobalEnabled()) {
             val cleanedBody = mailBodyCleaner.clean(received.body)
@@ -1574,7 +1634,12 @@ enum class SinglePipelineOutcome {
     /** I-2：收件人无法唯一判定 → 仅一条 MANUAL_REVIEW/RECIPIENT_UNRESOLVED（owner 归属）。 */
     RECIPIENT_UNRESOLVED,
     /** I-3/I-4（03）：同物理组自检探针在业务事务前被忽略，不落任何业务表。 */
-    SELF_CHECK_IGNORED
+    SELF_CHECK_IGNORED,
+    /**
+     * I-1/I-3/I-4：首封资格成立且命中自动回复规则的来信已由 MANUAL_REVIEW 调为
+     * PROCESSED/AUTO_RESPONSE；刻意不属于 [MANUAL_REVIEW_OUTCOMES]（批量待处理计数）。
+     */
+    AUTO_RESPONSE_PENDING_EXCLUDED
 }
 
 data class SinglePipelineResult(

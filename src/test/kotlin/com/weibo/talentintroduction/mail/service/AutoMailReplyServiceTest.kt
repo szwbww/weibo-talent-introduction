@@ -66,6 +66,7 @@ class AutoMailReplyServiceTest {
     private val attachmentTransferService = Mockito.mock(AttachmentTransferService::class.java)
     private val transactionManager = Mockito.mock(org.springframework.transaction.PlatformTransactionManager::class.java)
     private val transactionTemplate = org.springframework.transaction.support.TransactionTemplate(transactionManager)
+    private val inboundAutoResponseDetector = Mockito.mock(InboundAutoResponseDetector::class.java)
     private val mailComposeTemplateService = Mockito.mock(MailComposeTemplateService::class.java)
     private val groundedAutoReplyDecisionService = Mockito.mock(GroundedAutoReplyDecisionService::class.java)
     private val statusHistoryRepository = Mockito.mock(ExpertContactStatusHistoryRepository::class.java)
@@ -152,7 +153,8 @@ class AutoMailReplyServiceTest {
         mailVariableService,
         autoReplyConfidenceLogRepository,
         attachmentTransferService,
-        transactionTemplate
+        transactionTemplate,
+        inboundAutoResponseDetector
     )
 
     @org.junit.jupiter.api.BeforeEach
@@ -1025,6 +1027,224 @@ class AutoMailReplyServiceTest {
         assertEquals("GLOBAL_AUTO_REPLY_DISABLED", result.reason)
         Mockito.verifyNoInteractions(deliveryService)
         Mockito.verifyNoInteractions(groundedAutoReplyDecisionService)
+    }
+
+    @Test
+    fun `first reply header reclassifies new manual review row and reports exclusion`() {
+        Mockito.`when`(autoReplySettingService.isGlobalEnabled()).thenReturn(false)
+        val account = account("sender")
+        val contact = introSentContact()
+        val received = reply(autoSubmitted = "auto-replied", receivedAtReliable = true)
+        stubAutoReplyPipeline(account, contact, received)
+        Mockito.`when`(inboundAutoResponseDetector.evaluateFirstReply(11L, "sender", received))
+            .thenReturn(InboundAutoResponseDetector.AUTO_RESPONSE_HEADER)
+        val created = createdManualReview(received)
+        Mockito.`when`(
+            inboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid("sender", 1L, 101L)
+        ).thenReturn(null, created)
+
+        val result = service.processSingle(account, received, skipImapAck = true)
+
+        assertEquals(SinglePipelineOutcome.AUTO_RESPONSE_PENDING_EXCLUDED, result.outcome)
+        assertEquals(InboundAutoResponseDetector.AUTO_RESPONSE_HEADER, result.reason)
+        assertTrue(result.recorded)
+        assertEquals(11L, result.expertContactId)
+        assertEquals(100L, result.inboundMailRecordId)
+        assertFalse(result.outcome in MANUAL_REVIEW_OUTCOMES, "排除结果不得再计入待处理")
+        val captor = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
+        Mockito.verify(inboundMailProcessingRepository, Mockito.times(2)).save(captor.capture())
+        val original = captor.allValues.first()
+        assertEquals("MANUAL_REVIEW", original.processStatus)
+        assertEquals("GLOBAL_AUTO_REPLY_DISABLED", original.processReason)
+        val reclassified = captor.allValues.last()
+        assertEquals(created.id, reclassified.id)
+        assertEquals("PROCESSED", reclassified.processStatus)
+        assertEquals(InboundAutoResponseDetector.REASON_TYPE_AUTO_RESPONSE, reclassified.reasonType)
+        assertEquals(InboundAutoResponseDetector.AUTO_RESPONSE_HEADER, reclassified.processReason)
+        assertNull(reclassified.resolvedAt, "绝不冒充人工处理")
+        assertNull(reclassified.resolvedBy)
+        assertEquals(created.createdAt, reclassified.createdAt)
+        assertEquals(original.body, reclassified.body)
+        assertEquals(original.subject, reclassified.subject)
+    }
+
+    @Test
+    fun `first reply fast window reclassifies with the window reason`() {
+        Mockito.`when`(autoReplySettingService.isGlobalEnabled()).thenReturn(false)
+        val account = account("sender")
+        val contact = introSentContact()
+        val received = reply(receivedAtReliable = true)
+        stubAutoReplyPipeline(account, contact, received)
+        Mockito.`when`(inboundAutoResponseDetector.evaluateFirstReply(11L, "sender", received))
+            .thenReturn(InboundAutoResponseDetector.AUTO_RESPONSE_FAST_5M)
+        val created = createdManualReview(received)
+        Mockito.`when`(
+            inboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid("sender", 1L, 101L)
+        ).thenReturn(null, created)
+
+        val result = service.processSingle(account, received, skipImapAck = true)
+
+        assertEquals(SinglePipelineOutcome.AUTO_RESPONSE_PENDING_EXCLUDED, result.outcome)
+        assertEquals(InboundAutoResponseDetector.AUTO_RESPONSE_FAST_5M, result.reason)
+        val captor = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
+        Mockito.verify(inboundMailProcessingRepository, Mockito.times(2)).save(captor.capture())
+        assertEquals("PROCESSED", captor.allValues.last().processStatus)
+    }
+
+    @Test
+    fun `unmatched first-reply rules leave the original manual review result`() {
+        Mockito.`when`(autoReplySettingService.isGlobalEnabled()).thenReturn(false)
+        val account = account("sender")
+        val contact = introSentContact()
+        val received = reply(autoSubmitted = "no", receivedAtReliable = true)
+        stubAutoReplyPipeline(account, contact, received)
+
+        val result = service.processSingle(account, received, skipImapAck = true)
+
+        assertEquals(SinglePipelineOutcome.GLOBAL_AUTO_REPLY_DISABLED, result.outcome)
+        assertEquals("GLOBAL_AUTO_REPLY_DISABLED", result.reason)
+        Mockito.verify(inboundMailProcessingRepository, Mockito.times(1))
+            .save(Mockito.any(InboundMailProcessing::class.java))
+        Mockito.verify(inboundMailProcessingRepository, Mockito.times(1))
+            .findByMailboxOwnerCodeAndUidValidityAndImapUid("sender", 1L, 101L)
+    }
+
+    @Test
+    fun `second reply never reclassifies even when the detector reports no eligibility`() {
+        Mockito.`when`(autoReplySettingService.isGlobalEnabled()).thenReturn(false)
+        val account = account("sender")
+        val contact = introSentContact()
+        val received = reply(autoSubmitted = "auto-replied", receivedAtReliable = true)
+        stubAutoReplyPipeline(account, contact, received)
+        Mockito.`when`(inboundAutoResponseDetector.evaluateFirstReply(11L, "sender", received))
+            .thenReturn(null)
+
+        val result = service.processSingle(account, received, skipImapAck = true)
+
+        assertEquals(SinglePipelineOutcome.GLOBAL_AUTO_REPLY_DISABLED, result.outcome)
+        Mockito.verify(inboundAutoResponseDetector).evaluateFirstReply(11L, "sender", received)
+        Mockito.verify(inboundMailProcessingRepository, Mockito.times(1))
+            .save(Mockito.any(InboundMailProcessing::class.java))
+    }
+
+    @Test
+    fun `unmatched receipt never locks or evaluates first-reply rules`() {
+        val account = account("sender")
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com")).thenReturn(null)
+
+        val result = service.processSingle(account, reply(autoSubmitted = "auto-replied"), skipImapAck = true)
+
+        assertEquals(SinglePipelineOutcome.UNMATCHED_CONTACT, result.outcome)
+        assertEquals("CONTACT_NOT_FOUND", result.reason)
+        Mockito.verifyNoInteractions(inboundAutoResponseDetector)
+    }
+
+    @Test
+    fun `truncated matched body locks but never evaluates the new rules`() {
+        val account = account("sender")
+        val contact = introSentContact()
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
+            .thenReturn(contact)
+
+        val result = service.processSingle(account, reply(bodyTruncated = true), skipImapAck = true)
+
+        assertEquals(SinglePipelineOutcome.BODY_TRUNCATED, result.outcome)
+        Mockito.verify(inboundAutoResponseDetector).lockContact(11L)
+        Mockito.verify(inboundAutoResponseDetector, Mockito.never())
+            .evaluateFirstReply(anyValue(11L), anyValue("sender"), anyValue(reply(bodyTruncated = true)))
+    }
+
+    @Test
+    fun `physical duplicate skips first-reply locking and classification`() {
+        val processing = InboundMailProcessing(
+            id = 99, senderAccountCode = "sender", mailboxOwnerCode = "sender",
+            uidValidity = 1, imapUid = 101, messageId = "reply-1", fromEmail = "expert@example.com",
+            subject = "reply", receivedAt = reply().receivedAt, processStatus = "PROCESSED",
+            processReason = "done", expertContactId = 11
+        )
+        Mockito.`when`(
+            inboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid("sender", 1L, 101L)
+        ).thenReturn(processing)
+
+        val result = service.processSingle(account("sender"), reply(), skipImapAck = true)
+
+        assertEquals(SinglePipelineOutcome.DUPLICATE_IMAP_UID, result.outcome)
+        Mockito.verifyNoInteractions(inboundAutoResponseDetector)
+        Mockito.verify(inboundMailProcessingRepository, Mockito.never())
+            .save(Mockito.any(InboundMailProcessing::class.java))
+    }
+
+    @Test
+    fun `reclassification failure propagates and never acknowledges the uid`() {
+        Mockito.`when`(autoReplySettingService.isGlobalEnabled()).thenReturn(false)
+        val account = account("sender")
+        val contact = introSentContact()
+        val received = reply(receivedAtReliable = true)
+        stubAutoReplyPipeline(account, contact, received)
+        Mockito.`when`(inboundAutoResponseDetector.evaluateFirstReply(11L, "sender", received))
+            .thenReturn(InboundAutoResponseDetector.AUTO_RESPONSE_FAST_5M)
+        val created = createdManualReview(received)
+        Mockito.`when`(
+            inboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid("sender", 1L, 101L)
+        ).thenReturn(null, created)
+        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
+            .thenReturn(created)
+            .thenThrow(IllegalStateException("reclassification write failed"))
+
+        assertThrows(IllegalStateException::class.java) {
+            service.processSingle(account, received)
+        }
+
+        Mockito.verify(receiveService, Mockito.never())
+            .markSeen(anyValue(account("sender")), anyValue(101L))
+    }
+
+    @Test
+    fun `batch summary counts an excluded first reply as recorded but not manual review`() {
+        Mockito.`when`(autoReplySettingService.isGlobalEnabled()).thenReturn(false)
+        val account = account("sender")
+        val contact = introSentContact()
+        val received = reply(autoSubmitted = "auto-replied", receivedAtReliable = true)
+        stubAutoReplyPipeline(account, contact, received)
+        Mockito.`when`(inboundAutoResponseDetector.evaluateFirstReply(11L, "sender", received))
+            .thenReturn(InboundAutoResponseDetector.AUTO_RESPONSE_HEADER)
+        val created = createdManualReview(received)
+        Mockito.`when`(
+            inboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid("sender", 1L, 101L)
+        ).thenReturn(null, created)
+        Mockito.`when`(contactRepository.findById(11L))
+            .thenReturn(java.util.Optional.of(contact))
+
+        val result = service.receiveAndAutoReply("sender", 5)
+
+        assertEquals(1, result.recorded)
+        assertEquals(0, result.manualReview)
+        assertEquals(SinglePipelineOutcome.AUTO_RESPONSE_PENDING_EXCLUDED.name,
+            result.repliedExperts.single().outcome)
+    }
+
+    @Test
+    fun `uid backfill applies the same first-reply classification`() {
+        Mockito.`when`(autoReplySettingService.isGlobalEnabled()).thenReturn(false)
+        val account = account("sender")
+        val contact = introSentContact()
+        val received = reply(receivedAtReliable = true)
+        Mockito.`when`(accountService.getAutoReceiveAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchByUids(account, listOf(101L))).thenReturn(listOf(received))
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias(received.from))
+            .thenReturn(contact)
+        defaultPipelineWrites()
+        Mockito.`when`(inboundAutoResponseDetector.evaluateFirstReply(11L, "sender", received))
+            .thenReturn(InboundAutoResponseDetector.AUTO_RESPONSE_FAST_5M)
+        val created = createdManualReview(received)
+        Mockito.`when`(
+            inboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid("sender", 1L, 101L)
+        ).thenReturn(null, created)
+
+        val results = service.processByUids("sender", listOf(101L))
+
+        assertEquals(SinglePipelineOutcome.AUTO_RESPONSE_PENDING_EXCLUDED, results.single().outcome)
+        assertEquals(InboundAutoResponseDetector.AUTO_RESPONSE_FAST_5M, results.single().reason)
     }
 
     @Test
@@ -2323,6 +2543,47 @@ class AutoMailReplyServiceTest {
             expertContactId = 11L
         )
 
+    /** 本封新创建、仍为 MANUAL_REVIEW 的 processing 行（事务末尾归类前的当前读结果）。 */
+    private fun createdManualReview(received: ReceivedMail): InboundMailProcessing =
+        InboundMailProcessing(
+            id = 999L,
+            senderAccountCode = "sender",
+            mailboxOwnerCode = "sender",
+            uidValidity = received.uidValidity,
+            imapUid = received.imapUid,
+            messageId = received.messageId,
+            fromEmail = received.from,
+            subject = received.subject,
+            body = received.body,
+            cleanedBody = received.body,
+            receivedAt = received.receivedAt,
+            processStatus = "MANUAL_REVIEW",
+            processReason = "GLOBAL_AUTO_REPLY_DISABLED",
+            reasonType = "GLOBAL_AUTO_REPLY_DISABLED",
+            expertContactId = 11L,
+            createdAt = LocalDateTime.of(2026, 5, 22, 10, 0, 1),
+            updatedAt = LocalDateTime.of(2026, 5, 22, 10, 0, 1)
+        )
+
+    /** UID 回补路径的最小业务写桩（无 fetchInboundSince 依赖）。 */
+    private fun defaultPipelineWrites() {
+        Mockito.`when`(
+            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+        ).thenReturn(true)
+        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+            val record = invocation.getArgument<MailRecord>(0)
+            record.copy(id = record.id ?: 100)
+        }
+        Mockito.`when`(
+            mailAttachmentService.saveInboundAttachments(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyList())
+        ).thenReturn(emptyList())
+        Mockito.`when`(contactRepository.save(Mockito.any(ExpertContact::class.java))).thenAnswer { invocation ->
+            invocation.getArgument<ExpertContact>(0)
+        }
+        Mockito.`when`(statusHistoryRepository.save(Mockito.any(ExpertContactStatusHistory::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<ExpertContactStatusHistory>(0) }
+    }
+
     private fun outboundRecord(id: Long, accountCode: String, messageId: String): MailRecord =
         MailRecord(
             id = id,
@@ -3016,7 +3277,9 @@ class AutoMailReplyServiceTest {
         messageId: String = "reply-1",
         bodyTruncated: Boolean = false,
         to: List<String> = emptyList(),
-        inReplyTo: String = "intro-1"
+        inReplyTo: String = "intro-1",
+        autoSubmitted: String? = null,
+        receivedAtReliable: Boolean = false
     ): ReceivedMail =
         ReceivedMail(
             imapUid = imapUid,
@@ -3030,7 +3293,9 @@ class AutoMailReplyServiceTest {
             attachments = attachments,
             uidValidity = uidValidity,
             bodyTruncated = bodyTruncated,
-            linkedMaterials = linkedMaterials
+            linkedMaterials = linkedMaterials,
+            autoSubmitted = autoSubmitted,
+            receivedAtReliable = receivedAtReliable
         )
 
     /** 非空参数的 Mockito 匹配器（Mockito.any() 对 Kotlin 非空形参会触发 NPE）。 */

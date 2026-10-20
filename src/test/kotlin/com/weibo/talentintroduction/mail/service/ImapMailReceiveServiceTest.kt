@@ -661,6 +661,65 @@ class ImapMailReceiveServiceTest {
         assertEquals(42L, received.uidValidity)
     }
 
+    @Test
+    fun `top-level auto-submitted is normalized and params are stripped`() {
+        val message = multipartMessage(parts = listOf(MimeBodyPart().apply { setText("Hello body") }))
+        message.setHeader("Auto-Submitted", "Auto-Replied; owner=ml@university.edu")
+
+        val received = convert(message, metadataOnly = true)
+
+        assertEquals("auto-replied", received.autoSubmitted)
+        assertEquals("Hello body", received.body)
+    }
+
+    @Test
+    fun `non auto-replied and conflicting auto-submitted values never count as a single hit`() {
+        val noHeader = multipartMessage(parts = listOf(MimeBodyPart().apply { setText("Hello body") }))
+        noHeader.setHeader("Auto-Submitted", "no")
+        assertEquals("no", convert(noHeader, metadataOnly = true).autoSubmitted)
+
+        val generated = multipartMessage(parts = listOf(MimeBodyPart().apply { setText("Hello body") }))
+        generated.setHeader("Auto-Submitted", "auto-generated")
+        assertEquals("auto-generated", convert(generated, metadataOnly = true).autoSubmitted)
+
+        val conflicting = multipartMessage(parts = listOf(MimeBodyPart().apply { setText("Hello body") }))
+        conflicting.addHeader("Auto-Submitted", "auto-replied")
+        conflicting.addHeader("Auto-Submitted", "no")
+        assertNull(convert(conflicting, metadataOnly = true).autoSubmitted)
+    }
+
+    @Test
+    fun `real imap received date is converted once and marked reliable`() {
+        val date = java.util.Date(1_760_000_000_000L)
+        val message = FixedReceivedDateMessage(Session.getDefaultInstance(Properties()), date)
+        message.setFrom(InternetAddress("expert@university.edu"))
+        message.subject = "Re: Introduction"
+        message.setHeader("Message-ID", "<received-date@example.com>")
+        val multipart = MimeMultipart("mixed")
+        multipart.addBodyPart(MimeBodyPart().apply { setText("Hello body") })
+        message.setContent(multipart)
+        message.saveChanges()
+
+        val received = convert(message, metadataOnly = true)
+
+        assertTrue(received.receivedAtReliable)
+        assertEquals(
+            date.toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime(),
+            received.receivedAt
+        )
+    }
+
+    @Test
+    fun `missing imap received date keeps the fallback time but is never reliable`() {
+        val received = convert(
+            multipartMessage(parts = listOf(MimeBodyPart().apply { setText("Hello body") })),
+            metadataOnly = true
+        )
+
+        assertFalse(received.receivedAtReliable, "缺失真实到达时间时不得把 fallback 当可判定时间")
+        assertNotNull(received.receivedAt)
+    }
+
     private fun subjectMessage(subject: String): MimeMessage {
         val session = Session.getDefaultInstance(Properties())
         val message = MimeMessage(session)
@@ -777,4 +836,12 @@ private class ContentBlockedMessage(session: Session) : MimeMessage(session) {
         streamAccesses++
         throw IOException("stream access blocked by fixture")
     }
+}
+
+/** 固定 IMAP `receivedDate` 的夹具（MimeMessage 不提供公开 setter，只读日期由服务端提供）。 */
+private class FixedReceivedDateMessage(
+    session: Session,
+    private val receivedDate: java.util.Date
+) : MimeMessage(session) {
+    override fun getReceivedDate(): java.util.Date = receivedDate
 }
