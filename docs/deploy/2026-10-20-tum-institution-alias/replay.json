@@ -1,0 +1,36 @@
+{
+  "status": "PASS",
+  "execution": "server-only read-only comparison; no original payload exported",
+  "samples": [
+    {
+      "itemId": 152,
+      "before": "PENDING",
+      "after": "APOLLO_CLEAR",
+      "matchedPersonId": "63a47d8d3160610001a93c00",
+      "qualification": "UNKNOWN",
+      "businessWrites": 0,
+      "providerRequests": 0,
+      "reasons": [
+        "APOLLO_INSTITUTION_ALIAS_TUM_V1",
+        "APOLLO_MATCH_POLICY_V2",
+        "APOLLO_HISTORICAL_INSTITUTION_MATCH",
+        "QUALIFICATION_EVIDENCE_MISSING"
+      ]
+    },
+    {
+      "itemId": 170,
+      "before": "PENDING",
+      "after": "APOLLO_CLEAR",
+      "matchedPersonId": "5e84b846833c0e00011be45b",
+      "qualification": "UNKNOWN",
+      "businessWrites": 0,
+      "providerRequests": 0,
+      "reasons": [
+        "APOLLO_INSTITUTION_ALIAS_TUM_V1",
+        "APOLLO_MATCH_POLICY_V2",
+        "APOLLO_HISTORICAL_INSTITUTION_MATCH",
+        "QUALIFICATION_EVIDENCE_MISSING"
+      ]
+    }
+  ]
+}

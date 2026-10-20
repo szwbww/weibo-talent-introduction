@@ -1,0 +1,31 @@
+{
+  "status": "published",
+  "commit": "56829c97b7380848b73c61466dec8ea6279e3741",
+  "warSha256": "2abe76427b635f363461d637c236e1b49c60c22c05f7953b60bc9c532bc9373e",
+  "oldWarSha256": "1bf6da1b70b6e82e8385b9312e19bc4a10930e1a0bcfc68334b5e85412ffd386",
+  "backup": "/opt/apache-tomcat-9.0.71/deploy/backups/tum-alias-20261020-164313-56829c97b738",
+  "pid": 14437,
+  "health": "HTTP 200",
+  "expandedClassesMatchWar": {
+    "DiscoveryInstitutionNormalizer": true,
+    "DiscoveryVerificationRules": true,
+    "DiscoveryVerificationRegistrationService": true,
+    "DiscoveryVerificationWorker": true,
+    "DiscoveryVerificationQueryService": true,
+    "ApolloSearchEvidence": true
+  },
+  "countrySupplementEnabled": true,
+  "configUnchanged": true,
+  "newRunInstitutionAliasVersion": 1,
+  "at": "2026-10-20T16:44:19.468937",
+  "postcheck": {
+    "warSha256": "2abe76427b635f363461d637c236e1b49c60c22c05f7953b60bc9c532bc9373e",
+    "pid": 14437,
+    "java": "/usr/lib/jvm/zulu11.90.205-ca-jdk11.0.32.1-linux_x64/bin/java",
+    "countrySupplement": "true",
+    "additionalConfigLoaded": true,
+    "countryOverrideConflict": false,
+    "springApplicationJsonPresent": false,
+    "tasks": "id\tstatus\n27083\tCANCELLED\n27063\tCANCELLED\n26839\tCANCELLED\nstate\tCOUNT(*)\nCOMPLETED\t229\n"
+  }
+}

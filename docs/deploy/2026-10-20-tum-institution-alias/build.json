@@ -1,0 +1,29 @@
+{
+  "status": "BUILD_PASS",
+  "baseCommit": "ddd704bab0e15b47c36410fb8fe6d15b4a511dd6",
+  "command": "JAVA_HOME=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home mvn package -Dtest='*Test,DiscoveryVerificationFlowIT,DiscoveryCountrySupplementFlowIT' -DargLine=-Dapi.version=1.44",
+  "backend": {
+    "tests": 5290,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 21
+  },
+  "frontend": {
+    "tests": 1725,
+    "passed": 1725,
+    "failed": 0
+  },
+  "warSha256": "2abe76427b635f363461d637c236e1b49c60c22c05f7953b60bc9c532bc9373e",
+  "warBytes": 50906955,
+  "sourceHashes": {
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryInstitutionNormalizer.kt": "39e28c63f1c3e2e48aa8878ab652edfa770ee540ea85b4bbd62c791eebe7fcfc",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryService.kt": "551dbbeab4d04fc5764ed5d44557feaca96f4f59bb4c17aba198de0e8841ed32",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt": "d2a509331373297d773d0b8c0b75d597ecbf1abfd6e0a91b08a0c5baab286da7",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt": "52df3482ed58923c63ec5fb082946fdbdc41d15550dca134c2092307dbf446ab",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt": "ea9ae7629c8edcfd76a1c513521de83e39f6b4881757f4970931fb1c054f0248",
+    "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationFlowIT.kt": "6927d8a3d3267a9af3557ca152259ac84fe9ec95aff192891ca49298306c35e8",
+    "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationIntegrationTest.kt": "78038cd1c7517ef42b4ead655f4ea351188b8deb67751fe0150b7505ec81d1b3",
+    "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryInstitutionAliasTest.kt": "6a0462389460658a2289cb6f65a2fab5756c6fd6a761693f7dadb1ac33b7896a"
+  },
+  "codeCommit": "56829c9"
+}
