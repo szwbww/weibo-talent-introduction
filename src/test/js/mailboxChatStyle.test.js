@@ -145,6 +145,23 @@ describe("待确认显示：文案、option 原值与缓存键", () => {
         assert.ok(!cssSource.includes("待确认"), "mailbox-chat.css 不应出现业务文案");
         assert.ok(stylesSource.includes("#view-mailbox.mc-refined .mc-filter{flex:0 0 auto;min-height:36px;padding:7px 5px 10px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:#7d8ca2;font-size:12px;line-height:1.5;white-space:nowrap}"), "chip 基础规则保持不变");
     });
+
+    it("I-3（amend）：两个固定键测试已指向新 slug，旧 slug 无残留", () => {
+        const pinned = {
+            "discoveryVerification.test.js": {
+                source: fs.readFileSync(path.join(__dirname, "discoveryVerification.test.js"), "utf-8"),
+                assertion: "assert.match(values[0], /^\\d{8}-auto-response-confirmation$/);"
+            },
+            "discoveryReview.test.js": {
+                source: fs.readFileSync(path.join(__dirname, "discoveryReview.test.js"), "utf-8"),
+                assertion: "assert.match(keys[0], /^\\d{8}-auto-response-confirmation$/);"
+            }
+        };
+        Object.entries(pinned).forEach(([name, entry]) => {
+            assert.ok(entry.source.includes(entry.assertion), `${name} 必须固定新 slug`);
+            assert.ok(!entry.source.includes("apollo-matching-v2"), `${name} 不得残留旧 slug`);
+        });
+    });
 });
 
 describe("S-6: DOM class 白名单与模板卫生", () => {
