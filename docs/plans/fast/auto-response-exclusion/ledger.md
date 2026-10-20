@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-20/auto-response-exclusion.md
 
-- Status: RUNNING
+- Status: READY_FOR_HUMAN_REVIEW
 - Master plan: docs/plans/2026-10-20/auto-response-exclusion.md (commit a73ebf38df69b25839e7926bc09f66541574ccb8)
 - Amendments: A1,A2
 - Master base: 5f1e99d4fe024d698759c16ae5e2c9ba40554648
@@ -8,7 +8,7 @@
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-auto-response-exclusion
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
-- Started: 2026-10-20T13:05:00+08:00
+- Started: 2026-10-20T21:47:12+08:00
 - Current child: N/A
 - Waiting role: N/A
 - Agent attempt: 0
@@ -19,7 +19,7 @@
 ## Baseline
 - Invocation authorizes one isolated worktree and branch. Untracked master/child plans copied byte-for-byte from the user worktree; original worktree untouched.
 - Master base resolves to the plan-declared baseline `5f1e99d4fe024d698759c16ae5e2c9ba40554648`; branch `fast/auto-response-exclusion`.
-- Plan hashes: master/child01 `9d77540b671b0cef36f02ea72862215b9f50d928b34e4577540f66f6f1e1472c`; child02 `96de6aeac5609cfb4a049b0c631525fcb5096d91e56f96e292914f7b81bbd9b9`.
+- Initial plan hashes (pre-amendment): master/child01 `9d77540b671b0cef36f02ea72862215b9f50d928b34e4577540f66f6f1e1472c`; child02 `96de6aeac5609cfb4a049b0c631525fcb5096d91e56f96e292914f7b81bbd9b9`. Current identities are recorded in Children and Amendments.
 - Validator `python3 /Users/lukai/.agents/skills/fast-p/scripts/validate_fast_p.py --help`: exit 0, `--through-child` supported.
 - Required JDK for this repository is `/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home` (tzdb 2026b). The plan's literal `/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home` is 11.0.15 and fails 19 `ExpertContactLocationServiceTest` cases on missing `America/Coyhaique`; that run is an environment failure, not a product baseline.
 - Local MySQL IT prerequisite: Docker engine 29.8.2; container `ti-mysql-it` (mysql:8.0, 127.0.0.1:3306, root/root, db `talent_introduction`) started and pinged successfully.
