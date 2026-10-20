@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-10-20/auto-response-exclusion.md
+
+- Status: REPAIR_PLAN_READY
+- Review epoch: 1
+- Master plan: docs/plans/2026-10-20/auto-response-exclusion.md (sha256 01004d3ded06a9ac2fcf17ac642a27643445064beb0f342f283b646cc04e7625)
+- Governing master identity: sha256 01004d3ded06a9ac2fcf17ac642a27643445064beb0f342f283b646cc04e7625; recorded commit a73ebf38df69b25839e7926bc09f66541574ccb8
+- Invoked master identity: sha256 9d77540b671b0cef36f02ea72862215b9f50d928b34e4577540f66f6f1e1472c
+- Master identity state: AMENDMENT_RECORDED
+- Governing amendment: A1; master rule `变更文件清单 / 配套文案计划总量`; reason `缓存键 bump 使两个固定旧 slug 的正则测试必须同改，经用户批准将前端授权文件由 5 扩至 7`; approval `HUMAN:批准扩展授权 (2026-10-20T23:43:31+08:00)`
+- Amendments: A1 (master) and A2 (companion plan), both recorded in docs/plans/fast/auto-response-exclusion/ledger.md. Governing diff changes the companion scope from 5 to 7 frontend files and the aggregate total from 15 to 17; A2 authorizes `src/test/js/discoveryVerification.test.js` and `src/test/js/discoveryReview.test.js` only for their cache-key regex slug assertions. Those two files were changed in the reviewed boundary and are retroactively authorized by the recorded amendment.
+- Fast-p ledger: docs/plans/fast/auto-response-exclusion/ledger.md (sha256 6f0de14b4f70818f63d6ad02d2baa8472cb8d290066bc06810dcbaaaad782389)
+- Fast-p handoff: docs/plans/fast/auto-response-exclusion/human-review-handoff.md (sha256 8b23af50017d97d07c7e0783eaa7e12480f85a04525e18322ea92ab06bf18308)
+- Master base: 5f1e99d4fe024d698759c16ae5e2c9ba40554648
+- Final code head: aee499beaaea8c282e6f453d0cecbe863724df01
+- Evidence parent before next commit: 8ab314370d4bc3409f914a294ef33a08f8364b4d
+- Previous evidence commit: N/A
+- Branch: fast/auto-response-exclusion
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-auto-response-exclusion
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: SELECTED; candidate worktree `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-auto-response-exclusion`; branch `fast/auto-response-exclusion`; master base `5f1e99d4fe024d698759c16ae5e2c9ba40554648`; final code head `aee499beaaea8c282e6f453d0cecbe863724df01`; 2 terminal children; fast-p authority `matching READY_FOR_HUMAN_REVIEW fast-p ledger and handoff`.
+- Misdirected review evidence: N/A (none found in registered worktrees)
+- Reviewer: /root/aggregate_reviewer (fresh, created after final code head; distinct from recorded fast-p writers/verifiers)
+- Reviewer attempt: 1
+- Machine result: FAIL
+- Machine report epoch: `docs/plans/review/auto-response-exclusion/machine-verification.md`, Epoch 1
+- Repair artifact: `docs/plans/fix/auto-response-exclusion/repair.md` (DRAFT_READY)
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: V-1 P1 needs explicit human approval to execute `docs/plans/fix/auto-response-exclusion/repair.md`.
