@@ -146,7 +146,10 @@ class DiscoveryVerificationQueryService(
             snapshot.profile.institution, item.sourceName, item.batchNumber, item.route,
             item.outcome?.name ?: if (item.state == VerificationState.ERROR) "ERROR" else "QUEUED",
             missing, reasonCodes(item), item.updatedAt, decision, item.projectionState, revision, item.qualification,
-            reasonCodes(item).firstOrNull { it in MATCH_REASONS }?.let(::reasonLabel),
+            reasonCodes(item).firstOrNull { it in MATCH_REASONS }?.let { reason ->
+                reasonLabel(reason) + if (DiscoveryInstitutionNormalizer.TUM_ALIAS_REASON in reasonCodes(item))
+                    " · TUM 官网英德名称对应" else ""
+            },
             payload?.search?.matchingVersion ?: 1)
     }
 
@@ -176,6 +179,7 @@ class DiscoveryVerificationQueryService(
             "APOLLO_PROFESSOR_MATCH", "APOLLO_SPECIALTY_MATCH")
         private val REASON_LABELS = mapOf(
             "APOLLO_MATCH_POLICY_V2" to "匹配准入规则 V2",
+            DiscoveryInstitutionNormalizer.TUM_ALIAS_REASON to "机构别名：慕尼黑工业大学（TUM 官网英德名称，V1）",
             "APOLLO_CURRENT_INSTITUTION_MATCH" to "当前任职匹配",
             "APOLLO_HISTORICAL_INSTITUTION_MATCH" to "历史任职匹配",
             "APOLLO_PROFESSOR_MATCH" to "教授职称匹配",

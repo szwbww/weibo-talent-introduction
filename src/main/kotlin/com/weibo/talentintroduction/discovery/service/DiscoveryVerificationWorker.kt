@@ -195,6 +195,8 @@ class DiscoveryVerificationWorker(
             val run = repository.findRun(lease.ownerExecutionId) ?: error("Verification run missing")
             val matchingVersion = mapper.readTree(run.settingsJson).path("apolloMatchingVersion").asInt(1)
             require(matchingVersion in 1..2)
+            val aliasVersion = mapper.readTree(run.settingsJson).path("institutionAliasVersion").asInt(0)
+            require(aliasVersion in 0..DiscoveryInstitutionNormalizer.ALIAS_VERSION)
             if (payload.progress.stage == "LOCAL_EVIDENCE") {
                 payload = payload.copy(evidence = parser.rebuild(snapshot, payload.orcidCompleted.mapNotNull { it.document }, payload.evidence))
                 val existing = evaluate(snapshot)
@@ -229,7 +231,7 @@ class DiscoveryVerificationWorker(
                         rules.identityEmployments(snapshot, payload.evidence), emptyList())
                 else payload.institutionNormalization
                 payload = payload.copy(progress = VerificationProgress(stage = "APOLLO_SEARCH"),
-                    search = ApolloSearchEvidence(matchingVersion = matchingVersion, academicResearchFields = snapshot.profile.researchFields),
+                    search = ApolloSearchEvidence(matchingVersion = matchingVersion, academicResearchFields = snapshot.profile.researchFields, institutionAliasVersion = aliasVersion),
                     institutionNormalization = normalization, queries = searchQueries(snapshot, payload.evidence, normalization,
                         formalName = matchingVersion == 2))
                 entered = entered ?: clock.instant()
@@ -273,7 +275,7 @@ class DiscoveryVerificationWorker(
                         val candidates = payload.search!!.candidates.filter {
                             rules.nameMatches(it, names, payload.search!!.queryNames, masked = true)
                         }
-                        val strong = candidates.filter { rules.matchReason(snapshot, payload.evidence, it, null) in
+                        val strong = candidates.filter { rules.matchReason(snapshot, payload.evidence, it, null, payload.search?.institutionAliasVersion ?: 0) in
                             setOf("APOLLO_CURRENT_INSTITUTION_MATCH", "APOLLO_HISTORICAL_INSTITUTION_MATCH", "APOLLO_PROFESSOR_MATCH") }
                         // Current institution / professor evidence can distinguish a candidate from unrelated
                         // same-name people. Only fall back to history/specialty when no strong candidate exists.

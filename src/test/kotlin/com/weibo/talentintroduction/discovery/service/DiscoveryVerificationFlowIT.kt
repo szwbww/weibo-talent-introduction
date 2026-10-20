@@ -318,6 +318,30 @@ class DiscoveryVerificationFlowIT {
         return DiscoveryVerificationReplayTool.load(manifest, DiscoveryVerificationReplayTool.sha(java.nio.file.Files.readAllBytes(manifest)))
     }
 
+    @Test fun `versioned TUM aliases survive worker commit gate and reporting without upgrading legacy runs`() {
+        listOf(0, 1).forEach { version ->
+            clean()
+            VerificationFlowFixture(jdbc, manager).use { f ->
+                val item = f.seed(institution = "Technical University of Munich")
+                jdbc.update("UPDATE discovery_verification_run SET settings_json=?", """{"apolloMatchingVersion":2,"institutionAliasVersion":$version}""")
+                f.apolloBody = """{"people":[{"id":"person-1","first_name":"Ada","last_name_obfuscated":"L**","title":"Scientist","organization":{"name":"Google"}}],"total_entries":1}"""
+                f.detailBody = """{"person":{"id":"person-1","name":"Ada Lee","first_name":"Ada","last_name":"Lee","title":"Scientist","organization":{"name":"Google"},"employment_history":[{"organization_name":"Technische Universität München","current":false,"end_date":"2023-01-01"}]}}"""
+                f.worker().tick()
+                val done = f.item(item.id)
+                assertEquals(if (version == 1) VerificationOutcome.APOLLO_CLEAR else VerificationOutcome.PENDING, done.outcome)
+                assertEquals(version.toLong(), f.autoCount())
+                val payload = f.mapper.readValue(done.evidenceJson, VerificationWorkerEvidence::class.java)
+                assertEquals(version, payload.search!!.institutionAliasVersion)
+                if (version == 1) {
+                    assertEquals(VerificationProjection.PROJECTED, done.projectionState)
+                    val detail = DiscoveryVerificationQueryService(f.repository, f.admissions, f.props).item(item.id)
+                    assertEquals("历史任职匹配 · TUM 官网英德名称对应", detail.record.matchingLabel)
+                    assertTrue(DiscoveryInstitutionNormalizer.TUM_ALIAS_REASON in detail.record.reasonCodes)
+                }
+            }
+        }
+    }
+
     @Test fun `V2 masked detail retry is durable and does not repeat acknowledged search`() {
         VerificationFlowFixture(jdbc, manager).use { f ->
             val item = f.seed()

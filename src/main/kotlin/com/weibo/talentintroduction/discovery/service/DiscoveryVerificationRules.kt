@@ -13,7 +13,8 @@ import java.util.Locale
 data class ApolloSearchEvidence(val candidates: List<ApolloCandidate> = emptyList(), val broadComplete: Boolean = false,
     val complete: Boolean = false, val queryNames: Set<String> = emptySet(), val conflictingIds: Set<String> = emptySet(),
     val matchingVersion: Int = 1, val detailsCompleted: Set<String> = emptySet(), val detailsComplete: Boolean = false,
-    val academicResearchFields: String? = null, val academicCapturedAt: java.time.Instant? = null) {
+    val academicResearchFields: String? = null, val academicCapturedAt: java.time.Instant? = null,
+    val institutionAliasVersion: Int = 0) {
     fun merge(page: ApolloSearchPage, query: ApolloSearchQuery, broad: Boolean, allQueriesComplete: Boolean = false): ApolloSearchEvidence {
         val ids = conflictingIds.toMutableSet()
         val union = candidates.associateByTo(linkedMapOf()) { it.id }
@@ -38,6 +39,7 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
         institutionNormalization: InstitutionNormalization? = null): VerificationDecision {
         val today = LocalDate.now(clock)
         require(search == null || search.matchingVersion in 1..2) { "Unsupported Apollo matching version" }
+        require(search == null || search.institutionAliasVersion in 0..DiscoveryInstitutionNormalizer.ALIAS_VERSION)
         fun decision(q: VerificationQualification, reasons: List<String>, missing: List<String> = emptyList(),
             route: VerificationRoute = VerificationRoute.NONE, outcome: VerificationOutcome = VerificationOutcome.PENDING,
             id: String? = null) = VerificationDecision(q, route, outcome, reasons.distinct(), missing.distinct(), evidence, today, id)
@@ -92,7 +94,7 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
             if (named.any { it.orcid != null && snapshot.boundOrcid != null && normalizeOrcid(it.orcid) != snapshot.boundOrcid })
                 return decision(VerificationQualification.CONFLICT, listOf("ORCID_CONFLICT"), missing)
             val supported = named.mapNotNull { candidate ->
-                matchReason(snapshot, evidence, candidate, search.academicResearchFields)?.let { candidate to it }
+                matchReason(snapshot, evidence, candidate, search.academicResearchFields, search.institutionAliasVersion)?.let { candidate to it }
             }
             val strong = supported.filter { it.second in setOf("APOLLO_CURRENT_INSTITUTION_MATCH", "APOLLO_HISTORICAL_INSTITUTION_MATCH", "APOLLO_PROFESSOR_MATCH") }
             val matched = strong.ifEmpty { supported }
@@ -101,10 +103,13 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
             // An unresolved masked candidate could still be a second valid person; do not discard it.
             if (search.candidates.any { it.id != matched.single().first.id && explicitName(it) == null &&
                     nameMatches(it, namesToMatch, search.queryNames, masked = true) &&
-                    matchReason(snapshot, evidence, it, search.academicResearchFields) != null })
+                    matchReason(snapshot, evidence, it, search.academicResearchFields, search.institutionAliasVersion) != null })
                 return decision(qualification, listOf("IDENTITY_AMBIGUOUS"), missing)
             val (candidate, reason) = matched.single()
-            return decision(qualification, listOf("APOLLO_MATCH_POLICY_V2", reason, when (qualification) {
+            val aliasReasons = if (reason in setOf("APOLLO_CURRENT_INSTITUTION_MATCH", "APOLLO_HISTORICAL_INSTITUTION_MATCH") &&
+                matchReason(snapshot, evidence, candidate, search.academicResearchFields, 0) != reason)
+                listOf(DiscoveryInstitutionNormalizer.TUM_ALIAS_REASON) else emptyList()
+            return decision(qualification, aliasReasons + listOf("APOLLO_MATCH_POLICY_V2", reason, when (qualification) {
                 VerificationQualification.MET -> "QUALIFICATION_MET"
                 VerificationQualification.NOT_MET -> "AGE_REQUIREMENT_NOT_MET"
                 else -> "QUALIFICATION_EVIDENCE_MISSING"
@@ -210,11 +215,11 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
 
     /** V2 is an explicitly approved admission heuristic, not a claim that degrees/age were verified. */
     internal fun matchReason(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>,
-        candidate: ApolloCandidate, academicFields: String?): String? {
+        candidate: ApolloCandidate, academicFields: String?, institutionAliasVersion: Int = 0): String? {
         val originals = listOfNotNull(snapshot.profile.institution?.let(::VerificationInstitution)) +
             identityEmployments(snapshot, evidence).map { VerificationInstitution(value(it, "institution")) }
         fun institutionMatch(institution: VerificationInstitution?): Boolean = institution != null && originals.any {
-            DiscoveryInstitutionNormalizer.compare(it, institution) == InstitutionComparison.MATCH
+            DiscoveryInstitutionNormalizer.compareWithAliases(it, institution, institutionAliasVersion) == InstitutionComparison.MATCH
         }
         if (institutionMatch(candidate.institution)) return "APOLLO_CURRENT_INSTITUTION_MATCH"
         if (candidate.employmentHistory.any { job ->

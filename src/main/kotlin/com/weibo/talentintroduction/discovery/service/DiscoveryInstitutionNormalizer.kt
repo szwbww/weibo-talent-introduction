@@ -48,8 +48,8 @@ data class InstitutionCandidateInput(val sourceRef: String, val raw: String?)
  * Pure institution subject extraction and comparison. No Spring, HTTP, clock or database access.
  *
  * The subject is a derived comparison value; every caller keeps the original profile, ORCID evidence and
- * Apollo candidate strings untouched. There is intentionally no gazetteer, translation, abbreviation
- * expansion, fuzzy matching, LLM call or inferred parent organisation.
+ * Apollo candidate strings untouched. Versioned, source-backed aliases are opt-in; no translation,
+ * abbreviation expansion, fuzzy matching, LLM call or inferred parent organisation.
  */
 object DiscoveryInstitutionNormalizer {
     const val VERSION = "INST_SUBJECT_V1"
@@ -275,6 +275,29 @@ object DiscoveryInstitutionNormalizer {
             leftRecord.status == RESOLVED && rightRecord.status == RESOLVED -> InstitutionComparison.DIFFERENT
             else -> InstitutionComparison.UNKNOWN
         }
+    }
+
+    // Immutable V1 allowlist. Official bilingual contact pages identify the same university/address.
+    // https://www.tum.de/en/about-tum/contact-directions
+    // https://www.tum.de/ueber-die-tum/kontakt-und-anfahrt
+    // Additions require a new version so frozen decisions retain their original semantics.
+    const val ALIAS_VERSION = 1
+    const val TUM_ALIAS_REASON = "APOLLO_INSTITUTION_ALIAS_TUM_V1"
+    private val tumNamesV1 = setOf("Technical University of Munich", "Technische Universität München").map(::canonical).toSet()
+
+    fun compareWithAliases(left: VerificationInstitution, right: VerificationInstitution, aliasVersion: Int): InstitutionComparison {
+        require(aliasVersion in 0..ALIAS_VERSION) { "Unsupported institution alias version" }
+        val original = compare(left, right)
+        // Never override explicit identifiers, or change legacy callers/results.
+        if (aliasVersion == 0 || original == InstitutionComparison.MATCH ||
+            left.standardId != null && right.standardId != null) return original
+        fun knownSubject(institution: VerificationInstitution): Boolean {
+            // Full exact names also work for languages unsupported by the subject extractor.
+            if (canonical(institution.name) in tumNamesV1) return true
+            val record = resolve(institution.name, InstitutionSource.APOLLO_CANDIDATE, "alias")
+            return record.status == RESOLVED && record.subjects.singleOrNull()?.let(::canonical) in tumNamesV1
+        }
+        return if (knownSubject(left) && knownSubject(right)) InstitutionComparison.MATCH else original
     }
 
     fun canonical(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFKC)
