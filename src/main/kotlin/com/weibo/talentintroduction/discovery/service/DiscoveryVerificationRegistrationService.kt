@@ -124,22 +124,26 @@ class DiscoveryVerificationRegistrationService(
             // I-5: cancellation must stop discovery, never become a retryable registration failure.
             Thread.currentThread().interrupt()
             throw e
+        } catch (e: java.util.concurrent.CancellationException) {
+            throw e
         } catch (e: Exception) {
-            if (isCancellation(e)) {
-                Thread.currentThread().interrupt()
-                throw InterruptedException("Verification registration cancelled")
-            }
+            val cancellation = cancellationCause(e)
+            if (cancellation != null) throw cancellation
             throw DiscoveryRegistrationException(e)
         }
     }
 
-    private fun isCancellation(error: Throwable): Boolean {
+    private fun cancellationCause(error: Throwable): Throwable? {
         var current: Throwable? = error
         while (current != null) {
-            if (current is InterruptedException) return true
+            if (current is java.util.concurrent.CancellationException) return current
+            if (current is InterruptedException) {
+                Thread.currentThread().interrupt()
+                return current
+            }
             current = current.cause
         }
-        return Thread.currentThread().isInterrupted
+        return if (Thread.currentThread().isInterrupted) InterruptedException("Verification registration interrupted") else null
     }
 
     /** Reuses a reservation only when its frozen facts (excluding country and the institution token) still match. */

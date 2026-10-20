@@ -108,15 +108,27 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
             }
         }
         val allowedNames = setOf(snapshot.fullName) + evidence.filter { it.field == "otherName" && it.provider == "ORCID" }.map { it.value }
-        fun institutionMatches(candidate: ApolloCandidate): Boolean =
+        fun institutionMatches(candidate: ApolloCandidate): Boolean {
             if (institutionNormalization == null)
-                candidate.institution?.let { institution -> institutions.any { sameInstitution(it, institution) } } == true
-            else {
-                val subject = candidateSubjects[candidate.id]
-                subject != null && subject.status == DiscoveryInstitutionNormalizer.RESOLVED &&
-                    employmentSubjects.any { it.status == DiscoveryInstitutionNormalizer.RESOLVED &&
-                        DiscoveryInstitutionNormalizer.compare(subject, it) == InstitutionComparison.MATCH }
+                return candidate.institution?.let { institution -> institutions.any { sameInstitution(it, institution) } } == true
+            val subject = candidateSubjects[candidate.id]
+            if (subject == null || subject.status != DiscoveryInstitutionNormalizer.RESOLVED) return false
+            val candidateName = subject.subjects.singleOrNull() ?: return false
+            return employments.indices.any { index ->
+                val employmentSubject = employmentSubjects.getOrNull(index) ?: return@any false
+                val employmentName = employmentSubject.subjects.singleOrNull() ?: return@any false
+                if (employmentSubject.status != DiscoveryInstitutionNormalizer.RESOLVED) return@any false
+                val employmentInstitution = institutions[index]
+                // Validated subjects are the compare text; original standard IDs and aliases remain the
+                // source-bound metadata. Extraction never manufactures an ID or alias.
+                val left = VerificationInstitution(employmentName, employmentInstitution.standardId, employmentInstitution.aliases)
+                val right = candidate.institution?.let {
+                    VerificationInstitution(candidateName, it.standardId, it.aliases)
+                } ?: VerificationInstitution(candidateName)
+                DiscoveryInstitutionNormalizer.compare(left, right,
+                    InstitutionSource.ORCID_EMPLOYMENT, InstitutionSource.APOLLO_CANDIDATE) == InstitutionComparison.MATCH
             }
+        }
         val matches = search.candidates.filter { candidate ->
             val explicit = candidate.fullName ?: listOfNotNull(candidate.firstName, candidate.lastName).takeIf { candidate.lastName != null }?.joinToString(" ")
             val strict = explicit != null && allowedNames.any { known ->

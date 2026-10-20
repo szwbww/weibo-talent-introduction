@@ -55,6 +55,26 @@ class DiscoveryInstitutionNormalizerTest {
         }
     }
 
+    @Test fun `country suffix never erases campus identity or invents a parent`() {
+        val la = DiscoveryInstitutionNormalizer.resolve("University of California, Los Angeles, USA",
+            InstitutionSource.ORCID_EMPLOYMENT, "campus:la")
+        val berkeley = DiscoveryInstitutionNormalizer.resolve("University of California, Berkeley, USA",
+            InstitutionSource.ORCID_EMPLOYMENT, "campus:berkeley")
+        assertEquals("RESOLVED", la.status)
+        assertEquals(listOf("University of California, Los Angeles"), la.subjects)
+        assertEquals("RESOLVED", berkeley.status)
+        assertEquals(listOf("University of California, Berkeley"), berkeley.subjects)
+        assertEquals(InstitutionComparison.DIFFERENT, DiscoveryInstitutionNormalizer.compare(la, berkeley))
+        val parent = DiscoveryInstitutionNormalizer.resolve("University of California",
+            InstitutionSource.ORCID_EMPLOYMENT, "campus:parent")
+        assertEquals(InstitutionComparison.DIFFERENT, DiscoveryInstitutionNormalizer.compare(la, parent))
+        val overseas = DiscoveryInstitutionNormalizer.resolve(
+            "Department of Physics, Example University, Overseas Campus, USA", InstitutionSource.PROFILE, "campus:overseas")
+        assertEquals("RESOLVED", overseas.status)
+        assertEquals(listOf("Example University, Overseas Campus"), overseas.subjects)
+        assertFalse(overseas.subjects.any { it == "Example University" })
+    }
+
     @Test fun `duplicate blocks deduplicate regardless of segment order and unicode is normalized`() {
         val first = "Department of Education, Seoul National University, Seoul, South Korea"
         val second = "Department of Education, Seoul National University, 1 Gwanak-ro, Gwanak-gu, Seoul, South Korea"

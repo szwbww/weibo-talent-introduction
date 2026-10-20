@@ -203,6 +203,50 @@ class DiscoveryVerificationRulesTest {
         assertTrue(decision.missingFields.contains("institutionSubject"))
     }
 
+    @Test fun `country suffixed campuses and contextual standard ids keep identity boundaries`() {
+        val countrySuffixed = "University of California, Los Angeles, USA"
+        val la = ruleSnapshot().copy(profile = ruleSnapshot().profile.copy(institution = countrySuffixed))
+        val berkeleyFacts = listOf(ruleJob(institution = "University of California, Berkeley, USA")
+            .copy(identityHash = la.identityHash, factFingerprint = la.factFingerprint))
+        val berkeleySearch = ruleSearch(institution = "University of California, Berkeley, USA")
+        val berkeleyContext = DiscoveryInstitutionNormalizer.build(la.profile.institution,
+            rules.identityEmployments(la, berkeleyFacts), berkeleySearch.candidates)
+        val crossCampus = rules.evaluate(la, berkeleyFacts, berkeleySearch, institutionNormalization = berkeleyContext)
+        assertNotEquals(VerificationOutcome.APOLLO_UNCLEAR, crossCampus.outcome)
+        assertEquals(listOf("INSTITUTION_CONFLICT"), crossCampus.reasonCodes)
+
+        val base = ruleSnapshot()
+        fun factWithId(id: String) = ruleJob(institution = "Example University").let {
+            it.copy(identityHash = base.identityHash, factFingerprint = base.factFingerprint,
+                value = mapper.writeValueAsString(mapOf("orcid" to "0000-0002-1825-0097", "role" to "Researcher",
+                    "institution" to "Example University", "standardId" to id)))
+        }
+        fun searchWith(institution: VerificationInstitution) = ruleSearch(institution = "Example University").let {
+            it.copy(candidates = listOf(it.candidates.single().copy(institution = institution)))
+        }
+        val conflicting = searchWith(VerificationInstitution("Example University", "ROR:2"))
+        val conflictingContext = DiscoveryInstitutionNormalizer.build("Example University",
+            rules.identityEmployments(base, listOf(factWithId("ROR:1"))), conflicting.candidates)
+        val conflict = rules.evaluate(base, listOf(factWithId("ROR:1")), conflicting,
+            institutionNormalization = conflictingContext)
+        assertEquals(VerificationOutcome.PENDING, conflict.outcome)
+        assertEquals(listOf("IDENTITY_NOT_MATCHED"), conflict.reasonCodes)
+
+        val same = searchWith(VerificationInstitution("Example University", "ROR:1"))
+        val sameContext = DiscoveryInstitutionNormalizer.build("Example University",
+            rules.identityEmployments(base, listOf(factWithId("ROR:1"))), same.candidates)
+        assertEquals(VerificationOutcome.APOLLO_UNCLEAR,
+            rules.evaluate(base, listOf(factWithId("ROR:1")), same, institutionNormalization = sameContext).outcome)
+
+        val aliasFacts = listOf(ruleJob(institution = "Example University")
+            .copy(identityHash = base.identityHash, factFingerprint = base.factFingerprint))
+        val aliasSearch = searchWith(VerificationInstitution("Apollo University", aliases = setOf("Example University")))
+        val aliasContext = DiscoveryInstitutionNormalizer.build("Example University",
+            rules.identityEmployments(base, aliasFacts), aliasSearch.candidates)
+        assertEquals(VerificationOutcome.APOLLO_UNCLEAR,
+            rules.evaluate(base, aliasFacts, aliasSearch, institutionNormalization = aliasContext).outcome)
+    }
+
     @Test fun `unclear subject is missing evidence and a tampered or unknown context is rejected`() {
         val unresolved = ruleSnapshot().let { it.copy(profile = it.profile.copy(institution = "ACHISINA")) }
         val facts = listOf(ruleJob().copy(identityHash = unresolved.identityHash, factFingerprint = unresolved.factFingerprint))

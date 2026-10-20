@@ -90,6 +90,8 @@ object DiscoveryInstitutionNormalizer {
     private val postal = Regex("\\b\\d{4,6}\\b")
     private val street = Regex("(?i)\\b(?:street|st|road|rd|avenue|ave|boulevard|blvd|lane|drive|highway|route|way|place|plaza|court|suite|floor|building|bldg|daero|rue|strasse|straße|via|calle|rua|piazza)\\b|[a-z]-(?:gu|gun|si|do|ro|gil|dong|eup|myeon)\\b")
     private val streetNumber = Regex("^\\d+\\s")
+    private val systemName = Regex("(?i)^(?:the\\s+)?(?:university|université|universidad|università|universität)\\s+of\\b")
+    private val campusQualifier = Regex("(?i)\\b(?:campus|college|school|faculty|institute|laborator(?:y|ies)|cent(?:er|re))\\b")
     private val punctuation = Regex("[\\p{P}\\p{Z}\\s]+")
 
     private val countries = setOf(
@@ -371,14 +373,23 @@ object DiscoveryInstitutionNormalizer {
             }
         }
         val trailing = (lastOrg + 1) until parts.size
-        val tailRemovable = lastOrg + 1 < parts.size && isAddressTail(trailing.map { parts[it] })
+        val trailingParts = trailing.map { parts[it] }
+        val hadLeadingUnit = (0 until firstOrg).any { startsUnit.containsMatchIn(parts[it]) && !isOrganisation(parts[it]) }
+        val tailRemovable = trailingParts.isNotEmpty() &&
+            isAddressTail(trailingParts, parts[lastOrg], hadLeadingUnit)
+        val retainQualifier = trailingParts.isNotEmpty() && !tailRemovable &&
+            (isSystemName(parts[lastOrg]) || trailingParts.any(::isCampusQualifier))
+        val qualifiers = mutableListOf<String>()
         val residue = mutableListOf<String>()
         for (index in trailing) {
+            val part = parts[index]
             when {
-                tailRemovable -> removed += InstitutionRemovedPart(parts[index], REMOVED_ADDRESS_TAIL)
-                startsUnit.containsMatchIn(parts[index]) -> removed += InstitutionRemovedPart(parts[index], REMOVED_UNIT)
-                isAddressPart(parts[index]) -> removed += InstitutionRemovedPart(parts[index], REMOVED_ADDRESS)
-                else -> residue += parts[index]
+                tailRemovable -> removed += InstitutionRemovedPart(part, REMOVED_ADDRESS_TAIL)
+                isCountry(part) -> removed += InstitutionRemovedPart(part, REMOVED_ADDRESS)
+                startsUnit.containsMatchIn(part) -> removed += InstitutionRemovedPart(part, REMOVED_UNIT)
+                isAddressPart(part) -> removed += InstitutionRemovedPart(part, REMOVED_ADDRESS)
+                retainQualifier -> qualifiers += part
+                else -> residue += part
             }
         }
         for (index in firstOrg..lastOrg) {
@@ -391,7 +402,7 @@ object DiscoveryInstitutionNormalizer {
         if (residue.isNotEmpty()) return Parsed.Unresolved((removed + residue.map {
             InstitutionRemovedPart(it, REMOVED_UNRESOLVED)
         }).distinct())
-        val subject = (leadingNames + parts[orgIndexes.single()]).joinToString(", ")
+        val subject = (leadingNames + parts[orgIndexes.single()] + qualifiers).joinToString(", ")
         return Parsed.Subjects(listOf(subject), removed.distinct())
     }
 
@@ -409,11 +420,27 @@ object DiscoveryInstitutionNormalizer {
         return orgKeyword.containsMatchIn(part.removeRange(unit.range))
     }
 
-    private fun isAddressTail(parts: List<String>): Boolean {
+    private fun isAddressTail(parts: List<String>, organisation: String, hadLeadingUnit: Boolean): Boolean {
         if (parts.isEmpty()) return false
-        if (isCountry(parts.last())) return parts.all { isLocationToken(it) }
-        return parts.all { isAddressPart(it) }
+        if (!isCountry(parts.last())) return parts.all { isAddressPart(it) }
+        val qualifiers = parts.dropLast(1)
+        if (qualifiers.any(::isStrongAddressPart)) return qualifiers.all { isLocationToken(it) || isAddressPart(it) }
+        // A campus qualifier or a system name such as "University of California" is part of the
+        // institution, never proven address data merely because a country follows it.
+        if (qualifiers.any(::isCampusQualifier) || isSystemName(organisation)) return false
+        // Keep the approved city+country minimum cases only when a unit prefix establishes the
+        // segment as an address-bearing affiliation; otherwise return UNRESOLVED rather than collapse.
+        return hadLeadingUnit && qualifiers.all { isLocationToken(it) }
     }
+
+    private fun isStrongAddressPart(part: String): Boolean =
+        postal.containsMatchIn(part) || streetNumber.containsMatchIn(part) || street.containsMatchIn(part)
+
+    private fun isSystemName(organisation: String): Boolean =
+        systemName.containsMatchIn(organisation)
+
+    private fun isCampusQualifier(part: String): Boolean =
+        campusQualifier.containsMatchIn(part)
 
     private fun isLocationToken(part: String): Boolean {
         if (part.isEmpty()) return false

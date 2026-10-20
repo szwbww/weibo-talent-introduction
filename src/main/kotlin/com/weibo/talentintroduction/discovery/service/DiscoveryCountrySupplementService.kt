@@ -19,11 +19,13 @@ import org.springframework.web.client.ResponseErrorHandler
 import org.springframework.web.client.RestTemplate
 import java.net.HttpURLConnection
 import java.net.URI
+import java.text.Normalizer
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.util.ArrayDeque
 import java.util.Locale
+import java.util.concurrent.CancellationException
 
 /**
  * One auditable country observation. Only the bounded fields needed to re-verify an institution/country
@@ -135,19 +137,22 @@ class DiscoveryCountrySupplementService private constructor(
         var requests = 0
         val outcome = try {
             select(profile, paper).also { requests = it.requests }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
             throw e
         } catch (e: Exception) {
-            if (isCancellation(e)) {
-                Thread.currentThread().interrupt()
-                throw InterruptedException("Country supplement cancelled")
-            }
+            val cancellation = cancellationCause(e)
+            if (cancellation != null) throw cancellation
             Outcome(null, null, REASON_HTTP_ERROR, emptyList())
         }
         var effective = outcome
         if (effective.observations.size > MAX_OBSERVATIONS || effective.observations.any { it.institution.length > MAX_INSTITUTION_LENGTH }) {
-            effective = Outcome(null, null, REASON_EVIDENCE_TOO_LARGE, effective.observations.take(MAX_OBSERVATIONS))
+            // A skip must be a valid registration input: never retain an over-limit observation text.
+            val bounded = if (effective.observations.any { it.institution.length > MAX_INSTITUTION_LENGTH }) emptyList()
+            else effective.observations.take(MAX_OBSERVATIONS)
+            effective = Outcome(null, null, REASON_EVIDENCE_TOO_LARGE, bounded)
         }
         var finalProfile = profile
         val supplementSource = effective.source
@@ -242,21 +247,22 @@ class DiscoveryCountrySupplementService private constructor(
                 return Outcome(null, null, REASON_IDENTITY_UNRESOLVED, observations)
             }
         }
-        val institutions = matches.mapNotNull { it.institutionName?.trim()?.takeIf(String::isNotEmpty) }.distinctBy(::canonical)
+        val institutions = matches.mapNotNull { it.institutionName?.trim()?.takeIf(String::isNotEmpty) }.distinctBy(::completeName)
         if (institutions.size > 1) return Outcome(null, null, REASON_INSTITUTION_MISMATCH, observations)
         val structured = matches.filter { it.institutionSource == INSTITUTION_SOURCE_OPENALEX }
         if (structured.isEmpty() || institutions.isEmpty()) return Outcome(null, null, REASON_NO_EVIDENCE, observations)
         val institution = institutions.single()
-        if (canonical(institution) != canonical(profile.institution!!) ||
+        if (completeName(institution) != completeName(profile.institution!!) ||
             !resolvedInstitution(profile.institution!!, InstitutionSource.PROFILE) ||
             !resolvedInstitution(institution, InstitutionSource.PROFILE)
         ) {
             return Outcome(null, null, REASON_INSTITUTION_MISMATCH, observations)
         }
         val rawCountries = structured.map { it.institutionCountry?.trim()?.takeIf(String::isNotEmpty) }
-        val countries = rawCountries.mapNotNull(::validCountry).distinct()
         if (rawCountries.any { it == null }) return Outcome(null, null, REASON_NO_EVIDENCE, observations)
-        if (countries.size != rawCountries.size) return Outcome(null, null, REASON_INVALID_COUNTRY, observations)
+        val validCountries = rawCountries.map { validCountry(it) }
+        if (validCountries.any { it == null }) return Outcome(null, null, REASON_INVALID_COUNTRY, observations)
+        val countries = validCountries.filterNotNull().distinct()
         if (countries.size > 1) return Outcome(null, null, REASON_MULTIPLE_COUNTRIES, observations)
         if (countries.isEmpty()) return Outcome(null, null, REASON_NO_EVIDENCE, observations)
         return Outcome(countries.single(), SOURCE_OPENALEX, REASON_MATCHED_BOUND_INSTITUTION, observations)
@@ -293,10 +299,13 @@ class DiscoveryCountrySupplementService private constructor(
             if (!body.isObject) return Outcome(null, null, REASON_INVALID_RESPONSE, emptyList(), 1)
             val document = OrcidEvidenceDocument("employments", retainCountryFields(body), sha256(bytes), clock.instant())
             return selectOrcidEmployment(profile, document, orcid)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt(); throw e
         } catch (e: Exception) {
-            if (isCancellation(e)) { Thread.currentThread().interrupt(); throw InterruptedException("Country supplement cancelled") }
+            val cancellation = cancellationCause(e)
+            if (cancellation != null) throw cancellation
             return Outcome(null, null, REASON_HTTP_ERROR, emptyList(), 1)
         } finally {
             releasePermit()
@@ -311,7 +320,7 @@ class DiscoveryCountrySupplementService private constructor(
                 fact.assertionSource in setOf(com.weibo.talentintroduction.discovery.domain.AssertionSource.ORGANIZATION,
                     com.weibo.talentintroduction.discovery.domain.AssertionSource.SELF) &&
                 fact.conflicts.isEmpty() && institutionOf(fact.value)?.let {
-                    canonical(it) == canonical(profile.institution!!) && resolvedInstitution(it, InstitutionSource.ORCID_EMPLOYMENT) &&
+                    completeName(it) == completeName(profile.institution!!) && resolvedInstitution(it, InstitutionSource.ORCID_EMPLOYMENT) &&
                         resolvedInstitution(profile.institution!!, InstitutionSource.PROFILE)
                 } == true
         }
@@ -344,9 +353,9 @@ class DiscoveryCountrySupplementService private constructor(
             return Outcome(null, null, REASON_INVALID_COUNTRY, observations, 1)
         }
         if (observations.any { it.country == null }) return Outcome(null, null, REASON_NO_EVIDENCE, observations, 1)
-        val countries = observations.mapNotNull { it.country }.distinct()
-        if (countries.size != observations.size) return Outcome(null, null, REASON_INVALID_COUNTRY, observations, 1)
+        val countries = observations.mapNotNull { validCountry(it.country) }.distinct()
         if (countries.size > 1) return Outcome(null, null, REASON_MULTIPLE_COUNTRIES, observations, 1)
+        if (countries.isEmpty()) return Outcome(null, null, REASON_NO_EVIDENCE, observations, 1)
         return Outcome(countries.single(), SOURCE_ORCID, REASON_MATCHED_BOUND_INSTITUTION, observations, 1)
     }
 
@@ -439,7 +448,12 @@ class DiscoveryCountrySupplementService private constructor(
             it.status == DiscoveryInstitutionNormalizer.RESOLVED && it.subjects.size == 1
         }
 
-    private fun canonical(value: String) = DiscoveryInstitutionNormalizer.canonical(value)
+    /**
+     * Country selection permits only NFKC, whitespace collapse and case normalization for the complete
+     * institution name. It deliberately does not reuse the subject canonicalizer, which removes punctuation.
+     */
+    private fun completeName(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFKC)
+        .replace(Regex("\\s+"), " ").trim().lowercase(Locale.ROOT)
 
     private fun normalizedAuthorId(value: String?): String? = value?.trim()
         ?.removePrefix("https://openalex.org/")?.removePrefix("http://openalex.org/")
@@ -459,14 +473,18 @@ class DiscoveryCountrySupplementService private constructor(
         node.path(key).path("value")?.takeIf { !it.isMissingNode && !it.isNull }?.asText(null)
     }.takeIf { it.isNotEmpty() }?.joinToString("-")
 
-    private fun isCancellation(error: Throwable): Boolean {
+    private fun cancellationCause(error: Throwable): Throwable? {
         var current: Throwable? = error
         while (current != null) {
-            if (current is InterruptedException) return true
+            if (current is CancellationException) return current
+            if (current is InterruptedException) {
+                Thread.currentThread().interrupt()
+                return current
+            }
             current = current.cause
         }
         // A SocketTimeoutException is a bounded read failure, not cancellation; only a set interrupt flag is.
-        return Thread.currentThread().isInterrupted
+        return if (Thread.currentThread().isInterrupted) InterruptedException("Country supplement interrupted") else null
     }
 
     private fun sha256(value: String): String = DiscoveryInstitutionNormalizer.sha256(value)

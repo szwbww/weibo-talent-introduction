@@ -1080,4 +1080,77 @@ class DiscoveryVerificationFlowIT {
         }
     }
 
+    @Test fun `A4 null normalization inputs keep the row readable while the gate rejects`() {
+        VerificationFlowFixture(jdbc, manager).use { f ->
+            f.apolloBody = """{"people":[${person("person-1", "Example University")}],"total_entries":1}"""
+            val item = f.seed("null-inputs")
+            f.worker().tick()
+            val done = f.item(item.id)
+            assertEquals(VerificationOutcome.APOLLO_UNCLEAR, done.outcome)
+            val malformed = f.mapper.readTree(done.evidenceJson) as com.fasterxml.jackson.databind.node.ObjectNode
+            (malformed.get("institutionNormalization") as com.fasterxml.jackson.databind.node.ObjectNode).putNull("inputs")
+            jdbc.update("UPDATE discovery_verification_item SET evidence_json=? WHERE id=?", malformed.toString(), item.id)
+            val revision = f.repository.findRun(2001)!!.revision
+            val attempts = f.repository.findAttempts(item.id).size
+            val query = DiscoveryVerificationQueryService(f.repository, f.admissions, f.props)
+            val row = query.records(VerificationReportFilter(2001), 0, 20).items.single { it.itemId == item.id }
+            assertEquals("APOLLO_UNCLEAR", row.resultLabel)
+            assertTrue(row.missingFields.contains("institutionSubject"), row.missingFields.toString())
+            assertEquals(VerificationOutcome.APOLLO_UNCLEAR, query.item(item.id).outcome)
+            assertEquals(revision, f.repository.findRun(2001)!!.revision)
+            assertEquals(attempts, f.repository.findAttempts(item.id).size)
+            val profile = ruleSnapshot().profile.copy(esDocId = item.expertDocId, researchFieldIds = listOf("22"),
+                lastPublicationYear = 2026)
+            val rejected = f.policy.evaluate(item.expertDocId, profile)
+            assertTrue(rejected.blockingReasons.any { it.code == "VERIFICATION_EVIDENCE_INVALID" },
+                rejected.blockingReasons.toString())
+            f.report("a4-null-inputs", mapOf("readLabel" to row.resultLabel, "missingFields" to row.missingFields,
+                "gateBlockers" to rejected.blockingReasons.map { it.code }, "revision" to revision,
+                "attempts" to attempts))
+        }
+    }
+
+    @Test fun `A4 invalid saved protocol fails verification while lawful parser drift stays pending`() {
+        VerificationFlowFixture(jdbc, manager).use { f ->
+            val item = f.seed("invalid-protocol")
+            val snapshot = f.mapper.readValue(f.item(item.id).snapshotJson, VerificationSnapshot::class.java)
+            val evidence = listOf(ruleJob(institution = "Example University").copy(identityHash = item.identityHash,
+                factFingerprint = item.factFingerprint))
+            val context = DiscoveryInstitutionNormalizer.build("Example University",
+                f.rules.identityEmployments(snapshot, evidence), emptyList())
+            f.cached(VerificationWorkerEvidence(evidence = evidence, progress = VerificationProgress("DECIDE"),
+                institutionNormalization = context.copy(version = "INST_SUBJECT_V9")))
+            f.worker().tick()
+            val failed = f.item(item.id)
+            assertEquals(VerificationState.ERROR, failed.state)
+            assertNull(failed.outcome)
+            assertTrue(failed.reasonsJson!!.contains("VERIFICATION_FAILED"), failed.reasonsJson)
+            assertTrue(failed.evidenceJson!!.contains("INST_SUBJECT_V9"), failed.evidenceJson)
+            assertEquals(0, f.apolloRequests.size)
+            f.report("a4-invalid-protocol", mapOf("state" to failed.state.name, "reasons" to failed.reasonsJson,
+                "contextRetained" to failed.evidenceJson!!.contains("INST_SUBJECT_V9"), "requests" to f.apolloRequests.size))
+        }
+        clean()
+        VerificationFlowFixture(jdbc, manager).use { f ->
+            val item = f.seed("parser-drift")
+            val snapshot = f.mapper.readValue(f.item(item.id).snapshotJson, VerificationSnapshot::class.java)
+            val oldEvidence = listOf(ruleJob(institution = "Old University").copy(identityHash = item.identityHash,
+                factFingerprint = item.factFingerprint))
+            val rebuiltEvidence = listOf(ruleJob(institution = "Example University").copy(identityHash = item.identityHash,
+                factFingerprint = item.factFingerprint))
+            val frozen = DiscoveryInstitutionNormalizer.build("Example University",
+                f.rules.identityEmployments(snapshot, oldEvidence), emptyList())
+            f.cached(VerificationWorkerEvidence(evidence = rebuiltEvidence, progress = VerificationProgress("DECIDE"),
+                institutionNormalization = frozen))
+            f.worker().tick()
+            val drifted = f.item(item.id)
+            assertEquals(VerificationState.COMPLETED, drifted.state)
+            assertEquals(VerificationOutcome.PENDING, drifted.outcome)
+            assertTrue(drifted.reasonsJson!!.contains("EVIDENCE_CONFLICT"), drifted.reasonsJson)
+            assertEquals(0, f.apolloRequests.size)
+            f.report("a4-parser-drift", mapOf("state" to drifted.state.name, "outcome" to drifted.outcome?.name,
+                "reasons" to drifted.reasonsJson, "requests" to f.apolloRequests.size))
+        }
+    }
+
 }

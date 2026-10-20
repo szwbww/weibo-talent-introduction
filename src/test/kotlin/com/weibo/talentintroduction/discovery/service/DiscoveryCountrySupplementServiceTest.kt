@@ -242,6 +242,109 @@ class DiscoveryCountrySupplementServiceTest {
         assertEquals(0, result.httpRequests)
     }
 
+    @Test fun `country selection uses strict complete-name equality without punctuation folding`() {
+        val divergent = Case(id = "strict-name", source = "OPENALEX", institution = "Example University-A",
+            orcid = "0000-0002-1825-0097", proofOrcid = "0000-0002-1825-0097", openAlexAuthorId = "A123",
+            paperSource = "OPENALEX", paperDoi = "10.example/strict",
+            authors = listOf(Author(openAlexAuthorId = "A123", institutionName = "Example University A",
+                institutionCountry = "US", institutionSource = "OPENALEX")),
+            expectStatus = DiscoveryCountrySupplementService.STATUS_UNRESOLVED,
+            expectReason = DiscoveryCountrySupplementService.REASON_INSTITUTION_MISMATCH, expectRequests = 0)
+        val divergentService = DiscoveryCountrySupplementService(properties(), MutableClock(), countrySupplementRestTemplate())
+        val divergentResult = divergentService.supplement(1, "doc-strict", profile(divergent), paper(divergent))
+        assertNull(divergentResult.profile.country)
+        assertEquals(DiscoveryCountrySupplementService.REASON_INSTITUTION_MISMATCH, divergentResult.receipt!!.reason)
+        assertEquals(0, divergentResult.httpRequests)
+
+        val equivalent = divergent.copy(institution = "Example University",
+            authors = listOf(Author(openAlexAuthorId = "A123", institutionName = "  example   university ",
+                institutionCountry = "US", institutionSource = "OPENALEX")),
+            expectStatus = DiscoveryCountrySupplementService.STATUS_FILLED,
+            expectReason = DiscoveryCountrySupplementService.REASON_MATCHED_BOUND_INSTITUTION, expectCountry = "US")
+        val equivalentService = DiscoveryCountrySupplementService(properties(), MutableClock(), countrySupplementRestTemplate())
+        val equivalentResult = equivalentService.supplement(1, "doc-equivalent", profile(equivalent), paper(equivalent))
+        assertEquals("US", equivalentResult.profile.country)
+        assertEquals(0, equivalentResult.httpRequests)
+    }
+
+    @Test fun `identical valid country duplicates fill while real disagreement stays a conflict`() {
+        val duplicate = Case(id = "oa-duplicate", source = "OPENALEX", institution = "Example University",
+            openAlexAuthorId = "A123", paperSource = "OPENALEX", paperDoi = "10.example/duplicate",
+            authors = listOf(
+                Author(openAlexAuthorId = "A123", institutionName = "Example University", institutionCountry = "US",
+                    institutionSource = "OPENALEX"),
+                Author(openAlexAuthorId = "A123", institutionName = "Example University", institutionCountry = "US",
+                    institutionSource = "OPENALEX")),
+            expectStatus = DiscoveryCountrySupplementService.STATUS_FILLED,
+            expectReason = DiscoveryCountrySupplementService.REASON_MATCHED_BOUND_INSTITUTION,
+            expectCountry = "US", expectRequests = 0)
+        val duplicateResult = DiscoveryCountrySupplementService(properties(), MutableClock(), countrySupplementRestTemplate())
+            .supplement(1, "doc-oa-duplicate", profile(duplicate), paper(duplicate))
+        assertEquals("US", duplicateResult.profile.country)
+        assertEquals(0, duplicateResult.httpRequests)
+
+        val disagreement = duplicate.copy(authors = listOf(
+            duplicate.authors.first(),
+            duplicate.authors.first().copy(institutionCountry = "GB")),
+            expectStatus = DiscoveryCountrySupplementService.STATUS_CONFLICT,
+            expectReason = DiscoveryCountrySupplementService.REASON_MULTIPLE_COUNTRIES, expectCountry = null)
+        val disagreementResult = DiscoveryCountrySupplementService(properties(), MutableClock(), countrySupplementRestTemplate())
+            .supplement(1, "doc-oa-conflict", profile(disagreement), paper(disagreement))
+        assertNull(disagreementResult.profile.country)
+        assertEquals(DiscoveryCountrySupplementService.REASON_MULTIPLE_COUNTRIES, disagreementResult.receipt!!.reason)
+
+        val twoGb = mapper.readTree("""{"affiliation-group":[{"summaries":[
+            {"employment-summary":{"put-code":1,"visibility":"public","role-title":"Professor",
+              "organization":{"name":"Example University","address":{"country":{"value":"GB"}}},
+              "source":{"source-client-id":{"path":"fixture-org"}},"start-date":{"year":{"value":"2020"}}}},
+            {"employment-summary":{"put-code":2,"visibility":"public","role-title":"Professor",
+              "organization":{"name":"Example University","address":{"country":{"value":"GB"}}},
+              "source":{"source-client-id":{"path":"fixture-org"}},"start-date":{"year":{"value":"2021"}}}}]}]}""")
+        val orcidDuplicate = Case(id = "orcid-duplicate", source = "ORCID", institution = "Example University",
+            orcid = "0000-0002-1825-0097", proofOrcid = "0000-0002-1825-0097", orcidBody = twoGb,
+            expectStatus = DiscoveryCountrySupplementService.STATUS_FILLED,
+            expectReason = DiscoveryCountrySupplementService.REASON_MATCHED_BOUND_INSTITUTION,
+            expectCountry = "GB", expectRequests = 1)
+        val orcidHttp = countrySupplementRestTemplate()
+        val orcidServer = MockRestServiceServer.bindTo(orcidHttp).build()
+        orcidServer.expect(ExpectedCount.once(), anything()).andRespond(withSuccess(twoGb.toString(), MediaType.APPLICATION_JSON))
+        val orcidResult = DiscoveryCountrySupplementService(properties(), MutableClock(), orcidHttp)
+            .supplement(1, "doc-orcid-duplicate", profile(orcidDuplicate), paper(orcidDuplicate))
+        orcidServer.verify()
+        assertEquals("GB", orcidResult.profile.country)
+        assertEquals(1, orcidResult.httpRequests)
+    }
+
+    @Test fun `cancellation propagates instead of becoming an error receipt`() {
+        val case = fixture().cases.single { it.id == "ORCID_MATCH" }
+        val http = countrySupplementRestTemplate()
+        val server = MockRestServiceServer.bindTo(http).build()
+        server.expect(ExpectedCount.once(), anything()).andRespond {
+            throw java.util.concurrent.CancellationException("fixture")
+        }
+        val service = DiscoveryCountrySupplementService(properties(), MutableClock(), http)
+        assertThrows(java.util.concurrent.CancellationException::class.java) {
+            service.supplement(1, "doc-cancel", profile(case), paper(case))
+        }
+    }
+
+    @Test fun `over limit observation text is omitted so the skip remains a valid registration input`() {
+        val long = "Example University " + "x".repeat(2003)
+        val case = Case(id = "oversized-institution", source = "OPENALEX", institution = long,
+            openAlexAuthorId = "A123", paperSource = "OPENALEX", paperDoi = "10.example/long",
+            authors = listOf(Author(openAlexAuthorId = "A123", institutionName = long, institutionCountry = "US",
+                institutionSource = "OPENALEX")),
+            expectStatus = DiscoveryCountrySupplementService.STATUS_SKIPPED,
+            expectReason = DiscoveryCountrySupplementService.REASON_EVIDENCE_TOO_LARGE, expectRequests = 0)
+        val service = DiscoveryCountrySupplementService(properties(), MutableClock(), countrySupplementRestTemplate())
+        val result = service.supplement(1, "doc-oversized", profile(case), paper(case))
+        assertEquals(DiscoveryCountrySupplementService.STATUS_SKIPPED, result.receipt!!.status)
+        assertEquals(DiscoveryCountrySupplementService.REASON_EVIDENCE_TOO_LARGE, result.receipt!!.reason)
+        assertNull(result.profile.country)
+        assertEquals(profile(case).institutionEvidence, result.profile.institutionEvidence)
+        assertTrue(result.receipt!!.observations.isEmpty())
+    }
+
     @Test fun `observations are bounded and oversized evidence never fills a country`() {
         val case = fixture().cases.single { it.id == "ORCID_MATCH" }
         val html = mapper.createObjectNode()

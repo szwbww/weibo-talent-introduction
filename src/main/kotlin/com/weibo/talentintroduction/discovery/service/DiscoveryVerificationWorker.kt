@@ -65,6 +65,7 @@ class DiscoveryVerificationWorker(
 
     private class LeaseLost : IllegalStateException()
     private class BudgetDeferred(val reason: VerificationBudgetReason) : IllegalStateException()
+    private enum class ContextIssue { NONE, PARSER_DRIFT, INVALID_PROTOCOL }
 
     /** Also used by the isolated runtime fixture. SQL reservations always precede provider calls. */
     internal fun process(lease: VerificationItem) {
@@ -83,16 +84,43 @@ class DiscoveryVerificationWorker(
         var searched = lease.searchCompletedAt
         var candidatesAt = lease.candidateFoundAt
         fun json() = rawPayload ?: mapper.writeValueAsString(payload)
+        fun contextIssue(snapshot: VerificationSnapshot, saved: InstitutionNormalization): ContextIssue {
+            if (saved.version != DiscoveryInstitutionNormalizer.VERSION) return ContextIssue.INVALID_PROTOCOL
+            val expected = runCatching {
+                DiscoveryInstitutionNormalizer.build(snapshot.profile.institution,
+                    rules.identityEmployments(snapshot, payload.evidence), payload.search?.candidates)
+            }.getOrElse { return ContextIssue.INVALID_PROTOCOL }
+            // Structure and input identity are protocol, not parser output: a mismatch is corruption.
+            if (saved.inputs.map { it.source to it.sourceRef } != expected.inputs.map { it.source to it.sourceRef })
+                return ContextIssue.INVALID_PROTOCOL
+            var drift = false
+            saved.inputs.zip(expected.inputs).forEach { (stored, rebuilt) ->
+                if (stored.raw != rebuilt.raw) {
+                    // A lawful parser rebuild may change the raw value; the stored hash must still describe it.
+                    if (stored.rawSha256 != DiscoveryInstitutionNormalizer.sha256(stored.raw ?: ""))
+                        return ContextIssue.INVALID_PROTOCOL
+                    drift = true
+                } else if (stored != rebuilt) {
+                    return ContextIssue.INVALID_PROTOCOL
+                }
+            }
+            if (saved.queryInstitution != expected.queryInstitution && !drift) return ContextIssue.INVALID_PROTOCOL
+            return if (drift) ContextIssue.PARSER_DRIFT else ContextIssue.NONE
+        }
         fun evaluate(snapshot: VerificationSnapshot): VerificationDecision {
             val normalization = payload.institutionNormalization
-            return try {
-                rules.evaluate(snapshot, payload.evidence, payload.search, institutionNormalization = normalization)
-            } catch (_: IllegalArgumentException) {
-                // A context that cannot be rebuilt from its own inputs is never trusted as a no-match.
-                rules.evaluate(snapshot, payload.evidence, payload.search).copy(
-                    qualification = VerificationQualification.UNKNOWN, outcome = VerificationOutcome.PENDING,
-                    route = VerificationRoute.NONE, reasonCodes = listOf("EVIDENCE_CONFLICT"), matchedPersonId = null)
+            if (normalization != null) {
+                when (contextIssue(snapshot, normalization)) {
+                    // An unrecognized or corrupted saved protocol is an interface error, not a no-match.
+                    ContextIssue.INVALID_PROTOCOL -> throw IllegalArgumentException("Invalid institution normalization context")
+                    ContextIssue.PARSER_DRIFT -> return rules.evaluate(snapshot, payload.evidence, payload.search).copy(
+                        qualification = VerificationQualification.UNKNOWN, outcome = VerificationOutcome.PENDING,
+                        route = VerificationRoute.NONE, reasonCodes = listOf("EVIDENCE_CONFLICT"), matchedPersonId = null)
+                    ContextIssue.NONE -> return rules.evaluate(snapshot, payload.evidence, payload.search,
+                        institutionNormalization = normalization)
+                }
             }
+            return rules.evaluate(snapshot, payload.evidence, payload.search)
         }
         fun ensureOwned() { if (lost.get()) throw LeaseLost() }
         fun save() {

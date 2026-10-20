@@ -99,6 +99,24 @@ class DiscoveryCountryRegistrationTest {
         return base.copy(institutionEvidence = DiscoveryIdentity.institutionEvidence(base, "ORCID"))
     }
 
+    private fun openAlexProfile(institution: String): ExpertProfile {
+        val ids = linkedMapOf("orcid" to orcid, "openAlexAuthorId" to "A123", "doi" to "10.example/long")
+        val proof = IdentityVerification("VERIFIED", DiscoveryIdentity.VERSION, "ada@example.invalid", "Ada", "Lee",
+            "SOURCE_SHA256", "a".repeat(64), orcid, "A123")
+        val base = ExpertProfile(orcidId = orcid, email = "ada@example.invalid", givenNames = "Ada", familyNames = "Lee",
+            country = null, keyword = null, employment = null, institution = institution,
+            emailSource = "PAPER_FULLTEXT", dataSource = "OPENALEX", externalIds = mapper.writeValueAsString(ids),
+            identityVerification = proof)
+        return base.copy(institutionEvidence = DiscoveryIdentity.institutionEvidence(base, "OPENALEX"))
+    }
+
+    private fun openAlexPaper(institution: String): PaperMetadata = PaperMetadata(
+        pmcId = null, pmid = null, doi = "10.example/long", title = "Synthetic paper", pubYear = 2026,
+        journal = null, source = "OPENALEX", authors = listOf(
+            PaperAuthor(givenNames = "Ada", familyNames = "Lee", orcidId = orcid, affiliation = null,
+                openAlexAuthorId = "A123", institutionName = institution, institutionCountry = "US",
+                institutionSource = "OPENALEX")))
+
     private fun jatsProfile(): ExpertProfile {
         val ids = linkedMapOf("pmcId" to "PMC123456", "orcid" to orcid)
         val proof = IdentityVerification("VERIFIED", DiscoveryIdentity.VERSION, "ada@example.invalid", "Ada", "Lee",
@@ -346,5 +364,47 @@ class DiscoveryCountryRegistrationTest {
         }
         assertTrue(Thread.currentThread().isInterrupted)
         Thread.interrupted()
+    }
+
+    @Test fun `cancellation during the supplement request stops registration without inserting an item`() {
+        val cancelHttp = countrySupplementRestTemplate()
+        val cancelServer = MockRestServiceServer.bindTo(cancelHttp).build()
+        cancelServer.expect(ExpectedCount.once(), anything()).andRespond {
+            throw java.util.concurrent.CancellationException("fixture")
+        }
+        val props = properties()
+        val cancelRegistration = DiscoveryVerificationRegistrationService(props, repository, writer, policy, admissions,
+            jdbc, Mockito.mock(TransactionTemplate::class.java), clock,
+            DiscoveryCountrySupplementService(props, clock, cancelHttp))
+        assertThrows(java.util.concurrent.CancellationException::class.java) {
+            cancelRegistration.reserve(context(), "EMAIL-doc", profile(), "ORCID", orcid)
+        }
+        Mockito.verify(repository, Mockito.never()).reserveItem(anyValue(VerificationReservation(7, "EMAIL-doc",
+            "0".repeat(64), VerificationMode.ENFORCE.policyVersion, "ORCID", orcid, "{}", "0".repeat(64))), anyValue(now))
+        cancelServer.verify()
+    }
+
+    @Test fun `oversized skipped evidence freezes registration with the original token`() {
+        var capturedValue: VerificationReservation? = null
+        Mockito.doAnswer { invocation ->
+            capturedValue = invocation.getArgument(0)
+            item(invocation.getArgument(0))
+        }.`when`(repository).reserveItem(anyValue(VerificationReservation(7, "EMAIL-doc", "0".repeat(64),
+            VerificationMode.ENFORCE.policyVersion, "OPENALEX", "A123", "{}", "0".repeat(64))), anyValue(now))
+        server.expect(ExpectedCount.never(), anything())
+        val long = "Example University " + "x".repeat(2003)
+        val base = openAlexProfile(long)
+        val registration = service().reserve(context(), "EMAIL-doc", base, "OPENALEX", "A123", openAlexPaper(long))
+        server.verify()
+        val input = requireNotNull(capturedValue)
+        val root = mapper.readTree(input.snapshotJson)
+        assertEquals(DiscoveryCountrySupplementService.STATUS_SKIPPED, root.path("countrySupplement").path("status").asText())
+        assertEquals(DiscoveryCountrySupplementService.REASON_EVIDENCE_TOO_LARGE,
+            root.path("countrySupplement").path("reason").asText())
+        assertTrue(root.path("profile").path("country").isNull)
+        assertEquals(base.institutionEvidence, root.path("profile").path("institutionEvidence").asText())
+        assertTrue(root.path("countrySupplement").path("observations").size() <=
+            DiscoveryCountrySupplementService.MAX_OBSERVATIONS)
+        assertNull(registration.preparedProfile!!.country)
     }
 }
