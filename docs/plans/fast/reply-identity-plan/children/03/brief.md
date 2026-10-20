@@ -23,6 +23,11 @@ Read the complete exact child plan from disk; its `变更文件清单`, commands
 - Exercise changed runtime behavior beyond tests through an isolated smoke scenario. For frontend use a real browser with visual proof; do not substitute DOM stubs for browser verification. Record any missing mandatory evidence instead of claiming completion.
 - Do not add unlisted changelog/docs; fast-p execution evidence documents the change within this explicit file scope.
 
+## Seeded execution boundary and baseline
+
+- First seeded start boundary: 75b399d6fbb6cc6b8cb859eef984524fc1342c12. This plan-only commit descends directly from the master baseline above; use it as child_base_sha.
+- Baseline full `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test`: exit 1; 5288 tests, 0 failures, 19 errors, 21 skipped. All errors are ExpertContactLocationServiceTest constructor failures caused by JDK11 tzdb missing America/Coyhaique (artifact://770). Preserve and classify this unrelated baseline; do not fix it or exclude tests. Fresh required commands are still mandatory; unchanged baseline errors alone do not preclude READY_FOR_VERIFICATION when scoped commands pass and no in-scope failure remains.
+
 ## Authorized contract (verbatim child plan)
 
 # 03 全局称呼与签名设置
