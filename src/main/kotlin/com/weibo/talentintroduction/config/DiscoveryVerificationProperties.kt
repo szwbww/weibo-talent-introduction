@@ -16,8 +16,10 @@ class DiscoveryVerificationProperties(
     val mode: VerificationMode = VerificationMode.AUDIT,
     val apolloDefault: Boolean = true,
     val apolloApiKey: String = "",
+    /** Legacy compatibility only: Apollo uses provider limits and Retry-After. */
     val requestsPerMinute: Int = 10,
     val requestsPerDay: Int = 500,
+    /** ORCID evidence-read budget only; does not limit Apollo. */
     val maxRequestsPerItem: Int = 12,
     val maxPagesPerQuery: Int = 5,
     val maxTransientAttempts: Int = 3,

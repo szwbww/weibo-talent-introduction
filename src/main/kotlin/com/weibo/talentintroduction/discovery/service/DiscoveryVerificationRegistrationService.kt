@@ -65,7 +65,7 @@ class DiscoveryVerificationRegistrationService(
             "mode" to properties.mode.name, "policyVersion" to properties.mode.policyVersion,
             "apolloMatchingVersion" to 2,
             "institutionAliasVersion" to DiscoveryInstitutionNormalizer.ALIAS_VERSION,
-            "requestsPerMinute" to properties.requestsPerMinute, "requestsPerDay" to properties.requestsPerDay,
+            "apolloLimitPolicy" to "PROVIDER",
             "maxRequestsPerItem" to properties.maxRequestsPerItem, "maxPagesPerQuery" to properties.maxPagesPerQuery,
             "maxTransientAttempts" to properties.maxTransientAttempts, "leaseSeconds" to properties.leaseSeconds,
             "httpConnectTimeout" to properties.httpConnectTimeout.toString(), "httpReadTimeout" to properties.httpReadTimeout.toString()

@@ -60,6 +60,17 @@ class AdmissionGateFixture {
 }
 
 class DiscoveryVerificationAdmissionGateTest {
+    @Test fun `gate honors persisted SELF policy version and leaves old decisions unchanged`() {
+        val f = AdmissionGateFixture()
+        val old = f.item(facts = listOf(ruleJob("Professor", AssertionSource.SELF)))
+        f.load(old)
+        assertFalse(f.policy.evaluate(f.docId, f.profile).eligible)
+        val evidence = f.mapper.readValue(old.evidenceJson, VerificationAdmissionEvidence::class.java).copy(ruleVersion = 1)
+        val changed = old.copy(outcome = VerificationOutcome.DIRECT_CLEAR, qualification = VerificationQualification.MET,
+            route = VerificationRoute.DIRECT, evidenceJson = f.mapper.writeValueAsString(evidence))
+        f.load(changed)
+        assertTrue(f.policy.evaluate(f.docId, f.profile).eligible)
+    }
     @Test fun `matrix replaces only old education age blockers and keeps soft facts`() {
         val f = AdmissionGateFixture()
         val cases = listOf(

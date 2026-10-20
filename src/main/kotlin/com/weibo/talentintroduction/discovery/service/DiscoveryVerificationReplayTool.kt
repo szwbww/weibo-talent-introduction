@@ -269,12 +269,13 @@ object DiscoveryVerificationReplayTool {
                     it.field in setOf("name", "otherName", "employment", "education") } +
                     parser.parse(snapshot, OrcidEvidenceRead(documents, true, emptyList()))).distinct()
                 val search = payload.get("search")?.takeUnless { it.isNull }?.let { mapper.treeToValue(it, ApolloSearchEvidence::class.java) }
-                val local = rules.evaluate(snapshot, facts, null, false)
+                val version = payload.path("ruleVersion").asInt(0)
+                val local = rules.evaluate(snapshot, facts, null, false, ruleVersion = version)
                 val decision = if (local.outcome == VerificationOutcome.DIRECT_CLEAR ||
                     local.qualification == VerificationQualification.CONFLICT ||
                     search?.matchingVersion != 2 && local.qualification == VerificationQualification.NOT_MET)
-                    local else rules.evaluate(snapshot, facts, search, false)
-                val gate = rules.evaluate(snapshot, facts, search, false)
+                    local else rules.evaluate(snapshot, facts, search, false, ruleVersion = version)
+                val gate = rules.evaluate(snapshot, facts, search, false, ruleVersion = version)
                 EvaluationRow(node.path("id").asLong(), local.outcome.name, decision.outcome.name, decision.qualification.name,
                     decision.route.name, decision.matchedPersonId != null, decision.reasonCodes, decision.missingFields,
                     facts.groupingBy { "${it.field}:${it.assertionSource}:${it.temporalScope}" }.eachCount().toSortedMap(), facts.size,

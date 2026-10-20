@@ -138,7 +138,7 @@ class DiscoveryVerificationQueryService(
         // A damaged per-item normalization must not fail the whole list: keep the saved state and flag the field.
         val missing = if (payload == null) listOf("institutionSubject") else try {
             rules.evaluate(snapshot, payload.evidence, payload.search,
-                institutionNormalization = payload.institutionNormalization).missingFields
+                institutionNormalization = payload.institutionNormalization, ruleVersion = payload.ruleVersion).missingFields
         } catch (_: IllegalArgumentException) {
             listOf("institutionSubject")
         }

@@ -13,8 +13,6 @@ import org.springframework.transaction.support.TransactionSynchronization
 import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.sql.ResultSet
 import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneOffset
 import java.util.UUID
 
 /** Database-only seam. Call public transactional methods through the Spring bean.
@@ -373,18 +371,10 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         }
         val duplicate = jdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_attempt WHERE request_key=? FOR UPDATE", Long::class.java, request.requestKey)!!
         if (duplicate > 0) return VerificationAttemptReservation(deferred = VerificationBudgetReason.DUPLICATE_REQUEST)
-        if (item.requestCount >= maxRequestsPerItem) return VerificationAttemptReservation(deferred = VerificationBudgetReason.ITEM_LIMIT)
-        if (request.provider == VerificationProvider.APOLLO) {
-            // Current reads are required even inside an outer REPEATABLE_READ transaction:
-            // acquiring a named lock does not refresh an earlier MVCC snapshot.
-            val start = LocalDate.ofInstant(now, ZoneOffset.UTC).atStartOfDay()
-            val day = jdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_attempt WHERE provider='APOLLO' AND requested_at>=? AND requested_at<? FOR UPDATE",
-                Long::class.java, start, start.plusDays(1))!!
-            if (day >= requestsPerDay) return VerificationAttemptReservation(deferred = VerificationBudgetReason.DAY_LIMIT)
-            val minute = jdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_attempt WHERE provider='APOLLO' AND requested_at>? AND requested_at<=? FOR UPDATE",
-                Long::class.java, now.minusSeconds(60).verificationUtc(), now.verificationUtc())!!
-            if (minute >= requestsPerMinute) return VerificationAttemptReservation(deferred = VerificationBudgetReason.MINUTE_LIMIT)
-        }
+        // Apollo quotas are enforced by the provider (429/Retry-After). Legacy quota
+        // arguments remain compatible with existing callers/configuration, but do not cap Apollo.
+        if (request.provider != VerificationProvider.APOLLO && item.requestCount >= maxRequestsPerItem)
+            return VerificationAttemptReservation(deferred = VerificationBudgetReason.ITEM_LIMIT)
         jdbc.update("""INSERT INTO discovery_verification_attempt (item_id,request_key,provider,query_kind,page_number,attempt_number,requested_at,result_code,request_json)
             VALUES (?,?,?,?,?,?,?,'DISPATCH_RESERVED',?)""", itemId, request.requestKey, request.provider.name, request.queryKind.name,
             request.pageNumber, request.attemptNumber, now.verificationUtc(), request.requestJson)

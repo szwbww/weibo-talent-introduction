@@ -25,7 +25,8 @@ data class VerificationWorkerEvidence(
     val progress: VerificationProgress = VerificationProgress(),
     val orcidCompleted: List<OrcidEndpointCompletion> = emptyList(), val schemaVersion: Int = 1,
     val queries: List<ApolloSearchQuery>? = null,
-    val institutionNormalization: InstitutionNormalization? = null
+    val institutionNormalization: InstitutionNormalization? = null,
+    val ruleVersion: Int = 0
 ) { init { require(schemaVersion == 1) } }
 
 @Service
@@ -76,7 +77,7 @@ class DiscoveryVerificationWorker(
                 if (!repository.renewLease(lease.id, token, lease.generation, clock.instant(), properties.leaseSeconds)) lost.set(true)
             } catch (_: Exception) { lost.set(true) }
         }, 30, 30, TimeUnit.SECONDS)
-        var payload = VerificationWorkerEvidence()
+        var payload = VerificationWorkerEvidence(ruleVersion = 1)
         var rawPayload: String? = null
         var activePermit: RequestPermit? = null
         var requestNumber = lease.requestCount
@@ -113,14 +114,14 @@ class DiscoveryVerificationWorker(
                 when (contextIssue(snapshot, normalization)) {
                     // An unrecognized or corrupted saved protocol is an interface error, not a no-match.
                     ContextIssue.INVALID_PROTOCOL -> throw IllegalArgumentException("Invalid institution normalization context")
-                    ContextIssue.PARSER_DRIFT -> return rules.evaluate(snapshot, payload.evidence, payload.search).copy(
+                    ContextIssue.PARSER_DRIFT -> return rules.evaluate(snapshot, payload.evidence, payload.search, ruleVersion = payload.ruleVersion).copy(
                         qualification = VerificationQualification.UNKNOWN, outcome = VerificationOutcome.PENDING,
                         route = VerificationRoute.NONE, reasonCodes = listOf("EVIDENCE_CONFLICT"), matchedPersonId = null)
                     ContextIssue.NONE -> return rules.evaluate(snapshot, payload.evidence, payload.search,
-                        institutionNormalization = normalization)
+                        institutionNormalization = normalization, ruleVersion = payload.ruleVersion)
                 }
             }
-            return rules.evaluate(snapshot, payload.evidence, payload.search)
+            return rules.evaluate(snapshot, payload.evidence, payload.search, ruleVersion = payload.ruleVersion)
         }
         fun ensureOwned() { if (lost.get()) throw LeaseLost() }
         fun save() {
@@ -233,13 +234,13 @@ class DiscoveryVerificationWorker(
                 payload = payload.copy(progress = VerificationProgress(stage = "APOLLO_SEARCH"),
                     search = ApolloSearchEvidence(matchingVersion = matchingVersion, academicResearchFields = snapshot.profile.researchFields, institutionAliasVersion = aliasVersion),
                     institutionNormalization = normalization, queries = searchQueries(snapshot, payload.evidence, normalization,
-                        formalName = matchingVersion == 2))
+                        formalName = matchingVersion == 2, ruleVersion = payload.ruleVersion))
                 entered = entered ?: clock.instant()
                 save()
             }
             if (payload.progress.stage == "APOLLO_SEARCH") {
                 // Old in-flight payloads retain their original query sequence; new runs persist it before HTTP.
-                val queries = payload.queries ?: legacySearchQueries(snapshot, payload.evidence)
+                var queries = payload.queries ?: legacySearchQueries(snapshot, payload.evidence)
                 while (payload.progress.queryIndex < queries.size) {
                     val index = payload.progress.queryIndex
                     val query = queries[index].copy(page = payload.progress.page)
@@ -258,8 +259,19 @@ class DiscoveryVerificationWorker(
                         progress = VerificationProgress("APOLLO_SEARCH",
                         if (page.hasNext) index else index + 1, if (page.hasNext) query.page + 1 else 1,
                         last, search.candidates.map { it.id }, finished))
+                    if (last && payload.ruleVersion >= 1 && search.matchingVersion == 2 &&
+                        search.candidates.none { rules.nameMatches(it, rules.allowedNames(snapshot, payload.evidence), search.queryNames, true, payload.ruleVersion) &&
+                            rules.matchReason(snapshot, payload.evidence, it, null, search.institutionAliasVersion) in
+                            setOf("APOLLO_CURRENT_INSTITUTION_MATCH", "APOLLO_HISTORICAL_INSTITUTION_MATCH", "APOLLO_PROFESSOR_MATCH") }) {
+                        val fallback = surnameFallback(snapshot, payload.institutionNormalization)
+                        if (fallback != null && queries.none { it.name == fallback.name && it.institution == fallback.institution }) {
+                            queries = queries + fallback
+                            payload = payload.copy(queries = queries, search = search.copy(complete = false),
+                                progress = payload.progress.copy(complete = false))
+                        }
+                    }
                     if (search.candidates.isNotEmpty()) candidatesAt = candidatesAt ?: clock.instant()
-                    if (last) searched = searched ?: clock.instant()
+                    if (payload.search?.complete == true) searched = searched ?: clock.instant()
                     completed(permit, result, page)
                     if (page.hasNext && query.page >= properties.maxPagesPerQuery) {
                         val decision = evaluate(snapshot)
@@ -273,7 +285,8 @@ class DiscoveryVerificationWorker(
                     val names = rules.allowedNames(snapshot, payload.evidence)
                     while (true) {
                         val candidates = payload.search!!.candidates.filter {
-                            rules.nameMatches(it, names, payload.search!!.queryNames, masked = true)
+                            (rules.nameMatches(it, names, payload.search!!.queryNames, masked = true, ruleVersion = payload.ruleVersion) ||
+                                payload.ruleVersion >= 1 && rules.emailNameMatches(snapshot, payload.evidence, it, payload.search!!.institutionAliasVersion, masked = true))
                         }
                         val strong = candidates.filter { rules.matchReason(snapshot, payload.evidence, it, null, payload.search?.institutionAliasVersion ?: 0) in
                             setOf("APOLLO_CURRENT_INSTITUTION_MATCH", "APOLLO_HISTORICAL_INSTITUTION_MATCH", "APOLLO_PROFESSOR_MATCH") }
@@ -360,10 +373,10 @@ class DiscoveryVerificationWorker(
     }
 
     internal fun searchQueries(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>,
-        normalization: InstitutionNormalization? = null, formalName: Boolean = true): List<ApolloSearchQuery> {
+        normalization: InstitutionNormalization? = null, formalName: Boolean = true, ruleVersion: Int = 0): List<ApolloSearchQuery> {
         if (normalization != null) {
             // The narrow hint is exactly the frozen subject; ambiguity produces no institution query at all.
-            return nameQueries(snapshot, evidence, formalName) + listOfNotNull(normalization.queryInstitution?.let {
+            return nameQueries(snapshot, evidence, formalName, ruleVersion) + listOfNotNull(normalization.queryInstitution?.let {
                 ApolloSearchQuery(snapshot.fullName, institution = VerificationInstitution(it))
             })
         }
@@ -374,15 +387,23 @@ class DiscoveryVerificationWorker(
                 value.path("standardId").asText("").takeIf(String::isNotBlank))
             if (institutions.none { rules.sameInstitution(it, institution) }) institutions += institution
         }
-        return nameQueries(snapshot, evidence, formalName) + listOfNotNull(institutions.singleOrNull()?.let {
+        return nameQueries(snapshot, evidence, formalName, ruleVersion) + listOfNotNull(institutions.singleOrNull()?.let {
             ApolloSearchQuery(snapshot.fullName, institution = it)
         })
     }
 
-    private fun nameQueries(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>, formalName: Boolean = true) =
+    internal fun surnameFallback(snapshot: VerificationSnapshot, normalization: InstitutionNormalization?): ApolloSearchQuery? {
+        val subject = normalization?.queryInstitution ?: return null
+        val surname = rules.familyNameHint(snapshot)
+        if (surname.length < 3 || surname.any { !it.isLetter() && it != ' ' }) return null
+        return ApolloSearchQuery(surname, institution = VerificationInstitution(subject))
+    }
+
+    private fun nameQueries(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>, formalName: Boolean = true, ruleVersion: Int = 0) =
         (listOf(snapshot.fullName) + evidence.filter { it.provider == "ORCID" &&
             (it.field == "otherName" || formalName && it.field == "name") &&
             it.identityHash == snapshot.identityHash && it.factFingerprint == snapshot.factFingerprint }.map { it.value })
+            .let { names -> if (ruleVersion >= 1) names.flatMap(rules::queryNameVariants) else names }
             .distinctBy(rules::normalizeName).map { ApolloSearchQuery(it) }
 
     private fun legacySearchQueries(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>): List<ApolloSearchQuery> {

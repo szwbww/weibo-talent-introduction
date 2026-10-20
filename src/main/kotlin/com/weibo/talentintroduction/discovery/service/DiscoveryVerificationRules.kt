@@ -36,7 +36,9 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
     private val mapper = jacksonObjectMapper()
     fun evaluate(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>,
         search: ApolloSearchEvidence? = null, protected: Boolean = false,
-        institutionNormalization: InstitutionNormalization? = null): VerificationDecision {
+        institutionNormalization: InstitutionNormalization? = null, ruleVersion: Int = 0): VerificationDecision {
+        require(ruleVersion in 0..1)
+        fun sameName(left: String, right: String) = sameName(left, right, ruleVersion)
         val today = LocalDate.now(clock)
         require(search == null || search.matchingVersion in 1..2) { "Unsupported Apollo matching version" }
         require(search == null || search.institutionAliasVersion in 0..DiscoveryInstitutionNormalizer.ALIAS_VERSION)
@@ -57,7 +59,8 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
         val names = evidence.filter { it.field == "name" }.map { normalizeName(it.value) }.distinct()
         if (names.any { !sameName(it, snapshot.fullName) })
             return decision(VerificationQualification.CONFLICT, listOf("NAME_CONFLICT"))
-        val facts = evidence.filter { it.assertionSource == AssertionSource.ORGANIZATION }
+        val facts = evidence.filter { it.assertionSource == AssertionSource.ORGANIZATION ||
+            ruleVersion >= 1 && it.assertionSource == AssertionSource.SELF }
         val jobs = facts.filter { it.field == "employment" && it.temporalScope == TemporalScope.CURRENT }
         val professor = jobs.any { fact -> value(fact, "institution").isNotBlank() && isProfessor(value(fact, "role")) }
         val doctorates = facts.filter { it.field == "education" }.mapNotNull { fact ->
@@ -90,7 +93,8 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
                 return decision(VerificationQualification.CONFLICT, listOf("APOLLO_ID_CONFLICT"), missing)
             if (search.candidates.isEmpty()) return decision(qualification, listOf("APOLLO_NO_MATCH"), missing)
             val namesToMatch = allowedNames(snapshot, evidence)
-            val named = search.candidates.filter { nameMatches(it, namesToMatch, search.queryNames, masked = false) }
+            val named = search.candidates.filter { (nameMatches(it, namesToMatch, search.queryNames, masked = false, ruleVersion = ruleVersion) ||
+                ruleVersion >= 1 && emailNameMatches(snapshot, evidence, it, search.institutionAliasVersion)) }
             if (named.any { it.orcid != null && snapshot.boundOrcid != null && normalizeOrcid(it.orcid) != snapshot.boundOrcid })
                 return decision(VerificationQualification.CONFLICT, listOf("ORCID_CONFLICT"), missing)
             val supported = named.mapNotNull { candidate ->
@@ -102,14 +106,16 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
                 listOf(if (matched.size > 1) "IDENTITY_AMBIGUOUS" else "IDENTITY_NOT_MATCHED"), missing)
             // An unresolved masked candidate could still be a second valid person; do not discard it.
             if (search.candidates.any { it.id != matched.single().first.id && explicitName(it) == null &&
-                    nameMatches(it, namesToMatch, search.queryNames, masked = true) &&
+                    (nameMatches(it, namesToMatch, search.queryNames, masked = true, ruleVersion = ruleVersion) ||
+                        ruleVersion >= 1 && emailNameMatches(snapshot, evidence, it, search.institutionAliasVersion, masked = true)) &&
                     matchReason(snapshot, evidence, it, search.academicResearchFields, search.institutionAliasVersion) != null })
                 return decision(qualification, listOf("IDENTITY_AMBIGUOUS"), missing)
             val (candidate, reason) = matched.single()
             val aliasReasons = if (reason in setOf("APOLLO_CURRENT_INSTITUTION_MATCH", "APOLLO_HISTORICAL_INSTITUTION_MATCH") &&
                 matchReason(snapshot, evidence, candidate, search.academicResearchFields, 0) != reason)
                 listOf(DiscoveryInstitutionNormalizer.TUM_ALIAS_REASON) else emptyList()
-            return decision(qualification, aliasReasons + listOf("APOLLO_MATCH_POLICY_V2", reason, when (qualification) {
+            return decision(qualification, aliasReasons + (if (ruleVersion >= 1 && !nameMatches(candidate, namesToMatch, search.queryNames, false, ruleVersion))
+                listOf("APOLLO_EMAIL_GIVEN_NAME_MATCH") else emptyList()) + listOf("APOLLO_MATCH_POLICY_V2", reason, when (qualification) {
                 VerificationQualification.MET -> "QUALIFICATION_MET"
                 VerificationQualification.NOT_MET -> "AGE_REQUIREMENT_NOT_MET"
                 else -> "QUALIFICATION_EVIDENCE_MISSING"
@@ -198,12 +204,13 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
     private fun explicitName(candidate: ApolloCandidate): String? = candidate.fullName ?:
         listOfNotNull(candidate.firstName, candidate.lastName).takeIf { candidate.lastName != null }?.joinToString(" ")
 
-    internal fun nameMatches(candidate: ApolloCandidate, names: Set<String>, queries: Set<String>, masked: Boolean): Boolean {
+    internal fun nameMatches(candidate: ApolloCandidate, names: Set<String>, queries: Set<String>, masked: Boolean, ruleVersion: Int = 1): Boolean {
+        fun sameName(left: String, right: String) = sameName(left, right, ruleVersion)
         val explicit = explicitName(candidate)
         return if (explicit != null) names.any { known ->
             sameName(explicit, known) && (candidate.lastName == null ||
                 candidate.firstName != null && sameName("${candidate.firstName} ${candidate.lastName}", known))
-        } else masked && names.any { known ->
+        } else masked && names.flatMap { if (ruleVersion >= 1) nameVariants(it) else listOf(it) }.any { known ->
             val tokens = normalizeName(known).split(' ')
             val mask = candidate.obfuscatedLastName.orEmpty().lowercase(Locale.ROOT)
             // Apollo masks a hidden span, not a fixed number of letters: Hadfield -> Ha***d.
@@ -261,10 +268,56 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
 
     fun normalizeName(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFKC)
         .lowercase(Locale.ROOT).replace(Regex("[\\p{P}\\p{Z}\\s]+"), " ").trim()
-    fun sameName(left: String, right: String): Boolean {
-        val a = normalizeName(left).split(' '); val b = normalizeName(right).split(' ')
-        // Only omission of already-known middle names, never invented aliases, initials or surname completion.
-        return a == b || (a.size == 2 && b.size > 2 && a.first() == b.first() && a.last() == b.last())
+    /** Transliteration is only for person names, never for institution matching. */
+    internal fun nameVariants(name: String): List<String> {
+        val german = name.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue")
+            .replace("Ä", "Ae").replace("Ö", "Oe").replace("Ü", "Ue").replace("ß", "ss")
+        fun ascii(value: String) = Normalizer.normalize(value, Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")
+        return listOf(name, ascii(german), ascii(name)).distinctBy(::normalizeName)
+    }
+    internal fun queryNameVariants(name: String): List<String> {
+        val parts = name.trim().split(Regex("\\s+"))
+        val withoutInitials = if (parts.size > 2 && parts.drop(1).dropLast(1).all {
+                it.removeSuffix(".").let { token -> token.length == 1 && token.single().isLetter() }
+            }) "${parts.first()} ${parts.last()}" else null
+        return (nameVariants(name) + listOfNotNull(withoutInitials).flatMap(::nameVariants)).distinctBy(::normalizeName).take(4)
+    }
+    fun sameName(left: String, right: String, ruleVersion: Int = 1): Boolean {
+        fun matches(a: List<String>, b: List<String>): Boolean {
+            if (a == b || a.size == 2 && b.size > 2 && a.first() == b.first() && a.last() == b.last()) return true
+            return ruleVersion >= 1 && a.size >= 3 && a.size == b.size && a.first() == b.first() && a.last() == b.last() &&
+                a.drop(1).dropLast(1).zip(b.drop(1).dropLast(1)).all { (x, y) ->
+                    x == y || x.length == 1 && y.startsWith(x) || y.length == 1 && x.startsWith(y)
+                }
+        }
+        val aa = if (ruleVersion >= 1) nameVariants(left) else listOf(left)
+        val bb = if (ruleVersion >= 1) nameVariants(right) else listOf(right)
+        return aa.any { a -> bb.any { b -> matches(normalizeName(a).split(' '), normalizeName(b).split(' ')) } }
+    }
+
+    internal fun familyNameHint(snapshot: VerificationSnapshot): String = normalizeName(
+        snapshot.profile.familyNames.orEmpty().trim().split(Regex("\\s+"))
+            .dropWhile { it.removeSuffix(".").let { token -> token.length == 1 && token.single().isLetter() } }.joinToString(" "))
+
+    /** Email is a bounded corroborating hint, not a fabricated alias or a provider-revealed address. */
+    internal fun emailNameMatches(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>, candidate: ApolloCandidate,
+        aliasVersion: Int, masked: Boolean = false): Boolean {
+        val first = candidate.firstName?.let(::normalizeName) ?: return false
+        if (first.length < 3 || first.contains(' ')) return false
+        val local = snapshot.profile.email?.substringBefore('@')?.lowercase(Locale.ROOT) ?: return false
+        if (first !in local.split(Regex("[._+\\-]"))) return false
+        val surname = familyNameHint(snapshot)
+        if (surname.length < 3) return false
+        val full = explicitName(candidate)
+        val surnameMatches = if (full != null) {
+            val tokens = normalizeName(full).split(' ')
+            tokens.size >= 2 && tokens.first() == first && normalizeName(full).endsWith(" $surname") &&
+                (candidate.lastName == null || normalizeName(candidate.lastName) == surname)
+        } else masked && candidate.obfuscatedLastName?.let { mask ->
+            mask.any { it.isLetter() } && surname.matches(Regex(mask.lowercase(Locale.ROOT).split(Regex("\\*+")).joinToString(".*") { Regex.escape(it) }))
+        } == true
+        return surnameMatches && matchReason(snapshot, evidence, candidate, null, aliasVersion) in
+            setOf("APOLLO_CURRENT_INSTITUTION_MATCH", "APOLLO_HISTORICAL_INSTITUTION_MATCH")
     }
     fun sameInstitution(a: VerificationInstitution, b: VerificationInstitution): Boolean {
         if (a.standardId != null && b.standardId != null) return a.standardId == b.standardId

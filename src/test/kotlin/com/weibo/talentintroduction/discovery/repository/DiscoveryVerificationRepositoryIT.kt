@@ -150,16 +150,16 @@ class DiscoveryVerificationRepositoryIT {
         assertEquals(revision, repository.findRun(1001)!!.revision)
     }
 
-    @Test fun `parallel budget reservation never exceeds shared day cap and releases lock`() {
+    @Test fun `parallel Apollo reservations ignore legacy day cap and retain transaction rollback`() {
         val leases = (0 until 20).map { index -> run(1001L + index); activeForOwner(index) }
         val reservations = parallel(20) { index ->
             val lease = leases[index]
             repository.reserveAttemptWithBudget(lease.id, lease.leaseToken!!, lease.generation,
                 VerificationAttemptRequest("request-$index", VerificationProvider.APOLLO, VerificationQueryKind.BROAD, 1, 1, "{}"), 100, 3, 12, NOW)
         }
-        assertEquals(3, reservations.count { it.attemptId != null })
-        assertEquals(3L, jdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_attempt", Long::class.java))
-        assertEquals(3L, jdbc.queryForObject("SELECT SUM(request_count) FROM discovery_verification_item", Long::class.java))
+        assertEquals(20, reservations.count { it.attemptId != null })
+        assertEquals(20L, jdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_attempt", Long::class.java))
+        assertEquals(20L, jdbc.queryForObject("SELECT SUM(request_count) FROM discovery_verification_item", Long::class.java))
         assertNull(jdbc.queryForObject("SELECT IS_USED_LOCK('discovery_verification_apollo_budget')", Long::class.java))
         val lease = leases.first()
         val before = repository.findRun(lease.ownerExecutionId)!!.revision
@@ -188,7 +188,7 @@ class DiscoveryVerificationRepositoryIT {
             VerificationAttemptRequest(key, VerificationProvider.APOLLO, VerificationQueryKind.BROAD, 1, 1, "{}"), 1, 1, 2, NOW)
         val attempt = request("first").attemptId!!
         assertEquals(VerificationBudgetReason.DUPLICATE_REQUEST, request("first").deferred)
-        assertEquals(VerificationBudgetReason.DAY_LIMIT, request("second").deferred)
+        assertNotNull(request("second").attemptId)
         assertTrue(repository.completeAttempt(lease.id, lease.leaseToken!!, lease.generation, attempt, 429, "RATE_LIMIT", "{}", "d".repeat(64), NOW))
         assertFalse(repository.completeAttempt(lease.id, lease.leaseToken!!, lease.generation, attempt, 200, "OK", "{}", null, NOW))
         assertTrue(repository.reschedule(lease.id, lease.leaseToken!!, lease.generation, NOW.plusSeconds(60), 0, "{\"progress\":{\"stage\":\"APOLLO_SEARCH\"}}", "[]", NOW))
@@ -206,23 +206,17 @@ class DiscoveryVerificationRepositoryIT {
         assertEquals(VerificationOutcome.DIRECT_CLEAR, repository.findItem(lease.id)!!.outcome)
     }
 
-    @Test fun `minute item and UTC day budgets count dispatch reservations before responses`() {
+    @Test fun `Apollo ignores all legacy quotas while ORCID retains its evidence budget`() {
         run(); active()
-        var lease = claim()
-        fun reserve(key: String, now: Instant, minute: Int, day: Int, item: Int) =
+        val lease = claim()
+        fun reserve(key: String, provider: VerificationProvider) =
             repository.reserveAttemptWithBudget(lease.id, lease.leaseToken!!, lease.generation,
-                VerificationAttemptRequest(key, VerificationProvider.APOLLO, VerificationQueryKind.BROAD, 1, 1, "{}"),
-                minute, day, item, now)
-        assertNotNull(reserve("one", NOW, 1, 10, 3).attemptId)
-        assertEquals(VerificationBudgetReason.MINUTE_LIMIT, reserve("two", NOW, 1, 10, 3).deferred)
-        assertNotNull(reserve("two", NOW.plusSeconds(60), 1, 10, 3).attemptId)
-        assertEquals(VerificationBudgetReason.ITEM_LIMIT, reserve("three", NOW.plusSeconds(60), 10, 10, 2).deferred)
-        // Reclaim after midnight; yesterday's crashed DISPATCH_RESERVED remains in yesterday's budget.
-        val tomorrow = Instant.parse("2026-10-19T00:00:00Z")
-        lease = claim(tomorrow)
-        assertNotNull(reserve("three", tomorrow, 1, 1, 3).attemptId)
-        assertEquals(VerificationBudgetReason.ITEM_LIMIT, reserve("four", tomorrow, 1, 1, 3).deferred)
-        assertEquals(3, repository.findItem(lease.id)!!.requestCount)
+                VerificationAttemptRequest(key, provider, VerificationQueryKind.BROAD, 1, 1, "{}"),
+                1, 1, 1, NOW)
+        repeat(15) { assertNotNull(reserve("apollo-$it", VerificationProvider.APOLLO).attemptId) }
+        assertEquals(15, repository.findItem(lease.id)!!.requestCount)
+        assertEquals(VerificationBudgetReason.DUPLICATE_REQUEST, reserve("apollo-0", VerificationProvider.APOLLO).deferred)
+        assertEquals(VerificationBudgetReason.ITEM_LIMIT, reserve("orcid", VerificationProvider.ORCID).deferred)
     }
 
     @Test fun `reserved errors stay outside activated denominator and input close is idempotent`() {

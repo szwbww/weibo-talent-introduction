@@ -65,6 +65,63 @@ class DiscoveryVerificationIntegrationTest {
             "discovery_verification_run", "expert_discovery_admission", "task_execution").forEach { jdbc.update("DELETE FROM $it") }
     }
 
+    @Test fun `SELF professor is directly admitted with provenance and without Apollo requests`() {
+        VerificationFlowFixture(jdbc, manager).use { f ->
+            val row = f.seed()
+            f.orcidBodies["employments"] = f.selfDocuments()[1].document!!.body.toString()
+            f.worker().process(f.claim())
+            val done = f.item(row.id)
+            assertEquals(VerificationOutcome.DIRECT_CLEAR, done.outcome)
+            assertEquals(VerificationProjection.PROJECTED, done.projectionState)
+            assertTrue(f.apolloRequests.isEmpty())
+            val payload = f.mapper.readValue(done.evidenceJson, VerificationWorkerEvidence::class.java)
+            assertEquals(1, payload.ruleVersion)
+            assertEquals(AssertionSource.SELF, payload.evidence.single().assertionSource)
+            assertEquals(1L, f.autoCount())
+        }
+    }
+
+    @Test fun `surname fallback persists before detail throttling and resumes through real admission gate`() {
+        VerificationFlowFixture(jdbc, manager).use { f ->
+            val row = f.seed()
+            val old = f.mapper.readValue(row.snapshotJson, VerificationSnapshot::class.java)
+            val profile = old.profile.copy(givenNames = "Adaline", identityVerification = DiscoveryIdentity.verified(
+                "ada@example.invalid", "Adaline", "Lee", "ORCID_RECORD_SHA256:" + "a".repeat(64), "0000-0002-1825-0097", null))
+            val snapshot = DiscoveryVerificationAdmissionGate.snapshot(row.expertDocId, profile, f.policy.evaluate(profile).configSnapshot)
+            @Suppress("UNCHECKED_CAST")
+            val source = f.mapper.convertValue(profile, Map::class.java) as Map<String, Any?>
+            f.raws[row.expertDocId] = source
+            jdbc.update("UPDATE discovery_verification_item SET snapshot_json=?,identity_hash=?,fact_fingerprint=? WHERE id=?",
+                f.mapper.writeValueAsString(snapshot), snapshot.identityHash, snapshot.factFingerprint, row.id)
+            jdbc.update("UPDATE discovery_verification_run SET settings_json=? WHERE execution_id=2001", """{"apolloMatchingVersion":2}""")
+            f.onApollo = {
+                f.apolloBody = if (f.apolloRequests.last().contains("q_person_name=lee&"))
+                    """{"people":[{"id":"person-1","first_name":"Ada","last_name_obfuscated":"L**","title":"Researcher","organization":{"name":"Example University"}}],"total_entries":1}"""
+                else """{"people":[],"total_entries":0}"""
+            }
+            f.detailStatus = 429
+            f.worker().process(f.claim())
+            val waiting = f.item(row.id)
+            assertEquals(VerificationState.RETRY_WAIT, waiting.state)
+            val saved = f.mapper.readValue(waiting.evidenceJson, VerificationWorkerEvidence::class.java)
+            assertEquals(1, saved.ruleVersion)
+            assertEquals(listOf("Adaline Lee", "Adaline Lee", "lee"), saved.queries!!.map { it.name })
+            assertEquals("Example University", saved.queries!!.last().institution!!.name)
+            val searches = f.apolloRequests.count { it.contains("api_search") }
+            assertEquals(3, searches)
+            f.detailStatus = 200
+            f.clock.now = f.clock.now.plusSeconds(61)
+            f.worker().process(f.claim())
+            val done = f.item(row.id)
+            assertEquals(VerificationOutcome.APOLLO_CLEAR, done.outcome)
+            assertTrue(done.reasonsJson!!.contains("APOLLO_EMAIL_GIVEN_NAME_MATCH"))
+            assertEquals(VerificationProjection.PROJECTED, done.projectionState)
+            assertEquals(1L, f.autoCount())
+            assertEquals(searches, f.apolloRequests.count { it.contains("api_search") })
+            assertEquals(1, f.candidates.size)
+        }
+    }
+
     class Fixture(workerEnabled: Boolean = false) : AutoCloseable {
         val properties = DiscoveryVerificationProperties(enabled = true, workerEnabled = workerEnabled, mode = VerificationMode.ENFORCE, apolloApiKey = "offline-fixture")
         val flow = VerificationFlowFixture(jdbc, manager, properties)
@@ -173,7 +230,8 @@ class DiscoveryVerificationIntegrationTest {
             assertEquals(listOf(true, false, true, true), runs.map { (it["apollo_requested"] as Boolean) })
             assertEquals(4L, f.itemCount())
             assertTrue(runs.all { (it["execution_id"] as Number).toLong() > 0 && it["input_closed"] == true })
-            assertTrue(runs.all { f.flow.mapper.readTree(it["settings_json"] as String).path("requestsPerDay").asInt() == 500 })
+            assertTrue(runs.all { f.flow.mapper.readTree(it["settings_json"] as String).path("apolloLimitPolicy").asText() == "PROVIDER" })
+            assertTrue(runs.none { f.flow.mapper.readTree(it["settings_json"] as String).has("requestsPerDay") })
             assertTrue(runs.all { f.flow.mapper.readTree(it["settings_json"] as String).path("institutionAliasVersion").asInt() == 1 })
             assertEquals(0L, jdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_item WHERE owner_execution_id=987654", Long::class.java))
             assertEquals(4L, jdbc.queryForObject("SELECT COUNT(DISTINCT owner_execution_id) FROM discovery_verification_item", Long::class.java))

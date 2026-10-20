@@ -28,6 +28,19 @@ class DiscoveryVerificationWorkerTest {
                 listOf(ruleFact("name", "Robert Hadfield"))).map { it.name })
         }
     }
+    @Test fun `new spelling queries are bounded while historical query lists retain original spelling`() {
+        worker(DiscoveryVerificationProperties(), Mockito.mock(DiscoveryVerificationRepository::class.java)).useWorker { current ->
+            val snapshot = ruleSnapshot().let { it.copy(profile = it.profile.copy(givenNames = "Markus", familyNames = "Kästner")) }
+            assertEquals(listOf("Markus Kästner", "Markus Kaestner", "Markus Kastner"),
+                current.searchQueries(snapshot, emptyList(), ruleVersion = 1).map { it.name })
+            assertEquals(listOf("Markus Kästner"), current.searchQueries(snapshot, emptyList(), ruleVersion = 0).map { it.name })
+            val max = snapshot.copy(profile = snapshot.profile.copy(givenNames = "Max C.", familyNames = "Lemme"))
+            assertEquals(listOf("Max C. Lemme", "Max Lemme"), current.searchQueries(max, emptyList(), ruleVersion = 1).map { it.name })
+            assertNull(current.surnameFallback(snapshot, null))
+            val ambiguous = DiscoveryInstitutionNormalizer.buildInputs("CNRS UMI 3288- NTU - THALES", emptyList(), emptyList())
+            assertNull(current.surnameFallback(snapshot, ambiguous))
+        }
+    }
     @Test fun `disabled worker neither claims work nor calls optional recovery`() {
         val repo = Mockito.mock(DiscoveryVerificationRepository::class.java)
         val recovery = Mockito.mock(RegistrationRecovery::class.java)
