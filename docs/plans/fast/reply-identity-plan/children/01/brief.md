@@ -23,6 +23,14 @@ Read the complete exact child plan from disk; its `变更文件清单`, commands
 - Exercise changed runtime behavior beyond tests through an isolated smoke scenario. For frontend use a real browser with visual proof; do not substitute DOM stubs for browser verification. Record any missing mandatory evidence instead of claiming completion.
 - Do not add unlisted changelog/docs; fast-p execution evidence documents the change within this explicit file scope.
 
+## Completed dependency and execution boundary
+
+- Child product base: d7908cd713600afebe3b44c9a83e668f737ca919. Child 03 evidence commit: 7881072ab9d74fc8a53d7bdde236bfe8ec499303. Clean prefix artifact checkpoint passed at ac67b58d21831e748c226dd1a738b4a4fed034b5.
+- Child 03 exposes getIdentityDefaults() and authenticated GET/PUT /api/reply-snippets/identity-defaults. Its exact DTO snapshot matches child 03 plan; reuse one snapshot for both identity slots.
+- Dependency verdict: LIGHT_PASS_WITH_NOTES by Identity03Verifier. Scoped MySQL run: 34 tests, 0 failures/errors/skips, including 7 actual MySQL integration tests.
+- Baseline full mvn test: 19 unrelated ExpertContactLocationServiceTest constructor errors because JDK11 tzdb does not recognize America/Coyhaique, 0 failures; baseline 5288 tests and child 03 fresh full 5291 tests. Do not repair or exclude those tests. Required fresh full-suite execution remains mandatory; unchanged baseline alone does not preclude execution handoff when no in-scope failure remains.
+- Docker/Testcontainers environment-only compatibility: DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock JAVA_TOOL_OPTIONS=-Dapi.version=1.44. Always set JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home.
+
 ## Authorized contract (verbatim child plan)
 
 # 01 人工回复首尾校验与补全预览
