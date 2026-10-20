@@ -1170,7 +1170,8 @@ internal object SampleCaptureAcceptance {
                 Mockito.anyString(), Mockito.any(com.weibo.talentintroduction.expert.domain.ExpertProfile::class.java)
                     ?: com.weibo.talentintroduction.expert.domain.ExpertProfile(orcidId = "unused", email = null,
                         givenNames = null, familyNames = null, country = null, keyword = null, employment = null),
-                Mockito.anyString(), Mockito.anyString())
+                Mockito.anyString(), Mockito.anyString(),
+                Mockito.any(com.weibo.talentintroduction.discovery.domain.PaperMetadata::class.java))
             Mockito.doAnswer {
                 check(DiscoverySampleCapture.beginAttempt(DiscoverySampleAttemptKind.PMC_XML, "activate-outside-scope") == null)
                 events += "activate"
