@@ -14,7 +14,7 @@ enum class VerificationRoute { NONE, DIRECT, APOLLO }
 enum class VerificationProjection { NOT_REQUIRED, PENDING, PROJECTED, ALREADY_PRESENT, APPLICATION_PRESENT, ERROR }
 enum class VerificationContext { UNMANAGED, MANAGED_AUDIT, MANAGED_ENFORCE, UNAVAILABLE }
 enum class VerificationProvider { APOLLO, ORCID }
-enum class VerificationQueryKind { LOCAL_EVIDENCE, BROAD, VARIANT, NARROW, ORCID }
+enum class VerificationQueryKind { LOCAL_EVIDENCE, BROAD, VARIANT, NARROW, ORCID, DETAIL }
 enum class AssertionSource { ORGANIZATION, SELF, UNKNOWN }
 enum class TemporalScope { CURRENT, HISTORICAL, UNKNOWN }
 
@@ -121,8 +121,14 @@ data class VerificationResult(
         require((state == VerificationState.ERROR) == (outcome == null))
         when (outcome) {
             VerificationOutcome.DIRECT_CLEAR -> require(route == VerificationRoute.DIRECT && qualification == VerificationQualification.MET)
-            VerificationOutcome.APOLLO_CLEAR -> require(route == VerificationRoute.APOLLO && qualification == VerificationQualification.MET && personMatchedAt != null)
-            VerificationOutcome.APOLLO_UNCLEAR -> require(route == VerificationRoute.APOLLO && qualification == VerificationQualification.UNKNOWN && personMatchedAt != null)
+            // V2 matching clarity is independent of qualification. Old payloads retain their original contract.
+            VerificationOutcome.APOLLO_CLEAR, VerificationOutcome.APOLLO_UNCLEAR -> {
+                val v2 = runCatching { com.fasterxml.jackson.module.kotlin.jacksonObjectMapper()
+                    .readTree(evidenceJson).path("search").path("matchingVersion").asInt() == 2 }.getOrDefault(false)
+                require(route == VerificationRoute.APOLLO && personMatchedAt != null &&
+                    if (v2) qualification in setOf(VerificationQualification.MET, VerificationQualification.UNKNOWN, VerificationQualification.NOT_MET)
+                    else qualification == if (outcome == VerificationOutcome.APOLLO_CLEAR) VerificationQualification.MET else VerificationQualification.UNKNOWN)
+            }
             VerificationOutcome.PROTECTED -> require(route == VerificationRoute.NONE && qualification == VerificationQualification.NOT_EVALUATED)
             VerificationOutcome.PENDING -> require(route == VerificationRoute.NONE)
             null -> require(route == VerificationRoute.NONE)

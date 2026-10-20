@@ -18,6 +18,16 @@ class DiscoveryVerificationWorkerTest {
             DiscoveryVerificationRules(ruleClock), Mockito.mock(DiscoveryVerificationCommitService::class.java),
             factory.getBeanProvider(RegistrationRecovery::class.java), ruleClock)
 
+    @Test fun `formal ORCID name is queried alongside middle initial snapshot name`() {
+        worker(DiscoveryVerificationProperties(), Mockito.mock(DiscoveryVerificationRepository::class.java)).useWorker { current ->
+            val snapshot = ruleSnapshot().let { it.copy(profile = it.profile.copy(givenNames = "Duncan", familyNames = "S. Sutherland")) }
+            val queries = current.searchQueries(snapshot, listOf(ruleFact("name", "Duncan Sutherland")))
+            assertEquals(listOf("Duncan S. Sutherland", "Duncan Sutherland"), queries.map { it.name })
+            val robert = snapshot.copy(profile = snapshot.profile.copy(givenNames = "Robert", familyNames = "H. Hadfield"))
+            assertEquals(listOf("Robert H. Hadfield", "Robert Hadfield"), current.searchQueries(robert,
+                listOf(ruleFact("name", "Robert Hadfield"))).map { it.name })
+        }
+    }
     @Test fun `disabled worker neither claims work nor calls optional recovery`() {
         val repo = Mockito.mock(DiscoveryVerificationRepository::class.java)
         val recovery = Mockito.mock(RegistrationRecovery::class.java)

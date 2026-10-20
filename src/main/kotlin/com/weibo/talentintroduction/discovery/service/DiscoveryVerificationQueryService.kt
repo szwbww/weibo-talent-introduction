@@ -34,7 +34,7 @@ class DiscoveryVerificationQueryService(
         if (properties.apolloApiKey.isBlank()) reasons += "APOLLO_API_KEY_MISSING"
         if (worker?.getIfAvailable()?.isAuthBlocked() == true) reasons += "CONFIG_AUTH"
         return VerificationCapabilities(properties.enabled, properties.workerEnabled, properties.mode,
-            reasons.isEmpty(), properties.apolloDefault, reasons)
+            reasons.isEmpty(), properties.apolloDefault, reasons, properties.countrySupplementEnabled)
     }
 
     fun summary(executionIds: List<Long>): List<VerificationSummary> {
@@ -109,7 +109,9 @@ class DiscoveryVerificationQueryService(
                 it.pageNumber, it.attemptNumber, it.requestedAt, it.completedAt, it.httpStatus, it.resultCode, it.responseSha256) },
             item.admissionRevision, item.projectionError, run.mode, run.revision, Instant.now(),
             item.apolloPersonId, VerificationApolloStages(item.apolloEnteredAt, item.searchCompletedAt,
-                item.candidateFoundAt, item.personMatchedAt))
+                item.candidateFoundAt, item.personMatchedAt), payload?.search?.matchingVersion ?: 1,
+            payload?.search?.candidates?.firstOrNull { it.id == item.apolloPersonId },
+            payload?.search?.academicResearchFields)
     }
 
     private fun summaryRow(id: Long, run: VerificationRun?, counts: VerificationCounts, status: String?, asOf: Instant,
@@ -143,7 +145,9 @@ class DiscoveryVerificationQueryService(
         return VerificationRecord(item.id, item.expertDocId, snapshot.profile.displayName, snapshot.profile.email,
             snapshot.profile.institution, item.sourceName, item.batchNumber, item.route,
             item.outcome?.name ?: if (item.state == VerificationState.ERROR) "ERROR" else "QUEUED",
-            missing, reasonCodes(item), item.updatedAt, decision, item.projectionState, revision, item.qualification)
+            missing, reasonCodes(item), item.updatedAt, decision, item.projectionState, revision, item.qualification,
+            reasonCodes(item).firstOrNull { it in MATCH_REASONS }?.let(::reasonLabel),
+            payload?.search?.matchingVersion ?: 1)
     }
 
     /** Malformed optional evidence is a per-row rendering problem; snapshot/SQL failures remain fatal. */
@@ -168,7 +172,14 @@ class DiscoveryVerificationQueryService(
     private fun reasonLabel(code: String): String = REASON_LABELS[code] ?: code
 
     companion object {
+        private val MATCH_REASONS = setOf("APOLLO_CURRENT_INSTITUTION_MATCH", "APOLLO_HISTORICAL_INSTITUTION_MATCH",
+            "APOLLO_PROFESSOR_MATCH", "APOLLO_SPECIALTY_MATCH")
         private val REASON_LABELS = mapOf(
+            "APOLLO_MATCH_POLICY_V2" to "匹配准入规则 V2",
+            "APOLLO_CURRENT_INSTITUTION_MATCH" to "当前任职匹配",
+            "APOLLO_HISTORICAL_INSTITUTION_MATCH" to "历史任职匹配",
+            "APOLLO_PROFESSOR_MATCH" to "教授职称匹配",
+            "APOLLO_SPECIALTY_MATCH" to "专业辅助匹配",
             "QUALIFICATION_MET" to "资格已明确", "QUALIFICATION_EVIDENCE_MISSING" to "资格证据缺失",
             "IDENTITY_AMBIGUOUS" to "身份存在歧义", "APOLLO_NO_MATCH" to "未找到候选人",
             "APOLLO_PERSON_MATCHED" to "已确认 Apollo 本人", "IDENTITY_EVIDENCE_MISSING" to "身份证据缺失",
@@ -186,7 +197,8 @@ class DiscoveryVerificationQueryService(
 }
 
 data class VerificationCapabilities(val enabled: Boolean, val workerEnabled: Boolean, val mode: VerificationMode,
-    val ready: Boolean, val apolloDefault: Boolean, val reasonCodes: List<String>)
+    val ready: Boolean, val apolloDefault: Boolean, val reasonCodes: List<String>,
+    val countrySupplementEnabled: Boolean = false, val apolloMatchingVersion: Int = 2)
 data class VerificationSuggestions(val autoAdmitted: Long, val directAdmitted: Long, val apolloAdmitted: Long)
 data class VerificationReason(val code: String, val label: String, val count: Long)
 data class VerificationSummary(val executionId: Long, val coverage: String, val counts: VerificationCounts?,
@@ -205,7 +217,7 @@ data class VerificationRecord(val itemId: Long, val docId: String, val name: Str
     val institution: String?, val source: String, val batchNumber: Int, val route: VerificationRoute,
     val resultLabel: String, val missingFields: List<String>, val reasonCodes: List<String>, val updatedAt: Instant,
     val currentAdmissionDecision: String?, val projectionState: VerificationProjection, val currentAdmissionRevision: Long?,
-    val qualification: VerificationQualification)
+    val qualification: VerificationQualification, val matchingLabel: String? = null, val matchingVersion: Int = 1)
 data class VerificationAttemptSummary(val id: Long, val provider: VerificationProvider, val queryKind: VerificationQueryKind,
     val pageNumber: Int, val attemptNumber: Int, val requestedAt: Instant, val completedAt: Instant?,
     val httpStatus: Int?, val resultCode: String, val responseSha256: String?)
@@ -215,6 +227,7 @@ data class VerificationItemDetail(val record: VerificationRecord, val executionI
     val institutionEvidence: String?, val boundOrcid: String?, val evidence: List<VerificationEvidence>,
     val reasons: List<VerificationReason>, val attempts: List<VerificationAttemptSummary>, val admissionRevision: Long?,
     val projectionError: String?, val mode: VerificationMode, val snapshotVersion: Long, val asOf: Instant,
-    val apolloPersonId: String?, val apolloStages: VerificationApolloStages)
+    val apolloPersonId: String?, val apolloStages: VerificationApolloStages, val matchingVersion: Int = 1,
+    val matchedCandidate: ApolloCandidate? = null, val academicResearchFields: String? = null)
 data class VerificationApolloStages(val enteredAt: Instant?, val searchedAt: Instant?,
     val candidateFoundAt: Instant?, val matchedAt: Instant?)

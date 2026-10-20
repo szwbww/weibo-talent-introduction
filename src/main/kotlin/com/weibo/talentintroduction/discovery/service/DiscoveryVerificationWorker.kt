@@ -193,6 +193,8 @@ class DiscoveryVerificationWorker(
             val snapshot = mapper.readValue<VerificationSnapshot>(lease.snapshotJson)
             require(snapshot.identityHash == lease.identityHash && snapshot.factFingerprint == lease.factFingerprint)
             val run = repository.findRun(lease.ownerExecutionId) ?: error("Verification run missing")
+            val matchingVersion = mapper.readTree(run.settingsJson).path("apolloMatchingVersion").asInt(1)
+            require(matchingVersion in 1..2)
             if (payload.progress.stage == "LOCAL_EVIDENCE") {
                 payload = payload.copy(evidence = parser.rebuild(snapshot, payload.orcidCompleted.mapNotNull { it.document }, payload.evidence))
                 val existing = evaluate(snapshot)
@@ -217,7 +219,8 @@ class DiscoveryVerificationWorker(
                         route = VerificationRoute.NONE, reasonCodes = reasons)); return
                 }
                 if (local.outcome == VerificationOutcome.DIRECT_CLEAR || !run.apolloRequested || !snapshot.identityValid ||
-                    local.qualification in setOf(VerificationQualification.NOT_MET, VerificationQualification.CONFLICT)) {
+                    local.qualification == VerificationQualification.CONFLICT ||
+                    matchingVersion == 1 && local.qualification == VerificationQualification.NOT_MET) {
                     finish(local); return
                 }
                 // Only the first Apollo entry creates the derived context, and it is persisted before any HTTP.
@@ -225,8 +228,10 @@ class DiscoveryVerificationWorker(
                     DiscoveryInstitutionNormalizer.build(snapshot.profile.institution,
                         rules.identityEmployments(snapshot, payload.evidence), emptyList())
                 else payload.institutionNormalization
-                payload = payload.copy(progress = VerificationProgress(stage = "APOLLO_SEARCH"), search = ApolloSearchEvidence(),
-                    institutionNormalization = normalization, queries = searchQueries(snapshot, payload.evidence, normalization))
+                payload = payload.copy(progress = VerificationProgress(stage = "APOLLO_SEARCH"),
+                    search = ApolloSearchEvidence(matchingVersion = matchingVersion, academicResearchFields = snapshot.profile.researchFields),
+                    institutionNormalization = normalization, queries = searchQueries(snapshot, payload.evidence, normalization,
+                        formalName = matchingVersion == 2))
                 entered = entered ?: clock.instant()
                 save()
             }
@@ -259,6 +264,65 @@ class DiscoveryVerificationWorker(
                         finish(decision.copy(reasonCodes = (decision.reasonCodes + "SEARCH_INCOMPLETE" + "SEARCH_PAGE_LIMIT").distinct()))
                         return
                     }
+                }
+                if (payload.search?.matchingVersion == 2 && payload.search?.detailsComplete != true) {
+                    // Search pagination is finished and durable before detail calls begin. Recovery never repeats
+                    // acknowledged details or changes the saved query sequence.
+                    val names = rules.allowedNames(snapshot, payload.evidence)
+                    while (true) {
+                        val candidates = payload.search!!.candidates.filter {
+                            rules.nameMatches(it, names, payload.search!!.queryNames, masked = true)
+                        }
+                        val strong = candidates.filter { rules.matchReason(snapshot, payload.evidence, it, null) in
+                            setOf("APOLLO_CURRENT_INSTITUTION_MATCH", "APOLLO_HISTORICAL_INSTITUTION_MATCH", "APOLLO_PROFESSOR_MATCH") }
+                        // Current institution / professor evidence can distinguish a candidate from unrelated
+                        // same-name people. Only fall back to history/specialty when no strong candidate exists.
+                        val candidate = strong.ifEmpty { candidates }.firstOrNull {
+                            it.id !in payload.search!!.detailsCompleted &&
+                                !(it in strong && (it.fullName != null || it.lastName != null))
+                        } ?: break
+                        val permit = reserve(VerificationProvider.APOLLO, VerificationQueryKind.DETAIL, 1,
+                            mapper.writeValueAsString(mapOf("personId" to candidate.id, "matchingVersion" to 2)))
+                        val result = apollo.detail(candidate.id, permit)
+                        if (result is VerificationHttpResult.Success) {
+                            // Search is a partial projection; richer values replace it, rather than being treated as
+                            // contradictory copies from independent search pages.
+                            val detail = result.value
+                            val updated = detail.copy(
+                                orcid = detail.orcid ?: candidate.orcid,
+                                obfuscatedLastName = detail.obfuscatedLastName ?: candidate.obfuscatedLastName)
+                            val conflicting = detail.orcid != null && candidate.orcid != null &&
+                                normalizeOrcid(detail.orcid) != normalizeOrcid(candidate.orcid)
+                            val search = payload.search!!.copy(
+                                candidates = payload.search!!.candidates.map { if (it.id == candidate.id) updated else it },
+                                conflictingIds = payload.search!!.conflictingIds + if (conflicting) setOf(candidate.id) else emptySet(),
+                                detailsCompleted = payload.search!!.detailsCompleted + candidate.id)
+                            payload = payload.copy(search = search, institutionNormalization = payload.institutionNormalization?.let {
+                                DiscoveryInstitutionNormalizer.withCandidates(it, search.candidates)
+                            })
+                            completed(permit, result, detail)
+                        } else if (result is VerificationHttpResult.PermanentFailure && result.code == "EVIDENCE_MISSING") {
+                            payload = payload.copy(search = payload.search!!.copy(
+                                detailsCompleted = payload.search!!.detailsCompleted + candidate.id))
+                            completed(permit, result)
+                        } else {
+                            completed(permit, result)
+                            retry(result as VerificationHttpResult<Nothing>); return
+                        }
+                    }
+                    // Academic enrichment runs independently. Freeze the fields already available at decision
+                    // time; replay and the gate consume these same fields, never a later mutable profile.
+                    if (payload.search!!.candidates.isNotEmpty()) {
+                        val latest = commits.prepare(lease).snapshot
+                        if (latest != null && latest.identityHash == snapshot.identityHash &&
+                            latest.factFingerprint == snapshot.factFingerprint) {
+                            payload = payload.copy(search = payload.search!!.copy(
+                                academicResearchFields = latest.profile.researchFields,
+                                academicCapturedAt = clock.instant()))
+                        }
+                    }
+                    payload = payload.copy(search = payload.search!!.copy(detailsComplete = true))
+                    save()
                 }
                 finish(evaluate(snapshot))
             } else if (payload.progress.stage == "DECIDE") {
@@ -294,10 +358,10 @@ class DiscoveryVerificationWorker(
     }
 
     internal fun searchQueries(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>,
-        normalization: InstitutionNormalization? = null): List<ApolloSearchQuery> {
+        normalization: InstitutionNormalization? = null, formalName: Boolean = true): List<ApolloSearchQuery> {
         if (normalization != null) {
             // The narrow hint is exactly the frozen subject; ambiguity produces no institution query at all.
-            return nameQueries(snapshot, evidence) + listOfNotNull(normalization.queryInstitution?.let {
+            return nameQueries(snapshot, evidence, formalName) + listOfNotNull(normalization.queryInstitution?.let {
                 ApolloSearchQuery(snapshot.fullName, institution = VerificationInstitution(it))
             })
         }
@@ -308,13 +372,15 @@ class DiscoveryVerificationWorker(
                 value.path("standardId").asText("").takeIf(String::isNotBlank))
             if (institutions.none { rules.sameInstitution(it, institution) }) institutions += institution
         }
-        return nameQueries(snapshot, evidence) + listOfNotNull(institutions.singleOrNull()?.let {
+        return nameQueries(snapshot, evidence, formalName) + listOfNotNull(institutions.singleOrNull()?.let {
             ApolloSearchQuery(snapshot.fullName, institution = it)
         })
     }
 
-    private fun nameQueries(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>) =
-        (listOf(snapshot.fullName) + evidence.filter { it.provider == "ORCID" && it.field == "otherName" }.map { it.value })
+    private fun nameQueries(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>, formalName: Boolean = true) =
+        (listOf(snapshot.fullName) + evidence.filter { it.provider == "ORCID" &&
+            (it.field == "otherName" || formalName && it.field == "name") &&
+            it.identityHash == snapshot.identityHash && it.factFingerprint == snapshot.factFingerprint }.map { it.value })
             .distinctBy(rules::normalizeName).map { ApolloSearchQuery(it) }
 
     private fun legacySearchQueries(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>): List<ApolloSearchQuery> {
@@ -322,6 +388,6 @@ class DiscoveryVerificationWorker(
             it.temporalScope == TemporalScope.CURRENT }?.let {
             mapper.readTree(it.value).path("institution").asText().takeIf(String::isNotBlank)
         }?.let(::VerificationInstitution)
-        return nameQueries(snapshot, evidence) + listOfNotNull(institution?.let { ApolloSearchQuery(snapshot.fullName, institution = it) })
+        return nameQueries(snapshot, evidence, formalName = false) + listOfNotNull(institution?.let { ApolloSearchQuery(snapshot.fullName, institution = it) })
     }
 }

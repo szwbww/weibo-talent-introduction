@@ -990,7 +990,7 @@ describe("c5 discovery review · scope and confirm (I-2)", () => {
         const keys = [...indexHtml.matchAll(/\?v=([^"<>]+)/g)].map(match => match[1]);
         assert.strictEqual(keys.length, 16);
         assert.strictEqual(new Set(keys).size, 1);
-        assert.match(keys[0], /^\d{8}-apollo-verification$/);
+        assert.match(keys[0], /^\d{8}-apollo-matching-v2$/);
         assert.ok(indexHtml.includes('<script src="task-modal-runtime.js"></script>'));
     });
 });

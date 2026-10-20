@@ -92,7 +92,7 @@ test("S1/S2 real IDs, static head, original controls and exact CSS bytes", () =>
 test("I4 all 16 existing resource keys share the new key and runtime stays unversioned", () => {
     const values = [...html.matchAll(/\?v=([^"<>]+)/g)].map(m => m[1]);
     assert.equal(values.length, 16); assert.equal(new Set(values).size, 1);
-    assert.match(values[0], /^\d{8}-apollo-verification$/);
+    assert.match(values[0], /^\d{8}-apollo-matching-v2$/);
     assert.match(html, /<script src="task-modal-runtime\.js"><\/script>/);
 });
 
@@ -103,7 +103,7 @@ test("I1 F123 uses ledger counts, never original processed/passed", () => {
     assert.match(row, /<td>123<\/td><td class="apv-number">55<\/td><td>40<\/td>/);
     assert.match(row, /核验中/); assert.doesNotMatch(row, /9999/);
     const summary = s.apvSummaryHtml(F123);
-    for (const value of ["待核验 45", "错误 5", "排队/核验中 18", "进入辅助核验 108", "已查询 85", "返回候选 66", "确认本人 40", "同步错误 1"]) assert.ok(summary.includes(value), value);
+    for (const value of ["待核验 45", "错误 5", "排队/核验中 18", "进入辅助核验 108", "已查询 85", "返回候选 66", "满足匹配规则 40", "同步错误 1"]) assert.ok(summary.includes(value), value);
 });
 
 test("I1 null, real zero, audit and missing statistics are distinct", () => {
@@ -145,7 +145,7 @@ test("S7 evidence escapes external text, rejects unsafe links and shows typed Ap
     const output = s.apvEvidenceHtml({ qualification: "UNKNOWN", evidence: [evidence], attempts: [], reasons: [{ code: "LONG-CODE", label: "完整原因", count: 1 }], apolloPersonId: "person-fixture", apolloStages: { enteredAt: F123.asOf, searchedAt: F123.asOf, candidateFoundAt: F123.asOf, matchedAt: F123.asOf } }, record);
     assert.equal((output.match(/class="apv-evidence-item"/g) || []).length, 4);
     assert.match(output, /&lt;img/); assert.doesNotMatch(output, /<img|href="javascript:/);
-    for (const text of ["person-fixture", "进入辅助", "已查询", "返回候选", "确认本人", "未取得可靠证据", "历史", "采集日期", "LONG-CODE"]) assert.ok(output.includes(text));
+    for (const text of ["person-fixture", "进入辅助", "已查询", "返回候选", "满足匹配规则", "未取得可靠证据", "历史", "采集日期", "LONG-CODE"]) assert.ok(output.includes(text));
     assert.match(s.apvSourceHtml({ ...evidence, sourceUrl: 'https://example.invalid/?x="a"' }), /rel="noopener noreferrer"/);
 });
 
@@ -422,4 +422,20 @@ test("S2 launch propagates frozen Apollo option in both real transport shapes", 
     const body = extractFn("executeDiscover");
     assert.ok(body.indexOf('const apolloAssist') < body.indexOf('openTaskModal('));
     assert.match(body, /postDiscoveryLaunch\(keywords, selectedSources, includeRawScan, continuous, apolloAssist\)/);
+});
+
+test("matching V2 evidence shows the selected person and escapes provider text", () => {
+    const s = sandbox();
+    const output = s.apvEvidenceHtml({
+        qualification: "UNKNOWN", matchingVersion: 2, apolloPersonId: "p1",
+        matchedCandidate: { fullName: "Ada <Lee>", title: "Professor of Physics", institution: {name: "Example University"},
+            headline: "<img src=x onerror=alert(1)>", employmentHistory: [{institution:{name:"Old University"}, title:"Researcher", current:false, startDate:"2010-01-01", endDate:"2020-01-01"}] },
+        academicResearchFields: "Physics", attempts: [], reasons: []
+    }, {name:"Ada Lee", itemId:1, resultLabel:"APOLLO_CLEAR", matchingLabel:"教授职称匹配"});
+    assert.match(output, /匹配规则 V2/);
+    assert.match(output, /教授职称匹配/);
+    assert.match(output, /Old University/);
+    assert.match(output, /Professor of Physics/);
+    assert.doesNotMatch(output, /<img src=x/);
+    assert.match(output, /&lt;img/);
 });

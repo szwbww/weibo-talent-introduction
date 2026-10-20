@@ -76,6 +76,8 @@ class VerificationFlowFixture(val jdbc: JdbcTemplate, private val manager: DataS
     var jobRole: String? = "Researcher"
     var jobInstitution = "Example University"
     var jobEnd = "null"
+    var detailStatus = 200
+    var detailBody = """{"person":{"id":"person-1","first_name":"Ada","last_name":"Lee","name":"Ada Lee","title":"Professor of Physics","organization":{"name":"Example University"}}}"""
     var apolloStatus = 200
     var apolloBody = """{"people":[{"id":"person-1","name":"Ada Lee","first_name":"Ada","last_name":"Lee","organization":{"name":"Example University"}}],"total_entries":1}"""
     var orcidFailEndpoint: String? = null
@@ -104,6 +106,12 @@ class VerificationFlowFixture(val jdbc: JdbcTemplate, private val manager: DataS
         }
         provider.expect(ExpectedCount.manyTimes(), anything()).andRespond { request ->
             if (request.uri.host == "api.apollo.io") {
+                if (request.uri.path.startsWith("/api/v1/people/")) {
+                    assertEquals(HttpMethod.GET, request.method)
+                    apolloRequests += request.uri.toString()
+                    return@andRespond if (detailStatus == 200) withSuccess(detailBody, MediaType.APPLICATION_JSON).createResponse(request)
+                        else withStatus(HttpStatus.valueOf(detailStatus)).headers(org.springframework.http.HttpHeaders().apply { set("Retry-After", "60") }).createResponse(request)
+                }
                 assertEquals("/api/v1/mixed_people/api_search", request.uri.path)
                 assertFalse(request.uri.toString().contains("example.invalid"))
                 apolloRequests += request.uri.toString()
@@ -308,6 +316,63 @@ class DiscoveryVerificationFlowIT {
             f.clock, mapOf("fixed" to cp))
         val manifest = directory.resolve("manifest.json")
         return DiscoveryVerificationReplayTool.load(manifest, DiscoveryVerificationReplayTool.sha(java.nio.file.Files.readAllBytes(manifest)))
+    }
+
+    @Test fun `V2 masked detail retry is durable and does not repeat acknowledged search`() {
+        VerificationFlowFixture(jdbc, manager).use { f ->
+            val item = f.seed()
+            jdbc.update("UPDATE discovery_verification_run SET settings_json=?", """{"apolloMatchingVersion":2}""")
+            f.apolloBody = """{"people":[{"id":"person-1","first_name":"Ada","last_name_obfuscated":"L**","title":"Professor of Physics","organization":{"name":"Example University"}}],"total_entries":1}"""
+            f.detailStatus = 429
+            f.worker().tick()
+            assertEquals(VerificationState.RETRY_WAIT, f.item(item.id).state)
+            val searchRequests = f.apolloRequests.count { it.contains("mixed_people") }
+            assertEquals(2, searchRequests)
+            val retry = f.mapper.readValue(f.item(item.id).evidenceJson, VerificationWorkerEvidence::class.java)
+            assertTrue(retry.search!!.complete)
+            assertFalse(retry.search!!.detailsComplete)
+            f.detailStatus = 200
+            f.clock.now = f.clock.now.plusSeconds(60)
+            f.worker().tick()
+            val done = f.item(item.id)
+            assertEquals(VerificationOutcome.APOLLO_CLEAR, done.outcome)
+            assertEquals(VerificationQualification.UNKNOWN, done.qualification)
+            assertEquals(1L, f.autoCount())
+            assertEquals(VerificationProjection.PROJECTED, done.projectionState)
+            assertEquals(searchRequests, f.apolloRequests.count { it.contains("mixed_people") })
+            val attempts = f.repository.findAttempts(item.id)
+            assertEquals(2, attempts.count { it.queryKind == VerificationQueryKind.DETAIL })
+            assertEquals("OK", attempts.last().resultCode)
+            assertTrue(attempts.last().responseJson!!.contains("Professor of Physics"))
+            val detail = DiscoveryVerificationQueryService(f.repository, f.admissions, f.props).item(item.id)
+            assertEquals("当前任职匹配", detail.record.matchingLabel)
+            assertEquals(2, detail.matchingVersion)
+            assertEquals("Ada Lee", detail.matchedCandidate!!.fullName)
+        }
+    }
+
+    @Test fun `V2 history specialty and name only decisions pass the real commit gate`() {
+        listOf("history", "specialty", "name-only").forEach { case ->
+            clean()
+            VerificationFlowFixture(jdbc, manager).use { f ->
+                val item = f.seed()
+                jdbc.update("UPDATE discovery_verification_run SET settings_json=?", """{"apolloMatchingVersion":2}""")
+                f.raws[item.expertDocId] = f.raws.getValue(item.expertDocId) + ("researchFields" to "Photonics")
+                f.apolloBody = """{"people":[{"id":"person-1","first_name":"Ada","last_name_obfuscated":"L**","title":"Scientist","organization":{"name":"New University"}}],"total_entries":1}"""
+                val extra = when(case) {
+                    "history" -> """, "employment_history":[{"organization_name":"Example University","current":false,"start_date":"2010-01-01","end_date":"2020-01-01"}]"""
+                    "specialty" -> """, "headline":"Research Scientist in Photonics""""
+                    else -> ""
+                }
+                f.detailBody = """{"person":{"id":"person-1","name":"Ada Lee","first_name":"Ada","last_name":"Lee","title":"Scientist","organization":{"name":"New University"}$extra}}"""
+                f.worker().tick()
+                val done = f.item(item.id)
+                assertEquals(when(case) { "history" -> VerificationOutcome.APOLLO_CLEAR; "specialty" -> VerificationOutcome.APOLLO_UNCLEAR; else -> VerificationOutcome.PENDING }, done.outcome, case + done.reasonsJson)
+                assertEquals(if(case == "name-only") 0L else 1L, f.autoCount(), case)
+                assertEquals(1, f.repository.findAttempts(item.id).count { it.queryKind == VerificationQueryKind.DETAIL })
+                if(case != "name-only") assertEquals(VerificationProjection.PROJECTED, done.projectionState, case)
+            }
+        }
     }
 
     @Test fun `historical freeze offline evaluate CAS worker commit projection retains all original billing`() {

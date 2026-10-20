@@ -1,0 +1,56 @@
+{
+  "status": "BUILD_PASS",
+  "branch": "main",
+  "baseCommit": "f1883ccabaaa46b8d805e0a5ff80dc6e3cbf3e75",
+  "command": "JAVA_HOME=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home mvn clean package -Dtest='*Test,DiscoveryVerificationFlowIT,DiscoveryCountrySupplementFlowIT' -DargLine=-Dapi.version=1.44",
+  "backend": {
+    "tests": 5287,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 21
+  },
+  "frontend": {
+    "tests": 1725,
+    "passed": 1725,
+    "failed": 0
+  },
+  "flowTests": {
+    "apollo": 31,
+    "countrySupplement": 8
+  },
+  "war": {
+    "path": "target/weibo-talent-introduction-1.0.0-SNAPSHOT.war",
+    "bytes": 50901502,
+    "sha256": "1bf6da1b70b6e82e8385b9312e19bc4a10930e1a0bcfc68334b5e85412ffd386"
+  },
+  "files": {
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryVerification.kt": "821b2ad6a530aa8801bc2128c908f5a25cdcb8e1cd7ca08d229ac7e9a0e46f49",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/ApolloPeopleSearchClient.kt": "4dcac143c184bd8ac36efaf382598bd7752435e95fbad8942bb066942ac542cb",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryService.kt": "479ccedcf04aac474f014ba528d22085488d8d705d9dd053d5dfa928056e5ba7",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt": "62b384a837959de9f7e8b984230cc02e2383a3a33f3330f59f3976818af681bf",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationReplayTool.kt": "6e65a12874bbb7c8c912f22740f211aa733fcf77b9ae3bac4e8fd5e5b41d733e",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt": "0e4ea4ca5472002609bd0aa24239a18e9ba0ad54f56417bd303f4bfd078d9d93",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt": "fef2d6d17d19b221b3004b2b5c90f2ccc9ba46db5e9256744afab920109d36e3",
+    "src/main/resources/static/app.js": "586ef6106c5efbd87f380729d8f96048ac8b6466b642c4af4b579cfd75fbc9b8",
+    "src/main/resources/static/index.html": "af64e5757f98499dfb9f46ca55118d522fd1b5b7ef5170fb1693da8259e741eb",
+    "src/main/resources/static/styles.css": "1a02383b30a8937a4614624e87eaefdd366f4c4e7294665b96a05c9928f86263",
+    "src/test/js/discoveryReview.test.js": "7a200786a73cb33ff9ea95664e5a59ec529424ec33d9c145b6cd3d8c35d2b5d9",
+    "src/test/js/discoveryVerification.test.js": "bf48aff6e07d6d79eb3aafc8dfa672aa118975fba9d09a6ffe855b44a3d1b3e2",
+    "src/test/kotlin/com/weibo/talentintroduction/discovery/service/ApolloPeopleSearchClientTest.kt": "8fa41536efb00f4f408227c4a2deb954bc2c0934e0592e5594308b54545fc051",
+    "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationFlowIT.kt": "d5740564228b04389af5a284622cd25f78c75e125049079e5e08e968061c1212",
+    "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt": "0b5d41f82f9b214b452bc83f5aff2c4968f695c828a6696555c1e5d68d78a133",
+    "src/test/kotlin/com/weibo/talentintroduction/discovery/service/ApolloMatchingV2Test.kt": "7b04f94b8a43ca66b1cd8cf39b56eb2f34edb72a6f12019756c72c1b67c9e539"
+  },
+  "timezoneProbe": {
+    "local": "PASS",
+    "production": "PASS",
+    "version": "Zulu 11.0.32.1",
+    "offsetAssertions": "10/10"
+  },
+  "deployment": "PENDING",
+  "notes": [
+    "Docker API 1.32 failed preflight; existing repo API 1.44 compatibility option resolved it.",
+    "Existing unrelated documentation changes are excluded from commit.",
+    "No data migrations. Existing runs remain V1."
+  ]
+}

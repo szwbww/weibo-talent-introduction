@@ -270,8 +270,10 @@ object DiscoveryVerificationReplayTool {
                     parser.parse(snapshot, OrcidEvidenceRead(documents, true, emptyList()))).distinct()
                 val search = payload.get("search")?.takeUnless { it.isNull }?.let { mapper.treeToValue(it, ApolloSearchEvidence::class.java) }
                 val local = rules.evaluate(snapshot, facts, null, false)
-                val decision = if (local.outcome == VerificationOutcome.DIRECT_CLEAR || local.qualification in
-                    setOf(VerificationQualification.NOT_MET, VerificationQualification.CONFLICT)) local else rules.evaluate(snapshot, facts, search, false)
+                val decision = if (local.outcome == VerificationOutcome.DIRECT_CLEAR ||
+                    local.qualification == VerificationQualification.CONFLICT ||
+                    search?.matchingVersion != 2 && local.qualification == VerificationQualification.NOT_MET)
+                    local else rules.evaluate(snapshot, facts, search, false)
                 val gate = rules.evaluate(snapshot, facts, search, false)
                 EvaluationRow(node.path("id").asLong(), local.outcome.name, decision.outcome.name, decision.qualification.name,
                     decision.route.name, decision.matchedPersonId != null, decision.reasonCodes, decision.missingFields,

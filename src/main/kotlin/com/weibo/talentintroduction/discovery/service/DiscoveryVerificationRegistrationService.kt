@@ -63,6 +63,7 @@ class DiscoveryVerificationRegistrationService(
         val apollo = if (historical && criteria.apolloAssist == null) false else requireNotNull(resolveOptions(criteria).apolloAssist)
         val settings = mapper.writeValueAsString(linkedMapOf(
             "mode" to properties.mode.name, "policyVersion" to properties.mode.policyVersion,
+            "apolloMatchingVersion" to 2,
             "requestsPerMinute" to properties.requestsPerMinute, "requestsPerDay" to properties.requestsPerDay,
             "maxRequestsPerItem" to properties.maxRequestsPerItem, "maxPagesPerQuery" to properties.maxPagesPerQuery,
             "maxTransientAttempts" to properties.maxTransientAttempts, "leaseSeconds" to properties.leaseSeconds,

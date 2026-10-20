@@ -36,7 +36,10 @@ sealed class VerificationHttpResult<out T> {
 
 data class VerificationInstitution(val name: String, val standardId: String? = null, val aliases: Set<String> = emptySet())
 data class ApolloCandidate(val id: String, val firstName: String?, val lastName: String?, val obfuscatedLastName: String?,
-    val fullName: String?, val title: String?, val institution: VerificationInstitution?, val orcid: String? = null)
+    val fullName: String?, val title: String?, val institution: VerificationInstitution?, val orcid: String? = null,
+    val headline: String? = null, val employmentHistory: List<ApolloEmployment> = emptyList())
+data class ApolloEmployment(val institution: VerificationInstitution?, val title: String?, val current: Boolean?,
+    val startDate: String?, val endDate: String?, val major: String? = null)
 data class ApolloSearchQuery(val name: String, val page: Int = 1, val institution: VerificationInstitution? = null) {
     init { require(name.isNotBlank() && name.length <= 300 && page in 1..500) }
 }
@@ -112,6 +115,34 @@ class ApolloPeopleSearchClient(
     @org.springframework.beans.factory.annotation.Autowired
     constructor(properties: DiscoveryVerificationProperties) : this(properties, verificationRestTemplate(properties), Clock.systemUTC())
     private val transport = VerificationHttp(http, clock)
+    /** Read-only person detail. Keep only matching evidence; never retain revealed contact information. */
+    fun detail(id: String, permit: RequestPermit): VerificationHttpResult<ApolloCandidate> {
+        require(properties.apolloApiKey.isNotBlank() && id.matches(Regex("[A-Za-z0-9_-]{1,128}")))
+        val uri = UriComponentsBuilder.fromHttpUrl("https://api.apollo.io/api/v1/people")
+            .pathSegment(id).build().toUri()
+        val result = transport.request(uri, HttpMethod.GET,
+            mapOf("X-Api-Key" to properties.apolloApiKey, "Accept" to "application/json"), permit, VerificationProvider.APOLLO)
+        if (result !is VerificationHttpResult.Success) return result as VerificationHttpResult<Nothing>
+        val person = result.value.path("person")
+        if (!person.isObject || text(person, "id") != id ||
+            listOf("first_name", "last_name", "name", "title", "headline", "orcid").any {
+                person.hasNonNull(it) && !person.path(it).isTextual
+            }) return VerificationHttpResult.PermanentFailure("RESPONSE_INVALID", result.httpStatus)
+        val history = person.path("employment_history")
+        if (person.hasNonNull("employment_history") && !history.isArray ||
+            history.size() > 200 || history.any { !it.isObject ||
+                it.hasNonNull("current") && !it.path("current").isBoolean })
+            return VerificationHttpResult.PermanentFailure("RESPONSE_INVALID", result.httpStatus)
+        val candidate = ApolloCandidate(id, text(person, "first_name"), text(person, "last_name"),
+            text(person, "last_name_obfuscated"), text(person, "name"), text(person, "title"),
+            text(person.path("organization"), "name")?.let(::VerificationInstitution), text(person, "orcid"),
+            text(person, "headline"), history.map { job ->
+                ApolloEmployment(text(job, "organization_name")?.let(::VerificationInstitution),
+                    text(job, "title"), job.path("current").takeIf { it.isBoolean }?.booleanValue(),
+                    text(job, "start_date"), text(job, "end_date"), text(job, "major"))
+            })
+        return VerificationHttpResult.Success(candidate, result.responseSha256, result.httpStatus)
+    }
     fun search(query: ApolloSearchQuery, permit: RequestPermit): VerificationHttpResult<ApolloSearchPage> {
         require(properties.apolloApiKey.isNotBlank()) { "Apollo configuration unavailable" }
         val builder = UriComponentsBuilder.fromHttpUrl("https://api.apollo.io/api/v1/mixed_people/api_search")

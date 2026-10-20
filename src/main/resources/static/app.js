@@ -26881,7 +26881,7 @@ async function apvLoadCapabilities(generation) {
         const reasons = (capability.reasonCodes || []).join("、");
         $("#taskLaunchApolloHint").textContent = !capability.enabled ? "资格核验未启用"
             : !capability.ready ? "Apollo 辅助核验不可用：" + reasons
-            : "已有可靠证据足够的直接准入；其余进入辅助核验。确认本人后，资格结论分别标记为「已明确」或「未明确」。";
+            : "可靠资格证据足够的直接准入；其余进入 Apollo 匹配。姓名与当前／历史任职或教授职称匹配为「已明确」准入，专业辅助匹配为「未明确」准入；仅姓名或同名歧义不准入。";
     } catch (error) {
         if (!apvIsCurrent(token)) return;
         apvState.capabilityStatus = "error";
@@ -27003,7 +27003,7 @@ function apvDetailHtml(id) {
         <label>搜索<input type="search" data-filter="q" maxlength="100" placeholder="姓名 / 邮箱 / 机构" aria-label="搜索核验档案"></label><button class="button small secondary" type="button" data-action="clear-filters">清除筛选</button><span class="apv-count"></span></div>
         <div class="apv-scrollarea"><table class="data-table compact apv-records"><thead><tr>${["姓名 / 邮箱", "机构", "核验路径", "本次结论", "缺失信息 / 原因", "当前审核 / 同步", "更新时间", "证据"].map(x => `<th>${x}</th>`).join("")}</tr></thead><tbody>${apvEmpty(8, "加载中…")}</tbody></table></div>${apvPaginationHtml("record")}</section>
         <section class="apv-inner" role="tabpanel" id="apv-collection-${id}" aria-labelledby="apv-tab-collection-${id}" hidden><p class="apv-inner-note">原采集统计：论文/记录处理与 RAW 收录，不等于资格准入。</p><div class="apv-scrollarea"><table class="data-table compact"><thead><tr>${["批次", "本批处理", "收录", "未收录", "累计进度", "原因", "时间"].map(x => `<th>${x}</th>`).join("")}</tr></thead><tbody id="batch-body-${id}">${apvEmpty(7, "加载中…")}</tbody></table></div></section>
-        ${apvTrafficHtml(id)}<p class="apv-footnote">按本次核验结论统计；当前审核状态见逐条详情。自动准入不代表已发信。未明确表示资格缺证，待核验表示尚未获自动准入。采集取消/暂停后，已入队的学术补全与资格核验可继续。</p></td></tr>`;
+        ${apvTrafficHtml(id)}<p class="apv-footnote">按本次核验结论统计；当前审核状态见逐条详情。自动准入不代表已发信。V2：当前／历史任职或教授职称匹配为已明确；专业辅助匹配为未明确准入；仅姓名或同名歧义仍待核验。旧记录按原资格口径展示，具体依据见逐条详情。采集取消/暂停后，已入队的学术补全与资格核验可继续。</p></td></tr>`;
 }
 
 function apvPaginationHtml(prefix) {
@@ -27021,7 +27021,7 @@ function apvSummaryHtml(summary) {
         <div class="apv-line"><span>已明确 ${link("clear", "clear")}</span><span>未明确 ${link("unclear", "unclear")}</span></div>
         <div class="apv-state-row">${link("pending", "pending", "待核验 ")}${link("errors", "errors", "错误 ")}${link("queued", "queued", "排队/核验中 ")}${link("protected", "protected", "保护跳过 ")}</div>
         <p class="apv-small">已准入，候选同步待处理 ${c == null ? "未记录" : apvNumber(c.projectionPending + c.projectionErrors)}（同步错误 ${n("projectionErrors")}） · 收录登记异常 ${n("registrationErrors")} · 统计更新时间 ${apvTime(summary.asOf)}</p>
-        <div class="apv-flow">Apollo：进入辅助核验 ${n("apolloEntered")} → 已查询 ${n("apolloSearched")} → 返回候选 ${n("apolloCandidates")} → 确认本人 ${n("apolloMatched")}；请求 ${n("apolloHttpAttempts")} 次</div>`;
+        <div class="apv-flow">Apollo：进入辅助核验 ${n("apolloEntered")} → 已查询 ${n("apolloSearched")} → 返回候选 ${n("apolloCandidates")} → 满足匹配规则 ${n("apolloMatched")}；请求 ${n("apolloHttpAttempts")} 次</div>`;
 }
 
 function apvAlert(error, asOf) {
@@ -27109,7 +27109,7 @@ function apvRenderRecords() {
         const open = s.openEvidence.has(id);
         const resultClass = ["DIRECT_CLEAR", "APOLLO_CLEAR"].includes(record.resultLabel) ? "ok" : record.resultLabel === "ERROR" ? "error" : "warn";
         const projection = ["ERROR", "PENDING"].includes(record.projectionState) ? "候选同步待处理（" + record.projectionState + "）" : record.projectionState;
-        return `<tr><td>${escapeHtml(record.name)}<small class="apv-block">${escapeHtml(record.email || "未记录")}</small></td><td>${escapeHtml(record.institution || "未记录")}</td><td>${escapeHtml({ DIRECT: "直接准入", APOLLO: "Apollo 辅助", NONE: "未直接准入" }[record.route] || record.route)}</td><td><span class="badge ${resultClass}">${escapeHtml(apvResult(record))}</span></td><td>${escapeHtml([...(record.missingFields || []), ...(record.reasonCodes || [])].join("、") || "无")}</td><td>${escapeHtml(record.currentAdmissionDecision || "未记录")} / ${escapeHtml(projection)}<small class="apv-block">审核版本 ${apvNumber(record.currentAdmissionRevision)}</small></td><td>${apvTime(record.updatedAt)}</td><td>${apvButton("toggle-evidence", "查看依据", false, ` data-item-id="${id}" aria-expanded="${open}" aria-controls="apv-evidence-${id}"`)}</td></tr>
+        return `<tr><td>${escapeHtml(record.name)}<small class="apv-block">${escapeHtml(record.email || "未记录")}</small></td><td>${escapeHtml(record.institution || "未记录")}</td><td>${escapeHtml({ DIRECT: "直接准入", APOLLO: "Apollo 辅助", NONE: "未直接准入" }[record.route] || record.route)}</td><td><span class="badge ${resultClass}">${escapeHtml(apvResult(record))}</span>${record.matchingLabel ? `<small class="apv-match-label">${escapeHtml(record.matchingLabel)}</small>` : ""}<small class="apv-block">${record.matchingVersion === 2 ? "匹配规则 V2" : "原资格口径"}</small></td><td>${escapeHtml([...(record.missingFields || []), ...(record.reasonCodes || [])].join("、") || "无")}</td><td>${escapeHtml(record.currentAdmissionDecision || "未记录")} / ${escapeHtml(projection)}<small class="apv-block">审核版本 ${apvNumber(record.currentAdmissionRevision)}</small></td><td>${apvTime(record.updatedAt)}</td><td>${apvButton("toggle-evidence", "查看依据", false, ` data-item-id="${id}" aria-expanded="${open}" aria-controls="apv-evidence-${id}"`)}</td></tr>
             <tr id="apv-evidence-${id}"${open ? "" : " hidden"}><td colspan="8">${open ? apvEvidenceHtml(s.evidence.get(id), record) : ""}</td></tr>`;
     }).join("");
     const body = panel.querySelector("tbody");
@@ -27132,10 +27132,12 @@ function apvEvidenceHtml(detail, record) {
     const block = (title, matcher, extra = "") => `<div class="apv-evidence-item"><b>${title}</b>${extra}${fields.filter(e => matcher.test(e.field)).map(e => `<p>${escapeHtml(e.field)}：${escapeHtml(e.value)}</p>${e.excerpt ? `<p>${escapeHtml(e.excerpt)}</p>` : ""}${apvSourceHtml(e)}${e.conflicts?.length ? `<p>冲突：${escapeHtml(e.conflicts.join("、"))}</p>` : ""}`).join("") || '<p>未取得可靠证据</p>'}</div>`;
     const stages = detail.apolloStages || {};
     const identity = detail.identity ? JSON.stringify(detail.identity) : "未记录";
+    const matched = detail.matchedCandidate;
+    const matchEvidence = matched ? `<p>匹配规则 V${apvNumber(detail.matchingVersion || 1)} · ${escapeHtml(record.matchingLabel || "原资格口径")}</p><p>候选姓名：${escapeHtml(matched.fullName || [matched.firstName, matched.lastName].filter(Boolean).join(" "))}</p><p>当前机构：${escapeHtml(matched.institution?.name || "未记录")} · 职称：${escapeHtml(matched.title || "未记录")}</p><p>职业简介：${escapeHtml(matched.headline || "未记录")}</p><p>本次采用的学术方向：${escapeHtml(detail.academicResearchFields || "未记录")}</p>${(matched.employmentHistory || []).map(job => `<p>${job.current === true ? "当前任职" : "任职经历"}：${escapeHtml(job.institution?.name || "未记录")} · ${escapeHtml(job.title || "未记录")} · ${escapeHtml(job.startDate || "未知")}—${escapeHtml(job.endDate || "未记录结束日期")}</p>`).join("")}` : "";
     return `<div class="apv-evidence"><div class="apv-evidence-head"><strong>${escapeHtml(record.name)} · 核验依据</strong><button class="button small secondary" type="button" data-action="close-evidence" data-item-id="${Number(record.itemId)}">收起</button></div><div class="apv-evidence-grid">
         ${block("身份对应", /identity|institution|name|orcid/i, `<p>本次结论 ${escapeHtml(apvResult(record))} · 资格 ${escapeHtml(detail.qualification)}</p><p>原始身份 ${escapeHtml(identity)}</p><p>原任职线索 ${escapeHtml(detail.originalEmployment || "未记录")} · 机构依据 ${escapeHtml(detail.institutionEvidence || "未记录")} · ORCID ${escapeHtml(detail.boundOrcid || "未记录")}</p>`)}
         ${block("博士学位", /degree|education|doctoral|phd/i)}${block("年龄与当前职称", /age|birth|title|employment|professor/i)}
-        <div class="apv-evidence-item"><b>Apollo 与处理记录</b><p>Apollo person ID：${escapeHtml(detail.apolloPersonId || "未记录")}</p><p>进入辅助 ${apvTime(stages.enteredAt)} · 已查询 ${apvTime(stages.searchedAt)} · 返回候选 ${apvTime(stages.candidateFoundAt)} · 确认本人 ${apvTime(stages.matchedAt)}</p>
+        <div class="apv-evidence-item"><b>Apollo 与处理记录</b>${matchEvidence}<p>Apollo person ID：${escapeHtml(detail.apolloPersonId || "未记录")}</p><p>进入辅助 ${apvTime(stages.enteredAt)} · 已查询 ${apvTime(stages.searchedAt)} · 返回候选 ${apvTime(stages.candidateFoundAt)} · 满足匹配规则 ${apvTime(stages.matchedAt)}</p>
         ${(detail.attempts || []).map(a => `<p>${escapeHtml(a.provider)} / ${escapeHtml(a.queryKind)} · 页 ${apvNumber(a.pageNumber)} · 尝试 ${apvNumber(a.attemptNumber)} · HTTP ${apvNumber(a.httpStatus)} · ${escapeHtml(a.resultCode)} · ${apvTime(a.requestedAt)} → ${apvTime(a.completedAt)}</p>`).join("") || '<p>未记录请求</p>'}${apvReasonsHtml(detail.reasons)}<p>当前审核 ${escapeHtml(record.currentAdmissionDecision || "未记录")} · 候选同步 ${escapeHtml(record.projectionState)} · ${escapeHtml(detail.projectionError || "无同步异常")}</p><p>统计更新时间 ${apvTime(detail.asOf)}</p></div></div></div>`;
 }
 

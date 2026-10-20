@@ -12947,6 +12947,17 @@ body.preview-available:not(.preview-docked) .preview-rail {
 .ec-profile button:disabled, .ec-editor :is(button, input, select, textarea):disabled { opacity: .45; cursor: not-allowed; transform: none; box-shadow: none; }
 @media (max-width: 760px) { .ec-edit-grid { grid-template-columns: 1fr; } .ec-heading { align-items: flex-start; flex-wrap: wrap; } }
 
+/* Apollo matching basis; reuse existing table and badge layout. */
+.apv-match-label {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #334155;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
 /* apollo-verification-contract:start */
 .task-modal-logs.apv-log-host {
     display: flex;

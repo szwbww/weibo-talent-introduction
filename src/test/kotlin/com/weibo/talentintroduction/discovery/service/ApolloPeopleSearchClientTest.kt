@@ -22,6 +22,21 @@ class ApolloPeopleSearchClientTest {
     private val client = ApolloPeopleSearchClient(properties, http, clock)
     private fun permit() = RequestPermit(1, VerificationProvider.APOLLO)
 
+    @Test fun `detail preserves history and academic text but omits contact data`() {
+        server.expect(requestTo("https://api.apollo.io/api/v1/people/person-1"))
+            .andExpect(method(HttpMethod.GET)).andExpect(header("X-Api-Key", "secret"))
+            .andRespond(withSuccess("""{"person":{"id":"person-1","first_name":"Ada","last_name":"Lee","name":"Ada Lee","title":"Professor of Physics","headline":"Quantum optics","organization":{"name":"New University"},"email":"private@example.invalid","employment_history":[{"organization_name":"Old University","title":"Researcher","current":false,"start_date":"2010-01-01","end_date":"2020-01-01","major":"Physics"}]}}""", MediaType.APPLICATION_JSON))
+        val result = client.detail("person-1", permit()) as VerificationHttpResult.Success
+        assertEquals("Old University", result.value.employmentHistory.single().institution!!.name)
+        assertEquals("Quantum optics", result.value.headline)
+        assertFalse(result.toString().contains("private@example.invalid"))
+        server.verify()
+    }
+    @Test fun `detail refuses a response for a different person`() {
+        server.expect(anything()).andRespond(withSuccess("""{"person":{"id":"other"}}""", MediaType.APPLICATION_JSON))
+        assertEquals("RESPONSE_INVALID", (client.detail("person-1", permit()) as VerificationHttpResult.PermanentFailure).code)
+        server.verify()
+    }
     @Test fun `only encoded search parameters and authentication go on the wire`() {
         server.expect(requestTo("https://api.apollo.io/api/v1/mixed_people/api_search?q_person_name=Ada%20%26%20Lee&page=2&per_page=100&q_organization_name=Example%20University"))
             .andExpect(method(HttpMethod.POST)).andExpect(header("X-Api-Key", "secret"))

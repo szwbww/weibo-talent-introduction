@@ -11,7 +11,9 @@ import java.util.Locale
 
 /** Immutable union of successful pages. A narrower empty query cannot erase a broad result. */
 data class ApolloSearchEvidence(val candidates: List<ApolloCandidate> = emptyList(), val broadComplete: Boolean = false,
-    val complete: Boolean = false, val queryNames: Set<String> = emptySet(), val conflictingIds: Set<String> = emptySet()) {
+    val complete: Boolean = false, val queryNames: Set<String> = emptySet(), val conflictingIds: Set<String> = emptySet(),
+    val matchingVersion: Int = 1, val detailsCompleted: Set<String> = emptySet(), val detailsComplete: Boolean = false,
+    val academicResearchFields: String? = null, val academicCapturedAt: java.time.Instant? = null) {
     fun merge(page: ApolloSearchPage, query: ApolloSearchQuery, broad: Boolean, allQueriesComplete: Boolean = false): ApolloSearchEvidence {
         val ids = conflictingIds.toMutableSet()
         val union = candidates.associateByTo(linkedMapOf()) { it.id }
@@ -35,6 +37,7 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
         search: ApolloSearchEvidence? = null, protected: Boolean = false,
         institutionNormalization: InstitutionNormalization? = null): VerificationDecision {
         val today = LocalDate.now(clock)
+        require(search == null || search.matchingVersion in 1..2) { "Unsupported Apollo matching version" }
         fun decision(q: VerificationQualification, reasons: List<String>, missing: List<String> = emptyList(),
             route: VerificationRoute = VerificationRoute.NONE, outcome: VerificationOutcome = VerificationOutcome.PENDING,
             id: String? = null) = VerificationDecision(q, route, outcome, reasons.distinct(), missing.distinct(), evidence, today, id)
@@ -77,6 +80,37 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
             if (doctorates.isEmpty()) missing += "completedDoctorate"
             if (age == null) missing += "reliableAge"
             if (age != null && age >= 40) missing += "currentAssociateProfessor"
+        }
+        if (search?.matchingVersion == 2) {
+            if (!search.complete || !search.broadComplete || !search.detailsComplete)
+                return decision(qualification, listOf("SEARCH_INCOMPLETE"), missing)
+            if (search.conflictingIds.isNotEmpty())
+                return decision(VerificationQualification.CONFLICT, listOf("APOLLO_ID_CONFLICT"), missing)
+            if (search.candidates.isEmpty()) return decision(qualification, listOf("APOLLO_NO_MATCH"), missing)
+            val namesToMatch = allowedNames(snapshot, evidence)
+            val named = search.candidates.filter { nameMatches(it, namesToMatch, search.queryNames, masked = false) }
+            if (named.any { it.orcid != null && snapshot.boundOrcid != null && normalizeOrcid(it.orcid) != snapshot.boundOrcid })
+                return decision(VerificationQualification.CONFLICT, listOf("ORCID_CONFLICT"), missing)
+            val supported = named.mapNotNull { candidate ->
+                matchReason(snapshot, evidence, candidate, search.academicResearchFields)?.let { candidate to it }
+            }
+            val strong = supported.filter { it.second in setOf("APOLLO_CURRENT_INSTITUTION_MATCH", "APOLLO_HISTORICAL_INSTITUTION_MATCH", "APOLLO_PROFESSOR_MATCH") }
+            val matched = strong.ifEmpty { supported }
+            if (matched.size != 1) return decision(qualification,
+                listOf(if (matched.size > 1) "IDENTITY_AMBIGUOUS" else "IDENTITY_NOT_MATCHED"), missing)
+            // An unresolved masked candidate could still be a second valid person; do not discard it.
+            if (search.candidates.any { it.id != matched.single().first.id && explicitName(it) == null &&
+                    nameMatches(it, namesToMatch, search.queryNames, masked = true) &&
+                    matchReason(snapshot, evidence, it, search.academicResearchFields) != null })
+                return decision(qualification, listOf("IDENTITY_AMBIGUOUS"), missing)
+            val (candidate, reason) = matched.single()
+            return decision(qualification, listOf("APOLLO_MATCH_POLICY_V2", reason, when (qualification) {
+                VerificationQualification.MET -> "QUALIFICATION_MET"
+                VerificationQualification.NOT_MET -> "AGE_REQUIREMENT_NOT_MET"
+                else -> "QUALIFICATION_EVIDENCE_MISSING"
+            }), missing, VerificationRoute.APOLLO,
+                if (reason == "APOLLO_SPECIALTY_MATCH") VerificationOutcome.APOLLO_UNCLEAR else VerificationOutcome.APOLLO_CLEAR,
+                candidate.id)
         }
         if (qualification == VerificationQualification.NOT_MET) return decision(qualification, listOf("AGE_REQUIREMENT_NOT_MET"), missing)
         if (search == null && qualification == VerificationQualification.MET)
@@ -150,6 +184,63 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
         val match = matches.single()
         return decision(qualification, listOf("APOLLO_PERSON_MATCHED") + if (qualification == VerificationQualification.MET) listOf("QUALIFICATION_MET") else listOf("QUALIFICATION_EVIDENCE_MISSING"),
             missing, VerificationRoute.APOLLO, if (qualification == VerificationQualification.MET) VerificationOutcome.APOLLO_CLEAR else VerificationOutcome.APOLLO_UNCLEAR, match.id)
+    }
+
+    internal fun allowedNames(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>): Set<String> =
+        setOf(snapshot.fullName) + evidence.filter { it.provider == "ORCID" && it.field in setOf("name", "otherName") &&
+            it.identityHash == snapshot.identityHash && it.factFingerprint == snapshot.factFingerprint }.map { it.value }
+
+    private fun explicitName(candidate: ApolloCandidate): String? = candidate.fullName ?:
+        listOfNotNull(candidate.firstName, candidate.lastName).takeIf { candidate.lastName != null }?.joinToString(" ")
+
+    internal fun nameMatches(candidate: ApolloCandidate, names: Set<String>, queries: Set<String>, masked: Boolean): Boolean {
+        val explicit = explicitName(candidate)
+        return if (explicit != null) names.any { known ->
+            sameName(explicit, known) && (candidate.lastName == null ||
+                candidate.firstName != null && sameName("${candidate.firstName} ${candidate.lastName}", known))
+        } else masked && names.any { known ->
+            val tokens = normalizeName(known).split(' ')
+            val mask = candidate.obfuscatedLastName.orEmpty().lowercase(Locale.ROOT)
+            // Apollo masks a hidden span, not a fixed number of letters: Hadfield -> Ha***d.
+            val pattern = mask.split(Regex("\\*+")).joinToString(".*") { Regex.escape(it) }
+            queries.any { sameName(it, known) } && candidate.firstName?.let(::normalizeName) == tokens.first() &&
+                mask.any { it.isLetter() } && tokens.last().matches(Regex(pattern))
+        }
+    }
+
+    /** V2 is an explicitly approved admission heuristic, not a claim that degrees/age were verified. */
+    internal fun matchReason(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>,
+        candidate: ApolloCandidate, academicFields: String?): String? {
+        val originals = listOfNotNull(snapshot.profile.institution?.let(::VerificationInstitution)) +
+            identityEmployments(snapshot, evidence).map { VerificationInstitution(value(it, "institution")) }
+        fun institutionMatch(institution: VerificationInstitution?): Boolean = institution != null && originals.any {
+            DiscoveryInstitutionNormalizer.compare(it, institution) == InstitutionComparison.MATCH
+        }
+        if (institutionMatch(candidate.institution)) return "APOLLO_CURRENT_INSTITUTION_MATCH"
+        if (candidate.employmentHistory.any { job ->
+                job.current == false && !job.endDate.isNullOrBlank() &&
+                    runCatching { LocalDate.parse(job.endDate!!.take(10)) }.getOrNull()?.let { !it.isAfter(LocalDate.now(clock)) } == true &&
+                    institutionMatch(job.institution)
+            }) return "APOLLO_HISTORICAL_INSTITUTION_MATCH"
+        if (apolloProfessor(candidate.title)) return "APOLLO_PROFESSOR_MATCH"
+        // Whole specific phrases only. Generic job/industry labels are not academic specialties.
+        val excluded = setOf("science", "engineering", "research", "education", "higher education", "technology",
+            "professor", "researcher", "scientist", "科学", "研究", "教育", "工程", "其他")
+        val specialties = academicFields.orEmpty().split(Regex("[,;，；\\n]")).map(::normalizeName)
+            .filter { it.length >= 3 && it !in excluded }.distinct()
+        val currentText = listOfNotNull(candidate.title, candidate.headline) +
+            candidate.employmentHistory.filter { it.current == true }.mapNotNull { it.major }
+        if (specialties.any { field -> currentText.any { text ->
+                (" " + normalizeName(text) + " ").contains(" $field ")
+            } }) return "APOLLO_SPECIALTY_MATCH"
+        return null
+    }
+
+    internal fun apolloProfessor(role: String?): Boolean {
+        val title = normalizeName(role.orEmpty())
+        if (Regex("emeritus|retired|former|student|candidate|assistant to|lab of|research group|退休|学生|博士生|助理人员").containsMatchIn(title)) return false
+        return title.matches(Regex("(?:(?:assistant|associate|teaching|adjunct|visiting|full|research|clinical|honorary) )?(?:professor|prof)(?: (?:of|in|at) .+)?")) ||
+            title.matches(Regex("(?:助理|副|特聘|客座|讲席)?教授"))
     }
 
     /** Identity corroboration is broader than institutional qualification, but never unbound or historical. */
