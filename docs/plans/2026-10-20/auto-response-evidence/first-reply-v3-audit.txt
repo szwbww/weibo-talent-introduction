@@ -1,0 +1,30 @@
+$ rg -n processSingleCore\(|findAllByExpertContactId|firstReplyAt =|FOR UPDATE src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt src/main/kotlin/com/weibo/talentintroduction/mail/service/AutomaticApplicationPromotionService.kt src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionService.kt
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:68:    fun findAllByExpertContactIdIsNullAndProcessStatusOrderByReceivedAtDesc(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:84:    fun findAllByExpertContactId(expertContactId: Long): List<InboundMailProcessing>
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutomaticApplicationPromotionService.kt:69:        val firstReplyAt = contact.firstReplyAt ?: receivedAt
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutomaticApplicationPromotionService.kt:78:                firstReplyAt = firstReplyInstant,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutomaticApplicationPromotionService.kt:87:                        firstReplyAt = firstReplyAt
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionService.kt:247:    /** SELECT ... FOR UPDATE 串行化同专家的反复挂起/取消；不存在专家 404。 */
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionService.kt:250:            "SELECT id FROM expert_contact WHERE id = :contactId FOR UPDATE",
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:156:                val processed = processSingleCore(owner, businessMail, groupMembers)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:194:    private fun processSingleCore(
+
+exit=0
+
+$ rg -n \bAutoMailReplyService\( src/test
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:120:    private val service = AutoMailReplyService(
+
+exit=0
+
+$ rg -n inboundMailProcessingRepository\.(save|reopen)|UPDATE inbound_mail_processing|INSERT INTO inbound_mail_processing|DELETE FROM inbound_mail_processing src/main scripts
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1328:        val saved = inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1384:        val saved = inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:193:        val saved = inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:238:        val saved = inboundMailProcessingRepository.save(record.copy(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:50:        UPDATE inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1558:        inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1629:        val updated = inboundMailProcessingRepository.reopenManualResolved(inboundProcessingId, now)
+src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql:23:UPDATE inbound_mail_processing
+src/main/resources/db/migration/V14__contact_index_level_and_reason_type_and_qa_display_name.sql:43:UPDATE inbound_mail_processing
+
+exit=0

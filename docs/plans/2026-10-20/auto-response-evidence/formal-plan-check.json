@@ -1,0 +1,39 @@
+{
+  "date": "2026-10-20",
+  "version": "V3",
+  "status": "DOCUMENT_CHECK_PASSED",
+  "implementationTestsRun": false,
+  "firstReplyOnly": true,
+  "unmatchedFlowPreserved": true,
+  "plans": [
+    {
+      "plan": "auto-response-exclusion.md",
+      "version": "V3",
+      "fileCount": 10,
+      "files": [
+        "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReceiveService.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/mail/service/ImapMailReceiveService.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/mail/service/InboundAutoResponseDetector.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMailReceiveServiceTest.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/mail/service/InboundAutoResponseDetectorTest.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionServiceIT.kt",
+        "scripts/reclassify-auto-responses.py"
+      ]
+    },
+    {
+      "plan": "mailbox-pending-confirmation-label.md",
+      "version": "V3",
+      "fileCount": 5,
+      "files": [
+        "src/main/resources/static/mailbox-chat.js",
+        "src/main/resources/static/app.js",
+        "src/main/resources/static/index.html",
+        "src/test/js/mailboxChatBehavior.test.js",
+        "src/test/js/mailboxChatStyle.test.js"
+      ]
+    }
+  ]
+}
