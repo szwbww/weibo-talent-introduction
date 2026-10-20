@@ -1,0 +1,1752 @@
+
+FILE src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt SHA256 0b892994dd7d0d8d036f8edd1dfcea5481ef0029fcf216e51fce4141e414096d
+1: package com.weibo.talentintroduction.discovery.service
+2: 
+3: import com.fasterxml.jackson.databind.DeserializationFeature
+4: import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+5: import com.fasterxml.jackson.module.kotlin.readValue
+6: import com.weibo.talentintroduction.config.DiscoveryVerificationProperties
+7: import com.weibo.talentintroduction.discovery.domain.*
+8: import com.weibo.talentintroduction.discovery.repository.DiscoveryVerificationRepository
+9: import org.springframework.beans.factory.ObjectProvider
+10: import org.springframework.scheduling.annotation.Scheduled
+11: import org.springframework.stereotype.Service
+12: import java.time.Clock
+13: import java.time.Instant
+14: import java.time.LocalDate
+15: import java.time.ZoneOffset
+16: import java.util.UUID
+17: import java.util.concurrent.Executors
+18: import java.util.concurrent.TimeUnit
+19: import java.util.concurrent.atomic.AtomicBoolean
+20: import javax.annotation.PreDestroy
+21: 
+22: /** Confirmed field evidence and provider cursors are deliberately separate JSON members. */
+23: data class VerificationWorkerEvidence(
+24:     val evidence: List<VerificationEvidence> = emptyList(), val search: ApolloSearchEvidence? = null,
+25:     val progress: VerificationProgress = VerificationProgress(),
+26:     val orcidCompleted: List<OrcidEndpointCompletion> = emptyList(), val schemaVersion: Int = 1
+27: ) { init { require(schemaVersion == 1) } }
+28: 
+29: @Service
+30: class DiscoveryVerificationWorker(
+31:     private val properties: DiscoveryVerificationProperties,
+32:     private val repository: DiscoveryVerificationRepository,
+33:     private val orcid: OrcidVerificationEvidenceClient,
+34:     private val apollo: ApolloPeopleSearchClient,
+35:     private val parser: QualificationEvidenceParser,
+36:     private val rules: DiscoveryVerificationRules,
+37:     private val commits: DiscoveryVerificationCommitService,
+38:     private val recovery: ObjectProvider<RegistrationRecovery>,
+39:     private val clock: Clock = Clock.systemUTC()
+40: ) {
+41:     private val mapper = jacksonObjectMapper().findAndRegisterModules().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+42:     private val running = AtomicBoolean()
+43:     private val authBlocked = AtomicBoolean()
+44:     private val heartbeat = Executors.newSingleThreadScheduledExecutor { runnable -> Thread(runnable, "discovery-verification-lease").apply { isDaemon = true } }
+45:     @PreDestroy fun close() { heartbeat.shutdownNow() }
+46: 
+47:     /** Process-local current latch; observing it never resumes or claims work. */
+48:     fun isAuthBlocked(): Boolean = authBlocked.get()
+49: 
+50:     @Scheduled(fixedDelayString = "\${talent-introduction.discovery-verification.poll-ms:5000}")
+51:     fun tick() {
+52:         if (!properties.workerEnabled || authBlocked.get() || !running.compareAndSet(false, true)) return
+53:         try {
+54:             recovery.getIfAvailable()?.recoverReserved(10)
+55:             repository.listProjectionDue(10).forEach { commits.project(it) }
+56:             repeat(10) {
+57:                 if (!properties.workerEnabled || authBlocked.get()) return
+58:                 val lease = repository.claimDue(clock.instant(), properties.leaseSeconds) ?: return
+59:                 process(lease)
+60:             }
+61:         } finally { running.set(false) }
+62:     }
+63: 
+64:     private class LeaseLost : IllegalStateException()
+65:     private class BudgetDeferred(val reason: VerificationBudgetReason) : IllegalStateException()
+66: 
+67:     /** Also used by the isolated runtime fixture. SQL reservations always precede provider calls. */
+68:     internal fun process(lease: VerificationItem) {
+69:         val token = requireNotNull(lease.leaseToken)
+70:         val lost = AtomicBoolean()
+71:         val renewal = heartbeat.scheduleAtFixedRate({
+72:             try {
+73:                 if (!repository.renewLease(lease.id, token, lease.generation, clock.instant(), properties.leaseSeconds)) lost.set(true)
+74:             } catch (_: Exception) { lost.set(true) }
+75:         }, 30, 30, TimeUnit.SECONDS)
+76:         var payload = VerificationWorkerEvidence()
+77:         var activePermit: RequestPermit? = null
+78:         var requestNumber = lease.requestCount
+79:         var entered = lease.apolloEnteredAt
+80:         var searched = lease.searchCompletedAt
+81:         var candidatesAt = lease.candidateFoundAt
+82:         fun json() = mapper.writeValueAsString(payload)
+83:         fun ensureOwned() { if (lost.get()) throw LeaseLost() }
+84:         fun save() {
+85:             ensureOwned()
+86:             check(repository.saveProgress(lease.id, token, lease.generation, json(), entered, searched, candidatesAt, clock.instant())) { "Verification lease lost" }
+87:         }
+88:         fun reserve(provider: VerificationProvider, kind: VerificationQueryKind, page: Int, request: String): RequestPermit {
+89:             ensureOwned()
+90:             if (!properties.workerEnabled) throw BudgetDeferred(VerificationBudgetReason.LOCK_BUSY)
+91:             val reservation = repository.reserveAttemptWithBudget(lease.id, token, lease.generation,
+92:                 VerificationAttemptRequest("${lease.id}-${UUID.randomUUID()}", provider, kind, page, requestNumber + 1, request),
+93:                 properties.requestsPerMinute, properties.requestsPerDay, properties.maxRequestsPerItem, clock.instant())
+94:             val id = reservation.attemptId ?: throw BudgetDeferred(requireNotNull(reservation.deferred))
+95:             requestNumber++
+96:             return RequestPermit(id, provider).also { activePermit = it }
+97:         }
+98:         fun completed(permit: RequestPermit, result: VerificationHttpResult<*>, response: Any? = null) {
+99:             ensureOwned()
+100:             val status = when (result) {
+101:                 is VerificationHttpResult.Success -> result.httpStatus
+102:                 is VerificationHttpResult.RateLimited -> result.httpStatus
+103:                 is VerificationHttpResult.TransientFailure -> result.httpStatus
+104:                 is VerificationHttpResult.PermanentFailure -> result.httpStatus
+105:             }
+106:             val code = when (result) {
+107:                 is VerificationHttpResult.Success -> "OK"
+108:                 is VerificationHttpResult.RateLimited -> "RATE_LIMIT"
+109:                 is VerificationHttpResult.TransientFailure -> result.code
+110:                 is VerificationHttpResult.PermanentFailure -> result.code
+111:             }
+112:             check(repository.completeAttemptAndProgress(lease.id, token, lease.generation, permit.attemptId, status, code,
+113:                 response?.let { mapper.writeValueAsString(it) }, (result as? VerificationHttpResult.Success)?.responseSha256,
+114:                 json(), entered, searched, candidatesAt, clock.instant())) { "Verification completion not persisted" }
+115:             activePermit = null
+116:         }
+117:         fun finish(decision: VerificationDecision) {
+118:             ensureOwned()
+119:             payload = payload.copy(evidence = decision.evidence, progress = payload.progress.copy(stage = "DECIDE"))
+120:             val proposed = VerificationResult(VerificationState.COMPLETED, decision.outcome, decision.qualification, decision.route,
+121:                 json(), mapper.writeValueAsString(decision.reasonCodes), entered, searched, candidatesAt,
+122:                 if (decision.matchedPersonId != null) clock.instant() else null, decision.matchedPersonId)
+123:             val committed = commits.commit(lease, proposed, commits.prepare(lease))
+124:             if (committed != null) commits.project(committed)
+125:         }
+126:         fun fail(code: String, transientAttempts: Int = lease.transientAttempts) {
+127:             if (code == "CONFIG_AUTH") authBlocked.set(true)
+128:             repository.saveFailure(lease.id, token, lease.generation,
+129:                 VerificationResult(VerificationState.ERROR, null, VerificationQualification.NOT_EVALUATED, VerificationRoute.NONE,
+130:                     json(), mapper.writeValueAsString(listOf(code)), entered, searched, candidatesAt), transientAttempts, clock.instant())
+131:         }
+132:         fun retry(result: VerificationHttpResult<Nothing>) {
+133:             val now = clock.instant()
+134:             when (result) {
+135:                 is VerificationHttpResult.RateLimited -> repository.reschedule(lease.id, token, lease.generation, maxOf(now, result.retryAt),
+136:                     lease.transientAttempts, json(), "[\"RATE_LIMIT\"]", now)
+137:                 is VerificationHttpResult.TransientFailure -> {
+138:                     val count = lease.transientAttempts + 1
+139:                     if (count >= properties.maxTransientAttempts) fail(result.code, count)
+140:                     else repository.reschedule(lease.id, token, lease.generation, now.plusSeconds(longArrayOf(30, 120, 600)[count - 1]),
+141:                         count, json(), mapper.writeValueAsString(listOf(result.code)), now)
+142:                 }
+143:                 is VerificationHttpResult.PermanentFailure -> fail(result.code)
+144:                 else -> error("Unexpected retry result")
+145:             }
+146:         }
+147:         try {
+148:             payload = lease.evidenceJson?.let { mapper.readValue<VerificationWorkerEvidence>(it) } ?: payload
+149:             val snapshot = mapper.readValue<VerificationSnapshot>(lease.snapshotJson)
+150:             require(snapshot.identityHash == lease.identityHash && snapshot.factFingerprint == lease.factFingerprint)
+151:             val run = repository.findRun(lease.ownerExecutionId) ?: error("Verification run missing")
+152:             if (payload.progress.stage == "LOCAL_EVIDENCE") {
+153:                 val existing = rules.evaluate(snapshot, payload.evidence)
+154:                 if (existing.outcome == VerificationOutcome.DIRECT_CLEAR) { finish(existing); return }
+155:                 val read = orcid.read(snapshot, payload.orcidCompleted, { endpoint, permit, document, result ->
+156:                     if (result is VerificationHttpResult.Success || result is VerificationHttpResult.PermanentFailure && result.code == "EVIDENCE_MISSING") {
+157:                         val completion = OrcidEndpointCompletion(endpoint, document)
+158:                         val saved = payload.orcidCompleted + completion
+159:                         payload = payload.copy(orcidCompleted = saved,
+160:                             evidence = (payload.evidence + parser.parse(snapshot, OrcidEvidenceRead(listOfNotNull(document), false, emptyList()))).distinct())
+161:                         completed(permit, result, completion)
+162:                     } else completed(permit, result)
+163:                 }) { path -> reserve(VerificationProvider.ORCID, VerificationQueryKind.ORCID, 1, mapper.writeValueAsString(mapOf("path" to path))) }
+164:                 if (read.failure != null) { retry(read.failure); return }
+165:                 val local = rules.evaluate(snapshot, payload.evidence)
+166:                 if (!read.complete && snapshot.boundOrcid != null) {
+167:                     finish(local.copy(outcome = VerificationOutcome.PENDING, qualification = VerificationQualification.UNKNOWN,
+168:                         route = VerificationRoute.NONE, reasonCodes = listOf("EVIDENCE_INCOMPLETE"))); return
+169:                 }
+170:                 if (local.outcome == VerificationOutcome.DIRECT_CLEAR || !run.apolloRequested || !snapshot.identityValid ||
+171:                     local.qualification in setOf(VerificationQualification.NOT_MET, VerificationQualification.CONFLICT)) {
+172:                     finish(local); return
+173:                 }
+174:                 payload = payload.copy(progress = VerificationProgress(stage = "APOLLO_SEARCH"), search = ApolloSearchEvidence())
+175:                 entered = entered ?: clock.instant()
+176:                 save()
+177:             }
+178:             if (payload.progress.stage == "APOLLO_SEARCH") {
+179:                 val names = (listOf(snapshot.fullName) + payload.evidence.filter { it.provider == "ORCID" && it.field == "otherName" }.map { it.value })
+180:                     .distinctBy(rules::normalizeName)
+181:                 val institution = payload.evidence.firstOrNull { it.field == "employment" && it.assertionSource == AssertionSource.ORGANIZATION && it.temporalScope == TemporalScope.CURRENT }
+182:                     ?.let { mapper.readTree(it.value).path("institution").asText().takeIf(String::isNotBlank) }?.let(::VerificationInstitution)
+183:                 val queries = names.map { ApolloSearchQuery(it) } + listOfNotNull(institution?.let { ApolloSearchQuery(snapshot.fullName, institution = it) })
+184:                 while (payload.progress.queryIndex < queries.size) {
+185:                     val index = payload.progress.queryIndex
+186:                     val query = queries[index].copy(page = payload.progress.page)
+187:                     val kind = if (query.institution != null) VerificationQueryKind.NARROW else if (index == 0) VerificationQueryKind.BROAD else VerificationQueryKind.VARIANT
+188:                     val permit = reserve(VerificationProvider.APOLLO, kind, query.page, mapper.writeValueAsString(query))
+189:                     val result = apollo.search(query, permit)
+190:                     if (result !is VerificationHttpResult.Success) { completed(permit, result); retry(result as VerificationHttpResult<Nothing>); return }
+191:                     val page = result.value
+192:                     val last = index == queries.lastIndex && !page.hasNext
+193:                     val search = (payload.search ?: ApolloSearchEvidence()).merge(page, query, index == 0, last)
+194:                     val finished = if (!page.hasNext) payload.progress.finishedQueryKeys + index.toString() else payload.progress.finishedQueryKeys
+195:                     payload = payload.copy(search = search, progress = VerificationProgress("APOLLO_SEARCH",
+196:                         if (page.hasNext) index else index + 1, if (page.hasNext) query.page + 1 else 1,
+197:                         last, search.candidates.map { it.id }, finished))
+198:                     if (search.candidates.isNotEmpty()) candidatesAt = candidatesAt ?: clock.instant()
+199:                     if (last) searched = searched ?: clock.instant()
+200:                     completed(permit, result, page)
+201:                     if (page.hasNext && query.page >= properties.maxPagesPerQuery) break
+202:                 }
+203:                 finish(rules.evaluate(snapshot, payload.evidence, payload.search))
+204:             } else if (payload.progress.stage == "DECIDE") finish(rules.evaluate(snapshot, payload.evidence, payload.search))
+205:         } catch (_: LeaseLost) {
+206:             // A replacement token owns recovery; no stale writes.
+207:         } catch (deferred: BudgetDeferred) {
+208:             when (deferred.reason) {
+209:                 VerificationBudgetReason.LEASE_LOST -> Unit
+210:                 VerificationBudgetReason.ITEM_LIMIT -> {
+211:                     val snapshot = mapper.readValue<VerificationSnapshot>(lease.snapshotJson)
+212:                     val decision = rules.evaluate(snapshot, payload.evidence, payload.search)
+213:                     finish(decision.copy(outcome = VerificationOutcome.PENDING, route = VerificationRoute.NONE,
+214:                         reasonCodes = listOf(if (payload.progress.stage == "LOCAL_EVIDENCE") "EVIDENCE_INCOMPLETE" else "SEARCH_INCOMPLETE"), matchedPersonId = null))
+215:                 }
+216:                 else -> {
+217:                     val now = clock.instant()
+218:                     val next = if (deferred.reason == VerificationBudgetReason.DAY_LIMIT)
+219:                         LocalDate.ofInstant(now, ZoneOffset.UTC).plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC) else now.plusSeconds(60)
+220:                     repository.reschedule(lease.id, token, lease.generation, next, lease.transientAttempts, json(),
+221:                         mapper.writeValueAsString(listOf(deferred.reason.name)), now)
+222:                 }
+223:             }
+224:         } catch (_: Exception) {
+225:             // Persistence failure must stop the request chain. Leave its lease/cursor for durable recovery.
+226:             // Only preflight failures with no unacknowledged HTTP may be recorded as an interface-safe ERROR.
+227:             if (activePermit == null && !lost.get()) fail("VERIFICATION_FAILED")
+228:         } finally { renewal.cancel(false) }
+229:     }
+230: }
+
+FILE src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt SHA256 8f50c0c9c3b356a8d834380e9114fb3658bcdcd2a9e41ae7ec48092379dc3bbb
+1: package com.weibo.talentintroduction.discovery.service
+2: 
+3: import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+4: import com.weibo.talentintroduction.discovery.domain.*
+5: import org.springframework.stereotype.Service
+6: import java.text.Normalizer
+7: import java.time.Clock
+8: import java.time.LocalDate
+9: import java.time.Period
+10: import java.util.Locale
+11: 
+12: /** Immutable union of successful pages. A narrower empty query cannot erase a broad result. */
+13: data class ApolloSearchEvidence(val candidates: List<ApolloCandidate> = emptyList(), val broadComplete: Boolean = false,
+14:     val complete: Boolean = false, val queryNames: Set<String> = emptySet(), val conflictingIds: Set<String> = emptySet()) {
+15:     fun merge(page: ApolloSearchPage, query: ApolloSearchQuery, broad: Boolean, allQueriesComplete: Boolean = false): ApolloSearchEvidence {
+16:         val ids = conflictingIds.toMutableSet()
+17:         val union = candidates.associateByTo(linkedMapOf()) { it.id }
+18:         page.candidates.forEach { candidate ->
+19:             val previous = union[candidate.id]
+20:             if (previous != null && previous != candidate) ids += candidate.id
+21:             if (previous == null) union[candidate.id] = candidate
+22:         }
+23:         return copy(candidates = union.values.toList(), broadComplete = broadComplete || (broad && !page.hasNext),
+24:             complete = allQueriesComplete && !page.hasNext, queryNames = queryNames + query.name, conflictingIds = ids)
+25:     }
+26: }
+27: data class VerificationDecision(val qualification: VerificationQualification, val route: VerificationRoute,
+28:     val outcome: VerificationOutcome, val reasonCodes: List<String>, val missingFields: List<String>,
+29:     val evidence: List<VerificationEvidence>, val evaluatedOn: LocalDate, val matchedPersonId: String? = null)
+30: 
+31: @Service
+32: class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
+33:     private val mapper = jacksonObjectMapper()
+34:     fun evaluate(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>,
+35:         search: ApolloSearchEvidence? = null, protected: Boolean = false): VerificationDecision {
+36:         val today = LocalDate.now(clock)
+37:         fun decision(q: VerificationQualification, reasons: List<String>, missing: List<String> = emptyList(),
+38:             route: VerificationRoute = VerificationRoute.NONE, outcome: VerificationOutcome = VerificationOutcome.PENDING,
+39:             id: String? = null) = VerificationDecision(q, route, outcome, reasons.distinct(), missing.distinct(), evidence, today, id)
+40:         if (protected) return decision(VerificationQualification.NOT_EVALUATED, listOf("PROTECTED"), outcome = VerificationOutcome.PROTECTED)
+41:         if (evidence.any { it.identityHash != snapshot.identityHash || it.factFingerprint != snapshot.factFingerprint })
+42:             return decision(VerificationQualification.CONFLICT, listOf("FACT_CHANGED"))
+43:         if (!snapshot.identityValid) return decision(VerificationQualification.UNKNOWN, listOf("IDENTITY_EVIDENCE_MISSING"), listOf("identity"))
+44:         if (evidence.any { it.conflicts.isNotEmpty() }) return decision(VerificationQualification.CONFLICT, listOf("EVIDENCE_CONFLICT"))
+45:         val names = evidence.filter { it.field == "name" }.map { normalizeName(it.value) }.distinct()
+46:         if (names.any { !sameName(it, snapshot.fullName) })
+47:             return decision(VerificationQualification.CONFLICT, listOf("NAME_CONFLICT"))
+48:         val facts = evidence.filter { it.assertionSource == AssertionSource.ORGANIZATION }
+49:         val jobs = facts.filter { it.field == "employment" && it.temporalScope == TemporalScope.CURRENT }
+50:         val professor = jobs.any { fact -> value(fact, "institution").isNotBlank() && isProfessor(value(fact, "role")) }
+51:         val doctorates = facts.filter { it.field == "education" }.mapNotNull { fact ->
+52:             runCatching { mapper.readTree(fact.value) }.getOrNull()?.takeIf {
+53:                 it.path("completed").isBoolean && it.path("completed").booleanValue() &&
+54:                     QualificationEvidenceParser(clock).completedDoctorate(it.path("role").asText())
+55:             }
+56:         }
+57:         val ages = facts.filter { it.field == "birthDate" }.mapNotNull { fact ->
+58:             runCatching { LocalDate.parse(fact.value) }.getOrNull()?.takeIf { !it.isAfter(today) }?.let { Period.between(it, today).years }
+59:         }.distinct()
+60:         if (ages.size > 1) return decision(VerificationQualification.CONFLICT, listOf("AGE_CONFLICT"))
+61:         val age = ages.singleOrNull()
+62:         val qualification = when {
+63:             professor -> VerificationQualification.MET
+64:             doctorates.isNotEmpty() && age != null && age < 40 -> VerificationQualification.MET
+65:             doctorates.isNotEmpty() && age != null && age >= 40 -> VerificationQualification.NOT_MET
+66:             else -> VerificationQualification.UNKNOWN
+67:         }
+68:         val missing = mutableListOf<String>()
+69:         if (!professor) {
+70:             if (doctorates.isEmpty()) missing += "completedDoctorate"
+71:             if (age == null) missing += "reliableAge"
+72:             if (age != null && age >= 40) missing += "currentAssociateProfessor"
+73:         }
+74:         if (qualification == VerificationQualification.NOT_MET) return decision(qualification, listOf("AGE_REQUIREMENT_NOT_MET"), missing)
+75:         if (search == null && qualification == VerificationQualification.MET)
+76:             return decision(qualification, listOf("QUALIFICATION_MET"), route = VerificationRoute.DIRECT, outcome = VerificationOutcome.DIRECT_CLEAR)
+77:         if (search == null) return decision(qualification, listOf("QUALIFICATION_EVIDENCE_MISSING"), missing)
+78:         if (!search.complete || !search.broadComplete) return decision(qualification, listOf("SEARCH_INCOMPLETE"), missing)
+79:         if (search.conflictingIds.isNotEmpty()) return decision(VerificationQualification.CONFLICT, listOf("APOLLO_ID_CONFLICT"), missing)
+80:         if (search.candidates.isEmpty()) return decision(qualification, listOf("APOLLO_NO_MATCH"), missing)
+81:         val orcid = snapshot.boundOrcid ?: return decision(qualification, listOf("IDENTITY_EVIDENCE_MISSING"), missing + "boundOrcid")
+82:         val employments = jobs.filter { value(it, "orcid") == orcid && value(it, "institution").isNotBlank() }
+83:         if (employments.isEmpty()) return decision(qualification, listOf("CURRENT_INSTITUTION_EVIDENCE_MISSING"), missing + "currentInstitution")
+84:         val originalInstitution = snapshot.profile.institution
+85:         val institutions = employments.map { VerificationInstitution(value(it, "institution"), value(it, "standardId").takeIf(String::isNotBlank)) }
+86:         if (!originalInstitution.isNullOrBlank() && institutions.none { sameInstitution(it, VerificationInstitution(originalInstitution)) })
+87:             return decision(VerificationQualification.CONFLICT, listOf("INSTITUTION_CONFLICT"), missing)
+88:         val allowedNames = setOf(snapshot.fullName) + evidence.filter { it.field == "otherName" && it.provider == "ORCID" }.map { it.value }
+89:         val matches = search.candidates.filter { candidate ->
+90:             val explicit = candidate.fullName ?: listOfNotNull(candidate.firstName, candidate.lastName).takeIf { candidate.lastName != null }?.joinToString(" ")
+91:             val strict = explicit != null && allowedNames.any { known ->
+92:                 sameName(explicit, known) && (candidate.lastName == null ||
+93:                     (candidate.firstName != null && sameName("${candidate.firstName} ${candidate.lastName}", known)))
+94:             }
+95:             val masked = explicit == null && candidate.lastName == null && allowedNames.any { name ->
+96:                 search.queryNames.any { sameName(it, name) } && maskedCompatible(candidate, name)
+97:             }
+98:             (strict || masked) && (candidate.orcid == null || normalizeOrcid(candidate.orcid) == orcid) &&
+99:                 candidate.institution?.let { institution -> institutions.any { sameInstitution(it, institution) } } == true
+100:         }
+101:         if (matches.size != 1) return decision(qualification, listOf(if (matches.size > 1) "IDENTITY_AMBIGUOUS" else "IDENTITY_NOT_MATCHED"), missing)
+102:         // An explicit contradictory ORCID on a same-name record must not be discarded as an unrelated candidate.
+103:         if (search.candidates.any { candidate -> candidate.orcid != null && normalizeOrcid(candidate.orcid) != orcid &&
+104:                 (candidate.fullName ?: listOfNotNull(candidate.firstName, candidate.lastName).takeIf { candidate.lastName != null }?.joinToString(" "))
+105:                     ?.let { name -> allowedNames.any { sameName(name, it) } } == true })
+106:             return decision(VerificationQualification.CONFLICT, listOf("ORCID_CONFLICT"), missing)
+107:         val match = matches.single()
+108:         return decision(qualification, listOf("APOLLO_PERSON_MATCHED") + if (qualification == VerificationQualification.MET) listOf("QUALIFICATION_MET") else listOf("QUALIFICATION_EVIDENCE_MISSING"),
+109:             missing, VerificationRoute.APOLLO, if (qualification == VerificationQualification.MET) VerificationOutcome.APOLLO_CLEAR else VerificationOutcome.APOLLO_UNCLEAR, match.id)
+110:     }
+111: 
+112:     fun normalizeName(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFKC)
+113:         .lowercase(Locale.ROOT).replace(Regex("[\\p{P}\\p{Z}\\s]+"), " ").trim()
+114:     fun sameName(left: String, right: String): Boolean {
+115:         val a = normalizeName(left).split(' '); val b = normalizeName(right).split(' ')
+116:         // Only omission of already-known middle names, never invented aliases, initials or surname completion.
+117:         return a == b || (a.size == 2 && b.size > 2 && a.first() == b.first() && a.last() == b.last())
+118:     }
+119:     fun sameInstitution(a: VerificationInstitution, b: VerificationInstitution): Boolean {
+120:         if (a.standardId != null && b.standardId != null) return a.standardId == b.standardId
+121:         val left = (a.aliases + a.name).map(::normalizeName).toSet()
+122:         return (b.aliases + b.name).any { normalizeName(it) in left }
+123:     }
+124:     private fun maskedCompatible(candidate: ApolloCandidate, name: String): Boolean {
+125:         val tokens = normalizeName(name).split(' ')
+126:         if (candidate.firstName == null || normalizeName(candidate.firstName) != tokens.first()) return false
+127:         val mask = candidate.obfuscatedLastName ?: return false
+128:         if (!mask.contains('*')) return normalizeName(mask) == tokens.last()
+129:         val regex = mask.lowercase(Locale.ROOT).map { if (it == '*') "." else Regex.escape(it.toString()) }.joinToString("")
+130:         return tokens.last().matches(Regex(regex))
+131:     }
+132:     private fun value(evidence: VerificationEvidence, key: String): String = runCatching { mapper.readTree(evidence.value).path(key).asText("") }.getOrDefault("")
+133:     private fun isProfessor(role: String): Boolean {
+134:         val value = normalizeName(role)
+135:         if (Regex("emeritus|retired|former|student|candidate|visiting student|research group|lab of|assistant to|博士生|退休|课题组").containsMatchIn(value)) return false
+136:         return value.matches(Regex("(?:(?:assistant|associate|teaching|adjunct|visiting|full|research|clinical|honorary) )?(?:professor|prof)")) ||
+137:             value.matches(Regex("(?:助理|副|特聘|客座|讲席)?教授"))
+138:     }
+139: }
+
+FILE src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGate.kt SHA256 0f8c6be440f79766e7962dad847569a75e30a143ab79ab3384f9ef73e3b9b160
+1: package com.weibo.talentintroduction.discovery.service
+2: 
+3: import com.fasterxml.jackson.databind.DeserializationFeature
+4: import com.fasterxml.jackson.databind.SerializationFeature
+5: import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+6: import com.fasterxml.jackson.module.kotlin.readValue
+7: import com.weibo.talentintroduction.discovery.domain.*
+8: import com.weibo.talentintroduction.discovery.repository.DiscoveryVerificationRepository
+9: import com.weibo.talentintroduction.expert.domain.ExpertProfile
+10: import org.springframework.stereotype.Service
+11: 
+12: /** Loaded absence is a value; null at the policy boundary means not loaded. No network or writes. */
+13: data class VerificationAdmissionContext(
+14:     val docId: String,
+15:     val profile: ExpertProfile,
+16:     val items: List<VerificationItem>
+17: ) {
+18:     val managed: Boolean get() = items.any { it.policyVersion == VerificationMode.ENFORCE.policyVersion }
+19: }
+20: 
+21: /** Persisted input to the pure rules, separate from worker pagination progress. */
+22: data class VerificationAdmissionEvidence(
+23:     val evidence: List<VerificationEvidence>,
+24:     val search: ApolloSearchEvidence? = null,
+25:     val schemaVersion: Int = 1
+26: ) {
+27:     init { require(schemaVersion == 1) }
+28: }
+29: 
+30: @Service
+31: class DiscoveryVerificationAdmissionGate(
+32:     private val repository: DiscoveryVerificationRepository,
+33:     private val rules: DiscoveryVerificationRules
+34: ) {
+35:     fun findContext(docId: String, profile: ExpertProfile): VerificationAdmissionContext =
+36:         findContexts(mapOf(docId to profile)).getValue(docId)
+37: 
+38:     fun findContexts(keys: Map<String, ExpertProfile>): Map<String, VerificationAdmissionContext> {
+39:         require(keys.size <= 500)
+40:         val items = repository.findItemsByDocIds(keys.keys).groupBy { it.expertDocId }
+41:         return keys.mapValues { (docId, profile) -> VerificationAdmissionContext(docId, profile, items[docId].orEmpty()) }
+42:     }
+43: 
+44:     fun evaluateManaged(baseAutomatic: AutomaticAdmissionResult, context: VerificationAdmissionContext): AutomaticAdmissionResult {
+45:         if (!context.managed || baseAutomatic.status == DiscoveryAdmissionStatus.LEGACY_APPROVED) return baseAutomatic
+46:         val blockers = baseAutomatic.blockingReasons.filterNot { it.code in REPLACED_CODES }.toMutableList()
+47:         fun result(codes: List<String>): AutomaticAdmissionResult {
+48:             blockers += codes.map { AdmissionReason(it, it, "verification", null, "有效身份与资格证据", "discovery_verification_item") }
+49:             return baseAutomatic.copy(
+50:                 status = if (blockers.isEmpty()) DiscoveryAdmissionStatus.AUTO_PASSED else DiscoveryAdmissionStatus.NEEDS_REVIEW,
+51:                 blockingReasons = blockers.distinctBy { it.code }, policyVersion = POLICY_VERSION
+52:             )
+53:         }
+54:         val snapshot = snapshot(context.docId, context.profile, baseAutomatic.configSnapshot)
+55:         val item = context.items.filter { it.policyVersion == VerificationMode.ENFORCE.policyVersion && it.identityHash == snapshot.identityHash }
+56:             .maxByOrNull { it.id } ?: return result(listOf("IDENTITY_CHANGED"))
+57:         if (item.factFingerprint != snapshot.factFingerprint) return result(listOf("FACT_CHANGED"))
+58:         if (item.state != VerificationState.COMPLETED) return result(listOf("VERIFICATION_PENDING"))
+59:         val decision = try {
+60:             val frozen = mapper.readValue<VerificationSnapshot>(item.snapshotJson)
+61:             require(frozen.identityHash == item.identityHash && frozen.factFingerprint == item.factFingerprint)
+62:             require(snapshot(context.docId, frozen.profile, baseAutomatic.configSnapshot).factFingerprint == item.factFingerprint)
+63:             val payload = mapper.readValue<VerificationAdmissionEvidence>(requireNotNull(item.evidenceJson))
+64:             rules.evaluate(snapshot, payload.evidence, payload.search).also {
+65:                 require(it.outcome == item.outcome && it.qualification == item.qualification && it.route == item.route)
+66:                 require(it.matchedPersonId == item.apolloPersonId)
+67:             }
+68:         } catch (_: Exception) {
+69:             return result(listOf("VERIFICATION_EVIDENCE_INVALID"))
+70:         }
+71:         return result(if (decision.outcome in ADMITTED_OUTCOMES) emptyList() else decision.reasonCodes.ifEmpty { listOf("VERIFICATION_PENDING") })
+72:     }
+73: 
+74:     companion object {
+75:         const val POLICY_VERSION = "APV_20261018_V1"
+76:         val REPLACED_CODES = setOf("NO_DOCTORAL_DEGREE", "AGE_EXCEEDED")
+77:         private val ADMITTED_OUTCOMES = setOf(VerificationOutcome.DIRECT_CLEAR, VerificationOutcome.APOLLO_CLEAR, VerificationOutcome.APOLLO_UNCLEAR)
+78:         private val mapper = jacksonObjectMapper().findAndRegisterModules()
+79:             .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+80:             .enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
+81: 
+82:         /** Shared with registration/commit: acquired provider facts never enter this RAW fingerprint. */
+83:         fun snapshot(docId: String, profile: ExpertProfile, config: AdmissionConfigSnapshot): VerificationSnapshot {
+84:             val identity = DiscoveryReviewIdentity.hash(docId, profile.email, profile.givenNames, profile.familyNames)
+85:             val external = profile.externalIds?.let { mapper.readTree(it) }
+86:             val facts = sortedMapOf<String, Any?>(
+87:                 "identityHash" to identity,
+88:                 "externalIds" to sortedMapOf("orcid" to external?.get("orcid"), "openAlexAuthorId" to external?.get("openAlexAuthorId")),
+89:                 "orcidId" to profile.orcidId, "institution" to profile.institution, "employment" to profile.employment,
+90:                 "degree" to profile.degree, "age" to profile.age,
+91:                 "identityVerification" to profile.identityVerification, "institutionEvidence" to profile.institutionEvidence,
+92:                 "config" to config
+93:             )
+94:             return VerificationSnapshot(identity, com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.hash(mapper.writeValueAsString(facts)), profile)
+95:         }
+96:     }
+97: }
+
+FILE src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryService.kt SHA256 6f3d2df1a7f2b483a70874343f9a2f2da7cc101a1bafc266b9dcd141a39d60b0
+1: package com.weibo.talentintroduction.discovery.service
+2: 
+3: import com.fasterxml.jackson.databind.DeserializationFeature
+4: import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+5: import com.fasterxml.jackson.module.kotlin.readValue
+6: import com.weibo.talentintroduction.config.DiscoveryVerificationProperties
+7: import com.weibo.talentintroduction.discovery.domain.*
+8: import com.weibo.talentintroduction.discovery.repository.DiscoveryReviewRepository
+9: import com.weibo.talentintroduction.discovery.repository.DiscoveryVerificationRepository
+10: import com.weibo.talentintroduction.discovery.repository.VerificationReportFilter
+11: import org.springframework.beans.factory.ObjectProvider
+12: import org.springframework.http.HttpStatus
+13: import org.springframework.stereotype.Service
+14: import org.springframework.transaction.annotation.Isolation
+15: import org.springframework.transaction.annotation.Transactional
+16: import org.springframework.web.server.ResponseStatusException
+17: import java.time.Instant
+18: 
+19: /** Reads SQL/configuration and the optional worker's current authentication latch only. */
+20: @Service
+21: @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+22: class DiscoveryVerificationQueryService(
+23:     private val repository: DiscoveryVerificationRepository,
+24:     private val admissions: DiscoveryReviewRepository,
+25:     private val properties: DiscoveryVerificationProperties,
+26:     private val worker: ObjectProvider<DiscoveryVerificationWorker>? = null
+27: ) {
+28:     private val mapper = jacksonObjectMapper().findAndRegisterModules().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+29:     private val rules = DiscoveryVerificationRules()
+30: 
+31:     fun capabilities(): VerificationCapabilities {
+32:         val reasons = mutableListOf<String>()
+33:         if (!properties.enabled) reasons += "VERIFICATION_DISABLED"
+34:         if (properties.apolloApiKey.isBlank()) reasons += "APOLLO_API_KEY_MISSING"
+35:         if (worker?.getIfAvailable()?.isAuthBlocked() == true) reasons += "CONFIG_AUTH"
+36:         return VerificationCapabilities(properties.enabled, properties.workerEnabled, properties.mode,
+37:             reasons.isEmpty(), properties.apolloDefault, reasons)
+38:     }
+39: 
+40:     fun summary(executionIds: List<Long>): List<VerificationSummary> {
+41:         require(executionIds.isNotEmpty() && executionIds.size <= 50 && executionIds.all { it > 0 })
+42:         val ids = executionIds.distinct()
+43:         val runs = repository.reportingRuns(ids)
+44:         val statuses = repository.reportingCollectionStatuses(ids)
+45:         val counts = repository.reportingCounts(VerificationReportFilter(ids.first()), executionIds = ids)
+46:         val suggestions = repository.reportingSuggestions(VerificationReportFilter(ids.first()), executionIds = ids)
+47:         val asOf = Instant.now()
+48:         return ids.map { id -> summaryRow(id, runs[id], counts[id] ?: VerificationCounts(), statuses[id], asOf, suggestions[id]) }
+49:     }
+50: 
+51:     fun batches(executionId: Long, page: Int, size: Int): VerificationBatches {
+52:         validatePage(page, size)
+53:         val run = repository.findRun(executionId)
+54:         val filter = VerificationReportFilter(executionId)
+55:         val status = repository.reportingCollectionStatuses(listOf(executionId))[executionId]
+56:         val asOf = Instant.now()
+57:         if (run == null) return VerificationBatches("NOT_RECORDED", null, emptyList(), null, null, asOf, null, status)
+58:         val counts = repository.reportingCounts(filter).getValue(0L)
+59:         val grouped = repository.reportingCounts(filter, batches = true).entries.toList()
+60:         val suggestions = if (run.mode == VerificationMode.AUDIT) repository.reportingSuggestions(filter, batches = true) else emptyMap()
+61:         val updatedAt = repository.reportingBatchTimes(executionId)
+62:         val batchReasons = repository.reportingBatchReasons(executionId).groupBy { it.first }
+63:         var cumulative = 0L
+64:         val cumulativeProfiles = grouped.associate { (batch, value) ->
+65:             cumulative += value.profiles
+66:             batch to cumulative
+67:         }
+68:         val start = (page.toLong() * size).coerceAtMost(grouped.size.toLong()).toInt()
+69:         val items = grouped.drop(start).take(size).map { (batch, value) ->
+70:             VerificationBatch(batch.toInt(), value, suggested(run, suggestions[batch]),
+71:                 cumulativeProfiles.getValue(batch), updatedAt[batch.toInt()],
+72:                 aggregateReasons(batchReasons[batch.toInt()].orEmpty().map { it.second to it.third }))
+73:         }
+74:         return VerificationBatches("RECORDED", grouped.size.toLong(), items, counts, run.revision, asOf,
+75:             run.mode, status ?: "EXPIRED", lifecycle(run, counts), suggested(run, repository.reportingSuggestions(filter)[0L]))
+76:     }
+77: 
+78:     fun records(filter: VerificationReportFilter, page: Int, size: Int): VerificationRecords {
+79:         validatePage(page, size)
+80:         val run = repository.findRun(filter.executionId)
+81:         val status = repository.reportingCollectionStatuses(listOf(filter.executionId))[filter.executionId]
+82:         val asOf = Instant.now()
+83:         if (run == null) return VerificationRecords("NOT_RECORDED", null, emptyList(), null, null, asOf, null, status)
+84:         val counts = repository.reportingCounts(filter).getValue(0L)
+85:         val runCounts = if (filter == VerificationReportFilter(filter.executionId)) counts else
+86:             repository.reportingCounts(VerificationReportFilter(filter.executionId)).getValue(0L)
+87:         val total = repository.reportingRecordTotal(filter)
+88:         val items = repository.reportingRecords(filter, page, size)
+89:         val current = admissions.findAdmissions(items.map { it.expertDocId }).associateBy { it.expertDocId }
+90:         return VerificationRecords("RECORDED", total, items.map { item ->
+91:             val admission = current[item.expertDocId]
+92:             record(item, admission?.decision, admission?.revision)
+93:         }, counts, run.revision, asOf, run.mode, status ?: "EXPIRED", lifecycle(run, runCounts),
+94:             reasons(filter), suggested(run, repository.reportingSuggestions(filter)[0L]))
+95:     }
+96: 
+97:     fun item(itemId: Long): VerificationItemDetail {
+98:         require(itemId > 0)
+99:         val item = repository.findItem(itemId) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Verification item not found")
+100:         val run = repository.findRun(item.ownerExecutionId) ?: error("Verification run missing")
+101:         val admission = admissions.findAdmissions(listOf(item.expertDocId)).singleOrNull()
+102:         val snapshot = mapper.readValue<VerificationSnapshot>(item.snapshotJson)
+103:         val payload = item.evidenceJson?.let { mapper.readValue<VerificationWorkerEvidence>(it) } ?: VerificationWorkerEvidence()
+104:         return VerificationItemDetail(record(item, admission?.decision, admission?.revision, snapshot, payload), item.ownerExecutionId,
+105:             item.state, item.outcome, item.qualification, snapshot.profile.identityVerification,
+106:             snapshot.profile.employment, snapshot.profile.institutionEvidence, snapshot.boundOrcid,
+107:             payload.evidence, reasonCodes(item).map { VerificationReason(it, reasonLabel(it), 1) },
+108:             repository.findAttempts(itemId).map { VerificationAttemptSummary(it.id, it.provider, it.queryKind,
+109:                 it.pageNumber, it.attemptNumber, it.requestedAt, it.completedAt, it.httpStatus, it.resultCode, it.responseSha256) },
+110:             item.admissionRevision, item.projectionError, run.mode, run.revision, Instant.now(),
+111:             item.apolloPersonId, VerificationApolloStages(item.apolloEnteredAt, item.searchCompletedAt,
+112:                 item.candidateFoundAt, item.personMatchedAt))
+113:     }
+114: 
+115:     private fun summaryRow(id: Long, run: VerificationRun?, counts: VerificationCounts, status: String?, asOf: Instant,
+116:         suggestion: Triple<Long, Long, Long>?) =
+117:         VerificationSummary(id, if (run == null) "NOT_RECORDED" else "RECORDED", if (run == null) null else counts,
+118:             run?.let { lifecycle(it, counts) }, run?.revision, asOf, run?.mode, status ?: if (run != null) "EXPIRED" else null,
+119:             run?.let { suggested(it, suggestion) })
+120: 
+121:     private fun lifecycle(run: VerificationRun, counts: VerificationCounts) = when {
+122:         counts.queued > 0 -> "ACTIVE"
+123:         !run.inputClosed -> "COLLECTING"
+124:         else -> "COMPLETED"
+125:     }
+126: 
+127:     private fun suggested(run: VerificationRun, values: Triple<Long, Long, Long>?): VerificationSuggestions? =
+128:         if (run.mode != VerificationMode.AUDIT) null else VerificationSuggestions(
+129:             values?.first ?: 0, values?.second ?: 0, values?.third ?: 0)
+130: 
+131:     private fun record(item: VerificationItem, decision: String?, revision: Long?,
+132:         snapshot: VerificationSnapshot = mapper.readValue(item.snapshotJson),
+133:         payload: VerificationWorkerEvidence = item.evidenceJson?.let { mapper.readValue<VerificationWorkerEvidence>(it) } ?: VerificationWorkerEvidence()
+134:     ): VerificationRecord {
+135:         // Use the shared pure rules only for the explanation of missing fields, never to rewrite the recorded result.
+136:         val missing = rules.evaluate(snapshot, payload.evidence, payload.search).missingFields
+137:         return VerificationRecord(item.id, item.expertDocId, snapshot.profile.displayName, snapshot.profile.email,
+138:             snapshot.profile.institution, item.sourceName, item.batchNumber, item.route,
+139:             item.outcome?.name ?: if (item.state == VerificationState.ERROR) "ERROR" else "QUEUED",
+140:             missing, reasonCodes(item), item.updatedAt, decision, item.projectionState, revision, item.qualification)
+141:     }
+142: 
+143:     private fun reasonCodes(item: VerificationItem): List<String> = item.reasonsJson?.let { mapper.readValue<List<String>>(it).distinct() } ?: emptyList()
+144:     private fun reasons(filter: VerificationReportFilter): List<VerificationReason> =
+145:         aggregateReasons(repository.reportingReasons(filter))
+146: 
+147:     private fun aggregateReasons(rows: List<Pair<String, Long>>): List<VerificationReason> {
+148:         val totals = sortedMapOf<String, Long>()
+149:         rows.forEach { (json, count) ->
+150:             mapper.readValue<List<String>>(json).distinct().forEach { totals[it] = (totals[it] ?: 0) + count }
+151:         }
+152:         return totals.map { (code, count) -> VerificationReason(code, reasonLabel(code), count) }
+153:     }
+154:     private fun validatePage(page: Int, size: Int) { require(page >= 0 && size in 1..100) }
+155:     private fun reasonLabel(code: String): String = REASON_LABELS[code] ?: code
+156: 
+157:     companion object {
+158:         private val REASON_LABELS = mapOf(
+159:             "QUALIFICATION_MET" to "资格已明确", "QUALIFICATION_EVIDENCE_MISSING" to "资格证据缺失",
+160:             "IDENTITY_AMBIGUOUS" to "身份存在歧义", "APOLLO_NO_MATCH" to "未找到候选人",
+161:             "APOLLO_PERSON_MATCHED" to "已确认 Apollo 本人", "IDENTITY_EVIDENCE_MISSING" to "身份证据缺失",
+162:             "CURRENT_INSTITUTION_EVIDENCE_MISSING" to "当前机构证据缺失", "IDENTITY_NOT_MATCHED" to "身份未匹配",
+163:             "AGE_REQUIREMENT_NOT_MET" to "年龄及职称条件不符", "EVIDENCE_CONFLICT" to "证据冲突",
+164:             "NAME_CONFLICT" to "姓名冲突", "AGE_CONFLICT" to "年龄证据冲突", "INSTITUTION_CONFLICT" to "机构冲突",
+165:             "ORCID_CONFLICT" to "ORCID 冲突", "APOLLO_ID_CONFLICT" to "Apollo 标识冲突",
+166:             "FACT_CHANGED" to "输入事实已变化", "PROTECTED" to "保护跳过", "SEARCH_INCOMPLETE" to "查询尚未完成",
+167:             "EVIDENCE_INCOMPLETE" to "证据尚未完整", "CONFIG_AUTH" to "接口认证配置错误",
+168:             "REQUEST_INVALID" to "接口请求无效", "RESPONSE_INVALID" to "接口响应无效",
+169:             "SUPERSEDED_BY_REVIEW" to "已由人工审核决定取代")
+170:     }
+171: }
+172: 
+173: data class VerificationCapabilities(val enabled: Boolean, val workerEnabled: Boolean, val mode: VerificationMode,
+174:     val ready: Boolean, val apolloDefault: Boolean, val reasonCodes: List<String>)
+175: data class VerificationSuggestions(val autoAdmitted: Long, val directAdmitted: Long, val apolloAdmitted: Long)
+176: data class VerificationReason(val code: String, val label: String, val count: Long)
+177: data class VerificationSummary(val executionId: Long, val coverage: String, val counts: VerificationCounts?,
+178:     val lifecycle: String?, val snapshotVersion: Long?, val asOf: Instant, val mode: VerificationMode?,
+179:     val collectionStatus: String?, val suggested: VerificationSuggestions?)
+180: data class VerificationBatch(val batchNumber: Int, val counts: VerificationCounts, val suggested: VerificationSuggestions?,
+181:     val cumulativeProfiles: Long, val updatedAt: Instant?, val reasons: List<VerificationReason>)
+182: data class VerificationBatches(val coverage: String, val totalBatches: Long?, val items: List<VerificationBatch>,
+183:     val runCounts: VerificationCounts?, val snapshotVersion: Long?, val asOf: Instant, val mode: VerificationMode?,
+184:     val collectionStatus: String?, val lifecycle: String? = null, val suggested: VerificationSuggestions? = null)
+185: data class VerificationRecords(val coverage: String, val total: Long?, val items: List<VerificationRecord>,
+186:     val counts: VerificationCounts?, val snapshotVersion: Long?, val asOf: Instant, val mode: VerificationMode?,
+187:     val collectionStatus: String?, val lifecycle: String? = null, val reasons: List<VerificationReason> = emptyList(),
+188:     val suggested: VerificationSuggestions? = null)
+189: data class VerificationRecord(val itemId: Long, val docId: String, val name: String, val email: String?,
+190:     val institution: String?, val source: String, val batchNumber: Int, val route: VerificationRoute,
+191:     val resultLabel: String, val missingFields: List<String>, val reasonCodes: List<String>, val updatedAt: Instant,
+192:     val currentAdmissionDecision: String?, val projectionState: VerificationProjection, val currentAdmissionRevision: Long?,
+193:     val qualification: VerificationQualification)
+194: data class VerificationAttemptSummary(val id: Long, val provider: VerificationProvider, val queryKind: VerificationQueryKind,
+195:     val pageNumber: Int, val attemptNumber: Int, val requestedAt: Instant, val completedAt: Instant?,
+196:     val httpStatus: Int?, val resultCode: String, val responseSha256: String?)
+197: data class VerificationItemDetail(val record: VerificationRecord, val executionId: Long, val state: VerificationState,
+198:     val outcome: VerificationOutcome?, val qualification: VerificationQualification,
+199:     val identity: com.weibo.talentintroduction.expert.domain.IdentityVerification?, val originalEmployment: String?,
+200:     val institutionEvidence: String?, val boundOrcid: String?, val evidence: List<VerificationEvidence>,
+201:     val reasons: List<VerificationReason>, val attempts: List<VerificationAttemptSummary>, val admissionRevision: Long?,
+202:     val projectionError: String?, val mode: VerificationMode, val snapshotVersion: Long, val asOf: Instant,
+203:     val apolloPersonId: String?, val apolloStages: VerificationApolloStages)
+204: data class VerificationApolloStages(val enteredAt: Instant?, val searchedAt: Instant?,
+205:     val candidateFoundAt: Instant?, val matchedAt: Instant?)
+
+FILE src/main/kotlin/com/weibo/talentintroduction/discovery/service/ApolloPeopleSearchClient.kt SHA256 5e1ffb051f67003420b5b135e802b75c2aced815679a4fd6c97032b25bb13e0d
+1: package com.weibo.talentintroduction.discovery.service
+2: 
+3: import com.fasterxml.jackson.databind.JsonNode
+4: import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+5: import com.weibo.talentintroduction.config.DiscoveryVerificationProperties
+6: import com.weibo.talentintroduction.discovery.domain.VerificationProvider
+7: import org.springframework.http.HttpMethod
+8: import org.springframework.http.client.SimpleClientHttpRequestFactory
+9: import org.springframework.stereotype.Service
+10: import org.springframework.web.client.RestTemplate
+11: import org.springframework.web.util.UriComponentsBuilder
+12: import java.net.HttpURLConnection
+13: import java.net.URI
+14: import java.time.Clock
+15: import java.time.Duration
+16: import java.time.Instant
+17: import java.time.ZonedDateTime
+18: import java.time.format.DateTimeFormatter
+19: import java.util.concurrent.atomic.AtomicBoolean
+20: 
+21: /** Issued only after the caller has persisted DISPATCH_RESERVED. One reservation permits one wire request. */
+22: class RequestPermit(val attemptId: Long, val provider: VerificationProvider) {
+23:     private val consumed = AtomicBoolean()
+24:     init { require(attemptId > 0) }
+25:     internal fun consume(expected: VerificationProvider) {
+26:         require(provider == expected && consumed.compareAndSet(false, true)) { "Invalid or already consumed request permit" }
+27:     }
+28: }
+29: 
+30: sealed class VerificationHttpResult<out T> {
+31:     data class Success<T>(val value: T, val responseSha256: String, val httpStatus: Int = 200) : VerificationHttpResult<T>()
+32:     data class RateLimited(val retryAt: Instant, val httpStatus: Int = 429) : VerificationHttpResult<Nothing>()
+33:     data class TransientFailure(val code: String, val httpStatus: Int? = null) : VerificationHttpResult<Nothing>()
+34:     data class PermanentFailure(val code: String, val httpStatus: Int? = null) : VerificationHttpResult<Nothing>()
+35: }
+36: 
+37: data class VerificationInstitution(val name: String, val standardId: String? = null, val aliases: Set<String> = emptySet())
+38: data class ApolloCandidate(val id: String, val firstName: String?, val lastName: String?, val obfuscatedLastName: String?,
+39:     val fullName: String?, val title: String?, val institution: VerificationInstitution?, val orcid: String? = null)
+40: data class ApolloSearchQuery(val name: String, val page: Int = 1, val institution: VerificationInstitution? = null) {
+41:     init { require(name.isNotBlank() && name.length <= 300 && page in 1..500) }
+42: }
+43: data class ApolloSearchPage(val candidates: List<ApolloCandidate>, val totalEntries: Long, val page: Int) {
+44:     val hasNext: Boolean get() = page.toLong() * 100 < totalEntries
+45: }
+46: 
+47: internal fun verificationRestTemplate(properties: DiscoveryVerificationProperties): RestTemplate {
+48:     val factory = object : SimpleClientHttpRequestFactory() {
+49:         override fun prepareConnection(connection: HttpURLConnection, httpMethod: String) {
+50:             super.prepareConnection(connection, httpMethod)
+51:             connection.instanceFollowRedirects = false
+52:         }
+53:     }
+54:     factory.setConnectTimeout(properties.httpConnectTimeout.toMillis().toInt())
+55:     factory.setReadTimeout(properties.httpReadTimeout.toMillis().toInt())
+56:     return RestTemplate(factory).also { template ->
+57:         template.errorHandler = object : org.springframework.web.client.ResponseErrorHandler {
+58:             override fun hasError(response: org.springframework.http.client.ClientHttpResponse) = false
+59:             override fun handleError(response: org.springframework.http.client.ClientHttpResponse) = Unit
+60:         }
+61:     }
+62: }
+63: 
+64: /** Shared bounded transport. It never retries, follows redirects, logs bodies, or returns provider error text. */
+65: internal class VerificationHttp(private val http: RestTemplate, private val clock: Clock) {
+66:     private val mapper = jacksonObjectMapper()
+67:     fun request(uri: URI, method: HttpMethod, headers: Map<String, String>, permit: RequestPermit,
+68:         provider: VerificationProvider): VerificationHttpResult<JsonNode> {
+69:         permit.consume(provider)
+70:         return try {
+71:             http.execute(uri, method, { request -> headers.forEach { (key, value) -> request.headers.set(key, value) } }, { response ->
+72:                 val status = response.rawStatusCode
+73:                 when {
+74:                     status == 429 -> {
+75:                         val raw = response.headers.getFirst("Retry-After")
+76:                         val retryAt = raw?.toLongOrNull()?.takeIf { it >= 0 && it <= 31536000 }?.let { clock.instant().plusSeconds(it) }
+77:                             ?: runCatching { ZonedDateTime.parse(raw, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant() }.getOrNull()
+78:                             ?: clock.instant().plusSeconds(60)
+79:                         VerificationHttpResult.RateLimited(maxOf(clock.instant(), retryAt))
+80:                     }
+81:                     status >= 500 -> VerificationHttpResult.TransientFailure("PROVIDER_UNAVAILABLE", status)
+82:                     status !in 200..299 -> VerificationHttpResult.PermanentFailure(when (status) {
+83:                         401, 403 -> "CONFIG_AUTH"
+84:                         400, 422 -> "REQUEST_INVALID"
+85:                         404 -> "EVIDENCE_MISSING"
+86:                         else -> "HTTP_ERROR"
+87:                     }, status)
+88:                     else -> {
+89:                         val bytes = response.body.readNBytes(2 * 1024 * 1024 + 1)
+90:                         if (bytes.size > 2 * 1024 * 1024) VerificationHttpResult.PermanentFailure("RESPONSE_TOO_LARGE", status)
+91:                         else try {
+92:                             val node = mapper.readTree(bytes)
+93:                             if (node == null || !node.isObject) VerificationHttpResult.PermanentFailure("RESPONSE_INVALID", status)
+94:                             else VerificationHttpResult.Success(node, com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.hash(String(bytes, Charsets.UTF_8)), status)
+95:                         } catch (_: Exception) { VerificationHttpResult.PermanentFailure("RESPONSE_INVALID", status) }
+96:                     }
+97:                 }
+98:             }) ?: VerificationHttpResult.PermanentFailure("RESPONSE_INVALID")
+99:         } catch (_: org.springframework.web.client.ResourceAccessException) {
+100:             VerificationHttpResult.TransientFailure("NETWORK_OR_TIMEOUT")
+101:         } catch (_: org.springframework.web.client.RestClientException) {
+102:             VerificationHttpResult.PermanentFailure("RESPONSE_INVALID")
+103:         }
+104:     }
+105: }
+106: 
+107: @Service
+108: class ApolloPeopleSearchClient(
+109:     private val properties: DiscoveryVerificationProperties,
+110:     http: RestTemplate, clock: Clock = Clock.systemUTC()
+111: ) {
+112:     @org.springframework.beans.factory.annotation.Autowired
+113:     constructor(properties: DiscoveryVerificationProperties) : this(properties, verificationRestTemplate(properties), Clock.systemUTC())
+114:     private val transport = VerificationHttp(http, clock)
+115:     fun search(query: ApolloSearchQuery, permit: RequestPermit): VerificationHttpResult<ApolloSearchPage> {
+116:         require(properties.apolloApiKey.isNotBlank()) { "Apollo configuration unavailable" }
+117:         val builder = UriComponentsBuilder.fromHttpUrl("https://api.apollo.io/api/v1/mixed_people/api_search")
+118:             .queryParam("q_person_name", "{name}").queryParam("page", query.page).queryParam("per_page", 100)
+119:         val variables = mutableMapOf<String, String>("name" to query.name)
+120:         query.institution?.let {
+121:             require(it.name.isNotBlank())
+122:             builder.queryParam("q_organization_name", "{institution}")
+123:             variables["institution"] = it.name
+124:         }
+125:         val result = transport.request(builder.encode().buildAndExpand(variables).toUri(), HttpMethod.POST,
+126:             mapOf("X-Api-Key" to properties.apolloApiKey, "Accept" to "application/json"), permit, VerificationProvider.APOLLO)
+127:         if (result !is VerificationHttpResult.Success) return result as VerificationHttpResult<Nothing>
+128:         val root = result.value
+129:         val people = root.path("people")
+130:         val total = root.path("total_entries")
+131:         if (!people.isArray || !total.isIntegralNumber || !total.canConvertToLong() || total.longValue() < 0 || people.size() > 100)
+132:             return VerificationHttpResult.PermanentFailure("RESPONSE_INVALID", result.httpStatus)
+133:         val candidates = ArrayList<ApolloCandidate>()
+134:         for (person in people) {
+135:             if (!person.isObject || !person.path("id").isTextual || person.path("id").asText().isBlank() || person.path("id").asText().length > 128)
+136:                 return VerificationHttpResult.PermanentFailure("RESPONSE_INVALID", result.httpStatus)
+137:             val fields = listOf("first_name", "last_name", "last_name_obfuscated", "name", "title")
+138:             if (fields.any { person.hasNonNull(it) && !person.path(it).isTextual }) return VerificationHttpResult.PermanentFailure("RESPONSE_INVALID", result.httpStatus)
+139:             val org = person.path("organization")
+140:             if (!org.isMissingNode && !org.isNull && !org.isObject) return VerificationHttpResult.PermanentFailure("RESPONSE_INVALID", result.httpStatus)
+141:             candidates += ApolloCandidate(person.path("id").asText(), text(person, "first_name"), text(person, "last_name"),
+142:                 text(person, "last_name_obfuscated"), text(person, "name"), text(person, "title"),
+143:                 text(org, "name")?.let { VerificationInstitution(it) }, text(person, "orcid"))
+144:         }
+145:         if (total.longValue() < candidates.size) return VerificationHttpResult.PermanentFailure("RESPONSE_INVALID", result.httpStatus)
+146:         return VerificationHttpResult.Success(ApolloSearchPage(candidates, total.longValue(), query.page), result.responseSha256, result.httpStatus)
+147:     }
+148:     private fun text(node: JsonNode, field: String): String? = node.path(field).takeIf { it.isTextual }?.asText()?.takeIf { it.isNotBlank() }?.take(4096)
+149: }
+
+FILE src/main/kotlin/com/weibo/talentintroduction/discovery/service/QualificationEvidenceParser.kt SHA256 1bea14b97776d2b0140870535a32667203298c52f0c96afcdd39d13ad565928d
+1: package com.weibo.talentintroduction.discovery.service
+2: 
+3: import com.fasterxml.jackson.databind.JsonNode
+4: import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+5: import com.weibo.talentintroduction.discovery.domain.*
+6: import org.springframework.stereotype.Service
+7: import java.time.Clock
+8: import java.time.LocalDate
+9: import java.time.ZoneOffset
+10: 
+11: /** Only these bounded field facts may be retained, never the original person/affiliation response. */
+12: @Service
+13: class QualificationEvidenceParser(private val clock: Clock = Clock.systemUTC()) {
+14:     private val mapper = jacksonObjectMapper()
+15:     fun parse(snapshot: VerificationSnapshot, read: OrcidEvidenceRead): List<VerificationEvidence> {
+16:         val orcid = snapshot.boundOrcid ?: return emptyList()
+17:         val facts = ArrayList<VerificationEvidence>()
+18:         val today = LocalDate.now(clock)
+19:         read.documents.forEach { document ->
+20:             fun emit(field: String, value: String?, node: JsonNode, pointer: String, scope: TemporalScope = TemporalScope.UNKNOWN) {
+21:                 if (value.isNullOrBlank() || value.length > 4096 || node.path("visibility").asText("PUBLIC") != "PUBLIC") return
+22:                 val source = node.path("source")
+23:                 val assertion = when {
+24:                     source.path("source-client-id").path("path").asText().isNotBlank() -> AssertionSource.ORGANIZATION
+25:                     source.path("source-orcid").path("path").asText() == orcid -> AssertionSource.SELF
+26:                     else -> AssertionSource.UNKNOWN
+27:                 }
+28:                 val updated = node.path("last-modified-date").path("value").takeIf { it.isIntegralNumber && it.canConvertToLong() }
+29:                     ?.longValue()?.let { runCatching { java.time.Instant.ofEpochMilli(it) }.getOrNull() }
+30:                 facts += VerificationEvidence(snapshot.identityHash, snapshot.factFingerprint, "ORCID",
+31:                     "https://pub.orcid.org/v3.0/$orcid/${document.endpoint}", document.fetchedAt, document.responseSha256,
+32:                     field, value, assertion, scope, updated, pointer,
+33:                     excerpt = mapper.writeValueAsString(mapOf("sourceOrcid" to source.path("source-orcid").path("path").asText(null),
+34:                         "sourceClientId" to source.path("source-client-id").path("path").asText(null),
+35:                         "visibility" to node.path("visibility").asText("PUBLIC"))).take(2048))
+36:             }
+37:             if (document.endpoint == "person") {
+38:                 val name = document.body.path("name")
+39:                 val fullName = listOf(name.path("given-names").path("value").asText(""), name.path("family-name").path("value").asText("")).filter { it.isNotBlank() }.joinToString(" ")
+40:                 emit("name", fullName, name, "/name")
+41:                 document.body.path("other-names").path("other-name").forEachIndexed { index, alias ->
+42:                     emit("otherName", alias.path("content").asText(null), alias, "/other-names/other-name/$index/content")
+43:                 }
+44:             } else {
+45:                 val employment = document.endpoint.startsWith("employment")
+46:                 val kind = if (employment) "employment" else "education"
+47:                 val nodes = ArrayList<Pair<String, JsonNode>>()
+48:                 if (document.endpoint.contains('/')) nodes += "" to document.body
+49:                 else document.body.path("affiliation-group").forEachIndexed { groupIndex, group ->
+50:                     group.path("summaries").forEachIndexed { index, wrapper ->
+51:                         nodes += "/affiliation-group/$groupIndex/summaries/$index/$kind-summary" to wrapper.path("$kind-summary")
+52:                     }
+53:                 }
+54:                 nodes.forEach { (pointer, node) ->
+55:                     if (!node.isObject || node.path("visibility").asText("PUBLIC") != "PUBLIC") return@forEach
+56:                     val start = date(node.path("start-date"))
+57:                     val endNode = node.path("end-date")
+58:                     val end = date(endNode)
+59:                     val scope = when {
+60:                         end != null && !end.isAfter(today) -> TemporalScope.HISTORICAL
+61:                         start != null && !start.isAfter(today) && (endNode.isMissingNode || endNode.isNull || (end != null && end.isAfter(today))) -> TemporalScope.CURRENT
+62:                         else -> TemporalScope.UNKNOWN
+63:                     }
+64:                     val org = node.path("organization")
+65:                     val role = node.path("role-title").asText("")
+66:                     val value = mapper.writeValueAsString(linkedMapOf(
+67:                         "orcid" to orcid,
+68:                         "institution" to org.path("name").asText("").take(500),
+69:                         "standardId" to org.path("disambiguated-organization").let { dis ->
+70:                             val id = dis.path("disambiguated-organization-identifier").asText("")
+71:                             val source = dis.path("disambiguation-source").asText("")
+72:                             if (id.isNotBlank() && source.isNotBlank()) "$source:$id" else null
+73:                         },
+74:                         "role" to role.take(500),
+75:                         "startDate" to start?.toString(), "endDate" to end?.toString(),
+76:                         "completed" to (!employment && completedDoctorate(role))
+77:                     ))
+78:                     emit(kind, value, node, pointer, scope)
+79:                 }
+80:             }
+81:         }
+82:         return facts.distinctBy { listOf(it.field, it.value, it.assertionSource.name, it.temporalScope.name, it.sourceUrl.substringBeforeLast('/')) }
+83:     }
+84: 
+85:     fun completedDoctorate(text: String): Boolean {
+86:         val normalized = text.lowercase(java.util.Locale.ROOT)
+87:         val doctorate = Regex("(?<![a-z])(?:ph\\.?\\s?d\\.?|dphil|doctorate|doctor of philosophy)(?![a-z])|博士").containsMatchIn(normalized)
+88:         val student = Regex("student|candidate|pursuing|in progress|enrolled|在读|博士生|候选").containsMatchIn(normalized)
+89:         val awarded = Regex("awarded|conferred|completed|graduated|degree obtained|已获|授予|毕业").containsMatchIn(normalized)
+90:         val negated = Regex("\\b(?:not|never)\\s+(?:(?:yet|been|being|successfully|formally)\\s+)*(?:awarded|conferred|completed|graduated|obtained)\\b|\\b(?:uncompleted|incomplete|unawarded)\\b|(?:未|没有|尚未)(?:获|授予|完成|毕业)").containsMatchIn(normalized)
+91:         return doctorate && awarded && !student && !negated
+92:     }
+93: 
+94:     private fun date(node: JsonNode): LocalDate? = runCatching {
+95:         val year = node.path("year").path("value").asText("").toInt()
+96:         // A partial start date cannot establish current employment until its latest possible date.
+97:         val month = node.path("month").path("value").asText("").toIntOrNull() ?: 12
+98:         val day = node.path("day").path("value").asText("").toIntOrNull() ?: java.time.YearMonth.of(year, month).lengthOfMonth()
+99:         LocalDate.of(year, month, day)
+100:     }.getOrNull()
+101: }
+
+FILE src/main/kotlin/com/weibo/talentintroduction/discovery/service/OrcidVerificationEvidenceClient.kt SHA256 ecea654edea83a522b1be6c5688069ffd93c98eacfb388b7267b3fecaf71c22e
+1: package com.weibo.talentintroduction.discovery.service
+2: 
+3: import com.fasterxml.jackson.databind.JsonNode
+4: import com.weibo.talentintroduction.config.DiscoveryVerificationProperties
+5: import com.weibo.talentintroduction.discovery.domain.*
+6: import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
+7: import com.weibo.talentintroduction.expert.domain.ExpertProfile
+8: import org.springframework.http.HttpMethod
+9: import org.springframework.stereotype.Service
+10: import org.springframework.web.client.RestTemplate
+11: import java.net.URI
+12: import java.time.Clock
+13: import java.time.Instant
+14: 
+15: /** Constructed from the original profile, not from an Apollo hit or a same-name ORCID search. */
+16: data class VerificationSnapshot(val identityHash: String, val factFingerprint: String, val profile: ExpertProfile) {
+17:     init { verificationHash(identityHash); verificationHash(factFingerprint) }
+18:     val identityValid: Boolean get() = profile.identityVerification?.status == "VERIFIED" && DiscoveryIdentity.allowed(profile)
+19:     val fullName: String get() = listOfNotNull(profile.givenNames, profile.familyNames).joinToString(" ")
+20:     val boundOrcid: String? get() {
+21:         if (!identityValid) return null
+22:         val proofId = normalizeOrcid(profile.identityVerification?.orcid) ?: return null
+23:         val profileId = normalizeOrcid(profile.orcidId)
+24:         val externalNode = profile.externalIds?.let {
+25:             runCatching { com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().readTree(it) }.getOrNull() ?: return null
+26:         }
+27:         val external = externalNode?.path("orcid")?.takeIf { !it.isMissingNode && !it.isNull }?.let {
+28:             if (!it.isTextual) return null
+29:             normalizeOrcid(it.asText()) ?: return null
+30:         }
+31:         if ((profileId != null && profileId != proofId) || (external != null && external != proofId)) return null
+32:         return proofId
+33:     }
+34: }
+35: 
+36: fun normalizeOrcid(value: String?): String? {
+37:     val id = value?.removePrefix("https://orcid.org/")?.removePrefix("http://orcid.org/") ?: return null
+38:     if (!id.matches(Regex("[0-9]{4}-[0-9]{4}-[0-9]{4}-[0-9]{3}[0-9X]"))) return null
+39:     val digits = id.replace("-", "")
+40:     var total = 0
+41:     digits.take(15).forEach { total = (total + (it - '0')) * 2 }
+42:     val check = (12 - total % 11) % 11
+43:     return id.takeIf { digits.last() == if (check == 10) 'X' else ('0'.code + check).toChar() }
+44: }
+45: 
+46: data class OrcidEvidenceDocument(val endpoint: String, val body: JsonNode, val responseSha256: String, val fetchedAt: Instant)
+47: data class OrcidEvidenceRead(val documents: List<OrcidEvidenceDocument>, val complete: Boolean,
+48:     val reasonCodes: List<String>, val failure: VerificationHttpResult<Nothing>? = null)
+49: 
+50: /** Durable, bounded endpoint result. Missing public records are completed endpoints too. */
+51: data class OrcidEndpointCompletion(val endpoint: String, val document: OrcidEvidenceDocument? = null)
+52: 
+53: @Service
+54: class OrcidVerificationEvidenceClient(private val properties: DiscoveryVerificationProperties,
+55:     http: RestTemplate, private val clock: Clock = Clock.systemUTC()) {
+56:     @org.springframework.beans.factory.annotation.Autowired
+57:     constructor(properties: DiscoveryVerificationProperties) : this(properties, verificationRestTemplate(properties), Clock.systemUTC())
+58:     private val transport = VerificationHttp(http, clock)
+59: 
+60:     /** Existing callers retain aggregate semantics; durable callers acknowledge each response before another request. */
+61:     fun read(snapshot: VerificationSnapshot, reserve: (String) -> RequestPermit?): OrcidEvidenceRead =
+62:         read(snapshot, emptyList(), { _, _, _, _ -> }, reserve)
+63: 
+64:     fun read(snapshot: VerificationSnapshot, completed: List<OrcidEndpointCompletion>,
+65:         onResponse: (String, RequestPermit, OrcidEvidenceDocument?, VerificationHttpResult<*>) -> Unit,
+66:         reserve: (String) -> RequestPermit?): OrcidEvidenceRead {
+67:         val orcid = snapshot.boundOrcid ?: return OrcidEvidenceRead(emptyList(), false, listOf("IDENTITY_EVIDENCE_MISSING"))
+68:         val documents = ArrayList<OrcidEvidenceDocument>()
+69:         val endpoints = java.util.ArrayDeque(listOf("person", "employments", "educations"))
+70:         require(completed.map { it.endpoint }.distinct().size == completed.size)
+71:         completed.forEach { require(allowedEndpoint(it.endpoint) && (it.document == null || it.document.endpoint == it.endpoint)) }
+72:         val saved = completed.associateBy { it.endpoint }
+73:         var requests = 0
+74:         while (endpoints.isNotEmpty()) {
+75:             val endpoint = endpoints.removeFirst()
+76:             require(allowedEndpoint(endpoint))
+77:             val cached = saved[endpoint]
+78:             val doc: OrcidEvidenceDocument?
+79:             if (cached != null) {
+80:                 doc = cached.document
+81:             } else {
+82:                 if (requests + completed.size >= minOf(12, properties.maxRequestsPerItem))
+83:                     return OrcidEvidenceRead(documents, false, listOf("EVIDENCE_INCOMPLETE"))
+84:                 val path = "/$orcid/$endpoint"
+85:                 val permit = reserve(path) ?: return OrcidEvidenceRead(documents, false, listOf("EVIDENCE_INCOMPLETE"))
+86:                 val headers = mutableMapOf("Accept" to "application/json")
+87:                 if (properties.orcidAccessToken.isNotBlank()) headers["Authorization"] = "Bearer ${properties.orcidAccessToken}"
+88:                 requests++
+89:                 val result = transport.request(URI(properties.orcidPublicBaseUrl.trimEnd('/') + path), HttpMethod.GET, headers, permit, VerificationProvider.ORCID)
+90:                 doc = (result as? VerificationHttpResult.Success)?.let {
+91:                     OrcidEvidenceDocument(endpoint, selectedFields(it.value), it.responseSha256, clock.instant())
+92:                 }
+93:                 // A failed acknowledgement throws out of this method: never issue the next HTTP request.
+94:                 onResponse(endpoint, permit, doc, result)
+95:                 when (result) {
+96:                     is VerificationHttpResult.Success -> Unit
+97:                     is VerificationHttpResult.PermanentFailure -> if (result.code != "EVIDENCE_MISSING")
+98:                         return OrcidEvidenceRead(documents, false, listOf(result.code), result)
+99:                     else -> return OrcidEvidenceRead(documents, false, listOf("INTERFACE_UNAVAILABLE"), result as VerificationHttpResult<Nothing>)
+100:                 }
+101:             }
+102:             if (doc != null) {
+103:                 documents += doc
+104:                 if (endpoint == "employments" || endpoint == "educations") {
+105:                     val kind = if (endpoint == "employments") "employment" else "education"
+106:                     val groups = doc.body.path("affiliation-group")
+107:                     if (!groups.isMissingNode && !groups.isArray) return OrcidEvidenceRead(documents, false, listOf("RESPONSE_INVALID"), VerificationHttpResult.PermanentFailure("RESPONSE_INVALID"))
+108:                     groups.forEach { group -> group.path("summaries").forEach { wrapper ->
+109:                         val summary = wrapper.path("$kind-summary")
+110:                         val putCode = summary.path("put-code")
+111:                         if (putCode.isIntegralNumber && putCode.canConvertToLong() && putCode.longValue() > 0 &&
+112:                             (!summary.has("source") || !summary.has("start-date"))) {
+113:                             val detail = "$kind/${putCode.longValue()}"
+114:                             if (!endpoints.contains(detail) && documents.none { it.endpoint == detail }) endpoints.add(detail)
+115:                         }
+116:                     } }
+117:                 }
+118:             }
+119:         }
+120:         return OrcidEvidenceRead(documents, true, if (documents.isEmpty()) listOf("EVIDENCE_MISSING") else emptyList())
+121:     }
+122: 
+123:     private val endpointPattern = Regex("person|employments|educations|employment/[0-9]+|education/[0-9]+")
+124:     private fun allowedEndpoint(endpoint: String) = endpoint.matches(endpointPattern)
+125:     private val retainedFields = setOf("name", "given-names", "family-name", "value", "other-names", "other-name", "content",
+126:         "affiliation-group", "summaries", "employment-summary", "education-summary", "put-code", "source",
+127:         "source-client-id", "source-orcid", "path", "visibility", "last-modified-date", "start-date", "end-date",
+128:         "year", "month", "day", "organization", "role-title", "disambiguated-organization",
+129:         "disambiguated-organization-identifier", "disambiguation-source")
+130: 
+131:     /** Retain parser inputs and detail cursor only, not biographies, emails, URLs or raw provider records. */
+132:     private fun selectedFields(node: JsonNode): JsonNode {
+133:         return when {
+134:             node.isObject -> com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode().also { result ->
+135:                 node.fields().forEachRemaining { (key, value) -> if (key in retainedFields) result.set<JsonNode>(key, selectedFields(value)) }
+136:             }
+137:             node.isArray -> com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.arrayNode().also { result -> node.forEach { result.add(selectedFields(it)) } }
+138:             node.isTextual -> com.fasterxml.jackson.databind.node.TextNode(node.asText().take(500))
+139:             else -> node.deepCopy()
+140:         }
+141:     }
+142: }
+
+FILE src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt SHA256 2636403c043625b29cbb3b28ba23f4cbd64c7b533ecf47bc60f6a1d63f3eda66
+1: package com.weibo.talentintroduction.discovery.repository
+2: 
+3: import com.weibo.talentintroduction.discovery.domain.*
+4: import org.springframework.jdbc.core.JdbcTemplate
+5: import org.springframework.jdbc.core.ConnectionCallback
+6: import org.springframework.jdbc.core.RowMapper
+7: import org.springframework.stereotype.Repository
+8: import org.springframework.transaction.annotation.Transactional
+9: import org.springframework.transaction.support.TransactionSynchronization
+10: import org.springframework.transaction.support.TransactionSynchronizationManager
+11: import java.sql.ResultSet
+12: import java.time.Instant
+13: import java.time.LocalDate
+14: import java.time.ZoneOffset
+15: import java.util.UUID
+16: 
+17: /** Database-only seam. Call public transactional methods through the Spring bean.
+18:  * Lock order is run -> admission (caller, when needed) -> item -> attempt.
+19:  * No HTTP/ES work may be performed while these locks are held.
+20:  */
+21: @Repository
+22: class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
+23:     /** Reporting queries deliberately have no locks, writes, or recovery side effects. */
+24:     fun reportingCollectionStatuses(ids: List<Long>): Map<Long, String> {
+25:         require(ids.isNotEmpty() && ids.size <= 50 && ids.all { it > 0 })
+26:         return jdbc.query("SELECT id,status FROM task_execution WHERE id IN (${ids.joinToString(",") { "?" }})",
+27:             RowMapper { rs, _ -> rs.getLong("id") to rs.getString("status") }, *ids.toTypedArray()).toMap()
+28:     }
+29: 
+30:     fun reportingRuns(ids: List<Long>): Map<Long, VerificationRun> {
+31:         require(ids.isNotEmpty() && ids.size <= 50 && ids.all { it > 0 })
+32:         return jdbc.query("SELECT * FROM discovery_verification_run WHERE execution_id IN (${ids.joinToString(",") { "?" }})",
+33:             runMapper, *ids.toTypedArray()).associateBy { it.executionId }
+34:     }
+35: 
+36:     fun reportingCounts(filter: VerificationReportFilter, batches: Boolean = false, executionIds: List<Long>? = null): Map<Long, VerificationCounts> {
+37:         require(executionIds == null || executionIds.isNotEmpty() && executionIds.size <= 50 && executionIds.all { it > 0 })
+38:         val (where, args) = if (executionIds == null) reportingWhere(filter) else
+39:             "i.owner_execution_id IN (${executionIds.joinToString(",") { "?" }})" to executionIds
+40:         fun sum(condition: String, alias: String) = "COALESCE(SUM(CASE WHEN $condition THEN 1 ELSE 0 END),0) AS $alias"
+41:         val admitted = "i.activated_at IS NOT NULL AND r.mode='ENFORCE' AND i.admission_revision IS NOT NULL"
+42:         val active = "i.activated_at IS NOT NULL"
+43:         val columns = listOf(
+44:             sum(active, "profiles"),
+45:             sum("$admitted AND i.outcome IN ('DIRECT_CLEAR','APOLLO_CLEAR','APOLLO_UNCLEAR')", "autoAdmitted"),
+46:             sum("$admitted AND i.outcome='DIRECT_CLEAR'", "directAdmitted"),
+47:             sum("$admitted AND i.outcome IN ('APOLLO_CLEAR','APOLLO_UNCLEAR')", "apolloAdmitted"),
+48:             sum("$active AND i.outcome IN ('DIRECT_CLEAR','APOLLO_CLEAR')", "clear"),
+49:             sum("$active AND i.outcome='APOLLO_UNCLEAR'", "unclear"),
+50:             sum("$active AND i.outcome='PENDING'", "pending"),
+51:             sum("$active AND i.state='ERROR'", "errors"),
+52:             sum("$active AND i.state IN ('QUEUED','RUNNING','RETRY_WAIT')", "queued"),
+53:             sum("$active AND i.outcome='PROTECTED'", "protected"),
+54:             sum("$active AND i.projection_state='PENDING'", "projectionPending"),
+55:             sum("$active AND i.projection_state='ERROR'", "projectionErrors"),
+56:             sum("$active AND i.apollo_entered_at IS NOT NULL", "apolloEntered"),
+57:             sum("$active AND i.search_completed_at IS NOT NULL", "apolloSearched"),
+58:             sum("$active AND i.candidate_found_at IS NOT NULL", "apolloCandidates"),
+59:             sum("$active AND i.person_matched_at IS NOT NULL", "apolloMatched"),
+60:             """COALESCE(SUM(CASE WHEN $active THEN
+61:                 (SELECT COUNT(*) FROM discovery_verification_attempt a WHERE a.item_id=i.id AND a.provider='APOLLO')
+62:                 ELSE 0 END),0) AS apolloHttpAttempts""",
+63:             sum("i.activated_at IS NULL AND i.state='ERROR'", "registrationErrors")
+64:         ).joinToString(",")
+65:         val group = when { batches -> "i.batch_number"; executionIds != null -> "i.owner_execution_id"; else -> "0" }
+66:         val grouping = if (batches || executionIds != null) "GROUP BY $group ORDER BY $group" else ""
+67:         return jdbc.query("""SELECT $group AS batch,$columns FROM discovery_verification_item i
+68:             JOIN discovery_verification_run r ON r.execution_id=i.owner_execution_id WHERE $where
+69:             ${if (batches) "AND i.activated_at IS NOT NULL" else ""} $grouping""",
+70:             RowMapper { rs, _ -> rs.getLong("batch") to VerificationCounts(
+71:                 rs.getLong("profiles"), rs.getLong("autoAdmitted"), rs.getLong("directAdmitted"),
+72:                 rs.getLong("apolloAdmitted"), rs.getLong("clear"), rs.getLong("unclear"), rs.getLong("pending"),
+73:                 rs.getLong("errors"), rs.getLong("queued"), rs.getLong("protected"), rs.getLong("projectionPending"),
+74:                 rs.getLong("projectionErrors"), rs.getLong("apolloEntered"), rs.getLong("apolloSearched"),
+75:                 rs.getLong("apolloCandidates"), rs.getLong("apolloMatched"), rs.getLong("apolloHttpAttempts"),
+76:                 rs.getLong("registrationErrors"))
+77:             }, *args.toTypedArray()).toMap()
+78:     }
+79: 
+80:     fun reportingSuggestions(filter: VerificationReportFilter, batches: Boolean = false,
+81:         executionIds: List<Long>? = null): Map<Long, Triple<Long, Long, Long>> {
+82:         require(executionIds == null || executionIds.isNotEmpty() && executionIds.size <= 50 && executionIds.all { it > 0 })
+83:         val (where, args) = if (executionIds == null) reportingWhere(filter) else
+84:             "i.owner_execution_id IN (${executionIds.joinToString(",") { "?" }})" to executionIds
+85:         val group = when { batches -> "i.batch_number"; executionIds != null -> "i.owner_execution_id"; else -> "0" }
+86:         return jdbc.query("""SELECT $group AS bucket,
+87:             COALESCE(SUM(i.outcome IN ('DIRECT_CLEAR','APOLLO_CLEAR','APOLLO_UNCLEAR')),0) AS admitted,
+88:             COALESCE(SUM(i.outcome='DIRECT_CLEAR'),0) AS direct,
+89:             COALESCE(SUM(i.outcome IN ('APOLLO_CLEAR','APOLLO_UNCLEAR')),0) AS apollo
+90:             FROM discovery_verification_item i JOIN discovery_verification_run r ON r.execution_id=i.owner_execution_id
+91:             WHERE $where AND i.activated_at IS NOT NULL AND r.mode='AUDIT'
+92:             ${if (batches || executionIds != null) "GROUP BY $group ORDER BY $group" else ""}""",
+93:             RowMapper { rs, _ -> rs.getLong("bucket") to Triple(rs.getLong("admitted"), rs.getLong("direct"), rs.getLong("apollo")) },
+94:             *args.toTypedArray()).toMap()
+95:     }
+96: 
+97:     /** Hash the complete reason set: grouping TEXT directly can truncate comparisons at MySQL max_sort_length. */
+98:     fun reportingReasons(filter: VerificationReportFilter): List<Pair<String, Long>> {
+99:         val (where, args) = reportingWhere(filter)
+100:         return jdbc.query("""SELECT MAX(i.reasons_json) AS reasons_json,COUNT(*) AS n FROM discovery_verification_item i
+101:             WHERE $where AND i.activated_at IS NOT NULL AND i.reasons_json IS NOT NULL GROUP BY SHA2(i.reasons_json,256)""",
+102:             RowMapper { rs, _ -> rs.getString("reasons_json") to rs.getLong("n") }, *args.toTypedArray())
+103:     }
+104: 
+105:     fun reportingBatchTimes(executionId: Long): Map<Int, Instant> =
+106:         jdbc.query("""SELECT batch_number,MAX(updated_at) AS updated_at FROM discovery_verification_item
+107:             WHERE owner_execution_id=? AND activated_at IS NOT NULL GROUP BY batch_number ORDER BY batch_number""",
+108:             RowMapper { rs, _ -> rs.getInt("batch_number") to rs.time("updated_at")!! }, executionId).toMap()
+109: 
+110:     fun reportingBatchReasons(executionId: Long): List<Triple<Int, String, Long>> =
+111:         jdbc.query("""SELECT batch_number,MAX(reasons_json) AS reasons_json,COUNT(*) AS n
+112:             FROM discovery_verification_item WHERE owner_execution_id=? AND activated_at IS NOT NULL
+113:             AND reasons_json IS NOT NULL GROUP BY batch_number,SHA2(reasons_json,256) ORDER BY batch_number""",
+114:             RowMapper { rs, _ -> Triple(rs.getInt("batch_number"), rs.getString("reasons_json"), rs.getLong("n")) }, executionId)
+115: 
+116:     fun reportingRecordTotal(filter: VerificationReportFilter): Long {
+117:         val (where, args) = reportingWhere(filter)
+118:         return jdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_item i WHERE $where AND i.activated_at IS NOT NULL",
+119:             Long::class.java, *args.toTypedArray())!!
+120:     }
+121: 
+122:     fun reportingRecords(filter: VerificationReportFilter, page: Int, size: Int): List<VerificationItem> {
+123:         require(page >= 0 && size in 1..100)
+124:         val (where, args) = reportingWhere(filter)
+125:         // Prevent ORDER BY id/LIMIT from choosing an unrelated-owner PRIMARY scan on large runs.
+126:         return jdbc.query("""SELECT i.* FROM discovery_verification_item i FORCE INDEX (idx_dvi_run_batch) WHERE $where AND i.activated_at IS NOT NULL
+127:             ORDER BY i.id LIMIT ? OFFSET ?""", itemMapper, *(args + listOf(size, page.toLong() * size)).toTypedArray())
+128:     }
+129: 
+130:     private fun reportingWhere(filter: VerificationReportFilter): Pair<String, List<Any>> {
+131:         val clauses = mutableListOf("i.owner_execution_id=?")
+132:         val args = mutableListOf<Any>(filter.executionId)
+133:         when (filter.route) {
+134:             "APOLLO" -> clauses += "i.apollo_entered_at IS NOT NULL"
+135:             "DIRECT" -> { clauses += "i.route=?"; args += filter.route }
+136:         }
+137:         when (filter.result) {
+138:             "CLEAR" -> clauses += "i.outcome IN ('DIRECT_CLEAR','APOLLO_CLEAR')"
+139:             "UNCLEAR" -> clauses += "i.outcome='APOLLO_UNCLEAR'"
+140:             "PENDING" -> clauses += "i.outcome='PENDING'"
+141:             "ERROR" -> clauses += "i.state='ERROR'"
+142:             "QUEUED" -> clauses += "i.state IN ('QUEUED','RUNNING','RETRY_WAIT')"
+143:             "PROTECTED" -> clauses += "i.outcome='PROTECTED'"
+144:         }
+145:         filter.batchNumber?.let { clauses += "i.batch_number=?"; args += it }
+146:         if (filter.q.isNotEmpty()) {
+147:             // Use ! as SQL escape, escaping literal !, %, _, and backslash explicitly.
+148:             val q = "%" + filter.q.replace("!", "!!").replace("\\", "!\\").replace("%", "!%").replace("_", "!_") + "%"
+149:             clauses += """(i.expert_doc_id LIKE ? ESCAPE '!' OR
+150:                 CONCAT_WS(' ',JSON_UNQUOTE(JSON_EXTRACT(i.snapshot_json,'$.profile.givenNames')),
+151:                     JSON_UNQUOTE(JSON_EXTRACT(i.snapshot_json,'$.profile.familyNames'))) LIKE ? ESCAPE '!' OR
+152:                 JSON_UNQUOTE(JSON_EXTRACT(i.snapshot_json,'$.profile.email')) LIKE ? ESCAPE '!' OR
+153:                 JSON_UNQUOTE(JSON_EXTRACT(i.snapshot_json,'$.profile.institution')) LIKE ? ESCAPE '!')"""
+154:             repeat(4) { args += q }
+155:         }
+156:         return clauses.joinToString(" AND ") to args
+157:     }
+158: 
+159:     @Transactional
+160:     fun createRun(executionId: Long, mode: VerificationMode, apolloRequested: Boolean, settingsJson: String, now: Instant): VerificationRun {
+161:         require(executionId > 0 && settingsJson.isNotBlank())
+162:         jdbc.update("INSERT IGNORE INTO discovery_verification_run (execution_id,mode,policy_version,apollo_requested,settings_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
+163:             executionId, mode.name, mode.policyVersion, apolloRequested, settingsJson, now.verificationUtc(), now.verificationUtc())
+164:         val run = lockRun(executionId)
+165:         require(run.mode == mode && run.apolloRequested == apolloRequested && run.settingsJson == settingsJson) { "Run snapshot is immutable" }
+166:         return run
+167:     }
+168: 
+169:     @Transactional
+170:     fun reserveItem(input: VerificationReservation, now: Instant): VerificationItem {
+171:         // Read duplicate identity without locks first: never lock two runs in one transaction.
+172:         val existing = identity(input)
+173:         if (existing != null) return checkedIdentity(existing, input)
+174:         val run = lockRun(input.ownerExecutionId)
+175:         require(run.policyVersion == input.policyVersion && !run.inputClosed)
+176:         val inserted = jdbc.update("""INSERT IGNORE INTO discovery_verification_item
+177:             (owner_execution_id,expert_doc_id,identity_hash,policy_version,source_name,source_item_key,batch_number,snapshot_json,fact_fingerprint,created_at,updated_at)
+178:             VALUES (?,?,?,?,?,?,0,?,?,?,?)""", input.ownerExecutionId, input.expertDocId, input.identityHash,
+179:             input.policyVersion, input.sourceName, input.sourceItemKey, input.snapshotJson, input.factFingerprint,
+180:             now.verificationUtc(), now.verificationUtc())
+181:         val item = jdbc.query("SELECT * FROM discovery_verification_item WHERE expert_doc_id=? AND identity_hash=? AND policy_version=? FOR UPDATE", itemMapper,
+182:             input.expertDocId, input.identityHash, input.policyVersion).single()
+183:         checkedIdentity(item, input)
+184:         if (inserted == 1) bump(input.ownerExecutionId, now)
+185:         return item
+186:     }
+187: 
+188:     @Transactional
+189:     fun activateItem(itemId: Long, batchNumber: Int, now: Instant): VerificationItem {
+190:         require(batchNumber > 0)
+191:         val item = lockItem(itemId)
+192:         if (item.state == VerificationState.RESERVED) {
+193:             jdbc.update("UPDATE discovery_verification_item SET state='QUEUED',batch_number=?,activated_at=?,updated_at=? WHERE id=? AND state='RESERVED'",
+194:                 batchNumber, now.verificationUtc(), now.verificationUtc(), itemId)
+195:             bump(item.ownerExecutionId, now)
+196:         }
+197:         return findItem(itemId)!!
+198:     }
+199: 
+200:     @Transactional
+201:     fun closeInput(executionId: Long, now: Instant): Boolean {
+202:         val run = lockRun(executionId)
+203:         if (run.inputClosed) return false
+204:         jdbc.update("UPDATE discovery_verification_run SET input_closed=1,revision=revision+1,updated_at=? WHERE execution_id=?", now.verificationUtc(), executionId)
+205:         return true
+206:     }
+207: 
+208:     fun findRun(executionId: Long): VerificationRun? {
+209:         require(executionId > 0)
+210:         return jdbc.query("SELECT * FROM discovery_verification_run WHERE execution_id=?", runMapper, executionId).singleOrNull()
+211:     }
+212:     fun findItem(itemId: Long): VerificationItem? {
+213:         require(itemId > 0)
+214:         return jdbc.query("SELECT * FROM discovery_verification_item WHERE id=?", itemMapper, itemId).singleOrNull()
+215:     }
+216:     fun findManagedContexts(docIds: Collection<String>): Map<String, VerificationContext> {
+217:         require(docIds.size <= 500)
+218:         docIds.forEach { verificationText(it, 128) }
+219:         if (docIds.isEmpty()) return emptyMap()
+220:         val result = docIds.associateWith { VerificationContext.UNMANAGED }.toMutableMap()
+221:         jdbc.query("SELECT DISTINCT expert_doc_id,policy_version FROM discovery_verification_item WHERE expert_doc_id IN (${docIds.joinToString(",") { "?" }})",
+222:             RowMapper { rs, _ -> rs.getString(1) to rs.getString(2) }, *docIds.toTypedArray()).forEach { (doc, policy) ->
+223:             val context = when (policy) {
+224:                 VerificationMode.ENFORCE.policyVersion -> VerificationContext.MANAGED_ENFORCE
+225:                 VerificationMode.AUDIT.policyVersion -> VerificationContext.MANAGED_AUDIT
+226:                 else -> throw IllegalStateException("Unknown verification policy")
+227:             }
+228:             if (result[doc] != VerificationContext.MANAGED_ENFORCE) result[doc] = context
+229:         }
+230:         // Database failures propagate, never become UNMANAGED.
+231:         return result
+232:     }
+233: 
+234:     /** One evidence read for a bounded batch of real ES document IDs, including old identities. */
+235:     fun findItemsByDocIds(docIds: Collection<String>): List<VerificationItem> {
+236:         require(docIds.size <= 500)
+237:         docIds.forEach { verificationText(it, 128) }
+238:         if (docIds.isEmpty()) return emptyList()
+239:         return jdbc.query(
+240:             "SELECT * FROM discovery_verification_item WHERE expert_doc_id IN (${docIds.joinToString(",") { "?" }}) ORDER BY id",
+241:             itemMapper, *docIds.toTypedArray()
+242:         )
+243:     }
+244: 
+245:     @Transactional
+246:     fun claimDue(now: Instant, leaseSeconds: Long): VerificationItem? {
+247:         require(leaseSeconds > 0)
+248:         val candidates = jdbc.query("""SELECT * FROM discovery_verification_item WHERE
+249:             state='QUEUED' OR (state='RETRY_WAIT' AND next_attempt_at<=?) OR (state='RUNNING' AND lease_until<=?) ORDER BY id LIMIT 100""",
+250:             itemMapper, now.verificationUtc(), now.verificationUtc())
+251:         // One run per transaction, even when all of its candidates lost a race.
+252:         val owner = candidates.firstOrNull()?.ownerExecutionId ?: return null
+253:         lockRun(owner)
+254:         for (candidate in candidates.filter { it.ownerExecutionId == owner }) {
+255:             val item = lockedItem(candidate.id)
+256:             if (!(item.state == VerificationState.QUEUED ||
+257:                     item.state == VerificationState.RETRY_WAIT && item.nextAttemptAt?.let { it <= now } == true ||
+258:                     item.state == VerificationState.RUNNING && item.leaseUntil?.let { it <= now } == true)) continue
+259:             jdbc.update("UPDATE discovery_verification_item SET state='RUNNING',lease_token=?,generation=generation+1,lease_until=?,next_attempt_at=NULL,updated_at=? WHERE id=?",
+260:                 UUID.randomUUID().toString(), now.plusSeconds(leaseSeconds).verificationUtc(), now.verificationUtc(), item.id)
+261:             bump(owner, now)
+262:             return findItem(item.id)
+263:         }
+264:         return null
+265:     }
+266: 
+267:     @Transactional
+268:     fun renewLease(itemId: Long, token: String, generation: Long, now: Instant, leaseSeconds: Long): Boolean {
+269:         require(leaseSeconds > 0)
+270:         val item = lockItem(itemId)
+271:         if (!owns(item, token, generation, now)) return false
+272:         jdbc.update("UPDATE discovery_verification_item SET lease_until=?,updated_at=? WHERE id=? AND lease_token=? AND generation=? AND state='RUNNING'",
+273:             now.plusSeconds(leaseSeconds).verificationUtc(), now.verificationUtc(), itemId, token, generation)
+274:         bump(item.ownerExecutionId, now)
+275:         return true
+276:     }
+277: 
+278:     @Transactional
+279:     fun reserveAttemptWithBudget(itemId: Long, token: String, generation: Long, request: VerificationAttemptRequest,
+280:                                  requestsPerMinute: Int, requestsPerDay: Int, maxRequestsPerItem: Int, now: Instant): VerificationAttemptReservation {
+281:         require(requestsPerMinute > 0 && requestsPerDay > 0 && maxRequestsPerItem > 0)
+282:         val item = lockItem(itemId)
+283:         if (!owns(item, token, generation, now)) return VerificationAttemptReservation(deferred = VerificationBudgetReason.LEASE_LOST)
+284:         // Lock is retained through COMMIT, not merely through INSERT. Same bound JDBC connection.
+285:         if (request.provider == VerificationProvider.APOLLO) {
+286:             val acquired = jdbc.execute(ConnectionCallback<Boolean> { connection ->
+287:                 connection.prepareStatement("SELECT GET_LOCK('discovery_verification_apollo_budget',1)").use { statement ->
+288:                     statement.executeQuery().use { rs -> rs.next(); rs.getInt(1) == 1 }
+289:                 }.also { acquired ->
+290:                     if (acquired) TransactionSynchronizationManager.registerSynchronization(object : TransactionSynchronization {
+291:                         override fun afterCompletion(status: Int) {
+292:                             connection.prepareStatement("SELECT RELEASE_LOCK('discovery_verification_apollo_budget')").use { it.execute() }
+293:                         }
+294:                     })
+295:                 }
+296:             }) == true
+297:             if (!acquired) return VerificationAttemptReservation(deferred = VerificationBudgetReason.LOCK_BUSY)
+298:         }
+299:         val duplicate = jdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_attempt WHERE request_key=? FOR UPDATE", Long::class.java, request.requestKey)!!
+300:         if (duplicate > 0) return VerificationAttemptReservation(deferred = VerificationBudgetReason.DUPLICATE_REQUEST)
+301:         if (item.requestCount >= maxRequestsPerItem) return VerificationAttemptReservation(deferred = VerificationBudgetReason.ITEM_LIMIT)
+302:         if (request.provider == VerificationProvider.APOLLO) {
+303:             // Current reads are required even inside an outer REPEATABLE_READ transaction:
+304:             // acquiring a named lock does not refresh an earlier MVCC snapshot.
+305:             val start = LocalDate.ofInstant(now, ZoneOffset.UTC).atStartOfDay()
+306:             val day = jdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_attempt WHERE provider='APOLLO' AND requested_at>=? AND requested_at<? FOR UPDATE",
+307:                 Long::class.java, start, start.plusDays(1))!!
+308:             if (day >= requestsPerDay) return VerificationAttemptReservation(deferred = VerificationBudgetReason.DAY_LIMIT)
+309:             val minute = jdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_attempt WHERE provider='APOLLO' AND requested_at>? AND requested_at<=? FOR UPDATE",
+310:                 Long::class.java, now.minusSeconds(60).verificationUtc(), now.verificationUtc())!!
+311:             if (minute >= requestsPerMinute) return VerificationAttemptReservation(deferred = VerificationBudgetReason.MINUTE_LIMIT)
+312:         }
+313:         jdbc.update("""INSERT INTO discovery_verification_attempt (item_id,request_key,provider,query_kind,page_number,attempt_number,requested_at,result_code,request_json)
+314:             VALUES (?,?,?,?,?,?,?,'DISPATCH_RESERVED',?)""", itemId, request.requestKey, request.provider.name, request.queryKind.name,
+315:             request.pageNumber, request.attemptNumber, now.verificationUtc(), request.requestJson)
+316:         val id = jdbc.queryForObject("SELECT id FROM discovery_verification_attempt WHERE request_key=?", Long::class.java, request.requestKey)!!
+317:         jdbc.update("UPDATE discovery_verification_item SET request_count=request_count+1,updated_at=? WHERE id=?", now.verificationUtc(), itemId)
+318:         bump(item.ownerExecutionId, now)
+319:         return VerificationAttemptReservation(attemptId = id)
+320:     }
+321: 
+322:     @Transactional
+323:     fun completeAttempt(itemId: Long, token: String, generation: Long, attemptId: Long, httpStatus: Int?, resultCode: String,
+324:                         responseJson: String?, responseSha256: String?, now: Instant): Boolean {
+325:         verificationText(resultCode, 64)
+326:         require(httpStatus == null || httpStatus in 100..599)
+327:         responseSha256?.let { verificationHash(it) }
+328:         val item = lockItem(itemId)
+329:         if (!owns(item, token, generation, now)) return false
+330:         val changed = jdbc.update("""UPDATE discovery_verification_attempt SET completed_at=?,http_status=?,result_code=?,response_json=?,response_sha256=?
+331:             WHERE id=? AND item_id=? AND completed_at IS NULL""", now.verificationUtc(), httpStatus, resultCode, responseJson, responseSha256, attemptId, itemId)
+332:         if (changed == 1) bump(item.ownerExecutionId, now)
+333:         return changed == 1
+334:     }
+335: 
+336:     @Transactional
+337:     fun saveEvidenceAndOutcome(itemId: Long, token: String, generation: Long, result: VerificationResult, now: Instant): Boolean {
+338:         val item = lockItem(itemId)
+339:         if (!owns(item, token, generation, now)) return false
+340:         if (result.admissionRevision != null) require(item.policyVersion == VerificationMode.ENFORCE.policyVersion)
+341:         val changed = jdbc.update("""UPDATE discovery_verification_item SET state=?,outcome=?,qualification=?,route=?,evidence_json=?,reasons_json=?,
+342:             apollo_entered_at=COALESCE(apollo_entered_at,?),search_completed_at=COALESCE(search_completed_at,?),candidate_found_at=COALESCE(candidate_found_at,?),
+343:             person_matched_at=COALESCE(person_matched_at,?),apollo_person_id=?,admission_revision=?,projection_state=?,completed_at=?,updated_at=?,lease_token=NULL,lease_until=NULL
+344:             WHERE id=? AND lease_token=? AND generation=? AND state='RUNNING'""", result.state.name, result.outcome?.name, result.qualification.name,
+345:             result.route.name, result.evidenceJson, result.reasonsJson, result.apolloEnteredAt?.verificationUtc(), result.searchCompletedAt?.verificationUtc(),
+346:             result.candidateFoundAt?.verificationUtc(), result.personMatchedAt?.verificationUtc(), result.apolloPersonId, result.admissionRevision,
+347:             result.projectionState.name, now.verificationUtc(), now.verificationUtc(), itemId, token, generation)
+348:         if (changed == 1) bump(item.ownerExecutionId, now)
+349:         return changed == 1
+350:     }
+351: 
+352:     @Transactional
+353:     fun saveFailure(itemId: Long, token: String, generation: Long, result: VerificationResult,
+354:         transientAttempts: Int, now: Instant): Boolean {
+355:         require(result.state == VerificationState.ERROR)
+356:         val item = lockItem(itemId)
+357:         if (!owns(item, token, generation, now)) return false
+358:         require(transientAttempts >= item.transientAttempts)
+359:         jdbc.update("UPDATE discovery_verification_item SET transient_attempts=? WHERE id=? AND lease_token=? AND generation=? AND state='RUNNING'",
+360:             transientAttempts, itemId, token, generation)
+361:         check(saveEvidenceAndOutcome(itemId, token, generation, result, now))
+362:         return true
+363:     }
+364: 
+365:     @Transactional
+366:     fun markProjection(itemId: Long, admissionRevision: Long, projection: VerificationProjection, error: String?, now: Instant): Boolean {
+367:         require(admissionRevision >= 0)
+368:         require(error == null || error.length <= 128)
+369:         require(projection != VerificationProjection.NOT_REQUIRED)
+370:         val item = lockItem(itemId)
+371:         if (item.admissionRevision != admissionRevision || item.state != VerificationState.COMPLETED) return false
+372:         if (item.projectionState in setOf(VerificationProjection.PROJECTED, VerificationProjection.ALREADY_PRESENT, VerificationProjection.APPLICATION_PRESENT)) return false
+373:         jdbc.update("UPDATE discovery_verification_item SET projection_state=?,projection_error=?,updated_at=? WHERE id=?", projection.name, error, now.verificationUtc(), itemId)
+374:         bump(item.ownerExecutionId, now)
+375:         return true
+376:     }
+377: 
+378:     @Transactional
+379:     fun reschedule(itemId: Long, token: String, generation: Long, nextAttemptAt: Instant, transientAttempts: Int,
+380:                    evidenceJson: String, reasonsJson: String, now: Instant): Boolean {
+381:         require(nextAttemptAt >= now && transientAttempts >= 0)
+382:         val item = lockItem(itemId)
+383:         if (!owns(item, token, generation, now)) return false
+384:         require(transientAttempts >= item.transientAttempts)
+385:         jdbc.update("""UPDATE discovery_verification_item SET state='RETRY_WAIT',next_attempt_at=?,transient_attempts=?,evidence_json=?,reasons_json=?,
+386:             lease_token=NULL,lease_until=NULL,updated_at=? WHERE id=? AND lease_token=? AND generation=? AND state='RUNNING'""",
+387:             nextAttemptAt.verificationUtc(), transientAttempts, evidenceJson, reasonsJson, now.verificationUtc(), itemId, token, generation)
+388:         bump(item.ownerExecutionId, now)
+389:         return true
+390:     }
+391: 
+392:     fun listReserved(limit: Int): List<VerificationItem> {
+393:         require(limit in 1..500)
+394:         return jdbc.query("SELECT * FROM discovery_verification_item WHERE state='RESERVED' ORDER BY id LIMIT ?", itemMapper, limit)
+395:     }
+396: 
+397:     /** Recovery may terminate an unactivated registration only after its owner's input is closed. */
+398:     @Transactional
+399:     fun failReserved(itemId: Long, reasonsJson: String, now: Instant): Boolean {
+400:         val item = lockItem(itemId)
+401:         if (item.state != VerificationState.RESERVED || !findRun(item.ownerExecutionId)!!.inputClosed) return false
+402:         jdbc.update("UPDATE discovery_verification_item SET state='ERROR',reasons_json=?,completed_at=?,updated_at=? WHERE id=?", reasonsJson, now.verificationUtc(), now.verificationUtc(), itemId)
+403:         bump(item.ownerExecutionId, now)
+404:         return true
+405:     }
+406: 
+407: 
+408:     /** Called by the separate commit bean: no ES/HTTP while the fixed SQL lock order is held. */
+409:     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+410:     fun lockForCommit(itemId: Long): VerificationItem {
+411:         val item = findItem(itemId) ?: error("Verification item not found")
+412:         lockRun(item.ownerExecutionId)
+413:         jdbc.query("SELECT expert_doc_id FROM expert_discovery_admission WHERE expert_doc_id=? FOR UPDATE",
+414:             RowMapper { rs, _ -> rs.getString(1) }, item.expertDocId)
+415:         return lockedItem(itemId)
+416:     }
+417: 
+418:     @Transactional
+419:     fun saveProgress(itemId: Long, token: String, generation: Long, evidenceJson: String,
+420:         enteredAt: Instant?, searchedAt: Instant?, candidatesAt: Instant?, now: Instant): Boolean {
+421:         val item = lockItem(itemId)
+422:         if (!owns(item, token, generation, now)) return false
+423:         jdbc.update("""UPDATE discovery_verification_item SET evidence_json=?,apollo_entered_at=COALESCE(apollo_entered_at,?),
+424:             search_completed_at=COALESCE(search_completed_at,?),candidate_found_at=COALESCE(candidate_found_at,?),updated_at=?
+425:             WHERE id=? AND lease_token=? AND generation=? AND state='RUNNING'""",
+426:             evidenceJson, enteredAt?.verificationUtc(), searchedAt?.verificationUtc(), candidatesAt?.verificationUtc(),
+427:             now.verificationUtc(), itemId, token, generation)
+428:         bump(item.ownerExecutionId, now)
+429:         return true
+430:     }
+431: 
+432:     /** Completion and cursor are one commit, acknowledged before any subsequent wire request. */
+433:     @Transactional
+434:     fun completeAttemptAndProgress(itemId: Long, token: String, generation: Long, attemptId: Long,
+435:         httpStatus: Int?, resultCode: String, responseJson: String?, responseSha256: String?,
+436:         evidenceJson: String, enteredAt: Instant?, searchedAt: Instant?, candidatesAt: Instant?, now: Instant): Boolean {
+437:         if (!completeAttempt(itemId, token, generation, attemptId, httpStatus, resultCode, responseJson, responseSha256, now)) return false
+438:         check(saveProgress(itemId, token, generation, evidenceJson, enteredAt, searchedAt, candidatesAt, now))
+439:         return true
+440:     }
+441: 
+442:     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+443:     fun attachAdmission(itemId: Long, revision: Long, now: Instant) {
+444:         require(revision >= 0)
+445:         check(jdbc.update("""UPDATE discovery_verification_item SET admission_revision=?,projection_state='PENDING',updated_at=?
+446:             WHERE id=? AND state='COMPLETED' AND admission_revision IS NULL
+447:             AND policy_version=? AND outcome IN ('DIRECT_CLEAR','APOLLO_CLEAR','APOLLO_UNCLEAR')""",
+448:             revision, now.verificationUtc(), itemId, VerificationMode.ENFORCE.policyVersion) == 1)
+449:         bump(findItem(itemId)!!.ownerExecutionId, now)
+450:     }
+451: 
+452:     fun listProjectionDue(limit: Int): List<VerificationItem> {
+453:         require(limit in 1..100)
+454:         return jdbc.query("""SELECT * FROM discovery_verification_item WHERE state='COMPLETED' AND admission_revision IS NOT NULL
+455:             AND projection_state IN ('PENDING','ERROR') AND (projection_error IS NULL OR projection_error<>'SUPERSEDED_BY_REVIEW')
+456:             ORDER BY updated_at,id LIMIT ?""", itemMapper, limit)
+457:     }
+458: 
+459:     fun findAttempts(itemId: Long): List<VerificationAttempt> = jdbc.query(
+460:         "SELECT * FROM discovery_verification_attempt WHERE item_id=? ORDER BY id",
+461:         RowMapper { rs, _ -> VerificationAttempt(rs.getLong("id"), rs.getLong("item_id"), rs.getString("request_key"),
+462:             VerificationProvider.valueOf(rs.getString("provider")), VerificationQueryKind.valueOf(rs.getString("query_kind")),
+463:             rs.getInt("page_number"), rs.getInt("attempt_number"), rs.time("requested_at")!!, rs.time("completed_at"),
+464:             rs.getInt("http_status").let { if (rs.wasNull()) null else it }, rs.getString("result_code"),
+465:             rs.getString("request_json"), rs.getString("response_json"), rs.getString("response_sha256")) }, itemId)
+466:     private fun identity(input: VerificationReservation) = jdbc.query("SELECT * FROM discovery_verification_item WHERE expert_doc_id=? AND identity_hash=? AND policy_version=?",
+467:         itemMapper, input.expertDocId, input.identityHash, input.policyVersion).singleOrNull()
+468:     private fun checkedIdentity(item: VerificationItem, input: VerificationReservation): VerificationItem {
+469:         check(item.expertDocId == input.expertDocId && item.identityHash == input.identityHash && item.policyVersion == input.policyVersion) { "Identity collision" }
+470:         return item
+471:     }
+472:     private fun lockRun(id: Long): VerificationRun {
+473:         require(id > 0)
+474:         return jdbc.query("SELECT * FROM discovery_verification_run WHERE execution_id=? FOR UPDATE", runMapper, id).singleOrNull()
+475:             ?: throw IllegalStateException("Verification run not found")
+476:     }
+477:     private fun lockItem(id: Long): VerificationItem {
+478:         val item = findItem(id) ?: throw IllegalArgumentException("Verification item not found")
+479:         lockRun(item.ownerExecutionId)
+480:         return lockedItem(id)
+481:     }
+482:     private fun lockedItem(id: Long) = jdbc.query("SELECT * FROM discovery_verification_item WHERE id=? FOR UPDATE", itemMapper, id).single()
+483:     private fun owns(item: VerificationItem, token: String, generation: Long, now: Instant): Boolean =
+484:         item.state == VerificationState.RUNNING && item.leaseToken == token && item.generation == generation && item.leaseUntil?.let { it > now } == true
+485:     private fun bump(owner: Long, now: Instant) {
+486:         jdbc.update("UPDATE discovery_verification_run SET revision=revision+1,updated_at=? WHERE execution_id=?", now.verificationUtc(), owner)
+487:     }
+488: 
+489:     companion object {
+490:         private fun ResultSet.time(name: String): Instant? = getTimestamp(name)?.toLocalDateTime()?.verificationInstant()
+491:         private fun ResultSet.nullLong(name: String): Long? = getLong(name).let { if (wasNull()) null else it }
+492:         private val runMapper = RowMapper { rs: ResultSet, _: Int -> VerificationRun(rs.getLong("execution_id"), VerificationMode.valueOf(rs.getString("mode")),
+493:             rs.getString("policy_version"), rs.getBoolean("apollo_requested"), rs.getString("settings_json"), rs.getBoolean("input_closed"), rs.getLong("revision"), rs.time("created_at")!!, rs.time("updated_at")!!) }
+494:         private val itemMapper = RowMapper { rs: ResultSet, _: Int -> VerificationItem(
+495:             rs.getLong("id"), rs.getLong("owner_execution_id"), rs.getString("expert_doc_id"), rs.getString("identity_hash"), rs.getString("policy_version"),
+496:             rs.getString("source_name"), rs.getString("source_item_key"), rs.getInt("batch_number"), rs.getString("snapshot_json"), rs.getString("fact_fingerprint"),
+497:             VerificationState.valueOf(rs.getString("state")), rs.getString("outcome")?.let(VerificationOutcome::valueOf), VerificationQualification.valueOf(rs.getString("qualification")),
+498:             VerificationRoute.valueOf(rs.getString("route")), rs.time("apollo_entered_at"), rs.time("search_completed_at"), rs.time("candidate_found_at"), rs.time("person_matched_at"),
+499:             rs.getString("apollo_person_id"), rs.getString("evidence_json"), rs.getString("reasons_json"), rs.getInt("request_count"), rs.getInt("transient_attempts"), rs.getLong("generation"),
+500:             rs.getString("lease_token"), rs.time("lease_until"), rs.time("next_attempt_at"), rs.nullLong("admission_revision"), VerificationProjection.valueOf(rs.getString("projection_state")),
+501:             rs.getString("projection_error"), rs.time("activated_at"), rs.time("completed_at"), rs.time("created_at")!!, rs.time("updated_at")!!) }
+502:     }
+503: }
+504: 
+505: data class VerificationReportFilter(
+506:     val executionId: Long, val route: String = "ALL", val result: String = "ALL",
+507:     val q: String = "", val batchNumber: Int? = null
+508: ) {
+509:     init {
+510:         require(executionId > 0)
+511:         require(route in setOf("ALL", "DIRECT", "APOLLO"))
+512:         require(result in setOf("ALL", "CLEAR", "UNCLEAR", "PENDING", "ERROR", "QUEUED", "PROTECTED"))
+513:         require(q.length <= 100 && (batchNumber == null || batchNumber > 0))
+514:     }
+515: }
+
+FILE src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryVerification.kt SHA256 1dd175bc236fdac7787bd7c81f57de1bbc2e65ac1825df3c37507dc1a2be0f55
+1: package com.weibo.talentintroduction.discovery.domain
+2: 
+3: import java.time.Instant
+4: import java.time.LocalDateTime
+5: import java.time.ZoneOffset
+6: 
+7: enum class VerificationMode { AUDIT, ENFORCE;
+8:     val policyVersion: String get() = "APV_20261018_V1_$name"
+9: }
+10: enum class VerificationState { RESERVED, QUEUED, RUNNING, RETRY_WAIT, COMPLETED, ERROR }
+11: enum class VerificationOutcome { DIRECT_CLEAR, APOLLO_CLEAR, APOLLO_UNCLEAR, PENDING, PROTECTED }
+12: enum class VerificationQualification { NOT_EVALUATED, MET, UNKNOWN, NOT_MET, CONFLICT }
+13: enum class VerificationRoute { NONE, DIRECT, APOLLO }
+14: enum class VerificationProjection { NOT_REQUIRED, PENDING, PROJECTED, ALREADY_PRESENT, APPLICATION_PRESENT, ERROR }
+15: enum class VerificationContext { UNMANAGED, MANAGED_AUDIT, MANAGED_ENFORCE, UNAVAILABLE }
+16: enum class VerificationProvider { APOLLO, ORCID }
+17: enum class VerificationQueryKind { LOCAL_EVIDENCE, BROAD, VARIANT, NARROW, ORCID }
+18: enum class AssertionSource { ORGANIZATION, SELF, UNKNOWN }
+19: enum class TemporalScope { CURRENT, HISTORICAL, UNKNOWN }
+20: 
+21: fun verificationText(value: String, max: Int): String {
+22:     require(value.isNotBlank() && value.length <= max) { "Invalid verification field length (maximum $max)" }
+23:     return value
+24: }
+25: fun verificationHash(value: String): String {
+26:     require(value.matches(Regex("[a-f0-9]{64}"))) { "Expected SHA-256" }
+27:     return value
+28: }
+29: fun Instant.verificationUtc(): LocalDateTime = LocalDateTime.ofInstant(this, ZoneOffset.UTC)
+30: fun LocalDateTime.verificationInstant(): Instant = toInstant(ZoneOffset.UTC)
+31: 
+32: interface RegistrationRecovery { fun recoverReserved(limit: Int): Int }
+33: 
+34: data class VerificationRun(
+35:     val executionId: Long, val mode: VerificationMode, val policyVersion: String,
+36:     val apolloRequested: Boolean, val settingsJson: String, val inputClosed: Boolean = false,
+37:     val revision: Long = 0, val createdAt: Instant, val updatedAt: Instant
+38: ) {
+39:     init { require(executionId > 0); require(policyVersion == mode.policyVersion) }
+40: }
+41: 
+42: data class VerificationReservation(
+43:     val ownerExecutionId: Long, val expertDocId: String, val identityHash: String,
+44:     val policyVersion: String, val sourceName: String, val sourceItemKey: String,
+45:     val snapshotJson: String, val factFingerprint: String
+46: ) {
+47:     init {
+48:         require(ownerExecutionId > 0)
+49:         verificationText(expertDocId, 128); verificationHash(identityHash)
+50:         verificationText(policyVersion, 32); verificationText(sourceName, 32)
+51:         verificationText(sourceItemKey, 128); verificationHash(factFingerprint)
+52:         require(snapshotJson.isNotBlank())
+53:     }
+54: }
+55: 
+56: data class VerificationItem(
+57:     val id: Long, val ownerExecutionId: Long, val expertDocId: String, val identityHash: String,
+58:     val policyVersion: String, val sourceName: String, val sourceItemKey: String,
+59:     val batchNumber: Int, val snapshotJson: String, val factFingerprint: String,
+60:     val state: VerificationState, val outcome: VerificationOutcome?,
+61:     val qualification: VerificationQualification, val route: VerificationRoute,
+62:     val apolloEnteredAt: Instant?, val searchCompletedAt: Instant?, val candidateFoundAt: Instant?,
+63:     val personMatchedAt: Instant?, val apolloPersonId: String?, val evidenceJson: String?,
+64:     val reasonsJson: String?, val requestCount: Int, val transientAttempts: Int,
+65:     val generation: Long, val leaseToken: String?, val leaseUntil: Instant?, val nextAttemptAt: Instant?,
+66:     val admissionRevision: Long?, val projectionState: VerificationProjection, val projectionError: String?,
+67:     val activatedAt: Instant?, val completedAt: Instant?, val createdAt: Instant, val updatedAt: Instant
+68: ) {
+69:     init {
+70:         require(id > 0 && ownerExecutionId > 0 && batchNumber >= 0 && requestCount >= 0 && transientAttempts >= 0 && generation >= 0)
+71:         verificationText(expertDocId, 128); verificationHash(identityHash); verificationHash(factFingerprint)
+72:         require(policyVersion in VerificationMode.values().map { it.policyVersion })
+73:         if (state == VerificationState.RESERVED) require(batchNumber == 0 && activatedAt == null)
+74:         if (activatedAt != null) require(batchNumber > 0)
+75:         if (state == VerificationState.RUNNING) require(leaseToken != null && leaseUntil != null)
+76:         if (state != VerificationState.COMPLETED) require(outcome == null)
+77:         if (state == VerificationState.COMPLETED || state == VerificationState.ERROR) {
+78:             require(completedAt != null)
+79:             VerificationResult(state, outcome, qualification, route, evidenceJson ?: "{}", reasonsJson ?: "[]",
+80:                 apolloEnteredAt, searchCompletedAt, candidateFoundAt, personMatchedAt, apolloPersonId, admissionRevision, projectionState)
+81:         } else require(admissionRevision == null && projectionState == VerificationProjection.NOT_REQUIRED)
+82:     }
+83: }
+84: 
+85: data class VerificationEvidence(
+86:     val identityHash: String, val factFingerprint: String, val provider: String,
+87:     val sourceUrl: String, val fetchedAt: Instant, val responseSha256: String,
+88:     val field: String, val value: String, val assertionSource: AssertionSource,
+89:     val temporalScope: TemporalScope, val sourceUpdatedAt: Instant? = null,
+90:     val jsonPointer: String? = null, val excerpt: String? = null,
+91:     val conflicts: List<String> = emptyList(), val schemaVersion: Int = 1
+92: ) {
+93:     init {
+94:         require(schemaVersion == 1); verificationHash(identityHash); verificationHash(factFingerprint)
+95:         verificationHash(responseSha256); verificationText(provider, 16); verificationText(sourceUrl, 2048)
+96:         require(sourceUrl.startsWith("https://") || sourceUrl.startsWith("http://"))
+97:         verificationText(field, 128); verificationText(value, 4096)
+98:         require(excerpt == null || excerpt.length <= 2048)
+99:     }
+100: }
+101: 
+102: data class VerificationProgress(
+103:     val stage: String = "LOCAL_EVIDENCE", val queryIndex: Int = 0, val page: Int = 1,
+104:     val complete: Boolean = false, val candidateIds: List<String> = emptyList(),
+105:     val finishedQueryKeys: List<String> = emptyList(), val schemaVersion: Int = 1
+106: ) {
+107:     init { require(schemaVersion == 1); require(stage in setOf("LOCAL_EVIDENCE", "APOLLO_SEARCH", "DECIDE", "PROJECT")); require(queryIndex >= 0 && page > 0) }
+108: }
+109: 
+110: data class VerificationResult(
+111:     val state: VerificationState, val outcome: VerificationOutcome?,
+112:     val qualification: VerificationQualification, val route: VerificationRoute,
+113:     val evidenceJson: String, val reasonsJson: String,
+114:     val apolloEnteredAt: Instant? = null, val searchCompletedAt: Instant? = null,
+115:     val candidateFoundAt: Instant? = null, val personMatchedAt: Instant? = null,
+116:     val apolloPersonId: String? = null, val admissionRevision: Long? = null,
+117:     val projectionState: VerificationProjection = VerificationProjection.NOT_REQUIRED
+118: ) {
+119:     init {
+120:         require(state == VerificationState.COMPLETED || state == VerificationState.ERROR)
+121:         require((state == VerificationState.ERROR) == (outcome == null))
+122:         when (outcome) {
+123:             VerificationOutcome.DIRECT_CLEAR -> require(route == VerificationRoute.DIRECT && qualification == VerificationQualification.MET)
+124:             VerificationOutcome.APOLLO_CLEAR -> require(route == VerificationRoute.APOLLO && qualification == VerificationQualification.MET && personMatchedAt != null)
+125:             VerificationOutcome.APOLLO_UNCLEAR -> require(route == VerificationRoute.APOLLO && qualification == VerificationQualification.UNKNOWN && personMatchedAt != null)
+126:             VerificationOutcome.PROTECTED -> require(route == VerificationRoute.NONE && qualification == VerificationQualification.NOT_EVALUATED)
+127:             VerificationOutcome.PENDING -> require(route == VerificationRoute.NONE)
+128:             null -> require(route == VerificationRoute.NONE)
+129:         }
+130:         require(apolloPersonId == null || apolloPersonId.length <= 128)
+131:         if (projectionState != VerificationProjection.NOT_REQUIRED) require(admissionRevision != null && outcome in setOf(VerificationOutcome.DIRECT_CLEAR, VerificationOutcome.APOLLO_CLEAR, VerificationOutcome.APOLLO_UNCLEAR))
+132:     }
+133: }
+134: 
+135: data class VerificationAttemptRequest(
+136:     val requestKey: String, val provider: VerificationProvider, val queryKind: VerificationQueryKind,
+137:     val pageNumber: Int, val attemptNumber: Int, val requestJson: String
+138: ) {
+139:     init { verificationText(requestKey, 128); require(pageNumber > 0 && attemptNumber > 0); require(requestJson.isNotBlank()) }
+140: }
+141: data class VerificationAttempt(
+142:     val id: Long, val itemId: Long, val requestKey: String, val provider: VerificationProvider,
+143:     val queryKind: VerificationQueryKind, val pageNumber: Int, val attemptNumber: Int,
+144:     val requestedAt: Instant, val completedAt: Instant?, val httpStatus: Int?, val resultCode: String,
+145:     val requestJson: String, val responseJson: String?, val responseSha256: String?
+146: )
+147: enum class VerificationBudgetReason { LEASE_LOST, LOCK_BUSY, MINUTE_LIMIT, DAY_LIMIT, ITEM_LIMIT, DUPLICATE_REQUEST }
+148: data class VerificationAttemptReservation(val attemptId: Long? = null, val deferred: VerificationBudgetReason? = null)
+149: data class VerificationCounts(
+150:     val profiles: Long = 0, val autoAdmitted: Long = 0, val directAdmitted: Long = 0,
+151:     val apolloAdmitted: Long = 0, val clear: Long = 0, val unclear: Long = 0, val pending: Long = 0,
+152:     val errors: Long = 0, val queued: Long = 0, val protected: Long = 0,
+153:     val projectionPending: Long = 0, val projectionErrors: Long = 0, val apolloEntered: Long = 0,
+154:     val apolloSearched: Long = 0, val apolloCandidates: Long = 0, val apolloMatched: Long = 0,
+155:     val apolloHttpAttempts: Long = 0, val registrationErrors: Long = 0
+156: )

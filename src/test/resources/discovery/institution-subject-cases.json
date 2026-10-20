@@ -1,0 +1,191 @@
+{
+  "schemaVersion": 1,
+  "description": "Minimum institution-subject contract. `observed` cases are real 2026-10 audit strings (privacy-neutral academia only); `constructed` counterexamples are explicitly synthetic. This is not an accuracy benchmark.",
+  "cases": [
+    {
+      "caseId": "observed-gachon-footnote-department-address",
+      "kind": "observed",
+      "source": "ORCID_EMPLOYMENT",
+      "raw": "2Department of BioNano Technology, Gachon University, 1342 Seongnam-daero, Sujeong-gu, Seongnam-si 13120, Gyeonggi-do, Republic of Korea",
+      "status": "RESOLVED",
+      "subjects": ["Gachon University"],
+      "reason": "SUBJECT_EXTRACTED",
+      "removedContains": ["2", "Department of BioNano Technology", "1342 Seongnam-daero", "Sujeong-gu", "Seongnam-si 13120", "Gyeonggi-do", "Republic of Korea"]
+    },
+    {
+      "caseId": "observed-glued-mit-no-invented-boundary",
+      "kind": "observed",
+      "source": "ORCID_EMPLOYMENT",
+      "raw": "Department of Chemical EngineeringMassachusetts Institute of TechnologyCambridge, MA 02139 USA",
+      "status": "UNRESOLVED",
+      "subjects": [],
+      "reason": "UNSUPPORTED_LAYOUT"
+    },
+    {
+      "caseId": "observed-uc-los-angeles",
+      "kind": "observed",
+      "source": "ORCID_EMPLOYMENT",
+      "raw": "University of California, Los Angeles",
+      "status": "RESOLVED",
+      "subjects": ["University of California, Los Angeles"],
+      "reason": "UNCHANGED_STRUCTURED"
+    },
+    {
+      "caseId": "observed-uc-berkeley",
+      "kind": "observed",
+      "source": "ORCID_EMPLOYMENT",
+      "raw": "University of California, Berkeley",
+      "status": "RESOLVED",
+      "subjects": ["University of California, Berkeley"],
+      "reason": "UNCHANGED_STRUCTURED"
+    },
+    {
+      "caseId": "observed-rutgers-formal-name",
+      "kind": "observed",
+      "source": "ORCID_EMPLOYMENT",
+      "raw": "Rutgers, The State University of New Jersey",
+      "status": "RESOLVED",
+      "subjects": ["Rutgers, The State University of New Jersey"],
+      "reason": "UNCHANGED_STRUCTURED"
+    },
+    {
+      "caseId": "observed-leidos-joint-laboratory",
+      "kind": "observed",
+      "source": "ORCID_EMPLOYMENT",
+      "raw": "Leidos Research Support Team, Albany, OR, 97321, USA; National Energy Technology Laboratory, Albany, OR, 97321, USA",
+      "status": "AMBIGUOUS",
+      "subjects": ["National Energy Technology Laboratory"],
+      "reason": "MULTIPLE_SUBJECTS"
+    },
+    {
+      "caseId": "observed-renji-hospital-vs-university",
+      "kind": "observed",
+      "source": "ORCID_EMPLOYMENT",
+      "raw": "bDepartment of Pain Medicine, Renji Hospital, School of Medicine, Shanghai Jiao Tong University, Shanghai, China",
+      "status": "AMBIGUOUS",
+      "subjects": ["Renji Hospital", "Shanghai Jiao Tong University"],
+      "reason": "MULTIPLE_SUBJECTS"
+    },
+    {
+      "caseId": "observed-seoul-duplicate-blocks-and-address",
+      "kind": "observed",
+      "source": "ORCID_EMPLOYMENT",
+      "raw": "Department of Education, Seoul National University, Seoul, South Korea; Department of Education, Seoul National University, 1 Gwanak-ro, Gwanak-gu, Seoul, South Korea",
+      "status": "RESOLVED",
+      "subjects": ["Seoul National University"],
+      "reason": "SUBJECT_EXTRACTED"
+    },
+    {
+      "caseId": "observed-cnrs-joint-unit",
+      "kind": "observed",
+      "source": "PROFILE",
+      "raw": "CNRS UMI 3288- NTU - THALES",
+      "status": "AMBIGUOUS",
+      "subjects": ["CNRS UMI 3288", "NTU", "THALES"],
+      "reason": "MULTIPLE_SUBJECTS"
+    },
+    {
+      "caseId": "observed-universite-paris-sud-preserved",
+      "kind": "observed",
+      "source": "ORCID_EMPLOYMENT",
+      "raw": "Université Paris-Sud",
+      "status": "RESOLVED",
+      "subjects": ["Université Paris-Sud"],
+      "reason": "UNCHANGED_STRUCTURED"
+    },
+    {
+      "caseId": "constructed-email-fragment-is-not-institution",
+      "kind": "constructed",
+      "source": "PROFILE",
+      "raw": "Department of Biology, Example University, London, UK; a@example.invalid (A.B.)",
+      "status": "RESOLVED",
+      "subjects": ["Example University"],
+      "reason": "SUBJECT_EXTRACTED"
+    },
+    {
+      "caseId": "constructed-hospital-is-not-its-university",
+      "kind": "constructed",
+      "source": "PROFILE",
+      "raw": "Renji Hospital, School of Medicine, Shanghai Jiao Tong University, Shanghai, China",
+      "status": "AMBIGUOUS",
+      "subjects": ["Renji Hospital", "Shanghai Jiao Tong University"],
+      "reason": "MULTIPLE_SUBJECTS"
+    },
+    {
+      "caseId": "constructed-single-unstructured-name-is-unresolved",
+      "kind": "constructed",
+      "source": "PROFILE",
+      "raw": "ACHISINA",
+      "status": "UNRESOLVED",
+      "subjects": [],
+      "reason": "UNSUPPORTED_LAYOUT"
+    },
+    {
+      "caseId": "constructed-3m-keeps-leading-digit",
+      "kind": "constructed",
+      "source": "PROFILE",
+      "raw": "3M",
+      "status": "UNRESOLVED",
+      "subjects": [],
+      "reason": "UNSUPPORTED_LAYOUT"
+    }
+  ],
+  "comparisons": [
+    {
+      "caseId": "uc-campuses-are-different",
+      "left": "University of California, Los Angeles",
+      "leftSource": "ORCID_EMPLOYMENT",
+      "right": "University of California, Berkeley",
+      "rightSource": "APOLLO_CANDIDATE",
+      "expected": "DIFFERENT"
+    },
+    {
+      "caseId": "campus-is-not-folded-into-parent",
+      "left": "University of California, Los Angeles",
+      "leftSource": "ORCID_EMPLOYMENT",
+      "right": "University of California",
+      "rightSource": "APOLLO_CANDIDATE",
+      "expected": "DIFFERENT"
+    },
+    {
+      "caseId": "hospital-is-not-its-university",
+      "left": "Renji Hospital",
+      "leftSource": "ORCID_EMPLOYMENT",
+      "right": "Shanghai Jiao Tong University",
+      "rightSource": "APOLLO_CANDIDATE",
+      "expected": "DIFFERENT"
+    },
+    {
+      "caseId": "constructed-technical-university-is-different",
+      "left": "Example University",
+      "leftSource": "PROFILE",
+      "right": "Example Technical University",
+      "rightSource": "APOLLO_CANDIDATE",
+      "expected": "DIFFERENT"
+    },
+    {
+      "caseId": "structured-eth-zurich-matches-without-alias-table",
+      "left": "ETH Zurich",
+      "leftSource": "ORCID_EMPLOYMENT",
+      "right": "ETH Zurich",
+      "rightSource": "ORCID_EMPLOYMENT",
+      "expected": "MATCH"
+    },
+    {
+      "caseId": "constructed-same-name-conflicting-ror",
+      "left": "Same University",
+      "leftStandardId": "ROR:1",
+      "right": "Same University",
+      "rightStandardId": "ROR:2",
+      "expected": "DIFFERENT"
+    },
+    {
+      "caseId": "constructed-different-id-namespace-is-unknown",
+      "left": "Same University",
+      "leftStandardId": "ROR:1",
+      "right": "Same University",
+      "rightStandardId": "GRID:1",
+      "expected": "UNKNOWN"
+    }
+  ]
+}

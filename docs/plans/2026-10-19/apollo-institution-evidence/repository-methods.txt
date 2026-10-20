@@ -1,0 +1,53 @@
+$ rg -n fun |evidence_json|request_json|response_json src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt
+24:    fun reportingCollectionStatuses(ids: List<Long>): Map<Long, String> {
+30:    fun reportingRuns(ids: List<Long>): Map<Long, VerificationRun> {
+36:    fun reportingCounts(filter: VerificationReportFilter, batches: Boolean = false, executionIds: List<Long>? = null): Map<Long, VerificationCounts> {
+40:        fun sum(condition: String, alias: String) = "COALESCE(SUM(CASE WHEN $condition THEN 1 ELSE 0 END),0) AS $alias"
+80:    fun reportingSuggestions(filter: VerificationReportFilter, batches: Boolean = false,
+98:    fun reportingReasons(filter: VerificationReportFilter): List<Pair<String, Long>> {
+105:    fun reportingBatchTimes(executionId: Long): Map<Int, Instant> =
+110:    fun reportingBatchReasons(executionId: Long): List<Triple<Int, String, Long>> =
+116:    fun reportingRecordTotal(filter: VerificationReportFilter): Long {
+122:    fun reportingRecords(filter: VerificationReportFilter, page: Int, size: Int): List<VerificationItem> {
+130:    private fun reportingWhere(filter: VerificationReportFilter): Pair<String, List<Any>> {
+160:    fun createRun(executionId: Long, mode: VerificationMode, apolloRequested: Boolean, settingsJson: String, now: Instant): VerificationRun {
+170:    fun reserveItem(input: VerificationReservation, now: Instant): VerificationItem {
+189:    fun activateItem(itemId: Long, batchNumber: Int, now: Instant): VerificationItem {
+201:    fun closeInput(executionId: Long, now: Instant): Boolean {
+208:    fun findRun(executionId: Long): VerificationRun? {
+212:    fun findItem(itemId: Long): VerificationItem? {
+216:    fun findManagedContexts(docIds: Collection<String>): Map<String, VerificationContext> {
+235:    fun findItemsByDocIds(docIds: Collection<String>): List<VerificationItem> {
+246:    fun claimDue(now: Instant, leaseSeconds: Long): VerificationItem? {
+268:    fun renewLease(itemId: Long, token: String, generation: Long, now: Instant, leaseSeconds: Long): Boolean {
+279:    fun reserveAttemptWithBudget(itemId: Long, token: String, generation: Long, request: VerificationAttemptRequest,
+291:                        override fun afterCompletion(status: Int) {
+313:        jdbc.update("""INSERT INTO discovery_verification_attempt (item_id,request_key,provider,query_kind,page_number,attempt_number,requested_at,result_code,request_json)
+323:    fun completeAttempt(itemId: Long, token: String, generation: Long, attemptId: Long, httpStatus: Int?, resultCode: String,
+330:        val changed = jdbc.update("""UPDATE discovery_verification_attempt SET completed_at=?,http_status=?,result_code=?,response_json=?,response_sha256=?
+337:    fun saveEvidenceAndOutcome(itemId: Long, token: String, generation: Long, result: VerificationResult, now: Instant): Boolean {
+341:        val changed = jdbc.update("""UPDATE discovery_verification_item SET state=?,outcome=?,qualification=?,route=?,evidence_json=?,reasons_json=?,
+353:    fun saveFailure(itemId: Long, token: String, generation: Long, result: VerificationResult,
+366:    fun markProjection(itemId: Long, admissionRevision: Long, projection: VerificationProjection, error: String?, now: Instant): Boolean {
+379:    fun reschedule(itemId: Long, token: String, generation: Long, nextAttemptAt: Instant, transientAttempts: Int,
+385:        jdbc.update("""UPDATE discovery_verification_item SET state='RETRY_WAIT',next_attempt_at=?,transient_attempts=?,evidence_json=?,reasons_json=?,
+392:    fun listReserved(limit: Int): List<VerificationItem> {
+399:    fun failReserved(itemId: Long, reasonsJson: String, now: Instant): Boolean {
+410:    fun lockForCommit(itemId: Long): VerificationItem {
+419:    fun saveProgress(itemId: Long, token: String, generation: Long, evidenceJson: String,
+423:        jdbc.update("""UPDATE discovery_verification_item SET evidence_json=?,apollo_entered_at=COALESCE(apollo_entered_at,?),
+434:    fun completeAttemptAndProgress(itemId: Long, token: String, generation: Long, attemptId: Long,
+443:    fun attachAdmission(itemId: Long, revision: Long, now: Instant) {
+452:    fun listProjectionDue(limit: Int): List<VerificationItem> {
+459:    fun findAttempts(itemId: Long): List<VerificationAttempt> = jdbc.query(
+465:            rs.getString("request_json"), rs.getString("response_json"), rs.getString("response_sha256")) }, itemId)
+466:    private fun identity(input: VerificationReservation) = jdbc.query("SELECT * FROM discovery_verification_item WHERE expert_doc_id=? AND identity_hash=? AND policy_version=?",
+468:    private fun checkedIdentity(item: VerificationItem, input: VerificationReservation): VerificationItem {
+472:    private fun lockRun(id: Long): VerificationRun {
+477:    private fun lockItem(id: Long): VerificationItem {
+482:    private fun lockedItem(id: Long) = jdbc.query("SELECT * FROM discovery_verification_item WHERE id=? FOR UPDATE", itemMapper, id).single()
+483:    private fun owns(item: VerificationItem, token: String, generation: Long, now: Instant): Boolean =
+485:    private fun bump(owner: Long, now: Instant) {
+490:        private fun ResultSet.time(name: String): Instant? = getTimestamp(name)?.toLocalDateTime()?.verificationInstant()
+491:        private fun ResultSet.nullLong(name: String): Long? = getLong(name).let { if (wasNull()) null else it }
+499:            rs.getString("apollo_person_id"), rs.getString("evidence_json"), rs.getString("reasons_json"), rs.getInt("request_count"), rs.getInt("transient_attempts"), rs.getLong("generation"),

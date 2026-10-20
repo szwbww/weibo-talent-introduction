@@ -100,11 +100,11 @@ class DiscoveryVerificationQueryService(
         val run = repository.findRun(item.ownerExecutionId) ?: error("Verification run missing")
         val admission = admissions.findAdmissions(listOf(item.expertDocId)).singleOrNull()
         val snapshot = mapper.readValue<VerificationSnapshot>(item.snapshotJson)
-        val payload = item.evidenceJson?.let { mapper.readValue<VerificationWorkerEvidence>(it) } ?: VerificationWorkerEvidence()
+        val payload = workerPayload(item)
         return VerificationItemDetail(record(item, admission?.decision, admission?.revision, snapshot, payload), item.ownerExecutionId,
             item.state, item.outcome, item.qualification, snapshot.profile.identityVerification,
             snapshot.profile.employment, snapshot.profile.institutionEvidence, snapshot.boundOrcid,
-            payload.evidence, reasonCodes(item).map { VerificationReason(it, reasonLabel(it), 1) },
+            payload?.evidence ?: emptyList(), reasonCodes(item).map { VerificationReason(it, reasonLabel(it), 1) },
             repository.findAttempts(itemId).map { VerificationAttemptSummary(it.id, it.provider, it.queryKind,
                 it.pageNumber, it.attemptNumber, it.requestedAt, it.completedAt, it.httpStatus, it.resultCode, it.responseSha256) },
             item.admissionRevision, item.projectionError, run.mode, run.revision, Instant.now(),
@@ -130,14 +130,27 @@ class DiscoveryVerificationQueryService(
 
     private fun record(item: VerificationItem, decision: String?, revision: Long?,
         snapshot: VerificationSnapshot = mapper.readValue(item.snapshotJson),
-        payload: VerificationWorkerEvidence = item.evidenceJson?.let { mapper.readValue<VerificationWorkerEvidence>(it) } ?: VerificationWorkerEvidence()
+        payload: VerificationWorkerEvidence? = workerPayload(item)
     ): VerificationRecord {
         // Use the shared pure rules only for the explanation of missing fields, never to rewrite the recorded result.
-        val missing = rules.evaluate(snapshot, payload.evidence, payload.search).missingFields
+        // A damaged per-item normalization must not fail the whole list: keep the saved state and flag the field.
+        val missing = if (payload == null) listOf("institutionSubject") else try {
+            rules.evaluate(snapshot, payload.evidence, payload.search,
+                institutionNormalization = payload.institutionNormalization).missingFields
+        } catch (_: IllegalArgumentException) {
+            listOf("institutionSubject")
+        }
         return VerificationRecord(item.id, item.expertDocId, snapshot.profile.displayName, snapshot.profile.email,
             snapshot.profile.institution, item.sourceName, item.batchNumber, item.route,
             item.outcome?.name ?: if (item.state == VerificationState.ERROR) "ERROR" else "QUEUED",
             missing, reasonCodes(item), item.updatedAt, decision, item.projectionState, revision, item.qualification)
+    }
+
+    /** Malformed optional evidence is a per-row rendering problem; snapshot/SQL failures remain fatal. */
+    private fun workerPayload(item: VerificationItem): VerificationWorkerEvidence? = try {
+        item.evidenceJson?.let { mapper.readValue<VerificationWorkerEvidence>(it) } ?: VerificationWorkerEvidence()
+    } catch (_: com.fasterxml.jackson.core.JsonProcessingException) {
+        null
     }
 
     private fun reasonCodes(item: VerificationItem): List<String> = item.reasonsJson?.let { mapper.readValue<List<String>>(it).distinct() } ?: emptyList()

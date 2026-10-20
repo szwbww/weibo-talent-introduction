@@ -1,0 +1,46 @@
+"""Read-only audit of frozen 41,844 records; flags overlap and are not semantic labels."""
+import collections
+import hashlib
+import json
+from pathlib import Path
+import re
+
+ROOT = Path(__file__).resolve().parents[2]
+SOURCE = ROOT / 'outputs/apollo-institution-audit-20261017/pending-institution-inventory.json'
+data = SOURCE.read_bytes()
+rows = json.loads(data)
+assert len(rows) == len({r['id'] for r in rows}) == 41844
+assert all(len(r['rawInstitution']) <= 1 for r in rows)
+values = [r['rawInstitution'][0] for r in rows if r['rawInstitution']]
+footnote = re.compile(r'^\s*(?:\d+\s*(?=[A-Za-z])|[†‡*]+\s*|[a-z](?=Department|Institute|School|Faculty|The\b|Laboratory|College|Center|Centre))')
+patterns = {
+    'subunit_keywords': r'\b(?:department|dept|faculty|school|laboratory|lab|division)\b',
+    'postal_or_street_clues': r'\b\d{4,}\b|\b(?:road|street|avenue|boulevard|lane|rue|strasse|straße|P\.?\s*O\.?\s*Box)\b',
+    'semicolon': r'[;；]',
+    'contact_or_url': r'[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|https?://|www\.',
+}
+flags = {k: [s for s in values if re.search(p, footnote.sub('', s), re.I)] for k, p in patterns.items()}
+flags['leading_footnote_like'] = [s for s in values if footnote.search(s)]
+flags['hospital_and_university_words'] = [s for s in values if re.search(r'\bhospital\b', s, re.I) and re.search(r'\buniversit\w*\b', s, re.I)]
+flags['non_ascii_letters'] = [s for s in values if any(c.isalpha() and ord(c) > 127 for c in s)]
+lengths = sorted(map(len, values))
+summary = {
+    'source': str(SOURCE), 'sourceSha256': hashlib.sha256(data).hexdigest(),
+    'snapshotAt': json.loads((SOURCE.parent / 'summary.json').read_text())['snapshotAt'],
+    'unit': 'unique document ID, not deduplicated natural person; historical snapshot, not live production',
+    'inputNote': 'Inventory already trims/collapses whitespace and removes placeholder values; audit does not modify source.',
+    'records': len(rows), 'hasInstitution': len(values), 'missingInstitution': len(rows)-len(values),
+    'distinctInstitutionStrings': len(set(values)),
+    'lengthGreaterThan': {str(n): sum(len(s) > n for s in values) for n in [80,100,150,200,500]},
+    'lengthPercentiles': {str(q): lengths[int((len(lengths)-1)*q)] for q in [.5,.9,.95,.99,1]},
+    'patternCounts': {k: {'records': len(v), 'percentOfNonempty': round(len(v)*100/len(values),2)} for k,v in flags.items()},
+    'patternRules': patterns, 'footnoteRule': footnote.pattern,
+    'limitations': ['Pattern categories overlap; not a partition.', 'Semicolon can separate email addresses or repeated affiliations, not necessarily distinct institutions.', 'Postal/street and footnote matches are clues, not confirmed errors.', 'Non-ASCII does not prove an alias or multilingual identity.', 'No Apollo replay performed; counts do not measure identity-match improvement.'],
+    'examples': {
+        k: [re.sub(r'[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}', '[EMAIL]', s) for s in v[:3]]
+        for k,v in flags.items()
+    }
+}
+out = Path(__file__).with_name('summary.json')
+out.write_text(json.dumps(summary, ensure_ascii=False, indent=2)+'\n')
+print(json.dumps({k:v for k,v in summary.items() if k not in ['examples','patternRules','footnoteRule']}, ensure_ascii=False, indent=2))

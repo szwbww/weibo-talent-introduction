@@ -1,7 +1,9 @@
 package com.weibo.talentintroduction.discovery.service
 
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
 import com.weibo.talentintroduction.config.DiscoveryVerificationProperties
-import com.weibo.talentintroduction.discovery.domain.RegistrationRecovery
+import com.weibo.talentintroduction.discovery.domain.*
 import com.weibo.talentintroduction.discovery.repository.DiscoveryVerificationRepository
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
@@ -65,5 +67,68 @@ class DiscoveryVerificationWorkerTest {
     }
     private fun DiscoveryVerificationWorker.useWorker(action: (DiscoveryVerificationWorker) -> Unit) {
         try { action(this) } finally { close() }
+    }
+
+    private val gachon = "2Department of BioNano Technology, Gachon University, 1342 Seongnam-daero, Sujeong-gu, Seongnam-si 13120, Gyeonggi-do, Republic of Korea"
+
+    @Test fun `new queries narrow once with the frozen subject and never with an ambiguous one`() {
+        worker(DiscoveryVerificationProperties(), Mockito.mock(DiscoveryVerificationRepository::class.java)).useWorker { current ->
+            val facts = listOf(ruleJob(institution = gachon))
+            val context = DiscoveryInstitutionNormalizer.buildInputs(gachon,
+                listOf(InstitutionEmploymentInput("e1", gachon)), emptyList())
+            val queries = current.searchQueries(ruleSnapshot(), facts, context)
+            assertEquals(listOf("Ada Lee", "Ada Lee"), queries.map { it.name })
+            assertNull(queries.first().institution)
+            assertEquals("Gachon University", queries.last().institution!!.name)
+
+            val joint = "CNRS UMI 3288- NTU - THALES"
+            val ambiguous = DiscoveryInstitutionNormalizer.buildInputs(joint,
+                listOf(InstitutionEmploymentInput("e1", joint)), emptyList())
+            assertNull(ambiguous.queryInstitution)
+            assertEquals(1, current.searchQueries(ruleSnapshot(), listOf(ruleJob(institution = joint)), ambiguous).size)
+            assertTrue(current.searchQueries(ruleSnapshot(), listOf(ruleJob(institution = joint)), ambiguous).all { it.institution == null })
+
+            val rawOnly = DiscoveryInstitutionNormalizer.buildInputs(gachon, emptyList(), emptyList())
+            assertNull(rawOnly.queryInstitution)
+            assertEquals(1, current.searchQueries(ruleSnapshot(), emptyList(), rawOnly).size)
+            assertNull(current.searchQueries(ruleSnapshot(), emptyList(), rawOnly).single().institution)
+        }
+    }
+
+    @Test fun `unknown normalization version is accepted as data and rejected only by evaluation`() {
+        val payload: VerificationWorkerEvidence = jacksonObjectMapper().readValue(
+            """{"institutionNormalization":{"version":"INST_SUBJECT_V9","queryInstitution":"X","inputs":[]},
+               "progress":{"stage":"DECIDE","schemaVersion":1}}""")
+        assertEquals("INST_SUBJECT_V9", payload.institutionNormalization!!.version)
+        val snapshot = ruleSnapshot()
+        assertThrows(IllegalArgumentException::class.java) {
+            DiscoveryVerificationRules(ruleClock).evaluate(snapshot, listOf(ruleJob()), null,
+                institutionNormalization = payload.institutionNormalization)
+        }
+    }
+
+    @Test fun `unparseable evidence persists the original JSON instead of an empty payload`() {
+        val repo = Mockito.mock(DiscoveryVerificationRepository::class.java)
+        val lease = lease("{not-json")
+        worker(DiscoveryVerificationProperties(workerEnabled = true), repo).useWorker { it.process(lease) }
+        val saved = Mockito.mockingDetails(repo).invocations.filter { it.method.name == "saveFailure" }
+        assertEquals(1, saved.size)
+        val result = saved.single().arguments[3] as VerificationResult
+        assertEquals("{not-json", result.evidenceJson)
+        assertEquals("""["VERIFICATION_FAILED"]""", result.reasonsJson)
+        assertEquals(VerificationState.ERROR, result.state)
+    }
+
+    private fun lease(evidenceJson: String?): VerificationItem {
+        val now = ruleClock.instant()
+        return VerificationItem(id = 7, ownerExecutionId = 1, expertDocId = "doc", identityHash = "b".repeat(64),
+            policyVersion = VerificationMode.ENFORCE.policyVersion, sourceName = "ORCID", sourceItemKey = "doc",
+            batchNumber = 1, snapshotJson = "{}", factFingerprint = "c".repeat(64), state = VerificationState.RUNNING,
+            outcome = null, qualification = VerificationQualification.NOT_EVALUATED, route = VerificationRoute.NONE,
+            apolloEnteredAt = null, searchCompletedAt = null, candidateFoundAt = null, personMatchedAt = null,
+            apolloPersonId = null, evidenceJson = evidenceJson, reasonsJson = null, requestCount = 0,
+            transientAttempts = 0, generation = 0, leaseToken = "token", leaseUntil = now.plusSeconds(120),
+            nextAttemptAt = null, admissionRevision = null, projectionState = VerificationProjection.NOT_REQUIRED,
+            projectionError = null, activatedAt = now, completedAt = null, createdAt = now, updatedAt = now)
     }
 }

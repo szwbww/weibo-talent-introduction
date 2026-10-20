@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.discovery.service
 
+import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.weibo.talentintroduction.discovery.domain.*
 import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
@@ -29,6 +30,7 @@ fun ruleSearch(masked: Boolean = false, count: Int = 1, complete: Boolean = true
 
 class DiscoveryVerificationRulesTest {
     private val rules = DiscoveryVerificationRules(ruleClock)
+    private val mapper = jacksonObjectMapper()
     @Test fun `fixed annotated fixtures replay identically with auditable fields`() {
         val fixtures = jacksonObjectMapper().readTree(javaClass.getResourceAsStream("/discovery/apollo-verification-cases.json"))
         fixtures.path("cases").forEach { case ->
@@ -146,4 +148,186 @@ class DiscoveryVerificationRulesTest {
         assertEquals(2, rules.identityEmployments(ruleSnapshot(), listOf(self,
             ruleJob(source = AssertionSource.SELF, institution = "Second University"))).size)
     }
+
+    private val gachon = "2Department of BioNano Technology, Gachon University, 1342 Seongnam-daero, Sujeong-gu, Seongnam-si 13120, Gyeonggi-do, Republic of Korea"
+
+    private fun newContext(profileInstitution: String?, jobInstitution: String, candidateInstitution: String?,
+        snapshot: VerificationSnapshot = ruleSnapshot(),
+        evidence: List<VerificationEvidence> = listOf(ruleJob(institution = jobInstitution)),
+        search: ApolloSearchEvidence = ruleSearch(institution = candidateInstitution ?: "Example University")) =
+        DiscoveryInstitutionNormalizer.build(profileInstitution, rules.identityEmployments(snapshot, evidence), search.candidates)
+
+    @Test fun `new context extracts the subject before RAW ORCID and Apollo compare`() {
+        val snapshot = ruleSnapshot().let { it.copy(profile = it.profile.copy(institution = gachon)) }
+        val evidence = listOf(ruleJob(institution = gachon).copy(identityHash = snapshot.identityHash,
+            factFingerprint = snapshot.factFingerprint))
+        val search = ruleSearch(institution = "Gachon University")
+        val context = newContext(gachon, gachon, "Gachon University", snapshot, evidence, search)
+        assertEquals("Gachon University", context.queryInstitution)
+        val decision = rules.evaluate(snapshot, evidence, search, institutionNormalization = context)
+        assertEquals(VerificationOutcome.APOLLO_UNCLEAR, decision.outcome)
+        assertEquals("person-1", decision.matchedPersonId)
+        assertTrue(decision.reasonCodes.contains("APOLLO_PERSON_MATCHED"))
+    }
+
+    @Test fun `new context never folds campuses hospitals or joint names into one institution`() {
+        val campus = ruleSnapshot().let { it.copy(profile = it.profile.copy(institution = "University of California, Los Angeles")) }
+        val campusFacts = listOf(ruleJob(institution = "University of California, Berkeley")
+            .copy(identityHash = campus.identityHash, factFingerprint = campus.factFingerprint))
+        val campusContext = newContext(campus.profile.institution, "University of California, Berkeley",
+            "University of California, Los Angeles", campus, campusFacts,
+            ruleSearch(institution = "University of California, Los Angeles"))
+        assertEquals(listOf("INSTITUTION_CONFLICT"),
+            rules.evaluate(campus, campusFacts, ruleSearch(institution = "University of California, Los Angeles"),
+                institutionNormalization = campusContext).reasonCodes)
+
+        val hospital = ruleSnapshot().let { it.copy(profile = it.profile.copy(institution = "Renji Hospital")) }
+        val hospitalFacts = listOf(ruleJob(institution = "Shanghai Jiao Tong University")
+            .copy(identityHash = hospital.identityHash, factFingerprint = hospital.factFingerprint))
+        val hospitalContext = newContext(hospital.profile.institution, "Shanghai Jiao Tong University",
+            "Renji Hospital", hospital, hospitalFacts, ruleSearch(institution = "Renji Hospital"))
+        assertEquals(listOf("INSTITUTION_CONFLICT"),
+            rules.evaluate(hospital, hospitalFacts, ruleSearch(institution = "Renji Hospital"),
+                institutionNormalization = hospitalContext).reasonCodes)
+
+        val joint = ruleSnapshot().let { it.copy(profile = it.profile.copy(institution = "CNRS UMI 3288- NTU - THALES")) }
+        val jointFacts = listOf(ruleJob(institution = "CNRS UMI 3288- NTU - THALES")
+            .copy(identityHash = joint.identityHash, factFingerprint = joint.factFingerprint))
+        val jointSearch = ruleSearch(institution = "CNRS")
+        val jointContext = newContext(joint.profile.institution, "CNRS UMI 3288- NTU - THALES", "CNRS", joint, jointFacts, jointSearch)
+        assertNull(jointContext.queryInstitution)
+        val decision = rules.evaluate(joint, jointFacts, jointSearch, institutionNormalization = jointContext)
+        assertEquals(VerificationQualification.UNKNOWN, decision.qualification)
+        assertEquals(VerificationOutcome.PENDING, decision.outcome)
+        assertTrue(decision.reasonCodes.contains("IDENTITY_EVIDENCE_MISSING"))
+        assertTrue(decision.missingFields.contains("institutionSubject"))
+    }
+
+    @Test fun `country suffixed campuses and contextual standard ids keep identity boundaries`() {
+        val countrySuffixed = "University of California, Los Angeles, USA"
+        val la = ruleSnapshot().copy(profile = ruleSnapshot().profile.copy(institution = countrySuffixed))
+        val berkeleyFacts = listOf(ruleJob(institution = "University of California, Berkeley, USA")
+            .copy(identityHash = la.identityHash, factFingerprint = la.factFingerprint))
+        val berkeleySearch = ruleSearch(institution = "University of California, Berkeley, USA")
+        val berkeleyContext = DiscoveryInstitutionNormalizer.build(la.profile.institution,
+            rules.identityEmployments(la, berkeleyFacts), berkeleySearch.candidates)
+        val crossCampus = rules.evaluate(la, berkeleyFacts, berkeleySearch, institutionNormalization = berkeleyContext)
+        assertNotEquals(VerificationOutcome.APOLLO_UNCLEAR, crossCampus.outcome)
+        assertEquals(listOf("INSTITUTION_CONFLICT"), crossCampus.reasonCodes)
+
+        val base = ruleSnapshot()
+        fun factWithId(id: String) = ruleJob(institution = "Example University").let {
+            it.copy(identityHash = base.identityHash, factFingerprint = base.factFingerprint,
+                value = mapper.writeValueAsString(mapOf("orcid" to "0000-0002-1825-0097", "role" to "Researcher",
+                    "institution" to "Example University", "standardId" to id)))
+        }
+        fun searchWith(institution: VerificationInstitution) = ruleSearch(institution = "Example University").let {
+            it.copy(candidates = listOf(it.candidates.single().copy(institution = institution)))
+        }
+        val conflicting = searchWith(VerificationInstitution("Example University", "ROR:2"))
+        val conflictingContext = DiscoveryInstitutionNormalizer.build("Example University",
+            rules.identityEmployments(base, listOf(factWithId("ROR:1"))), conflicting.candidates)
+        val conflict = rules.evaluate(base, listOf(factWithId("ROR:1")), conflicting,
+            institutionNormalization = conflictingContext)
+        assertEquals(VerificationOutcome.PENDING, conflict.outcome)
+        assertEquals(listOf("IDENTITY_NOT_MATCHED"), conflict.reasonCodes)
+
+        val same = searchWith(VerificationInstitution("Example University", "ROR:1"))
+        val sameContext = DiscoveryInstitutionNormalizer.build("Example University",
+            rules.identityEmployments(base, listOf(factWithId("ROR:1"))), same.candidates)
+        assertEquals(VerificationOutcome.APOLLO_UNCLEAR,
+            rules.evaluate(base, listOf(factWithId("ROR:1")), same, institutionNormalization = sameContext).outcome)
+
+        val aliasFacts = listOf(ruleJob(institution = "Example University")
+            .copy(identityHash = base.identityHash, factFingerprint = base.factFingerprint))
+        val aliasSearch = searchWith(VerificationInstitution("Apollo University", aliases = setOf("Example University")))
+        val aliasContext = DiscoveryInstitutionNormalizer.build("Example University",
+            rules.identityEmployments(base, aliasFacts), aliasSearch.candidates)
+        assertEquals(VerificationOutcome.APOLLO_UNCLEAR,
+            rules.evaluate(base, aliasFacts, aliasSearch, institutionNormalization = aliasContext).outcome)
+    }
+
+    @Test fun `unclear subject is missing evidence and a tampered or unknown context is rejected`() {
+        val unresolved = ruleSnapshot().let { it.copy(profile = it.profile.copy(institution = "ACHISINA")) }
+        val facts = listOf(ruleJob().copy(identityHash = unresolved.identityHash, factFingerprint = unresolved.factFingerprint))
+        val context = newContext("ACHISINA", "Example University", "Example University", unresolved, facts)
+        val decision = rules.evaluate(unresolved, facts, ruleSearch(), institutionNormalization = context)
+        assertEquals(VerificationOutcome.PENDING, decision.outcome)
+        assertEquals(listOf("IDENTITY_EVIDENCE_MISSING"), decision.reasonCodes)
+        assertTrue(decision.missingFields.contains("institutionSubject"))
+
+        val tampered = context.copy(inputs = context.inputs.mapIndexed { index, input ->
+            if (index == 0) input.copy(subjects = listOf("Example University"), status = "RESOLVED",
+                reason = "SUBJECT_EXTRACTED") else input
+        })
+        assertThrows(IllegalArgumentException::class.java) {
+            rules.evaluate(unresolved, facts, ruleSearch(), institutionNormalization = tampered)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            rules.evaluate(unresolved, facts, ruleSearch(), institutionNormalization = context.copy(version = "INST_SUBJECT_V2"))
+        }
+    }
+
+    @Test fun `optional frozen verification replay compares null and explicit contexts deterministically`() {
+        val input = System.getProperty("institutionReplayInput")
+        val output = System.getProperty("institutionReplayOutput")
+        if (input == null && output == null) return
+        require(input != null && output != null) { "Both institutionReplayInput and institutionReplayOutput are required" }
+        val directory = java.nio.file.Paths.get(input)
+        require(java.nio.file.Files.isRegularFile(directory.resolve("manifest.json"))) {
+            "institutionReplayInput must be a frozen replay directory with manifest.json"
+        }
+        val frozenMapper = jacksonObjectMapper().findAndRegisterModules()
+            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+        val manifest = frozenMapper.readTree(java.nio.file.Files.readAllBytes(directory.resolve("manifest.json")))
+        require(manifest.path("schemaVersion").asInt() == 1) { "Unsupported frozen manifest schema" }
+        val beforeBytes = java.nio.file.Files.readAllBytes(directory.resolve("before.json"))
+        assertEquals(manifest.path("beforeSha256").asText(), replaySha(beforeBytes), "Frozen input hash mismatch")
+        val before = frozenMapper.readTree(beforeBytes)
+        val evaluated = manifest.path("evaluatedAt")
+        val evaluatedAt = if (evaluated.isNumber) {
+            val seconds = evaluated.asDouble()
+            val whole = seconds.toLong()
+            Instant.ofEpochSecond(whole, ((seconds - whole) * 1_000_000_000).toLong())
+        } else Instant.parse(evaluated.asText())
+        val clock = Clock.fixed(evaluatedAt, ZoneOffset.UTC)
+        val replayRules = DiscoveryVerificationRules(clock)
+        fun group(contextual: Boolean) = before.path("items").map { item ->
+            val snapshot = frozenMapper.readValue(item.path("snapshotJson").asText(), VerificationSnapshot::class.java)
+            val payload = frozenMapper.readValue(item.path("evidenceJson").asText("{}"), VerificationWorkerEvidence::class.java)
+            val context = if (contextual) DiscoveryInstitutionNormalizer.build(snapshot.profile.institution,
+                replayRules.identityEmployments(snapshot, payload.evidence), payload.search?.candidates) else null
+            val decision = replayRules.evaluate(snapshot, payload.evidence, payload.search,
+                institutionNormalization = context)
+            linkedMapOf<String, Any?>("itemId" to item.path("id").asLong(), "outcome" to decision.outcome.name,
+                "qualification" to decision.qualification.name, "route" to decision.route.name,
+                "matched" to (decision.matchedPersonId != null), "reasons" to decision.reasonCodes,
+                "missing" to decision.missingFields, "institution" to context?.let { built ->
+                    mapOf("queryInstitution" to built.queryInstitution, "inputs" to built.inputs.map {
+                        mapOf("source" to it.source, "status" to it.status, "subjects" to it.subjects, "reason" to it.reason)
+                    })
+                })
+        }
+        val old = group(false)
+        val fixed = group(true)
+        assertEquals(old, group(false), "Old group must be deterministic")
+        assertEquals(fixed, group(true), "New group must be deterministic")
+        val negative = old.indices.filter {
+            old[it]["matched"] == true && fixed[it]["matched"] != true
+        }
+        require(!java.nio.file.Files.exists(java.nio.file.Paths.get(output))) { "Replay output must not already exist" }
+        java.nio.file.Files.createDirectories(java.nio.file.Paths.get(output))
+        java.nio.file.Files.writeString(java.nio.file.Paths.get(output).resolve("replay.json"),
+            frozenMapper.writeValueAsString(mapOf("schemaVersion" to 1, "input" to input,
+                "inputSha256" to manifest.path("beforeSha256").asText(),
+                "evaluatedAt" to manifest.path("evaluatedAt").asText(), "denominator" to old.size,
+                "groups" to mapOf("old" to old, "fixed" to fixed),
+                "negativeChanges" to negative.map { old[it]["itemId"] },
+                "historicalInput" to manifest.path("oldInputStatus").asText("UNAVAILABLE"),
+                "note" to "New context is built in memory only; no item or admission is upgraded.")))
+        println("institutionReplay denominator=${old.size} negativeChanges=${negative.size} output=$output")
+    }
+
+    private fun replaySha(bytes: ByteArray): String = java.security.MessageDigest.getInstance("SHA-256")
+        .digest(bytes).joinToString("") { "%02x".format(it) }
 }

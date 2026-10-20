@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-10-19/apollo-institution-subject-repair.md
+
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 2
+- Master plan: docs/plans/2026-10-19/apollo-institution-subject-repair.md (sha256 49d5870d43c9877f947427c5b22277233fb5bf7f326176be33bc4629c5632397)
+- Governing master identity: worktree sha256 49d5870d43c9877f947427c5b22277233fb5bf7f326176be33bc4629c5632397; recorded sha256 49d5870d43c9877f947427c5b22277233fb5bf7f326176be33bc4629c5632397
+- Invoked master identity: sha256 49d5870d43c9877f947427c5b22277233fb5bf7f326176be33bc4629c5632397
+- Master identity state: CONSISTENT
+- Governing amendment: N/A
+- Amendments: N/A
+- Fast-p ledger: docs/plans/fast/apollo-institution-subject-repair/ledger.md (sha256 21d81c64d823a5a492a899f11c16d15960f503eeb1eb8b3f899f26478b744f69)
+- Fast-p handoff: docs/plans/fast/apollo-institution-subject-repair/human-review-handoff.md (sha256 5f22a79fe9234603138977b1120a9cc608d654db5276c2624527d5e1ab81bba3)
+- Master base: fcd6719ecd03645284c3df0f8a6b95bf4686ba95
+- Final code head: 8e4e7d7e6cdd4670ccc372cd9ac6e67c2ba72078
+- Evidence parent before next commit: b8ed6f9ffad047975c2d7cec6de5d56f6188ff48
+- Previous evidence commit: b8ed6f9ffad047975c2d7cec6de5d56f6188ff48
+- Branch: fast/apollo-institution-subject-repair
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-apollo-institution-subject-repair
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: SELECTED; repository /Users/lukai/IdeaProjects/weibo-talent-introduction; child_count 2; fast ledger/handoff and base/final identities match discovery output.
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_reviewer_epoch2
+- Reviewer attempt: 1
+- Machine result: PASS
+- Machine report epoch: Epoch 2 in `docs/plans/review/apollo-institution-subject-repair/machine-verification.md`
+- Repair artifact: `docs/plans/fix/apollo-institution-subject-repair/repair.md` (sha256 cfd5a2179390fb1c18470c0e2854d27b0df52b8ac37fab1bca6e443574cdab85; executed and independently re-reviewed)
+- Repair evidence mode: DURABLE_HANDOFF
+- Repair approval source: explicit human-originated `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-apollo-institution-subject-repair/docs/plans/fix/apollo-institution-subject-repair/repair.md` recorded in `repair-execution.md`
+- Repair executor: omp coding assistant (single execution context; no separate subagent identity exposed)
+- Repair code head: 8e4e7d7e6cdd4670ccc372cd9ac6e67c2ba72078
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: All eleven mandatory human checks and explicit sign-off for `8e4e7d7e6cdd4670ccc372cd9ac6e67c2ba72078` are pending in `manual-acceptance.md`.

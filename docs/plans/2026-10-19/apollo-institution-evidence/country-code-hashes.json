@@ -1,0 +1,21 @@
+{
+  "src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt": "c702d62e1baf21df2b3b836eb798c1cea55521e7371de16059092fad68c17ae7",
+  "src/main/kotlin/com/weibo/talentintroduction/discovery/service/OrcidDataSource.kt": "a77bcee6bd7f826ecb962960dce07ee8f0c21dca986f77d10754220c9c43bc50",
+  "src/main/kotlin/com/weibo/talentintroduction/discovery/service/OrcidVerificationEvidenceClient.kt": "ecea654edea83a522b1be6c5688069ffd93c98eacfb388b7267b3fecaf71c22e",
+  "src/main/kotlin/com/weibo/talentintroduction/discovery/service/QualificationEvidenceParser.kt": "1bea14b97776d2b0140870535a32667203298c52f0c96afcdd39d13ad565928d",
+  "src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt": "a1cdd42b3a1851eef017af1e027bdf0545f265d5f166d46b9e2b862aa8fac8d2",
+  "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt": "6a9a779b649ccf9f9fc42ce90d842d2fa45966c37a9a0ea296bc2fda9a90ac87",
+  "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGate.kt": "0f8c6be440f79766e7962dad847569a75e30a143ab79ab3384f9ef73e3b9b160",
+  "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt": "8d2dc66b86c26167a35ec2031d2525eaeba78e6ced43fe29dbc3209a39491b9d",
+  "src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt": "2636403c043625b29cbb3b28ba23f4cbd64c7b533ecf47bc60f6a1d63f3eda66",
+  "src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt": "7a65ef36546714b52a92acdb0122d8761a2ede81242bd63ad765e164f9fcced5",
+  "src/main/kotlin/com/weibo/talentintroduction/expert/domain/CountryContinentMapping.kt": "0ca95fe2db4d529b2d1d36607138f7132349d9b89fa33373be11bf4dc43c900e",
+  "src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt": "702bf1c4a6d29abc15627b3be8fe967767b967f5522cdbc6086095cd473c0841",
+  "src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt": "daf8faeae7367a3f60b3c349e79dc7a05bda3b0db2756185ff1670651dfd7e19",
+  "src/main/kotlin/com/weibo/talentintroduction/config/DiscoveryVerificationProperties.kt": "cd6d5c356ce1c3ff6799529ea1a841ed3b6e229164d7d44c3922c66ffa00b529",
+  "src/main/resources/es/orcid_info_raw.json": "36e17ff1f2d94ace0580ed581eef00ec1c7219d13723f3104d27212224c7d590",
+  "src/main/resources/es/orcid_info_application.json": "1dd76c89a3a652cdfc09cd97338da28a9342c15fee4369f2b6f5bdb61d312020",
+  "src/main/resources/es/orcid_info_candidate.json": "922847bf07f1bd89f1c8cfd32cae6bebe9f1972a34f99c274ac40f35bef14ddf",
+  "src/main/resources/es/trust_reply_unsupported_answer_v1.json": "34f767c855f5787689556eed92b46e628ee8f5b413ce7a5118b8b32770e7e10f",
+  "src/main/resources/db/migration/V158__create_discovery_verification.sql": "855a85c27da96e252c95e2e9e58d9d566fe7eb6c0452d1bed18977f7563592c5"
+}

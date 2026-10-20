@@ -1,0 +1,94 @@
+$ rg -n indexToRaw|reconcileDiscoveryCandidate|promoteToCandidate|promoteToApplication|demoteToRaw|reserveItem|snapshot_json|country.*to|put\("country"|\["country"\] src/main/kotlin scripts
+scripts/test_probe_corporate_experts.py:129:        china["country"] = "China"
+scripts/test_probe_corporate_experts.py:164:        self.data["people"]["p1"]["country"] = None
+scripts/test_probe_corporate_experts.py:165:        self.data["search_pages"][0][0]["country"] = None
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:413:    fun promoteToApplication(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:493:        promoteToApplication(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:540:    fun promoteToCandidate(orcid: String, contact: ExpertContact): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:611:    fun indexToRaw(orcid: String, profile: Map<String, Any?>): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:803:    fun reconcileDiscoveryCandidate(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:1033:    fun demoteToRaw(orcid: String, contact: ExpertContact): Boolean {
+scripts/generate_meeting_timezone_catalog.py:98:    if separator and country in english_territories:
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:160:                                    "must_not" to listOf(mapOf("terms" to mapOf("country" to knownValues)))
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:175:            val countryValues = CountryContinentMapping.countriesForRegion(region).toList()
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:179:                        mapOf("terms" to mapOf("country" to countryValues)),
+scripts/build_qiandeng_contactout_configs.py:176:        existing = pooled.setdefault(key, {"name": name, "aliases": set(), "country": benchmark["country"], "domain": domain, "scores": []})
+scripts/build_qiandeng_contactout_configs.py:194:            "headquartersCountry": item["country"],
+scripts/build_qiandeng_contactout_configs.py:195:            "developedEconomy": item["country"] in DEVELOPED,
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:128:            val ok = expertIndexWriterService.promoteToApplication(
+scripts/probe_corporate_experts.py:384:    if not row["country"]:
+scripts/probe_corporate_experts.py:387:    if row["country"].casefold() in {"china", "cn", "中国", "people's republic of china"}:
+scripts/probe_corporate_experts.py:390:    if args.locations and row["country"].casefold() not in {s.casefold() for s in args.locations}:
+scripts/generate_meeting_zone_countries.py:37:#: IDs that legitimately have no country attribution. Fixed to this round's audit list so
+scripts/generate_meeting_zone_countries.py:152:    # An exempt ID must genuinely be unmapped: if a country entry appears for it, stop.
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:394:                if (!expertIndexWriterService.reconcileDiscoveryCandidate(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:407:                if (!expertIndexWriterService.reconcileDiscoveryCandidate(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:422:            if (!expertIndexWriterService.reconcileDiscoveryCandidate(
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:326:        val countryRows = mailRecordRepository.aggregateIntroCohortByCountry(start, end, matureBefore)
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:331:        val countriesByRegion = countryRows.groupBy { CountryContinentMapping.toRegion(it.country) }
+scripts/expert_discovery/adapters.py:160:title,title_quote,country,country_quote,technical_quote,technical_topics(字符串数组),
+scripts/expert_discovery/test_apollo_first.py:165:            "linkedin_url": "", "country": "Italy", "title": "R&D Director", "evidence": [],
+scripts/benchmark-scan/openalex_benchmark_scan.py:299:            ("country", r["country"]),
+scripts/benchmark-scan/openalex_benchmark_scan.py:465:            trunc(r["sector"], 12), trunc(r["display_name"], 30), r["country"],
+scripts/expert_discovery/workflow.py:153:    if person.get("country") and quoted(person.get("country_quote"), doc["text"], person["country"]):
+scripts/expert_discovery/workflow.py:154:        c["country"] = clean(person["country"])
+scripts/expert_discovery/workflow.py:350:                  "country": c["country"], "organization": next((e.get("company", "")
+scripts/expert_discovery/workflow.py:712:            rows.append(dict(id=c["id"], name=c["name"], title=c["title"], country=c["country"],
+scripts/expert_discovery/workflow.py:718:            rows.append(dict(id=c["id"], name=c["name"], title=c["title"], country=c["country"],
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryReview.kt:116:/** 02（I-1）：自动结论 + 原因在 prepare 时的快照（`reason_snapshot_json`）。 */
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1476:                    if (!expertIndexWriterService.indexToRaw(esDocId, profileMap)) { sourceStats.rawWriteFailed++; continue }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1834:            if (!expertIndexWriterService.indexToRaw(identity.esDocId, profileMap)) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2492:            "country" to profile.country, "keyword" to profile.keyword,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendControlService.kt:530:                "countryName" to account.countryName.orEmpty()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParser.kt:222:        .filter { it.tagName == "country" && it.ancestorsUntil(aff).none { ancestor -> ancestor.tagName == "fn" } }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:129:                "countryName" to account.countryName.orEmpty(),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicy.kt:182:                "country", profile.country, "9 个大区之一（Other 表示未映射）", "CountryContinentMapping.toRegion()"))
+scripts/benchmark-scan/out-run2-作废/02_institution_scan.csv:1:sector,cn_company,institution_id,display_name,country,note,works_2021_2026,works_open_access,oa_ratio,sampled_works,distinct_authors_in_sample,authors_with_orcid,orcid_ratio,top_field,top_field_ratio,medical_ratio,verdict
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:100:            val item = repository.reserveItem(VerificationReservation(run.executionId, docId, snapshot.identityHash,
+scripts/expert_discovery/enterprise_batch/apollo_benchmark_discovery.py:338:                                     "country": b["country"], "source_stage": "现有DeepSeek对标", "apollo_focus_engineers": None,
+scripts/expert_discovery/enterprise_batch/apollo_benchmark_discovery.py:346:            new_domain_info.setdefault(d, {"benchmark_name": x["name"], "official_domain": d, "country": x["country"],
+scripts/expert_discovery/enterprise_batch/apollo_benchmark_discovery.py:351:                   "country": x["country"], "apollo_rank": rank, "apollo_focus_engineers": x.get("focus_count"),
+scripts/expert_discovery/enterprise_batch/build_recharge_personal_email_shortlist.py:135:            -COUNTRY_SCORE[row["benchmark"]["country"]],
+scripts/expert_discovery/enterprise_batch/build_recharge_personal_email_shortlist.py:143:        row["priorityScore"] = row["titleScore"] * 1000 + row["domesticMatchCount"] * 10 + COUNTRY_SCORE[row["benchmark"]["country"]]
+scripts/expert_discovery/enterprise_batch/build_recharge_personal_email_shortlist.py:230:        "eligibleBeforeCompanyCapByCountry": dict(sorted(Counter(row["benchmark"]["country"] for row in best).items())),
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:38:            targetLevel == "RAW" -> demoteToRaw(contact)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:67:        val ok = expertIndexWriterService.promoteToCandidate(contact.orcidId, contact)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:79:        val ok = expertIndexWriterService.promoteToApplication(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:96:        val ok = expertIndexWriterService.promoteToApplication(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:106:    private fun demoteToRaw(contact: ExpertContact): ExpertContact {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:108:        val ok = expertIndexWriterService.demoteToRaw(contact.orcidId, contact)
+scripts/expert_discovery/enterprise_batch/expand_benchmarks.py:22:{"companies":[{"company_id":"CN-0001","benchmarks":[{"name":"...","official_domain":"example.com","country":"美国","benchmark_type":"direct_competitor","reason":"...","confidence":"high"}]}]}
+scripts/expert_discovery/enterprise_batch/expand_benchmarks.py:207:            if item["country"]:
+scripts/expert_discovery/enterprise_batch/expand_benchmarks.py:208:                countries_by_domain[d][item["country"]] += 1
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:261:    fun promoteToApplication(contactId: Long): ExpertContact {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:270:        val ok = expertIndexWriterService.promoteToApplication(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:282:    fun promoteToCandidate(contactId: Long): ExpertContact {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:285:        val ok = expertIndexWriterService.promoteToCandidate(contact.orcidId, contact)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:291:    fun demoteToRaw(contactId: Long): ExpertContact {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:294:        val ok = expertIndexWriterService.demoteToRaw(contact.orcidId, contact)
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:177:    fun promoteToApplication(@PathVariable contactId: Long): ExpertContactResponse =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:181:    fun promoteToCandidate(@PathVariable contactId: Long): ExpertContactResponse =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:185:    fun demoteToRaw(@PathVariable contactId: Long): ExpertContactResponse =
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:150:                CONCAT_WS(' ',JSON_UNQUOTE(JSON_EXTRACT(i.snapshot_json,'$.profile.givenNames')),
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:151:                    JSON_UNQUOTE(JSON_EXTRACT(i.snapshot_json,'$.profile.familyNames'))) LIKE ? ESCAPE '!' OR
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:152:                JSON_UNQUOTE(JSON_EXTRACT(i.snapshot_json,'$.profile.email')) LIKE ? ESCAPE '!' OR
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:153:                JSON_UNQUOTE(JSON_EXTRACT(i.snapshot_json,'$.profile.institution')) LIKE ? ESCAPE '!')"""
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:170:    fun reserveItem(input: VerificationReservation, now: Instant): VerificationItem {
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:177:            (owner_execution_id,expert_doc_id,identity_hash,policy_version,source_name,source_item_key,batch_number,snapshot_json,fact_fingerprint,created_at,updated_at)
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:496:            rs.getString("source_name"), rs.getString("source_item_key"), rs.getInt("batch_number"), rs.getString("snapshot_json"), rs.getString("fact_fingerprint"),
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:100:                     expected_revision, action, state, snapshot_json, reason_snapshot_json,
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:433:                snapshotJson = rs.getString("snapshot_json"),
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryReviewRepository.kt:434:                reasonSnapshotJson = rs.getString("reason_snapshot_json"),
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailPlaceholderService.kt:192:            "countryName" to "发件人国家",
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailPlaceholderService.kt:216:            "countryName" to null,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailPlaceholderService.kt:240:            "countryName" to "China",
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:439:            "countryName" to account.countryName.orEmpty()
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt:168:            promoteToApplication = request.promoteToApplication ?: false
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt:947:    val promoteToApplication: Boolean? = null
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailVariableService.kt:131:            "countryName" to account?.countryName.orEmpty()
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1295:            "countryName" to account.countryName.orEmpty(),
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutomaticApplicationPromotionService.kt:75:            val ok = expertIndexWriterService.promoteToApplication(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt:216:            "countryName" to account.countryName.orEmpty(),
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:156:        promoteToApplication: Boolean = false
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:172:        if (promoteToApplication && !contact.applicationIndexed) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:176:            val ok = expertIndexWriterService.promoteToApplication(

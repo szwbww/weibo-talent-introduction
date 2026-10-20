@@ -1,0 +1,410 @@
+{
+  "version": "COUNTRY_CASES_V1",
+  "synthetic": true,
+  "clock": "2026-10-19T00:00:00Z",
+  "note": "Synthetic, de-identified inputs only. No production record or real person is represented.",
+  "cases": [
+    {
+      "id": "OA_MATCH",
+      "source": "OPENALEX",
+      "institution": "Example University",
+      "country": null,
+      "openAlexAuthorId": "A123",
+      "paperSource": "OPENALEX",
+      "paperDoi": "10.example/test",
+      "authors": [
+        {"openAlexAuthorId": "A123", "institutionName": "Example University", "institutionCountry": "US", "institutionSource": "OPENALEX"}
+      ],
+      "expectStatus": "FILLED",
+      "expectReason": "MATCHED_BOUND_INSTITUTION",
+      "expectCountry": "US",
+      "expectRequests": 0
+    },
+    {
+      "id": "OA_EXISTING_US",
+      "source": "OPENALEX",
+      "institution": "Example University",
+      "country": "US",
+      "openAlexAuthorId": "A123",
+      "paperSource": "OPENALEX",
+      "paperDoi": "10.example/test",
+      "authors": [
+        {"openAlexAuthorId": "A123", "institutionName": "Example University", "institutionCountry": "GB", "institutionSource": "OPENALEX"}
+      ],
+      "expectStatus": "UNCHANGED",
+      "expectReason": "EXISTING_VALUE",
+      "expectCountry": "US",
+      "expectRequests": 0
+    },
+    {
+      "id": "OA_EXISTING_LITERAL_UNKNOWN",
+      "source": "OPENALEX",
+      "institution": "Example University",
+      "country": "未知",
+      "openAlexAuthorId": "A123",
+      "paperSource": "OPENALEX",
+      "paperDoi": "10.example/test",
+      "authors": [
+        {"openAlexAuthorId": "A123", "institutionName": "Example University", "institutionCountry": "US", "institutionSource": "OPENALEX"}
+      ],
+      "expectStatus": "UNCHANGED",
+      "expectReason": "EXISTING_VALUE",
+      "expectCountry": "未知",
+      "expectRequests": 0
+    },
+    {
+      "id": "OA_AUTHOR_ID_MISMATCH",
+      "source": "OPENALEX",
+      "institution": "Example University",
+      "country": null,
+      "openAlexAuthorId": "A123",
+      "paperSource": "OPENALEX",
+      "paperDoi": "10.example/test",
+      "authors": [
+        {"openAlexAuthorId": "A999", "institutionName": "Example University", "institutionCountry": "US", "institutionSource": "OPENALEX"}
+      ],
+      "expectStatus": "UNRESOLVED",
+      "expectReason": "NO_EVIDENCE",
+      "expectCountry": null,
+      "expectRequests": 0
+    },
+    {
+      "id": "OA_INSTITUTION_MISMATCH",
+      "source": "OPENALEX",
+      "institution": "Example University",
+      "country": null,
+      "openAlexAuthorId": "A123",
+      "paperSource": "OPENALEX",
+      "paperDoi": "10.example/test",
+      "authors": [
+        {"openAlexAuthorId": "A123", "institutionName": "Example University, London Campus", "institutionCountry": "GB", "institutionSource": "OPENALEX"}
+      ],
+      "expectStatus": "CONFLICT",
+      "expectReason": "INSTITUTION_MISMATCH",
+      "expectCountry": null,
+      "expectRequests": 0
+    },
+    {
+      "id": "OA_MULTIPLE_COUNTRIES",
+      "source": "OPENALEX",
+      "institution": "Example University",
+      "country": null,
+      "openAlexAuthorId": "A123",
+      "paperSource": "OPENALEX",
+      "paperDoi": "10.example/test",
+      "authors": [
+        {"openAlexAuthorId": "A123", "institutionName": "Example University", "institutionCountry": "US", "institutionSource": "OPENALEX"},
+        {"openAlexAuthorId": "A123", "institutionName": "Example University", "institutionCountry": "GB", "institutionSource": "OPENALEX"}
+      ],
+      "expectStatus": "CONFLICT",
+      "expectReason": "MULTIPLE_COUNTRIES",
+      "expectCountry": null,
+      "expectRequests": 0
+    },
+    {
+      "id": "OA_ORCID_CONFLICT",
+      "source": "OPENALEX",
+      "institution": "Example University",
+      "country": null,
+      "orcid": "0000-0002-1825-0097",
+      "proofOrcid": "0000-0002-1825-0097",
+      "openAlexAuthorId": "A123",
+      "paperSource": "OPENALEX",
+      "paperDoi": "10.example/test",
+      "authors": [
+        {"openAlexAuthorId": "A123", "institutionName": "Example University", "institutionCountry": "US", "institutionSource": "OPENALEX", "orcidId": "0000-0001-5109-3700"}
+      ],
+      "expectStatus": "UNRESOLVED",
+      "expectReason": "IDENTITY_UNRESOLVED",
+      "expectCountry": null,
+      "expectRequests": 0
+    },
+    {
+      "id": "OA_NOT_OPENALEX_PAPER",
+      "source": "OPENALEX",
+      "institution": "Example University",
+      "country": null,
+      "openAlexAuthorId": "A123",
+      "paperSource": "CROSSREF",
+      "paperDoi": "10.example/test",
+      "authors": [
+        {"openAlexAuthorId": "A123", "institutionName": "Example University", "institutionCountry": "US", "institutionSource": "OPENALEX"}
+      ],
+      "expectStatus": "UNRESOLVED",
+      "expectReason": "NO_EVIDENCE",
+      "expectCountry": null,
+      "expectRequests": 0
+    },
+    {
+      "id": "JATS_ORCID_MATCH",
+      "source": "JATS",
+      "pmcId": "PMC123456",
+      "institution": "Example University",
+      "country": null,
+      "orcid": "0000-0002-1825-0097",
+      "proofOrcid": "0000-0002-1825-0097",
+      "orcidStatus": 200,
+      "orcidBody": {"affiliation-group": [{"summaries": [{"employment-summary": {
+        "put-code": 21,
+        "visibility": "public",
+        "role-title": "Professor",
+        "organization": {"name": "Example University", "address": {"country": {"value": "GB"}}},
+        "source": {"source-client-id": {"path": "fixture-org"}},
+        "start-date": {"year": {"value": "2020"}},
+        "end-date": null
+      }}]}]},
+      "expectStatus": "FILLED",
+      "expectReason": "MATCHED_BOUND_INSTITUTION",
+      "expectCountry": "GB",
+      "expectRequests": 1
+    },
+    {
+      "id": "ORCID_MATCH",
+      "source": "ORCID",
+      "institution": "Example University",
+      "country": null,
+      "orcid": "0000-0002-1825-0097",
+      "proofOrcid": "0000-0002-1825-0097",
+      "orcidStatus": 200,
+      "orcidBody": {"affiliation-group": [{"summaries": [{"employment-summary": {
+        "put-code": 11,
+        "visibility": "public",
+        "role-title": "Professor",
+        "organization": {"name": "Example University", "address": {"country": {"value": "GB"}}},
+        "source": {"source-client-id": {"path": "fixture-org"}},
+        "start-date": {"year": {"value": "2020"}},
+        "end-date": null
+      }}]}]},
+      "expectStatus": "FILLED",
+      "expectReason": "MATCHED_BOUND_INSTITUTION",
+      "expectCountry": "GB",
+      "expectRequests": 1
+    },
+    {
+      "id": "ORCID_SELF_CURRENT",
+      "source": "ORCID",
+      "institution": "Example University",
+      "country": null,
+      "orcid": "0000-0002-1825-0097",
+      "proofOrcid": "0000-0002-1825-0097",
+      "orcidStatus": 200,
+      "orcidBody": {"affiliation-group": [{"summaries": [{"employment-summary": {
+        "put-code": 12,
+        "visibility": "public",
+        "role-title": "Researcher",
+        "organization": {"name": "Example University", "address": {"country": {"value": "JP"}}},
+        "source": {"source-orcid": {"path": "0000-0002-1825-0097"}},
+        "start-date": {"year": {"value": "2021"}},
+        "end-date": null
+      }}]}]},
+      "expectStatus": "FILLED",
+      "expectReason": "MATCHED_BOUND_INSTITUTION",
+      "expectCountry": "JP",
+      "expectRequests": 1
+    },
+    {
+      "id": "ORCID_HISTORICAL",
+      "source": "ORCID",
+      "institution": "Example University",
+      "country": null,
+      "orcid": "0000-0002-1825-0097",
+      "proofOrcid": "0000-0002-1825-0097",
+      "orcidStatus": 200,
+      "orcidBody": {"affiliation-group": [{"summaries": [{"employment-summary": {
+        "put-code": 13,
+        "visibility": "public",
+        "role-title": "Professor",
+        "organization": {"name": "Example University", "address": {"country": {"value": "GB"}}},
+        "source": {"source-client-id": {"path": "fixture-org"}},
+        "start-date": {"year": {"value": "2010"}},
+        "end-date": {"year": {"value": "2019"}}
+      }}]}]},
+      "expectStatus": "UNRESOLVED",
+      "expectReason": "NO_EVIDENCE",
+      "expectCountry": null,
+      "expectRequests": 1
+    },
+    {
+      "id": "ORCID_OTHER_INSTITUTION",
+      "source": "ORCID",
+      "institution": "Example University",
+      "country": null,
+      "orcid": "0000-0002-1825-0097",
+      "proofOrcid": "0000-0002-1825-0097",
+      "orcidStatus": 200,
+      "orcidBody": {"affiliation-group": [{"summaries": [{"employment-summary": {
+        "put-code": 14,
+        "visibility": "public",
+        "role-title": "Professor",
+        "organization": {"name": "Other University", "address": {"country": {"value": "GB"}}},
+        "source": {"source-client-id": {"path": "fixture-org"}},
+        "start-date": {"year": {"value": "2020"}},
+        "end-date": null
+      }}]}]},
+      "expectStatus": "UNRESOLVED",
+      "expectReason": "NO_EVIDENCE",
+      "expectCountry": null,
+      "expectRequests": 1
+    },
+    {
+      "id": "ORCID_TWO_COUNTRIES",
+      "source": "ORCID",
+      "institution": "Example University",
+      "country": null,
+      "orcid": "0000-0002-1825-0097",
+      "proofOrcid": "0000-0002-1825-0097",
+      "orcidStatus": 200,
+      "orcidBody": {"affiliation-group": [{"summaries": [
+        {"employment-summary": {
+          "put-code": 15, "visibility": "public", "role-title": "Professor",
+          "organization": {"name": "Example University", "address": {"country": {"value": "GB"}}},
+          "source": {"source-client-id": {"path": "fixture-org"}},
+          "start-date": {"year": {"value": "2020"}}, "end-date": null
+        }},
+        {"employment-summary": {
+          "put-code": 16, "visibility": "public", "role-title": "Visitor",
+          "organization": {"name": "Example University", "address": {"country": {"value": "US"}}},
+          "source": {"source-client-id": {"path": "fixture-org"}},
+          "start-date": {"year": {"value": "2022"}}, "end-date": null
+        }}
+      ]}]},
+      "expectStatus": "CONFLICT",
+      "expectReason": "MULTIPLE_COUNTRIES",
+      "expectCountry": null,
+      "expectRequests": 1
+    },
+    {
+      "id": "ORCID_MISSING_COUNTRY",
+      "source": "ORCID",
+      "institution": "Example University",
+      "country": null,
+      "orcid": "0000-0002-1825-0097",
+      "proofOrcid": "0000-0002-1825-0097",
+      "orcidStatus": 200,
+      "orcidBody": {"affiliation-group": [{"summaries": [{"employment-summary": {
+        "put-code": 17,
+        "visibility": "public",
+        "role-title": "Professor",
+        "organization": {"name": "Example University"},
+        "source": {"source-client-id": {"path": "fixture-org"}},
+        "start-date": {"year": {"value": "2020"}},
+        "end-date": null
+      }}]}]},
+      "expectStatus": "UNRESOLVED",
+      "expectReason": "NO_EVIDENCE",
+      "expectCountry": null,
+      "expectRequests": 1
+    },
+    {
+      "id": "ORCID_CAMPUS_MISMATCH",
+      "source": "ORCID",
+      "institution": "Example University",
+      "country": null,
+      "orcid": "0000-0002-1825-0097",
+      "proofOrcid": "0000-0002-1825-0097",
+      "orcidStatus": 200,
+      "orcidBody": {"affiliation-group": [{"summaries": [{"employment-summary": {
+        "put-code": 18,
+        "visibility": "public",
+        "role-title": "Professor",
+        "organization": {"name": "Example University, London Campus", "address": {"country": {"value": "GB"}}},
+        "source": {"source-client-id": {"path": "fixture-org"}},
+        "start-date": {"year": {"value": "2020"}},
+        "end-date": null
+      }}]}]},
+      "expectStatus": "UNRESOLVED",
+      "expectReason": "NO_EVIDENCE",
+      "expectCountry": null,
+      "expectRequests": 1
+    },
+    {
+      "id": "ORCID_INVALID_COUNTRY",
+      "source": "ORCID",
+      "institution": "Example University",
+      "country": null,
+      "orcid": "0000-0002-1825-0097",
+      "proofOrcid": "0000-0002-1825-0097",
+      "orcidStatus": 200,
+      "orcidBody": {"affiliation-group": [{"summaries": [{"employment-summary": {
+        "put-code": 19,
+        "visibility": "public",
+        "role-title": "Professor",
+        "organization": {"name": "Example University", "address": {"country": {"value": "ZZ"}}},
+        "source": {"source-client-id": {"path": "fixture-org"}},
+        "start-date": {"year": {"value": "2020"}},
+        "end-date": null
+      }}]}]},
+      "expectStatus": "CONFLICT",
+      "expectReason": "INVALID_COUNTRY",
+      "expectCountry": null,
+      "expectRequests": 1
+    },
+    {
+      "id": "NO_BOUND_ORCID",
+      "source": "ORCID",
+      "institution": "Example University",
+      "country": null,
+      "orcid": "0000-0002-1825-0097",
+      "proofOrcid": null,
+      "expectStatus": "UNRESOLVED",
+      "expectReason": "NO_EVIDENCE",
+      "expectCountry": null,
+      "expectRequests": 0
+    },
+    {
+      "id": "ORCID_429",
+      "source": "ORCID",
+      "institution": "Example University",
+      "country": null,
+      "orcid": "0000-0002-1825-0097",
+      "proofOrcid": "0000-0002-1825-0097",
+      "orcidStatus": 429,
+      "retryAfter": 5,
+      "expectStatus": "SKIPPED",
+      "expectReason": "RATE_LIMITED",
+      "expectCountry": null,
+      "expectRequests": 1
+    },
+    {
+      "id": "ORCID_500",
+      "source": "ORCID",
+      "institution": "Example University",
+      "country": null,
+      "orcid": "0000-0002-1825-0097",
+      "proofOrcid": "0000-0002-1825-0097",
+      "orcidStatus": 500,
+      "expectStatus": "ERROR",
+      "expectReason": "HTTP_ERROR",
+      "expectCountry": null,
+      "expectRequests": 1
+    },
+    {
+      "id": "ORCID_INVALID_JSON",
+      "source": "ORCID",
+      "institution": "Example University",
+      "country": null,
+      "orcid": "0000-0002-1825-0097",
+      "proofOrcid": "0000-0002-1825-0097",
+      "orcidStatus": 200,
+      "orcidRaw": "{not-json",
+      "expectStatus": "ERROR",
+      "expectReason": "INVALID_RESPONSE",
+      "expectCountry": null,
+      "expectRequests": 1
+    },
+    {
+      "id": "ORCID_OVERSIZE",
+      "source": "ORCID",
+      "institution": "Example University",
+      "country": null,
+      "orcid": "0000-0002-1825-0097",
+      "proofOrcid": "0000-0002-1825-0097",
+      "orcidStatus": 200,
+      "oversize": true,
+      "expectStatus": "SKIPPED",
+      "expectReason": "EVIDENCE_TOO_LARGE",
+      "expectCountry": null,
+      "expectRequests": 1
+    }
+  ]
+}

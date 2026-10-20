@@ -24,7 +24,8 @@ data class DiscoveryVerificationExecution(val executionId: Long?, val run: Verif
     }
 }
 
-data class DiscoveryRegistration(val item: VerificationItem? = null, val protected: Boolean = false)
+data class DiscoveryRegistration(val item: VerificationItem? = null, val protected: Boolean = false,
+    val preparedProfile: ExpertProfile? = null)
 class DiscoveryRegistrationException(cause: Exception) : IllegalStateException("VERIFICATION_REGISTRATION_FAILED", cause)
 
 @Service
@@ -36,9 +37,11 @@ class DiscoveryVerificationRegistrationService(
     private val admissions: DiscoveryReviewRepository,
     private val jdbc: JdbcTemplate,
     private val transactions: TransactionTemplate,
-    private val clock: Clock = Clock.systemUTC()
+    private val clock: Clock = Clock.systemUTC(),
+    private val countrySupplement: DiscoveryCountrySupplementService? = null
 ) : RegistrationRecovery {
     private val mapper = jacksonObjectMapper().findAndRegisterModules()
+        .disable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
 
     fun resolveOptions(criteria: PaperSearchCriteria): PaperSearchCriteria {
         if (criteria.apolloAssist == true && (!properties.enabled || properties.apolloApiKey.isBlank())) {
@@ -73,7 +76,7 @@ class DiscoveryVerificationRegistrationService(
     }
 
     fun reserve(context: DiscoveryVerificationExecution, docId: String, profile: ExpertProfile,
-                sourceName: String, sourceItemKey: String): DiscoveryRegistration {
+                sourceName: String, sourceItemKey: String, paper: PaperMetadata? = null): DiscoveryRegistration {
         try {
             val run = context.run ?: run {
                 check(!properties.enabled) { "Verification execution context is missing" }
@@ -81,7 +84,8 @@ class DiscoveryVerificationRegistrationService(
             }
             // Match toIndexMap's RAW identity convention; real ORCID remains in externalIds/provenance.
             val rawProfile = profile.copy(esDocId = docId, orcidId = docId)
-            val snapshot = DiscoveryVerificationAdmissionGate.snapshot(docId, rawProfile, policy.evaluate(docId, rawProfile).configSnapshot)
+            val config = policy.evaluate(docId, rawProfile).configSnapshot
+            val snapshot = DiscoveryVerificationAdmissionGate.snapshot(docId, rawProfile, config)
             // Read every business protection before the first RAW write; read failures propagate.
             val layers = ExpertIndexLevel.values().associateWith { writer.readDiscoveryDocument(it, docId) }
             val admission = admissions.findAdmission(docId)
@@ -94,14 +98,122 @@ class DiscoveryVerificationRegistrationService(
                 admission?.let { it.identityHash == snapshot.identityHash && (it.decisionEnum.manual || it.decision in setOf("LEGACY_APPROVED", "AUTO_PASSED")) } == true) {
                 return DiscoveryRegistration(protected = true)
             }
-            val saved = mapper.writeValueAsString(linkedMapOf("docId" to docId, "identityHash" to snapshot.identityHash,
-                "factFingerprint" to snapshot.factFingerprint, "profile" to rawProfile, "admissionRevision" to admission?.revision,
-                "sourceName" to sourceName, "sourceItemKey" to sourceItemKey, "constructedAt" to clock.instant().toString()))
-            val item = repository.reserveItem(VerificationReservation(run.executionId, docId, snapshot.identityHash,
-                run.policyVersion, sourceName, sourceItemKey, saved, snapshot.factFingerprint), clock.instant())
-            check(item.sourceName == sourceName && item.sourceItemKey == sourceItemKey) { "Reserved source differs" }
-            return DiscoveryRegistration(item)
-        } catch (e: Exception) { throw DiscoveryRegistrationException(e) }
+            // I-3: a retry or a concurrent reservation must consume the already frozen facts and issue no HTTP.
+            val existing = repository.findItemsByDocIds(listOf(docId))
+                .filter { it.identityHash == snapshot.identityHash && it.policyVersion == run.policyVersion }
+            require(existing.size <= 1) { "Multiple reservations for the same identity and policy" }
+            existing.firstOrNull()?.let { return resumeExisting(it, rawProfile, sourceName, sourceItemKey, config) }
+
+            var finalProfile = rawProfile
+            var receipt: CountrySupplementReceipt? = null
+            if (properties.countrySupplementEnabled && countrySupplement != null) {
+                val supplemented = countrySupplement.supplement(run.executionId, docId, rawProfile, paper)
+                finalProfile = supplemented.profile
+                receipt = supplemented.receipt
+            }
+            val finalSnapshot = DiscoveryVerificationAdmissionGate.snapshot(docId, finalProfile, config)
+            val savedMap = linkedMapOf<String, Any?>("docId" to docId, "identityHash" to finalSnapshot.identityHash,
+                "factFingerprint" to finalSnapshot.factFingerprint, "profile" to finalProfile, "admissionRevision" to admission?.revision,
+                "sourceName" to sourceName, "sourceItemKey" to sourceItemKey, "constructedAt" to clock.instant().toString())
+            receipt?.let { savedMap["countrySupplement"] = it }
+            val saved = mapper.writeValueAsString(savedMap)
+            val item = repository.reserveItem(VerificationReservation(run.executionId, docId, finalSnapshot.identityHash,
+                run.policyVersion, sourceName, sourceItemKey, saved, finalSnapshot.factFingerprint), clock.instant())
+            return freeze(item, rawProfile, sourceName, sourceItemKey, config)
+        } catch (e: InterruptedException) {
+            // I-5: cancellation must stop discovery, never become a retryable registration failure.
+            Thread.currentThread().interrupt()
+            throw e
+        } catch (e: java.util.concurrent.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val cancellation = cancellationCause(e)
+            if (cancellation != null) throw cancellation
+            throw DiscoveryRegistrationException(e)
+        }
+    }
+
+    private fun cancellationCause(error: Throwable): Throwable? {
+        var current: Throwable? = error
+        while (current != null) {
+            if (current is java.util.concurrent.CancellationException) return current
+            if (current is InterruptedException) {
+                Thread.currentThread().interrupt()
+                return current
+            }
+            current = current.cause
+        }
+        return if (Thread.currentThread().isInterrupted) InterruptedException("Verification registration interrupted") else null
+    }
+
+    /** Reuses a reservation only when its frozen facts (excluding country and the institution token) still match. */
+    private fun resumeExisting(item: VerificationItem, rawProfile: ExpertProfile, sourceName: String,
+                               sourceItemKey: String, config: AdmissionConfigSnapshot): DiscoveryRegistration {
+        require(item.sourceName == sourceName && item.sourceItemKey == sourceItemKey) { "Reserved source differs" }
+        return freeze(item, rawProfile, sourceName, sourceItemKey, config, verifyFingerprint = false)
+    }
+
+    /**
+     * Returns the profile actually persisted: a concurrency winner may have frozen another country, and only
+     * its snapshot may be written to RAW. All other facts must still match the current discovery input.
+     */
+    private fun freeze(item: VerificationItem, rawProfile: ExpertProfile, sourceName: String,
+                       sourceItemKey: String, config: AdmissionConfigSnapshot,
+                       verifyFingerprint: Boolean = true): DiscoveryRegistration {
+        require(item.sourceName == sourceName && item.sourceItemKey == sourceItemKey) { "Reserved source differs" }
+        val root = mapper.readTree(item.snapshotJson)
+        require(root.path("identityHash").asText() == item.identityHash &&
+            root.path("factFingerprint").asText() == item.factFingerprint) { "Reserved snapshot is inconsistent" }
+        val frozen = frozenProfile(item)
+        require(factsWithoutCountry(frozen) == factsWithoutCountry(rawProfile)) { "Reserved facts differ from the current input" }
+        validateReceipt(item.snapshotJson, frozen)
+        if (verifyFingerprint) {
+            val recomputed = DiscoveryVerificationAdmissionGate.snapshot(item.expertDocId, frozen, config)
+            require(recomputed.identityHash == item.identityHash && recomputed.factFingerprint == item.factFingerprint) {
+                "Frozen profile does not match the reserved fingerprint"
+            }
+        }
+        // A non-RESERVED item was already activated by another caller: never rewrite its RAW.
+        return DiscoveryRegistration(item, protected = item.state != VerificationState.RESERVED, preparedProfile = frozen)
+    }
+
+    private fun frozenProfile(item: VerificationItem): ExpertProfile {
+        val root = mapper.readTree(item.snapshotJson)
+        val profile = root.get("profile") ?: throw IllegalStateException("Reserved snapshot has no profile")
+        return mapper.treeToValue(profile, ExpertProfile::class.java)
+    }
+
+    private fun factsWithoutCountry(profile: ExpertProfile) =
+        profile.copy(country = null, institutionEvidence = null)
+
+    /** Absent member keeps the pre-supplement semantics; present member must be a complete COUNTRY_V1 receipt. */
+    private fun validateReceipt(snapshotJson: String, frozen: ExpertProfile) {
+        val node = mapper.readTree(snapshotJson).get("countrySupplement") ?: return
+        require(node.isObject) { "Country supplement receipt must be an object" }
+        val receipt = mapper.treeToValue(node, CountrySupplementReceipt::class.java)
+        require(receipt.version == DiscoveryCountrySupplementService.VERSION) { "Unknown country supplement version" }
+        require(receipt.status in DiscoveryCountrySupplementService.STATUSES) { "Unknown country supplement status" }
+        require(receipt.reason in DiscoveryCountrySupplementService.REASONS) { "Unknown country supplement reason" }
+        require(receipt.observations.size <= DiscoveryCountrySupplementService.MAX_OBSERVATIONS)
+        require(receipt.observations.all { it.institution.length <= DiscoveryCountrySupplementService.MAX_INSTITUTION_LENGTH })
+        require(receipt.institution == null || receipt.institution == frozen.institution) { "Receipt institution differs" }
+        when (receipt.status) {
+            DiscoveryCountrySupplementService.STATUS_FILLED -> {
+                require(receipt.beforeCountry.isNullOrBlank() && receipt.afterCountry == frozen.country && !frozen.country.isNullOrBlank())
+                require(receipt.selectedSource in setOf(DiscoveryCountrySupplementService.SOURCE_OPENALEX,
+                    DiscoveryCountrySupplementService.SOURCE_ORCID))
+                val original = requireNotNull(receipt.originalInstitutionEvidence)
+                val current = requireNotNull(frozen.institutionEvidence)
+                require(original.substringBefore(':') == current.substringBefore(':')) { "Institution evidence source changed" }
+                require(DiscoveryIdentity.validInstitutionEvidence(frozen)) { "Frozen institution evidence is invalid" }
+            }
+            DiscoveryCountrySupplementService.STATUS_UNCHANGED -> {
+                require(!frozen.country.isNullOrBlank() && receipt.beforeCountry == frozen.country && receipt.afterCountry == frozen.country)
+            }
+            else -> {
+                require(frozen.country.isNullOrBlank() && receipt.beforeCountry.isNullOrBlank() && receipt.afterCountry.isNullOrBlank())
+            }
+        }
     }
 
     fun activate(registration: DiscoveryRegistration) {
