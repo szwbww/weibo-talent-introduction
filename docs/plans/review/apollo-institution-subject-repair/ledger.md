@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-10-19/apollo-institution-subject-repair.md
+
+- Status: REPAIR_PLAN_READY
+- Review epoch: 1
+- Master plan: docs/plans/2026-10-19/apollo-institution-subject-repair.md (sha256 49d5870d43c9877f947427c5b22277233fb5bf7f326176be33bc4629c5632397)
+- Governing master identity: worktree sha256 49d5870d43c9877f947427c5b22277233fb5bf7f326176be33bc4629c5632397; recorded sha256 49d5870d43c9877f947427c5b22277233fb5bf7f326176be33bc4629c5632397
+- Invoked master identity: sha256 49d5870d43c9877f947427c5b22277233fb5bf7f326176be33bc4629c5632397
+- Master identity state: CONSISTENT
+- Governing amendment: N/A
+- Amendments: N/A
+- Fast-p ledger: docs/plans/fast/apollo-institution-subject-repair/ledger.md (sha256 21d81c64d823a5a492a899f11c16d15960f503eeb1eb8b3f899f26478b744f69)
+- Fast-p handoff: docs/plans/fast/apollo-institution-subject-repair/human-review-handoff.md (sha256 5f22a79fe9234603138977b1120a9cc608d654db5276c2624527d5e1ab81bba3)
+- Master base: fcd6719ecd03645284c3df0f8a6b95bf4686ba95
+- Final code head: 0953b2f3570725bf1de5cc138422220c1731a48d
+- Evidence parent before next commit: 1b7e1a84233dd781a62b492276b83c6fc96632cc
+- Previous evidence commit: N/A
+- Branch: fast/apollo-institution-subject-repair
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-apollo-institution-subject-repair
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: SELECTED; repository /Users/lukai/IdeaProjects/weibo-talent-introduction; child_count 2; fast ledger/handoff and base/final identities match discovery output.
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_reviewer
+- Reviewer attempt: 1
+- Machine result: FAIL
+- Machine report epoch: Epoch 1 in `docs/plans/review/apollo-institution-subject-repair/machine-verification.md`
+- Repair artifact: `docs/plans/fix/apollo-institution-subject-repair/repair.md` (sha256 cfd5a2179390fb1c18470c0e2854d27b0df52b8ac37fab1bca6e443574cdab85; DRAFT_READY)
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: Human approval required for the exact repair artifact.
