@@ -255,3 +255,15 @@ Read the complete exact child plan from disk; its `变更文件清单`, commands
 - 操作步骤：1. inspect两份正文。2. 使用旧界面发送第一份并确认。
 - 预期结果：第一份签名UNCERTAIN/canInsert=false；第二份MULTIPLE_OR_MISPLACED/canInsert=false；确认第一份可送达自有测试邮箱1封，Bob原文保留。
 - 覆盖：I-3/I-5。
+
+## Epoch 2 — Approved amendment overrides historical contract
+
+- Approval: user 「批准 继续」 on 2026-10-21, following the exact proposed authority in the pause handoff.
+- Current authoritative plan: docs/plans/2026-10-21/reply-identity-01-backend.md at commit:57443d500be0d6ab3b60fd0b0821193f9d963a1e. Read the complete current plan afresh. The prior hash/verbatim plan above is historical epoch 1, not the current authority.
+- Master amendment: docs/plans/2026-10-21/reply-identity-plan.md at the same commit; ledger A1/A2 preserves before/after approval lineage.
+- Product base remains d7908cd713600afebe3b44c9a83e668f737ca919. Preserved incomplete edits from epoch 1 are inputs only; reconcile against the current immutable plan, do not treat prior passing tests as current evidence.
+- Authorized scope now includes ManualReplySendAttemptService.kt in addition to the original listed paths, solely for read-only exact completed-payload lookup. T6 explicitly defines original-risk→attachment/full-payload/suppression→read-only-SENT→remaining-new-identity→claim ordering; preserve all original risk/attachment/STRONG/draft behavior.
+- New required regressions: non-draft INBOUND successful send→default change→same complete payload without new confirmation returns original result and SMTP remains once; changed attachment content/order and non-completed attempts cannot skip identity reminder; read-only lookup cannot insert/claim/bind/release/write audit.
+- Fresh commands: JDK11 mysqlIt scoped suite with ReplyIdentityServiceTest, ReplyIdentityControllerTest (same-file top-level MVC class), PendingMailOperationServiceTest, PendingMailOperationServiceTrustWorkbenchTest, MailReplyDraftSendIntegrationTest, MeetingCalendarSendIntegrationTest, OutboundAttachmentFlowTest, RagSendBridgeTest; then full mvn test. Use recorded Docker API compatibility env. Repeat isolated runtime smoke after final state.
+- Append a complete epoch 2 execution result without rewriting epoch 1 logs. All product changes for child 01 (including preserved edits and amendment implementation) form one authorized implementation commit: feat(fast-p): implement 01.
+- Required next verification is a fresh isolated Fast-P light-verifier, not verify-p/review-p. No independent or aggregate compliance claim by implementer.

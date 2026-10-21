@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-10-21/reply-identity-plan.md
 
-- Status: PAUSED_FOR_HUMAN
-- Master plan: docs/plans/2026-10-21/reply-identity-plan.md (sha256 0bed23689f5e2eab5d5dea9e36922770686f769d932892c9d297503d4e901c88)
-- Amendments: N/A
+- Status: RUNNING
+- Master plan: docs/plans/2026-10-21/reply-identity-plan.md (commit 57443d500be0d6ab3b60fd0b0821193f9d963a1e)
+- Amendments: A1,A2
 - Master base: b0d2f278a9dddc0be0dcf6fbd2e9b5a947c8a135
 - Branch: fast/reply-identity-plan
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-reply-identity-plan
@@ -10,22 +10,24 @@
 - Finalization repair parent: N/A
 - Started: 2026-10-21T00:57:35.739654+08:00
 - Current child: 01
-- Waiting role: N/A
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: Child 01 I-6 non-draft INBOUND SENT replay cannot satisfy the approved pre-claim identity gate without additional read-only exact-completion authority and explicit attachment-inclusive payload/gate ordering; see children/01/execution.md:24-57.
-- Resume from: 7003ce9c6fe386a7690ded26d9ffa67f0920bf2d
+- Pause reason: N/A
+- Resume from: 5d7904ed0667823b6206bf8ab15f4e57c76e467f
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | 03 | docs/plans/2026-10-21/reply-identity-03-global-settings.md | sha256:a47dc08ffaee7311503a82356490d42af4dadb0f2bbefe231782d33e92d80786 | none | 1 | LIGHT_PASS_WITH_NOTES | 75b399d6fbb6cc6b8cb859eef984524fc1342c12 | d7908cd713600afebe3b44c9a83e668f737ca919 | 0 | — | d7908cd713600afebe3b44c9a83e668f737ca919 | 7881072ab9d74fc8a53d7bdde236bfe8ec499303 | Implementer: Identity03Implementer; verifier: Identity03Verifier; O-1 unchanged timezone baseline |
-| 01 | docs/plans/2026-10-21/reply-identity-01-backend.md | sha256:dc437ba13279b3174da1c82168c23364777503b5832f03fed9caa4c5301f54c3 | 03 | 1 | PAUSED_FOR_HUMAN | d7908cd713600afebe3b44c9a83e668f737ca919 | — | 0 | — | d7908cd713600afebe3b44c9a83e668f737ca919 | 7003ce9c6fe386a7690ded26d9ffa67f0920bf2d | Implementer: Identity01Implementer; PLAN_CONFLICT; authorized edits uncommitted; no verifier dispatched |
+| 01 | docs/plans/2026-10-21/reply-identity-01-backend.md | commit:57443d500be0d6ab3b60fd0b0821193f9d963a1e | 03 | 2 | IMPLEMENTING | d7908cd713600afebe3b44c9a83e668f737ca919 | — | 0 | — | — | — | Epoch 1 pause preserved; A1 approved; fresh implementer acquisition |
 | 02 | docs/plans/2026-10-21/reply-identity-02-frontend.md | sha256:68dbeb8eac0a8bfd8578dc3c0cea8c4369942f1c67668a056bcff5034978a308 | 03,01 | 1 | PENDING | — | — | 0 | — | — | — | — |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
 |---|---|---|---|---|---|---|
+| A1 | docs/plans/2026-10-21/reply-identity-01-backend.md | commit:5d7904ed0667823b6206bf8ab15f4e57c76e467f | commit:57443d500be0d6ab3b60fd0b0821193f9d963a1e | I-4 and 实现方案清单外必改先修订规则; child I-6 | Authorize read-only exact SENT lookup and attachment-inclusive identity gate ordering without narrowing replay guarantees | HUMAN:批准 继续 — 2026-10-21; recorded 2026-10-21T09:14:43+08:00 |
+| A2 | docs/plans/2026-10-21/reply-identity-plan.md | commit:5d7904ed0667823b6206bf8ab15f4e57c76e467f | commit:57443d500be0d6ab3b60fd0b0821193f9d963a1e | I-4 and 实现方案清单外必改先修订规则 | Align master authorized scope with approved child A1; dependency order unchanged | HUMAN:批准 继续 — 2026-10-21; recorded 2026-10-21T09:14:43+08:00 |
 
 ## Baseline
 
@@ -42,3 +44,9 @@
 - No child 01 product commit; ten authorized product/test files remain modified or untracked, index empty before evidence-only commits. Child 02 untouched/PENDING.
 - Proposed amendment, not applied: authorize ManualReplySendAttemptService.kt for a read-only exact completed-payload lookup; explicitly define attachment-inclusive payload/gate ordering while preserving original validation, STRONG, suppression, draft and attachment behavior; add no-new-confirmation SENT-replay and changed-attachment/non-completed regressions in authorized tests.
 - No plan amendment is approved. Resume only after human authority is recorded; create a new child 01 epoch, retain current edits and prior evidence, and obtain fresh implementer/verifier roles under the amended immutable contract.
+
+## Resume after approval
+
+- User approved the proposed amendment with exact instruction 「批准 继续」 on 2026-10-21. A1/A2 plan-only commit is 57443d500be0d6ab3b60fd0b0821193f9d963a1e; previous pause notes above remain historical.
+- Resume checks: retained branch/worktree/git-dir and HEAD 5d7904ed0667823b6206bf8ab15f4e57c76e467f match prior pause; all original plan digests match; product index empty; authorized incomplete product/test edits preserved.
+- Child 01 epoch 2 starts at unchanged product base d7908cd713600afebe3b44c9a83e668f737ca919, fix_round=0. Completed child 03 is not replayed.
