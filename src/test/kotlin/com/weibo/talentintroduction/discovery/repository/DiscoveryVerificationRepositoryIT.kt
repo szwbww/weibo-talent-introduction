@@ -445,4 +445,44 @@ class DiscoveryVerificationRepositoryIT {
         current.forEach { assertEquals(it.item, repository.findItem(it.item.id)) }
     }
 
+    @Test fun `successful detail lookup is owner scoped batched parsed and read only`() {
+        run(); run(1002)
+        val first = active("lookup-first")
+        val other = repository.reserveItem(reservation("lookup-other", owner = 1002), NOW)
+        val mapper = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper()
+        fun attempt(key: String, personId: String, item: Long = first.id, status: Int = 200, code: String = "OK",
+            response: String = mapper.writeValueAsString(ApolloCandidate(personId, "Ada", "Lee", null, "Ada Lee", "Professor", null)),
+            completed: Boolean = true, provider: String = "APOLLO", kind: String = "DETAIL", hash: String? = "e".repeat(64)) {
+            jdbc.update("""INSERT INTO discovery_verification_attempt
+                (item_id,request_key,provider,query_kind,page_number,attempt_number,requested_at,completed_at,http_status,
+                 result_code,request_json,response_json,response_sha256) VALUES (?,?,?,?,1,1,?,?,?,?,?,?,?)""",
+                item, key, provider, kind, NOW.verificationUtc(), if (completed) NOW.verificationUtc() else null,
+                status, code, mapper.writeValueAsString(mapOf("personId" to personId, "matchingVersion" to 2)), response, hash)
+        }
+        attempt("ok", "shared")
+        attempt("duplicate-success", "shared")
+        attempt("other-run", "outside", item = other.id)
+        attempt("id-conflict", "mismatch", response = mapper.writeValueAsString(ApolloCandidate("different", null, null, null, null, null, null)))
+        attempt("malformed", "malformed", response = "{broken")
+        attempt("provider-error", "failed", status = 422, code = "REQUEST_INVALID")
+        attempt("unacknowledged", "inflight", completed = false)
+        attempt("not-detail", "search", kind = "BROAD")
+        attempt("not-apollo", "orcid", provider = "ORCID")
+        attempt("not-ok", "not-ok", code = "RESPONSE_INVALID")
+        attempt("no-hash", "no-hash", hash = null)
+        attempt("last-batch", "last")
+        val before = repository.findAttempts(first.id)
+        val runBefore = repository.findRun(1001)
+        val itemBefore = repository.findItem(first.id)
+        val ids = listOf("shared", "outside", "mismatch", "malformed", "failed", "inflight", "search", "orcid", "not-ok", "no-hash") +
+            (1..500).map { "absent-$it" } + "last"
+        val found = repository.findSuccessfulDetails(1001, ids)
+        assertEquals(setOf("shared", "last"), found.keys)
+        assertEquals(before.first { it.requestKey == "ok" }, found["shared"])
+        assertEquals("e".repeat(64), found["shared"]!!.responseSha256)
+        assertEquals(setOf("outside"), repository.findSuccessfulDetails(1002, listOf("shared", "outside")).keys)
+        assertTrue(repository.findSuccessfulDetails(1001, emptyList()).isEmpty())
+        assertEquals(before, repository.findAttempts(first.id))
+        assertEquals(runBefore, repository.findRun(1001)); assertEquals(itemBefore, repository.findItem(first.id))
+    }
 }

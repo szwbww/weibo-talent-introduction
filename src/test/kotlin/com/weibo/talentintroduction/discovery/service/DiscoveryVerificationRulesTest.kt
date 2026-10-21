@@ -328,6 +328,32 @@ class DiscoveryVerificationRulesTest {
         println("institutionReplay denominator=${old.size} negativeChanges=${negative.size} output=$output")
     }
 
+    @Test fun `later empty query preserves incomplete candidate union and conflict protection`() {
+        val broad = ApolloSearchQuery("Ada Lee")
+        val institution = ApolloSearchQuery("Ada Lee", institution = VerificationInstitution("Example University"))
+        val person = ruleSearch().candidates.single()
+        val truncated = ApolloSearchEvidence(matchingVersion = 2).merge(
+            ApolloSearchPage(listOf(person), 600, 5), broad, broad = true)
+        val final = truncated.merge(ApolloSearchPage(emptyList(), 0, 1), institution, broad = false,
+            allQueriesComplete = false).copy(detailsComplete = true)
+        assertFalse(final.complete); assertFalse(final.broadComplete)
+        assertEquals(listOf(person), final.candidates)
+        assertEquals(listOf("SEARCH_INCOMPLETE"), rules.evaluate(ruleSnapshot(), emptyList(), final).reasonCodes)
+        val conflicting = final.merge(ApolloSearchPage(listOf(person.copy(title = "Researcher")), 1, 1),
+            institution, broad = false)
+        assertEquals(setOf(person.id), conflicting.conflictingIds)
+        assertEquals(VerificationOutcome.PENDING, rules.evaluate(ruleSnapshot(), emptyList(), conflicting).outcome)
+        val complete = conflicting.copy(complete = true, broadComplete = true)
+        assertEquals(listOf("APOLLO_ID_CONFLICT"), rules.evaluate(ruleSnapshot(), emptyList(), complete).reasonCodes)
+    }
+
+    @Test fun `legacy complete facts survive merges without optional diagnostics`() {
+        val old = ruleSearch().copy(matchingVersion = 2, detailsComplete = true)
+        val merged = old.merge(ApolloSearchPage(emptyList(), 0, 1), ApolloSearchQuery("Ada Lee"), broad = false)
+        assertTrue(merged.complete); assertTrue(merged.broadComplete)
+        assertEquals(rules.evaluate(ruleSnapshot(), emptyList(), old), rules.evaluate(ruleSnapshot(), emptyList(), merged))
+    }
+
     private fun replaySha(bytes: ByteArray): String = java.security.MessageDigest.getInstance("SHA-256")
         .digest(bytes).joinToString("") { "%02x".format(it) }
 }

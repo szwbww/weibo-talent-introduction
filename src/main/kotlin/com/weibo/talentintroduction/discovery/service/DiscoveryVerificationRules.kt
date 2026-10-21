@@ -24,7 +24,7 @@ data class ApolloSearchEvidence(val candidates: List<ApolloCandidate> = emptyLis
             if (previous == null) union[candidate.id] = candidate
         }
         return copy(candidates = union.values.toList(), broadComplete = broadComplete || (broad && !page.hasNext),
-            complete = allQueriesComplete && !page.hasNext, queryNames = queryNames + query.name, conflictingIds = ids)
+            complete = complete || (allQueriesComplete && !page.hasNext), queryNames = queryNames + query.name, conflictingIds = ids)
     }
 }
 data class VerificationDecision(val qualification: VerificationQualification, val route: VerificationRoute,

@@ -158,4 +158,25 @@ class DiscoveryVerificationQueryServiceTest {
         assertTrue(reasons.all { it.label == "额度不足，等待恢复" })
         verifyNoInteractions(admissions)
     }
+
+    @Test fun `worker diagnostics bound query and reuse projections without changing evidence`() {
+        val queries = (0..39).map { WorkerQueryDiagnostic(it, "a".repeat(64), "VARIANT") }
+        val reuse = WorkerDetailReuse(11, 7, "person-1", "b".repeat(64))
+        val recorded = WorkerDiagnostics(queries = queries, detailReuses = List(205) { reuse }).bounded()
+        assertEquals(32, recorded.queries.size); assertEquals(40, recorded.totalQueryCount)
+        assertEquals(200, recorded.detailReuses.size); assertEquals(205, recorded.totalReused)
+        assertTrue(recorded.truncated)
+        var accumulated = WorkerDiagnostics()
+        repeat(205) { accumulated = accumulated.reuse(reuse) }
+        assertEquals(200, accumulated.detailReuses.size); assertEquals(205, accumulated.totalReused)
+        assertTrue(accumulated.truncated)
+        val mapper = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().findAndRegisterModules()
+        val legacy = mapper.readValue("""{"search":{"complete":true,"broadComplete":true}}""", VerificationWorkerEvidence::class.java)
+        assertNull(legacy.diagnostics); assertTrue(legacy.search!!.complete)
+        val payload = legacy.copy(diagnostics = recorded)
+        assertEquals(recorded, mapper.readValue(mapper.writeValueAsString(payload), VerificationWorkerEvidence::class.java).diagnostics)
+        // The API detail contract adds only a nullable diagnostic projection, not a new admission input.
+        assertTrue(VerificationItemDetail::class.java.declaredFields.any { it.name == "diagnostics" })
+        assertEquals(legacy.search, payload.search); assertEquals(legacy.progress, payload.progress)
+    }
 }

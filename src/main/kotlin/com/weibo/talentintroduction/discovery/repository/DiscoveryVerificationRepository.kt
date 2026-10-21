@@ -635,12 +635,33 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     }
 
     fun findAttempts(itemId: Long): List<VerificationAttempt> = jdbc.query(
-        "SELECT * FROM discovery_verification_attempt WHERE item_id=? ORDER BY id",
-        RowMapper { rs, _ -> VerificationAttempt(rs.getLong("id"), rs.getLong("item_id"), rs.getString("request_key"),
-            VerificationProvider.valueOf(rs.getString("provider")), VerificationQueryKind.valueOf(rs.getString("query_kind")),
-            rs.getInt("page_number"), rs.getInt("attempt_number"), rs.time("requested_at")!!, rs.time("completed_at"),
-            rs.getInt("http_status").let { if (rs.wasNull()) null else it }, rs.getString("result_code"),
-            rs.getString("request_json"), rs.getString("response_json"), rs.getString("response_sha256")) }, itemId)
+        "SELECT * FROM discovery_verification_attempt WHERE item_id=? ORDER BY id", attemptMapper, itemId)
+
+    /** Same-run successful HTTP ledger only; no cache rows and no synthetic attempts. */
+    fun findSuccessfulDetails(ownerExecutionId: Long, personIds: Collection<String>): Map<String, VerificationAttempt> {
+        require(ownerExecutionId > 0)
+        if (personIds.isEmpty()) return emptyMap()
+        val found = linkedMapOf<String, VerificationAttempt>()
+        personIds.distinct().chunked(500).forEach { ids ->
+            val attempts = jdbc.query("""SELECT a.* FROM discovery_verification_item i FORCE INDEX (idx_dvi_run_batch)
+                JOIN discovery_verification_attempt a FORCE INDEX (idx_dva_item) ON a.item_id=i.id
+                WHERE i.owner_execution_id=? AND a.provider='APOLLO' AND a.query_kind='DETAIL'
+                AND a.completed_at IS NOT NULL AND a.http_status=200 AND a.result_code='OK'
+                AND a.response_json IS NOT NULL AND a.response_sha256 IS NOT NULL
+                AND JSON_UNQUOTE(JSON_EXTRACT(IF(JSON_VALID(a.request_json),a.request_json,'{}'),'$.personId'))
+                    IN (${ids.joinToString(",") { "?" }}) ORDER BY a.id""", attemptMapper,
+                *(listOf(ownerExecutionId) + ids).toTypedArray())
+            attempts.forEach attemptLoop@ { attempt ->
+                // response_sha256 identifies the original HTTP body; the saved parsed JSON is not that body.
+                val candidate = runCatching {
+                    replayMapper.readValue(attempt.responseJson, com.weibo.talentintroduction.discovery.service.ApolloCandidate::class.java)
+                }.getOrNull() ?: return@attemptLoop
+                val requested = replayMapper.readTree(attempt.requestJson).path("personId").asText()
+                if (candidate.id == requested && candidate.id in ids) found.putIfAbsent(candidate.id, attempt)
+            }
+        }
+        return found
+    }
     private fun identity(input: VerificationReservation) = jdbc.query("SELECT * FROM discovery_verification_item WHERE expert_doc_id=? AND identity_hash=? AND policy_version=?",
         itemMapper, input.expertDocId, input.identityHash, input.policyVersion).singleOrNull()
     private fun checkedIdentity(item: VerificationItem, input: VerificationReservation): VerificationItem {
@@ -682,6 +703,12 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         }
         private fun ResultSet.time(name: String): Instant? = getTimestamp(name)?.toLocalDateTime()?.verificationInstant()
         private fun ResultSet.nullLong(name: String): Long? = getLong(name).let { if (wasNull()) null else it }
+        private val attemptMapper = RowMapper { rs: ResultSet, _: Int -> VerificationAttempt(
+            rs.getLong("id"), rs.getLong("item_id"), rs.getString("request_key"),
+            VerificationProvider.valueOf(rs.getString("provider")), VerificationQueryKind.valueOf(rs.getString("query_kind")),
+            rs.getInt("page_number"), rs.getInt("attempt_number"), rs.time("requested_at")!!, rs.time("completed_at"),
+            rs.getInt("http_status").let { if (rs.wasNull()) null else it }, rs.getString("result_code"),
+            rs.getString("request_json"), rs.getString("response_json"), rs.getString("response_sha256")) }
         private val runMapper = RowMapper { rs: ResultSet, _: Int -> VerificationRun(rs.getLong("execution_id"), VerificationMode.valueOf(rs.getString("mode")),
             rs.getString("policy_version"), rs.getBoolean("apollo_requested"), rs.getString("settings_json"), rs.getBoolean("input_closed"), rs.getLong("revision"), rs.time("created_at")!!, rs.time("updated_at")!!) }
         private val itemMapper = RowMapper { rs: ResultSet, _: Int -> VerificationItem(

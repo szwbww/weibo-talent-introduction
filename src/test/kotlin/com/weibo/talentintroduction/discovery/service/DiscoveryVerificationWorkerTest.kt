@@ -325,4 +325,192 @@ class DiscoveryVerificationWorkerTest {
                 }
             }
     }
+
+    companion object {
+        /** Direct runtime smoke entry: same real SQL/HTTP/worker/commit scenario, outside the JUnit runner. */
+        @JvmStatic fun main(args: Array<String>) {
+            DiscoveryVerificationWorkerTest().`runtime search trace survives interrupted pages and reuses only same run successes`()
+            println("SEARCH_TRACE_RUNTIME_SMOKE completed: pagination restart, bounded diagnostics, same-run reuse, Gate parity")
+        }
+    }
+
+    @Test fun `runtime search trace survives interrupted pages and reuses only same run successes`() {
+        check(org.testcontainers.DockerClientFactory.instance().isDockerAvailable) { "Docker is required; skip is not PASS" }
+        DiagnosticMysql().withDatabaseName("search_trace").withUsername("test").withPassword("test")
+            .withCommand("--log-bin-trust-function-creators=1").use { mysql ->
+                mysql.start()
+                val ds = org.springframework.jdbc.datasource.DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
+                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("158").load().migrate()
+                val jdbc = org.springframework.jdbc.core.JdbcTemplate(ds)
+                val manager = org.springframework.jdbc.datasource.DataSourceTransactionManager(ds)
+                listOf("before-ack", "after-ack", "legacy-page-six").forEach { crash ->
+                    VerificationFlowFixture(jdbc, manager).use { f ->
+                        val row = f.seed("trace-$crash")
+                        val queries = listOf(ApolloSearchQuery("Ada Lee"),
+                            ApolloSearchQuery("Ada Lee", institution = VerificationInstitution("Example University")),
+                            ApolloSearchQuery("Ada Empty"))
+                        f.cached(VerificationWorkerEvidence(search = ApolloSearchEvidence(matchingVersion = 2),
+                            progress = VerificationProgress(stage = "APOLLO_SEARCH"), queries = queries))
+                        val calls = mutableListOf<Pair<String, Int>>()
+                        val http = verificationRestTemplate(f.props)
+                        val server = org.springframework.test.web.client.MockRestServiceServer.bindTo(http).build()
+                        server.expect(org.springframework.test.web.client.ExpectedCount.manyTimes(),
+                            org.springframework.test.web.client.match.MockRestRequestMatchers.anything()).andRespond { request ->
+                            check(!request.uri.path.startsWith("/api/v1/people/")) { "Incomplete search must not request DETAIL" }
+                            val params = org.springframework.web.util.UriComponentsBuilder.fromUri(request.uri).build().queryParams
+                            val page = params.getFirst("page")!!.toInt()
+                            assertEquals("100", params.getFirst("per_page"))
+                            val kind = if (params.containsKey("q_organization_name")) "narrow"
+                                else if (params.getFirst("q_person_name")!!.contains("Empty")) "empty" else "broad"
+                            calls += kind to page
+                            val body = when (kind) {
+                                "broad" -> """{"people":[{"id":"broad-$page","first_name":"Ada","last_name_obfuscated":"L**"}],"total_entries":600}"""
+                                "narrow" -> """{"people":[{"id":"narrow-person","name":"Ada Lee","title":"Professor"}],"total_entries":1}"""
+                                else -> """{"people":[],"total_entries":0}"""
+                            }
+                            org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess(body,
+                                org.springframework.http.MediaType.APPLICATION_JSON).createResponse(request)
+                        }
+                        var responses = 0
+                        val crashing = Mockito.mock(DiscoveryVerificationRepository::class.java) { invocation ->
+                            val fifth = invocation.method.name == "completeAttemptAndProgress" && ++responses == 5
+                            if (fifth && crash == "before-ack") throw IllegalStateException("injected before acknowledgement")
+                            val result = invocation.method.invoke(f.repository, *invocation.arguments)
+                            if (fifth) throw IllegalStateException("injected after acknowledgement")
+                            result
+                        }
+                        fun worker(repo: DiscoveryVerificationRepository = f.repository) = DiscoveryVerificationWorker(
+                            f.props, repo, OrcidVerificationEvidenceClient(f.props, http, f.clock),
+                            ApolloPeopleSearchClient(f.props, http, f.clock), QualificationEvidenceParser(f.clock), f.rules, f.commits,
+                            DefaultListableBeanFactory().getBeanProvider(RegistrationRecovery::class.java), f.clock)
+                        worker(crashing).useWorker { it.process(f.claim()) }
+                        val interrupted = f.mapper.readValue<VerificationWorkerEvidence>(f.item(row.id).evidenceJson!!)
+                        assertEquals(5, calls.size)
+                        assertEquals(if (crash == "before-ack") 0 else 1, interrupted.progress.queryIndex)
+                        assertEquals(if (crash == "before-ack") 5 else 1, interrupted.progress.page)
+                        assertEquals(VerificationState.RUNNING, f.item(row.id).state)
+                        if (crash == "legacy-page-six") {
+                            val legacy = interrupted.copy(diagnostics = null, progress = interrupted.progress.copy(queryIndex = 0, page = 6))
+                            jdbc.update("UPDATE discovery_verification_item SET evidence_json=? WHERE id=?",
+                                f.mapper.writeValueAsString(legacy), row.id)
+                        }
+                        f.clock.now = f.clock.instant().plusSeconds(121)
+                        worker().useWorker { it.process(f.claim()) }
+                        val done = f.item(row.id)
+                        val payload = f.mapper.readValue<VerificationWorkerEvidence>(done.evidenceJson!!)
+                        assertEquals(queries, payload.queries)
+                        assertEquals(VerificationOutcome.PENDING, done.outcome)
+                        assertTrue(done.reasonsJson!!.contains("SEARCH_PAGE_LIMIT"))
+                        assertFalse(payload.search!!.complete); assertFalse(payload.search!!.broadComplete)
+                        assertFalse(payload.search!!.detailsComplete)
+                        assertEquals(setOf("1", "2"), payload.progress.finishedQueryKeys.toSet())
+                        assertEquals((1..5).map { "broad" to it } +
+                            (if (crash == "before-ack") listOf("broad" to 5) else emptyList()) +
+                            listOf("narrow" to 1, "empty" to 1), calls)
+                        assertEquals((1..5).map { "broad-$it" }.toSet() + "narrow-person",
+                            payload.search!!.candidates.map { it.id }.toSet())
+                        val trace = payload.diagnostics!!
+                        assertEquals(listOf("TRUNCATED", "EXHAUSTED", "EXHAUSTED"), trace.queries.map { it.state })
+                        assertEquals(5, trace.queries[0].pagesReceived)
+                        // Deleted historical diagnostics are NOT_RECORDED; never invent a last supplied total.
+                        assertEquals(if (crash == "legacy-page-six") null else 600L, trace.queries[0].totalEntries)
+                        val detail = DiscoveryVerificationQueryService(f.repository, f.admissions, f.props).item(row.id)
+                        assertEquals(trace, detail.diagnostics)
+                        assertEquals(calls.size, detail.attempts.size)
+                        assertEquals(calls.size, done.requestCount)
+                        val profile = f.mapper.readValue<VerificationSnapshot>(done.snapshotJson).profile
+                        val withTrace = f.policy.evaluate(done.expertDocId, profile)
+                        jdbc.update("UPDATE discovery_verification_item SET evidence_json=? WHERE id=?",
+                            f.mapper.writeValueAsString(payload.copy(diagnostics = null)), row.id)
+                        val withoutTrace = f.policy.evaluate(done.expertDocId, profile)
+                        assertEquals(withTrace, withoutTrace)
+                        assertNull(DiscoveryVerificationQueryService(f.repository, f.admissions, f.props).item(row.id).diagnostics)
+                        server.verify()
+                    }
+                }
+                VerificationFlowFixture(jdbc, manager).use { f ->
+                    val calls = mutableListOf<String>()
+                    val http = verificationRestTemplate(f.props)
+                    val server = org.springframework.test.web.client.MockRestServiceServer.bindTo(http).build()
+                    var fail = false
+                    server.expect(org.springframework.test.web.client.ExpectedCount.manyTimes(),
+                        org.springframework.test.web.client.match.MockRestRequestMatchers.anything()).andRespond { request ->
+                        val id = request.uri.path.substringAfterLast('/')
+                        calls += id
+                        if (fail) org.springframework.test.web.client.response.MockRestResponseCreators
+                            .withStatus(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY).body("""{"message":"unclassified failure"}""")
+                            .contentType(org.springframework.http.MediaType.APPLICATION_JSON).createResponse(request)
+                        else org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess(
+                            """{"person":{"id":"$id","first_name":"Ada","last_name":"Lee","title":"Professor"}}""",
+                            org.springframework.http.MediaType.APPLICATION_JSON).createResponse(request)
+                    }
+                    fun run(doc: String, owner: Long = 2001, person: String = "shared-person", conflict: Boolean = false): VerificationItem {
+                        val row = f.seed(doc)
+                        if (owner != 2001L) {
+                            f.repository.createRun(owner, VerificationMode.ENFORCE, true, "{}", f.clock.instant())
+                            jdbc.update("UPDATE discovery_verification_item SET owner_execution_id=? WHERE id=?", owner, row.id)
+                        }
+                        val payload = pendingDetailPayload().copy(search = pendingDetailPayload().search!!.copy(
+                            candidates = listOf(ApolloCandidate(person, "Ada", null, "L**", null, null, null)),
+                            conflictingIds = if (conflict) setOf(person) else emptySet()))
+                        f.cached(payload)
+                        DiscoveryVerificationWorker(f.props, f.repository, OrcidVerificationEvidenceClient(f.props, http, f.clock),
+                            ApolloPeopleSearchClient(f.props, http, f.clock), QualificationEvidenceParser(f.clock), f.rules, f.commits,
+                            DefaultListableBeanFactory().getBeanProvider(RegistrationRecovery::class.java), f.clock).useWorker { it.process(f.claim()) }
+                        return f.item(row.id)
+                    }
+                    val first = run("reuse-first")
+                    val source = f.repository.findAttempts(first.id).single()
+                    val second = run("reuse-second")
+                    val secondPayload = f.mapper.readValue<VerificationWorkerEvidence>(second.evidenceJson!!)
+                    assertEquals(VerificationOutcome.APOLLO_CLEAR, second.outcome)
+                    assertEquals(0, second.requestCount); assertTrue(f.repository.findAttempts(second.id).isEmpty())
+                    assertEquals(listOf(WorkerDetailReuse(source.id, first.id, "shared-person", source.responseSha256!!)),
+                        secondPayload.diagnostics!!.detailReuses)
+                    assertEquals(source, f.repository.findAttempts(first.id).single())
+                    assertNotNull(second.admissionRevision)
+                    assertEquals(VerificationProjection.PROJECTED, second.projectionState)
+                    assertEquals(listOf("shared-person"), calls)
+                    val otherRun = run("reuse-other-run", owner = 2002)
+                    assertEquals(1, otherRun.requestCount)
+                    assertNull(f.mapper.readValue<VerificationWorkerEvidence>(otherRun.evidenceJson!!).diagnostics)
+                    assertEquals(listOf("shared-person", "shared-person"), calls)
+                    val conflict = run("reuse-conflict", conflict = true)
+                    assertEquals(VerificationOutcome.PENDING, conflict.outcome)
+                    assertTrue(conflict.reasonsJson!!.contains("APOLLO_ID_CONFLICT"))
+                    assertEquals(0, conflict.requestCount)
+                    fail = true
+                    assertEquals(VerificationState.ERROR, run("failed-detail-1", person = "failed-person").state)
+                    assertEquals(VerificationState.ERROR, run("failed-detail-2", person = "failed-person").state)
+                    assertEquals(2, calls.count { it == "failed-person" })
+                    val api = DiscoveryVerificationQueryService(f.repository, f.admissions, f.props).item(second.id)
+                    assertTrue(api.attempts.isEmpty()); assertEquals(secondPayload.diagnostics, api.diagnostics)
+                    val oversized = secondPayload.copy(diagnostics = WorkerDiagnostics(
+                        queries = (0..39).map { WorkerQueryDiagnostic(it, "a".repeat(64), "VARIANT") },
+                        detailReuses = List(205) { secondPayload.diagnostics!!.detailReuses.single() }))
+                    val oversizedJson = f.mapper.writeValueAsString(oversized)
+                    jdbc.update("UPDATE discovery_verification_item SET evidence_json=? WHERE id=?", oversizedJson, second.id)
+                    val bounded = DiscoveryVerificationQueryService(f.repository, f.admissions, f.props).item(second.id).diagnostics!!
+                    assertEquals(32, bounded.queries.size); assertEquals(40, bounded.totalQueryCount)
+                    assertEquals(200, bounded.detailReuses.size); assertEquals(205, bounded.totalReused)
+                    assertTrue(bounded.truncated)
+                    assertEquals(oversizedJson, f.item(second.id).evidenceJson)
+                    server.verify()
+                }
+                VerificationFlowFixture(jdbc, manager).use { f ->
+                    val row = f.seed("bounded-query-trace")
+                    val queries = (0..33).map { ApolloSearchQuery("Ada query $it") }
+                    f.apolloBody = """{"people":[],"total_entries":0}"""
+                    f.cached(VerificationWorkerEvidence(search = ApolloSearchEvidence(matchingVersion = 2),
+                        progress = VerificationProgress(stage = "APOLLO_SEARCH"), queries = queries))
+                    f.worker().process(f.claim())
+                    val payload = f.mapper.readValue<VerificationWorkerEvidence>(f.item(row.id).evidenceJson!!)
+                    assertEquals(queries, payload.queries)
+                    assertEquals(34, f.apolloRequests.size); assertEquals(34, payload.progress.finishedQueryKeys.size)
+                    assertTrue(payload.search!!.complete); assertTrue(payload.search!!.broadComplete)
+                    assertEquals(32, payload.diagnostics!!.queries.size)
+                    assertEquals(34, payload.diagnostics!!.totalQueryCount); assertTrue(payload.diagnostics!!.truncated)
+                }
+            }
+    }
 }

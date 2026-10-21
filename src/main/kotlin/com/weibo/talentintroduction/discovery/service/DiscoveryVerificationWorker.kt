@@ -26,7 +26,8 @@ data class VerificationWorkerEvidence(
     val orcidCompleted: List<OrcidEndpointCompletion> = emptyList(), val schemaVersion: Int = 1,
     val queries: List<ApolloSearchQuery>? = null,
     val institutionNormalization: InstitutionNormalization? = null,
-    val ruleVersion: Int = 0
+    val ruleVersion: Int = 0,
+    val diagnostics: WorkerDiagnostics? = null
 ) { init { require(schemaVersion == 1) } }
 
 @Service
@@ -249,24 +250,64 @@ class DiscoveryVerificationWorker(
             if (payload.progress.stage == "APOLLO_SEARCH") {
                 // Old in-flight payloads retain their original query sequence; new runs persist it before HTTP.
                 var queries = payload.queries ?: legacySearchQueries(snapshot, payload.evidence)
+                fun queryKind(index: Int) = if (queries[index].institution != null) VerificationQueryKind.NARROW
+                    else if (index == 0) VerificationQueryKind.BROAD else VerificationQueryKind.VARIANT
+                fun trace(index: Int, state: String, reason: String? = null, attemptId: Long? = null,
+                    page: ApolloSearchPage? = null, confirmedPages: Int = 0) {
+                    val previous = payload.diagnostics ?: WorkerDiagnostics()
+                    val rows = queries.take(32).mapIndexed { i, query ->
+                        val saved = previous.queries.firstOrNull { it.queryIndex == i } ?: WorkerQueryDiagnostic(i,
+                            DiscoveryInstitutionNormalizer.sha256(mapper.writeValueAsString(query.copy(page = 1))), queryKind(i).name)
+                        if (i != index) saved else saved.copy(state = state, stopReason = reason,
+                            pagesReceived = if (page != null) maxOf(saved.pagesReceived + 1, page.page)
+                                else maxOf(saved.pagesReceived, confirmedPages),
+                            totalEntries = page?.totalEntries ?: saved.totalEntries,
+                            candidateCount = saved.candidateCount + (page?.candidates?.size ?: 0),
+                            lastAttemptId = attemptId ?: saved.lastAttemptId)
+                    }
+                    payload = payload.copy(diagnostics = previous.copy(queries = rows, totalQueryCount = queries.size).bounded())
+                }
                 while (payload.progress.queryIndex < queries.size) {
                     val index = payload.progress.queryIndex
                     val query = queries[index].copy(page = payload.progress.page)
-                    val kind = if (query.institution != null) VerificationQueryKind.NARROW else if (index == 0) VerificationQueryKind.BROAD else VerificationQueryKind.VARIANT
-                    val permit = reserve(VerificationProvider.APOLLO, kind, query.page, mapper.writeValueAsString(query))
+                    // Old workers could acknowledge page five, persist page six, then crash before finish.
+                    // An unacknowledged page has not advanced this durable cursor and is still retried.
+                    if (query.page > properties.maxPagesPerQuery) {
+                        payload = payload.copy(search = (payload.search ?: ApolloSearchEvidence()).copy(complete = false),
+                            progress = payload.progress.copy(queryIndex = index + 1, page = 1, complete = false),
+                            queries = queries)
+                        trace(index, "TRUNCATED", "SEARCH_PAGE_LIMIT", confirmedPages = query.page - 1)
+                        save()
+                        continue
+                    }
+                    val permit = reserve(VerificationProvider.APOLLO, queryKind(index), query.page, mapper.writeValueAsString(query))
                     val result = apollo.search(query, permit)
-                    if (result !is VerificationHttpResult.Success) { completed(permit, result); retry(result as VerificationHttpResult<Nothing>); return }
+                    if (result !is VerificationHttpResult.Success) {
+                        val reason = when (result) {
+                            is VerificationHttpResult.RateLimited -> "RATE_LIMIT"
+                            is VerificationHttpResult.TransientFailure -> result.code
+                            is VerificationHttpResult.PermanentFailure -> result.code
+                            else -> error("Unexpected search result")
+                        }
+                        trace(index, "ERROR", reason, permit.attemptId)
+                        completed(permit, result); retry(result as VerificationHttpResult<Nothing>); return
+                    }
                     val page = result.value
+                    val truncated = page.hasNext && query.page >= properties.maxPagesPerQuery
                     val last = index == queries.lastIndex && !page.hasNext
-                    val search = (payload.search ?: ApolloSearchEvidence()).merge(page, query, index == 0, last)
-                    val finished = if (!page.hasNext) payload.progress.finishedQueryKeys + index.toString() else payload.progress.finishedQueryKeys
-                    payload = payload.copy(search = search,
+                    val finished = if (!page.hasNext) (payload.progress.finishedQueryKeys + index.toString()).distinct()
+                        else payload.progress.finishedQueryKeys
+                    val allComplete = queries.indices.all { it.toString() in finished }
+                    val search = (payload.search ?: ApolloSearchEvidence()).merge(page, query, index == 0, allComplete)
+                        .let { if (truncated) it.copy(complete = false) else it }
+                    payload = payload.copy(search = search, queries = queries,
                         institutionNormalization = payload.institutionNormalization?.let {
                             DiscoveryInstitutionNormalizer.withCandidates(it, search.candidates)
                         },
                         progress = VerificationProgress("APOLLO_SEARCH",
-                        if (page.hasNext) index else index + 1, if (page.hasNext) query.page + 1 else 1,
-                        last, search.candidates.map { it.id }, finished))
+                            if (page.hasNext && !truncated) index else index + 1,
+                            if (page.hasNext && !truncated) query.page + 1 else 1,
+                            search.complete, search.candidates.map { it.id }, finished))
                     if (last && payload.ruleVersion >= 1 && search.matchingVersion == 2 &&
                         search.candidates.none { rules.nameMatches(it, rules.allowedNames(snapshot, payload.evidence), search.queryNames, true, payload.ruleVersion) &&
                             rules.matchReason(snapshot, payload.evidence, it, null, search.institutionAliasVersion) in
@@ -280,17 +321,38 @@ class DiscoveryVerificationWorker(
                     }
                     if (search.candidates.isNotEmpty()) candidatesAt = candidatesAt ?: clock.instant()
                     if (payload.search?.complete == true) searched = searched ?: clock.instant()
+                    trace(index, if (truncated) "TRUNCATED" else if (page.hasNext) "RUNNING" else "EXHAUSTED",
+                        if (truncated) "SEARCH_PAGE_LIMIT" else null, permit.attemptId, page)
                     completed(permit, result, page)
-                    if (page.hasNext && query.page >= properties.maxPagesPerQuery) {
-                        val decision = evaluate(snapshot)
-                        finish(decision.copy(reasonCodes = (decision.reasonCodes + "SEARCH_INCOMPLETE" + "SEARCH_PAGE_LIMIT").distinct()))
-                        return
-                    }
+                }
+                if (payload.search?.complete != true) {
+                    val decision = evaluate(snapshot)
+                    finish(decision.copy(outcome = VerificationOutcome.PENDING, route = VerificationRoute.NONE,
+                        matchedPersonId = null,
+                        reasonCodes = (decision.reasonCodes + "SEARCH_INCOMPLETE" + "SEARCH_PAGE_LIMIT").distinct()))
+                    return
                 }
                 if (payload.search?.matchingVersion == 2 && payload.search?.detailsComplete != true) {
                     // Search pagination is finished and durable before detail calls begin. Recovery never repeats
                     // acknowledged details or changes the saved query sequence.
                     val names = rules.allowedNames(snapshot, payload.evidence)
+                    fun mergeDetail(candidate: ApolloCandidate, detail: ApolloCandidate) {
+                        require(detail.id == candidate.id)
+                        // Search is a projection. Preserve missing identity hints but retain real ORCID conflicts.
+                        val updated = detail.copy(orcid = detail.orcid ?: candidate.orcid,
+                            obfuscatedLastName = detail.obfuscatedLastName ?: candidate.obfuscatedLastName)
+                        val conflicting = detail.orcid != null && candidate.orcid != null &&
+                            normalizeOrcid(detail.orcid) != normalizeOrcid(candidate.orcid)
+                        val search = payload.search!!.copy(
+                            candidates = payload.search!!.candidates.map { if (it.id == candidate.id) updated else it },
+                            conflictingIds = payload.search!!.conflictingIds + if (conflicting) setOf(candidate.id) else emptySet(),
+                            detailsCompleted = payload.search!!.detailsCompleted + candidate.id)
+                        payload = payload.copy(search = search, institutionNormalization = payload.institutionNormalization?.let {
+                            DiscoveryInstitutionNormalizer.withCandidates(it, search.candidates)
+                        })
+                    }
+                    val reusable = mutableMapOf<String, VerificationAttempt>()
+                    val lookedUp = mutableSetOf<String>()
                     while (true) {
                         val candidates = payload.search!!.candidates.filter {
                             (rules.nameMatches(it, names, payload.search!!.queryNames, masked = true, ruleVersion = payload.ruleVersion) ||
@@ -300,29 +362,31 @@ class DiscoveryVerificationWorker(
                             setOf("APOLLO_CURRENT_INSTITUTION_MATCH", "APOLLO_HISTORICAL_INSTITUTION_MATCH", "APOLLO_PROFESSOR_MATCH") }
                         // Current institution / professor evidence can distinguish a candidate from unrelated
                         // same-name people. Only fall back to history/specialty when no strong candidate exists.
-                        val candidate = strong.ifEmpty { candidates }.firstOrNull {
+                        val needingDetails = strong.ifEmpty { candidates }.filter {
                             it.id !in payload.search!!.detailsCompleted &&
                                 !(it in strong && (it.fullName != null || it.lastName != null))
-                        } ?: break
+                        }
+                        val candidate = needingDetails.firstOrNull() ?: break
+                        val ids = needingDetails.map { it.id }.filter { it !in lookedUp }
+                        if (ids.isNotEmpty()) {
+                            reusable.putAll(repository.findSuccessfulDetails(lease.ownerExecutionId, ids))
+                            lookedUp.addAll(ids)
+                        }
+                        val source = reusable[candidate.id]
+                        if (source != null) {
+                            val detail = mapper.readValue<ApolloCandidate>(requireNotNull(source.responseJson))
+                            mergeDetail(candidate, detail)
+                            payload = payload.copy(diagnostics = (payload.diagnostics ?: WorkerDiagnostics()).reuse(
+                                WorkerDetailReuse(source.id, source.itemId, candidate.id, requireNotNull(source.responseSha256))))
+                            save()
+                            continue
+                        }
                         val permit = reserve(VerificationProvider.APOLLO, VerificationQueryKind.DETAIL, 1,
                             mapper.writeValueAsString(mapOf("personId" to candidate.id, "matchingVersion" to 2)))
                         val result = apollo.detail(candidate.id, permit)
                         if (result is VerificationHttpResult.Success) {
-                            // Search is a partial projection; richer values replace it, rather than being treated as
-                            // contradictory copies from independent search pages.
                             val detail = result.value
-                            val updated = detail.copy(
-                                orcid = detail.orcid ?: candidate.orcid,
-                                obfuscatedLastName = detail.obfuscatedLastName ?: candidate.obfuscatedLastName)
-                            val conflicting = detail.orcid != null && candidate.orcid != null &&
-                                normalizeOrcid(detail.orcid) != normalizeOrcid(candidate.orcid)
-                            val search = payload.search!!.copy(
-                                candidates = payload.search!!.candidates.map { if (it.id == candidate.id) updated else it },
-                                conflictingIds = payload.search!!.conflictingIds + if (conflicting) setOf(candidate.id) else emptySet(),
-                                detailsCompleted = payload.search!!.detailsCompleted + candidate.id)
-                            payload = payload.copy(search = search, institutionNormalization = payload.institutionNormalization?.let {
-                                DiscoveryInstitutionNormalizer.withCandidates(it, search.candidates)
-                            })
+                            mergeDetail(candidate, detail)
                             completed(permit, result, detail)
                         } else if (result is VerificationHttpResult.PermanentFailure && result.code == "EVIDENCE_MISSING") {
                             payload = payload.copy(search = payload.search!!.copy(

@@ -24,6 +24,33 @@ data class VerificationDiagnostic(
     val classification: String
 )
 
+/** Optional bounded trace. Business completeness is held in search/progress, never in this projection. */
+data class WorkerQueryDiagnostic(
+    val queryIndex: Int, val queryHash: String, val kind: String,
+    val pagesReceived: Int = 0, val totalEntries: Long? = null, val candidateCount: Int = 0,
+    val state: String = "PENDING", val stopReason: String? = null, val lastAttemptId: Long? = null
+)
+
+data class WorkerDetailReuse(
+    val sourceAttemptId: Long, val sourceItemId: Long, val personId: String,
+    val providerResponseSha256: String
+)
+
+data class WorkerDiagnostics(
+    val schemaVersion: Int = 1,
+    val queries: List<WorkerQueryDiagnostic> = emptyList(),
+    val detailReuses: List<WorkerDetailReuse> = emptyList(),
+    val totalQueryCount: Int = 0, val totalReused: Int = 0, val truncated: Boolean = false
+) {
+    fun bounded(): WorkerDiagnostics = copy(queries = queries.take(32), detailReuses = detailReuses.take(200),
+        totalQueryCount = maxOf(totalQueryCount, queries.size), totalReused = maxOf(totalReused, detailReuses.size),
+        truncated = truncated || queries.size > 32 || detailReuses.size > 200 || totalQueryCount > 32 || totalReused > 200)
+
+    fun reuse(value: WorkerDetailReuse): WorkerDiagnostics = copy(
+        detailReuses = if (detailReuses.size < 200) detailReuses + value else detailReuses,
+        totalReused = totalReused + 1, truncated = truncated || totalReused >= 200).bounded()
+}
+
 internal object VerificationDiagnostics {
     const val ERROR_LIMIT = 16 * 1024
     private val mapper = jacksonObjectMapper()

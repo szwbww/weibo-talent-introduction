@@ -112,7 +112,7 @@ class DiscoveryVerificationQueryService(
             item.apolloPersonId, VerificationApolloStages(item.apolloEnteredAt, item.searchCompletedAt,
                 item.candidateFoundAt, item.personMatchedAt), payload?.search?.matchingVersion ?: 1,
             payload?.search?.candidates?.firstOrNull { it.id == item.apolloPersonId },
-            payload?.search?.academicResearchFields)
+            payload?.search?.academicResearchFields, payload?.diagnostics?.bounded())
     }
 
     private fun summaryRow(id: Long, run: VerificationRun?, counts: VerificationCounts, status: String?, asOf: Instant,
@@ -234,6 +234,7 @@ data class VerificationItemDetail(val record: VerificationRecord, val executionI
     val reasons: List<VerificationReason>, val attempts: List<VerificationAttemptSummary>, val admissionRevision: Long?,
     val projectionError: String?, val mode: VerificationMode, val snapshotVersion: Long, val asOf: Instant,
     val apolloPersonId: String?, val apolloStages: VerificationApolloStages, val matchingVersion: Int = 1,
-    val matchedCandidate: ApolloCandidate? = null, val academicResearchFields: String? = null)
+    val matchedCandidate: ApolloCandidate? = null, val academicResearchFields: String? = null,
+    val diagnostics: WorkerDiagnostics? = null)
 data class VerificationApolloStages(val enteredAt: Instant?, val searchedAt: Instant?,
     val candidateFoundAt: Instant?, val matchedAt: Instant?)
