@@ -30,7 +30,7 @@ internal object VerificationDiagnostics {
     private val email = Regex("[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9.-]+", RegexOption.IGNORE_CASE)
     private val phone = Regex("(?<![A-Za-z0-9])\\+?\\d[\\d ()-]{6,}\\d(?![A-Za-z0-9])")
     private val bearer = Regex("\\bBearer\\s+[^\\s,;\\\"']+", RegexOption.IGNORE_CASE)
-    private val secret = Regex("\\b([A-Za-z0-9_-]*(?:key|token|password)[A-Za-z0-9_-]*)\\s*[:=]\\s*[\\\"']?[^\\s,;\\\"']+", RegexOption.IGNORE_CASE)
+    private val secret = Regex("\\b([A-Za-z0-9_-]*(?:key|token|password)[A-Za-z0-9_-]*)[\\\"']?\\s*[:=]\\s*[\\\"']?[^\\s,;\\\"']+", RegexOption.IGNORE_CASE)
     private val query = Regex("([?&][^\\s=&#]+)=([^\\s&#]*)")
     fun sanitize(value: String?, limit: Int): String? = value?.let {
         query.replace(secret.replace(bearer.replace(phone.replace(email.replace(it, "[REDACTED]"), "[REDACTED]"), "Bearer [REDACTED]"), "$1=[REDACTED]"), "$1=[REDACTED]")

@@ -144,6 +144,35 @@ class ApolloPeopleSearchClientTest {
         server.verify()
     }
 
+    @Test fun `quoted secret assignments are redacted before storage and on detail projection`() {
+        val mapper = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper()
+        val messages = listOf(
+            """invalid parameter {"token":"private-token"}""",
+            """invalid parameter {"api_key":"private-key","password":"private-password"}""",
+            """invalid parameter {'TOKEN' = 'private-token', 'key': 'private-key', 'password': 'private-password'}""")
+        messages.forEach { message ->
+            val body = mapper.writeValueAsString(mapOf("message" to message))
+            server.expect(anything()).andRespond(withStatus(HttpStatus.UNPROCESSABLE_ENTITY).body(body).contentType(MediaType.APPLICATION_JSON))
+            val result = client.detail("person-1", permit()) as VerificationHttpResult.PermanentFailure
+            assertEquals("REQUEST_INVALID", result.code)
+            val diagnostic = requireNotNull(result.diagnostic)
+            val json = mapper.writeValueAsString(diagnostic)
+            val projection = requireNotNull(VerificationDiagnostics.read(json))
+            val historicalProjection = requireNotNull(VerificationDiagnostics.read(
+                mapper.writeValueAsString(diagnostic.copy(message = message))))
+            listOf(json, mapper.writeValueAsString(projection), mapper.writeValueAsString(historicalProjection)).forEach { output ->
+                listOf("private-token", "private-key", "private-password").forEach { secret ->
+                    assertFalse(output.contains(secret), secret)
+                }
+                assertTrue(output.contains("[REDACTED]"))
+            }
+            assertEquals(diagnostic.message, projection.message)
+            assertEquals(diagnostic.message, historicalProjection.message)
+            server.verify()
+            server.reset()
+        }
+    }
+
     @Test fun `large error reads only the bounded prefix and records its real hash`() {
         val body = """{"message":"token=private-token ${"x".repeat(20000)}"}"""
         server.expect(anything()).andRespond(withStatus(HttpStatus.UNPROCESSABLE_ENTITY).body(body).contentType(MediaType.APPLICATION_JSON))
