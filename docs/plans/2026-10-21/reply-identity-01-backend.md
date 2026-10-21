@@ -147,9 +147,22 @@
 
 只有新增identity分析读取/解析发生异常时捕获为REPLY_IDENTITY_UNCERTAIN；认证/账号/发送源校验、原占位符、会议、附件及SMTP异常不吞。若第一次未确认返回422，第二次confirmed即使配置改了也不重新做不可继续的身份门槛；这是用户授权的本次软确认，不声称“确认过的期望配置版本永久有效”。原正文变量在第二次请求仍按现有渲染机制解析，不承诺两次ES查询的原子一致性。
 
+### T6 已批准修订：非草稿来信 SENT 只读重放（I-3/I-6）
+
+批准：2026-10-21 用户「批准 继续」，对应暂停交接提出的只读完成查询、附件指纹及执行顺序修订；不缩小 I-6。
+
+- 授权 `ManualReplySendAttemptService.kt` 新增只读精确完成查询：复用现有完整 payload 指纹、full-hash/content-type/recipient 一致性校验；只返回已 SENT 的原结果。不得 insert、claim、更新状态、释放/绑定草稿、写审计；非完成请求不能被当成已发。
+- Pending 中保留原账号/认证/源、占位符、会议及原有 NORMAL/STRONG 的校验语义和错误优先级。原风险本身需要确认时，仍在原 safety gate 抛出合并后的 findings；不得为探测 SENT 提前 claim 或绕过原风险。
+- 原风险已满足确认条件后，按原链解析并验证附件，构建包含最终 text/HTML、canonical QA、日历和有序附件快照的完整 SendPayload，保留原附件归属/hash/原文件缺失失败及抑制检查。然后在新增身份提醒会阻断之前，对非草稿 INBOUND 执行只读精确 SENT 查询；匹配已完成则返回原结果，不受后来默认修改产生的新身份提醒阻断。其他路径的原有完成早退保持不变。
+- 没有精确 SENT 结果时才执行仍待确认的新增身份提醒；未确认仍不得产生 attempt/claim/SMTP/草稿关闭/计数/审计成功写入。确认后继续原 `prepareAndClaim` 和发送链，不以近似正文/源/账号匹配跳过提醒，不忽略附件顺序或内容。
+- 同时存在原风险时继续复用完整 findings 计算 STRONG 及文字确认，不通过拆分检查消除或降低原风险。新增身份finding仍均为NORMAL。
+- 使用现有已授权测试文件补充：非草稿 INBOUND 成功→修改默认→同 payload 且无新增确认重放返回原结果、SMTP仍一次；有序附件/内容改变不能命中旧完成；未完成请求仍提示、无claim；原STRONG、附件异常、抑制及草稿回归保持。
+- 本修订明确允许新增身份提醒在完整payload/原抑制检查后最终阻断；原有业务校验不后移到claim之后。只改变新增身份提醒的提交边界，不增加持久字段或新的写路径。
+
+
 ## 变更文件清单
 
-共 10 个文件，均相对仓库根；未列文件不在实施范围。
+共 11 个文件，均相对仓库根；未列文件不在实施范围。用户批准的本次窄范围补充增加一个既有幂等服务文件，不另增子系统。
 
 | # | 文件 | 作用 |
 |---|---|---|
@@ -163,6 +176,7 @@
 |8|src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt|会议回归|
 |9|src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt|附件回归|
 |10|src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt|RAG 回归|
+|11|src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt|只读精确SENT完成查询；无新增写路径|
 
 ## 验收标准
 
@@ -172,6 +186,7 @@
 - I-4：text 对 HTML 错、历史引用含他人姓名、正文中间正确姓名、伪造引用标记、隐藏节点分别验证；不发与校验不同的正文。
 - I-5：MATCH/MISSING/MISMATCH/UNCERTAIN/重复错位状态矩阵；仅可信 MISSING 可插入，预览表写入次数和投递次数均为0；启用真实退订配置且该邮箱尚无token时，inspect/defaults-preview不得新增unsubscribe_token。
 - I-6：取消无发送 attempt/记录/计数；已完成重试仍只一次 SMTP；附件、草稿、QA/RAG 测试通过。
+- I-6 修订：实际 MySQL 下覆盖非草稿 INBOUND 已SENT后修改默认、原payload不带新确认重放仍返回原邮件且SMTP次数不变；改变附件快照/顺序或非SENT状态不能跳过身份提醒；只读查询不新增/claim attempt、不改变草稿绑定。
 - 构造点6项逐行回执见E11。使用 JDK11 跑新测试和表内6个现有测试类；新Controller契约测试须由Surefire实际发现。运行 `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -DmysqlIt=true -Dtest=ReplyIdentityServiceTest,PendingMailOperationServiceTest,PendingMailOperationServiceTrustWorkbenchTest,MailReplyDraftSendIntegrationTest,MeetingCalendarSendIntegrationTest,OutboundAttachmentFlowTest,RagSendBridgeTest test`；若Controller类是同文件另一顶层类，必须加入-Dtest列表。随后运行项目既有完整 `mvn test`。任何未列文件被证实必须改时先修订清单，禁止用跳过测试掩盖。
 
 ## 人工验收清单
@@ -220,3 +235,7 @@
 - 操作步骤：1. inspect两份正文。2. 使用旧界面发送第一份并确认。
 - 预期结果：第一份签名UNCERTAIN/canInsert=false；第二份MULTIPLE_OR_MISPLACED/canInsert=false；确认第一份可送达自有测试邮箱1封，Bob原文保留。
 - 覆盖：I-3/I-5。
+
+## 修正记录
+
+- A1（2026-10-21，用户「批准 继续」）：按 `docs/plans/fast/reply-identity-plan/children/01/execution.md:24-57` 的暂停证据，增加 ManualReplySendAttemptService.kt 的只读精确SENT查询授权，明确完整附件payload与新增身份提醒边界，并增加重放回归；保留原 I-6 全范围要求，不以测试通过代替独立验证。
