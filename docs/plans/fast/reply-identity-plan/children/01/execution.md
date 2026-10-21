@@ -146,3 +146,113 @@ Control-plane changes:
 - Approved plans modified, scope expanded, push/merge/history rewrite/new worktrees: NO.
 
 Remaining blocker: human authority for the exact non-draft inbound replay seam and attachment-inclusive gate ordering, or an explicit I-6 acceptance amendment. Controller should persist this pause evidence and request that decision. Resume only against the newly approved immutable contract; do not create a child implementation commit from this incomplete state.
+
+## Epoch 2 — Execution Result: READY_FOR_VERIFICATION
+
+Plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-reply-identity-plan/docs/plans/2026-10-21/reply-identity-01-backend.md`
+
+Plan SHA-256: `ef97501e1a3537e0617cd815385001da5b1be2d0799a36e9486ef019d5ca1b0f` (32045 bytes).
+
+Execution ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-reply-identity-plan/docs/plans/2026-10-21/reply-identity-01-backend.md@ef97501e1a3537e0617cd815385001da5b1be2d0799a36e9486ef019d5ca1b0f`
+
+Execution epoch: NEW. Authority: current user dispatch, brief Epoch 2 and approved A1/A2 lineage; current plan at approved commit `57443d500be0d6ab3b60fd0b0821193f9d963a1e`. Historical epoch 1 results above were not used as fresh execution evidence.
+
+Executor: Identity01Epoch2Implementer, using execute-p.
+
+Target worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-reply-identity-plan`
+
+Branch: `fast/reply-identity-plan`
+
+Worktree ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-reply-identity-plan@fast/reply-identity-plan@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-reply-identity-plan`
+
+Common Git directory: `/Users/lukai/IdeaProjects/weibo-talent-introduction/.git`.
+
+Child product base: `d7908cd713600afebe3b44c9a83e668f737ca919`.
+
+Pre-execution HEAD: `b6490a5f339d5072b93cc2eba8ce21f9d7ddb29d`; retained incomplete epoch 1 authorized edits were present.
+
+Post-execution code SHA / current product HEAD: `494b6cc569a70b2bcc5ef838b5808ad687600b28`.
+
+Product commit: `feat(fast-p): implement 01`. The commit contains the authorized product/test files, including retained epoch 1 work, and excludes fast-p reports/ledger. No evidence commit was made by this implementer; controller owns artifact persistence. Implementation boundary: child base through this product SHA, with child 01 product changes in this commit and earlier dependency/control commits retained unchanged.
+
+### Current Task Status and Implementation Evidence
+
+| Requirement | Status | Implementation and exercised evidence |
+|---|---|---|
+| I-1 actual server contact/account/source | IMPLEMENTED | Shared conversation anchor resolver reused by send/preview; inbound preview uses the existing account resolver and verifies contact linkage. MySQL integration rejects foreign contact/anchor and out-of-scope anchor without SMTP. Existing account/thread regressions ran. |
+| I-2 one defaults/profile/variables snapshot | IMPLEMENTED | Analyzer consumes `getIdentityDefaults()` once and resolves profile/variables once; main content only, no variant selection. Missing defaults/variables, fallback without identity evidence, generic/exact literal rules and default changes exercised. No other frame implementation changed. |
+| I-3 NORMAL confirmable findings | IMPLEMENTED | Identity findings precede original findings, retain the existing safety exception/confirmation flow and original STRONG computation/text confirmation. Identity read/parse exceptions become NORMAL uncertainty only. Real MySQL draft warning/cancel retains draft and creates no attempt; confirmation sends original MIME once. |
+| I-4 final MIME and source-backed quotes | IMPLEMENTED | Final normalized MIME is analyzed without rewriting payload; JDK HTML visible-text parser excludes hidden nodes, conservatively marks uncertain CSS, and verifies quoted tails against server source. Tests cover mismatched HTML/text, case/punctuation differences, duplicates/misplacement, authentic quote containers/header, forged quotes, hidden/aria/style nodes. |
+| I-5 read-only inspect/defaults-preview | IMPLEMENTED | Strict context/size validation, plain-text response fields, deterministic statuses and trusted-MISSING insertion eligibility. Separate real MVC class was selected by Surefire. Real enabled unsubscribe configuration with initially absent token remains unwritten through both preview APIs. Standalone authenticated HTTP runtime exercised empty/MATCH/MIME divergence/defaults preview. |
+| I-6 existing attempts/drafts/audits | IMPLEMENTED | Existing draft, meeting, attachment, workbench, QA/RAG regressions ran freshly. Completed draft/conversation early-return paths remain. Canceled identity confirmation does not claim/send/close/count. |
+| T6 exact non-draft INBOUND SENT replay | IMPLEMENTED | Read-only `findCompletedByPayload` reuses full MIME/QA/calendar/ordered-attachment fingerprint and validates content type/full hash/recipient. Only SENT with its existing record returns. Pending keeps original risk gate first, then attachment validation/full payload/inReplyTo/suppression, then exact SENT lookup, then remaining new identity gate, then existing claim/send/finalize. Actual MySQL default-snippet mutation after success replays identical payload without new confirmation or SMTP/audit/draft mutation. Changed attachment order/content/absence and non-SENT states cannot bypass identity; suppression/missing attachment still fail before replay. |
+
+### Authorized Changed Files
+
+- `src/main/kotlin/com/weibo/talentintroduction/mail/service/ReplyIdentityService.kt` — analysis, read-only preview DTOs, snapshots, visible-text/quote/slot rules and NORMAL findings.
+- `src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt` — shared source resolution, preview entrypoints, final MIME findings and approved T6 ordering.
+- `src/main/kotlin/com/weibo/talentintroduction/mail/controller/ReplyIdentityController.kt` — validated inspect/defaults-preview POST endpoints.
+- `src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt` — exact read-only SENT lookup only.
+- `src/test/kotlin/com/weibo/talentintroduction/mail/service/ReplyIdentityServiceTest.kt` — deterministic rule matrix and separate top-level MVC contract class.
+- `src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt` — explicit guard wiring.
+- `src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt` — explicit guard wiring and retained workbench regressions.
+- `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt` — actual MySQL identity/read-only/token/default-change/attachment-sensitive exact replay and existing draft/runtime regressions.
+- `src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt` — explicit guard wiring.
+- `src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt` — explicit guard wiring.
+- `src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt` — explicit guard wiring.
+
+No approved plan, child 03 product, migration, other production subsystem, or unlisted product/test file was edited. Controller-owned pre-existing `ledger.md` changes were preserved and excluded from staging.
+
+### Fresh Commands and Outcomes
+
+All repository commands ran with the exact target worktree as cwd. No build/lint/test/formatter was run mid-implementation. All required tests ran after the final product edits; no subsequent product edits occurred.
+
+| Command | Result and evidence |
+|---|---|
+| `python3 /Users/lukai/.agents/skills/execute-p/scripts/plan_identity.py docs/plans/2026-10-21/reply-identity-01-backend.md` | PASS at preflight and pre-commit handoff; identical canonical path/hash above. |
+| `python3 /Users/lukai/.agents/skills/execute-p/scripts/worktree_identity.py docs/plans/2026-10-21/reply-identity-01-backend.md --worktree /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-reply-identity-plan` | PASS; root/branch/Git directory recorded above. Before each add/commit, also supplied exact `--expect-root`, `--expect-branch`, `--expect-git-dir`; all matched. |
+| `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock JAVA_TOOL_OPTIONS=-Dapi.version=1.44 mvn -DmysqlIt=true -Dtest=ReplyIdentityServiceTest,ReplyIdentityControllerTest,PendingMailOperationServiceTest,PendingMailOperationServiceTrustWorkbenchTest,MailReplyDraftSendIntegrationTest,MeetingCalendarSendIntegrationTest,OutboundAttachmentFlowTest,RagSendBridgeTest test` | PASS, exit 0; 180 tests, 0 failures/errors/skips. Actual Docker MySQL tests ran, not skipped. Fresh raw output `artifact://841`; duration 4:17. |
+| `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock JAVA_TOOL_OPTIONS=-Dapi.version=1.44 mvn test` | FAIL, exit 1; 5315 tests, 0 failures, 19 errors, 22 skipped. All errors are the documented `ExpertContactLocationServiceTest` constructor baseline (`America/Coyhaique` unsupported by JDK11 tzdb). No baseline tests were modified/excluded/repaired. Raw output `artifact://845`; duration 6:27. Full Maven invocation stops at Surefire failure; do not infer later exec-plugin phases passed. |
+| `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn dependency:build-classpath -Dmdep.outputFile=/tmp/identity01-epoch2-classpath.txt -DincludeScope=test` | PASS, exit 0; standalone runtime classpath preparation only. |
+| `/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home/bin/java --class-path <target/classes:target/test-classes:generated test dependency classpath> /tmp/Identity01Epoch2Smoke.java` | PASS after correcting the temporary authentication fixture to return an actual AdminUser. First fixture launch returned 401 after session creation because mocked AuthService.findUser was unstubbed; no product defect/edit. Corrected runtime reached `IDENTITY01_EPOCH2_SMOKE_READY 127.0.0.1:18082`; `artifact://850`. |
+| External Python urllib requests to standalone loopback runtime | PASS: unauthenticated inspect 401; authenticated empty inspect MISSING/MISSING and canInsert with account A/Alex Lee; full expected boundaries MATCH/MATCH; text-correct/HTML-wrong UNCERTAIN/no insertion; unsaved defaults render `Hi Daniel Morgan,`; mixed-source request 400. Response evidence `artifact://851`. |
+| Stop both temporary standalone fixtures; `rm /tmp/Identity01Epoch2Smoke.java /tmp/identity01-epoch2-classpath.txt` | PASS; supervised processes exited 0; runtime directory cleanup performed by finally block. No throwaway source/classpath remains. |
+| `git diff --check` | PASS, exit 0 after final edits. |
+| Guarded `git add <explicit eleven authorized paths>`; guarded `git commit -m 'feat(fast-p): implement 01'` | PASS, exit 0; commit `494b6cc569a70b2bcc5ef838b5808ad687600b28`, 11 files, 769 insertions/21 deletions. Artifact files excluded. |
+| `git rev-parse HEAD && git merge-base --is-ancestor HEAD fast/reply-identity-plan` | PASS, exit 0; new commit is current HEAD and reachable from exact target branch. |
+
+Scoped Surefire XML counts recorded freshly via Python ElementTree (tests/failures/errors/skips):
+
+```text
+ReplyIdentityServiceTest                       20 / 0 / 0 / 0
+ReplyIdentityControllerTest                     4 / 0 / 0 / 0
+PendingMailOperationServiceTest                42 / 0 / 0 / 0
+PendingMailOperationServiceTrustWorkbenchTest  60 / 0 / 0 / 0
+MailReplyDraftSendIntegrationTest              27 / 0 / 0 / 0
+MeetingCalendarSendIntegrationTest              7 / 0 / 0 / 0
+OutboundAttachmentFlowTest                      9 / 0 / 0 / 0
+RagSendBridgeTest                              11 / 0 / 0 / 0
+```
+
+### Runtime Evidence Boundary
+
+Standalone smoke was a separate JDK11 process, real Tomcat/DispatcherServlet/AuthInterceptor/global advice/new controller/identity analyzer and real external HTTP, not another JUnit/MockMvc invocation. Deterministic contact/account/profile/default fixtures and a Pending operations adapter were used; source resolution, MySQL and SMTP are not claimed as standalone-smoke coverage. The separately completed actual MySQL suite covers actual source resolution, complete send payload, attempt/draft/record transactions, token no-write behavior and delivery invocation counts. Its existing actual-HTTP runtime test also ran in the scoped suite. No production configuration/secrets/services or real-expert mailboxes were used.
+
+### Deviations, Freshness and Handoff
+
+- Required full suite was run and has only the authorized known baseline errors; no in-scope test failure is known.
+- Historical logs remain intact. No silent scope reduction or authority amendment was made.
+- Plan identity and target-worktree identity rechecked unchanged; reported product commit is current target HEAD and branch-reachable.
+- Required commands ran freshly in this epoch against the final implementation; prior test outputs were baseline only.
+- Product commit excludes this execution report and controller ledger; those artifact changes remain for controller persistence. No unrelated product edits remain unstaged.
+- No push, merge, history rewrite, new worktree, later-child inspection, verify-p/review-p, or independent compliance claim occurred.
+- Remaining blocker: none for execution handoff. Known full-suite baseline is not reported as a product pass.
+- Next action: controller dispatches the required fresh isolated Fast-P light verifier against this exact product SHA and plan identity. This execution result is not independent verification.
+
+## Epoch 2 — Controller closing record
+
+- Implementation: 494b6cc569a70b2bcc5ef838b5808ad687600b28.
+- Fresh independent verifier Identity01Epoch2Verifier returned LIGHT_PASS_WITH_NOTES / COMPLETE_CHILD; no AUTO_FIX.
+- Fix round: 0; fix commits: —.
+- Fresh verifier scoped MySQL run: 180 tests, zero failures/errors/skips. Full5315 tests retains only 19 documented unrelated timezone baseline errors and 22 skips.
+- This closes child 01 only. No whole-system verification was performed.
