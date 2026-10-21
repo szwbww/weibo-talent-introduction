@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-10-21/reply-identity-plan.md
 
-- Status: PAUSED_FOR_HUMAN
-- Master plan: docs/plans/2026-10-21/reply-identity-plan.md (commit 57443d500be0d6ab3b60fd0b0821193f9d963a1e)
-- Amendments: A1,A2
+- Status: RUNNING
+- Master plan: docs/plans/2026-10-21/reply-identity-plan.md (commit 0ef090e93f9da7ca4b755b5c5d2cb1dfa4b0176a)
+- Amendments: A1,A2,A3,A4
 - Master base: b0d2f278a9dddc0be0dcf6fbd2e9b5a947c8a135
 - Branch: fast/reply-identity-plan
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-reply-identity-plan
@@ -10,24 +10,26 @@
 - Finalization repair parent: N/A
 - Started: 2026-10-21T00:57:35.739654+08:00
 - Current child: 02
-- Waiting role: N/A
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: Child 02 S-1 completion-after-follow-up toolbar order contradicts unlisted src/test/js/mailboxChatBehavior.test.js:4109 follow-up-is-last assertion; minimal legacy-test authorization required.
-- Resume from: f178733036d06c10e67f705c0dec76c2c773cb7c
+- Pause reason: N/A
+- Resume from: f82cf9f54951b3ef8992f4c0ad6b3a79541d08c1
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | 03 | docs/plans/2026-10-21/reply-identity-03-global-settings.md | sha256:a47dc08ffaee7311503a82356490d42af4dadb0f2bbefe231782d33e92d80786 | none | 1 | LIGHT_PASS_WITH_NOTES | 75b399d6fbb6cc6b8cb859eef984524fc1342c12 | d7908cd713600afebe3b44c9a83e668f737ca919 | 0 | — | d7908cd713600afebe3b44c9a83e668f737ca919 | 7881072ab9d74fc8a53d7bdde236bfe8ec499303 | Implementer: Identity03Implementer; verifier: Identity03Verifier; O-1 unchanged timezone baseline |
 | 01 | docs/plans/2026-10-21/reply-identity-01-backend.md | commit:57443d500be0d6ab3b60fd0b0821193f9d963a1e | 03 | 2 | LIGHT_PASS_WITH_NOTES | d7908cd713600afebe3b44c9a83e668f737ca919 | 494b6cc569a70b2bcc5ef838b5808ad687600b28 | 0 | — | 494b6cc569a70b2bcc5ef838b5808ad687600b28 | 53eda1223417558f6037bae12ca0cab8169e68fd | Implementer: Identity01Epoch2Implementer; verifier: Identity01Epoch2Verifier; O-1 unchanged timezone baseline |
-| 02 | docs/plans/2026-10-21/reply-identity-02-frontend.md | sha256:68dbeb8eac0a8bfd8578dc3c0cea8c4369942f1c67668a056bcff5034978a308 | 03,01 | 1 | PAUSED_FOR_HUMAN | 494b6cc569a70b2bcc5ef838b5808ad687600b28 | — | 0 | — | 494b6cc569a70b2bcc5ef838b5808ad687600b28 | f178733036d06c10e67f705c0dec76c2c773cb7c | Implementer: Identity02Implementer; PLAN_CONFLICT; five authorized incomplete paths uncommitted; no verifier |
+| 02 | docs/plans/2026-10-21/reply-identity-02-frontend.md | commit:0ef090e93f9da7ca4b755b5c5d2cb1dfa4b0176a | 03,01 | 2 | IMPLEMENTING | 494b6cc569a70b2bcc5ef838b5808ad687600b28 | — | 0 | — | — | — | Epoch 1 pause preserved; A3 approved; fresh implementer acquisition |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
 |---|---|---|---|---|---|---|
 | A1 | docs/plans/2026-10-21/reply-identity-01-backend.md | commit:5d7904ed0667823b6206bf8ab15f4e57c76e467f | commit:57443d500be0d6ab3b60fd0b0821193f9d963a1e | I-4 and 实现方案清单外必改先修订规则; child I-6 | Authorize read-only exact SENT lookup and attachment-inclusive identity gate ordering without narrowing replay guarantees | HUMAN:批准 继续 — 2026-10-21; recorded 2026-10-21T09:14:43+08:00 |
 | A2 | docs/plans/2026-10-21/reply-identity-plan.md | commit:5d7904ed0667823b6206bf8ab15f4e57c76e467f | commit:57443d500be0d6ab3b60fd0b0821193f9d963a1e | I-4 and 实现方案清单外必改先修订规则 | Align master authorized scope with approved child A1; dependency order unchanged | HUMAN:批准 继续 — 2026-10-21; recorded 2026-10-21T09:14:43+08:00 |
+| A3 | docs/plans/2026-10-21/reply-identity-02-frontend.md | commit:f82cf9f54951b3ef8992f4c0ad6b3a79541d08c1 | commit:0ef090e93f9da7ca4b755b5c5d2cb1dfa4b0176a | 实现方案清单外必改先修订规则; child02 S-1 | Authorize minimal obsolete legacy toolbar assertion removal while preserving follow-up behavior | HUMAN:批准 继续 — 2026-10-21; recorded 2026-10-21T10:49:28+08:00 |
+| A4 | docs/plans/2026-10-21/reply-identity-plan.md | commit:f82cf9f54951b3ef8992f4c0ad6b3a79541d08c1 | commit:0ef090e93f9da7ca4b755b5c5d2cb1dfa4b0176a | 实现方案清单外必改先修订规则; child02 S-1 | Align master child02 file scope with approved A3; product behavior and order unchanged | HUMAN:批准 继续 — 2026-10-21; recorded 2026-10-21T10:49:28+08:00 |
 
 ## Baseline
 
@@ -58,3 +60,9 @@
 - Proposed amendment, not applied: authorize src/test/js/mailboxChatBehavior.test.js solely to retire/update the obsolete last-child assertion/test description, preserving follow-up success gating, class/text, and no-successful-send behavior; cover required follow-up→completion ordering in the new behavior suite.
 - No child 02 product commit; authorized partial edits preserved. Required frontend commands and actual desktop/mobile browser proof have not run; no frontend verification or readiness claim.
 - Previous A1/A2 approval resolved only child 01 scope/order and does not approve this additional test-file amendment. Resume child 02 in a new epoch only after explicit authority.
+
+## Child 02 approved resume
+
+- User approved proposed minimal legacy-test amendment with 「批准 继续」; A3/A4 plan-only commit 0ef090e93f9da7ca4b755b5c5d2cb1dfa4b0176a records exact authority.
+- Resume checks: retained branch/worktree/git-dir and paused HEAD f82cf9f54951b3ef8992f4c0ad6b3a79541d08c1 match; frontend original plan digest matches; product index empty; only preserved five authorized incomplete frontend paths are modified/untracked.
+- Child 02 epoch 2, fix_round=0; product base unchanged 494b6cc569a70b2bcc5ef838b5808ad687600b28. Prior pause is historical; completed children are not replayed.
