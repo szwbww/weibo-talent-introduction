@@ -230,3 +230,41 @@ Repair artifact: **N/A（未创建）**。指定唯一路径仍为`/Users/lukai/
 No implementation was performed.
 
 No product code was modified.
+
+
+## Epoch 1 planning supplement — 2026-10-21T21:47:46+08:00
+
+This is repair planning after exact human scope approval; it does not replace the immutable machine findings or create a new machine epoch. Product boundary remains `962fcfe924ad7562a4ea917d174180df82ac3b5c..462c52385bfe3b248016829a08a5b6ceb2403bb4`; machine result remains FAIL / INITIAL. No verification commands were repeated.
+
+- Human instruction: 「批准 生成修复  repair」, 2026-10-21, approving the exact minimal child04 amendment proposed above and requesting repair generation.
+- Approved A2: commit `17a80ba9f6178ab8c139366743607960277fe2c7`; child04 before SHA256 `1b1fb2670794126f2a7842988319d7b9796a244a4bd74c00e23a6cb111896b2b`, after SHA256 `d343e2ff9164b0f1ba91778f62540c64c47926cf13ee7605bf08967fff71ad48`. Adds IntegrationTest as file10 solely for specified new-run alias expectation1→2, preserving old-run fallback and all other assertions. Master/A1/product are unchanged.
+- Evidence parent before next commit: `17a80ba9f6178ab8c139366743607960277fe2c7`.
+
+## Repair Planning Result: DRAFT_READY
+
+Baseline plan: `docs/plans/2026-10-21/apollo-repair-retention-master.md`, governing SHA256 `7b0113d6782083d3c86b910f74197bd39e3875f2018a93e68ef6d0f5554cfbda`, approved amendments A1 and A2.
+Verification result: **FAIL / INITIAL**, Epoch1.
+Repair artifact: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-apollo-repair-retention-master/docs/plans/fix/apollo-repair-retention-master/repair.md`.
+Repair SHA256: `e208c94bcabe0b4a5a6d57accd5e76134f5f001df0a320b125b47efc217fb6da`.
+Planner: `/root/apollo_retention_aggregate_review`.
+
+### Included Findings
+
+- V-1 / P1: REPAIRABLE; complete secret-value redaction plus HTTP→SQL→API regression. Authorized existing files: VerificationDiagnostics.kt, ApolloPeopleSearchClientTest.kt, DiscoveryVerificationWorkerTest.kt.
+- V-2 / explicitly mandatory P2 / O-04-01: REPAIRABLE after approved A2; only migrate specified new-run institutionAliasVersion expectation1→2 in DiscoveryVerificationIntegrationTest.kt. Production default2 and old-run assertions remain.
+
+### Excluded Findings
+
+- Resolved F-01/F-04-01; retain lineage without reopening.
+- Production gains, historical data operations, human acceptance and unrelated cleanup.
+
+### Self-review
+
+One plan, two root causes, four existing files. Exact environment, executor E1/E2, independent aggregate ten-command gate, concrete product/evidence subjects and durable handoff are specified. No tests run, product edited, or repair executed during planning. Prior PLAN_AMENDMENT_REQUIRED was a historical planning state now resolved by human A2 approval; defects remain unresolved until implementation and independent re-review.
+
+### Required Human Decision
+
+Approve and execute the exact generated repair with execute-p; request automatic same-task return to review-fast-p using committed repair-execution.md after READY_FOR_VERIFICATION. A2 approval and generation alone do not authorize execution of the newly written repair.
+
+No implementation was performed.
+No product code was modified.
