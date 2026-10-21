@@ -30,7 +30,7 @@ class DiscoveryVerificationWorkerTest {
                 VerificationFlowFixture(jdbc, manager).use { f ->
                     jdbc.update("INSERT INTO task_execution (id,task_type,trigger_type,status,started_at) VALUES (2001,'EXPERT_DISCOVERY','MANUAL','RUNNING',?)",
                         f.clock.instant().verificationUtc())
-                    val registration = DiscoveryVerificationRegistrationService(DiscoveryVerificationProperties(enabled = true, apolloApiKey = "fixture-key"), f.repository, f.writer, f.policy,
+                    val registration = DiscoveryVerificationRegistrationService(DiscoveryVerificationProperties(enabled = true, mode = VerificationMode.ENFORCE, apolloApiKey = "fixture-key"), f.repository, f.writer, f.policy,
                         f.admissions, jdbc, org.springframework.transaction.support.TransactionTemplate(manager), f.clock)
                     val context = registration.begin(2001, PaperSearchCriteria(apolloAssist = true))
                     assertEquals(2, f.mapper.readTree(context.run!!.settingsJson).path("ruleVersion").intValue())
