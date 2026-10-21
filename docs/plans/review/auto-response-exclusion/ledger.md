@@ -1,7 +1,7 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-10-20/auto-response-exclusion.md
 
-- Status: REPAIR_PLAN_READY
-- Review epoch: 1
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 2
 - Master plan: docs/plans/2026-10-20/auto-response-exclusion.md (sha256 01004d3ded06a9ac2fcf17ac642a27643445064beb0f342f283b646cc04e7625)
 - Governing master identity: sha256 01004d3ded06a9ac2fcf17ac642a27643445064beb0f342f283b646cc04e7625; recorded commit a73ebf38df69b25839e7926bc09f66541574ccb8
 - Invoked master identity: sha256 9d77540b671b0cef36f02ea72862215b9f50d928b34e4577540f66f6f1e1472c
@@ -11,23 +11,23 @@
 - Fast-p ledger: docs/plans/fast/auto-response-exclusion/ledger.md (sha256 6f0de14b4f70818f63d6ad02d2baa8472cb8d290066bc06810dcbaaaad782389)
 - Fast-p handoff: docs/plans/fast/auto-response-exclusion/human-review-handoff.md (sha256 8b23af50017d97d07c7e0783eaa7e12480f85a04525e18322ea92ab06bf18308)
 - Master base: 5f1e99d4fe024d698759c16ae5e2c9ba40554648
-- Final code head: aee499beaaea8c282e6f453d0cecbe863724df01
-- Evidence parent before next commit: 8ab314370d4bc3409f914a294ef33a08f8364b4d
-- Previous evidence commit: N/A
+- Final code head: de77c293063d0b502a8ac9c99ceeb7d4340101f2
+- Evidence parent before next commit: 5a5ad861ea8c29f3fd6b4abc3e96de0eabb6d3ef
+- Previous evidence commit: 5a5ad861ea8c29f3fd6b4abc3e96de0eabb6d3ef
 - Branch: fast/auto-response-exclusion
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-auto-response-exclusion
 - Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
 - Discovery evidence: SELECTED; candidate worktree `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-auto-response-exclusion`; branch `fast/auto-response-exclusion`; master base `5f1e99d4fe024d698759c16ae5e2c9ba40554648`; final code head `aee499beaaea8c282e6f453d0cecbe863724df01`; 2 terminal children; fast-p authority `matching READY_FOR_HUMAN_REVIEW fast-p ledger and handoff`.
 - Misdirected review evidence: N/A (none found in registered worktrees)
-- Reviewer: /root/aggregate_reviewer (fresh, created after final code head; distinct from recorded fast-p writers/verifiers)
+- Reviewer: /root/aggregate_rereviewer (fresh, created after repair code head; distinct from recorded fast-p writers/verifiers and repair executor)
 - Reviewer attempt: 1
-- Machine result: FAIL
-- Machine report epoch: `docs/plans/review/auto-response-exclusion/machine-verification.md`, Epoch 1
-- Repair artifact: `docs/plans/fix/auto-response-exclusion/repair.md` (DRAFT_READY)
-- Repair evidence mode: N/A
-- Repair approval source: N/A
-- Repair executor: N/A
-- Repair code head: N/A
+- Machine result: PASS
+- Machine report epoch: `docs/plans/review/auto-response-exclusion/machine-verification.md`, Epoch 2
+- Repair artifact: `docs/plans/fix/auto-response-exclusion/repair.md` (executed)
+- Repair evidence mode: DURABLE_HANDOFF
+- Repair approval source: explicit human invocation `$execute-p docs/plans/fix/auto-response-exclusion/repair.md`
+- Repair executor: omp coding assistant (`opencode-go/deepseek-v4.1-flash:max`)
+- Repair code head: de77c293063d0b502a8ac9c99ceeb7d4340101f2
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: V-1 P1 needs explicit human approval to execute `docs/plans/fix/auto-response-exclusion/repair.md`.
+- Blocker/next action: mandatory manual acceptance A-1–A-8 and companion A-1–A-3, then explicit sign-off for `de77c293063d0b502a8ac9c99ceeb7d4340101f2`.
