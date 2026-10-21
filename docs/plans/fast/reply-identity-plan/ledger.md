@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-21/reply-identity-plan.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-10-21/reply-identity-plan.md (commit 0ef090e93f9da7ca4b755b5c5d2cb1dfa4b0176a)
 - Amendments: A1,A2,A3,A4
 - Master base: b0d2f278a9dddc0be0dcf6fbd2e9b5a947c8a135
@@ -10,18 +10,18 @@
 - Finalization repair parent: N/A
 - Started: 2026-10-21T00:57:35.739654+08:00
 - Current child: 02
-- Waiting role: IMPLEMENTER
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: f82cf9f54951b3ef8992f4c0ad6b3a79541d08c1
+- Pause reason: Child02 fresh fullJS suite reveals additional unlisted legacy cache/CSS-hash/source-shape/toolbar-count contracts conflicting with approved changes; complete inventory in children/02/execution.md:159-198 requires batched minimal test-retirement authority.
+- Resume from: 3afdbf89920a8513715e71d65b078d31ac1bc0da
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | 03 | docs/plans/2026-10-21/reply-identity-03-global-settings.md | sha256:a47dc08ffaee7311503a82356490d42af4dadb0f2bbefe231782d33e92d80786 | none | 1 | LIGHT_PASS_WITH_NOTES | 75b399d6fbb6cc6b8cb859eef984524fc1342c12 | d7908cd713600afebe3b44c9a83e668f737ca919 | 0 | — | d7908cd713600afebe3b44c9a83e668f737ca919 | 7881072ab9d74fc8a53d7bdde236bfe8ec499303 | Implementer: Identity03Implementer; verifier: Identity03Verifier; O-1 unchanged timezone baseline |
 | 01 | docs/plans/2026-10-21/reply-identity-01-backend.md | commit:57443d500be0d6ab3b60fd0b0821193f9d963a1e | 03 | 2 | LIGHT_PASS_WITH_NOTES | d7908cd713600afebe3b44c9a83e668f737ca919 | 494b6cc569a70b2bcc5ef838b5808ad687600b28 | 0 | — | 494b6cc569a70b2bcc5ef838b5808ad687600b28 | 53eda1223417558f6037bae12ca0cab8169e68fd | Implementer: Identity01Epoch2Implementer; verifier: Identity01Epoch2Verifier; O-1 unchanged timezone baseline |
-| 02 | docs/plans/2026-10-21/reply-identity-02-frontend.md | commit:0ef090e93f9da7ca4b755b5c5d2cb1dfa4b0176a | 03,01 | 2 | IMPLEMENTING | 494b6cc569a70b2bcc5ef838b5808ad687600b28 | — | 0 | — | — | — | Epoch 1 pause preserved; A3 approved; fresh implementer acquisition |
+| 02 | docs/plans/2026-10-21/reply-identity-02-frontend.md | commit:0ef090e93f9da7ca4b755b5c5d2cb1dfa4b0176a | 03,01 | 2 | PAUSED_FOR_HUMAN | 494b6cc569a70b2bcc5ef838b5808ad687600b28 | — | 0 | — | 494b6cc569a70b2bcc5ef838b5808ad687600b28 | 3afdbf89920a8513715e71d65b078d31ac1bc0da | Implementer: Identity02Epoch2Implementer; fullJS1780/1763pass/17fail; incomplete edits uncommitted; no verifier |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
@@ -66,3 +66,11 @@
 - User approved proposed minimal legacy-test amendment with 「批准 继续」; A3/A4 plan-only commit 0ef090e93f9da7ca4b755b5c5d2cb1dfa4b0176a records exact authority.
 - Resume checks: retained branch/worktree/git-dir and paused HEAD f82cf9f54951b3ef8992f4c0ad6b3a79541d08c1 match; frontend original plan digest matches; product index empty; only preserved five authorized incomplete frontend paths are modified/untracked.
 - Child 02 epoch 2, fix_round=0; product base unchanged 494b6cc569a70b2bcc5ef838b5808ad687600b28. Prior pause is historical; completed children are not replayed.
+
+## Child 02 epoch 2 pause
+
+- Both syntax checks passed. Complete fresh fullJS run artifact://905:1780 tests,1763 passed,17 failed,0 skipped. Exact per-failure inventory:children/02/execution.md:159-198, including own-test logout/extractor setup defects; not all failures are external scope blockers.
+- Additional authority requested (not approved/applied): retire only incompatible incidental/source assertions in aiReplyReviewConfirmation.test.js, discoveryReview.test.js, discoveryVerification.test.js, mailboxOutboundAttachments.test.js, manualReplySubjectPrefill.test.js, materialRequestIntegration.test.js, meetingConfirmationIntegration.test.js; extend mailboxChatBehavior.test.js beyond prior A3 to its exhaustive toolbar array. All are under src/test/js/.
+- Preserve actual behavior assertions; do not repin cache suffixes, whole-CSS suffix hashes, source occurrence counts, exhaustive toolbar counts, helper placement or recursive retry spelling. Current authorized identity tests must fix their own setup failures; no new product behavior is proposed by this test retirement.
+- Actual Chromium partial fixture observations/screenshot paths are recorded in execution.md:218-238. Full confirmation/ESC/STRONG/two-entry send and remaining cross-context browser matrix is missing; no frontend READY/light-PASS or SMTP-delivery claim.
+- Product edits remain uncommitted with empty index; no independent verifier or automatic repair round. Completed backend children remain unchanged.
