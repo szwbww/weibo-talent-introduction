@@ -242,3 +242,144 @@ These are partial fixture/UI evidence only, not backend identity correctness, re
 Plan identity rechecked: YES, unchanged. Worktree identity rechecked: YES, unchanged. Required commands run freshly this invocation: YES, with failure as reported. Historical evidence used only as baseline: YES. Reported new product commits reachable: N/A, none created. Index: empty. Product edits: preserved unstaged/untracked. Controller ledger: preserved unchanged by worker. This appended evidence file is not staged or committed.
 
 Outcome: **PLAN_CONFLICT**, not READY_FOR_VERIFICATION. Next action: obtain the bounded legacy-test retirement authority above and bind a new plan identity before resuming; then repair the already-authorized own-test setup defects, finish every current I/S/runtime contract, rerun required full commands and complete real browser acceptance before any product commit or independent verification.
+
+## Epoch 3 Recovery Execution Result: READY_FOR_VERIFICATION — Identity02Epoch3Recovery
+
+This is execution evidence, not an independent PASS verdict. Historical entries above are unchanged. The parked epoch3 implementer's incomplete browser runs and reported earlier passing command were treated as baseline only; mandatory commands and browser scenarios below ran freshly in this recovery invocation.
+
+### Immutable execution and worktree identity
+
+- Plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-reply-identity-plan/docs/plans/2026-10-21/reply-identity-02-frontend.md`
+- Approved plan commit: `f296820eb8d94d4e3985846b2156480db8ce0b90`
+- Plan SHA-256: `9a9b146883f395501e98084f715ae8a40486944a6e3c8e1971ccdbd56abcc955`
+- Execution ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-reply-identity-plan/docs/plans/2026-10-21/reply-identity-02-frontend.md@9a9b146883f395501e98084f715ae8a40486944a6e3c8e1971ccdbd56abcc955`
+- Execution epoch: RESUME, current epoch3 identity; approval basis: current recovery assignment and recorded A3/A5 approval.
+- Executor: `Identity02Epoch3Recovery`, using execute-p.
+- Target worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-reply-identity-plan`
+- Target branch: `fast/reply-identity-plan`
+- Worktree Git directory: `/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-reply-identity-plan`
+- Common Git directory: `/Users/lukai/IdeaProjects/weibo-talent-introduction/.git`
+- Worktree ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-reply-identity-plan@fast/reply-identity-plan@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-reply-identity-plan`
+- Child product base: `494b6cc569a70b2bcc5ef838b5808ad687600b28`
+- Pre-recovery HEAD: `eb147ae36b5919db492c95a5cd7007c02f8a2d2a`
+- Post-execution code SHA / current evidence HEAD: `adcc2b4e36aa578d5ab915a2af39c727bbbe079e`
+- Product subject: `feat(fast-p): implement 02`
+- Implementation boundary: child base through the product SHA, including the previously retained authorized frontend modifications reconciled in this invocation.
+- This appended execution log and the controller's already-dirty ledger are excluded from the product commit. Controller persists evidence separately.
+
+### Requirement status
+
+| Requirement | Status | Implementation / fresh evidence |
+|---|---|---|
+| T6 / I-1 / S-1 | IMPLEMENTED | Actual toolbar event invokes inspect; pure text p/br fragments insert only MISSING/canInsert slots; both/single/empty/whitespace/mismatch/repeat browser matrix preserved original nodes. No-followup toolbar ends with completion. |
+| T6 / I-2 / I-5 | IMPLEMENTED | Full captured owner/context/revision comparison and seq guards; actual delayed responses after edit, expert switch, account-scope switch, real followup anchor replacement, session-user change and unmount were rejected. Server context mismatch fails closed. |
+| T6 / I-4 | IMPLEMENTED | Insertion uses the existing input/save chain. Real rich-node followup draft retained subject, anchor 88, ready attachment 8 and quote; switching away/back and page reload restored completed HTML from fixture draft storage. Existing meeting block retained node identity/HTML and ready snapshot after completion. |
+| T7 / I-3 / S-2 | IMPLEMENTED | Actual global host, conversation host, component send and unmatched handler exercised against fixture safety responses. NORMAL uses untyped identity schema; ESC and return-to-edit cancel without retry/failure alert; frozen retry preserves nested payload; STRONG has independent exact typed confirmation. Existing shared dialog labels restore. |
+| T8 / I-6 / S-3 | IMPLEMENTED | Actual GET/PUT/preview hosts in independent browser profiles; per-selection drafts, selected-pair save, fresh reopen, two-session conflict, two-expert rendered previews, no-default state, cancellation, delayed preview and network-result uncertainty observed. Saving left current editor unchanged. |
+| S-4 | IMPLEMENTED | Exact approved settings CSS retained; actual index/CSS/JS and dialogs used at desktop/mobile; new UI does not change shared stylesheet rules or original action-dialog markup. Full JS registration/style contracts passed. |
+| A3/A5 retirement | IMPLEMENTED | Retained only authorized obsolete last-child/full-toolbar/cache-suffix/EOF-hash/source-occurrence/source-shape/no-lock assertions' retirement. No suite exclusion, harness-wide mutation, new incidental-value repinning or product scope expansion. |
+| Required fresh commands | IMPLEMENTED | Both syntax checks and complete JS suite exit 0 after final implementation; 1782 tests passed, no failures/cancelled/skipped/todo. |
+| Local product commit | IMPLEMENTED | Authorized product/test paths committed; product SHA is HEAD and reachable from target branch. |
+
+### Reconciliation and final code change
+
+The retained product implementation, own interaction suite setup corrections and approved legacy-test retirement were inspected rather than accepted as historical completion claims. Recovery additionally corrected canonical visible-text mapping for list-item and div line breaks: list items/div siblings use single rendered breaks while paragraph/list boundaries retain paragraph separation. Without this, a genuine rich list before a verified quoted tail could fail signature placement despite a unique matching quote. The new interaction regression uses the browser-observed list/div text shape and verifies original rich nodes and quoted node remain intact. The actual rich-list browser scenario then inserted signature before the historical text.
+
+The original mapping was also exercised with a non-equivalent raw-newline text node: browser white-space:normal collapses its newlines, so it correctly refused signature insertion. The real followup BR form succeeded, preserving the original first text node. This refusal is not bypassed by the mapping repair.
+
+### Fresh commands
+
+All repository commands used the exact target worktree as cwd. No Maven/backend replay, aggregate audit, verify-p or review-p ran.
+
+| Command | Result | Evidence |
+|---|---|---|
+| `python3 /Users/lukai/.agents/skills/execute-p/scripts/plan_identity.py docs/plans/2026-10-21/reply-identity-02-frontend.md` | exit 0 | Initial and final hash identical to the approved identity; tool artifacts 972 / 1087. |
+| `python3 /Users/lukai/.agents/skills/execute-p/scripts/worktree_identity.py docs/plans/2026-10-21/reply-identity-02-frontend.md --worktree /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-reply-identity-plan` | exit 0 | Initial canonical root/branch/Git directories/HEAD recorded; artifact 972. |
+| `node --check src/main/resources/static/mailbox-chat.js` | exit 0 | Ran in the final required-command chain before the full suite. |
+| `node --check src/main/resources/static/app.js` | exit 0 | Ran in the same final chain. |
+| `node --test src/test/js/*.test.js` | exit 0 | Fresh artifact `artifact://1071`: tests 1782, suites 331, pass 1782, fail 0, cancelled 0, skipped 0, todo 0, duration 4930.829ms. |
+| `git diff --check` and `git diff --name-only` | exit 0 | Final scope/whitespace check, artifact 1087; pre-existing controller ledger remained excluded; new suite was then explicitly staged. |
+| Worktree identity helper with `--expect-root`, `--expect-branch`, `--expect-git-dir` before `git add` and again before `git commit` | exit 0 | Artifacts 1100 / 1101. |
+| `git diff --cached --check` | exit 0 | Immediately before authorized product commit. |
+| `git commit -m 'feat(fast-p): implement 02'` | exit 0 | `adcc2b4e36aa578d5ab915a2af39c727bbbe079e`; commit output records 13 files changed, including new interaction suite. |
+| `git rev-parse HEAD` and `git merge-base --is-ancestor HEAD refs/heads/fast/reply-identity-plan` | exit 0 | Product SHA is exact target HEAD and target-branch reachable; artifact 1101. |
+
+### Actual browser boundary and recovery
+
+Browser tests used this worktree's real `index.html`, stylesheets, scripts, real `MailboxChat.mount` and actual app host functions/dialogs. They did not use a demo page or replace product functions. The temporary HTTP fixture at `http://127.0.0.1:18793/` served static assets and intercepted `/api/*` with the existing test draft-server semantics plus dedicated identity/defaults/send responses. `/fixture/control` adjusted delay, conflict, uncertain network, snippets/defaults and test draft seeding; `/fixture/logs` recorded requests and in-memory draft/default state. All network destinations were local fixture or blocked external font requests. No production services, credentials, backend database or SMTP were contacted; “send success” below means fixture acceptance, never a delivered email.
+
+Recovery fixed a temporary-fixture-only pending-badge response: an incomplete response omitted countsByReasonType and made the unrelated app badge refresh recurse. The corrected fixture returned countsByReasonType={} and manualReviewTotal=0. No product badge change was made.
+
+The first raw createBrowserContext/settings orchestration attempt timed out; a separately spawned managed profile then detached its frame. Instead of repeating those hung approaches, recovery launched a dedicated task-owned headless Chrome with CDP port 18794 and a separate /tmp profile, attached using the supported app.cdp_url route, and completed the second-session/mobile scenarios there. The normal managed tab remained the desktop session. An additional evaluate call accidentally awaited a send Promise while its dialog was still open; it timed out, then the actual dialog was explicitly confirmed and its result inspected. These tool failures are not presented as completed scenario evidence.
+
+One initial direct-host frozen-payload probe used synthetic draftRef id=99; the fixture correctly rejected it as NOT_FOUND after confirmation. This was a fixture setup error, not a product success. Fresh successful direct-host probes omitted that nonexistent reference, and the later actual component send used an existing fixture draftRef `{id:1,version:2}`, completed successfully, and had byte-equivalent original/retry JSON after removing safetyWarningConfirmed.
+
+### Fresh runtime observations
+
+- Completion: both missing, salutation-only, signature-only, empty and whitespace HTML inputs received only expected p/br additions. Original rich bold/link/list node references stayed identical. Repeating completion produced unchanged HTML. Dear Alice/Bob remained unchanged and status explicitly warned of mismatch. UNCERTAIN returned no fabricated identity content.
+- Rich quote and persistence: a draft titled “Followup retained” contained bold/link/list content, historical tail “History retained.”, anchor 88 and ready `fixture.pdf` attachment 8. Completion inserted signature before the historical tail and left original rich/quote nodes connected and identical. The existing save chain retained subject/anchor/attachment metadata. Expert switch/back and full reload restored the completed canonical HTML from fixture storage.
+- Quote failures/partial behavior: an unmatched tail inserted salutation only and displayed “已补全称呼；无法确定签名位置，请手动补全”. A non-equivalent raw-newline node was not treated as a trusted quote. The actual BR-based followup quote received signature before the historical tail without replacing the original first text node.
+- Meeting: seeded canonical `meeting-body-block`/`data-meeting-block=true` markup and its ready meeting snapshot were restored through the actual sanitizer. Completing surrounding identity left the same block node and exact block HTML, kept meeting state ready and retained attachment 8. The first exploratory fixture omitted the required existing class and was corrected before this evidence; no sanitizer behavior was changed.
+- Late inspect: with actual delayed fixture transport, editing body, switching expert, changing account scope, applying the real followup dialog to anchor 87, changing sessionUser and unmounting all prevented stale identity insertion. Live contexts displayed “正文或会话已变化，请重新检查”; disposed UI was not mutated.
+- Global host send: actual mcHostSendRichReply and mcHostSendConversationRichReply called the real confirmation flow. ESC and return-to-edit returned false without retry or failure alert; a new independent call prompted again. Mutating the original nested request object during the prompt did not change retry text/HTML/template/nested evidence/attachment order. NORMAL confirmation retried once with safetyWarningConfirmed only.
+- Actual component send: mc-send-manual preserved the current draft through native ESC, restored send availability and emitted no failure alert. Subsequent confirmation used the real existing draft reference, retried the same body and received fixture success. Completion/settings controls remained disabled while the sending state owned the request.
+- Legacy unmatched: actual showUnmatchedDetail rendered the editor and actual handleUnmatchedAction invoked its local submit. The existing details element was expanded before the final visible-text probes. ESC returned false with original visible Dear Alice/Bob text, QA IDs [4,2], no failure alert and send button restored. Return-to-edit also cancelled without refresh/success behavior. Actual successful NORMAL/STRONG retries preserved the original submitted body and QA order; forced late DOM/QA edits in the snapshot probe did not alter the frozen retry.
+- STRONG: after the ordinary identity dialog, a separate confirm-typed dialog kept the original “取消 / 确认执行” labels and required exact “确认发送”. Cancelling that second stage stopped without retry. Typed acceptance included strongConfirmationText and preserved body. Both global/conversation and legacy routes exercised this independent stage.
+- Settings selection/save: option1 edits survived 1→2→1 within the modal. Saving final option2 submitted only option2 plus signature3; option1 remained its earlier server value, not its unselected local edit. Current editor HTML remained unchanged. Reopening fetched server defaults; ESC discarded unsaved edits.
+- Two profiles/two experts: the desktop Morgan modal and a separate browser-profile Taylor modal shared fixture defaults. Taylor saved “Shared ${expertName}”, preview showed “Shared Taylor”; the older Morgan modal's PUT received the fixed conflict message and retained its inputs. Later selected-only save was visible in fixture state, without current draft rewriting.
+- Settings races: an actual 650ms preview was allowed to start before a newer selection/edit with zero delay. The final preview remained “Winning second Morgan” after the older response arrived. Changing the editor revision while preview was pending cleared rendered identity and displayed “正文或会话已变化，请重新打开设置”.
+- Save uncertainty: PUT dispatch disabled cancel and native ESC, showed “保存中…”, and retained the dialog. Deliberate transport socket loss yielded “保存结果未确认，请重新加载核对”, retained edited signature and disabled repeat save until fresh GET/reopen. Reopen loaded unchanged server content. A missing default left select empty and save disabled, never silently selecting the first candidate.
+- Visual proof: desktop 1200×900; mobile 390×844. Completion button desktop computed font12px, height32px, padding0px 11px and toolbar gap6px. Keyboard focus-visible computed solid2px #3b82f6, offset2px. Busy button became disabled with “检查中…”. Mobile inherited existing coarse/narrow layout with 44px touch buttons and natural wrapping; no new shared CSS override was added. No-followup editable fixture placed completion last. Settings computed white background, 12px fields and one mobile grid column. At 390px the dialog measured358px under the existing native viewport-margin cap; the approved94vw CSS is unchanged.
+
+### Screenshots and transport records retained outside product scope
+
+- `/tmp/reply-identity-02-epoch3/recovery-desktop-completion.png`
+- `/tmp/reply-identity-02-epoch3/recovery-final-rich-quote.png`
+- `/tmp/reply-identity-02-epoch3/recovery-settings-conflict-desktop.png`
+- `/tmp/reply-identity-02-epoch3/recovery-settings-mobile.png`
+- `/tmp/reply-identity-02-epoch3/recovery-settings-mobile-top.png`
+- `/tmp/reply-identity-02-epoch3/recovery-send-normal.png`
+- `/tmp/reply-identity-02-epoch3/recovery-send-strong.png`
+- `/tmp/reply-identity-02-epoch3/recovery-final-mobile-toolbar.png`
+- `/tmp/reply-identity-02-epoch3/recovery-final-desktop-no-followup.png`
+- `/tmp/reply-identity-02-epoch3/recovery-transport-evidence.json`
+- `/tmp/reply-identity-02-epoch3/recovery-no-followup-transport-evidence.json`
+
+These images/records prove actual UI/DOM/fixture-transport behavior, not backend identity correctness, real MySQL draft persistence or SMTP delivery. Historical screenshots in the same directory are not substituted for the fresh observations above.
+
+### Changed files in product commit
+
+- `src/main/resources/static/mailbox-chat.js` — completion/defaults entry, owner/context guards, local text-node insertion and canonical quote mapping.
+- `src/main/resources/static/app.js` — settings/preview hosts, schema/native cancellation, shared frozen-send confirmation and legacy local lock/cancel behavior.
+- `src/main/resources/static/index.html` — approved uniform cache-key cutover only.
+- `src/main/resources/static/styles.css` — approved S-3 rules appended verbatim only.
+- `src/test/js/mailboxReplyIdentity.test.js` — actual component/DOM interaction, snapshot guards, frozen send, native dialog lifecycle and settings regressions, including browser-rendered list/div quote mapping.
+- `src/test/js/mailboxChatBehavior.test.js` — A3/A5 obsolete toolbar assertions/descriptions retired.
+- `src/test/js/aiReplyReviewConfirmation.test.js` — A5 obsolete source placement/recursive spelling/no-lock assertions retired.
+- `src/test/js/discoveryReview.test.js` — A5 obsolete old cache suffix retired.
+- `src/test/js/discoveryVerification.test.js` — A5 old cache suffix and CSS-to-EOF hash retired.
+- `src/test/js/mailboxOutboundAttachments.test.js` — A5 old exhaustive toolbar assertion retired.
+- `src/test/js/manualReplySubjectPrefill.test.js` — A5 source-ID occurrence-count assertion retired, no-overwrite behavior retained.
+- `src/test/js/materialRequestIntegration.test.js` — A5 obsolete toolbar array retired.
+- `src/test/js/meetingConfirmationIntegration.test.js` — A5 obsolete toolbar count retired.
+
+### Cleanup, deviations, freshness and next action
+
+- Temporary fixture server source `/tmp/reply-identity-epoch3-server.cjs` was removed after proof. Recovery fixture services were stopped. Dedicated CDP Chrome and recovery-spawned profile browser were stopped; recovery browser tabs and the task-created isolated context were closed without killing the shared browser service or unrelated user tabs. Task profile directories were removed. Screenshots and transport evidence remain.
+- All prior authorized modifications and historical logs were preserved. The controller ledger was neither edited nor staged by recovery. No plan amendment, scope reduction, backend edit, extra worktree, push, merge or history rewrite occurred.
+- Plan identity rechecked: YES, unchanged.
+- Worktree identity rechecked: YES, unchanged.
+- Reported product commit reachable from target branch: YES.
+- Required commands run freshly after final implementation: YES.
+- Historical evidence used only as baseline: YES.
+- Product index/working tree: product changes committed; execution log intentionally unstaged and controller ledger intentionally dirty for controller persistence.
+- Remaining blocker / known in-scope failure: None.
+- Next action: fresh isolated child02 Fast-P verifier applies the independent four-gate workflow. This execution report does not grant verification PASS.
+
+## Epoch 3 — Controller terminal closing record
+
+- Initial implementation: adcc2b4e36aa578d5ab915a2af39c727bbbe079e.
+- Initial fresh verifier Identity02Epoch3Verifier returned LIGHT_FAIL/AUTO_FIX F-1: inspect/defaults-preview serialized source-incompatible context fields, masked by permissive fixtures.
+- Automatic repair count:1. Separate fix commit2a85029d79e082358cc3ac03c54665c33fe69d1b by Identity02FixRound1 projects source-specific wire fields while retaining internal full-context guards. Strict regression and actual-app strict fixture smoke recorded in fix-log.
+- Fresh independent re-verifier Identity02Round1Reverifier returned LIGHT_PASS/COMPLETE_CHILD; F-1 CLOSED. Latest fresh syntax checks exit0 and fullJS1785 passed,0 failures/cancelled/skipped/todo (artifact://1130).
+- Terminal code head:2a85029d79e082358cc3ac03c54665c33fe69d1b. Browser records show actual UI/fixture transport, not real backend/SMTP end-to-end. No whole-system verification was performed.
