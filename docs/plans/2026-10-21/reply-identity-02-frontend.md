@@ -209,7 +209,7 @@ ${meetingTrigger}${materialTrigger}${templateReferenceTrigger}${followUpButton}
 
 ## 变更文件清单
 
-共 5 个文件；只追加 S-3 样式，不改数据库。
+共 6 个文件；只追加 S-3 样式，不改数据库。新增的既有行为测试文件仅用于退役已被S-1替代的工具栏末位断言，不扩大产品范围。
 
 |文件|用途|
 |---|---|
@@ -218,6 +218,7 @@ ${meetingTrigger}${materialTrigger}${templateReferenceTrigger}${followUpButton}
 |src/main/resources/static/index.html|统一资源缓存键|
 |src/main/resources/static/styles.css|仅追加 S-3 设置弹窗样式|
 |src/test/js/mailboxReplyIdentity.test.js|交互与集成回归|
+|src/test/js/mailboxChatBehavior.test.js|仅删除旧“跟进按钮最后”断言及对应过时描述，保留成功发件门槛、跟进class/文案、无成功发件行为|
 
 ## 验收标准
 
@@ -230,6 +231,7 @@ ${meetingTrigger}${materialTrigger}${templateReferenceTrigger}${followUpButton}
 - 运行 `node --check src/main/resources/static/mailbox-chat.js`、`node --check src/main/resources/static/app.js`、`node --test src/test/js/*.test.js`。真实浏览器执行下列人工场景验证 DOM 与布局，纯 stub 通过不等于验收完成。
 
 - I-6/S-3：两专家/两登录会话共用设置；选择/编辑/取消/保存冲突矩阵；未选片段不写；CSS逐字核对。
+- A3已批准修订：`mailboxChatBehavior.test.js:4109` 的“跟进按钮必须是工具栏最后一个”断言与S-1冲突，移除该过时布局断言及对应描述，不以另一条布局断言重新钉死旧实现。保留该用例的跟进入口成功发件门槛、class/文案和无成功发件行为；新 `mailboxReplyIdentity.test.js` 按S-1覆盖跟进后紧邻补全、无跟进时补全在末尾。禁止隐藏按钮、跨测试修改harness或排除旧suite来获得通过。
 
 ## 人工验收清单
 
@@ -293,3 +295,7 @@ ${meetingTrigger}${materialTrigger}${templateReferenceTrigger}${followUpButton}
 - 操作步骤：1. 在每个入口发送、按ESC。2. 再发送、点返回修改。3. 修改正文后再发送并确认。4. 开新的独立草稿再触发错误。
 - 预期结果：前两步测试邮箱0封、无“发送失败”alert、输入与QA上下文保留、发送按钮恢复；步骤3恰1封且为本次提交正文；步骤4再次提醒，不沿用旧确认。STRONG分支仍要求原文字确认。
 - 覆盖：I-3/I-4、P3、S-2/S-4、原共享弹窗保持项。
+
+## 修正记录
+
+- A3（2026-10-21，用户「批准 继续」，记录时间10:49:28+08:00）：按暂停证据 `docs/plans/fast/reply-identity-plan/children/02/execution.md:31-53`，授权对 mailboxChatBehavior.test.js 的过时工具栏末位断言及描述作最小移除，保留其他行为回归。S-1顺序和所有产品要求不变，恢复后须实际运行完整JS套件与真实浏览器验证。
