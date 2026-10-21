@@ -4,9 +4,13 @@ import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import java.security.MessageDigest
 import com.weibo.talentintroduction.discovery.domain.*
+import com.weibo.talentintroduction.discovery.service.DiscoveryVerificationRules
+import com.weibo.talentintroduction.discovery.service.VerificationSnapshot
+import com.weibo.talentintroduction.discovery.service.VerificationWorkerEvidence
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.ConnectionCallback
 import org.springframework.jdbc.core.RowMapper
+import org.springframework.jdbc.core.RowCallbackHandler
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionSynchronization
@@ -93,7 +97,112 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         return receipts
     }
 
+    /** Historical ERROR recovery is queue-only; unlike evidence replay it never changes the saved stage. */
+    @Transactional
+    fun requeueErrorsForCreditRecovery(executionId: Long, expectedItems: List<ReplayExpected>, now: Instant): List<ReplayReceipt> {
+        require(TransactionSynchronizationManager.isActualTransactionActive()) { "Recovery requires a transaction" }
+        require(expectedItems.size in 1..100 && expectedItems.map { it.item.id }.distinct().size == expectedItems.size)
+        require(expectedItems.all { it.item.ownerExecutionId == executionId })
+        val run = lockRun(executionId)
+        val admissions = expectedItems.map { it.item.expertDocId }.distinct().sorted().associateWith { replayAdmission(it, true) }
+        val current = expectedItems.sortedBy { it.item.id }.associate { expected ->
+            expected.item.id to jdbc.query("SELECT * FROM discovery_verification_item WHERE id=? FOR UPDATE",
+                itemMapper, expected.item.id).singleOrNull()
+        }
+        fun stale(expected: ReplayExpected): Boolean {
+            val item = current[expected.item.id]
+            return item != expected.item || replayHash(item?.snapshotJson) != expected.snapshotSha256 ||
+                replayHash(item?.evidenceJson) != expected.evidenceSha256 ||
+                replayHash(item?.reasonsJson) != expected.reasonsSha256 || admissions[expected.item.expertDocId] != expected.admission
+        }
+        if (expectedItems.all(::stale)) return expectedItems.map { ReplayReceipt(it.item.id, "STALE_OR_ALREADY_APPLIED") }
+        val finished = jdbc.queryForObject("SELECT COUNT(*) FROM task_execution WHERE id=? AND finished_at IS NOT NULL",
+            Long::class.java, executionId) == 1L
+        val active = jdbc.queryForObject("""SELECT COUNT(*) FROM discovery_verification_item WHERE owner_execution_id=?
+            AND state IN ('RESERVED','QUEUED','RUNNING','RETRY_WAIT')""", Long::class.java, executionId)!!
+        if (!run.inputClosed || !finished || active != 0L)
+            return expectedItems.map { ReplayReceipt(it.item.id, if (stale(it)) "STALE_OR_ALREADY_APPLIED" else "RUN_NOT_SETTLED") }
+        val receipts = expectedItems.map { expected ->
+            if (stale(expected)) return@map ReplayReceipt(expected.item.id, "STALE_OR_ALREADY_APPLIED")
+            val item = requireNotNull(current[expected.item.id])
+            val admission = admissions[item.expertDocId]
+            val reasons = runCatching { replayMapper.readTree(item.reasonsJson ?: "[]") }.getOrNull()
+            val status = when {
+                admission != null && (admission.decision != "NEEDS_REVIEW" || admission.identityHash != item.identityHash) -> "PROTECTED_ADMISSION"
+                reasons?.isArray != true || reasons.any { !it.isTextual } -> "INELIGIBLE"
+                reasons.any {
+                    it.asText() in setOf("IDENTITY_CHANGED", "FACT_CHANGED", "SOURCE_MISSING", "PROTECTED", "APPLICATION_PRESENT") ||
+                        it.asText().startsWith("PROTECTED_") || it.asText().endsWith("_PROTECTED")
+                } -> "PROTECTED_REASON"
+                item.state != VerificationState.ERROR || item.activatedAt == null || item.admissionRevision != null ||
+                    item.projectionState != VerificationProjection.NOT_REQUIRED || item.leaseToken != null || item.leaseUntil != null ||
+                    item.personMatchedAt != null || item.apolloPersonId != null || expected.evidenceJson != item.evidenceJson -> "INELIGIBLE"
+                !recoverableDetailCursor(item) -> "INELIGIBLE"
+                else -> "QUEUED"
+            }
+            ReplayReceipt(item.id, status)
+        }
+        receipts.filter { it.status == "QUEUED" }.forEach { receipt ->
+            val item = requireNotNull(current[receipt.itemId])
+            check(jdbc.update("""UPDATE discovery_verification_item SET state='QUEUED',outcome=NULL,
+                qualification='NOT_EVALUATED',route='NONE',completed_at=NULL,next_attempt_at=NULL,lease_token=NULL,
+                lease_until=NULL,reasons_json='[]',generation=generation+1,updated_at=?
+                WHERE id=? AND generation=? AND state='ERROR'""", now.verificationUtc(), item.id, item.generation) == 1)
+        }
+        if (receipts.any { it.status == "QUEUED" }) bump(executionId, now)
+        return receipts
+    }
+
+    private fun recoverableDetailCursor(item: VerificationItem): Boolean = runCatching {
+        val last = findAttempts(item.id).lastOrNull() ?: return false
+        if (last.provider != VerificationProvider.APOLLO || last.queryKind != VerificationQueryKind.DETAIL ||
+            last.httpStatus != 422 || last.completedAt == null ||
+            last.resultCode !in setOf("REQUEST_INVALID", "APOLLO_HTTP_422_UNCLASSIFIED", "APOLLO_CREDITS_EXHAUSTED")) return false
+        val tree = replayMapper.readTree(requireNotNull(item.evidenceJson))
+        if (!tree.isObject || !tree.path("progress").isObject || !tree.path("search").isObject || !tree.path("queries").isArray) return false
+        val payload = replayMapper.treeToValue(tree, VerificationWorkerEvidence::class.java)
+        val queries = payload.queries ?: return false
+        val search = payload.search ?: return false
+        if (payload.progress.stage != "APOLLO_SEARCH" || queries.isEmpty() || payload.progress.queryIndex != queries.size ||
+            search.matchingVersion != 2 || search.detailsComplete) return false
+        val snapshot = replayMapper.readValue(item.snapshotJson, VerificationSnapshot::class.java)
+        if (snapshot.identityHash != item.identityHash || snapshot.factFingerprint != item.factFingerprint ||
+            payload.evidence.any { it.identityHash != item.identityHash || it.factFingerprint != item.factFingerprint }) return false
+        val person = replayMapper.readTree(last.requestJson).path("personId").takeIf { it.isTextual }?.asText() ?: return false
+        val rules = DiscoveryVerificationRules()
+        val names = rules.allowedNames(snapshot, payload.evidence)
+        val candidates = search.candidates.filter {
+            rules.nameMatches(it, names, search.queryNames, masked = true, ruleVersion = payload.ruleVersion) ||
+                payload.ruleVersion >= 1 && rules.emailNameMatches(snapshot, payload.evidence, it, search.institutionAliasVersion, masked = true)
+        }
+        val strong = candidates.filter { rules.matchReason(snapshot, payload.evidence, it, null, search.institutionAliasVersion) in
+            setOf("APOLLO_CURRENT_INSTITUTION_MATCH", "APOLLO_HISTORICAL_INSTITUTION_MATCH", "APOLLO_PROFESSOR_MATCH") }
+        strong.ifEmpty { candidates }.any {
+            it.id == person && it.id !in search.detailsCompleted && !(it in strong && (it.fullName != null || it.lastName != null))
+        }
+    }.getOrDefault(false)
+
     /** Reporting queries deliberately have no locks, writes, or recovery side effects. */
+    data class PromotionDocuments(val managedDocIds: Set<String>, val projectedSources: Map<String, String>)
+
+    /** One read snapshot supplies both the legacy exclusion set and actual new projection events. */
+    fun reportingPromotionDocuments(executionId: Long): PromotionDocuments {
+        val managed = mutableSetOf<String>()
+        val projected = mutableMapOf<String, String>()
+        jdbc.query("""SELECT i.expert_doc_id,i.source_name,
+            (i.admission_revision IS NOT NULL AND i.projection_state='PROJECTED') AS projected
+            FROM discovery_verification_item i FORCE INDEX (idx_dvi_run_batch)
+            JOIN discovery_verification_run r ON r.execution_id=i.owner_execution_id
+            WHERE i.owner_execution_id=? AND r.mode='ENFORCE' AND i.activated_at IS NOT NULL
+            ORDER BY i.id DESC""", RowCallbackHandler { rs ->
+            val docId = rs.getString("expert_doc_id")
+            managed.add(docId)
+            // Descending item id makes the latest qualifying event's source deterministic.
+            if (rs.getBoolean("projected")) projected.putIfAbsent(docId, rs.getString("source_name"))
+        }, executionId)
+        return PromotionDocuments(managed, projected)
+    }
+
     fun reportingCollectionStatuses(ids: List<Long>): Map<Long, String> {
         require(ids.isNotEmpty() && ids.size <= 50 && ids.all { it > 0 })
         return jdbc.query("SELECT id,status FROM task_execution WHERE id IN (${ids.joinToString(",") { "?" }})",
@@ -375,6 +484,11 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         // arguments remain compatible with existing callers/configuration, but do not cap Apollo.
         if (request.provider != VerificationProvider.APOLLO && item.requestCount >= maxRequestsPerItem)
             return VerificationAttemptReservation(deferred = VerificationBudgetReason.ITEM_LIMIT)
+        if (request.provider == VerificationProvider.APOLLO && request.queryKind == VerificationQueryKind.DETAIL) {
+            val retryAt = detailCreditsRetryAt()
+            if (retryAt != null && now < retryAt)
+                return VerificationAttemptReservation(deferred = VerificationBudgetReason.CREDITS_WAIT, retryAt = retryAt)
+        }
         jdbc.update("""INSERT INTO discovery_verification_attempt (item_id,request_key,provider,query_kind,page_number,attempt_number,requested_at,result_code,request_json)
             VALUES (?,?,?,?,?,?,?,'DISPATCH_RESERVED',?)""", itemId, request.requestKey, request.provider.name, request.queryKind.name,
             request.pageNumber, request.attemptNumber, now.verificationUtc(), request.requestJson)
@@ -382,6 +496,26 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         jdbc.update("UPDATE discovery_verification_item SET request_count=request_count+1,updated_at=? WHERE id=?", now.verificationUtc(), itemId)
         bump(item.ownerExecutionId, now)
         return VerificationAttemptReservation(attemptId = id)
+    }
+
+    /** Current locking reads are essential: acquiring GET_LOCK must not reuse an earlier RR snapshot.
+     * A success reserved before the fault completed cannot reopen the channel, even if it completed late.
+     * Unfinished reservations occupy a probe window too; no process-local state is involved.
+     */
+    private fun detailCreditsRetryAt(): Instant? {
+        val fault = jdbc.query("""SELECT id,completed_at FROM discovery_verification_attempt
+            WHERE provider='APOLLO' AND query_kind='DETAIL' AND result_code='APOLLO_CREDITS_EXHAUSTED'
+            AND completed_at IS NOT NULL ORDER BY completed_at DESC,id DESC LIMIT 1 FOR UPDATE""",
+            RowMapper { rs, _ -> rs.getLong("id") to rs.time("completed_at")!! }).singleOrNull() ?: return null
+        val success = jdbc.query("""SELECT id FROM discovery_verification_attempt WHERE provider='APOLLO'
+            AND query_kind='DETAIL' AND id>? AND requested_at>? AND completed_at IS NOT NULL
+            AND http_status=200 AND result_code='OK' ORDER BY id DESC LIMIT 1 FOR UPDATE""",
+            RowMapper { rs, _ -> rs.getLong("id") }, fault.first, fault.second.verificationUtc())
+        if (success.isNotEmpty()) return null
+        val probe = jdbc.query("""SELECT requested_at FROM discovery_verification_attempt WHERE provider='APOLLO'
+            AND query_kind='DETAIL' AND id>? AND requested_at>? ORDER BY id DESC LIMIT 1 FOR UPDATE""",
+            RowMapper { rs, _ -> rs.time("requested_at")!! }, fault.first, fault.second.verificationUtc()).singleOrNull()
+        return maxOf(fault.second, probe ?: fault.second).plusSeconds(1800)
     }
 
     @Transactional
@@ -522,12 +656,33 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     }
 
     fun findAttempts(itemId: Long): List<VerificationAttempt> = jdbc.query(
-        "SELECT * FROM discovery_verification_attempt WHERE item_id=? ORDER BY id",
-        RowMapper { rs, _ -> VerificationAttempt(rs.getLong("id"), rs.getLong("item_id"), rs.getString("request_key"),
-            VerificationProvider.valueOf(rs.getString("provider")), VerificationQueryKind.valueOf(rs.getString("query_kind")),
-            rs.getInt("page_number"), rs.getInt("attempt_number"), rs.time("requested_at")!!, rs.time("completed_at"),
-            rs.getInt("http_status").let { if (rs.wasNull()) null else it }, rs.getString("result_code"),
-            rs.getString("request_json"), rs.getString("response_json"), rs.getString("response_sha256")) }, itemId)
+        "SELECT * FROM discovery_verification_attempt WHERE item_id=? ORDER BY id", attemptMapper, itemId)
+
+    /** Same-run successful HTTP ledger only; no cache rows and no synthetic attempts. */
+    fun findSuccessfulDetails(ownerExecutionId: Long, personIds: Collection<String>): Map<String, VerificationAttempt> {
+        require(ownerExecutionId > 0)
+        if (personIds.isEmpty()) return emptyMap()
+        val found = linkedMapOf<String, VerificationAttempt>()
+        personIds.distinct().chunked(500).forEach { ids ->
+            val attempts = jdbc.query("""SELECT a.* FROM discovery_verification_item i FORCE INDEX (idx_dvi_run_batch)
+                JOIN discovery_verification_attempt a FORCE INDEX (idx_dva_item) ON a.item_id=i.id
+                WHERE i.owner_execution_id=? AND a.provider='APOLLO' AND a.query_kind='DETAIL'
+                AND a.completed_at IS NOT NULL AND a.http_status=200 AND a.result_code='OK'
+                AND a.response_json IS NOT NULL AND a.response_sha256 IS NOT NULL
+                AND JSON_UNQUOTE(JSON_EXTRACT(IF(JSON_VALID(a.request_json),a.request_json,'{}'),'$.personId'))
+                    IN (${ids.joinToString(",") { "?" }}) ORDER BY a.id""", attemptMapper,
+                *(listOf(ownerExecutionId) + ids).toTypedArray())
+            attempts.forEach attemptLoop@ { attempt ->
+                // response_sha256 identifies the original HTTP body; the saved parsed JSON is not that body.
+                val candidate = runCatching {
+                    replayMapper.readValue(attempt.responseJson, com.weibo.talentintroduction.discovery.service.ApolloCandidate::class.java)
+                }.getOrNull() ?: return@attemptLoop
+                val requested = replayMapper.readTree(attempt.requestJson).path("personId").asText()
+                if (candidate.id == requested && candidate.id in ids) found.putIfAbsent(candidate.id, attempt)
+            }
+        }
+        return found
+    }
     private fun identity(input: VerificationReservation) = jdbc.query("SELECT * FROM discovery_verification_item WHERE expert_doc_id=? AND identity_hash=? AND policy_version=?",
         itemMapper, input.expertDocId, input.identityHash, input.policyVersion).singleOrNull()
     private fun checkedIdentity(item: VerificationItem, input: VerificationReservation): VerificationItem {
@@ -552,7 +707,8 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     }
 
     companion object {
-        private val replayMapper = jacksonObjectMapper()
+        private val replayMapper = jacksonObjectMapper().findAndRegisterModules()
+            .disable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
         fun replayHash(value: String?): String = MessageDigest.getInstance("SHA-256")
             .digest((value ?: "\u0000").toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
         /** The caller cannot alter provider evidence, search cursors, or any other progress member. */
@@ -568,6 +724,12 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         }
         private fun ResultSet.time(name: String): Instant? = getTimestamp(name)?.toLocalDateTime()?.verificationInstant()
         private fun ResultSet.nullLong(name: String): Long? = getLong(name).let { if (wasNull()) null else it }
+        private val attemptMapper = RowMapper { rs: ResultSet, _: Int -> VerificationAttempt(
+            rs.getLong("id"), rs.getLong("item_id"), rs.getString("request_key"),
+            VerificationProvider.valueOf(rs.getString("provider")), VerificationQueryKind.valueOf(rs.getString("query_kind")),
+            rs.getInt("page_number"), rs.getInt("attempt_number"), rs.time("requested_at")!!, rs.time("completed_at"),
+            rs.getInt("http_status").let { if (rs.wasNull()) null else it }, rs.getString("result_code"),
+            rs.getString("request_json"), rs.getString("response_json"), rs.getString("response_sha256")) }
         private val runMapper = RowMapper { rs: ResultSet, _: Int -> VerificationRun(rs.getLong("execution_id"), VerificationMode.valueOf(rs.getString("mode")),
             rs.getString("policy_version"), rs.getBoolean("apollo_requested"), rs.getString("settings_json"), rs.getBoolean("input_closed"), rs.getLong("revision"), rs.time("created_at")!!, rs.time("updated_at")!!) }
         private val itemMapper = RowMapper { rs: ResultSet, _: Int -> VerificationItem(

@@ -19,6 +19,54 @@ class DiscoveryVerificationQueryServiceTest {
     private fun run(id: Long, mode: VerificationMode = VerificationMode.ENFORCE) =
         VerificationRun(id, mode, mode.policyVersion, true, "{}", true, 17, now, now)
 
+    @Test fun `details return only saved recorded trace tolerate unknown fields and never synthesize legacy trace`() {
+        val f = AdmissionGateFixture()
+        val base = f.item(facts = emptyList())
+        val search = ruleSearch().copy(matchingVersion = 2, detailsComplete = true)
+        val trace = DiscoveryVerificationRules(ruleClock).evaluate(ruleSnapshot(), emptyList(), search, ruleVersion = 2).trace!!
+        `when`(repository.findRun(base.ownerExecutionId)).thenReturn(run(base.ownerExecutionId))
+        for (saved in listOf(null, trace, trace.copy(traceOrigin = "RECOMPUTED"))) {
+            val payload = VerificationWorkerEvidence(search = search, ruleVersion = 2,
+                diagnostics = WorkerDiagnostics(decision = saved))
+            val json = f.mapper.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(payload)
+            (json.path("diagnostics") as com.fasterxml.jackson.databind.node.ObjectNode).put("futureField", true)
+            if (saved != null) (json.path("diagnostics").path("decision") as com.fasterxml.jackson.databind.node.ObjectNode)
+                .put("futureStep", "NEW")
+            `when`(repository.findItem(base.id)).thenReturn(base.copy(evidenceJson = f.mapper.writeValueAsString(json)))
+            val detail = service.item(base.id)
+            assertEquals(saved?.takeIf { it.traceOrigin == "RECORDED" }, detail.diagnostics!!.decision)
+        }
+        `when`(repository.findItem(base.id)).thenReturn(base.copy(evidenceJson = """{"evidence":[],"ruleVersion":1}"""))
+        assertNull(service.item(base.id).diagnostics)
+        verify(repository, times(4)).findItem(base.id)
+        verify(repository, times(4)).findRun(base.ownerExecutionId)
+        verify(repository, times(4)).findAttempts(base.id)
+        verifyNoMoreInteractions(repository)
+    }
+
+    @Test fun `detail recomputes persisted version two without upgrading old evidence or writing`() {
+        val f = AdmissionGateFixture()
+        val base = f.item(facts = emptyList())
+        val candidate = ApolloCandidate("v2-person", "Ada", "Lee", null, "Ada Lee", "Assistenzprofessor",
+            VerificationInstitution("Other University"), headline = "Assistant Professor at Other University")
+        val search = ApolloSearchEvidence(listOf(candidate), true, true, setOf("Ada Lee"), matchingVersion = 2,
+            detailsComplete = true, institutionAliasVersion = 2)
+        val payload = VerificationWorkerEvidence(search = search, ruleVersion = 2)
+        val row = base.copy(outcome = VerificationOutcome.APOLLO_CLEAR, route = VerificationRoute.APOLLO,
+            evidenceJson = f.mapper.writeValueAsString(payload), apolloPersonId = candidate.id, personMatchedAt = ruleClock.instant())
+        `when`(repository.findItem(row.id)).thenReturn(row)
+        `when`(repository.findRun(row.ownerExecutionId)).thenReturn(run(row.ownerExecutionId))
+        val detail = service.item(row.id)
+        assertEquals(VerificationOutcome.APOLLO_CLEAR, detail.outcome)
+        assertEquals("Assistenzprofessor", detail.matchedCandidate!!.title)
+        assertEquals(listOf("completedDoctorate", "reliableAge"), detail.record.missingFields)
+        assertEquals(2, f.mapper.readTree(repository.findItem(row.id)!!.evidenceJson).path("ruleVersion").intValue())
+        verify(repository, times(2)).findItem(row.id)
+        verify(repository).findRun(row.ownerExecutionId)
+        verify(repository).findAttempts(row.id)
+        verifyNoMoreInteractions(repository)
+    }
+
     @Test fun `summary distinguishes missing empty expired and audit suggestions using batched aggregate`() {
         val ids = listOf(3001L, 3002L, 3003L, 3004L)
         `when`(repository.reportingRuns(ids)).thenReturn(mapOf(3001L to run(3001), 3003L to run(3003), 3004L to run(3004, VerificationMode.AUDIT)))
@@ -122,5 +170,61 @@ class DiscoveryVerificationQueryServiceTest {
         assertThrows(IllegalArgumentException::class.java) { VerificationReportFilter(1, q = "x".repeat(101)) }
         assertThrows(IllegalArgumentException::class.java) { VerificationReportFilter(1, batchNumber = 0) }
         verifyNoInteractions(repository, admissions)
+    }
+    @Test fun `diagnostic decoder accepts only versioned errors and projects whitelisted fields`() {
+        val mapper = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper()
+        val diagnostic = VerificationDiagnostics.fromBytes(VerificationProvider.APOLLO, "/api/v1/people/person-1", 422,
+            """{"message":"insufficient credits"}""".toByteArray(), false, "APOLLO_CREDITS_EXHAUSTED")
+        val json = mapper.writeValueAsString(diagnostic)
+        assertEquals(diagnostic, VerificationDiagnostics.read(json))
+        assertNull(VerificationDiagnostics.read(null))
+        assertNull(VerificationDiagnostics.read("""{"person":{"id":"person-1"}}"""))
+        assertNull(VerificationDiagnostics.read("""{"endpoint":"person","document":null}"""))
+        assertNull(VerificationDiagnostics.read("broken"))
+        assertNull(VerificationDiagnostics.read(json.replace("\"schemaVersion\":1", "\"schemaVersion\":2")))
+        assertNull(VerificationDiagnostics.read(json.replace("\"schemaVersion\":1", "\"schemaVersion\":1.5")))
+        assertNull(VerificationDiagnostics.read((mapper.readTree(json) as com.fasterxml.jackson.databind.node.ObjectNode).put("bodyBytesRead", 1.5).toString()))
+        assertNull(VerificationDiagnostics.read(json.replace("APOLLO_CREDITS_EXHAUSTED", "made-up")))
+        val extended = mapper.readTree(json) as com.fasterxml.jackson.databind.node.ObjectNode
+        extended.put("people", "private-person")
+        extended.put("token", "private-token")
+        val output = mapper.writeValueAsString(VerificationDiagnostics.read(extended.toString()))
+        assertFalse(output.contains("private-person"))
+        assertFalse(output.contains("private-token"))
+        assertNull(VerificationAttemptSummary(1, VerificationProvider.APOLLO, VerificationQueryKind.DETAIL,
+            1, 1, now, now, 422, "REQUEST_INVALID", null).diagnostic)
+    }
+    @Test fun `credit failure and deferred probe have the same recovery reason label`() {
+        val filter = VerificationReportFilter(3001)
+        `when`(repository.findRun(3001)).thenReturn(run(3001))
+        `when`(repository.reportingCounts(filter)).thenReturn(mapOf(0L to VerificationCounts(profiles = 2)))
+        `when`(repository.reportingCounts(filter, batches = true)).thenReturn(mapOf(1L to VerificationCounts(profiles = 2)))
+        `when`(repository.reportingBatchReasons(3001)).thenReturn(listOf(Triple(1,
+            """["APOLLO_CREDITS_EXHAUSTED","CREDITS_WAIT"]""", 1L)))
+        val reasons = service.batches(3001, 0, 20).items.single().reasons
+        assertEquals(setOf("APOLLO_CREDITS_EXHAUSTED", "CREDITS_WAIT"), reasons.map { it.code }.toSet())
+        assertTrue(reasons.all { it.label == "额度不足，等待恢复" })
+        verifyNoInteractions(admissions)
+    }
+
+    @Test fun `worker diagnostics bound query and reuse projections without changing evidence`() {
+        val queries = (0..39).map { WorkerQueryDiagnostic(it, "a".repeat(64), "VARIANT") }
+        val reuse = WorkerDetailReuse(11, 7, "person-1", "b".repeat(64))
+        val recorded = WorkerDiagnostics(queries = queries, detailReuses = List(205) { reuse }).bounded()
+        assertEquals(32, recorded.queries.size); assertEquals(40, recorded.totalQueryCount)
+        assertEquals(200, recorded.detailReuses.size); assertEquals(205, recorded.totalReused)
+        assertTrue(recorded.truncated)
+        var accumulated = WorkerDiagnostics()
+        repeat(205) { accumulated = accumulated.reuse(reuse) }
+        assertEquals(200, accumulated.detailReuses.size); assertEquals(205, accumulated.totalReused)
+        assertTrue(accumulated.truncated)
+        val mapper = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().findAndRegisterModules()
+        val legacy = mapper.readValue("""{"search":{"complete":true,"broadComplete":true}}""", VerificationWorkerEvidence::class.java)
+        assertNull(legacy.diagnostics); assertTrue(legacy.search!!.complete)
+        val payload = legacy.copy(diagnostics = recorded)
+        assertEquals(recorded, mapper.readValue(mapper.writeValueAsString(payload), VerificationWorkerEvidence::class.java).diagnostics)
+        // The API detail contract adds only a nullable diagnostic projection, not a new admission input.
+        assertTrue(VerificationItemDetail::class.java.declaredFields.any { it.name == "diagnostics" })
+        assertEquals(legacy.search, payload.search); assertEquals(legacy.progress, payload.progress)
     }
 }

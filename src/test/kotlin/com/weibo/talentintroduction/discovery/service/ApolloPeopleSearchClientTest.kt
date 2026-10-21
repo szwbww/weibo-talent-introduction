@@ -49,7 +49,7 @@ class ApolloPeopleSearchClientTest {
         server.verify()
     }
     @Test fun `status mapping never becomes an empty successful search and requests are not retried`() {
-        val cases = listOf(401 to "CONFIG_AUTH", 403 to "CONFIG_AUTH", 400 to "REQUEST_INVALID", 422 to "REQUEST_INVALID", 302 to "HTTP_ERROR")
+        val cases = listOf(401 to "CONFIG_AUTH", 403 to "CONFIG_AUTH", 400 to "REQUEST_INVALID", 422 to "APOLLO_HTTP_422_UNCLASSIFIED", 302 to "HTTP_ERROR")
         cases.forEach { (status, code) ->
             server.expect(anything()).andRespond(withStatus(HttpStatus.valueOf(status)))
             assertEquals(code, (client.search(ApolloSearchQuery("Ada Lee"), permit()) as VerificationHttpResult.PermanentFailure).code)
@@ -65,6 +65,8 @@ class ApolloPeopleSearchClientTest {
             server.expect(anything()).andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS).headers(org.springframework.http.HttpHeaders().apply { set("Retry-After", header) }))
             val result = client.search(ApolloSearchQuery("Ada Lee"), permit()) as VerificationHttpResult.RateLimited
             assertEquals(clock.instant().plusSeconds(seconds), result.retryAt)
+            assertEquals("RATE_LIMIT", result.diagnostic!!.classification)
+            assertEquals(header, result.diagnostic!!.retryAfter)
             server.verify()
             server.reset()
         }
@@ -97,5 +99,110 @@ class ApolloPeopleSearchClientTest {
         assertTrue(narrow.broadComplete && narrow.complete)
         val incomplete = ApolloSearchEvidence().merge(ApolloSearchPage(listOf(candidate), 501, 5), ApolloSearchQuery("Ada Lee", 5), true, true)
         assertFalse(incomplete.complete || incomplete.broadComplete)
+    }
+    @Test fun `422 classifications require explicit bounded provider evidence`() {
+        val cases = listOf(
+            """{"message":"insufficient credits"}""" to "APOLLO_CREDITS_EXHAUSTED",
+            """{"error":{"error_code":"CREDITS_EXHAUSTED"}}""" to "APOLLO_CREDITS_EXHAUSTED",
+            """{"error":"not enough credits"}""" to "APOLLO_CREDITS_EXHAUSTED",
+            """{"message":"invalid parameter"}""" to "REQUEST_INVALID",
+            """{"error":{"message":"validation error"}}""" to "REQUEST_INVALID",
+            """{"message":"credits limit upgrade plan"}""" to "APOLLO_HTTP_422_UNCLASSIFIED",
+            """{"people":[{"message":"insufficient credits"}]}""" to "APOLLO_HTTP_422_UNCLASSIFIED",
+            "" to "APOLLO_HTTP_422_UNCLASSIFIED",
+            "<html>insufficient credits</html>" to "APOLLO_HTTP_422_UNCLASSIFIED")
+        cases.forEach { (body, expected) ->
+            server.expect(anything()).andRespond(withStatus(HttpStatus.UNPROCESSABLE_ENTITY).body(body).contentType(MediaType.APPLICATION_JSON))
+            val result = client.search(ApolloSearchQuery("Ada Lee"), permit()) as VerificationHttpResult.PermanentFailure
+            assertEquals(expected, result.code)
+            val diagnostic = requireNotNull(result.diagnostic)
+            assertEquals(expected, diagnostic.classification)
+            assertEquals(body.toByteArray().size, diagnostic.bodyBytesRead)
+            assertEquals("FULL", diagnostic.hashScope)
+            assertEquals(java.security.MessageDigest.getInstance("SHA-256").digest(body.toByteArray()).joinToString("") { "%02x".format(it) }, diagnostic.bodySha256)
+            server.verify()
+            server.reset()
+        }
+        assertEquals("REQUEST_INVALID", VerificationDiagnostics.classify(VerificationProvider.ORCID, 422,
+            """{"message":"insufficient credits"}""".toByteArray()))
+    }
+
+    @Test fun `diagnostics whitelist and redact secrets and never retain arbitrary bodies`() {
+        val body = """{"message":"invalid parameter email alice@example.invalid phone +1 (415) 555-0123 Bearer bearer-secret token=token-secret password:password-secret https://x.invalid/?foo=query-secret&bar=more-secret","people":[{"name":"private-person","email":"hidden@example.invalid"}],"token":"private-token"}"""
+        server.expect(anything()).andRespond(withStatus(HttpStatus.BAD_REQUEST).body(body).contentType(MediaType.APPLICATION_JSON))
+        val result = client.detail("person-1", permit()) as VerificationHttpResult.PermanentFailure
+        val diagnostic = requireNotNull(result.diagnostic)
+        val json = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().writeValueAsString(diagnostic)
+        listOf("alice@example.invalid", "415", "bearer-secret", "token-secret", "password-secret", "query-secret",
+            "more-secret", "private-person", "hidden@example.invalid", "private-token").forEach { assertFalse(json.contains(it), it) }
+        assertFalse(com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().readTree(json).has("people"))
+        assertEquals("/api/v1/people/person-1", diagnostic.endpointPath)
+        server.verify()
+        server.reset()
+        server.expect(anything()).andRespond(withStatus(HttpStatus.BAD_REQUEST).body("<html>private-token</html>").contentType(MediaType.TEXT_HTML))
+        assertNull((client.detail("person-1", permit()) as VerificationHttpResult.PermanentFailure).diagnostic!!.message)
+        server.verify()
+    }
+
+    @Test fun `quoted secret assignments are redacted before storage and on detail projection`() {
+        val mapper = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper()
+        val messages = listOf(
+            """invalid parameter {"token":"private-token"}""",
+            """invalid parameter {"api_key":"private-key","password":"private-password"}""",
+            """invalid parameter {'TOKEN' = 'private-token', 'key': 'private-key', 'password': 'private-password'}""",
+            """invalid parameter {"password":"alpha TOPSECRET omega"}""",
+            """invalid parameter {'token':'alpha TOPSECRET omega'}""",
+            """invalid parameter api_key=single-secret""")
+        messages.forEach { message ->
+            val body = mapper.writeValueAsString(mapOf("message" to message))
+            server.expect(anything()).andRespond(withStatus(HttpStatus.UNPROCESSABLE_ENTITY).body(body).contentType(MediaType.APPLICATION_JSON))
+            val result = client.detail("person-1", permit()) as VerificationHttpResult.PermanentFailure
+            assertEquals("REQUEST_INVALID", result.code)
+            val diagnostic = requireNotNull(result.diagnostic)
+            val json = mapper.writeValueAsString(diagnostic)
+            val projection = requireNotNull(VerificationDiagnostics.read(json))
+            val historicalProjection = requireNotNull(VerificationDiagnostics.read(
+                mapper.writeValueAsString(diagnostic.copy(message = message))))
+            listOf(json, mapper.writeValueAsString(projection), mapper.writeValueAsString(historicalProjection)).forEach { output ->
+                listOf("private-token", "private-key", "private-password", "alpha TOPSECRET omega", "TOPSECRET omega", "single-secret").forEach { secret ->
+                    assertFalse(output.contains(secret), secret)
+                }
+                assertTrue(output.contains("[REDACTED]"))
+                assertTrue(output.contains("invalid parameter"), "Non-sensitive diagnostic context must remain")
+            }
+            assertEquals(diagnostic.message, projection.message)
+            assertEquals(diagnostic.message, historicalProjection.message)
+            server.verify()
+            server.reset()
+        }
+    }
+
+    @Test fun `large error reads only the bounded prefix and records its real hash`() {
+        val body = """{"message":"token=private-token ${"x".repeat(20000)}"}"""
+        server.expect(anything()).andRespond(withStatus(HttpStatus.UNPROCESSABLE_ENTITY).body(body).contentType(MediaType.APPLICATION_JSON))
+        val diagnostic = (client.detail("person-1", permit()) as VerificationHttpResult.PermanentFailure).diagnostic!!
+        assertEquals(16385, diagnostic.bodyBytesRead)
+        assertTrue(diagnostic.bodyTruncated)
+        assertEquals("PREFIX", diagnostic.hashScope)
+        assertNull(diagnostic.message)
+        assertEquals(java.security.MessageDigest.getInstance("SHA-256").digest(body.toByteArray().copyOf(16385))
+            .joinToString("") { "%02x".format(it) }, diagnostic.bodySha256)
+        server.verify()
+    }
+
+    @Test fun `malformed and structurally invalid success diagnostics do not invent byte sizes`() {
+        server.expect(anything()).andRespond(withSuccess("bad", MediaType.APPLICATION_JSON))
+        val parsed = (client.detail("person-1", permit()) as VerificationHttpResult.PermanentFailure).diagnostic!!
+        assertEquals(3, parsed.bodyBytesRead)
+        assertNull(parsed.message)
+        server.verify()
+        server.reset()
+        val body = """{ "person": { "id": "other" } }"""
+        server.expect(anything()).andRespond(withSuccess(body, MediaType.APPLICATION_JSON))
+        val structural = (client.detail("person-1", permit()) as VerificationHttpResult.PermanentFailure).diagnostic!!
+        assertNull(structural.bodyBytesRead)
+        assertEquals(com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.hash(body), structural.bodySha256)
+        assertEquals("FULL", structural.hashScope)
+        server.verify()
     }
 }

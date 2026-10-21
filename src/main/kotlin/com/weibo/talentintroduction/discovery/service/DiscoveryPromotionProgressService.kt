@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.weibo.talentintroduction.config.ElasticsearchProperties
+import com.weibo.talentintroduction.discovery.repository.DiscoveryVerificationRepository
 import com.weibo.talentintroduction.discovery.repository.ExpertAcademicEnrichmentJobRepository
 import com.weibo.talentintroduction.task.domain.TaskExecution
 import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
@@ -24,6 +25,7 @@ import java.time.temporal.ChronoUnit
 @Service
 class DiscoveryPromotionProgressService(
     private val jobs: ExpertAcademicEnrichmentJobRepository,
+    private val verification: DiscoveryVerificationRepository,
     private val executions: TaskExecutionRepository,
     private val logs: TaskProgressLogRepository,
     private val restTemplate: RestTemplate,
@@ -70,8 +72,11 @@ class DiscoveryPromotionProgressService(
 
     internal fun counts(execution: TaskExecution): Map<String, Int> {
         val id = execution.id ?: return emptyMap()
-        val documents = jobs.findDiscoveryDocuments(id).associate { it.expertDocId to it.source }
-        val admitted = mutableSetOf<String>()
+        val managed = verification.reportingPromotionDocuments(id)
+        val documents = jobs.findDiscoveryDocuments(id).associateTo(mutableMapOf()) { it.expertDocId to it.source }
+        // Existence alone cannot turn an already-present or unfinished managed projection into a new one.
+        managed.managedDocIds.forEach { documents.remove(it) }
+        val admitted = mutableMapOf<String, String>()
         val start = execution.startedAt.truncatedTo(ChronoUnit.SECONDS)
         val end = execution.finishedAt
         val headers = HttpHeaders().apply {
@@ -97,10 +102,11 @@ class DiscoveryPromotionProgressService(
                 // Duplicate encounters also enqueue old experts. They are not this run's new admissions.
                 if (discovered.isBefore(start) || (end != null && discovered.isAfter(end))) continue
                 val docId = doc.path("_id").asText()
-                if (docId in documents) admitted.add(docId)
+                if (docId in documents) admitted[docId] = documents.getValue(docId)
             }
         }
-        return admitted.groupingBy { documents.getValue(it) }.eachCount()
+        admitted.putAll(managed.projectedSources)
+        return admitted.values.groupingBy { it }.eachCount()
     }
 
     private fun merge(details: ObjectNode, counts: Map<String, Int>) {
@@ -109,7 +115,8 @@ class DiscoveryPromotionProgressService(
         var summary = details.path("summaryText").asText()
         sources.fields().forEach { (source, value) ->
             if (value is ObjectNode) {
-                // Actual layer membership already includes synchronous admissions: never add the two.
+                // Legacy anonymous aggregates remain a lower bound, not an additive contribution.
+                // LEGACY_AGGREGATE_FLOOR may exceed the document-verifiable union for old data.
                 val promoted = maxOf(value.path("promoted").asInt(), counts[source] ?: 0)
                 value.put("promoted", promoted)
                 total += promoted

@@ -232,7 +232,7 @@ class DiscoveryVerificationIntegrationTest {
             assertTrue(runs.all { (it["execution_id"] as Number).toLong() > 0 && it["input_closed"] == true })
             assertTrue(runs.all { f.flow.mapper.readTree(it["settings_json"] as String).path("apolloLimitPolicy").asText() == "PROVIDER" })
             assertTrue(runs.none { f.flow.mapper.readTree(it["settings_json"] as String).has("requestsPerDay") })
-            assertTrue(runs.all { f.flow.mapper.readTree(it["settings_json"] as String).path("institutionAliasVersion").asInt() == 1 })
+            assertTrue(runs.all { f.flow.mapper.readTree(it["settings_json"] as String).path("institutionAliasVersion").asInt() == 2 })
             assertEquals(0L, jdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_item WHERE owner_execution_id=987654", Long::class.java))
             assertEquals(4L, jdbc.queryForObject("SELECT COUNT(DISTINCT owner_execution_id) FROM discovery_verification_item", Long::class.java))
             assertTrue(f.flow.candidates.isEmpty(), "All managed profiles wait for the worker, even direct candidates")

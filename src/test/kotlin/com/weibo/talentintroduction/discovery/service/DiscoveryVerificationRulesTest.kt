@@ -31,6 +31,125 @@ fun ruleSearch(masked: Boolean = false, count: Int = 1, complete: Boolean = true
 class DiscoveryVerificationRulesTest {
     private val rules = DiscoveryVerificationRules(ruleClock)
     private val mapper = jacksonObjectMapper()
+
+    @Test fun `decision trace records actual short circuit steps and bounded full set ambiguity`() {
+        val person = ApolloCandidate("chosen", "Ada", "Lee", null, "Ada Lee", "Researcher",
+            VerificationInstitution("Example University"))
+        fun search(vararg candidates: ApolloCandidate) = ApolloSearchEvidence(candidates.toList(), true, true,
+            setOf("Ada Lee"), matchingVersion = 2, detailsComplete = true, institutionAliasVersion = 2,
+            academicResearchFields = "quantum optics")
+        fun evaluate(candidate: ApolloCandidate) = rules.evaluate(ruleSnapshot(), emptyList(), search(candidate), ruleVersion = 2)
+        val current = evaluate(person)
+        val currentTrace = current.trace!!.candidates.single()
+        assertEquals("MATCH", currentTrace.nameMatch)
+        assertEquals("NOT_AVAILABLE", currentTrace.orcid)
+        assertEquals("MATCH", currentTrace.currentInstitution)
+        assertEquals("NOT_EVALUATED", currentTrace.historicalInstitution)
+        assertEquals("NOT_EVALUATED", currentTrace.professor)
+        assertEquals("NOT_EVALUATED", currentTrace.specialty)
+        assertNull(currentTrace.rejectedReason)
+        assertEquals("APOLLO_CURRENT_INSTITUTION_MATCH", currentTrace.chosenReason)
+        assertEquals(ruleClock.instant(), current.trace!!.evaluatedAt)
+        assertEquals("RECORDED", current.trace!!.traceOrigin)
+        val elsewhere = person.copy(institution = VerificationInstitution("Unrelated University"))
+        val historical = evaluate(elsewhere.copy(employmentHistory = listOf(ApolloEmployment(
+            VerificationInstitution("Example University"), null, false, null, "2020-01-01")))).trace!!.candidates.single()
+        assertEquals("DIFFERENT", historical.currentInstitution)
+        assertEquals("MATCH", historical.historicalInstitution)
+        assertEquals("NOT_EVALUATED", historical.professor)
+        val professor = evaluate(elsewhere.copy(title = "Professor")).trace!!.candidates.single()
+        assertEquals("MATCH", professor.professor)
+        assertEquals("NOT_EVALUATED", professor.specialty)
+        val specialty = evaluate(elsewhere.copy(headline = "quantum optics")).trace!!.candidates.single()
+        assertEquals("NO_MATCH", specialty.professor)
+        assertEquals("MATCH", specialty.specialty)
+        val failed = evaluate(elsewhere).trace!!.candidates.single()
+        assertEquals("NO_MATCH", failed.specialty)
+        assertEquals("IDENTITY_NOT_MATCHED", failed.rejectedReason)
+        val wrongName = evaluate(person.copy(firstName = "Grace", fullName = "Grace Lee")).trace!!.candidates.single()
+        assertEquals("NO_MATCH", wrongName.nameMatch)
+        assertEquals("NOT_EVALUATED", wrongName.currentInstitution)
+        val conflict = evaluate(person.copy(orcid = "0000-0001-0000-0001"))
+        assertEquals(listOf("ORCID_CONFLICT"), conflict.reasonCodes)
+        assertEquals("CONFLICT", conflict.trace!!.candidates.single().orcid)
+        assertEquals("NOT_EVALUATED", conflict.trace!!.candidates.single().currentInstitution)
+        val incomplete = rules.evaluate(ruleSnapshot(), emptyList(), search(person).copy(complete = false), ruleVersion = 2)
+        assertEquals("SEARCH_INCOMPLETE", incomplete.trace!!.candidates.single().rejectedReason)
+        assertEquals("NOT_EVALUATED", incomplete.trace!!.candidates.single().nameMatch)
+        val empty = rules.evaluate(ruleSnapshot(), emptyList(), search(), ruleVersion = 2)
+        assertEquals(0, empty.trace!!.total)
+        assertTrue(empty.trace!!.candidates.isEmpty())
+        assertEquals(listOf("APOLLO_NO_MATCH"), empty.reasonCodes)
+        val candidates = (1..201).map { person.copy(id = "person-$it") }
+        val all = search().copy(candidates = candidates)
+        val ambiguous = rules.evaluate(ruleSnapshot(), emptyList(), all, ruleVersion = 2)
+        assertEquals(listOf("IDENTITY_AMBIGUOUS"), ambiguous.reasonCodes)
+        assertEquals(201, all.candidates.size)
+        assertEquals(201, ambiguous.trace!!.total)
+        assertEquals(200, ambiguous.trace!!.candidates.size)
+        assertTrue(ambiguous.trace!!.truncated)
+        val onlyLast = all.copy(candidates = candidates.mapIndexed { index, candidate ->
+            if (index == 200) candidate else candidate.copy(firstName = "Grace", fullName = "Grace Lee")
+        })
+        val last = rules.evaluate(ruleSnapshot(), emptyList(), onlyLast, ruleVersion = 2)
+        assertEquals("person-201", last.matchedPersonId)
+        assertEquals("person-201", last.trace!!.candidates.first().personId)
+        assertEquals("search.candidates[200]", last.trace!!.candidates.first().candidateRef)
+        assertEquals(last.copy(trace = null), rules.evaluate(ruleSnapshot(), emptyList(), onlyLast, ruleVersion = 2).copy(trace = null))
+    }
+
+    @Test fun `Nicolas minimal archived shape improves once with either repair and preserves raw title`() {
+        val snapshot = ruleSnapshot().let { it.copy(profile = it.profile.copy(institution = "University of Geneva")) }
+        val candidate = ApolloCandidate("nicolas-synthetic", "Ada", "Lee", null, "Ada Lee", "Assistenzprofessor",
+            VerificationInstitution("University of Southern Denmark"), headline = "Assistant Professor at University of Southern Denmark",
+            employmentHistory = listOf(ApolloEmployment(VerificationInstitution("Université de Genève"), "Researcher", false,
+                "2011-01-01", "2024-12-01")))
+        fun search(alias: Int, person: ApolloCandidate = candidate) = ApolloSearchEvidence(
+            candidates = listOf(person), broadComplete = true, complete = true, queryNames = setOf("Ada Lee"),
+            matchingVersion = 2, detailsComplete = true, institutionAliasVersion = alias)
+        for (version in 0..1) assertEquals(VerificationOutcome.PENDING, rules.evaluate(snapshot, emptyList(), search(1), ruleVersion = version).outcome)
+        val aliasOnly = rules.evaluate(snapshot, emptyList(), search(2), ruleVersion = 1)
+        val titleOnly = rules.evaluate(snapshot, emptyList(), search(1), ruleVersion = 2)
+        val combined = rules.evaluate(snapshot, emptyList(), search(2), ruleVersion = 2)
+        listOf(aliasOnly, titleOnly, combined).forEach {
+            assertEquals(VerificationOutcome.APOLLO_CLEAR, it.outcome)
+            assertEquals(candidate.id, it.matchedPersonId)
+            assertEquals(VerificationQualification.UNKNOWN, it.qualification)
+            assertEquals(listOf("completedDoctorate", "reliableAge"), it.missingFields)
+            assertEquals(java.time.LocalDate.parse("2026-10-18"), it.evaluatedOn)
+        }
+        assertTrue(combined.reasonCodes.contains(DiscoveryInstitutionNormalizer.GENEVA_ALIAS_REASON))
+        assertFalse(combined.reasonCodes.contains(DiscoveryInstitutionNormalizer.TUM_ALIAS_REASON))
+        assertTrue(titleOnly.reasonCodes.contains("APOLLO_PROFESSOR_MATCH"))
+        assertEquals(1, listOf(aliasOnly, titleOnly, combined).map { it.matchedPersonId }.distinct().size)
+        assertEquals("Assistenzprofessor", candidate.title)
+        assertFalse(rules.apolloProfessor(candidate.title))
+        val second = candidate.copy(id = "second-person")
+        assertTrue(rules.evaluate(snapshot, emptyList(), search(2).copy(candidates = listOf(candidate, second)), ruleVersion = 2)
+            .reasonCodes.contains("IDENTITY_AMBIGUOUS"))
+        assertTrue(rules.evaluate(snapshot, emptyList(), search(2, candidate.copy(orcid = "0000-0001-0000-0001")), ruleVersion = 2)
+            .reasonCodes.contains("ORCID_CONFLICT"))
+        assertEquals(VerificationOutcome.PROTECTED, rules.evaluate(snapshot, emptyList(), search(2), protected = true, ruleVersion = 2).outcome)
+        assertThrows(IllegalArgumentException::class.java) { rules.evaluate(snapshot, emptyList(), search(2), ruleVersion = 3) }
+    }
+
+    @Test fun `Assistenzprofessor needs explicit positive prefix and cannot extend email identity route`() {
+        val snapshot = ruleSnapshot()
+        val candidate = ApolloCandidate("person", "Ada", "Lee", null, "Ada Lee", "Assistenzprofessor",
+            VerificationInstitution("Unrelated University"))
+        listOf(null, "Professor", "Student and Assistant Professor", "Assistant to Professor",
+            "Assistant Professor retired", "Assistant Professor student", "Assistant Professor not currently employed",
+            "Former Assistant Professor").forEach { headline ->
+            assertNull(rules.matchReason(snapshot, emptyList(), candidate.copy(headline = headline), null, 2, 2), headline)
+        }
+        val positive = candidate.copy(headline = "Assistant Professor at Nottingham University")
+        assertEquals("APOLLO_PROFESSOR_MATCH", rules.matchReason(snapshot, emptyList(), positive, null, 2, 2))
+        assertNull(rules.matchReason(snapshot, emptyList(), positive, null, 2, 1))
+        assertFalse(rules.emailNameMatches(snapshot, emptyList(), positive, 2))
+        val unknown = ruleJob("Professor", temporal = TemporalScope.UNKNOWN)
+        assertEquals(VerificationOutcome.PENDING, rules.evaluate(snapshot, listOf(unknown), ruleVersion = 2).outcome)
+        assertEquals(TemporalScope.UNKNOWN, unknown.temporalScope)
+    }
     @Test fun `fixed annotated fixtures replay identically with auditable fields`() {
         val fixtures = jacksonObjectMapper().readTree(javaClass.getResourceAsStream("/discovery/apollo-verification-cases.json"))
         fixtures.path("cases").forEach { case ->
@@ -115,7 +234,9 @@ class DiscoveryVerificationRulesTest {
         val results = listOf(wrong, wrong.copy(fullName = null)).map { candidate ->
             rules.evaluate(ruleSnapshot(), listOf(ruleJob()), search.copy(candidates = search.candidates + candidate))
         }
-        assertEquals(results.first(), results.last())
+        assertEquals(results.first().copy(trace = null), results.last().copy(trace = null))
+        assertEquals(results.first().trace!!.candidates, results.last().trace!!.candidates)
+        assertNotEquals(results.first().trace!!.inputHash, results.last().trace!!.inputHash)
         results.forEach { result ->
             assertEquals(VerificationQualification.CONFLICT, result.qualification)
             assertEquals(VerificationOutcome.PENDING, result.outcome)
@@ -326,6 +447,32 @@ class DiscoveryVerificationRulesTest {
                 "historicalInput" to manifest.path("oldInputStatus").asText("UNAVAILABLE"),
                 "note" to "New context is built in memory only; no item or admission is upgraded.")))
         println("institutionReplay denominator=${old.size} negativeChanges=${negative.size} output=$output")
+    }
+
+    @Test fun `later empty query preserves incomplete candidate union and conflict protection`() {
+        val broad = ApolloSearchQuery("Ada Lee")
+        val institution = ApolloSearchQuery("Ada Lee", institution = VerificationInstitution("Example University"))
+        val person = ruleSearch().candidates.single()
+        val truncated = ApolloSearchEvidence(matchingVersion = 2).merge(
+            ApolloSearchPage(listOf(person), 600, 5), broad, broad = true)
+        val final = truncated.merge(ApolloSearchPage(emptyList(), 0, 1), institution, broad = false,
+            allQueriesComplete = false).copy(detailsComplete = true)
+        assertFalse(final.complete); assertFalse(final.broadComplete)
+        assertEquals(listOf(person), final.candidates)
+        assertEquals(listOf("SEARCH_INCOMPLETE"), rules.evaluate(ruleSnapshot(), emptyList(), final).reasonCodes)
+        val conflicting = final.merge(ApolloSearchPage(listOf(person.copy(title = "Researcher")), 1, 1),
+            institution, broad = false)
+        assertEquals(setOf(person.id), conflicting.conflictingIds)
+        assertEquals(VerificationOutcome.PENDING, rules.evaluate(ruleSnapshot(), emptyList(), conflicting).outcome)
+        val complete = conflicting.copy(complete = true, broadComplete = true)
+        assertEquals(listOf("APOLLO_ID_CONFLICT"), rules.evaluate(ruleSnapshot(), emptyList(), complete).reasonCodes)
+    }
+
+    @Test fun `legacy complete facts survive merges without optional diagnostics`() {
+        val old = ruleSearch().copy(matchingVersion = 2, detailsComplete = true)
+        val merged = old.merge(ApolloSearchPage(emptyList(), 0, 1), ApolloSearchQuery("Ada Lee"), broad = false)
+        assertTrue(merged.complete); assertTrue(merged.broadComplete)
+        assertEquals(rules.evaluate(ruleSnapshot(), emptyList(), old), rules.evaluate(ruleSnapshot(), emptyList(), merged))
     }
 
     private fun replaySha(bytes: ByteArray): String = java.security.MessageDigest.getInstance("SHA-256")

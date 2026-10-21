@@ -29,9 +29,9 @@ class RequestPermit(val attemptId: Long, val provider: VerificationProvider) {
 
 sealed class VerificationHttpResult<out T> {
     data class Success<T>(val value: T, val responseSha256: String, val httpStatus: Int = 200) : VerificationHttpResult<T>()
-    data class RateLimited(val retryAt: Instant, val httpStatus: Int = 429) : VerificationHttpResult<Nothing>()
-    data class TransientFailure(val code: String, val httpStatus: Int? = null) : VerificationHttpResult<Nothing>()
-    data class PermanentFailure(val code: String, val httpStatus: Int? = null) : VerificationHttpResult<Nothing>()
+    data class RateLimited(val retryAt: Instant, val httpStatus: Int = 429, val diagnostic: VerificationDiagnostic? = null) : VerificationHttpResult<Nothing>()
+    data class TransientFailure(val code: String, val httpStatus: Int? = null, val diagnostic: VerificationDiagnostic? = null) : VerificationHttpResult<Nothing>()
+    data class PermanentFailure(val code: String, val httpStatus: Int? = null, val diagnostic: VerificationDiagnostic? = null) : VerificationHttpResult<Nothing>()
 }
 
 data class VerificationInstitution(val name: String, val standardId: String? = null, val aliases: Set<String> = emptySet())
@@ -73,29 +73,33 @@ internal class VerificationHttp(private val http: RestTemplate, private val cloc
         return try {
             http.execute(uri, method, { request -> headers.forEach { (key, value) -> request.headers.set(key, value) } }, { response ->
                 val status = response.rawStatusCode
-                when {
-                    status == 429 -> {
-                        val raw = response.headers.getFirst("Retry-After")
-                        val retryAt = raw?.toLongOrNull()?.takeIf { it >= 0 && it <= 31536000 }?.let { clock.instant().plusSeconds(it) }
-                            ?: runCatching { ZonedDateTime.parse(raw, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant() }.getOrNull()
-                            ?: clock.instant().plusSeconds(60)
-                        VerificationHttpResult.RateLimited(maxOf(clock.instant(), retryAt))
+                if (status !in 200..299) {
+                    val bytes = response.body.readNBytes(VerificationDiagnostics.ERROR_LIMIT + 1)
+                    val code = VerificationDiagnostics.classify(provider, status, bytes)
+                    val diagnostic = VerificationDiagnostics.fromBytes(provider, uri.path, status, bytes,
+                        bytes.size > VerificationDiagnostics.ERROR_LIMIT, code, response.headers.getFirst("X-Request-Id"),
+                        response.headers.getFirst("Retry-After"), response.headers.getFirst("Content-Type"))
+                    when {
+                        status == 429 -> {
+                            val raw = response.headers.getFirst("Retry-After")
+                            val retryAt = raw?.toLongOrNull()?.takeIf { it >= 0 && it <= 31536000 }?.let { clock.instant().plusSeconds(it) }
+                                ?: runCatching { ZonedDateTime.parse(raw, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant() }.getOrNull()
+                                ?: clock.instant().plusSeconds(60)
+                            VerificationHttpResult.RateLimited(maxOf(clock.instant(), retryAt), status, diagnostic)
+                        }
+                        status >= 500 -> VerificationHttpResult.TransientFailure(code, status, diagnostic)
+                        else -> VerificationHttpResult.PermanentFailure(code, status, diagnostic)
                     }
-                    status >= 500 -> VerificationHttpResult.TransientFailure("PROVIDER_UNAVAILABLE", status)
-                    status !in 200..299 -> VerificationHttpResult.PermanentFailure(when (status) {
-                        401, 403 -> "CONFIG_AUTH"
-                        400, 422 -> "REQUEST_INVALID"
-                        404 -> "EVIDENCE_MISSING"
-                        else -> "HTTP_ERROR"
-                    }, status)
-                    else -> {
-                        val bytes = response.body.readNBytes(2 * 1024 * 1024 + 1)
-                        if (bytes.size > 2 * 1024 * 1024) VerificationHttpResult.PermanentFailure("RESPONSE_TOO_LARGE", status)
-                        else try {
-                            val node = mapper.readTree(bytes)
-                            if (node == null || !node.isObject) VerificationHttpResult.PermanentFailure("RESPONSE_INVALID", status)
-                            else VerificationHttpResult.Success(node, com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.hash(String(bytes, Charsets.UTF_8)), status)
-                        } catch (_: Exception) { VerificationHttpResult.PermanentFailure("RESPONSE_INVALID", status) }
+                } else {
+                    val bytes = response.body.readNBytes(2 * 1024 * 1024 + 1)
+                    val node = if (bytes.size <= 2 * 1024 * 1024) runCatching { mapper.readTree(bytes) }.getOrNull() else null
+                    if (node != null && node.isObject) VerificationHttpResult.Success(node,
+                        com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.hash(String(bytes, Charsets.UTF_8)), status)
+                    else {
+                        val code = if (bytes.size > 2 * 1024 * 1024) "RESPONSE_TOO_LARGE" else "RESPONSE_INVALID"
+                        VerificationHttpResult.PermanentFailure(code, status, VerificationDiagnostics.fromBytes(
+                            provider, uri.path, status, bytes, bytes.size > 2 * 1024 * 1024, code,
+                            contentType = response.headers.getFirst("Content-Type")))
                     }
                 }
             }) ?: VerificationHttpResult.PermanentFailure("RESPONSE_INVALID")
@@ -127,12 +131,12 @@ class ApolloPeopleSearchClient(
         if (!person.isObject || text(person, "id") != id ||
             listOf("first_name", "last_name", "name", "title", "headline", "orcid").any {
                 person.hasNonNull(it) && !person.path(it).isTextual
-            }) return VerificationHttpResult.PermanentFailure("RESPONSE_INVALID", result.httpStatus)
+            }) return invalid(result, uri.path)
         val history = person.path("employment_history")
         if (person.hasNonNull("employment_history") && !history.isArray ||
             history.size() > 200 || history.any { !it.isObject ||
                 it.hasNonNull("current") && !it.path("current").isBoolean })
-            return VerificationHttpResult.PermanentFailure("RESPONSE_INVALID", result.httpStatus)
+            return invalid(result, uri.path)
         val candidate = ApolloCandidate(id, text(person, "first_name"), text(person, "last_name"),
             text(person, "last_name_obfuscated"), text(person, "name"), text(person, "title"),
             text(person.path("organization"), "name")?.let(::VerificationInstitution), text(person, "orcid"),
@@ -160,21 +164,25 @@ class ApolloPeopleSearchClient(
         val people = root.path("people")
         val total = root.path("total_entries")
         if (!people.isArray || !total.isIntegralNumber || !total.canConvertToLong() || total.longValue() < 0 || people.size() > 100)
-            return VerificationHttpResult.PermanentFailure("RESPONSE_INVALID", result.httpStatus)
+            return invalid(result, "/api/v1/mixed_people/api_search")
         val candidates = ArrayList<ApolloCandidate>()
         for (person in people) {
             if (!person.isObject || !person.path("id").isTextual || person.path("id").asText().isBlank() || person.path("id").asText().length > 128)
-                return VerificationHttpResult.PermanentFailure("RESPONSE_INVALID", result.httpStatus)
+                return invalid(result, "/api/v1/mixed_people/api_search")
             val fields = listOf("first_name", "last_name", "last_name_obfuscated", "name", "title")
-            if (fields.any { person.hasNonNull(it) && !person.path(it).isTextual }) return VerificationHttpResult.PermanentFailure("RESPONSE_INVALID", result.httpStatus)
+            if (fields.any { person.hasNonNull(it) && !person.path(it).isTextual }) return invalid(result, "/api/v1/mixed_people/api_search")
             val org = person.path("organization")
-            if (!org.isMissingNode && !org.isNull && !org.isObject) return VerificationHttpResult.PermanentFailure("RESPONSE_INVALID", result.httpStatus)
+            if (!org.isMissingNode && !org.isNull && !org.isObject) return invalid(result, "/api/v1/mixed_people/api_search")
             candidates += ApolloCandidate(person.path("id").asText(), text(person, "first_name"), text(person, "last_name"),
                 text(person, "last_name_obfuscated"), text(person, "name"), text(person, "title"),
                 text(org, "name")?.let { VerificationInstitution(it) }, text(person, "orcid"))
         }
-        if (total.longValue() < candidates.size) return VerificationHttpResult.PermanentFailure("RESPONSE_INVALID", result.httpStatus)
+        if (total.longValue() < candidates.size) return invalid(result, "/api/v1/mixed_people/api_search")
         return VerificationHttpResult.Success(ApolloSearchPage(candidates, total.longValue(), query.page), result.responseSha256, result.httpStatus)
     }
+    private fun invalid(result: VerificationHttpResult.Success<JsonNode>, path: String) =
+        VerificationHttpResult.PermanentFailure("RESPONSE_INVALID", result.httpStatus, VerificationDiagnostic(
+            provider = VerificationProvider.APOLLO, endpointPath = path, httpStatus = result.httpStatus,
+            bodySha256 = result.responseSha256, hashScope = "FULL", classification = "RESPONSE_INVALID"))
     private fun text(node: JsonNode, field: String): String? = node.path(field).takeIf { it.isTextual }?.asText()?.takeIf { it.isNotBlank() }?.take(4096)
 }

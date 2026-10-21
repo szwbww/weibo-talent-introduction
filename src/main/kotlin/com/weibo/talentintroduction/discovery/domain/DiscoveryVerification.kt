@@ -150,8 +150,9 @@ data class VerificationAttempt(
     val requestedAt: Instant, val completedAt: Instant?, val httpStatus: Int?, val resultCode: String,
     val requestJson: String, val responseJson: String?, val responseSha256: String?
 )
-enum class VerificationBudgetReason { LEASE_LOST, LOCK_BUSY, MINUTE_LIMIT, DAY_LIMIT, ITEM_LIMIT, DUPLICATE_REQUEST }
-data class VerificationAttemptReservation(val attemptId: Long? = null, val deferred: VerificationBudgetReason? = null)
+enum class VerificationBudgetReason { LEASE_LOST, LOCK_BUSY, MINUTE_LIMIT, DAY_LIMIT, ITEM_LIMIT, DUPLICATE_REQUEST, CREDITS_WAIT }
+data class VerificationAttemptReservation(val attemptId: Long? = null, val deferred: VerificationBudgetReason? = null,
+    val retryAt: Instant? = null)
 data class VerificationCounts(
     val profiles: Long = 0, val autoAdmitted: Long = 0, val directAdmitted: Long = 0,
     val apolloAdmitted: Long = 0, val clear: Long = 0, val unclear: Long = 0, val pending: Long = 0,

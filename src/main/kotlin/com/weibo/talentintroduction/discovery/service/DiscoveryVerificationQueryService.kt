@@ -106,12 +106,15 @@ class DiscoveryVerificationQueryService(
             snapshot.profile.employment, snapshot.profile.institutionEvidence, snapshot.boundOrcid,
             payload?.evidence ?: emptyList(), reasonCodes(item).map { VerificationReason(it, reasonLabel(it), 1) },
             repository.findAttempts(itemId).map { VerificationAttemptSummary(it.id, it.provider, it.queryKind,
-                it.pageNumber, it.attemptNumber, it.requestedAt, it.completedAt, it.httpStatus, it.resultCode, it.responseSha256) },
+                it.pageNumber, it.attemptNumber, it.requestedAt, it.completedAt, it.httpStatus, it.resultCode, it.responseSha256,
+                VerificationDiagnostics.read(it.responseJson)) },
             item.admissionRevision, item.projectionError, run.mode, run.revision, Instant.now(),
             item.apolloPersonId, VerificationApolloStages(item.apolloEnteredAt, item.searchCompletedAt,
                 item.candidateFoundAt, item.personMatchedAt), payload?.search?.matchingVersion ?: 1,
             payload?.search?.candidates?.firstOrNull { it.id == item.apolloPersonId },
-            payload?.search?.academicResearchFields)
+            payload?.search?.academicResearchFields, payload?.diagnostics?.let { saved ->
+                saved.copy(decision = saved.decision?.takeIf { it.traceOrigin == "RECORDED" }) .bounded()
+            })
     }
 
     private fun summaryRow(id: Long, run: VerificationRun?, counts: VerificationCounts, status: String?, asOf: Instant,
@@ -196,6 +199,7 @@ class DiscoveryVerificationQueryService(
             "ITEM_REQUEST_LIMIT" to "核验未完成：达到单档案请求上限",
             "EVIDENCE_INCOMPLETE" to "证据尚未完整", "CONFIG_AUTH" to "接口认证配置错误",
             "REQUEST_INVALID" to "接口请求无效", "RESPONSE_INVALID" to "接口响应无效",
+            "APOLLO_CREDITS_EXHAUSTED" to "额度不足，等待恢复", "CREDITS_WAIT" to "额度不足，等待恢复",
             "SUPERSEDED_BY_REVIEW" to "已由人工审核决定取代")
     }
 }
@@ -224,7 +228,7 @@ data class VerificationRecord(val itemId: Long, val docId: String, val name: Str
     val qualification: VerificationQualification, val matchingLabel: String? = null, val matchingVersion: Int = 1)
 data class VerificationAttemptSummary(val id: Long, val provider: VerificationProvider, val queryKind: VerificationQueryKind,
     val pageNumber: Int, val attemptNumber: Int, val requestedAt: Instant, val completedAt: Instant?,
-    val httpStatus: Int?, val resultCode: String, val responseSha256: String?)
+    val httpStatus: Int?, val resultCode: String, val responseSha256: String?, val diagnostic: VerificationDiagnostic? = null)
 data class VerificationItemDetail(val record: VerificationRecord, val executionId: Long, val state: VerificationState,
     val outcome: VerificationOutcome?, val qualification: VerificationQualification,
     val identity: com.weibo.talentintroduction.expert.domain.IdentityVerification?, val originalEmployment: String?,
@@ -232,6 +236,7 @@ data class VerificationItemDetail(val record: VerificationRecord, val executionI
     val reasons: List<VerificationReason>, val attempts: List<VerificationAttemptSummary>, val admissionRevision: Long?,
     val projectionError: String?, val mode: VerificationMode, val snapshotVersion: Long, val asOf: Instant,
     val apolloPersonId: String?, val apolloStages: VerificationApolloStages, val matchingVersion: Int = 1,
-    val matchedCandidate: ApolloCandidate? = null, val academicResearchFields: String? = null)
+    val matchedCandidate: ApolloCandidate? = null, val academicResearchFields: String? = null,
+    val diagnostics: WorkerDiagnostics? = null)
 data class VerificationApolloStages(val enteredAt: Instant?, val searchedAt: Instant?,
     val candidateFoundAt: Instant?, val matchedAt: Instant?)
