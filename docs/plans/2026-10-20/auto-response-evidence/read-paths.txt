@@ -1,0 +1,56 @@
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt:95:    /** 线上来信：inbound_mail_processing 行；必须已绑定联系人。 */
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt:101:                "inbound_mail_processing $sourceId does not exist"
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt:107:            "inbound_mail_processing $sourceId has no expert contact"
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/InboundMailProcessing.kt:7:@Table("inbound_mail_processing")
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:33: * 其唯一 owner（mail_record 或 inbound_mail_processing）→ contact。
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:855:              LEFT JOIN inbound_mail_processing p ON p.id = COALESCE(t.inbound_processing_id, a.inbound_processing_id)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:865:                     SELECT p.id FROM inbound_mail_processing p
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:877:                     SELECT p.id FROM inbound_mail_processing p
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:55: * latestInbound.processingId 是真实 inbound_mail_processing.id（供可信工作台），
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:57:        /** 来信路径 = 真实 inbound_mail_processing.id；会话回信路径 = null（I-3）。 */
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:132:        // `inbound_mail_processing`/`mail_record`/意图/标签/附件/专家状态，只在允许确认时
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailTagRepository.kt:46:        JOIN inbound_mail_processing p ON p.id = t.inbound_processing_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailTagRepository.kt:69:        JOIN inbound_mail_processing p ON p.id = t.inbound_processing_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:84:                    JOIN inbound_mail_processing p ON p.id = t.inbound_processing_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:89:                    JOIN inbound_mail_processing p2 ON p2.id = t2.inbound_processing_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:118:                    JOIN inbound_mail_processing p ON p.id = t.inbound_processing_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:123:                    JOIN inbound_mail_processing p2 ON p2.id = t2.inbound_processing_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:550:            FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:597:            FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:667:                FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:733:                FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:826:            FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:37:        SELECT * FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:50:        UPDATE inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:87:        SELECT * FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:104:        SELECT COUNT(*) FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:121:        SELECT * FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:140:        SELECT COUNT(*) FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:152:        FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:159:        SELECT COUNT(*) FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:167:        FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:176:        SELECT COUNT(*) FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:185:        SELECT COUNT(*) FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:194:        SELECT * FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:213:        SELECT COUNT(*) FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:229:          FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:238:        SELECT * FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:245:    @Query("SELECT COUNT(*) FROM inbound_mail_processing")
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:250:        SELECT p.* FROM inbound_mail_processing p
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:276:        SELECT COUNT(*) FROM inbound_mail_processing p
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionService.kt:64: *   inbound_mail_processing/ES（I-6）。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionService.kt:74:        /** 待处理权威谓词（复用 inbound_mail_processing 现有 MANUAL_REVIEW 口径 I-3）。 */
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionService.kt:127:              FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionService.kt:234:              FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:30: * - 推荐（[timing]）：只读配置、业务账号集合与 `inbound_mail_processing` 的窄投影，
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:84:     * 样本只来自指定 contact 的 `inbound_mail_processing`；账号集合复用
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:292:            FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertRepliedDismissalService.kt:27:            "SELECT MAX(id) FROM inbound_mail_processing WHERE expert_contact_id = :contactId",
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:14: * 数据权威（I-1）：来信只取 linked inbound_mail_processing（排除未匹配与独立机器信；
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:412:     * 2. `inbound_mail_processing JOIN mail_sender_account` 的 MANUAL_REVIEW 分组聚合 →
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:451:              FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:528:     * 归一化 UNION 基础：OUTBOUND mail_record UNION ALL linked inbound_mail_processing。
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:586:              FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:620:        // 入站匹配 inbound_mail_processing.from_email（别名）。recipientEmail/keyword 与
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:644:                SELECT 1 FROM inbound_mail_processing impi
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:739:                    SELECT 1 FROM inbound_mail_processing imp_replied

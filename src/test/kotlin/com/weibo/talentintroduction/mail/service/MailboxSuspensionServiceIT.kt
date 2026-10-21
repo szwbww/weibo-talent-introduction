@@ -319,6 +319,48 @@ class MailboxSuspensionServiceIT {
         assertFalse(cleared.followed)
     }
 
+    @Test
+    fun `auto-response first reply drops suspension and badge counts consistently`() {
+        insertProcessing(1, "acc-a", 921, "MANUAL_REVIEW", "2026-10-04 09:00:00", "auto-badge-1")
+        insertProcessing(1, "acc-a", 922, "MANUAL_REVIEW", "2026-10-04 09:01:00", "manual-badge-2")
+        insertProcessing(2, "acc-a", 923, "MANUAL_REVIEW", "2026-10-04 09:02:00", "unmatched-badge")
+        jdbcTemplate.update(
+            "UPDATE inbound_mail_processing SET expert_contact_id = NULL, reason_type = 'UNMATCHED_CONTACT' " +
+                "WHERE message_id = 'unmatched-badge'"
+        )
+
+        assertEquals(3L, service.pendingBadge("op1").manualReviewTotal,
+            "挂起前导航角标包含两条已关联待处理与一条未关联待处理")
+
+        service.suspend("op1", 1, null)
+        assertEquals(2L, service.get("op1", 1).suspensionPendingCount)
+        // 导航角标按既有规则排除「本人挂起」的专家，只剩未关联来信。
+        assertEquals(1L, service.pendingBadge("op1").manualReviewTotal)
+
+        jdbcTemplate.update(
+            """
+            UPDATE inbound_mail_processing
+               SET process_status = 'PROCESSED',
+                   process_reason = 'AUTO_RESPONSE_HEADER',
+                   reason_type = 'AUTO_RESPONSE',
+                   resolved_at = NULL,
+                   resolved_by = NULL,
+                   updated_at = NOW()
+             WHERE message_id = 'auto-badge-1'
+            """.trimIndent()
+        )
+
+        val after = service.get("op1", 1)
+        assertTrue(after.suspended, "归类不结束用户挂起")
+        assertEquals(1L, after.suspensionPendingCount)
+        assertEquals(1L, service.pendingBadge("op1").manualReviewTotal)
+        val otherUserBadge = service.pendingBadge("op2")
+        assertEquals(2L, otherUserBadge.manualReviewTotal,
+            "未挂起 op2 的导航角标同时减少被排除的首封")
+        assertEquals(1L, otherUserBadge.countsByReasonType["UNMATCHED_CONTACT"],
+            "未关联来信保持原待处理")
+    }
+
     // ------------------------------------------------------------------
     // 工具
     // ------------------------------------------------------------------

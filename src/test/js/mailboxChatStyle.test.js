@@ -99,6 +99,71 @@ describe("收发件箱静态资源版本", () => {
     });
 });
 
+// ---------------------------------------------------------------------------
+// 2026-10-20 · mailbox-pending-confirmation-label（I-1/I-2/I-3/S-1）
+// 仅显示改名为「待确认」：option value、CHIP key、class 与布局不变；
+// 全部版本化资源统一到同一新键。
+// ---------------------------------------------------------------------------
+describe("待确认显示：文案、option 原值与缓存键", () => {
+    it("I-3：全部版本化资源使用同一键（唯一来源 styles.css）", () => {
+        const refs = [...indexSource.matchAll(/\?v=([^"'&<>]+)/g)].map((match) => match[1]);
+        assert.ok(refs.length > 0, "index.html 必须存在版本化资源");
+        assert.deepStrictEqual([...new Set(refs)], [CACHE_KEY], "所有资源必须同键");
+        assert.match(CACHE_KEY, /^[0-9]{8}-[a-z0-9-]+$/, "键须为 <yyyymmdd>-<slug>");
+        assert.strictEqual(
+            indexSource.match(/mailbox-chat\.css\?v=([^"'&<>]+)/)[1],
+            CACHE_KEY,
+            "聊天 CSS 与聊天脚本必须同键"
+        );
+        assert.strictEqual(
+            indexSource.match(/app\.js\?v=([^"'&<>]+)/)[1],
+            CACHE_KEY,
+            "主脚本必须同键"
+        );
+    });
+
+    it("I-1：旧标签 option 保留原 value，只改显示文字", () => {
+        assert.ok(indexSource.includes('<option value="待匹配">待确认</option>'), "option value 仍为后端原值");
+        assert.ok(!indexSource.includes('<option value="待匹配">待匹配</option>'), "旧显示文字必须移除");
+    });
+
+    it("I-1/I-2/S-1：聊天模板展示「待确认」，CHIP key 与宿主 action 不变", () => {
+        assert.ok(chatSource.includes('{ key: CHIP_UNMATCHED, label: "待确认" }'), "chip 显示改名");
+        assert.ok(chatSource.includes('const CHIP_UNMATCHED = "unmatched"'), "CHIP key 不变");
+        assert.ok(chatSource.includes('aria-label="待确认来信详情"'), "详情 aria-label 同步");
+        assert.ok(chatSource.includes('body.setAttribute("aria-label", "待确认来信处理")'), "右栏 aria-label 同步");
+        assert.ok(chatSource.includes('暂无待确认来信'), "空态同步");
+        assert.ok(chatSource.includes('请选择左侧待确认来信'), "详情占位同步");
+        assert.ok(chatSource.includes('待确认来信加载失败，请重试。'), "错误提示同步");
+        assert.ok(chatSource.includes('搜索待确认来信'), "搜索 aria 同步");
+        assert.ok(!chatSource.includes('暂无待匹配来信'), "旧空态文案必须移除");
+        assert.ok(chatSource.includes('data-action="mc-select-unmatched"'), "卡片 action 不变");
+        assert.ok(chatSource.includes('data-action="mc-retry-list"'), "错误重试 action 不变");
+    });
+
+    it("S-1：不改样式与布局（CSS 文件无待确认文案，chip 样式仍由既有规则提供）", () => {
+        assert.ok(!cssSource.includes("待确认"), "mailbox-chat.css 不应出现业务文案");
+        assert.ok(stylesSource.includes("#view-mailbox.mc-refined .mc-filter{flex:0 0 auto;min-height:36px;padding:7px 5px 10px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:#7d8ca2;font-size:12px;line-height:1.5;white-space:nowrap}"), "chip 基础规则保持不变");
+    });
+
+    it("I-3（amend）：两个固定键测试已指向新 slug，旧 slug 无残留", () => {
+        const pinned = {
+            "discoveryVerification.test.js": {
+                source: fs.readFileSync(path.join(__dirname, "discoveryVerification.test.js"), "utf-8"),
+                assertion: "assert.match(values[0], /^\\d{8}-auto-response-confirmation$/);"
+            },
+            "discoveryReview.test.js": {
+                source: fs.readFileSync(path.join(__dirname, "discoveryReview.test.js"), "utf-8"),
+                assertion: "assert.match(keys[0], /^\\d{8}-auto-response-confirmation$/);"
+            }
+        };
+        Object.entries(pinned).forEach(([name, entry]) => {
+            assert.ok(entry.source.includes(entry.assertion), `${name} 必须固定新 slug`);
+            assert.ok(!entry.source.includes("apollo-matching-v2"), `${name} 不得残留旧 slug`);
+        });
+    });
+});
+
 describe("S-6: DOM class 白名单与模板卫生", () => {
     function literalClasses(source) {
         const out = new Set();
@@ -384,7 +449,7 @@ describe("02 · 三态标记 S-2 样式与结构契约", () => {
         ["ALL", "PROVIDED", "FOLLOWED", "PENDING", "SUSPENDED", "REPLIED", "UNMATCHED"].forEach((name) => {
             assert.ok(new RegExp("\\{ key: CHIP_" + name + ", label:").test(chatSource), `CHIP_${name} 必须在 FILTER_CHIPS`);
         });
-        ["全部", "已提供", "跟进中", "待处理", "已挂起", "已回复", "待匹配"].forEach((label) => {
+        ["全部", "已提供", "跟进中", "待处理", "已挂起", "已回复", "待确认"].forEach((label) => {
             assert.ok(chatSource.includes(`label: "${label}"`), `${label} 必须在 FILTER_CHIPS`);
         });
         assert.ok(!/label: "关注"/.test(chatSource), "旧「关注」展示名必须删除");

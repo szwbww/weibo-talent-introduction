@@ -46,7 +46,17 @@ data class ReceivedMail(
      * 与 MIME [attachments] 分离——self-check/bounce/DMARC 等机器邮件继续只读真实 MIME
      * 附件，linked material 只在公共业务事务入口并入资料写链。
      */
-    val linkedMaterials: List<ReceivedMailAttachment> = emptyList()
+    val linkedMaterials: List<ReceivedMailAttachment> = emptyList(),
+    /**
+     * I-1（首封自动回复）：规范化后的顶层 `Auto-Submitted`（去参数、小写）。只在内存中
+     * 传递，不落库；缺失/重复冲突时为 null。`no`/`auto-generated` 等值不等于命中。
+     */
+    val autoSubmitted: String? = null,
+    /**
+     * I-2：`receivedAt` 是否来自 IMAP 实际 `receivedDate`；false 表示缺失时间后的
+     * fallback（now），绝不能用于五分钟窗口判断。
+     */
+    val receivedAtReliable: Boolean = false
 )
 
 /**

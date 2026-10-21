@@ -15,13 +15,22 @@ import org.springframework.context.annotation.Import
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.TestPropertySource
 import com.weibo.talentintroduction.mail.service.MailboxProgressStatus
+import com.weibo.talentintroduction.mail.service.InboundAutoResponseDetector
+import com.weibo.talentintroduction.mail.service.ReceivedMail
+import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.Statement
 import java.sql.Timestamp
 import java.time.LocalDateTime
+import java.util.concurrent.Callable
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * 专家会话查询真实 MySQL 集成测试（fast-p 07；G-1 门禁，mysqlIt）。
@@ -49,7 +58,7 @@ import java.time.LocalDateTime
         "spring.flyway.placeholder-replacement=false"
     ]
 )
-@Import(MailboxConversationRepository::class)
+@Import(MailboxConversationRepository::class, InboundAutoResponseDetector::class)
 class MailboxConversationRepositoryIT {
 
     @Autowired
@@ -57,6 +66,12 @@ class MailboxConversationRepositoryIT {
 
     @Autowired
     private lateinit var repository: MailboxConversationRepository
+
+    @Autowired
+    private lateinit var inboundAutoResponseDetector: InboundAutoResponseDetector
+
+    @Autowired
+    private lateinit var transactions: PlatformTransactionManager
 
     private val allAccounts = listOf("acc-a", "acc-b", "acc-c")
 
@@ -967,10 +982,200 @@ class MailboxConversationRepositoryIT {
     }
 
     // ------------------------------------------------------------------
+    // 首封自动回复归类后的队列/挂起计数（I-3/I-7）
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `auto-response reclassification removes only that first reply from pending views`() {
+        insertOutbound(1, "acc-a", "INTRODUCTION", "SENT", "Intro A", "2026-09-01 09:00:00")
+        insertProcessing(1, "acc-a", 5101, "MANUAL_REVIEW", "Re: Intro A",
+            "2026-09-01 09:00:19", "auto-a", "alice@example.org")
+        insertOutbound(2, "acc-a", "INTRODUCTION", "SENT", "Intro B", "2026-09-01 09:00:00")
+        insertProcessing(2, "acc-a", 5102, "MANUAL_REVIEW", "Re: Intro B",
+            "2026-09-01 10:00:00", "manual-b", "bob@example.org")
+        // 未关联来信必须保持原 MANUAL_REVIEW，不受本次归类影响。
+        jdbcTemplate.update(
+            """
+            INSERT INTO inbound_mail_processing
+                (sender_account_code, uid_validity, imap_uid, message_id, from_email, subject,
+                 body, cleaned_body, received_at, process_status, process_reason, reason_type, expert_contact_id)
+            VALUES ('acc-a', 1, 5103, 'unmatched-c', 'stranger@example.org', 'Re: something',
+                    'body', 'cleaned', '2026-09-01 09:30:00', 'MANUAL_REVIEW', 'CONTACT_NOT_FOUND',
+                    'UNMATCHED_CONTACT', NULL)
+            """.trimIndent()
+        )
+
+        assertEquals(listOf(1L, 2L), page(filter(pendingOnly = true)).map { it.expertContactId }.sorted())
+        assertEquals(1L, repository.suspensionStatesByContacts("op1", listOf(1L))[1L]!!.suspensionPendingCount)
+
+        // I-3：与收信事务同形的条件写入（只改四个归类字段）。
+        jdbcTemplate.update(
+            """
+            UPDATE inbound_mail_processing
+               SET process_status = 'PROCESSED',
+                   process_reason = 'AUTO_RESPONSE_FAST_5M',
+                   reason_type = 'AUTO_RESPONSE',
+                   resolved_at = NULL,
+                   resolved_by = NULL,
+                   updated_at = NOW()
+             WHERE message_id = 'auto-a' AND process_status = 'MANUAL_REVIEW'
+            """.trimIndent()
+        )
+
+        val pending = page(filter(pendingOnly = true))
+        assertEquals(listOf(2L), pending.map { it.expertContactId },
+            "被排除的首封离开待处理；第二封普通回复保持待处理")
+        val alice = page(emptyFilter()).first { it.expertContactId == 1L }
+        assertEquals(0L, alice.pendingCount)
+        assertEquals(1L, alice.receivedCount, "已排除首封仍计入已收件统计")
+        assertEquals(0L, repository.suspensionStatesByContacts("op1", listOf(1L))[1L]!!.suspensionPendingCount)
+        assertEquals(1L, repository.suspensionStatesByContacts("op1", listOf(2L))[2L]!!.suspensionPendingCount)
+        assertEquals(2L, jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM inbound_mail_processing WHERE process_status = 'MANUAL_REVIEW'",
+            Long::class.java
+        ), "未关联来信与第二封仍为 MANUAL_REVIEW")
+        assertEquals(1L, jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM inbound_mail_processing WHERE process_status = 'PROCESSED' " +
+                "AND process_reason = 'AUTO_RESPONSE_FAST_5M' AND reason_type = 'AUTO_RESPONSE' " +
+                "AND resolved_at IS NULL AND resolved_by IS NULL",
+            Long::class.java
+        ))
+    }
+
+    @Test
+    fun `concurrent first replies serialize on the contact row and only the committed one is eligible`() {
+        insertOutbound(1, "acc-a", "INTRODUCTION", "SENT", "Intro A", "2026-09-01 09:00:00")
+        val received = firstReplyReceived(6001, "2026-09-01 09:00:10")
+        val firstResult = AtomicReference<String?>()
+        val secondResult = AtomicReference<String?>()
+        val firstLocked = CountDownLatch(1)
+        val secondStarted = CountDownLatch(1)
+        val releaseFirst = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            val first = pool.submit(Callable {
+                TransactionTemplate(transactions).execute {
+                    inboundAutoResponseDetector.lockContact(1L)
+                    firstResult.set(inboundAutoResponseDetector.evaluateFirstReply(1L, "acc-a", received))
+                    firstLocked.countDown()
+                    check(releaseFirst.await(20, TimeUnit.SECONDS)) { "first transaction was not released" }
+                    insertProcessing(1, "acc-a", 6001, "MANUAL_REVIEW", "Re: Intro A",
+                        "2026-09-01 09:00:10", "concurrent-1", "alice@example.org")
+                }
+            })
+            assertTrue(firstLocked.await(20, TimeUnit.SECONDS), "first transaction must acquire the contact lock")
+            val second = pool.submit(Callable {
+                TransactionTemplate(transactions).execute {
+                    secondStarted.countDown()
+                    inboundAutoResponseDetector.lockContact(1L)
+                    secondResult.set(inboundAutoResponseDetector.evaluateFirstReply(1L, "acc-a", received))
+                }
+            })
+            assertTrue(secondStarted.await(20, TimeUnit.SECONDS))
+            releaseFirst.countDown()
+            first.get(30, TimeUnit.SECONDS)
+            second.get(30, TimeUnit.SECONDS)
+        } finally {
+            releaseFirst.countDown()
+            pool.shutdownNow()
+        }
+
+        assertEquals(InboundAutoResponseDetector.AUTO_RESPONSE_FAST_5M, firstResult.get())
+        assertNull(secondResult.get(), "第二事务在锁释放后必须看见已提交的首封记录")
+    }
+
+    @Test
+    fun `rolled back first reply does not consume first-reply eligibility`() {
+        insertOutbound(1, "acc-a", "INTRODUCTION", "SENT", "Intro A", "2026-09-01 09:00:00")
+        val received = firstReplyReceived(6002, "2026-09-01 09:00:10")
+        val tx = TransactionTemplate(transactions)
+
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException::class.java) {
+            tx.execute {
+                inboundAutoResponseDetector.lockContact(1L)
+                assertEquals(
+                    InboundAutoResponseDetector.AUTO_RESPONSE_FAST_5M,
+                    inboundAutoResponseDetector.evaluateFirstReply(1L, "acc-a", received)
+                )
+                insertProcessing(1, "acc-a", 6002, "MANUAL_REVIEW", "Re: Intro A",
+                    "2026-09-01 09:00:10", "rollback-1", "alice@example.org")
+                throw IllegalStateException("force rollback")
+            }
+        }
+
+        val reason = tx.execute {
+            inboundAutoResponseDetector.lockContact(1L)
+            inboundAutoResponseDetector.evaluateFirstReply(1L, "acc-a", received)
+        }
+        assertEquals(InboundAutoResponseDetector.AUTO_RESPONSE_FAST_5M, reason,
+            "回滚释放资格，下一次事务仍是首封")
+        assertEquals(0L, jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM inbound_mail_processing WHERE message_id = 'rollback-1'",
+            Long::class.java
+        ))
+    }
+
+    @Test
+    fun `any existing reply history blocks eligibility across accounts and both tables`() {
+        insertOutbound(1, "acc-a", "INTRODUCTION", "SENT", "Intro A", "2026-09-01 09:00:00")
+        // 只有 INBOUND mail_record 的历史（人工绑定等场景可能没有 processing）。
+        insertInboundMailRecord(1, "acc-a", "legacy-history", "2026-09-01 09:05:00")
+        // 只有 processing 的历史，且发生在另一个逻辑账号。
+        insertOutbound(2, "acc-a", "INTRODUCTION", "SENT", "Intro B", "2026-09-01 09:00:00")
+        insertProcessing(2, "acc-b", 6101, "PROCESSED", "Re: Intro B",
+            "2026-09-01 09:04:00", "bound-history", "bob@example.org")
+        val tx = TransactionTemplate(transactions)
+
+        assertNull(tx.execute {
+            inboundAutoResponseDetector.lockContact(1L)
+            inboundAutoResponseDetector.evaluateFirstReply(
+                1L, "acc-a", firstReplyReceived(6102, "2026-09-01 09:00:10")
+            )
+        }, "已有 INBOUND 记录必须阻止首封资格")
+        assertNull(tx.execute {
+            inboundAutoResponseDetector.lockContact(2L)
+            inboundAutoResponseDetector.evaluateFirstReply(
+                2L, "acc-a", firstReplyReceived(6103, "2026-09-01 09:00:10")
+            )
+        }, "首封范围跨账号：其他逻辑账号的 processing 历史也算已有回复")
+    }
+
+    @Test
+    fun `five minute anchor is scoped to the same logical account`() {
+        insertOutbound(1, "acc-a", "INTRODUCTION", "SENT", "Intro A", "2026-09-01 09:00:00")
+        insertOutbound(1, "acc-b", "INTRODUCTION", "SENT", "Intro A2", "2026-09-01 09:00:00")
+        val received = firstReplyReceived(6201, "2026-09-01 09:00:19")
+        val tx = TransactionTemplate(transactions)
+
+        assertEquals(InboundAutoResponseDetector.AUTO_RESPONSE_FAST_5M, tx.execute {
+            inboundAutoResponseDetector.lockContact(1L)
+            inboundAutoResponseDetector.evaluateFirstReply(1L, "acc-a", received)
+        })
+        assertNull(tx.execute {
+            inboundAutoResponseDetector.lockContact(1L)
+            inboundAutoResponseDetector.evaluateFirstReply(1L, "acc-c", received)
+        }, "其他逻辑账号的成功发信不得作为本账号的时间锚点")
+    }
+
+    // ------------------------------------------------------------------
     // 工具
     // ------------------------------------------------------------------
 
     private fun emptyFilter() = MailboxConversationRepository.ConversationFilter(accountCodes = allAccounts)
+
+    /** 首封检测用的真实到达时间来信（reliable=true 才允许五分钟规则）。 */
+    private fun firstReplyReceived(uid: Long, receivedAt: String): ReceivedMail =
+        ReceivedMail(
+            imapUid = uid,
+            from = "alice@example.org",
+            subject = "Re: Intro A",
+            body = "body",
+            messageId = "msg-$uid",
+            inReplyTo = "out-intro",
+            receivedAt = LocalDateTime.parse(receivedAt.replace(' ', 'T')),
+            uidValidity = 1,
+            receivedAtReliable = true
+        )
 
     private fun filter(
         q: String? = null,
