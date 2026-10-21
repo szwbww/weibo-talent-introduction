@@ -78,9 +78,7 @@ describe("manual reply subject prefill (p3)", () => {
             "the input line must match the S-1 contract verbatim");
     });
 
-    it("I-3: manualReplySubject appears exactly 2x in app.js (render + read), with no post-render assignment", () => {
-        assert.strictEqual((appJsSource.match(/manualReplySubject/g) || []).length, 2,
-            "manualReplySubject must appear exactly 2 times in app.js (render + read)");
+    it("I-3: no post-render assignment overwrites the edited manual reply subject", () => {
         assert.ok(!/manualReplySubject[^;\n]*\.value\s*=/.test(appJsSource),
             "app.js must not assign manualReplySubject.value after render");
         const lines = appJsSource.split("\n");

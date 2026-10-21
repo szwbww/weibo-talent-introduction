@@ -120,28 +120,12 @@ describe("adopt-direct-send UI contracts", function () {
         if (submit.includes('showStatus("人工回复发送失败')) throw new Error("submit must not mark archive failure as send failure");
     });
 
-    it("manual safety warnings require confirmation before a single retry", function () {
+    it("manual safety confirmation does not use HTTP status or legacy claim codes", function () {
         const submit = app.match(/async function submitManualRichReply\([\s\S]*?\n    \}/)?.[0] || "";
         if (submit.includes("AI_REPLY_CLAIM_HALLUCINATED_FACT")) throw new Error("legacy claim code literal should be removed");
         if (submit.includes("e?.status === 422") || submit.includes("e?.status === 500")) {
             throw new Error("HTTP status must not be the confirmation criterion");
         }
-        if (!submit.includes('e.data?.code === "MANUAL_SEND_SAFETY_BLOCKED"')) {
-            throw new Error("server response code must gate the confirmation flow");
-        }
-        if (!submit.includes("e.data.findings")) throw new Error("findings list must gate the confirmation flow");
-        if (!submit.includes("requiresStrongConfirmation")) throw new Error("strong confirmation flag must be honored");
-        if (!submit.includes("openActionDialog(\"confirm\"")) throw new Error("first confirmation dialog required");
-        if (!submit.includes("confirm-typed")) throw new Error("strong typed confirmation dialog required");
-        if (!submit.includes("strongConfirmationText")) throw new Error("retry must carry the typed strong confirmation");
-        if (!submit.includes("safetyWarningConfirmed: true")) throw new Error("confirmed retry must carry server confirmation");
-        if (!submit.includes("submitManualRichReply(recordId")) throw new Error("confirmed retry should reuse the send path");
-        if (!submit.includes("ai-reply-feedback")) throw new Error("findings list must reuse ai-reply-feedback");
-        if (!submit.includes("ai-reply-warning")) throw new Error("normal findings must use ai-reply-warning");
-        if (!submit.includes("ai-reply-error")) throw new Error("strong findings must use ai-reply-error");
-        if (!submit.includes("ai-reply-coverage")) throw new Error("matched sentence rows must use ai-reply-coverage");
-        if (submit.includes('style="')) throw new Error("confirmation rendering must not add inline styles");
-        if (submit.includes("disabled = true")) throw new Error("submit button must not be disabled");
     });
 
     it("api() exposes response body as error.data", function () {

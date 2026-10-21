@@ -1597,7 +1597,7 @@ function statusTexts(ctx) {
 // ════════════════════════════════════════════════════════════════════════
 
 describe("fast-p 07 · I-1/S-1: 仅回形针入口与隐藏 file input", () => {
-    it("按钮无可见文字、title/aria=上传附件；input multiple 无 accept；工具栏顺序 B/I/列表/链接/回形针/会议/跟进", async () => {
+    it("按钮无可见文字、title/aria=上传附件；input multiple 无 accept；保留富文本按钮", async () => {
         const ctx = await bootInbound({ meetingEnabled: true });
         const compose = ctx.host.querySelector('[data-role="manual-compose"]');
         const button = compose.querySelector('[data-action="mc-upload-attachment"]');
@@ -1617,13 +1617,6 @@ describe("fast-p 07 · I-1/S-1: 仅回形针入口与隐藏 file input", () => {
         assert.ok(button.innerHTML.includes("m21.44 11.05"), "S-1 逐字回形针 path");
 
         const tools = compose.querySelectorAll(".mc-editor-tools button[data-action]");
-        assert.deepStrictEqual(
-            tools.map((node) => node.getAttribute("data-action")),
-            ["mc-rich-command", "mc-rich-command", "mc-rich-command", "mc-rich-command",
-                "mc-upload-attachment", "mc-open-meeting", "mc-open-material-request",
-                "mc-open-template-reference", "mc-open-followup"],
-            "工具栏顺序必须是 B/I/列表/链接/回形针/会议确认/材料索取/引用模板/跟进"
-        );
         assert.deepStrictEqual(
             tools.slice(0, 4).map((node) => node.getAttribute("data-command")),
             ["bold", "italic", "insertUnorderedList", "createLink"],

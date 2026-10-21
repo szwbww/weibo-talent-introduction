@@ -311,6 +311,118 @@
         return status === PROGRESS_FOLLOWING;
     }
 
+    function replyIdentityNormalize(text) {
+        return String(text || "").replace(/\r\n?/g, "\n").replace(/\u00a0/g, " ")
+            .split("\n").map((line) => line.replace(/[\t ]+/g, " ").trim()).join("\n").trim().replace(/\n{3,}/g, "\n\n");
+    }
+
+    function replyIdentityResultMatches(result, context) {
+        const actual = result && result.context;
+        if (!actual || !result.salutation || !result.signature || !result.quoteBoundary) return false;
+        return Number(actual.contactId) === context.contactId
+            && (actual.inboundProcessingId == null ? null : Number(actual.inboundProcessingId)) === context.inboundProcessingId
+            && (context.anchorMailRecordId == null || Number(actual.anchorMailRecordId) === context.anchorMailRecordId)
+            && (!context.senderAccountCode || actual.accountCode === context.senderAccountCode);
+    }
+
+    // Map canonical visible text back to original nodes, never serializing/replacing the editor.
+    // Unsupported/hidden content and non-equivalent plaintext fail closed for quote placement.
+    function replyIdentityQuoteRange(editor, boundary, textBody) {
+        if (!boundary || boundary.kind !== "VERIFIED_TAIL" || !boundary.canonicalQuotedTail) return null;
+        const doc = editor.ownerDocument;
+        const units = [];
+        let supported = true;
+        const blocks = new Set(["P", "DIV", "LI", "UL", "OL", "BLOCKQUOTE", "PRE", "H1", "H2", "H3", "H4", "H5", "H6"]);
+        const newline = (node, count) => {
+            let trailing = 0;
+            for (let i = units.length - 1; i >= 0 && units[i].char === "\n"; i -= 1) trailing += 1;
+            for (; trailing < count; trailing += 1) units.push({ char: "\n", node, offset: 0 });
+        };
+        const visit = (node) => {
+            if (node.nodeType === 3) {
+                for (let i = 0; i < node.data.length; i += 1) units.push({ char: node.data[i], node, offset: i });
+                return;
+            }
+            if (node.nodeType !== 1 && node !== editor) return;
+            if (node !== editor && (["SCRIPT", "STYLE", "TABLE", "IMG", "IFRAME", "SVG", "OBJECT"].includes(node.tagName)
+                || node.hidden || node.getAttribute("aria-hidden") === "true" || node.getAttribute("style"))) supported = false;
+            if (node.tagName === "BR") { units.push({ char: "\n", node, offset: 0 }); return; }
+            const breaks = node.tagName === "LI" || node.tagName === "DIV" ? 1 : 2;
+            if (blocks.has(node.tagName)) newline(node, breaks);
+            Array.from(node.childNodes).forEach(visit);
+            if (blocks.has(node.tagName)) newline(node, breaks);
+        };
+        visit(editor);
+        if (!supported) return null;
+        const canonical = [];
+        let line = [];
+        const flushLine = () => {
+            while (line.length && /[\t \u00a0\r]/.test(line[0].char)) line.shift();
+            while (line.length && /[\t \u00a0\r]/.test(line[line.length - 1].char)) line.pop();
+            line.forEach((unit) => {
+                const char = /[\t \u00a0]/.test(unit.char) ? " " : unit.char;
+                if (char !== " " || !canonical.length || canonical[canonical.length - 1].char !== " ") canonical.push({ ...unit, char });
+            });
+            line = [];
+        };
+        units.forEach((unit) => {
+            if (unit.char === "\n") { flushLine(); canonical.push(unit); } else line.push(unit);
+        });
+        flushLine();
+        while (canonical.length && canonical[0].char === "\n") canonical.shift();
+        while (canonical.length && canonical[canonical.length - 1].char === "\n") canonical.pop();
+        const mapped = canonical.filter((unit, index) => unit.char !== "\n" || index < 2 || canonical[index - 1].char !== "\n" || canonical[index - 2].char !== "\n");
+        const visible = mapped.map((unit) => unit.char).join("");
+        const tail = replyIdentityNormalize(boundary.canonicalQuotedTail);
+        if (visible !== replyIdentityNormalize(textBody) || !tail || !visible.endsWith(tail)) return null;
+        const start = visible.length - tail.length;
+        if (visible.indexOf(tail) !== start || (start && visible[start - 1] !== "\n")) return null;
+        const point = mapped[start];
+        if (!point || point.node.nodeType !== 3) return null;
+        const range = doc.createRange();
+        let node = point.node;
+        if (point.offset === 0) {
+            while (node.parentNode && node.parentNode !== editor && node === node.parentNode.firstChild) node = node.parentNode;
+        }
+        if (node !== point.node) range.setStartBefore(node);
+        else range.setStart(point.node, point.offset);
+        range.collapse(true);
+        return range;
+    }
+
+    function replyIdentityFragment(doc, text) {
+        const fragment = doc.createDocumentFragment();
+        String(text).replace(/\r\n?/g, "\n").split(/\n\s*\n/).forEach((paragraph) => {
+            const p = doc.createElement("p");
+            paragraph.split("\n").forEach((line, index) => {
+                if (index) p.appendChild(doc.createElement("br"));
+                const span = doc.createTextNode("");
+                span.textContent = line;
+                p.appendChild(span);
+            });
+            fragment.appendChild(p);
+        });
+        return fragment;
+    }
+
+    function insertReplyIdentitySlots(editor, result, textBody) {
+        const insertable = (slot) => slot && slot.status === "MISSING" && slot.canInsert === true
+            && typeof slot.expectedText === "string" && slot.expectedText.trim();
+        const salutation = insertable(result.salutation) ? replyIdentityFragment(editor.ownerDocument, result.salutation.expectedText) : null;
+        const signature = insertable(result.signature) ? replyIdentityFragment(editor.ownerDocument, result.signature.expectedText) : null;
+        const boundary = result.quoteBoundary;
+        const range = signature && boundary && boundary.kind !== "NONE" ? replyIdentityQuoteRange(editor, boundary, textBody) : null;
+        const unsafeQuote = !!signature && (!boundary || boundary.kind !== "NONE") && !range;
+        // Prepare both positions before mutating anything. Insert the tail first so a Range
+        // inside the first text node remains stable when a salutation is prepended.
+        if (signature && !unsafeQuote) {
+            if (range) range.insertNode(signature);
+            else editor.appendChild(signature);
+        }
+        if (salutation) editor.insertBefore(salutation, editor.firstChild);
+        return { salutation: !!salutation, signature: !!signature && !unsafeQuote, unsafeQuote };
+    }
+
     // 人工富文本换行规范化：普通换行保留，连续空行最多保留一行；与服务端保持一致。
     function normalizeManualTextLineBreaks(value) {
         const text = value == null ? "" : String(value);
@@ -829,6 +941,7 @@
                 summaryEpoch: -1
             },
             followup: { open: false, targetKey: null, selectedId: null, selectedCopy: null, trigger: null },
+            replyIdentity: { seq: 0, busy: null },
             materialRequest: { open: false, identity: null, items: [], seq: 0, trigger: null },
             // fast-p 01（I-6）：引用模板弹框的单次临时状态；不是持久 store，不加 draft 字段。
             templateReference: {
@@ -3320,6 +3433,8 @@
         }
 
         function teardownConversationSubViews() {
+            instance.replyIdentity.seq += 1;
+            instance.replyIdentity.busy = null;
             closeExpertNoteDialog({ restoreFocus: false, force: true });
             invalidateExpertNote();
             closeContactTimingDialog({ restoreFocus: false });
@@ -5528,7 +5643,9 @@
                         <button class="button outbound-upload" type="button" data-action="mc-upload-attachment" title="上传附件" aria-label="上传附件"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l10.6-10.6a4 4 0 0 1 5.66 5.66L9.41 17.41a2 2 0 0 1-2.83-2.83l9.19-9.19"/></svg></button>
                         <input type="file" data-role="outbound-file-input" multiple hidden>
                         ${meetingTrigger}${materialTrigger}${templateReferenceTrigger}${followUpButton}
+                        <button class="button" type="button" data-action="mc-complete-reply-identity">补全称呼与签名</button>
                     </div>
+                    <div class="reply-identity-defaults"><span>全局默认</span><strong data-role="reply-identity-default-summary">全局默认：加载中…</strong><button class="reply-identity-settings-link" type="button" data-action="mc-reply-identity-settings">默认设置</button></div>
                     <div class="mc-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="人工回复正文" data-role="mc-editor">${editorContent}</div>
                     ${anchorNote}
                     ${meetingAttachment}
@@ -6362,6 +6479,7 @@
             setSendButtonDisabled(!!instance.manual.busy || outboundAttachmentsBlockSend() || !!(meeting && meeting.state !== "ready")
                 || !rec || !rec.loaded || !!rec.loading || rec.readOnly || !!rec.error || rec.conflict || rec.closed || rec.sendUnconfirmed
                 || !!(rec.detail && ["DELIVERY_UNKNOWN", "DELIVERY_IN_PROGRESS"].includes(rec.detail.sendAttemptStatus)));
+            refreshReplyIdentityControls();
         }
 
         /** 附件卡重渲染：只消费当前目标的草稿字段；发送可用性随之刷新。 */
@@ -7335,6 +7453,110 @@
                         </div>
                     </footer>
                 </dialog>`;
+        }
+
+        function replyIdentityCapture() {
+            const values = readManualValues();
+            const key = currentTargetKey();
+            if (!values || !key) return null;
+            const draft = getDraft(key);
+            const anchorId = draft && draft.followUpAnchorMailRecordId != null ? Number(draft.followUpAnchorMailRecordId) : null;
+            const account = templateReferenceSenderAccount(anchorId);
+            if (!account.ok) return null;
+            const context = {
+                sourceKind: instance.manual.mode === "outbound" || anchorId != null ? "CONVERSATION" : "INBOUND",
+                contactId: Number(instance.selectedContactId),
+                inboundProcessingId: instance.manual.mode === "inbound" && anchorId == null ? Number(instance.manual.targetProcessingId) : null,
+                senderAccountCode: account.code || null,
+                accountScope: instance.conversation.accountScope || null,
+                anchorMailRecordId: anchorId
+            };
+            return {
+                user: instance.user, sessionEpoch: draftSessionEpoch, draftsMap: currentDraftsMap(),
+                ownerKey: conversationCacheKey(instance.user, instance.conversation.accountScope || "", context.contactId),
+                targetKey: key, convEpoch: instance.convEpoch, revision: instance.meeting.editorRevision,
+                context, values, editor: manualInputs().editor
+            };
+        }
+
+        function replyIdentityMatches(captured) {
+            if (!captured || instance.disposed || captured.user !== draftSessionUser || captured.sessionEpoch !== draftSessionEpoch) return false;
+            const now = replyIdentityCapture();
+            return !!now && now.user === captured.user && now.draftsMap === captured.draftsMap
+                && now.ownerKey === captured.ownerKey && now.targetKey === captured.targetKey
+                && now.convEpoch === captured.convEpoch && now.revision === captured.revision && now.editor === captured.editor
+                && JSON.stringify(now.context) === JSON.stringify(captured.context)
+                && now.values.subject === captured.values.subject && now.values.html === captured.values.html && now.values.text === captured.values.text;
+        }
+
+        function replyIdentityEditable() {
+            const rec = currentDraftRecord();
+            const inputs = manualInputs();
+            return !!(inputs && rec && rec.loaded && !rec.loading && !rec.readOnly && !rec.closed && !rec.conflict
+                && !rec.error && !rec.preparing && !rec.sending && !instance.manual.busy
+                && inputs.editor.getAttribute("contenteditable") !== "false");
+        }
+
+        function refreshReplyIdentityControls() {
+            const compose = manualComposeEl();
+            if (!compose) return;
+            const complete = compose.querySelector('[data-action="mc-complete-reply-identity"]');
+            const settings = compose.querySelector('[data-action="mc-reply-identity-settings"]');
+            const busy = instance.replyIdentity.busy && instance.replyIdentity.busy.targetKey === currentTargetKey()
+                && instance.replyIdentity.busy.convEpoch === instance.convEpoch;
+            if (complete) { complete.disabled = !replyIdentityEditable() || !!busy; complete.textContent = busy ? "检查中…" : "补全称呼与签名"; }
+            if (settings) settings.disabled = !replyIdentityEditable();
+            const summary = compose.querySelector('[data-role="reply-identity-default-summary"]');
+            const load = hostFn("mcHostLoadReplyIdentitySummary");
+            if (summary && !summary.dataset.identityRequested && load) {
+                summary.dataset.identityRequested = "true";
+                load(summary);
+            }
+        }
+
+        async function completeReplyIdentity() {
+            if (!replyIdentityEditable()) return;
+            if (instance.replyIdentity.busy && instance.replyIdentity.busy.targetKey === currentTargetKey()
+                && instance.replyIdentity.busy.convEpoch === instance.convEpoch) return;
+            saveDraftFromInputs();
+            const captured = replyIdentityCapture();
+            const inspect = hostFn("mcHostInspectReplyIdentity");
+            if (!captured || !inspect) { hostShowStatus("无法核实当前身份，请检查资料", "error"); return; }
+            const seq = ++instance.replyIdentity.seq;
+            instance.replyIdentity.busy = captured;
+            refreshReplyIdentityControls();
+            try {
+                const result = await inspect({ ...captured.context, textBody: captured.values.text, htmlBody: captured.values.html });
+                if (seq !== instance.replyIdentity.seq || !replyIdentityMatches(captured) || !replyIdentityEditable()) {
+                    if (!instance.disposed) hostShowStatus("正文或会话已变化，请重新检查", "warn");
+                    return;
+                }
+                if (!replyIdentityResultMatches(result, captured.context)) {
+                    hostShowStatus("无法核实当前身份，请检查资料", "error");
+                    return;
+                }
+                const applied = insertReplyIdentitySlots(captured.editor, result, captured.values.text);
+                if (applied.salutation || applied.signature) handleManualComposeInput(captured.editor);
+                let message = applied.salutation && applied.signature ? "已补全称呼与签名"
+                    : applied.salutation ? "已补全称呼" : applied.signature ? "已补全签名" : "称呼与签名已存在，未修改";
+                if (applied.unsafeQuote) message += "；无法确定签名位置，请手动补全";
+                if ([result.salutation, result.signature].some((slot) => ["MISMATCH", "MULTIPLE_OR_MISPLACED"].includes(slot.status))) message += "；存在不一致，请核对";
+                if ([result.salutation, result.signature].some((slot) => slot.status === "UNCERTAIN")) message += "；无法核实当前身份，请检查资料";
+                hostShowStatus(message, "ok");
+            } catch (error) {
+                if (replyIdentityMatches(captured)) hostShowStatus(error.message || "身份检查失败", "error");
+            } finally {
+                if (seq === instance.replyIdentity.seq) instance.replyIdentity.busy = null;
+                if (!instance.disposed) refreshReplyIdentityControls();
+            }
+        }
+
+        function openReplyIdentitySettings() {
+            if (!replyIdentityEditable()) return;
+            const captured = replyIdentityCapture();
+            const open = hostFn("mcHostOpenReplyIdentitySettings");
+            if (captured && open) open({ payload: captured.context, isCurrent: () => replyIdentityMatches(captured) });
+            else hostShowStatus("无法核实当前身份，请检查资料", "error");
         }
 
         /** I-6：打开时捕获的草稿身份（owner/contact/target/epoch + 主题与正文快照）。 */
@@ -9029,6 +9251,14 @@
             }
             if (action === "mc-open-template-reference") {
                 openTemplateReferenceDialog();
+                return;
+            }
+            if (action === "mc-complete-reply-identity") {
+                completeReplyIdentity();
+                return;
+            }
+            if (action === "mc-reply-identity-settings") {
+                openReplyIdentitySettings();
                 return;
             }
             if (action === "mc-open-followup") {
