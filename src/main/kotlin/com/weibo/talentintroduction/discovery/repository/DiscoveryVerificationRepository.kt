@@ -10,6 +10,7 @@ import com.weibo.talentintroduction.discovery.service.VerificationWorkerEvidence
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.ConnectionCallback
 import org.springframework.jdbc.core.RowMapper
+import org.springframework.jdbc.core.RowCallbackHandler
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionSynchronization
@@ -182,6 +183,26 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     }.getOrDefault(false)
 
     /** Reporting queries deliberately have no locks, writes, or recovery side effects. */
+    data class PromotionDocuments(val managedDocIds: Set<String>, val projectedSources: Map<String, String>)
+
+    /** One read snapshot supplies both the legacy exclusion set and actual new projection events. */
+    fun reportingPromotionDocuments(executionId: Long): PromotionDocuments {
+        val managed = mutableSetOf<String>()
+        val projected = mutableMapOf<String, String>()
+        jdbc.query("""SELECT i.expert_doc_id,i.source_name,
+            (i.admission_revision IS NOT NULL AND i.projection_state='PROJECTED') AS projected
+            FROM discovery_verification_item i FORCE INDEX (idx_dvi_run_batch)
+            JOIN discovery_verification_run r ON r.execution_id=i.owner_execution_id
+            WHERE i.owner_execution_id=? AND r.mode='ENFORCE' AND i.activated_at IS NOT NULL
+            ORDER BY i.id DESC""", RowCallbackHandler { rs ->
+            val docId = rs.getString("expert_doc_id")
+            managed.add(docId)
+            // Descending item id makes the latest qualifying event's source deterministic.
+            if (rs.getBoolean("projected")) projected.putIfAbsent(docId, rs.getString("source_name"))
+        }, executionId)
+        return PromotionDocuments(managed, projected)
+    }
+
     fun reportingCollectionStatuses(ids: List<Long>): Map<Long, String> {
         require(ids.isNotEmpty() && ids.size <= 50 && ids.all { it > 0 })
         return jdbc.query("SELECT id,status FROM task_execution WHERE id IN (${ids.joinToString(",") { "?" }})",

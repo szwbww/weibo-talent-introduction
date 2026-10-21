@@ -46,6 +46,7 @@ import com.weibo.talentintroduction.expert.service.PromotionOutcome
 import com.weibo.talentintroduction.discovery.repository.DiscoverySourceCursorRepository
 import com.weibo.talentintroduction.discovery.repository.DiscoveryJobDocument
 import com.weibo.talentintroduction.discovery.repository.ExpertAcademicEnrichmentJobRepository
+import com.weibo.talentintroduction.discovery.repository.DiscoveryVerificationRepository
 import com.weibo.talentintroduction.task.domain.TaskExecution
 import com.weibo.talentintroduction.task.domain.TaskProgressLog
 import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
@@ -437,6 +438,9 @@ class ExpertDiscoveryServiceTest {
      */
     private fun promotionProjection(): DiscoveryPromotionProgressService {
         val jobs = Mockito.mock(ExpertAcademicEnrichmentJobRepository::class.java)
+        val verification = Mockito.mock(DiscoveryVerificationRepository::class.java)
+        Mockito.`when`(verification.reportingPromotionDocuments(1L)).thenReturn(
+            DiscoveryVerificationRepository.PromotionDocuments(emptySet(), emptyMap()))
         val executions = Mockito.mock(TaskExecutionRepository::class.java)
         val logs = Mockito.mock(TaskProgressLogRepository::class.java)
         val template = RestTemplate()
@@ -461,7 +465,7 @@ class ExpertDiscoveryServiceTest {
         val body = objectMapper.writeValueAsString(mapOf("docs" to listOf(docEntry, docEntry)))
         server.expect(MockRestRequestMatchers.requestTo("${esProperties.baseUrl}/_mget"))
             .andRespond(MockRestResponseCreators.withSuccess(body, MediaType.APPLICATION_JSON))
-        return DiscoveryPromotionProgressService(jobs, executions, logs, template, esProperties, objectMapper)
+        return DiscoveryPromotionProgressService(jobs, verification, executions, logs, template, esProperties, objectMapper)
     }
 
     private fun stubSource(source: AcademicDataSource, name: String) {

@@ -58,6 +58,9 @@ class DiscoveryVerificationReportingIT {
     @Autowired private lateinit var query: DiscoveryVerificationQueryService
     @Autowired private lateinit var manager: PlatformTransactionManager
     @SpyBean private lateinit var jdbc: JdbcTemplate
+    @Autowired private lateinit var jobs: ExpertAcademicEnrichmentJobRepository
+    @Autowired private lateinit var executions: com.weibo.talentintroduction.task.repository.TaskExecutionRepository
+    @Autowired private lateinit var logs: com.weibo.talentintroduction.task.repository.TaskProgressLogRepository
 
     private fun importFixture() {
         val result = mysql.execInContainer("mysql", "-utest", "-ptest", mysql.databaseName, "-e", "source /tmp/apv-fixture.sql")
@@ -68,6 +71,8 @@ class DiscoveryVerificationReportingIT {
         jdbc.update("DELETE FROM discovery_verification_attempt WHERE item_id IN (SELECT id FROM discovery_verification_item WHERE owner_execution_id NOT IN (3001,3003))")
         jdbc.update("DELETE FROM discovery_verification_item WHERE owner_execution_id NOT IN (3001,3003)")
         jdbc.update("DELETE FROM discovery_verification_run WHERE execution_id NOT IN (3001,3003)")
+        jdbc.update("DELETE FROM expert_academic_enrichment_job WHERE expert_doc_id LIKE 'APV-FIXTURE-PROMOTION-%'")
+        jdbc.update("DELETE FROM task_execution WHERE id=6101")
         importFixture()
         Mockito.clearInvocations(jdbc)
     }
@@ -81,6 +86,125 @@ class DiscoveryVerificationReportingIT {
         assertEquals(listOf(108L,85L,66L,40L,108L),
             listOf(c.apolloEntered,c.apolloSearched,c.apolloCandidates,c.apolloMatched,c.apolloHttpAttempts))
         assertEquals(0L,c.projectionPending); assertEquals(0L,c.projectionErrors); assertEquals(0L,c.registrationErrors)
+    }
+
+    private val promotionTime = java.time.Instant.parse("2026-10-18T12:00:00Z")
+
+    private fun promotionItem(owner: Long, doc: String, source: String = "OPENALEX",
+        projection: VerificationProjection = VerificationProjection.PROJECTED, revision: Long? = 1L,
+        activated: Boolean = true, mode: VerificationMode = VerificationMode.ENFORCE,
+        identity: String = source) {
+        repository.createRun(owner, mode, false, "{}", promotionTime)
+        val item = repository.reserveItem(VerificationReservation(owner, doc,
+            DiscoveryVerificationRepository.replayHash("$owner/$doc/$identity"), mode.policyVersion,
+            source, identity, "{}", "b".repeat(64)), promotionTime)
+        if (activated) repository.activateItem(item.id, 1, promotionTime)
+        jdbc.update("""UPDATE discovery_verification_item SET state='COMPLETED',outcome='DIRECT_CLEAR',
+            route='DIRECT',qualification='MET',admission_revision=?,projection_state=?,
+            completed_at=?,updated_at=? WHERE id=?""",
+            revision, projection.name, promotionTime.verificationUtc(), promotionTime.verificationUtc(), item.id)
+        // Filter fixtures deliberately include inconsistent persisted rows; do not materialize them as domain items.
+    }
+
+    @Test fun `promotion ownership query filters mode activation revision and deduplicates latest qualifying source`() {
+        val doc = "APV-FIXTURE-PROMOTION-SHARED"
+        promotionItem(6001, doc)
+        promotionItem(6001, doc, "CROSSREF")
+        // A still newer nonqualifying item cannot replace the latest actual projection's source.
+        promotionItem(6001, doc, "EUROPE_PMC", VerificationProjection.PENDING)
+        val excluded = VerificationProjection.values().filter { it != VerificationProjection.PROJECTED }
+        excluded.forEach { promotionItem(6001, "APV-FIXTURE-PROMOTION-${it.name}", projection = it) }
+        promotionItem(6001, "APV-FIXTURE-PROMOTION-NO-REVISION", revision = null)
+        promotionItem(6001, "APV-FIXTURE-PROMOTION-UNACTIVATED", activated = false)
+        promotionItem(6002, "APV-FIXTURE-PROMOTION-OTHER-RUN")
+        promotionItem(6003, "APV-FIXTURE-PROMOTION-AUDIT", mode = VerificationMode.AUDIT)
+        val before = databaseSnapshot()
+        Mockito.clearInvocations(jdbc)
+        val result = repository.reportingPromotionDocuments(6001)
+        assertEquals(setOf(doc, "APV-FIXTURE-PROMOTION-NO-REVISION") +
+            excluded.map { "APV-FIXTURE-PROMOTION-${it.name}" }, result.managedDocIds)
+        assertEquals(mapOf(doc to "CROSSREF"), result.projectedSources)
+        assertEquals(DiscoveryVerificationRepository.PromotionDocuments(emptySet(), emptyMap()),
+            repository.reportingPromotionDocuments(6003))
+        assertEquals(DiscoveryVerificationRepository.PromotionDocuments(emptySet(), emptyMap()),
+            repository.reportingPromotionDocuments(999999))
+        assertFalse(Mockito.mockingDetails(jdbc).invocations.any {
+            it.method.name in setOf("update", "batchUpdate", "execute")
+        })
+        assertEquals(before, databaseSnapshot())
+    }
+
+    @Test fun `changed path HTTP smoke reads real MySQL ledger plus legacy ES without writes or summary mutation`() {
+        val mapper = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper()
+        val start = java.time.LocalDateTime.of(2026, 10, 18, 10, 0)
+        val projected = "APV-FIXTURE-PROMOTION-LATE"
+        val existing = "APV-FIXTURE-PROMOTION-EXISTING"
+        val legacy = "APV-FIXTURE-PROMOTION-LEGACY"
+        // Projection events are at 12:00, after the 10:20 collection finish.
+        promotionItem(6101, projected)
+        promotionItem(6101, existing, projection = VerificationProjection.ALREADY_PRESENT)
+        assertEquals(2L, counts(6101).autoAdmitted)
+        jobs.insertIfAbsent(projected, "OPENALEX", 6000, start) // unique job belongs to an older run
+        jobs.insertIfAbsent(existing, "OPENALEX", 6101, start)
+        jobs.insertIfAbsent(legacy, "CROSSREF", 6101, start)
+        val details = mapOf("promoted" to 0, "autoAdmitted" to 2,
+            "bySource" to mapOf("OPENALEX" to mapOf("promoted" to 0), "CROSSREF" to mapOf("promoted" to 0)))
+        val summary = mapper.writeValueAsString(mapOf("stats" to details))
+        jdbc.update("""INSERT INTO task_execution
+            (id,task_type,trigger_type,status,result_summary,started_at,finished_at,created_at,updated_at)
+            VALUES (6101,'EXPERT_DISCOVERY','MANUAL','SUCCESS',?,?,?,?,?)""",
+            summary, start, start.plusMinutes(20), start, start)
+        val rest = org.springframework.web.client.RestTemplate()
+        val server = org.springframework.test.web.client.MockRestServiceServer.createServer(rest)
+        val reader = DiscoveryPromotionProgressService(jobs, repository, executions, logs, rest,
+            com.weibo.talentintroduction.config.ElasticsearchProperties("http://es", "user", "pass", "raw", "candidate", "application"), mapper)
+        val store = Mockito.mock(com.weibo.talentintroduction.task.service.TaskProgressStore::class.java)
+        val original = com.weibo.talentintroduction.task.service.TaskProgress(
+            "EXPERT_DISCOVERY", "RUNNING", 1, 2, 2, executionId = 6101, details = details)
+        Mockito.`when`(store.get("EXPERT_DISCOVERY")).thenReturn(original)
+        val mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(
+            com.weibo.talentintroduction.task.controller.TaskProgressController(store, logs, executions, mapper,
+                promotionProgress = reader),
+            com.weibo.talentintroduction.task.controller.TaskExecutionController(
+                Mockito.mock(com.weibo.talentintroduction.task.service.TaskExecutionService::class.java), executions,
+                com.weibo.talentintroduction.task.service.TaskExecutionSummaryExtractor(logs, mapper), mapper,
+                promotionProgress = reader)).build()
+        val body = mapper.writeValueAsString(mapOf("docs" to listOf(
+            mapOf("_id" to legacy, "found" to true, "_source" to mapOf(
+                "tags" to listOf("discovered"), "discoveredAt" to "2026-10-18 10:05:00")),
+            mapOf("_id" to legacy, "found" to false))))
+        server.expect(org.springframework.test.web.client.ExpectedCount.times(4),
+            org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo("http://es/_mget"))
+            .andExpect(org.springframework.test.web.client.match.MockRestRequestMatchers.method(org.springframework.http.HttpMethod.POST))
+            .andExpect(org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath("$.docs.length()").value(2))
+            .andExpect(org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath("$.docs[0]._id").value(legacy))
+            .andRespond(org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess(body,
+                org.springframework.http.MediaType.APPLICATION_JSON))
+        val before = databaseSnapshot() + ("jobs" to jdbc.queryForList("SELECT * FROM expert_academic_enrichment_job ORDER BY id").toString())
+        Mockito.clearInvocations(jdbc)
+        repeat(2) {
+            mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/task-progress/EXPERT_DISCOVERY"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk)
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.details.promoted").value(2))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.details.autoAdmitted").value(2))
+            val response = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/task-executions/6101/detail"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk)
+                .andReturn().response.contentAsString
+            val stats = mapper.readTree(mapper.readTree(response).path("rawResultSummary").asText()).path("stats")
+            assertEquals(2, stats.path("promoted").asInt())
+            assertEquals(1, stats.path("bySource").path("OPENALEX").path("promoted").asInt())
+            assertEquals(1, stats.path("bySource").path("CROSSREF").path("promoted").asInt())
+        }
+        assertFalse(Mockito.mockingDetails(jdbc).invocations.any {
+            it.method.name in setOf("update", "batchUpdate", "execute")
+        })
+        assertEquals(before, databaseSnapshot() +
+            ("jobs" to jdbc.queryForList("SELECT * FROM expert_academic_enrichment_job ORDER BY id").toString()))
+        assertEquals(summary, executions.findById(6101).get().resultSummary)
+        assertEquals(0, original.details!!["promoted"])
+        Mockito.verify(store, Mockito.times(2)).get("EXPERT_DISCOVERY")
+        Mockito.verifyNoMoreInteractions(store)
+        server.verify()
     }
 
     @Test fun `actual 401 and 403 worker failures reach HTTP capabilities without more claims or writes`() {
