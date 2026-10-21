@@ -37,7 +37,7 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
     fun evaluate(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>,
         search: ApolloSearchEvidence? = null, protected: Boolean = false,
         institutionNormalization: InstitutionNormalization? = null, ruleVersion: Int = 0): VerificationDecision {
-        require(ruleVersion in 0..1)
+        require(ruleVersion in 0..2)
         fun sameName(left: String, right: String) = sameName(left, right, ruleVersion)
         val today = LocalDate.now(clock)
         require(search == null || search.matchingVersion in 1..2) { "Unsupported Apollo matching version" }
@@ -98,7 +98,7 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
             if (named.any { it.orcid != null && snapshot.boundOrcid != null && normalizeOrcid(it.orcid) != snapshot.boundOrcid })
                 return decision(VerificationQualification.CONFLICT, listOf("ORCID_CONFLICT"), missing)
             val supported = named.mapNotNull { candidate ->
-                matchReason(snapshot, evidence, candidate, search.academicResearchFields, search.institutionAliasVersion)?.let { candidate to it }
+                matchReason(snapshot, evidence, candidate, search.academicResearchFields, search.institutionAliasVersion, ruleVersion)?.let { candidate to it }
             }
             val strong = supported.filter { it.second in setOf("APOLLO_CURRENT_INSTITUTION_MATCH", "APOLLO_HISTORICAL_INSTITUTION_MATCH", "APOLLO_PROFESSOR_MATCH") }
             val matched = strong.ifEmpty { supported }
@@ -108,12 +108,21 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
             if (search.candidates.any { it.id != matched.single().first.id && explicitName(it) == null &&
                     (nameMatches(it, namesToMatch, search.queryNames, masked = true, ruleVersion = ruleVersion) ||
                         ruleVersion >= 1 && emailNameMatches(snapshot, evidence, it, search.institutionAliasVersion, masked = true)) &&
-                    matchReason(snapshot, evidence, it, search.academicResearchFields, search.institutionAliasVersion) != null })
+                    matchReason(snapshot, evidence, it, search.academicResearchFields, search.institutionAliasVersion, ruleVersion) != null })
                 return decision(qualification, listOf("IDENTITY_AMBIGUOUS"), missing)
             val (candidate, reason) = matched.single()
             val aliasReasons = if (reason in setOf("APOLLO_CURRENT_INSTITUTION_MATCH", "APOLLO_HISTORICAL_INSTITUTION_MATCH") &&
-                matchReason(snapshot, evidence, candidate, search.academicResearchFields, 0) != reason)
-                listOf(DiscoveryInstitutionNormalizer.TUM_ALIAS_REASON) else emptyList()
+                matchReason(snapshot, evidence, candidate, search.academicResearchFields, 0, ruleVersion) != reason) {
+                val originals = listOfNotNull(snapshot.profile.institution?.let(::VerificationInstitution)) +
+                    identityEmployments(snapshot, evidence).map { VerificationInstitution(value(it, "institution")) }
+                val institutions = if (reason == "APOLLO_CURRENT_INSTITUTION_MATCH") listOfNotNull(candidate.institution)
+                    else candidate.employmentHistory.filter { it.current == false && !it.endDate.isNullOrBlank() &&
+                        runCatching { LocalDate.parse(it.endDate!!.take(10)) }.getOrNull()?.let { date -> !date.isAfter(today) } == true
+                    }.mapNotNull { it.institution }
+                originals.flatMap { original -> institutions.mapNotNull {
+                    DiscoveryInstitutionNormalizer.aliasReason(original, it, search.institutionAliasVersion)
+                } }.distinct()
+            } else emptyList()
             return decision(qualification, aliasReasons + (if (ruleVersion >= 1 && !nameMatches(candidate, namesToMatch, search.queryNames, false, ruleVersion))
                 listOf("APOLLO_EMAIL_GIVEN_NAME_MATCH") else emptyList()) + listOf("APOLLO_MATCH_POLICY_V2", reason, when (qualification) {
                 VerificationQualification.MET -> "QUALIFICATION_MET"
@@ -222,7 +231,8 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
 
     /** V2 is an explicitly approved admission heuristic, not a claim that degrees/age were verified. */
     internal fun matchReason(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>,
-        candidate: ApolloCandidate, academicFields: String?, institutionAliasVersion: Int = 0): String? {
+        candidate: ApolloCandidate, academicFields: String?, institutionAliasVersion: Int = 0, ruleVersion: Int = 0): String? {
+        require(ruleVersion in 0..2)
         val originals = listOfNotNull(snapshot.profile.institution?.let(::VerificationInstitution)) +
             identityEmployments(snapshot, evidence).map { VerificationInstitution(value(it, "institution")) }
         fun institutionMatch(institution: VerificationInstitution?): Boolean = institution != null && originals.any {
@@ -234,7 +244,11 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
                     runCatching { LocalDate.parse(job.endDate!!.take(10)) }.getOrNull()?.let { !it.isAfter(LocalDate.now(clock)) } == true &&
                     institutionMatch(job.institution)
             }) return "APOLLO_HISTORICAL_INSTITUTION_MATCH"
-        if (apolloProfessor(candidate.title)) return "APOLLO_PROFESSOR_MATCH"
+        if (apolloProfessor(candidate.title) || ruleVersion >= 2 && candidate.title?.trim() == "Assistenzprofessor" &&
+            normalizeName(candidate.headline.orEmpty()).let { headline ->
+                Regex("^assistant professor(?: |$)").containsMatchIn(headline) &&
+                    !Regex("\\b(?:emeritus|retired|former|student|candidate|assistant to|lab of|research group|not|never|no longer)\\b|退休|学生|博士生|助理人员").containsMatchIn(headline)
+            }) return "APOLLO_PROFESSOR_MATCH"
         // Whole specific phrases only. Generic job/industry labels are not academic specialties.
         val excluded = setOf("science", "engineering", "research", "education", "higher education", "technology",
             "professor", "researcher", "scientist", "科学", "研究", "教育", "工程", "其他")

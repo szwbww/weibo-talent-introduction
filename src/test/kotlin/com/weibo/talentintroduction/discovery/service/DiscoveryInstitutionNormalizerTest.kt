@@ -14,6 +14,30 @@ class DiscoveryInstitutionNormalizerTest {
     private val mapper = jacksonObjectMapper()
     private val fixtures = mapper.readTree(javaClass.getResourceAsStream("/discovery/institution-subject-cases.json"))
 
+    @Test fun `version two Geneva aliases are exact sourced subjects and cannot override identifiers`() {
+        val english = VerificationInstitution("University of Geneva")
+        val french = VerificationInstitution("Université de Genève")
+        for (version in 0..1) {
+            assertNotEquals(InstitutionComparison.MATCH, DiscoveryInstitutionNormalizer.compareWithAliases(english, french, version))
+            assertNull(DiscoveryInstitutionNormalizer.aliasReason(english, french, version))
+        }
+        assertEquals(InstitutionComparison.MATCH, DiscoveryInstitutionNormalizer.compareWithAliases(english, french, 2))
+        assertEquals(DiscoveryInstitutionNormalizer.GENEVA_ALIAS_REASON, DiscoveryInstitutionNormalizer.aliasReason(french, english, 2))
+        assertEquals(InstitutionComparison.DIFFERENT, DiscoveryInstitutionNormalizer.compareWithAliases(
+            english.copy(standardId = "ROR:1"), french.copy(standardId = "ROR:2"), 2))
+        listOf("Geneva University Hospital", "University of Genoa", "Université de Genève Campus Imaginaire").forEach {
+            assertNotEquals(InstitutionComparison.MATCH, DiscoveryInstitutionNormalizer.compareWithAliases(english, VerificationInstitution(it), 2), it)
+        }
+        val tum = VerificationInstitution("Technical University of Munich")
+        val munich = VerificationInstitution("Technische Universität München")
+        assertNotEquals(InstitutionComparison.MATCH, DiscoveryInstitutionNormalizer.compareWithAliases(tum, munich, 0))
+        for (version in 1..2) {
+            assertEquals(InstitutionComparison.MATCH, DiscoveryInstitutionNormalizer.compareWithAliases(tum, munich, version))
+            assertEquals(DiscoveryInstitutionNormalizer.TUM_ALIAS_REASON, DiscoveryInstitutionNormalizer.aliasReason(tum, munich, version))
+        }
+        assertThrows(IllegalArgumentException::class.java) { DiscoveryInstitutionNormalizer.compareWithAliases(english, french, 3) }
+    }
+
     private fun source(value: String) = InstitutionSource.valueOf(value)
 
     @Test fun `fixed real cases resolve exactly the documented subjects and reasons`() {

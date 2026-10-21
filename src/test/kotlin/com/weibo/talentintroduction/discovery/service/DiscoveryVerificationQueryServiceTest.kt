@@ -19,6 +19,29 @@ class DiscoveryVerificationQueryServiceTest {
     private fun run(id: Long, mode: VerificationMode = VerificationMode.ENFORCE) =
         VerificationRun(id, mode, mode.policyVersion, true, "{}", true, 17, now, now)
 
+    @Test fun `detail recomputes persisted version two without upgrading old evidence or writing`() {
+        val f = AdmissionGateFixture()
+        val base = f.item(facts = emptyList())
+        val candidate = ApolloCandidate("v2-person", "Ada", "Lee", null, "Ada Lee", "Assistenzprofessor",
+            VerificationInstitution("Other University"), headline = "Assistant Professor at Other University")
+        val search = ApolloSearchEvidence(listOf(candidate), true, true, setOf("Ada Lee"), matchingVersion = 2,
+            detailsComplete = true, institutionAliasVersion = 2)
+        val payload = VerificationWorkerEvidence(search = search, ruleVersion = 2)
+        val row = base.copy(outcome = VerificationOutcome.APOLLO_CLEAR, route = VerificationRoute.APOLLO,
+            evidenceJson = f.mapper.writeValueAsString(payload), apolloPersonId = candidate.id, personMatchedAt = ruleClock.instant())
+        `when`(repository.findItem(row.id)).thenReturn(row)
+        `when`(repository.findRun(row.ownerExecutionId)).thenReturn(run(row.ownerExecutionId))
+        val detail = service.item(row.id)
+        assertEquals(VerificationOutcome.APOLLO_CLEAR, detail.outcome)
+        assertEquals("Assistenzprofessor", detail.matchedCandidate!!.title)
+        assertEquals(listOf("completedDoctorate", "reliableAge"), detail.record.missingFields)
+        assertEquals(2, f.mapper.readTree(repository.findItem(row.id)!!.evidenceJson).path("ruleVersion").intValue())
+        verify(repository, times(2)).findItem(row.id)
+        verify(repository).findRun(row.ownerExecutionId)
+        verify(repository).findAttempts(row.id)
+        verifyNoMoreInteractions(repository)
+    }
+
     @Test fun `summary distinguishes missing empty expired and audit suggestions using batched aggregate`() {
         val ids = listOf(3001L, 3002L, 3003L, 3004L)
         `when`(repository.reportingRuns(ids)).thenReturn(mapOf(3001L to run(3001), 3003L to run(3003), 3004L to run(3004, VerificationMode.AUDIT)))

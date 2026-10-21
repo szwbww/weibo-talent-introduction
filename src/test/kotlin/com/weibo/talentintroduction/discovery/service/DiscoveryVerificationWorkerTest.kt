@@ -18,6 +18,90 @@ class DiscoveryVerificationWorkerTest {
             DiscoveryVerificationRules(ruleClock), Mockito.mock(DiscoveryVerificationCommitService::class.java),
             factory.getBeanProvider(RegistrationRecovery::class.java), ruleClock)
 
+    @Test fun `runtime version two registration worker SQL gate query smoke and frozen legacy runs`() {
+        check(org.testcontainers.DockerClientFactory.instance().isDockerAvailable) { "Docker is required; skip is not PASS" }
+        DiagnosticMysql().withDatabaseName("identity_v2").withUsername("test").withPassword("test")
+            .withCommand("--log-bin-trust-function-creators=1").use { mysql ->
+                mysql.start()
+                val ds = org.springframework.jdbc.datasource.DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
+                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("158").load().migrate()
+                val jdbc = org.springframework.jdbc.core.JdbcTemplate(ds)
+                val manager = org.springframework.jdbc.datasource.DataSourceTransactionManager(ds)
+                VerificationFlowFixture(jdbc, manager).use { f ->
+                    jdbc.update("INSERT INTO task_execution (id,task_type,trigger_type,status,started_at) VALUES (2001,'EXPERT_DISCOVERY','MANUAL','RUNNING',?)",
+                        f.clock.instant().verificationUtc())
+                    val registration = DiscoveryVerificationRegistrationService(DiscoveryVerificationProperties(enabled = true, apolloApiKey = "fixture-key"), f.repository, f.writer, f.policy,
+                        f.admissions, jdbc, org.springframework.transaction.support.TransactionTemplate(manager), f.clock)
+                    val context = registration.begin(2001, PaperSearchCriteria(apolloAssist = true))
+                    assertEquals(2, f.mapper.readTree(context.run!!.settingsJson).path("ruleVersion").intValue())
+                    assertEquals(2, f.mapper.readTree(context.run!!.settingsJson).path("institutionAliasVersion").intValue())
+                    val doc = "identity-v2"
+                    val profile = ruleSnapshot().profile.copy(esDocId = doc, researchFieldIds = listOf("22"),
+                        lastPublicationYear = 2026, institution = "University of Geneva")
+                    val frozen = DiscoveryVerificationAdmissionGate.snapshot(doc, profile, f.policy.evaluate(profile).configSnapshot)
+                    @Suppress("UNCHECKED_CAST")
+                    val raw = f.mapper.convertValue(profile, Map::class.java) as Map<String, Any?>
+                    f.raws[doc] = raw
+                    val reserved = f.repository.reserveItem(VerificationReservation(2001, doc, frozen.identityHash,
+                        context.run!!.policyVersion, "ORCID", doc, f.mapper.writeValueAsString(frozen), frozen.factFingerprint), f.clock.instant())
+                    val row = f.repository.activateItem(reserved.id, 1, f.clock.instant())
+                    f.jobRole = null
+                    f.apolloBody = """{"people":[{"id":"person-1","name":"Ada Lee","first_name":"Ada","last_name":"Lee","title":"Assistenzprofessor","headline":"Assistant Professor at University of Southern Denmark","organization":{"name":"University of Southern Denmark"}}],"total_entries":1}"""
+                    f.detailBody = """{"person":{"id":"person-1","name":"Ada Lee","first_name":"Ada","last_name":"Lee","title":"Assistenzprofessor","headline":"Assistant Professor at University of Southern Denmark","organization":{"name":"University of Southern Denmark"},"employment_history":[{"organization_name":"Université de Genève","title":"Researcher","current":false,"start_date":"2011-01-01","end_date":"2024-12-01"}]}}"""
+                    f.worker().process(f.claim())
+                    val done = f.item(row.id)
+                    assertEquals(VerificationOutcome.APOLLO_CLEAR, done.outcome)
+                    assertEquals(VerificationProjection.PROJECTED, done.projectionState)
+                    assertNotNull(done.admissionRevision)
+                    val payload = f.mapper.readValue<VerificationWorkerEvidence>(done.evidenceJson!!)
+                    assertEquals(2, payload.ruleVersion)
+                    assertEquals(2, payload.search!!.institutionAliasVersion)
+                    assertEquals("Assistenzprofessor", payload.search!!.candidates.single().title)
+                    assertEquals(1L, f.autoCount())
+                    val snapshot = f.mapper.readValue<VerificationSnapshot>(done.snapshotJson)
+                    assertTrue(f.policy.evaluate(done.expertDocId, snapshot.profile).eligible)
+                    val detail = DiscoveryVerificationQueryService(f.repository, f.admissions, f.props).item(done.id)
+                    assertEquals(VerificationOutcome.APOLLO_CLEAR, detail.outcome)
+                    assertEquals("Assistenzprofessor", detail.matchedCandidate!!.title)
+                    assertEquals(listOf("completedDoctorate", "reliableAge"), detail.record.missingFields)
+                    assertEquals(context.run!!.settingsJson, registration.begin(2001, PaperSearchCriteria(apolloAssist = true)).run!!.settingsJson)
+                    println("IDENTITY_V2_SMOKE run=2001 workerRule=2 alias=2 sql=${done.outcome} gate=eligible projection=${done.projectionState} admission=${done.admissionRevision} requests=${done.requestCount}")
+                }
+                listOf("discovery_verification_attempt", "discovery_verification_item", "discovery_verification_run",
+                    "expert_discovery_admission", "task_execution").forEach { jdbc.update("DELETE FROM $it") }
+                // New payload on a pre-existing run without settings must retain the old default, not v2.
+                VerificationFlowFixture(jdbc, manager).use { f ->
+                    val row = f.seed("legacy-no-settings")
+                    f.worker().process(f.claim())
+                    assertEquals(1, f.mapper.readValue<VerificationWorkerEvidence>(f.item(row.id).evidenceJson!!).ruleVersion)
+                }
+                listOf("discovery_verification_attempt", "discovery_verification_item", "discovery_verification_run",
+                    "expert_discovery_admission").forEach { jdbc.update("DELETE FROM $it") }
+                for (version in listOf(0, 1, 2, 3)) {
+                    VerificationFlowFixture(jdbc, manager).use { f ->
+                        val row = f.seed("frozen-$version")
+                        jdbc.update("UPDATE discovery_verification_run SET settings_json=? WHERE execution_id=2001",
+                            """{"ruleVersion":2,"apolloMatchingVersion":2,"institutionAliasVersion":2}""")
+                        val candidate = ApolloCandidate("person-frozen", "Ada", "Lee", null, "Ada Lee", "Assistenzprofessor",
+                            VerificationInstitution("Other University"), headline = "Assistant Professor at Other University")
+                        f.cached(VerificationWorkerEvidence(ruleVersion = version, progress = VerificationProgress(stage = "DECIDE"),
+                            search = ApolloSearchEvidence(listOf(candidate), true, true, setOf("Ada Lee"), matchingVersion = 2,
+                                detailsComplete = true, institutionAliasVersion = 1)))
+                        f.worker().process(f.claim())
+                        val done = f.item(row.id)
+                        if (version == 3) assertEquals(VerificationState.ERROR, done.state)
+                        else {
+                            assertEquals(version, f.mapper.readValue<VerificationWorkerEvidence>(done.evidenceJson!!).ruleVersion)
+                            assertEquals(if (version == 2) VerificationOutcome.APOLLO_CLEAR else VerificationOutcome.PENDING, done.outcome)
+                        }
+                        assertTrue(f.apolloRequests.isEmpty())
+                    }
+                    listOf("discovery_verification_attempt", "discovery_verification_item", "discovery_verification_run",
+                        "expert_discovery_admission").forEach { jdbc.update("DELETE FROM $it") }
+                }
+            }
+    }
+
     @Test fun `formal ORCID name is queried alongside middle initial snapshot name`() {
         worker(DiscoveryVerificationProperties(), Mockito.mock(DiscoveryVerificationRepository::class.java)).useWorker { current ->
             val snapshot = ruleSnapshot().let { it.copy(profile = it.profile.copy(givenNames = "Duncan", familyNames = "S. Sutherland")) }

@@ -207,6 +207,14 @@ class DiscoveryVerificationWorker(
             require(matchingVersion in 1..2)
             val aliasVersion = mapper.readTree(run.settingsJson).path("institutionAliasVersion").asInt(0)
             require(aliasVersion in 0..DiscoveryInstitutionNormalizer.ALIAS_VERSION)
+            if (lease.evidenceJson == null) {
+                val frozenRule = mapper.readTree(run.settingsJson).get("ruleVersion")
+                require(frozenRule == null || frozenRule.isIntegralNumber && frozenRule.canConvertToInt()) {
+                    "Invalid frozen rule version"
+                }
+                payload = payload.copy(ruleVersion = frozenRule?.intValue() ?: 1)
+            }
+            require(payload.ruleVersion in 0..2) { "Unsupported frozen rule version" }
             if (payload.progress.stage == "LOCAL_EVIDENCE") {
                 payload = payload.copy(evidence = parser.rebuild(snapshot, payload.orcidCompleted.mapNotNull { it.document }, payload.evidence))
                 val existing = evaluate(snapshot)
@@ -310,7 +318,7 @@ class DiscoveryVerificationWorker(
                             search.complete, search.candidates.map { it.id }, finished))
                     if (last && payload.ruleVersion >= 1 && search.matchingVersion == 2 &&
                         search.candidates.none { rules.nameMatches(it, rules.allowedNames(snapshot, payload.evidence), search.queryNames, true, payload.ruleVersion) &&
-                            rules.matchReason(snapshot, payload.evidence, it, null, search.institutionAliasVersion) in
+                            rules.matchReason(snapshot, payload.evidence, it, null, search.institutionAliasVersion, payload.ruleVersion) in
                             setOf("APOLLO_CURRENT_INSTITUTION_MATCH", "APOLLO_HISTORICAL_INSTITUTION_MATCH", "APOLLO_PROFESSOR_MATCH") }) {
                         val fallback = surnameFallback(snapshot, payload.institutionNormalization)
                         if (fallback != null && queries.none { it.name == fallback.name && it.institution == fallback.institution }) {
@@ -358,7 +366,7 @@ class DiscoveryVerificationWorker(
                             (rules.nameMatches(it, names, payload.search!!.queryNames, masked = true, ruleVersion = payload.ruleVersion) ||
                                 payload.ruleVersion >= 1 && rules.emailNameMatches(snapshot, payload.evidence, it, payload.search!!.institutionAliasVersion, masked = true))
                         }
-                        val strong = candidates.filter { rules.matchReason(snapshot, payload.evidence, it, null, payload.search?.institutionAliasVersion ?: 0) in
+                        val strong = candidates.filter { rules.matchReason(snapshot, payload.evidence, it, null, payload.search?.institutionAliasVersion ?: 0, payload.ruleVersion) in
                             setOf("APOLLO_CURRENT_INSTITUTION_MATCH", "APOLLO_HISTORICAL_INSTITUTION_MATCH", "APOLLO_PROFESSOR_MATCH") }
                         // Current institution / professor evidence can distinguish a candidate from unrelated
                         // same-name people. Only fall back to history/specialty when no strong candidate exists.

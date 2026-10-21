@@ -60,6 +60,24 @@ class AdmissionGateFixture {
 }
 
 class DiscoveryVerificationAdmissionGateTest {
+    @Test fun `gate recomputes version two and rejects a persisted result paired with old rules`() {
+        val f = AdmissionGateFixture()
+        val candidate = ApolloCandidate("person-v2", "Ada", "Lee", null, "Ada Lee", "Assistenzprofessor",
+            VerificationInstitution("Other University"), headline = "Assistant Professor at Other University")
+        val search = ApolloSearchEvidence(listOf(candidate), true, true, setOf("Ada Lee"),
+            matchingVersion = 2, detailsComplete = true, institutionAliasVersion = 2)
+        val original = f.item(facts = emptyList(), search = search)
+        val payload = VerificationAdmissionEvidence(emptyList(), search, ruleVersion = 2)
+        val current = original.copy(outcome = VerificationOutcome.APOLLO_CLEAR, route = VerificationRoute.APOLLO,
+            apolloPersonId = candidate.id, personMatchedAt = ruleClock.instant(),
+            evidenceJson = f.mapper.writeValueAsString(payload))
+        f.load(current)
+        assertTrue(f.policy.evaluate(f.docId, f.profile).eligible)
+        f.load(current.copy(evidenceJson = f.mapper.writeValueAsString(payload.copy(ruleVersion = 1))))
+        assertFalse(f.policy.evaluate(f.docId, f.profile).eligible)
+        f.load(original)
+        assertFalse(f.policy.evaluate(f.docId, f.profile).eligible)
+    }
     @Test fun `gate honors persisted SELF policy version and leaves old decisions unchanged`() {
         val f = AdmissionGateFixture()
         val old = f.item(facts = listOf(ruleJob("Professor", AssertionSource.SELF)))

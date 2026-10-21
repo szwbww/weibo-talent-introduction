@@ -31,6 +31,59 @@ fun ruleSearch(masked: Boolean = false, count: Int = 1, complete: Boolean = true
 class DiscoveryVerificationRulesTest {
     private val rules = DiscoveryVerificationRules(ruleClock)
     private val mapper = jacksonObjectMapper()
+
+    @Test fun `Nicolas minimal archived shape improves once with either repair and preserves raw title`() {
+        val snapshot = ruleSnapshot().let { it.copy(profile = it.profile.copy(institution = "University of Geneva")) }
+        val candidate = ApolloCandidate("nicolas-synthetic", "Ada", "Lee", null, "Ada Lee", "Assistenzprofessor",
+            VerificationInstitution("University of Southern Denmark"), headline = "Assistant Professor at University of Southern Denmark",
+            employmentHistory = listOf(ApolloEmployment(VerificationInstitution("Université de Genève"), "Researcher", false,
+                "2011-01-01", "2024-12-01")))
+        fun search(alias: Int, person: ApolloCandidate = candidate) = ApolloSearchEvidence(
+            candidates = listOf(person), broadComplete = true, complete = true, queryNames = setOf("Ada Lee"),
+            matchingVersion = 2, detailsComplete = true, institutionAliasVersion = alias)
+        for (version in 0..1) assertEquals(VerificationOutcome.PENDING, rules.evaluate(snapshot, emptyList(), search(1), ruleVersion = version).outcome)
+        val aliasOnly = rules.evaluate(snapshot, emptyList(), search(2), ruleVersion = 1)
+        val titleOnly = rules.evaluate(snapshot, emptyList(), search(1), ruleVersion = 2)
+        val combined = rules.evaluate(snapshot, emptyList(), search(2), ruleVersion = 2)
+        listOf(aliasOnly, titleOnly, combined).forEach {
+            assertEquals(VerificationOutcome.APOLLO_CLEAR, it.outcome)
+            assertEquals(candidate.id, it.matchedPersonId)
+            assertEquals(VerificationQualification.UNKNOWN, it.qualification)
+            assertEquals(listOf("completedDoctorate", "reliableAge"), it.missingFields)
+            assertEquals(java.time.LocalDate.parse("2026-10-18"), it.evaluatedOn)
+        }
+        assertTrue(combined.reasonCodes.contains(DiscoveryInstitutionNormalizer.GENEVA_ALIAS_REASON))
+        assertFalse(combined.reasonCodes.contains(DiscoveryInstitutionNormalizer.TUM_ALIAS_REASON))
+        assertTrue(titleOnly.reasonCodes.contains("APOLLO_PROFESSOR_MATCH"))
+        assertEquals(1, listOf(aliasOnly, titleOnly, combined).map { it.matchedPersonId }.distinct().size)
+        assertEquals("Assistenzprofessor", candidate.title)
+        assertFalse(rules.apolloProfessor(candidate.title))
+        val second = candidate.copy(id = "second-person")
+        assertTrue(rules.evaluate(snapshot, emptyList(), search(2).copy(candidates = listOf(candidate, second)), ruleVersion = 2)
+            .reasonCodes.contains("IDENTITY_AMBIGUOUS"))
+        assertTrue(rules.evaluate(snapshot, emptyList(), search(2, candidate.copy(orcid = "0000-0001-0000-0001")), ruleVersion = 2)
+            .reasonCodes.contains("ORCID_CONFLICT"))
+        assertEquals(VerificationOutcome.PROTECTED, rules.evaluate(snapshot, emptyList(), search(2), protected = true, ruleVersion = 2).outcome)
+        assertThrows(IllegalArgumentException::class.java) { rules.evaluate(snapshot, emptyList(), search(2), ruleVersion = 3) }
+    }
+
+    @Test fun `Assistenzprofessor needs explicit positive prefix and cannot extend email identity route`() {
+        val snapshot = ruleSnapshot()
+        val candidate = ApolloCandidate("person", "Ada", "Lee", null, "Ada Lee", "Assistenzprofessor",
+            VerificationInstitution("Unrelated University"))
+        listOf(null, "Professor", "Student and Assistant Professor", "Assistant to Professor",
+            "Assistant Professor retired", "Assistant Professor student", "Assistant Professor not currently employed",
+            "Former Assistant Professor").forEach { headline ->
+            assertNull(rules.matchReason(snapshot, emptyList(), candidate.copy(headline = headline), null, 2, 2), headline)
+        }
+        val positive = candidate.copy(headline = "Assistant Professor at Nottingham University")
+        assertEquals("APOLLO_PROFESSOR_MATCH", rules.matchReason(snapshot, emptyList(), positive, null, 2, 2))
+        assertNull(rules.matchReason(snapshot, emptyList(), positive, null, 2, 1))
+        assertFalse(rules.emailNameMatches(snapshot, emptyList(), positive, 2))
+        val unknown = ruleJob("Professor", temporal = TemporalScope.UNKNOWN)
+        assertEquals(VerificationOutcome.PENDING, rules.evaluate(snapshot, listOf(unknown), ruleVersion = 2).outcome)
+        assertEquals(TemporalScope.UNKNOWN, unknown.temporalScope)
+    }
     @Test fun `fixed annotated fixtures replay identically with auditable fields`() {
         val fixtures = jacksonObjectMapper().readTree(javaClass.getResourceAsStream("/discovery/apollo-verification-cases.json"))
         fixtures.path("cases").forEach { case ->
