@@ -153,7 +153,12 @@ class DiscoveryVerificationWorker(
                 is VerificationHttpResult.PermanentFailure -> result.code
             }
             check(repository.completeAttemptAndProgress(lease.id, token, lease.generation, permit.attemptId, status, code,
-                response?.let { mapper.writeValueAsString(it) }, (result as? VerificationHttpResult.Success)?.responseSha256,
+                (if (result is VerificationHttpResult.Success) response else when (result) {
+                    is VerificationHttpResult.RateLimited -> result.diagnostic
+                    is VerificationHttpResult.TransientFailure -> result.diagnostic
+                    is VerificationHttpResult.PermanentFailure -> result.diagnostic
+                    else -> null
+                })?.let { mapper.writeValueAsString(it) }, (result as? VerificationHttpResult.Success)?.responseSha256,
                 json(), entered, searched, candidatesAt, clock.instant())) { "Verification completion not persisted" }
             activePermit = null
         }

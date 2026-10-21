@@ -106,7 +106,8 @@ class DiscoveryVerificationQueryService(
             snapshot.profile.employment, snapshot.profile.institutionEvidence, snapshot.boundOrcid,
             payload?.evidence ?: emptyList(), reasonCodes(item).map { VerificationReason(it, reasonLabel(it), 1) },
             repository.findAttempts(itemId).map { VerificationAttemptSummary(it.id, it.provider, it.queryKind,
-                it.pageNumber, it.attemptNumber, it.requestedAt, it.completedAt, it.httpStatus, it.resultCode, it.responseSha256) },
+                it.pageNumber, it.attemptNumber, it.requestedAt, it.completedAt, it.httpStatus, it.resultCode, it.responseSha256,
+                VerificationDiagnostics.read(it.responseJson)) },
             item.admissionRevision, item.projectionError, run.mode, run.revision, Instant.now(),
             item.apolloPersonId, VerificationApolloStages(item.apolloEnteredAt, item.searchCompletedAt,
                 item.candidateFoundAt, item.personMatchedAt), payload?.search?.matchingVersion ?: 1,
@@ -224,7 +225,7 @@ data class VerificationRecord(val itemId: Long, val docId: String, val name: Str
     val qualification: VerificationQualification, val matchingLabel: String? = null, val matchingVersion: Int = 1)
 data class VerificationAttemptSummary(val id: Long, val provider: VerificationProvider, val queryKind: VerificationQueryKind,
     val pageNumber: Int, val attemptNumber: Int, val requestedAt: Instant, val completedAt: Instant?,
-    val httpStatus: Int?, val resultCode: String, val responseSha256: String?)
+    val httpStatus: Int?, val resultCode: String, val responseSha256: String?, val diagnostic: VerificationDiagnostic? = null)
 data class VerificationItemDetail(val record: VerificationRecord, val executionId: Long, val state: VerificationState,
     val outcome: VerificationOutcome?, val qualification: VerificationQualification,
     val identity: com.weibo.talentintroduction.expert.domain.IdentityVerification?, val originalEmployment: String?,

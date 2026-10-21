@@ -123,4 +123,27 @@ class DiscoveryVerificationQueryServiceTest {
         assertThrows(IllegalArgumentException::class.java) { VerificationReportFilter(1, batchNumber = 0) }
         verifyNoInteractions(repository, admissions)
     }
+    @Test fun `diagnostic decoder accepts only versioned errors and projects whitelisted fields`() {
+        val mapper = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper()
+        val diagnostic = VerificationDiagnostics.fromBytes(VerificationProvider.APOLLO, "/api/v1/people/person-1", 422,
+            """{"message":"insufficient credits"}""".toByteArray(), false, "APOLLO_CREDITS_EXHAUSTED")
+        val json = mapper.writeValueAsString(diagnostic)
+        assertEquals(diagnostic, VerificationDiagnostics.read(json))
+        assertNull(VerificationDiagnostics.read(null))
+        assertNull(VerificationDiagnostics.read("""{"person":{"id":"person-1"}}"""))
+        assertNull(VerificationDiagnostics.read("""{"endpoint":"person","document":null}"""))
+        assertNull(VerificationDiagnostics.read("broken"))
+        assertNull(VerificationDiagnostics.read(json.replace("\"schemaVersion\":1", "\"schemaVersion\":2")))
+        assertNull(VerificationDiagnostics.read(json.replace("\"schemaVersion\":1", "\"schemaVersion\":1.5")))
+        assertNull(VerificationDiagnostics.read((mapper.readTree(json) as com.fasterxml.jackson.databind.node.ObjectNode).put("bodyBytesRead", 1.5).toString()))
+        assertNull(VerificationDiagnostics.read(json.replace("APOLLO_CREDITS_EXHAUSTED", "made-up")))
+        val extended = mapper.readTree(json) as com.fasterxml.jackson.databind.node.ObjectNode
+        extended.put("people", "private-person")
+        extended.put("token", "private-token")
+        val output = mapper.writeValueAsString(VerificationDiagnostics.read(extended.toString()))
+        assertFalse(output.contains("private-person"))
+        assertFalse(output.contains("private-token"))
+        assertNull(VerificationAttemptSummary(1, VerificationProvider.APOLLO, VerificationQueryKind.DETAIL,
+            1, 1, now, now, 422, "REQUEST_INVALID", null).diagnostic)
+    }
 }

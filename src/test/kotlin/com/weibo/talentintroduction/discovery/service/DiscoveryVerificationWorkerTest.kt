@@ -154,4 +154,58 @@ class DiscoveryVerificationWorkerTest {
             nextAttemptAt = null, admissionRevision = null, projectionState = VerificationProjection.NOT_REQUIRED,
             projectionError = null, activatedAt = now, completedAt = null, createdAt = now, updatedAt = now)
     }
+    private class DiagnosticMysql : org.testcontainers.containers.MySQLContainer<DiagnosticMysql>("mysql:8.0.36")
+
+    @Test fun `mock HTTP failures persist atomically in MySQL and appear in item details once per request`() {
+        check(org.testcontainers.DockerClientFactory.instance().isDockerAvailable) { "Docker is required; skip is not PASS" }
+        DiagnosticMysql().withDatabaseName("verification_diagnostics").withUsername("test").withPassword("test")
+            .withCommand("--log-bin-trust-function-creators=1").use { mysql ->
+                mysql.start()
+                val ds = org.springframework.jdbc.datasource.DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
+                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("158").load().migrate()
+                val jdbc = org.springframework.jdbc.core.JdbcTemplate(ds)
+                val manager = org.springframework.jdbc.datasource.DataSourceTransactionManager(ds)
+                val cases = listOf(
+                    """{"message":"insufficient credits token=private-token alice@example.invalid +1 (415) 555-0123","people":[{"name":"private-person"}]}""" to "APOLLO_CREDITS_EXHAUSTED",
+                    """{"message":"invalid parameter"}""" to "REQUEST_INVALID",
+                    "" to "APOLLO_HTTP_422_UNCLASSIFIED")
+                cases.forEachIndexed { index, (body, expected) ->
+                    VerificationFlowFixture(jdbc, manager).use { f ->
+                        val row = f.seed("diagnostic-$index")
+                        f.cached(VerificationWorkerEvidence(progress = VerificationProgress(stage = "APOLLO_SEARCH"),
+                            search = ApolloSearchEvidence(), queries = listOf(ApolloSearchQuery("Ada Lee"))))
+                        val http = verificationRestTemplate(f.props)
+                        val server = org.springframework.test.web.client.MockRestServiceServer.bindTo(http).build()
+                        server.expect(org.springframework.test.web.client.match.MockRestRequestMatchers.anything())
+                            .andRespond(org.springframework.test.web.client.response.MockRestResponseCreators
+                                .withStatus(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY).body(body)
+                                .contentType(org.springframework.http.MediaType.APPLICATION_JSON))
+                        DiscoveryVerificationWorker(f.props, f.repository,
+                            Mockito.mock(OrcidVerificationEvidenceClient::class.java), ApolloPeopleSearchClient(f.props, http, f.clock),
+                            QualificationEvidenceParser(f.clock), f.rules, f.commits,
+                            DefaultListableBeanFactory().getBeanProvider(RegistrationRecovery::class.java), f.clock).useWorker { it.process(f.claim()) }
+                        server.verify()
+                        val attempts = f.repository.findAttempts(row.id)
+                        assertEquals(1, attempts.size)
+                        val attempt = attempts.single()
+                        assertEquals(expected, attempt.resultCode)
+                        assertNull(attempt.responseSha256)
+                        assertEquals(1, f.item(row.id).requestCount)
+                        val json = requireNotNull(attempt.responseJson)
+                        listOf("private-token", "alice@example.invalid", "415", "private-person").forEach { assertFalse(json.contains(it), it) }
+                        val query = DiscoveryVerificationQueryService(f.repository, f.admissions, f.props)
+                        val detail = query.item(row.id)
+                        assertEquals(expected, detail.attempts.single().diagnostic!!.classification)
+                        assertEquals(VerificationState.ERROR, detail.state)
+                        jdbc.update("UPDATE discovery_verification_attempt SET response_json=NULL WHERE id=?", attempt.id)
+                        assertNull(query.item(row.id).attempts.single().diagnostic)
+                        assertEquals(expected, f.repository.findAttempts(row.id).single().resultCode)
+                        assertEquals(1, f.item(row.id).requestCount)
+                        jdbc.update("DELETE FROM discovery_verification_attempt")
+                        jdbc.update("DELETE FROM discovery_verification_item")
+                        jdbc.update("DELETE FROM discovery_verification_run")
+                    }
+                }
+            }
+    }
 }
