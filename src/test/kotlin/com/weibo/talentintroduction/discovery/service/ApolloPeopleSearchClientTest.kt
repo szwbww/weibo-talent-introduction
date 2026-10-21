@@ -149,7 +149,10 @@ class ApolloPeopleSearchClientTest {
         val messages = listOf(
             """invalid parameter {"token":"private-token"}""",
             """invalid parameter {"api_key":"private-key","password":"private-password"}""",
-            """invalid parameter {'TOKEN' = 'private-token', 'key': 'private-key', 'password': 'private-password'}""")
+            """invalid parameter {'TOKEN' = 'private-token', 'key': 'private-key', 'password': 'private-password'}""",
+            """invalid parameter {"password":"alpha TOPSECRET omega"}""",
+            """invalid parameter {'token':'alpha TOPSECRET omega'}""",
+            """invalid parameter api_key=single-secret""")
         messages.forEach { message ->
             val body = mapper.writeValueAsString(mapOf("message" to message))
             server.expect(anything()).andRespond(withStatus(HttpStatus.UNPROCESSABLE_ENTITY).body(body).contentType(MediaType.APPLICATION_JSON))
@@ -161,10 +164,11 @@ class ApolloPeopleSearchClientTest {
             val historicalProjection = requireNotNull(VerificationDiagnostics.read(
                 mapper.writeValueAsString(diagnostic.copy(message = message))))
             listOf(json, mapper.writeValueAsString(projection), mapper.writeValueAsString(historicalProjection)).forEach { output ->
-                listOf("private-token", "private-key", "private-password").forEach { secret ->
+                listOf("private-token", "private-key", "private-password", "alpha TOPSECRET omega", "TOPSECRET omega", "single-secret").forEach { secret ->
                     assertFalse(output.contains(secret), secret)
                 }
                 assertTrue(output.contains("[REDACTED]"))
+                assertTrue(output.contains("invalid parameter"), "Non-sensitive diagnostic context must remain")
             }
             assertEquals(diagnostic.message, projection.message)
             assertEquals(diagnostic.message, historicalProjection.message)

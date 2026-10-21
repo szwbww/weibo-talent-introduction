@@ -287,6 +287,10 @@ class DiscoveryVerificationWorkerTest {
                 val cases = listOf(
                     """{"message":"insufficient credits token=private-token alice@example.invalid +1 (415) 555-0123","people":[{"name":"private-person"}]}""" to "APOLLO_CREDITS_EXHAUSTED",
                     """{"message":"invalid parameter"}""" to "REQUEST_INVALID",
+                    com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().writeValueAsString(mapOf(
+                        "message" to """invalid parameter {"password":"alpha TOPSECRET omega"}""")) to "REQUEST_INVALID",
+                    com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().writeValueAsString(mapOf(
+                        "message" to """invalid parameter {'token':'alpha TOPSECRET omega'}""")) to "REQUEST_INVALID",
                     "" to "APOLLO_HTTP_422_UNCLASSIFIED")
                 cases.forEachIndexed { index, (body, expected) ->
                     VerificationFlowFixture(jdbc, manager).use { f ->
@@ -311,10 +315,20 @@ class DiscoveryVerificationWorkerTest {
                         assertNull(attempt.responseSha256)
                         assertEquals(1, f.item(row.id).requestCount)
                         val json = requireNotNull(attempt.responseJson)
-                        listOf("private-token", "alice@example.invalid", "415", "private-person").forEach { assertFalse(json.contains(it), it) }
+                        listOf("private-token", "alice@example.invalid", "415", "private-person", "alpha TOPSECRET omega", "TOPSECRET omega").forEach {
+                            assertFalse(json.contains(it), it)
+                        }
                         val query = DiscoveryVerificationQueryService(f.repository, f.admissions, f.props)
                         val detail = query.item(row.id)
                         assertEquals(expected, detail.attempts.single().diagnostic!!.classification)
+                        val apiJson = f.mapper.writeValueAsString(detail.attempts.single().diagnostic)
+                        listOf("private-token", "alice@example.invalid", "415", "private-person", "alpha TOPSECRET omega", "TOPSECRET omega").forEach {
+                            assertFalse(apiJson.contains(it), it)
+                        }
+                        if (expected == "REQUEST_INVALID") {
+                            assertTrue(json.contains("invalid parameter"))
+                            assertTrue(apiJson.contains("invalid parameter"))
+                        }
                         assertEquals(if (expected == "APOLLO_CREDITS_EXHAUSTED") VerificationState.RETRY_WAIT else VerificationState.ERROR, detail.state)
                         jdbc.update("UPDATE discovery_verification_attempt SET response_json=NULL WHERE id=?", attempt.id)
                         assertNull(query.item(row.id).attempts.single().diagnostic)
