@@ -55,8 +55,9 @@ CommitService.project:103–128明确区分PROJECTED/ALREADY_PRESENT/APPLICATION
 | 2 | `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPromotionProgressService.kt` | 集合合并读侧统计 |
 | 3 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPromotionProgressServiceTest.kt` | 双路径去重/时序/故障 |
 | 4 | `src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationReportingIT.kt` | 投影查询条件 |
+| 5 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt` | 仅迁移 PromotionProgressService 构造调用及必要 repository mock；保留原断言 |
 
-共 4 个文件；1 个业务子系统；不修改前端、数据库 schema 或 ES mapping。新增测试数据放入列出的测试文件，不另建 fixture 文件。
+共 5 个文件；1 个业务子系统；不修改前端、数据库 schema 或 ES mapping。新增测试数据放入列出的测试文件，不另建 fixture 文件。
 
 ## 验收标准
 
@@ -96,3 +97,7 @@ mvn -DfailIfNoTests=true -Dsurefire.failIfNoSpecifiedTests=true -DmysqlIt=true -
 - 预期结果：投影台账203且无其他计数差异时managed贡献203；投影失败/已有候选不增加新晋升；任务原始日志保持。
 - 覆盖：I-1/I-2/I-3
 
+
+## 修正记录
+
+- A1（2026-10-21）：用户批准「批准 继续」，将 `ExpertDiscoveryServiceTest.kt` 纳入白名单，仅迁移构造调用及必要 mock，解决 C-06-01；依据总计划「执行约束（I-1/I-2/I-3）」第2条，先修订范围再实施，不改变业务要求或原测试断言。
