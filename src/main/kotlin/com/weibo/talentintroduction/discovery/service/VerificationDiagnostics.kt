@@ -36,15 +36,48 @@ data class WorkerDetailReuse(
     val providerResponseSha256: String
 )
 
+/** References point into the frozen search/evidence; no duplicate personal profile is stored here. */
+data class CandidateDecisionTrace(
+    val personId: String,
+    val candidateRef: String,
+    val nameMatch: String = "NOT_EVALUATED",
+    val orcid: String = "NOT_EVALUATED",
+    val currentInstitution: String = "NOT_EVALUATED",
+    val historicalInstitution: String = "NOT_EVALUATED",
+    val professor: String = "NOT_EVALUATED",
+    val specialty: String = "NOT_EVALUATED",
+    val chosenReason: String? = null,
+    val rejectedReason: String? = null
+)
+
+data class VerificationDecisionTrace(
+    val schemaVersion: Int = 1,
+    val traceOrigin: String = "RECORDED",
+    val ruleVersion: Int,
+    val aliasVersion: Int,
+    val evaluatedAt: java.time.Instant,
+    val inputHash: String,
+    val normalizationRef: String? = null,
+    val evidenceRefs: List<String> = emptyList(),
+    val total: Int,
+    val truncated: Boolean,
+    val candidates: List<CandidateDecisionTrace>
+) {
+    fun bounded(): VerificationDecisionTrace = copy(candidates = candidates.take(200),
+        truncated = truncated || candidates.size > 200 || total > 200)
+}
+
 data class WorkerDiagnostics(
     val schemaVersion: Int = 1,
     val queries: List<WorkerQueryDiagnostic> = emptyList(),
     val detailReuses: List<WorkerDetailReuse> = emptyList(),
-    val totalQueryCount: Int = 0, val totalReused: Int = 0, val truncated: Boolean = false
+    val totalQueryCount: Int = 0, val totalReused: Int = 0, val truncated: Boolean = false,
+    val decision: VerificationDecisionTrace? = null
 ) {
     fun bounded(): WorkerDiagnostics = copy(queries = queries.take(32), detailReuses = detailReuses.take(200),
         totalQueryCount = maxOf(totalQueryCount, queries.size), totalReused = maxOf(totalReused, detailReuses.size),
-        truncated = truncated || queries.size > 32 || detailReuses.size > 200 || totalQueryCount > 32 || totalReused > 200)
+        truncated = truncated || queries.size > 32 || detailReuses.size > 200 || totalQueryCount > 32 || totalReused > 200,
+        decision = decision?.bounded())
 
     fun reuse(value: WorkerDetailReuse): WorkerDiagnostics = copy(
         detailReuses = if (detailReuses.size < 200) detailReuses + value else detailReuses,

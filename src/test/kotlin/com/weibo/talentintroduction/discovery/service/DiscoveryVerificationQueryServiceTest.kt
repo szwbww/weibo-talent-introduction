@@ -19,6 +19,31 @@ class DiscoveryVerificationQueryServiceTest {
     private fun run(id: Long, mode: VerificationMode = VerificationMode.ENFORCE) =
         VerificationRun(id, mode, mode.policyVersion, true, "{}", true, 17, now, now)
 
+    @Test fun `details return only saved recorded trace tolerate unknown fields and never synthesize legacy trace`() {
+        val f = AdmissionGateFixture()
+        val base = f.item(facts = emptyList())
+        val search = ruleSearch().copy(matchingVersion = 2, detailsComplete = true)
+        val trace = DiscoveryVerificationRules(ruleClock).evaluate(ruleSnapshot(), emptyList(), search, ruleVersion = 2).trace!!
+        `when`(repository.findRun(base.ownerExecutionId)).thenReturn(run(base.ownerExecutionId))
+        for (saved in listOf(null, trace, trace.copy(traceOrigin = "RECOMPUTED"))) {
+            val payload = VerificationWorkerEvidence(search = search, ruleVersion = 2,
+                diagnostics = WorkerDiagnostics(decision = saved))
+            val json = f.mapper.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(payload)
+            (json.path("diagnostics") as com.fasterxml.jackson.databind.node.ObjectNode).put("futureField", true)
+            if (saved != null) (json.path("diagnostics").path("decision") as com.fasterxml.jackson.databind.node.ObjectNode)
+                .put("futureStep", "NEW")
+            `when`(repository.findItem(base.id)).thenReturn(base.copy(evidenceJson = f.mapper.writeValueAsString(json)))
+            val detail = service.item(base.id)
+            assertEquals(saved?.takeIf { it.traceOrigin == "RECORDED" }, detail.diagnostics!!.decision)
+        }
+        `when`(repository.findItem(base.id)).thenReturn(base.copy(evidenceJson = """{"evidence":[],"ruleVersion":1}"""))
+        assertNull(service.item(base.id).diagnostics)
+        verify(repository, times(4)).findItem(base.id)
+        verify(repository, times(4)).findRun(base.ownerExecutionId)
+        verify(repository, times(4)).findAttempts(base.id)
+        verifyNoMoreInteractions(repository)
+    }
+
     @Test fun `detail recomputes persisted version two without upgrading old evidence or writing`() {
         val f = AdmissionGateFixture()
         val base = f.item(facts = emptyList())

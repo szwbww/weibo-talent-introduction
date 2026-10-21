@@ -165,7 +165,8 @@ class DiscoveryVerificationWorker(
         }
         fun finish(decision: VerificationDecision) {
             ensureOwned()
-            payload = payload.copy(evidence = decision.evidence, progress = payload.progress.copy(stage = "DECIDE"))
+            payload = payload.copy(evidence = decision.evidence, progress = payload.progress.copy(stage = "DECIDE"),
+                diagnostics = (payload.diagnostics ?: WorkerDiagnostics()).copy(decision = decision.trace).bounded())
             val proposed = VerificationResult(VerificationState.COMPLETED, decision.outcome, decision.qualification, decision.route,
                 json(), mapper.writeValueAsString(decision.reasonCodes), entered, searched, candidatesAt,
                 if (decision.matchedPersonId != null) clock.instant() else null, decision.matchedPersonId)

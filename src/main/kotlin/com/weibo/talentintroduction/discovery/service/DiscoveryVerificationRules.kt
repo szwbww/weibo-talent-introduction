@@ -29,11 +29,14 @@ data class ApolloSearchEvidence(val candidates: List<ApolloCandidate> = emptyLis
 }
 data class VerificationDecision(val qualification: VerificationQualification, val route: VerificationRoute,
     val outcome: VerificationOutcome, val reasonCodes: List<String>, val missingFields: List<String>,
-    val evidence: List<VerificationEvidence>, val evaluatedOn: LocalDate, val matchedPersonId: String? = null)
+    val evidence: List<VerificationEvidence>, val evaluatedOn: LocalDate, val matchedPersonId: String? = null,
+    val trace: VerificationDecisionTrace? = null)
 
 @Service
 class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
-    private val mapper = jacksonObjectMapper()
+    private val mapper = jacksonObjectMapper().findAndRegisterModules()
+        .enable(com.fasterxml.jackson.databind.MapperFeature.SORT_PROPERTIES_ALPHABETICALLY)
+        .enable(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
     fun evaluate(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>,
         search: ApolloSearchEvidence? = null, protected: Boolean = false,
         institutionNormalization: InstitutionNormalization? = null, ruleVersion: Int = 0): VerificationDecision {
@@ -42,9 +45,32 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
         val today = LocalDate.now(clock)
         require(search == null || search.matchingVersion in 1..2) { "Unsupported Apollo matching version" }
         require(search == null || search.institutionAliasVersion in 0..DiscoveryInstitutionNormalizer.ALIAS_VERSION)
+        val traces = search?.candidates.orEmpty().mapIndexed { index, candidate ->
+            candidate.id to CandidateDecisionTrace(candidate.id, "search.candidates[$index]")
+        }.toMap(linkedMapOf())
+        fun trace(candidate: ApolloCandidate, update: (CandidateDecisionTrace) -> CandidateDecisionTrace) {
+            traces[candidate.id]?.let { traces[candidate.id] = update(it) }
+        }
+        fun support(candidate: ApolloCandidate): String? = matchReason(snapshot, evidence, candidate,
+            search?.academicResearchFields, search?.institutionAliasVersion ?: 0, ruleVersion) { update ->
+                trace(candidate, update)
+            }
         fun decision(q: VerificationQualification, reasons: List<String>, missing: List<String> = emptyList(),
             route: VerificationRoute = VerificationRoute.NONE, outcome: VerificationOutcome = VerificationOutcome.PENDING,
-            id: String? = null) = VerificationDecision(q, route, outcome, reasons.distinct(), missing.distinct(), evidence, today, id)
+            id: String? = null): VerificationDecision {
+            val rows = traces.values.map { row ->
+                if (row.personId == id) row.copy(rejectedReason = null)
+                else row.copy(rejectedReason = row.rejectedReason ?: reasons.firstOrNull())
+            }.sortedBy { if (it.personId == id) 0 else 1 }
+            val inputHash = DiscoveryInstitutionNormalizer.sha256(mapper.writeValueAsString(
+                listOf(snapshot, evidence, search, institutionNormalization, protected)))
+            return VerificationDecision(q, route, outcome, reasons.distinct(), missing.distinct(), evidence, today, id,
+                VerificationDecisionTrace(ruleVersion = ruleVersion, aliasVersion = search?.institutionAliasVersion ?: 0,
+                    evaluatedAt = clock.instant(), inputHash = inputHash,
+                    normalizationRef = institutionNormalization?.let { "institutionNormalization" },
+                    evidenceRefs = evidence.indices.map { "evidence[$it]" },
+                    total = search?.candidates?.size ?: 0, truncated = rows.size > 200, candidates = rows.take(200)))
+        }
         if (protected) return decision(VerificationQualification.NOT_EVALUATED, listOf("PROTECTED"), outcome = VerificationOutcome.PROTECTED)
         if (institutionNormalization != null) {
             // Recompute the expected context from the original payload; a saved subject is never self-certifying.
@@ -93,22 +119,40 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
                 return decision(VerificationQualification.CONFLICT, listOf("APOLLO_ID_CONFLICT"), missing)
             if (search.candidates.isEmpty()) return decision(qualification, listOf("APOLLO_NO_MATCH"), missing)
             val namesToMatch = allowedNames(snapshot, evidence)
-            val named = search.candidates.filter { (nameMatches(it, namesToMatch, search.queryNames, masked = false, ruleVersion = ruleVersion) ||
-                ruleVersion >= 1 && emailNameMatches(snapshot, evidence, it, search.institutionAliasVersion)) }
-            if (named.any { it.orcid != null && snapshot.boundOrcid != null && normalizeOrcid(it.orcid) != snapshot.boundOrcid })
-                return decision(VerificationQualification.CONFLICT, listOf("ORCID_CONFLICT"), missing)
+            val named = search.candidates.filter { candidate ->
+                val matchedName = nameMatches(candidate, namesToMatch, search.queryNames, masked = false, ruleVersion = ruleVersion) ||
+                    ruleVersion >= 1 && emailNameMatches(snapshot, evidence, candidate, search.institutionAliasVersion)
+                trace(candidate) { it.copy(nameMatch = if (matchedName) "MATCH" else "NO_MATCH",
+                    rejectedReason = if (matchedName) null else "NAME_NOT_MATCHED") }
+                matchedName
+            }
+            if (named.any { candidate ->
+                    val conflict = candidate.orcid != null && snapshot.boundOrcid != null && normalizeOrcid(candidate.orcid) != snapshot.boundOrcid
+                    trace(candidate) { it.copy(orcid = when {
+                        candidate.orcid == null || snapshot.boundOrcid == null -> "NOT_AVAILABLE"
+                        conflict -> "CONFLICT"
+                        else -> "MATCH"
+                    }) }
+                    conflict
+                }) return decision(VerificationQualification.CONFLICT, listOf("ORCID_CONFLICT"), missing)
             val supported = named.mapNotNull { candidate ->
-                matchReason(snapshot, evidence, candidate, search.academicResearchFields, search.institutionAliasVersion, ruleVersion)?.let { candidate to it }
+                support(candidate)?.let { candidate to it }
             }
             val strong = supported.filter { it.second in setOf("APOLLO_CURRENT_INSTITUTION_MATCH", "APOLLO_HISTORICAL_INSTITUTION_MATCH", "APOLLO_PROFESSOR_MATCH") }
             val matched = strong.ifEmpty { supported }
             if (matched.size != 1) return decision(qualification,
                 listOf(if (matched.size > 1) "IDENTITY_AMBIGUOUS" else "IDENTITY_NOT_MATCHED"), missing)
             // An unresolved masked candidate could still be a second valid person; do not discard it.
-            if (search.candidates.any { it.id != matched.single().first.id && explicitName(it) == null &&
-                    (nameMatches(it, namesToMatch, search.queryNames, masked = true, ruleVersion = ruleVersion) ||
-                        ruleVersion >= 1 && emailNameMatches(snapshot, evidence, it, search.institutionAliasVersion, masked = true)) &&
-                    matchReason(snapshot, evidence, it, search.academicResearchFields, search.institutionAliasVersion, ruleVersion) != null })
+            if (search.candidates.any { candidate ->
+                    if (candidate.id == matched.single().first.id || explicitName(candidate) != null) false
+                    else {
+                        val maskedMatch = nameMatches(candidate, namesToMatch, search.queryNames, masked = true, ruleVersion = ruleVersion) ||
+                            ruleVersion >= 1 && emailNameMatches(snapshot, evidence, candidate, search.institutionAliasVersion, masked = true)
+                        trace(candidate) { it.copy(nameMatch = if (maskedMatch) "MATCH" else "NO_MATCH",
+                            rejectedReason = if (maskedMatch) null else "NAME_NOT_MATCHED") }
+                        maskedMatch && support(candidate) != null
+                    }
+                })
                 return decision(qualification, listOf("IDENTITY_AMBIGUOUS"), missing)
             val (candidate, reason) = matched.single()
             val aliasReasons = if (reason in setOf("APOLLO_CURRENT_INSTITUTION_MATCH", "APOLLO_HISTORICAL_INSTITUTION_MATCH") &&
@@ -192,8 +236,16 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
             val masked = explicit == null && candidate.lastName == null && allowedNames.any { name ->
                 search.queryNames.any { sameName(it, name) } && maskedCompatible(candidate, name)
             }
-            (strict || masked) && (candidate.orcid == null || normalizeOrcid(candidate.orcid) == orcid) &&
-                institutionMatches(candidate)
+            trace(candidate) { it.copy(nameMatch = if (strict || masked) "MATCH" else "NO_MATCH") }
+            if (!strict && !masked) return@filter false
+            val orcidMatch = candidate.orcid == null || normalizeOrcid(candidate.orcid) == orcid
+            trace(candidate) { it.copy(orcid = if (candidate.orcid == null) "NOT_AVAILABLE" else if (orcidMatch) "MATCH" else "CONFLICT") }
+            if (!orcidMatch) return@filter false
+            val institutionMatch = institutionMatches(candidate)
+            trace(candidate) { it.copy(currentInstitution = if (institutionMatch) "MATCH" else
+                if (candidate.institution == null) "UNKNOWN" else "DIFFERENT",
+                chosenReason = if (institutionMatch) "APOLLO_PERSON_MATCHED" else null) }
+            institutionMatch
         }
         if (matches.size != 1) return decision(qualification, listOf(if (matches.size > 1) "IDENTITY_AMBIGUOUS" else "IDENTITY_NOT_MATCHED"), missing)
         // An explicit contradictory ORCID on a same-name record must not be discarded as an unrelated candidate.
@@ -231,24 +283,45 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
 
     /** V2 is an explicitly approved admission heuristic, not a claim that degrees/age were verified. */
     internal fun matchReason(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>,
-        candidate: ApolloCandidate, academicFields: String?, institutionAliasVersion: Int = 0, ruleVersion: Int = 0): String? {
+        candidate: ApolloCandidate, academicFields: String?, institutionAliasVersion: Int = 0, ruleVersion: Int = 0,
+        trace: (((CandidateDecisionTrace) -> CandidateDecisionTrace) -> Unit)? = null): String? {
         require(ruleVersion in 0..2)
         val originals = listOfNotNull(snapshot.profile.institution?.let(::VerificationInstitution)) +
             identityEmployments(snapshot, evidence).map { VerificationInstitution(value(it, "institution")) }
-        fun institutionMatch(institution: VerificationInstitution?): Boolean = institution != null && originals.any {
-            DiscoveryInstitutionNormalizer.compareWithAliases(it, institution, institutionAliasVersion) == InstitutionComparison.MATCH
+        fun institutionResult(institution: VerificationInstitution?): String {
+            if (institution == null || originals.isEmpty()) return "UNKNOWN"
+            val comparisons = originals.map { DiscoveryInstitutionNormalizer.compareWithAliases(it, institution, institutionAliasVersion) }
+            return when {
+                InstitutionComparison.MATCH in comparisons -> "MATCH"
+                InstitutionComparison.UNKNOWN in comparisons -> "UNKNOWN"
+                else -> "DIFFERENT"
+            }
         }
-        if (institutionMatch(candidate.institution)) return "APOLLO_CURRENT_INSTITUTION_MATCH"
-        if (candidate.employmentHistory.any { job ->
-                job.current == false && !job.endDate.isNullOrBlank() &&
-                    runCatching { LocalDate.parse(job.endDate!!.take(10)) }.getOrNull()?.let { !it.isAfter(LocalDate.now(clock)) } == true &&
-                    institutionMatch(job.institution)
-            }) return "APOLLO_HISTORICAL_INSTITUTION_MATCH"
-        if (apolloProfessor(candidate.title) || ruleVersion >= 2 && candidate.title?.trim() == "Assistenzprofessor" &&
+        fun chosen(reason: String): String {
+            trace?.invoke { it.copy(chosenReason = reason) }
+            return reason
+        }
+        val current = institutionResult(candidate.institution)
+        trace?.invoke { it.copy(currentInstitution = current) }
+        if (current == "MATCH") return chosen("APOLLO_CURRENT_INSTITUTION_MATCH")
+        val historical = candidate.employmentHistory.filter { job ->
+            job.current == false && !job.endDate.isNullOrBlank() &&
+                runCatching { LocalDate.parse(job.endDate!!.take(10)) }.getOrNull()?.let { !it.isAfter(LocalDate.now(clock)) } == true
+        }.map { institutionResult(it.institution) }
+        val history = when {
+            "MATCH" in historical -> "MATCH"
+            historical.isEmpty() || "UNKNOWN" in historical -> "UNKNOWN"
+            else -> "DIFFERENT"
+        }
+        trace?.invoke { it.copy(historicalInstitution = history) }
+        if (history == "MATCH") return chosen("APOLLO_HISTORICAL_INSTITUTION_MATCH")
+        val professor = apolloProfessor(candidate.title) || ruleVersion >= 2 && candidate.title?.trim() == "Assistenzprofessor" &&
             normalizeName(candidate.headline.orEmpty()).let { headline ->
                 Regex("^assistant professor(?: |$)").containsMatchIn(headline) &&
                     !Regex("\\b(?:emeritus|retired|former|student|candidate|assistant to|lab of|research group|not|never|no longer)\\b|退休|学生|博士生|助理人员").containsMatchIn(headline)
-            }) return "APOLLO_PROFESSOR_MATCH"
+            }
+        trace?.invoke { it.copy(professor = if (professor) "MATCH" else "NO_MATCH") }
+        if (professor) return chosen("APOLLO_PROFESSOR_MATCH")
         // Whole specific phrases only. Generic job/industry labels are not academic specialties.
         val excluded = setOf("science", "engineering", "research", "education", "higher education", "technology",
             "professor", "researcher", "scientist", "科学", "研究", "教育", "工程", "其他")
@@ -256,9 +329,12 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
             .filter { it.length >= 3 && it !in excluded }.distinct()
         val currentText = listOfNotNull(candidate.title, candidate.headline) +
             candidate.employmentHistory.filter { it.current == true }.mapNotNull { it.major }
-        if (specialties.any { field -> currentText.any { text ->
-                (" " + normalizeName(text) + " ").contains(" $field ")
-            } }) return "APOLLO_SPECIALTY_MATCH"
+        val specialty = specialties.any { field -> currentText.any { text ->
+            (" " + normalizeName(text) + " ").contains(" $field ")
+        } }
+        trace?.invoke { it.copy(specialty = if (specialty) "MATCH" else "NO_MATCH",
+            rejectedReason = if (specialty) null else "IDENTITY_NOT_MATCHED") }
+        if (specialty) return chosen("APOLLO_SPECIALTY_MATCH")
         return null
     }
 

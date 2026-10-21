@@ -14,6 +14,90 @@ class DiscoveryVerificationReplayToolTest {
     @TempDir lateinit var root: Path
     private val tool = DiscoveryVerificationReplayTool
     @org.junit.jupiter.api.BeforeEach fun canonicalRoot() { root = root.toRealPath() }
+    @Test fun `frozen rules uses saved facts never reparses and keeps protections separate from pure rule gains`() {
+        val f = AdmissionGateFixture()
+        val candidate = ApolloCandidate("synthetic", "Ada", "Lee", null, "Ada Lee", "Assistenzprofessor",
+            VerificationInstitution("Other University"), headline = "Assistant Professor at Other University")
+        val payload = VerificationWorkerEvidence(ruleVersion = 1,
+            search = ApolloSearchEvidence(listOf(candidate), true, true, setOf("Ada Lee"), matchingVersion = 2,
+                detailsComplete = true, institutionAliasVersion = 1),
+            // Malformed cached parser document is intentionally not consumed by frozen-rules.
+            orcidCompleted = listOf(OrcidEndpointCompletion("person", OrcidEvidenceDocument("person",
+                tool.mapper.readTree("""{"name":{"given-names":{"value":"Contradictory"}}}"""), "d".repeat(64), ruleClock.instant()))))
+        val items = listOf("RND_OUT_OF_SCOPE", "IDENTITY_CHANGED", "REVIEW_PROTECTED").mapIndexed { index, reason ->
+            f.item(facts = emptyList()).copy(id = index + 1L, outcome = VerificationOutcome.PENDING,
+                reasonsJson = tool.mapper.writeValueAsString(listOf(reason)),
+                evidenceJson = tool.mapper.writeValueAsString(payload))
+        }
+        val run = VerificationRun(items.first().ownerExecutionId, VerificationMode.ENFORCE, VerificationMode.ENFORCE.policyVersion, true, "{}",
+            true, 1, ruleClock.instant(), ruleClock.instant())
+        val attempts = items.associate { item -> item.id to listOf(VerificationAttempt(item.id, item.id,
+            "attempt-${item.id}", VerificationProvider.APOLLO, VerificationQueryKind.DETAIL, 1, 1,
+            ruleClock.instant(), ruleClock.instant(), 422, "REQUEST_INVALID", "{}", null, null)) }
+        val before = DiscoveryVerificationReplayTool.Before(executionId = run.executionId, itemIds = items.map { it.id },
+            capturedAt = ruleClock.instant(), run = run, items = items, attempts = attempts, admissions = emptyMap())
+        val bytes = tool.mapper.writeValueAsBytes(before)
+        val cp = System.getProperty("java.class.path")
+        val hashes = tool.hashes(cp)
+        assertTrue(hashes.containsKey("DiscoveryInstitutionNormalizer"))
+        val manifest = DiscoveryVerificationReplayTool.Manifest(executionId = run.executionId,
+            sortedItemIds = items.map { it.id }, capturedAt = ruleClock.instant(), evaluatedAt = ruleClock.instant(),
+            beforeSha256 = tool.sha(bytes), baselineClassHashes = mapOf("old" to hashes, "fixed" to hashes))
+        val directory = root.resolve("frozen")
+        Files.createDirectory(directory, PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")))
+        tool.atomicWrite(directory.resolve("before.json"), bytes)
+        tool.atomicWrite(directory.resolve("manifest.json"), tool.mapper.writeValueAsBytes(manifest))
+        val frozen = DiscoveryVerificationReplayTool.Frozen(directory, manifest, before)
+        val classpaths = mapOf("old" to cp, "fixed" to cp)
+        fun isolatedOutput(): com.fasterxml.jackson.databind.JsonNode {
+            val child = ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                "-cp", cp, DiscoveryVerificationReplayTool.FrozenRulesEvaluator::class.java.name,
+                directory.resolve("before.json").toString(), ruleClock.instant().toString(), "fixed", "2", "2")
+                .redirectError(ProcessBuilder.Redirect.DISCARD).start()
+            val output = child.inputStream.readBytes()
+            assertEquals(0, child.waitFor())
+            return tool.mapper.readTree(output)
+        }
+        assertEquals(isolatedOutput(), isolatedOutput())
+        val first = tool.evaluateFrozenRules(frozen, classpaths, 2, 2)
+        assertEquals(first, tool.evaluateFrozenRules(frozen, classpaths, 2, 2))
+        assertEquals(0, first.path("businessWrites").asInt())
+        assertEquals(0, first.path("admissionWrites").asInt())
+        first.path("rows").forEach { row ->
+            assertEquals("PENDING", row.path("oldStoredOutcome").asText())
+            assertEquals("PENDING", row.path("oldRecomputedOutcome").asText())
+            assertEquals("APOLLO_CLEAR", row.path("newRecomputedOutcome").asText())
+            assertEquals("NOT_EVALUATED", row.path("gateResult").asText())
+            assertEquals("RECORDED_PROTECTION", row.path("protectionStatus").asText())
+            assertEquals("NOT_EVALUATED", row.path("currentCommitProtection").asText())
+            assertEquals("NOT_RECORDED", row.path("errorBodyStatus").asText())
+            assertTrue(row.path("storedTrace").isNull)
+            assertEquals("RECOMPUTED", row.path("newTrace").path("traceOrigin").asText())
+            assertEquals("RECOMPUTED", row.path("oldTrace").path("traceOrigin").asText())
+            assertEquals(1, row.path("oldRuleVersion").intValue())
+            assertEquals(2, row.path("newRuleVersion").intValue())
+        }
+        assertArrayEquals(bytes, Files.readAllBytes(directory.resolve("before.json")))
+        assertEquals(manifest, tool.mapper.readValue(Files.readAllBytes(directory.resolve("manifest.json")),
+            DiscoveryVerificationReplayTool.Manifest::class.java))
+        Files.list(directory).use { paths -> paths.filter { it.fileName.toString().startsWith("frozen-rules-") }.forEach { path ->
+            assertEquals(PosixFilePermissions.fromString("rw-------"), Files.getPosixFilePermissions(path))
+            val envelope = tool.mapper.readTree(Files.readAllBytes(path))
+            assertEquals(tool.sha(tool.mapper.writeValueAsBytes(envelope.path("report"))), envelope.path("reportSha256").asText())
+            assertFalse(Files.readString(path).contains("Contradictory"))
+            assertFalse(Files.readString(path).contains("api_key"))
+        } }
+        val changed = frozen.copy(manifest = manifest.copy(baselineClassHashes = mapOf("old" to emptyMap(), "fixed" to hashes)))
+        assertThrows(IllegalArgumentException::class.java) { tool.evaluateFrozenRules(changed, classpaths, 2, 2) }
+        assertThrows(IllegalArgumentException::class.java) { tool.evaluateFrozenRules(frozen, classpaths, 1, 2) }
+        listOf(arrayOf("evaluate", "--mode", "frozen-rules"),
+            arrayOf("evaluate", "--mode", "unknown"),
+            arrayOf("evaluate", "--mode", "frozen-rules", "--target-rule-version", "3", "--target-alias-version", "2"),
+            arrayOf("evaluate", "--target-rule-version", "2")).forEach { args ->
+            assertThrows(IllegalArgumentException::class.java) { tool.execute(args) }
+        }
+    }
+
     @Test fun `bounded explicit unique cohort and stage only transform`() {
         listOf(emptyList(), (1L..101L).toList(), listOf(1L, 1L), listOf(0L)).forEach { ids ->
             assertThrows(IllegalArgumentException::class.java) { tool.validateIds(ids) }

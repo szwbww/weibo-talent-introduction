@@ -11,6 +11,7 @@ import org.mockito.Mockito
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 
 class DiscoveryVerificationWorkerTest {
+    @org.junit.jupiter.api.io.TempDir lateinit var replayRoot: java.nio.file.Path
     private fun worker(props: DiscoveryVerificationProperties, repo: DiscoveryVerificationRepository,
         factory: DefaultListableBeanFactory = DefaultListableBeanFactory()): DiscoveryVerificationWorker =
         DiscoveryVerificationWorker(props, repo, Mockito.mock(OrcidVerificationEvidenceClient::class.java),
@@ -57,6 +58,13 @@ class DiscoveryVerificationWorkerTest {
                     assertEquals(2, payload.ruleVersion)
                     assertEquals(2, payload.search!!.institutionAliasVersion)
                     assertEquals("Assistenzprofessor", payload.search!!.candidates.single().title)
+                    val trace = payload.diagnostics!!.decision!!
+                    assertEquals("RECORDED", trace.traceOrigin)
+                    assertEquals(2, trace.ruleVersion)
+                    assertEquals(2, trace.aliasVersion)
+                    assertEquals(done.apolloPersonId, trace.candidates.single().personId)
+                    assertEquals("MATCH", trace.candidates.single().historicalInstitution)
+                    assertEquals("NOT_EVALUATED", trace.candidates.single().professor)
                     assertEquals(1L, f.autoCount())
                     val snapshot = f.mapper.readValue<VerificationSnapshot>(done.snapshotJson)
                     assertTrue(f.policy.evaluate(done.expertDocId, snapshot.profile).eligible)
@@ -64,6 +72,33 @@ class DiscoveryVerificationWorkerTest {
                     assertEquals(VerificationOutcome.APOLLO_CLEAR, detail.outcome)
                     assertEquals("Assistenzprofessor", detail.matchedCandidate!!.title)
                     assertEquals(listOf("completedDoctorate", "reliableAge"), detail.record.missingFields)
+                    assertEquals(trace, detail.diagnostics!!.decision)
+                    val tool = DiscoveryVerificationReplayTool
+                    val classpaths = mapOf("old" to System.getProperty("java.class.path"),
+                        "fixed" to System.getProperty("java.class.path"))
+                    val directory = tool.freeze(jdbc, manager, 2001, listOf(done.id),
+                        replayRoot.toRealPath().resolve("frozen"), f.clock, classpaths)
+                    val manifest = directory.resolve("manifest.json")
+                    val manifestHash = tool.sha(java.nio.file.Files.readAllBytes(manifest))
+                    val frozenInput = tool.load(manifest, manifestHash)
+                    val beforeHash = tool.sha(java.nio.file.Files.readAllBytes(directory.resolve("before.json")))
+                    val report = tool.evaluateFrozenRules(frozenInput, classpaths, 2, 2)
+                    assertEquals("RULE_REEVALUATION", report.path("layer").asText())
+                    assertEquals("APOLLO_CLEAR", report.path("rows").single().path("newRecomputedOutcome").asText())
+                    assertEquals("RECOMPUTED", report.path("rows").single().path("newTrace").path("traceOrigin").asText())
+                    assertEquals("NOT_EVALUATED", report.path("rows").single().path("gateResult").asText())
+                    assertEquals(0, report.path("admissionWrites").asInt())
+                    assertEquals(manifestHash, tool.sha(java.nio.file.Files.readAllBytes(manifest)))
+                    assertEquals(beforeHash, tool.sha(java.nio.file.Files.readAllBytes(directory.resolve("before.json"))))
+                    assertEquals(done, f.item(done.id))
+                    assertEquals(1L, f.autoCount())
+                    java.nio.file.Files.list(directory).use { paths -> paths.filter {
+                        it.fileName.toString().startsWith("frozen-rules-")
+                    }.forEach { path ->
+                        assertEquals(java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"),
+                            java.nio.file.Files.getPosixFilePermissions(path))
+                    } }
+                    println("DECISION_AUDIT_SMOKE HTTP->Rules->Worker/SQL->Query->freeze->isolated-fixed-time-report admissionDelta=0 immutable=true")
                     assertEquals(context.run!!.settingsJson, registration.begin(2001, PaperSearchCriteria(apolloAssist = true)).run!!.settingsJson)
                     println("IDENTITY_V2_SMOKE run=2001 workerRule=2 alias=2 sql=${done.outcome} gate=eligible projection=${done.projectionState} admission=${done.admissionRevision} requests=${done.requestCount}")
                 }
@@ -557,7 +592,9 @@ class DiscoveryVerificationWorkerTest {
                     assertEquals(listOf("shared-person"), calls)
                     val otherRun = run("reuse-other-run", owner = 2002)
                     assertEquals(1, otherRun.requestCount)
-                    assertNull(f.mapper.readValue<VerificationWorkerEvidence>(otherRun.evidenceJson!!).diagnostics)
+                    val otherDiagnostics = f.mapper.readValue<VerificationWorkerEvidence>(otherRun.evidenceJson!!).diagnostics!!
+                    assertTrue(otherDiagnostics.detailReuses.isEmpty())
+                    assertEquals("RECORDED", otherDiagnostics.decision!!.traceOrigin)
                     assertEquals(listOf("shared-person", "shared-person"), calls)
                     val conflict = run("reuse-conflict", conflict = true)
                     assertEquals(VerificationOutcome.PENDING, conflict.outcome)

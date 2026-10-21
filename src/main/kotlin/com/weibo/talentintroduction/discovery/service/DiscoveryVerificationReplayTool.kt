@@ -26,7 +26,7 @@ import kotlin.system.exitProcess
 /** Single-purpose, opt-in operations main. No Spring context, scheduler, provider or ES client. */
 object DiscoveryVerificationReplayTool {
     val mapper = jacksonObjectMapper().findAndRegisterModules().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
-    private val classNames = listOf("QualificationEvidenceParser", "DiscoveryVerificationRules")
+    private val classNames = listOf("QualificationEvidenceParser", "DiscoveryVerificationRules", "DiscoveryInstitutionNormalizer")
     data class Before(val schemaVersion: Int = 1, val executionId: Long, val itemIds: List<Long>,
         val capturedAt: Instant, val run: VerificationRun, val items: List<VerificationItem>,
         val attempts: Map<Long, List<VerificationAttempt>>, val admissions: Map<String, ReplayAdmission?>)
@@ -57,11 +57,18 @@ object DiscoveryVerificationReplayTool {
         val options = pairs.associate { it[0] to it[1] }
         val allowed = when (args[0]) {
             "freeze" -> setOf("--execution-id", "--item-ids", "--output", "--old-classpath", "--fixed-classpath")
-            "evaluate" -> setOf("--manifest", "--manifest-sha256", "--old-classpath", "--fixed-classpath")
+            "evaluate" -> setOf("--manifest", "--manifest-sha256", "--old-classpath", "--fixed-classpath",
+                "--mode", "--target-rule-version", "--target-alias-version")
             else -> setOf("--manifest", "--manifest-sha256")
         }
         require(options.keys.all { it in allowed })
         fun required(key: String) = requireNotNull(options[key])
+        val mode = options["--mode"]
+        require(mode == null || mode == "frozen-rules")
+        if (mode == "frozen-rules") {
+            require(required("--target-rule-version") == "2" && required("--target-alias-version") == "2")
+            required("--old-classpath")
+        } else require("--target-rule-version" !in options && "--target-alias-version" !in options)
         if (args[0] == "freeze") {
             val ids: List<Long> = mapper.readValue(Files.readAllBytes(Paths.get(required("--item-ids"))))
             validateIds(ids)
@@ -73,7 +80,8 @@ object DiscoveryVerificationReplayTool {
             val frozen = load(Paths.get(required("--manifest")), required("--manifest-sha256"))
             if (args[0] == "apply-errors") require(Paths.get(required("--manifest")).isAbsolute)
             when (args[0]) {
-                "evaluate" -> evaluate(frozen, classpaths(options))
+                "evaluate" -> if (mode == "frozen-rules") evaluateFrozenRules(frozen, classpaths(options), 2, 2)
+                    else evaluate(frozen, classpaths(options))
                 "apply" -> { val db = database(); apply(frozen, db.first, db.second, Clock.systemUTC()) }
                 "apply-errors" -> { val db = database(); applyErrors(frozen, db.first, db.second, Clock.systemUTC()) }
                 "inspect" -> { val db = database(); inspect(frozen, db.first, db.second, Clock.systemUTC()) }
@@ -250,6 +258,115 @@ object DiscoveryVerificationReplayTool {
                 "reasons" to rows.flatMap { it.reasons }.groupingBy { it }.eachCount(), "matched" to rows.count { it.matched }) }))
         return groups
     }
+    /** Frozen facts only: parser-only results are deliberately kept out of this report. */
+    fun evaluateFrozenRules(frozen: Frozen, classpaths: Map<String, String>, targetRuleVersion: Int,
+        targetAliasVersion: Int): JsonNode {
+        require(targetRuleVersion == 2 && targetAliasVersion == 2)
+        for (version in listOf("old", "fixed")) {
+            val cp = requireNotNull(classpaths[version])
+            require(hashes(cp) == frozen.manifest.baselineClassHashes[version]) { "Compiled version changed" }
+        }
+        fun isolated(version: String): JsonNode {
+            val cp = classpaths.getValue(version)
+            val bridge = Paths.get(FrozenRulesEvaluator::class.java.protectionDomain.codeSource.location.toURI()).toString()
+            val executable = Paths.get(System.getProperty("java.home"), "bin", "java").toString()
+            fun run(): JsonNode {
+                val process = ProcessBuilder(executable, "-cp", cp + java.io.File.pathSeparator + bridge,
+                    FrozenRulesEvaluator::class.java.name, frozen.directory.resolve("before.json").toString(),
+                    frozen.manifest.evaluatedAt.toString(), version, targetRuleVersion.toString(), targetAliasVersion.toString())
+                    .redirectError(ProcessBuilder.Redirect.DISCARD).start()
+                val bytes = process.inputStream.use { it.readBytes() }
+                require(process.waitFor() == 0) { "Isolated frozen evaluator failed" }
+                return mapper.readTree(bytes)
+            }
+            val first = run()
+            require(first == run()) { "Non-deterministic frozen replay" }
+            return first
+        }
+        val old = isolated("old")
+        val fixed = isolated("fixed")
+        val rows = fixed.map { newer ->
+            val older = old.single { it.path("itemId") == newer.path("itemId") }
+            val item = frozen.before.items.single { it.id == newer.path("itemId").asLong() }
+            val last = frozen.before.attempts[item.id].orEmpty().maxByOrNull { it.id }
+            val reasons = mapper.readTree(item.reasonsJson ?: "[]").map { it.asText() }
+            val protections = reasons.filter { it in setOf("RND_OUT_OF_SCOPE", "IDENTITY_CHANGED", "PROTECTED",
+                "SBIR_PROTECTED", "CONTACT_PROTECTED", "REVIEW_PROTECTED", "LEGACY_AUTO_PROTECTED",
+                "SOURCE_MISSING", "FACT_CHANGED", "ADMISSION_CHANGED") }
+            mapOf("itemId" to item.id, "inputHash" to sha(mapper.writeValueAsBytes(
+                    listOf(item.snapshotJson, item.evidenceJson))),
+                "oldRuleVersion" to older.path("ruleVersion"), "newRuleVersion" to newer.path("ruleVersion"),
+                "oldAliasVersion" to older.path("aliasVersion"), "newAliasVersion" to newer.path("aliasVersion"),
+                "oldStoredOutcome" to item.outcome?.name,
+                "oldRecomputedOutcome" to older.path("outcome"), "newRecomputedOutcome" to newer.path("outcome"),
+                "oldMatchedPersonId" to older.get("matchedPersonId"), "matchedPersonId" to newer.get("matchedPersonId"),
+                "reasonDelta" to mapOf("added" to newer.path("reasons").filterNot { it in older.path("reasons") },
+                    "removed" to older.path("reasons").filterNot { it in newer.path("reasons") }),
+                "searchCoverage" to newer.path("searchCoverage"), "lastHttpStatus" to last?.httpStatus,
+                "resultCode" to last?.resultCode,
+                "errorBodyStatus" to if (last?.httpStatus?.let { it >= 400 } == true &&
+                    VerificationDiagnostics.read(last.responseJson) == null) "NOT_RECORDED" else
+                    if (last?.httpStatus?.let { it >= 400 } == true) "RECORDED" else "NOT_APPLICABLE",
+                "gateResult" to "NOT_EVALUATED",
+                "protectionStatus" to if (protections.isEmpty()) "NOT_EVALUATED" else "RECORDED_PROTECTION",
+                "recordedProtectionReasons" to protections, "currentCommitProtection" to "NOT_EVALUATED",
+                "traceOrigin" to "RECOMPUTED", "oldTrace" to older.get("trace"), "newTrace" to newer.get("trace"),
+                "storedTrace" to mapper.readTree(item.evidenceJson ?: "{}").path("diagnostics").get("decision"))
+        }
+        val result = mapper.valueToTree<JsonNode>(mapOf("layer" to "RULE_REEVALUATION", "mode" to "frozen-rules",
+            "beforeSha256" to frozen.manifest.beforeSha256, "evaluatedAt" to frozen.manifest.evaluatedAt.toString(),
+            "inputDifferences" to listOf("ruleVersion", "search.institutionAliasVersion"),
+            "businessWrites" to 0, "admissionWrites" to 0, "rows" to rows,
+            "missingItemIds" to frozen.before.itemIds.filterNot { id -> frozen.before.items.any { it.id == id } }))
+        val bytes = mapper.writeValueAsBytes(result)
+        report(frozen, "frozen-rules", mapOf("reportSha256" to sha(bytes), "report" to result))
+        return result
+    }
+
+    /** Stable evaluate entry point also runs under the supplied old rules, without invoking the parser. */
+    object FrozenRulesEvaluator {
+        @JvmStatic fun main(args: Array<String>) {
+            val input = mapper.readTree(Files.readAllBytes(Paths.get(args[0])))
+            print(mapper.writeValueAsString(evaluateInput(input, Instant.parse(args[1]),
+                if (args[2] == "fixed") args[3].toInt() else null,
+                if (args[2] == "fixed") args[4].toInt() else null)))
+        }
+        fun evaluateInput(input: JsonNode, instant: Instant, targetRuleVersion: Int? = null,
+            targetAliasVersion: Int? = null): JsonNode {
+            require((targetRuleVersion == null && targetAliasVersion == null) ||
+                (targetRuleVersion == 2 && targetAliasVersion == 2))
+            val rules = DiscoveryVerificationRules(Clock.fixed(instant, ZoneOffset.UTC))
+            return mapper.valueToTree(input.path("items").map { node ->
+                val snapshot: VerificationSnapshot = mapper.readValue(node.path("snapshotJson").asText())
+                val payload = mapper.readTree(node.path("evidenceJson").asText("{}"))
+                val facts: List<VerificationEvidence> = mapper.convertValue(
+                    payload.path("evidence").takeIf { it.isArray } ?: mapper.createArrayNode(),
+                    mapper.typeFactory.constructCollectionType(List::class.java, VerificationEvidence::class.java))
+                val savedSearch = payload.get("search")?.takeUnless { it.isNull }
+                    ?.let { mapper.treeToValue(it, ApolloSearchEvidence::class.java) }
+                val search = if (targetAliasVersion == null) savedSearch
+                    else savedSearch?.copy(institutionAliasVersion = targetAliasVersion)
+                val normalization = payload.get("institutionNormalization")?.takeUnless { it.isNull }
+                    ?.let { mapper.treeToValue(it, InstitutionNormalization::class.java) }
+                val version = targetRuleVersion ?: payload.path("ruleVersion").asInt(0)
+                val local = rules.evaluate(snapshot, facts, null, false, ruleVersion = version)
+                val decision = if (local.outcome == VerificationOutcome.DIRECT_CLEAR ||
+                    local.qualification == VerificationQualification.CONFLICT ||
+                    search?.matchingVersion != 2 && local.qualification == VerificationQualification.NOT_MET) local
+                    else rules.evaluate(snapshot, facts, search, false, normalization, version)
+                // Serialization, rather than getTrace(), preserves compatibility with old decision classes.
+                val trace = mapper.valueToTree<JsonNode>(decision).get("trace")?.takeUnless { it.isNull }?.deepCopy<JsonNode>()
+                (trace as? ObjectNode)?.put("traceOrigin", "RECOMPUTED")
+                mapOf("itemId" to node.path("id"), "ruleVersion" to version,
+                    "aliasVersion" to (search?.institutionAliasVersion ?: 0),
+                    "outcome" to decision.outcome.name, "matchedPersonId" to decision.matchedPersonId,
+                    "reasons" to decision.reasonCodes, "trace" to trace,
+                    "searchCoverage" to mapOf("complete" to search?.complete, "broadComplete" to search?.broadComplete,
+                        "detailsComplete" to search?.detailsComplete, "totalCandidates" to search?.candidates?.size))
+            })
+        }
+    }
+
     private fun fork(frozen: Frozen, classpath: String, group: String): List<EvaluationRow> {
         val bridge = Paths.get(Evaluator::class.java.protectionDomain.codeSource.location.toURI()).toString()
         val executable = Paths.get(System.getProperty("java.home"), "bin", "java").toString()

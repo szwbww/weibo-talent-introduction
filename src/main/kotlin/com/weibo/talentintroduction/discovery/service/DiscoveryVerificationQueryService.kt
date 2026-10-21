@@ -112,7 +112,9 @@ class DiscoveryVerificationQueryService(
             item.apolloPersonId, VerificationApolloStages(item.apolloEnteredAt, item.searchCompletedAt,
                 item.candidateFoundAt, item.personMatchedAt), payload?.search?.matchingVersion ?: 1,
             payload?.search?.candidates?.firstOrNull { it.id == item.apolloPersonId },
-            payload?.search?.academicResearchFields, payload?.diagnostics?.bounded())
+            payload?.search?.academicResearchFields, payload?.diagnostics?.let { saved ->
+                saved.copy(decision = saved.decision?.takeIf { it.traceOrigin == "RECORDED" }) .bounded()
+            })
     }
 
     private fun summaryRow(id: Long, run: VerificationRun?, counts: VerificationCounts, status: String?, asOf: Instant,
