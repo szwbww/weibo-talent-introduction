@@ -320,3 +320,13 @@ ${meetingTrigger}${materialTrigger}${templateReferenceTrigger}${followUpButton}
 - 操作步骤：1. 在每个入口发送、按ESC。2. 再发送、点返回修改。3. 修改正文后再发送并确认。4. 开新的独立草稿再触发错误。
 - 预期结果：前两步测试邮箱0封、无“发送失败”alert、输入与QA上下文保留、发送按钮恢复；步骤3恰1封且为本次提交正文；步骤4再次提醒，不沿用旧确认。STRONG分支仍要求原文字确认。
 - 覆盖：I-3/I-4、P3、S-2/S-4、原共享弹窗保持项。
+
+## Dependency outputs and current execution boundary
+
+- Child product base: 494b6cc569a70b2bcc5ef838b5808ad687600b28. Child 01 evidence: 53eda1223417558f6037bae12ca0cab8169e68fd. Completed prefix clean artifact checkpoint passed at 47b782a45d16134e62e5aebba4b804d917e7ed5c.
+- Child 03 and child 01 terminal verdicts: LIGHT_PASS_WITH_NOTES. Independent verifiers: Identity03Verifier / Identity01Epoch2Verifier. Scoped actual MySQL suites passed (03:34; 01:180; zero failures/errors/skips).
+- Implemented APIs match child plans: authenticated GET/PUT /api/reply-snippets/identity-defaults; POST /api/mail/reply-identity/inspect and /defaults-preview. Inspect returns plain-text slot states, canInsert, expectedText/actualText/reasonCode, exact context, fingerprint and verified canonicalQuotedTail. Final send findings are NORMAL and use existing safetyWarningConfirmed; original STRONG remains independent.
+- Approved A1/A2 only changes backend exact SENT lookup scope/order; no frontend contract change. No need to replay backend work or amend this approved frontend plan.
+- Known full Maven baseline: 19 unrelated ExpertContactLocationServiceTest constructor errors because JDK11 tzdb lacks America/Coyhaique (baseline artifact://770; child01 fresh artifact://870). Do not repair or exclude them. This child requires the frontend commands in its plan, not a new aggregate Maven run.
+- Real browser requirement: use actual application HTML/JS and actual MailboxChat component/host dialogs at desktop and mobile widths, exercise completion/settings/confirmation/ESC/STRONG/rich DOM and delayed-response isolation. Safe isolated fixture transport/server is allowed for visual/UI behavior, but explicitly distinguish fixture transport from backend/SMTP end-to-end; do not connect production services or send to real experts. Preserve screenshot evidence outside product scope and reference it in execution report.
+- All original frontend authorized files/style contracts remain exact. Append full current execution evidence to execution.md; implementation commit includes only the five authorized product/test paths, subject feat(fast-p): implement 02. Controller persists artifacts separately.
