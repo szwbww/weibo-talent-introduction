@@ -204,6 +204,7 @@ class MeetingCalendarSendIntegrationTest {
             unsupportedAnswerIndexService,
             emailSuppressionService,
             meetingConfirmationService,
+            Mockito.mock(ReplyIdentityService::class.java),
             mailReplyDraftService = draftService
         )
     }

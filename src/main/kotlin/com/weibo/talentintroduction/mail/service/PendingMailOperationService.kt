@@ -85,6 +85,7 @@ class PendingMailOperationService(
     // 03 (T1/I-1): 会议日历校验/重建 —— 发送时用服务端解析后的真实 account/contact/
     // processing 与 01 validateAndBuild 重算（禁止默认 null 让生产依赖悄悄消失）。
     private val meetingConfirmationService: MeetingConfirmationService,
+    private val replyIdentityService: ReplyIdentityService,
     // 03b (I-40/I-41/I-43): RAG 发送路径的协作件。可空默认 null 仅为让既有的直接
     // 构造单元测试（不触碰 RAG 分支）保持零改动；Spring 运行时按主构造器完整注入，
     // RAG 分支入口 requireNotNull 防御性校验。
@@ -458,20 +459,7 @@ class PendingMailOperationService(
         // I-1：真实 SENT 出站锚点（排除空账号/模拟器）；accountScope 非空时只在该账号内找，
         // scope 下无成功发件不回退其他账号（I-6）。锚点查询在任何 claim/SMTP 之前。
         // 跟进（I-2）：显式 id 必须重读同一行并全校验，前端只作提示、绝不作为权限边界。
-        val anchor = if (anchorMailRecordId != null) {
-            mailRecordRepository.findById(anchorMailRecordId)
-                .orElse(null)
-                ?.takeIf { isConversationSentAnchor(it, contactId, accountScope) }
-        } else {
-            mailRecordRepository.findLatestSentOutboundAnchor(
-                contactId = contactId,
-                accountScope = accountScope?.takeIf { it.isNotBlank() },
-                excludedAccountCode = MailSenderAccountService.SIMULATOR_ACCOUNT_CODE
-            )
-        } ?: throw ResponseStatusException(
-            HttpStatus.UNPROCESSABLE_ENTITY,
-            "CONVERSATION_SENT_ANCHOR_NOT_FOUND"
-        )
+        val anchor = resolveIdentityConversationAnchor(contactId, accountScope, anchorMailRecordId)
         val accountCode = requireNotNull(anchor.senderAccountCode) {
             "Conversation anchor mail record has no sender account"
         }
@@ -498,7 +486,8 @@ class PendingMailOperationService(
             smtpInReplyTo = anchorMessageId,
             smtpReferences = smtpReferences,
             anchorMailRecordId = requireNotNull(anchor.id) { "Conversation anchor mail record has no id" },
-            requestId = canonicalRequestId
+            requestId = canonicalRequestId,
+            identityAnchor = anchor
         )
         return executeManualRichSend(
             source = source,
@@ -513,6 +502,60 @@ class PendingMailOperationService(
             authenticatedUsername = authenticatedUsername,
             draftSendRef = validatedDraft
         )
+    }
+
+    fun inspectReplyIdentity(request: ReplyIdentityInspectRequest): ReplyIdentityResult =
+        replyIdentityService.inspect(resolveIdentitySource(request.contextRequest()), request.textBody, request.htmlBody)
+
+    fun previewReplyIdentityDefaults(request: ReplyIdentityDefaultsPreviewRequest): ReplyIdentityDefaultsPreview =
+        replyIdentityService.previewDefaults(resolveIdentitySource(request.contextRequest()), request.salutation, request.signature)
+
+    private fun resolveIdentityConversationAnchor(contactId: Long, accountScope: String?, anchorMailRecordId: Long?): MailRecord {
+        return (if (anchorMailRecordId != null) {
+            mailRecordRepository.findById(anchorMailRecordId).orElse(null)
+                ?.takeIf { isConversationSentAnchor(it, contactId, accountScope) }
+        } else {
+            mailRecordRepository.findLatestSentOutboundAnchor(contactId,
+                accountScope?.takeIf { it.isNotBlank() }, MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
+        }) ?: throw ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "CONVERSATION_SENT_ANCHOR_NOT_FOUND")
+    }
+
+    private fun resolveIdentitySource(request: ReplyIdentityContextRequest): ReplyIdentitySource {
+        request.validate()
+        val contact = expertContactRepository.findById(request.contactId)
+            .orElseThrow { error("Expert contact not found: ${request.contactId}") }
+        if (request.sourceKind == ReplyIdentitySourceKind.INBOUND) {
+            val processing = inboundMailProcessingRepository.findById(requireNotNull(request.inboundProcessingId))
+                .orElseThrow { error("Inbound mail processing not found") }
+            require(processing.expertContactId == request.contactId) { "Inbound mail contact mismatch" }
+            val account = resolvePendingReplyAccount(request.senderAccountCode, processing.senderAccountCode)
+            return ReplyIdentitySource(contact, account,
+                ReplyIdentityContext(request.contactId, processing.id, null, account.accountCode, contact.expertEmail, account.senderName),
+                processing.cleanedBody?.takeIf { it.isNotBlank() } ?: processing.body, null)
+        }
+        val anchor = resolveIdentityConversationAnchor(request.contactId, request.accountScope, request.anchorMailRecordId)
+        val account = mailSenderAccountService.getManualSendAccount(requireNotNull(anchor.senderAccountCode))
+        return identitySource(contact, account, null, anchor)
+    }
+
+    private fun identitySource(source: ManualRichSendSource): ReplyIdentitySource {
+        if (source.inboundRecord != null) {
+            val record = source.inboundRecord
+            return ReplyIdentitySource(source.contact, source.account,
+                ReplyIdentityContext(source.contactId,source.inboundProcessingId,null,source.accountCode,
+                    source.contact.expertEmail,source.account.senderName),
+                record.cleanedBody?.takeIf { it.isNotBlank() } ?: record.body,null)
+        }
+        return identitySource(source.contact, source.account, null, source.identityAnchor)
+    }
+
+    private fun identitySource(contact: ExpertContact, account: MailSenderAccount,
+                               inboundId: Long?, anchor: MailRecord?): ReplyIdentitySource {
+        val date = (anchor?.sentAt ?: anchor?.createdAt)?.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+        return ReplyIdentitySource(contact,account,
+            ReplyIdentityContext(requireNotNull(contact.id),inboundId,anchor?.id,account.accountCode,contact.expertEmail,account.senderName),
+            anchor?.cleanedBody?.takeIf { it.isNotBlank() } ?: anchor?.body,
+            date?.let { "On $it, ${account.accountCode} wrote:" })
     }
 
     private fun completedDraftResult(contactId: Long, completed: ManualReplySendAttemptService.CompletedOutboundReply) =
@@ -670,7 +713,12 @@ class PendingMailOperationService(
                 meetingLink = rebuilt.meeting.zoomUrl
             )
         }
-        val findings = collectSafetyFindings(
+        val identityFindings = try {
+            replyIdentityService.analyzeFinalBody(identitySource(source), finalTextBody, finalHtmlBody)
+        } catch (_: Exception) {
+            listOf(SafetyFinding("REPLY_IDENTITY_UNCERTAIN",SafetySeverity.NORMAL,"身份格式暂无法核对；可检查正文后确认发送"))
+        }
+        val originalFindings = collectSafetyFindings(
             verificationText = finalValidationText,
             // 03b (I-47 ①): RAG 路径 carriesQa 显式传 false（RAG 不携带 QA 证据）。
             carriesQa = if (evidence.ragMode) false else evidence.carriesQa,
@@ -687,8 +735,9 @@ class PendingMailOperationService(
             // T2.7: 会话回信路径在通用纯文本检查后返回，不跑来信语义检查。
             runInboundSemanticChecks = evidence.runInboundSemanticChecks
         )
+        val findings = identityFindings + originalFindings
         val requiresStrong = findings.any { it.severity == SafetySeverity.STRONG }
-        if (findings.isNotEmpty() && !safetyWarningConfirmed) {
+        if (originalFindings.isNotEmpty() && !safetyWarningConfirmed) {
             throw ManualSendSafetyBlockedException(findings)
         }
         if (requiresStrong && strongConfirmationText?.trim() != "确认发送") {
@@ -747,6 +796,17 @@ class PendingMailOperationService(
                 HttpStatus.BAD_REQUEST,
                 "收件人已退订，禁止外发：${contact.expertEmail}"
             )
+        }
+
+        // Preserve original risk/attachment/suppression priority. Only an exact completed
+        // non-draft inbound payload may bypass a newly introduced identity reminder.
+        if (draftSendRef == null && source.inboundProcessingId != null) {
+            manualReplySendAttemptService.findCompletedByPayload(payload)?.let {
+                return completedDraftResult(source.contactId, it)
+            }
+        }
+        if (identityFindings.isNotEmpty() && !safetyWarningConfirmed) {
+            throw ManualSendSafetyBlockedException(findings)
         }
 
         val claim = manualReplySendAttemptService.prepareAndClaim(payload)
@@ -1818,7 +1878,8 @@ private data class ManualRichSendSource(
     /** 会话回信审计 before 的锚点 mail record id（I-11）；来信路径恒 null。 */
     val anchorMailRecordId: Long?,
     /** 会话回信幂等 requestId（已规范化 UUID）；来信路径恒 null（I-4）。 */
-    val requestId: String?
+    val requestId: String?,
+    val identityAnchor: MailRecord? = null
 )
 
 /**

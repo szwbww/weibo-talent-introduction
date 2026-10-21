@@ -18173,12 +18173,18 @@ async function handleUnmatchedAction(element) {
         return;
     }
 
-    async function submitManualRichReply(recordId, requestBody, safetyWarningConfirmed = false) {
+    async function submitManualRichReply(recordId, requestBody) {
+        if (element.disabled) return false;
+        element.disabled = true;
+        const lockedEditor = $("#manualRichReplyEditor");
+        const lockedSubject = $("#manualReplySubject");
+        const editable = lockedEditor?.getAttribute("contenteditable");
+        const readOnly = lockedSubject?.readOnly;
+        if (lockedEditor) lockedEditor.setAttribute("contenteditable", "false");
+        if (lockedSubject) lockedSubject.readOnly = true;
         try {
-            const result = await api(`/api/mail/unmatched-inbound/${recordId}/manual-rich-reply`, {
-                method: "POST",
-                body: JSON.stringify(requestBody)
-            });
+            const result = await postManualRichReplySnapshot(`/api/mail/unmatched-inbound/${recordId}/manual-rich-reply`, requestBody);
+            if (result === null) return false;
             manualReplyQaContext = null;
             aiReplyState.adoptContext = null;
             resetPreflightState();
@@ -18195,50 +18201,19 @@ async function handleUnmatchedAction(element) {
                 alert("人工回复邮件发送成功");
             }
         } catch (e) {
-            const canConfirmSafety = !safetyWarningConfirmed &&
-                e.data?.code === "MANUAL_SEND_SAFETY_BLOCKED" &&
-                Array.isArray(e.data.findings) &&
-                e.data.findings.length > 0;
-            if (canConfirmSafety) {
-                const findings = e.data.findings;
-                const renderFindings = (list) => list.map((finding) => {
-                    const severityClass = finding.severity === "STRONG" ? "ai-reply-error" : "ai-reply-warning";
-                    const label = AI_REPLY_WARNING_LABELS[finding.code] || "正文包含需人工核对的风险声明";
-                    const coverage = finding.sentence
-                        ? `<div class="ai-reply-coverage">命中原句：${escapeHtml(finding.sentence)}</div>`
-                        : "";
-                    return `<div class="${severityClass}">${escapeHtml(label)}</div>${coverage}`;
-                }).join("");
-                const firstConfirmed = await openActionDialog("confirm", {
-                    message: `<p>本次发送命中 ${findings.length} 项内容安全门禁，请逐条核对后确认：</p><div class="ai-reply-feedback">${renderFindings(findings)}</div><p>确认已人工核对，仍要发送吗？</p>`
-                });
-                if (!firstConfirmed) {
-                    alert("人工回复发送失败: " + e.message);
-                    throw e;
-                }
-                let strongConfirmationText = null;
-                if (e.data.requiresStrongConfirmation === true) {
-                    const strongFindings = findings.filter((finding) => finding.severity === "STRONG");
-                    const secondConfirmed = await openActionDialog("confirm-typed", {
-                        message: `<div class="ai-reply-error">高风险：本封邮件正文向专家索取护照 / 身份证 / 在职证明 / 银行流水一类敏感证件材料。此类索取存在合规与信任风险，一经发出不可撤回。</div><div class="ai-reply-feedback">${renderFindings(strongFindings)}</div><p>确认要发送，请在下方输入框中逐字输入「确认发送」四个字。</p>`
-                    });
-                    if (!secondConfirmed) {
-                        alert("人工回复发送失败: " + e.message);
-                        throw e;
-                    }
-                    strongConfirmationText = "确认发送";
-                }
-                const retryBody = { ...requestBody, safetyWarningConfirmed: true };
-                if (strongConfirmationText !== null) {
-                    retryBody.strongConfirmationText = strongConfirmationText;
-                }
-                return submitManualRichReply(recordId, retryBody, true);
-            }
             alert("人工回复发送失败: " + e.message);
             throw e;
+        } finally {
+            element.disabled = false;
+            if (lockedEditor) {
+                if (editable == null) lockedEditor.removeAttribute("contenteditable");
+                else lockedEditor.setAttribute("contenteditable", editable);
+            }
+            if (lockedSubject) lockedSubject.readOnly = readOnly;
         }
         await showUnmatchedDetail(recordId);
         await refreshMailboxAfterPendingAction();
+        return true;
     }
 
     if (action === "send-manual-rich-reply") {
@@ -20346,6 +20321,10 @@ const ACTION_DIALOG_SCHEMAS = {
             { name: "availableText", label: "专家可沟通时间说明", type: "textarea", required: false, placeholder: "留空则由手动填写" }
         ]
     },
+    "reply-identity-confirm": {
+        title: "称呼与签名需确认",
+        fields: [{ name: "message", label: "", type: "html", required: false }]
+    },
     "confirm": {
         title: "确认操作",
         fields: [
@@ -20377,6 +20356,15 @@ function openActionDialog(type, options = {}) {
         }
 
         titleEl.textContent = schema.title;
+        let settled = false;
+        const cancelButton = form.querySelector("[data-action='action-dialog-cancel']");
+        const submitButton = form.querySelector('[type="submit"]');
+        const originalCancel = cancelButton.textContent;
+        const originalSubmit = submitButton.textContent;
+        if (type === "reply-identity-confirm") {
+            cancelButton.textContent = "返回修改";
+            submitButton.textContent = "确认发送";
+        }
 
         // Render fields
         let html = "";
@@ -20425,13 +20413,19 @@ function openActionDialog(type, options = {}) {
         }
         bodyEl.innerHTML = html;
 
-        const handleCancel = () => {
+        const handleCancel = (event) => {
+            // A previous close event can arrive after a second-stage dialog opens.
+            if (event?.type === "close" && dialog.open) return;
+            if (event) event.preventDefault();
+            if (settled) return;
+            settled = true;
             cleanup();
             resolve(null);
         };
 
         const handleSubmit = (e) => {
             e.preventDefault();
+            if (settled) return;
             const result = {};
             fields.forEach(field => {
                 const el = document.getElementById(`dialog_${field.name}`);
@@ -20453,19 +20447,24 @@ function openActionDialog(type, options = {}) {
                     return;
                 }
             }
+            settled = true;
             cleanup();
             resolve(result);
         };
 
         const cleanup = () => {
             form.removeEventListener("submit", handleSubmit);
-            const cancelBtn = form.querySelector("[data-action='action-dialog-cancel']");
-            cancelBtn.removeEventListener("click", handleCancel);
-            dialog.close();
+            cancelButton.removeEventListener("click", handleCancel);
+            dialog.removeEventListener("cancel", handleCancel);
+            dialog.removeEventListener("close", handleCancel);
+            cancelButton.textContent = originalCancel;
+            submitButton.textContent = originalSubmit;
+            if (dialog.open) dialog.close();
         };
 
-        const cancelBtn = form.querySelector("[data-action='action-dialog-cancel']");
-        cancelBtn.addEventListener("click", handleCancel);
+        cancelButton.addEventListener("click", handleCancel);
+        dialog.addEventListener("cancel", handleCancel);
+        dialog.addEventListener("close", handleCancel);
         form.addEventListener("submit", handleSubmit);
 
         dialog.showModal();
@@ -21282,13 +21281,281 @@ async function mcHostSendConversationRichReply(contactId, requestBody) {
 // 按 URL 提交人工富文本回复并处理两级安全确认（I-9/I-10：失败提示不泄露 SMTP 诊断，
 // 安全确认取消返回 false —— 调用方保留草稿与 requestId）。成功提示与归档状态提示
 // 对来信/会话两条路径保持同一口径（I-8）。
-async function submitManualRichReply(url, requestBody) {
-    const submitWithConfirmation = async (body) => {
+function mcHostInspectReplyIdentity(payload) {
+    return api("/api/mail/reply-identity/inspect", { method: "POST", body: JSON.stringify(payload) });
+}
+
+function mcHostPreviewReplyIdentityDefaults(payload) {
+    return api("/api/mail/reply-identity/defaults-preview", { method: "POST", body: JSON.stringify(payload) });
+}
+
+function replyIdentitySummary(data) {
+    return `${data.salutation ? data.salutation.name || "称呼" : "称呼未设置"} / ${data.signature ? data.signature.name || "签名" : "签名未设置"}`;
+}
+
+let replyIdentityDefaultsRevision = 0;
+
+async function mcHostLoadReplyIdentitySummary(node) {
+    const revision = replyIdentityDefaultsRevision;
+    try {
+        const data = await api("/api/reply-snippets/identity-defaults");
+        if (node.isConnected && revision === replyIdentityDefaultsRevision) node.textContent = replyIdentitySummary(data);
+    } catch (_) {
+        if (node.isConnected && revision === replyIdentityDefaultsRevision) node.textContent = "默认设置加载失败";
+    }
+}
+
+let replyIdentitySettingsDialog = null;
+
+async function mcHostOpenReplyIdentitySettings(context) {
+    if (replyIdentitySettingsDialog) {
+        replyIdentitySettingsDialog.focus();
+        return;
+    }
+    const dialog = document.createElement("dialog");
+    dialog.className = "action-dialog reply-identity-settings";
+    dialog.setAttribute("aria-labelledby", "replyIdentitySettingsTitle");
+    dialog.innerHTML = `<h3 id="replyIdentitySettingsTitle">称呼与签名默认设置</h3><p>所有专家共用这两个片段。修改内容也会影响引用这些片段的模板；已有草稿不会自动改变。</p><div class="reply-identity-settings-grid"><div><label>称呼片段<select name="salutationSnippetId"></select></label><textarea name="salutationContent" aria-label="称呼片段内容" rows="2"></textarea><label>签名片段<select name="signatureSnippetId"></select></label><textarea name="signatureContent" aria-label="签名片段内容" rows="4"></textarea></div><aside class="reply-identity-paper"><h4>当前邮件效果</h4><p data-role="identity-context"></p><div data-role="identity-salutation"></div><p>邮件正文内容保持不变……</p><div data-role="identity-signature"></div></aside></div><p role="status" data-role="settings-result"></p><div class="action-dialog-footer"><button class="button" type="button" data-action="close-identity-settings">取消</button><button class="button primary" type="button" data-action="save-identity-settings">保存默认设置</button></div>`;
+    document.body.appendChild(dialog);
+    replyIdentitySettingsDialog = dialog;
+    const result = dialog.querySelector('[data-role="settings-result"]');
+    const save = dialog.querySelector('[data-action="save-identity-settings"]');
+    const cancel = dialog.querySelector('[data-action="close-identity-settings"]');
+    const fields = ["salutation", "signature"].map((kind) => ({
+        kind, select: dialog.querySelector(`[name="${kind}SnippetId"]`),
+        input: dialog.querySelector(`[name="${kind}Content"]`), drafts: new Map(), selected: ""
+    }));
+    let active = true;
+    let saving = false;
+    let uncertain = false;
+    let snapshot = null;
+    let editSeq = 0;
+    let timer = null;
+    const current = () => active && replyIdentitySettingsDialog === dialog;
+    const enabled = () => {
+        fields.forEach((field) => {
+            field.select.disabled = saving || !snapshot;
+            field.input.disabled = saving || !field.select.value;
+        });
+        save.disabled = saving || uncertain || !snapshot || fields.some((field) => !field.select.value || !field.input.value.trim());
+        cancel.disabled = saving;
+    };
+    const selections = () => Object.fromEntries(fields.map((field) => [field.kind, { id: Number(field.select.value), content: field.input.value }]));
+    const preview = async () => {
+        clearTimeout(timer);
+        const seq = ++editSeq;
+        if (!current()) return;
+        dialog.querySelector('[data-role="identity-salutation"]').textContent = "";
+        dialog.querySelector('[data-role="identity-signature"]').textContent = "";
+        if (!context.isCurrent()) { result.textContent = "正文或会话已变化，请重新打开设置"; return; }
+        if (fields.some((field) => !field.select.value)) { result.textContent = "请选择称呼和签名片段"; return; }
+        result.textContent = "预览中…";
         try {
-            const result = await api(url, {
-                method: "POST",
-                body: JSON.stringify(body)
+            const data = await mcHostPreviewReplyIdentityDefaults({ ...context.payload, ...selections() });
+            if (!current() || seq !== editSeq) return;
+            if (!context.isCurrent()) { result.textContent = "正文或会话已变化，请重新打开设置"; return; }
+            dialog.querySelector('[data-role="identity-context"]').textContent = `${data.context.recipientEmail || ""} · ${data.context.accountCode || ""}`;
+            dialog.querySelector('[data-role="identity-salutation"]').textContent = data.renderedTexts.salutation || "";
+            dialog.querySelector('[data-role="identity-signature"]').textContent = data.renderedTexts.signature || "";
+            result.textContent = (data.missingVariables || []).length || (data.warnings || []).length ? "无法核实当前身份，请检查资料" : "";
+        } catch (error) {
+            if (current() && seq === editSeq) result.textContent = error.message || "预览失败，输入已保留";
+        }
+    };
+    const schedulePreview = () => {
+        clearTimeout(timer);
+        editSeq += 1;
+        enabled();
+        result.textContent = "预览中…";
+        timer = setTimeout(preview, 300);
+    };
+    const cleanup = () => {
+        if (!active) return;
+        active = false;
+        editSeq += 1;
+        clearTimeout(timer);
+        dialog.removeEventListener("cancel", close);
+        dialog.removeEventListener("close", close);
+        dialog.removeEventListener("input", input);
+        dialog.removeEventListener("change", change);
+        cancel.removeEventListener("click", close);
+        save.removeEventListener("click", submit);
+        if (dialog.open) dialog.close();
+        dialog.remove();
+        if (replyIdentitySettingsDialog === dialog) replyIdentitySettingsDialog = null;
+    };
+    const close = (event) => {
+        if (event) event.preventDefault();
+        if (saving) { result.textContent = "保存中…"; return; }
+        cleanup();
+    };
+    const input = (event) => {
+        const field = fields.find((item) => item.input === event.target);
+        if (!field || saving) return;
+        field.drafts.set(field.selected, field.input.value);
+        schedulePreview();
+    };
+    const change = (event) => {
+        const field = fields.find((item) => item.select === event.target);
+        if (!field || saving) return;
+        field.drafts.set(field.selected, field.input.value);
+        field.selected = field.select.value;
+        field.input.value = field.drafts.get(field.selected) || "";
+        schedulePreview();
+    };
+    const populate = (data) => {
+        snapshot = data;
+        fields.forEach((field) => {
+            field.select.replaceChildren();
+            field.drafts.clear();
+            const empty = document.createElement("option");
+            empty.value = "";
+            empty.textContent = "请选择";
+            field.select.appendChild(empty);
+            (data[`${field.kind}Options`] || []).forEach((option) => {
+                const node = document.createElement("option");
+                node.value = String(option.id);
+                node.textContent = option.name || String(option.id);
+                field.select.appendChild(node);
+                field.drafts.set(node.value, option.content);
             });
+            field.selected = data[field.kind] ? String(data[field.kind].id) : "";
+            field.select.value = field.selected;
+            field.input.value = field.drafts.get(field.selected) || "";
+        });
+        enabled();
+    };
+    const submit = async () => {
+        if (save.disabled || saving || !snapshot || uncertain) return;
+        const body = { baseFingerprint: snapshot.baseFingerprint, ...selections() };
+        saving = true;
+        clearTimeout(timer);
+        editSeq += 1;
+        enabled();
+        result.textContent = "保存中…";
+        try {
+            const data = await api("/api/reply-snippets/identity-defaults", { method: "PUT", body: JSON.stringify(body) });
+            replyIdentityDefaultsRevision += 1;
+            populate(data);
+            document.querySelectorAll('[data-role="reply-identity-default-summary"]').forEach((node) => { node.textContent = replyIdentitySummary(data); });
+            // PUT has succeeded. A legacy-cache refresh error must never masquerade as a save failure.
+            state.replySnippetsLoaded = false;
+            try { await loadReplySnippets(); } catch (_) { state.replySnippetsLoaded = false; }
+            if (current()) {
+                await preview();
+                result.textContent = "默认设置已保存，已有草稿未改变";
+            }
+            showStatus("默认设置已保存，已有草稿未改变", "ok");
+        } catch (error) {
+            if (error.data?.code === "REPLY_IDENTITY_DEFAULTS_CHANGED" || error.status === 409) {
+                uncertain = true;
+                result.textContent = "默认设置已被修改，请重新加载后核对";
+            } else if (!error.data) {
+                uncertain = true;
+                result.textContent = "保存结果未确认，请重新加载核对";
+            } else result.textContent = error.message || "保存失败，输入已保留";
+        } finally {
+            saving = false;
+            if (current()) enabled();
+        }
+    };
+    dialog.addEventListener("cancel", close);
+    dialog.addEventListener("close", close);
+    dialog.addEventListener("input", input);
+    dialog.addEventListener("change", change);
+    cancel.addEventListener("click", close);
+    save.addEventListener("click", submit);
+    enabled();
+    result.textContent = "全局默认：加载中…";
+    dialog.showModal();
+    try {
+        const data = await api("/api/reply-snippets/identity-defaults");
+        if (!current()) return;
+        populate(data);
+        if (fields.some((field) => !(data[`${field.kind}Options`] || []).length)) {
+            result.textContent = "请先在回复片段管理中创建并启用片段";
+        } else await preview();
+    } catch (error) {
+        if (current()) result.textContent = error.message || "默认设置加载失败";
+    }
+}
+
+const manualReplySubmissions = new Set();
+
+function freezeManualReplySnapshot(value) {
+    const copy = JSON.parse(JSON.stringify(value));
+    const freeze = (item) => {
+        if (item && typeof item === "object") {
+            Object.values(item).forEach(freeze);
+            Object.freeze(item);
+        }
+        return item;
+    };
+    return freeze(copy);
+}
+
+function renderManualReplyFindings(findings) {
+    const identityLabels = {
+        REPLY_SALUTATION_MISSING: "称呼缺失",
+        REPLY_SALUTATION_MISMATCH: "称呼与当前专家不一致",
+        REPLY_SIGNATURE_MISSING: "签名缺失",
+        REPLY_SIGNATURE_MISMATCH: "签名与当前发件人不一致",
+        REPLY_IDENTITY_MULTIPLE_OR_MISPLACED: "称呼或签名重复、位置异常",
+        REPLY_IDENTITY_UNCERTAIN: "无法核实当前身份，请检查资料"
+    };
+    return findings.map((finding) => {
+        const identity = String(finding.code || "").startsWith("REPLY_");
+        const label = identityLabels[finding.code] || AI_REPLY_WARNING_LABELS[finding.code] || "正文包含需人工核对的风险声明";
+        const severityClass = finding.severity === "STRONG" ? "ai-reply-error" : "ai-reply-warning";
+        const coverage = finding.sentence
+            ? `<div class="ai-reply-coverage">${identity ? "" : "命中原句："}${escapeHtml(finding.sentence)}</div>` : "";
+        return `<div class="${severityClass}">${escapeHtml(label)}</div>${coverage}`;
+    }).join("");
+}
+
+async function confirmManualReplySafety(data) {
+    const findings = data.findings;
+    const identity = findings.some((finding) => String(finding.code || "").startsWith("REPLY_"));
+    const message = identity
+        ? "<p>本次邮件的称呼或签名需要核对。确认后将按当前正文发送。</p>"
+        : `<p>本次发送命中 ${findings.length} 项内容安全门禁，请逐条核对后确认：</p>`;
+    if (!await openActionDialog(identity ? "reply-identity-confirm" : "confirm", {
+        message: `${message}<div class="ai-reply-feedback">${renderManualReplyFindings(findings)}</div>`
+    })) return null;
+    const confirmation = { safetyWarningConfirmed: true };
+    if (data.requiresStrongConfirmation === true) {
+        if (!await openActionDialog("confirm-typed", {
+            message: `<div class="ai-reply-error">高风险：本封邮件正文向专家索取护照 / 身份证 / 在职证明 / 银行流水一类敏感证件材料。此类索取存在合规与信任风险，一经发出不可撤回。</div><div class="ai-reply-feedback">${renderManualReplyFindings(findings.filter((finding) => finding.severity === "STRONG"))}</div><p>确认要发送，请在下方输入框中逐字输入「确认发送」四个字。</p>`
+        })) return null;
+        confirmation.strongConfirmationText = "确认发送";
+    }
+    return confirmation;
+}
+
+async function postManualRichReplySnapshot(url, requestBody) {
+    if (manualReplySubmissions.has(url)) return null;
+    const body = freezeManualReplySnapshot(requestBody);
+    manualReplySubmissions.add(url);
+    try {
+        try {
+            return await api(url, { method: "POST", body: JSON.stringify(body) });
+        } catch (error) {
+            const data = error.data;
+            if (body.safetyWarningConfirmed || data?.code !== "MANUAL_SEND_SAFETY_BLOCKED"
+                || !Array.isArray(data.findings) || !data.findings.length) throw error;
+            const confirmation = await confirmManualReplySafety(data);
+            if (!confirmation) return null;
+            return await api(url, { method: "POST", body: JSON.stringify({ ...body, ...confirmation }) });
+        }
+    } finally {
+        manualReplySubmissions.delete(url);
+    }
+}
+
+async function submitManualRichReply(url, requestBody) {
+        try {
+            const result = await postManualRichReplySnapshot(url, requestBody);
+            if (result === null) return false;
             const archiveStatus = result?.unsupportedAnswerArchiveStatus || "NOT_APPLICABLE";
             const archivedCount = Number(result?.unsupportedAnswerArchivedCount) || 0;
             if (archiveStatus === "SAVED") {
@@ -21303,50 +21570,9 @@ async function submitManualRichReply(url, requestBody) {
             }
             return true;
         } catch (e) {
-            const canConfirmSafety = !body.safetyWarningConfirmed
-                && e.data?.code === "MANUAL_SEND_SAFETY_BLOCKED"
-                && Array.isArray(e.data.findings)
-                && e.data.findings.length > 0;
-            if (canConfirmSafety) {
-                const findings = e.data.findings;
-                const renderFindings = (list) => list.map((finding) => {
-                    const severityClass = finding.severity === "STRONG" ? "ai-reply-error" : "ai-reply-warning";
-                    const label = AI_REPLY_WARNING_LABELS[finding.code] || "正文包含需人工核对的风险声明";
-                    const coverage = finding.sentence
-                        ? `<div class="ai-reply-coverage">命中原句：${escapeHtml(finding.sentence)}</div>`
-                        : "";
-                    return `<div class="${severityClass}">${escapeHtml(label)}</div>${coverage}`;
-                }).join("");
-                const firstConfirmed = await openActionDialog("confirm", {
-                    message: `<p>本次发送命中 ${findings.length} 项内容安全门禁，请逐条核对后确认：</p><div class="ai-reply-feedback">${renderFindings(findings)}</div><p>确认已人工核对，仍要发送吗？</p>`
-                });
-                if (!firstConfirmed) {
-                    alert("人工回复发送失败: " + e.message);
-                    return false;
-                }
-                let strongConfirmationText = null;
-                if (e.data.requiresStrongConfirmation === true) {
-                    const strongFindings = findings.filter((finding) => finding.severity === "STRONG");
-                    const secondConfirmed = await openActionDialog("confirm-typed", {
-                        message: `<div class="ai-reply-error">高风险：本封邮件正文向专家索取护照 / 身份证 / 在职证明 / 银行流水一类敏感证件材料。此类索取存在合规与信任风险，一经发出不可撤回。</div><div class="ai-reply-feedback">${renderFindings(strongFindings)}</div><p>确认要发送，请在下方输入框中逐字输入「确认发送」四个字。</p>`
-                    });
-                    if (!secondConfirmed) {
-                        alert("人工回复发送失败: " + e.message);
-                        return false;
-                    }
-                    strongConfirmationText = "确认发送";
-                }
-                const retryBody = { ...body, safetyWarningConfirmed: true };
-                if (strongConfirmationText !== null) {
-                    retryBody.strongConfirmationText = strongConfirmationText;
-                }
-                return submitWithConfirmation(retryBody);
-            }
             alert("人工回复发送失败: " + e.message);
             return false;
         }
-    };
-    return submitWithConfirmation(requestBody);
 }
 
 // I-4：无来信专家「选择模板发送跟进邮件」→ 既有专家模板发件流程

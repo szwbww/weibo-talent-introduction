@@ -141,6 +141,7 @@ class PendingMailOperationServiceTest {
         unsupportedAnswerIndexService,
         emailSuppressionService,
         meetingConfirmationService,
+        org.mockito.Mockito.mock(ReplyIdentityService::class.java),
         outboundAttachmentService = outboundAttachmentService,
         mailReplyDraftService = draftService
     )

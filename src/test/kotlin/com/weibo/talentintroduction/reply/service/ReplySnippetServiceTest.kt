@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.BeforeEach
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
 import java.time.LocalDateTime
@@ -49,6 +50,68 @@ class ReplySnippetServiceTest {
     private val contentVariantService = ContentVariantService(contentVariantRepository, MailPlaceholderService())
     private val service = ReplySnippetService(repository, mailVariableService, contentVariantService)
     private val variantIdSeq = AtomicLong(1)
+
+    @BeforeEach
+    fun lockSnapshot() {
+        Mockito.`when`(repository.lockAllForUpdate()).thenReturn(emptyList())
+    }
+
+    @Test
+    fun `identity GET reads one snapshot and diagnoses missing and multiple defaults deterministically`() {
+        val rows = listOf(
+            snippet(id = 102, snippetType = "SALUTATION", content = "Second", isDefault = true),
+            snippet(id = 101, snippetType = "SALUTATION", content = "First", isDefault = true),
+            snippet(id = 104, snippetType = "CLOSING", content = "Disabled", isDefault = true, enabled = false)
+        )
+        Mockito.`when`(repository.findAllByOrderBySnippetTypeAscDisplayOrderAscIdAsc()).thenReturn(rows)
+        val snapshot = service.getIdentityDefaults()
+        assertEquals(101L, snapshot.salutation?.id)
+        assertNull(snapshot.signature)
+        assertEquals(listOf("MISSING_SIGNATURE_DEFAULT", "MULTIPLE_DEFAULTS"), snapshot.diagnostics)
+        Mockito.verify(repository).findAllByOrderBySnippetTypeAscDisplayOrderAscIdAsc()
+        Mockito.`when`(repository.findAllByOrderBySnippetTypeAscDisplayOrderAscIdAsc()).thenReturn(rows.reversed())
+        assertEquals(snapshot.baseFingerprint, service.getIdentityDefaults().baseFingerprint)
+        Mockito.`when`(repository.findAllByOrderBySnippetTypeAscDisplayOrderAscIdAsc())
+            .thenReturn(rows.map { if (it.id == 104L) it.copy(name = "renamed") else it })
+        assertNotEquals(snapshot.baseFingerprint, service.getIdentityDefaults().baseFingerprint)
+    }
+
+    @Test
+    fun `identity validates both slots before any save and preserves variant rows`() {
+        val rows = listOf(
+            snippet(id = 101, snippetType = "SALUTATION", content = "Dear", isDefault = true),
+            snippet(id = 202, snippetType = "CLOSING", content = "Regards", isDefault = true)
+        )
+        Mockito.`when`(repository.lockAllForUpdate()).thenReturn(rows)
+        Mockito.`when`(repository.findAllByOrderBySnippetTypeAscDisplayOrderAscIdAsc()).thenReturn(rows)
+        val fingerprint = service.getIdentityDefaults().baseFingerprint
+        val request = IdentityDefaultsSaveRequest(fingerprint,
+            IdentityDefaultSelection(101, "Hello"), IdentityDefaultSelection(202, " "))
+        assertThrows(IllegalArgumentException::class.java) { service.saveIdentityDefaults(request) }
+        Mockito.verify(repository, Mockito.never()).save(Mockito.any(ReplySnippet::class.java))
+        assertThrows(ReplyIdentityDefaultsChangedException::class.java) {
+            service.saveIdentityDefaults(request.copy(baseFingerprint = "stale"))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            service.saveIdentityDefaults(request.copy(signature = IdentityDefaultSelection(101, "wrong type")))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            service.saveIdentityDefaults(request.copy(signature = IdentityDefaultSelection(202, "\${unknown}")))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            service.saveIdentityDefaults(request.copy(signature = IdentityDefaultSelection(202, "x".repeat(10001))))
+        }
+        Mockito.`when`(repository.save(Mockito.any(ReplySnippet::class.java))).thenAnswer { it.arguments[0] }
+        val result = service.saveIdentityDefaults(request.copy(signature = IdentityDefaultSelection(202, "Best")))
+        assertEquals("Hello", result.salutation?.content)
+        assertEquals("Best", result.signature?.content)
+        Mockito.verify(contentVariantRepository, Mockito.never())
+            .deleteByOwnerTypeAndOwnerId(Mockito.anyString(), Mockito.anyLong())
+        val order = Mockito.inOrder(repository)
+        order.verify(repository).findAllByOrderBySnippetTypeAscDisplayOrderAscIdAsc()
+        order.verify(repository, Mockito.atLeastOnce()).lockAllForUpdate()
+        order.verify(repository, Mockito.times(2)).save(Mockito.any(ReplySnippet::class.java))
+    }
 
     @Test
     fun `create assigns timestamps before saving`() {

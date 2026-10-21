@@ -86,6 +86,9 @@ class MailReplyDraftSendIntegrationTest {
     private val suppression = mock(EmailSuppressionService::class.java)
     private val meetingTemplates = mock(MailComposeTemplateService::class.java)
     private val ragKnowledge = mock(com.weibo.talentintroduction.rag.service.RagKnowledgeBase::class.java)
+    private val identityGuard = mock(ReplyIdentityService::class.java)
+    @Autowired private lateinit var unsubscribeTokens: com.weibo.talentintroduction.mail.repository.UnsubscribeTokenRepository
+    @Autowired private lateinit var snippetRepository: com.weibo.talentintroduction.reply.repository.ReplySnippetRepository
     private lateinit var pending: PendingMailOperationService
     private lateinit var meetings: MeetingConfirmationService
     private val target = MailReplyDraftTarget(1,MailReplyDraftKind.INBOUND,100,"draft-send")
@@ -98,14 +101,14 @@ class MailReplyDraftSendIntegrationTest {
     private fun contact() = ExpertContact(id=1,campaignId=1,orcidId="draft-send-orcid",expertEmail="expert@fixture.test",expertName="Expert",currentStatus="WAITING_REPLY")
     private fun composed() = ComposedMail("expert@fixture.test","Re: Test","<p>Hello</p>",html=true,text="Hello")
     private fun successful() = DeliveredMail("<fixture@weibo.com>","SENT",errorCategory=SmtpErrorCategory.SUCCESS)
-    private fun variableService(): MailVariableService {
+    private fun variableService(tokens: UnsubscribeTokenService? = null): MailVariableService {
         val template = MailComposeTemplateService(
             mock(com.weibo.talentintroduction.template.repository.MailComposeTemplateRepository::class.java),
             mock(com.weibo.talentintroduction.template.repository.MailComposeTemplateBlockRepository::class.java),rules,
             mock(com.weibo.talentintroduction.reply.repository.ReplySnippetRepository::class.java),ObjectMapper(),
             mock(MailVariableService::class.java),contacts,accounts,
             ContentVariantService(mock(com.weibo.talentintroduction.variant.repository.ContentVariantRepository::class.java),MailPlaceholderService()))
-        return MailVariableService(mock(ExpertSearchService::class.java),template)
+        return MailVariableService(mock(ExpertSearchService::class.java),template,tokens)
     }
     @BeforeEach fun setup() {
         reset(audit); CalendarSendToggle.failOnCreate=false
@@ -131,11 +134,12 @@ class MailReplyDraftSendIntegrationTest {
             mock(ExpertIndexLevelOperationService::class.java),accounts,delivery,records,mock(MailRecordQaRuleRepository::class.java),audit,
             rules,categories,factSelection,mock(AiReplyDraftService::class.java),aiContext,AiReplyHighRiskClaimValidator(rules),
             MailBodyCleaner(),MailContentService(),variables,attempts,mock(TrustReplyWorkbenchService::class.java),
-            mock(UnsupportedAnswerIndexService::class.java),suppression,meetings,ragKnowledgeBase=ragKnowledge,
+            mock(UnsupportedAnswerIndexService::class.java),suppression,meetings,identityGuard,ragKnowledgeBase=ragKnowledge,
             outboundAttachmentService=attachments,mailReplyDraftService=drafts)
     }
     @AfterEach fun teardown() { jdbc.execute("DROP TRIGGER IF EXISTS reject_draft_sent"); cleanup() }
     private fun cleanup() {
+        jdbc.update("DELETE FROM reply_snippet WHERE id IN (990001,990002)")
         for (table in listOf("mailbox_reply_draft","meeting_calendar_event","mail_record_rag_fact","mail_record_qa_rule",
             "mail_record","mail_send_attempt","outbound_mail_attachment","inbound_mail_processing","expert_contact","campaign","mail_sender_account")) jdbc.update("DELETE FROM $table")
     }
@@ -155,6 +159,83 @@ class MailReplyDraftSendIntegrationTest {
     private fun count(table: String, condition: String = "1=1") = jdbc.queryForObject("SELECT COUNT(*) FROM $table WHERE $condition",Long::class.java)!!
     private fun assertActive(draft: MailReplyDraftDetail, version: Long = draft.version) {
         val row = drafts.get("op",requireNotNull(draft.id)); assertEquals(MailReplyDraftState.ACTIVE,row.state); assertEquals(version,row.version); assertNotNull(row.content)
+    }
+
+    private fun identityWarning() {
+        `when`(identityGuard.analyzeFinalBody(anyValue(ReplyIdentitySource(contact(),account(),
+            ReplyIdentityContext(1,100,null,"draft-send",contact().expertEmail,"Sender"),null,null)),anyString(),anyString()))
+            .thenReturn(listOf(SafetyFinding("REPLY_SIGNATURE_MISMATCH",SafetySeverity.NORMAL,"当前：Sender；建议：New sender")))
+    }
+
+    private fun nonDraftSend(ids: List<String> = emptyList(), confirmed: Boolean = false) =
+        pending.sendManualRichReply(100,null,original.subject,original.html,original.text,"op",
+            authenticatedUsername="op",attachmentIds=ids,safetyWarningConfirmed=confirmed)
+
+    @Test fun `non draft exact SENT replay ignores changed defaults without new confirmation or writes`() {
+        jdbc.update("INSERT INTO reply_snippet (id,snippet_type,content,display_order,is_default,enabled) VALUES (990001,'SALUTATION','Hello,',-999,true,true),(990002,'CLOSING','Regards,',-999,true,true)")
+        val realIdentity = ReplyIdentityService(
+            com.weibo.talentintroduction.reply.service.ReplySnippetService(snippetRepository,variableService(),mock(ContentVariantService::class.java)),
+            variableService(),mock(MailComposeTemplateService::class.java,CALLS_REAL_METHODS))
+        `when`(identityGuard.analyzeFinalBody(anyValue(ReplyIdentitySource(contact(),account(),
+            ReplyIdentityContext(1,100,null,"draft-send",contact().expertEmail,"Sender"),null,null)),anyString(),anyString()))
+            .thenAnswer { realIdentity.analyzeFinalBody(it.getArgument(0),it.getArgument(1),it.getArgument(2)) }
+        val draft = save()
+        val first = nonDraftSend(confirmed=true)
+        jdbc.update("UPDATE reply_snippet SET content='Hi,' WHERE id=990001")
+        assertTrue(realIdentity.analyzeFinalBody(ReplyIdentitySource(contact(),account(),
+            ReplyIdentityContext(1,100,null,"draft-send",contact().expertEmail,"Sender"),null,null),original.text,original.html).isNotEmpty())
+        val auditCount = mockingDetails(audit).invocations.size
+        val before = drafts.get("op",draft.id!!)
+        val result = nonDraftSend()
+        assertEquals(first,result)
+        assertEquals(1,smtpCount())
+        assertEquals(1L,count("mail_send_attempt"))
+        assertEquals(1L,count("mail_send_attempt","status='SENT'"))
+        assertEquals(before,drafts.get("op",draft.id!!))
+        assertEquals(auditCount,mockingDetails(audit).invocations.size)
+    }
+
+    @Test fun `changed ordered attachment snapshots cannot bypass identity reminder`() {
+        val a = attachments.upload(1,"op","a.txt","text/plain","first".byteInputStream()).id
+        val b = attachments.upload(1,"op","b.txt","text/plain","second".byteInputStream()).id
+        val changed = attachments.upload(1,"op","a.txt","text/plain","changed".byteInputStream()).id
+        nonDraftSend(listOf(a,b))
+        identityWarning()
+        val auditCount = mockingDetails(audit).invocations.size
+        for (ids in listOf(listOf(b,a),listOf(changed,b),emptyList())) {
+            assertThrows(ManualSendSafetyBlockedException::class.java) { nonDraftSend(ids) }
+        }
+        assertEquals(1,smtpCount())
+        assertEquals(1L,count("mail_send_attempt"))
+        assertEquals(auditCount,mockingDetails(audit).invocations.size)
+        assertEquals("SENT",nonDraftSend(listOf(a,b)).sendStatus)
+        assertEquals(1,smtpCount())
+    }
+
+    @Test fun `non completed exact payload lookup never claims or bypasses identity`() {
+        nonDraftSend()
+        identityWarning()
+        val auditCount = mockingDetails(audit).invocations.size
+        for (status in listOf("PREPARED","DELIVERY_IN_PROGRESS","DELIVERY_UNKNOWN","FAILED_SAFE_TO_RETRY","FAILED")) {
+            jdbc.update("UPDATE mail_send_attempt SET status=?",status)
+            assertThrows(ManualSendSafetyBlockedException::class.java) { nonDraftSend() }
+            assertEquals(1L,count("mail_send_attempt","status='$status'"))
+            assertEquals(1,smtpCount())
+            assertEquals(auditCount,mockingDetails(audit).invocations.size)
+        }
+    }
+
+    @Test fun `completed replay still validates suppression and original attachment files`() {
+        val upload = attachments.upload(1,"op","proof.txt","text/plain","proof".byteInputStream()).id
+        nonDraftSend(listOf(upload))
+        identityWarning()
+        `when`(suppression.isSuppressed(anyString())).thenReturn(true)
+        assertEquals(400,assertThrows(ResponseStatusException::class.java) { nonDraftSend(listOf(upload)) }.status.value())
+        `when`(suppression.isSuppressed(anyString())).thenReturn(false)
+        jdbc.update("DELETE FROM outbound_mail_attachment WHERE id=?",upload)
+        assertThrows(OutboundAttachmentException::class.java) { nonDraftSend(listOf(upload)) }
+        assertEquals(1,smtpCount())
+        assertEquals(1L,count("mail_send_attempt"))
     }
 
     @Test fun `inbound success closes exactly its version and terminal replay makes no SMTP`() {
@@ -332,6 +413,15 @@ class MailReplyDraftSendIntegrationTest {
         assertEquals(MailReplyDraftState.SENT,drafts.get("op",draft.id!!).state); assertEquals(1,smtpCount()); assertEquals(1L,count("mail_record","mail_type='MANUAL_RICH_REPLY' AND send_status='SENT'"))
     }
     @Test fun `actual HTTP sending smoke closes persists and replays across independent sessions`() {
+        val snippetService = mock(com.weibo.talentintroduction.reply.service.ReplySnippetService::class.java)
+        `when`(snippetService.getIdentityDefaults()).thenReturn(com.weibo.talentintroduction.reply.service.IdentityDefaultsResponse(
+            com.weibo.talentintroduction.reply.service.IdentityDefaultValue(1,null,"Dear Professor,"),
+            com.weibo.talentintroduction.reply.service.IdentityDefaultValue(2,null,"Best regards,\n\${senderName}"),
+            emptyList(),emptyList(),"runtime-fixture",emptyList()))
+        val realIdentity = ReplyIdentityService(snippetService,variableService(),mock(MailComposeTemplateService::class.java,CALLS_REAL_METHODS))
+        `when`(identityGuard.inspect(anyValue(ReplyIdentitySource(contact(),account(),
+            ReplyIdentityContext(1,100,null,"draft-send",contact().expertEmail,"Sender"),null,null)),anyString(),anyString()))
+            .thenAnswer { realIdentity.inspect(it.getArgument(0),it.getArgument(1),it.getArgument(2)) }
         val root=Files.createTempDirectory("draft-send-http")
         val tomcat=Tomcat(); tomcat.setBaseDir(root.toString()); tomcat.setPort(0); tomcat.connector
         val context=tomcat.addContext("",root.toString()); val app=AnnotationConfigWebApplicationContext()
@@ -340,6 +430,7 @@ class MailReplyDraftSendIntegrationTest {
             it.registerSingleton("draftController",MailReplyDraftController(drafts))
             it.registerSingleton("conversationController",MailboxConversationController(mock(MailboxConversationService::class.java),
                 mock(ExpertFollowService::class.java),mock(ExpertRepliedDismissalService::class.java),pending,mock(MailboxSuspensionService::class.java)))
+            it.registerSingleton("identityController",com.weibo.talentintroduction.mail.controller.ReplyIdentityController(pending))
         }
         val dispatcher=Tomcat.addServlet(context,"dispatcher",DispatcherServlet(app)); dispatcher.loadOnStartup=1; context.addServletMappingDecoded("/","dispatcher")
         val login=object: HttpServlet() { override fun doGet(req: HttpServletRequest,res: HttpServletResponse) { req.getSession(true).setAttribute(AuthSessionKeys.USERNAME,req.getParameter("user")); res.writer.write("ok") } }
@@ -355,6 +446,13 @@ class MailReplyDraftSendIntegrationTest {
                 println("DRAFT_SEND_RUNTIME_SMOKE $method $path -> $status ${result["state"] ?: result["sendStatus"] ?: result["code"]}"); return status to result
             }
             val a=session("op"); val b=session("other"); val requestId=UUID.randomUUID().toString()
+            val inspected=request("POST","/api/mail/reply-identity/inspect",a,
+                """{"sourceKind":"CONVERSATION","contactId":1,"anchorMailRecordId":10,"htmlBody":"","textBody":""}""")
+            assertEquals(200,inspected.first)
+            assertEquals("draft-send",inspected.second["context"]["accountCode"].asText())
+            assertEquals("MISSING",inspected.second["salutation"]["status"].asText())
+            assertEquals("Best regards,\nSender",inspected.second["signature"]["expectedText"].asText())
+            println("REPLY_IDENTITY_RUNTIME_SMOKE actual loopback HTTP inspect: actual anchor/account, MISSING slots, rendered sender; SMTP=0 before send")
             val content=original.copy(context=MailReplyDraftContext(requestId=requestId,followUpAnchorMailRecordId=10))
             val saved=request("PUT","/api/mail/mailbox/drafts/target?contactId=1&kind=OUTBOUND",a,mapper.writeValueAsString(MailReplyDraftSaveRequest(0,content)))
             assertEquals(200,saved.first); val id=saved.second["id"].asLong()
@@ -366,6 +464,63 @@ class MailReplyDraftSendIntegrationTest {
             assertEquals(0L,request("GET","/api/mail/mailbox/drafts",a).second["total"].asLong()); assertEquals(1,smtpCount()); assertEquals(1L,count("mail_send_attempt","status='SENT'"))
             println("DRAFT_SEND_RUNTIME_SMOKE complete; actual HTTP controller, Session identity, MySQL claim/CAS/transaction, SMTP calls=1, SENT/version=2/null content")
         } finally { tomcat.stop(); tomcat.destroy(); app.close(); Files.walk(root).use { paths -> paths.sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) } } }
+    }
+    @Test fun `identity soft warning preserves draft then confirmed sends exactly original MIME once`() {
+        val warning = listOf(SafetyFinding("REPLY_SALUTATION_MISMATCH",SafetySeverity.NORMAL,"当前：Dear Alice；建议：Dear Professor,"))
+        `when`(identityGuard.analyzeFinalBody(anyValue(ReplyIdentitySource(contact(),account(),
+            ReplyIdentityContext(1,100,null,"draft-send",contact().expertEmail,"Sender"),null,null)),anyString(),anyString())).thenReturn(warning)
+        val draft = save()
+        assertThrows(ManualSendSafetyBlockedException::class.java) {
+            pending.sendManualRichReply(100,null,original.subject,original.html,original.text,"op",
+                authenticatedUsername="op",draftRef=ref(draft))
+        }
+        assertActive(draft); assertEquals(0,smtpCount()); assertEquals(0L,count("mail_send_attempt"))
+        assertEquals("SENT",send(draft).sendStatus)
+        assertEquals("SENT",send(draft).sendStatus)
+        assertEquals(1,smtpCount())
+        val sent = records.findAll().first { it.mailType == "MANUAL_RICH_REPLY" }
+        assertEquals("Hello",sent.body)
+    }
+
+    @Test fun `identity inspect and unsaved defaults use enabled real unsubscribe config without creating token`() {
+        val tokenService = UnsubscribeTokenService(com.weibo.talentintroduction.config.UnsubscribeProperties(baseUrl="http://127.0.0.1.invalid"),unsubscribeTokens)
+        assertTrue(tokenService.enabled())
+        jdbc.update("DELETE FROM unsubscribe_token WHERE email=?",contact().expertEmail)
+        val snippetService = mock(com.weibo.talentintroduction.reply.service.ReplySnippetService::class.java)
+        val snapshot = com.weibo.talentintroduction.reply.service.IdentityDefaultsResponse(
+            com.weibo.talentintroduction.reply.service.IdentityDefaultValue(1,null,"Dear Professor,"),
+            com.weibo.talentintroduction.reply.service.IdentityDefaultValue(2,null,"Best regards,\n\${senderName}"),
+            listOf(com.weibo.talentintroduction.reply.service.IdentityDefaultOption(1,null,"Dear Professor,",0,true)),
+            listOf(com.weibo.talentintroduction.reply.service.IdentityDefaultOption(2,null,"Best regards,\n\${senderName}",0,true)),"fixture",emptyList())
+        `when`(snippetService.getIdentityDefaults()).thenReturn(snapshot)
+        val real = ReplyIdentityService(snippetService,variableService(tokenService),mock(MailComposeTemplateService::class.java,CALLS_REAL_METHODS))
+        val source = ReplyIdentitySource(contact(),account(),ReplyIdentityContext(1,100,null,"draft-send",contact().expertEmail,"Sender"),null,null)
+        val before = listOf(count("mailbox_reply_draft"),count("mail_record"),count("mail_send_attempt"),count("unsubscribe_token"))
+        val result = real.inspect(source,"","")
+        assertEquals(ReplyIdentityStatus.MISSING,result.salutation.status)
+        assertEquals("Best regards,\nSender",result.signature.expectedText)
+        real.previewDefaults(source,com.weibo.talentintroduction.reply.service.IdentityDefaultSelection(1,"Hello,"),
+            com.weibo.talentintroduction.reply.service.IdentityDefaultSelection(2,"Best regards,\n\${senderName}"))
+        assertEquals(before,listOf(count("mailbox_reply_draft"),count("mail_record"),count("mail_send_attempt"),count("unsubscribe_token")))
+        assertNull(unsubscribeTokens.findByEmail(contact().expertEmail))
+        assertEquals(0,smtpCount())
+    }
+
+    @Test fun `inspection reuses inbound owner and rejects foreign or out of scope anchors before SMTP`() {
+        val request = ReplyIdentityInspectRequest(ReplyIdentitySourceKind.INBOUND,1,inboundProcessingId=100)
+        pending.inspectReplyIdentity(request)
+        val captured = org.mockito.ArgumentCaptor.forClass(ReplyIdentitySource::class.java)
+        verify(identityGuard).inspect(captured.capture() ?: ReplyIdentitySource(contact(),account(),
+            ReplyIdentityContext(1,100,null,"draft-send",contact().expertEmail,"Sender"),null,null),eq("") ?: "",eq("") ?: "")
+        assertEquals("draft-send",captured.value.context.accountCode)
+        assertEquals(100L,captured.value.context.inboundProcessingId)
+        assertThrows(IllegalArgumentException::class.java) {
+            pending.inspectReplyIdentity(request.copy(contactId=2))
+        }
+        assertThrows(ResponseStatusException::class.java) {
+            pending.inspectReplyIdentity(ReplyIdentityInspectRequest(ReplyIdentitySourceKind.CONVERSATION,1,accountScope="other",anchorMailRecordId=10))
+        }
+        assertEquals(0,smtpCount()); assertEquals(0L,count("mail_send_attempt"))
     }
 }
 

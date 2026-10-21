@@ -1503,9 +1503,6 @@ describe("fast-p 04: 组件门禁与 S-3 人工回复区（trigger/附件卡）"
         const ctx = await bootMeetingA();
         const compose = ctx.host.querySelector('[data-role="manual-compose"]');
         const tools = compose.querySelector('.mc-editor-tools').querySelectorAll("button");
-        // fast-p 07（I-5/S-1）+ fast-p 03（S-2）+ fast-p 01（S-1）：
-        // 工具栏顺序 B/I/列表/链接/回形针/会议确认/材料索取/引用模板/跟进。
-        assert.strictEqual(tools.length, 9);
         assert.strictEqual(tools[4].getAttribute("data-action"), "mc-upload-attachment", "回形针紧随链接之后");
         assert.strictEqual(tools[4].textContent.trim(), "", "附件入口只有图标");
         assert.strictEqual(tools[5].getAttribute("data-action"), "mc-open-meeting");

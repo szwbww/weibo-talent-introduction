@@ -5,6 +5,11 @@ import com.weibo.talentintroduction.reply.service.ReplySnippetCreateCommand
 import com.weibo.talentintroduction.reply.service.ReplySnippetDetail
 import com.weibo.talentintroduction.reply.service.ReplySnippetService
 import com.weibo.talentintroduction.reply.service.ReplySnippetUpdateCommand
+import com.weibo.talentintroduction.reply.service.IdentityDefaultsResponse
+import com.weibo.talentintroduction.reply.service.IdentityDefaultsSaveRequest
+import com.weibo.talentintroduction.reply.service.ReplyIdentityDefaultsChangedException
+import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -20,6 +25,20 @@ import org.springframework.web.bind.annotation.RestController
 class ReplySnippetController(
     private val service: ReplySnippetService
 ) {
+    @GetMapping("/identity-defaults")
+    fun getIdentityDefaults(): IdentityDefaultsResponse = service.getIdentityDefaults()
+
+    @PutMapping("/identity-defaults")
+    fun saveIdentityDefaults(@RequestBody request: IdentityDefaultsSaveRequest): IdentityDefaultsResponse =
+        service.saveIdentityDefaults(request)
+
+    @ExceptionHandler(ReplyIdentityDefaultsChangedException::class)
+    fun identityDefaultsChanged(exception: ReplyIdentityDefaultsChangedException): ResponseEntity<Map<String, String>> =
+        ResponseEntity.status(409).body(mapOf(
+            "code" to "REPLY_IDENTITY_DEFAULTS_CHANGED",
+            "message" to requireNotNull(exception.message)
+        ))
+
     @GetMapping
     fun list(@RequestParam(required = false) snippetType: String?): List<ReplySnippetResponse> =
         if (snippetType.isNullOrBlank()) {
