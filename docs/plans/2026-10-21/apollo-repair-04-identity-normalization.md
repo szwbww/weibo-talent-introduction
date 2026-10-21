@@ -64,8 +64,9 @@ Rules.evaluate 是 Worker、AdmissionGate 和 QueryService 共用入口；Gate D
 | 7 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt` | 恢复版本与预筛选 |
 | 8 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGateTest.kt` | 旧新Gate一致 |
 | 9 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryServiceTest.kt` | 读取重算版本一致 |
+| 10 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationIntegrationTest.kt` | 仅迁移既有新 Registration run 的 institutionAliasVersion 预期 1→2；保留旧 run 回退及其余断言 |
 
-共 9 个文件；1 个业务子系统；不修改前端、数据库 schema 或 ES mapping。新增测试数据放入列出的测试文件，不另建 fixture 文件。
+共 10 个文件；1 个业务子系统；不修改前端、数据库 schema 或 ES mapping。新增测试数据放入列出的测试文件，不另建 fixture 文件。
 
 ## 验收标准
 
@@ -105,3 +106,7 @@ mvn -DfailIfNoTests=true -Dsurefire.failIfNoSpecifiedTests=true -Dtest=Discovery
 - 预期结果：第一项无新增教授命中；第二项不靠别名覆盖；第三项日期仍UNKNOWN；没有副教授新断言。
 - 覆盖：I-2/I-3
 
+
+## 修正记录
+
+- A2（2026-10-21，聚合审查 Epoch 1 后）：用户明确回复「批准 生成修复  repair」，批准上一轮给出的最小子04范围修订，并要求生成单一修复计划。依据总计划「执行约束（I-1/I-2/I-3）」第2条，将 `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationIntegrationTest.kt` 加入白名单，文件数9→10。仅允许迁移既有 `manual keyword scheduled and continuous freeze options and bind actual positive execution IDs` 测试中新 Registration run 的 `institutionAliasVersion` 预期1→已批准版本2；保留旧run回退1，以及其余生命周期、owner归属、请求、无HTTP与保护断言。禁止删除/跳过测试、回退生产默认版本或扩大其他文件/业务行为。对应审查 [V-2 / O-04-01](../review/apollo-repair-retention-master/machine-verification.md)；V-1脱敏修复仍沿子01原合同。此批准仅消除范围规划阻断并授权生成repair.md，尚未授权执行未生成的修复计划。
