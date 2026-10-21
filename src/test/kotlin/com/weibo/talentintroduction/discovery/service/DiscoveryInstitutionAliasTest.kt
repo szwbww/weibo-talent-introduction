@@ -25,7 +25,9 @@ class DiscoveryInstitutionAliasTest {
         }
         assertEquals(InstitutionComparison.DIFFERENT, DiscoveryInstitutionNormalizer.compareWithAliases(
             english.copy(standardId = "ROR:a"), german.copy(standardId = "ROR:b"), 1))
-        assertThrows(IllegalArgumentException::class.java) { DiscoveryInstitutionNormalizer.compareWithAliases(english, german, 2) }
+        assertThrows(IllegalArgumentException::class.java) {
+            DiscoveryInstitutionNormalizer.compareWithAliases(english, german, DiscoveryInstitutionNormalizer.ALIAS_VERSION + 1)
+        }
     }
 
     @Test fun `Patrick and Nils observed histories qualify without changing qualification or legacy result`() {
