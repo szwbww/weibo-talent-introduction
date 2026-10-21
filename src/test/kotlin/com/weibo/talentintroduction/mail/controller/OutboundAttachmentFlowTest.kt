@@ -233,6 +233,7 @@ class OutboundAttachmentFlowTest {
             unsupportedAnswerIndexService,
             emailSuppressionService,
             meetingConfirmationService,
+            Mockito.mock(com.weibo.talentintroduction.mail.service.ReplyIdentityService::class.java),
             outboundAttachmentService = attachmentService
         )
         conversationService = MailboxConversationService(

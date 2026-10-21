@@ -241,6 +241,26 @@ class ManualReplySendAttemptService(
         return CompletedOutboundReply(attemptId,attempt.messageId,attempt.accountCode,record)
     }
 
+    /** Exact completed-payload lookup only: never reserves an attempt or touches draft state. */
+    fun findCompletedByPayload(payload: SendPayload): CompletedOutboundReply? {
+        val fingerprint = computeFingerprint(payload)
+        val attempt = attemptRepository.findByOrcidIdAndMailType(payload.orcidId, fingerprint.shortKey)
+            ?: return null
+        require(attempt.contentType == FINGERPRINT_CONTENT_TYPE) {
+            "Mail send attempt fingerprint collision: unexpected contentType=${attempt.contentType}"
+        }
+        require(attempt.body == fingerprint.fullHex) {
+            "Mail send attempt fingerprint collision: full hash mismatch"
+        }
+        require(attempt.recipient == payload.normalizedRecipient) {
+            "Mail send attempt fingerprint collision: recipient mismatch"
+        }
+        if (attempt.status != MailSendAttemptStatus.SENT) return null
+        val attemptId = attempt.id ?: return null
+        val record = mailRecordRepository.findByMailSendAttemptId(attemptId) ?: return null
+        return CompletedOutboundReply(attemptId, attempt.messageId, attempt.accountCode, record)
+    }
+
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun prepareAndClaim(payload: SendPayload): ClaimedAttempt {
         val draftRef = payload.draftSendRef

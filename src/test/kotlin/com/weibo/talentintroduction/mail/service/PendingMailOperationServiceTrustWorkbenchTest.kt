@@ -128,6 +128,7 @@ class PendingMailOperationServiceTrustWorkbenchTest {
         unsupportedAnswerIndexService,
         emailSuppressionService,
         meetingConfirmationService,
+        Mockito.mock(ReplyIdentityService::class.java),
         outboundAttachmentService = outboundAttachmentService
     )
 
