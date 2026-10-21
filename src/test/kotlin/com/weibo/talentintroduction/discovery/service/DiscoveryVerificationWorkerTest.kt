@@ -196,7 +196,7 @@ class DiscoveryVerificationWorkerTest {
                         val query = DiscoveryVerificationQueryService(f.repository, f.admissions, f.props)
                         val detail = query.item(row.id)
                         assertEquals(expected, detail.attempts.single().diagnostic!!.classification)
-                        assertEquals(VerificationState.ERROR, detail.state)
+                        assertEquals(if (expected == "APOLLO_CREDITS_EXHAUSTED") VerificationState.RETRY_WAIT else VerificationState.ERROR, detail.state)
                         jdbc.update("UPDATE discovery_verification_attempt SET response_json=NULL WHERE id=?", attempt.id)
                         assertNull(query.item(row.id).attempts.single().diagnostic)
                         assertEquals(expected, f.repository.findAttempts(row.id).single().resultCode)
@@ -205,6 +205,123 @@ class DiscoveryVerificationWorkerTest {
                         jdbc.update("DELETE FROM discovery_verification_item")
                         jdbc.update("DELETE FROM discovery_verification_run")
                     }
+                }
+            }
+    }
+    @Test fun `credit deferral retains retryAt without HTTP transient retries or auth latch`() {
+        val retryAt = ruleClock.instant().plusSeconds(1793)
+        val repo = Mockito.mock(DiscoveryVerificationRepository::class.java) { invocation ->
+            if (invocation.method.name == "reserveAttemptWithBudget")
+                VerificationAttemptReservation(deferred = VerificationBudgetReason.CREDITS_WAIT, retryAt = retryAt)
+            else Mockito.RETURNS_DEFAULTS.answer(invocation)
+        }
+        val snapshot = ruleSnapshot()
+        val mapper = jacksonObjectMapper().findAndRegisterModules()
+        val payload = pendingDetailPayload()
+        val lease = lease(mapper.writeValueAsString(payload)).copy(
+            snapshotJson = mapper.writeValueAsString(snapshot), identityHash = snapshot.identityHash, factFingerprint = snapshot.factFingerprint,
+            requestCount = 42, transientAttempts = 2)
+        Mockito.`when`(repo.findRun(1)).thenReturn(VerificationRun(1, VerificationMode.ENFORCE, VerificationMode.ENFORCE.policyVersion,
+            true, """{"apolloMatchingVersion":2}""", createdAt = ruleClock.instant(), updatedAt = ruleClock.instant()))
+        worker(DiscoveryVerificationProperties(workerEnabled = true), repo).useWorker {
+            it.process(lease)
+            assertFalse(it.isAuthBlocked())
+        }
+        val saved = Mockito.mockingDetails(repo).invocations.single { it.method.name == "reschedule" }.arguments
+        assertEquals(retryAt, saved[3]); assertEquals(2, saved[4])
+        assertEquals(mapper.readTree(lease.evidenceJson), mapper.readTree(saved[5] as String))
+        assertEquals("[\"CREDITS_WAIT\"]", saved[6])
+        assertFalse(Mockito.mockingDetails(repo).invocations.any { it.method.name in setOf("saveFailure", "completeAttemptAndProgress") })
+    }
+
+    private fun pendingDetailPayload() = VerificationWorkerEvidence(
+        search = ApolloSearchEvidence(candidates = listOf(
+            ApolloCandidate("person-1", "Ada", null, "L**", null, null, null),
+            ApolloCandidate("person-2", "Ada", null, "L**", null, null, null)),
+            broadComplete = true, complete = true, matchingVersion = 2, queryNames = setOf("Ada Lee")),
+        progress = VerificationProgress(stage = "APOLLO_SEARCH", queryIndex = 1, complete = true,
+            candidateIds = listOf("person-1", "person-2")),
+        queries = listOf(ApolloSearchQuery("Ada Lee")), ruleVersion = 1)
+
+    @Test fun `runtime credit recovery smoke restarts resumes remaining details and commits through normal gate`() {
+        check(org.testcontainers.DockerClientFactory.instance().isDockerAvailable) { "Docker is required; skip is not PASS" }
+        DiagnosticMysql().withDatabaseName("credit_recovery").withUsername("test").withPassword("test")
+            .withCommand("--log-bin-trust-function-creators=1").use { mysql ->
+                mysql.start()
+                val ds = org.springframework.jdbc.datasource.DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
+                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("158").load().migrate()
+                val jdbc = org.springframework.jdbc.core.JdbcTemplate(ds)
+                val manager = org.springframework.jdbc.datasource.DataSourceTransactionManager(ds)
+                VerificationFlowFixture(jdbc, manager).use { f ->
+                    val row = f.seed("credits-smoke")
+                    f.cached(pendingDetailPayload())
+                    var exhausted = true
+                    val detailCalls = mutableListOf<String>()
+                    val http = verificationRestTemplate(f.props)
+                    val server = org.springframework.test.web.client.MockRestServiceServer.bindTo(http).build()
+                    server.expect(org.springframework.test.web.client.ExpectedCount.manyTimes(),
+                        org.springframework.test.web.client.match.MockRestRequestMatchers.anything()).andRespond { request ->
+                        val id = request.uri.path.substringAfterLast('/')
+                        detailCalls += id
+                        if (exhausted) org.springframework.test.web.client.response.MockRestResponseCreators
+                            .withStatus(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY)
+                            .body("""{"message":"insufficient credits"}""").contentType(org.springframework.http.MediaType.APPLICATION_JSON).createResponse(request)
+                        else org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess(
+                            """{"person":{"id":"$id","first_name":"Ada","last_name":"${if (id == "person-1") "Gray" else "Lee"}",
+                                "title":"Professor of Physics","organization":{"name":"Example University"}}}""",
+                            org.springframework.http.MediaType.APPLICATION_JSON).createResponse(request)
+                    }
+                    fun restarted() = DiscoveryVerificationWorker(f.props, f.repository,
+                        OrcidVerificationEvidenceClient(f.props, http, f.clock), ApolloPeopleSearchClient(f.props, http, f.clock),
+                        QualificationEvidenceParser(f.clock), f.rules, f.commits,
+                        DefaultListableBeanFactory().getBeanProvider(RegistrationRecovery::class.java), f.clock)
+                    restarted().useWorker { it.process(f.claim()); assertFalse(it.isAuthBlocked()) }
+                    val waiting = f.item(row.id)
+                    assertEquals(VerificationState.RETRY_WAIT, waiting.state)
+                    assertNull(waiting.outcome); assertEquals(VerificationRoute.NONE, waiting.route)
+                    assertEquals(0, waiting.transientAttempts); assertEquals(1, waiting.requestCount)
+                    assertEquals(f.clock.instant().plusSeconds(1800), waiting.nextAttemptAt)
+                    assertEquals(pendingDetailPayload(), f.mapper.readValue<VerificationWorkerEvidence>(waiting.evidenceJson!!))
+                    val oldAttempt = f.repository.findAttempts(row.id).single()
+
+                    // A second item reaches the same database guard after process restart: no wire call or billing.
+                    val blocked = f.seed("credits-blocked")
+                    f.cached(pendingDetailPayload())
+                    restarted().useWorker { it.process(f.claim()) }
+                    assertEquals(0, f.item(blocked.id).requestCount)
+                    assertEquals(waiting.nextAttemptAt, f.item(blocked.id).nextAttemptAt)
+                    assertEquals("[\"CREDITS_WAIT\"]", f.item(blocked.id).reasonsJson)
+                    assertEquals(listOf("person-1"), detailCalls)
+
+                    // DETAIL outage does not stop an already admitted projection, ORCID, or direct admission.
+                    val direct = f.seed("direct-during-credit-pause")
+                    f.cached(VerificationWorkerEvidence(orcidCompleted = f.selfDocuments(), ruleVersion = 1))
+                    f.failProjection = true
+                    f.worker().process(f.claim())
+                    assertEquals(VerificationOutcome.DIRECT_CLEAR, f.item(direct.id).outcome)
+                    assertEquals(VerificationProjection.ERROR, f.item(direct.id).projectionState)
+                    f.failProjection = false
+                    val orcid = f.seed("orcid-during-credit-pause")
+                    f.worker().tick()
+                    assertTrue(f.orcidRequests.isNotEmpty())
+                    assertEquals(VerificationProjection.PROJECTED, f.item(direct.id).projectionState)
+                    assertNotEquals(VerificationState.QUEUED, f.item(orcid.id).state)
+
+                    exhausted = false
+                    f.clock.now = waiting.nextAttemptAt!!
+                    restarted().useWorker { it.process(f.claim()) }
+                    val completed = f.item(row.id)
+                    assertEquals(VerificationState.COMPLETED, completed.state)
+                    assertEquals(VerificationOutcome.APOLLO_CLEAR, completed.outcome)
+                    assertNotNull(completed.admissionRevision)
+                    assertEquals(VerificationProjection.PROJECTED, completed.projectionState)
+                    assertEquals(listOf("person-1", "person-1", "person-2"), detailCalls)
+                    assertEquals(oldAttempt, f.repository.findAttempts(row.id).first())
+                    assertEquals(3, completed.requestCount)
+                    assertEquals(setOf("person-1", "person-2"), f.mapper.readValue<VerificationWorkerEvidence>(completed.evidenceJson!!).search!!.detailsCompleted)
+                    assertEquals(row.ownerExecutionId, completed.ownerExecutionId)
+                    assertEquals(row.batchNumber, completed.batchNumber)
+                    server.verify()
                 }
             }
     }

@@ -197,6 +197,7 @@ class DiscoveryVerificationQueryService(
             "ITEM_REQUEST_LIMIT" to "核验未完成：达到单档案请求上限",
             "EVIDENCE_INCOMPLETE" to "证据尚未完整", "CONFIG_AUTH" to "接口认证配置错误",
             "REQUEST_INVALID" to "接口请求无效", "RESPONSE_INVALID" to "接口响应无效",
+            "APOLLO_CREDITS_EXHAUSTED" to "额度不足，等待恢复", "CREDITS_WAIT" to "额度不足，等待恢复",
             "SUPERSEDED_BY_REVIEW" to "已由人工审核决定取代")
     }
 }

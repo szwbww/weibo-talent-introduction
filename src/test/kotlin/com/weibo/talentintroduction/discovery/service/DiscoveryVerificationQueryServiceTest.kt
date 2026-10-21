@@ -146,4 +146,16 @@ class DiscoveryVerificationQueryServiceTest {
         assertNull(VerificationAttemptSummary(1, VerificationProvider.APOLLO, VerificationQueryKind.DETAIL,
             1, 1, now, now, 422, "REQUEST_INVALID", null).diagnostic)
     }
+    @Test fun `credit failure and deferred probe have the same recovery reason label`() {
+        val filter = VerificationReportFilter(3001)
+        `when`(repository.findRun(3001)).thenReturn(run(3001))
+        `when`(repository.reportingCounts(filter)).thenReturn(mapOf(0L to VerificationCounts(profiles = 2)))
+        `when`(repository.reportingCounts(filter, batches = true)).thenReturn(mapOf(1L to VerificationCounts(profiles = 2)))
+        `when`(repository.reportingBatchReasons(3001)).thenReturn(listOf(Triple(1,
+            """["APOLLO_CREDITS_EXHAUSTED","CREDITS_WAIT"]""", 1L)))
+        val reasons = service.batches(3001, 0, 20).items.single().reasons
+        assertEquals(setOf("APOLLO_CREDITS_EXHAUSTED", "CREDITS_WAIT"), reasons.map { it.code }.toSet())
+        assertTrue(reasons.all { it.label == "额度不足，等待恢复" })
+        verifyNoInteractions(admissions)
+    }
 }

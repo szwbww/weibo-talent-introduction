@@ -50,7 +50,7 @@ object DiscoveryVerificationReplayTool {
         }
     }
     fun execute(args: Array<String>) {
-        require(args.isNotEmpty() && args[0] in setOf("freeze", "evaluate", "apply", "inspect"))
+        require(args.isNotEmpty() && args[0] in setOf("freeze", "evaluate", "apply", "apply-errors", "inspect"))
         require((args.size - 1) % 2 == 0)
         val pairs = args.drop(1).chunked(2)
         require(pairs.all { it[0].startsWith("--") } && pairs.map { it[0] }.distinct().size == pairs.size)
@@ -71,9 +71,11 @@ object DiscoveryVerificationReplayTool {
             println("FROZEN manifest=$directory/manifest.json sha256=${sha(Files.readAllBytes(directory.resolve("manifest.json")))}")
         } else {
             val frozen = load(Paths.get(required("--manifest")), required("--manifest-sha256"))
+            if (args[0] == "apply-errors") require(Paths.get(required("--manifest")).isAbsolute)
             when (args[0]) {
                 "evaluate" -> evaluate(frozen, classpaths(options))
                 "apply" -> { val db = database(); apply(frozen, db.first, db.second, Clock.systemUTC()) }
+                "apply-errors" -> { val db = database(); applyErrors(frozen, db.first, db.second, Clock.systemUTC()) }
                 "inspect" -> { val db = database(); inspect(frozen, db.first, db.second, Clock.systemUTC()) }
             }
         }
@@ -183,6 +185,20 @@ object DiscoveryVerificationReplayTool {
             repository.requeuePendingForEvidenceReplay(frozen.before.executionId, inputs, clock.instant())
         }!!) + frozen.before.itemIds.filterNot { id -> frozen.before.items.any { it.id == id } }.map { ReplayReceipt(it, "SOURCE_MISSING") }
         report(frozen, "apply", mapOf("layer" to "QUEUE_ONLY", "receipts" to receipts, "queued" to receipts.count { it.status == "QUEUED" }))
+        return receipts
+    }
+    fun applyErrors(frozen: Frozen, jdbc: JdbcTemplate, manager: DataSourceTransactionManager, clock: Clock): List<ReplayReceipt> {
+        val repository = DiscoveryVerificationRepository(jdbc)
+        // Do not use expected(): the PENDING replay intentionally forces DECIDE.
+        val inputs = frozen.before.items.map { ReplayExpected(it, frozen.before.admissions[it.expertDocId], it.evidenceJson ?: "") }
+        val receipts = (if (inputs.isEmpty()) emptyList() else TransactionTemplate(manager).execute {
+            repository.requeueErrorsForCreditRecovery(frozen.before.executionId, inputs, clock.instant())
+        }!!) + frozen.before.itemIds.filterNot { id -> frozen.before.items.any { it.id == id } }.map { ReplayReceipt(it, "INELIGIBLE") }
+        val result = mapOf("layer" to "QUEUE_ONLY", "receipts" to receipts, "queued" to receipts.count { it.status == "QUEUED" })
+        // Keep every receipt immutable, including repeated applications of the same frozen manifest.
+        val directory = frozen.directory.resolve("apply-errors-${Instant.now().toEpochMilli()}-${UUID.randomUUID()}")
+        secureDirectory(directory)
+        atomicWrite(directory.resolve("apply-errors.json"), mapper.writeValueAsBytes(result))
         return receipts
     }
     fun inspect(frozen: Frozen, jdbc: JdbcTemplate, manager: DataSourceTransactionManager, clock: Clock): Map<String, Any> {

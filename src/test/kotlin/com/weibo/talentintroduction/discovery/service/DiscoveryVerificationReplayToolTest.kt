@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.discovery.service
 
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.weibo.talentintroduction.discovery.repository.DiscoveryVerificationRepository
+import com.weibo.talentintroduction.discovery.domain.*
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -67,5 +68,80 @@ class DiscoveryVerificationReplayToolTest {
         val child = process.start()
         val output = child.inputStream.bufferedReader().readText()
         assertEquals(2, child.waitFor()); assertTrue(output.contains("REPLAY_FAILED")); assertFalse(output.contains(secret))
+    }
+    private class RecoveryMysql : org.testcontainers.containers.MySQLContainer<RecoveryMysql>("mysql:8.0.36")
+
+    @Test fun `apply errors frozen manifest retains stage protects operators and is repeatable without provider calls`() {
+        check(org.testcontainers.DockerClientFactory.instance().isDockerAvailable) { "Docker is required; skip is not PASS" }
+        RecoveryMysql().withDatabaseName("replay_errors").withUsername("test").withPassword("test")
+            .withCommand("--log-bin-trust-function-creators=1").use { mysql ->
+                mysql.start()
+                val ds = org.springframework.jdbc.datasource.DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
+                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("158").load().migrate()
+                val jdbc = org.springframework.jdbc.core.JdbcTemplate(ds)
+                val manager = org.springframework.jdbc.datasource.DataSourceTransactionManager(ds)
+                VerificationFlowFixture(jdbc, manager).use { f ->
+                    val payload = VerificationWorkerEvidence(
+                        search = ApolloSearchEvidence(candidates = listOf(ApolloCandidate("person-1", "Ada", null, "L**", null, null, null)),
+                            complete = true, matchingVersion = 2, queryNames = setOf("Ada Lee")),
+                        progress = VerificationProgress(stage = "APOLLO_SEARCH", queryIndex = 1, complete = true, candidateIds = listOf("person-1")),
+                        queries = listOf(ApolloSearchQuery("Ada Lee")), ruleVersion = 1)
+                    val items = (1..4).map { index ->
+                        val item = f.seed("recovery-$index")
+                        val lease = f.claim()
+                        val attempt = f.repository.reserveAttemptWithBudget(item.id, lease.leaseToken!!, lease.generation,
+                            VerificationAttemptRequest("frozen-$index", VerificationProvider.APOLLO, VerificationQueryKind.DETAIL,
+                                1, 1, """{"personId":"person-1","matchingVersion":2}"""), 1, 1, 1, f.clock.instant()).attemptId!!
+                        assertTrue(f.repository.completeAttempt(item.id, lease.leaseToken!!, lease.generation,
+                            attempt, 422, "REQUEST_INVALID", null, null, f.clock.instant()))
+                        assertTrue(f.repository.saveFailure(item.id, lease.leaseToken!!, lease.generation,
+                            VerificationResult(VerificationState.ERROR, null, VerificationQualification.NOT_EVALUATED, VerificationRoute.NONE,
+                                tool.mapper.writeValueAsString(payload), if (index == 3) """["FACT_CHANGED"]""" else """["REQUEST_INVALID"]"""),
+                            0, f.clock.instant()))
+                        if (index == 2) f.manual(item)
+                        f.item(item.id)
+                    }
+                    f.settleHistorical()
+                    val directory = tool.freeze(jdbc, manager, 2001, items.map { it.id }, root.resolve("freeze"), f.clock,
+                        mapOf("fixed" to System.getProperty("java.class.path")))
+                    val manifest = directory.resolve("manifest.json")
+                    val hash = tool.sha(Files.readAllBytes(manifest))
+                    val frozen = tool.load(manifest, hash)
+                    val beforeBytes = Files.readAllBytes(directory.resolve("before.json"))
+                    val attempts = items.associate { it.id to f.repository.findAttempts(it.id) }
+                    // A change after freeze is stale, not permission to overwrite a newer operator result.
+                    f.manual(items[3])
+                    assertEquals(listOf("INELIGIBLE", "PROTECTED_ADMISSION", "INELIGIBLE", "STALE_OR_ALREADY_APPLIED"),
+                        tool.apply(frozen, jdbc, manager, f.clock).map { it.status })
+                    val receipts = tool.applyErrors(frozen, jdbc, manager, f.clock)
+                    assertEquals(listOf("QUEUED", "PROTECTED_ADMISSION", "PROTECTED_REASON", "STALE_OR_ALREADY_APPLIED"), receipts.map { it.status })
+                    assertEquals(VerificationState.QUEUED, f.item(items[0].id).state)
+                    assertEquals(items[0].evidenceJson, f.item(items[0].id).evidenceJson)
+                    assertEquals("APOLLO_SEARCH", tool.mapper.readTree(f.item(items[0].id).evidenceJson).path("progress").path("stage").asText())
+                    assertEquals("STALE_OR_ALREADY_APPLIED", tool.applyErrors(frozen, jdbc, manager, f.clock).first().status)
+                    assertEquals(items[0].generation + 1, f.item(items[0].id).generation)
+                    assertArrayEquals(beforeBytes, Files.readAllBytes(directory.resolve("before.json")))
+                    assertEquals(hash, tool.sha(Files.readAllBytes(manifest)))
+                    items.forEach { assertEquals(attempts[it.id], f.repository.findAttempts(it.id)); assertEquals(it.requestCount, f.item(it.id).requestCount) }
+                    assertTrue(f.apolloRequests.isEmpty()); assertTrue(f.orcidRequests.isEmpty()); assertEquals(0, f.autoCount()!!.toInt())
+                    val reports = Files.walk(directory).use { paths -> paths.filter { it.fileName.toString() == "apply-errors.json" }.toArray().map { it as Path } }
+                    assertEquals(2, reports.size)
+                    reports.forEach { path ->
+                        assertEquals(PosixFilePermissions.fromString("rw-------"), Files.getPosixFilePermissions(path))
+                        assertEquals(PosixFilePermissions.fromString("rwx------"), Files.getPosixFilePermissions(path.parent))
+                        val text = Files.readString(path)
+                        assertFalse(text.contains("Ada")); assertFalse(text.contains("example.invalid"))
+                        assertEquals("QUEUE_ONLY", tool.mapper.readTree(text).path("layer").asText())
+                    }
+                    listOf("--execution-id", "--item-ids", "--fixed-classpath", "--unknown").forEach { extra ->
+                        assertThrows(IllegalArgumentException::class.java) { tool.execute(arrayOf("apply-errors", "--manifest", manifest.toString(),
+                            "--manifest-sha256", hash, extra, "forbidden")) }
+                    }
+                    assertThrows(IllegalArgumentException::class.java) { tool.execute(arrayOf("apply-errors", "--manifest", manifest.toString(),
+                        "--manifest-sha256", hash, "--manifest-sha256", hash)) }
+                    assertThrows(IllegalArgumentException::class.java) { tool.execute(arrayOf("apply-errors", "--manifest", manifest.toString(),
+                        "--manifest-sha256", "0".repeat(64))) }
+                }
+            }
     }
 }

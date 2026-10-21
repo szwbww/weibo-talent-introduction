@@ -65,7 +65,7 @@ class DiscoveryVerificationWorker(
     }
 
     private class LeaseLost : IllegalStateException()
-    private class BudgetDeferred(val reason: VerificationBudgetReason) : IllegalStateException()
+    private class BudgetDeferred(val reason: VerificationBudgetReason, val retryAt: Instant? = null) : IllegalStateException()
     private enum class ContextIssue { NONE, PARSER_DRIFT, INVALID_PROTOCOL }
 
     /** Also used by the isolated runtime fixture. SQL reservations always precede provider calls. */
@@ -134,7 +134,7 @@ class DiscoveryVerificationWorker(
             val reservation = repository.reserveAttemptWithBudget(lease.id, token, lease.generation,
                 VerificationAttemptRequest("${lease.id}-${UUID.randomUUID()}", provider, kind, page, requestNumber + 1, request),
                 properties.requestsPerMinute, properties.requestsPerDay, properties.maxRequestsPerItem, clock.instant())
-            val id = reservation.attemptId ?: throw BudgetDeferred(requireNotNull(reservation.deferred))
+            val id = reservation.attemptId ?: throw BudgetDeferred(requireNotNull(reservation.deferred), reservation.retryAt)
             requestNumber++
             return RequestPermit(id, provider).also { activePermit = it }
         }
@@ -188,7 +188,10 @@ class DiscoveryVerificationWorker(
                     else repository.reschedule(lease.id, token, lease.generation, now.plusSeconds(longArrayOf(30, 120, 600)[count - 1]),
                         count, json(), mapper.writeValueAsString(listOf(result.code)), now)
                 }
-                is VerificationHttpResult.PermanentFailure -> fail(result.code)
+                is VerificationHttpResult.PermanentFailure -> if (result.code == "APOLLO_CREDITS_EXHAUSTED") {
+                    repository.reschedule(lease.id, token, lease.generation, now.plusSeconds(1800),
+                        lease.transientAttempts, json(), "[\"APOLLO_CREDITS_EXHAUSTED\"]", now)
+                } else fail(result.code)
                 else -> error("Unexpected retry result")
             }
         }
@@ -364,7 +367,7 @@ class DiscoveryVerificationWorker(
                 }
                 else -> {
                     val now = clock.instant()
-                    val next = if (deferred.reason == VerificationBudgetReason.DAY_LIMIT)
+                    val next = deferred.retryAt?.let { maxOf(now, it) } ?: if (deferred.reason == VerificationBudgetReason.DAY_LIMIT)
                         LocalDate.ofInstant(now, ZoneOffset.UTC).plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC) else now.plusSeconds(60)
                     repository.reschedule(lease.id, token, lease.generation, next, lease.transientAttempts, json(),
                         mapper.writeValueAsString(listOf(deferred.reason.name)), now)

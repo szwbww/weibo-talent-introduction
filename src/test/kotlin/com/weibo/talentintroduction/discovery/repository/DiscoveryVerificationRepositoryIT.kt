@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.discovery.repository
 
 import com.weibo.talentintroduction.discovery.domain.*
+import com.weibo.talentintroduction.discovery.service.*
 import org.junit.jupiter.api.*
 import org.junit.jupiter.api.Assertions.*
 import org.springframework.beans.factory.annotation.Autowired
@@ -314,4 +315,134 @@ class DiscoveryVerificationRepositoryIT {
         assertEquals("PROTECTED_REASON", replay(listOf(current)).single().status)
         assertEquals(current.item, repository.findItem(current.item.id))
     }
+    private fun detail(lease: VerificationItem, key: String, at: Instant = NOW,
+        repo: DiscoveryVerificationRepository = repository) =
+        repo.reserveAttemptWithBudget(lease.id, lease.leaseToken!!, lease.generation,
+            VerificationAttemptRequest(key, VerificationProvider.APOLLO, VerificationQueryKind.DETAIL, 1, 1,
+                """{"personId":"person-1","matchingVersion":2}"""), 1, 1, 1, at)
+
+    @Test fun `persistent DETAIL fault permits only one probe across workers and crashed windows`() {
+        val leases = (0..2).map { run(1001L + it); activeForOwner(it) }
+        val failed = detail(leases[0], "fault").attemptId!!
+        val old = detail(leases[1], "old-in-flight").attemptId!!
+        val faultAt = NOW.plusSeconds(1)
+        assertTrue(repository.completeAttempt(leases[0].id, leases[0].leaseToken!!, leases[0].generation,
+            failed, 422, "APOLLO_CREDITS_EXHAUSTED", "{}", null, faultAt))
+        assertTrue(repository.completeAttempt(leases[1].id, leases[1].leaseToken!!, leases[1].generation,
+            old, 200, "OK", "{}", null, NOW.plusSeconds(2)))
+        val before = repository.findItem(leases[2].id)!!
+        val blocked = detail(leases[2], "blocked", NOW.plusSeconds(3))
+        assertEquals(VerificationBudgetReason.CREDITS_WAIT, blocked.deferred)
+        assertEquals(faultAt.plusSeconds(1800), blocked.retryAt)
+        assertEquals(before, repository.findItem(leases[2].id))
+        assertEquals(2, leases.sumOf { repository.findAttempts(it.id).size })
+        val restarted = DiscoveryVerificationRepository(jdbc)
+        val restartResult = TransactionTemplate(manager).execute { detail(leases[2], "restart", NOW.plusSeconds(4), restarted) }!!
+        assertEquals(blocked, restartResult)
+        val probeAt = faultAt.plusSeconds(1800)
+        leases.forEach { assertTrue(repository.renewLease(it.id, it.leaseToken!!, it.generation, NOW.plusSeconds(5), 8000)) }
+        val permits = parallel(2) { detail(leases[it], "probe-$it", probeAt) }
+        assertEquals(1, permits.count { it.attemptId != null })
+        assertEquals(1, permits.count { it.deferred == VerificationBudgetReason.CREDITS_WAIT })
+        assertEquals(probeAt.plusSeconds(1800), permits.single { it.deferred != null }.retryAt)
+        // An unfinished (crashed) probe consumes the entire window, including after reconstruction.
+        assertEquals(VerificationBudgetReason.CREDITS_WAIT, TransactionTemplate(manager).execute {
+            detail(leases[2], "crashed-window", probeAt.plusSeconds(1799), restarted)
+        }!!.deferred)
+        val nextAt = probeAt.plusSeconds(1800)
+        val next = detail(leases[2], "next-window", nextAt).attemptId!!
+        assertTrue(repository.completeAttempt(leases[2].id, leases[2].leaseToken!!, leases[2].generation,
+            next, 200, "OK", "{}", null, nextAt))
+        assertNotNull(detail(leases[2], "reopened", nextAt.plusSeconds(1)).attemptId)
+        assertEquals(5, leases.sumOf { repository.findAttempts(it.id).size })
+    }
+
+    @Test fun `only explicit completed DETAIL credit faults pause and search ORCID remain independent`() {
+        run(); active(); val lease = claim()
+        val unknown = detail(lease, "unknown").attemptId!!
+        repository.completeAttempt(lease.id, lease.leaseToken!!, lease.generation, unknown,
+            422, "APOLLO_HTTP_422_UNCLASSIFIED", "{}", null, NOW)
+        val fault = detail(lease, "explicit").attemptId!!
+        repository.completeAttempt(lease.id, lease.leaseToken!!, lease.generation, fault,
+            422, "APOLLO_CREDITS_EXHAUSTED", "{}", null, NOW)
+        assertEquals(VerificationBudgetReason.CREDITS_WAIT, detail(lease, "no-detail").deferred)
+        listOf(VerificationProvider.APOLLO to VerificationQueryKind.BROAD, VerificationProvider.ORCID to VerificationQueryKind.ORCID).forEach { (provider, kind) ->
+            assertNotNull(repository.reserveAttemptWithBudget(lease.id, lease.leaseToken!!, lease.generation,
+                VerificationAttemptRequest("continue-$provider", provider, kind, 1, 1, "{}"), 1, 1, 100, NOW).attemptId)
+        }
+        val later = NOW.plusSeconds(1800)
+        repository.renewLease(lease.id, lease.leaseToken!!, lease.generation, NOW, 4000)
+        val probe = detail(lease, "not-ok", later).attemptId!!
+        repository.completeAttempt(lease.id, lease.leaseToken!!, lease.generation, probe, 200, "RESPONSE_INVALID", "{}", null, later)
+        assertEquals(VerificationBudgetReason.CREDITS_WAIT, detail(lease, "still-blocked", later.plusSeconds(1)).deferred)
+    }
+
+    private fun recoveryError(doc: String, code: String = "REQUEST_INVALID"): DiscoveryVerificationRepository.ReplayExpected {
+        val snapshot = ruleSnapshot().copy(identityHash = "a".repeat(64), factFingerprint = "b".repeat(64))
+        val mapper = DiscoveryVerificationReplayTool.mapper
+        val item = repository.reserveItem(reservation(doc).copy(snapshotJson = mapper.writeValueAsString(snapshot)), NOW)
+        repository.activateItem(item.id, 1, NOW)
+        val lease = claim()
+        val attempt = detail(lease, "error-$doc").attemptId!!
+        repository.completeAttempt(item.id, lease.leaseToken!!, lease.generation, attempt, 422, code, "{}", null, NOW)
+        val candidate = ApolloCandidate("person-1", "Ada", null, "L**", null, null, null)
+        val evidence = mapper.writeValueAsString(VerificationWorkerEvidence(
+            search = ApolloSearchEvidence(candidates = listOf(candidate), complete = true, matchingVersion = 2, queryNames = setOf("Ada Lee")),
+            progress = VerificationProgress(stage = "APOLLO_SEARCH", queryIndex = 1, complete = true, candidateIds = listOf("person-1")),
+            queries = listOf(ApolloSearchQuery("Ada Lee")), ruleVersion = 1))
+        repository.saveFailure(item.id, lease.leaseToken!!, lease.generation,
+            VerificationResult(VerificationState.ERROR, null, VerificationQualification.NOT_EVALUATED, VerificationRoute.NONE,
+                evidence, """["$code"]"""), 0, NOW)
+        return repository.findItem(item.id)!!.let { DiscoveryVerificationRepository.ReplayExpected(it, null, it.evidenceJson!!) }
+    }
+    private fun recover(items: List<DiscoveryVerificationRepository.ReplayExpected>) =
+        repository.requeueErrorsForCreditRecovery(1001, items, NOW.plusSeconds(1))
+
+    @Test fun `error recovery CAS preserves original cursors billing attempts and run ownership`() {
+        run(); val first = recoveryError("error-1"); val second = recoveryError("error-2", "APOLLO_HTTP_422_UNCLASSIFIED")
+        val oldAttempts = listOf(first, second).associate { it.item.id to repository.findAttempts(it.item.id) }
+        assertEquals(setOf("RUN_NOT_SETTLED"), recover(listOf(first, second)).map { it.status }.toSet())
+        settle()
+        assertEquals("INELIGIBLE", replay(listOf(first.copy(evidenceJson = DiscoveryVerificationRepository.replayEvidence(first.evidenceJson)))).single().status)
+        assertThrows(IllegalArgumentException::class.java) { recover(List(101) { first }) }
+        assertEquals("STALE_OR_ALREADY_APPLIED", recover(listOf(first.copy(evidenceSha256 = "0".repeat(64)))).single().status)
+        val receipts = parallel(2) { recover(listOf(first, second)) }.flatten()
+        assertEquals(2, receipts.count { it.status == "QUEUED" })
+        assertEquals(2, receipts.count { it.status == "STALE_OR_ALREADY_APPLIED" })
+        listOf(first, second).forEach { expected ->
+            val next = repository.findItem(expected.item.id)!!
+            assertEquals(expected.item.copy(state = VerificationState.QUEUED, completedAt = null, reasonsJson = "[]",
+                generation = expected.item.generation + 1, updatedAt = NOW.plusSeconds(1)), next)
+            assertEquals(oldAttempts[next.id], repository.findAttempts(next.id))
+        }
+        val lease = claim(NOW.plusSeconds(1))
+        assertNotNull(detail(lease, "new-http", NOW.plusSeconds(1)).attemptId)
+        assertEquals(first.item.requestCount + 1, repository.findItem(lease.id)!!.requestCount)
+    }
+
+    @Test fun `error recovery rejects manual admissions reasons damaged cursors and stale manifests without writes`() {
+        run()
+        val initial = (1..9).map { recoveryError("reject-$it") }
+        jdbc.update("""INSERT INTO expert_discovery_admission (expert_doc_id,identity_hash,decision,revision,updated_at)
+            VALUES (?,?, 'HOLD',1,?)""", initial[0].item.expertDocId, initial[0].item.identityHash, NOW.verificationUtc())
+        jdbc.update("UPDATE discovery_verification_item SET reasons_json='[\"FACT_CHANGED\"]' WHERE id=?", initial[1].item.id)
+        jdbc.update("UPDATE discovery_verification_item SET evidence_json='broken' WHERE id=?", initial[2].item.id)
+        listOf(3 to "DECIDE", 4 to "LOCAL_EVIDENCE", 5 to "PROJECT").forEach { (index, stage) ->
+            jdbc.update("UPDATE discovery_verification_item SET evidence_json=JSON_SET(evidence_json,'$.progress.stage',?) WHERE id=?", stage, initial[index].item.id)
+        }
+        jdbc.update("UPDATE discovery_verification_item SET evidence_json=JSON_REMOVE(evidence_json,'$.queries') WHERE id=?", initial[6].item.id)
+        jdbc.update("UPDATE discovery_verification_item SET evidence_json=JSON_SET(evidence_json,'$.search.detailsCompleted',JSON_ARRAY('person-1')) WHERE id=?", initial[7].item.id)
+        jdbc.update("UPDATE discovery_verification_attempt SET result_code='CONFIG_AUTH' WHERE item_id=?", initial[8].item.id)
+        settle()
+        val current = initial.map { old -> repository.findItem(old.item.id)!!.let {
+            DiscoveryVerificationRepository.ReplayExpected(it, repository.replayAdmission(it.expertDocId), it.evidenceJson!!)
+        } }
+        val beforeRevision = repository.findRun(1001)!!.revision
+        assertEquals("STALE_OR_ALREADY_APPLIED", recover(listOf(initial[0])).single().status)
+        val receipts = recover(current)
+        assertEquals(listOf("PROTECTED_ADMISSION", "PROTECTED_REASON") + List(7) { "INELIGIBLE" }, receipts.map { it.status })
+        assertEquals(beforeRevision, repository.findRun(1001)!!.revision)
+        current.forEach { assertEquals(it.item, repository.findItem(it.item.id)) }
+    }
+
 }
