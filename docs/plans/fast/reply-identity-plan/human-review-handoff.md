@@ -1,8 +1,8 @@
 # Fast-P Human Review Handoff
 
-- Outcome: PAUSED_FOR_HUMAN
+- Outcome: READY_FOR_HUMAN_REVIEW
 - Master base: b0d2f278a9dddc0be0dcf6fbd2e9b5a947c8a135
-- Current/final code head: 494b6cc569a70b2bcc5ef838b5808ad687600b28
+- Current/final code head: 2a85029d79e082358cc3ac03c54665c33fe69d1b
 - Branch/worktree: fast/reply-identity-plan / /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-reply-identity-plan
 
 ## Child Status
@@ -10,22 +10,28 @@
 |---|---|---|---:|---|
 | 03 | LIGHT_PASS_WITH_NOTES | 75b399d6fbb6cc6b8cb859eef984524fc1342c12..d7908cd713600afebe3b44c9a83e668f737ca919 | 0 | 7881072ab9d74fc8a53d7bdde236bfe8ec499303 |
 | 01 | LIGHT_PASS_WITH_NOTES | d7908cd713600afebe3b44c9a83e668f737ca919..494b6cc569a70b2bcc5ef838b5808ad687600b28 | 0 | 53eda1223417558f6037bae12ca0cab8169e68fd |
-| 02 | PAUSED_FOR_HUMAN | 494b6cc569a70b2bcc5ef838b5808ad687600b28..494b6cc569a70b2bcc5ef838b5808ad687600b28 | 0 | 3afdbf89920a8513715e71d65b078d31ac1bc0da |
+| 02 | LIGHT_PASS | 494b6cc569a70b2bcc5ef838b5808ad687600b28..2a85029d79e082358cc3ac03c54665c33fe69d1b | 1 | 6aa5867d51c6d7fe6e96dc46a1bd9a942b6ae69d |
 
 ## RECORD_ONLY Index
 | Observation | Child | Evidence | Source report |
 |---|---|---|---|
-| O-1: unchanged JDK11 tzdb America/Coyhaique baseline;19 full-suite errors,0 failures | 03 | baseline artifact://770;fresh artifact://812 | children/03/verify-log.md |
-| O-1: same baseline error-method set, no additions/removals | 01 | fresh180 scoped tests pass;full5315/0 failures/19 errors/22 skips,artifact://870 | children/01/verify-log.md |
+| O-1 — pre-existing JDK11 tzdb lacks America/Coyhaique; ExpertContactLocationServiceTest constructor errors, not feature regressions | 03 | Baseline 5288 tests/0 failures/19 errors/21 skipped; fresh child full suite 5291/0/19/22, same root cause | children/03/verify-log.md; children/03/execution.md; ledger.md Baseline |
+| O-1 — same unchanged timezone baseline | 01 | Fresh full suite 5315 tests/0 failures/19 errors/22 skipped; scoped 180 tests passed without skips | children/01/verify-log.md; children/01/execution.md |
+
+## Recorded Verification
+
+- Child03: 34 scoped tests passed (27 unit and7 actual-MySQL); isolated HTTP smoke. Distinct fresh verifier recorded LIGHT_PASS_WITH_NOTES.
+- Child01: 180 scoped actual-MySQL/MVC tests passed; isolated HTTP smoke. Distinct fresh verifier recorded LIGHT_PASS_WITH_NOTES.
+- Child02: actual desktop/mobile application UI and both send-entry fixture scenarios recorded in execution.md; first independent verifier found F-1 despite1782 JS tests passing. Source-specific request projection corrected in separate fix2a85029d79e082358cc3ac03c54665c33fe69d1b; strict contract regressions and actual-app strict fixture smoke recorded in fix-log.md. Fresh Identity02Round1Reverifier closed F-1 and reran both syntax checks plus the complete JS suite:1785 passed,0 failures/cancelled/skipped/todo,332 suites (artifact://1130).
+- Frontend screenshots and transport records prove fixture/UI behavior, not real backend/database/SMTP end-to-end delivery. Backend behavior has separate child01/03 scoped evidence. No production deployment, merge or push performed.
+- Child checkpoints completed in order03→01→02; latest clean full-manifest child checkpoint at1648b9a579491efba34aafc6f220916c0cd782b9 returned VALID/CHILD_CHECKPOINT. Final readiness requires separate final-mode artifact validation, not an overall product PASS.
 
 ## Pause/Resume
+- Reason: N/A
+- Resume from: N/A
 
-- Reason: child02 epoch2 complete required frontend suite revealed further unlisted obsolete source/layout/cache contracts. Both syntax checks passed; fresh suite artifact://905:1780 tests,1763 passed,17 failed,0 skipped. Full inventory children/02/execution.md:159-198 includes authorized own-test logout/extractor defects as well as legacy scope conflicts; failures are not all external blockers. No child02 product commit or independent light verdict exists.
-- Resume from: child02 new epoch only after batched minimal legacy-test authority; unchanged product base494b6cc569a70b2bcc5ef838b5808ad687600b28, pause evidence3afdbf89920a8513715e71d65b078d31ac1bc0da. Preserve all partial edits, fix authorized own-test setup defects, finish every I/S contract, rerun required syntax/fullJS and complete real browser matrix before committing/handoff.
-- Requested additional paths under src/test/js/: aiReplyReviewConfirmation.test.js (obsolete single-function source shape/recursive-retry/submit-not-disabled assertions), discoveryReview.test.js (old Apollo cache suffix), discoveryVerification.test.js (old suffix and unrelated EOF CSS hash), mailboxOutboundAttachments.test.js (exhaustive old toolbar array), manualReplySubjectPrefill.test.js (literal source occurrence count), materialRequestIntegration.test.js (exhaustive old toolbar array), meetingConfirmationIntegration.test.js (old total toolbar count).
-- Also extend already-authorized mailboxChatBehavior.test.js beyond A3's first last-child assertion to its separately observed exhaustive old toolbar array. Retire only incidental assertions/descriptions; preserve actual feature behavior coverage. Do not repin cache suffixes, EOF hashes, occurrence counts, complete toolbar counts or source placement. No new product behavior, hidden buttons, cross-harness mutation or suite exclusion is proposed. Authority remains unapproved.
-- Browser evidence is partial and fixture-only: actual application HTML/CSS/JS and component/settings in managed Chromium at1200x900 and390x844, observed repeat/single/both completion, rich node/quote preservation, delayed edit isolation, selected settings save/conflict/cancel and responsive opaque layout. Screenshots /tmp/reply-identity-02-epoch2/{desktop-completion,desktop-rich-quote,desktop-settings,mobile-settings}.png. Execution report218-238 contains limits. Full two-entry send confirmation/ESC/STRONG and remaining cross-context matrix are missing; no successful send or SMTP coverage is claimed. Server/tab stopped.
-- Previous pauses resolved by approved A1/A2 (backend exact SENT/order) and A3/A4 (first legacy toolbar assertion), with exact commit lineage in ledger. Completed backend children are not replayed. Clean prefix checkpoint47b782a45d16134e62e5aebba4b804d917e7ed5c preceded frontend work.
-- Main worktree unrelated changes preserved; no push, merge, deployment or history rewrite.
+Historical scope pauses were resolved by user approvals 「批准 继续」, recorded as A1–A6 in the ledger: child01 exact completed-payload lookup/attachment-inclusive gate ordering, then child02 minimal obsolete toolbar assertion retirement, then bounded legacy source/cache/hash/toolbar assertion retirement. Approved plan-only commits57443d500be0d6ab3b60fd0b0821193f9d963a1e,0ef090e93f9da7ca4b755b5c5d2cb1dfa4b0176a,f296820eb8d94d4e3985846b2156480db8ce0b90. Child02 epoch3 parked writer was recovered by a fresh isolated writer after 「继续」 without replaying completed backend children. All historical epochs and approvals remain in append-only child logs and ledger history.
+
+Finalization bookkeeping correction normalized A4/A6 Before fields to the preceding approved master identities after proving identical blobs at the originally named pause snapshots; no plan content, authority or product code changed. Exact receipt is in ledger.md.
 
 No whole-system verification was performed.

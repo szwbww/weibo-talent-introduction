@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-21/reply-identity-plan.md
 
-- Status: RUNNING
+- Status: READY_FOR_HUMAN_REVIEW
 - Master plan: docs/plans/2026-10-21/reply-identity-plan.md (commit f296820eb8d94d4e3985846b2156480db8ce0b90)
 - Amendments: A1,A2,A3,A4,A5,A6
 - Master base: b0d2f278a9dddc0be0dcf6fbd2e9b5a947c8a135
@@ -9,12 +9,12 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-21T00:57:35.739654+08:00
-- Current child: 02
-- Waiting role: CHILD_ARTIFACT_CHECKPOINT
+- Current child: N/A
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
-- Resume from: 08b4fdf180598564058907c550578bb097a6ea28
+- Resume from: N/A
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
@@ -99,3 +99,9 @@
 - Validator first candidate rejected only A4/A6 Before master-chain fields: they named equivalent later pause snapshots instead of the preceding approved master identity.
 - `git rev-parse 57443d500be0d6ab3b60fd0b0821193f9d963a1e:docs/plans/2026-10-21/reply-identity-plan.md f82cf9f54951b3ef8992f4c0ad6b3a79541d08c1:docs/plans/2026-10-21/reply-identity-plan.md 0ef090e93f9da7ca4b755b5c5d2cb1dfa4b0176a:docs/plans/2026-10-21/reply-identity-plan.md 08b4fdf180598564058907c550578bb097a6ea28:docs/plans/2026-10-21/reply-identity-plan.md` returned identical first pair `2a44b6e00656115b4d6a7a163cd07ddc5ef3a928` and identical second pair `9221a6bb48e50715957e39a68c18a5be951e236b`.
 - Corrected A4 Before to A2 After, A6 Before to A4 After. Pause snapshot identities remain recorded above; approval, amended content, product/evidence boundaries and all child logs unchanged.
+
+## Finalization
+
+- All ordered children reached terminal light verdicts; child02 clean full-manifest checkpoint returned VALID/CHILD_CHECKPOINT at1648b9a579491efba34aafc6f220916c0cd782b9.
+- All pause/resume notes above are historical; A1–A6 authority resolved their scope issues. F-1 was repaired in one separate commit and closed by a distinct fresh re-verifier.
+- Handoff is generated only from committed child evidence. Finalization mode NORMAL; no aggregate diff review, final reviewer or whole-system suite replay. Final readiness additionally requires the separate final-mode candidate and clean validators.
