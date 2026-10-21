@@ -268,3 +268,278 @@ Approve and execute the exact generated repair with execute-p; request automatic
 
 No implementation was performed.
 No product code was modified.
+
+
+## Epoch 2 — 2026-10-21T23:02:59+08:00
+
+- Master plan: docs/plans/2026-10-21/apollo-repair-retention-master.md (sha256 7b0113d6782083d3c86b910f74197bd39e3875f2018a93e68ef6d0f5554cfbda)
+- Governing master identity: worktree/invoked/fast-recorded same SHA256; CONSISTENT; approved child amendments A1 and A2 retained.
+- Boundary: 962fcfe924ad7562a4ea917d174180df82ac3b5c..aba2430dabe1237f114708033b02776f83ee79a6
+- Reviewer: /root/apollo_retention_recheck_epoch2 (fresh fork_turns=none, created after repair commit)
+- Result: PASS
+- Convergence: PROGRESSING
+- Repair artifact/result: docs/plans/fix/apollo-repair-retention-master/repair.md / executed prior to this epoch; new repair planning N/A
+- Repair evidence mode: DURABLE_HANDOFF
+- Original complete reviewer report SHA256: 6bb05c2597746eba5358600932bd498511ed020e01e536b71ee965e97b6e45ba
+- Evidence parent before this commit: 24cd7bc7099efaa65dc2e6aa6b157ba7783a73c5
+
+## Verification Result: PASS
+
+Plan: `docs/plans/2026-10-21/apollo-repair-retention-master.md`；phase=`aggregate/master`。
+Implementation boundary: `962fcfe924ad7562a4ea917d174180df82ac3b5c..aba2430dabe1237f114708033b02776f83ee79a6`。
+Convergence: **PROGRESSING**。
+Manual acceptance: **PENDING**（主计划 A-1/A-2/A-3、全部子项及部署后生产对照）。
+Reviewer: `/root/apollo_retention_recheck_epoch2`；独立于 fast-p writers/verifiers、Epoch1 reviewer/planner及本次修复执行者。
+Mode: `AUDIT_ONLY`；主流程 `review-p`→`verify-p`，并应用项目要求的 `fix-v` 只读审计规则；没有机械修复授权或产品编辑。
+
+10组必跑命令全部新鲜通过，失败/错误/必要跳过均0；V-1和V-2已解决，未发现新增强制违反。机器PASS不代替人类ACCEPT；人工验收仍待执行。
+
+### Identity and Evidence Boundary
+
+- 原仓库：`/Users/lukai/IdeaProjects/weibo-talent-introduction`；全部源码/Git/Maven在保留worktree：`/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-apollo-repair-retention-master`；branch=`fast/apollo-repair-retention-master`。
+- governing/invoked/fast-recorded master SHA256均为`7b0113d6782083d3c86b910f74197bd39e3875f2018a93e68ef6d0f5554cfbda`，**CONSISTENT**；没有master amendment。
+- 旧fast code head=`462c52385bfe3b248016829a08a5b6ceb2403bb4`；修复code head=`aba2430dabe1237f114708033b02776f83ee79a6`；本轮evidence HEAD=`24cd7bc7099efaa65dc2e6aa6b157ba7783a73c5`。完整base→当前code纳入审阅，code之后仅repair-execution.md；不把docs提交当产品边界。
+- A1：child06批准commit `c337ee2aec8a7fc5f36584afeb0d00464ca5103e`，前态`27e5f15b5ee53234c9bcf06b7afa6057dfdee008`；主计划执行约束2；HUMAN「批准 继续」，2026-10-21；仅授权ExpertDiscoveryServiceTest构造迁移/mock，保留原断言。
+- A2：child04批准commit `17a80ba9f6178ab8c139366743607960277fe2c7`；前hash=`1b1fb2670794126f2a7842988319d7b9796a244a4bd74c00e23a6cb111896b2b`，现hash见下表；主计划执行约束2；HUMAN「批准 生成修复  repair」，2026-10-21。仅新增IntegrationTest file10，指定新run alias断言1→2；旧run及其余断言保留。两个child现有字节均与批准commit完全一致。
+- Fast ledger SHA256=`7ff79d501ff04d206bd82ae344dc4abc7bcb6172617994d5dd6beafab6c8f15e`；handoff SHA256=`b2fa58b6a552284c80102552dd1d28cca4fe222e29c54b01e67df03ab3c20d2c`；路径为`docs/plans/fast/apollo-repair-retention-master/{ledger,human-review-handoff}.md`。同目录baseline-freeze.txt及children/01–06各brief/execution/verify-log/fix-log均存在；24份child证据为历史证据，不替代本轮测试。
+- Resolution=`DISCOVERED_FROM_GIT_WORKTREES`。控制器在原仓库cwd执行确切命令`python3 /Users/lukai/.agents/skills/review-fast-p/scripts/discover_fast_p.py --repo /Users/lukai/IdeaProjects/weibo-talent-introduction --master-plan docs/plans/2026-10-21/apollo-repair-retention-master.md`，唯一SELECTED，6 terminal children；完整选中头`/tmp/apollo-review-epoch2/controller-discovery-selected.json`。无关rejected列表transport截断，不声称为空。审阅者独立确认选中worktree/branch、全部hash、base/prior/A1/A2/repair→HEAD祖先exit0。审阅者从retained cwd额外误跑同一相对master命令，脚本把master解析为非repo-relative路径而返回NONE；该调用错误完整保存在discovery.json，不作为选中候选失效证据，也未替代正确SELECTED头。
+- 规范性evidence E-6/E-7/E-8及完整code receipts已读；22/22基线源码回执hash与base Git内容匹配。当前所有受影响写入/读取路径另行审查。临时证据：boundary.json、scope.json、各Cxx.log、Cxx-reports、results.json、command-summary.json均位于`/tmp/apollo-review-epoch2/`。
+
+| 顺序 | 计划（docs/plans/2026-10-21/） | 批准SHA256 |
+|---|---|---|
+| 01 | apollo-repair-01-error-retention.md | 290edb938b50bbb8859cc96db2d64fb1e3bacdcbc075186bd12e57448e32bb0b |
+| 02 | apollo-repair-02-credit-recovery.md | 13e24fb1c83a1035ba58a902642833947755c7c79320fc5d474ddb7c819b6b16 |
+| 03 | apollo-repair-03-search-trace.md | 3cfa9fad532edb7e462148b85a84dfa5ac6f6d85ed8641ff2f14835ed370ec53 |
+| 04/A2 | apollo-repair-04-identity-normalization.md | d343e2ff9164b0f1ba91778f62540c64c47926cf13ee7605bf08967fff71ad48 |
+| 05 | apollo-repair-05-decision-audit.md | de1aba525acca6e45b8ef434360f85fd79715944a46af36b18f33c44e42e1809 |
+| 06/A1 | apollo-repair-06-promotion-reporting.md | bc32f14ea0db548fc4b81ea3459777f016da5f317aa1e6831c1365e3ea42e999 |
+
+### Post-repair Authority and Delta
+
+- Evidence mode: **DURABLE_HANDOFF**，`docs/plans/review/apollo-repair-retention-master/repair-execution.md` Epoch1，executor result=`READY_FOR_VERIFICATION`。
+- Repair：`/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-apollo-repair-retention-master/docs/plans/fix/apollo-repair-retention-master/repair.md`；SHA256=`e208c94bcabe0b4a5a6d57accd5e76134f5f001df0a320b125b47efc217fb6da`，本轮未改。
+- Approval source：handoff明确记录human-originated `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-apollo-repair-retention-master/docs/plans/fix/apollo-repair-retention-master/repair.md`，批准其当前hash及4个Authorized Files。executor runtime identity=`UNAVAILABLE`（可选元数据，如实保留，不阻断独立机器结论）。没有把规划者/审阅者冒充executor。
+- 独立Git核对prior→repair的src delta恰以下4个文件；R-1只既有sanitizer及HTTP/SQL/API断言，R-2唯一hunk是指定断言1→2，无其他IntegrationTest改动。
+
+| Repair Authorized File | 核实边界 |
+|---|---|
+| src/main/kotlin/com/weibo/talentintroduction/discovery/service/VerificationDiagnostics.kt | 完整单/双引号秘密值匹配及保留引号替换；既有接口/分类/白名单/上限保留 |
+| src/test/kotlin/com/weibo/talentintroduction/discovery/service/ApolloPeopleSearchClientTest.kt | 既有测试扩展两组反例及无引号控制；存储/投影/历史污染投影、context断言 |
+| src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt | 既有真实MySQL+Mock HTTP→Query链扩展两组反例；账、hash、分类及历史NULL断言保留 |
+| src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationIntegrationTest.kt | 仅:235指定新run institutionAliasVersion==1→2；:78/:107旧run回退断言及其余内容不变 |
+
+### Commands
+
+新鲜环境检查exit0：JDK Zulu **11.0.32.1**，Docker client/server **29.8.2**，server最低API1.40。全部Maven从上述worktree串行运行，使用：
+
+```text
+JAVA_HOME=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home
+PATH=$JAVA_HOME/bin:$PATH
+DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock
+JAVA_TOOL_OPTIONS=-Dapi.version=1.44
+```
+
+计数为tests/failures/errors/skipped。下列全部为本审阅者本轮执行；没有沿用executor或Epoch1结果。完整日志全部扫描、读取实际suite汇总及绑定JS结尾；XML在各自命令完成后逐类解析mtime/计数并保存快照。C03同时满足子02/03相同RepositoryIT命令；C09显式mysqlIt，避免IntegrationTest被条件跳过。
+
+| ID | 完整命令 | 结果 / counts | 完成时间(+08:00) / 日志 |
+|---|---|---|---|
+| C01 | `mvn -DfailIfNoTests=true -Dsurefire.failIfNoSpecifiedTests=true -Dtest=ApolloPeopleSearchClientTest,DiscoveryVerificationWorkerTest,DiscoveryVerificationQueryServiceTest test` | PASS exit0；40/0/0/0 | 2026-10-21T22:26:06.813786+08:00；`/tmp/apollo-review-epoch2/C01.log` |
+| C02 | `mvn -DfailIfNoTests=true -Dsurefire.failIfNoSpecifiedTests=true -Dtest=DiscoveryVerificationWorkerTest,DiscoveryVerificationReplayToolTest,DiscoveryVerificationQueryServiceTest test` | PASS exit0；34/0/0/0 | 2026-10-21T22:30:50.064804+08:00；`/tmp/apollo-review-epoch2/C02.log` |
+| C03 | `mvn -DfailIfNoTests=true -Dsurefire.failIfNoSpecifiedTests=true -DmysqlIt=true -Dapi.version=1.44 -Dtest=DiscoveryVerificationRepositoryIT test` | PASS exit0；17/0/0/0 | 2026-10-21T22:33:58.013031+08:00；`/tmp/apollo-review-epoch2/C03.log` |
+| C04 | `mvn -DfailIfNoTests=true -Dsurefire.failIfNoSpecifiedTests=true -Dtest=DiscoveryVerificationWorkerTest,DiscoveryVerificationRulesTest,DiscoveryVerificationQueryServiceTest,ApolloPeopleSearchClientTest test` | PASS exit0；59/0/0/0 | 2026-10-21T22:38:06.970810+08:00；`/tmp/apollo-review-epoch2/C04.log` |
+| C05 | `mvn -DfailIfNoTests=true -Dsurefire.failIfNoSpecifiedTests=true -Dtest=DiscoveryInstitutionNormalizerTest,DiscoveryVerificationRulesTest,DiscoveryVerificationWorkerTest,DiscoveryVerificationAdmissionGateTest,DiscoveryVerificationQueryServiceTest,ApolloMatchingV2Test test` | PASS exit0；72/0/0/0 | 2026-10-21T22:42:18.664012+08:00；`/tmp/apollo-review-epoch2/C05.log` |
+| C06 | `mvn -DfailIfNoTests=true -Dsurefire.failIfNoSpecifiedTests=true -Dtest=DiscoveryVerificationRulesTest,DiscoveryVerificationWorkerTest,DiscoveryVerificationQueryServiceTest,DiscoveryVerificationReplayToolTest test` | PASS exit0；53/0/0/0 | 2026-10-21T22:46:57.008709+08:00；`/tmp/apollo-review-epoch2/C06.log` |
+| C07 | `mvn -DfailIfNoTests=true -Dsurefire.failIfNoSpecifiedTests=true -Dtest=DiscoveryPromotionProgressServiceTest test` | PASS exit0；12/0/0/0 | 2026-10-21T22:49:32.404032+08:00；`/tmp/apollo-review-epoch2/C07.log` |
+| C08 | `mvn -DfailIfNoTests=true -Dsurefire.failIfNoSpecifiedTests=true -DmysqlIt=true -Dapi.version=1.44 -Dtest=DiscoveryVerificationReportingIT test` | PASS exit0；12/0/0/0 | 2026-10-21T22:53:18.146708+08:00；`/tmp/apollo-review-epoch2/C08.log` |
+| C09 | `mvn -DfailIfNoTests=true -Dsurefire.failIfNoSpecifiedTests=true -DmysqlIt=true -Dapi.version=1.44 -Dtest=DiscoveryVerificationIntegrationTest,DiscoveryVerificationCommitServiceTest,DiscoveryVerificationAdmissionGateTest,ApolloMatchingV2Test test` | PASS exit0；33/0/0/0 | 2026-10-21T22:56:31.204976+08:00；`/tmp/apollo-review-epoch2/C09.log` |
+| C10 | `mvn -DfailIfNoTests=true -Dsurefire.failIfNoSpecifiedTests=true -Dtest=ExpertDiscoveryServiceTest,TaskProgressControllerTest,TaskExecutionControllerTest test` | PASS exit0；217/0/0/0 | 2026-10-21T23:00:20.431138+08:00；`/tmp/apollo-review-epoch2/C10.log` |
+
+每组均完成绑定前端JS：1733 tests / 1733 pass / 0 fail / 0 cancelled / 0 skipped / 0 todo；node-check-app与node-check-task-modal-runtime均通过。完整10组日志哈希、行数及生命周期摘要见command-summary.json。重复运行数量不是新业务样本或独立人数。
+
+| Group | Class | Tests/failures/errors/skipped | XML mtime(+08:00) | fresh |
+|---|---|---|---|---|
+| C01 | ApolloPeopleSearchClientTest | 13/0/0/0 | 2026-10-21T22:26:01.435463+08:00 | YES |
+| C01 | DiscoveryVerificationWorkerTest | 15/0/0/0 | 2026-10-21T22:26:01.373419+08:00 | YES |
+| C01 | DiscoveryVerificationQueryServiceTest | 12/0/0/0 | 2026-10-21T22:24:31.770894+08:00 | YES |
+| C02 | DiscoveryVerificationWorkerTest | 15/0/0/0 | 2026-10-21T22:30:45.003322+08:00 | YES |
+| C02 | DiscoveryVerificationReplayToolTest | 7/0/0/0 | 2026-10-21T22:29:15.145113+08:00 | YES |
+| C02 | DiscoveryVerificationQueryServiceTest | 12/0/0/0 | 2026-10-21T22:29:15.319939+08:00 | YES |
+| C03 | DiscoveryVerificationRepositoryIT | 17/0/0/0 | 2026-10-21T22:33:53.004821+08:00 | YES |
+| C04 | DiscoveryVerificationWorkerTest | 15/0/0/0 | 2026-10-21T22:38:01.485973+08:00 | YES |
+| C04 | DiscoveryVerificationRulesTest | 19/0/0/0 | 2026-10-21T22:38:01.717909+08:00 | YES |
+| C04 | DiscoveryVerificationQueryServiceTest | 12/0/0/0 | 2026-10-21T22:36:28.536644+08:00 | YES |
+| C04 | ApolloPeopleSearchClientTest | 13/0/0/0 | 2026-10-21T22:38:01.773344+08:00 | YES |
+| C05 | DiscoveryInstitutionNormalizerTest | 9/0/0/0 | 2026-10-21T22:42:12.398485+08:00 | YES |
+| C05 | DiscoveryVerificationRulesTest | 19/0/0/0 | 2026-10-21T22:42:12.379676+08:00 | YES |
+| C05 | DiscoveryVerificationWorkerTest | 15/0/0/0 | 2026-10-21T22:42:12.225813+08:00 | YES |
+| C05 | DiscoveryVerificationAdmissionGateTest | 8/0/0/0 | 2026-10-21T22:42:13.244081+08:00 | YES |
+| C05 | DiscoveryVerificationQueryServiceTest | 12/0/0/0 | 2026-10-21T22:40:37.097072+08:00 | YES |
+| C05 | ApolloMatchingV2Test | 9/0/0/0 | 2026-10-21T22:40:36.514410+08:00 | YES |
+| C06 | DiscoveryVerificationRulesTest | 19/0/0/0 | 2026-10-21T22:46:50.769402+08:00 | YES |
+| C06 | DiscoveryVerificationWorkerTest | 15/0/0/0 | 2026-10-21T22:46:50.534252+08:00 | YES |
+| C06 | DiscoveryVerificationQueryServiceTest | 12/0/0/0 | 2026-10-21T22:45:22.571348+08:00 | YES |
+| C06 | DiscoveryVerificationReplayToolTest | 7/0/0/0 | 2026-10-21T22:45:22.428604+08:00 | YES |
+| C07 | DiscoveryPromotionProgressServiceTest | 12/0/0/0 | 2026-10-21T22:49:27.640261+08:00 | YES |
+| C08 | DiscoveryVerificationReportingIT | 12/0/0/0 | 2026-10-21T22:53:11.676241+08:00 | YES |
+| C09 | DiscoveryVerificationIntegrationTest | 12/0/0/0 | 2026-10-21T22:56:24.776661+08:00 | YES |
+| C09 | DiscoveryVerificationCommitServiceTest | 4/0/0/0 | 2026-10-21T22:56:24.987601+08:00 | YES |
+| C09 | DiscoveryVerificationAdmissionGateTest | 8/0/0/0 | 2026-10-21T22:56:25.810420+08:00 | YES |
+| C09 | ApolloMatchingV2Test | 9/0/0/0 | 2026-10-21T22:55:51.086735+08:00 | YES |
+| C10 | ExpertDiscoveryServiceTest | 193/0/0/0 | 2026-10-21T23:00:12.823919+08:00 | YES |
+| C10 | TaskProgressControllerTest | 13/0/0/0 | 2026-10-21T23:00:15.110697+08:00 | YES |
+| C10 | TaskExecutionControllerTest | 11/0/0/0 | 2026-10-21T23:00:12.834404+08:00 | YES |
+
+独立当前编译类诊断D-1：JDK11 source-file模式运行`/tmp/apollo-review-epoch2/sanitizer-probe.java`，classpath取本轮C01 XML的java.class.path；exit0。两组原反例`invalid parameter {"password":"alpha TOPSECRET omega"}`、`invalid parameter {'token':'alpha TOPSECRET omega'}`及无引号api_key控制，分别断言新保存DTO、详情read、历史污染输入read均无秘密；context、REQUEST_INVALID、实际字节数及FULL语义均保留。`sanitizer-probe.log`三行全部`STORED_SECRET=false API_SECRET=false HISTORICAL_SECRET=false CONTEXT=true BYTE_COUNT=true CLASSIFICATION=true`。这是当前真实编译类的独立合成探针，不是生产数据或外部请求。
+
+### Contract Matrix
+
+所有路径相对选中worktree：S=`src/main/kotlin/com/weibo/talentintroduction/discovery/service/`；R=`src/main/kotlin/com/weibo/talentintroduction/discovery/repository/`；TS=`src/test/kotlin/com/weibo/talentintroduction/discovery/service/`；TR=`src/test/kotlin/com/weibo/talentintroduction/discovery/repository/`。每个机器行均Mandatory=YES；人工/部署后项按原合同PENDING，不伪装机器证据缺失。
+
+| ID / Source | 强制要求 / 必需证据 | 判定 | 当前源码/新鲜运行证据 |
+|---|---|---|---|
+| M-I1 / master I-1、验收 | 基线、纯规则、Gate/Commit、真实HTTP分层；264/14不算收益，Nicolas最多1 | PASS | S/DiscoveryVerificationReplayTool.kt:296–320三类outcome、Gate/currentCommitProtection=NOT_EVALUATED、admissionWrites=0；TS/DiscoveryVerificationRulesTest.kt:100同一person去重；C05/C06；本报告无生产收益承诺 |
+| M-I2-a / master I-2、E-6 | 原attempt不覆盖，恢复不迁run/batch、不清request_count；仅新HTTP计账 | PASS | R/DiscoveryVerificationRepository.kt:102–153恢复CAS只排队；:492–497真实预约；:529只完成未完成attempt；TR/DiscoveryVerificationRepositoryIT.kt:401；C02/C03 |
+| M-I2-b / master I-2、E-7 | SELF、单姓名/同名拒绝、APOLLO_UNCLEAR、人工/身份/事实保护；准入仍Gate/Commit | PASS | S/DiscoveryVerificationRules.kt:88–176；S/DiscoveryVerificationAdmissionGate.kt:46–74；S/DiscoveryVerificationCommitService.kt:49–98；C05/C09 |
+| M-I3 / master I-3 | 01→06顺序，各步≤10、白名单、仅一个diagnostics新根 | PASS | Git各child原实施7/9/9/9/9/5，差集0；approved04上限10；repair4文件独立；WorkerEvidence:24–32；scope.json |
+| M-SCOPE / master非目标、E-7 | 无schema/ES/frontend/sample策略/发送路径更改；无新cache/log系统；无部署或历史批量操作 | PASS | 完整base..code非docs变更恰23授权src文件；其余路径无diff；本轮仅本地隔离容器/Mock transport/临时文件 |
+| M-FREEZE / master执行约束1 | 实施前冻结Git/WAR/生产任务且保留原工作区 | PASS（历史执行证据） | fast ledger Baseline及baseline-freeze.txt记录base、WAR/class hash、27254 revision25790及1046聚合；原始全量冻结输出引用artifact://9，仓库文件含bounded输出；本轮不把此历史证据冒充最新生产状态 |
+| M-ROLLBACK / master约束4–5 | 历史不自动升级；ERROR独立恢复；v2旧binary失败关闭，暂停worker保账 | PASS | Worker:202–218持久版本优先；Repository:43与:102独立入口；基线Rules只0..1，新规则0..2；Registration已有run直接返回；无自动apply调用 |
+| 01-I1 / child01 | 422仅明确额度短语；参数/未知不同；auth/429/5xx保持 | PASS | S/VerificationDiagnostics.kt:115–130；ApolloPeopleSearchClient.kt:76–92；TS/ApolloPeopleSearchClientTest.kt:103；C01 |
+| 01-I2-a / child01 | 非2xx≤16385字节，固定白名单/有界字段，非JSON不留原文 | PASS | ApolloPeopleSearchClient.kt:77；VerificationDiagnostics.kt:131–143；HTTPTest:130/:180；C01 |
+| 01-I2-b / child01、V-1 | 秘密完整值和尾部不入SQL/API，保留有用context | PASS | VerificationDiagnostics.kt:93–104；HTTPTest:147；WorkerTest:278–339实际response_json/API；C01及D-1三组合成当前类probe |
+| 01-I3 / child01 | 非成功response_sha256=NULL；真实byte hash/FULL/PREFIX；结构失败未知大小；历史NULL | PASS | Worker:156–163；Diagnostics:131–181；ApolloPeopleSearchClient.invalid:183；HTTPTest:180/:193；C01 |
+| 01-X / child01、E-8 | Mock HTTP→真实Worker/MySQL attempt→详情，一请求只记1次 | PASS | TS/DiscoveryVerificationWorkerTest.kt:278–339；R/Repository:633同事务；C01 |
+| 02-I1 / child02 | DETAIL额度故障RETRY_WAIT、outcome NULL/route NONE；保游标、不增transient | PASS | Worker:193–196；R/Repository:578–590；WorkerTest:379；C02 |
+| 02-I2 / child02 | 持久单探测1800秒，重启/双worker/crash窗保持；旧晚到成功不解除；SEARCH/ORCID/投影继续，无500/12恢复 | PASS | R/Repository:461–518同连接GET_LOCK至COMMIT、current locking reads；Worker:58–63/:443；TR/RepositoryIT:324–377；WorkerTest:379；C02/C03 |
+| 02-I3 / child02 | settled ERROR422、manifest/整项hash/admission CAS、身份/人工/投影保护、≤100；仅有效APOLLO_SEARCH原游标 | PASS | R/Repository:102–183；ReplayTool:198直接原evidence，未走expected DECIDE；RepositoryIT:401/:423；ReplayToolTest:158；C02/C03 |
+| 02-I4 / child02 | 历史attempt/hash/归属/计数不变；重复apply无副作用；工具无HTTP | PASS | Repository:111–153；ReplayTool:198–211 queue-only；C02/C03 |
+| 02-CLI / child02 | apply-errors仅绝对manifest/hash；0700/0600；receipt枚举、业务拒绝；错误exit2不泄密，旧apply不变 | PASS | ReplayTool:42–87/:174–211；TS/ReplayToolTest:111–153/:158；C02 |
+| 03-I1 / child03 | 页5截断后续查，最后空页不洗掉不完整；无页6/额外DETAIL，PENDING | PASS | Worker:279–342；Rules:18–27/:115；WorkerTest:470三种中断场景；C04 |
+| 03-I2 / child03 | 固定queries、finishedQueryKeys为业务事实；页响应/trace/游标原子，重启无漏页 | PASS | Worker:264–335，Repository:633；WorkerTest:470前/后ACK/legacy页6重启；C04 |
+| 03-I3 / child03 | 仅同run/person已完成200 OK可解析详情复用；来源attempt/hash、无虚构HTTP，冲突仍拒绝 | PASS | Repository:662–687；Worker:348–406共用mergeDetail；RepositoryIT:448；WorkerTest:580后复用/跨run/错误/冲突；C03/C04 |
+| 03-I4 / child03 | diagnostics可空、有界32/200+total/truncated；不作准入authority；samples保持 | PASS | Diagnostics:27–86；Query:116；Gate:65仅业务DTO；WorkerTest移除diagnostics后真实Gate相同；C04/C05；sample源无diff |
+| 04-I1 / child04 | 新run rule2/alias2；旧run缺setting首次payload1、缺payload字段0；未知失败关闭，Worker/Gate/Query一致 | PASS | Registration:64–70；Worker:202–218；Rules:43；WorkerTest:22及:101–136版本矩阵；C05/C09 |
+| 04-I2 / child04 | 仅有来源TUM/Geneva、版本隔离、完整主体对应、明确ID冲突不覆盖、不误写TUM | PASS | Normalizer:280–313；Rules:158–169；NormalizerTest:17；C05 |
+| 04-I3 / child04 | 精确Assistenzprofessor+明确headline前缀/负面保护；原title/等级、姓名唯一性及邮箱路线保持 | PASS | Rules:318–324及emailNameMatches；Worker:322/:370传版本；RulesTest:100/:136；C05 |
+| 04-I4 / child04 | Nicolas两路合并只1；规则建议不直接入admission，Gate/Commit保护独立 | PASS | RulesTest:100；WorkerTest:22真实SQL→Gate→Commit→Query；Commit:49–98；C05/C09 |
+| 05-I1 / child05 | trace同次真实分支、短路未执行NOT_EVALUATED；Worker持久，Query不重算冒充 | PASS | Rules:48–72/:122–177/:285–337；Worker:166–174；Query:116仅saved RECORDED；C06 |
+| 05-I2 / child05 | 业务全集判定后trace≤200、命中优先、total/truncated/version/time/hash/refs；导出有界权限 | PASS | Rules:58–72/:138–155；Diagnostics:53–86；RulesTest:35验证201及chosen index200；ReplayTool:128–170；C06 |
+| 05-I3 / child05 | 旧trace不补RECORDED；重算RECOMPUTED；缺正文NOT_RECORDED；规则/Gate/保护分列 | PASS | Query:116；ReplayTool:303–319/:327–367；QueryTest:22；C06 |
+| 05-CLI / child05 | 显式frozen-rules target2/2；原CLI兼容；冻结facts不跑Parser/外部；不可变before/manifest、固定time及class hash | PASS | ReplayTool:54–87/:100–113/:262–367；ReplayToolTest:17–98及WorkerTest:22端到端；C06；生产真实旧classpath收益仍未宣称 |
+| 06-I1 / child06 | owner+activated+ENFORCE+revision+PROJECTED；doc去重、最新合格source；其余状态0 | PASS | Repository:189–203；TR/ReportingIT:109–136真实SQL条件与重复source；C07/C08 |
+| 06-I2 / child06 | legacy ES时间窗保留；排除managed非PROJECTED；按doc union且managed source优先 | PASS | PromotionProgressService:73–109；ServiceTest:136–160；ReportingIT:137–207；C07/C08 |
+| 06-FLOOR / child06步骤3、I-1 | 原匿名aggregate floor max保留；显示高于可验证集合必须明示 | PASS | Service:118–120；ServiceTest:183示例verified1、原5、显示5，差4标LEGACY_AGGREGATE_FLOOR；不是额外4人投影证明；C07 |
+| 06-I3 / child06、E-7.4 | 两refresh同count；运行中/完成两个HTTP入口一致；重复读0 SQL/ES写，故障保留原结果 | PASS | Service:37–70/:135；ReportingIT:137–207真实MySQL→双Controller及无写快照；C07/C08/C10 |
+| A1 / master约束2+human amendment | ExpertDiscoveryServiceTest仅构造迁移/必要mock且保断言 | PASS | Git base..code该文件仅import、empty-ledger mock/stub、构造参数；TS/ExpertDiscoveryServiceTest.kt:441/:468；C10；符合先修订白名单再实施 |
+| A2 / master约束2+human amendment | IntegrationTest指定新run alias预期1→2，旧run及其他断言不动，child≤10 | PASS | prior..repair该文件唯一hunk:235；旧:78/:107不变；C09实际执行所有12 Integration tests；符合批准范围 |
+| R-SCOPE / approved repair | prior..repair仅4 Authorized Files，无额外接口/规则/恢复/读统计更改 | PASS | boundary.json/scope.json及完整四文件diff；repair hash未变；其余产品delta0 |
+| M-COMMAND / master验收+repair复验 | 全部定向/IT/最终交互命令新鲜执行，失败/错误/必要skip0、JS绑定完成 | PASS | 下列C01–C10逐类新鲜XML/日志；C03重复命令去重映射两个child，未跳过任何不同命令 |
+| M-A1 / master A-1、child01/02人工项 | 额度/未知422/429可辨；重启冷却DETAIL0、单探测200恢复，其他通道/旧账保持 | PENDING | 必须人类实际操作/记录；本轮C01/C02/C03不替代人工签收 |
+| M-A2 / master A-2、child03/04/05人工项 | 续查仍保守，Nicolas只1，姓名/同名保护、SELF/APOLLO_UNCLEAR、旧版本/trace/固定对照 | PENDING | 必须人类实际操作；机器C04/C05/C06/C09不替代人工 |
+| M-A3 / master A-3、child03/05/06人工项 | 自动准入2/晋升1，双入口一致；旧缺正文NOT_RECORDED、原sample hash、刷新0写 | PENDING | 必须人类操作/样本实物；机器C07/C08/C10不替代人工 |
+| M-PRODUCTION / master部署后对照、child06 A-3 | 新冻结27254→小量恢复→额度/错误→完整新run，真实样本hash及收益分层 | PENDING | 原合同要求部署/运维授权后实施；本轮无生产访问，无真实provider请求；203等仅历史基线 |
+
+### Runtime / Write-Read / Lifecycle Audit
+
+- `Registration.begin`新run冻结rule2/alias2，现有run优先；Worker首次payload读取run并校验，重启从保存payload/queryIndex/page继续。Rules/Gate/Query消费相同冻结业务版本，未知版本失败关闭；diagnostics单独可丢弃。实际旧0/1、新2、未知3矩阵及Nicolas/保护入口由C05/C09验证。
+- `reserveAttemptWithBudget`持同连接Apollo GET_LOCK至事务结束；DETAIL冷却读取持久fault/probe/success，1800秒跨进程不清零；HTTP在预约后、事务外执行。`completeAttemptAndProgress`一次提交attempt+evidence+下个游标；失败不推进未确认页，过期lease/token/generation不能写；Worker finally取消heartbeat，close关闭executor。C02/C03/C04/C09包含restart/concurrency/CAS/late-success/前后ACK测试。
+- 主要状态：RESERVED→QUEUED→RUNNING→COMPLETED或ERROR；额度/429/瞬态/预算延后RUNNING→RETRY_WAIT→到期claim；崩溃RUNNING→lease过期claim；仅settled/frozen/eligible ERROR422→queue-only CAS→QUEUED。旧PENDING replay仍独立DECIDE，不作为ERROR恢复。投影PENDING/ERROR重试不重做provider；终态PROJECTED/ALREADY_PRESENT/APPLICATION_PRESENT不重复记新事件。
+- Commit先读RAW/保护，再SQL锁run/admission/item；核对身份/事实/人工及revision，调用共享Gate后持久真实admission revision，再异步ES投影并CAS状态。新诊断、复用、离线报告不新增admission/ES写入口。诊断read只返回白名单，报告明确纯规则/Gate/真实Commit的证据等级。
+- verification三表SQL集中原Repository；新增恢复沿原事务保护，新增lookup/reporting只读。E-7既有admission/ES、enrichment-job生命周期、task writer、发送/重验、sample store、migration/mapping均未改。PromotionProgress从ledger与legacy集合形成doc union，两个read返回copy，读取失败保留原结果；不回写resultSummary/progress/ES。
+- Accumulation/state-machine/cross-plan/no-extras/scope：PASS；deleted-code N/A（无删除公共路径）；知识条目只作探针，无写回或共享规则提升。
+
+### Cumulative Authorized File Scope
+
+原六步实际文件数7/9/9/9/9/5，逐步白名单差集0；原去重22，A2新增IntegrationTest后累计**23**，均在批准child白名单内。修复4文件为累计集合子集；没有其他非docs变更。
+
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryVerification.kt`
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt`
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/service/ApolloPeopleSearchClient.kt`
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryInstitutionNormalizer.kt`
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPromotionProgressService.kt`
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryService.kt`
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt`
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationReplayTool.kt`
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt`
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt`
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/service/VerificationDiagnostics.kt`
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationReportingIT.kt`
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt`
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/ApolloPeopleSearchClientTest.kt`
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryInstitutionNormalizerTest.kt`
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPromotionProgressServiceTest.kt`
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGateTest.kt`
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationIntegrationTest.kt`
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryServiceTest.kt`
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationReplayToolTest.kt`
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRulesTest.kt`
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt`
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt`
+
+### Finding Lineage
+
+| Finding | State | 本轮证据 |
+|---|---|---|
+| V-1 / P1 | RESOLVED | 原双/单引号含空格反例，当前matcher完整消费；C01实际SQL/API及D-1保存/历史投影无秘密尾部，有用context保持 |
+| V-2 / mandatory P2 / O-04-01 | RESOLVED | A2精确指定断言迁移；C09新鲜实际IntegrationTest全12及最终四类组；旧run断言保留 |
+| F-01（历史child01） | RESOLVED | 原quoted-key单词反例仍在HTTPTest:147，同一C01/C04真实执行；不把V-1另根因抹去历史 |
+| F-04-01（历史child04） | RESOLVED | WorkerTest:33显式ENFORCE，production AUDIT默认未改；C05完整SQL→Gate→projection→Query和冻结矩阵 |
+
+V-1的原根因是带引号值按空白截断，完整秘密尾部残留SQL/API；当前完整引号matcher及共享read已消除该具体违反。C01有实际SQL/API反例断言，D-1另行当前编译类确认，原无引号/quoted-key回归保留。V-2仅在批准A2内迁移已明确新run版本，C09从Epoch1的33/1/0/0变为本轮33/0/0/0。原两个阻断均消除且无同级/更高新增回归，故PROGRESSING；不依据单纯finding数判收敛。
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+| Source item | Master requirement | Result | Evidence |
+|---|---|---|---|
+| O-04-01，child04:66；05/06继承 | master最终IntegrationTest、04-I1新run版本2/旧run兼容 | RESOLVED，原阻断V-2关闭 | 历史记录误概括为payload rule1；确切目标是IntegrationTest:235新Registration run alias版本。A2仅该断言1→2，旧:78/:107保留；C09真实执行 |
+| O-06-01，child06/verify-log.md:34（handoff索引遗漏，独立扫描发现） | master A-1/A-2/A-3与部署后27254核对、I-1证据等级 | PENDING人工/生产；非本轮机器阻断 | 规范把生产对照限定部署授权后；本轮fixture/Mock ES不能冒充203生产人或人工ACCEPT；必须后续人类验收 |
+| O-06-02，child06/verify-log.md:35（handoff索引遗漏） | child06步骤3/master I-1保留历史floor且分开doc证明 | PASS兼容观察保留 | C07实际floor case verified1/display5/difference4；代码max旧aggregate，未冒充额外投影4人 |
+
+### Findings
+
+#### P1
+
+N/A — 当前无未解决P1。V-1保留于谱系并标RESOLVED。
+
+#### P2
+
+N/A — 当前无未解决mandatory P2。V-2/O-04-01保留于谱系并标RESOLVED。
+
+#### Observations
+
+- O-06-01保持待人工/生产验收；O-06-02为批准的匿名聚合下界兼容。未重开已批准决策，也不增加可选清理/硬化任务。
+- 真实新增准入/召回率、264条全部错误根因、14条续查收益、27254最新203投影/API、真实论文样本hash：本轮未验证，不能从本地测试推断。
+
+### Evidence Boundaries
+
+- 所有必需机器证据已取得；无未执行的必跑命令、过期XML、必要跳过或未解决基础设施失败。Maven输出完整扫描、suite/JS/syntax结尾均核对；未使用旧report补齐。
+
+- 本轮只按批准的10组命令核验；没有声称执行仓库全部JVM测试、WAR打包、生产旧二进制真实人群收益对照或人工签收。项目默认全量build命令不替代本次明确计划命令。
+- 官方发现头来自控制器；审阅者已独立复核身份/hash/Git边界。executor runtime identity未提供为可选UNAVAILABLE；executor自测日志只作历史输入，全部必跑命令本轮另跑。
+- 审阅者没有写machine-verification.md、review ledger、repair.md、计划、知识、产品、测试、index或commit。仅Maven瞬时target及/tmp传输证据。最终final-boundary.json确认HEAD/branch未变、产品/index干净；唯一tracked修改仍为控制器既有review ledger。
+
+Repair planning: N/A — verify-p为PASS，按review-p路由不运行repair-p；原repair.md保持既有批准内容，无新修复计划或自动修复轮次。
+
+### Next Action
+
+- 对同一最终产品SHA `aba2430dabe1237f114708033b02776f83ee79a6`执行待完成的人类验收并明确ACCEPT/REJECT；控制器按Epoch2持久化本报告。机器结果不授权merge、push、部署或生产恢复。
+
+No product code was modified.
+
+
+### Controller Evidence Check — Epoch 2
+
+Complete independent report above preserved without alteration. Controller independently parsed all ten fresh command results, all selected suite counts/mtime flags, lifecycle summaries and log hashes; final product/index clean and unchanged HEAD confirmed. No product review substituted for the independent reviewer.
+
+| Command | Exit | Tests/failures/errors/skipped | Log SHA256 | JS pass/fail/skipped | Syntax checks |
+|---|---:|---|---|---|---|
+| C01 | 0 | 40/0/0/0 | bed80bc9fc735d781134207218ac78dee2f3fd1075874562359f043e995ef0b8 | 1733/0/0 | app + task-modal-runtime PASS |
+| C02 | 0 | 34/0/0/0 | 3774938d80d040a0bbb156f3a6c21c00a898c820270694b3bd8fc3d036b78559 | 1733/0/0 | app + task-modal-runtime PASS |
+| C03 | 0 | 17/0/0/0 | 2cfc3a11d0c1ddd6dadab2c669c2d8c975a8b64706814dc2eeae6ff6ea22274f | 1733/0/0 | app + task-modal-runtime PASS |
+| C04 | 0 | 59/0/0/0 | be2c54ad5c9ee0a6a17c02c449844290800d383d4c1bc694e3a222d6b04fadd3 | 1733/0/0 | app + task-modal-runtime PASS |
+| C05 | 0 | 72/0/0/0 | 6ff426f476369f7b2da2b2d3b29600207af9de602a2a26c6eacbff65f93084a5 | 1733/0/0 | app + task-modal-runtime PASS |
+| C06 | 0 | 53/0/0/0 | cb5b55680f0d8369cccb16ccfdfeaa9c9db7bd8764392088bcecd1ddc748e9b0 | 1733/0/0 | app + task-modal-runtime PASS |
+| C07 | 0 | 12/0/0/0 | 96e09e06c39453fbffa27dfc74fda0f77627e134c7ab4f989d7b92f0a27d7c12 | 1733/0/0 | app + task-modal-runtime PASS |
+| C08 | 0 | 12/0/0/0 | 698242ec8b8cfd05afa50c088361902bb622de8954e99cb58de742ffaf5916db | 1733/0/0 | app + task-modal-runtime PASS |
+| C09 | 0 | 33/0/0/0 | 7e14ff4dd1e1dd8350c65380b6aeb6ec794bc84839512f4f72291b27f791dedc | 1733/0/0 | app + task-modal-runtime PASS |
+| C10 | 0 | 217/0/0/0 | 72945e7f942351b3b1d0dc1bdb1c09cddfafe1c718bfa771e7ab8f90941817f9 | 1733/0/0 | app + task-modal-runtime PASS |
