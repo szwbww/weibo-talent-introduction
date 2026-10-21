@@ -7479,6 +7479,13 @@
             };
         }
 
+        function replyIdentityRequestContext(context) {
+            const { sourceKind, contactId, inboundProcessingId, senderAccountCode, accountScope, anchorMailRecordId } = context;
+            return sourceKind === "INBOUND"
+                ? { sourceKind, contactId, inboundProcessingId, senderAccountCode }
+                : { sourceKind, contactId, accountScope, anchorMailRecordId };
+        }
+
         function replyIdentityMatches(captured) {
             if (!captured || instance.disposed || captured.user !== draftSessionUser || captured.sessionEpoch !== draftSessionEpoch) return false;
             const now = replyIdentityCapture();
@@ -7526,7 +7533,7 @@
             instance.replyIdentity.busy = captured;
             refreshReplyIdentityControls();
             try {
-                const result = await inspect({ ...captured.context, textBody: captured.values.text, htmlBody: captured.values.html });
+                const result = await inspect({ ...replyIdentityRequestContext(captured.context), textBody: captured.values.text, htmlBody: captured.values.html });
                 if (seq !== instance.replyIdentity.seq || !replyIdentityMatches(captured) || !replyIdentityEditable()) {
                     if (!instance.disposed) hostShowStatus("正文或会话已变化，请重新检查", "warn");
                     return;
@@ -7555,7 +7562,7 @@
             if (!replyIdentityEditable()) return;
             const captured = replyIdentityCapture();
             const open = hostFn("mcHostOpenReplyIdentitySettings");
-            if (captured && open) open({ payload: captured.context, isCurrent: () => replyIdentityMatches(captured) });
+            if (captured && open) open({ payload: replyIdentityRequestContext(captured.context), isCurrent: () => replyIdentityMatches(captured) });
             else hostShowStatus("无法核实当前身份，请检查资料", "error");
         }
 

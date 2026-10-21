@@ -243,6 +243,81 @@ describe("reply identity complete owner/revision/context snapshot guards", () =>
     }
 });
 
+describe("reply identity source-specific backend request contract (F-1)", () => {
+    function validate(body) {
+        // ReplyIdentityContextRequest.validate(): retain the backend's strict predicates.
+        assert.ok(body.contactId > 0);
+        assert.ok(body.inboundProcessingId == null || body.inboundProcessingId > 0);
+        assert.ok(body.anchorMailRecordId == null || body.anchorMailRecordId > 0);
+        if (body.sourceKind === "INBOUND") {
+            assert.ok(body.inboundProcessingId != null && body.anchorMailRecordId == null && body.accountScope == null);
+        } else {
+            assert.equal(body.sourceKind, "CONVERSATION");
+            assert.ok(body.inboundProcessingId == null && body.senderAccountCode == null);
+        }
+    }
+    for (const scenario of [
+        { name: "filtered inbound", mode: "inbound", anchor: null, sourceKind: "INBOUND" },
+        { name: "ordinary conversation", mode: "outbound", anchor: null, sourceKind: "CONVERSATION" },
+        { name: "followup-anchor conversation", mode: "inbound", anchor: 88, sourceKind: "CONVERSATION" }
+    ]) {
+        it(`projects inspect and defaults-preview for ${scenario.name} without losing internal guards`, async () => {
+            const requests = [], values = { subject: "Subject", text: "Body", html: "<p>Body</p>" }, draftMap = {};
+            const s = {
+                instance: { user: "admin", manual: { mode: scenario.mode, targetProcessingId: 101 },
+                    selectedContactId: 1, conversation: { accountScope: "acc1" }, convEpoch: 3,
+                    meeting: { editorRevision: 4 }, replyIdentity: { seq: 0 }, disposed: false },
+                draftSessionEpoch: 2, draftSessionUser: "admin",
+                readManualValues: () => values, currentTargetKey: () => "target",
+                getDraft: () => ({ followUpAnchorMailRecordId: scenario.anchor }),
+                templateReferenceSenderAccount: () => ({ ok: true, code: "acc1" }),
+                currentDraftsMap: () => draftMap, conversationCacheKey: (...parts) => parts.join(":"),
+                manualInputs: () => ({ editor: values }), replyIdentityEditable: () => true,
+                saveDraftFromInputs() {}, refreshReplyIdentityControls() {}, hostShowStatus() {},
+                replyIdentityResultMatches: () => true, insertReplyIdentitySlots: () => ({}),
+                hostFn: (name) => {
+                    if (name === "mcHostInspectReplyIdentity") return async (body) => {
+                        validate(body); requests.push({ endpoint: "inspect", body: json(body) });
+                        return { salutation: slot("MATCH"), signature: slot("MATCH") };
+                    };
+                    if (name === "mcHostOpenReplyIdentitySettings") return async (context) => {
+                        assert.equal(context.isCurrent(), true);
+                        const h = settingsHost({ preview: async (body) => {
+                            validate(body); requests.push({ endpoint: "defaults-preview", body: json(body) });
+                            return { context: {}, renderedTexts: {}, warnings: [], missingVariables: [] };
+                        } });
+                        await h.open(context);
+                    };
+                }
+            };
+            vm.createContext(s);
+            ["replyIdentityCapture", "replyIdentityRequestContext", "replyIdentityMatches", "completeReplyIdentity", "openReplyIdentitySettings"]
+                .forEach((name) => vm.runInContext(fn(chat, name, "        "), s));
+            const captured = s.replyIdentityCapture();
+            assert.equal(captured.context.senderAccountCode, "acc1");
+            assert.equal(captured.context.accountScope, "acc1");
+            await s.completeReplyIdentity();
+            s.openReplyIdentitySettings(); await H.flush();
+            assert.deepEqual(requests.map((request) => request.endpoint), ["inspect", "defaults-preview"]);
+            for (const { body } of requests) {
+                assert.equal(body.sourceKind, scenario.sourceKind);
+                if (scenario.sourceKind === "INBOUND") {
+                    assert.equal(body.senderAccountCode, "acc1"); assert.equal(body.inboundProcessingId, 101);
+                    assert.equal(Object.hasOwn(body, "accountScope"), false);
+                } else {
+                    assert.equal(body.accountScope, "acc1"); assert.equal(body.anchorMailRecordId, scenario.anchor);
+                    assert.equal(Object.hasOwn(body, "senderAccountCode"), false);
+                    assert.equal(Object.hasOwn(body, "inboundProcessingId"), false);
+                }
+            }
+            s.instance.conversation.accountScope = "acc2";
+            assert.equal(s.replyIdentityMatches(captured), false);
+            assert.throws(() => validate({ ...requests[0].body,
+                ...(scenario.sourceKind === "INBOUND" ? { accountScope: "acc1" } : { senderAccountCode: "acc1" }) }));
+        });
+    }
+});
+
 function sending(overrides = {}) {
     const sandbox = { console, Set, JSON, Object, String, Array, Number, alerts: [], dialogs: [], requests: [],
         AI_REPLY_WARNING_LABELS: {}, escapeHtml: (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
