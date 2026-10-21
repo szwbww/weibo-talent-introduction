@@ -10,7 +10,7 @@
 - Finalization repair parent: N/A
 - Started: 2026-10-21T00:57:35.739654+08:00
 - Current child: 02
-- Waiting role: IMPLEMENTER
+- Waiting role: CHILD_ARTIFACT_CHECKPOINT
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -21,7 +21,7 @@
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | 03 | docs/plans/2026-10-21/reply-identity-03-global-settings.md | sha256:a47dc08ffaee7311503a82356490d42af4dadb0f2bbefe231782d33e92d80786 | none | 1 | LIGHT_PASS_WITH_NOTES | 75b399d6fbb6cc6b8cb859eef984524fc1342c12 | d7908cd713600afebe3b44c9a83e668f737ca919 | 0 | — | d7908cd713600afebe3b44c9a83e668f737ca919 | 7881072ab9d74fc8a53d7bdde236bfe8ec499303 | Implementer: Identity03Implementer; verifier: Identity03Verifier; O-1 unchanged timezone baseline |
 | 01 | docs/plans/2026-10-21/reply-identity-01-backend.md | commit:57443d500be0d6ab3b60fd0b0821193f9d963a1e | 03 | 2 | LIGHT_PASS_WITH_NOTES | d7908cd713600afebe3b44c9a83e668f737ca919 | 494b6cc569a70b2bcc5ef838b5808ad687600b28 | 0 | — | 494b6cc569a70b2bcc5ef838b5808ad687600b28 | 53eda1223417558f6037bae12ca0cab8169e68fd | Implementer: Identity01Epoch2Implementer; verifier: Identity01Epoch2Verifier; O-1 unchanged timezone baseline |
-| 02 | docs/plans/2026-10-21/reply-identity-02-frontend.md | commit:f296820eb8d94d4e3985846b2156480db8ce0b90 | 03,01 | 3 | IMPLEMENTING | 494b6cc569a70b2bcc5ef838b5808ad687600b28 | — | 0 | — | — | — | Epochs 1-2 pauses retained; A5 approved; fresh implementer acquisition |
+| 02 | docs/plans/2026-10-21/reply-identity-02-frontend.md | commit:f296820eb8d94d4e3985846b2156480db8ce0b90 | 03,01 | 3 | LIGHT_PASS | 494b6cc569a70b2bcc5ef838b5808ad687600b28 | adcc2b4e36aa578d5ab915a2af39c727bbbe079e | 1 | 2a85029d79e082358cc3ac03c54665c33fe69d1b | 2a85029d79e082358cc3ac03c54665c33fe69d1b | 6aa5867d51c6d7fe6e96dc46a1bd9a942b6ae69d | Writers: Identity02Epoch3Implementer,Identity02Epoch3Recovery,Identity02FixRound1; fresh re-verifier: Identity02Round1Reverifier; F-1 CLOSED; agent_attempt=0 |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
@@ -29,9 +29,9 @@
 | A1 | docs/plans/2026-10-21/reply-identity-01-backend.md | commit:5d7904ed0667823b6206bf8ab15f4e57c76e467f | commit:57443d500be0d6ab3b60fd0b0821193f9d963a1e | I-4 and 实现方案清单外必改先修订规则; child I-6 | Authorize read-only exact SENT lookup and attachment-inclusive identity gate ordering without narrowing replay guarantees | HUMAN:批准 继续 — 2026-10-21; recorded 2026-10-21T09:14:43+08:00 |
 | A2 | docs/plans/2026-10-21/reply-identity-plan.md | commit:5d7904ed0667823b6206bf8ab15f4e57c76e467f | commit:57443d500be0d6ab3b60fd0b0821193f9d963a1e | I-4 and 实现方案清单外必改先修订规则 | Align master authorized scope with approved child A1; dependency order unchanged | HUMAN:批准 继续 — 2026-10-21; recorded 2026-10-21T09:14:43+08:00 |
 | A3 | docs/plans/2026-10-21/reply-identity-02-frontend.md | commit:f82cf9f54951b3ef8992f4c0ad6b3a79541d08c1 | commit:0ef090e93f9da7ca4b755b5c5d2cb1dfa4b0176a | 实现方案清单外必改先修订规则; child02 S-1 | Authorize minimal obsolete legacy toolbar assertion removal while preserving follow-up behavior | HUMAN:批准 继续 — 2026-10-21; recorded 2026-10-21T10:49:28+08:00 |
-| A4 | docs/plans/2026-10-21/reply-identity-plan.md | commit:f82cf9f54951b3ef8992f4c0ad6b3a79541d08c1 | commit:0ef090e93f9da7ca4b755b5c5d2cb1dfa4b0176a | 实现方案清单外必改先修订规则; child02 S-1 | Align master child02 file scope with approved A3; product behavior and order unchanged | HUMAN:批准 继续 — 2026-10-21; recorded 2026-10-21T10:49:28+08:00 |
+| A4 | docs/plans/2026-10-21/reply-identity-plan.md | commit:57443d500be0d6ab3b60fd0b0821193f9d963a1e | commit:0ef090e93f9da7ca4b755b5c5d2cb1dfa4b0176a | 实现方案清单外必改先修订规则; child02 S-1 | Align master child02 file scope with approved A3; product behavior and order unchanged | HUMAN:批准 继续 — 2026-10-21; recorded 2026-10-21T10:49:28+08:00 |
 | A5 | docs/plans/2026-10-21/reply-identity-02-frontend.md | commit:08b4fdf180598564058907c550578bb097a6ea28 | commit:f296820eb8d94d4e3985846b2156480db8ce0b90 | 实现方案清单外必改先修订规则; child02 I/S acceptance | Authorize observed bounded legacy JS source/cache/hash/toolbar assertion retirement while retaining actual behavior coverage | HUMAN:批准 继续 — 2026-10-21; recorded 2026-10-21T11:17:39+08:00 |
-| A6 | docs/plans/2026-10-21/reply-identity-plan.md | commit:08b4fdf180598564058907c550578bb097a6ea28 | commit:f296820eb8d94d4e3985846b2156480db8ce0b90 | 实现方案清单外必改先修订规则; child02 I/S acceptance | Align master with A5 exact legacy-test retirement exception; no product behavior expansion | HUMAN:批准 继续 — 2026-10-21; recorded 2026-10-21T11:17:39+08:00 |
+| A6 | docs/plans/2026-10-21/reply-identity-plan.md | commit:0ef090e93f9da7ca4b755b5c5d2cb1dfa4b0176a | commit:f296820eb8d94d4e3985846b2156480db8ce0b90 | 实现方案清单外必改先修订规则; child02 I/S acceptance | Align master with A5 exact legacy-test retirement exception; no product behavior expansion | HUMAN:批准 继续 — 2026-10-21; recorded 2026-10-21T11:17:39+08:00 |
 
 ## Baseline
 
@@ -82,3 +82,20 @@
 - User approved the batched exact legacy-test retirement list with 「批准 继续」; A5/A6 plan-only commit f296820eb8d94d4e3985846b2156480db8ce0b90 records the contract without weakening feature acceptance.
 - Paused HEAD08b4fdf180598564058907c550578bb097a6ea28, branch/worktree/git-dir and prior frontend digest checked; index empty, only authorized partial edits retained.
 - Epoch 3 fix_round=0, product base unchanged494b6cc569a70b2bcc5ef838b5808ad687600b28. Prior failed tests and partial browser observations are historical only; no completed child replay.
+
+## Child 02 epoch 3 agent recovery
+
+- User instructed 「继续」 after original implementer became parked with no current result/report/commit. Recovery read history://Identity02Epoch3Implementer and retained ledger/execution logs; no active writer exists.
+- Retained HEAD eb147ae36b5919db492c95a5cd7007c02f8a2d2a, branch/worktree/git-dir and plan SHA2569a9b146883f395501e98084f715ae8a40486944a6e3c8e1971ccdbd56abcc955 match current approved identity; index empty and authorized partial changes retained.
+- Fresh isolated writer Identity02Epoch3Recovery resumes same epoch/identity, not a repair round; no product changes by controller. Historical browser errors/progress are not current completion evidence.
+
+## Child 02 automatic repair round 1
+
+- Fresh verifier Identity02Epoch3Verifier returned LIGHT_FAIL/AUTO_FIX F-1: source-incompatible inspect/defaults-preview wire fields rejected by existing backend predicates; exact source and retained wire records in verify-log.md.
+- Acquired isolated fixer Identity02FixRound1; increment fix_round to1 for child02/epoch3 immediately before actual authorized correction. No plan amendment or scope expansion; no controller product edits.
+
+## Child 02 checkpoint bookkeeping correction 1
+
+- Validator first candidate rejected only A4/A6 Before master-chain fields: they named equivalent later pause snapshots instead of the preceding approved master identity.
+- `git rev-parse 57443d500be0d6ab3b60fd0b0821193f9d963a1e:docs/plans/2026-10-21/reply-identity-plan.md f82cf9f54951b3ef8992f4c0ad6b3a79541d08c1:docs/plans/2026-10-21/reply-identity-plan.md 0ef090e93f9da7ca4b755b5c5d2cb1dfa4b0176a:docs/plans/2026-10-21/reply-identity-plan.md 08b4fdf180598564058907c550578bb097a6ea28:docs/plans/2026-10-21/reply-identity-plan.md` returned identical first pair `2a44b6e00656115b4d6a7a163cd07ddc5ef3a928` and identical second pair `9221a6bb48e50715957e39a68c18a5be951e236b`.
+- Corrected A4 Before to A2 After, A6 Before to A4 After. Pause snapshot identities remain recorded above; approval, amended content, product/evidence boundaries and all child logs unchanged.
