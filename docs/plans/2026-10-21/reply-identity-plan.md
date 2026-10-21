@@ -63,7 +63,7 @@
 |---|---|---:|---|
 |1|[03 全局默认设置](reply-identity-03-global-settings.md)|5|认证GET/PUT、双项原子保存、旧写路径协调；旧UI仍可用|
 |2|[01 后端校验与只读预览](reply-identity-01-backend.md)|11|inspect/defaults-preview；既有UI可通过原安全确认继续发送；只读精确SENT重放|
-|3|[02 前端按钮与设置/确认](reply-identity-02-frontend.md)|6|缺项补全、全局编辑与预览、软确认文案/取消语义；退役冲突旧工具栏断言|
+|3|[02 前端按钮与设置/确认](reply-identity-02-frontend.md)|13（含已批准测试退役例外）|缺项补全、全局编辑与预览、软确认文案/取消语义；批量退役冲突旧测试断言|
 
 每阶段不超过2个独立子系统，新增持久字段0。若执行发现清单外文件确实必改，先根据新代码证据修订对应子计划，不借本计划扩大到邮箱整体重构。
 
@@ -79,7 +79,7 @@
 |---|---|
 |reply-identity-03-global-settings.md|reply repository/service/controller及两个测试|
 |reply-identity-01-backend.md|identity service/controller、PendingMailOperationService、ManualReplySendAttemptService及七个测试文件|
-|reply-identity-02-frontend.md|mailbox-chat.js/app.js/index.html/styles.css、mailboxReplyIdentity.test.js及mailboxChatBehavior.test.js最小过时断言移除|
+|reply-identity-02-frontend.md|原前端产品与新交互测试；按A3/A5白名单对既有JS测试作最小过时断言退役，不新增产品范围|
 
 ## 验收标准
 
@@ -123,3 +123,5 @@
 - A2（2026-10-21，用户「批准 继续」）：依据本计划 I-4 的发送幂等保持项、实现方案的清单外必改先修订规则，以及 01 的 I-6，批准 01 增加 ManualReplySendAttemptService.kt 的只读精确完成查询、附件完整payload与新增身份提醒顺序修订；详见子计划 T6/A1 和暂停证据 `docs/plans/fast/reply-identity-plan/children/01/execution.md:24-57`。03→01→02 顺序、持久字段及其他范围均不变。
 
 - A4（2026-10-21，用户「批准 继续」，记录时间10:49:28+08:00）：依据实现方案“清单外必改先修订”规则和02 S-1，批准02增加既有 mailboxChatBehavior.test.js 的最小过时断言移除授权，保持跟进行为回归与新按钮顺序；对应子计划A3及暂停证据 `docs/plans/fast/reply-identity-plan/children/02/execution.md:31-53`。不改变产品范围或阶段顺序。
+
+- A6（2026-10-21，用户「批准 继续」，记录时间11:17:39+08:00）：依据实现方案“清单外必改先修订”规则及02 I/S验证要求，批准子计划A5中完整失败清单对应的批量旧测试最小退役例外；精确路径与禁止项见子计划，不重新钉死缓存键/哈希/源码形态/工具栏总数，不削弱实际行为覆盖。依赖顺序及产品范围不变。

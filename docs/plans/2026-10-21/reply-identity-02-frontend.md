@@ -209,7 +209,7 @@ ${meetingTrigger}${materialTrigger}${templateReferenceTrigger}${followUpButton}
 
 ## 变更文件清单
 
-共 6 个文件；只追加 S-3 样式，不改数据库。新增的既有行为测试文件仅用于退役已被S-1替代的工具栏末位断言，不扩大产品范围。
+共 13 个文件，包含用户批准的既有测试最小退役例外；产品文件仍为原清单，样式仅追加S-3，不改数据库。新增测试授权限于A5列出的冲突断言，不扩展产品行为或进行测试清理。
 
 |文件|用途|
 |---|---|
@@ -218,7 +218,14 @@ ${meetingTrigger}${materialTrigger}${templateReferenceTrigger}${followUpButton}
 |src/main/resources/static/index.html|统一资源缓存键|
 |src/main/resources/static/styles.css|仅追加 S-3 设置弹窗样式|
 |src/test/js/mailboxReplyIdentity.test.js|交互与集成回归|
-|src/test/js/mailboxChatBehavior.test.js|仅删除旧“跟进按钮最后”断言及对应过时描述，保留成功发件门槛、跟进class/文案、无成功发件行为|
+|src/test/js/mailboxChatBehavior.test.js|A3末位断言及A5旧工具栏全集断言退役，保留跟进与模板引用实际行为|
+|src/test/js/aiReplyReviewConfirmation.test.js|仅退役单函数源码形态/递归重试拼写/禁止发送锁断言，保留实际安全确认行为覆盖|
+|src/test/js/discoveryReview.test.js|仅退役旧Apollo缓存后缀断言，保留资源一致性等行为|
+|src/test/js/discoveryVerification.test.js|仅退役旧缓存后缀和到EOF的CSS哈希断言，保留Apollo控件/规则覆盖|
+|src/test/js/mailboxOutboundAttachments.test.js|仅退役旧工具栏全集断言，保留附件入口/上传行为|
+|src/test/js/manualReplySubjectPrefill.test.js|仅退役源码ID出现次数断言，保留不覆盖已编辑主题等行为|
+|src/test/js/materialRequestIntegration.test.js|仅退役旧工具栏全集断言，保留材料入口及操作行为|
+|src/test/js/meetingConfirmationIntegration.test.js|仅退役旧工具栏总数断言，保留会议入口相对位置与业务行为|
 
 ## 验收标准
 
@@ -232,6 +239,8 @@ ${meetingTrigger}${materialTrigger}${templateReferenceTrigger}${followUpButton}
 
 - I-6/S-3：两专家/两登录会话共用设置；选择/编辑/取消/保存冲突矩阵；未选片段不写；CSS逐字核对。
 - A3已批准修订：`mailboxChatBehavior.test.js:4109` 的“跟进按钮必须是工具栏最后一个”断言与S-1冲突，移除该过时布局断言及对应描述，不以另一条布局断言重新钉死旧实现。保留该用例的跟进入口成功发件门槛、class/文案和无成功发件行为；新 `mailboxReplyIdentity.test.js` 按S-1覆盖跟进后紧邻补全、无跟进时补全在末尾。禁止隐藏按钮、跨测试修改harness或排除旧suite来获得通过。
+- A5已批准修订：依据完整失败清单 `docs/plans/fast/reply-identity-plan/children/02/execution.md:159-198`，白名单新增上述测试文件，并扩展 mailboxChatBehavior 的独立旧工具栏全集断言移除。仅删除不再成立的源码形态、旧缓存后缀、CSS至EOF哈希、源码出现次数、旧工具栏全集/总数断言及过时描述，不重新钉死新值，不删除实际业务行为覆盖；新身份suite负责T7两发送入口NORMAL/STRONG/取消/冻结请求及S-1新顺序的行为验证。原有先行失败后未执行的同一用例中同类过时断言也在本次窄范围内；不授权其他文件或新产品行为。
+- A5不豁免新测试自身失败：按组件真实API修复logout场景、按准确声明缩进修复函数提取器，完成所有当前I/S要求后重新执行完整JS和真实浏览器矩阵。禁止隐藏按钮、全局测试harness变异、测试排除、缓存键伪装或搬移CSS来规避旧测试。
 
 ## 人工验收清单
 
@@ -299,3 +308,5 @@ ${meetingTrigger}${materialTrigger}${templateReferenceTrigger}${followUpButton}
 ## 修正记录
 
 - A3（2026-10-21，用户「批准 继续」，记录时间10:49:28+08:00）：按暂停证据 `docs/plans/fast/reply-identity-plan/children/02/execution.md:31-53`，授权对 mailboxChatBehavior.test.js 的过时工具栏末位断言及描述作最小移除，保留其他行为回归。S-1顺序和所有产品要求不变，恢复后须实际运行完整JS套件与真实浏览器验证。
+
+- A5（2026-10-21，用户「批准 继续」，记录时间11:17:39+08:00）：一次性批准完整失败清单中的旧测试最小退役及 mailboxChatBehavior 范围扩展；保留行为覆盖，不改变产品、I/S契约或完整验证要求。新测试自身提取器/会话API缺陷仍由本次实施修复，不归为外部问题。
