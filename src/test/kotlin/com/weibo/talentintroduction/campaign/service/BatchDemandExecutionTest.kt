@@ -442,7 +442,14 @@ class BatchDemandExecutionTest {
         fun assertProtocol(result: ManualOutreachResult) {
             assertNotNull(result.execution)
             assertTrue(snapshots.isNotEmpty(), "run must publish progress including early and failure exits")
-            snapshots.forEach { assertNotNull(it.details?.get("execution"), "every progress event must carry demand metadata") }
+            snapshots.forEach {
+                assertNotNull(it.details?.get("execution"), "every progress event must carry demand metadata")
+                val actualProcessed = listOf("sentTotal", "failedTotal", "skippedTotal")
+                    .sumOf { key -> (it.details!![key] as Number).toLong() }
+                assertEquals(actualProcessed, it.processedCount, "processed count must reflect actual outcomes")
+                assertEquals(if (it.status == "RUNNING") 0L else actualProcessed, it.totalCount,
+                    "running population is unknown; final total is actual processed")
+            }
             assertEquals(mapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(result.execution),
                 mapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(snapshots.last().details!!["execution"]))
             assertEquals(result.sent + result.failed + result.skipped, result.total)

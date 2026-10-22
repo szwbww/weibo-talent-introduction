@@ -2801,7 +2801,9 @@ class ManualInitialOutreachService(
             taskType = "MANUAL_INITIAL_OUTREACH", status = status,
             batchNumber = batchNumber,
             processedCount = if (accumulator.executionMetadata != null) breakdown.target.toLong() else processed.toLong(),
-            totalCount = if (accumulator.executionMetadata != null) breakdown.target.toLong() else total.toLong(),
+            totalCount = if (accumulator.executionMetadata != null) {
+                if (status == "RUNNING") 0L else breakdown.target.toLong()
+            } else total.toLong(),
             message = message,
             details = details,
             errors = errors.toList(),
