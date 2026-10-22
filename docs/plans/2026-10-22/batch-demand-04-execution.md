@@ -1,6 +1,6 @@
 # 04 首封与材料提醒按成功配额拉取
 
-状态：已获 fast-p 调用及本次范围修订批准。依赖：03（也依赖02游标）。范围：9文件；批量选人/执行与ES游标两个子系统。部署本步后真实执行切换按需读取，不依赖05缓存。
+状态：已获 fast-p 调用及本次范围修订批准。依赖：03（也依赖02游标）。范围：10文件；批量选人/执行（含追踪调用方回归）与ES游标两个子系统。部署本步后真实执行切换按需读取，不依赖05缓存。
 
 ## 需求描述
 
@@ -85,6 +85,7 @@
 | 7 | `src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchDemandExecutionTest.kt` |
 | 8 | `src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchCursor.kt` |
 | 9 | `src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchCursorTest.kt` |
+| 10 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailOpenTrackingPersistenceTest.kt` |
 
 ## 验收标准
 
@@ -94,7 +95,7 @@
 - I-3：候选读取后改退订/状态/绑定/地址，投递spy=0；身份变化reason明确；mget失败不变空集合；材料保留contact地址；门禁关闭不能绕过准入/退订/幂等。模板启动重验不变。
 - I-4：计划30/成功30/failed5/skipped5→target40/remaining0、execution.remainingSuccessQuota0；候选读异常0成功→FAILED，10成功→PARTIAL_SUCCESS；取消不新增虚拟skip。running/final同协议，所有路径均有元数据；旧accumulator测试期望不改。
 - I-5：首封/材料均覆盖oneRoundOnly、roundsPerRun=2、容量0/小于roundSize、候选耗尽、取消、所有邮箱不可达；显式材料统计11001人不在10000截断且mail/contact/attempt/SMTP写入spy均0；finally close恰好一次，后台续期结束。
-- Java11：mvn test -Dtest=ManualInitialOutreachServiceTest,OutreachTargetIteratorTest,BatchSendTaskRuntimeIntegrationTest,BatchDemandExecutionTest,BatchSendExecutionDetailTest,ExpertSearchCursorTest；mvn test -Dtest=ExpertSearchCursorTest -DesIt=true；再全量mvn test（环境依赖失败逐项记录，不伪报通过）。
+- Java11：使用已安装的 `/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home` 作为JAVA_HOME（旧11.0.15缺少America/Coyhaique时区数据，不修改时区业务代码）。执行 `mvn test '-Dtest=ManualInitialOutreachServiceTest*,OutreachTargetIteratorTest,BatchSendTaskRuntimeIntegrationTest,BatchDemandExecutionTest,BatchSendExecutionDetailTest,ExpertSearchCursorTest,MailOpenTrackingPersistenceTest'`（含嵌套材料用例）；`mvn test -Dtest=ExpertSearchCursorTest -DesIt=true`；再全量 `mvn test`（环境依赖失败逐项记录，不伪报通过）。
 - 性能断言用查询调用/读取条数，不承诺未经压测的毫秒数。极端无合格人仍可能扫全库，属正确行为而非缓存失效。SenderAccountAssignmentService等既有账号绑定库存聚合是安全配额读取，不属于本次待发专家全量枚举，不删改。
 
 ## 人工验收清单
@@ -126,4 +127,5 @@
 ## 修正记录
 
 - 2026-10-22，人工选择“扩大两文件授权，保持按需公式”：为满足原I-2，增加清单8/9及逐次页大小接口/回归，不改变成功额度或其他安全边界。范围由7文件/1子系统改为9文件/2子系统，符合主计划I-4；批准与提交身份见 `docs/plans/fast/batch-demand-master/ledger.md` Amendments。
+- 2026-10-22，人工选择“批准第10文件并继续”：增加清单10，仅迁移候选读取夹具且保留真实success helper/openTrackingId断言；完成清单4嵌套材料夹具迁移，删除与移除10000上限直接冲突的旧测试，不放宽生产过滤。新执行轮次使用现有更新版JDK11，显式覆盖嵌套测试并重跑全部命令。范围10文件、2子系统；批准与提交身份见ledger Amendments。
 
