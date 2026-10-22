@@ -9,7 +9,7 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-22T19:50:07.103289+08:00
-- Current child: 01
+- Current child: 02
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
@@ -24,7 +24,7 @@ Original worktree left untouched. Approved plan snapshot seeded in f684da0a316b8
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | 01 | docs/plans/2026-10-22/batch-demand-01-classification.md | commit:f684da0a316b8cfb560fe7ebb0a8817d8a2594f2 | none | 2 | LIGHT_PASS | d403caeb5dcc4810067293c10600ee57f94e276b | 756e8acaccc4675759152b4973e6b451a58f0a00 | 0 | — | 756e8acaccc4675759152b4973e6b451a58f0a00 | 536c77a410ecbc14a749e7f8df557b80448f7fc7 | Writer Demand01Epoch2Writer; verifier Demand01LightVerifier; 370 JVM and 1792 Node passed freshly; epoch1 blocked evidence preserved |
-| 02 | docs/plans/2026-10-22/batch-demand-02-cursors.md | commit:f684da0a316b8cfb560fe7ebb0a8817d8a2594f2 | 01 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
+| 02 | docs/plans/2026-10-22/batch-demand-02-cursors.md | commit:f684da0a316b8cfb560fe7ebb0a8817d8a2594f2 | 01 | 1 | LIGHT_PASS | 756e8acaccc4675759152b4973e6b451a58f0a00 | fb50f5e18f74a6df42eac3ec86c9a1560808b948 | 0 | — | fb50f5e18f74a6df42eac3ec86c9a1560808b948 | a977f6b00818acfd64980fed34943e1bc7424000 | Writer Demand02Implementer; verifier Demand02LightVerifier; all three commands passed including real MySQL and ES containers |
 | 03 | docs/plans/2026-10-22/batch-demand-03-progress.md | commit:f684da0a316b8cfb560fe7ebb0a8817d8a2594f2 | 02 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 | 04 | docs/plans/2026-10-22/batch-demand-04-execution.md | commit:f684da0a316b8cfb560fe7ebb0a8817d8a2594f2 | 02,03 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 | 05 | docs/plans/2026-10-22/batch-demand-05-cache.md | commit:f684da0a316b8cfb560fe7ebb0a8817d8a2594f2 | 04 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
