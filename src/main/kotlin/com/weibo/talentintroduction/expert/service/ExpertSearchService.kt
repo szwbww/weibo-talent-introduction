@@ -15,6 +15,7 @@ import org.springframework.http.HttpMethod
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestTemplate
+import org.springframework.http.client.SimpleClientHttpRequestFactory
 import java.nio.charset.StandardCharsets
 import java.time.DateTimeException
 import java.time.Instant
@@ -24,6 +25,9 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import java.util.Base64
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ScheduledThreadPoolExecutor
+import javax.annotation.PreDestroy
 
 @Service
 class ExpertSearchService(
@@ -32,6 +36,25 @@ class ExpertSearchService(
     private val expertIndexService: ExpertIndexService
 ) {
     private val log = LoggerFactory.getLogger(ExpertSearchService::class.java)
+    private val activeCandidateCursors = ConcurrentHashMap.newKeySet<ExpertSearchCursor>()
+    private val candidateCursorLifecycle = Any()
+    private var candidateCursorsDestroyed = false
+    private val candidateCursorScheduler = ScheduledThreadPoolExecutor(1) { runnable ->
+        Thread(runnable, "expert-candidate-pit-renewal").apply { isDaemon = true }
+    }.apply { removeOnCancelPolicy = true }
+
+    // A private client preserves configured wire converters/interceptors without changing global HTTP timeouts.
+    private val candidateCursorClient: RestTemplate by lazy {
+        RestTemplate(SimpleClientHttpRequestFactory().apply {
+            setConnectTimeout(3_000)
+            setReadTimeout(20_000)
+        }).apply {
+            messageConverters = restTemplate.messageConverters.toList()
+            interceptors = restTemplate.interceptors.toList()
+            errorHandler = restTemplate.errorHandler
+            uriTemplateHandler = restTemplate.uriTemplateHandler
+        }
+    }
     companion object {
         val ALLOWED_HAS_FIELDS = setOf("employment", "degree", "institution", "researchFields", "patentTitles", "recentWorkTitles")
 
@@ -714,6 +737,59 @@ class ExpertSearchService(
         return response.path("hits")
             .path("hits")
             .map { hit -> toExpertProfile(hit) }
+    }
+
+    fun openCandidateCursor(
+        level: ExpertIndexLevel,
+        filters: List<Map<String, Any>> = emptyList(),
+        pageSize: Int = 500
+    ): ExpertSearchCursor = openCandidateCursor(listOf(level), mapOf(level to filters), pageSize)
+
+    /** Freeze the caller's layer order and query; open only the layer currently being consumed. */
+    fun openCandidateCursor(
+        levels: List<ExpertIndexLevel>,
+        filtersByLevel: Map<ExpertIndexLevel, List<Map<String, Any>>> = emptyMap(),
+        pageSize: Int = 500
+    ): ExpertSearchCursor = synchronized(candidateCursorLifecycle) {
+        check(!candidateCursorsDestroyed) { "Candidate cursor factory is closed" }
+        // Deep-copy nested filter maps with the same configured JSON converter used on the wire.
+        val mapper = candidateCursorClient.messageConverters
+            .filterIsInstance<org.springframework.http.converter.json.MappingJackson2HttpMessageConverter>()
+            .first().objectMapper
+        val frozenBodies = levels.associateWith { level ->
+            val filters = filtersByLevel[level].orEmpty()
+            val body = mapOf(
+                "_source" to sourceFields(),
+                "query" to if (filters.isEmpty()) mapOf("match_all" to emptyMap<String, Any>())
+                    else mapOf("bool" to mapOf("filter" to filters)),
+                "sort" to (sortFields(level) + mapOf("_shard_doc" to mapOf("order" to "asc")))
+            )
+            @Suppress("UNCHECKED_CAST")
+            (mapper.convertValue(body, Map::class.java) as Map<String, Any>)
+        }
+        ExpertSearchCursor(
+            levels, pageSize, expertIndexService::indexName, { frozenBodies.getValue(it) },
+            { path, method, body ->
+                candidateCursorClient.exchange(
+                    "${properties.baseUrl}$path", method, HttpEntity(body, headers()), JsonNode::class.java
+                ).body ?: throw ExpertSearchUnavailableException("Missing candidate cursor response")
+            },
+            ::toExpertProfile, candidateCursorScheduler, activeCandidateCursors::remove
+        ).also { activeCandidateCursors.add(it) }
+    }
+
+    @PreDestroy
+    fun closeCandidateCursors() = synchronized(candidateCursorLifecycle) {
+        candidateCursorsDestroyed = true
+        try {
+            activeCandidateCursors.toList().forEach { cursor ->
+                try { cursor.close() } catch (ex: Exception) {
+                    log.warn("Failed to close candidate PIT during shutdown", ex)
+                }
+            }
+        } finally {
+            candidateCursorScheduler.shutdownNow()
+        }
     }
 
     fun countExperts(

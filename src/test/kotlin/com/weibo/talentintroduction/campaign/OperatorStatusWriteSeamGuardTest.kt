@@ -95,14 +95,14 @@ class OperatorStatusWriteSeamGuardTest {
         //   05A toExpertProfile 新增 institutionType 读取行使 :542 偏移至 :543，本计划授权行号修正
         //   05A-2 Part C 门禁 term→terms 使 expertSendableFilter 增加 2 行，:543 偏移至 :545，本计划授权行号修正
         //   ；repair R-10 完整性校验（requireCompleteResponse 调用与注释）使 :499 平移至 :505，context 不变）
-        NoiseSite("com/weibo/talentintroduction/expert/service/ExpertSearchService.kt", 505, "operatorStatus = source.nullableText"),
+        NoiseSite("com/weibo/talentintroduction/expert/service/ExpertSearchService.kt", 528, "operatorStatus = source.nullableText"),
         // ── ES 侧写入（非 expert_contact 表写入，扫描模式天然不命中）──
         // 03 P-B T-3 后：ExpertIndexWriterService 的 operatorStatus 同步改为三层 doc 部分更新
         // （"operatorStatus" to operatorStatus），旧脚本行 ctx._source.operatorStatus = params.status
         // 已随 syncCandidateOperatorStatus 移除 → 原 :84 排除项失效，按新契约删除（未弱化白名单闭包断言）。
         // ── SQL 只读上下文（SELECT @Query，非写入）──
         // SELECT @Query 的 WHERE 比较（读过滤条件），不是对列的赋值
-        NoiseSite("com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt", 47, "operator_status = :operatorStatus"),
+        NoiseSite("com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt", 56, "operator_status = :operatorStatus"),
         // SELECT 只读过滤：批量收件人读取按 operator_status 筛 EMAIL_INVALID，同样是读条件（非写入）。
         // 8b07363（fast-p 02-diagnostics）新增 EMAIL_INVALID_SQL 时未登记本排除项，导致守卫误报；
         // 该 SQL 只做 SELECT DISTINCT orcid_id，无任何 UPDATE/INSERT。

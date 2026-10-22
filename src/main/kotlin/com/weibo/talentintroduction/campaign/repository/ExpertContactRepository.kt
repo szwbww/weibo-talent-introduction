@@ -5,8 +5,14 @@ import org.springframework.data.jdbc.repository.query.Modifying
 import org.springframework.data.jdbc.repository.query.Query
 import org.springframework.data.repository.CrudRepository
 import java.time.LocalDateTime
+import org.springframework.data.jdbc.core.convert.EntityRowMapper
+import org.springframework.data.jdbc.core.convert.JdbcConverter
+import org.springframework.data.relational.core.mapping.RelationalMappingContext
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcOperations
+import java.sql.Types
 
-interface ExpertContactRepository : CrudRepository<ExpertContact, Long> {
+interface ExpertContactRepository : CrudRepository<ExpertContact, Long>, ExpertContactRetryCursor {
     fun existsByCampaignIdAndOrcidId(campaignId: Long, orcidId: String): Boolean
     fun existsByOrcidId(orcidId: String): Boolean
     fun findAllByCurrentStatus(currentStatus: String): List<ExpertContact>
@@ -28,6 +34,9 @@ interface ExpertContactRepository : CrudRepository<ExpertContact, Long> {
         campaignId: Long,
         currentStatus: String
     ): List<ExpertContact>
+
+    @Query("SELECT MAX(id) FROM expert_contact WHERE campaign_id = :campaignId")
+    fun findNewRetryUpperId(campaignId: Long): Long?
 
     fun findAllByExpertNameContainingIgnoreCaseOrExpertEmailContainingIgnoreCaseOrderByUpdatedAtDesc(
         expertName: String,
@@ -141,3 +150,48 @@ data class AccountCountryBindingCount(
     val distributionKey: String?,
     val boundCount: Long
 )
+
+/** Custom read fragment validates the bound before issuing any SQL. */
+interface ExpertContactRetryCursor {
+    fun findNewRetryPage(
+        campaignId: Long,
+        upperId: Long,
+        afterUpdatedAt: LocalDateTime?,
+        afterId: Long?,
+        limit: Int
+    ): List<ExpertContact>
+}
+
+class ExpertContactRetryCursorImpl(
+    private val jdbc: NamedParameterJdbcOperations,
+    mappingContext: RelationalMappingContext,
+    converter: JdbcConverter
+) : ExpertContactRetryCursor {
+    @Suppress("UNCHECKED_CAST")
+    private val rowMapper = EntityRowMapper(
+        mappingContext.getRequiredPersistentEntity(ExpertContact::class.java)
+            as org.springframework.data.relational.core.mapping.RelationalPersistentEntity<ExpertContact>,
+        converter
+    )
+
+    override fun findNewRetryPage(
+        campaignId: Long, upperId: Long, afterUpdatedAt: LocalDateTime?, afterId: Long?, limit: Int
+    ): List<ExpertContact> {
+        require(limit in 1..500) { "limit must be between 1 and 500" }
+        require((afterUpdatedAt == null) == (afterId == null)) { "Both retry cursor values must be supplied together" }
+        val params = MapSqlParameterSource()
+            .addValue("campaignId", campaignId)
+            .addValue("upperId", upperId)
+            .addValue("afterUpdatedAt", afterUpdatedAt, Types.TIMESTAMP)
+            .addValue("afterId", afterId, Types.BIGINT)
+            .addValue("limit", limit)
+        return jdbc.query("""
+            SELECT * FROM expert_contact
+             WHERE campaign_id = :campaignId AND current_status = 'NEW' AND id <= :upperId
+               AND (:afterUpdatedAt IS NULL OR updated_at < :afterUpdatedAt
+                    OR (updated_at = :afterUpdatedAt AND id < :afterId))
+             ORDER BY updated_at DESC, id DESC
+             LIMIT :limit
+        """.trimIndent(), params, rowMapper)
+    }
+}

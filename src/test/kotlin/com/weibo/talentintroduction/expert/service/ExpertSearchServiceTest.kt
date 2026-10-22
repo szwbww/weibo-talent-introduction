@@ -3129,6 +3129,129 @@ class ExpertSearchServiceTest {
         assertEquals(123L, service.countExperts(ExpertIndexLevel.CANDIDATE, emptyList()))
     }
 
+    @Test
+    fun `cursor factory preserves filters source sorting auth and converter without changing global client`() {
+        val requests = mutableListOf<Pair<String, com.fasterxml.jackson.databind.JsonNode?>>()
+        val response = """{"pit_id":"latest","timed_out":false,"_shards":{"total":1,"successful":1,"failed":0},"hits":{"hits":[{"_id":"doc","_source":{"orcidId":"same","expertClassification":{"type":"ACADEMIC_RND","productionScore":0,"researchScore":95,"positiveEvidence":[],"negativeEvidence":[],"version":"test","sourceFingerprint":"test","classifiedAt":[2026,10,22,0,0]}},"sort":[1720000000000,42]}]}}"""
+        withCursorServer({ exchange ->
+            val body = exchange.requestBody.readBytes()
+            requests.add(exchange.requestURI.path to if (body.isEmpty()) null else mapper.readTree(body))
+            assertEquals("Basic dXNlcjpwYXNz", exchange.requestHeaders.getFirst("Authorization"))
+            assertEquals("preserved", exchange.requestHeaders.getFirst("X-Cursor-Test"))
+            when {
+                exchange.requestURI.path.endsWith("/_pit") && exchange.requestMethod == "POST" -> """{"id":"opened"}"""
+                exchange.requestMethod == "DELETE" -> """{"succeeded":true}"""
+                else -> response
+            }
+        }) { cursorService, client ->
+            val originalFactory = client.requestFactory
+            val term = mutableMapOf<String, Any>("operatorStatus" to "NOT_CONTACTED")
+            val filters = listOf(mapOf<String, Any>("term" to term))
+            val cursor = cursorService.openCandidateCursor(ExpertIndexLevel.CANDIDATE, filters, 2)
+            assertTrue(requests.isEmpty())
+            term["operatorStatus"] = "EMAIL_INVALID"
+            val page = cursor.nextPage()
+            assertEquals("doc", page.profiles.single().esDocId)
+            assertEquals(LocalDateTime.of(2026, 10, 22, 0, 0), page.profiles.single().expertClassification!!.classifiedAt)
+            val body = requests.single { it.first == "/_search" }.second!!
+            assertEquals("NOT_CONTACTED", body.path("query").path("bool").path("filter")[0].path("term").path("operatorStatus").asText())
+            assertEquals(2, body.path("size").asInt())
+            assertEquals("desc", body.path("sort")[0].path("candidateValidatedAt").path("order").asText())
+            assertEquals("asc", body.path("sort")[1].path("_shard_doc").path("order").asText())
+            assertTrue(body.path("_source").any { it.asText() == "expertClassification" })
+            assertFalse(body.has("from"))
+            assertFalse(body.path("track_total_hits").asBoolean(true))
+            cursor.close()
+            assertEquals("latest", requests.last().second!!.path("id").asText())
+            org.junit.jupiter.api.Assertions.assertSame(originalFactory, client.requestFactory)
+            assertEquals(1, client.interceptors.size)
+        }
+    }
+
+    @Test
+    fun `cursor factory retains application and raw sorting and shuts down unused cursors`() {
+        val bodies = mutableListOf<com.fasterxml.jackson.databind.JsonNode>()
+        withCursorServer({ exchange ->
+            val bytes = exchange.requestBody.readBytes()
+            when {
+                exchange.requestURI.path.endsWith("/_pit") && exchange.requestMethod == "POST" -> """{"id":"opened"}"""
+                exchange.requestMethod == "DELETE" -> """{"succeeded":true}"""
+                else -> {
+                    bodies.add(mapper.readTree(bytes))
+                    """{"pit_id":"latest","timed_out":false,"_shards":{"total":1,"successful":1,"failed":0},"hits":{"hits":[]}}"""
+                }
+            }
+        }) { cursorService, _ ->
+            assertTrue(cursorService.openCandidateCursor(ExpertIndexLevel.APPLICATION).nextPage().exhausted)
+            assertTrue(cursorService.openCandidateCursor(ExpertIndexLevel.RAW).nextPage().exhausted)
+            assertEquals(listOf("applicationPromotedAt", "lastReplyAt", "_shard_doc"),
+                bodies[0].path("sort").map { it.fieldNames().next() })
+            assertEquals(listOf("_doc", "_shard_doc"), bodies[1].path("sort").map { it.fieldNames().next() })
+            val unused = cursorService.openCandidateCursor(ExpertIndexLevel.CANDIDATE)
+            cursorService.closeCandidateCursors()
+            assertThrows(IllegalStateException::class.java) { unused.nextPage() }
+            assertThrows(IllegalStateException::class.java) { cursorService.openCandidateCursor(ExpertIndexLevel.CANDIDATE) }
+        }
+    }
+
+    @Test
+    fun `cursor HTTP read timeout is bounded at twenty seconds and releases PIT`() {
+        val deleted = java.util.concurrent.atomic.AtomicInteger()
+        withCursorServer({ exchange ->
+            exchange.requestBody.readBytes()
+            when {
+                exchange.requestURI.path.endsWith("/_pit") && exchange.requestMethod == "POST" -> """{"id":"timeout-pit"}"""
+                exchange.requestMethod == "DELETE" -> { deleted.incrementAndGet(); """{"succeeded":true}""" }
+                else -> {
+                    Thread.sleep(30_000)
+                    """{}"""
+                }
+            }
+        }) { cursorService, _ ->
+            val started = System.nanoTime()
+            val cursor = cursorService.openCandidateCursor(ExpertIndexLevel.CANDIDATE)
+            assertThrows(ExpertSearchUnavailableException::class.java) { cursor.nextPage() }
+            val elapsed = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
+            assertTrue(elapsed in 19_000..27_000, "Observed bounded read timeout: $elapsed ms")
+            assertEquals(1, deleted.get())
+            cursor.close()
+            println("CURSOR_SMOKE localHTTP readTimeoutMs=$elapsed releasedPits=1 SMTP=0")
+        }
+    }
+
+    private fun withCursorServer(
+        respond: (com.sun.net.httpserver.HttpExchange) -> String,
+        test: (ExpertSearchService, RestTemplate) -> Unit
+    ) {
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
+        val executor = java.util.concurrent.Executors.newCachedThreadPool { runnable ->
+            Thread(runnable, "cursor-http-test").apply { isDaemon = true }
+        }
+        server.executor = executor
+        server.createContext("/") { exchange ->
+            try {
+                val bytes = respond(exchange).toByteArray()
+                exchange.responseHeaders.add("Content-Type", "application/json")
+                exchange.sendResponseHeaders(200, bytes.size.toLong())
+                exchange.responseBody.use { it.write(bytes) }
+            } finally { exchange.close() }
+        }
+        server.start()
+        val client = RestTemplate()
+        client.interceptors.add(org.springframework.http.client.ClientHttpRequestInterceptor { request, body, execution ->
+            request.headers.add("X-Cursor-Test", "preserved")
+            execution.execute(request, body)
+        })
+        val local = ElasticsearchProperties(baseUrl = "http://127.0.0.1:${server.address.port}", username = "user", password = "pass",
+            rawIndexName = "raw", candidateIndexName = "candidate", applicationIndexName = "application")
+        val cursorService = ExpertSearchService(client, local, ExpertIndexService(local, client, mapper))
+        try { test(cursorService, client) } finally {
+            cursorService.closeCandidateCursors()
+            server.stop(0)
+            executor.shutdownNow()
+        }
+    }
+
     private fun serviceIndexName(level: ExpertIndexLevel): String = when (level) {
         ExpertIndexLevel.RAW -> properties.rawIndexName
         ExpertIndexLevel.CANDIDATE -> properties.candidateIndexName
