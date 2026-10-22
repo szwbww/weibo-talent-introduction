@@ -177,6 +177,17 @@ class ExpertDiscoveryServiceTest {
         emailValidationService = Mockito.mock(EmailValidationService::class.java)
         eligibilityService = Mockito.mock(CandidateEligibilityService::class.java)
         indexWriterService = Mockito.mock(ExpertIndexWriterService::class.java)
+        val classificationWriter = ExpertIndexWriterService(
+            Mockito.mock(RestTemplate::class.java), esProperties, Mockito.mock(ExpertIndexService::class.java),
+            objectMapper, Mockito.mock(com.weibo.talentintroduction.expert.service.ExpertPromotionAuditService::class.java),
+            Mockito.mock(com.weibo.talentintroduction.campaign.repository.ExpertContactRepository::class.java)
+        )
+        Mockito.doAnswer { invocation ->
+            classificationWriter.classificationNode(invocation.getArgument(0))
+        }.`when`(indexWriterService).classificationNode(
+            Mockito.any(com.weibo.talentintroduction.expert.domain.ExpertClassification::class.java)
+                ?: expertClassificationService.classify(c6Expert("fallback"))
+        )
         indexService = Mockito.mock(ExpertIndexService::class.java)
         expertSearchService = Mockito.mock(ExpertSearchService::class.java)
         revalidationService = Mockito.mock(ExpertRevalidationService::class.java)
@@ -4192,9 +4203,9 @@ class ExpertDiscoveryServiceTest {
         )
         @Suppress("UNCHECKED_CAST")
         val doc = (entityCaptor.value.body as Map<*, *>)["doc"] as Map<*, *>
-        val classification = doc["expertClassification"]
-            as com.weibo.talentintroduction.expert.domain.ExpertClassification
-        assertEquals(com.weibo.talentintroduction.expert.domain.ExpertType.ACADEMIC_RND, classification.type)
+        val classification = doc["expertClassification"] as com.fasterxml.jackson.databind.JsonNode
+        assertEquals("ACADEMIC_RND", classification.path("type").asText())
+        assertTrue(classification.path("classifiedAt").isTextual)
     }
 
     @Test
@@ -6271,6 +6282,47 @@ class ExpertDiscoveryServiceTest {
     }
 
     @Test
+    fun `discovered enrichment identity conflict noop remains failed without upsert or identity writes`() {
+        val svc = createService()
+        val profile = c6Expert("0000-CONFLICT", esDocId = "DOC-CONFLICT").copy(tags = listOf("discovered"))
+        listOf("orcid_info", "orcid_info_candidate", "orcid_info_application").forEach(::stubLayerExists)
+        Mockito.doReturn(ResponseEntity.ok(objectMapper.readTree("""{"result":"noop"}""")) as ResponseEntity<*>)
+            .`when`(restTemplate).exchange(
+                Mockito.anyString(), Mockito.eq(HttpMethod.POST), Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+
+        val result = org.springframework.test.util.ReflectionTestUtils.invokeMethod<LayerUpdateResult>(
+            svc, "updateExpertAcademicFields", profile, AuthorEnrichment(24, null, null)
+        )!!
+
+        assertEquals(LayerUpdateStatus.FAILED, result.raw)
+        assertEquals(LayerUpdateStatus.FAILED, result.candidate)
+        assertEquals(LayerUpdateStatus.FAILED, result.application)
+        val updates = Mockito.mockingDetails(restTemplate).invocations.filter {
+            it.method.name == "exchange" && (it.arguments[0] as? String)?.contains("/_update/") == true
+        }
+        assertEquals(3, updates.size)
+        updates.forEach {
+            val body = (it.arguments[2] as HttpEntity<*>).body as Map<*, *>
+            assertFalse(body.containsKey("upsert"))
+            val script = body["script"] as Map<*, *>
+            assertTrue(script["source"].toString().contains("ctx.op = 'none'"))
+            val params = script["params"] as Map<*, *>
+            assertEquals(profile.email, params["email"])
+            val doc = params["doc"] as Map<*, *>
+            assertTrue((doc["expertClassification"] as com.fasterxml.jackson.databind.JsonNode).path("classifiedAt").isTextual)
+            for (key in listOf("identityVerification", "email", "givenNames", "familyNames", "externalIds")) {
+                assertFalse(doc.containsKey(key))
+            }
+        }
+        Mockito.verify(restTemplate, Mockito.never()).exchange(
+            Mockito.anyString(), Mockito.eq(HttpMethod.PUT), Mockito.any(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+    }
+
+    @Test
     fun `enrichProfiles prefers the trusted author id and keys results by the real esDocId (I-1)`() {
         val svc = createService()
         val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
@@ -6496,7 +6548,7 @@ class ExpertDiscoveryServiceTest {
             val doc = params["doc"] as Map<*, *>
             assertEquals(listOf("17", "22"), doc["researchFieldIds"])
             assertEquals(ExpertClassificationService.VERSION,
-                (doc["expertClassification"] as com.weibo.talentintroduction.expert.domain.ExpertClassification).version)
+                (doc["expertClassification"] as com.fasterxml.jackson.databind.JsonNode).path("version").asText())
             for (identityKey in listOf("email", "givenNames", "familyNames", "externalIds", "identityVerification")) {
                 assertFalse(doc.containsKey(identityKey))
             }
@@ -6511,7 +6563,7 @@ class ExpertDiscoveryServiceTest {
         val nullDoc = ((lastBody["script"] as Map<*, *>)["params"] as Map<*, *>)["doc"] as Map<*, *>
         assertFalse(nullDoc.containsKey("researchFieldIds"))
         assertEquals(ExpertClassificationService.VERSION,
-            (nullDoc["expertClassification"] as com.weibo.talentintroduction.expert.domain.ExpertClassification).version)
+            (nullDoc["expertClassification"] as com.fasterxml.jackson.databind.JsonNode).path("version").asText())
         val output = Paths.get("target/discovery-plan-acceptance/09c-layers.json")
         Files.createDirectories(output.parent)
         objectMapper.writerWithDefaultPrettyPrinter().writeValue(output.toFile(), mapOf(

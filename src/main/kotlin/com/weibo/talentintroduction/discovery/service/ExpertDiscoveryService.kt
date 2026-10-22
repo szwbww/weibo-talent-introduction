@@ -3272,7 +3272,7 @@ class ExpertDiscoveryService(
             disciplineCategory = enrichment.disciplineCategory ?: profile.disciplineCategory,
             lastPublicationYear = enrichment.lastPublicationYear ?: profile.lastPublicationYear
         )
-        doc["expertClassification"] = expertClassificationService.classify(enrichedProfile)
+        doc["expertClassification"] = expertIndexWriterService.classificationNode(expertClassificationService.classify(enrichedProfile))
         val updateBody: Map<String, Any> = if (DiscoveryIdentity.isDiscovery(profile)) {
             mapOf("script" to mapOf("lang" to "painless", "source" to
                 "if (ctx._source.identityVerification != params.identity || ctx._source.email != params.email || ctx._source.givenNames != params.given || ctx._source.familyNames != params.family || ctx._source.externalIds != params.externalIds) { ctx.op = 'none'; } else { for (entry in params.doc.entrySet()) { ctx._source[entry.getKey()] = entry.getValue(); } }",

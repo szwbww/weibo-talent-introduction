@@ -2025,6 +2025,63 @@ class ExpertSearchServiceTest {
     }
 
     @Test
+    fun `classifiedAt accepts strict Jackson arrays and preserves legacy formats in every layer`() {
+        val valid = listOf(
+            "[2026,10,22,2,47]" to LocalDateTime.of(2026, 10, 22, 2, 47),
+            "[2026,10,22,2,47,14]" to LocalDateTime.of(2026, 10, 22, 2, 47, 14),
+            "[2026,10,22,2,47,14,390627000]" to LocalDateTime.of(2026, 10, 22, 2, 47, 14, 390627000),
+            "[2024,2,29,23,59,59,999999999]" to LocalDateTime.of(2024, 2, 29, 23, 59, 59, 999999999),
+            "[2026,10,22,2,47,14,0]" to LocalDateTime.of(2026, 10, 22, 2, 47, 14),
+            "\"2026-10-22 02:47:14\"" to LocalDateTime.of(2026, 10, 22, 2, 47, 14),
+            "\"2026-10-22\"" to LocalDateTime.of(2026, 10, 22, 0, 0),
+            "1768444200000" to LocalDateTime.ofInstant(
+                java.time.Instant.ofEpochMilli(1768444200000), java.time.ZoneId.systemDefault())
+        )
+        for (level in ExpertIndexLevel.values()) {
+            for ((json, expected) in valid) {
+                assertEquals(expected, readClassificationDate(json, level), "$level: $json")
+            }
+        }
+    }
+
+    @Test
+    fun `classifiedAt rejects malformed arrays without truncation or current-time fallback`() {
+        val invalid = listOf(
+            "[]", "[2026,10,22,2]", "[2026,10,22,2,47,14,0,1]",
+            "[2026,10,22,2,47.0]", "[2026,10,22,2,47.5]",
+            "[2026,10,22,2,2147483648]", "[2026,10,22,2,-2147483649]",
+            "[18446744073709553642,10,22,2,47]", "[2026,10,22,2,\"47\"]",
+            "[2026,10,22,2,null]", "[2026,10,22,2,true]", "[2026,10,22,2,[]]",
+            "[2026,13,22,2,47]", "[2026,0,22,2,47]", "[2026,2,29,2,47]",
+            "[2026,4,31,2,47]", "[2026,10,0,2,47]", "[2026,10,22,24,47]",
+            "[2026,10,22,-1,47]", "[2026,10,22,2,60]", "[2026,10,22,2,47,60]",
+            "[2026,10,22,2,47,14,-1]", "[2026,10,22,2,47,14,1000000000]",
+            "[1000000000,10,22,2,47]", "\"2026-10-22T02:47:14\"", "{}", "null"
+        )
+        for (level in ExpertIndexLevel.values()) {
+            for (json in invalid) {
+                assertNull(readClassificationDate(json, level), "$level: $json")
+            }
+        }
+    }
+
+    private fun readClassificationDate(json: String, level: ExpertIndexLevel): LocalDateTime? {
+        val body = mapper.readTree("""
+            {"hits":{"total":{"value":1},"hits":[{"_source":{
+                "orcidId":"DATE-FIXTURE","email":"date@example.com",
+                "expertClassification":{"type":"ACADEMIC_RND","productionScore":0,"researchScore":95,
+                "positiveEvidence":["ACADEMIC"],"negativeEvidence":[],"version":"fixture-v1",
+                "sourceFingerprint":"fixture-fingerprint","classifiedAt":$json}
+            }}]}}
+        """.trimIndent())
+        Mockito.`when`(restTemplate.exchange(
+            eq("${properties.baseUrl}/${ExpertIndexService(properties, restTemplate, mapper).indexName(level)}/_search"),
+            eq(HttpMethod.POST), any(), eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )).thenReturn(ResponseEntity.ok(body))
+        return service.searchExpertsWithEmail(1, level).experts.single().expertClassification?.classifiedAt
+    }
+
+    @Test
     fun `classifiedAt supports date-only and epoch_millis formats (I1-5)`() {
         val body = mapper.readTree(
             """

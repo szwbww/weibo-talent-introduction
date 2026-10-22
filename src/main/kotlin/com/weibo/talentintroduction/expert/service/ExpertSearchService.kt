@@ -562,12 +562,25 @@ class ExpertSearchService(
         return array.map { it.asText() }
     }
 
-    /** 支持 mapping 声明的三种格式：`yyyy-MM-dd HH:mm:ss`、`yyyy-MM-dd`、epoch_millis。 */
+    /** 支持 mapping 的三种格式，以及历史 Jackson LocalDateTime 的 5/6/7 项整数数组。 */
     private fun parseClassifiedAt(node: JsonNode): LocalDateTime? {
         if (node.isMissingNode || node.isNull) return null
         if (node.isIntegralNumber) {
             return try {
                 LocalDateTime.ofInstant(Instant.ofEpochMilli(node.asLong()), ZoneId.systemDefault())
+            } catch (e: DateTimeException) {
+                null
+            }
+        }
+        if (node.isArray) {
+            if (node.size() !in 5..7 || !node.all { it.isIntegralNumber && it.canConvertToInt() }) return null
+            return try {
+                LocalDateTime.of(
+                    node[0].intValue(), node[1].intValue(), node[2].intValue(),
+                    node[3].intValue(), node[4].intValue(),
+                    if (node.size() >= 6) node[5].intValue() else 0,
+                    if (node.size() == 7) node[6].intValue() else 0
+                )
             } catch (e: DateTimeException) {
                 null
             }
