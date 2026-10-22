@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-10-22/batch-demand-master.md
 
-- Status: PAUSED_FOR_HUMAN
-- Master plan: docs/plans/2026-10-22/batch-demand-master.md (commit f684da0a316b8cfb560fe7ebb0a8817d8a2594f2)
-- Amendments: N/A
+- Status: RUNNING
+- Master plan: docs/plans/2026-10-22/batch-demand-master.md (commit 6c020573bc44e7fbe70208337e5e96b867e641f9)
+- Amendments: A1,A2
 - Master base: d403caeb5dcc4810067293c10600ee57f94e276b
 - Branch: fast/batch-demand-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-batch-demand-master
@@ -13,8 +13,8 @@
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: Child04 exact per-read demand size requires adjustable advancing cursor API, but ExpertSearchCursor.kt and ExpertSearchCursorTest.kt are outside its seven authorized files.
-- Resume from: 0fb10de69a6ae0129c7cb6a645fa0432de65ce30
+- Pause reason: N/A
+- Resume from: 6c020573bc44e7fbe70208337e5e96b867e641f9
 
 ## Baseline
 
@@ -26,13 +26,15 @@ Original worktree left untouched. Approved plan snapshot seeded in f684da0a316b8
 | 01 | docs/plans/2026-10-22/batch-demand-01-classification.md | commit:f684da0a316b8cfb560fe7ebb0a8817d8a2594f2 | none | 2 | LIGHT_PASS | d403caeb5dcc4810067293c10600ee57f94e276b | 756e8acaccc4675759152b4973e6b451a58f0a00 | 0 | — | 756e8acaccc4675759152b4973e6b451a58f0a00 | 536c77a410ecbc14a749e7f8df557b80448f7fc7 | Writer Demand01Epoch2Writer; verifier Demand01LightVerifier; 370 JVM and 1792 Node passed freshly; epoch1 blocked evidence preserved |
 | 02 | docs/plans/2026-10-22/batch-demand-02-cursors.md | commit:f684da0a316b8cfb560fe7ebb0a8817d8a2594f2 | 01 | 1 | LIGHT_PASS | 756e8acaccc4675759152b4973e6b451a58f0a00 | fb50f5e18f74a6df42eac3ec86c9a1560808b948 | 0 | — | fb50f5e18f74a6df42eac3ec86c9a1560808b948 | a977f6b00818acfd64980fed34943e1bc7424000 | Writer Demand02Implementer; verifier Demand02LightVerifier; all three commands passed including real MySQL and ES containers |
 | 03 | docs/plans/2026-10-22/batch-demand-03-progress.md | commit:f684da0a316b8cfb560fe7ebb0a8817d8a2594f2 | 02 | 1 | LIGHT_PASS | fb50f5e18f74a6df42eac3ec86c9a1560808b948 | c83a74ec5afc6b380d0f3ec33aa997db512103f7 | 0 | — | c83a74ec5afc6b380d0f3ec33aa997db512103f7 | aae963ea60a7d515fa9008d7bdfb2066f2b6dd6e | Writer Demand03Implementer; verifier Demand03LightVerifier; 38 JVM and 1799 Node plus focused42 passed; browser fixture smoke recorded |
-| 04 | docs/plans/2026-10-22/batch-demand-04-execution.md | commit:f684da0a316b8cfb560fe7ebb0a8817d8a2594f2 | 02,03 | 1 | PAUSED_FOR_HUMAN | c83a74ec5afc6b380d0f3ec33aa997db512103f7 | — | 0 | — | c83a74ec5afc6b380d0f3ec33aa997db512103f7 | 0fb10de69a6ae0129c7cb6a645fa0432de65ce30 | Writer Demand04Implementer PLAN_CONFLICT before product edits; immutable cursor page size cannot satisfy exact I-2 |
+| 04 | docs/plans/2026-10-22/batch-demand-04-execution.md | commit:6c020573bc44e7fbe70208337e5e96b867e641f9 | 02,03 | 2 | IMPLEMENTING | c83a74ec5afc6b380d0f3ec33aa997db512103f7 | — | 0 | — | — | — | Human approved A1/A2; nine files and adaptive cursor; epoch1 conflict preserved |
 | 05 | docs/plans/2026-10-22/batch-demand-05-cache.md | commit:f684da0a316b8cfb560fe7ebb0a8817d8a2594f2 | 04 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 | 06 | docs/plans/2026-10-22/batch-demand-06-ui.md | commit:f684da0a316b8cfb560fe7ebb0a8817d8a2594f2 | 05 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
 |---|---|---|---|---|---|---|
+| A1 | docs/plans/2026-10-22/batch-demand-04-execution.md | commit:f684da0a316b8cfb560fe7ebb0a8817d8a2594f2 | commit:6c020573bc44e7fbe70208337e5e96b867e641f9 | Invariant I-2: 统计与执行分离; Invariant I-4: 逐段范围门禁 | Preserve exact per-read demand formula by authorizing cursor implementation/test and regression commands; nine files/two subsystems | HUMAN:2026-10-22 selected 扩大两文件授权，保持按需公式; approve cursor per-read size, no-arg compatibility, regression commands, master summary update and continue04–06 |
+| A2 | docs/plans/2026-10-22/batch-demand-master.md | commit:f684da0a316b8cfb560fe7ebb0a8817d8a2594f2 | commit:6c020573bc44e7fbe70208337e5e96b867e641f9 | Invariant I-4: 逐段范围门禁 | Synchronize master child04 scope summary with approved A1; preserve exact demand formula | HUMAN:2026-10-22 selected 扩大两文件授权，保持按需公式; approve cursor per-read size, no-arg compatibility, regression commands, master summary update and continue04–06 |
 
 ## Resume Events
 

@@ -142,3 +142,11 @@ Use execute-p against the exact approved child plan. Local implementation commit
 ## Baseline evidence
 
 Java 11.0.15 Zulu and Docker server 29.8.2 observed available. Initial child 01 Maven baseline is controller-owned and its result will be recorded before dispatch. No whole-system baseline is claimed. Prior child interfaces are only those explicitly approved in their plans, not later product changes.
+
+## Epoch 2 — Approved amendments A1/A2 override historical copied contract above
+
+- Exact current authoritative plan: `docs/plans/2026-10-22/batch-demand-04-execution.md` at commit `6c020573bc44e7fbe70208337e5e96b867e641f9`. Re-read full current file; it supersedes the original seven-file copy above.
+- Human approval: 2026-10-22 selected “扩大两文件授权，保持按需公式”; authorize nine files/two subsystems, per-read cursor size with unchanged PIT/search_after/lifecycle and no-arg compatibility, cursor regression commands, synchronized master summary. Approval lineage ledger A1/A2. No behavioral relaxation.
+- Added Authorized Files: `src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchCursor.kt`; `src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchCursorTest.kt`. All original seven remain.
+- Required Java11 commands: `mvn test -Dtest=ManualInitialOutreachServiceTest,OutreachTargetIteratorTest,BatchSendTaskRuntimeIntegrationTest,BatchDemandExecutionTest,BatchSendExecutionDetailTest,ExpertSearchCursorTest`; `mvn test -Dtest=ExpertSearchCursorTest -DesIt=true`; `mvn test`.
+- Product base remains c83a74ec5afc6b380d0f3ec33aa997db512103f7; no product changes in blocked epoch1. Preserve its append-only report; start epoch2 with fix_round=0.
