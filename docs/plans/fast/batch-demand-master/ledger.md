@@ -10,7 +10,7 @@
 - Finalization repair parent: N/A
 - Started: 2026-10-22T19:50:07.103289+08:00
 - Current child: 04
-- Waiting role: IMPLEMENTER
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -26,7 +26,7 @@ Original worktree left untouched. Approved plan snapshot seeded in f684da0a316b8
 | 01 | docs/plans/2026-10-22/batch-demand-01-classification.md | commit:f684da0a316b8cfb560fe7ebb0a8817d8a2594f2 | none | 2 | LIGHT_PASS | d403caeb5dcc4810067293c10600ee57f94e276b | 756e8acaccc4675759152b4973e6b451a58f0a00 | 0 | — | 756e8acaccc4675759152b4973e6b451a58f0a00 | 536c77a410ecbc14a749e7f8df557b80448f7fc7 | Writer Demand01Epoch2Writer; verifier Demand01LightVerifier; 370 JVM and 1792 Node passed freshly; epoch1 blocked evidence preserved |
 | 02 | docs/plans/2026-10-22/batch-demand-02-cursors.md | commit:f684da0a316b8cfb560fe7ebb0a8817d8a2594f2 | 01 | 1 | LIGHT_PASS | 756e8acaccc4675759152b4973e6b451a58f0a00 | fb50f5e18f74a6df42eac3ec86c9a1560808b948 | 0 | — | fb50f5e18f74a6df42eac3ec86c9a1560808b948 | a977f6b00818acfd64980fed34943e1bc7424000 | Writer Demand02Implementer; verifier Demand02LightVerifier; all three commands passed including real MySQL and ES containers |
 | 03 | docs/plans/2026-10-22/batch-demand-03-progress.md | commit:f684da0a316b8cfb560fe7ebb0a8817d8a2594f2 | 02 | 1 | LIGHT_PASS | fb50f5e18f74a6df42eac3ec86c9a1560808b948 | c83a74ec5afc6b380d0f3ec33aa997db512103f7 | 0 | — | c83a74ec5afc6b380d0f3ec33aa997db512103f7 | aae963ea60a7d515fa9008d7bdfb2066f2b6dd6e | Writer Demand03Implementer; verifier Demand03LightVerifier; 38 JVM and 1799 Node plus focused42 passed; browser fixture smoke recorded |
-| 04 | docs/plans/2026-10-22/batch-demand-04-execution.md | commit:1ba7003f2719165e4d420132255d071102cd6c3e | 02,03 | 3 | IMPLEMENTING | c83a74ec5afc6b380d0f3ec33aa997db512103f7 | a36258bbe2bb49f131acc869395bc801eb7e822c | 0 | — | a36258bbe2bb49f131acc869395bc801eb7e822c | — | A3/A4 human approved tenth caller test and updated installed JDK11; prior incomplete epoch2 preserved |
+| 04 | docs/plans/2026-10-22/batch-demand-04-execution.md | commit:1ba7003f2719165e4d420132255d071102cd6c3e | 02,03 | 3 | LIGHT_PASS | c83a74ec5afc6b380d0f3ec33aa997db512103f7 | 566ed817ce6f314383e0764331b75760f29e328c | 1 | 5b4bc0a134a7af7c08ce0b7ac5376ee567649c47 | 5b4bc0a134a7af7c08ce0b7ac5376ee567649c47 | 2d94aed7b69cd4ef64b4882dd756a5e38b9da485 | Demand04Reverifier LIGHT_PASS F-1 closed; full5440/0fail/0errors23skips, focused365 and realES10 passed |
 | 05 | docs/plans/2026-10-22/batch-demand-05-cache.md | commit:f684da0a316b8cfb560fe7ebb0a8817d8a2594f2 | 04 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 | 06 | docs/plans/2026-10-22/batch-demand-06-ui.md | commit:f684da0a316b8cfb560fe7ebb0a8817d8a2594f2 | 05 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 
