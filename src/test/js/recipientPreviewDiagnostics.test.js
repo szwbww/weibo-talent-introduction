@@ -1,12 +1,6 @@
 "use strict";
 
-// 03-ui 契约测试（I-1/I-2/I-3、S-1/S-2、MAIN M-5）：
-// 1) 带 02 诊断字段的响应按 S-1 骨架显示 10/4/6/3，原因命中可重叠（绝不求和冒充排除人数），
-//    样本限量与截断、partial、统计时间显式呈现，动态内容全部转义；
-// 2) 缺新字段的旧响应只显示现有数量并注明「详细解释不可用」，禁止补 0；
-// 3) HTTP/API 失败显示「预估不可用」且不弹窗；陈旧响应被 seq 丢弃；
-//    诊断只读（只打预估接口，不发发送/验证请求）；
-// 4) MAIN M-5：真实 index.html 必须声明两个容器 ID，且 16 个版本化资源统一到新 cache key。
+// Cached recipient statistics diagnostics and real static-surface contracts (child 06).
 
 const fs = require("fs");
 const path = require("path");
@@ -41,8 +35,9 @@ function element(value = "") {
     };
 }
 
-const PREVIEW_HELPERS = ["baseHintHtml", "escapeHtml", "recipientPreviewHintId", "gateToggleId",
-    "setRecipientPreviewState", "resetRecipientPreview", "scheduleRecipientPreview", "refreshRecipientPreview"];
+const PREVIEW_HELPERS = ["escapeHtml", "recipientPreviewHintId", "gateToggleId",
+    "setRecipientPreviewState", "resetRecipientPreview", "scheduleRecipientPreview",
+    "renderRecipientStatistics", "refreshRecipientPreview"];
 
 /** 只加载 03 渲染所需的 app.js 函数 + DOM stub；api 由用例注入。 */
 function previewSandbox(options = {}) {
@@ -78,7 +73,7 @@ function previewSandbox(options = {}) {
 
 /** MAIN G-2 共同 fixture：10 母集 / 4 排除 / 6 符合 / 3 待验证，原因命中 2+2+1+1=6 次。 */
 function diagnosticsResponse(overrides = {}) {
-    return Object.assign({
+    return { state: "READY", cacheKey: "fixture", cachedAt: "2026-10-22T16:00:00", summary: Object.assign({
         pending: 6,
         retryable: 0,
         totalSendable: 6,
@@ -105,7 +100,7 @@ function diagnosticsResponse(overrides = {}) {
                 { docId: "doc-e1", orcidId: "0000-0000-0000-0006" }
             ], truncated: false }
         ]
-    }, overrides);
+    }, overrides) };
 }
 
 describe("recipient preview diagnostics (03 / I-1 / I-3 / S-1)", () => {
@@ -115,8 +110,8 @@ describe("recipient preview diagnostics (03 / I-1 / I-3 / S-1)", () => {
         sandbox.refreshRecipientPreview("editor");
         await flush();
 
-        assert.ok(hint.innerHTML.includes("统计时间：<span>2026-10-14 09:30:00</span>"),
-            "asOf must render, formatted and labelled");
+        assert.ok(hint.innerHTML.includes("诊断采样时间：<span>2026-10-14 09:30:00</span>"),
+            "asOf is diagnostic time, not cache completion time");
         assert.ok(hint.innerHTML.includes("范围内 <strong>10</strong> 人"), "baseline must render");
         assert.ok(hint.innerHTML.includes("排除 <span class=\"batch-gate-excluded\">4</span> 人"),
             "excludedUnique must render as the exclusion count");
@@ -154,7 +149,7 @@ describe("recipient preview diagnostics (03 / I-1 / I-3 / S-1)", () => {
 
         assert.ok(hint.innerHTML.includes("原因：REGION <strong>1201</strong> 人；仅显示前 <strong>1</strong> 条（样本已截断）"),
             "the full count is kept while the sample list stays bounded and truncated");
-        assert.ok(hint.innerHTML.includes("统计未完成"), "partial statistics must say 统计未完成");
+        assert.ok(hint.innerHTML.includes("诊断仅覆盖部分候选；不是全量排除分析。"));
     });
 
     it("renders when no reason is hit without inventing hits", async () => {
@@ -203,12 +198,12 @@ describe("recipient preview diagnostics (03 / I-1 / I-3 / S-1)", () => {
             gateAvailable: false,
             snapshot: { excludeVerifiedUnavailableEmails: false }
         });
-        sandbox.api = async () => ({ pending: 5, retryable: 1, totalSendable: 6 });
+        sandbox.api = async () => ({ state: "READY", cacheKey: "legacy", summary: { pending: 5, retryable: 1, totalSendable: 6 } });
         sandbox.refreshRecipientPreview("editor");
         await flush();
 
         assert.ok(hint.innerHTML.includes("详细解释不可用"), "a legacy response must name the missing explanation");
-        assert.ok(hint.innerHTML.includes("当前条件命中 <strong>6</strong>"), "existing counts must still render");
+        assert.ok(hint.innerHTML.includes("缓存目标估计：<strong>6</strong>"), "cached total must render");
         assert.ok(!hint.innerHTML.includes("范围内"), "no diagnostics skeleton may be faked for legacy responses");
         assert.ok(!hint.innerHTML.includes("排除 <span"), "no exclusion count may be invented");
     });
@@ -221,19 +216,18 @@ describe("recipient preview diagnostics (03 / I-1 / I-3 / S-1)", () => {
         sandbox.refreshRecipientPreview("editor");
         await flush();
 
-        assert.strictEqual(hint.textContent, "预估不可用", "an API failure renders 预估不可用");
+        assert.strictEqual(hint.textContent, "统计不可用，可重试。", "an API failure is not a zero count");
         assert.ok(!hint.innerHTML.includes("batch-gate-warnline") && !hint.innerHTML.includes("batch-gate-excluded"),
             "a failed preview must not keep a stale exclusion line");
     });
 
-    it("keeps the concrete message for non-HTTP failures (no fake diagnostics)", async () => {
+    it("does not inject arbitrary error messages into the cache hint", async () => {
         const { sandbox, hint } = previewSandbox({ kind: "manual", gateAvailable: false });
         sandbox.api = async () => { throw new Error("roundSize must be a number"); };
         sandbox.refreshRecipientPreview("manual");
         await flush();
 
-        assert.strictEqual(hint.textContent, "预估失败：roundSize must be a number",
-            "client-side errors keep their concrete message");
+        assert.strictEqual(hint.textContent, "统计不可用，可重试。");
     });
 
     it("discards a stale response and never writes it over the latest selection", async () => {
@@ -241,8 +235,8 @@ describe("recipient preview diagnostics (03 / I-1 / I-3 / S-1)", () => {
         const pending = [];
         sandbox.api = () => new Promise((resolve, reject) => { pending.push({ resolve, reject }); });
 
-        sandbox.refreshRecipientPreview("editor");   // seq 1
-        sandbox.refreshRecipientPreview("editor");   // seq 2
+        sandbox.refreshRecipientPreview("editor", "cacheOnly");   // seq 1
+        sandbox.refreshRecipientPreview("editor", "cacheOnly");   // seq 2
         assert.strictEqual(pending.length, 2, "each preview issues exactly one request when the gate is unavailable");
 
         pending[1].resolve(diagnosticsResponse({ baseline: 11, excludedUnique: 5,

@@ -72,7 +72,8 @@ function loadRecipientPreviewHelpers(sandbox) {
     if (sandbox.recipientPreviewRequestSeq === undefined) sandbox.recipientPreviewRequestSeq = { editor: 0, manual: 0 };
     if (sandbox.recipientPreviewTimers === undefined) sandbox.recipientPreviewTimers = { editor: null, manual: null };
     if (sandbox.clearTimeout === undefined) sandbox.clearTimeout = clearTimeout;
-    ["recipientPreviewHintId", "setRecipientPreviewState", "resetRecipientPreview"].forEach((name) => {
+    if (sandbox.setTimeout === undefined) sandbox.setTimeout = setTimeout;
+    ["recipientPreviewHintId", "setRecipientPreviewState", "resetRecipientPreview", "renderRecipientStatistics", "escapeHtml"].forEach((name) => {
         if (sandbox[name] === undefined) vm.runInContext(extractFn(name), sandbox);
     });
     return sandbox;
@@ -1005,7 +1006,6 @@ function exclusionFilterSandbox(extra = {}) {
         "updateExcludeVerifiedUnavailableToggleLabel",
         "showBatchConfigEditor",
         "buildConfigEditorRecipientSnapshot",
-        "baseHintHtml",
         "refreshRecipientPreview"
     ].forEach((name) => vm.runInContext(extractFn(name), sandbox));
     loadEmailPolicyHelpers(sandbox);
@@ -1106,164 +1106,31 @@ describe("verified-unavailable email filter UI (04-filter-ui)", () => {
         assert.strictEqual(sandbox.computeManualDiffs().some((item) => item.key === "excludeVerifiedUnavailableEmails"), false);
     });
 
-    it("uses the selected gate response's total and exclusion count without an additional request", async () => {
+    it("carries verified-unavailable and actual gate settings in one statistics refresh", async () => {
         const elements = createElementStore();
         const calls = [];
-        const responses = [
-            { totalSendable: 18, excludedVerifiedUnavailable: 4, pending: 18, retryable: 0 },
-            { totalSendable: 11, excludedVerifiedUnavailable: 2, pending: 11, retryable: 0 }
-        ];
-        const sandbox = Object.assign({
+        const snapshot = { excludeVerifiedUnavailableEmails: true, gateFilterEnabled: true,
+            emailVerificationEnabled: true, emailVerificationAllowedStates: ["deliverable"] };
+        const sandbox = {
             document: { getElementById: (id) => elements.get(id) },
-            recipientPreviewRequestSeq: { editor: 0 },
             batchGateState: { editor: { available: true } },
-            recipientPreviewHintId: () => "preview",
-            buildConfigEditorRecipientSnapshot: () => ({ excludeVerifiedUnavailableEmails: true }),
-            gateToggleId: () => "gate",
+            buildConfigEditorRecipientSnapshot: () => snapshot,
             api: async (url, options) => {
                 calls.push({ url, body: JSON.parse(options.body) });
-                return responses.shift();
-            },
-            console: { warn: () => {} }
-        }, {});
-        vm.createContext(sandbox);
-        loadRecipientPreviewHelpers(sandbox);
-        vm.runInContext(extractFn("baseHintHtml"), sandbox);
-        vm.runInContext(extractFn("refreshRecipientPreview"), sandbox);
-        elements.get("gate").checked = true;
-        sandbox.refreshRecipientPreview("editor");
-        await flush();
-        assert.strictEqual(calls.length, 2, "the existing gate preview remains two requests");
-        assert.ok(calls.every((call) => call.url === "/api/mail/batch-send/recipients/preview"));
-        assert.ok(calls.every((call) => call.body.excludeVerifiedUnavailableEmails === true));
-        assert.ok(elements.get("preview").innerHTML.includes("<strong>11</strong>"));
-        assert.ok(elements.get("preview").innerHTML.includes("已排除不可用邮箱 <strong>2</strong> 位"),
-            "use the selected response's count, not a difference between gate branches");
-    });
-
-    it("renders the historical exclusion count when the template gate is unavailable and defaults a missing count to zero", async () => {
-        const elements = createElementStore();
-        const calls = [];
-        const sandbox = {
-            document: { getElementById: (id) => elements.get(id) },
-            recipientPreviewRequestSeq: { manual: 0 },
-            batchGateState: { manual: { available: false } },
-            recipientPreviewHintId: () => "preview",
-            buildManualExecutionSnapshot: () => ({ excludeVerifiedUnavailableEmails: true }),
-            gateToggleId: () => "gate",
-            api: async (url, options) => {
-                calls.push(JSON.parse(options.body));
-                return { totalSendable: 6, pending: 6, retryable: 0 };
-            },
-            console: { warn: () => {} }
+                return { state: "READY", cacheKey: "verified", cachedAt: "2026-10-22T16:00:00",
+                    summary: { totalSendable: 11, baseline: 18, excludedUnique: 7,
+                        eligibleBeforeLiveVerification: 11, awaitingVerification: 11, reasonHitsDetail: [] } };
+            }
         };
         vm.createContext(sandbox);
         loadRecipientPreviewHelpers(sandbox);
-        vm.runInContext(extractFn("baseHintHtml"), sandbox);
         vm.runInContext(extractFn("refreshRecipientPreview"), sandbox);
-        sandbox.refreshRecipientPreview("manual");
-        await flush();
-        assert.strictEqual(calls.length, 1, "unavailable gate state retains its one-request path");
-        assert.strictEqual(calls[0].excludeVerifiedUnavailableEmails, true);
-        assert.ok(elements.get("preview").innerHTML.includes("<strong>6</strong>"));
-        assert.ok(elements.get("preview").innerHTML.includes("已排除不可用邮箱 <strong>0</strong> 位"));
-    });
-
-    it("uses the gate-off branch when selected and clears counts on error without accepting an older response", async () => {
-        const elements = createElementStore();
-        const requests = [];
-        let filterEnabled = true;
-        const sandbox = {
-            document: { getElementById: (id) => elements.get(id) },
-            recipientPreviewRequestSeq: { editor: 0 },
-            batchGateState: { editor: { available: true } },
-            recipientPreviewHintId: () => "preview",
-            buildConfigEditorRecipientSnapshot: () => ({ excludeVerifiedUnavailableEmails: filterEnabled }),
-            gateToggleId: () => "gate",
-            api: (url, options) => new Promise((resolve, reject) => {
-                requests.push({ body: JSON.parse(options.body), resolve, reject });
-            }),
-            console: { warn: () => {} }
-        };
-        vm.createContext(sandbox);
-        loadRecipientPreviewHelpers(sandbox);
-        vm.runInContext(extractFn("baseHintHtml"), sandbox);
-        vm.runInContext(extractFn("refreshRecipientPreview"), sandbox);
-
-        elements.get("gate").checked = false;
-        sandbox.refreshRecipientPreview("editor");
-        requests[0].resolve({ totalSendable: 18, excludedVerifiedUnavailable: 4, pending: 18 });
-        requests[1].resolve({ totalSendable: 11, excludedVerifiedUnavailable: 2, pending: 11 });
-        await flush();
-        assert.ok(elements.get("preview").innerHTML.includes("命中 <strong>18</strong>"));
-        assert.ok(elements.get("preview").innerHTML.includes("已排除不可用邮箱 <strong>4</strong> 位"));
-
-        sandbox.refreshRecipientPreview("editor");
-        assert.ok(elements.get("preview").innerHTML.includes("计算中"));
-        filterEnabled = false;
-        sandbox.refreshRecipientPreview("editor");
-        assert.strictEqual(requests.length, 6, "one existing pair per preview, never a third filter request");
-        assert.ok(requests.slice(4).every((request) => request.body.excludeVerifiedUnavailableEmails === false));
-        requests[4].resolve({ totalSendable: 22, excludedVerifiedUnavailable: 7, pending: 22 });
-        requests[5].resolve({ totalSendable: 12, excludedVerifiedUnavailable: 5, pending: 12 });
-        await flush();
-        assert.ok(elements.get("preview").innerHTML.includes("命中 <strong>22</strong>"));
-        assert.ok(!elements.get("preview").innerHTML.includes("已排除不可用邮箱"),
-            "the disabled filter must not display the response's excluded count");
-        requests[2].resolve({ totalSendable: 100, excludedVerifiedUnavailable: 80 });
-        requests[3].resolve({ totalSendable: 90, excludedVerifiedUnavailable: 70 });
-        await flush();
-        assert.ok(elements.get("preview").innerHTML.includes("命中 <strong>22</strong>"),
-            "an older preview must not overwrite the latest value");
-
-        filterEnabled = true;
-        sandbox.refreshRecipientPreview("editor");
-        requests[6].reject(new Error("ES unavailable"));
-        requests[7].resolve({ totalSendable: 9, excludedVerifiedUnavailable: 3 });
-        await flush();
-        assert.strictEqual(elements.get("preview").textContent, "预估失败：ES unavailable");
-        assert.ok(!elements.get("preview").innerHTML.includes("已排除不可用邮箱"),
-            "failed preview must not retain a stale count");
-    });
-
-    it("03: renders the shared diagnostics skeleton for new responses and keeps legacy responses explicit", async () => {
-        async function render(response) {
-            const elements = createElementStore();
-            const sandbox = {
-                document: { getElementById: (id) => elements.get(id) },
-                recipientPreviewRequestSeq: { editor: 0 },
-                batchGateState: { editor: { available: false } },
-                recipientPreviewHintId: () => "preview",
-                gateToggleId: () => "gate",
-                buildConfigEditorRecipientSnapshot: () => ({ excludeVerifiedUnavailableEmails: true }),
-                api: async () => response,
-                console: { warn: () => {} }
-            };
-            vm.createContext(sandbox);
-            loadRecipientPreviewHelpers(sandbox);
-            ["baseHintHtml", "escapeHtml", "refreshRecipientPreview"]
-                .forEach((name) => vm.runInContext(extractFn(name), sandbox));
-            sandbox.refreshRecipientPreview("editor");
-            await flush();
-            return elements.get("preview").innerHTML;
-        }
-
-        const diagnostics = await render({
-            baseline: 10, excludedUnique: 4, eligibleBeforeLiveVerification: 6, awaitingVerification: 3,
-            asOf: "2026-10-14T09:30:00", partial: false, reasonHitsDetail: []
-        });
-        assert.ok(diagnostics.includes("范围内 <strong>10</strong> 人；排除 <span class=\"batch-gate-excluded\">4</span> 人"),
-            "the diagnostics skeleton must render the shared counts");
-        assert.ok(diagnostics.includes("符合任务条件 <strong>6</strong> 人；待执行验证 <strong>3</strong> 人"),
-            "the diagnostics skeleton must render the eligibility and awaiting counts");
-        assert.ok(!diagnostics.includes("已排除不可用邮箱"),
-            "the diagnostics path must not fall back to the legacy email heuristic");
-
-        const legacy = await render({ pending: 6, retryable: 0, totalSendable: 6 });
-        assert.ok(legacy.includes("已排除不可用邮箱 <strong>0</strong> 位"),
-            "a legacy response keeps its existing counts");
-        assert.ok(legacy.includes("详细解释不可用"), "a legacy response names the missing explanation");
-        assert.ok(!legacy.includes("范围内"), "no skeleton may be faked for legacy responses");
+        await sandbox.refreshRecipientPreview("editor");
+        assert.strictEqual(calls.length, 1);
+        assert.strictEqual(calls[0].url, "/api/mail/batch-send/recipients/statistics?refresh=true");
+        assert.deepStrictEqual(calls[0].body, snapshot);
+        assert.ok(elements.get("batchConfigEditorRecipientHint").innerHTML.includes("缓存目标估计：<strong>11</strong>"));
+        assert.ok(elements.get("batchConfigEditorRecipientHint").innerHTML.includes("模板门禁：<span>已开启</span>"));
     });
 });
 

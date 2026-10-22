@@ -32,9 +32,10 @@ const EMAIL_POLICY_HELPERS = [
 function loadEmailPolicyHelpers(target) {
     EMAIL_POLICY_HELPERS.forEach((name) => vm.runInContext(extractFn(name), target));
     if (!target.clearTimeout) target.clearTimeout = clearTimeout;
+    if (!target.setTimeout) target.setTimeout = setTimeout;
     if (!target.recipientPreviewTimers) target.recipientPreviewTimers = { editor: null, manual: null };
     if (!target.recipientPreviewRequestSeq) target.recipientPreviewRequestSeq = { editor: 0, manual: 0 };
-    ["recipientPreviewHintId", "setRecipientPreviewState", "resetRecipientPreview"].forEach((name) => {
+    ["recipientPreviewHintId", "setRecipientPreviewState", "resetRecipientPreview", "renderRecipientStatistics", "escapeHtml"].forEach((name) => {
         if (!target[name]) vm.runInContext(extractFn(name), target);
     });
     return target;
@@ -1186,15 +1187,15 @@ describe("batch send task console interactions", () => {
         rejectRequest(new Error("roundSize must be a number"));
         await new Promise((resolve) => setImmediate(resolve));
 
-        assert.strictEqual(hint.textContent, "预估失败：roundSize must be a number");
-        assert.ok(hint.innerHTML.includes("计算中"), "error must use textContent, not unsafe HTML");
+        assert.strictEqual(hint.textContent, "统计不可用，可重试。");
+        assert.ok(!hint.innerHTML.includes("<script"), "errors must not inject unsafe HTML");
 
         sandbox.refreshRecipientPreview("manual");
         sandbox.recipientPreviewRequestSeq.manual += 1;
         rejectRequest(new Error("obsolete"));
         await new Promise((resolve) => setImmediate(resolve));
 
-        assert.strictEqual(hint.textContent, "预估失败：roundSize must be a number");
+        assert.strictEqual(hint.textContent, "正在统计当前条件…");
     });
 
     it("V1: setBatchMultiPickerValue + readBatchMultiPickerValue roundtrip keeps the comma contract (I2b-3)", () => {
@@ -1933,197 +1934,54 @@ describe("batch send task console interactions", () => {
         assert.ok(hint.textContent.includes("keyword"), "dropped field must be named in the hint");
     });
 
-    it("G7: unavailable gate state sends a single preview request (I4b-6)", async () => {
-        const refresh = extractFn("refreshRecipientPreview");
-        const baseHint = extractFn("baseHintHtml");
-        const gateToggle = extractFn("gateToggleId");
-        assert.ok(refresh && baseHint && gateToggle, "preview helpers must exist");
+    for (const gate of [false, true]) {
+        it("G7–G9: statistics sends only the actual gate=" + gate + " snapshot", async () => {
+            const hint = element();
+            const calls = [];
+            const sandbox = {
+                batchGateState: { editor: { available: gate }, manual: { available: gate } },
+                buildManualExecutionSnapshot: () => ({ templateId: 3, gateFilterEnabled: gate }),
+                document: { getElementById: (id) => id === "batchManualRecipientHint" ? hint : null },
+                api: async (url, opts) => {
+                    calls.push({ url, body: JSON.parse(opts.body) });
+                    return { state: "READY", cacheKey: "gate", cachedAt: "2026-10-22T16:00:00",
+                        summary: { totalSendable: gate ? 60 : 100 } };
+                }
+            };
+            vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
+            vm.runInContext(extractFn("refreshRecipientPreview"), sandbox);
+            await sandbox.refreshRecipientPreview("manual");
+            assert.strictEqual(calls.length, 1);
+            assert.strictEqual(calls[0].url, "/api/mail/batch-send/recipients/statistics?refresh=true");
+            assert.strictEqual(calls[0].body.gateFilterEnabled, gate);
+            assert.ok(hint.innerHTML.includes("缓存目标估计：<strong>" + (gate ? 60 : 100) + "</strong>"));
+            assert.ok(hint.innerHTML.includes("模板门禁：<span>" + (gate ? "已开启" : "已关闭") + "</span>"));
+            assert.ok(!hint.innerHTML.includes("其中 40"), "never infer exclusions by comparing gate branches");
+        });
+    }
 
+    it("G10–G11: obsolete statistics successes and failures cannot overwrite new conditions", async () => {
         const hint = element();
-        const bodies = [];
+        const pending = [];
+        let gate = false;
         const sandbox = {
-            batchGateState: { editor: { available: false }, manual: { available: false } },
-            recipientPreviewRequestSeq: { editor: 0, manual: 0 },
-            recipientPreviewHintId: () => "batchManualRecipientHint",
-            gateToggleId: () => "batchManualGateFilter",
-            buildManualExecutionSnapshot: () => ({ templateId: 3 }),
+            batchGateState: { manual: { available: true } },
+            buildManualExecutionSnapshot: () => ({ templateId: 3, gateFilterEnabled: gate }),
             document: { getElementById: (id) => id === "batchManualRecipientHint" ? hint : null },
-            api: async (url, opts) => { bodies.push(JSON.parse(opts.body)); return { pending: 5, retryable: 3 }; },
-            console: { warn: () => {} }
+            api: () => new Promise((resolve, reject) => pending.push({ resolve, reject }))
         };
         vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
-        vm.runInContext(baseHint, sandbox);
-        vm.runInContext(gateToggle, sandbox);
-        vm.runInContext(refresh, sandbox);
-
+        vm.runInContext(extractFn("refreshRecipientPreview"), sandbox);
         sandbox.refreshRecipientPreview("manual");
-        await new Promise((resolve) => setImmediate(resolve));
-
-        assert.strictEqual(bodies.length, 1, "unavailable state must send exactly one request (I4b-6)");
-        assert.strictEqual(bodies[0].gateFilterEnabled, false, "the single request must gate off (I4b-6)");
-        assert.ok(hint.innerHTML.includes("当前条件命中 <strong>8</strong>"),
-            "single-request total must render (5+3)");
-        assert.ok(!hint.innerHTML.includes("batch-gate-warnline") && !hint.innerHTML.includes("batch-gate-excluded"),
-            "no exclusion line may render without dual requests");
-    });
-
-    it("G8: available gate with toggle off sends two requests and renders the warnline (I4b-1)", async () => {
-        const refresh = extractFn("refreshRecipientPreview");
-        const baseHint = extractFn("baseHintHtml");
-        const gateToggle = extractFn("gateToggleId");
-        assert.ok(refresh && baseHint && gateToggle, "preview helpers must exist");
-
-        const hint = element();
-        const checkbox = element("");
-        checkbox.checked = false;
-        const bodies = [];
-        const sandbox = {
-            batchGateState: { editor: { available: true }, manual: { available: true } },
-            recipientPreviewRequestSeq: { editor: 0, manual: 0 },
-            recipientPreviewHintId: () => "batchManualRecipientHint",
-            gateToggleId: () => "batchManualGateFilter",
-            buildManualExecutionSnapshot: () => ({ templateId: 3 }),
-            document: { getElementById: (id) => id === "batchManualRecipientHint" ? hint : (id === "batchManualGateFilter" ? checkbox : null) },
-            api: async (url, opts) => {
-                bodies.push(JSON.parse(opts.body));
-                return bodies.length === 1 ? { pending: 10, retryable: 5 } : { pending: 4, retryable: 3 };
-            },
-            console: { warn: () => {} }
-        };
-        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
-        vm.runInContext(baseHint, sandbox);
-        vm.runInContext(gateToggle, sandbox);
-        vm.runInContext(refresh, sandbox);
-
+        gate = true;
         sandbox.refreshRecipientPreview("manual");
+        pending[1].resolve({ state: "READY", cacheKey: "new", summary: { totalSendable: 60 } });
         await new Promise((resolve) => setImmediate(resolve));
-
-        assert.strictEqual(bodies.length, 2, "available state must send two requests (I4b-1)");
-        assert.strictEqual(bodies[0].gateFilterEnabled, false, "first request must be gate off (I4b-1)");
-        assert.strictEqual(bodies[1].gateFilterEnabled, true, "second request must be gate on (I4b-1)");
-        assert.ok(hint.innerHTML.includes("batch-gate-warnline"),
-            "off toggle with an excluded count must render the warnline (I4b-1)");
-        assert.ok(hint.innerHTML.includes("其中 8 位缺少该模板必填字段"),
-            "excluded count must be off-total minus on-total (15-7=8) (I4b-1)");
-    });
-
-    it("G9: available gate with toggle on renders the excluded span with the gated total (I4b-1)", async () => {
-        const refresh = extractFn("refreshRecipientPreview");
-        const baseHint = extractFn("baseHintHtml");
-        const gateToggle = extractFn("gateToggleId");
-        assert.ok(refresh && baseHint && gateToggle, "preview helpers must exist");
-
-        const hint = element();
-        const checkbox = element("");
-        checkbox.checked = true;
-        const bodies = [];
-        const sandbox = {
-            batchGateState: { editor: { available: true }, manual: { available: true } },
-            recipientPreviewRequestSeq: { editor: 0, manual: 0 },
-            recipientPreviewHintId: () => "batchManualRecipientHint",
-            gateToggleId: () => "batchManualGateFilter",
-            buildManualExecutionSnapshot: () => ({ templateId: 3 }),
-            document: { getElementById: (id) => id === "batchManualRecipientHint" ? hint : (id === "batchManualGateFilter" ? checkbox : null) },
-            api: async (url, opts) => {
-                bodies.push(JSON.parse(opts.body));
-                return bodies.length === 1 ? { totalSendable: 100 } : { totalSendable: 60 };
-            },
-            console: { warn: () => {} }
-        };
-        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
-        vm.runInContext(baseHint, sandbox);
-        vm.runInContext(gateToggle, sandbox);
-        vm.runInContext(refresh, sandbox);
-
-        sandbox.refreshRecipientPreview("manual");
+        const fresh = hint.innerHTML;
+        pending[0].reject(new Error("<script>obsolete</script>"));
         await new Promise((resolve) => setImmediate(resolve));
-
-        assert.strictEqual(bodies.length, 2);
-        assert.ok(hint.innerHTML.includes("batch-gate-excluded"),
-            "on toggle must render the excluded span (I4b-1)");
-        assert.ok(hint.innerHTML.includes("门禁过滤已排除"), "exclusion copy must render (I4b-1)");
-        assert.ok(hint.innerHTML.includes("当前条件命中 <strong>60</strong>"),
-            "total must come from the gate-on response (I4b-1)");
-        assert.ok(hint.innerHTML.includes(">40<"), "excluded = 100-60 = 40 (I4b-1)");
-    });
-
-    it("G10: a stale dual-response round is discarded by seq and never renders (I4b-2)", async () => {
-        const refresh = extractFn("refreshRecipientPreview");
-        const baseHint = extractFn("baseHintHtml");
-        const gateToggle = extractFn("gateToggleId");
-        assert.ok(refresh && baseHint && gateToggle, "preview helpers must exist");
-
-        const hint = element();
-        const checkbox = element("");
-        checkbox.checked = false;
-        const pending = [];
-        const sandbox = {
-            batchGateState: { editor: { available: true }, manual: { available: true } },
-            recipientPreviewRequestSeq: { editor: 0, manual: 0 },
-            recipientPreviewHintId: () => "batchManualRecipientHint",
-            gateToggleId: () => "batchManualGateFilter",
-            buildManualExecutionSnapshot: () => ({ templateId: 3 }),
-            document: { getElementById: (id) => id === "batchManualRecipientHint" ? hint : (id === "batchManualGateFilter" ? checkbox : null) },
-            api: () => new Promise((resolve, reject) => { pending.push({ resolve, reject }); }),
-            console: { warn: () => {} }
-        };
-        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
-        vm.runInContext(baseHint, sandbox);
-        vm.runInContext(gateToggle, sandbox);
-        vm.runInContext(refresh, sandbox);
-
-        sandbox.refreshRecipientPreview("manual");   // round 1 (seq 1): pending[0] off, pending[1] on
-        sandbox.refreshRecipientPreview("manual");   // round 2 (seq 2): pending[2] off, pending[3] on
-        assert.strictEqual(pending.length, 4, "two rounds must issue four requests (I4b-2)");
-
-        pending[2].resolve({ pending: 1, retryable: 1 });   // round 2 off → total 2
-        pending[3].resolve({ pending: 1, retryable: 0 });   // round 2 on  → total 1, excluded 1
-        await new Promise((resolve) => setImmediate(resolve));
-        assert.ok(hint.innerHTML.includes("batch-gate-warnline"), "fresh round must render");
-        assert.ok(hint.innerHTML.includes("其中 1 位缺少该模板必填字段"), "fresh excluded count must render");
-
-        pending[0].resolve({ pending: 50, retryable: 50 }); // round 1 off → total 100
-        pending[1].resolve({ pending: 25, retryable: 25 }); // round 1 on  → total 50, excluded 50
-        await new Promise((resolve) => setImmediate(resolve));
-        assert.ok(hint.innerHTML.includes("其中 1 位缺少该模板必填字段"),
-            "stale round must not overwrite the fresh render (I4b-2)");
-        assert.ok(!hint.innerHTML.includes("其中 50 位"), "stale excluded count must not render (I4b-2)");
-    });
-
-    it("G11: a rejected dual request renders the failure, never a partial result (I4b-2)", async () => {
-        const refresh = extractFn("refreshRecipientPreview");
-        const baseHint = extractFn("baseHintHtml");
-        const gateToggle = extractFn("gateToggleId");
-        assert.ok(refresh && baseHint && gateToggle, "preview helpers must exist");
-
-        const hint = element();
-        const checkbox = element("");
-        checkbox.checked = false;
-        const pending = [];
-        const sandbox = {
-            batchGateState: { editor: { available: true }, manual: { available: true } },
-            recipientPreviewRequestSeq: { editor: 0, manual: 0 },
-            recipientPreviewHintId: () => "batchManualRecipientHint",
-            gateToggleId: () => "batchManualGateFilter",
-            buildManualExecutionSnapshot: () => ({ templateId: 3 }),
-            document: { getElementById: (id) => id === "batchManualRecipientHint" ? hint : (id === "batchManualGateFilter" ? checkbox : null) },
-            api: () => new Promise((resolve, reject) => { pending.push({ resolve, reject }); }),
-            console: { warn: () => {} }
-        };
-        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
-        vm.runInContext(baseHint, sandbox);
-        vm.runInContext(gateToggle, sandbox);
-        vm.runInContext(refresh, sandbox);
-
-        sandbox.refreshRecipientPreview("manual");
-        pending[0].resolve({ pending: 10, retryable: 5 });   // off succeeds
-        pending[1].reject(new Error("boom"));                // on fails
-        await new Promise((resolve) => setImmediate(resolve));
-
-        assert.strictEqual(hint.textContent, "预估失败：boom",
-            "any failing request must render the failure (I4b-2)");
-        assert.ok(!hint.innerHTML.includes("batch-gate-warnline") && !hint.innerHTML.includes("batch-gate-excluded"),
-            "no half-rendered result may appear (I4b-2)");
+        assert.strictEqual(hint.innerHTML, fresh);
+        assert.ok(fresh.includes("缓存目标估计：<strong>60</strong>"));
     });
 
     it("G12: gateFilterEnabled participates in manual diffs with 开启/关闭 values (I4b-5)", () => {

@@ -22648,30 +22648,37 @@ var batchManualSourceRequestToken = 0;
 var recipientPreviewTimers = { editor: null, manual: null };
 var recipientPreviewRequestSeq = { editor: 0, manual: 0 };
 
-function setRecipientPreviewState(kind, state) {
+function setRecipientPreviewState(kind, state, hasValue, loading, stale) {
     var prefix = kind === "editor" ? "batchConfigEditor" : "batchManual";
     var status = document.getElementById(prefix + "RecipientStatus");
     var button = document.getElementById(prefix + "RecipientPreviewBtn");
     if (!status || !button) return;
     var labels = {
-        idle: ["尚未统计", "统计命中人数"],
-        stale: ["尚未统计或条件已更新", "统计命中人数"],
-        loading: ["正在统计当前条件…", "统计中…"],
-        done: ["统计完成", "重新统计"],
-        error: ["统计失败，可重试", "重新统计"]
-    }[state];
-    status.textContent = labels[0];
-    button.textContent = labels[1];
-    button.disabled = state === "loading";
+        MISS: "尚未统计",
+        READY: stale ? "缓存已超过24小时" : "已加载缓存",
+        REFRESHING: "正在刷新统计…",
+        ERROR: hasValue ? "刷新失败，保留上次缓存" : "统计不可用"
+    };
+    status.textContent = labels[state] || labels.MISS;
+    button.textContent = loading ? "统计中…" : (hasValue ? "刷新统计" : "统计并缓存");
+    button.disabled = loading === true;
 }
 
 function resetRecipientPreview(kind) {
     if (kind !== "editor" && kind !== "manual") return;
     clearTimeout(recipientPreviewTimers[kind]);
+    recipientPreviewTimers[kind] = null;
     recipientPreviewRequestSeq[kind]++;
+    if (typeof batchGateState !== "undefined" && batchGateState[kind]) {
+        batchGateState[kind].requestSeq = (batchGateState[kind].requestSeq || 0) + 1;
+        batchGateState[kind].pending = false;
+    }
     var hint = document.getElementById(recipientPreviewHintId(kind));
-    if (hint) hint.textContent = "";
-    setRecipientPreviewState(kind, "idle");
+    if (hint) {
+        hint.recipientStatistics = null;
+        hint.textContent = "尚未统计，点击‘统计并缓存’获取参考人数。";
+    }
+    setRecipientPreviewState(kind, "MISS");
 }
 
 function openBatchSendTaskModal() {
@@ -22697,6 +22704,8 @@ function closeBatchSendTaskModal() {
 }
 
 function resetBatchTaskState() {
+    resetRecipientPreview("editor");
+    resetRecipientPreview("manual");
     batchTaskState = {
         activeTab: "scheduled",
         configs: [],
@@ -22764,6 +22773,7 @@ async function preloadBatchSendLookups() {
 // ── Tab switching ────────────────────────────────────────────────────────────────────
 
 function switchBatchSendTab(tab) {
+    resetRecipientPreview(tab === "manual" ? "editor" : "manual");
     batchTaskState.activeTab = tab;
     var tabs = $$("#batchSendTaskModal .batch-send-tab");
     tabs.forEach(function(t) {
@@ -22777,6 +22787,8 @@ function switchBatchSendTab(tab) {
     } else if (tab === "manual") {
         if (!batchTaskState.manualSource) {
             resetManualExecution({ preserveSource: false });
+        } else {
+            refreshBatchGateState("manual");
         }
     }
 }
@@ -22939,6 +22951,7 @@ async function deleteBatchConfig(id) {
 // ── Config Editor (create/edit) ─────────────────────────────────────────────────────
 
 function hideBatchConfigEditor() {
+    resetRecipientPreview("editor");
     var editor = document.getElementById("batchConfigEditor");
     if (editor) editor.hidden = true;
     var panel = document.getElementById("batchScheduledPanel");
@@ -22979,6 +22992,7 @@ function padClock(hourText, minText) {
 function showBatchConfigEditor(config) {
     var editor = document.getElementById("batchConfigEditor");
     if (!editor) return;
+    resetRecipientPreview("editor");
     var panel = document.getElementById("batchScheduledPanel");
     if (panel) {
         panel.classList.add("is-editing");
@@ -23058,7 +23072,6 @@ function showBatchConfigEditor(config) {
     // I-1：历史/未知 code 原样回显（列表未加载时 chip 以 code 原文显示），不静默清空。
     setBatchMultiPickerValue("batchConfigEditorSenderAccounts", config && Array.isArray(config.senderAccountCodes) ? config.senderAccountCodes : []);
     updateBatchConfigVolumeHint();
-    resetRecipientPreview("editor");
 }
 
 function fillBatchConfigEditorTemplateSelector(selectedId) {
@@ -23105,6 +23118,12 @@ function refreshBatchTemplateSelectors() {
             ? batchTaskState.manualDraft.templateId
             : (manualSelect.value || null);
         fillBatchManualTemplateSelector(manualTemplateId);
+        if (batchTaskState.activeTab === "manual" && typeof refreshBatchGateState === "function") {
+            refreshBatchGateState("manual");
+        }
+        if (batchTaskState.activeTab === "manual" && typeof refreshEmailVerificationState === "function") {
+            refreshEmailVerificationState("manual");
+        }
     }
 }
 
@@ -23693,12 +23712,15 @@ function updateGateToggleLabel(kind) {
    8. 结束后调 scheduleRecipientPreview(kind)（IP-1：模板变了排除数也变）。 */
 async function refreshBatchGateState(kind) {
     if (kind !== "editor" && kind !== "manual") return;
+    resetRecipientPreview(kind);
     var field = document.getElementById(kind === "editor" ? "editorFieldGateFilter" : "manualFieldGateFilter");
     var checkbox = document.getElementById(gateToggleId(kind));
     var keys = document.getElementById(kind === "editor" ? "batchConfigEditorGateFilterKeys" : "batchManualGateFilterKeys");
     var hint = document.getElementById(kind === "editor" ? "batchConfigEditorGateFilterHint" : "batchManualGateFilterHint");
     if (!field || !checkbox || !keys || !hint) return;
     var st = batchGateState[kind];
+    var gateSeq = st.requestSeq;
+    st.pending = true;
     var DEFAULT_HINTS = {
         editor: "开启后按模板必填字段筛选，缺项会在发送前排除；关闭时不因个性化缺项排除。",
         manual: "仅影响本次执行；开启后按模板必填字段筛选，关闭时不因个性化缺项排除。"
@@ -23716,6 +23738,11 @@ async function refreshBatchGateState(kind) {
         hint.classList.add("is-warn");
         hint.textContent = warnText;
     };
+    var finish = function() {
+        st.pending = false;
+        updateGateToggleLabel(kind);
+        scheduleRecipientPreview(kind);
+    };
 
     var templateEl = document.getElementById(kind === "editor" ? "batchConfigEditorTemplateId" : "batchManualTemplateId");
     var rawTemplate = templateEl ? templateEl.value : "";
@@ -23727,8 +23754,7 @@ async function refreshBatchGateState(kind) {
     // 步骤 2：模板为空 → 不可用态，不发 gate-fields 请求
     if (!id) {
         setUnavailable("请先选择邮件模板");
-        updateGateToggleLabel(kind);
-        scheduleRecipientPreview(kind);
+        finish();
         return;
     }
 
@@ -23737,20 +23763,20 @@ async function refreshBatchGateState(kind) {
         // 步骤 3
         data = await api("/api/compose-templates/" + id + "/gate-fields");
     } catch (error) {
+        if (gateSeq !== st.requestSeq) return;
         // 失败策略照 initExpertGateFilter：只清状态、console.error 一次、不弹窗
         setUnavailable("门禁字段加载失败，开关暂不可用");
         console.error("Failed to load gate fields for template " + id, error);
-        updateGateToggleLabel(kind);
-        scheduleRecipientPreview(kind);
+        finish();
         return;
     }
+    if (gateSeq !== st.requestSeq) return;
 
     var esFields = Array.isArray(data && data.esFields) ? data.esFields : [];
     // 步骤 4：无门禁字段 → 不可用态（S-2：文案不再引用已废弃的旧必填列）
     if (esFields.length === 0) {
         setUnavailable("该模板未配置门禁字段，门禁本身未启用，开启无效。");
-        updateGateToggleLabel(kind);
-        scheduleRecipientPreview(kind);
+        finish();
         return;
     }
 
@@ -23760,8 +23786,7 @@ async function refreshBatchGateState(kind) {
     // 步骤 5：全部落在差集，预筛不会产生任何效果 → 仍不可用态
     if (fields.length === 0) {
         setUnavailable("该模板的必填字段均无法预筛（" + dropped.join("、") + "）");
-        updateGateToggleLabel(kind);
-        scheduleRecipientPreview(kind);
+        finish();
         return;
     }
 
@@ -23785,8 +23810,7 @@ async function refreshBatchGateState(kind) {
     hint.textContent = DEFAULT_HINTS[kind];
 
     // 步骤 7 + 8
-    updateGateToggleLabel(kind);
-    scheduleRecipientPreview(kind);
+    finish();
 }
 
 // ── 发送前邮箱验证（Emailable）开关（03 T2 / I-1 / S-1） ────────────────────────────
@@ -24025,152 +24049,105 @@ function scheduleRecipientPreview(kind) {
     clearTimeout(recipientPreviewTimers[kind]);
     recipientPreviewTimers[kind] = null;
     recipientPreviewRequestSeq[kind]++;
-    setRecipientPreviewState(kind, "stale");
+    var hint = document.getElementById(recipientPreviewHintId(kind));
+    if (hint) {
+        hint.recipientStatistics = null;
+        hint.textContent = "尚未统计，点击‘统计并缓存’获取参考人数。";
+    }
+    setRecipientPreviewState(kind, "MISS");
+    if (batchGateState[kind].pending) return;
+    recipientPreviewTimers[kind] = setTimeout(function() {
+        recipientPreviewTimers[kind] = null;
+        refreshRecipientPreview(kind, "cacheOnly");
+    }, 300);
 }
 
-/* baseHintHtml preserves the original summary and appends the selected response count. */
-function baseHintHtml(total, res, excludeVerifiedUnavailableEmails) {
-    var pending = Number(res.pending || 0);
-    var retryable = Number(res.retryable || 0);
-    var hint = "当前条件命中 <strong>" + total + "</strong> 位专家（其中未联系 " + pending +
-        "、可重试 " + retryable + "）";
-    // c5/I-4：批量页展示服务端准入与显式条件计数，不新增审核筛选控件。
-    var admission = res.admission || null;
-    if (admission) {
-        hint += "；准入通过 <strong>" + Number(admission.admitted || 0) + "</strong>" +
-            "；待审核 <strong>" + Number(admission.needsReview || 0) + "</strong>（去深度发现）" +
-            "；显式条件排除 <strong>" + Number(admission.explicitFilterExcluded || 0) + "</strong>" +
-            "；本次目标 <strong>" +
-            Number(admission.target != null ? admission.target : total) + "</strong>";
-    }
-    if (excludeVerifiedUnavailableEmails) {
-        hint += "；已排除不可用邮箱 <strong>" +
-            Number(res.excludedVerifiedUnavailable || 0) + "</strong> 位";
-    }
-    return hint;
-}
-
-function refreshRecipientPreview(kind) {
-    if (kind !== "editor" && kind !== "manual") return;
+function renderRecipientStatistics(kind, envelope, snapshot, loading) {
     var hint = document.getElementById(recipientPreviewHintId(kind));
     if (!hint) return;
-    var seq = ++recipientPreviewRequestSeq[kind];          // I4b-2：两次请求共用同一 seq
-    var snapshot = kind === "editor" ? buildConfigEditorRecipientSnapshot() : buildManualExecutionSnapshot();
-    setRecipientPreviewState(kind, "loading");
-    hint.innerHTML = "当前条件命中 <strong>计算中…</strong>";
-
-    /* 03/I-1（MAIN M-3）：只有带完整母集字段的响应才渲染 S-1 诊断骨架；缺新字段的旧响应走兼容渲染。
-       这些辅助函数内联，保持 refreshRecipientPreview 自包含（既有契约测试按函数名单独抽取）。 */
-    var hasDiagnostics = function(res) {
-        return Boolean(res) && res.baseline !== null && res.baseline !== undefined;
+    var res = envelope.summary;
+    var hasValue = Boolean(res && res.totalSendable !== null && res.totalSendable !== undefined);
+    setRecipientPreviewState(kind, envelope.state, hasValue, loading, envelope.stale);
+    if (!hasValue) {
+        hint.textContent = envelope.state === "ERROR" ? "统计不可用，可重试。" :
+            (envelope.state === "REFRESHING" ? "正在统计当前条件…" : "尚未统计，点击‘统计并缓存’获取参考人数。");
+        return;
+    }
+    var numberText = function(value) {
+        return value !== null && value !== undefined && Number.isFinite(Number(value))
+            ? escapeHtml(String(Number(value))) : "详细解释不可用";
     };
-    var numberOf = function(value) {
-        var n = Number(value);
-        return Number.isFinite(n) ? n : 0;
+    var timeText = function(value) {
+        return escapeHtml(value ? String(value).replace("T", " ").slice(0, 19) : "未知");
     };
-    var asOfText = function(value) {
-        if (value === null || value === undefined || value === "") return "未知";
-        return String(value).replace("T", " ").slice(0, 19);
-    };
-    /* 03/S-1（I-1）：两处表单共用的诊断骨架。原因命中可重叠，绝不求和冒充排除人数；样本标注
-       「仅显示前 N 条」，截断、partial 与统计时间显式呈现；所有动态内容转义。 */
-    var diagnosticsHtml = function(res) {
-        var baseline = numberOf(res.baseline);
-        var excluded = numberOf(res.excludedUnique);
-        var eligible = numberOf(res.eligibleBeforeLiveVerification);
-        var awaiting = numberOf(res.awaitingVerification);
-        var hits = Array.isArray(res.reasonHitsDetail) ? res.reasonHitsDetail : [];
-        var html = "<div>统计时间：<span>" + escapeHtml(asOfText(res.asOf)) + "</span></div>" +
-            "<div>范围内 <strong>" + baseline + "</strong> 人；排除 <span class=\"batch-gate-excluded\">" + excluded +
-            "</span> 人；符合任务条件 <strong>" + eligible + "</strong> 人；待执行验证 <strong>" + awaiting +
-            "</strong> 人</div>" +
+    var html = "<div>缓存时间：<span>" + timeText(envelope.cachedAt) + "</span></div>" +
+        "<div>缓存目标估计：<strong>" + numberText(res.totalSendable) + "</strong> 人（未做实时验证）</div>" +
+        "<span class=\"batch-gate-warnline\">仅供参考；发送时按当次额度取人并重新检查。</span>" +
+        "<div>模板门禁：<span>" + (snapshot.gateFilterEnabled ? "已开启" : "已关闭") + "</span></div>";
+    if (res.baseline !== null && res.baseline !== undefined) {
+        html += "<div>诊断采样时间：<span>" + timeText(res.asOf) + "</span></div>" +
+            "<div>诊断范围内 <strong>" + numberText(res.baseline) + "</strong> 人；排除 <span class=\"batch-gate-excluded\">" +
+            numberText(res.excludedUnique) + "</span> 人；符合任务条件 <strong>" +
+            numberText(res.eligibleBeforeLiveVerification) + "</strong> 人；待执行验证 <strong>" +
+            numberText(res.awaitingVerification) + "</strong> 人</div>" +
             "<span class=\"batch-gate-warnline\">原因人数可重叠；发送前还会复核退订、发送历史和账号运行状态。</span>";
-        var detail = "";
-        if (hits.length === 0) {
-            detail = "<div>原因：0 人；仅显示前 0 条</div>";
-        } else {
-            hits.forEach(function(hit) {
-                var samples = hit && Array.isArray(hit.samples) ? hit.samples : [];
-                detail += "<div>原因：" + escapeHtml(hit && hit.reasonKey) + " <strong>" +
-                    numberOf(hit && hit.count) + "</strong> 人；仅显示前 <strong>" + samples.length +
-                    "</strong> 条" + (hit && hit.truncated ? "（样本已截断）" : "") + "</div>";
-                samples.forEach(function(sample) {
-                    detail += "<div>样本：" + escapeHtml(sample && sample.docId) + "（" +
-                        escapeHtml(sample && sample.orcidId) + "）</div>";
-                });
+        var hits = Array.isArray(res.reasonHitsDetail) ? res.reasonHitsDetail : [];
+        var detail = hits.length ? "" : "<div>原因：0 人；仅显示前 0 条</div>";
+        hits.forEach(function(hit) {
+            var samples = hit && Array.isArray(hit.samples) ? hit.samples : [];
+            detail += "<div>原因：" + escapeHtml(hit && hit.reasonKey) + " <strong>" +
+                numberText(hit && hit.count) + "</strong> 人；仅显示前 <strong>" + samples.length +
+                "</strong> 条" + (hit && hit.truncated ? "（样本已截断）" : "") + "</div>";
+            samples.forEach(function(sample) {
+                detail += "<div>样本：" + escapeHtml(sample && sample.docId) + "（" +
+                    escapeHtml(sample && sample.orcidId) + "）</div>";
             });
-        }
-        html += "<details><summary>查看排除原因与样本</summary>" + detail + "</details>";
-        if (res.partial) {
-            html += "<span class=\"batch-gate-warnline\">统计未完成，结果可能不完整。</span>";
-        }
-        return html;
-    };
-    /* 03/I-2：模板门禁说明跟随开关，关闭时不再称为发送失败。 */
-    var gateHtml = function(gate) {
-        if (!gate) return "";
-        if (gate.gateOn) {
-            return "；因模板缺项排除 <span class=\"batch-gate-excluded\">" + gate.excluded +
-                "</span> 人（门禁过滤已排除）";
-        }
-        if (gate.excluded > 0) {
-            return "<span class=\"batch-gate-warnline\">其中 " + gate.excluded +
-                " 位缺少该模板必填字段，当前未开启门禁不会因此排除。</span>";
-        }
-        return "";
-    };
-    /* 03/I-1/I-3：新响应按 S-1 骨架渲染；旧响应只显示现有数量并注明「详细解释不可用」，禁止补 0。 */
-    var hintHtml = function(total, res, excludeVerifiedUnavailableEmails, gate) {
-        var html = hasDiagnostics(res)
-            ? diagnosticsHtml(res)
-            : baseHintHtml(total, res, excludeVerifiedUnavailableEmails) + "<span>详细解释不可用</span>";
-        return html + gateHtml(gate);
-    };
-
-    var post = function(gateOn) {
-        return api("/api/mail/batch-send/recipients/preview", {
-            method: "POST",
-            body: JSON.stringify(Object.assign({}, snapshot, { gateFilterEnabled: gateOn }))
         });
-    };
-    // I4b-6：不可用态只发一次（当前全库门禁字段为空，双发会让 ES 计数量翻倍且结果恒等）
-    var gateAvailable = batchGateState[kind].available;
-    var requests = gateAvailable ? [post(false), post(true)] : [post(false)];
+        html += "<details><summary>查看排除原因与样本</summary>" + detail + "</details>";
+    } else {
+        html += "<span>详细解释不可用</span>";
+    }
+    if (res.partial) html += "<span class=\"batch-gate-warnline\">诊断仅覆盖部分候选；不是全量排除分析。</span>";
+    if (envelope.stale) html += "<span class=\"batch-gate-warnline\">缓存已超过24小时，请按需刷新。</span>";
+    hint.innerHTML = html;
+}
 
-    Promise.all(requests).then(function(results) {
-        if (seq !== recipientPreviewRequestSeq[kind]) return;   // I4b-2
-        var totalOf = function(r) {
-            var p = Number(r.pending || 0), t = Number(r.retryable || 0);
-            return Number(r.totalSendable != null ? r.totalSendable : (p + t));
-        };
-        var off = results[0];
-        var offTotal = totalOf(off);
-        var gateOn = gateAvailable && document.getElementById(gateToggleId(kind)).checked;
-        var selectedResponse = gateOn ? results[1] : off;
-        var selectedTotal = gateOn ? totalOf(results[1]) : offTotal;
-        var excludeVerifiedUnavailable = snapshot.excludeVerifiedUnavailableEmails === true;
-        if (!gateAvailable) {
-            hint.innerHTML = hintHtml(offTotal, off, excludeVerifiedUnavailable);
-            setRecipientPreviewState(kind, "done");
-            return;
-        }
-        var onTotal = totalOf(results[1]);
-        var excluded = Math.max(0, offTotal - onTotal);
-        hint.innerHTML = hintHtml(selectedTotal, selectedResponse, excludeVerifiedUnavailable,
-            { gateOn: gateOn, excluded: excluded });
-        setRecipientPreviewState(kind, "done");
+function refreshRecipientPreview(kind, mode) {
+    if (kind !== "editor" && kind !== "manual") return;
+    var hint = document.getElementById(recipientPreviewHintId(kind));
+    if (!hint || batchGateState[kind].pending) return;
+    var snapshot = kind === "editor" ? buildConfigEditorRecipientSnapshot() : buildManualExecutionSnapshot();
+    var identity = JSON.stringify(snapshot);
+    var previous = hint.recipientStatistics;
+    if (previous && previous.identity !== identity) previous = null;
+    if (previous && previous.loading) return;
+    clearTimeout(recipientPreviewTimers[kind]);
+    recipientPreviewTimers[kind] = null;
+    var seq = ++recipientPreviewRequestSeq[kind];
+    var refresh = mode !== "cacheOnly";
+    var oldEnvelope = previous && previous.envelope;
+    var pendingEnvelope = Object.assign({}, oldEnvelope || {}, { state: refresh ? "REFRESHING" : "MISS" });
+    hint.recipientStatistics = { identity: identity, envelope: oldEnvelope, loading: refresh };
+    renderRecipientStatistics(kind, pendingEnvelope, snapshot, refresh);
+    var current = function() {
+        var now = kind === "editor" ? buildConfigEditorRecipientSnapshot() : buildManualExecutionSnapshot();
+        return seq === recipientPreviewRequestSeq[kind] && identity === JSON.stringify(now);
+    };
+    return api("/api/mail/batch-send/recipients/statistics?" + (refresh ? "refresh=true" : "cacheOnly=true"), {
+        method: "POST", body: JSON.stringify(snapshot)
+    }).then(function(envelope) {
+        if (!current()) return;
+        hint.recipientStatistics = { identity: identity, envelope: envelope, loading: false };
+        renderRecipientStatistics(kind, envelope, snapshot, false);
     }).catch(function(error) {
-        if (seq !== recipientPreviewRequestSeq[kind]) return;   // I4b-2：失败也要比 seq
-        console.warn("Recipient preview failed", error);
-        // 03/I-3：HTTP/API 失败显示「预估不可用」且不弹窗；非 API 错误仅保留原文，不伪装成诊断结果。
-        if (error && error.status !== null && error.status !== undefined) {
-            hint.textContent = "预估不可用";
-            setRecipientPreviewState(kind, "error");
-            return;
-        }
-        var message = error && error.message ? String(error.message) : "请求失败";
-        hint.textContent = "预估失败：" + message;
-        setRecipientPreviewState(kind, "error");
+        if (!current()) return;
+        // The request snapshot binds a first server key. Once known, an error may only reuse that key.
+        var data = error && error.data;
+        var matching = data && data.state === "ERROR" && data.cacheKey &&
+            (!oldEnvelope || !oldEnvelope.cacheKey || data.cacheKey === oldEnvelope.cacheKey);
+        var envelope = matching ? data : Object.assign({}, oldEnvelope || {}, { state: "ERROR" });
+        hint.recipientStatistics = { identity: identity, envelope: envelope, loading: false };
+        renderRecipientStatistics(kind, envelope, snapshot, false);
     });
 }
 
@@ -24365,6 +24342,7 @@ function fillManualFormDefaults() {
 function fillManualFormFromDraft() {
     var d = batchTaskState.manualDraft;
     if (!d) { fillManualFormDefaults(); return; }
+    resetRecipientPreview("manual");
 
     var setVal = function(id, v) { var el = document.getElementById(id); if (el) el.value = v || ""; };
     setVal("batchManualTemplateId", d.templateId ? String(d.templateId) : "");
@@ -24403,7 +24381,7 @@ function fillManualFormFromDraft() {
     if (typeof refreshEmailVerificationState === "function") refreshEmailVerificationState("manual");
 
     computeAndRenderDiffs();
-    resetRecipientPreview("manual");
+    if (typeof refreshBatchGateState === "function") refreshBatchGateState("manual");
 }
 
 function fillBatchManualTemplateSelector(selectedId) {
@@ -24740,7 +24718,7 @@ async function confirmManualExecution() {
     if (okBtn) okBtn.disabled = true;
 
     var source = batchTaskState.manualSource;
-    // 与预估（recipients/preview）同源（I-2）：两条路径复用同一完整快照。
+    // Statistics and execution read the same complete form snapshot; cached counts are not authority.
     var snapshot = buildManualExecutionSnapshot();
 
     try {
@@ -25713,7 +25691,7 @@ function bindBatchSendTaskEvents() {
     if (roundsInput) roundsInput.addEventListener("input", updateBatchConfigVolumeHint);
     if (roundSizeInput) roundSizeInput.addEventListener("input", updateBatchConfigVolumeHint);
 
-    // Recipient preview: filter changes invalidate the displayed estimate; only the explicit buttons run it.
+    // Ordinary condition changes only look up cached statistics; explicit buttons refresh.
     var editorRecipientPreviewBtn = document.getElementById("batchConfigEditorRecipientPreviewBtn");
     if (editorRecipientPreviewBtn) editorRecipientPreviewBtn.addEventListener("click", function() {
         refreshRecipientPreview("editor");
@@ -25756,9 +25734,13 @@ function bindBatchSendTaskEvents() {
     });
     // 03 T2：开关 label 同步（手动面板的差异标记由既有 input/change 监听负责）。
     var editorEmailVerificationToggle = document.getElementById("batchConfigEditorEmailVerification");
-    if (editorEmailVerificationToggle) editorEmailVerificationToggle.addEventListener("change", function() { updateEmailVerificationToggleLabel("editor"); });
+    if (editorEmailVerificationToggle) editorEmailVerificationToggle.addEventListener("change", function() { updateEmailVerificationToggleLabel("editor"); scheduleRecipientPreview("editor"); });
     var manualEmailVerificationToggle = document.getElementById("batchManualEmailVerification");
     if (manualEmailVerificationToggle) manualEmailVerificationToggle.addEventListener("change", function() { updateEmailVerificationToggleLabel("manual"); });
+    ["deliverable", "risky", "unknown"].forEach(function(value) {
+        var el = document.getElementById(emailVerificationPolicyOptionId("editor", value));
+        if (el) el.addEventListener("change", function() { scheduleRecipientPreview("editor"); });
+    });
 
     // Manual source search — autocomplete
     var sourceQuery = document.getElementById("batchManualSourceQuery");
