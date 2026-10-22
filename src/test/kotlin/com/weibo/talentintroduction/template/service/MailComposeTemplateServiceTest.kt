@@ -24,12 +24,14 @@ import com.weibo.talentintroduction.variant.service.ContentVariantService
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.springframework.dao.DataIntegrityViolationException
 import java.util.Optional
+import java.security.MessageDigest
 
 class MailComposeTemplateServiceTest {
     private val templateRepository = Mockito.mock(MailComposeTemplateRepository::class.java)
@@ -1481,6 +1483,241 @@ class MailComposeTemplateServiceTest {
 
     private fun snippet(id: Long, content: String, enabled: Boolean = true): ReplySnippet =
         ReplySnippet(id = id, snippetType = "CUSTOM", content = content, enabled = enabled)
+
+    @Test
+    fun `statistics fingerprint is deterministic ordered read only and separate from launch token`() {
+        val blocks = listOf(customBlock(1, 0, "First"), customBlock(1, 10, "Second"))
+        stubTemplate(1, "Hello", blocks = blocks)
+        val token = service.loadSnapshot(1).versionToken
+        val expectedToken = MessageDigest.getInstance("SHA-256")
+            .digest("1|Hello|null|INTRODUCTION|true\n0:CUSTOM_TEXT:null:First\n10:CUSTOM_TEXT:null:Second\n".toByteArray())
+            .joinToString("") { "%02x".format(it) }
+
+        val first = service.statisticsFingerprint(1, "INTRODUCTION")
+        Mockito.`when`(blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(1)).thenReturn(blocks.reversed())
+        val second = service.statisticsFingerprint(1, "INTRODUCTION")
+
+        assertEquals(1L, first.templateId)
+        assertTrue(first.fingerprint.matches(Regex("[0-9a-f]{64}")))
+        assertEquals(first, second)
+        assertEquals(expectedToken, token)
+        assertEquals(token, service.loadSnapshot(1).versionToken)
+        Mockito.verify(templateRepository, Mockito.never()).save(Mockito.any(MailComposeTemplate::class.java))
+        Mockito.verify(blockRepository, Mockito.never()).save(Mockito.any(MailComposeTemplateBlock::class.java))
+        Mockito.verifyNoInteractions(mailVariableService, expertContactRepository, mailSenderAccountService)
+    }
+
+    @Test
+    fun `statistics fingerprint tracks live snippet body every variant and variant enabling without changing launch token`() {
+        stubTemplate(1, "Hello", blocks = listOf(snippetBlock(1, 0, 5)))
+        Mockito.`when`(replySnippetRepository.findById(5)).thenReturn(Optional.of(snippet(5, "Main")))
+        val a = snippetVariant(21, 5, 10, "Variant A")
+        val b = snippetVariant(22, 5, 20, "Variant B")
+        allSnippetVariants(5, listOf(a, b))
+        val token = service.loadSnapshot(1).versionToken
+        val original = service.statisticsFingerprint(1, "INTRODUCTION")
+
+        Mockito.`when`(replySnippetRepository.findById(5))
+            .thenReturn(Optional.of(snippet(5, "Main \${institution}")))
+        val editedMain = service.statisticsFingerprint(1, "INTRODUCTION")
+        assertNotEquals(original, editedMain)
+
+        allSnippetVariants(5, listOf(a, b.copy(content = "Variant B \${researchFields}")))
+        val editedVariant = service.statisticsFingerprint(1, "INTRODUCTION")
+        assertNotEquals(editedMain, editedVariant)
+        allSnippetVariants(5, listOf(a, b.copy(content = "Variant B \${researchFields}", enabled = false)))
+        val disabledVariant = service.statisticsFingerprint(1, "INTRODUCTION")
+        assertNotEquals(editedVariant, disabledVariant)
+        allSnippetVariants(5, listOf(a))
+        assertEquals(disabledVariant, service.statisticsFingerprint(1, "INTRODUCTION"))
+        allSnippetVariants(5, emptyList())
+        assertNotEquals(disabledVariant, service.statisticsFingerprint(1, "INTRODUCTION"))
+        assertEquals(token, service.loadSnapshot(1).versionToken)
+    }
+
+    @Test
+    fun `statistics fingerprint distinguishes missing disabled and enabled empty snippet references`() {
+        stubTemplate(1, "Hello", blocks = listOf(snippetBlock(1, 0, 5)))
+        Mockito.`when`(replySnippetRepository.findById(5)).thenReturn(Optional.empty())
+        val missing = service.statisticsFingerprint(1, "INTRODUCTION")
+        Mockito.`when`(replySnippetRepository.findById(5))
+            .thenReturn(Optional.of(snippet(5, "", enabled = false)))
+        val disabled = service.statisticsFingerprint(1, "INTRODUCTION")
+        Mockito.`when`(replySnippetRepository.findById(5)).thenReturn(Optional.of(snippet(5, "")))
+        val enabledEmpty = service.statisticsFingerprint(1, "INTRODUCTION")
+
+        assertEquals(3, setOf(missing, disabled, enabledEmpty).size)
+    }
+
+    @Test
+    fun `statistics fingerprint tracks QA text enabled and existence but ignores nonrenderable QA variants`() {
+        stubTemplate(
+            1, "Hello",
+            blocks = listOf(MailComposeTemplateBlock(templateId = 1, blockOrder = 0, blockType = ComposeBlockType.QA_RULE, refId = 7))
+        )
+        val rule = QaRule(id = 7, categoryId = 1, keywords = "kw", replySubject = null, replyBody = "Answer")
+        Mockito.`when`(qaRuleRepository.findById(7)).thenReturn(Optional.of(rule))
+        val token = service.loadSnapshot(1).versionToken
+        val original = service.statisticsFingerprint(1, "INTRODUCTION")
+        stubQaVariants(7, listOf(contentVariant(30, 7, 10, "Not rendered")))
+        assertEquals(original, service.statisticsFingerprint(1, "INTRODUCTION"))
+        Mockito.`when`(qaRuleRepository.findById(7)).thenReturn(Optional.of(rule.copy(replyBody = "New \${institution}")))
+        val edited = service.statisticsFingerprint(1, "INTRODUCTION")
+        Mockito.`when`(qaRuleRepository.findById(7)).thenReturn(Optional.of(rule.copy(enabled = false)))
+        val disabled = service.statisticsFingerprint(1, "INTRODUCTION")
+        Mockito.`when`(qaRuleRepository.findById(7)).thenReturn(Optional.empty())
+        val missing = service.statisticsFingerprint(1, "INTRODUCTION")
+
+        assertEquals(4, setOf(original, edited, disabled, missing).size)
+        assertEquals(token, service.loadSnapshot(1).versionToken)
+    }
+
+    @Test
+    fun `statistics subject reference includes live text all variants and reference identity`() {
+        val template = MailComposeTemplate(
+            id = 1, templateName = "Test", subject = "Stored default",
+            mailType = "INTRODUCTION", subjectSnippetId = 5
+        )
+        Mockito.`when`(templateRepository.findById(1)).thenReturn(Optional.of(template))
+        Mockito.`when`(blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(1)).thenReturn(emptyList())
+        Mockito.`when`(replySnippetRepository.findById(5)).thenReturn(Optional.of(snippet(5, "Live subject")))
+        allSnippetVariants(5, listOf(snippetVariant(21, 5, 10, "Subject variant")))
+        val token = service.loadSnapshot(1).versionToken
+        val original = service.statisticsFingerprint(1, "INTRODUCTION")
+        Mockito.`when`(replySnippetRepository.findById(5)).thenReturn(Optional.of(snippet(5, "Edited subject")))
+        val editedMain = service.statisticsFingerprint(1, "INTRODUCTION")
+        allSnippetVariants(5, listOf(snippetVariant(21, 5, 10, "Edited \${institution|University}")))
+        val editedVariant = service.statisticsFingerprint(1, "INTRODUCTION")
+
+        assertEquals(3, setOf(original, editedMain, editedVariant).size)
+        assertEquals(token, service.loadSnapshot(1).versionToken)
+        Mockito.`when`(replySnippetRepository.findById(6)).thenReturn(Optional.of(snippet(6, "Edited subject")))
+        allSnippetVariants(6, listOf(snippetVariant(22, 6, 10, "Edited \${institution|University}")))
+        Mockito.`when`(templateRepository.findById(1)).thenReturn(Optional.of(template.copy(subjectSnippetId = 6)))
+        assertNotEquals(editedVariant, service.statisticsFingerprint(1, "INTRODUCTION"))
+    }
+
+    @Test
+    fun `statistics fingerprint rejects missing disabled or invalid subject references`() {
+        val template = MailComposeTemplate(
+            id = 1, templateName = "Test", subject = "Stored default",
+            mailType = "INTRODUCTION", subjectSnippetId = 5
+        )
+        Mockito.`when`(templateRepository.findById(1)).thenReturn(Optional.of(template))
+        Mockito.`when`(blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(1)).thenReturn(emptyList())
+        Mockito.`when`(replySnippetRepository.findById(5)).thenReturn(Optional.empty())
+        assertThrows(IllegalArgumentException::class.java) { service.statisticsFingerprint(1, "INTRODUCTION") }
+        Mockito.`when`(replySnippetRepository.findById(5)).thenReturn(Optional.of(snippet(5, "Valid", enabled = false)))
+        assertThrows(IllegalArgumentException::class.java) { service.statisticsFingerprint(1, "INTRODUCTION") }
+        Mockito.`when`(replySnippetRepository.findById(5)).thenReturn(Optional.of(snippet(5, "Valid")))
+        allSnippetVariants(5, listOf(snippetVariant(21, 5, 10, "Invalid\nsubject")))
+        assertThrows(IllegalArgumentException::class.java) { service.statisticsFingerprint(1, "INTRODUCTION") }
+    }
+
+    @Test
+    fun `statistics structured encoding distinguishes delimiter collision and null from empty text`() {
+        stubTemplate(1, "Hello", blocks = listOf(customBlock(1, 0, "A\n1:CUSTOM_TEXT:null:B")))
+        val combined = service.statisticsFingerprint(1, "INTRODUCTION")
+        val combinedToken = service.loadSnapshot(1).versionToken
+        stubTemplate(1, "Hello", blocks = listOf(customBlock(1, 0, "A"), customBlock(1, 1, "B")))
+        val separated = service.statisticsFingerprint(1, "INTRODUCTION")
+        assertEquals(combinedToken, service.loadSnapshot(1).versionToken)
+        assertNotEquals(combined, separated)
+
+        stubTemplate(1, "Hello", blocks = listOf(customBlock(1, 0, "")))
+        val empty = service.statisticsFingerprint(1, "INTRODUCTION")
+        Mockito.`when`(blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(1))
+            .thenReturn(listOf(customBlock(1, 0, "").copy(customText = null)))
+        assertNotEquals(empty, service.statisticsFingerprint(1, "INTRODUCTION"))
+    }
+
+    @Test
+    fun `statistics fingerprint preserves per block variant list boundaries`() {
+        stubTemplate(1, "Hello", blocks = listOf(snippetBlock(1, 0, 5), snippetBlock(1, 1, 6)))
+        Mockito.`when`(replySnippetRepository.findById(5)).thenReturn(Optional.of(snippet(5, "A")))
+        Mockito.`when`(replySnippetRepository.findById(6)).thenReturn(Optional.of(snippet(6, "C")))
+        allSnippetVariants(5, listOf(snippetVariant(21, 5, 10, "B")))
+        allSnippetVariants(6, emptyList())
+        val first = service.statisticsFingerprint(1, "INTRODUCTION")
+        val token = service.loadSnapshot(1).versionToken
+        allSnippetVariants(5, emptyList())
+        Mockito.`when`(replySnippetRepository.findById(6)).thenReturn(Optional.of(snippet(6, "B")))
+        allSnippetVariants(6, listOf(snippetVariant(22, 6, 10, "C")))
+
+        assertNotEquals(first, service.statisticsFingerprint(1, "INTRODUCTION"))
+        assertEquals(token, service.loadSnapshot(1).versionToken)
+    }
+
+    @Test
+    fun `statistics fingerprint tracks defaults and block structure not just placeholder keys`() {
+        val base = MailComposeTemplate(
+            id = 1, templateName = "Test", subject = "Hello \${institution|University}", mailType = "INTRODUCTION"
+        )
+        val block = customBlock(1, 0, "Topic \${researchFields|Science}")
+        Mockito.`when`(templateRepository.findById(1)).thenReturn(Optional.of(base))
+        Mockito.`when`(blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(1)).thenReturn(listOf(block))
+        val original = service.statisticsFingerprint(1, "INTRODUCTION")
+        Mockito.`when`(templateRepository.findById(1))
+            .thenReturn(Optional.of(base.copy(subject = "Hello \${institution|College}")))
+        assertNotEquals(original, service.statisticsFingerprint(1, "INTRODUCTION"))
+        Mockito.`when`(templateRepository.findById(1)).thenReturn(Optional.of(base))
+        val alternatives = listOf(
+            block.copy(customText = "Topic \${researchFields|Engineering}"),
+            block.copy(blockOrder = 10),
+            block.copy(blockType = ComposeBlockType.REPLY_SNIPPET, refId = 5),
+            block.copy(refId = 99)
+        )
+        alternatives.forEach { changed ->
+            Mockito.`when`(blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(1)).thenReturn(listOf(changed))
+            assertNotEquals(original, service.statisticsFingerprint(1, "INTRODUCTION"), "block=$changed")
+        }
+    }
+
+    @Test
+    fun `statistics null template uses composer default and detects a changed default binding`() {
+        val first = MailComposeTemplate(
+            id = 1, templateCode = "INTRODUCTION", templateName = "Default", subject = "Hello", mailType = "INTRODUCTION"
+        )
+        val second = first.copy(id = 2)
+        Mockito.`when`(templateRepository.findByTemplateCodeAndEnabledTrue("INTRODUCTION")).thenReturn(first)
+        Mockito.`when`(templateRepository.findById(1)).thenReturn(Optional.of(first))
+        Mockito.`when`(blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(1)).thenReturn(emptyList())
+        Mockito.`when`(blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(2)).thenReturn(emptyList())
+        val original = service.statisticsFingerprint(null, "INTRODUCTION")
+        assertEquals(service.statisticsFingerprint(1, "INTRODUCTION"), original)
+        Mockito.`when`(templateRepository.findByTemplateCodeAndEnabledTrue("INTRODUCTION")).thenReturn(second)
+        val switched = service.statisticsFingerprint(null, "INTRODUCTION")
+
+        assertEquals(1L, original.templateId)
+        assertEquals(2L, switched.templateId)
+        assertNotEquals(original.fingerprint, switched.fingerprint)
+    }
+
+    @Test
+    fun `statistics rejects invalid templates without falling back to a different template`() {
+        Mockito.`when`(templateRepository.findById(99)).thenReturn(Optional.empty())
+        assertThrows(IllegalStateException::class.java) { service.statisticsFingerprint(99, "INTRODUCTION") }
+        val template = MailComposeTemplate(id = 1, templateName = "Test", subject = "Hello", mailType = "INTRODUCTION")
+        Mockito.`when`(templateRepository.findById(1)).thenReturn(Optional.of(template.copy(enabled = false)))
+        assertThrows(IllegalArgumentException::class.java) { service.statisticsFingerprint(1, "INTRODUCTION") }
+        Mockito.`when`(templateRepository.findById(1)).thenReturn(Optional.of(template))
+        assertThrows(IllegalArgumentException::class.java) { service.statisticsFingerprint(1, "MATERIAL_REMINDER") }
+        Mockito.`when`(templateRepository.findById(1)).thenReturn(Optional.of(template.copy(mailType = null)))
+        assertThrows(IllegalArgumentException::class.java) { service.statisticsFingerprint(1, "INTRODUCTION") }
+        assertThrows(IllegalArgumentException::class.java) { service.statisticsFingerprint(null, "MATERIAL_REMINDER") }
+        Mockito.verify(templateRepository, Mockito.never()).findByTemplateCodeAndEnabledTrue(Mockito.anyString())
+        Mockito.`when`(templateRepository.findByTemplateCodeAndEnabledTrue("INTRODUCTION")).thenReturn(null)
+        assertThrows(IllegalStateException::class.java) { service.statisticsFingerprint(null, "INTRODUCTION") }
+    }
+
+    @Test
+    fun `statistics supports explicitly selected material reminder template`() {
+        stubTemplate(1, "Materials", mailType = "MATERIAL_REMINDER")
+        val result = service.statisticsFingerprint(1, "MATERIAL_REMINDER")
+        assertEquals(1L, result.templateId)
+        assertTrue(result.fingerprint.matches(Regex("[0-9a-f]{64}")))
+        Mockito.verify(templateRepository, Mockito.never()).findByTemplateCodeAndEnabledTrue(Mockito.anyString())
+    }
 
     @Test
     fun `bare token is required while a defaulted token is optional (I-1)`() {

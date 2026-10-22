@@ -613,9 +613,129 @@ class ManualInitialOutreachService(
      * A3: 响应同时冻结模板版本摘要、准入计数、原因命中与逐人原因 key（06 数据源）；INTRODUCTION 的
      * 门禁开启时，目标在 selector 之后再过一次**精确**模板门禁（[batchTemplateGate]），预估与执行同判定。
      */
-    fun countBySnapshot(snapshot: BatchExecutionSnapshot): PendingOutreachSummary = when (snapshot.mailType) {
+    fun countBySnapshot(snapshot: BatchExecutionSnapshot): PendingOutreachSummary =
+        countStatistics(snapshot, resolveScope(snapshot), strict = false)
+
+    /** Resolve the effective read-only context before constructing a display cache key. */
+    fun statisticsContext(snapshot: BatchExecutionSnapshot): BatchRecipientStatisticsContext =
+        BatchRecipientStatisticsContext(snapshot, resolveScope(snapshot))
+
+    /** Strict reads fail closed; the legacy preview deliberately retains its original contract. */
+    fun countStrictStatistics(context: BatchRecipientStatisticsContext): PendingOutreachSummary {
+        val summary = countStatistics(context.snapshot, context.scope, strict = true)
+        if (context.scope.mailType == BatchSendType.INTRODUCTION.name) return summary
+        val preflight = strictPreflight(context.snapshot, context.scope)
+        return summary.withDiagnostics(preflight)
+    }
+
+    private fun PendingOutreachSummary.withDiagnostics(result: BatchRecipientPreflightResult) = copy(
+        baseline = result.baseline, excludedUnique = result.excludedUnique,
+        eligibleBeforeLiveVerification = result.eligibleBeforeLiveVerification,
+        awaitingVerification = result.awaitingVerification, verificationPhase = result.verificationPhase.name,
+        partial = result.partial, asOf = result.asOf, reasonHitsDetail = result.reasonHits
+    )
+
+    /** NEW enumeration is bounded keyset pagination; callbacks retain no page beyond this call. */
+    private fun forEachStrictRetryPage(campaignId: Long, consume: (List<ExpertContact>) -> Boolean) {
+        val upper = expertContactRepository.findNewRetryUpperId(campaignId) ?: return
+        var updatedAt: LocalDateTime? = null
+        var id: Long? = null
+        while (true) {
+            val page = expertContactRepository.findNewRetryPage(campaignId, upper, updatedAt, id, 500)
+            if (page.isEmpty()) return
+            if (!consume(page)) return
+            updatedAt = page.last().updatedAt
+            id = page.last().id
+        }
+    }
+
+    private fun strictProfilesByOrcid(orcids: List<String>, level: ExpertIndexLevel): List<ExpertProfile> {
+        if (orcids.isEmpty()) return emptyList()
+        val found = mutableListOf<ExpertProfile>()
+        expertSearchService.openCandidateCursor(
+            level, listOf(mapOf("terms" to mapOf("orcidId" to orcids.distinct()))), 500
+        ).use { cursor ->
+            while (true) {
+                val page = cursor.nextPage()
+                if (page.profiles.isEmpty()) break
+                found.addAll(expertSearchService.findByDocumentIdsStrict(
+                    level, page.profiles.map(BatchRecipientSelectionService::docIdOf)
+                ))
+            }
+        }
+        return found
+    }
+
+    private data class RetryStatistics(
+        val count: Int, val seenOrcids: Set<String>, val seenPersonKeys: Set<String>, val excluded: Int
+    )
+
+    private fun strictRetryableTargets(
+        campaignId: Long, scope: RecipientScope, now: LocalDateTime, seenDocs: MutableSet<String>,
+        gate: (List<ExpertProfile>) -> List<ExpertProfile>, onSelection: (RecipientSelection) -> Unit
+    ): RetryStatistics {
+        var count = 0
+        var excluded = 0
+        val orcids = mutableSetOf<String>()
+        val people = mutableSetOf<String>()
+        forEachStrictRetryPage(campaignId) { contacts ->
+            val (targets, _, _) = buildRetryableTargets(
+                campaignId, scope, gate, onSelection, contacts, true, orcids, people, seenDocs
+            )
+            val (retained, rejected) = filterTargets(targets, scope.excludeVerifiedUnavailableEmails, now) { it.second.email }
+            count = Math.addExact(count, retained.size)
+            excluded = Math.addExact(excluded, rejected)
+            true
+        }
+        return RetryStatistics(count, orcids, people, excluded)
+    }
+
+    /** Full targets and bounded diagnostics are deliberately independent strict traversals. */
+    private fun strictPreflight(snapshot: BatchExecutionSnapshot, scope: RecipientScope): BatchRecipientPreflightResult {
+        val preflight = requireNotNull(batchRecipientPreflightService) { "Read-only preflight service is required" }
+        val base = baseRecipientScope(scope)
+        val collected = LinkedHashMap<String, ExpertProfile>()
+        fun collect(profiles: List<ExpertProfile>): Boolean {
+            for (profile in profiles) {
+                collected.putIfAbsent(BatchRecipientSelectionService.docIdOf(profile), profile)
+                if (collected.size >= MAX_BASELINE_SCAN) return false
+            }
+            return true
+        }
+        for (levelName in base.funnelLevels) {
+            if (collected.size >= MAX_BASELINE_SCAN) break
+            val level = ExpertIndexLevel.valueOf(levelName)
+            expertSearchService.openCandidateCursor(level, buildBaseEsFilters(base), 500).use { cursor ->
+                while (collected.size < MAX_BASELINE_SCAN) {
+                    val page = cursor.nextPage(minOf(500, MAX_BASELINE_SCAN - collected.size))
+                    if (page.profiles.isEmpty()) break
+                    if (!collect(expertSearchService.findByDocumentIdsStrict(
+                        level, page.profiles.map(BatchRecipientSelectionService::docIdOf)
+                    ))) break
+                }
+            }
+        }
+        if (base.mailType == BatchSendType.INTRODUCTION.name && collected.size < MAX_BASELINE_SCAN) {
+            campaignRepository.findByCampaignCode("MANUAL_OUTREACH")?.id?.let { campaignId ->
+                forEachStrictRetryPage(campaignId) { contacts ->
+                    for (level in base.funnelLevels) {
+                        if (!collect(strictProfilesByOrcid(contacts.map { it.orcidId }, ExpertIndexLevel.valueOf(level)))) {
+                            return@forEachStrictRetryPage false
+                        }
+                    }
+                    true
+                }
+            }
+        }
+        return preflight.preflight(preflightInput(snapshot, scope, collected.values.toList(), collected.size >= MAX_BASELINE_SCAN))
+    }
+
+    private fun countStatistics(
+        snapshot: BatchExecutionSnapshot,
+        scope: RecipientScope,
+        strict: Boolean
+    ): PendingOutreachSummary = when (snapshot.mailType) {
         BatchSendType.MATERIAL_REMINDER.name -> {
-            val scope = resolveScope(snapshot)
             val accumulator = AdmissionPreviewAccumulator()
             val materialSnapshot = buildMaterialReminderSnapshot(
                 scope, verificationFilterNow(), onSelection = accumulator::record
@@ -632,7 +752,6 @@ class ManualInitialOutreachService(
             )
         }
         else -> {
-            val scope = resolveScope(snapshot)
             val now = verificationFilterNow()
             val accumulator = AdmissionPreviewAccumulator()
             // A3 (I-4)：门禁开启时用精确模板门禁（与发送期 compose 同源），不再是 ES 字段白名单子集。
@@ -645,8 +764,12 @@ class ManualInitialOutreachService(
             val campaign = campaignRepository.findByCampaignCode("MANUAL_OUTREACH")
             if (campaign != null) {
                 val campaignId = campaign.id ?: error("Campaign ID is null")
-                val retry = buildFilteredRetryableTargets(campaignId, scope, now, seenDocIds, gate, accumulator::record)
-                retryable = retry.targets.size
+                val retry = if (strict) strictRetryableTargets(
+                    campaignId, scope, now, seenDocIds, gate, accumulator::record
+                ) else buildFilteredRetryableTargets(campaignId, scope, now, seenDocIds, gate, accumulator::record).let {
+                    RetryStatistics(it.targets.size, it.seenOrcids, it.seenPersonKeys, it.excluded)
+                }
+                retryable = retry.count
                 excluded += retry.excluded
                 seenOrcids.addAll(retry.seenOrcids)
                 seenPersonKeys.addAll(retry.seenPersonKeys)
@@ -654,12 +777,12 @@ class ManualInitialOutreachService(
             val (esEstimate, esExcluded) = countEsTargets(
                 scope, now, gate = gate, onSelection = accumulator::record,
                 initialSeenOrcids = seenOrcids, initialSeenDocIds = seenDocIds,
-                initialSeenPersonKeys = seenPersonKeys
+                initialSeenPersonKeys = seenPersonKeys, strict = strict
             )
             excluded += esExcluded
             // I-1/I-2（02）：完整母集只读预检查 —— 母集仅按所选层级/标签读取（不再被地区/状态/模板提前缩小），
             // 保护/模板/邮箱原因独立表达；新增字段为兼容扩展，旧字段含义逐字保留。
-            val preflight = preflightForSnapshot(snapshot, scope)
+            val preflight = if (strict) strictPreflight(snapshot, scope) else preflightForSnapshot(snapshot, scope)
             PendingOutreachSummary(
                 pending = esEstimate,
                 retryable = retryable,
@@ -2262,15 +2385,21 @@ class ManualInitialOutreachService(
         campaignId: Long,
         scope: RecipientScope,
         gate: (List<ExpertProfile>) -> List<ExpertProfile> = { it },
-        onSelection: ((RecipientSelection) -> Unit)? = null
+        onSelection: ((RecipientSelection) -> Unit)? = null,
+        contacts: List<ExpertContact>? = null,
+        strict: Boolean = false,
+        initialOrcids: MutableSet<String> = mutableSetOf(),
+        initialPersonKeys: MutableSet<String> = mutableSetOf(),
+        initialDocIds: MutableSet<String> = mutableSetOf()
     ): Triple<List<Pair<ExpertContact?, ExpertProfile>>, MutableSet<String>, MutableSet<String>> {
-        val seenOrcids = mutableSetOf<String>()
-        val seenDocIds = mutableSetOf<String>()
-        val seenPersonKeys = mutableSetOf<String>()
+        // Strict pagination owns these sets for the scan; do not copy the growing population per page.
+        val seenOrcids = initialOrcids
+        val seenDocIds = initialDocIds
+        val seenPersonKeys = initialPersonKeys
         val targets = mutableListOf<Pair<ExpertContact?, ExpertProfile>>()
         val candidates = mutableListOf<Triple<ExpertContact, ExpertProfile, String>>()
 
-        val newContacts = expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(campaignId, "NEW")
+        val newContacts = contacts ?: expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(campaignId, "NEW")
         if (newContacts.isNotEmpty()) {
             val retryableContacts = newContacts.filter { contact ->
                 // I-4（03）：同一份邮件列表同时服务「已发首封」去重与「历史首封永久失败」阻断
@@ -2289,7 +2418,8 @@ class ManualInitialOutreachService(
                 emptyMap()
             } else {
                 scope.funnelLevels.associateWith { level ->
-                    expertSearchService.searchByOrcidIds(orcidIds, ExpertIndexLevel.valueOf(level))
+                    (if (strict) strictProfilesByOrcid(orcidIds, ExpertIndexLevel.valueOf(level))
+                    else expertSearchService.searchByOrcidIds(orcidIds, ExpertIndexLevel.valueOf(level)))
                         .associateBy { normalizeOrcid(it.orcidId) }
                 }
             }
@@ -2327,6 +2457,7 @@ class ManualInitialOutreachService(
             for ((contact, profile, normOrcid) in candidates) {
                 val docId = BatchRecipientSelectionService.docIdOf(profile)
                 if (docId !in gatedDocIds) continue
+                if (strict && (normOrcid in seenOrcids || (personKeys[docId] ?: docId) in seenPersonKeys)) continue
                 if (seenOrcids.add(normOrcid) && seenDocIds.add(docId)) {
                     targets.add(Pair(contact, profile))
                     seenPersonKeys += personKeys[docId] ?: docId
@@ -2517,7 +2648,8 @@ class ManualInitialOutreachService(
         onSelection: ((RecipientSelection) -> Unit)? = null,
         initialSeenOrcids: Set<String> = emptySet(),
         initialSeenDocIds: Set<String> = emptySet(),
-        initialSeenPersonKeys: Set<String> = emptySet()
+        initialSeenPersonKeys: Set<String> = emptySet(),
+        strict: Boolean = false
     ): Pair<Int, Int> {
         var sendable = 0
         var excluded = 0
@@ -2528,11 +2660,7 @@ class ManualInitialOutreachService(
         val seenPersonKeys = initialSeenPersonKeys.toMutableSet()
         for (level in scope.funnelLevels) {
             if (shouldStop()) break
-            expertSearchService.scrollExpertsFiltered(
-                level = ExpertIndexLevel.valueOf(level),
-                filters = buildEsFiltersForLevel(scope, level),
-                batchSize = 500
-            ) { batch ->
+            val consume: (List<ExpertProfile>) -> Boolean = { batch ->
                 if (shouldStop()) {
                     false
                 } else {
@@ -2564,6 +2692,21 @@ class ManualInitialOutreachService(
                     excluded += matched.size - retained.size
                     !shouldStop()
                 }
+            }
+            if (strict) {
+                expertSearchService.openCandidateCursor(
+                    ExpertIndexLevel.valueOf(level), buildEsFiltersForLevel(scope, level), 500
+                ).use { cursor ->
+                    while (true) {
+                        val page = cursor.nextPage()
+                        if (page.profiles.isEmpty()) break
+                        if (!consume(page.profiles)) error("Strict statistics interrupted")
+                    }
+                }
+            } else {
+                expertSearchService.scrollExpertsFiltered(
+                    ExpertIndexLevel.valueOf(level), buildEsFiltersForLevel(scope, level), 500, consume
+                )
             }
         }
         return sendable to excluded

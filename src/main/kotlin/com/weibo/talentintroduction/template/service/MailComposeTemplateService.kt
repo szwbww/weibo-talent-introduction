@@ -209,6 +209,56 @@ class MailComposeTemplateService(
         return snapshotOf(template, blocks)
     }
 
+    /**
+     * Read-only statistics identity, deliberately separate from the launch [ComposeTemplateSnapshot.versionToken].
+     * References are read live and all renderable variants retain their block/list boundaries.
+     */
+    fun statisticsFingerprint(templateId: Long?, mailType: String): TemplateStatisticsFingerprint {
+        val template = if (templateId != null) {
+            findTemplate(templateId)
+        } else {
+            require(mailType == INTRODUCTION_MAIL_TYPE) { "$mailType config requires a templateId" }
+            templateRepository.findByTemplateCodeAndEnabledTrue("INTRODUCTION")
+                ?: error("Enabled compose template not found: INTRODUCTION")
+        }
+        require(template.enabled) { "Compose template is disabled: ${template.id}" }
+        require(template.mailType == mailType) {
+            "Compose template mail type mismatch: expected $mailType, actual ${template.mailType}"
+        }
+        val resolvedId = template.id ?: error("Compose template id is required")
+        val blocks = blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(resolvedId)
+            .sortedBy { it.blockOrder }
+        val canonical = linkedMapOf(
+            "schemaVersion" to 1,
+            "templateId" to resolvedId,
+            "templateCode" to template.templateCode,
+            "mailType" to template.mailType,
+            "enabled" to template.enabled,
+            "rootVersion" to versionTokenOf(template, blocks),
+            "subject" to linkedMapOf(
+                "defaultText" to template.subject,
+                "refId" to template.subjectSnippetId,
+                "texts" to subjectCandidates(template)
+            ),
+            "blocks" to blocks.map { block ->
+                val source = blockRenderTexts(block)
+                linkedMapOf(
+                    "order" to block.blockOrder,
+                    "type" to block.blockType,
+                    "refId" to block.refId,
+                    "customText" to block.customText,
+                    "referenceExists" to source.referenceExists,
+                    "referenceEnabled" to source.referenceEnabled,
+                    "texts" to source.texts
+                )
+            }
+        )
+        val fingerprint = MessageDigest.getInstance("SHA-256")
+            .digest(objectMapper.writeValueAsBytes(canonical))
+            .joinToString("") { "%02x".format(it) }
+        return TemplateStatisticsFingerprint(resolvedId, fingerprint)
+    }
+
     private fun snapshotOf(
         template: MailComposeTemplate,
         blocks: List<MailComposeTemplateBlock>
@@ -325,20 +375,37 @@ class MailComposeTemplateService(
         )
     }
 
+    private data class BlockRenderTexts(
+        val referenceExists: Boolean? = null,
+        val referenceEnabled: Boolean? = null,
+        val texts: List<String>? = null
+    )
+
     private fun possibleRenderTexts(block: MailComposeTemplateBlock): List<String>? =
+        blockRenderTexts(block).texts
+
+    private fun blockRenderTexts(block: MailComposeTemplateBlock): BlockRenderTexts =
         when (block.blockType) {
-            ComposeBlockType.CUSTOM_TEXT -> listOf(block.customText.orEmpty())
+            ComposeBlockType.CUSTOM_TEXT -> BlockRenderTexts(texts = listOf(block.customText.orEmpty()))
             ComposeBlockType.REPLY_SNIPPET -> {
                 val refId = block.refId
                 val snippet = refId?.let { replySnippetRepository.findById(it).orElse(null) }
-                if (snippet == null || !snippet.enabled) null
-                else contentVariantService.replySnippetBodies(refId, snippet.content)
+                BlockRenderTexts(
+                    referenceExists = snippet != null,
+                    referenceEnabled = snippet?.enabled,
+                    texts = if (snippet == null || !snippet.enabled) null
+                        else contentVariantService.replySnippetBodies(refId, snippet.content)
+                )
             }
             ComposeBlockType.QA_RULE -> {
                 val rule = block.refId?.let { qaRuleRepository.findById(it).orElse(null) }
-                if (rule == null || !rule.enabled) null else listOf(rule.replyBody)
+                BlockRenderTexts(
+                    referenceExists = rule != null,
+                    referenceEnabled = rule?.enabled,
+                    texts = if (rule == null || !rule.enabled) null else listOf(rule.replyBody)
+                )
             }
-            else -> null
+            else -> BlockRenderTexts()
         }
 
     private fun renderTemplate(
@@ -896,6 +963,11 @@ class MailComposeTemplateService(
         }
     }
 }
+
+data class TemplateStatisticsFingerprint(
+    val templateId: Long,
+    val fingerprint: String
+)
 
 /**
  * A3 (I-4): 一份**内存模板内容快照**。由 [MailComposeTemplateService.loadSnapshot] /

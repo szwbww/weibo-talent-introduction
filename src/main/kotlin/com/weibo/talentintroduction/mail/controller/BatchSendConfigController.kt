@@ -10,6 +10,9 @@ import com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest
 import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationRepository
 import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationRow
 import com.weibo.talentintroduction.campaign.service.BatchRecipientDiagnosticsResponse
+import com.weibo.talentintroduction.campaign.service.BatchRecipientStatisticsCache
+import com.weibo.talentintroduction.campaign.service.BatchRecipientStatisticsEnvelope
+import com.weibo.talentintroduction.campaign.service.BatchRecipientStatisticsState
 import com.weibo.talentintroduction.campaign.service.BatchSendConfig
 import com.weibo.talentintroduction.campaign.service.BatchSendConfigUpdateRequest
 import com.weibo.talentintroduction.campaign.service.BatchSendControlService
@@ -49,7 +52,8 @@ class BatchSendConfigController(
     private val taskExecutionService: TaskExecutionService,
     private val progressLogRepository: TaskProgressLogRepository,
     private val objectMapper: ObjectMapper,
-    private val batchEmailVerificationRepository: BatchEmailVerificationRepository
+    private val batchEmailVerificationRepository: BatchEmailVerificationRepository,
+    private val recipientStatisticsCache: BatchRecipientStatisticsCache? = null
 ) {
     private val log = LoggerFactory.getLogger(BatchSendConfigController::class.java)
     // ── New multi-config CRUD ──────────────────────────────────────────────────
@@ -102,6 +106,21 @@ class BatchSendConfigController(
     @PostMapping("/recipients/preview")
     fun previewRecipients(@RequestBody snapshot: BatchExecutionSnapshot): ResponseEntity<PendingOutreachSummary> =
         ResponseEntity.ok(manualInitialOutreachService.countBySnapshot(snapshot))
+
+    /** Display-only reference counts; never used to authorize or start delivery. */
+    @PostMapping("/recipients/statistics")
+    fun recipientStatistics(
+        @RequestBody snapshot: BatchExecutionSnapshot,
+        @RequestParam(defaultValue = "false") cacheOnly: Boolean,
+        @RequestParam(defaultValue = "false") refresh: Boolean
+    ): ResponseEntity<BatchRecipientStatisticsEnvelope> {
+        require(!(cacheOnly && refresh)) { "cacheOnly and refresh cannot both be true" }
+        val result = checkNotNull(recipientStatisticsCache) { "Recipient statistics cache is unavailable" }
+            .statistics(snapshot, cacheOnly, refresh)
+        return ResponseEntity.status(
+            if (result.state == BatchRecipientStatisticsState.ERROR) HttpStatus.SERVICE_UNAVAILABLE else HttpStatus.OK
+        ).body(result)
+    }
 
     /**
      * I-1/I-4/I-5（02）：按 docId 的**只读**诊断 —— 沿用既有预估请求形状（snapshot）+ `docIds`（1..200）。

@@ -1,6 +1,17 @@
 package com.weibo.talentintroduction.mail.controller
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot
+import com.weibo.talentintroduction.campaign.domain.RecipientScope
+import com.weibo.talentintroduction.campaign.service.BatchRecipientStatisticsCache
+import com.weibo.talentintroduction.campaign.service.BatchRecipientStatisticsContext
+import com.weibo.talentintroduction.campaign.service.PendingOutreachSummary
+import com.weibo.talentintroduction.common.controller.GlobalExceptionHandler
+import com.weibo.talentintroduction.template.service.TemplateStatisticsFingerprint
+import org.springframework.http.MediaType
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfig
 import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository
 import com.weibo.talentintroduction.campaign.service.BatchSendConfigUpdateRequest
@@ -89,6 +100,95 @@ class BatchSendConfigControllerTest {
         createdAt = LocalDateTime.now(),
         updatedAt = LocalDateTime.now()
     )
+
+    @Test
+    fun `statistics HTTP contract uses real cache without starting business work and preserves preview`() {
+        val outreach = Mockito.mock(ManualInitialOutreachService::class.java)
+        val control = Mockito.mock(BatchSendControlService::class.java)
+        val progress = Mockito.mock(TaskProgressLogRepository::class.java)
+        val verification = Mockito.mock(com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationRepository::class.java)
+        val cache = BatchRecipientStatisticsCache(outreach, templateService, objectMapper)
+        val controller = BatchSendConfigController(
+            taskConfigService, templateRepository, control, outreach, taskExecutionService,
+            progress, objectMapper, verification, cache
+        )
+        val mvc = MockMvcBuilders.standaloneSetup(controller)
+            .setControllerAdvice(GlobalExceptionHandler())
+            .setMessageConverters(MappingJackson2HttpMessageConverter(objectMapper))
+            .build()
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION", templateId = 7L, roundSize = 30,
+            perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
+        )
+        val context = BatchRecipientStatisticsContext(
+            snapshot, RecipientScope("INTRODUCTION", setOf("CANDIDATE"), emptyList(), emptyList(), emptyList(), null)
+        )
+        Mockito.`when`(outreach.statisticsContext(snapshot)).thenReturn(context)
+        Mockito.`when`(templateService.statisticsFingerprint(7L, "INTRODUCTION"))
+            .thenReturn(TemplateStatisticsFingerprint(7L, "stable-fingerprint"))
+        val firstSummary = PendingOutreachSummary(10, 2, 12)
+        val refreshedSummary = PendingOutreachSummary(20, 3, 23)
+        Mockito.`when`(outreach.countStrictStatistics(context))
+            .thenReturn(firstSummary)
+            .thenReturn(refreshedSummary)
+            .thenThrow(IllegalStateException("private ES connection detail"))
+
+        fun request(query: String = "", path: String = "statistics", expectedStatus: Int = 200): com.fasterxml.jackson.databind.JsonNode {
+            val response = mvc.perform(
+                post("/api/mail/batch-send/recipients/$path$query")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsBytes(snapshot))
+            ).andReturn().response
+            assertEquals(expectedStatus, response.status)
+            return objectMapper.readTree(response.contentAsString)
+        }
+
+        val miss = request("?cacheOnly=true")
+        assertEquals("MISS", miss["state"].asText())
+        assertTrue(miss["summary"].isNull)
+        Mockito.verify(outreach, Mockito.never()).countStrictStatistics(context)
+
+        val loaded = request()
+        assertEquals("READY", loaded["state"].asText())
+        assertEquals(12, loaded["summary"]["totalSendable"].asInt())
+        val hit = request()
+        assertEquals(loaded["cachedAt"], hit["cachedAt"])
+        assertEquals(loaded["cacheKey"], hit["cacheKey"])
+        assertEquals("READY", request("?cacheOnly=true")["state"].asText())
+        Mockito.verify(outreach, Mockito.times(1)).countStrictStatistics(context)
+
+        val refreshed = request("?refresh=true")
+        assertEquals("READY", refreshed["state"].asText())
+        assertEquals(23, refreshed["summary"]["totalSendable"].asInt())
+        Mockito.verify(outreach, Mockito.times(2)).countStrictStatistics(context)
+        val failed = request("?refresh=true", expectedStatus = 503)
+        assertEquals("ERROR", failed["state"].asText())
+        assertEquals(refreshed["cachedAt"], failed["cachedAt"])
+        assertEquals(23, failed["summary"]["totalSendable"].asInt())
+        assertTrue(failed["errorCode"].asText().isNotBlank())
+        assertTrue(!failed.toString().contains("private ES connection detail"))
+        request("?cacheOnly=true&refresh=true", expectedStatus = 400)
+        request("?cacheOnly=not-a-boolean", expectedStatus = 400)
+        Mockito.verify(outreach, Mockito.times(3)).countStrictStatistics(context)
+        Mockito.`when`(templateService.statisticsFingerprint(7L, "INTRODUCTION"))
+            .thenReturn(TemplateStatisticsFingerprint(7L, "uncached-fingerprint"))
+        val firstFailure = request(expectedStatus = 503)
+        assertEquals("ERROR", firstFailure["state"].asText())
+        assertTrue(firstFailure["summary"].isNull)
+        assertTrue(firstFailure["cachedAt"].isNull)
+        Mockito.verify(outreach, Mockito.times(4)).countStrictStatistics(context)
+
+        Mockito.`when`(outreach.countBySnapshot(snapshot)).thenReturn(firstSummary)
+        val preview = request(path = "preview")
+        assertEquals(12, preview["totalSendable"].asInt())
+        assertTrue(!preview.has("state"))
+        Mockito.verify(outreach).countBySnapshot(snapshot)
+        Mockito.verify(outreach, Mockito.atLeastOnce()).statisticsContext(snapshot)
+        Mockito.verifyNoMoreInteractions(outreach)
+        Mockito.verifyNoInteractions(
+            repository, templateRepository, control, taskExecutionService, progress, verification, eventPublisher
+        )
+    }
 
     @Test
     fun `GET config reads INTRODUCTION legacy entity not KV`() {

@@ -2805,7 +2805,8 @@ class ManualInitialOutreachServiceTest {
     private fun serviceWithPersonSelection(
         personRepo: com.weibo.talentintroduction.discovery.repository.DiscoveryPersonRepository,
         guard: DiscoveryPersonOutreachGuardService? = null,
-        gateEnabled: Boolean = true
+        gateEnabled: Boolean = true,
+        preflight: BatchRecipientPreflightService? = null
     ): ManualInitialOutreachService {
         val personRecipientService = DiscoveryPersonRecipientService(
             batchRecipientSelectionService = batchRecipientSelectionService,
@@ -2845,6 +2846,7 @@ class ManualInitialOutreachServiceTest {
             batchEmailVerificationService = batchEmailVerificationService,
             expertOperatorStatusService = expertOperatorStatusService,
             batchRecipientSelectionService = batchRecipientSelectionService,
+            batchRecipientPreflightService = preflight,
             discoveryPersonRecipientService = personRecipientService,
             outreachGuardService = guard,
             // V-1：总开关与人物选择层保持同一取值（本 helper 覆盖门禁启用/关闭两条路径）。
@@ -7753,6 +7755,174 @@ class ManualInitialOutreachServiceTest {
             sourceFingerprint = "fp-$type",
             classifiedAt = LocalDateTime.of(2026, 8, 1, 12, 0)
         )
+
+    @Test
+    fun `strict statistics shares person identity across NEW and ES`() {
+        val d1 = discoveredExpert("D1", "d1@test.com")
+        val d2 = discoveredExpert("D2", "d2@test.com")
+        stubCampaignWithRetryContact(retryContact(55L, "D2", "d2@test.com"))
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("D2"), ExpertIndexLevel.CANDIDATE))
+            .thenReturn(listOf(d2))
+        stubPersonMemberProfiles(listOf(d1, d2))
+        stubPagedExperts(listOf(d1))
+        stubAdmissions("D1" to "AUTO_PASSED", "D2" to "AUTO_PASSED")
+        val personAware = serviceWithPersonSelection(personMembers(listOf(d1, d2)), preflight = batchRecipientPreflightService)
+        val snapshot = introSnapshot(10, 1).copy(funnelLevel = "CANDIDATE")
+
+        val summary = personAware.countStrictStatistics(personAware.statisticsContext(snapshot))
+
+        assertEquals(1, summary.retryable)
+        assertEquals(0, summary.pending)
+        assertEquals(1, summary.totalSendable)
+        assertStatisticsReadOnly()
+    }
+
+    @Test
+    fun `strict statistics completes 30001 targets while diagnostics stop at 20000 without business writes`() {
+        stubEmptyRetryCandidates()
+        val profiles = (1..30_001).map { expert("CACHE$it", "cache$it@example.org") }
+        stubPagedExperts(profiles)
+        val snapshot = runScheduledSnapshot()
+
+        val summary = service.countStrictStatistics(service.statisticsContext(snapshot))
+
+        assertEquals(30_001, summary.totalSendable)
+        assertEquals(20_000, summary.baseline)
+        assertTrue(summary.partial)
+        assertEquals(summary.baseline, summary.excludedUnique!! + summary.eligibleBeforeLiveVerification!!)
+        assertNotNull(summary.asOf)
+        assertStatisticsReadOnly()
+        Mockito.verify(expertSearchService, Mockito.never()).scrollExpertsFiltered(
+            anyIndexLevel(), anyValue(emptyList()), anyInt(), anyValue({ _: List<ExpertProfile> -> true })
+        )
+    }
+
+    @Test
+    fun `strict statistics NEW keyset and PIT identities are counted once across page boundary`() {
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH",
+            campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        val profiles = (1..501).map { expert("RETRYCACHE$it", "retrycache$it@example.org") }
+        val contacts = profiles.mapIndexed { index, profile ->
+            ExpertContact(id = index + 1L, campaignId = 10L, orcidId = profile.orcidId,
+                expertName = "Expert", expertEmail = profile.email!!, currentStatus = "NEW")
+        }
+        Mockito.doReturn(501L).`when`(expertContactRepository).findNewRetryUpperId(10L)
+        Mockito.doAnswer { invocation ->
+            val after = invocation.getArgument<Long?>(3)?.toInt() ?: 0
+            contacts.drop(after).take(invocation.getArgument(4))
+        }.`when`(expertContactRepository).findNewRetryPage(
+            anyLong(), anyLong(), Mockito.any(), Mockito.any(), anyInt()
+        )
+        Mockito.`when`(expertSearchService.searchByOrcidIds(Mockito.anyList(), anyIndexLevel()))
+            .thenAnswer { invocation ->
+                val orcids = invocation.getArgument<List<String>>(0).toSet()
+                profiles.filter { it.orcidId in orcids }
+            }
+        stubPagedExperts(profiles)
+        val summary = service.countStrictStatistics(service.statisticsContext(runScheduledSnapshot()))
+
+        assertEquals(501, summary.retryable)
+        assertEquals(0, summary.pending)
+        assertEquals(501, summary.totalSendable)
+        assertEquals(501, summary.baseline)
+        assertFalse(summary.partial)
+        Mockito.verify(expertContactRepository, Mockito.never())
+            .findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(anyLong(), Mockito.anyString())
+        assertStatisticsReadOnly()
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["null", "failed_shard", "timeout"])
+    fun `strict PIT failure is ERROR without a fabricated zero and releases cursor`(failure: String) {
+        val mapper = ObjectMapper().registerKotlinModule()
+        var closed = 0
+        Mockito.doAnswer {
+            ExpertSearchCursor(
+                levels = listOf(ExpertIndexLevel.CANDIDATE), pageSize = 500,
+                indexName = { it.name }, searchBody = { mapOf("sort" to listOf("_shard_doc")) },
+                request = { path, method, _ ->
+                    when {
+                        method == HttpMethod.DELETE -> mapper.createObjectNode().also { closed++ }
+                        path.contains("/_pit?") -> mapper.createObjectNode().put("id", "isolated-statistics")
+                        failure == "null" -> mapper.nullNode()
+                        else -> mapper.readTree("""{"timed_out":${failure == "timeout"},"_shards":{"total":1,"successful":${if (failure == "failed_shard") 0 else 1},"failed":${if (failure == "failed_shard") 1 else 0}},"hits":{"hits":[]}}""")
+                    }
+                },
+                profile = { error("Invalid response must not deserialize candidates") },
+                scheduler = Mockito.mock(java.util.concurrent.ScheduledExecutorService::class.java), onClosed = {}
+            )
+        }.`when`(expertSearchService).openCandidateCursor(
+            anyIndexLevel(), anyValue(emptyList()), anyInt()
+        )
+        val snapshot = runScheduledSnapshot().copy(templateId = 42L)
+        Mockito.`when`(mailComposeTemplateService.statisticsFingerprint(42L, "INTRODUCTION"))
+            .thenReturn(com.weibo.talentintroduction.template.service.TemplateStatisticsFingerprint(42L, "isolated-v1"))
+        val cache = BatchRecipientStatisticsCache(service, mailComposeTemplateService, mapper)
+
+        val result = cache.statistics(snapshot)
+
+        assertEquals(BatchRecipientStatisticsState.ERROR, result.state)
+        assertEquals("STATISTICS_UNAVAILABLE", result.errorCode)
+        assertNull(result.summary)
+        assertNull(result.cachedAt)
+        assertEquals(1, closed)
+        assertEquals(BatchRecipientStatisticsState.ERROR, cache.statistics(snapshot, cacheOnly = true).state)
+        assertStatisticsReadOnly()
+    }
+
+    @Test
+    fun isolatedStatisticsApiCacheStrictSmoke() {
+        stubEmptyRetryCandidates()
+        stubPagedExperts((1..100).map { expert("SMOKECACHE$it", "smokecache$it@example.org") })
+        val mapper = ObjectMapper().registerKotlinModule().findAndRegisterModules()
+        val snapshot = runScheduledSnapshot().copy(templateId = 42L)
+        Mockito.`when`(mailComposeTemplateService.statisticsFingerprint(42L, "INTRODUCTION"))
+            .thenReturn(com.weibo.talentintroduction.template.service.TemplateStatisticsFingerprint(42L, "smoke-v1"))
+        val cache = BatchRecipientStatisticsCache(service, mailComposeTemplateService, mapper)
+        val controller = com.weibo.talentintroduction.mail.controller.BatchSendConfigController(
+            Mockito.mock(BatchSendTaskConfigService::class.java),
+            Mockito.mock(MailComposeTemplateRepository::class.java),
+            Mockito.mock(BatchSendControlService::class.java), service, taskExecutionService,
+            Mockito.mock(com.weibo.talentintroduction.task.repository.TaskProgressLogRepository::class.java),
+            mapper,
+            Mockito.mock(com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationRepository::class.java),
+            cache
+        )
+        val mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(controller)
+            .setMessageConverters(org.springframework.http.converter.json.MappingJackson2HttpMessageConverter(mapper)).build()
+        fun post(query: String = ""): com.fasterxml.jackson.databind.JsonNode {
+            val result = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .post("/api/mail/batch-send/recipients/statistics$query")
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content(mapper.writeValueAsBytes(snapshot)))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk).andReturn()
+            return mapper.readTree(result.response.contentAsString)
+        }
+        assertEquals("MISS", post("?cacheOnly=true").path("state").asText())
+        Mockito.verify(expertSearchService, Mockito.never()).openCandidateCursor(anyIndexLevel(), anyValue(emptyList()), anyInt())
+        val loaded = post()
+        assertEquals("READY", loaded.path("state").asText())
+        assertEquals(100, loaded.path("summary").path("totalSendable").asInt())
+        assertEquals(100, loaded.path("summary").path("baseline").asInt())
+        assertEquals(20_000, loaded.path("diagnosticLimit").asInt())
+        val scans = Mockito.mockingDetails(expertSearchService).invocations.count { it.method.name == "openCandidateCursor" }
+        assertEquals(loaded.path("cachedAt"), post().path("cachedAt"))
+        assertEquals(scans, Mockito.mockingDetails(expertSearchService).invocations.count { it.method.name == "openCandidateCursor" })
+        assertEquals("READY", post("?refresh=true").path("state").asText())
+        assertTrue(Mockito.mockingDetails(expertSearchService).invocations.count { it.method.name == "openCandidateCursor" } > scans)
+        assertStatisticsReadOnly()
+    }
+
+    private fun assertStatisticsReadOnly() {
+        Mockito.verifyNoInteractions(mailDeliveryService, txHelper, taskExecutionService, expertIndexWriterService,
+            senderAccountBindingService, mailSendAttemptRepository)
+        Mockito.verify(expertContactRepository, Mockito.never()).save(Mockito.any(ExpertContact::class.java))
+        Mockito.verify(campaignRepository, Mockito.never()).save(Mockito.any(Campaign::class.java))
+        Mockito.verify(mailRecordRepository, Mockito.never()).save(Mockito.any(MailRecord::class.java))
+        assertTrue(Mockito.mockingDetails(batchEmailVerificationService).invocations.all {
+            it.method.name.startsWith("find") || it.method.name.startsWith("lookup")
+        }, "Only historical read methods may be called, never verification providers")
+    }
 
     /**
      * Adapt the legacy page fixtures to real PIT cursors. Each cursor owns its raw offset;
