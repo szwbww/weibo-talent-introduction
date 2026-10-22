@@ -150,3 +150,11 @@ Java 11.0.15 Zulu and Docker server 29.8.2 observed available. Initial child 01 
 - Added Authorized Files: `src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchCursor.kt`; `src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchCursorTest.kt`. All original seven remain.
 - Required Java11 commands: `mvn test -Dtest=ManualInitialOutreachServiceTest,OutreachTargetIteratorTest,BatchSendTaskRuntimeIntegrationTest,BatchDemandExecutionTest,BatchSendExecutionDetailTest,ExpertSearchCursorTest`; `mvn test -Dtest=ExpertSearchCursorTest -DesIt=true`; `mvn test`.
 - Product base remains c83a74ec5afc6b380d0f3ec33aa997db512103f7; no product changes in blocked epoch1. Preserve its append-only report; start epoch2 with fix_round=0.
+
+## Epoch 3 — Approved amendments A3/A4 override earlier contract versions
+
+- Exact current authoritative child plan: `docs/plans/2026-10-22/batch-demand-04-execution.md` at commit `1ba7003f2719165e4d420132255d071102cd6c3e`. Re-read/hash current full plan, not historical copied text.
+- Human selected “批准第10文件并继续”: add `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailOpenTrackingPersistenceTest.kt` as tenth Authorized File, preserve success helper/tracking assertions, migrate already-authorized nested material fixtures and delete obsolete10000-abort test. New bounded execution epoch. No timezone product changes.
+- Required JAVA_HOME now `/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home`, installed Java11.0.32.1 observed by java_home -V; old11.0.15 full suite timezone errors recorded, not rerun to confirm.
+- Exact fresh commands in current plan explicitly include nested `ManualInitialOutreachServiceTest*` and tracking tests, realES opt-in, and full Maven. Prior failure counts are baseline only, not new verification.
+- Existing product boundary a36258bbe2bb49f131acc869395bc801eb7e822c contains nine-file implementation with incomplete acceptance. Finish current contract without replaying completed unrelated work; product base remains c83a74ec5afc6b380d0f3ec33aa997db512103f7. Preserve all previous append-only reports. Controller fast-p independent repair count remains0.
