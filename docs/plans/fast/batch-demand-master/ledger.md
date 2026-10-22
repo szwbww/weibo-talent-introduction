@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-22/batch-demand-master.md
 
-- Status: RUNNING
+- Status: READY_FOR_HUMAN_REVIEW
 - Master plan: docs/plans/2026-10-22/batch-demand-master.md (commit 1ba7003f2719165e4d420132255d071102cd6c3e)
 - Amendments: A1,A2,A3,A4
 - Master base: d403caeb5dcc4810067293c10600ee57f94e276b
@@ -9,12 +9,12 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-22T19:50:07.103289+08:00
-- Current child: 06
+- Current child: N/A
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
-- Resume from: 1ba7003f2719165e4d420132255d071102cd6c3e
+- Resume from: N/A
 
 ## Baseline
 
@@ -41,3 +41,9 @@ Original worktree left untouched. Approved plan snapshot seeded in f684da0a316b8
 ## Resume Events
 
 - 2026-10-22: Human selected “授权清理并继续” for `git worktree prune --verbose` following dry-run. Cleanup changed only Git-invalid registration metadata, not existing worktree directories or branches. Mandatory execute-p worktree_identity.py succeeded at HEAD 190a563cf5127473bc090bc090414f0ed0c933ff (artifact://265). Resume child01 as epoch2; unchanged approved plans and product base. No plan amendment.
+
+## Finalization
+
+- All six children reached LIGHT_PASS in dependency order. Each evidence checkpoint passed both dirty-artifact and clean CHILD_CHECKPOINT validation before the next dispatch; child06 clean checkpoint passed at 451a4406477204a5730432bb6149b5f71ab7fb60.
+- Finalization mode NORMAL; no finalization repair. Final handoff compiled solely from recorded child reports/commits and amendments A1–A4. No aggregate diff inspection, whole-system rerun, final reviewer, publication, merge, or branch/worktree deletion by controller.
+- Remaining human work is the deferred combined review and approved manual end-to-end acceptance; child-specific full Maven in04 is evidence at that boundary, not a claim that final06 underwent a new whole-system suite.
