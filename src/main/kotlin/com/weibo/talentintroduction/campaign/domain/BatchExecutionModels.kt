@@ -125,6 +125,16 @@ data class OutcomeBreakdown(
     val errorSamples: List<String> = emptyList()
 )
 
+/** Optional demand-execution counters; legacy executions do not acquire this protocol. */
+data class BatchExecutionMetadata(
+    val plannedSuccess: Long,
+    val remainingSuccessQuota: Long,
+    /** Candidates read, not the size of the source population. */
+    val scanned: Long,
+    val sourceExhausted: Boolean,
+    val version: Int = 2
+)
+
 /**
  * I-2/I-3: 本次批量筛选的显式条件 key。每个 key 精确对应一个用户可见控件，
  * 排除原因必须落在这里列出的 key（或统一 selector 的准入状态）之一，不得有隐式默认。

@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.mail.controller
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.weibo.talentintroduction.campaign.domain.BatchExecutionMetadata
 import com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigCreateCommand
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigUpdateCommand
@@ -371,7 +372,8 @@ class BatchSendConfigController(
             remaining = outcome?.remaining ?: 0,
             startedAt = execution.startedAt,
             finishedAt = execution.finishedAt,
-            durationMs = durationMs
+            durationMs = durationMs,
+            execution = outcome?.execution
         )
     }
 
@@ -408,7 +410,8 @@ class BatchSendConfigController(
             skippedReasons = outcome?.skippedReasons ?: runningFallback?.skippedReasons ?: emptyMap(),
             errorSamples = outcome?.errorSamples ?: runningFallback?.errorSamples ?: emptyList(),
             progressRows = progressRows,
-            live = live
+            live = live,
+            execution = outcome?.execution ?: runningFallback?.execution
         )
     }
 
@@ -456,15 +459,20 @@ class BatchSendConfigController(
         val detailsJson = entry.detailsJson ?: return null
         return try {
             val node = objectMapper.readTree(detailsJson)
+            val execution = parseExecution(node.path("execution"))
+            val success = node.path("sentTotal").asInt(0)
+            val failure = node.path("failedTotal").asInt(0)
+            val skipped = node.path("skippedTotal").asInt(0)
             ParsedOutcome(
-                target = entry.totalCount.toInt(),
-                success = node.path("sentTotal").asInt(0),
-                failure = node.path("failedTotal").asInt(0),
-                skipped = node.path("skippedTotal").asInt(0),
-                remaining = node.path("pending").asInt(0),
+                target = if (execution != null) success + failure + skipped else entry.totalCount.toInt(),
+                success = success,
+                failure = failure,
+                skipped = skipped,
+                remaining = if (execution != null) 0 else node.path("pending").asInt(0),
                 failureReasons = parseReasonMap(node.path("failureReasons")),
                 skippedReasons = parseReasonMap(node.path("skippedReasons")),
-                errorSamples = parseErrors(entry.errorsJson)
+                errorSamples = parseErrors(entry.errorsJson),
+                execution = execution
             )
         } catch (e: Exception) {
             log.warn("Failed to parse progress log outcome: {}", e.message)
@@ -476,6 +484,7 @@ class BatchSendConfigController(
         if (resultSummary.isNullOrBlank()) return null
         return try {
             val root = objectMapper.readTree(resultSummary)
+            val execution = parseExecution(root.path("execution"))
             val outcomeNode = root.path("outcome")
             if (!outcomeNode.isMissingNode) {
                 ParsedOutcome(
@@ -486,7 +495,8 @@ class BatchSendConfigController(
                     remaining = outcomeNode.path("remaining").asInt(0),
                     failureReasons = parseReasonMap(outcomeNode.path("failureReasons")),
                     skippedReasons = parseReasonMap(outcomeNode.path("skippedReasons")),
-                    errorSamples = outcomeNode.path("errorSamples").map { it.asText() }
+                    errorSamples = outcomeNode.path("errorSamples").map { it.asText() },
+                    execution = execution
                 )
             } else {
                 ParsedOutcome(
@@ -497,12 +507,31 @@ class BatchSendConfigController(
                     remaining = root.path("remaining").asInt(0),
                     failureReasons = emptyMap(),
                     skippedReasons = emptyMap(),
-                    errorSamples = emptyList()
+                    errorSamples = emptyList(),
+                    execution = execution
                 )
             }
         } catch (_: Exception) {
             null
         }
+    }
+
+    /** Ignore only the optional protocol on invalid/unknown data; preserve the legacy outcome. */
+    private fun parseExecution(node: com.fasterxml.jackson.databind.JsonNode): BatchExecutionMetadata? {
+        val version = node.path("version")
+        if (!node.isObject || !version.isIntegralNumber || !version.canConvertToInt() || version.intValue() != 2) return null
+        fun nonNegativeLong(key: String): Long? {
+            val value = node.path(key)
+            return if (value.isIntegralNumber && value.canConvertToLong() && value.longValue() >= 0) value.longValue() else null
+        }
+        val exhausted = node.path("sourceExhausted")
+        if (!exhausted.isBoolean) return null
+        return BatchExecutionMetadata(
+            plannedSuccess = nonNegativeLong("plannedSuccess") ?: return null,
+            remainingSuccessQuota = nonNegativeLong("remainingSuccessQuota") ?: return null,
+            scanned = nonNegativeLong("scanned") ?: return null,
+            sourceExhausted = exhausted.booleanValue()
+        )
     }
 
     private fun parseReasonMap(node: com.fasterxml.jackson.databind.JsonNode): Map<String, com.weibo.talentintroduction.campaign.domain.ReasonCount> {
@@ -565,7 +594,8 @@ data class BatchConfigExecutionSummary(
     val remaining: Int,
     val startedAt: java.time.LocalDateTime,
     val finishedAt: java.time.LocalDateTime?,
-    val durationMs: Long?
+    val durationMs: Long?,
+    val execution: BatchExecutionMetadata? = null
 )
 
 data class BatchConfigExecutionDetail(
@@ -585,7 +615,8 @@ data class BatchConfigExecutionDetail(
     val skippedReasons: Map<String, com.weibo.talentintroduction.campaign.domain.ReasonCount>,
     val errorSamples: List<String>,
     val progressRows: List<ExecutionProgressRow>,
-    val live: ExecutionLiveView? = null
+    val live: ExecutionLiveView? = null,
+    val execution: BatchExecutionMetadata? = null
 )
 
 data class ExecutionProgressRow(
@@ -654,5 +685,6 @@ private data class ParsedOutcome(
     val remaining: Int,
     val failureReasons: Map<String, com.weibo.talentintroduction.campaign.domain.ReasonCount>,
     val skippedReasons: Map<String, com.weibo.talentintroduction.campaign.domain.ReasonCount>,
-    val errorSamples: List<String>
+    val errorSamples: List<String>,
+    val execution: BatchExecutionMetadata? = null
 )

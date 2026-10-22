@@ -25111,18 +25111,35 @@ function renderBatchLiveSection(d) {
     if (cancelBtn) cancelBtn.hidden = l.cancellable !== true;
 }
 
+function batchDemandExecution(d) {
+    var execution = d.execution;
+    if (!execution || execution.version !== 2 || typeof execution.sourceExhausted !== "boolean") return null;
+    var counts = [execution.plannedSuccess, execution.remainingSuccessQuota, execution.scanned];
+    if (!counts.every(function(value) { return Number.isSafeInteger(value) && value >= 0; })) return null;
+    return execution;
+}
+
 function renderOutcomeMetrics(d) {
     var container = document.getElementById("batchLogMetrics");
     if (!container) return;
     var duration = d.durationMs != null ? formatDuration(d.durationMs) : "—";
-    var items = [
+    var execution = batchDemandExecution(d);
+    var items = execution ? [
+        { label: "本次计划成功", value: String(execution.plannedSuccess), cls: "" },
+        { label: "成功", value: String(d.success), cls: "is-success" },
+        { label: "失败", value: String(d.failure), cls: "is-failure" },
+        { label: "跳过", value: String(d.skipped), cls: "is-skipped" },
+        { label: "实际处理", value: String(d.target), cls: "" },
+        { label: "未完成配额", value: String(execution.remainingSuccessQuota), cls: "" },
+        { label: "耗时", value: duration, cls: "" }
+    ] : [
         { label: "目标", value: String(d.target), cls: "" },
         { label: "成功", value: String(d.success), cls: "is-success" },
         { label: "失败", value: String(d.failure), cls: "is-failure" },
         { label: "跳过", value: String(d.skipped), cls: "is-skipped" },
         { label: "耗时", value: duration, cls: "" }
     ];
-    if (d.remaining > 0) {
+    if (!execution && d.remaining > 0) {
         items.push({ label: "剩余", value: String(d.remaining), cls: "" });
     }
     container.innerHTML = items.map(function(it) {
@@ -25136,6 +25153,13 @@ function renderOutcomeMetrics(d) {
 function renderIntegrityWarning(d) {
     var el = document.getElementById("batchLogIntegrityWarning");
     if (!el) return;
+    var execution = batchDemandExecution(d);
+    if (execution) {
+        el.hidden = d.target === d.success + d.failure + d.skipped && d.remaining === 0 &&
+            execution.remainingSuccessQuota === Math.max(execution.plannedSuccess - d.success, 0);
+        if (!el.hidden) el.textContent = "统计待核对：本次执行计数不一致";
+        return;
+    }
     if (d.status === "RUNNING" || d.status === "CANCELLING") { el.hidden = true; return; }
     var expected = d.success + d.failure + d.skipped + (d.remaining || 0);
     if (expected !== d.target) {
@@ -25177,7 +25201,9 @@ function renderLogStatusInfo(d) {
     var status = statusLabel(d.status);
     var trigger = triggerTypeLabel(d.triggerType);
     var time = d.finishedAt ? "完成于 " + formatDateTime(d.finishedAt) : (d.startedAt ? "开始于 " + formatDateTime(d.startedAt) : "");
-    el.textContent = status + " | " + trigger + " | " + time;
+    var execution = batchDemandExecution(d);
+    el.textContent = status + " | " + trigger + " | " + time +
+        (execution && execution.sourceExhausted ? " | 候选已耗尽" : "");
 }
 
 function clearBatchLogDisplay() {

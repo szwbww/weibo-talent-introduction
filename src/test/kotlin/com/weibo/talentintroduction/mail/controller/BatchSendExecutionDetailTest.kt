@@ -1,6 +1,8 @@
 package com.weibo.talentintroduction.mail.controller
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.weibo.talentintroduction.campaign.domain.BatchExecutionMetadata
+import com.weibo.talentintroduction.campaign.service.ManualOutreachResult
 import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationAggregate
 import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationPage
 import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationRepository
@@ -390,6 +392,170 @@ class BatchSendExecutionDetailTest {
         assertEquals(HttpStatus.OK, response.statusCode)
         assertEquals(emptyList<Any>(), response.body)
         Mockito.verify(taskExecutionService).listRecentByTaskType(BatchSendControlService.TASK_TYPE, 200)
+    }
+
+    private fun demandExecutionJson(
+        planned: Long = 30,
+        quota: Long = 10,
+        scanned: Long = 50,
+        exhausted: Boolean = true
+    ) = """{"version":2,"plannedSuccess":$planned,"remainingSuccessQuota":$quota,"scanned":$scanned,"sourceExhausted":$exhausted}"""
+
+    private fun resultWithExecution(metadata: String, success: Int = 20, skipped: Int = 3) =
+        """{"execution":$metadata,"outcome":{"target":${success + 2 + skipped},"success":$success,"failure":2,"skipped":$skipped,"remaining":0,
+           "failureReasons":{"SMTP_TIMEOUT":{"label":"SMTP 超时","count":2}},
+           "skippedReasons":{"FILTERED":{"label":"条件排除","count":$skipped}},"errorSamples":["fixture timeout"]}}"""
+
+    @Test
+    fun `v2 latest progress and final result expose identical counters through both detail endpoints`() {
+        val metadata = demandExecutionJson()
+        val latest = logRow(9, 1, totalCount = 0, processedCount = 25,
+            detailsJson = """{"execution":$metadata,"sentTotal":20,"failedTotal":2,"skippedTotal":3,"pending":999,
+                "failureReasons":{"SMTP_TIMEOUT":{"label":"SMTP 超时","count":2}},
+                "skippedReasons":{"FILTERED":{"label":"条件排除","count":3}}}""",
+            errorsJson = """["fixture timeout"]""")
+        stubLogs(listOf(logRow(1, 0), latest))
+        Mockito.`when`(progressLogRepository.findTopByTaskExecutionIdOrderByIdDesc(10L)).thenReturn(latest)
+        Mockito.`when`(taskExecutionService.getExecution(10L)).thenReturn(execution(status = "RUNNING"))
+        val c = controller()
+        val running = c.getConfigExecutionDetail(1L, 10L).body!!
+        assertEquals(25, running.target, "unknown generic totalCount must not become the v2 target")
+        assertEquals(0, running.remaining, "quota and legacy population remaining must not be mixed")
+        assertEquals(BatchExecutionMetadata(30, 10, 50, true), running.execution)
+        assertEquals(running.execution, c.getExecutionDetail(10L).body!!.execution)
+        assertEquals(listOf("INIT", "ROUND"), running.progressRows.map { it.kind })
+
+        Mockito.`when`(taskExecutionService.getExecution(10L)).thenReturn(
+            execution(resultSummary = resultWithExecution(metadata)))
+        val completed = c.getExecutionDetail(10L).body!!
+        assertEquals(running.target, completed.target)
+        assertEquals(running.success, completed.success)
+        assertEquals(running.failure, completed.failure)
+        assertEquals(running.skipped, completed.skipped)
+        assertEquals(running.remaining, completed.remaining)
+        assertEquals(running.execution, completed.execution)
+        assertEquals(running.failureReasons, completed.failureReasons)
+        assertEquals(running.skippedReasons, completed.skippedReasons)
+        assertEquals(running.errorSamples, completed.errorSamples)
+        assertEquals(completed.execution, c.getConfigExecutionDetail(1L, 10L).body!!.execution)
+    }
+
+    @Test
+    fun `v2 completed summary exposes actual49 and zero quota without reading progress`() {
+        val row = execution(resultSummary = resultWithExecution(demandExecutionJson(quota = 0, scanned = 80, exhausted = false),
+            success = 30, skipped = 17))
+        Mockito.`when`(taskExecutionService.listRecentByBatchConfigId(1L, 50)).thenReturn(listOf(row))
+        Mockito.`when`(taskExecutionService.listRecentByTaskType(BatchSendControlService.TASK_TYPE, 50)).thenReturn(listOf(row))
+        val c = controller()
+        val summary = c.listConfigExecutions(1L, 50).body!!.single()
+        assertEquals(49, summary.target)
+        assertEquals(30, summary.success)
+        assertEquals(2, summary.failure)
+        assertEquals(17, summary.skipped)
+        assertEquals(0, summary.remaining)
+        assertEquals(0L, summary.execution!!.remainingSuccessQuota)
+        assertEquals(summary.execution, c.listAllExecutions(50).body!!.single().execution)
+        Mockito.verifyNoInteractions(progressLogRepository)
+    }
+
+    @Test
+    fun `RUNNING list does not perform per execution progress lookups`() {
+        Mockito.`when`(taskExecutionService.listRecentByTaskType(BatchSendControlService.TASK_TYPE, 50))
+            .thenReturn(listOf(execution(status = "RUNNING")))
+        val summary = controller().listAllExecutions(50).body!!.single()
+        assertNull(summary.execution)
+        Mockito.verifyNoInteractions(progressLogRepository)
+    }
+
+    @Test
+    fun `historical1757 remains unchanged in summary and both detail readers`() {
+        val row = execution(resultSummary = """{"outcome":{"target":1757,"success":30,"failure":0,"skipped":17,"remaining":1710}}""")
+        Mockito.`when`(taskExecutionService.getExecution(10L)).thenReturn(row)
+        Mockito.`when`(taskExecutionService.listRecentByTaskType(BatchSendControlService.TASK_TYPE, 50)).thenReturn(listOf(row))
+        stubLogs(emptyList())
+        val c = controller()
+        val summary = c.listAllExecutions(50).body!!.single()
+        assertEquals(listOf(1757, 30, 0, 17, 1710),
+            listOf(summary.target, summary.success, summary.failure, summary.skipped, summary.remaining))
+        assertNull(summary.execution)
+        listOf(c.getExecutionDetail(10L).body!!, c.getConfigExecutionDetail(1L, 10L).body!!).forEach {
+            assertEquals(listOf(1757, 30, 0, 17, 1710), listOf(it.target, it.success, it.failure, it.skipped, it.remaining))
+            assertNull(it.execution)
+        }
+    }
+
+    @Test
+    fun `unknown incomplete negative coercible and overflow protocols preserve existing outcome in both readers`() {
+        val valid = demandExecutionJson()
+        val invalid = listOf(
+            "null", "{}", "[]",
+            valid.replace("\"version\":2", "\"version\":3"),
+            valid.replace("\"version\":2", "\"version\":2.0"),
+            valid.replace("\"version\":2", "\"version\":\"2\""),
+            valid.replace("\"scanned\":50,", ""),
+            valid.replace("\"scanned\":50", "\"scanned\":-1"),
+            valid.replace("\"plannedSuccess\":30", "\"plannedSuccess\":30.5"),
+            valid.replace("\"plannedSuccess\":30", "\"plannedSuccess\":\"30\""),
+            valid.replace("\"remainingSuccessQuota\":10", "\"remainingSuccessQuota\":-1"),
+            valid.replace("\"plannedSuccess\":30", "\"plannedSuccess\":9223372036854775808"),
+            valid.replace("\"sourceExhausted\":true", "\"sourceExhausted\":\"true\"")
+        )
+        val c = controller()
+        invalid.forEach { metadata ->
+            Mockito.`when`(taskExecutionService.getExecution(10L)).thenReturn(
+                execution(resultSummary = resultWithExecution(metadata)))
+            stubLogs(emptyList())
+            val final = c.getExecutionDetail(10L).body!!
+            assertNull(final.execution, metadata)
+            assertEquals(25, final.target, metadata)
+            assertEquals(20, final.success, metadata)
+            assertEquals("SMTP 超时", final.failureReasons["SMTP_TIMEOUT"]?.label)
+            assertEquals(listOf("fixture timeout"), final.errorSamples)
+
+            val latest = logRow(9, 1, totalCount = 1757,
+                detailsJson = """{"execution":$metadata,"sentTotal":30,"failedTotal":0,"skippedTotal":17,"pending":1710}""")
+            Mockito.`when`(taskExecutionService.getExecution(10L)).thenReturn(execution(status = "RUNNING"))
+            Mockito.`when`(progressLogRepository.findTopByTaskExecutionIdOrderByIdDesc(10L)).thenReturn(latest)
+            val running = c.getExecutionDetail(10L).body!!
+            assertNull(running.execution, metadata)
+            assertEquals(1757, running.target, metadata)
+            assertEquals(1710, running.remaining, metadata)
+        }
+    }
+
+    @Test
+    fun `bad JSON result and progress degrade without manufacturing protocol`() {
+        Mockito.`when`(taskExecutionService.getExecution(10L)).thenReturn(
+            execution(status = "RUNNING", resultSummary = "{", successCount = 7, failureCount = 2))
+        stubLogs(emptyList())
+        Mockito.`when`(progressLogRepository.findTopByTaskExecutionIdOrderByIdDesc(10L))
+            .thenReturn(logRow(9, 1, detailsJson = "{"))
+        val detail = controller().getExecutionDetail(10L).body!!
+        assertNull(detail.execution)
+        assertEquals(7, detail.success)
+        assertEquals(2, detail.failure)
+    }
+
+    @Test
+    fun `metadata uses Long and adds only one nested result or progress field while legacy result omits it`() {
+        val legacy = ManualOutreachResult(0, 0, 0, 0, false)
+        val legacyNode = objectMapper.readTree(objectMapper.writeValueAsString(legacy))
+        assertFalse(legacyNode.has("execution"), "existing producers must not write even a null protocol")
+        val planned = 50_000L * 50_000L
+        val metadata = BatchExecutionMetadata(planned, planned - 20, 50, true)
+        val result = objectMapper.readTree(objectMapper.writeValueAsString(legacy.copy(execution = metadata)))
+        assertEquals(legacyNode.fieldNames().asSequence().toSet() + "execution", result.fieldNames().asSequence().toSet())
+        assertEquals(setOf("version", "plannedSuccess", "remainingSuccessQuota", "scanned", "sourceExhausted"),
+            result.path("execution").fieldNames().asSequence().toSet())
+        assertEquals(2_500_000_000L, result.path("execution").path("plannedSuccess").longValue())
+        val details = objectMapper.readTree(objectMapper.writeValueAsString(mapOf("sentTotal" to 20)))
+        val progress = objectMapper.readTree(objectMapper.writeValueAsString(mapOf("sentTotal" to 20, "execution" to metadata)))
+        assertEquals(details.fieldNames().asSequence().toSet() + "execution", progress.fieldNames().asSequence().toSet())
+        assertEquals(result.path("execution"), progress.path("execution"))
+        Mockito.`when`(taskExecutionService.getExecution(10L)).thenReturn(execution(
+            resultSummary = resultWithExecution(objectMapper.writeValueAsString(metadata))))
+        stubLogs(emptyList())
+        assertEquals(planned, controller().getExecutionDetail(10L).body!!.execution!!.plannedSuccess)
     }
 
     // ── 03 T1: per-email verification detail (read-only) ───────────────────────────

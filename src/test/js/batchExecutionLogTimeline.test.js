@@ -35,6 +35,7 @@ function createTimelineSandbox() {
     };
     vm.createContext(sandbox);
     vm.runInContext(extractFn("renderBatchTimeline"), sandbox);
+    vm.runInContext(extractFn("batchDemandExecution"), sandbox);
     vm.runInContext(extractFn("renderIntegrityWarning"), sandbox);
     vm.runInContext(extractFn("statusLabel"), sandbox);
     return { sandbox, elements };

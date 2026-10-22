@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.campaign.service
 
 import com.weibo.talentintroduction.campaign.domain.Campaign
+import com.weibo.talentintroduction.campaign.domain.BatchExecutionMetadata
 import com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot
 import com.weibo.talentintroduction.campaign.domain.BatchOutcomeReasonCodes
 import com.weibo.talentintroduction.campaign.domain.EmailVerificationAllowedStates
@@ -2828,7 +2829,9 @@ data class ManualOutreachResult(
     val stopReason: String? = null,
     val remaining: Int = 0,
     val skipped: Int = 0,
-    val outcome: OutcomeBreakdown? = null
+    val outcome: OutcomeBreakdown? = null,
+    @get:com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    val execution: BatchExecutionMetadata? = null
 ) : TaskExecutionSummaryProvider {
     override val taskSuccessCount: Int get() = sent
     override val taskFailureCount: Int get() = failed
