@@ -226,3 +226,84 @@ Specialized grep/read receipts used for quantified failure classification:
 ### Next Action
 
 Controller persists PLAN_CONFLICT pause and obtains the minimal scope/renewed-execution authority above. Preserve this exact implementation/report boundary; do not relabel it READY or proceed to child05.
+
+---
+
+## Epoch 3 — Execution Result: READY_FOR_VERIFICATION
+
+Plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-batch-demand-master/docs/plans/2026-10-22/batch-demand-04-execution.md`
+Approved immutable plan: `commit:1ba7003f2719165e4d420132255d071102cd6c3e`
+Plan SHA-256: `d7ae76071b513da814c9b1f49feea7cc01942e87b500d0e0027588cc6fecd565` (15564 bytes).
+Execution ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-batch-demand-master/docs/plans/2026-10-22/batch-demand-04-execution.md@d7ae76071b513da814c9b1f49feea7cc01942e87b500d0e0027588cc6fecd565`
+Execution epoch: NEW; human “批准第10文件并继续”, Epoch3 A3/A4 overrides and current dispatch.
+Executor: Demand04Epoch3Writer. Fast-p independent fix_round remains 0.
+Target worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-batch-demand-master`
+Branch: `fast/batch-demand-master`
+Worktree ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-batch-demand-master@fast/batch-demand-master@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-batch-demand-master`
+Common Git directory: `/Users/lukai/IdeaProjects/weibo-talent-introduction/.git`.
+Entry evidence HEAD: `015e45f44e04f90655334a1c367ce9850c4f5342`.
+Pre-execution code SHA: `a36258bbe2bb49f131acc869395bc801eb7e822c`.
+Post-execution code SHA / current HEAD: `566ed817ce6f314383e0764331b75760f29e328c`.
+Product child_base remains `c83a74ec5afc6b380d0f3ec33aa997db512103f7`; implementation boundary is that base through post-execution code SHA, excluding controller-owned evidence commits.
+Evidence HEAD: executor leaves this append uncommitted for controller-owned evidence commit; no evidence included in product commit.
+
+### Task Status
+
+| Requirement | Status | Files / evidence |
+|---|---|---|
+| I-1/I-2 bounded demand quotas, NEW-first, dynamic raw reads and no execution initialization count | IMPLEMENTED | Retained approved nine-file implementation; freshly exercised focused suite and isolated capture |
+| I-3 current-document revalidation and existing safety/transaction seams | IMPLEMENTED | No production filter changes this epoch; tracking caller now supplies real cursor/current-read fixture; actual success-helper/openTrackingId assertions preserved |
+| I-4 actual-only outcome and shared running/final execution metadata | IMPLEMENTED | Fresh demand/protocol and full suite |
+| I-5 material streaming count, symmetric stop/close | IMPLEMENTED | Fresh capture includes 11001 count/no writes, both send types, round budgets/capacity/cancellation |
+| Nested material fixtures | IMPLEMENTED | Material scope tags supplied to positive and negative fixtures; oneRoundOnly fixture fills its one-success round; obsolete10000-abort test removed |
+| Required current-identity commands | IMPLEMENTED | Final-state commands below all exit0; gated skips reported explicitly |
+
+### Changed Files
+
+- `src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt` — correct nested material scope fixtures without weakening production eligibility; oneRoundOnly roundSize1 makes completed-round assertion meaningful; remove obsolete10000-abort contract authorized by A4.
+- `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailOpenTrackingPersistenceTest.kt` — replace obsolete offset/count/scroll fixtures with real callback-transport ExpertSearchCursor and strict current-document lookup. Preserve real helper plus openTrackingId77/taskExecutionId91/body assertions.
+- This execution report append only; prior epochs unchanged.
+
+### Commands — fresh final-state evidence
+
+All repository commands used the exact target worktree as cwd. All Java commands used `JAVA_HOME=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home`. No old11.0.15 confirmation rerun, timezone product edit, production SMTP, push, merge, history rewrite, plan edit or knowledge edit occurred.
+
+| Exact command | Result | Evidence |
+|---|---|---|
+| `JAVA_HOME=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home mvn test '-Dtest=ManualInitialOutreachServiceTest*,OutreachTargetIteratorTest,BatchSendTaskRuntimeIntegrationTest,BatchDemandExecutionTest,BatchSendExecutionDetailTest,ExpertSearchCursorTest,MailOpenTrackingPersistenceTest'` | PASS exit0 | artifact://526:365 tests,0 failures,0 errors,1 gated realES skip; includes234 outer+nested ManualInitialOutreach cases and6 tracking cases; Node1799 pass |
+| `JAVA_HOME=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home mvn test -Dtest=ExpertSearchCursorTest -DesIt=true` | PASS exit0 | artifact://526:10 tests,0 failures/errors/skips; Node1799 pass |
+| `JAVA_HOME=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home mvn test` | PASS exit0 | artifact://526:5440 tests,0 failures,0 errors,23 skips; Node1799 pass,0 failures/skips; configured JS syntax checks completed |
+| `JAVA_HOME=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home mvn surefire:test -Dtest=BatchDemandExecutionTest` | PASS exit0 | artifact://526: isolated capture smoke26 tests,0 failures/errors/skips |
+| `git diff --check` | PASS exit0 | Final command in artifact://526 chained sequence; no whitespace errors |
+| `git show 1ba7003f2719165e4d420132255d071102cd6c3e:docs/plans/2026-10-22/batch-demand-04-execution.md \| shasum -a 256` | PASS exit0 | artifact://519 hash equals current plan SHA |
+| `python3 /Users/lukai/.agents/skills/execute-p/scripts/plan_identity.py docs/plans/2026-10-22/batch-demand-04-execution.md` | PASS exit0 | artifact://529 unchanged current SHA/path/size |
+| `python3 /Users/lukai/.agents/skills/execute-p/scripts/worktree_identity.py docs/plans/2026-10-22/batch-demand-04-execution.md --worktree /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-batch-demand-master --expect-root /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-batch-demand-master --expect-branch fast/batch-demand-master --expect-git-dir /Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-batch-demand-master` | PASS exit0 | Run before staging, before commit, and final binding; artifacts527/528/529 |
+| `git commit -m 'feat(fast-p): implement 04'` (with detailed epoch3 evidence body) | PASS exit0 | artifact://528:566ed817ce6f314383e0764331b75760f29e328c;2 authorized test files; evidence excluded |
+| `git rev-parse HEAD` and `git merge-base --is-ancestor HEAD refs/heads/fast/batch-demand-master` | PASS exit0 | artifact://528 confirms product commit is target HEAD and branch-reachable |
+| `git status --short` | PASS exit0 | artifact://529 clean product/index before this authorized report append |
+
+Earlier fresh epoch3 runs also passed (focused artifact520, realES522, full524), but were superseded after completing the negative material scope fixtures. Only final-state artifact526 satisfies the required acceptance evidence here. Historical epoch2 failures remain baseline only.
+
+### Runtime smoke and isolation
+
+- Fresh real ES7.14.2 container: `CURSOR_SMOKE ES=7.14.2 documents=11001 pages=24 searchRequests=24 countRequests=0`; `earlyStopSearchRequests=3 releasedPits=2 openContexts=0 SMTP=0` (artifact526).
+- Isolated capture smoke invokes changed production `run` for INTRODUCTION and MATERIAL_REMINDER with real callback-transport cursor state machines and mocked delivery capture, not production SMTP. Assertions include30-success early stop,5fail+5changed supplement to30, dynamic page sizes, filtered pages/deep traversal, NEW501 lookup, strict-read failures before/after success, round budgets/capacity/cancel before PREPARED, genuine exhaustion, metadata parity and cursor release.
+- Material11001 explicit count asserts no delivery/mail/contact/attempt/binding business writes. Tracking regression separately exercises real success helper and captured persisted tracking metadata.
+- This is execution evidence, not independent verification or a whole-system PASS. No claim that human A-1 through A-4 isolated MySQL/ES/capture-box acceptance was performed end-to-end.
+
+### Deviations / Remaining Blocker
+
+None. No known in-scope failing test remains. Opt-in skips are not represented as passes.
+
+### Freshness
+
+- Plan identity rechecked: YES; approved immutable commit hash matches current bytes.
+- Worktree identity rechecked: YES, including expected root/branch/Git directory before staging and commit.
+- Reported product commit reachable from target branch: YES.
+- Required commands freshly run after final implementation state: YES.
+- Historical evidence used only as baseline: YES.
+- Product/index clean before authorized evidence append: YES; report intentionally left for controller evidence commit.
+
+### Next Action
+
+Controller persists evidence and runs independent fast-p verification. READY_FOR_VERIFICATION is not PASS and does not authorize release or production sends.
