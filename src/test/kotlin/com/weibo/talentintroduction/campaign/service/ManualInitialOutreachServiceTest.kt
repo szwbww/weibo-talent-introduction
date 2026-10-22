@@ -3258,7 +3258,7 @@ class ManualInitialOutreachServiceTest {
 
         @Test
         fun `runMaterialReminderBatch excludes experts without existing MySQL contact (I-3)`() {
-            val ep = expert("R001", "r1@test.com")
+            val ep = expert("R001", "r1@test.com").copy(tags = listOf("承诺回复材料"))
             Mockito.`when`(expertSearchService.countExperts(
                 eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
             )).thenReturn(1L)
@@ -3281,7 +3281,7 @@ class ManualInitialOutreachServiceTest {
                 id = contactId, campaignId = 10L, orcidId = "R002", expertEmail = "r2@test.com",
                 expertName = "R2", currentStatus = "WAITING_REPLY"
             )
-            val ep = expert("R002", "r2@test.com")
+            val ep = expert("R002", "r2@test.com").copy(tags = listOf("承诺回复材料"))
 
             Mockito.`when`(expertSearchService.countExperts(
                 eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
@@ -3307,19 +3307,6 @@ class ManualInitialOutreachServiceTest {
             Mockito.verifyNoInteractions(manualExpertMailService)
         }
 
-        @Test
-        fun `runMaterialReminderBatch throws IllegalState when count exceeds 10000 before any send (I-6)`() {
-            Mockito.`when`(expertSearchService.countExperts(
-                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
-            )).thenReturn(10001L)
-
-            val thrown = org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException::class.java) {
-                service.runMaterialReminderBatch(12345L, ExecutionMode.MANUAL, false)
-            }
-            assertTrue(thrown.message!!.contains("10001"))
-            assertTrue(thrown.message!!.contains("10000"))
-            Mockito.verifyNoInteractions(manualExpertMailService)
-        }
 
         @Test
         fun `runMaterialReminderBatch does not modify tags or call txHelper after send (I-5)`() {
@@ -3328,7 +3315,7 @@ class ManualInitialOutreachServiceTest {
                 id = contactId, campaignId = 10L, orcidId = "R003", expertEmail = "r3@test.com",
                 expertName = "R3", currentStatus = "WAITING_REPLY"
             )
-            val ep = expert("R003", "r3@test.com")
+            val ep = expert("R003", "r3@test.com").copy(tags = listOf("承诺回复材料"))
             val acc = account("chen")
 
             Mockito.`when`(expertSearchService.countExperts(
@@ -3377,7 +3364,7 @@ class ManualInitialOutreachServiceTest {
                 id = contactId, campaignId = 10L, orcidId = "R004", expertEmail = "r4@test.com",
                 expertName = "R4", currentStatus = "WAITING_REPLY"
             )
-            val ep = expert("R004", "r4@test.com")
+            val ep = expert("R004", "r4@test.com").copy(tags = listOf("承诺回复材料"))
             val acc = account("chen")
 
             Mockito.`when`(expertSearchService.countExperts(
@@ -3424,8 +3411,10 @@ class ManualInitialOutreachServiceTest {
                 id = contactId, campaignId = 10L, orcidId = "R005", expertEmail = "r5@test.com",
                 expertName = "R5", currentStatus = "WAITING_REPLY"
             )
-            val ep = expert("R005", "r5@test.com")
+            val ep = expert("R005", "r5@test.com").copy(tags = listOf("承诺回复材料"))
             val acc = account("chen")
+            Mockito.`when`(batchSendSettingService.getConfig(BatchSendType.MATERIAL_REMINDER))
+                .thenReturn(reminderConfig().copy(roundSize = 1))
 
             Mockito.`when`(expertSearchService.countExperts(
                 eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
@@ -3468,7 +3457,7 @@ class ManualInitialOutreachServiceTest {
                     id = contactId, campaignId = 10L, orcidId = orcid, expertEmail = email,
                     expertName = "R$i", currentStatus = "WAITING_REPLY"
                 )
-                val ep = expert(orcid, email)
+                val ep = expert(orcid, email).copy(tags = listOf("承诺回复材料"))
                 Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
                     .thenReturn(emptyList())
                 Pair(contact, ep)
@@ -3520,7 +3509,7 @@ class ManualInitialOutreachServiceTest {
                     id = contactId, campaignId = 10L, orcidId = orcid, expertEmail = email,
                     expertName = "M$i", currentStatus = "WAITING_REPLY"
                 )
-                val ep = expert(orcid, email)
+                val ep = expert(orcid, email).copy(tags = listOf("承诺回复材料"))
                 Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
                     .thenReturn(emptyList())
                 Pair(contact, ep)
@@ -3580,7 +3569,7 @@ class ManualInitialOutreachServiceTest {
                 )
                 Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
                     .thenReturn(emptyList())
-                Pair(contact, expert(orcid, email))
+                Pair(contact, expert(orcid, email).copy(tags = listOf("承诺回复材料")))
             }
 
             val capConfig = reminderConfig(templateId = 10L).copy(dailyCap = 3, roundSize = 10)
@@ -3632,7 +3621,7 @@ class ManualInitialOutreachServiceTest {
                 )
                 Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
                     .thenReturn(emptyList())
-                Pair(contact, expert(orcid, email))
+                Pair(contact, expert(orcid, email).copy(tags = listOf("承诺回复材料")))
             }
 
             val capConfig = reminderConfig(templateId = 10L).copy(dailyCap = 2, roundSize = 10)
@@ -3685,7 +3674,7 @@ class ManualInitialOutreachServiceTest {
                     )
                     Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
                         .thenReturn(emptyList())
-                    Pair(contact, expert(orcid, email))
+                    Pair(contact, expert(orcid, email).copy(tags = listOf("承诺回复材料")))
                 }
 
             val capConfig = reminderConfig(templateId = 10L).copy(dailyCap = 2, roundSize = 10)

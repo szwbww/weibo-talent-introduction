@@ -193,19 +193,33 @@ class MailOpenTrackingPersistenceTest {
             expertClassification = ExpertClassification(type = ExpertType.PRODUCTION_RND, productionScore = 80,
                 researchScore = 20, positiveEvidence = listOf("EVIDENCE"), negativeEvidence = emptyList(),
                 version = "rnd-v2-2026", sourceFingerprint = "fp", classifiedAt = java.time.LocalDateTime.now()))
-        Mockito.`when`(search.countExperts(eqValue(ExpertIndexLevel.CANDIDATE),
-            anyValue(emptyList()))).thenReturn(1L)
-        Mockito.`when`(search.searchExpertsFiltered(eqValue(ExpertIndexLevel.CANDIDATE),
-            anyValue(emptyList()), Mockito.anyInt(), Mockito.anyInt())).thenAnswer {
-            listOf(expert).drop(it.getArgument<Int>(2)).take(it.getArgument(3))
+        val mapper = ObjectMapper().registerKotlinModule()
+        Mockito.`when`(search.findByDocumentIdsStrict(eqValue(ExpertIndexLevel.CANDIDATE),
+            anyValue(emptyList()))).thenReturn(listOf(expert))
+        Mockito.`when`(search.openCandidateCursor(eqValue(ExpertIndexLevel.CANDIDATE),
+            anyValue(emptyList()), Mockito.anyInt())).thenAnswer {
+            var emitted = false
+            com.weibo.talentintroduction.expert.service.ExpertSearchCursor(
+                levels = listOf(ExpertIndexLevel.CANDIDATE), pageSize = 500,
+                indexName = { it.name }, searchBody = { mapOf("sort" to listOf("_shard_doc")) },
+                request = { path, method, _ ->
+                    when {
+                        method == org.springframework.http.HttpMethod.DELETE -> mapper.createObjectNode()
+                        path.contains("/_pit?") -> mapper.createObjectNode().put("id", "tracking-fixture")
+                        else -> mapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(mapOf(
+                            "_shards" to mapOf("total" to 1, "successful" to 1, "failed" to 0),
+                            "hits" to mapOf("hits" to if (emitted) emptyList() else listOf(
+                                mapOf("_id" to expert.orcidId, "_source" to emptyMap<String, Any>(),
+                                    "sort" to listOf(0))
+                            ))
+                        )).also { emitted = true }
+                    }
+                },
+                profile = { expert },
+                scheduler = Mockito.mock(java.util.concurrent.ScheduledExecutorService::class.java),
+                onClosed = {}
+            )
         }
-        // A2: 预估改走 scroll + 最终谓词（03/I-3）—— 仍交回同一 expert fixture，断言与用例主体不变。
-        Mockito.doAnswer { invocation ->
-            val handler = invocation.getArgument<(List<ExpertProfile>) -> Boolean>(3)
-            handler(listOf(expert))
-            null
-        }.`when`(search).scrollExpertsFiltered(eqValue(ExpertIndexLevel.CANDIDATE),
-            anyValue(emptyList()), Mockito.anyInt(), anyValue({ _: List<ExpertProfile> -> true }))
         Mockito.`when`(accountService.listSendableAccounts(Mockito.anyBoolean())).thenReturn(listOf(account))
         Mockito.`when`(accountService.listAccounts()).thenReturn(listOf(account))
         Mockito.`when`(accountService.listEnabledAccounts()).thenReturn(listOf(account))
