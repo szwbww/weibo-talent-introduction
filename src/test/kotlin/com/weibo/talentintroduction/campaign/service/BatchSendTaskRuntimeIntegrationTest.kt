@@ -405,6 +405,23 @@ class BatchSendTaskRuntimeIntegrationTest {
     }
 
     @Test
+    fun `demand execution counts only processed outcomes and cancel invents no skipped targets`() {
+        val acc = OutcomeAccumulator.demand()
+        repeat(30) { acc.recordSuccess() }
+        repeat(5) { acc.recordFailure(BatchOutcomeReasonCodes.SEND_EXCEPTION) }
+        repeat(5) { acc.recordSkipped(BatchOutcomeReasonCodes.SUPPRESSED) }
+        val running = acc.toBreakdown()
+        assertEquals(40, running.target)
+        assertEquals(0, running.remaining)
+
+        acc.annotateTerminalRemaining("CANCELLED")
+        val terminal = acc.toBreakdown()
+        assertEquals(running, terminal)
+        assertEquals(terminal.target, terminal.success + terminal.failure + terminal.skipped)
+        assertFalse(terminal.skippedReasons.containsKey(BatchOutcomeReasonCodes.CANCELLED))
+    }
+
+    @Test
     fun `failure and skipped reason sums match totals`() {
         val acc = OutcomeAccumulator(target = 8)
         repeat(2) { acc.recordFailure(BatchOutcomeReasonCodes.SEND_EXCEPTION) }

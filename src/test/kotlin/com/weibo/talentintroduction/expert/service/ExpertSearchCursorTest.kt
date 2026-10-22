@@ -95,11 +95,70 @@ class ExpertSearchCursorTest {
     }
 
     @Test
+    fun `per read sizes advance one PIT and noarg reads retain the configured default`() {
+        val f = Fixture(size = 7)
+        f.responses.add(response((1..60).map { hit(it) }, "shared-pit"))
+        f.responses.add(response((61..80).map { hit(it) }, "shared-pit"))
+        f.responses.add(response((81..87).map { hit(it) }, "shared-pit"))
+        f.responses.add(response(emptyList(), "shared-pit"))
+        try {
+            val first = f.cursor.nextPage(60)
+            val second = f.cursor.nextPage(20)
+            val third = f.cursor.nextPage()
+            assertEquals((1..87).map { "doc-$it" },
+                (first.profiles + second.profiles + third.profiles).map { it.esDocId })
+            assertFalse(first.exhausted)
+            assertFalse(second.exhausted)
+            assertFalse(third.exhausted)
+            assertTrue(f.cursor.nextPage().exhausted)
+            val bodies = f.searches().map { it.third!! }
+            assertEquals(listOf(60, 20, 7, 7), bodies.map { it["size"] })
+            assertFalse(bodies.first().containsKey("search_after"))
+            assertEquals(listOf(60L, 80L, 87L).map { json(listOf(1720000000000L, it)) },
+                bodies.drop(1).map { it["search_after"] })
+            assertEquals(listOf("pit-1", "shared-pit", "shared-pit", "shared-pit"),
+                bodies.map { (it["pit"] as Map<*, *>)["id"] })
+            assertEquals(1, f.requests.count { it.first.contains("/_pit?") })
+            assertEquals(1, f.renewals.size)
+            assertEquals("shared-pit", f.deletes().single().third!!["id"])
+            assertEquals(1, f.closed)
+        } finally {
+            f.cursor.close()
+        }
+    }
+
+    @Test
+    fun `per read size bounds reject before requests without closing or advancing the cursor`() {
+        val f = Fixture()
+        try {
+            for (size in listOf(0, 501)) {
+                assertThrows(IllegalArgumentException::class.java) { f.cursor.nextPage(size) }
+            }
+            assertTrue(f.requests.isEmpty())
+            f.responses.add(response(listOf(hit(1))))
+            f.responses.add(response(listOf(hit(2))))
+            assertEquals("doc-1", f.cursor.nextPage(1).profiles.single().esDocId)
+            val requestCount = f.requests.size
+            for (size in listOf(0, 501)) {
+                assertThrows(IllegalArgumentException::class.java) { f.cursor.nextPage(size) }
+            }
+            assertEquals(requestCount, f.requests.size)
+            assertEquals(0, f.closed)
+            assertEquals("doc-2", f.cursor.nextPage(500).profiles.single().esDocId)
+            assertEquals(listOf(1, 500), f.searches().map { it.third!!["size"] })
+            assertEquals(json(listOf(1720000000000L, 1L)), f.searches().last().third!!["search_after"])
+            assertEquals(1, f.requests.count { it.first.contains("/_pit?") })
+        } finally {
+            f.cursor.close()
+        }
+    }
+
+    @Test
     fun `six minutes of renewals update PIT without consuming search after or prefetching`() {
         val f = Fixture()
         f.responses.add(response(listOf(hit(1))))
         f.responses.add(response(listOf(hit(2))))
-        f.cursor.nextPage()
+        f.cursor.nextPage(60)
         repeat(6) { f.renewals.single().run() }
         assertEquals(1, f.searches().size)
         val renewalBodies = f.requests.filter { it.third?.get("size") == 0 }.map { it.third!! }
@@ -109,7 +168,8 @@ class ExpertSearchCursorTest {
             assertEquals(false, it["track_total_hits"])
             assertFalse(it.containsKey("search_after"))
         }
-        f.cursor.nextPage()
+        f.cursor.nextPage(20)
+        assertEquals(listOf(60, 20), f.searches().map { it.third!!["size"] })
         assertEquals("renewed-8", (f.searches().last().third!!["pit"] as Map<*, *>)["id"])
         assertEquals(json(listOf(1720000000000L, 1L)), f.searches().last().third!!["search_after"])
         f.cursor.close()
@@ -203,7 +263,7 @@ class ExpertSearchCursorTest {
         val pool = java.util.concurrent.Executors.newFixedThreadPool(3)
         f.beforeSearch = { entered.countDown(); check(release.await(5, TimeUnit.SECONDS)) }
         try {
-            val page = pool.submit<ExpertSearchCursor.Page> { f.cursor.nextPage() }
+            val page = pool.submit<ExpertSearchCursor.Page> { f.cursor.nextPage(60) }
             assertTrue(entered.await(5, TimeUnit.SECONDS))
             val renewal = pool.submit { f.renewals.single().run() }
             val close = pool.submit { f.cursor.close() }

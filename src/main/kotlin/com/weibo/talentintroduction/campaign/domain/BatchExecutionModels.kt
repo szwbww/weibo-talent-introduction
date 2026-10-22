@@ -357,6 +357,7 @@ object BatchOutcomeReasonCodes {
     const val CANCELLED = "CANCELLED"
     const val PERSONALIZATION_INCOMPLETE = "PERSONALIZATION_INCOMPLETE"
     const val EXPERT_NOT_SENDABLE = "EXPERT_NOT_SENDABLE"
+    const val CANDIDATE_CHANGED = "CANDIDATE_CHANGED"
     /**
      * I-1/I-3: 发送前兜底门禁命中 —— 新发现/待确认档案缺身份/机构/可映射国家/机构证据或
      * `filterResult != PASSED`。ES 取页与 NEW 重试已按同一谓词过滤，此码只覆盖绕过查询侧的残余路径。
@@ -393,6 +394,7 @@ object BatchOutcomeReasonCodes {
         CANCELLED to "被取消",
         PERSONALIZATION_INCOMPLETE to "个性化字段缺失",
         EXPERT_NOT_SENDABLE to "研发类型不在本次选择范围内",
+        CANDIDATE_CHANGED to "候选信息已变化",
         DISCOVERY_EVIDENCE_MISSING to "新发现机构证据不足",
         BOUND_SENDER_ALREADY_SET to "专家已绑定发件账号",
         EMAIL_VERIFICATION_REJECTED to "邮箱验证未通过",
@@ -403,9 +405,19 @@ object BatchOutcomeReasonCodes {
     fun label(code: String): String = LABELS[code] ?: code
 }
 
-class OutcomeAccumulator(private val target: Int) {
+class OutcomeAccumulator private constructor(private val target: Int, private val demandMode: Boolean) {
+    constructor(target: Int) : this(target, false)
+
+    companion object {
+        /** Demand executions count only actual outcomes, never unprocessed source candidates. */
+        fun demand(): OutcomeAccumulator = OutcomeAccumulator(0, true)
+    }
+
     private val failureReasons = mutableMapOf<String, Int>()
     private val skippedReasons = mutableMapOf<String, Int>()
+
+    /** Optional live metadata provider shared by running and final demand results. */
+    var executionMetadata: (() -> BatchExecutionMetadata)? = null
     private val errorSamples = mutableListOf<String>()
 
     var success: Int = 0
@@ -416,28 +428,32 @@ class OutcomeAccumulator(private val target: Int) {
         private set
 
     fun recordSuccess() {
+        checkDemandCapacity()
         success++
     }
 
     fun recordFailure(code: String, sample: String? = null) {
+        checkDemandCapacity()
         failure++
         failureReasons.merge(code, 1) { a, b -> a + b }
         addSample(sample)
     }
 
     fun recordSkipped(code: String, sample: String? = null) {
+        checkDemandCapacity()
         skipped++
         skippedReasons.merge(code, 1) { a, b -> a + b }
         addSample(sample)
     }
 
-    fun remaining(): Int = (target - success - failure - skipped).coerceAtLeast(0)
+    fun remaining(): Int = if (demandMode) 0 else (target - success - failure - skipped).coerceAtLeast(0)
 
     /**
      * Move unprocessed slots into skipped reasons for terminal stop codes (I-6 coverage).
      * Leaves remaining untouched for soft stops like ONE_ROUND_DONE.
      */
     fun annotateTerminalRemaining(stopReason: String?) {
+        if (demandMode) return
         val left = remaining()
         if (left <= 0) return
         val code = when (stopReason) {
@@ -451,7 +467,7 @@ class OutcomeAccumulator(private val target: Int) {
     }
 
     fun toBreakdown(): OutcomeBreakdown = OutcomeBreakdown(
-        target = target,
+        target = if (demandMode) success + failure + skipped else target,
         success = success,
         failure = failure,
         skipped = skipped,
@@ -467,6 +483,14 @@ class OutcomeAccumulator(private val target: Int) {
 
     fun failureReasonsMap(): Map<String, Int> = failureReasons.toMap()
     fun skippedReasonsMap(): Map<String, Int> = skippedReasons.toMap()
+
+    private fun checkDemandCapacity() {
+        if (demandMode) {
+            check(success.toLong() + failure.toLong() + skipped.toLong() < Int.MAX_VALUE) {
+                "Batch outcome count exceeds supported Int range"
+            }
+        }
+    }
 
     private fun addSample(sample: String?) {
         if (sample.isNullOrBlank()) return

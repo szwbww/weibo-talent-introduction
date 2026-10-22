@@ -241,10 +241,7 @@ class ManualInitialOutreachService(
         }.getOrNull()
 
     /**
-     * Material-reminder batch send loop.
-     *
-     * Targets: APPLICATION index + tag=`承诺回复材料` + has email + config emailDomain/discipline.
-     * Snapshot is built eagerly before the first send; totalHits > 10000 aborts with error.
+     * Enumerates material candidates on demand, preserving the existing delivery and binding path.
      * Sends via [ManualExpertMailService.sendManualMail] COMPOSE_TEMPLATE path.
      * Reuses round gate / dailyCap / roundSize / intervals / rate-limiter from MATERIAL_REMINDER config.
      * Does NOT create new contacts, call ManualOutreachTxHelper, or modify tags/index/handoff.
@@ -274,23 +271,18 @@ class ManualInitialOutreachService(
         // I-1/I-2: 本次执行的唯一发件账号范围快照。
         val allowedAccountCodes = allowedAccountCodesOf(snapshot)
 
-        val materialSnapshot = buildMaterialReminderSnapshot(scope, verificationFilterNow())
-        val targets = materialSnapshot.targets
-        val totalEstimate = targets.size
-        log.info("Material reminder snapshot: esHits={}, sendable={}, scope={}",
-            materialSnapshot.totalEsHits, totalEstimate, materialSnapshot.scopeDescription)
-
-        if (totalEstimate == 0) {
-            val emptyFinal = if (oneRoundOnly) "PAUSED" else "COMPLETED"
-            val emptyReason = if (oneRoundOnly) "EMPTY_SNAPSHOT" else null
-            updateProgress(executionId, 0, 0, 0, 0, 0, 0,
-                emptyFinal, "没有需要发送材料提醒的专家", emptyList(), mode, 0, config, emptyMap(),
-                stopReason = emptyReason, sendType = BatchSendType.MATERIAL_REMINDER, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
-            return emptyResult(emptyFinal, emptyReason)
+        val source = DemandCandidateSource(snapshot, scope, null, executionId, { it }, verificationFilterNow())
+        var remainingRoundQuota = config.roundSize
+        val targetIterator = source.iterator { demandPageSize(remainingRoundQuota) }
+        val accumulator = OutcomeAccumulator.demand()
+        val plannedSuccess = plannedSuccess(snapshot, oneRoundOnly)
+        accumulator.executionMetadata = {
+            com.weibo.talentintroduction.campaign.domain.BatchExecutionMetadata(
+                plannedSuccess, maxOf(0L, plannedSuccess - accumulator.success.toLong()),
+                source.scanned, targetIterator.sourceExhausted
+            )
         }
-
-        var targetIndex = 0
-        val accumulator = OutcomeAccumulator(totalEstimate)
+        val totalEstimate = 0
         var wasCancelled = false
         val errors = mutableListOf<String>()
         val assignments = mutableListOf<SenderExpertAssignment>()
@@ -301,7 +293,8 @@ class ManualInitialOutreachService(
         var finalStatus: String? = null
         var processedTotal = 0
 
-        while (targetIndex < targets.size) {
+        try {
+        while (true) {
             // Cancellation check
             if (progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)) {
                 log.info("Material reminder batch cancelled after {} processed", processedTotal)
@@ -311,7 +304,7 @@ class ManualInitialOutreachService(
             }
 
             // Round budget (I-1/I-2): roundsPerRun bounds rounds started in THIS run only.
-            if (roundNumber >= snapshot.roundsPerRun) {
+            if (roundNumber >= effectiveRounds(snapshot, oneRoundOnly)) {
                 log.info("Reminder rounds per run exhausted after {} rounds (roundsPerRun={})", roundNumber, snapshot.roundsPerRun)
                 stopReason = "ROUNDS_PER_RUN_REACHED"
                 finalStatus = "COMPLETED"
@@ -329,13 +322,12 @@ class ManualInitialOutreachService(
                 break
             }
 
-            // Round quota
-            val estimatedRemaining = maxOf(0, totalEstimate - targetIndex)
-            val remainingAccountCapacity = sendable.sumOf { senderWarmupService.remainingCapacity(it, ignoreWarmup = ignoreWarmup) }
-            val roundQuota = minOf(config.roundSize, estimatedRemaining, remainingAccountCapacity)
+            val remainingAccountCapacity = sendable.sumOf {
+                senderWarmupService.remainingCapacity(it, ignoreWarmup = ignoreWarmup).toLong()
+            }
+            val roundQuota = minOf(config.roundSize.toLong(), remainingAccountCapacity).toInt()
             if (roundQuota <= 0) {
-                log.info("Reminder round quota exhausted (estimatedRemaining={}, accountCapacity={})",
-                    estimatedRemaining, remainingAccountCapacity)
+                log.info("Reminder account capacity exhausted")
                 when {
                     remainingAccountCapacity <= 0 -> {
                         val limitOutcome = classifyLimitReachedOutcome(sendable, ignoreWarmup)
@@ -352,15 +344,34 @@ class ManualInitialOutreachService(
             var roundRejected = 0
             var midRoundStop = false
 
-            while (roundPassed < roundQuota && targetIndex < targets.size) {
+            while (roundPassed < roundQuota) {
                 if (progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)) {
                     wasCancelled = true
                     stopReason = "CANCELLED"
                     midRoundStop = true
                     break
                 }
-                val (contact, expert) = targets[targetIndex]
-                targetIndex++
+                if (accumulator.success.toLong() + accumulator.failure + accumulator.skipped >= Int.MAX_VALUE) {
+                    stopReason = "COUNT_LIMIT_REACHED"
+                    finalStatus = if (accumulator.success > 0) "PARTIAL_SUCCESS" else "FAILED"
+                    midRoundStop = true
+                    break
+                }
+                remainingRoundQuota = roundQuota - roundPassed
+                if (!targetIterator.hasNext()) break
+                if (progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)) {
+                    wasCancelled = true
+                    stopReason = "CANCELLED"
+                    midRoundStop = true
+                    break
+                }
+                val (selectedContact, expert) = targetIterator.next()
+                val contact = selectedContact!!
+                if (!source.revalidate(expert, contact)) {
+                    accumulator.recordSkipped(BatchOutcomeReasonCodes.CANDIDATE_CHANGED)
+                    processedTotal++; roundProcessed++; roundRejected++
+                    continue
+                }
 
                 val contactId = contact.id!!
                 val email = contact.expertEmail
@@ -417,6 +428,24 @@ class ManualInitialOutreachService(
                         continue
                     }
 
+                    if (progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)) {
+                        wasCancelled = true
+                        stopReason = "CANCELLED"
+                        midRoundStop = true
+                        break
+                    }
+                    if (!source.revalidate(expert, contact, checkBinding = false) ||
+                        emailSuppressionService.isSuppressed(email)) {
+                        accumulator.recordSkipped(BatchOutcomeReasonCodes.CANDIDATE_CHANGED)
+                        processedTotal++; roundProcessed++; roundRejected++
+                        continue
+                    }
+                    if (progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)) {
+                        wasCancelled = true
+                        stopReason = "CANCELLED"
+                        midRoundStop = true
+                        break
+                    }
                     val command = ManualMailSendCommand(
                         optionType = ManualMailOptionType.COMPOSE_TEMPLATE.name,
                         optionValue = templateId.toString(),
@@ -449,6 +478,8 @@ class ManualInitialOutreachService(
                         errors.add("发送失败 ($email): ${result.sendStatus}")
                         if (errors.size > 20) errors.removeAt(0)
                     }
+                } catch (e: com.weibo.talentintroduction.expert.service.ExpertSearchUnavailableException) {
+                    throw e
                 } catch (e: PersonalizationGateException) {
                     accumulator.recordSkipped(
                         BatchOutcomeReasonCodes.PERSONALIZATION_INCOMPLETE,
@@ -479,12 +510,14 @@ class ManualInitialOutreachService(
                     sendType = BatchSendType.MATERIAL_REMINDER, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
 
                 val intervalMs = accountRateLimiter.getIntervalMs(account.accountCode, provider, config.perMailIntervalMs)
-                if (intervalMs > 0 && roundPassed < roundQuota && targetIndex < targets.size) {
+                if (intervalMs > 0 && roundPassed < roundQuota && !targetIterator.sourceExhausted &&
+                    !progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)) {
                     try { Thread.sleep(intervalMs) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
                 }
             }
 
             if (midRoundStop) break
+            if (targetIterator.sourceExhausted) break
 
             updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
                 "RUNNING", "第${roundNumber}轮完成，已发送 ${accumulator.success} 封材料提醒", errors, mode, roundNumber, config, runAccountStats,
@@ -499,11 +532,27 @@ class ManualInitialOutreachService(
             }
 
             // Round interval — skip when the roundsPerRun budget is already spent
-            if (config.perRoundIntervalMs > 0 && targetIndex < targets.size && roundNumber < snapshot.roundsPerRun) {
+            if (roundNumber < effectiveRounds(snapshot, oneRoundOnly) && config.perRoundIntervalMs > 0 &&
+                !targetIterator.sourceExhausted && !progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)) {
                 try { Thread.sleep(config.perRoundIntervalMs) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
             }
         }
+        } catch (ex: com.weibo.talentintroduction.expert.service.ExpertSearchUnavailableException) {
+            stopReason = "CANDIDATE_READ_FAILED"
+            finalStatus = if (accumulator.success > 0) "PARTIAL_SUCCESS" else "FAILED"
+            errors.add("候选读取失败：${ex.message.orEmpty().take(160)}")
+        } finally {
+            try { targetIterator.close() } catch (ex: Exception) {
+                stopReason = "CANDIDATE_READ_FAILED"
+                finalStatus = if (accumulator.success > 0) "PARTIAL_SUCCESS" else "FAILED"
+                errors.add("候选游标关闭失败：${ex.message.orEmpty().take(160)}")
+            }
+        }
 
+        if (progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)) {
+            wasCancelled = true
+            stopReason = "CANCELLED"
+        }
         val resolvedFinalStatus = when {
             wasCancelled -> "CANCELLED"
             finalStatus != null -> finalStatus
@@ -526,7 +575,7 @@ class ManualInitialOutreachService(
         BatchSendType.MATERIAL_REMINDER -> {
             val config = batchSendSettingService.getConfig(BatchSendType.MATERIAL_REMINDER)
             val snapshot = buildMaterialReminderSnapshot(config)
-            PendingOutreachSummary(pending = snapshot.targets.size, retryable = 0, totalSendable = snapshot.targets.size)
+            PendingOutreachSummary(pending = snapshot.targetCount, retryable = 0, totalSendable = snapshot.targetCount)
         }
     }
 
@@ -572,12 +621,12 @@ class ManualInitialOutreachService(
                 scope, verificationFilterNow(), onSelection = accumulator::record
             )
             PendingOutreachSummary(
-                pending = materialSnapshot.targets.size,
+                pending = materialSnapshot.targetCount,
                 retryable = 0,
-                totalSendable = materialSnapshot.targets.size,
+                totalSendable = materialSnapshot.targetCount,
                 excludedVerifiedUnavailable = materialSnapshot.excludedVerifiedUnavailable,
                 template = previewTemplateVersion(snapshot),
-                admission = accumulator.counts(materialSnapshot.targets.size),
+                admission = accumulator.counts(materialSnapshot.targetCount),
                 reasonHits = accumulator.reasonHits(),
                 excludedRecipients = accumulator.excludedRecipients(PREVIEW_EXCLUDED_DETAIL_LIMIT)
             )
@@ -708,20 +757,6 @@ class ManualInitialOutreachService(
             }
         }
         return BaseScan(collected.values.toList(), partial)
-    }
-
-    /**
-     * repair V-2（epoch 2）：按执行期资格过滤候选。[eligibility] 为 `null`（未配置预检查服务的历史
-     * 手工夹具）时逐字保持旧行为；空候选不触发预检查。
-     */
-    private fun <T> executionEligibleOnly(
-        items: List<T>,
-        eligibility: Lazy<ExecutionPreflightEligibility>?,
-        docId: (T) -> String,
-        profile: (T) -> ExpertProfile
-    ): List<T> {
-        if (items.isEmpty() || eligibility == null) return items
-        return eligibility.value.filter(items, docId, profile)
     }
 
     /**
@@ -931,97 +966,18 @@ class ManualInitialOutreachService(
         val filterNow = verificationFilterNow()
         // A3 (I-4)：预估（countBySnapshot）与执行共用的精确模板门禁；门禁关闭时为 no-op。
         val gate = batchTemplateGate(snapshot)
-        // repair V-2（epoch 2）：诊断母集是有界、可能 `partial` 的，**不能**当作执行期白名单。
-        // 执行期对每个候选（NEW 重试 + ES 取页）取同一快照的确定性预检查结论：母集已覆盖的直接复用；
-        // 因 [MAX_BASELINE_SCAN] 截断而未覆盖的候选按同一输入单独求一次结论并记忆化 ——
-        // 目标仅仅「不在 partial 母集里」绝不等于确定性排除；发送前的动态复核逐点保留。
-        // 惰性求值：只有真的要选择目标时才做母集扫描（每次运行至多一次），取消/空快照提前返回不再多付一次扫描。
-        val preflightService = batchRecipientPreflightService
-        val executionEligibility: Lazy<ExecutionPreflightEligibility>? = if (preflightService == null) {
-            null
-        } else {
-            lazy {
-                val scan = scanBaseCandidates(scope) {
-                    progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)
-                }
-                val baseline = preflightService.preflight(preflightInput(snapshot, scope, scan.profiles, scan.partial))
-                ExecutionPreflightEligibility(
-                    initial = baseline.decisions.associate { it.docId to it.eligible },
-                    // 母集因上限截断而未覆盖的候选：按同一输入单独求一次确定性结论。
-                    decide = { profiles ->
-                        preflightService.preflight(preflightInput(snapshot, scope, profiles, partial = false))
-                            .decisions
-                            .associate { it.docId to it.eligible }
-                    }
-                )
-            }
+        val source = DemandCandidateSource(snapshot, scope, campaignId, executionId, gate, filterNow)
+        var remainingRoundQuota = config.roundSize
+        val targetIterator = source.iterator { demandPageSize(remainingRoundQuota) }
+        val accumulator = OutcomeAccumulator.demand()
+        val plannedSuccess = plannedSuccess(snapshot, oneRoundOnly)
+        accumulator.executionMetadata = {
+            com.weibo.talentintroduction.campaign.domain.BatchExecutionMetadata(
+                plannedSuccess, maxOf(0L, plannedSuccess - accumulator.success.toLong()),
+                source.scanned, targetIterator.sourceExhausted
+            )
         }
-        val seenDocIds = mutableSetOf<String>()
-        val retry = buildFilteredRetryableTargets(campaignId, scope, filterNow, seenDocIds, gate)
-        val allRetryableTargets = retry.targets
-        // Preserve execution preflight for retries; all retry candidates reserve keys so ES cannot reintroduce them.
-        val retryableTargets = executionEligibleOnly(
-            allRetryableTargets,
-            executionEligibility,
-            docId = { BatchRecipientSelectionService.docIdOf(it.second) },
-            profile = { it.second }
-        )
-        val seenOrcids = retry.seenOrcids.toMutableSet()
-        val seenPersonKeys = retry.seenPersonKeys.toMutableSet()
-        val (esEstimate, _) = countEsTargets(scope, filterNow, {
-            progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)
-        }, gate, initialSeenOrcids = seenOrcids, initialSeenDocIds = seenDocIds,
-            initialSeenPersonKeys = seenPersonKeys)
-        val totalEstimate = allRetryableTargets.size + esEstimate
-        log.info("Outreach targets: {} retryable, {} ES estimate, {} total estimate; config: roundSize={}, perMailMs={}, perRoundMs={}",
-            retryableTargets.size, esEstimate, totalEstimate,
-            config.roundSize, config.perMailIntervalMs, config.perRoundIntervalMs)
-
-        val cancelledBeforeSend = progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)
-        if (totalEstimate == 0 || (scope.excludeVerifiedUnavailableEmails && cancelledBeforeSend)) {
-            val emptyFinal = if (cancelledBeforeSend) "CANCELLED" else if (oneRoundOnly) "PAUSED" else "COMPLETED"
-            val emptyReason = if (cancelledBeforeSend) "CANCELLED" else if (oneRoundOnly) "EMPTY_SNAPSHOT" else null
-            // A cancelled prescan has no complete target count; do not report its partial estimate.
-            val accumulator = OutcomeAccumulator(0)
-            val message = if (cancelledBeforeSend) "发送任务已被取消" else "没有需要发送的专家"
-            updateProgressWithAccumulator(executionId, accumulator, 0, 0,
-                emptyFinal, message, emptyList(), mode, 0, config, emptyMap(),
-                stopReason = emptyReason, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
-            return if (cancelledBeforeSend) {
-                buildResult(0, accumulator, true, emptyFinal, emptyReason)
-            } else {
-                emptyResult(emptyFinal, emptyReason)
-            }
-        }
-
-        val targetIterator = OutreachTargetIterator(
-            retryableTargets = retryableTargets,
-            pageSize = config.roundSize * 2,
-            seenKeys = seenPersonKeys,
-            fetchNextPage = { offset, size -> fetchEsPage(scope, offset, size) },
-            // I-1/I-3: ES 页返回后先过最终谓词（新发现机构证据 + 已证实机构所在地判地区），
-            // 再叠加历史不可达过滤；整页被过滤时迭代器继续推进 offset（I-3）。
-            // Deduplicate normalized ORCIDs before preflight, including members excluded by preflight.
-            filterPage = { profiles ->
-                val rawDistinct = profiles.filter { seenOrcids.add(normalizeOrcid(it.orcidId)) }
-                val eligible = executionEligibleOnly(
-                    rawDistinct,
-                    executionEligibility,
-                    docId = { BatchRecipientSelectionService.docIdOf(it) },
-                    profile = { it }
-                )
-                filterKnownProfiles(
-                    gate(selectIncluded(scope, eligible, seenDocIds)),
-                    scope.excludeVerifiedUnavailableEmails,
-                    filterNow
-                ).filter { seenDocIds.add(BatchRecipientSelectionService.docIdOf(it)) }
-            },
-            // I-2（R-7）：迭代器按**真实人物键**去重 —— 与重试/预估共用同一人物集合。
-            dedupeKey = { discoveryPersonRecipientService.personKeyOf(it) },
-            shouldStop = { progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId) }
-        )
-
-        val accumulator = OutcomeAccumulator(totalEstimate)
+        val totalEstimate = 0 // Demand totals are supplied by the accumulator, never by a population estimate.
         var wasCancelled = false
         val errors = mutableListOf<String>()
         val assignments = mutableListOf<SenderExpertAssignment>()
@@ -1032,7 +988,8 @@ class ManualInitialOutreachService(
         var finalStatus: String? = null
         var processedTotal = 0
 
-        while (targetIterator.hasNext()) {
+        try {
+        while (true) {
             // 1. Cancellation check (I-1: single flow, operator pause → requestCancel)
             if (progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)) {
                 log.info("Cancelled after {} processed", processedTotal)
@@ -1042,7 +999,7 @@ class ManualInitialOutreachService(
             }
 
             // Round budget (I-1/I-2): roundsPerRun bounds rounds started in THIS run only.
-            if (roundNumber >= snapshot.roundsPerRun) {
+            if (roundNumber >= effectiveRounds(snapshot, oneRoundOnly)) {
                 log.info("Rounds per run exhausted after {} rounds (roundsPerRun={})", roundNumber, snapshot.roundsPerRun)
                 stopReason = "ROUNDS_PER_RUN_REACHED"
                 finalStatus = "COMPLETED"
@@ -1060,15 +1017,13 @@ class ManualInitialOutreachService(
                 break
             }
 
-            // 3. Compute round quota (I-1): min(roundSize, estimated remaining, account capacity)
-            val estimatedRemaining = maxOf(0, totalEstimate - processedTotal)
-            val remainingAccountCapacity = sendable.sumOf { senderWarmupService.remainingCapacity(it, ignoreWarmup = ignoreWarmup) }
-            val roundQuota = minOf(config.roundSize, estimatedRemaining, remainingAccountCapacity)
+            // Only current account capacity and the configured successful-send budget authorize this round.
+            val remainingAccountCapacity = sendable.sumOf {
+                senderWarmupService.remainingCapacity(it, ignoreWarmup = ignoreWarmup).toLong()
+            }
+            val roundQuota = minOf(config.roundSize.toLong(), remainingAccountCapacity).toInt()
             if (roundQuota <= 0) {
-                log.info(
-                    "Round quota exhausted at round {} (estimatedRemaining={}, remainingAccountCapacity={})",
-                    roundNumber, estimatedRemaining, remainingAccountCapacity
-                )
+                log.info("Round capacity exhausted at round {}", roundNumber)
                 when {
                     remainingAccountCapacity <= 0 -> {
                         val limitOutcome = classifyLimitReachedOutcome(sendable, ignoreWarmup)
@@ -1084,7 +1039,21 @@ class ManualInitialOutreachService(
             var roundPassed = 0
             var roundRejected = 0
             var midRoundStop = false
-            while (roundPassed < roundQuota && targetIterator.hasNext()) {
+            while (roundPassed < roundQuota) {
+                if (progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)) {
+                    wasCancelled = true
+                    stopReason = "CANCELLED"
+                    midRoundStop = true
+                    break
+                }
+                if (accumulator.success.toLong() + accumulator.failure + accumulator.skipped >= Int.MAX_VALUE) {
+                    stopReason = "COUNT_LIMIT_REACHED"
+                    finalStatus = if (accumulator.success > 0) "PARTIAL_SUCCESS" else "FAILED"
+                    midRoundStop = true
+                    break
+                }
+                remainingRoundQuota = roundQuota - roundPassed
+                if (!targetIterator.hasNext()) break
                 if (progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)) {
                     wasCancelled = true
                     stopReason = "CANCELLED"
@@ -1093,6 +1062,11 @@ class ManualInitialOutreachService(
                 }
                 val (existingContact, expert) = targetIterator.next()
                 val normOrcid = normalizeOrcid(expert.orcidId)
+                if (!source.revalidate(expert, existingContact)) {
+                    accumulator.recordSkipped(BatchOutcomeReasonCodes.CANDIDATE_CHANGED)
+                    processedTotal++; roundProcessed++; roundRejected++
+                    continue
+                }
 
                 // I-1/I-3: 发现准入与显式条件已由统一 selector 在取页/重试构造时判定；
                 // 这里保留廉价的内存类型复核，兜住任何绕过查询侧的残余路径。
@@ -1378,6 +1352,22 @@ class ManualInitialOutreachService(
                         continue
                     }
 
+                    if (!source.revalidate(expert, existingContact) ||
+                        emailSuppressionService.isSuppressed(expert.email.orEmpty()) || hasBoundContact(normOrcid)) {
+                        accumulator.recordSkipped(BatchOutcomeReasonCodes.CANDIDATE_CHANGED)
+                        processedTotal++; roundProcessed++; roundRejected++
+                        recordVerificationSend(verified, BatchEmailVerificationSendStatus.NOT_SENT,
+                            BatchOutcomeReasonCodes.CANDIDATE_CHANGED)
+                        continue
+                    }
+                    if (progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)) {
+                        wasCancelled = true
+                        stopReason = "CANCELLED"
+                        midRoundStop = true
+                        recordVerificationSend(verified, BatchEmailVerificationSendStatus.NOT_SENT,
+                            BatchOutcomeReasonCodes.CANCELLED)
+                        break
+                    }
                     // 主题/个性化校验通过后才创建并绑定联系人，跳过者可修正资料后重试。
                     val contact = existingContact ?: run {
                         val now = LocalDateTime.now()
@@ -1421,7 +1411,7 @@ class ManualInitialOutreachService(
                     }
 
                     // I-3/I-6：PASS 之后、SMTP 之前再查一次取消 —— 不发未确认的信，明细留 NOT_SENT/CANCELLED。
-                    if (emailVerificationEnabled && progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)) {
+                    if (progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)) {
                         verified?.let {
                             recordVerificationSend(it, BatchEmailVerificationSendStatus.NOT_SENT, BatchOutcomeReasonCodes.CANCELLED)
                         }
@@ -1602,6 +1592,8 @@ class ManualInitialOutreachService(
                             guard!!.markUnknown(guardTicket)
                         }
                     }
+                } catch (e: com.weibo.talentintroduction.expert.service.ExpertSearchUnavailableException) {
+                    throw e
                 } catch (e: EmailVerificationAuditException) {
                     // I-6：审计边界先于广义 catch —— 绝不进入 pauseAccount / SMTP 故障统计，也不伪增失败。
                     log.error("Email verification audit failed for ORCID {}: {}", normOrcid, e.message)
@@ -1658,12 +1650,14 @@ class ManualInitialOutreachService(
                 }
                 // Throttle per mail (I-6 + dynamic rate limiter)
                 val intervalMs = accountRateLimiter.getIntervalMs(account.accountCode, provider, config.perMailIntervalMs)
-                if (intervalMs > 0 && roundPassed < roundQuota && targetIterator.hasNext()) {
+                if (intervalMs > 0 && roundPassed < roundQuota && !targetIterator.sourceExhausted &&
+                    !progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)) {
                     try { Thread.sleep(intervalMs) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
                 }
             }
 
             if (midRoundStop) break
+            if (targetIterator.sourceExhausted) break
 
             // 5. Round end progress (I-8)
             updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
@@ -1679,8 +1673,20 @@ class ManualInitialOutreachService(
             }
 
             // 7. Round interval (I-6) — skip when the roundsPerRun budget is already spent
-            if (config.perRoundIntervalMs > 0 && targetIterator.hasNext() && roundNumber < snapshot.roundsPerRun) {
+            if (roundNumber < effectiveRounds(snapshot, oneRoundOnly) && config.perRoundIntervalMs > 0 &&
+                !targetIterator.sourceExhausted && !progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)) {
                 try { Thread.sleep(config.perRoundIntervalMs) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
+            }
+        }
+        } catch (ex: com.weibo.talentintroduction.expert.service.ExpertSearchUnavailableException) {
+            stopReason = "CANDIDATE_READ_FAILED"
+            finalStatus = if (accumulator.success > 0) "PARTIAL_SUCCESS" else "FAILED"
+            errors.add("候选读取失败：${ex.message.orEmpty().take(160)}")
+        } finally {
+            try { targetIterator.close() } catch (ex: Exception) {
+                stopReason = "CANDIDATE_READ_FAILED"
+                finalStatus = if (accumulator.success > 0) "PARTIAL_SUCCESS" else "FAILED"
+                errors.add("候选游标关闭失败：${ex.message.orEmpty().take(160)}")
             }
         }
 
@@ -1702,6 +1708,289 @@ class ManualInitialOutreachService(
     }
 
     // ──── Private helpers ────
+    private fun effectiveRounds(snapshot: BatchExecutionSnapshot, oneRoundOnly: Boolean): Int {
+        require(snapshot.roundSize > 0 && snapshot.roundsPerRun > 0) { "发送轮数和每轮成功额度必须为正数" }
+        return if (oneRoundOnly) 1 else snapshot.roundsPerRun
+    }
+
+    private fun plannedSuccess(snapshot: BatchExecutionSnapshot, oneRoundOnly: Boolean): Long =
+        snapshot.roundSize.toLong() * effectiveRounds(snapshot, oneRoundOnly).toLong()
+
+    private fun demandPageSize(remaining: Int): Int = minOf(500L, maxOf(1L, 2L * remaining.toLong())).toInt()
+
+    /**
+     * Bounded raw enumeration, separate from delivery. Only identity sets grow with the scan;
+     * profiles and document-to-layer attribution are retained for the current accepted page.
+     */
+    private inner class DemandCandidateSource(
+        private val snapshot: BatchExecutionSnapshot?,
+        private val scope: RecipientScope,
+        private val campaignId: Long?,
+        private val executionId: Long?,
+        private val gate: (List<ExpertProfile>) -> List<ExpertProfile>,
+        private val now: LocalDateTime,
+        private val onSelection: ((RecipientSelection) -> Unit)? = null
+    ) : AutoCloseable {
+        var scanned = 0L
+            private set
+        var excludedVerifiedUnavailable = 0
+            private set
+        private val levels = scope.funnelLevels.map(ExpertIndexLevel::valueOf)
+        private var levelIndex = 0
+        private var cursor: com.weibo.talentintroduction.expert.service.ExpertSearchCursor? = null
+        private var retryUpperId: Long? = null
+        private var retryStarted = false
+        private var retryUpdatedAt: LocalDateTime? = null
+        private var retryId: Long? = null
+        private var retryExhausted = campaignId == null
+        private val candidateLevels = mutableMapOf<String, ExpertIndexLevel>()
+        private val seenOrcids = mutableSetOf<String>()
+        private val seenDocIds = mutableSetOf<String>()
+        private val seenEmails = mutableSetOf<String>()
+        private val seenContacts = mutableSetOf<Long>()
+
+        private fun cancelled() = executionId != null &&
+            progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)
+
+        private fun <T> readCandidates(action: () -> T): T = try {
+            action()
+        } catch (ex: com.weibo.talentintroduction.expert.service.ExpertSearchUnavailableException) {
+            throw ex
+        } catch (ex: Exception) {
+            throw com.weibo.talentintroduction.expert.service.ExpertSearchUnavailableException(
+                "Candidate source read failed"
+            ).apply { initCause(ex) }
+        }
+
+        fun iterator(pageSize: () -> Int): DemandOutreachTargetIterator = OutreachTargetIterator.demand(
+            retryNext = { size -> readCandidates {
+                if (scope.mailType == BatchSendType.MATERIAL_REMINDER.name) nextMaterial(size) else nextRetry(size)
+            } },
+            esNext = { size -> readCandidates {
+                if (scope.mailType == BatchSendType.MATERIAL_REMINDER.name) emptyList() else nextIntroduction(size)
+            } },
+            filterPage = { it },
+            pageSize = pageSize,
+            shouldStop = ::cancelled,
+            dedupeKey = { profile ->
+                if (scope.mailType == BatchSendType.MATERIAL_REMINDER.name) normalizeOrcid(profile.orcidId)
+                else discoveryPersonRecipientService.personKeyOf(profile)
+            },
+            onScanned = {},
+            close = ::close
+        )
+
+        private fun currentPage(raw: List<ExpertProfile>, level: ExpertIndexLevel): List<ExpertProfile> {
+            val ids = raw.map(BatchRecipientSelectionService::docIdOf)
+            val latest = expertSearchService.findByDocumentIdsStrict(level, ids)
+                .associateBy(BatchRecipientSelectionService::docIdOf)
+            return raw.mapNotNull { original ->
+                latest[BatchRecipientSelectionService.docIdOf(original)]?.takeIf {
+                    normalizeOrcid(it.orcidId) == normalizeOrcid(original.orcidId)
+                }
+            }
+        }
+
+        private fun nextRaw(size: Int): List<ExpertProfile> {
+            while (levelIndex < levels.size && !cancelled()) {
+                val level = levels[levelIndex]
+                val active = cursor ?: expertSearchService.openCandidateCursor(
+                    level, buildEsFiltersForLevel(scope, level.name), 500
+                ).also { cursor = it }
+                val page = active.nextPage(size)
+                scanned = Math.addExact(scanned, page.profiles.size.toLong())
+                if (cancelled()) return emptyList()
+                if (page.profiles.isEmpty()) {
+                    active.close()
+                    cursor = null
+                    levelIndex++
+                    continue
+                }
+                candidateLevels.clear()
+                val current = currentPage(page.profiles, level)
+                val latest = if (scope.mailType == BatchSendType.INTRODUCTION.name) {
+                    // Reserve raw identities after strict refresh, before deterministic filtering.
+                    // A changed/previously accepted document must not reappear through an ORCID alias.
+                    val unseenIds = page.profiles.filter {
+                        seenOrcids.add(normalizeOrcid(it.orcidId)) &&
+                            BatchRecipientSelectionService.docIdOf(it) !in seenDocIds
+                    }.map(BatchRecipientSelectionService::docIdOf).toSet()
+                    current.filter { BatchRecipientSelectionService.docIdOf(it) in unseenIds }
+                } else current
+                latest.forEach { candidateLevels[BatchRecipientSelectionService.docIdOf(it)] = level }
+                // Missing current documents are filtered, not mistaken for source exhaustion.
+                if (latest.isNotEmpty()) return latest
+            }
+            return emptyList()
+        }
+
+        private fun eligible(profiles: List<ExpertProfile>, reserveRetryIdentities: Boolean = false): List<ExpertProfile> {
+            if (profiles.isEmpty()) return profiles
+            val selected = if (scope.mailType == BatchSendType.INTRODUCTION.name) {
+                selectIncluded(scope, profiles)
+            } else {
+                val matching = profiles.filter(scope::matchesExpert)
+                val selection = batchRecipientSelectionService.select(scope.copy(tags = emptyList()), matching)
+                onSelection?.invoke(selection)
+                matching.filter { BatchRecipientSelectionService.docIdOf(it) in selection.includedDocIds }
+            }
+            val gated = gate(selected)
+            if (reserveRetryIdentities) gated.forEach { seenOrcids.add(normalizeOrcid(it.orcidId)) }
+            val deterministic = if (snapshot != null && batchRecipientPreflightService != null &&
+                scope.mailType == BatchSendType.INTRODUCTION.name) {
+                val decisions = batchRecipientPreflightService.preflight(
+                    preflightInput(snapshot, scope, gated, partial = false)
+                ).decisions.associate { it.docId to it.eligible }
+                gated.filter { decisions[BatchRecipientSelectionService.docIdOf(it)] == true }
+            } else gated
+            return deterministic
+        }
+
+        private fun nextIntroduction(size: Int): List<ExpertProfile> {
+            while (!cancelled()) {
+                val raw = nextRaw(size)
+                if (raw.isEmpty()) return emptyList()
+                val distinct = raw.filter { BatchRecipientSelectionService.docIdOf(it) !in seenDocIds }
+                val filtered = filterKnownProfiles(eligible(distinct), scope.excludeVerifiedUnavailableEmails, now)
+                val accepted = filtered.filter {
+                    seenDocIds.add(BatchRecipientSelectionService.docIdOf(it)) &&
+                        seenEmails.add(normalizeVerificationEmail(it.email))
+                }
+                if (accepted.isNotEmpty()) return accepted
+            }
+            return emptyList()
+        }
+
+        private fun nextRetry(size: Int): List<Pair<ExpertContact?, ExpertProfile>> {
+            if (!retryStarted) {
+                retryStarted = true
+                retryUpperId = campaignId?.let(expertContactRepository::findNewRetryUpperId)
+                if (retryUpperId == null) retryExhausted = true
+            }
+            while (!retryExhausted && !cancelled()) {
+                val contacts = expertContactRepository.findNewRetryPage(
+                    campaignId!!, retryUpperId!!, retryUpdatedAt, retryId, size
+                )
+                scanned = Math.addExact(scanned, contacts.size.toLong())
+                if (contacts.isEmpty()) {
+                    retryExhausted = true
+                    return emptyList()
+                }
+                retryUpdatedAt = contacts.last().updatedAt
+                retryId = contacts.last().id
+                val unseenContacts = contacts.filter { normalizeOrcid(it.orcidId) !in seenOrcids }
+                val retryable = unseenContacts.filter { contact ->
+                    val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contact.id!!)
+                    contact.operatorStatus != "EMAIL_INVALID" && contact.boundSenderAccountCode.isNullOrBlank() &&
+                        records.none { it.isPermanentIntroductionFailure() ||
+                            (it.direction == "OUTBOUND" && it.mailType == "INTRODUCTION" && it.sendStatus == "SENT") }
+                }
+                val byOrcid = retryable.associateBy { normalizeOrcid(it.orcidId) }
+                val bound = boundOrcidsOf(byOrcid.keys.toList())
+                val chosen = mutableMapOf<String, ExpertProfile>()
+                candidateLevels.clear()
+                if (byOrcid.isNotEmpty()) for (level in levels) {
+                    if (cancelled()) break
+                    expertSearchService.openCandidateCursor(
+                        level, listOf(mapOf("terms" to mapOf("orcidId" to byOrcid.keys.toList()))), 500
+                    ).use { lookup ->
+                        while (!cancelled()) {
+                            val page = lookup.nextPage(size)
+                            scanned = Math.addExact(scanned, page.profiles.size.toLong())
+                            if (page.profiles.isEmpty()) break
+                            val latest = currentPage(page.profiles, level).filter {
+                                val norm = normalizeOrcid(it.orcidId)
+                                val contact = byOrcid[norm]
+                                contact != null && norm !in bound && norm !in chosen && norm !in seenOrcids &&
+                                    normalizeVerificationEmail(contact.expertEmail) == normalizeVerificationEmail(it.email)
+                            }
+                            // Fully selected NEW identities remain reserved even if historical address filtering rejects them.
+                            val selected = eligible(latest, reserveRetryIdentities = true)
+                            val filtered = filterKnownProfiles(selected, scope.excludeVerifiedUnavailableEmails, now)
+                            filtered.forEach { profile ->
+                                val norm = normalizeOrcid(profile.orcidId)
+                                if (chosen.putIfAbsent(norm, profile) == null) {
+                                    candidateLevels[BatchRecipientSelectionService.docIdOf(profile)] = level
+                                }
+                            }
+                        }
+                    }
+                }
+                val result = retryable.mapNotNull { contact ->
+                    val profile = chosen[normalizeOrcid(contact.orcidId)] ?: return@mapNotNull null
+                    if (!seenDocIds.add(BatchRecipientSelectionService.docIdOf(profile)) ||
+                        !seenEmails.add(normalizeVerificationEmail(contact.expertEmail))) return@mapNotNull null
+                    Pair(contact, profile)
+                }
+                if (result.isNotEmpty()) return result
+            }
+            return emptyList()
+        }
+
+        private fun nextMaterial(size: Int): List<Pair<ExpertContact?, ExpertProfile>> {
+            while (!cancelled()) {
+                val raw = nextRaw(size)
+                if (raw.isEmpty()) return emptyList()
+                val profiles = eligible(raw)
+                val contacts = expertContactRepository.findByOrcidIdIn(
+                    profiles.map { normalizeOrcid(it.orcidId) }.distinct()
+                )
+                val bound = contacts.filter { !it.boundSenderAccountCode.isNullOrBlank() }
+                    .map { normalizeOrcid(it.orcidId) }.toSet()
+                val byOrcid = contacts.associateBy { normalizeOrcid(it.orcidId) }
+                val targets = profiles.mapNotNull { profile ->
+                    val norm = normalizeOrcid(profile.orcidId)
+                    val contact = byOrcid[norm] ?: return@mapNotNull null
+                    val id = contact.id ?: return@mapNotNull null
+                    if (norm in bound || id in seenContacts || contact.expertEmail.isBlank() ||
+                        emailSuppressionService.isSuppressed(contact.expertEmail) || hasSentMaterialReminder(id)) {
+                        return@mapNotNull null
+                    }
+                    Pair(contact, profile)
+                }
+                val (filtered, excluded) = filterTargets(
+                    targets, scope.excludeVerifiedUnavailableEmails, now, email = { it.first.expertEmail }
+                )
+                excludedVerifiedUnavailable = Math.addExact(excludedVerifiedUnavailable, excluded)
+                val accepted = filtered.filter { seenContacts.add(it.first.id!!) &&
+                    seenEmails.add(normalizeVerificationEmail(it.first.expertEmail)) }
+                if (accepted.isNotEmpty()) return accepted
+            }
+            return emptyList()
+        }
+
+        fun revalidate(profile: ExpertProfile, contact: ExpertContact?, checkBinding: Boolean = true): Boolean = readCandidates {
+            val id = BatchRecipientSelectionService.docIdOf(profile)
+            val level = candidateLevels[id] ?: return@readCandidates false
+            val latest = expertSearchService.findByDocumentIdsStrict(level, listOf(id)).singleOrNull()
+                ?: return@readCandidates false
+            if (normalizeOrcid(latest.orcidId) != normalizeOrcid(profile.orcidId) ||
+                normalizeVerificationEmail(latest.email) != normalizeVerificationEmail(profile.email) ||
+                eligible(listOf(latest)).isEmpty()) return@readCandidates false
+            val recipientEmail = contact?.expertEmail ?: latest.email
+            if (scope.excludeVerifiedUnavailableEmails &&
+                normalizeVerificationEmail(recipientEmail) in findKnownUndeliverable(listOf(recipientEmail), verificationFilterNow())) {
+                return@readCandidates false
+            }
+            if (contact != null) {
+                val current = expertContactRepository.findById(contact.id!!).orElse(null)
+                    ?: return@readCandidates false
+                if (current.expertEmail != contact.expertEmail ||
+                    (checkBinding && current.boundSenderAccountCode != contact.boundSenderAccountCode) ||
+                    (scope.mailType == BatchSendType.INTRODUCTION.name && current.currentStatus != "NEW")) {
+                    return@readCandidates false
+                }
+            }
+            true
+        }
+
+        override fun close() {
+            val active = cursor
+            cursor = null
+            active?.close()
+        }
+    }
+
 
     private fun classifyNoSendableOutcome(
         ignoreWarmup: Boolean,
@@ -1750,6 +2039,8 @@ class ManualInitialOutreachService(
         "ROUNDS_PER_RUN_REACHED" -> "本次调度轮次已用完"
         "ONE_ROUND_DONE" -> "手动单轮发送已完成"
         "CANCELLED" -> "发送任务已被取消"
+        "CANDIDATE_READ_FAILED" -> "候选读取失败，已停止本次发送"
+        "COUNT_LIMIT_REACHED" -> "实际处理数量达到计数上限，已停止本次发送"
         // I-4/I-6：发送前验证的受控停止原因（服务故障/审计不可用/状态冲突），文案按受控错误码给出。
         BatchEmailVerificationErrorCodes.AUTH_ERROR -> "邮箱验证服务鉴权失败，已停止本次发送"
         BatchEmailVerificationErrorCodes.NO_CREDITS -> "邮箱验证服务额度不足，已停止本次发送"
@@ -2129,50 +2420,6 @@ class ManualInitialOutreachService(
         }
     }
 
-    private fun updateProgress(
-        executionId: Long, sent: Int, failed: Int, processed: Int,
-        remaining: Int, total: Int, totalCount: Int,
-        status: String, message: String, errors: List<String>,
-        mode: ExecutionMode, roundNumber: Int,
-        config: BatchSendConfig, runAccountStats: Map<String, AccountRunStat>,
-        batchNumber: Int = 0,
-        batchProcessed: Int = 0,
-        batchPassed: Int = 0,
-        batchRejected: Int = 0,
-        stopReason: String? = null,
-        sendType: BatchSendType = BatchSendType.INTRODUCTION,
-        ignoreWarmup: Boolean = false,
-        roundsPerRun: Int = 0
-    ) {
-        val details = mutableMapOf<String, Any>(
-            "executionMode" to mode.name,
-            "sendType" to sendType.name,
-            "status" to status,
-            "roundNumber" to roundNumber,
-            "roundsPerRun" to roundsPerRun,
-            "dailySentTotal" to sent,
-            "sentTotal" to sent,
-            "failedTotal" to failed,
-            "pending" to remaining,
-            "sent" to sent,
-            "failed" to failed,
-            "accounts" to buildAccountStats(runAccountStats, config, ignoreWarmup)
-        )
-        if (stopReason != null) {
-            details["stopReason"] = stopReason
-        }
-        progressStore.update("MANUAL_INITIAL_OUTREACH", TaskProgress(
-            taskType = "MANUAL_INITIAL_OUTREACH", status = status,
-            batchNumber = batchNumber, processedCount = processed.toLong(), totalCount = totalCount.toLong(),
-            message = message,
-            details = details,
-            errors = errors.toList(),
-            batchProcessed = batchProcessed,
-            batchPassed = batchPassed,
-            batchRejected = batchRejected,
-            executionId = executionId
-        ), executionId)
-    }
 
     private fun hasSentMaterialReminder(contactId: Long): Boolean {
         val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
@@ -2201,9 +2448,7 @@ class ManualInitialOutreachService(
     }
 
     /**
-     * Builds the full send-target list for one material reminder batch run (I-3/I-6).
-     * Rejects outright if ES total exceeds 10000 (I-6 — no partial sends on oversized scope).
-     * Paginates ES in 1000-item pages, then joins to MySQL contacts and applies exclusion rules.
+     * Explicit read-only material estimate. Traverses bounded pages and retains counters only.
      */
     private fun buildMaterialReminderSnapshot(
         scope: RecipientScope,
@@ -2239,86 +2484,19 @@ class ManualInitialOutreachService(
         now: LocalDateTime,
         onSelection: ((RecipientSelection) -> Unit)? = null
     ): MaterialReminderSnapshot {
-        var totalHits = 0L
-        val allExperts = mutableListOf<ExpertProfile>()
-        val pageSize = 1000
-        for (level in scope.funnelLevels) {
-            val filters = buildEsFiltersForLevel(scope, level)
-            val levelHits = expertSearchService.countExperts(ExpertIndexLevel.valueOf(level), filters)
-            totalHits += levelHits
-            if (totalHits > 10000) {
-                throw IllegalStateException(
-                    "材料提醒目标数 ($totalHits) 超过 10000 上限，请缩小过滤范围后再发送"
-                )
-            }
-            var offset = 0
-            while (offset < levelHits) {
-                val page = expertSearchService.searchExpertsFiltered(
-                    level = ExpertIndexLevel.valueOf(level),
-                    filters = filters,
-                    from = offset,
-                    size = pageSize
-                )
-                if (page.isEmpty()) break
-                allExperts.addAll(page)
-                offset += page.size
+        val source = DemandCandidateSource(null, scope, null, null, { it }, now, onSelection)
+        var count = 0
+        source.iterator { 500 }.use { iterator ->
+            while (iterator.hasNext()) {
+                iterator.next()
+                count = Math.addExact(count, 1)
             }
         }
-        if (totalHits > 10000) {
-            throw IllegalStateException(
-                "材料提醒目标数 ($totalHits) 超过 10000 上限，请缩小过滤范围后再发送"
-            )
-        }
-
-        // Step 3: normalize ORCIDs and bulk-load contacts (K-es-tag-to-mail-cross-store-join)
-        val normalizedExperts = allExperts.map { normalizeOrcid(it.orcidId) to it }
-        val normOrcidList = normalizedExperts.map { it.first }.distinct()
-        val contacts = if (normOrcidList.isNotEmpty()) expertContactRepository.findByOrcidIdIn(normOrcidList) else emptyList()
-        val contactByNormOrcid = contacts.associateBy { normalizeOrcid(it.orcidId) }
-        // I-3/I-4: 预估与执行共用本构造函数 —— 同一 ORCID 的任一行已绑定即排除（材料目标全绑定时可为 0）。
-        val boundOrcids = contacts
-            .filter { !it.boundSenderAccountCode.isNullOrBlank() }
-            .map { normalizeOrcid(it.orcidId) }
-            .toSet()
-
-        // I-1/I-3: 与预估/执行共用同一 selector（显式条件 + 持久准入）。
-        // 材料提醒的 `承诺回复材料` 标签由快照隐式加入且已由 ES 查询强制，selector 不重复判定该隐式标签。
-        val includedDocIds = if (normalizedExperts.isEmpty()) {
-            emptySet()
-        } else {
-            val selection = batchRecipientSelectionService.select(scope.copy(tags = emptyList()), allExperts)
-            onSelection?.invoke(selection)
-            selection.includedDocIds
-        }
-
-        // Step 4: apply exclusion rules, dedup by contactId
-        val seenContactIds = mutableSetOf<Long>()
-        val sendableTargets = mutableListOf<Pair<ExpertContact, ExpertProfile>>()
-
-        for ((normOrcid, expert) in normalizedExperts) {
-            if (BatchRecipientSelectionService.docIdOf(expert) !in includedDocIds) continue  // exclude: not admitted / explicit condition (I-1/I-3)
-            if (normOrcid in boundOrcids) continue             // exclude: already bound to a sender account (I-3)
-            val contact = contactByNormOrcid[normOrcid] ?: continue  // exclude: no existing contact
-            val contactId = contact.id ?: continue
-            if (!seenContactIds.add(contactId)) continue              // dedup by contactId
-            val email = contact.expertEmail
-            if (email.isBlank()) continue                             // exclude: empty email
-            if (emailSuppressionService.isSuppressed(email)) continue  // exclude: suppressed
-            if (hasSentMaterialReminder(contactId)) continue          // exclude: already SENT (I-6)
-            sendableTargets.add(Pair(contact, expert))
-        }
-
-        val (filteredTargets, excluded) = filterTargets(
-            sendableTargets,
-            enabled = scope.excludeVerifiedUnavailableEmails,
-            now = now,
-            email = { it.first.expertEmail }
-        )
         return MaterialReminderSnapshot(
-            targets = filteredTargets,
-            totalEsHits = totalHits,
+            targetCount = count,
+            totalEsHits = source.scanned,
             scopeDescription = scopeDescription,
-            excludedVerifiedUnavailable = excluded
+            excludedVerifiedUnavailable = source.excludedVerifiedUnavailable
         )
     }
 
@@ -2445,31 +2623,6 @@ class ManualInitialOutreachService(
         return filtered to (targets.size - filtered.size)
     }
 
-    private fun fetchEsPage(scope: RecipientScope, offset: Int, size: Int): List<ExpertProfile> {
-        val results = mutableListOf<ExpertProfile>()
-        var remaining = size
-        var pageOffset = offset
-        for (level in scope.funnelLevels) {
-            if (remaining <= 0) break
-            val filters = buildEsFiltersForLevel(scope, level)
-            val levelCount = expertSearchService.countExperts(ExpertIndexLevel.valueOf(level), filters).toInt()
-            if (pageOffset >= levelCount) {
-                pageOffset -= levelCount
-                continue
-            }
-            val page = expertSearchService.searchExpertsFiltered(
-                level = ExpertIndexLevel.valueOf(level),
-                filters = filters,
-                from = pageOffset,
-                size = remaining
-            )
-            results.addAll(page)
-            remaining -= page.size
-            pageOffset = 0
-        }
-        return results
-    }
-
     private fun buildEsFiltersForLevel(scope: RecipientScope, level: String): List<Map<String, Any>> {
         // I-2: 状态空集合 = 不限，绝不偷偷切到 NOT_CONTACTED 基座（页面承诺与执行一致）。
         // 状态筛选一律走 operatorStatusesFilter（空集合返回 null，不追加）：
@@ -2576,15 +2729,6 @@ class ManualInitialOutreachService(
             templateId = templateId
         )
 
-    private fun emptyResult(finalStatus: String?, stopReason: String?): ManualOutreachResult {
-        val outcome = OutcomeBreakdown(target = 0, success = 0, failure = 0, skipped = 0, remaining = 0)
-        return ManualOutreachResult(
-            total = 0, sent = 0, failed = 0, skippedNoAccount = 0,
-            wasCancelled = false, finalStatus = finalStatus, stopReason = stopReason,
-            remaining = 0, outcome = outcome
-        )
-    }
-
     private fun buildResult(
         total: Int,
         accumulator: OutcomeAccumulator,
@@ -2592,11 +2736,13 @@ class ManualInitialOutreachService(
         finalStatus: String?,
         stopReason: String?
     ): ManualOutreachResult {
-        accumulator.annotateTerminalRemaining(if (wasCancelled) "CANCELLED" else stopReason)
+        if (accumulator.executionMetadata == null) {
+            accumulator.annotateTerminalRemaining(if (wasCancelled) "CANCELLED" else stopReason)
+        }
         val outcome = accumulator.toBreakdown()
         val skippedNoAccount = outcome.skippedReasons[BatchOutcomeReasonCodes.ACCOUNT_UNAVAILABLE]?.count ?: 0
         return ManualOutreachResult(
-            total = total,
+            total = if (accumulator.executionMetadata != null) outcome.target else total,
             sent = outcome.success,
             failed = outcome.failure,
             skipped = outcome.skipped,
@@ -2605,7 +2751,8 @@ class ManualInitialOutreachService(
             finalStatus = finalStatus,
             stopReason = stopReason,
             remaining = outcome.remaining,
-            outcome = outcome
+            outcome = outcome,
+            execution = accumulator.executionMetadata?.invoke()
         )
     }
 
@@ -2648,10 +2795,13 @@ class ManualInitialOutreachService(
             "skippedReasons" to breakdown.skippedReasons,
             "accounts" to buildAccountStats(runAccountStats, config, ignoreWarmup)
         )
+        accumulator.executionMetadata?.invoke()?.let { details["execution"] = it }
         if (stopReason != null) details["stopReason"] = stopReason
         progressStore.update("MANUAL_INITIAL_OUTREACH", TaskProgress(
             taskType = "MANUAL_INITIAL_OUTREACH", status = status,
-            batchNumber = batchNumber, processedCount = processed.toLong(), totalCount = total.toLong(),
+            batchNumber = batchNumber,
+            processedCount = if (accumulator.executionMetadata != null) breakdown.target.toLong() else processed.toLong(),
+            totalCount = if (accumulator.executionMetadata != null) breakdown.target.toLong() else total.toLong(),
             message = message,
             details = details,
             errors = errors.toList(),
@@ -2669,7 +2819,7 @@ class ManualInitialOutreachService(
     )
 
     private data class MaterialReminderSnapshot(
-        val targets: List<Pair<ExpertContact, ExpertProfile>>,
+        val targetCount: Int,
         val totalEsHits: Long,
         val scopeDescription: String,
         val excludedVerifiedUnavailable: Int = 0
@@ -2750,31 +2900,6 @@ data class PreviewExcludedRecipient(
     val filterKeys: List<String>,
     val reasonKeys: List<String>
 )
-
-/**
- * repair V-2（epoch 2）：执行期目标资格。
- *
- * 诊断母集（[MAX_BASELINE_SCAN] 上限）是有界的、可能 `partial=true`，**不能**当作执行期白名单：
- * 目标仅仅「不在母集里」不等于确定性排除。执行期复用同一快照的同一只读预检查结论 ——
- * 母集已覆盖的候选直接复用其结论；因截断未被覆盖的候选按同一输入单独求一次结论并记忆化，
- * 因此每个执行候选都有完整的确定性结论，绝不静默丢人。
- */
-private class ExecutionPreflightEligibility(
-    initial: Map<String, Boolean>,
-    private val decide: (List<ExpertProfile>) -> Map<String, Boolean>
-) {
-    private val memo = HashMap<String, Boolean>(initial)
-
-    fun <T> filter(items: List<T>, docId: (T) -> String, profile: (T) -> ExpertProfile): List<T> {
-        val unknown = items.asSequence()
-            .filter { memo[docId(it)] == null }
-            .distinctBy(docId)
-            .map(profile)
-            .toList()
-        if (unknown.isNotEmpty()) memo.putAll(decide(unknown))
-        return items.filter { memo[docId(it)] == true }
-    }
-}
 
 /**
  * A3 (I-3): 预估侧准入摘要累加器（只读、无写入）。按真实 docId 去重后合并 selector 结论，

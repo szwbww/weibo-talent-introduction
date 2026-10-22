@@ -65,4 +65,100 @@ class OutreachTargetIterator(
             esOffset += page.size
         }
     }
+
+    companion object {
+        fun demand(
+            retryNext: (Int) -> List<Pair<ExpertContact?, ExpertProfile>>,
+            esNext: (Int) -> List<ExpertProfile>,
+            filterPage: (List<ExpertProfile>) -> List<ExpertProfile>,
+            pageSize: () -> Int,
+            shouldStop: () -> Boolean,
+            dedupeKey: (ExpertProfile) -> String,
+            onScanned: (Int) -> Unit,
+            close: () -> Unit
+        ): DemandOutreachTargetIterator = DemandOutreachTargetIterator(
+            retryNext, esNext, filterPage, pageSize, shouldStop, dedupeKey, onScanned, close
+        )
+    }
+}
+
+/**
+ * Forward-only demand source. NEW callbacks return already-filtered contacts in contact order;
+ * ES pages are filtered here. An empty callback result alone means that source is exhausted:
+ * callbacks must skip their internal raw filtered-empty pages rather than return them.
+ *
+ * Page sizes are reevaluated only before a source read. Short pages are not terminal, and
+ * neither exhaustion nor the presence of further candidates is probed after a stop.
+ * [onScanned] counts returned source rows before deduplication/ES filtering; callbacks account
+ * separately for raw rows discarded internally. Only accepted identities enter the seen set.
+ */
+class DemandOutreachTargetIterator internal constructor(
+    private val retryNext: (Int) -> List<Pair<ExpertContact?, ExpertProfile>>,
+    private val esNext: (Int) -> List<ExpertProfile>,
+    private val filterPage: (List<ExpertProfile>) -> List<ExpertProfile>,
+    private val pageSize: () -> Int,
+    private val shouldStop: () -> Boolean,
+    private val dedupeKey: (ExpertProfile) -> String,
+    private val onScanned: (Int) -> Unit,
+    private val closeSource: () -> Unit
+) : Iterator<Pair<ExpertContact?, ExpertProfile>>, AutoCloseable {
+    private val seenKeys = mutableSetOf<String>()
+    private var buffer: List<Pair<ExpertContact?, ExpertProfile>> = emptyList()
+    private var bufferIndex = 0
+    private var retryExhausted = false
+    private var esExhausted = false
+    private var closed = false
+
+    val sourceExhausted: Boolean
+        get() = retryExhausted && esExhausted
+
+    override fun hasNext(): Boolean {
+        if (closed || shouldStop()) return false
+        if (bufferIndex < buffer.size) return true
+        buffer = emptyList()
+        bufferIndex = 0
+        while (!closed && !shouldStop() && !sourceExhausted) {
+            val size = pageSize()
+            require(size in 1..500) { "Demand page size must be between 1 and 500: $size" }
+            if (!retryExhausted) {
+                val page = retryNext(size)
+                onScanned(page.size)
+                if (shouldStop()) return false
+                if (page.isEmpty()) {
+                    retryExhausted = true
+                    continue
+                }
+                buffer = page.filter { seenKeys.add(dedupeKey(it.second)) }
+            } else {
+                val page = esNext(size)
+                onScanned(page.size)
+                if (shouldStop()) return false
+                if (page.isEmpty()) {
+                    esExhausted = true
+                    continue
+                }
+                val unseen = page.filter { dedupeKey(it) !in seenKeys }
+                val filtered = if (unseen.isEmpty()) emptyList() else filterPage(unseen)
+                if (shouldStop()) return false
+                buffer = filtered.mapNotNull { profile ->
+                    if (seenKeys.add(dedupeKey(profile))) Pair(null, profile) else null
+                }
+            }
+            if (buffer.isNotEmpty()) return true
+        }
+        return false
+    }
+
+    override fun next(): Pair<ExpertContact?, ExpertProfile> {
+        if (!hasNext()) throw NoSuchElementException()
+        return buffer[bufferIndex++]
+    }
+
+    override fun close() {
+        if (closed) return
+        closed = true
+        buffer = emptyList()
+        bufferIndex = 0
+        closeSource()
+    }
 }

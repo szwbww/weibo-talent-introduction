@@ -36,7 +36,10 @@ class ExpertSearchCursor internal constructor(
         require(this.levels.distinct().size == this.levels.size) { "levels must not repeat" }
     }
 
-    fun nextPage(): Page = synchronized(lock) {
+    fun nextPage(): Page = nextPage(pageSize)
+
+    fun nextPage(pageSize: Int): Page = synchronized(lock) {
+        require(pageSize in 1..500) { "pageSize must be between 1 and 500" }
         failure?.let { throw it }
         if (exhausted) return@synchronized Page(emptyList(), true)
         check(!closed) { "Candidate cursor is closed" }

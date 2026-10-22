@@ -31,6 +31,7 @@ import com.weibo.talentintroduction.expert.domain.ExpertType
 import com.weibo.talentintroduction.expert.domain.IdentityVerification
 import com.weibo.talentintroduction.expert.service.ExpertClassificationService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.expert.service.ExpertSearchCursor
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonIdentity
 import com.weibo.talentintroduction.discovery.domain.DiscoveryPersonScope
 import com.weibo.talentintroduction.discovery.service.DiscoveryPersonFeatureGate
@@ -87,6 +88,7 @@ import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.Mockito
 import org.springframework.http.HttpStatus
+import org.springframework.http.HttpMethod
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import java.time.LocalDateTime
@@ -95,6 +97,7 @@ import java.util.Optional
 
 class ManualInitialOutreachServiceTest {
     private val expertSearchService = Mockito.mock(ExpertSearchService::class.java)
+    private val currentCandidateProfiles = mutableMapOf<Pair<ExpertIndexLevel, String>, ExpertProfile>()
     private val senderAccountAssignmentService = Mockito.mock(SenderAccountAssignmentService::class.java)
     private val senderAccountBindingService = Mockito.mock(SenderAccountBindingService::class.java)
     private val introductionMailComposer = Mockito.mock(IntroductionMailComposer::class.java)
@@ -207,6 +210,7 @@ class ManualInitialOutreachServiceTest {
     @org.junit.jupiter.api.BeforeEach
     fun setUp() {
         accountRateLimiter.clear()
+        stubDemandCandidateReads()
         Mockito.`when`(autoReplySettingService.isGlobalEnabled()).thenReturn(true)
         Mockito.`when`(emailSuppressionService.isSuppressed(Mockito.anyString())).thenReturn(false)
         Mockito.`when`(mailSendAttemptRepository.save(Mockito.any(MailSendAttempt::class.java))).thenAnswer { invocation ->
@@ -918,7 +922,7 @@ class ManualInitialOutreachServiceTest {
 
     @ParameterizedTest
     @ValueSource(booleans = [false, true])
-    fun `cancellation during historical prescan stops later pages and layers even when all are excluded`(oneRoundOnly: Boolean) {
+    fun `cancellation during demand filtering stops later pages and layers even when all are excluded`(oneRoundOnly: Boolean) {
         val campaign = Campaign(
             id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach",
             description = null, senderAccountId = 1L
@@ -932,6 +936,15 @@ class ManualInitialOutreachServiceTest {
         val first = expert("E081", "excluded@example.com")
         val later = expert("E082", "later@example.com")
         val otherLevel = expert("E083", "other@example.com")
+        Mockito.`when`(expertSearchService.searchExpertsFiltered(
+            eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList()), anyInt(), anyInt()
+        )).thenAnswer { invocation ->
+            when (invocation.getArgument<Int>(2)) {
+                0 -> listOf(first)
+                1 -> listOf(later)
+                else -> emptyList()
+            }
+        }
         Mockito.doAnswer { invocation ->
             val handler = invocation.getArgument<(List<ExpertProfile>) -> Boolean>(3)
             if (handler(listOf(first))) handler(listOf(later))
@@ -972,7 +985,9 @@ class ManualInitialOutreachServiceTest {
         Mockito.verify(batchEmailVerificationService, Mockito.times(1)).findKnownUndeliverableEmails(
             anyValue(emptyList<String?>()), anyValue(LocalDateTime.now())
         )
-        Mockito.verifyNoInteractions(senderAccountAssignmentService, mailDeliveryService)
+        Mockito.verify(senderAccountAssignmentService).loadBindingStock()
+        Mockito.verifyNoMoreInteractions(senderAccountAssignmentService)
+        Mockito.verifyNoInteractions(mailDeliveryService)
         Mockito.verify(batchEmailVerificationService, Mockito.never()).verify(
             anyValue(verificationContext), anyValue(verificationTarget()), anyAllowedStates()
         )
@@ -1023,7 +1038,7 @@ class ManualInitialOutreachServiceTest {
     }
 
     @Test
-    fun `countBySnapshot matches execution path totalEstimate for same snapshot (I-1)`() {
+    fun `countBySnapshot counts the full scope while unavailable accounts leave execution unprocessed (I-1)`() {
         val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
         Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
 
@@ -1061,11 +1076,11 @@ class ManualInitialOutreachServiceTest {
         assertEquals(3, preview.pending)
         assertEquals(5, preview.totalSendable)
 
-        // Execution path (same snapshot) must report the same total; no accounts → stops at the round gate
+        // Preview counts the full scope; no account means execution processes no candidate.
         Mockito.`when`(mailSenderAccountService.listSendableAccounts(anyBooleanValue())).thenReturn(emptyList())
         val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = true)
 
-        assertEquals(preview.totalSendable, result.total)
+        assertEquals(0, result.total)
         Mockito.verifyNoInteractions(taskExecutionService)
     }
 
@@ -1097,7 +1112,7 @@ class ManualInitialOutreachServiceTest {
     }
 
     @Test
-    fun `countBySnapshot MATERIAL_REMINDER reuses material snapshot targets (I-1)`() {
+    fun `countBySnapshot MATERIAL_REMINDER streams the material candidate count (I-1)`() {
         val snapshot = BatchExecutionSnapshot(
             mailType = "MATERIAL_REMINDER",
             roundSize = 10,
@@ -1116,7 +1131,8 @@ class ManualInitialOutreachServiceTest {
         )).thenAnswer { invocation ->
             val from = invocation.getArgument<Int>(2)
             val size = invocation.getArgument<Int>(3)
-            listOf(expert("M001", "m1@b.com"), expert("M002", "m2@b.com")).drop(from).take(size)
+            listOf(expert("M001", "m1@b.com"), expert("M002", "m2@b.com"))
+                .map { it.copy(tags = listOf("承诺回复材料")) }.drop(from).take(size)
         }
         Mockito.`when`(expertContactRepository.findByOrcidIdIn(listOf("M001", "M002")))
             .thenReturn(listOf(
@@ -1129,11 +1145,11 @@ class ManualInitialOutreachServiceTest {
         assertEquals(0, preview.retryable)
         assertEquals(2, preview.totalSendable)
 
-        // Execution path (same snapshot) must agree; no accounts → stops at the round gate
+        // The preview stays read-only; execution stops before reading candidates.
         Mockito.`when`(mailSenderAccountService.listSendableAccounts(anyBooleanValue())).thenReturn(emptyList())
         val result = service.run(snapshot, 12346L, ExecutionMode.MANUAL, oneRoundOnly = true)
 
-        assertEquals(preview.totalSendable, result.total)
+        assertEquals(0, result.total)
         Mockito.verifyNoInteractions(taskExecutionService)
     }
 
@@ -1208,10 +1224,9 @@ class ManualInitialOutreachServiceTest {
 
         // I-3: 已有绑定的目标不发信、不重选号、不改绑（绑定值是否为本次选中账号无关）。
         assertEquals(0, result.sent)
-        assertEquals(1, result.skipped)
-        val boundSkip = result.outcome?.skippedReasons?.get(BatchOutcomeReasonCodes.BOUND_SENDER_ALREADY_SET)
-        assertEquals(1, boundSkip?.count)
-        assertEquals("专家已绑定发件账号", boundSkip?.label)
+        assertEquals(0, result.total)
+        assertEquals(0, result.skipped, "scan-time binding exclusions are not processed targets")
+        assertNull(result.outcome?.skippedReasons?.get(BatchOutcomeReasonCodes.BOUND_SENDER_ALREADY_SET))
         Mockito.verifyNoInteractions(mailDeliveryService)
         Mockito.verify(expertContactRepository, Mockito.never()).updateBindingById(
             Mockito.anyLong(),
@@ -1255,8 +1270,7 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(progressStore.isCancelled(eqValue("MANUAL_INITIAL_OUTREACH"), eqValue(12345L))).thenReturn(true)
 
         val result = service.run(runScheduledSnapshot(), 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
-        // I-3: 预估改为与取页同一份最终筛选的扫描，取消即中止扫描 —— 取消的预扫描没有完整目标数，
-        // 故 total 报 0（与既有「cancelled prescan has no complete target count」口径一致），状态仍为 CANCELLED。
+        // Cancellation before candidate processing reports no invented target or skip.
         assertEquals(0, result.total)
         assertEquals(0, result.sent)
         assertEquals("CANCELLED", result.finalStatus)
@@ -1275,10 +1289,11 @@ class ManualInitialOutreachServiceTest {
             .thenThrow(com.weibo.talentintroduction.mail.service.NoAvailableSenderAccountException("Quota exhausted"))
 
         val result = service.run(runScheduledSnapshot(), 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
-        assertEquals(1, result.total)
+        assertEquals(0, result.total)
         assertEquals(0, result.sent)
         assertEquals(0, result.failed)
-        assertEquals(1, result.skippedNoAccount)
+        assertEquals(0, result.skippedNoAccount)
+        assertEquals("NO_AVAILABLE_ACCOUNT", result.stopReason)
     }
 
     @Test
@@ -1577,8 +1592,8 @@ class ManualInitialOutreachServiceTest {
 
         // Only one round of 2 mails
         assertEquals(2, result.sent)
-        assertEquals(3, result.total)
-        assertEquals(1, result.remaining)
+        assertEquals(2, result.total)
+        assertEquals(0, result.remaining)
         // L3-2: oneRoundOnly returns to PAUSED
         assertEquals("PAUSED", result.finalStatus)
         assertEquals("ONE_ROUND_DONE", result.stopReason)
@@ -2023,7 +2038,7 @@ class ManualInitialOutreachServiceTest {
 
         stubScrolledExperts(listOf(
             expert("0001", "user@gmail.com"),
-            expert("0002", "user@gmail.com"),
+            expert("0002", "second-user@gmail.com"),
             expert("0003", "user@outlook.com")
         ))
         Mockito.`when`(expertContactRepository.existsByOrcidId("0001")).thenReturn(false)
@@ -2098,7 +2113,7 @@ class ManualInitialOutreachServiceTest {
         assertEquals("NO_AVAILABLE_ACCOUNT", result.stopReason)
         assertEquals("PAUSED", result.finalStatus)
         assertEquals(0, result.remaining)
-        assertEquals(1, result.skippedNoAccount)
+        assertEquals(0, result.skippedNoAccount, "unread candidates are not synthetic account skips")
         Mockito.verify(mailSenderAccountService).pauseAutoSend(
             eqValue("chen"),
             eqValue("SMTP_TRANSIENT:450:450 mailbox busy")
@@ -2155,7 +2170,7 @@ class ManualInitialOutreachServiceTest {
 
         assertEquals(20, result.sent)
         assertEquals(1, result.failed)
-        assertEquals(2, result.remaining)
+        assertEquals(0, result.remaining)
         assertEquals("ROUNDS_PER_RUN_REACHED", result.stopReason)
         assertEquals(21, submissions.size)
         assertEquals(21, submissions.map { it.second }.distinct().size, "failed recipient must not be resubmitted")
@@ -2195,7 +2210,7 @@ class ManualInitialOutreachServiceTest {
         assertEquals("PAUSED", result.finalStatus)
         assertEquals(1, result.failed)
         assertEquals(0, result.remaining)
-        assertEquals(1, result.skippedNoAccount)
+        assertEquals(0, result.skippedNoAccount)
         Mockito.verify(mailDeliveryService, Mockito.times(1)).send(anyValue(selected), anyValue(ComposedMail("", "", "")))
     }
 
@@ -2303,10 +2318,8 @@ class ManualInitialOutreachServiceTest {
         val result = service.run(runScheduledSnapshot(), 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
         assertEquals(0, result.total)
         
-        // I-3: 预估走 scroll + 最终谓词（不再读粗筛计数），filter 列表必须逐字同源。
-        Mockito.verify(expertSearchService).scrollExpertsFiltered(
-            eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters), eqValue(500),
-            anyValue({ _: List<ExpertProfile> -> true })
+        Mockito.verify(expertSearchService).openCandidateCursor(
+            eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters), eqValue(500)
         )
     }
 
@@ -2344,10 +2357,8 @@ class ManualInitialOutreachServiceTest {
         val result = service.run(runScheduledSnapshot(), 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
         assertEquals(0, result.total)
 
-        // I-3: 预估走 scroll + 最终谓词（不再读粗筛计数），filter 列表必须逐字同源。
-        Mockito.verify(expertSearchService).scrollExpertsFiltered(
-            eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters), eqValue(500),
-            anyValue({ _: List<ExpertProfile> -> true })
+        Mockito.verify(expertSearchService).openCandidateCursor(
+            eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters), eqValue(500)
         )
     }
 
@@ -2516,7 +2527,7 @@ class ManualInitialOutreachServiceTest {
         val result = service.run(runScheduledSnapshot(), 12345L, ExecutionMode.MANUAL, oneRoundOnly = true)
 
         assertEquals(1, result.sent)
-        assertEquals("ONE_ROUND_DONE", result.stopReason)
+        assertNull(result.stopReason, "source exhausted before filling the configured round")
         assertNotEquals("WARMUP_LIMIT_REACHED", result.stopReason)
     }
 
@@ -2587,7 +2598,7 @@ class ManualInitialOutreachServiceTest {
         )).thenReturn(2L)
         Mockito.`when`(expertSearchService.searchExpertsFiltered(
             eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList()), eqValue(0), anyInt()
-        )).thenReturn(targets.map { it.second })
+        )).thenReturn(targets.map { it.second.copy(tags = listOf("承诺回复材料")) })
         Mockito.`when`(expertContactRepository.findByOrcidIdIn(anyValue(emptyList())))
             .thenReturn(targets.map { it.first })
 
@@ -2751,21 +2762,15 @@ class ManualInitialOutreachServiceTest {
             .thenReturn(DeliveredMail("msg", "SENT"))
     }
 
-    /**
-     * Legacy fixture serving a fresh page on each call. Real offset paging and
-     * shrinking result sets are covered separately by the scheduled-round regressions.
-     */
+    /** Stable raw pages: the cursor, rather than a shrinking result list, owns advancement. */
     private fun stubIntroChunkedExperts(experts: List<ExpertProfile>, pageSize: Int) {
-        val chunks = experts.chunked(pageSize)
-        var callIndex = 0
+        require(pageSize > 0)
         Mockito.`when`(expertSearchService.searchExpertsFiltered(
             eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList()), anyInt(), anyInt()
         )).thenAnswer { invocation ->
             val from = invocation.getArgument<Int>(2)
             val size = invocation.getArgument<Int>(3)
-            val chunk = chunks.getOrNull(callIndex) ?: emptyList()
-            callIndex++
-            chunk.drop(from).take(size)
+            experts.drop(from).take(minOf(size, pageSize))
         }
         Mockito.`when`(expertSearchService.countExperts(
             eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList())
@@ -3119,7 +3124,10 @@ class ManualInitialOutreachServiceTest {
     private fun stubPersonMemberProfiles(profiles: List<ExpertProfile>) {
         Mockito.`when`(expertSearchService.findByDocumentIdsStrict(anyIndexLevel(), Mockito.anyList()))
             .thenAnswer { invocation ->
-                expertSearchService.findByDocumentIds(invocation.getArgument(0), invocation.getArgument(1))
+                val level = invocation.getArgument<ExpertIndexLevel>(0)
+                val ids = invocation.getArgument<List<String>>(1)
+                val members = expertSearchService.findByDocumentIds(level, ids).associateBy { it.esDocId ?: it.orcidId }
+                ids.mapNotNull { members[it] ?: currentCandidateProfiles[level to it] }
             }
         Mockito.`when`(expertSearchService.findByDocumentIds(anyIndexLevel(), Mockito.anyList()))
             .thenAnswer { invocation ->
@@ -3146,7 +3154,7 @@ class ManualInitialOutreachServiceTest {
 
         // Observable outcome 2: roundsPerRun(2) × roundSize(20) = 40 mails max for this run
         assertEquals(40, result.sent)
-        assertEquals(100, result.total)
+        assertEquals(40, result.total)
         // I-1/I-2: budget exhausted is a normal completion, not a pause
         assertEquals("ROUNDS_PER_RUN_REACHED", result.stopReason)
         assertEquals("COMPLETED", result.finalStatus)
@@ -3240,11 +3248,11 @@ class ManualInitialOutreachServiceTest {
 
             service.runMaterialReminderBatch(12345L, ExecutionMode.MANUAL, false)
 
-            Mockito.verify(expertSearchService).countExperts(
-                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
+            Mockito.verify(expertSearchService).openCandidateCursor(
+                eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList()), eqValue(500)
             )
-            Mockito.verify(expertSearchService, Mockito.never()).countExperts(
-                eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList())
+            Mockito.verify(expertSearchService, Mockito.never()).openCandidateCursor(
+                eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList()), anyInt()
             )
         }
 
@@ -4281,10 +4289,8 @@ class ManualInitialOutreachServiceTest {
         val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
 
         assertEquals(0, result.total)
-        // I-3: 预估走 scroll + 最终谓词（不再读粗筛计数），filter 列表必须逐字同源。
-        Mockito.verify(expertSearchService).scrollExpertsFiltered(
-            eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters), eqValue(500),
-            anyValue({ _: List<ExpertProfile> -> true })
+        Mockito.verify(expertSearchService).openCandidateCursor(
+            eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters), eqValue(500)
         )
     }
 
@@ -4311,7 +4317,9 @@ class ManualInitialOutreachServiceTest {
         val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
 
         assertEquals(0, result.total)
-        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.APPLICATION), eqValue(expectedFilters))
+        Mockito.verify(expertSearchService).openCandidateCursor(
+            eqValue(ExpertIndexLevel.APPLICATION), eqValue(expectedFilters), eqValue(500)
+        )
     }
 
     @Test
@@ -4342,7 +4350,9 @@ class ManualInitialOutreachServiceTest {
         val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
 
         assertEquals(0, result.total)
-        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.APPLICATION), eqValue(expectedFilters))
+        Mockito.verify(expertSearchService).openCandidateCursor(
+            eqValue(ExpertIndexLevel.APPLICATION), eqValue(expectedFilters), eqValue(500)
+        )
     }
 
     @Test
@@ -4375,10 +4385,8 @@ class ManualInitialOutreachServiceTest {
         val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
 
         assertEquals(0, result.total)
-        // I-3: 预估走 scroll + 最终谓词（不再读粗筛计数），filter 列表必须逐字同源。
-        Mockito.verify(expertSearchService).scrollExpertsFiltered(
-            eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters), eqValue(500),
-            anyValue({ _: List<ExpertProfile> -> true })
+        Mockito.verify(expertSearchService).openCandidateCursor(
+            eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters), eqValue(500)
         )
     }
 
@@ -4454,13 +4462,14 @@ class ManualInitialOutreachServiceTest {
             // I4-2: fixture 分类 PRODUCTION_RND —— 快照必须携带该类型，retryable 才能保留。
             expertTypes = listOf("PRODUCTION_RND")
         )
-        // No sendable accounts → stop at round gate; target count proves the retryable survived matchesExpert.
+        // No account: verify retry eligibility via the unchanged explicit preview, not execution totals.
         Mockito.`when`(mailSenderAccountService.listSendableAccounts(anyBooleanValue())).thenReturn(emptyList())
         stubScrolledExperts(emptyList())
+        assertEquals(1, service.countBySnapshot(snapshot).totalSendable)
 
         val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
 
-        assertEquals(1, result.total)
+        assertEquals(0, result.total)
     }
 
     @Test
@@ -4557,10 +4566,8 @@ class ManualInitialOutreachServiceTest {
         val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
 
         assertEquals(0, result.total)
-        // I-3: 预估走 scroll + 最终谓词（不再读粗筛计数），filter 列表必须逐字同源。
-        Mockito.verify(expertSearchService).scrollExpertsFiltered(
-            eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters), eqValue(500),
-            anyValue({ _: List<ExpertProfile> -> true })
+        Mockito.verify(expertSearchService).openCandidateCursor(
+            eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters), eqValue(500)
         )
     }
 
@@ -4598,10 +4605,8 @@ class ManualInitialOutreachServiceTest {
         val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
 
         assertEquals(0, result.total)
-        // I-3: 预估走 scroll + 最终谓词（不再读粗筛计数），filter 列表必须逐字同源。
-        Mockito.verify(expertSearchService).scrollExpertsFiltered(
-            eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters), eqValue(500),
-            anyValue({ _: List<ExpertProfile> -> true })
+        Mockito.verify(expertSearchService).openCandidateCursor(
+            eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters), eqValue(500)
         )
     }
 
@@ -4635,7 +4640,9 @@ class ManualInitialOutreachServiceTest {
         val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
 
         assertEquals(0, result.total)
-        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.APPLICATION), eqValue(expectedFilters))
+        Mockito.verify(expertSearchService).openCandidateCursor(
+            eqValue(ExpertIndexLevel.APPLICATION), eqValue(expectedFilters), eqValue(500)
+        )
     }
 
     @Test
@@ -4693,10 +4700,8 @@ class ManualInitialOutreachServiceTest {
         val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
 
         assertEquals(0, result.total)
-        // I-3: 预估走 scroll + 最终谓词（不再读粗筛计数），filter 列表必须逐字同源。
-        Mockito.verify(expertSearchService).scrollExpertsFiltered(
-            eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters), eqValue(500),
-            anyValue({ _: List<ExpertProfile> -> true })
+        Mockito.verify(expertSearchService).openCandidateCursor(
+            eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters), eqValue(500)
         )
     }
 
@@ -5201,17 +5206,20 @@ class ManualInitialOutreachServiceTest {
         // 执行路径（无可用账号 → 停在轮次闸口，不发信）
         Mockito.`when`(mailSenderAccountService.listSendableAccounts(anyBooleanValue())).thenReturn(emptyList())
         val result = service.run(snapshot, 12347L, ExecutionMode.MANUAL, oneRoundOnly = true)
-        assertEquals(preview.totalSendable, result.total)
+        assertEquals(0, result.total, "no account means no processed candidates")
+        assertEquals(0, result.remaining)
 
-        // I2-2 / I-3: 两条路径对同一 snapshot 使用完全相同的 filter 列表（同源同口径）。
-        // 预估 = 两次 scroll 最终筛选（预估 1 + 执行前估算 1）；执行取页的 offset 口径另算 1 次 count。
-        Mockito.verify(expertSearchService, Mockito.times(2))
-            .scrollExpertsFiltered(
-                eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters), eqValue(500),
-                anyValue({ _: List<ExpertProfile> -> true })
-            )
-        Mockito.verify(expertSearchService, Mockito.times(1))
-            .countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
+        // The preview keeps its full read contract; execution stops before candidate enumeration.
+        Mockito.verify(expertSearchService, Mockito.times(1)).scrollExpertsFiltered(
+            eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters), eqValue(500),
+            anyValue({ _: List<ExpertProfile> -> true })
+        )
+        Mockito.verify(expertSearchService, Mockito.never()).countExperts(
+            eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)
+        )
+        Mockito.verify(expertSearchService, Mockito.never()).openCandidateCursor(
+            anyIndexLevel(), anyValue(emptyList()), anyInt()
+        )
     }
 
     // ── P4a: 邮件模版门禁过滤（I4a-1..I4a-6 / M-1 / M-2 / M-4）────────────────────
@@ -5418,18 +5426,19 @@ class ManualInitialOutreachServiceTest {
         // 执行路径（无可用账号 → 停在轮次闸口，不发信）
         Mockito.`when`(mailSenderAccountService.listSendableAccounts(anyBooleanValue())).thenReturn(emptyList())
         val result = service.run(snapshot, 12346L, ExecutionMode.MANUAL, oneRoundOnly = true)
-        assertEquals(preview.totalSendable, result.total)
+        assertEquals(0, result.total, "no account means no processed candidates")
+        assertEquals(0, result.remaining)
 
-        // I4a-4 / M-4 / I-3: 两条路径对同一 snapshot 使用完全相同的 filter 列表（同源同口径）。
-        // 预估 = 两次 scroll 最终筛选（预估 1 + 执行前估算 1）；执行取页的 offset 口径另算 1 次 count
-        // （OutreachTargetIterator.hasNext 在轮次闸口前拉首页）。
-        Mockito.verify(expertSearchService, Mockito.times(2))
-            .scrollExpertsFiltered(
-                eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters), eqValue(500),
-                anyValue({ _: List<ExpertProfile> -> true })
-            )
-        Mockito.verify(expertSearchService, Mockito.times(1))
-            .countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
+        Mockito.verify(expertSearchService, Mockito.times(1)).scrollExpertsFiltered(
+            eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters), eqValue(500),
+            anyValue({ _: List<ExpertProfile> -> true })
+        )
+        Mockito.verify(expertSearchService, Mockito.never()).countExperts(
+            eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)
+        )
+        Mockito.verify(expertSearchService, Mockito.never()).openCandidateCursor(
+            anyIndexLevel(), anyValue(emptyList()), anyInt()
+        )
     }
 
     // ── 02: 统一只读预检查（完整母集、独立原因、限量样本、动态保护） ──────────────
@@ -6227,17 +6236,19 @@ class ManualInitialOutreachServiceTest {
         // 执行路径（无可用账号 → 停在轮次闸口，不发信）
         Mockito.`when`(mailSenderAccountService.listSendableAccounts(anyBooleanValue())).thenReturn(emptyList())
         val result = service.run(snapshot, 12348L, ExecutionMode.MANUAL, oneRoundOnly = true)
-        assertEquals(preview.totalSendable, result.total)
+        assertEquals(0, result.total)
+        assertEquals(0, result.remaining)
 
-        // I-2 / I-3: 调用次数 = 预估 scroll(1) + 执行前估算 scroll(1) + 执行取页 count(1)，
-        // 全部命中同一 filter 列表 —— 预估人数与实际收件筛选同口径。
-        Mockito.verify(expertSearchService, Mockito.times(2))
-            .scrollExpertsFiltered(
-                eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters), eqValue(500),
-                anyValue({ _: List<ExpertProfile> -> true })
-            )
-        Mockito.verify(expertSearchService, Mockito.times(1))
-            .countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
+        Mockito.verify(expertSearchService, Mockito.times(1)).scrollExpertsFiltered(
+            eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters), eqValue(500),
+            anyValue({ _: List<ExpertProfile> -> true })
+        )
+        Mockito.verify(expertSearchService, Mockito.never()).countExperts(
+            eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)
+        )
+        Mockito.verify(expertSearchService, Mockito.never()).openCandidateCursor(
+            anyIndexLevel(), anyValue(emptyList()), anyInt()
+        )
     }
 
     @Test
@@ -6947,7 +6958,7 @@ class ManualInitialOutreachServiceTest {
         // 策略跳过仍继续扫描补足本轮成功配额；达到成功上限后不验证第 6 个目标。
         assertEquals(2, result.sent)
         assertEquals(3, result.skipped)
-        assertEquals(1, result.remaining)
+        assertEquals(0, result.remaining)
         assertEquals(
             3,
             result.outcome?.skippedReasons?.get(BatchOutcomeReasonCodes.EMAIL_VERIFICATION_POLICY_SKIP)?.count ?: 0
@@ -7030,7 +7041,7 @@ class ManualInitialOutreachServiceTest {
         assertEquals(1, result.sent)
         assertEquals(0, result.failed)
         assertEquals(0, result.skipped)
-        assertEquals(2, result.remaining)
+        assertEquals(0, result.remaining)
         assertEquals("PARTIAL_SUCCESS", result.finalStatus)
         assertEquals("PARTIAL_SUCCESS", result.taskFinalStatus)
         assertEquals("EMAIL_VERIFY_NO_CREDITS", result.stopReason)
@@ -7052,7 +7063,7 @@ class ManualInitialOutreachServiceTest {
         val result = service.run(introSnapshotWithVerification(), 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
 
         assertEquals(0, result.sent)
-        assertEquals(1, result.remaining)
+        assertEquals(0, result.remaining)
         assertEquals("FAILED", result.finalStatus)
         assertEquals("FAILED", result.taskFinalStatus)
         Mockito.verify(mailDeliveryService, Mockito.never()).send(anyValue(account), anyValue(ComposedMail("", "", "")))
@@ -7078,7 +7089,7 @@ class ManualInitialOutreachServiceTest {
         assertEquals(1, result.skipped)
         assertEquals(0, result.remaining)
         assertEquals("COMPLETED", result.finalStatus)
-        assertNull(result.stopReason)
+        assertEquals("ROUNDS_PER_RUN_REACHED", result.stopReason)
         assertEquals(1, result.outcome?.skippedReasons?.get(BatchOutcomeReasonCodes.EMAIL_VERIFICATION_DEFERRED)?.count)
         Mockito.verify(batchEmailVerificationService).recordSend(
             555L, "SKIPPED", BatchOutcomeReasonCodes.EMAIL_VERIFICATION_DEFERRED
@@ -7132,10 +7143,10 @@ class ManualInitialOutreachServiceTest {
 
         assertTrue(result.wasCancelled)
         assertEquals("CANCELLED", result.finalStatus)
-        assertEquals(2, result.skipped)
+        assertEquals(1, result.skipped)
         assertEquals(0, result.remaining)
         assertEquals(1, result.outcome?.skippedReasons?.get(BatchOutcomeReasonCodes.EMAIL_VERIFICATION_DEFERRED)?.count)
-        assertEquals(1, result.outcome?.skippedReasons?.get(BatchOutcomeReasonCodes.CANCELLED)?.count)
+        assertNull(result.outcome?.skippedReasons?.get(BatchOutcomeReasonCodes.CANCELLED))
         Mockito.verify(batchEmailVerificationService, Mockito.times(1))
             .verify(anyValue(verificationContext), anyValue(verificationTarget()), anyAllowedStates())
         Mockito.verifyNoInteractions(mailDeliveryService)
@@ -7155,7 +7166,7 @@ class ManualInitialOutreachServiceTest {
 
         assertEquals(0, result.sent)
         assertEquals(0, result.skipped)
-        assertEquals(2, result.remaining)
+        assertEquals(0, result.remaining)
         assertEquals("FAILED", result.finalStatus)
         assertEquals("EMAIL_VERIFY_AUDIT_FAILED", result.stopReason)
         Mockito.verify(batchEmailVerificationService, Mockito.times(1))
@@ -7195,7 +7206,7 @@ class ManualInitialOutreachServiceTest {
         val result = service.run(introSnapshotWithVerification(roundSize = 2), 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
 
         assertEquals(0, result.sent)
-        assertEquals(2, result.remaining)
+        assertEquals(0, result.remaining)
         assertEquals("FAILED", result.finalStatus)
         assertEquals("EMAIL_VERIFY_FUTURE_CODE", result.stopReason)
         Mockito.verify(batchEmailVerificationService, Mockito.times(1))
@@ -7270,7 +7281,7 @@ class ManualInitialOutreachServiceTest {
         )
 
         assertEquals(0, result.sent)
-        assertEquals(2, result.remaining)
+        assertEquals(0, result.remaining)
         assertEquals("EMAIL_VERIFY_SEND_STATE_CONFLICT", result.stopReason)
         assertEquals("FAILED", result.finalStatus)
         Mockito.verify(mailDeliveryService, Mockito.never()).send(anyValue(account), anyValue(ComposedMail("", "", "")))
@@ -7327,7 +7338,7 @@ class ManualInitialOutreachServiceTest {
 
         assertEquals(2, result.sent)
         assertEquals(3, result.skipped)
-        assertEquals(1, result.remaining)
+        assertEquals(0, result.remaining)
         // 跳过 3 个仍补足 2 封成功；达到成功上限后不验证第 6 个目标。
         Mockito.verify(batchEmailVerificationService, Mockito.times(5))
             .verify(anyValue(verificationContext), anyValue(verificationTarget()), anyAllowedStates())
@@ -7349,7 +7360,7 @@ class ManualInitialOutreachServiceTest {
 
         assertEquals(20, result.sent)
         assertEquals(12, result.skipped)
-        assertEquals(1, result.remaining)
+        assertEquals(0, result.remaining)
         assertEquals("ONE_ROUND_DONE", result.stopReason)
         Mockito.verify(batchEmailVerificationService, Mockito.times(32))
             .verify(anyValue(verificationContext), anyValue(verificationTarget()), anyAllowedStates())
@@ -7357,17 +7368,16 @@ class ManualInitialOutreachServiceTest {
     }
 
     @Test
-    fun `scheduled round fills twenty sends when skipped experts remain in shrinking ES pages`() {
+    fun `scheduled round fills twenty sends from a stable PIT while successful experts change state`() {
         val acc = account("chen")
         val experts = (1..100).map { expert("Q$it", "q$it@test.com") }
         val sentEmails = mutableSetOf<String>()
         stubIntroSendPipeline(acc, experts)
-        // Real ES applies from/size BEFORE the service's in-memory deduplication.
+        // PIT membership stays fixed even after successful delivery changes live operator status.
         Mockito.`when`(expertSearchService.searchExpertsFiltered(
             eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList()), anyInt(), anyInt()
         )).thenAnswer { call ->
-            experts.filterNot { it.email in sentEmails }
-                .drop(call.getArgument<Int>(2)).take(call.getArgument<Int>(3))
+            experts.drop(call.getArgument<Int>(2)).take(call.getArgument<Int>(3))
         }
         Mockito.`when`(expertSearchService.countExperts(
             eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList())
@@ -7386,7 +7396,7 @@ class ManualInitialOutreachServiceTest {
 
         assertEquals(20, result.sent)
         assertEquals(38, result.skipped)
-        assertEquals(42, result.remaining)
+        assertEquals(0, result.remaining)
         assertEquals("ROUNDS_PER_RUN_REACHED", result.stopReason)
         Mockito.verify(batchEmailVerificationService, Mockito.times(58))
             .verify(anyValue(verificationContext), anyValue(verificationTarget()), anyAllowedStates())
@@ -7447,7 +7457,7 @@ class ManualInitialOutreachServiceTest {
         assertEquals(4, result.sent)
         assertEquals(2, result.skipped)
         assertEquals(1, result.outcome!!.failure)
-        assertEquals(1, result.remaining)
+        assertEquals(0, result.remaining)
         assertEquals("ROUNDS_PER_RUN_REACHED", result.stopReason)
         Mockito.verify(mailDeliveryService, Mockito.times(5)).send(anyValue(acc), anyValue(ComposedMail("", "", "")))
     }
@@ -7468,10 +7478,10 @@ class ManualInitialOutreachServiceTest {
 
         assertTrue(result.wasCancelled)
         assertEquals("CANCELLED", result.finalStatus)
-        assertEquals(3, result.skipped)
+        assertEquals(1, result.skipped)
         assertEquals(0, result.remaining)
         assertEquals(1, result.outcome!!.skippedReasons[BatchOutcomeReasonCodes.SUPPRESSED]?.count)
-        assertEquals(2, result.outcome!!.skippedReasons[BatchOutcomeReasonCodes.CANCELLED]?.count)
+        assertNull(result.outcome!!.skippedReasons[BatchOutcomeReasonCodes.CANCELLED])
         Mockito.verify(emailSuppressionService, Mockito.times(1)).isSuppressed(Mockito.anyString())
         Mockito.verifyNoInteractions(mailDeliveryService)
     }
@@ -7722,7 +7732,7 @@ class ManualInitialOutreachServiceTest {
         )
     }
 
-    /** 预估路径的空 ES 面：settle 为 0 时执行路径立即结束，便于断言重试/预估口径。 */
+    /** Empty legacy retry fixture shared by explicit previews and the demand-source adapter. */
     private fun stubEmptyRetryCandidates() {
         Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(
             Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
@@ -7756,8 +7766,115 @@ class ManualInitialOutreachServiceTest {
         )
 
     /**
-     * I-3: 预估（`countEsTargets`）走 ES scroll + 最终谓词，取页走 `searchExpertsFiltered`；
-     * 这一个 helper 同时铺满两条路径，使既有用例的人数口径逐字不变。
+     * Adapt the legacy page fixtures to real PIT cursors. Each cursor owns its raw offset;
+     * changing the requested size never resets enumeration. Current-document reads remain
+     * a separate mock seam so individual tests can replace them with changed facts.
+     */
+    private fun stubDemandCandidateReads() {
+        currentCandidateProfiles.clear()
+        val current = currentCandidateProfiles
+        Mockito.`when`(expertSearchService.findByDocumentIdsStrict(anyIndexLevel(), Mockito.anyList()))
+            .thenAnswer { invocation ->
+                val level = invocation.getArgument<ExpertIndexLevel>(0)
+                invocation.getArgument<List<String>>(1).mapNotNull { current[level to it] }
+            }
+        Mockito.`when`(expertContactRepository.findNewRetryUpperId(anyLong())).thenAnswer { invocation ->
+            expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(
+                invocation.getArgument(0), "NEW"
+            ).mapNotNull { it.id }.maxOrNull()
+        }
+        Mockito.`when`(expertContactRepository.findNewRetryPage(
+            anyLong(), anyLong(), Mockito.any(), Mockito.any(), anyInt()
+        )).thenAnswer { invocation ->
+            val campaignId = invocation.getArgument<Long>(0)
+            val upperId = invocation.getArgument<Long>(1)
+            val afterId = invocation.getArgument<Long?>(3)
+            // The legacy mock already represents repository order; continue after its last id.
+            val contacts = expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(campaignId, "NEW")
+                .filter { it.id!! <= upperId }
+            contacts.drop(if (afterId == null) 0 else contacts.indexOfFirst { it.id == afterId } + 1)
+                .take(invocation.getArgument(4))
+        }
+        Mockito.`when`(expertContactRepository.findById(anyLong())).thenAnswer { invocation ->
+            val id = invocation.getArgument<Long>(0)
+            val profiles = current.values.map { it.orcidId }.distinct()
+            val contacts = expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW") +
+                expertContactRepository.findByOrcidIdIn(profiles) +
+                profiles.mapNotNull { expertContactRepository.findFirstByOrcidIdOrderByUpdatedAtDesc(it) }
+            Optional.ofNullable(contacts.firstOrNull { it.id == id })
+        }
+        Mockito.`when`(expertSearchService.openCandidateCursor(
+            anyIndexLevel(), anyValue(emptyList()), anyInt()
+        )).thenAnswer { invocation ->
+            val level = invocation.getArgument<ExpertIndexLevel>(0)
+            val filters = invocation.getArgument<List<Map<String, Any>>>(1)
+            val mapper = ObjectMapper().registerKotlinModule()
+            val terms = mapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(filters)
+                .findValues("orcidId").firstOrNull { it.isArray }?.map { it.asText() }
+            var offset = 0
+            var pageProfiles = emptyList<ExpertProfile>()
+            var pageStart = 0
+            var previousRawPage: List<ExpertProfile>? = null
+            ExpertSearchCursor(
+                levels = listOf(level), pageSize = invocation.getArgument(2),
+                indexName = { it.name },
+                searchBody = { mapOf("sort" to listOf("_shard_doc")) },
+                request = { path, method, body ->
+                    when {
+                        method == HttpMethod.DELETE -> mapper.createObjectNode()
+                        path.contains("/_pit?") -> mapper.createObjectNode().put("id", "fixture-${level.name}")
+                        else -> {
+                            val size = body!!.getValue("size") as Int
+                            val raw = if (terms != null) {
+                                val direct = expertSearchService.searchByOrcidIds(terms, level)
+                                if (direct.isNotEmpty()) direct else {
+                                    // Old retry fixtures may stub the entire NEW batch; demand
+                                    // filtering can narrow that batch before its profile query.
+                                    val legacyIds = Mockito.mockingDetails(expertSearchService).stubbings
+                                        .map { it.invocation }
+                                        .firstOrNull { call ->
+                                            call.method.name == "searchByOrcidIds" &&
+                                                call.arguments.getOrNull(1) == level &&
+                                                (call.arguments.getOrNull(0) as? List<*>)?.containsAll(terms) == true
+                                        }?.arguments?.get(0) as? List<*>
+                                    if (legacyIds == null) emptyList() else {
+                                        val ids = legacyIds.filterIsInstance<String>()
+                                        expertSearchService.searchByOrcidIds(ids, level)
+                                            .filter { profile -> terms.any { it.trim().equals(profile.orcidId.trim(), true) } }
+                                    }
+                                }
+                            } else {
+                                expertSearchService.searchExpertsFiltered(level, filters, offset, size)
+                            }
+                            // Fixed thenReturn lists model a source, while thenAnswer fixtures
+                            // already return a page. Both obey the real cursor's requested bound.
+                            val profiles = if (terms != null || raw.size > size || raw == previousRawPage) {
+                                raw.drop(offset).take(size)
+                            } else raw
+                            previousRawPage = raw
+                            pageProfiles = profiles
+                            pageStart = offset
+                            profiles.forEach { current.putIfAbsent(level to (it.esDocId ?: it.orcidId), it) }
+                            mapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(mapOf(
+                                "_shards" to mapOf("total" to 1, "successful" to 1, "failed" to 0),
+                                "hits" to mapOf("hits" to profiles.mapIndexed { index, profile ->
+                                    mapOf("_id" to (profile.esDocId ?: profile.orcidId),
+                                        "_source" to emptyMap<String, Any>(), "sort" to listOf(offset + index))
+                                })
+                            )).also { offset += profiles.size }
+                        }
+                    }
+                },
+                profile = { pageProfiles[it.path("sort").first().asInt() - pageStart] },
+                scheduler = Mockito.mock(java.util.concurrent.ScheduledExecutorService::class.java),
+                onClosed = {}
+            )
+        }
+    }
+
+    /**
+     * Explicit previews retain scroll + final predicates. Demand cursors adapt the same
+     * raw page fixture through their request callback, without running a preview first.
      */
     private fun stubPagedExperts(experts: List<ExpertProfile>) {
         Mockito.`when`(expertSearchService.searchExpertsFiltered(
