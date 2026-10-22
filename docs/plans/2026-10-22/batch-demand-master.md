@@ -77,7 +77,7 @@
 | 01 | [分类时间读写修复](batch-demand-01-classification.md) | 6 | 先修真实bug；旧数组无需全库回刷 |
 | 02 | [有界候选读取基础](batch-demand-02-cursors.md) | 7 | 新PIT+NEW keyset接口，暂不切发送 |
 | 03 | [进度协议兼容](batch-demand-03-progress.md) | 9 | 先部署可选新reader/UI；不启用新producer |
-| 04 | [按需发送](batch-demand-04-execution.md) | 7 | 两发送循环切换，启用新producer |
+| 04 | [按需发送](batch-demand-04-execution.md) | 9 | 两发送循环切换，启用新producer；含逐次页大小游标扩展与回归 |
 | 05 | [统计缓存后端](batch-demand-05-cache.md) | 8 | 新统计端点与指纹，旧preview仍可用 |
 | 06 | [缓存页面](batch-demand-06-ui.md) | 6 | UI切新端点；显示缓存时间、单条件刷新 |
 
@@ -149,4 +149,8 @@
 - 操作步骤: 1. 比较旧/新日志；2. 运行中取消；3. 展开缓存诊断原因；4. 对照03/06样式实值。
 - 预期结果: 旧目标1757/剩余1710不变；新卡片不出现虚假全库剩余；取消后不新投递/不虚增skip；原因样本与partial保留；卡片/按钮/间距符合S契约。
 - 覆盖: I-3/4、X3/X5、全部must-NOT-change与UI回归。
+
+## 修正记录
+
+- 2026-10-22，人工选择“扩大两文件授权，保持按需公式”：04加入已有的 `ExpertSearchCursor.kt` / `ExpertSearchCursorTest.kt`，范围9文件、2子系统；同一PIT支持逐次页大小，保留无参合同，原按需公式不变。满足I-2及I-4；去重总清单不增加新路径。原自审回执为修订前历史快照。精确批准与Before/After提交身份见 `docs/plans/fast/batch-demand-master/ledger.md` Amendments。
 

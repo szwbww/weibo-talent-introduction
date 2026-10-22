@@ -1,6 +1,6 @@
 # 04 首封与材料提醒按成功配额拉取
 
-状态：待批准。依赖：03（也依赖02游标）。范围：7文件；批量选人/执行一个子系统。部署本步后真实执行切换按需读取，不依赖05缓存。
+状态：已获 fast-p 调用及本次范围修订批准。依赖：03（也依赖02游标）。范围：9文件；批量选人/执行与ES游标两个子系统。部署本步后真实执行切换按需读取，不依赖05缓存。
 
 ## 需求描述
 
@@ -65,6 +65,7 @@
 ## 实现方案
 
 1. 清单1/3接入02接口。新增NEW有界source与ES cursor source；NEW批次按orcid匹配当前profile，沿既有身份/人物选择决策，不用全量ES查找。NEW关联查询使用02游标加terms(本批至多500个orcid)并遍历该小集合，不能调用searchByOrcidIds:644这个size=输入数且缺body返回空的非严格入口；多个文档不能因size截断挤掉其它orcid。沿联系人顺序消费、跨源共享去重；保留同一人物后续合格成员机会，重试地址不变。profile缓冲限定当前页/当前NEW批次，只保留选择结果；仅已见ID集合随扫描增长，不能声称总内存绝对O(1)（I-2/3）。
+   为满足逐次取页公式，清单8/9为同一推进中的 ExpertSearchCursor 增加每次读取指定 pageSize 的操作，保留无参 nextPage() 的原默认页大小合同；指定值严格限定1..500，页大小变化不得重开PIT、丢失search_after、改变续期/锁/关闭语义。两发送循环按剩余本轮成功额度重新计算每次读取值；不放宽I-2公式。
 2. 清单1首封删掉执行初始化全量计数、全量preflight；把scope/admission/template/verifiedUnavailability等纯判断作用于当前页，并在发信前复核；保持真正验证和绑定顺序。页内因确定性过滤被丢弃记scanned、不凭空变成投递skip；已进入处理再被实时护栏拦截才recordSkipped（I-1/2/3/4）。
 3. 清单1材料将buildMaterialReminderSnapshot拆为可遍历候选source：按页关联已有contact、binding、suppression、hasSentMaterialReminder，真实收件地址仍contact.expertEmail。执行早停；显式预估只迭代累计，不存allExperts/targets全量、不保留10000截断、不执行投递写入（I-3/5）。
 4. 清单1两循环统一额度与停止顺序：取消/轮上限→round gate→容量→取候选→发信；失败/跳过补人，轮间等待只在尚有轮预算时执行。不能为了知道“还有没有人”在最后一轮后调用hasNext。sourceExhausted未探明时保持false而不是额外扫尽（I-1/2/5）。
@@ -82,15 +83,18 @@
 | 5 | `src/test/kotlin/com/weibo/talentintroduction/campaign/service/OutreachTargetIteratorTest.kt` |
 | 6 | `src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskRuntimeIntegrationTest.kt` |
 | 7 | `src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchDemandExecutionTest.kt` |
+| 8 | `src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchCursor.kt` |
+| 9 | `src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchCursorTest.kt` |
 
 ## 验收标准
 
 - I-1：每种sendType分别断言正常30封过程中countBySnapshot/countEsTargets/scanBaseCandidates/fullNEW从执行入口调用次数=0；与统计cache类依赖=0；成功30后source.nextPage、hasNext、sleep无额外调用。5失败+5跳过时继续补到成功30，不按processed30停。
 - I-2：首批全被过滤，后批有合格30仍能发30；跨11001条、NEW501条、同sort/同邮箱、跨层重复覆盖；NEW关联同orcid多文档不挤掉其它orcid；内存不包含全量profile列表；批size<=500。
+- 游标逐次页大小回归：同一PIT连续请求60→20等不同size，完整sort推进且无重开/遗漏；无参调用保持原页大小；0/501等非法值拒绝。保留02续期、关闭和真实ES深分页验收。
 - I-3：候选读取后改退订/状态/绑定/地址，投递spy=0；身份变化reason明确；mget失败不变空集合；材料保留contact地址；门禁关闭不能绕过准入/退订/幂等。模板启动重验不变。
 - I-4：计划30/成功30/failed5/skipped5→target40/remaining0、execution.remainingSuccessQuota0；候选读异常0成功→FAILED，10成功→PARTIAL_SUCCESS；取消不新增虚拟skip。running/final同协议，所有路径均有元数据；旧accumulator测试期望不改。
 - I-5：首封/材料均覆盖oneRoundOnly、roundsPerRun=2、容量0/小于roundSize、候选耗尽、取消、所有邮箱不可达；显式材料统计11001人不在10000截断且mail/contact/attempt/SMTP写入spy均0；finally close恰好一次，后台续期结束。
-- Java11：mvn test -Dtest=ManualInitialOutreachServiceTest,OutreachTargetIteratorTest,BatchSendTaskRuntimeIntegrationTest,BatchDemandExecutionTest,BatchSendExecutionDetailTest；再全量mvn test（环境依赖失败逐项记录，不伪报通过）。
+- Java11：mvn test -Dtest=ManualInitialOutreachServiceTest,OutreachTargetIteratorTest,BatchSendTaskRuntimeIntegrationTest,BatchDemandExecutionTest,BatchSendExecutionDetailTest,ExpertSearchCursorTest；mvn test -Dtest=ExpertSearchCursorTest -DesIt=true；再全量mvn test（环境依赖失败逐项记录，不伪报通过）。
 - 性能断言用查询调用/读取条数，不承诺未经压测的毫秒数。极端无合格人仍可能扫全库，属正确行为而非缓存失效。SenderAccountAssignmentService等既有账号绑定库存聚合是安全配额读取，不属于本次待发专家全量枚举，不删改。
 
 ## 人工验收清单
@@ -118,4 +122,8 @@
 - 操作步骤: 1. 调用显式预估接口；2. 查看统计和DB审计计数；3. 再执行只发30的任务。
 - 预期结果: 全量目标11001（不是10000），统计阶段SMTP/新增mail_record/attempt/联系人绑定均0；执行阶段只发30；缓存并非前置条件。
 - 覆盖: I-5、X4、只读统计。
+
+## 修正记录
+
+- 2026-10-22，人工选择“扩大两文件授权，保持按需公式”：为满足原I-2，增加清单8/9及逐次页大小接口/回归，不改变成功额度或其他安全边界。范围由7文件/1子系统改为9文件/2子系统，符合主计划I-4；批准与提交身份见 `docs/plans/fast/batch-demand-master/ledger.md` Amendments。
 
