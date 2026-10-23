@@ -93,15 +93,17 @@ class DiscoveryPaperArchiveService(
             node.fields().forEachRemaining { (key, value) ->
                 val sensitive = key.replace("_", "").replace("-", "").lowercase() in SENSITIVE_FIELDS
                 if (!(metadata && key.equals("fullText", true)) && !sensitive) {
-                    val v = if (value.isTextual && value.asText().startsWith("/")) mapper.nullNode()
-                        else if (value.isTextual && value.asText().matches(Regex("(?is)^https?://.*"))) safeUrl(value.asText())?.let { mapper.nodeFactory.textNode(it) } ?: mapper.nullNode()
-                        else clean(value, metadata)
-                    result.set<JsonNode>(key, v)
+                    result.set<JsonNode>(key, clean(value, metadata))
                 }
             }
             return result
         }
         if (node.isArray) return mapper.createArrayNode().also { array -> node.forEach { array.add(clean(it, metadata)) } }
+        if (node.isTextual) {
+            val value = node.asText()
+            if (value.startsWith("/")) return mapper.nullNode()
+            if (value.matches(Regex("(?is)^https?://.*"))) return safeUrl(value)?.let { mapper.nodeFactory.textNode(it) } ?: mapper.nullNode()
+        }
         return node.deepCopy<JsonNode>()
     }
     private fun json(node: JsonNode, max: Int, metadata: Boolean = false): String {

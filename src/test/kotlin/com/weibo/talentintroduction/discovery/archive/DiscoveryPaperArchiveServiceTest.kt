@@ -225,6 +225,21 @@ class DiscoveryPaperArchiveServiceTest {
         val invalid=DiscoveryPaperArchiveService(f.repository,DiscoveryPaperArchiveProperties(link.toString()),f.sampleProps,f.mapper)
         code("UNSAFE_PATH") { invalid.settings() }
     }
+    @Test fun `all JSON text positions sanitize paths and URL secrets while retaining other scalars`() {
+        val input=f.mapper.readTree("""{"schemaVersion":1,"links":["https://user:password@fixture.invalid/p?api_key=secret#fragment","/private/source.pdf",["https://user:password@fixture.invalid/nested?token=secret",["/private/nested.pdf",{"values":["https://user:password@fixture.invalid/deep?token=secret","/private/deep.pdf","ordinary",42,true,null]}]]],"plain":"ordinary","number":42,"flag":true,"empty":null}""")
+        val expected=f.mapper.readTree("""{"schemaVersion":1,"links":["https://fixture.invalid/p",null,["https://fixture.invalid/nested",[null,{"values":["https://fixture.invalid/deep",null,"ordinary",42,true,null]}]]],"plain":"ordinary","number":42,"flag":true,"empty":null}""")
+        val record=f.service.beginRecord(1,"OPENALEX","recursive-sanitization",input)
+        val extracted=f.service.finishExtraction(record.id,input)
+        f.service.saveAnalysis(record.id,extracted.revision,input)
+        val persisted=f.repository.record(record.id)!!
+        assertEquals(expected,f.mapper.readTree(persisted.metadataJson))
+        assertEquals(expected,f.mapper.readTree(persisted.outcomeJson))
+        assertEquals(expected,f.mapper.readTree(persisted.analysisJson))
+        val detail=f.service.detail(record.id)
+        assertEquals(expected,detail.paper)
+        assertEquals(expected,detail.outcome)
+        assertEquals(expected,detail.analysis)
+    }
     @Test fun `metadata limits remove full text secrets and URL parameters without truncation`() {
         val metadata=f.mapper.createObjectNode().put("schemaVersion",1).put("title","safe").put("fullText","x".repeat(600000))
             .put("sourceUrl","https://user:password@fixture.invalid/p?token=secret#hash").put("apiKey","secret").put("localPath","/private/file")
