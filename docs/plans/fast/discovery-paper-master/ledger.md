@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-10-23/discovery-paper-master.md
 
-- Status: PAUSED_FOR_HUMAN
-- Master plan: docs/plans/2026-10-23/discovery-paper-master.md (commit 8d2313da868251b68dcaee02b744dfa777b41674)
-- Amendments: A1,A2,A3,A4
+- Status: RUNNING
+- Master plan: docs/plans/2026-10-23/discovery-paper-master.md (commit bcf5d64fb9534759eb1cad08db3089d36e4a1fb0)
+- Amendments: A1,A2,A3,A4,A5,A6
 - Master base: c6e9709f349f32c5feb1d067b47c697b0dff05b6
 - Branch: fast/discovery-paper-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master
@@ -13,8 +13,8 @@
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: Child04 required RepositoryIT hasGain expectation accepts incomplete baseline, contradicting T-3; test outside nine-file scope needs tenth-file authorization. No product edits.
-- Resume from: 5b7bc8919202876e7d1b6884cd9c9cd50d1f23af
+- Pause reason: N/A
+- Resume from: N/A
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
@@ -22,7 +22,7 @@
 | 01 | docs/plans/2026-10-23/discovery-paper-01-storage.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | none | 1 | LIGHT_PASS | c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 90dec47f8604886df890c20e9e31dd394c20173d | 1 | 74c00bdab46796084c5d4a1a7a3c572b7bee6915 | 74c00bdab46796084c5d4a1a7a3c572b7bee6915 | 1ba166e3da369f73fe1519834dea8a04123239df | PaperStorageReverifier1 LIGHT_PASS; F-1 resolved; human acceptance pending |
 | 02 | docs/plans/2026-10-23/discovery-paper-02-capture.md | commit:87c5268976807c19c165fe50c91ba3372ed0075d | 01 | 2 | LIGHT_PASS_WITH_NOTES | 74c00bdab46796084c5d4a1a7a3c572b7bee6915 | 030d96b227111587ba591446e9aeb64b1b0e85d7 | 1 | c37341aacfc0937e829132ad73d8af7fa24b4b97 | c37341aacfc0937e829132ad73d8af7fa24b4b97 | a7a72c05206345e2e24b15115cd753273d1f1c01 | PaperCaptureReverifierE2R1; F-1 closed; O-1 RECORD_ONLY; artifact correction1 |
 | 03 | docs/plans/2026-10-23/discovery-paper-03-parser.md | commit:8d2313da868251b68dcaee02b744dfa777b41674 | 02 | 2 | LIGHT_PASS_WITH_NOTES | c37341aacfc0937e829132ad73d8af7fa24b4b97 | 5b7bc8919202876e7d1b6884cd9c9cd50d1f23af | 0 | — | 5b7bc8919202876e7d1b6884cd9c9cd50d1f23af | 7a7237aba8a5e2d4f66f0b6bfb6d17f74e232b54 | PaperParserVerifierE2; O-1 missing originals/page34; real effects incomplete |
-| 04 | docs/plans/2026-10-23/discovery-paper-04-analysis.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 01,02,03 | 1 | PAUSED_FOR_HUMAN | 5b7bc8919202876e7d1b6884cd9c9cd50d1f23af | — | 0 | — | 5b7bc8919202876e7d1b6884cd9c9cd50d1f23af | d12dbb89f6080f6dec2421e50b9ca539bc08b32e | PLAN_CONFLICT C-1 RepositoryIT; no product edits/checks |
+| 04 | docs/plans/2026-10-23/discovery-paper-04-analysis.md | commit:bcf5d64fb9534759eb1cad08db3089d36e4a1fb0 | 01,02,03 | 2 | IMPLEMENTING | 5b7bc8919202876e7d1b6884cd9c9cd50d1f23af | — | 0 | — | — | — | A5/A6 approved; fresh implementer pending acquisition; prior epoch preserved |
 | 05 | docs/plans/2026-10-23/discovery-paper-05-frontend.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 01,02,03,04 | 1 | PENDING | — | — | 0 | — | — | — |  |
 | 06a | docs/plans/2026-10-23/discovery-paper-06a-apollo-persistence.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | none | 1 | PENDING | — | — | 0 | — | — | — |  |
 | 06b | docs/plans/2026-10-23/discovery-paper-06b-apollo-runtime.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 06a | 1 | PENDING | — | — | 0 | — | — | — |  |
@@ -35,6 +35,8 @@
 | A2 | docs/plans/2026-10-23/discovery-paper-master.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | commit:87c5268976807c19c165fe50c91ba3372ed0075d | I-3; 顺序、隔离与出口; 执行前检查第5项 | Synchronize child02 limit 8→10 and ArchiveService/Repository order 01→02→04 with approved A1 | HUMAN:批准 继续 — 2026-10-23, approving the preceding PAUSED_FOR_HUMAN bounded amendment |
 | A3 | docs/plans/2026-10-23/discovery-paper-03-parser.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | commit:8d2313da868251b68dcaee02b744dfa777b41674 | I-3; 执行前检查第5项 | Add CaptureTest as seventh authorized file to update fresh pdfLayout expectation while retaining first immutability | HUMAN:批准 继续 — 2026-10-24, approving the preceding child03 PAUSED_FOR_HUMAN bounded amendment |
 | A4 | docs/plans/2026-10-23/discovery-paper-master.md | commit:87c5268976807c19c165fe50c91ba3372ed0075d | commit:8d2313da868251b68dcaee02b744dfa777b41674 | I-3; 顺序、隔离与出口; 执行前检查第5项 | Synchronize child03 file cap6→7 with approved A3 without changing real-effect evidence boundary | HUMAN:批准 继续 — 2026-10-24, approving the preceding child03 PAUSED_FOR_HUMAN bounded amendment |
+| A5 | docs/plans/2026-10-23/discovery-paper-04-analysis.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | commit:bcf5d64fb9534759eb1cad08db3089d36e4a1fb0 | I-3; 执行前检查第5项 | Authorize RepositoryIT as tenth file for incomplete-baseline hasGain exclusion while preserving rollback/first/CAS | HUMAN:批准 继续 — approving preceding child04 PAUSED_FOR_HUMAN bounded amendment |
+| A6 | docs/plans/2026-10-23/discovery-paper-master.md | commit:8d2313da868251b68dcaee02b744dfa777b41674 | commit:bcf5d64fb9534759eb1cad08db3089d36e4a1fb0 | I-3; 顺序、隔离与出口; 执行前检查第5项 | Synchronize child04 cap9→10 with approved A5 without weakening complete-baseline semantics | HUMAN:批准 继续 — approving preceding child04 PAUSED_FOR_HUMAN bounded amendment |
 
 ## Baseline
 - Original worktree remains untouched. Its unrelated dirty application.yml attachment-transfer settings, CLAUDE/knowledge/release changes, other Apollo plans and untracked artifacts are not included in this implementation. Product baseline is the master-named c6e9709 commit.
@@ -76,3 +78,4 @@
 - 2026-10-24: child04 preflight PLAN_CONFLICT C-1: mandatory DiscoveryPaperArchiveRepositoryIT.kt:106–108 stores a legacy analysis without complete baseline/deltaAddedBindings then expects hasGain=true. Exact T-3 requires complete baseline and positive delta, so authorizing that test as tenth file is necessary; no query bypass or test exclusion.
 - 2026-10-24: bounded inspection of already-required predecessor constructor/analysis consumers found no further proven unavoidable file-scope conflict; exact source receipts in child04 execution.md. Product unchanged, no tests/smoke/private23 audit or implementation commit. Whole run paused before05; child03 stays completed with corpus note.
 - Resume requires explicit human tenth-file amendment, separate plan-only commit and canonical row before new child04 epoch. Existing rollback/first/CAS assertions must remain; no new product behavior is proposed.
+- User approved child04 bounded tenth-file amendment with “批准 继续”. Separate plan-only commitbcf5d64fb9534759eb1cad08db3089d36e4a1fb0 recorded as A5/A6; epoch2 fix_round0 resumes unchanged product base5b7bc8919202876e7d1b6884cd9c9cd50d1f23af. Prior pause evidence6eff917 retained; no completed child replay.
