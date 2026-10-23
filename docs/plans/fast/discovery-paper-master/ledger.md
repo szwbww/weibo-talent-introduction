@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-10-23/discovery-paper-master.md
 
-- Status: PAUSED_FOR_HUMAN
-- Master plan: docs/plans/2026-10-23/discovery-paper-master.md (commit c18dbc060dcf4c8440f853ede4d1d3aaf737994f)
-- Amendments: N/A
+- Status: RUNNING
+- Master plan: docs/plans/2026-10-23/discovery-paper-master.md (commit 87c5268976807c19c165fe50c91ba3372ed0075d)
+- Amendments: A1,A2
 - Master base: c6e9709f349f32c5feb1d067b47c697b0dff05b6
 - Branch: fast/discovery-paper-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master
@@ -13,14 +13,14 @@
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: Child 02 C-1/C-2: scope-frozen enablement and mutable latest require changes to archive Service/Repository outside its eight-file authorization; no child02 product edits.
+- Pause reason: N/A
 - Resume from: 74c00bdab46796084c5d4a1a7a3c572b7bee6915
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | 01 | docs/plans/2026-10-23/discovery-paper-01-storage.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | none | 1 | LIGHT_PASS | c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 90dec47f8604886df890c20e9e31dd394c20173d | 1 | 74c00bdab46796084c5d4a1a7a3c572b7bee6915 | 74c00bdab46796084c5d4a1a7a3c572b7bee6915 | 1ba166e3da369f73fe1519834dea8a04123239df | PaperStorageReverifier1 LIGHT_PASS; F-1 resolved; human acceptance pending |
-| 02 | docs/plans/2026-10-23/discovery-paper-02-capture.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 01 | 1 | PAUSED_FOR_HUMAN | 74c00bdab46796084c5d4a1a7a3c572b7bee6915 | — | 0 | — | 74c00bdab46796084c5d4a1a7a3c572b7bee6915 | 0f7e47069e908f59848bfdb262c3783a476d10b6 | PLAN_CONFLICT C-1/C-2; no product edits/checks; human amendment required |
+| 02 | docs/plans/2026-10-23/discovery-paper-02-capture.md | commit:87c5268976807c19c165fe50c91ba3372ed0075d | 01 | 2 | WAITING_FOR_AGENT | 74c00bdab46796084c5d4a1a7a3c572b7bee6915 | — | 0 | — | — | — | Epoch1 PLAN_CONFLICT retained at 0f7e47069e908f59848bfdb262c3783a476d10b6; approved A1/A2 resume |
 | 03 | docs/plans/2026-10-23/discovery-paper-03-parser.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 02 | 1 | PENDING | — | — | 0 | — | — | — |  |
 | 04 | docs/plans/2026-10-23/discovery-paper-04-analysis.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 01,02,03 | 1 | PENDING | — | — | 0 | — | — | — |  |
 | 05 | docs/plans/2026-10-23/discovery-paper-05-frontend.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 01,02,03,04 | 1 | PENDING | — | — | 0 | — | — | — |  |
@@ -31,6 +31,8 @@
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
 |---|---|---|---|---|---|---|
+| A1 | docs/plans/2026-10-23/discovery-paper-02-capture.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | commit:87c5268976807c19c165fe50c91ba3372ed0075d | I-3; 执行前检查第5项 | C-1/C-2 require two existing storage files; authorize 10-file scope and accepted-scope save plus immutable-first/mutable-latest semantics | HUMAN:批准 继续 — 2026-10-23, approving the preceding PAUSED_FOR_HUMAN bounded amendment |
+| A2 | docs/plans/2026-10-23/discovery-paper-master.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | commit:87c5268976807c19c165fe50c91ba3372ed0075d | I-3; 顺序、隔离与出口; 执行前检查第5项 | Synchronize child02 limit 8→10 and ArchiveService/Repository order 01→02→04 with approved A1 | HUMAN:批准 继续 — 2026-10-23, approving the preceding PAUSED_FOR_HUMAN bounded amendment |
 
 ## Baseline
 - Original worktree remains untouched. Its unrelated dirty application.yml attachment-transfer settings, CLAUDE/knowledge/release changes, other Apollo plans and untracked artifacts are not included in this implementation. Product baseline is the master-named c6e9709 commit.
@@ -50,3 +52,5 @@
 - 2026-10-23: child 02 PaperCaptureImplementer returned PLAN_CONFLICT before product changes. C-1: saveBody rereads enabled and rejects a previously enabled scope after disable. C-2: finishExtraction only writes when outcome_json IS NULL, preventing latest updates. Exact static evidence is committed in child02 execution.md; no runtime result is claimed for these conflicts.
 - 2026-10-23: paused whole run before child03. Smallest proposed authorization is to add DiscoveryPaperArchiveService.kt and DiscoveryPaperArchiveRepository.kt to child02 (8→10 files), defining accepted-scope save completion and atomic immutable-first/mutable-latest persistence. This proposal is NOT approved; plans and amendment table remain unchanged.
 - Resume requires explicit human approval, separate amended-plan commit and canonical amendment rows before a new child02 execution epoch; retain child01 evidence and do not replay completed work.
+- 2026-10-23: user approved “批准 继续”. Resume checked retained clean worktree/branch, exact pause HEAD 0b921e315a68309bd81d1a601a39b327bc11dc5c and product-base ancestry. Approved plans were committed separately as 87c5268976807c19c165fe50c91ba3372ed0075d; A1/A2 recorded before implementation resumes.
+- 2026-10-23: child02 resumes in epoch2, fix_round=0; prior epoch1 report and paused handoff remain historical evidence. No completed child is replayed and no additional worktree is created.

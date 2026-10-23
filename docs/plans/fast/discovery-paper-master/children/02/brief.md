@@ -23,3 +23,13 @@ Baseline evidence: original JDK11 sample suites 11 tests passed; child01 termina
 
 ## Execution discipline and outputs
 Use execute-p bound to exact approved bytes/worktree. One product writer, no additional worktree. Skip builds/tests/linters/formatters mid-flight; run checks after final edits. Commit product/tests only as `feat(fast-p): implement 02`. Append execution result only to `docs/plans/fast/discovery-paper-master/children/02/execution.md`; controller owns ledger, briefs and other logs. Do not update knowledge/plan/docs outside that report. Return READY_FOR_VERIFICATION | BLOCKED | PLAN_CONFLICT, commit, commands, report path. Do not inspect or implement later children.
+
+## Epoch 2 — Approved resume contract (supersedes epoch1 identities and eight-file restriction)
+
+- Human instruction: “批准 继续” on 2026-10-23 approves the exact preceding bounded amendment.
+- Exact current child plan and master plan: their existing paths above, both at commit 87c5268976807c19c165fe50c91ba3372ed0075d. Read current full plan bytes and use execute-p identity gates; do not execute the historical seed version.
+- Approved amendments: ledger A1/A2. Authorized scope is now exactly ten files in current child02 table, including DiscoveryPaperArchiveService.kt and DiscoveryPaperArchiveRepository.kt. T-1a defines the service-owned scope permit, live capacity/deployment/safety checks, and transactionally preserved first with updated latest. Existing child01 direct-call semantics and DTOs remain; no other child01/test files may be edited.
+- Product base remains 74c00bdab46796084c5d4a1a7a3c572b7bee6915. Epoch1 made no product edits. Resume fresh in epoch2, fix_round=0; retain all historical logs. Do not replay child01.
+- Add regression cases for both approved seams to already-authorized CaptureTest/FlowIT. Run the original epoch1 required command freshly, plus existing storage regression command: `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=DiscoveryPaperArchiveRepositoryIT,DiscoveryPaperArchiveServiceTest,DiscoveryPaperArchiveControllerTest,DiscoverySampleStoreTest -DmigrationIt=true`. A single combined invocation covering all named suites is equivalent and avoids duplicate Maven-bound checks.
+- Separate smoke must demonstrate the changed capture scope and frozen-first/latest behavior with actual files/SQL and fake HTTP. No deployment, paid API or production database; preserve original capture/source/retry/cache/admission rules.
+- Append the new execution report headed Epoch 2 to execution.md; do not replace the epoch1 PLAN_CONFLICT. Commit product/tests as `feat(fast-p): implement 02`; exclude evidence.
