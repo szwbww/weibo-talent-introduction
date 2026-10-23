@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-23/discovery-paper-master.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-10-23/discovery-paper-master.md (commit bcf5d64fb9534759eb1cad08db3089d36e4a1fb0)
 - Amendments: A1,A2,A3,A4,A5,A6
 - Master base: c6e9709f349f32c5feb1d067b47c697b0dff05b6
@@ -9,12 +9,12 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-23T14:24:57.472352+00:00
-- Current child: 04
-- Waiting role: N/A
+- Current child: 05
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: N/A
+- Pause reason: Child05 required discoveryVerification.test.js still expects16 assets while T-3 requires17; authorize seventh test file for count/description sync, no invariant weakening.
+- Resume from: f4b192dd671d1892a76cd98dd0a102015a69c49a
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
@@ -23,7 +23,7 @@
 | 02 | docs/plans/2026-10-23/discovery-paper-02-capture.md | commit:87c5268976807c19c165fe50c91ba3372ed0075d | 01 | 2 | LIGHT_PASS_WITH_NOTES | 74c00bdab46796084c5d4a1a7a3c572b7bee6915 | 030d96b227111587ba591446e9aeb64b1b0e85d7 | 1 | c37341aacfc0937e829132ad73d8af7fa24b4b97 | c37341aacfc0937e829132ad73d8af7fa24b4b97 | a7a72c05206345e2e24b15115cd753273d1f1c01 | PaperCaptureReverifierE2R1; F-1 closed; O-1 RECORD_ONLY; artifact correction1 |
 | 03 | docs/plans/2026-10-23/discovery-paper-03-parser.md | commit:8d2313da868251b68dcaee02b744dfa777b41674 | 02 | 2 | LIGHT_PASS_WITH_NOTES | c37341aacfc0937e829132ad73d8af7fa24b4b97 | 5b7bc8919202876e7d1b6884cd9c9cd50d1f23af | 0 | — | 5b7bc8919202876e7d1b6884cd9c9cd50d1f23af | 7a7237aba8a5e2d4f66f0b6bfb6d17f74e232b54 | PaperParserVerifierE2; O-1 missing originals/page34; real effects incomplete |
 | 04 | docs/plans/2026-10-23/discovery-paper-04-analysis.md | commit:bcf5d64fb9534759eb1cad08db3089d36e4a1fb0 | 01,02,03 | 2 | LIGHT_PASS_WITH_NOTES | 5b7bc8919202876e7d1b6884cd9c9cd50d1f23af | 3cdf7a6aa30ee773a0233e70e8c84d3b00754384 | 1 | bbd2700ca56d00a9e2845b61b15c1fb7e5b07a49 | bbd2700ca56d00a9e2845b61b15c1fb7e5b07a49 | ee524ba4c74480cd8a9dd985fae36ee886ef8160 | PaperAnalysisReverifierE2R1; F-1 closed; O-1 effects incomplete/O-2 historical classpath |
-| 05 | docs/plans/2026-10-23/discovery-paper-05-frontend.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 01,02,03,04 | 1 | PENDING | — | — | 0 | — | — | — |  |
+| 05 | docs/plans/2026-10-23/discovery-paper-05-frontend.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 01,02,03,04 | 1 | PAUSED_FOR_HUMAN | bbd2700ca56d00a9e2845b61b15c1fb7e5b07a49 | f4b192dd671d1892a76cd98dd0a102015a69c49a | 0 | — | f4b192dd671d1892a76cd98dd0a102015a69c49a | a04b4795ebdf537b23377ae68660436a870efa18 | PLAN_CONFLICT C-1 seventh test; required65 tests64pass1fail; browser evidence retained, not READY |
 | 06a | docs/plans/2026-10-23/discovery-paper-06a-apollo-persistence.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | none | 1 | PENDING | — | — | 0 | — | — | — |  |
 | 06b | docs/plans/2026-10-23/discovery-paper-06b-apollo-runtime.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 06a | 1 | PENDING | — | — | 0 | — | — | — |  |
 | 07 | docs/plans/2026-10-23/discovery-paper-07-apollo-frontend.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 05,06a,06b | 1 | PENDING | — | — | 0 | — | — | — |  |
@@ -84,3 +84,6 @@
 - Child04 LIGHT_FAIL attempt1: F-1 proven I-2/T-2 violation, PhD candidate-status award matched completed degree. Fresh119 JVM/1807 Node and separate runtime smoke passed but lacked this edge. PaperAnalysisFixerE2R1 acquired; epoch2 repair round1/3 started only for F-1, no RECORD_ONLY changes. O-1 real-effect limitation and O-2 invocation-only classpath correction retained.
 - Child04 repair round1 committedbbd2700ca56d00a9e2845b61b15c1fb7e5b07a49; writer recorded120 JVM0fail/error/skip and bound frontend plus separate filesSQLcontroller smoke. Fresh distinct REVERIFIER PaperAnalysisReverifierE2R1 acquired, attempt2 agent_attempt0; only F-1 repaired.
 - Child04 epoch2 terminal LIGHT_PASS_WITH_NOTES / COMPLETE_CHILD by PaperAnalysisReverifierE2R1, one repair; evidenceee524ba4c74480cd8a9dd985fae36ee886ef8160. Fresh120 JVM/1807 Node and actual separate smoke passed. Later children remain PENDING until full manifest clean checkpoint.
+- Child04 full manifest dirty/clean checkpoint VALID atd458b594043c1a8c83d5dacea8269c18e415f5e6. Child05 IMPLEMENTER PaperFrontendImplementer acquired, epoch1 fix_round0 agent_attempt0; actual browser surface required; no completed child replay.
+- Child05 PLAN_CONFLICT C-1: required unauthorized discoveryVerification.test.js:90–92 hard-asserts16 assets; explicit T-3 requires17. Six authorized files retained in product commitf4b192dd671d1892a76cd98dd0a102015a69c49a, not passing/READY. Final Node65 tests64pass1fail, both syntaxchecks pass; actual fullpage Chromium1440×1080/643×900 and13 screenshots retained, no independent verifier.
+- Whole workflow paused before06a; proposed seventh-file amendment updates only asset count/description16→17 in discoveryVerification.test.js, preserving equal-key and unversioned-runtime assertions. No implicit authorization from child04 approval. Evidencea04b4795ebdf537b23377ae68660436a870efa18. Resume after explicit separate plan amendment in new child05 epoch, fix_round0; retain current product and prior logs.
