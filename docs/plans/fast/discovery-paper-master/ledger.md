@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-23/discovery-paper-master.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-10-23/discovery-paper-master.md (commit 87c5268976807c19c165fe50c91ba3372ed0075d)
 - Amendments: A1,A2
 - Master base: c6e9709f349f32c5feb1d067b47c697b0dff05b6
@@ -9,19 +9,19 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-23T14:24:57.472352+00:00
-- Current child: 02
-- Waiting role: N/A
+- Current child: 03
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: 74c00bdab46796084c5d4a1a7a3c572b7bee6915
+- Pause reason: Child03 CaptureTest fresh capture expects pdfLayout0 but required implementation emits20261023; seventh test file is outside six-file scope. Other authorized regression failures remain; six uncommitted product files preserved.
+- Resume from: c37341aacfc0937e829132ad73d8af7fa24b4b97
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | 01 | docs/plans/2026-10-23/discovery-paper-01-storage.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | none | 1 | LIGHT_PASS | c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 90dec47f8604886df890c20e9e31dd394c20173d | 1 | 74c00bdab46796084c5d4a1a7a3c572b7bee6915 | 74c00bdab46796084c5d4a1a7a3c572b7bee6915 | 1ba166e3da369f73fe1519834dea8a04123239df | PaperStorageReverifier1 LIGHT_PASS; F-1 resolved; human acceptance pending |
 | 02 | docs/plans/2026-10-23/discovery-paper-02-capture.md | commit:87c5268976807c19c165fe50c91ba3372ed0075d | 01 | 2 | LIGHT_PASS_WITH_NOTES | 74c00bdab46796084c5d4a1a7a3c572b7bee6915 | 030d96b227111587ba591446e9aeb64b1b0e85d7 | 1 | c37341aacfc0937e829132ad73d8af7fa24b4b97 | c37341aacfc0937e829132ad73d8af7fa24b4b97 | a7a72c05206345e2e24b15115cd753273d1f1c01 | PaperCaptureReverifierE2R1; F-1 closed; O-1 RECORD_ONLY; artifact correction1 |
-| 03 | docs/plans/2026-10-23/discovery-paper-03-parser.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 02 | 1 | PENDING | — | — | 0 | — | — | — |  |
+| 03 | docs/plans/2026-10-23/discovery-paper-03-parser.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 02 | 1 | PAUSED_FOR_HUMAN | c37341aacfc0937e829132ad73d8af7fa24b4b97 | — | 0 | — | c37341aacfc0937e829132ad73d8af7fa24b4b97 | 8d58d7c0b1f56d21930ba78c4847a10b1ddc559f | PLAN_CONFLICT C-1 seventh test file; 6 dirty product paths; no implementation commit |
 | 04 | docs/plans/2026-10-23/discovery-paper-04-analysis.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 01,02,03 | 1 | PENDING | — | — | 0 | — | — | — |  |
 | 05 | docs/plans/2026-10-23/discovery-paper-05-frontend.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 01,02,03,04 | 1 | PENDING | — | — | 0 | — | — | — |  |
 | 06a | docs/plans/2026-10-23/discovery-paper-06a-apollo-persistence.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | none | 1 | PENDING | — | — | 0 | — | — | — |  |
@@ -60,3 +60,9 @@
 - 2026-10-24: child02 epoch2 round1 FIXED c37341aacfc0937e829132ad73d8af7fa24b4b97; fresh REVERIFIER PaperCaptureReverifierE2R1 acquired for attempt2, distinct from all writers, agent_attempt=0. Fix execution reports342 JVM/1807 Node plus guarded smoke passing.
 - 2026-10-24: child02 epoch2 terminal LIGHT_PASS_WITH_NOTES, complete action, evidence8dbbaeea65435974b179395daf3fb6b06cfdc598; one actual repair. All later children remain PENDING until full-manifest artifact checkpoint passes. O-1 indexed for final human handoff.
 - 2026-10-24: child02 checkpoint initially INVALID solely on annotated fix SHA binding. Deterministic append-only correction1 committed as a7a72c05206345e2e24b15115cd753273d1f1c01; replacement evidence preserves all verdicts/history and does not consume a product repair round. Later children remain PENDING.
+- 2026-10-24: child02 complete-manifest checkpoint passed VALID/CHILD_CHECKPOINT both before and after b2dc81e4725a1e2127b9465bb9af497e7cf915ec; correction1 resolved annotated SHA without product rerun.
+- 2026-10-24: child03 IMPLEMENTER PaperParserImplementer acquired, agent_attempt=0, epoch1 fix_round=0; product base c37341aacfc0937e829132ad73d8af7fa24b4b97. Private original-corpus availability is prerequisite; master permits explicit incomplete real-effect evidence if originals are absent.
+- 2026-10-24: child03 PLAN_CONFLICT C-1: fresh CaptureTest.kt:126 expects placeholder pdfLayout0, whereas approved new parser must emit20261023; file is not in child03 six-file scope. No unauthorized edit/test exclusion or product commit occurred; whole run paused before04.
+- 2026-10-24: child03 required Maven run failed84 tests/4 failures/1 error/1 skipped, including scope-conflict assertion and authorized parser/resolver regressions. Pure actual-PDF smoke passed and comparator control fixtures behaved as recorded; neither establishes completion.
+- 2026-10-24: exact original corpus availability checked:294 sample metadata/295 body references,216 matching files frozen privately,79 missing files,0 hash mismatches;215 complete samples. Manifest hash376a9d7273a73a48df431f9d13164523ff6d0b3da75c62b10f3497125af75df9. Real-effect replay remains INCOMPLETE/SKIPPED, not79/52 PASS.
+- Resume prerequisite: human approve adding DiscoveryPaperArchiveCaptureTest.kt as seventh authorized child03 file and updating its fresh-capture parserVersion expectation while preserving frozen-first behavior; no such amendment is yet approved. Then commit plan amendment/record row and resume new child03 epoch, preserving six dirty files and resolving authorized regression failures before fresh checks/implementation commit. No completed child replay.
