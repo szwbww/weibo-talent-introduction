@@ -87,9 +87,9 @@ test("S1/S2 real IDs, static head and original controls", () => {
     assert.match(css, /\.apv-logs \.data-table th \{\n    position: static;\n    background: #f8fafc;/);
 });
 
-test("I4 all 16 existing resource keys share the new key and runtime stays unversioned", () => {
+test("I4 all 17 existing resource keys share the new key and runtime stays unversioned", () => {
     const values = [...html.matchAll(/\?v=([^"<>]+)/g)].map(m => m[1]);
-    assert.equal(values.length, 16); assert.equal(new Set(values).size, 1);
+    assert.equal(values.length, 17); assert.equal(new Set(values).size, 1);
     assert.match(html, /<script src="task-modal-runtime\.js"><\/script>/);
 });
 
