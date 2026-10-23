@@ -10,7 +10,7 @@
 - Finalization repair parent: N/A
 - Started: 2026-10-23T14:24:57.472352+00:00
 - Current child: 03
-- Waiting role: IMPLEMENTER
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -21,7 +21,7 @@
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | 01 | docs/plans/2026-10-23/discovery-paper-01-storage.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | none | 1 | LIGHT_PASS | c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 90dec47f8604886df890c20e9e31dd394c20173d | 1 | 74c00bdab46796084c5d4a1a7a3c572b7bee6915 | 74c00bdab46796084c5d4a1a7a3c572b7bee6915 | 1ba166e3da369f73fe1519834dea8a04123239df | PaperStorageReverifier1 LIGHT_PASS; F-1 resolved; human acceptance pending |
 | 02 | docs/plans/2026-10-23/discovery-paper-02-capture.md | commit:87c5268976807c19c165fe50c91ba3372ed0075d | 01 | 2 | LIGHT_PASS_WITH_NOTES | 74c00bdab46796084c5d4a1a7a3c572b7bee6915 | 030d96b227111587ba591446e9aeb64b1b0e85d7 | 1 | c37341aacfc0937e829132ad73d8af7fa24b4b97 | c37341aacfc0937e829132ad73d8af7fa24b4b97 | a7a72c05206345e2e24b15115cd753273d1f1c01 | PaperCaptureReverifierE2R1; F-1 closed; O-1 RECORD_ONLY; artifact correction1 |
-| 03 | docs/plans/2026-10-23/discovery-paper-03-parser.md | commit:8d2313da868251b68dcaee02b744dfa777b41674 | 02 | 2 | WAITING_FOR_AGENT | c37341aacfc0937e829132ad73d8af7fa24b4b97 | — | 0 | — | — | — | Approved A3/A4; preserve six dirty files; prior epoch1 evidence8d58d7c |
+| 03 | docs/plans/2026-10-23/discovery-paper-03-parser.md | commit:8d2313da868251b68dcaee02b744dfa777b41674 | 02 | 2 | LIGHT_PASS_WITH_NOTES | c37341aacfc0937e829132ad73d8af7fa24b4b97 | 5b7bc8919202876e7d1b6884cd9c9cd50d1f23af | 0 | — | 5b7bc8919202876e7d1b6884cd9c9cd50d1f23af | 7a7237aba8a5e2d4f66f0b6bfb6d17f74e232b54 | PaperParserVerifierE2; O-1 missing originals/page34; real effects incomplete |
 | 04 | docs/plans/2026-10-23/discovery-paper-04-analysis.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 01,02,03 | 1 | PENDING | — | — | 0 | — | — | — |  |
 | 05 | docs/plans/2026-10-23/discovery-paper-05-frontend.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 01,02,03,04 | 1 | PENDING | — | — | 0 | — | — | — |  |
 | 06a | docs/plans/2026-10-23/discovery-paper-06a-apollo-persistence.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | none | 1 | PENDING | — | — | 0 | — | — | — |  |
@@ -69,3 +69,6 @@
 - 2026-10-24: exact original corpus availability checked:294 sample metadata/295 body references,216 matching files frozen privately,79 missing files,0 hash mismatches;215 complete samples. Manifest hash376a9d7273a73a48df431f9d13164523ff6d0b3da75c62b10f3497125af75df9. Real-effect replay remains INCOMPLETE/SKIPPED, not79/52 PASS.
 - Resume prerequisite: human approve adding DiscoveryPaperArchiveCaptureTest.kt as seventh authorized child03 file and updating its fresh-capture parserVersion expectation while preserving frozen-first behavior; no such amendment is yet approved. Then commit plan amendment/record row and resume new child03 epoch, preserving six dirty files and resolving authorized regression failures before fresh checks/implementation commit. No completed child replay.
 - 2026-10-24: user approved “批准 继续” for child03 seventh-file amendment. Retained branch/pause HEAD69626008b7a0915ececc9ec5ffcff1a55c890228 and empty index verified; six documented dirty product paths preserved. Plan-only amendment8d2313da868251b68dcaee02b744dfa777b41674 recorded as A3/A4 before new epoch2 dispatch, fix_round=0.
+- 2026-10-24: fresh child03 epoch2 IMPLEMENTER PaperParserImplementerE2 acquired after amendment record cde33aa; agent_attempt=0, fix_round=0; exact retained product boundary unchanged.
+- 2026-10-24: child03 epoch2 READY_FOR_VERIFICATION committed5b7bc8919202876e7d1b6884cd9c9cd50d1f23af; execution84 JVM/0fail/error/1 missing-original skip and1807 Node passed, comparator/pure parser smoke passed. Fresh VERIFIER PaperParserVerifierE2 acquired, agent_attempt=0, no completed child replay.
+- 2026-10-24: child03 epoch2 terminal LIGHT_PASS_WITH_NOTES, zero repair rounds; evidence7a7237aba8a5e2d4f66f0b6bfb6d17f74e232b54. Missing-original/page34 note remains distinct from code verification; later children pending checkpoint.
