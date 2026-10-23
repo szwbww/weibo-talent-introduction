@@ -74,7 +74,7 @@
 
 ## 变更文件清单
 
-9 文件；子系统 1（归档分析）；既有共享 store 新字段 0。
+10 文件；子系统 1（归档分析）；既有共享 store 新字段 0。
 
 | 文件 | 动作 |
 |---|---|
@@ -87,6 +87,7 @@
 | src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt | 暴露现有纯字节入口 |
 | src/test/kotlin/com/weibo/talentintroduction/discovery/archive/PaperQualificationEvidenceExtractorTest.kt | 主体/职称/历史语义 |
 | src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperAnalysisServiceTest.kt | 缺文件/缓存/CAS/零业务写 |
+| src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveRepositoryIT.kt | 同步不完整基线不得命中hasGain筛选，保留回滚/first/CAS断言 |
 
 ## 验收标准
 
@@ -114,3 +115,7 @@
 - 操作步骤：1. 批量调用纯函数验收入口。2. 比对1位教授且博士、2位当时博士在读与其余49人。3. 查看所有新增事实的原句。
 - 预期结果：任何结构化事实均有本人原句；其余49不能被自动认定满足/不满足；未覆盖的已知原句列为未实现覆盖，不作虚假成功；生产写入和外部请求均0。
 - 覆盖：I-1～I-4；真实证据边界。
+
+## 修正记录
+
+- 2026-10-24：用户“批准 继续”批准04暂停报告C-1：增加DiscoveryPaperArchiveRepositoryIT.kt为第十个授权文件，将不完整基线的hasGain=true筛选预期改为不命中，保留事务回滚、first不可变及CAS断言。完整正/负与缺失基线行为由已授权分析测试覆盖，不新增legacy旁路，不降低T-3。依据主计划I-3和执行前检查第5项；批准与提交身份见 `../fast/discovery-paper-master/ledger.md` Amendments。
