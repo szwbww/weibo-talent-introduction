@@ -2449,7 +2449,29 @@ const DISCOVERY_REVIEW_UNPROVIDED = "未提供";
 const DISCOVERY_REVIEW_READ_FAILED = "读取失败";
 const DISCOVERY_REVIEW_ACTIONS = ["APPROVE", "HOLD", "REJECT"];
 const DISCOVERY_REVIEW_ACTION_LABELS = { APPROVE: "通过", HOLD: "暂缓", REJECT: "不通过" };
-const DISCOVERY_REVIEW_TABS = ["pipeline", "review", "history"];
+const DISCOVERY_REVIEW_TABS = ["pipeline", "review", "history", "papers"];
+let discoveryPapersView = null;
+
+function ensureDiscoveryPapers() {
+    if (!discoveryPapersView && typeof window !== "undefined" && window.DiscoveryPapers) {
+        discoveryPapersView = window.DiscoveryPapers.mount({
+            root: $("#taskProgressModal"), api,
+            makeUrl: path => contextPath + path,
+            onStatus: message => {
+                const target = $("#discoveryPapersPane [data-dp='error']");
+                if (target) { target.textContent = message; target.hidden = !message; }
+            }
+        });
+    }
+    return discoveryPapersView;
+}
+
+function syncDiscoveryPapers() {
+    if (!discoveryReviewState.active) return;
+    const view = ensureDiscoveryPapers();
+    if (view) view.setExecution(currentTaskModal?.expandedExecutionId ?? null,
+        typeof apvState !== "undefined" && apvState ? apvState.runs : []);
+}
 const DISCOVERY_REVIEW_SCOPE_LABELS = { SINGLE: "单人", SELECTED: "所选", PAGE: "当前页", ALL: "所有页" };
 // decision / phase / item state 的值域与后端枚举逐字一致（词义前后端一致，不新增同义词）。
 const DISCOVERY_REVIEW_DECISION_LABELS = {
@@ -2549,9 +2571,11 @@ function discoveryReviewElements() {
         tabPipeline: $("#discoveryPipelineTab"),
         tabReview: $("#discoveryReviewTab"),
         tabHistory: $("#discoveryReviewHistoryTab"),
+        tabPapers: $("#discoveryPapersTab"),
         pipelinePane: $("#discoveryPipelinePane"),
         reviewPane: $("#discoveryReviewPane"),
         historyPane: $("#discoveryReviewHistoryPane"),
+        papersPane: $("#discoveryPapersPane"),
         counts: $("#discoveryReviewCounts"),
         search: $("#discoveryReviewSearch"),
         issue: $("#discoveryReviewIssue"),
@@ -2693,6 +2717,8 @@ function initDiscoveryReview(taskType, generation) {
     const els = discoveryReviewElements();
     if (!els.tabs || !els.pipelinePane) return;
     const isDiscovery = taskType === DISCOVERY_TASK_TYPE;
+    if (discoveryPapersView) discoveryPapersView.dispose();
+    discoveryPapersView = null;
     discoveryReviewState.taskType = taskType;
     discoveryReviewState.generation = generation;
     discoveryReviewState.active = isDiscovery;
@@ -2713,6 +2739,8 @@ function initDiscoveryReview(taskType, generation) {
 
 /** I-3：关闭弹窗只停本页轮询与在途请求（不取消任何后台审核任务）。 */
 function resetDiscoveryReviewPanel() {
+    if (discoveryPapersView) discoveryPapersView.dispose();
+    discoveryPapersView = null;
     discoveryReviewBumpAll();
     stopDiscoveryReviewPolling();
     discoveryReviewState.active = false;
@@ -2723,6 +2751,7 @@ function resetDiscoveryReviewPanel() {
     if (els.pipelinePane) els.pipelinePane.hidden = false;
     if (els.reviewPane) els.reviewPane.hidden = true;
     if (els.historyPane) els.historyPane.hidden = true;
+    if (els.papersPane) els.papersPane.hidden = true;
 }
 
 function resetDiscoveryReviewTransient() {
@@ -2769,12 +2798,12 @@ function stopDiscoveryReviewPolling() {
 
 function discoveryReviewTabButtons() {
     const els = discoveryReviewElements();
-    return { pipeline: els.tabPipeline, review: els.tabReview, history: els.tabHistory };
+    return { pipeline: els.tabPipeline, review: els.tabReview, history: els.tabHistory, papers: els.tabPapers };
 }
 
 function discoveryReviewPanes() {
     const els = discoveryReviewElements();
-    return { pipeline: els.pipelinePane, review: els.reviewPane, history: els.historyPane };
+    return { pipeline: els.pipelinePane, review: els.reviewPane, history: els.historyPane, papers: els.papersPane };
 }
 
 /** S-1/I-3：唯一页签切换接缝；aria-selected/tabindex/hidden 同源同步。 */
@@ -2788,11 +2817,14 @@ function selectDiscoveryReviewTab(name, options) {
         if (els.pipelinePane) els.pipelinePane.hidden = false;
         if (els.reviewPane) els.reviewPane.hidden = true;
         if (els.historyPane) els.historyPane.hidden = true;
+        if (els.papersPane) els.papersPane.hidden = true;
         return;
     }
     discoveryReviewBumpAll();
     discoveryReviewState.tab = name;
     if (typeof apvSetVisible === "function") apvSetVisible(name === "pipeline");
+    if (name === "papers") syncDiscoveryPapers();
+    if (discoveryPapersView) discoveryPapersView.setVisible(name === "papers", name === "pipeline");
     const buttons = discoveryReviewTabButtons();
     const panes = discoveryReviewPanes();
     DISCOVERY_REVIEW_TABS.forEach(function (key) {
@@ -2844,9 +2876,11 @@ function bindDiscoveryReviewEvents() {
     bind(els.tabPipeline, "click", function () { selectDiscoveryReviewTab("pipeline"); });
     bind(els.tabReview, "click", function () { selectDiscoveryReviewTab("review"); });
     bind(els.tabHistory, "click", function () { selectDiscoveryReviewTab("history"); });
+    bind(els.tabPapers, "click", function () { selectDiscoveryReviewTab("papers"); });
     bind(els.tabPipeline, "keydown", discoveryReviewTabKeydown);
     bind(els.tabReview, "keydown", discoveryReviewTabKeydown);
     bind(els.tabHistory, "keydown", discoveryReviewTabKeydown);
+    bind(els.tabPapers, "keydown", discoveryReviewTabKeydown);
     bind(els.search, "input", function () {
         discoveryReviewState.q = els.search && els.search.value != null ? String(els.search.value) : "";
         invalidateDiscoveryReviewBatch("筛选条件已变化，未确认的名单快照已作废");
@@ -20091,6 +20125,9 @@ function bindEvents() {
     // 弹窗 ESC 关闭
     document.addEventListener("keydown", (event) => {
         if (event.key === "Escape" && currentTaskModal) {
+            // A disabled submit can temporarily leave focus on body; native dialog cancel still owns Escape.
+            if (["discoveryPaperReader", "discoveryPaperSettings", "discoveryPaperDelete"]
+                .some(id => document.getElementById(id)?.open)) return;
             closeTaskModal();
         }
     });
@@ -27154,6 +27191,7 @@ function apvReceiveRuns(runs, taskType, generation) {
     const s = apvState;
     if (!s || !isCurrentTaskModal(taskType, generation)) return;
     s.runs = runs.filter(run => Number.isSafeInteger(Number(run.executionId)) && Number(run.executionId) > 0);
+    if (typeof syncDiscoveryPapers === "function") syncDiscoveryPapers();
     currentTaskModal.runStatusByExecutionId = Object.fromEntries(s.runs.map(run => [run.executionId, run.status]));
     currentTaskModal.runTrafficByExecutionId = Object.fromEntries(s.runs.map(run => [run.executionId, run.traffic || null]));
     let requiresRefresh = s.runs.some(run => {
@@ -27238,6 +27276,7 @@ function apvDetailHtml(id) {
     const tabs = APV_TABS.map((tab, i) => `<button class="apv-subtab" type="button" role="tab" id="apv-tab-${tab}-${id}" aria-controls="apv-${tab}-${id}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}" data-action="tab-${tab}">${["准入批次", "逐条核验", "采集日志"][i]}</button>`).join("");
     return `<tr class="run-detail-row apv-run-detail" id="detail-row-${id}"><td colspan="11">
         <div class="apv-summary" aria-live="polite"></div><nav class="apv-subtabs" role="tablist" aria-label="核验日志">${tabs}</nav>
+        <div class="dp-run-summary" data-dp="runSummary" hidden><span data-dp="runCounts"></span><button class="dp-link" type="button" data-dp-action="open-run-papers">查看本次原文</button></div>
         <section class="apv-inner" role="tabpanel" id="apv-batches-${id}" aria-labelledby="apv-tab-batches-${id}"><p class="apv-inner-note">按本次激活档案每 100 条分批；与论文采集批次独立。理由可能一条档案多项命中。</p>
         <div class="apv-scrollarea"><table class="data-table compact apv-batches"><thead><tr>${["批次", "本批档案", "自动准入", "直接", "Apollo", "已明确", "未明确", "待核验", "错误", "排队", "累计档案", "原因", "时间"].map(x => `<th>${x}</th>`).join("")}</tr></thead><tbody>${apvEmpty(13, "加载中…")}</tbody><tfoot></tfoot></table></div>${apvPaginationHtml("batch")}</section>
         <section class="apv-inner" role="tabpanel" id="apv-records-${id}" aria-labelledby="apv-tab-records-${id}" hidden><div class="apv-toolbar">
@@ -27278,6 +27317,10 @@ function apvRenderDetail() {
     if (!detail) return;
     const summary = s.summaries.get(s.executionId);
     apvPatch(detail.querySelector(".apv-summary"), apvSummaryHtml(summary) + (s.error ? apvAlert(s.error, summary?.asOf) : ""));
+    if (typeof syncDiscoveryPapers === "function") {
+        syncDiscoveryPapers();
+        if (discoveryPapersView) discoveryPapersView.setVisible(false, true);
+    }
     APV_TABS.forEach(tab => {
         const button = document.getElementById(`apv-tab-${tab}-${s.executionId}`);
         const panel = document.getElementById(`apv-${tab}-${s.executionId}`);
@@ -27596,6 +27639,7 @@ function apvToggleRun(executionId) {
     const previous = s.executionId;
     s.executionId = previous === executionId ? null : executionId;
     currentTaskModal.expandedExecutionId = s.executionId;
+    if (typeof syncDiscoveryPapers === "function") syncDiscoveryPapers();
     s.tab = "batches"; s.batchPage = 0; s.recordPage = 0; s.route = "ALL"; s.result = "ALL"; s.q = ""; s.batchNumber = null;
     s.openBatches.clear();
     apvChangeView();

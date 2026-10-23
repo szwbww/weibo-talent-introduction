@@ -251,8 +251,8 @@ async function runNextTimer(sandbox) {
 describe("c5 discovery review · S-1/S-2/S-3 contract", () => {
     it("index.html declares the tabs, the pipeline wrapper, and every review id", () => {
         for (const id of [
-            "discoveryReviewTabs", "discoveryPipelineTab", "discoveryReviewTab", "discoveryReviewHistoryTab",
-            "discoveryPipelinePane", "discoveryReviewPane", "discoveryReviewHistoryPane",
+            "discoveryReviewTabs", "discoveryPipelineTab", "discoveryReviewTab", "discoveryReviewHistoryTab", "discoveryPapersTab",
+            "discoveryPipelinePane", "discoveryReviewPane", "discoveryReviewHistoryPane", "discoveryPapersPane",
             "discoveryReviewCounts", "discoveryReviewSearch", "discoveryReviewIssue", "discoveryReviewDecision",
             "discoveryReviewPageSize", "discoveryReviewApprovePage", "discoveryReviewApproveAll",
             "discoveryReviewSelection", "discoveryReviewError", "discoveryReviewResult",
@@ -273,18 +273,19 @@ describe("c5 discovery review · S-1/S-2/S-3 contract", () => {
         assert.ok(paneAt < reviewAt && reviewAt < historyAt, "review panes must follow the pipeline wrapper");
     });
 
-    it("the nav declares the three tabs with roving selection attributes", () => {
+    it("the nav declares the four tabs with roving selection attributes", () => {
         const navStart = indexHtml.indexOf('id="discoveryReviewTabs"');
         const nav = indexHtml.slice(navStart - 200, indexHtml.indexOf("</nav>", navStart));
         assert.ok(nav.includes('role="tablist"'), "the nav must be a tablist");
-        for (const label of ["采集运行", "专家审核", "审核记录"]) {
+        for (const label of ["采集运行", "专家审核", "审核记录", "论文原文"]) {
             assert.ok(nav.includes(">" + label + "</button>"), "missing tab: " + label);
         }
         assert.strictEqual((nav.match(/aria-selected="true"/g) || []).length, 1, "exactly one tab starts selected");
-        assert.strictEqual((nav.match(/tabindex="-1"/g) || []).length, 2, "inactive tabs start with tabindex=-1");
+        assert.strictEqual((nav.match(/tabindex="-1"/g) || []).length, 3, "inactive tabs start with tabindex=-1");
         assert.ok(nav.includes('aria-controls="discoveryPipelinePane"'));
         assert.ok(nav.includes('aria-controls="discoveryReviewPane"'));
         assert.ok(nav.includes('aria-controls="discoveryReviewHistoryPane"'));
+        assert.ok(nav.includes('aria-controls="discoveryPapersPane"'));
     });
 
     it("the new review DOM has no inline styles and no undeclared classes", () => {
@@ -440,10 +441,10 @@ describe("c5 discovery review · S-1/S-2/S-3 contract", () => {
         assert.ok(stylesCss.includes(s3), "S-3 CSS must be verbatim");
     });
 
-    it("keeps one cache key for all eleven assets and other task modals at 700px", () => {
+    it("keeps one cache key for all seventeen assets and other task modals at 700px", () => {
         const keys = Array.from(indexHtml.matchAll(/[?"]v=([^"'&<>]+)/g)).map((m) => m[1]);
         const unique = Array.from(new Set(keys));
-        assert.strictEqual(keys.length, 16, "exactly sixteen cache-busted assets");
+        assert.strictEqual(keys.length, 17, "exactly seventeen cache-busted assets");
         assert.strictEqual(unique.length, 1, "all assets must share one cache key");
         assert.match(unique[0], /^[0-9]{8}-[a-z0-9-]+$/, "cache key must be <yyyymmdd>-<slug>");
         assert.notStrictEqual(unique[0], "20261004-mailbox-suspension-followup",
@@ -515,6 +516,17 @@ describe("c5 discovery review · lifecycle (I-1 / I-3)", () => {
         assert.strictEqual(sandbox.$("#discoveryReviewTab").focused, true, "the new tab receives focus");
         assert.strictEqual(sandbox.$("#discoveryReviewPane").hidden, false);
         assert.strictEqual(sandbox.$("#discoveryPipelinePane").hidden, true);
+        sandbox.$("#discoveryReviewTab").dispatch("keydown", { key: "End", preventDefault() {} });
+        assert.strictEqual(sandbox.$("#discoveryPapersTab").getAttribute("aria-selected"), "true");
+        assert.strictEqual(sandbox.$("#discoveryPapersPane").hidden, false);
+        sandbox.$("#discoveryPapersTab").dispatch("keydown", { key: "ArrowRight", preventDefault() {} });
+        assert.strictEqual(sandbox.$("#discoveryPipelineTab").getAttribute("aria-selected"), "true");
+        sandbox.$("#discoveryPipelineTab").dispatch("keydown", { key: "ArrowLeft", preventDefault() {} });
+        assert.strictEqual(sandbox.$("#discoveryPapersTab").getAttribute("aria-selected"), "true");
+        sandbox.$("#discoveryPapersTab").dispatch("keydown", { key: "Home", preventDefault() {} });
+        assert.strictEqual(sandbox.$("#discoveryPipelinePane").hidden, false);
+        sandbox.resetDiscoveryReviewPanel();
+        assert.strictEqual(sandbox.$("#discoveryPapersPane").hidden, true);
     });
 
     it("a second list request that resolves first is not overwritten by the stale one (I-3)", async () => {
@@ -981,14 +993,14 @@ describe("c5 discovery review · scope and confirm (I-2)", () => {
     });
 
     it("Apollo logs retain the enabled main review tabs and the original other-task head", () => {
-        for (const id of ["discoveryPipelineTab", "discoveryReviewTab", "discoveryReviewHistoryTab"]) {
+        for (const id of ["discoveryPipelineTab", "discoveryReviewTab", "discoveryReviewHistoryTab", "discoveryPapersTab"]) {
             const tag = indexHtml.match(new RegExp("<button[^>]*id=\"" + id + "\"[^>]*>"))[0];
             assert.ok(!tag.includes("disabled"), "the main tab stays operable: " + id);
         }
         assert.ok(indexHtml.includes('id="taskModalRunHead"'));
         assert.ok(indexHtml.includes('id="taskModalTrafficHead"'));
         const keys = [...indexHtml.matchAll(/\?v=([^"<>]+)/g)].map(match => match[1]);
-        assert.strictEqual(keys.length, 16);
+        assert.strictEqual(keys.length, 17);
         assert.strictEqual(new Set(keys).size, 1);
         assert.ok(indexHtml.includes('<script src="task-modal-runtime.js"></script>'));
     });
