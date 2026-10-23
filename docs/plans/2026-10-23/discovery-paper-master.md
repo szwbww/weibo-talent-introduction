@@ -100,7 +100,7 @@
 | 02 | [全下载接入](discovery-paper-02-capture.md) | 10 | 六论文来源真实正文留存，容量阻断不丢游标，可通过API使用；含已批准的存储接缝修订 |
 | 03 | [版面解析修复](discovery-paper-03-parser.md) | 7 | 两条解析规则独立生效，固定原文回放报告；同步新采集版本回归 |
 | 04 | [解析对照与历史事实](discovery-paper-04-analysis.md) | 10 | 只读分析现有正文、分析JSON和查看API；同步完整基线增益筛选回归 |
-| 05 | [论文原文前端](discovery-paper-05-frontend.md) | 6 | 真实页面管理/预览/磁盘/批量取消保护，完整CSS |
+| 05 | [论文原文前端](discovery-paper-05-frontend.md) | 7 | 真实页面管理/预览/磁盘/批量取消保护，完整CSS；同步必跑核验测试资源数 |
 | 06a | [Apollo配置持久化](discovery-paper-06a-apollo-persistence.md) | 5 | 两开关独立保存API，默认/冲突/失败语义 |
 | 06b | [Apollo运行接入](discovery-paper-06b-apollo-runtime.md) | 10 | 新旧run分离、分渠道日志、现有测试适配 |
 | 07 | [Apollo前端配置/日志](discovery-paper-07-apollo-frontend.md) | 5 | 保存状态、收费开关、运行快照与尝试数字，完整CSS |
@@ -176,3 +176,4 @@
 - 2026-10-23：用户“批准 继续”批准02暂停报告C-1/C-2的最小修订：02授权由8增至10文件，加入ArchiveService/ArchiveRepository，明确已启用scope的保存完成与原子保留first/更新latest。依据I-3与执行前检查第5项，保持每子计划≤10文件且不改变准入或缓存规则；共享文件顺序同步为01→02→04。批准和提交身份记录在 `../fast/discovery-paper-master/ledger.md` 的 Amendments 表；原始自审计数为历史记录。
 - 2026-10-24：用户“批准 继续”批准03暂停报告C-1：03由6增至7文件，增加CaptureTest新采集版本断言同步，保留first冻结与缓存兼容约束。依据I-3及执行前检查第5项；不改变真实样本缺失时不得宣称效果已验证的边界。批准与提交身份见 `../fast/discovery-paper-master/ledger.md` Amendments。
 - 2026-10-24：用户“批准 继续”批准04暂停报告C-1：04由9增至10文件，增加RepositoryIT不完整基线hasGain筛选预期同步，保留回滚/first/CAS断言。依据I-3及执行前检查第5项；T-3完整基线要求不变，不引入legacy旁路。批准与提交身份见 `../fast/discovery-paper-master/ledger.md` Amendments。
+- 2026-10-24：用户“批准 继续”批准05暂停报告C-1：05由6增至7文件，加入discoveryVerification.test.js同步资源数量及描述16→17；同key/runtime约束不变。依据I-3及执行前检查第5项；批准与提交身份见 `../fast/discovery-paper-master/ledger.md` Amendments。

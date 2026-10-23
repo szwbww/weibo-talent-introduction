@@ -242,10 +242,11 @@
 ### T-3 缓存与验收（I-3；S-4）
 
 index全部本地asset key=20261023-discovery-paper-archive；记录新模块同key。新测试用实际HTML解析得到元素，不能使用“任何选择器都有元素”的万能stub。扩展旧discoveryReview.test.js四页签键盘/重置用例；该文件:446硬断言16个cache-busted assets，新增discovery-papers.js后应为17；同步更新这一精确数量，保留所有key同值断言。
+`discoveryVerification.test.js` 同样钉死16个资源；同步该必跑测试的描述和数量为17，保留同key与runtime不带版本的断言。
 
 ## 变更文件清单
 
-6 文件；子系统1（深度发现前端）；共享store新字段0。
+7 文件；子系统1（深度发现前端）；共享store新字段0。
 
 | 文件 | 动作 |
 |---|---|
@@ -255,6 +256,7 @@ index全部本地asset key=20261023-discovery-paper-archive；记录新模块同
 | src/main/resources/static/discovery-papers.js | 新页面模块 |
 | src/test/js/discoveryPapers.test.js | 实际DOM/请求/批处理回归 |
 | src/test/js/discoveryReview.test.js | 原审核与四页签回归 |
+| src/test/js/discoveryVerification.test.js | 仅同步资源数量及描述16→17，保留同key/runtime约束 |
 
 ## 验收标准
 
@@ -292,3 +294,7 @@ index全部本地asset key=20261023-discovery-paper-archive；记录新模块同
 - 操作步骤：1. 保存25/15GiB，保护一份原文。2. 刷新并重启隔离实例。3. 下载两份。4. 关闭重开弹窗，再打开专家审核与审核记录。
 - 预期结果：配置25/15GiB与保护状态保留；下载200、HTML只显示文字；没有重复事件/请求；原审核操作与历史记录仍可用。
 - 覆盖：I-2/I-3/I-4，S-1/S-3；持久配置/旧页面回归。
+
+## 修正记录
+
+- 2026-10-24：用户“批准 继续”批准05暂停报告C-1：将discoveryVerification.test.js加入第七个授权文件，仅同步新增模块后的资源数量与描述16→17，保留缓存键一致性与runtime不带版本的断言。依据主计划I-3及执行前检查第5项；不改产品行为、不排除测试。批准与提交身份见 `../fast/discovery-paper-master/ledger.md` Amendments。
