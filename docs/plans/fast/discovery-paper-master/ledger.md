@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-10-23/discovery-paper-master.md
 
-- Status: PAUSED_FOR_HUMAN
-- Master plan: docs/plans/2026-10-23/discovery-paper-master.md (commit bcf5d64fb9534759eb1cad08db3089d36e4a1fb0)
-- Amendments: A1,A2,A3,A4,A5,A6
+- Status: RUNNING
+- Master plan: docs/plans/2026-10-23/discovery-paper-master.md (commit 541411d540019428c72b31775c325087b33da303)
+- Amendments: A1,A2,A3,A4,A5,A6,A7,A8
 - Master base: c6e9709f349f32c5feb1d067b47c697b0dff05b6
 - Branch: fast/discovery-paper-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master
@@ -13,8 +13,8 @@
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: Child05 required discoveryVerification.test.js still expects16 assets while T-3 requires17; authorize seventh test file for count/description sync, no invariant weakening.
-- Resume from: f4b192dd671d1892a76cd98dd0a102015a69c49a
+- Pause reason: N/A
+- Resume from: N/A
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
@@ -23,7 +23,7 @@
 | 02 | docs/plans/2026-10-23/discovery-paper-02-capture.md | commit:87c5268976807c19c165fe50c91ba3372ed0075d | 01 | 2 | LIGHT_PASS_WITH_NOTES | 74c00bdab46796084c5d4a1a7a3c572b7bee6915 | 030d96b227111587ba591446e9aeb64b1b0e85d7 | 1 | c37341aacfc0937e829132ad73d8af7fa24b4b97 | c37341aacfc0937e829132ad73d8af7fa24b4b97 | a7a72c05206345e2e24b15115cd753273d1f1c01 | PaperCaptureReverifierE2R1; F-1 closed; O-1 RECORD_ONLY; artifact correction1 |
 | 03 | docs/plans/2026-10-23/discovery-paper-03-parser.md | commit:8d2313da868251b68dcaee02b744dfa777b41674 | 02 | 2 | LIGHT_PASS_WITH_NOTES | c37341aacfc0937e829132ad73d8af7fa24b4b97 | 5b7bc8919202876e7d1b6884cd9c9cd50d1f23af | 0 | — | 5b7bc8919202876e7d1b6884cd9c9cd50d1f23af | 7a7237aba8a5e2d4f66f0b6bfb6d17f74e232b54 | PaperParserVerifierE2; O-1 missing originals/page34; real effects incomplete |
 | 04 | docs/plans/2026-10-23/discovery-paper-04-analysis.md | commit:bcf5d64fb9534759eb1cad08db3089d36e4a1fb0 | 01,02,03 | 2 | LIGHT_PASS_WITH_NOTES | 5b7bc8919202876e7d1b6884cd9c9cd50d1f23af | 3cdf7a6aa30ee773a0233e70e8c84d3b00754384 | 1 | bbd2700ca56d00a9e2845b61b15c1fb7e5b07a49 | bbd2700ca56d00a9e2845b61b15c1fb7e5b07a49 | ee524ba4c74480cd8a9dd985fae36ee886ef8160 | PaperAnalysisReverifierE2R1; F-1 closed; O-1 effects incomplete/O-2 historical classpath |
-| 05 | docs/plans/2026-10-23/discovery-paper-05-frontend.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 01,02,03,04 | 1 | PAUSED_FOR_HUMAN | bbd2700ca56d00a9e2845b61b15c1fb7e5b07a49 | f4b192dd671d1892a76cd98dd0a102015a69c49a | 0 | — | f4b192dd671d1892a76cd98dd0a102015a69c49a | a04b4795ebdf537b23377ae68660436a870efa18 | PLAN_CONFLICT C-1 seventh test; required65 tests64pass1fail; browser evidence retained, not READY |
+| 05 | docs/plans/2026-10-23/discovery-paper-05-frontend.md | commit:541411d540019428c72b31775c325087b33da303 | 01,02,03,04 | 2 | IMPLEMENTING | bbd2700ca56d00a9e2845b61b15c1fb7e5b07a49 | — | 0 | — | f4b192dd671d1892a76cd98dd0a102015a69c49a | — | A7/A8 approved; retain epoch1 implementation; fresh implementer pending |
 | 06a | docs/plans/2026-10-23/discovery-paper-06a-apollo-persistence.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | none | 1 | PENDING | — | — | 0 | — | — | — |  |
 | 06b | docs/plans/2026-10-23/discovery-paper-06b-apollo-runtime.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 06a | 1 | PENDING | — | — | 0 | — | — | — |  |
 | 07 | docs/plans/2026-10-23/discovery-paper-07-apollo-frontend.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 05,06a,06b | 1 | PENDING | — | — | 0 | — | — | — |  |
@@ -37,6 +37,8 @@
 | A4 | docs/plans/2026-10-23/discovery-paper-master.md | commit:87c5268976807c19c165fe50c91ba3372ed0075d | commit:8d2313da868251b68dcaee02b744dfa777b41674 | I-3; 顺序、隔离与出口; 执行前检查第5项 | Synchronize child03 file cap6→7 with approved A3 without changing real-effect evidence boundary | HUMAN:批准 继续 — 2026-10-24, approving the preceding child03 PAUSED_FOR_HUMAN bounded amendment |
 | A5 | docs/plans/2026-10-23/discovery-paper-04-analysis.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | commit:bcf5d64fb9534759eb1cad08db3089d36e4a1fb0 | I-3; 执行前检查第5项 | Authorize RepositoryIT as tenth file for incomplete-baseline hasGain exclusion while preserving rollback/first/CAS | HUMAN:批准 继续 — approving preceding child04 PAUSED_FOR_HUMAN bounded amendment |
 | A6 | docs/plans/2026-10-23/discovery-paper-master.md | commit:8d2313da868251b68dcaee02b744dfa777b41674 | commit:bcf5d64fb9534759eb1cad08db3089d36e4a1fb0 | I-3; 顺序、隔离与出口; 执行前检查第5项 | Synchronize child04 cap9→10 with approved A5 without weakening complete-baseline semantics | HUMAN:批准 继续 — approving preceding child04 PAUSED_FOR_HUMAN bounded amendment |
+| A7 | docs/plans/2026-10-23/discovery-paper-05-frontend.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | commit:541411d540019428c72b31775c325087b33da303 | I-3; 执行前检查第5项 | Authorize discoveryVerification.test.js as seventh file for asset count/description16→17, preserve equal-key/unversioned-runtime checks | HUMAN:批准 继续 — 2026-10-24, approving preceding child05 PAUSED_FOR_HUMAN bounded amendment |
+| A8 | docs/plans/2026-10-23/discovery-paper-master.md | commit:bcf5d64fb9534759eb1cad08db3089d36e4a1fb0 | commit:541411d540019428c72b31775c325087b33da303 | I-3; 顺序、隔离与出口; 执行前检查第5项 | Synchronize child05 cap6→7 with approved A7 without behavior or invariant changes | HUMAN:批准 继续 — 2026-10-24, approving preceding child05 PAUSED_FOR_HUMAN bounded amendment |
 
 ## Baseline
 - Original worktree remains untouched. Its unrelated dirty application.yml attachment-transfer settings, CLAUDE/knowledge/release changes, other Apollo plans and untracked artifacts are not included in this implementation. Product baseline is the master-named c6e9709 commit.
@@ -87,3 +89,4 @@
 - Child04 full manifest dirty/clean checkpoint VALID atd458b594043c1a8c83d5dacea8269c18e415f5e6. Child05 IMPLEMENTER PaperFrontendImplementer acquired, epoch1 fix_round0 agent_attempt0; actual browser surface required; no completed child replay.
 - Child05 PLAN_CONFLICT C-1: required unauthorized discoveryVerification.test.js:90–92 hard-asserts16 assets; explicit T-3 requires17. Six authorized files retained in product commitf4b192dd671d1892a76cd98dd0a102015a69c49a, not passing/READY. Final Node65 tests64pass1fail, both syntaxchecks pass; actual fullpage Chromium1440×1080/643×900 and13 screenshots retained, no independent verifier.
 - Whole workflow paused before06a; proposed seventh-file amendment updates only asset count/description16→17 in discoveryVerification.test.js, preserving equal-key and unversioned-runtime assertions. No implicit authorization from child04 approval. Evidencea04b4795ebdf537b23377ae68660436a870efa18. Resume after explicit separate plan amendment in new child05 epoch, fix_round0; retain current product and prior logs.
+- User “批准 继续” released child05 C-1 pause; separate amended-plan commit541411d540019428c72b31775c325087b33da303 recorded A7/A8. Resume same child epoch2 fix_round0 from retainedf4b192dd671d1892a76cd98dd0a102015a69c49a, product base staysbbd2700; no completed child replay.
