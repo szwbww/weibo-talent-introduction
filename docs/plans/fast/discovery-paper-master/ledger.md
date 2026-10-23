@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-10-23/discovery-paper-master.md
 
-- Status: PAUSED_FOR_HUMAN
-- Master plan: docs/plans/2026-10-23/discovery-paper-master.md (commit 87c5268976807c19c165fe50c91ba3372ed0075d)
-- Amendments: A1,A2
+- Status: RUNNING
+- Master plan: docs/plans/2026-10-23/discovery-paper-master.md (commit 8d2313da868251b68dcaee02b744dfa777b41674)
+- Amendments: A1,A2,A3,A4
 - Master base: c6e9709f349f32c5feb1d067b47c697b0dff05b6
 - Branch: fast/discovery-paper-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master
@@ -13,7 +13,7 @@
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: Child03 CaptureTest fresh capture expects pdfLayout0 but required implementation emits20261023; seventh test file is outside six-file scope. Other authorized regression failures remain; six uncommitted product files preserved.
+- Pause reason: N/A
 - Resume from: c37341aacfc0937e829132ad73d8af7fa24b4b97
 
 ## Children
@@ -21,7 +21,7 @@
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | 01 | docs/plans/2026-10-23/discovery-paper-01-storage.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | none | 1 | LIGHT_PASS | c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 90dec47f8604886df890c20e9e31dd394c20173d | 1 | 74c00bdab46796084c5d4a1a7a3c572b7bee6915 | 74c00bdab46796084c5d4a1a7a3c572b7bee6915 | 1ba166e3da369f73fe1519834dea8a04123239df | PaperStorageReverifier1 LIGHT_PASS; F-1 resolved; human acceptance pending |
 | 02 | docs/plans/2026-10-23/discovery-paper-02-capture.md | commit:87c5268976807c19c165fe50c91ba3372ed0075d | 01 | 2 | LIGHT_PASS_WITH_NOTES | 74c00bdab46796084c5d4a1a7a3c572b7bee6915 | 030d96b227111587ba591446e9aeb64b1b0e85d7 | 1 | c37341aacfc0937e829132ad73d8af7fa24b4b97 | c37341aacfc0937e829132ad73d8af7fa24b4b97 | a7a72c05206345e2e24b15115cd753273d1f1c01 | PaperCaptureReverifierE2R1; F-1 closed; O-1 RECORD_ONLY; artifact correction1 |
-| 03 | docs/plans/2026-10-23/discovery-paper-03-parser.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 02 | 1 | PAUSED_FOR_HUMAN | c37341aacfc0937e829132ad73d8af7fa24b4b97 | — | 0 | — | c37341aacfc0937e829132ad73d8af7fa24b4b97 | 8d58d7c0b1f56d21930ba78c4847a10b1ddc559f | PLAN_CONFLICT C-1 seventh test file; 6 dirty product paths; no implementation commit |
+| 03 | docs/plans/2026-10-23/discovery-paper-03-parser.md | commit:8d2313da868251b68dcaee02b744dfa777b41674 | 02 | 2 | WAITING_FOR_AGENT | c37341aacfc0937e829132ad73d8af7fa24b4b97 | — | 0 | — | — | — | Approved A3/A4; preserve six dirty files; prior epoch1 evidence8d58d7c |
 | 04 | docs/plans/2026-10-23/discovery-paper-04-analysis.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 01,02,03 | 1 | PENDING | — | — | 0 | — | — | — |  |
 | 05 | docs/plans/2026-10-23/discovery-paper-05-frontend.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 01,02,03,04 | 1 | PENDING | — | — | 0 | — | — | — |  |
 | 06a | docs/plans/2026-10-23/discovery-paper-06a-apollo-persistence.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | none | 1 | PENDING | — | — | 0 | — | — | — |  |
@@ -33,6 +33,8 @@
 |---|---|---|---|---|---|---|
 | A1 | docs/plans/2026-10-23/discovery-paper-02-capture.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | commit:87c5268976807c19c165fe50c91ba3372ed0075d | I-3; 执行前检查第5项 | C-1/C-2 require two existing storage files; authorize 10-file scope and accepted-scope save plus immutable-first/mutable-latest semantics | HUMAN:批准 继续 — 2026-10-23, approving the preceding PAUSED_FOR_HUMAN bounded amendment |
 | A2 | docs/plans/2026-10-23/discovery-paper-master.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | commit:87c5268976807c19c165fe50c91ba3372ed0075d | I-3; 顺序、隔离与出口; 执行前检查第5项 | Synchronize child02 limit 8→10 and ArchiveService/Repository order 01→02→04 with approved A1 | HUMAN:批准 继续 — 2026-10-23, approving the preceding PAUSED_FOR_HUMAN bounded amendment |
+| A3 | docs/plans/2026-10-23/discovery-paper-03-parser.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | commit:8d2313da868251b68dcaee02b744dfa777b41674 | I-3; 执行前检查第5项 | Add CaptureTest as seventh authorized file to update fresh pdfLayout expectation while retaining first immutability | HUMAN:批准 继续 — 2026-10-24, approving the preceding child03 PAUSED_FOR_HUMAN bounded amendment |
+| A4 | docs/plans/2026-10-23/discovery-paper-master.md | commit:87c5268976807c19c165fe50c91ba3372ed0075d | commit:8d2313da868251b68dcaee02b744dfa777b41674 | I-3; 顺序、隔离与出口; 执行前检查第5项 | Synchronize child03 file cap6→7 with approved A3 without changing real-effect evidence boundary | HUMAN:批准 继续 — 2026-10-24, approving the preceding child03 PAUSED_FOR_HUMAN bounded amendment |
 
 ## Baseline
 - Original worktree remains untouched. Its unrelated dirty application.yml attachment-transfer settings, CLAUDE/knowledge/release changes, other Apollo plans and untracked artifacts are not included in this implementation. Product baseline is the master-named c6e9709 commit.
@@ -66,3 +68,4 @@
 - 2026-10-24: child03 required Maven run failed84 tests/4 failures/1 error/1 skipped, including scope-conflict assertion and authorized parser/resolver regressions. Pure actual-PDF smoke passed and comparator control fixtures behaved as recorded; neither establishes completion.
 - 2026-10-24: exact original corpus availability checked:294 sample metadata/295 body references,216 matching files frozen privately,79 missing files,0 hash mismatches;215 complete samples. Manifest hash376a9d7273a73a48df431f9d13164523ff6d0b3da75c62b10f3497125af75df9. Real-effect replay remains INCOMPLETE/SKIPPED, not79/52 PASS.
 - Resume prerequisite: human approve adding DiscoveryPaperArchiveCaptureTest.kt as seventh authorized child03 file and updating its fresh-capture parserVersion expectation while preserving frozen-first behavior; no such amendment is yet approved. Then commit plan amendment/record row and resume new child03 epoch, preserving six dirty files and resolving authorized regression failures before fresh checks/implementation commit. No completed child replay.
+- 2026-10-24: user approved “批准 继续” for child03 seventh-file amendment. Retained branch/pause HEAD69626008b7a0915ececc9ec5ffcff1a55c890228 and empty index verified; six documented dirty product paths preserved. Plan-only amendment8d2313da868251b68dcaee02b744dfa777b41674 recorded as A3/A4 before new epoch2 dispatch, fix_round=0.
