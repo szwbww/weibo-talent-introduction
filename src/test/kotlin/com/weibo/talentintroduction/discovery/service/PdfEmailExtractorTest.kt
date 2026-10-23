@@ -41,6 +41,68 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import javax.net.ssl.SSLHandshakeException
 
 class PdfEmailExtractorTest {
+    @Test
+    fun `full name layout actual PDF geometry and ownership boundaries`() {
+        fun rows(vararg texts: String) = texts.mapIndexed { index, text ->
+            LayoutPdfFixtures.Row(text, 300f + index * 12f)
+        }
+        fun count(lines: List<LayoutPdfFixtures.Row>, authors: List<PaperAuthor> = LayoutPdfFixtures.authors) =
+            LayoutPdfFixtures.contacts(lines, authors).size
+        assertEquals(1, count(rows("Alice Smith", "alice@sample.edu")))
+        assertEquals(0, count(listOf(LayoutPdfFixtures.Row("Alice Smith", 300f),
+            LayoutPdfFixtures.Row("alice@sample.edu", 312f, 340f))))
+        val next = LayoutPdfFixtures.contacts(rows("Alice Smith", "Bob Jones", "bob@sample.edu"))
+        assertEquals(listOf(1), next.map { it.authorIndex })
+        assertEquals(0, count(rows("Alice Smith", "a@sample.edu, b@sample.edu")))
+        assertEquals(0, count(listOf(LayoutPdfFixtures.Row("Alice Smith", 300f),
+            LayoutPdfFixtures.Row("alice@sample.edu", 380f))))
+        assertEquals(0, count(rows("Alice Smith", "alice@sample.edu"),
+            LayoutPdfFixtures.authors + LayoutPdfFixtures.authors.first()))
+        assertEquals(0, count(rows("Alice Smith", "References", "alice@sample.edu")))
+        assertEquals(1, count(rows("Alice Smith", "Example University", "alice@sample.edu")))
+        assertEquals(0, count(rows("Alice Smith", "Unknown Organisation", "alice@sample.edu")))
+        assertEquals(2, count(rows("Alice Smith", "Unknown Organisation", "alice@sample.edu",
+            "Bob Jones", "Other Organisation", "bob@sample.edu")))
+        assertEquals(0, count(rows("Alice Smith", "Unknown Organisation", "alice@sample.edu",
+            "Alice Smith", "Other Organisation", "alice@sample.edu")))
+        for (middle in listOf(5, 6)) {
+            val lines = rows(*(listOf("Alice Smith", "Example University") +
+                List(middle - 1) { "Research Unit" } + "alice@sample.edu").toTypedArray())
+            assertEquals(if (middle == 5) 1 else 0, count(lines))
+        }
+        for (gap in listOf(24f, 25f)) assertEquals(if (gap == 24f) 1 else 0,
+            count(listOf(LayoutPdfFixtures.Row("Alice Smith", 300f),
+                LayoutPdfFixtures.Row("alice@sample.edu", 300f + gap))))
+        assertEquals(0, count(listOf(LayoutPdfFixtures.Row("Alice Smith", 300f),
+            LayoutPdfFixtures.Row("alice@sample.edu", 312f, page = 1))))
+        for (name in listOf("Alice", "Smith", "Alice Smith Bob Jones", "Alice X Smith", "About Alice Smith"))
+            assertEquals(0, count(rows(name, "alice@sample.edu")), name)
+        // Approved NFKD/alphanumeric normalization maps interior punctuation to whitespace.
+        assertEquals(1, count(rows("Alice ? Smith", "alice@sample.edu")))
+        assertEquals(1, count(rows("Alicé Smith", "alice@sample.edu")))
+        assertEquals(0, count(rows("References", "Alice Smith", "alice@sample.edu")))
+        assertEquals(0, count(rows("Alice Smith", "Abstract", "alice@sample.edu")))
+        assertEquals(0, count(rows("Alice Smith", "support@sample.edu")))
+        for (indent in listOf(36f, 37f)) assertEquals(if (indent == 36f) 1 else 0,
+            count(listOf(LayoutPdfFixtures.Row("Alice Smith", 300f),
+                LayoutPdfFixtures.Row("alice@sample.edu", 312f, 40f + indent))))
+        for (distance in listOf(90f, 91f)) {
+            val lines = listOf(LayoutPdfFixtures.Row("Alice Smith", 300f)) +
+                (1..5).map { LayoutPdfFixtures.Row("Example University", 300f + 15f * it) } +
+                LayoutPdfFixtures.Row("alice@sample.edu", 300f + distance)
+            assertEquals(if (distance == 90f) 1 else 0, count(lines))
+        }
+        assertEquals(0, count(rows("Alice Smith", "broken@ address", "alice@sample.edu")))
+        assertEquals(0, count(rows("Alice Smith", "{alice,bob}@sample.edu")))
+        assertEquals(1, count(rows("*Alice Smith1,*", "Email: alice@sample.edu")))
+        assertEquals(0, count(rows("Alice Smith", "alice@sample.edu"),
+            listOf(PaperAuthor("Alice", null, null, null, false))))
+        val old = PdfAuthorContactLayout.Contact("alice@sample.edu", 0, 1, "Alice Smith*", "* alice@sample.edu")
+        assertEquals("PDF_PAGE:1\nAUTHOR:Alice Smith*\nCONTACT:* alice@sample.edu", old.evidenceText)
+        assertTrue(LayoutPdfFixtures.contacts(rows("Alice Smith", "alice@sample.edu")).single()
+            .evidenceText.endsWith("RULE:PDF_NAME_EMAIL_ADJACENT"))
+    }
+
     private val restTemplate = Mockito.mock(RestTemplate::class.java)
     private val plainTextExtractor = PlainTextEmailExtractor()
     private val properties = PdfExtractionProperties()
@@ -98,10 +160,13 @@ class PdfEmailExtractorTest {
             assertEquals(listOf(1, 2, 62), extractor.selectedPages(document.numberOfPages))
             val contacts = PdfAuthorContactLayout.collect(document, 2, authors, 1)
             for ((email, name) in expected) {
-                val contact = contacts.singleOrNull { it.email == email }
-                    ?: error("missing $email, observed contacts: $contacts")
-                assertEquals(62, contact.page)
-                assertEquals(name, "${authors[contact.authorIndex].givenNames} ${authors[contact.authorIndex].familyNames}")
+                val matching = contacts.filter { it.email == email }
+                assertTrue(matching.isNotEmpty(), "missing $email, observed contacts: $contacts")
+                assertTrue(matching.any { it.rule == null }, "original contact evidence must remain")
+                assertEquals(setOf(62), matching.map { it.page }.toSet())
+                assertEquals(setOf(name), matching.map {
+                    "${authors[it.authorIndex].givenNames} ${authors[it.authorIndex].familyNames}"
+                }.toSet())
             }
         }
         assertEquals(listOf(1), extractor.selectedPages(1))

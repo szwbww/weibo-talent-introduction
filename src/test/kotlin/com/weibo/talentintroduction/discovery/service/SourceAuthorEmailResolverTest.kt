@@ -257,6 +257,23 @@ internal fun pdfPositiveControls(): List<PdfPositiveControl> {
 }
 
 class SourceAuthorEmailResolverTest {
+    @Test
+    fun `new PDF contacts cannot overwrite old text or marker ownership`() {
+        val authors = LayoutPdfFixtures.authors
+        val fresh = LayoutPdfFixtures.contacts(listOf(
+            LayoutPdfFixtures.Row("Alice Smith", 300f),
+            LayoutPdfFixtures.Row("alice@sample.edu", 312f)))
+        assertEquals(1, fresh.size)
+        val text = "Bob Jones: alice@sample.edu"
+        assertEquals("Bob", SourceAuthorEmailResolver.resolvePdf(text, authors, emptyList()).single().givenNames)
+        assertNull(SourceAuthorEmailResolver.resolvePdf(text, authors, fresh).single().givenNames)
+        val marker = PdfAuthorContactLayout.Contact("alice@sample.edu", 1, 1, "Bob Jones*", "* alice@sample.edu")
+        assertNull(SourceAuthorEmailResolver.resolvePdf("alice@sample.edu", authors, listOf(marker) + fresh).single().givenNames)
+        assertEquals("Alice", SourceAuthorEmailResolver.resolvePdf("alice@sample.edu", authors, fresh).single().givenNames)
+        assertTrue(SourceAuthorEmailResolver.resolvePdf("alice@sample.edu", authors, fresh, listOf("alice")).isEmpty())
+        assertTrue(SourceAuthorEmailResolver.resolvePdf("", authors, fresh).isEmpty())
+    }
+
     private val jane = PaperAuthor("Jane", "Doe", "0000-0002-1825-0097", "Jane Lab", true, openAlexAuthorId = "A123")
     private val john = PaperAuthor("John", "Smith", null, "John Lab", false)
 

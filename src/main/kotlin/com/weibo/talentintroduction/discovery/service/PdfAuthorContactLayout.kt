@@ -9,8 +9,11 @@ import java.util.Locale
 
 /** Bounded, same-page author/contact evidence; no inference from the article body or reference list. */
 internal object PdfAuthorContactLayout {
-    data class Contact(val email: String, val authorIndex: Int, val page: Int, val authorText: String, val contactText: String) {
-        val evidenceText get() = "PDF_PAGE:$page\nAUTHOR:$authorText\nCONTACT:$contactText"
+    const val RULE_VERSION = 20261023
+
+    data class Contact(val email: String, val authorIndex: Int, val page: Int, val authorText: String, val contactText: String, val rule: String? = null) {
+        val evidenceText get() = "PDF_PAGE:$page\nAUTHOR:$authorText\nCONTACT:$contactText" +
+            (rule?.let { "\nRULE:$it" } ?: "")
     }
 
     private data class Line(val page: Int, val x: Float, val right: Float, val y: Float, val text: String)
@@ -66,6 +69,7 @@ internal object PdfAuthorContactLayout {
             val height = document.getPage(page - 1).mediaBox.height
             val width = document.getPage(page - 1).mediaBox.width
             val lines = toLines(page, glyphs, width)
+            contacts += adjacentAuthorContacts(lines, authors)
             contacts += endContactBlocks(page, pageText, authors)
             val header = authorHeader(lines, height, authors) ?: continue
             // I-1：拥有者计数取自作者署名区（含匹配不上元数据的署名）；分不清作者段则回退为空集。
@@ -108,6 +112,62 @@ internal object PdfAuthorContactLayout {
             }
         }
         return contacts
+    }
+
+    private fun adjacentAuthorContacts(lines: List<Line>, authors: List<PaperAuthor>): List<Contact> {
+        fun name(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFKD)
+            .replace(Regex("\\p{M}+"), "").lowercase(Locale.ROOT)
+            .replace(Regex("[^\\p{L}\\p{N}]"), " ").trim().replace(Regex("\\s+"), " ")
+        val owners = authors.indices.filter {
+            !authors[it].givenNames.isNullOrBlank() && !authors[it].familyNames.isNullOrBlank()
+        }.groupBy { name("${authors[it].givenNames} ${authors[it].familyNames}") }
+        fun owner(text: String): Int? = owners[name(text.replace(
+            Regex("^[\\s*∗†‡§★]+|[\\s,*∗†‡§★\\d]+$"), ""))]?.singleOrNull()
+        val stop = Regex("^\\s*(abstract|references|introduction|acknowledg|keywords|conclusion)\\b", RegexOption.IGNORE_CASE)
+        val institution = Regex("universit|department|institut|school|laborator|college|faculty|centre|center|academy", RegexOption.IGNORE_CASE)
+        val wholeMailbox = Regex("\\s*(?:e-?mail\\s*:\\s*)?([A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,})\\s*", RegexOption.IGNORE_CASE)
+        val ordered = lines.sortedWith(compareBy<Line> { it.y }.thenBy { it.x })
+        val referenceHeading = Regex("^\\s*references\\b", RegexOption.IGNORE_CASE)
+        // A reference-list name is not a new contact anchor, even when followed by a mailbox.
+        // Existing explicit end-contact sections retain their separate, roster-bound parser.
+        val referenceY = ordered.firstOrNull {
+            referenceHeading.containsMatchIn(it.text)
+        }?.y
+        val candidates = mutableListOf<Pair<Contact, Boolean>>()
+        for (anchor in ordered) {
+            if (referenceY != null && anchor.y >= referenceY) break
+            val author = owner(anchor.text) ?: continue
+            var previousY = anchor.y
+            val middle = mutableListOf<String>()
+            for (line in ordered) {
+                if (line.y <= anchor.y + 1f) continue
+                if (line.y - anchor.y > 90f) break
+                if (kotlin.math.abs(line.x - anchor.x) > 36f ||
+                    line.right < anchor.x - 8f || line.x > anchor.right + 8f) continue
+                if (line.y - previousY > 24f) break
+                previousY = line.y
+                val text = line.text.trim()
+                if (text.isEmpty()) continue
+                if (owner(text) != null || stop.containsMatchIn(text)) break
+                if ('@' in text) {
+                    val address = wholeMailbox.matchEntire(text)?.groupValues?.get(1)
+                    if (address != null && emailExtractor.extract(address).contains(address.lowercase(Locale.ROOT))) {
+                        val rule = if (middle.isEmpty()) "PDF_NAME_EMAIL_ADJACENT" else "PDF_AUTHOR_CONTACT_BLOCK"
+                        candidates += Contact(address.lowercase(Locale.ROOT), author, anchor.page,
+                            anchor.text, (middle + line.text).joinToString("\n"), rule) to
+                            institution.containsMatchIn(middle.joinToString(" "))
+                    }
+                    break
+                }
+                middle += text
+                if (middle.size > 5) break
+            }
+        }
+        val blockOwners = candidates.filter { it.first.rule == "PDF_AUTHOR_CONTACT_BLOCK" }
+            .map { it.first.authorIndex }.toSet()
+        return candidates.filter {
+            it.first.rule == "PDF_NAME_EMAIL_ADJACENT" || it.second || blockOwners.size >= 2
+        }.map { it.first }
     }
 
     /** Section heading + actual metadata author roster + independent name/mailbox records. */

@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome
 import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.sample.DiscoverySampleContext
 import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
+import com.weibo.talentintroduction.discovery.service.PdfAuthorContactLayout
 import org.springframework.stereotype.Component
 import java.time.Instant
 import java.util.UUID
@@ -101,7 +102,7 @@ class DiscoveryPaperArchiveCapture(private val service: DiscoveryPaperArchiveSer
             scope.firstFatal?.let { throw it }
             scope.storage {
                 val snapshot = mapper.createObjectNode().put("capturedAt", Instant.now().toString())
-                snapshot.set<JsonNode>("parserVersion", mapper.createObjectNode().put("identityExtraction", DiscoveryIdentity.EXTRACTION_VERSION).put("pdfLayout", 0))
+                snapshot.set<JsonNode>("parserVersion", mapper.createObjectNode().put("identityExtraction", DiscoveryIdentity.EXTRACTION_VERSION).put("pdfLayout", PdfAuthorContactLayout.RULE_VERSION))
                 snapshot.set<JsonNode>("attemptIds", mapper.valueToTree(scope.attempts.map { it.id }))
                 snapshot.set<JsonNode>("outcome", mapper.valueToTree(outcome))
                 val envelope = mapper.createObjectNode().put("schemaVersion", 1)

@@ -123,7 +123,7 @@ class DiscoveryPaperArchiveCaptureTest {
             assertEquals(first,latest.get("first"))
             assertEquals("LATEST",latest.path("latest").path("outcome").path("failureReason").asText())
             assertEquals(20261004,first.path("parserVersion").path("identityExtraction").asInt())
-            assertEquals(0,first.path("parserVersion").path("pdfLayout").asInt())
+            assertEquals(20261023,first.path("parserVersion").path("pdfLayout").asInt())
             assertEquals(1,first.path("attemptIds").size())
             assertFalse(record.metadataJson.contains("fullText")); assertFalse(record.metadataJson.contains("secret"))
             assertEquals("https://fixture.invalid/a",f.mapper.readTree(record.metadataJson).path("downloadUrl").asText())
