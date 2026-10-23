@@ -64,6 +64,18 @@ class PaperQualificationEvidenceExtractorTest {
         val conflict = text("Biographies\nAlice Smith received her PhD. Alice Smith is a doctoral student.")
         assertTrue(conflict.facts.isNotEmpty()); assertTrue(conflict.facts.all { it.kind == PaperQualificationKind.CONFLICT })
     }
+    @Test fun `received doctoral candidate or student status is not a completed degree`() {
+        listOf("PhD candidate status", "Ph.D. candidate status", "PhD candidacy", "PhD student status",
+            "doctorate candidate status").forEach { status ->
+            val result = text("Biographies\nAlice Smith received her $status in 2023.")
+            assertTrue(result.facts.isEmpty(),status)
+            assertEquals(PaperEvidenceStatus.NOT_FOUND,result.coverage.status,status)
+        }
+        listOf("PhD", "Ph.D.", "PhD degree", "doctorate").forEach { degree ->
+            val result = text("Biographies\nAlice Smith received her $degree in 2023.")
+            assertEquals(PaperQualificationKind.COMPLETED_DOCTORATE,result.facts.single().kind,degree)
+        }
+    }
     @Test fun `safe HTML XML and DTD rejection preserve paragraph semantics`() {
         assertEquals(PaperQualificationKind.PROFESSOR,text("<html><body><h2>Biographies</h2><script>Alice Smith is a PhD student.</script><p>Alice Smith is a Professor.</p></body></html>",format="HTML").facts.single().kind)
         assertEquals(PaperQualificationKind.COMPLETED_DOCTORATE,text("<article><title>Biographies</title><p>Alice Smith earned her doctorate.</p></article>",format="XML").facts.single().kind)

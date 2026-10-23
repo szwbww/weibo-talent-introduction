@@ -74,7 +74,7 @@ class PaperQualificationEvidenceExtractor {
                         else -> PaperQualificationKind.PROFESSOR
                     } to m }
                     // Each assertion must explicitly name its subject; pronouns cannot supply ownership.
-                    Regex(subject + "\\s+(?:received|earned|obtained|was\\s+awarded)\\s+(?:(?:his|her|their|a|the)\\s+)?(Ph\\.?\\s?D\\.?|doctorate)(?:\\s+degree)?\\b", RegexOption.IGNORE_CASE)
+                    Regex(subject + "\\s+(?:received|earned|obtained|was\\s+awarded)\\s+(?:(?:his|her|their|a|the)\\s+)?(Ph\\.?\\s?D\\.?|doctorate)(?!\\.?\\s+(?:candidate|candidacy|student)\\b)(?:\\s+degree)?\\b", RegexOption.IGNORE_CASE)
                         .find(block)?.let { candidates += PaperQualificationKind.COMPLETED_DOCTORATE to it }
                     Regex(subject + "\\s+(?:is|was)\\s+(?:(?:an?|currently|now|presently)\\s+)*((?:Ph\\.?\\s?D\\.?|doctoral)\\s+(?:student|candidate))\\b", RegexOption.IGNORE_CASE)
                         .find(block)?.let { candidates += PaperQualificationKind.DOCTORAL_STUDENT to it }
