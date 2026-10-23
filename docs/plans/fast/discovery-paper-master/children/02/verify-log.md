@@ -91,3 +91,7 @@ Result: exit 0; BUILD SUCCESS finished 2026-10-24T00:20:37+08:00, artifact://132
 
 ### Required Action
 - COMPLETE_CHILD
+
+### Controller artifact checkpoint correction 1 — 2026-10-24
+- The child checkpoint rejected only an annotated repair SHA in fix-log; a canonical bare-SHA binding was appended preserving history.
+- PaperCaptureReverifierE2R1's LIGHT_PASS_WITH_NOTES/COMPLETE_CHILD and all recorded command evidence above remain unchanged. No verifier, product check or repair was rerun for this formatting correction.

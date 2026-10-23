@@ -243,3 +243,7 @@ READY_FOR_VERIFICATION → controller runs independent `verify-p`/light verifica
 - F-1 summary envelope consumer resolved. Fresh verifier evidence records342 JVM tests,1807 Node tests and separate guarded real-file/MySQL/HTTP capture smoke, all passing.
 - O-1 historical accidental external synthetic ARXIV requests remains RECORD_ONLY, with no exact wire count and no replay; final guarded evidence is separate from that failed run.
 - Human acceptance and whole-system verification remain unperformed. Proceed only after controller-owned artifact checkpoint succeeds.
+
+### Artifact checkpoint correction 1 — 2026-10-24
+- First checkpoint returned INVALID only because fix-log's Fix commit contained a subject annotation. Appended a bare-SHA binding without rewriting the historical record.
+- No product behavior, tests, implementation/fix SHA or independent verdict changed. Replacement evidence records this deterministic correction, not another execution.
