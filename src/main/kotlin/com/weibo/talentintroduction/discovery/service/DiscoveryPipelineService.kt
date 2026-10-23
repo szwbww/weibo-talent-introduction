@@ -24,6 +24,7 @@ import com.weibo.talentintroduction.discovery.repository.StreamCursorState
 import com.weibo.talentintroduction.discovery.repository.StreamRow
 import com.weibo.talentintroduction.discovery.sample.DiscoverySampleContext
 import com.weibo.talentintroduction.discovery.sample.DiscoverySampleEntry
+import com.weibo.talentintroduction.discovery.archive.PaperArchiveBlockedException
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.task.service.TaskExecutionSummaryProvider
 import com.weibo.talentintroduction.task.service.TaskProgress
@@ -1021,7 +1022,7 @@ class DiscoveryPipelineService(
                     releaseWindow(state, PipelineWaitReason.SOURCE_ERROR, null)
                     return
                 }
-                when (val extraction = DiscoveryTrafficMeter.measure(
+                val extraction = try { DiscoveryTrafficMeter.measure(
                     state.trafficSession, stream.source, DiscoveryTrafficMeter.Category.FULLTEXT
                 ) { expertDiscoveryService.extractQueuedItem(
                     envelope = envelope,
@@ -1031,7 +1032,13 @@ class DiscoveryPipelineService(
                     sampleContext = state.executionId.get().takeIf { it > 0 }?.let {
                         DiscoverySampleContext(it, stream.source, DiscoverySampleEntry.QUEUE, null, job.id)
                     }
-                ) }) {
+                ) } } catch (e: PaperArchiveBlockedException) {
+                    val at = now()
+                    repository.returnToPending(job.id, leaseToken, job.generation, at.plusSeconds(60), e.code, at)
+                    state.waitReasons.add(e.code)
+                    return
+                }
+                when (extraction) {
                     is QueuedItemExtraction.Extracted -> {
                         val bytes = extraction.extractionJson.toByteArray(Charsets.UTF_8).size.toLong()
                         val saved = repository.saveExtraction(

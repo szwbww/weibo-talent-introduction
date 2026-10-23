@@ -12,6 +12,8 @@ import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.domain.PaperSearchResult
 import com.weibo.talentintroduction.discovery.sample.DiscoverySampleAttemptKind
 import com.weibo.talentintroduction.discovery.sample.DiscoverySampleCapture
+import com.weibo.talentintroduction.discovery.archive.ArchiveAttemptKind
+import com.weibo.talentintroduction.discovery.archive.DiscoveryPaperArchiveCapture
 import org.springframework.web.client.HttpStatusCodeException
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
@@ -105,14 +107,26 @@ class EuropePmcDataSource(
                 // R-1（V-4）：连接/读取超时取 min(既有配置, 剩余预算)，响应体也在同一个绝对 deadline
                 // 内读完 —— 细水长流的 XML 会被截断，而不是永远读下去。
                 val attempt = DiscoverySampleCapture.beginAttempt(DiscoverySampleAttemptKind.PMC_XML, url)
+                val archiveAttempt = DiscoveryPaperArchiveCapture.beginAttempt(ArchiveAttemptKind.PMC_XML, url)
                 var attemptError: Throwable? = null
                 try {
-                    BoundedFulltextHttp.getForObject(
+                    if (DiscoveryPaperArchiveCapture.hasScope()) {
+                        BoundedFulltextHttp.execute(restTemplate, java.net.URI(url),
+                            properties.connectTimeoutMs.toLong(), properties.readTimeoutMs.toLong(), deadline
+                        ) { response ->
+                            DiscoveryPaperArchiveCapture.headers(archiveAttempt, response.rawStatusCode, response.headers.contentType?.toString())
+                            response.body.readBytes().also { bytes ->
+                                DiscoverySampleCapture.fullBody(attempt, bytes)
+                                DiscoveryPaperArchiveCapture.fullBody(archiveAttempt, bytes)
+                            }
+                        }
+                    } else BoundedFulltextHttp.getForObject(
                         restTemplate, url, ByteArray::class.java,
                         properties.connectTimeoutMs.toLong(), properties.readTimeoutMs.toLong(), deadline
                     ).also { bytes -> if (bytes != null) DiscoverySampleCapture.fullBody(attempt, bytes) }
                 } catch (error: Throwable) {
                     attemptError = error
+                    if (error is HttpStatusCodeException) DiscoveryPaperArchiveCapture.headers(archiveAttempt, error.statusCode.value(), error.responseHeaders?.contentType?.toString())
                     if (attempt != null && error is HttpStatusCodeException) {
                         try {
                             DiscoverySampleCapture.headers(attempt, error.statusCode.value(), error.responseHeaders?.contentType?.toString())
@@ -121,6 +135,7 @@ class EuropePmcDataSource(
                     throw error
                 } finally {
                     DiscoverySampleCapture.endAttempt(attempt, attemptError)
+                    DiscoveryPaperArchiveCapture.endAttempt(archiveAttempt, attemptError)
                 }
             }
             if (payload == null) XmlFetchResult.BudgetExhausted(requestsIssued) else XmlFetchResult.Bytes(payload)

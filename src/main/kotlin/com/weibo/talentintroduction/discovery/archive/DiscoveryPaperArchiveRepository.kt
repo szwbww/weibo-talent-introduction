@@ -13,6 +13,7 @@ import java.time.ZoneOffset
 @Repository
 class DiscoveryPaperArchiveRepository(private val jdbc: JdbcTemplate, manager: PlatformTransactionManager) {
     private val tx = TransactionTemplate(manager)
+    private val mapper = com.fasterxml.jackson.databind.ObjectMapper()
     fun <T : Any> transaction(action: () -> T): T = tx.execute { action() }!!
     fun setting(): ArchiveSetting = jdbc.query("SELECT * FROM discovery_paper_archive_setting WHERE id=1", RowMapper { r, _ ->
         ArchiveSetting(r.getLong("revision"), r.getBoolean("enabled"), r.getLong("max_bytes"), r.getLong("min_free_bytes"), time(r, "updated_at"))
@@ -63,7 +64,18 @@ class DiscoveryPaperArchiveRepository(private val jdbc: JdbcTemplate, manager: P
         attempt(id)!!
     }
     fun finishExtraction(id: Long, json: String, now: Instant): ArchiveRecord = transaction {
-        if (jdbc.update("UPDATE discovery_paper_archive_record SET outcome_json=?,revision=revision+1,updated_at=? WHERE id=? AND outcome_json IS NULL", json, db(now), id) == 0 && record(id) == null) throw ArchiveException("NOT_FOUND", 404)
+        val current = jdbc.query("SELECT * FROM discovery_paper_archive_record WHERE id=? FOR UPDATE", recordMapper, id).firstOrNull()
+            ?: throw ArchiveException("NOT_FOUND", 404)
+        val incoming = mapper.readTree(json)
+        val previous = current.outcomeJson?.let { mapper.readTree(it) }
+        // Legacy direct callers retain their immutable baseline semantics. Real capture envelopes update latest.
+        val merged = if (previous == null) incoming else if (incoming.has("latest")) {
+            (previous.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>()).also {
+                it.set<com.fasterxml.jackson.databind.JsonNode>("latest", incoming.get("latest"))
+            }
+        } else previous
+        jdbc.update("UPDATE discovery_paper_archive_record SET outcome_json=?,revision=revision+1,updated_at=? WHERE id=?",
+            mapper.writeValueAsString(merged), db(now), id)
         record(id)!!
     }
     fun saveAnalysis(id: Long, revision: Long, json: String, now: Instant): ArchiveRecord = transaction {

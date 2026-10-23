@@ -8,6 +8,8 @@ import com.weibo.talentintroduction.discovery.domain.PaperAuthor
 import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.domain.PaperSearchResult
+import com.weibo.talentintroduction.discovery.archive.ArchiveAttemptKind
+import com.weibo.talentintroduction.discovery.archive.DiscoveryPaperArchiveCapture
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Service
@@ -70,12 +72,24 @@ class PmcOaDataSource(
 
     private fun fetchFullTextXml(pmcId: String): ByteArray? {
         val url = "${properties.baseUrl}/efetch.fcgi?db=pmc&id=$pmcId&rettype=xml"
+        val attempt = DiscoveryPaperArchiveCapture.beginAttempt(ArchiveAttemptKind.PMC_OA_XML, url)
+        var attemptError: Throwable? = null
         return try {
             if (properties.requestDelayMs > 0) Thread.sleep(properties.requestDelayMs)
-            restTemplate.getForObject(url, ByteArray::class.java)
+            if (DiscoveryPaperArchiveCapture.hasScope()) {
+                restTemplate.execute(url, org.springframework.http.HttpMethod.GET, null,
+                    org.springframework.web.client.ResponseExtractor { response ->
+                        DiscoveryPaperArchiveCapture.headers(attempt, response.rawStatusCode, response.headers.contentType?.toString())
+                        response.body.readBytes().also { DiscoveryPaperArchiveCapture.fullBody(attempt, it) }
+                    })
+            } else restTemplate.getForObject(url, ByteArray::class.java)
         } catch (e: Exception) {
+            attemptError = e
+            if (e is org.springframework.web.client.HttpStatusCodeException) DiscoveryPaperArchiveCapture.headers(attempt, e.statusCode.value(), e.responseHeaders?.contentType?.toString())
             log.debug("Failed to fetch full text XML for {}: {}", pmcId, e.message)
             null
+        } finally {
+            DiscoveryPaperArchiveCapture.endAttempt(attempt, attemptError)
         }
     }
 

@@ -9,6 +9,8 @@ import com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome
 import com.weibo.talentintroduction.discovery.domain.PaperAuthor
 import com.weibo.talentintroduction.discovery.sample.DiscoverySampleAttemptKind
 import com.weibo.talentintroduction.discovery.sample.DiscoverySampleCapture
+import com.weibo.talentintroduction.discovery.archive.ArchiveAttemptKind
+import com.weibo.talentintroduction.discovery.archive.DiscoveryPaperArchiveCapture
 import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink
 import org.apache.pdfbox.pdmodel.interactive.action.PDActionURI
@@ -233,6 +235,7 @@ class PdfEmailExtractor(
             throw FulltextDeadlineExceededException(requestIssued = false)
         }
         val attempt = DiscoverySampleCapture.beginAttempt(DiscoverySampleAttemptKind.PDF_URL, uri.toString(), properties)
+        val archiveAttempt = DiscoveryPaperArchiveCapture.beginAttempt(ArchiveAttemptKind.PDF_URL, uri.toString())
         var attemptError: Throwable? = null
         return try {
             boundedHttp.execute<DownloadedContent>(
@@ -241,6 +244,7 @@ class PdfEmailExtractor(
             ) { response ->
                 onResponseHeaders?.invoke(response.headers)
                 val contentType = response.headers.contentType
+                if (archiveAttempt != null) DiscoveryPaperArchiveCapture.headers(archiveAttempt, response.rawStatusCode, contentType?.toString())
                 if (attempt != null) {
                     try {
                         DiscoverySampleCapture.headers(attempt, response.rawStatusCode, contentType?.toString())
@@ -274,6 +278,7 @@ class PdfEmailExtractor(
                 val bytes = buffer.toByteArray()
                 if (bytes.isEmpty()) throw RuntimeException("Empty body")
                 DiscoverySampleCapture.fullBody(attempt, bytes)
+                DiscoveryPaperArchiveCapture.fullBody(archiveAttempt, bytes)
 
                 val hasMagic = bytes.size >= 4 && bytes.take(4).toByteArray().contentEquals(magicBytes)
                 if (isPdfContentType || hasMagic) {
@@ -288,6 +293,7 @@ class PdfEmailExtractor(
             } ?: throw RuntimeException("Empty response")
         } catch (error: Throwable) {
             attemptError = error
+            if (archiveAttempt != null && error is HttpStatusCodeException) DiscoveryPaperArchiveCapture.headers(archiveAttempt, error.statusCode.value(), error.responseHeaders?.contentType?.toString())
             if (attempt != null && error is HttpStatusCodeException) {
                 try {
                     DiscoverySampleCapture.headers(attempt, error.statusCode.value(), error.responseHeaders?.contentType?.toString())
@@ -296,6 +302,7 @@ class PdfEmailExtractor(
             throw error
         } finally {
             DiscoverySampleCapture.endAttempt(attempt, attemptError)
+            DiscoveryPaperArchiveCapture.endAttempt(archiveAttempt, attemptError, attemptError is PdfTooLargeException)
         }
     }
 

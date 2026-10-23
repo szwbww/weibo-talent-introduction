@@ -112,6 +112,39 @@ class DiscoveryPaperArchiveService(
         if (value.toByteArray(Charsets.UTF_8).size > max) throw ArchiveException("METADATA_TOO_LARGE", 413)
         return value
     }
+    /** A server-issued, short-lived capability; never part of the HTTP DTO surface. */
+    internal class ScopePermit internal constructor(val recordId: Long) {
+        internal val attempts = mutableSetOf<Long>()
+    }
+    private val scopePermits = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<ScopePermit, Boolean>())
+    internal fun beginScope(executionId: Long, source: String, key: String, metadata: JsonNode): ScopePermit? = mutation {
+        if (!properties.allowed || !repository.setting().enabled) return@mutation null
+        preflight()
+        ScopePermit(beginRecord(executionId, source, key, metadata).id).also { scopePermits.add(it) }
+    }
+    private fun permit(value: ScopePermit) {
+        if (!scopePermits.contains(value)) throw ArchiveException("INVALID_SCOPE", 409)
+    }
+    private fun preflight(bytes: Long = 0) {
+        if (!properties.allowed) throw ArchiveException("ARCHIVE_DISABLED", 409)
+        val settings = repository.setting()
+        val base = root()
+        if (!Files.isDirectory(base, LinkOption.NOFOLLOW_LINKS) || !Files.isWritable(base)) throw ArchiveException("STORAGE_UNAVAILABLE", 503)
+        val size = sizes()
+        if (bytes > settings.maxBytes - size.first - size.second ||
+            (bytes == 0L && size.first + size.second >= settings.maxBytes) ||
+            diskProbe(base).usable - bytes < settings.minFreeBytes) throw ArchiveException("ARCHIVE_STORAGE_BLOCKED", 409)
+    }
+    internal fun beginScopeAttempt(value: ScopePermit, extractionId: UUID, sequence: Int, kind: ArchiveAttemptKind, url: String?): ArchiveAttempt = mutation {
+        permit(value); preflight()
+        beginAttempt(value.recordId, extractionId, sequence, kind, url).also { value.attempts.add(it.id) }
+    }
+    internal fun saveScopeBody(value: ScopePermit, attemptId: Long, bytes: ByteArray, mediaType: String): ArchiveAttempt = mutation {
+        permit(value)
+        if (attemptId !in value.attempts) throw ArchiveException("INVALID_SCOPE", 409)
+        saveBodyInternal(attemptId, bytes, mediaType, value)
+    }
+    internal fun endScope(value: ScopePermit) = lock.withLock { scopePermits.remove(value); Unit }
     fun beginRecord(executionId: Long, sourceName: String, paperKey: String, metadata: JsonNode): ArchiveRecord = mutation {
         id(executionId)
         if (!sourceName.matches(Regex("[A-Z0-9_]{1,32}")) || paperKey.isBlank() || paperKey.length > 160) throw ArchiveException("INVALID_RECORD", 400)
@@ -133,7 +166,9 @@ class DiscoveryPaperArchiveService(
     fun saveAnalysis(recordId: Long, revision: Long, analysis: JsonNode): ArchiveRecord = mutation {
         record(recordId); repository.saveAnalysis(recordId, revision, json(analysis, 4 * 1024 * 1024), Instant.now())
     }
-    fun saveBody(attemptId: Long, bytes: ByteArray, mediaType: String): ArchiveAttempt = mutation(create = true) {
+    fun saveBody(attemptId: Long, bytes: ByteArray, mediaType: String): ArchiveAttempt =
+        saveBodyInternal(attemptId, bytes, mediaType, null)
+    private fun saveBodyInternal(attemptId: Long, bytes: ByteArray, mediaType: String, scope: ScopePermit?): ArchiveAttempt = mutation(create = true) {
         id(attemptId)
         val a = repository.attempt(attemptId) ?: throw ArchiveException("NOT_FOUND", 404)
         if (a.status == ArchiveAttemptStatus.SAVED) {
@@ -143,7 +178,8 @@ class DiscoveryPaperArchiveService(
         }
         if (a.status != ArchiveAttemptStatus.STARTED) throw ArchiveException("ATTEMPT_FINISHED", 409)
         val settings = repository.setting()
-        if (!properties.allowed || !settings.enabled) throw ArchiveException("ARCHIVE_DISABLED", 409)
+        if (!properties.allowed || (scope == null && !settings.enabled)) throw ArchiveException("ARCHIVE_DISABLED", 409)
+        if (scope != null) { permit(scope); preflight(bytes.size.toLong()) }
         val hash = sha(bytes); val existing = repository.blob(hash)
         if (existing?.state == ArchiveBlobState.DELETING) throw ArchiveException("DELETE_IN_PROGRESS", 409)
         if (existing?.state == ArchiveBlobState.AVAILABLE && validBlob(existing, true)) {

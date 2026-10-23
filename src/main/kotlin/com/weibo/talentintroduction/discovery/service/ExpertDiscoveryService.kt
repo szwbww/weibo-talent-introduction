@@ -48,6 +48,8 @@ import com.weibo.talentintroduction.discovery.repository.QueueItemUnit
 import com.weibo.talentintroduction.discovery.sample.DiscoverySampleCapture
 import com.weibo.talentintroduction.discovery.sample.DiscoverySampleContext
 import com.weibo.talentintroduction.discovery.sample.DiscoverySampleEntry
+import com.weibo.talentintroduction.discovery.archive.DiscoveryPaperArchiveCapture
+import com.weibo.talentintroduction.discovery.archive.PaperArchiveBlockedException
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Qualifier
@@ -138,7 +140,8 @@ class ExpertDiscoveryService(
      */
     private val personRegistrationService: DiscoveryPersonRegistrationService? = null,
     private val verificationRegistration: DiscoveryVerificationRegistrationService? = null,
-    private val sampleCapture: DiscoverySampleCapture? = null
+    private val sampleCapture: DiscoverySampleCapture? = null,
+    private val archiveCapture: DiscoveryPaperArchiveCapture? = null
 ) {
     private val log = LoggerFactory.getLogger(ExpertDiscoveryService::class.java)
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
@@ -1610,13 +1613,23 @@ class ExpertDiscoveryService(
         sampleContext: DiscoverySampleContext?
     ): PaperExtraction {
         return try {
-            val outcome = if (source.sourceName == "OPENALEX" && sampleContext?.valid() == true && sampleCapture != null) {
-                sampleCapture.capture(sampleContext, paper) { source.extractAuthorEmails(paper) }
-            } else source.extractAuthorEmails(paper)
+            val outcome = capturePaper(paper, source, sampleContext,
+                envelopeForPaper(source.sourceName, paper, Int.MAX_VALUE).itemKey)
             PaperExtraction(outcome, null)
         } catch (e: Exception) {
+            if (e is PaperArchiveBlockedException) throw e
             PaperExtraction(null, e.message ?: e.javaClass.simpleName)
         }
+    }
+
+    private fun capturePaper(paper: PaperMetadata, source: AcademicDataSource,
+                             context: DiscoverySampleContext?, paperKey: String): EmailExtractionOutcome {
+        val extract = {
+            if (source.sourceName == "OPENALEX" && context?.valid() == true && sampleCapture != null) {
+                sampleCapture.capture(context, paper) { source.extractAuthorEmails(paper) }
+            } else source.extractAuthorEmails(paper)
+        }
+        return archiveCapture?.capture(context, paperKey, paper, extract) ?: extract()
     }
 
     /** I-7（c2）：RAW 晋升扫描 + 邮箱补全的**唯一**入口（旧 `discover(includeRawScan=true)` 与队列窗口共用同一门禁）。 */
@@ -1686,7 +1699,17 @@ class ExpertDiscoveryService(
         val futures = papers.map { paper ->
             paper to CompletableFuture.supplyAsync({ extract(paper) }, discoveryFetchExecutor)
         }
-        return futures.map { (paper, future) -> paper to future.join() }
+        var firstFailure: Throwable? = null
+        val results = mutableListOf<Pair<PaperMetadata, PaperExtraction>>()
+        futures.forEach { (paper, future) ->
+            try { results.add(paper to future.join()) }
+            catch (e: java.util.concurrent.CompletionException) {
+                val cause = e.cause ?: e
+                if (firstFailure == null || (cause is PaperArchiveBlockedException && firstFailure !is PaperArchiveBlockedException)) firstFailure = cause
+            }
+        }
+        firstFailure?.let { throw it }
+        return results
     }
 
     private fun consumeOutcome(
@@ -2101,10 +2124,7 @@ class ExpertDiscoveryService(
                     else -> {
                         val source = requireNotNull(paperSource)
                         val paper = readPaper(envelope.payloadJson)
-                        if (envelope.unit == QueueItemUnit.PAPER && source.sourceName == "OPENALEX" &&
-                            sampleContext?.valid() == true && sampleCapture != null) {
-                            sampleCapture.capture(sampleContext, paper) { source.extractAuthorEmails(paper) }
-                        } else source.extractAuthorEmails(paper)
+                        capturePaper(paper, source, sampleContext, envelope.itemKey)
                     }
                 }
                 if (FulltextRequestGate.hostBusyInScope()) {
@@ -2126,6 +2146,7 @@ class ExpertDiscoveryService(
             } catch (e: FulltextRequestGate.HostBusyException) {
                 QueuedItemExtraction.HostBusy
             } catch (e: Exception) {
+                if (e is PaperArchiveBlockedException) throw e
                 QueuedItemExtraction.Failed(e.message ?: e.javaClass.simpleName, retryable = true)
             }
         }
