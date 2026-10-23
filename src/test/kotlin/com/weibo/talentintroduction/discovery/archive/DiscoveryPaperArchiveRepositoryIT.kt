@@ -105,7 +105,7 @@ class DiscoveryPaperArchiveRepositoryIT {
             val revision=f.repository.record(p.id)!!.revision
             f.service.saveAnalysis(p.id,revision,f.mapper.readTree("{\"schemaVersion\":1,\"hasGain\":true,\"summary\":{\"delta\":1}}"))
             assertThrows(ArchiveException::class.java) { f.service.saveAnalysis(p.id,revision,first) }
-            assertEquals(1,f.service.list(ArchiveQuery(hasGain=true)).items.size)
+            assertEquals(0,f.service.list(ArchiveQuery(hasGain=true)).items.size)
         }
     }
     @Test fun `parallel singleton CAS has exactly one winner`() {

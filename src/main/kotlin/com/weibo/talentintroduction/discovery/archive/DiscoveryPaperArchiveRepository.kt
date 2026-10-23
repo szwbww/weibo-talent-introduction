@@ -109,7 +109,8 @@ class DiscoveryPaperArchiveRepository(private val jdbc: JdbcTemplate, manager: P
         }
         query.status?.let { clauses += "($STATE_SQL)=?"; args += it.name }
         query.hasGain?.let {
-            clauses += "r.analysis_json IS NOT NULL AND (COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.analysis_json,'$.hasGain')),'false')=?)"; args += it.toString()
+            clauses += "r.analysis_json IS NOT NULL AND JSON_UNQUOTE(JSON_EXTRACT(r.analysis_json,'$.baselineCoverage'))='COMPLETE' AND JSON_EXTRACT(r.analysis_json,'$.delta') IS NOT NULL AND JSON_TYPE(JSON_EXTRACT(r.analysis_json,'$.delta'))<>'NULL' AND (CAST(JSON_UNQUOTE(JSON_EXTRACT(r.analysis_json,'$.deltaAddedBindings')) AS SIGNED)>0)=?"
+            args += it
         }
         val where = clauses.joinToString(" AND ")
         val total = jdbc.queryForObject("SELECT COUNT(*) FROM discovery_paper_archive_record r WHERE $where", Long::class.java, *args.toTypedArray())!!

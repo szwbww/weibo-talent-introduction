@@ -9,7 +9,8 @@ import javax.servlet.http.HttpServletResponse
 /** All archive routes remain covered by the existing AuthWebConfig interceptor. */
 @RestController
 @RequestMapping("/api/expert-discovery/papers")
-class DiscoveryPaperArchiveController(private val service: DiscoveryPaperArchiveService) {
+class DiscoveryPaperArchiveController(private val service: DiscoveryPaperArchiveService,
+    private val analysisService: DiscoveryPaperAnalysisService? = null) {
     @GetMapping("/settings") fun settings() = service.settings()
     @PutMapping("/settings") fun settings(@RequestBody body: JsonNode) = service.updateSettings(
         ArchiveSettingsRequest(number(body,"revision"),boolean(body,"enabled"),number(body,"maxBytes"),number(body,"minFreeBytes")))
@@ -19,6 +20,13 @@ class DiscoveryPaperArchiveController(private val service: DiscoveryPaperArchive
         @RequestParam(required=false) hasGain: Boolean?, @RequestParam(defaultValue="0") page: Int,
         @RequestParam(defaultValue="20") size: Int) = service.list(ArchiveQuery(executionId,q,status,protected,hasGain,page,size))
     @GetMapping("/{id}") fun detail(@PathVariable id: Long) = service.detail(id)
+    @PostMapping("/{id}/analysis")
+    fun analysis(@PathVariable id: Long, @RequestBody body: JsonNode): JsonNode {
+        if (!body.isObject || body.fieldNames().asSequence().any { it != "force" })
+            throw ArchiveException("INVALID_ANALYSIS_REQUEST", 400)
+        val force = if (body.has("force")) boolean(body, "force") else false
+        return requireNotNull(analysisService).analyze(id, force)
+    }
     @PostMapping("/protection") fun protection(@RequestBody body: JsonNode): ArchiveProtectionResult {
         val items = body.path("items"); if (!items.isArray) throw ArchiveException("INVALID_IDS",400)
         return service.protection(ArchiveProtectionRequest(items.map { ArchiveRevisionItem(number(it,"id"),number(it,"revision")) },boolean(body,"protected")))

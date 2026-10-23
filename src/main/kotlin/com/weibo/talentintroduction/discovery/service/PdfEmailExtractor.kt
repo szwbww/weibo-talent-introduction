@@ -319,7 +319,7 @@ class PdfEmailExtractor(
     internal fun selectedPages(pageCount: Int): List<Int> =
         PdfAuthorContactLayout.selectedPages(pageCount, properties.maxPages, properties.tailPages)
 
-    private fun extractEmailsFromBytes(bytes: ByteArray, knownAuthors: List<PaperAuthor>, deadline: Instant?): List<AuthorEmail> {
+    internal fun extractEmailsFromBytes(bytes: ByteArray, knownAuthors: List<PaperAuthor>, deadline: Instant?): List<AuthorEmail> {
         ByteArrayInputStream(bytes).use { stream ->
             PDDocument.load(stream).use { doc ->
                 val text = StringBuilder()

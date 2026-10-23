@@ -33,6 +33,52 @@ class DiscoveryPaperArchiveService(
 ) {
     private val lock = ReentrantLock()
     private val activeWriters = mutableSetOf<Path>()
+    private val analysisReaders = mutableMapOf<String, Int>()
+    internal data class AnalysisBody(val attempt: ArchiveAttempt, val hash: String, val mediaType: String, val input: InputStream)
+    internal inner class AnalysisLease(val record: ArchiveRecord, val bodies: List<AnalysisBody>,
+        val fileSet: List<Pair<Long, String>>) : AutoCloseable {
+        override fun close() = lock.withLock {
+            bodies.forEach { body ->
+                try { body.input.close() } finally {
+                    val n = analysisReaders.getValue(body.hash) - 1
+                    if (n == 0) analysisReaders.remove(body.hash) else analysisReaders[body.hash] = n
+                }
+            }
+        }
+    }
+    private fun analysisFiles(recordId: Long): List<Pair<Long, String>> = repository.attempts(recordId).mapNotNull { a ->
+        val b = a.blobSha256?.let { repository.blob(it) }
+        if (a.status == ArchiveAttemptStatus.SAVED && b?.state == ArchiveBlobState.AVAILABLE &&
+            Files.isRegularFile(blobPath(b.sha256), LinkOption.NOFOLLOW_LINKS) &&
+            Files.size(blobPath(b.sha256)) == b.sizeBytes && hashFile(blobPath(b.sha256)) == b.sha256)
+            a.id to b.sha256 else null
+    }
+    internal fun analysisLease(recordId: Long): AnalysisLease = mutation {
+        val r = record(recordId)
+        val files = analysisFiles(recordId)
+        if (files.isEmpty()) throw ArchiveException("SOURCE_MISSING", 410)
+        val first = r.outcomeJson?.let { mapper.readTree(it).path("first") }
+        val anchors = first?.path("attemptIds")?.takeIf { it.isArray && !it.isEmpty }?.map { it.asLong() }?.toSet()
+        val selected = files.filter { anchors == null || it.first in anchors }
+        val opened = mutableListOf<AnalysisBody>()
+        try {
+            selected.distinctBy { it.second }.forEach { (id, hash) ->
+                val body = AnalysisBody(repository.attempt(id)!!, hash, repository.blob(hash)!!.mediaType,
+                    Files.newInputStream(blobPath(hash), LinkOption.NOFOLLOW_LINKS))
+                opened += body
+                analysisReaders[hash] = (analysisReaders[hash] ?: 0) + 1
+            }
+            AnalysisLease(r, opened, files)
+        } catch (e: Exception) {
+            AnalysisLease(r, opened, files).close()
+            throw e
+        }
+    }
+    internal fun commitAnalysis(lease: AnalysisLease, analysis: JsonNode): ArchiveRecord = mutation {
+        if (record(lease.record.id).revision != lease.record.revision || analysisFiles(lease.record.id) != lease.fileSet)
+            throw ArchiveException("REVISION_CONFLICT", 409)
+        repository.saveAnalysis(lease.record.id, lease.record.revision, json(analysis, 4 * 1024 * 1024), Instant.now())
+    }
     internal var failpoint: (String) -> Unit = {}
     internal var diskProbe: (Path) -> ArchiveDisk = { path -> Files.getFileStore(path).let { ArchiveDisk(it.totalSpace, it.unallocatedSpace, it.usableSpace) } }
     private val directoryPermissions = PosixFilePermissions.fromString("rwx------")
@@ -299,7 +345,14 @@ class DiscoveryPaperArchiveService(
         val analysis = r.analysisJson?.let { mapper.readTree(it) }
         return ArchiveRow(r.id,r.revision,r.executionId,r.sourceName,r.paperKey,paper.path("title").takeUnless { it.isMissingNode || it.isNull }?.asText(),paper.path("doi").takeUnless { it.isMissingNode || it.isNull }?.asText(),
             (paper.get("pubYear") ?: paper.get("year"))?.takeIf { it.isIntegralNumber }?.asInt(),state,r.protected,
-            readable.mapNotNull { it.blobSha256 }.distinct().sumOf { repository.blob(it)!!.sizeBytes },attempts.size,readable.map { it.id },r.createdAt,r.updatedAt,summary,analysis?.get("summary") ?: analysis)
+            readable.mapNotNull { it.blobSha256 }.distinct().sumOf { repository.blob(it)!!.sizeBytes },attempts.size,readable.map { it.id },r.createdAt,r.updatedAt,summary,analysis?.let { value ->
+                mapper.createObjectNode().also { projection ->
+                    listOf("schemaVersion", "analysisVersion", "parserVersion", "analyzedAt", "baselineCoverage",
+                        "coverage", "delta", "deltaAddedBindings", "hasGain").forEach { key ->
+                        value.get(key)?.let { projection.set<JsonNode>(key, it) }
+                    }
+                }
+            })
     }
     fun list(query: ArchiveQuery): ArchivePage = mutation {
         if (query.page < 0 || query.size !in listOf(20,50,100) || (query.q?.length ?: 0) > 200) throw ArchiveException("INVALID_QUERY", 400)
@@ -360,6 +413,7 @@ class DiscoveryPaperArchiveService(
             blobSnapshot.add(mapper.valueToTree<JsonNode>(listOf(hash,blob?.state?.name,references)))
             when {
                 blob == null || blob.state == ArchiveBlobState.MISSING -> {}
+                (analysisReaders[hash] ?: 0) > 0 -> busy += hash
                 blob.state == ArchiveBlobState.DELETING -> busy += hash
                 refs.any { it.recordId !in ids || repository.record(it.recordId)?.protected == true } -> shared += hash
                 validBlob(blob) -> deletable += blob
@@ -374,7 +428,8 @@ class DiscoveryPaperArchiveService(
             if (id in protected) reasons += "PROTECTED"
             if (id in notStored) reasons += "NOT_STORED"
             if (a.any { it.blobSha256 in shared }) reasons += "SHARED_FILE"
-            if (a.any { it.blobSha256 in busy }) reasons += "DELETE_IN_PROGRESS"
+            if (a.any { it.blobSha256 in busy })
+                reasons += if (a.any { (analysisReaders[it.blobSha256] ?: 0) > 0 }) "BUSY" else "DELETE_IN_PROGRESS"
             ArchiveDeleteItem(id,reasons)
         }
         return Deletion(ArchiveDeletePreview(ids,sha(mapper.writeValueAsBytes(canonical)),deletable.size,deletable.sumOf { it.sizeBytes },protected,shared,busy,notStored,items),deletable)
@@ -415,6 +470,7 @@ class DiscoveryPaperArchiveService(
         val now = Instant.now()
         repository.blobs().forEach { blob ->
             when {
+                (analysisReaders[blob.sha256] ?: 0) > 0 -> Unit
                 blob.state == ArchiveBlobState.DELETING -> {
                     // Once DELETING commits, new references/protection are forbidden until this finishes.
                     Files.deleteIfExists(blobPath(blob.sha256)); repository.finishDelete(blob.sha256,now)

@@ -67,3 +67,22 @@ data class ArchiveDeleteResult(val deletedFiles: Int, val deletedBytes: Long, va
 
 /** The descriptor is never serialized. The controller streams while the service holds the mutation/file lock. */
 data class ArchiveContent(val mediaType: String, val length: Long, val filename: String)
+
+enum class PaperEvidenceStatus { FOUND, NOT_FOUND, PARTIAL, ERROR }
+enum class PaperQualificationKind { ASSISTANT_PROFESSOR, ASSOCIATE_PROFESSOR, PROFESSOR, COMPLETED_DOCTORATE, DOCTORAL_STUDENT, CONFLICT }
+data class PaperQualificationFact(val authorIndex: Int, val authorName: String, val kind: PaperQualificationKind,
+    val originalTerm: String, val quote: String, val page: Int?, val paragraph: Int, val paperYear: Int?,
+    val bodySha256: String, val temporalScope: String = "PUBLICATION_TIME", val rule: String)
+data class PaperAnalysisCoverage(val status: PaperEvidenceStatus, val scannedPages: Int = 0, val totalPages: Int = 0,
+    val reasons: List<String> = emptyList())
+data class PaperQualificationResult(val facts: List<PaperQualificationFact>, val coverage: PaperAnalysisCoverage)
+data class PaperAnalysisBinding(val email: String, val authorName: String?, val identityEvidence: String? = null)
+data class PaperAnalysisDelta(val addedBindings: Int, val removedBindings: Int)
+data class PaperAnalysisResult(val schemaVersion: Int = 1, val parserVersion: Map<String, Int>,
+    val analysisVersion: Int = 1, val analyzedAt: String, val inputBodyHashes: List<String>,
+    val baselineCaptureAt: String?, val baselineCoverage: String, val missingBodies: List<Long>,
+    val coverage: PaperAnalysisCoverage, val before: List<PaperAnalysisBinding>?, val after: List<PaperAnalysisBinding>,
+    val added: List<PaperAnalysisBinding>, val removed: List<PaperAnalysisBinding>, val conflicts: List<PaperAnalysisBinding>,
+    val qualificationFacts: List<PaperQualificationFact>, val delta: PaperAnalysisDelta?, val deltaAddedBindings: Int?,
+    val hasGain: Boolean?, val reasons: List<String>,
+    val comparisonScope: String = "CAPTURE_SOURCE_FALLBACK_VS_SAVED_BODY_REPARSE")
