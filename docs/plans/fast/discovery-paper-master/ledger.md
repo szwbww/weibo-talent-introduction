@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-23/discovery-paper-master.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-10-23/discovery-paper-master.md (commit 541411d540019428c72b31775c325087b33da303)
 - Amendments: A1,A2,A3,A4,A5,A6,A7,A8
 - Master base: c6e9709f349f32c5feb1d067b47c697b0dff05b6
@@ -9,12 +9,12 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-23T14:24:57.472352+00:00
-- Current child: 05
-- Waiting role: N/A
+- Current child: 06a
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: N/A
+- Pause reason: Mandatory06a Maven-bound Node gate exposes29 inherited resource-contract failures in28 unauthorized JS files; requires explicit test-only scope and master10-file-cap exception, not silent expansion.
+- Resume from: ae467257b520133ad2db999478d02bd9b02b6c85
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
@@ -24,7 +24,7 @@
 | 03 | docs/plans/2026-10-23/discovery-paper-03-parser.md | commit:8d2313da868251b68dcaee02b744dfa777b41674 | 02 | 2 | LIGHT_PASS_WITH_NOTES | c37341aacfc0937e829132ad73d8af7fa24b4b97 | 5b7bc8919202876e7d1b6884cd9c9cd50d1f23af | 0 | — | 5b7bc8919202876e7d1b6884cd9c9cd50d1f23af | 7a7237aba8a5e2d4f66f0b6bfb6d17f74e232b54 | PaperParserVerifierE2; O-1 missing originals/page34; real effects incomplete |
 | 04 | docs/plans/2026-10-23/discovery-paper-04-analysis.md | commit:bcf5d64fb9534759eb1cad08db3089d36e4a1fb0 | 01,02,03 | 2 | LIGHT_PASS_WITH_NOTES | 5b7bc8919202876e7d1b6884cd9c9cd50d1f23af | 3cdf7a6aa30ee773a0233e70e8c84d3b00754384 | 1 | bbd2700ca56d00a9e2845b61b15c1fb7e5b07a49 | bbd2700ca56d00a9e2845b61b15c1fb7e5b07a49 | ee524ba4c74480cd8a9dd985fae36ee886ef8160 | PaperAnalysisReverifierE2R1; F-1 closed; O-1 effects incomplete/O-2 historical classpath |
 | 05 | docs/plans/2026-10-23/discovery-paper-05-frontend.md | commit:541411d540019428c72b31775c325087b33da303 | 01,02,03,04 | 2 | LIGHT_PASS_WITH_NOTES | bbd2700ca56d00a9e2845b61b15c1fb7e5b07a49 | 1b8c4981f0116e17648f064482e505d436c02edd | 0 | — | 1b8c4981f0116e17648f064482e505d436c02edd | b9e3c3e257faf9a294b7f3c8a0187c8c06e75dc7 | PaperFrontendVerifierE2; O-1 fixture limit/O-2 attempt time/O-3 harness; no repairs |
-| 06a | docs/plans/2026-10-23/discovery-paper-06a-apollo-persistence.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | none | 1 | PENDING | — | — | 0 | — | — | — |  |
+| 06a | docs/plans/2026-10-23/discovery-paper-06a-apollo-persistence.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | none | 1 | PAUSED_FOR_HUMAN | 1b8c4981f0116e17648f064482e505d436c02edd | ae467257b520133ad2db999478d02bd9b02b6c85 | 0 | — | ae467257b520133ad2db999478d02bd9b02b6c85 | c27b87f95488bad63b67bfcbb3168c268856fc3d | Fivefiles retained; JVM12pass/runtimeSQLHTTPpass; boundNode29fail28files; no independent verifier |
 | 06b | docs/plans/2026-10-23/discovery-paper-06b-apollo-runtime.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 06a | 1 | PENDING | — | — | 0 | — | — | — |  |
 | 07 | docs/plans/2026-10-23/discovery-paper-07-apollo-frontend.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 05,06a,06b | 1 | PENDING | — | — | 0 | — | — | — |  |
 
@@ -93,3 +93,6 @@
 - Child05 epoch2 IMPLEMENTER PaperFrontendImplementerE2 acquired, agent_attempt0 fix_round0. Seven-file amended contract, required final Node/browser evidence; no completed child replay.
 - Child05 epoch2 READY_FOR_VERIFICATION at1b8c4981f0116e17648f064482e505d436c02edd after approved test-only sync;65/65 requiredNode/syntax passed and fresh actual Chromium bothviewports. Fresh distinct VERIFIER PaperFrontendVerifierE2 acquired attempt1 agent_attempt0; entire retained range reviewed, no replay01–04.
 - Child05 epoch2 terminal LIGHT_PASS_WITH_NOTES / COMPLETE_CHILD; independent65/65 Node,syntax,verbatimS-4 and actual Chromium desktop/narrow+mutations/lifecycle passed. Evidenceb9e3c3e257faf9a294b7f3c8a0187c8c06e75dc7; zero repairs; later children PENDING until fullmanifest checkpoint.
+- Child05 fullmanifest dirty/clean checkpoint VALID at3700fb3eadab04b6fa0469abece5690d9ae2051d. Child06a IMPLEMENTER ApolloPersistenceImplementer acquired, epoch1 fix_round0 agent_attempt0. Five-file persistence-only contract, realSQLrace/HTTPsmoke required; no runtime wiring/laterchildreview.
+- Child06a execution PLAN_CONFLICT retainedae467257b520133ad2db999478d02bd9b02b6c85 five-file implementation; mandatory finalMaven exit1, JVM12pass0fail/error/skip, boundNode1816/1787pass/29fail across28 files. All JS/index byteidentical to productbase1b8c498, provenance05f4b192d; no06a runtime behavior caused resource addition. Actual SQL/TCPHTTP separate smoke passed independentflags/CASrace409/strict400/auth401/DBoutage503/reload/nootherwrites/nooutsidecalls.
+- Exact28-path failing assertion inventory and receipt commands recorded in children/06a/execution.md:139–196, evidencec27b87f95488bad63b67bfcbb3168c268856fc3d. Proposed bounded amendment: add only these28 tests for count/description16→17 and orderedmodule-list sync, preserving key/order/no-duplicate/runtime/behavior assertions; existing5+28=33 requires explicit one-time masterI-3 test-only cap exception. No amendment applied without human approval;06b/07 remain pending, no independent verifier or automatic repair.
