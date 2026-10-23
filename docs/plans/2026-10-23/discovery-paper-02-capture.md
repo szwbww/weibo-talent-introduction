@@ -66,6 +66,15 @@ scope 保存 recordId、attempt handles、firstFatal；不累积完整 body 列�
 
 即使下层 broad catch 吞掉 hook 异常，scope.firstFatal 仍在 delegate 结束时重新抛 `PaperArchiveBlockedException(code)`；finally 结束 STARTED 尝试和恢复 ThreadLocal。不能通过“诊断失败不影响业务”的旧 sample 语义掩盖此异常。没有完整 body 的下载异常记 DOWNLOAD_FAILED/TOO_LARGE；它们不属于保存基础设施失败。
 
+### T-1a 已批准的存储接缝修订（I-3/I-4）
+
+2026-10-23 用户批准暂停报告中的最小修订，允许本切片修改既有 `DiscoveryPaperArchiveService.kt` 与 `DiscoveryPaperArchiveRepository.kt`；总授权从8文件扩至10文件，不扩大业务行为。
+
+- Service 在每篇 scope 开始时读取启用状态并签发仅服务端可建立的 scope 保存许可；许可绑定该 scope 的 record/attempt，不接受 HTTP 客户端提供的绕过标记。已获许可的 scope 在 enabled 后续关闭时仍可完成本次实际取得正文的保存；每次写入继续检查当前容量、目录/文件安全和部署总许可。新 scope 或重试重新读取 enabled，关闭时不新增归档写入。保留既有无 scope 调用的启用检查语义，不能全局删掉 `saveBody` 的开关保护。
+- Repository 的唯一 `finishExtraction` 写口在事务内锁定/比较当前记录后原子合并：首次保存 first 与 latest；再次真实抽取逐字保留既有 first 的证据值，仅更新 latest、revision、updated_at。不得再以 `outcome_json IS NULL` 条件吞掉后续更新；并发调用也不能覆盖已冻结 first。analysis_json 不变，旧记录无基线时不伪造 first。
+- 以上接缝的回归放在本切片已授权 CaptureTest/FlowIT：下载后关闭仍保存、关闭后的新 scope 无归档写、容量阈值仍实时阻断、重复及并发抽取保留 first 并更新 latest。既有01测试只运行回归，不扩大其编辑权限；不重做01已完成的实施或轻量复验。
+
+
 ### T-2 HTTP hooks 与调用入口（I-1～I-4）
 
 修改 `PdfEmailExtractor.kt`、`EuropePmcDataSource.kt`、`PmcOaDataSource.kt`：新增 archive begin/headers/fullBody/end，保留旧 sample hooks。archive preflight 在每次请求发出前；没有 archive scope 时 no-op。headers 不以解析后的字符串正文冒称原始 bytes。
@@ -85,7 +94,7 @@ scope 保存 recordId、attempt handles、firstFatal；不累积完整 body 列�
 
 ## 变更文件清单
 
-8 文件；子系统 2（原文采集、发现调度）；既有共享 store 新字段 0。
+10 文件；子系统 2（原文采集、发现调度）；既有共享 store 新字段 0。
 
 | 文件 | 动作 |
 |---|---|
@@ -97,6 +106,8 @@ scope 保存 recordId、attempt handles、firstFatal；不累积完整 body 列�
 | src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt | 存储阻断不消耗重试 |
 | src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveCaptureTest.kt | scope、字节、关闭回归 |
 | src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveFlowIT.kt | 多来源/游标/队列/取消 |
+| src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt | scope启用许可与实时容量检查接缝 |
+| src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveRepository.kt | 原子保留first并更新latest的唯一SQL写口 |
 
 ## 验收标准
 
@@ -125,3 +136,7 @@ scope 保存 recordId、attempt handles、firstFatal；不累积完整 body 列�
 - 操作步骤：1. 消费缓存 job。2. 开启归档并运行假来源。3. 首份原文保存后取消任务。
 - 预期结果：步骤 1 不新增全文请求或伪造原文；步骤 3 已存原文仍可读、已准入专家仍在；新库不改旧采样文件 hash。
 - 覆盖：I-2/I-4；缓存与取消回归。
+
+## 修正记录
+
+- 2026-10-23：用户“批准 继续”批准暂停报告 C-1/C-2 的最小修订：授权上述两个既有存储文件，8→10文件；明确 scope 保存许可与 first/latest 原子持久化，避免在权限外绕过存储接缝。批准及提交身份记录在 `../fast/discovery-paper-master/ledger.md` 的 Amendments 表。

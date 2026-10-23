@@ -97,7 +97,7 @@
 | 顺序 | 子计划 | 文件上限 | 可独立验证/部署的结果 |
 |---|---|---:|---|
 | 01 | [存储与管理API](discovery-paper-01-storage.md) | 9 | 独立目录/持久化/鉴权/保护删除/容量API；默认关闭，不接入旧业务 |
-| 02 | [全下载接入](discovery-paper-02-capture.md) | 8 | 六论文来源真实正文留存，容量阻断不丢游标，可通过API使用 |
+| 02 | [全下载接入](discovery-paper-02-capture.md) | 10 | 六论文来源真实正文留存，容量阻断不丢游标，可通过API使用；含已批准的存储接缝修订 |
 | 03 | [版面解析修复](discovery-paper-03-parser.md) | 6 | 两条解析规则独立生效，固定原文回放报告 |
 | 04 | [解析对照与历史事实](discovery-paper-04-analysis.md) | 9 | 只读分析现有正文、分析JSON和查看API |
 | 05 | [论文原文前端](discovery-paper-05-frontend.md) | 6 | 真实页面管理/预览/磁盘/批量取消保护，完整CSS |
@@ -107,7 +107,7 @@
 
 每份先实施、机器复验通过，再进入下一份；不把机器复验当成人工验收。任务可以一次连续执行，但不能并行修改共享文件或越过失败关卡。本轮只创建计划，未启动执行。
 
-共享文件顺序：ArchiveService 01→04，Models 01→04，Controller 01→04；Capture 02→03，PdfEmailExtractor 02→04；index/app/styles 05→07。Flyway V159归档、V160 Apollo；执行前再核对最新migration，冲突必须修订计划清单。不得修改已应用迁移。
+共享文件顺序：ArchiveService/ArchiveRepository 01→02→04，Models 01→04，Controller 01→04；Capture 02→03，PdfEmailExtractor 02→04；index/app/styles 05→07。Flyway V159归档、V160 Apollo；执行前再核对最新migration，冲突必须修订计划清单。不得修改已应用迁移。
 
 ### 执行前检查（I-1/I-3）
 
@@ -170,3 +170,7 @@
 
 
 计划自审（2026-10-23）：8个子计划的章节顺序、变更清单、相对链接、I/S引用与新增class覆盖已检查；文件数依次9/8/6/9/6/5/10/5；两份CSS括号与DOM class覆盖检查通过。自审发现并修正了“升级缓存兼容常量会拒绝旧队列”“新增script触发16资源断言”“核验构造器/旧迁移测试遗漏”三处范围问题。以上是文档自审，不是产品测试或上线效果证明。
+
+## 修正记录
+
+- 2026-10-23：用户“批准 继续”批准02暂停报告C-1/C-2的最小修订：02授权由8增至10文件，加入ArchiveService/ArchiveRepository，明确已启用scope的保存完成与原子保留first/更新latest。依据I-3与执行前检查第5项，保持每子计划≤10文件且不改变准入或缓存规则；共享文件顺序同步为01→02→04。批准和提交身份记录在 `../fast/discovery-paper-master/ledger.md` 的 Amendments 表；原始自审计数为历史记录。
