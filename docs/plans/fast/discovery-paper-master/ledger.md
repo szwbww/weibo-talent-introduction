@@ -10,7 +10,7 @@
 - Finalization repair parent: N/A
 - Started: 2026-10-23T14:24:57.472352+00:00
 - Current child: 02
-- Waiting role: IMPLEMENTER
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -20,7 +20,7 @@
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | 01 | docs/plans/2026-10-23/discovery-paper-01-storage.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | none | 1 | LIGHT_PASS | c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 90dec47f8604886df890c20e9e31dd394c20173d | 1 | 74c00bdab46796084c5d4a1a7a3c572b7bee6915 | 74c00bdab46796084c5d4a1a7a3c572b7bee6915 | 1ba166e3da369f73fe1519834dea8a04123239df | PaperStorageReverifier1 LIGHT_PASS; F-1 resolved; human acceptance pending |
-| 02 | docs/plans/2026-10-23/discovery-paper-02-capture.md | commit:87c5268976807c19c165fe50c91ba3372ed0075d | 01 | 2 | WAITING_FOR_AGENT | 74c00bdab46796084c5d4a1a7a3c572b7bee6915 | — | 0 | — | — | — | Epoch1 PLAN_CONFLICT retained at 0f7e47069e908f59848bfdb262c3783a476d10b6; approved A1/A2 resume |
+| 02 | docs/plans/2026-10-23/discovery-paper-02-capture.md | commit:87c5268976807c19c165fe50c91ba3372ed0075d | 01 | 2 | LIGHT_PASS_WITH_NOTES | 74c00bdab46796084c5d4a1a7a3c572b7bee6915 | 030d96b227111587ba591446e9aeb64b1b0e85d7 | 1 | c37341aacfc0937e829132ad73d8af7fa24b4b97 | c37341aacfc0937e829132ad73d8af7fa24b4b97 | a7a72c05206345e2e24b15115cd753273d1f1c01 | PaperCaptureReverifierE2R1; F-1 closed; O-1 RECORD_ONLY; artifact correction1 |
 | 03 | docs/plans/2026-10-23/discovery-paper-03-parser.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 02 | 1 | PENDING | — | — | 0 | — | — | — |  |
 | 04 | docs/plans/2026-10-23/discovery-paper-04-analysis.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 01,02,03 | 1 | PENDING | — | — | 0 | — | — | — |  |
 | 05 | docs/plans/2026-10-23/discovery-paper-05-frontend.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 01,02,03,04 | 1 | PENDING | — | — | 0 | — | — | — |  |
@@ -54,3 +54,9 @@
 - Resume requires explicit human approval, separate amended-plan commit and canonical amendment rows before a new child02 execution epoch; retain child01 evidence and do not replay completed work.
 - 2026-10-23: user approved “批准 继续”. Resume checked retained clean worktree/branch, exact pause HEAD 0b921e315a68309bd81d1a601a39b327bc11dc5c and product-base ancestry. Approved plans were committed separately as 87c5268976807c19c165fe50c91ba3372ed0075d; A1/A2 recorded before implementation resumes.
 - 2026-10-23: child02 resumes in epoch2, fix_round=0; prior epoch1 report and paused handoff remain historical evidence. No completed child is replayed and no additional worktree is created.
+- 2026-10-23: fresh child02 epoch2 IMPLEMENTER PaperCaptureImplementerE2 acquired after amendment-record commit 5eea942; agent_attempt=0, fix_round=0. Exact resumed product boundary is unchanged.
+- 2026-10-23: child02 epoch2 implementation committed 030d96b227111587ba591446e9aeb64b1b0e85d7. Fresh VERIFIER PaperCaptureVerifierE2 acquired; agent_attempt=0. Execution reports guarded final341 JVM/1807 Node and separate smoke; earlier accidental synthetic ARXIV requests are disclosed, not waived or rerun, and verifier must inspect fail-closed test guards.
+- 2026-10-24: child02 epoch2 attempt1 LIGHT_FAIL/AUTO_FIX F-1, extractionSummary consumer still reads flat outcome. FIXER PaperCaptureFixerE2R1 acquired; agent_attempt=0; fix_round advanced to1 immediately before repair. Historical external-request deviation retained as O-1 RECORD_ONLY and not repair scope.
+- 2026-10-24: child02 epoch2 round1 FIXED c37341aacfc0937e829132ad73d8af7fa24b4b97; fresh REVERIFIER PaperCaptureReverifierE2R1 acquired for attempt2, distinct from all writers, agent_attempt=0. Fix execution reports342 JVM/1807 Node plus guarded smoke passing.
+- 2026-10-24: child02 epoch2 terminal LIGHT_PASS_WITH_NOTES, complete action, evidence8dbbaeea65435974b179395daf3fb6b06cfdc598; one actual repair. All later children remain PENDING until full-manifest artifact checkpoint passes. O-1 indexed for final human handoff.
+- 2026-10-24: child02 checkpoint initially INVALID solely on annotated fix SHA binding. Deterministic append-only correction1 committed as a7a72c05206345e2e24b15115cd753273d1f1c01; replacement evidence preserves all verdicts/history and does not consume a product repair round. Later children remain PENDING.
