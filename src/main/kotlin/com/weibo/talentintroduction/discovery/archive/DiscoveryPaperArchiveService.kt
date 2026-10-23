@@ -289,7 +289,9 @@ class DiscoveryPaperArchiveService(
             attempts.isNotEmpty() && attempts.all { it.status == ArchiveAttemptStatus.DELETED } -> ArchiveRecordState.DELETED
             else -> ArchiveRecordState.NOT_STORED
         }
-        val outcome = r.outcomeJson?.let { mapper.readTree(it) }
+        val outcome = r.outcomeJson?.let { mapper.readTree(it) }?.let {
+            if (it.path("schemaVersion").asInt() == 1 && it.path("first").has("outcome")) it.path("first").get("outcome") else it
+        }
         val summary = outcome?.let { o ->
             fun count(key: String): Int = o.path(key).let { if (it.isArray) it.size() else it.asInt(0) }
             ArchiveExtractionSummary(count("emails"), count("resolved"), count("unresolved"))

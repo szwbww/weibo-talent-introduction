@@ -91,6 +91,26 @@ class DiscoveryPaperArchiveCaptureTest {
             assertFalse(called); assertEquals(0,f.repository.records().size)
         }
     }
+    @Test fun `list and detail summarize frozen captured emails and retain flat outcomes`() {
+        ArchiveFixture().use { f ->
+            f.enable(); val capture = DiscoveryPaperArchiveCapture(f.service, f.mapper)
+            val email = com.weibo.talentintroduction.discovery.domain.AuthorEmail("ada@example.invalid", "Ada", "Lee", true, null, null)
+            capture.capture(context(), "summary", paper()) {
+                body(f.pdf()); EmailExtractionOutcome(listOf(email), "PDF_PARSE")
+            }
+            val record = f.repository.records().single()
+            capture.capture(context(), "summary", paper()) { body(f.pdf()); outcome("LATEST") }
+            val flat = f.paper("flat-summary")
+            f.service.finishExtraction(flat.id, f.mapper.readTree("""{"schemaVersion":1,"emails":["one@example.invalid","two@example.invalid"],"resolved":1,"unresolved":1}"""))
+            val rows = f.service.list(ArchiveQuery()).items.associateBy { it.id }
+            val capturedSummary = ArchiveExtractionSummary(1, 0, 0)
+            val flatSummary = ArchiveExtractionSummary(2, 1, 1)
+            assertEquals(capturedSummary, rows.getValue(record.id).extractionSummary)
+            assertEquals(capturedSummary, f.service.detail(record.id).record.extractionSummary)
+            assertEquals(flatSummary, rows.getValue(flat.id).extractionSummary)
+            assertEquals(flatSummary, f.service.detail(flat.id).record.extractionSummary)
+        }
+    }
     @Test fun `first snapshot frozen latest updates and metadata has no full text or credentials`() {
         ArchiveFixture().use { f ->
             f.enable(); val capture = DiscoveryPaperArchiveCapture(f.service,f.mapper)
