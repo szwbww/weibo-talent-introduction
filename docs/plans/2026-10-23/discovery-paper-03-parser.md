@@ -70,10 +70,11 @@
 - `SourceAuthorEmailResolverTest.kt` 添加旧 claim 与新 contact 冲突的整合测试；保留旧回归。
 - 新 `DiscoveryPaperLayoutRegressionTest.kt` 支持环境变量提供**服务器私有**冻结样本路径；常规 CI 只运行合成 fixtures，真实样本缺失应明确 SKIPPED，发布验收不得把 SKIPPED 当 PASS。复用现有 DiscoverySampleReplay 的纯 parser，无 Spring/网络/ES/SQL 写入。
 - `scripts/discovery_paper_archive/verify_layout_gain.py` 读取两份回放报告及私有 labels，按 (paper/bodySha,email,normalizedName) 对比；输出 aggregate JSON、原始已关联丢失、冲突、新增邮箱、新增关联。不得用运行中新下载文件代替同一原文。
+- 已批准的消费端回归同步：`DiscoveryPaperArchiveCaptureTest.kt` 新建采集结果的 pdfLayout 期望由占位0改为20261023；保留冻结 first 与 latest 对照断言，不改历史first/缓存版本语义。该文件纳入本切片授权；原有六文件中的回归失败仍须按本计划规则修复，不能跳过测试。
 
 ## 变更文件清单
 
-6 文件；子系统 1；既有共享 store 新字段 0。
+7 文件；子系统 1；既有共享 store 新字段 0。
 
 | 文件 | 动作 |
 |---|---|
@@ -83,6 +84,7 @@
 | src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt | 冲突合并回归 |
 | src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperLayoutRegressionTest.kt | 私有原文回放入口 |
 | scripts/discovery_paper_archive/verify_layout_gain.py | 汇总与 labels 对照 |
+| src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveCaptureTest.kt | 同步新采集pdfLayout版本，保留first冻结回归 |
 
 ## 验收标准
 
@@ -105,3 +107,7 @@
 - 操作步骤：1. 使用同一回放入口分析。2. 比较部署前后解析结果。3. 检查带旧版本的队列缓存与原留档 first。
 - 预期结果：五个反例均没有新增独占归属；旧有效归属不减少；缓存/first版本仍为原值，新归档pdfLayout版本20261023、identityExtraction仍20261004；专家和准入表没有写入。
 - 覆盖：I-1～I-4；must-NOT-change 全部回归。
+
+## 修正记录
+
+- 2026-10-24：用户“批准 继续”批准03暂停报告C-1的最小修订：增加DiscoveryPaperArchiveCaptureTest.kt，授权6→7文件；仅同步新采集版本断言并保留first冻结验证。真实294原文缺失的效果复验仍按原计划标为未完成，不扩大规则或伪造收益。批准与提交身份见 `../fast/discovery-paper-master/ledger.md` Amendments。
