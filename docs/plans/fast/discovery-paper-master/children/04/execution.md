@@ -123,3 +123,126 @@ Missing human authorization to amend the child04 change table with the exact pre
 
 Obtain the bounded child04 file-scope amendment, then execute against the amended current plan identity and rerun the full required suite plus separate smoke after final edits. Fresh independent `verify-p` follows only after a subsequent READY_FOR_VERIFICATION implementation result.
 
+
+## Epoch 2 — READY_FOR_VERIFICATION
+
+### Immutable identity and authority
+
+- Executor: `PaperAnalysisImplementerE2`; skill: `execute-p`, NEW for the amended bytes (chronological epoch2, fix_round0).
+- Approval: current assignment plus A5/A6 at `bcf5d64fb9534759eb1cad08db3089d36e4a1fb0`. Prior C-1 is resolved, not reopened. Epoch1 above is preserved verbatim.
+- Plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master/docs/plans/2026-10-23/discovery-paper-04-analysis.md`.
+- Plan SHA-256: `d506cc357820388ec3ef7a094314c28e58196db9800c84df52f0757459ecbf49`; EXECUTION_ID is canonical plan path above `@d506cc357820388ec3ef7a094314c28e58196db9800c84df52f0757459ecbf49`.
+- Master SHA-256: `32de90d973f483cb6b4ca862cf7fb2a936a91b59661297de2af1f1046dc7f00d`. Both hashes matched `git show bcf5d64fb9534759eb1cad08db3089d36e4a1fb0:<plan-path> | shasum -a 256`; child/master read in full.
+- Target worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master`; branch: `fast/discovery-paper-master`.
+- Git directory: `/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-discovery-paper-master`; common directory: `/Users/lukai/IdeaProjects/weibo-talent-introduction/.git`.
+- WORKTREE_ID: target canonical root above `@fast/discovery-paper-master@` Git directory above.
+- Pre-execution code SHA / child_base_sha: `5b7bc8919202876e7d1b6884cd9c9cd50d1f23af`.
+- Pre-execution HEAD: `6f3c05edf9f70cceb9b81a8d872a7277236bc887`.
+- Post-execution code SHA / HEAD: `3cdf7a6aa30ee773a0233e70e8c84d3b00754384`, subject `feat(fast-p): implement 04`.
+- Evidence HEAD: none created by executor. This append and controller-owned dirty ledger are excluded from the implementation commit.
+- Implementation boundary: `5b7bc8919202876e7d1b6884cd9c9cd50d1f23af..3cdf7a6aa30ee773a0233e70e8c84d3b00754384`, product changes restricted to the ten authorized paths.
+
+### Task status and execution evidence
+
+| Requirement | State | Evidence |
+|---|---|---|
+| T-1 / I-3 on-demand analysis | IMPLEMENTED | Controller POST accepts only optional boolean force; archive acquisition uses its existing mutation/file lock, opens source streams, counts reader leases, then releases mutation lock before parsing. Duplicate same-record requests return ANALYSIS_RUNNING/409. Deletion preview reports BUSY while leased. Final commit compares record revision and the physical readable attempt/hash set before repository CAS. |
+| T-1 / I-4 exact first and cache | IMPLEMENTED | Frozen first.attemptIds selects retained original inputs; later attempt bodies do not join that comparison. Missing anchored inputs are listed; absent baseline or partial inputs produce null delta/hasGain. Version/hash/baseline cache returns persisted JSON without parse or revision change. PDF calls the original byte parser with no parsing-flow/page-range modification. |
+| T-2 / I-1/I-2 | IMPLEMENTED, synthetic evidence only | Pure explicit full-name single-subject biography extraction; distinct assistant/associate/professor, completed doctorate, student and conflict categories; negation/future guards. Facts retain quote, original term, hash, actual page or paragraph locator, year and PUBLICATION_TIME. NOT_FOUND/PARTIAL/ERROR remain separate. No current qualification or adviser inference. |
+| T-2 bounded and safe source parsing | IMPLEMENTED | PDF maximum100 pages,2MiB text and checked10-second soft deadline, not hard timeout. HTML excludes script/style; XML disallows DTD and external entities before either qualification or JATS parsing. Fact cap100 marks PARTIAL. |
+| T-3 / I-4 model and projections | IMPLEMENTED | Fixed analysis DTO and list-summary whitelist; detailed analysis remains available after body deletion. SQL gain filter requires COMPLETE baseline and non-null delta, then tests deltaAddedBindings>0; unanalyzed/incomplete records do not become zero-gain records. RepositoryIT's incomplete fixture no longer matches, with its rollback/first/CAS checks intact. |
+| Files/SQL/controller smoke | EXERCISED | Separate actual runtime main below, with disposable MySQL and real files. Three exact biography facts, year/hash/locator, unchanged first, cached no-write return, missing-baseline null delta, delete/detail retained analysis and reanalysis410 all checked at runtime. |
+| Original private23 effect | INCOMPLETE, explicitly not verified | Original23 bodies are available and were frozen privately; pure extractor ran on them and produced0 facts,0 parse errors. Original person-level qualification labels were not available in that audit directory. Known1+2 coverage is NOT_VERIFIED/NOT_COVERED, not a success. Neither qualification nor disqualification is assigned to the other49. |
+
+### Ten committed paths
+
+The staging receipt `git diff --cached --stat` reported exactly10 files,679 insertions,6 deletions; commit output confirmed it.
+
+1. `src/main/kotlin/com/weibo/talentintroduction/discovery/archive/PaperQualificationEvidenceExtractor.kt` — pure source extraction and limits.
+2. `src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperAnalysisService.kt` — frozen-input orchestration, cache, comparison and CAS.
+3. `src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt` — short-lived read lease, deletion protection, final file-set validation and bounded list projection.
+4. `src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveRepository.kt` — complete-baseline-only gain filter; existing unique analysis SQL writer retained.
+5. `src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveModels.kt` — historical facts, coverage and analysis DTOs.
+6. `src/main/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryPaperArchiveController.kt` — analysis endpoint under the existing authenticated route family; predecessor direct construction preserved.
+7. `src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt` — byte-entry visibility only, private to internal.
+8. `src/test/kotlin/com/weibo/talentintroduction/discovery/archive/PaperQualificationEvidenceExtractorTest.kt` — source/subject/classification/safety/limits fixtures.
+9. `src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperAnalysisServiceTest.kt` — actual SQL/file/controller lifecycle, concurrency, CAS, source conflict and runtime launchers.
+10. `src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveRepositoryIT.kt` — approved incomplete-baseline gain assertion only.
+
+### Fresh required command after final edits
+
+```sh
+env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=PaperQualificationEvidenceExtractorTest,DiscoveryPaperAnalysisServiceTest,DiscoveryPaperArchiveRepositoryIT,DiscoveryPaperArchiveServiceTest,DiscoveryPaperArchiveControllerTest,DiscoveryPaperArchiveCaptureTest,PdfEmailExtractorTest,SourceAuthorEmailResolverTest -DmigrationIt=true
+```
+
+Final-state run: exit0, BUILD SUCCESS,119 tests /0 failures /0 errors /0 skipped; duration03:48, finished2026-10-24T01:34:22+08:00; full tool log `artifact://240`.
+
+| Suite | Tests | Failures | Errors | Skipped |
+|---|---:|---:|---:|---:|
+| PaperQualificationEvidenceExtractorTest | 8 | 0 | 0 | 0 |
+| DiscoveryPaperAnalysisServiceTest | 7 | 0 | 0 | 0 |
+| DiscoveryPaperArchiveRepositoryIT | 4 | 0 | 0 | 0 |
+| DiscoveryPaperArchiveServiceTest | 15 | 0 | 0 | 0 |
+| DiscoveryPaperArchiveControllerTest | 7 | 0 | 0 | 0 |
+| DiscoveryPaperArchiveCaptureTest | 9 | 0 | 0 | 0 |
+| PdfEmailExtractorTest | 43 | 0 | 0 | 0 |
+| SourceAuthorEmailResolverTest | 26 | 0 | 0 | 0 |
+
+The same Maven lifecycle ran its bound Node suite:1807 tests,334 suites,1807 passed,0 failed/skipped; node-check-app and node-check-task-modal-runtime completed. This is not a full backend suite or WAR build claim.
+
+An earlier fresh required run also exited0/119 tests (`artifact://230`). The first separate smoke then failed at its deletedFiles assertion because its missing-baseline record accidentally reused the identical shared blob; production correctly refused shared deletion. One authorized test-fixture-only correction gave that independent source distinct bytes, preserving shared-file protection. The final required command above and separate smoke below were both rerun after that edit. No production behavior was weakened.
+
+### Separate actual runtime smoke
+
+```sh
+/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home/bin/java -cp "target/test-classes:target/classes:<contents of target/archive-smoke-classpath.txt>" com.weibo.talentintroduction.discovery.archive.PaperAnalysisSmokeLauncher
+```
+
+Executed as a distinct process after the final required suite, using the existing ignored classpath file, real temporary filesystem, FileStore and disposable MySQL8.0.36; no production Spring context. Exit0; runtime stdout:
+
+```text
+ANALYSIS_SMOKE facts=3 kinds=assistant/completed/student year=2023 hash/paragraph=verified scope=PUBLICATION_TIME first=unchanged cache=no-write missingBaselineDelta=null deletedAnalysis=retained reanalysis=410 network=0 businessWrites=0
+```
+
+The network assertion checks no interactions with either injected download RestTemplate or bounded HTTP executor; the launcher constructs only archive SQL/file services and controller, not any expert/admission/mail/Apollo/enrichment service.
+
+### Original private audit availability and limitations
+
+- Access: existing native SSH deployment target from `.multi-ai-kit.yaml` (BatchMode); credentials were not opened or emitted. No paper download or paid/provider request was made.
+- Original directory: `/root/paper-qualification-audit-4yo_4f8l`; private freeze: `/root/discovery-paper-child04-epoch2-frozen`, directory0700, original files0600.
+- Freeze verified52 original files hash-identical to the source directory, including23 exact body filenames;23 metadata body references resolved to23 files, original pageCount aggregate432. These qualification inputs were established directly, not inferred from child03's incomplete corpus.
+- Original manifest SHA-256 (sorted filename:body-hash lines, before adding audit tooling/reports): `79e0224f027130fd27e96a7faf7134eb8356f9c6adb2966f478dc316afa9e8aa`.
+- `inputs.json` SHA-256: `2bb94665ff2506f6f5a4f89d9b0d1c758b70167257306387d6ab13b35b533fb5`.
+- `qualification-summary.json` SHA-256: `88f4d1d52e167b38d0d69ce711609b57af4992b5e8b47ff072b5ee24bab02ca0`; it preserves historical23/432/52,1 professor+completed,2 students,49 insufficient and no production writes. It is an aggregate historical label summary, not per-person qualification labels.
+- Available targets contain identity association evidence, not a person-level qualification label set; filename search in the exact frozen original tree found0 label-named files. Original missing.json has2 historical entries; the actual frozen body-reference check now has0 missing, so these historical entries are not reported as current missing bodies.
+- Packaged current compiled extractor/models/private pure launcher into ignored `target/child04-private-audit.jar`, SHA-256 `08a132d431e636f57bb483b6cd2299ab8a9122fad12dfd295f2ff6fe49686090`, copied only to the0700 frozen directory, jar0600. Existing deployed library jars supplied dependencies; no production application was started.
+- Initial infrastructure attempts exposed remote Python3.6 lacking capture_output and default Java8 rejecting Java11 bytecode. Corrected only the launcher invocation: stdout/stderr PIPE and the already-installed native JDK11; no server installation/configuration change.
+
+Native isolated pure execution:
+
+```sh
+/usr/lib/jvm/zulu11.90.205-ca-jdk11.0.32.1-linux_x64/bin/java -cp "/root/discovery-paper-child04-epoch2-frozen/child04-private-audit.jar:/opt/apache-tomcat-9.0.71/webapps/talent/WEB-INF/lib/*:/opt/apache-tomcat-9.0.71/webapps/talent/WEB-INF/classes" com.weibo.talentintroduction.discovery.archive.PaperQualificationPrivateAuditLauncher /root/discovery-paper-child04-epoch2-frozen
+```
+
+Exit0; aggregate stdout (full runtime log `artifact://236`):
+
+```text
+PRIVATE_QUALIFICATION_AUDIT papers=23 bodies=23 missingBodies=0 facts=0 kinds={} parseErrors=0 personLabels=UNAVAILABLE exact1plus2Coverage=NOT_VERIFIED externalRequests=0 businessWrites=0
+```
+
+This is an explicitly incomplete real-effect result, not qualification accuracy success. Conservative named-biography rules did not produce the known historical1+2. Private `qualification-quote-gaps.json` preserves original keyword contexts with source hash/year/page and NOT_FOUND diagnostic, without assigning people:14 diagnostic contexts (12 from2023,2 from2024), SHA-256 `f5c12d14557f29623b8e3aa165fc91e1467c00f7b9f81b095e73e55ba02a3cc2`, file0600. These contexts are not substitute manual labels or accepted facts. No names, mailboxes or private quotes were emitted to the execution report or Git. Exact person-level difference adjudication remains unavailable without the original person-level labels.
+
+### Scope, deviations and freshness
+
+- `git diff --check` and final `git diff --cached --check`: exit0. Exactly the authorized product/test paths were staged; fast-p artifacts excluded.
+- Before both staging and commit, worktree identity helper checked expected canonical root, branch and worktree Git directory.
+- After commit: HEAD equals `3cdf7a6aa30ee773a0233e70e8c84d3b00754384`; `git merge-base --is-ancestor` against `fast/discovery-paper-master` exited0. Final index is empty; only the controller's pre-existing ledger modification remained before this authorized evidence append.
+- Plan identity rechecked unchanged: YES. Worktree identity rechecked: YES. Reported commit target-branch reachable: YES. Required commands fresh this invocation after final edits: YES. Historical results used only as baseline: YES.
+- Deviation: required suite first ran after implementation rather than red/green mid-flight, as explicitly instructed; the only post-suite edit corrected the isolated smoke fixture, then all required checks reran.
+- No plan amendment, later-child review, full verify-p/review-p/repair-p invocation, history rewrite, push/merge, deployment, business/ES write, current-qualification update, cache/proof version bump or new dependency/schema.
+- Real-effect limitation retained: person-level private labels unavailable and observed real facts0; no fabricated1+2 coverage or eligibility conclusions. Master explicitly permits code handoff with this limitation recorded.
+- Remaining implementation blocker: none observed by this execution. Human acceptance and independent verification remain pending.
+- Next action: controller-owned fast-p verification for child04; READY_FOR_VERIFICATION is an execution handoff, not PASS or final human acceptance.
+
+### Epoch2 controller terminal record
+- Implementation3cdf7a6aa30ee773a0233e70e8c84d3b00754384, repairbbd2700ca56d00a9e2845b61b15c1fb7e5b07a49. Distinct fresh PaperAnalysisReverifierE2R1 returned LIGHT_PASS_WITH_NOTES / COMPLETE_CHILD after fresh120 JVM0fail/error/skip,1807 Node and separate actual filesSQLcontroller smoke. F-1 closed; one repair round. O-1 private effect0facts/unavailable person labels and O-2 historical invocation-only issue retained; no whole-system success claim.
