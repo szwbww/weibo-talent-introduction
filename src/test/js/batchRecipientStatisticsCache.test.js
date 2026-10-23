@@ -134,7 +134,35 @@ test("503 old summary uses matching key only and never rewrites cachedAt", async
     f.sandbox.refreshRecipientPreview("editor");
     f.pending[2].reject({ status: 503, data: ready(999, { state: "ERROR", cacheKey: "wrong-key" }) }); await flush();
     assert.doesNotMatch(hint(f).innerHTML, /999/);
-    assert.match(hint(f).innerHTML, /缓存目标估计：<strong>100<\/strong>/);
+    assert.doesNotMatch(hint(f).innerHTML, /缓存目标估计|2026-10-22 16:00:00/);
+    assert.equal(status(f).textContent, "统计不可用");
+    assert.equal(hint(f).textContent, "统计不可用，可重试。");
+});
+
+for (const kind of ["editor", "manual"]) test(kind + " discards cached statistics when unchanged form receives a new server key error", async () => {
+    const f = fixture();
+    const snapshot = JSON.stringify(f.snapshots[kind]);
+    f.sandbox.refreshRecipientPreview(kind, "cacheOnly");
+    f.pending[0].resolve(ready(100, { cacheKey: "A" })); await flush();
+    assert.match(hint(f, kind).innerHTML, /缓存目标估计：<strong>100<\/strong>/);
+    assert.match(hint(f, kind).innerHTML, /2026-10-22 16:00:00/);
+    f.sandbox.refreshRecipientPreview(kind);
+    f.pending[1].reject({ status: 503, data: {
+        state: "ERROR", cacheKey: "B", summary: null, cachedAt: null,
+        errorCode: "STATISTICS_UNAVAILABLE"
+    } }); await flush();
+    assert.equal(JSON.stringify(f.snapshots[kind]), snapshot, "template fingerprint changes without a form change");
+    assert.doesNotMatch(hint(f, kind).innerHTML, /100|2026-10-22 16:00:00/);
+    assert.equal(status(f, kind).textContent, "统计不可用");
+    assert.equal(hint(f, kind).textContent, "统计不可用，可重试。");
+    assert.equal(button(f, kind).disabled, false);
+    assert.equal(button(f, kind).textContent, "统计并缓存");
+    assert.equal(f.calls.length, 2, "failure does not trigger another statistics request");
+    assert.ok(f.calls[0].url.endsWith("cacheOnly=true"));
+    assert.ok(f.calls[1].url.endsWith("refresh=true"));
+    assert.equal(hint(f, kind).recipientStatistics.envelope.cacheKey, "B");
+    assert.equal(hint(f, kind).recipientStatistics.envelope.summary, null);
+    assert.equal(hint(f, kind).recipientStatistics.envelope.cachedAt, null);
 });
 
 for (const late of ["resolve", "reject"]) test("A → B discards late A " + late + " and clears old count before lookup", async () => {

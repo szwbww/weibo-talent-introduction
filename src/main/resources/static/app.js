@@ -24141,11 +24141,15 @@ function refreshRecipientPreview(kind, mode) {
         renderRecipientStatistics(kind, envelope, snapshot, false);
     }).catch(function(error) {
         if (!current()) return;
-        // The request snapshot binds a first server key. Once known, an error may only reuse that key.
+        // A server key change invalidates old statistics even when the form snapshot is unchanged.
         var data = error && error.data;
         var matching = data && data.state === "ERROR" && data.cacheKey &&
             (!oldEnvelope || !oldEnvelope.cacheKey || data.cacheKey === oldEnvelope.cacheKey);
-        var envelope = matching ? data : Object.assign({}, oldEnvelope || {}, { state: "ERROR" });
+        var changedKey = data && data.state === "ERROR" && data.cacheKey &&
+            oldEnvelope && oldEnvelope.cacheKey && data.cacheKey !== oldEnvelope.cacheKey;
+        var envelope = matching ? data : (changedKey
+            ? { state: "ERROR", cacheKey: data.cacheKey, summary: null, cachedAt: null }
+            : Object.assign({}, oldEnvelope || {}, { state: "ERROR" }));
         hint.recipientStatistics = { identity: identity, envelope: envelope, loading: false };
         renderRecipientStatistics(kind, envelope, snapshot, false);
     });
