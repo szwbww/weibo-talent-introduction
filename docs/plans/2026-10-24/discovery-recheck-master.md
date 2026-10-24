@@ -24,7 +24,7 @@
 绑定≠新专家≠资格证据≠可准入≠已准入≠候选同步。每份报告说明固定范围、版本、原文SHA、外部刷新、未完整部分。适用全部子计划；违反会虚报收益。来源：本批原文对照。
 
 ### I-M4：范围受子计划约束
-每子计划≤10文件、≤2独立子系统；每既有共享store最多1新列。01经用户于2026-10-25授权，仅为同步修正`discoveryApolloSettings.test.js`的过期全局资源键断言，允许11文件；其他子计划上限不变。共享文件必须串行按前一产物实施，每步独立机器复验。新发现范围或文件超限先修订计划，不能顺手扩大。来源：K-master-plan-shared-file-sequential-gates。
+每子计划≤10文件、≤2独立子系统；每既有共享store最多1新列。01经用户于2026-10-25授权，仅为同步修正`discoveryApolloSettings.test.js`的过期全局资源键断言，允许11文件。05经用户于2026-10-25授权，仅为六个直接/共享核验消费者测试同步V161 schema，允许15文件，保留原回归行为；其他子计划上限不变。共享文件必须串行按前一产物实施，每步独立机器复验。新发现范围或文件超限先修订计划，不能顺手扩大。来源：K-master-plan-shared-file-sequential-gates。
 
 ## 现状审计
 
@@ -53,7 +53,7 @@
 | [02](discovery-recheck-02-archive.md) | 原文格式、姓名显示、DOCTYPE | 10 | 原文分析+前端 | 可独立发布 |
 | [03](discovery-recheck-03-identity-parser.md) | 明确邮箱姓名归属、伪邮箱 | 9 | 来源解析 | 可独立发布；不自动回填 |
 | [04](discovery-recheck-04-qualification.md) | 简介事实、绑定姓名、复合职称 | 9 | 原文事实+核验规则 | 可独立发布；规则版本化 |
-| [05](discovery-recheck-05-history.md) | 独立轮次和轨迹schema/读隔离 | 9 | 核验持久化 | 兼容部署，无新启动入口 |
+| [05](discovery-recheck-05-history.md) | 独立轮次和轨迹schema/读隔离 | 15（授权测试例外） | 核验持久化 | 兼容部署，无新启动入口 |
 | [06](discovery-recheck-06-evidence.md) | 共享只读原文/学术采集 | 9 | 原文分析+核验证据 | 兼容部署，无新入口 |
 | [07](discovery-recheck-07-pipeline.md) | 统一Worker与八步 | 10 | 核验执行+审计 | 原发现回归通过；新入口仍未开放 |
 | [08](discovery-recheck-08-api.md) | 冻结/启动/取消/历史API | 9 | 重审协调/API | 与09作为完整用户功能发布单元 |
@@ -151,3 +151,4 @@
 
 - 2026-10-25，用户“授权 继续”：批准01增加`src/test/js/discoveryApolloSettings.test.js`并允许11文件，保留独立控制器测试；原断言从旧计划动态读取全局资源键，字面量检索无法发现，导致01必需的资源键升级与全量JS回归冲突。仅修正过期断言，不修改历史计划、不扩大产品行为；授权与提交身份详见`../fast/discovery-recheck-master/ledger.md`的Amendments。
 - 2026-10-25，用户再次“授权 继续”：批准03增加`DiscoveryPaperArchiveCaptureTest.kt`、`PdfEmailExtractorTest.kt`、`ExpertDiscoveryServiceTest.kt`，清单6→9、未突破I-M4上限。只同步已证实的layout版本及明确唯一来源归属正例，不放宽共享/未知/相邻/错误所有者保护，不改变消费或准入行为；授权与提交身份详见同一ledger的Amendments。
+- 2026-10-25，用户“授权 继续”：批准05增加六个已由检索回执证明消费修改后Repository/Gate/Query的旧schema测试：`DiscoveryVerificationReportingIT.kt`、`DiscoveryCountrySupplementFlowIT.kt`、`DiscoveryVerificationFlowIT.kt`、`DiscoveryVerificationIntegrationTest.kt`、`DiscoveryVerificationReplayToolTest.kt`、`DiscoveryVerificationWorkerTest.kt`。清单9→15，仅05获得文件数上限例外；仅同步测试schema至V161，保留原断言及故意测试迁移前后的旧schema阶段，不加生产schema探测兼容分支、不增加生产行为。确切检索请求/输出见`../fast/discovery-recheck-master/children/05/execution.md`的Scope/precondition evidence addendum，授权与提交身份见同一ledger的Amendments。

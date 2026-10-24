@@ -55,7 +55,7 @@ V158唯一键当前只有docId/identity/policy；Repository.reserveItem:371–38
 
 ## 变更文件清单
 
-仅下列 9 个文件。新增文件明确标注；其余文件不得顺带修改。
+仅下列 15 个文件。新增文件明确标注；其余文件不得顺带修改。用户于2026-10-25授权六个既有消费者测试同步V161 schema，9→15；总计划I-M4仅为05授予文件数上限例外，不扩大生产行为。
 
 | 文件 | 变更 |
 |---|---|
@@ -68,6 +68,12 @@ V158唯一键当前只有docId/identity/policy；Repository.reserveItem:371–38
 | `src/test/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryVerificationContractTest.kt` | 新旧JSON与取消约束 |
 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGateTest.kt` | 未提交新项不抢占 |
 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryServiceTest.kt` | 取消与历史核账 |
+| `src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationReportingIT.kt` | 既有核验报表测试schema目标同步V161，保留回归 |
+| `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementFlowIT.kt` | 共享核验fixture测试schema目标同步V161，保留回归 |
+| `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationFlowIT.kt` | 共享真实Repository/Gate fixture测试schema目标同步V161，保留回归 |
+| `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationIntegrationTest.kt` | 既有核验集成测试schema目标同步V161，保留回归 |
+| `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationReplayToolTest.kt` | 既有恢复/回放测试schema目标同步V161，保留回归 |
+| `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt` | 既有Worker真实SQL测试schema目标同步V161，保留回归 |
 
 ## 验收标准
 
@@ -76,6 +82,12 @@ V158唯一键当前只有docId/identity/policy；Repository.reserveItem:371–38
 - I-3：spec二次改写409；run revision过期CAS失败；READY前不能claim；scopeHash可重复重算。
 - I-4：8个step槽齐全；终态更新拒绝；CANCELLED不入errors/autoAdmitted；已有admission_revision不能被cancel清除。
 - I-5：普通恢复器不碰重审RESERVED；旧CLI拒绝重审项；RUNNING取消后新reserveAttempt/commit禁止，已存在投影可单独重试。真实MySQL测试必须执行，不能只mock SQL。
+
+## 必需验证命令
+
+- `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=DiscoveryVerificationRepositoryIT,DiscoveryVerificationContractTest,DiscoveryVerificationAdmissionGateTest,DiscoveryVerificationQueryServiceTest -DmysqlIt=true`
+- `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=DiscoveryVerificationReportingIT,DiscoveryCountrySupplementFlowIT,DiscoveryVerificationFlowIT,DiscoveryVerificationIntegrationTest,DiscoveryVerificationReplayToolTest,DiscoveryVerificationWorkerTest -DmysqlIt=true`
+- 两组都须在最终编辑后新跑；真实MySQL IT不得跳过。保留故意测试迁移前后的旧schema阶段，只在调用新Repository/Gate/Query前迁至V161。独立临时运行时冒烟仍须经过实际迁移SQL与Repository/Gate/Query，不以测试通过代替。
 
 ## 人工验收清单
 
@@ -98,3 +110,7 @@ V158唯一键当前只有docId/identity/policy；Repository.reserveItem:371–38
 - 覆盖：I-4/5
 
 人工验收开始后，才从本节导出同名前缀 `-acceptance.md`；机器通过不代表人工验收完成。
+
+## 修正记录
+
+- 2026-10-25，用户“授权 继续”：批准上列六个已有测试文件同步V161 schema，清单9→15，并批准总计划仅05的上限例外。源代码检索证明这些测试固定V158/V160且消费新Repository/Gate/Query；不改会与本计划schema切换冲突。仅同步fixture schema，不放宽断言、不加生产兼容分支；确切请求/输出见`../fast/discovery-recheck-master/children/05/execution.md`的Scope/precondition evidence addendum，授权与提交身份详见同一ledger的Amendments。
