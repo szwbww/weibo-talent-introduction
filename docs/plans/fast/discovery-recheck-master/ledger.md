@@ -9,17 +9,17 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-24T23:47:16.652745+08:00
-- Current child: 01
-- Waiting role: IMPLEMENTER
+- Current child: 02
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
-- Resume from: 96c70d8cb8d07562ea5a2ccca6d08ca86f1369b0
+- Resume from: N/A
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| 01 | docs/plans/2026-10-24/discovery-recheck-01-counts.md | commit:014e9df745fbd7761fe4fce38039aab98af877b4 | none | 2 | WAITING_FOR_AGENT | b161e87464d42b9fa2cd076ef9255b0e3b2b29ab | — | 0 | — | — | — | Epoch 1 retained; user authorized added regression test and 11-file exception; resuming retained implementation. |
+| 01 | docs/plans/2026-10-24/discovery-recheck-01-counts.md | commit:014e9df745fbd7761fe4fce38039aab98af877b4 | none | 2 | LIGHT_PASS_WITH_NOTES | b161e87464d42b9fa2cd076ef9255b0e3b2b29ab | 7d0cb8c276533576d79f28fe970ccfbac4114d9e | 0 | — | 7d0cb8c276533576d79f28fe970ccfbac4114d9e | e0df0b0af15eeca62f21f8f0e6f4c08e1a061d7a | Independent verifier Recheck01Verifier; O-01 record-only failed-progress fixture/SQL difference; no repairs. |
 | 02 | docs/plans/2026-10-24/discovery-recheck-02-archive.md | sha256:01b4abd5cf06e535848abb65b1d9bc62194c225df4f7dfa12e20e6d2a002b13f | 01 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 | 03 | docs/plans/2026-10-24/discovery-recheck-03-identity-parser.md | sha256:199a71d6d89625a0faaf2aa5f3abe37a42f6740c2c1ad03220fad934426c87a9 | 02 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 | 04 | docs/plans/2026-10-24/discovery-recheck-04-qualification.md | sha256:04b07f58de1d6e9199e0919047cfffde967896f1bd4cfcad526b40a7d412dd0d | 03 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
@@ -63,3 +63,12 @@
 - User approved “授权 继续” on 2026-10-25 in response to the recommended one-extra-test-file amendment. Scope changes were committed separately at 014e9df745fbd7761fe4fce38039aab98af877b4 before resuming product work.
 - Retained worktree/branch and pause HEAD 96c70d8cb8d07562ea5a2ccca6d08ca86f1369b0 matched; product index empty; the ten retained authorized files match the recorded pause file list. No completed child is replayed.
 - New child-01 execution epoch 2, fix_round=0. Prior epoch reports and pause evidence remain unchanged.
+- 2026-10-25: acquired fresh epoch-2 IMPLEMENTER Recheck01Epoch2; dispatch succeeded; agent_attempt=0, fix_round=0.
+- Epoch 2 implementer returned READY_FOR_VERIFICATION at product commit 7d0cb8c276533576d79f28fe970ccfbac4114d9e; Maven Kotlin88/JS1826 passed with no failures/skips; fresh HTTP smoke recorded in execution.md.
+- Acquired independent VERIFIER Recheck01Verifier for b161e87464d42b9fa2cd076ef9255b0e3b2b29ab..7d0cb8c276533576d79f28fe970ccfbac4114d9e; no writer identity reused; agent_attempt=0.
+
+## Child 01 checkpoint
+- Terminal LIGHT_PASS_WITH_NOTES; independent verifier Recheck01Verifier; exact report in children/01/verify-log.md. Required commands freshly passed (Kotlin88, bound JS1826, direct Node46/Apollo7, syntax/S-1/resource checks and isolated async HTTP smoke).
+- RECORD_ONLY O-01: failed-scan scanned=5000 was a fixture observation, not production conditional-SQL progress-retention evidence. No explicit terminal-progress requirement was violated; no behavior change authorized by this note.
+- Child evidence committed at e0df0b0af15eeca62f21f8f0e6f4c08e1a061d7a; product head 7d0cb8c276533576d79f28fe970ccfbac4114d9e. Later children remain PENDING until both checkpoint validations pass.
+- Complete ten-child validator manifest with `--through-child 01 --allow-dirty-artifacts`: exit 0, result VALID, validation_scope CHILD_CHECKPOINT, validated_child_count=1, child_count=10, amendments A1/A2. No final readiness claimed.
