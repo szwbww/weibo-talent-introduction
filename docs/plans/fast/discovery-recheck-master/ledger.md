@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-24/discovery-recheck-master.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-10-24/discovery-recheck-master.md (commit 5f9136047ce821259ce96b70871b71045ab9778b)
 - Amendments: A1, A2, A3, A4
 - Master base: b161e87464d42b9fa2cd076ef9255b0e3b2b29ab
@@ -9,12 +9,12 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-24T23:47:16.652745+08:00
-- Current child: 04
+- Current child: 05
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: N/A
+- Pause reason: Child05 requires six unlisted old-schema consumer test fixtures to migrate to V161; nine-to-fifteen files also exceeds master cap. No authority to expand or add schema-detection shim.
+- Resume from: 11a9cedf0074f831bc59f7816818355e30310c92
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
@@ -23,7 +23,7 @@
 | 02 | docs/plans/2026-10-24/discovery-recheck-02-archive.md | sha256:01b4abd5cf06e535848abb65b1d9bc62194c225df4f7dfa12e20e6d2a002b13f | 01 | 1 | LIGHT_PASS_WITH_NOTES | 7d0cb8c276533576d79f28fe970ccfbac4114d9e | 5487f3b45085f20f8db8554fb94888de1446c378 | 0 | — | 5487f3b45085f20f8db8554fb94888de1446c378 | f48eacfd708a72f78ae975f3609d8e220d26693b | Independent Recheck02VerifierFull; O-02 unrelated compiler warnings only; no repairs. |
 | 03 | docs/plans/2026-10-24/discovery-recheck-03-identity-parser.md | commit:5f9136047ce821259ce96b70871b71045ab9778b | 02 | 2 | LIGHT_PASS_WITH_NOTES | 5487f3b45085f20f8db8554fb94888de1446c378 | bc5ec812dedd7ac6aef5ea0e4d9094e19b2a9f4a | 0 | — | bc5ec812dedd7ac6aef5ea0e4d9094e19b2a9f4a | bb338ab750388cf1bf411684c6b33cd8c5fbd792 | Independent Recheck03Verifier; O-03-01 authorized private/live skips, O-03-02 existing warnings; no repairs. |
 | 04 | docs/plans/2026-10-24/discovery-recheck-04-qualification.md | sha256:04b07f58de1d6e9199e0919047cfffde967896f1bd4cfcad526b40a7d412dd0d | 03 | 1 | LIGHT_PASS_WITH_NOTES | bc5ec812dedd7ac6aef5ea0e4d9094e19b2a9f4a | 6884eb7f31b1763dbb14422e91dfd63dc022fb94 | 0 | — | 6884eb7f31b1763dbb14422e91dfd63dc022fb94 | 4c2fdcd72494ef8622132a27288ed41c80c132da | Independent Recheck04Verifier; O-04-01 existing warnings/harness limits record-only; no repairs. |
-| 05 | docs/plans/2026-10-24/discovery-recheck-05-history.md | sha256:1e269d2e8ba0bee59ff0442e6e10b3e750fb9323d9dc4e666a8f5dfd80b6870a | 04 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
+| 05 | docs/plans/2026-10-24/discovery-recheck-05-history.md | sha256:1e269d2e8ba0bee59ff0442e6e10b3e750fb9323d9dc4e666a8f5dfd80b6870a | 04 | 1 | PAUSED_FOR_HUMAN | 6884eb7f31b1763dbb14422e91dfd63dc022fb94 | — | 0 | — | 6884eb7f31b1763dbb14422e91dfd63dc022fb94 | 358884570e8d77903481addf953d3bb019b90d96 | Recheck05Implementer PLAN_CONFLICT; nine drafts retained unstaged, required commands/smoke not run, no implementation/verifier/repairs. |
 | 06 | docs/plans/2026-10-24/discovery-recheck-06-evidence.md | sha256:c3a21b4a2fbfe80968f19302d23979dbfec9d1a97e14c7717ba86c55674829ae | 05 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 | 07 | docs/plans/2026-10-24/discovery-recheck-07-pipeline.md | sha256:f07ebf6c63e7e3c1e084a79fcbde47ce51a5ed0f69343b569556562a3d332ad4 | 06 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 | 08 | docs/plans/2026-10-24/discovery-recheck-08-api.md | sha256:47196d02af0f41bd852216230d91ec446020baa6e19b6e5e9a1b0f8c7e1d440a | 07 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
@@ -115,3 +115,12 @@
 - Implementer READY_FOR_VERIFICATION at6884eb7f31b1763dbb14422e91dfd63dc022fb94; reports final prescribed command62 JVM/1827JS with zero skips and actual disposable extractor/Rules plus Registration/Worker/MySQL smoke. Controller has not substituted these writer claims for independent verification. Acquired distinct fresh Recheck04Verifier; exact committed product boundary dispatched, fix_round0.
 - Epoch1 terminal LIGHT_PASS_WITH_NOTES, COMPLETE_CHILD; independent fresh62 JVM/1827JS, zero skips, actual extractor/evidence/Rules and Registration/Worker isolated MySQL runtime passed. Evidence4c2fdcd72494ef8622132a27288ed41c80c132da; no repairs, O-04-01 record-only. Later children remain PENDING until both full-manifest checkpoint modes pass.
 - Full approved ten-child validator --through-child04 --allow-dirty-artifacts: exit0, VALID, CHILD_CHECKPOINT, four terminal children, A1–A4 checked, no errors. This is bookkeeping validation, not whole-system verification.
+- Clean full-manifest validator --through-child04: exit0, VALID, CHILD_CHECKPOINT; evidence HEAD11a9cedf0074f831bc59f7816818355e30310c92, four completed children and all ten identities/dependencies checked. Child05 dispatch now authorized by this artifact gate.
+
+## Child05
+- Acquired fresh IMPLEMENTER Recheck05Implementer; product base6884eb7f31b1763dbb14422e91dfd63dc022fb94, governance HEAD11a9cedf0074f831bc59f7816818355e30310c92; epoch1, fix_round0, agent_attempt0. Exact approved nine-file plan, real MySQL and standalone runtime requirements supplied in brief. No production start endpoint or later-child work authorized.
+- Executor PLAN_CONFLICT; exhaustive source-only grep receipts identify six exact unlisted pre-V161 consumer fixtures: DiscoveryVerificationReportingIT.kt, DiscoveryCountrySupplementFlowIT.kt, DiscoveryVerificationFlowIT.kt, DiscoveryVerificationIntegrationTest.kt, DiscoveryVerificationReplayToolTest.kt, DiscoveryVerificationWorkerTest.kt. Full paths/target/consumer receipts in children/05/execution.md:100 onward. DiscoveryApolloSettingsIT and unrelated migration fixtures excluded by dependency evidence.
+- Minimum proposed amendment is child05 nine→fifteen files for those six schema fixture updates only, plus a child05-specific master cap exception. Existing user approvals A1–A4 do not grant this authority. Approved plans unchanged; no unauthorized test or schema-detection shim edited.
+- Paused before required command/smoke/implementation commit; zero fresh child05 tests, no independent verifier or repair. Eight tracked authorized drafts plus new V161 migration remain unstaged and unverified; index was empty in executor's exact paused-state receipt. Current committed product head6884eb7f31b1763dbb14422e91dfd63dc022fb94; pre-pause governance HEAD11a9cedf0074f831bc59f7816818355e30310c92.
+- Committed only child05 pause evidence358884570e8d77903481addf953d3bb019b90d96. No terminal child05 checkpoint or final-readiness validation applies. Children06–10 remain PENDING; no whole-system verification.
+- On human approval: amend exact master/child05 plans in separate plans-only commit, append canonical Before/After amendment rows, reconcile retained drafts in new child05 execution epoch/fix_round0, complete all commands/runtime smoke then fresh independent light verification. Never replay completed01–04.
