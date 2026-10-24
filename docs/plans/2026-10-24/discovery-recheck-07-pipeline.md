@@ -33,7 +33,7 @@
 - 来源：需求及下列源码审计
 
 ### I-5：取消与同步
-- 规则：每次外调预留及commit前检查run控制CAS；取消后迟到回包只可存该请求诊断，不能新准入。已提交准入保留；projection失败单独显示已准入/同步失败，重试只投影，不能重查Apollo。
+- 规则：每次外调预留及commit前检查run控制CAS；取消后迟到回包只可存该请求诊断，不能新准入。包括REFRESH学术采集内部author/works/patent及重试的每次HTTP dispatch：预留前检查，预算等待后发出前再检查，取消异常不得被通用catch吞掉后继续请求。已提交准入保留；projection失败单独显示已准入/同步失败，重试只投影，不能重查Apollo。
 - 适用：Worker、Commit、Trace
 - 违反后果：取消回滚成果或重试烧请求。
 - 来源：需求及下列源码审计
@@ -56,7 +56,7 @@ Worker:55 tick→claim、:73 process，finish:178左右prepare/commit/project；
 
 ## 变更文件清单
 
-仅下列 10 个文件。新增文件明确标注；其余文件不得顺带修改。
+仅下列 14 个文件。新增文件明确标注；其余文件不得顺带修改。依用户持续授权（总计划I-M4、ledger A7）增加四个必要的已有学术采集/client及测试文件，10→14，仅落实I-5的逐次外调取消边界，不扩大业务行为。
 
 | 文件 | 变更 |
 |---|---|
@@ -70,6 +70,10 @@ Worker:55 tick→claim、:73 process，finish:178左右prepare/commit/project；
 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitServiceTest.kt` | 取消/保护/无写入/同步 |
 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGateTest.kt` | 时钟及历史复算一致 |
 | `src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationTraceRepositoryIT.kt` | 新增租约/步骤CAS真实库测试 |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckAcademicEvidenceService.kt` | REFRESH只读采集传递逐次请求取消guard |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt` | author/works/patent及重试dispatch边界guard；普通调用行为不变 |
+| `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckAcademicEvidenceServiceTest.kt` | 内部多次HTTP期间取消不继续请求 |
+| `src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt` | 每次dispatch/等待后取消与原请求类型/预算回归 |
 
 ## 验收标准
 
@@ -78,6 +82,12 @@ Worker:55 tick→claim、:73 process，finish:178左右prepare/commit/project；
 - I-3：固定时刻跨生日复跑相同；Gate读取新evidence与Worker同outcome/qualification/route/personId；不同hash拒绝，不重签旧证据。
 - I-4：REUSE网络调用0；免费设置detail调用0；429等待不增失败；普通旧APOLLO_SEARCH queries顺序不变。
 - I-5：真实库并发取消/commit只有一个胜出；取消胜出不提交，commit胜出保留；同步重试provider调用0；trace不能被过期token写。
+
+## 必需验证补充
+
+- 保留brief中原四类主测试及原发现/历史存储回归两组命令；新增最终编辑后执行：
+  `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=DiscoveryRecheckAcademicEvidenceServiceTest,OpenAlexDataSourceTest -DmysqlIt=true`
+- 使用严格本地provider fixture观察author响应后取消时works/patent不再外发，并覆盖预算等待后发出前再检查；未取消的既有普通补全行为、RequestKind记账/预算回归保持。不能只测试callback转发或mock echo。
 
 ## 人工验收清单
 
@@ -106,3 +116,7 @@ Worker:55 tick→claim、:73 process，finish:178左右prepare/commit/project；
 - 覆盖：I-1/3/5
 
 人工验收开始后，才从本节导出同名前缀 `-acceptance.md`；机器通过不代表人工验收完成。
+
+## 修正记录
+
+- 2026-10-25，按用户持续授权“后续修改都授权 把所有子计划都跑完”（ledger A7），增加上列四个直接依赖/回归文件并允许14文件。现有collect调用batchEnrichByAuthorIds/Orcids，client内部author→enrichment→works/patent均落到getJson的预算预留/HTTP；只在Worker入口检查不足以满足I-5。仅增加窄逐次dispatch guard与取消传播；普通未带guard的合法调用保留原行为/配置/预算，不新增第二客户端、不改免费付费规则。确切检索请求/输出及调用链归档于`../fast/discovery-recheck-master/children/07/execution.md`，修订提交与授权见ledger Amendments。
