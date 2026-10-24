@@ -1,0 +1,80 @@
+$ rg -n findItemsByDocIds|findManagedContexts|reserveItem|requeuePendingForEvidenceReplay|requeueErrorsForCreditRecovery|saveAnalysis|commitAnalysis|consumeOutcomeInternal|updateExpertAcademicFields|readDiscoveryDocument|projectApprovedCandidate|recordAutomaticPersisted|revalidateDiscovery|scanAll src/main/kotlin
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:64:                        when (val outcome = revalidateDiscovery(profile.esDocId ?: profile.orcidId)) {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:184:                        when (val outcome = revalidateDiscovery(profile.esDocId ?: profile.orcidId)) {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:303:     * Historical non-discovery RAW gate. Discovery always uses revalidateDiscovery and its
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:340:    fun revalidateDiscovery(docId: String): PromotionOutcome {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:347:            val snapshot = expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.RAW, docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:405:                    else expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:420:                else expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:455:        val sync = review.projectApprovedCandidate(docId, source, decision)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:480:            expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.RAW, docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:485:            return revalidateDiscovery(docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:86:        // ExpertDiscoveryService.updateExpertAcademicFields pattern — skip layers whose
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:704:    fun readDiscoveryDocument(level: ExpertIndexLevel, docId: String): DiscoverySnapshot? {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:809:        val current = readDiscoveryDocument(ExpertIndexLevel.RAW, docId) ?: return false
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:812:        val candidate = if (preserveApplication) null else readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:824:        val stableRaw = readDiscoveryDocument(ExpertIndexLevel.RAW, docId) ?: return false
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:890:            readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:918:                    readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveRepository.kt:81:    fun saveAnalysis(id: Long, revision: Long, json: String, now: Instant): ArchiveRecord = transaction {
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:43:    fun requeuePendingForEvidenceReplay(executionId: Long, expectedItems: List<ReplayExpected>, now: Instant): List<ReplayReceipt> {
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:102:    fun requeueErrorsForCreditRecovery(executionId: Long, expectedItems: List<ReplayExpected>, now: Instant): List<ReplayReceipt> {
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:371:    fun reserveItem(input: VerificationReservation, now: Instant): VerificationItem {
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:417:    fun findManagedContexts(docIds: Collection<String>): Map<String, VerificationContext> {
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:436:    fun findItemsByDocIds(docIds: Collection<String>): List<VerificationItem> {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewScanService.kt:138:    fun scanAll(
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:77:    internal fun commitAnalysis(lease: AnalysisLease, analysis: JsonNode): ArchiveRecord = mutation {
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:80:        repository.saveAnalysis(lease.record.id, lease.record.revision, json(analysis, 4 * 1024 * 1024), Instant.now())
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:212:    fun saveAnalysis(recordId: Long, revision: Long, analysis: JsonNode): ArchiveRecord = mutation {
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:213:        record(recordId); repository.saveAnalysis(recordId, revision, json(analysis, 4 * 1024 * 1024), Instant.now())
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:85:                expertIndexWriterService.readDiscoveryDocument(level, docId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:135:                        expertIndexWriterService.readDiscoveryDocument(level, docId)?.let { proofOf(it.source) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:207:                expertIndexWriterService.readDiscoveryDocument(level, docId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:268:                        expertIndexWriterService.readDiscoveryDocument(level, docId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:532:            val document = expertIndexWriterService.readDiscoveryDocument(level, docId) ?: continue
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1730:        return consumeOutcomeInternal(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1751:    private fun consumeOutcomeInternal(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1916:    // 补全入队）仍然只有 [consumeOutcomeInternal] 一份实现。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2188:        val result = consumeOutcomeInternal(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2566:        val sync = review.projectApprovedCandidate(docId, rawSource, admission.decision)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3261:    private fun updateExpertAcademicFields(profile: ExpertProfile, enrichment: AuthorEnrichment): LayerUpdateResult {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3459:                            val layers = updateExpertAcademicFields(profile, found.data)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3465:                                    revalidationService.revalidateDiscovery(docId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3483:                        // 也不请求最近论文/标题（跳过 updateExpertAcademicFields 与 revalidationService）。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:493:                expertIndexWriterService.readDiscoveryDocument(level, docId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGate.kt:42:        val items = repository.findItemsByDocIds(keys.keys).groupBy { it.expertDocId }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt:32:        val raw = writer.readDiscoveryDocument(ExpertIndexLevel.RAW, item.expertDocId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt:34:        writer.readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, item.expertDocId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt:35:        val application = writer.readDiscoveryDocument(ExpertIndexLevel.APPLICATION, item.expertDocId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt:96:            val persisted = review.recordAutomaticPersisted(item.expertDocId, input.snapshot!!.profile, requireNotNull(automatic))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt:112:            val raw = writer.readDiscoveryDocument(ExpertIndexLevel.RAW, item.expertDocId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt:119:            val sync = review.projectApprovedCandidate(item.expertDocId, raw.source, "AUTO_PASSED")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt:215:                expertIndexWriterService.readDiscoveryDocument(level, docId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperAnalysisService.kt:119:                archive.commitAnalysis(lease, tree)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:128:            val layers = ExpertIndexLevel.values().associateWith { writer.readDiscoveryDocument(it, docId) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:140:            val existing = repository.findItemsByDocIds(listOf(docId))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:158:            val item = repository.reserveItem(VerificationReservation(run.executionId, docId, finalSnapshot.identityHash,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:276:            repository.findItemsByDocIds(listOf(docId)).filter {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:283:        val raw = writer.readDiscoveryDocument(ExpertIndexLevel.RAW, item.expertDocId) ?: run {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:131:            expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.RAW, docId)?.source
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:186:                expertIndexWriterService.readDiscoveryDocument(level, docId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationReplayTool.kt:193:            repository.requeuePendingForEvidenceReplay(frozen.before.executionId, inputs, clock.instant())
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationReplayTool.kt:203:            repository.requeueErrorsForCreditRecovery(frozen.before.executionId, inputs, clock.instant())
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:249: * 边界：读取真实 ES source（[ExpertIndexWriterService.readDiscoveryDocument]）用于展示事实与身份
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:323:            val snapshot = writer.readDiscoveryDocument(level, docId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:456:        scanService.scanAll(filter) { experts ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:558:            val snapshot = writer.readDiscoveryDocument(level, item.expertDocId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:753:        val snapshot = writer.readDiscoveryDocument(level, item.expertDocId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:797:        val snapshot = writer.readDiscoveryDocument(level, item.expertDocId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:858:    fun recordAutomaticPersisted(docId: String, profile: ExpertProfile,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1033:    fun projectApprovedCandidate(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1061:                writer.readDiscoveryDocument(parseLevel(item.sourceLevel), item.expertDocId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1070:            val sync = projectApprovedCandidate(item.expertDocId, snapshot.source, decision)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1196:            scanService.scanAll(filter) { experts ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1209:                if (fresh.isEmpty()) return@scanAll true
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1270:            scanService.scanAll(filter) { experts ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1334:                scanService.scanAll(filter) { experts ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1336:                    if (pending.isEmpty()) return@scanAll true
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1377:                            projectApprovedCandidate(docId, expert.source, automatic.status.name)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1502:            projectApprovedCandidate(docId, source, decision)

@@ -1,0 +1,101 @@
+{
+  "status": "PASS",
+  "scope": "plan structural checks only; not implementation tests",
+  "plans": [
+    {
+      "path": "docs/plans/2026-10-24/discovery-recheck-01-counts.md",
+      "files": 10,
+      "frontend": true,
+      "invariants": 3,
+      "errors": []
+    },
+    {
+      "path": "docs/plans/2026-10-24/discovery-recheck-02-archive.md",
+      "files": 10,
+      "frontend": true,
+      "invariants": 3,
+      "errors": []
+    },
+    {
+      "path": "docs/plans/2026-10-24/discovery-recheck-03-identity-parser.md",
+      "files": 6,
+      "frontend": false,
+      "invariants": 4,
+      "errors": []
+    },
+    {
+      "path": "docs/plans/2026-10-24/discovery-recheck-04-qualification.md",
+      "files": 9,
+      "frontend": false,
+      "invariants": 4,
+      "errors": []
+    },
+    {
+      "path": "docs/plans/2026-10-24/discovery-recheck-05-history.md",
+      "files": 9,
+      "frontend": false,
+      "invariants": 5,
+      "errors": []
+    },
+    {
+      "path": "docs/plans/2026-10-24/discovery-recheck-06-evidence.md",
+      "files": 9,
+      "frontend": false,
+      "invariants": 5,
+      "errors": []
+    },
+    {
+      "path": "docs/plans/2026-10-24/discovery-recheck-07-pipeline.md",
+      "files": 10,
+      "frontend": false,
+      "invariants": 5,
+      "errors": []
+    },
+    {
+      "path": "docs/plans/2026-10-24/discovery-recheck-08-api.md",
+      "files": 9,
+      "frontend": false,
+      "invariants": 4,
+      "errors": []
+    },
+    {
+      "path": "docs/plans/2026-10-24/discovery-recheck-09-frontend.md",
+      "files": 8,
+      "frontend": true,
+      "invariants": 4,
+      "errors": []
+    },
+    {
+      "path": "docs/plans/2026-10-24/discovery-recheck-10-historical-replay.md",
+      "files": 7,
+      "frontend": false,
+      "invariants": 4,
+      "errors": []
+    }
+  ],
+  "brokenLinks": [],
+  "sourceHashChanges": [],
+  "frontendUndeclaredClasses": [],
+  "cssBracePairs": 86,
+  "documentsSha256": {
+    "discovery-recheck-01-counts.md": "00495a84d294e6a4af1389c2a42421dcafc107de06d3ff42d20dbd1d84979fc3",
+    "discovery-recheck-02-archive.md": "01b4abd5cf06e535848abb65b1d9bc62194c225df4f7dfa12e20e6d2a002b13f",
+    "discovery-recheck-03-identity-parser.md": "199a71d6d89625a0faaf2aa5f3abe37a42f6740c2c1ad03220fad934426c87a9",
+    "discovery-recheck-04-qualification.md": "04b07f58de1d6e9199e0919047cfffde967896f1bd4cfcad526b40a7d412dd0d",
+    "discovery-recheck-05-history.md": "1e269d2e8ba0bee59ff0442e6e10b3e750fb9323d9dc4e666a8f5dfd80b6870a",
+    "discovery-recheck-06-evidence.md": "c3a21b4a2fbfe80968f19302d23979dbfec9d1a97e14c7717ba86c55674829ae",
+    "discovery-recheck-07-pipeline.md": "f07ebf6c63e7e3c1e084a79fcbde47ce51a5ed0f69343b569556562a3d332ad4",
+    "discovery-recheck-08-api.md": "47196d02af0f41bd852216230d91ec446020baa6e19b6e5e9a1b0f8c7e1d440a",
+    "discovery-recheck-09-frontend.md": "b92cdfdcbe1ffe5da3e5eda43af3488c18e3c948c777fd196c6f70eeb502b4df",
+    "discovery-recheck-10-historical-replay.md": "47cc24df6d94279a93156fc73e31661c0da7d7aa3d390778d35c72ca0b336dda",
+    "discovery-recheck-master.md": "554c841cde657ee6bb8de6df467e77a1032b9a93d54b0adce283220433ea3792"
+  },
+  "interfaceSelfReview": [
+    "review_epoch lookup + Gate eligibility + CLI + recovery covered",
+    "cancelled HTTP diagnostic separated from apply",
+    "snapshot reviewInput initial admission revision frozen and rechecked",
+    "REUSE zero provider requests; ordinary discovery compatibility retained",
+    "CSS 86 balanced blocks; DOM classes declared",
+    "10 child plans at most 10 files; existing shared stores one new column each"
+  ]
+}

@@ -1,0 +1,118 @@
+$ rg -n EXTRACTION_VERSION|RULE_VERSION|ruleVersion|sameName|isProfessor|safeText|xDirAdj <|height \* \.90|atObfuscation|parserVersion|archiveCapture|analysisLease src/main/kotlin/com/weibo/talentintroduction/discovery src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:26:    const val EXTRACTION_VERSION = 20261004
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:29:    val ruleVersion: Int = 0,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:81:        var payload = VerificationWorkerEvidence(ruleVersion = 1)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:118:                    ContextIssue.PARSER_DRIFT -> return rules.evaluate(snapshot, payload.evidence, payload.search, ruleVersion = payload.ruleVersion).copy(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:122:                        institutionNormalization = normalization, ruleVersion = payload.ruleVersion)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:125:            return rules.evaluate(snapshot, payload.evidence, payload.search, ruleVersion = payload.ruleVersion)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:218:                val frozenRule = mapper.readTree(run.settingsJson).get("ruleVersion")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:222:                payload = payload.copy(ruleVersion = frozenRule?.intValue() ?: 1)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:224:            require(payload.ruleVersion in 0..2) { "Unsupported frozen rule version" }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:261:                        formalName = matchingVersion == 2, ruleVersion = payload.ruleVersion))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:326:                    if (last && payload.ruleVersion >= 1 && search.matchingVersion == 2 &&
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:327:                        search.candidates.none { rules.nameMatches(it, rules.allowedNames(snapshot, payload.evidence), search.queryNames, true, payload.ruleVersion) &&
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:328:                            rules.matchReason(snapshot, payload.evidence, it, null, search.institutionAliasVersion, payload.ruleVersion) in
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:373:                            (rules.nameMatches(it, names, payload.search!!.queryNames, masked = true, ruleVersion = payload.ruleVersion) ||
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:374:                                payload.ruleVersion >= 1 && rules.emailNameMatches(snapshot, payload.evidence, it, payload.search!!.institutionAliasVersion, masked = true))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:376:                        val strong = candidates.filter { rules.matchReason(snapshot, payload.evidence, it, null, payload.search?.institutionAliasVersion ?: 0, payload.ruleVersion) in
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:469:        normalization: InstitutionNormalization? = null, formalName: Boolean = true, ruleVersion: Int = 0): List<ApolloSearchQuery> {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:472:            return nameQueries(snapshot, evidence, formalName, ruleVersion) + listOfNotNull(normalization.queryInstitution?.let {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:483:        return nameQueries(snapshot, evidence, formalName, ruleVersion) + listOfNotNull(institutions.singleOrNull()?.let {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:495:    private fun nameQueries(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>, formalName: Boolean = true, ruleVersion: Int = 0) =
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:499:            .let { names -> if (ruleVersion >= 1) names.flatMap(rules::queryNameVariants) else names }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryService.kt:156:                institutionNormalization = payload.institutionNormalization, ruleVersion = payload.ruleVersion).missingFields
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:144:    private val archiveCapture: DiscoveryPaperArchiveCapture? = null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1632:        return archiveCapture?.capture(context, paperKey, paper, extract) ?: extract()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2133:                    val json = objectMapper.writeValueAsString(outcome.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2175:        if (extraction.identityRuleVersion != DiscoveryIdentity.EXTRACTION_VERSION) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2176:            return QueuedItemConsumption(unrecoverableReason = "IDENTITY_EXTRACTION_VERSION_UNSUPPORTED")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGate.kt:27:    val ruleVersion: Int = 0
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGate.kt:67:                institutionNormalization = payload.institutionNormalization, ruleVersion = payload.ruleVersion).also {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PlainTextEmailExtractor.kt:28:    private val atObfuscation = Regex("\\(at\\)|\\[at\\]|\\{at\\}|\\s+at\\s+")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PlainTextEmailExtractor.kt:70:        .replace(atObfuscation, "@")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationReplayTool.kt:298:                "oldRuleVersion" to older.path("ruleVersion"), "newRuleVersion" to newer.path("ruleVersion"),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationReplayTool.kt:318:            "inputDifferences" to listOf("ruleVersion", "search.institutionAliasVersion"),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationReplayTool.kt:351:                val version = targetRuleVersion ?: payload.path("ruleVersion").asInt(0)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationReplayTool.kt:352:                val local = rules.evaluate(snapshot, facts, null, false, ruleVersion = version)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationReplayTool.kt:360:                mapOf("itemId" to node.path("id"), "ruleVersion" to version,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationReplayTool.kt:405:                val version = payload.path("ruleVersion").asInt(0)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationReplayTool.kt:406:                val local = rules.evaluate(snapshot, facts, null, false, ruleVersion = version)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationReplayTool.kt:410:                    local else rules.evaluate(snapshot, facts, search, false, ruleVersion = version)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationReplayTool.kt:411:                val gate = rules.evaluate(snapshot, facts, search, false, ruleVersion = version)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:64:        if (request.ruleVersion != null && request.ruleVersion != RULE_VERSION) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:65:            return MaintenancePreviewOutcome.Rejected(MaintenanceReasonCodes.RULE_VERSION_MISMATCH)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:112:            ruleVersion = RULE_VERSION,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:223:        if (request.ruleVersion != RULE_VERSION) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:224:            return MaintenanceApplyOutcome.Rejected(MaintenanceReasonCodes.RULE_VERSION_MISMATCH)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:412:        if (request.ruleVersion != RULE_VERSION) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:413:            return MaintenanceRollbackOutcome.Rejected(MaintenanceReasonCodes.RULE_VERSION_MISMATCH)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:700:        DiscoveryIdentity.hash("v$RULE_VERSION\u0000" + frozen.distinct().sorted().joinToString("\u0000"))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:707:        const val RULE_VERSION = 1
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:726:    const val RULE_VERSION_MISMATCH = "RULE_VERSION_MISMATCH"
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:793:    val ruleVersion: Int,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:808:    val ruleVersion: Int? = null,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:825:    val ruleVersion: Int? = null,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:851:    val ruleVersion: Int? = null,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt:270:                "ruleVersion" to RULE_VERSION
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt:502:        const val RULE_VERSION = 1
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:101:            "ruleVersion" to 2,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:42:        institutionNormalization: InstitutionNormalization? = null, ruleVersion: Int = 0): VerificationDecision {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:43:        require(ruleVersion in 0..2)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:44:        fun sameName(left: String, right: String) = sameName(left, right, ruleVersion)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:55:            search?.academicResearchFields, search?.institutionAliasVersion ?: 0, ruleVersion) { update ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:68:                VerificationDecisionTrace(ruleVersion = ruleVersion, aliasVersion = search?.institutionAliasVersion ?: 0,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:86:        if (names.any { !sameName(it, snapshot.fullName) })
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:89:            ruleVersion >= 1 && it.assertionSource == AssertionSource.SELF }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:91:        val professor = jobs.any { fact -> value(fact, "institution").isNotBlank() && isProfessor(value(fact, "role")) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:123:                val matchedName = nameMatches(candidate, namesToMatch, search.queryNames, masked = false, ruleVersion = ruleVersion) ||
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:124:                    ruleVersion >= 1 && emailNameMatches(snapshot, evidence, candidate, search.institutionAliasVersion)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:149:                        val maskedMatch = nameMatches(candidate, namesToMatch, search.queryNames, masked = true, ruleVersion = ruleVersion) ||
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:150:                            ruleVersion >= 1 && emailNameMatches(snapshot, evidence, candidate, search.institutionAliasVersion, masked = true)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:159:                matchReason(snapshot, evidence, candidate, search.academicResearchFields, 0, ruleVersion) != reason) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:170:            return decision(qualification, aliasReasons + (if (ruleVersion >= 1 && !nameMatches(candidate, namesToMatch, search.queryNames, false, ruleVersion))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:233:                sameName(explicit, known) && (candidate.lastName == null ||
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:234:                    (candidate.firstName != null && sameName("${candidate.firstName} ${candidate.lastName}", known)))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:237:                search.queryNames.any { sameName(it, name) } && maskedCompatible(candidate, name)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:254:                    ?.let { name -> allowedNames.any { sameName(name, it) } } == true })
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:268:    internal fun nameMatches(candidate: ApolloCandidate, names: Set<String>, queries: Set<String>, masked: Boolean, ruleVersion: Int = 1): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:269:        fun sameName(left: String, right: String) = sameName(left, right, ruleVersion)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:272:            sameName(explicit, known) && (candidate.lastName == null ||
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:273:                candidate.firstName != null && sameName("${candidate.firstName} ${candidate.lastName}", known))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:274:        } else masked && names.flatMap { if (ruleVersion >= 1) nameVariants(it) else listOf(it) }.any { known ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:279:            queries.any { sameName(it, known) } && candidate.firstName?.let(::normalizeName) == tokens.first() &&
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:286:        candidate: ApolloCandidate, academicFields: String?, institutionAliasVersion: Int = 0, ruleVersion: Int = 0,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:288:        require(ruleVersion in 0..2)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:318:        val professor = apolloProfessor(candidate.title) || ruleVersion >= 2 && candidate.title?.trim() == "Assistenzprofessor" &&
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:375:    fun sameName(left: String, right: String, ruleVersion: Int = 1): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:378:            return ruleVersion >= 1 && a.size >= 3 && a.size == b.size && a.first() == b.first() && a.last() == b.last() &&
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:383:        val aa = if (ruleVersion >= 1) nameVariants(left) else listOf(left)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:384:        val bb = if (ruleVersion >= 1) nameVariants(right) else listOf(right)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt:426:    private fun isProfessor(role: String): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleModels.kt:35:    val identityExtractionVersion: Int = DiscoveryIdentity.EXTRACTION_VERSION, val attempts: List<DiscoverySampleAttempt>,
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:175:            rules.nameMatches(it, names, search.queryNames, masked = true, ruleVersion = payload.ruleVersion) ||
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:176:                payload.ruleVersion >= 1 && rules.emailNameMatches(snapshot, payload.evidence, it, search.institutionAliasVersion, masked = true)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/VerificationDiagnostics.kt:56:    val ruleVersion: Int,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfAuthorContactLayout.kt:12:    const val RULE_VERSION = 20261023
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfAuthorContactLayout.kt:78:                if (line.y <= header.y || line.y > height * .90f) continue
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfAuthorContactLayout.kt:344:            if (position.xDirAdj < 40f) continue
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:324:            identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:354:            identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:567:            incoming.openAlexAuthorId.orEmpty(), DiscoveryIdentity.EXTRACTION_VERSION.toString()
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/PaperQualificationEvidenceExtractor.kt:43:                val text = safeText(bytes, format)
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/PaperQualificationEvidenceExtractor.kt:106:    internal fun safeText(bytes: ByteArray, format: String): String {
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryPersonMaintenanceController.kt:25:    val ruleVersion: Int? = null,
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryPersonMaintenanceController.kt:39:    val ruleVersion: Int? = null,
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryPersonMaintenanceController.kt:47:    val ruleVersion: Int? = null,
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryPersonMaintenanceController.kt:77:                ruleVersion = body.ruleVersion,
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryPersonMaintenanceController.kt:99:                ruleVersion = body.ruleVersion,
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryPersonMaintenanceController.kt:120:                ruleVersion = body.ruleVersion,
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperAnalysisService.kt:25:            archive.analysisLease(id).use { lease ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperAnalysisService.kt:43:                val versions = mapOf("identityExtraction" to DiscoveryIdentity.EXTRACTION_VERSION, "pdfLayout" to PdfAuthorContactLayout.RULE_VERSION)
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperAnalysisService.kt:47:                        value.path("parserVersion") == mapper.valueToTree<JsonNode>(versions) &&
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperAnalysisService.kt:76:                            "XML" -> { qualification.safeText(bytes, "XML"); JatsXmlEmailParser.parse(bytes) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperAnalysisService.kt:112:                val output = PaperAnalysisResult(parserVersion = versions, analyzedAt = Instant.now().toString(), inputBodyHashes = hashes,
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveModels.kt:81:data class PaperAnalysisResult(val schemaVersion: Int = 1, val parserVersion: Map<String, Int>,
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveCapture.kt:105:                snapshot.set<JsonNode>("parserVersion", mapper.createObjectNode().put("identityExtraction", DiscoveryIdentity.EXTRACTION_VERSION).put("pdfLayout", PdfAuthorContactLayout.RULE_VERSION))
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:56:    internal fun analysisLease(recordId: Long): AnalysisLease = mutation {
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:355:                    listOf("schemaVersion", "analysisVersion", "parserVersion", "analyzedAt", "baselineCoverage",

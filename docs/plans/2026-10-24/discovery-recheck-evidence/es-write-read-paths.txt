@@ -1,0 +1,218 @@
+$ rg -n _update|_doc/|_bulk|_delete_by_query|_update_by_query|readDiscoveryDocument|projectDiscoveryCandidate|writeIdentityProofIfVersionMatches|writeDiscoveryNameAndProofIfVersionMatches|dynamic|identityVerification|externalIds src/main/kotlin/com/weibo/talentintroduction/expert src/main/kotlin/com/weibo/talentintroduction/discovery src/main/resources/es
+exit=0
+src/main/resources/es/orcid_info_application.json:7:    "dynamic": false,
+src/main/resources/es/orcid_info_application.json:45:      "identityVerification": { "type": "object", "dynamic": false, "properties": {
+src/main/resources/es/orcid_info_application.json:52:      "externalIds": { "type": "object", "enabled": false },
+src/main/resources/es/trust_reply_unsupported_answer_v1.json:7:    "dynamic": "strict",
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPerson.kt:122:        hasDiscoverySource(profile.identityVerification != null, profile.emailSource) &&
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPerson.kt:127:        hasDiscoverySource(source["identityVerification"] != null, source["emailSource"] as? String) &&
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPerson.kt:140: *  2. 凭证内 ORCID/OpenAlex 作者 ID 与 `externalIds`/业务主键不冲突；
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPerson.kt:167:        val proofs = profiles.mapNotNull { it.identityVerification }
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPerson.kt:209:     * 凭证内非空作者 ID 与 `externalIds` 对应值 / 业务主键（非 `EMAIL-*`）不得冲突；
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPerson.kt:213:        val proof = profile.identityVerification ?: return false
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPerson.kt:214:        val ids = parsedExternalIds(profile.externalIds)
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPerson.kt:228:    private fun parsedExternalIds(externalIds: String?): Map<String, String> {
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPerson.kt:229:        if (externalIds.isNullOrBlank()) return emptyMap()
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPerson.kt:231:            val node = mapper.readTree(externalIds)
+src/main/resources/es/orcid_info_raw.json:7:    "dynamic": false,
+src/main/resources/es/orcid_info_raw.json:33:      "identityVerification": { "type": "object", "dynamic": false, "properties": {
+src/main/resources/es/orcid_info_raw.json:40:      "externalIds": { "type": "object", "enabled": false },
+src/main/resources/es/orcid_info_candidate.json:7:    "dynamic": false,
+src/main/resources/es/orcid_info_candidate.json:34:      "identityVerification": { "type": "object", "dynamic": false, "properties": {
+src/main/resources/es/orcid_info_candidate.json:41:      "externalIds": { "type": "object", "enabled": false },
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/AuthorEmail.kt:20:     * `externalIds.openAlexAuthorId`。邮箱线索与学术身份的绑定必须唯一且强（见 I-2）；
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt:24:    val externalIds: String? = null,
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt:41:    val identityVerification: IdentityVerification? = null,
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:32:    fun isDiscovery(profile: ExpertProfile) = profile.identityVerification != null ||
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:40:    fun isDiscoveryMap(source: Map<String, Any?>): Boolean = source["identityVerification"] != null ||
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:44:        (!source.path("identityVerification").isMissingNode && !source.path("identityVerification").isNull) ||
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:51:        val proof = profile.identityVerification ?: return false
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:70:        identityVerification = read(source.path("identityVerification"))
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:83:        val proof = profile.identityVerification ?: return false
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:109:     * 只有身份凭证成立、来源身份与 `externalIds`/主键无冲突、该来源必需的来源 ID 齐备、机构非空时才产出
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:115:        val proof = profile.identityVerification ?: return null
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:116:        val ids = parsedExternalIds(profile.externalIds)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:119:        // JATS 必须有 externalIds.pmcId；OPENALEX 必须有同作者 openAlexAuthorId（且 doi/pmcId 至少一项）；
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:120:        // ORCID 必须有 externalIds.orcid。
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:163:    /** `已存 externalIds 中论文 ID 或 ORCID ID`：论文来源取论文 ID（pmcId→doi→pmid），ORCID 来源取 ORCID ID。 */
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:172:     * I-2 的签发前置：`identityVerification` 中非空的 ORCID/OpenAlex 作者 ID 与 `externalIds` 对应 ID 不得冲突；
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:199:    private fun parsedExternalIds(externalIds: String?): Map<String, String> {
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:200:        if (externalIds.isNullOrBlank()) return emptyMap()
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:202:            val node = mapper.readTree(externalIds)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:230:        val proof = profile.identityVerification ?: return listOf(AdmissionReason(
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:232:            "identityVerification", null, "VERIFIED 身份凭证", "profile.identityVerification"))
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:236:            "identityVerification.status", proof.status.ifBlank { null }, "VERIFIED", IDENTITY_STATUS_LOCATION)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:239:            "identityVerification.version", proof.version.toString(), VERSION.toString(), IDENTITY_STATUS_LOCATION)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:243:            "identityVerification.email", null, "与档案邮箱一致的规范邮箱", IDENTITY_STATUS_LOCATION)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:246:            "identityVerification.email", proof.email, profile.email, IDENTITY_STATUS_LOCATION)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:249:            "identityVerification.givenNames", null, "与档案 givenNames 一致的非空名字", IDENTITY_STATUS_LOCATION)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:252:            "identityVerification.givenNames", proof.givenNames, profile.givenNames, IDENTITY_STATUS_LOCATION)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:255:            "identityVerification.familyNames", null, "与档案 familyNames 一致的非空姓氏", IDENTITY_STATUS_LOCATION)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:258:            "identityVerification.familyNames", proof.familyNames, profile.familyNames, IDENTITY_STATUS_LOCATION)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:264:                "identityVerification.source / identityVerification.evidenceHash",
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:302:        val proof = profile.identityVerification ?: return emptyList()
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:303:        val ids = parsedExternalIds(profile.externalIds)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:312:                "externalIds", "$leftLabel=$leftId / $rightLabel=$rightId", "两侧 ID 归一后一致", EVIDENCE_LOCATION)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:314:        check("identityVerification.orcid", proof.orcid, "externalIds.orcid", ids["orcid"])
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:315:        check("identityVerification.openAlexAuthorId", proof.openAlexAuthorId,
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:316:            "externalIds.openAlexAuthorId", ids["openAlexAuthorId"])
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:317:        check("orcidId", primaryOrcid, "externalIds.orcid", ids["orcid"])
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:318:        check("orcidId", primaryOrcid, "identityVerification.orcid", proof.orcid)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:324:        val ids = parsedExternalIds(profile.externalIds)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:326:            AdmissionReasonCodes.SOURCE_ID_MISSING, label, field, null, expected, "profile.externalIds")
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:330:                    add(missing("OPENALEX 凭证缺少作者 ID", "externalIds.openAlexAuthorId", "非空 openAlexAuthorId"))
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:332:                    add(missing("OPENALEX 凭证缺少论文 ID", "externalIds.doi / externalIds.pmcId", "doi 或 pmcId 至少一项"))
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:336:                    missing("ORCID 凭证缺少 ORCID ID", "externalIds.orcid", "非空 orcid") else null)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:339:                    missing("JATS 凭证缺少论文 ID", "externalIds.pmcId", "非空 pmcId") else null)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementService.kt:225:        val bound = normalizedAuthorId(profile.externalIds?.let { runCatching { mapper.readTree(it) }.getOrNull() }?.path("openAlexAuthorId")?.asText(null))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementService.kt:226:        if (bound == null || !bound.equals(normalizedAuthorId(profile.identityVerification?.openAlexAuthorId), ignoreCase = true)) return null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementService.kt:426:        val proofId = normalizeOrcid(profile.identityVerification?.orcid) ?: return null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementService.kt:428:        val externalNode = profile.externalIds?.let {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementService.kt:440:        normalizeOrcid(profile.identityVerification?.orcid)?.let(::add)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementService.kt:442:        profile.externalIds?.let { runCatching { mapper.readTree(it) }.getOrNull() }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewScanService.kt:340:            "disciplineCategory", "institution", "institutionType", "emailSource", "externalIds",
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewScanService.kt:341:            "identityVerification", "institutionEvidence", "filterResult", "tags", "expertClassification",
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:493:                expertIndexWriterService.readDiscoveryDocument(level, docId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:513:        val proof = rawProfile.identityVerification
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonMaintenanceService.kt:711:            listOf("orcidId", "email", "givenNames", "familyNames", "externalIds", "identityVerification")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:85:                expertIndexWriterService.readDiscoveryDocument(level, docId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:130:            when (expertIndexWriterService.writeIdentityProofIfVersionMatches(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:135:                        expertIndexWriterService.readDiscoveryDocument(level, docId)?.let { proofOf(it.source) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:207:                expertIndexWriterService.readDiscoveryDocument(level, docId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:263:            when (expertIndexWriterService.writeDiscoveryNameAndProofIfVersionMatches(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:268:                        expertIndexWriterService.readDiscoveryDocument(level, docId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:346:        val node: JsonNode = source["identityVerification"]?.let { mapper.valueToTree(it) } ?: return null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:351:        val raw = source["externalIds"]
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:419: * 绝不从无凭证 externalIds 猜身份，也不据同名归组。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRepairService.kt:532:            val document = expertIndexWriterService.readDiscoveryDocument(level, docId) ?: continue
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:249: * 边界：读取真实 ES source（[ExpertIndexWriterService.readDiscoveryDocument]）用于展示事实与身份
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:323:            val snapshot = writer.readDiscoveryDocument(level, docId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:558:            val snapshot = writer.readDiscoveryDocument(level, item.expertDocId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:753:        val snapshot = writer.readDiscoveryDocument(level, item.expertDocId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:797:        val snapshot = writer.readDiscoveryDocument(level, item.expertDocId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1038:        val result = writer.projectDiscoveryCandidate(docId, source, decision)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:1061:                writer.readDiscoveryDocument(parseLevel(item.sourceLevel), item.expertDocId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:827: * 其他形状的值不是可信作者身份：既不写 externalIds，也不参与任何主键/文档定位。
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:522:            externalIds = source.path("externalIds").let { if (it.isObject) it.toString() else null },
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:536:            identityVerification = DiscoveryIdentity.read(source.path("identityVerification")),
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:639:            "dataSource", "externalIds", "worksCount", "identityVerification",
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryAdmissionPolicy.kt:148:            "identityVerification", null, "VERIFIED 身份凭证", "RecipientScope.DISCOVERY_PENDING_TAG"))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OrcidVerificationEvidenceClient.kt:18:    val identityValid: Boolean get() = profile.identityVerification?.status == "VERIFIED" && DiscoveryIdentity.allowed(profile)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OrcidVerificationEvidenceClient.kt:22:        val proofId = normalizeOrcid(profile.identityVerification?.orcid) ?: return null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OrcidVerificationEvidenceClient.kt:24:        val externalNode = profile.externalIds?.let {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryService.kt:108:            item.state, item.outcome, item.qualification, snapshot.profile.identityVerification,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:25: * 只做四件事：①按服务端存量 `externalIds`（PMCID/DOI/PMID）精确定位原文并重新取证；
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:131:            expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.RAW, docId)?.source
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:186:                expertIndexWriterService.readDiscoveryDocument(level, docId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:215:        val storedOrcid = presentSources.mapNotNull { externalIds(it)["orcid"]?.takeIf { id -> id.isNotBlank() } }.distinct()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:389:    /** 三层 `externalIds` 的同键值必须一致；不一致即停止（绝不任取一层）。 */
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:391:        val maps = sources.map { externalIds(it) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:486:    private fun hasProof(source: Map<String, Any?>): Boolean = source["identityVerification"] != null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:501:            val ids = externalIds(source)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:512:        val ids = externalIds(source)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:523:        val node: JsonNode = source["identityVerification"]?.let { mapper.valueToTree(it) } ?: return null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:528:    private fun externalIds(source: Map<String, Any?>): Map<String, String> {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:529:        val raw = source["externalIds"] ?: return emptyMap()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryIdentityRecoveryService.kt:556:                externalIds(snap.source).toSortedMap().entries.joinToString(",") { "${it.key}=${it.value}" }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:123:            // Match toIndexMap's RAW identity convention; real ORCID remains in externalIds/provenance.
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:128:            val layers = ExpertIndexLevel.values().associateWith { writer.readDiscoveryDocument(it, docId) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt:283:        val raw = writer.readDiscoveryDocument(ExpertIndexLevel.RAW, item.expertDocId) ?: run {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationService.kt:303:            "pharmacodynamics", "toxicology", "formulation", "preclinical", "biologics",
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt:32:        val raw = writer.readDiscoveryDocument(ExpertIndexLevel.RAW, item.expertDocId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt:34:        writer.readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, item.expertDocId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt:35:        val application = writer.readDiscoveryDocument(ExpertIndexLevel.APPLICATION, item.expertDocId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt:112:            val raw = writer.readDiscoveryDocument(ExpertIndexLevel.RAW, item.expertDocId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitService.kt:135:        val orcid = profile.externalIds?.let { runCatching { mapper.readTree(it) }.getOrNull() }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGate.kt:88:            val external = profile.externalIds?.let { mapper.readTree(it) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGate.kt:91:                "externalIds" to sortedMapOf("orcid" to external?.get("orcid"), "openAlexAuthorId" to external?.get("openAlexAuthorId")),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGate.kt:94:                "identityVerification" to profile.identityVerification, "institutionEvidence" to profile.institutionEvidence,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt:215:                expertIndexWriterService.readDiscoveryDocument(level, docId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt:255:    /** 层间身份一致：`orcidId/email/givenNames/familyNames/externalIds/identityVerification` 逐键相同。 */
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPersonService.kt:507:            listOf("orcidId", "email", "givenNames", "familyNames", "externalIds", "identityVerification")
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:347:            val snapshot = expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.RAW, docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:405:                    else expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:420:                else expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:480:            expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.RAW, docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:72:            val updateUrl = "${properties.baseUrl}/$applicationIndex/_update/$orcid"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:87:        // document does not exist (HEAD check), then _update by doc id.
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:110:                val updateUrl = "${properties.baseUrl}/$index/_update/$normalizedOrcidId"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:182:                    val bulkUrl = "${properties.baseUrl}/_bulk"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:237:     * 不写根级 `updatedAt`、不自动创建缺失文档（`doc_as_upsert=false`）、不使用 `_update_by_query`。
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:263:                val bulkUrl = "${properties.baseUrl}/_bulk"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:426:        val getUrl = "${properties.baseUrl}/$candidateIndex/_doc/$normalizedOrcid"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:465:        val putUrl = "${properties.baseUrl}/$applicationIndex/_doc/$normalizedOrcid" +
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:466:            if (source.path("identityVerification").isObject) "?op_type=create" else ""
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:528:            val updateUrl = "${properties.baseUrl}/$applicationIndex/_update/$orcid"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:545:        val getUrl = "${properties.baseUrl}/$rawIndex/_doc/$normalizedOrcid"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:570:        val putUrl = "${properties.baseUrl}/$candidateIndex/_doc/$normalizedOrcid" +
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:571:            if (source.path("identityVerification").isObject) "?op_type=create" else ""
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:588:        val deleteUrl = "${properties.baseUrl}/$candidateIndex/_doc/$esDocId"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:614:        val putUrl = "${properties.baseUrl}/$rawIndex/_doc/$normalizedOrcid" +
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:632:        val headUrl = "${properties.baseUrl}/$index/_doc/$esDocId"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:654:        val url = "${properties.baseUrl}/$index/_update/$docId"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:672:        val url = "${properties.baseUrl}/$index/_update/$docId"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:684:        val getUrl = "${properties.baseUrl}/$rawIndex/_doc/$docId"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:704:    fun readDiscoveryDocument(level: ExpertIndexLevel, docId: String): DiscoverySnapshot? {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:708:                "${properties.baseUrl}/$index/_doc/$docId", HttpMethod.GET,
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:735:                "email", "givenNames", "familyNames", "identityVerification",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:736:                "externalIds", "emailSource", "tags", "orcidId"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:769:        listOf("orcidId", "email", "givenNames", "familyNames", "externalIds", "identityVerification")
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:784:            externalIds = source["externalIds"]?.let { objectMapper.writeValueAsString(it) },
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:789:            identityVerification = source["identityVerification"]?.let {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:809:        val current = readDiscoveryDocument(ExpertIndexLevel.RAW, docId) ?: return false
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:812:        val candidate = if (preserveApplication) null else readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:820:            "${properties.baseUrl}/$rawIndex/_update/$docId?if_seq_no=${snapshot.seqNo}&if_primary_term=${snapshot.primaryTerm}",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:824:        val stableRaw = readDiscoveryDocument(ExpertIndexLevel.RAW, docId) ?: return false
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:840:                "${properties.baseUrl}/$candidateIndex/_doc/$docId?if_seq_no=${candidate.seqNo}&if_primary_term=${candidate.primaryTerm}",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:869:     * 只有复读身份一致才算「已存在」，否则身份冲突。**绝不**写 `filterResult`/`identityVerification`/
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:872:    fun projectDiscoveryCandidate(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:890:            readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:911:        val putUrl = "${properties.baseUrl}/$candidateIndex/_doc/$docId?op_type=create"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:918:                    readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:939:        val putUrl = "${properties.baseUrl}/$candidateIndex/_doc/$docId" +
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:940:            if (doc["identityVerification"] != null) "?op_type=create" else ""
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:956:     * I-2/I-3：只写 `identityVerification` 的条件补丁 —— 带 `if_seq_no/if_primary_term`，
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:961:    fun writeIdentityProofIfVersionMatches(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:969:        val url = "${properties.baseUrl}/$index/_update/$docId?if_seq_no=$seqNo&if_primary_term=$primaryTerm"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:970:        val body = mapOf("doc" to mapOf("identityVerification" to proof))
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:996:     * [writeIdentityProofIfVersionMatches] 一致：绝不创建缺层，也绝不用旧快照盲目重试。
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:998:    fun writeDiscoveryNameAndProofIfVersionMatches(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:1007:        val doc = linkedMapOf<String, Any?>("identityVerification" to proof)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:1011:        val url = "${properties.baseUrl}/$index/_update/$docId?if_seq_no=$seqNo&if_primary_term=$primaryTerm"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:1039:        val deleteCandidateUrl = "${properties.baseUrl}/$candidateIndex/_delete_by_query"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:1040:        val deleteApplicationUrl = "${properties.baseUrl}/$applicationIndex/_delete_by_query"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:1055:            log.warn("Failed to delete orcid={} from candidate index via _delete_by_query", orcid, e)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:1070:            log.warn("Failed to delete orcid={} from application index via _delete_by_query", orcid, e)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1599:            externalIds = objectMapper.writeValueAsString(mapOf("orcid" to authorEmail.orcidId)),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1600:            identityVerification = proofFor(authorEmail)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2382:        val proof = source?.let { DiscoveryIdentity.read(it.path("identityVerification")) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2383:        val externalIds = source?.path("externalIds")?.let {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2393:            conflictingId(externalIds?.path("orcid")?.asText(null), incoming.orcidId) ||
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2394:            conflictingId(externalIds?.path("openAlexAuthorId")?.asText(null), incoming.openAlexAuthorId))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2493:            externalIds = buildExternalIds(paper, authorEmail),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2495:            identityVerification = proofFor(authorEmail)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2522:            "identityVerification" to profile.identityVerification,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2523:            "externalIds" to profile.externalIds?.let { objectMapper.readValue(it, Map::class.java) },
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3257:     * I-2：学术字段的唯一写入点。按真实 `_id` 对每个已存在层做局部 `_update`：404 跳过、非 404 失败可按层重试；
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3269:        // I-2：null 事实不写入（否则 _update 会用 null 擦掉已有指标）。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3299:                "if (ctx._source.identityVerification != params.identity || ctx._source.email != params.email || ctx._source.givenNames != params.given || ctx._source.familyNames != params.family || ctx._source.externalIds != params.externalIds) { ctx.op = 'none'; } else { for (entry in params.doc.entrySet()) { ctx._source[entry.getKey()] = entry.getValue(); } }",
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3300:                "params" to mapOf("identity" to profile.identityVerification, "email" to profile.email,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3302:                    "externalIds" to profile.externalIds?.let { objectMapper.readValue(it, Map::class.java) }, "doc" to doc)))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3313:     * `_update` 失败都标 [LayerUpdateStatus.FAILED] 以便按层重试（成功层在重试时不会被再次破坏）。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3323:                "${esProperties.baseUrl}/$index/_doc/$docId", HttpMethod.HEAD, HttpEntity(null, esHeaders()),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3336:                "${esProperties.baseUrl}/$index/_update/$docId", HttpMethod.POST,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3354:     * I-1：可信作者身份只来自 `externalIds.openAlexAuthorId`，并且只接受 `A` + 数字的规范形状。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3359:            return if (DiscoveryIdentity.allowed(profile)) normalizeOpenAlexAuthorId(profile.identityVerification?.openAlexAuthorId) else null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3361:        val externalIds = profile.externalIds ?: return null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3363:            objectMapper.readValue(externalIds, Map::class.java)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3373:            return profile.identityVerification?.orcid?.takeIf {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3382:     * - 每批最多 [MAX_ENRICHMENT_IDENTITIES_PER_BATCH] 个不同身份；先用可信 `externalIds.openAlexAuthorId`，
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3505:        val url = "${esProperties.baseUrl}/${expertIndexService.indexName(ExpertIndexLevel.RAW)}/_doc/$orcid"
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3524:            "_source" to listOf("email", "givenNames", "familyNames", "identityVerification", "externalIds", "emailSource", "tags")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3547:        // I-1/I-3: 作者 ID 只是 externalIds 的一个子键（合并写入，不覆盖其他导入 ID），
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3587:        val updateUrl = "${esProperties.baseUrl}/$rawIndex/_update/$orcidId"
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3602:                "${esProperties.baseUrl}/$candidateIndex/_doc/${profile.orcidId}",
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3620:        val getUrl = "${esProperties.baseUrl}/$rawIndex/_doc/${profile.orcidId}"
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3640:        val putUrl = "${esProperties.baseUrl}/$candidateIndex/_doc/${profile.orcidId}" +
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3987:    /** 文档存在且局部 `_update` 成功。 */
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3991:    /** HEAD 非 404 失败或 `_update` 失败：该层可重试。 */

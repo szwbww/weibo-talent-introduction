@@ -1,0 +1,37 @@
+$ rg -n dr-review|dr-counts|dr-toolbar|discoveryReviewLoadCounts|discoveryReviewFetchDecisionTotal|discoveryReviewRows|discoveryReviewPane|styles.css\?v|app.js\?v|trust-reply-workbench.js\?v src/main/resources/static/index.html src/main/resources/static/app.js src/main/resources/static/styles.css
+exit=0
+src/main/resources/static/index.html:11:    <link rel="stylesheet" href="styles.css?v=20261023-discovery-paper-apollo-settings">
+src/main/resources/static/index.html:1137:          <button class="batch-send-tab" type="button" role="tab" aria-selected="false" aria-controls="discoveryReviewPane" id="discoveryReviewTab" tabindex="-1">专家审核</button>
+src/main/resources/static/index.html:1274:        <section id="discoveryReviewPane" class="modal-body dr-review" role="tabpanel" aria-labelledby="discoveryReviewTab" hidden>
+src/main/resources/static/index.html:1275:            <div class="dr-counts" id="discoveryReviewCounts" aria-live="polite">
+src/main/resources/static/index.html:1279:            <div class="dr-toolbar">
+src/main/resources/static/index.html:1287:            <div class="dr-toolbar">
+src/main/resources/static/index.html:1301:              <div class="dr-toolbar"><button class="button secondary" type="button" id="discoveryReviewCancelConfirm">取消</button><button class="button primary" type="button" id="discoveryReviewCommit">确认审核</button></div>
+src/main/resources/static/index.html:1305:              <tbody id="discoveryReviewRows"></tbody>
+src/main/resources/static/index.html:1307:            <footer class="dr-pager"><span id="discoveryReviewPageInfo"></span><div class="dr-toolbar">
+src/main/resources/static/index.html:1312:        <section id="discoveryReviewHistoryPane" class="modal-body dr-review" role="tabpanel" aria-labelledby="discoveryReviewHistoryTab" hidden></section>
+src/main/resources/static/index.html:2463:<script src="trust-reply-workbench.js?v=20261023-discovery-paper-apollo-settings"></script>
+src/main/resources/static/index.html:2471:<script src="app.js?v=20261023-discovery-paper-apollo-settings"></script>
+src/main/resources/static/styles.css:12721:.dr-review {
+src/main/resources/static/styles.css:12726:.dr-review [role="alert"] {
+src/main/resources/static/styles.css:12733:.dr-review button:disabled {
+src/main/resources/static/styles.css:12739:.dr-review :focus-visible,
+src/main/resources/static/styles.css:12751:.dr-counts {
+src/main/resources/static/styles.css:12756:.dr-counts > div {
+src/main/resources/static/styles.css:12762:.dr-counts strong {
+src/main/resources/static/styles.css:12767:.dr-toolbar,
+src/main/resources/static/styles.css:12774:.dr-toolbar .bsc-input {
+src/main/resources/static/styles.css:12818:.dr-review input[type="checkbox"] {
+src/main/resources/static/styles.css:12824:    .dr-counts {
+src/main/resources/static/app.js:2576:        reviewPane: $("#discoveryReviewPane"),
+src/main/resources/static/app.js:2590:        rows: $("#discoveryReviewRows"),
+src/main/resources/static/app.js:2804:function discoveryReviewPanes() {
+src/main/resources/static/app.js:2829:    const panes = discoveryReviewPanes();
+src/main/resources/static/app.js:2926:        $$("#discoveryReviewPane [data-review-action]").forEach(function (btn) {
+src/main/resources/static/app.js:2994:async function discoveryReviewFetchDecisionTotal(decision, seq, countsSeq) {
+src/main/resources/static/app.js:3014:async function discoveryReviewLoadCounts(seq, countsSeq) {
+src/main/resources/static/app.js:3018:            return discoveryReviewFetchDecisionTotal(decision, seq, countsSeq).catch(function () { return undefined; });
+src/main/resources/static/app.js:3044:    discoveryReviewLoadCounts(seq, countsSeq);
+src/main/resources/static/app.js:3122:    discoveryReviewLoadCounts(seq, discoveryReviewState.countsSeq);
+src/main/resources/static/app.js:3316:        $$("#discoveryReviewPane [data-review-action]").forEach(function (btn) {
+src/main/resources/static/app.js:3961:    const toolbar = discoveryReviewNode("div", "dr-toolbar", null);
