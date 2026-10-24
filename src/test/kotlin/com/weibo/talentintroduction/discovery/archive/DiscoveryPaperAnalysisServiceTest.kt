@@ -36,6 +36,35 @@ internal class AnalysisFixture(val f: ArchiveFixture) {
 
 class DiscoveryPaperAnalysisServiceTest {
     @BeforeEach fun clean() = ArchiveMysqlFixture.clean()
+    @Test fun `byte format and implementation versions invalidate old cache without rewriting first`() {
+        ArchiveFixture().use { f ->
+            f.enable(); val a = AnalysisFixture(f); val p = a.paper("old-pdf")
+            val b = f.body(p,QualificationFixtures.pdf(),ArchiveAttemptKind.PDF_URL,"text/plain")
+            a.baseline(p,listOf(b.id))
+            val before = f.repository.record(p.id)!!
+            val result = a.post(p)
+            assertEquals(2,result.path("analysisVersion").asInt())
+            assertEquals(1,result.path("coverage").path("scannedPages").asInt())
+            assertEquals(PaperContentFormat.VERSION,result.path("parserVersion").path("format").asInt())
+            assertEquals(PaperQualificationEvidenceExtractor.VERSION,result.path("parserVersion").path("qualification").asInt())
+            val old = result.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>().put("analysisVersion",1)
+            f.service.saveAnalysis(p.id,f.repository.record(p.id)!!.revision,old)
+            var parsed = false
+            a.analysis.beforeParse = { parsed = true }
+            assertEquals(2,a.post(p).path("analysisVersion").asInt()); assertTrue(parsed)
+            for (key in listOf("format", "qualification")) {
+                val stale = result.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>()
+                (stale.path("parserVersion") as com.fasterxml.jackson.databind.node.ObjectNode).put(key,0)
+                f.service.saveAnalysis(p.id,f.repository.record(p.id)!!.revision,stale)
+                parsed = false
+                a.post(p); assertTrue(parsed,key)
+            }
+            assertEquals(before.outcomeJson,f.repository.record(p.id)!!.outcomeJson)
+            assertEquals(b.blobSha256,f.repository.attempt(b.id)!!.blobSha256)
+            val html = "<html>not PDF</html>".toByteArray()
+            assertEquals("HTML",PaperContentFormat.detect(html,ArchiveAttemptKind.PDF_URL))
+        }
+    }
     @Test fun `actual files SQL controller first immutable cache force and deletion retention`() {
         ArchiveFixture().use { f ->
             f.enable(); val a = AnalysisFixture(f); val p = a.paper("lifecycle"); val b = a.body(p); a.baseline(p,listOf(b.id))

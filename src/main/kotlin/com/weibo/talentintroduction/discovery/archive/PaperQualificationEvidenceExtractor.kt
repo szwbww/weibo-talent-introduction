@@ -107,7 +107,7 @@ class PaperQualificationEvidenceExtractor {
         val text = bytes.toString(Charsets.UTF_8)
         if (format == "XML") {
             val factory = DocumentBuilderFactory.newInstance().apply {
-                setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+                setFeature("http://apache.org/xml/features/disallow-doctype-decl", false)
                 setFeature("http://xml.org/sax/features/external-general-entities", false)
                 setFeature("http://xml.org/sax/features/external-parameter-entities", false)
                 setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
@@ -168,6 +168,7 @@ class PaperQualificationEvidenceExtractor {
     }
     private fun namePattern(name: String) = Regex("(?i)(?<![\\p{L}\\p{N}])" + Regex.escape(name) + "(?![\\p{L}\\p{N}])")
     companion object {
+        const val VERSION = 2
         const val MAX_PAGES = 100
         const val MAX_TEXT_BYTES = 2 * 1024 * 1024
         const val MAX_FACTS = 100

@@ -92,6 +92,19 @@ test('exact approved HTML/CSS contract, real IDs and asset keys', () => {
     assert.ok(!source.includes('localStorage')); assert.ok(!source.includes('innerHTML')); assert.ok(!source.includes('style.'));
 });
 
+test('first bindings are distinct from unrun comparison and unknown is not zero', async () => {
+    const record = { ...row(), extractionSummary: { emails: 3, resolved: 2, unresolved: 1 } };
+    const h = harness(url => /\/1$/.test(url) ? { record, paper: {}, outcome: { first: { outcome: { emails: [] } } }, analysis: null, attempts: [] } : url.includes('size=') ? { items: [record, { ...row(2), extractionSummary: null }], total: 2 } : undefined);
+    h.view.setVisible(true); await flush();
+    assert.match(h.find('rows').textContent, /邮箱 3 \/ 姓名关联 2/);
+    assert.match(h.find('rows').textContent, /邮箱 未知 \/ 姓名关联 未知/);
+    assert.match(h.find('rows').textContent, /未运行解析对照/);
+    h.act('view').click(); await flush();
+    assert.match(h.find('comparisonSummary').textContent, /尚未运行解析对照；首次提取结果见下方/);
+    assert.equal(h.calls.filter(c => c.url.endsWith('/analysis')).length, 0);
+    h.view.dispose();
+});
+
 test('lazy visit, exact API shape, null unknown, current-page protected selection and unprotect only', async () => {
     const h = harness((url, _, call) => url.endsWith('/protection') ? { changed: 1, unchanged: 0, conflicts: [], items: [{ id: 1, revision: 3, protected: false }] } : undefined);
     assert.equal(h.calls.length, 0); h.view.setExecution(101, [{ executionId: 101 }]); assert.equal(h.calls.length, 0);

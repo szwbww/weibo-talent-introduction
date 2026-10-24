@@ -76,10 +76,18 @@ class PaperQualificationEvidenceExtractorTest {
             assertEquals(PaperQualificationKind.COMPLETED_DOCTORATE,result.facts.single().kind,degree)
         }
     }
-    @Test fun `safe HTML XML and DTD rejection preserve paragraph semantics`() {
+    @Test fun `safe HTML XML and external entity suppression preserve paragraph semantics`() {
         assertEquals(PaperQualificationKind.PROFESSOR,text("<html><body><h2>Biographies</h2><script>Alice Smith is a PhD student.</script><p>Alice Smith is a Professor.</p></body></html>",format="HTML").facts.single().kind)
         assertEquals(PaperQualificationKind.COMPLETED_DOCTORATE,text("<article><title>Biographies</title><p>Alice Smith earned her doctorate.</p></article>",format="XML").facts.single().kind)
-        assertEquals(PaperEvidenceStatus.ERROR,text("<!DOCTYPE article [<!ENTITY x SYSTEM 'file:///etc/passwd'>]><article>&x;</article>",format="XML").coverage.status)
+        val xml = "<!DOCTYPE article SYSTEM 'http://127.0.0.1:1/never.dtd'><article><title>Biographies</title><p>Alice Smith earned her doctorate.</p></article>"
+        assertEquals(PaperQualificationKind.COMPLETED_DOCTORATE,text(xml,format="XML").facts.single().kind)
+        val secret = java.nio.file.Files.createTempFile("paper-xxe", ".txt")
+        try {
+            java.nio.file.Files.writeString(secret, "SECRET_QUALIFICATION")
+            val unsafe = "<!DOCTYPE article [<!ENTITY x SYSTEM '${secret.toUri()}'>]><article>&x;<p>safe</p></article>"
+            assertFalse(extractor.safeText(unsafe.toByteArray(), "XML").contains("SECRET_QUALIFICATION"))
+        } finally { java.nio.file.Files.deleteIfExists(secret) }
+        assertEquals(PaperEvidenceStatus.ERROR,text("<!DOCTYPE article><article>",format="XML").coverage.status)
     }
     @Test fun `actual PDF source has genuine pages while bounded scans remain partial`() {
         val bytes = QualificationFixtures.pdf()

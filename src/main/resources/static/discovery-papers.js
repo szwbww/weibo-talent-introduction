@@ -75,7 +75,7 @@
         function node(tag, className, value) { const el = doc.createElement(tag); if (className) el.className = className; if (value != null) el.textContent = value; return el; }
         function append(parent, tag, cls, value) { const el = node(tag, cls, value); parent.appendChild(el); return el; }
         function link(parent, label, name, disabled) { const b = append(parent, 'button', 'dp-link', label); b.type = 'button'; b.dataset.dpAction = name; b.disabled = Boolean(disabled); return b; }
-        function delta(a) { return !a ? '未分析' : a.baselineCoverage === 'BASELINE_MISSING' ? 'BASELINE_MISSING · 无基线，增量未知' : a.deltaAddedBindings == null ? '增量未知' : '新增关联 ' + a.deltaAddedBindings; }
+        function delta(a) { return !a ? '未运行解析对照' : a.baselineCoverage === 'BASELINE_MISSING' ? 'BASELINE_MISSING · 无基线，增量未知' : a.deltaAddedBindings == null ? '增量未知' : '新增关联 ' + a.deltaAddedBindings; }
         function renderRows() {
             const body = find('rows'); body.replaceChildren();
             rows.forEach(r => {
@@ -87,7 +87,7 @@
                 const source = append(tr, 'td'); const src = append(source, 'span', '', r.sourceName); src.dataset.dp = 'source'; append(source, 'span', 'dp-sub', bytes(r.storedBytes)).dataset.dp = 'bytes';
                 const run = append(tr, 'td'); append(run, 'span', '', '执行 #' + r.executionId).dataset.dp = 'executionLabel'; append(run, 'span', 'dp-sub', r.firstCapturedAt).dataset.dp = 'createdAt';
                 const binding = append(tr, 'td'); append(binding, 'span', '', '邮箱 ' + unknown(r.extractionSummary?.emails) + ' / 姓名关联 ' + unknown(r.extractionSummary?.resolved)).dataset.dp = 'bindings'; append(binding, 'span', 'dp-sub', delta(r.analysisSummary)).dataset.dp = 'delta';
-                append(append(tr, 'td'), 'span', '', r.analysisSummary ? '查看解析记录 · ' + unknown(r.analysisSummary.coverage?.status) : '未分析').dataset.dp = 'facts';
+                append(append(tr, 'td'), 'span', '', r.analysisSummary ? '查看解析记录 · ' + unknown(r.analysisSummary.coverage?.status) : '未运行解析对照').dataset.dp = 'facts';
                 const tools = append(append(tr, 'td'), 'div', 'dp-actions'); link(tools, '查看记录', 'view'); link(tools, '下载', 'download', !r.readableAttemptIds?.length);
             });
             if (!rows.length) { const td = append(append(body, 'tr'), 'td', 'dp-empty', '暂无论文原文记录'); td.colSpan = 7; }
@@ -255,14 +255,14 @@
         function renderEvidence() {
             const a = detail.analysis, first = detail.outcome?.first;
             const firstInfo = first ? '首次采集 ' + unknown(first.capturedAt) + ' · 版本 ' + JSON.stringify(first.parserVersion ?? first.extractionVersion ?? detail.outcome.schemaVersion ?? null) : '首次采集基线未记录';
-            text('comparisonSummary', firstInfo + '；' + (a ? '新分析 ' + unknown(a.analyzedAt) + ' · 版本 ' + unknown(a.analysisVersion) + ' / ' + JSON.stringify(a.parserVersion) + ' · ' + delta(a) + ' · 移除关联 ' + unknown(a.delta?.removedBindings) + ' · ' + a.baselineCoverage + ' · ' + a.coverage?.status : '尚未分析'));
+            text('comparisonSummary', firstInfo + '；' + (a ? '新分析 ' + unknown(a.analyzedAt) + ' · 版本 ' + unknown(a.analysisVersion) + ' / ' + JSON.stringify(a.parserVersion) + ' · ' + delta(a) + ' · 移除关联 ' + unknown(a.delta?.removedBindings) + ' · ' + a.baselineCoverage + ' · ' + a.coverage?.status : '尚未运行解析对照；首次提取结果见下方'));
             find('comparisonSummary').className = a && (a.coverage?.status === 'PARTIAL' || a.baselineCoverage === 'BASELINE_MISSING') ? 'dp-warning' : 'dp-muted';
-            text('coverage', a ? '覆盖 ' + a.coverage?.status + ' · 扫描 ' + unknown(a.coverage?.scannedPages) + '/' + unknown(a.coverage?.totalPages) + ' 页 · ' + [...(a.reasons || []), ...(a.coverage?.reasons || [])].join('、') : '尚未分析');
+            text('coverage', a ? '覆盖 ' + a.coverage?.status + ' · 扫描 ' + unknown(a.coverage?.scannedPages) + '/' + unknown(a.coverage?.totalPages) + ' 页 · ' + [...(a.reasons || []), ...(a.coverage?.reasons || [])].join('、') : '尚未运行解析对照；首次提取结果见下方');
             find('mappingCards').replaceChildren(); find('qualificationCards').replaceChildren();
             (a?.after || []).forEach(fact => card(find('mappingCards'), fact, false));
             (a?.qualificationFacts || []).forEach(fact => card(find('qualificationCards'), fact, true));
-            if (!a?.after?.length) append(find('mappingCards'), 'p', 'dp-muted', a ? '未提取到关联' : '尚未分析');
-            if (!a?.qualificationFacts?.length) append(find('qualificationCards'), 'p', 'dp-muted', a ? '未提取到本人资格原句，不代表无资格' : '尚未分析');
+            if (!a?.after?.length) append(find('mappingCards'), 'p', 'dp-muted', a ? '未提取到关联' : '尚未运行解析对照；首次提取结果见下方');
+            if (!a?.qualificationFacts?.length) append(find('qualificationCards'), 'p', 'dp-muted', a ? '未提取到本人资格原句，不代表无资格' : '尚未运行解析对照；首次提取结果见下方');
         }
         async function reader(id, trigger) {
             close('reader'); const seq = ++readerSeq, token = epoch;

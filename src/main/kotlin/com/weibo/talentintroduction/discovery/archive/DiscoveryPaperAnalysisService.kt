@@ -40,10 +40,11 @@ class DiscoveryPaperAnalysisService(private val archive: DiscoveryPaperArchiveSe
                     else -> "COMPLETE"
                 }
                 val hashes = lease.bodies.map { it.hash }.sorted()
-                val versions = mapOf("identityExtraction" to DiscoveryIdentity.EXTRACTION_VERSION, "pdfLayout" to PdfAuthorContactLayout.RULE_VERSION)
+                val versions = mapOf("identityExtraction" to DiscoveryIdentity.EXTRACTION_VERSION, "pdfLayout" to PdfAuthorContactLayout.RULE_VERSION,
+                    "format" to PaperContentFormat.VERSION, "qualification" to PaperQualificationEvidenceExtractor.VERSION)
                 record.analysisJson?.let { cached ->
                     val value = mapper.readTree(cached)
-                    if (!force && value.path("schemaVersion").asInt() == 1 && value.path("analysisVersion").asInt() == 1 &&
+                    if (!force && value.path("schemaVersion").asInt() == 1 && value.path("analysisVersion").asInt() == 2 &&
                         value.path("parserVersion") == mapper.valueToTree<JsonNode>(versions) &&
                         value.path("inputBodyHashes") == mapper.valueToTree<JsonNode>(hashes) &&
                         value.path("baselineCoverage").asText() == baselineCoverage &&
@@ -61,12 +62,7 @@ class DiscoveryPaperAnalysisService(private val archive: DiscoveryPaperArchiveSe
                 if (baselineCoverage != "COMPLETE") reasons += if (baselineCoverage == "PARTIAL") "BASELINE_BODIES_MISSING" else "BASELINE_MISSING"
                 for (body in lease.bodies) {
                     val bytes = body.input.readBytes()
-                    val format = when {
-                        body.mediaType == "application/pdf" -> "PDF"
-                        body.attempt.kind in listOf(ArchiveAttemptKind.PMC_XML, ArchiveAttemptKind.PMC_OA_XML) -> "XML"
-                        bytes.toString(Charsets.UTF_8).trimStart().startsWith("<") -> "HTML"
-                        else -> "TEXT"
-                    }
+                    val format = PaperContentFormat.detect(bytes, body.attempt.kind)
                     val result = qualification.extract(bytes, format, authors, year, body.hash)
                     coverages += result.coverage
                     facts += result.facts
@@ -109,7 +105,7 @@ class DiscoveryPaperAnalysisService(private val archive: DiscoveryPaperArchiveSe
                 }
                 val complete = baselineCoverage == "COMPLETE" && status != PaperEvidenceStatus.ERROR && status != PaperEvidenceStatus.PARTIAL
                 val delta = if (complete) PaperAnalysisDelta(added.size, removed.size) else null
-                val output = PaperAnalysisResult(parserVersion = versions, analyzedAt = Instant.now().toString(), inputBodyHashes = hashes,
+                val output = PaperAnalysisResult(analysisVersion = 2, parserVersion = versions, analyzedAt = Instant.now().toString(), inputBodyHashes = hashes,
                     baselineCaptureAt = first?.path("capturedAt")?.takeIf { it.isTextual }?.asText(), baselineCoverage = baselineCoverage,
                     missingBodies = missing, coverage = PaperAnalysisCoverage(status, coverages.sumOf { it.scannedPages }, coverages.sumOf { it.totalPages }, reasons.distinct()),
                     before = before, after = after, added = if (delta == null) emptyList() else added, removed = if (delta == null) emptyList() else removed,

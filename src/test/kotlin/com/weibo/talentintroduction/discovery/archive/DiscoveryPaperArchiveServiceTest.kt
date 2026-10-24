@@ -26,6 +26,32 @@ class DiscoveryPaperArchiveServiceTest {
     private fun path(a: ArchiveAttempt) = f.root.resolve("blobs/${a.blobSha256!!.take(2)}/${a.blobSha256}.bin")
     private class Crash : Error("simulated process interruption")
 
+    @Test fun `first email array counts names without proof and missing outcomes stay unknown`() {
+        f.enable(); val p = f.paper("names")
+        f.service.finishExtraction(p.id, f.mapper.readTree("""{"schemaVersion":1,"first":{"outcome":{"emails":[{"email":"a@x.org","givenNames":"Alice","familyNames":"Smith"},{"email":"b@x.org","givenNames":"Bob","familyNames":"Jones"},{"email":"c@x.org","givenNames":"Carol"}]}}}"""))
+        assertEquals(ArchiveExtractionSummary(3,2,1), f.service.detail(p.id).record.extractionSummary)
+        assertNull(f.service.detail(f.paper("unknown").id).record.extractionSummary)
+        val missing = f.paper("missing-outcome")
+        f.service.finishExtraction(missing.id, f.mapper.readTree("""{"schemaVersion":1,"first":{}}"""))
+        assertNull(f.service.detail(missing.id).record.extractionSummary)
+    }
+
+    @Test fun `PDF magic overrides MIME on save and historical preview without analysis writes`() {
+        f.enable(); val p = f.paper("mime")
+        val bytes = QualificationFixtures.pdf()
+        val b = f.body(p,bytes,ArchiveAttemptKind.PDF_URL,"text/plain")
+        assertEquals("application/pdf", f.repository.blob(b.blobSha256!!)!!.mediaType)
+        ArchiveMysqlFixture.jdbc.update("UPDATE discovery_paper_archive_blob SET media_type = 'text/plain' WHERE sha256 = ?",b.blobSha256)
+        val before = f.repository.record(p.id)
+        f.service.withContent(p.id,b.id) { content, input ->
+            assertEquals("application/pdf",content.mediaType); assertArrayEquals(bytes,input.readBytes())
+        }
+        assertEquals(before,f.repository.record(p.id))
+        val html = f.paper("fake")
+        val h = f.body(html,"<html>not PDF</html>".toByteArray(),ArchiveAttemptKind.PDF_URL,"application/pdf")
+        f.service.withContent(html.id,h.id) { content,_ -> assertTrue(content.mediaType.startsWith("text/plain")) }
+    }
+
     @Test fun `default disabled absent root and persistent settings reread`() {
         f.service.startupRecovery()
         assertFalse(Files.exists(f.root)); assertFalse(f.service.settings().effectiveEnabled)
