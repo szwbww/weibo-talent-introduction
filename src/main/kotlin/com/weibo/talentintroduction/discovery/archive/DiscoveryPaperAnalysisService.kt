@@ -41,7 +41,7 @@ class DiscoveryPaperAnalysisService(private val archive: DiscoveryPaperArchiveSe
                 }
                 val hashes = lease.bodies.map { it.hash }.sorted()
                 val versions = mapOf("identityExtraction" to DiscoveryIdentity.EXTRACTION_VERSION, "pdfLayout" to PdfAuthorContactLayout.RULE_VERSION,
-                    "format" to PaperContentFormat.VERSION, "qualification" to PaperQualificationEvidenceExtractor.VERSION)
+                    "format" to PaperContentFormat.VERSION, "qualification" to PaperQualificationEvidenceExtractor.RULE_VERSION)
                 record.analysisJson?.let { cached ->
                     val value = mapper.readTree(cached)
                     if (!force && value.path("schemaVersion").asInt() == 1 && value.path("analysisVersion").asInt() == 2 &&

@@ -221,7 +221,7 @@ class DiscoveryVerificationWorker(
                 }
                 payload = payload.copy(ruleVersion = frozenRule?.intValue() ?: 1)
             }
-            require(payload.ruleVersion in 0..2) { "Unsupported frozen rule version" }
+            require(payload.ruleVersion in 0..3) { "Unsupported frozen rule version" }
             if (payload.progress.stage == "LOCAL_EVIDENCE") {
                 payload = payload.copy(evidence = parser.rebuild(snapshot, payload.orcidCompleted.mapNotNull { it.document }, payload.evidence))
                 val existing = evaluate(snapshot)

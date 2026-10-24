@@ -5,6 +5,7 @@ import com.weibo.talentintroduction.discovery.domain.*
 import org.springframework.stereotype.Service
 import java.text.Normalizer
 import java.time.Clock
+import java.time.Instant
 import java.time.LocalDate
 import java.time.Period
 import java.util.Locale
@@ -39,10 +40,12 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
         .enable(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
     fun evaluate(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>,
         search: ApolloSearchEvidence? = null, protected: Boolean = false,
-        institutionNormalization: InstitutionNormalization? = null, ruleVersion: Int = 0): VerificationDecision {
-        require(ruleVersion in 0..2)
+        institutionNormalization: InstitutionNormalization? = null, ruleVersion: Int = 0,
+        evaluatedAt: Instant? = null): VerificationDecision {
+        require(ruleVersion in 0..3)
         fun sameName(left: String, right: String) = sameName(left, right, ruleVersion)
-        val today = LocalDate.now(clock)
+        val evaluationTime = evaluatedAt ?: clock.instant()
+        val today = evaluationTime.atZone(clock.zone).toLocalDate()
         require(search == null || search.matchingVersion in 1..2) { "Unsupported Apollo matching version" }
         require(search == null || search.institutionAliasVersion in 0..DiscoveryInstitutionNormalizer.ALIAS_VERSION)
         val traces = search?.candidates.orEmpty().mapIndexed { index, candidate ->
@@ -52,7 +55,7 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
             traces[candidate.id]?.let { traces[candidate.id] = update(it) }
         }
         fun support(candidate: ApolloCandidate): String? = matchReason(snapshot, evidence, candidate,
-            search?.academicResearchFields, search?.institutionAliasVersion ?: 0, ruleVersion) { update ->
+            search?.academicResearchFields, search?.institutionAliasVersion ?: 0, ruleVersion, today) { update ->
                 trace(candidate, update)
             }
         fun decision(q: VerificationQualification, reasons: List<String>, missing: List<String> = emptyList(),
@@ -66,7 +69,7 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
                 listOf(snapshot, evidence, search, institutionNormalization, protected)))
             return VerificationDecision(q, route, outcome, reasons.distinct(), missing.distinct(), evidence, today, id,
                 VerificationDecisionTrace(ruleVersion = ruleVersion, aliasVersion = search?.institutionAliasVersion ?: 0,
-                    evaluatedAt = clock.instant(), inputHash = inputHash,
+                    evaluatedAt = evaluationTime, inputHash = inputHash,
                     normalizationRef = institutionNormalization?.let { "institutionNormalization" },
                     evidenceRefs = evidence.indices.map { "evidence[$it]" },
                     total = search?.candidates?.size ?: 0, truncated = rows.size > 200, candidates = rows.take(200)))
@@ -82,13 +85,14 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
             return decision(VerificationQualification.CONFLICT, listOf("FACT_CHANGED"))
         if (!snapshot.identityValid) return decision(VerificationQualification.UNKNOWN, listOf("IDENTITY_EVIDENCE_MISSING"), listOf("identity"))
         if (evidence.any { it.conflicts.isNotEmpty() }) return decision(VerificationQualification.CONFLICT, listOf("EVIDENCE_CONFLICT"))
-        val names = evidence.filter { it.field == "name" }.map { normalizeName(it.value) }.distinct()
-        if (names.any { !sameName(it, snapshot.fullName) })
+        val names = evidence.filter { it.field == "name" }
+        if (names.any { !sameName(it.value, snapshot.fullName) &&
+                !(ruleVersion >= 3 && anchoredNameMatches(snapshot, it)) })
             return decision(VerificationQualification.CONFLICT, listOf("NAME_CONFLICT"))
         val facts = evidence.filter { it.assertionSource == AssertionSource.ORGANIZATION ||
             ruleVersion >= 1 && it.assertionSource == AssertionSource.SELF }
         val jobs = facts.filter { it.field == "employment" && it.temporalScope == TemporalScope.CURRENT }
-        val professor = jobs.any { fact -> value(fact, "institution").isNotBlank() && isProfessor(value(fact, "role")) }
+        val professor = jobs.any { fact -> value(fact, "institution").isNotBlank() && isProfessor(value(fact, "role"), ruleVersion) }
         val doctorates = facts.filter { it.field == "education" }.mapNotNull { fact ->
             runCatching { mapper.readTree(fact.value) }.getOrNull()?.takeIf {
                 it.path("completed").isBoolean && it.path("completed").booleanValue() &&
@@ -156,7 +160,7 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
                 return decision(qualification, listOf("IDENTITY_AMBIGUOUS"), missing)
             val (candidate, reason) = matched.single()
             val aliasReasons = if (reason in setOf("APOLLO_CURRENT_INSTITUTION_MATCH", "APOLLO_HISTORICAL_INSTITUTION_MATCH") &&
-                matchReason(snapshot, evidence, candidate, search.academicResearchFields, 0, ruleVersion) != reason) {
+                matchReason(snapshot, evidence, candidate, search.academicResearchFields, 0, ruleVersion, today) != reason) {
                 val originals = listOfNotNull(snapshot.profile.institution?.let(::VerificationInstitution)) +
                     identityEmployments(snapshot, evidence).map { VerificationInstitution(value(it, "institution")) }
                 val institutions = if (reason == "APOLLO_CURRENT_INSTITUTION_MATCH") listOfNotNull(candidate.institution)
@@ -284,8 +288,9 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
     /** V2 is an explicitly approved admission heuristic, not a claim that degrees/age were verified. */
     internal fun matchReason(snapshot: VerificationSnapshot, evidence: List<VerificationEvidence>,
         candidate: ApolloCandidate, academicFields: String?, institutionAliasVersion: Int = 0, ruleVersion: Int = 0,
+        evaluatedOn: LocalDate = LocalDate.now(clock),
         trace: (((CandidateDecisionTrace) -> CandidateDecisionTrace) -> Unit)? = null): String? {
-        require(ruleVersion in 0..2)
+        require(ruleVersion in 0..3)
         val originals = listOfNotNull(snapshot.profile.institution?.let(::VerificationInstitution)) +
             identityEmployments(snapshot, evidence).map { VerificationInstitution(value(it, "institution")) }
         fun institutionResult(institution: VerificationInstitution?): String {
@@ -306,7 +311,7 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
         if (current == "MATCH") return chosen("APOLLO_CURRENT_INSTITUTION_MATCH")
         val historical = candidate.employmentHistory.filter { job ->
             job.current == false && !job.endDate.isNullOrBlank() &&
-                runCatching { LocalDate.parse(job.endDate!!.take(10)) }.getOrNull()?.let { !it.isAfter(LocalDate.now(clock)) } == true
+                runCatching { LocalDate.parse(job.endDate!!.take(10)) }.getOrNull()?.let { !it.isAfter(evaluatedOn) } == true
         }.map { institutionResult(it.institution) }
         val history = when {
             "MATCH" in historical -> "MATCH"
@@ -385,6 +390,29 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
         return aa.any { a -> bb.any { b -> matches(normalizeName(a).split(' '), normalizeName(b).split(' ')) } }
     }
 
+    /** Only the bound ORCID endpoint can reconcile its own name with the immutable snapshot. */
+    private fun anchoredNameMatches(snapshot: VerificationSnapshot, fact: VerificationEvidence): Boolean {
+        val orcid = snapshot.boundOrcid ?: return false
+        if (fact.provider != "ORCID" || fact.identityHash != snapshot.identityHash ||
+            fact.factFingerprint != snapshot.factFingerprint ||
+            fact.sourceUrl !in setOf("https://pub.orcid.org/v3.0/$orcid/person", "https://pub.orcid.org/v3.0/$orcid/other-names")) return false
+        val left = normalizeName(fact.value).split(' ')
+        val right = normalizeName(snapshot.fullName).split(' ')
+        if (left.size < 2 || left.size != right.size) return false
+        // Rotation preserves every token and its relative order; arbitrary permutations are not aliases.
+        if (left.indices.any { shift -> left.drop(shift) + left.take(shift) == right }) return true
+        val surname = familyNameHint(snapshot)
+        if (surname.length < 3 || surname.contains(' ') ||
+            left.count { it == surname } != 1 || right.count { it == surname } != 1) return false
+        fun given(tokens: List<String>): List<String> {
+            val at = tokens.indexOf(surname)
+            return tokens.drop(at + 1) + tokens.take(at)
+        }
+        return given(left).zip(given(right)).all { (a, b) ->
+            a == b || a.length == 1 && b.startsWith(a) || b.length == 1 && a.startsWith(b)
+        }
+    }
+
     internal fun familyNameHint(snapshot: VerificationSnapshot): String = normalizeName(
         snapshot.profile.familyNames.orEmpty().trim().split(Regex("\\s+"))
             .dropWhile { it.removeSuffix(".").let { token -> token.length == 1 && token.single().isLetter() } }.joinToString(" "))
@@ -423,9 +451,17 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
         return tokens.last().matches(Regex(regex))
     }
     private fun value(evidence: VerificationEvidence, key: String): String = runCatching { mapper.readTree(evidence.value).path(key).asText("") }.getOrDefault("")
-    private fun isProfessor(role: String): Boolean {
+    private fun isProfessor(role: String, ruleVersion: Int = 0): Boolean {
         val value = normalizeName(role)
         if (Regex("emeritus|retired|former|student|candidate|visiting student|research group|lab of|assistant to|博士生|退休|课题组").containsMatchIn(value)) return false
+        if (ruleVersion >= 3) {
+            if (Regex("\\b(?:not|never|no longer)\\b").containsMatchIn(value)) return false
+            return role.split('/').any { part ->
+                val title = normalizeName(part)
+                title.matches(Regex("(?:(?:assistant|associate|teaching|adjunct|visiting|full|research|clinical|honorary) )?(?:professor|prof)(?: (?:of|in|at) [\\p{L}][\\p{L}\\p{N} ]*)?")) ||
+                    title.matches(Regex("(?:助理|副|特聘|客座|讲席)?教授"))
+            }
+        }
         return value.matches(Regex("(?:(?:assistant|associate|teaching|adjunct|visiting|full|research|clinical|honorary) )?(?:professor|prof)")) ||
             value.matches(Regex("(?:助理|副|特聘|客座|讲席)?教授"))
     }

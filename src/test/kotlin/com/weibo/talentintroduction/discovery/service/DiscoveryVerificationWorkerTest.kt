@@ -193,7 +193,7 @@ class DiscoveryVerificationWorkerTest {
             DiscoveryVerificationRules(ruleClock), Mockito.mock(DiscoveryVerificationCommitService::class.java),
             factory.getBeanProvider(RegistrationRecovery::class.java), ruleClock)
 
-    @Test fun `runtime version two registration worker SQL gate query smoke and frozen legacy runs`() {
+    @Test fun `runtime version three registration worker SQL gate query smoke and frozen legacy runs`() {
         check(org.testcontainers.DockerClientFactory.instance().isDockerAvailable) { "Docker is required; skip is not PASS" }
         DiagnosticMysql().withDatabaseName("identity_v2").withUsername("test").withPassword("test")
             .withCommand("--log-bin-trust-function-creators=1").use { mysql ->
@@ -209,7 +209,7 @@ class DiscoveryVerificationWorkerTest {
                     val registration = DiscoveryVerificationRegistrationService(DiscoveryVerificationProperties(enabled = true, mode = VerificationMode.ENFORCE, apolloApiKey = "fixture-key"), f.repository, f.writer, f.policy,
                         f.admissions, jdbc, org.springframework.transaction.support.TransactionTemplate(manager), f.apolloSettings, f.clock)
                     val context = registration.begin(2001, PaperSearchCriteria(apolloAssist = true))
-                    assertEquals(2, f.mapper.readTree(context.run!!.settingsJson).path("ruleVersion").intValue())
+                    assertEquals(3, f.mapper.readTree(context.run!!.settingsJson).path("ruleVersion").intValue())
                     assertEquals(2, f.mapper.readTree(context.run!!.settingsJson).path("institutionAliasVersion").intValue())
                     val doc = "identity-v2"
                     val profile = ruleSnapshot().profile.copy(esDocId = doc, researchFieldIds = listOf("22"),
@@ -230,12 +230,12 @@ class DiscoveryVerificationWorkerTest {
                     assertEquals(VerificationProjection.PROJECTED, done.projectionState)
                     assertNotNull(done.admissionRevision)
                     val payload = f.mapper.readValue<VerificationWorkerEvidence>(done.evidenceJson!!)
-                    assertEquals(2, payload.ruleVersion)
+                    assertEquals(3, payload.ruleVersion)
                     assertEquals(2, payload.search!!.institutionAliasVersion)
                     assertEquals("Assistenzprofessor", payload.search!!.candidates.single().title)
                     val trace = payload.diagnostics!!.decision!!
                     assertEquals("RECORDED", trace.traceOrigin)
-                    assertEquals(2, trace.ruleVersion)
+                    assertEquals(3, trace.ruleVersion)
                     assertEquals(2, trace.aliasVersion)
                     assertEquals(done.apolloPersonId, trace.candidates.single().personId)
                     assertEquals("MATCH", trace.candidates.single().historicalInstitution)
@@ -275,11 +275,11 @@ class DiscoveryVerificationWorkerTest {
                     } }
                     println("DECISION_AUDIT_SMOKE HTTP->Rules->Worker/SQL->Query->freeze->isolated-fixed-time-report admissionDelta=0 immutable=true")
                     assertEquals(context.run!!.settingsJson, registration.begin(2001, PaperSearchCriteria(apolloAssist = true)).run!!.settingsJson)
-                    println("IDENTITY_V2_SMOKE run=2001 workerRule=2 alias=2 sql=${done.outcome} gate=eligible projection=${done.projectionState} admission=${done.admissionRevision} requests=${done.requestCount}")
+                    println("QUALIFICATION_VERSION_SMOKE run=2001 workerRule=3 alias=2 sql=${done.outcome} gate=eligible projection=${done.projectionState} admission=${done.admissionRevision} requests=${done.requestCount}")
                 }
                 listOf("discovery_verification_attempt", "discovery_verification_item", "discovery_verification_run",
                     "expert_discovery_admission", "task_execution").forEach { jdbc.update("DELETE FROM $it") }
-                // New payload on a pre-existing run without settings must retain the old default, not v2.
+                // An old run without frozen settings retains its historical default.
                 VerificationFlowFixture(jdbc, manager).use { f ->
                     val row = f.seed("legacy-no-settings")
                     f.worker().process(f.claim())
@@ -287,11 +287,11 @@ class DiscoveryVerificationWorkerTest {
                 }
                 listOf("discovery_verification_attempt", "discovery_verification_item", "discovery_verification_run",
                     "expert_discovery_admission").forEach { jdbc.update("DELETE FROM $it") }
-                for (version in listOf(0, 1, 2, 3)) {
+                for (version in listOf(0, 1, 2, 3, 4)) {
                     VerificationFlowFixture(jdbc, manager).use { f ->
                         val row = f.seed("frozen-$version")
                         jdbc.update("UPDATE discovery_verification_run SET settings_json=? WHERE execution_id=2001",
-                            """{"ruleVersion":2,"apolloMatchingVersion":2,"institutionAliasVersion":2}""")
+                            """{"ruleVersion":3,"apolloMatchingVersion":2,"institutionAliasVersion":2}""")
                         val candidate = ApolloCandidate("person-frozen", "Ada", "Lee", null, "Ada Lee", "Assistenzprofessor",
                             VerificationInstitution("Other University"), headline = "Assistant Professor at Other University")
                         f.cached(VerificationWorkerEvidence(ruleVersion = version, progress = VerificationProgress(stage = "DECIDE"),
@@ -299,12 +299,15 @@ class DiscoveryVerificationWorkerTest {
                                 detailsComplete = true, institutionAliasVersion = 1)))
                         f.worker().process(f.claim())
                         val done = f.item(row.id)
-                        if (version == 3) assertEquals(VerificationState.ERROR, done.state)
+                        if (version == 4) assertEquals(VerificationState.ERROR, done.state)
                         else {
                             assertEquals(version, f.mapper.readValue<VerificationWorkerEvidence>(done.evidenceJson!!).ruleVersion)
-                            assertEquals(if (version == 2) VerificationOutcome.APOLLO_CLEAR else VerificationOutcome.PENDING, done.outcome)
+                            assertEquals(if (version >= 2) VerificationOutcome.APOLLO_CLEAR else VerificationOutcome.PENDING, done.outcome)
                         }
                         assertTrue(f.apolloRequests.isEmpty())
+                        assertEquals("""{"ruleVersion":3,"apolloMatchingVersion":2,"institutionAliasVersion":2}""",
+                            f.repository.findRun(2001)!!.settingsJson)
+                        println("QUALIFICATION_VERSION_SMOKE frozenPayloadRule=$version state=${done.state} outcome=${done.outcome} externalHttp=0")
                     }
                     listOf("discovery_verification_attempt", "discovery_verification_item", "discovery_verification_run",
                         "expert_discovery_admission").forEach { jdbc.update("DELETE FROM $it") }
