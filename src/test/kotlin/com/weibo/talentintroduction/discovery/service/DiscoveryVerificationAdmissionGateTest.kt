@@ -60,6 +60,28 @@ class AdmissionGateFixture {
 }
 
 class DiscoveryVerificationAdmissionGateTest {
+    @Test fun `rule three gate uses frozen birthday instant and old missing context retains historical semantics`() {
+        val f = AdmissionGateFixture()
+        val before = java.time.Instant.parse("2026-10-18T00:00:00Z")
+        val after = java.time.Clock.fixed(java.time.Instant.parse("2026-10-20T00:00:00Z"), java.time.ZoneOffset.UTC)
+        val snapshot = DiscoveryVerificationAdmissionGate.snapshot(f.docId, f.profile, f.config)
+        val facts = listOf(ruleFact("education", """{"role":"PhD awarded","completed":true}"""),
+            ruleFact("birthDate", "1986-10-19")).map { it.copy(identityHash = snapshot.identityHash, factFingerprint = snapshot.factFingerprint) }
+        val decision = f.rules.evaluate(snapshot, facts, ruleVersion = 3, evaluatedAt = before)
+        assertEquals(VerificationOutcome.DIRECT_CLEAR, decision.outcome)
+        val payload = VerificationAdmissionEvidence(facts, ruleVersion = 3,
+            executionContext = VerificationExecutionContext(before))
+        val item = f.item().copy(outcome = decision.outcome, qualification = decision.qualification, route = decision.route,
+            evidenceJson = f.mapper.writeValueAsString(payload))
+        val laterGate = DiscoveryVerificationAdmissionGate(f.repository, DiscoveryVerificationRules(after))
+        val base = f.basePolicy.evaluate(f.profile)
+        assertTrue(laterGate.evaluateManaged(base, VerificationAdmissionContext(f.docId, f.profile, listOf(item))).eligible)
+        val legacy = item.copy(evidenceJson = f.mapper.writeValueAsString(payload.copy(executionContext = null)))
+        assertFalse(laterGate.evaluateManaged(base, VerificationAdmissionContext(f.docId, f.profile, listOf(legacy))).eligible)
+        val changed = payload.copy(evidence = facts.map { it.copy(factFingerprint = "f".repeat(64)) })
+        assertFalse(laterGate.evaluateManaged(base, VerificationAdmissionContext(f.docId, f.profile,
+            listOf(item.copy(evidenceJson = f.mapper.writeValueAsString(changed))))).eligible)
+    }
     @Test fun `gate recomputes version two and rejects a persisted result paired with old rules`() {
         val f = AdmissionGateFixture()
         val candidate = ApolloCandidate("person-v2", "Ada", "Lee", null, "Ada Lee", "Assistenzprofessor",

@@ -490,8 +490,9 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         jdbc.update("""UPDATE discovery_verification_item SET state='CANCELLED',outcome=NULL,route='NONE',
             completed_at=?,lease_token=NULL,lease_until=NULL,next_attempt_at=NULL,updated_at=? WHERE id=?
             AND admission_revision IS NULL""", now.verificationUtc(), now.verificationUtc(), itemId)
-        jdbc.update("""UPDATE discovery_verification_step SET state='CANCELLED',finished_at=?
-            WHERE item_id=? AND state='RUNNING'""", now.verificationUtc(), itemId)
+        DiscoveryVerificationTraceRepository(jdbc).cancelSteps(itemId, now)
+        jdbc.update("""UPDATE discovery_verification_attempt SET result_code='UNKNOWN_AFTER_CANCEL'
+            WHERE item_id=? AND completed_at IS NULL""", itemId)
         bump(item.ownerExecutionId, now)
         return true
     }
@@ -500,8 +501,7 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         run.recheckJson != null && run.inputClosed && recheck(run).control.phase == RecheckPhase.RUNNING
 
     private fun initializeSteps(itemId: Long, now: Instant) {
-        for (step in 1..8) jdbc.update("""INSERT IGNORE INTO discovery_verification_step
-            (item_id,step_no,attempt_no,state,created_at) VALUES (?,?,1,'NOT_STARTED',?)""", itemId, step, now.verificationUtc())
+        DiscoveryVerificationTraceRepository(jdbc).initSteps(itemId, now)
     }
 
     fun findSteps(itemId: Long): List<VerificationStep> = jdbc.query(
@@ -510,41 +510,13 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     /** A retry appends a new attempt. A completed attempt is never reused or rewritten. */
     @Transactional
     fun beginStep(itemId: Long, token: String, generation: Long, stepNo: Int, inputJson: String,
-        versionJson: String, now: Instant): VerificationStep? {
-        require(stepNo in 1..8 && inputJson.isNotBlank() && versionJson.isNotBlank())
-        val item = lockItem(itemId)
-        if (!owns(item, token, generation, now)) return null
-        initializeSteps(itemId, now)
-        val previous = findSteps(itemId).last { it.stepNo == stepNo }
-        check(previous.state != VerificationStepState.RUNNING) { "Step attempt already running" }
-        val hash = replayHash(inputJson)
-        if (previous.state == VerificationStepState.NOT_STARTED) {
-            jdbc.update("""UPDATE discovery_verification_step SET state='RUNNING',input_hash=?,input_json=?,version_json=?,started_at=?
-                WHERE id=? AND state='NOT_STARTED'""", hash, inputJson, versionJson, now.verificationUtc(), previous.id)
-        } else {
-            jdbc.update("""INSERT INTO discovery_verification_step
-                (item_id,step_no,attempt_no,state,input_hash,input_json,version_json,started_at,created_at)
-                VALUES (?,?,?,'RUNNING',?,?,?,?,?)""", itemId, stepNo, previous.attemptNo + 1,
-                hash, inputJson, versionJson, now.verificationUtc(), now.verificationUtc())
-        }
-        bump(item.ownerExecutionId, now)
-        return findSteps(itemId).last { it.stepNo == stepNo }
-    }
+        versionJson: String, now: Instant): VerificationStep? =
+        DiscoveryVerificationTraceRepository(jdbc).startStep(itemId, token, generation, stepNo, inputJson, versionJson, now)
 
     @Transactional
     fun finishStep(itemId: Long, token: String, generation: Long, stepId: Long, state: VerificationStepState,
-        outputJson: String?, reasonJson: String?, now: Instant): Boolean {
-        require(state.terminal)
-        val item = lockItem(itemId)
-        if (!owns(item, token, generation, now)) return false
-        val step = findSteps(itemId).singleOrNull { it.id == stepId } ?: return false
-        if (step.state != VerificationStepState.RUNNING) return false
-        require(now >= step.startedAt!!)
-        val changed = jdbc.update("""UPDATE discovery_verification_step SET state=?,output_json=?,reason_json=?,finished_at=?
-            WHERE id=? AND item_id=? AND state='RUNNING'""", state.name, outputJson, reasonJson, now.verificationUtc(), stepId, itemId)
-        if (changed == 1) bump(item.ownerExecutionId, now)
-        return changed == 1
-    }
+        outputJson: String?, reasonJson: String?, now: Instant): Boolean =
+        DiscoveryVerificationTraceRepository(jdbc).finishStep(itemId, token, generation, stepId, state, outputJson, reasonJson, now)
 
     @Transactional
     fun reserveItem(input: VerificationReservation, now: Instant): VerificationItem {
@@ -574,7 +546,7 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         if (item.state == VerificationState.RESERVED) {
             jdbc.update("UPDATE discovery_verification_item SET state='QUEUED',batch_number=?,activated_at=?,updated_at=? WHERE id=? AND state='RESERVED'",
                 batchNumber, now.verificationUtc(), now.verificationUtc(), itemId)
-            if (item.reviewEpoch > 0) initializeSteps(item.id, now)
+            initializeSteps(item.id, now)
             bump(item.ownerExecutionId, now)
         }
         return findItem(itemId)!!
@@ -736,6 +708,44 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         return changed == 1
     }
 
+    /** Read-only control check; request reservation and commit repeat it under run -> item locks. */
+    fun isRunAccepting(executionId: Long): Boolean = findRun(executionId)?.let {
+        it.recheckJson == null || recheckRunning(it)
+    } == true
+
+    /** Commit holds this run lock until its outer transaction ends, before acquiring admission/item locks. */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    fun lockRunAccepting(executionId: Long): Boolean = lockRun(executionId).let {
+        it.recheckJson == null || recheckRunning(it)
+    }
+
+    fun isOwned(itemId: Long, token: String, generation: Long, now: Instant): Boolean =
+        findItem(itemId)?.let { owns(it, token, generation, now) } == true
+
+    /**
+     * A cancelled worker may acknowledge only its already dispatched request, once. The ownership
+     * receipt was frozen before dispatch. No item, run revision, lease, cursor or admission is touched.
+     */
+    @Transactional
+    fun completeDispatchedDiagnostic(itemId: Long, token: String, generation: Long, attemptId: Long, requestKey: String,
+        httpStatus: Int?, resultCode: String, responseJson: String?, responseSha256: String?, now: Instant): Boolean {
+        verificationText(requestKey, 128); verificationText(resultCode, 64)
+        require(httpStatus == null || httpStatus in 100..599)
+        responseSha256?.let(::verificationHash)
+        val item = lockItem(itemId)
+        if (item.reviewEpoch == 0L || item.state != VerificationState.CANCELLED &&
+            isRunAccepting(item.ownerExecutionId)) return false
+        val attempt = findAttempts(itemId).singleOrNull { it.id == attemptId && it.requestKey == requestKey } ?: return false
+        if (attempt.completedAt != null) return false
+        val receipt = replayMapper.readTree(attempt.requestJson).path("_dispatch")
+        if (receipt.path("generation").asLong(-1) != generation ||
+            receipt.path("ownerHash").asText() != replayHash(token)) return false
+        return jdbc.update("""UPDATE discovery_verification_attempt
+            SET completed_at=?,http_status=?,result_code=?,response_json=?,response_sha256=?
+            WHERE id=? AND item_id=? AND request_key=? AND completed_at IS NULL""",
+            now.verificationUtc(), httpStatus, resultCode, responseJson, responseSha256, attemptId, itemId, requestKey) == 1
+    }
+
     @Transactional
     fun saveEvidenceAndOutcome(itemId: Long, token: String, generation: Long, result: VerificationResult, now: Instant): Boolean {
         val item = lockItem(itemId)
@@ -812,12 +822,11 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
     fun lockForCommit(itemId: Long): VerificationItem {
         val item = findItem(itemId) ?: error("Verification item not found")
-        lockRun(item.ownerExecutionId)
+        val run = lockRun(item.ownerExecutionId)
         jdbc.query("SELECT expert_doc_id FROM expert_discovery_admission WHERE expert_doc_id=? FOR UPDATE",
             RowMapper { rs, _ -> rs.getString(1) }, item.expertDocId)
         val locked = lockedItem(itemId)
-        check(locked.reviewEpoch == 0L || recheckRunning(lockRun(locked.ownerExecutionId)) ||
-            locked.admissionRevision != null) { "Recheck is not running" }
+        check(locked.reviewEpoch == 0L || recheckRunning(run)) { "Recheck is not running" }
         return locked
     }
 

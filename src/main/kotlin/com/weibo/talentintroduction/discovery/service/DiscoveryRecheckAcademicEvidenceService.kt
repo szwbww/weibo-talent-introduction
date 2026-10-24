@@ -13,11 +13,13 @@ import java.time.Instant
 data class RecheckAcademicEvidence(val identityHash: String, val factFingerprint: String,
     val trustedId: String?, val data: AuthorEnrichment?, val sourceUrls: List<String>,
     val evaluatedAt: Instant, val reasonCodes: List<String>, val retained: Boolean,
-    val profileResearchFields: String? = null, val retryAt: Instant? = null, val provider: String = "OPENALEX")
+    val profileResearchFields: String? = null, val retryAt: Instant? = null, val provider: String = "OPENALEX",
+    val providerError: String? = null, val httpStatus: Int? = null)
 
 @Service
 class DiscoveryRecheckAcademicEvidenceService(private val clients: ObjectProvider<OpenAlexDataSource>,
-    private val properties: OpenAlexProperties = OpenAlexProperties()) {
+    private val properties: OpenAlexProperties = OpenAlexProperties(),
+    private val clock: java.time.Clock = java.time.Clock.systemUTC()) {
     /** Trusted discovery IDs must be carried by the current, verified receipt, never guessed from names. */
     fun trustedId(snapshot: VerificationSnapshot): String? {
         if (!snapshot.identityValid || !DiscoveryIdentity.allowed(snapshot.profile)) return null
@@ -26,7 +28,7 @@ class DiscoveryRecheckAcademicEvidenceService(private val clients: ObjectProvide
     }
 
     fun collect(snapshots: List<VerificationSnapshot>, mode: RecheckEvidenceMode, evaluatedAt: Instant,
-        retained: Map<String, RecheckAcademicEvidence> = emptyMap()): Map<String, RecheckAcademicEvidence> {
+        retained: Map<String, RecheckAcademicEvidence> = emptyMap(), beforeDispatch: (() -> Unit)? = null): Map<String, RecheckAcademicEvidence> {
         require(snapshots.size <= 100)
         require(snapshots.map { it.identityHash }.distinct().size == snapshots.size)
         val results = linkedMapOf<String, RecheckAcademicEvidence>()
@@ -67,8 +69,12 @@ class DiscoveryRecheckAcademicEvidenceService(private val clients: ObjectProvide
         val outcomes = linkedMapOf<String, EnrichmentOutcome>()
         var deferred: OpenAlexBudgetDeferredException? = null
         try {
-            if (authors.isNotEmpty()) outcomes.putAll(client.batchEnrichByAuthorIds(authors, RequestKind.HISTORY_ENRICHMENT))
-            if (orcids.isNotEmpty()) outcomes.putAll(client.batchEnrichByOrcids(orcids, RequestKind.HISTORY_ENRICHMENT))
+            if (authors.isNotEmpty()) outcomes.putAll(if (beforeDispatch == null)
+                client.batchEnrichByAuthorIds(authors, RequestKind.HISTORY_ENRICHMENT)
+                else client.batchEnrichByAuthorIds(authors, RequestKind.HISTORY_ENRICHMENT, beforeDispatch))
+            if (orcids.isNotEmpty()) outcomes.putAll(if (beforeDispatch == null)
+                client.batchEnrichByOrcids(orcids, RequestKind.HISTORY_ENRICHMENT)
+                else client.batchEnrichByOrcids(orcids, RequestKind.HISTORY_ENRICHMENT, beforeDispatch))
         } catch (e: OpenAlexBudgetDeferredException) { deferred = e }
         pending.forEach { (s, id) ->
             val urls = if (id!!.startsWith("A")) listOf("${properties.baseUrl}/authors?filter=openalex:${authors.joinToString("|")}&per_page=${authors.size}")
@@ -78,8 +84,11 @@ class DiscoveryRecheckAcademicEvidenceService(private val clients: ObjectProvide
                     reasons = if (outcome.titlesFailed) listOf("PARTIAL_TITLES") else emptyList(), urls = urls)
                 EnrichmentOutcome.AmbiguousIdentity -> result(s, id, reasons = listOf("AMBIGUOUS_IDENTITY"), urls = urls)
                 EnrichmentOutcome.NotFound -> result(s, id, reasons = listOf("ACADEMIC_SOURCE_NOT_FOUND"), urls = urls)
-                is EnrichmentOutcome.RateLimited -> result(s, id, reasons = listOf("RATE_LIMITED"), urls = urls)
-                is EnrichmentOutcome.ApiError -> result(s, id, reasons = listOf("PROVIDER_ERROR"), urls = urls)
+                is EnrichmentOutcome.RateLimited -> result(s, id, reasons = listOf("RATE_LIMITED"), urls = urls).copy(
+                    retryAt = clock.instant().plusMillis((outcome.retryAfterMs ?: 60000L).coerceAtLeast(0)))
+                is EnrichmentOutcome.ApiError -> result(s, id, reasons = listOf("PROVIDER_ERROR"), urls = urls).copy(
+                    providerError = outcome.message.take(2048),
+                    httpStatus = Regex("^HTTP ([1-5][0-9]{2})$").matchEntire(outcome.message)?.groupValues?.get(1)?.toInt())
                 null -> if (deferred != null) result(s, id, reasons = listOf("BUDGET_DEFERRED"), urls = urls).copy(retryAt = deferred.retryAt)
                     else result(s, id, reasons = listOf("PROVIDER_RESULT_MISSING"), urls = urls)
             }

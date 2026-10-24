@@ -44,6 +44,9 @@ import com.weibo.talentintroduction.config.UnpaywallProperties
 import com.weibo.talentintroduction.config.BoundedFulltextHttp
 
 class OpenAlexDataSourceTest {
+    @Test fun `guard rechecks after actual policy rate wait and retry never dispatches cancelled work`() {
+        assertTrue(academicDispatchCancellation(true).contains("cancelDuringWait=true"))
+    }
     private val restTemplate = Mockito.mock(RestTemplate::class.java)
     private val europePmc = Mockito.mock(EuropePmcDataSource::class.java)
     private val pdfExtractor = Mockito.mock(PdfEmailExtractor::class.java)

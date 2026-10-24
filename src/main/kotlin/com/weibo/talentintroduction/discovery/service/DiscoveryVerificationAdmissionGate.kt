@@ -26,7 +26,8 @@ data class VerificationAdmissionEvidence(
     val search: ApolloSearchEvidence? = null,
     val schemaVersion: Int = 1,
     val institutionNormalization: InstitutionNormalization? = null,
-    val ruleVersion: Int = 0
+    val ruleVersion: Int = 0,
+    val executionContext: VerificationExecutionContext? = null
 ) {
     init { require(schemaVersion == 1) }
 }
@@ -68,7 +69,8 @@ class DiscoveryVerificationAdmissionGate(
             require(snapshot(context.docId, frozen.profile, baseAutomatic.configSnapshot).factFingerprint == item.factFingerprint)
             val payload = mapper.readValue<VerificationAdmissionEvidence>(requireNotNull(item.evidenceJson))
             rules.evaluate(snapshot, payload.evidence, payload.search,
-                institutionNormalization = payload.institutionNormalization, ruleVersion = payload.ruleVersion).also {
+                institutionNormalization = payload.institutionNormalization, ruleVersion = payload.ruleVersion,
+                evaluatedAt = payload.executionContext?.evaluationAt).also {
                 require(it.outcome == item.outcome && it.qualification == item.qualification && it.route == item.route)
                 require(it.matchedPersonId == item.apolloPersonId)
             }

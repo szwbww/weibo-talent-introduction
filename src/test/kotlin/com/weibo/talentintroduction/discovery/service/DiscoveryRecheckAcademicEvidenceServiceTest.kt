@@ -49,6 +49,25 @@ internal class AcademicClientFixture(baseUrl: String = "https://api.openalex.org
 }
 
 class DiscoveryRecheckAcademicEvidenceServiceTest {
+    @Test fun `real author response cancellation prevents works patents and next identity dispatch`() {
+        assertTrue(academicDispatchCancellation(false).contains("wire=1"))
+    }
+    @Test fun `academic rate limit uses live retry clock without changing frozen evaluation time`() {
+        val client = Mockito.mock(OpenAlexDataSource::class.java)
+        val live = recheckTime.plusSeconds(86400)
+        val service = DiscoveryRecheckAcademicEvidenceService(
+            StaticListableBeanFactory(mapOf("openAlex" to client)).getBeanProvider(OpenAlexDataSource::class.java),
+            OpenAlexProperties(), java.time.Clock.fixed(live, java.time.ZoneOffset.UTC))
+        Mockito.`when`(client.batchEnrichByAuthorIds(listOf("A123"), RequestKind.HISTORY_ENRICHMENT))
+            .thenReturn(mapOf("A123" to EnrichmentOutcome.RateLimited(120000)))
+        val snapshot = evidenceSnapshot()
+        val result = service.collect(listOf(snapshot), RecheckEvidenceMode.REFRESH, recheckTime).getValue(snapshot.identityHash)
+        assertEquals(recheckTime, result.evaluatedAt)
+        assertEquals(live.plusSeconds(120), result.retryAt)
+        assertEquals(listOf("RATE_LIMITED"), result.reasonCodes)
+        assertNull(result.httpStatus)
+        assertNull(result.data)
+    }
     @Test fun `REUSE never resolves provider and missing evidence stays insufficient`() {
         @Suppress("UNCHECKED_CAST")
         val providers = Mockito.mock(org.springframework.beans.factory.ObjectProvider::class.java) as org.springframework.beans.factory.ObjectProvider<OpenAlexDataSource>
@@ -132,4 +151,82 @@ class DiscoveryRecheckAcademicEvidenceServiceTest {
         Mockito.verify(client).batchEnrichByAuthorIds(listOf("A123"),RequestKind.HISTORY_ENRICHMENT)
         Mockito.verifyNoMoreInteractions(client)
     }
+}
+
+/** Strict loopback transport used by both regression tests and the independent child07 launcher. */
+internal fun academicDispatchCancellation(cancelDuringWait: Boolean): String {
+    val calls = java.util.concurrent.CopyOnWriteArrayList<String>()
+    val cancelled = java.util.concurrent.atomic.AtomicBoolean()
+    var cancelAfterAuthor = !cancelDuringWait
+    var cancelOnSleep = false
+    val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
+    val base = "http://127.0.0.1:${server.address.port}"
+    val mapper = jacksonObjectMapper()
+    val author = mapper.readTree(AcademicClientFixture.AUTHOR) as com.fasterxml.jackson.databind.node.ObjectNode
+    author.put("works_api_url", "$base/works")
+    server.createContext("/") { exchange ->
+        calls += exchange.requestURI.toString()
+        val response = if (exchange.requestURI.path == "/authors") {
+            if (cancelAfterAuthor) cancelled.set(true)
+            """{"meta":{"count":1},"results":[$author]}"""
+        } else {
+            check(exchange.requestURI.path == "/works")
+            """{"results":[{"title":"fixture title"}]}"""
+        }
+        val bytes = response.toByteArray()
+        exchange.responseHeaders.add("Content-Type", "application/json")
+        exchange.sendResponseHeaders(200, bytes.size.toLong())
+        exchange.responseBody.use { it.write(bytes) }; exchange.close()
+    }
+    server.start()
+    try {
+        val properties = OpenAlexProperties(enabled = true, baseUrl = base, requestDelayMs = 0,
+            enrichmentDelayMs = 0, maxRequestsPerSecond = 100.0, fetchWorksEnabled = true, fetchPatentsEnabled = true)
+        val time = object : PolicyTimeSource {
+            var current = recheckTime
+            override fun now() = current
+            override fun sleep(ms: Long) { current = current.plusMillis(ms); if (cancelOnSleep) cancelled.set(true) }
+        }
+        val store = InMemoryOpenAlexBudgetStore().also {
+            it.reconcile(properties.accountScope, recheckTime.plusSeconds(86400), 10000, 10000, 10000, recheckTime)
+        }
+        val kinds = mutableListOf<RequestKind>()
+        val observed = object : OpenAlexBudgetStore by store {
+            override fun reserve(request: BudgetReserveRequest): BudgetReserveResult {
+                kinds += request.kind; return store.reserve(request)
+            }
+        }
+        val policy = OpenAlexRequestPolicy(properties, time, observed)
+        fun client(p: OpenAlexProperties) = OpenAlexDataSource(RestTemplate(), p,
+            Mockito.mock(EuropePmcDataSource::class.java), Mockito.mock(PdfEmailExtractor::class.java),
+            Mockito.mock(UnpaywallClient::class.java), policy)
+        if (cancelDuringWait) {
+            client(properties.copy(fetchWorksEnabled = false, fetchPatentsEnabled = false))
+                .batchEnrichByAuthorIds(listOf("A123"), RequestKind.HISTORY_ENRICHMENT)
+            cancelOnSleep = true
+        }
+        val service = academicService(client(properties), properties)
+        var refused = false
+        try {
+            service.collect(listOf(evidenceSnapshot(), evidenceSnapshot(authorId = null, orcid = "0000-0002-1825-0097", suffix = "second")),
+                RecheckEvidenceMode.REFRESH, recheckTime, beforeDispatch = {
+                    if (cancelled.get()) throw java.util.concurrent.CancellationException("fixture run cancelled")
+                })
+        } catch (_: java.util.concurrent.CancellationException) { refused = true }
+        check(refused && calls.size == 1 && calls.single().startsWith("/authors"))
+        val attemptsBefore = kinds.size
+        try {
+            service.collect(listOf(evidenceSnapshot()), RecheckEvidenceMode.REFRESH, recheckTime,
+                beforeDispatch = { throw java.util.concurrent.CancellationException("still cancelled") })
+            error("Cancelled retry must propagate")
+        } catch (_: java.util.concurrent.CancellationException) { }
+        check(kinds.size == attemptsBefore && calls.size == 1)
+        check(kinds.all { it == RequestKind.HISTORY_ENRICHMENT })
+        cancelAfterAuthor = false; cancelOnSleep = false; cancelled.set(false)
+        val ordinary = client(properties).batchEnrichByAuthorIds(listOf("A123"), RequestKind.HISTORY_ENRICHMENT)
+        check((ordinary.getValue("A123") as EnrichmentOutcome.Success).data.let {
+            it.recentWorkTitles == listOf("fixture title") && it.patentTitles == listOf("fixture title") })
+        check(calls.size == 4 && calls.drop(2).all { it.startsWith("/works") })
+        return "cancelDuringWait=$cancelDuringWait wire=1 cancelledRetryWire=0 ordinaryWire=3 requestKind=HISTORY_ENRICHMENT"
+    } finally { server.stop(0) }
 }

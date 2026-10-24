@@ -25,6 +25,31 @@ class DiscoveryVerificationCommitServiceTest {
         completedAt = null, generation = 1, leaseToken = "current-token", leaseUntil = ruleClock.instant().plusSeconds(120))
     private fun proposed() = fixture.item().let { VerificationResult(it.state, it.outcome, it.qualification, it.route, it.evidenceJson!!, it.reasonsJson!!) }
 
+    @Test fun `recheck compares launch revision including true absence not freshly prepared completion revision`() {
+        val original = lease()
+        val snapshot = DiscoveryVerificationAdmissionGate.snapshot(original.expertDocId, fixture.profile, fixture.config)
+        val root = fixture.mapper.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(snapshot)
+        root.set<com.fasterxml.jackson.databind.JsonNode>("reviewInput", fixture.mapper.valueToTree(VerificationReviewInput(null)))
+        val lease = original.copy(reviewEpoch = original.ownerExecutionId, snapshotJson = root.toString())
+        Mockito.`when`(fixture.repository.lockForCommit(lease.id)).thenReturn(lease)
+        Mockito.`when`(fixture.repository.lockRunAccepting(lease.ownerExecutionId)).thenReturn(true)
+        val current = row(lease, revision = 0)
+        Mockito.`when`(admissions.findAdmission(lease.expertDocId)).thenReturn(current)
+        Mockito.`when`(fixture.repository.saveEvidenceAndOutcome(Mockito.anyLong(), Mockito.anyString(), Mockito.anyLong(),
+            Mockito.any(VerificationResult::class.java) ?: proposed(), Mockito.any(java.time.Instant::class.java) ?: ruleClock.instant())).thenReturn(true)
+        service.commit(lease, proposed(), VerificationCommitInput(snapshot, current, null))
+        val saved = Mockito.mockingDetails(fixture.repository).invocations.single { it.method.name == "saveEvidenceAndOutcome" }.arguments[3] as VerificationResult
+        assertEquals(VerificationOutcome.PENDING, saved.outcome); assertTrue(saved.reasonsJson.contains("ADMISSION_CHANGED"))
+        Mockito.verifyNoInteractions(review, writer)
+    }
+
+    @Test fun `cancelled recheck run cannot commit with an otherwise current lease`() {
+        val lease = lease().let { it.copy(reviewEpoch = it.ownerExecutionId) }
+        Mockito.`when`(fixture.repository.lockForCommit(lease.id)).thenReturn(lease)
+        Mockito.`when`(fixture.repository.lockRunAccepting(lease.ownerExecutionId)).thenReturn(false)
+        assertNull(service.commit(lease, proposed(), VerificationCommitInput(null, null, null)))
+        Mockito.verifyNoInteractions(admissions, review, writer, jdbc)
+    }
     @Test fun `expired lease and replacement token do not write evidence or admission`() {
         listOf(lease().copy(leaseUntil = ruleClock.instant()), lease().copy(leaseToken = "replacement")).forEach { current ->
             Mockito.`when`(fixture.repository.lockForCommit(current.id)).thenReturn(current)
