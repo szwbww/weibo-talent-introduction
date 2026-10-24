@@ -269,3 +269,123 @@ Exit0. Tool summary: staged0, unstaged9, untracked2. Raw output: `artifact://997
 
 Final outcome remains **PLAN_CONFLICT**. Preserve state and await human-approved amended authority; do not run checks to confirm this source-proven schema mismatch.
 
+
+## Epoch 2 — Execution Result: READY_FOR_VERIFICATION
+
+Plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-recheck-master/docs/plans/2026-10-24/discovery-recheck-05-history.md`
+Plan SHA-256: `0c301face4b7fc18a4197dee63221195dbf7ad367ffeb6df279a3311e3c2b440`
+Execution ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-recheck-master/docs/plans/2026-10-24/discovery-recheck-05-history.md@0c301face4b7fc18a4197dee63221195dbf7ad367ffeb6df279a3311e3c2b440`
+Execution epoch: NEW — amended identity, not inherited epoch1 completion.
+Approval basis: current invocation, Epoch2 brief, user-approved six fixture files and child05-only fifteen-file exception; immutable plan authority `commit:863530b3f0d8aca6c0cd03fa29d9af7df8cb09d6`, canonical A5/A6 authority retained.
+Executor: Recheck05Epoch2.
+Target worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-recheck-master`
+Target branch: `fast/discovery-recheck-master`
+Worktree ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-recheck-master@fast/discovery-recheck-master@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-discovery-recheck-master`
+Common Git directory: `/Users/lukai/IdeaProjects/weibo-talent-introduction/.git`
+Pre-execution code SHA / child_base_sha: `6884eb7f31b1763dbb14422e91dfd63dc022fb94`
+Actual pre-execution governance HEAD: `fabc991b7e2113092c1cdfe0c007ed862bde4dcb`
+Post-execution code SHA: `74a4c94e88230d88710e35eb9b45612a4234fb52`
+Evidence HEAD: not separately committed by implementer; current target HEAD is the product commit above. Controller owns later evidence commit.
+Implementation boundary: retained authorized drafts reconciled and completed in `fabc991b7e2113092c1cdfe0c007ed862bde4dcb..74a4c94e88230d88710e35eb9b45612a4234fb52`; preceding completed children preserved. Product ancestry begins at child_base_sha above.
+
+### Task Status
+
+| Requirement | Status | Files | Fresh execution evidence |
+|---|---|---|---|
+| I-1 ordinary compatibility and independent epochs | IMPLEMENTED | migration, domain, repository, RepositoryIT | Actual MySQL V158→V161 preservation compares every old run/item/attempt field; concurrent ordinary reservations, cross-owner first ownership, two real recheck epochs and same-round retry pass. |
+| I-2 business reads versus full history | IMPLEMENTED | repository, Gate, Query and their tests | Business predicate preserves ordinary AUDIT/ENFORCE, excludes uncommitted/AUDIT rechecks, admits committed ENFORCE; staged contexts remain explicit. Repository/Gate tests and independent runtime history/business isolation pass. |
+| I-3 immutable spec, frozen scope and revision CAS | IMPLEMENTED | domain, repository, ContractTest, RepositoryIT | Spec rewrite yields409; stale and parallel CAS, repeated scope hash, PREPARING/READY claim exclusion and concurrent RUNNING claims pass on actual MySQL. |
+| I-4 eight step slots, append retries, cancellation | IMPLEMENTED | migration, domain, repository, Query and authorized tests | Eight slots, unique attempts, terminal rewrite rejection, append retry, SQL step/time constraints, cancellation counts disjoint from errors/queued/autoAdmitted and preserved committed projection pass. |
+| I-5 claim/recovery/commit isolation | IMPLEMENTED | repository, RepositoryIT, Gate/Query consumers | Cancellation/interruption blocks renew, attempts, outcome and new commit; ordinary recovery/CLI excludes rechecks; committed projection retry remains allowed. No network SQL transaction introduced. |
+| A5/A6 schema fixture synchronization | IMPLEMENTED | exact six amended existing test files | Only Flyway targets change to161, with existing assertions preserved; added six-class command executes89 JVM regressions with zero skips. Deliberate V158-before/V161-after preservation stage remains intact. |
+
+### Commands
+
+Every repository shell command used cwd exactly the target worktree.
+
+| Command | Result | Evidence |
+|---|---|---|
+| `python3 /Users/lukai/.agents/skills/execute-p/scripts/plan_identity.py docs/plans/2026-10-24/discovery-recheck-05-history.md` | PASS exit0 | At entry and handoff: canonical path above,11797 bytes, unchanged SHA-256. |
+| `python3 /Users/lukai/.agents/skills/execute-p/scripts/worktree_identity.py docs/plans/2026-10-24/discovery-recheck-05-history.md --worktree /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-recheck-master` | PASS exit0 | Entry root/branch/git-dir/common-dir/HEAD match authority. |
+| `git rev-parse 863530b3f0d8aca6c0cd03fa29d9af7df8cb09d6:docs/plans/2026-10-24/discovery-recheck-05-history.md && git hash-object docs/plans/2026-10-24/discovery-recheck-05-history.md && git merge-base --is-ancestor 863530b3f0d8aca6c0cd03fa29d9af7df8cb09d6 HEAD && git merge-base --is-ancestor 6884eb7f31b1763dbb14422e91dfd63dc022fb94 HEAD` | PASS exit0 | Both plan blobs `d49983eb0f6adab98c58e611ea688da4cf4ad99d`; approved amendment and product base are target ancestors. |
+| `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=DiscoveryVerificationRepositoryIT,DiscoveryVerificationContractTest,DiscoveryVerificationAdmissionGateTest,DiscoveryVerificationQueryServiceTest -DmysqlIt=true` — first run | FAIL exit1 |60 JVM,1 failure,0 errors,0 skips. New SQL constraint test assumed Spring DataIntegrityViolationException, but MySQL3819 is UncategorizedSQLException in this installed translator. Full output `artifact://1011` / `artifact://1008`. |
+| Same exact primary command — fresh after final product/test edit | PASS exit0 |60 JVM: RepositoryIT24, ContractTest8, Gate9, Query19;0 failures/errors/skips. Bound JS1827/1827,0 failures/skips; bound app/task-modal syntax checks pass.208.56s wall, Maven3:27. Output `artifact://1014`. |
+| `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=DiscoveryVerificationReportingIT,DiscoveryCountrySupplementFlowIT,DiscoveryVerificationFlowIT,DiscoveryVerificationIntegrationTest,DiscoveryVerificationReplayToolTest,DiscoveryVerificationWorkerTest -DmysqlIt=true` | PASS exit0 |89 JVM: Reporting12, Country8, Flow32, Integration14, Replay7, Worker16;0 failures/errors/skips. Bound JS1827/1827,0 failures/skips; bound syntax checks pass.436.85s wall, Maven7:15. Output `artifact://1018`. Actual isolated MySQL8.0.36 containers, not H2 or mocked SQL. |
+| `python3 /tmp/run_child05_runtime_smoke.py` — initial launcher | FAIL exit1, infrastructure-only | Independent JVM intentionally excluded target/test-classes, also excluding existing docker-java.properties; shaded client defaultAPI1.32 rejected by Docker29 minimum1.40. No product change. Output `artifact://1019`. |
+| `python3 /tmp/run_child05_runtime_smoke.py` — corrected standalone launcher | PASS exit0 | Uses explicit `-Dapi.version=1.40`, matching existing test resource, no test classes or JUnit runner. Kotlin1.9.25 compiler/JDK11 builds temporary main, then executes actual migrated disposable MySQL and production domain/repository transaction proxy/Gate/Query.23.99s wall. Output `artifact://1021`. |
+| `git diff --check` | PASS exit0 | Final implementation whitespace check. |
+| `python3 /Users/lukai/.agents/skills/execute-p/scripts/worktree_identity.py docs/plans/2026-10-24/discovery-recheck-05-history.md --worktree /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-recheck-master --expect-root /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-recheck-master --expect-branch fast/discovery-recheck-master --expect-git-dir /Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-discovery-recheck-master` | PASS exit0 | Repeated directly before each git add/commit and at handoff; exact target identity preserved. |
+| `git add <exact fifteen approved product/test paths> && git diff --cached --name-only` | PASS exit0 | Staging receipt `artifact://1024` contains exact plan allowlist, no evidence/ledger/plan paths. |
+| `git commit -m 'feat(fast-p): implement 05' && git rev-parse HEAD && git merge-base --is-ancestor HEAD refs/heads/fast/discovery-recheck-master` | PASS exit0 | `74a4c94e88230d88710e35eb9b45612a4234fb52`,15 product/test files,723 insertions/52 deletions. Output `artifact://1025`. |
+| Final plan/worktree identity helpers, `git status --short`, `git diff --cached --exit-code`, `git merge-base --is-ancestor 74a4c94e88230d88710e35eb9b45612a4234fb52 refs/heads/fast/discovery-recheck-master`, `git show --format=fuller --stat --no-renames HEAD` | PASS exit0 | Target HEAD is exact product commit and branch reachable, index empty, product tree clean. Only pre-existing controller ledger modification remained before this requested report append. Output `artifact://1026`. |
+
+### Independent runtime smoke boundaries
+
+The temporary standalone main used only target/classes plus dependency jars (target/test-classes removed), production repository with Spring transaction interception, production Gate/Query and real Flyway migrations to161 in its own MySQL8.0.36 `child05_runtime` database. It created one ordinary completed item and two real owner task/recheck epochs, exercised eight initialized slots per recheck, frozen scope hashing, early claim prevention, stale CAS rejection, one completed uncommitted round and one cancelled running round, stopped late outcome writes, checked cancelled step/query counts and preserved ordinary Gate context/business reads against three-row history. Gate evidence selection was exercised through `findContext`; this standalone smoke does not claim production HTTP entrypoints or full later-child Worker orchestration.
+
+Observed marker:
+
+```text
+CHILD05_RUNTIME_OK migrated=161 ordinary=1 recheckEpochs=2 history=3 steps=16 staleCAS=rejected earlyClaims=blocked cancelled=1 gateBusiness=unchanged providerRequests=0
+```
+
+Flyway applied160 migrations through version161 (the repository has a historical version gap); runtime marker is at `artifact://1021:17513`. Container and associated volumes removal observed at17734. No production schema/data, ES or paid provider request was used.
+
+Temporary files were outside the repository and removed after success with:
+
+```text
+shasum -a 256 /tmp/Child05RuntimeSmoke.kt /tmp/run_child05_runtime_smoke.py /tmp/child05-runtime-smoke.jar
+rm /tmp/Child05RuntimeSmoke.kt /tmp/run_child05_runtime_smoke.py /tmp/child05-runtime-smoke.jar
+```
+
+Exit0; source hash `ce12c001f24b8b4ad1886715f7c719ef21ba1057849a226ce151f8bbd77b0ad2`, launcher hash `03b0856f311206ff3403f46b869aec79f88ee7f4470091a8a7dd56740efd1c4b`, compiled jar hash `9be03bccfc69d7796cd96cb058b0fcc5c751c4877ac1da40a50f5ab8f926e01d`.
+
+### Changed Files
+
+- `src/main/resources/db/migration/V161__discovery_recheck_history.sql` — new nullable run JSON/default-zero item epoch/four-part identity and independent constrained step table; no applied migration edited.
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryVerification.kt` — compatible defaults, immutable recheck spec/control, steps, terminal cancellation.
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt` — round identity, business/history isolation, frozen control CAS, steps, cancellation, claim/attempt/recovery/commit boundaries and reporting.
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGate.kt` — filtered business context selection, explicit staged context retained.
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryService.kt` — history/detail epoch/control/steps, cancellation labels/counts and lifecycle.
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt` — real migration/concurrency/identity/control/step/cancellation/projection regressions.
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryVerificationContractTest.kt` — old JSON defaults, new spec, cancelled and step invariants.
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationAdmissionGateTest.kt` — unfinished rechecks do not displace ordinary evidence; explicit staged evaluation.
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryServiceTest.kt` — full history, saved trace, cancellation accounting.
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationReportingIT.kt` — authorized fixture target161 only.
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementFlowIT.kt` — authorized fixture target161 only.
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationFlowIT.kt` — authorized shared fixture target161 only.
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationIntegrationTest.kt` — authorized fixture target161 only.
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationReplayToolTest.kt` — authorized fixture target161 only.
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt` — authorized fixture targets161 only.
+- This explicitly requested append-only execution report remains outside the product commit. Prior epochs preserved; ledger left untouched.
+
+### Deviations and execution limits
+
+- No scope/behavior deviation. The primary command's initial failure was fixed only in the authorized new RepositoryIT assertions: require actual Spring UncategorizedSQLException plus exact MySQL CHECK error3819, preserving rejection strength. No six-file legacy assertion was weakened.
+- First standalone smoke launch lacked the existing DockerAPI resource because test classes were intentionally excluded; explicit matching API1.40 corrected the disposable launcher, not production configuration.
+- Existing MySQL display-width/VALUES deprecation and expected injected-failure/invalid-configuration logs remain observations; temporary runtime transaction-interceptor constructor deprecation is harness-only.
+- No full-system verify/review/fix skill, later-child implementation, production/provider call, push/merge/history rewrite, package/deployment or human acceptance claimed.
+
+### Freshness
+
+- Plan identity rechecked: YES, unchanged current approved bytes.
+- Worktree identity rechecked: YES, target root/branch/git-dir unchanged.
+- Reported product commit is target HEAD and reachable from target branch: YES.
+- Required commands run this invocation after final product/test edit: YES, both exact commands plus independent actual runtime smoke.
+- Historical evidence used only as baseline: YES; epoch1 unverified drafts were not treated as proof.
+- Product/index cleanliness: YES; controller ledger and this requested evidence append intentionally remain uncommitted.
+
+### Remaining Blocker
+
+None for implementer handoff. READY_FOR_VERIFICATION is execution evidence, not PASS or human acceptance.
+
+### Next Action
+
+Controller continues the approved fast-p child05 independent/light verification workflow; no full verify-p/review-p is invoked inside this child execution.
+
+## Epoch 2 — Controller terminal closing record
+
+- Implementation: 74a4c94e88230d88710e35eb9b45612a4234fb52.
+- Fix round1: 440b7e0cb1daae1eb0d985fef3e12f78d1c7b607; F-05-01/F-05-02 repaired within authorized Repository/RepositoryIT only. Final code head: 440b7e0cb1daae1eb0d985fef3e12f78d1c7b607.
+- Distinct fresh Recheck05Reverify1 independently returned LIGHT_PASS_WITH_NOTES/COMPLETE_CHILD, both finding IDs CLOSED, none OPEN. Fresh required commands60/89 JVM and each JS1827, zero failures/errors/skips; standalone actual MySQL/Repository/Gate/Query proved RESERVED READY, zero early trace and transactional RUNNING eight-slot idempotent activation.
+- RECORD_ONLY O-05-01 existing warnings retained; no unrelated repair. Runtime limits in verify-log.md preserved; no full CommitService/ES or whole-system acceptance claim.
