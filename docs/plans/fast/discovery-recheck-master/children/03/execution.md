@@ -167,3 +167,185 @@ Freshness:
 - Historical evidence used only as baseline: YES.
 
 **Final outcome: PLAN_CONFLICT. SHA: N/A (uncommitted scoped implementation); unchanged target HEAD 9186a79c6ce78a8e9d253dbe5051d2b0a5a0ae54. Minimum missing authority remains exactly the three additional test paths above (six→nine); preserve current authorized edits and obtain scope amendment before reconciliation/commit/independent verification.**
+
+## Epoch 2 — Execution Result: READY_FOR_VERIFICATION
+
+Plan: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-recheck-master/docs/plans/2026-10-24/discovery-recheck-03-identity-parser.md
+Plan SHA-256: 3088b1b12f0897d349a4e054794e33348a2e95d0951cc5f2455d8d4952a1a3b0
+Execution ID: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-recheck-master/docs/plans/2026-10-24/discovery-recheck-03-identity-parser.md@3088b1b12f0897d349a4e054794e33348a2e95d0951cc5f2455d8d4952a1a3b0
+Execution epoch: NEW — epoch2 / fix_round0; earlier entries above are historical baseline, not this execution's evidence.
+Approval basis: current invocation, brief epoch2 supersession, and approved plan content at commit:5f9136047ce821259ce96b70871b71045ab9778b. Fresh `git show 5f9136047ce821259ce96b70871b71045ab9778b:docs/plans/2026-10-24/discovery-recheck-03-identity-parser.md | shasum -a 256` returned the same SHA-256.
+Executor: Recheck03Epoch2
+Target worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-recheck-master
+Target branch: fast/discovery-recheck-master
+Worktree ID: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-recheck-master@fast/discovery-recheck-master@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-discovery-recheck-master
+Common Git directory: /Users/lukai/IdeaProjects/weibo-talent-introduction/.git
+Pre-execution code SHA / child_base_sha: 5487f3b45085f20f8db8554fb94888de1446c378
+Pre-execution target HEAD: bb177a769907ad32334452e46075eea9c497abf2
+Post-execution code SHA: bc5ec812dedd7ac6aef5ea0e4d9094e19b2a9f4a
+Evidence HEAD: N/A — no executor evidence commit; controller owns evidence commits.
+Implementation boundary: 5487f3b45085f20f8db8554fb94888de1446c378..bc5ec812dedd7ac6aef5ea0e4d9094e19b2a9f4a, nine authorized product/test files. Six retained uncommitted files were read/reconciled, not accepted on the strength of old reports.
+Product commit: `feat(fast-p): implement 03`; exactly nine authorized files, 238 insertions / 45 deletions; no fast-p reports/logs included (commit receipt artifact://927).
+
+### Task Status
+
+| Requirement | Status | Files | Fresh implementation/execution evidence |
+|---|---|---|---|
+| I-1 explicit unique source ownership | IMPLEMENTED | PdfAuthorContactLayout, SourceAuthorEmailResolver, resolver/layout/PDF/consumer tests | Explicit trailing full-name/complete-initial labels require a unique metadata owner; mailbox labels remain local; existing results conflict handling produces proof. Shared, unknown, damaged, next-author, reference and wrong-owner negatives retained. Actual parser smoke below produced valid SOURCE_SHA256 only for proven owners. |
+| I-2 preserve left/footer characters and structural bounds | IMPLEMENTED | PdfAuthorContactLayout, DiscoveryPaperLayoutRegressionTest | Hard x<40 and y>90% deletion removed; inline marker segmentation and narrowly shaped continuation stay within marker/contact boundaries. Fresh generated x32/y96% Bernd, inline affiliation, next-line and wrapped-domain positives passed; structural negatives bound nobody. |
+| I-3 no prose-created mailbox | IMPLEMENTED | PlainTextEmailExtractor, PlainTextEmailExtractorTest | Bare at/dot normalization requires labelled complete address shape; bracketed forms retained. Actual available-at URL returned []; explicit bare-at/dot and bracket-at returned intended addresses. No provider blacklist added. |
+| I-4 independent versions/cache compatibility | IMPLEMENTED | PdfAuthorContactLayout, CaptureTest and required source/identity/queue/consumer tests | Layout RULE_VERSION=20261024; DiscoveryIdentity.VERSION=20260925 and EXTRACTION_VERSION=20261004 unchanged. Actual first/analysis output below uses new layout version. Fresh opt-in queue/MySQL tests passed without mandatory skips. |
+| Existing regression reconciliation | IMPLEMENTED | DiscoveryPaperArchiveCaptureTest, PdfEmailExtractorTest, ExpertDiscoveryServiceTest, retained SourceAuthorEmailResolverTest | Precise Mette/Nour/Marwa and explicit nguyen owner assertions replace obsolete all-unbound pins. Original PDF/archive bytes remain unchanged; genuine seven wrong-owner relations and shared/unknown/damaged/adjacent negatives remain strict. Consumer/admission production code untouched. |
+| Prior-child02 summary contract dependency | IMPLEMENTED | DiscoveryPaperArchiveCaptureTest only | Existing Ada Lee captured fixture now expects 1/1/0; schema-v1 envelope without first.outcome now expects unknown in list/detail. Explicit controller interpretation recorded below; no capture/service implementation or fixture changes. |
+| Required commands and standalone proof | IMPLEMENTED | No permanent harness file | Both exact mandatory Maven commands rerun after the last test edit, exit 0. Final standalone actual parser/proof/capture/analysis smoke exit 0 after that edit. |
+| Local product commit | IMPLEMENTED | Nine authorized files only | bc5ec812dedd7ac6aef5ea0e4d9094e19b2a9f4a is target HEAD and target-branch reachable; reports excluded. |
+
+### Commands
+
+All repository commands used the explicit target cwd above. No build/test/lint was run before the retained implementation and initial epoch2 test reconciliation were complete. Following each subsequently authorized summary-test correction, final required commands were rerun after the final edit.
+
+Define exact mandatory commands:
+
+**C1**
+```sh
+env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test '-Dtest=DiscoveryPaperLayoutRegressionTest,SourceAuthorEmailResolverTest,PlainTextEmailExtractorTest,DiscoveryPaperArchiveCaptureTest,*EmailExtractorTest,*Queue*Test,*DiscoveryIdentity*Test,*Source*Test' -DmysqlIt=true
+```
+
+**C2**
+```sh
+env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test '-Dtest=ExpertDiscoveryServiceTest,DiscoveryPipelineServiceTest,DiscoveryVerificationIntegrationTest,DiscoveryPaperQueueRepositoryIT,DiscoveryPaperArchiveFlowIT' -DmysqlIt=true
+```
+
+| Command | Result | Evidence |
+|---|---|---|
+| `python3 /Users/lukai/.agents/skills/execute-p/scripts/plan_identity.py docs/plans/2026-10-24/discovery-recheck-03-identity-parser.md` | exit 0, initial and pre-handoff | Canonical path and SHA-256 above; current bytes match approved commit5f9136. |
+| `python3 /Users/lukai/.agents/skills/execute-p/scripts/worktree_identity.py docs/plans/2026-10-24/discovery-recheck-03-identity-parser.md --worktree /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-recheck-master` | exit 0 | Root, branch, git-dir and pre-execution HEAD above. Before each add/commit and at handoff used explicit `--expect-root`, `--expect-branch`, `--expect-git-dir`. |
+| C1, initial epoch2 run | exit 1 | artifact://908: 347 JVM tests, 1 failure, 0 errors, 2 allowed skips. Failure: captured Ada Lee summary expected (1,0,0), actual (1,1,0). Maven did not reach bound JS/syntax. |
+| C2, initial epoch2 run | exit 0 | artifact://913: 299 JVM tests, zero failures/errors/skips. This run started before the final summary-test edits; retained as intermediate evidence, not the final C2 gate. |
+| C1, after first summary correction | exit 1 | artifact://917: 347 JVM tests, 1 failure, 0 errors, 2 allowed skips. Next obsolete pin: schema-v1 flat record without first.outcome expected (2,1,1), actual unknown/null. Maven did not reach bound JS/syntax. |
+| **C1, final after last edit** | **exit 0** | **artifact://919: 347 JVM tests, 0 failures, 0 errors, 2 explicitly allowed skips. Maven-bound full JS: 1827 pass, 0 fail, 0 cancelled, 0 skipped; node-check-app and node-check-task-modal-runtime completed. BUILD SUCCESS.** |
+| **C2, final after last edit** | **exit 0** | **artifact://923: 299 JVM tests, 0 failures/errors/skips. Maven-bound full JS: 1827 pass, 0 fail, 0 cancelled, 0 skipped; both bound syntax goals completed. BUILD SUCCESS.** |
+| JDK11 `javap -classpath target/test-classes:target/classes ...` | exit 0, two API-discovery calls | Actual fixture/parser/capture/repository constructors inspected to build standalone Java main; no test verdict substituted. |
+| Python XML reader: actual Surefire `java.class.path` → disposable `/tmp/child03-epoch2-classpath.txt` | success | 127 classpath entries; no dependency or repository configuration modified. |
+| JDK11 `javac -cp <actual Surefire classpath> /tmp/Child03Epoch2.java`, then `java -cp </tmp:actual Surefire classpath> Child03Epoch2` | both exit 0 | Initial epoch2 actual runtime proof; disposable MySQL, real capture and analysis; repeated by final harness below after all test corrections. |
+| JDK11 `javac -cp <actual Surefire classpath> /tmp/Child03Epoch2Final.java`, then `java -cp </tmp:actual Surefire classpath> Child03Epoch2Final` | both exit 0 | Final current-invocation smoke after last edit; actual outcomes below. Compile and Java run were executed using subprocess argument lists with explicit target cwd. No test source was placed in repository. |
+| `git diff --check` and `git diff --cached --check` | exit 0 | No whitespace errors. |
+| `git diff 5487f3b45085f20f8db8554fb94888de1446c378 -- src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt` | exit 0, empty output | Identity/extraction constants and admission proof semantics unchanged relative to child base. |
+| `git diff --name-only -- src/main src/test`, then exact-path add, `git diff --cached --name-only` | exit 0 | Receipts list precisely the nine approved files; no plan/ledger/report/resource path staged. |
+| `git commit -m 'feat(fast-p): implement 03'` | exit 0 | bc5ec812dedd7ac6aef5ea0e4d9094e19b2a9f4a; exact nine-file receipt artifact://927. |
+| `git rev-parse HEAD && git merge-base --is-ancestor HEAD refs/heads/fast/discovery-recheck-master && git show --format=fuller --stat HEAD` | exit 0 | Product SHA is HEAD and reachable on correct target branch; subject/file scope above. |
+| `rm /tmp/Child03Epoch2.java /tmp/Child03Epoch2.class /tmp/child03-epoch2-classpath.txt /tmp/child03-epoch2-smoke-output.txt`; `rm /tmp/Child03Epoch2Final.java /tmp/Child03Epoch2Final.class` | both exit 0 | All executor-created standalone source/class/classpath/output scaffolds removed. Each harness stopped its own disposable MySQL in finally and removed its temporary archive directory. |
+
+### Exact resolved suites / skips
+
+Final C1 receipt: `grep` tool over artifact://919 with pattern `Tests run:|# tests |# pass |# fail |# skipped |exec-maven-plugin|node --|BUILD SUCCESS`, plus artifact://919:3155-3189, yielded:
+
+| Class | JVM tests | Failures | Errors | Skips |
+|---|---:|---:|---:|---:|
+| DiscoveryPaperArchiveCaptureTest | 11 | 0 | 0 | 0 |
+| DiscoveryIdentityRecoveryControllerTest | 7 | 0 | 0 | 0 |
+| ArxivDataSourceTest | 18 | 0 | 0 | 0 |
+| CoreDataSourceTest | 19 | 0 | 0 | 0 |
+| CrossrefDataSourceTest | 12 | 0 | 0 | 0 |
+| DiscoveryIdentityRecoveryServiceTest | 24 | 0 | 0 | 0 |
+| DiscoveryIdentityRepairServiceTest | 20 | 0 | 0 | 0 |
+| DiscoveryPaperLayoutRegressionTest | 3 | 0 | 0 | 1 |
+| EuropePmcDataSourceTest | 31 | 0 | 0 | 1 |
+| OpenAlexDataSourceTest | 89 | 0 | 0 | 0 |
+| OrcidDataSourceTest | 16 | 0 | 0 | 0 |
+| PdfEmailExtractorTest | 43 | 0 | 0 | 0 |
+| PlainTextEmailExtractorTest | 8 | 0 | 0 | 0 |
+| PmcOaDataSourceTest | 3 | 0 | 0 | 0 |
+| SourceAuthorEmailResolverTest | 27 | 0 | 0 | 0 |
+| DiscoveryIdentityTest | 13 | 0 | 0 | 0 |
+| MailQueueConsumerTest | 3 | 0 | 0 | 0 |
+
+Skip metadata was read from actual fresh Surefire XML:
+- `DiscoveryPaperLayoutRegressionTest.private original corpus replay explicitly skips when unavailable`: exact original294 frozen raw corpus unavailable; no real-effect/full historical batch claim.
+- `EuropePmcDataSourceTest.smoke test real Europe PMC API returns papers`: explicitly disabled live network smoke, requires manual opt-in. Not a compatibility pass and not run against production.
+
+Source/queue/identity filename inventory used `glob` patterns `src/test/**/*Queue*`, `src/test/**/*Source*`, `src/test/**/*DiscoveryIdentity*`. Existing omitted consumption/real-MySQL classes are covered freshly by C2. Final C2 receipt: `grep` tool over artifact://923 with pattern `Tests run:|ℹ (tests|pass|fail|skipped)|node-check|BUILD SUCCESS`:
+- DiscoveryPaperQueueRepositoryIT: 31/0/0/0 — real disposable MySQL.
+- DiscoveryPaperArchiveFlowIT: 8/0/0/0.
+- ExpertDiscoveryServiceTest: 194/0/0/0.
+- DiscoveryVerificationIntegrationTest: 14/0/0/0 — real disposable MySQL.
+- DiscoveryPipelineServiceTest: 52/0/0/0.
+
+No mandatory queue/real-MySQL/source compatibility test was counted as passing by skipping it. Existing compiler/PDF font and fixture-simulated provider error logs remain observations, not unrelated repair scope.
+
+### Final actual standalone runtime proof
+
+Disposable Java main used programmatically generated PDF bytes, actual production layout/resolver/plain/PDF parser, and actual `DiscoveryIdentity.validEvidence`. Layout fixture helper constructed PDF and calculated fresh contacts/results; the harness printed those runtime observations rather than reading acceptance JSON or precomputed verdicts. Capture delegate invoked the real production byte parser, and analysis independently invoked that same production PDF parsing path. No proof string was prefilled.
+
+```text
+LAYOUT left32Bottom96 email=bernd@sample.edu owner=Bernd Bayerlein validEvidence=true contacts=1
+LAYOUT inlineAffiliationMarker email=bernd@sample.edu owner=Bernd Bayerlein validEvidence=true contacts=1
+LAYOUT sameContactNextLine email=bernd@sample.edu owner=Bernd Bayerlein validEvidence=true contacts=1
+LAYOUT wrappedContactDomain email=bernd@sample.edu owner=Bernd Bayerlein validEvidence=true contacts=1
+LAYOUT sharedMarker email=bernd@sample.edu owner=null null validEvidence=false contacts=0
+LAYOUT unknownMarkerOwner email=bernd@sample.edu owner=null null validEvidence=false contacts=0
+LAYOUT damagedSignature email=bernd@sample.edu owner=null null validEvidence=false contacts=0
+LAYOUT referenceMailbox email=bernd@sample.edu owner=null null validEvidence=false contacts=0
+LAYOUT nextAuthorBoundary email=bernd@sample.edu owner=null null validEvidence=false contacts=0
+LAYOUT unknownNextAuthorBoundary email=bernd@sample.edu owner=null null validEvidence=false contacts=0
+LAYOUT emptyParagraphBoundary email=bernd@sample.edu owner=null null validEvidence=false contacts=0
+LAYOUT nextMarkerBoundary email=bernd@sample.edu owner=null null validEvidence=false contacts=0
+LABEL b@example.edu (B. Bayerlein) mailbox=b@example.edu owner=Bernd validEvidence=true
+LABEL b@example.edu (B. Bayerlein); other@example.edu mailbox=b@example.edu owner=Bernd validEvidence=true
+LABEL b@example.edu (B. Bayerlein); other@example.edu mailbox=other@example.edu owner=null validEvidence=false
+LABEL b@example.edu (Unknown Owner) mailbox=b@example.edu owner=null validEvidence=false
+LABEL b@example.edu (B? Bayerlein) mailbox=b@example.edu owner=null validEvidence=false
+AMBIGUOUS_INITIALS owner=null validEvidence=false
+NORMALIZE available at www.nature.com -> []
+NORMALIZE Email: bayerlein at example.edu -> [bayerlein@example.edu]
+NORMALIZE a(at)example.edu -> [a@example.edu]
+NORMALIZE Contact: ada at laboratory dot edu -> [ada@laboratory.edu]
+CAPTURE_FIRST_VERSION={"identityExtraction":20261004,"pdfLayout":20261024}
+ANALYSIS_VERSION={"identityExtraction":20261004,"pdfLayout":20261024,"format":1,"qualification":2}
+ANALYSIS_AFTER=[{"email":"bernd@sample.edu","authorName":"Bernd Bayerlein","identityEvidence":"SOURCE_SHA256:bd56c074bc5a16b28a6fd298533af2bd6f3de4d69e50144d4cbff4841bba6abd"}]
+FIRST_UNCHANGED=true ORIGINAL_SHA_UNCHANGED=true
+IDENTITY=20260925 EXTRACTION=20261004 productionWrites=0 network=0
+SMOKE_COMPLETE disposableMysqlStopped=true temporaryArchiveRemoved=true
+```
+
+The final main captured an initial generated PDF through `DiscoveryPaperArchiveCapture`, analyzed its stored original through `DiscoveryPaperAnalysisService`, then captured a later empty outcome. It compared the first JSON and original SHA after both operations; both remained unchanged. Mockito `verifyNoInteractions(network,bounded)` passed. MySQL was a fresh local `mysql:8.0.36` Testcontainers instance; archive filesystem was disposable. No production writes, production re-queries, admission/ES/mailbox/contact/outreach side effects, or Apollo configuration changes.
+
+### Changed Files
+
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfAuthorContactLayout.kt` — retained scoped implementation reconciled: rule version, no hard edge cropping, marker-local continuation and section boundaries.
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolver.kt` — retained explicit source owner-label handling with unique full/initial names and unchanged central results/proof conflict resolution.
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/service/PlainTextEmailExtractor.kt` — retained context-restricted bare at/dot normalization.
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperLayoutRegressionTest.kt` — generated coordinate/segment positive and strict negative fixtures.
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt` — explicit mailbox-label/ownership-conflict coverage; precise debie/nguyen positives with original resources unchanged.
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/PlainTextEmailExtractorTest.kt` — pseudo-address negatives and supported normalization cases.
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveCaptureTest.kt` — dynamic current layout version; corrected direct child02 summary dependency assertions without changing inputs or first/identity/extraction invariants.
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt` — exactly Mette B. Gaarde's unique † footer contact; Lun and genuine ambiguous owners remain strictly unbound.
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt` — exact restored owner documents/author IDs/institutions/counts/audit; remaining unknowns and wrong-owner negatives retained; consumer/admission code untouched.
+- This append-only execution report — required evidence only, excluded from product commit.
+
+### Deviations / scope reconciliation
+
+- No additional file authority required; no implementation behavior added beyond exact approved plan. No approved plan/ledger/other-worktree edits, later-child review, push/merge, or history rewrite.
+- Initial C1 additionally exposed obsolete prior-child02 count/unknown expectations in the already authorized CaptureTest. Controller explicitly instructed that complete-name count 1/1/0 and unknown-without-first semantics are inside approved precise-count authority and frozen prior-child02 contract; retire these old-bug pins without changing production capture/service or fixtures. Only those exact assertions/test label were reconciled; final C1/C2 were rerun afterward. This is a direct dependency correction, not a new feature or weakened acceptance.
+- User/controller's pre-existing uncommitted ledger change was preserved and excluded from staging/commit. Required execution report remains for controller evidence commit.
+- Private original294 and disabled online Europe PMC smoke remain explicit skips as permitted; no full historical/live replay or human acceptance claimed.
+- No review-p/verify-p/repair-p/fix-v was run in this fast-p child loop. Results are executor evidence, not an independent PASS.
+
+### Freshness
+
+- Plan identity rechecked: YES; unchanged current epoch2 hash.
+- Worktree identity rechecked: YES; exact target root/branch/git-dir, including pre-add/pre-commit expectation gates and final handoff gate.
+- Product commit is target HEAD and reachable from target branch: YES.
+- Product/test working tree and index clean after product commit: YES; only controller ledger and required append-only evidence report are intentionally outside product commit.
+- Both exact required commands freshly rerun after final edit: YES; final C1 artifact://919 and final C2 artifact://923.
+- Standalone actual parser/proof/capture/analysis smoke freshly rerun after final edit: YES; final javac/java exit 0, scaffolds removed.
+- Historical reports/logs used only as baseline: YES.
+
+### Remaining Blocker
+
+None for executor handoff.
+
+### Next Action
+
+Independent fast-p light verifier against current epoch2 identity and product SHA; controller commits evidence. READY_FOR_VERIFICATION is not independent verification PASS or human acceptance.
+
