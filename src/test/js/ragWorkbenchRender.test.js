@@ -394,7 +394,7 @@ describe("rag workbench render contracts (计划 05)", () => {
         const match = html.match(/src="trust-reply-workbench\.js\?v=([^"]+)"/);
         assert.ok(match, "index.html must include trust-reply-workbench.js?v=");
         const keys = [...html.matchAll(/\?v=([0-9a-z-]+)/g)].map((item) => item[1]);
-        assert.strictEqual(keys.length, 16, "sixteen cache-busted assets expected");
+        assert.strictEqual(keys.length, 17, "seventeen cache-busted assets expected");
         assert.ok(keys.every((key) => key === CACHE_KEY), `all keys must equal ${CACHE_KEY}`);
         const ordered = ["styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css",
             "world-clock.css", "trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js",

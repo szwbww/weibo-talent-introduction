@@ -179,7 +179,7 @@ describe("shared trust reply workbench mount contract (计划 05 改写)", () =>
 
     it(`G-5: the eleven cache-busted assets share one key (${CACHE_KEY})`, () => {
         const keys = [...indexSource.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
-        assert.strictEqual(keys.length, 16, "index.html must carry exactly sixteen cache-busted asset URLs");
+        assert.strictEqual(keys.length, 17, "index.html must carry exactly seventeen cache-busted asset URLs");
         assert.strictEqual(new Set(keys).size, 1, "all eleven keys must share one value");
         assert.strictEqual(keys[0], CACHE_KEY, `the shared key must be ${CACHE_KEY}`);
         const ordered = ["styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css",

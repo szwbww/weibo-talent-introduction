@@ -925,7 +925,7 @@ describe("contact profile 02 — S-2 / 缓存键 / 模块边界", () => {
     it("缓存键：index.html 11 项统一为计划键，数量与顺序不变", () => {
         assert.match(CACHE_KEY, /^\d{8}-[a-z0-9-]+$/, "approved contact-records release key");
         const keys = [...INDEX_SOURCE.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
-        assert.strictEqual(keys.length, 16, "index.html must carry sixteen cache-busted assets");
+        assert.strictEqual(keys.length, 17, "index.html must carry seventeen cache-busted assets");
         assert.deepStrictEqual([...new Set(keys)], [CACHE_KEY], "all eleven keys must share the planned value");
         const ordered = [
             "styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css", "world-clock.css",

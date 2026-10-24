@@ -273,6 +273,6 @@ test("badges, dynamic metrics and detail labels render the 120-second copy", asy
 
 test("all eleven versioned assets in index.html carry one cache key", () => {
     const versions = [...markup.matchAll(/\.(?:css|js)\?v=([A-Za-z0-9._-]+)/g)].map(match => match[1]);
-    assert.equal(versions.length, 16, "expected the five stylesheets and six scripts");
+    assert.equal(versions.length, 17, "expected the seven stylesheets and ten scripts");
     assert.equal(new Set(versions).size, 1, `assets must share one cache key, saw ${[...new Set(versions)].join(", ")}`);
 });

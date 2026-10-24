@@ -355,7 +355,7 @@ describe("上次回复：S-3 逐字样式与 S-1/S-2 结构（mailbox-last-reply
 
     it("S-4 既有 11 个版本化资源统一为新键、标签与注册顺序不变", () => {
         const keys = Array.from(indexSource.matchAll(/\?v=([^"'&<>\s]+)/g)).map((match) => match[1]);
-        assert.strictEqual(keys.length, 16, "仍为 16 个版本化资源（不新增 script/link）");
+        assert.strictEqual(keys.length, 17, "共 17 个版本化资源（包含 discovery-papers.js）");
         assert.deepStrictEqual(Array.from(new Set(keys)), [CACHE_KEY], "全部资源键必须同值");
         const ordered = ["styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css",
             "world-clock.css", "trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js",

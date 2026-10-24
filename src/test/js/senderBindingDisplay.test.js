@@ -392,7 +392,7 @@ describe("bounce alert badge (O-1/I-4/S-1)", () => {
 describe("static resource cache keys (I-5)", () => {
     it("switches every already-versioned resource to the one current key without adding or retiring one", () => {
         const keys = indexHtmlSource.match(/\?v=[^"']+/g) || [];
-        assert.strictEqual(keys.length, 16, `expected 16 versioned assets, found ${keys.length}`);
+        assert.strictEqual(keys.length, 17, `expected 17 versioned assets, found ${keys.length}`);
         keys.forEach((key) => assert.strictEqual(key, `?v=${CACHE_KEY}`));
         assert.ok(/^[0-9]{8}-[a-z0-9-]+$/.test(CACHE_KEY), `cache key must be <yyyymmdd>-<slug>, got: ${CACHE_KEY}`);
     });

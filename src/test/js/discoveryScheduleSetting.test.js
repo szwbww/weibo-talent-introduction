@@ -329,7 +329,7 @@ describe("c4 discovery schedule setting (frontend)", () => {
 
         it("keeps every versioned asset on one non-legacy key (S-2)", () => {
             const keys = [...indexHtml.matchAll(/\?v=([^"'&<>]+)/g)].map((match) => match[1]);
-            assert.strictEqual(keys.length, 16, "index.html must keep exactly the 16 versioned assets");
+            assert.strictEqual(keys.length, 17, "index.html must keep exactly the 17 versioned assets");
             assert.strictEqual(new Set(keys).size, 1, "all versioned keys must share one value: " + keys.join(", "));
             const cacheKey = keys[0];
             assert.match(cacheKey, /^[0-9]{8}-[a-z0-9-]+$/, "the shared key must be <yyyymmdd>-<slug>");
