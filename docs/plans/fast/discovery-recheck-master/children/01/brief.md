@@ -63,3 +63,16 @@
 ## Baseline completion before dispatch
 - `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=DiscoveryReviewServiceTest,DiscoveryReviewAllPagesTest,DiscoveryReviewControllerTest`: exit 0; Kotlin 74 tests, 0 failures/errors/skips; Maven-bound JS 1823 passed, 0 failures/skips; BUILD SUCCESS (artifact://759).
 - Direct three-file Node baseline: 43 passed, 0 failed/skipped.
+
+## Epoch 2 — Approved amendment and resume authority
+
+This section supersedes epoch-1 identity, ten-file bound and blocked-test authority above; all other behavior, commands and downstream contracts are unchanged.
+
+- Approved child plan identity: commit:014e9df745fbd7761fe4fce38039aab98af877b4; compute fresh SHA-256 from the exact disk bytes using execute-p.
+- User approval: “授权 继续” (2026-10-25), approving the immediately preceding recommendation: retain separate controller tests; authorize one extra test file, 11 total for child 01 only.
+- Amendments A1/A2 recorded in ledger; approved plans committed separately at 014e9df745fbd7761fe4fce38039aab98af877b4. No general scope expansion.
+- Additional Authorized File: `src/test/js/discoveryApolloSettings.test.js`. Remove obsolete global-key binding to the previous plan; keep shared-key, DOM/CSS and Apollo behavior assertions. Do not replace it with a new hardcoded key or edit historical plans.
+- Preserve the ten retained uncommitted implementation files from epoch 1; reconcile their actual state against the current exact plan. They are not a committed or independently verified implementation.
+- New execution epoch 2, fix_round=0; product base remains b161e87464d42b9fa2cd076ef9255b0e3b2b29ab.
+- Run every required command freshly after final implementation, plus `node --test src/test/js/discoveryApolloSettings.test.js`; rerun the disposable runtime smoke in this invocation. No required full-suite failure may remain.
+- Append a new epoch-2 full execution report to execution.md; preserve prior entries. Commit authorized product/test changes only as `feat(fast-p): implement 01` once complete and commands pass. No evidence files in that commit.

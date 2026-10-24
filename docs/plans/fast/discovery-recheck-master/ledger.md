@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-10-24/discovery-recheck-master.md
 
-- Status: PAUSED_FOR_HUMAN
-- Master plan: docs/plans/2026-10-24/discovery-recheck-master.md (sha256 554c841cde657ee6bb8de6df467e77a1032b9a93d54b0adce283220433ea3792)
-- Amendments: N/A
+- Status: RUNNING
+- Master plan: docs/plans/2026-10-24/discovery-recheck-master.md (commit 014e9df745fbd7761fe4fce38039aab98af877b4)
+- Amendments: A1, A2
 - Master base: b161e87464d42b9fa2cd076ef9255b0e3b2b29ab
 - Branch: fast/discovery-recheck-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-recheck-master
@@ -13,13 +13,13 @@
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: Child 01 requires a new global resource key but unauthorized discoveryApolloSettings.test.js derives the obsolete key from a previous plan; required Maven command fails. All ten authorized files are used; scope/bound amendment requires human approval.
-- Resume from: bad1fbeff9082fd04c57164b1b4bc641a913fca2
+- Pause reason: N/A
+- Resume from: 96c70d8cb8d07562ea5a2ccca6d08ca86f1369b0
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| 01 | docs/plans/2026-10-24/discovery-recheck-01-counts.md | sha256:00495a84d294e6a4af1389c2a42421dcafc107de06d3ff42d20dbd1d84979fc3 | none | 1 | PAUSED_FOR_HUMAN | b161e87464d42b9fa2cd076ef9255b0e3b2b29ab | — | 0 | — | b161e87464d42b9fa2cd076ef9255b0e3b2b29ab | 33207c69b919e327c205df28162851f90a42aa66 | Implementer Recheck01Implementer returned PLAN_CONFLICT; ten authorized files uncommitted; no verifier dispatched. |
+| 01 | docs/plans/2026-10-24/discovery-recheck-01-counts.md | commit:014e9df745fbd7761fe4fce38039aab98af877b4 | none | 2 | WAITING_FOR_AGENT | b161e87464d42b9fa2cd076ef9255b0e3b2b29ab | — | 0 | — | — | — | Epoch 1 retained; user authorized added regression test and 11-file exception; resuming retained implementation. |
 | 02 | docs/plans/2026-10-24/discovery-recheck-02-archive.md | sha256:01b4abd5cf06e535848abb65b1d9bc62194c225df4f7dfa12e20e6d2a002b13f | 01 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 | 03 | docs/plans/2026-10-24/discovery-recheck-03-identity-parser.md | sha256:199a71d6d89625a0faaf2aa5f3abe37a42f6740c2c1ad03220fad934426c87a9 | 02 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 | 04 | docs/plans/2026-10-24/discovery-recheck-04-qualification.md | sha256:04b07f58de1d6e9199e0919047cfffde967896f1bd4cfcad526b40a7d412dd0d | 03 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
@@ -33,6 +33,8 @@
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
 |---|---|---|---|---|---|---|
+| A1 | docs/plans/2026-10-24/discovery-recheck-master.md | commit:96c70d8cb8d07562ea5a2ccca6d08ca86f1369b0 | commit:014e9df745fbd7761fe4fce38039aab98af877b4 | I-M4：范围受子计划约束 | Only child 01 may use 11 files to repair its obsolete global asset-key regression contract. | HUMAN:授权 继续 (2026-10-25; approves the immediately preceding recommended 11-file child-01 test exception) |
+| A2 | docs/plans/2026-10-24/discovery-recheck-01-counts.md | commit:96c70d8cb8d07562ea5a2ccca6d08ca86f1369b0 | commit:014e9df745fbd7761fe4fce38039aab98af877b4 | I-M4：范围受子计划约束 | Add discoveryApolloSettings.test.js; retire its old-plan global-key assertion while preserving Apollo contracts and separate controller tests. | HUMAN:授权 继续 (2026-10-25; approves the immediately preceding recommended 11-file child-01 test exception) |
 
 ## Baseline
 - Authorized invocation: `/fast-p docs/plans/2026-10-24/discovery-recheck-master.md`.
@@ -56,3 +58,8 @@
 - Minimum approval: add discoveryApolloSettings.test.js to child 01's file authority and resolve the ten-file cap. Options recorded in execution.md: retain separate test files with an explicit one-test exception (11 files), or authorize consolidating the new controller-test class into the existing authorized service-test file and replacing its file-list entry (10 files).
 - On human amendment: commit the approved plan changes separately, append canonical amendment rows with exact Before/After identities and approval, then resume child 01 in a new execution epoch with fix_round=0. Rerun required commands and obtain a committed implementation before a fresh independent light verifier.
 - Children 02–10 remain PENDING; no child checkpoint or final-readiness validator was applicable or claimed.
+
+## Resume — Epoch 2
+- User approved “授权 继续” on 2026-10-25 in response to the recommended one-extra-test-file amendment. Scope changes were committed separately at 014e9df745fbd7761fe4fce38039aab98af877b4 before resuming product work.
+- Retained worktree/branch and pause HEAD 96c70d8cb8d07562ea5a2ccca6d08ca86f1369b0 matched; product index empty; the ten retained authorized files match the recorded pause file list. No completed child is replayed.
+- New child-01 execution epoch 2, fix_round=0. Prior epoch reports and pause evidence remain unchanged.
