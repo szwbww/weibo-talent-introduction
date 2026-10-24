@@ -82,4 +82,44 @@ class DiscoveryVerificationContractTest {
             assertEquals(10, now.verificationUtc().hour)
         } finally { TimeZone.setDefault(original) }
     }
+    @Test fun `legacy JSON defaults remain ordinary while recheck spec round trips independently`() {
+        val mapper = jacksonObjectMapper().findAndRegisterModules()
+        val run = VerificationRun(1, VerificationMode.AUDIT, VerificationMode.AUDIT.policyVersion, false, "{}",
+            createdAt = now, updatedAt = now)
+        val old = mapper.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(run).also { it.remove("recheckJson") }
+        assertNull(mapper.treeToValue(old, VerificationRun::class.java).recheckJson)
+        val spec = RecheckSpec("operator", "request-1", """{"docIds":["one"]}""", RecheckEvidenceMode.REUSE,
+            now, "code-sha", "parser-version")
+        val recheck = RecheckRun(spec)
+        assertEquals(recheck, mapper.readValue(mapper.writeValueAsString(recheck), RecheckRun::class.java))
+        assertThrows(IllegalArgumentException::class.java) { recheck.copy(schemaVersion = 2) }
+        assertThrows(IllegalArgumentException::class.java) { RecheckControl(RecheckPhase.READY) }
+        assertThrows(IllegalArgumentException::class.java) { spec.copy(scope = "[]") }
+    }
+
+    @Test fun `cancelled is terminal without outcome admission or projection`() {
+        val cancelled = VerificationResult(VerificationState.CANCELLED, null, VerificationQualification.NOT_EVALUATED,
+            VerificationRoute.NONE, "{}", "[]")
+        assertThrows(IllegalArgumentException::class.java) { cancelled.copy(admissionRevision = 1) }
+        assertThrows(IllegalArgumentException::class.java) { cancelled.copy(outcome = VerificationOutcome.PENDING) }
+        assertThrows(IllegalArgumentException::class.java) { cancelled.copy(route = VerificationRoute.DIRECT) }
+        assertThrows(IllegalArgumentException::class.java) { cancelled.copy(projectionState = VerificationProjection.PENDING) }
+    }
+
+    @Test fun `eight step numbers and state specific hash and timestamps are enforced`() {
+        val slot = VerificationStep(1, 1, 1, 1, VerificationStepState.NOT_STARTED, null, null, null, null, null, null, null, now)
+        for (number in 1..8) assertEquals(number, slot.copy(stepNo = number).stepNo)
+        assertThrows(IllegalArgumentException::class.java) { slot.copy(stepNo = 9) }
+        assertThrows(IllegalArgumentException::class.java) { slot.copy(attemptNo = 0) }
+        assertThrows(IllegalArgumentException::class.java) { slot.copy(inputHash = "a".repeat(64)) }
+        assertThrows(IllegalArgumentException::class.java) { slot.copy(state = VerificationStepState.RUNNING) }
+        val running = slot.copy(state = VerificationStepState.RUNNING, inputHash = "a".repeat(64), startedAt = now)
+        assertThrows(IllegalArgumentException::class.java) { running.copy(finishedAt = now) }
+        for (state in VerificationStepState.values().filter { it.terminal }) {
+            assertThrows(IllegalArgumentException::class.java) { running.copy(state = state) }
+            assertEquals(state, running.copy(state = state, finishedAt = now).state)
+            assertThrows(IllegalArgumentException::class.java) { running.copy(state = state, finishedAt = now.minusMillis(1)) }
+        }
+    }
+
 }

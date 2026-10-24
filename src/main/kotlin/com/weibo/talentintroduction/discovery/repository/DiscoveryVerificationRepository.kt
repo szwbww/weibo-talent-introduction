@@ -43,8 +43,9 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     fun requeuePendingForEvidenceReplay(executionId: Long, expectedItems: List<ReplayExpected>, now: Instant): List<ReplayReceipt> {
         require(TransactionSynchronizationManager.isActualTransactionActive()) { "Replay requires a transaction" }
         require(expectedItems.size in 1..100 && expectedItems.map { it.item.id }.distinct().size == expectedItems.size)
-        require(expectedItems.all { it.item.ownerExecutionId == executionId })
+        require(expectedItems.all { it.item.ownerExecutionId == executionId && it.item.reviewEpoch == 0L })
         val run = lockRun(executionId)
+        require(run.recheckJson == null) { "Legacy replay cannot modify rechecks" }
         val admissions = expectedItems.map { it.item.expertDocId }.distinct().sorted().associateWith { replayAdmission(it, true) }
         val current = expectedItems.sortedBy { it.item.id }.associate { it.item.id to lockedItem(it.item.id) }
         fun stale(expected: ReplayExpected): Boolean {
@@ -102,8 +103,9 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     fun requeueErrorsForCreditRecovery(executionId: Long, expectedItems: List<ReplayExpected>, now: Instant): List<ReplayReceipt> {
         require(TransactionSynchronizationManager.isActualTransactionActive()) { "Recovery requires a transaction" }
         require(expectedItems.size in 1..100 && expectedItems.map { it.item.id }.distinct().size == expectedItems.size)
-        require(expectedItems.all { it.item.ownerExecutionId == executionId })
+        require(expectedItems.all { it.item.ownerExecutionId == executionId && it.item.reviewEpoch == 0L })
         val run = lockRun(executionId)
+        require(run.recheckJson == null) { "Legacy recovery cannot modify rechecks" }
         val admissions = expectedItems.map { it.item.expertDocId }.distinct().sorted().associateWith { replayAdmission(it, true) }
         val current = expectedItems.sortedBy { it.item.id }.associate { expected ->
             expected.item.id to jdbc.query("SELECT * FROM discovery_verification_item WHERE id=? FOR UPDATE",
@@ -261,7 +263,8 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
             """COALESCE(SUM(CASE WHEN $active THEN
                 (SELECT COUNT(*) FROM discovery_verification_attempt a WHERE a.item_id=i.id AND a.provider='APOLLO')
                 ELSE 0 END),0) AS apolloHttpAttempts""",
-            sum("i.activated_at IS NULL AND i.state='ERROR'", "registrationErrors")
+            sum("i.activated_at IS NULL AND i.state='ERROR'", "registrationErrors"),
+            sum("i.state='CANCELLED'", "cancelled")
         ).joinToString(",")
         val group = when { batches -> "i.batch_number"; executionIds != null -> "i.owner_execution_id"; else -> "0" }
         val grouping = if (batches || executionIds != null) "GROUP BY $group ORDER BY $group" else ""
@@ -274,7 +277,7 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
                 rs.getLong("errors"), rs.getLong("queued"), rs.getLong("protected"), rs.getLong("projectionPending"),
                 rs.getLong("projectionErrors"), rs.getLong("apolloEntered"), rs.getLong("apolloSearched"),
                 rs.getLong("apolloCandidates"), rs.getLong("apolloMatched"), rs.getLong("apolloHttpAttempts"),
-                rs.getLong("registrationErrors"))
+                rs.getLong("registrationErrors"), rs.getLong("cancelled"))
             }, *args.toTypedArray()).toMap()
     }
 
@@ -342,6 +345,7 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
             "ERROR" -> clauses += "i.state='ERROR'"
             "QUEUED" -> clauses += "i.state IN ('QUEUED','RUNNING','RETRY_WAIT')"
             "PROTECTED" -> clauses += "i.outcome='PROTECTED'"
+            "CANCELLED" -> clauses += "i.state='CANCELLED'"
         }
         filter.batchNumber?.let { clauses += "i.batch_number=?"; args += it }
         if (filter.q.isNotEmpty()) {
@@ -363,23 +367,200 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         jdbc.update("INSERT IGNORE INTO discovery_verification_run (execution_id,mode,policy_version,apollo_requested,settings_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
             executionId, mode.name, mode.policyVersion, apolloRequested, settingsJson, now.verificationUtc(), now.verificationUtc())
         val run = lockRun(executionId)
-        require(run.mode == mode && run.apolloRequested == apolloRequested && run.settingsJson == settingsJson) { "Run snapshot is immutable" }
+        require(run.recheckJson == null && run.mode == mode && run.apolloRequested == apolloRequested && run.settingsJson == settingsJson) { "Run snapshot is immutable" }
         return run
     }
 
     @Transactional
+    fun createRecheckRun(executionId: Long, mode: VerificationMode, apolloRequested: Boolean,
+        settingsJson: String, spec: RecheckSpec, now: Instant): VerificationRun {
+        require(executionId > 0 && settingsJson.isNotBlank())
+        require(jdbc.queryForObject("SELECT COUNT(*) FROM task_execution WHERE id=?", Long::class.java, executionId) == 1L) {
+            "Recheck requires a real owner execution"
+        }
+        val json = replayMapper.writeValueAsString(RecheckRun(spec))
+        jdbc.update("""INSERT IGNORE INTO discovery_verification_run
+            (execution_id,mode,policy_version,apollo_requested,settings_json,recheck_json,created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,?)""", executionId, mode.name, mode.policyVersion, apolloRequested,
+            settingsJson, json, now.verificationUtc(), now.verificationUtc())
+        val run = lockRun(executionId)
+        if (run.mode != mode || run.apolloRequested != apolloRequested || run.settingsJson != settingsJson ||
+            run.recheckJson == null || recheck(run).spec != spec) {
+            throw org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT, "Recheck spec is immutable")
+        }
+        return run
+    }
+
+    fun recheck(run: VerificationRun): RecheckRun =
+        replayMapper.readValue(requireNotNull(run.recheckJson) { "Not a recheck run" }, RecheckRun::class.java)
+
+    /** Hash exactly the persisted frozen inputs, in stable identity order. Never consult live ES. */
+    fun recheckScopeHash(executionId: Long): String {
+        val rows = jdbc.query("""SELECT expert_doc_id,identity_hash,policy_version,review_epoch,snapshot_json,fact_fingerprint
+            FROM discovery_verification_item WHERE owner_execution_id=? ORDER BY expert_doc_id,identity_hash,policy_version,review_epoch""",
+            RowMapper { rs, _ -> listOf(rs.getString(1), rs.getString(2), rs.getString(3), rs.getLong(4),
+                rs.getString(5), rs.getString(6)) }, executionId)
+        return replayHash(replayMapper.writeValueAsString(rows))
+    }
+
+    /** Only control can change; the immutable spec is copied from the locked database row. */
+    @Transactional
+    fun compareAndSetRecheckControl(executionId: Long, expectedRevision: Long, control: RecheckControl, now: Instant): Boolean {
+        val run = lockRun(executionId)
+        if (run.revision != expectedRevision) return false
+        val current = recheck(run)
+        val allowed = when (current.control.phase) {
+            RecheckPhase.PREPARING -> setOf(RecheckPhase.READY, RecheckPhase.FAILED, RecheckPhase.INTERRUPTED, RecheckPhase.CANCELLING)
+            RecheckPhase.READY -> setOf(RecheckPhase.RUNNING, RecheckPhase.FAILED, RecheckPhase.INTERRUPTED, RecheckPhase.CANCELLING)
+            RecheckPhase.RUNNING -> setOf(RecheckPhase.COMPLETED, RecheckPhase.FAILED, RecheckPhase.INTERRUPTED, RecheckPhase.CANCELLING)
+            RecheckPhase.CANCELLING -> setOf(RecheckPhase.CANCELLED)
+            else -> emptySet()
+        }
+        require(control.phase in allowed) { "Invalid recheck phase transition" }
+        if (current.control.scopeHash != null) require(control.scopeHash == current.control.scopeHash) { "Frozen scope hash is immutable" }
+        else if (control.phase != RecheckPhase.READY) require(control.scopeHash == null)
+        if (control.phase == RecheckPhase.READY) {
+            require(control.scopeHash == recheckScopeHash(executionId)) { "Scope hash mismatch" }
+            require(jdbc.queryForObject("""SELECT COUNT(*) FROM discovery_verification_item
+                WHERE owner_execution_id=? AND (review_epoch<>? OR state<>'QUEUED')""",
+                Long::class.java, executionId, executionId) == 0L) { "Scope is not fully frozen" }
+        }
+        if (control.phase in setOf(RecheckPhase.COMPLETED, RecheckPhase.CANCELLED)) {
+            require(jdbc.queryForObject("""SELECT COUNT(*) FROM discovery_verification_item
+                WHERE owner_execution_id=? AND state IN ('RESERVED','QUEUED','RUNNING','RETRY_WAIT')""",
+                Long::class.java, executionId) == 0L) { "Unsettled recheck items" }
+        }
+        if (control.phase == RecheckPhase.RUNNING) require(run.inputClosed)
+        return jdbc.update("""UPDATE discovery_verification_run SET recheck_json=?,input_closed=?,revision=revision+1,updated_at=?
+            WHERE execution_id=? AND revision=?""", replayMapper.writeValueAsString(current.copy(control = control)),
+            run.inputClosed || control.phase == RecheckPhase.READY, now.verificationUtc(), executionId, expectedRevision) == 1
+    }
+
+    @Transactional
+    fun reserveRecheckItem(input: VerificationReservation, now: Instant): VerificationItem {
+        val run = lockRun(input.ownerExecutionId)
+        val config = recheck(run)
+        require(run.policyVersion == input.policyVersion)
+        val existing = jdbc.query("""SELECT * FROM discovery_verification_item WHERE expert_doc_id=?
+            AND identity_hash=? AND policy_version=? AND review_epoch=? FOR UPDATE""", itemMapper,
+            input.expertDocId, input.identityHash, input.policyVersion, run.executionId).singleOrNull()
+        if (existing != null) {
+            require(existing.snapshotJson == input.snapshotJson && existing.factFingerprint == input.factFingerprint &&
+                existing.sourceName == input.sourceName && existing.sourceItemKey == input.sourceItemKey) { "Frozen review input is immutable" }
+            return existing
+        }
+        require(!run.inputClosed && config.control.phase == RecheckPhase.PREPARING)
+        jdbc.update("""INSERT INTO discovery_verification_item
+            (owner_execution_id,expert_doc_id,identity_hash,policy_version,review_epoch,source_name,source_item_key,
+            batch_number,snapshot_json,fact_fingerprint,created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,0,?,?,?,?)""", run.executionId, input.expertDocId, input.identityHash,
+            input.policyVersion, run.executionId, input.sourceName, input.sourceItemKey, input.snapshotJson,
+            input.factFingerprint, now.verificationUtc(), now.verificationUtc())
+        val item = jdbc.query("""SELECT * FROM discovery_verification_item WHERE expert_doc_id=?
+            AND identity_hash=? AND policy_version=? AND review_epoch=?""", itemMapper,
+            input.expertDocId, input.identityHash, input.policyVersion, run.executionId).single()
+        initializeSteps(item.id, now)
+        bump(run.executionId, now)
+        return item
+    }
+
+    /** Full audit history is deliberately separate from business admission reads. */
+    fun findHistoryByDocIds(docIds: Collection<String>): List<VerificationItem> {
+        require(docIds.size <= 500)
+        docIds.forEach { verificationText(it, 128) }
+        if (docIds.isEmpty()) return emptyList()
+        return jdbc.query("SELECT * FROM discovery_verification_item WHERE expert_doc_id IN (${docIds.joinToString(",") { "?" }}) ORDER BY id",
+            itemMapper, *docIds.toTypedArray())
+    }
+
+    fun readReserved(executionId: Long, limit: Int): List<VerificationItem> {
+        require(limit in 1..500)
+        val run = findRun(executionId) ?: return emptyList()
+        if (!recheckRunning(run)) return emptyList()
+        return jdbc.query("""SELECT * FROM discovery_verification_item WHERE owner_execution_id=? AND review_epoch=?
+            AND state='RESERVED' ORDER BY id LIMIT ?""", itemMapper, executionId, executionId, limit)
+    }
+
+    @Transactional
+    fun cancelRecheckItem(itemId: Long, now: Instant): Boolean {
+        val item = lockItem(itemId)
+        require(item.reviewEpoch > 0)
+        require(recheck(lockRun(item.ownerExecutionId)).control.phase in
+            setOf(RecheckPhase.CANCELLING, RecheckPhase.INTERRUPTED, RecheckPhase.FAILED))
+        if (item.admissionRevision != null || item.state == VerificationState.CANCELLED) return false
+        jdbc.update("""UPDATE discovery_verification_item SET state='CANCELLED',outcome=NULL,route='NONE',
+            completed_at=?,lease_token=NULL,lease_until=NULL,next_attempt_at=NULL,updated_at=? WHERE id=?
+            AND admission_revision IS NULL""", now.verificationUtc(), now.verificationUtc(), itemId)
+        jdbc.update("""UPDATE discovery_verification_step SET state='CANCELLED',finished_at=?
+            WHERE item_id=? AND state='RUNNING'""", now.verificationUtc(), itemId)
+        bump(item.ownerExecutionId, now)
+        return true
+    }
+
+    private fun recheckRunning(run: VerificationRun): Boolean =
+        run.recheckJson != null && run.inputClosed && recheck(run).control.phase == RecheckPhase.RUNNING
+
+    private fun initializeSteps(itemId: Long, now: Instant) {
+        for (step in 1..8) jdbc.update("""INSERT IGNORE INTO discovery_verification_step
+            (item_id,step_no,attempt_no,state,created_at) VALUES (?,?,1,'NOT_STARTED',?)""", itemId, step, now.verificationUtc())
+    }
+
+    fun findSteps(itemId: Long): List<VerificationStep> = jdbc.query(
+        "SELECT * FROM discovery_verification_step WHERE item_id=? ORDER BY step_no,attempt_no", stepMapper, itemId)
+
+    /** A retry appends a new attempt. A completed attempt is never reused or rewritten. */
+    @Transactional
+    fun beginStep(itemId: Long, token: String, generation: Long, stepNo: Int, inputJson: String,
+        versionJson: String, now: Instant): VerificationStep? {
+        require(stepNo in 1..8 && inputJson.isNotBlank() && versionJson.isNotBlank())
+        val item = lockItem(itemId)
+        if (!owns(item, token, generation, now)) return null
+        initializeSteps(itemId, now)
+        val previous = findSteps(itemId).last { it.stepNo == stepNo }
+        check(previous.state != VerificationStepState.RUNNING) { "Step attempt already running" }
+        val hash = replayHash(inputJson)
+        if (previous.state == VerificationStepState.NOT_STARTED) {
+            jdbc.update("""UPDATE discovery_verification_step SET state='RUNNING',input_hash=?,input_json=?,version_json=?,started_at=?
+                WHERE id=? AND state='NOT_STARTED'""", hash, inputJson, versionJson, now.verificationUtc(), previous.id)
+        } else {
+            jdbc.update("""INSERT INTO discovery_verification_step
+                (item_id,step_no,attempt_no,state,input_hash,input_json,version_json,started_at,created_at)
+                VALUES (?,?,?,'RUNNING',?,?,?,?,?)""", itemId, stepNo, previous.attemptNo + 1,
+                hash, inputJson, versionJson, now.verificationUtc(), now.verificationUtc())
+        }
+        bump(item.ownerExecutionId, now)
+        return findSteps(itemId).last { it.stepNo == stepNo }
+    }
+
+    @Transactional
+    fun finishStep(itemId: Long, token: String, generation: Long, stepId: Long, state: VerificationStepState,
+        outputJson: String?, reasonJson: String?, now: Instant): Boolean {
+        require(state.terminal)
+        val item = lockItem(itemId)
+        if (!owns(item, token, generation, now)) return false
+        val step = findSteps(itemId).singleOrNull { it.id == stepId } ?: return false
+        if (step.state != VerificationStepState.RUNNING) return false
+        require(now >= step.startedAt!!)
+        val changed = jdbc.update("""UPDATE discovery_verification_step SET state=?,output_json=?,reason_json=?,finished_at=?
+            WHERE id=? AND item_id=? AND state='RUNNING'""", state.name, outputJson, reasonJson, now.verificationUtc(), stepId, itemId)
+        if (changed == 1) bump(item.ownerExecutionId, now)
+        return changed == 1
+    }
+
+    @Transactional
     fun reserveItem(input: VerificationReservation, now: Instant): VerificationItem {
+        require(findRun(input.ownerExecutionId)?.recheckJson == null) { "Ordinary reservation requires an ordinary run" }
         // Read duplicate identity without locks first: never lock two runs in one transaction.
         val existing = identity(input)
         if (existing != null) return checkedIdentity(existing, input)
         val run = lockRun(input.ownerExecutionId)
-        require(run.policyVersion == input.policyVersion && !run.inputClosed)
+        require(run.recheckJson == null && run.policyVersion == input.policyVersion && !run.inputClosed)
         val inserted = jdbc.update("""INSERT IGNORE INTO discovery_verification_item
-            (owner_execution_id,expert_doc_id,identity_hash,policy_version,source_name,source_item_key,batch_number,snapshot_json,fact_fingerprint,created_at,updated_at)
-            VALUES (?,?,?,?,?,?,0,?,?,?,?)""", input.ownerExecutionId, input.expertDocId, input.identityHash,
+            (owner_execution_id,expert_doc_id,identity_hash,policy_version,review_epoch,source_name,source_item_key,batch_number,snapshot_json,fact_fingerprint,created_at,updated_at)
+            VALUES (?,?,?,?,0,?,?,0,?,?,?,?)""", input.ownerExecutionId, input.expertDocId, input.identityHash,
             input.policyVersion, input.sourceName, input.sourceItemKey, input.snapshotJson, input.factFingerprint,
             now.verificationUtc(), now.verificationUtc())
-        val item = jdbc.query("SELECT * FROM discovery_verification_item WHERE expert_doc_id=? AND identity_hash=? AND policy_version=? FOR UPDATE", itemMapper,
+        val item = jdbc.query("SELECT * FROM discovery_verification_item WHERE expert_doc_id=? AND identity_hash=? AND policy_version=? AND review_epoch=0 FOR UPDATE", itemMapper,
             input.expertDocId, input.identityHash, input.policyVersion).single()
         checkedIdentity(item, input)
         if (inserted == 1) bump(input.ownerExecutionId, now)
@@ -390,6 +571,7 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     fun activateItem(itemId: Long, batchNumber: Int, now: Instant): VerificationItem {
         require(batchNumber > 0)
         val item = lockItem(itemId)
+        if (item.reviewEpoch > 0) require(recheck(lockRun(item.ownerExecutionId)).control.phase == RecheckPhase.PREPARING)
         if (item.state == VerificationState.RESERVED) {
             jdbc.update("UPDATE discovery_verification_item SET state='QUEUED',batch_number=?,activated_at=?,updated_at=? WHERE id=? AND state='RESERVED'",
                 batchNumber, now.verificationUtc(), now.verificationUtc(), itemId)
@@ -419,7 +601,7 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         docIds.forEach { verificationText(it, 128) }
         if (docIds.isEmpty()) return emptyMap()
         val result = docIds.associateWith { VerificationContext.UNMANAGED }.toMutableMap()
-        jdbc.query("SELECT DISTINCT expert_doc_id,policy_version FROM discovery_verification_item WHERE expert_doc_id IN (${docIds.joinToString(",") { "?" }})",
+        jdbc.query("SELECT DISTINCT expert_doc_id,policy_version FROM discovery_verification_item WHERE $BUSINESS_ITEMS AND expert_doc_id IN (${docIds.joinToString(",") { "?" }})",
             RowMapper { rs, _ -> rs.getString(1) to rs.getString(2) }, *docIds.toTypedArray()).forEach { (doc, policy) ->
             val context = when (policy) {
                 VerificationMode.ENFORCE.policyVersion -> VerificationContext.MANAGED_ENFORCE
@@ -438,7 +620,7 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         docIds.forEach { verificationText(it, 128) }
         if (docIds.isEmpty()) return emptyList()
         return jdbc.query(
-            "SELECT * FROM discovery_verification_item WHERE expert_doc_id IN (${docIds.joinToString(",") { "?" }}) ORDER BY id",
+            "SELECT * FROM discovery_verification_item WHERE $BUSINESS_ITEMS AND expert_doc_id IN (${docIds.joinToString(",") { "?" }}) ORDER BY id",
             itemMapper, *docIds.toTypedArray()
         )
     }
@@ -446,12 +628,15 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     @Transactional
     fun claimDue(now: Instant, leaseSeconds: Long): VerificationItem? {
         require(leaseSeconds > 0)
-        val candidates = jdbc.query("""SELECT * FROM discovery_verification_item WHERE
-            state='QUEUED' OR (state='RETRY_WAIT' AND next_attempt_at<=?) OR (state='RUNNING' AND lease_until<=?) ORDER BY id LIMIT 100""",
+        val candidates = jdbc.query("""SELECT i.* FROM discovery_verification_item i
+            JOIN discovery_verification_run r ON r.execution_id=i.owner_execution_id
+            WHERE (i.review_epoch=0 OR (r.input_closed=1 AND JSON_UNQUOTE(JSON_EXTRACT(r.recheck_json,'$.control.phase'))='RUNNING'))
+            AND (i.state='QUEUED' OR (i.state='RETRY_WAIT' AND i.next_attempt_at<=?) OR (i.state='RUNNING' AND i.lease_until<=?)) ORDER BY i.id LIMIT 100""",
             itemMapper, now.verificationUtc(), now.verificationUtc())
         // One run per transaction, even when all of its candidates lost a race.
         val owner = candidates.firstOrNull()?.ownerExecutionId ?: return null
-        lockRun(owner)
+        val run = lockRun(owner)
+        if (run.recheckJson != null && !recheckRunning(run)) return null
         for (candidate in candidates.filter { it.ownerExecutionId == owner }) {
             val item = lockedItem(candidate.id)
             if (!(item.state == VerificationState.QUEUED ||
@@ -609,14 +794,14 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
 
     fun listReserved(limit: Int): List<VerificationItem> {
         require(limit in 1..500)
-        return jdbc.query("SELECT * FROM discovery_verification_item WHERE state='RESERVED' ORDER BY id LIMIT ?", itemMapper, limit)
+        return jdbc.query("SELECT * FROM discovery_verification_item WHERE review_epoch=0 AND state='RESERVED' ORDER BY id LIMIT ?", itemMapper, limit)
     }
 
     /** Recovery may terminate an unactivated registration only after its owner's input is closed. */
     @Transactional
     fun failReserved(itemId: Long, reasonsJson: String, now: Instant): Boolean {
         val item = lockItem(itemId)
-        if (item.state != VerificationState.RESERVED || !findRun(item.ownerExecutionId)!!.inputClosed) return false
+        if (item.reviewEpoch != 0L || item.state != VerificationState.RESERVED || !findRun(item.ownerExecutionId)!!.inputClosed) return false
         jdbc.update("UPDATE discovery_verification_item SET state='ERROR',reasons_json=?,completed_at=?,updated_at=? WHERE id=?", reasonsJson, now.verificationUtc(), now.verificationUtc(), itemId)
         bump(item.ownerExecutionId, now)
         return true
@@ -630,7 +815,10 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         lockRun(item.ownerExecutionId)
         jdbc.query("SELECT expert_doc_id FROM expert_discovery_admission WHERE expert_doc_id=? FOR UPDATE",
             RowMapper { rs, _ -> rs.getString(1) }, item.expertDocId)
-        return lockedItem(itemId)
+        val locked = lockedItem(itemId)
+        check(locked.reviewEpoch == 0L || recheckRunning(lockRun(locked.ownerExecutionId)) ||
+            locked.admissionRevision != null) { "Recheck is not running" }
+        return locked
     }
 
     @Transactional
@@ -660,6 +848,8 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
     fun attachAdmission(itemId: Long, revision: Long, now: Instant) {
         require(revision >= 0)
+        val item = lockItem(itemId)
+        check(item.reviewEpoch == 0L || recheckRunning(lockRun(item.ownerExecutionId))) { "Recheck is not running" }
         check(jdbc.update("""UPDATE discovery_verification_item SET admission_revision=?,projection_state='PENDING',updated_at=?
             WHERE id=? AND state='COMPLETED' AND admission_revision IS NULL
             AND policy_version=? AND outcome IN ('DIRECT_CLEAR','APOLLO_CLEAR','APOLLO_UNCLEAR')""",
@@ -702,7 +892,7 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         }
         return found
     }
-    private fun identity(input: VerificationReservation) = jdbc.query("SELECT * FROM discovery_verification_item WHERE expert_doc_id=? AND identity_hash=? AND policy_version=?",
+    private fun identity(input: VerificationReservation) = jdbc.query("SELECT * FROM discovery_verification_item WHERE expert_doc_id=? AND identity_hash=? AND policy_version=? AND review_epoch=0",
         itemMapper, input.expertDocId, input.identityHash, input.policyVersion).singleOrNull()
     private fun checkedIdentity(item: VerificationItem, input: VerificationReservation): VerificationItem {
         check(item.expertDocId == input.expertDocId && item.identityHash == input.identityHash && item.policyVersion == input.policyVersion) { "Identity collision" }
@@ -720,12 +910,15 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     }
     private fun lockedItem(id: Long) = jdbc.query("SELECT * FROM discovery_verification_item WHERE id=? FOR UPDATE", itemMapper, id).single()
     private fun owns(item: VerificationItem, token: String, generation: Long, now: Instant): Boolean =
-        item.state == VerificationState.RUNNING && item.leaseToken == token && item.generation == generation && item.leaseUntil?.let { it > now } == true
+        item.state == VerificationState.RUNNING && item.leaseToken == token && item.generation == generation &&
+            item.leaseUntil?.let { it > now } == true &&
+            (item.reviewEpoch == 0L || recheckRunning(findRun(item.ownerExecutionId)!!))
     private fun bump(owner: Long, now: Instant) {
         jdbc.update("UPDATE discovery_verification_run SET revision=revision+1,updated_at=? WHERE execution_id=?", now.verificationUtc(), owner)
     }
 
     companion object {
+        private const val BUSINESS_ITEMS = "(review_epoch=0 OR (policy_version='APV_20261018_V1_ENFORCE' AND admission_revision IS NOT NULL))"
         private val replayMapper = jacksonObjectMapper().findAndRegisterModules()
             .disable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
         fun replayHash(value: String?): String = MessageDigest.getInstance("SHA-256")
@@ -743,6 +936,11 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         }
         private fun ResultSet.time(name: String): Instant? = getTimestamp(name)?.toLocalDateTime()?.verificationInstant()
         private fun ResultSet.nullLong(name: String): Long? = getLong(name).let { if (wasNull()) null else it }
+        private val stepMapper = RowMapper { rs: ResultSet, _: Int -> VerificationStep(
+            rs.getLong("id"), rs.getLong("item_id"), rs.getInt("step_no"), rs.getInt("attempt_no"),
+            VerificationStepState.valueOf(rs.getString("state")), rs.getString("input_hash"), rs.getString("input_json"),
+            rs.getString("output_json"), rs.getString("reason_json"), rs.getString("version_json"),
+            rs.time("started_at"), rs.time("finished_at"), rs.time("created_at")!!) }
         private val attemptMapper = RowMapper { rs: ResultSet, _: Int -> VerificationAttempt(
             rs.getLong("id"), rs.getLong("item_id"), rs.getString("request_key"),
             VerificationProvider.valueOf(rs.getString("provider")), VerificationQueryKind.valueOf(rs.getString("query_kind")),
@@ -750,7 +948,7 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
             rs.getInt("http_status").let { if (rs.wasNull()) null else it }, rs.getString("result_code"),
             rs.getString("request_json"), rs.getString("response_json"), rs.getString("response_sha256")) }
         private val runMapper = RowMapper { rs: ResultSet, _: Int -> VerificationRun(rs.getLong("execution_id"), VerificationMode.valueOf(rs.getString("mode")),
-            rs.getString("policy_version"), rs.getBoolean("apollo_requested"), rs.getString("settings_json"), rs.getBoolean("input_closed"), rs.getLong("revision"), rs.time("created_at")!!, rs.time("updated_at")!!) }
+            rs.getString("policy_version"), rs.getBoolean("apollo_requested"), rs.getString("settings_json"), rs.getBoolean("input_closed"), rs.getLong("revision"), rs.time("created_at")!!, rs.time("updated_at")!!, rs.getString("recheck_json")) }
         private val itemMapper = RowMapper { rs: ResultSet, _: Int -> VerificationItem(
             rs.getLong("id"), rs.getLong("owner_execution_id"), rs.getString("expert_doc_id"), rs.getString("identity_hash"), rs.getString("policy_version"),
             rs.getString("source_name"), rs.getString("source_item_key"), rs.getInt("batch_number"), rs.getString("snapshot_json"), rs.getString("fact_fingerprint"),
@@ -758,7 +956,7 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
             VerificationRoute.valueOf(rs.getString("route")), rs.time("apollo_entered_at"), rs.time("search_completed_at"), rs.time("candidate_found_at"), rs.time("person_matched_at"),
             rs.getString("apollo_person_id"), rs.getString("evidence_json"), rs.getString("reasons_json"), rs.getInt("request_count"), rs.getInt("transient_attempts"), rs.getLong("generation"),
             rs.getString("lease_token"), rs.time("lease_until"), rs.time("next_attempt_at"), rs.nullLong("admission_revision"), VerificationProjection.valueOf(rs.getString("projection_state")),
-            rs.getString("projection_error"), rs.time("activated_at"), rs.time("completed_at"), rs.time("created_at")!!, rs.time("updated_at")!!) }
+            rs.getString("projection_error"), rs.time("activated_at"), rs.time("completed_at"), rs.time("created_at")!!, rs.time("updated_at")!!, rs.getLong("review_epoch")) }
     }
 }
 
@@ -771,7 +969,7 @@ data class VerificationReportFilter(
     init {
         require(executionId > 0)
         require(route in setOf("ALL", "DIRECT", "APOLLO"))
-        require(result in setOf("ALL", "CLEAR", "UNCLEAR", "PENDING", "ERROR", "QUEUED", "PROTECTED"))
+        require(result in setOf("ALL", "CLEAR", "UNCLEAR", "PENDING", "ERROR", "QUEUED", "PROTECTED", "CANCELLED"))
         require(q.length <= 100 && (batchNumber == null || batchNumber > 0))
     }
 }

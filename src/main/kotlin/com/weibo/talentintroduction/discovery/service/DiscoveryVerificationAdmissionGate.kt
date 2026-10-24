@@ -9,7 +9,9 @@ import com.weibo.talentintroduction.discovery.repository.DiscoveryVerificationRe
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import org.springframework.stereotype.Service
 
-/** Loaded absence is a value; null at the policy boundary means not loaded. No network or writes. */
+/** Loaded absence is a value; null at the policy boundary means not loaded. No network or writes.
+ * Explicit contexts also carry commit's authoritative staged row; business reads use findContexts.
+ */
 data class VerificationAdmissionContext(
     val docId: String,
     val profile: ExpertProfile,
@@ -39,7 +41,9 @@ class DiscoveryVerificationAdmissionGate(
 
     fun findContexts(keys: Map<String, ExpertProfile>): Map<String, VerificationAdmissionContext> {
         require(keys.size <= 500)
-        val items = repository.findItemsByDocIds(keys.keys).groupBy { it.expertDocId }
+        val items = repository.findItemsByDocIds(keys.keys).filter {
+            it.reviewEpoch == 0L || it.policyVersion == VerificationMode.ENFORCE.policyVersion && it.admissionRevision != null
+        }.groupBy { it.expertDocId }
         return keys.mapValues { (docId, profile) -> VerificationAdmissionContext(docId, profile, items[docId].orEmpty()) }
     }
 

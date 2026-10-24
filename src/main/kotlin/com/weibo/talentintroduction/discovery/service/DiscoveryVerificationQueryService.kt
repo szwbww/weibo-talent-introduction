@@ -97,6 +97,9 @@ class DiscoveryVerificationQueryService(
             reasons(filter), suggested(run, repository.reportingSuggestions(filter)[0L]))
     }
 
+    /** Audit reads never reuse the admission-facing filtered repository query. */
+    fun history(docIds: Collection<String>): List<VerificationItem> = repository.findHistoryByDocIds(docIds)
+
     fun item(itemId: Long): VerificationItemDetail {
         require(itemId > 0)
         val item = repository.findItem(itemId) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Verification item not found")
@@ -117,7 +120,7 @@ class DiscoveryVerificationQueryService(
             payload?.search?.candidates?.firstOrNull { it.id == item.apolloPersonId },
             payload?.search?.academicResearchFields, payload?.diagnostics?.let { saved ->
                 saved.copy(decision = saved.decision?.takeIf { it.traceOrigin == "RECORDED" }) .bounded()
-            })
+            }, item.reviewEpoch, run.recheckJson?.let { repository.recheck(run) }, repository.findSteps(itemId))
     }
 
     private fun summaryRow(id: Long, run: VerificationRun?, counts: VerificationCounts, status: String?, asOf: Instant,
@@ -135,10 +138,13 @@ class DiscoveryVerificationQueryService(
         null
     }
 
-    private fun lifecycle(run: VerificationRun, counts: VerificationCounts) = when {
-        counts.queued > 0 -> "ACTIVE"
-        !run.inputClosed -> "COLLECTING"
-        else -> "COMPLETED"
+    private fun lifecycle(run: VerificationRun, counts: VerificationCounts): String {
+        if (run.recheckJson != null) return repository.recheck(run).control.phase.name
+        return when {
+            counts.queued > 0 -> "ACTIVE"
+            !run.inputClosed -> "COLLECTING"
+            else -> "COMPLETED"
+        }
     }
 
     private fun suggested(run: VerificationRun, values: Triple<Long, Long, Long>?): VerificationSuggestions? =
@@ -159,13 +165,17 @@ class DiscoveryVerificationQueryService(
         }
         return VerificationRecord(item.id, item.expertDocId, snapshot.profile.displayName, snapshot.profile.email,
             snapshot.profile.institution, item.sourceName, item.batchNumber, item.route,
-            item.outcome?.name ?: if (item.state == VerificationState.ERROR) "ERROR" else "QUEUED",
+            item.outcome?.name ?: when (item.state) {
+                VerificationState.ERROR -> "ERROR"
+                VerificationState.CANCELLED -> "CANCELLED"
+                else -> "QUEUED"
+            },
             missing, reasonCodes(item), item.updatedAt, decision, item.projectionState, revision, item.qualification,
             reasonCodes(item).firstOrNull { it in MATCH_REASONS }?.let { reason ->
                 reasonLabel(reason) + if (DiscoveryInstitutionNormalizer.TUM_ALIAS_REASON in reasonCodes(item))
                     " · TUM 官网英德名称对应" else ""
             },
-            payload?.search?.matchingVersion ?: 1)
+            payload?.search?.matchingVersion ?: 1, item.reviewEpoch)
     }
 
     /** Malformed optional evidence is a per-row rendering problem; snapshot/SQL failures remain fatal. */
@@ -239,7 +249,8 @@ data class VerificationRecord(val itemId: Long, val docId: String, val name: Str
     val institution: String?, val source: String, val batchNumber: Int, val route: VerificationRoute,
     val resultLabel: String, val missingFields: List<String>, val reasonCodes: List<String>, val updatedAt: Instant,
     val currentAdmissionDecision: String?, val projectionState: VerificationProjection, val currentAdmissionRevision: Long?,
-    val qualification: VerificationQualification, val matchingLabel: String? = null, val matchingVersion: Int = 1)
+    val qualification: VerificationQualification, val matchingLabel: String? = null, val matchingVersion: Int = 1,
+    val reviewEpoch: Long = 0)
 data class VerificationAttemptSummary(val id: Long, val provider: VerificationProvider, val queryKind: VerificationQueryKind,
     val pageNumber: Int, val attemptNumber: Int, val requestedAt: Instant, val completedAt: Instant?,
     val httpStatus: Int?, val resultCode: String, val responseSha256: String?, val diagnostic: VerificationDiagnostic? = null)
@@ -251,6 +262,7 @@ data class VerificationItemDetail(val record: VerificationRecord, val executionI
     val projectionError: String?, val mode: VerificationMode, val snapshotVersion: Long, val asOf: Instant,
     val apolloPersonId: String?, val apolloStages: VerificationApolloStages, val matchingVersion: Int = 1,
     val matchedCandidate: ApolloCandidate? = null, val academicResearchFields: String? = null,
-    val diagnostics: WorkerDiagnostics? = null)
+    val diagnostics: WorkerDiagnostics? = null, val reviewEpoch: Long = 0,
+    val recheck: RecheckRun? = null, val steps: List<VerificationStep> = emptyList())
 data class VerificationApolloStages(val enteredAt: Instant?, val searchedAt: Instant?,
     val candidateFoundAt: Instant?, val matchedAt: Instant?)

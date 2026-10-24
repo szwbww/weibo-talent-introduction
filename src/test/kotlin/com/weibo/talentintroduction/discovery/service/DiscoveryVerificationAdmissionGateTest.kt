@@ -186,12 +186,36 @@ class DiscoveryVerificationAdmissionGateTest {
         assertTrue(repo.findItemsByDocIds(ids).isEmpty())
         val invocation = Mockito.mockingDetails(jdbc).invocations.single()
         val sql = invocation.arguments[0] as String
-        assertTrue(sql.startsWith("SELECT * FROM discovery_verification_item WHERE expert_doc_id IN ("))
+        assertTrue(sql.startsWith("SELECT * FROM discovery_verification_item WHERE "))
+        assertTrue(sql.contains("review_epoch=0 OR (policy_version='APV_20261018_V1_ENFORCE' AND admission_revision IS NOT NULL)"))
+        assertTrue(sql.contains("expert_doc_id IN ("))
         assertEquals(500, sql.count { it == '?' })
         assertTrue(invocation.arguments[1] is RowMapper<*>)
         assertEquals(ids, invocation.arguments.drop(2))
         assertThrows(IllegalArgumentException::class.java) { repo.findItemsByDocIds(ids + "501") }
         assertTrue(repo.findItemsByDocIds(emptyList()).isEmpty())
         assertEquals(1, Mockito.mockingDetails(jdbc).invocations.size)
+    }
+    @Test fun `uncommitted recheck epochs never displace ordinary admission but explicit commit stage is recomputed`() {
+        val f = AdmissionGateFixture()
+        val ordinary = f.item().copy(admissionRevision = 1, projectionState = VerificationProjection.PROJECTED)
+        val pending = f.item(facts = emptyList()).copy(id = 2, ownerExecutionId = 2, reviewEpoch = 2)
+        val queued = pending.copy(id = 3, ownerExecutionId = 3, reviewEpoch = 3,
+            state = VerificationState.QUEUED, outcome = null, completedAt = null)
+        val audit = pending.copy(id = 4, ownerExecutionId = 4, reviewEpoch = 4, policyVersion = VerificationMode.AUDIT.policyVersion)
+        f.load(ordinary, pending, queued, audit)
+        assertTrue(f.policy.evaluate(f.docId, f.profile).eligible)
+        assertEquals(listOf(ordinary), f.gate.findContext(f.docId, f.profile).items)
+        f.load(audit)
+        assertFalse(f.gate.findContext(f.docId, f.profile).managed)
+        val committed = f.item().copy(id = 5, ownerExecutionId = 5, reviewEpoch = 5,
+            admissionRevision = 2, projectionState = VerificationProjection.PENDING)
+        f.load(ordinary, pending, queued, audit, committed)
+        assertEquals(listOf(ordinary, committed), f.gate.findContext(f.docId, f.profile).items)
+        assertTrue(f.policy.evaluate(f.docId, f.profile).eligible)
+        val stage = committed.copy(admissionRevision = null, projectionState = VerificationProjection.NOT_REQUIRED)
+        assertTrue(f.policy.evaluate(f.docId, f.profile, VerificationAdmissionContext(f.docId, f.profile, listOf(stage))).eligible)
+        val invalidStage = stage.copy(evidenceJson = "{}")
+        assertFalse(f.policy.evaluate(f.docId, f.profile, VerificationAdmissionContext(f.docId, f.profile, listOf(invalidStage))).eligible)
     }
 }

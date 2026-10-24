@@ -22,7 +22,7 @@ class DiscoveryVerificationWorkerTest {
             .withCommand("--log-bin-trust-function-creators=1").use { mysql ->
                 mysql.start()
                 val ds = org.springframework.jdbc.datasource.DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
-                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("160").load().migrate()
+                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("161").load().migrate()
                 val jdbc = org.springframework.jdbc.core.JdbcTemplate(ds)
                 val manager = org.springframework.jdbc.datasource.DataSourceTransactionManager(ds)
                 val props = DiscoveryVerificationProperties(enabled = true, workerEnabled = true,
@@ -199,7 +199,7 @@ class DiscoveryVerificationWorkerTest {
             .withCommand("--log-bin-trust-function-creators=1").use { mysql ->
                 mysql.start()
                 val ds = org.springframework.jdbc.datasource.DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
-                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("160").load().migrate()
+                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("161").load().migrate()
                 val jdbc = org.springframework.jdbc.core.JdbcTemplate(ds)
                 val manager = org.springframework.jdbc.datasource.DataSourceTransactionManager(ds)
                 VerificationFlowFixture(jdbc, manager).use { f ->
@@ -459,7 +459,7 @@ class DiscoveryVerificationWorkerTest {
             .withCommand("--log-bin-trust-function-creators=1").use { mysql ->
                 mysql.start()
                 val ds = org.springframework.jdbc.datasource.DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
-                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("160").load().migrate()
+                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("161").load().migrate()
                 val jdbc = org.springframework.jdbc.core.JdbcTemplate(ds)
                 val manager = org.springframework.jdbc.datasource.DataSourceTransactionManager(ds)
                 val cases = listOf(
@@ -560,7 +560,7 @@ class DiscoveryVerificationWorkerTest {
             .withCommand("--log-bin-trust-function-creators=1").use { mysql ->
                 mysql.start()
                 val ds = org.springframework.jdbc.datasource.DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
-                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("160").load().migrate()
+                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("161").load().migrate()
                 val jdbc = org.springframework.jdbc.core.JdbcTemplate(ds)
                 val manager = org.springframework.jdbc.datasource.DataSourceTransactionManager(ds)
                 VerificationFlowFixture(jdbc, manager).use { f ->
@@ -656,7 +656,7 @@ class DiscoveryVerificationWorkerTest {
             .withCommand("--log-bin-trust-function-creators=1").use { mysql ->
                 mysql.start()
                 val ds = org.springframework.jdbc.datasource.DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
-                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("160").load().migrate()
+                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("161").load().migrate()
                 val jdbc = org.springframework.jdbc.core.JdbcTemplate(ds)
                 val manager = org.springframework.jdbc.datasource.DataSourceTransactionManager(ds)
                 listOf("before-ack", "after-ack", "legacy-page-six").forEach { crash ->

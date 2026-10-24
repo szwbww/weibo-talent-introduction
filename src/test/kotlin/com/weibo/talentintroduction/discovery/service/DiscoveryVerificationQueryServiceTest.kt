@@ -19,6 +19,39 @@ class DiscoveryVerificationQueryServiceTest {
     private fun run(id: Long, mode: VerificationMode = VerificationMode.ENFORCE) =
         VerificationRun(id, mode, mode.policyVersion, true, "{}", true, 17, now, now)
 
+    @Test fun `cancelled rechecks retain separate counts frozen control full history and actual saved steps`() {
+        val f = AdmissionGateFixture()
+        val item = f.item().copy(id = 20, ownerExecutionId = 20, reviewEpoch = 20,
+            state = VerificationState.CANCELLED, outcome = null, route = VerificationRoute.NONE)
+        val spec = RecheckSpec("operator", "request", "{}", RecheckEvidenceMode.REUSE, now, "code", "parser")
+        val recheck = RecheckRun(spec, RecheckControl(RecheckPhase.CANCELLED, "a".repeat(64)))
+        val run = run(20).copy(recheckJson = f.mapper.writeValueAsString(recheck))
+        val filter = VerificationReportFilter(20, result = "CANCELLED")
+        val counts = VerificationCounts(profiles = 1, cancelled = 1)
+        val steps = (1..8).map { VerificationStep(it.toLong(), item.id, it, 1, VerificationStepState.NOT_STARTED,
+            null, null, null, null, null, null, null, now) }
+        `when`(repository.findRun(20)).thenReturn(run)
+        `when`(repository.recheck(run)).thenReturn(recheck)
+        `when`(repository.findItem(item.id)).thenReturn(item)
+        `when`(repository.findSteps(item.id)).thenReturn(steps)
+        `when`(repository.reportingCounts(filter)).thenReturn(mapOf(0L to counts))
+        `when`(repository.reportingCounts(VerificationReportFilter(20))).thenReturn(mapOf(0L to counts))
+        `when`(repository.reportingRecordTotal(filter)).thenReturn(1L)
+        `when`(repository.reportingRecords(filter, 0, 20)).thenReturn(listOf(item))
+        `when`(repository.findHistoryByDocIds(listOf(f.docId))).thenReturn(listOf(f.item(), item))
+        val records = service.records(filter, 0, 20)
+        assertEquals("CANCELLED", records.lifecycle)
+        assertEquals("CANCELLED", records.items.single().resultLabel)
+        assertEquals(20L, records.items.single().reviewEpoch)
+        assertEquals(1L, records.counts!!.cancelled)
+        assertEquals(0L, records.counts!!.queued + records.counts!!.errors + records.counts!!.autoAdmitted)
+        val detail = service.item(item.id)
+        assertEquals(recheck, detail.recheck); assertEquals(steps, detail.steps); assertEquals(20L, detail.reviewEpoch)
+        assertEquals(listOf(0L, 20L), service.history(listOf(f.docId)).map { it.reviewEpoch })
+        verify(repository).findHistoryByDocIds(listOf(f.docId))
+        verify(repository, never()).findItemsByDocIds(anyCollection<String>() ?: emptyList())
+    }
+
     @Test fun `details return only saved recorded trace tolerate unknown fields and never synthesize legacy trace`() {
         val f = AdmissionGateFixture()
         val base = f.item(facts = emptyList())
@@ -41,6 +74,7 @@ class DiscoveryVerificationQueryServiceTest {
         verify(repository, times(4)).findItem(base.id)
         verify(repository, times(4)).findRun(base.ownerExecutionId)
         verify(repository, times(4)).findAttempts(base.id)
+        verify(repository, times(4)).findSteps(base.id)
         verifyNoMoreInteractions(repository)
     }
 
@@ -64,6 +98,7 @@ class DiscoveryVerificationQueryServiceTest {
         verify(repository, times(2)).findItem(row.id)
         verify(repository).findRun(row.ownerExecutionId)
         verify(repository).findAttempts(row.id)
+        verify(repository).findSteps(row.id)
         verifyNoMoreInteractions(repository)
     }
 
