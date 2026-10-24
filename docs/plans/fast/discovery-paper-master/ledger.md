@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-23/discovery-paper-master.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-10-23/discovery-paper-master.md (commit 6112a58b4bc94b510a6b1cff88cfd9ec159c83d6)
 - Amendments: A1,A2,A3,A4,A5,A6,A7,A8,A9,A10
 - Master base: c6e9709f349f32c5feb1d067b47c697b0dff05b6
@@ -9,12 +9,12 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-23T14:24:57.472352+00:00
-- Current child: 06a
-- Waiting role: N/A
+- Current child: 06b
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: N/A
+- Pause reason: Child06b C-1 new queue nullablecriteria and legacyhistorical criteria shareversion1; unauthorized PipelineService change and explicit11file/provenance amendment required. Finalrequired171tests8fail, partialcodeuncommitted.
+- Resume from: 16a138852bea292d40b47dd9cb2d7fc0c8732578
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
@@ -25,7 +25,7 @@
 | 04 | docs/plans/2026-10-23/discovery-paper-04-analysis.md | commit:bcf5d64fb9534759eb1cad08db3089d36e4a1fb0 | 01,02,03 | 2 | LIGHT_PASS_WITH_NOTES | 5b7bc8919202876e7d1b6884cd9c9cd50d1f23af | 3cdf7a6aa30ee773a0233e70e8c84d3b00754384 | 1 | bbd2700ca56d00a9e2845b61b15c1fb7e5b07a49 | bbd2700ca56d00a9e2845b61b15c1fb7e5b07a49 | ee524ba4c74480cd8a9dd985fae36ee886ef8160 | PaperAnalysisReverifierE2R1; F-1 closed; O-1 effects incomplete/O-2 historical classpath |
 | 05 | docs/plans/2026-10-23/discovery-paper-05-frontend.md | commit:541411d540019428c72b31775c325087b33da303 | 01,02,03,04 | 2 | LIGHT_PASS_WITH_NOTES | bbd2700ca56d00a9e2845b61b15c1fb7e5b07a49 | 1b8c4981f0116e17648f064482e505d436c02edd | 0 | — | 1b8c4981f0116e17648f064482e505d436c02edd | b9e3c3e257faf9a294b7f3c8a0187c8c06e75dc7 | PaperFrontendVerifierE2; O-1 fixture limit/O-2 attempt time/O-3 harness; no repairs |
 | 06a | docs/plans/2026-10-23/discovery-paper-06a-apollo-persistence.md | commit:6112a58b4bc94b510a6b1cff88cfd9ec159c83d6 | none | 2 | LIGHT_PASS | 1b8c4981f0116e17648f064482e505d436c02edd | 16a138852bea292d40b47dd9cb2d7fc0c8732578 | 0 | — | 16a138852bea292d40b47dd9cb2d7fc0c8732578 | 27acda3ca258d86bc1c1073520264f407100f502 | ApolloPersistenceVerifierE2; all fourgates pass; no findings/repairs |
-| 06b | docs/plans/2026-10-23/discovery-paper-06b-apollo-runtime.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 06a | 1 | PENDING | — | — | 0 | — | — | — |  |
+| 06b | docs/plans/2026-10-23/discovery-paper-06b-apollo-runtime.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 06a | 1 | PAUSED_FOR_HUMAN | 16a138852bea292d40b47dd9cb2d7fc0c8732578 | — | 0 | — | 16a138852bea292d40b47dd9cb2d7fc0c8732578 | 8116136747dfaa2173d36ebc52791c857e7bc8da | C-1 queuecompatibility;10dirtyauthorizedfiles, no productcommit;171tests8fail; smoke0 |
 | 07 | docs/plans/2026-10-23/discovery-paper-07-apollo-frontend.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 05,06a,06b | 1 | PENDING | — | — | 0 | — | — | — |  |
 
 ## Amendments
@@ -102,3 +102,7 @@
 - Child06a epoch2 IMPLEMENTER ApolloPersistenceImplementerE2 acquired, agent_attempt0 fix_round0. Existing settingsimplementation retained; exact28test contracts only, requiredfinalMaven/fullboundNode and separateSQLHTTPsmoke.
 - Child06a epoch2 READY_FOR_VERIFICATION16a138852bea292d40b47dd9cb2d7fc0c8732578; requiredMaven exit0/JVM12/Node1816/syntaxpasses, separateactualSQLHTTPsmoke0. Fresh distinct VERIFIER ApolloPersistenceVerifierE2 acquired attempt1 agent_attempt0 fix_round0; full original5+28 range, not merely testcontinuation.
 - Child06a epoch2 terminal LIGHT_PASS / COMPLETE_CHILD by ApolloPersistenceVerifierE2; evidence27acda3ca258d86bc1c1073520264f407100f502. FreshrequiredMaven0/JVM12/Node1816/syntax and actualSQLHTTPsmoke0, zero repairrounds. Later06b/07 PENDING until clean fullmanifest checkpoint.
+- Child06a fullmanifest dirty/clean checkpoint VALID7371ef5e50af0694967350a205e9fcf98d3a948b. Child06b IMPLEMENTER ApolloRuntimeImplementer acquired epoch1 fix_round0 agent_attempt0; exact10file runtimecontract, no completedchildreplay.
+- Child06b PLAN_CONFLICT C-1 from actualdefaultqueue integration: PipelineService alwayshistorical=true, new/legacycriteriaVersion1 withapolloAssistnull indistinguishable; expectedtrue/false/true/true observedtrue/false/true/false. Minimum extra productionfile DiscoveryPipelineService.kt; existingauthorizedIntegrationTest can cover new/legacy; no provenmandatory dedicatedPipelineServiceTest/schema/domainfile.
+- Proposedboundedamendment addsPipelineService as11th file and explicitone-timecapexception; authorize persistentnewcriteriaversion/provenance while retainingversion1legacy historical-nullfalse, existingrun snapshots unchanged, newnulluses saveddefaults. No authority applied yet. C-2 withdrawn: explicittrue validation mayread beforebegin, whichfreezesonce afterexistingrunbranch.
+- Finalrequiredfull11class command with migrationIt=true/mysqlIt=true exited1:171tests/8failures/0errors/0skips, oneC-1 and7oldFlowIT assertions. Historicalprovenanceonly supportsINFERENCEpreexisting, no baselineexecutionclaim; no expectationsrepinned/ruleschanged. Separate actualSQLWorkerGate summarysmoke0; freeDETAILattempt/permit/cache/HTTP0, channels3/2/1/pending1. Evidence8116136747dfaa2173d36ebc52791c857e7bc8da; all10authorizedproductpaths dirtyuncommitted preserved, no incompletefeaturecommit.07pending.
