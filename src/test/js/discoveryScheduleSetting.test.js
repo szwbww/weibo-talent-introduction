@@ -544,7 +544,7 @@ describe("c4 discovery schedule setting (frontend)", () => {
             assert.ok(launchCalls[0].requestPath.includes("keywords=AI"), "keywords stay frozen into the request");
             assert.ok(launchCalls[0].requestPath.includes("keywords=ML"));
             assert.ok(launchCalls[0].requestPath.includes("sources=OPENALEX"), "运营选中的来源原样发送");
-            assert.ok(launchCalls[0].requestPath.includes("apolloAssist=false"), "the explicit per-run option is preserved");
+            assert.ok(!launchCalls[0].requestPath.includes("apolloAssist"), "the page leaves saved settings authoritative");
             assert.strictEqual(openedWith.length, 1);
             assert.deepStrictEqual(sandbox.statuses.map((entry) => entry.level), ["ok"],
                 "the launch succeeds without any failure status (runtime notifyTaskCompletionOnce)");

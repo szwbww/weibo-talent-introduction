@@ -8,13 +8,13 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20261023-discovery-paper-archive">
-    <link rel="stylesheet" href="expert-materials.css?v=20261023-discovery-paper-archive">
-    <link rel="stylesheet" href="mailbox-chat.css?v=20261023-discovery-paper-archive">
-    <link rel="stylesheet" href="meeting-confirmation.css?v=20261023-discovery-paper-archive">
-    <link rel="stylesheet" href="world-clock.css?v=20261023-discovery-paper-archive">
-<link rel="stylesheet" href="meeting-records.css?v=20261023-discovery-paper-archive">
-<link rel="stylesheet" href="contact-details.css?v=20261023-discovery-paper-archive">
+    <link rel="stylesheet" href="styles.css?v=20261023-discovery-paper-apollo-settings">
+    <link rel="stylesheet" href="expert-materials.css?v=20261023-discovery-paper-apollo-settings">
+    <link rel="stylesheet" href="mailbox-chat.css?v=20261023-discovery-paper-apollo-settings">
+    <link rel="stylesheet" href="meeting-confirmation.css?v=20261023-discovery-paper-apollo-settings">
+    <link rel="stylesheet" href="world-clock.css?v=20261023-discovery-paper-apollo-settings">
+<link rel="stylesheet" href="meeting-records.css?v=20261023-discovery-paper-apollo-settings">
+<link rel="stylesheet" href="contact-details.css?v=20261023-discovery-paper-apollo-settings">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -1189,12 +1189,18 @@
                     </details>
                 </div>
 
-                <!-- S-2: Apollo is a per-launch option; existing source controls are unchanged. -->
-                <div class="apv-option" id="taskLaunchApolloRow" hidden>
-                    <label for="taskLaunchApolloAssist"><input type="checkbox" id="taskLaunchApolloAssist" aria-describedby="taskLaunchApolloHint" disabled>启用 Apollo 辅助核验</label>
-                    <p id="taskLaunchApolloHint">正在读取资格核验能力…</p>
-                    <details class="apv-rules"><summary>查看准入口径</summary><p>当前本人教授类职称可明确符合；其他情况核对已取得博士及年龄、职称条件。Apollo 仅返回候选不能直接准入。缺少可靠来源时保留待核验。</p></details>
-                </div>
+<section class="apc-settings" id="taskLaunchApolloRow" aria-labelledby="apcTitle" hidden>
+  <div class="apc-head"><h4 id="apcTitle">Apollo 辅助核验设置</h4><span class="apc-save-state" id="apcSaveState" role="status">正在读取已保存配置…</span></div>
+  <div class="apc-grid">
+    <div class="apc-option"><label for="taskLaunchApolloAssist"><input type="checkbox" id="taskLaunchApolloAssist" aria-describedby="apcSearchHelp" disabled>免费搜索</label><p id="apcSearchHelp">使用 People API Search 查询姓名和机构；该搜索接口为 0 credits。</p></div>
+    <div class="apc-option"><label for="apcPaidDetails"><input type="checkbox" id="apcPaidDetails" aria-describedby="apcPaidHelp" disabled>允许付费详情</label><p id="apcPaidHelp">需要完整人物资料时允许调用详情接口，可能消耗 Apollo credits；实际以账户账单为准。</p></div>
+  </div>
+  <p class="apc-note" id="apcEffective">正在读取可用性…</p>
+  <p class="apc-note" id="taskLaunchApolloHint">保存后对新任务生效；正在运行的任务沿用启动时配置。需要付费详情而未启用时保留待核验。</p>
+  <div class="apc-error" id="apcError" role="alert" hidden></div>
+  <div class="apc-actions"><span class="apc-note" id="apcSavedAt"></span><button class="button secondary small" id="apcReload" type="button" disabled>恢复已保存值</button><button class="button primary small" id="apcSave" type="button" disabled>保存 Apollo 设置</button></div>
+  <details class="apv-rules"><summary>查看准入口径</summary><p>当前本人教授类职称可明确符合；其他情况核对已取得博士及年龄、职称条件。Apollo 仅返回候选不能直接准入。缺少可靠来源时保留待核验。</p></details>
+</section>
 
                 <div id="taskLaunchFiltersRow" hidden>
                     <p style="font-size:11px;color:var(--text-muted);margin:0 0 6px;">以下配置修改后立即生效，影响所有后续任务。</p>
@@ -2454,15 +2460,15 @@
 <dialog id="playerDialog" class="cr-dialog cr-player-dialog"><header class="cr-dialoghead"><h2 id="playerTitle">会议视频</h2><button class="button cr-iconbtn" type="button" data-close="playerDialog" aria-label="关闭视频">×</button></header><video id="player" controls preload="metadata"></video><p class="cr-hint" id="playerHint">若浏览器不支持该编码，可下载原视频观看。</p></dialog>
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20261023-discovery-paper-archive"></script>
-<script src="expert-materials.js?v=20261023-discovery-paper-archive"></script>
-<script src="meeting-confirmation.js?v=20261023-discovery-paper-archive"></script>
-<script src="mailbox-chat.js?v=20261023-discovery-paper-archive"></script>
-<script src="contact-history.js?v=20261023-discovery-paper-archive"></script>
-<script src="meeting-records.js?v=20261023-discovery-paper-archive"></script>
-<script src="contact-details.js?v=20261023-discovery-paper-archive"></script>
-<script src="discovery-papers.js?v=20261023-discovery-paper-archive"></script>
-<script src="app.js?v=20261023-discovery-paper-archive"></script>
-<script src="world-clock.js?v=20261023-discovery-paper-archive"></script>
+<script src="trust-reply-workbench.js?v=20261023-discovery-paper-apollo-settings"></script>
+<script src="expert-materials.js?v=20261023-discovery-paper-apollo-settings"></script>
+<script src="meeting-confirmation.js?v=20261023-discovery-paper-apollo-settings"></script>
+<script src="mailbox-chat.js?v=20261023-discovery-paper-apollo-settings"></script>
+<script src="contact-history.js?v=20261023-discovery-paper-apollo-settings"></script>
+<script src="meeting-records.js?v=20261023-discovery-paper-apollo-settings"></script>
+<script src="contact-details.js?v=20261023-discovery-paper-apollo-settings"></script>
+<script src="discovery-papers.js?v=20261023-discovery-paper-apollo-settings"></script>
+<script src="app.js?v=20261023-discovery-paper-apollo-settings"></script>
+<script src="world-clock.js?v=20261023-discovery-paper-apollo-settings"></script>
 </body>
 </html>

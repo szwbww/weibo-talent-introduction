@@ -27,7 +27,7 @@ function node() {
 function sandbox(handler = async () => []) {
     const elements = new Map();
     // Only real static IDs are admitted. Dynamic IDs are explicitly installed by each view test.
-    for (const id of ["taskModalRunBody", "taskModalRunHead", "discoveryVerificationLogHost", "taskLaunchApolloRow", "taskLaunchApolloAssist", "taskLaunchApolloHint"]) {
+    for (const id of ["taskModalRunBody", "taskModalRunHead", "discoveryVerificationLogHost", "taskLaunchApolloRow", "taskLaunchApolloAssist", "taskLaunchApolloHint", "apcPaidDetails", "apcSave", "apcReload", "apcSaveState", "apcError", "apcEffective", "apcSavedAt"]) {
         assert.ok(html.includes('id="' + id + '"'), id + " must exist in actual index.html");
         elements.set(id, node());
     }
@@ -81,7 +81,7 @@ function cancelHandler(s, pipelineState) {
 
 test("S1/S2 real IDs, static head and original controls", () => {
     for (const id of ["taskModalTrafficHead", "taskLaunchKeywordInput", "taskLaunchSources", "taskLaunchAdvancedRow", "taskLaunchRunBtn", "discoveryReviewTab", "discoveryReviewHistoryTab"]) assert.ok(html.includes('id="' + id + '"'));
-    const option = html.slice(html.indexOf('<div class="apv-option"'), html.indexOf('id="taskLaunchFiltersRow"'));
+    const option = html.slice(html.indexOf('<section class="apc-settings"'), html.indexOf('id="taskLaunchFiltersRow"'));
     assert.doesNotMatch(option, /style=|onclick=/);
     assert.match(css, /\.apv-option input\[type="checkbox"\] \{\n    width: 14px;\n    height: 14px;/);
     assert.match(css, /\.apv-logs \.data-table th \{\n    position: static;\n    background: #f8fafc;/);
@@ -373,19 +373,23 @@ test("I2 old A response cannot alter B or closed/reopened modal", async () => {
     assert.equal(s.elements.get("discoveryVerificationLogHost").classList.contains("apv-logs"), false);
 });
 
-test("S2 capabilities defaults are applied once and failure is explicit", async () => {
-    const s = sandbox(async () => ({ enabled: true, ready: true, apolloDefault: true, reasonCodes: [] }));
+test("S2 capabilities never replace the saved draft and failure is explicit", async () => {
+    const settings = { revision: 1, source: "SAVED", searchEnabled: true, detailEnabled: false, effectiveSearch: true, effectiveDetails: false, keyConfigured: true, serviceEnabled: true, workerEnabled: true };
+    const s = sandbox(async url => url.endsWith("apollo-settings") ? settings : { enabled: true, ready: true, apolloDefault: false, reasonCodes: [] });
     await s.apvLoadCapabilities(1);
     assert.equal(s.elements.get("taskLaunchApolloAssist").checked, true);
-    assert.equal(s.apvCanLaunch(true), true);
-    s.elements.get("taskLaunchApolloAssist").checked = false;
+    assert.equal(s.apvCanLaunch(), true);
+    s.apcEvent({ type: "change", target: { id: "taskLaunchApolloAssist", checked: false } });
     seed(s); isolateViews(s); s.api = async url => url.includes("summary") ? [F123] : page(); await s.apvRefresh();
     assert.equal(s.elements.get("taskLaunchApolloAssist").checked, false);
-    const disabled = sandbox(async () => ({ enabled: false, ready: false, apolloDefault: true, reasonCodes: ["VERIFICATION_DISABLED"] }));
-    await disabled.apvLoadCapabilities(1); assert.equal(disabled.elements.get("taskLaunchApolloAssist").disabled, true);
-    assert.equal(disabled.elements.get("taskLaunchApolloHint").textContent, "资格核验未启用");
+    assert.equal(s.apvCanLaunch(), false, "dirty configuration blocks launch");
+    const disabled = sandbox(async url => url.endsWith("apollo-settings") ? settings : { enabled: false, ready: false, reasonCodes: ["VERIFICATION_DISABLED"] });
+    await disabled.apvLoadCapabilities(1);
+    assert.equal(disabled.elements.get("taskLaunchApolloAssist").disabled, false, "configuration remains independently editable");
+    assert.match(disabled.elements.get("apcEffective").textContent, /VERIFICATION_DISABLED/);
+    assert.equal(disabled.apvCanLaunch(), false);
     const broken = sandbox(async () => { throw Error("503 offline"); });
-    await assert.rejects(broken.apvLoadCapabilities(1), /503/); assert.equal(broken.apvCanLaunch(true), false);
+    await assert.rejects(broken.apvLoadCapabilities(1), /503/); assert.equal(broken.apvCanLaunch(), false);
 });
 
 test("S6 filter and server pagination requests use size20, reset pages, debounce300ms", () => {
@@ -408,7 +412,7 @@ test("S4 keyboard tabs keep selected tabindex and cancel obsolete requests", () 
     s.apvSetVisible(false); assert.equal(s.state().visible, false);
 });
 
-test("S2 launch propagates frozen Apollo option in both real transport shapes", async () => {
+test("S2 explicit external Apollo options remain compatible while page launches omit them", async () => {
     const calls = [];
     const s = { URLSearchParams, PIPELINE_LAUNCH_TIMEOUT_MS: 15000, api: async (url, options) => calls.push({ url, options }) };
     vm.createContext(s); vm.runInContext(extractFn("postDiscoveryLaunch"), s);
@@ -417,8 +421,9 @@ test("S2 launch propagates frozen Apollo option in both real transport shapes", 
     await s.postDiscoveryLaunch("", ["OPENALEX"], false, false, false);
     assert.deepEqual(JSON.parse(calls[1].options.body), { sources: ["OPENALEX"], apolloAssist: false });
     const body = extractFn("executeDiscover");
-    assert.ok(body.indexOf('const apolloAssist') < body.indexOf('openTaskModal('));
-    assert.match(body, /postDiscoveryLaunch\(keywords, selectedSources, includeRawScan, continuous, apolloAssist\)/);
+    assert.match(body, /apvCanLaunch\(\)/);
+    assert.doesNotMatch(body, /const apolloAssist/);
+    assert.match(body, /postDiscoveryLaunch\(keywords, selectedSources, includeRawScan, continuous\)/);
 });
 
 test("matching V2 evidence shows the selected person and escapes provider text", () => {

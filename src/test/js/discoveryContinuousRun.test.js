@@ -272,7 +272,7 @@ describe("c3 deep discovery continuous run (frontend)", () => {
                 "frozen keywords must be submitted, got: " + launch.path);
             assert.ok(launch.path.includes("sources=OPENALEX"), "frozen sources must be submitted");
             assert.ok(launch.path.includes("includeRawScan=true"), "includeRawScan must be explicit");
-            assert.ok(launch.path.includes("apolloAssist=true"), "Apollo selection is frozen before view switching");
+            assert.ok(!launch.path.includes("apolloAssist"), "saved settings are resolved by the backend, not overridden by the page");
             assert.strictEqual(launch.options.timeoutMs, sandbox.__c3.launchTimeoutMs);
             assert.strictEqual(sandbox.notifications.length, 0, "a 202 acceptance is not a completion");
         });

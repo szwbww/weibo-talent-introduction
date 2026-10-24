@@ -10141,8 +10141,7 @@ async function executeDiscover() {
     const keywords = ($("#taskLaunchKeywordInput")?.value || "").trim();
     const selectedSources = getSelectedSources();
     const includeRawScan = $("#taskLaunchIncludeRawScan")?.checked === true;
-    const apolloAssist = $("#taskLaunchApolloAssist")?.checked === true;
-    if (typeof apvCanLaunch === "function" && !apvCanLaunch(apolloAssist)) return;
+    if (typeof apvCanLaunch === "function" && !apvCanLaunch()) return;
     if (discoverySources.status !== "ready") {
         // I-7：来源加载失败时禁止按空列表意外启动所有默认来源。
         showStatus("来源列表未加载成功，请重新打开弹窗后重试", "error");
@@ -10167,7 +10166,7 @@ async function executeDiscover() {
     });
     const capturedGeneration = currentTaskModal?.generation;
     try {
-        const response = await postDiscoveryLaunch(keywords, selectedSources, includeRawScan, continuous, apolloAssist);
+        const response = await postDiscoveryLaunch(keywords, selectedSources, includeRawScan, continuous);
         if (response && response.mode === "CONTINUOUS") {
             // I-2：202 只表示已受理 —— 不发完成通知、不据 202 绑定任何历史执行，
             // 也不交给旧 task-progress watcher（窗口终态不是流水线结束）。
@@ -10203,21 +10202,21 @@ async function executeDiscover() {
 }
 
 /** I-7（c3）：只有新模式（连续）的 POST 有 15 秒超时；旧模式耗时请求沿用原机制。 */
-async function postDiscoveryLaunch(keywords, selectedSources, includeRawScan, continuous, apolloAssist = false) {
+async function postDiscoveryLaunch(keywords, selectedSources, includeRawScan, continuous, apolloAssist = null) {
     const timeout = continuous ? { timeoutMs: PIPELINE_LAUNCH_TIMEOUT_MS } : {};
     if (keywords) {
         const params = new URLSearchParams();
         keywords.split(",").map(k => k.trim()).filter(k => k).forEach(k => params.append("keywords", k));
         if (selectedSources.length > 0) selectedSources.forEach(s => params.append("sources", s));
         if (includeRawScan) params.append("includeRawScan", "true");
-        params.append("apolloAssist", String(apolloAssist));
+        if (apolloAssist != null) params.append("apolloAssist", String(apolloAssist));
         return await api(`/api/expert-discovery/run/by-keyword?${params}`, { method: "POST", ...timeout });
     }
     const params = new URLSearchParams();
     if (includeRawScan) params.append("includeRawScan", "true");
     const query = params.toString();
     const url = query ? `/api/expert-discovery/run?${query}` : "/api/expert-discovery/run";
-    const body = { ...(selectedSources.length > 0 ? { sources: selectedSources } : {}), apolloAssist };
+    const body = { ...(selectedSources.length > 0 ? { sources: selectedSources } : {}), ...(apolloAssist != null ? { apolloAssist } : {}) };
     return await api(url, {
         method: "POST",
         body: JSON.stringify(body),
@@ -27077,6 +27076,11 @@ function apvSuspend() {
 
 function apvDispose() {
     apvSuspend();
+    if (apvState) {
+        apvState.apolloSettings.controllers.forEach(controller => controller.abort());
+        const row = $("#taskLaunchApolloRow");
+        ["click", "change"].forEach(type => row?.removeEventListener(type, apcEvent));
+    }
     const host = $("#discoveryVerificationLogHost");
     if (host && apvState) {
         ["click", "change", "input", "keydown"].forEach(type => host.removeEventListener(type, apvEvent));
@@ -27111,14 +27115,15 @@ function apvInit(taskType, generation) {
         tab: "batches", route: "ALL", result: "ALL", q: "", batchNumber: null,
         batchPage: 0, recordPage: 0, batches: null, records: null, pageKey: null,
         openBatches: new Set(), openEvidence: new Set(), evidence: new Map(), error: null,
-        capability: null, capabilityStatus: "loading", collectionError: null };
+        capability: null, capabilityStatus: "loading", collectionError: null,
+        apolloSettings: { saved: null, draft: null, revision: null, status: "loading", requestSeq: 0, dirty: false, error: "", controllers: new Set() } };
     ["click", "change", "input", "keydown"].forEach(type => host.addEventListener(type, apvEvent));
     const option = $("#taskLaunchApolloRow");
-    const checkbox = $("#taskLaunchApolloAssist");
-    if (option) option.hidden = false;
-    if (checkbox) { checkbox.disabled = true; checkbox.checked = false; }
-    const hint = $("#taskLaunchApolloHint");
-    if (hint) hint.textContent = "正在读取资格核验能力…";
+    if (option) {
+        option.hidden = false;
+        ["click", "change"].forEach(type => option.addEventListener(type, apcEvent));
+    }
+    apcRender();
     apvPatch($("#taskModalRunBody"), apvEmpty(11, "正在加载最近执行记录…"));
 }
 
@@ -27148,33 +27153,145 @@ async function apvGet(path, token) {
 }
 
 async function apvLoadCapabilities(generation) {
-    const token = apvToken();
-    if (!token || token.generation !== generation) return;
+    const state = apvState;
+    if (!state || state.generation !== generation) return;
+    const settingsRequest = apcLoadSettings();
+    const controller = new AbortController();
+    state.apolloSettings.controllers.add(controller);
     try {
-        const capability = await apvGet(APV_PATH + "/capabilities", token);
-        if (!capability || !apvIsCurrent(token)) return;
-        apvState.capability = capability;
-        apvState.capabilityStatus = "ready";
-        const checkbox = $("#taskLaunchApolloAssist");
-        checkbox.disabled = !capability.enabled || !capability.ready;
-        checkbox.checked = capability.enabled && capability.ready && capability.apolloDefault === true;
-        const reasons = (capability.reasonCodes || []).join("、");
-        $("#taskLaunchApolloHint").textContent = !capability.enabled ? "资格核验未启用"
-            : !capability.ready ? "Apollo 辅助核验不可用：" + reasons
-            : "可靠资格证据足够的直接准入；其余进入 Apollo 匹配。姓名与当前／历史任职或教授职称匹配为「已明确」准入，专业辅助匹配为「未明确」准入；仅姓名或同名歧义不准入。";
+        const capability = await api(APV_PATH + "/capabilities", { signal: controller.signal });
+        if (!apcCurrent(state)) return;
+        state.capability = capability;
+        state.capabilityStatus = "ready";
+        apcRender();
     } catch (error) {
-        if (!apvIsCurrent(token)) return;
-        apvState.capabilityStatus = "error";
-        $("#taskLaunchApolloHint").textContent = "资格核验能力读取失败：" + error.message + "；请重新打开弹窗重试";
+        if (!apcCurrent(state)) return;
+        state.capabilityStatus = "error";
+        apcRender();
         throw error;
+    } finally {
+        state.apolloSettings.controllers.delete(controller);
+        await settingsRequest;
     }
 }
 
-function apvCanLaunch(requested) {
-    const s = apvState;
-    if (!s || s.capabilityStatus !== "ready" || (requested && (!s.capability?.enabled || !s.capability?.ready))) {
-        showStatus("资格核验能力未就绪，请重新打开弹窗检查配置", "error");
-        return false;
+function apcCurrent(state, sequence = state?.apolloSettings.requestSeq) {
+    return apvState === state && !!state && isCurrentTaskModal(state.taskType, state.generation)
+        && state.apolloSettings.requestSeq === sequence;
+}
+
+function apcValid(value) {
+    return value && Number.isSafeInteger(value.revision) && value.revision >= 0
+        && ["SAVED", "DEPLOYMENT_DEFAULT"].includes(value.source)
+        && ["searchEnabled", "detailEnabled", "effectiveSearch", "effectiveDetails", "keyConfigured", "serviceEnabled", "workerEnabled"].every(key => typeof value[key] === "boolean");
+}
+
+function apcAccept(settings, value) {
+    if (!apcValid(value)) throw new Error("配置响应无效");
+    settings.saved = value;
+    settings.draft = { searchEnabled: value.searchEnabled, detailEnabled: value.detailEnabled };
+    settings.revision = value.revision;
+    settings.dirty = false;
+    settings.status = "ready";
+    settings.error = "";
+}
+
+function apcRender() {
+    const state = apvState, settings = state?.apolloSettings;
+    if (!settings) return;
+    const busy = settings.status === "loading" || settings.status === "saving";
+    const enabled = !!settings.saved && !busy && settings.status !== "error";
+    for (const [id, key] of [["taskLaunchApolloAssist", "searchEnabled"], ["apcPaidDetails", "detailEnabled"]]) {
+        const input = $("#" + id);
+        if (input) { input.checked = settings.draft?.[key] === true; input.disabled = !enabled; }
+    }
+    const status = $("#apcSaveState");
+    if (status) {
+        status.textContent = settings.status === "saving" ? "正在保存…" : settings.status === "loading" ? "正在读取已保存配置…"
+            : settings.status === "error" ? "配置读取失败" : settings.dirty ? "有未保存修改" : "已保存 · 对新任务生效";
+        status.dataset.state = settings.dirty ? "dirty" : settings.status === "ready" ? "saved" : settings.status;
+    }
+    const save = $("#apcSave"), reload = $("#apcReload");
+    if (save) save.disabled = !enabled || !settings.dirty;
+    if (reload) reload.disabled = busy;
+    const error = $("#apcError");
+    if (error) { error.hidden = !settings.error; error.textContent = settings.error; }
+    const saved = settings.saved;
+    const effective = $("#apcEffective");
+    if (effective) effective.textContent = !saved ? "正在读取可用性…" :
+        `API Key：${saved.keyConfigured ? "已配置" : "未配置"} · 服务：${saved.serviceEnabled ? "已启用" : "未启用"} · Worker：${saved.workerEnabled ? "已启用" : "未启用"}`
+        + (saved.detailEnabled && !saved.searchEnabled ? "；付费详情：已保存开启，搜索关闭期间不调用" : "")
+        + (saved.searchEnabled && !saved.effectiveSearch ? "；免费搜索当前不可执行" : "")
+        + (state.capabilityStatus === "error" ? "；资格核验能力读取失败，请重新打开弹窗重试" : "")
+        + (state.capabilityStatus === "ready" && !state.capability?.ready ? "；Apollo 辅助核验不可用：" + (state.capability?.reasonCodes || []).join("、") : "");
+    const at = $("#apcSavedAt");
+    if (at) at.textContent = saved ? `保存版本 ${settings.revision} · ${saved.updatedAt ? formatBeijingInstant(saved.updatedAt) : "部署默认配置"}` : "";
+}
+
+async function apcLoadSettings() {
+    const state = apvState;
+    if (!state || state.apolloSettings.status === "saving") return;
+    const settings = state.apolloSettings, sequence = ++settings.requestSeq;
+    const controller = new AbortController();
+    settings.controllers.add(controller);
+    settings.status = "loading"; settings.error = ""; apcRender();
+    try {
+        const value = await api(APV_PATH + "/apollo-settings", { signal: controller.signal });
+        if (!apcCurrent(state, sequence)) return;
+        apcAccept(settings, value);
+    } catch (error) {
+        if (!apcCurrent(state, sequence)) return;
+        settings.status = "error";
+        settings.error = error.status === 404 ? "配置后端未就绪，请恢复已保存值后重试" : "配置读取失败，请恢复已保存值后重试";
+    } finally {
+        settings.controllers.delete(controller);
+        if (apcCurrent(state, sequence)) apcRender();
+    }
+}
+
+async function apcSaveSettings() {
+    const state = apvState, settings = state?.apolloSettings;
+    if (!settings?.saved || settings.status !== "ready" || !settings.dirty) return;
+    const sequence = ++settings.requestSeq, controller = new AbortController();
+    settings.controllers.add(controller);
+    settings.status = "saving"; settings.error = ""; apcRender();
+    try {
+        const value = await api(APV_PATH + "/apollo-settings", { method: "PUT", signal: controller.signal,
+            body: JSON.stringify({ revision: settings.revision, ...settings.draft }) });
+        if (!apcCurrent(state, sequence)) return;
+        apcAccept(settings, value);
+    } catch (error) {
+        if (!apcCurrent(state, sequence)) return;
+        settings.status = "ready";
+        settings.error = error.status === 409 ? "配置已被其他会话修改，请恢复已保存值后重新设置" : "保存失败，原配置仍生效";
+    } finally {
+        settings.controllers.delete(controller);
+        if (apcCurrent(state, sequence)) apcRender();
+    }
+}
+
+function apcEvent(event) {
+    const settings = apvState?.apolloSettings;
+    if (!settings) return;
+    const id = event.target.id;
+    if (event.type === "click" && id === "apcSave") { event.preventDefault(); apcSaveSettings(); }
+    if (event.type === "click" && id === "apcReload") { event.preventDefault(); apcLoadSettings(); }
+    if (event.type !== "change" || settings.status !== "ready" || !settings.saved) return;
+    const key = id === "taskLaunchApolloAssist" ? "searchEnabled" : id === "apcPaidDetails" ? "detailEnabled" : null;
+    if (!key) return;
+    settings.draft[key] = event.target.checked === true;
+    settings.dirty = ["searchEnabled", "detailEnabled"].some(name => settings.draft[name] !== settings.saved[name]);
+    apcRender();
+}
+
+function apvCanLaunch() {
+    const s = apvState, settings = s?.apolloSettings;
+    if (settings?.dirty) { showStatus("有未保存修改，请先保存 Apollo 设置或恢复已保存值", "error"); return false; }
+    if (!settings?.saved || settings.status !== "ready") {
+        showStatus("Apollo 配置未读取成功，请恢复已保存值后重试", "error"); return false;
+    }
+    if (s.capabilityStatus !== "ready" || (settings.saved.searchEnabled && (!s.capability?.enabled || !s.capability?.ready))) {
+        showStatus("资格核验能力未就绪，请重新打开弹窗检查配置", "error"); return false;
     }
     return true;
 }
@@ -27303,7 +27420,20 @@ function apvSummaryHtml(summary) {
         <div class="apv-line"><span>已明确 ${link("clear", "clear")}</span><span>未明确 ${link("unclear", "unclear")}</span></div>
         <div class="apv-state-row">${link("pending", "pending", "待核验 ")}${link("errors", "errors", "错误 ")}${link("queued", "queued", "排队/核验中 ")}${link("protected", "protected", "保护跳过 ")}</div>
         <p class="apv-small">已准入，候选同步待处理 ${c == null ? "未记录" : apvNumber(c.projectionPending + c.projectionErrors)}（同步错误 ${n("projectionErrors")}） · 收录登记异常 ${n("registrationErrors")} · 统计更新时间 ${apvTime(summary.asOf)}</p>
-        <div class="apv-flow">Apollo：进入辅助核验 ${n("apolloEntered")} → 已查询 ${n("apolloSearched")} → 返回候选 ${n("apolloCandidates")} → 满足匹配规则 ${n("apolloMatched")}；请求 ${n("apolloHttpAttempts")} 次</div>`;
+        <div class="apv-flow">Apollo：进入辅助核验 ${n("apolloEntered")} → 已查询 ${n("apolloSearched")} → 返回候选 ${n("apolloCandidates")} → 满足匹配规则 ${n("apolloMatched")}；请求 ${n("apolloHttpAttempts")} 次</div>
+        <div class="apc-run-config"><span data-apc="runConfig">${apcRunConfig(summary.apolloAccess)}</span><span data-apc="runAttempts">${apcRunAttempts(summary.apolloAttempts)}</span><span class="apc-run-note">以上为已登记请求尝试，不等于实际扣费次数或 credits。</span></div>`;
+}
+
+function apcRunConfig(access) {
+    if (!access || typeof access.searchEnabled !== "boolean" || typeof access.detailEnabled !== "boolean") return "本次配置：未记录";
+    const flags = `免费搜索 ${access.searchEnabled ? "开" : "关"} · 付费详情 ${access.detailEnabled ? "开" : "关"}`;
+    return access.source === "LEGACY" ? `本次配置：旧任务沿用原规则 · ${flags}`
+        : `本次配置：${flags} · 保存版本 ${apvNumber(access.settingRevision)}`;
+}
+
+function apcRunAttempts(attempts) {
+    if (!attempts) return "分渠道尝试：未记录";
+    return `免费搜索尝试 ${apvNumber(attempts.search)} · 付费详情尝试 ${apvNumber(attempts.detail)} · 其他 ${apvNumber(attempts.other)} · 登记后尚未确认完成 ${apvNumber(attempts.pendingDispatch)}`;
 }
 
 function apvAlert(error, asOf) {

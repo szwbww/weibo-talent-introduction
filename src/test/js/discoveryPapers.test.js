@@ -83,7 +83,8 @@ test('exact approved HTML/CSS contract, real IDs and asset keys', () => {
     for (const id of ['discoveryPapersTab', 'discoveryPapersPane', 'discoveryPaperReader', 'discoveryPaperSettings', 'discoveryPaperDelete', 'dpMappings', 'dpQualifications']) assert.ok(d.getElementById(id), id);
     assert.equal(d.getElementById('missing'), null);
     const expected = plan.match(/```css\n(\/\* discovery-paper-archive-contract:start \*\/[\s\S]*?)\n```/)[1];
-    assert.equal(css.slice(css.indexOf('/* discovery-paper-archive-contract:start */')).trim(), expected);
+    const endMarker = '/* discovery-paper-archive-contract:end */';
+    assert.equal(css.slice(css.indexOf('/* discovery-paper-archive-contract:start */'), css.indexOf(endMarker) + endMarker.length).trim(), expected);
     const blocks = [...plan.matchAll(/```html\n([\s\S]*?)\n```/g)].map(m => m[1]);
     for (const i of [0, 3, 5]) assert.ok(html.includes(i === 0 ? blocks[i].split('\n').slice(1).join('\n') : blocks[i]));
     assert.ok(app.includes(blocks[1]));

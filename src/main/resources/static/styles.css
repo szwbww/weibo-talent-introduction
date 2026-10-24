@@ -13433,3 +13433,27 @@ body.preview-available:not(.preview-docked) .preview-rail {
 @media(max-width:900px){.dp-filters{grid-template-columns:repeat(3,minmax(0,1fr))}.dp-search{grid-column:span 2}.dp-storage{grid-template-columns:1fr 1.3fr}.dp-reader-grid{display:block;overflow:auto;height:65vh;min-height:0;max-height:none}.dp-original{height:40vh;border-right:0;border-bottom:1px solid #e2e8f0}.dp-evidence{overflow:visible}.dp-pdf{min-height:0}}
 @media(max-width:540px){.dp-root{padding:14px;gap:12px}.dp-storage{grid-template-columns:1fr}.dp-storage-main{border-right:0;border-bottom:1px solid rgba(15,23,42,.08)}.dp-storage-main>strong{font-size:24px}.dp-disk{padding:13px 15px}.dp-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.dp-selection,.dp-footer{align-items:flex-start;gap:8px;flex-direction:column}.dp-reader,.dp-confirm{width:calc(100vw - 24px)}.dp-reader-tools{align-items:flex-start;flex-direction:column}.dp-inline-label{width:100%}.dp-dialog-head{padding:14px}.dp-dialog-foot{padding:12px 14px}.dp-original{padding:12px}.dp-evidence-tabs{gap:12px}.dp-evidence-tabs button{font-size:11px}.dp-heading{align-items:flex-start}.dp-root .button,.dp-dialog .button{height:auto;min-height:36px}}
 /* discovery-paper-archive-contract:end */
+
+/* discovery-apollo-settings-contract:start */
+#taskProgressModal[data-discovery-review="true"] .apc-settings{padding:14px 16px;border:1px solid rgba(15,23,42,.08);border-radius:7px;background:#f8fafc;color:#1e293b;font-size:12px;line-height:1.7}
+#taskProgressModal[data-discovery-review="true"] .apc-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+#taskProgressModal[data-discovery-review="true"] .apc-head h4{margin:0;color:#1e293b;font-size:13px;font-weight:600}
+#taskProgressModal[data-discovery-review="true"] .apc-save-state{color:#64748b;font-size:11px;line-height:1.6}
+#taskProgressModal[data-discovery-review="true"] .apc-save-state[data-state="dirty"]{color:#b45309}
+#taskProgressModal[data-discovery-review="true"] .apc-save-state[data-state="saved"]{color:#047857}
+#taskProgressModal[data-discovery-review="true"] .apc-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+#taskProgressModal[data-discovery-review="true"] .apc-option{padding:12px;border:1px solid #dfe4eb;border-radius:6px;background:#fff;min-width:0}
+#taskProgressModal[data-discovery-review="true"] .apc-option label{display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:7px;margin:0;color:#1e293b;font-size:12px;font-weight:600;letter-spacing:normal;text-transform:none}
+#taskProgressModal[data-discovery-review="true"] .apc-option input[type="checkbox"]{appearance:auto;width:14px;height:14px;min-width:14px;min-height:14px;max-width:14px;max-height:14px;flex:0 0 14px;margin:0;padding:0;accent-color:#1e40af;cursor:pointer;box-shadow:none;box-sizing:border-box}
+#taskProgressModal[data-discovery-review="true"] .apc-option p{margin:6px 0 0 21px;color:#475569;font-size:11px;line-height:1.7}
+#taskProgressModal[data-discovery-review="true"] .apc-note{margin:8px 0 0;color:#64748b;font-size:11px;line-height:1.7}
+#taskProgressModal[data-discovery-review="true"] .apc-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:12px}
+#taskProgressModal[data-discovery-review="true"] .apc-actions>.apc-note{margin:0 auto 0 0}
+#taskProgressModal[data-discovery-review="true"] .apc-error{margin-top:10px;padding:10px 12px;border:1px solid rgba(225,29,72,.16);border-radius:6px;background:rgba(225,29,72,.07);color:#be123c;font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+#taskProgressModal[data-discovery-review="true"] .apc-settings :is(button,input,summary):focus-visible{outline:2px solid #3b82f6;outline-offset:2px}
+#taskProgressModal[data-discovery-review="true"] .apc-settings :is(button,input):disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
+#taskProgressModal[data-discovery-review="true"] .apc-settings .button:disabled:hover{transform:none;box-shadow:none}
+#taskProgressModal[data-discovery-review="true"] .apc-run-config{display:flex;flex-direction:column;gap:4px;margin-top:8px;padding-top:10px;border-top:1px solid #e2e8f0;color:#475569;font-size:12px;line-height:1.7}
+#taskProgressModal[data-discovery-review="true"] .apc-run-note{color:#94a3b8;font-size:11px}
+@media(max-width:640px){#taskProgressModal[data-discovery-review="true"] .apc-grid{grid-template-columns:1fr}#taskProgressModal[data-discovery-review="true"] .apc-head{align-items:flex-start;flex-direction:column;gap:5px}#taskProgressModal[data-discovery-review="true"] .apc-actions{flex-wrap:wrap}#taskProgressModal[data-discovery-review="true"] .apc-actions>.apc-note{width:100%}#taskProgressModal[data-discovery-review="true"] .apc-settings{padding:12px}}
+/* discovery-apollo-settings-contract:end */
