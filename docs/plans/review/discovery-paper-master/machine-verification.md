@@ -451,3 +451,456 @@ $execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-pa
 ```
 
 No product code was modified.
+
+
+## Epoch 2 — 2026-10-24 — Verification Result: PASS
+
+Plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master/docs/plans/2026-10-23/discovery-paper-master.md`
+Phase: aggregate/master
+Reviewer: `/root/aggregate_master_reviewer_e2`
+Implementation boundary: `c6e9709f349f32c5feb1d067b47c697b0dff05b6..1ebe3534be212c26eb1e490d747ae4a10daa702f`
+Evidence HEAD: `410c7d95fc010ade43f5412d9c9a9193d17d29cd`
+Convergence: **PROGRESSING**
+Manual acceptance: **PENDING**
+
+**PASS applies to the master’s explicitly permitted code-completion boundary. Original294/page34 and original23/person-label effect evidence remain BLOCKED, effect-only. No real-effect acceptance, human PASS, deployment readiness, or integration approval is asserted.**
+
+### Identity and authority
+
+All repository commands used exactly:
+
+`/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master`
+
+Abbreviated **W** below; repository-relative source paths resolve within W.
+
+| Item | Verified value |
+|---|---|
+| Branch | `fast/discovery-paper-master` |
+| Worktree resolution | EXPLICIT |
+| Common repository | `/Users/lukai/IdeaProjects/weibo-talent-introduction` |
+| Governing master commit | `3c5a68ad9917fdee22e0548b5afc57a6df04d580` |
+| Governing master SHA-256 | `fc83cdf9149df3cb11d9433dd36cc2059ce09ad70fb550f7f647769714e17de3` |
+| Master identity state | AMENDMENT_RECORDED; A1–A16 govern |
+| Invoked identity | Current invocation supplied the handoff; no new invoked master copy. Prior invoked-copy SHA-256: `ae1f7d432643853aba3071975167441a2b9607ca04151021617a90f6ae2f215f` |
+| Fast ledger SHA-256 | `de7e31a72c3f931aacbd8fe285f34c398ab54ec344c308c72031b83ab6c2f87d` |
+| Fast handoff SHA-256 | `ee4944f00f684918b75d23e7d569212ad93333d02e0f77c1a2e362250e5b7956` |
+| Prior code | `37da0edbdb9737ed75c27ea8e6e525e35ef78354` |
+| Repair candidate | `1ebe3534be212c26eb1e490d747ae4a10daa702f` |
+| Repair evidence mode | DURABLE_HANDOFF |
+| Repair SHA-256 | `4c9cc7637968e0691ba61bc362acbd3324c97d1a8d50c0d1ecdb0ec2bd991584` |
+| Repair execution SHA-256 | `d8d0b84be484d42b4fb4ce99285b30725a80823e38e24b221b8878de775f567f` |
+| Repair approval | Exact human-originated `$execute-p` invocation persisted in `repair-execution.md`; current repair bytes and resolved local commits named |
+| Executor | Stable identity UNAVAILABLE; durable report names top-level assistant `openai-codex/gpt-6.1-sol:max` |
+| Separation | Fresh reviewer created after repair commit, without inherited execution context |
+| Final state | HEAD unchanged; index empty; no product/script dirty files; only controller-owned review ledger modified |
+
+Fresh ancestry checks returned exit 0 for base→candidate and candidate→HEAD. Candidate→HEAD changes only `docs/plans/review/discovery-paper-master/repair-execution.md`.
+
+All eight current child-plan bytes match their recorded commits; all referenced child evidence commits belong to the retained lineage.
+
+| Child | Recorded identity commit | Current SHA-256 |
+|---|---|---|
+| 01 | `c18dbc060dcf4c8440f853ede4d1d3aaf737994f` | `6e1d78f48e71e9a518ce6cb7ea8de1cbd6ae2af76a0d837351aacd693d9ee0d3` |
+| 02 | `87c5268976807c19c165fe50c91ba3372ed0075d` | `53381edc616c15ae87db31c1abacea4a4652702a60432dec0aa713fb57af11c4` |
+| 03 | `8d2313da868251b68dcaee02b744dfa777b41674` | `c46019e05d5315854277057d2550541093b5f4649a7961c2f4a30f9ccf999abe` |
+| 04 | `bcf5d64fb9534759eb1cad08db3089d36e4a1fb0` | `d506cc357820388ec3ef7a094314c28e58196db9800c84df52f0757459ecbf49` |
+| 05 | `541411d540019428c72b31775c325087b33da303` | `4c8de3b3406ca4d1129713fe1b7ea6ae79067112ceac411fa5a3a42de3995f00` |
+| 06a | `6112a58b4bc94b510a6b1cff88cfd9ec159c83d6` | `9802f4f4b4009a8dfbf57eb158efb83e32a32e5badc7f8f27f5fddc4b6aa3fc7` |
+| 06b | `0199430a0b4f30f89b8fb240d58880167471b512` | `41c6fd43b5cd37153a524d251cc9283e15e8d73581a423851b053db91324b170` |
+| 07 | `3c5a68ad9917fdee22e0548b5afc57a6df04d580` | `b1fc292788236a5620340395e393a97216cac516df449a2ad3f1ccfdd703fa69` |
+
+### Scope and repair boundary
+
+Fresh per-child Git deltas matched each amended file table.
+
+| Child | Changed product/test/script files | Authorized | Unexpected |
+|---|---:|---:|---|
+| 01 | 9 | 9 | None |
+| 02 | 10 | 10 | None |
+| 03 | 7 | 7 | None |
+| 04 | 10 | 10 | None |
+| 05 | 7 | 7 | None |
+| 06a | 33 | 33 | None |
+| 06b | 11 | 11 | None |
+| 07 | 8 | 8 | None |
+| Cumulative unique union | 78 | 78 | None |
+
+The repair delta contains exactly:
+
+1. `src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt`
+2. `src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveCaptureTest.kt`
+
+No third product/test file changed. Existing assertions remain; two discriminating tests were added. No test exclusions or bypass additions were found.
+
+Shared-file history follows the approved sequence. Frontend product changes occur in 05/07. Only new migrations V159/V160 changed; applied migrations, dependencies, application configuration, authentication configuration, old sample production files, identity constants, Rules, AdmissionGate and Apollo client remain unchanged. Product/script `git diff --check` returned exit 0.
+
+### Commands
+
+Fresh environment: JDK11 Zulu 11.0.15, Maven 3.9.11, Node v25.7.0. Runtime fixture logs confirm Docker 29.8.2. Required Maven runs explicitly used JDK11.
+
+**C-1 — Full required JVM union**
+
+```sh
+env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=DiscoveryPaperArchiveRepositoryIT,DiscoveryPaperArchiveServiceTest,DiscoveryPaperArchiveControllerTest,DiscoverySampleStoreTest,DiscoverySampleCaptureTest,DiscoveryPaperArchiveCaptureTest,DiscoveryPaperArchiveFlowIT,PdfEmailExtractorTest,ExpertDiscoveryServiceTest,DiscoveryPipelineServiceTest,SourceAuthorEmailResolverTest,DiscoverySampleReplayTest,DiscoveryPaperLayoutRegressionTest,PaperQualificationEvidenceExtractorTest,DiscoveryPaperAnalysisServiceTest,DiscoveryApolloSettingsIT,DiscoveryVerificationControllerTest,DiscoveryVerificationWorkerTest,DiscoveryCountrySupplementFlowIT,DiscoveryCountryRegistrationTest,DiscoveryVerificationIntegrationTest,DiscoveryVerificationFlowIT,DiscoveryVerificationQueryServiceTest,ApolloPeopleSearchClientTest,DiscoveryVerificationRulesTest,DiscoveryVerificationAdmissionGateTest,DiscoveryVerificationRepositoryIT -DmigrationIt=true -DmysqlIt=true
+```
+
+Exit **0**, BUILD SUCCESS, elapsed **10:36**. Log: `/private/tmp/discovery-e2-maven.log`.
+
+| Suite | Tests | Failures | Errors | Skipped |
+|---|---:|---:|---:|---:|
+| DiscoveryPaperArchiveRepositoryIT | 4 | 0 | 0 | 0 |
+| DiscoveryPaperArchiveServiceTest | 15 | 0 | 0 | 0 |
+| DiscoveryPaperArchiveControllerTest | 7 | 0 | 0 | 0 |
+| DiscoverySampleStoreTest | 7 | 0 | 0 | 0 |
+| DiscoverySampleCaptureTest | 4 | 0 | 0 | 0 |
+| DiscoveryPaperArchiveCaptureTest | 11 | 0 | 0 | 0 |
+| DiscoveryPaperArchiveFlowIT | 8 | 0 | 0 | 0 |
+| PdfEmailExtractorTest | 43 | 0 | 0 | 0 |
+| ExpertDiscoveryServiceTest | 194 | 0 | 0 | 0 |
+| DiscoveryPipelineServiceTest | 52 | 0 | 0 | 0 |
+| SourceAuthorEmailResolverTest | 26 | 0 | 0 | 0 |
+| DiscoverySampleReplayTest | 4 | 0 | 0 | 0 |
+| DiscoveryPaperLayoutRegressionTest | 2 | 0 | 0 | 1 |
+| PaperQualificationEvidenceExtractorTest | 9 | 0 | 0 | 0 |
+| DiscoveryPaperAnalysisServiceTest | 7 | 0 | 0 | 0 |
+| DiscoveryApolloSettingsIT | 8 | 0 | 0 | 0 |
+| DiscoveryVerificationControllerTest | 4 | 0 | 0 | 0 |
+| DiscoveryVerificationWorkerTest | 16 | 0 | 0 | 0 |
+| DiscoveryCountrySupplementFlowIT | 8 | 0 | 0 | 0 |
+| DiscoveryCountryRegistrationTest | 19 | 0 | 0 | 0 |
+| DiscoveryVerificationIntegrationTest | 14 | 0 | 0 | 0 |
+| DiscoveryVerificationFlowIT | 32 | 0 | 0 | 0 |
+| DiscoveryVerificationQueryServiceTest | 18 | 0 | 0 | 0 |
+| ApolloPeopleSearchClientTest | 13 | 0 | 0 | 0 |
+| DiscoveryVerificationRulesTest | 19 | 0 | 0 | 0 |
+| DiscoveryVerificationAdmissionGateTest | 8 | 0 | 0 | 0 |
+| DiscoveryVerificationRepositoryIT | 17 | 0 | 0 | 0 |
+| **Total: 27 classes** | **569** | **0** | **0** | **1** |
+
+**568 tests executed successfully.** The sole skip is `DiscoveryPaperLayoutRegressionTest.kt:20–22`, explicitly reporting unavailable exact original294 input. It is not effect evidence.
+
+C-1 also ran bound Node **1823/1823**, 334 suites, zero failures/cancelled/skipped/todo, followed by both bound syntax goals.
+
+| ID | Exact command | Fresh result |
+|---|---|---|
+| C-2 | `node --check src/main/resources/static/app.js` | Exit 0 |
+| C-3 | `node --check src/main/resources/static/discovery-papers.js` | Exit 0 |
+| C-4 | `node --test src/test/js/discoveryPapers.test.js src/test/js/discoveryReview.test.js src/test/js/discoveryVerification.test.js` | Exit 0; 65/65, 4 suites, zero failures/skips |
+| C-5 | `node --test src/test/js/discoveryApolloSettings.test.js src/test/js/discoveryVerification.test.js src/test/js/discoveryContinuousRun.test.js src/test/js/discoveryScheduleSetting.test.js src/test/js/discoveryReview.test.js src/test/js/discoveryPapers.test.js` | Exit 0; 118/118, 17 suites, zero failures/skips |
+| C-6 | `node --test src/test/js/*.test.js` | Exit 0; 1823/1823, 334 suites, zero failures/skips |
+| C-7 | `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn package -DskipTests` | Exit 0; BUILD SUCCESS; 02:38; bound Node1823/1823 and syntax passed; JVM execution explicitly skipped |
+| C-8 | `python3 /private/tmp/discovery_e2_comparator.py` | Exit 0; all seven controlled outcomes matched |
+| C-9 | `python3 /private/tmp/discovery_e2_runtime.py` | Exit 0; all six standalone JVM processes exit 0 |
+| C-10 | `python3 /private/tmp/discovery_e2_ui.py` plus CUA Chromium interactions | Required rendered UI gates completed; both disposable server sessions intentionally ended with Ctrl-C/exit130 |
+
+Node logs: `/private/tmp/discovery-e2-{05-node,focused-node,full-node}.log`.
+Package log: `/private/tmp/discovery-e2-package.log`.
+
+The initial UI server invocation in the default sandbox failed with socket `PermissionError`; authorized elevated execution succeeded. No product/test change resolved it.
+
+WAR:
+
+`/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master/target/weibo-talent-introduction-1.0.0-SNAPSHOT.war`
+
+Size: **51,617,556 bytes**
+SHA-256: **`0004a2bcb9637b1d24876df75c23b8a75f6f477cdf25929bf8261b253bc7d014`**
+
+No reproducible-build or deployment claim.
+
+### Separate runtime evidence
+
+The prior runtime/comparator/UI harnesses were inspected before adaptation. New harnesses, controls and logs use epoch2-specific paths under `/private/tmp`.
+
+C-9 freshly parsed property `surefire.test.class.path` from:
+
+`W/target/surefire-reports/TEST-com.weibo.talentintroduction.discovery.archive.DiscoveryPaperArchiveServiceTest.xml`
+
+That XML was generated this epoch at `2026-10-24T06:01:51.625421+00:00`, reports Java11.0.15, and supplies **127 classpath entries**.
+
+CP SHA-256:
+
+`f3b59342667efda4decb557407c65553243f487e1361d23b82ba322cd836228e`
+
+Each separate process used the complete CP as one argument:
+
+```text
+JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home
+DYLD_LIBRARY_PATH=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home/lib
+
+/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home/bin/java -cp CP FULL_CLASS [ARGUMENT]
+```
+
+| Full class / argument | Exit | Fresh observations |
+|---|---:|---|
+| `com.weibo.talentintroduction.discovery.archive.ArchiveSmokeLauncher` | 0 | Actual SQL/files/FileStore; settings reread25/15GiB;3072bytes/2files; protected/shared deletion; unprotection retained bytes; Range206/100bytes; delete retained metadata/outcome/analysis; content410 |
+| `com.weibo.talentintroduction.discovery.archive.ArchiveCaptureSmokeLauncher` | 0 |1024bytes; SHA `a9c40cf3c9314d60ef74257cbf948ffd117523ba94ffbde20874973db5114c02`; first frozen/latest updated; savedAttempts2/sharedFiles1; blockedHTTP0; queuePENDING/attempts2 unchanged/+60s/cursor unchanged |
+| `com.weibo.talentintroduction.discovery.service.LayoutPdfFixtures` | 0 | Actual double-column PDFs; resolved2/crossColumnRejected1/conflictingOwnerRejected1/network0/businessWrites0 |
+| `com.weibo.talentintroduction.discovery.archive.PaperAnalysisSmokeLauncher` | 0 | Three separate historical facts; year2023/hash/paragraph/PUBLICATION_TIME; first unchanged; cached repeat no write; missing-baseline delta null; deleted analysis retained; reanalysis410/network0/businessWrites0 |
+| `com.weibo.talentintroduction.discovery.service.DiscoveryApolloSettingsSmokeLauncher` | 0 | Actual SQL/TCPHTTP; defaultrevision0; save/recreate; false/true retained/effectiveDetailsfalse; stale409/unknown400/anonymous401; first-write race[200,409]; actual MySQL restart/outageGET-PUT503/recovered saved row;93 other tables unchanged/providerObserver0/keyLeakfalse |
+| `com.weibo.talentintroduction.discovery.service.DiscoveryVerificationWorkerTest --apollo-access-smoke` | 0 | Atrue/true unchanged; Btrue/false; LEGACYtrue/true; free-required-detailPENDING/PAID_DETAILS_DISABLED with DETAILattempts/permits/cacheLookups/HTTP all0; needless-detailAPOLLO_CLEAR remains eligible; malformedCONFIG_INVALID/providerHTTP0; channels3/2/1/pending1; persistedqueuev1 nullrequestedfalse versusv2 true, same-run reentry unchanged |
+
+Logs: `/private/tmp/discovery-e2-CLASS_SHORT_NAME.log`.
+
+Disposable MySQL and strict fake/intercepted provider HTTP were used. No production application context/DB, real provider or paid call was used.
+
+### Comparator controls
+
+Fixture directory:
+
+`/private/tmp/discovery-e2-layout-kyt_mjx_`
+
+Each case freshly executed:
+
+```text
+python3 scripts/discovery_paper_archive/verify_layout_gain.py --before F/BEFORE --after F/AFTER --labels F/labels.json --output F/OUTPUT
+```
+
+Here F is the exact fixture directory above; filenames resolve as follows.
+
+| Case | BEFORE | AFTER | OUTPUT | Exit / observed counter |
+|---|---|---|---|---|
+| unchanged | before.json | unchanged.json | unchanged-result.json |0; all difference counters0 |
+| lost | before.json | lost.json | lost-result.json |2; lostAssociations1 |
+| new | before.json | new.json | new-result.json |2; newEmails1/addedAssociations1/incorrectAssociations1 |
+| conflict | before.json | conflict.json | conflict-result.json |2; conflicts1/addedAssociations1/incorrectAssociations1 |
+| hash | before.json | hash.json | hash-result.json |2; bodyHashMismatches2 |
+| config | before.json | config.json | config-result.json |2; configMismatches1 |
+| labelled gain | before_gain.json | gain.json | gain-result.json |0; addedAssociations1/newEmails0/incorrectAssociations0 |
+
+Log: `/private/tmp/discovery-e2-comparator.log`.
+
+These controls prove comparator behavior, not original294 effects.
+
+### Real Chromium evidence
+
+The fixture served W’s unchanged real static assets at `http://127.0.0.1:63240/`. CUA operated actual controls and inspected rendered DOM, computed styles and screenshots.
+
+| Gate | Fresh result |
+|---|---|
+| Desktop |1440×1080; modal1180×864; Apollo grid546px/546px |
+| Responsive |643×900 modal595×720/grid253.5px253.5px;640×900 single grid552px |
+| Styles |checkbox14×14; disabled opacity.45; enabled save keyboard focus-visible true/outline`rgb(59,130,246)` |
+| Draft/save |Edit produced dirty without PUT; actual launch blocked; successful save used server revision; all four independent combinations observed |
+| Search-off/detail-on |Paid flag remained true; explicit “搜索关闭期间不调用” wording |
+| Duplicate save |Delayed actual double-click produced exactly one revision5 PUT; search/save/reload disabled while saving; server returned revision6 |
+| Failures |409/503 retained draft and correct guidance; GET404 disabled inputs/save and showed backend-not-ready; successful reload recovered |
+| Lifecycle |Slow GET and slow PUT followed by CHECK_REPLIES did not restore Apollo controls; ordinary modal width700; closing hid task modal and cleared reader iframe src |
+| Run/current separation |Current free-only state separate from historical paid-on revision2; channels3/2/1/pending1 and non-billing wording; LEGACY explicit; absent metadata “未记录”; summary refresh retained dirty draft |
+| Default launch |Actual POST `/api/expert-discovery/run`, body `{"sources":["OPENALEX"]}` |
+| Keyword launch |Actual POST `/api/expert-discovery/run/by-keyword?keywords=epoch2+fixture&sources=OPENALEX` |
+| Continuous launch |Actual POST `/api/expert-discovery/run/by-keyword?keywords=epoch2+continuous&sources=OPENALEX` |
+| Launch override |All three omitted `apolloAssist` |
+| Protection |Protected row selectable; unprotect sent false, cleared selection and retained content |
+| Reader |Script-like title/body rendered as text; preview generated zero analysis POSTs; Esc restored focus to “查看记录” |
+| Historical evidence |Assistant/completed/student separate; year2023; PARTIAL/BASELINE_MISSING and historical warning; missing delta remained unknown |
+| Delete |Preview separate from commit; first commit409 refreshed preview and waited; only second explicit click committed |
+| Deleted record |Record view retained; download/reanalysis disabled; prior analysis visible |
+| Empty/error/settings |Empty state rendered; list503 guidance and recovery worked; settings503 retained25/15 inputs and open dialog |
+| Table/old pages |Headerstatic/background`rgb(248,249,251)`; narrow table inner551/scrollWidth1010; review/history tabs rendered; other task retained original columns and hid Apollo |
+
+Wire log: `/private/tmp/discovery-e2-discovery-ui-wire.log`.
+
+Saved screenshots:
+
+- `/private/tmp/discovery-e2-desktop-saved.png`
+- `/private/tmp/discovery-e2-desktop-protected-selected.png`
+- `/private/tmp/discovery-e2-desktop-reader.png`
+- `/private/tmp/discovery-e2-desktop-delete409.png`
+- `/private/tmp/discovery-e2-desktop-deleted.png`
+- `/private/tmp/discovery-e2-settings503.png`
+
+Additional narrow/empty rendered screenshots were inspected through CUA. All temporary tabs were closed, viewport overrides reset, and fixture servers terminated.
+
+Generic unrelated account metadata fixtures produced an initial account-page shape diagnostic; no product defect was inferred. Remote fonts were blocked by fixture policy. This proves real-assets UI behavior with controlled transport, not authenticated backend deployment, original-PDF fidelity, SQL-backed UI restart or vendor billing.
+
+### Contract matrix
+
+Machine rows are mandatory within the code-completion boundary. Effect-only and human rows retain their explicit separate status.
+
+| ID | Requirement / source | Verdict | Fresh evidence |
+|---|---|---|---|
+| M-I1 | Separate facts/defaults/proposals/effects | PASS | Versioned evidence/source; no79/52 or qualification-effect success asserted; effect limitations below |
+| M-I2 | Storage/association/historical qualification/admission separate | PASS | Archive-only SQL; AnalysisService22–120; C-9 historical facts/network0/businessWrites0 |
+| M-I3 | Exact scope/order/literal UI contracts | PASS |78-file union; amended child counts; per-file matrix; C-4/C-5 literal DOM/CSS; source history |
+| M-I4 | Live archive capacity; new-run Apollo snapshots | PASS |Service174/217–245; repaired capacity regressions; Registration77–112; C-9 freeDETAIL0/old-run unchanged |
+| M-ENV | Existing dependencies/JDK11/new migrations/isolated fixtures | PASS |No pom/application/auth change; V159/V160 only; C-1/C-7/C-9 |
+| M-NONGOALS | No eligibility loosening/history refill/OCR/LLM/new provider/Key management | PASS |Complete product boundary; Rules/Gate/client unchanged; A13 test contract respected |
+| 01-I1/T1 | Independent archive, raw-byte dedup, audit retention | PASS |V159; Repository54–55/87–100; Service217–280; actual storage smoke |
+| 01-I2/T2 | VerifiedSAVED/protection/CAS/crash recovery | PASS |Service217–280/391–410/472–505; ServiceTest15; controller7; storage runtime |
+| 01-I3 | Shared/protected deletion recheck and snapshot409 | PASS |Service410–462; references/finishDelete; SQL/file tests; Chromium explicit second confirmation |
+| 01-I4 | Settings/defaults/CAS/503/FileStore/exact capacity | PASS |Repository18–32; Service174–183/300–337; tests and fresh zero-growth/new-growth counters |
+| 01-I5/T3 | Auth/positiveID/path-secret safety/symlink/MIME/Range/410 | PASS |Service87–156/369–385; controller39–92; fresh controller7/storage runtime |
+| 02-I1/T1 | Six sources/worker scopes/rawbytes/COREembedded | PASS |Capture81–128; ExpertDiscovery1613–1640/2124–2150; XML/PDF hooks; FlowIT8/Capture11 |
+| 02-I2 | Cache/download/consumption counts distinct | PASS |Cached extraction branch unchanged; embedded hook; Repositorycounts; C-9 |
+| 02-I3/T2 | SYNCawait-all/no consume-checkpoint; QUEUECAS+60s/no attempts | PASS |ExpertDiscovery1699–1714; Pipeline1033–1042; FlowIT; C-9 blockedHTTP0/cursor unchanged |
+| 02-I4/T1a | Disabled/sample independence/accepted-scope permission/frozenfirst | PASS |Capture; Service162–194/217–245; Repository66–79; new reuse regression and existing toggle tests |
+| 03-I1/I2/T1 | Exact unique-name/geometry/section/firstmailbox boundaries | PASS |Layout117–170; actual PDF43/resolver26; standalone actual double-column runtime |
+| 03-I3 | Unified conflicts/no generated mailboxes | PASS |Unchanged resolver merge; source/actual PDF tests; seven comparator controls |
+| 03-I4/T2 | Layout20261023; identity20261004/proof20260925; oldfirst/cache preserved | PASS |Layout12/Capture105; unchanged DiscoveryIdentity24/26 and cache gate; C-1 |
+| 03-EFFECT | Exact294 dual-version79/52/0/page34 proof | **BLOCKED, effect-only** |Fresh genuine corpus skip; incomplete historical originals cannot establish effects; explicit master code-completion exception applies |
+| 04-I1/T2 | Unique named biography facts; reject others/references/pronouns | PASS |Extractor19–105/155–178; extractor9; C-9 actual historical facts |
+| 04-I2 | Historical categories/NOT_FOUND/PARTIAL/ERROR; student≠completed | PASS |Extractor assertions/lookahead; distinct DTO kinds; tests/runtime/UI |
+| 04-I3/T1 | Analysis-only writes/leaseBUSY/CAS/no network/deletion retention | PASS |Service56–81; Analysis22–120; Repository81–83; Analysis7 and C-9 |
+| 04-I4/T3 | Anchored bodies/hashes/cache/partialdeltanull/completehasGain | PASS |Analysis28–52/96–120; Repository112–115; SQL/tests/runtime/Chromium |
+| 04-EFFECT | Original23/432/person-label/quote-gap audit | **BLOCKED, effect-only** |No fresh private-label audit; historical0facts and absent person-level labels cannot establish known1+2 coverage or any conclusion on49 |
+| 05-I1 | APIcounts/null/units/snapshot/new-library notice | PASS |Module39–55/76–100; C-4; rendered Chromium states |
+| 05-I2 | Protected selection/reset/unprotect/preview/explicit409 retry | PASS |Module58–72/153–197; C-4; actual wire and screenshots |
+| 05-I3/T1 | Lazy lifecycle/abort/generation/contextPath/textsafety/cleanup | PASS |Module24–43/128–152/203–243; app2452/27077; transition tests/Chromium |
+| 05-I4/T2 | Previewread-only/clickanalysis/historical warning/deleted analysis | PASS |Module249–284; analysis backend/runtime; zero preview analysisPOST; deleted reader |
+| 05-S1–S4/T3 | LiteralDOM/CSS/1180px80vh/scopedstates/table/checkbox/cache | PASS |Styles13364–13435; literal tests; actual three viewports/styles/screenshots |
+| 06a-I1/I2/T1 | Independent flags/defaults/CAS/no-op/strict503 | PASS |SettingRepository34–85/SettingsService86–111; SettingsIT8; actual race/restart/outage runtime |
+| 06a-I3 | Setting-onlywrites/auth/noKey/provider0 | PASS |SettingsController16–43;93 nonsetting tables unchanged/provider0/401/400/409/503 |
+| 06a-I4/T2 | One strict frozen schema/no duplicate defaults or quota | PASS |FrozenApolloAccess15–61; Registration32–40/77–112; C-1/C-9 |
+| 06a-T3 | Exact28 resource synchronizations/33-file exception/no exclusions | PASS |Individual scope inspection below; only resource assertions/descriptions/lists; full Node1823 |
+| 06b-I2/T1/T2 | Existingrunfirst/singlefreeze/null-false-true/LEGACY/invalid/queue1-2 | PASS |Registration58–112; Pipeline50/647/1266; Integration14/Worker16; real SQL queue runtime |
+| 06b-I3/T3 | FreeDETAILreserve/cache/HTTP0; preservePENDING/originalrules | PASS |Worker208/385–391 before reuse/reserve; C-9 zero counters; needless-detailAPOLLO_CLEAR eligible |
+| 06b-I4 | Registered search/detail/other/pending channels | PASS |Repository218–236; Query121–136; actual3/2/1/pending1; Chromiumnonbilling |
+| 06b-MNC/A13 | Originalbudgets/429/credits/SELF/manual/country/cache | PASS |Rules/Gate/client production unchanged; approved seven scenarios inspected; FlowIT32/Repository17/Rules19/Gate8/country27 pass |
+| 07-I1/T1 | Draft/save/readiness/dirtygate/omit pageoverride | PASS |App10205/27189/27231/27252/27287; C-5; actual three launch captures |
+| 07-I2 | Four independent combinations/capability distinction | PASS |Settings/runtime/focusedtests; actual four combinations and search-off warning |
+| 07-I3/T2 | Historicalsnapshot/LEGACY/unknown/attempts≠billing | PASS |App27427/27434; Query130; backendruntime and Chromium |
+| 07-I4 | Generation/sequence/onePUT/draftretention/disposal | PASS |App27077/27178/27231–27284; C-5; delayedGET/PUT/doubleclick/summaryrefresh |
+| 07-S1–S3/T3 | LiteralDOM/CSS/cache/responsive/focus/papers-oldtaskretention | PASS |Styles13437–13459; C-5/C-6/C-7; actualChromium |
+| M-BUILD | Final WAR and complete affectedJS | PASS |C-7/buildhash; JVMskip explicitly separated from C-1 |
+| M-MANUAL | Authoritative26 A-n and human boundarysign-off | **PENDING** |Master3;013;023;032;043;054;06a2;06b3;073; no human results manufactured |
+
+Accumulation, persistence/state-machine, cross-plan and scope checks: PASS within this code boundary. No extra product behavior or deleted required path identified.
+
+### Amendment authority
+
+The exact governing diff and fast-ledger amendment rows were read. Each approval below is recorded human authority.
+
+| ID | Master rule | Reason | Recorded approval |
+|---|---|---|---|
+| A1 |I-3/preflight5 |02 storageService/Repository seams;8→10; accepted-scope and immutablefirst/latest |HUMAN:批准 继续,2026-10-23 |
+| A2 |I-3/sequencing/preflight5 |Master02count/order synchronized withA1 |Same preceding human approval |
+| A3 |I-3/preflight5 |CaptureTest seventh file; fresh layoutversion expectation |HUMAN:批准 继续,2026-10-24 |
+| A4 |I-3/sequencing/preflight5 |Master03count6→7; effect boundary unchanged |Same preceding human approval |
+| A5 |I-3/preflight5 |RepositoryIT tenth file; incompletebaseline excluded fromhasGain |HUMAN:批准 继续 |
+| A6 |I-3/sequencing/preflight5 |Master04count9→10; completebaseline retained |Same preceding human approval |
+| A7 |I-3/preflight5 |VerificationJS seventh file;16→17 resource synchronization |HUMAN:批准 继续,2026-10-24 |
+| A8 |I-3/sequencing/preflight5 |Master05count6→7 |Same preceding human approval |
+| A9 |I-3/preflight5 |Exact28 resource tests; original5+28=33 |HUMAN:批准 继续,2026-10-24 |
+| A10 |I-3/filetable/preflight5 |One-time33-file test-only exception; no frontend product permission |Same preceding human approval |
+| A11 |I-3/I-4/preflight5 |PipelineService eleventh file; persistentqueuev2/v1 compatibility |HUMAN:批准 继续 |
+| A12 |I-3/I-4/filetable/preflight5 |Master10→11 exception; no regressionwaiver |Same preceding human approval |
+| A13 |I-3/I-4/preflight5 |Exactseven historicalFlowIT contracts; preserved production semantics |HUMAN:继续 修复 直到可以人工复验；说错了 是可以执行 review-fast-p |
+| A14 |I-3/I-4/preflight5 |Master recordsA13; unchanged filecount/productionlimits |Same preceding human approval |
+| A15 |I-3/I-4/preflight5 |ExactContinuousRun/ScheduleSetting/Papers additions;5→8 |HUMAN:批准 继续 — approving preceding07 exactthree-test scopeamendment |
+| A16 |I-3/I-4/sequencing/preflight5 |Master07count synchronized; no newproductbehavior |Same preceding human approval |
+
+### Per-file amendment matrix
+
+Every amendment-added or behavior-reconciled path is listed separately. Paths are relative to W.
+
+| Amendment | Exact file | Fresh assessment |
+|---|---|---|
+| A1/A2 |`src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt` |PASS; authorized seam; V-1 now resolved; currentcapacity/permission retained |
+| A1/A2 |`src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveRepository.kt` |PASS; transactional frozenfirst/latest merge; archive-only writes |
+| A3/A4 |`src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveCaptureTest.kt` |PASS;20261023 expectation and originalfirst assertions retained; repair adds two authorized regressions |
+| A5/A6 |`src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveRepositoryIT.kt` |PASS; incompletebaseline excluded; rollback/first/CAS retained |
+| A7/A8 |`src/test/js/discoveryVerification.test.js` |PASS;05resourcecount/description synchronization |
+| A9/A10 |`src/test/js/batchDemandProgress.test.js` |PASS; count/description17 |
+| A9/A10 |`src/test/js/batchEmailVerification.test.js` |PASS; count/description17 |
+| A9/A10 |`src/test/js/batchSenderFilter.test.js` |PASS; count/description17 |
+| A9/A10 |`src/test/js/checkRepliesRelocation.test.js` |PASS; count/description17 |
+| A9/A10 |`src/test/js/contactTimingStyle.test.js` |PASS; count/description17 |
+| A9/A10 |`src/test/js/discoveryScheduleSetting.test.js` |PASS;06aresource synchronization only |
+| A9/A10 |`src/test/js/expertContactSharedNote.test.js` |PASS; count/description17 |
+| A9/A10 |`src/test/js/expertManualProfile.test.js` |PASS; count/description17 |
+| A9/A10 |`src/test/js/expertMeetingVideo.test.js` |PASS; count/description17 |
+| A9/A10 |`src/test/js/mailOpenTracking.test.js` |PASS; count/description17 |
+| A9/A10 |`src/test/js/mailboxChatBehavior.test.js` |PASS; actual ordered list addsdiscovery-papers.js beforeapp.js |
+| A9/A10 |`src/test/js/mailboxChatStyle.test.js` |PASS; resourcecount/description only |
+| A9/A10 |`src/test/js/mailboxGroupPush.test.js` |PASS; count/orderedlist; ordering/key assertions retained |
+| A9/A10 |`src/test/js/mailboxReplyIdentity.test.js` |PASS; count/description17 |
+| A9/A10 |`src/test/js/mailboxSuspensionStyle.test.js` |PASS; count/description17 |
+| A9/A10 |`src/test/js/mailboxTemplateReferenceStyle.test.js` |PASS; resourcecount/description only |
+| A9/A10 |`src/test/js/manualReplySubjectPrefill.test.js` |PASS; count/description17 |
+| A9/A10 |`src/test/js/meetingCalendar.test.js` |PASS; resourcecount/description only |
+| A9/A10 |`src/test/js/meetingConfirmationAssets.test.js` |PASS; count/uniqueness synchronization; other assertions retained |
+| A9/A10 |`src/test/js/mobileCoreNavigation.test.js` |PASS; count17/key assertions retained |
+| A9/A10 |`src/test/js/overlayAndDialogContrast.test.js` |PASS; count/description17 |
+| A9/A10 |`src/test/js/ragKnowledgeBasePage.test.js` |PASS; count/description17 |
+| A9/A10 |`src/test/js/ragWorkbenchRender.test.js` |PASS; count/description17 |
+| A9/A10 |`src/test/js/recipientPreviewDiagnostics.test.js` |PASS; count/description17 |
+| A9/A10 |`src/test/js/senderBindingDisplay.test.js` |PASS; count/description17 |
+| A9/A10 |`src/test/js/taskActivityCenter.test.js` |PASS; count17/runtime assertions retained |
+| A9/A10 |`src/test/js/taskRecordsSemantics.test.js` |PASS; count17/behavior assertions retained |
+| A9/A10 |`src/test/js/trustReplyWorkbenchSharedMount.test.js` |PASS; count/description17 |
+| A11/A12 |`src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt` |PASS; newcriteria2/read1-2; persistedversion determineshistorical; existingrun unchanged |
+| A13/A14 |`src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationFlowIT.kt` |PASS; exactrule0fixtures/budgetsplit/cappedcontinuation/conservativecachedPENDING;32 fresh tests pass |
+| A15/A16 |`src/test/js/discoveryContinuousRun.test.js` |PASS; overrideabsence; keyword/source/includeRawScan/timeout/no-completion retained |
+| A15/A16 |`src/test/js/discoveryScheduleSetting.test.js` |PASS; overrideabsence; other schedule/source/status assertions retained |
+| A15/A16 |`src/test/js/discoveryPapers.test.js` |PASS; complete unchanged CSS compared within existing inclusive markers |
+
+### Fast-P RECORD_ONLY re-evaluation
+
+| Source item | Master requirement | Result | Fresh evidence / retained limitation |
+|---|---|---|---|
+|02O-1 earlier syntheticARXIV external requests |Isolated fixtures/no real provider |Historical deviation retained; no current mandatory defect proven |Final loopback rewrite and rejecting interceptors inspected atFlowIT79–100; fresh C-1/C-9 guarded execution; historical exactwirecount unavailable |
+|03O-1 originalcorpus/page34 |M-I1/03effect |**BLOCKED effect-only** |Fresh private test genuinely skipped; historical294metadata/295references/216files/79missing/215complete not promoted to fresh availability or79/52PASS |
+|04O-1 qualificationeffects |M-I1/M-I2/04effect |**BLOCKED effect-only** |Historical23bodies/432pages/0facts and missingpersonlabels do not establish known1+2 coverage or conclusions on49; no fresh private-labelaudit |
+|04O-2 helperclasspath |Independent runtime |Resolved invocation concern |C-9 uses all127 fresh SurefireCPentries; standaloneanalysis exit0 |
+|05O-1 isolatedfixturelimit |API/UI/persistence separation |Limitation retained |ActualSQL/files C-1/C-9 plus real-assetsChromium; no authenticated integrateddeployment/restart/originalPDF/billing claim |
+|05O-2 absentattempttimestamp |Factual UI display |No mandatory violation proven |Reader labels actual recordcapturetime and explicitly says filetime unavailable |
+|05O-3 preliminaryharnessfailures |ActualUI evidence |Historical failures retained; no inferred productdefect |Fresh actual controls/wire/styles/screenshots passed; fixtureboundary disclosed |
+|07fixture/font/harness limitations |M-I1/07browser |Limitation retained |FreshChromium; blockedremotefonts/fallback; unrelated genericfixtures not treated as productproof |
+
+### Finding lineage
+
+| Finding | State | Evidence |
+|---|---|---|
+| V-1 | **RESOLVED** |Service231 verifies AVAILABLE/hash/length before choosing reuse; scoped capacity uses zero incremental bytes for valid reuse and actualbytes for new content. Fresh two-case capture regressions demonstrate no growth and continued positive-growth blocking. |
+
+Prior V-1 root cause no longer exists. Blocking findings shrink from one to zero; no equal-or-higher new regression found. Convergence is **PROGRESSING**.
+
+Fresh C-1 output:
+
+```text
+SCOPE_REUSE limit=free-space bodyBytes=1024 headroom=1023 saved=2 reused=1 failed=1 usedBytes=1024 files=1 growth=0 first=frozen newBody=ARCHIVE_STORAGE_BLOCKED
+SCOPE_REUSE limit=archive-cap bodyBytes=1024 headroom=1023 saved=2 reused=1 failed=1 usedBytes=1073740801 files=2 growth=0 first=frozen newBody=ARCHIVE_STORAGE_BLOCKED
+```
+
+The archive-cap fixture uses a real sparse filler file counted by actual directory-size accounting. Both cases preserve first, update latest on reuse, retain identical physical logical bytes/filecount, and reject distinct new content without increasing SAVED.
+
+Pre-request headroom gating remains in `beginScope`/`beginScopeAttempt`. Current deployment permission, scope membership/attempt binding, path/writability checks, DELETING rejection, verified reuse, currentcap/minfree and new-write postchecks remain. Direct-save behavior remains.
+
+The executor’s historical failing-before B0 evidence is preserved as lineage, not represented as a new independent old-code run. Current candidate behavior was independently tested freshly.
+
+### Findings
+
+#### P1
+
+N/A — V-1 resolved.
+
+#### P2
+
+N/A.
+
+#### Observations
+
+- Original-corpus and person-label effects remain incomplete.
+- Seeded code-receipts documentation whitespace remains unrelated/nonbehavioral; excluded from repair.
+- CLAUDE-required `fix-v` was read and applied in AUDIT_ONLY mode. Explicit review-p/review-fast-p governs reporting and repair routing. No fix-N, continuation, knowledge update, product repair or review-evidence write occurred.
+- Knowledge probes for source-layout receipts, page-commit completeness, reentry accounting and cache-key synchronization were read; no inferred requirement was promoted to P1.
+- No configured LSP is recorded; the repair changes a private helper and tests, with no exported API change.
+
+### Evidence boundaries
+
+- **Original294/page34:** BLOCKED effect-only. No complete same-original dual-version79/52/0 verification; genuine skip retained.
+- **Original23/person labels:** BLOCKED effect-only. No fresh original-quote/person-label audit or qualification-effect success.
+- The master explicitly allows code completion when originals are missing while prohibiting real-effect success claims. This PASS uses that exception; it does not satisfy the effect/manual gates.
+- Synthetic parser/fact tests establish bounded behavior, never real-original accuracy or human acceptance.
+- Browser fixture evidence does not establish production authentication, integrated SQL-backed UI restart, originalPDF fidelity or vendor billing.
+- All26 authoritative manual items and explicit sign-off of candidate/master identity remain pending.
+
+### Repair planning
+
+**N/A.** PASS does not route to repair-p. Existing exact `repair.md` remains unchanged; no new repair round or artifact was created.
+
+### Next action
+
+Controller: append this complete Epoch2 report, create the plan-derived pending26-item manual-acceptance epoch, and set **AWAITING_HUMAN_ACCEPTANCE** for code head `1ebe3534be212c26eb1e490d747ae4a10daa702f` and governing master SHA-256 `fc83cdf9149df3cb11d9433dd36cc2059ce09ad70fb550f7f647769714e17de3`.
+
+No product code was modified.
