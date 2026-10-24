@@ -146,7 +146,7 @@ index所有本地CSS/JS版本统一升级`20261023-discovery-paper-apollo-settin
 
 ## 变更文件清单
 
-5 文件；子系统1（核验前端）；既有共享store新增字段0。
+8 文件；子系统1（核验前端）；既有共享store新增字段0。原5文件加已批准的3份直接契约测试同步，仍在主计划10文件上限内，不授权其他产品行为或范围。
 
 | 文件 | 动作 |
 |---|---|
@@ -155,6 +155,9 @@ index所有本地CSS/JS版本统一升级`20261023-discovery-paper-apollo-settin
 | src/main/resources/static/app.js | 保存配置状态/两种启动/摘要 |
 | src/test/js/discoveryVerification.test.js | 改旧启动语义回归 |
 | src/test/js/discoveryApolloSettings.test.js | 实际DOM/CAS/dirty/快照回归 |
+| src/test/js/discoveryContinuousRun.test.js | 启动断言改为省略apolloAssist，保留冻结关键词/来源/includeRawScan、超时及未完成断言 |
+| src/test/js/discoveryScheduleSetting.test.js | 启动断言改为省略apolloAssist，保留人工启动/来源/状态及零schedule GET/PUT断言 |
+| src/test/js/discoveryPapers.test.js | CSS逐字校验限定既有start/end标记（含end）；保留整个论文CSS契约逐字相等 |
 
 ## 验收标准
 
@@ -185,3 +188,7 @@ index所有本地CSS/JS版本统一升级`20261023-discovery-paper-apollo-settin
 - 操作步骤：1. 展开执行记录。2. 看当前配置和任务快照。3. 检查两种窗口宽度，再切论文原文、专家审核、审核记录，打开另一个普通任务。
 - 预期结果：显示3/2/1和登记尚未确认1，保留原准入数并显示非账单说明；新卡片在≤640px一列，否则两列，checkbox14px、主色#1e40af、焦点#3b82f6；原文/审核功能及其他任务样式不变。
 - 覆盖：I-2/I-3/I-4，S-1～S-3；must-NOT-change回归。
+
+## 修正记录
+
+- 用户“批准 继续”批准07暂停C-1的三份测试补充：5→8文件，加入ContinuousRun/ScheduleSetting两条旧启动参数断言同步和Papers CSS边界校验修正。旧key/接缝批量检查凭据见 `../fast/discovery-paper-master/children/07/execution.md:30–74`。必须保留其余行为断言与论文CSS字节不变，仅将两启动断言改为无apolloAssist、CSS比较限定已有完整标记块；S-3仍按原文追加，不改为插入旧块前。无其他文件或产品行为扩展，批准与身份见ledger Amendments。完整JS/浏览器/WAR与独立轻量复验后才能READY_FOR_HUMAN_REVIEW。

@@ -103,7 +103,7 @@
 | 05 | [论文原文前端](discovery-paper-05-frontend.md) | 7 | 真实页面管理/预览/磁盘/批量取消保护，完整CSS；同步必跑核验测试资源数 |
 | 06a | [Apollo配置持久化](discovery-paper-06a-apollo-persistence.md) | 33 | 原5文件两开关保存API；额外28测试仅同步资源契约，显式一次性上限例外 |
 | 06b | [Apollo运行接入](discovery-paper-06b-apollo-runtime.md) | 11 | 新旧run分离、分渠道日志、测试适配；新增PipelineService队列版本兼容，明确一次性例外 |
-| 07 | [Apollo前端配置/日志](discovery-paper-07-apollo-frontend.md) | 5 | 保存状态、收费开关、运行快照与尝试数字，完整CSS |
+| 07 | [Apollo前端配置/日志](discovery-paper-07-apollo-frontend.md) | 8 | 保存状态、收费开关、运行快照与尝试数字，完整CSS；同步三份既有直接契约测试 |
 
 每份先实施、机器复验通过，再进入下一份；不把机器复验当成人工验收。任务可以一次连续执行，但不能并行修改共享文件或越过失败关卡。本轮只创建计划，未启动执行。
 
@@ -180,3 +180,4 @@
 - 2026-10-24：用户“批准 继续”批准06a暂停报告的28份JS资源契约同步与5＋28＝33文件一次性例外。I-3及变更清单规则同步，其他切片仍≤10文件；只改资源数量/描述和真实有序模块列表，保留所有其他断言，Maven绑定全量Node仍须通过。不授权前端产品改动或后续泛化例外。实际grep失败清单/来源凭据见 `../fast/discovery-paper-master/children/06a/execution.md:139–196`；批准与身份见ledger Amendments。
 - 用户“批准 继续”批准06b暂停C-1：增加DiscoveryPipelineService.kt，明确10→11文件一次性例外；新队列criteriaVersion=2与旧version=1同时可读，新任务null采用保存配置，历史null仍false，既有run保持原快照。依据I-3/I-4及执行前检查第5项；不新增迁移/领域字段/测试文件，不改变准入规则，不豁免其余失败。批准与身份见 `../fast/discovery-paper-master/ledger.md` Amendments。
 - 用户“继续 修复 直到可以人工复验”，后澄清“说错了 是可以执行 review-fast-p”，批准上次暂停中精确列明的七项FlowIT测试契约修订，保持现行生产规则/预算/查询与保守缓存恢复语义，仅既有FlowIT文件及seed输入调整；不删除/跳过测试，不增加文件，不恢复旧生产行为。明确契约在06b修正记录及 `../fast/discovery-paper-master/children/06b/execution.md:451–516`；依据I-3/I-4与执行前检查第5项，原回归全部成功要求不变。完成剩余子计划和证据门后交付READY_FOR_HUMAN_REVIEW，整体review-fast-p另行执行；身份见ledger Amendments。
+- 用户“批准 继续”批准07暂停C-1的明确三测试清单：discoveryContinuousRun.test.js、discoveryScheduleSetting.test.js、discoveryPapers.test.js，原5→8文件，不超I-3上限。同步启动参数省略断言及既有论文CSS标记块边界，保留其余断言及论文CSS字节不变；不扩产品行为、后端或其他文件。依据I-3/I-4及执行前检查第5项；批准及身份见ledger Amendments。
