@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-10-24/discovery-recheck-master.md
 
-- Status: PAUSED_FOR_HUMAN
-- Master plan: docs/plans/2026-10-24/discovery-recheck-master.md (commit 014e9df745fbd7761fe4fce38039aab98af877b4)
-- Amendments: A1, A2
+- Status: RUNNING
+- Master plan: docs/plans/2026-10-24/discovery-recheck-master.md (commit 5f9136047ce821259ce96b70871b71045ab9778b)
+- Amendments: A1, A2, A3, A4
 - Master base: b161e87464d42b9fa2cd076ef9255b0e3b2b29ab
 - Branch: fast/discovery-recheck-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-recheck-master
@@ -13,15 +13,15 @@
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: Child03 requires three unlisted existing regression-test files to retire old layout-version and unbound-owner expectations contradicted by source-proven unique marker recovery; authorized scope six files must become nine before reconciliation.
-- Resume from: 9186a79c6ce78a8e9d253dbe5051d2b0a5a0ae54
+- Pause reason: N/A
+- Resume from: 29e6915c1b5a63d6f68b9ba1c0c307513bae0058
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | 01 | docs/plans/2026-10-24/discovery-recheck-01-counts.md | commit:014e9df745fbd7761fe4fce38039aab98af877b4 | none | 2 | LIGHT_PASS_WITH_NOTES | b161e87464d42b9fa2cd076ef9255b0e3b2b29ab | 7d0cb8c276533576d79f28fe970ccfbac4114d9e | 0 | — | 7d0cb8c276533576d79f28fe970ccfbac4114d9e | e0df0b0af15eeca62f21f8f0e6f4c08e1a061d7a | Independent verifier Recheck01Verifier; O-01 record-only failed-progress fixture/SQL difference; no repairs. |
 | 02 | docs/plans/2026-10-24/discovery-recheck-02-archive.md | sha256:01b4abd5cf06e535848abb65b1d9bc62194c225df4f7dfa12e20e6d2a002b13f | 01 | 1 | LIGHT_PASS_WITH_NOTES | 7d0cb8c276533576d79f28fe970ccfbac4114d9e | 5487f3b45085f20f8db8554fb94888de1446c378 | 0 | — | 5487f3b45085f20f8db8554fb94888de1446c378 | f48eacfd708a72f78ae975f3609d8e220d26693b | Independent Recheck02VerifierFull; O-02 unrelated compiler warnings only; no repairs. |
-| 03 | docs/plans/2026-10-24/discovery-recheck-03-identity-parser.md | sha256:199a71d6d89625a0faaf2aa5f3abe37a42f6740c2c1ad03220fad934426c87a9 | 02 | 1 | PAUSED_FOR_HUMAN | 5487f3b45085f20f8db8554fb94888de1446c378 | — | 0 | — | 5487f3b45085f20f8db8554fb94888de1446c378 | 4e5ba6bd7cd9adb270c8549ec7f25eacd33a7e6e | Recheck03Implementer PLAN_CONFLICT; six files uncommitted; three extra existing test paths need approval; no verifier dispatched. |
+| 03 | docs/plans/2026-10-24/discovery-recheck-03-identity-parser.md | commit:5f9136047ce821259ce96b70871b71045ab9778b | 02 | 2 | WAITING_FOR_AGENT | 5487f3b45085f20f8db8554fb94888de1446c378 | — | 0 | — | — | — | Human authorized three existing tests; scope nine; epoch1 retained, resuming epoch2. |
 | 04 | docs/plans/2026-10-24/discovery-recheck-04-qualification.md | sha256:04b07f58de1d6e9199e0919047cfffde967896f1bd4cfcad526b40a7d412dd0d | 03 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 | 05 | docs/plans/2026-10-24/discovery-recheck-05-history.md | sha256:1e269d2e8ba0bee59ff0442e6e10b3e750fb9323d9dc4e666a8f5dfd80b6870a | 04 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 | 06 | docs/plans/2026-10-24/discovery-recheck-06-evidence.md | sha256:c3a21b4a2fbfe80968f19302d23979dbfec9d1a97e14c7717ba86c55674829ae | 05 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
@@ -35,6 +35,8 @@
 |---|---|---|---|---|---|---|
 | A1 | docs/plans/2026-10-24/discovery-recheck-master.md | commit:96c70d8cb8d07562ea5a2ccca6d08ca86f1369b0 | commit:014e9df745fbd7761fe4fce38039aab98af877b4 | I-M4：范围受子计划约束 | Only child 01 may use 11 files to repair its obsolete global asset-key regression contract. | HUMAN:授权 继续 (2026-10-25; approves the immediately preceding recommended 11-file child-01 test exception) |
 | A2 | docs/plans/2026-10-24/discovery-recheck-01-counts.md | commit:96c70d8cb8d07562ea5a2ccca6d08ca86f1369b0 | commit:014e9df745fbd7761fe4fce38039aab98af877b4 | I-M4：范围受子计划约束 | Add discoveryApolloSettings.test.js; retire its old-plan global-key assertion while preserving Apollo contracts and separate controller tests. | HUMAN:授权 继续 (2026-10-25; approves the immediately preceding recommended 11-file child-01 test exception) |
+| A3 | docs/plans/2026-10-24/discovery-recheck-master.md | commit:014e9df745fbd7761fe4fce38039aab98af877b4 | commit:5f9136047ce821259ce96b70871b71045ab9778b | I-M4：范围受子计划约束 | Synchronize child03 manifest count six to nine for three authorized existing regression tests; no cap or product behavior change. | HUMAN:授权 继续 (2026-10-25; approves the immediately preceding recommendation to add the three named child03 regression tests only) |
+| A4 | docs/plans/2026-10-24/discovery-recheck-03-identity-parser.md | commit:29e6915c1b5a63d6f68b9ba1c0c307513bae0058 | commit:5f9136047ce821259ce96b70871b71045ab9778b | I-M4：范围受子计划约束 | Authorize Capture/PdfEmailExtractor/ExpertDiscoveryService test reconciliation for exact source-proven owners and current layout version; genuine ambiguity negatives remain strict. | HUMAN:授权 继续 (2026-10-25; approves the immediately preceding recommendation to add the three named child03 regression tests only) |
 
 ## Baseline
 - Authorized invocation: `/fast-p docs/plans/2026-10-24/discovery-recheck-master.md`.
@@ -92,3 +94,8 @@
 - Fresh standalone parser/proof/capture/analysis smoke passed against disposable MySQL: x32/y96% full owner and unique labels valid; shared/unknown/adjacent/reference negatives unbound; no pseudo mailbox; actual first/analysis layout20261024, identity20260925/extraction20261004 unchanged; first immutable. JS1827 and syntax passed separately because Maven stops before bound JS on known JVM failures.
 - No implementation commit, no staging, no independent verdict and no repair rounds. Product code head remains5487f3b45085f20f8db8554fb94888de1446c378; pre-pause actual HEAD9186a79c6ce78a8e9d253dbe5051d2b0a5a0ae54. Only child03 evidence committed at4e5ba6bd7cd9adb270c8549ec7f25eacd33a7e6e; six scoped edits preserved.
 - Resume requires human-approved exact child03 file-list amendment, separately committed with canonical amendment rows, then new epoch/fix_round0. Completed children01/02 must not replay. Children04–10 remain PENDING; no whole-system verification performed.
+
+## Child 03 resume — Epoch 2
+- Second user “授权 继续” on2026-10-25 approved the three specifically named existing regression-test files, six→nine. Master/child amendment committed separately at5f9136047ce821259ce96b70871b71045ab9778b; canonical authority A3/A4 above.
+- Retained worktree/branch and pause HEAD29e6915c1b5a63d6f68b9ba1c0c307513bae0058 matched; product index empty, six recorded authorized edits retained. No completed child replay; product base remains5487f3b45085f20f8db8554fb94888de1446c378.
+- New execution epoch2, fix_round0; historical reports/pauses remain append-only. Acquire fresh command-capable implementer and later a distinct verifier.

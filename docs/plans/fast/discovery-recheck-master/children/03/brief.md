@@ -52,3 +52,21 @@
 - Append full execute-p execution result to /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-recheck-master/docs/plans/fast/discovery-recheck-master/children/03/execution.md; no rewrites of logs.
 - Independent light verifier follows; no review-p/verify-p/repair-p/fix-v inside fast-p loop.
 - No later-child review, unrelated fixes, other-worktree edits, push/merge/history rewrite, plan/ledger modification.
+
+## Epoch 2 — Approved scope reconciliation
+
+This section supersedes epoch1 identity, six-file count and missing-test authority; all original parser behavior/invariants remain unchanged.
+
+- Exact current child plan identity: commit:5f9136047ce821259ce96b70871b71045ab9778b. Re-read full plan and compute fresh execute-p SHA; new epoch2/fix_round0.
+- Human approval: second “授权 继续” (2026-10-25), replying to explicit recommendation to add the following existing regression tests, six→nine:
+  - `src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveCaptureTest.kt`
+  - `src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt`
+  - `src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt`
+- These are additional Authorized Files, not authorization for any other path. Sync obsolete layout version and precise proven source owners/count/audit assertions only; preserve original PDF bytes and all true shared/unknown/adjacent/wrong-owner negatives. Do not broaden production logic to make the tests pass.
+- Reconcile retained six uncommitted files against exact current plan. Historical evidence in execution.md is baseline only, not fresh completion.
+- Required fresh command1: `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test '-Dtest=DiscoveryPaperLayoutRegressionTest,SourceAuthorEmailResolverTest,PlainTextEmailExtractorTest,DiscoveryPaperArchiveCaptureTest,*EmailExtractorTest,*Queue*Test,*DiscoveryIdentity*Test,*Source*Test' -DmysqlIt=true`.
+- Required fresh command2: `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test '-Dtest=ExpertDiscoveryServiceTest,DiscoveryPipelineServiceTest,DiscoveryVerificationIntegrationTest,DiscoveryPaperQueueRepositoryIT,DiscoveryPaperArchiveFlowIT' -DmysqlIt=true`.
+- Both commands include Maven-bound full JS/syntax checks. Explicit private-original294 and disabled live EuropePMC smoke may remain recorded skips; no mandatory queue/real-MySQL test may be skipped.
+- Rerun standalone actual parser/proof/capture/analysis smoke in this invocation after final implementation, including x32/y96% positives, ownership negatives, normalization, versions and immutable first. No production writes; remove all scaffolds.
+- Run build/tests/lint only after implementation complete; final required commands after last edit. Append full epoch2 execution report, keep all old entries.
+- Local implementation commit authority unchanged: `feat(fast-p): implement 03`, now nine authorized paths only. No reports/logs in product commit. No plan/ledger changes, push/merge/history rewriting or later-child review.
