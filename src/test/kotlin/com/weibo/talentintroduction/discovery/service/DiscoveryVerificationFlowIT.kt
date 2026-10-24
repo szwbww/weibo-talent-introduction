@@ -46,6 +46,9 @@ class VerificationFlowFixture(val jdbc: JdbcTemplate, private val manager: DataS
     val props: DiscoveryVerificationProperties = DiscoveryVerificationProperties(workerEnabled = true, apolloApiKey = "fixture-key", requestsPerMinute = 1000)) : AutoCloseable {
     val mapper = jacksonObjectMapper().findAndRegisterModules().disable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
     val clock = VerificationFlowClock()
+    val apolloSettings = DiscoveryApolloSettingsService(DiscoveryApolloSettingRepository(jdbc, manager), props, clock)
+    fun saveApolloSettings(search: Boolean = true, detail: Boolean = true): DiscoveryApolloSettings =
+        apolloSettings.save(apolloSettings.resolve().revision, search, detail)
     private fun <T : Any> transactional(target: T): T {
         val factory = ProxyFactory(target)
         factory.isProxyTargetClass = true
@@ -134,17 +137,17 @@ class VerificationFlowFixture(val jdbc: JdbcTemplate, private val manager: DataS
         java.nio.file.Files.createDirectories(directory)
         java.nio.file.Files.write(directory.resolve("$name.json"), mapper.writeValueAsBytes(value))
     }
-    fun worker() = DiscoveryVerificationWorker(props, repository, OrcidVerificationEvidenceClient(props, providerHttp, clock),
+    fun worker(repository: DiscoveryVerificationRepository = this.repository) = DiscoveryVerificationWorker(props, repository, OrcidVerificationEvidenceClient(props, providerHttp, clock),
         ApolloPeopleSearchClient(props, providerHttp, clock), QualificationEvidenceParser(clock), rules, commits,
         DefaultListableBeanFactory().getBeanProvider(RegistrationRecovery::class.java), clock).also { workers += it }
     fun seed(doc: String = "synthetic-1", mode: VerificationMode = VerificationMode.ENFORCE, apollo: Boolean = true,
-        institution: String = "Example University"): VerificationItem {
+        institution: String = "Example University", settingsJson: String = "{}"): VerificationItem {
         val profile = ruleSnapshot().profile.copy(esDocId = doc, researchFieldIds = listOf("22"), lastPublicationYear = 2026,
             institution = institution)
         val snapshot = DiscoveryVerificationAdmissionGate.snapshot(doc, profile, policy.evaluate(profile).configSnapshot)
         @Suppress("UNCHECKED_CAST") val source = mapper.convertValue(profile, Map::class.java) as Map<String, Any?>
         raws[doc] = source
-        repository.createRun(2001, mode, apollo, "{}", clock.instant())
+        repository.createRun(2001, mode, apollo, settingsJson, clock.instant())
         val item = repository.reserveItem(VerificationReservation(2001, doc, snapshot.identityHash, mode.policyVersion,
             "ORCID", doc, mapper.writeValueAsString(snapshot), snapshot.factFingerprint), clock.instant())
         return repository.activateItem(item.id, 1, clock.instant())
@@ -205,7 +208,7 @@ class DiscoveryVerificationFlowIT {
             check(DockerClientFactory.instance().isDockerAvailable) { "Isolated Docker MySQL is required; skipping is not PASS" }
             mysql.start()
             val ds = DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
-            Flyway.configure().dataSource(ds).placeholderReplacement(false).target("158").load().migrate()
+            Flyway.configure().dataSource(ds).placeholderReplacement(false).target("160").load().migrate()
             jdbc = JdbcTemplate(ds)
             manager = DataSourceTransactionManager(ds)
         }
@@ -611,11 +614,15 @@ class DiscoveryVerificationFlowIT {
             }
         }
     }
-    @Test fun `403 invalid response page caps item budget and transient exhaustion never pretend no match`() {
-        listOf("403", "invalid", "pages", "budget", "transient").forEach { scenario ->
+    @Test fun `provider failures page caps and non Apollo budgets fail closed while Apollo is item budget exempt`() {
+        listOf("403", "invalid", "pages", "apollo-budget-exempt", "orcid-budget", "transient").forEach { scenario ->
             clean()
             val props = DiscoveryVerificationProperties(workerEnabled = true, apolloApiKey = "fixture", requestsPerMinute = 1000,
-                maxPagesPerQuery = 1, maxRequestsPerItem = if (scenario == "budget") 3 else 12)
+                maxPagesPerQuery = 1, maxRequestsPerItem = when (scenario) {
+                    "apollo-budget-exempt" -> 3
+                    "orcid-budget" -> 2
+                    else -> 12
+                })
             VerificationFlowFixture(jdbc, manager, props).use { f ->
                 val item = f.seed()
                 when (scenario) {
@@ -630,13 +637,53 @@ class DiscoveryVerificationFlowIT {
                     f.clock.now = f.clock.now.plusSeconds(120); worker.tick()
                 }
                 val done = f.item(item.id)
-                assertEquals(0L, f.autoCount())
-                if (scenario in listOf("pages", "budget")) {
-                    assertEquals(VerificationOutcome.PENDING, done.outcome)
-                    assertTrue(done.reasonsJson!!.contains("SEARCH_INCOMPLETE"))
-                    assertTrue(done.reasonsJson!!.contains(if (scenario == "pages") "SEARCH_PAGE_LIMIT" else "ITEM_REQUEST_LIMIT"))
-                } else assertEquals(VerificationState.ERROR, done.state)
-                assertNull(done.searchCompletedAt)
+                if (scenario == "apollo-budget-exempt") {
+                    val attempts = f.repository.findAttempts(item.id)
+                    assertEquals(3, f.orcidRequests.size)
+                    assertEquals(3, attempts.count { it.provider == VerificationProvider.ORCID })
+                    val searchAttempts = attempts.filter { it.provider == VerificationProvider.APOLLO &&
+                        it.queryKind in setOf(VerificationQueryKind.BROAD, VerificationQueryKind.NARROW, VerificationQueryKind.VARIANT) }
+                    assertTrue(searchAttempts.isNotEmpty())
+                    assertTrue(searchAttempts.first().id > attempts.filter { it.provider == VerificationProvider.ORCID }.maxOf { it.id })
+                    assertTrue(done.requestCount > 3)
+                    assertEquals(f.orcidRequests.size + f.apolloRequests.size, done.requestCount)
+                    assertEquals(attempts.size, done.requestCount)
+                    assertFalse(done.reasonsJson!!.contains("ITEM_REQUEST_LIMIT"))
+                    assertNotNull(done.searchCompletedAt)
+                    assertEquals(VerificationState.COMPLETED, done.state)
+                    assertEquals(1L, f.autoCount()); assertEquals(1, f.candidates.size)
+                    val payload = f.mapper.readValue(done.evidenceJson, VerificationWorkerEvidence::class.java)
+                    val snapshot = f.mapper.readValue(done.snapshotJson, VerificationSnapshot::class.java)
+                    val recomputed = f.rules.evaluate(snapshot, payload.evidence, payload.search,
+                        institutionNormalization = payload.institutionNormalization, ruleVersion = payload.ruleVersion)
+                    assertEquals(VerificationOutcome.APOLLO_UNCLEAR, recomputed.outcome)
+                    assertEquals(VerificationQualification.UNKNOWN, recomputed.qualification)
+                    assertEquals(recomputed.outcome, done.outcome)
+                    assertEquals(recomputed.qualification, done.qualification)
+                    assertTrue(payload.search!!.complete)
+                } else {
+                    assertEquals(0L, f.autoCount())
+                    if (scenario == "orcid-budget") {
+                        val attempts = f.repository.findAttempts(item.id)
+                        assertEquals(2, f.orcidRequests.size)
+                        assertEquals(2, attempts.size)
+                        assertTrue(attempts.all { it.provider == VerificationProvider.ORCID })
+                        assertTrue(f.apolloRequests.isEmpty())
+                        assertEquals(2, done.requestCount)
+                        assertEquals(VerificationState.COMPLETED, done.state)
+                        assertEquals(VerificationOutcome.PENDING, done.outcome)
+                        assertEquals(VerificationRoute.NONE, done.route)
+                        assertNull(done.apolloPersonId); assertNull(done.admissionRevision)
+                        assertTrue(f.candidates.isEmpty())
+                        assertTrue(done.reasonsJson!!.contains("EVIDENCE_INCOMPLETE"))
+                        assertTrue(done.reasonsJson!!.contains("ITEM_REQUEST_LIMIT"))
+                    } else if (scenario == "pages") {
+                        assertEquals(VerificationOutcome.PENDING, done.outcome)
+                        assertTrue(done.reasonsJson!!.contains("SEARCH_INCOMPLETE"))
+                        assertTrue(done.reasonsJson!!.contains("SEARCH_PAGE_LIMIT"))
+                    } else assertEquals(VerificationState.ERROR, done.state)
+                    assertNull(done.searchCompletedAt)
+                }
                 if (scenario == "transient") {
                     assertEquals(3, f.apolloRequests.size)
                     assertEquals(3, done.transientAttempts)
@@ -768,10 +815,10 @@ class DiscoveryVerificationFlowIT {
         }
     }
 
-    @Test fun `lowercase HTTP self evidence passes gate commit projection without becoming qualification`() {
+    @Test fun `legacy ruleVersion0 lowercase HTTP self evidence passes gate commit projection without becoming qualification`() {
         VerificationFlowFixture(jdbc, manager).use { f ->
             f.orcidBodies["employments"] = f.selfDocuments()[1].document!!.body.toString()
-            val item = f.seed()
+            val item = f.seed(settingsJson = """{"ruleVersion":0}""")
             f.worker().tick()
             val done = f.item(item.id)
             assertEquals(VerificationOutcome.APOLLO_UNCLEAR, done.outcome)
@@ -779,6 +826,9 @@ class DiscoveryVerificationFlowIT {
             assertNotNull(done.admissionRevision)
             assertEquals(VerificationProjection.PROJECTED, done.projectionState)
             val payload = f.mapper.readValue(done.evidenceJson, VerificationWorkerEvidence::class.java)
+            assertEquals(0, payload.ruleVersion)
+            assertFalse(f.mapper.readTree(f.repository.findRun(2001)!!.settingsJson).has("apolloAccess"))
+            assertEquals(ApolloSettingSource.LEGACY, f.repository.findRun(2001)!!.frozenApolloAccess(f.mapper).source)
             assertEquals(AssertionSource.SELF, payload.evidence.single().assertionSource)
             val snapshot = f.mapper.readValue(done.snapshotJson, VerificationSnapshot::class.java)
             assertEquals(done.outcome, f.rules.evaluate(snapshot, payload.evidence, payload.search).outcome)
@@ -828,11 +878,11 @@ class DiscoveryVerificationFlowIT {
         }
     }
 
-    @Test fun `self identity negatives stay unadmitted through the real worker`() {
+    @Test fun `legacy ruleVersion0 self identity negatives stay unadmitted through the real worker`() {
         listOf("ambiguous", "orcid", "name", "historical", "unknown").forEach { scenario ->
             clean()
             VerificationFlowFixture(jdbc, manager).use { f ->
-                val item = f.seed()
+                val item = f.seed(settingsJson = """{"ruleVersion":0}""")
                 val docs = when (scenario) {
                     "historical" -> f.selfDocuments(end = """{"year":{"value":"2022"}}""")
                     "unknown" -> f.selfDocuments(source = "")
@@ -845,6 +895,10 @@ class DiscoveryVerificationFlowIT {
                     "name" -> f.orcidBodies["person"] = """{"name":{"given-names":{"value":"Other"},"family-name":{"value":"Person"},"visibility":"public"}}"""
                 }
                 f.worker().tick()
+                val payload = f.mapper.readValue(f.item(item.id).evidenceJson, VerificationWorkerEvidence::class.java)
+                assertEquals(0, payload.ruleVersion)
+                assertFalse(f.mapper.readTree(f.repository.findRun(2001)!!.settingsJson).has("apolloAccess"))
+                assertEquals(ApolloSettingSource.LEGACY, f.repository.findRun(2001)!!.frozenApolloAccess(f.mapper).source)
                 assertEquals(0L, f.autoCount(), scenario); assertTrue(f.candidates.isEmpty(), scenario)
                 val reason = when (scenario) {
                     "ambiguous" -> "IDENTITY_AMBIGUOUS"
@@ -881,16 +935,30 @@ class DiscoveryVerificationFlowIT {
                 val saved = f.mapper.readValue(f.item(item.id).evidenceJson, VerificationWorkerEvidence::class.java)
                 assertEquals(facts, saved.evidence)
                 assertEquals(listOf("person-1"), saved.search!!.candidates.map { it.id })
-                assertEquals(VerificationOutcome.APOLLO_UNCLEAR, f.item(item.id).outcome)
+                val done = f.item(item.id)
+                assertEquals(VerificationOutcome.PENDING, done.outcome)
+                assertEquals(VerificationState.COMPLETED, done.state)
+                assertEquals(VerificationRoute.NONE, done.route)
+                assertNull(done.apolloPersonId); assertNull(done.admissionRevision)
+                assertEquals(0L, f.autoCount()); assertTrue(f.candidates.isEmpty())
+                assertTrue(done.reasonsJson!!.contains("SEARCH_INCOMPLETE"))
+                assertTrue(done.reasonsJson!!.contains("SEARCH_PAGE_LIMIT"))
+                assertFalse(saved.search!!.complete)
+                assertFalse("0" in saved.progress.finishedQueryKeys)
+                val attempts = f.repository.findAttempts(item.id)
+                assertEquals(1, attempts.size)
+                assertEquals(VerificationProvider.APOLLO, attempts.single().provider)
+                assertEquals(f.apolloRequests.size, done.requestCount)
+                assertEquals(attempts.size, done.requestCount)
             }
         }
     }
 
-    @Test fun `new public alias requests are deduplicated and narrow empty results retain broad candidates`() {
+    @Test fun `legacy ruleVersion0 public alias requests are deduplicated and narrow empty results retain broad candidates`() {
         listOf(false, true).forEach { multipleInstitutions ->
             clean()
             VerificationFlowFixture(jdbc, manager).use { f ->
-                val item = f.seed()
+                val item = f.seed(settingsJson = """{"ruleVersion":0}""")
                 val body = f.selfDocuments()[1].document!!.body.deepCopy<com.fasterxml.jackson.databind.JsonNode>()
                 if (multipleInstitutions) {
                     val summaries = body.path("affiliation-group")[0].path("summaries") as com.fasterxml.jackson.databind.node.ArrayNode
@@ -908,6 +976,9 @@ class DiscoveryVerificationFlowIT {
                 assertEquals(if (multipleInstitutions) 0 else 1, f.apolloRequests.count { it.contains("q_organization_name") })
                 assertFalse(f.apolloRequests.any { it.contains("Secret") })
                 val saved = f.mapper.readValue(f.item(item.id).evidenceJson, VerificationWorkerEvidence::class.java)
+                assertEquals(0, saved.ruleVersion)
+                assertFalse(f.mapper.readTree(f.repository.findRun(2001)!!.settingsJson).has("apolloAccess"))
+                assertEquals(ApolloSettingSource.LEGACY, f.repository.findRun(2001)!!.frozenApolloAccess(f.mapper).source)
                 assertEquals(listOf("person-1"), saved.search!!.candidates.map { it.id })
                 assertEquals(VerificationOutcome.APOLLO_UNCLEAR, f.item(item.id).outcome)
                 assertEquals(f.apolloRequests.size + f.orcidRequests.size, f.item(item.id).requestCount)
@@ -1010,7 +1081,7 @@ class DiscoveryVerificationFlowIT {
                 "ORCID_CONFLICT", 1),
             InstitutionNegative("incomplete-search", "Example University", "Example University", "null",
                 """{"people":[${person("person-1", "Example University")}],"total_entries":101}""",
-                "SEARCH_INCOMPLETE", 0, maxPages = 1)
+                "SEARCH_INCOMPLETE", 1, maxPages = 1)
         )
         for (case in cases) {
             clean()
@@ -1037,6 +1108,19 @@ class DiscoveryVerificationFlowIT {
                     else -> "Example University"
                 }
                 assertEquals(expectedQuery, payload.institutionNormalization!!.queryInstitution, case.id)
+                if (case.id == "incomplete-search") {
+                    assertEquals(VerificationState.COMPLETED, done.state)
+                    assertEquals(VerificationOutcome.PENDING, done.outcome)
+                    assertEquals(VerificationRoute.NONE, done.route)
+                    assertTrue(done.reasonsJson!!.contains("SEARCH_PAGE_LIMIT"))
+                    assertFalse(payload.search!!.complete)
+                    assertEquals(2, f.apolloRequests.size)
+                    assertEquals(1, f.apolloRequests.count { !it.contains("q_organization_name") })
+                    assertEquals(1, f.apolloRequests.count { it.contains("q_organization_name") })
+                    assertTrue(f.apolloRequests.all { java.net.URI(it).query.split('&').contains("page=1") })
+                    assertEquals(f.orcidRequests.size + f.apolloRequests.size, done.requestCount)
+                    assertEquals(f.repository.findAttempts(item.id).size, done.requestCount)
+                }
                 f.report("a3-${case.id}", mapOf("input" to mapOf("profile" to case.profile, "employment" to case.job),
                     "requests" to f.apolloRequests, "persisted" to mapOf("outcome" to done.outcome?.name,
                         "reasons" to done.reasonsJson, "admissionRevision" to done.admissionRevision),
@@ -1104,7 +1188,20 @@ class DiscoveryVerificationFlowIT {
             val saved = f.mapper.readValue(f.item(item.id).evidenceJson, VerificationWorkerEvidence::class.java)
             assertNull(saved.institutionNormalization)
             assertEquals(VerificationOutcome.PENDING, f.item(item.id).outcome)
-            assertTrue(f.item(item.id).reasonsJson!!.contains("APOLLO_NO_MATCH"), f.item(item.id).reasonsJson)
+            val done = f.item(item.id)
+            assertTrue(done.reasonsJson!!.contains("SEARCH_INCOMPLETE"), done.reasonsJson)
+            assertTrue(done.reasonsJson!!.contains("SEARCH_PAGE_LIMIT"), done.reasonsJson)
+            assertFalse(done.reasonsJson!!.contains("APOLLO_NO_MATCH"), done.reasonsJson)
+            assertFalse(saved.search!!.complete)
+            assertEquals(VerificationState.COMPLETED, done.state)
+            assertEquals(VerificationRoute.NONE, done.route)
+            assertNull(done.apolloPersonId); assertNull(done.admissionRevision)
+            assertEquals(0L, f.autoCount()); assertTrue(f.candidates.isEmpty())
+            val attempts = f.repository.findAttempts(item.id)
+            assertEquals(1, attempts.size)
+            assertEquals(VerificationProvider.APOLLO, attempts.single().provider)
+            assertEquals(f.apolloRequests.size, done.requestCount)
+            assertEquals(attempts.size, done.requestCount)
             f.report("a4-legacy-inflight", mapOf("requests" to f.apolloRequests,
                 "normalization" to saved.institutionNormalization, "reasons" to f.item(item.id).reasonsJson,
                 "attempts" to f.repository.findAttempts(item.id).map { it.requestJson }))

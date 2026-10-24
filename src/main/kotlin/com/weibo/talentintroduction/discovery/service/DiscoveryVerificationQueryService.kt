@@ -8,6 +8,7 @@ import com.weibo.talentintroduction.discovery.domain.*
 import com.weibo.talentintroduction.discovery.repository.DiscoveryReviewRepository
 import com.weibo.talentintroduction.discovery.repository.DiscoveryVerificationRepository
 import com.weibo.talentintroduction.discovery.repository.VerificationReportFilter
+import com.weibo.talentintroduction.discovery.repository.VerificationAttemptChannels
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -44,8 +45,10 @@ class DiscoveryVerificationQueryService(
         val statuses = repository.reportingCollectionStatuses(ids)
         val counts = repository.reportingCounts(VerificationReportFilter(ids.first()), executionIds = ids)
         val suggestions = repository.reportingSuggestions(VerificationReportFilter(ids.first()), executionIds = ids)
+        val attempts = repository.reportingAttemptChannels(ids)
         val asOf = Instant.now()
-        return ids.map { id -> summaryRow(id, runs[id], counts[id] ?: VerificationCounts(), statuses[id], asOf, suggestions[id]) }
+        return ids.map { id -> summaryRow(id, runs[id], counts[id] ?: VerificationCounts(), statuses[id], asOf,
+            suggestions[id], attempts[id]) }
     }
 
     fun batches(executionId: Long, page: Int, size: Int): VerificationBatches {
@@ -118,10 +121,19 @@ class DiscoveryVerificationQueryService(
     }
 
     private fun summaryRow(id: Long, run: VerificationRun?, counts: VerificationCounts, status: String?, asOf: Instant,
-        suggestion: Triple<Long, Long, Long>?) =
+        suggestion: Triple<Long, Long, Long>?, attempts: VerificationAttemptChannels?) =
         VerificationSummary(id, if (run == null) "NOT_RECORDED" else "RECORDED", if (run == null) null else counts,
             run?.let { lifecycle(it, counts) }, run?.revision, asOf, run?.mode, status ?: if (run != null) "EXPIRED" else null,
-            run?.let { suggested(it, suggestion) })
+            run?.let { suggested(it, suggestion) }, run?.let { apolloAccess(it) }, attempts?.takeIf { run != null })
+
+    /** A damaged snapshot is unknown, never an implicit free-mode snapshot or a read of current settings. */
+    private fun apolloAccess(run: VerificationRun): FrozenApolloAccess? = try {
+        run.frozenApolloAccess(mapper)
+    } catch (_: com.fasterxml.jackson.core.JsonProcessingException) {
+        null
+    } catch (_: IllegalArgumentException) {
+        null
+    }
 
     private fun lifecycle(run: VerificationRun, counts: VerificationCounts) = when {
         counts.queued > 0 -> "ACTIVE"
@@ -200,6 +212,7 @@ class DiscoveryVerificationQueryService(
             "EVIDENCE_INCOMPLETE" to "证据尚未完整", "CONFIG_AUTH" to "接口认证配置错误",
             "REQUEST_INVALID" to "接口请求无效", "RESPONSE_INVALID" to "接口响应无效",
             "APOLLO_CREDITS_EXHAUSTED" to "额度不足，等待恢复", "CREDITS_WAIT" to "额度不足，等待恢复",
+            "PAID_DETAILS_DISABLED" to "付费详情未启用，证据仍不完整",
             "SUPERSEDED_BY_REVIEW" to "已由人工审核决定取代")
     }
 }
@@ -211,7 +224,8 @@ data class VerificationSuggestions(val autoAdmitted: Long, val directAdmitted: L
 data class VerificationReason(val code: String, val label: String, val count: Long)
 data class VerificationSummary(val executionId: Long, val coverage: String, val counts: VerificationCounts?,
     val lifecycle: String?, val snapshotVersion: Long?, val asOf: Instant, val mode: VerificationMode?,
-    val collectionStatus: String?, val suggested: VerificationSuggestions?)
+    val collectionStatus: String?, val suggested: VerificationSuggestions?,
+    val apolloAccess: FrozenApolloAccess? = null, val apolloAttempts: VerificationAttemptChannels? = null)
 data class VerificationBatch(val batchNumber: Int, val counts: VerificationCounts, val suggested: VerificationSuggestions?,
     val cumulativeProfiles: Long, val updatedAt: Instant?, val reasons: List<VerificationReason>)
 data class VerificationBatches(val coverage: String, val totalBatches: Long?, val items: List<VerificationBatch>,

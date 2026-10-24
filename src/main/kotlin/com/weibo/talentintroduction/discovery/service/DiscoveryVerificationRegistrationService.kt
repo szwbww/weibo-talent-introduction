@@ -28,6 +28,17 @@ data class DiscoveryRegistration(val item: VerificationItem? = null, val protect
     val preparedProfile: ExpertProfile? = null)
 class DiscoveryRegistrationException(cause: Exception) : IllegalStateException("VERIFICATION_REGISTRATION_FAILED", cause)
 
+/** Existing runs alone may interpret a missing member through the historical paid-enabled contract. */
+internal fun VerificationRun.frozenApolloAccess(mapper: com.fasterxml.jackson.databind.ObjectMapper): FrozenApolloAccess {
+    val root = mapper.readTree(settingsJson)
+    require(root != null && root.isObject) { "Invalid verification settings snapshot" }
+    val node = root.get("apolloAccess") ?: mapper.createObjectNode()
+        .put("schemaVersion", FrozenApolloAccess.SCHEMA_VERSION).put("settingRevision", 0)
+        .put("searchEnabled", apolloRequested).put("detailEnabled", apolloRequested)
+        .put("source", ApolloSettingSource.LEGACY.name)
+    return FrozenApolloAccess.parse(node)
+}
+
 @Service
 class DiscoveryVerificationRegistrationService(
     private val properties: DiscoveryVerificationProperties,
@@ -37,6 +48,7 @@ class DiscoveryVerificationRegistrationService(
     private val admissions: DiscoveryReviewRepository,
     private val jdbc: JdbcTemplate,
     private val transactions: TransactionTemplate,
+    private val apolloSettings: DiscoveryApolloSettingsService,
     private val clock: Clock = Clock.systemUTC(),
     private val countrySupplement: DiscoveryCountrySupplementService? = null
 ) : RegistrationRecovery {
@@ -44,29 +56,52 @@ class DiscoveryVerificationRegistrationService(
         .disable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
 
     fun resolveOptions(criteria: PaperSearchCriteria): PaperSearchCriteria {
-        if (criteria.apolloAssist == true && (!properties.enabled || properties.apolloApiKey.isBlank())) {
+        if (criteria.apolloAssist == true) {
+            requireApolloReady()
+            val settings = try {
+                apolloSettings.resolve()
+            } catch (_: DiscoveryApolloSettingsUnavailable) {
+                throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "APOLLO_SETTINGS_UNAVAILABLE")
+            }
+            if (!settings.searchEnabled) throw ResponseStatusException(HttpStatus.CONFLICT, "APOLLO_SEARCH_DISABLED")
+        }
+        return criteria
+    }
+
+    private fun requireApolloReady() {
+        if (!properties.enabled || properties.apolloApiKey.isBlank()) {
             throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Apollo verification is not ready")
         }
-        return criteria.copy(apolloAssist = criteria.apolloAssist ?: (properties.enabled && properties.apolloApiKey.isNotBlank() && properties.apolloDefault))
     }
 
     fun begin(executionId: Long?, criteria: PaperSearchCriteria, historical: Boolean = false): DiscoveryVerificationExecution {
         require(executionId == null || executionId > 0) { "A real positive execution ID is required" }
         val existing = executionId?.let { repository.findRun(it) }
         if (existing != null) return DiscoveryVerificationExecution(executionId, existing)
+        if (criteria.apolloAssist == true) requireApolloReady()
         if (!properties.enabled) return DiscoveryVerificationExecution(executionId)
         require(executionId != null) { "Verification requires a real positive execution ID" }
         check(jdbc.queryForObject("SELECT COUNT(*) FROM task_execution WHERE id=?", Long::class.java, executionId) == 1L) {
             "Verification requires an existing task execution"
         }
         // Old persisted JSON is OFF, never reinterpreted through today's default.
-        val apollo = if (historical && criteria.apolloAssist == null) false else requireNotNull(resolveOptions(criteria).apolloAssist)
+        val access = try {
+            apolloSettings.freeze()
+        } catch (_: DiscoveryApolloSettingsUnavailable) {
+            throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "APOLLO_SETTINGS_UNAVAILABLE")
+        }
+        if (criteria.apolloAssist == true && !access.searchEnabled) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, "APOLLO_SEARCH_DISABLED")
+        }
+        val apollo = !(historical && criteria.apolloAssist == null) &&
+            access.searchEnabled && criteria.apolloAssist != false && properties.apolloApiKey.isNotBlank()
         val settings = mapper.writeValueAsString(linkedMapOf(
             "mode" to properties.mode.name, "policyVersion" to properties.mode.policyVersion,
             "apolloMatchingVersion" to 2,
             "ruleVersion" to 2,
             "institutionAliasVersion" to DiscoveryInstitutionNormalizer.ALIAS_VERSION,
             "apolloLimitPolicy" to "PROVIDER",
+            "apolloAccess" to access.toJson(mapper),
             "maxRequestsPerItem" to properties.maxRequestsPerItem, "maxPagesPerQuery" to properties.maxPagesPerQuery,
             "maxTransientAttempts" to properties.maxTransientAttempts, "leaseSeconds" to properties.leaseSeconds,
             "httpConnectTimeout" to properties.httpConnectTimeout.toString(), "httpReadTimeout" to properties.httpReadTimeout.toString()

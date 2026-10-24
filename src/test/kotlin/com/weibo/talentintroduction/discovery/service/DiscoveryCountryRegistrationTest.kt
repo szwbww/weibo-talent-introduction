@@ -57,6 +57,7 @@ class DiscoveryCountryRegistrationTest {
     private lateinit var clock: MutableClock
     private lateinit var http: org.springframework.web.client.RestTemplate
     private lateinit var server: MockRestServiceServer
+    private lateinit var apolloSettings: DiscoveryApolloSettingsService
 
     private fun <T> anyValue(defaultValue: T): T = Mockito.any<T>() ?: defaultValue
 
@@ -65,6 +66,11 @@ class DiscoveryCountryRegistrationTest {
         writer = Mockito.mock(ExpertIndexWriterService::class.java)
         admissions = Mockito.mock(DiscoveryReviewRepository::class.java)
         jdbc = Mockito.mock(JdbcTemplate::class.java)
+        apolloSettings = Mockito.mock(DiscoveryApolloSettingsService::class.java)
+        val settings = DiscoveryApolloSettings(1, ApolloSettingSource.SAVED, true, true, true, true,
+            true, true, true, now)
+        Mockito.`when`(apolloSettings.resolve()).thenReturn(settings)
+        Mockito.`when`(apolloSettings.freeze()).thenReturn(FrozenApolloAccess.fromSettings(settings))
         clock = MutableClock(now)
         val filters = Mockito.mock(EligibilityFilterService::class.java)
         Mockito.`when`(filters.getCandidateFilter()).thenReturn(CandidateFilterProperties(requireValidEmail = false,
@@ -84,7 +90,111 @@ class DiscoveryCountryRegistrationTest {
     private fun service(props: DiscoveryVerificationProperties = properties(), supplement: Boolean = true): DiscoveryVerificationRegistrationService {
         val supplementService = if (supplement) DiscoveryCountrySupplementService(props, clock, http) else null
         return DiscoveryVerificationRegistrationService(props, repository, writer, policy, admissions, jdbc,
-            Mockito.mock(TransactionTemplate::class.java), clock, supplementService)
+            Mockito.mock(TransactionTemplate::class.java), apolloSettings, clock, supplementService)
+    }
+
+    @Test fun `new run reads settings once at freeze and preserves null options until begin`() {
+        val registration = service()
+        val criteria = registration.resolveOptions(PaperSearchCriteria())
+        assertNull(criteria.apolloAssist)
+        Mockito.verifyNoInteractions(apolloSettings)
+        Mockito.`when`(jdbc.queryForObject("SELECT COUNT(*) FROM task_execution WHERE id=?", Long::class.java, 71L))
+            .thenReturn(1L)
+        Mockito.doAnswer { invocation ->
+            VerificationRun(invocation.getArgument(0), invocation.getArgument(1),
+                VerificationMode.ENFORCE.policyVersion, invocation.getArgument(2), invocation.getArgument(3),
+                createdAt = now, updatedAt = now)
+        }.`when`(repository).createRun(Mockito.eq(71L), Mockito.eq(VerificationMode.ENFORCE) ?: VerificationMode.ENFORCE, Mockito.eq(true),
+            anyValue("{}"), anyValue(now))
+        val run = registration.begin(71, criteria).run!!
+        Mockito.verify(apolloSettings, Mockito.times(1)).freeze()
+        Mockito.verify(apolloSettings, Mockito.never()).resolve()
+        assertTrue(run.apolloRequested)
+        val frozen = run.frozenApolloAccess(mapper)
+        assertEquals(1L, frozen.settingRevision)
+        assertTrue(frozen.searchEnabled)
+        assertTrue(frozen.detailEnabled)
+    }
+
+    @Test fun `existing run wins before live settings and unavailable service validation`() {
+        val existing = context().run!!
+        Mockito.`when`(repository.findRun(7)).thenReturn(existing)
+        val unavailable = DiscoveryVerificationProperties(enabled = false, apolloApiKey = "")
+        val resumed = service(unavailable).begin(7, PaperSearchCriteria(apolloAssist = true))
+        assertEquals(existing, resumed.run)
+        Mockito.verifyNoInteractions(apolloSettings)
+        Mockito.verifyNoInteractions(jdbc)
+    }
+
+    @Test fun `explicit Apollo requires service and key but null and false stay unresolved`() {
+        listOf(DiscoveryVerificationProperties(enabled = false, apolloApiKey = "fixture-key"),
+            DiscoveryVerificationProperties(enabled = true, apolloApiKey = "")).forEach { props ->
+            val registration = service(props)
+            assertNull(registration.resolveOptions(PaperSearchCriteria()).apolloAssist)
+            assertFalse(registration.resolveOptions(PaperSearchCriteria(apolloAssist = false)).apolloAssist!!)
+            val error = assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+                registration.resolveOptions(PaperSearchCriteria(apolloAssist = true))
+            }
+            assertEquals(503, error.rawStatusCode)
+        }
+        Mockito.verifyNoInteractions(apolloSettings)
+    }
+
+    @Test fun `explicit true validates saved search before launch without resolving null or false`() {
+        val settings = apolloSettings.resolve().copy(revision = 2, searchEnabled = false, detailEnabled = true,
+            effectiveSearch = false, effectiveDetails = false)
+        Mockito.`when`(apolloSettings.resolve()).thenReturn(settings)
+        Mockito.clearInvocations(apolloSettings)
+        val registration = service()
+        assertNull(registration.resolveOptions(PaperSearchCriteria()).apolloAssist)
+        assertEquals(false, registration.resolveOptions(PaperSearchCriteria(apolloAssist = false)).apolloAssist)
+        Mockito.verifyNoInteractions(apolloSettings)
+        val error = assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            registration.resolveOptions(PaperSearchCriteria(apolloAssist = true))
+        }
+        assertEquals(409, error.rawStatusCode)
+        assertEquals("APOLLO_SEARCH_DISABLED", error.reason)
+        Mockito.verify(apolloSettings, Mockito.times(1)).resolve()
+        Mockito.verify(apolloSettings, Mockito.never()).freeze()
+        Mockito.verifyNoInteractions(repository, jdbc)
+    }
+
+    @Test fun `begin freezes once and rechecks settings changed after explicit prelaunch validation`() {
+        val registration = service()
+        val criteria = registration.resolveOptions(PaperSearchCriteria(apolloAssist = true))
+        val changed = DiscoveryApolloSettings(2, ApolloSettingSource.SAVED, false, true, false, false,
+            true, true, true, now)
+        Mockito.`when`(apolloSettings.freeze()).thenReturn(FrozenApolloAccess.fromSettings(changed))
+        Mockito.`when`(jdbc.queryForObject("SELECT COUNT(*) FROM task_execution WHERE id=?", Long::class.java, 71L))
+            .thenReturn(1L)
+        val error = assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            registration.begin(71, criteria)
+        }
+        assertEquals(409, error.rawStatusCode)
+        Mockito.verify(apolloSettings, Mockito.times(1)).resolve()
+        Mockito.verify(apolloSettings, Mockito.times(1)).freeze()
+        assertFalse(Mockito.mockingDetails(repository).invocations.any { it.method.name == "createRun" })
+    }
+
+    @Test fun `saved settings read failures stay 503 at prelaunch and new run freeze`() {
+        Mockito.`when`(apolloSettings.resolve()).thenThrow(DiscoveryApolloSettingsUnavailable())
+        val registration = service()
+        val validation = assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            registration.resolveOptions(PaperSearchCriteria(apolloAssist = true))
+        }
+        assertEquals(503, validation.rawStatusCode)
+        assertEquals("APOLLO_SETTINGS_UNAVAILABLE", validation.reason)
+        Mockito.verifyNoInteractions(repository, jdbc)
+        Mockito.`when`(apolloSettings.freeze()).thenThrow(DiscoveryApolloSettingsUnavailable())
+        Mockito.`when`(jdbc.queryForObject("SELECT COUNT(*) FROM task_execution WHERE id=?", Long::class.java, 71L))
+            .thenReturn(1L)
+        val freeze = assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            registration.begin(71, PaperSearchCriteria())
+        }
+        assertEquals(503, freeze.rawStatusCode)
+        assertEquals("APOLLO_SETTINGS_UNAVAILABLE", freeze.reason)
+        Mockito.verify(apolloSettings, Mockito.times(1)).freeze()
+        assertFalse(Mockito.mockingDetails(repository).invocations.any { it.method.name == "createRun" })
     }
 
     private fun profile(institution: String = "Example University", country: String? = null, paperDoi: String? = "10.example/test"): ExpertProfile {
@@ -342,6 +452,7 @@ class DiscoveryCountryRegistrationTest {
             ctx.beanFactory.registerSingleton("admissions", admissions)
             ctx.beanFactory.registerSingleton("jdbc", jdbc)
             ctx.beanFactory.registerSingleton("transactions", Mockito.mock(TransactionTemplate::class.java))
+            ctx.beanFactory.registerSingleton("apolloSettings", apolloSettings)
             ctx.beanFactory.registerSingleton("clock", clock)
             ctx.register(DiscoveryCountrySupplementService::class.java, DiscoveryVerificationRegistrationService::class.java)
             ctx.refresh()
@@ -357,7 +468,7 @@ class DiscoveryCountryRegistrationTest {
         interruptServer.expect(ExpectedCount.once(), anything()).andRespond { throw InterruptedException("fixture") }
         val props = properties()
         val interruptRegistration = DiscoveryVerificationRegistrationService(props, repository, writer, policy, admissions,
-            jdbc, Mockito.mock(TransactionTemplate::class.java), clock,
+            jdbc, Mockito.mock(TransactionTemplate::class.java), apolloSettings, clock,
             DiscoveryCountrySupplementService(props, clock, interruptHttp))
         assertThrows(InterruptedException::class.java) {
             interruptRegistration.reserve(context(), "EMAIL-doc", profile(), "ORCID", orcid)
@@ -374,7 +485,7 @@ class DiscoveryCountryRegistrationTest {
         }
         val props = properties()
         val cancelRegistration = DiscoveryVerificationRegistrationService(props, repository, writer, policy, admissions,
-            jdbc, Mockito.mock(TransactionTemplate::class.java), clock,
+            jdbc, Mockito.mock(TransactionTemplate::class.java), apolloSettings, clock,
             DiscoveryCountrySupplementService(props, clock, cancelHttp))
         assertThrows(java.util.concurrent.CancellationException::class.java) {
             cancelRegistration.reserve(context(), "EMAIL-doc", profile(), "ORCID", orcid)

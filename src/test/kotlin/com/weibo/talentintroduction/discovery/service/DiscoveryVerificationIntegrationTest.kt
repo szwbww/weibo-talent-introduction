@@ -50,17 +50,25 @@ class DiscoveryVerificationIntegrationTest {
             check(DockerClientFactory.instance().isDockerAvailable) { "Docker is required; skip is not PASS" }
             mysql.start()
             val ds = DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
-            Flyway.configure().dataSource(ds).placeholderReplacement(false).target("158").load().migrate()
+            Flyway.configure().dataSource(ds).placeholderReplacement(false).target("160").load().migrate()
             jdbc = JdbcTemplate(ds)
             manager = DataSourceTransactionManager(ds)
         }
         @JvmStatic @AfterAll fun stop() { if (mysql.isRunning) mysql.stop() }
+        /** Separate runtime entry; never starts the production Spring application. */
+        @JvmStatic fun main(args: Array<String>) {
+            require(args.contentEquals(arrayOf("--queue-access-smoke")))
+            start()
+            try {
+                DiscoveryVerificationIntegrationTest().queueVersionAccessScenario()
+            } finally { stop() }
+        }
     }
 
     @BeforeEach fun clean() {
         jdbc.execute("DROP TRIGGER IF EXISTS fail_registration_reserve")
         jdbc.execute("DROP TRIGGER IF EXISTS fail_registration_activate")
-        listOf("discovery_paper_job", "discovery_collection_stream", "discovery_pipeline", "discovery_source_cursor",
+        listOf("discovery_apollo_setting", "discovery_paper_job", "discovery_collection_stream", "discovery_pipeline", "discovery_source_cursor",
             "expert_email_alias", "expert_contact", "discovery_verification_attempt", "discovery_verification_item",
             "discovery_verification_run", "expert_discovery_admission", "task_execution").forEach { jdbc.update("DELETE FROM $it") }
     }
@@ -125,8 +133,9 @@ class DiscoveryVerificationIntegrationTest {
     class Fixture(workerEnabled: Boolean = false) : AutoCloseable {
         val properties = DiscoveryVerificationProperties(enabled = true, workerEnabled = workerEnabled, mode = VerificationMode.ENFORCE, apolloApiKey = "offline-fixture")
         val flow = VerificationFlowFixture(jdbc, manager, properties)
+        init { flow.saveApolloSettings(true, true) }
         val registration = DiscoveryVerificationRegistrationService(properties, flow.repository, flow.writer, flow.policy,
-            flow.admissions, jdbc, TransactionTemplate(manager), flow.clock)
+            flow.admissions, jdbc, TransactionTemplate(manager), flow.apolloSettings, flow.clock)
         val beans = DefaultListableBeanFactory()
         inline fun <reified T : Any> provider() = beans.getBeanProvider(T::class.java)
         val source = Mockito.mock(CrossrefDataSource::class.java)
@@ -240,6 +249,45 @@ class DiscoveryVerificationIntegrationTest {
             Mockito.verify(f.progress, Mockito.never()).getCurrentExecutionId("EXPERT_DISCOVERY")
         }
     }
+    @Test fun queueVersionAccessScenario() {
+        for (version in listOf(1, 2)) {
+            clean()
+            Fixture().use { f ->
+                f.flow.saveApolloSettings(true, false)
+                val pipeline = f.pipeline()
+                assertTrue(pipeline.launch(PaperSearchCriteria(sources = listOf("CROSSREF"),
+                    keywords = listOf("queue-access-$version")), "MANUAL", false).applied)
+                val launched = f.queue.findPipeline()!!
+                assertEquals(2, launched.criteriaVersion)
+                val savedCriteria = f.flow.mapper.readTree(launched.criteriaJson)
+                assertTrue(savedCriteria.has("apolloAssist"))
+                assertTrue(savedCriteria.path("apolloAssist").isNull)
+                if (version == 1) {
+                    // Simulate an already persisted old launch, not a new launch guessed from its timestamp.
+                    jdbc.update("UPDATE discovery_pipeline SET criteria_version=1")
+                }
+                val before = f.queue.findPipeline()!!
+                assertTrue(pipeline.tick().dispatched)
+                val executionId = jdbc.queryForObject("SELECT execution_id FROM discovery_verification_run",
+                    Long::class.java)!!
+                assertTrue(executionId > 0)
+                assertEquals(1L, jdbc.queryForObject("SELECT COUNT(*) FROM task_execution WHERE id=?", Long::class.java, executionId))
+                val run = f.flow.repository.findRun(executionId)!!
+                assertEquals(version == 2, run.apolloRequested)
+                assertTrue(run.frozenApolloAccess(f.flow.mapper).searchEnabled)
+                assertFalse(run.frozenApolloAccess(f.flow.mapper).detailEnabled)
+                assertEquals(before.criteriaJson, f.queue.findPipeline()!!.criteriaJson)
+                assertEquals(version, f.queue.findPipeline()!!.criteriaVersion)
+                f.flow.saveApolloSettings(false, true)
+                assertEquals(run, f.registration.begin(executionId, PaperSearchCriteria(apolloAssist = true),
+                    historical = version == 1).run)
+                assertEquals(run.settingsJson, f.flow.repository.findRun(executionId)!!.settingsJson)
+                assertTrue(f.flow.apolloRequests.isEmpty())
+                println("APOLLO_QUEUE_ACCESS_SMOKE version=$version nullPersisted=true executionId=$executionId requested=${run.apolloRequested} frozen=true/false reentry=unchanged providerHttp=0")
+            }
+        }
+    }
+
 
     @Test fun `historical JSON is OFF existing snapshots survive config change and missing task or ID cannot create runs`() {
         Fixture().use { f ->
@@ -251,10 +299,50 @@ class DiscoveryVerificationIntegrationTest {
             assertThrows(IllegalArgumentException::class.java) { f.registration.begin(-1, PaperSearchCriteria()) }
             assertThrows(IllegalStateException::class.java) { f.registration.begin(12, PaperSearchCriteria()) }
             val disabled = DiscoveryVerificationRegistrationService(DiscoveryVerificationProperties(), f.flow.repository, f.flow.writer,
-                f.flow.policy, f.flow.admissions, jdbc, TransactionTemplate(manager), f.flow.clock)
-            assertFalse(disabled.resolveOptions(PaperSearchCriteria()).apolloAssist!!)
+                f.flow.policy, f.flow.admissions, jdbc, TransactionTemplate(manager), f.flow.apolloSettings, f.flow.clock)
+            assertNull(disabled.resolveOptions(PaperSearchCriteria()).apolloAssist)
             assertThrows(ResponseStatusException::class.java) { disabled.resolveOptions(PaperSearchCriteria(apolloAssist = true)) }
             assertEquals(1L, jdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_run", Long::class.java))
+        }
+    }
+
+    @Test fun `new runs freeze saved permissions while resumed and legacy runs keep their own permissions`() {
+        Fixture().use { f ->
+            f.task(13)
+            val options = f.registration.resolveOptions(PaperSearchCriteria())
+            assertNull(options.apolloAssist)
+            val a = f.registration.begin(13, options).run!!
+            assertTrue(a.apolloRequested)
+            assertTrue(a.frozenApolloAccess(f.flow.mapper).detailEnabled)
+            val saved = f.flow.saveApolloSettings(true, false)
+            assertEquals(a, f.registration.begin(13, options).run)
+            f.task(14)
+            val b = f.registration.begin(14, options).run!!
+            assertTrue(b.apolloRequested)
+            val access = b.frozenApolloAccess(f.flow.mapper)
+            assertTrue(access.searchEnabled)
+            assertFalse(access.detailEnabled)
+            assertEquals(saved.revision, access.settingRevision)
+            assertEquals(ApolloSettingSource.SAVED, access.source)
+            f.task(15)
+            val legacy = f.flow.repository.createRun(15, VerificationMode.ENFORCE, true, "{}", f.flow.clock.instant())
+            f.flow.saveApolloSettings(false, true)
+            assertEquals(legacy, f.registration.begin(15, PaperSearchCriteria(apolloAssist = true)).run)
+            assertEquals(ApolloSettingSource.LEGACY, legacy.frozenApolloAccess(f.flow.mapper).source)
+            assertTrue(legacy.frozenApolloAccess(f.flow.mapper).detailEnabled)
+            f.task(16)
+            val off = f.registration.begin(16, options).run!!
+            assertFalse(off.apolloRequested)
+            assertFalse(off.frozenApolloAccess(f.flow.mapper).searchEnabled)
+            assertTrue(off.frozenApolloAccess(f.flow.mapper).detailEnabled)
+            f.task(17)
+            val error = assertThrows(ResponseStatusException::class.java) {
+                f.registration.begin(17, PaperSearchCriteria(apolloAssist = true))
+            }
+            assertEquals(409, error.rawStatusCode)
+            assertEquals("APOLLO_SEARCH_DISABLED", error.reason)
+            assertNull(f.flow.repository.findRun(17))
+            assertTrue(f.flow.apolloRequests.isEmpty())
         }
     }
 

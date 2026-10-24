@@ -12,6 +12,180 @@ import org.springframework.beans.factory.support.DefaultListableBeanFactory
 
 class DiscoveryVerificationWorkerTest {
     @org.junit.jupiter.api.io.TempDir lateinit var replayRoot: java.nio.file.Path
+
+    @Test fun `frozen paid access gates cache and permits while preserving legacy and channel accounting`() =
+        apolloAccessScenario()
+
+    private fun apolloAccessScenario() {
+        check(org.testcontainers.DockerClientFactory.instance().isDockerAvailable) { "Isolated Docker MySQL is required" }
+        DiagnosticMysql().withDatabaseName("apollo_access").withUsername("test").withPassword("test")
+            .withCommand("--log-bin-trust-function-creators=1").use { mysql ->
+                mysql.start()
+                val ds = org.springframework.jdbc.datasource.DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
+                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("160").load().migrate()
+                val jdbc = org.springframework.jdbc.core.JdbcTemplate(ds)
+                val manager = org.springframework.jdbc.datasource.DataSourceTransactionManager(ds)
+                val props = DiscoveryVerificationProperties(enabled = true, workerEnabled = true,
+                    mode = VerificationMode.ENFORCE, apolloApiKey = "fixture-key", requestsPerMinute = 1000)
+                VerificationFlowFixture(jdbc, manager, props).use { f ->
+                    val registration = DiscoveryVerificationRegistrationService(props, f.repository, f.writer, f.policy,
+                        f.admissions, jdbc, org.springframework.transaction.support.TransactionTemplate(manager), f.apolloSettings, f.clock)
+                    fun task(id: Long) {
+                        jdbc.update("INSERT INTO task_execution (id,task_type,trigger_type,status,started_at) VALUES (?,'EXPERT_DISCOVERY','MANUAL','RUNNING',?)",
+                            id, f.clock.instant().verificationUtc())
+                    }
+                    fun seed(run: VerificationRun, doc: String): VerificationItem {
+                        val profile = ruleSnapshot().profile.copy(esDocId = doc, researchFieldIds = listOf("22"), lastPublicationYear = 2026)
+                        val snapshot = DiscoveryVerificationAdmissionGate.snapshot(doc, profile, f.policy.evaluate(profile).configSnapshot)
+                        @Suppress("UNCHECKED_CAST")
+                        val raw = f.mapper.convertValue(profile, Map::class.java) as Map<String, Any?>
+                        f.raws[doc] = raw
+                        val item = f.repository.reserveItem(VerificationReservation(run.executionId, doc, snapshot.identityHash,
+                            run.policyVersion, "ORCID", doc, f.mapper.writeValueAsString(snapshot), snapshot.factFingerprint), f.clock.instant())
+                        return f.repository.activateItem(item.id, 1, f.clock.instant())
+                    }
+                    fun detailPayload() = pendingDetailPayload().let { it.copy(ruleVersion = 2,
+                        search = it.search!!.copy(candidates = it.search!!.candidates.take(1))) }
+                    fun execute(run: VerificationRun, doc: String, payload: VerificationWorkerEvidence? = detailPayload(),
+                        repository: DiscoveryVerificationRepository = f.repository): VerificationItem {
+                        val row = seed(run, doc)
+                        if (payload != null) f.cached(payload)
+                        f.worker(repository).process(f.claim())
+                        return f.item(row.id)
+                    }
+                    task(2101)
+                    f.saveApolloSettings(true, true)
+                    val a = registration.begin(2101, registration.resolveOptions(PaperSearchCriteria())).run!!
+                    f.saveApolloSettings(true, false)
+                    assertEquals(a, registration.begin(2101, PaperSearchCriteria(apolloAssist = false)).run)
+                    task(2102)
+                    val b = registration.begin(2102, PaperSearchCriteria()).run!!
+                    task(2103)
+                    val legacy = f.repository.createRun(2103, VerificationMode.ENFORCE, true,
+                        """{"apolloMatchingVersion":2,"ruleVersion":2}""", f.clock.instant())
+                    assertTrue(a.frozenApolloAccess(f.mapper).detailEnabled)
+                    assertFalse(b.frozenApolloAccess(f.mapper).detailEnabled)
+                    assertEquals(ApolloSettingSource.LEGACY, legacy.frozenApolloAccess(f.mapper).source)
+                    val oldA = execute(a, "frozen-paid-a")
+                    assertEquals(VerificationOutcome.APOLLO_CLEAR, oldA.outcome)
+                    assertEquals(1, f.repository.findAttempts(oldA.id).count { it.queryKind == VerificationQueryKind.DETAIL })
+                    val oldL = execute(legacy, "legacy-paid-l")
+                    assertEquals(VerificationOutcome.APOLLO_CLEAR, oldL.outcome)
+                    assertEquals(1, f.repository.findAttempts(oldL.id).count { it.queryKind == VerificationQueryKind.DETAIL })
+                    println("APOLLO_ACCESS_SMOKE frozen A=true/true revision=${a.frozenApolloAccess(f.mapper).settingRevision} unchanged=true B=true/false revision=${b.frozenApolloAccess(f.mapper).settingRevision} legacy=LEGACY/true/true oldDetailHttp=2")
+
+                    // A same-run paid result exists, but the free target must not even look it up.
+                    val source = seed(b, "synthetic-paid-cache")
+                    val sourceLease = f.claim()
+                    assertEquals(source.id, sourceLease.id)
+                    val detailJson = f.mapper.writeValueAsString(ApolloCandidate("person-1", "Ada", "Lee", null,
+                        "Ada Lee", "Professor", VerificationInstitution("Example University")))
+                    val sourceAttempt = f.repository.reserveAttemptWithBudget(source.id, sourceLease.leaseToken!!, sourceLease.generation,
+                        VerificationAttemptRequest("synthetic-cache", VerificationProvider.APOLLO, VerificationQueryKind.DETAIL, 1, 1,
+                            """{"personId":"person-1","matchingVersion":2}"""), 1000, 1000, 12, f.clock.instant()).attemptId!!
+                    assertTrue(f.repository.completeAttempt(source.id, sourceLease.leaseToken!!, sourceLease.generation, sourceAttempt,
+                        200, "OK", detailJson, "d".repeat(64), f.clock.instant()))
+                    assertTrue(f.repository.saveEvidenceAndOutcome(source.id, sourceLease.leaseToken!!, sourceLease.generation,
+                        VerificationResult(VerificationState.COMPLETED, VerificationOutcome.PENDING, VerificationQualification.UNKNOWN,
+                            VerificationRoute.NONE, f.mapper.writeValueAsString(detailPayload()), "[]"), f.clock.instant()))
+                    assertNotNull(f.repository.findSuccessfulDetails(b.executionId, listOf("person-1"))["person-1"])
+                    val observed = Mockito.mock(DiscoveryVerificationRepository::class.java,
+                        org.mockito.AdditionalAnswers.delegatesTo<DiscoveryVerificationRepository>(f.repository))
+                    val beforeHttp = f.apolloRequests.size
+                    val free = execute(b, "free-cache-target", repository = observed)
+                    assertEquals(VerificationState.COMPLETED, free.state)
+                    assertEquals(VerificationOutcome.PENDING, free.outcome)
+                    assertTrue(free.reasonsJson!!.contains("PAID_DETAILS_DISABLED"))
+                    assertTrue(f.repository.findAttempts(free.id).isEmpty())
+                    assertEquals(beforeHttp, f.apolloRequests.size)
+                    val freePayload = f.mapper.readValue<VerificationWorkerEvidence>(free.evidenceJson!!)
+                    assertFalse(freePayload.search!!.detailsComplete)
+                    assertTrue(freePayload.search!!.detailsCompleted.isEmpty())
+                    assertTrue(freePayload.diagnostics!!.detailReuses.isEmpty())
+                    assertFalse(Mockito.mockingDetails(observed).invocations.any { it.method.name == "findSuccessfulDetails" })
+                    assertFalse(Mockito.mockingDetails(observed).invocations.any { it.method.name == "reserveAttemptWithBudget" })
+                    val recomputed = f.rules.evaluate(f.mapper.readValue<VerificationSnapshot>(free.snapshotJson),
+                        freePayload.evidence, freePayload.search, institutionNormalization = freePayload.institutionNormalization,
+                        ruleVersion = freePayload.ruleVersion)
+                    assertEquals(recomputed.outcome, free.outcome)
+                    assertEquals(recomputed.qualification, free.qualification)
+                    assertEquals(recomputed.route, free.route)
+                    assertEquals(recomputed.matchedPersonId, free.apolloPersonId)
+                    assertEquals((recomputed.reasonCodes + "PAID_DETAILS_DISABLED").distinct(),
+                        f.mapper.readValue<List<String>>(free.reasonsJson!!))
+                    assertFalse(f.policy.evaluate(free.expertDocId, f.mapper.readValue<VerificationSnapshot>(free.snapshotJson).profile).eligible)
+                    println("APOLLO_ACCESS_SMOKE free-required-detail outcome=${free.outcome} reason=PAID_DETAILS_DISABLED detailsComplete=false attempts=0 permits=0 cacheLookups=0 detailHttp=0 gate=not-admitted")
+
+                    f.jobRole = null
+                    f.apolloBody = """{"people":[{"id":"person-1","first_name":"Ada","last_name_obfuscated":"L**"}],"total_entries":1}"""
+                    val liveStart = f.apolloRequests.size
+                    val liveFree = execute(b, "free-live-search", payload = null)
+                    assertEquals(VerificationOutcome.PENDING, liveFree.outcome)
+                    assertTrue(liveFree.reasonsJson!!.contains("PAID_DETAILS_DISABLED"))
+                    assertTrue(f.apolloRequests.size > liveStart)
+                    assertTrue(f.apolloRequests.drop(liveStart).all { it.contains("/mixed_people/api_search") })
+                    val strong = ApolloCandidate("person-strong", "Ada", "Lee", null, "Ada Lee", "Professor",
+                        VerificationInstitution("Example University"))
+                    val needless = execute(b, "free-needs-no-detail", detailPayload().let {
+                        it.copy(search = it.search!!.copy(candidates = listOf(strong)))
+                    })
+                    assertEquals(VerificationOutcome.APOLLO_CLEAR, needless.outcome)
+                    assertEquals(VerificationProjection.PROJECTED, needless.projectionState)
+                    assertTrue(f.repository.findAttempts(needless.id).isEmpty())
+                    assertTrue(f.policy.evaluate(needless.expertDocId, f.mapper.readValue<VerificationSnapshot>(needless.snapshotJson).profile).eligible)
+                    println("APOLLO_ACCESS_SMOKE live-free-search requests=${f.apolloRequests.size - liveStart} detailHttp=0 needless-detail=${needless.outcome} gate=eligible projection=${needless.projectionState}")
+
+                    task(2104)
+                    val malformed = f.repository.createRun(2104, VerificationMode.ENFORCE, true,
+                        """{"apolloAccess":{"schemaVersion":99}}""", f.clock.instant())
+                    val beforeInvalid = f.apolloRequests.size + f.orcidRequests.size
+                    val invalid = execute(malformed, "invalid-access", payload = null)
+                    assertEquals(VerificationState.ERROR, invalid.state)
+                    assertEquals(listOf("CONFIG_INVALID"), f.mapper.readValue<List<String>>(invalid.reasonsJson!!))
+                    assertEquals(beforeInvalid, f.apolloRequests.size + f.orcidRequests.size)
+                    assertTrue(f.repository.findAttempts(invalid.id).isEmpty())
+                    println("APOLLO_ACCESS_SMOKE malformed=CONFIG_INVALID providerHttp=0 attempts=0")
+
+                    task(2105)
+                    val channelsRun = registration.begin(2105, PaperSearchCriteria()).run!!
+                    val channelItem = seed(channelsRun, "channel-attempts")
+                    val lease = f.claim()
+                    assertEquals(channelItem.id, lease.id)
+                    val kinds = listOf(VerificationQueryKind.BROAD, VerificationQueryKind.NARROW, VerificationQueryKind.VARIANT,
+                        VerificationQueryKind.DETAIL, VerificationQueryKind.DETAIL, VerificationQueryKind.ORCID)
+                    kinds.forEachIndexed { index, kind ->
+                        val permit = f.repository.reserveAttemptWithBudget(lease.id, lease.leaseToken!!, lease.generation,
+                            VerificationAttemptRequest("channel-$index", if (kind == VerificationQueryKind.ORCID) VerificationProvider.ORCID
+                                else VerificationProvider.APOLLO, kind, 1, 1, "{}"), 1000, 1000, 100, f.clock.instant()).attemptId!!
+                        if (index != 5) assertTrue(f.repository.completeAttempt(lease.id, lease.leaseToken!!, lease.generation,
+                            permit, if (index == 3) 429 else 200, if (index == 3) "RATE_LIMIT" else "OK", null, null, f.clock.instant()))
+                    }
+                    task(2106)
+                    registration.begin(2106, PaperSearchCriteria())
+                    val query = DiscoveryVerificationQueryService(f.repository, f.admissions, props)
+                    val summaries = query.summary(listOf(2101, 2102, 2103, 2104, 2105, 2106, 9999)).associateBy { it.executionId }
+                    assertTrue(summaries.getValue(2101).apolloAccess!!.detailEnabled)
+                    assertFalse(summaries.getValue(2102).apolloAccess!!.detailEnabled)
+                    assertEquals(ApolloSettingSource.LEGACY, summaries.getValue(2103).apolloAccess!!.source)
+                    assertNull(summaries.getValue(2104).apolloAccess)
+                    val channels = summaries.getValue(2105).apolloAttempts!!
+                    assertEquals(3L, channels.search)
+                    assertEquals(2L, channels.detail)
+                    assertEquals(1L, channels.other)
+                    assertEquals(1L, channels.pendingDispatch)
+                    assertEquals(6, f.repository.findAttempts(channelItem.id).size)
+                    assertEquals(0L, summaries.getValue(2106).apolloAttempts!!.search)
+                    assertEquals(0L, summaries.getValue(2106).apolloAttempts!!.detail)
+                    assertNull(summaries.getValue(9999).apolloAccess)
+                    assertNull(summaries.getValue(9999).apolloAttempts)
+                    assertEquals(a.settingsJson, f.repository.findRun(a.executionId)!!.settingsJson)
+                    assertEquals(legacy.settingsJson, f.repository.findRun(legacy.executionId)!!.settingsJson)
+                    println("APOLLO_ACCESS_SMOKE channels search=${channels.search} detail=${channels.detail} other=${channels.other} pendingDispatch=${channels.pendingDispatch} totalRegistered=6 billing=not-inferred emptyRun=zero missingRun=unknown")
+                    println("APOLLO_ACCESS_SMOKE PASS isolatedMySQL=true strictMockHTTP=true productionContext=false oldSettingsImmutable=true")
+                }
+            }
+    }
+
     private fun worker(props: DiscoveryVerificationProperties, repo: DiscoveryVerificationRepository,
         factory: DefaultListableBeanFactory = DefaultListableBeanFactory()): DiscoveryVerificationWorker =
         DiscoveryVerificationWorker(props, repo, Mockito.mock(OrcidVerificationEvidenceClient::class.java),
@@ -25,14 +199,15 @@ class DiscoveryVerificationWorkerTest {
             .withCommand("--log-bin-trust-function-creators=1").use { mysql ->
                 mysql.start()
                 val ds = org.springframework.jdbc.datasource.DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
-                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("158").load().migrate()
+                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("160").load().migrate()
                 val jdbc = org.springframework.jdbc.core.JdbcTemplate(ds)
                 val manager = org.springframework.jdbc.datasource.DataSourceTransactionManager(ds)
                 VerificationFlowFixture(jdbc, manager).use { f ->
                     jdbc.update("INSERT INTO task_execution (id,task_type,trigger_type,status,started_at) VALUES (2001,'EXPERT_DISCOVERY','MANUAL','RUNNING',?)",
                         f.clock.instant().verificationUtc())
+                    f.saveApolloSettings(true, true)
                     val registration = DiscoveryVerificationRegistrationService(DiscoveryVerificationProperties(enabled = true, mode = VerificationMode.ENFORCE, apolloApiKey = "fixture-key"), f.repository, f.writer, f.policy,
-                        f.admissions, jdbc, org.springframework.transaction.support.TransactionTemplate(manager), f.clock)
+                        f.admissions, jdbc, org.springframework.transaction.support.TransactionTemplate(manager), f.apolloSettings, f.clock)
                     val context = registration.begin(2001, PaperSearchCriteria(apolloAssist = true))
                     assertEquals(2, f.mapper.readTree(context.run!!.settingsJson).path("ruleVersion").intValue())
                     assertEquals(2, f.mapper.readTree(context.run!!.settingsJson).path("institutionAliasVersion").intValue())
@@ -281,7 +456,7 @@ class DiscoveryVerificationWorkerTest {
             .withCommand("--log-bin-trust-function-creators=1").use { mysql ->
                 mysql.start()
                 val ds = org.springframework.jdbc.datasource.DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
-                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("158").load().migrate()
+                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("160").load().migrate()
                 val jdbc = org.springframework.jdbc.core.JdbcTemplate(ds)
                 val manager = org.springframework.jdbc.datasource.DataSourceTransactionManager(ds)
                 val cases = listOf(
@@ -382,7 +557,7 @@ class DiscoveryVerificationWorkerTest {
             .withCommand("--log-bin-trust-function-creators=1").use { mysql ->
                 mysql.start()
                 val ds = org.springframework.jdbc.datasource.DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
-                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("158").load().migrate()
+                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("160").load().migrate()
                 val jdbc = org.springframework.jdbc.core.JdbcTemplate(ds)
                 val manager = org.springframework.jdbc.datasource.DataSourceTransactionManager(ds)
                 VerificationFlowFixture(jdbc, manager).use { f ->
@@ -462,6 +637,11 @@ class DiscoveryVerificationWorkerTest {
     companion object {
         /** Direct runtime smoke entry: same real SQL/HTTP/worker/commit scenario, outside the JUnit runner. */
         @JvmStatic fun main(args: Array<String>) {
+            if (args.contentEquals(arrayOf("--apollo-access-smoke"))) {
+                DiscoveryVerificationWorkerTest().apolloAccessScenario()
+                DiscoveryVerificationIntegrationTest.main(arrayOf("--queue-access-smoke"))
+                return
+            }
             DiscoveryVerificationWorkerTest().`runtime search trace survives interrupted pages and reuses only same run successes`()
             println("SEARCH_TRACE_RUNTIME_SMOKE completed: pagination restart, bounded diagnostics, same-run reuse, Gate parity")
         }
@@ -473,7 +653,7 @@ class DiscoveryVerificationWorkerTest {
             .withCommand("--log-bin-trust-function-creators=1").use { mysql ->
                 mysql.start()
                 val ds = org.springframework.jdbc.datasource.DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
-                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("158").load().migrate()
+                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("160").load().migrate()
                 val jdbc = org.springframework.jdbc.core.JdbcTemplate(ds)
                 val manager = org.springframework.jdbc.datasource.DataSourceTransactionManager(ds)
                 listOf("before-ack", "after-ack", "legacy-page-six").forEach { crash ->

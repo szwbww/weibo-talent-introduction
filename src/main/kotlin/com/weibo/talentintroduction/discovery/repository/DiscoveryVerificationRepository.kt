@@ -214,6 +214,25 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         return jdbc.query("SELECT * FROM discovery_verification_run WHERE execution_id IN (${ids.joinToString(",") { "?" }})",
             runMapper, *ids.toTypedArray()).associateBy { it.executionId }
     }
+    /** Registered attempts, not successful requests or billed credits. Pending dispatch overlaps its channel. */
+    fun reportingAttemptChannels(ids: List<Long>): Map<Long, VerificationAttemptChannels> {
+        require(ids.isNotEmpty() && ids.size <= 50 && ids.all { it > 0 })
+        return jdbc.query("""SELECT r.execution_id,
+            COALESCE(SUM(a.provider='APOLLO' AND a.query_kind IN ('BROAD','NARROW','VARIANT')),0) AS search,
+            COALESCE(SUM(a.provider='APOLLO' AND a.query_kind='DETAIL'),0) AS detail,
+            COALESCE(SUM(a.id IS NOT NULL AND NOT (a.provider='APOLLO'
+                AND a.query_kind IN ('BROAD','NARROW','VARIANT','DETAIL'))),0) AS other,
+            COALESCE(SUM(a.result_code='DISPATCH_RESERVED'),0) AS pendingDispatch
+            FROM discovery_verification_run r
+            LEFT JOIN discovery_verification_item i ON i.owner_execution_id=r.execution_id
+            LEFT JOIN discovery_verification_attempt a ON a.item_id=i.id
+            WHERE r.execution_id IN (${ids.joinToString(",") { "?" }})
+            GROUP BY r.execution_id ORDER BY r.execution_id""",
+            RowMapper { rs, _ -> rs.getLong("execution_id") to VerificationAttemptChannels(
+                rs.getLong("search"), rs.getLong("detail"), rs.getLong("other"), rs.getLong("pendingDispatch")) },
+            *ids.toTypedArray()).toMap()
+    }
+
 
     fun reportingCounts(filter: VerificationReportFilter, batches: Boolean = false, executionIds: List<Long>? = null): Map<Long, VerificationCounts> {
         require(executionIds == null || executionIds.isNotEmpty() && executionIds.size <= 50 && executionIds.all { it > 0 })
@@ -742,6 +761,8 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
             rs.getString("projection_error"), rs.time("activated_at"), rs.time("completed_at"), rs.time("created_at")!!, rs.time("updated_at")!!) }
     }
 }
+
+data class VerificationAttemptChannels(val search: Long, val detail: Long, val other: Long, val pendingDispatch: Long)
 
 data class VerificationReportFilter(
     val executionId: Long, val route: String = "ALL", val result: String = "ALL",

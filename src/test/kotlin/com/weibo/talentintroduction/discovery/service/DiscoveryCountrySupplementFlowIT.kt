@@ -54,7 +54,7 @@ class DiscoveryCountrySupplementFlowIT {
             check(DockerClientFactory.instance().isDockerAvailable) { "Isolated Docker MySQL is required; skipping is not PASS" }
             mysql.start()
             val ds = DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
-            Flyway.configure().dataSource(ds).placeholderReplacement(false).target("158").load().migrate()
+            Flyway.configure().dataSource(ds).placeholderReplacement(false).target("160").load().migrate()
             jdbc = JdbcTemplate(ds)
             manager = DataSourceTransactionManager(ds)
         }
@@ -140,12 +140,13 @@ class DiscoveryCountrySupplementFlowIT {
         val props = DiscoveryVerificationProperties(enabled = true, workerEnabled = true, mode = VerificationMode.ENFORCE,
             apolloApiKey = "fixture-key", requestsPerMinute = 1000, countrySupplementEnabled = true)
         val flow = VerificationFlowFixture(jdbc, manager, props)
+        init { flow.saveApolloSettings(true, true) }
         private val http = countrySupplementRestTemplate()
         private val server = MockRestServiceServer.bindTo(http).build()
         val supplementRequests = mutableListOf<String>()
         private val supplement = DiscoveryCountrySupplementService(props, flow.clock, http)
         val registration = DiscoveryVerificationRegistrationService(props, flow.repository, flow.writer, flow.policy,
-            flow.admissions, jdbc, TransactionTemplate(manager), flow.clock, supplement)
+            flow.admissions, jdbc, TransactionTemplate(manager), flow.apolloSettings, flow.clock, supplement)
         val raws get() = flow.raws
 
         init {
@@ -231,7 +232,7 @@ class DiscoveryCountrySupplementFlowIT {
     }
 
     @BeforeEach fun clean() {
-        listOf("expert_email_alias", "expert_contact", "discovery_verification_attempt", "discovery_verification_item",
+        listOf("discovery_apollo_setting", "expert_email_alias", "expert_contact", "discovery_verification_attempt", "discovery_verification_item",
             "discovery_verification_run", "expert_discovery_admission", "task_execution").forEach {
             jdbc.update("DELETE FROM $it")
         }
@@ -388,9 +389,10 @@ class DiscoveryCountrySupplementFlowIT {
         val server = MockRestServiceServer.bindTo(http).build()
         server.expect(ExpectedCount.never(), anything())
         val registration = DiscoveryVerificationRegistrationService(off, flow.repository, flow.writer, flow.policy,
-            flow.admissions, jdbc, TransactionTemplate(manager), flow.clock,
+            flow.admissions, jdbc, TransactionTemplate(manager), flow.apolloSettings, flow.clock,
             DiscoveryCountrySupplementService(off, flow.clock, http))
         flow.use {
+            flow.saveApolloSettings(true, true)
             jdbc.update("INSERT INTO task_execution (id,task_type,trigger_type,status,started_at) VALUES (2101,'EXPERT_DISCOVERY','MANUAL','RUNNING',?)",
                 flow.clock.instant().verificationUtc())
             val context = registration.begin(2101, registration.resolveOptions(PaperSearchCriteria(apolloAssist = true)))
@@ -449,7 +451,7 @@ class DiscoveryCountrySupplementFlowIT {
                 "source":{"source-client-id":{"path":"fixture-org"}},"start-date":{"year":{"value":"2020"}}}}]}]}""",
                     MediaType.APPLICATION_JSON))
             val otherRegistration = DiscoveryVerificationRegistrationService(f.props, f.flow.repository, f.flow.writer,
-                f.flow.policy, f.flow.admissions, jdbc, TransactionTemplate(manager), f.flow.clock,
+                f.flow.policy, f.flow.admissions, jdbc, TransactionTemplate(manager), f.flow.apolloSettings, f.flow.clock,
                 DiscoveryCountrySupplementService(f.props, f.flow.clock, other))
             val start = CountDownLatch(1)
             val executor = Executors.newFixedThreadPool(2)
@@ -499,7 +501,7 @@ class DiscoveryCountrySupplementFlowIT {
             val service = DiscoveryCountrySupplementService(f.props, f.flow.clock, countrySupplementRestTemplate())
             repeat(10) { assertEquals(CountryPermit.ACQUIRED, service.tryAcquirePermit()); service.releasePermit() }
             val budgetRegistration = DiscoveryVerificationRegistrationService(f.props, f.flow.repository, f.flow.writer,
-                f.flow.policy, f.flow.admissions, jdbc, TransactionTemplate(manager), f.flow.clock, service)
+                f.flow.policy, f.flow.admissions, jdbc, TransactionTemplate(manager), f.flow.apolloSettings, f.flow.clock, service)
             val budget = budgetRegistration.reserve(context, "EMAIL-fail-budget", orcidProfile(), "ORCID", ORCID)
             assertEquals(DiscoveryCountrySupplementService.REASON_BUDGET_EXHAUSTED,
                 f.receipt(budget.item!!).path("reason").asText())

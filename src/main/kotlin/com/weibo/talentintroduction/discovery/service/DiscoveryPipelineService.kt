@@ -47,7 +47,7 @@ import java.util.concurrent.atomic.AtomicLong
 const val DISCOVERY_PIPELINE_TASK_TYPE: String = "EXPERT_DISCOVERY"
 
 /** I-7（c2）：`launch` 的 `criteria_version`；未知版本不得消费同一份 criteria。 */
-const val PIPELINE_CRITERIA_VERSION: Int = 1
+const val PIPELINE_CRITERIA_VERSION: Int = 2
 
 /**
  * I-7/I-6（c2）：时间源 —— 窗口截止、租约、退避、日切在测试里必须可控（与 01 的 `PolicyTimeSource` 同风格）。
@@ -643,7 +643,8 @@ class DiscoveryPipelineService(
                 onStarted = { executionId ->
                     state.executionId.set(executionId)
                     check(repository.bindExecutionId(ownerToken, executionId, now()) == 1) { "Window execution binding failed" }
-                    state.verification = verificationRegistration?.begin(executionId, requireNotNull(state.criteria), historical = true)
+                    state.verification = verificationRegistration?.begin(executionId, requireNotNull(state.criteria),
+                        historical = initial.criteriaVersion == 1)
                         ?: DiscoveryVerificationExecution(executionId)
                 },
                 block = { windowLoop(state, initial) }
@@ -1262,7 +1263,7 @@ class DiscoveryPipelineService(
 
     private fun criteriaOf(row: PipelineRow): PaperSearchCriteria? {
         val json = row.criteriaJson ?: return null
-        if (row.criteriaVersion != PIPELINE_CRITERIA_VERSION) return null
+        if (row.criteriaVersion != 1 && row.criteriaVersion != PIPELINE_CRITERIA_VERSION) return null
         return try {
             objectMapper.readValue(json, PaperSearchCriteria::class.java)
         } catch (e: Exception) {

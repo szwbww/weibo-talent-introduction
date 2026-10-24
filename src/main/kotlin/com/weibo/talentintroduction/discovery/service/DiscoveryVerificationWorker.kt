@@ -204,6 +204,12 @@ class DiscoveryVerificationWorker(
             val snapshot = mapper.readValue<VerificationSnapshot>(lease.snapshotJson)
             require(snapshot.identityHash == lease.identityHash && snapshot.factFingerprint == lease.factFingerprint)
             val run = repository.findRun(lease.ownerExecutionId) ?: error("Verification run missing")
+            val apolloAccess = try {
+                run.frozenApolloAccess(mapper)
+            } catch (_: Exception) {
+                fail("CONFIG_INVALID")
+                return
+            }
             val matchingVersion = mapper.readTree(run.settingsJson).path("apolloMatchingVersion").asInt(1)
             require(matchingVersion in 1..2)
             val aliasVersion = mapper.readTree(run.settingsJson).path("institutionAliasVersion").asInt(0)
@@ -376,6 +382,12 @@ class DiscoveryVerificationWorker(
                                 !(it in strong && (it.fullName != null || it.lastName != null))
                         }
                         val candidate = needingDetails.firstOrNull() ?: break
+                        if (!apolloAccess.detailEnabled) {
+                            // Permissions apply before both paid evidence reuse and request reservation.
+                            val decision = evaluate(snapshot)
+                            finish(decision.copy(reasonCodes = (decision.reasonCodes + "PAID_DETAILS_DISABLED").distinct()))
+                            return
+                        }
                         val ids = needingDetails.map { it.id }.filter { it !in lookedUp }
                         if (ids.isNotEmpty()) {
                             reusable.putAll(repository.findSuccessfulDetails(lease.ownerExecutionId, ids))

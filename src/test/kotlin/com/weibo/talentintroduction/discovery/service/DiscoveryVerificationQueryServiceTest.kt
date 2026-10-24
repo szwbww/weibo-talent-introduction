@@ -77,6 +77,10 @@ class DiscoveryVerificationQueryServiceTest {
         `when`(repository.reportingSuggestions(filter, executionIds = ids)).thenReturn(mapOf(3004L to Triple(2L, 1L, 1L)))
         val rows = service.summary(ids)
         assertEquals("EXPIRED", rows[0].collectionStatus)
+        assertEquals(ApolloSettingSource.LEGACY, rows[0].apolloAccess!!.source)
+        assertTrue(rows[0].apolloAccess!!.searchEnabled); assertTrue(rows[0].apolloAccess!!.detailEnabled)
+        assertNull(rows[1].apolloAccess); assertNull(rows[1].apolloAttempts)
+        assertNull(rows[2].apolloAttempts) // An absent aggregate is unknown, not a fabricated zero.
         assertEquals("NOT_RECORDED", rows[1].coverage); assertNull(rows[1].counts); assertNull(rows[1].snapshotVersion)
         assertEquals("RECORDED", rows[2].coverage); assertEquals(0L, rows[2].counts!!.profiles)
         assertEquals("COMPLETED", rows[2].lifecycle); assertEquals(17L, rows[2].snapshotVersion)
@@ -85,6 +89,7 @@ class DiscoveryVerificationQueryServiceTest {
         verify(repository).reportingRuns(ids)
         verify(repository).reportingCollectionStatuses(ids)
         verify(repository).reportingSuggestions(filter, executionIds = ids)
+        verify(repository).reportingAttemptChannels(ids)
         verifyNoInteractions(admissions)
         verifyNoMoreInteractions(repository)
     }
@@ -142,6 +147,103 @@ class DiscoveryVerificationQueryServiceTest {
         verify(repository).reportingSuggestions(filter)
         verifyNoMoreInteractions(repository)
     }
+    @Test fun `summary projects all frozen switch combinations and recorded attempts without credentials or billing claims`() {
+        val mapper = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().findAndRegisterModules()
+        val switches = listOf(true to true, true to false, false to true, false to false)
+        val ids = (4001L..4004L).toList()
+        val runs = ids.zip(switches).associate { (id, flags) ->
+            val access = """{"schemaVersion":1,"settingRevision":3,"searchEnabled":${flags.first},"detailEnabled":${flags.second},"source":"SAVED"}"""
+            id to run(id).copy(settingsJson = """{"apolloAccess":$access,"unrelatedBudget":17}""")
+        }
+        val attempts = VerificationAttemptChannels(3, 2, 1, 1)
+        `when`(repository.reportingRuns(ids)).thenReturn(runs)
+        `when`(repository.reportingAttemptChannels(ids)).thenReturn(ids.associateWith { attempts })
+        val rows = service.summary(ids)
+        rows.zip(switches).forEach { (row, flags) ->
+            val access = row.apolloAccess!!
+            assertEquals(flags.first, access.searchEnabled); assertEquals(flags.second, access.detailEnabled)
+            assertEquals(3L, access.settingRevision); assertEquals(1, access.schemaVersion)
+            assertEquals(ApolloSettingSource.SAVED, access.source)
+            assertEquals(attempts, row.apolloAttempts)
+            assertEquals(6L, row.apolloAttempts!!.let { it.search + it.detail + it.other })
+            assertEquals(0L, row.counts!!.apolloHttpAttempts) // Existing counters are not replaced by channel counters.
+        }
+        val json = mapper.writeValueAsString(rows)
+        assertFalse(json.contains("SECRET")); assertFalse(json.contains("credits", ignoreCase = true))
+        assertFalse(json.contains("billed", ignoreCase = true))
+        verify(repository).reportingAttemptChannels(ids)
+        verifyNoInteractions(admissions)
+    }
+
+    @Test fun `legacy access follows recorded requested flag and deployment snapshots retain their saved source`() {
+        val ids = listOf(4101L, 4102L, 4103L)
+        `when`(repository.reportingRuns(ids)).thenReturn(mapOf(
+            4101L to run(4101).copy(apolloRequested = false),
+            4102L to run(4102),
+            4103L to run(4103).copy(settingsJson = """{"apolloAccess":{"schemaVersion":1,"settingRevision":0,"searchEnabled":true,"detailEnabled":false,"source":"DEPLOYMENT_DEFAULT"}}""")))
+        val rows = service.summary(ids)
+        assertEquals(listOf(false, true), rows.take(2).map { it.apolloAccess!!.searchEnabled })
+        assertEquals(listOf(false, true), rows.take(2).map { it.apolloAccess!!.detailEnabled })
+        assertTrue(rows.take(2).all { it.apolloAccess!!.source == ApolloSettingSource.LEGACY })
+        assertEquals(ApolloSettingSource.DEPLOYMENT_DEFAULT, rows[2].apolloAccess!!.source)
+        assertEquals(0L, rows[2].apolloAccess!!.settingRevision)
+        assertFalse(rows[2].apolloAccess!!.detailEnabled)
+        verifyNoInteractions(admissions)
+    }
+
+    @Test fun `malformed access is unknown while actual registered attempts remain visible`() {
+        val valid = """{"schemaVersion":1,"settingRevision":3,"searchEnabled":true,"detailEnabled":false,"source":"SAVED"}"""
+        val malformed = listOf("broken", "null", "[]", """{"apolloAccess":null}""",
+            """{"apolloAccess":{}}""", """{"apolloAccess":$valid}""".replace("\"schemaVersion\":1", "\"schemaVersion\":2"),
+            """{"apolloAccess":$valid}""".replace("\"searchEnabled\":true", "\"searchEnabled\":\"true\""),
+            """{"apolloAccess":$valid}""".replace("\"settingRevision\":3", "\"settingRevision\":3.5"),
+            """{"apolloAccess":$valid}""".replace("\"source\":\"SAVED\"", "\"source\":\"FUTURE\""))
+        val ids = malformed.indices.map { 4201L + it }
+        `when`(repository.reportingRuns(ids)).thenReturn(ids.zip(malformed).associate { (id, json) ->
+            id to run(id).copy(settingsJson = json)
+        })
+        val attempts = VerificationAttemptChannels(3, 2, 1, 1)
+        `when`(repository.reportingAttemptChannels(ids)).thenReturn(ids.associateWith { attempts })
+        service.summary(ids).forEach {
+            assertEquals("RECORDED", it.coverage); assertNull(it.apolloAccess)
+            assertEquals(attempts, it.apolloAttempts)
+        }
+        verifyNoInteractions(admissions)
+    }
+
+    @Test fun `attempt aggregate failure is propagated rather than rendered as zero`() {
+        val ids = listOf(4301L)
+        `when`(repository.reportingRuns(ids)).thenReturn(mapOf(4301L to run(4301)))
+        `when`(repository.reportingAttemptChannels(ids))
+            .thenThrow(org.springframework.dao.DataAccessResourceFailureException("attempt ledger offline"))
+        assertThrows(org.springframework.dao.DataAccessResourceFailureException::class.java) { service.summary(ids) }
+        verifyNoInteractions(admissions)
+    }
+
+    @Test fun `summary deduplicates ids before channel SQL and hides aggregates for unrecorded runs`() {
+        val ids = listOf(4401L, 4402L)
+        `when`(repository.reportingRuns(ids)).thenReturn(mapOf(4401L to run(4401)))
+        `when`(repository.reportingAttemptChannels(ids)).thenReturn(mapOf(
+            4401L to VerificationAttemptChannels(0, 0, 0, 0), 4402L to VerificationAttemptChannels(9, 9, 9, 9)))
+        val rows = service.summary(listOf(4401, 4402, 4401))
+        assertEquals(ids, rows.map { it.executionId })
+        assertEquals(VerificationAttemptChannels(0, 0, 0, 0), rows[0].apolloAttempts)
+        assertNull(rows[1].apolloAccess); assertNull(rows[1].apolloAttempts)
+        verify(repository).reportingAttemptChannels(ids)
+        verifyNoInteractions(admissions)
+    }
+
+    @Test fun `channel repository enforces bounded positive execution identifiers before SQL`() {
+        val jdbc = mock(org.springframework.jdbc.core.JdbcTemplate::class.java)
+        val sqlRepository = DiscoveryVerificationRepository(jdbc)
+        listOf(emptyList(), listOf(0L), listOf(-1L), (1L..51L).toList()).forEach { ids ->
+            assertThrows(IllegalArgumentException::class.java) { sqlRepository.reportingAttemptChannels(ids) }
+        }
+        verifyNoInteractions(jdbc)
+        assertEquals(emptyMap<Long, VerificationAttemptChannels>(), sqlRepository.reportingAttemptChannels((1L..50L).toList()))
+        assertEquals(1, mockingDetails(jdbc).invocations.size)
+    }
+
     @Test fun `database error is never changed to zero`() {
         `when`(repository.reportingRuns(listOf(1L))).thenThrow(org.springframework.dao.DataAccessResourceFailureException("offline"))
         assertThrows(org.springframework.dao.DataAccessResourceFailureException::class.java) { service.summary(listOf(1)) }
@@ -200,10 +302,12 @@ class DiscoveryVerificationQueryServiceTest {
         `when`(repository.reportingCounts(filter)).thenReturn(mapOf(0L to VerificationCounts(profiles = 2)))
         `when`(repository.reportingCounts(filter, batches = true)).thenReturn(mapOf(1L to VerificationCounts(profiles = 2)))
         `when`(repository.reportingBatchReasons(3001)).thenReturn(listOf(Triple(1,
+            """["PAID_DETAILS_DISABLED"]""", 1L), Triple(1,
             """["APOLLO_CREDITS_EXHAUSTED","CREDITS_WAIT"]""", 1L)))
         val reasons = service.batches(3001, 0, 20).items.single().reasons
-        assertEquals(setOf("APOLLO_CREDITS_EXHAUSTED", "CREDITS_WAIT"), reasons.map { it.code }.toSet())
-        assertTrue(reasons.all { it.label == "额度不足，等待恢复" })
+        assertEquals(setOf("PAID_DETAILS_DISABLED", "APOLLO_CREDITS_EXHAUSTED", "CREDITS_WAIT"), reasons.map { it.code }.toSet())
+        assertEquals("付费详情未启用，证据仍不完整", reasons.single { it.code == "PAID_DETAILS_DISABLED" }.label)
+        assertTrue(reasons.filter { it.code != "PAID_DETAILS_DISABLED" }.all { it.label == "额度不足，等待恢复" })
         verifyNoInteractions(admissions)
     }
 
