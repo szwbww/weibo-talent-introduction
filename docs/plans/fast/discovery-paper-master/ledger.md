@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-10-23/discovery-paper-master.md
 
-- Status: PAUSED_FOR_HUMAN
-- Master plan: docs/plans/2026-10-23/discovery-paper-master.md (commit 6112a58b4bc94b510a6b1cff88cfd9ec159c83d6)
-- Amendments: A1,A2,A3,A4,A5,A6,A7,A8,A9,A10
+- Status: RUNNING
+- Master plan: docs/plans/2026-10-23/discovery-paper-master.md (commit 2187c5cfebd2da7e984f05d41b4c5ef037fa1969)
+- Amendments: A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12
 - Master base: c6e9709f349f32c5feb1d067b47c697b0dff05b6
 - Branch: fast/discovery-paper-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master
@@ -13,8 +13,8 @@
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: Child06b C-1 new queue nullablecriteria and legacyhistorical criteria shareversion1; unauthorized PipelineService change and explicit11file/provenance amendment required. Finalrequired171tests8fail, partialcodeuncommitted.
-- Resume from: 16a138852bea292d40b47dd9cb2d7fc0c8732578
+- Pause reason: N/A
+- Resume from: N/A
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
@@ -25,7 +25,7 @@
 | 04 | docs/plans/2026-10-23/discovery-paper-04-analysis.md | commit:bcf5d64fb9534759eb1cad08db3089d36e4a1fb0 | 01,02,03 | 2 | LIGHT_PASS_WITH_NOTES | 5b7bc8919202876e7d1b6884cd9c9cd50d1f23af | 3cdf7a6aa30ee773a0233e70e8c84d3b00754384 | 1 | bbd2700ca56d00a9e2845b61b15c1fb7e5b07a49 | bbd2700ca56d00a9e2845b61b15c1fb7e5b07a49 | ee524ba4c74480cd8a9dd985fae36ee886ef8160 | PaperAnalysisReverifierE2R1; F-1 closed; O-1 effects incomplete/O-2 historical classpath |
 | 05 | docs/plans/2026-10-23/discovery-paper-05-frontend.md | commit:541411d540019428c72b31775c325087b33da303 | 01,02,03,04 | 2 | LIGHT_PASS_WITH_NOTES | bbd2700ca56d00a9e2845b61b15c1fb7e5b07a49 | 1b8c4981f0116e17648f064482e505d436c02edd | 0 | — | 1b8c4981f0116e17648f064482e505d436c02edd | b9e3c3e257faf9a294b7f3c8a0187c8c06e75dc7 | PaperFrontendVerifierE2; O-1 fixture limit/O-2 attempt time/O-3 harness; no repairs |
 | 06a | docs/plans/2026-10-23/discovery-paper-06a-apollo-persistence.md | commit:6112a58b4bc94b510a6b1cff88cfd9ec159c83d6 | none | 2 | LIGHT_PASS | 1b8c4981f0116e17648f064482e505d436c02edd | 16a138852bea292d40b47dd9cb2d7fc0c8732578 | 0 | — | 16a138852bea292d40b47dd9cb2d7fc0c8732578 | 27acda3ca258d86bc1c1073520264f407100f502 | ApolloPersistenceVerifierE2; all fourgates pass; no findings/repairs |
-| 06b | docs/plans/2026-10-23/discovery-paper-06b-apollo-runtime.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 06a | 1 | PAUSED_FOR_HUMAN | 16a138852bea292d40b47dd9cb2d7fc0c8732578 | — | 0 | — | 16a138852bea292d40b47dd9cb2d7fc0c8732578 | 8116136747dfaa2173d36ebc52791c857e7bc8da | C-1 queuecompatibility;10dirtyauthorizedfiles, no productcommit;171tests8fail; smoke0 |
+| 06b | docs/plans/2026-10-23/discovery-paper-06b-apollo-runtime.md | commit:2187c5cfebd2da7e984f05d41b4c5ef037fa1969 | 06a | 2 | WAITING_FOR_AGENT | 16a138852bea292d40b47dd9cb2d7fc0c8732578 | — | 0 | — | — | — | Approved C-1 11-file/version amendment; ten dirty partial paths preserved; fresh IMPLEMENTER pending |
 | 07 | docs/plans/2026-10-23/discovery-paper-07-apollo-frontend.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 05,06a,06b | 1 | PENDING | — | — | 0 | — | — | — |  |
 
 ## Amendments
@@ -41,6 +41,8 @@
 | A8 | docs/plans/2026-10-23/discovery-paper-master.md | commit:bcf5d64fb9534759eb1cad08db3089d36e4a1fb0 | commit:541411d540019428c72b31775c325087b33da303 | I-3; 顺序、隔离与出口; 执行前检查第5项 | Synchronize child05 cap6→7 with approved A7 without behavior or invariant changes | HUMAN:批准 继续 — 2026-10-24, approving preceding child05 PAUSED_FOR_HUMAN bounded amendment |
 | A9 | docs/plans/2026-10-23/discovery-paper-06a-apollo-persistence.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | commit:6112a58b4bc94b510a6b1cff88cfd9ec159c83d6 | I-3; 执行前检查第5项 | Authorize exact28 inherited failing JS resource contracts for count/description/module-list sync only, original5+28=33 | HUMAN:批准 继续 — 2026-10-24, approving preceding06a complete inventory and explicit one-time cap exception |
 | A10 | docs/plans/2026-10-23/discovery-paper-master.md | commit:541411d540019428c72b31775c325087b33da303 | commit:6112a58b4bc94b510a6b1cff88cfd9ec159c83d6 | I-3; 变更文件清单; 执行前检查第5项 | Explicit one-time06a33-file test-only cap exception, no frontend product/behavior changes or general waiver | HUMAN:批准 继续 — 2026-10-24, approving preceding06a complete inventory and explicit one-time cap exception |
+| A11 | docs/plans/2026-10-23/discovery-paper-06b-apollo-runtime.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | commit:2187c5cfebd2da7e984f05d41b4c5ef037fa1969 | I-3; I-4; 执行前检查第5项 | Add PipelineService as11th file; newqueue criteriaVersion2 saveddefaults versus legacy1 historical-nullfalse, immutableexistingrun | HUMAN:批准 继续 — approving preceding06b C-1 bounded11-file compatibility amendment |
+| A12 | docs/plans/2026-10-23/discovery-paper-master.md | commit:6112a58b4bc94b510a6b1cff88cfd9ec159c83d6 | commit:2187c5cfebd2da7e984f05d41b4c5ef037fa1969 | I-3; I-4; 变更文件清单; 执行前检查第5项 | Explicit one-time06b10→11 exception only for persistentqueue provenance compatibility; no regression waiver | HUMAN:批准 继续 — approving preceding06b C-1 bounded11-file compatibility amendment |
 
 ## Baseline
 - Original worktree remains untouched. Its unrelated dirty application.yml attachment-transfer settings, CLAUDE/knowledge/release changes, other Apollo plans and untracked artifacts are not included in this implementation. Product baseline is the master-named c6e9709 commit.
@@ -106,3 +108,4 @@
 - Child06b PLAN_CONFLICT C-1 from actualdefaultqueue integration: PipelineService alwayshistorical=true, new/legacycriteriaVersion1 withapolloAssistnull indistinguishable; expectedtrue/false/true/true observedtrue/false/true/false. Minimum extra productionfile DiscoveryPipelineService.kt; existingauthorizedIntegrationTest can cover new/legacy; no provenmandatory dedicatedPipelineServiceTest/schema/domainfile.
 - Proposedboundedamendment addsPipelineService as11th file and explicitone-timecapexception; authorize persistentnewcriteriaversion/provenance while retainingversion1legacy historical-nullfalse, existingrun snapshots unchanged, newnulluses saveddefaults. No authority applied yet. C-2 withdrawn: explicittrue validation mayread beforebegin, whichfreezesonce afterexistingrunbranch.
 - Finalrequiredfull11class command with migrationIt=true/mysqlIt=true exited1:171tests/8failures/0errors/0skips, oneC-1 and7oldFlowIT assertions. Historicalprovenanceonly supportsINFERENCEpreexisting, no baselineexecutionclaim; no expectationsrepinned/ruleschanged. Separate actualSQLWorkerGate summarysmoke0; freeDETAILattempt/permit/cache/HTTP0, channels3/2/1/pending1. Evidence8116136747dfaa2173d36ebc52791c857e7bc8da; all10authorizedproductpaths dirtyuncommitted preserved, no incompletefeaturecommit.07pending.
+- User “批准 继续” approved06b C-1 minimum11-file/version amendment. Retained identity49eb41f858965a90761c7f61d3563dbdbd8b605a, fast/discovery-paper-master, emptyindex and tenpartialdirtypaths checked. Plan-only2187c5cfebd2da7e984f05d41b4c5ef037fa1969 recorded A11/A12; resume06b epoch2 fix_round0, unchangedproductbase16a1388, no completedchildreplay. SevenotherFlowITfailures remain unresolved and unwaived.
