@@ -137,3 +137,16 @@ needingDetails为空时，原规则路径正常finish；非空且detailEnabled=f
 ## 修正记录
 
 - 用户“批准 继续”批准06b暂停C-1的最小修订：加入DiscoveryPipelineService.kt，10→11文件明确一次性例外；新队列持久化criteriaVersion=2，旧version=1保留历史null→false，新版本按保存配置冻结；不改已有run、不新增迁移/领域字段/测试文件。保留原有准入/预算/缓存边界；七项FlowIT失败仍须定位并给出有证据的处理，不以批准视为豁免。批准及提交身份见 `../fast/discovery-paper-master/ledger.md` Amendments。
+- 用户“继续 修复 直到可以人工复验”，并澄清目标为“可以执行 review-fast-p”，批准前述七项测试契约修订，保持现行生产行为而非恢复旧规则；不新增文件。下节是本次获批精确替代契约，不是跳过失败的授权。
+
+### 获批测试契约修订：七项历史 FlowIT 场景
+
+仅修改既有DiscoveryVerificationFlowIT.kt中的对应场景及seed辅助函数；精确来源、原断言及保留清单见 `../fast/discovery-paper-master/children/06b/execution.md:451–516`。不得删除/跳过测试、改变Rules/Gate/client/生产预算或查询恢复行为；其余断言保持。
+
+1. seed尾部可增加settingsJson默认"{}"，仅三项历史SELF场景（小写HTTP SELF、公开别名/候选保留、SELF身份负例）显式传{"ruleVersion":0}，保持无apolloAccess，并断言版本0/LEGACY；原结果、身份负例、别名及记账断言全部保留。其余seed不改默认，不覆盖现行SELF直接准入测试。
+2. 预算复合场景保留403/invalid/pages/transient断言；将旧budget分为Apollo豁免与ORCID限制两场景。Apollo保留原3次ORCID及有效搜索输入，验证后续Apollo搜索、总次数>3且等于实际HTTP/attempt账、无ITEM_REQUEST_LIMIT、完整搜索/原规则复算/准入一致。ORCID上限2验证仅两次ORCID、无Apollo、COMPLETED/PENDING、NONE/无准入/无person、EVIDENCE_INCOMPLETE+ITEM_REQUEST_LIMIT。429/credits/Repository回归仍必跑。
+3. A3 incomplete-search仅把narrow期望0→1；保留全局不完整、无准入，增加COMPLETED/PENDING/NONE、SEARCH_PAGE_LIMIT、search.complete=false、全部page1、恰好一broad一narrow及HTTP/attempt记账一致。不得通过生产提前停止查询来迎合旧计数。
+4. 缓存别名恢复两个分支保留原payload（rule0、queryIndex1/page2、缺finishedQueryKeys），不伪造完成键；旧APOLLO_UNCLEAR预期替换为PENDING，并断言COMPLETED/NONE/无person/无准入、SEARCH_INCOMPLETE+SEARCH_PAGE_LIMIT、complete=false且缺"0"完成键。保留恰好一次page2/Frozen Alias、无ORCID、冻结证据及候选并集，核对新增attempt账。
+5. A4旧在途缓存保留全部原payload及一次page2/Example University/无institutionNormalization/PENDING；旧APOLLO_NO_MATCH预期替换为SEARCH_INCOMPLETE+SEARCH_PAGE_LIMIT且不得含NO_MATCH，增加complete=false/COMPLETED/NONE/无person/无准入及单次attempt账。缺失每查询完成记录时不能声称完整无匹配。
+
+上述修订不豁免必跑命令：完成后全量既定JDK11 selector及两个IT开关、绑定Node/语法和独立SQL/Worker/queue烟测均须重新成功，才可提交实施并交由独立轻量复验。
