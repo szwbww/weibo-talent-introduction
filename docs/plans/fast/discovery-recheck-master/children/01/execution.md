@@ -157,3 +157,115 @@ The human must resolve the scope conflict before any repair or implementation co
 
 PLAN_CONFLICT → controller persists PAUSED_FOR_HUMAN and obtains the smallest explicit scope/bound amendment. No later child dispatch. After a newly authorized execution, run the full required commands again; only a green completed child can receive `feat(fast-p): implement 01` and independent verification.
 
+
+## Epoch 2 — Execution Result: READY_FOR_VERIFICATION
+
+Plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-recheck-master/docs/plans/2026-10-24/discovery-recheck-01-counts.md`
+Plan SHA-256: `b7c5693604f114b596229f68cfe72df03d2de2321fc6c62c5ba9ac9bbe1c19c6`
+Execution ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-recheck-master/docs/plans/2026-10-24/discovery-recheck-01-counts.md@b7c5693604f114b596229f68cfe72df03d2de2321fc6c62c5ba9ac9bbe1c19c6`
+Execution epoch: NEW (epoch 2; fix_round=0; retained epoch-1 work reconciled against newly approved bytes)
+Approval basis: current invocation, brief epoch-2 amendment, human “授权 继续”, approved amendment commit `014e9df745fbd7761fe4fce38039aab98af877b4`, explicit local implementation commit authority.
+Executor: `Recheck01Epoch2`
+Target worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-recheck-master`
+Target branch: `fast/discovery-recheck-master`
+Worktree ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-recheck-master@fast/discovery-recheck-master@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-discovery-recheck-master`
+Pre-execution code SHA: `b161e87464d42b9fa2cd076ef9255b0e3b2b29ab`
+Pre-execution actual HEAD: `aa46959e0356ffb2a50eb65ee7351b299d0821e9`
+Post-execution code SHA: `7d0cb8c276533576d79f28fe970ccfbac4114d9e`
+Evidence HEAD: N/A — controller commits this appended report separately.
+Implementation boundary: `b161e87464d42b9fa2cd076ef9255b0e3b2b29ab..7d0cb8c276533576d79f28fe970ccfbac4114d9e` product changes; evidence/authority commits in ancestry remain distinct.
+
+### Task Status
+
+| Requirement | Status | Files | Evidence |
+|---|---|---|---|
+| I-1 one RAW/discovered scan, batch 500, initialized-only six decisions/four groups | IMPLEMENTED | CountsService, ScanService, service test | Actual retained code reconciled; fresh service tests exercise 15501 rows/32 batches, row-wise enrich oracle, one search/no listPage, no business/ES writes. HTTP runtime reports 100/200/50/11 and 15140 uninitialized. |
+| I-2 persisted status/result/time, real execution ID, errors and old success | IMPLEMENTED | CountsService, CountsController, Kotlin tests | Fresh tests cover page-11 503, database failure, scroll loss, failed shards, empty/invalid response, interruption and restart read; HTTP smoke observes PREPARING null ID, RUNNING ID 1, SUCCESS, then FAILED ID 2 preserving prior success. |
+| I-3 single flight, dedicated queue-zero executor, audit-only writes, side-effect-free GET | IMPLEMENTED | CountsService, DiscoveryExecutorConfig, service test | Twenty concurrent refreshes reuse one preparing request; executor isolation/rejection and read-only business boundaries pass. |
+| Single POST/two-second polling, sequence/timer isolation, old cards, separate status | IMPLEMENTED | app.js, discoveryReview.test.js | Fresh direct 46-test run covers late refresh/read replies, close/tab exit, failure without zeroing or overwriting operator result. |
+| S-1 exact status DOM/CSS, seventeen same-key resources | IMPLEMENTED | index.html, styles.css, discoveryReview.test.js | Exact DOM and six-line CSS assertions pass; seventeen shared resource keys verified by source assertions. |
+| Approved A1/A2 obsolete global-key assertion removal | IMPLEMENTED | discoveryApolloSettings.test.js | Removed only previous-plan-derived approvedKey lookup/comparison; retains 17 resources, nonempty shared key, existing plan-derived Apollo DOM/CSS and behavioral assertions; fresh 7-test run passes. |
+| Required full Maven-bound JS and selected Kotlin tests | IMPLEMENTED | authorized implementation/tests | Fresh Maven BUILD SUCCESS: Kotlin 88 pass, JS 1826 pass; no failures/errors/skips. |
+| Explicit implementation commit | IMPLEMENTED | eleven authorized product/test files | `7d0cb8c276533576d79f28fe970ccfbac4114d9e`, exact subject `feat(fast-p): implement 01`; no report/ledger/log in commit. |
+
+### Commands
+
+Every repository command used the explicit target worktree. All required tests ran after the final product/test edit; no subsequent product edit occurred.
+
+| Command | Result | Evidence |
+|---|---|---|
+| `python /Users/lukai/.agents/skills/execute-p/scripts/plan_identity.py ...` | FAIL | Exit 127: python alias unavailable; retried with installed python3, before any repository mutation. |
+| `python3 /Users/lukai/.agents/skills/execute-p/scripts/plan_identity.py docs/plans/2026-10-24/discovery-recheck-01-counts.md` | PASS | Exit 0 at entry and before commit; exact SHA above unchanged; artifacts 780/789. |
+| `python3 /Users/lukai/.agents/skills/execute-p/scripts/worktree_identity.py docs/plans/2026-10-24/discovery-recheck-01-counts.md --worktree /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-recheck-master` | PASS | Exit 0; entry root/branch/git-dir/HEAD captured. |
+| `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=DiscoveryReviewCountsServiceTest,DiscoveryReviewCountsControllerTest,DiscoveryReviewServiceTest,DiscoveryReviewAllPagesTest,DiscoveryReviewControllerTest` | PASS | Exit 0, BUILD SUCCESS; Kotlin 88 tests, 0 failures/errors/skips; Maven-bound JS 1826 tests/pass, 0 failed/skipped/cancelled; syntax checks app/task-modal-runtime pass. Full artifact://788. |
+| `node --test src/test/js/discoveryReview.test.js src/test/js/meetingConfirmationAssets.test.js src/test/js/trustReplyWorkbenchSharedMount.test.js` | PASS | Exit 0; 46 passed, 0 failed/skipped/cancelled. Includes exact S-1 DOM/CSS and shared 17 resource-key assertions. |
+| `node --check src/main/resources/static/app.js` | PASS | Exit 0. |
+| `node --test src/test/js/discoveryApolloSettings.test.js` | PASS | Exit 0; 7 passed, 0 failed/skipped/cancelled. |
+| `git diff --check` | PASS | Exit 0 after final product edit. |
+| JDK11 `javac -cp <java.class.path from target/surefire-reports/TEST-com.weibo.talentintroduction.discovery.service.DiscoveryReviewCountsServiceTest.xml> /tmp/DiscoveryCountsEpoch2Smoke.java` | PASS | Exit 0; Python subprocess with explicit target cwd. Existing report supplied runtime dependency paths only, not historical outcome evidence. |
+| JDK11 `java -cp /tmp:<same-test-classpath> DiscoveryCountsEpoch2Smoke` | PASS | Exit 0; fresh actual localhost HTTP POST/GET invoking changed controller/service, production executor, task-execution and scan/enrich; transcript artifact://786, summarized below. |
+| `rm /tmp/DiscoveryCountsEpoch2Smoke.java /tmp/DiscoveryCountsEpoch2Smoke.class` | PASS | Exit 0; disposable harness removed. |
+| Worktree identity helper with `--expect-root /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-recheck-master --expect-branch fast/discovery-recheck-master --expect-git-dir /Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-discovery-recheck-master` | PASS | Exit 0 immediately before staging and again immediately before commit; artifacts 789/790. |
+| Explicit `git add <eleven authorized paths>`; `git commit -m 'feat(fast-p): implement 01'` | PASS | Exit 0; eleven files, 934 insertions/102 deletions; no evidence staged. |
+| `git rev-parse HEAD && git merge-base --is-ancestor HEAD fast/discovery-recheck-master && git status --short` | PASS | Exit 0; HEAD is reported product SHA, branch reachability confirmed; only controller-owned ledger dirty before appending this report. |
+
+### Fresh Runtime Smoke
+
+Disposable loopback HTTP adapter calls the actual CountsController refresh/read methods with authenticated MockHttpServletRequest, actual CountsService, actual dedicated single-thread executor, actual TaskExecutionService and scan/enrich code. CountsFixture replaces external repository persistence/ES HTTP boundaries. A latch holds submission before task creation, then releases real asynchronous execution; polling observes RUNNING before completion. No production connection or live data mutation occurred.
+
+```text
+POST 202 requestKey=0b9478db-4f1b-44ed-877e-dfa6fb8477ea executionId=null state=PREPARING
+GET PREPARING executionId=null scanned=0 result=null lastSuccess=null
+GET RUNNING executionId=1 scanned=0 startedAt=2026-10-25T00:15:19.123477
+GET SUCCESS executionId=1 scanned=15501 uninitialized=15140
+  startedAt=2026-10-25T00:15:19.123477 asOf=2026-10-25T00:15:19.861768
+  decisions=AUTO_PASSED:100,NEEDS_REVIEW:200,MANUAL_APPROVED:30,LEGACY_APPROVED:20,HOLD:5,REJECTED:6
+  counts=autoPassed:100,needsReview:200,manualApproved:50,held:11
+POST 202 requestKey=eb4068f0-0a75-40be-bf3e-d542b5c29a9d executionId=null state=PREPARING
+GET FAILED executionId=2 scanned=5000 result=null
+  lastSuccess.asOf=2026-10-25T00:15:19.861768
+  lastSuccess.counts=autoPassed:100,needsReview:200,manualApproved:50,held:11
+  error.code=REVIEW_SCAN_FAILED causeCategory=HTTP_503 message=503 ES fixture unavailable
+SMOKE_OK searches=2 clears=2
+```
+
+This is changed async runtime-path evidence, not live MySQL/ES integration or browser/manual acceptance.
+
+### Changed Files
+
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewCountsService.kt` — retained typed asynchronous task-backed aggregation reconciled against current plan.
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryReviewCountsController.kt` — authenticated accepted/read endpoints and stable error responses.
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewScanService.kt` — scanAll completeness failures/finally cleanup; listPage unchanged.
+- `src/main/kotlin/com/weibo/talentintroduction/config/DiscoveryExecutorConfig.kt` — isolated single-thread queue-zero executor.
+- `src/main/resources/static/app.js` — single refresh/poll chain, lifecycle guards and timestamped complete cards.
+- `src/main/resources/static/index.html` — exact S-1 status after cards, uniform new resource keys.
+- `src/main/resources/static/styles.css` — exact six-line S-1 CSS.
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewCountsServiceTest.kt` — counts/oracle/failure/concurrency coverage and external-boundary fixture.
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryReviewCountsControllerTest.kt` — independent login/acceptance/read/error tests retained.
+- `src/test/js/discoveryReview.test.js` — async counts, late replies, old success and DOM/CSS/resource regressions.
+- `src/test/js/discoveryApolloSettings.test.js` — epoch-2 approved removal of obsolete previous-plan global-key binding; shared-key and Apollo assertions retained.
+
+Evidence only: this append. Controller-owned ledger changes preserved without editing or staging. No later-child behavior, unlisted product file, other worktree, plan or applied migration changed.
+
+### Deviations
+
+- None to the approved epoch-2 contract. General skill mid-flight red/green steps superseded by explicit brief requirement to run tests only after implementation completion.
+- No independent verify-p/review-p/fix-v invoked; READY_FOR_VERIFICATION is an execution handoff, not PASS.
+- Browser viewport/manual acceptance not performed; no claim of live database or real external ES transport integration.
+
+### Freshness
+
+- Plan identity rechecked: YES; exact hash unchanged.
+- Worktree identity rechecked: YES; exact root/branch/git-dir gates immediately before staging/commit.
+- Reported commits reachable from target branch: YES; product commit is target HEAD and ancestor of target branch.
+- Required commands run this invocation: YES; all fresh and successful after final implementation.
+- Historical evidence used only as baseline: YES; no epoch-1 result substituted.
+- Product/index cleanliness: product changes committed; only controller-owned ledger remained dirty before this report append. Evidence intentionally uncommitted for controller.
+
+### Remaining Blocker
+
+- None.
+
+### Next Action
+
+- READY_FOR_VERIFICATION → controller's independent light verification under fast-p; no later-child review performed by executor.
