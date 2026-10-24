@@ -85,9 +85,11 @@ PUT同路径body严格为`{revision,searchEnabled,detailEnabled}`；正整数/0 
 
 新增SettingsIT同时覆盖真实MySQL CAS、Controller HTTP响应、重启service读取、无行/坏行/DB异常。使用本地假HTTP观测器断言保存期间外部请求0。测试fixture可显式seed四组合，提供06b复用的设置构造方式；不能在生产代码加入“测试模式跳过DB”的分支。
 
+本轮新增模块引发的全量JS资源契约同步也在本切片完成：仅对下列28份测试同步资源数量/描述16→17，以及mailboxChatBehavior的有序资源列表补入实际位置的discovery-papers.js；保留同key、加载顺序、无重复、runtime不带版本及其余行为断言。不修改前端产品文件、不排除测试；必需Maven命令及其绑定全量Node必须通过。
+
 ## 变更文件清单
 
-5文件；子系统1；既有共享store新字段0（新表完整建模）。
+33文件：原5文件实现与已明确批准的28份JS测试机械同步；本切片享有主计划I-3一次性测试同步上限例外，其他子计划仍≤10文件。既有共享store新字段0（新表完整建模）。
 
 | 文件 | 动作 |
 |---|---|
@@ -96,6 +98,34 @@ PUT同路径body严格为`{revision,searchEnabled,detailEnabled}`；正整数/0 
 | src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryApolloSettingsService.kt | DTO/默认/快照协议 |
 | src/main/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryApolloSettingsController.kt | 独立GET/PUT映射 |
 | src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryApolloSettingsIT.kt | 数据库/API/CAS/副作用 |
+| src/test/js/batchDemandProgress.test.js | 资源数量/描述16→17 |
+| src/test/js/batchEmailVerification.test.js | 资源数量/描述16→17 |
+| src/test/js/batchSenderFilter.test.js | 资源数量/描述16→17 |
+| src/test/js/checkRepliesRelocation.test.js | 资源数量/描述16→17 |
+| src/test/js/contactTimingStyle.test.js | 资源数量/描述16→17 |
+| src/test/js/discoveryScheduleSetting.test.js | 资源数量/描述16→17 |
+| src/test/js/expertContactSharedNote.test.js | 资源数量/描述16→17 |
+| src/test/js/expertManualProfile.test.js | 资源数量/描述16→17 |
+| src/test/js/expertMeetingVideo.test.js | 资源数量/描述16→17 |
+| src/test/js/mailOpenTracking.test.js | 资源数量/描述16→17 |
+| src/test/js/mailboxChatBehavior.test.js | 有序资源列表实际位置增加discovery-papers.js |
+| src/test/js/mailboxChatStyle.test.js | 资源数量/描述16→17 |
+| src/test/js/mailboxGroupPush.test.js | 资源数量/描述16→17 |
+| src/test/js/mailboxReplyIdentity.test.js | 资源数量/描述16→17 |
+| src/test/js/mailboxSuspensionStyle.test.js | 资源数量/描述16→17 |
+| src/test/js/mailboxTemplateReferenceStyle.test.js | 资源数量/描述16→17 |
+| src/test/js/manualReplySubjectPrefill.test.js | 资源数量/描述16→17 |
+| src/test/js/meetingCalendar.test.js | 资源数量/描述16→17 |
+| src/test/js/meetingConfirmationAssets.test.js | 两处资源数量/描述16→17 |
+| src/test/js/mobileCoreNavigation.test.js | 资源数量/描述16→17 |
+| src/test/js/overlayAndDialogContrast.test.js | 资源数量/描述16→17 |
+| src/test/js/ragKnowledgeBasePage.test.js | 资源数量/描述16→17 |
+| src/test/js/ragWorkbenchRender.test.js | 资源数量/描述16→17 |
+| src/test/js/recipientPreviewDiagnostics.test.js | 资源数量/描述16→17 |
+| src/test/js/senderBindingDisplay.test.js | 资源数量/描述16→17 |
+| src/test/js/taskActivityCenter.test.js | 资源数量/描述16→17 |
+| src/test/js/taskRecordsSemantics.test.js | 资源数量/描述16→17 |
+| src/test/js/trustReplyWorkbenchSharedMount.test.js | 资源数量/描述16→17 |
 
 ## 验收标准
 
@@ -118,3 +148,7 @@ PUT同路径body严格为`{revision,searchEnabled,detailEnabled}`；正整数/0 
 - 操作步骤：1. A/B依次用旧revision保存不同组合。2. 停MySQL再GET/PUT。3. 查响应与日志。4. 恢复数据库并查正在运行任务快照。
 - 预期结果：B409；DB故障503，不回退默认；没有Key；任务快照和所有准入状态不变。
 - 覆盖：I-2/I-3/I-4；must-NOT-change。
+
+## 修正记录
+
+- 2026-10-24：用户“批准 继续”批准06a暂停报告中的完整28测试清单和33文件一次性测试同步例外。失败凭据：`../fast/discovery-paper-master/children/06a/execution.md:139–196` 所列grep输入/实际29失败及原始28路径；这些JS与index相对06a base字节未改，来源为05模块新增。授权仅资源契约同步，所有原行为约束保留；不将继承失败当成06a产品错误，不排除绑定Node门禁。身份及批准记录于ledger Amendments。
