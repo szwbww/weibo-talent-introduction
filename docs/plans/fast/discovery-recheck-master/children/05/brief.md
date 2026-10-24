@@ -47,3 +47,19 @@ Any extra required file, changed behavior beyond approved plan, or conflicting a
 - Explicit local implementation authority: feat(fast-p): implement 05. Stage only authorized product/test files, exclude all fast-p logs/ledger/brief. Controller commits verification evidence separately.
 - Append full execute-p result to docs/plans/fast/discovery-recheck-master/children/05/execution.md; include exact immutable identity/base/head/commands/limits. Child logs append-only.
 - No plan/ledger/other-worktree edits, unapproved test files, unrelated cleanup, push/merge/rebase/amend/reset or later-child investigation. Return READY_FOR_VERIFICATION | BLOCKED | PLAN_CONFLICT, exact commit SHA, command summary, report path.
+
+## Epoch 2 — Approved resume authority (supersedes epoch1 scope/identity only)
+
+- User “授权 继续” on2026-10-25 approves the exact six named existing test files and child05-specific9→15 cap exception. Plans-only amendment/master identity: commit863530b3f0d8aca6c0cd03fa29d9af7df8cb09d6. Exact child05 plan identity is now commit:863530b3f0d8aca6c0cd03fa29d9af7df8cb09d6; read its current bytes fully.
+- Product base unchanged6884eb7f31b1763dbb14422e91dfd63dc022fb94; retained pause HEADbb6b222b533a584648c1464b7ee8d6dd96c13852. Eight authorized tracked drafts plus new V161 migration preserved unstaged, uncompiled and unverified; reconcile and finish rather than replay completed01–04. Fresh execute-p execution epoch, fix_round0; old reports append-only.
+- Authorized Files now the original nine above PLUS these six, strictly fixture schema-target synchronization only, preserving original regressions/intentional migration-before-after stages:
+  - src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationReportingIT.kt
+  - src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementFlowIT.kt
+  - src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationFlowIT.kt
+  - src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationIntegrationTest.kt
+  - src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationReplayToolTest.kt
+  - src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt
+- Mandatory additional fresh command after final product/test edit:
+  `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=DiscoveryVerificationReportingIT,DiscoveryCountrySupplementFlowIT,DiscoveryVerificationFlowIT,DiscoveryVerificationIntegrationTest,DiscoveryVerificationReplayToolTest,DiscoveryVerificationWorkerTest -DmysqlIt=true`
+- Original four-class primary command and independent disposable actual MySQL/repository/Gate/query runtime smoke remain mandatory. No mandatory MySQL skip, production schema-detection shim, assertion weakening, production behavior expansion, or later-child implementation. All prior invariants/downstream contracts remain.
+- Append new epoch result to execution.md, never replace epoch1 history. Implementation commit remains feat(fast-p): implement 05, only fifteen authorized product/test paths; no fast-p artifacts/ledger/plan staging.

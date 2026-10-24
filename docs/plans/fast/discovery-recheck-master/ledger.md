@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-10-24/discovery-recheck-master.md
 
-- Status: PAUSED_FOR_HUMAN
-- Master plan: docs/plans/2026-10-24/discovery-recheck-master.md (commit 5f9136047ce821259ce96b70871b71045ab9778b)
-- Amendments: A1, A2, A3, A4
+- Status: RUNNING
+- Master plan: docs/plans/2026-10-24/discovery-recheck-master.md (commit 863530b3f0d8aca6c0cd03fa29d9af7df8cb09d6)
+- Amendments: A1, A2, A3, A4, A5, A6
 - Master base: b161e87464d42b9fa2cd076ef9255b0e3b2b29ab
 - Branch: fast/discovery-recheck-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-recheck-master
@@ -13,8 +13,8 @@
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: Child05 requires six unlisted old-schema consumer test fixtures to migrate to V161; nine-to-fifteen files also exceeds master cap. No authority to expand or add schema-detection shim.
-- Resume from: 11a9cedf0074f831bc59f7816818355e30310c92
+- Pause reason: N/A
+- Resume from: N/A
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
@@ -23,7 +23,7 @@
 | 02 | docs/plans/2026-10-24/discovery-recheck-02-archive.md | sha256:01b4abd5cf06e535848abb65b1d9bc62194c225df4f7dfa12e20e6d2a002b13f | 01 | 1 | LIGHT_PASS_WITH_NOTES | 7d0cb8c276533576d79f28fe970ccfbac4114d9e | 5487f3b45085f20f8db8554fb94888de1446c378 | 0 | — | 5487f3b45085f20f8db8554fb94888de1446c378 | f48eacfd708a72f78ae975f3609d8e220d26693b | Independent Recheck02VerifierFull; O-02 unrelated compiler warnings only; no repairs. |
 | 03 | docs/plans/2026-10-24/discovery-recheck-03-identity-parser.md | commit:5f9136047ce821259ce96b70871b71045ab9778b | 02 | 2 | LIGHT_PASS_WITH_NOTES | 5487f3b45085f20f8db8554fb94888de1446c378 | bc5ec812dedd7ac6aef5ea0e4d9094e19b2a9f4a | 0 | — | bc5ec812dedd7ac6aef5ea0e4d9094e19b2a9f4a | bb338ab750388cf1bf411684c6b33cd8c5fbd792 | Independent Recheck03Verifier; O-03-01 authorized private/live skips, O-03-02 existing warnings; no repairs. |
 | 04 | docs/plans/2026-10-24/discovery-recheck-04-qualification.md | sha256:04b07f58de1d6e9199e0919047cfffde967896f1bd4cfcad526b40a7d412dd0d | 03 | 1 | LIGHT_PASS_WITH_NOTES | bc5ec812dedd7ac6aef5ea0e4d9094e19b2a9f4a | 6884eb7f31b1763dbb14422e91dfd63dc022fb94 | 0 | — | 6884eb7f31b1763dbb14422e91dfd63dc022fb94 | 4c2fdcd72494ef8622132a27288ed41c80c132da | Independent Recheck04Verifier; O-04-01 existing warnings/harness limits record-only; no repairs. |
-| 05 | docs/plans/2026-10-24/discovery-recheck-05-history.md | sha256:1e269d2e8ba0bee59ff0442e6e10b3e750fb9323d9dc4e666a8f5dfd80b6870a | 04 | 1 | PAUSED_FOR_HUMAN | 6884eb7f31b1763dbb14422e91dfd63dc022fb94 | — | 0 | — | 6884eb7f31b1763dbb14422e91dfd63dc022fb94 | 358884570e8d77903481addf953d3bb019b90d96 | Recheck05Implementer PLAN_CONFLICT; nine drafts retained unstaged, required commands/smoke not run, no implementation/verifier/repairs. |
+| 05 | docs/plans/2026-10-24/discovery-recheck-05-history.md | commit:863530b3f0d8aca6c0cd03fa29d9af7df8cb09d6 | 04 | 2 | WAITING_FOR_AGENT | 6884eb7f31b1763dbb14422e91dfd63dc022fb94 | — | 0 | — | — | — | Human-approved six fixture files and15-file exception; new epoch2, retained nine drafts; acquire fresh implementer. |
 | 06 | docs/plans/2026-10-24/discovery-recheck-06-evidence.md | sha256:c3a21b4a2fbfe80968f19302d23979dbfec9d1a97e14c7717ba86c55674829ae | 05 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 | 07 | docs/plans/2026-10-24/discovery-recheck-07-pipeline.md | sha256:f07ebf6c63e7e3c1e084a79fcbde47ce51a5ed0f69343b569556562a3d332ad4 | 06 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 | 08 | docs/plans/2026-10-24/discovery-recheck-08-api.md | sha256:47196d02af0f41bd852216230d91ec446020baa6e19b6e5e9a1b0f8c7e1d440a | 07 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
@@ -37,6 +37,8 @@
 | A2 | docs/plans/2026-10-24/discovery-recheck-01-counts.md | commit:96c70d8cb8d07562ea5a2ccca6d08ca86f1369b0 | commit:014e9df745fbd7761fe4fce38039aab98af877b4 | I-M4：范围受子计划约束 | Add discoveryApolloSettings.test.js; retire its old-plan global-key assertion while preserving Apollo contracts and separate controller tests. | HUMAN:授权 继续 (2026-10-25; approves the immediately preceding recommended 11-file child-01 test exception) |
 | A3 | docs/plans/2026-10-24/discovery-recheck-master.md | commit:014e9df745fbd7761fe4fce38039aab98af877b4 | commit:5f9136047ce821259ce96b70871b71045ab9778b | I-M4：范围受子计划约束 | Synchronize child03 manifest count six to nine for three authorized existing regression tests; no cap or product behavior change. | HUMAN:授权 继续 (2026-10-25; approves the immediately preceding recommendation to add the three named child03 regression tests only) |
 | A4 | docs/plans/2026-10-24/discovery-recheck-03-identity-parser.md | commit:29e6915c1b5a63d6f68b9ba1c0c307513bae0058 | commit:5f9136047ce821259ce96b70871b71045ab9778b | I-M4：范围受子计划约束 | Authorize Capture/PdfEmailExtractor/ExpertDiscoveryService test reconciliation for exact source-proven owners and current layout version; genuine ambiguity negatives remain strict. | HUMAN:授权 继续 (2026-10-25; approves the immediately preceding recommendation to add the three named child03 regression tests only) |
+| A5 | docs/plans/2026-10-24/discovery-recheck-master.md | commit:5f9136047ce821259ce96b70871b71045ab9778b | commit:863530b3f0d8aca6c0cd03fa29d9af7df8cb09d6 | I-M4：范围受子计划约束 | Only child05 may use15 files to synchronize six existing direct/shared consumer test schemas with V161; no production expansion. | HUMAN:授权 继续 (2026-10-25; approves immediately preceding six named child05 test files and9→15 cap exception) |
+| A6 | docs/plans/2026-10-24/discovery-recheck-05-history.md | commit:bb6b222b533a584648c1464b7ee8d6dd96c13852 | commit:863530b3f0d8aca6c0cd03fa29d9af7df8cb09d6 | I-M4：范围受子计划约束 | Add Reporting/CountrySupplement/Flow/Integration/Replay/Worker test fixture schema targets and their fresh required command; preserve assertions and intentional migration stages. | HUMAN:授权 继续 (2026-10-25; approves immediately preceding six named child05 test files and9→15 cap exception) |
 
 ## Baseline
 - Authorized invocation: `/fast-p docs/plans/2026-10-24/discovery-recheck-master.md`.
@@ -124,3 +126,8 @@
 - Paused before required command/smoke/implementation commit; zero fresh child05 tests, no independent verifier or repair. Eight tracked authorized drafts plus new V161 migration remain unstaged and unverified; index was empty in executor's exact paused-state receipt. Current committed product head6884eb7f31b1763dbb14422e91dfd63dc022fb94; pre-pause governance HEAD11a9cedf0074f831bc59f7816818355e30310c92.
 - Committed only child05 pause evidence358884570e8d77903481addf953d3bb019b90d96. No terminal child05 checkpoint or final-readiness validation applies. Children06–10 remain PENDING; no whole-system verification.
 - On human approval: amend exact master/child05 plans in separate plans-only commit, append canonical Before/After amendment rows, reconcile retained drafts in new child05 execution epoch/fix_round0, complete all commands/runtime smoke then fresh independent light verification. Never replay completed01–04.
+
+## Child05 resume — Epoch 2
+- User “授权 继续” approves the exact six named existing test fixtures and child05-only9→15 file exception. Plans-only amendment863530b3f0d8aca6c0cd03fa29d9af7df8cb09d6 committed before resuming product work; authority A5/A6 above.
+- Retained branch/worktree and pause HEADbb6b222b533a584648c1464b7ee8d6dd96c13852 matched; eight scoped tracked edits plus new V161 draft retained, product index empty. No unexpected product path or completed-child replay.
+- New execution epoch2, fix_round0. Product base remains6884eb7f31b1763dbb14422e91dfd63dc022fb94; prior epoch records unchanged. Exact revised plan governs fifteen files, unchanged production behavior and mandatory fresh primary plus six-fixture regression commands/runtime smoke.
