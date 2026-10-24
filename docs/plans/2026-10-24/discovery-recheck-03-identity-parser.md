@@ -45,10 +45,11 @@ PdfAuthorContactLayout:78 y>90%跳过，:286 markerSegments首标记行首限制
 2. SourceAuthorEmailResolver.textClaims增加明确`email (B. Bayerlein)`和`email (A.M.A.)`语法；缩写按已知作者所有given/family initials展开且唯一；同段两个邮箱各自标签隔离。仍由results统一冲突处理、产生proof；不得在审计脚本里补造proof。（I-1）
 3. PlainTextEmailExtractor精确限制裸at/dot上下文；保留brace、mailto、显式混淆邮箱；别名“available”并不全局禁用。（I-3）
 4. 同步RULE_VERSION并用程序生成PDF fixture测试页面坐标，不把版权全文加入仓库。回归负例：Favero邮箱不能绑Alessandro Achille；共享星号、多位同initial、首字母损坏、上一邮箱标签干扰。真实原文全量回放由10完成。（I-1/2/4）
+5. 按2026-10-25用户授权，同步已有回归中钉死旧解析结果的断言：捕获layout版本改为当前RULE_VERSION；lun仅Mette B. Gaarde的唯一†页底邮箱可绑定，Lun邮箱仍无归属；debie中的Nour/Marwa按明确独立符号分别归属。消费测试只同步这些确证身份带来的计数和审计，不修改consumer/准入逻辑。保留所有真正的共享、未知、相邻、损坏署名和错误所有者负例；不得宽化为任意非空结果。（I-1/2/4）
 
 ## 变更文件清单
 
-仅下列 6 个文件。新增文件明确标注；其余文件不得顺带修改。
+仅下列9个文件；新增授权仅为三个既有回归测试，不扩大生产实现范围。新增文件明确标注；其余文件不得顺带修改。
 
 | 文件 | 变更 |
 |---|---|
@@ -58,6 +59,9 @@ PdfAuthorContactLayout:78 y>90%跳过，:286 markerSegments首标记行首限制
 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperLayoutRegressionTest.kt` | 真实布局结构正负fixture |
 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt` | 标签与归属冲突 |
 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/PlainTextEmailExtractorTest.kt` | 伪邮箱及回归 |
+| `src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveCaptureTest.kt` | 同步当前layout实现版本断言，保留first/identity/extraction不变量 |
+| `src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt` | 精确核对Mette唯一页底归属，保留Lun及真实歧义负例 |
+| `src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt` | 同步确证身份恢复的消费计数/审计断言，消费与准入逻辑不改 |
 
 ## 验收标准
 
@@ -65,6 +69,7 @@ PdfAuthorContactLayout:78 y>90%跳过，:286 markerSegments首标记行首限制
 - I-2：坐标x=32的Bernd不能变ernd；y=96%页高的独占脚注恢复；参考文献同邮箱不得凭位置关联。
 - I-3：available at www.nature.com输出0；Email: bayerlein at example.edu输出真实地址；`a(at)example.edu`仍输出；97是原批出现次数不是必达新增数量。
 - I-4：缓存兼容/身份证明常量diff为0；已有来源及队列消费测试运行；新layout版本在first与analysis均可读。
+- 新授权回归须通过：`DiscoveryPaperArchiveCaptureTest`、`PdfEmailExtractorTest`、`ExpertDiscoveryServiceTest`；真实队列/核验MySQL兼容测试以`-DmysqlIt=true`执行，不以默认关闭的skip代替证据。私有original294和主动关闭的在线Europe PMC烟测须明确记录，不冒称全批历史验证完成。
 
 ## 人工验收清单
 
@@ -87,3 +92,7 @@ PdfAuthorContactLayout:78 y>90%跳过，:286 markerSegments首标记行首限制
 - 覆盖：I-4
 
 人工验收开始后，才从本节导出同名前缀 `-acceptance.md`；机器通过不代表人工验收完成。
+
+## 修正记录
+
+- 2026-10-25，用户“授权 继续”：依据总计划I-M4，清单由6→9，仅增加上述三个既有测试；旧断言把本计划要求恢复的唯一归属当成无归属，或仍钉死旧layout版本。同步精确正例，不改历史fixture，不放宽身份边界，不扩生产行为。授权与提交身份见`../fast/discovery-recheck-master/ledger.md`的Amendments。

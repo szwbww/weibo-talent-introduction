@@ -51,7 +51,7 @@
 |---|---|---:|---|---|
 | [01](discovery-recheck-01-counts.md) | 一次异步统计、准确错误提示 | 11（授权测试例外） | 审核计数+前端 | 可独立发布 |
 | [02](discovery-recheck-02-archive.md) | 原文格式、姓名显示、DOCTYPE | 10 | 原文分析+前端 | 可独立发布 |
-| [03](discovery-recheck-03-identity-parser.md) | 明确邮箱姓名归属、伪邮箱 | 6 | 来源解析 | 可独立发布；不自动回填 |
+| [03](discovery-recheck-03-identity-parser.md) | 明确邮箱姓名归属、伪邮箱 | 9 | 来源解析 | 可独立发布；不自动回填 |
 | [04](discovery-recheck-04-qualification.md) | 简介事实、绑定姓名、复合职称 | 9 | 原文事实+核验规则 | 可独立发布；规则版本化 |
 | [05](discovery-recheck-05-history.md) | 独立轮次和轨迹schema/读隔离 | 9 | 核验持久化 | 兼容部署，无新启动入口 |
 | [06](discovery-recheck-06-evidence.md) | 共享只读原文/学术采集 | 9 | 原文分析+核验证据 | 兼容部署，无新入口 |
@@ -150,3 +150,4 @@
 ## 修正记录
 
 - 2026-10-25，用户“授权 继续”：批准01增加`src/test/js/discoveryApolloSettings.test.js`并允许11文件，保留独立控制器测试；原断言从旧计划动态读取全局资源键，字面量检索无法发现，导致01必需的资源键升级与全量JS回归冲突。仅修正过期断言，不修改历史计划、不扩大产品行为；授权与提交身份详见`../fast/discovery-recheck-master/ledger.md`的Amendments。
+- 2026-10-25，用户再次“授权 继续”：批准03增加`DiscoveryPaperArchiveCaptureTest.kt`、`PdfEmailExtractorTest.kt`、`ExpertDiscoveryServiceTest.kt`，清单6→9、未突破I-M4上限。只同步已证实的layout版本及明确唯一来源归属正例，不放宽共享/未知/相邻/错误所有者保护，不改变消费或准入行为；授权与提交身份详见同一ledger的Amendments。
