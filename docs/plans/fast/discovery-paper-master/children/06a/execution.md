@@ -216,3 +216,126 @@ Parsed actual `^test at` receipts: 29 failures, 28 distinct paths. Final artifac
 - Remaining blocker: mandatory Maven's inherited bound-Node failures need a controller/human decision because all28 required test-only consumers are outside the five authorized06a paths. No new06a behavior is identified as their cause. No plan amendment, unilateral repair, push, merge, deploy, rewrite, later-child work or independent verification was performed.
 - Next action: controller evaluates inherited-gate classification and any explicit bounded test-only authority; do not silently advance the child as READY or bypass the bound gate.
 
+
+## Epoch2 — Execution Result: READY_FOR_VERIFICATION
+
+Plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master/docs/plans/2026-10-23/discovery-paper-06a-apollo-persistence.md`
+
+Plan SHA-256: `9802f4f4b4009a8dfbf57eb158efb83e32a32e5badc7f8f27f5fddc4b6aa3fc7`
+
+Execution ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master/docs/plans/2026-10-23/discovery-paper-06a-apollo-persistence.md@9802f4f4b4009a8dfbf57eb158efb83e32a32e5badc7f8f27f5fddc4b6aa3fc7`
+
+Execution epoch: NEW identity, approved epoch2 continuation, fix_round0. Approval basis: current assignment and amended child/master A9/A10 at `6112a58b4bc94b510a6b1cff88cfd9ec159c83d6`; exact28 JS resources synchronization, original five-file implementation retained. Executor: ApolloPersistenceImplementerE2, execute-p only.
+
+Target worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master`
+
+Target branch: `fast/discovery-paper-master`
+
+Worktree ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master@fast/discovery-paper-master@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-discovery-paper-master`
+
+Original child base: `1b8c4981f0116e17648f064482e505d436c02edd`; retained code commit: `ae467257b520133ad2db999478d02bd9b02b6c85`. Pre-execution HEAD (including governance/evidence): `40fc7a4028fadb95276a390f5cd302355018a36d`.
+
+Post-execution code SHA / HEAD:
+
+16a138852bea292d40b47dd9cb2d7fc0c8732578
+
+Subject: `feat(fast-p): implement 06a`. New continuation commit, no amend/rewrite. Evidence HEAD: N/A; this appended report is left for controller evidence handling, excluded from product commit. Implementation boundary: retained five files plus continuation `40fc7a4028fadb95276a390f5cd302355018a36d..16a138852bea292d40b47dd9cb2d7fc0c8732578` (28 JS files, 35 insertions/35 deletions). Pre-existing dirty ledger preserved unstaged.
+
+### Current identity task status
+
+| Requirement | Status | Evidence |
+|---|---|---|
+| T-1 / I-1–I-3 | IMPLEMENTED, retained unchanged | Read actual ae467257 diff: exact V160 singleton DDL, repository find/save transaction/SELECT FOR UPDATE/CAS, validation/no-op/first insertion conflict, UTC milliseconds. Fresh real MySQL IT below. |
+| T-2 / I-1–I-4 | IMPLEMENTED, retained unchanged | Independent flags, fail-closed storage errors, defaults without fake row, separate effective availability and worker flag, strict authenticated controller and single frozen protocol. Fresh HTTP and protocol tests below. No runtime wiring added. |
+| T-3 original SQL/HTTP tests | IMPLEMENTED, retained unchanged | SettingsIT8/8, existing controller4/4; four combinations/service recreation/no-op/defaults/bad rows/storage errors/strict payloads/frozen protocol and genuine SQL concurrency. |
+| T-3 / A9/A10 resource synchronization | IMPLEMENTED | Exact28 authorized JS files; counts/descriptions16→17 and exact ordered module lists insert discovery-papers.js before app.js. All key equality/order/no-duplicate/unversioned runtime/business assertions retained. Bound full1816 Node passes without exclusion. |
+| A-1/A-2 execution smoke | IMPLEMENTED, not human sign-off | Separate actual SQL/TCP HTTP launcher, default/save/recreate/independent flags, stale409/malformed400/anonymous401, deterministic first-write race, actual MySQL stop/start503/recovery, unchanged93 non-setting tables and provider observer0. |
+
+### Fresh commands and results
+
+All shell commands used the target worktree as cwd.
+
+```sh
+env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=DiscoveryApolloSettingsIT,DiscoveryVerificationControllerTest -DmigrationIt=true
+```
+
+Selector confirmed from `src/test/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryVerificationControllerTest.kt:24`; no selector correction/exclusion.
+
+| Invocation | Exit/result | Evidence |
+|---|---|---|
+| First final check, finished09:00:44+08 | 1; JVM12 passed, Node1816/pass1815/fail1/skipped0 | `artifact://393`. After updating count, mailboxGroupPush exact ordered list exposed same missing discovery-papers.js entry. Updated only that authorized file's list at actual position; current user assignment explicitly authorizes actual ordered module list synchronization. No product change/test weakening. |
+| Final state command, finished09:04:04+08 | 0 BUILD SUCCESS | `artifact://395`: ControllerTest4/4/time1.321s; SettingsIT8/8/time26.522s; JVM12/failure0/error0/skipped0. Bound fullNode1816/suites334/pass1816/fail0/cancelled0/skipped0/todo0; node-check-app and node-check-task-modal-runtime also executed successfully. |
+| Separate fresh SQL/HTTP launcher | 0 | Python Eval subprocess below; complete classpath freshly parsed from final Surefire XML, not historical helper. |
+| git diff --cached --check | 0 | Staged exact28 JS paths only, output `artifact://398`; no reports/ledger/products staged. |
+| identity helpers/stage/commit/reachability | 0 | `artifact://398`, `artifact://399`; root/branch/git-dir bound before add and commit; HEAD SHA above, ancestor of target branch, same plan SHA after commit. Product working tree/index clean; dirty ledger preserved. |
+
+No tests/build/lint/formatter midflight; first gate followed completed initial edits, second followed the single authorized test correction. This is execution evidence, not independent verification. No full verify-p/review-p/repair-p or later-child work.
+
+### Separate actual SQL/HTTP smoke invocation
+
+Executed through Python Eval exactly as follows:
+
+```python
+from pathlib import Path
+import xml.etree.ElementTree as ET
+import subprocess, hashlib
+worktree = Path('/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master')
+report = worktree / 'target/surefire-reports/TEST-com.weibo.talentintroduction.discovery.service.DiscoveryApolloSettingsIT.xml'
+root = ET.parse(report).getroot()
+props = {p.attrib['name']: p.attrib['value'] for p in root.findall('./properties/property')}
+cp = props['surefire.test.class.path']
+assert str(worktree / 'target/test-classes') in cp and str(worktree / 'target/classes') in cp
+assert 'mysql-connector-j' in cp and 'tomcat-embed-core' in cp
+command = ['/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home/bin/java', '-cp', cp,
+           'com.weibo.talentintroduction.discovery.service.DiscoveryApolloSettingsSmokeLauncher']
+result = subprocess.run(command, cwd=worktree, text=True, stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT, timeout=180)
+print('FRESH_SUREFIRE', root.attrib)
+print('CLASSPATH_SHA256', hashlib.sha256(cp.encode()).hexdigest())
+print(result.stdout)
+print('APOLLO_RUNTIME_EXIT', result.returncode)
+```
+
+Fresh XML tests8/errors0/failures0/skipped0/time26.522s. Full classpath SHA-256 `f3b59342667efda4decb557407c65553243f487e1361d23b82ba322cd836228e` (same dependency bytes as epoch1, freshly obtained from this run).
+
+Observed separate runtime output09:04:10–09:04:35+08:
+
+```text
+Successfully applied 159 migrations to schema `apollo_settings`, now at version v160
+APOLLO_RUNTIME_FLOW defaultGET=200/revision0 firstPUT=200/revision1 recreatedGET=200/SAVED independentPUT=200/false/true/effectiveDetails=false stale=409 unknown=400 anonymousGET=401 anonymousPUT=401 nonSettingTables=93 nonSettingChanges=0 providerObserverRequests=0 snapshotRoundtrip=true
+APOLLO_FIRST_WRITE_RACE emptyLockedReads=2 statuses=[200, 409] revision=1
+APOLLO_RUNTIME_MYSQL_RESTART previousPort=32868 currentPort=32869
+APOLLO_RUNTIME_OUTAGE stoppedMysqlGET=503 stoppedMysqlPUT=503 restoredSavedRow=true nonSettingChanges=0 providerObserverRequests=0 keyLeak=false
+APOLLO_RUNTIME_EXIT 0
+```
+
+Actual disposable MySQL8.0.36, migrated159 files throughV160, embedded loopback Tomcat/controller/existing login interceptor. Race synchronizes after two real empty locked reads then real competing inserts; outage actually stops/restarts MySQL and reconnects fresh host port. Recreated settings service/controller is not a full production restart. All93 non-setting row counts/checksums (including seeded immutable run snapshot) unchanged. Only fixture identity lookup is stubbed. No provider clients/production context/production DB called; observer0 and captured response/log key leak checks pass. No browser/human/production acceptance, full Kotlin suite or WAR build claimed.
+
+### Changed files and scope
+
+Continuation commit contains exactly the28 JS paths in the amended child's change table (same complete inventory as the epoch1 table above). Counts/descriptions only except actual ordered list insertion in mailboxChatBehavior and mailboxGroupPush; meetingConfirmationAssets also updates unique-name cardinality to17 while retaining uniqueness assertion. No frontend product, runtime wiring, configuration, applied migration, original five-file implementation, provider/business writer or later-child file changed.
+
+Stage command used explicit paths for all28 authorized JS files, not a directory-wide add. Helpers before both stage and commit:
+
+```sh
+python3 /Users/lukai/.agents/skills/execute-p/scripts/worktree_identity.py docs/plans/2026-10-23/discovery-paper-06a-apollo-persistence.md --worktree /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master --expect-root /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master --expect-branch fast/discovery-paper-master --expect-git-dir /Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-discovery-paper-master
+git diff --cached --check
+git diff --cached --name-only
+git commit -m 'feat(fast-p): implement 06a'
+git rev-parse HEAD
+git merge-base --is-ancestor HEAD refs/heads/fast/discovery-paper-master
+python3 /Users/lukai/.agents/skills/execute-p/scripts/plan_identity.py docs/plans/2026-10-23/discovery-paper-06a-apollo-persistence.md
+git status --short
+```
+
+Downstream protocol unchanged: resolve/freeze/fromSettings → toJson/parse schemaVersion1, settingRevision, searchEnabled, detailEnabled, source; saved positive revision, deployment0, LEGACY parse only for06b interpretation. Saved flags do not yet alter existing registration/worker behavior;06b owns that cutover.
+
+### Freshness / deviations / next action
+
+- Plan identity rechecked: YES, unchanged hash above. Worktree root/branch/git-dir and target branch HEAD/reachability rechecked: YES. Required commands run freshly after final implementation edits: YES. Historical evidence only baseline/provenance: YES.
+- Original five-file implementation retained; exact authorized28 test consumers updated; no exclusions. mailboxGroupPush's newly exposed ordered-list consumer uses the same explicitly requested ordered-module synchronization, not a new behavioral assertion.
+- No remaining blocker or known in-scope check failure. No amend/push/merge/deploy/rewrite, plan amendment or independent PASS claim.
+- Next action: controller independent verification for current plan identity. This READY_FOR_VERIFICATION does not advance or approve a later child.
+
+### Epoch2 controller terminal record
+- Fresh distinct ApolloPersistenceVerifierE2 returned LIGHT_PASS / COMPLETE_CHILD, zero repair rounds, boundary1b8c4981f0116e17648f064482e505d436c02edd..16a138852bea292d40b47dd9cb2d7fc0c8732578. FreshJVM12/Node1816/syntax and separateactualSQLTCPHTTPsmoke passed. Only childgate, no whole-system success or production acceptance.
