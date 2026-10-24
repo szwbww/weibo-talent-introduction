@@ -8,13 +8,13 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20261023-discovery-paper-apollo-settings">
-    <link rel="stylesheet" href="expert-materials.css?v=20261023-discovery-paper-apollo-settings">
-    <link rel="stylesheet" href="mailbox-chat.css?v=20261023-discovery-paper-apollo-settings">
-    <link rel="stylesheet" href="meeting-confirmation.css?v=20261023-discovery-paper-apollo-settings">
-    <link rel="stylesheet" href="world-clock.css?v=20261023-discovery-paper-apollo-settings">
-<link rel="stylesheet" href="meeting-records.css?v=20261023-discovery-paper-apollo-settings">
-<link rel="stylesheet" href="contact-details.css?v=20261023-discovery-paper-apollo-settings">
+    <link rel="stylesheet" href="styles.css?v=20261024-review-counts">
+    <link rel="stylesheet" href="expert-materials.css?v=20261024-review-counts">
+    <link rel="stylesheet" href="mailbox-chat.css?v=20261024-review-counts">
+    <link rel="stylesheet" href="meeting-confirmation.css?v=20261024-review-counts">
+    <link rel="stylesheet" href="world-clock.css?v=20261024-review-counts">
+<link rel="stylesheet" href="meeting-records.css?v=20261024-review-counts">
+<link rel="stylesheet" href="contact-details.css?v=20261024-review-counts">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -1276,6 +1276,7 @@
               <div>自动通过<strong>—</strong></div><div>待人工审核<strong>—</strong></div>
               <div>人工 / 历史通过<strong>—</strong></div><div>暂缓 / 不通过<strong>—</strong></div>
             </div>
+            <div id="discoveryReviewCountStatus" role="status" aria-live="polite" data-state="PREPARING"><span data-count-message>正在统计全部发现档案…</span><button class="button secondary" type="button" data-count-refresh>刷新数量</button></div>
             <div class="dr-toolbar">
               <input class="bsc-input" id="discoveryReviewSearch" type="search" aria-label="搜索专家" placeholder="姓名、邮箱、机构">
               <select class="bsc-input" id="discoveryReviewIssue" aria-label="问题筛选"></select>
@@ -2460,15 +2461,15 @@
 <dialog id="playerDialog" class="cr-dialog cr-player-dialog"><header class="cr-dialoghead"><h2 id="playerTitle">会议视频</h2><button class="button cr-iconbtn" type="button" data-close="playerDialog" aria-label="关闭视频">×</button></header><video id="player" controls preload="metadata"></video><p class="cr-hint" id="playerHint">若浏览器不支持该编码，可下载原视频观看。</p></dialog>
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20261023-discovery-paper-apollo-settings"></script>
-<script src="expert-materials.js?v=20261023-discovery-paper-apollo-settings"></script>
-<script src="meeting-confirmation.js?v=20261023-discovery-paper-apollo-settings"></script>
-<script src="mailbox-chat.js?v=20261023-discovery-paper-apollo-settings"></script>
-<script src="contact-history.js?v=20261023-discovery-paper-apollo-settings"></script>
-<script src="meeting-records.js?v=20261023-discovery-paper-apollo-settings"></script>
-<script src="contact-details.js?v=20261023-discovery-paper-apollo-settings"></script>
-<script src="discovery-papers.js?v=20261023-discovery-paper-apollo-settings"></script>
-<script src="app.js?v=20261023-discovery-paper-apollo-settings"></script>
-<script src="world-clock.js?v=20261023-discovery-paper-apollo-settings"></script>
+<script src="trust-reply-workbench.js?v=20261024-review-counts"></script>
+<script src="expert-materials.js?v=20261024-review-counts"></script>
+<script src="meeting-confirmation.js?v=20261024-review-counts"></script>
+<script src="mailbox-chat.js?v=20261024-review-counts"></script>
+<script src="contact-history.js?v=20261024-review-counts"></script>
+<script src="meeting-records.js?v=20261024-review-counts"></script>
+<script src="contact-details.js?v=20261024-review-counts"></script>
+<script src="discovery-papers.js?v=20261024-review-counts"></script>
+<script src="app.js?v=20261024-review-counts"></script>
+<script src="world-clock.js?v=20261024-review-counts"></script>
 </body>
 </html>

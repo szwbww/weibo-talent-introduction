@@ -2553,7 +2553,9 @@ const discoveryReviewState = {
     selected: new Set(),
     issues: new Map(),
     counts: null,
-    countErrors: [],
+    countsSuccess: null,
+    countsStatus: null,
+    countsTimer: null,
     confirm: null,
     pollTimer: null,
     searchTimer: null,
@@ -2577,6 +2579,7 @@ function discoveryReviewElements() {
         historyPane: $("#discoveryReviewHistoryPane"),
         papersPane: $("#discoveryPapersPane"),
         counts: $("#discoveryReviewCounts"),
+        countStatus: $("#discoveryReviewCountStatus"),
         search: $("#discoveryReviewSearch"),
         issue: $("#discoveryReviewIssue"),
         decision: $("#discoveryReviewDecision"),
@@ -2767,7 +2770,8 @@ function resetDiscoveryReviewTransient() {
     discoveryReviewState.listError = null;
     discoveryReviewState.selected = new Set();
     discoveryReviewState.counts = null;
-    discoveryReviewState.countErrors = [];
+    discoveryReviewState.countsSuccess = null;
+    discoveryReviewState.countsStatus = null;
     discoveryReviewState.confirm = null;
     discoveryReviewState.records = [];
     discoveryReviewState.recordsLoaded = false;
@@ -2791,6 +2795,7 @@ function resetDiscoveryReviewTransient() {
 }
 
 function stopDiscoveryReviewPolling() {
+    stopDiscoveryReviewCountsPolling();
     clearTimeout(discoveryReviewState.pollTimer);
     discoveryReviewState.pollTimer = null;
     discoveryReviewState.pollSeq += 1;
@@ -2821,6 +2826,7 @@ function selectDiscoveryReviewTab(name, options) {
         return;
     }
     discoveryReviewBumpAll();
+    stopDiscoveryReviewCountsPolling();
     discoveryReviewState.tab = name;
     if (typeof apvSetVisible === "function") apvSetVisible(name === "pipeline");
     if (name === "papers") syncDiscoveryPapers();
@@ -2877,6 +2883,8 @@ function bindDiscoveryReviewEvents() {
     bind(els.tabReview, "click", function () { selectDiscoveryReviewTab("review"); });
     bind(els.tabHistory, "click", function () { selectDiscoveryReviewTab("history"); });
     bind(els.tabPapers, "click", function () { selectDiscoveryReviewTab("papers"); });
+    const countRefresh = els.countStatus && els.countStatus.querySelectorAll("button")[0];
+    bind(countRefresh, "click", refreshDiscoveryReviewCounts);
     bind(els.tabPipeline, "keydown", discoveryReviewTabKeydown);
     bind(els.tabReview, "keydown", discoveryReviewTabKeydown);
     bind(els.tabHistory, "keydown", discoveryReviewTabKeydown);
@@ -2989,59 +2997,67 @@ function rememberDiscoveryReviewIssues(rows) {
     });
 }
 
-// ── 数量（I-1）：全部来自 API 的 decision 过滤 total ──────────────────────────
+// ── 数量（I-1）：一次后台全范围扫描；卡片只接受完整成功结果 ────────────────
 
-async function discoveryReviewFetchDecisionTotal(decision, seq, countsSeq) {
-    const params = new URLSearchParams();
-    params.set("level", DISCOVERY_REVIEW_LEVEL);
-    params.set("tag", DISCOVERY_REVIEW_TAG);
-    params.set("size", "100");
-    params.set("decision", decision);
-    let from = 0;
-    let initializedCount = 0;
-    while (true) {
-        params.set("from", String(from));
-        const page = await api(DISCOVERY_REVIEW_PATH + "/experts?" + params.toString(), { timeoutMs: DISCOVERY_REVIEW_TIMEOUT_MS });
-        if (!discoveryReviewCountsCurrent(seq, countsSeq)) return null;
-        const rows = page && Array.isArray(page.experts) ? page.experts : [];
-        initializedCount += rows.filter(function (row) { return row.initialized === true; }).length;
-        from += rows.length;
-        if (from >= Number(page && page.total || 0)) return initializedCount;
-        if (rows.length === 0) throw new Error("准入数量分页不完整");
-    }
+function stopDiscoveryReviewCountsPolling() {
+    clearTimeout(discoveryReviewState.countsTimer);
+    discoveryReviewState.countsTimer = null;
 }
 
-async function discoveryReviewLoadCounts(seq, countsSeq) {
-    const groups = DISCOVERY_REVIEW_COUNT_GROUPS;
-    const results = await Promise.all(groups.map(function (group) {
-        return Promise.all(group.decisions.map(function (decision) {
-            return discoveryReviewFetchDecisionTotal(decision, seq, countsSeq).catch(function () { return undefined; });
-        }));
-    }));
-    if (!discoveryReviewCountsCurrent(seq, countsSeq)) return;
-    const counts = {};
-    const errors = [];
-    groups.forEach(function (group, index) {
-        const parts = results[index];
-        if (parts.some(function (value) { return value === undefined || value === null; })) {
-            counts[group.key] = null;
-            errors.push(group.subject);
-            return;
-        }
-        counts[group.key] = parts.reduce(function (sum, value) { return sum + value; }, 0);
-    });
-    discoveryReviewState.counts = counts;
-    discoveryReviewState.countErrors = errors;
+function discoveryReviewScheduleCounts(requestKey, seq, countsSeq) {
+    if (!discoveryReviewCountsCurrent(seq, countsSeq) || discoveryReviewState.tab !== "review") return;
+    discoveryReviewState.countsTimer = setTimeout(function () {
+        discoveryReviewState.countsTimer = null;
+        discoveryReviewPollCounts(requestKey, seq, countsSeq);
+    }, 2000);
+}
+
+function discoveryReviewAcceptCounts(status) {
+    discoveryReviewState.countsStatus = status;
+    const success = status.state === "SUCCESS" ? status.result : status.lastSuccess;
+    if (success) {
+        discoveryReviewState.countsSuccess = success;
+        discoveryReviewState.counts = success.counts;
+    }
     renderDiscoveryReviewCounts();
-    if (errors.length > 0) {
-        setDiscoveryReviewError("部分准入数量读取失败：" + errors.join("、") + "；列表仍以服务端结果为准");
+}
+
+function discoveryReviewCountsFailed(error) {
+    const data = error && error.data;
+    discoveryReviewAcceptCounts({
+        state: "FAILED",
+        error: { code: data && data.code || "REVIEW_SCAN_FAILED", message: discoveryReviewErrorMessage(error) }
+    });
+}
+
+async function discoveryReviewPollCounts(requestKey, seq, countsSeq) {
+    try {
+        const status = await api(DISCOVERY_REVIEW_PATH + "/counts?requestKey=" + encodeURIComponent(requestKey),
+            { timeoutMs: DISCOVERY_REVIEW_TIMEOUT_MS });
+        if (!discoveryReviewCountsCurrent(seq, countsSeq)) return;
+        discoveryReviewAcceptCounts(status);
+        if (status.state === "PREPARING" || status.state === "RUNNING") {
+            discoveryReviewScheduleCounts(requestKey, seq, countsSeq);
+        }
+    } catch (error) {
+        if (discoveryReviewCountsCurrent(seq, countsSeq)) discoveryReviewCountsFailed(error);
     }
 }
 
-function refreshDiscoveryReviewCounts() {
+async function refreshDiscoveryReviewCounts() {
     const seq = discoveryReviewState.requestSeq;
     const countsSeq = ++discoveryReviewState.countsSeq;
-    discoveryReviewLoadCounts(seq, countsSeq);
+    stopDiscoveryReviewCountsPolling();
+    discoveryReviewAcceptCounts({ state: "PREPARING", scanned: 0 });
+    try {
+        const accepted = await api(DISCOVERY_REVIEW_PATH + "/counts/refresh",
+            { method: "POST", timeoutMs: DISCOVERY_REVIEW_TIMEOUT_MS });
+        if (!discoveryReviewCountsCurrent(seq, countsSeq)) return;
+        discoveryReviewAcceptCounts(accepted);
+        discoveryReviewScheduleCounts(accepted.requestKey, seq, countsSeq);
+    } catch (error) {
+        if (discoveryReviewCountsCurrent(seq, countsSeq)) discoveryReviewCountsFailed(error);
+    }
 }
 
 function discoveryReviewCountNodes() {
@@ -3060,6 +3076,33 @@ function renderDiscoveryReviewCounts() {
         const value = discoveryReviewState.counts ? discoveryReviewState.counts[group.key] : null;
         node.textContent = value == null ? "—" : String(value);
     });
+    renderDiscoveryReviewCountStatus();
+}
+
+function renderDiscoveryReviewCountStatus() {
+    const container = discoveryReviewElements().countStatus;
+    if (!container) return;
+    const status = discoveryReviewState.countsStatus || { state: "PREPARING", scanned: 0 };
+    const state = status.state || "PREPARING";
+    container.setAttribute("data-state", state);
+    const message = container.querySelectorAll("span")[0];
+    const button = container.querySelectorAll("button")[0];
+    const busy = state === "PREPARING" || state === "RUNNING";
+    if (button) button.disabled = busy;
+    let text = "全部 RAW/discovered；仅 initialized=true；滚动统计，非跨 ES/MySQL 事务快照。";
+    if (busy) text += "正在统计全部发现档案… 已扫描 " + Number(status.scanned || 0) + "。";
+    else if (state === "FAILED" || state === "INTERRUPTED") {
+        const error = status.error || {};
+        text += "数量统计" + (state === "INTERRUPTED" ? "中断" : "失败") + "（" + (error.code || "REVIEW_SCAN_FAILED")
+            + (error.causeCategory ? " / " + error.causeCategory : "") + "）；列表仍可使用。";
+        if (error.message) text += String(error.message) + "。";
+    }
+    const success = discoveryReviewState.countsSuccess;
+    if (success) {
+        text += (state === "SUCCESS" ? "统计区间 " : "旧统计区间 ") + success.startedAt + " ～ " + success.asOf
+            + "；未初始化 " + success.uninitialized + "。";
+    }
+    if (message) message.textContent = text;
 }
 
 // ── 列表、选择与分页（I-2 / S-2） ────────────────────────────────────────────
@@ -3119,7 +3162,7 @@ function ensureDiscoveryReviewData() {
     discoveryReviewState.loaded = false;
     renderDiscoveryReviewRows();
     renderDiscoveryReviewCounts();
-    discoveryReviewLoadCounts(seq, discoveryReviewState.countsSeq);
+    refreshDiscoveryReviewCounts();
     discoveryReviewLoadList(seq, discoveryReviewState.listSeq);
 }
 
