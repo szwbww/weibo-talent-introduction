@@ -171,14 +171,14 @@ class DiscoveryPaperArchiveService(
     private fun permit(value: ScopePermit) {
         if (!scopePermits.contains(value)) throw ArchiveException("INVALID_SCOPE", 409)
     }
-    private fun preflight(bytes: Long = 0) {
+    private fun preflight(bytes: Long = 0, requireHeadroom: Boolean = true) {
         if (!properties.allowed) throw ArchiveException("ARCHIVE_DISABLED", 409)
         val settings = repository.setting()
         val base = root()
         if (!Files.isDirectory(base, LinkOption.NOFOLLOW_LINKS) || !Files.isWritable(base)) throw ArchiveException("STORAGE_UNAVAILABLE", 503)
         val size = sizes()
         if (bytes > settings.maxBytes - size.first - size.second ||
-            (bytes == 0L && size.first + size.second >= settings.maxBytes) ||
+            (requireHeadroom && bytes == 0L && size.first + size.second >= settings.maxBytes) ||
             diskProbe(base).usable - bytes < settings.minFreeBytes) throw ArchiveException("ARCHIVE_STORAGE_BLOCKED", 409)
     }
     internal fun beginScopeAttempt(value: ScopePermit, extractionId: UUID, sequence: Int, kind: ArchiveAttemptKind, url: String?): ArchiveAttempt = mutation {
@@ -225,15 +225,20 @@ class DiscoveryPaperArchiveService(
         if (a.status != ArchiveAttemptStatus.STARTED) throw ArchiveException("ATTEMPT_FINISHED", 409)
         val settings = repository.setting()
         if (!properties.allowed || (scope == null && !settings.enabled)) throw ArchiveException("ARCHIVE_DISABLED", 409)
-        if (scope != null) { permit(scope); preflight(bytes.size.toLong()) }
+        if (scope != null) permit(scope)
         val hash = sha(bytes); val existing = repository.blob(hash)
         if (existing?.state == ArchiveBlobState.DELETING) throw ArchiveException("DELETE_IN_PROGRESS", 409)
-        if (existing?.state == ArchiveBlobState.AVAILABLE && validBlob(existing, true)) {
-            repository.saveBody(attemptId, hash, existing.sizeBytes, existing.mediaType, true, Instant.now())
+        val reusable = existing?.takeIf { it.state == ArchiveBlobState.AVAILABLE && validBlob(it, true) }
+        // Download admission needs headroom; verified reuse adds no physical bytes.
+        if (scope != null) preflight(if (reusable == null) bytes.size.toLong() else 0, requireHeadroom = false)
+        if (reusable != null) {
+            repository.saveBody(attemptId, hash, reusable.sizeBytes, reusable.mediaType, true, Instant.now())
             return@mutation repository.attempt(attemptId)!!
         }
-        val size = sizes(); val disk = diskProbe(root())
-        if (bytes.size.toLong() > settings.maxBytes - size.first - size.second || disk.usable - bytes.size < settings.minFreeBytes) throw ArchiveException("ARCHIVE_STORAGE_BLOCKED", 409)
+        if (scope == null) {
+            val size = sizes(); val disk = diskProbe(root())
+            if (bytes.size.toLong() > settings.maxBytes - size.first - size.second || disk.usable - bytes.size < settings.minFreeBytes) throw ArchiveException("ARCHIVE_STORAGE_BLOCKED", 409)
+        }
         val media = if (mediaType.substringBefore(';').lowercase() == "application/pdf" && bytes.take(5).toByteArray().contentEquals("%PDF-".toByteArray())) "application/pdf" else "text/plain"
         val temp = root().resolve(".tmp").resolve(UUID.randomUUID().toString())
         activeWriters.add(temp)

@@ -7,7 +7,10 @@ import com.weibo.talentintroduction.discovery.sample.DiscoverySampleEntry
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
+import java.nio.ByteBuffer
+import java.nio.channels.FileChannel
 import java.nio.file.Files
+import java.nio.file.StandardOpenOption
 import java.time.Instant
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -54,6 +57,61 @@ class DiscoveryPaperArchiveCaptureTest {
             val direct = f.service.beginAttempt(f.repository.records().single().id, java.util.UUID.randomUUID(), 1, ArchiveAttemptKind.PDF_URL)
             assertEquals("ARCHIVE_DISABLED", assertThrows(ArchiveException::class.java) { f.service.saveBody(direct.id, f.pdf(), "application/pdf") }.code)
             assertFalse(DiscoveryPaperArchiveCapture.hasScope())
+        }
+    }
+    @Test fun `accepted scope reuses verified body with less free space than body size`() =
+        assertScopedReuseUnderCapacity(capHeadroom = false)
+
+    @Test fun `accepted scope reuses verified body with less archive cap headroom than body size`() =
+        assertScopedReuseUnderCapacity(capHeadroom = true)
+
+    private fun assertScopedReuseUnderCapacity(capHeadroom: Boolean) {
+        ArchiveFixture().use { f ->
+            f.enable(ARCHIVE_GIB)
+            val capture = DiscoveryPaperArchiveCapture(f.service, f.mapper)
+            val bytes = f.pdf(1024)
+            capture.capture(context(), "same", paper()) { body(bytes); outcome("FIRST") }
+            val record = f.repository.records().single()
+            val first = f.mapper.readTree(record.outcomeJson).get("first")
+            if (capHeadroom) {
+                // Sparse filler leaves exactly 1023 logical bytes under the live archive cap.
+                FileChannel.open(f.root.resolve("blobs/filler.bin"), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE).use {
+                    it.position(ARCHIVE_GIB - bytes.size - 1023 - 1)
+                    it.write(ByteBuffer.wrap(byteArrayOf(0)))
+                }
+            } else {
+                val minFree = f.service.settings().minFreeBytes
+                f.service.diskProbe = { ArchiveDisk(100 * ARCHIVE_GIB, 80 * ARCHIVE_GIB, minFree + 1023) }
+            }
+            val before = f.service.stats()
+            capture.capture(context(), "same", paper()) { body(bytes); outcome("REUSED") }
+            val reused = f.repository.attempts(record.id).last()
+            assertEquals(ArchiveAttemptStatus.SAVED, reused.status)
+            assertTrue(reused.reused)
+            assertEquals(1024L, reused.completedBytes)
+            val afterReuse = f.service.stats()
+            assertEquals(2L, afterReuse.counts.savedAttempts)
+            assertEquals(1L, afterReuse.counts.reusedAttempts)
+            assertEquals(1L, afterReuse.counts.newFiles)
+            assertEquals(before.storage.archiveUsedBytes, afterReuse.storage.archiveUsedBytes)
+            assertEquals(before.storage.fileCount, afterReuse.storage.fileCount)
+            val envelope = f.mapper.readTree(f.repository.record(record.id)!!.outcomeJson)
+            assertEquals(first, envelope.get("first"))
+            assertEquals("REUSED", envelope.path("latest").path("outcome").path("failureReason").asText())
+
+            val blocked = assertThrows(PaperArchiveBlockedException::class.java) {
+                capture.capture(context(), "new", paper()) { body(f.pdf(1024, 66)); outcome("NEW") }
+            }
+            assertEquals("ARCHIVE_STORAGE_BLOCKED", blocked.code)
+            val afterBlocked = f.service.stats()
+            assertEquals(2L, afterBlocked.counts.savedAttempts)
+            assertEquals(1L, afterBlocked.counts.reusedAttempts)
+            assertEquals(1L, afterBlocked.counts.failedAttempts)
+            assertEquals(before.storage.archiveUsedBytes, afterBlocked.storage.archiveUsedBytes)
+            assertEquals(before.storage.fileCount, afterBlocked.storage.fileCount)
+            assertEquals(first, f.mapper.readTree(f.repository.record(record.id)!!.outcomeJson).get("first"))
+            assertFalse(DiscoveryPaperArchiveCapture.hasScope())
+            println("SCOPE_REUSE limit=${if (capHeadroom) "archive-cap" else "free-space"} bodyBytes=1024 headroom=1023 saved=${afterBlocked.counts.savedAttempts} reused=${afterBlocked.counts.reusedAttempts} failed=${afterBlocked.counts.failedAttempts} usedBytes=${afterBlocked.storage.archiveUsedBytes} files=${afterBlocked.storage.fileCount} growth=0 first=frozen newBody=ARCHIVE_STORAGE_BLOCKED")
         }
     }
     @Test fun `live capacity and deployment permission still block issued permits`() {
