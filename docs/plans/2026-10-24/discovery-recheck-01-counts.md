@@ -57,11 +57,11 @@ S-1：四卡复用现有 `.dr-counts`，新增区域置四卡之后，不动工�
 2. 新增 CountsController：登录态沿用 ReviewController.sessionUsername；POST `/api/discovery/review/counts/refresh` 返回202 `{requestKey,executionId?,state}`，同一在途任务复用；GET `/api/discovery/review/counts?requestKey=...` 查持久task请求/结果。requestKey UUID，先在执行器提交受理，onStarted才发布真实id；未建任务前不得虚构id。执行器拒绝返回409/COUNTS_BUSY。无隐式GET启动；重启未完成由现有恢复置INTERRUPTED，新刷新另建任务，不返回假成功。（I-2/3）
 3. ScanService.scanAll 增加响应完整性校验：ES timed_out=true、_shards.failed>0、null body、完整页却无scrollId均报明确错误，finally清理；不得把半份数据写SUCCESS。不要全局重写listPage。（I-1）
 4. app.js删除六路FetchDecisionTotal计数调用链，进入审核页发一次refresh，再2秒轮询，退出/切页销毁timer并校验requestSeq/countsSeq；保留旧成功四卡但标时间；无旧值显示—。失败显示如“数量统计失败（REVIEW_SCAN_FAILED）；列表仍可使用”，不可吞cause。已有手工动作成功仅触发一次刷新，不覆盖discoveryReviewResult。（I-1/2，S-1）
-5. index插入独立status区；styles原样复制S-1；全部17资源key改为`20261024-review-counts`。按当前key反查测试，基线0个固定字符串；若执行时出现新增命中，先修订清单。（S-1）
+5. index插入独立status区；styles原样复制S-1；全部17资源key改为`20261024-review-counts`。字面量反查未发现测试命中，但实施发现`discoveryApolloSettings.test.js`从旧计划动态提取全局key。按2026-10-25用户授权，修正该过期断言：移除对旧计划key的绑定，保留资源同键、DOM/CSS及Apollo行为断言，不将旧键换成另一硬编码键，不修改旧计划。（S-1）
 
 ## 变更文件清单
 
-仅下列 10 个文件。新增文件明确标注；其余文件不得顺带修改。
+仅下列11个文件；本次授权仅增加既有资源断言测试，独立控制器测试保留。新增文件明确标注；其余文件不得顺带修改。
 
 | 文件 | 变更 |
 |---|---|
@@ -75,13 +75,14 @@ S-1：四卡复用现有 `.dr-counts`，新增区域置四卡之后，不动工�
 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewCountsServiceTest.kt` | 新增服务/失败/并发测试 |
 | `src/test/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryReviewCountsControllerTest.kt` | 新增登录/受理/读取测试 |
 | `src/test/js/discoveryReview.test.js` | 六路消除、迟到回包、失败不清零 |
+| `src/test/js/discoveryApolloSettings.test.js` | 修正从旧计划读取全局资源键的过期断言，保留同键与Apollo行为约束 |
 
 ## 验收标准
 
 - I-1：15501条测试输入分32批，六decision已初始化计数与一次同输入enrich逐条oracle相同；不得调用listPage；未初始化不计卡片；ES每页仅一轮扫描。原15,398只用于线上报告参考。
 - I-2：模拟第11页失败，状态FAILED、无完整四卡；旧结果仍带旧asOf；数据库故障、滚动丢失、分片失败和重启中断分别可见。
 - I-3：20个同时refresh只有一个扫描；业务表和ES写调用0；GET不调度；滚动finally清理；专用执行器不占邮件/采集池。
-- S-1：CSS逐字比对、DOM无新inline style，17资源同key；node --test src/test/js/discoveryReview.test.js；两个现有资源测试必须通过。
+- S-1：CSS逐字比对、DOM无新inline style，17资源同key；node --test src/test/js/discoveryReview.test.js；两个现有资源测试及`node --test src/test/js/discoveryApolloSettings.test.js`必须通过；完整Maven绑定JS不得有已知失败。
 
 ## 人工验收清单
 
@@ -104,3 +105,7 @@ S-1：四卡复用现有 `.dr-counts`，新增区域置四卡之后，不动工�
 - 覆盖：I-1/2，S-1
 
 人工验收开始后，才从本节导出同名前缀 `-acceptance.md`；机器通过不代表人工验收完成。
+
+## 修正记录
+
+- 2026-10-25，用户“授权 继续”：依据总计划I-M4，增加`discoveryApolloSettings.test.js`，01文件上限仅此例外为11；只修正过期全局资源键断言，不删除Apollo功能回归，不合并独立控制器测试。授权与提交身份详见`../fast/discovery-recheck-master/ledger.md`的Amendments。
