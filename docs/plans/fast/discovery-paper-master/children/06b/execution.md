@@ -514,3 +514,180 @@ Keep the current 403/invalid/pages/transient branches and their existing inputs/
 This is a single concrete test-contract reconciliation: three explicitly versioned historical inputs, one split budget contract with new non-Apollo safety coverage, one corrected continuation count with preserved global safety, and two retained historical cursor payloads asserting conservative PENDING. No production restoration or additional file authority is requested. No unresolved implementation-choice decision remains in this proposal; human approval is required specifically because scenario4/5/6/7 alter old behavioral expectations that the current invocation forbids repinning.
 
 If approved, implement only this amendment, keep all existing assertions except the precisely enumerated replacements, rerun the exact full required JDK11 selector command with both opt-ins, actually run bound Node/syntax goals, and run the fresh standalone SQL/Worker/queue smoke from the new Surefire classpath. Any additional newly revealed discrepancy must be diagnosed within this bounded contract, not auto-repinned. Only all-correct final checks permit the requested local product commit.
+
+## Epoch3 Execution Result: READY_FOR_VERIFICATION
+
+Execution evidence only; not independent verification or approval of later children. The approved seven-scenario reconciliation is complete, all required checks passed freshly, and the retained eleven-file product is committed locally. Earlier epoch results above remain historical and unchanged.
+
+### Current execution identity
+
+- Plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master/docs/plans/2026-10-23/discovery-paper-06b-apollo-runtime.md`
+- Plan SHA-256: `41c6fd43b5cd37153a524d251cc9283e15e8d73581a423851b053db91324b170`
+- Execution ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master/docs/plans/2026-10-23/discovery-paper-06b-apollo-runtime.md@41c6fd43b5cd37153a524d251cc9283e15e8d73581a423851b053db91324b170`
+- Execution epoch: NEW, bound to the amended bytes rather than either previous epoch hash.
+- Approval basis: current user invocation, Epoch3 brief and approved amended child at `0199430a0b4f30f89b8fb240d58880167471b512` (A13/A14). `git show 0199430a0b4f30f89b8fb240d58880167471b512:docs/plans/2026-10-23/discovery-paper-06b-apollo-runtime.md | shasum -a 256` returned the same hash, exit0.
+- Executor: `ApolloRuntimeImplementerE3`, execute-p. No implementation delegation, independent review, later-child inspection or replay of completed children.
+- Target worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master`
+- Target branch: `fast/discovery-paper-master`
+- Worktree ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master@fast/discovery-paper-master@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-discovery-paper-master`
+- Pre-execution code SHA / child base: `16a138852bea292d40b47dd9cb2d7fc0c8732578`
+- Pre-execution HEAD: `28c4867b44a804a6bace08ead54473e5d8ddfae3`
+- Post-execution code SHA / current product HEAD: `f28acd2d1ae1cc2a7ae8b84d0b843d2a4061a9a0`
+- Product commit subject: `feat(fast-p): implement 06b`
+- Evidence HEAD: no new evidence commit; this append is intentionally outside the product commit. Controller-owned ledger changes are preserved and not staged.
+- Implementation boundary: child base through the product SHA above, retaining all intervening history and the eleven partial product/test paths. Product commit reports eleven files,719 insertions,54 deletions; no fast-p reports/ledger included.
+
+### Task status and exact reconciliation
+
+| Requirement | Status | Current evidence |
+|---|---|---|
+| T-1 / I-1 shared saved settings | IMPLEMENTED | Mandatory06a SettingsService dependency; shared freeze/parser, actual SQL fixture. Fresh SettingsIT8/8 includes saved combinations/default/CAS/failure behavior. No06a/schema/controller edits. |
+| T-2 / I-2 registration | IMPLEMENTED | Existing-run branch precedes live settings/readiness; null/false remain unchanged, explicit true validates409/503; new begin freezes once. CountryRegistration19/19 and Integration14/14. Prevalidation may read separately, per withdrawn C-2. |
+| I-2 queue provenance | IMPLEMENTED | Pipeline persists criteriaVersion2 and accepts1/2; version1 historical nullfalse, version2 nullsaveddefault. Integration and separate actual queue smoke prove serialized null, real positive execution binding and immutable same-run reentry. |
+| I-2 legacy/invalid snapshots | IMPLEMENTED | Missing member uses run.apolloRequested with LEGACY; malformed snapshot CONFIG_INVALID before provider HTTP; query reports unknown/null rather than free. Worker16/16, Query18/18 and separate SQL smoke. |
+| I-3 free details boundary | IMPLEMENTED | Guard before successful paid-cache lookup, permit/reservation and detail call; original evaluation plus PAID_DETAILS_DISABLED only. Actual free target proves PENDING, detailsComplete=false and zero attempts/permits/cache lookups/HTTP. Need-no-detail APOLLO_CLEAR still projects and passes Gate. |
+| I-4 readonly channels | IMPLEMENTED | Repository bounded aggregate; summary nullable DTOs, no attempt accounting writes or billing inference. Actual SQL3search/2detail/1other/pending1,total6; known empty zero, missing unknown. |
+| Approved historical SELF inputs | IMPLEMENTED | Only the three named tests pass seed settingsJson ruleVersion0 and retain missing apolloAccess; explicit payload0 and LEGACY assertions. Original outcomes, identity negatives, alias counts/retention, recomputation and read immutability remain. Shared seed default stays `"{}"`; current-rule tests unchanged. |
+| Approved split budget contract | IMPLEMENTED | Original valid Researcher/Apollo input with cap3 proves three ORCID attempts followed by exempt Apollo, total>3 with HTTP/ledger equality, complete APOLLO_UNCLEAR/UNKNOWN and projection/recomputation. New cap2 branch proves only two ORCID attempts, no Apollo, COMPLETED/PENDING/NONE, no person/admission/candidate and EVIDENCE_INCOMPLETE+ITEM_REQUEST_LIMIT. 403/invalid/pages/transient assertions retained. |
+| Approved A3 continuation | IMPLEMENTED | Only incomplete-search narrow expectation0→1; COMPLETED/PENDING/NONE, false completeness, SEARCH_PAGE_LIMIT, exactly broad+narrow at page1 and HTTP/ledger equality. Shared no-admission/normalization assertions retained. |
+| Approved cached alias cursor | IMPLEMENTED | Both original payload branches retained unchanged, including absent finishedQueryKeys. PENDING/NONE/no person/no admission; incomplete/page-limit reasons, false completeness and missing `"0"` completion key. One page2 Frozen Alias request, frozen evidence/candidate union/no ORCID and new attempt accounting retained/proven. |
+| Approved A4 old cursor | IMPLEMENTED | Original payload unchanged, one page2 Example University request/null normalization/PENDING retained. Incomplete+page-limit instead of NO_MATCH; no person/admission/candidate, false completeness and one attempt with matching accounting. |
+| Required checks and commit | IMPLEMENTED | Fresh172 JVM tests and1816 Node tests pass; both bound syntax checks pass; separate SQL/Worker/Gate/query/queue launcher exit0. Local product-only commit above. |
+
+No production Rules/Gate/client/budget/query-restoration change was needed or made in Epoch3. No tests deleted, excluded or skipped. No further incidental assertion repinning occurred.
+
+### Authorized changed files
+
+All paths are relative to the target worktree:
+
+1. `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt` — required settings dependency, validation/freeze/existing-run interpretation.
+2. `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt` — invalid access boundary and paid-disabled pre-cache/pre-permit finish.
+3. `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryService.kt` — access/channel DTOs and reason translation.
+4. `src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt` — readonly bounded channel aggregation.
+5. `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt` — versioned queued launch provenance.
+6. `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt` — retained access/runtime/constructor/migration coverage and standalone launcher.
+7. `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementFlowIT.kt` — retained settings fixture/160 migration/country regression.
+8. `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountryRegistrationTest.kt` — retained settings stubs and registration boundary coverage.
+9. `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationIntegrationTest.kt` — retained160/settings launch and version1/version2/reentry coverage.
+10. `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationFlowIT.kt` — shared SQL fixture plus the exact approved seven-scenario reconciliation, this epoch's only new product/test edits.
+11. `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryServiceTest.kt` — retained frozen/legacy/unknown/channel/bounds coverage.
+
+### Fresh required commands and results
+
+Plan/worktree identity commands ran at entry, exit0, and were repeated before staging/commit and handoff:
+
+```sh
+python3 /Users/lukai/.agents/skills/execute-p/scripts/plan_identity.py docs/plans/2026-10-23/discovery-paper-06b-apollo-runtime.md
+python3 /Users/lukai/.agents/skills/execute-p/scripts/worktree_identity.py docs/plans/2026-10-23/discovery-paper-06b-apollo-runtime.md --worktree /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master
+```
+
+After the final product/test edit:
+
+```sh
+env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=DiscoveryVerificationWorkerTest,DiscoveryCountrySupplementFlowIT,DiscoveryCountryRegistrationTest,DiscoveryVerificationIntegrationTest,DiscoveryVerificationFlowIT,DiscoveryVerificationQueryServiceTest,ApolloPeopleSearchClientTest,DiscoveryVerificationRulesTest,DiscoveryVerificationAdmissionGateTest,DiscoveryVerificationRepositoryIT,DiscoveryApolloSettingsIT -DmigrationIt=true -DmysqlIt=true
+```
+
+Exit0, BUILD SUCCESS, finished2026-10-24T11:06:17+08:00, duration07:02. Full output `artifact://486`. **172 tests,0 failures,0 errors,0 skipped**. Bound `node-test` actually ran: **1816 tests/334 suites,1816 pass,0 fail/cancelled/skipped/todo**. Bound `node-check-app` and `node-check-task-modal-runtime` both ran successfully. No separate frontend goal invocation was needed because the required lifecycle reached them successfully.
+
+| Suite | Tests | Failures | Errors | Skipped |
+|---|---:|---:|---:|---:|
+| DiscoveryVerificationWorkerTest |16|0|0|0|
+| DiscoveryCountrySupplementFlowIT |8|0|0|0|
+| DiscoveryCountryRegistrationTest |19|0|0|0|
+| DiscoveryVerificationIntegrationTest |14|0|0|0|
+| DiscoveryVerificationFlowIT |32|0|0|0|
+| DiscoveryVerificationQueryServiceTest |18|0|0|0|
+| ApolloPeopleSearchClientTest |13|0|0|0|
+| DiscoveryVerificationRulesTest |19|0|0|0|
+| DiscoveryVerificationAdmissionGateTest |8|0|0|0|
+| DiscoveryVerificationRepositoryIT |17|0|0|0|
+| DiscoveryApolloSettingsIT |8|0|0|0|
+
+Suite counts were extracted from the freshly generated Surefire XML for the exact selectors. No unchanged failing baseline was rerun to confirm prior observations; diagnosis used the approved prior source evidence before the reconciliation edit.
+
+Final diff/boundary check, exit0 (`artifact://490`):
+
+```sh
+git diff --check && python3 /Users/lukai/.agents/skills/execute-p/scripts/plan_identity.py docs/plans/2026-10-23/discovery-paper-06b-apollo-runtime.md && python3 /Users/lukai/.agents/skills/execute-p/scripts/worktree_identity.py docs/plans/2026-10-23/discovery-paper-06b-apollo-runtime.md --worktree /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master --expect-root /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master --expect-branch fast/discovery-paper-master --expect-git-dir /Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-discovery-paper-master && git merge-base --is-ancestor 16a138852bea292d40b47dd9cb2d7fc0c8732578 HEAD && git status --short
+```
+
+Before `git add` and again before `git commit`, the same strict worktree helper succeeded. `git add` explicitly named only the eleven authorized product/test paths listed above. `git commit -m 'feat(fast-p): implement 06b'`, `git rev-parse HEAD`, and `git merge-base --is-ancestor HEAD refs/heads/fast/discovery-paper-master` all exited0 (`artifact://492`); actual HEAD is the reported product SHA on the target branch.
+
+### Fresh separate actual runtime
+
+Executed outside JUnit, after the successful final compile, with the entire newly generated Surefire classpath:
+
+```python
+from pathlib import Path
+import xml.etree.ElementTree as ET
+import subprocess, hashlib
+wt = Path('/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master')
+report = wt / 'target/surefire-reports/TEST-com.weibo.talentintroduction.discovery.service.DiscoveryVerificationWorkerTest.xml'
+root = ET.parse(report).getroot()
+props = {p.attrib['name']: p.attrib['value'] for p in root.findall('./properties/property')}
+cp = props['surefire.test.class.path']
+assert str(wt/'target/test-classes') in cp and str(wt/'target/classes') in cp and 'mysql-connector-j' in cp
+command = ['/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home/bin/java', '-cp', cp,
+           'com.weibo.talentintroduction.discovery.service.DiscoveryVerificationWorkerTest',
+           '--apollo-access-smoke']
+result = subprocess.run(command, cwd=wt, stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT, text=True, timeout=300)
+(wt/'target/06b-epoch3-apollo-access-smoke.log').write_text(result.stdout)
+```
+
+Exit0. Full classpath SHA-256 `f3b59342667efda4decb557407c65553243f487e1361d23b82ba322cd836228e`; equal dependency paths to prior epoch, with target classes freshly compiled in this epoch, not a reused partial helper.
+
+Observed program stdout:
+
+```text
+APOLLO_ACCESS_SMOKE frozen A=true/true revision=1 unchanged=true B=true/false revision=2 legacy=LEGACY/true/true oldDetailHttp=2
+APOLLO_ACCESS_SMOKE free-required-detail outcome=PENDING reason=PAID_DETAILS_DISABLED detailsComplete=false attempts=0 permits=0 cacheLookups=0 detailHttp=0 gate=not-admitted
+APOLLO_ACCESS_SMOKE live-free-search requests=1 detailHttp=0 needless-detail=APOLLO_CLEAR gate=eligible projection=PROJECTED
+APOLLO_ACCESS_SMOKE malformed=CONFIG_INVALID providerHttp=0 attempts=0
+APOLLO_ACCESS_SMOKE channels search=3 detail=2 other=1 pendingDispatch=1 totalRegistered=6 billing=not-inferred emptyRun=zero missingRun=unknown
+APOLLO_ACCESS_SMOKE PASS isolatedMySQL=true strictMockHTTP=true productionContext=false oldSettingsImmutable=true
+APOLLO_QUEUE_ACCESS_SMOKE version=1 nullPersisted=true executionId=4001 requested=false frozen=true/false reentry=unchanged providerHttp=0
+APOLLO_QUEUE_ACCESS_SMOKE version=2 nullPersisted=true executionId=4001 requested=true frozen=true/false reentry=unchanged providerHttp=0
+```
+
+Actual disposable MySQL settings/run/attempts, actual registration/Worker/Rules/Gate/query, and actual pipeline/task-execution binding; no production Spring context/business writes or real Apollo calls. Provider and ES transport are strictly intercepted by MockRestServiceServer, not live external or loopback provider sockets. The seeded paid-cache row is synthetic evidence deliberately present to prove the free target never reads it. Queue cases clean the isolated tables between versions, so execution4001 is independently allocated in each case. The smoke does not prove vendor billing, production credentials, UI interaction or all deployment properties frozen.
+
+### Caller/selector receipts and downstream contracts
+
+Fresh `functions.grep` over target `src`, pattern `DiscoveryVerificationRegistrationService\(|verificationRegistration\?\.(begin|resolveOptions)`, returned:
+
+```text
+ExpertDiscoveryController.kt:400 resolveOptions(normalized)
+ExpertDiscoveryScheduler.kt:401 resolveOptions(requested)
+ExpertDiscoveryService.kt:441 begin(execId, criteria)
+DiscoveryPipelineService.kt:320 resolveOptions(requested)
+DiscoveryPipelineService.kt:646-647 begin(executionId, criteria, historical=initial.criteriaVersion==1)
+Direct test constructor files:
+ DiscoveryCountryRegistrationTest.kt:92,470,487
+ DiscoveryCountrySupplementFlowIT.kt:148,391,453,503
+ DiscoveryVerificationIntegrationTest.kt:137,301
+ DiscoveryVerificationWorkerTest.kt:31,209
+```
+
+The required selector grep, pattern `class (DiscoveryVerificationWorkerTest|DiscoveryCountrySupplementFlowIT|DiscoveryCountryRegistrationTest|DiscoveryVerificationIntegrationTest|DiscoveryVerificationFlowIT|DiscoveryVerificationQueryServiceTest|ApolloPeopleSearchClientTest|DiscoveryVerificationRulesTest|DiscoveryVerificationAdmissionGateTest|DiscoveryVerificationRepositoryIT|DiscoveryApolloSettingsIT)\b` over target `src/test/kotlin/com/weibo/talentintroduction/discovery`, returned each corresponding declaration in its matching file. Exact names and both IT opt-ins were used; no guessed replacement suite.
+
+Downstream DTO contract:
+
+- `VerificationSummary.apolloAccess: FrozenApolloAccess?` and `apolloAttempts: VerificationAttemptChannels?` are optional projection fields, not new database columns or current-setting reads.
+- Shared access schema1 carries settingRevision/searchEnabled/detailEnabled/source; SAVED has positive revision, DEPLOYMENT_DEFAULT revision0, absent member on an existing run explicitly LEGACY from run.apolloRequested. Missing/malformed access is unknown/null, not false.
+- Channel Long fields search/detail/other/pendingDispatch count registered attempts. Pending overlaps its channel; the sum of the first three is total attempts, not credits. A known empty run returns zero channels; a missing run remains unknown/null.
+- PAID_DETAILS_DISABLED translates exactly to `付费详情未启用，证据仍不完整`.
+- Query constructor, capabilities ready/apolloDefault compatibility, admission metrics and existing budgets/429/credits/identity protections remain unchanged. No claim that old timeout/page deployment properties are now fully frozen.
+
+### Freshness, deviations and next action
+
+- Plan identity rechecked: YES, current approved SHA unchanged.
+- Target worktree identity rechecked: YES, root/branch/git-dir unchanged.
+- Product commit is target HEAD and target-branch reachable: YES.
+- Required commands run freshly after final product/test edits: YES, all pass.
+- Historical results used only as baseline: YES.
+- Product/index cleanliness: product/test changes committed; index clear. This append-only report and the preexisting controller ledger are intentionally uncommitted evidence/control-plane changes, excluded from product.
+- Deviations: none to the amended implementation contract. HTTP smoke uses strict in-process fixture interception as explicitly recorded, not real provider sockets.
+- Remaining blocker: none. Human acceptance remains pending; no independent PASS or whole-master readiness is claimed.
+- Next action: controller-owned independent light verification of child06b. No later-child work, review-fast-p, deploy, push, merge, rewrite or new worktree performed.
+- Handoff check note: the first post-append `git diff --check` exited2 solely for this report's new blank EOF line; removed that report-only whitespace and repeated the handoff check. Product/test code remained unchanged after the passing required checks.
