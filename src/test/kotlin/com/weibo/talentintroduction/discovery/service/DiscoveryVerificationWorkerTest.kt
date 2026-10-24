@@ -1003,7 +1003,7 @@ internal fun runChild07Pipeline() {
                             "OPENALEX", "child07-paper")
                         check(!reserved.protected && !trace.read(reserved.item!!.id).recorded)
                         putRaw(reserved.preparedProfile!!); registration.activate(reserved)
-                        val initialWire = wire.size
+                        var initialWire = wire.size
                         val ordinary = execute(f.item(reserved.item!!.id))
                         check(ordinary.outcome == VerificationOutcome.DIRECT_CLEAR && wire.size == initialWire) {
                             "ordinary state=${ordinary.state} outcome=${ordinary.outcome} reasons=${ordinary.reasonsJson} wire=$wire evidence=${ordinary.evidenceJson}"
@@ -1013,6 +1013,44 @@ internal fun runChild07Pipeline() {
                         check(ordinaryPayload.executionContext!!.paper!!.sources.single().source == source)
                         check(trace.read(ordinary.id).steps.last { it.stepNo == 6 }.reasonJson!!.contains("DIRECT_SUFFICIENT"))
 
+                        // Queued rule3 inputs predate the additive context protocol: never backfill their clock.
+                        val savedClock = f.clock.instant()
+                        val created = java.time.Instant.parse("2026-10-18T00:00:00Z")
+                        val executed = java.time.Instant.parse("2026-10-20T00:00:00Z")
+                        f.clock.now = created
+                        task(9002)
+                        val legacyRun = f.repository.createRun(9002, VerificationMode.AUDIT, true,
+                            ordinaryRun.settingsJson, created)
+                        val legacyProfile = raw("legacy-no-context")
+                        putRaw(legacyProfile)
+                        val legacySnapshot = frozen(legacyProfile)
+                        val legacyReserved = f.repository.reserveItem(VerificationReservation(9002,
+                            legacyProfile.esDocId!!, legacySnapshot.identityHash, legacyRun.policyVersion,
+                            "ORCID", "legacy-no-context", f.mapper.writeValueAsString(legacySnapshot),
+                            legacySnapshot.factFingerprint), created)
+                        val legacyActive = f.repository.activateItem(legacyReserved.id, 1, created)
+                        check(legacyActive.evidenceJson == null &&
+                            !f.mapper.readTree(legacyActive.snapshotJson).has("executionContext"))
+                        f.clock.now = executed
+                        val legacy = execute(legacyActive)
+                        val legacyPayload = f.mapper.readValue<VerificationWorkerEvidence>(legacy.evidenceJson!!)
+                        check(legacyPayload.ruleVersion == 3 && legacyPayload.executionContext == null)
+                        val birthdayFacts = listOf(
+                            ruleFact("education", """{"completed":true,"role":"PhD awarded"}"""),
+                            ruleFact("birthDate", "1986-10-19", AssertionSource.SELF))
+                        fun birthday(at: java.time.Instant?) = f.rules.evaluate(ruleSnapshot(), birthdayFacts,
+                            ruleVersion = legacyPayload.ruleVersion, evaluatedAt = at)
+                        val live = birthday(legacyPayload.executionContext?.evaluationAt)
+                        val beforeBirthday = birthday(created)
+                        check(live == birthday(executed) && live.evaluatedOn == java.time.LocalDate.parse("2026-10-20"))
+                        check(live.qualification == VerificationQualification.NOT_MET &&
+                            beforeBirthday.qualification == VerificationQualification.MET &&
+                            live.outcome != beforeBirthday.outcome)
+                        check(ordinaryPayload.executionContext!!.evaluationAt == savedClock)
+                        println("CHILD07_LEGACY PASS realWorkerSQL=true rule3=true inputContextAbsent=true evidenceAbsent=true outputContextAbsent=true executionClock=$executed liveQualification=${live.qualification} frozenQualification=${beforeBirthday.qualification} crossBirthdayOutcomesDiffer=true explicitOrdinaryFrozen=true")
+                        f.clock.now = savedClock
+                        initialWire = wire.size // Legacy live collection is not part of the following REUSE budget.
+
                         val reuseProfile = raw("reuse-direct")
                         val baseline = cached(frozen(reuseProfile))
                         val reuse = execute(recheck(reuseProfile, evidence = baseline))
@@ -1021,6 +1059,7 @@ internal fun runChild07Pipeline() {
                         check(reused.queries == null && reused.progress.queryIndex == 0 && reused.progress.page == 1)
                         check(reused.evidence.all { it.fetchedAt == java.time.Instant.parse("2024-01-01T00:00:00Z") })
                         check(reused.executionContext!!.cacheReasons.contains("CACHE_REUSED"))
+                        check(reused.executionContext!!.evaluationAt == savedClock)
                         check(trace.read(reuse.id).steps.last { it.stepNo == 2 }.state == VerificationStepState.INSUFFICIENT)
                         check(f.admissions.findAdmission(reuseProfile.esDocId!!) == null)
                         val notReparsedProfile = raw("reuse-derived")

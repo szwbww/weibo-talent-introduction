@@ -356,7 +356,6 @@ class DiscoveryVerificationWorker(
                         listOf("CACHE_REUSED") + if (payload.orcidCompleted.none { it.document != null }) listOf("ORCID_NOT_REPARSED") else emptyList()
                     else emptyList()))
                 else if (ordinary != null) payload = payload.copy(executionContext = ordinary)
-                else if (payload.ruleVersion >= 3) payload = payload.copy(executionContext = VerificationExecutionContext(run.createdAt))
             }
             val mode = recheck?.spec?.evidenceMode ?: RecheckEvidenceMode.REUSE
             val context = payload.executionContext
