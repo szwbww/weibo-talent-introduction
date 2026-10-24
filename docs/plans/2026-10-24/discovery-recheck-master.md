@@ -24,7 +24,7 @@
 绑定≠新专家≠资格证据≠可准入≠已准入≠候选同步。每份报告说明固定范围、版本、原文SHA、外部刷新、未完整部分。适用全部子计划；违反会虚报收益。来源：本批原文对照。
 
 ### I-M4：范围受子计划约束
-每子计划≤10文件、≤2独立子系统；每既有共享store最多1新列。01经用户于2026-10-25授权，仅为同步修正`discoveryApolloSettings.test.js`的过期全局资源键断言，允许11文件。05经用户于2026-10-25授权，仅为六个直接/共享核验消费者测试同步V161 schema，允许15文件，保留原回归行为；其他子计划上限不变。共享文件必须串行按前一产物实施，每步独立机器复验。新发现范围或文件超限先修订计划，不能顺手扩大。来源：K-master-plan-shared-file-sequential-gates。
+每子计划默认≤10文件、≤2独立子系统；每既有共享store最多1新列。01经用户于2026-10-25授权，仅为同步修正`discoveryApolloSettings.test.js`的过期全局资源键断言，允许11文件。05经用户于2026-10-25授权，仅为六个直接/共享核验消费者测试同步V161 schema，允许15文件，保留原回归行为。用户随后明确“后续修改都授权 把所有子计划都跑完”：为完整实现既定目标、关键不变量与验收所必需的后续修改（包括直接依赖/回归文件、清单扩展及必要的文件数例外）已获持续授权；控制器须先记录具体证据、逐次单独提交相应计划修订并追加ledger的Amendments，再实施，不再为同类范围变更重复等待授权。此授权不扩大无关业务，不取消独立核验、三轮自动修复上限及不可达前提/安全边界的阻塞处理，也不授权生产发布、付费操作、推送或改写历史。共享文件必须串行按前一产物实施，每步独立机器复验。来源：K-master-plan-shared-file-sequential-gates及本次用户持续授权。
 
 ## 现状审计
 
@@ -152,3 +152,4 @@
 - 2026-10-25，用户“授权 继续”：批准01增加`src/test/js/discoveryApolloSettings.test.js`并允许11文件，保留独立控制器测试；原断言从旧计划动态读取全局资源键，字面量检索无法发现，导致01必需的资源键升级与全量JS回归冲突。仅修正过期断言，不修改历史计划、不扩大产品行为；授权与提交身份详见`../fast/discovery-recheck-master/ledger.md`的Amendments。
 - 2026-10-25，用户再次“授权 继续”：批准03增加`DiscoveryPaperArchiveCaptureTest.kt`、`PdfEmailExtractorTest.kt`、`ExpertDiscoveryServiceTest.kt`，清单6→9、未突破I-M4上限。只同步已证实的layout版本及明确唯一来源归属正例，不放宽共享/未知/相邻/错误所有者保护，不改变消费或准入行为；授权与提交身份详见同一ledger的Amendments。
 - 2026-10-25，用户“授权 继续”：批准05增加六个已由检索回执证明消费修改后Repository/Gate/Query的旧schema测试：`DiscoveryVerificationReportingIT.kt`、`DiscoveryCountrySupplementFlowIT.kt`、`DiscoveryVerificationFlowIT.kt`、`DiscoveryVerificationIntegrationTest.kt`、`DiscoveryVerificationReplayToolTest.kt`、`DiscoveryVerificationWorkerTest.kt`。清单9→15，仅05获得文件数上限例外；仅同步测试schema至V161，保留原断言及故意测试迁移前后的旧schema阶段，不加生产schema探测兼容分支、不增加生产行为。确切检索请求/输出见`../fast/discovery-recheck-master/children/05/execution.md`的Scope/precondition evidence addendum，授权与提交身份见同一ledger的Amendments。
+- 2026-10-25，用户在05独立核验期间明确“后续修改都授权 把所有子计划都跑完”：批准在原定目标/不变量/验收内继续完成全部子计划，并为必要的后续修改、直接依赖/回归清单扩展及文件数例外提供持续授权。每次仍须以具体证据界定、单独提交计划修订、追加Amendments并保留独立实现/核验和证据门禁；不因同类范围问题再次等待用户确认。未授权无关业务、生产发布、付费操作或Git历史改写；不可达前提与安全冲突仍如实阻塞，不能伪造证据。
