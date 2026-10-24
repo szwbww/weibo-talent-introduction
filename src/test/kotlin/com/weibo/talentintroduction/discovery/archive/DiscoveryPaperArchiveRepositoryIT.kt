@@ -70,6 +70,25 @@ internal class ArchiveFixture(val realDisk: Boolean = false) : AutoCloseable {
 
 class DiscoveryPaperArchiveRepositoryIT {
     @BeforeEach fun clean() { ArchiveMysqlFixture.clean() }
+    @Test fun `bounded exact origin and historical keyset lookup preserve cross run provenance`() {
+        val r = ArchiveMysqlFixture.repository(); val now = Instant.parse("2026-10-24T00:00:00Z")
+        val original = r.beginRecord(2,"OPENALEX","W1","""{"doi":"10.1234/example","pmid":"123","pmcId":"PMC123"}""",now)
+        val historical = (3L..7L).map { r.beginRecord(it,"OPENALEX","W1",original.metadataJson,now) }
+        val request = PaperArchiveLookup(2,"OPENALEX","W1","https://doi.org/10.1234/EXAMPLE","123","pmc123")
+        assertEquals(original,r.lookupOriginal(listOf(request))[request])
+        val first = r.lookupHistorical(request,size=2)
+        assertEquals(2,first.records.size); assertNotNull(first.nextAfterId)
+        val second = r.lookupHistorical(request,first.nextAfterId!!,2)
+        assertTrue(first.records.none { a -> second.records.any { it.id == a.id } })
+        val byId = r.lookupHistorical(PaperArchiveLookup(99,"OTHER","missing","10.1234/example"),size=10)
+        assertEquals(listOf(original.id)+historical.map { it.id },byId.records.map { it.id })
+        assertNull(byId.nextAfterId)
+        assertNull(r.lookupOriginal(listOf(request.copy(executionId=99)))[request.copy(executionId=99)])
+        assertThrows(IllegalArgumentException::class.java) { r.lookupHistorical(request,size=101) }
+        assertThrows(IllegalArgumentException::class.java) { r.lookupOriginal(List(101) { request }) }
+        assertEquals("10.1234/example",PaperArchiveLookup.doi(request.doi))
+        assertEquals("PMC123",PaperArchiveLookup.pmcid(request.pmcid))
+    }
     @Test fun `schema singleton ranges binary identities and UTC milliseconds`() {
         val r=ArchiveMysqlFixture.repository()
         assertEquals(ArchiveSetting(),r.setting())

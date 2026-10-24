@@ -36,6 +36,27 @@ internal class AnalysisFixture(val f: ArchiveFixture) {
 
 class DiscoveryPaperAnalysisServiceTest {
     @BeforeEach fun clean() = ArchiveMysqlFixture.clean()
+    @Test fun `pure kernel equals explicit saved result and never changes baseline or body`() {
+        ArchiveFixture().use { f ->
+            f.enable(); val a = AnalysisFixture(f); val p = a.paper("pure"); val b = a.body(p)
+            a.baseline(p, listOf(b.id))
+            val before = f.repository.record(p.id)!!
+            val analyzer = PaperBodyAnalyzer(PdfEmailExtractor(a.network,PlainTextEmailExtractor(),PdfExtractionProperties(),a.bounded),a.extractor,f.mapper)
+            val time = java.time.Instant.parse("2026-10-24T00:00:00Z")
+            val pure = f.service.analysisLease(p.id).use { lease ->
+                analyzer.compute(lease.bodies.map { PaperBodyInput(it.hash,it.attempt.kind,it.input.readBytes()) },
+                    f.mapper.readTree(before.metadataJson),f.mapper.readTree(before.outcomeJson).path("first"),
+                    lease.fileSet.map { it.first }.toSet(),time)
+            }
+            assertEquals(before,f.repository.record(p.id))
+            val explicit = a.post(p).deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>().put("analyzedAt",time.toString())
+            assertEquals(f.mapper.valueToTree<JsonNode>(pure),explicit)
+            assertEquals(before.revision+1,f.repository.record(p.id)!!.revision)
+            assertEquals(before.outcomeJson,f.repository.record(p.id)!!.outcomeJson)
+            assertEquals(b.blobSha256,f.repository.attempt(b.id)!!.blobSha256)
+            Mockito.verifyNoInteractions(a.network,a.bounded)
+        }
+    }
     @Test fun `byte format and implementation versions invalidate old cache without rewriting first`() {
         ArchiveFixture().use { f ->
             f.enable(); val a = AnalysisFixture(f); val p = a.paper("old-pdf")
