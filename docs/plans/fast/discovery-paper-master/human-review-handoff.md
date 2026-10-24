@@ -2,7 +2,7 @@
 
 - Outcome: PAUSED_FOR_HUMAN
 - Master base: c6e9709f349f32c5feb1d067b47c697b0dff05b6
-- Current code head: 16a138852bea292d40b47dd9cb2d7fc0c8732578
+- Current code head: f28acd2d1ae1cc2a7ae8b84d0b843d2a4061a9a0
 - Branch: fast/discovery-paper-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master
 - Recovery authority: ledger.md; no final whole-system verification or overall PASS.
@@ -16,8 +16,8 @@
 | 04 | LIGHT_PASS_WITH_NOTES | bbd2700ca56d00a9e2845b61b15c1fb7e5b07a49 | 1 | ee524ba4c74480cd8a9dd985fae36ee886ef8160 |
 | 05 | LIGHT_PASS_WITH_NOTES | 1b8c4981f0116e17648f064482e505d436c02edd | 0 | b9e3c3e257faf9a294b7f3c8a0187c8c06e75dc7 |
 | 06a | LIGHT_PASS | 16a138852bea292d40b47dd9cb2d7fc0c8732578 | 0 | 27acda3ca258d86bc1c1073520264f407100f502 |
-| 06b | PAUSED_FOR_HUMAN | 16a138852bea292d40b47dd9cb2d7fc0c8732578 | 0 | 14915afef9cd97203680528e0e6c1e8c7e85cc85 |
-| 07 | PENDING | — | 0 | — |
+| 06b | LIGHT_PASS | f28acd2d1ae1cc2a7ae8b84d0b843d2a4061a9a0 | 0 | 24b68bad1af4038add786364767da4d78549364a |
+| 07 | PAUSED_FOR_HUMAN | f28acd2d1ae1cc2a7ae8b84d0b843d2a4061a9a0 | 0 | 90de7fe43bc6e55a170d99fd3004eb4bd4b075bb |
 
 ## Recorded Verification
 - Child01: independent terminal verifier recorded37 JVM and1807 Node passes plus separate real-files/MySQL smoke; clean artifact checkpoint passed.
@@ -26,7 +26,8 @@
 - Child04: PaperAnalysisReverifierE2R1 LIGHT_PASS_WITH_NOTES,120 JVM0failure/error/skip,1807 Node and separate actual files/MySQL/controller smoke passed. F-1 candidate-status false completed doctorate repaired; one repair. Full-manifest dirty/clean checkpointd458b594043c1a8c83d5dacea8269c18e415f5e6 VALID.
 - Child05: PaperFrontendVerifierE2 LIGHT_PASS_WITH_NOTES / COMPLETE_CHILD, zero repairs. RequiredNode65/65, both syntaxchecks, exact S-4 and actual Chromium desktop/narrow+mutations/lifecycle passed. Fullmanifest dirty/clean checkpoint3700fb3eadab04b6fa0469abece5690d9ae2051d VALID. Fixture/persistence/realPDF limits, missingattempttimestamp and preliminary browser-harness failures remain RECORD_ONLY; no authenticated SQL browser acceptance or real effects inferred.
 - Child06a: ApolloPersistenceVerifierE2 LIGHT_PASS / COMPLETE_CHILD, zero repairs. FreshJVM12/Node1816/syntax and separateactualSQLTCPHTTPsmoke0; singletonrace[200,409],401/400/409/503,outagerestoration,93nonsettingtablesunchanged,providerobserver0. Fullmanifest dirty/clean checkpoint7371ef5e50af0694967350a205e9fcf98d3a948b VALID. A9/A10 exact28test resource synchronization/masterexception approved and completed.
-- Child06b epoch2: approvedA11/A12 queueversion boundary implemented;14IntegrationTestcases pass and actualSQLruntime proves old1/new2 nullableoption/reentry. Required11classMaven172tests7FlowITfailures0errors0skips, exit1; all failures conflict with preserved rule/budget/query/cursor semantics. ExistingMavenNode/syntax goals separatelyexit0,1816Nodepass. Fresh actualSQLWorkerGate/query/queue smoke0, preserving oldA/LEGACY/newBfree behavior, malformednoHTTP/channels3/2/1/pending1. Elevenauthorizeddirtypartialpaths preserved; no implementationcommit/readiness/independentverifier/WARclaim.
+- Child06b epoch3 terminalLIGHT_PASS/COMPLETE_CHILD byApolloRuntimeVerifierE3 afterapprovedA13/A14testreconciliation. Fresh172JVM0failure/error/skip,1816Node/syntaxandseparateactualSQLWorker/Gate/query/versionedqueue smoke0. No findings/repairrounds. Fullmanifestdirty/clean checkpointb1584a30ef271b6280533cb1d6f648a8b8917933 VALID.
+- Child07scopepreflightonly, noproductedits/implementationcommit/verifier/tests/browser/WAR. Exactbatchedthree-testomissions inexecution.md:30–74; no fakepass/hash/visualproof.
 
 ## RECORD_ONLY Index
 | Observation | Child | Evidence / source |
@@ -48,9 +49,9 @@
 - Child04 private freeze /root/discovery-paper-child04-epoch2-frozen,0700/0600;23 referenced bodies present,0missing. Original manifest SHA25679e0224f027130fd27e96a7faf7134eb8356f9c6adb2966f478dc316afa9e8aa; inputs SHA2562bb94665ff2506f6f5a4f89d9b0d1c758b70167257306387d6ab13b35b533fb5; quote-gap diagnostic SHA256f5c12d14557f29623b8e3aa165fc91e1467c00f7b9f81b095e73e55ba02a3cc2. No private quotes/person-level data in Git. These are existing writer observations, not a fresh aggregate audit.
 
 ## Pause / Exact Proposed Amendment
-- Previous queueC-1 is implemented under human-approved A11/A12/plan-only2187c5c: newcriteriaVersion2 saveddefaults versuslegacy1historical-nullfalse; actualSQLintegration and runtimepassed. NotanoverallchildPASS.
-- Newpause is precise test-contract authority, not extra files: original sevenFlowIT assertions conflict with later unchangedproductionsemantics, with exactblamereceipts inexecution.md. [INFERENCE] historical drift; no executedbaselineclaim. Do not restoreoldproductionrules/budgets/querybehavior togreen.
-- Proposedonebounded test-onlyamendment, detailschildren/06b/execution.md:451–516: (1) threehistoricalSELFscenarios explicitruleVersion0 andmissingapolloAccess, preservealloutcome/negative/alias/accountingassertions; (2) splitbudgetcase into Apolloexemption andORCIDcap2 safety, retain403/invalid/page/transient/429/credits tests; (3) cappedbroadexpectednarrow0→1 with globalincompletePENDING/noadmission/page1only/accounting; (4) keepbothoriginalcachedcursorpayloads untouched, requireconservativePENDING/SEARCH_INCOMPLETE/SEARCH_PAGE_LIMIT/noadmission insteadofunprovencomplete/no-match. No testdeletions/exclusions, no furtherfiles or productionchangeauthority.
-- Approvalrequired because four scenarios revise oldexpectedbehavior; originalinvocationforbidsrepinning. Notapplied/waived. Afterapprovalseparatelycommitexactchild/masteramendmentandcanonicalrows, resume06bnewepochfix_round0 retainingelevenpartialpaths and allhistory; completefreshrequiredchecks/smoke/implementationcommit thenindependentlightverification.07remainsPENDING.
-- C-2 remainswithdrawn; existingresolveOptions validation-versus-beginfreeze interpretation needs no furtherauthority. Retainunchangedproductbase16a138852bea292d40b47dd9cb2d7fc0c8732578 and allprivatecorpuslimitsabove.
+- Currentpause07C-1: mandatorylaunchtransportomitsapolloAssist, whileout-of-scope discoveryContinuousRun.test.js:275 requires=true anddiscoveryScheduleSetting.test.js:547 requires=false. Existing discoveryPapers.test.js:86 exactCSS-to-EOFcomparisonrequiresboundingpaperendmarkerbeforeliteralS3append; paperCSSmustremainbyteexact.
+- Proposedboundedauthorization addsjust src/test/js/discoveryContinuousRun.test.js, src/test/js/discoveryScheduleSetting.test.js, src/test/js/discoveryPapers.test.js tooriginalfivepaths, total8withinmaster10. Firsttwoassertparameterabsence, preserveallotherlaunch/schedule/timeouts/frozeninputassertions; thirdcompareentirepapercontractbetweenexistingstart/endmarkersinclusive. No extra productbehavior/backend/module/schema/filecapexception. Actualkeyscanonlyindexoldkey, no furtherliteralkeytestscopeclaim.
+- No amendmentappliedyet. Afterapprovalplan-onlychild/mastercommit+canonicalrows, new07epoch2fix_round0 thenfreshimplementation/allrequiredJS/browser/WARandindependentlightverifier; no completed01–06breplay. OriginalfivefileUIcontract/S3CSSunchanged.
+- Previous06bqueueversionandsevenFlowITcontracts completedunderA11–A14 andindependentlypassed. Do notreopencloseddecisions; priorfailureobservationsretainedinappend-onlylogs. TargetREADY_FOR_HUMAN_REVIEW enablingseparatereview-fast-p, notoverallPASS/inlineaggregatereview.
+- Resumeproductboundaryf28acd2d1ae1cc2a7ae8b84d0b843d2a4061a9a0; retainedbranch/worktree, no dirtyproductfilesfrom07. Privatecorpusandeffectlimitationsaboveunchanged.
 - Retain branch/worktree and all commits. No push, merge, deployment, reset, history rewrite or worktree deletion.

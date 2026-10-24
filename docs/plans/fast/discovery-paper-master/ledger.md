@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-23/discovery-paper-master.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-10-23/discovery-paper-master.md (commit 0199430a0b4f30f89b8fb240d58880167471b512)
 - Amendments: A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12,A13,A14
 - Master base: c6e9709f349f32c5feb1d067b47c697b0dff05b6
@@ -9,12 +9,12 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-23T14:24:57.472352+00:00
-- Current child: 06b
-- Waiting role: N/A
+- Current child: 07
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: N/A
+- Pause reason: Child07 batchedscopeC-1 requires threeexistingJStests beyondfiveauthorizedfiles for mandatorylaunchomission and boundedpaperCSScontract; proposed5→8withinmastercap, no productedits.
+- Resume from: f28acd2d1ae1cc2a7ae8b84d0b843d2a4061a9a0
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
@@ -26,7 +26,7 @@
 | 05 | docs/plans/2026-10-23/discovery-paper-05-frontend.md | commit:541411d540019428c72b31775c325087b33da303 | 01,02,03,04 | 2 | LIGHT_PASS_WITH_NOTES | bbd2700ca56d00a9e2845b61b15c1fb7e5b07a49 | 1b8c4981f0116e17648f064482e505d436c02edd | 0 | — | 1b8c4981f0116e17648f064482e505d436c02edd | b9e3c3e257faf9a294b7f3c8a0187c8c06e75dc7 | PaperFrontendVerifierE2; O-1 fixture limit/O-2 attempt time/O-3 harness; no repairs |
 | 06a | docs/plans/2026-10-23/discovery-paper-06a-apollo-persistence.md | commit:6112a58b4bc94b510a6b1cff88cfd9ec159c83d6 | none | 2 | LIGHT_PASS | 1b8c4981f0116e17648f064482e505d436c02edd | 16a138852bea292d40b47dd9cb2d7fc0c8732578 | 0 | — | 16a138852bea292d40b47dd9cb2d7fc0c8732578 | 27acda3ca258d86bc1c1073520264f407100f502 | ApolloPersistenceVerifierE2; all fourgates pass; no findings/repairs |
 | 06b | docs/plans/2026-10-23/discovery-paper-06b-apollo-runtime.md | commit:0199430a0b4f30f89b8fb240d58880167471b512 | 06a | 3 | LIGHT_PASS | 16a138852bea292d40b47dd9cb2d7fc0c8732578 | f28acd2d1ae1cc2a7ae8b84d0b843d2a4061a9a0 | 0 | — | f28acd2d1ae1cc2a7ae8b84d0b843d2a4061a9a0 | 24b68bad1af4038add786364767da4d78549364a | ApolloRuntimeVerifierE3; fourgatespass, nofindings/repairs |
-| 07 | docs/plans/2026-10-23/discovery-paper-07-apollo-frontend.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 05,06a,06b | 1 | PENDING | — | — | 0 | — | — | — |  |
+| 07 | docs/plans/2026-10-23/discovery-paper-07-apollo-frontend.md | commit:c18dbc060dcf4c8440f853ede4d1d3aaf737994f | 05,06a,06b | 1 | PAUSED_FOR_HUMAN | f28acd2d1ae1cc2a7ae8b84d0b843d2a4061a9a0 | — | 0 | — | f28acd2d1ae1cc2a7ae8b84d0b843d2a4061a9a0 | 90de7fe43bc6e55a170d99fd3004eb4bd4b075bb | Batched3testscopeomissions; no productedits/tests/browser/WAR; five→eightproposal |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
@@ -118,3 +118,5 @@
 - Child06b epoch3 freshIMPLEMENTERApolloRuntimeImplementerE3 acquired afterresumerecord28c4867, agent_attempt0 fix_round0. Exactseven-scenarioreconciliationandfullrequiredchecks/smoke; no completedchildreplay. Targetfast-pREADY_FOR_HUMAN_REVIEW.
 - Child06b epoch3 READY_FOR_VERIFICATION implementationf28acd2d1ae1cc2a7ae8b84d0b843d2a4061a9a0. Writerreports required172JVM0failure/error/skip and1816Node/syntaxplusactualSQLWorker/Gate/query/queue smoke0. FreshdistinctVERIFIER ApolloRuntimeVerifierE3 acquired attempt1agent_attempt0fix_round0; fullretainedproductrange16a1388..f28acd2, no finalrevieworcompletedchildreplay.
 - Child06b epoch3 terminalLIGHT_PASS/COMPLETE_CHILD byApolloRuntimeVerifierE3; evidence24b68bad1af4038add786364767da4d78549364a. Fresh172JVM0failure/error/skip,1816Node/syntaxandactualSQLWorker/Gate/query/versionedqueuesmoke0. No findings/repairrounds;07PENDING until fullmanifestcleancheckpoint.
+- Child06b fullmanifestdirty/clean checkpointVALIDb1584a30ef271b6280533cb1d6f648a8b8917933. Child07 freshIMPLEMENTERApolloFrontendImplementer acquired, epoch1fix_round0agent_attempt0, exactfivefileUIcontract. ActualbrowserandcompleteaffectedJS/finalchildWARbuild required; no finalreview-inline.
+- Child07PLAN_CONFLICTbeforeproductedits; batchedexactminimumscopeinventorydiscoveryContinuousRun.test.js:275 oldapolloAssist=true, discoveryScheduleSetting.test.js:547 false bothcontradictomission; discoveryPapers.test.js:86 CSScomparison-to-EOFbreakswhenappendS3. Proposed5→8addsjustthesetests, requestassertabsencewhileotherassertionsretained andCSScompareboundedexistingendmarkerbyteexact. No newproductbehavior/schema/module/cachekeytestomission. Evidence90de7fe43bc6e55a170d99fd3004eb4bd4b075bb, planunchanged, no Node/browser/WARexecuted.06b remainsLIGHT_PASS; no completedchildreplay. Explicitamendmentapprovalrequiredbefore07epoch2.
