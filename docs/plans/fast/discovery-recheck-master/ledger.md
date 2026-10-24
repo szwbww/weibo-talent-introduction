@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-24/discovery-recheck-master.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-10-24/discovery-recheck-master.md (commit 014e9df745fbd7761fe4fce38039aab98af877b4)
 - Amendments: A1, A2
 - Master base: b161e87464d42b9fa2cd076ef9255b0e3b2b29ab
@@ -10,18 +10,18 @@
 - Finalization repair parent: N/A
 - Started: 2026-10-24T23:47:16.652745+08:00
 - Current child: 03
-- Waiting role: N/A
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: N/A
+- Pause reason: Child03 requires three unlisted existing regression-test files to retire old layout-version and unbound-owner expectations contradicted by source-proven unique marker recovery; authorized scope six files must become nine before reconciliation.
+- Resume from: 9186a79c6ce78a8e9d253dbe5051d2b0a5a0ae54
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | 01 | docs/plans/2026-10-24/discovery-recheck-01-counts.md | commit:014e9df745fbd7761fe4fce38039aab98af877b4 | none | 2 | LIGHT_PASS_WITH_NOTES | b161e87464d42b9fa2cd076ef9255b0e3b2b29ab | 7d0cb8c276533576d79f28fe970ccfbac4114d9e | 0 | — | 7d0cb8c276533576d79f28fe970ccfbac4114d9e | e0df0b0af15eeca62f21f8f0e6f4c08e1a061d7a | Independent verifier Recheck01Verifier; O-01 record-only failed-progress fixture/SQL difference; no repairs. |
 | 02 | docs/plans/2026-10-24/discovery-recheck-02-archive.md | sha256:01b4abd5cf06e535848abb65b1d9bc62194c225df4f7dfa12e20e6d2a002b13f | 01 | 1 | LIGHT_PASS_WITH_NOTES | 7d0cb8c276533576d79f28fe970ccfbac4114d9e | 5487f3b45085f20f8db8554fb94888de1446c378 | 0 | — | 5487f3b45085f20f8db8554fb94888de1446c378 | f48eacfd708a72f78ae975f3609d8e220d26693b | Independent Recheck02VerifierFull; O-02 unrelated compiler warnings only; no repairs. |
-| 03 | docs/plans/2026-10-24/discovery-recheck-03-identity-parser.md | sha256:199a71d6d89625a0faaf2aa5f3abe37a42f6740c2c1ad03220fad934426c87a9 | 02 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
+| 03 | docs/plans/2026-10-24/discovery-recheck-03-identity-parser.md | sha256:199a71d6d89625a0faaf2aa5f3abe37a42f6740c2c1ad03220fad934426c87a9 | 02 | 1 | PAUSED_FOR_HUMAN | 5487f3b45085f20f8db8554fb94888de1446c378 | — | 0 | — | 5487f3b45085f20f8db8554fb94888de1446c378 | 4e5ba6bd7cd9adb270c8549ec7f25eacd33a7e6e | Recheck03Implementer PLAN_CONFLICT; six files uncommitted; three extra existing test paths need approval; no verifier dispatched. |
 | 04 | docs/plans/2026-10-24/discovery-recheck-04-qualification.md | sha256:04b07f58de1d6e9199e0919047cfffde967896f1bd4cfcad526b40a7d412dd0d | 03 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 | 05 | docs/plans/2026-10-24/discovery-recheck-05-history.md | sha256:1e269d2e8ba0bee59ff0442e6e10b3e750fb9323d9dc4e666a8f5dfd80b6870a | 04 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 | 06 | docs/plans/2026-10-24/discovery-recheck-06-evidence.md | sha256:c3a21b4a2fbfe80968f19302d23979dbfec9d1a97e14c7717ba86c55674829ae | 05 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
@@ -83,3 +83,12 @@
 - Terminal LIGHT_PASS_WITH_NOTES from Recheck02VerifierFull; all four gates PASS. Fresh JVM34/bound JS1827/direct paper10/resource18, syntax, separate real-MySQL JVM smoke and real Chromium component observation passed. No skips, no AUTO_FIX.
 - RECORD_ONLY O-02: unrelated existing compiler warnings; no investigation or cleanup. Evidence commit f48eacfd708a72f78ae975f3609d8e220d26693b; product head5487f3b45085f20f8db8554fb94888de1446c378.
 - Complete ten-child checkpoint validator `--through-child 02 --allow-dirty-artifacts`: exit0, VALID, CHILD_CHECKPOINT, validated_child_count2, full child_count10. Later children remain PENDING.
+- Clean complete ten-child validator `--through-child 02`: exit0, VALID, CHILD_CHECKPOINT, evidence_head9186a79c6ce78a8e9d253dbe5051d2b0a5a0ae54; passed before child03 dispatch.
+
+## Child 03
+- Fresh IMPLEMENTER Recheck03Implementer acquired at prior terminal product base5487f3b45085f20f8db8554fb94888de1446c378; agent_attempt=0, fix_round=0.
+- Executor returned PLAN_CONFLICT with exact scope evidence: add existing DiscoveryPaperArchiveCaptureTest.kt (obsolete pdfLayout20261023 assertion), PdfEmailExtractorTest.kt (newly recovered unique Mette footer), ExpertDiscoveryServiceTest.kt (same unique source owners/count/audit expectations). This is six→nine files, not a master cap increase; no unlisted test was modified.
+- Final primary suite: 336 JVM tests, one remaining unauthorized assertion failure, two explicit skips (private original294 corpus and disabled live Europe PMC smoke). Final consumption suite with -DmysqlIt=true:299 JVM tests, two unauthorized assertion failures, zero skips; queue repository31, archive flow8, verification integration14, pipeline52 passed. SourceAuthorEmailResolverTest27 passed after exact-source positive reconciliation; real ambiguity/wrong-owner negatives retained.
+- Fresh standalone parser/proof/capture/analysis smoke passed against disposable MySQL: x32/y96% full owner and unique labels valid; shared/unknown/adjacent/reference negatives unbound; no pseudo mailbox; actual first/analysis layout20261024, identity20260925/extraction20261004 unchanged; first immutable. JS1827 and syntax passed separately because Maven stops before bound JS on known JVM failures.
+- No implementation commit, no staging, no independent verdict and no repair rounds. Product code head remains5487f3b45085f20f8db8554fb94888de1446c378; pre-pause actual HEAD9186a79c6ce78a8e9d253dbe5051d2b0a5a0ae54. Only child03 evidence committed at4e5ba6bd7cd9adb270c8549ec7f25eacd33a7e6e; six scoped edits preserved.
+- Resume requires human-approved exact child03 file-list amendment, separately committed with canonical amendment rows, then new epoch/fix_round0. Completed children01/02 must not replay. Children04–10 remain PENDING; no whole-system verification performed.
