@@ -1,15 +1,15 @@
 # Fast-P Ledger — master: docs/plans/2026-10-24/discovery-recheck-master.md
 
 - Status: RUNNING
-- Master plan: docs/plans/2026-10-24/discovery-recheck-master.md (commit bc1cf7fedf59dc3399c2bfbd5be7db0a403b6af7)
-- Amendments: A1, A2, A3, A4, A5, A6, A7
+- Master plan: docs/plans/2026-10-24/discovery-recheck-master.md (commit 7bcefb3815f3f3d318c8e619477cab0d67ad6c91)
+- Amendments: A1, A2, A3, A4, A5, A6, A7, A8, A9
 - Master base: b161e87464d42b9fa2cd076ef9255b0e3b2b29ab
 - Branch: fast/discovery-recheck-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-recheck-master
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-24T23:47:16.652745+08:00
-- Current child: 06
+- Current child: 07
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
@@ -25,7 +25,7 @@
 | 04 | docs/plans/2026-10-24/discovery-recheck-04-qualification.md | sha256:04b07f58de1d6e9199e0919047cfffde967896f1bd4cfcad526b40a7d412dd0d | 03 | 1 | LIGHT_PASS_WITH_NOTES | bc5ec812dedd7ac6aef5ea0e4d9094e19b2a9f4a | 6884eb7f31b1763dbb14422e91dfd63dc022fb94 | 0 | — | 6884eb7f31b1763dbb14422e91dfd63dc022fb94 | 4c2fdcd72494ef8622132a27288ed41c80c132da | Independent Recheck04Verifier; O-04-01 existing warnings/harness limits record-only; no repairs. |
 | 05 | docs/plans/2026-10-24/discovery-recheck-05-history.md | commit:863530b3f0d8aca6c0cd03fa29d9af7df8cb09d6 | 04 | 2 | LIGHT_PASS_WITH_NOTES | 6884eb7f31b1763dbb14422e91dfd63dc022fb94 | 74a4c94e88230d88710e35eb9b45612a4234fb52 | 1 | 440b7e0cb1daae1eb0d985fef3e12f78d1c7b607 | 440b7e0cb1daae1eb0d985fef3e12f78d1c7b607 | 6389e5c488f9e931e77d13aafc025231f89894d4 | Recheck05Reverify1 closes F-05-01/F-05-02; O-05-01 warnings record-only; one repair. |
 | 06 | docs/plans/2026-10-24/discovery-recheck-06-evidence.md | sha256:c3a21b4a2fbfe80968f19302d23979dbfec9d1a97e14c7717ba86c55674829ae | 05 | 1 | LIGHT_PASS_WITH_NOTES | 440b7e0cb1daae1eb0d985fef3e12f78d1c7b607 | feb58f65512484c742f7bf5f0edb6ec0e2207df8 | 0 | — | feb58f65512484c742f7bf5f0edb6ec0e2207df8 | 392429d71119e0f46b2c54765f40491d5e769b5b | Independent Recheck06Verifier; O-06-01 warnings record-only; no repairs. |
-| 07 | docs/plans/2026-10-24/discovery-recheck-07-pipeline.md | sha256:f07ebf6c63e7e3c1e084a79fcbde47ce51a5ed0f69343b569556562a3d332ad4 | 06 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
+| 07 | docs/plans/2026-10-24/discovery-recheck-07-pipeline.md | commit:7bcefb3815f3f3d318c8e619477cab0d67ad6c91 | 06 | 2 | IMPLEMENTING | feb58f65512484c742f7bf5f0edb6ec0e2207df8 | — | 0 | — | — | — | Recheck07Implementer new immutable epoch2 after A7-authorized dispatch-guard scope amendment; agent_attempt0. |
 | 08 | docs/plans/2026-10-24/discovery-recheck-08-api.md | sha256:47196d02af0f41bd852216230d91ec446020baa6e19b6e5e9a1b0f8c7e1d440a | 07 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 | 09 | docs/plans/2026-10-24/discovery-recheck-09-frontend.md | sha256:b92cdfdcbe1ffe5da3e5eda43af3488c18e3c948c777fd196c6f70eeb502b4df | 08 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 | 10 | docs/plans/2026-10-24/discovery-recheck-10-historical-replay.md | sha256:47cc24df6d94279a93156fc73e31661c0da7d7aa3d390778d35c72ca0b336dda | 09 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
@@ -40,6 +40,8 @@
 | A5 | docs/plans/2026-10-24/discovery-recheck-master.md | commit:5f9136047ce821259ce96b70871b71045ab9778b | commit:863530b3f0d8aca6c0cd03fa29d9af7df8cb09d6 | I-M4：范围受子计划约束 | Only child05 may use15 files to synchronize six existing direct/shared consumer test schemas with V161; no production expansion. | HUMAN:授权 继续 (2026-10-25; approves immediately preceding six named child05 test files and9→15 cap exception) |
 | A6 | docs/plans/2026-10-24/discovery-recheck-05-history.md | commit:bb6b222b533a584648c1464b7ee8d6dd96c13852 | commit:863530b3f0d8aca6c0cd03fa29d9af7df8cb09d6 | I-M4：范围受子计划约束 | Add Reporting/CountrySupplement/Flow/Integration/Replay/Worker test fixture schema targets and their fresh required command; preserve assertions and intentional migration stages. | HUMAN:授权 继续 (2026-10-25; approves immediately preceding six named child05 test files and9→15 cap exception) |
 | A7 | docs/plans/2026-10-24/discovery-recheck-master.md | commit:863530b3f0d8aca6c0cd03fa29d9af7df8cb09d6 | commit:bc1cf7fedf59dc3399c2bfbd5be7db0a403b6af7 | I-M4：范围受子计划约束 | Continuing authority for necessary in-goal changes/direct regression dependencies, explicit child-list amendments and file-cap exceptions, each evidenced and committed before implementation; isolation/checkpoint/safety gates retained. | HUMAN:后续修改都授权 把所有子计划都跑完 (2026-10-25; interjection during child05 independent verification) |
+| A8 | docs/plans/2026-10-24/discovery-recheck-master.md | commit:bc1cf7fedf59dc3399c2bfbd5be7db0a403b6af7 | commit:7bcefb3815f3f3d318c8e619477cab0d67ad6c91 | I-M4：范围受子计划约束 | Child07 ten→fourteen files for per-HTTP academic cancellation guard and existing tests, required by original I-5; no ordinary enrichment/budget policy change. | HUMAN:后续修改都授权 把所有子计划都跑完 (2026-10-25; A7 standing authority for evidenced necessary direct dependencies) |
+| A9 | docs/plans/2026-10-24/discovery-recheck-07-pipeline.md | commit:1bdd2d7ab5f034ce529ec9105fae1f350ca2594d | commit:7bcefb3815f3f3d318c8e619477cab0d67ad6c91 | I-M4：范围受子计划约束；07 I-5：取消与同步 | Add academic service/OpenAlex client and their two existing tests to guard author/works/patent/retry dispatches and propagate cancellation; add covering command. | HUMAN:后续修改都授权 把所有子计划都跑完 (2026-10-25; A7 standing authority for evidenced necessary direct dependencies) |
 
 ## Baseline
 - Authorized invocation: `/fast-p docs/plans/2026-10-24/discovery-recheck-master.md`.
@@ -150,3 +152,10 @@
 - Acquired distinct fresh Recheck06Verifier for full child boundary440b7e0cb1daae1eb0d985fef3e12f78d1c7b607..feb58f65512484c742f7bf5f0edb6ec0e2207df8; exact four-gate rubric, fresh mandatory commands and separate changed-path runtime required, fix_round0.
 - Terminal LIGHT_PASS_WITH_NOTES/COMPLETE_CHILD from Recheck06Verifier, all four gates PASS. Fresh30 JVM/realMySQL/zero skips and JS1827/syntax; actual standalone archive/bridge/provider-fixture runtime pass with explicit limits. Evidence392429d71119e0f46b2c54765f40491d5e769b5b; no repair, O-06-01 existing warnings only. Later children stay PENDING until both full-manifest checkpoint modes pass.
 - Full ten-child validator --through-child06 --allow-dirty-artifacts: exit0, VALID, CHILD_CHECKPOINT, six terminal children and A1–A7 checked; no errors, no final readiness claim.
+- Clean full ten-child validator --through-child06: exit0, VALID, CHILD_CHECKPOINT, evidence HEAD1bdd2d7ab5f034ce529ec9105fae1f350ca2594d; passed before07 acquisition. Completed01–06 must not replay.
+
+## Child07
+- Acquired fresh IMPLEMENTER Recheck07Implementer, epoch1/fix_round0/agent_attempt0; product basefeb58f65512484c742f7bf5f0edb6ec0e2207df8, governance HEAD1bdd2d7ab5f034ce529ec9105fae1f350ca2594d. Exact ten-file approved plan, fixed eight-step/readonly/AUDIT/ENFORCE/frozen-time/cancellation/legacy invariants and real MySQL/standalone requirements supplied. No new08 start API or unrelated work authorized.
+- Epoch1 scope discovery: Worker-level entry guard cannot stop subsequent OpenAlex author/works/patent dispatches inside academic collect. Implementer provided bounded getJson→policy.reserve→exchange/catch and ORCID callback convention receipts; no extra-file edit allowed before amendment. Necessary four exact files fit original I-5, not unrelated expansion.
+- Under user A7 continuing authority, master/child07 plans-only amendment7bcefb3815f3f3d318c8e619477cab0d67ad6c91 committed, A8/A9. Four existing service/client/tests added,10→14; ordinary enrichment APIs/behavior, RequestKind/budget and free/paid policy retained. No repeated human pause.
+- New immutable execution epoch2/fix_round0, same sole writer Recheck07Implementer; original scoped drafts retained, no implementation commit/verification/replay. Writer must re-read exact revised plan and rerun identity gates, append old scope discovery and fresh epoch result; three final commands/runtime now required.
