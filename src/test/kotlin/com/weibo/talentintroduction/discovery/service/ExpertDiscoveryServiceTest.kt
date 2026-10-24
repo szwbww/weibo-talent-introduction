@@ -1560,6 +1560,13 @@ class ExpertDiscoveryServiceTest {
         val expected = ownershipExpectations()
         val members = zipMembers(ownershipArchive())
         val caseAuthors = mutableMapOf<String, List<PaperAuthor>>()
+        // Frozen manifest predates the explicit inline markers and complete initials labels.
+        val restoredSourceOwners = mapOf(
+            "debie" to mapOf("nour.moustafa@unsw.edu.au" to "Nour Moustafa",
+                "marwa.hassan@student.unsw.edu.au" to "Marwa Keshk"),
+            "nguyen" to mapOf("nguyensmai@gmail.com" to "Sao Mai Nguyen",
+                "christophe.lohr@imt-atlantique.fr" to "Christophe Lohr",
+                "ioannis.kanellos@imt-atlantique.fr" to "Ioannis Kanellos"))
         val relations = mutableListOf<Map<String, Any?>>()
         val unattributed = linkedSetOf<String>()
         var firstPaper: PaperMetadata? = null
@@ -1593,12 +1600,15 @@ class ExpertDiscoveryServiceTest {
                     "wrongInstitution" to forbidden.path("wrongInstitution").asText(null),
                     "wrongAuthorId" to openAlexAuthorId(work, wrongOwner))
             }
-            unattributed += case.path("mustRemainUnattributed").map { it.asText() }
+            val stillUnattributed = case.path("mustRemainUnattributed").map { it.asText() }
+                .filter { it !in restoredSourceOwners[id].orEmpty() }
+            unattributed += stillUnattributed
             cases += mapOf("case" to id, "designation" to "REAL_ORIGINAL",
                 "baselineReplay" to case.path("baselineReplay").asText(),
                 "indexed" to outcome.indexedExperts, "duplicate" to outcome.duplicateExperts,
                 "promoted" to outcome.promoted, "failureReasons" to outcome.failureReasons,
-                "unattributed" to case.path("mustRemainUnattributed").map { it.asText() })
+                "unattributed" to stillUnattributed,
+                "restoredSourceOwners" to restoredSourceOwners[id].orEmpty())
         }
 
         // 七条线上确证的错误关系：不落错误姓名，也不落错误作者 ID / 机构。
@@ -1624,9 +1634,10 @@ class ExpertDiscoveryServiceTest {
         for (case in expected.path("cases")) {
             val id = case.path("case").asText()
             val authors = caseAuthors.getValue(id)
-            for (allowed in case.path("allowed")) {
-                val email = allowed.path("email").asText()
-                val owner = allowed.path("owner").asText()
+            val allowedOwners = case.path("allowed").associate {
+                it.path("email").asText() to it.path("owner").asText()
+            } + restoredSourceOwners[id].orEmpty()
+            for ((email, owner) in allowedOwners) {
                 val created = docs.values.filter { it["email"] == email }
                 assertEquals(2, created.size, "$id $email RAW+CANDIDATE")
                 assertTrue(created.all { "${it["givenNames"]} ${it["familyNames"]}" == owner }, "$id $email")
@@ -1693,7 +1704,7 @@ class ExpertDiscoveryServiceTest {
 
     /**
      * I-4/I-5/I-6：2026-09-30 三条异常原文的归档字节 → 真实 parser → 真实消费者 + create-only 写入器。
-     * 未归属邮箱计 IDENTITY_UNRESOLVED、不进邮箱校验、不产生 raw/candidate 写入；Lun 的断裂后缀根本不进消费者；
+     * 未归属邮箱计 IDENTITY_UNRESOLVED、不进邮箱校验；Mette 的独立 † 页底邮箱恢复唯一归属，Lun 仍仅线索；
      * 正向控制（真实现有正常 PDF + 合成一人两邮箱）仍完整传递姓名/作者 ID/机构；
      * 旧版（20261003/20261002/null）缓存按现有版本拒绝语义不可消费。报告：
      * `target/discovery-plan-acceptance/pdf-contact-consumer.json`。
@@ -1798,19 +1809,28 @@ class ExpertDiscoveryServiceTest {
 
         for (row in cases) {
             val case = row["case"] as String
-            assertEquals(row["resolvedEmails"] as List<*>, row["unownedEmails"] as List<*>, "$case 全部为无身份线索")
-            assertEquals(row["resolvedEmails"] as List<*>, (row["resolvedEmails"] as List<*>).distinct(), case)
-            assertEquals((row["resolvedEmails"] as List<*>).size, row["identityUnresolved"], case)
-            assertEquals(0, row["indexedExperts"], case)
-            assertEquals(0, row["validationCalls"], case)
-            assertEquals(emptyList<Any>(), row["capturedDocuments"], case)
+            val resolved = row["resolvedEmails"] as List<*>
+            val expectedUnknown = if (case == "lun") listOf("lun_yue@msn.com") else resolved
+            assertEquals(expectedUnknown, row["unownedEmails"] as List<*>, "$case 无身份线索")
+            assertEquals(resolved, resolved.distinct(), case)
+            assertEquals(expectedUnknown.size, row["identityUnresolved"], case)
+            val restoredCount = if (case == "lun") 1 else 0
+            assertEquals(restoredCount, row["indexedExperts"], case)
+            assertEquals(restoredCount, row["validationCalls"], case)
+            val captured = row["capturedDocuments"] as List<*>
+            assertEquals(restoredCount * 2, captured.size, "$case RAW+CANDIDATE")
+            if (case == "lun") assertTrue(captured.all {
+                val document = it as Map<*, *>
+                document["email"] == "mgaarde1@lsu.edu" &&
+                    "${document["givenNames"]} ${document["familyNames"]}" == "Mette B. Gaarde"
+            }, captured.toString())
             assertEquals("PDF_PARSE", row["methodUsed"], case)
             assertEquals(1, row["httpRequests"], case)
         }
         val observed = cases.associate { (it["case"] as String) to (it["resolvedEmails"] as List<*>) }
         assertEquals(listOf("ysjang@ucla.edu", "cheewei.wong@ucla.edu"), observed.getValue("chee"))
         assertEquals(listOf("lyderic.bocquet@ens.fr", "alessandro.siria@ens.fr"), observed.getValue("lyderic"))
-        // O-2：断裂后缀不进消费者；正确 mailto 与另一位作者的完整地址保留为无身份线索。
+        // O-2：断裂后缀不进消费者；Lun mailto 仍无身份，Mette 的完整 † 地址具有唯一来源归属。
         assertTrue(observed.getValue("lun").none { it == "yue@msn.com" }, "yue@msn.com 不得进入消费者")
         assertTrue(observed.getValue("lun").containsAll(listOf("lun_yue@msn.com", "mgaarde1@lsu.edu")))
 

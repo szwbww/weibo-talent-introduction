@@ -9,7 +9,7 @@ import java.util.Locale
 
 /** Bounded, same-page author/contact evidence; no inference from the article body or reference list. */
 internal object PdfAuthorContactLayout {
-    const val RULE_VERSION = 20261023
+    const val RULE_VERSION = 20261024
 
     data class Contact(val email: String, val authorIndex: Int, val page: Int, val authorText: String, val contactText: String, val rule: String? = null) {
         val evidenceText get() = "PDF_PAGE:$page\nAUTHOR:$authorText\nCONTACT:$contactText" +
@@ -21,7 +21,7 @@ internal object PdfAuthorContactLayout {
     private val emailExtractor = PlainTextEmailExtractor()
     /** I-1/I-2：作者与联系两侧共用的标记集合，`∗` 与 `*` 归一。 */
     private val markerGlyph = Regex("[*∗†‡§]")
-    private val markerContact = Regex("^\\s*([*∗†‡§])")
+    private val contactBoundary = Regex("(?i)^\\s*(?:references\\b|bibliography\\b|abstract\\b|keywords?\\b|introduction\\b)")
     private val paragraphStart = Regex("^\\s*((?:[A-Z]\\.\\s*){1,4}[A-Z][A-Za-z'-]+|[A-Z][A-Za-z'-]+(?:\\s+[A-Z][A-Za-z.'-]+){1,3})\\s+is\\s+with\\b", RegexOption.IGNORE_CASE)
     /** I-2：下一个作者的联系语句（含 `are with` 与 `A. K. Singh` 这类多首字母）终止上一段，与元数据匹配无关。 */
     private val paragraphBoundary = Regex("^\\s*((?:[A-Z]\\.\\s*){1,4}[A-Z][A-Za-z'-]+|[A-Z][A-Za-z'-]+(?:\\s+[A-Z][A-Za-z.'-]+){1,3})\\s+(?:is|are)\\s+with\\b", RegexOption.IGNORE_CASE)
@@ -74,32 +74,57 @@ internal object PdfAuthorContactLayout {
             val header = authorHeader(lines, height, authors) ?: continue
             // I-1：拥有者计数取自作者署名区（含匹配不上元数据的署名）；分不清作者段则回退为空集。
             val owners = markerOwners(authorArea(lines, header, height).orEmpty(), authors)
-            for (line in lines) {
-                if (line.y <= header.y || line.y > height * .90f) continue
+            for ((index, line) in lines.withIndex()) {
+                if (contactBoundary.containsMatchIn(line.text) &&
+                    line.text.trim().matches(Regex("(?i)(?:references|bibliography)\\s*[:.]?"))) break
+                if (line.y <= header.y) continue
                 if (header.right < width * .48f && line.x > width * .52f) continue
                 if (header.x > width * .52f && line.right < width * .48f) continue
-                // I-2：同一联系行按标记边界切分，各自抽邮箱；分段不明确则整行不出证明。
-                for ((marker, segment) in markerSegments(line.text)) {
+                val segments = markerSegments(line.text)
+                for ((position, marked) in segments.withIndex()) {
+                    val (marker, segment) = marked
                     val owner = uniqueOwner(owners, marker) ?: continue
-                    // I-3：把该片段自己的标记一起交给提取器，裸标记残缺邮箱（`∗ lun yue@msn.com`）
-                    // 才与整页文本走同一条过滤；Contact/evidenceText 仍保留原始行。
-                    for (address in emailExtractor.extract("$marker$segment")) {
-                        contacts += Contact(address, owner, page, header.text, line.text)
+                    val continuation = StringBuilder(segment)
+                    var previous = line
+                    // Only the last marked segment can continue onto the next physical line.
+                    // A new marker, author, section, column, or empty vertical gap ends it.
+                    if (position == segments.lastIndex &&
+                        segment.trim().matches(Regex("(?i)(?:(?:e-?mail|contact)\\s*:\\s*)?(?:[A-Za-z0-9._%+-]+@)?")) &&
+                        emailExtractor.extract("$marker$segment").isEmpty()) {
+                        for (next in lines.drop(index + 1)) {
+                            if (next.y - previous.y !in 1f..16f ||
+                                kotlin.math.abs(next.x - line.x) > 24f ||
+                                markerGlyph.containsMatchIn(next.text) ||
+                                contactBoundary.containsMatchIn(next.text) ||
+                                paragraphBoundary.containsMatchIn(next.text) ||
+                                authors.any { mentionsAuthor(next.text, it) }) break
+                            val nextText = next.text.trim()
+                            if (!mailbox.matches(nextText) &&
+                                !nextText.matches(Regex("[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"))) break
+                            continuation.append('\n').append(next.text)
+                            previous = next
+                            if (emailExtractor.extract("$marker$continuation").isNotEmpty()) break
+                        }
+                    }
+                    for (address in emailExtractor.extract("$marker$continuation")) {
+                        contacts += Contact(address, owner, page, header.text, "$marker$continuation")
                     }
                 }
             }
             // A contact paragraph is its own column-local record, not a line chosen by nearest email.
             for (start in lines.indices) {
                 val line = lines[start]
-                if (line.y <= header.y || line.y < height * .60f || line.y > height * .94f) continue
+                if (line.text.trim().matches(Regex("(?i)(?:references|bibliography)\\s*[:.]?"))) break
+                if (line.y <= header.y || contactBoundary.containsMatchIn(line.text)) continue
                 val anchor = paragraphStart.find(line.text)?.groupValues?.get(1) ?: continue
                 val owner = uniqueAuthor(anchor, header.text, authors) ?: continue
                 val paragraph = mutableListOf(line)
                 for (next in lines.drop(start + 1)) {
-                    if (next.y - paragraph.last().y > 16f || next.y > height * .95f) break
+                    if (next.y - paragraph.last().y > 16f) break
                     if (line.x < width * .5f && next.x >= width * .5f) continue
                     if (next.x > line.right + 24f || next.right < line.x - 24f) continue
-                    if (paragraphBoundary.containsMatchIn(next.text) ||
+                    if (paragraphBoundary.containsMatchIn(next.text) || contactBoundary.containsMatchIn(next.text) ||
+                        markerGlyph.containsMatchIn(next.text) ||
                         next.text.startsWith("Corresponding author:", ignoreCase = true) || paragraph.size == 5) break
                     paragraph += next
                 }
@@ -284,8 +309,8 @@ internal object PdfAuthorContactLayout {
 
     /** I-2：同一联系行按标记边界切分成 (标记, 片段)；标记成组时分段不明确，整行不出证明。 */
     private fun markerSegments(text: String): List<Pair<String, String>> {
-        val first = markerContact.find(text) ?: return emptyList()
-        val marks = mutableListOf(first.range.last to first.groupValues[1])
+        val first = markerGlyph.find(text) ?: return emptyList()
+        val marks = mutableListOf(first.range.first to first.value)
         var cursor = first.range.last + 1
         while (cursor < text.length) {
             val next = markerGlyph.find(text, cursor) ?: break
@@ -341,7 +366,6 @@ internal object PdfAuthorContactLayout {
     private fun toLines(page: Int, positions: List<TextPosition>, pageWidth: Float): List<Line> {
         val rows = mutableListOf<MutableList<TextPosition>>()
         for (position in positions.sortedWith(compareBy<TextPosition> { it.yDirAdj }.thenBy { it.xDirAdj })) {
-            if (position.xDirAdj < 40f) continue
             val row = rows.lastOrNull()?.takeIf { kotlin.math.abs(it.first().yDirAdj - position.yDirAdj) < 5f }
                 ?: mutableListOf<TextPosition>().also { rows += it }
             row += position

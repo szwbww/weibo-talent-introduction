@@ -25,8 +25,13 @@ class PlainTextEmailExtractor {
      * 完整的 `* x@host.edu` 与既有 `Email:` 标签句式不在此列。
      */
     private val bareMarkerTruncatedMailbox = Regex("(?m)^[ \\t]*[*∗†‡§][ \\t]+[A-Za-z0-9._%+-]+[ \\t]+\\z")
-    private val atObfuscation = Regex("\\(at\\)|\\[at\\]|\\{at\\}|\\s+at\\s+")
-    private val dotObfuscation = Regex("\\(dot\\)|\\[dot\\]|\\{dot\\}|\\s+dot\\s+")
+    private val atObfuscation = Regex("(?i)\\(at\\)|\\[at\\]|\\{at\\}")
+    private val dotObfuscation = Regex("(?i)\\(dot\\)|\\[dot\\]|\\{dot\\}")
+    private val labelledObfuscation = Regex(
+        "(?i)(\\b(?:e-?mail(?: address)?|contact)\\s*:\\s*)" +
+            "([A-Za-z0-9._%+-]+)(?:\\s+at\\s+|\\s*@\\s*)" +
+            "([A-Za-z0-9-]+(?:(?:\\.|\\s+dot\\s+)[A-Za-z0-9-]+)*" +
+            "(?:\\.|\\s+dot\\s+)[A-Za-z]{2,})(?![A-Za-z0-9.-])")
     private val blacklistDomains = setOf("example.com", "example.org", "domain.com")
 
     private val operationalPrefixes = setOf(
@@ -66,10 +71,11 @@ class PlainTextEmailExtractor {
         else members.joinToString(" ") { "$it@${match.groupValues[2]}" }
     }
 
-    private fun cleanObfuscation(text: String): String = text
-        .replace(atObfuscation, "@")
-        .replace(dotObfuscation, ".")
-        .replace(Regex("\\b(dot)\\s+(com|org|edu|net|gov|io|uk|de|fr|cn|jp)\\b")) { match ->
-            ".${match.groupValues[2]}"
+    private fun cleanObfuscation(text: String): String {
+        val bracketed = text.replace(atObfuscation, "@").replace(dotObfuscation, ".")
+        return labelledObfuscation.replace(bracketed) { match ->
+            val domain = match.groupValues[3].replace(Regex("(?i)\\s+dot\\s+"), ".")
+            "${match.groupValues[1]}${match.groupValues[2]}@$domain"
         }
+    }
 }

@@ -258,6 +258,35 @@ internal fun pdfPositiveControls(): List<PdfPositiveControl> {
 
 class SourceAuthorEmailResolverTest {
     @Test
+    fun `explicit trailing owner labels are unique and mailbox local`() {
+        val bernd = PaperAuthor("Bernd", "Bayerlein", null, null, false)
+        val alessandro = PaperAuthor("Alessandro Maria", "Achille", null, null, false)
+        val favero = PaperAuthor("Francesco", "Favero", null, null, false)
+        val authors = listOf(bernd, alessandro, favero)
+        val resolved = SourceAuthorEmailResolver.resolveText(
+            "b@example.edu (B. Bayerlein); a@example.edu (A.M.A.); f@example.edu (F. Favero)", authors)
+        assertEquals(listOf("Bernd", "Alessandro Maria", "Francesco"), resolved.map { it.givenNames })
+        assertTrue(resolved.all { com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.validEvidence(it.identityEvidence) })
+        val isolated = SourceAuthorEmailResolver.resolveText(
+            "b@example.edu (B. Bayerlein); f@example.edu; a@example.edu (A.M.A.)", authors)
+        assertEquals(listOf("Bernd", null, "Alessandro Maria"), isolated.map { it.givenNames })
+        for ((text, roster) in listOf(
+            "b@example.edu (B. Bayerlein)" to (authors + PaperAuthor("Bob", "Bayerlein", null, null, false)),
+            "a@example.edu (A.M.A.)" to (authors + PaperAuthor("Alice Mary", "Anderson", null, null, false)),
+            "b@example.edu (B? Bayerlein)" to authors,
+            "b@example.edu (Unknown Owner)" to authors,
+            "b@example.edu (B. Bayerlein and F. Favero)" to authors,
+            "b@example.edu" to authors,
+            "b@example.edu (B. Bayerlein); b@example.edu (F. Favero)" to authors)) {
+            val actual = SourceAuthorEmailResolver.resolveText(text, roster)
+            assertTrue(actual.isNotEmpty())
+            assertTrue(actual.all { it.givenNames == null && it.identityEvidence == null }, text)
+        }
+        val faveroOnly = SourceAuthorEmailResolver.resolveText("favero@example.edu (F. Favero)", authors).single()
+        assertEquals("Francesco", faveroOnly.givenNames)
+        assertNotEquals("Alessandro Maria", faveroOnly.givenNames)
+    }
+    @Test
     fun `new PDF contacts cannot overwrite old text or marker ownership`() {
         val authors = LayoutPdfFixtures.authors
         val fresh = LayoutPdfFixtures.contacts(listOf(
@@ -351,8 +380,25 @@ class SourceAuthorEmailResolverTest {
                 assertEquals(allowed.path("owner").asText(), "${row.givenNames} ${row.familyNames}", "$id $email")
                 assertTrue(row.identityEvidence?.startsWith("SOURCE_SHA256:") == true, "$id $email")
             }
+            // The frozen historical manifest predates inline markers and explicit initials labels.
+            // Reconcile only directly proven positive records; retain the original archive bytes.
+            val restoredSourceOwners = when (id) {
+                "debie" -> mapOf(
+                    "nour.moustafa@unsw.edu.au" to "Nour Moustafa",
+                    "marwa.hassan@student.unsw.edu.au" to "Marwa Keshk")
+                "nguyen" -> mapOf(
+                    "nguyensmai@gmail.com" to "Sao Mai Nguyen",
+                    "christophe.lohr@imt-atlantique.fr" to "Christophe Lohr",
+                    "ioannis.kanellos@imt-atlantique.fr" to "Ioannis Kanellos")
+                else -> emptyMap()
+            }
             for (email in case.path("mustRemainUnattributed").map { it.asText() }) {
                 val row = resolved.single { it.email == email }
+                restoredSourceOwners[email]?.let { expected ->
+                    assertEquals(expected, "${row.givenNames} ${row.familyNames}", "$id $email")
+                    assertTrue(com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.validEvidence(row.identityEvidence), "$id $email")
+                }
+                if (email in restoredSourceOwners) continue
                 assertNull(row.givenNames, "$id $email")
                 assertNull(row.familyNames, "$id $email")
                 assertNull(row.openAlexAuthorId, "$id $email")
