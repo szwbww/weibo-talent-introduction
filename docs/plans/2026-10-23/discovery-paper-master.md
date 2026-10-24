@@ -28,7 +28,7 @@
 - 来源: K-extraction-samples-are-not-consumption；K-paper-affiliation-is-not-employment；K-admission-event-and-projection-counts。
 
 ### Invariant I-3: 样式与文件边界必须明确
-- Rule: 仅05/07改前端产品，逐字落实它们的S-n CSS/DOM；不允许执行代理临时补class或inline style。每子计划≤10文件，超出先修订计划；本次唯一例外为06a原5文件加明确列明的28份JS资源契约同步，共33文件，不授权前端产品或其他行为变更。共享文件按01→02→03→04→05→06a→06b→07顺序，不并行覆盖。
+- Rule: 仅05/07改前端产品，逐字落实它们的S-n CSS/DOM；不允许执行代理临时补class或inline style。每子计划≤10文件，超出先修订计划；本次明确例外为06a原5文件加列明的28份JS资源契约同步，共33文件（不授权前端产品/其他行为变更），以及06b原10文件加DiscoveryPipelineService.kt，共11文件（仅新旧队列持久化来源兼容）。例外不泛化授权其他切片。共享文件按01→02→03→04→05→06a→06b→07顺序，不并行覆盖。
 - Applies to: 所有子计划执行和复验。
 - Violation consequence: 漂移成另一套UI、共享文件互相覆盖、复验无法收敛。
 - 来源: K-master-plan-shared-file-sequential-gates；K-frontend-cache-key-triad。
@@ -102,7 +102,7 @@
 | 04 | [解析对照与历史事实](discovery-paper-04-analysis.md) | 10 | 只读分析现有正文、分析JSON和查看API；同步完整基线增益筛选回归 |
 | 05 | [论文原文前端](discovery-paper-05-frontend.md) | 7 | 真实页面管理/预览/磁盘/批量取消保护，完整CSS；同步必跑核验测试资源数 |
 | 06a | [Apollo配置持久化](discovery-paper-06a-apollo-persistence.md) | 33 | 原5文件两开关保存API；额外28测试仅同步资源契约，显式一次性上限例外 |
-| 06b | [Apollo运行接入](discovery-paper-06b-apollo-runtime.md) | 10 | 新旧run分离、分渠道日志、现有测试适配 |
+| 06b | [Apollo运行接入](discovery-paper-06b-apollo-runtime.md) | 11 | 新旧run分离、分渠道日志、测试适配；新增PipelineService队列版本兼容，明确一次性例外 |
 | 07 | [Apollo前端配置/日志](discovery-paper-07-apollo-frontend.md) | 5 | 保存状态、收费开关、运行快照与尝试数字，完整CSS |
 
 每份先实施、机器复验通过，再进入下一份；不把机器复验当成人工验收。任务可以一次连续执行，但不能并行修改共享文件或越过失败关卡。本轮只创建计划，未启动执行。
@@ -126,7 +126,7 @@
 
 ## 变更文件清单
 
-本主计划是治理入口，不作为合并后的超大实施清单。具体生产代码权限严格以各子计划文件表为准；除I-3已批准的06a一次性28份测试同步例外外，各子计划仍≤10文件。本轮治理/子计划产物如下（8个子计划）；代码证据快照及实验算法附件在上文链接，不属于生产实现变更清单：
+本主计划是治理入口，不作为合并后的超大实施清单。具体生产代码权限严格以各子计划文件表为准；除I-3已批准的06a一次性28份测试同步例外和06b单增PipelineService的11文件兼容例外外，各子计划仍≤10文件。本轮治理/子计划产物如下（8个子计划）；代码证据快照及实验算法附件在上文链接，不属于生产实现变更清单：
 
 | 文件 | 用途 |
 |---|---|
@@ -178,3 +178,4 @@
 - 2026-10-24：用户“批准 继续”批准04暂停报告C-1：04由9增至10文件，增加RepositoryIT不完整基线hasGain筛选预期同步，保留回滚/first/CAS断言。依据I-3及执行前检查第5项；T-3完整基线要求不变，不引入legacy旁路。批准与提交身份见 `../fast/discovery-paper-master/ledger.md` Amendments。
 - 2026-10-24：用户“批准 继续”批准05暂停报告C-1：05由6增至7文件，加入discoveryVerification.test.js同步资源数量及描述16→17；同key/runtime约束不变。依据I-3及执行前检查第5项；批准与提交身份见 `../fast/discovery-paper-master/ledger.md` Amendments。
 - 2026-10-24：用户“批准 继续”批准06a暂停报告的28份JS资源契约同步与5＋28＝33文件一次性例外。I-3及变更清单规则同步，其他切片仍≤10文件；只改资源数量/描述和真实有序模块列表，保留所有其他断言，Maven绑定全量Node仍须通过。不授权前端产品改动或后续泛化例外。实际grep失败清单/来源凭据见 `../fast/discovery-paper-master/children/06a/execution.md:139–196`；批准与身份见ledger Amendments。
+- 用户“批准 继续”批准06b暂停C-1：增加DiscoveryPipelineService.kt，明确10→11文件一次性例外；新队列criteriaVersion=2与旧version=1同时可读，新任务null采用保存配置，历史null仍false，既有run保持原快照。依据I-3/I-4及执行前检查第5项；不新增迁移/领域字段/测试文件，不改变准入规则，不豁免其余失败。批准与身份见 `../fast/discovery-paper-master/ledger.md` Amendments。

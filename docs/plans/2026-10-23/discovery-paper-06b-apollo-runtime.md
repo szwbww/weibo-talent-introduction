@@ -69,7 +69,7 @@
 
 修改registration.resolveOptions：保留null直到begin真正冻结，不用前一次读取值把null改写为true/false；显式false仍是本次opt-out。显式true但持久搜索关闭返回409 APOLLO_SEARCH_DISABLED；服务/key不可用仍为原503。手动/定时/队列统一经过此路径，不能在不同入口复制设置判断。
 
-begin在已有run复用分支之后、createRun之前读取一份settings，计算requested和`apolloAccess`；所有字段来自同一次读取。历史legacy条件`historical && criteria.apolloAssist==null`仍requested=false，不因新默认自动历史补跑。snapshot JSON除了新增apolloAccess字段，其余版本和预算字段不改。
+begin在已有run复用分支之后、createRun之前读取一份settings，计算requested和`apolloAccess`；所有字段来自同一次读取。历史legacy条件`historical && criteria.apolloAssist==null`仍requested=false，不因新默认自动历史补跑。为区分队列中的新任务与历史任务，PipelineService新启动持久化criteriaVersion=2，读取同时接受旧version=1与新version=2；version=1保持historical=true及历史null→false，version=2按新任务语义冻结保存配置，不能再一律historical=true。省略/null仍原样持久化，不提前改写bool；既有execution/run及快照不重写，不用时间戳或内存状态猜来源。除新增顶层apolloAccess外，run快照其余版本和预算字段不改；无需新增schema或领域字段。
 
 新快照示例：
 
@@ -89,7 +89,7 @@ needingDetails为空时，原规则路径正常finish；非空且detailEnabled=f
 
 ## 变更文件清单
 
-10文件；子系统1（核验运行及报表）；既有共享store仅settings_json新增1个顶层apolloAccess字段。依赖06a，但不回改其文件。
+11文件；子系统1（核验运行及报表）；既有共享store仅settings_json新增1个顶层apolloAccess字段，现有队列criteriaVersion区分新旧启动。依赖06a，但不回改其文件。本次明确批准10→11文件的一次性例外，仅增加PipelineService持久化来源兼容，不泛化放宽其他切片上限。
 
 | 文件 | 动作 |
 |---|---|
@@ -97,6 +97,7 @@ needingDetails为空时，原规则路径正常finish；非空且detailEnabled=f
 | src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt | 付费关闭分流 |
 | src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryService.kt | 快照/日志DTO/原因 |
 | src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt | 只读渠道聚合 |
+| src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt | 新criteriaVersion=2；接受旧1/新2，登记时区分历史和新任务 |
 | src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt | 新旧run与分流，构造器/160迁移 |
 | src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementFlowIT.kt | 设置依赖/160迁移，国家补全回归 |
 | src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountryRegistrationTest.kt | 设置依赖stub，保护/恢复回归 |
@@ -107,7 +108,7 @@ needingDetails为空时，原规则路径正常finish；非空且detailEnabled=f
 ## 验收标准
 
 - I-1：无行、保存重启、同值保存、CAS并发、无key、DB503；四组合(search/detail)均测试。false/true保留detail=true但effectiveDetails=false。
-- I-2：三个启动入口以及同execution重入；runA快照true/true，保存true/false后runA仍true/true、runB=true/false；缺apolloAccess老run保持原行为；新字段格式非法不发请求。
+- I-2：三个启动入口以及同execution重入；runA快照true/true，保存true/false后runA仍true/true、runB=true/false；缺apolloAccess老run保持原行为；新字段格式非法不发请求。队列version=1的历史null仍requested=false，新version=2的null采用保存默认；新任务持久化null而非预解析bool，既有run不重写。已授权IntegrationTest覆盖两种版本及实际执行id。
 - I-3：免费模式DETAIL分配0/HTTP0/收费复用0，必要证据不足PENDING+PAID_DETAILS_DISABLED，非NO_MATCH/ERROR；原直接准入、无需详情可匹配、SELF/教授、人工保护回归不变；Gate复算一致。
 - I-4：合成3条搜索、2条详情、1条其他，其中1条DISPATCH_RESERVED→统计3/2/1/pending1，总尝试6；不给出“消耗2credits”；取消/超时后原尝试账保留。
 - 既有客户端/Rules/AdmissionGate/Repository预算测试通过；超过500次合成Apollo尝试不因系统日额度阻断，429/credits/ORCID限制仍按原测试。
@@ -132,3 +133,7 @@ needingDetails为空时，原规则路径正常finish；非空且detailEnabled=f
 - 操作步骤：1. 两会话相继保存不同值。2. 暂停DB再GET。3. 恢复DB，查看尝试统计并运行资格fixtures。
 - 预期结果：后保存409、数据库不可用503，不静默付费；统计3/2/1/pending1；原能准入者结果不变，歧义与人工拒绝未放开；不产生500日上限。
 - 覆盖：I-1～I-4；设置/报表与must-NOT-change回归。
+
+## 修正记录
+
+- 用户“批准 继续”批准06b暂停C-1的最小修订：加入DiscoveryPipelineService.kt，10→11文件明确一次性例外；新队列持久化criteriaVersion=2，旧version=1保留历史null→false，新版本按保存配置冻结；不改已有run、不新增迁移/领域字段/测试文件。保留原有准入/预算/缓存边界；七项FlowIT失败仍须定位并给出有证据的处理，不以批准视为豁免。批准及提交身份见 `../fast/discovery-paper-master/ledger.md` Amendments。
