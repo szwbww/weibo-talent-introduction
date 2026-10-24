@@ -248,3 +248,269 @@ Smoke does **not** claim queue provenance solved: actual queue test fails above.
 - Working tree remains dirty with exact authorized partial changes and preserved controller evidence; no reset/rewrite.
 - Remaining: human C-1 queue provenance/file-cap decision plus bounded treatment of unchanged FlowIT failures without altering admission/rule contract. No automatic plan/repair amendment generated.
 - Next: resolve/amend authority, complete implementation/commit/checks, then controller-owned independent verification. Do not advance07 or treat as PASS.
+
+## Epoch2 Execution Result: PLAN_CONFLICT
+
+Fresh executor `ApolloRuntimeImplementerE2`, execute-p; implementation retained, **not READY_FOR_VERIFICATION**. Epoch1 history above is unchanged. C-1 queue provenance is now implemented and freshly exercised. The required regression still fails in seven existing FlowIT cases; no assertions, production rules, or test exclusions were changed to conceal this.
+
+### Current execution identity
+
+- Plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master/docs/plans/2026-10-23/discovery-paper-06b-apollo-runtime.md`
+- Plan SHA-256: `ff878a348b79b0a9454af6decd9ae8115eca3d3cb8c685a4d7b396b6d91ff7f1`
+- Execution ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master/docs/plans/2026-10-23/discovery-paper-06b-apollo-runtime.md@ff878a348b79b0a9454af6decd9ae8115eca3d3cb8c685a4d7b396b6d91ff7f1`
+- Execution epoch: NEW; current amended plan bytes, A11/A12 and current invocation authorize eleven product/test paths. This is not a continuation claim against the previous plan hash.
+- Approval basis: user-approved Epoch2 brief and amended child; ten prior partial files preserved, no completed-child replay.
+- Target root: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master`
+- Target branch: `fast/discovery-paper-master`
+- Worktree ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master@fast/discovery-paper-master@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-discovery-paper-master`
+- Child product base: `16a138852bea292d40b47dd9cb2d7fc0c8732578`
+- Pre-execution code SHA: `16a138852bea292d40b47dd9cb2d7fc0c8732578`
+- Pre-execution HEAD / final HEAD: `c5eca7007eed3de47a9f33363a28c6ae8aa01690`
+- Post-execution product SHA: N/A. Evidence commit: N/A. No files staged or committed; the instruction permits the product commit only after correct final checks.
+- Boundary: retained authorized working-tree implementation on that HEAD. Controller-owned dirty ledger is preserved and untouched.
+
+### Task status and implementation boundary
+
+| Requirement | Status | Current evidence |
+|---|---|---|
+| T-1 / I-1 shared persisted settings | IMPLEMENTED | Mandatory SettingsService dependency retained, shared freeze/parser; SettingsIT freshly passes eight cases. |
+| T-2 / I-2 freeze and reentry | IMPLEMENTED | New begin freezes once after existing-run branch; null/false retained; explicit true validation retained; fresh registration/integration suites pass. |
+| Epoch2 queue provenance | IMPLEMENTED | Pipeline writes criteriaVersion=2, accepts 1/2, passes historical=true only for 1. Added SQL integration scenario checks null serialization, real execution binding, old1 nullfalse/new2 nullsaveddefault, persisted criteria unchanged, same-run reentry after saved settings change. |
+| I-2 old/malformed run interpretation | IMPLEMENTED | LEGACY derives from run.apolloRequested; malformed access CONFIG_INVALID before provider requests. Fresh Worker/Query tests and standalone runtime. |
+| I-3 paid-disabled boundary | IMPLEMENTED | Pre-cache/pre-permit gate retained; standalone real SQL/Worker/Gate proves PENDING plus reason and zero attempts/permits/cache lookups/HTTP for target. |
+| I-4 readonly channels | IMPLEMENTED | Fresh standalone SQL summary proves search3/detail2/other1/pending1, total6; missing unknown, known-empty zero. |
+| Required regression success | CONFLICT | Fresh 172 tests, seven failures, zero errors/skips. Integration now fourteen passing cases including queue boundary; all failures are FlowIT assertions below. |
+| Commit / readiness | BLOCKED by conflict | No misleading completed-feature commit. |
+
+Authorized product/test files retained (no additions outside this list):
+
+1. `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt` — required settings, validation/freeze/reentry and shared historical interpretation.
+2. `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt` — malformed snapshot boundary and paid-disabled pre-cache/pre-permit finish.
+3. `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryService.kt` — immutable access/attempt DTOs and reason.
+4. `src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt` — readonly channel aggregation.
+5. `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt` — Epoch2 versioned queue provenance.
+6. `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt` — retained runtime/access coverage; standalone entry now also invokes real queue-version smoke.
+7. `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountrySupplementFlowIT.kt` — retained required settings and160 fixture.
+8. `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCountryRegistrationTest.kt` — retained required settings/stubs and registration contracts.
+9. `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationIntegrationTest.kt` — retained launch/freeze tests; new version1/version2 SQL scenario plus standalone launcher.
+10. `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationFlowIT.kt` — retained shared settings fixture/160 migration; original legacy JSON, cached payloads and assertions unchanged.
+11. `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryServiceTest.kt` — retained immutable access/channel/missing-data coverage.
+
+### Fresh commands and observed results
+
+Initial `python ...` identity invocation exited127 because this environment exposes `python3`, not `python`. Retried the failed prerequisite with python3; no setup or repository edits were repeated.
+
+```sh
+python3 /Users/lukai/.agents/skills/execute-p/scripts/plan_identity.py docs/plans/2026-10-23/discovery-paper-06b-apollo-runtime.md
+python3 /Users/lukai/.agents/skills/execute-p/scripts/worktree_identity.py docs/plans/2026-10-23/discovery-paper-06b-apollo-runtime.md --worktree /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master
+```
+
+Both exit0; current identities above. Full amended child, complete brief and prior execution report were read before implementation. Final helper commands below reconfirm unchanged identities.
+
+Required regression after final product/test edits:
+
+```sh
+env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=DiscoveryVerificationWorkerTest,DiscoveryCountrySupplementFlowIT,DiscoveryCountryRegistrationTest,DiscoveryVerificationIntegrationTest,DiscoveryVerificationFlowIT,DiscoveryVerificationQueryServiceTest,ApolloPeopleSearchClientTest,DiscoveryVerificationRulesTest,DiscoveryVerificationAdmissionGateTest,DiscoveryVerificationRepositoryIT,DiscoveryApolloSettingsIT -DmigrationIt=true -DmysqlIt=true
+```
+
+Exit1; finished 2026-10-24T10:47:16+08:00, total07:17. **172 tests / seven failures / zero errors / zero skipped**. Full Maven output `artifact://462` (failure summary `artifact://465`). No repeated unchanged baseline run; this invocation exercises the amended queue implementation and added tests.
+
+| Suite | Tests | Failures | Errors | Skipped |
+|---|---:|---:|---:|---:|
+| DiscoveryVerificationWorkerTest | 16 | 0 | 0 | 0 |
+| DiscoveryCountrySupplementFlowIT | 8 | 0 | 0 | 0 |
+| DiscoveryCountryRegistrationTest | 19 | 0 | 0 | 0 |
+| DiscoveryVerificationIntegrationTest | 14 | 0 | 0 | 0 |
+| DiscoveryVerificationFlowIT | 32 | 7 | 0 | 0 |
+| DiscoveryVerificationQueryServiceTest | 18 | 0 | 0 | 0 |
+| ApolloPeopleSearchClientTest | 13 | 0 | 0 | 0 |
+| DiscoveryVerificationRulesTest | 19 | 0 | 0 | 0 |
+| DiscoveryVerificationAdmissionGateTest | 8 | 0 | 0 | 0 |
+| DiscoveryVerificationRepositoryIT | 17 | 0 | 0 | 0 |
+| DiscoveryApolloSettingsIT | 8 | 0 | 0 | 0 |
+
+Surefire failure prevents lifecycle execution of the bound frontend goals. They were actually run separately using their existing Maven execution IDs, not skipped or suppressed:
+
+```sh
+env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn exec:exec@node-test exec:exec@node-check-app exec:exec@node-check-task-modal-runtime
+```
+
+Exit0, BUILD SUCCESS; Node1816 tests/334 suites,1816 pass, zero fail/cancelled/skipped/todo, then both syntax executions succeeded (`app.js`, `task-modal-runtime.js`). Output `artifact://469`.
+
+Final diff/identity/boundary command:
+
+```sh
+git diff --check && python3 /Users/lukai/.agents/skills/execute-p/scripts/plan_identity.py docs/plans/2026-10-23/discovery-paper-06b-apollo-runtime.md && python3 /Users/lukai/.agents/skills/execute-p/scripts/worktree_identity.py docs/plans/2026-10-23/discovery-paper-06b-apollo-runtime.md --worktree /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master --expect-root /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master --expect-branch fast/discovery-paper-master --expect-git-dir /Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-discovery-paper-master && git status --short
+```
+
+Exit0 (`artifact://472`); plan hash/root/branch/git-dir/HEAD unchanged; staged0, eleven dirty authorized product/test files plus preexisting dirty controller ledger, before this append-only report addition.
+
+### Fresh separate actual runtime
+
+Ran outside JUnit through Python Eval subprocess, using the complete newly generated Surefire `surefire.test.class.path` property. Exact launcher construction:
+
+```python
+from pathlib import Path
+import xml.etree.ElementTree as ET
+import subprocess, hashlib
+wt = Path('/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master')
+report = wt / 'target/surefire-reports/TEST-com.weibo.talentintroduction.discovery.service.DiscoveryVerificationWorkerTest.xml'
+root = ET.parse(report).getroot()
+props = {p.attrib['name']: p.attrib['value'] for p in root.findall('./properties/property')}
+cp = props['surefire.test.class.path']
+assert str(wt/'target/test-classes') in cp and str(wt/'target/classes') in cp and 'mysql-connector-j' in cp
+command = ['/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home/bin/java', '-cp', cp,
+           'com.weibo.talentintroduction.discovery.service.DiscoveryVerificationWorkerTest',
+           '--apollo-access-smoke']
+result = subprocess.run(command, cwd=wt, stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT, text=True, timeout=300)
+(wt/'target/06b-epoch2-apollo-access-smoke.log').write_text(result.stdout)
+```
+
+Exit0; classpath SHA-256 `f3b59342667efda4decb557407c65553243f487e1361d23b82ba322cd836228e` (the dependency paths are unchanged, but test/classes were freshly compiled by the required invocation). Observed stdout:
+
+```text
+APOLLO_ACCESS_SMOKE frozen A=true/true revision=1 unchanged=true B=true/false revision=2 legacy=LEGACY/true/true oldDetailHttp=2
+APOLLO_ACCESS_SMOKE free-required-detail outcome=PENDING reason=PAID_DETAILS_DISABLED detailsComplete=false attempts=0 permits=0 cacheLookups=0 detailHttp=0 gate=not-admitted
+APOLLO_ACCESS_SMOKE live-free-search requests=1 detailHttp=0 needless-detail=APOLLO_CLEAR gate=eligible projection=PROJECTED
+APOLLO_ACCESS_SMOKE malformed=CONFIG_INVALID providerHttp=0 attempts=0
+APOLLO_ACCESS_SMOKE channels search=3 detail=2 other=1 pendingDispatch=1 totalRegistered=6 billing=not-inferred emptyRun=zero missingRun=unknown
+APOLLO_ACCESS_SMOKE PASS isolatedMySQL=true strictMockHTTP=true productionContext=false oldSettingsImmutable=true
+APOLLO_QUEUE_ACCESS_SMOKE version=1 nullPersisted=true executionId=4001 requested=false frozen=true/false reentry=unchanged providerHttp=0
+APOLLO_QUEUE_ACCESS_SMOKE version=2 nullPersisted=true executionId=4001 requested=true frozen=true/false reentry=unchanged providerHttp=0
+```
+
+Isolated disposable MySQL, actual SQL settings/registration/attempts/Worker/Rules/Gate/query and actual queue/task execution binding; provider/ES HTTP strictly intercepted with MockRestServiceServer, not live Apollo sockets. The two version scenarios clear the isolated tables between cases, so id4001 is reused across independent cases, not an overwrite of one run. Paid-cache source is synthetic SQL evidence as documented in epoch1; free target does not read it. No production Spring context, deployment or business data writes. Runtime is not a substitute for the failing required suite.
+
+### Bounded investigation and exact remaining authority
+
+The final seven failures are:
+
+| Existing FlowIT assertion | Fresh observation | Source-established boundary |
+|---|---|---|
+| lowercase HTTP SELF :780 | APOLLO_UNCLEAR expected, DIRECT_CLEAR actual | Missing run ruleVersion becomes1; rule1 includes SELF Professor in qualification and short-circuits before Apollo. |
+| multi-scenario provider/page/item-budget :636 | autoCount0 expected,1 actual | Fixture budget branch sets maxRequestsPerItem3; repository explicitly applies item cap only to non-Apollo, allowing the subsequent Apollo evidence path. No source permission to restore the old Apollo cap. |
+| new public alias :909 | three requests expected, zero actual | Same SELF Professor direct-clear short circuit. |
+| SELF identity negatives :851 | ambiguous autoCount0 expected,1 actual | Same SELF Professor direct-clear short circuit before Apollo ambiguity is requested. |
+| A3 incomplete-search :1034 | zero narrow expected, one actual | Worker durably marks a capped broad query incomplete but continues the remaining saved queries, including narrow. |
+| cached inflight cursor :887 | APOLLO_UNCLEAR expected, PENDING actual | Legacy payload already has ruleVersion0; cursor queryIndex1/page2, no finishedQueryKeys for prior query. allComplete requires every query index in finishedQueryKeys. |
+| A4 legacy inflight :1110 | APOLLO_NO_MATCH expected, SEARCH_INCOMPLETE/SEARCH_PAGE_LIMIT actual | Same old cursor/finishedQueryKeys representation, independent of Apollo access. |
+
+Receipts (read-only, no baseline test checkout):
+
+```sh
+git blame -L 774,798 HEAD -- src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationFlowIT.kt
+git blame -L 834,918 HEAD -- src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationFlowIT.kt
+git blame -L 210,224 HEAD -- src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt
+git blame -L 88,109 HEAD -- src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRules.kt
+git blame -L 481,507 HEAD -- src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt
+git blame -L 280,337 HEAD -- src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt
+git blame -L 617,650 HEAD -- src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationFlowIT.kt
+```
+
+Observed blame: SELF expectations originate41e95f05 Oct19; SELF rule1 and Apollo item-cap exemption b0d2f278 Oct20; missing run ruleVersion default1 is043c8437 Oct21; per-query finishedQueryKeys completion and continue-after-cap are8024e30c Oct21. The budget expectation predates these at a0103c2e Oct18. Current retained FlowIT diff changes only shared settings/worker fixture/migration target, not these inputs/assertions. Worker access additions do not alter the legacy true/true path.
+
+This establishes old assertions and later implementation semantics, **not a claimed baseline test result**. [INFERENCE] They are pre-existing compatibility/test drift; no unobserved baseline PASS/FAIL is asserted.
+
+Three SELF test inputs could plausibly be made explicitly ruleVersion0, supported by the unchanged Rules API and existing WorkerTest version0 coverage: the original assertions and their default `rules.evaluate(...)` recomputation target the pre-rule1 semantics. This is distinct from changing expected outcomes. However, that does not solve the independent item-budget/capped-query/cached-cursor assertions; a blanket fixture version pin is not an authorized resolution and was not applied.
+
+**Minimum decision required:** explicitly reconcile the retained FlowIT item-budget/capped-query expectations with the must-not-change current Apollo budget/query behavior, and decide whether old cached payloads without finishedQueryKeys require a targeted production compatibility restoration or explicitly versioned fixture coverage. If selecting test-contract corrections, authorize exact FlowIT scenario/expectation revisions; current invocation expressly forbids expectation repinning/weakening. If selecting production restoration, explicitly amend the preserved budget/query compatibility requirements before editing. No extra product file is proven necessary for these decisions: Worker/Repository/FlowIT are already authorized, but the behavioral authority is missing. Rules/Gate/client changes are neither needed nor requested.
+
+A narrower fixture-only ruleVersion0 correction for the three old SELF scenarios is supported by provenance, but cannot justify a successful whole-child result or override the remaining contradictory assertions. No new repair plan, waiver, rules change, expectation change, unrelated behavior repair, or unauthorized file edit was made.
+
+### Caller receipts and downstream contracts
+
+Fresh `functions.grep` over target `src`:
+
+```text
+pattern: DiscoveryVerificationRegistrationService\(|verificationRegistration\?\.(begin|resolveOptions)
+ExpertDiscoveryController.kt:400   resolveOptions(normalized)
+ExpertDiscoveryScheduler.kt:401    resolveOptions(requested)
+ExpertDiscoveryService.kt:441      begin(execId, criteria)
+DiscoveryPipelineService.kt:320    resolveOptions(requested)
+DiscoveryPipelineService.kt:646    begin(executionId, criteria, historical=initial.criteriaVersion==1)
+Direct test constructor files: DiscoveryCountryRegistrationTest,
+ DiscoveryCountrySupplementFlowIT, DiscoveryVerificationIntegrationTest, DiscoveryVerificationWorkerTest.
+```
+
+Fresh regression class selectors were resolved via `functions.grep` pattern `class (DiscoveryVerificationWorkerTest|DiscoveryCountrySupplementFlowIT|DiscoveryCountryRegistrationTest|DiscoveryVerificationIntegrationTest|DiscoveryVerificationFlowIT|DiscoveryVerificationQueryServiceTest|ApolloPeopleSearchClientTest|DiscoveryVerificationRulesTest|DiscoveryVerificationAdmissionGateTest|DiscoveryVerificationRepositoryIT|DiscoveryApolloSettingsIT)` against target `src/test/kotlin`; each name exists in its matching source file. No guessed selectors or omitted opt-ins.
+
+Downstream DTOs unchanged from epoch1 implementation: nullable `VerificationSummary.apolloAccess: FrozenApolloAccess?` and `apolloAttempts: VerificationAttemptChannels?`; schema1 access fields revision/search/detail/source, SAVED positive revision, DEPLOYMENT_DEFAULT revision0, absent member on an existing run explicit LEGACY from apolloRequested; malformed/missing run null. Channel Long fields search/detail/other/pendingDispatch are registered attempts, not billed credits; pending overlaps channels. Known empty run zero, missing unknown. Reason `PAID_DETAILS_DISABLED` maps to `付费详情未启用，证据仍不完整`. Query constructor and capabilities readiness/apolloDefault compatibility preserved. No claim all deployment timeouts/budgets are frozen.
+
+### Freshness and next action
+
+- Plan identity rechecked: YES, unchanged current hash.
+- Worktree root/branch/git-dir/HEAD rechecked: YES.
+- Required commands fresh after final product/test edits: YES; Maven required suite FAIL, bound Node/syntax PASS, separate runtime PASS, diff check PASS.
+- Historical evidence used only as baseline: YES.
+- Product/evidence commit reachability: N/A; no new commit because required checks are not correct.
+- All eleven authorized partial files retained; original assertions/legacy payloads retained. This report is append-only; controller ledger untouched.
+- Remaining blocker: the exact bounded behavioral/test authority above, not old C-1 or withdrawn C-2.
+- Next action: human decision/amendment for the remaining contract conflict, then finish/freshly check/commit before controller-owned independent verification. No later-child work.
+
+## Proposed bounded amendment — preserve production, reconcile seven FlowIT contracts
+
+**Proposal only; not approved or implemented.** Requested by controller after the Epoch2 pause. No product/test edits, test runs or commits accompany this section. This proposal supersedes the alternatives in “Minimum decision required” above: choose preservation of current production rules, budgets, query continuation and conservative cached-cursor semantics; **do not restore older production behavior**.
+
+Authorize edits only to existing `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationFlowIT.kt`, within the seven scenarios below and its existing shared `VerificationFlowFixture.seed` helper. No tests removed/excluded; no Rules/Gate/client/Worker/Repository/queue production changes. No shared-default rule-version change.
+
+### Common narrowly scoped fixture change
+
+Add an optional `settingsJson: String = "{}"` parameter at the end of `VerificationFlowFixture.seed`, and forward it to the existing `repository.createRun` call instead of the hardcoded `"{}"`. Only the three expressly historical SELF scenarios below pass `"""{"ruleVersion":0}"""`; every other seed keeps its current JSON. No `apolloAccess` is added: these remain historical LEGACY runs with both access flags determined by apolloRequested. Rename those three test descriptions to say “legacy ruleVersion0” so the compatibility contract is explicit. Assert their serialized worker payload has `ruleVersion == 0` and their run snapshot has no `apolloAccess`.
+
+Source basis: Rules accepts ruleVersion0..2 (`DiscoveryVerificationRules.kt:42–43`), includes SELF qualification only at version>=1 (`:88–89`), and defaults its direct `evaluate` API to0. Worker honors an explicit integral run ruleVersion, while a missing field defaults1 (`DiscoveryVerificationWorker.kt:217–224`). Existing WorkerTest already covers explicit0,1,2 and rejects3 (`DiscoveryVerificationWorkerTest.kt:290–307`). Blame receipts above show these three assertions originated41e95f05 before b0d2f278 introduced rule1 SELF qualification. This is an explicit historical input correction, not outcome rewriting or a blanket downgrade. Existing IntegrationTest’s current missing-version SELF Professor DIRECT_CLEAR and WorkerTest’s v2 registration cases remain unchanged.
+
+### 1. Lowercase HTTP SELF legacy qualification scenario (current lines774–798)
+
+- Change only `f.seed()` to `f.seed(settingsJson = """{"ruleVersion":0}""")`, plus explicit historical version/access assertions described above.
+- Preserve **all** existing outcome/qualification/source/projection assertions: APOLLO_UNCLEAR, UNKNOWN, SELF source, nonnull admission, PROJECTED, one admission and one candidate.
+- Preserve the `rules.evaluate(snapshot, payload.evidence, payload.search)` equality and query-read immutability checks for run revision and attempts.
+- Evidence: this test explicitly says SELF must not become qualification, and its standalone recomputation uses the version0 default. Rule1 cannot represent that stated historical premise. Do not change the separate current-rule direct-clear test.
+
+### 2. Public aliases and broad-candidate retention legacy scenario (current lines892–920)
+
+- Pass only this scenario’s seed `settingsJson = """{"ruleVersion":0}"""`; retain both multipleInstitutions=false/true branches and add explicit historical version/access assertions.
+- Preserve every existing assertion: request counts3/2, exactly one public Known Alias request, narrow count1/0, no Secret Alias request, broad candidate person-1 retained after empty narrow results, APOLLO_UNCLEAR, requestCount equal to provider request total and persisted attempt count.
+- Evidence: existing SELF Professor input otherwise short-circuits before any alias search at rule1; the test originated with pre-rule1 semantics. `searchQueries` and legacy identity-employment matching still support the old route. Nothing about alias deduplication, visibility, candidate union or accounting is waived.
+
+### 3. SELF identity-negative legacy scenario (current lines834–861)
+
+- Pass only this scenario’s seed `settingsJson = """{"ruleVersion":0}"""`; retain all five cases ambiguous/orcid/name/historical/unknown, with explicit historical version/access assertions.
+- Preserve all zero-admission/empty-candidate assertions and exact reason requirements: IDENTITY_AMBIGUOUS, ORCID_CONFLICT, NAME_CONFLICT, CURRENT_INSTITUTION_EVIDENCE_MISSING for historical/unknown.
+- Evidence: current rule1 can directly qualify the SELF Professor before Apollo ambiguity, whereas these fixtures were written to exercise the historical identity route. Making that premise explicit preserves the intended negative coverage without prohibiting current direct qualification.
+
+### 4. Provider/page/item-budget scenario (current lines617–653)
+
+Keep the current 403/invalid/pages/transient branches and their existing inputs/assertions unchanged. Split the existing `budget` branch’s expectations from the common no-admission/error group, rename it to `apollo-budget-exempt`, and add one explicit `orcid-budget` branch. This changes the budget contract, not a blanket pass condition:
+
+- `apollo-budget-exempt`: keep maxRequestsPerItem=3, original Researcher employment and original valid Apollo search response. Assert exactly three registered ORCID attempts, at least one APOLLO search attempt after those, total requestCount>3, and requestCount equals persisted attempts and observed provider requests. Assert no ITEM_REQUEST_LIMIT reason, completed search timestamp, state COMPLETED, one admission, one projected candidate, and final outcome equals a fresh `f.rules.evaluate(snapshot, payload.evidence, payload.search, institutionNormalization=payload.institutionNormalization, ruleVersion=payload.ruleVersion)` result. Assert that result/outcome is APOLLO_UNCLEAR with UNKNOWN qualification for this unchanged matchingVersion1/no-Apollo-title fixture. These exact expected values are source-derived, not separately exercised runtime claims.
+- `orcid-budget`: set maxRequestsPerItem=2 with the same otherwise unchanged fixture. Assert only two ORCID HTTP requests/attempts, no Apollo HTTP/attempts, total requestCount2 equal to persisted attempts, COMPLETED/PENDING, route NONE, null matched person/searchCompletedAt/admission revision, zero admission/empty candidates, and both EVIDENCE_INCOMPLETE and ITEM_REQUEST_LIMIT. This is the non-Apollo cap the current repository actually enforces.
+- Keep 403 auth-fault suppression of a second item, invalid-response ERROR, page-cap PENDING+SEARCH_INCOMPLETE+SEARCH_PAGE_LIMIT/no admission, and transient exhaustion three requests/three transient attempts/ERROR. Existing independent 429/credits/repository regression suites remain mandatory and unchanged; this amendment does not treat passing them historically as current evidence.
+- Evidence: `DiscoveryVerificationRepository.kt:502–505` explicitly exempts APOLLO from the item cap but caps non-Apollo; `DiscoveryVerificationWorker.kt:442–451` converts a LOCAL_EVIDENCE cap to PENDING plus EVIDENCE_INCOMPLETE/ITEM_REQUEST_LIMIT. MatchingVersion1 defaults at Worker:213; Rules:179–249 handles complete identity/institution matches without changing qualification. b0d2f278 deliberately introduced the exemption after the old budget assertion.
+
+### 5. A3 capped broad search continues saved narrow query (current lines995–1050)
+
+- Change only the `incomplete-search` `InstitutionNegative` fixture’s expected narrow count from0 to1 (line1016); retain maxPages=1, total_entries101 and its real matching candidate.
+- Preserve every shared negative assertion: zero admissions, no candidates, null admission revision, SEARCH_INCOMPLETE, and authoritative queryInstitution/normalization checks for all cases.
+- Add this case’s explicit state COMPLETED/outcome PENDING/route NONE, SEARCH_PAGE_LIMIT, `payload.search.complete == false`, and all Apollo HTTP requests at page1 (no page2). Assert exactly one broad and one narrow request and persisted attempt/provider request-count equality.
+- Evidence: Worker:311–325 marks truncated queries incomplete and advances to the next saved query; Worker:285 loops remaining queries; Worker:343–348 finalizes PENDING when global completeness is false. Current fixture supplies a nonempty stable queryInstitution and thus a narrow query. Continuing it is not global completion or admission. No production early-stop change is proposed.
+
+### 6. Cached alias cursor without historical completion keys (current lines863–890)
+
+- **Retain the original cached payload exactly**, including ruleVersion0, queryIndex1/page2 and absent finishedQueryKeys, for both `legacy=false/true` branches. Do not invent a `"0"` completion key from cursor position.
+- Replace only the obsolete APOLLO_UNCLEAR outcome expectation at line887 with PENDING. Add state COMPLETED, route NONE, null matched person/admission revision, zero admission/empty projected candidates, SEARCH_INCOMPLETE and SEARCH_PAGE_LIMIT reasons, `saved.search.complete == false`, and prior index `"0"` absent from saved `finishedQueryKeys`.
+- Preserve the stronger existing recovery assertions unchanged: exactly one HTTP request, page2, Frozen Alias (never new alias), no ORCID HTTP, identical frozen evidence and original person-1 candidate retained. Assert one newly registered Apollo attempt and request accounting matches the actual request.
+- Evidence: current payload has a cursor but no durable completion record for query0. Worker:313–316 requires every query index in finishedQueryKeys; :343–348 conservatively completes PENDING. The fixture’s candidate union and cursor do not prove the omitted broad query was fully exhausted. Keeping the original payload and asserting safe incompleteness is stricter than fabricating completion.
+
+### 7. A4 legacy inflight cursor without completion keys (current lines1094–1115)
+
+- **Retain the entire original payload**, including absent institutionNormalization/queries/finishedQueryKeys, broadComplete=true, queryIndex1/page2. Do not add a completion key: broadComplete alone does not supply the per-query completion protocol the current Worker requires.
+- Keep existing exactly-one-request/page2/Example University narrow-query assertions, null institutionNormalization and PENDING outcome.
+- Replace only the APOLLO_NO_MATCH requirement at line1110 with both SEARCH_INCOMPLETE and SEARCH_PAGE_LIMIT; additionally assert APOLLO_NO_MATCH is absent, `saved.search.complete == false`, state COMPLETED, route NONE, null admission/person, zero admissions/empty candidates and one registered Apollo attempt with matching accounting.
+- Evidence: same Worker completeness and PENDING branch as scenario6. Empty last-page response does not establish that every earlier query was complete; preserving the old payload must not silently promote it to a fully searched no-match. Existing `f.report` retains original request/normalization/reason/attempt evidence.
+
+### Approval boundary and execution after approval
+
+This is a single concrete test-contract reconciliation: three explicitly versioned historical inputs, one split budget contract with new non-Apollo safety coverage, one corrected continuation count with preserved global safety, and two retained historical cursor payloads asserting conservative PENDING. No production restoration or additional file authority is requested. No unresolved implementation-choice decision remains in this proposal; human approval is required specifically because scenario4/5/6/7 alter old behavioral expectations that the current invocation forbids repinning.
+
+If approved, implement only this amendment, keep all existing assertions except the precisely enumerated replacements, rerun the exact full required JDK11 selector command with both opt-ins, actually run bound Node/syntax goals, and run the fresh standalone SQL/Worker/queue smoke from the new Surefire classpath. Any additional newly revealed discrepancy must be diagnosed within this bounded contract, not auto-repinned. Only all-correct final checks permit the requested local product commit.
