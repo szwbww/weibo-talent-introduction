@@ -422,7 +422,7 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         if (control.phase == RecheckPhase.READY) {
             require(control.scopeHash == recheckScopeHash(executionId)) { "Scope hash mismatch" }
             require(jdbc.queryForObject("""SELECT COUNT(*) FROM discovery_verification_item
-                WHERE owner_execution_id=? AND (review_epoch<>? OR state<>'QUEUED')""",
+                WHERE owner_execution_id=? AND (review_epoch<>? OR state<>'RESERVED')""",
                 Long::class.java, executionId, executionId) == 0L) { "Scope is not fully frozen" }
         }
         if (control.phase in setOf(RecheckPhase.COMPLETED, RecheckPhase.CANCELLED)) {
@@ -459,7 +459,6 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         val item = jdbc.query("""SELECT * FROM discovery_verification_item WHERE expert_doc_id=?
             AND identity_hash=? AND policy_version=? AND review_epoch=?""", itemMapper,
             input.expertDocId, input.identityHash, input.policyVersion, run.executionId).single()
-        initializeSteps(item.id, now)
         bump(run.executionId, now)
         return item
     }
@@ -571,10 +570,11 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     fun activateItem(itemId: Long, batchNumber: Int, now: Instant): VerificationItem {
         require(batchNumber > 0)
         val item = lockItem(itemId)
-        if (item.reviewEpoch > 0) require(recheck(lockRun(item.ownerExecutionId)).control.phase == RecheckPhase.PREPARING)
+        if (item.reviewEpoch > 0) require(recheckRunning(lockRun(item.ownerExecutionId)))
         if (item.state == VerificationState.RESERVED) {
             jdbc.update("UPDATE discovery_verification_item SET state='QUEUED',batch_number=?,activated_at=?,updated_at=? WHERE id=? AND state='RESERVED'",
                 batchNumber, now.verificationUtc(), now.verificationUtc(), itemId)
+            if (item.reviewEpoch > 0) initializeSteps(item.id, now)
             bump(item.ownerExecutionId, now)
         }
         return findItem(itemId)!!
