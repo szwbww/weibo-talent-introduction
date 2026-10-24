@@ -1,7 +1,7 @@
 # Child06a — Persisted independent Apollo access settings
 
-- Exact child docs/plans/2026-10-23/discovery-paper-06a-apollo-persistence.md (commit c18dbc060dcf4c8440f853ede4d1d3aaf737994f), read full plan.
-- Current master docs/plans/2026-10-23/discovery-paper-master.md (commit541411d540019428c72b31775c325087b33da303); A1–A8 recorded. Child06a unchanged, epoch1 fix_round0.
+- Exact child docs/plans/2026-10-23/discovery-paper-06a-apollo-persistence.md (commit6112a58b4bc94b510a6b1cff88cfd9ec159c83d6), read full amended plan.
+- Current master docs/plans/2026-10-23/discovery-paper-master.md (commit6112a58b4bc94b510a6b1cff88cfd9ec159c83d6); A1–A10 recorded. Epoch2 fix_round0; approved exact28 tests and master one-time cap exception.
 - Retained worktree /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-paper-master; branch fast/discovery-paper-master. child_base_sha1b8c4981f0116e17648f064482e505d436c02edd. Child05 LIGHT_PASS_WITH_NOTES evidenceb9e3c3e257faf9a294b7f3c8a0187c8c06e75dc7, fullmanifest dirty/clean checkpoint3700fb3eadab04b6fa0469abece5690d9ae2051d. No completed child replay.
 
 ## Authorized files
@@ -15,3 +15,7 @@ Use execute-p exactplan/worktree. Skip tests/builds/lints/formatters midflight; 
 
 ## Delivery
 Commit only five authorizedproduct/testfiles as feat(fast-p): implement 06a; excludeartifactreports. Append full execution to docs/plans/fast/discovery-paper-master/children/06a/execution.md with bareSHA, exactcommands/exits, deterministicrace/smokeoutput, downstream protocol and honestlimits. This plan/report is feature documentation; no newdocs/changelog/knowledge outsideevidence. Return READY_FOR_VERIFICATION|BLOCKED|PLAN_CONFLICT,SHA,commands/report. No fullverify-p/review-p/repair-p, laterchildreview, secondworktree, plan edits, deployment/push/merge/rewrite. Controllerownsverification/ledger.
+
+## Epoch2 approved resume — supersedes original five-file scope/delivery wording
+User explicitly approved full28-path inventory and 5+28=33-file one-time test-only exception A9/A10. Current complete change table is amended child. Existing implementationae467257b520133ad2db999478d02bd9b02b6c85 stays; no completed child replay. Update ONLY the exact28 listed JS tests for stale count/description16→17 and actual ordereddiscovery-papers.js module entry, preserve equalkey/order/no-duplicate/runtime/business assertions. No new frontend product or runtime wiring; original fivefile implementation may only be reconciled with explicit unchanged requirements if needed. No appliedmigration edits.
+Reconcile full amended contract; final mandatory Maven selector remains same, bound1816Node previously1787pass29fail must now pass with no exclusions. Counts derive actualoutput, disregard historical speculative count phrase. Fresh separate DiscoveryApolloSettingsSmokeLauncher using complete surefire.test.class.path from new XML (record exactinvocation), no provider calls. After final edits only, no tests/build/lint/format midflight. Commit authorized continuation product/tests as feat(fast-p): implement 06a, not amend. Append epoch2 full report to execution.md, preserve all prior logs. Return READY_FOR_VERIFICATION|BLOCKED|PLAN_CONFLICT,bareSHA,commands/smoke/report. Independent verification belongs controller, no fullverify-p.
