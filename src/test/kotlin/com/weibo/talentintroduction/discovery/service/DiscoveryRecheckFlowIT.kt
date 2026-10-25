@@ -61,7 +61,7 @@ import javax.sql.DataSource
 /** No application component scan, production datasource, scheduler, SMTP or provider is bootstrapped. */
 @org.springframework.boot.test.context.TestConfiguration
 @EnableAutoConfiguration
-@EnableJdbcRepositories(basePackageClasses = [TaskExecutionRepository::class])
+@EnableJdbcRepositories(basePackages = ["com.weibo.talentintroduction"])
 class RecheckRuntimeJdbcConfig
 
 @org.springframework.boot.test.context.TestConfiguration
@@ -76,12 +76,24 @@ class RecheckRuntimeMvc(private val mapper: ObjectMapper) : WebMvcConfigurer {
 /** Selected ITs always require real MySQL. main() exercises the same actual servlet/SQL pipeline outside JUnit. */
 class DiscoveryRecheckFlowIT {
     @Test fun `all new routes frozen 1001 audit history application cancellation recovery and projection use real SQL`() = runRuntime()
+    @Test fun `archived bodies use production consumer registration and private replay CLI`() = runRuntime(true)
 
     companion object {
         private class Mysql : MySQLContainer<Mysql>("mysql:8.0.36")
-        @JvmStatic fun main(args: Array<String>) { runRuntime() }
+        @JvmStatic fun main(args: Array<String>) {
+            if (args.firstOrNull() == "--historical") {
+                try { runHistorical(args.drop(1)) }
+                catch (e: Exception) {
+                    val frame = e.stackTrace.firstOrNull { it.className.startsWith("com.weibo.") }
+                    System.err.println("HISTORICAL_REPLAY_FAILED:${e.javaClass.simpleName} at=${frame?.fileName}:${frame?.lineNumber}")
+                    kotlin.system.exitProcess(2)
+                }
+            }
+            else if (args.firstOrNull() == "--archived") runRuntime(true)
+            else { runRuntime(); runRuntime(true) }
+        }
 
-        private fun runRuntime() {
+        private fun runRuntime(archivedOnly: Boolean = false) {
             check(DockerClientFactory.instance().isDockerAvailable) { "Disposable MySQL required; skipping is not PASS" }
             Mysql().withDatabaseName("recheck_runtime").withUsername("test").withPassword("test")
                 .withCommand("--log-bin-trust-function-creators=1").use { mysql ->
@@ -97,11 +109,408 @@ class DiscoveryRecheckFlowIT {
                     val tasks = app.getBean(TaskExecutionRepository::class.java)
                     val props = DiscoveryVerificationProperties(enabled = true, workerEnabled = true, apolloApiKey = "fixture-key")
                     VerificationFlowFixture(jdbc, manager, props).use { f ->
-                        Runtime(f, manager, tasks).use { runtime -> runtime.exercise() }
+                        if (archivedOnly) ArchivedRuntime(f, manager, tasks, app).use { it.exercise() }
+                        else Runtime(f, manager, tasks).use { runtime -> runtime.exercise() }
                     }
                 } finally { app.close() }
             }
         }
+
+        /** Opt-in private historical replay; only disposable MySQL and the existing strict fixture ES are writable. */
+        private fun runHistorical(args: List<String>) {
+            require(args.size == 3)
+            (org.slf4j.LoggerFactory.getILoggerFactory() as ch.qos.logback.classic.LoggerContext)
+                .getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME).level = ch.qos.logback.classic.Level.OFF
+            val inputPath = java.nio.file.Paths.get(args[0]).toRealPath()
+            DiscoveryHistoricalReplayTool.privateFile(inputPath)
+            val input = DiscoveryHistoricalReplayTool.mapper.readTree(Files.readAllBytes(inputPath))
+            val archiveRoot = java.nio.file.Paths.get(args[1]).toRealPath()
+            val output = java.nio.file.Paths.get(args[2]).toAbsolutePath()
+            DiscoveryHistoricalReplayTool.secureDirectory(output)
+            check(DockerClientFactory.instance().isDockerAvailable)
+            Mysql().withDatabaseName("historical_reuse").withUsername("test").withPassword("test").use { mysql ->
+                mysql.start()
+                val app = SpringApplicationBuilder(RecheckRuntimeJdbcConfig::class.java).web(WebApplicationType.NONE).run(
+                    "--spring.datasource.url=${mysql.jdbcUrl}", "--spring.datasource.username=${mysql.username}",
+                    "--spring.datasource.password=${mysql.password}", "--spring.flyway.placeholder-replacement=false",
+                    "--spring.flyway.target=161", "--spring.main.banner-mode=off", "--logging.level.root=OFF")
+                try {
+                    val jdbc = app.getBean(JdbcTemplate::class.java)
+                    val manager = DataSourceTransactionManager(app.getBean(DataSource::class.java))
+                    val tasks = app.getBean(TaskExecutionRepository::class.java)
+                    val props = DiscoveryVerificationProperties(enabled = true, workerEnabled = true, apolloApiKey = "isolated-never-dispatched")
+                    VerificationFlowFixture(jdbc, manager, props).use { f ->
+                        f.clock.now = java.time.Instant.parse(input.path("evaluationAt").asText())
+                        Mockito.`when`(f.filters.getCandidateFilter()).thenReturn(f.mapper.treeToValue(input.path("candidateConfig"), CandidateFilterProperties::class.java))
+                        Mockito.`when`(f.filters.getAcademicFilter()).thenReturn(f.mapper.treeToValue(input.path("academicConfig"), AcademicFilterProperties::class.java))
+                        val originals = input.path("original").toList()
+                        val docs = originals.map { it.path("docId").asText() }.sorted()
+                        require(docs.isNotEmpty() && docs.distinct().size == docs.size)
+                        val sql = input.path("sqlRows").toList()
+                        val allowed = setOf("discovery_paper_archive_record", "task_execution", "discovery_verification_run",
+                            "discovery_verification_item", "discovery_verification_attempt", "expert_discovery_admission")
+                        fun restore(table: String) {
+                            require(table in allowed)
+                            sql.filter { it.path("table").asText() == table }.forEach { saved ->
+                                val values = saved.path("row").fields().asSequence().toList()
+                                require(values.all { it.key.matches(Regex("[a-z_][a-z0-9_]*")) })
+                                val columns = values.joinToString(",") { "`${it.key}`" }
+                                val parameters = values.map { (_, value) -> when {
+                                    value.isNull -> null
+                                    value.isIntegralNumber -> value.longValue()
+                                    value.isBoolean -> value.booleanValue()
+                                    value.isTextual -> value.textValue()
+                                    else -> f.mapper.writeValueAsString(value)
+                                } }.toTypedArray()
+                                jdbc.update("INSERT INTO $table ($columns) VALUES (${values.joinToString(",") { "?" }})", *parameters)
+                            }
+                        }
+                        listOf("task_execution", "discovery_verification_run", "discovery_verification_item",
+                            "discovery_verification_attempt", "expert_discovery_admission", "discovery_paper_archive_record").forEach(::restore)
+                        originals.forEach { original ->
+                            val id = original.path("id").asLong()
+                            // The actual original frozen cache, not a refreshed or precomputed proposed outcome.
+                            jdbc.update("UPDATE discovery_verification_item SET evidence_json=? WHERE id=?",
+                                f.mapper.writeValueAsString(original.path("evidence")), id)
+                            @Suppress("UNCHECKED_CAST") val profile = f.mapper.convertValue(original.path("snapshot").path("profile"), Map::class.java) as Map<String, Any?>
+                            val raw = profile.toMutableMap()
+                            (raw["externalIds"] as? String)?.let { raw["externalIds"] = f.mapper.readValue(it, Map::class.java) }
+                            f.raws[original.path("docId").asText()] = raw
+                        }
+                        val sources = input.path("sourcePapers").map { f.mapper.treeToValue(it, DiscoveryHistoricalReplayTool.Paper::class.java) }
+                        sources.forEach { paper ->
+                            val ref = paper.source
+                            val path = archiveRoot.resolve("blobs").resolve(ref.bodySha256.take(2)).resolve("${ref.bodySha256}.bin")
+                            require(DiscoveryPaperArchiveService.sha(Files.readAllBytes(path)) == ref.bodySha256)
+                            jdbc.update("INSERT IGNORE INTO discovery_paper_archive_blob (sha256,size_bytes,media_type,state,created_at) VALUES (?,?,?,'AVAILABLE',?)",
+                                ref.bodySha256, Files.size(path), "text/plain", f.clock.instant().verificationUtc())
+                            jdbc.update("""INSERT INTO discovery_paper_archive_attempt
+                                (id,record_id,attempt_key,kind,status,blob_sha256,completed_bytes,created_at,updated_at)
+                                VALUES (?,?,?,?,'SAVED',?,?,?,?)""", ref.attemptId, ref.archiveRecordId,
+                                "historical-${ref.attemptId}", paper.kind.name, ref.bodySha256, Files.size(path),
+                                f.clock.instant().verificationUtc(), f.clock.instant().verificationUtc())
+                        }
+                        val archiveRepo = DiscoveryPaperArchiveRepository(jdbc, manager)
+                        val archive = DiscoveryPaperArchiveService(archiveRepo, DiscoveryPaperArchiveProperties(archiveRoot.toString()),
+                            DiscoverySampleProperties(directory = output.resolve("unused-samples").toString()), f.mapper)
+                        val papers = PaperVerificationEvidenceService(archiveRepo, archive, DiscoveryHistoricalReplayTool.analyzer(), f.mapper)
+                        var providerCalls = 0
+                        val deny = RestTemplate().apply { interceptors.add(org.springframework.http.client.ClientHttpRequestInterceptor { _, _, _ ->
+                            providerCalls++; error("Historical REUSE forbids dispatch") }) }
+                        val trace = DiscoveryVerificationTraceRepository(jdbc)
+                        val worker = DiscoveryVerificationWorker(props, f.repository, OrcidVerificationEvidenceClient(props, deny, f.clock),
+                            ApolloPeopleSearchClient(props, deny, f.clock), QualificationEvidenceParser(f.clock), f.rules, f.commits,
+                            DefaultListableBeanFactory().getBeanProvider(RegistrationRecovery::class.java), f.clock, trace, papers)
+                        val beans = DefaultListableBeanFactory()
+                        beans.registerSingleton("historicalWorker", worker)
+                        val queries = DiscoveryVerificationQueryService(f.repository, f.admissions, props)
+                        val scan = DiscoveryReviewScanService(f.admissions, f.policy, f.writer, f.esHttp, f.esProperties, f.indices, f.mapper)
+                        val rechecks = DiscoveryRecheckService(f.repository, f.admissions, f.writer, scan, f.policy, f.apolloSettings, props,
+                            tasks, TransactionTemplate(manager), queries, f.commits, Executor { it.run() },
+                            beans.getBeanProvider(DiscoveryVerificationWorker::class.java), papers, f.clock)
+                        fun business() = f.mapper.writeValueAsString(listOf(f.raws, f.candidates, f.applications,
+                            jdbc.queryForList("SELECT * FROM expert_discovery_admission ORDER BY expert_doc_id"),
+                            jdbc.queryForList("SELECT * FROM mail_record ORDER BY id"), jdbc.queryForList("SELECT * FROM expert_contact ORDER BY id")))
+                        val businessBefore = business()
+                        val oldItems = jdbc.queryForList("SELECT * FROM discovery_verification_item ORDER BY id")
+                        val oldAttempts = jdbc.queryForList("SELECT * FROM discovery_verification_attempt ORDER BY id")
+                        val runs = mutableListOf<RecheckRunView>()
+                        val proposed = mutableListOf<Map<String, Any?>>()
+                        try {
+                            docs.chunked(100).forEach { batch ->
+                                val run = rechecks.prepare(RecheckPrepareRequest(UUID.randomUUID().toString(), docIds = batch), "historical-isolated-audit")
+                                check(run.phase == RecheckPhase.READY)
+                                rechecks.start(run.runId, RecheckStartRequest(run.rosterHash!!, run.revision))
+                                while (true) {
+                                    val lease = f.repository.claimDue(f.clock.instant(), 120) ?: break
+                                    check(lease.reviewEpoch > 0 && lease.ownerExecutionId == run.runId)
+                                    worker.process(lease)
+                                }
+                                rechecks.reconcile()
+                                runs += queries.recheckRun(run.runId)
+                                f.repository.findHistoryByDocIds(batch).filter { it.ownerExecutionId == run.runId }.forEach { item ->
+                                    val original = originals.single { it.path("docId").asText() == item.expertDocId }
+                                    val frozen = f.mapper.readTree(item.snapshotJson).path("reviewInput")
+                                    proposed += mapOf("docHash" to com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.hash(item.expertDocId),
+                                        "before" to original.path("outcome").asText(), "proposed" to item.outcome?.name,
+                                        "qualification" to item.qualification.name, "state" to item.state.name,
+                                        "cacheAvailable" to frozen.path("baselineEvidenceAvailable").asBoolean(),
+                                        "sourceRefs" to frozen.path("paperSourceRefs"), "reasons" to f.mapper.readTree(item.reasonsJson ?: "[]"),
+                                        "steps" to trace.read(item.id), "admissionRevision" to item.admissionRevision)
+                                }
+                            }
+                        } finally { worker.close() }
+                        check(proposed.size == docs.size && providerCalls == 0 && businessBefore == business())
+                        check(oldItems == jdbc.queryForList("SELECT * FROM discovery_verification_item WHERE review_epoch=0 ORDER BY id"))
+                        check(oldAttempts == jdbc.queryForList("SELECT * FROM discovery_verification_attempt ORDER BY id"))
+                        val summary = mapOf("inputSha256" to DiscoveryPaperArchiveService.sha(Files.readAllBytes(inputPath)),
+                            "evaluationAt" to f.clock.instant(), "requested" to docs.size, "processed" to proposed.size,
+                            "terminalStates" to proposed.groupingBy { it["state"] }.eachCount(),
+                            "outcomes" to proposed.groupingBy { it["proposed"] }.eachCount(),
+                            "compatibleFrozenCaches" to proposed.count { it["cacheAvailable"] == true },
+                            "wouldAdmit" to runs.sumOf { it.counts.wouldAdmit }, "actualAdmitted" to runs.sumOf { it.counts.actualAdmitted },
+                            "providerHttpRequests" to providerCalls, "businessUnchanged" to true,
+                            "environment" to "DISPOSABLE_MYSQL_STRICT_FIXTURE_ES_ORIGINAL_WORKER_GATE", "runs" to runs, "rows" to proposed)
+                        val bytes = f.mapper.writeValueAsBytes(summary)
+                        DiscoveryVerificationReplayTool.atomicWrite(output.resolve("audit-reuse.json"), bytes)
+                        println("RECHECK10_HISTORICAL requested=${docs.size} processed=${proposed.size} wouldAdmit=${runs.sumOf { it.counts.wouldAdmit }} actualAdmitted=0 providerHttpRequests=0 businessUnchanged=true reportHash=${DiscoveryPaperArchiveService.sha(bytes)}")
+                    }
+                } finally { app.close() }
+            }
+        }
+    }
+
+    private class ArchivedRuntime(val f: VerificationFlowFixture, val manager: DataSourceTransactionManager,
+        val tasks: TaskExecutionRepository, val app: org.springframework.context.ConfigurableApplicationContext) : AutoCloseable {
+        private val root = Files.createTempDirectory("discovery-archived-runtime-").toRealPath()
+        private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        private var writes = 0
+        private var unexpected = 0
+        private var providers = 0
+        private val fixtureMappings = mutableMapOf<String, com.fasterxml.jackson.databind.JsonNode>()
+        init {
+            Files.setPosixFilePermissions(root, java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"))
+            server.createContext("/") { exchange ->
+                try {
+                    val parts = exchange.requestURI.path.trim('/').split('/')
+                    val indices = mapOf("raw" to f.raws, "candidate" to f.candidates, "application" to f.applications)
+                    val method = exchange.requestMethod
+                    var status = 200
+                    val response: Any = if (parts.size == 1 && parts[0] in indices && method in setOf("GET", "HEAD")) {
+                        mapOf(parts[0] to mapOf("mappings" to mapOf("properties" to fixtureMappings[parts[0]])))
+                    } else if (parts.size == 2 && parts[0] in indices && parts[1] == "_mapping" && method == "PUT") {
+                        val properties = f.mapper.readTree(exchange.requestBody.readBytes()).path("properties")
+                        check(properties.isObject && !properties.isEmpty)
+                        fixtureMappings[parts[0]] = properties
+                        mapOf("acknowledged" to true)
+                    } else if (parts.last() == "_search" && method == "POST") {
+                        val body = f.mapper.readTree(exchange.requestBody.readBytes())
+                        val email = body.path("query").path("term").path("email").asText()
+                        check(email.isNotBlank())
+                        val hits = parts.first().split(',').flatMap { index ->
+                            indices.getValue(index).filter { it.value["email"] == email }.map { (id, doc) ->
+                                mapOf("_id" to id, "_index" to index, "_source" to doc) }
+                        }
+                        mapOf("timed_out" to false, "_shards" to mapOf("failed" to 0),
+                            "hits" to mapOf("total" to mapOf("value" to hits.size, "relation" to "eq"), "hits" to hits))
+                    } else {
+                        check(parts.size == 3 && parts[1] == "_doc")
+                        val docs = indices.getValue(parts[0]); val id = parts[2]
+                        when (method) {
+                            "PUT" -> {
+                                check(!docs.containsKey(id)) { "Fixture forbids overwriting a profile" }
+                                @Suppress("UNCHECKED_CAST") val source = f.mapper.readValue(exchange.requestBody.readBytes(), Map::class.java) as Map<String, Any?>
+                                docs[id] = source; writes++; mapOf("result" to "created")
+                            }
+                            "GET", "HEAD" -> if (docs.containsKey(id)) mapOf("_source" to docs[id], "_seq_no" to 1, "_primary_term" to 1)
+                                else { status = 404; emptyMap<String, Any>() }
+                            else -> error("Unexpected method")
+                        }
+                    }
+                    val bytes = f.mapper.writeValueAsBytes(response)
+                    exchange.responseHeaders.add("Content-Type", "application/json")
+                    exchange.sendResponseHeaders(status, if (method == "HEAD") -1 else bytes.size.toLong())
+                    if (method != "HEAD") exchange.responseBody.use { it.write(bytes) } else exchange.close()
+                } catch (_: Throwable) { unexpected++; exchange.sendResponseHeaders(500, -1); exchange.close() }
+            }
+            server.start()
+        }
+        private fun command(args: List<String>, expected: Int = 0, environment: Map<String, String> = emptyMap()) {
+            val script = java.nio.file.Paths.get("scripts/discovery_recheck_replay/run.sh").toAbsolutePath().toString()
+            val process = ProcessBuilder(listOf(script) + args).redirectErrorStream(true).apply {
+                environment()["REPLAY_CLASSPATH"] = System.getProperty("java.class.path")
+                environment().putAll(environment)
+            }.start()
+            val output = process.inputStream.readBytes().toString(Charsets.UTF_8)
+            check(process.waitFor(180, TimeUnit.SECONDS) && process.exitValue() == expected) {
+                "CLI expected=$expected actual=${process.exitValue()} output=$output" }
+            check(!output.contains("ada@"))
+            println("RECHECK10_CLI command=${args.firstOrNull()} exit=$expected")
+        }
+        fun exercise() {
+            val basePaper = HistoricalReplayFixtures.paper(root, 900001).let { paper ->
+                val path = java.nio.file.Paths.get(paper.path)
+                val bytes = String(Files.readAllBytes(path), Charsets.UTF_8)
+                    .replace("Ada Lee holds a PhD in physics.",
+                        "Ada Lee received her PhD in 2015. She was born on 15 May 1990.")
+                    .toByteArray(Charsets.UTF_8)
+                Files.write(path, bytes)
+                paper.copy(source = paper.source.copy(bodySha256 = DiscoveryPaperArchiveService.sha(bytes)))
+            }
+            val invalid = HistoricalReplayFixtures.paper(root, 900002, email = "ada@mailinator.com")
+            val ambiguous = HistoricalReplayFixtures.paper(root, 900003).let { p ->
+                val bytes = """<article><front><article-meta><contrib-group><contrib><name><given-names>Ada</given-names><surname>Lee</surname></name><email>shared@fixture.edu</email></contrib><contrib><name><given-names>Eve</given-names><surname>Lee</surname></name><email>shared@fixture.edu</email></contrib></contrib-group></article-meta></front></article>""".toByteArray()
+                Files.write(java.nio.file.Paths.get(p.path), bytes)
+                p.copy(source = p.source.copy(bodySha256 = DiscoveryPaperArchiveService.sha(bytes)),
+                    metadata = p.metadata.copy(authors = listOf(PaperAuthor("Ada", "Lee", null, null), PaperAuthor("Eve", "Lee", null, null))))
+            }
+            val missing = HistoricalReplayFixtures.paper(root, 900004, missing = true)
+            val repo = DiscoveryPaperArchiveRepository(f.jdbc, manager)
+            val archive = DiscoveryPaperArchiveService(repo, DiscoveryPaperArchiveProperties(root.resolve("archive").toString()),
+                DiscoverySampleProperties(directory = root.resolve("samples").toString()), f.mapper)
+            val analyzer = DiscoveryHistoricalReplayTool.analyzer()
+            val papers = PaperVerificationEvidenceService(repo, archive, analyzer, f.mapper)
+            val settings = archive.settings()
+            archive.updateSettings(ArchiveSettingsRequest(settings.revision, true, settings.maxBytes, settings.minFreeBytes))
+            val retained = listOf(basePaper, invalid, ambiguous).map { p ->
+                val metadata = f.mapper.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(p.metadata).put("schemaVersion", 1)
+                val record = archive.beginRecord(28671, "CROSSREF", p.source.sourceItemKey, metadata)
+                val attempt = archive.beginAttempt(record.id, UUID.randomUUID(), 1, p.kind,
+                    "https://papers.fixture.invalid/${p.source.sourceItemKey}")
+                archive.saveBody(attempt.id, Files.readAllBytes(java.nio.file.Paths.get(p.path)), "text/plain")
+                archive.finishExtraction(record.id, f.mapper.valueToTree(mapOf("schemaVersion" to 1, "first" to mapOf("attemptIds" to listOf(attempt.id),
+                    "outcome" to mapOf("emails" to emptyList<Any>())))))
+                p.copy(source = p.source.copy(archiveRecordId = record.id, attemptId = attempt.id), baselineAttemptIds = listOf(attempt.id))
+            } + missing
+            archive.analysisLease(retained.first().source.archiveRecordId).use { lease ->
+                val ref = retained.first().source
+                val stored = repo.attempt(ref.attemptId)!!
+                check(lease.record.executionId == ref.sourceExecutionId && lease.record.sourceName == ref.sourceName &&
+                    lease.record.paperKey == ref.sourceItemKey && stored.blobSha256 == ref.bodySha256 &&
+                    (ref.attemptId to ref.bodySha256) in lease.fileSet) { "Fixture archive references must resolve exact retained bytes" }
+            }
+            val historyBefore = f.jdbc.queryForList("SELECT * FROM discovery_verification_item ORDER BY id")
+            val tasksBefore = f.jdbc.queryForList("SELECT * FROM task_execution ORDER BY id")
+            val checkpoints = f.jdbc.queryForList("SELECT * FROM discovery_source_cursor ORDER BY id")
+            val archiveBefore = f.jdbc.queryForList("SELECT * FROM discovery_paper_archive_attempt ORDER BY id")
+            val mailBefore = listOf("mail_record", "expert_contact", "mail_sender_account").associateWith {
+                f.jdbc.queryForList("SELECT * FROM $it ORDER BY id") }
+            val props = f.esProperties.copy(baseUrl = "http://127.0.0.1:${server.address.port}")
+            val http = RestTemplate()
+            val indices = com.weibo.talentintroduction.expert.service.ExpertIndexService(props, http, f.mapper)
+            val writer = com.weibo.talentintroduction.expert.service.ExpertIndexWriterService(http, props, indices, f.mapper,
+                com.weibo.talentintroduction.expert.service.ExpertPromotionAuditService(app.getBean(com.weibo.talentintroduction.expert.repository.ExpertApplicationPromotionRepository::class.java)),
+                app.getBean(com.weibo.talentintroduction.campaign.repository.ExpertContactRepository::class.java))
+            Mockito.`when`(f.filters.getEmailValidationConfig()).thenReturn(EmailValidationProperties(enableMxCheck = false))
+            val validator = com.weibo.talentintroduction.expert.service.EmailValidationService(EmailValidationProperties(enableMxCheck = false),
+                app.getBean(com.weibo.talentintroduction.expert.repository.EmailValidationCacheRepository::class.java),
+                org.springframework.core.io.DefaultResourceLoader(), com.weibo.talentintroduction.expert.service.MxLookupClient {
+                    providers++; error("No DNS/provider allowed") }, f.filters)
+            val registration = DiscoveryVerificationRegistrationService(f.props, f.repository, writer, f.policy, f.admissions,
+                f.jdbc, TransactionTemplate(manager), f.apolloSettings, f.clock, papers = papers)
+            val beans = DefaultListableBeanFactory()
+            fun <T : Any> provider(type: Class<T>) = beans.getBeanProvider(type)
+            val discovery = ExpertDiscoveryService(EuropePmcDataSource(http, EuropePmcProperties(enabled = false)),
+                provider(OpenAlexDataSource::class.java), provider(CrossrefDataSource::class.java), provider(ArxivDataSource::class.java),
+                provider(PmcOaDataSource::class.java), provider(OrcidDataSource::class.java), provider(CoreDataSource::class.java),
+                validator, f.eligibility, writer, indices, Mockito.mock(com.weibo.talentintroduction.expert.service.ExpertRevalidationService::class.java),
+                com.weibo.talentintroduction.expert.service.ExpertSearchService(http, props, indices),
+                com.weibo.talentintroduction.expert.service.ExpertClassificationService(), http, props,
+                ExpertDiscoveryProperties(maxAuthorsPerRun = 500), OpenAlexProperties(enabled = false), f.mapper,
+                com.weibo.talentintroduction.task.service.TaskProgressStore(app.getBean(com.weibo.talentintroduction.task.repository.TaskProgressLogRepository::class.java), f.mapper),
+                app.getBean(com.weibo.talentintroduction.discovery.repository.DiscoverySourceCursorRepository::class.java),
+                ExpertAcademicEnrichmentJobService(app.getBean(com.weibo.talentintroduction.discovery.repository.ExpertAcademicEnrichmentJobRepository::class.java)),
+                app.getBean(com.weibo.talentintroduction.discovery.repository.ExpertAcademicEnrichmentJobRepository::class.java),
+                Executor { it.run() }, EuropePmcProperties(enabled = false), verificationRegistration = registration)
+            val workerBeans = DefaultListableBeanFactory()
+            val queries = DiscoveryVerificationQueryService(f.repository, f.admissions, f.props)
+            val scan = DiscoveryReviewScanService(f.admissions, f.policy, writer, http, props, indices, f.mapper)
+            val rechecks = DiscoveryRecheckService(f.repository, f.admissions, writer, scan, f.policy, f.apolloSettings, f.props,
+                tasks, TransactionTemplate(manager), queries, f.commits, Executor { it.run() },
+                workerBeans.getBeanProvider(DiscoveryVerificationWorker::class.java), papers, f.clock)
+            val target = HistoricalSqlBindingsTarget(tasks, registration, f.repository, f.admissions, writer, f.policy, rechecks)
+            val config = mapOf("admission" to f.mapper.writeValueAsString(f.policy.evaluate(ruleSnapshot().profile).configSnapshot))
+            val scope = HistoricalReplayFixtures.scope(retained, config = config)
+            val scopePath = root.resolve("scope.json")
+            DiscoveryVerificationReplayTool.atomicWrite(scopePath, f.mapper.writeValueAsBytes(scope))
+            command(listOf("freeze", "--scope", scopePath.toString(), "--output", root.resolve("frozen").toString()))
+            val frozen = DiscoveryHistoricalReplayTool.load(root.resolve("frozen/manifest.json"))
+            val options = listOf("--manifest", frozen.directory.resolve("manifest.json").toString(), "--manifest-hash", frozen.hash)
+            val writesBefore = writes
+            command(listOf("compare") + options); val report = DiscoveryHistoricalReplayTool.writeComparison(frozen)
+            val bytes = Files.readAllBytes(report)
+            command(listOf("compare") + options); command(listOf("report") + options)
+            check(bytes.contentEquals(Files.readAllBytes(report)) && writes == writesBefore)
+            command(listOf("apply-bindings", "--manifest", frozen.directory.resolve("manifest.json").toString(), "--manifest-hash", "0".repeat(64)), expected = 2)
+            val backfill = DiscoveryPaperBackfillService(discovery, analyzer, target)
+            var checks = 0
+            val first = backfill.apply(frozen, frozen.hash) { ++checks > 2 }
+            check(first.cancelled && first.newRaw == 1)
+            val second = backfill.apply(frozen, frozen.hash)
+            check(second.newRaw == 0 && second.failed == 1 && second.skippedCompleted == 1)
+            val repeated = backfill.apply(frozen, frozen.hash)
+            check(repeated.newRaw == 0 && repeated.skippedCompleted == 3 && repeated.failed == 1)
+            val item = f.repository.findItemsByDocIds(listOf(com.weibo.talentintroduction.expert.service.ExpertIdGenerator.generate(null, "ada@fixture.edu"))).single()
+            val execution = f.mapper.readTree(item.snapshotJson).path("executionContext")
+            check(f.mapper.treeToValue(execution, VerificationExecutionContext::class.java) ==
+                VerificationExecutionContext(scope.evaluationAt, listOf(retained.first().source)))
+            check(item.ownerExecutionId != 28671L && item.requestCount == 0)
+            val deny = RestTemplate().apply { interceptors.add(org.springframework.http.client.ClientHttpRequestInterceptor { _, _, _ -> providers++; error("Provider dispatch forbidden") }) }
+            val worker = DiscoveryVerificationWorker(f.props, f.repository, OrcidVerificationEvidenceClient(f.props, deny, f.clock),
+                ApolloPeopleSearchClient(f.props, deny, f.clock), QualificationEvidenceParser(f.clock), f.rules, f.commits,
+                beans.getBeanProvider(RegistrationRecovery::class.java), f.clock, DiscoveryVerificationTraceRepository(f.jdbc), papers)
+            try {
+                val lease = f.repository.claimDue(f.clock.instant(), 120)!!
+                check(lease.id == item.id); worker.process(lease)
+            } finally { worker.close() }
+            val done = f.repository.findItem(item.id)!!
+            check(done.state == VerificationState.COMPLETED && done.admissionRevision == null)
+            check(done.evidenceJson!!.contains(retained.first().source.bodySha256))
+            check(f.jdbc.queryForList("SELECT * FROM discovery_verification_item WHERE id<>? ORDER BY id", item.id) == historyBefore)
+            check(tasksBefore.all { row -> f.jdbc.queryForList("SELECT * FROM task_execution WHERE id=?", row["id"]).single() == row })
+            check(checkpoints == f.jdbc.queryForList("SELECT * FROM discovery_source_cursor ORDER BY id"))
+            check(archiveBefore == f.jdbc.queryForList("SELECT * FROM discovery_paper_archive_attempt ORDER BY id"))
+            check(mailBefore.all { (table, rows) -> rows == f.jdbc.queryForList("SELECT * FROM $table ORDER BY id") })
+            // Existing identities go to an independent READY AUDIT run, never profile replacement or old-item reset.
+            val profile = writer.discoveryProfile(item.expertDocId, f.raws.getValue(item.expertDocId))
+            val snapshot = DiscoveryVerificationAdmissionGate.snapshot(item.expertDocId, profile, f.policy.evaluate(profile).configSnapshot)
+            val actualPaper = papers.collect(snapshot, listOf(retained.first().source), RecheckEvidenceMode.REUSE, scope.evaluationAt)
+            check(actualPaper.sources.single().evidence.map { it.field }.toSet().containsAll(setOf("education", "birthDate"))) {
+                "Actual fixture paper fields=${actualPaper.sources.single().evidence.map { it.field }} reasons=${actualPaper.reasonCodes}"
+            }
+            val existing = DiscoveryHistoricalReplayTool.Expert(item.expertDocId, snapshot.identityHash, snapshot.factFingerprint,
+                f.admissions.findAdmission(item.expertDocId)?.revision, profile)
+            val existingFrozen = DiscoveryHistoricalReplayTool.freeze(HistoricalReplayFixtures.scope(listOf(retained.first()),
+                listOf(existing), config), root.resolve("existing-frozen"))
+            val existingBefore = f.raws.toMap()
+            val existingResult = backfill.apply(existingFrozen, existingFrozen.hash)
+            check(existingResult.newRaw == 0 && existingResult.receipts.single().recheckRunIds.size == 1)
+            check(f.repository.findItem(item.id) == done && existingBefore == f.raws)
+            val altered = existing.copy(identityHash = "0".repeat(64))
+            val wrongIdentity = DiscoveryHistoricalReplayTool.freeze(HistoricalReplayFixtures.scope(listOf(retained.first()),
+                listOf(altered), config), root.resolve("wrong-identity"))
+            try { backfill.apply(wrongIdentity, wrongIdentity.hash); error("Changed identity must reject") }
+            catch (e: IllegalArgumentException) { check(e.message == "CURRENT_IDENTITY_OR_REVISION_CHANGED") }
+            val enforce = rechecks.prepare(RecheckPrepareRequest(UUID.randomUUID().toString(), docIds = listOf(item.expertDocId),
+                mode = VerificationMode.ENFORCE, evidenceMode = RecheckEvidenceMode.REUSE), "isolated-archived-fixture")
+            check(enforce.phase == RecheckPhase.READY)
+            val enforceWorker = DiscoveryVerificationWorker(f.props, f.repository, OrcidVerificationEvidenceClient(f.props, deny, f.clock),
+                ApolloPeopleSearchClient(f.props, deny, f.clock), QualificationEvidenceParser(f.clock), f.rules, f.commits,
+                beans.getBeanProvider(RegistrationRecovery::class.java), f.clock, DiscoveryVerificationTraceRepository(f.jdbc), papers)
+            workerBeans.registerSingleton("archivedWorker", enforceWorker)
+            rechecks.start(enforce.runId, RecheckStartRequest(enforce.rosterHash!!, enforce.revision))
+            try {
+                val lease = f.repository.claimDue(f.clock.instant(), 120)!!
+                check(lease.ownerExecutionId == enforce.runId); enforceWorker.process(lease)
+            } finally { enforceWorker.close() }
+            rechecks.reconcile()
+            val enforced = f.repository.findHistoryByDocIds(listOf(item.expertDocId)).single { it.ownerExecutionId == enforce.runId }
+            check(enforced.admissionRevision != null && enforced.qualification == VerificationQualification.MET &&
+                enforced.projectionState == VerificationProjection.PROJECTED && f.candidates.containsKey(item.expertDocId)) {
+                "Archived fixture outcome=${enforced.outcome} qualification=${enforced.qualification} state=${enforced.state} reasons=${enforced.reasonsJson}"
+            }
+            check(DiscoveryVerificationTraceRepository(f.jdbc).read(enforced.id).steps.map { it.stepNo }.toSet() == (1..8).toSet())
+            val cliPaper = HistoricalReplayFixtures.paper(root, 900005, email = "cli@fixture.edu")
+            val cliFrozen = DiscoveryHistoricalReplayTool.freeze(HistoricalReplayFixtures.scope(listOf(cliPaper), config = config), root.resolve("cli-apply"))
+            val cliOptions = listOf("--manifest", cliFrozen.directory.resolve("manifest.json").toString(), "--manifest-hash", cliFrozen.hash)
+            val env = mapOf("REPLAY_DB_URL" to app.environment.getRequiredProperty("spring.datasource.url"),
+                "REPLAY_DB_USERNAME" to app.environment.getRequiredProperty("spring.datasource.username"),
+                "REPLAY_DB_PASSWORD" to app.environment.getRequiredProperty("spring.datasource.password"),
+                "REPLAY_ES_URL" to props.baseUrl, "REPLAY_ES_USERNAME" to "u", "REPLAY_ES_PASSWORD" to "p",
+                "ES_RAW_INDEX_NAME" to "raw", "ES_CANDIDATE_INDEX_NAME" to "candidate", "ES_APPLICATION_INDEX_NAME" to "application",
+                "CANDIDATE_REQUIRE_DOCTORAL_DEGREE" to "true", "CANDIDATE_REQUIRE_VALID_EMAIL" to "false",
+                "CANDIDATE_ENABLE_AGE_FILTER" to "true", "EMAIL_ENABLE_MX_CHECK" to "false")
+            f.jdbc.update("DELETE FROM eligibility_filter_setting")
+            val cliWritesBefore = writes
+            command(listOf("apply-bindings") + cliOptions, environment = env)
+            check(writes == cliWritesBefore + 1)
+            command(listOf("apply-bindings") + cliOptions, environment = env)
+            check(writes == cliWritesBefore + 1)
+            check(mailBefore.all { (table, rows) -> rows == f.jdbc.queryForList("SELECT * FROM $table ORDER BY id") })
+            check(providers == 0 && unexpected == 0) { "Forbidden provider requests=$providers unexpected fixture requests=$unexpected" }
+            println("RECHECK10_RUNTIME isolatedMySQL=true strictFixtureES=true productionParserConsumerWorkerGate=true firstNewRaw=${first.newRaw} repeatNewRaw=${repeated.newRaw} actualFixtureAdmitted=1 candidateSync=1 partialMissing=1 frozenContext=true providerHttp=0 oldHistoryCheckpointMailUnchanged=true")
+        }
+        override fun close() { server.stop(0); check(root.toFile().deleteRecursively()) }
     }
 
     private class Runtime(val f: VerificationFlowFixture, val manager: DataSourceTransactionManager,

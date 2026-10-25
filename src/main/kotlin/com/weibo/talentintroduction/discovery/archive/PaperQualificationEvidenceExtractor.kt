@@ -235,6 +235,9 @@ class PaperQualificationEvidenceExtractor {
         const val MAX_TEXT_BYTES = 2 * 1024 * 1024
         const val MAX_FACTS = 100
         const val SOFT_NANOS = 10_000_000_000L
+        /** Read-only frozen replay: deterministic work bounds, never the live worker's wall-clock budget. */
+        internal fun forFrozenReplay(): PaperQualificationEvidenceExtractor =
+            PaperQualificationEvidenceExtractor().apply { nanoTime = { 0L } }
         private val BIOGRAPHY = Regex("(?i)^(?:author\\s+)?biograph(?:y|ies)|^about\\s+the\\s+authors?$")
         private val SECTION = Regex("(?i)^(?:(?:[0-9]+[.)]?\\s+)?(?:references|acknowledg(?:e)?ments|conclusions?|introduction|methods?|results?|discussion|funding|author contributions|competing interests|conflicts of interest|research interests)|[0-9]+[.)]?\\s+[A-Z][a-zA-Z ]{2,60})$")
         private val NEGATIVE = Regex("(?i)\\b(?:not|never|no|expected|expecting|pursuing|working\\s+towards?)\\b")

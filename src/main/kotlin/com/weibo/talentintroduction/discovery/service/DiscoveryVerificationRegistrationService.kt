@@ -17,7 +17,8 @@ import org.springframework.web.server.ResponseStatusException
 import java.time.Clock
 
 /** Passed explicitly across executor boundaries; never inferred from a task progress slot. */
-data class DiscoveryVerificationExecution(val executionId: Long?, val run: VerificationRun? = null) {
+data class DiscoveryVerificationExecution(val executionId: Long?, val run: VerificationRun? = null,
+    val archivedPaper: ArchivedPaperExecution? = null) {
     init {
         require(executionId == null || executionId > 0)
         require(run == null || executionId == run.executionId)
@@ -156,9 +157,15 @@ class DiscoveryVerificationRegistrationService(
             val savedMap = linkedMapOf<String, Any?>("docId" to docId, "identityHash" to finalSnapshot.identityHash,
                 "factFingerprint" to finalSnapshot.factFingerprint, "profile" to finalProfile, "admissionRevision" to admission?.revision,
                 "sourceName" to sourceName, "sourceItemKey" to sourceItemKey, "constructedAt" to clock.instant().toString())
-            val evaluatedAt = clock.instant()
-            val refs = papers?.locate(listOf(com.weibo.talentintroduction.discovery.archive.PaperArchiveLookup(
-                run.executionId, sourceName, sourceItemKey, paper?.doi, paper?.pmid, paper?.pmcId)))?.values?.flatten().orEmpty()
+            val archived = context.archivedPaper
+            if (archived != null) {
+                require(archived.source.sourceName == sourceName && archived.source.sourceItemKey == sourceItemKey)
+                require(archived.source.sourceExecutionId != context.executionId)
+            }
+            val evaluatedAt = archived?.evaluationAt ?: clock.instant()
+            val refs = archived?.let { listOf(it.source) } ?: papers?.locate(listOf(
+                com.weibo.talentintroduction.discovery.archive.PaperArchiveLookup(
+                    run.executionId, sourceName, sourceItemKey, paper?.doi, paper?.pmid, paper?.pmcId)))?.values?.flatten().orEmpty()
             savedMap["executionContext"] = VerificationExecutionContext(evaluatedAt, refs)
             receipt?.let { savedMap["countrySupplement"] = it }
             val saved = mapper.writeValueAsString(savedMap)
