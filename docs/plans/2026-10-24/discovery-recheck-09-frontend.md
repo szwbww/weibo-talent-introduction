@@ -224,8 +224,8 @@
 | `src/test/js/mailOpenTracking.test.js` | 同上，仅直接资源契约 |
 | `src/test/js/mailboxChatBehavior.test.js` | 原资源脚本列表增加discovery-recheck.js且在app前，保留功能/同key/顺序 |
 | `src/test/js/mailboxChatStyle.test.js` | 删除过期全局17资源数断言，保留本功能及同key/顺序 |
-| `src/test/js/mailboxGroupPush.test.js` | 同上，仅直接资源契约 |
-| `src/test/js/mailboxReplyIdentity.test.js` | 同上，仅直接资源契约 |
+| `src/test/js/mailboxGroupPush.test.js` | 删除过期17数量断言；原完整脚本列表同样补入app前discovery-recheck.js，保留功能/同key/顺序 |
+| `src/test/js/mailboxReplyIdentity.test.js` | 删除过期17数量断言，保留功能/同key/顺序；无脚本列表变更 |
 | `src/test/js/mailboxSuspensionStyle.test.js` | 同上，仅直接资源契约 |
 | `src/test/js/mailboxTemplateReferenceStyle.test.js` | 同上，仅直接资源契约 |
 | `src/test/js/manualReplySubjectPrefill.test.js` | 同上，仅直接资源契约 |
@@ -279,3 +279,4 @@
 ## 修正记录
 - 2026-10-25，依用户A7持续授权增加上述四个直接依赖、8→12文件例外及对应命令；原reader缺公开固定来源桥接，08计数缺本计划已要求的拆分/保护值。仅满足原I-1/3合同，不改变S-1/S-2、准入策略或旧人工路径。确切源码/检索回执见`../fast/discovery-recheck-master/children/09/execution.md`，授权/前后身份见同一ledger的Amendments。
 - 2026-10-25，依A7持续授权增加上述28个已在新鲜全量JS命令失败的直接资源测试，12→40文件例外。必需新增script引起动态旧17数量/列表契约冲突；仅删除过期数量钉死并更新实际script顺序，不改原功能/同key/顺序保护，不再复制18数量到无关套件。`artifact://1241`记录1840例/28失败，失败是本次实施阶段ground truth，不重跑只为确认；完成后按全部既定命令重新执行。源码/检索/失败回执与授权身份见09 execution/ledger。
+- 2026-10-25，依A7持续授权澄清已列`mailboxGroupPush.test.js`也有完整script-list deepEqual，原count失败遮住后续列表比较（实施者回执原90–95行、grep tag12E7）。与`mailboxChatBehavior`同样仅补入app前的实际新script，不扩大40文件或产品行为，不改功能/同key/顺序。实施者已在本澄清前机械补入该项，日志须如实保留时间顺序，不伪造先授权后编辑；随后控制器记录精确合同与独立核验边界。其余直接资源测试仍仅退休过期数量断言。
