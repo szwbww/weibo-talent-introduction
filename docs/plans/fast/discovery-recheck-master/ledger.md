@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-24/discovery-recheck-master.md
 
-- Status: RUNNING
+- Status: READY_FOR_HUMAN_REVIEW
 - Master plan: docs/plans/2026-10-24/discovery-recheck-master.md (commit da8940153f4ad22a5ac3a094f444a7ac4858f695)
 - Amendments: A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14, A15, A16, A17, A18
 - Master base: b161e87464d42b9fa2cd076ef9255b0e3b2b29ab
@@ -9,7 +9,7 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-24T23:47:16.652745+08:00
-- Current child: 10
+- Current child: N/A
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
@@ -208,3 +208,10 @@
 - AcquiredfreshVERIFIER Recheck10Verifier, distinctfrombothwriters; epoch3/attempt1/fix_round0/agent_attempt0. Suppliedexact9-fileboundary/amendedcontract/baseline/allfreshrequiredcommands/actualCLIandfaithfulhistoricalruntime/privateaggregate-onlylimits. Fullsuitefailuresmustbeclassifiedwithboundedcausalevidence, notoutsidefile⇒baseline; noinlinecontrollerverification, noaggregateaudit/productedits.
 - Epoch3terminalLIGHT_PASS_WITH_NOTES/COMPLETE_CHILDfromRecheck10Verifier/allfourlightgatesPASS/noAUTO_FIX/repair0. Evidence9c38f69f96616bafa04e1163ca9ed061128474ad. Fresh11/67JVMzeroskips/actualCLIandpipeline/genuinefullsourcecomparetwice/frozen897AUDIT0actual+provider/packageJS1840/WARpass; fulltestexit1retained5622/1failure/19errors/24skips withboundedunrelatedcausesO-10-1/2. O-10-3PARTIAL/skipsandO-10-4privacyincidentnotwaived. All10childrennowterminal; fullmanifest10checkpointbeforefinalhandoff, noaggregatereview.
 - Fullten-childvalidator --through-child10 --allow-dirty-artifacts: exit0/VALID/CHILD_CHECKPOINT, all10terminal/A1–A18/noerrors. Bookkeepingonly; docs-onlycheckpointthencleanmodebeforefinalhandoff. RequiredfullJVMsuitefailure/partialcoverage/privacyrecordsunmodified.
+- Cleanfullten-childvalidator --through-child10: exit0/VALID/CHILD_CHECKPOINT, evidenceHEAD ab363b61f474190a05e35909cda45a679a366f46; all10terminalcheckpointscompletedbeforefinalization.
+
+## Finalization — NORMAL
+- All10orderedchildren terminalLIGHT_PASS/LIGHT_PASS_WITH_NOTES, onecanonicalroweach; exactproduct/fix/evidencechainandA1–A18 retained. Humanhandoffrebuiltonlyfromrecordedchildartifacts; noaggregatediffinspection/producttestrerun/finalreviewerbycontroller.
+- Finalcodehead0d60b43e586584319b78c4f3f9ca86b4820dd24f; fullrequiredJVMsuiteexit1/5622/1failure/19errors/24skips, PARTIALhistoricalcoverage/privateoutputincidentallretained. ReadyforhumanreviewdoesnotmeanoverallPASS/release/application/humanacceptance.
+- Final-modefullmanifestvalidation(without --through-child) requirednextdirtythenfinaldocs-onlycommitthenclean; finaltoolreceiptsgovernreadiness, notthisprospectivestatusalone.
+- Final-modefullten-childvalidator --allow-dirty-artifacts (no --through-child): exit0/VALID/FINAL, all10validated/A1–A18/noerrors. Onlyledger/handoffdirty, preparingfinaldocs-onlyevidencecommit; cleanfinalvalidationfollowscommit.
