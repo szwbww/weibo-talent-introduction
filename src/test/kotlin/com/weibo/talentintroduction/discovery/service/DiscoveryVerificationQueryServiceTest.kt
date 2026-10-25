@@ -366,4 +366,63 @@ class DiscoveryVerificationQueryServiceTest {
         assertTrue(VerificationItemDetail::class.java.declaredFields.any { it.name == "diagnostics" })
         assertEquals(legacy.search, payload.search); assertEquals(legacy.progress, payload.progress)
     }
+
+    @Test fun `recheck projects bounded saved facts with exact source binding and unknown XML page`() {
+        val f = AdmissionGateFixture()
+        val base = f.item().copy(ownerExecutionId = 20, reviewEpoch = 20)
+        val ref = PaperSourceRef(3, 4, "b".repeat(64), 9, "paper", "fixture")
+        val root = f.mapper.readTree(base.snapshotJson) as com.fasterxml.jackson.databind.node.ObjectNode
+        root.set<com.fasterxml.jackson.databind.JsonNode>("reviewInput", f.mapper.valueToTree(
+            VerificationReviewInput(null, paperSourceRefs = listOf(ref))))
+        val fact = ruleJob("Professor").copy(identityHash = base.identityHash, factFingerprint = base.factFingerprint,
+            provider = "PAPER", sourceUrl = "https://publisher.invalid/article", responseSha256 = ref.bodySha256,
+            excerpt = "Ada completed her PhD.", temporalScope = TemporalScope.HISTORICAL,
+            jsonPointer = "/archive/3/attempt/4/page/0/paragraph/2/year/2020")
+        `when`(repository.findRun(20)).thenReturn(run(20).copy(recheckJson = "{}"))
+        `when`(repository.trace(base.id)).thenReturn(VerificationTraceRead(false, emptyList(), null))
+        fun read(facts: List<VerificationEvidence>): com.fasterxml.jackson.databind.JsonNode {
+            val json = f.mapper.writeValueAsString(VerificationWorkerEvidence(evidence = facts))
+            `when`(repository.findItem(base.id)).thenReturn(base.copy(snapshotJson = root.toString(), evidenceJson = json))
+            return service.recheckItem(20, base.id).evidence!!
+        }
+        val saved = read(listOf(fact))
+        val shown = saved.path("items").single()
+        assertEquals("RECORDED", saved.path("state").asText())
+        assertEquals(fact.excerpt, shown.path("excerpt").asText())
+        assertEquals(fact.sourceUrl, shown.path("sourceUrl").asText())
+        assertEquals(fact.responseSha256, shown.path("responseSha256").asText())
+        assertEquals(fact.jsonPointer, shown.path("jsonPointer").asText())
+        assertEquals(fact.fetchedAt, f.mapper.treeToValue(shown.path("fetchedAt"), java.time.Instant::class.java))
+        assertEquals("HISTORICAL", shown.path("temporalScope").asText())
+        assertTrue(shown.path("page").isNull); assertEquals(2, shown.path("paragraph").asInt())
+        assertEquals(f.mapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(ref), shown.path("sourceRef"))
+        assertEquals(7, read(listOf(fact.copy(jsonPointer = "/archive/3/attempt/4/page/7/paragraph/2/year/2020")))
+            .path("items").single().path("page").asInt())
+        assertTrue(read(listOf(fact.copy(responseSha256 = "c".repeat(64)))).path("items").single().path("sourceRef").isNull)
+        assertTrue(read(listOf(fact.copy(jsonPointer = "/archive/3/attempt/5/page/7/paragraph/2/year/2020")))
+            .path("items").single().path("sourceRef").isNull)
+        assertEquals("EMPTY", read(listOf(fact.copy(identityHash = "a".repeat(64)))).path("state").asText())
+        val bounded = read((1..101).map { fact.copy(excerpt = "Saved fact $it") })
+        assertEquals(101, bounded.path("total").asInt()); assertTrue(bounded.path("truncated").asBoolean())
+        assertEquals(100, bounded.path("items").size())
+        assertEquals("Saved fact 100", bounded.path("items").last().path("excerpt").asText())
+    }
+
+    @Test fun `recheck distinguishes missing malformed and empty payload without copying snapshot evidence`() {
+        val f = AdmissionGateFixture()
+        val base = f.item().copy(ownerExecutionId = 20, reviewEpoch = 20)
+        val root = f.mapper.readTree(base.snapshotJson) as com.fasterxml.jackson.databind.node.ObjectNode
+        root.set<com.fasterxml.jackson.databind.JsonNode>("reviewInput", f.mapper.valueToTree(
+            VerificationReviewInput(null, evidence = VerificationWorkerEvidence(evidence = listOf(ruleJob("Professor"))))))
+        `when`(repository.findRun(20)).thenReturn(run(20).copy(recheckJson = "{}"))
+        `when`(repository.trace(base.id)).thenReturn(VerificationTraceRead(false, emptyList(), null))
+        for ((json, expected) in listOf(null to "MISSING", "broken" to "MALFORMED", "{}" to "EMPTY")) {
+            `when`(repository.findItem(base.id)).thenReturn(base.copy(snapshotJson = root.toString(), evidenceJson = json))
+            val view = service.recheckItem(20, base.id)
+            val evidence = view.evidence!!
+            assertEquals(expected, evidence.path("state").asText())
+            assertEquals(0, evidence.path("items").size())
+            assertFalse(view.trace.recorded); assertTrue(view.trace.steps.isEmpty())
+        }
+    }
 }

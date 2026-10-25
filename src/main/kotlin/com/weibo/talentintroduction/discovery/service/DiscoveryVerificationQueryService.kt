@@ -202,7 +202,46 @@ class DiscoveryVerificationQueryService(
             item.outcome, item.qualification, item.route, item.projectionState, item.projectionError,
             item.admissionRevision != null, item.requestCount, trace, allReasons, review.path("paperSourceRefs"),
             review.path("evidenceHash").asText(null), review.path("baselineItemId").takeIf { it.isIntegralNumber }?.longValue(),
-            latest.values.mapNotNull { value(it.versionJson) }.distinct(), saved, item.updatedAt)
+            latest.values.mapNotNull { value(it.versionJson) }.distinct(), saved, item.updatedAt,
+            recheckEvidence(item, review.path("paperSourceRefs")))
+    }
+
+    /** Only saved, identity-bound facts; no archive reads, re-parsing or fallback to snapshot evidence. */
+    private fun recheckEvidence(item: VerificationItem, refs: com.fasterxml.jackson.databind.JsonNode): com.fasterxml.jackson.databind.JsonNode {
+        val payload = workerPayload(item)
+        val facts = payload?.evidence.orEmpty().filter {
+            it.identityHash == item.identityHash && it.factFingerprint == item.factFingerprint
+        }
+        val state = when {
+            item.evidenceJson == null -> "MISSING"
+            payload == null -> "MALFORMED"
+            facts.isEmpty() -> "EMPTY"
+            else -> "RECORDED"
+        }
+        val locator = Regex("^/archive/([1-9][0-9]*)/attempt/([1-9][0-9]*)/page/([0-9]+)/paragraph/([0-9]+)/year/([0-9]+)$")
+        val projected = facts.take(100).map { fact ->
+            val parts = fact.jsonPointer?.let { locator.matchEntire(it)?.groupValues }
+            val record = parts?.get(1)?.toLongOrNull()
+            val attempt = parts?.get(2)?.toLongOrNull()
+            val ref = refs.takeIf { it.isArray }?.firstOrNull {
+                it.path("archiveRecordId").isIntegralNumber && it.path("archiveRecordId").asLong() == record &&
+                    it.path("attemptId").isIntegralNumber && it.path("attemptId").asLong() == attempt &&
+                    it.path("bodySha256").asText() == fact.responseSha256
+            }?.let { savedRef ->
+                mapOf("archiveRecordId" to record, "attemptId" to attempt, "bodySha256" to fact.responseSha256,
+                    "sourceExecutionId" to savedRef.path("sourceExecutionId").longValue(),
+                    "sourceName" to savedRef.path("sourceName").asText(), "sourceItemKey" to savedRef.path("sourceItemKey").asText())
+            }
+            mapOf("provider" to fact.provider, "field" to fact.field, "value" to fact.value,
+                "excerpt" to fact.excerpt, "sourceUrl" to fact.sourceUrl, "responseSha256" to fact.responseSha256,
+                "fetchedAt" to fact.fetchedAt.toString(), "sourceUpdatedAt" to fact.sourceUpdatedAt?.toString(),
+                "assertionSource" to fact.assertionSource, "temporalScope" to fact.temporalScope,
+                "jsonPointer" to fact.jsonPointer,
+                "page" to parts?.get(3)?.toIntOrNull()?.takeIf { it > 0 },
+                "paragraph" to parts?.get(4)?.toIntOrNull()?.takeIf { it > 0 }, "sourceRef" to ref)
+        }
+        return mapper.valueToTree(mapOf("state" to state, "total" to facts.size,
+            "truncated" to (facts.size > projected.size), "items" to projected))
     }
 
     /** Manifest is paginated frozen identity, never a current ES lookup or an unbounded summary field. */
@@ -383,7 +422,7 @@ data class RecheckItemView(val itemId: Long, val runId: Long, val docId: String,
     val trace: com.weibo.talentintroduction.discovery.repository.VerificationTraceRead, val allReasons: List<String>,
     val sourceRefs: com.fasterxml.jackson.databind.JsonNode, val evidenceHash: String?, val baselineItemId: Long?,
     val versions: List<com.fasterxml.jackson.databind.JsonNode>, val recordedResult: com.fasterxml.jackson.databind.JsonNode?,
-    val updatedAt: Instant)
+    val updatedAt: Instant, val evidence: com.fasterxml.jackson.databind.JsonNode? = null)
 data class RecheckManifestItem(val itemId: Long, val docId: String, val identityHash: String,
     val factFingerprint: String, val reviewEpoch: Long, val expectedAdmissionRevision: com.fasterxml.jackson.databind.JsonNode?,
     val evidenceHash: String?, val sourceRefs: com.fasterxml.jackson.databind.JsonNode, val state: VerificationState)

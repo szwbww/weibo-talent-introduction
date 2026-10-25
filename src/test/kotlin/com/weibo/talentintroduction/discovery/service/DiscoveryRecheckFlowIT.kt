@@ -490,6 +490,30 @@ class DiscoveryRecheckFlowIT {
                 "Archived fixture outcome=${enforced.outcome} qualification=${enforced.qualification} state=${enforced.state} reasons=${enforced.reasonsJson}"
             }
             check(DiscoveryVerificationTraceRepository(f.jdbc).read(enforced.id).steps.map { it.stepNo }.toSet() == (1..8).toSet())
+            val payload = f.mapper.readValue(enforced.evidenceJson, VerificationWorkerEvidence::class.java)
+            val expectedFacts = payload.evidence.filter { it.identityHash == enforced.identityHash && it.factFingerprint == enforced.factFingerprint }
+            val currentPaperFacts = payload.executionContext!!.paper!!.sources.single().evidence
+            check(currentPaperFacts.size == 2 && expectedFacts.containsAll(currentPaperFacts))
+            val detail = DiscoveryVerificationQueryService(f.repository, f.admissions, f.props).recheckItem(enforce.runId, enforced.id)
+            val savedEvidence = detail.evidence!!
+            check(savedEvidence.path("state").asText() == "RECORDED")
+            val shown = savedEvidence.path("items").toList()
+            check(shown.size == expectedFacts.size && shown.all { !it.path("excerpt").asText().isBlank() })
+            expectedFacts.zip(shown).forEach { (fact, view) ->
+                check(view.path("excerpt").asText() == fact.excerpt && view.path("sourceUrl").asText() == fact.sourceUrl)
+                check(view.path("responseSha256").asText() == fact.responseSha256 && view.path("jsonPointer").asText() == fact.jsonPointer)
+                check(view.path("fetchedAt").asText() == fact.fetchedAt.toString())
+                check(view.path("temporalScope").asText() == fact.temporalScope.name)
+                check(view.path("page").isNull && view.path("paragraph").asInt() > 0)
+                check(view.path("sourceRef") == f.mapper.valueToTree<JsonNode>(retained.first().source))
+            }
+            val beforeRead = f.jdbc.queryForList("SELECT * FROM discovery_verification_item WHERE id=?", enforced.id)
+            Runtime(f, manager, tasks).use { http ->
+                check(http.evidenceDetail(enforce.runId, enforced.id).path("evidence") ==
+                    f.mapper.readTree(f.mapper.writeValueAsString(detail.evidence)))
+            }
+            check(beforeRead == f.jdbc.queryForList("SELECT * FROM discovery_verification_item WHERE id=?", enforced.id))
+            println("RECHECK_REPAIR paperFacts=${currentPaperFacts.size} savedFacts=${expectedFacts.size} parserPersistedQueryHttpExact=true xmlPageUnknown=true frozenReaderRefs=true queryWrites=0")
             val cliPaper = HistoricalReplayFixtures.paper(root, 900005, email = "cli@fixture.edu")
             val cliFrozen = DiscoveryHistoricalReplayTool.freeze(HistoricalReplayFixtures.scope(listOf(cliPaper), config = config), root.resolve("cli-apply"))
             val cliOptions = listOf("--manifest", cliFrozen.directory.resolve("manifest.json").toString(), "--manifest-hash", cliFrozen.hash)
@@ -659,6 +683,36 @@ class DiscoveryRecheckFlowIT {
                         VerificationRoute.NONE, f.mapper.writeValueAsString(payload), "[]"), f.clock.instant()))
             }
         }
+
+        fun evidenceDetail(runId: Long, itemId: Long): JsonNode = api("GET", "/$runId/items/$itemId/steps")
+
+        /** Capture the actual production component's POST, then validate it through the real servlet and SQL. */
+        private fun componentWire(scope: String, filter: Map<String, String>): String {
+            val script = """
+                const fs = require('node:fs'), vm = require('node:vm'), path = require('node:path');
+                const file = path.resolve('src/test/js/discoveryRecheck.test.js');
+                const definitions = fs.readFileSync(file, 'utf8').split("test('approved exact root")[0];
+                const sandbox = { require: require('node:module').createRequire(file), __dirname: path.dirname(file),
+                    console, process, setImmediate, URL, URLSearchParams, AbortController, DOMException };
+                vm.runInNewContext(definitions + `;(async () => {
+                    const h = harness(); h.setFilter(JSON.parse(process.argv[2]));
+                    h.setSelected(['fixture-0001', 'fixture-0002']);
+                    if (process.argv[1] === 'ALL_MATCHING') {
+                        h.root.querySelector('input[value="IDS"]').checked = false;
+                        h.root.querySelector('input[value="ALL_MATCHING"]').checked = true;
+                    }
+                    h.find('open').click(); h.find('prepare').click(); await flush();
+                    const captured = h.calls.find(c => c.url.endsWith('/prepare'));
+                    if (!captured) throw Error('No component POST');
+                    process.stdout.write(JSON.stringify(captured.body)); h.view.unmount();
+                })().catch(e => { console.error(e); process.exitCode = 1; });`, sandbox);
+            """.trimIndent()
+            val process = ProcessBuilder("/opt/homebrew/bin/node", "-e", script, scope, f.mapper.writeValueAsString(filter)).start()
+            val body = process.inputStream.bufferedReader().readText()
+            val error = process.errorStream.bufferedReader().readText()
+            check(process.waitFor(30, TimeUnit.SECONDS) && process.exitValue() == 0) { "Component wire capture failed: $error" }
+            return body
+        }
         private fun business() = f.mapper.writeValueAsString(listOf(
             f.jdbc.queryForList("SELECT * FROM expert_discovery_admission ORDER BY expert_doc_id"),
             f.jdbc.queryForList("SELECT * FROM expert_discovery_review_item ORDER BY id"), f.raws, f.candidates, f.applications))
@@ -671,6 +725,27 @@ class DiscoveryRecheckFlowIT {
             api("GET", "/runs?size=21", expected = 400)
             api("GET", "/latest?docIds=" + (1..101).joinToString(",") { "id-$it" }, expected = 400)
             (1..1001).forEach { profile("fixture-%04d".format(it)) }
+            val defaultFilter = mapOf("q" to "", "issue" to "", "decision" to "")
+            val nonemptyFilter = mapOf("q" to "Ada", "issue" to "IDENTITY_UNRESOLVED", "decision" to "NEEDS_REVIEW")
+            for ((scope, filter) in listOf("IDS" to nonemptyFilter, "ALL_MATCHING" to defaultFilter, "ALL_MATCHING" to nonemptyFilter)) {
+                val wire = componentWire(scope, filter)
+                val acceptedWire = api("POST", "/prepare", wire, 202)
+                val fixed = ready(acceptedWire.path("runId").asLong())
+                check(fixed.path("scope").asText() == scope && fixed.path("mode").asText() == "AUDIT" &&
+                    fixed.path("evidenceMode").asText() == "REUSE")
+                if (filter == defaultFilter || scope == "IDS") check(fixed.path("counts").path("total").asInt() == if (scope == "IDS") 2 else 1001)
+                if (scope == "ALL_MATCHING" && filter == nonemptyFilter) check(fixed.path("filter").path("q").asText() == "Ada")
+                println("RECHECK_REPAIR productionComponentWire=true scope=$scope emptyFilter=${filter == defaultFilter} http=202 phase=READY")
+            }
+            for (invalid in listOf(
+                """{"scope":"IDS","docIds":["fixture-0001"],"filter":{"q":"Ada"}}""",
+                """{"scope":"IDS","docIds":["invalid/id"]}""",
+                """{"scope":"ALL_MATCHING","filter":{"decision":""}}""",
+                """{"scope":"ALL_MATCHING","filter":{"decision":"INVALID"}}""")) {
+                val json = f.mapper.readTree(invalid) as com.fasterxml.jackson.databind.node.ObjectNode
+                json.put("requestKey", UUID.randomUUID().toString()); api("POST", "/prepare", json, 400)
+            }
+            val previousHistoryCount = api("GET", "/runs?docId=fixture-0001").path("total").asInt()
             val before = business()
             val key = UUID.randomUUID().toString()
             val accepted = prepare(key = key); val id = accepted.path("runId").asLong()
@@ -706,7 +781,7 @@ class DiscoveryRecheckFlowIT {
             check(!item.path("before").path("revision").isNumber)
             api("GET", "/$id/items/${item.path("itemId").asLong()}/steps")
             check(api("GET", "/latest?docIds=fixture-0001").path("fixture-0001").path("runId").asLong() == id)
-            check(api("GET", "/runs?docId=fixture-0001").path("total").asInt() == 1)
+            check(api("GET", "/runs?docId=fixture-0001").path("total").asInt() == previousHistoryCount + 1)
             println("RECHECK08_RUNTIME roster=1001 batches=500,500,1 frozenAfterInsert=true processed=1001 prepareProviderHttp=0 auditProviderHttp=0 auditBusinessWrites=0 realTaskBinding=true")
 
             // Partial scroll failure is retained as FAILED, never startable or inputClosed.

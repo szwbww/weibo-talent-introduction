@@ -99,7 +99,11 @@
             const token = epoch;
             find("prepare").disabled = true; status("prepare-status", "正在固定名单… 尚不可启动。");
             try {
-                run = await post("run", "/prepare", { ...spec, docIds: spec.scope === "IDS" ? spec.docIds : [], requestKey: global.crypto.randomUUID() });
+                const filter = Object.fromEntries(Object.entries(spec.filter).filter(([key, entry]) =>
+                    ["q", "issue", "decision"].includes(key) && entry != null && entry !== ""));
+                const wire = { scope: spec.scope, docIds: spec.scope === "IDS" ? spec.docIds : [],
+                    ...(spec.scope === "ALL_MATCHING" ? { filter } : {}), mode: spec.mode, evidenceMode: spec.evidenceMode };
+                run = await post("run", "/prepare", { ...wire, requestKey: global.crypto.randomUUID() });
                 prepared = run; manifestPage = 0; renderRun(); renderPrepared();
                 if (run.phase === "READY") await loadManifest();
                 schedule();
@@ -255,9 +259,24 @@
             const fact = (label, content, cls) => { add(facts, "dt", null, label); const dd = add(facts, "dd", cls, value(content)); if (factKeys[label]) dd.setAttribute("data-step-" + factKeys[label], ""); return dd; };
             fact("输入", unpack(step?.inputJson));
             const evidence = fact("证据", "");
-            (person.sourceRefs || []).forEach(ref => {
-                add(evidence, "p", "rr-muted", "来源 " + value(ref.sourceName) + " / " + value(ref.sourceItemKey) + " · SHA " + value(ref.bodySha256) + " · 页 " + value(ref.page));
-                if (Number.isSafeInteger(ref.archiveRecordId) && ref.archiveRecordId > 0 && Number.isSafeInteger(ref.attemptId) && ref.attemptId > 0 && /^[a-f0-9]{64}$/i.test(ref.bodySha256 || "")) {
+            const saved = selectedStep === 4 ? person.evidence : null;
+            if (selectedStep === 4) {
+                const labels = { MISSING: "本轮证据未记录；不从历史快照推断原句。", MALFORMED: "本轮证据损坏，无法读取原句。", EMPTY: "本轮未保存本人资格证据。" };
+                add(evidence, "p", "rr-muted", labels[saved?.state] || (saved?.state === "RECORDED" ? "本轮已持久化证据，共 " + value(saved.total) + " 条。" : labels.MISSING));
+                if (saved?.truncated) add(evidence, "p", "rr-muted", "证据展示已截断；原始共 " + value(saved.total) + " 条，仅显示前100条。");
+            }
+            const entries = saved ? (saved.items || []).map(fact => ({ ref: fact.sourceRef, fact })) : (person.sourceRefs || []).map(ref => ({ ref }));
+            entries.forEach(({ ref, fact: savedFact }) => {
+                if (savedFact) {
+                    add(evidence, "p", "rr-muted", value(savedFact.provider) + " / " + value(savedFact.field) + " · " + value(savedFact.value));
+                    add(evidence, "p", "rr-muted", "SHA " + value(savedFact.responseSha256) + " · 页 " + (savedFact.page || "未知") + " · 段落 " + (savedFact.paragraph || "未知"));
+                    add(evidence, "p", "rr-muted", "取证 " + value(savedFact.fetchedAt) + " · " + value(savedFact.temporalScope) + " / " + value(savedFact.assertionSource) + " · 来源更新 " + value(savedFact.sourceUpdatedAt));
+                    add(evidence, "p", "rr-code", "定位 " + value(savedFact.jsonPointer));
+                    if (savedFact.excerpt) add(evidence, "blockquote", "rr-quote", savedFact.excerpt).setAttribute("data-step-quote", "");
+                    else add(evidence, "p", "rr-muted", "原句未记录");
+                }
+                if (ref) add(evidence, "p", "rr-muted", "来源 " + value(ref.sourceName) + " / " + value(ref.sourceItemKey) + " · SHA " + value(ref.bodySha256) + (savedFact ? "" : " · 页 " + value(ref.page)));
+                if (ref && Number.isSafeInteger(ref.archiveRecordId) && ref.archiveRecordId > 0 && Number.isSafeInteger(ref.attemptId) && ref.attemptId > 0 && /^[a-f0-9]{64}$/i.test(ref.bodySha256 || "")) {
                     const link = add(evidence, "a", "rr-link", "查看留存原文"); link.href = "#";
                     actions.set(link, async () => {
                         const token = epoch, controller = new AbortController();
@@ -267,16 +286,14 @@
                         finally { if (controllers.get("paper") === controller) controllers.delete("paper"); }
                     });
                 }
-                const url = safeUrl(ref.sourceUrl, doc.baseURI); if (url) { const link = add(evidence, "a", "rr-link", "来源链接"); link.href = url; link.target = "_blank"; link.rel = "noopener noreferrer"; }
+                const url = safeUrl(savedFact?.sourceUrl || ref?.sourceUrl, doc.baseURI); if (url) { const link = add(evidence, "a", "rr-link", "来源链接"); link.href = url; link.target = "_blank"; link.rel = "noopener noreferrer"; }
             });
-            if (!person.sourceRefs?.length) evidence.textContent = "来源 / SHA / 页码未记录";
+            if (selectedStep !== 4 && !person.sourceRefs?.length) evidence.textContent = "来源 / SHA / 页码未记录";
             fact("版本", unpack(step?.versionJson), "rr-code");
             let time = "历史未记录";
             if (step?.startedAt) { time = step.startedAt + " ～ " + value(step.finishedAt); if (step.finishedAt) { const ms = Date.parse(step.finishedAt) - Date.parse(step.startedAt); if (Number.isFinite(ms) && ms >= 0) time += "（" + ms + " ms）"; } }
             fact("执行时间", time); fact("尝试次数", attempts.length || "历史未记录");
             const output = unpack(step?.outputJson); fact("输出", output);
-            const quote = output?.quote || output?.evidence?.quote;
-            const quoteNode = add(body, "blockquote", "rr-quote", quote); quoteNode.setAttribute("data-step-quote", ""); quoteNode.hidden = !quote;
             attempts.forEach(a => { const detail = add(body, "details"); add(detail, "summary", null, "尝试 #" + a.attemptNo + " · " + (states[a.state] || a.state)); add(detail, "p", "rr-muted", "原因 " + value(unpack(a.reasonJson)) + "；输入 " + value(unpack(a.inputJson)) + "；输出 " + value(unpack(a.outputJson)) + "；版本 " + value(unpack(a.versionJson)) + "；时间 " + value(a.startedAt) + " ～ " + value(a.finishedAt)); });
             const delta = add(body, "div", "rr-delta"); add(add(delta, "div", null, "执行前"), "strong", null, value(person.before)).setAttribute("data-before", ""); add(add(delta, "div", null, "本轮建议 / 实际应用"), "strong", null, "建议 " + value(person.proposed) + " / 实际应用 " + value(person.applied)).setAttribute("data-after", "");
         }

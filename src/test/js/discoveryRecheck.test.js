@@ -133,6 +133,67 @@ test('default audit/reuse, READY authority, paginated frozen roster, option/filt
     h.view.unmount(); assert.equal(h.timers.size, 0);
 });
 
+test('prepare wire separates selected IDs from empty and effective all-page filters', async () => {
+    const h = harness();
+    h.setFilter({ q: 'Ada', issue: 'IDENTITY_UNRESOLVED', decision: 'NEEDS_REVIEW' });
+    h.find('open').click(); h.find('prepare').click(); await flush();
+    const selected = h.calls.find(c => c.url.endsWith('/prepare')).body;
+    assert.equal(selected.scope, 'IDS');
+    assert.deepEqual(selected.docIds, ['doc-1', 'doc-2']);
+    assert.ok(!Object.hasOwn(selected, 'filter'));
+    assert.equal(selected.mode, 'AUDIT'); assert.equal(selected.evidenceMode, 'REUSE');
+    const ids = h.root.querySelector('input[value="IDS"]'), all = h.root.querySelector('input[value="ALL_MATCHING"]');
+    ids.checked = false; all.checked = true; all.dispatch('change');
+    h.setFilter({ q: '', issue: '', decision: '' }); await h.view.onRows([]);
+    h.find('prepare').click(); await flush();
+    const defaults = h.calls.filter(c => c.url.endsWith('/prepare')).at(-1).body;
+    assert.deepEqual(defaults.docIds, []); assert.deepEqual(defaults.filter, {});
+    h.setFilter({ q: 'Ada', issue: 'IDENTITY_UNRESOLVED', decision: 'NEEDS_REVIEW' }); await h.view.onRows([]);
+    assert.equal(h.find('start').disabled, true);
+    h.find('prepare').click(); await flush();
+    const filtered = h.calls.filter(c => c.url.endsWith('/prepare')).at(-1).body;
+    assert.deepEqual(filtered.filter, { q: 'Ada', issue: 'IDENTITY_UNRESOLVED', decision: 'NEEDS_REVIEW' });
+    assert.deepEqual(filtered.docIds, []); h.view.unmount();
+});
+
+test('persisted detail evidence renders literal quotes and exact frozen reader identity, not step output quotes', async () => {
+    const detail = item(2), ref = detail.sourceRefs[0];
+    detail.evidence = { state: 'RECORDED', total: 1, truncated: false, items: [{
+        provider: 'PAPER', field: 'education', value: '{"completed":true}', excerpt: 'Ada earned her PhD. <img src=x>',
+        sourceUrl: 'https://publisher.invalid/article', responseSha256: ref.bodySha256, fetchedAt: '2020-01-02T00:00:00Z',
+        assertionSource: 'SELF', temporalScope: 'HISTORICAL', jsonPointer: '/archive/3/attempt/4/page/0/paragraph/2/year/2020',
+        page: null, paragraph: 2, sourceRef: ref
+    }] };
+    const h = harness(url => url.includes('/items/2/steps') ? detail : undefined);
+    await h.view.onRows([], { docId: 'doc-2', trigger: h.find('open') });
+    h.find('steps').querySelectorAll('button')[3].click();
+    assert.match(h.find('step-body').textContent, /Ada earned her PhD\. <img src=x>/);
+    assert.match(h.find('step-body').textContent, /PAPER.*education/);
+    assert.match(h.find('step-body').textContent, /页 未知.*段落 2/);
+    assert.match(h.find('step-body').textContent, /2020-01-02T00:00:00Z.*HISTORICAL/);
+    assert.equal(h.find('step-body').querySelectorAll('img').length, 0);
+    const quotes = h.find('step-body').querySelectorAll('[data-step-quote]');
+    assert.equal(quotes.length, 1); assert.equal(quotes[0].hidden, false);
+    h.find('step-body').querySelector('a').click();
+    assert.deepEqual(JSON.parse(JSON.stringify(h.opened[0])), ref); h.view.unmount();
+});
+
+test('missing damaged empty and bounded evidence remain explicit without invented quotes', async () => {
+    for (const [state, label] of [['MISSING', '未记录'], ['MALFORMED', '损坏'], ['EMPTY', '未保存']]) {
+        const detail = item(2); detail.evidence = { state, total: 0, truncated: false, items: [] };
+        const h = harness(url => url.includes('/items/2/steps') ? detail : undefined);
+        await h.view.onRows([], { docId: 'doc-2', trigger: h.find('open') });
+        h.find('steps').querySelectorAll('button')[3].click();
+        assert.match(h.find('step-body').textContent, new RegExp(label));
+        assert.equal(h.find('step-body').querySelectorAll('[data-step-quote]').length, 0); h.view.unmount();
+    }
+    const detail = item(2); detail.evidence = { state: 'RECORDED', total: 101, truncated: true, items: [] };
+    const h = harness(url => url.includes('/items/2/steps') ? detail : undefined);
+    await h.view.onRows([], { docId: 'doc-2', trigger: h.find('open') });
+    h.find('steps').querySelectorAll('button')[3].click();
+    assert.match(h.find('step-body').textContent, /截断.*101/); h.view.unmount();
+});
+
 test('Esc only closes, restores focus, keeps run; explicit cancel has its own endpoint', async () => {
     const h = harness(); const trigger = h.find('open'); trigger.focus(); trigger.click();
     h.find('prepare').click(); await flush();
