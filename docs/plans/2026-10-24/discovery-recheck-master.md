@@ -58,7 +58,7 @@
 | [07](discovery-recheck-07-pipeline.md) | 统一Worker与八步 | 14（A7授权必需依赖） | 核验执行+审计 | 原发现回归通过；新入口仍未开放 |
 | [08](discovery-recheck-08-api.md) | 冻结/启动/取消/历史API | 9 | 重审协调/API | 与09作为完整用户功能发布单元 |
 | [09](discovery-recheck-09-frontend.md) | 真实审核页、完整CSS、原文桥接及只读统计 | 40（A7授权必需依赖/直接资源回归） | 审核前端+只读统计 | 依赖08并联合验收后发布 |
-| [10](discovery-recheck-10-historical-replay.md) | 历史同批验证和补录、冻结上下文传播 | 8 | 原文补录+隔离回放 | 默认只读；生产应用单独按manifest明确执行 |
+| [10](discovery-recheck-10-historical-replay.md) | 历史同批验证和补录、冻结上下文及确定性只读解析 | 9 | 原文补录+隔离回放 | 默认只读；生产应用单独按manifest明确执行 |
 
 ### 八步与不短路的边界
 
@@ -157,3 +157,4 @@
 - 2026-10-25，依用户持续授权“后续修改都授权 把所有子计划都跑完”（A7），09增加`discovery-papers.js`、`discoveryPapers.test.js`、`DiscoveryVerificationRepository.kt`、`DiscoveryVerificationRepositoryIT.kt`，清单8→12并记录必要文件数例外。原文reader仅私有且默认首个可读attempt，宿主无法按冻结record/attempt/SHA复用；08统计仅有聚合queued，缺09已要求的pending/processing和独立protected。仅增加原reader窄公开桥接与只读真实SQL计数及直接回归，不改准入写链、旧人工行为、迁移或全站样式；保留旧API字段，protected为重叠诊断子计数不得加总为互斥类别。具体检索/源码回执归档于09 execution日志，提交身份详见ledger的Amendments。
 - 2026-10-25，依A7持续授权，09再增加子计划逐名列出的28个直接资源回归测试，清单12→40。必需的第18个资源使新鲜全量JS执行`artifact://1241`的28个旧17-count/list断言失败（1840例中28失败）；它们动态取key，旧字面量检索无匹配。仅删除无关套件中过期的全局17数量钉死断言，并为`mailboxChatBehavior.test.js`原脚本列表补入app前的新script；共享key/顺序/各自功能断言保留，指定资源/重审测试仍集中验证完整18资源合同。不改这些功能的产品代码、不以重新钉死旧数量掩盖回归；确切失败与检索回执见09 execution日志，提交身份见ledger的Amendments。
 - 2026-10-25，依A7持续授权，10增加`DiscoveryVerificationRegistrationService.kt`，清单7→8、不突破默认上限。既有reserve按当前clock与新execution/DOI自行locate，无法保留补录manifest固定evaluationAt及唯一record/attempt/SHA；仅向同文件现有Execution传递可空冻结原文上下文，由reserve校验来源后使用，普通默认null仍走旧clock/locator。禁止reserve后重写快照或另建登记链；授权FlowIT覆盖真实consumer→注册固定上下文，原登记/集成测试不改且新鲜执行。检索回执与提交身份见10 execution/ledger。
+- 2026-10-25，依A7持续授权，10增加`discovery/archive/PaperQualificationEvidenceExtractor.kt`，清单8→9。恢复代理实际历史报告4472论文/4487读取尝试/3904 COMPLETE，含生产10秒nanoTime软限的PARTIAL；相同输入重复比较可能因运行耗时改变覆盖，不能用缓存首份报告伪装确定性。仅增加现有生产extractor的显式只读冻结回放factory：固定clock但保留100页/2MiB/100事实工作上限，Tool compare独用，记录预算模式及实现hash/版本。普通@Component、Worker、Backfill及原analyzer仍用System clock/10秒；旧PARTIAL原样历史保留，新模式真实重算且独立版本，不返缓存作二次重算证据。原deadline测试不改并新鲜执行，授权ToolTest覆盖超100页及真实重复解析；身份/资格门槛不变，前后身份见ledger。
