@@ -1,15 +1,15 @@
 # Fast-P Ledger — master: docs/plans/2026-10-24/discovery-recheck-master.md
 
 - Status: RUNNING
-- Master plan: docs/plans/2026-10-24/discovery-recheck-master.md (commit cb825484c1e8642ac992a3533b08c5ff78666501)
-- Amendments: A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14
+- Master plan: docs/plans/2026-10-24/discovery-recheck-master.md (commit aa66b4b68e938c8bf827c4bd9914e18fd5e2af58)
+- Amendments: A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14, A15, A16
 - Master base: b161e87464d42b9fa2cd076ef9255b0e3b2b29ab
 - Branch: fast/discovery-recheck-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-recheck-master
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-24T23:47:16.652745+08:00
-- Current child: 09
+- Current child: 10
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
@@ -28,7 +28,7 @@
 | 07 | docs/plans/2026-10-24/discovery-recheck-07-pipeline.md | commit:7bcefb3815f3f3d318c8e619477cab0d67ad6c91 | 06 | 2 | LIGHT_PASS | feb58f65512484c742f7bf5f0edb6ec0e2207df8 | 93e3cda5e661a98fe045bbc100ff82c769b1f159 | 1 | f37ff178554cb19b3264f81ed4deac7a6b43bd8c | f37ff178554cb19b3264f81ed4deac7a6b43bd8c | 791aa0e90c35eb1f50d8994e91a3e69966d2cbde | Recheck07Reverify1 closes F-07-E2-01; no RECORD_ONLY; one repair. |
 | 08 | docs/plans/2026-10-24/discovery-recheck-08-api.md | sha256:47196d02af0f41bd852216230d91ec446020baa6e19b6e5e9a1b0f8c7e1d440a | 07 | 1 | LIGHT_PASS_WITH_NOTES | f37ff178554cb19b3264f81ed4deac7a6b43bd8c | 59c34a1b6f04af0669a9276dae7c043bca4164f5 | 0 | — | 59c34a1b6f04af0669a9276dae7c043bca4164f5 | feb35034d7d97c02e21d4873cc61265fac179969 | Independent Recheck08Verifier; O-08-E1-01 existing Tomcat shutdown warning record-only; no repairs. |
 | 09 | docs/plans/2026-10-24/discovery-recheck-09-frontend.md | commit:47150fa045e7109ba60fad0a8ef19d7ae54d51a5 | 08 | 4 | LIGHT_PASS | 59c34a1b6f04af0669a9276dae7c043bca4164f5 | 306664e25738d78e2587e175c05bb0724e778d71 | 0 | — | 306664e25738d78e2587e175c05bb0724e778d71 | 44306f6f879ce8ce2670f8bcdff046434ac6ed86 | Independent Recheck09Verifier; four gates PASS, no findings or repairs; fixture-browser limits retained. |
-| 10 | docs/plans/2026-10-24/discovery-recheck-10-historical-replay.md | sha256:47cc24df6d94279a93156fc73e31661c0da7d7aa3d390778d35c72ca0b336dda | 09 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
+| 10 | docs/plans/2026-10-24/discovery-recheck-10-historical-replay.md | commit:aa66b4b68e938c8bf827c4bd9914e18fd5e2af58 | 09 | 2 | IMPLEMENTING | 306664e25738d78e2587e175c05bb0724e778d71 | — | 0 | — | — | — | Recheck10Implementer retained; A7/A15–A16 exact8-file scope; epoch2/fix_round0; no production apply. |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
@@ -47,6 +47,8 @@
 | A12 | docs/plans/2026-10-24/discovery-recheck-master.md | commit:f64b7d3adafdf94743a22b524a4c38745071ebe1 | commit:cb825484c1e8642ac992a3533b08c5ff78666501 | I-M4：范围受子计划约束；09方案1：18资源同key/全量JS门禁 | Child09 twelve→forty files solely for28 proven direct asset-regression failures from required newscript; no corresponding product behavior expansion. | HUMAN:后续修改都授权 把所有子计划都跑完 (2026-10-25; A7 standing authority for evidenced direct regressions) |
 | A13 | docs/plans/2026-10-24/discovery-recheck-09-frontend.md | commit:f64b7d3adafdf94743a22b524a4c38745071ebe1 | commit:cb825484c1e8642ac992a3533b08c5ff78666501 | I-M4：范围受子计划约束；09方案1及验收全量JS | Add28 exact named tests after artifact1241 observed28/1840 failures; retire stale17-count pins and addnewscript to mailbox list while retaining functional/key/order checks and centralized18contract. | HUMAN:后续修改都授权 把所有子计划都跑完 (2026-10-25; A7 standing authority for evidenced direct regressions) |
 | A14 | docs/plans/2026-10-24/discovery-recheck-09-frontend.md | commit:cb825484c1e8642ac992a3533b08c5ff78666501 | commit:47150fa045e7109ba60fad0a8ef19d7ae54d51a5 | I-M4：范围受子计划约束；09方案1：实际18资源及顺序 | Clarify already-listed mailboxGroupPush fullscriptlist also requires newscript beforeapp; no file/behavior expansion. Mechanical insertion preceded clarification, chronology retained rather than falsely retrodated. | HUMAN:后续修改都授权 把所有子计划都跑完 (2026-10-25; A7 standing authority for evidenced direct regressions) |
+| A15 | docs/plans/2026-10-24/discovery-recheck-master.md | commit:cb825484c1e8642ac992a3533b08c5ff78666501 | commit:aa66b4b68e938c8bf827c4bd9914e18fd5e2af58 | I-M4：范围受子计划约束；共享接口冻结evaluationAt/paperSourceRefs | Child10 seven→eight files for existingRegistration narrow default-null archive context, preserving exact frozen source/time without post-reserve mutation. | HUMAN:后续修改都授权 把所有子计划都跑完 (2026-10-25; A7 standing authority for evidenced necessary direct dependency) |
+| A16 | docs/plans/2026-10-24/discovery-recheck-10-historical-replay.md | commit:fdb2570a1d750e83b0d0aa2255afb02ef8a94c8a | commit:aa66b4b68e938c8bf827c4bd9914e18fd5e2af58 | I-M4：范围受子计划约束；10 I-1/2及方案3 | AddRegistrationService only, existingExecution optional frozen context/source validation; ordinary null path unchanged, FlowIT regression and sixclass realSQL command, existing directtests unchanged. | HUMAN:后续修改都授权 把所有子计划都跑完 (2026-10-25; A7 standing authority for evidenced necessary direct dependency) |
 
 ## Baseline
 - Authorized invocation: `/fast-p docs/plans/2026-10-24/discovery-recheck-master.md`.
@@ -191,3 +193,8 @@
 - Acquired freshVERIFIER Recheck09Verifier, distinctfromwriter; epoch4/attempt1/fix_round0/agent_attempt0. Exact40-fileamendedcontract/fullproductboundary/baseline/sevenfreshcommands plusindependentChromiumproductionassets/twoviewports/inspectedscreenshots required. Only09verify-log writable; noaggregateaudit/productedits.
 - Epoch4 terminalLIGHT_PASS/COMPLETE_CHILD fromRecheck09Verifier/allfour gatesPASS/no findings; freshJS56/13/full1840 and48JVMrealMySQL/zeroskips plus independentactualChromiumproductionassets/twoviewports/inspectedscreenshots. Evidence44306f6f879ce8ce2670f8bcdff046434ac6ed86; repair0. Child10 remainsPENDING untilfullmanifestdirty/cleancheckpoint.
 - Fullten-childvalidator --through-child09 --allow-dirty-artifacts: exit0/VALID/CHILD_CHECKPOINT, nineterminalchildren/A1–A14/noerrors; committingdocs-onlycheckpointbeforecleanvalidation. Bookkeepingonly, notfinalreadiness.
+- Cleanfullten-childvalidator --through-child09 exit0/VALID/CHILD_CHECKPOINT, evidenceHEAD fdb2570a1d750e83b0d0aa2255afb02ef8a94c8a, passedbefore10acquisition; completed01–09notreplayed.
+
+## Child10
+- AcquiredfreshIMPLEMENTER Recheck10Implementer, epoch1/fix_round0/agent_attempt0; productbase306664e25738d78e2587e175c05bb0724e778d71/governanceHEAD fdb2570a1d750e83b0d0aa2255afb02ef8a94c8a. Exactseven-filecontract/readonlyCLI+manifest+realconsumer/receipt/productionprotection/knownhistoricalSSHsources/privatecoverage/fullJDK11testandWARpackage/actualruntimegates supplied. Noautomaticproductionapplication/paidcalls/aggregate-reviewauthorized.
+- Recheck10Implementer evidencedoriginalreserve clock/locate cannotcarryfixedmanifesttime/source into newexecution. UnderA7 controllercommittedplan-onlyaa66b4b68e938c8bf827c4bd9914e18fd5e2af58/A15–A16 exactRegistrationdependency/8total beforeedit; defaultnullordinarypathunchanged/no post-reserve mutation. Newimmutableepoch2/fix_round0 retainswriter/base; originaldirecttestsrununchanged withrealMySQL/FlowITfrozeninputproof.
