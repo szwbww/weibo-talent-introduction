@@ -9,7 +9,7 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-24T23:47:16.652745+08:00
-- Current child: 07
+- Current child: 08
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
@@ -26,7 +26,7 @@
 | 05 | docs/plans/2026-10-24/discovery-recheck-05-history.md | commit:863530b3f0d8aca6c0cd03fa29d9af7df8cb09d6 | 04 | 2 | LIGHT_PASS_WITH_NOTES | 6884eb7f31b1763dbb14422e91dfd63dc022fb94 | 74a4c94e88230d88710e35eb9b45612a4234fb52 | 1 | 440b7e0cb1daae1eb0d985fef3e12f78d1c7b607 | 440b7e0cb1daae1eb0d985fef3e12f78d1c7b607 | 6389e5c488f9e931e77d13aafc025231f89894d4 | Recheck05Reverify1 closes F-05-01/F-05-02; O-05-01 warnings record-only; one repair. |
 | 06 | docs/plans/2026-10-24/discovery-recheck-06-evidence.md | sha256:c3a21b4a2fbfe80968f19302d23979dbfec9d1a97e14c7717ba86c55674829ae | 05 | 1 | LIGHT_PASS_WITH_NOTES | 440b7e0cb1daae1eb0d985fef3e12f78d1c7b607 | feb58f65512484c742f7bf5f0edb6ec0e2207df8 | 0 | — | feb58f65512484c742f7bf5f0edb6ec0e2207df8 | 392429d71119e0f46b2c54765f40491d5e769b5b | Independent Recheck06Verifier; O-06-01 warnings record-only; no repairs. |
 | 07 | docs/plans/2026-10-24/discovery-recheck-07-pipeline.md | commit:7bcefb3815f3f3d318c8e619477cab0d67ad6c91 | 06 | 2 | LIGHT_PASS | feb58f65512484c742f7bf5f0edb6ec0e2207df8 | 93e3cda5e661a98fe045bbc100ff82c769b1f159 | 1 | f37ff178554cb19b3264f81ed4deac7a6b43bd8c | f37ff178554cb19b3264f81ed4deac7a6b43bd8c | 791aa0e90c35eb1f50d8994e91a3e69966d2cbde | Recheck07Reverify1 closes F-07-E2-01; no RECORD_ONLY; one repair. |
-| 08 | docs/plans/2026-10-24/discovery-recheck-08-api.md | sha256:47196d02af0f41bd852216230d91ec446020baa6e19b6e5e9a1b0f8c7e1d440a | 07 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
+| 08 | docs/plans/2026-10-24/discovery-recheck-08-api.md | sha256:47196d02af0f41bd852216230d91ec446020baa6e19b6e5e9a1b0f8c7e1d440a | 07 | 1 | LIGHT_PASS_WITH_NOTES | f37ff178554cb19b3264f81ed4deac7a6b43bd8c | 59c34a1b6f04af0669a9276dae7c043bca4164f5 | 0 | — | 59c34a1b6f04af0669a9276dae7c043bca4164f5 | feb35034d7d97c02e21d4873cc61265fac179969 | Independent Recheck08Verifier; O-08-E1-01 existing Tomcat shutdown warning record-only; no repairs. |
 | 09 | docs/plans/2026-10-24/discovery-recheck-09-frontend.md | sha256:b92cdfdcbe1ffe5da3e5eda43af3488c18e3c948c777fd196c6f70eeb502b4df | 08 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 | 10 | docs/plans/2026-10-24/discovery-recheck-10-historical-replay.md | sha256:47cc24df6d94279a93156fc73e31661c0da7d7aa3d390778d35c72ca0b336dda | 09 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 
@@ -167,3 +167,11 @@
 - Acquired fresh REVERIFIER Recheck07Reverify1, distinct from both writers; full child boundary throughf37ff178554cb19b3264f81ed4deac7a6b43bd8c, all three commands/runtime required freshly. Prior finding ID retained; fix_round remains1.
 - Epoch2 terminal LIGHT_PASS/COMPLETE_CHILD from Recheck07Reverify1; all four gates PASS, F-07-E2-01 CLOSED, no open/record-only finding. Fresh37/77/98 JVM and eachJS1827/syntax, zero failures/errors/skips, actual MySQL and separate legacy/pipeline/cancel/academic runtime pass. Evidence791aa0e90c35eb1f50d8994e91a3e69966d2cbde; actual repair1. Later children remain PENDING until complete-manifest dirty/clean checkpoint modes pass.
 - Full ten-child validator --through-child07 --allow-dirty-artifacts: exit0, VALID, CHILD_CHECKPOINT, seven terminal children/A1–A9, no errors. This is bookkeeping only, not final readiness.
+- Clean full ten-child validator --through-child07: exit0, VALID, CHILD_CHECKPOINT, evidence HEADfca3b4ecb886ebda7b564d9b0a2ef08a60eaf49a; passed before08 acquisition. Completed01–07 must not replay.
+
+## Child08
+- Acquired fresh IMPLEMENTER Recheck08Implementer, epoch1/fix_round0/agent_attempt0; product basef37ff178554cb19b3264f81ed4deac7a6b43bd8c, governance HEADfca3b4ecb886ebda7b564d9b0a2ef08a60eaf49a. Exactnine-fileapprovedAPIplan/full frozenroster/auth/control/task/recovery/read invariants, requiredfreshSQLtestsandactualHTTPpipeline runtime supplied. No09UI/10backfill or unrelatedworkauthorized.
+- Recheck08Implementer returned READY_FOR_VERIFICATION at59c34a1b6f04af0669a9276dae7c043bca4164f5, exactlynineauthorizedfiles. Reports fresh39/56JVM, eachJS1827/zero skips and standalone actualTomcatHTTP+MySQL+originalpipeline, frozen1001/500+500+1; no liveprovider/productionwrites. Independent closure not inferred; acquiring distinct verifier next.
+- Acquired fresh VERIFIER Recheck08Verifier, distinct from Recheck08Implementer; epoch1/attempt1/fix_round0/agent_attempt0. Exactbrief/boundary/baseline/twofreshcommands and forkedactualHTTP/MySQLruntime supplied; onlyappend-only08verify-log writable, noproductedits oraggregate review.
+- Epoch1 terminal LIGHT_PASS_WITH_NOTES/COMPLETE_CHILD from Recheck08Verifier; allfour gatesPASS; noAUTO_FIX, O-08-E1-01 existingTomcatshutdownwarningonly. Fresh39/56JVM, eachJS1827 andsyntax/zero skips plus separateactualHTTP414/MySQL/pipeline pass. Evidencefeb35034d7d97c02e21d4873cc61265fac179969; repair0. Later09/10 remainPENDING untilfullmanifestdirty/cleancheckpointpass.
+- Fullten-childvalidator --through-child08 --allow-dirty-artifacts: exit0, VALID, CHILD_CHECKPOINT, eightterminalchildren/A1–A9/noerrors. Bookkeepingonly, notfinalreadiness; committingcheckpointbeforecleanvalidation.
