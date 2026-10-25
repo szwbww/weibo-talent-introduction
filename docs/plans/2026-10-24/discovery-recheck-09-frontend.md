@@ -194,7 +194,7 @@
 
 ## 变更文件清单
 
-仅下列 12 个文件。新增文件明确标注；其余文件不得顺带修改。依用户A7持续授权为满足既定原文/真实计数合同增加四个直接依赖，09获得必要文件数例外。
+仅下列 40 个文件。新增文件明确标注；其余文件不得顺带修改。依用户A7持续授权为满足既定原文/真实计数合同增加四个直接依赖，并为必需新增第18资源同步28个已失败的直接资源契约测试，09获得必要文件数例外。新增测试授权仅限删除无关套件中过期全局17数量断言、为旧脚本列表增加新script；保留功能/共享key/顺序断言，集中资源测试仍验证完整18合同，不修改对应产品业务。
 
 | 文件 | 变更 |
 |---|---|
@@ -210,6 +210,34 @@
 | `src/test/js/discoveryPapers.test.js` | 指定原文/错误SHA或attempt/陈旧dispose回包回归 |
 | `src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt` | 既有只读counts SQL/DTO追加pending/processing/protected，旧字段及写链不变 |
 | `src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt` | 真MySQL核对互斥分区、保护重叠计数与原回归 |
+| `src/test/js/batchDemandProgress.test.js` | 删除过期全局17资源数断言，保留本功能及同key/顺序 |
+| `src/test/js/batchEmailVerification.test.js` | 同上，仅直接资源契约 |
+| `src/test/js/batchSenderFilter.test.js` | 同上，仅直接资源契约 |
+| `src/test/js/checkRepliesRelocation.test.js` | 同上，仅直接资源契约 |
+| `src/test/js/contactTimingStyle.test.js` | 同上，仅直接资源契约 |
+| `src/test/js/discoveryApolloSettings.test.js` | 同上，仅直接资源契约 |
+| `src/test/js/discoveryScheduleSetting.test.js` | 同上，仅直接资源契约 |
+| `src/test/js/discoveryVerification.test.js` | 同上，仅直接资源契约 |
+| `src/test/js/expertContactSharedNote.test.js` | 同上，仅直接资源契约 |
+| `src/test/js/expertManualProfile.test.js` | 同上，仅直接资源契约 |
+| `src/test/js/expertMeetingVideo.test.js` | 同上，仅直接资源契约 |
+| `src/test/js/mailOpenTracking.test.js` | 同上，仅直接资源契约 |
+| `src/test/js/mailboxChatBehavior.test.js` | 原资源脚本列表增加discovery-recheck.js且在app前，保留功能/同key/顺序 |
+| `src/test/js/mailboxChatStyle.test.js` | 删除过期全局17资源数断言，保留本功能及同key/顺序 |
+| `src/test/js/mailboxGroupPush.test.js` | 同上，仅直接资源契约 |
+| `src/test/js/mailboxReplyIdentity.test.js` | 同上，仅直接资源契约 |
+| `src/test/js/mailboxSuspensionStyle.test.js` | 同上，仅直接资源契约 |
+| `src/test/js/mailboxTemplateReferenceStyle.test.js` | 同上，仅直接资源契约 |
+| `src/test/js/manualReplySubjectPrefill.test.js` | 同上，仅直接资源契约 |
+| `src/test/js/meetingCalendar.test.js` | 同上，仅直接资源契约 |
+| `src/test/js/mobileCoreNavigation.test.js` | 同上，仅直接资源契约 |
+| `src/test/js/overlayAndDialogContrast.test.js` | 同上，仅直接资源契约 |
+| `src/test/js/ragKnowledgeBasePage.test.js` | 同上，仅直接资源契约 |
+| `src/test/js/ragWorkbenchRender.test.js` | 同上，仅直接资源契约 |
+| `src/test/js/recipientPreviewDiagnostics.test.js` | 同上，仅直接资源契约 |
+| `src/test/js/senderBindingDisplay.test.js` | 同上，仅直接资源契约 |
+| `src/test/js/taskActivityCenter.test.js` | 同上，仅直接资源契约 |
+| `src/test/js/taskRecordsSemantics.test.js` | 同上，仅直接资源契约 |
 
 ## 验收标准
 
@@ -250,3 +278,4 @@
 
 ## 修正记录
 - 2026-10-25，依用户A7持续授权增加上述四个直接依赖、8→12文件例外及对应命令；原reader缺公开固定来源桥接，08计数缺本计划已要求的拆分/保护值。仅满足原I-1/3合同，不改变S-1/S-2、准入策略或旧人工路径。确切源码/检索回执见`../fast/discovery-recheck-master/children/09/execution.md`，授权/前后身份见同一ledger的Amendments。
+- 2026-10-25，依A7持续授权增加上述28个已在新鲜全量JS命令失败的直接资源测试，12→40文件例外。必需新增script引起动态旧17数量/列表契约冲突；仅删除过期数量钉死并更新实际script顺序，不改原功能/同key/顺序保护，不再复制18数量到无关套件。`artifact://1241`记录1840例/28失败，失败是本次实施阶段ground truth，不重跑只为确认；完成后按全部既定命令重新执行。源码/检索/失败回执与授权身份见09 execution/ledger。

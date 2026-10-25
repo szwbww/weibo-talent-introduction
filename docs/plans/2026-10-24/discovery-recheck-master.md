@@ -57,7 +57,7 @@
 | [06](discovery-recheck-06-evidence.md) | 共享只读原文/学术采集 | 9 | 原文分析+核验证据 | 兼容部署，无新入口 |
 | [07](discovery-recheck-07-pipeline.md) | 统一Worker与八步 | 14（A7授权必需依赖） | 核验执行+审计 | 原发现回归通过；新入口仍未开放 |
 | [08](discovery-recheck-08-api.md) | 冻结/启动/取消/历史API | 9 | 重审协调/API | 与09作为完整用户功能发布单元 |
-| [09](discovery-recheck-09-frontend.md) | 真实审核页、完整CSS、原文桥接及只读统计 | 12（A7授权必需依赖） | 审核前端+只读统计 | 依赖08并联合验收后发布 |
+| [09](discovery-recheck-09-frontend.md) | 真实审核页、完整CSS、原文桥接及只读统计 | 40（A7授权必需依赖/直接资源回归） | 审核前端+只读统计 | 依赖08并联合验收后发布 |
 | [10](discovery-recheck-10-historical-replay.md) | 历史同批验证和补录 | 7 | 原文补录+隔离回放 | 默认只读；生产应用单独按manifest明确执行 |
 
 ### 八步与不短路的边界
@@ -155,3 +155,4 @@
 - 2026-10-25，用户在05独立核验期间明确“后续修改都授权 把所有子计划都跑完”：批准在原定目标/不变量/验收内继续完成全部子计划，并为必要的后续修改、直接依赖/回归清单扩展及文件数例外提供持续授权。每次仍须以具体证据界定、单独提交计划修订、追加Amendments并保留独立实现/核验和证据门禁；不因同类范围问题再次等待用户确认。未授权无关业务、生产发布、付费操作或Git历史改写；不可达前提与安全冲突仍如实阻塞，不能伪造证据。
 - 2026-10-25，依用户持续授权“后续修改都授权 把所有子计划都跑完”（A7），07增加`DiscoveryRecheckAcademicEvidenceService.kt`、`OpenAlexDataSource.kt`及各自现有测试，清单10→14并记录必要文件数例外。07 I-5要求每次外调前检查取消；现有OpenAlex批次内部会继续发author/works/patent请求，Worker只在collect入口检查不能满足此合同。仅增加该调用链的逐次dispatch取消guard、传播及回归，保留普通补全API/行为、RequestKind/预算与原有免费付费规则；不新增客户端或第二执行引擎。具体调用链与检索回执归档于07 execution日志，提交身份详见ledger的Amendments。
 - 2026-10-25，依用户持续授权“后续修改都授权 把所有子计划都跑完”（A7），09增加`discovery-papers.js`、`discoveryPapers.test.js`、`DiscoveryVerificationRepository.kt`、`DiscoveryVerificationRepositoryIT.kt`，清单8→12并记录必要文件数例外。原文reader仅私有且默认首个可读attempt，宿主无法按冻结record/attempt/SHA复用；08统计仅有聚合queued，缺09已要求的pending/processing和独立protected。仅增加原reader窄公开桥接与只读真实SQL计数及直接回归，不改准入写链、旧人工行为、迁移或全站样式；保留旧API字段，protected为重叠诊断子计数不得加总为互斥类别。具体检索/源码回执归档于09 execution日志，提交身份详见ledger的Amendments。
+- 2026-10-25，依A7持续授权，09再增加子计划逐名列出的28个直接资源回归测试，清单12→40。必需的第18个资源使新鲜全量JS执行`artifact://1241`的28个旧17-count/list断言失败（1840例中28失败）；它们动态取key，旧字面量检索无匹配。仅删除无关套件中过期的全局17数量钉死断言，并为`mailboxChatBehavior.test.js`原脚本列表补入app前的新script；共享key/顺序/各自功能断言保留，指定资源/重审测试仍集中验证完整18资源合同。不改这些功能的产品代码、不以重新钉死旧数量掩盖回归；确切失败与检索回执见09 execution日志，提交身份见ledger的Amendments。
