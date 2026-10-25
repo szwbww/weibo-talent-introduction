@@ -123,6 +123,103 @@ class DiscoveryVerificationQueryService(
             }, item.reviewEpoch, run.recheckJson?.let { repository.recheck(run) }, repository.findSteps(itemId))
     }
 
+    fun requireRecheck(id: Long): VerificationRun {
+        require(id > 0)
+        return repository.findRun(id)?.takeIf { it.recheckJson != null }
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "RECHECK_NOT_FOUND")
+    }
+
+    fun requireRecheckItem(runId: Long, itemId: Long): VerificationItem {
+        requireRecheck(runId)
+        require(itemId > 0)
+        return repository.findItem(itemId)?.takeIf { it.ownerExecutionId == runId && it.reviewEpoch == runId }
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "RECHECK_ITEM_NOT_FOUND")
+    }
+
+    fun recheckRun(id: Long): RecheckRunView = recheckView(requireRecheck(id))
+
+    private fun recheckView(run: VerificationRun): RecheckRunView {
+        val frozen = repository.recheck(run)
+        val scope = mapper.readTree(frozen.spec.scope)
+        return RecheckRunView(run.executionId, run.executionId, frozen.spec.requestKey, frozen.spec.actor,
+            frozen.control.phase, run.mode, frozen.spec.evidenceMode, run.revision, frozen.control.scopeHash,
+            scope.path("specHash").asText(null), scope.path("scope").asText(), scope.get("filter"),
+            run.inputClosed, repository.recheckCounts(run.executionId), repository.recheckTask(run.executionId),
+            frozen.spec.evaluatedAt, frozen.spec.codeVersion, frozen.spec.parserVersion,
+            mapper.readTree(run.settingsJson), run.createdAt, run.updatedAt)
+    }
+
+    fun recheckRuns(page: Int, size: Int, docId: String?): RecheckPage<RecheckRunView> {
+        recheckPage(page, size)
+        docId?.let { verificationText(it, 128) }
+        val result = repository.recheckRuns(page, size, docId)
+        return RecheckPage(result.first, page, size, result.second.map(::recheckView))
+    }
+
+    fun latestRechecks(docIds: List<String>): Map<String, RecheckRunView?> {
+        require(docIds.size in 1..100)
+        docIds.forEach { verificationText(it, 128) }
+        val latest = repository.latestRechecks(docIds.distinct())
+        val runs = latest.values.distinct().associateWith { recheckRun(it) }
+        return docIds.distinct().associateWith { latest[it]?.let(runs::getValue) }
+    }
+
+    fun recheckItems(id: Long, page: Int, size: Int, state: VerificationState?): RecheckPage<RecheckItemView> {
+        requireRecheck(id)
+        recheckPage(page, size)
+        val result = repository.recheckItems(id, page, size, state)
+        val current = admissions.findAdmissions(result.second.map { it.expertDocId }).associateBy { it.expertDocId }
+        return RecheckPage(result.first, page, size, result.second.map { recheckItemView(it, current[it.expertDocId]) })
+    }
+
+    fun recheckItem(id: Long, itemId: Long): RecheckItemView {
+        val item = requireRecheckItem(id, itemId)
+        return recheckItemView(item, admissions.findAdmission(item.expertDocId))
+    }
+
+    private fun recheckItemView(item: VerificationItem, current: ExpertDiscoveryAdmission?): RecheckItemView {
+        val root = mapper.readTree(item.snapshotJson)
+        val review = root.path("reviewInput")
+        val trace = repository.trace(item.id)
+        val latest = trace.steps.groupBy { it.stepNo }.mapValues { it.value.last() }
+        fun value(json: String?): com.fasterxml.jackson.databind.JsonNode? = json?.let { mapper.readTree(it) }?.let {
+            if (it.has("value")) it.get("value") else it
+        }
+        val combined = value(latest[7]?.outputJson)
+        val saved = value(latest[8]?.outputJson)
+        val allReasons = (reasonCodes(item) + trace.steps.flatMap { step ->
+            val reason = value(step.reasonJson)
+            if (reason?.isArray == true) reason.map { it.asText() }
+            else reason?.path("codes")?.takeIf { it.isArray }?.map { it.asText() }.orEmpty()
+        }).distinct()
+        return RecheckItemView(item.id, item.ownerExecutionId, item.expertDocId, item.batchNumber, item.state,
+            root.path("profile").path("givenNames").asText(null), root.path("profile").path("familyNames").asText(null),
+            root.path("profile").path("email").asText(null), item.identityHash, item.factFingerprint,
+            mapper.valueToTree(mapOf("decision" to review.path("beforeDecision"),
+                "revision" to review.path("expectedAdmissionRevision"))),
+            combined?.get("proposed"), current?.let { RecheckAdmissionView(it.decision, it.revision) },
+            if (item.admissionRevision == null) null else RecheckAdmissionView("AUTO_PASSED", item.admissionRevision),
+            item.outcome, item.qualification, item.route, item.projectionState, item.projectionError,
+            item.admissionRevision != null, item.requestCount, trace, allReasons, review.path("paperSourceRefs"),
+            review.path("evidenceHash").asText(null), review.path("baselineItemId").takeIf { it.isIntegralNumber }?.longValue(),
+            latest.values.mapNotNull { value(it.versionJson) }.distinct(), saved, item.updatedAt)
+    }
+
+    /** Manifest is paginated frozen identity, never a current ES lookup or an unbounded summary field. */
+    fun recheckManifest(id: Long, page: Int, size: Int): RecheckPage<RecheckManifestItem> {
+        requireRecheck(id)
+        recheckPage(page, size)
+        val result = repository.recheckItems(id, page, size)
+        return RecheckPage(result.first, page, size, result.second.map { item ->
+            val input = mapper.readTree(item.snapshotJson).path("reviewInput")
+            RecheckManifestItem(item.id, item.expertDocId, item.identityHash, item.factFingerprint, item.reviewEpoch,
+                input.get("expectedAdmissionRevision"), input.path("evidenceHash").asText(null),
+                input.path("paperSourceRefs"), item.state)
+        })
+    }
+
+    private fun recheckPage(page: Int, size: Int) { require(page >= 0 && size in setOf(20, 50, 100)) }
+
     private fun summaryRow(id: Long, run: VerificationRun?, counts: VerificationCounts, status: String?, asOf: Instant,
         suggestion: Triple<Long, Long, Long>?, attempts: VerificationAttemptChannels?) =
         VerificationSummary(id, if (run == null) "NOT_RECORDED" else "RECORDED", if (run == null) null else counts,
@@ -266,3 +363,27 @@ data class VerificationItemDetail(val record: VerificationRecord, val executionI
     val recheck: RecheckRun? = null, val steps: List<VerificationStep> = emptyList())
 data class VerificationApolloStages(val enteredAt: Instant?, val searchedAt: Instant?,
     val candidateFoundAt: Instant?, val matchedAt: Instant?)
+
+data class RecheckPage<T>(val total: Long, val page: Int, val size: Int, val items: List<T>)
+data class RecheckRunView(val runId: Long, val taskId: Long, val requestKey: String, val actor: String,
+    val phase: RecheckPhase, val mode: VerificationMode, val evidenceMode: RecheckEvidenceMode, val revision: Long,
+    val rosterHash: String?, val specHash: String?, val scope: String, val filter: com.fasterxml.jackson.databind.JsonNode?,
+    val inputClosed: Boolean, val counts: com.weibo.talentintroduction.discovery.repository.RecheckCounts,
+    val prepareTask: com.weibo.talentintroduction.discovery.repository.RecheckTask?, val evaluatedAt: Instant,
+    val codeVersion: String, val parserVersion: String, val settings: com.fasterxml.jackson.databind.JsonNode,
+    val createdAt: Instant, val updatedAt: Instant)
+data class RecheckAdmissionView(val decision: String, val revision: Long)
+data class RecheckItemView(val itemId: Long, val runId: Long, val docId: String, val batchNumber: Int,
+    val state: VerificationState, val givenNames: String?, val familyNames: String?, val email: String?,
+    val identityHash: String, val factFingerprint: String, val before: com.fasterxml.jackson.databind.JsonNode,
+    val proposed: com.fasterxml.jackson.databind.JsonNode?, val current: RecheckAdmissionView?,
+    val applied: RecheckAdmissionView?, val outcome: VerificationOutcome?, val qualification: VerificationQualification,
+    val route: VerificationRoute, val projection: VerificationProjection, val projectionError: String?,
+    val actualAdmitted: Boolean, val requestCount: Int,
+    val trace: com.weibo.talentintroduction.discovery.repository.VerificationTraceRead, val allReasons: List<String>,
+    val sourceRefs: com.fasterxml.jackson.databind.JsonNode, val evidenceHash: String?, val baselineItemId: Long?,
+    val versions: List<com.fasterxml.jackson.databind.JsonNode>, val recordedResult: com.fasterxml.jackson.databind.JsonNode?,
+    val updatedAt: Instant)
+data class RecheckManifestItem(val itemId: Long, val docId: String, val identityHash: String,
+    val factFingerprint: String, val reviewEpoch: Long, val expectedAdmissionRevision: com.fasterxml.jackson.databind.JsonNode?,
+    val evidenceHash: String?, val sourceRefs: com.fasterxml.jackson.databind.JsonNode, val state: VerificationState)

@@ -391,6 +391,164 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         return run
     }
 
+    /** Registration only: task creation and run binding share this short transaction/connection.
+     * Synchronization releases the named lock AFTER commit/rollback, before the pool can reuse it.
+     */
+    @Transactional
+    fun registerRecheck(requestKey: String, create: () -> VerificationRun): Pair<VerificationRun, Boolean> {
+        require(UUID.fromString(requestKey).toString() == requestKey) { "requestKey must be a canonical UUID" }
+        check(TransactionSynchronizationManager.isActualTransactionActive())
+        val acquired = jdbc.execute(ConnectionCallback<Boolean> { connection ->
+            connection.prepareStatement("SELECT GET_LOCK('discovery_recheck_prepare',1)").use { statement ->
+                statement.executeQuery().use { rs -> rs.next(); rs.getInt(1) == 1 }
+            }.also { locked ->
+                if (locked) {
+                    try {
+                        TransactionSynchronizationManager.registerSynchronization(object : TransactionSynchronization {
+                            override fun afterCompletion(status: Int) {
+                                connection.prepareStatement("SELECT RELEASE_LOCK('discovery_recheck_prepare')").use { it.execute() }
+                            }
+                        })
+                    } catch (ex: Exception) {
+                        connection.prepareStatement("SELECT RELEASE_LOCK('discovery_recheck_prepare')").use { it.execute() }
+                        throw ex
+                    }
+                }
+            }
+        }) == true
+        if (!acquired) throw org.springframework.web.server.ResponseStatusException(
+            org.springframework.http.HttpStatus.CONFLICT, "PREPARE_BUSY")
+        // A current read, not a pre-lock repeatable-read snapshot; never LIKE on user input.
+        val existing = jdbc.query("""SELECT * FROM discovery_verification_run
+            WHERE JSON_UNQUOTE(JSON_EXTRACT(recheck_json,'$.spec.requestKey'))=? FOR UPDATE""",
+            runMapper, requestKey).singleOrNull()
+        return if (existing != null) existing to false else create() to true
+    }
+
+    fun recheckRuns(page: Int, size: Int, docId: String?): Pair<Long, List<VerificationRun>> {
+        require(page >= 0 && size in setOf(20, 50, 100))
+        docId?.let { verificationText(it, 128) }
+        val where = "r.recheck_json IS NOT NULL" + if (docId == null) "" else
+            " AND EXISTS(SELECT 1 FROM discovery_verification_item i WHERE i.owner_execution_id=r.execution_id AND i.expert_doc_id=?)"
+        val args = if (docId == null) emptyList() else listOf(docId)
+        val total = jdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_run r WHERE $where",
+            Long::class.java, *args.toTypedArray())!!
+        return total to jdbc.query("""SELECT r.* FROM discovery_verification_run r WHERE $where
+            ORDER BY r.execution_id DESC LIMIT ? OFFSET ?""", runMapper,
+            *(args + listOf(size, page.toLong() * size)).toTypedArray())
+    }
+
+    fun latestRechecks(docIds: List<String>): Map<String, Long> {
+        require(docIds.size in 1..100)
+        docIds.forEach { verificationText(it, 128) }
+        return jdbc.query("""SELECT i.expert_doc_id,MAX(i.owner_execution_id) AS execution_id
+            FROM discovery_verification_item i JOIN discovery_verification_run r ON r.execution_id=i.owner_execution_id
+            WHERE r.recheck_json IS NOT NULL AND i.expert_doc_id IN (${docIds.joinToString(",") { "?" }})
+            GROUP BY i.expert_doc_id""", RowMapper { rs, _ -> rs.getString(1) to rs.getLong(2) },
+            *docIds.toTypedArray()).toMap()
+    }
+
+    fun recheckItems(executionId: Long, page: Int, size: Int, state: VerificationState? = null): Pair<Long, List<VerificationItem>> {
+        require(executionId > 0 && page >= 0 && size in setOf(20, 50, 100))
+        val where = "owner_execution_id=?" + if (state == null) "" else " AND state=?"
+        val args = listOf<Any>(executionId) + listOfNotNull(state?.name)
+        return jdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_item WHERE $where",
+            Long::class.java, *args.toTypedArray())!! to jdbc.query(
+            "SELECT * FROM discovery_verification_item WHERE $where ORDER BY expert_doc_id,id LIMIT ? OFFSET ?",
+            itemMapper, *(args + listOf(size, page.toLong() * size)).toTypedArray())
+    }
+
+    fun recheckCounts(executionId: Long): RecheckCounts = jdbc.query("""SELECT COUNT(*) AS total,
+        COALESCE(SUM(state='COMPLETED'),0) AS processed,
+        COALESCE(SUM(state IN ('RESERVED','QUEUED','RUNNING','RETRY_WAIT')),0) AS queued,
+        COALESCE(SUM(state='CANCELLED'),0) AS cancelled,COALESCE(SUM(state='ERROR'),0) AS errors,
+        COALESCE(SUM(state='COMPLETED' AND outcome IN ('DIRECT_CLEAR','APOLLO_CLEAR','APOLLO_UNCLEAR')),0) AS would_admit,
+        COALESCE(SUM(admission_revision IS NOT NULL),0) AS actual_admitted,
+        COALESCE(SUM(projection_state='PENDING'),0) AS sync_pending,
+        COALESCE(SUM(projection_state='ERROR'),0) AS sync_errors,
+        COALESCE(SUM(projection_state IN ('PROJECTED','ALREADY_PRESENT','APPLICATION_PRESENT')),0) AS synced
+        FROM discovery_verification_item WHERE owner_execution_id=?""", RowMapper { rs, _ ->
+        RecheckCounts(rs.getLong("total"), rs.getLong("processed"), rs.getLong("queued"), rs.getLong("cancelled"),
+            rs.getLong("errors"), rs.getLong("would_admit"), rs.getLong("actual_admitted"),
+            rs.getLong("sync_pending"), rs.getLong("sync_errors"), rs.getLong("synced"))
+    }, executionId).single()
+
+    fun recheckTask(executionId: Long): RecheckTask? = jdbc.query(
+        "SELECT status,error_message FROM task_execution WHERE id=? AND task_type='DISCOVERY_RECHECK_PREPARE'",
+        RowMapper { rs, _ -> RecheckTask(rs.getString(1), rs.getString(2)) }, executionId).singleOrNull()
+
+    fun trace(itemId: Long): VerificationTraceRead = DiscoveryVerificationTraceRepository(jdbc).read(itemId)
+
+    /** One transaction changes authority and activates exactly the persisted roster, in docId order. */
+    @Transactional
+    fun startRecheck(executionId: Long, rosterHash: String, expectedRevision: Long, now: Instant): VerificationRun {
+        val run = lockRun(executionId)
+        val control = recheck(run).control
+        fun conflict(code: String): Nothing = throw org.springframework.web.server.ResponseStatusException(
+            org.springframework.http.HttpStatus.CONFLICT, code)
+        if (control.scopeHash != rosterHash) conflict("ROSTER_HASH_CONFLICT")
+        // The accepted READY revision is saved separately because worker/lease revisions continue to advance.
+        val accepted = replayMapper.readTree(run.recheckJson).path("startRevision")
+        if (control.phase in setOf(RecheckPhase.RUNNING, RecheckPhase.COMPLETED, RecheckPhase.CANCELLING, RecheckPhase.CANCELLED)) {
+            if (!accepted.isIntegralNumber || accepted.longValue() != expectedRevision) conflict("REVISION_CONFLICT")
+            return run
+        }
+        if (run.revision != expectedRevision) conflict("REVISION_CONFLICT")
+        if (control.phase != RecheckPhase.READY || !run.inputClosed) conflict("RUN_NOT_READY")
+        if (recheckScopeHash(executionId) != rosterHash) conflict("ROSTER_HASH_CONFLICT")
+        val json = replayMapper.readTree(run.recheckJson) as ObjectNode
+        (json.get("control") as ObjectNode).put("phase", RecheckPhase.RUNNING.name)
+        json.put("startRevision", expectedRevision)
+        jdbc.update("UPDATE discovery_verification_run SET recheck_json=?,revision=revision+1,updated_at=? WHERE execution_id=?",
+            json.toString(), now.verificationUtc(), executionId)
+        val items = jdbc.query("SELECT * FROM discovery_verification_item WHERE owner_execution_id=? ORDER BY expert_doc_id,id FOR UPDATE",
+            itemMapper, executionId)
+        items.forEachIndexed { index, item ->
+            check(item.reviewEpoch == executionId && item.state == VerificationState.RESERVED)
+            activateItem(item.id, index / 500 + 1, now)
+        }
+        return findRun(executionId)!!
+    }
+
+    @Transactional
+    fun cancelRecheck(executionId: Long, now: Instant): VerificationRun {
+        val run = lockRun(executionId)
+        val control = recheck(run).control
+        if (control.phase !in setOf(RecheckPhase.PREPARING, RecheckPhase.READY, RecheckPhase.RUNNING, RecheckPhase.CANCELLING)) return run
+        if (control.phase != RecheckPhase.CANCELLING)
+            check(compareAndSetRecheckControl(executionId, run.revision, control.copy(phase = RecheckPhase.CANCELLING), now))
+        // run -> item is also the commit/lease lock order. Completed receipts are immutable.
+        jdbc.query("""SELECT id FROM discovery_verification_item WHERE owner_execution_id=?
+            AND state IN ('RESERVED','QUEUED','RUNNING','RETRY_WAIT') ORDER BY id""",
+            RowMapper { rs, _ -> rs.getLong(1) }, executionId).forEach { cancelRecheckItem(it, now) }
+        val current = findRun(executionId)!!
+        check(compareAndSetRecheckControl(executionId, current.revision,
+            recheck(current).control.copy(phase = RecheckPhase.CANCELLED), now))
+        jdbc.update("""UPDATE task_execution SET status='CANCELLED',finished_at=?,updated_at=?,error_message='RUN_CANCELLED'
+            WHERE id=? AND task_type='DISCOVERY_RECHECK_PREPARE' AND status IN ('RUNNING','CANCELLING')""",
+            now.verificationUtc(), now.verificationUtc(), executionId)
+        return findRun(executionId)!!
+    }
+
+    /** Scheduled reconciliation only; GET never repairs, claims leases or changes task state. */
+    fun unsettledRechecks(): List<Long> = jdbc.query("""SELECT execution_id FROM discovery_verification_run
+        WHERE JSON_UNQUOTE(JSON_EXTRACT(recheck_json,'$.control.phase')) IN ('PREPARING','RUNNING','CANCELLING')
+        ORDER BY execution_id LIMIT 100""", RowMapper { rs, _ -> rs.getLong(1) })
+
+    @Transactional
+    fun reconcileRecheck(executionId: Long, now: Instant) {
+        val run = lockRun(executionId)
+        val control = recheck(run).control
+        when {
+            control.phase == RecheckPhase.PREPARING && !run.inputClosed &&
+                recheckTask(executionId)?.status == "INTERRUPTED" ->
+                compareAndSetRecheckControl(executionId, run.revision, control.copy(phase = RecheckPhase.INTERRUPTED), now)
+            control.phase == RecheckPhase.CANCELLING -> cancelRecheck(executionId, now)
+            control.phase == RecheckPhase.RUNNING && recheckCounts(executionId).queued == 0L ->
+                compareAndSetRecheckControl(executionId, run.revision, control.copy(phase = RecheckPhase.COMPLETED), now)
+        }
+    }
+
     fun recheck(run: VerificationRun): RecheckRun =
         replayMapper.readValue(requireNotNull(run.recheckJson) { "Not a recheck run" }, RecheckRun::class.java)
 
@@ -431,8 +589,10 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
                 Long::class.java, executionId) == 0L) { "Unsettled recheck items" }
         }
         if (control.phase == RecheckPhase.RUNNING) require(run.inputClosed)
+        val json = replayMapper.readTree(run.recheckJson) as ObjectNode
+        json.set<com.fasterxml.jackson.databind.JsonNode>("control", replayMapper.valueToTree(control))
         return jdbc.update("""UPDATE discovery_verification_run SET recheck_json=?,input_closed=?,revision=revision+1,updated_at=?
-            WHERE execution_id=? AND revision=?""", replayMapper.writeValueAsString(current.copy(control = control)),
+            WHERE execution_id=? AND revision=?""", json.toString(),
             run.inputClosed || control.phase == RecheckPhase.READY, now.verificationUtc(), executionId, expectedRevision) == 1
     }
 
@@ -970,6 +1130,10 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
 }
 
 data class VerificationAttemptChannels(val search: Long, val detail: Long, val other: Long, val pendingDispatch: Long)
+data class RecheckTask(val status: String, val error: String?)
+data class RecheckCounts(val total: Long, val processed: Long, val queued: Long, val cancelled: Long,
+    val errors: Long, val wouldAdmit: Long, val actualAdmitted: Long,
+    val syncPending: Long, val syncErrors: Long, val synced: Long)
 
 data class VerificationReportFilter(
     val executionId: Long, val route: String = "ALL", val result: String = "ALL",

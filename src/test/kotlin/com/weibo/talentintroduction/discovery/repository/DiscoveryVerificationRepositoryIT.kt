@@ -769,4 +769,108 @@ class DiscoveryVerificationRepositoryIT {
         assertTrue(repository.cancelRecheckItem(item.id, NOW))
         assertEquals(VerificationState.CANCELLED, repository.findItem(item.id)!!.state)
     }
+
+    @Test fun `prepare named lock serializes current uuid registration and releases only after transaction`() {
+        val key = java.util.UUID.randomUUID().toString()
+        val registrations = parallel(8) { index ->
+            repository.registerRecheck(key) {
+                val id = 5001L + index
+                jdbc.update("""INSERT INTO task_execution (id,task_type,trigger_type,status,started_at)
+                    VALUES (?,'DISCOVERY_RECHECK_PREPARE','MANUAL','RUNNING',?)""", id, NOW.verificationUtc())
+                repository.createRecheckRun(id, VerificationMode.AUDIT, false, "{}",
+                    RecheckSpec("fixture", key, "{}", RecheckEvidenceMode.REUSE, NOW, "v", "v"), NOW)
+            }
+        }
+        assertEquals(1, registrations.count { it.second })
+        assertEquals(1, registrations.map { it.first.executionId }.distinct().size)
+        assertEquals(1L, jdbc.queryForObject("SELECT COUNT(*) FROM task_execution", Long::class.java))
+        assertNull(jdbc.queryForObject("SELECT IS_USED_LOCK('discovery_recheck_prepare')", Long::class.java))
+        assertThrows(IllegalStateException::class.java) {
+            TransactionTemplate(manager).executeWithoutResult {
+                repository.registerRecheck(key) { error("must find current row") }
+                assertNotNull(jdbc.queryForObject("SELECT IS_USED_LOCK('discovery_recheck_prepare')", Long::class.java))
+                error("rollback")
+            }
+        }
+        assertNull(jdbc.queryForObject("SELECT IS_USED_LOCK('discovery_recheck_prepare')", Long::class.java))
+        assertThrows(IllegalArgumentException::class.java) { repository.registerRecheck("%") { error("unreachable") } }
+    }
+
+    @Test fun `prepare busy is database scoped and failed registration leaves no executable orphan`() {
+        jdbc.dataSource!!.connection.use { connection ->
+            connection.createStatement().use { it.execute("SELECT GET_LOCK('discovery_recheck_prepare',1)") }
+            try {
+                val error = assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+                    repository.registerRecheck(java.util.UUID.randomUUID().toString()) { error("must not execute") }
+                }
+                assertEquals("PREPARE_BUSY", error.reason)
+            } finally { connection.createStatement().use { it.execute("SELECT RELEASE_LOCK('discovery_recheck_prepare')") } }
+        }
+        assertThrows(IllegalStateException::class.java) {
+            repository.registerRecheck(java.util.UUID.randomUUID().toString()) {
+                recheckRun(5101)
+                error("run binding failure")
+            }
+        }
+        assertEquals(0L, jdbc.queryForObject("SELECT COUNT(*) FROM task_execution", Long::class.java))
+        assertEquals(0L, jdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_run", Long::class.java))
+    }
+
+    @Test fun `atomic start activates frozen roster once and preserves accepted revision across worker changes`() {
+        recheckRun(5201)
+        val items = (1..3).map { repository.reserveRecheckItem(reservation("fixed-$it", 5201), NOW) }
+        assertTrue(phase(5201, RecheckPhase.READY))
+        val ready = repository.findRun(5201)!!
+        val hash = repository.recheck(ready).control.scopeHash!!
+        val started = parallel(8) { repository.startRecheck(5201, hash, ready.revision, NOW) }
+        assertTrue(started.all { repository.recheck(it).control.phase == RecheckPhase.RUNNING })
+        assertEquals(24L, jdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_step", Long::class.java))
+        assertEquals(3L, repository.recheckCounts(5201).queued)
+        val lease = claim()
+        assertEquals(hash, repository.recheckScopeHash(5201))
+        assertEquals(VerificationState.RUNNING, repository.findItem(lease.id)!!.state)
+        assertEquals(repository.findRun(5201), repository.startRecheck(5201, hash, ready.revision, NOW))
+        assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            repository.startRecheck(5201, hash, ready.revision + 1, NOW)
+        }
+        assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            repository.startRecheck(5201, "e".repeat(64), ready.revision, NOW)
+        }
+        val cancelled = repository.cancelRecheck(5201, NOW)
+        assertEquals(RecheckPhase.CANCELLED, repository.recheck(cancelled).control.phase)
+        assertEquals(3L, repository.recheckCounts(5201).cancelled)
+        assertEquals(items.map { it.id }.toSet(), repository.recheckItems(5201, 0, 20).second.map { it.id }.toSet())
+        assertFalse(repository.renewLease(lease.id, lease.leaseToken!!, lease.generation, NOW, 120))
+    }
+
+    @Test fun `prepare interruption is not ready while running lease recovery retains hash attempts and terminal counts`() {
+        recheckRun(5301)
+        repository.reserveRecheckItem(reservation(owner = 5301), NOW)
+        jdbc.update("UPDATE task_execution SET status='INTERRUPTED' WHERE id=5301")
+        repository.reconcileRecheck(5301, NOW)
+        val interrupted = repository.findRun(5301)!!
+        assertEquals(RecheckPhase.INTERRUPTED, repository.recheck(interrupted).control.phase)
+        assertFalse(interrupted.inputClosed)
+        assertNull(repository.claimDue(NOW, 120))
+        recheckRun(5302)
+        val row = repository.reserveRecheckItem(reservation("running-recovery", 5302), NOW)
+        assertTrue(phase(5302, RecheckPhase.READY))
+        val ready = repository.findRun(5302)!!
+        val hash = repository.recheck(ready).control.scopeHash!!
+        repository.startRecheck(5302, hash, ready.revision, NOW)
+        val first = claim()
+        assertNotNull(detail(first, "recovery-request").attemptId)
+        repository.reconcileRecheck(5302, NOW)
+        val second = repository.claimDue(NOW.plusSeconds(121), 120)!!
+        assertEquals(first.id, second.id); assertEquals(1, second.requestCount)
+        assertNotEquals(first.leaseToken, second.leaseToken)
+        assertEquals(hash, repository.recheck(repository.findRun(5302)!!).control.scopeHash)
+        assertTrue(repository.saveEvidenceAndOutcome(row.id, second.leaseToken!!, second.generation, result(), NOW.plusSeconds(121)))
+        repository.reconcileRecheck(5302, NOW.plusSeconds(121))
+        assertEquals(RecheckPhase.COMPLETED, repository.recheck(repository.findRun(5302)!!).control.phase)
+        val counts = repository.recheckCounts(5302)
+        assertEquals(counts.total, counts.processed + counts.queued + counts.errors + counts.cancelled)
+        assertEquals(1L, counts.processed)
+        assertEquals(mapOf("running-recovery" to 5302L), repository.latestRechecks(listOf("running-recovery")))
+    }
 }

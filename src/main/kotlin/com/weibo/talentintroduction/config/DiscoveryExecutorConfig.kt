@@ -48,6 +48,19 @@ class DiscoveryExecutorConfig(
         return executor
     }
 
+    /** Freezing a roster never occupies the ordinary discovery/mail executors. Bounded submissions. */
+    @Bean("discoveryRecheckPrepareExecutor")
+    fun discoveryRecheckPrepareExecutor(): Executor {
+        val executor = ThreadPoolTaskExecutor()
+        executor.corePoolSize = 1
+        executor.maxPoolSize = 1
+        executor.setQueueCapacity(32)
+        executor.setThreadNamePrefix("discovery-recheck-prepare-")
+        executor.setWaitForTasksToCompleteOnShutdown(true)
+        executor.initialize()
+        return executor
+    }
+
     /**
      * I-2（08）：自动补全 worker 的专用单线程 executor。`@Scheduled` 默认只有一个调度线程、
      * 与邮件定时任务共用，补全批次含外部 HTTP，绝不能占用它；队列容量 0 →
