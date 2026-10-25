@@ -20,8 +20,45 @@ import org.mockito.Mockito
  * 未初始化/身份变化/人工拒绝是明确准入状态；多原因重复计命中、总排除按人去重。
  */
 class BatchRecipientSelectionServiceTest {
+    @Test
+    fun `exclude tags empty missing and include conflict are consistent across mail types`() {
+        val profiles = listOf(
+            expert("a", discovery = false, tags = listOf("A")),
+            expert("b", discovery = false, tags = listOf("B")),
+            expert("ab", discovery = false, tags = listOf("A", "B")),
+            expert("none", discovery = false, tags = emptyList()),
+            expert("missing", discovery = false)
+        )
+        for (type in listOf("INTRODUCTION", "MATERIAL_REMINDER")) {
+            val original = scope(mailType = type)
+            assertEquals(5, service.select(original, profiles).included.size)
+            val excluded = original.copy(excludeTags = listOf(" A ", "B", "A", ""))
+            assertEquals(setOf("none", "missing"), service.select(excluded, profiles).includedDocIds)
+            assertEquals(0, service.select(excluded.copy(tags = listOf("A")), profiles).included.size)
+        }
+    }
+
+
     private val review = Mockito.mock(DiscoveryReviewService::class.java)
     private val service = BatchRecipientSelectionService(review)
+
+    @Test
+    fun `exclude tags from request remove any matching expert and preserve untagged experts`() {
+        val mapper = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper()
+            .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+        val tree = mapper.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(scope())
+        tree.putArray("excludeTags").add("微软系邮箱").add("重点关注")
+        val filteredScope = mapper.treeToValue(tree, RecipientScope::class.java)
+        val profiles = listOf(
+            expert("a", discovery = false, tags = listOf("微软系邮箱")),
+            expert("b", discovery = false, tags = listOf("重点关注")),
+            expert("ab", discovery = false, tags = listOf("微软系邮箱", "重点关注")),
+            expert("none", discovery = false)
+        )
+        val result = service.select(filteredScope, profiles)
+        assertEquals(listOf("none"), result.included.map { it.docId })
+        assertEquals(3, result.reasonHits["EXCLUDED_TAGS"])
+    }
 
     private fun scope(
         mailType: String = BatchSendType.INTRODUCTION.name,

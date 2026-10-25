@@ -369,6 +369,7 @@ class BatchRecipientStatisticsCacheTest {
         val scope = RecipientScope.fromSnapshot(baseSnapshot).copy(
             funnelLevels = linkedSetOf("APPLICATION", "CANDIDATE"),
             tags = listOf("beta", "alpha", "beta"),
+            excludeTags = listOf(" B ", "A", "A"),
             regions = listOf("Europe", "East Asia", "Europe"),
             emailDomains = listOf("z.example", "a.example", "z.example"),
             operatorStatuses = listOf("NOT_CONTACTED", "CONTACTED", "NOT_CONTACTED"),
@@ -377,6 +378,7 @@ class BatchRecipientStatisticsCacheTest {
         )
         val reordered = scope.copy(
             funnelLevels = linkedSetOf("CANDIDATE", "APPLICATION"),
+            excludeTags = listOf("A", "B"),
             tags = listOf("alpha", "beta"), regions = listOf("East Asia", "Europe"),
             emailDomains = listOf("a.example", "z.example"),
             operatorStatuses = listOf("CONTACTED", "NOT_CONTACTED"),
@@ -399,6 +401,7 @@ class BatchRecipientStatisticsCacheTest {
         val changed = linkedMapOf(
             "funnel levels" to base.copy(scope = base.scope.copy(funnelLevels = setOf("APPLICATION"))),
             "tags" to base.copy(scope = base.scope.copy(tags = listOf("new"))),
+            "exclude tags" to base.copy(scope = base.scope.copy(excludeTags = listOf("微软系邮箱"))),
             "regions" to base.copy(scope = base.scope.copy(regions = listOf("Europe"))),
             "email domains" to base.copy(scope = base.scope.copy(emailDomains = listOf("example.edu"))),
             "discipline" to base.copy(scope = base.scope.copy(discipline = "ENGINEERING")),

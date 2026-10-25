@@ -22880,6 +22880,7 @@ function renderBatchConfigRow(c) {
     var scopeParts = [];
     if (c.funnelLevel) scopeParts.push("漏斗: " + escapeHtml(c.funnelLevel));
     if (Array.isArray(c.tags) && c.tags.length > 0) scopeParts.push("标签: " + escapeHtml(c.tags.join(", ")));
+    if (Array.isArray(c.excludeTags) && c.excludeTags.length > 0) scopeParts.push("排除标签: " + escapeHtml(c.excludeTags.join(", ")));
     if (Array.isArray(c.regions) && c.regions.length > 0) scopeParts.push("地区: " + c.regions.map(regionLabel).join("、"));
     if (Array.isArray(c.emailDomains) && c.emailDomains.length > 0) scopeParts.push("服务商: " + escapeHtml(c.emailDomains.join(", ")));
     if (c.discipline) scopeParts.push("学科: " + (c.discipline === "STEM" ? "仅理工科" : c.discipline === "HUMANITIES" ? "仅文社科" : c.discipline === "UNCLASSIFIED" ? "未分类" : escapeHtml(c.discipline)));
@@ -23045,6 +23046,7 @@ function showBatchConfigEditor(config) {
     setVal("batchConfigEditorName", config ? config.configName : "");
     setVal("batchConfigEditorFunnelLevel", config ? (config.funnelLevel || "") : "");
     setBatchTagPickerValue("batchConfigEditorTags", config && Array.isArray(config.tags) ? config.tags : []);
+    setBatchTagPickerValue("batchConfigEditorExcludeTags", config && Array.isArray(config.excludeTags) ? config.excludeTags : []);
     setVal("batchConfigEditorDiscipline", config ? (config.discipline || "") : "");
     // I-1: 旧任务（无该字段）与新建任务都回显 ANY（不限）；不把上一条任务的值留在框里。
     setVal("batchConfigEditorResearchDirectionFilter", config ? (config.researchDirectionFilter || "ANY") : "ANY");
@@ -23194,10 +23196,14 @@ async function loadBatchTagOptions() {
         });
     }));
     var currentTags = readBatchTagPickerValue("batchConfigEditorTags")
-        .concat(readBatchTagPickerValue("batchManualTags"));
+        .concat(readBatchTagPickerValue("batchManualTags"))
+        .concat(readBatchTagPickerValue("batchConfigEditorExcludeTags"))
+        .concat(readBatchTagPickerValue("batchManualExcludeTags"));
     batchTaskState.preloadedTags = mergeBatchTagOptions(results, currentTags);
     renderBatchTagPicker("batchConfigEditorTags");
+    renderBatchTagPicker("batchConfigEditorExcludeTags");
     renderBatchTagPicker("batchManualTags");
+    renderBatchTagPicker("batchManualExcludeTags");
 }
 
 function readBatchTagPickerValue(valueId) {
@@ -23242,12 +23248,12 @@ function renderBatchTagPicker(valueId) {
 }
 
 function notifyBatchTagPickerChanged(valueId) {
-    if (valueId === "batchManualTags") {
+    if (valueId === "batchManualTags" || valueId === "batchManualExcludeTags") {
         if (!batchTaskState.manualDraft) batchTaskState.manualDraft = {};
-        batchTaskState.manualDraft.tags = readBatchTagPickerValue(valueId);
+        batchTaskState.manualDraft[valueId === "batchManualExcludeTags" ? "excludeTags" : "tags"] = readBatchTagPickerValue(valueId);
         computeAndRenderDiffs();
     }
-    scheduleRecipientPreview(valueId === "batchConfigEditorTags" ? "editor" : "manual");
+    scheduleRecipientPreview(valueId === "batchConfigEditorTags" || valueId === "batchConfigEditorExcludeTags" ? "editor" : "manual");
 }
 
 function notifyBatchRegionPickerChanged(valueId) {
@@ -24033,6 +24039,7 @@ function buildConfigEditorRecipientSnapshot() {
         selfCheckTtlMinutes: Number(val("batchConfigEditorSelfCheckTtlMin")) || 30,
         funnelLevel: val("batchConfigEditorFunnelLevel") || null,
         tags: readBatchTagPickerValue("batchConfigEditorTags"),
+        excludeTags: readBatchTagPickerValue("batchConfigEditorExcludeTags"),
         regions: readBatchRegionPickerValue("batchConfigEditorRegions"),
         emailDomains: readBatchMultiPickerValue("batchConfigEditorEmailDomains"),
         discipline: val("batchConfigEditorDiscipline") || null,
@@ -24060,6 +24067,7 @@ function buildManualExecutionSnapshot() {
         selfCheckTtlMinutes: Number.isFinite(values.selfCheckTtlMinutes) ? values.selfCheckTtlMinutes : 30,
         funnelLevel: values.funnelLevel,
         tags: values.tags,
+        excludeTags: values.excludeTags,
         regions: values.regions,
         emailDomains: values.emailDomains,
         discipline: values.discipline,
@@ -24131,7 +24139,7 @@ function renderRecipientStatistics(kind, envelope, snapshot, loading) {
         var detail = hits.length ? "" : "<div>原因：0 人；仅显示前 0 条</div>";
         hits.forEach(function(hit) {
             var samples = hit && Array.isArray(hit.samples) ? hit.samples : [];
-            detail += "<div>原因：" + escapeHtml(hit && hit.reasonKey) + " <strong>" +
+            detail += "<div>原因：" + escapeHtml(hit && hit.reasonKey === "EXCLUDED_TAGS" ? "命中排除标签" : hit && hit.reasonKey) + " <strong>" +
                 numberText(hit && hit.count) + "</strong> 人；仅显示前 <strong>" + samples.length +
                 "</strong> 条" + (hit && hit.truncated ? "（样本已截断）" : "") + "</div>";
             samples.forEach(function(sample) {
@@ -24231,6 +24239,7 @@ async function saveBatchConfigEditor() {
         selfCheckTtlMinutes: Number(val("batchConfigEditorSelfCheckTtlMin")) || 30,
         funnelLevel: val("batchConfigEditorFunnelLevel") || null,
         tags: tags,
+        excludeTags: readBatchTagPickerValue("batchConfigEditorExcludeTags"),
         regions: readBatchRegionPickerValue("batchConfigEditorRegions"),
         emailDomains: readBatchMultiPickerValue("batchConfigEditorEmailDomains"),
         discipline: val("batchConfigEditorDiscipline") || null,
@@ -24328,6 +24337,7 @@ function deepCloneConfig(c) {
         mailType: c.mailType || "INTRODUCTION",
         funnelLevel: c.funnelLevel || "",
         tags: Array.isArray(c.tags) ? c.tags.slice() : [],
+        excludeTags: Array.isArray(c.excludeTags) ? c.excludeTags.slice() : [],
         regions: Array.isArray(c.regions) ? c.regions.slice() : [],
         emailDomains: Array.isArray(c.emailDomains) ? c.emailDomains.slice() : [],
         discipline: c.discipline || "",
@@ -24356,6 +24366,7 @@ function fillManualFormDefaults() {
         mailType: "INTRODUCTION",
         funnelLevel: "",
         tags: [],
+        excludeTags: [],
         regions: [],
         emailDomains: [],
         discipline: "",
@@ -24388,6 +24399,7 @@ function fillManualFormFromDraft() {
     setVal("batchManualTemplateId", d.templateId ? String(d.templateId) : "");
     setVal("batchManualFunnelLevel", d.funnelLevel || "");
     setBatchTagPickerValue("batchManualTags", Array.isArray(d.tags) ? d.tags : []);
+    setBatchTagPickerValue("batchManualExcludeTags", Array.isArray(d.excludeTags) ? d.excludeTags : []);
     setBatchRegionPickerValue("batchManualRegions", Array.isArray(d.regions) ? d.regions : []);
     setBatchMultiPickerValue("batchManualEmailDomains", Array.isArray(d.emailDomains) ? d.emailDomains : []);
     setVal("batchManualDiscipline", d.discipline || "");
@@ -24488,6 +24500,7 @@ function readManualFormValues() {
         mailType: resolveBatchTemplateMailType(templateId),
         funnelLevel: val("batchManualFunnelLevel") || null,
         tags: readBatchTagPickerValue("batchManualTags"),
+        excludeTags: readBatchTagPickerValue("batchManualExcludeTags"),
         regions: typeof readBatchRegionPickerValue === "function" ? readBatchRegionPickerValue("batchManualRegions") : [],
         emailDomains: typeof readBatchMultiPickerValue === "function" ? readBatchMultiPickerValue("batchManualEmailDomains") : [],
         discipline: val("batchManualDiscipline") || null,
@@ -24514,6 +24527,7 @@ function normalizeManualSnapshot(v) {
         funnelLevel: (v.funnelLevel || "").trim() || null,
         excludeVerifiedUnavailableEmails: v.excludeVerifiedUnavailableEmails === true,
         tags: (Array.isArray(v.tags) ? v.tags.slice() : []).map(function(t) { return t.trim(); }).filter(function(t) { return t.length > 0; }).sort().filter(function(t, i, arr) { return arr.indexOf(t) === i; }),
+        excludeTags: (Array.isArray(v.excludeTags) ? v.excludeTags.slice() : []).map(function(t) { return t.trim(); }).filter(function(t) { return t.length > 0; }).sort().filter(function(t, i, arr) { return arr.indexOf(t) === i; }),
         regions: (Array.isArray(v.regions) ? v.regions.slice() : []).map(function(r) { return r.trim(); }).filter(function(r) { return r.length > 0; }).sort().filter(function(r, i, arr) { return arr.indexOf(r) === i; }),
         emailDomains: (Array.isArray(v.emailDomains) ? v.emailDomains : []).map(function(s) { return String(s).trim(); }).filter(Boolean).slice().sort(),
         discipline: (v.discipline || "").trim() || null,
@@ -24565,7 +24579,7 @@ function formatManualDiffValue(key, value) {
         return (Array.isArray(value) && value.length > 0) ? value.map(function(v) { return labels[v] || v; }).join("、") : "全部类型";
     }
     if (key === "senderAccountCodes") return (Array.isArray(value) && value.length > 0) ? value.join("、") : "全部可发送账号";
-    if (key === "tags") {
+    if (key === "tags" || key === "excludeTags") {
         var tags = Array.isArray(value) ? value : [];
         return tags.length > 0 ? tags.join(", ") : "(无)";
     }
@@ -24583,6 +24597,7 @@ function computeManualDiffs() {
         { key: "funnelLevel", label: "漏斗层级" },
         { key: "excludeVerifiedUnavailableEmails", label: "排除已验证不可用邮箱" },
         { key: "tags", label: "标签" },
+        { key: "excludeTags", label: "排除标签" },
         { key: "regions", label: "地区" },
         { key: "emailDomains", label: "邮箱服务商" },
         { key: "discipline", label: "学科" },
@@ -24605,7 +24620,7 @@ function computeManualDiffs() {
     fieldDefs.forEach(function(fd) {
         var oldVal = base[fd.key];
         var newVal = dn[fd.key];
-        if (fd.key === "tags") {
+        if (fd.key === "tags" || fd.key === "excludeTags") {
             var oldArr = (oldVal || []).join(", ");
             var newArr = (newVal || []).join(", ");
             if (oldArr !== newArr) {
@@ -24636,6 +24651,7 @@ function computeAndRenderDiffs() {
         templateId: "manualFieldTemplate",
         funnelLevel: "manualFieldFunnelLevel",
         tags: "manualFieldTags",
+        excludeTags: "manualFieldExcludeTags",
         regions: "manualFieldRegions",
         emailDomains: "manualFieldEmailDomain",
         discipline: "manualFieldDiscipline",
@@ -24675,7 +24691,7 @@ function computeAndRenderDiffs() {
 }
 
 function clearAllDiffMarkers() {
-    var fields = ["manualFieldTemplate", "manualFieldFunnelLevel", "manualFieldTags", "manualFieldRegions", "manualFieldEmailDomain",
+    var fields = ["manualFieldTemplate", "manualFieldFunnelLevel", "manualFieldTags", "manualFieldExcludeTags", "manualFieldRegions", "manualFieldEmailDomain",
         "manualFieldDiscipline", "manualFieldResearchDirectionFilter", "manualFieldOperatorStatus", "manualFieldExpertTypes", "manualFieldSenderAccounts", "manualFieldGateFilter", "manualFieldEmailVerification", "manualFieldEmailVerificationAllowedStates", "manualFieldExcludeVerifiedUnavailableEmails", "manualFieldRoundsPerRun", "manualFieldRoundSize",
         "manualFieldPerMailIntervalSec", "manualFieldPerRoundIntervalSec", "manualFieldSelfCheckTtlMin"];
     fields.forEach(function(id) {
@@ -25709,7 +25725,9 @@ function bindBatchSendTaskEvents() {
     }
 
     bindBatchTagPicker("batchConfigEditorTags");
+    bindBatchTagPicker("batchConfigEditorExcludeTags");
     bindBatchTagPicker("batchManualTags");
+    bindBatchTagPicker("batchManualExcludeTags");
     bindBatchRegionPicker("batchConfigEditorRegions");
     bindBatchRegionPicker("batchManualRegions");
     bindBatchMultiPicker("batchConfigEditorEmailDomains");

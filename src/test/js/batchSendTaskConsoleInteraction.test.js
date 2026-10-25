@@ -438,7 +438,7 @@ describe("batch send task console interactions", () => {
         const sandbox = {
             document: { getElementById: (id) => el(id) },
             batchTaskState: { editorMode: "create", editorId: null, editorAutoEnabled: true },
-            readBatchTagPickerValue: () => [],
+            readBatchTagPickerValue: id => id === "batchConfigEditorExcludeTags" ? ["微软系邮箱", "重点关注"] : ["verified"],
             readBatchRegionPickerValue: () => ["China", "Europe"],
             readBatchMultiPickerValue: () => ["PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"],
             gateToggleChecked: () => false,
@@ -458,6 +458,8 @@ describe("batch send task console interactions", () => {
         await sandbox.saveBatchConfigEditor();
 
         assert.strictEqual(apiBodies.length, 1);
+        assert.deepStrictEqual(apiBodies[0].excludeTags, ["微软系邮箱", "重点关注"]);
+        assert.deepStrictEqual(apiBodies[0].tags, ["verified"]);
         assert.deepStrictEqual(apiBodies[0].regions, ["China", "Europe"],
             "payload regions must stay English constants (I-1)");
     });
@@ -2323,4 +2325,60 @@ describe("batch send task console interactions", () => {
         assert.ok(clearMarkers.includes('"manualFieldResearchDirectionFilter"'),
             "clearing diff markers must cover the new field (S-1)");
     });
+});
+
+
+describe("batch exclude tags", () => {
+    it("provides distinct multiselect controls in the real editor and manual HTML", () => {
+        for (const id of ["batchConfigEditorExcludeTags", "batchManualExcludeTags"]) {
+            for (const suffix of ["", "Chips", "Search", "Dropdown"]) {
+                assert.ok(indexSource.includes('id="' + id + suffix + '"'), id + suffix);
+            }
+            assert.ok(indexSource.includes('data-tag-picker="' + id + '"'));
+            assert.ok(appSource.includes('bindBatchTagPicker("' + id + '")'));
+        }
+        assert.ok(indexSource.includes("多选，命中任意一个即排除"));
+    });
+});
+
+it("exclude tags preserve include tags and travel through editor and manual snapshots", () => {
+    const elements = {
+        batchManualTags: element("verified"),
+        batchManualExcludeTags: element(" 微软系邮箱,重点关注,微软系邮箱 "),
+        batchConfigEditorTags: element("verified"),
+        batchConfigEditorExcludeTags: element(" 微软系邮箱,重点关注,微软系邮箱 ")
+    };
+    const calls = [];
+    const sandbox = {
+        document: { getElementById: id => elements[id] || null },
+        resolveBatchTemplateMailType: () => "INTRODUCTION",
+        readBatchRegionPickerValue: () => [], readBatchMultiPickerValue: () => [],
+        readEmailVerificationAllowedStates: () => ["deliverable"],
+        normalizeEmailVerificationAllowedStates: v => v || ["deliverable"],
+        gateToggleChecked: () => false,
+        batchTaskState: { manualDraft: { tags: ["verified"] } },
+        computeAndRenderDiffs: () => calls.push("diff"),
+        scheduleRecipientPreview: kind => calls.push(kind)
+    };
+    vm.createContext(sandbox);
+    for (const fn of ["normalizeBatchTags", "readBatchTagPickerValue", "readManualFormValues",
+        "buildManualExecutionSnapshot", "buildConfigEditorRecipientSnapshot", "notifyBatchTagPickerChanged",
+        "normalizeManualSnapshot", "deepCloneConfig"]) vm.runInContext(extractFn(fn), sandbox);
+    for (const snapshot of [sandbox.buildManualExecutionSnapshot(), sandbox.buildConfigEditorRecipientSnapshot()]) {
+        assert.deepStrictEqual(Array.from(snapshot.excludeTags), ["微软系邮箱", "重点关注"]);
+        assert.deepStrictEqual(Array.from(snapshot.tags), ["verified"]);
+    }
+    sandbox.notifyBatchTagPickerChanged("batchManualExcludeTags");
+    assert.deepStrictEqual(Array.from(sandbox.batchTaskState.manualDraft.tags), ["verified"]);
+    assert.deepStrictEqual(Array.from(sandbox.batchTaskState.manualDraft.excludeTags), ["微软系邮箱", "重点关注"]);
+    sandbox.notifyBatchTagPickerChanged("batchConfigEditorExcludeTags");
+    assert.deepStrictEqual(calls, ["diff", "manual", "editor"]);
+    const saved = { excludeTags: ["A", "B"] };
+    const cloned = sandbox.deepCloneConfig(saved);
+    cloned.excludeTags.push("C");
+    assert.deepStrictEqual(saved.excludeTags, ["A", "B"]);
+    assert.deepStrictEqual(Array.from(sandbox.deepCloneConfig({}).excludeTags), []);
+    assert.deepStrictEqual(Array.from(sandbox.normalizeManualSnapshot({excludeTags:[" B ","A","A"]}).excludeTags), ["A","B"]);
+    elements.batchManualExcludeTags.value = "";
+    assert.deepStrictEqual(Array.from(sandbox.buildManualExecutionSnapshot().excludeTags), []);
 });

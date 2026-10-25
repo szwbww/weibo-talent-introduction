@@ -96,6 +96,70 @@ import java.util.concurrent.Executor
 import java.util.Optional
 
 class ManualInitialOutreachServiceTest {
+    @Test
+    fun `exclude tags remove NEW retry contacts from preview and actual execution`() {
+        stubIntroSendPipeline(account("chen"), emptyList())
+        val contact = ExpertContact(id = 1L, campaignId = 10L, orcidId = "EXCLUDE-RETRY",
+            expertEmail = "retry@example.org", expertName = null, currentStatus = "NEW")
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(contact))
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf(contact.orcidId)))
+            .thenReturn(listOf(expert(contact.orcidId, contact.expertEmail).copy(tags = listOf("微软系邮箱"))))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+        val snapshot = runScheduledSnapshot()
+        assertEquals(1, service.countBySnapshot(snapshot).totalSendable)
+        val filtered = snapshot.copy(excludeTags = listOf("微软系邮箱", "重点关注"))
+        assertEquals(0, service.countBySnapshot(filtered).totalSendable)
+        val result = service.run(filtered, 12345L, ExecutionMode.MANUAL, true)
+        assertEquals(0, result.sent)
+        Mockito.verifyNoInteractions(mailDeliveryService)
+    }
+
+    @Test
+    fun `exclude tags filter ES sends but stay visible in the diagnostic base`() {
+        val profiles = listOf(expert("EXCLUDED-ES", "excluded@example.org").copy(tags = listOf("微软系邮箱")))
+        stubIntroSendPipeline(account("chen"), profiles)
+        val snapshot = runScheduledSnapshot().copy(excludeTags = listOf("微软系邮箱", "重点关注"))
+        val scope = RecipientScope.fromSnapshot(snapshot)
+        val build = ManualInitialOutreachService::class.java.getDeclaredMethod("buildEsFiltersForLevel", RecipientScope::class.java, String::class.java)
+        build.isAccessible = true
+        val exclusion = mapOf("bool" to mapOf("must_not" to listOf(mapOf("terms" to mapOf("tags" to snapshot.excludeTags)))))
+        for (type in listOf("INTRODUCTION", "MATERIAL_REMINDER")) {
+            val filters = build.invoke(service, scope.copy(mailType = type), "CANDIDATE") as List<*>
+            assertTrue(exclusion in filters)
+            val empty = build.invoke(service, scope.copy(mailType = type, excludeTags = emptyList()), "CANDIDATE") as List<*>
+            assertFalse(exclusion in empty)
+        }
+        val baseMethod = ManualInitialOutreachService::class.java.getDeclaredMethod("baseRecipientScope", RecipientScope::class.java)
+        baseMethod.isAccessible = true
+        val base = baseMethod.invoke(service, scope) as RecipientScope
+        assertEquals(emptyList<String>(), base.excludeTags)
+        val preview = service.countBySnapshot(snapshot)
+        assertEquals(0, preview.totalSendable)
+        assertEquals(1, preview.baseline)
+        assertEquals(1, preview.excludedUnique)
+        assertEquals(1, preview.reasonHitsDetail.single { it.reasonKey == "EXCLUDED_TAGS" }.count)
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, true)
+        assertEquals(0, result.sent)
+        Mockito.verifyNoInteractions(mailDeliveryService)
+    }
+
+
+    @Test
+    fun `person grouping cannot restore excluded member addresses`() {
+        val first = discoveredExpert("EXCLUDE-P1", "p1@example.org").copy(tags = listOf(DiscoveryPersonScope.DISCOVERED_TAG, "微软系邮箱"))
+        val second = discoveredExpert("EXCLUDE-P2", "p2@example.org").copy(tags = listOf(DiscoveryPersonScope.DISCOVERED_TAG, "重点关注"))
+        val profiles = listOf(first, second)
+        stubIntroSendPipeline(account("chen"), profiles)
+        stubPersonMemberProfiles(profiles)
+        stubAdmissions("EXCLUDE-P1" to "AUTO_PASSED", "EXCLUDE-P2" to "AUTO_PASSED")
+        val grouped = serviceWithPersonSelection(personMembers(profiles))
+        val snapshot = introSnapshot(roundSize = 10, roundsPerRun = 1)
+        assertEquals(1, grouped.countBySnapshot(snapshot).totalSendable)
+        assertEquals(0, grouped.countBySnapshot(snapshot.copy(excludeTags = listOf("微软系邮箱", "重点关注"))).totalSendable)
+        Mockito.verifyNoInteractions(mailDeliveryService)
+    }
+
     private val expertSearchService = Mockito.mock(ExpertSearchService::class.java)
     private val currentCandidateProfiles = mutableMapOf<Pair<ExpertIndexLevel, String>, ExpertProfile>()
     private val senderAccountAssignmentService = Mockito.mock(SenderAccountAssignmentService::class.java)

@@ -7,6 +7,7 @@ import com.weibo.talentintroduction.campaign.domain.BatchOutcomeReasonCodes
 import com.weibo.talentintroduction.campaign.domain.EmailVerificationAllowedStates
 import com.weibo.talentintroduction.campaign.domain.OutcomeAccumulator
 import com.weibo.talentintroduction.campaign.domain.OutcomeBreakdown
+import com.weibo.talentintroduction.campaign.domain.normalizeExcludeTags
 import com.weibo.talentintroduction.campaign.domain.RecipientScope
 import com.weibo.talentintroduction.campaign.domain.ResearchDirectionFilters
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
@@ -2777,6 +2778,12 @@ class ManualInitialOutreachService(
         val filters = base
         if (scope.tags.isNotEmpty()) {
             filters.add(mapOf("terms" to mapOf("tags" to scope.tags)))
+        }
+        val excludeTags = normalizeExcludeTags(scope.excludeTags)
+        if (excludeTags.isNotEmpty()) {
+            filters.add(mapOf("bool" to mapOf("must_not" to listOf(
+                mapOf("terms" to mapOf("tags" to excludeTags))
+            ))))
         }
         ExpertSearchService.regionsFilter(scope.regions)?.let { regionFilter ->
             filters.add(withDiscoveryUnmappedCountryBranch(scope.regions, regionFilter))

@@ -35,6 +35,40 @@ import java.time.LocalDateTime
 
 class BatchSendTaskConfigServiceTest {
 
+    @Test
+    fun `exclude tags round trip preserve absent updates and clear explicit empty updates`() {
+        var stored = row(expertTypesJson = "[\"PRODUCTION_RND\"]")
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            stored = (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 1L)
+            stored
+        }
+        `when`(repository.findByIdAndDeletedAtIsNull(1L)).thenAnswer { stored }
+        val created = service().create(createCmd().copy(excludeTags = listOf(" 微软系邮箱 ", "重点关注", "微软系邮箱", " ")))
+        assertEquals(listOf("微软系邮箱", "重点关注"), created.excludeTags)
+        assertEquals(created.excludeTags, service().get(1L).excludeTags)
+        assertEquals(created.excludeTags, stored.toExecutionSnapshot(objectMapper).excludeTags)
+        assertEquals(created.excludeTags, service().update(1L, updateCmd()).excludeTags)
+        assertEquals(created.excludeTags, service().setEnabled(1L, true).excludeTags)
+        assertEquals(emptyList<String>(), service().update(1L, updateCmd().copy(excludeTags = emptyList())).excludeTags)
+        assertEquals("[]", stored.excludeTagsJson)
+    }
+
+    @Test
+    fun `exclude tag protection rejects corrupt stored data and invalid elements`() {
+        assertEquals(emptyList<String>(), row().toExecutionSnapshot(objectMapper).excludeTags)
+        for (bad in listOf("{", "", "null", "{}", "[1]", "[null]", "[\"A,B\"]")) {
+            val stored = row().copy(excludeTagsJson = bad)
+            `when`(repository.findByIdAndDeletedAtIsNull(1L)).thenReturn(stored)
+            assertThrows(IllegalArgumentException::class.java) { service().get(1L) }
+            assertThrows(IllegalArgumentException::class.java) { stored.toExecutionSnapshot(objectMapper) }
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            service().create(createCmd().copy(excludeTags = listOf("A,B")))
+        }
+        verify(repository, Mockito.never()).save(any())
+    }
+
+
     private val repository = Mockito.mock(BatchSendTaskConfigRepository::class.java)
     private val mailComposeTemplateService = Mockito.mock(MailComposeTemplateService::class.java)
     private val eventPublisher = Mockito.mock(ApplicationEventPublisher::class.java)
@@ -582,6 +616,7 @@ class BatchSendTaskConfigServiceTest {
             id = 2L, configName = "默认介绍邮件任务", mailType = "INTRODUCTION",
             autoEnabled = false, cron = "0 0 0 * * ?", roundSize = 50,
             perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
+            excludeTagsJson = "[\"微软系邮箱\"]",
             funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""", emailDomainsJson = "[]",
             expertTypesJson = """["PRODUCTION_RND","ACADEMIC_RND","HYBRID_RND"]""",
             discipline = null, templateId = null, legacyCode = "INTRODUCTION",
@@ -615,6 +650,7 @@ class BatchSendTaskConfigServiceTest {
         verify(repository).save(captor.capture())
         assertEquals("默认介绍邮件任务", captor.value.configName)
         assertEquals("CANDIDATE", captor.value.funnelLevel)
+        assertEquals("[\"微软系邮箱\"]", captor.value.excludeTagsJson)
         assertEquals("""["保留标签"]""", captor.value.tagsJson)
         assertEquals("0 30 8 * * ?", captor.value.cron)
         // M-2/I2a-6: legacy request's degraded single emailDomain must never rebuild the entity json.

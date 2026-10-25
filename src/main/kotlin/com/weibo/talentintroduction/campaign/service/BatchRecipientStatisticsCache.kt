@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.campaign.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.weibo.talentintroduction.campaign.domain.normalizeExcludeTags
 import com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot
 import com.weibo.talentintroduction.campaign.domain.EmailVerificationAllowedStates
 import com.weibo.talentintroduction.campaign.domain.RecipientScope
@@ -103,6 +104,7 @@ class BatchRecipientStatisticsCache(
             "rulesVersion" to "v1", "mailType" to scope.mailType,
             "templateId" to context.snapshot.templateId, "templateFingerprint" to fingerprint,
             "funnelLevels" to scope.funnelLevels.sorted(), "tags" to scope.tags.distinct().sorted(),
+            "excludeTags" to normalizeExcludeTags(scope.excludeTags).sorted(),
             "regions" to scope.regions.distinct().sorted(), "emailDomains" to scope.emailDomains.distinct().sorted(),
             "discipline" to scope.discipline, "operatorStatuses" to scope.operatorStatuses.distinct().sorted(),
             "expertTypes" to scope.expertTypes.distinct().sorted(), "hasFields" to scope.gateEsFields.distinct().sorted(),

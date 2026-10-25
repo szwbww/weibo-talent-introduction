@@ -50,7 +50,8 @@ data class BatchSendTaskConfig(
     val legacyCode: String? = null,
     val deletedAt: LocalDateTime? = null,
     val createdAt: LocalDateTime? = null,
-    val updatedAt: LocalDateTime? = null
+    val updatedAt: LocalDateTime? = null,
+    val excludeTagsJson: String? = null
 )
 
 data class BatchSendTaskConfigView(
@@ -92,7 +93,8 @@ data class BatchSendTaskConfigView(
     /** Next planned trigger time; null when the cron is invalid (I-1/I-2/I-3). */
     val nextFireTime: LocalDateTime? = null,
     /** Most recent execution start time (started_at), MANUAL or SCHEDULED; null when never executed (I-5). */
-    val lastExecutedAt: LocalDateTime? = null
+    val lastExecutedAt: LocalDateTime? = null,
+    val excludeTags: List<String> = emptyList()
 )
 
 data class BatchSendTaskConfigCreateCommand(
@@ -129,7 +131,8 @@ data class BatchSendTaskConfigCreateCommand(
      * 非 nullable：请求体显式 null 由绑定器拒绝（不可升级成旧的三态全放行）；非法值由配置服务拒绝。
      */
     val emailVerificationAllowedStates: List<String> =
-        listOf(EmailVerificationAllowedStates.DELIVERABLE)
+        listOf(EmailVerificationAllowedStates.DELIVERABLE),
+    val excludeTags: List<String> = emptyList()
 )
 
 data class BatchSendTaskConfigUpdateCommand(
@@ -165,7 +168,8 @@ data class BatchSendTaskConfigUpdateCommand(
      * 显式 `[]` 存 `[]`；显式数组按固定顺序去重后落库。合并由
      * `BatchSendTaskConfigService.update` 在入口完成，绝不用「空值即清空」推断。
      */
-    val emailVerificationAllowedStates: List<String>? = null
+    val emailVerificationAllowedStates: List<String>? = null,
+    val excludeTags: List<String>? = null
 )
 
 /**

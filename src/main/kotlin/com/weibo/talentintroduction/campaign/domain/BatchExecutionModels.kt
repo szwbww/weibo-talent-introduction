@@ -89,11 +89,13 @@ data class BatchExecutionSnapshot(
      */
     val emailVerificationAllowedStates: List<String>? = null,
     /** Historical verified-undeliverable filtering is independent of live verification. */
-    val excludeVerifiedUnavailableEmails: Boolean = false
+    val excludeVerifiedUnavailableEmails: Boolean = false,
+    val excludeTags: List<String> = emptyList()
 ) {
     init {
         // I-1：直接构造与 JSON 绑定都在启动前拒绝非法白名单，绝不带着未校验策略开跑。
         EmailVerificationAllowedStates.requireValid(emailVerificationAllowedStates)
+        normalizeExcludeTags(excludeTags)
     }
 }
 
@@ -146,6 +148,7 @@ object RecipientFilterKeys {
     const val EMAIL_DOMAIN = "EMAIL_DOMAIN"
     const val RESEARCH_DIRECTION = "RESEARCH_DIRECTION"
     const val TAGS = "TAGS"
+    const val EXCLUDED_TAGS = "EXCLUDED_TAGS"
     const val REGION = "REGION"
     const val GATE_FIELD = "GATE_FIELD"
 }
@@ -170,7 +173,8 @@ data class RecipientScope(
      * 是彼此独立的 AND 维度（I-3）。
      */
     val researchDirectionFilter: String = ResearchDirectionFilters.ANY,
-    val excludeVerifiedUnavailableEmails: Boolean = false
+    val excludeVerifiedUnavailableEmails: Boolean = false,
+    val excludeTags: List<String> = emptyList()
 ) {
     /**
      * I-2/I-3: 本次显式条件的不匹配 key 列表（空列表 = 全部命中）。**不含**发现准入判定 ——
@@ -223,6 +227,9 @@ data class RecipientScope(
         if (tags.isNotEmpty()) {
             val expertTags = profile.tags.orEmpty()
             if (tags.none { it in expertTags }) keys += RecipientFilterKeys.TAGS
+        }
+        if (normalizeExcludeTags(excludeTags).any { it in profile.tags.orEmpty() }) {
+            keys += RecipientFilterKeys.EXCLUDED_TAGS
         }
         if (regions.isNotEmpty() && !matchesRegion(profile)) keys += RecipientFilterKeys.REGION
         if (gateEsFields.isNotEmpty() && !matchesGateFields(profile)) keys += RecipientFilterKeys.GATE_FIELD
@@ -329,6 +336,7 @@ data class RecipientScope(
                 mailType = snapshot.mailType,
                 funnelLevels = levels,
                 tags = snapshot.tags,
+                excludeTags = normalizeExcludeTags(snapshot.excludeTags),
                 regions = snapshot.regions,
                 // I2a-2 / I2a-5：trim、丢空、去重保序；空集合 = 不限。
                 emailDomains = snapshot.emailDomains.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
@@ -558,6 +566,7 @@ fun BatchSendTaskConfig.toExecutionSnapshot(
         selfCheckTtlMinutes = selfCheckTtlMinutes,
         funnelLevel = funnelLevel,
         tags = tags,
+        excludeTags = parseExcludeTags(objectMapper, excludeTagsJson),
         regions = regions,
         emailDomains = emailDomains,
         discipline = discipline,
@@ -645,4 +654,24 @@ fun parseSenderAccountCodes(objectMapper: ObjectMapper, json: String?): List<Str
     }.map { it.trim() }
         .filter { it.isNotEmpty() }
         .distinct()
+}
+
+/** Empty/legacy exclusions are unrestricted; invalid protection data must never silently widen scope. */
+fun normalizeExcludeTags(tags: List<String?>): List<String> = tags.map {
+    val tag = requireNotNull(it) { "excludeTags must contain strings only" }.trim()
+    require(!tag.contains(",")) { "excludeTags must not contain commas" }
+    tag
+}.filter { it.isNotEmpty() }.distinct()
+
+fun parseExcludeTags(objectMapper: ObjectMapper, json: String?): List<String> {
+    if (json == null) return emptyList()
+    val node = try {
+        objectMapper.readTree(json)
+    } catch (e: Exception) {
+        throw IllegalArgumentException("Invalid excludeTags JSON", e)
+    }
+    require(node != null && node.isArray && node.all { it.isTextual }) {
+        "excludeTags must be a JSON array of strings"
+    }
+    return normalizeExcludeTags(node.map { it.asText() })
 }

@@ -10,6 +10,8 @@ import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigView
 import com.weibo.talentintroduction.campaign.domain.EmailVerificationAllowedStates
 import com.weibo.talentintroduction.campaign.domain.ResearchDirectionFilters
 import com.weibo.talentintroduction.campaign.domain.parseEmailVerificationAllowedStates
+import com.weibo.talentintroduction.campaign.domain.normalizeExcludeTags
+import com.weibo.talentintroduction.campaign.domain.parseExcludeTags
 import com.weibo.talentintroduction.campaign.domain.parseSenderAccountCodes
 import com.weibo.talentintroduction.campaign.event.BatchSendCronChangedEvent
 import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository
@@ -81,6 +83,7 @@ class BatchSendTaskConfigService(
                 selfCheckTtlMinutes = normalized.selfCheckTtlMinutes,
                 funnelLevel = normalized.funnelLevel,
                 tagsJson = normalized.tagsJson,
+                excludeTagsJson = normalized.excludeTagsJson,
                 regionsJson = normalized.regionsJson,
                 emailDomainsJson = normalized.emailDomainsJson,
                 discipline = normalized.discipline,
@@ -115,6 +118,7 @@ class BatchSendTaskConfigService(
             ?: existing.emailVerificationAllowedStatesJson
         val normalized = normalizeAndValidate(
             cmd.toFields(
+                mergedExcludeTags = cmd.excludeTags ?: parseExcludeTags(objectMapper, existing.excludeTagsJson),
                 mergedEmailVerificationEnabled = cmd.emailVerificationEnabled ?: existing.emailVerificationEnabled,
                 mergedExcludeVerifiedUnavailableEmails = cmd.excludeVerifiedUnavailableEmails ?: existing.excludeVerifiedUnavailableEmails,
                 mergedEmailVerificationAllowedStatesJson = mergedEmailVerificationAllowedStatesJson
@@ -135,6 +139,7 @@ class BatchSendTaskConfigService(
                 selfCheckTtlMinutes = normalized.selfCheckTtlMinutes,
                 funnelLevel = normalized.funnelLevel,
                 tagsJson = normalized.tagsJson,
+                excludeTagsJson = normalized.excludeTagsJson,
                 regionsJson = normalized.regionsJson,
                 emailDomainsJson = normalized.emailDomainsJson,
                 discipline = normalized.discipline,
@@ -222,6 +227,7 @@ class BatchSendTaskConfigService(
                 selfCheckTtlMinutes = request.selfCheckTtlMinutes,
                 funnelLevel = existing.funnelLevel,
                 tags = parseTags(existing.tagsJson),
+                excludeTags = parseExcludeTags(objectMapper, existing.excludeTagsJson),
                 regions = parseRegions(existing.regionsJson),
                 emailDomains = parseEmailDomains(existing.emailDomainsJson),
                 discipline = request.discipline.ifBlank { null },
@@ -414,6 +420,7 @@ class BatchSendTaskConfigService(
             selfCheckTtlMinutes = fields.selfCheckTtlMinutes,
             funnelLevel = funnelLevel,
             tagsJson = tagsJson,
+            excludeTagsJson = objectMapper.writeValueAsString(normalizeExcludeTags(fields.excludeTags)),
             regionsJson = regionsJson,
             emailDomainsJson = emailDomainsJson,
             discipline = discipline,
@@ -576,6 +583,7 @@ class BatchSendTaskConfigService(
             selfCheckTtlMinutes = row.selfCheckTtlMinutes,
             funnelLevel = row.funnelLevel,
             tags = parseTags(row.tagsJson),
+            excludeTags = parseExcludeTags(objectMapper, row.excludeTagsJson),
             regions = parseRegions(row.regionsJson),
             emailDomains = parseEmailDomains(row.emailDomainsJson),
             discipline = row.discipline,
@@ -695,7 +703,8 @@ class BatchSendTaskConfigService(
          * 旧配置三态全放行）。create 与显式传值路径经 [encodeEmailVerificationAllowedStates]
          * 规范化序列化；update 缺字段路径逐字透传 existing 列文本。
          */
-        val emailVerificationAllowedStatesJson: String? = null
+        val emailVerificationAllowedStatesJson: String? = null,
+        val excludeTags: List<String> = emptyList()
     )
 
     private data class NormalizedConfig(
@@ -725,7 +734,8 @@ class BatchSendTaskConfigService(
         /**
          * I-1/I-2: 本列待写入的原始 JSON 文本；null 只出现在「保留 existing 原始列」（含 SQL NULL）。
          */
-        val emailVerificationAllowedStatesJson: String? = null
+        val emailVerificationAllowedStatesJson: String? = null,
+        val excludeTagsJson: String = "[]"
     )
 
     private fun BatchSendTaskConfigCreateCommand.toFields() = ConfigFields(
@@ -739,6 +749,7 @@ class BatchSendTaskConfigService(
         selfCheckTtlMinutes = selfCheckTtlMinutes,
         funnelLevel = funnelLevel,
         tags = tags,
+        excludeTags = excludeTags,
         regions = regions,
         emailDomains = emailDomains,
         discipline = discipline,
@@ -760,6 +771,7 @@ class BatchSendTaskConfigService(
      * I-2: 放行白名单同理，合并后的列文本（显式值规范化序列化 / 缺字段逐字保留）由 [update] 计算。
      */
     private fun BatchSendTaskConfigUpdateCommand.toFields(
+        mergedExcludeTags: List<String>,
         mergedEmailVerificationEnabled: Boolean,
         mergedExcludeVerifiedUnavailableEmails: Boolean,
         mergedEmailVerificationAllowedStatesJson: String?
@@ -774,6 +786,7 @@ class BatchSendTaskConfigService(
         selfCheckTtlMinutes = selfCheckTtlMinutes,
         funnelLevel = funnelLevel,
         tags = tags,
+        excludeTags = mergedExcludeTags,
         regions = regions,
         emailDomains = emailDomains,
         discipline = discipline,
@@ -799,6 +812,7 @@ class BatchSendTaskConfigService(
         selfCheckTtlMinutes = selfCheckTtlMinutes,
         funnelLevel = funnelLevel,
         tags = parseTags(tagsJson),
+        excludeTags = parseExcludeTags(objectMapper, excludeTagsJson),
         regions = parseRegions(regionsJson),
         emailDomains = parseEmailDomains(emailDomainsJson),
         discipline = discipline,

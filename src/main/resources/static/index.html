@@ -1453,6 +1453,18 @@
                             </div>
                         </div>
                         <div class="batch-config-field">
+                            <span class="batch-config-field-label">排除标签</span>
+                            <div class="batch-tag-picker" data-tag-picker="batchConfigEditorExcludeTags">
+                                <div class="batch-tag-picker-control">
+                                    <div id="batchConfigEditorExcludeTagsChips" class="batch-tag-picker-chips"></div>
+                                    <input type="search" id="batchConfigEditorExcludeTagsSearch" class="batch-tag-picker-search" placeholder="多选，命中任意一个即排除" autocomplete="off" aria-controls="batchConfigEditorExcludeTagsDropdown" aria-expanded="false">
+                                    <span class="batch-tag-picker-chevron" aria-hidden="true">⌄</span>
+                                </div>
+                                <input type="hidden" id="batchConfigEditorExcludeTags" value="">
+                                <div id="batchConfigEditorExcludeTagsDropdown" class="batch-tag-picker-dropdown" role="listbox" aria-multiselectable="true" hidden></div>
+                            </div>
+                        </div>
+                        <div class="batch-config-field">
                             <span class="batch-config-field-label">地区</span>
                             <div class="batch-tag-picker" data-tag-picker="batchConfigEditorRegions">
                                 <div class="batch-tag-picker-control">
@@ -1705,6 +1717,20 @@
                             </div>
                             <input type="hidden" id="batchManualTags" value="">
                             <div id="batchManualTagsDropdown" class="batch-tag-picker-dropdown" role="listbox" aria-multiselectable="true" hidden></div>
+                        </div>
+                        <span class="batch-config-diff-badge" hidden>已修改</span>
+                        <div class="batch-config-diff-original" hidden></div>
+                    </div>
+                    <div class="batch-config-field" id="manualFieldExcludeTags">
+                        <span class="batch-config-field-label">排除标签</span>
+                        <div class="batch-tag-picker" data-tag-picker="batchManualExcludeTags">
+                            <div class="batch-tag-picker-control">
+                                <div id="batchManualExcludeTagsChips" class="batch-tag-picker-chips"></div>
+                                <input type="search" id="batchManualExcludeTagsSearch" class="batch-tag-picker-search" placeholder="多选，命中任意一个即排除" autocomplete="off" aria-controls="batchManualExcludeTagsDropdown" aria-expanded="false">
+                                <span class="batch-tag-picker-chevron" aria-hidden="true">⌄</span>
+                            </div>
+                            <input type="hidden" id="batchManualExcludeTags" value="">
+                            <div id="batchManualExcludeTagsDropdown" class="batch-tag-picker-dropdown" role="listbox" aria-multiselectable="true" hidden></div>
                         </div>
                         <span class="batch-config-diff-badge" hidden>已修改</span>
                         <div class="batch-config-diff-original" hidden></div>
