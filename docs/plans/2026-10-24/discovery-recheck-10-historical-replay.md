@@ -44,13 +44,13 @@ ExpertDiscoveryService:1715 consumeOutcome与:2162 consumeQueuedItem最终均调
 
 1. 新DiscoveryHistoricalReplayTool命令`freeze/compare/apply-bindings/report`，类内隔离只读依赖，compare绝不可加载会启动scheduler的Spring应用。新增脚本仅调用工具/记录版本和hash，不直接执行准入SQL。freeze把当时服务器源清单与样本事实存manifest，文件权限0600。新专家名单与旧待审核名单分文件；已有CLI运维requeue不改造成此入口。（I-1/3）
 2. compare使用03/04/06生产解析器，先按相同原文SHA对照首提取，再按原文级/批内邮箱+姓名/全历史专家去重逐级报数；只在完整baseline+原文coverage时计算新增/移除，PARTIAL不作零增益结论。资格恢复单列，旧当前准入不改。（I-1/4）
-3. ExpertDiscoveryService新增consumeArchivedPaper(paper,authorEmails,sourceName,originalPaperKey,newExecutionContext)：只接受BackfillService解析出的、原文SHA仍匹配的完整proof；调用原consumeOutcomeInternal和paperIdentityFactory。不得篡改原execution归属；新补录有新task execution且source仍原论文source，来源key/原archive id进入step2引用。明确httpRequests=0是复用原文，不谎报新下载；业务结果单独记补录统计，不污染原批采集计数。（I-2）
+3. ExpertDiscoveryService新增consumeArchivedPaper(paper,authorEmails,sourceName,originalPaperKey,newExecutionContext)：只接受BackfillService解析出的、原文SHA仍匹配的完整proof；调用原consumeOutcomeInternal和paperIdentityFactory。不得篡改原execution归属；新补录有新task execution且source仍原论文source，来源key/原archive id进入step2引用。明确httpRequests=0是复用原文，不谎报新下载；业务结果单独记补录统计，不污染原批采集计数。现有DiscoveryVerificationExecution仅增加可空冻结原文上下文（同Registration文件），携带manifest evaluationAt/确切paperSourceRefs；reserve校验sourceName/sourceItemKey后直接采用固定输入，不再按新execution/DOI重新选来源。默认null保持普通登记原clock/locate语义，禁止reserve后重写快照。（I-2）
 4. 新DiscoveryPaperBackfillService负责冻结paper列表、逐篇租约、parse→dedup/consume、收据；仅apply-bindings manifestHash一致才调用。重复命中走既有recordIdentityDuplicate/核验恢复与补全幂等，不覆盖整人profile；已有人需要重新资格核验则送08新重审run，不重置旧item。每paper失败receipt含可重试原因；重试不得重新纳入后续新文件。（I-2/3/4）
 5. 历史验证顺序固定：结构fixture→部署类/修复类同SHA抽样（确认全部新绑定负例）→4472原文完整对照→897冻结名单AUDIT/REUSE→人工阅读具体diff→仅对批准范围ENFORCE/补录。刷新外部数据另建REFRESH轮，不混算代码修复收益。结果生成审计报告，生产真实名单不提交仓库。（I-1/3）
 
 ## 变更文件清单
 
-仅下列 7 个文件。新增文件明确标注；其余文件不得顺带修改。
+仅下列 8 个文件。新增文件明确标注；其余文件不得顺带修改。第8项依A7持续授权为固定原文/评估时刻传播的直接依赖，不改普通发现默认路径。
 
 | 文件 | 变更 |
 |---|---|
@@ -61,6 +61,7 @@ ExpertDiscoveryService:1715 consumeOutcome与:2162 consumeQueuedItem最终均调
 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperBackfillServiceTest.kt` | 新增去重/无写/部分失败 |
 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryHistoricalReplayToolTest.kt` | 新增manifest/差异核账 |
 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckFlowIT.kt` | 扩展08新建的FlowIT：原文→consumer→RAW→核验→候选端到端 |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationRegistrationService.kt` | 现有Execution可空冻结原文上下文及reserve来源校验/固定输入；普通默认null行为不变 |
 
 ## 验收标准
 
@@ -68,6 +69,7 @@ ExpertDiscoveryService:1715 consumeOutcome与:2162 consumeQueuedItem最终均调
 - I-2：原文实际parser输出穿过真实consumer，mock不能预填正确proof；重复apply仅首次创建RAW，旧checkpoint和旧批统计不变；现有无效邮箱/身份冲突拒绝。
 - I-3：compare数据库/ES业务写0、provider HTTP0；apply错误manifestHash拒绝；本地脚本不输出连接密码/key。
 - I-4：缺失文件和部分解析分别计数，不能以0关联当完整失败；中途取消后重启只续固定未完成项；重试不清原attempt；不得触发发信/联系人/邮件创建。
+- 必需新鲜命令：指定JDK11执行`mvn test -Dtest=DiscoveryPaperBackfillServiceTest,DiscoveryHistoricalReplayToolTest,DiscoveryRecheckFlowIT,DiscoveryCountryRegistrationTest,DiscoveryCountrySupplementFlowIT,DiscoveryVerificationIntegrationTest -DmysqlIt=true`；真实MySQL不得以skip通过。原直接登记/补全/集成测试保持不改，授权FlowIT断言真实consumer注册后的固定evaluationAt和精确record/attempt/SHA。保留master完整`mvn test`、`mvn package -DskipTests`及实际CLI/历史只读验证。
 
 ## 人工验收清单
 
@@ -90,3 +92,6 @@ ExpertDiscoveryService:1715 consumeOutcome与:2162 consumeQueuedItem最终均调
 - 覆盖：I-1/3/4
 
 人工验收开始后，才从本节导出同名前缀 `-acceptance.md`；机器通过不代表人工验收完成。
+
+## 修正记录
+- 2026-10-25，依A7持续授权增加现有Registration文件（7→8）与上述覆盖命令。原reserve自行取clock并locate来源，与本计划冻结manifest输入矛盾；仅新增默认null的窄上下文传播/来源校验，保留普通旧行为、共用consumer/登记门禁，禁止事后改快照。检索回执与前后身份见10 execution及ledger的Amendments。
