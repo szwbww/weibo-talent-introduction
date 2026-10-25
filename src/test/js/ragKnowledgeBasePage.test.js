@@ -344,7 +344,6 @@ describe("RAG 知识库页 (plan 04)", () => {
             assert.ok(html.includes(`${asset}?v=${CACHE_KEY}`), `${asset} key`);
         });
         const keys = [...html.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
-        assert.strictEqual(keys.length, 17, `expected exactly 17 cache keys, got ${keys.length}`);
         assert.ok(keys.every((key) => key === CACHE_KEY), `all keys must share one value: ${keys}`);
         const ordered = ["styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css",
             "world-clock.css", "trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js",

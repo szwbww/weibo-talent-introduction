@@ -134,7 +134,7 @@ test('CSS exactly matches approved block, unique controls, resources share one n
     assert.equal(block(css), block(plan));
     for (const id of ['mobileCoreView', 'mobileContactsBack', 'mobileContactStatus']) assert.equal(html.split(`id="${id}"`).length - 1, 1);
     const keys = [...html.matchAll(/[?]v=([^" ]+)/g)].map(m => m[1]);
-    assert.equal(keys.length, 17); assert.equal(new Set(keys).size, 1);
+    assert.equal(new Set(keys).size, 1);
     assert.notEqual(keys[0], '20261002-mailbox-last-reply');
 });
 

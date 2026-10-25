@@ -8,13 +8,13 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20261024-paper-format">
-    <link rel="stylesheet" href="expert-materials.css?v=20261024-paper-format">
-    <link rel="stylesheet" href="mailbox-chat.css?v=20261024-paper-format">
-    <link rel="stylesheet" href="meeting-confirmation.css?v=20261024-paper-format">
-    <link rel="stylesheet" href="world-clock.css?v=20261024-paper-format">
-<link rel="stylesheet" href="meeting-records.css?v=20261024-paper-format">
-<link rel="stylesheet" href="contact-details.css?v=20261024-paper-format">
+    <link rel="stylesheet" href="styles.css?v=20261024-discovery-recheck">
+    <link rel="stylesheet" href="expert-materials.css?v=20261024-discovery-recheck">
+    <link rel="stylesheet" href="mailbox-chat.css?v=20261024-discovery-recheck">
+    <link rel="stylesheet" href="meeting-confirmation.css?v=20261024-discovery-recheck">
+    <link rel="stylesheet" href="world-clock.css?v=20261024-discovery-recheck">
+<link rel="stylesheet" href="meeting-records.css?v=20261024-discovery-recheck">
+<link rel="stylesheet" href="contact-details.css?v=20261024-discovery-recheck">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -1291,6 +1291,33 @@
               <button class="button secondary" type="button" data-review-action="HOLD">暂缓所选</button>
               <button class="button secondary" type="button" data-review-action="REJECT">不通过所选</button>
             </div>
+<section class="dr-recheck" id="discoveryRecheckRoot" aria-label="重新审核">
+  <div class="rr-between"><button class="button primary" type="button" data-rr="open">批量重新审核</button><button class="rr-link" type="button" data-rr="history">重审记录</button></div>
+  <section class="rr-panel" data-tone="blue" data-rr="run" hidden aria-label="本次重审">
+    <div class="rr-between"><h4 data-rr="run-title"></h4><span class="rr-tag" data-rr="run-state"></span><div class="rr-actions"><button class="button secondary" type="button" data-rr="cancel-run">取消任务</button><button class="rr-link" type="button" data-rr="run-details">查看逐人流程</button></div></div>
+    <p class="rr-muted" data-rr="run-context"></p><progress data-rr="progress" max="1" value="0" aria-label="已处理固定名单"></progress>
+    <div class="rr-metrics" data-rr="metrics"></div><p class="rr-status" data-rr="run-message" role="status" aria-live="polite"></p>
+  </section>
+  <dialog class="rr-dialog rr-config" data-rr="config" aria-labelledby="recheckConfigTitle">
+    <header class="rr-head"><h3 class="rr-title" id="recheckConfigTitle">批量重新审核</h3><button class="button secondary" type="button" data-rr="close-config">关闭</button></header>
+    <div class="rr-content">
+      <fieldset class="rr-field"><legend>名单范围</legend><label class="rr-option"><input type="radio" name="rr-scope" value="IDS">所选专家 <span data-rr="selected-count">0</span> 人</label><label class="rr-option"><input type="radio" name="rr-scope" value="ALL_MATCHING">当前筛选的全部页<small data-rr="filter-summary"></small></label></fieldset>
+      <fieldset class="rr-field"><legend>执行模式</legend><label class="rr-option"><input type="radio" name="rr-mode" value="AUDIT" checked>仅对照验证<small>记录新结论；不改变当前准入和候选层。</small></label><label class="rr-option"><input type="radio" name="rr-mode" value="ENFORCE">重审并应用结果<small>按现有规则提交可准入者；人工和联系保护仍有效。</small></label></fieldset>
+      <fieldset class="rr-field"><legend>证据来源</legend><label class="rr-option"><input type="radio" name="rr-evidence" value="REUSE" checked>复用留存证据<small>不请求外部服务；缺失证据会明确标注。</small></label><label class="rr-option"><input type="radio" name="rr-evidence" value="REFRESH">刷新外部证据<small>按已保存的免费／付费配置调用；外部数据变化单列。</small></label></fieldset>
+      <p class="rr-muted" data-rr="apollo-config"></p><p class="rr-status" data-rr="prepare-status" role="status" aria-live="polite"></p>
+      <details data-rr="manifest-panel" hidden><summary>查看固定名单</summary><div class="rr-manifest" data-rr="manifest"></div><div class="rr-pager"><button class="button secondary" type="button" data-rr="manifest-prev">上一页</button><span data-rr="manifest-page"></span><button class="button secondary" type="button" data-rr="manifest-next">下一页</button></div></details>
+    </div><footer class="rr-foot"><span class="rr-muted" data-rr="scope-hash"></span><button class="button secondary" type="button" data-rr="prepare">固定名单</button><button class="button primary" type="button" data-rr="start" disabled>确认执行</button></footer>
+  </dialog>
+  <dialog class="rr-dialog" data-rr="history-dialog" aria-labelledby="recheckHistoryTitle">
+    <header class="rr-head"><h3 class="rr-title" id="recheckHistoryTitle">重审记录</h3><button class="button secondary" type="button" data-rr="close-history">关闭</button></header>
+    <div class="rr-content"><p class="rr-status" data-rr="history-status" role="status"></p><div class="rr-table-wrap"><table class="rr-table"><thead data-rr="history-head"></thead><tbody data-rr="history-rows"></tbody></table></div><footer class="rr-pager"><span data-rr="history-page"></span><div class="rr-row"><button class="button secondary" type="button" data-rr="history-prev">上一页</button><button class="button secondary" type="button" data-rr="history-next">下一页</button></div></footer></div>
+  </dialog>
+  <dialog class="rr-dialog" data-rr="detail" aria-labelledby="recheckDetailTitle">
+    <header class="rr-head"><div><h3 class="rr-title" id="recheckDetailTitle"></h3><p class="rr-muted" data-rr="detail-person"></p></div><button class="button secondary" type="button" data-rr="close-detail">关闭</button></header>
+    <div class="rr-detail-summary" data-rr="detail-summary"></div><div class="rr-detail-content"><div class="rr-detail-grid"><ol class="rr-steps" data-rr="steps"></ol><section class="rr-step-body" data-rr="step-body" aria-live="polite"></section></div></div>
+    <footer class="rr-foot"><span class="rr-muted" data-rr="detail-version"></span><button class="button secondary" type="button" data-rr="sync-retry" hidden>仅重试候选同步</button><button class="button secondary" type="button" data-rr="person-history">查看此人历次重审</button></footer>
+  </dialog>
+</section>
             <div role="alert" id="discoveryReviewError" hidden></div>
             <div role="status" id="discoveryReviewResult" aria-live="polite"></div>
             <section class="dr-confirm" id="discoveryReviewConfirm" hidden aria-labelledby="discoveryReviewConfirmTitle">
@@ -2461,15 +2488,16 @@
 <dialog id="playerDialog" class="cr-dialog cr-player-dialog"><header class="cr-dialoghead"><h2 id="playerTitle">会议视频</h2><button class="button cr-iconbtn" type="button" data-close="playerDialog" aria-label="关闭视频">×</button></header><video id="player" controls preload="metadata"></video><p class="cr-hint" id="playerHint">若浏览器不支持该编码，可下载原视频观看。</p></dialog>
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20261024-paper-format"></script>
-<script src="expert-materials.js?v=20261024-paper-format"></script>
-<script src="meeting-confirmation.js?v=20261024-paper-format"></script>
-<script src="mailbox-chat.js?v=20261024-paper-format"></script>
-<script src="contact-history.js?v=20261024-paper-format"></script>
-<script src="meeting-records.js?v=20261024-paper-format"></script>
-<script src="contact-details.js?v=20261024-paper-format"></script>
-<script src="discovery-papers.js?v=20261024-paper-format"></script>
-<script src="app.js?v=20261024-paper-format"></script>
-<script src="world-clock.js?v=20261024-paper-format"></script>
+<script src="trust-reply-workbench.js?v=20261024-discovery-recheck"></script>
+<script src="expert-materials.js?v=20261024-discovery-recheck"></script>
+<script src="meeting-confirmation.js?v=20261024-discovery-recheck"></script>
+<script src="mailbox-chat.js?v=20261024-discovery-recheck"></script>
+<script src="contact-history.js?v=20261024-discovery-recheck"></script>
+<script src="meeting-records.js?v=20261024-discovery-recheck"></script>
+<script src="contact-details.js?v=20261024-discovery-recheck"></script>
+<script src="discovery-papers.js?v=20261024-discovery-recheck"></script>
+<script src="discovery-recheck.js?v=20261024-discovery-recheck"></script>
+<script src="app.js?v=20261024-discovery-recheck"></script>
+<script src="world-clock.js?v=20261024-discovery-recheck"></script>
 </body>
 </html>

@@ -873,4 +873,25 @@ class DiscoveryVerificationRepositoryIT {
         assertEquals(1L, counts.processed)
         assertEquals(mapOf("running-recovery" to 5302L), repository.latestRechecks(listOf("running-recovery")))
     }
+    @Test fun `recheck read counts partition queued and keep protected as overlapping diagnostic`() {
+        recheckRun(5401)
+        val states = listOf("RESERVED", "QUEUED", "RETRY_WAIT", "RUNNING", "COMPLETED", "ERROR", "CANCELLED")
+        states.forEachIndexed { index, state ->
+            val item = repository.reserveRecheckItem(reservation("counts-$index", 5401), NOW)
+            jdbc.update("UPDATE discovery_verification_item SET state=?,reasons_json=? WHERE id=?",
+                state, if (index in listOf(0, 4, 6)) "[\"REVIEW_PROTECTED\",\"CONTACT_PROTECTED\"]" else "[]", item.id)
+        }
+        val before = jdbc.queryForList("SELECT * FROM discovery_verification_item WHERE owner_execution_id=? ORDER BY id", 5401)
+        val counts = repository.recheckCounts(5401)
+        assertEquals(7L, counts.total)
+        assertEquals(3L, counts.pending)
+        assertEquals(1L, counts.processing)
+        assertEquals(counts.queued, counts.pending + counts.processing)
+        assertEquals(3L, counts.protected, "multiple protection reasons count a person once, including terminal rows")
+        assertEquals(counts.total, counts.processed + counts.queued + counts.errors + counts.cancelled)
+        assertEquals(before, jdbc.queryForList("SELECT * FROM discovery_verification_item WHERE owner_execution_id=? ORDER BY id", 5401),
+            "counts must not write or recalculate admission")
+        assertEquals(0L, repository.recheckCounts(5402).protected)
+        assertEquals(0L, repository.recheckCounts(5402).pending)
+    }
 }

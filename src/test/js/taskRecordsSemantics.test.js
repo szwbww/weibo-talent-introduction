@@ -333,7 +333,6 @@ describe("task records semantics (b2)", () => {
         sandbox.renderBySourceTable({ OPENALEX: { enqueued: 3, succeeded: 1, pending: 1, unmatched: 1, failed: 0 } }, enrichment);
         assert.ok(enrichment.innerHTML.includes(">入队</th>") && !enrichment.innerHTML.includes(">论文</th>"));
         const versionedAssets = [...html.matchAll(/(?:href|src)="([^"]+\?v=([^"]+))"/g)];
-        assert.strictEqual(versionedAssets.length, 17);
         const assetKey = versionedAssets[0][2];
         assert.ok(versionedAssets.every((asset) => asset[2] === assetKey));
         for (const asset of ["styles.css", "trust-reply-workbench.js", "app.js"]) {

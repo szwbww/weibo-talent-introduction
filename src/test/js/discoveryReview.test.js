@@ -314,6 +314,9 @@ describe("c5 discovery review · S-1/S-2/S-3 contract", () => {
             "modal-body", "dr-review", "dr-counts", "dr-toolbar", "dr-confirm", "dr-table-wrap",
             "data-table", "dr-table", "dr-pager", "button", "secondary", "primary", "bsc-input"
         ]);
+        const recheckPlan = fs.readFileSync(path.join(__dirname, "../../../docs/plans/2026-10-24/discovery-recheck-09-frontend.md"), "utf8");
+        const recheckRoot = recheckPlan.match(/```html\n(<section class="dr-recheck"[\s\S]*?)\n```/)[1];
+        for (const match of recheckRoot.matchAll(/class="([^"]+)"/g)) match[1].split(/\s+/).forEach(cls => allowed.add(cls));
         const classes = block.match(/class="([^"]*)"/g) || [];
         classes.forEach((attr) => {
             attr.replace(/class="|"/g, "").split(/\s+/).filter(Boolean).forEach((cls) => {
@@ -458,10 +461,10 @@ describe("c5 discovery review · S-1/S-2/S-3 contract", () => {
         assert.ok(stylesCss.includes(s3), "S-3 CSS must be verbatim");
     });
 
-    it("keeps one cache key for all seventeen assets and other task modals at 700px", () => {
+    it("keeps one cache key for all eighteen assets and other task modals at 700px", () => {
         const keys = Array.from(indexHtml.matchAll(/[?"]v=([^"'&<>]+)/g)).map((m) => m[1]);
         const unique = Array.from(new Set(keys));
-        assert.strictEqual(keys.length, 17, "exactly seventeen cache-busted assets");
+        assert.strictEqual(keys.length, 18, "exactly eighteen cache-busted assets");
         assert.strictEqual(unique.length, 1, "all assets must share one cache key");
         assert.match(unique[0], /^[0-9]{8}-[a-z0-9-]+$/, "cache key must be <yyyymmdd>-<slug>");
         assert.notStrictEqual(unique[0], "20261004-mailbox-suspension-followup",
@@ -1075,8 +1078,37 @@ describe("c5 discovery review · scope and confirm (I-2)", () => {
         assert.ok(indexHtml.includes('id="taskModalRunHead"'));
         assert.ok(indexHtml.includes('id="taskModalTrafficHead"'));
         const keys = [...indexHtml.matchAll(/\?v=([^"<>]+)/g)].map(match => match[1]);
-        assert.strictEqual(keys.length, 17);
+        assert.strictEqual(keys.length, 18);
         assert.strictEqual(new Set(keys).size, 1);
         assert.ok(indexHtml.includes('<script src="task-modal-runtime.js"></script>'));
+    });
+});
+
+describe("child09 host-only recheck bridge", () => {
+    it("keeps seven columns and all old manual protections, with an independent flow button", () => {
+        const sandbox = loadSandbox();
+        const row = sandbox.buildDiscoveryReviewRow({ docId: "protected", decision: "MANUAL_APPROVED" });
+        assert.strictEqual(row.children.length, 7);
+        assert.strictEqual(row.children[0].children[0].disabled, true);
+        const actions = row.children[6].children;
+        assert.strictEqual(actions.length, 4);
+        assert.deepStrictEqual(actions.slice(0, 3).map(button => button.textContent), ["通过", "暂缓", "不通过"]);
+        assert.ok(actions.slice(0, 3).every(button => button.disabled));
+        assert.strictEqual(actions[3].textContent, "验证流程");
+        assert.strictEqual(actions[3].className, "button secondary small");
+        assert.strictEqual(actions[3].disabled, false);
+        assert.ok(indexHtml.includes('id="discoveryRecheckRoot"'));
+    });
+    it("bridges real selection/filter and existing refresh/paper reader without a second manual approval path", () => {
+        const bridge = extractFn("ensureDiscoveryRecheck");
+        assert.ok(bridge.includes("Array.from(discoveryReviewState.selected)"));
+        assert.ok(bridge.includes("refreshDiscoveryReviewCounts()"));
+        assert.ok(bridge.includes("refreshDiscoveryReviewList()"));
+        assert.ok(bridge.includes("ensureDiscoveryPapers()?.openPaper(ref, trigger, signal)"));
+        assert.ok(appJsSource.includes('$("#discoveryRecheckRoot")?.querySelector("dialog[open]")'),
+            "native recheck dialog owns Escape even when a disabled submit leaves focus on body");
+        assert.ok(!bridge.includes("/confirm") && !bridge.includes("/prepare"));
+        assert.ok(extractFn("resetDiscoveryReviewPanel").includes("discoveryRecheckView.unmount()"));
+        assert.ok(extractFn("initDiscoveryReview").includes("discoveryRecheckView = null"));
     });
 });

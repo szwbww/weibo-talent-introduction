@@ -25,11 +25,14 @@
         async function request(path, options = {}) {
             const token = epoch, controller = new AbortController();
             controllers.add(controller);
+            const abort = () => controller.abort();
+            if (options.signal?.aborted) controller.abort();
+            options.signal?.addEventListener('abort', abort, { once: true });
             try {
                 const result = await api(BASE + path, { ...options, signal: controller.signal });
                 if (stale(token) || controller.signal.aborted) throw new DOMException('Stale response', 'AbortError');
                 return result;
-            } finally { controllers.delete(controller); }
+            } finally { controllers.delete(controller); options.signal?.removeEventListener('abort', abort); }
         }
         const post = (path, body) => request(path, { method: 'POST', body: JSON.stringify(body) });
         function revoke() { if (blobUrl) URL.revokeObjectURL(blobUrl); blobUrl = null; find('pdf').removeAttribute('src'); }
@@ -198,8 +201,11 @@
             finally { if (!stale(token)) { busy = false; button.disabled = false; } }
         }
         function contentPath(id, attempt, download) { return BASE + '/' + id + '/attempts/' + attempt + '/content' + (download ? '?download=true' : ''); }
-        async function content(id, attempt, download = false) {
+        async function content(id, attempt, download = false, signal) {
             const controller = new AbortController(), token = epoch; controllers.add(controller);
+            const abort = () => controller.abort();
+            if (signal?.aborted) controller.abort();
+            signal?.addEventListener('abort', abort, { once: true });
             try {
                 const response = await fetch(makeUrl(contentPath(id, attempt, download)), { credentials: 'same-origin', signal: controller.signal });
                 // The host owns login redirects for JSON and binary requests alike.
@@ -209,7 +215,7 @@
                 if (!['application/pdf', 'text/plain', 'text/xml', 'application/xml', 'text/html', 'application/xhtml+xml'].includes(type)) throw new Error('不支持的原文类型：' + type);
                 const blob = await response.blob(); if (stale(token) || controller.signal.aborted) throw new DOMException('Stale content', 'AbortError');
                 return { blob, type };
-            } finally { controllers.delete(controller); }
+            } finally { controllers.delete(controller); signal?.removeEventListener('abort', abort); }
         }
         async function download(id, attempt) {
             const token = epoch;
@@ -221,7 +227,7 @@
                 URL.revokeObjectURL(url); downloadUrls.delete(url);
             } catch (e) { if (!stale(token) && e.name !== 'AbortError') error('error', e.message); }
         }
-        async function loadOriginal() {
+        async function loadOriginal(options = {}) {
             revoke(); const seq = ++contentSeq, current = detail, attemptId = Number(find('attempts').value);
             find('pdf').hidden = find('text').hidden = true; find('text').replaceChildren(); find('originalMessage').hidden = false;
             const attempt = current?.attempts.find(a => a.id === attemptId);
@@ -229,7 +235,7 @@
             if (!attempt?.readable) { text('originalMessage', '原文不可用；已有解析记录仍保留。'); return; }
             text('originalMessage', '正在读取原文…');
             try {
-                const value = await content(current.record.id, attemptId); if (seq !== contentSeq || detail !== current) return;
+                const value = await content(current.record.id, attemptId, false, options.signal); if (seq !== contentSeq || detail !== current) return;
                 if (value.type === 'application/pdf') { blobUrl = URL.createObjectURL(value.blob); find('pdf').src = blobUrl; find('pdf').hidden = false; }
                 else { const raw = await value.blob.text(); if (seq !== contentSeq || detail !== current) return; text('text', raw); find('text').hidden = false; }
                 find('originalMessage').hidden = true;
@@ -264,16 +270,41 @@
             if (!a?.after?.length) append(find('mappingCards'), 'p', 'dp-muted', a ? '未提取到关联' : '尚未运行解析对照；首次提取结果见下方');
             if (!a?.qualificationFacts?.length) append(find('qualificationCards'), 'p', 'dp-muted', a ? '未提取到本人资格原句，不代表无资格' : '尚未运行解析对照；首次提取结果见下方');
         }
-        async function reader(id, trigger) {
+        async function reader(id, trigger, ref, signal) {
             close('reader'); const seq = ++readerSeq, token = epoch;
+            const abort = () => { if (seq === readerSeq) close('reader'); };
+            signal?.addEventListener('abort', abort, { once: true });
             try {
-                const value = await request('/' + id); if (seq !== readerSeq || stale(token)) return;
+                const value = await request('/' + id, { signal }); if (seq !== readerSeq || stale(token) || signal?.aborted) return;
+                if (ref) {
+                    const fixed = value.attempts.find(a => a.id === ref.attemptId);
+                    if (value.record.id !== ref.archiveRecordId || !fixed) throw new Error('PAPER_ATTEMPT_NOT_FOUND：固定原文不存在，请核对来源记录');
+                    if (!fixed.bodySha256 || !ref.bodySha256) throw new Error('PAPER_SHA_UNKNOWN：未留存 SHA，不能确认是本轮原文');
+                    if (fixed.bodySha256 !== ref.bodySha256) throw new Error('PAPER_SHA_CONFLICT：原文 SHA 与冻结记录不一致，请核对历史来源');
+                    if (!fixed.readable) throw new Error('PAPER_SOURCE_UNAVAILABLE：固定原文已删除或不可读，已有证据仍保留');
+                }
                 detail = value; root.querySelector('#dpReaderTitle').textContent = value.record.title || value.record.paperKey;
                 text('readerSubtitle', '执行 #' + value.record.executionId + ' · ' + (states[value.record.state] || value.record.state)); error('analysisError', ''); text('readerFoot', '原文预览不会自动运行解析或改变专家准入。');
                 const select = find('attempts'); select.replaceChildren(); value.attempts.forEach(a => { const option = append(select, 'option', '', '#' + a.id + ' · ' + a.kind + ' · ' + a.status + ' · 记录采集 ' + value.record.firstCapturedAt + '（文件时间未提供）'); option.value = String(a.id); });
-                const readable = value.attempts.find(a => a.readable); if (readable) select.value = String(readable.id);
-                renderEvidence(); evidenceTabs('mappings'); show('reader', trigger); loadOriginal();
-            } catch (e) { if (!stale(token) && seq === readerSeq && e.name !== 'AbortError') error('error', e.message); }
+                const readable = ref ? value.attempts.find(a => a.id === ref.attemptId) : value.attempts.find(a => a.readable); if (readable) select.value = String(readable.id);
+                renderEvidence(); evidenceTabs('mappings'); show('reader', trigger); await loadOriginal({ signal });
+                if (ref && seq === readerSeq && !stale(token)) {
+                    if (Number.isSafeInteger(ref.page) && ref.page > 0) locate({ page: ref.page, quote: ref.quote });
+                    else text('readerFoot', '已核对固定原文 SHA；页码未记录，不猜测定位。');
+                }
+            } catch (e) {
+                if (!stale(token) && seq === readerSeq && e.name !== 'AbortError') {
+                    if (ref) throw e;
+                    error('error', e.message);
+                }
+            } finally { signal?.removeEventListener('abort', abort); }
+        }
+        function openPaper(ref, trigger, signal) {
+            if (disposed) return Promise.resolve();
+            if (!ref || !Number.isSafeInteger(ref.archiveRecordId) || ref.archiveRecordId <= 0 ||
+                !Number.isSafeInteger(ref.attemptId) || ref.attemptId <= 0)
+                return Promise.reject(new Error('PAPER_REFERENCE_INVALID：缺少有效的固定 record / attempt，请核对来源'));
+            return reader(ref.archiveRecordId, trigger, ref, signal);
         }
         async function analyze() {
             if (!detail || busy) return;
@@ -314,7 +345,7 @@
         });
         ['mappings', 'qualifications'].forEach(name => listen(action(name), 'keydown', event => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) { event.preventDefault(); evidenceTabs(event.key === 'Home' ? 'mappings' : event.key === 'End' ? 'qualifications' : name === 'mappings' ? 'qualifications' : 'mappings', true); } }));
         renderRows(); storage(false);
-        return { setVisible, setExecution, dispose() { if (disposed) return; disposed = true; suspend(); listeners.splice(0).forEach(remove => remove()); focusTargets.clear(); } };
+        return { setVisible, setExecution, openPaper, dispose() { if (disposed) return; disposed = true; suspend(); listeners.splice(0).forEach(remove => remove()); focusTargets.clear(); } };
     }
     window.DiscoveryPapers = Object.freeze({ mount });
 })();

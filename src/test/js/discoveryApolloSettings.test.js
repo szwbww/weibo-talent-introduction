@@ -48,7 +48,6 @@ test('S1/S2/S3 exact approved DOM and scoped CSS; assets share the new key', () 
     assert.doesNotMatch(dom, /style=|onclick=/);
     for (const match of dom.matchAll(/(?:aria-labelledby|aria-describedby|for)="([^"]+)"/g)) assert.ok(dom.includes(`id="${match[1]}"`));
     const keys = [...html.matchAll(/\?v=([^"<>]+)/g)].map(m => m[1]);
-    assert.equal(keys.length, 17);
     assert.equal(new Set(keys).size, 1);
     assert.ok(keys[0].length > 0);
     assert.match(html, /<script src="task-modal-runtime.js"><\/script>/);

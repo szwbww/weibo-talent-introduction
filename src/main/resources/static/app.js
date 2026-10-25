@@ -2451,6 +2451,25 @@ const DISCOVERY_REVIEW_ACTIONS = ["APPROVE", "HOLD", "REJECT"];
 const DISCOVERY_REVIEW_ACTION_LABELS = { APPROVE: "通过", HOLD: "暂缓", REJECT: "不通过" };
 const DISCOVERY_REVIEW_TABS = ["pipeline", "review", "history", "papers"];
 let discoveryPapersView = null;
+let discoveryRecheckView = null;
+
+function ensureDiscoveryRecheck() {
+    const root = $("#discoveryRecheckRoot");
+    if (!discoveryRecheckView && root && typeof window !== "undefined" && window.createDiscoveryRecheck) {
+        discoveryRecheckView = window.createDiscoveryRecheck({
+            root, api,
+            getSelectedDocIds: () => Array.from(discoveryReviewState.selected),
+            getFilter: () => ({ q: discoveryReviewState.q, issue: discoveryReviewState.issue, decision: discoveryReviewState.decision }),
+            onApplied: () => {
+                if (!discoveryReviewState.active || discoveryReviewState.tab !== "review") return;
+                refreshDiscoveryReviewCounts();
+                refreshDiscoveryReviewList();
+            },
+            openPaper: (ref, trigger, signal) => ensureDiscoveryPapers()?.openPaper(ref, trigger, signal)
+        });
+    }
+    return discoveryRecheckView;
+}
 
 function ensureDiscoveryPapers() {
     if (!discoveryPapersView && typeof window !== "undefined" && window.DiscoveryPapers) {
@@ -2720,6 +2739,8 @@ function initDiscoveryReview(taskType, generation) {
     const els = discoveryReviewElements();
     if (!els.tabs || !els.pipelinePane) return;
     const isDiscovery = taskType === DISCOVERY_TASK_TYPE;
+    if (discoveryRecheckView) discoveryRecheckView.unmount();
+    discoveryRecheckView = null;
     if (discoveryPapersView) discoveryPapersView.dispose();
     discoveryPapersView = null;
     discoveryReviewState.taskType = taskType;
@@ -2742,6 +2763,7 @@ function initDiscoveryReview(taskType, generation) {
 
 /** I-3：关闭弹窗只停本页轮询与在途请求（不取消任何后台审核任务）。 */
 function resetDiscoveryReviewPanel() {
+    if (discoveryRecheckView) discoveryRecheckView.unmount();
     if (discoveryPapersView) discoveryPapersView.dispose();
     discoveryPapersView = null;
     discoveryReviewBumpAll();
@@ -2828,6 +2850,8 @@ function selectDiscoveryReviewTab(name, options) {
     discoveryReviewBumpAll();
     stopDiscoveryReviewCountsPolling();
     discoveryReviewState.tab = name;
+    if (name === "review") ensureDiscoveryRecheck()?.mount();
+    else if (discoveryRecheckView) discoveryRecheckView.unmount();
     if (typeof apvSetVisible === "function") apvSetVisible(name === "pipeline");
     if (name === "papers") syncDiscoveryPapers();
     if (discoveryPapersView) discoveryPapersView.setVisible(name === "papers", name === "pipeline");
@@ -2891,6 +2915,7 @@ function bindDiscoveryReviewEvents() {
     bind(els.tabPapers, "keydown", discoveryReviewTabKeydown);
     bind(els.search, "input", function () {
         discoveryReviewState.q = els.search && els.search.value != null ? String(els.search.value) : "";
+        if (discoveryRecheckView) discoveryRecheckView.onRows(discoveryReviewState.rows);
         invalidateDiscoveryReviewBatch("筛选条件已变化，未确认的名单快照已作废");
         discoveryReviewState.listSeq += 1;
         clearTimeout(discoveryReviewState.searchTimer);
@@ -2945,6 +2970,7 @@ function discoveryReviewApplyFilterChange() {
     discoveryReviewState.decision = els.decision && els.decision.value != null ? String(els.decision.value) : "";
     discoveryReviewState.page = 1;
     discoveryReviewState.selected.clear();
+    if (discoveryRecheckView) discoveryRecheckView.onRows(discoveryReviewState.rows);
     invalidateDiscoveryReviewBatch("筛选条件已变化，未确认的名单快照已作废");
     refreshDiscoveryReviewList();
 }
@@ -3148,6 +3174,7 @@ async function discoveryReviewLoadList(seq, listSeq) {
     renderDiscoveryReviewRows();
     renderDiscoveryReviewSelection();
     renderDiscoveryReviewPager();
+    if (discoveryRecheckView) discoveryRecheckView.onRows(discoveryReviewState.rows);
 }
 
 function refreshDiscoveryReviewList() {
@@ -3180,6 +3207,7 @@ function discoveryReviewToggleSelection(docId, checked) {
     else discoveryReviewState.selected.delete(String(docId));
     invalidateDiscoveryReviewBatch();
     renderDiscoveryReviewSelection();
+    if (discoveryRecheckView) discoveryRecheckView.onRows(discoveryReviewState.rows);
 }
 
 function discoveryReviewTogglePageSelection(checked) {
@@ -3191,6 +3219,7 @@ function discoveryReviewTogglePageSelection(checked) {
     invalidateDiscoveryReviewBatch();
     renderDiscoveryReviewRows();
     renderDiscoveryReviewSelection();
+    if (discoveryRecheckView) discoveryRecheckView.onRows(discoveryReviewState.rows);
 }
 
 function discoveryReviewChangePage(delta) {
@@ -3339,6 +3368,10 @@ function buildDiscoveryReviewRow(row) {
         btn.disabled = !reviewable;
         tdActions.appendChild(btn);
     });
+    tdActions.appendChild(discoveryReviewButton("验证流程", "button secondary small", function (event) {
+        const view = ensureDiscoveryRecheck();
+        if (view) view.onRows(discoveryReviewState.rows, { docId, trigger: event.currentTarget });
+    }, { recheckDoc: docId }));
     tr.appendChild(tdActions);
 
     return tr;
@@ -20170,6 +20203,7 @@ function bindEvents() {
             // A disabled submit can temporarily leave focus on body; native dialog cancel still owns Escape.
             if (["discoveryPaperReader", "discoveryPaperSettings", "discoveryPaperDelete"]
                 .some(id => document.getElementById(id)?.open)) return;
+            if ($("#discoveryRecheckRoot")?.querySelector("dialog[open]")) return;
             closeTaskModal();
         }
     });

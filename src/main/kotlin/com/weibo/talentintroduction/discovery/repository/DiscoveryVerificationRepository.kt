@@ -461,6 +461,13 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     fun recheckCounts(executionId: Long): RecheckCounts = jdbc.query("""SELECT COUNT(*) AS total,
         COALESCE(SUM(state='COMPLETED'),0) AS processed,
         COALESCE(SUM(state IN ('RESERVED','QUEUED','RUNNING','RETRY_WAIT')),0) AS queued,
+        COALESCE(SUM(state IN ('RESERVED','QUEUED','RETRY_WAIT')),0) AS pending,
+        COALESCE(SUM(state='RUNNING'),0) AS processing,
+        COALESCE(SUM(JSON_CONTAINS(reasons_json,JSON_QUOTE('APPLICATION_PRESENT')) OR
+            JSON_CONTAINS(reasons_json,JSON_QUOTE('SBIR_PROTECTED')) OR
+            JSON_CONTAINS(reasons_json,JSON_QUOTE('CONTACT_PROTECTED')) OR
+            JSON_CONTAINS(reasons_json,JSON_QUOTE('REVIEW_PROTECTED')) OR
+            JSON_CONTAINS(reasons_json,JSON_QUOTE('LEGACY_AUTO_PROTECTED'))),0) AS protected,
         COALESCE(SUM(state='CANCELLED'),0) AS cancelled,COALESCE(SUM(state='ERROR'),0) AS errors,
         COALESCE(SUM(state='COMPLETED' AND outcome IN ('DIRECT_CLEAR','APOLLO_CLEAR','APOLLO_UNCLEAR')),0) AS would_admit,
         COALESCE(SUM(admission_revision IS NOT NULL),0) AS actual_admitted,
@@ -470,7 +477,8 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         FROM discovery_verification_item WHERE owner_execution_id=?""", RowMapper { rs, _ ->
         RecheckCounts(rs.getLong("total"), rs.getLong("processed"), rs.getLong("queued"), rs.getLong("cancelled"),
             rs.getLong("errors"), rs.getLong("would_admit"), rs.getLong("actual_admitted"),
-            rs.getLong("sync_pending"), rs.getLong("sync_errors"), rs.getLong("synced"))
+            rs.getLong("sync_pending"), rs.getLong("sync_errors"), rs.getLong("synced"),
+            rs.getLong("pending"), rs.getLong("processing"), rs.getLong("protected"))
     }, executionId).single()
 
     fun recheckTask(executionId: Long): RecheckTask? = jdbc.query(
@@ -1133,7 +1141,8 @@ data class VerificationAttemptChannels(val search: Long, val detail: Long, val o
 data class RecheckTask(val status: String, val error: String?)
 data class RecheckCounts(val total: Long, val processed: Long, val queued: Long, val cancelled: Long,
     val errors: Long, val wouldAdmit: Long, val actualAdmitted: Long,
-    val syncPending: Long, val syncErrors: Long, val synced: Long)
+    val syncPending: Long, val syncErrors: Long, val synced: Long,
+    val pending: Long = 0, val processing: Long = 0, val protected: Long = 0)
 
 data class VerificationReportFilter(
     val executionId: Long, val route: String = "ALL", val result: String = "ALL",
