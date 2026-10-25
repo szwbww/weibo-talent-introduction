@@ -187,12 +187,14 @@
 2. 新模块暴露createDiscoveryRecheck({root,api,getSelectedDocIds,getFilter,onApplied,openPaper})，返回mount/unmount/onRows；app仅桥接审核生命周期/实际选中docId/筛选/刷新数量和列表。不得复刻手工approve逻辑。ID选中沿现有可选列表；任何不能勾选的保护对象可以通过ALL_MATCHING进入且被后端标保护，不前端擅自强放开旧人工checkbox。每行原“操作”格加“验证流程”按钮，使用现有button secondary small类，不新增第8列表列。（I-1/4，S-1）
 3. prepare后读取分页manifest，显示真实固定人数、范围、配置，READY才start；数据准备/网络错误在本dialog rr-status显示，不能覆盖原审核错误框。关闭配置保留待执行run，只有“取消任务”调用cancel；Esc只关dialog且归还焦点。请求1次、运行每2秒poll，隐藏页暂停poll，恢复时GET状态；终态停止。（I-1/2）
 4. 整批六指标为固定总数、已处理、预计/实际准入、待验证、错误、取消/保护（最后一格分别列取消和保护数，不能相加当一个人数类别）；queued/processing通过已处理差值及文本列出；候选待同步/同步失败另有run-message，计数不可重复加总。模式显示AUDIT“预计准入”、ENFORCE“实际准入”。详情固定八个step按钮及attempt列表，默认选blockingStep，否则最后完成步；summary显示current与proposed/applied差异。（I-3，S-1/2）
-5. 历史dialog提供run列表、run内人列表、按docId历史三种同表模式，明确表头，分页每页20；GET /runs支持docId过滤，GET /latest按当前页≤100 docIds批量读，不逐人N+1。这两个只读查询已由08提供；本子计划不修改后端文件；用户点真实证据链接调用现有原文reader，SHA/页码不存在则明确未留存，不猜定位。（I-1/3）
+5. 历史dialog提供run列表、run内人列表、按docId历史三种同表模式，明确表头，分页每页20；GET /runs支持docId过滤，GET /latest按当前页≤100 docIds批量读，不逐人N+1。这两个只读查询已由08提供；后端仅按第8项增加原Repository只读计数，不修改准入写入。用户点真实证据链接经第7项桥接调用现有原文reader，SHA/页码不存在则明确未留存，不猜定位。（I-1/3）
 6. 所有外部名字、原因、quote通过textContent；URL只接受服务器提供http(s)/同域API引用并校验，不innerHTML注入provider原文。CSS逐字复制S-2；新增任意class或inline style必须修订本计划，不交执行agent自行设计。（I-4）
+7. 原`DiscoveryPapers.mount()`只公开setVisible/setExecution/dispose，reader为私有且默认首个可读attempt。仅在同一模块公开`openPaper(ref,trigger)`窄桥接，按服务器冻结的archiveRecordId/attemptId/bodySha256核对目标并复用原reader；可选页定位只用真实证据locator，不猜SHA/页码。保留旧默认reader、保护/删除功能和dispose/迟到请求隔离。新增回归覆盖指定attempt、错误SHA/attempt与dispose陈旧回包。（I-1/3）
+8. 08的RecheckCounts与SQL在原Repository同文件，QueryService原样转发。保留现有queued字段，追加pending（RESERVED/QUEUED/RETRY_WAIT）、processing（RUNNING）和protected；前两者是queued的互斥分区，protected只从已持久化的APPLICATION_PRESENT/SBIR_PROTECTED/CONTACT_PROTECTED/REVIEW_PROTECTED/LEGACY_AUTO_PROTECTED原因取诊断子计数，可与终态重叠，不得和互斥状态求和。仅只读查询/DTO与真实SQL回归，不新增schema、provider请求、逐人N+1或任何准入/人工写行为。（I-3）
 
 ## 变更文件清单
 
-仅下列 8 个文件。新增文件明确标注；其余文件不得顺带修改。
+仅下列 12 个文件。新增文件明确标注；其余文件不得顺带修改。依用户A7持续授权为满足既定原文/真实计数合同增加四个直接依赖，09获得必要文件数例外。
 
 | 文件 | 变更 |
 |---|---|
@@ -204,6 +206,10 @@
 | `src/test/js/discoveryReview.test.js` | 人工操作和计数回归 |
 | `src/test/js/meetingConfirmationAssets.test.js` | 18资源与顺序 |
 | `src/test/js/trustReplyWorkbenchSharedMount.test.js` | 18资源与同key |
+| `src/main/resources/static/discovery-papers.js` | 公开原reader的冻结record/attempt/SHA窄桥接，不复制reader |
+| `src/test/js/discoveryPapers.test.js` | 指定原文/错误SHA或attempt/陈旧dispose回包回归 |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt` | 既有只读counts SQL/DTO追加pending/processing/protected，旧字段及写链不变 |
+| `src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt` | 真MySQL核对互斥分区、保护重叠计数与原回归 |
 
 ## 验收标准
 
@@ -212,6 +218,7 @@
 - I-3：8步完整；状态文案映射明确；AUDIT仅预计、ENFORCE实际、同步另列；旧记录“历史未记录”；错误包含code和重试操作。
 - I-4/S-1/S-2：对完整CSS逐字diff；DOM类名集合包含于S-1/S-2及列出的既有button类；新增节点无style属性。真实浏览器1280×720和640×900截图检查，dialog不透底、横向滚动限制在表、焦点与Esc可用。
 - node --check src/main/resources/static/discovery-recheck.js；运行本表4个JS测试及全量node --test src/test/js/*.test.js。只用弱DOM stub不能取代真实浏览器检查。
+- 新增依赖门禁：`node --check src/main/resources/static/discovery-papers.js`；`node --test src/test/js/discoveryPapers.test.js`；指定JDK11执行`mvn test -Dtest=DiscoveryVerificationRepositoryIT,DiscoveryVerificationQueryServiceTest -DmysqlIt=true`，真实Docker MySQL不得跳过。全部必需命令在最终相关修改后重新运行，保留原四文件及全量JS命令。
 
 ## 人工验收清单
 
@@ -240,3 +247,6 @@
 - 覆盖：I-2/3/4
 
 人工验收开始后，才从本节导出同名前缀 `-acceptance.md`；机器通过不代表人工验收完成。
+
+## 修正记录
+- 2026-10-25，依用户A7持续授权增加上述四个直接依赖、8→12文件例外及对应命令；原reader缺公开固定来源桥接，08计数缺本计划已要求的拆分/保护值。仅满足原I-1/3合同，不改变S-1/S-2、准入策略或旧人工路径。确切源码/检索回执见`../fast/discovery-recheck-master/children/09/execution.md`，授权/前后身份见同一ledger的Amendments。
