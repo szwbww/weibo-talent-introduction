@@ -18,7 +18,8 @@ data class IntroductionRow(
     val sendStatus: String?,
     val contactCurrentStatus: String?,
     val currentIndexLevel: String?,
-    val replied: Boolean
+    val replied: Boolean,
+    val expertEmails: List<String> = emptyList()
 )
 
 data class OutboundReplyListResponse(

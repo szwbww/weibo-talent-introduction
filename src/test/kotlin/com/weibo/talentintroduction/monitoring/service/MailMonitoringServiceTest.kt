@@ -1,6 +1,10 @@
 package com.weibo.talentintroduction.monitoring.service
 
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.campaign.repository.ExpertEmailAliasRepository
+import com.weibo.talentintroduction.campaign.domain.ExpertContact
+import com.weibo.talentintroduction.campaign.domain.ExpertEmailAlias
+import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.expert.domain.CountryContinentMapping
 import com.weibo.talentintroduction.expert.repository.ExpertApplicationPromotionRepository
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
@@ -29,6 +33,7 @@ class MailMonitoringServiceTest {
     private val promotionRepository = Mockito.mock(ExpertApplicationPromotionRepository::class.java)
     private val mailSenderAccountRepository = Mockito.mock(MailSenderAccountRepository::class.java)
     private val expertContactRepository = Mockito.mock(ExpertContactRepository::class.java)
+    private val expertEmailAliasRepository = Mockito.mock(ExpertEmailAliasRepository::class.java)
     private val qaRuleRepository = Mockito.mock(QaRuleRepository::class.java)
     private val expertIndexWriterService = Mockito.mock(ExpertIndexWriterService::class.java)
     private val dateRangeResolver = MonitoringDateRangeResolver()
@@ -44,7 +49,8 @@ class MailMonitoringServiceTest {
         qaRuleRepository = qaRuleRepository,
         expertIndexWriterService = expertIndexWriterService,
         dateRangeResolver = dateRangeResolver,
-        providerResolver = providerResolver
+        providerResolver = providerResolver,
+        expertEmailAliasRepository = expertEmailAliasRepository
     )
 
     private val date = LocalDate.of(2026, 6, 29)
@@ -56,6 +62,44 @@ class MailMonitoringServiceTest {
         val range = dateRangeResolver.resolveDay(date)
         from = range.first
         to = range.second
+    }
+
+    @Test
+    fun `introductions include primary and all aliases without duplicates or cross contact leakage`() {
+        fun mail(id: Long, contactId: Long) = MailRecord(
+            id = id, expertContactId = contactId, direction = "OUTBOUND", mailType = "INTRODUCTION",
+            messageId = null, inReplyTo = null, subject = null, body = null, matchedQaRuleId = null,
+            sendStatus = "SENT", receivedAt = null, sentAt = from
+        )
+        Mockito.`when`(mailRecordRepository.listIntroductions(from, to, null, 20, 0))
+            .thenReturn(listOf(mail(10, 1), mail(11, 2), mail(12, 1), mail(13, 3)))
+        Mockito.`when`(expertContactRepository.findAllById(listOf(1L, 2L, 3L))).thenReturn(listOf(
+            ExpertContact(id = 1, campaignId = 1, orcidId = "one", expertEmail = " Main@example.org ", expertName = "One"),
+            ExpertContact(id = 2, campaignId = 1, orcidId = "two", expertEmail = "", expertName = "Two")
+        ))
+        Mockito.`when`(expertEmailAliasRepository.findAllByContactIds(listOf(1L, 2L, 3L))).thenReturn(listOf(
+            ExpertEmailAlias(expertContactId = 1, email = "main@EXAMPLE.org", normalizedEmail = "main@example.org"),
+            ExpertEmailAlias(expertContactId = 1, email = " alias@example.org ", normalizedEmail = "alias@example.org"),
+            ExpertEmailAlias(expertContactId = 1, email = " ", normalizedEmail = ""),
+            ExpertEmailAlias(expertContactId = 2, email = "other@example.org", normalizedEmail = "other@example.org")
+        ))
+        Mockito.`when`(mailRecordRepository.countIntroductions(from, to, null)).thenReturn(4)
+
+        val result = service.listIntroductions(date, date, null, 20, 0)
+
+        assertEquals(listOf("Main@example.org", "alias@example.org"), result.records[0].expertEmails)
+        assertEquals(listOf("other@example.org"), result.records[1].expertEmails)
+        assertEquals(result.records[0].expertEmails, result.records[2].expertEmails)
+        assertEquals(emptyList<String>(), result.records[3].expertEmails)
+        assertEquals(4L, result.totalCount)
+        Mockito.verify(expertEmailAliasRepository).findAllByContactIds(listOf(1L, 2L, 3L))
+    }
+
+    @Test
+    fun `empty introductions do not query aliases`() {
+        Mockito.`when`(mailRecordRepository.listIntroductions(from, to, null, 20, 0)).thenReturn(emptyList())
+        assertTrue(service.listIntroductions(date, date, null, 20, 0).records.isEmpty())
+        Mockito.verifyNoInteractions(expertEmailAliasRepository)
     }
 
     private fun cohortDomain(domain: String?, cohort: Long, replied: Long = 0, matureCohort: Long = 0, matureReplied: Long = 0) =

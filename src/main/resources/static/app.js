@@ -19068,12 +19068,13 @@ function renderMonitoringActivityTable() {
     const rows = state.monitoring.rows || [];
     const renderEmpty = (colspan) => `<tr><td colspan="${colspan}" class="text-muted" style="text-align:center;">暂无记录</td></tr>`;
     if (tab === "introductions") {
-        table.querySelector("thead").innerHTML = `<tr><th>时间</th><th>专家</th><th>账号</th><th>主题</th><th>状态</th><th>阶段</th><th>已回复</th></tr>`;
+        table.querySelector("thead").innerHTML = `<tr><th>时间</th><th>专家</th><th>专家邮箱</th><th>账号</th><th>主题</th><th>状态</th><th>阶段</th><th>已回复</th></tr>`;
         table.querySelector("tbody").innerHTML = rows.map((r) => `
-            <tr><td>${escapeHtml(r.sentAt || "-")}</td><td>${monitoringContactCell(r)}</td><td>${escapeHtml(r.senderAccountCode || "-")}</td>
+            <tr><td>${escapeHtml(r.sentAt || "-")}</td><td>${monitoringContactCell(r)}</td>
+            <td style="overflow-wrap:anywhere; min-width:180px;">${(r.expertEmails || []).map(email => escapeHtml(email)).join("<br>") || "-"}</td><td>${escapeHtml(r.senderAccountCode || "-")}</td>
             <td>${escapeHtml(r.subject || "-")}</td><td>${badge(r.sendStatus || "-", r.sendStatus === "SUCCESS" ? "ok" : "warn")}</td>
             <td>${escapeHtml(labelStatus(r.contactCurrentStatus) || "-")}</td><td>${escapeHtml(r.replied ? "是" : "否")}</td></tr>
-        `).join("") || renderEmpty(7);
+        `).join("") || renderEmpty(8);
         return;
     }
     if (tab === "inbound") {

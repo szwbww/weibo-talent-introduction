@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.monitoring.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
+import com.weibo.talentintroduction.campaign.repository.ExpertEmailAliasRepository
 import com.weibo.talentintroduction.expert.domain.CountryContinentMapping
 import com.weibo.talentintroduction.expert.domain.ExpertApplicationPromotion
 import com.weibo.talentintroduction.expert.repository.ExpertApplicationPromotionRepository
@@ -46,7 +47,8 @@ class MailMonitoringService(
     private val qaRuleRepository: QaRuleRepository,
     private val expertIndexWriterService: ExpertIndexWriterService,
     private val dateRangeResolver: MonitoringDateRangeResolver,
-    private val providerResolver: ProviderResolver
+    private val providerResolver: ProviderResolver,
+    private val expertEmailAliasRepository: ExpertEmailAliasRepository
 ) {
     data class DailySummary(
         val date: String,
@@ -94,6 +96,9 @@ class MailMonitoringService(
         val (start, end) = dateRangeResolver.resolveRange(from, to)
         val records = mailRecordRepository.listIntroductions(start, end, senderAccountCode, pageSize.safeLimit(), pageOffset.safeOffset())
         val contacts = records.contactsById()
+        val contactIds = records.map { it.expertContactId }.distinct()
+        val aliases = if (contactIds.isEmpty()) emptyMap() else
+            expertEmailAliasRepository.findAllByContactIds(contactIds).groupBy { it.expertContactId }
         return IntroductionListResponse(
             records = records.map { record ->
                 val contact = contacts[record.expertContactId]
@@ -110,7 +115,10 @@ class MailMonitoringService(
                     sendStatus = record.sendStatus,
                     contactCurrentStatus = contact?.currentStatus,
                     currentIndexLevel = contact?.currentIndexLevel,
-                    replied = contact?.lastReplyAt != null
+                    replied = contact?.lastReplyAt != null,
+                    expertEmails = (listOfNotNull(contact?.expertEmail) +
+                        aliases[record.expertContactId].orEmpty().map { it.email })
+                        .map { it.trim() }.filter { it.isNotEmpty() }.distinctBy { it.lowercase() }
                 )
             },
             totalCount = mailRecordRepository.countIntroductions(start, end, senderAccountCode)
