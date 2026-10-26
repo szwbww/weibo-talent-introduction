@@ -52,6 +52,8 @@ object TaskTypeCatalog {
      *   显式声明「无统计」比继续显示反射猜出来的 0/0 诚实。
      */
     val entries: Map<String, TaskTypeMeta> = listOf(
+        TaskTypeMeta("DISCOVERY_RECHECK_PREPARE", "重新审核名单准备", "MANUAL", "已准备人数/失败", null, true, null),
+        TaskTypeMeta("DISCOVERY_REVIEW_COUNTS", "审核数量统计", "MANUAL", "已统计人数/失败", null, false, null),
         TaskTypeMeta(
             code = "AI_QA_EXTRACTION", label = "AI QA 提炼", group = "SCHEDULED",
             metricLabel = null, summaryRule = null, hasProgressUi = false, drilldown = null

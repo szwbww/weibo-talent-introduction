@@ -35,6 +35,13 @@ class DiscoveryExecutorConfig(
         return executor
     }
 
+    @Bean("discoveryReviewQueryExecutor")
+    fun discoveryReviewQueryExecutor(): Executor = ThreadPoolTaskExecutor().also {
+        it.corePoolSize = 1; it.maxPoolSize = 1; it.setQueueCapacity(8)
+        it.setThreadNamePrefix("discovery-review-query-")
+        it.setWaitForTasksToCompleteOnShutdown(false); it.initialize()
+    }
+
     /** Full-range counts must never occupy collection, enrichment, or mail executors. */
     @Bean("discoveryReviewCountsExecutor")
     fun discoveryReviewCountsExecutor(): Executor {
@@ -54,7 +61,7 @@ class DiscoveryExecutorConfig(
         val executor = ThreadPoolTaskExecutor()
         executor.corePoolSize = 1
         executor.maxPoolSize = 1
-        executor.setQueueCapacity(32)
+        executor.setQueueCapacity(0)
         executor.setThreadNamePrefix("discovery-recheck-prepare-")
         executor.setWaitForTasksToCompleteOnShutdown(true)
         executor.initialize()

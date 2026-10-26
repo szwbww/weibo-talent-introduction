@@ -1,0 +1,108 @@
+{
+  "latest_result_per_selected_class": [
+    {
+      "class": "DiscoveryRecheckServiceTest",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 0.093
+    },
+    {
+      "class": "DiscoveryReviewCountsServiceTest",
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 4.321
+    },
+    {
+      "class": "DiscoveryReviewQuerySnapshotServiceIT",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 31.435
+    },
+    {
+      "class": "DiscoveryPaperArchiveRepositoryIT",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 15.75
+    },
+    {
+      "class": "PaperVerificationEvidenceServiceTest",
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 7.325
+    },
+    {
+      "class": "DiscoveryRecheckFlowIT",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 643.466
+    },
+    {
+      "class": "DiscoveryReviewControllerTest",
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 3.755
+    },
+    {
+      "class": "DiscoveryRecheckControllerTest",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 0.94
+    },
+    {
+      "class": "DiscoveryVerificationQueryServiceTest",
+      "tests": 21,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 0.825
+    },
+    {
+      "class": "TaskTypeCatalogTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 0.001
+    },
+    {
+      "class": "TaskActivityControllerTest",
+      "tests": 17,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 0.143
+    }
+  ],
+  "total_unique_tests": {
+    "tests": 100,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "package_exit_code": 0,
+  "js_all": {
+    "tests": 1851,
+    "pass": 1851,
+    "fail": 0,
+    "skipped": 0
+  },
+  "versioned_assets": 18,
+  "asset_version": "20261026-discovery-recheck-recovery",
+  "note": "千人 FlowIT 与未变更的回归结果取此前执行；控制器、QueryService、列表快照、任务展示取最终 package 执行。末次 package 跳过 Node，使用此前最终 JS 源码全量测试收据；未运行全仓 JVM 测试。"
+}

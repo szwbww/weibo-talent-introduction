@@ -148,6 +148,9 @@ class DiscoveryAdmissionPolicy(
             "identityVerification", null, "VERIFIED 身份凭证", "RecipientScope.DISCOVERY_PENDING_TAG"))
     }
 
+    /** Freezing input requires configuration only, not another per-person verification-history query. */
+    fun currentConfigSnapshot(): AdmissionConfigSnapshot = configSnapshot()
+
     private fun configSnapshot(): AdmissionConfigSnapshot {
         val candidate = eligibilityFilterService.getCandidateFilter()
         val academic = eligibilityFilterService.getAcademicFilter()

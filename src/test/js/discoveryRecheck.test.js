@@ -76,6 +76,7 @@ function harness(handler) {
         calls.push({ url, options, body: options.body && JSON.parse(options.body) });
         const result = handler && await handler(url, options, calls.at(-1));
         if (result !== undefined) return result;
+        if (url.endsWith('/active')) return [];
         if (url.includes('/latest?')) return { 'doc-1': run(), 'doc-2': run() };
         if (url.endsWith('/prepare')) return run();
         if (url.endsWith('/start')) return run('RUNNING');
@@ -94,7 +95,10 @@ function harness(handler) {
 
 test('approved exact root, full CSS, real IDs, only allowed classes and no inline style', () => {
     const expectedDom = plan.match(/```html\n(<section class="dr-recheck"[\s\S]*?)\n```/)[1];
-    assert.ok(html.includes(expectedDom));
+    const amended = expectedDom.replace('data-rr="open">批量重新审核', 'data-rr="open">重新审核全部待审核 / 所选专家')
+        .replace('<fieldset class="rr-field"><legend>名单范围</legend>', '<fieldset class="rr-field"><legend>名单范围</legend><label class="rr-option"><input type="radio" name="rr-scope" value="ALL_PENDING" checked>全部待审核专家<small>服务端固定待审核范围；无需先加载列表，不受当前页和搜索条件限制。</small></label>')
+        .replace('<button class="button secondary" type="button" data-rr="prepare">', '<button class="button secondary" type="button" data-rr="cancel-preparation" disabled>取消当前任务</button><button class="button secondary" type="button" data-rr="prepare">');
+    assert.ok(html.includes(amended));
     const expectedCss = plan.match(/```css\n([\s\S]*?)\n```/)[1];
     assert.equal(css.slice(css.indexOf('.dr-recheck{')).trimEnd(), expectedCss.trimEnd());
     const d = dom();
@@ -117,43 +121,76 @@ test('approved exact root, full CSS, real IDs, only allowed classes and no inlin
 test('default audit/reuse, READY authority, paginated frozen roster, option/filter/selection invalidation', async () => {
     let phase = 'PREPARING';
     const h = harness(url => url.endsWith('/prepare') || /rechecks\/42$/.test(url) ? run(phase) : undefined);
-    const trigger = h.find('open'); trigger.focus(); trigger.click();
+    const trigger = h.find('open'); trigger.focus(); trigger.click(); await flush();
     assert.equal(h.root.querySelector('input[name="rr-mode"]:checked').value, 'AUDIT');
     assert.equal(h.root.querySelector('input[name="rr-evidence"]:checked').value, 'REUSE');
     assert.equal(h.find('start').disabled, true);
     h.find('prepare').click(); await flush();
-    assert.deepEqual(h.calls.find(c => c.url.endsWith('/prepare')).body.docIds, ['doc-1', 'doc-2']);
+    assert.equal(h.calls.find(c => c.url.endsWith('/prepare')).body.scope, 'ALL_PENDING');
+    assert.deepEqual(h.calls.find(c => c.url.endsWith('/prepare')).body.docIds, []);
     assert.equal(h.find('start').disabled, true); assert.equal(h.timers.size, 1);
     phase = 'READY'; const poll = [...h.timers.values()][0]; h.timers.clear(); await poll.fn(); await flush();
     assert.equal(h.find('start').disabled, false); assert.match(h.find('scope-hash').textContent, /固定 2 人/);
     assert.match(h.find('apollo-config').textContent, /search=true \/ detail=false/);
     assert.ok(h.calls.some(c => c.url.endsWith('/manifest?page=0&size=20')));
     h.setFilter({ q: 'changed' }); await h.view.onRows([]);
-    assert.equal(h.find('start').disabled, true); assert.match(h.find('scope-hash').textContent, /未固定/);
+    assert.equal(h.find('start').disabled, false); assert.match(h.find('scope-hash').textContent, /固定 2 人/);
     h.view.unmount(); assert.equal(h.timers.size, 0);
 });
 
-test('prepare wire separates selected IDs from empty and effective all-page filters', async () => {
-    const h = harness();
-    h.setFilter({ q: 'Ada', issue: 'IDENTITY_UNRESOLVED', decision: 'NEEDS_REVIEW' });
-    h.find('open').click(); h.find('prepare').click(); await flush();
-    const selected = h.calls.find(c => c.url.endsWith('/prepare')).body;
-    assert.equal(selected.scope, 'IDS');
-    assert.deepEqual(selected.docIds, ['doc-1', 'doc-2']);
-    assert.ok(!Object.hasOwn(selected, 'filter'));
-    assert.equal(selected.mode, 'AUDIT'); assert.equal(selected.evidenceMode, 'REUSE');
-    const ids = h.root.querySelector('input[value="IDS"]'), all = h.root.querySelector('input[value="ALL_MATCHING"]');
-    ids.checked = false; all.checked = true; all.dispatch('change');
-    h.setFilter({ q: '', issue: '', decision: '' }); await h.view.onRows([]);
+test('prepare wire separates selected IDs, all-page filters and server-owned ALL_PENDING', async () => {
+    for (const scope of ['IDS', 'ALL_MATCHING', 'ALL_PENDING']) {
+        const h = harness();
+        h.setFilter({ q: 'Ada', issue: 'IDENTITY_UNRESOLVED', decision: 'NEEDS_REVIEW' });
+        h.find('open').click(); await flush();
+        for (const input of h.root.querySelectorAll('input[name="rr-scope"]')) input.checked = input.value === scope;
+        h.find('prepare').click(); await flush();
+        const body = h.calls.find(c => c.url.endsWith('/prepare')).body;
+        assert.equal(body.scope, scope);
+        assert.deepEqual(body.docIds, scope === 'IDS' ? ['doc-1', 'doc-2'] : []);
+        if (scope === 'ALL_MATCHING') assert.deepEqual(body.filter, { q: 'Ada', issue: 'IDENTITY_UNRESOLVED', decision: 'NEEDS_REVIEW' });
+        else assert.ok(!Object.hasOwn(body, 'filter'));
+        assert.equal(body.mode, 'AUDIT'); assert.equal(body.evidenceMode, 'REUSE');
+        h.view.unmount();
+    }
+});
+
+test('restore READY after re-entry without prepare and submit frozen authority', async () => {
+    const saved = { ...run('READY'), scope: 'ALL_PENDING', filter: { decision: 'NEEDS_REVIEW' }, docIds: [] };
+    const h = harness(url => url.endsWith('/active') ? [saved] : undefined);
+    await flush(); h.find('open').click(); await flush();
+    assert.equal(h.find('prepare').disabled, true);
+    assert.equal(h.find('start').disabled, false);
+    assert.ok(h.calls.some(c => c.url.endsWith('/manifest?page=0&size=20')));
     h.find('prepare').click(); await flush();
-    const defaults = h.calls.filter(c => c.url.endsWith('/prepare')).at(-1).body;
-    assert.deepEqual(defaults.docIds, []); assert.deepEqual(defaults.filter, {});
-    h.setFilter({ q: 'Ada', issue: 'IDENTITY_UNRESOLVED', decision: 'NEEDS_REVIEW' }); await h.view.onRows([]);
+    assert.equal(h.calls.filter(c => c.url.endsWith('/prepare')).length, 0);
+    h.view.unmount(); h.view.mount(); await flush();
+    h.find('open').click(); await flush(); h.find('start').click(); await flush();
+    assert.deepEqual(h.calls.find(c => c.url.endsWith('/start')).body, { rosterHash: saved.rosterHash, revision: saved.revision });
+    h.view.unmount();
+});
+
+test('reopen refreshes a roster completed in another tab and unlocks a new preparation', async () => {
+    let finished = false;
+    const h = harness(url => url.endsWith('/active') ? (finished ? [] : [run('READY')])
+        : /rechecks\/42$/.test(url) ? run('COMPLETED') : undefined);
+    await flush(); h.find('open').click(); await flush();
+    assert.equal(h.find('prepare').disabled, true);
+    h.find('close-config').click(); finished = true;
+    h.find('open').click(); await flush();
+    assert.equal(h.find('prepare').disabled, false);
     assert.equal(h.find('start').disabled, true);
-    h.find('prepare').click(); await flush();
-    const filtered = h.calls.filter(c => c.url.endsWith('/prepare')).at(-1).body;
-    assert.deepEqual(filtered.filter, { q: 'Ada', issue: 'IDENTITY_UNRESOLVED', decision: 'NEEDS_REVIEW' });
-    assert.deepEqual(filtered.docIds, []); h.view.unmount();
+    assert.equal(h.calls.filter(c => c.url.endsWith('/prepare')).length, 0);
+    h.view.unmount();
+});
+
+test('accepted preparation remains disabled and option changes cannot create another task', async () => {
+    const h = harness(url => url.endsWith('/prepare') ? run('PREPARING') : undefined);
+    h.find('open').click(); await flush(); h.find('prepare').click(); await flush();
+    assert.equal(h.find('prepare').disabled, true);
+    h.find('prepare').click(); h.root.querySelector('input[value="REFRESH"]').dispatch('change'); await flush();
+    assert.equal(h.calls.filter(c => c.url.endsWith('/prepare')).length, 1);
+    assert.equal(h.find('start').disabled, true); h.view.unmount();
 });
 
 test('persisted detail evidence renders literal quotes and exact frozen reader identity, not step output quotes', async () => {
@@ -195,7 +232,7 @@ test('missing damaged empty and bounded evidence remain explicit without invente
 });
 
 test('Esc only closes, restores focus, keeps run; explicit cancel has its own endpoint', async () => {
-    const h = harness(); const trigger = h.find('open'); trigger.focus(); trigger.click();
+    const h = harness(); const trigger = h.find('open'); trigger.focus(); trigger.click(); await flush();
     h.find('prepare').click(); await flush();
     h.find('config').dispatch('cancel'); assert.equal(h.find('config').open, false);
     assert.equal(h.document.activeElement, trigger);
@@ -209,7 +246,7 @@ test('Esc only closes, restores focus, keeps run; explicit cancel has its own en
 test('single 2s timer, hidden pause/resume GET and terminal stop; unmount removes listeners and stale requests', async () => {
     let phase = 'RUNNING';
     const h = harness(url => /rechecks\/42$/.test(url) ? run(phase) : undefined);
-    h.find('open').click(); h.find('prepare').click(); await flush(); h.find('start').click(); await flush();
+    h.find('open').click(); await flush(); h.find('prepare').click(); await flush(); h.find('start').click(); await flush();
     assert.equal(h.timers.size, 1); assert.equal([...h.timers.values()][0].ms, 2000);
     h.document.hidden = true; h.document.dispatch('visibilitychange'); assert.equal(h.timers.size, 0);
     h.document.hidden = false; h.document.dispatch('visibilitychange'); await flush(); assert.equal(h.timers.size, 1);
@@ -223,7 +260,7 @@ test('batch latest ≤100, old detail Promise cannot replace new person; eight r
     const h = harness(url => url.includes('/items/1/steps') ? new Promise(r => { resolve = r; }) : undefined);
     await h.view.onRows(Array.from({ length: 100 }, (_, index) => ({ docId: 'doc-' + index })));
     assert.equal(h.calls.filter(c => c.url.includes('/latest?')).length, 1);
-    assert.equal(new URL('http://local' + h.calls[0].url).searchParams.get('docIds').split(',').length, 100);
+    assert.equal(new URL('http://local' + h.calls.find(c => c.url.includes('/latest?')).url).searchParams.get('docIds').split(',').length, 100);
     const first = h.view.onRows([], { docId: 'doc-1', trigger: h.find('open') }); await flush();
     await h.view.onRows([], { docId: 'doc-2', trigger: h.find('open') });
     resolve(item(1)); await first; await flush();
@@ -257,7 +294,7 @@ test('history all/run/person uses clear size20 pagination; projection retry requ
 
 test('old trace means historical absence, network errors retain code/action and never fabricate zero', async () => {
     const h = harness(url => url.includes('/items/2/steps') ? { ...item(2), trace: { recorded: false, steps: [], blockingStep: null } } : url.endsWith('/prepare') ? Promise.reject(Object.assign(new Error('offline'), { data: { code: 'UNAVAILABLE' } })) : undefined);
-    h.find('open').click(); h.find('prepare').click(); await flush();
+    h.find('open').click(); await flush(); h.find('prepare').click(); await flush();
     assert.match(h.find('prepare-status').textContent, /UNAVAILABLE.*固定名单重试/); assert.equal(h.find('start').disabled, true);
     await h.view.onRows([], { docId: 'doc-2', trigger: h.find('open') });
     assert.equal(h.find('steps').children.length, 8); assert.match(h.find('step-body').textContent, /历史未记录/);

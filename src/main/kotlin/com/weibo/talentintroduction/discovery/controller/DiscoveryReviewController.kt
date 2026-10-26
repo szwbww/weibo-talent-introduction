@@ -33,7 +33,8 @@ import javax.servlet.http.HttpServletRequest
  */
 @RestController
 @RequestMapping("/api/discovery/review")
-class DiscoveryReviewController(private val service: DiscoveryReviewService) {
+class DiscoveryReviewController(private val service: DiscoveryReviewService,
+    private val snapshots: com.weibo.talentintroduction.discovery.service.DiscoveryReviewQuerySnapshotService? = null) {
 
     @GetMapping("/experts")
     fun listExperts(
@@ -44,9 +45,15 @@ class DiscoveryReviewController(private val service: DiscoveryReviewService) {
         @RequestParam(defaultValue = "20") size: Int,
         @RequestParam(required = false) q: String?,
         @RequestParam(required = false) issue: String?,
-        @RequestParam(required = false) decision: String?
+        @RequestParam(required = false) decision: String?,
+        @RequestParam(defaultValue = "false") refresh: Boolean = false
     ): ResponseEntity<Any> {
         sessionUsername(request) ?: return unauthorized()
+        if (snapshots != null && (!decision.isNullOrBlank() && decision != "ALL" || !issue.isNullOrBlank())) {
+            val parsedLevel = com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.valueOf((level ?: "RAW").uppercase())
+            return ResponseEntity.ok(snapshots.page(com.weibo.talentintroduction.discovery.service.DiscoveryReviewScanService.DiscoveryReviewFilter(
+                parsedLevel, tag, q, issue, decision), from, size, refresh))
+        }
         return ResponseEntity.ok(service.listExperts(level, tag, from, size, q, issue, decision))
     }
 

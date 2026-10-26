@@ -13464,6 +13464,7 @@ body.preview-available:not(.preview-docked) .preview-rail {
 @media(max-width:640px){#taskProgressModal[data-discovery-review="true"] .apc-grid{grid-template-columns:1fr}#taskProgressModal[data-discovery-review="true"] .apc-head{align-items:flex-start;flex-direction:column;gap:5px}#taskProgressModal[data-discovery-review="true"] .apc-actions{flex-wrap:wrap}#taskProgressModal[data-discovery-review="true"] .apc-actions>.apc-note{width:100%}#taskProgressModal[data-discovery-review="true"] .apc-settings{padding:12px}}
 /* discovery-apollo-settings-contract:end */
 
+#discoveryReviewSnapshotStatus{margin:8px 0;color:#64748b;font-size:13px;line-height:1.5;overflow-wrap:anywhere}
 .dr-recheck{color:#1e293b;font-size:13px;line-height:1.6}
 .dr-recheck [hidden]{display:none!important}
 .dr-recheck p{margin:6px 0;color:#475569;font-size:12px;line-height:1.7}

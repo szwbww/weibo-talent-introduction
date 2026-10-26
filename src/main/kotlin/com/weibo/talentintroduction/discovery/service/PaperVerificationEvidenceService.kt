@@ -26,8 +26,9 @@ class PaperVerificationEvidenceService(private val repository: DiscoveryPaperArc
     /** Bounded preparation helper. Historical reuse is declared in every returned ref, not hidden at execution. */
     fun locate(requests: List<PaperArchiveLookup>): Map<PaperArchiveLookup, List<PaperSourceRef>> {
         val originals = repository.lookupOriginal(requests)
+        val historical = repository.lookupHistoricalBatch(requests.distinct().filter { originals[it] == null })
         return requests.distinct().associateWith { request ->
-            val candidates = originals[request]?.let { listOf(it) } ?: repository.lookupHistorical(request).let {
+            val candidates = originals[request]?.let { listOf(it) } ?: historical.getValue(request).let {
                 if (it.nextAfterId != null) throw ArchiveException("SOURCE_LOOKUP_LIMIT",409)
                 it.records
             }

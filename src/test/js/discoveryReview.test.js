@@ -1112,3 +1112,28 @@ describe("child09 host-only recheck bridge", () => {
         assert.ok(extractFn("initDiscoveryReview").includes("discoveryRecheckView = null"));
     });
 });
+
+it("async filtered list polls one snapshot, paginates without refresh and stops on exit", async () => {
+    let state = 'RUNNING';
+    const sandbox = loadSandbox({ formatBeijingInstant: value => value });
+    sandbox.apiHandler = p => {
+        if (p.includes('/experts?')) return { queryStatus: state, total: state === 'READY' ? 15340 : null,
+            matched: 500, experts: state === 'READY' ? [expertRow(1)] : [], asOf: '2026-10-26T14:00:00' };
+        if (p.includes('/counts/refresh')) return { requestKey: 'counts-one', state: 'RUNNING' };
+        if (p.includes('/counts?')) return { state: 'RUNNING' };
+        return {};
+    };
+    await openReviewTab(sandbox);
+    assert.equal(sandbox.__dr.state.loading, true);
+    assert.match(sandbox.__dr.state.listMessage, /已找到 500/);
+    assert.ok(indexHtml.includes('id="discoveryReviewSnapshotStatus"'));
+    state = 'READY';
+    await sandbox.discoveryReviewLoadList(sandbox.__dr.state.requestSeq, sandbox.__dr.state.listSeq, false);
+    assert.equal(sandbox.__dr.state.total, 15340);
+    assert.equal(sandbox.$('#discoveryReviewSnapshotStatus').hidden, false);
+    sandbox.discoveryReviewChangePage(1); await flush();
+    const last = sandbox.__apiCalls.filter(c => c.path.includes('/experts?')).at(-1).path;
+    assert.ok(!last.includes('refresh=true')); assert.ok(last.includes('from=20'));
+    sandbox.resetDiscoveryReviewPanel();
+    assert.equal(sandbox.__dr.state.listTimer, null);
+});

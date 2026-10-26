@@ -1,4 +1,4 @@
-/* Recheck UI: server-owned frozen rosters, receipts and traces; memory-only host lifecycle. */
+/* Recheck UI: server-owned frozen rosters, receipts and traces; server-restored host lifecycle. */
 (function (global) {
     "use strict";
     const BASE = "/api/discovery/rechecks";
@@ -28,6 +28,41 @@
         let mounted = false, epoch = 0, timer = null, run = null, prepared = null, preparedSpec = null;
         let rows = [], latest = {}, history = { kind: "runs", page: 0, total: 0 }, manifestPage = 0;
         let person = null, selectedStep = null, appliedRevision = null;
+        let restoring = false, restoreFailed = false, submitting = false, requestKey = null, requestSpec = null;
+        const unfinished = candidate => candidate && ["PREPARING", "READY", "RUNNING", "CANCELLING"].includes(candidate.phase);
+        function controls() {
+            const locked = restoring || restoreFailed || submitting || unfinished(prepared);
+            find("prepare").disabled = !!locked;
+            root.querySelectorAll('input[name^="rr-"]').forEach(input => { input.disabled = !!locked; });
+            const cancel = find("cancel-preparation");
+            if (cancel) cancel.disabled = !unfinished(run);
+        }
+        function adoptRun(saved) {
+            run = saved;
+            if (unfinished(saved)) {
+                prepared = saved;
+                for (const [name, selected] of [["scope", saved.scope], ["mode", saved.mode], ["evidence", saved.evidenceMode]]) {
+                    root.querySelectorAll('input[name="rr-' + name + '"]').forEach(input => { input.checked = input.value === selected; });
+                }
+                preparedSpec = null;
+                text("filter-summary", saved.scope === "ALL_PENDING" ? "全部待审核专家；不受当前页及搜索条件限制" : value(saved.filter));
+                text("selected-count", saved.docIds?.length || 0);
+            } else if (prepared?.runId === saved.runId) prepared = saved;
+            renderRun(); renderPrepared(); controls(); schedule();
+        }
+        async function restoreActive() {
+            const token = epoch; restoring = true; controls();
+            try {
+                const found = await request("restore", "/active");
+                if (Array.isArray(found) && found.length) adoptRun(found[0]);
+                else if (unfinished(prepared) || unfinished(run)) {
+                    const previous = unfinished(prepared) ? prepared : run;
+                    adoptRun(await request("restore", "/" + previous.runId));
+                }
+                restoreFailed = false; return true;
+            } catch (e) { if (e.name !== "AbortError") restoreFailed = true; error("prepare-status", e, "重新打开重审窗口恢复任务"); return false; }
+            finally { if (token === epoch) { restoring = false; controls(); } }
+        }
         const controllers = new Map(), sequences = new Map(), listeners = [], focusTargets = new Map(), actions = new WeakMap();
         const text = (key, data) => { find(key).textContent = value(data); };
         function node(tag, className, content) {
@@ -42,7 +77,7 @@
         function stop() { clearTimeout(timer); timer = null; }
         function invalidate() {
             epoch++; stop(); controllers.forEach(c => c.abort()); controllers.clear();
-            find("prepare").disabled = false;
+            controls();
         }
         async function request(lane, path, options = {}) {
             controllers.get(lane)?.abort();
@@ -74,7 +109,10 @@
         }
         function currentSpec() {
             const checked = name => root.querySelector('input[name="rr-' + name + '"]:checked')?.value;
-            return { scope: checked("scope") || "IDS", docIds: [...getSelectedDocIds()].map(String).sort(), filter: { ...getFilter() }, mode: checked("mode") || "AUDIT", evidenceMode: checked("evidence") || "REUSE" };
+            const scope = checked("scope") || "ALL_PENDING";
+            return { scope, docIds: scope === "IDS" ? [...getSelectedDocIds()].map(String).sort() : [],
+                filter: scope === "ALL_PENDING" ? { decision: "NEEDS_REVIEW" } : { ...getFilter() },
+                mode: checked("mode") || "AUDIT", evidenceMode: checked("evidence") || "REUSE" };
         }
         function signature() { return JSON.stringify(currentSpec()); }
         function invalidatePrepared() {
@@ -82,48 +120,61 @@
             find("manifest-panel").hidden = true; text("scope-hash", "名单未固定");
             status("prepare-status", "范围或选项已变化，请重新固定名单。");
         }
-        function checkSpec() { if (preparedSpec && preparedSpec !== signature()) { invalidate(); invalidatePrepared(); schedule(); } }
-        function openConfig(trigger) {
-            invalidate(); checkSpec();
-            if (!root.querySelector('input[name="rr-scope"]:checked')) root.querySelector('input[value="IDS"]').checked = true;
-            text("selected-count", getSelectedDocIds().length);
-            text("filter-summary", value(getFilter()));
-            show("config", trigger);
-            if (prepared) { renderPrepared(); if (active(run)) poll(); }
+        function checkSpec() { if (unfinished(prepared)) return; if (preparedSpec && preparedSpec !== signature()) { invalidate(); invalidatePrepared(); schedule(); } }
+        async function openConfig(trigger) {
+            invalidate(); checkSpec(); show("config", trigger);
+            status("prepare-status", "正在恢复未完成任务…");
+            const restored = await restoreActive();
+            if (!restored || !mounted || !dialogs.config.open) return;
+            if (!root.querySelector('input[name="rr-scope"]:checked')) root.querySelector('input[value="ALL_PENDING"]').checked = true;
+            if (!unfinished(prepared)) {
+                text("selected-count", getSelectedDocIds().length);
+                text("filter-summary", value(getFilter()));
+            }
+            if (prepared) { renderPrepared(); if (prepared.phase === "READY") await loadManifest(); else if (active(run)) poll(); }
             else { find("start").disabled = true; status("prepare-status", "请先固定名单；关闭窗口不会取消任务。"); schedule(); }
         }
         async function prepare() {
+            if (restoring || restoreFailed || submitting || unfinished(prepared)) return;
+            if (run && !unfinished(run)) { requestKey = null; requestSpec = null; }
             invalidate(); invalidatePrepared();
             const spec = currentSpec(); preparedSpec = JSON.stringify(spec);
             if (spec.scope === "IDS" && !spec.docIds.length) { status("prepare-status", "请选择专家，或改用当前筛选的全部页。"); return; }
             const token = epoch;
-            find("prepare").disabled = true; status("prepare-status", "正在固定名单… 尚不可启动。");
+            submitting = true; controls(); status("prepare-status", "正在固定名单… 尚不可启动。");
             try {
                 const filter = Object.fromEntries(Object.entries(spec.filter).filter(([key, entry]) =>
                     ["q", "issue", "decision"].includes(key) && entry != null && entry !== ""));
                 const wire = { scope: spec.scope, docIds: spec.scope === "IDS" ? spec.docIds : [],
                     ...(spec.scope === "ALL_MATCHING" ? { filter } : {}), mode: spec.mode, evidenceMode: spec.evidenceMode };
-                run = await post("run", "/prepare", { ...wire, requestKey: global.crypto.randomUUID() });
+                const wireSpec = JSON.stringify(wire);
+                if (requestSpec !== wireSpec || !requestKey) { requestKey = global.crypto.randomUUID(); requestSpec = wireSpec; }
+                run = await post("run", "/prepare", { ...wire, requestKey });
                 prepared = run; manifestPage = 0; renderRun(); renderPrepared();
                 if (run.phase === "READY") await loadManifest();
                 schedule();
             } catch (e) { error("prepare-status", e, "点击固定名单重试"); }
-            finally { if (token === epoch && mounted) find("prepare").disabled = false; }
+            finally { submitting = false; if (mounted) controls(); }
         }
         function renderPrepared() {
+            controls();
             if (!prepared) return;
             checkSpec(); if (!prepared) return;
             const access = prepared.settings?.apolloAccess;
             text("apollo-config", "冻结 Apollo search=" + value(access?.searchEnabled) + " / detail=" + value(access?.detailEnabled) + "；配置版本 " + value(access?.settingRevision));
             text("scope-hash", "固定 " + value(prepared.counts?.total) + " 人 · " + prepared.mode + " / " + prepared.evidenceMode + " · hash " + value(prepared.rosterHash));
-            status("prepare-status", (states[prepared.phase] || prepared.phase) + "；任务 #" + prepared.taskId + (prepared.prepareTask?.error ? "；" + prepared.prepareTask.error + "，请重新固定名单" : ""));
+            status("prepare-status", (prepared.phase === "PREPARING" ? preparationText(prepared) : states[prepared.phase] || prepared.phase) + "；任务 #" + prepared.taskId + (prepared.prepareTask?.error ? "；" + prepared.prepareTask.error + "，请重新固定名单" : ""));
             find("start").disabled = prepared.phase !== "READY" || !prepared.rosterHash;
             find("manifest-panel").hidden = prepared.phase !== "READY";
+        }
+        function preparationText(current) {
+            const stage = { QUEUED: "等待准备线程", SCANNING: "正在保存待审核名单", EVIDENCE: "正在关联论文证据" }[current.preparationStage] || "正在固定名单";
+            return stage + "；已保存 " + (current.scanned || 0) + " 人，证据准备 " + (current.counts?.total || 0) + " 人";
         }
         function renderRun() {
             if (!run) return;
             find("run").hidden = false;
-            text("run-title", "重审 #" + run.runId); text("run-state", states[run.phase] || run.phase);
+            text("run-title", "重审 #" + run.runId); text("run-state", run.phase === "PREPARING" ? preparationText(run) : states[run.phase] || run.phase);
             text("run-context", run.mode + " / " + run.evidenceMode + " · 固定范围 " + run.scope + " · hash " + value(run.rosterHash));
             const c = run.counts;
             const metrics = [["固定总数", c.total], ["已处理", c.processed], [run.mode === "AUDIT" ? "预计准入" : "实际准入", run.mode === "AUDIT" ? c.wouldAdmit : c.actualAdmitted], ["待验证", c.pending], ["错误", c.errors], ["取消 / 保护（独立子计数）", "取消 " + value(c.cancelled) + " / 保护 " + value(c.protected)]];
@@ -162,7 +213,8 @@
         async function cancelRun() {
             if (!run) return;
             invalidate();
-            try { run = await post("run", "/" + run.runId + "/cancel"); if (prepared?.runId === run.runId) prepared = run; renderRun(); renderPrepared(); }
+            try { run = await post("run", "/" + run.runId + "/cancel"); prepared = null; preparedSpec = null;
+                requestKey = null; requestSpec = null; renderRun(); invalidatePrepared(); controls(); }
             catch (e) { error("run-message", e, "重新读取任务后再次取消"); }
             schedule();
         }
@@ -204,7 +256,7 @@
             } catch (e) { error("history-status", e, "重新打开记录或翻页重试"); }
         }
         async function selectRun(selected, docId, trigger) {
-            invalidate(); run = selected; renderRun(); schedule();
+            invalidate(); adoptRun(selected);
             if (docId) { await locatePerson(selected.runId, docId, trigger); }
             else { history = { kind: "items", id: selected.runId, page: 0, total: 0 }; await loadHistory(); }
         }
@@ -333,7 +385,7 @@
             if (key === "open") openConfig(target);
             else if (key === "prepare") prepare();
             else if (key === "start") start();
-            else if (key === "cancel-run") cancelRun();
+            else if (key === "cancel-run" || key === "cancel-preparation") cancelRun();
             else if (key === "history") openHistory("runs", null, target);
             else if (key === "run-details" && run) openHistory("items", run.runId, target);
             else if (key === "person-history" && person) openHistory("person", person.docId, target);
@@ -345,14 +397,17 @@
             if (mounted) return; mounted = true; invalidate();
             if (!run) find("run").hidden = true;
             listen(root, "click", click);
-            listen(root, "change", event => { if (event.target.matches('input[name^="rr-"]')) { invalidate(); invalidatePrepared(); schedule(); } });
+            listen(root, "change", event => { if (event.target.matches('input[name^="rr-"]')) {
+                if (unfinished(prepared)) { adoptRun(prepared); return; }
+                invalidate(); invalidatePrepared(); schedule();
+            } });
             listen(doc, "visibilitychange", () => { invalidate(); if (!doc.hidden && run) poll(); });
             Object.entries(dialogs).forEach(([name, dialog]) => {
                 listen(dialog, "keydown", event => { if (event.key === "Escape") event.stopPropagation(); });
                 listen(dialog, "cancel", event => { event.preventDefault(); event.stopPropagation(); close(name); });
                 listen(dialog, "close", () => { const target = focusTargets.get(dialog); focusTargets.delete(dialog); if (mounted && target?.isConnected) target.focus(); });
             });
-            schedule();
+            restoreActive().then(schedule);
         }
         function unmount() {
             mounted = false; invalidate(); listeners.splice(0).forEach(remove => remove());

@@ -1,0 +1,7 @@
+{
+  "artifact": "/Users/lukai/IdeaProjects/weibo-talent-introduction/target/weibo-talent-introduction-1.0.0-SNAPSHOT.war",
+  "bytes": 52003374,
+  "sha256": "09706a94b2dcf7d9ca727f29ac57a8bdb5d7502c1cabf28002d313a0e77a7701",
+  "static_files_and_migrations_match_sources": true,
+  "deployed": false
+}

@@ -146,7 +146,7 @@ class DiscoveryVerificationQueryService(
             scope.path("specHash").asText(null), scope.path("scope").asText(), scope.get("filter"),
             run.inputClosed, repository.recheckCounts(run.executionId), repository.recheckTask(run.executionId),
             frozen.spec.evaluatedAt, frozen.spec.codeVersion, frozen.spec.parserVersion,
-            mapper.readTree(run.settingsJson), run.createdAt, run.updatedAt)
+            mapper.readTree(run.settingsJson), run.createdAt, run.updatedAt, frozen.control.preparationStage, frozen.control.scanned, scope.path("docIds").map { it.asText() })
     }
 
     fun recheckRuns(page: Int, size: Int, docId: String?): RecheckPage<RecheckRunView> {
@@ -410,7 +410,8 @@ data class RecheckRunView(val runId: Long, val taskId: Long, val requestKey: Str
     val inputClosed: Boolean, val counts: com.weibo.talentintroduction.discovery.repository.RecheckCounts,
     val prepareTask: com.weibo.talentintroduction.discovery.repository.RecheckTask?, val evaluatedAt: Instant,
     val codeVersion: String, val parserVersion: String, val settings: com.fasterxml.jackson.databind.JsonNode,
-    val createdAt: Instant, val updatedAt: Instant)
+    val createdAt: Instant, val updatedAt: Instant, val preparationStage: String = "QUEUED",
+    val scanned: Long = 0, val docIds: List<String> = emptyList())
 data class RecheckAdmissionView(val decision: String, val revision: Long)
 data class RecheckItemView(val itemId: Long, val runId: Long, val docId: String, val batchNumber: Int,
     val state: VerificationState, val givenNames: String?, val familyNames: String?, val email: String?,

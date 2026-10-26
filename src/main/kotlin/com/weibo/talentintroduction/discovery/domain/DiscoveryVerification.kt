@@ -182,7 +182,8 @@ data class RecheckSpec(
         require(com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().readTree(scope).isObject)
     }
 }
-data class RecheckControl(val phase: RecheckPhase = RecheckPhase.PREPARING, val scopeHash: String? = null) {
+data class RecheckControl(val phase: RecheckPhase = RecheckPhase.PREPARING, val scopeHash: String? = null,
+    val preparationStage: String = "QUEUED", val scanned: Long = 0) {
     init {
         scopeHash?.let(::verificationHash)
         if (phase in setOf(RecheckPhase.READY, RecheckPhase.RUNNING, RecheckPhase.COMPLETED)) require(scopeHash != null)

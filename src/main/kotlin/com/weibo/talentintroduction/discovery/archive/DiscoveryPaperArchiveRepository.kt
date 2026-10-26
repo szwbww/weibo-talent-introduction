@@ -69,26 +69,50 @@ class DiscoveryPaperArchiveRepository(private val jdbc: JdbcTemplate, manager: P
             recordMapper, *args.toTypedArray()).associateBy { Triple(it.executionId,it.sourceName,it.paperKey) }
         return distinct.associateWith { rows[Triple(it.executionId,it.sourceName,it.sourceItemKey)] }
     }
-    /** Cross-execution fallback is explicit, keyset paginated, and never materializes the archive. */
-    fun lookupHistorical(request: PaperArchiveLookup, afterId: Long = 0, size: Int = 20): PaperArchiveLookupPage {
+    /** Each identity branch uses its own index; LIMIT never forces a primary-key JSON scan. */
+    private fun historicalQuery(request: PaperArchiveLookup, afterId: Long, size: Int): Pair<String, List<Any>> {
         require(afterId >= 0 && size in 1..100)
-        val clauses = mutableListOf("(source_name=? AND paper_key=?)")
-        val args = mutableListOf<Any>(afterId, request.sourceName, request.sourceItemKey)
-        PaperArchiveLookup.doi(request.doi)?.let {
-            clauses += "LOWER(REPLACE(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(metadata_json,'$.doi')),'https://doi.org/',''),'http://doi.org/',''),'doi:',''))=?"
-            args += it
+        val branches = mutableListOf<String>()
+        val args = mutableListOf<Any>()
+        fun branch(predicate: String, values: List<Any>) {
+            branches += "(SELECT id FROM discovery_paper_archive_record WHERE $predicate AND id>? ORDER BY id LIMIT ?)"
+            args.addAll(values); args += afterId; args += size + 1
         }
-        PaperArchiveLookup.pmid(request.pmid)?.let {
-            clauses += "JSON_UNQUOTE(JSON_EXTRACT(metadata_json,'$.pmid'))=?"; args += it
-        }
-        PaperArchiveLookup.pmcid(request.pmcid)?.let {
-            clauses += "UPPER(JSON_UNQUOTE(JSON_EXTRACT(metadata_json,'$.pmcId')))=?"; args += it
-        }
+        branch("source_name=? AND paper_key=?", listOf(request.sourceName, request.sourceItemKey))
+        PaperArchiveLookup.doi(request.doi)?.let { branch("doi_lookup_sha=SHA2(?,256)", listOf(it)) }
+        PaperArchiveLookup.pmid(request.pmid)?.let { branch("pmid_lookup_sha=SHA2(?,256)", listOf(it)) }
+        PaperArchiveLookup.pmcid(request.pmcid)?.let { branch("pmcid_lookup_sha=SHA2(?,256)", listOf(it)) }
         args += size + 1
-        val rows = jdbc.query("SELECT * FROM discovery_paper_archive_record WHERE id>? AND (${clauses.joinToString(" OR ")}) ORDER BY id LIMIT ?",
-            recordMapper, *args.toTypedArray())
+        return "SELECT r.* FROM discovery_paper_archive_record r JOIN (SELECT id FROM (${branches.joinToString(" UNION ")}) hits ORDER BY id LIMIT ?) ids ON ids.id=r.id ORDER BY r.id" to args
+    }
+
+    fun lookupHistorical(request: PaperArchiveLookup, afterId: Long = 0, size: Int = 20): PaperArchiveLookupPage {
+        val (sql, args) = historicalQuery(request, afterId, size)
+        val rows = jdbc.query({ connection -> connection.prepareStatement(sql).also {
+            it.queryTimeout = 15; args.forEachIndexed { index, value -> it.setObject(index + 1, value) }
+        } }, recordMapper)
         return PaperArchiveLookupPage(rows.take(size), rows.takeIf { it.size > size }?.get(size - 1)?.id)
     }
+
+    fun lookupHistoricalBatch(requests: List<PaperArchiveLookup>): Map<PaperArchiveLookup, PaperArchiveLookupPage> {
+        require(requests.size <= 100)
+        val distinct = requests.distinct()
+        if (distinct.isEmpty()) return emptyMap()
+        val args = mutableListOf<Any>()
+        val parts = distinct.mapIndexed { index, request ->
+            val (sql, values) = historicalQuery(request, 0, 20)
+            args.addAll(values)
+            "SELECT $index lookup_slot, records.* FROM ($sql) records"
+        }
+        val rows = jdbc.query({ connection -> connection.prepareStatement(parts.joinToString(" UNION ALL ")).also {
+            it.queryTimeout = 30; args.forEachIndexed { index, value -> it.setObject(index + 1, value) }
+        } }, RowMapper { rs, n -> rs.getInt("lookup_slot") to recordMapper.mapRow(rs, n)!! }).groupBy({ it.first }, { it.second })
+        return distinct.mapIndexed { index, request ->
+            val found = rows[index].orEmpty().sortedBy { it.id }
+            request to PaperArchiveLookupPage(found.take(20), found.takeIf { it.size > 20 }?.get(19)?.id)
+        }.toMap()
+    }
+
     fun lookupSourceAttempts(recordIds: List<Long>, size: Int = 100): List<ArchiveAttempt> {
         require(recordIds.size <= 100 && recordIds.all { it > 0 } && size in 1..100)
         if (recordIds.isEmpty()) return emptyList()

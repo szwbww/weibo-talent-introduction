@@ -395,7 +395,7 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
      * Synchronization releases the named lock AFTER commit/rollback, before the pool can reuse it.
      */
     @Transactional
-    fun registerRecheck(requestKey: String, create: () -> VerificationRun): Pair<VerificationRun, Boolean> {
+    fun registerRecheck(requestKey: String, canonical: String? = null, create: () -> VerificationRun): Pair<VerificationRun, Boolean> {
         require(UUID.fromString(requestKey).toString() == requestKey) { "requestKey must be a canonical UUID" }
         check(TransactionSynchronizationManager.isActualTransactionActive())
         val acquired = jdbc.execute(ConnectionCallback<Boolean> { connection ->
@@ -422,7 +422,53 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         val existing = jdbc.query("""SELECT * FROM discovery_verification_run
             WHERE JSON_UNQUOTE(JSON_EXTRACT(recheck_json,'$.spec.requestKey'))=? FOR UPDATE""",
             runMapper, requestKey).singleOrNull()
-        return if (existing != null) existing to false else create() to true
+        if (existing != null) return existing to false
+        if (canonical != null) {
+            val spec = replayMapper.readTree(canonical)
+            val active = activeRechecks(spec.path("actor").asText()).firstOrNull()
+            if (active != null) {
+                val old = replayMapper.readTree(recheck(active).spec.scope).deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>()
+                old.remove("specHash")
+                if (old == spec) return active to false
+                throw org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT,
+                    "ACTIVE_RECHECK_EXISTS:${active.executionId}")
+            }
+            if (activeRechecks(null).any { recheck(it).control.phase == RecheckPhase.PREPARING })
+                throw org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT, "PREPARE_BUSY")
+        }
+        return create() to true
+    }
+
+    fun activeRechecks(actor: String?): List<VerificationRun> = jdbc.query("""SELECT * FROM discovery_verification_run
+        WHERE recheck_json IS NOT NULL
+          AND JSON_UNQUOTE(JSON_EXTRACT(recheck_json,'$.control.phase')) IN ('PREPARING','READY','RUNNING','CANCELLING')
+          ${if (actor != null) "AND JSON_UNQUOTE(JSON_EXTRACT(recheck_json,'$.spec.actor'))=?" else ""}
+        ORDER BY execution_id DESC""", runMapper, *listOfNotNull(actor).toTypedArray())
+
+    @Transactional
+    fun savePreparationInputs(executionId: Long, inputs: List<Pair<String, String>>, now: Instant) {
+        val run = lockRun(executionId)
+        check(recheck(run).control.phase == RecheckPhase.PREPARING && !run.inputClosed)
+        inputs.forEach { (docId, json) ->
+            jdbc.update("INSERT INTO discovery_recheck_input(execution_id,doc_id,payload_json) VALUES (?,?,?) ON DUPLICATE KEY UPDATE doc_id=doc_id",
+                executionId, docId, json)
+        }
+        val count = jdbc.queryForObject("SELECT COUNT(*) FROM discovery_recheck_input WHERE execution_id=?", Long::class.java, executionId)!!
+        check(compareAndSetRecheckControl(executionId, run.revision,
+            recheck(run).control.copy(preparationStage = "SCANNING", scanned = count), now))
+    }
+
+    fun preparationInputs(executionId: Long, after: String = "", size: Int = 50): List<String> {
+        require(size in 1..100)
+        return jdbc.query("SELECT payload_json FROM discovery_recheck_input WHERE execution_id=? AND doc_id>? ORDER BY doc_id LIMIT ?",
+            RowMapper { rs, _ -> rs.getString(1) }, executionId, after, size)
+    }
+
+    @Transactional
+    fun preparationStage(executionId: Long, stage: String, now: Instant) {
+        val run = lockRun(executionId)
+        check(recheck(run).control.phase == RecheckPhase.PREPARING)
+        check(compareAndSetRecheckControl(executionId, run.revision, recheck(run).control.copy(preparationStage = stage), now))
     }
 
     fun recheckRuns(page: Int, size: Int, docId: String?): Pair<Long, List<VerificationRun>> {
@@ -576,13 +622,18 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         if (run.revision != expectedRevision) return false
         val current = recheck(run)
         val allowed = when (current.control.phase) {
-            RecheckPhase.PREPARING -> setOf(RecheckPhase.READY, RecheckPhase.FAILED, RecheckPhase.INTERRUPTED, RecheckPhase.CANCELLING)
+            RecheckPhase.PREPARING -> setOf(RecheckPhase.PREPARING, RecheckPhase.READY, RecheckPhase.FAILED, RecheckPhase.INTERRUPTED, RecheckPhase.CANCELLING)
             RecheckPhase.READY -> setOf(RecheckPhase.RUNNING, RecheckPhase.FAILED, RecheckPhase.INTERRUPTED, RecheckPhase.CANCELLING)
             RecheckPhase.RUNNING -> setOf(RecheckPhase.COMPLETED, RecheckPhase.FAILED, RecheckPhase.INTERRUPTED, RecheckPhase.CANCELLING)
             RecheckPhase.CANCELLING -> setOf(RecheckPhase.CANCELLED)
             else -> emptySet()
         }
         require(control.phase in allowed) { "Invalid recheck phase transition" }
+        if (current.control.phase == RecheckPhase.PREPARING && control.phase == RecheckPhase.PREPARING) {
+            val stages = listOf("QUEUED", "SCANNING", "EVIDENCE")
+            require(control.preparationStage in stages && stages.indexOf(control.preparationStage) >= stages.indexOf(current.control.preparationStage))
+            require(control.scanned >= current.control.scanned) { "Preparation progress must not go backwards" }
+        }
         if (current.control.scopeHash != null) require(control.scopeHash == current.control.scopeHash) { "Frozen scope hash is immutable" }
         else if (control.phase != RecheckPhase.READY) require(control.scopeHash == null)
         if (control.phase == RecheckPhase.READY) {

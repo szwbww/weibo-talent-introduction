@@ -70,6 +70,23 @@ class DiscoveryReviewControllerTest {
     private lateinit var service: DiscoveryReviewService
 
     @MockBean
+    private lateinit var snapshots: com.weibo.talentintroduction.discovery.service.DiscoveryReviewQuerySnapshotService
+
+    @Test
+    fun `pending review list returns asynchronous snapshot instead of synchronous scan`() {
+        val filter = com.weibo.talentintroduction.discovery.service.DiscoveryReviewScanService.DiscoveryReviewFilter(
+            com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.RAW, "discovered", null, null, "NEEDS_REVIEW")
+        Mockito.`when`(snapshots.page(filter, 10020, 20, false)).thenReturn(
+            com.weibo.talentintroduction.discovery.service.ReviewQueryPage(null, 10020, 20, emptyList(),
+                "RUNNING", "fixture-query", 500, "2026-10-26T12:00:00", null))
+        mockMvc.perform(get("/api/discovery/review/experts?decision=NEEDS_REVIEW&from=10020&size=20")
+            .session(sessionOf("operator")))
+            .andExpect(status().isOk).andExpect(jsonPath("$.queryStatus").value("RUNNING"))
+            .andExpect(jsonPath("$.matched").value(500)).andExpect(jsonPath("$.total").doesNotExist())
+        Mockito.verifyNoInteractions(service)
+    }
+
+    @MockBean
     private lateinit var authService: AuthService
 
     private fun sessionOf(username: String): MockHttpSession {
@@ -111,16 +128,20 @@ class DiscoveryReviewControllerTest {
     }
 
     @Test
-    fun `filters are forwarded to the service and the page is returned`() {
-        Mockito.`when`(service.listExperts(any(), anyString(), anyInt(), anyInt(), any(), any(), any()))
-            .thenReturn(DiscoveryReviewExpertPage(0, 0, 20, emptyList()))
+    fun `issue filter is forwarded to the snapshot service and the ready page is returned`() {
+        val filter = com.weibo.talentintroduction.discovery.service.DiscoveryReviewScanService.DiscoveryReviewFilter(
+            com.weibo.talentintroduction.expert.domain.ExpertIndexLevel.RAW, "discovered", null, "ANY", null)
+        Mockito.`when`(snapshots.page(filter, 0, 20, false)).thenReturn(
+            com.weibo.talentintroduction.discovery.service.ReviewQueryPage(0, 0, 20, emptyList(),
+                "READY", "fixture-query", 0, "2026-10-26T12:00:00Z", null))
 
         mockMvc.perform(
             get("/api/discovery/review/experts?level=RAW&issue=ANY").session(sessionOf("op1"))
         ).andExpect(status().isOk)
             .andExpect(jsonPath("$.total").value(0))
 
-        Mockito.verify(service).listExperts("RAW", "discovered", 0, 20, null, "ANY", null)
+        Mockito.verify(snapshots).page(filter, 0, 20, false)
+        Mockito.verifyNoInteractions(service)
     }
 
     @Test

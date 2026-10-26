@@ -1,0 +1,69 @@
+{
+  "run": "runtime and archive regression before final controller mechanical assertion update",
+  "results": [
+    {
+      "class": "DiscoveryRecheckServiceTest",
+      "tests": "6",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "0.093"
+    },
+    {
+      "class": "DiscoveryReviewCountsServiceTest",
+      "tests": "9",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "4.321"
+    },
+    {
+      "class": "DiscoveryReviewQuerySnapshotServiceIT",
+      "tests": "3",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "16.007"
+    },
+    {
+      "class": "DiscoveryPaperArchiveRepositoryIT",
+      "tests": "6",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "15.75"
+    },
+    {
+      "class": "PaperVerificationEvidenceServiceTest",
+      "tests": "10",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "7.325"
+    },
+    {
+      "class": "DiscoveryRecheckFlowIT",
+      "tests": "2",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "643.466"
+    },
+    {
+      "class": "DiscoveryReviewControllerTest",
+      "tests": "18",
+      "failures": "1",
+      "errors": "0",
+      "skipped": "0",
+      "time": "3.433"
+    },
+    {
+      "class": "DiscoveryRecheckControllerTest",
+      "tests": "5",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "0.907"
+    }
+  ]
+}

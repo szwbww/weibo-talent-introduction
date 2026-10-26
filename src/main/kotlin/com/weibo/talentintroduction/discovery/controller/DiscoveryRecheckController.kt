@@ -46,6 +46,12 @@ class DiscoveryRecheckController(private val service: DiscoveryRecheckService,
         return ResponseEntity.ok(queries.recheckRuns(page, size, docId))
     }
 
+    @GetMapping("/active")
+    fun active(request: HttpServletRequest): ResponseEntity<Any> {
+        val actor = actor(request) ?: return unauthorized()
+        return ResponseEntity.ok(service.active(actor))
+    }
+
     @GetMapping("/latest")
     fun latest(request: HttpServletRequest, @RequestParam docIds: List<String>): ResponseEntity<Any> {
         actor(request) ?: return unauthorized()

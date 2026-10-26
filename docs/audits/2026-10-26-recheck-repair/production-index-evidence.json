@@ -1,0 +1,50 @@
+{
+  "production_host": "150.158.92.103",
+  "database_version": "MySQL 5.7.41",
+  "application_deployed": false,
+  "archive_before_count": 25348,
+  "archive_after_count": 25348,
+  "archive_before_crc_sum": 54340932242315,
+  "archive_after_crc_sum": 54340932242315,
+  "crc_columns": [
+    "id",
+    "metadata_json",
+    "outcome_json",
+    "analysis_json"
+  ],
+  "index_ddl_elapsed_seconds": 37.522,
+  "migration_file_sha256": "579d0ff877da5f676fffa913f1923e72d770c70fbe41a381c695bde4a5f07e3d",
+  "indexes": [
+    "idx_paper_source_key",
+    "idx_paper_doi_lookup",
+    "idx_paper_pmid_lookup",
+    "idx_paper_pmcid_lookup"
+  ],
+  "probes": [
+    {
+      "old_ms": 2253.02,
+      "new_ms": 11.04,
+      "same_ids": true,
+      "matches": 1
+    },
+    {
+      "old_ms": 2338.18,
+      "new_ms": 63.44,
+      "same_ids": true,
+      "matches": 1
+    },
+    {
+      "old_ms": 2374.27,
+      "new_ms": 11.2,
+      "same_ids": true,
+      "matches": 1
+    },
+    {
+      "old_ms": 2177.65,
+      "new_ms": 11.43,
+      "same_ids": true,
+      "matches": 0
+    }
+  ],
+  "benchmark_limits": "4 SELECT-id probes only, three archived DOI/source keys and one absent key; MySQL CLI overhead included, not end-to-end roster or application speed; old application SQL remains deployed."
+}

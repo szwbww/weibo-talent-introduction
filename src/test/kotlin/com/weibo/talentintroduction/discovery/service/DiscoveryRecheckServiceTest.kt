@@ -52,6 +52,16 @@ class DiscoveryRecheckServiceTest {
         assertTrue(tree.path("docIds").isEmpty)
     }
 
+    @Test fun `all pending overrides page search and status filters on server`() {
+        val text = service().canonicalSpec(RecheckPrepareRequest(key, RecheckScope.ALL_PENDING,
+            filter = RecheckFilter("unrelated", "ANY", "AUTO_PASSED")), "operator")
+        val tree = jacksonObjectMapper().readTree(text)
+        assertEquals("NEEDS_REVIEW", tree.path("filter").path("decision").asText())
+        assertTrue(tree.path("filter").path("q").isNull)
+        assertTrue(tree.path("filter").path("issue").isNull)
+        assertTrue(tree.path("docIds").isEmpty)
+    }
+
     @Test fun `invalid request parameters fail before registration or source reads`() {
         val invalid = listOf(RecheckPrepareRequest("not-uuid", docIds = listOf("a")),
             RecheckPrepareRequest(key), RecheckPrepareRequest(key, docIds = (1..101).map { "d$it" }),

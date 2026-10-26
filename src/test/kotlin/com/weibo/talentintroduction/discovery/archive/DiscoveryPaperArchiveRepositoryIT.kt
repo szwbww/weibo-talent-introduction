@@ -29,7 +29,7 @@ internal object ArchiveMysqlFixture {
         Mysql().withDatabaseName("archive_child01").withUsername("test").withPassword("test").also { it.start() }
     }
     val dataSource by lazy { DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password).also {
-        ResourceDatabasePopulator(ClassPathResource("db/migration/V159__create_discovery_paper_archive.sql")).execute(it)
+        ResourceDatabasePopulator(ClassPathResource("db/migration/V159__create_discovery_paper_archive.sql"), ClassPathResource("db/migration/V163__paper_archive_lookup_indexes.sql")).execute(it)
     } }
     val jdbc by lazy { JdbcTemplate(dataSource) }
     val mapper = jacksonObjectMapper().findAndRegisterModules()
@@ -89,6 +89,28 @@ class DiscoveryPaperArchiveRepositoryIT {
         assertEquals("10.1234/example",PaperArchiveLookup.doi(request.doi))
         assertEquals("PMC123",PaperArchiveLookup.pmcid(request.pmcid))
     }
+    @Test fun `indexed batch lookup equals legacy union and generated hashes follow old writer inserts`() {
+        val r = ArchiveMysqlFixture.repository(); val jdbc = ArchiveMysqlFixture.jdbc
+        val now = Instant.parse("2026-10-26T00:00:00Z")
+        val first = r.beginRecord(10, "OPENALEX", "W-test", """{"doi":"https://doi.org/10.1234/EXAMPLE","pmid":"456","pmcId":"pmc456"}""", now)
+        val second = r.beginRecord(11, "OPENALEX", "W-second", """{"doi":"10.1234/example"}""", now)
+        val requests = listOf(PaperArchiveLookup(99, "UNKNOWN", "other", "10.1234/example"),
+            PaperArchiveLookup(99, "UNKNOWN", "other", pmid = "456"),
+            PaperArchiveLookup(99, "UNKNOWN", "other", pmcid = "PMC456"),
+            PaperArchiveLookup(99, "OPENALEX", "W-test"), PaperArchiveLookup(99, "UNKNOWN", "absent"))
+        val batch = r.lookupHistoricalBatch(requests + requests)
+        assertEquals(requests.size, batch.size)
+        requests.forEach { assertEquals(r.lookupHistorical(it), batch.getValue(it)) }
+        assertEquals(listOf(first.id, second.id), batch.getValue(requests[0]).records.map { it.id })
+        assertEquals(listOf(first.id), batch.getValue(requests[1]).records.map { it.id })
+        assertEquals(listOf(first.id), batch.getValue(requests[2]).records.map { it.id })
+        assertTrue(batch.getValue(requests.last()).records.isEmpty())
+        val plan = jdbc.queryForMap("EXPLAIN SELECT id FROM discovery_paper_archive_record WHERE doi_lookup_sha=SHA2(?,256) AND id>0 ORDER BY id LIMIT 21", "10.1234/example")
+        assertEquals("idx_paper_doi_lookup", plan["key"])
+        val old = jdbc.queryForList("SELECT id FROM discovery_paper_archive_record WHERE LOWER(REPLACE(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(metadata_json,'$.doi')),'https://doi.org/',''),'http://doi.org/',''),'doi:',''))=? ORDER BY id", Long::class.java, "10.1234/example")
+        assertEquals(old, batch.getValue(requests[0]).records.map { it.id })
+    }
+
     @Test fun `schema singleton ranges binary identities and UTC milliseconds`() {
         val r=ArchiveMysqlFixture.repository()
         assertEquals(ArchiveSetting(),r.setting())

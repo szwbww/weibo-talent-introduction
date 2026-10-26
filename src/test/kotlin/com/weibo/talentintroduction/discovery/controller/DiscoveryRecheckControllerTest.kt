@@ -47,7 +47,7 @@ class DiscoveryRecheckControllerTest {
         "fixture", "fixture", mapper.createObjectNode(), Instant.EPOCH, Instant.EPOCH)
 
     @Test fun `every new endpoint rejects anonymous sessions without invoking services`() {
-        listOf("/runs", "/latest?docIds=real-doc", "/42", "/42/items", "/42/items/7/steps", "/42/manifest").forEach {
+        listOf("/active", "/runs", "/latest?docIds=real-doc", "/42", "/42/items", "/42/items/7/steps", "/42/manifest").forEach {
             mvc.perform(get("/api/discovery/rechecks$it")).andExpect(status().isUnauthorized)
         }
         listOf("/prepare" to "{}", "/42/start" to "{}", "/42/cancel" to "{}", "/42/sync-retry" to "{}").forEach { (path, body) ->
@@ -65,6 +65,14 @@ class DiscoveryRecheckControllerTest {
             .andExpect(jsonPath("$.mode").value("AUDIT")).andExpect(jsonPath("$.evidenceMode").value("REUSE"))
             .andExpect(jsonPath("$.taskId").value(42))
         Mockito.verify(service).prepare(body, "operator")
+    }
+
+    @Test fun `active roster restoration uses only the authenticated operator`() {
+        Mockito.`when`(service.active("operator")).thenReturn(listOf(view()))
+        mvc.perform(get("/api/discovery/rechecks/active?actor=forged").session(session()))
+            .andExpect(status().isOk).andExpect(jsonPath("$[0].runId").value(42))
+        Mockito.verify(service).active("operator")
+        Mockito.verifyNoMoreInteractions(service)
     }
 
     @Test fun `invalid enum types and missing fields return 400`() {

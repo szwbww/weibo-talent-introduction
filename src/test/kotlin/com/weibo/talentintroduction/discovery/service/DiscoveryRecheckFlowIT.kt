@@ -101,7 +101,7 @@ class DiscoveryRecheckFlowIT {
                 val app = SpringApplicationBuilder(RecheckRuntimeJdbcConfig::class.java).web(WebApplicationType.NONE)
                     .run("--spring.datasource.url=${mysql.jdbcUrl}", "--spring.datasource.username=${mysql.username}",
                         "--spring.datasource.password=${mysql.password}", "--spring.flyway.placeholder-replacement=false",
-                        "--spring.flyway.target=161", "--spring.main.banner-mode=off", "--logging.level.root=WARN",
+                        "--spring.flyway.target=165", "--spring.main.banner-mode=off", "--logging.level.root=WARN",
                         "--spring.rabbitmq.listener.simple.auto-startup=false")
                 try {
                     val jdbc = app.getBean(JdbcTemplate::class.java)
@@ -133,7 +133,7 @@ class DiscoveryRecheckFlowIT {
                 val app = SpringApplicationBuilder(RecheckRuntimeJdbcConfig::class.java).web(WebApplicationType.NONE).run(
                     "--spring.datasource.url=${mysql.jdbcUrl}", "--spring.datasource.username=${mysql.username}",
                     "--spring.datasource.password=${mysql.password}", "--spring.flyway.placeholder-replacement=false",
-                    "--spring.flyway.target=161", "--spring.main.banner-mode=off", "--logging.level.root=OFF")
+                    "--spring.flyway.target=165", "--spring.main.banner-mode=off", "--logging.level.root=OFF")
                 try {
                     val jdbc = app.getBean(JdbcTemplate::class.java)
                     val manager = DataSourceTransactionManager(app.getBean(DataSource::class.java))
@@ -697,11 +697,8 @@ class DiscoveryRecheckFlowIT {
                 vm.runInNewContext(definitions + `;(async () => {
                     const h = harness(); h.setFilter(JSON.parse(process.argv[2]));
                     h.setSelected(['fixture-0001', 'fixture-0002']);
-                    if (process.argv[1] === 'ALL_MATCHING') {
-                        h.root.querySelector('input[value="IDS"]').checked = false;
-                        h.root.querySelector('input[value="ALL_MATCHING"]').checked = true;
-                    }
-                    h.find('open').click(); h.find('prepare').click(); await flush();
+                    for (const input of h.root.querySelectorAll('input[name="rr-scope"]')) input.checked = input.value === process.argv[1];
+                    h.find('open').click(); await flush(); h.find('prepare').click(); await flush();
                     const captured = h.calls.find(c => c.url.endsWith('/prepare'));
                     if (!captured) throw Error('No component POST');
                     process.stdout.write(JSON.stringify(captured.body)); h.view.unmount();
@@ -727,7 +724,7 @@ class DiscoveryRecheckFlowIT {
             (1..1001).forEach { profile("fixture-%04d".format(it)) }
             val defaultFilter = mapOf("q" to "", "issue" to "", "decision" to "")
             val nonemptyFilter = mapOf("q" to "Ada", "issue" to "IDENTITY_UNRESOLVED", "decision" to "NEEDS_REVIEW")
-            for ((scope, filter) in listOf("IDS" to nonemptyFilter, "ALL_MATCHING" to defaultFilter, "ALL_MATCHING" to nonemptyFilter)) {
+            for ((scope, filter) in listOf("IDS" to nonemptyFilter, "ALL_MATCHING" to defaultFilter, "ALL_MATCHING" to nonemptyFilter, "ALL_PENDING" to nonemptyFilter)) {
                 val wire = componentWire(scope, filter)
                 val acceptedWire = api("POST", "/prepare", wire, 202)
                 val fixed = ready(acceptedWire.path("runId").asLong())
@@ -735,6 +732,7 @@ class DiscoveryRecheckFlowIT {
                     fixed.path("evidenceMode").asText() == "REUSE")
                 if (filter == defaultFilter || scope == "IDS") check(fixed.path("counts").path("total").asInt() == if (scope == "IDS") 2 else 1001)
                 if (scope == "ALL_MATCHING" && filter == nonemptyFilter) check(fixed.path("filter").path("q").asText() == "Ada")
+                api("POST", "/${fixed.path("runId").asLong()}/cancel")
                 println("RECHECK_REPAIR productionComponentWire=true scope=$scope emptyFilter=${filter == defaultFilter} http=202 phase=READY")
             }
             for (invalid in listOf(
@@ -757,6 +755,10 @@ class DiscoveryRecheckFlowIT {
             check(f.jdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_step WHERE item_id IN (SELECT id FROM discovery_verification_item WHERE owner_execution_id=?)", Long::class.java, id) == 0L)
             check(before == business() && providerCalls == 0)
             check(prepare(key = key).path("runId").asLong() == id)
+            check(prepare(key = UUID.randomUUID().toString()).path("runId").asLong() == id)
+            check(api("GET", "/active").single().path("runId").asLong() == id)
+            api("POST", "/prepare", RecheckPrepareRequest(UUID.randomUUID().toString(), RecheckScope.ALL_MATCHING,
+                evidenceMode = RecheckEvidenceMode.REFRESH), 409)
             api("POST", "/prepare", RecheckPrepareRequest(key, RecheckScope.ALL_MATCHING, mode = VerificationMode.ENFORCE), 409)
             val disabled = newService(prepares, DiscoveryVerificationProperties(enabled = false))
             assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
@@ -788,7 +790,8 @@ class DiscoveryRecheckFlowIT {
             failScroll = true
             val failed = prepare(); val failedId = failed.path("runId").asLong(); val failedView = ready(failedId, "FAILED")
             failScroll = false
-            check(!failedView.path("inputClosed").asBoolean() && failedView.path("counts").path("total").asInt() == 500)
+            check(!failedView.path("inputClosed").asBoolean() && failedView.path("counts").path("total").asInt() == 0) { "Incomplete scan must not create executable items: $failedView" }
+            check(failedView.path("scanned").asLong() == 500L && failedView.path("preparationStage").asText() == "SCANNING")
             check(tasks.findById(failedId).orElseThrow().status == "FAILED")
             api("POST", "/$failedId/start", RecheckStartRequest("a".repeat(64), failedView.path("revision").asLong()), 409)
             api("GET", "/$failedId/items/${item.path("itemId").asLong()}/steps", expected = 404)
@@ -807,7 +810,7 @@ class DiscoveryRecheckFlowIT {
             check(api("GET", "/${preCancel.runId}").path("phase").asText() == "CANCELLED")
             val readyCancel = ready(prepare(listOf("fixture-0001")).path("runId").asLong())
             api("POST", "/${readyCancel.path("runId").asLong()}/cancel")
-            println("RECHECK08_RUNTIME partialFreeze=FAILED/500/notClosed interruptedPrepare=INTERRUPTED preparingCancel=CANCELLED readyCancel=CANCELLED crossRun404=true")
+            println("RECHECK08_RUNTIME partialFreeze=FAILED/scanned500/items0/notClosed interruptedPrepare=INTERRUPTED preparingCancel=CANCELLED readyCancel=CANCELLED crossRun404=true")
 
             // Use the unchanged manual HTTP endpoints, then verify the new ENFORCE path protects their receipt.
             profile("manual", true)

@@ -2554,6 +2554,8 @@ const discoveryReviewState = {
     tab: "pipeline",
     requestSeq: 0,
     listSeq: 0,
+    listTimer: null,
+    listMessage: null,
     countsSeq: 0,
     prepareSeq: 0,
     recordSeq: 0,
@@ -2607,6 +2609,7 @@ function discoveryReviewElements() {
         approveAll: $("#discoveryReviewApproveAll"),
         selection: $("#discoveryReviewSelection"),
         error: $("#discoveryReviewError"),
+        snapshotStatus: $("#discoveryReviewSnapshotStatus"),
         result: $("#discoveryReviewResult"),
         selectPage: $("#discoveryReviewSelectPage"),
         rows: $("#discoveryReviewRows"),
@@ -2817,6 +2820,7 @@ function resetDiscoveryReviewTransient() {
 }
 
 function stopDiscoveryReviewPolling() {
+    clearTimeout(discoveryReviewState.listTimer); discoveryReviewState.listTimer = null;
     stopDiscoveryReviewCountsPolling();
     clearTimeout(discoveryReviewState.pollTimer);
     discoveryReviewState.pollTimer = null;
@@ -2848,6 +2852,7 @@ function selectDiscoveryReviewTab(name, options) {
         return;
     }
     discoveryReviewBumpAll();
+    clearTimeout(discoveryReviewState.listTimer); discoveryReviewState.listTimer = null;
     stopDiscoveryReviewCountsPolling();
     discoveryReviewState.tab = name;
     if (name === "review") ensureDiscoveryRecheck()?.mount();
@@ -3133,8 +3138,9 @@ function renderDiscoveryReviewCountStatus() {
 
 // ── 列表、选择与分页（I-2 / S-2） ────────────────────────────────────────────
 
-function discoveryReviewListPath() {
+function discoveryReviewListPath(refresh) {
     const params = new URLSearchParams();
+    if (refresh) params.set("refresh", "true");
     params.set("level", DISCOVERY_REVIEW_LEVEL);
     params.set("tag", DISCOVERY_REVIEW_TAG);
     params.set("from", String((discoveryReviewState.page - 1) * discoveryReviewState.pageSize));
@@ -3145,12 +3151,15 @@ function discoveryReviewListPath() {
     return DISCOVERY_REVIEW_PATH + "/experts?" + params.toString();
 }
 
-async function discoveryReviewLoadList(seq, listSeq) {
+async function discoveryReviewLoadList(seq, listSeq, refresh = false) {
     discoveryReviewState.loading = true;
+    const snapshotStatusBefore = discoveryReviewElements().snapshotStatus;
+    if (snapshotStatusBefore) snapshotStatusBefore.hidden = true;
     renderDiscoveryReviewRows();
+    renderDiscoveryReviewPager();
     let page;
     try {
-        page = await api(discoveryReviewListPath(), { timeoutMs: DISCOVERY_REVIEW_TIMEOUT_MS });
+        page = await api(discoveryReviewListPath(refresh), { timeoutMs: DISCOVERY_REVIEW_TIMEOUT_MS });
     } catch (error) {
         if (!discoveryReviewListCurrent(seq, listSeq)) return;
         discoveryReviewState.loading = false;
@@ -3163,13 +3172,34 @@ async function discoveryReviewLoadList(seq, listSeq) {
         return;
     }
     if (!discoveryReviewListCurrent(seq, listSeq)) return;
+    if (page && ["QUEUED", "RUNNING"].includes(page.queryStatus)) {
+        discoveryReviewState.listMessage = "正在后台筛选，已找到 " + (page.matched || 0) + " 人；可直接使用全部待审核重审入口。";
+        discoveryReviewState.rows = []; discoveryReviewState.selected.clear();
+        setDiscoveryReviewError(null); renderDiscoveryReviewRows(); renderDiscoveryReviewSelection();
+        clearTimeout(discoveryReviewState.listTimer);
+        discoveryReviewState.listTimer = setTimeout(function () {
+            if (discoveryReviewListCurrent(seq, listSeq)) discoveryReviewLoadList(seq, listSeq, false);
+        }, 2000);
+        return;
+    }
+    if (page && page.queryStatus === "FAILED") {
+        discoveryReviewState.loading = false; discoveryReviewState.loaded = true;
+        discoveryReviewState.listError = page.queryError || "后台筛选失败，请刷新重试";
+        setDiscoveryReviewError(discoveryReviewState.listError); renderDiscoveryReviewRows(); renderDiscoveryReviewPager(); return;
+    }
     discoveryReviewState.loading = false;
     discoveryReviewState.loaded = true;
     discoveryReviewState.listError = null;
+    discoveryReviewState.listMessage = null;
     discoveryReviewState.rows = Array.isArray(page && page.experts) ? page.experts : [];
     discoveryReviewState.total = Number(page && page.total != null ? page.total : 0);
     rememberDiscoveryReviewIssues(discoveryReviewState.rows);
     setDiscoveryReviewError(null);
+    const snapshotStatus = discoveryReviewElements().snapshotStatus;
+    if (snapshotStatus) {
+        snapshotStatus.hidden = !page.asOf;
+        snapshotStatus.textContent = page.asOf ? "列表快照时间：" + formatBeijingInstant(page.asOf) + "；状态变化后可刷新。" : "";
+    }
     renderDiscoveryReviewIssueOptions();
     renderDiscoveryReviewRows();
     renderDiscoveryReviewSelection();
@@ -3177,10 +3207,12 @@ async function discoveryReviewLoadList(seq, listSeq) {
     if (discoveryRecheckView) discoveryRecheckView.onRows(discoveryReviewState.rows);
 }
 
-function refreshDiscoveryReviewList() {
+function refreshDiscoveryReviewList(refresh = true) {
+    clearTimeout(discoveryReviewState.listTimer); discoveryReviewState.listTimer = null;
+    discoveryReviewState.listMessage = null;
     const seq = discoveryReviewState.requestSeq;
     const listSeq = ++discoveryReviewState.listSeq;
-    discoveryReviewLoadList(seq, listSeq);
+    discoveryReviewLoadList(seq, listSeq, refresh);
 }
 
 function ensureDiscoveryReviewData() {
@@ -3228,7 +3260,7 @@ function discoveryReviewChangePage(delta) {
     if (next === discoveryReviewState.page) return;
     discoveryReviewState.page = next;
     invalidateDiscoveryReviewBatch();
-    refreshDiscoveryReviewList();
+    refreshDiscoveryReviewList(false);
 }
 
 function discoveryReviewStatusRow(text) {
@@ -3246,7 +3278,7 @@ function renderDiscoveryReviewRows() {
     if (!discoveryReviewCanRender(tbody)) return;
     tbody.innerHTML = "";
     if (discoveryReviewState.loading) {
-        tbody.appendChild(discoveryReviewStatusRow("加载中…"));
+        tbody.appendChild(discoveryReviewStatusRow(discoveryReviewState.listMessage || "加载中…"));
         return;
     }
     if (!discoveryReviewState.loaded) {
@@ -3398,6 +3430,12 @@ function renderDiscoveryReviewSelection() {
 
 function renderDiscoveryReviewPager() {
     const els = discoveryReviewElements();
+    if (discoveryReviewState.loading || discoveryReviewState.listError) {
+        if (els.pageInfo) els.pageInfo.textContent = discoveryReviewState.loading ? "正在筛选，人数待统计" : "列表不可用，请刷新重试";
+        if (els.prev) els.prev.disabled = true;
+        if (els.next) els.next.disabled = true;
+        return;
+    }
     const total = discoveryReviewState.total;
     const pages = Math.max(1, Math.ceil(total / discoveryReviewState.pageSize));
     const page = Math.min(discoveryReviewState.page, pages);
