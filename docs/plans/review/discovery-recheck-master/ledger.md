@@ -12,8 +12,8 @@
 - Fast-p handoff: docs/plans/fast/discovery-recheck-master/human-review-handoff.md; sha256 7897304ff920ce75ca7b5660caa437e42b2130ae93f7a88a2c792aa9e119aea5
 - Master base: b161e87464d42b9fa2cd076ef9255b0e3b2b29ab
 - Final code head: 50f8484ed2c30d51adf781c8b07a16920feab75e
-- Evidence parent before next commit: 52853e03d3081d8ab4bed49a53c25e0202c7516f
-- Previous evidence commit: 52853e03d3081d8ab4bed49a53c25e0202c7516f (repair execution); epoch1 report b6959cd47f1ff9ff9288401b0325362c14b9b54e
+- Evidence parent before next commit: 0921e44334555a3c1a25926933ca1b9d80145499
+- Previous evidence commit: 0921e44334555a3c1a25926933ca1b9d80145499 (Epoch2 aggregate machine verification); repair-execution commit 52853e03d3081d8ab4bed49a53c25e0202c7516f
 - Branch: fast/discovery-recheck-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-recheck-master
 - Worktree resolution: EXPLICIT
@@ -30,7 +30,7 @@
 - Repair code head: 50f8484ed2c30d51adf781c8b07a16920feab75e
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: Human A-M1–A-M5 item verdicts with evidence/note, then explicit acceptance of candidate 50f8484ed2c30d51adf781c8b07a16920feab75e, governing master identity and A14 src/test/js/mailboxGroupPush.test.js; no human result inferred
+- Blocker/next action: Complete docs/plans/review/discovery-recheck-master/manual-acceptance.md Epoch2: human A-M1–A-M5 verdicts with evidence/note and explicit candidate/master/A14-file sign-off
 
 ## Preflight — 2026-10-25 Asia/Shanghai
 
@@ -139,3 +139,7 @@ Environment: actual Java 11.0.32.1 at /Users/lukai/Library/Java/JavaVirtualMachi
 Independent review-p PASS / PROGRESSING; V-1/V-2 RESOLVED, no new mandatory violation; complete 46-row master matrix and all RECORD_ONLY re-evaluations persisted verbatim in machine-verification.md. Fresh selected MySQL33 plus cumulative MySQL276: zero failures/errors/skips. JS1843 pass and package exit0; full JDK11 test remains exit1,5624/1failure/0error/24skip, exact unchanged quota/retention baseline causally retained. Fresh897 AUDIT: actualAdmitted0/providerHTTP0/businessUnchanged. Full-source parsing explicitly reuses epoch1 real repeated computation, with unchanged8-class hashes and fresh4487 source SHA checks; PARTIAL and receipt limits retained.
 
 Controller completeness/boundary check: exact returned report hash verified; full report includes commands, matrix, stable finding lineage, amendment/A14 per-file gate, RECORD_ONLY mappings and explicit evidence limits. HEAD/branch unchanged, index empty, only controller ledger dirty before report persistence; no product/test modification. Manual remains PENDING. Evidence parent before next commit: 52853e03d3081d8ab4bed49a53c25e0202c7516f.
+
+## Epoch 2 Human Gate Prepared — 2026-10-26T10:16:36.718962+08:00
+
+Machine evidence commit 0921e44334555a3c1a25926933ca1b9d80145499. manual-acceptance.md contains only master A-M1–A-M5 and required candidate/master/A14-file sign-off. All human result/evidence/reporter/timestamp fields remain PENDING or blank; no human acceptance was performed, simulated or inferred. State AWAITING_HUMAN_ACCEPTANCE. Product boundary unchanged at 50f8484ed2c30d51adf781c8b07a16920feab75e. Evidence parent before next commit: 0921e44334555a3c1a25926933ca1b9d80145499.
