@@ -1,36 +1,36 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-10-24/discovery-recheck-master.md
 
-- Status: REPAIR_PLAN_READY
-- Review epoch: 1
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 2
 - Master plan: docs/plans/2026-10-24/discovery-recheck-master.md (commit da8940153f4ad22a5ac3a094f444a7ac4858f695)
 - Governing master identity: sha256 5279a76a70aa84729ec849f881c97a31cd768e623b8da07c0c3e216a04a4cd99; recorded commit da8940153f4ad22a5ac3a094f444a7ac4858f695
-- Invoked master identity: sha256 554c841cde657ee6bb8de6df467e77a1032b9a93d54b0adce283220433ea3792
+- Invoked master identity: SAME (explicit retained-worktree handoff invocation)
 - Master identity state: AMENDMENT_RECORDED
 - Governing amendment: A17; I-M3 fixed-input gains / I-M4 child scope / child10 I-1/4; explicit bounded readonly replay factory, ordinary10s unchanged; HUMAN:后续修改都授权 把所有子计划都跑完 (2026-10-25), A7 standing authority
 - Amendments: A1–A18, exact Before/After identities, master rules, reasons and approvals in fast-p ledger Amendments; governing diff recorded below
 - Fast-p ledger: docs/plans/fast/discovery-recheck-master/ledger.md; sha256 610315d099ce9d10c7d90999436829def499bd4511b2bdc1ccc11d5ee7efc6c3
 - Fast-p handoff: docs/plans/fast/discovery-recheck-master/human-review-handoff.md; sha256 7897304ff920ce75ca7b5660caa437e42b2130ae93f7a88a2c792aa9e119aea5
 - Master base: b161e87464d42b9fa2cd076ef9255b0e3b2b29ab
-- Final code head: 0d60b43e586584319b78c4f3f9ca86b4820dd24f
-- Evidence parent before next commit: ee65822ed51caf012e487d82cc04e9d74c0b125a
-- Previous evidence commit: N/A
+- Final code head: 50f8484ed2c30d51adf781c8b07a16920feab75e
+- Evidence parent before next commit: 52853e03d3081d8ab4bed49a53c25e0202c7516f
+- Previous evidence commit: 52853e03d3081d8ab4bed49a53c25e0202c7516f (repair execution); epoch1 report b6959cd47f1ff9ff9288401b0325362c14b9b54e
 - Branch: fast/discovery-recheck-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-discovery-recheck-master
-- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
-- Discovery evidence: discover_fast_p.py --repo /Users/lukai/IdeaProjects/weibo-talent-introduction --master-plan docs/plans/2026-10-24/discovery-recheck-master.md; exit0 SELECTED, exactly one candidate, child_count10; matching terminal ledger/handoff, identities and ancestry
+- Worktree resolution: EXPLICIT
+- Discovery evidence: N/A for epoch2; exact supplied retained-worktree handoff validated against registered Git worktree; epoch1 discovery retained below
 - Misdirected review evidence: N/A
-- Reviewer: /root/aggregate_reviewer (fresh fork_turns=none; created after final code commit; differs from all recorded fast-p writers/verifiers)
+- Reviewer: /root/aggregate_reviewer_epoch2 (fresh fork_turns=none, created after 50f8484; distinct from prior reviewer and every recorded writer/verifier; executor task identity UNAVAILABLE)
 - Reviewer attempt: 1
-- Machine result: FAIL
-- Machine report epoch: machine-verification.md, Epoch 1
-- Repair artifact: docs/plans/fix/discovery-recheck-master/repair.md; sha256 1e62fa911bb0130b8c7ab31f76cc175608da02af84454d3edb2729abb14932ae; DRAFT_READY
-- Repair evidence mode: N/A
-- Repair approval source: N/A
-- Repair executor: N/A
-- Repair code head: N/A
+- Machine result: PASS
+- Machine report epoch: machine-verification.md, Epoch 2; Epoch 1 retained append-only
+- Repair artifact: docs/plans/fix/discovery-recheck-master/repair.md; sha256 1e62fa911bb0130b8c7ab31f76cc175608da02af84454d3edb2729abb14932ae; unchanged executed repair, new repair planning N/A
+- Repair evidence mode: DURABLE_HANDOFF
+- Repair approval source: Committed repair-execution.md: exact human-originated execute-p invocation for repair.md at SHA256 1e62fa911bb0130b8c7ab31f76cc175608da02af84454d3edb2729abb14932ae
+- Repair executor: UNAVAILABLE (handoff identifies resumed top-level coding assistant; no separate identity exposed)
+- Repair code head: 50f8484ed2c30d51adf781c8b07a16920feab75e
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: Human approval of the exact repair.md via execute-p; authorized product/evidence commits and same-task aggregate re-review using committed repair-execution.md, as specified in the repair handoff
+- Blocker/next action: Human A-M1–A-M5 item verdicts with evidence/note, then explicit acceptance of candidate 50f8484ed2c30d51adf781c8b07a16920feab75e, governing master identity and A14 src/test/js/mailboxGroupPush.test.js; no human result inferred
 
 ## Preflight — 2026-10-25 Asia/Shanghai
 
@@ -123,3 +123,19 @@ Human response to the explicit remote verification question: “授权上述远�
 - Controller completeness/boundary check: retained HEAD/branch unchanged; tracked product/index clean before evidence staging; writes limited to ledger.md, machine-verification.md, and the single repair.md.
 - Evidence parent before next commit: ee65822ed51caf012e487d82cc04e9d74c0b125a.
 - No human check or sign-off inferred. No product repair, push, merge or deployment performed.
+
+## Epoch 2 Preflight — 2026-10-26T09:27:53.917023+08:00
+
+Explicit supplied retained-worktree handoff remains READY_FOR_HUMAN_REVIEW. All ten child plan identities, terminal states, forty artifacts and evidence ancestry independently rechecked. Governing master bytes equal recorded da8940153f4ad22a5ac3a094f444a7ac4858f695, SHA256 5279a76a70aa84729ec849f881c97a31cd768e623b8da07c0c3e216a04a4cd99; A1–A18 unchanged, AMENDMENT_RECORDED; invoked selected copy SAME. Fast ledger/handoff hashes unchanged from epoch1.
+
+DURABLE_HANDOFF: repair-execution.md in 52853e03d3081d8ab4bed49a53c25e0202c7516f names exact repair/approval, prior code 0d60b43e586584319b78c4f3f9ca86b4820dd24f and committed candidate 50f8484ed2c30d51adf781c8b07a16920feab75e. Candidate descends from prior boundary. Its sole product delta contains exactly five Authorized Files: DiscoveryVerificationQueryService.kt, discovery-recheck.js, DiscoveryVerificationQueryServiceTest.kt, discoveryRecheck.test.js, DiscoveryRecheckFlowIT.kt, with full paths specified by repair.md. Intervening changes are only known plan/evidence documents; candidate..evidence HEAD contains only repair-execution.md. Product/index/worktree were CLEAN before this ledger update. No executor claims substitute for new mandatory verification.
+
+Environment: actual Java 11.0.32.1 at /Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home; /opt/homebrew/bin/mvn, /opt/homebrew/bin/node, /opt/homebrew/bin/python3 available. Master requires fresh full JDK11 mvn test and mvn package -DskipTests, plus required runtime/real-MySQL/browser evidence; repair command criteria and all full-suite skips/failures retained. Required fresh independent subagent capability available. Manual A-M1–A-M5 and governing-master/boundary/A14 file sign-off remain PENDING.
+
+- Epoch2 reviewer acquired: /root/aggregate_reviewer_epoch2, fork_turns=none; exact bundle only; review-p aggregate/master required; product and review evidence read-only, only eligible repair-p artifact permitted. No dispatch failure.
+
+## Epoch 2 Machine Outcome — 2026-10-26T10:15:51.780479+08:00
+
+Independent review-p PASS / PROGRESSING; V-1/V-2 RESOLVED, no new mandatory violation; complete 46-row master matrix and all RECORD_ONLY re-evaluations persisted verbatim in machine-verification.md. Fresh selected MySQL33 plus cumulative MySQL276: zero failures/errors/skips. JS1843 pass and package exit0; full JDK11 test remains exit1,5624/1failure/0error/24skip, exact unchanged quota/retention baseline causally retained. Fresh897 AUDIT: actualAdmitted0/providerHTTP0/businessUnchanged. Full-source parsing explicitly reuses epoch1 real repeated computation, with unchanged8-class hashes and fresh4487 source SHA checks; PARTIAL and receipt limits retained.
+
+Controller completeness/boundary check: exact returned report hash verified; full report includes commands, matrix, stable finding lineage, amendment/A14 per-file gate, RECORD_ONLY mappings and explicit evidence limits. HEAD/branch unchanged, index empty, only controller ledger dirty before report persistence; no product/test modification. Manual remains PENDING. Evidence parent before next commit: 52853e03d3081d8ab4bed49a53c25e0202c7516f.
