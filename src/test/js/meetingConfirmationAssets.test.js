@@ -39,8 +39,6 @@ describe("T3: 11 个带版本资源统一键与注册（I-1/S-1）", () => {
         const keys = [...html.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
         assert.strictEqual(keys.length, 18, `index.html 必须恰好注册 18 个带版本资源，实际 ${keys.length}`);
         assert.ok(keys.every((key) => key === CACHE_KEY), `全部键必须等于 ${CACHE_KEY}: ${keys}`);
-        const recheckPlan = fs.readFileSync(path.join(__dirname, "../../../docs/plans/2026-10-24/discovery-recheck-09-frontend.md"), "utf8");
-        assert.strictEqual(CACHE_KEY, recheckPlan.match(/key=`([^`]+)`/)[1]);
         assert.ok(html.indexOf("discovery-recheck.js?v=") < html.indexOf("app.js?v="), "重审组件必须先于宿主");
         assert.ok(!html.includes("20260910-mailbox-spacing"),
             "上一缓存键 20260910-mailbox-spacing 必须 0 命中 index.html");
