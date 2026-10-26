@@ -27,8 +27,19 @@ data class VerificationWorkerEvidence(
     val queries: List<ApolloSearchQuery>? = null,
     val institutionNormalization: InstitutionNormalization? = null,
     val ruleVersion: Int = 0,
-    val diagnostics: WorkerDiagnostics? = null
+    val diagnostics: WorkerDiagnostics? = null,
+    val executionContext: VerificationExecutionContext? = null
 ) { init { require(schemaVersion == 1) } }
+
+/** One additive payload member. Missing context deliberately retains historical clock semantics. */
+data class VerificationExecutionContext(val evaluationAt: Instant, val paperSourceRefs: List<PaperSourceRef> = emptyList(),
+    val paper: PaperEvidenceRead? = null, val academic: RecheckAcademicEvidence? = null,
+    val cacheReasons: List<String> = emptyList())
+
+/** The preparation/start contract; no cursor or HTTP counters are inherited into a new review epoch. */
+data class VerificationReviewInput(val expectedAdmissionRevision: Long?, val beforeDecision: String? = null,
+    val paperSourceRefs: List<PaperSourceRef> = emptyList(), val evidence: VerificationWorkerEvidence? = null,
+    val evidenceHash: String? = null)
 
 @Service
 class DiscoveryVerificationWorker(
@@ -40,7 +51,10 @@ class DiscoveryVerificationWorker(
     private val rules: DiscoveryVerificationRules,
     private val commits: DiscoveryVerificationCommitService,
     private val recovery: ObjectProvider<RegistrationRecovery>,
-    private val clock: Clock = Clock.systemUTC()
+    private val clock: Clock = Clock.systemUTC(),
+    private val traces: com.weibo.talentintroduction.discovery.repository.DiscoveryVerificationTraceRepository? = null,
+    private val papers: PaperVerificationEvidenceService? = null,
+    private val academic: DiscoveryRecheckAcademicEvidenceService? = null
 ) {
     private val mapper = jacksonObjectMapper().findAndRegisterModules().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
     private val running = AtomicBoolean()
@@ -86,6 +100,26 @@ class DiscoveryVerificationWorker(
         var searched = lease.searchCompletedAt
         var candidatesAt = lease.candidateFoundAt
         fun json() = rawPayload ?: mapper.writeValueAsString(payload)
+        val activeSteps = mutableMapOf<Int, VerificationStep>()
+        var activeStepNo = 1
+        val requestKeys = mutableMapOf<Long, String>()
+        fun startStep(number: Int, input: Any = emptyMap<String, Any?>()) {
+            activeStepNo = number
+            traces?.startStep(lease.id, token, lease.generation, number, mapper.writeValueAsString(input),
+                mapper.writeValueAsString(mapOf("ruleVersion" to payload.ruleVersion, "evaluationAt" to payload.executionContext?.evaluationAt,
+                    "identityVersion" to lease.snapshotJson.let { mapper.readTree(it).path("profile").path("identityVerification").path("version").asText() })),
+                clock.instant())?.let { activeSteps[number] = it }
+        }
+        fun endStep(number: Int, state: VerificationStepState, output: Any = emptyMap<String, Any?>(),
+            codes: List<String> = emptyList(), blocking: Boolean = false) {
+            val step = activeSteps.remove(number) ?: return
+            check(traces!!.finishStep(lease.id, token, lease.generation, step.id, state, mapper.writeValueAsString(output),
+                mapper.writeValueAsString(mapOf("codes" to codes, "blocking" to blocking)), clock.instant())) { "Trace lease lost" }
+        }
+        fun skipStep(number: Int, reason: String) {
+            startStep(number)
+            endStep(number, VerificationStepState.SKIPPED, codes = listOf(reason))
+        }
         fun contextIssue(snapshot: VerificationSnapshot, saved: InstitutionNormalization): ContextIssue {
             if (saved.version != DiscoveryInstitutionNormalizer.VERSION) return ContextIssue.INVALID_PROTOCOL
             val expected = runCatching {
@@ -115,16 +149,21 @@ class DiscoveryVerificationWorker(
                 when (contextIssue(snapshot, normalization)) {
                     // An unrecognized or corrupted saved protocol is an interface error, not a no-match.
                     ContextIssue.INVALID_PROTOCOL -> throw IllegalArgumentException("Invalid institution normalization context")
-                    ContextIssue.PARSER_DRIFT -> return rules.evaluate(snapshot, payload.evidence, payload.search, ruleVersion = payload.ruleVersion).copy(
+                    ContextIssue.PARSER_DRIFT -> return rules.evaluate(snapshot, payload.evidence, payload.search,
+                        ruleVersion = payload.ruleVersion, evaluatedAt = payload.executionContext?.evaluationAt).copy(
                         qualification = VerificationQualification.UNKNOWN, outcome = VerificationOutcome.PENDING,
                         route = VerificationRoute.NONE, reasonCodes = listOf("EVIDENCE_CONFLICT"), matchedPersonId = null)
                     ContextIssue.NONE -> return rules.evaluate(snapshot, payload.evidence, payload.search,
-                        institutionNormalization = normalization, ruleVersion = payload.ruleVersion)
+                        institutionNormalization = normalization, ruleVersion = payload.ruleVersion,
+                        evaluatedAt = payload.executionContext?.evaluationAt)
                 }
             }
-            return rules.evaluate(snapshot, payload.evidence, payload.search, ruleVersion = payload.ruleVersion)
+            return rules.evaluate(snapshot, payload.evidence, payload.search, ruleVersion = payload.ruleVersion,
+                evaluatedAt = payload.executionContext?.evaluationAt)
         }
-        fun ensureOwned() { if (lost.get()) throw LeaseLost() }
+        fun ensureOwned() {
+            if (lost.get() || lease.reviewEpoch > 0 && !repository.isOwned(lease.id, token, lease.generation, clock.instant())) throw LeaseLost()
+        }
         fun save() {
             ensureOwned()
             check(repository.saveProgress(lease.id, token, lease.generation, json(), entered, searched, candidatesAt, clock.instant())) { "Verification lease lost" }
@@ -132,15 +171,19 @@ class DiscoveryVerificationWorker(
         fun reserve(provider: VerificationProvider, kind: VerificationQueryKind, page: Int, request: String): RequestPermit {
             ensureOwned()
             if (!properties.workerEnabled) throw BudgetDeferred(VerificationBudgetReason.LOCK_BUSY)
+            val requestKey = "${lease.id}-${UUID.randomUUID()}"
+            val requestNode = mapper.readTree(request) as com.fasterxml.jackson.databind.node.ObjectNode
+            requestNode.set<com.fasterxml.jackson.databind.JsonNode>("_dispatch", mapper.valueToTree(mapOf(
+                "generation" to lease.generation, "ownerHash" to DiscoveryVerificationRepository.replayHash(token))))
             val reservation = repository.reserveAttemptWithBudget(lease.id, token, lease.generation,
-                VerificationAttemptRequest("${lease.id}-${UUID.randomUUID()}", provider, kind, page, requestNumber + 1, request),
+                VerificationAttemptRequest(requestKey, provider, kind, page, requestNumber + 1, requestNode.toString()),
                 properties.requestsPerMinute, properties.requestsPerDay, properties.maxRequestsPerItem, clock.instant())
             val id = reservation.attemptId ?: throw BudgetDeferred(requireNotNull(reservation.deferred), reservation.retryAt)
             requestNumber++
+            requestKeys[id] = requestKey
             return RequestPermit(id, provider).also { activePermit = it }
         }
         fun completed(permit: RequestPermit, result: VerificationHttpResult<*>, response: Any? = null) {
-            ensureOwned()
             val status = when (result) {
                 is VerificationHttpResult.Success -> result.httpStatus
                 is VerificationHttpResult.RateLimited -> result.httpStatus
@@ -153,14 +196,31 @@ class DiscoveryVerificationWorker(
                 is VerificationHttpResult.TransientFailure -> result.code
                 is VerificationHttpResult.PermanentFailure -> result.code
             }
-            check(repository.completeAttemptAndProgress(lease.id, token, lease.generation, permit.attemptId, status, code,
-                (if (result is VerificationHttpResult.Success) response else when (result) {
-                    is VerificationHttpResult.RateLimited -> result.diagnostic
-                    is VerificationHttpResult.TransientFailure -> result.diagnostic
-                    is VerificationHttpResult.PermanentFailure -> result.diagnostic
-                    else -> null
-                })?.let { mapper.writeValueAsString(it) }, (result as? VerificationHttpResult.Success)?.responseSha256,
-                json(), entered, searched, candidatesAt, clock.instant())) { "Verification completion not persisted" }
+            val responseJson = (if (result is VerificationHttpResult.Success) response else when (result) {
+                is VerificationHttpResult.RateLimited -> result.diagnostic
+                is VerificationHttpResult.TransientFailure -> result.diagnostic
+                is VerificationHttpResult.PermanentFailure -> result.diagnostic
+                else -> null
+            })?.let { mapper.writeValueAsString(it) }
+            if (lease.reviewEpoch > 0 && !repository.isOwned(lease.id, token, lease.generation, clock.instant())) {
+                repository.completeDispatchedDiagnostic(lease.id, token, lease.generation, permit.attemptId,
+                    requireNotNull(requestKeys[permit.attemptId]), status, code, responseJson,
+                    (result as? VerificationHttpResult.Success)?.responseSha256, clock.instant())
+                activePermit = null
+                throw LeaseLost()
+            }
+            ensureOwned()
+            val persisted = repository.completeAttemptAndProgress(lease.id, token, lease.generation, permit.attemptId, status, code,
+                responseJson, (result as? VerificationHttpResult.Success)?.responseSha256,
+                json(), entered, searched, candidatesAt, clock.instant())
+            if (!persisted && lease.reviewEpoch > 0) {
+                repository.completeDispatchedDiagnostic(lease.id, token, lease.generation, permit.attemptId,
+                    requireNotNull(requestKeys[permit.attemptId]), status, code, responseJson,
+                    (result as? VerificationHttpResult.Success)?.responseSha256, clock.instant())
+                activePermit = null
+                throw LeaseLost()
+            }
+            check(persisted) { "Verification completion not persisted" }
             activePermit = null
         }
         fun finish(decision: VerificationDecision) {
@@ -170,16 +230,52 @@ class DiscoveryVerificationWorker(
             val proposed = VerificationResult(VerificationState.COMPLETED, decision.outcome, decision.qualification, decision.route,
                 json(), mapper.writeValueAsString(decision.reasonCodes), entered, searched, candidatesAt,
                 if (decision.matchedPersonId != null) clock.instant() else null, decision.matchedPersonId)
+            if (activeSteps.containsKey(4)) endStep(4, VerificationStepState.SUCCESS,
+                mapOf("evidenceCount" to payload.evidence.size, "evidenceRef" to "item:${lease.id}/evidence_json"))
+            if (activeSteps.containsKey(5)) endStep(5, if (decision.qualification == VerificationQualification.MET)
+                VerificationStepState.SUCCESS else VerificationStepState.INSUFFICIENT,
+                mapOf("outcome" to decision.outcome, "qualification" to decision.qualification), decision.reasonCodes)
+            if (activeSteps.containsKey(6)) endStep(6, if (decision.route == VerificationRoute.APOLLO)
+                VerificationStepState.SUCCESS else VerificationStepState.INSUFFICIENT,
+                mapOf("searchRef" to "item:${lease.id}/evidence_json/search", "personId" to decision.matchedPersonId), decision.reasonCodes)
+            else if (traces?.read(lease.id)?.steps?.lastOrNull { it.stepNo == 6 }?.state == VerificationStepState.NOT_STARTED)
+                skipStep(6, if (decision.outcome == VerificationOutcome.DIRECT_CLEAR) "DIRECT_SUFFICIENT" else "PERSONAL_QUERY_NOT_REQUIRED")
             val committed = commits.commit(lease, proposed, commits.prepare(lease))
             if (committed != null) commits.project(committed)
         }
         fun fail(code: String, transientAttempts: Int = lease.transientAttempts) {
             if (code == "CONFIG_AUTH") authBlocked.set(true)
-            repository.saveFailure(lease.id, token, lease.generation,
+            val blocker = activeStepNo
+            if (!activeSteps.containsKey(blocker)) startStep(blocker)
+            endStep(blocker, VerificationStepState.ERROR, codes = listOf(code), blocking = true)
+            if (traces != null) for (number in 1..7) if (traces.read(lease.id).steps.lastOrNull { it.stepNo == number }?.state == VerificationStepState.NOT_STARTED)
+                skipStep(number, "BLOCKED_BY_STEP_$blocker")
+            startStep(8, mapOf("error" to code))
+            val record = activeSteps.remove(8)
+            if (repository.saveFailure(lease.id, token, lease.generation,
                 VerificationResult(VerificationState.ERROR, null, VerificationQualification.NOT_EVALUATED, VerificationRoute.NONE,
-                    json(), mapper.writeValueAsString(listOf(code)), entered, searched, candidatesAt), transientAttempts, clock.instant())
+                    json(), mapper.writeValueAsString(listOf(code)), entered, searched, candidatesAt), transientAttempts, clock.instant())) {
+                record?.let { traces!!.finishFailure(lease.id, lease.generation, it.id,
+                    mapper.writeValueAsString(mapOf("error" to code, "applied" to false, "projection" to "NOT_REQUIRED")), clock.instant()) }
+            }
         }
         fun retry(result: VerificationHttpResult<Nothing>) {
+            val waitCode = when (result) {
+                is VerificationHttpResult.RateLimited -> "RATE_LIMIT"
+                is VerificationHttpResult.TransientFailure -> result.code
+                is VerificationHttpResult.PermanentFailure -> result.code
+                else -> "PROVIDER_ERROR"
+            }
+            if (activeSteps.containsKey(activeStepNo)) endStep(activeStepNo,
+                if (result is VerificationHttpResult.RateLimited || waitCode == "APOLLO_CREDITS_EXHAUSTED")
+                    VerificationStepState.INSUFFICIENT else VerificationStepState.ERROR,
+                mapOf("retryAt" to (result as? VerificationHttpResult.RateLimited)?.retryAt,
+                    "httpStatus" to when (result) {
+                        is VerificationHttpResult.RateLimited -> result.httpStatus
+                        is VerificationHttpResult.TransientFailure -> result.httpStatus
+                        is VerificationHttpResult.PermanentFailure -> result.httpStatus
+                        else -> null
+                    }, "providerCode" to waitCode, "attemptsRef" to "item:${lease.id}/attempts"), listOf(waitCode))
             val now = clock.instant()
             when (result) {
                 is VerificationHttpResult.RateLimited -> repository.reschedule(lease.id, token, lease.generation, maxOf(now, result.retryAt),
@@ -202,8 +298,16 @@ class DiscoveryVerificationWorker(
             payload = lease.evidenceJson?.let { mapper.readValue<VerificationWorkerEvidence>(it) } ?: payload
             rawPayload = null
             val snapshot = mapper.readValue<VerificationSnapshot>(lease.snapshotJson)
-            require(snapshot.identityHash == lease.identityHash && snapshot.factFingerprint == lease.factFingerprint)
+            require(snapshot.identityHash == lease.identityHash && snapshot.factFingerprint == lease.factFingerprint) { "STALE_INPUT" }
             val run = repository.findRun(lease.ownerExecutionId) ?: error("Verification run missing")
+            ensureOwned()
+            traces?.initSteps(lease.id, clock.instant())
+            startStep(1, mapOf("docId" to lease.expertDocId, "identityHash" to lease.identityHash,
+                "factFingerprint" to lease.factFingerprint, "reviewEpoch" to lease.reviewEpoch))
+            val baseline = if (traces != null) commits.prepare(lease) else null
+            endStep(1, if (baseline?.protection == null) VerificationStepState.SUCCESS else VerificationStepState.INSUFFICIENT,
+                mapOf("beforeRevision" to baseline?.admission?.revision, "beforeDecision" to baseline?.admission?.decision,
+                    "protection" to baseline?.protection), listOfNotNull(baseline?.protection))
             val apolloAccess = try {
                 run.frozenApolloAccess(mapper)
             } catch (_: Exception) {
@@ -221,11 +325,109 @@ class DiscoveryVerificationWorker(
                 }
                 payload = payload.copy(ruleVersion = frozenRule?.intValue() ?: 1)
             }
-            require(payload.ruleVersion in 0..2) { "Unsupported frozen rule version" }
+            require(payload.ruleVersion in 0..3) { "Unsupported frozen rule version" }
+            val recheck = run.recheckJson?.let { repository.recheck(run) }
+            val root = mapper.readTree(lease.snapshotJson)
+            val reviewNode = root.get("reviewInput")
+            val reviewInput = reviewNode?.let {
+                require(it.isObject && it.has("expectedAdmissionRevision")) { "Missing frozen admission baseline" }
+                val revision = it.get("expectedAdmissionRevision")
+                require(revision.isNull || revision.isIntegralNumber && revision.canConvertToLong() && revision.longValue() >= 0)
+                mapper.treeToValue(it, VerificationReviewInput::class.java)
+            }
+            require(lease.reviewEpoch == 0L || recheck != null && reviewInput != null)
+            if (lease.evidenceJson == null && reviewInput?.evidence != null) {
+                val cached = reviewInput.evidence
+                reviewInput.evidenceHash?.let {
+                    require(it == DiscoveryVerificationRepository.replayHash(mapper.writeValueAsString(cached))) { "STALE_INPUT" }
+                }
+                require(cached.evidence.all { it.identityHash == snapshot.identityHash && it.factFingerprint == snapshot.factFingerprint }) {
+                    "STALE_INPUT"
+                }
+                if (recheck?.spec?.evidenceMode == RecheckEvidenceMode.REUSE) payload = payload.copy(
+                    evidence = cached.evidence, search = cached.search, orcidCompleted = cached.orcidCompleted,
+                    institutionNormalization = cached.institutionNormalization)
+            }
+            if (payload.executionContext == null && lease.evidenceJson == null) {
+                val ordinary = root.get("executionContext")?.let { mapper.treeToValue(it, VerificationExecutionContext::class.java) }
+                if (recheck != null) payload = payload.copy(executionContext = VerificationExecutionContext(
+                    recheck.spec.evaluatedAt, reviewInput!!.paperSourceRefs,
+                    cacheReasons = if (recheck.spec.evidenceMode == RecheckEvidenceMode.REUSE)
+                        listOf("CACHE_REUSED") + if (payload.orcidCompleted.none { it.document != null }) listOf("ORCID_NOT_REPARSED") else emptyList()
+                    else emptyList()))
+                else if (ordinary != null) payload = payload.copy(executionContext = ordinary)
+            }
+            val mode = recheck?.spec?.evidenceMode ?: RecheckEvidenceMode.REUSE
+            val context = payload.executionContext
+            startStep(2, mapOf("sources" to context?.paperSourceRefs.orEmpty()))
+            if (context != null && context.paper == null) {
+                val collected = if (context.paperSourceRefs.isNotEmpty()) papers?.collect(snapshot, context.paperSourceRefs, mode, context.evaluationAt) else null
+                payload = payload.copy(executionContext = context.copy(paper = collected),
+                    evidence = (payload.evidence + collected?.sources.orEmpty().flatMap { it.evidence }).distinct())
+            }
+            val paperRead = payload.executionContext?.paper
+            endStep(2, if (paperRead?.sources?.any { it.coverage != null } == true) VerificationStepState.SUCCESS else VerificationStepState.INSUFFICIENT,
+                mapOf("sourceRefs" to payload.executionContext?.paperSourceRefs.orEmpty(),
+                    "parsedBodies" to paperRead?.parsedBodies, "evidenceRef" to "executionContext.paper"),
+                paperRead?.reasonCodes.orEmpty().ifEmpty { if (paperRead == null) listOf("SOURCE_UNAVAILABLE") else emptyList() })
+            startStep(3, mapOf("identityHash" to snapshot.identityHash))
+            endStep(3, if (snapshot.identityValid) VerificationStepState.SUCCESS else VerificationStepState.INSUFFICIENT,
+                mapOf("reliableIdentity" to snapshot.identityValid, "paperBindings" to paperRead?.sources.orEmpty().map {
+                    mapOf("source" to it.source, "authorIndex" to it.boundAuthorIndex, "method" to it.bindingMethod) }),
+                if (snapshot.identityValid) emptyList() else listOf("IDENTITY_EVIDENCE_MISSING"), !snapshot.identityValid)
+            if (!snapshot.identityValid) {
+                for (number in 4..6) skipStep(number, "IDENTITY_EVIDENCE_MISSING")
+                finish(evaluate(snapshot)); return
+            }
+            if (payload.progress.stage != "LOCAL_EVIDENCE") {
+                // These stages predate this observation; do not invent elapsed time for their historical work.
+                for (number in 4..5) skipStep(number, "PREVIOUS_STAGE_HISTORY_NOT_RECORDED")
+            }
             if (payload.progress.stage == "LOCAL_EVIDENCE") {
+                startStep(4, mapOf("mode" to mode, "evidenceRef" to "item:${lease.id}/evidence_json"))
+                if (payload.executionContext != null && payload.executionContext!!.academic == null && academic != null) {
+                    ensureOwned()
+                    val academicMode = if (recheck?.spec?.evidenceMode == RecheckEvidenceMode.REFRESH)
+                        RecheckEvidenceMode.REFRESH else RecheckEvidenceMode.REUSE
+                    val collected = academic.collect(listOf(snapshot), academicMode, payload.executionContext!!.evaluationAt,
+                        beforeDispatch = {
+                            if (lease.reviewEpoch > 0 && !repository.isOwned(lease.id, token, lease.generation, clock.instant()))
+                                throw java.util.concurrent.CancellationException("Recheck dispatch no longer authorized")
+                        }).getValue(snapshot.identityHash)
+                    ensureOwned()
+                    if (collected.retryAt == null) payload = payload.copy(executionContext = payload.executionContext!!.copy(academic = collected))
+                    if (collected.retryAt != null) {
+                        endStep(4, VerificationStepState.INSUFFICIENT, mapOf("retryAt" to collected.retryAt), collected.reasonCodes)
+                        repository.reschedule(lease.id, token, lease.generation, maxOf(clock.instant(), collected.retryAt),
+                            lease.transientAttempts, json(), mapper.writeValueAsString(collected.reasonCodes), clock.instant())
+                        return
+                    }
+                }
                 payload = payload.copy(evidence = parser.rebuild(snapshot, payload.orcidCompleted.mapNotNull { it.document }, payload.evidence))
+                fun directStep(decision: VerificationDecision) {
+                    endStep(4, if (payload.evidence.isEmpty()) VerificationStepState.INSUFFICIENT else VerificationStepState.SUCCESS,
+                        mapOf("evidenceCount" to payload.evidence.size, "academicRef" to "executionContext.academic",
+                            "cacheReasons" to payload.executionContext?.cacheReasons.orEmpty()),
+                        payload.executionContext?.academic?.reasonCodes.orEmpty())
+                    startStep(5)
+                    endStep(5, if (decision.outcome == VerificationOutcome.DIRECT_CLEAR) VerificationStepState.SUCCESS else VerificationStepState.INSUFFICIENT,
+                        mapOf("outcome" to decision.outcome, "qualification" to decision.qualification,
+                            "missingFields" to decision.missingFields), decision.reasonCodes,
+                        decision.qualification == VerificationQualification.CONFLICT ||
+                            matchingVersion == 1 && decision.qualification == VerificationQualification.NOT_MET)
+                }
+                if (recheck?.spec?.evidenceMode == RecheckEvidenceMode.REUSE) {
+                    val cached = payload
+                    payload = payload.copy(search = null, institutionNormalization = null)
+                    val direct = evaluate(snapshot)
+                    if (direct.outcome == VerificationOutcome.DIRECT_CLEAR) { directStep(direct); finish(direct); return }
+                    payload = cached
+                    directStep(direct)
+                    startStep(6, mapOf("mode" to "REUSE", "searchRef" to "reviewInput.evidence.search"))
+                    finish(evaluate(snapshot)); return
+                }
                 val existing = evaluate(snapshot)
-                if (existing.outcome == VerificationOutcome.DIRECT_CLEAR) { finish(existing); return }
+                if (existing.outcome == VerificationOutcome.DIRECT_CLEAR) { directStep(existing); finish(existing); return }
                 val read = orcid.read(snapshot, payload.orcidCompleted, { endpoint, permit, document, result ->
                     if (result is VerificationHttpResult.Success || result is VerificationHttpResult.PermanentFailure && result.code == "EVIDENCE_MISSING") {
                         val completion = OrcidEndpointCompletion(endpoint, document)
@@ -239,6 +441,7 @@ class DiscoveryVerificationWorker(
                 payload = payload.copy(evidence = parser.rebuild(snapshot,
                     (payload.orcidCompleted.mapNotNull { it.document } + read.documents).distinct(), payload.evidence))
                 val local = evaluate(snapshot)
+                directStep(local)
                 if (!read.complete && snapshot.boundOrcid != null) {
                     val reasons = listOf("EVIDENCE_INCOMPLETE") +
                         if (requestNumber >= properties.maxRequestsPerItem) listOf("ITEM_REQUEST_LIMIT") else emptyList()
@@ -256,12 +459,17 @@ class DiscoveryVerificationWorker(
                         rules.identityEmployments(snapshot, payload.evidence), emptyList())
                 else payload.institutionNormalization
                 payload = payload.copy(progress = VerificationProgress(stage = "APOLLO_SEARCH"),
-                    search = ApolloSearchEvidence(matchingVersion = matchingVersion, academicResearchFields = snapshot.profile.researchFields, institutionAliasVersion = aliasVersion),
+                    search = ApolloSearchEvidence(matchingVersion = matchingVersion,
+                        academicResearchFields = payload.executionContext?.academic?.let {
+                            it.profileResearchFields ?: it.data?.topics?.joinToString(", ")
+                        } ?: snapshot.profile.researchFields, institutionAliasVersion = aliasVersion),
                     institutionNormalization = normalization, queries = searchQueries(snapshot, payload.evidence, normalization,
                         formalName = matchingVersion == 2, ruleVersion = payload.ruleVersion))
                 entered = entered ?: clock.instant()
                 save()
             }
+            if (payload.progress.stage == "APOLLO_SEARCH") startStep(6,
+                mapOf("searchRef" to "item:${lease.id}/evidence_json/search", "requestCount" to requestNumber))
             if (payload.progress.stage == "APOLLO_SEARCH") {
                 // Old in-flight payloads retain their original query sequence; new runs persist it before HTTP.
                 var queries = payload.queries ?: legacySearchQueries(snapshot, payload.evidence)
@@ -420,7 +628,7 @@ class DiscoveryVerificationWorker(
                     }
                     // Academic enrichment runs independently. Freeze the fields already available at decision
                     // time; replay and the gate consume these same fields, never a later mutable profile.
-                    if (payload.search!!.candidates.isNotEmpty()) {
+                    if (lease.reviewEpoch == 0L && payload.search!!.candidates.isNotEmpty()) {
                         val latest = commits.prepare(lease).snapshot
                         if (latest != null && latest.identityHash == snapshot.identityHash &&
                             latest.factFingerprint == snapshot.factFingerprint) {
@@ -454,14 +662,18 @@ class DiscoveryVerificationWorker(
                     val now = clock.instant()
                     val next = deferred.retryAt?.let { maxOf(now, it) } ?: if (deferred.reason == VerificationBudgetReason.DAY_LIMIT)
                         LocalDate.ofInstant(now, ZoneOffset.UTC).plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC) else now.plusSeconds(60)
+                    if (activeSteps.containsKey(activeStepNo)) endStep(activeStepNo, VerificationStepState.INSUFFICIENT,
+                        mapOf("retryAt" to next), listOf(deferred.reason.name))
                     repository.reschedule(lease.id, token, lease.generation, next, lease.transientAttempts, json(),
                         mapper.writeValueAsString(listOf(deferred.reason.name)), now)
                 }
             }
-        } catch (_: Exception) {
+        } catch (_: java.util.concurrent.CancellationException) {
+            // A provider guard refused dispatch. Cancellation owns item convergence; no error/lease writes.
+        } catch (error: Exception) {
             // Persistence failure must stop the request chain. Leave its lease/cursor for durable recovery.
             // Only preflight failures with no unacknowledged HTTP may be recorded as an interface-safe ERROR.
-            if (activePermit == null && !lost.get()) fail("VERIFICATION_FAILED")
+            if (activePermit == null && !lost.get()) fail(if (error.message == "STALE_INPUT") "STALE_INPUT" else "VERIFICATION_FAILED")
         } finally { renewal.cancel(false) }
     }
 

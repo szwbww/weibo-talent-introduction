@@ -10,6 +10,29 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 
+
+/** Frozen provenance lookup. Cursor and result size are bounded independently of archive size. */
+data class PaperArchiveLookup(val executionId: Long, val sourceName: String, val sourceItemKey: String,
+    val doi: String? = null, val pmid: String? = null, val pmcid: String? = null) {
+    init {
+        require(executionId > 0); require(sourceName.isNotBlank() && sourceName.length <= 32)
+        require(sourceItemKey.isNotBlank() && sourceItemKey.length <= 128)
+        require(doi == null || Companion.doi(doi) != null)
+        require(pmid == null || Companion.pmid(pmid) != null)
+        require(pmcid == null || Companion.pmcid(pmcid) != null)
+    }
+    companion object {
+        fun doi(value: String?): String? = value?.trim()?.lowercase()?.removePrefix("https://doi.org/")
+            ?.removePrefix("http://doi.org/")?.removePrefix("doi:")?.trim()
+            ?.takeIf { it.matches(Regex("10\\.\\d{4,9}/\\S+")) }
+        fun pmid(value: String?): String? = value?.trim()?.removePrefix("https://pubmed.ncbi.nlm.nih.gov/")
+            ?.trimEnd('/')?.takeIf { it.matches(Regex("[1-9][0-9]*")) }
+        fun pmcid(value: String?): String? = value?.trim()?.uppercase()?.removePrefix("HTTPS://PMC.NCBI.NLM.NIH.GOV/ARTICLES/")
+            ?.trimEnd('/')?.let { if (it.matches(Regex("[1-9][0-9]*"))) "PMC$it" else it }
+            ?.takeIf { it.matches(Regex("PMC[1-9][0-9]*")) }
+    }
+}
+data class PaperArchiveLookupPage(val records: List<ArchiveRecord>, val nextAfterId: Long?)
 @Repository
 class DiscoveryPaperArchiveRepository(private val jdbc: JdbcTemplate, manager: PlatformTransactionManager) {
     private val tx = TransactionTemplate(manager)
@@ -36,6 +59,44 @@ class DiscoveryPaperArchiveRepository(private val jdbc: JdbcTemplate, manager: P
     }
     fun record(id: Long): ArchiveRecord? = jdbc.query("SELECT * FROM discovery_paper_archive_record WHERE id=?", recordMapper, id).firstOrNull()
     fun records(): List<ArchiveRecord> = jdbc.query("SELECT * FROM discovery_paper_archive_record ORDER BY id", recordMapper)
+    /** Exact origin uses the existing (execution, source, paper_key) unique index. */
+    fun lookupOriginal(requests: List<PaperArchiveLookup>): Map<PaperArchiveLookup, ArchiveRecord?> {
+        require(requests.size <= 100)
+        if (requests.isEmpty()) return emptyMap()
+        val distinct = requests.distinct()
+        val args = distinct.flatMap { listOf(it.executionId, it.sourceName, it.sourceItemKey) }
+        val rows = jdbc.query("SELECT * FROM discovery_paper_archive_record WHERE (execution_id,source_name,paper_key) IN (${distinct.joinToString(",") { "(?,?,?)" }})",
+            recordMapper, *args.toTypedArray()).associateBy { Triple(it.executionId,it.sourceName,it.paperKey) }
+        return distinct.associateWith { rows[Triple(it.executionId,it.sourceName,it.sourceItemKey)] }
+    }
+    /** Cross-execution fallback is explicit, keyset paginated, and never materializes the archive. */
+    fun lookupHistorical(request: PaperArchiveLookup, afterId: Long = 0, size: Int = 20): PaperArchiveLookupPage {
+        require(afterId >= 0 && size in 1..100)
+        val clauses = mutableListOf("(source_name=? AND paper_key=?)")
+        val args = mutableListOf<Any>(afterId, request.sourceName, request.sourceItemKey)
+        PaperArchiveLookup.doi(request.doi)?.let {
+            clauses += "LOWER(REPLACE(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(metadata_json,'$.doi')),'https://doi.org/',''),'http://doi.org/',''),'doi:',''))=?"
+            args += it
+        }
+        PaperArchiveLookup.pmid(request.pmid)?.let {
+            clauses += "JSON_UNQUOTE(JSON_EXTRACT(metadata_json,'$.pmid'))=?"; args += it
+        }
+        PaperArchiveLookup.pmcid(request.pmcid)?.let {
+            clauses += "UPPER(JSON_UNQUOTE(JSON_EXTRACT(metadata_json,'$.pmcId')))=?"; args += it
+        }
+        args += size + 1
+        val rows = jdbc.query("SELECT * FROM discovery_paper_archive_record WHERE id>? AND (${clauses.joinToString(" OR ")}) ORDER BY id LIMIT ?",
+            recordMapper, *args.toTypedArray())
+        return PaperArchiveLookupPage(rows.take(size), rows.takeIf { it.size > size }?.get(size - 1)?.id)
+    }
+    fun lookupSourceAttempts(recordIds: List<Long>, size: Int = 100): List<ArchiveAttempt> {
+        require(recordIds.size <= 100 && recordIds.all { it > 0 } && size in 1..100)
+        if (recordIds.isEmpty()) return emptyList()
+        return jdbc.query("SELECT * FROM discovery_paper_archive_attempt WHERE record_id IN (${recordIds.joinToString(",") { "?" }}) AND status='SAVED' AND blob_sha256 IS NOT NULL ORDER BY id LIMIT ?",
+            attemptMapper, *(recordIds + (size + 1).toLong()).toTypedArray()).also {
+            if (it.size > size) throw ArchiveException("SOURCE_LOOKUP_LIMIT", 409)
+        }
+    }
     fun beginAttempt(recordId: Long, key: String, kind: ArchiveAttemptKind, url: String?, now: Instant): ArchiveAttempt = transaction {
         jdbc.update("INSERT INTO discovery_paper_archive_attempt (record_id,attempt_key,kind,source_url,status,created_at,updated_at) VALUES (?,?,?,?,'STARTED',?,?) ON DUPLICATE KEY UPDATE id=id",
             recordId, key, kind.name, url, db(now), db(now))

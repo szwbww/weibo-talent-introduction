@@ -88,8 +88,21 @@ test('exact approved HTML/CSS contract, real IDs and asset keys', () => {
     const blocks = [...plan.matchAll(/```html\n([\s\S]*?)\n```/g)].map(m => m[1]);
     for (const i of [0, 3, 5]) assert.ok(html.includes(i === 0 ? blocks[i].split('\n').slice(1).join('\n') : blocks[i]));
     assert.ok(app.includes(blocks[1]));
-    assert.equal((html.match(/\?v=/g) || []).length, 17);
+    assert.equal((html.match(/\?v=/g) || []).length, 18);
     assert.ok(!source.includes('localStorage')); assert.ok(!source.includes('innerHTML')); assert.ok(!source.includes('style.'));
+});
+
+test('first bindings are distinct from unrun comparison and unknown is not zero', async () => {
+    const record = { ...row(), extractionSummary: { emails: 3, resolved: 2, unresolved: 1 } };
+    const h = harness(url => /\/1$/.test(url) ? { record, paper: {}, outcome: { first: { outcome: { emails: [] } } }, analysis: null, attempts: [] } : url.includes('size=') ? { items: [record, { ...row(2), extractionSummary: null }], total: 2 } : undefined);
+    h.view.setVisible(true); await flush();
+    assert.match(h.find('rows').textContent, /邮箱 3 \/ 姓名关联 2/);
+    assert.match(h.find('rows').textContent, /邮箱 未知 \/ 姓名关联 未知/);
+    assert.match(h.find('rows').textContent, /未运行解析对照/);
+    h.act('view').click(); await flush();
+    assert.match(h.find('comparisonSummary').textContent, /尚未运行解析对照；首次提取结果见下方/);
+    assert.equal(h.calls.filter(c => c.url.endsWith('/analysis')).length, 0);
+    h.view.dispose();
 });
 
 test('lazy visit, exact API shape, null unknown, current-page protected selection and unprotect only', async () => {
@@ -169,4 +182,45 @@ test('empty/error states stay operable and a wholly protected preview cannot com
     empty = false; h.find('status').value = 'DELETED'; h.find('status').dispatch('change'); await flush(); assert.match(h.find('error').textContent, /列表读取失败/); h.view.dispose();
     const protectedOnly = harness(url => url.endsWith('/delete-preview') ? { ...deletion(), deletableFiles: 0, protectedRecords: [1] } : undefined);
     protectedOnly.view.setVisible(true); await flush(); protectedOnly.find('selectPage').checked = true; protectedOnly.find('selectPage').dispatch('change'); protectedOnly.act('delete').click(); await flush(); assert.equal(protectedOnly.act('confirm-delete').disabled, true); protectedOnly.view.dispose();
+});
+
+test('frozen paper bridge selects exact attempt and rejects changed SHA or unknown attempt', async () => {
+    const hash = 'a'.repeat(64);
+    const h = harness(url => /\/1$/.test(url) ? { record: row(), analysis: null, outcome: null,
+        attempts: [11, 12].map(id => ({ id, kind: 'EMBEDDED_TEXT', status: 'SAVED', readable: true, bodySha256: id === 12 ? hash : 'b'.repeat(64) })) } : undefined);
+    await h.view.openPaper({ archiveRecordId: 1, attemptId: 12, bodySha256: hash });
+    assert.equal(h.find('attempts').value, '12');
+    assert.match(h.fetched.at(-1).url, /\/attempts\/12\/content$/);
+    assert.match(h.find('readerFoot').textContent, /页码未记录/);
+    const count = h.fetched.length;
+    await assert.rejects(h.view.openPaper({ archiveRecordId: 1, attemptId: 12, bodySha256: 'c'.repeat(64) }), /PAPER_SHA_CONFLICT/);
+    await assert.rejects(h.view.openPaper({ archiveRecordId: 1, attemptId: 99, bodySha256: hash }), /PAPER_ATTEMPT_NOT_FOUND/);
+    await assert.rejects(h.view.openPaper({ archiveRecordId: 1, attemptId: 12 }), /PAPER_SHA_UNKNOWN/);
+    assert.equal(h.fetched.length, count, 'mismatches must never fall back to a different readable original');
+    assert.equal(h.calls.filter(c => c.url.endsWith('/analysis')).length, 0);
+    h.view.dispose();
+});
+
+test('frozen paper bridge drops late metadata after dispose and after a newer paper context', async () => {
+    let resolve;
+    const detail = { record: row(), analysis: null, outcome: null, attempts: [{ id: 12, kind: 'PDF_URL', status: 'SAVED', readable: true, bodySha256: 'a'.repeat(64) }] };
+    const h = harness(url => /\/1$/.test(url) ? new Promise(r => { resolve = r; }) : undefined);
+    const pending = h.view.openPaper({ archiveRecordId: 1, attemptId: 12, bodySha256: 'a'.repeat(64), page: 2 });
+    await flush(); h.view.dispose(); resolve(detail); await pending;
+    assert.equal(h.root.querySelector('#discoveryPaperReader').open, false);
+    assert.equal(h.fetched.length, 0);
+    assert.equal(h.timers.size, 0);
+    assert.equal(h.blobs.size, 0);
+});
+
+test('frozen reader host cancellation aborts transport without showing a late original', async () => {
+    let resolve;
+    const h = harness(url => /\/1$/.test(url) ? new Promise(r => { resolve = r; }) : undefined);
+    const controller = new AbortController();
+    const pending = h.view.openPaper({ archiveRecordId: 1, attemptId: 12, bodySha256: 'a'.repeat(64) }, h.act('view'), controller.signal);
+    await flush(); const request = h.calls.at(-1); controller.abort();
+    assert.equal(request.options.signal.aborted, true);
+    resolve({ record: row(), attempts: [] }); await pending;
+    assert.equal(h.root.querySelector('#discoveryPaperReader').open, false);
+    assert.equal(h.fetched.length, 0); h.view.dispose();
 });

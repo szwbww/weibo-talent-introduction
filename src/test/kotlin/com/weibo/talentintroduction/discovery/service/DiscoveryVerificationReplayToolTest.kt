@@ -161,7 +161,7 @@ class DiscoveryVerificationReplayToolTest {
             .withCommand("--log-bin-trust-function-creators=1").use { mysql ->
                 mysql.start()
                 val ds = org.springframework.jdbc.datasource.DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
-                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("158").load().migrate()
+                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("161").load().migrate()
                 val jdbc = org.springframework.jdbc.core.JdbcTemplate(ds)
                 val manager = org.springframework.jdbc.datasource.DataSourceTransactionManager(ds)
                 VerificationFlowFixture(jdbc, manager).use { f ->

@@ -7,7 +7,7 @@ import java.time.ZoneOffset
 enum class VerificationMode { AUDIT, ENFORCE;
     val policyVersion: String get() = "APV_20261018_V1_$name"
 }
-enum class VerificationState { RESERVED, QUEUED, RUNNING, RETRY_WAIT, COMPLETED, ERROR }
+enum class VerificationState { RESERVED, QUEUED, RUNNING, RETRY_WAIT, COMPLETED, ERROR, CANCELLED }
 enum class VerificationOutcome { DIRECT_CLEAR, APOLLO_CLEAR, APOLLO_UNCLEAR, PENDING, PROTECTED }
 enum class VerificationQualification { NOT_EVALUATED, MET, UNKNOWN, NOT_MET, CONFLICT }
 enum class VerificationRoute { NONE, DIRECT, APOLLO }
@@ -34,7 +34,8 @@ interface RegistrationRecovery { fun recoverReserved(limit: Int): Int }
 data class VerificationRun(
     val executionId: Long, val mode: VerificationMode, val policyVersion: String,
     val apolloRequested: Boolean, val settingsJson: String, val inputClosed: Boolean = false,
-    val revision: Long = 0, val createdAt: Instant, val updatedAt: Instant
+    val revision: Long = 0, val createdAt: Instant, val updatedAt: Instant,
+    val recheckJson: String? = null
 ) {
     init { require(executionId > 0); require(policyVersion == mode.policyVersion) }
 }
@@ -64,17 +65,19 @@ data class VerificationItem(
     val reasonsJson: String?, val requestCount: Int, val transientAttempts: Int,
     val generation: Long, val leaseToken: String?, val leaseUntil: Instant?, val nextAttemptAt: Instant?,
     val admissionRevision: Long?, val projectionState: VerificationProjection, val projectionError: String?,
-    val activatedAt: Instant?, val completedAt: Instant?, val createdAt: Instant, val updatedAt: Instant
+    val activatedAt: Instant?, val completedAt: Instant?, val createdAt: Instant, val updatedAt: Instant,
+    val reviewEpoch: Long = 0
 ) {
     init {
         require(id > 0 && ownerExecutionId > 0 && batchNumber >= 0 && requestCount >= 0 && transientAttempts >= 0 && generation >= 0)
+        require(reviewEpoch == 0L || reviewEpoch == ownerExecutionId)
         verificationText(expertDocId, 128); verificationHash(identityHash); verificationHash(factFingerprint)
         require(policyVersion in VerificationMode.values().map { it.policyVersion })
         if (state == VerificationState.RESERVED) require(batchNumber == 0 && activatedAt == null)
         if (activatedAt != null) require(batchNumber > 0)
         if (state == VerificationState.RUNNING) require(leaseToken != null && leaseUntil != null)
         if (state != VerificationState.COMPLETED) require(outcome == null)
-        if (state == VerificationState.COMPLETED || state == VerificationState.ERROR) {
+        if (state in setOf(VerificationState.COMPLETED, VerificationState.ERROR, VerificationState.CANCELLED)) {
             require(completedAt != null)
             VerificationResult(state, outcome, qualification, route, evidenceJson ?: "{}", reasonsJson ?: "[]",
                 apolloEnteredAt, searchCompletedAt, candidateFoundAt, personMatchedAt, apolloPersonId, admissionRevision, projectionState)
@@ -117,8 +120,10 @@ data class VerificationResult(
     val projectionState: VerificationProjection = VerificationProjection.NOT_REQUIRED
 ) {
     init {
-        require(state == VerificationState.COMPLETED || state == VerificationState.ERROR)
-        require((state == VerificationState.ERROR) == (outcome == null))
+        require(state in setOf(VerificationState.COMPLETED, VerificationState.ERROR, VerificationState.CANCELLED))
+        require((state != VerificationState.COMPLETED) == (outcome == null))
+        if (state == VerificationState.CANCELLED)
+            require(admissionRevision == null && projectionState == VerificationProjection.NOT_REQUIRED)
         when (outcome) {
             VerificationOutcome.DIRECT_CLEAR -> require(route == VerificationRoute.DIRECT && qualification == VerificationQualification.MET)
             // V2 matching clarity is independent of qualification. Old payloads retain their original contract.
@@ -159,5 +164,51 @@ data class VerificationCounts(
     val errors: Long = 0, val queued: Long = 0, val protected: Long = 0,
     val projectionPending: Long = 0, val projectionErrors: Long = 0, val apolloEntered: Long = 0,
     val apolloSearched: Long = 0, val apolloCandidates: Long = 0, val apolloMatched: Long = 0,
-    val apolloHttpAttempts: Long = 0, val registrationErrors: Long = 0
+    val apolloHttpAttempts: Long = 0, val registrationErrors: Long = 0, val cancelled: Long = 0
 )
+
+enum class RecheckEvidenceMode { REUSE, REFRESH }
+enum class RecheckPhase { PREPARING, READY, RUNNING, COMPLETED, FAILED, INTERRUPTED, CANCELLING, CANCELLED }
+
+/** Immutable serialized request. Scope is a frozen JSON object, not a live query. */
+data class RecheckSpec(
+    val actor: String, val requestKey: String, val scope: String,
+    val evidenceMode: RecheckEvidenceMode, val evaluatedAt: Instant,
+    val codeVersion: String, val parserVersion: String
+) {
+    init {
+        verificationText(actor, 128); verificationText(requestKey, 128)
+        verificationText(codeVersion, 128); verificationText(parserVersion, 128)
+        require(com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().readTree(scope).isObject)
+    }
+}
+data class RecheckControl(val phase: RecheckPhase = RecheckPhase.PREPARING, val scopeHash: String? = null) {
+    init {
+        scopeHash?.let(::verificationHash)
+        if (phase in setOf(RecheckPhase.READY, RecheckPhase.RUNNING, RecheckPhase.COMPLETED)) require(scopeHash != null)
+    }
+}
+data class RecheckRun(val spec: RecheckSpec, val control: RecheckControl = RecheckControl(), val schemaVersion: Int = 1) {
+    init { require(schemaVersion == 1) }
+}
+
+enum class VerificationStepState { NOT_STARTED, RUNNING, SUCCESS, INSUFFICIENT, SKIPPED, ERROR, CANCELLED;
+    val terminal: Boolean get() = this != NOT_STARTED && this != RUNNING
+}
+data class VerificationStep(
+    val id: Long, val itemId: Long, val stepNo: Int, val attemptNo: Int,
+    val state: VerificationStepState, val inputHash: String?, val inputJson: String?,
+    val outputJson: String?, val reasonJson: String?, val versionJson: String?,
+    val startedAt: Instant?, val finishedAt: Instant?, val createdAt: Instant
+) {
+    init {
+        require(id > 0 && itemId > 0 && stepNo in 1..8 && attemptNo > 0)
+        if (state == VerificationStepState.NOT_STARTED) {
+            require(inputHash == null && startedAt == null && finishedAt == null)
+        } else {
+            verificationHash(requireNotNull(inputHash)); require(startedAt != null)
+            if (state == VerificationStepState.RUNNING) require(finishedAt == null)
+            else require(finishedAt != null && finishedAt >= startedAt)
+        }
+    }
+}

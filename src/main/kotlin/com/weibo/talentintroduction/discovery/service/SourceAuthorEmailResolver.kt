@@ -135,6 +135,15 @@ internal object SourceAuthorEmailResolver {
         val claims = mutableListOf<Claim>()
         for ((originalEntry, entry) in entries) {
             if (entry.length > 1000 || shared.containsMatchIn(entry)) continue
+            // A trailing parenthesized owner belongs only to the immediately preceding mailbox.
+            // Initials are admitted only here, never from the metadata roster alone.
+            val labelledMailbox = Regex("([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,})\\s*\\(([^()\\r\\n]+)\\)")
+            for (label in labelledMailbox.findAll(entry)) {
+                val ownerLabel = label.groupValues[2]
+                val owner = authors.indices.singleOrNull { matchesExplicitLabel(ownerLabel, authors[it]) } ?: continue
+                val email = emails.extract(label.groupValues[1]).singleOrNull() ?: continue
+                claims += Claim(email, owner, originalEntry)
+            }
             val body = prefix.replaceFirst(entry, "").trim()
             for ((index, author) in authors.withIndex()) {
                 if (author.givenNames.isNullOrBlank() || author.familyNames.isNullOrBlank()) continue
@@ -153,6 +162,18 @@ internal object SourceAuthorEmailResolver {
             }
         }
         return claims
+    }
+
+    private fun matchesExplicitLabel(label: String, author: PaperAuthor): Boolean {
+        if (author.givenNames.isNullOrBlank() || author.familyNames.isNullOrBlank()) return false
+        if (normalize(label) == fullName(author)) return true
+        val given = author.givenNames.split(Regex("[\\s.-]+")).filter { it.isNotBlank() }
+        val family = author.familyNames.split(Regex("[\\s.-]+")).filter { it.isNotBlank() }
+        val givenInitials = given.joinToString("\\s*") { Regex.escape(it.first().toString()) + "\\." }
+        val familyName = family.joinToString("\\s+") { Regex.escape(it) }
+        if (Regex("$givenInitials\\s*$familyName", RegexOption.IGNORE_CASE).matches(label.trim())) return true
+        val allInitials = (given + family).joinToString("\\s*") { Regex.escape(it.first().toString()) + "\\." }
+        return Regex(allInitials, RegexOption.IGNORE_CASE).matches(label.trim())
     }
 
     private fun results(found: List<String>, claims: List<Claim>, authors: List<PaperAuthor>): List<AuthorEmail> =

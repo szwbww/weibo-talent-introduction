@@ -13,6 +13,9 @@ import org.springframework.beans.factory.support.DefaultListableBeanFactory
 class DiscoveryVerificationWorkerTest {
     @org.junit.jupiter.api.io.TempDir lateinit var replayRoot: java.nio.file.Path
 
+    @Test fun `child07 real pipeline traces frozen REUSE refresh cancellation and projection only retry`() {
+        runChild07Pipeline()
+    }
     @Test fun `frozen paid access gates cache and permits while preserving legacy and channel accounting`() =
         apolloAccessScenario()
 
@@ -22,7 +25,7 @@ class DiscoveryVerificationWorkerTest {
             .withCommand("--log-bin-trust-function-creators=1").use { mysql ->
                 mysql.start()
                 val ds = org.springframework.jdbc.datasource.DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
-                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("160").load().migrate()
+                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("161").load().migrate()
                 val jdbc = org.springframework.jdbc.core.JdbcTemplate(ds)
                 val manager = org.springframework.jdbc.datasource.DataSourceTransactionManager(ds)
                 val props = DiscoveryVerificationProperties(enabled = true, workerEnabled = true,
@@ -193,13 +196,13 @@ class DiscoveryVerificationWorkerTest {
             DiscoveryVerificationRules(ruleClock), Mockito.mock(DiscoveryVerificationCommitService::class.java),
             factory.getBeanProvider(RegistrationRecovery::class.java), ruleClock)
 
-    @Test fun `runtime version two registration worker SQL gate query smoke and frozen legacy runs`() {
+    @Test fun `runtime version three registration worker SQL gate query smoke and frozen legacy runs`() {
         check(org.testcontainers.DockerClientFactory.instance().isDockerAvailable) { "Docker is required; skip is not PASS" }
         DiagnosticMysql().withDatabaseName("identity_v2").withUsername("test").withPassword("test")
             .withCommand("--log-bin-trust-function-creators=1").use { mysql ->
                 mysql.start()
                 val ds = org.springframework.jdbc.datasource.DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
-                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("160").load().migrate()
+                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("161").load().migrate()
                 val jdbc = org.springframework.jdbc.core.JdbcTemplate(ds)
                 val manager = org.springframework.jdbc.datasource.DataSourceTransactionManager(ds)
                 VerificationFlowFixture(jdbc, manager).use { f ->
@@ -209,7 +212,7 @@ class DiscoveryVerificationWorkerTest {
                     val registration = DiscoveryVerificationRegistrationService(DiscoveryVerificationProperties(enabled = true, mode = VerificationMode.ENFORCE, apolloApiKey = "fixture-key"), f.repository, f.writer, f.policy,
                         f.admissions, jdbc, org.springframework.transaction.support.TransactionTemplate(manager), f.apolloSettings, f.clock)
                     val context = registration.begin(2001, PaperSearchCriteria(apolloAssist = true))
-                    assertEquals(2, f.mapper.readTree(context.run!!.settingsJson).path("ruleVersion").intValue())
+                    assertEquals(3, f.mapper.readTree(context.run!!.settingsJson).path("ruleVersion").intValue())
                     assertEquals(2, f.mapper.readTree(context.run!!.settingsJson).path("institutionAliasVersion").intValue())
                     val doc = "identity-v2"
                     val profile = ruleSnapshot().profile.copy(esDocId = doc, researchFieldIds = listOf("22"),
@@ -230,12 +233,12 @@ class DiscoveryVerificationWorkerTest {
                     assertEquals(VerificationProjection.PROJECTED, done.projectionState)
                     assertNotNull(done.admissionRevision)
                     val payload = f.mapper.readValue<VerificationWorkerEvidence>(done.evidenceJson!!)
-                    assertEquals(2, payload.ruleVersion)
+                    assertEquals(3, payload.ruleVersion)
                     assertEquals(2, payload.search!!.institutionAliasVersion)
                     assertEquals("Assistenzprofessor", payload.search!!.candidates.single().title)
                     val trace = payload.diagnostics!!.decision!!
                     assertEquals("RECORDED", trace.traceOrigin)
-                    assertEquals(2, trace.ruleVersion)
+                    assertEquals(3, trace.ruleVersion)
                     assertEquals(2, trace.aliasVersion)
                     assertEquals(done.apolloPersonId, trace.candidates.single().personId)
                     assertEquals("MATCH", trace.candidates.single().historicalInstitution)
@@ -275,11 +278,11 @@ class DiscoveryVerificationWorkerTest {
                     } }
                     println("DECISION_AUDIT_SMOKE HTTP->Rules->Worker/SQL->Query->freeze->isolated-fixed-time-report admissionDelta=0 immutable=true")
                     assertEquals(context.run!!.settingsJson, registration.begin(2001, PaperSearchCriteria(apolloAssist = true)).run!!.settingsJson)
-                    println("IDENTITY_V2_SMOKE run=2001 workerRule=2 alias=2 sql=${done.outcome} gate=eligible projection=${done.projectionState} admission=${done.admissionRevision} requests=${done.requestCount}")
+                    println("QUALIFICATION_VERSION_SMOKE run=2001 workerRule=3 alias=2 sql=${done.outcome} gate=eligible projection=${done.projectionState} admission=${done.admissionRevision} requests=${done.requestCount}")
                 }
                 listOf("discovery_verification_attempt", "discovery_verification_item", "discovery_verification_run",
                     "expert_discovery_admission", "task_execution").forEach { jdbc.update("DELETE FROM $it") }
-                // New payload on a pre-existing run without settings must retain the old default, not v2.
+                // An old run without frozen settings retains its historical default.
                 VerificationFlowFixture(jdbc, manager).use { f ->
                     val row = f.seed("legacy-no-settings")
                     f.worker().process(f.claim())
@@ -287,11 +290,11 @@ class DiscoveryVerificationWorkerTest {
                 }
                 listOf("discovery_verification_attempt", "discovery_verification_item", "discovery_verification_run",
                     "expert_discovery_admission").forEach { jdbc.update("DELETE FROM $it") }
-                for (version in listOf(0, 1, 2, 3)) {
+                for (version in listOf(0, 1, 2, 3, 4)) {
                     VerificationFlowFixture(jdbc, manager).use { f ->
                         val row = f.seed("frozen-$version")
                         jdbc.update("UPDATE discovery_verification_run SET settings_json=? WHERE execution_id=2001",
-                            """{"ruleVersion":2,"apolloMatchingVersion":2,"institutionAliasVersion":2}""")
+                            """{"ruleVersion":3,"apolloMatchingVersion":2,"institutionAliasVersion":2}""")
                         val candidate = ApolloCandidate("person-frozen", "Ada", "Lee", null, "Ada Lee", "Assistenzprofessor",
                             VerificationInstitution("Other University"), headline = "Assistant Professor at Other University")
                         f.cached(VerificationWorkerEvidence(ruleVersion = version, progress = VerificationProgress(stage = "DECIDE"),
@@ -299,12 +302,15 @@ class DiscoveryVerificationWorkerTest {
                                 detailsComplete = true, institutionAliasVersion = 1)))
                         f.worker().process(f.claim())
                         val done = f.item(row.id)
-                        if (version == 3) assertEquals(VerificationState.ERROR, done.state)
+                        if (version == 4) assertEquals(VerificationState.ERROR, done.state)
                         else {
                             assertEquals(version, f.mapper.readValue<VerificationWorkerEvidence>(done.evidenceJson!!).ruleVersion)
-                            assertEquals(if (version == 2) VerificationOutcome.APOLLO_CLEAR else VerificationOutcome.PENDING, done.outcome)
+                            assertEquals(if (version >= 2) VerificationOutcome.APOLLO_CLEAR else VerificationOutcome.PENDING, done.outcome)
                         }
                         assertTrue(f.apolloRequests.isEmpty())
+                        assertEquals("""{"ruleVersion":3,"apolloMatchingVersion":2,"institutionAliasVersion":2}""",
+                            f.repository.findRun(2001)!!.settingsJson)
+                        println("QUALIFICATION_VERSION_SMOKE frozenPayloadRule=$version state=${done.state} outcome=${done.outcome} externalHttp=0")
                     }
                     listOf("discovery_verification_attempt", "discovery_verification_item", "discovery_verification_run",
                         "expert_discovery_admission").forEach { jdbc.update("DELETE FROM $it") }
@@ -456,7 +462,7 @@ class DiscoveryVerificationWorkerTest {
             .withCommand("--log-bin-trust-function-creators=1").use { mysql ->
                 mysql.start()
                 val ds = org.springframework.jdbc.datasource.DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
-                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("160").load().migrate()
+                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("161").load().migrate()
                 val jdbc = org.springframework.jdbc.core.JdbcTemplate(ds)
                 val manager = org.springframework.jdbc.datasource.DataSourceTransactionManager(ds)
                 val cases = listOf(
@@ -557,7 +563,7 @@ class DiscoveryVerificationWorkerTest {
             .withCommand("--log-bin-trust-function-creators=1").use { mysql ->
                 mysql.start()
                 val ds = org.springframework.jdbc.datasource.DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
-                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("160").load().migrate()
+                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("161").load().migrate()
                 val jdbc = org.springframework.jdbc.core.JdbcTemplate(ds)
                 val manager = org.springframework.jdbc.datasource.DataSourceTransactionManager(ds)
                 VerificationFlowFixture(jdbc, manager).use { f ->
@@ -653,7 +659,7 @@ class DiscoveryVerificationWorkerTest {
             .withCommand("--log-bin-trust-function-creators=1").use { mysql ->
                 mysql.start()
                 val ds = org.springframework.jdbc.datasource.DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
-                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("160").load().migrate()
+                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("161").load().migrate()
                 val jdbc = org.springframework.jdbc.core.JdbcTemplate(ds)
                 val manager = org.springframework.jdbc.datasource.DataSourceTransactionManager(ds)
                 listOf("before-ack", "after-ack", "legacy-page-six").forEach { crash ->
@@ -827,5 +833,353 @@ class DiscoveryVerificationWorkerTest {
                     assertEquals(34, payload.diagnostics!!.totalQueryCount); assertTrue(payload.diagnostics!!.truncated)
                 }
             }
+    }
+}
+
+/** Independent disposable runtime entry. It invokes production services, never a JUnit method. */
+object RecheckPipelineRuntimeLauncher {
+    @JvmStatic fun main(args: Array<String>) {
+        runChild07Pipeline()
+        println("CHILD07_ACADEMIC ${academicDispatchCancellation(false)}")
+        println("CHILD07_ACADEMIC ${academicDispatchCancellation(true)}")
+    }
+}
+
+private class Child07Mysql : org.testcontainers.containers.MySQLContainer<Child07Mysql>("mysql:8.0.36")
+
+internal fun runChild07Pipeline() {
+    check(org.testcontainers.DockerClientFactory.instance().isDockerAvailable) { "Real isolated MySQL required, no skip" }
+    Child07Mysql().withDatabaseName("pipeline_07").withUsername("test").withPassword("test")
+        .withCommand("--log-bin-trust-function-creators=1").use { mysql ->
+        mysql.start()
+        val ds = org.springframework.jdbc.datasource.DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
+        org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("161").load().migrate()
+        val jdbc = org.springframework.jdbc.core.JdbcTemplate(ds)
+        val manager = org.springframework.jdbc.datasource.DataSourceTransactionManager(ds)
+        val tx = org.springframework.transaction.support.TransactionTemplate(manager)
+        val props = DiscoveryVerificationProperties(enabled = true, workerEnabled = true, apolloApiKey = "fixture-only",
+            mode = VerificationMode.AUDIT, requestsPerMinute = 1000)
+        VerificationFlowFixture(jdbc, manager, props).use { f ->
+            com.weibo.talentintroduction.discovery.archive.ArchiveMysqlFixture.clean()
+            try {
+                com.weibo.talentintroduction.discovery.archive.ArchiveFixture(realDisk = true).use { archive ->
+                    archive.enable()
+                    val bridge = PaperBridgeFixture(archive)
+                    val source = bridge.paper("child07-paper", 9001,
+                        value = "Ada Lee: ada@example.invalid\n\nBiographies\n\nAda Lee received her PhD in 2020. Ada Lee was born on 1987-10-25.",
+                        people = listOf(PaperAuthor("Ada", "Lee", "0000-0002-1825-0097", null)))
+                    val sourceBefore = archive.repository.record(source.archiveRecordId)!!
+                    f.clock.now = java.time.Instant.parse("2026-10-24T00:00:00Z")
+                    f.apolloBody = """{"people":[{"id":"person-1","name":"Ada Lee","first_name":"Ada","last_name":"Lee","title":"Professor of Physics","organization":{"name":"Example University"}}],"total_entries":1}"""
+                    fun <T : Any> proxy(target: T): T {
+                        val factory = org.springframework.aop.framework.ProxyFactory(target)
+                        factory.isProxyTargetClass = true
+                        factory.addAdvice(org.springframework.transaction.interceptor.TransactionInterceptor(manager,
+                            org.springframework.transaction.annotation.AnnotationTransactionAttributeSource()))
+                        @Suppress("UNCHECKED_CAST") return factory.proxy as T
+                    }
+                    val trace = proxy(com.weibo.talentintroduction.discovery.repository.DiscoveryVerificationTraceRepository(jdbc))
+                    val commits = proxy(DiscoveryVerificationCommitService(f.repository, f.admissions, f.review, f.policy,
+                        f.writer, jdbc, f.clock, trace))
+                    val wire = java.util.concurrent.CopyOnWriteArrayList<String>()
+                    val onRequest = java.util.concurrent.atomic.AtomicReference<((String) -> Unit)?>(null)
+                    var searchStatus = 200
+                    val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
+                    val base = "http://127.0.0.1:${server.address.port}"
+                    server.createContext("/") { exchange ->
+                        val path = exchange.requestURI.path
+                        wire += path
+                        onRequest.get()?.invoke(path)
+                        val body = when {
+                            path == "/authors" -> AcademicClientFixture.success.replace("\"counts_by_year\"", "\"works_api_url\":\"$base/works\",\"counts_by_year\"")
+                            path == "/works" -> """{"results":[]}"""
+                            path.contains("mixed_people/api_search") -> f.apolloBody
+                            path.endsWith("/employments") -> """{"affiliation-group":[]}"""
+                            path.endsWith("/educations") || path.endsWith("/person") -> "{}"
+                            else -> error("Unexpected fixture HTTP $path")
+                        }.toByteArray()
+                        exchange.responseHeaders.add("Content-Type", "application/json")
+                        if (path.contains("mixed_people") && searchStatus == 429) exchange.responseHeaders.add("Retry-After", "60")
+                        exchange.sendResponseHeaders(if (path.contains("mixed_people")) searchStatus else 200, body.size.toLong())
+                        exchange.responseBody.use { it.write(body) }; exchange.close()
+                    }
+                    server.start()
+                    val transport = org.springframework.web.client.RestTemplate(object : org.springframework.http.client.ClientHttpRequestFactory {
+                        val delegate = org.springframework.http.client.SimpleClientHttpRequestFactory().apply { setConnectTimeout(2000); setReadTimeout(5000) }
+                        override fun createRequest(uri: java.net.URI, method: org.springframework.http.HttpMethod): org.springframework.http.client.ClientHttpRequest =
+                            delegate.createRequest(java.net.URI("$base${uri.rawPath}${uri.rawQuery?.let { "?$it" }.orEmpty()}"), method)
+                    })
+                    val verificationTransport = verificationRestTemplate(props).apply { requestFactory = transport.requestFactory }
+                    val academicProperties = com.weibo.talentintroduction.config.OpenAlexProperties(enabled = true, baseUrl = base,
+                        requestDelayMs = 0, enrichmentDelayMs = 0, maxRequestsPerSecond = 100.0, fetchWorksEnabled = true, fetchPatentsEnabled = true)
+                    val budgetTime = object : com.weibo.talentintroduction.config.PolicyTimeSource {
+                        var current = f.clock.instant()
+                        override fun now() = current
+                        override fun sleep(ms: Long) { current = current.plusMillis(ms) }
+                    }
+                    val store = com.weibo.talentintroduction.config.InMemoryOpenAlexBudgetStore().also {
+                        it.reconcile(academicProperties.accountScope, f.clock.instant().plusSeconds(86400), 10000, 10000, 10000, f.clock.instant())
+                    }
+                    val academicClient = OpenAlexDataSource(transport, academicProperties, Mockito.mock(EuropePmcDataSource::class.java),
+                        Mockito.mock(PdfEmailExtractor::class.java), Mockito.mock(UnpaywallClient::class.java),
+                        com.weibo.talentintroduction.config.OpenAlexRequestPolicy(academicProperties, budgetTime, store))
+                    val academic = academicService(academicClient, academicProperties)
+                    val workers = mutableListOf<DiscoveryVerificationWorker>()
+                    fun worker() = DiscoveryVerificationWorker(props, f.repository, OrcidVerificationEvidenceClient(props, verificationTransport, f.clock),
+                        ApolloPeopleSearchClient(props, verificationTransport, f.clock), QualificationEvidenceParser(f.clock), f.rules, commits,
+                        DefaultListableBeanFactory().getBeanProvider(RegistrationRecovery::class.java), f.clock, trace, bridge.bridge, academic)
+                        .also { workers += it }
+                    fun task(id: Long) = jdbc.update("INSERT INTO task_execution(id,task_type,trigger_type,status,started_at) VALUES (?,'EXPERT_DISCOVERY','MANUAL','RUNNING',?)", id, f.clock.instant().verificationUtc())
+                    fun raw(doc: String, valid: Boolean = true): com.weibo.talentintroduction.expert.domain.ExpertProfile {
+                        val p = ruleSnapshot().profile.copy(orcidId = "EMAIL-$doc", esDocId = "EMAIL-$doc", tags = listOf("discovered"),
+                            researchFieldIds = listOf("22"), lastPublicationYear = 2026,
+                            externalIds = """{"orcid":"0000-0002-1825-0097"}""")
+                        return if (valid) p else p.copy(identityVerification = null)
+                    }
+                    fun putRaw(p: com.weibo.talentintroduction.expert.domain.ExpertProfile) {
+                        @Suppress("UNCHECKED_CAST")
+                        val fields = f.mapper.convertValue(p, Map::class.java) as Map<String, Any?>
+                        f.raws[p.esDocId!!] = fields + ("externalIds" to p.externalIds?.let { f.mapper.readTree(it) })
+                    }
+                    fun frozen(p: com.weibo.talentintroduction.expert.domain.ExpertProfile) =
+                        DiscoveryVerificationAdmissionGate.snapshot(p.esDocId!!, p, f.policy.evaluate(p).configSnapshot)
+                    fun cached(snapshot: VerificationSnapshot, rawDocuments: Boolean = true): VerificationWorkerEvidence {
+                        val completions = f.selfDocuments().map { it.copy(document = it.document?.copy(fetchedAt = java.time.Instant.parse("2024-01-01T00:00:00Z"))) }
+                        val facts = QualificationEvidenceParser(f.clock).rebuild(snapshot, completions.mapNotNull { it.document }, emptyList())
+                        return VerificationWorkerEvidence(evidence = facts, orcidCompleted = if (rawDocuments) completions else emptyList(),
+                            progress = VerificationProgress("APOLLO_SEARCH", 7, 3), queries = listOf(ApolloSearchQuery("DO NOT COPY")), ruleVersion = 1)
+                    }
+                    var nextRun = 9100L
+                    fun recheck(p: com.weibo.talentintroduction.expert.domain.ExpertProfile, mode: VerificationMode = VerificationMode.AUDIT,
+                        evidenceMode: RecheckEvidenceMode = RecheckEvidenceMode.REUSE, sources: List<PaperSourceRef> = emptyList(),
+                        evidence: VerificationWorkerEvidence? = null): VerificationItem {
+                        val id = nextRun++; task(id); putRaw(p)
+                        val settings = """{"ruleVersion":3,"apolloMatchingVersion":2,"institutionAliasVersion":2,"apolloAccess":{"schemaVersion":1,"settingRevision":1,"searchEnabled":true,"detailEnabled":false,"source":"SAVED"}}"""
+                        f.repository.createRecheckRun(id, mode, true, settings,
+                            RecheckSpec("fixture", "child07-$id", "{}", evidenceMode, f.clock.instant(), "child07", "3"), f.clock.instant())
+                        val snapshot = frozen(p)
+                        val current = f.admissions.findAdmission(p.esDocId!!)
+                        val root = f.mapper.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(snapshot)
+                        root.set<com.fasterxml.jackson.databind.JsonNode>("reviewInput", f.mapper.valueToTree(
+                            VerificationReviewInput(current?.revision, current?.decision, sources, evidence,
+                                evidence?.let { com.weibo.talentintroduction.discovery.repository.DiscoveryVerificationRepository.replayHash(f.mapper.writeValueAsString(it)) })))
+                        val item = f.repository.reserveRecheckItem(VerificationReservation(id, p.esDocId!!, snapshot.identityHash,
+                            mode.policyVersion, "OPENALEX", "child07-paper", root.toString(), snapshot.factFingerprint), f.clock.instant())
+                        check(item.state == VerificationState.RESERVED && !trace.read(item.id).recorded)
+                        val preparing = f.repository.findRun(id)!!
+                        check(f.repository.compareAndSetRecheckControl(id, preparing.revision,
+                            RecheckControl(RecheckPhase.READY, f.repository.recheckScopeHash(id)), f.clock.instant()))
+                        check(!trace.read(item.id).recorded && f.repository.claimDue(f.clock.instant(), 120) == null)
+                        val ready = f.repository.findRun(id)!!
+                        check(f.repository.compareAndSetRecheckControl(id, ready.revision,
+                            f.repository.recheck(ready).control.copy(phase = RecheckPhase.RUNNING), f.clock.instant()))
+                        return f.repository.activateItem(item.id, 1, f.clock.instant())
+                    }
+                    fun execute(item: VerificationItem): VerificationItem {
+                        val lease = f.claim(); check(lease.id == item.id); worker().process(lease)
+                        val result = f.item(item.id)
+                        check(result.state in setOf(VerificationState.COMPLETED, VerificationState.ERROR, VerificationState.CANCELLED, VerificationState.RETRY_WAIT)) { "Unsettled ${result.reasonsJson}" }
+                        if (result.state in setOf(VerificationState.COMPLETED, VerificationState.ERROR)) {
+                            val latest = trace.read(item.id).steps.groupBy { it.stepNo }.mapValues { it.value.last() }
+                            check(latest.keys == (1..8).toSet() && latest.values.all { it.state.terminal }) { latest.toString() }
+                        }
+                        return result
+                    }
+                    fun cancel(item: VerificationItem) {
+                        tx.executeWithoutResult {
+                            jdbc.queryForObject("SELECT execution_id FROM discovery_verification_run WHERE execution_id=? FOR UPDATE", Long::class.java, item.ownerExecutionId)
+                            val run = f.repository.findRun(item.ownerExecutionId)!!
+                            check(f.repository.compareAndSetRecheckControl(run.executionId, run.revision,
+                                f.repository.recheck(run).control.copy(phase = RecheckPhase.CANCELLING), f.clock.instant()))
+                            f.repository.cancelRecheckItem(item.id, f.clock.instant())
+                        }
+                    }
+                    try {
+                        task(9001); f.saveApolloSettings(true, false)
+                        val registration = DiscoveryVerificationRegistrationService(props, f.repository, f.writer, f.policy, f.admissions,
+                            jdbc, tx, f.apolloSettings, f.clock, traces = trace, papers = bridge.bridge)
+                        val ordinaryRun = registration.begin(9001, PaperSearchCriteria()).run!!
+                        val reserved = registration.reserve(DiscoveryVerificationExecution(9001, ordinaryRun), "EMAIL-ordinary-paper", raw("ordinary-paper"),
+                            "OPENALEX", "child07-paper")
+                        check(!reserved.protected && !trace.read(reserved.item!!.id).recorded)
+                        putRaw(reserved.preparedProfile!!); registration.activate(reserved)
+                        var initialWire = wire.size
+                        val ordinary = execute(f.item(reserved.item!!.id))
+                        check(ordinary.outcome == VerificationOutcome.DIRECT_CLEAR && wire.size == initialWire) {
+                            "ordinary state=${ordinary.state} outcome=${ordinary.outcome} reasons=${ordinary.reasonsJson} wire=$wire evidence=${ordinary.evidenceJson}"
+                        }
+                        check(f.admissions.findAdmission(ordinary.expertDocId) == null && f.candidates.isEmpty())
+                        val ordinaryPayload = f.mapper.readValue<VerificationWorkerEvidence>(ordinary.evidenceJson!!)
+                        check(ordinaryPayload.executionContext!!.paper!!.sources.single().source == source)
+                        check(trace.read(ordinary.id).steps.last { it.stepNo == 6 }.reasonJson!!.contains("DIRECT_SUFFICIENT"))
+
+                        // Queued rule3 inputs predate the additive context protocol: never backfill their clock.
+                        val savedClock = f.clock.instant()
+                        val created = java.time.Instant.parse("2026-10-18T00:00:00Z")
+                        val executed = java.time.Instant.parse("2026-10-20T00:00:00Z")
+                        f.clock.now = created
+                        task(9002)
+                        val legacyRun = f.repository.createRun(9002, VerificationMode.AUDIT, true,
+                            ordinaryRun.settingsJson, created)
+                        val legacyProfile = raw("legacy-no-context")
+                        putRaw(legacyProfile)
+                        val legacySnapshot = frozen(legacyProfile)
+                        val legacyReserved = f.repository.reserveItem(VerificationReservation(9002,
+                            legacyProfile.esDocId!!, legacySnapshot.identityHash, legacyRun.policyVersion,
+                            "ORCID", "legacy-no-context", f.mapper.writeValueAsString(legacySnapshot),
+                            legacySnapshot.factFingerprint), created)
+                        val legacyActive = f.repository.activateItem(legacyReserved.id, 1, created)
+                        check(legacyActive.evidenceJson == null &&
+                            !f.mapper.readTree(legacyActive.snapshotJson).has("executionContext"))
+                        f.clock.now = executed
+                        val legacy = execute(legacyActive)
+                        val legacyPayload = f.mapper.readValue<VerificationWorkerEvidence>(legacy.evidenceJson!!)
+                        check(legacyPayload.ruleVersion == 3 && legacyPayload.executionContext == null)
+                        val birthdayFacts = listOf(
+                            ruleFact("education", """{"completed":true,"role":"PhD awarded"}"""),
+                            ruleFact("birthDate", "1986-10-19", AssertionSource.SELF))
+                        fun birthday(at: java.time.Instant?) = f.rules.evaluate(ruleSnapshot(), birthdayFacts,
+                            ruleVersion = legacyPayload.ruleVersion, evaluatedAt = at)
+                        val live = birthday(legacyPayload.executionContext?.evaluationAt)
+                        val beforeBirthday = birthday(created)
+                        check(live == birthday(executed) && live.evaluatedOn == java.time.LocalDate.parse("2026-10-20"))
+                        check(live.qualification == VerificationQualification.NOT_MET &&
+                            beforeBirthday.qualification == VerificationQualification.MET &&
+                            live.outcome != beforeBirthday.outcome)
+                        check(ordinaryPayload.executionContext!!.evaluationAt == savedClock)
+                        println("CHILD07_LEGACY PASS realWorkerSQL=true rule3=true inputContextAbsent=true evidenceAbsent=true outputContextAbsent=true executionClock=$executed liveQualification=${live.qualification} frozenQualification=${beforeBirthday.qualification} crossBirthdayOutcomesDiffer=true explicitOrdinaryFrozen=true")
+                        f.clock.now = savedClock
+                        initialWire = wire.size // Legacy live collection is not part of the following REUSE budget.
+
+                        val reuseProfile = raw("reuse-direct")
+                        val baseline = cached(frozen(reuseProfile))
+                        val reuse = execute(recheck(reuseProfile, evidence = baseline))
+                        val reused = f.mapper.readValue<VerificationWorkerEvidence>(reuse.evidenceJson!!)
+                        check(reuse.outcome == VerificationOutcome.DIRECT_CLEAR && reuse.requestCount == 0 && wire.size == initialWire)
+                        check(reused.queries == null && reused.progress.queryIndex == 0 && reused.progress.page == 1)
+                        check(reused.evidence.all { it.fetchedAt == java.time.Instant.parse("2024-01-01T00:00:00Z") })
+                        check(reused.executionContext!!.cacheReasons.contains("CACHE_REUSED"))
+                        check(reused.executionContext!!.evaluationAt == savedClock)
+                        check(trace.read(reuse.id).steps.last { it.stepNo == 2 }.state == VerificationStepState.INSUFFICIENT)
+                        check(f.admissions.findAdmission(reuseProfile.esDocId!!) == null)
+                        val notReparsedProfile = raw("reuse-derived")
+                        val notReparsed = execute(recheck(notReparsedProfile, evidence = cached(frozen(notReparsedProfile), false)))
+                        check(f.mapper.readValue<VerificationWorkerEvidence>(notReparsed.evidenceJson!!).executionContext!!.cacheReasons.contains("ORCID_NOT_REPARSED"))
+                        check(wire.size == initialWire)
+                        val noIdentity = execute(recheck(raw("no-identity", false), sources = listOf(source)))
+                        check(trace.read(noIdentity.id).blockingStep == 3 && wire.size == initialWire)
+                        check(trace.read(noIdentity.id).steps.last { it.stepNo == 4 }.state == VerificationStepState.SKIPPED)
+                        val conflictProfile = raw("qualification-conflict")
+                        val conflictingCache = cached(frozen(conflictProfile), false).let { cache ->
+                            cache.copy(evidence = cache.evidence.map { it.copy(conflicts = listOf("PROVIDER_FACT_CONFLICT")) })
+                        }
+                        val conflict = execute(recheck(conflictProfile, evidence = conflictingCache))
+                        check(conflict.qualification == VerificationQualification.CONFLICT && trace.read(conflict.id).blockingStep == 5)
+                        check(wire.size == initialWire)
+
+                        val apollo = execute(recheck(raw("refresh-free"), evidenceMode = RecheckEvidenceMode.REFRESH))
+                        check(apollo.outcome == VerificationOutcome.APOLLO_CLEAR && apollo.admissionRevision == null) {
+                            "refresh state=${apollo.state} outcome=${apollo.outcome} reasons=${apollo.reasonsJson} wire=$wire"
+                        }
+                        check(wire.none { it.startsWith("/api/v1/people/") })
+                        val allBeforeAudit = jdbc.queryForObject("SELECT COUNT(*) FROM expert_discovery_admission", Long::class.java)
+                        check(allBeforeAudit == 0L && f.candidates.isEmpty() && f.applications.isEmpty())
+                        val payload = f.mapper.readValue<VerificationWorkerEvidence>(apollo.evidenceJson!!)
+                        val recomputed = f.rules.evaluate(f.mapper.readValue<VerificationSnapshot>(apollo.snapshotJson), payload.evidence, payload.search,
+                            institutionNormalization = payload.institutionNormalization, ruleVersion = payload.ruleVersion, evaluatedAt = payload.executionContext!!.evaluationAt)
+                        check(listOf(recomputed.outcome, recomputed.qualification, recomputed.route, recomputed.matchedPersonId) ==
+                            listOf(apollo.outcome, apollo.qualification, apollo.route, apollo.apolloPersonId))
+                        val cachedSearchWire = wire.size
+                        val reusedSearch = execute(recheck(raw("refresh-free"), evidence = payload))
+                        val reusedSearchPayload = f.mapper.readValue<VerificationWorkerEvidence>(reusedSearch.evidenceJson!!)
+                        check(listOf(reusedSearch.outcome, reusedSearch.qualification, reusedSearch.route, reusedSearch.apolloPersonId) ==
+                            listOf(apollo.outcome, apollo.qualification, apollo.route, apollo.apolloPersonId))
+                        check(reusedSearchPayload.search == payload.search && reusedSearchPayload.queries == null)
+                        check(reusedSearch.requestCount == 0 && wire.size == cachedSearchWire)
+
+                        val syncProfile = raw("sync-only")
+                        f.failProjection = true
+                        val sync = execute(recheck(syncProfile, VerificationMode.ENFORCE, evidence = cached(frozen(syncProfile))))
+                        check(sync.admissionRevision != null && sync.projectionState == VerificationProjection.ERROR)
+                        val providerBeforeSync = wire.size; cancel(sync); f.failProjection = false; commits.project(f.item(sync.id))
+                        val projected = f.item(sync.id)
+                        check(projected.admissionRevision == sync.admissionRevision && projected.projectionState == VerificationProjection.PROJECTED)
+                        check(wire.size == providerBeforeSync && trace.read(sync.id).steps.count { it.stepNo == 8 } == 3)
+                        check(f.policy.evaluate(projected.expertDocId, syncProfile).eligible)
+                        val unsuccessful = execute(recheck(syncProfile, VerificationMode.ENFORCE))
+                        check(unsuccessful.admissionRevision == null && f.admissions.findAdmission(syncProfile.esDocId!!)!!.revision == sync.admissionRevision)
+                        check(f.policy.evaluate(projected.expertDocId, syncProfile).eligible)
+
+                        val changedProfile = raw("changed-admission")
+                        val changed = recheck(changedProfile, VerificationMode.ENFORCE, evidence = cached(frozen(changedProfile)))
+                        f.admissions.initializeAdmission(changed.expertDocId, changed.identityHash, "NEEDS_REVIEW", changed.policyVersion, f.clock.instant().verificationUtc())
+                        val rejected = execute(changed)
+                        check(rejected.reasonsJson!!.contains("ADMISSION_CHANGED") && rejected.admissionRevision == null)
+                        val staleProfile = raw("stale-facts")
+                        val stale = recheck(staleProfile, VerificationMode.ENFORCE, evidence = cached(frozen(staleProfile)))
+                        putRaw(staleProfile.copy(institution = "Changed University"))
+                        check(execute(stale).reasonsJson!!.contains("STALE_INPUT"))
+
+                        val late = recheck(raw("late-apollo"), VerificationMode.ENFORCE, RecheckEvidenceMode.REFRESH)
+                        onRequest.set { path -> if (path.contains("mixed_people")) cancel(late) }
+                        val cancelled = execute(late); onRequest.set(null)
+                        check(cancelled.state == VerificationState.CANCELLED && cancelled.admissionRevision == null)
+                        val attempt = f.repository.findAttempts(late.id).last()
+                        check(attempt.completedAt != null && attempt.httpStatus == 200 && attempt.resultCode == "OK")
+                        check(f.admissions.findAdmission(late.expertDocId) == null)
+                        check(!f.repository.completeDispatchedDiagnostic(late.id, "wrong", cancelled.generation, attempt.id, attempt.requestKey,
+                            200, "OK", "{}", null, f.clock.instant()))
+                        val academicCancel = recheck(raw("cancel-academic"), VerificationMode.ENFORCE, RecheckEvidenceMode.REFRESH)
+                        val beforeAcademicCancel = wire.size
+                        onRequest.set { path -> if (path == "/authors") cancel(academicCancel) }
+                        check(execute(academicCancel).state == VerificationState.CANCELLED); onRequest.set(null)
+                        check(wire.drop(beforeAcademicCancel) == listOf("/authors"))
+                        check(f.repository.findAttempts(academicCancel.id).isEmpty())
+
+                        searchStatus = 429
+                        val waiting = execute(recheck(raw("waiting-429"), evidenceMode = RecheckEvidenceMode.REFRESH))
+                        check(waiting.state == VerificationState.RETRY_WAIT && waiting.transientAttempts == 0) {
+                            "waiting state=${waiting.state} failures=${waiting.transientAttempts} reasons=${waiting.reasonsJson}"
+                        }
+                        check(f.repository.findAttempts(waiting.id).last().httpStatus == 429)
+                        check(trace.read(waiting.id).steps.last { it.stepNo == 6 }.state == VerificationStepState.INSUFFICIENT)
+                        cancel(waiting); searchStatus = 200
+
+                        // Both lock orders are exercised with separate JDBC connections and a real shared run lock.
+                        val pool = java.util.concurrent.Executors.newFixedThreadPool(2)
+                        try {
+                            for (cancelWins in listOf(true, false)) {
+                                val p = raw("race-$cancelWins")
+                                val item = recheck(p, VerificationMode.ENFORCE, evidence = cached(frozen(p)))
+                                val lease = f.claim()
+                                val evidence = cached(frozen(p)).let { it.copy(progress = VerificationProgress(), ruleVersion = 3,
+                                    executionContext = VerificationExecutionContext(f.clock.instant())) }
+                                val decision = f.rules.evaluate(frozen(p), evidence.evidence, ruleVersion = 3, evaluatedAt = f.clock.instant())
+                                val proposed = VerificationResult(VerificationState.COMPLETED, decision.outcome, decision.qualification, decision.route,
+                                    f.mapper.writeValueAsString(evidence), f.mapper.writeValueAsString(decision.reasonCodes))
+                                val prepared = commits.prepare(lease)
+                                val started = java.util.concurrent.CountDownLatch(1)
+                                val contender = tx.execute {
+                                    jdbc.queryForObject("SELECT execution_id FROM discovery_verification_run WHERE execution_id=? FOR UPDATE", Long::class.java, item.ownerExecutionId)
+                                    val future = if (cancelWins) pool.submit(java.util.concurrent.Callable { started.countDown(); commits.commit(lease, proposed, prepared) })
+                                        else pool.submit(java.util.concurrent.Callable { started.countDown(); cancel(item); null })
+                                    check(started.await(10, java.util.concurrent.TimeUnit.SECONDS))
+                                    if (cancelWins) cancel(item) else check(commits.commit(lease, proposed, prepared)!!.admissionRevision != null)
+                                    future
+                                }!!
+                                contender.get(30, java.util.concurrent.TimeUnit.SECONDS)
+                                val result = f.item(item.id)
+                                check(if (cancelWins) result.state == VerificationState.CANCELLED && result.admissionRevision == null
+                                    else result.state == VerificationState.COMPLETED && result.admissionRevision != null)
+                            }
+                        } finally { pool.shutdownNow() }
+                        check(archive.repository.record(source.archiveRecordId) == sourceBefore)
+                        check(archive.repository.attempt(source.attemptId)!!.blobSha256 == source.bodySha256)
+                        check(wire.none { it.startsWith("/api/v1/people/") })
+                        println("CHILD07_RUNTIME PASS actualRegistrationWorkerRulesGateCommitTrace=true realMySQL=true ordinaryPaper=DIRECT_CLEAR eightSteps=true AUDIT_businessWrites=0 REUSE_HTTP=0 originalFetchedAt=true frozenParity=true freeDetailHTTP=0 lateDiagnostic=once academicCancelWire=1 cancelled429Failures=0 cancelCommitBothOrders=true admittedProjectionRetryProviderHTTP=0 projectionAttempts=3 archiveFirstSHA=unchanged")
+                    } finally { workers.forEach { it.close() }; server.stop(0) }
+                }
+            } finally { com.weibo.talentintroduction.discovery.archive.ArchiveMysqlFixture.stop() }
+        }
     }
 }

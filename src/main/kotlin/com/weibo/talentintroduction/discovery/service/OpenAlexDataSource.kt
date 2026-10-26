@@ -74,11 +74,14 @@ class OpenAlexDataSource(
      * [OpenAlexBudgetDeferredException] instead of calling; a timeout marks the permit UNKNOWN (never refunded).
      * Every retry goes through this method again, so a retry reserves a second time (I-1/I-3).
      */
-    private fun getJson(kind: RequestKind, operation: Operation, url: String): JsonNode? {
+    private fun getJson(kind: RequestKind, operation: Operation, url: String, beforeDispatch: (() -> Unit)? = null): JsonNode? {
+        beforeDispatch?.invoke()
         val permit = requestPolicy.reserve(kind, operation, url)
         if (permit is Permit.Deferred) throw OpenAlexBudgetDeferredException(permit.reason, permit.retryAt)
         val permitId = (permit as Permit.Allowed).permitId
         val response = try {
+            // reserve may wait for a rate slot. Never dispatch on the authority checked before that wait.
+            beforeDispatch?.invoke()
             restTemplate.exchange(url, HttpMethod.GET, null, JsonNode::class.java)
         } catch (e: HttpStatusCodeException) {
             requestPolicy.recordResponse(permitId, e.responseHeaders ?: HttpHeaders())
@@ -444,11 +447,11 @@ class OpenAlexDataSource(
      * - `NOT_REQUESTED`：按开关未请求（不计入失败）。
      * 限流（429/503）原样抛出，由批量调用方统一降级。
      */
-    private fun fetchTitles(url: String, kind: RequestKind): TitlesFetch {
+    private fun fetchTitles(url: String, kind: RequestKind, beforeDispatch: (() -> Unit)? = null): TitlesFetch {
         val fullUrl = url + if (properties.politeEmail.isNotBlank()) "&mailto=${properties.politeEmail}" else ""
         return try {
             if (properties.requestDelayMs > 0) Thread.sleep(properties.requestDelayMs)
-            val response = getJson(kind, Operation.LIST, fullUrl) ?: return TitlesFetch.failed()
+            val response = getJson(kind, Operation.LIST, fullUrl, beforeDispatch) ?: return TitlesFetch.failed()
             TitlesFetch.ok(
                 response.path("results")
                     .mapNotNull { it.path("title").asText(null)?.takeIf { title -> title.isNotBlank() } }
@@ -460,6 +463,8 @@ class OpenAlexDataSource(
             if (code == 429 || code == 503) throw e
             log.debug("OpenAlex titles fetch failed for {}: {} (HTTP {})", fullUrl, e.message, code)
             TitlesFetch.failed()
+        } catch (e: java.util.concurrent.CancellationException) {
+            throw e
         } catch (e: Exception) {
             log.debug("OpenAlex titles fetch failed for {}: {}", fullUrl, e.message)
             TitlesFetch.failed()
@@ -536,11 +541,15 @@ class OpenAlexDataSource(
      * [ORCID_RESPONSE_INCOMPLETE]，不做无界翻页、也不降级成部分 Success/NotFound。
      */
     fun batchEnrichByOrcids(orcids: List<String>, kind: RequestKind): Map<String, EnrichmentOutcome> {
+        return batchEnrichByOrcids(orcids, kind, null)
+    }
+
+    fun batchEnrichByOrcids(orcids: List<String>, kind: RequestKind, beforeDispatch: (() -> Unit)?): Map<String, EnrichmentOutcome> {
         if (orcids.isEmpty()) return emptyMap()
         val url = "${properties.baseUrl}/authors?filter=orcid:${orcids.joinToString("|") { canonicalOrcid(it) }}" +
             "&per_page=$ORCID_PAGE_SIZE" + mailtoSuffix()
         val response = try {
-            getJson(kind, Operation.LIST, url)
+            getJson(kind, Operation.LIST, url, beforeDispatch)
         } catch (e: OpenAlexBudgetDeferredException) {
             throw e
         } catch (e: HttpStatusCodeException) {
@@ -556,6 +565,8 @@ class OpenAlexDataSource(
                 }
             }
             return orcids.associateWith { EnrichmentOutcome.ApiError("HTTP $code") }
+        } catch (e: java.util.concurrent.CancellationException) {
+            throw e
         } catch (e: Exception) {
             return orcids.associateWith { EnrichmentOutcome.ApiError(e.message ?: "unknown") }
         }
@@ -575,7 +586,7 @@ class OpenAlexDataSource(
             outcomes[input] = when (val lookup = lookups.getOrPut(key) { resolveOrcid(response, input) }) {
                 is OrcidLookup.Unique -> facts.getOrPut(key) {
                     try {
-                        enrichmentOutcome(lookup.node, kind)
+                        enrichmentOutcome(lookup.node, kind, beforeDispatch)
                     } catch (e: OpenAlexBudgetDeferredException) {
                         throw e
                     } catch (e: HttpStatusCodeException) {
@@ -607,10 +618,14 @@ class OpenAlexDataSource(
      * 响应里的 `id` 必须经 [normalizeOpenAlexAuthorId] 才是可信作者身份，其他形状绝不参与匹配。
      */
     fun batchEnrichByAuthorIds(authorIds: List<String>, kind: RequestKind): Map<String, EnrichmentOutcome> {
+        return batchEnrichByAuthorIds(authorIds, kind, null)
+    }
+
+    fun batchEnrichByAuthorIds(authorIds: List<String>, kind: RequestKind, beforeDispatch: (() -> Unit)?): Map<String, EnrichmentOutcome> {
         if (authorIds.isEmpty()) return emptyMap()
         val url = "${properties.baseUrl}/authors?filter=openalex:${authorIds.joinToString("|")}" +
             "&per_page=${authorIds.size}" + mailtoSuffix()
-        return batchEnrichIdentities(authorIds, url, kind) { node ->
+        return batchEnrichIdentities(authorIds, url, kind, beforeDispatch) { node ->
             normalizeOpenAlexAuthorId(node.path("id").asText(null))
         }
     }
@@ -673,10 +688,11 @@ class OpenAlexDataSource(
         identities: List<String>,
         url: String,
         kind: RequestKind,
+        beforeDispatch: (() -> Unit)? = null,
         identityOf: (JsonNode) -> String?
     ): Map<String, EnrichmentOutcome> {
         val response = try {
-            getJson(kind, Operation.LIST, url)
+            getJson(kind, Operation.LIST, url, beforeDispatch)
         } catch (e: OpenAlexBudgetDeferredException) {
             throw e
         } catch (e: HttpStatusCodeException) {
@@ -692,6 +708,8 @@ class OpenAlexDataSource(
                 }
             }
             return identities.associateWith { EnrichmentOutcome.ApiError("HTTP $code") }
+        } catch (e: java.util.concurrent.CancellationException) {
+            throw e
         } catch (e: Exception) {
             return identities.associateWith { EnrichmentOutcome.ApiError(e.message ?: "unknown") }
         }
@@ -712,7 +730,7 @@ class OpenAlexDataSource(
         for ((index, entry) in foundEntries.withIndex()) {
             val (identity, node) = entry
             try {
-                results[identity] = enrichmentOutcome(node, kind)
+                results[identity] = enrichmentOutcome(node, kind, beforeDispatch)
             } catch (e: OpenAlexBudgetDeferredException) {
                 throw e
             } catch (e: HttpStatusCodeException) {
@@ -776,16 +794,16 @@ class OpenAlexDataSource(
      * 关闭的开关不发请求（[TitlesFetch.NOT_REQUESTED]），打开的开关失败只标 [ParsedAuthorEnrichment.titlesFailed]，
      * 绝不因此丢掉基础事实。
      */
-    private fun parseAuthorEnrichment(node: JsonNode, kind: RequestKind): ParsedAuthorEnrichment {
+    private fun parseAuthorEnrichment(node: JsonNode, kind: RequestKind, beforeDispatch: (() -> Unit)? = null): ParsedAuthorEnrichment {
         val base = parseAuthorBase(node)
         val worksUrl = node.path("works_api_url").asText(null)
         val recentWorks = if (worksUrl != null && properties.fetchWorksEnabled) {
-            fetchTitles(recentWorksUrl(worksUrl), kind)
+            fetchTitles(recentWorksUrl(worksUrl), kind, beforeDispatch)
         } else {
             TitlesFetch.NOT_REQUESTED
         }
         val patents = if (worksUrl != null && properties.fetchPatentsEnabled) {
-            fetchTitles(patentWorksUrl(worksUrl), kind)
+            fetchTitles(patentWorksUrl(worksUrl), kind, beforeDispatch)
         } else {
             TitlesFetch.NOT_REQUESTED
         }
@@ -802,8 +820,8 @@ class OpenAlexDataSource(
     private data class ParsedAuthorEnrichment(val data: AuthorEnrichment, val titlesFailed: Boolean)
 
     /** 作者节点 → 结果；限流（429/503）与额度延期照原样抛出，由调用方决定降级方式。 */
-    private fun enrichmentOutcome(node: JsonNode, kind: RequestKind): EnrichmentOutcome {
-        val parsed = parseAuthorEnrichment(node, kind)
+    private fun enrichmentOutcome(node: JsonNode, kind: RequestKind, beforeDispatch: (() -> Unit)? = null): EnrichmentOutcome {
+        val parsed = parseAuthorEnrichment(node, kind, beforeDispatch)
         return EnrichmentOutcome.Success(parsed.data, parsed.titlesFailed)
     }
 

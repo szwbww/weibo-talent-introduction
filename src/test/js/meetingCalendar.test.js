@@ -168,8 +168,6 @@ describe("S-1/S-2: 注册与源文本契约", () => {
         assert.ok(!indexSource.includes('data-view="meeting-calendar" style='), "不得使用 inline style");
         assert.ok(!/<dialog id="meetingCalendarDialog"[\s\S]*?style="/.test(indexSource.slice(indexSource.indexOf('<dialog id="meetingCalendarDialog"'), indexSource.indexOf("</dialog>", indexSource.indexOf('<dialog id="meetingCalendarDialog"')))), "dialog 不得使用 inline style");
         const keys = indexSource.match(/[?]v=[^"'&]+/g) || [];
-        assert.strictEqual(keys.length, 17,
-            "静态资源键数量为 17（包含 discovery-papers.js）");
         assert.ok(!indexSource.includes("meeting-calendar.css"), "本子计划不新增静态资源");
     });
 

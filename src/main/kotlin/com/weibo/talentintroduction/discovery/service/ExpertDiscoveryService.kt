@@ -1742,6 +1742,22 @@ class ExpertDiscoveryService(
         )
     }
 
+    /** Retained-body backfill only; the normal consumer still owns validation, dedup and every write. */
+    internal fun consumeArchivedPaper(paper: PaperMetadata, authorEmails: List<AuthorEmail>, sourceName: String,
+        originalPaperKey: String, newExecutionContext: DiscoveryVerificationExecution): ConsumeOutcomeResult {
+        val archived = requireNotNull(newExecutionContext.archivedPaper) { "ARCHIVED_CONTEXT_REQUIRED" }
+        require(newExecutionContext.executionId != null && newExecutionContext.run != null)
+        require(newExecutionContext.executionId != archived.source.sourceExecutionId)
+        require(sourceName == paper.source && sourceName == archived.source.sourceName &&
+            originalPaperKey == archived.source.sourceItemKey)
+        // The permit has a private constructor and is minted only by the production body parser.
+        archived.parsed.requireMatches(paper, authorEmails, archived.source)
+        val stats = DiscoveryStats()
+        return consumeOutcomeInternal(authorEmails, null, null, true, 0, sourceName, stats,
+            stats.getOrCreateSourceStats(sourceName, "ARCHIVE_REUSE"), newExecutionContext, originalPaperKey,
+            paperIdentityFactory(paper))
+    }
+
     /**
      * I-4：消费（写入/晋升/补全入队）的唯一门禁实现，旧流程与队列共同调用。
      *

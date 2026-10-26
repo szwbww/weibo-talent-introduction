@@ -9,7 +9,9 @@ import com.weibo.talentintroduction.discovery.repository.DiscoveryVerificationRe
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import org.springframework.stereotype.Service
 
-/** Loaded absence is a value; null at the policy boundary means not loaded. No network or writes. */
+/** Loaded absence is a value; null at the policy boundary means not loaded. No network or writes.
+ * Explicit contexts also carry commit's authoritative staged row; business reads use findContexts.
+ */
 data class VerificationAdmissionContext(
     val docId: String,
     val profile: ExpertProfile,
@@ -24,7 +26,8 @@ data class VerificationAdmissionEvidence(
     val search: ApolloSearchEvidence? = null,
     val schemaVersion: Int = 1,
     val institutionNormalization: InstitutionNormalization? = null,
-    val ruleVersion: Int = 0
+    val ruleVersion: Int = 0,
+    val executionContext: VerificationExecutionContext? = null
 ) {
     init { require(schemaVersion == 1) }
 }
@@ -39,7 +42,9 @@ class DiscoveryVerificationAdmissionGate(
 
     fun findContexts(keys: Map<String, ExpertProfile>): Map<String, VerificationAdmissionContext> {
         require(keys.size <= 500)
-        val items = repository.findItemsByDocIds(keys.keys).groupBy { it.expertDocId }
+        val items = repository.findItemsByDocIds(keys.keys).filter {
+            it.reviewEpoch == 0L || it.policyVersion == VerificationMode.ENFORCE.policyVersion && it.admissionRevision != null
+        }.groupBy { it.expertDocId }
         return keys.mapValues { (docId, profile) -> VerificationAdmissionContext(docId, profile, items[docId].orEmpty()) }
     }
 
@@ -64,7 +69,8 @@ class DiscoveryVerificationAdmissionGate(
             require(snapshot(context.docId, frozen.profile, baseAutomatic.configSnapshot).factFingerprint == item.factFingerprint)
             val payload = mapper.readValue<VerificationAdmissionEvidence>(requireNotNull(item.evidenceJson))
             rules.evaluate(snapshot, payload.evidence, payload.search,
-                institutionNormalization = payload.institutionNormalization, ruleVersion = payload.ruleVersion).also {
+                institutionNormalization = payload.institutionNormalization, ruleVersion = payload.ruleVersion,
+                evaluatedAt = payload.executionContext?.evaluationAt).also {
                 require(it.outcome == item.outcome && it.qualification == item.qualification && it.route == item.route)
                 require(it.matchedPersonId == item.apolloPersonId)
             }

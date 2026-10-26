@@ -149,7 +149,7 @@ class DiscoveryPaperArchiveCaptureTest {
             assertFalse(called); assertEquals(0,f.repository.records().size)
         }
     }
-    @Test fun `list and detail summarize frozen captured emails and retain flat outcomes`() {
+    @Test fun `list and detail summarize frozen captured emails and keep missing first unknown`() {
         ArchiveFixture().use { f ->
             f.enable(); val capture = DiscoveryPaperArchiveCapture(f.service, f.mapper)
             val email = com.weibo.talentintroduction.discovery.domain.AuthorEmail("ada@example.invalid", "Ada", "Lee", true, null, null)
@@ -161,12 +161,12 @@ class DiscoveryPaperArchiveCaptureTest {
             val flat = f.paper("flat-summary")
             f.service.finishExtraction(flat.id, f.mapper.readTree("""{"schemaVersion":1,"emails":["one@example.invalid","two@example.invalid"],"resolved":1,"unresolved":1}"""))
             val rows = f.service.list(ArchiveQuery()).items.associateBy { it.id }
-            val capturedSummary = ArchiveExtractionSummary(1, 0, 0)
-            val flatSummary = ArchiveExtractionSummary(2, 1, 1)
+            val capturedSummary = ArchiveExtractionSummary(1, 1, 0)
             assertEquals(capturedSummary, rows.getValue(record.id).extractionSummary)
             assertEquals(capturedSummary, f.service.detail(record.id).record.extractionSummary)
-            assertEquals(flatSummary, rows.getValue(flat.id).extractionSummary)
-            assertEquals(flatSummary, f.service.detail(flat.id).record.extractionSummary)
+            // A schema-v1 envelope without first.outcome is unknown, not a latest/flat fallback.
+            assertNull(rows.getValue(flat.id).extractionSummary)
+            assertNull(f.service.detail(flat.id).record.extractionSummary)
         }
     }
     @Test fun `first snapshot frozen latest updates and metadata has no full text or credentials`() {
@@ -181,7 +181,8 @@ class DiscoveryPaperArchiveCaptureTest {
             assertEquals(first,latest.get("first"))
             assertEquals("LATEST",latest.path("latest").path("outcome").path("failureReason").asText())
             assertEquals(20261004,first.path("parserVersion").path("identityExtraction").asInt())
-            assertEquals(20261023,first.path("parserVersion").path("pdfLayout").asInt())
+            assertEquals(com.weibo.talentintroduction.discovery.service.PdfAuthorContactLayout.RULE_VERSION,
+                first.path("parserVersion").path("pdfLayout").asInt())
             assertEquals(1,first.path("attemptIds").size())
             assertFalse(record.metadataJson.contains("fullText")); assertFalse(record.metadataJson.contains("secret"))
             assertEquals("https://fixture.invalid/a",f.mapper.readTree(record.metadataJson).path("downloadUrl").asText())

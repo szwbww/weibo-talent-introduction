@@ -28,7 +28,7 @@ import java.util.concurrent.TimeUnit
 @DataJdbcTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
-@TestPropertySource(properties = ["spring.flyway.placeholder-replacement=false", "spring.flyway.target=158"])
+@TestPropertySource(properties = ["spring.flyway.placeholder-replacement=false", "spring.flyway.target=161"])
 @Import(DiscoveryVerificationRepository::class)
 class DiscoveryVerificationRepositoryIT {
     companion object {
@@ -52,6 +52,7 @@ class DiscoveryVerificationRepositoryIT {
 
     @BeforeEach fun clean() {
         // These tables exist only in this test's disposable container.
+        jdbc.update("DELETE FROM discovery_verification_step")
         jdbc.update("DELETE FROM discovery_verification_attempt")
         jdbc.update("DELETE FROM discovery_verification_item")
         jdbc.update("DELETE FROM discovery_verification_run")
@@ -484,5 +485,413 @@ class DiscoveryVerificationRepositoryIT {
         assertTrue(repository.findSuccessfulDetails(1001, emptyList()).isEmpty())
         assertEquals(before, repository.findAttempts(first.id))
         assertEquals(runBefore, repository.findRun(1001)); assertEquals(itemBefore, repository.findItem(first.id))
+    }
+    private fun recheckRun(id: Long, mode: VerificationMode = VerificationMode.ENFORCE): VerificationRun {
+        jdbc.update("""INSERT INTO task_execution (id,task_type,trigger_type,status,started_at)
+            VALUES (?,'DISCOVERY_RECHECK_PREPARE','MANUAL','RUNNING',?)""", id, NOW.verificationUtc())
+        return repository.createRecheckRun(id, mode, false, "{}",
+            RecheckSpec("fixture", "request-$id", """{"docIds":["doc-1"]}""",
+                RecheckEvidenceMode.REUSE, NOW, "fixture-code", "fixture-parser"), NOW)
+    }
+
+    private fun phase(id: Long, phase: RecheckPhase): Boolean {
+        val run = repository.findRun(id)!!
+        val hash = repository.recheck(run).control.scopeHash ?: if (phase == RecheckPhase.READY) repository.recheckScopeHash(id) else null
+        return repository.compareAndSetRecheckControl(id, run.revision, RecheckControl(phase, hash), NOW)
+    }
+
+    private fun freeze(id: Long) {
+        assertTrue(phase(id, RecheckPhase.READY))
+        assertTrue(phase(id, RecheckPhase.RUNNING))
+    }
+
+    @Test fun `V158 migration preserves every old field and adds only ordinary defaults`() {
+        Mysql().withDatabaseName("old_verification").withUsername("test").withPassword("test").use { old ->
+            old.start()
+            fun flyway(target: String) = org.flywaydb.core.Flyway.configure()
+                .dataSource(old.jdbcUrl, old.username, old.password).placeholderReplacement(false).target(target).load()
+            flyway("158").migrate()
+            val oldJdbc = JdbcTemplate(org.springframework.jdbc.datasource.DriverManagerDataSource(old.jdbcUrl, old.username, old.password))
+            oldJdbc.update("""INSERT INTO discovery_verification_run
+                (execution_id,mode,policy_version,apollo_requested,settings_json,created_at,updated_at)
+                VALUES (42,'ENFORCE',?,1,'{\"frozen\":true}',?,?)""",
+                VerificationMode.ENFORCE.policyVersion, NOW.verificationUtc(), NOW.verificationUtc())
+            oldJdbc.update("""INSERT INTO discovery_verification_item
+                (id,owner_execution_id,expert_doc_id,identity_hash,policy_version,source_name,source_item_key,batch_number,
+                snapshot_json,fact_fingerprint,evidence_json,reasons_json,request_count,created_at,updated_at)
+                VALUES (123,42,'legacy',?,?,'ORCID','old-source',0,'{\"old\":true}',?,
+                '{\"original\":\"evidence\"}','[\"OLD\"]',17,?,?)""",
+                "a".repeat(64), VerificationMode.ENFORCE.policyVersion, "b".repeat(64), NOW.verificationUtc(), NOW.verificationUtc())
+            oldJdbc.update("""INSERT INTO discovery_verification_attempt
+                (item_id,request_key,provider,query_kind,page_number,attempt_number,requested_at,result_code,request_json,response_json,response_sha256)
+                VALUES (123,'old-http','APOLLO','BROAD',1,1,?,'OK','{}','{\"raw\":\"original\"}',?)""",
+                NOW.verificationUtc(), "c".repeat(64))
+            val beforeRun = oldJdbc.queryForMap("SELECT * FROM discovery_verification_run")
+            val beforeItem = oldJdbc.queryForMap("SELECT * FROM discovery_verification_item")
+            val beforeAttempt = oldJdbc.queryForMap("SELECT * FROM discovery_verification_attempt")
+            flyway("161").migrate()
+            assertEquals(beforeRun, oldJdbc.queryForMap("SELECT * FROM discovery_verification_run").filterKeys { it != "recheck_json" })
+            assertEquals(beforeItem, oldJdbc.queryForMap("SELECT * FROM discovery_verification_item").filterKeys { it != "review_epoch" })
+            assertEquals(beforeAttempt, oldJdbc.queryForMap("SELECT * FROM discovery_verification_attempt"))
+            val repo = DiscoveryVerificationRepository(oldJdbc)
+            assertNull(repo.findRun(42)!!.recheckJson)
+            assertEquals(0L, repo.findItem(123)!!.reviewEpoch)
+            assertEquals(17, repo.findItem(123)!!.requestCount)
+            assertEquals(0L, oldJdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_step", Long::class.java))
+        }
+    }
+
+    @Test fun `ordinary identity and two real recheck epochs are independent and retry is immutable`() {
+        run()
+        val ordinary = repository.reserveItem(reservation(), NOW)
+        jdbc.update("UPDATE discovery_verification_item SET request_count=9,evidence_json='{\"old\":true}' WHERE id=?", ordinary.id)
+        val before = repository.findItem(ordinary.id)!!
+        recheckRun(2001); recheckRun(2002)
+        val first = parallel(10) { repository.reserveRecheckItem(reservation(owner = 2001), NOW).id }
+        val second = repository.reserveRecheckItem(reservation(owner = 2002), NOW)
+        assertEquals(1, first.distinct().size)
+        assertEquals(3, setOf(ordinary.id, first.first(), second.id).size)
+        assertEquals(2001L, repository.findItem(first.first())!!.reviewEpoch)
+        assertEquals(2002L, second.reviewEpoch)
+        assertEquals(before, repository.reserveItem(reservation(), NOW))
+        assertEquals(before, repository.findItem(before.id))
+        assertEquals(listOf(before), repository.findItemsByDocIds(listOf("doc-1")))
+        assertEquals(3, repository.findHistoryByDocIds(listOf("doc-1")).size)
+        assertEquals(listOf(before), repository.listReserved(100))
+        assertTrue(repository.readReserved(2001, 100).isEmpty())
+        assertFalse(repository.failReserved(second.id, "[]", NOW))
+        assertThrows(IllegalArgumentException::class.java) {
+            repository.reserveRecheckItem(reservation(owner = 2001).copy(snapshotJson = "{\"changed\":true}"), NOW)
+        }
+        assertThrows(IllegalArgumentException::class.java) { repository.reserveItem(reservation(owner = 2001), NOW) }
+        assertThrows(IllegalArgumentException::class.java) { repository.reserveRecheckItem(reservation(), NOW) }
+        assertTrue(repository.findSteps(second.id).isEmpty())
+        val expected = DiscoveryVerificationRepository.ReplayExpected(second, null, "{}")
+        assertThrows(IllegalArgumentException::class.java) {
+            repository.requeuePendingForEvidenceReplay(2002, listOf(expected), NOW)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            repository.requeueErrorsForCreditRecovery(2002, listOf(expected), NOW)
+        }
+    }
+
+    @Test fun `frozen spec scope CAS and parallel claims cannot execute preparing or ready inputs`() {
+        val initial = recheckRun(2001)
+        val spec = repository.recheck(initial).spec
+        assertEquals(initial, repository.createRecheckRun(2001, VerificationMode.ENFORCE, false, "{}", spec, NOW))
+        val conflict = assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            repository.createRecheckRun(2001, VerificationMode.ENFORCE, false, "{}", spec.copy(actor = "rewritten"), NOW)
+        }
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, conflict.status)
+        val item = repository.reserveRecheckItem(reservation(owner = 2001), NOW)
+        assertNull(repository.claimDue(NOW, 120))
+        assertThrows(IllegalArgumentException::class.java) { repository.activateItem(item.id, 1, NOW) }
+        assertTrue(repository.findSteps(item.id).isEmpty())
+        val hash = repository.recheckScopeHash(2001)
+        assertEquals(hash, repository.recheckScopeHash(2001))
+        val revision = repository.findRun(2001)!!.revision
+        assertEquals(1, parallel(10) {
+            repository.compareAndSetRecheckControl(2001, revision, RecheckControl(RecheckPhase.READY, hash), NOW)
+        }.count { it })
+        assertTrue(repository.findRun(2001)!!.inputClosed)
+        assertEquals(VerificationState.RESERVED, repository.findItem(item.id)!!.state)
+        assertTrue(repository.findSteps(item.id).isEmpty())
+        assertTrue(repository.readReserved(2001, 100).isEmpty())
+        assertThrows(IllegalArgumentException::class.java) { repository.activateItem(item.id, 1, NOW) }
+        assertNull(repository.claimDue(NOW, 120))
+        assertFalse(repository.compareAndSetRecheckControl(2001, revision, RecheckControl(RecheckPhase.RUNNING, hash), NOW))
+        assertThrows(IllegalArgumentException::class.java) {
+            repository.compareAndSetRecheckControl(2001, repository.findRun(2001)!!.revision,
+                RecheckControl(RecheckPhase.RUNNING, "d".repeat(64)), NOW)
+        }
+        assertTrue(phase(2001, RecheckPhase.RUNNING))
+        assertNull(repository.claimDue(NOW, 120))
+        assertEquals(listOf(item.id), repository.readReserved(2001, 100).map { it.id })
+        val activated = repository.activateItem(item.id, 1, NOW)
+        val steps = repository.findSteps(item.id)
+        assertEquals((1..8).toList(), steps.map { it.stepNo })
+        assertTrue(steps.all { it.state == VerificationStepState.NOT_STARTED && it.attemptNo == 1 })
+        assertEquals(activated, repository.activateItem(item.id, 99, NOW))
+        assertEquals(steps, repository.findSteps(item.id))
+        val leases = parallel(10) { repository.claimDue(NOW, 120) }.filterNotNull()
+        assertEquals(1, leases.size)
+        assertEquals(item.id, leases.single().id)
+        assertEquals(spec, repository.recheck(repository.findRun(2001)!!).spec)
+        assertEquals(item.id, repository.reserveRecheckItem(reservation(owner = 2001), NOW).id)
+        assertThrows(IllegalArgumentException::class.java) {
+            repository.reserveRecheckItem(reservation("late", 2001), NOW)
+        }
+    }
+
+    @Test fun `business reads exclude audit queued pending rechecks and include only committed new facts`() {
+        run()
+        active()
+        val original = claim()
+        val clear = VerificationResult(VerificationState.COMPLETED, VerificationOutcome.DIRECT_CLEAR,
+            VerificationQualification.MET, VerificationRoute.DIRECT, "{}", "[]", admissionRevision = 1,
+            projectionState = VerificationProjection.PROJECTED)
+        assertTrue(repository.saveEvidenceAndOutcome(original.id, original.leaseToken!!, original.generation, clear, NOW))
+        recheckRun(2001, VerificationMode.AUDIT)
+        val audit = repository.reserveRecheckItem(reservation(owner = 2001, mode = VerificationMode.AUDIT), NOW)
+        recheckRun(2002)
+        val enforce = repository.reserveRecheckItem(reservation(owner = 2002), NOW)
+        assertEquals(listOf(original.id), repository.findItemsByDocIds(listOf("doc-1")).map { it.id })
+        freeze(2001)
+        repository.activateItem(audit.id, 1, NOW)
+        val auditLease = claim()
+        assertTrue(repository.saveEvidenceAndOutcome(audit.id, auditLease.leaseToken!!, auditLease.generation,
+            clear.copy(admissionRevision = null, projectionState = VerificationProjection.NOT_REQUIRED), NOW))
+        freeze(2002)
+        repository.activateItem(enforce.id, 1, NOW)
+        val enforceLease = claim()
+        assertTrue(repository.saveEvidenceAndOutcome(enforce.id, enforceLease.leaseToken!!, enforceLease.generation, result(), NOW))
+        assertEquals(listOf(original.id), repository.findItemsByDocIds(listOf("doc-1")).map { it.id })
+        assertEquals(3, repository.findHistoryByDocIds(listOf("doc-1")).size)
+        recheckRun(2003)
+        val committed = repository.reserveRecheckItem(reservation(owner = 2003), NOW)
+        freeze(2003); repository.activateItem(committed.id, 1, NOW)
+        val lease = claim()
+        TransactionTemplate(manager).executeWithoutResult {
+            assertTrue(repository.saveEvidenceAndOutcome(committed.id, lease.leaseToken!!, lease.generation,
+                clear.copy(admissionRevision = null, projectionState = VerificationProjection.NOT_REQUIRED), NOW))
+            assertEquals(listOf(original.id), repository.findItemsByDocIds(listOf("doc-1")).map { it.id })
+            repository.attachAdmission(committed.id, 2, NOW)
+        }
+        assertEquals(listOf(original.id, committed.id), repository.findItemsByDocIds(listOf("doc-1")).map { it.id })
+        assertEquals(4, repository.findHistoryByDocIds(listOf("doc-1")).size)
+        recheckRun(2004, VerificationMode.AUDIT)
+        val onlyAudit = repository.reserveRecheckItem(reservation("only-audit", 2004, VerificationMode.AUDIT), NOW)
+        assertEquals(VerificationContext.UNMANAGED, repository.findManagedContexts(listOf("only-audit"))["only-audit"])
+        assertEquals(listOf(onlyAudit), repository.findHistoryByDocIds(listOf("only-audit")))
+    }
+
+    @Test fun `eight independent step slots append retries and reject terminal rewrites`() {
+        recheckRun(2001)
+        val item = repository.reserveRecheckItem(reservation(owner = 2001), NOW)
+        freeze(2001); repository.activateItem(item.id, 1, NOW)
+        val lease = claim()
+        for (number in 1..8) {
+            val step = repository.beginStep(item.id, lease.leaseToken!!, lease.generation, number,
+                "{\"step\":$number}", "{\"parser\":\"frozen\"}", NOW)!!
+            assertEquals(DiscoveryVerificationRepository.replayHash("{\"step\":$number}"), step.inputHash)
+            assertThrows(IllegalStateException::class.java) {
+                repository.beginStep(item.id, lease.leaseToken!!, lease.generation, number, "{}", "{}", NOW)
+            }
+            assertTrue(repository.finishStep(item.id, lease.leaseToken!!, lease.generation, step.id,
+                VerificationStepState.SUCCESS, "{\"saved\":true}", "[]", NOW))
+            assertFalse(repository.finishStep(item.id, lease.leaseToken!!, lease.generation, step.id,
+                VerificationStepState.ERROR, null, "[\"late\"]", NOW))
+        }
+        val before = repository.findSteps(item.id)
+        assertEquals((1..8).toList(), before.map { it.stepNo })
+        val retry = repository.beginStep(item.id, lease.leaseToken!!, lease.generation, 3, "{\"retry\":true}", "{}", NOW)!!
+        assertEquals(2, retry.attemptNo)
+        assertEquals(before, repository.findSteps(item.id).filter { it.attemptNo == 1 })
+        val invalidStep = assertThrows(org.springframework.jdbc.UncategorizedSQLException::class.java) {
+            jdbc.update("""INSERT INTO discovery_verification_step (item_id,step_no,attempt_no,state,created_at)
+                VALUES (?,9,1,'NOT_STARTED',?)""", item.id, NOW.verificationUtc())
+        }
+        assertEquals(3819, invalidStep.sqlException.errorCode)
+        assertThrows(org.springframework.dao.DuplicateKeyException::class.java) {
+            jdbc.update("""INSERT INTO discovery_verification_step (item_id,step_no,attempt_no,state,created_at)
+                VALUES (?,1,1,'NOT_STARTED',?)""", item.id, NOW.verificationUtc())
+        }
+        val invalidTime = assertThrows(org.springframework.jdbc.UncategorizedSQLException::class.java) {
+            jdbc.update("UPDATE discovery_verification_step SET finished_at=? WHERE id=?", NOW.verificationUtc(), retry.id)
+        }
+        assertEquals(3819, invalidTime.sqlException.errorCode)
+    }
+
+    @Test fun `cancellation blocks late external completion new admission and ordinary recovery but keeps committed projection`() {
+        recheckRun(2001)
+        val items = (1..3).map {
+            repository.reserveRecheckItem(reservation("cancel-$it", 2001), NOW)
+        }
+        freeze(2001)
+        items.forEach { repository.activateItem(it.id, 1, NOW) }
+        val first = claim()
+        val clear = VerificationResult(VerificationState.COMPLETED, VerificationOutcome.DIRECT_CLEAR,
+            VerificationQualification.MET, VerificationRoute.DIRECT, "{}", "[]",
+            admissionRevision = 7, projectionState = VerificationProjection.PENDING)
+        assertTrue(repository.saveEvidenceAndOutcome(first.id, first.leaseToken!!, first.generation, clear, NOW))
+        val running = claim()
+        val step = repository.beginStep(running.id, running.leaseToken!!, running.generation, 2, "{}", "{}", NOW)!!
+        val attempt = detail(running, "blocked-http").attemptId!!
+        val released = CountDownLatch(1)
+        val pool = Executors.newSingleThreadExecutor()
+        try {
+            val late = pool.submit(Callable {
+                released.await()
+                repository.completeAttempt(running.id, running.leaseToken!!, running.generation,
+                    attempt, 200, "OK", "{}", null, NOW)
+            })
+            assertTrue(phase(2001, RecheckPhase.CANCELLING))
+            released.countDown()
+            assertFalse(late.get(30, TimeUnit.SECONDS))
+        } finally { released.countDown(); pool.shutdownNow() }
+        assertFalse(repository.renewLease(running.id, running.leaseToken!!, running.generation, NOW, 120))
+        assertEquals(VerificationBudgetReason.LEASE_LOST, detail(running, "after-cancel").deferred)
+        assertFalse(repository.saveEvidenceAndOutcome(running.id, running.leaseToken!!, running.generation, clear, NOW))
+        assertThrows(IllegalStateException::class.java) {
+            TransactionTemplate(manager).executeWithoutResult { repository.lockForCommit(running.id) }
+        }
+        assertFalse(repository.cancelRecheckItem(first.id, NOW))
+        items.filter { it.id != first.id }.forEach { assertTrue(repository.cancelRecheckItem(it.id, NOW)) }
+        assertTrue(phase(2001, RecheckPhase.CANCELLED))
+        assertNull(repository.claimDue(NOW.plusSeconds(200), 120))
+        assertTrue(repository.listReserved(100).isEmpty())
+        assertTrue(repository.readReserved(2001, 100).isEmpty())
+        assertEquals(VerificationStepState.CANCELLED, repository.findSteps(running.id).single { it.id == step.id }.state)
+        val cancelled = repository.findItem(running.id)!!
+        assertEquals(VerificationState.CANCELLED, cancelled.state)
+        assertNull(cancelled.outcome); assertNull(cancelled.admissionRevision); assertNotNull(cancelled.completedAt)
+        assertEquals(7L, repository.findItem(first.id)!!.admissionRevision)
+        assertTrue(repository.markProjection(first.id, 7, VerificationProjection.PROJECTED, null, NOW))
+        val counts = repository.reportingCounts(VerificationReportFilter(2001)).getValue(0L)
+        assertEquals(2L, counts.cancelled); assertEquals(0L, counts.errors); assertEquals(0L, counts.queued)
+        assertEquals(1L, counts.autoAdmitted)
+        assertEquals(2L, repository.reportingRecordTotal(VerificationReportFilter(2001, result = "CANCELLED")))
+        val spec = repository.recheck(repository.findRun(2001)!!).spec
+        assertEquals(RecheckEvidenceMode.REUSE, spec.evidenceMode)
+    }
+
+    @Test fun `interrupted control prevents fresh requests and attach but never removes old admission`() {
+        recheckRun(2001)
+        val item = repository.reserveRecheckItem(reservation(owner = 2001), NOW)
+        freeze(2001); repository.activateItem(item.id, 1, NOW)
+        val lease = claim()
+        assertTrue(phase(2001, RecheckPhase.INTERRUPTED))
+        assertEquals(VerificationBudgetReason.LEASE_LOST, detail(lease, "interrupted").deferred)
+        assertThrows(IllegalStateException::class.java) {
+            TransactionTemplate(manager).executeWithoutResult { repository.attachAdmission(item.id, 3, NOW) }
+        }
+        assertNull(repository.claimDue(NOW.plusSeconds(121), 120))
+        assertTrue(repository.cancelRecheckItem(item.id, NOW))
+        assertEquals(VerificationState.CANCELLED, repository.findItem(item.id)!!.state)
+    }
+
+    @Test fun `prepare named lock serializes current uuid registration and releases only after transaction`() {
+        val key = java.util.UUID.randomUUID().toString()
+        val registrations = parallel(8) { index ->
+            repository.registerRecheck(key) {
+                val id = 5001L + index
+                jdbc.update("""INSERT INTO task_execution (id,task_type,trigger_type,status,started_at)
+                    VALUES (?,'DISCOVERY_RECHECK_PREPARE','MANUAL','RUNNING',?)""", id, NOW.verificationUtc())
+                repository.createRecheckRun(id, VerificationMode.AUDIT, false, "{}",
+                    RecheckSpec("fixture", key, "{}", RecheckEvidenceMode.REUSE, NOW, "v", "v"), NOW)
+            }
+        }
+        assertEquals(1, registrations.count { it.second })
+        assertEquals(1, registrations.map { it.first.executionId }.distinct().size)
+        assertEquals(1L, jdbc.queryForObject("SELECT COUNT(*) FROM task_execution", Long::class.java))
+        assertNull(jdbc.queryForObject("SELECT IS_USED_LOCK('discovery_recheck_prepare')", Long::class.java))
+        assertThrows(IllegalStateException::class.java) {
+            TransactionTemplate(manager).executeWithoutResult {
+                repository.registerRecheck(key) { error("must find current row") }
+                assertNotNull(jdbc.queryForObject("SELECT IS_USED_LOCK('discovery_recheck_prepare')", Long::class.java))
+                error("rollback")
+            }
+        }
+        assertNull(jdbc.queryForObject("SELECT IS_USED_LOCK('discovery_recheck_prepare')", Long::class.java))
+        assertThrows(IllegalArgumentException::class.java) { repository.registerRecheck("%") { error("unreachable") } }
+    }
+
+    @Test fun `prepare busy is database scoped and failed registration leaves no executable orphan`() {
+        jdbc.dataSource!!.connection.use { connection ->
+            connection.createStatement().use { it.execute("SELECT GET_LOCK('discovery_recheck_prepare',1)") }
+            try {
+                val error = assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+                    repository.registerRecheck(java.util.UUID.randomUUID().toString()) { error("must not execute") }
+                }
+                assertEquals("PREPARE_BUSY", error.reason)
+            } finally { connection.createStatement().use { it.execute("SELECT RELEASE_LOCK('discovery_recheck_prepare')") } }
+        }
+        assertThrows(IllegalStateException::class.java) {
+            repository.registerRecheck(java.util.UUID.randomUUID().toString()) {
+                recheckRun(5101)
+                error("run binding failure")
+            }
+        }
+        assertEquals(0L, jdbc.queryForObject("SELECT COUNT(*) FROM task_execution", Long::class.java))
+        assertEquals(0L, jdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_run", Long::class.java))
+    }
+
+    @Test fun `atomic start activates frozen roster once and preserves accepted revision across worker changes`() {
+        recheckRun(5201)
+        val items = (1..3).map { repository.reserveRecheckItem(reservation("fixed-$it", 5201), NOW) }
+        assertTrue(phase(5201, RecheckPhase.READY))
+        val ready = repository.findRun(5201)!!
+        val hash = repository.recheck(ready).control.scopeHash!!
+        val started = parallel(8) { repository.startRecheck(5201, hash, ready.revision, NOW) }
+        assertTrue(started.all { repository.recheck(it).control.phase == RecheckPhase.RUNNING })
+        assertEquals(24L, jdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_step", Long::class.java))
+        assertEquals(3L, repository.recheckCounts(5201).queued)
+        val lease = claim()
+        assertEquals(hash, repository.recheckScopeHash(5201))
+        assertEquals(VerificationState.RUNNING, repository.findItem(lease.id)!!.state)
+        assertEquals(repository.findRun(5201), repository.startRecheck(5201, hash, ready.revision, NOW))
+        assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            repository.startRecheck(5201, hash, ready.revision + 1, NOW)
+        }
+        assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            repository.startRecheck(5201, "e".repeat(64), ready.revision, NOW)
+        }
+        val cancelled = repository.cancelRecheck(5201, NOW)
+        assertEquals(RecheckPhase.CANCELLED, repository.recheck(cancelled).control.phase)
+        assertEquals(3L, repository.recheckCounts(5201).cancelled)
+        assertEquals(items.map { it.id }.toSet(), repository.recheckItems(5201, 0, 20).second.map { it.id }.toSet())
+        assertFalse(repository.renewLease(lease.id, lease.leaseToken!!, lease.generation, NOW, 120))
+    }
+
+    @Test fun `prepare interruption is not ready while running lease recovery retains hash attempts and terminal counts`() {
+        recheckRun(5301)
+        repository.reserveRecheckItem(reservation(owner = 5301), NOW)
+        jdbc.update("UPDATE task_execution SET status='INTERRUPTED' WHERE id=5301")
+        repository.reconcileRecheck(5301, NOW)
+        val interrupted = repository.findRun(5301)!!
+        assertEquals(RecheckPhase.INTERRUPTED, repository.recheck(interrupted).control.phase)
+        assertFalse(interrupted.inputClosed)
+        assertNull(repository.claimDue(NOW, 120))
+        recheckRun(5302)
+        val row = repository.reserveRecheckItem(reservation("running-recovery", 5302), NOW)
+        assertTrue(phase(5302, RecheckPhase.READY))
+        val ready = repository.findRun(5302)!!
+        val hash = repository.recheck(ready).control.scopeHash!!
+        repository.startRecheck(5302, hash, ready.revision, NOW)
+        val first = claim()
+        assertNotNull(detail(first, "recovery-request").attemptId)
+        repository.reconcileRecheck(5302, NOW)
+        val second = repository.claimDue(NOW.plusSeconds(121), 120)!!
+        assertEquals(first.id, second.id); assertEquals(1, second.requestCount)
+        assertNotEquals(first.leaseToken, second.leaseToken)
+        assertEquals(hash, repository.recheck(repository.findRun(5302)!!).control.scopeHash)
+        assertTrue(repository.saveEvidenceAndOutcome(row.id, second.leaseToken!!, second.generation, result(), NOW.plusSeconds(121)))
+        repository.reconcileRecheck(5302, NOW.plusSeconds(121))
+        assertEquals(RecheckPhase.COMPLETED, repository.recheck(repository.findRun(5302)!!).control.phase)
+        val counts = repository.recheckCounts(5302)
+        assertEquals(counts.total, counts.processed + counts.queued + counts.errors + counts.cancelled)
+        assertEquals(1L, counts.processed)
+        assertEquals(mapOf("running-recovery" to 5302L), repository.latestRechecks(listOf("running-recovery")))
+    }
+    @Test fun `recheck read counts partition queued and keep protected as overlapping diagnostic`() {
+        recheckRun(5401)
+        val states = listOf("RESERVED", "QUEUED", "RETRY_WAIT", "RUNNING", "COMPLETED", "ERROR", "CANCELLED")
+        states.forEachIndexed { index, state ->
+            val item = repository.reserveRecheckItem(reservation("counts-$index", 5401), NOW)
+            jdbc.update("UPDATE discovery_verification_item SET state=?,reasons_json=? WHERE id=?",
+                state, if (index in listOf(0, 4, 6)) "[\"REVIEW_PROTECTED\",\"CONTACT_PROTECTED\"]" else "[]", item.id)
+        }
+        val before = jdbc.queryForList("SELECT * FROM discovery_verification_item WHERE owner_execution_id=? ORDER BY id", 5401)
+        val counts = repository.recheckCounts(5401)
+        assertEquals(7L, counts.total)
+        assertEquals(3L, counts.pending)
+        assertEquals(1L, counts.processing)
+        assertEquals(counts.queued, counts.pending + counts.processing)
+        assertEquals(3L, counts.protected, "multiple protection reasons count a person once, including terminal rows")
+        assertEquals(counts.total, counts.processed + counts.queued + counts.errors + counts.cancelled)
+        assertEquals(before, jdbc.queryForList("SELECT * FROM discovery_verification_item WHERE owner_execution_id=? ORDER BY id", 5401),
+            "counts must not write or recalculate admission")
+        assertEquals(0L, repository.recheckCounts(5402).protected)
+        assertEquals(0L, repository.recheckCounts(5402).pending)
     }
 }

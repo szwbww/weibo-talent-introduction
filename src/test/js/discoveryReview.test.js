@@ -126,6 +126,9 @@ function makeSandbox(overrides = {}) {
         cell.appendChild(makeEl("strong"));
         counts.appendChild(cell);
     }
+    const countStatus = el("discoveryReviewCountStatus");
+    countStatus.appendChild(makeEl("span"));
+    countStatus.appendChild(makeEl("button"));
     const pane = el("discoveryReviewPane");
     const actionButtons = ["APPROVE", "HOLD", "REJECT"].map((action) => {
         const btn = makeEl("button");
@@ -249,11 +252,25 @@ async function runNextTimer(sandbox) {
 // ── S-1/S-2/S-3 静态契约 ─────────────────────────────────────────────────────
 
 describe("c5 discovery review · S-1/S-2/S-3 contract", () => {
+    it("copies the counts status DOM and complete six-line S-1 CSS verbatim", () => {
+        const dom = '<div id="discoveryReviewCountStatus" role="status" aria-live="polite" data-state="PREPARING"><span data-count-message>正在统计全部发现档案…</span><button class="button secondary" type="button" data-count-refresh>刷新数量</button></div>';
+        const css = `#discoveryReviewCountStatus{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0 12px;color:#475569;font-size:12px;line-height:1.7}
+#discoveryReviewCountStatus[data-state="FAILED"],#discoveryReviewCountStatus[data-state="INTERRUPTED"]{color:#b91c1c}
+#discoveryReviewCountStatus button{min-height:32px}
+#discoveryReviewCountStatus button:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
+#discoveryReviewCountStatus button:focus-visible{outline:2px solid #1e40af;outline-offset:3px}
+#discoveryReviewCountStatus[hidden]{display:none!important}`;
+        assert.ok(indexHtml.includes(dom));
+        assert.ok(stylesCss.includes(css));
+        assert.ok(indexHtml.indexOf(dom) > indexHtml.indexOf('id="discoveryReviewCounts"'));
+        assert.ok(indexHtml.indexOf(dom) < indexHtml.indexOf('<div class="dr-toolbar">'));
+        assert.ok(!appJsSource.includes("discoveryReviewFetchDecisionTotal"));
+    });
     it("index.html declares the tabs, the pipeline wrapper, and every review id", () => {
         for (const id of [
             "discoveryReviewTabs", "discoveryPipelineTab", "discoveryReviewTab", "discoveryReviewHistoryTab", "discoveryPapersTab",
             "discoveryPipelinePane", "discoveryReviewPane", "discoveryReviewHistoryPane", "discoveryPapersPane",
-            "discoveryReviewCounts", "discoveryReviewSearch", "discoveryReviewIssue", "discoveryReviewDecision",
+            "discoveryReviewCounts", "discoveryReviewCountStatus", "discoveryReviewSearch", "discoveryReviewIssue", "discoveryReviewDecision",
             "discoveryReviewPageSize", "discoveryReviewApprovePage", "discoveryReviewApproveAll",
             "discoveryReviewSelection", "discoveryReviewError", "discoveryReviewResult",
             "discoveryReviewSelectPage", "discoveryReviewRows", "discoveryReviewPageInfo",
@@ -297,6 +314,9 @@ describe("c5 discovery review · S-1/S-2/S-3 contract", () => {
             "modal-body", "dr-review", "dr-counts", "dr-toolbar", "dr-confirm", "dr-table-wrap",
             "data-table", "dr-table", "dr-pager", "button", "secondary", "primary", "bsc-input"
         ]);
+        const recheckPlan = fs.readFileSync(path.join(__dirname, "../../../docs/plans/2026-10-24/discovery-recheck-09-frontend.md"), "utf8");
+        const recheckRoot = recheckPlan.match(/```html\n(<section class="dr-recheck"[\s\S]*?)\n```/)[1];
+        for (const match of recheckRoot.matchAll(/class="([^"]+)"/g)) match[1].split(/\s+/).forEach(cls => allowed.add(cls));
         const classes = block.match(/class="([^"]*)"/g) || [];
         classes.forEach((attr) => {
             attr.replace(/class="|"/g, "").split(/\s+/).filter(Boolean).forEach((cls) => {
@@ -441,10 +461,10 @@ describe("c5 discovery review · S-1/S-2/S-3 contract", () => {
         assert.ok(stylesCss.includes(s3), "S-3 CSS must be verbatim");
     });
 
-    it("keeps one cache key for all seventeen assets and other task modals at 700px", () => {
+    it("keeps one cache key for all eighteen assets and other task modals at 700px", () => {
         const keys = Array.from(indexHtml.matchAll(/[?"]v=([^"'&<>]+)/g)).map((m) => m[1]);
         const unique = Array.from(new Set(keys));
-        assert.strictEqual(keys.length, 17, "exactly seventeen cache-busted assets");
+        assert.strictEqual(keys.length, 18, "exactly eighteen cache-busted assets");
         assert.strictEqual(unique.length, 1, "all assets must share one cache key");
         assert.match(unique[0], /^[0-9]{8}-[a-z0-9-]+$/, "cache key must be <yyyymmdd>-<slug>");
         assert.notStrictEqual(unique[0], "20261004-mailbox-suspension-followup",
@@ -576,51 +596,106 @@ describe("c5 discovery review · lifecycle (I-1 / I-3)", () => {
     });
 });
 
+function countsResult(overrides = {}) {
+    return {
+        startedAt: "2026-10-24T10:00:00", asOf: "2026-10-24T10:00:20", uninitialized: 15140,
+        counts: Object.assign({ autoPassed: 7, needsReview: 10005, manualApproved: 3, held: 7 }, overrides)
+    };
+}
+
+function countMessage(sandbox) {
+    return sandbox.$("#discoveryReviewCountStatus").querySelectorAll("span")[0].textContent;
+}
+
 // ── 数量与列表 ───────────────────────────────────────────────────────────────
 
 describe("c5 discovery review · counts and list (I-1)", () => {
-    it("renders the four server counts and never counts auto-passed as pending", async () => {
+    it("uses one refresh then two-second status polls instead of six decision scans", async () => {
         const sandbox = loadSandbox();
         sandbox.apiHandler = (requestPath) => {
-            const query = new URLSearchParams(requestPath.split("?")[1] || "");
-            const decision = query.get("decision");
-            if (decision) {
-                const totals = {
-                    AUTO_PASSED: 7, NEEDS_REVIEW: 10005, MANUAL_APPROVED: 2,
-                    LEGACY_APPROVED: 1, HOLD: 3, REJECTED: 4
-                };
-                const total = totals[decision] || 0;
-                const from = Number(query.get("from") || 0);
-                const size = Number(query.get("size") || 100);
-                return { total, experts: Array.from({ length: Math.min(size, Math.max(0, total - from)) },
-                    (_, i) => expertRow(from + i, { decision })) };
-            }
+            if (requestPath.endsWith("/counts/refresh")) return { requestKey: "counts-1", state: "PREPARING" };
+            if (requestPath.includes("/counts?")) return {
+                requestKey: "counts-1", executionId: 42, state: "SUCCESS", result: countsResult()
+            };
             return { total: 20, experts: [expertRow(1)] };
         };
         await openReviewTab(sandbox);
-        const strongs = countStrongs(sandbox);
-        assert.strictEqual(strongs[0].textContent, "7", "自动通过 count");
-        assert.strictEqual(strongs[1].textContent, "10005", "待人工审核 count");
-        assert.strictEqual(strongs[2].textContent, "3", "人工/历史通过 = MANUAL_APPROVED + LEGACY_APPROVED");
-        assert.strictEqual(strongs[3].textContent, "7", "暂缓/不通过 = HOLD + REJECTED");
-        assert.notStrictEqual(strongs[1].textContent, "10012", "auto-passed must never inflate the pending count");
+        assert.deepStrictEqual(countStrongs(sandbox).map(node => node.textContent), ["—", "—", "—", "—"]);
+        assert.strictEqual(sandbox.__apiCalls.filter(call => call.path.endsWith("/counts/refresh")).length, 1);
+        assert.strictEqual(sandbox.__apiCalls.filter(call => call.path.includes("decision=")).length, 0);
+        assert.strictEqual(sandbox.__apiCalls.find(call => call.path.endsWith("/counts/refresh")).options.method, "POST");
+        assert.strictEqual(sandbox.__dr.state.countsTimer.ms, 2000);
+        await runNextTimer(sandbox);
+        assert.deepStrictEqual(countStrongs(sandbox).map(node => node.textContent), ["7", "10005", "3", "7"]);
+        assert.match(countMessage(sandbox), /未初始化 15140/);
+        assert.match(countMessage(sandbox), /非跨 ES\/MySQL 事务快照/);
+        assert.match(countMessage(sandbox), /统计区间 .* ～ /);
+        assert.strictEqual(sandbox.__dr.state.countsTimer, null);
     });
 
-    it("keeps the failing count cell undefined and surfaces a specific error", async () => {
+    it("retains old successful cards and timestamp on failure without overwriting the action result", async () => {
         const sandbox = loadSandbox();
+        let fail = false;
         sandbox.apiHandler = (requestPath) => {
-            const query = new URLSearchParams(requestPath.split("?")[1] || "");
-            const decision = query.get("decision");
-            if (decision === "HOLD") throw new Error("503 服务不可用");
-            if (decision) return { total: 1, experts: [expertRow(1, { decision })] };
+            if (requestPath.endsWith("/counts/refresh")) return { requestKey: "counts-1", state: "RUNNING", executionId: 42 };
+            if (requestPath.includes("/counts?")) return fail
+                ? { state: "FAILED", error: { code: "REVIEW_SCAN_FAILED", causeCategory: "HTTP_503", message: "ES unavailable" }, lastSuccess: countsResult() }
+                : { state: "SUCCESS", result: countsResult() };
             return { total: 0, experts: [] };
         };
         await openReviewTab(sandbox);
-        const strongs = countStrongs(sandbox);
-        assert.strictEqual(strongs[3].textContent, "—", "failed group must not fake a number");
-        assert.strictEqual(sandbox.$("#discoveryReviewError").hidden, false);
-        assert.ok(sandbox.$("#discoveryReviewError").textContent.includes("部分准入数量读取失败"));
-        assert.ok(sandbox.$("#discoveryReviewError").textContent.includes("暂缓 / 不通过"));
+        await runNextTimer(sandbox);
+        sandbox.$("#discoveryReviewResult").textContent = "人工暂缓成功";
+        fail = true;
+        sandbox.$("#discoveryReviewCountStatus").querySelectorAll("button")[0].click();
+        await flush();
+        await runNextTimer(sandbox);
+        assert.deepStrictEqual(countStrongs(sandbox).map(node => node.textContent), ["7", "10005", "3", "7"]);
+        assert.match(countMessage(sandbox), /数量统计失败（REVIEW_SCAN_FAILED \/ HTTP_503）/);
+        assert.match(countMessage(sandbox), /旧统计区间 2026-10-24T10:00:00/);
+        assert.match(countMessage(sandbox), /列表仍可使用/);
+        assert.strictEqual(sandbox.$("#discoveryReviewResult").textContent, "人工暂缓成功");
+        assert.strictEqual(sandbox.$("#discoveryReviewCountStatus").querySelectorAll("button")[0].disabled, false);
+    });
+
+    it("keeps unknown cards on first failure and exposes transport error codes", async () => {
+        const sandbox = loadSandbox({ apiHandler: () => { throw { data: { code: "COUNTS_DATABASE_FAILED", message: "offline" } }; } });
+        await openReviewTab(sandbox);
+        assert.deepStrictEqual(countStrongs(sandbox).map(node => node.textContent), ["—", "—", "—", "—"]);
+        assert.match(countMessage(sandbox), /COUNTS_DATABASE_FAILED/);
+        assert.match(countMessage(sandbox), /offline/);
+    });
+
+    it("isolates late refresh and poll replies and destroys count timers on tab exit and close", async () => {
+        const replies = [];
+        const sandbox = loadSandbox({ apiHandler: (requestPath) => {
+            if (requestPath.includes("/counts")) return new Promise(resolve => replies.push(resolve));
+            return { total: 0, experts: [] };
+        } });
+        await openReviewTab(sandbox);
+        sandbox.refreshDiscoveryReviewCounts();
+        await flush();
+        replies[1]({ requestKey: "new", state: "RUNNING" });
+        await flush();
+        replies[0]({ requestKey: "old", state: "FAILED", error: { code: "STALE" } });
+        await flush();
+        assert.strictEqual(sandbox.__dr.state.countsStatus.requestKey, "new");
+        const timer = sandbox.__dr.state.countsTimer;
+        await runNextTimer(sandbox);
+        sandbox.$("#discoveryPipelineTab").click();
+        replies[2]({ state: "SUCCESS", result: countsResult() });
+        await flush();
+        assert.strictEqual(timer.cancelled, true);
+        assert.strictEqual(sandbox.__dr.state.countsSuccess, null);
+        assert.strictEqual(sandbox.__dr.state.countsTimer, null);
+        sandbox.$("#discoveryReviewTab").click();
+        await flush();
+        replies[3]({ requestKey: "resume", state: "PREPARING" });
+        await flush();
+        const resumedTimer = sandbox.__dr.state.countsTimer;
+        sandbox.resetDiscoveryReviewPanel();
+        assert.strictEqual(resumedTimer.cancelled, true);
+        assert.strictEqual(sandbox.__dr.state.countsTimer, null);
     });
 
     it("uses admission presence for display and counts without a revision heuristic", async () => {
@@ -632,6 +707,8 @@ describe("c5 discovery review · counts and list (I-1)", () => {
         ];
         sandbox.apiHandler = (requestPath) => {
             const query = new URLSearchParams(requestPath.split("?")[1] || "");
+            if (requestPath.endsWith("/counts/refresh")) return { requestKey: "presence", state: "RUNNING" };
+            if (requestPath.includes("/counts?")) return { state: "SUCCESS", result: countsResult({ needsReview: 2 }) };
             const decision = query.get("decision");
             if (decision === "NEEDS_REVIEW") return { total: 3, experts: rows };
             if (decision === "UNINITIALIZED") return { total: 1, experts: [rows[0]] };
@@ -639,6 +716,7 @@ describe("c5 discovery review · counts and list (I-1)", () => {
             return { total: 3, experts: rows };
         };
         await openReviewTab(sandbox);
+        await runNextTimer(sandbox);
         assert.strictEqual(countStrongs(sandbox)[1].textContent, "2");
         const rendered = sandbox.$("#discoveryReviewRows").children;
         assert.strictEqual(rendered[0].children[5].children[0].textContent, "未初始化");
@@ -1000,8 +1078,37 @@ describe("c5 discovery review · scope and confirm (I-2)", () => {
         assert.ok(indexHtml.includes('id="taskModalRunHead"'));
         assert.ok(indexHtml.includes('id="taskModalTrafficHead"'));
         const keys = [...indexHtml.matchAll(/\?v=([^"<>]+)/g)].map(match => match[1]);
-        assert.strictEqual(keys.length, 17);
+        assert.strictEqual(keys.length, 18);
         assert.strictEqual(new Set(keys).size, 1);
         assert.ok(indexHtml.includes('<script src="task-modal-runtime.js"></script>'));
+    });
+});
+
+describe("child09 host-only recheck bridge", () => {
+    it("keeps seven columns and all old manual protections, with an independent flow button", () => {
+        const sandbox = loadSandbox();
+        const row = sandbox.buildDiscoveryReviewRow({ docId: "protected", decision: "MANUAL_APPROVED" });
+        assert.strictEqual(row.children.length, 7);
+        assert.strictEqual(row.children[0].children[0].disabled, true);
+        const actions = row.children[6].children;
+        assert.strictEqual(actions.length, 4);
+        assert.deepStrictEqual(actions.slice(0, 3).map(button => button.textContent), ["通过", "暂缓", "不通过"]);
+        assert.ok(actions.slice(0, 3).every(button => button.disabled));
+        assert.strictEqual(actions[3].textContent, "验证流程");
+        assert.strictEqual(actions[3].className, "button secondary small");
+        assert.strictEqual(actions[3].disabled, false);
+        assert.ok(indexHtml.includes('id="discoveryRecheckRoot"'));
+    });
+    it("bridges real selection/filter and existing refresh/paper reader without a second manual approval path", () => {
+        const bridge = extractFn("ensureDiscoveryRecheck");
+        assert.ok(bridge.includes("Array.from(discoveryReviewState.selected)"));
+        assert.ok(bridge.includes("refreshDiscoveryReviewCounts()"));
+        assert.ok(bridge.includes("refreshDiscoveryReviewList()"));
+        assert.ok(bridge.includes("ensureDiscoveryPapers()?.openPaper(ref, trigger, signal)"));
+        assert.ok(appJsSource.includes('$("#discoveryRecheckRoot")?.querySelector("dialog[open]")'),
+            "native recheck dialog owns Escape even when a disabled submit leaves focus on body");
+        assert.ok(!bridge.includes("/confirm") && !bridge.includes("/prepare"));
+        assert.ok(extractFn("resetDiscoveryReviewPanel").includes("discoveryRecheckView.unmount()"));
+        assert.ok(extractFn("initDiscoveryReview").includes("discoveryRecheckView = null"));
     });
 });

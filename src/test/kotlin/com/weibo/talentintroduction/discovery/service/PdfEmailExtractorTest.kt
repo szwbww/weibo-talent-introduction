@@ -295,9 +295,18 @@ class PdfEmailExtractorTest {
             assertEquals("PDF_PARSE", observation.methodUsed, observation.case)
             assertEquals(1, observation.httpRequests, observation.case)
             assertEquals(true, observation.fulltextObtained, observation.case)
-            // X-1：错误归属不允许出现在中间 Contact，也不允许出现在最终 emails。
-            assertTrue(observation.contacts.isEmpty(), "${observation.case} contacts: ${observation.contacts}")
-            for (email in observation.resolved) {
+            // Only Mette's independent † footer is restored; Lun and all ambiguous owners stay unknown.
+            val restoredEmail = if (observation.case == "lun") "mgaarde1@lsu.edu" else null
+            if (restoredEmail != null) {
+                val contact = observation.contacts.single()
+                assertEquals(restoredEmail, contact.email)
+                val author = observation.authors[contact.authorIndex]
+                assertEquals("Mette B. Gaarde", "${author.givenNames} ${author.familyNames}")
+                val restored = observation.resolved.single { it.email == restoredEmail }
+                assertEquals("Mette B. Gaarde", "${restored.givenNames} ${restored.familyNames}")
+                assertTrue(com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.validEvidence(restored.identityEvidence))
+            } else assertTrue(observation.contacts.isEmpty(), "${observation.case} contacts: ${observation.contacts}")
+            for (email in observation.resolved.filter { it.email != restoredEmail }) {
                 assertNull(email.givenNames, "${observation.case} ${email.email}")
                 assertNull(email.familyNames, "${observation.case} ${email.email}")
                 assertNull(email.orcidId, "${observation.case} ${email.email}")

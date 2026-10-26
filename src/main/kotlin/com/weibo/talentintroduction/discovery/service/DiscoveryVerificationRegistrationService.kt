@@ -17,7 +17,8 @@ import org.springframework.web.server.ResponseStatusException
 import java.time.Clock
 
 /** Passed explicitly across executor boundaries; never inferred from a task progress slot. */
-data class DiscoveryVerificationExecution(val executionId: Long?, val run: VerificationRun? = null) {
+data class DiscoveryVerificationExecution(val executionId: Long?, val run: VerificationRun? = null,
+    val archivedPaper: ArchivedPaperExecution? = null) {
     init {
         require(executionId == null || executionId > 0)
         require(run == null || executionId == run.executionId)
@@ -50,7 +51,10 @@ class DiscoveryVerificationRegistrationService(
     private val transactions: TransactionTemplate,
     private val apolloSettings: DiscoveryApolloSettingsService,
     private val clock: Clock = Clock.systemUTC(),
-    private val countrySupplement: DiscoveryCountrySupplementService? = null
+    private val countrySupplement: DiscoveryCountrySupplementService? = null,
+    private val traces: com.weibo.talentintroduction.discovery.repository.DiscoveryVerificationTraceRepository =
+        com.weibo.talentintroduction.discovery.repository.DiscoveryVerificationTraceRepository(jdbc),
+    private val papers: PaperVerificationEvidenceService? = null
 ) : RegistrationRecovery {
     private val mapper = jacksonObjectMapper().findAndRegisterModules()
         .disable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
@@ -98,7 +102,7 @@ class DiscoveryVerificationRegistrationService(
         val settings = mapper.writeValueAsString(linkedMapOf(
             "mode" to properties.mode.name, "policyVersion" to properties.mode.policyVersion,
             "apolloMatchingVersion" to 2,
-            "ruleVersion" to 2,
+            "ruleVersion" to 3,
             "institutionAliasVersion" to DiscoveryInstitutionNormalizer.ALIAS_VERSION,
             "apolloLimitPolicy" to "PROVIDER",
             "apolloAccess" to access.toJson(mapper),
@@ -153,6 +157,16 @@ class DiscoveryVerificationRegistrationService(
             val savedMap = linkedMapOf<String, Any?>("docId" to docId, "identityHash" to finalSnapshot.identityHash,
                 "factFingerprint" to finalSnapshot.factFingerprint, "profile" to finalProfile, "admissionRevision" to admission?.revision,
                 "sourceName" to sourceName, "sourceItemKey" to sourceItemKey, "constructedAt" to clock.instant().toString())
+            val archived = context.archivedPaper
+            if (archived != null) {
+                require(archived.source.sourceName == sourceName && archived.source.sourceItemKey == sourceItemKey)
+                require(archived.source.sourceExecutionId != context.executionId)
+            }
+            val evaluatedAt = archived?.evaluationAt ?: clock.instant()
+            val refs = archived?.let { listOf(it.source) } ?: papers?.locate(listOf(
+                com.weibo.talentintroduction.discovery.archive.PaperArchiveLookup(
+                    run.executionId, sourceName, sourceItemKey, paper?.doi, paper?.pmid, paper?.pmcId)))?.values?.flatten().orEmpty()
+            savedMap["executionContext"] = VerificationExecutionContext(evaluatedAt, refs)
             receipt?.let { savedMap["countrySupplement"] = it }
             val saved = mapper.writeValueAsString(savedMap)
             val item = repository.reserveItem(VerificationReservation(run.executionId, docId, finalSnapshot.identityHash,
@@ -260,12 +274,14 @@ class DiscoveryVerificationRegistrationService(
             transactions.executeWithoutResult {
                 // run -> admission -> item. No external reads while holding these locks.
                 jdbc.queryForObject("SELECT execution_id FROM discovery_verification_run WHERE execution_id=? FOR UPDATE", Long::class.java, item.ownerExecutionId)
-                if (item.state == VerificationState.RESERVED) {
+                if (item.reviewEpoch == 0L && item.policyVersion == VerificationMode.ENFORCE.policyVersion &&
+                    item.state == VerificationState.RESERVED) {
                     admissions.initializeAdmission(item.expertDocId, item.identityHash, "NEEDS_REVIEW",
                         item.policyVersion, java.time.LocalDateTime.ofInstant(clock.instant(), java.time.ZoneOffset.UTC))
                 }
                 val count = jdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_item WHERE owner_execution_id=? AND activated_at IS NOT NULL FOR UPDATE", Long::class.java, item.ownerExecutionId)!!
-                repository.activateItem(item.id, (count / 100 + 1).toInt(), clock.instant())
+                val activated = repository.activateItem(item.id, (count / 100 + 1).toInt(), clock.instant())
+                traces.initSteps(activated.id, clock.instant())
             }
         } catch (e: Exception) { throw DiscoveryRegistrationException(e) }
     }

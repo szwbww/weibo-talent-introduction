@@ -32,7 +32,7 @@ import java.util.concurrent.TimeUnit
 @DataJdbcTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
-@TestPropertySource(properties = ["spring.flyway.placeholder-replacement=false", "spring.flyway.target=158"])
+@TestPropertySource(properties = ["spring.flyway.placeholder-replacement=false", "spring.flyway.target=161"])
 @Import(DiscoveryVerificationRepository::class, DiscoveryReviewRepository::class, DiscoveryVerificationQueryService::class,
     DiscoveryVerificationReportingIT.Config::class)
 class DiscoveryVerificationReportingIT {

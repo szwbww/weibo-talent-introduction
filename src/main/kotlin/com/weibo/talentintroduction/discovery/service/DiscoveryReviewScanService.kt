@@ -146,15 +146,19 @@ class DiscoveryReviewScanService(
         val issueFilter = filter.issue?.takeIf { it.isNotBlank() && it != FILTER_ALL }
         var scrollId: String? = null
         try {
-            var response: JsonNode? = restTemplate.exchange(
+            var response = restTemplate.exchange(
                 "${properties.baseUrl}/$index/_search?scroll=$SCROLL_TTL",
                 HttpMethod.POST,
                 HttpEntity(searchBody(filter, batchSize, from = null), headers()),
                 JsonNode::class.java
             ).body
             scrollId = response?.path("_scroll_id")?.asText()?.takeIf { it.isNotBlank() }
-            while (response != null) {
-                val hits = parseHits(response)
+            while (true) {
+                val complete = requireCompleteScroll(response)
+                val hits = parseHits(complete)
+                if (hits.size >= batchSize && complete.path("_scroll_id").asText("").isBlank()) {
+                    throw DiscoveryReviewScanIntegrityException("REVIEW_SCAN_SCROLL_LOST", "完整扫描页缺少 scrollId")
+                }
                 if (hits.isEmpty()) break
                 val experts = enrich(hits, filter.level).filter {
                     matchesDecision(it.row, decisionFilter) && matchesIssue(it.row, issueFilter)
@@ -181,6 +185,22 @@ class DiscoveryReviewScanService(
                 } catch (_: Exception) {}
             }
         }
+    }
+
+    private fun requireCompleteScroll(response: JsonNode?): JsonNode {
+        if (response == null) {
+            throw DiscoveryReviewScanIntegrityException("REVIEW_SCAN_EMPTY_BODY", "ES 扫描响应为空")
+        }
+        if (response.path("timed_out").asBoolean(false)) {
+            throw DiscoveryReviewScanIntegrityException("REVIEW_SCAN_TIMED_OUT", "ES 扫描超时，结果不完整")
+        }
+        if (response.path("_shards").path("failed").asInt(0) > 0) {
+            throw DiscoveryReviewScanIntegrityException("REVIEW_SCAN_SHARDS_FAILED", "ES 扫描存在失败分片")
+        }
+        if (!response.path("hits").path("hits").isArray) {
+            throw DiscoveryReviewScanIntegrityException("REVIEW_SCAN_INVALID_RESPONSE", "ES 扫描缺少 hits 数组")
+        }
+        return response
     }
 
     // ── 内部：ES 查询 / 命中解析 / admission 批量合并 ─────────────────────────

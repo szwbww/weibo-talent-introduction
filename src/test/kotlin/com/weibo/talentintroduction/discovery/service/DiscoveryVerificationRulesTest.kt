@@ -130,7 +130,7 @@ class DiscoveryVerificationRulesTest {
         assertTrue(rules.evaluate(snapshot, emptyList(), search(2, candidate.copy(orcid = "0000-0001-0000-0001")), ruleVersion = 2)
             .reasonCodes.contains("ORCID_CONFLICT"))
         assertEquals(VerificationOutcome.PROTECTED, rules.evaluate(snapshot, emptyList(), search(2), protected = true, ruleVersion = 2).outcome)
-        assertThrows(IllegalArgumentException::class.java) { rules.evaluate(snapshot, emptyList(), search(2), ruleVersion = 3) }
+        assertThrows(IllegalArgumentException::class.java) { rules.evaluate(snapshot, emptyList(), search(2), ruleVersion = 4) }
     }
 
     @Test fun `Assistenzprofessor needs explicit positive prefix and cannot extend email identity route`() {
@@ -477,4 +477,111 @@ class DiscoveryVerificationRulesTest {
 
     private fun replaySha(bytes: ByteArray): String = java.security.MessageDigest.getInstance("SHA-256")
         .digest(bytes).joinToString("") { "%02x".format(it) }
+
+    private fun namedSnapshot(given: String, family: String): VerificationSnapshot {
+        val original = ruleSnapshot()
+        val proof = DiscoveryIdentity.verified("ada@example.invalid", given, family,
+            "ORCID_RECORD_SHA256:" + "a".repeat(64), "0000-0002-1825-0097", null)
+        return original.copy(profile = original.profile.copy(givenNames = given, familyNames = family, identityVerification = proof))
+    }
+
+    @Test fun `Agbo ordering reconciles only bound ORCID name and never broadens Apollo matching`() {
+        val snapshot = namedSnapshot("Friday Joseph", "Agbo")
+        val name = ruleFact("name", "Agbo Friday Joseph").copy(sourceUrl = "https://pub.orcid.org/v3.0/${snapshot.boundOrcid}/person")
+        val facts = listOf(name, ruleJob("Assistant Professor", AssertionSource.SELF))
+        val old = rules.evaluate(snapshot, facts, ruleVersion = 2)
+        val repaired = rules.evaluate(snapshot, facts, ruleVersion = 3)
+        assertEquals(listOf("NAME_CONFLICT"), old.reasonCodes)
+        assertEquals(VerificationQualification.MET, repaired.qualification)
+        assertEquals(VerificationOutcome.DIRECT_CLEAR, repaired.outcome)
+        assertEquals(facts, repaired.evidence)
+        assertFalse(rules.sameName(name.value, snapshot.fullName, 3))
+        assertFalse(rules.nameMatches(ApolloCandidate("x", "Agbo", "Friday Joseph", null, name.value, null, null),
+            setOf(snapshot.fullName), emptySet(), false, 3))
+        listOf(name.copy(provider = "APOLLO"), name.copy(sourceUrl = "https://example.invalid/person"),
+            name.copy(sourceUrl = "https://pub.orcid.org/v3.0/0000-0001-0000-0001/person"),
+            name.copy(sourceUrl = "https://pub.orcid.org/v3.0/${snapshot.boundOrcid}/employments"),
+            name.copy(sourceUrl = "https://pub.orcid.org/v3.0/${snapshot.boundOrcid}/person?fake=1")).forEach {
+            assertEquals(listOf("NAME_CONFLICT"), rules.evaluate(snapshot, listOf(it), ruleVersion = 3).reasonCodes)
+        }
+        assertEquals(listOf("FACT_CHANGED"), rules.evaluate(snapshot, listOf(name.copy(identityHash = "e".repeat(64))), ruleVersion = 3).reasonCodes)
+        assertEquals(listOf("FACT_CHANGED"), rules.evaluate(snapshot, listOf(name.copy(factFingerprint = "e".repeat(64))), ruleVersion = 3).reasonCodes)
+        val unbound = snapshot.copy(profile = snapshot.profile.copy(orcidId = "0000-0001-5109-3700"))
+        assertNull(unbound.boundOrcid)
+        assertTrue(rules.evaluate(unbound, facts, ruleVersion = 3).reasonCodes.contains("NAME_CONFLICT"))
+        val initials = name.copy(value = "Agbo F. J.", sourceUrl = "https://pub.orcid.org/v3.0/${snapshot.boundOrcid}/other-names")
+        assertEquals(VerificationQualification.UNKNOWN, rules.evaluate(snapshot, listOf(initials), ruleVersion = 3).qualification)
+        listOf("Agbo Friday", "Agbo Joseph Friday", "Agbo F. X.", "Agbo Agbo Friday").forEach {
+            assertEquals(listOf("NAME_CONFLICT"), rules.evaluate(snapshot, listOf(name.copy(value = it)), ruleVersion = 3).reasonCodes, it)
+        }
+        val spelling = namedSnapshot("Lakshmana Phaneendra", "Maguluri")
+        val misspelled = name.copy(value = "mangulur Lakshmana Phaneendra")
+        assertEquals(listOf("NAME_CONFLICT"), rules.evaluate(spelling, listOf(misspelled), ruleVersion = 3).reasonCodes)
+        val missingInitial = namedSnapshot("M. Amina", "Begum")
+        assertEquals(listOf("NAME_CONFLICT"), rules.evaluate(missingInitial,
+            listOf(name.copy(value = "Begum Amina")), ruleVersion = 3).reasonCodes)
+    }
+
+    @Test fun `R Krishnamoorthy repaired name remains unknown without completed doctorate and age evidence`() {
+        val snapshot = namedSnapshot("R.", "Krishnamoorthy")
+        val name = ruleFact("name", "Krishnamoorthy R.").copy(sourceUrl = "https://pub.orcid.org/v3.0/${snapshot.boundOrcid}/person")
+        assertEquals(listOf("NAME_CONFLICT"), rules.evaluate(snapshot, listOf(name), ruleVersion = 2).reasonCodes)
+        val repaired = rules.evaluate(snapshot, listOf(name), ruleVersion = 3)
+        assertEquals(VerificationQualification.UNKNOWN, repaired.qualification)
+        assertEquals(VerificationOutcome.PENDING, repaired.outcome)
+        assertEquals(listOf("completedDoctorate", "reliableAge"), repaired.missingFields)
+        assertEquals(listOf("QUALIFICATION_EVIDENCE_MISSING"), repaired.reasonCodes)
+    }
+
+    @Test fun `Brendan compound current title meets qualification but incomplete search stays pending`() {
+        val snapshot = namedSnapshot("Brendan James", "Keegan")
+        val job = ruleJob("Lecturer/Assistant Professor in Marketing", AssertionSource.SELF)
+        val search = ApolloSearchEvidence(matchingVersion = 2)
+        val old = rules.evaluate(snapshot, listOf(job), search, ruleVersion = 2)
+        val repaired = rules.evaluate(snapshot, listOf(job), search, ruleVersion = 3)
+        assertEquals(VerificationQualification.UNKNOWN, old.qualification)
+        assertEquals(VerificationQualification.MET, repaired.qualification)
+        assertEquals(VerificationOutcome.PENDING, repaired.outcome)
+        assertEquals(listOf("SEARCH_INCOMPLETE"), repaired.reasonCodes)
+        assertEquals(VerificationRoute.NONE, repaired.route)
+        listOf("assistant to Professor", "Lecturer/retired Professor", "Lecturer/emeritus Professor",
+            "Student/Assistant Professor", "Professor/not currently employed", "Professor/Lab of someone").forEach {
+            assertEquals(VerificationQualification.UNKNOWN, rules.evaluate(snapshot, listOf(ruleJob(it)), ruleVersion = 3).qualification, it)
+        }
+        assertEquals(VerificationQualification.UNKNOWN, rules.evaluate(snapshot,
+            listOf(job.copy(temporalScope = TemporalScope.HISTORICAL)), ruleVersion = 3).qualification)
+        assertEquals(VerificationQualification.UNKNOWN, rules.evaluate(snapshot,
+            listOf(job.copy(temporalScope = TemporalScope.UNKNOWN)), ruleVersion = 3).qualification)
+        assertEquals(VerificationOutcome.PROTECTED, rules.evaluate(snapshot, listOf(job), protected = true, ruleVersion = 3).outcome)
+        assertEquals("Lecturer/Assistant Professor in Marketing", mapper.readTree(job.value).path("role").asText())
+    }
+
+    @Test fun `legacy zero one two results retain every decision field and explicit evaluation freezes trace and age`() {
+        val snapshot = ruleSnapshot()
+        for (version in 0..2) {
+            val job = ruleJob("Lecturer/Assistant Professor in Marketing", AssertionSource.SELF)
+            val actual = rules.evaluate(snapshot, listOf(job), ruleVersion = version)
+            val canonical = jacksonObjectMapper().findAndRegisterModules()
+                .enable(com.fasterxml.jackson.databind.MapperFeature.SORT_PROPERTIES_ALPHABETICALLY)
+                .enable(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
+            val expectedTrace = VerificationDecisionTrace(ruleVersion = version, aliasVersion = 0, evaluatedAt = ruleClock.instant(),
+                inputHash = DiscoveryInstitutionNormalizer.sha256(canonical.writeValueAsString(
+                    listOf(snapshot, listOf(job), null, null, false))), evidenceRefs = listOf("evidence[0]"),
+                total = 0, truncated = false, candidates = emptyList())
+            assertEquals(VerificationDecision(VerificationQualification.UNKNOWN, VerificationRoute.NONE, VerificationOutcome.PENDING,
+                listOf("QUALIFICATION_EVIDENCE_MISSING"), listOf("completedDoctorate", "reliableAge"), listOf(job),
+                java.time.LocalDate.parse("2026-10-18"), trace = expectedTrace), actual)
+        }
+        val facts = listOf(ruleFact("education", """{"completed":true,"role":"PhD awarded"}"""),
+            ruleFact("birthDate", "1987-10-18", AssertionSource.SELF))
+        val frozen = Instant.parse("2026-10-18T00:00:00Z")
+        val first = rules.evaluate(snapshot, facts, ruleVersion = 3, evaluatedAt = frozen)
+        val laterRules = DiscoveryVerificationRules(Clock.fixed(Instant.parse("2035-01-01T00:00:00Z"), ZoneOffset.UTC))
+        assertEquals(first, laterRules.evaluate(snapshot, facts, ruleVersion = 3, evaluatedAt = frozen))
+        assertEquals(VerificationQualification.MET, first.qualification)
+        assertEquals(frozen, first.trace!!.evaluatedAt)
+        assertEquals(VerificationQualification.NOT_MET, laterRules.evaluate(snapshot, facts, ruleVersion = 3).qualification)
+        assertEquals(VerificationQualification.NOT_MET, rules.evaluate(snapshot, facts, ruleVersion = 3,
+            evaluatedAt = Instant.parse("2027-10-18T00:00:00Z")).qualification)
+    }
 }

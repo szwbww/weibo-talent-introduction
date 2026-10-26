@@ -239,7 +239,7 @@ class DiscoveryPaperArchiveService(
             val size = sizes(); val disk = diskProbe(root())
             if (bytes.size.toLong() > settings.maxBytes - size.first - size.second || disk.usable - bytes.size < settings.minFreeBytes) throw ArchiveException("ARCHIVE_STORAGE_BLOCKED", 409)
         }
-        val media = if (mediaType.substringBefore(';').lowercase() == "application/pdf" && bytes.take(5).toByteArray().contentEquals("%PDF-".toByteArray())) "application/pdf" else "text/plain"
+        val media = if (PaperContentFormat.detect(bytes, a.kind) == "PDF") "application/pdf" else "text/plain"
         val temp = root().resolve(".tmp").resolve(UUID.randomUUID().toString())
         activeWriters.add(temp)
         try {
@@ -340,12 +340,19 @@ class DiscoveryPaperArchiveService(
             attempts.isNotEmpty() && attempts.all { it.status == ArchiveAttemptStatus.DELETED } -> ArchiveRecordState.DELETED
             else -> ArchiveRecordState.NOT_STORED
         }
-        val outcome = r.outcomeJson?.let { mapper.readTree(it) }?.let {
-            if (it.path("schemaVersion").asInt() == 1 && it.path("first").has("outcome")) it.path("first").get("outcome") else it
+        val outcome = r.outcomeJson?.let { raw ->
+            try {
+                mapper.readTree(raw)?.let {
+                    if (it.path("schemaVersion").asInt() == 1) it.path("first").get("outcome") else it
+                }
+            } catch (_: Exception) { null }
         }
-        val summary = outcome?.let { o ->
-            fun count(key: String): Int = o.path(key).let { if (it.isArray) it.size() else it.asInt(0) }
-            ArchiveExtractionSummary(count("emails"), count("resolved"), count("unresolved"))
+        val summary = outcome?.get("emails")?.takeIf { it.isArray }?.let { emails ->
+            val resolved = emails.count {
+                it.path("givenNames").isTextual && it.path("givenNames").asText().isNotBlank() &&
+                    it.path("familyNames").isTextual && it.path("familyNames").asText().isNotBlank()
+            }
+            ArchiveExtractionSummary(emails.size(), resolved, emails.size() - resolved)
         }
         val analysis = r.analysisJson?.let { mapper.readTree(it) }
         return ArchiveRow(r.id,r.revision,r.executionId,r.sourceName,r.paperKey,paper.path("title").takeUnless { it.isMissingNode || it.isNull }?.asText(),paper.path("doi").takeUnless { it.isMissingNode || it.isNull }?.asText(),
@@ -380,7 +387,7 @@ class DiscoveryPaperArchiveService(
         if (a.status != ArchiveAttemptStatus.SAVED || !validBlob(b)) throw ArchiveException("SOURCE_MISSING", 410)
         Files.newInputStream(blobPath(b.sha256), LinkOption.NOFOLLOW_LINKS).use { input ->
             val magic = ByteArray(5); val count = input.read(magic)
-            val pdf = b.mediaType == "application/pdf" && count == 5 && magic.contentEquals("%PDF-".toByteArray())
+            val pdf = count == 5 && PaperContentFormat.detect(magic) == "PDF"
             Files.newInputStream(blobPath(b.sha256), LinkOption.NOFOLLOW_LINKS).use { body -> action(ArchiveContent(if (pdf) "application/pdf" else "text/plain;charset=UTF-8",b.sizeBytes,"paper-$recordId-$attemptId.${if (pdf) "pdf" else "txt"}"), body) }
         }
     }

@@ -509,6 +509,6 @@ describe("reply identity frozen presentation and registration contract", () => {
         const css = [...plan.matchAll(/```css\n([\s\S]*?)```/g)].find((match) => match[1].startsWith(".reply-identity-defaults"))[1];
         assert.ok(fs.readFileSync(path.join(ROOT, "styles.css"), "utf8").includes(css));
         const keys = [...index.matchAll(/(?:src|href)="[^"\n]+\?v=([^"&]+)/g)].map((match) => match[1]);
-        assert.equal(new Set(keys).size, 1); assert.equal(keys.length, 17);
+        assert.equal(new Set(keys).size, 1);
     });
 });

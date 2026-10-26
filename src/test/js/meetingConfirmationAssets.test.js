@@ -31,14 +31,17 @@ const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const CSS_ORDER = ["styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css",
     "world-clock.css"];
 const JS_ORDER = ["trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js",
-    "mailbox-chat.js", "app.js", "world-clock.js"];
+    "mailbox-chat.js", "discovery-recheck.js", "app.js", "world-clock.js"];
 const ALL_ASSETS = [...CSS_ORDER, ...JS_ORDER];
 
 describe("T3: 11 个带版本资源统一键与注册（I-1/S-1）", () => {
     it(`恰好 11 个带 ?v= 资源且全部等于 ${CACHE_KEY}，无旧键残留`, () => {
         const keys = [...html.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
-        assert.strictEqual(keys.length, 17, `index.html 必须恰好注册 17 个带版本资源，实际 ${keys.length}`);
+        assert.strictEqual(keys.length, 18, `index.html 必须恰好注册 18 个带版本资源，实际 ${keys.length}`);
         assert.ok(keys.every((key) => key === CACHE_KEY), `全部键必须等于 ${CACHE_KEY}: ${keys}`);
+        const recheckPlan = fs.readFileSync(path.join(__dirname, "../../../docs/plans/2026-10-24/discovery-recheck-09-frontend.md"), "utf8");
+        assert.strictEqual(CACHE_KEY, recheckPlan.match(/key=`([^`]+)`/)[1]);
+        assert.ok(html.indexOf("discovery-recheck.js?v=") < html.indexOf("app.js?v="), "重审组件必须先于宿主");
         assert.ok(!html.includes("20260910-mailbox-spacing"),
             "上一缓存键 20260910-mailbox-spacing 必须 0 命中 index.html");
     });
@@ -50,14 +53,14 @@ describe("T3: 11 个带版本资源统一键与注册（I-1/S-1）", () => {
         let match;
         while ((match = linkRe.exec(html)) !== null) refs.push({ tag: "link", name: match[1] });
         while ((match = scriptRe.exec(html)) !== null) refs.push({ tag: "script", name: match[1] });
-        assert.strictEqual(refs.length, 17, "link+script 带版本注册行合计必须为 17");
+        assert.strictEqual(refs.length, 18, "link+script 带版本注册行合计必须为 18");
         for (const asset of ALL_ASSETS) {
             const hits = refs.filter((ref) => ref.name === asset).length;
             assert.strictEqual(hits, 1, `${asset} 必须恰好注册 1 次，实际 ${hits}`);
         }
         // 无重名：11 个名字互不重复
-        assert.strictEqual(new Set(refs.map((ref) => ref.name)).size, 17,
-            "11 个注册资源名不得重复");
+        assert.strictEqual(new Set(refs.map((ref) => ref.name)).size, 18,
+            "注册资源名不得重复");
     });
 
     it("link 全在 head、script 全在 body；task-modal-runtime.js 未版本化且位于组件脚本之前", () => {

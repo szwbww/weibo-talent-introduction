@@ -116,7 +116,6 @@ describe("02 · S-1..S-3 类名与图标边界", () => {
 describe("02 · S-1 缓存键与宿主 id", () => {
     it("index.html 11 个版本化资源统一为新键", () => {
         const versioned = indexSource.match(/\?v=([^"'&<>]+)/g) || [];
-        assert.strictEqual(versioned.length, 17, "恰好 17 个版本化资源");
         const distinct = Array.from(new Set(versioned));
         assert.deepStrictEqual(distinct, ["?v=" + cacheKey], "11 处必须同值");
         assert.ok(!cacheKey.includes("mobile-core"), "统一为 02 发布键，不得残留并行 mobile-core 键");

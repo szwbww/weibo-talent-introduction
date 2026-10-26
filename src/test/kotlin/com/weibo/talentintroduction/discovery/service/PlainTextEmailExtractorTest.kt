@@ -17,6 +17,24 @@ class PlainTextEmailExtractorTest {
     )
 
     @Test
+    fun `bare at and dot require explicit complete contact fields`() {
+        for (input in listOf("available at www.nature.com", "available at science.nature.com",
+            "bayerlein at example.edu", "Email: bayerlein at incomplete",
+            "Results were obtained at lab dot university dot edu")) {
+            assertTrue(extractor.extract(input).isEmpty(), input)
+        }
+        for ((input, expected) in listOf(
+            "Email: bayerlein at example.edu" to "bayerlein@example.edu",
+            "Contact: bayerlein at example dot edu" to "bayerlein@example.edu",
+            "E-mail: bayerlein@example dot edu" to "bayerlein@example.edu",
+            "Email: available at example.edu" to "available@example.edu",
+            "a(at)example.edu" to "a@example.edu",
+            "a[AT]example[DOT]edu" to "a@example.edu",
+            "mailto:a@example.edu" to "a@example.edu")) {
+            assertEquals(listOf(expected), extractor.extract(input), input)
+        }
+    }
+    @Test
     fun `extracts standard emails`() {
         val result = extractor.extract("Contact: john.smith@oxford.ac.uk, jane.doe@cam.ac.uk")
         assertEquals(setOf("john.smith@oxford.ac.uk", "jane.doe@cam.ac.uk"), result.toSet())

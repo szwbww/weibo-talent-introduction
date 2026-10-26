@@ -69,7 +69,7 @@ data class ArchiveDeleteResult(val deletedFiles: Int, val deletedBytes: Long, va
 data class ArchiveContent(val mediaType: String, val length: Long, val filename: String)
 
 enum class PaperEvidenceStatus { FOUND, NOT_FOUND, PARTIAL, ERROR }
-enum class PaperQualificationKind { ASSISTANT_PROFESSOR, ASSOCIATE_PROFESSOR, PROFESSOR, COMPLETED_DOCTORATE, DOCTORAL_STUDENT, CONFLICT }
+enum class PaperQualificationKind { ASSISTANT_PROFESSOR, ASSOCIATE_PROFESSOR, PROFESSOR, COMPLETED_DOCTORATE, DOCTORAL_STUDENT, BIRTH_DATE, CONFLICT }
 data class PaperQualificationFact(val authorIndex: Int, val authorName: String, val kind: PaperQualificationKind,
     val originalTerm: String, val quote: String, val page: Int?, val paragraph: Int, val paperYear: Int?,
     val bodySha256: String, val temporalScope: String = "PUBLICATION_TIME", val rule: String)

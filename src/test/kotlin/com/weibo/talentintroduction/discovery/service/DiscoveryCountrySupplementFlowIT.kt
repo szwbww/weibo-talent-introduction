@@ -54,7 +54,7 @@ class DiscoveryCountrySupplementFlowIT {
             check(DockerClientFactory.instance().isDockerAvailable) { "Isolated Docker MySQL is required; skipping is not PASS" }
             mysql.start()
             val ds = DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
-            Flyway.configure().dataSource(ds).placeholderReplacement(false).target("160").load().migrate()
+            Flyway.configure().dataSource(ds).placeholderReplacement(false).target("161").load().migrate()
             jdbc = JdbcTemplate(ds)
             manager = DataSourceTransactionManager(ds)
         }
