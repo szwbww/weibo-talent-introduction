@@ -92,3 +92,11 @@
 - 完整构建：同一JDK执行`mvn clean package`，exit0；5634 tests / 0 failures / 0 errors / 24 skipped；WAR已生成。跳过数为默认可选集成用例，定向真实MySQL验证未跳过。不把本地含既有未提交配置的WAR作为发布物，发布仍由工具从固定提交重新构建。
 - fix-v复核模式AUDIT_ONLY：FIX-1/P1-1源因RESOLVED；默认扫描与显式CLI均有独立运行收据；正式HTTP策略、显式连接、默认无业务写、准入/状态机/归档恢复保持不变。Accumulation：✅ 重复apply新增0；Cross-plan：✅ 生产扫描隔离且CLI保留；Deleted code：✅ 无扫描stereotype且无兼容别名；Scope：✅ 本次仅授权清单与用户后续批准的部署窗口。人工验收PENDING；部署I-3待新任务终态，不提前记为通过。
 - 部署配置烟测：Ruby YAML实际解析`.multi-ai-kit.yaml`，`DEPLOY_CONFIG_SMOKE PASS timeoutSeconds=600 fullBuild=true healthUrlUnchanged=true externalMysql=true`，exit0。仅延长等待，不启用Bean覆盖、不绕过构建/测试/归档校验。工作树身份仍为main及原仓库，FIX-1 SHA256仍为`c2fbbc2b721977a49c48714c5cd38b4b77ff5fd57112c310f287fc81aa70d57a`。
+
+## FIX-1发布终态
+
+- 本轮仅调用一次publish_feature，固定提交`a28748d386b018348638f6ae7a3b90615eb66d8e`；任务`job_20261026-121649_publish-production_7ab6094b`，release_id=`release_20261026-121652_a28748d386b0`。
+- 每15秒check_job_status查询同一job，共76次；12:36:12查询终态`completed successfully`，发布结构化结果`status=passed`，没有触发本轮回滚。发布工具使用固定提交的独立工作树执行完整构建，并在结束后清理工作树；终态日志窗口未保留完整测试计数，发布轮count unavailable，不借用本地5634计数。
+- V161/V162本轮日志均`already applied`，保持此前迁移不变；上传、Tomcat重启及600秒窗口内的健康检查通过。旧Tomcat未在shutdown等待内退出，工具发送TERM后新实例正常通过检查；不把这一条当作仍未解决的alias冲突。
+- 发布产物51,961,795字节，SHA256=`5f78636ff2726775c552b5ce57f7bbb2d559f8dd8b145b87a0cdab9ba8101307`。部署后SSH直接对`webapps/talent.war`执行sha256sum，结果与产物一致；再执行独立curl，`deployed_http=200 total_seconds=0.042`，exit0。
+- 机器验证最终PASS：I-1/I-2沿用前次已通过收据，FIX-1/P1-1 RESOLVED，I-3真实部署及健康检查通过；没有修改应用恢复逻辑、已应用迁移或既有未提交用户文件。A-1人工登录和业务页面验收仍PENDING，不将机器健康检查冒称人工验收完成。
