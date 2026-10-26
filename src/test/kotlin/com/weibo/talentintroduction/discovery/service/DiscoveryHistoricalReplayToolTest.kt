@@ -29,6 +29,35 @@ object HistoricalReplayFixtures {
 
 class DiscoveryHistoricalReplayToolTest {
     @TempDir lateinit var root: Path
+    @Test fun `production component scan keeps CLI clients out of HTTP wiring`() {
+        org.springframework.context.annotation.AnnotationConfigApplicationContext().use { context ->
+            context.defaultListableBeanFactory.setAllowBeanDefinitionOverriding(false)
+            context.environment.propertySources.addFirst(org.springframework.core.env.MapPropertySource("isolatedClients", mapOf(
+                "talent-introduction.elasticsearch.base-url" to "http://127.0.0.1:1",
+                "talent-introduction.elasticsearch.username" to "fixture",
+                "talent-introduction.elasticsearch.password" to "fixture",
+                "talent-introduction.elasticsearch.raw-index-name" to "raw",
+                "talent-introduction.elasticsearch.candidate-index-name" to "candidate",
+                "talent-introduction.elasticsearch.application-index-name" to "application")))
+            context.beanFactory.registerSingleton("restTemplateBuilder", org.springframework.boot.web.client.RestTemplateBuilder())
+            context.beanFactory.registerSingleton("budgetStore",
+                org.mockito.Mockito.mock(com.weibo.talentintroduction.config.OpenAlexBudgetStore::class.java))
+            val scanner = org.springframework.context.annotation.ClassPathBeanDefinitionScanner(context)
+            val boundary = setOf(com.weibo.talentintroduction.config.RestTemplateConfig::class.java.name,
+                HistoricalBindingsConfiguration::class.java.name)
+            scanner.addExcludeFilter { metadata, _ -> metadata.classMetadata.className !in boundary }
+            scanner.scan("com.weibo.talentintroduction")
+            context.refresh()
+            val standard = context.getBean("restTemplate", org.springframework.web.client.RestTemplate::class.java)
+            val europe = context.getBean("europePmcRestTemplate", org.springframework.web.client.RestTemplate::class.java)
+            assertNotSame(standard, europe)
+            assertFalse(standard.interceptors.any { it is com.weibo.talentintroduction.config.RetryingClientHttpRequestInterceptor })
+            assertTrue(europe.interceptors.any { it is com.weibo.talentintroduction.config.RetryingClientHttpRequestInterceptor })
+            assertTrue(context.getBeansOfType(HistoricalBindingsConfiguration::class.java).isEmpty())
+            assertFalse(context.containsBean("analyzer"))
+            assertFalse(context.containsBean("discoveryFetchExecutor"))
+        }
+    }
     @Test fun `fixed production parser compare is private deterministic and layered`() {
         val paper = HistoricalReplayFixtures.paper(root)
         val frozen = HistoricalReplayFixtures.freeze(root, listOf(paper))

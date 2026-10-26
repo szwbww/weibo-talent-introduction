@@ -214,7 +214,6 @@ object DiscoveryHistoricalReplayTool {
 }
 
 /** Explicit apply-only bean graph: no component scan, scheduling, listeners, Flyway or worker. */
-@org.springframework.context.annotation.Configuration(proxyBeanMethods = false)
 @org.springframework.boot.autoconfigure.EnableAutoConfiguration(exclude = [
     org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration::class,
     org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration::class])

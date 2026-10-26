@@ -15,7 +15,7 @@ release:
     upload_dir: /opt/apache-tomcat-9.0.71/deploy/incoming
     backup_dir: /opt/apache-tomcat-9.0.71/deploy/backups
     health_url: http://127.0.0.1/talent/
-    health_timeout_seconds: 120
+    health_timeout_seconds: 600
     require_clean_worktree: true
     database_migrations:
       mode: external-mysql

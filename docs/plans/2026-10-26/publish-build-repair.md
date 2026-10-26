@@ -47,6 +47,9 @@
 | `src/test/kotlin/com/weibo/talentintroduction/discovery/sample/DiscoverySampleStoreTest.kt` | 接受场景固定时钟，不放宽断言 |
 | `src/main/resources/db/migration/V161__add_batch_exclude_tags.sql` → `V162__add_batch_exclude_tags.sql` | 仅文件名顺延，内容不变 |
 | `docs/plans/2026-10-26/publish-build-repair.md` | 本次修复范围、授权及验证收据 |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryHistoricalReplayTool.kt` | FIX-1：移除CLI配置的扫描stereotype，保留显式register及现有Bean图 |
+| `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryHistoricalReplayToolTest.kt` | FIX-1：实际Spring扫描的客户端隔离回归 |
+| `.multi-ai-kit.yaml` | 后续明确批准：生产健康等待120→600秒；不改健康URL、完整构建、自动回滚或应用恢复 |
 
 ## 验收标准
 
@@ -72,3 +75,20 @@
 - 真实Store：SAVED/SAVED/QUOTA，重启QUOTA，第8天样本清空。临时数据库容器与目录已清理，Java脚本交付前删除。
 - fix-v机器检查：I-1/I-2通过；状态机/准入无变更；无新增业务写路径。人工验收PENDING。完整构建与部署以随后的独立发布任务为准，不将定向测试冒称全量通过。
 - 已用知识探针仅更新使用元数据；其中原本被忽略且未跟踪的两条保持本地，不强制加入Git。迁移顺序条目达到10次，可供团队后续批准提升共享规则，本轮不修改CLAUDE.md。
+
+## 修正记录
+
+- 2026-10-26，用户再次“修复 继续”批准 `docs/plans/fix/publish-build-repair/fix-1.md`：原构建机械修复已通过，但真实发布暴露CLI配置污染生产扫描，故将范围扩到上表两份Kotlin文件；不改配额、HTTP客户端策略、迁移、归档恢复或健康超时。FIX-1原文件保持不变。
+- 第二次发布 `job_20261026-110010_publish-production_7e1e6eab` 已完成构建并应用V161/V162，但因RestTemplate别名冲突启动失败，WAR自动回滚；数据库迁移没有回滚，不得再改写这两份SQL。
+- 2026-10-26，用户在启动窗口选项中明确选择“延长至600秒后发布”，追加授权仅修改`.multi-ai-kit.yaml`的`release.production.health_timeout_seconds`（120→600）。证据：旧版曾约6分钟恢复、生产归档27GB而内存约7.5GB，当前旧版HTTP200；CLI冲突已由独立烟测证明修复。此批准覆盖前条“不改健康超时”的局部限制，不跳过归档校验、不改自动回滚、不修改FIX-1原文件。
+
+## FIX-1执行收据
+
+- 生产改动：仅删除HistoricalBindingsConfiguration上的扫描配置注解；`HistoricalBindingsRuntime.open():286-287`仍显式register/refresh，原有@Bean/@Import及显式连接要求不变；`RestTemplateConfig.kt:61-82`未改。
+- 回归失败证据：新增实际扫描用例在修复前运行 `mvn test '-Dtest=DiscoveryHistoricalReplayToolTest#production*'`，1 test / 1 error，context.refresh重现线上同一alias覆盖冲突。首次修复后回归夹具缺少必填ES属性，补齐仅指向loopback的隔离配置后重新验证；没有修改正式配置或减弱断言。
+- 独立默认入口烟测：JDK11直接运行临时Java程序，实际Spring默认扫描并禁用Bean覆盖；`DEFAULT_SCAN_SMOKE PASS separateProductionClients=true cliGraphAbsent=true overriding=false`，exit0；分别验证正式客户端重试拦截器语义，无CLI analyzer/执行器污染。
+- 独立显式CLI烟测：JDK11直接执行 `DiscoveryRecheckFlowIT --archived`（非JUnit入口），exit0。`RECHECK10_RUNTIME isolatedMySQL=true strictFixtureES=true productionParserConsumerWorkerGate=true firstNewRaw=1 repeatNewRaw=0 actualFixtureAdmitted=1 candidateSync=1 partialMissing=1 frozenContext=true providerHttp=0 oldHistoryCheckpointMailUnchanged=true`。完整命令覆盖freeze/compare/report、缺少授权的apply拒绝，以及显式apply两次；没有向生产执行apply。
+- 定向命令：`env JAVA_HOME=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home mvn test -Dtest=DiscoveryHistoricalReplayToolTest,DiscoveryPaperBackfillServiceTest,RestTemplateConfigTest,DiscoveryRecheckFlowIT -DmysqlIt=true`，exit0；30 tests / 0 failures / 0 errors / 0 skipped，真实MySQL用例已运行。
+- 完整构建：同一JDK执行`mvn clean package`，exit0；5634 tests / 0 failures / 0 errors / 24 skipped；WAR已生成。跳过数为默认可选集成用例，定向真实MySQL验证未跳过。不把本地含既有未提交配置的WAR作为发布物，发布仍由工具从固定提交重新构建。
+- fix-v复核模式AUDIT_ONLY：FIX-1/P1-1源因RESOLVED；默认扫描与显式CLI均有独立运行收据；正式HTTP策略、显式连接、默认无业务写、准入/状态机/归档恢复保持不变。Accumulation：✅ 重复apply新增0；Cross-plan：✅ 生产扫描隔离且CLI保留；Deleted code：✅ 无扫描stereotype且无兼容别名；Scope：✅ 本次仅授权清单与用户后续批准的部署窗口。人工验收PENDING；部署I-3待新任务终态，不提前记为通过。
+- 部署配置烟测：Ruby YAML实际解析`.multi-ai-kit.yaml`，`DEPLOY_CONFIG_SMOKE PASS timeoutSeconds=600 fullBuild=true healthUrlUnchanged=true externalMysql=true`，exit0。仅延长等待，不启用Bean覆盖、不绕过构建/测试/归档校验。工作树身份仍为main及原仓库，FIX-1 SHA256仍为`c2fbbc2b721977a49c48714c5cd38b4b77ff5fd57112c310f287fc81aa70d57a`。
