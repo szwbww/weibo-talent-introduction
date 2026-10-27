@@ -46,6 +46,24 @@ internal class PaperBridgeFixture(val f: ArchiveFixture) {
 
 class PaperVerificationEvidenceServiceTest {
     @BeforeEach fun clean() = ArchiveMysqlFixture.clean()
+    @Test fun `archive busy retains safe cause and retryability without confusing a missing body`() {
+        ArchiveFixture().use { f ->
+            f.enable(); val bridge = PaperBridgeFixture(f); val ref = bridge.paper()
+            java.nio.channels.FileChannel.open(f.root.resolve(".archive.lock"), java.nio.file.StandardOpenOption.WRITE).use { channel ->
+                channel.lock().use {
+                    val source = bridge.collect(evidenceSnapshot(), listOf(ref)).sources.single()
+                    assertEquals(listOf("SOURCE_UNAVAILABLE"), source.reasonCodes)
+                    assertEquals("ARCHIVE_BUSY", source.failure!!.code)
+                    assertEquals("OPEN_ARCHIVE", source.failure!!.stage)
+                    assertTrue(source.failure!!.retryable)
+                    assertTrue(source.evidence.isEmpty())
+                }
+            }
+            val recovered = bridge.collect(evidenceSnapshot(), listOf(ref)).sources.single()
+            assertNull(recovered.failure)
+            assertTrue(recovered.evidence.isNotEmpty())
+        }
+    }
     @Test fun `unique current body binding maps only own SELF historical facts with exact provenance and zero writes`() {
         ArchiveFixture().use { f ->
             f.enable(); val b = PaperBridgeFixture(f); val ref = b.paper()
@@ -114,7 +132,11 @@ class PaperVerificationEvidenceServiceTest {
         ArchiveFixture().use { f ->
             f.enable(); val b = PaperBridgeFixture(f); val ref = b.paper(); b.paper(execution=2)
             for (bad in listOf(ref.copy(attemptId=999999),ref.copy(bodySha256="b".repeat(64)),ref.copy(sourceExecutionId=99))) {
-                assertEquals(listOf("SOURCE_UNAVAILABLE"),b.collect(evidenceSnapshot(),listOf(bad),RecheckEvidenceMode.REFRESH).reasonCodes)
+                val failed = b.collect(evidenceSnapshot(),listOf(bad),RecheckEvidenceMode.REFRESH)
+                assertEquals(listOf("SOURCE_UNAVAILABLE"),failed.reasonCodes)
+                assertNotNull(failed.sources.single().failure)
+                assertFalse(failed.sources.single().failure!!.retryable)
+                assertEquals("VALIDATE_REFERENCE", failed.sources.single().failure!!.stage)
             }
             val path = f.root.resolve("blobs").resolve(ref.bodySha256.take(2)).resolve("${ref.bodySha256}.bin")
             Files.write(path,"changed".toByteArray())

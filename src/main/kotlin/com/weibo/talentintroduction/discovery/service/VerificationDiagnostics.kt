@@ -67,12 +67,15 @@ data class VerificationDecisionTrace(
         truncated = truncated || candidates.size > 200 || total > 200)
 }
 
+data class WorkerFailureDiagnostic(val step: Int, val exceptionType: String, val applicationFrame: String?)
+
 data class WorkerDiagnostics(
     val schemaVersion: Int = 1,
     val queries: List<WorkerQueryDiagnostic> = emptyList(),
     val detailReuses: List<WorkerDetailReuse> = emptyList(),
     val totalQueryCount: Int = 0, val totalReused: Int = 0, val truncated: Boolean = false,
-    val decision: VerificationDecisionTrace? = null
+    val decision: VerificationDecisionTrace? = null,
+    val failure: WorkerFailureDiagnostic? = null
 ) {
     fun bounded(): WorkerDiagnostics = copy(queries = queries.take(32), detailReuses = detailReuses.take(200),
         totalQueryCount = maxOf(totalQueryCount, queries.size), totalReused = maxOf(totalReused, detailReuses.size),

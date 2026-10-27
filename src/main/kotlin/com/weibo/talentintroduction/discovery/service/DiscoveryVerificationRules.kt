@@ -15,8 +15,9 @@ data class ApolloSearchEvidence(val candidates: List<ApolloCandidate> = emptyLis
     val complete: Boolean = false, val queryNames: Set<String> = emptySet(), val conflictingIds: Set<String> = emptySet(),
     val matchingVersion: Int = 1, val detailsCompleted: Set<String> = emptySet(), val detailsComplete: Boolean = false,
     val academicResearchFields: String? = null, val academicCapturedAt: java.time.Instant? = null,
-    val institutionAliasVersion: Int = 0) {
-    fun merge(page: ApolloSearchPage, query: ApolloSearchQuery, broad: Boolean, allQueriesComplete: Boolean = false): ApolloSearchEvidence {
+    val institutionAliasVersion: Int = 0, val freeSearchOnly: Boolean = false,
+    val firstPages: List<ApolloQueryResult> = emptyList()) {
+    fun merge(page: ApolloSearchPage, query: ApolloSearchQuery, broad: Boolean, allQueriesComplete: Boolean = false, attemptId: Long? = null): ApolloSearchEvidence {
         val ids = conflictingIds.toMutableSet()
         val union = candidates.associateByTo(linkedMapOf()) { it.id }
         page.candidates.forEach { candidate ->
@@ -25,7 +26,9 @@ data class ApolloSearchEvidence(val candidates: List<ApolloCandidate> = emptyLis
             if (previous == null) union[candidate.id] = candidate
         }
         return copy(candidates = union.values.toList(), broadComplete = broadComplete || (broad && !page.hasNext),
-            complete = complete || (allQueriesComplete && !page.hasNext), queryNames = queryNames + query.name, conflictingIds = ids)
+            complete = complete || (allQueriesComplete && !page.hasNext), queryNames = queryNames + query.name, conflictingIds = ids,
+            firstPages = if (freeSearchOnly && page.page == 1) firstPages.filterNot { it.query.copy(page = 1) == query.copy(page = 1) } +
+                ApolloQueryResult.retained(query, page, attemptId) else firstPages)
     }
 }
 data class VerificationDecision(val qualification: VerificationQualification, val route: VerificationRoute,
@@ -42,7 +45,7 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
         search: ApolloSearchEvidence? = null, protected: Boolean = false,
         institutionNormalization: InstitutionNormalization? = null, ruleVersion: Int = 0,
         evaluatedAt: Instant? = null): VerificationDecision {
-        require(ruleVersion in 0..3)
+        require(ruleVersion in 0..4)
         fun sameName(left: String, right: String) = sameName(left, right, ruleVersion)
         val evaluationTime = evaluatedAt ?: clock.instant()
         val today = evaluationTime.atZone(clock.zone).toLocalDate()
@@ -115,6 +118,19 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
             if (doctorates.isEmpty()) missing += "completedDoctorate"
             if (age == null) missing += "reliableAge"
             if (age != null && age >= 40) missing += "currentAssociateProfessor"
+        }
+        if (ruleVersion >= 4 && search?.freeSearchOnly == true) {
+            val result = FreeApolloVerification.evaluate(snapshot, evidence, search, this,
+                institutionNormalization?.queryInstitution ?: DiscoveryInstitutionNormalizer.build(
+                    snapshot.profile.institution, identityEmployments(snapshot, evidence), emptyList()).queryInstitution)
+            result.personId?.let { id -> search.candidates.firstOrNull { it.id == id }?.let { candidate ->
+                trace(candidate) { it.copy(nameMatch = "MATCH", currentInstitution = if (result.clear) "MATCH" else "NOT_EVALUATED",
+                    chosenReason = result.reason) }
+            } }
+            return decision(qualification, listOf(result.reason), missing,
+                if (result.personId != null) VerificationRoute.APOLLO else VerificationRoute.NONE,
+                if (result.personId == null) VerificationOutcome.PENDING else if (result.clear) VerificationOutcome.APOLLO_CLEAR else VerificationOutcome.APOLLO_UNCLEAR,
+                result.personId)
         }
         if (search?.matchingVersion == 2) {
             if (!search.complete || !search.broadComplete || !search.detailsComplete)
@@ -290,7 +306,7 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
         candidate: ApolloCandidate, academicFields: String?, institutionAliasVersion: Int = 0, ruleVersion: Int = 0,
         evaluatedOn: LocalDate = LocalDate.now(clock),
         trace: (((CandidateDecisionTrace) -> CandidateDecisionTrace) -> Unit)? = null): String? {
-        require(ruleVersion in 0..3)
+        require(ruleVersion in 0..4)
         val originals = listOfNotNull(snapshot.profile.institution?.let(::VerificationInstitution)) +
             identityEmployments(snapshot, evidence).map { VerificationInstitution(value(it, "institution")) }
         fun institutionResult(institution: VerificationInstitution?): String {
@@ -454,6 +470,10 @@ class DiscoveryVerificationRules(private val clock: Clock = Clock.systemUTC()) {
     private fun isProfessor(role: String, ruleVersion: Int = 0): Boolean {
         val value = normalizeName(role)
         if (Regex("emeritus|retired|former|student|candidate|visiting student|research group|lab of|assistant to|博士生|退休|课题组").containsMatchIn(value)) return false
+        if (ruleVersion >= 4) {
+            if (Regex("\\b(?:not|never|no|qualification|postdoctoral|emerito|under|supervised|mentor|advised|aspiring|seeking|becoming)\\b|from lecturer to").containsMatchIn(value)) return false
+            if (Regex("\\bprofessor\\b").containsMatchIn(value)) return true
+        }
         if (ruleVersion >= 3) {
             if (Regex("\\b(?:not|never|no longer)\\b").containsMatchIn(value)) return false
             return role.split('/').any { part ->

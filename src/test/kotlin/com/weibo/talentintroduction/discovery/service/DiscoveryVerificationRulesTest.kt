@@ -130,7 +130,7 @@ class DiscoveryVerificationRulesTest {
         assertTrue(rules.evaluate(snapshot, emptyList(), search(2, candidate.copy(orcid = "0000-0001-0000-0001")), ruleVersion = 2)
             .reasonCodes.contains("ORCID_CONFLICT"))
         assertEquals(VerificationOutcome.PROTECTED, rules.evaluate(snapshot, emptyList(), search(2), protected = true, ruleVersion = 2).outcome)
-        assertThrows(IllegalArgumentException::class.java) { rules.evaluate(snapshot, emptyList(), search(2), ruleVersion = 4) }
+        assertThrows(IllegalArgumentException::class.java) { rules.evaluate(snapshot, emptyList(), search(2), ruleVersion = 5) }
     }
 
     @Test fun `Assistenzprofessor needs explicit positive prefix and cannot extend email identity route`() {

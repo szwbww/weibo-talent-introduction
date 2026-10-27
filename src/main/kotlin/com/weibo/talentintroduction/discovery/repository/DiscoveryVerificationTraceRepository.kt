@@ -82,9 +82,9 @@ class DiscoveryVerificationTraceRepository(private val jdbc: JdbcTemplate) {
         jdbc.update("""UPDATE discovery_verification_step SET state='SKIPPED',input_hash=?,input_json='{}',
             reason_json='{"codes":["CANCELLED_BEFORE_START"]}',started_at=?,finished_at=?
             WHERE item_id=? AND state='NOT_STARTED'""", DiscoveryVerificationRepository.replayHash("{}"),
-            now.verificationUtc(), now.verificationUtc(), itemId)
+            now.truncatedTo(java.time.temporal.ChronoUnit.MILLIS).verificationUtc(), now.truncatedTo(java.time.temporal.ChronoUnit.MILLIS).verificationUtc(), itemId)
         jdbc.update("""UPDATE discovery_verification_step SET state='CANCELLED',
-            reason_json='{"codes":["RUN_CANCELLED"]}',finished_at=? WHERE item_id=? AND state='RUNNING'""", now.verificationUtc(), itemId)
+            reason_json='{"codes":["RUN_CANCELLED"]}',finished_at=? WHERE item_id=? AND state='RUNNING'""", now.truncatedTo(java.time.temporal.ChronoUnit.MILLIS).verificationUtc(), itemId)
     }
 
     /** Projection is authorized by the persisted admission receipt, never by a new worker/provider lease. */
@@ -113,7 +113,7 @@ class DiscoveryVerificationTraceRepository(private val jdbc: JdbcTemplate) {
 
     private fun initialize(itemId: Long, now: Instant) {
         for (step in 1..8) jdbc.update("""INSERT IGNORE INTO discovery_verification_step
-            (item_id,step_no,attempt_no,state,created_at) VALUES (?,?,1,'NOT_STARTED',?)""", itemId, step, now.verificationUtc())
+            (item_id,step_no,attempt_no,state,created_at) VALUES (?,?,1,'NOT_STARTED',?)""", itemId, step, now.truncatedTo(java.time.temporal.ChronoUnit.MILLIS).verificationUtc())
     }
 
     private fun start(itemId: Long, stepNo: Int, input: String, versions: String, generation: Long, now: Instant): VerificationStep {
@@ -130,21 +130,21 @@ class DiscoveryVerificationTraceRepository(private val jdbc: JdbcTemplate) {
         if (previous.state == VerificationStepState.NOT_STARTED) {
             jdbc.update("""UPDATE discovery_verification_step SET state='RUNNING',input_hash=?,input_json=?,version_json=?,started_at=?
                 WHERE id=? AND state='NOT_STARTED'""", DiscoveryVerificationRepository.replayHash(input), bounded,
-                version.toString(), now.verificationUtc(), previous.id)
+                version.toString(), now.truncatedTo(java.time.temporal.ChronoUnit.MILLIS).verificationUtc(), previous.id)
         } else jdbc.update("""INSERT INTO discovery_verification_step
             (item_id,step_no,attempt_no,state,input_hash,input_json,version_json,started_at,created_at)
             VALUES (?,?,?,'RUNNING',?,?,?,?,?)""", itemId, stepNo, previous.attemptNo + 1,
-            DiscoveryVerificationRepository.replayHash(input), bounded, version.toString(), now.verificationUtc(), now.verificationUtc())
+            DiscoveryVerificationRepository.replayHash(input), bounded, version.toString(), now.truncatedTo(java.time.temporal.ChronoUnit.MILLIS).verificationUtc(), now.truncatedTo(java.time.temporal.ChronoUnit.MILLIS).verificationUtc())
         return read(itemId).steps.last { it.stepNo == stepNo }
     }
 
     private fun finish(step: VerificationStep, state: VerificationStepState, output: String?, reasons: String?, now: Instant): Boolean {
         require(state.terminal)
-        if (step.state != VerificationStepState.RUNNING || now < step.startedAt!!) return false
+        if (step.state != VerificationStepState.RUNNING || now.truncatedTo(java.time.temporal.ChronoUnit.MILLIS) < step.startedAt!!) return false
         val ref = "item:${step.itemId}/evidence_json;attempts:item:${step.itemId}"
         return jdbc.update("""UPDATE discovery_verification_step SET state=?,output_json=?,reason_json=?,finished_at=?
             WHERE id=? AND item_id=? AND state='RUNNING'""", state.name, output?.let { boundedJson(it, ref) },
-            reasons?.let { boundedJson(it, ref) }, now.verificationUtc(), step.id, step.itemId) == 1
+            reasons?.let { boundedJson(it, ref) }, now.truncatedTo(java.time.temporal.ChronoUnit.MILLIS).verificationUtc(), step.id, step.itemId) == 1
     }
 
     /** Short excerpts and references only. Truncation never masquerades as a complete evidence list. */

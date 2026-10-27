@@ -325,7 +325,7 @@ class DiscoveryVerificationWorker(
                 }
                 payload = payload.copy(ruleVersion = frozenRule?.intValue() ?: 1)
             }
-            require(payload.ruleVersion in 0..3) { "Unsupported frozen rule version" }
+            require(payload.ruleVersion in 0..4) { "Unsupported frozen rule version" }
             val recheck = run.recheckJson?.let { repository.recheck(run) }
             val root = mapper.readTree(lease.snapshotJson)
             val reviewNode = root.get("reviewInput")
@@ -339,7 +339,26 @@ class DiscoveryVerificationWorker(
             if (lease.evidenceJson == null && reviewInput?.evidence != null) {
                 val cached = reviewInput.evidence
                 reviewInput.evidenceHash?.let {
-                    require(it == DiscoveryVerificationRepository.replayHash(mapper.writeValueAsString(cached))) { "STALE_INPUT" }
+                    // MySQL JSON reorders object keys. Restore the DTO's serialization order, but do not
+                    // inject newly added default fields into a hash frozen by an older application.
+                    fun frozenShape(canonical: com.fasterxml.jackson.databind.JsonNode, frozen: com.fasterxml.jackson.databind.JsonNode) {
+                        if (canonical.isObject && frozen.isObject) {
+                            val objectNode = canonical as com.fasterxml.jackson.databind.node.ObjectNode
+                            objectNode.fieldNames().asSequence().toList().forEach { key ->
+                                if (!frozen.has(key)) objectNode.remove(key) else frozenShape(objectNode.path(key), frozen.path(key))
+                            }
+                        } else if (canonical.isArray && frozen.isArray) {
+                            canonical.forEachIndexed { index, value -> frozenShape(value, frozen.path(index)) }
+                        }
+                    }
+                    val serialized = mapper.writeValueAsString(cached)
+                    if (it != DiscoveryVerificationRepository.replayHash(serialized)) {
+                        val exact = mapper.copy().enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+                            .setNodeFactory(com.fasterxml.jackson.databind.node.JsonNodeFactory.withExactBigDecimals(true))
+                        val canonical = exact.readTree(serialized)
+                        frozenShape(canonical, reviewNode!!.path("evidence"))
+                        require(it == DiscoveryVerificationRepository.replayHash(canonical.toString())) { "STALE_INPUT" }
+                    }
                 }
                 require(cached.evidence.all { it.identityHash == snapshot.identityHash && it.factFingerprint == snapshot.factFingerprint }) {
                     "STALE_INPUT"
@@ -362,8 +381,18 @@ class DiscoveryVerificationWorker(
             startStep(2, mapOf("sources" to context?.paperSourceRefs.orEmpty()))
             if (context != null && context.paper == null) {
                 val collected = if (context.paperSourceRefs.isNotEmpty()) papers?.collect(snapshot, context.paperSourceRefs, mode, context.evaluationAt) else null
+                if (collected?.sources?.any { it.failure?.retryable == true } == true && lease.transientAttempts < properties.maxTransientAttempts) {
+                    payload = payload.copy(executionContext = context.copy(paper = collected))
+                    endStep(2, VerificationStepState.INSUFFICIENT, mapOf("failures" to collected.sources.filter { it.failure != null }.map { mapOf("source" to it.source, "failure" to it.failure) }), listOf("ARCHIVE_BUSY"))
+                    // Keep the diagnostic in the retry trace; retry the same frozen sources, never replace them.
+                    payload = payload.copy(executionContext = context.copy(paper = null))
+                    repository.reschedule(lease.id, token, lease.generation, clock.instant().plusSeconds(30),
+                        lease.transientAttempts + 1, json(), "[\"ARCHIVE_BUSY\"]", clock.instant())
+                    return
+                }
                 payload = payload.copy(executionContext = context.copy(paper = collected),
-                    evidence = (payload.evidence + collected?.sources.orEmpty().flatMap { it.evidence }).distinct())
+                    evidence = (payload.evidence.filterNot { it.provider == "PAPER" && context.paperSourceRefs.any { ref -> ref.bodySha256 == it.responseSha256 } } +
+                        collected?.sources.orEmpty().flatMap { it.evidence }).distinct())
             }
             val paperRead = payload.executionContext?.paper
             endStep(2, if (paperRead?.sources?.any { it.coverage != null } == true) VerificationStepState.SUCCESS else VerificationStepState.INSUFFICIENT,
@@ -422,6 +451,20 @@ class DiscoveryVerificationWorker(
                     val direct = evaluate(snapshot)
                     if (direct.outcome == VerificationOutcome.DIRECT_CLEAR) { directStep(direct); finish(direct); return }
                     payload = cached
+                    if (payload.ruleVersion >= 4 && (!apolloAccess.detailEnabled || payload.search != null)) {
+                        val baselineId = reviewNode?.path("baselineItemId")?.takeIf { it.isIntegralNumber }?.asLong()
+                        val prior = baselineId?.let { repository.findItem(it) }
+                        val cachedSearch = payload.search ?: ApolloSearchEvidence(matchingVersion = 2, institutionAliasVersion = aliasVersion)
+                        val pages = if (cachedSearch.firstPages.isNotEmpty()) cachedSearch.firstPages else
+                            if (prior != null && prior.expertDocId == lease.expertDocId && prior.identityHash == lease.identityHash &&
+                                prior.factFingerprint == lease.factFingerprint)
+                                FreeApolloVerification.retainedPages(repository.findAttempts(prior.id)) else emptyList()
+                        val restored = cachedSearch.copy(freeSearchOnly = !apolloAccess.detailEnabled, firstPages = pages,
+                            candidates = if (!apolloAccess.detailEnabled) pages.flatMap { it.result.candidates }.distinctBy { it.id } else cachedSearch.candidates)
+                        payload = payload.copy(search = restored, institutionNormalization = payload.institutionNormalization?.let {
+                            DiscoveryInstitutionNormalizer.withCandidates(it, restored.candidates)
+                        })
+                    }
                     directStep(direct)
                     startStep(6, mapOf("mode" to "REUSE", "searchRef" to "reviewInput.evidence.search"))
                     finish(evaluate(snapshot)); return
@@ -462,7 +505,8 @@ class DiscoveryVerificationWorker(
                     search = ApolloSearchEvidence(matchingVersion = matchingVersion,
                         academicResearchFields = payload.executionContext?.academic?.let {
                             it.profileResearchFields ?: it.data?.topics?.joinToString(", ")
-                        } ?: snapshot.profile.researchFields, institutionAliasVersion = aliasVersion),
+                        } ?: snapshot.profile.researchFields, institutionAliasVersion = aliasVersion,
+                        freeSearchOnly = payload.ruleVersion >= 4 && !apolloAccess.detailEnabled),
                     institutionNormalization = normalization, queries = searchQueries(snapshot, payload.evidence, normalization,
                         formalName = matchingVersion == 2, ruleVersion = payload.ruleVersion))
                 entered = entered ?: clock.instant()
@@ -521,7 +565,7 @@ class DiscoveryVerificationWorker(
                     val finished = if (!page.hasNext) (payload.progress.finishedQueryKeys + index.toString()).distinct()
                         else payload.progress.finishedQueryKeys
                     val allComplete = queries.indices.all { it.toString() in finished }
-                    val search = (payload.search ?: ApolloSearchEvidence()).merge(page, query, index == 0, allComplete)
+                    val search = (payload.search ?: ApolloSearchEvidence()).merge(page, query, index == 0, allComplete, permit.attemptId)
                         .let { if (truncated) it.copy(complete = false) else it }
                     payload = payload.copy(search = search, queries = queries,
                         institutionNormalization = payload.institutionNormalization?.let {
@@ -547,6 +591,10 @@ class DiscoveryVerificationWorker(
                     trace(index, if (truncated) "TRUNCATED" else if (page.hasNext) "RUNNING" else "EXHAUSTED",
                         if (truncated) "SEARCH_PAGE_LIMIT" else null, permit.attemptId, page)
                     completed(permit, result, page)
+                }
+                if (payload.ruleVersion >= 4 && !apolloAccess.detailEnabled) {
+                    payload = payload.copy(search = payload.search?.copy(freeSearchOnly = true))
+                    finish(evaluate(snapshot)); return
                 }
                 if (payload.search?.complete != true) {
                     val decision = evaluate(snapshot)
@@ -673,7 +721,12 @@ class DiscoveryVerificationWorker(
         } catch (error: Exception) {
             // Persistence failure must stop the request chain. Leave its lease/cursor for durable recovery.
             // Only preflight failures with no unacknowledged HTTP may be recorded as an interface-safe ERROR.
-            if (activePermit == null && !lost.get()) fail(if (error.message == "STALE_INPUT") "STALE_INPUT" else "VERIFICATION_FAILED")
+            if (activePermit == null && !lost.get()) {
+                payload = payload.copy(diagnostics = (payload.diagnostics ?: WorkerDiagnostics()).copy(
+                    failure = WorkerFailureDiagnostic(activeStepNo, error.javaClass.simpleName.take(80),
+                        error.stackTrace.firstOrNull { it.className.startsWith("com.weibo.") }?.toString()?.take(240))))
+                fail(if (error.message == "STALE_INPUT") "STALE_INPUT" else "VERIFICATION_FAILED")
+            }
         } finally { renewal.cancel(false) }
     }
 

@@ -102,7 +102,7 @@ class DiscoveryVerificationRegistrationService(
         val settings = mapper.writeValueAsString(linkedMapOf(
             "mode" to properties.mode.name, "policyVersion" to properties.mode.policyVersion,
             "apolloMatchingVersion" to 2,
-            "ruleVersion" to 3,
+            "ruleVersion" to 4,
             "institutionAliasVersion" to DiscoveryInstitutionNormalizer.ALIAS_VERSION,
             "apolloLimitPolicy" to "PROVIDER",
             "apolloAccess" to access.toJson(mapper),

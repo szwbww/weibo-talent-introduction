@@ -22,6 +22,7 @@ class PaperQualificationEvidenceExtractor {
     internal var nanoTime: () -> Long = System::nanoTime
     fun extract(bytes: ByteArray, format: String, authors: List<PaperAuthor>, paperYear: Int?, bodySha256: String,
         publicationDate: LocalDate? = null): PaperQualificationResult {
+        val names = authors.map { listOfNotNull(it.givenNames, it.familyNames).joinToString(" ").trim().replace(Regex("\\s+"), " ") }
         val start = nanoTime()
         val reasons = mutableListOf<String>()
         val pages = mutableListOf<Pair<Int?, String>>()
@@ -34,7 +35,13 @@ class PaperQualificationEvidenceExtractor {
                     totalPages = doc.numberOfPages
                     for (page in 1..minOf(totalPages, MAX_PAGES)) {
                         if (nanoTime() - start >= SOFT_NANOS) { reasons += "SOFT_TIME_LIMIT"; break }
-                        val text = PDFTextStripper().apply { startPage = page; endPage = page; sortByPosition = true }.getText(doc)
+                        val sorted = PDFTextStripper().apply { startPage = page; endPage = page; sortByPosition = true }.getText(doc)
+                        val biographyCandidate = names.any { namePattern(it).containsMatchIn(sorted) } &&
+                            Regex("(?i)professor|Ph\\.?\\s?D|doctorate|doctoral|was born").containsMatchIn(sorted)
+                        val stream = if (biographyCandidate && nanoTime() - start < SOFT_NANOS)
+                            PDFTextStripper().apply { startPage = page; endPage = page; sortByPosition = false }.getText(doc) else sorted
+                        // Select a layout, never union conflicting ownership from two text orders.
+                        val text = if (biographyStarts(stream, names) > biographyStarts(sorted, names)) stream else sorted
                         scannedPages++
                         val size = text.toByteArray(Charsets.UTF_8).size
                         if (size > MAX_TEXT_BYTES - textBytes) { reasons += "TEXT_LIMIT"; break }
@@ -52,17 +59,25 @@ class PaperQualificationEvidenceExtractor {
                     pages += null to text.take(MAX_TEXT_BYTES / 4)
                 } else pages += null to text
             }
-            val names = authors.map { listOfNotNull(it.givenNames, it.familyNames).joinToString(" ").trim().replace(Regex("\\s+"), " ") }
             val facts = mutableListOf<PaperQualificationFact>()
             var paragraph = 0
             var outsideBiography = false
+            var afterReferences = false
             for ((page, text) in pages) {
-                for (block in paragraphs(text, names)) {
+                for (originalBlock in paragraphs(text, names)) {
+                    val (block, offsets) = dehyphenate(originalBlock)
                     paragraph++
                     val trimmed = block.trim()
-                    if (BIOGRAPHY.matches(trimmed)) { outsideBiography = false; continue }
-                    if (SECTION.matches(trimmed)) { outsideBiography = true; continue }
-                    if (outsideBiography) continue
+                    if (BIOGRAPHY.matches(trimmed)) { outsideBiography = false; afterReferences = false; continue }
+                    if (SECTION.matches(trimmed)) {
+                        outsideBiography = true
+                        afterReferences = Regex("(?i)^(?:[0-9]+[.)]?\\s+)?references$").matches(trimmed)
+                        continue
+                    }
+                    // A literal known-author degree biography can follow references without a heading.
+                    // A lone professor mention, funding paragraph, or detached pronoun cannot reopen ownership.
+                    if (outsideBiography && !(afterReferences && biographyStarts(block, names, degreeOnly = true) > 0)) continue
+                    if (outsideBiography) outsideBiography = false
                     val owners = names.indices.filter { names[it].contains(' ') && namePattern(names[it]).containsMatchIn(block) }
                     if (owners.size != 1) continue
                     val owner = owners.single()
@@ -135,9 +150,12 @@ class PaperQualificationEvidenceExtractor {
                             parseBirthDate(match.groupValues[1]).toString() else match.groupValues[1].ifBlank { match.groupValues.getOrElse(2) { "" } }
                         val conflict = kind in PROFESSOR_KINDS && titleConflict || kind == PaperQualificationKind.BIRTH_DATE && birthConflict
                         // Retain the literal assertion even when the display quote must be bounded.
-                        val assertionStart = block.indexOf(match.value).takeIf { it >= 0 } ?: 0
+                        val normalizedStart = block.indexOf(match.value).takeIf { it >= 0 } ?: 0
+                        val assertionStart = offsets[normalizedStart.coerceAtMost(offsets.lastIndex)]
+                        val normalizedEnd = (normalizedStart + match.value.length).coerceAtMost(block.length)
+                        val assertionEnd = if (normalizedEnd < offsets.size) offsets[normalizedEnd] else originalBlock.length
                         val quoteStart = (assertionStart - 200).coerceAtLeast(0)
-                        val quote = block.substring(quoteStart, minOf(block.length, maxOf(quoteStart + 1000, assertionStart + match.value.length)))
+                        val quote = originalBlock.substring(quoteStart, minOf(originalBlock.length, maxOf(quoteStart + 1000, assertionEnd)))
                         facts += PaperQualificationFact(owner, name, if (conflict) PaperQualificationKind.CONFLICT else kind,
                             term, quote, page, paragraph, paperYear, bodySha256, rule = if (conflict) "BIOGRAPHY_CONFLICT" else "EXPLICIT_UNIQUE_BIOGRAPHY")
                     }
@@ -204,6 +222,19 @@ class PaperQualificationEvidenceExtractor {
         }
         return text
     }
+    private fun biographyStarts(text: String, names: List<String>, degreeOnly: Boolean = false): Int = names.count { name ->
+        val lead = "(?im)^[ \t]*(?:(?:Dr\\.|Assoc\\.\\s*Prof\\.)[ \t]+)?" + Regex.escape(name) +
+            "(?:\\s*\\([^)]{0,120}\\))?\\s+"
+        val predicate = if (degreeOnly) "(?:received|earned|obtained|holds|was awarded)\\b[^!?]{0,500}(?:Ph\\.?\\s?D|doctorate|Doctor of Philosophy)"
+            else "(?:received|earned|obtained|holds|is|was|has been)\\b"
+        Regex(lead + predicate).containsMatchIn(text)
+    }
+    /** Map normalized assertion offsets back to the untouched source quote. */
+    private fun dehyphenate(raw: String): Pair<String, List<Int>> {
+        val removed = Regex("(?<=[A-Za-z])-\\h*\\r?\\n\\h*(?=[a-z])").findAll(raw).flatMap { it.range.asSequence() }.toSet()
+        val offsets = raw.indices.filterNot { it in removed }
+        return offsets.map { raw[it] }.joinToString("") to offsets
+    }
     private fun paragraphs(text: String, names: List<String>): List<String> {
         val blocks = mutableListOf<String>(); val current = StringBuilder()
         fun flush() { if (current.isNotBlank()) { blocks += current.toString().trim(); current.setLength(0) } }
@@ -211,7 +242,7 @@ class PaperQualificationEvidenceExtractor {
             val value = line.trim()
             val boundary = BIOGRAPHY.matches(value) || SECTION.matches(value) ||
                 value.matches(Regex("[A-Z][A-Z ]{3,60}")) && names.none { it.equals(value, true) }
-            val named = names.any { it.contains(' ') && Regex("(?i)^" + Regex.escape(it) + "(?:\\s|$)").containsMatchIn(value) }
+            val named = names.any { it.contains(' ') && Regex("(?i)^(?:(?:Dr\\.|Assoc\\.\\s*Prof\\.)\\s+)?" + Regex.escape(it) + "(?:\\s|$)").containsMatchIn(value) }
             if (value.isEmpty() || boundary || (named && current.isNotBlank() && names.none { current.toString().trim().equals(it, true) })) flush()
             if (value.isNotEmpty()) current.append(line).append('\n')
             if (boundary) flush()
@@ -229,7 +260,7 @@ class PaperQualificationEvidenceExtractor {
     }
     companion object {
         /** Analysis implementation version; unrelated to identity/cache admission compatibility. */
-        const val RULE_VERSION = 3
+        const val RULE_VERSION = 4
         const val VERSION = RULE_VERSION
         const val MAX_PAGES = 100
         const val MAX_TEXT_BYTES = 2 * 1024 * 1024

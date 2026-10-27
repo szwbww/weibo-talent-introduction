@@ -29,6 +29,36 @@ class PaperQualificationEvidenceExtractorTest {
     private val extractor = PaperQualificationEvidenceExtractor()
     private fun text(value: String, authors: List<PaperAuthor> = QualificationFixtures.authors, format: String = "TEXT") =
         value.toByteArray().let { extractor.extract(it, format, authors, 2023, DiscoveryPaperArchiveService.sha(it)) }
+    @Test fun `unheaded degree biographies after references restore ownership and preserve literal broken word quote`() {
+        val body = "References\n[1] A. Other, Article.\n\nAlice Smith received her PhD in 2010. She is an Associate Pro-\nfessor at Example University.\n\nDr. Bob Jones received his PhD in 2012."
+        val result = text(body)
+        assertTrue(result.facts.any { it.authorName == "Alice Smith" && it.kind == PaperQualificationKind.ASSOCIATE_PROFESSOR })
+        assertTrue(result.facts.any { it.authorName == "Bob Jones" && it.kind == PaperQualificationKind.COMPLETED_DOCTORATE })
+        result.facts.forEach { assertTrue(body.contains(it.quote.trim())) }
+        assertTrue(result.facts.first { it.kind == PaperQualificationKind.ASSOCIATE_PROFESSOR }.quote.contains("Pro-\nfessor"))
+        assertTrue(text("Funding\nAlice Smith received her PhD.").facts.isEmpty())
+        assertTrue(text("References\nShe received her PhD.").facts.isEmpty())
+    }
+    @Test fun `two column PDF separates references from author biography instead of interleaving rows`() {
+        val bytes = ByteArrayOutputStream().use { output ->
+            PDDocument().use { doc ->
+                val page = PDPage(); doc.addPage(page)
+                PDPageContentStream(doc, page).use { stream ->
+                    fun column(x: Float, lines: List<String>) {
+                        stream.beginText(); stream.setFont(PDType1Font.HELVETICA, 10f)
+                        stream.newLineAtOffset(x, 700f); stream.setLeading(14f)
+                        lines.forEach { stream.showText(it); stream.newLine() }; stream.endText()
+                    }
+                    column(30f, listOf("References", "[1] Other Author, Paper title", "[2] Another cited paper", "[3] Remaining references"))
+                    column(320f, listOf("Alice Smith received her PhD", "in 2010. She is an Associate", "Professor at Example University."))
+                }
+                doc.save(output)
+            }; output.toByteArray()
+        }
+        val result = extractor.extract(bytes, "PDF", QualificationFixtures.authors, 2023, DiscoveryPaperArchiveService.sha(bytes))
+        assertEquals(setOf(PaperQualificationKind.COMPLETED_DOCTORATE, PaperQualificationKind.ASSOCIATE_PROFESSOR), result.facts.map { it.kind }.toSet())
+        assertTrue(result.facts.all { it.authorIndex == 0 && it.page == 1 })
+    }
     @Test fun `three named historical facts retain exact source locator hash and year`() {
         val result = text(QualificationFixtures.biography)
         assertEquals(listOf(PaperQualificationKind.ASSISTANT_PROFESSOR, PaperQualificationKind.COMPLETED_DOCTORATE, PaperQualificationKind.DOCTORAL_STUDENT),result.facts.map { it.kind })
@@ -187,7 +217,7 @@ class PaperQualificationEvidenceExtractorTest {
         assertEquals(1, born("2023-04-01", publication = LocalDate.parse("2023-04-01")).size)
         assertTrue(born("2023-04-02", publication = LocalDate.parse("2023-04-01")).isEmpty())
         assertFalse(text("Alice Smith received her PhD in 2019.").facts.any { it.kind == PaperQualificationKind.BIRTH_DATE })
-        assertEquals(3, PaperQualificationEvidenceExtractor.RULE_VERSION)
+        assertEquals(4, PaperQualificationEvidenceExtractor.RULE_VERSION)
         assertEquals(PaperQualificationEvidenceExtractor.RULE_VERSION, PaperQualificationEvidenceExtractor.VERSION)
     }
 
@@ -210,7 +240,7 @@ class PaperQualificationEvidenceExtractorTest {
             a.analysis.beforeParse = { parsed = true }
             val refreshed = a.post(paper)
             assertTrue(parsed)
-            assertEquals(3, refreshed.path("parserVersion").path("qualification").asInt())
+            assertEquals(4, refreshed.path("parserVersion").path("qualification").asInt())
             assertEquals("COMPLETED_DOCTORATE", refreshed.path("qualificationFacts").single().path("kind").asText())
             assertEquals(first, f.repository.record(paper.id)!!.outcomeJson)
             org.mockito.Mockito.verifyNoInteractions(a.network, a.bounded)

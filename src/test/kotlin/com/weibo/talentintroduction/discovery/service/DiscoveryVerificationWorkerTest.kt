@@ -123,8 +123,15 @@ class DiscoveryVerificationWorkerTest {
                     f.apolloBody = """{"people":[{"id":"person-1","first_name":"Ada","last_name_obfuscated":"L**"}],"total_entries":1}"""
                     val liveStart = f.apolloRequests.size
                     val liveFree = execute(b, "free-live-search", payload = null)
-                    assertEquals(VerificationOutcome.PENDING, liveFree.outcome)
-                    assertTrue(liveFree.reasonsJson!!.contains("PAID_DETAILS_DISABLED"))
+                    assertEquals(VerificationOutcome.APOLLO_UNCLEAR, liveFree.outcome)
+                    assertTrue(liveFree.reasonsJson!!.contains("APOLLO_FREE_NAME_UNIQUE"))
+                    val livePayload = f.mapper.readValue<VerificationWorkerEvidence>(liveFree.evidenceJson!!)
+                    assertEquals(4, livePayload.ruleVersion)
+                    assertTrue(livePayload.search!!.freeSearchOnly)
+                    assertTrue(livePayload.search!!.firstPages.isNotEmpty())
+                    assertFalse(livePayload.search!!.detailsComplete)
+                    assertTrue(f.repository.findAttempts(liveFree.id).none { it.queryKind == VerificationQueryKind.DETAIL })
+                    assertTrue(f.policy.evaluate(liveFree.expertDocId, f.mapper.readValue<VerificationSnapshot>(liveFree.snapshotJson).profile).eligible)
                     assertTrue(f.apolloRequests.size > liveStart)
                     assertTrue(f.apolloRequests.drop(liveStart).all { it.contains("/mixed_people/api_search") })
                     val strong = ApolloCandidate("person-strong", "Ada", "Lee", null, "Ada Lee", "Professor",
@@ -212,7 +219,7 @@ class DiscoveryVerificationWorkerTest {
                     val registration = DiscoveryVerificationRegistrationService(DiscoveryVerificationProperties(enabled = true, mode = VerificationMode.ENFORCE, apolloApiKey = "fixture-key"), f.repository, f.writer, f.policy,
                         f.admissions, jdbc, org.springframework.transaction.support.TransactionTemplate(manager), f.apolloSettings, f.clock)
                     val context = registration.begin(2001, PaperSearchCriteria(apolloAssist = true))
-                    assertEquals(3, f.mapper.readTree(context.run!!.settingsJson).path("ruleVersion").intValue())
+                    assertEquals(4, f.mapper.readTree(context.run!!.settingsJson).path("ruleVersion").intValue())
                     assertEquals(2, f.mapper.readTree(context.run!!.settingsJson).path("institutionAliasVersion").intValue())
                     val doc = "identity-v2"
                     val profile = ruleSnapshot().profile.copy(esDocId = doc, researchFieldIds = listOf("22"),
@@ -233,12 +240,12 @@ class DiscoveryVerificationWorkerTest {
                     assertEquals(VerificationProjection.PROJECTED, done.projectionState)
                     assertNotNull(done.admissionRevision)
                     val payload = f.mapper.readValue<VerificationWorkerEvidence>(done.evidenceJson!!)
-                    assertEquals(3, payload.ruleVersion)
+                    assertEquals(4, payload.ruleVersion)
                     assertEquals(2, payload.search!!.institutionAliasVersion)
                     assertEquals("Assistenzprofessor", payload.search!!.candidates.single().title)
                     val trace = payload.diagnostics!!.decision!!
                     assertEquals("RECORDED", trace.traceOrigin)
-                    assertEquals(3, trace.ruleVersion)
+                    assertEquals(4, trace.ruleVersion)
                     assertEquals(2, trace.aliasVersion)
                     assertEquals(done.apolloPersonId, trace.candidates.single().personId)
                     assertEquals("MATCH", trace.candidates.single().historicalInstitution)
@@ -278,7 +285,7 @@ class DiscoveryVerificationWorkerTest {
                     } }
                     println("DECISION_AUDIT_SMOKE HTTP->Rules->Worker/SQL->Query->freeze->isolated-fixed-time-report admissionDelta=0 immutable=true")
                     assertEquals(context.run!!.settingsJson, registration.begin(2001, PaperSearchCriteria(apolloAssist = true)).run!!.settingsJson)
-                    println("QUALIFICATION_VERSION_SMOKE run=2001 workerRule=3 alias=2 sql=${done.outcome} gate=eligible projection=${done.projectionState} admission=${done.admissionRevision} requests=${done.requestCount}")
+                    println("QUALIFICATION_VERSION_SMOKE run=2001 workerRule=4 alias=2 sql=${done.outcome} gate=eligible projection=${done.projectionState} admission=${done.admissionRevision} requests=${done.requestCount}")
                 }
                 listOf("discovery_verification_attempt", "discovery_verification_item", "discovery_verification_run",
                     "expert_discovery_admission", "task_execution").forEach { jdbc.update("DELETE FROM $it") }
@@ -290,7 +297,7 @@ class DiscoveryVerificationWorkerTest {
                 }
                 listOf("discovery_verification_attempt", "discovery_verification_item", "discovery_verification_run",
                     "expert_discovery_admission").forEach { jdbc.update("DELETE FROM $it") }
-                for (version in listOf(0, 1, 2, 3, 4)) {
+                for (version in listOf(0, 1, 2, 3, 4, 5)) {
                     VerificationFlowFixture(jdbc, manager).use { f ->
                         val row = f.seed("frozen-$version")
                         jdbc.update("UPDATE discovery_verification_run SET settings_json=? WHERE execution_id=2001",
@@ -302,7 +309,7 @@ class DiscoveryVerificationWorkerTest {
                                 detailsComplete = true, institutionAliasVersion = 1)))
                         f.worker().process(f.claim())
                         val done = f.item(row.id)
-                        if (version == 4) assertEquals(VerificationState.ERROR, done.state)
+                        if (version == 5) assertEquals(VerificationState.ERROR, done.state)
                         else {
                             assertEquals(version, f.mapper.readValue<VerificationWorkerEvidence>(done.evidenceJson!!).ruleVersion)
                             assertEquals(if (version >= 2) VerificationOutcome.APOLLO_CLEAR else VerificationOutcome.PENDING, done.outcome)
@@ -952,9 +959,9 @@ internal fun runChild07Pipeline() {
                     var nextRun = 9100L
                     fun recheck(p: com.weibo.talentintroduction.expert.domain.ExpertProfile, mode: VerificationMode = VerificationMode.AUDIT,
                         evidenceMode: RecheckEvidenceMode = RecheckEvidenceMode.REUSE, sources: List<PaperSourceRef> = emptyList(),
-                        evidence: VerificationWorkerEvidence? = null): VerificationItem {
+                        evidence: VerificationWorkerEvidence? = null, ruleVersion: Int = 3, baselineItemId: Long? = null): VerificationItem {
                         val id = nextRun++; task(id); putRaw(p)
-                        val settings = """{"ruleVersion":3,"apolloMatchingVersion":2,"institutionAliasVersion":2,"apolloAccess":{"schemaVersion":1,"settingRevision":1,"searchEnabled":true,"detailEnabled":false,"source":"SAVED"}}"""
+                        val settings = """{"ruleVersion":$ruleVersion,"apolloMatchingVersion":2,"institutionAliasVersion":2,"apolloAccess":{"schemaVersion":1,"settingRevision":1,"searchEnabled":true,"detailEnabled":false,"source":"SAVED"}}"""
                         f.repository.createRecheckRun(id, mode, true, settings,
                             RecheckSpec("fixture", "child07-$id", "{}", evidenceMode, f.clock.instant(), "child07", "3"), f.clock.instant())
                         val snapshot = frozen(p)
@@ -963,6 +970,14 @@ internal fun runChild07Pipeline() {
                         root.set<com.fasterxml.jackson.databind.JsonNode>("reviewInput", f.mapper.valueToTree(
                             VerificationReviewInput(current?.revision, current?.decision, sources, evidence,
                                 evidence?.let { com.weibo.talentintroduction.discovery.repository.DiscoveryVerificationRepository.replayHash(f.mapper.writeValueAsString(it)) })))
+                        if (baselineItemId != null) {
+                            val review = root.path("reviewInput") as com.fasterxml.jackson.databind.node.ObjectNode
+                            review.put("baselineItemId", baselineItemId)
+                            // A real pre-upgrade JSON hash must remain valid after additive DTO fields arrive.
+                            (review.path("evidence").path("search") as com.fasterxml.jackson.databind.node.ObjectNode)
+                                .remove(listOf("freeSearchOnly", "firstPages"))
+                            review.put("evidenceHash", DiscoveryVerificationRepository.replayHash(review.path("evidence").toString()))
+                        }
                         val item = f.repository.reserveRecheckItem(VerificationReservation(id, p.esDocId!!, snapshot.identityHash,
                             mode.policyVersion, "OPENALEX", "child07-paper", root.toString(), snapshot.factFingerprint), f.clock.instant())
                         check(item.state == VerificationState.RESERVED && !trace.read(item.id).recorded)
@@ -1020,7 +1035,7 @@ internal fun runChild07Pipeline() {
                         f.clock.now = created
                         task(9002)
                         val legacyRun = f.repository.createRun(9002, VerificationMode.AUDIT, true,
-                            ordinaryRun.settingsJson, created)
+                            (f.mapper.readTree(ordinaryRun.settingsJson) as com.fasterxml.jackson.databind.node.ObjectNode).put("ruleVersion", 3).toString(), created)
                         val legacyProfile = raw("legacy-no-context")
                         putRaw(legacyProfile)
                         val legacySnapshot = frozen(legacyProfile)
@@ -1062,6 +1077,33 @@ internal fun runChild07Pipeline() {
                         check(reused.executionContext!!.evaluationAt == savedClock)
                         check(trace.read(reuse.id).steps.last { it.stepNo == 2 }.state == VerificationStepState.INSUFFICIENT)
                         check(f.admissions.findAdmission(reuseProfile.esDocId!!) == null)
+
+                        val freeProfile = raw("reuse-free-old-ledger")
+                        val oldFree = recheck(freeProfile)
+                        val oldLease = f.claim()
+                        check(oldLease.id == oldFree.id)
+                        val freeSnapshot = frozen(freeProfile)
+                        val candidate = ApolloCandidate("retained-person", "Ada", "Lee", null, "Ada Lee", null, null)
+                        val page = ApolloSearchPage(listOf(candidate), 1, 1)
+                        for (name in f.rules.allowedNames(freeSnapshot, emptyList()).flatMap(f.rules::queryNameVariants).distinct()) {
+                            val query = ApolloSearchQuery(name)
+                            val attempt = f.repository.reserveAttemptWithBudget(oldFree.id, oldLease.leaseToken!!, oldLease.generation,
+                                VerificationAttemptRequest("retained-$name", VerificationProvider.APOLLO, VerificationQueryKind.BROAD,
+                                    1, 1, f.mapper.writeValueAsString(query)), 1000, 1000, 12, f.clock.instant()).attemptId!!
+                            check(f.repository.completeAttempt(oldFree.id, oldLease.leaseToken!!, oldLease.generation, attempt,
+                                200, "OK", f.mapper.writeValueAsString(page), "a".repeat(64), f.clock.instant()))
+                        }
+                        val oldEvidence = VerificationWorkerEvidence(search = ApolloSearchEvidence(matchingVersion = 2), ruleVersion = 3)
+                        check(f.repository.saveEvidenceAndOutcome(oldFree.id, oldLease.leaseToken!!, oldLease.generation,
+                            VerificationResult(VerificationState.COMPLETED, VerificationOutcome.PENDING, VerificationQualification.UNKNOWN,
+                                VerificationRoute.NONE, f.mapper.writeValueAsString(oldEvidence), "[]"), f.clock.instant()))
+                        val freeReuse = execute(recheck(freeProfile, evidence = oldEvidence, ruleVersion = 4, baselineItemId = oldFree.id))
+                        val freeReused = f.mapper.readValue<VerificationWorkerEvidence>(freeReuse.evidenceJson!!)
+                        check(freeReuse.outcome == VerificationOutcome.APOLLO_UNCLEAR && freeReuse.apolloPersonId == candidate.id)
+                        check(freeReuse.requestCount == 0 && wire.size == initialWire)
+                        check(freeReused.search!!.firstPages.all { it.attemptId != null } && freeReused.search!!.freeSearchOnly)
+                        check(f.admissions.findAdmission(freeProfile.esDocId!!) == null) // AUDIT never applies the prediction.
+                        println("RULE4_REUSE PASS oldJsonHash=true priorAttemptLedger=true providerHTTP=0 freeOutcome=APOLLO_UNCLEAR AUDIT_businessWrites=0")
                         val notReparsedProfile = raw("reuse-derived")
                         val notReparsed = execute(recheck(notReparsedProfile, evidence = cached(frozen(notReparsedProfile), false)))
                         check(f.mapper.readValue<VerificationWorkerEvidence>(notReparsed.evidenceJson!!).executionContext!!.cacheReasons.contains("ORCID_NOT_REPARSED"))

@@ -50,6 +50,19 @@ class DiscoveryVerificationTraceRepositoryIT {
         listOf("discovery_verification_step", "discovery_verification_attempt", "discovery_verification_item",
             "discovery_verification_run", "expert_discovery_admission", "task_execution").forEach { jdbc.update("DELETE FROM $it") }
     }
+    @Test fun `same instant start finish crosses mysql fractional rounding boundaries safely`() {
+        val item = reserved(); repository.activateItem(item.id, 1, now)
+        val lease = repository.claimDue(now, 120)!!
+        for (fraction in listOf(123100000L, 123400000L, 123600000L, 123900000L, 999900000L)) {
+            val instant = now.plusNanos(fraction)
+            val step = trace.startStep(item.id, lease.leaseToken!!, lease.generation, 7, "{}", "{}", instant)!!
+            assertEquals(instant.truncatedTo(java.time.temporal.ChronoUnit.MILLIS), step.startedAt)
+            assertFalse(trace.finishStep(item.id, lease.leaseToken!!, lease.generation, step.id, VerificationStepState.SUCCESS,
+                "{}", "{}", instant.minusMillis(1)))
+            assertTrue(trace.finishStep(item.id, lease.leaseToken!!, lease.generation, step.id, VerificationStepState.SUCCESS,
+                "{}", "{}", instant))
+        }
+    }
     private fun reserved(recheck: Boolean = false): VerificationItem {
         if (recheck) {
             jdbc.update("INSERT INTO task_execution(id,task_type,trigger_type,status,started_at) VALUES (7001,'EXPERT_DISCOVERY','MANUAL','RUNNING',?)", now.verificationUtc())

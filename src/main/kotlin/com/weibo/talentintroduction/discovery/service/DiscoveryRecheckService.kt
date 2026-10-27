@@ -76,7 +76,7 @@ class DiscoveryRecheckService(
                     heartbeatAt = LocalDateTime.now()))
                 taskId = requireNotNull(task.id)
                 val settings = mapper.writeValueAsString(linkedMapOf(
-                    "mode" to request.mode, "policyVersion" to request.mode.policyVersion, "ruleVersion" to 3,
+                    "mode" to request.mode, "policyVersion" to request.mode.policyVersion, "ruleVersion" to 4,
                     "apolloMatchingVersion" to 2, "institutionAliasVersion" to DiscoveryInstitutionNormalizer.ALIAS_VERSION,
                     "apolloLimitPolicy" to "PROVIDER", "apolloAccess" to access.toJson(mapper),
                     "maxRequestsPerItem" to properties.maxRequestsPerItem, "maxPagesPerQuery" to properties.maxPagesPerQuery,
@@ -338,6 +338,6 @@ class DiscoveryRecheckService(
     private fun conflict(code: String): Nothing = throw ResponseStatusException(HttpStatus.CONFLICT, code)
     companion object {
         const val TASK_TYPE = "DISCOVERY_RECHECK_PREPARE"
-        const val CODE_VERSION = "discovery-recheck-v1-rule3"
+        const val CODE_VERSION = "discovery-recheck-v1-rule4"
     }
 }

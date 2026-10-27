@@ -17,7 +17,9 @@ data class PaperSourceRef(val archiveRecordId: Long, val attemptId: Long, val bo
 }
 data class PaperSourceEvidence(val source: PaperSourceRef, val coverage: PaperAnalysisCoverage?,
     val binding: PaperAnalysisBinding?, val evidence: List<VerificationEvidence>, val reasonCodes: List<String>,
-    val analysis: PaperAnalysisResult? = null, val boundAuthorIndex: Int? = null, val bindingMethod: String? = null)
+    val analysis: PaperAnalysisResult? = null, val boundAuthorIndex: Int? = null, val bindingMethod: String? = null,
+    val failure: PaperSourceFailure? = null)
+data class PaperSourceFailure(val stage: String, val code: String, val exceptionType: String, val retryable: Boolean)
 data class PaperEvidenceRead(val sources: List<PaperSourceEvidence>, val reasonCodes: List<String>, val parsedBodies: Int)
 
 @Service
@@ -58,19 +60,28 @@ class PaperVerificationEvidenceService(private val repository: DiscoveryPaperArc
         val results = mutableMapOf<PaperSourceRef, PaperSourceEvidence>()
         val bodyBytes = mutableMapOf<String, ByteArray>()
         val reads = refs.distinct().mapNotNull { ref ->
+            var stage = "OPEN_ARCHIVE"
+            fun unavailable(error: Exception, code: String) {
+                results[ref] = PaperSourceEvidence(ref, null, null, emptyList(), listOf("SOURCE_UNAVAILABLE"),
+                    failure = PaperSourceFailure(stage, code.take(80), error.javaClass.simpleName.take(80), code == "ARCHIVE_BUSY"))
+            }
             try {
                 archive.analysisLease(ref.archiveRecordId).use { lease ->
                     val r = lease.record
+                    stage = "VALIDATE_REFERENCE"
                     require(r.executionId == ref.sourceExecutionId && r.sourceName == ref.sourceName && r.paperKey == ref.sourceItemKey)
                     val attempt = repository.attempt(ref.attemptId) ?: error("SOURCE_UNAVAILABLE")
                     require(attempt.recordId == r.id && attempt.status == ArchiveAttemptStatus.SAVED && attempt.blobSha256 == ref.bodySha256)
                     require(ref.attemptId to ref.bodySha256 in lease.fileSet)
+                    stage = "READ_BODY"
                     val bytes = bodyBytes.getOrPut(ref.bodySha256) {
                         val body = lease.bodies.singleOrNull { it.hash == ref.bodySha256 }
                         if (body != null) body.input.readBytes()
                         else archive.withContent(r.id, ref.attemptId) { _, input -> input.readBytes() }
                     }
+                    stage = "VALIDATE_BODY_HASH"
                     require(DiscoveryPaperArchiveService.sha(bytes) == ref.bodySha256)
+                    stage = "VALIDATE_METADATA"
                     val metadata = mapper.readTree(r.metadataJson)
                     val external = snapshot.profile.externalIds?.let { mapper.readTree(it) }
                     if (external != null) {
@@ -85,14 +96,14 @@ class PaperVerificationEvidenceService(private val repository: DiscoveryPaperArc
                             ?: url(attempt.sourceUrl) ?: url(metadata.path("sourceUrl").asText(null))
                             ?: origin(applicationOrigin)?.let { "$it/api/expert-discovery/papers/${r.id}" })
                 }
-            } catch (_: ArchiveException) {
-                results[ref] = PaperSourceEvidence(ref, null, null, emptyList(), listOf("SOURCE_UNAVAILABLE")); null
-            } catch (_: IllegalArgumentException) {
-                results[ref] = PaperSourceEvidence(ref, null, null, emptyList(), listOf("SOURCE_UNAVAILABLE")); null
-            } catch (_: IllegalStateException) {
-                results[ref] = PaperSourceEvidence(ref, null, null, emptyList(), listOf("SOURCE_UNAVAILABLE")); null
-            } catch (_: java.io.IOException) {
-                results[ref] = PaperSourceEvidence(ref, null, null, emptyList(), listOf("SOURCE_UNAVAILABLE")); null
+            } catch (e: ArchiveException) {
+                unavailable(e, e.code); null
+            } catch (e: IllegalArgumentException) {
+                unavailable(e, "SOURCE_VALIDATION_FAILED"); null
+            } catch (e: IllegalStateException) {
+                unavailable(e, "SOURCE_STATE_INVALID"); null
+            } catch (e: java.io.IOException) {
+                unavailable(e, "SOURCE_READ_FAILED"); null
             }
         }
         var parsedBodies = 0
