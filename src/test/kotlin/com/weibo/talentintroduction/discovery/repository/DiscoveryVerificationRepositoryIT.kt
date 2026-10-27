@@ -35,6 +35,25 @@ class DiscoveryVerificationRepositoryIT {
         private class Mysql : MySQLContainer<Mysql>("mysql:8.0.36")
         private val mysql = Mysql().withDatabaseName("verification_ledger").withUsername("test").withPassword("test")
         private val NOW = Instant.parse("2026-10-18T10:00:00.123Z")
+        /** Child JVM has a deliberately small heap; only the disposable fixture database is reachable. */
+        @JvmStatic fun main(args: Array<String>) {
+            val ds = org.springframework.jdbc.datasource.DriverManagerDataSource(args[0], "test", "test")
+            val childJdbc = JdbcTemplate(ds)
+            val childRepository = DiscoveryVerificationRepository(childJdbc)
+            val tx = TransactionTemplate(org.springframework.jdbc.datasource.DataSourceTransactionManager(ds))
+            val hash = childRepository.recheckScopeHash(5901)
+            tx.executeWithoutResult {
+                val run = childRepository.findRun(5901)!!
+                check(childRepository.compareAndSetRecheckControl(5901, run.revision,
+                    childRepository.recheck(run).control.copy(phase=RecheckPhase.READY, scopeHash=hash), NOW))
+            }
+            val ready = childRepository.findRun(5901)!!
+            tx.executeWithoutResult { childRepository.startRecheck(5901, hash, ready.revision, NOW) }
+            check(childRepository.recheck(childRepository.findRun(5901)!!).control.phase == RecheckPhase.RUNNING)
+            check(childJdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_item WHERE owner_execution_id=5901 AND state='QUEUED'", Long::class.java)==8594L)
+            check(childJdbc.queryForObject("SELECT COUNT(*) FROM discovery_verification_step", Long::class.java)==8594L*8)
+            println("BOUNDED_HEAP_OK rows=8594 hash=$hash maxHeap="+Runtime.getRuntime().maxMemory())
+        }
         @JvmStatic @BeforeAll fun start() {
             check(DockerClientFactory.instance().isDockerAvailable) { "Isolated Docker MySQL is required" }
             mysql.start()
@@ -49,6 +68,7 @@ class DiscoveryVerificationRepositoryIT {
     @Autowired private lateinit var repository: DiscoveryVerificationRepository
     @Autowired private lateinit var jdbc: JdbcTemplate
     @Autowired private lateinit var manager: PlatformTransactionManager
+    @Autowired private lateinit var tasks: com.weibo.talentintroduction.task.repository.TaskExecutionRepository
 
     @BeforeEach fun clean() {
         // These tables exist only in this test's disposable container.
@@ -894,4 +914,67 @@ class DiscoveryVerificationRepositoryIT {
         assertEquals(0L, repository.recheckCounts(5402).protected)
         assertEquals(0L, repository.recheckCounts(5402).pending)
     }
+    @Test fun `scope hash preserves legacy JSON bytes including unicode escaping and numeric epoch`() {
+        recheckRun(5900)
+        val mapper = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper()
+        assertEquals(DiscoveryVerificationRepository.replayHash("[]"), repository.recheckScopeHash(5900))
+        val unicode = "中文 é 𝄞 😀" + '\n' + '\t' + '\\' + '\"'
+        listOf("z", "a", "b").forEach { doc ->
+            repository.reserveRecheckItem(reservation(doc,5900).copy(snapshotJson=mapper.writeValueAsString(mapOf("evidence" to unicode))), NOW)
+        }
+        val rows = jdbc.query("""SELECT expert_doc_id,identity_hash,policy_version,review_epoch,snapshot_json,fact_fingerprint
+            FROM discovery_verification_item WHERE owner_execution_id=5900 ORDER BY expert_doc_id,identity_hash,policy_version,review_epoch""",
+            org.springframework.jdbc.core.RowMapper { rs, _ -> listOf(rs.getString(1),rs.getString(2),rs.getString(3),rs.getLong(4),rs.getString(5),rs.getString(6)) })
+        val expected = DiscoveryVerificationRepository.replayHash(mapper.writeValueAsString(rows))
+        assertEquals(expected, repository.recheckScopeHash(5900))
+        val before = repository.findRun(5900)
+        jdbc.execute("UPDATE discovery_verification_item SET fact_fingerprint=REPEAT('c',64) WHERE expert_doc_id='a'")
+        val changedRows = rows.map { if (it[0]=="a") it.dropLast(1)+listOf("c".repeat(64)) else it }
+        assertEquals(DiscoveryVerificationRepository.replayHash(mapper.writeValueAsString(changedRows)), repository.recheckScopeHash(5900))
+        assertNotEquals(expected, repository.recheckScopeHash(5900))
+        assertEquals(before, repository.findRun(5900))
+    }
+
+    @Test fun `8594 large frozen snapshots hash freeze and activate within 128 MiB heap`() {
+        recheckRun(5901)
+        val snapshot = "{\"evidence\":\"" + "x".repeat(40*1024) + "\"}"
+        val sql = """INSERT INTO discovery_verification_item
+            (owner_execution_id,expert_doc_id,identity_hash,policy_version,review_epoch,source_name,source_item_key,
+             batch_number,snapshot_json,fact_fingerprint,created_at,updated_at)
+            VALUES (5901,?,?,?,5901,'OPENALEX','large-fixture',0,?,?,?,?)"""
+        (1..8594).chunked(100).forEach { ids ->
+            jdbc.batchUpdate(sql, ids.map { id -> arrayOf<Any>("large-%05d".format(id),"a".repeat(64),
+                VerificationMode.ENFORCE.policyVersion, snapshot,"b".repeat(64),NOW.verificationUtc(),NOW.verificationUtc()) })
+        }
+        assertTrue(jdbc.queryForObject("SELECT SUM(OCTET_LENGTH(snapshot_json)) FROM discovery_verification_item WHERE owner_execution_id=5901", Long::class.java)!! > 315715363)
+        val log = java.nio.file.Files.createTempFile("recheck-small-heap-", ".log")
+        val child = ProcessBuilder(System.getProperty("java.home")+"/bin/java", "-Xmx128m", "-cp",
+            System.getProperty("surefire.test.class.path",System.getProperty("java.class.path")),
+            DiscoveryVerificationRepositoryIT::class.java.name, mysql.jdbcUrl)
+            .redirectErrorStream(true).redirectOutput(log.toFile()).start()
+        val exited = child.waitFor(240,TimeUnit.SECONDS)
+        if (!exited) child.destroyForcibly().waitFor()
+        val output = java.nio.file.Files.readString(log)
+        assertTrue(exited, "Bounded heap child timed out: $output")
+        assertEquals(0,child.exitValue(),output)
+        assertTrue(output.contains("BOUNDED_HEAP_OK rows=8594"), output)
+        val rows = jdbc.query("SELECT batch_number,COUNT(*) FROM discovery_verification_item WHERE owner_execution_id=5901 GROUP BY batch_number ORDER BY batch_number",
+            org.springframework.jdbc.core.RowMapper { rs,_ -> rs.getInt(1) to rs.getInt(2) })
+        assertEquals((1..17).map { it to 500 }+listOf(18 to 94),rows)
+    }
+
+    @Test fun `execution heartbeat isolates task identity owner and terminal state in real SQL`() {
+        recheckRun(5951); recheckRun(5952)
+        val initial=NOW.truncatedTo(java.time.temporal.ChronoUnit.SECONDS).verificationUtc()
+        jdbc.update("UPDATE task_execution SET owner_token='worker-a',heartbeat_at=?",initial)
+        val later=initial.plusSeconds(30)
+        assertEquals(0,tasks.heartbeatExecution(5951,"wrong-owner",later))
+        assertEquals(1,tasks.heartbeatExecution(5951,"worker-a",later))
+        assertEquals(later,tasks.findById(5951).orElseThrow().heartbeatAt)
+        assertEquals(initial,tasks.findById(5952).orElseThrow().heartbeatAt)
+        jdbc.update("UPDATE task_execution SET status='SUCCESS' WHERE id=5951")
+        assertEquals(0,tasks.heartbeatExecution(5951,"worker-a",NOW.plusSeconds(60).verificationUtc()))
+        assertEquals(later,tasks.findById(5951).orElseThrow().heartbeatAt)
+    }
+
 }

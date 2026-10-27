@@ -92,4 +92,61 @@ class DiscoveryRecheckServiceTest {
         assertEquals(HttpStatus.NOT_FOUND, error.status)
         Mockito.verifyNoInteractions(commits, writer, papers)
     }
+    @Test fun `idle coordinator does not renew abandoned preparation tasks`() {
+        service().reconcile()
+        assertFalse(Mockito.mockingDetails(tasks).invocations.any { it.method.name.startsWith("heartbeat") })
+    }
+
+    @Test fun `fatal preparation failure records failure instead of leaving running task`() {
+        val policy: DiscoveryAdmissionPolicy = mock()
+        val tx: TransactionTemplate = mock()
+        Mockito.doAnswer { invocation ->
+            invocation.getArgument<java.util.function.Consumer<org.springframework.transaction.TransactionStatus>>(0)
+                .accept(mock())
+            null
+        }.`when`(tx).executeWithoutResult(Mockito.any())
+        val service = DiscoveryRecheckService(repository, admissions, writer, mock(), policy, mock(),
+            DiscoveryVerificationProperties(), tasks, tx, queries, commits, Executor { it.run() },
+            DefaultListableBeanFactory().getBeanProvider(DiscoveryVerificationWorker::class.java), papers)
+        val run = VerificationRun(42, VerificationMode.AUDIT, VerificationMode.AUDIT.policyVersion, false, "{}", false,
+            7, Instant.EPOCH, Instant.EPOCH, "{}")
+        val recheck = RecheckRun(RecheckSpec("operator", key, "{}", RecheckEvidenceMode.REUSE, Instant.EPOCH, "v", "v"),
+            RecheckControl(RecheckPhase.PREPARING))
+        Mockito.`when`(repository.findRun(42)).thenReturn(run)
+        Mockito.`when`(repository.recheck(run)).thenReturn(recheck)
+        Mockito.`when`(repository.recheckCounts(42)).thenReturn(RecheckCounts(0,0,0,0,0,0,0,0,0,0))
+        Mockito.`when`(tasks.findById(42)).thenReturn(java.util.Optional.of(
+            com.weibo.talentintroduction.task.domain.TaskExecution(id=42, taskType="DISCOVERY_RECHECK_PREPARE",
+                triggerType="MANUAL", status="RUNNING", requestPayload=null, resultSummary=null, startedAt=java.time.LocalDateTime.now())))
+        Mockito.`when`(policy.currentConfigSnapshot()).thenThrow(OutOfMemoryError("synthetic bounded failure"))
+        val freeze = DiscoveryRecheckService::class.java.getDeclaredMethod("freeze", VerificationRun::class.java, RecheckPrepareRequest::class.java)
+        freeze.isAccessible = true
+        val error = assertThrows(java.lang.reflect.InvocationTargetException::class.java) {
+            freeze.invoke(service, run, RecheckPrepareRequest(key, docIds=listOf("a")))
+        }
+        assertTrue(error.cause is OutOfMemoryError)
+        val terminal = Mockito.mockingDetails(tasks).invocations.filter { it.method.name == "finishOwned" }
+        assertEquals(1, terminal.size, "Fatal error must persist a terminal task before being rethrown")
+        assertEquals("FAILED", terminal.single().arguments[2])
+        assertEquals("PREPARE_FATAL:OutOfMemoryError", terminal.single().arguments[6])
+    }
+
+    @Test fun `heartbeat targets only live preparation execution and stops after removal`() {
+        val service = service()
+        val field = DiscoveryRecheckService::class.java.getDeclaredField("preparingThreads").apply { isAccessible=true }
+        @Suppress("UNCHECKED_CAST")
+        val active = field.get(service) as java.util.concurrent.ConcurrentHashMap<Long, Thread>
+        active[42]=Thread.currentThread()
+        active[43]=Thread { }
+        service.reconcile()
+        val heartbeats = Mockito.mockingDetails(tasks).invocations.filter { it.method.name.startsWith("heartbeat") }
+        assertEquals(1,heartbeats.size)
+        assertEquals("heartbeatExecution",heartbeats.single().method.name)
+        assertEquals(42L,heartbeats.single().arguments[0])
+        active.clear()
+        Mockito.clearInvocations(tasks)
+        service.reconcile()
+        assertFalse(Mockito.mockingDetails(tasks).invocations.any { it.method.name.startsWith("heartbeat") })
+    }
+
 }

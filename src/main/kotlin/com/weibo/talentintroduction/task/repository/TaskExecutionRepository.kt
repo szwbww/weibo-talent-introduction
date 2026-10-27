@@ -124,6 +124,14 @@ interface TaskExecutionRepository : CrudRepository<TaskExecution, Long> {
     """)
     fun heartbeatOwned(ownerToken: String, now: LocalDateTime): Int
 
+    /** A coordinator may renew only executions with a live local worker. */
+    @Modifying
+    @Query("""
+        UPDATE task_execution SET heartbeat_at = :now, updated_at = :now
+        WHERE id = :id AND owner_token = :ownerToken AND status IN ('RUNNING', 'CANCELLING')
+    """)
+    fun heartbeatExecution(id: Long, ownerToken: String, now: LocalDateTime): Int
+
     @Modifying
     @Query("""
         UPDATE task_execution

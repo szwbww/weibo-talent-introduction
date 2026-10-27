@@ -24,6 +24,7 @@ import org.springframework.web.server.ResponseStatusException
 import java.time.Clock
 import java.time.LocalDateTime
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executor
 import java.util.concurrent.RejectedExecutionException
 
@@ -58,6 +59,7 @@ class DiscoveryRecheckService(
 ) {
     private val mapper = jacksonObjectMapper().findAndRegisterModules().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
     private val owner = UUID.randomUUID().toString()
+    private val preparingThreads = ConcurrentHashMap<Long, Thread>()
 
     fun prepare(submitted: RecheckPrepareRequest, actor: String): RecheckRunView {
         val request = normalizedRequest(submitted)
@@ -99,7 +101,11 @@ class DiscoveryRecheckService(
         frozen.remove("specHash")
         if (frozen != mapper.readTree(canonical)) conflict("SPEC_CONFLICT")
         if (registration.second) {
-            try { executor.execute { freeze(run, request) } }
+            try { executor.execute {
+                preparingThreads[run.executionId] = Thread.currentThread()
+                try { freeze(run, request) }
+                finally { preparingThreads.remove(run.executionId) }
+            } }
             catch (_: RejectedExecutionException) {
                 failPreparation(run.executionId, "PREPARE_BUSY")
                 conflict("PREPARE_BUSY")
@@ -142,8 +148,6 @@ class DiscoveryRecheckService(
 
     private fun freeze(run: VerificationRun, request: RecheckPrepareRequest) {
         val seen = HashSet<String>()
-        progressStore?.tryStart(TASK_TYPE, com.weibo.talentintroduction.task.service.TaskProgress(TASK_TYPE, "RUNNING", 0, 0, 0,
-            "正在保存名单", executionId = run.executionId))
         fun progress() {
             val current = repository.findRun(run.executionId) ?: return
             val control = repository.recheck(current).control
@@ -155,6 +159,8 @@ class DiscoveryRecheckService(
                 if (control.preparationStage == "SCANNING") 0 else control.scanned, message), run.executionId)
         }
         try {
+            progressStore?.tryStart(TASK_TYPE, com.weibo.talentintroduction.task.service.TaskProgress(TASK_TYPE, "RUNNING", 0, 0, 0,
+                "正在保存名单", executionId = run.executionId))
             val admissionConfig = policy.currentConfigSnapshot()
             fun batch(inputs: List<Input>): Boolean {
                 ensurePreparing(run.executionId)
@@ -258,6 +264,11 @@ class DiscoveryRecheckService(
                     repository.recheck(current).control.copy(phase = RecheckPhase.READY, scopeHash = repository.recheckScopeHash(run.executionId)), clock.instant()))
             }
             finishTask(run.executionId, "SUCCESS", seen.size, null)
+        } catch (fatal: Error) {
+            // Best effort after stack unwinds; if persistence also fails, no live heartbeat masks lease expiry.
+            try { failPreparation(run.executionId, "PREPARE_FATAL:${fatal.javaClass.simpleName}") }
+            catch (cleanup: Throwable) { if (cleanup !== fatal) fatal.addSuppressed(cleanup) }
+            throw fatal
         } catch (ex: Exception) {
             val phase = repository.findRun(run.executionId)?.let { repository.recheck(it).control.phase }
             when {
@@ -331,7 +342,9 @@ class DiscoveryRecheckService(
     /** No worker or provider dispatch here. The original worker owns claim/recovery of running items. */
     @Scheduled(fixedDelayString = "\${talent-introduction.discovery-verification.poll-ms:5000}")
     fun reconcile() {
-        tasks.heartbeatOwned(owner, LocalDateTime.now())
+        preparingThreads.forEach { (id, thread) ->
+            if (thread.isAlive) tasks.heartbeatExecution(id, owner, LocalDateTime.now())
+        }
         repository.unsettledRechecks().forEach { repository.reconcileRecheck(it, clock.instant()) }
     }
 

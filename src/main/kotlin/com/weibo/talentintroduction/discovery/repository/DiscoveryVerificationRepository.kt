@@ -3,6 +3,10 @@ package com.weibo.talentintroduction.discovery.repository
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import java.security.MessageDigest
+import java.security.DigestOutputStream
+import java.io.OutputStream
+import java.io.OutputStreamWriter
+import java.nio.charset.StandardCharsets
 import com.weibo.talentintroduction.discovery.domain.*
 import com.weibo.talentintroduction.discovery.service.DiscoveryVerificationRules
 import com.weibo.talentintroduction.discovery.service.VerificationSnapshot
@@ -555,11 +559,13 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         json.put("startRevision", expectedRevision)
         jdbc.update("UPDATE discovery_verification_run SET recheck_json=?,revision=revision+1,updated_at=? WHERE execution_id=?",
             json.toString(), now.verificationUtc(), executionId)
-        val items = jdbc.query("SELECT * FROM discovery_verification_item WHERE owner_execution_id=? ORDER BY expert_doc_id,id FOR UPDATE",
-            itemMapper, executionId)
-        items.forEachIndexed { index, item ->
+        // Keep only IDs in memory. activateItem locks/validates one snapshot at a time under the run lock.
+        val ids = jdbc.query("SELECT id FROM discovery_verification_item WHERE owner_execution_id=? ORDER BY expert_doc_id,id FOR UPDATE",
+            RowMapper { rs, _ -> rs.getLong(1) }, executionId)
+        ids.forEachIndexed { index, id ->
+            val item = lockItem(id)
             check(item.reviewEpoch == executionId && item.state == VerificationState.RESERVED)
-            activateItem(item.id, index / 500 + 1, now)
+            activateItem(id, index / 500 + 1, now)
         }
         return findRun(executionId)!!
     }
@@ -608,11 +614,39 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
 
     /** Hash exactly the persisted frozen inputs, in stable identity order. Never consult live ES. */
     fun recheckScopeHash(executionId: Long): String {
-        val rows = jdbc.query("""SELECT expert_doc_id,identity_hash,policy_version,review_epoch,snapshot_json,fact_fingerprint
-            FROM discovery_verification_item WHERE owner_execution_id=? ORDER BY expert_doc_id,identity_hash,policy_version,review_epoch""",
-            RowMapper { rs, _ -> listOf(rs.getString(1), rs.getString(2), rs.getString(3), rs.getLong(4),
-                rs.getString(5), rs.getString(6)) }, executionId)
-        return replayHash(replayMapper.writeValueAsString(rows))
+        val digest = MessageDigest.getInstance("SHA-256")
+        // Writer-backed JSON preserves writeValueAsString's Unicode bytes, including supplementary characters.
+        // Digest output discards bytes immediately; never construct the roster JSON or retain all snapshots.
+        OutputStreamWriter(DigestOutputStream(OutputStream.nullOutputStream(), digest), StandardCharsets.UTF_8).use { writer ->
+            replayMapper.factory.createGenerator(writer).use { json ->
+                json.writeStartArray()
+                jdbc.execute(ConnectionCallback { connection ->
+                    connection.prepareStatement("""SELECT expert_doc_id,identity_hash,policy_version,review_epoch,snapshot_json,fact_fingerprint
+                        FROM discovery_verification_item WHERE owner_execution_id=?
+                        ORDER BY expert_doc_id,identity_hash,policy_version,review_epoch""",
+                        ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY).use { statement ->
+                        // Connector/J otherwise buffers the entire result before the first row callback.
+                        statement.fetchSize = Int.MIN_VALUE
+                        if (jdbc.queryTimeout >= 0) statement.queryTimeout = jdbc.queryTimeout
+                        statement.setLong(1, executionId)
+                        statement.executeQuery().use { rs ->
+                            while (rs.next()) {
+                                json.writeStartArray()
+                                json.writeString(rs.getString(1))
+                                json.writeString(rs.getString(2))
+                                json.writeString(rs.getString(3))
+                                json.writeNumber(rs.getLong(4))
+                                json.writeString(rs.getString(5))
+                                json.writeString(rs.getString(6))
+                                json.writeEndArray()
+                            }
+                        }
+                    }
+                })
+                json.writeEndArray()
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
     /** Only control can change; the immutable spec is copied from the locked database row. */

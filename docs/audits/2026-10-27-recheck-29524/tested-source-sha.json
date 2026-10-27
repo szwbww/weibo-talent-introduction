@@ -1,0 +1,5 @@
+{
+  "src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt": "08a59226f8f216a3a3540d1db568665174c009d0f39778d0606285320b96ed9d",
+  "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckService.kt": "52a99bb0db14fbc0cfee53986c7d61d991a6b24d1ce7ccffc29c84413aeae16a",
+  "src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt": "f864aafdbf3920e1d2014e428d901062224ff5dc647420714b908cb85064c502"
+}
