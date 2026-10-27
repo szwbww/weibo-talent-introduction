@@ -36,3 +36,10 @@
 
 - 发布恢复已执行：原hash与线上再算一致，run revision8630、READY、input_closed=1；准备任务SUCCESS，8594项全RESERVED。新PID19778，39/39类校验一致，配置文件SHA保持。
 - 启动耗时已定位：既有DiscoveryPaperArchiveService定时recover先取得锁、遍历原文计算SHA；ApplicationReadyEvent主线程等待同一锁，再执行startupRecovery。线程栈证明非本次哈希OOM。当前未改该组件。
+
+## 上线验收
+
+- 2026-10-28 00:30:43（服务器时间）：新PID19778；39/39修复文件SHA匹配；配置SHA未变；内网/公网首页HTTP200，未登录业务接口401；启动无OOM/链接错误/Bean创建失败。完整回执见deploy-receipt.json。
+- 本地main提交90bee3b。生产为原WAR上的限定类文件补丁，不包含其他并行改动。
+- #29524已恢复READY，revision8630，8594 RESERVED，0外部请求、0准入；用户已授权启动，但当前可用管理页面未登录，等待用户完成登录后通过正常启动入口执行。不宣称已运行。
+- 服务启动约7分钟：既有论文原文recover的定时与启动校验先后全量执行，线程栈确认持续读文件/计算SHA。未为提速跳过原文校验。

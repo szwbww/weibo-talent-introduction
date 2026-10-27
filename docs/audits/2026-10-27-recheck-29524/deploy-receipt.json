@@ -1,0 +1,23 @@
+{
+  "baseWarSha": "522bd9f56dd7dbb76ccf54835cdb29f9a4922a896f5c13e929cc66424251f183",
+  "releaseWarSha": "6dbd5eb28090c8b8b844ddcfcad64321cee32318befab83a61e8ede0e523f0f4",
+  "backup": "/opt/apache-tomcat-9.0.71/deploy/backups/recheck-29524-20261027-233337",
+  "configSha": "de2f8e1fe4beaf9ae18ca4b2d056ba8c16c0cd612925392ff6c4185414233ef3",
+  "patchFiles": 39,
+  "stage": "VERIFIED",
+  "baseGit": "128488eeac26781fbf7c6892ff9d3d4a3f5c7c10",
+  "oldPid": 27185,
+  "restartStartedAt": "2026-10-28T00:22:28.407616",
+  "catalinaLogOffset": 1588932669,
+  "recoveredHash": "fab8adb6db794da34fd36a875b22a86527cb4bead3e7d02a9bd3a84b252328b9",
+  "startupExit": 0,
+  "newPid": 19778,
+  "verifiedAt": "2026-10-28T00:30:43.904985",
+  "classMatches": 39,
+  "http": [
+    200,
+    200,
+    401
+  ],
+  "taskState": "29524\t8630\t1\tREADY\tfab8adb6db794da34fd36a875b22a86527cb4bead3e7d02a9bd3a84b252328b9\n29524\tSUCCESS\t8594\t0\nRESERVED\t8594\t0\t0"
+}
