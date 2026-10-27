@@ -1,0 +1,93 @@
+$ rg -n 'hostApi\(|hostFn\(' src/main/resources/static/mailbox-chat.js
+exit=0
+245:    function hostFn(name) {
+249:    function hostApi() {
+250:        return hostFn("api") || function () { return Promise.reject(new Error("api 不可用")); };
+254:        const fn = hostFn("showStatus");
+267:        const fn = hostFn("openActionDialog");
+1134:            rec.loading = Promise.resolve(detail || hostApi()(draftTargetUrl(rec.target))).then((data) => {
+1140:                    return hostApi()(`/api/mail/unmatched-inbound/${rec.target.processingId}`).then(() => data).catch((err) => {
+1179:                const session = await hostApi()("/api/auth/me", { cache: "no-store" });
+1186:                return hostApi()(draftTargetUrl(captured.target), { method: "PUT",
+1198:                    const current = await hostApi()(rec.id ? `/api/mail/mailbox/drafts/${rec.id}` : draftTargetUrl(rec.target)).catch(() => null);
+1296:                const detail = await hostApi()(rec.id ? `/api/mail/mailbox/drafts/${rec.id}` : draftTargetUrl(rec.target));
+1332:            const detail = await hostApi()(`/api/mail/mailbox/drafts/${rec.id}`).catch(() => null);
+1355:                const detail = rec.id ? await hostApi()(`/api/mail/mailbox/drafts/${rec.id}?expectedVersion=${rec.version}`, { method: "DELETE" })
+1356:                    : await hostApi()(draftTargetUrl(rec.target));
+1955:            hostApi()("/api/inbound-summary/tags/options").then((data) => {
+2252:            hostApi()(`/api/mail/mailbox/drafts/summaries?${params.toString()}`).then((data) => {
+2267:            hostApi()(`/api/mail/mailbox/drafts?${draftListParams(0, 1).toString()}`).then((data) => {
+2278:            return hostApi()(`/api/mail/mailbox/drafts?${draftListParams(page).toString()}`).then((data) => {
+2301:                    const detail = await hostApi()(`/api/mail/mailbox/drafts/${Number(id)}`);
+2352:                hostApi()(`/api/mail/mailbox/conversations?${params.toString()}`).then((data) => {
+2389:            return hostApi()(url).then((data) => {
+2573:            return hostApi()(`/api/mail/mailbox/conversations/${id}/suspension`).then((data) => {
+2723:            hostApi()("/api/auth/me").then((data) => {
+2893:            hostApi()(`/api/mail/mailbox/conversations/${id}/suspension${editing ? "/reason" : ""}`, {
+2944:            const refreshBadge = hostFn("refreshUnmatchedBadge");
+3010:            hostApi()(`/api/mail/mailbox/conversations/${id}/suspension`).then((data) => {
+3031:            hostApi()(`/api/mail/mailbox/conversations/${contactId}/suspension`, { method: "DELETE" }).then((data) => {
+3056:            hostApi()(`/api/mail/mailbox/conversations/${id}/suspension`, { method: "DELETE" }).then((data) => {
+3203:            const release = hostFn("mcHostReleaseUnmatchedDetail");
+3259:            const mount = hostFn("mcHostMountUnmatchedDetail");
+3403:            hostApi()(`/api/mail/mailbox/conversations?${params.toString()}`).then((data) => {
+3452:            const releaseMaterials = hostFn("unmountExpertMaterialsHosts");
+3515:            const contactPromise = hostApi()(`/api/expert-contacts/${contactId}`).catch(() => null);
+3516:            const messagesPromise = hostApi()(`/api/mail/mailbox/conversations/${contactId}/messages?${msgParams.toString()}`)
+3713:            hostApi()(`/api/mail/contact-notes/${id}`).then((data) => {
+3778:            hostApi()(`/api/mail/contact-notes/${dialog.contactId}`, {
+3871:            const fetchTags = hostFn("fetchExpertTagsFromEs");
+4027:            hostApi()(`/api/mail/contact-locations/${id}/timing`).then((data) => {
+4429:                : hostApi()("/api/mail/contact-locations/countries").catch(() => null);
+4430:            const locationPromise = hostApi()(`/api/mail/contact-locations/${contactId}`).catch(() => null);
+4478:            hostApi()(`/api/mail/contact-locations/${contactId}`, {
+4557:            const fn = hostFn("formatBeijingMeetingShort");
+4609:            const fn = hostFn("mcHostGetMeetingSummaries");
+4642:            const fn = hostFn("mcHostGetMeetingSummaries");
+4681:            const fn = hostFn("mcHostMeetingScheduleChanged");
+4692:            const fn = hostFn("mcHostOpenMeetingSchedule");
+5011:            const retryTags = hostFn("fetchExpertTagsFromEs");
+5237:            hostApi()(`/api/mail/unmatched-inbound/${processingId}/mark-resolved`, {
+5261:                const refreshBadge = hostFn("refreshUnmatchedBadge");
+5296:            const openFn = hostFn("mcHostOpenInboundTagModal");
+5321:            hostApi()(`/api/inbound-summary/tags/${tagIdNum}`, { method: "DELETE" }).then(() => {
+5369:            hostApi()("/api/translate", {
+5426:            const adapter = hostFn("mcHostMountWorkbench");
+5552:                hostFn("formatBeijingMeetingRange")
+5701:            hostApi()(`/api/operator-action-logs?expertContactId=${contactId}&pageSize=50&pageOffset=0`).then((data) => {
+5703:                const renderLogs = hostFn("renderOperatorLogs");
+5821:            hostApi()(`/api/mail/mailbox/conversations/${id}/progress-status`, {
+5859:            hostApi()(`/api/mail/mailbox/conversations/${id}/replied-dismissal`, { method: "PUT" }).then(() => {
+5935:            const pending = contact ? Promise.resolve(contact) : hostApi()(`/api/expert-contacts/${contactId}`).then((data) => data && data.contact ? data.contact : null).catch(() => null);
+5987:            const fetchTags = hostFn("fetchExpertTagsFromEs");
+5988:            const renderEditor = hostFn("renderMailboxExpertTagEditor");
+6096:                    request: hostApi()(`/api/expert-contacts/${contactId}/operator-status`, {
+6105:                    request: hostApi()(`/api/expert-contacts/${contactId}/index-level`, {
+6183:                const fetchTags = hostFn("fetchExpertTagsFromEs");
+6184:                const openAdd = hostFn("openExpertTagAddDialog");
+6185:                const mutate = hostFn("mutateExpertTag");
+6186:                const updateEditor = hostFn("updateExpertTagEditor");
+6187:                const setLoading = hostFn("setTagEditorLoading");
+6213:                const mutate = hostFn("mutateExpertTag");
+6214:                const updateEditor = hostFn("updateExpertTagEditor");
+6249:            const adapter = hostFn("mcHostOpenMaterials");
+6254:            const adapter = hostFn("mcHostOpenExpertDetail");
+6261:            const adapter = hostFn("mcHostOpenFollowUp");
+6564:            return hostApi()(`/api/mail/conversations/${captured.contactId}/outbound-attachments`, {
+6842:            const getSenderName = hostFn("mcHostGetSenderName");
+7283:                data = await hostApi()(`/api/expert-contacts/${identity.contactId}/material-requests`);
+7517:            const load = hostFn("mcHostLoadReplyIdentitySummary");
+7530:            const inspect = hostFn("mcHostInspectReplyIdentity");
+7564:            const open = hostFn("mcHostOpenReplyIdentitySettings");
+7839:            hostApi()("/api/compose-templates").then((data) => {
+7896:            hostApi()("/api/compose-templates/preview-draft", {
+8420:                    api: hostApi(),
+8592:            const adapter = hostFn("mcHostDownloadCalendar");
+8661:                    const detail = await hostApi()(`/api/mail/mailbox/drafts/${rec.id}`);
+8803:                ? hostFn("mcHostSendConversationRichReply")
+8804:                : hostFn("mcHostSendRichReply");
+8813:                    const detail = await hostApi()(`/api/mail/mailbox/drafts/${rec.id}`);
+8878:            hostApi()(`/api/mail/mailbox/conversations/${contactId}/messages?${msgParams.toString()}`).then((msgData) => {
+8904:            hostApi()(`/api/mail/mailbox/conversations/${contactId}/messages?${params.toString()}`).then((msgData) => {
+8938:                    const detail = await hostApi()(draftTargetUrl(rec.target));
+9635:            hostApi()(`/api/mail/mailbox/conversations/${contactId}/messages?${params.toString()}`).then((data) => {

@@ -1,0 +1,153 @@
+$ rg -n 'mc-actions|mc-header|mc-body|mc-message|mc-empty|mc-refined' src/main/resources/static src/test/js
+exit=0
+src/test/js/mailboxSuspension.test.js:1311:    it("详情：挂起按钮在 mc-actions 最前，banner 渲染非空原因与编辑入口", async () => {
+src/test/js/mailboxSuspension.test.js:1320:        const actions = ctx.host.querySelector(".mc-actions");
+src/test/js/mailboxSuspension.test.js:1763:        const detailButton = ctx.host.querySelector('.mc-actions [data-action="mc-suspension"]');
+src/test/js/mailboxSuspension.test.js:1789:        click(ctx.host.querySelector('.mc-actions [data-action="mc-suspension"]'));
+src/test/js/mailboxSuspension.test.js:1816:        click(ctx.host.querySelector('.mc-actions [data-action="mc-suspension"]'));
+src/test/js/mailboxSuspension.test.js:1825:        click(ctx.host.querySelector('.mc-actions [data-action="mc-suspension"]'));
+src/test/js/mailboxSuspension.test.js:1854:        click(ctx.host.querySelector('.mc-actions [data-action="mc-suspension"]'));
+src/test/js/mailboxSuspension.test.js:1894:        assert.ok(ctx.host.querySelector(".mc-header"), "B 的详情仍在");
+src/test/js/mailboxSuspension.test.js:1977:        click(ctx.host.querySelector('.mc-actions [data-action="mc-suspension"]')); await flush();
+src/test/js/mailboxSuspension.test.js:1980:        click(ctx.host.querySelector('.mc-actions [data-action="mc-suspension"]')); await flush();
+src/test/js/mailboxCalendarIntegration.test.js:839:    const actions = ctx.host.querySelector(".mc-actions");
+src/main/resources/static/mailbox-chat.js:4: * 布局：S-1 两栏（专家列表 + 会话）；聊天挂载时 view-mailbox 加 mc-refined，
+src/main/resources/static/mailbox-chat.js:995:        // S-1：宿主 chrome（mc-refined / 刷新按钮迁移 / 旧筛选节点迁移）
+src/main/resources/static/mailbox-chat.js:1377:            if (on) view.classList.add("mc-refined");
+src/main/resources/static/mailbox-chat.js:1378:            else view.classList.remove("mc-refined");
+src/main/resources/static/mailbox-chat.js:2168:                root.innerHTML = `<div class="mc-empty">没有符合条件的专家</div>`;
+src/main/resources/static/mailbox-chat.js:2201:                root.innerHTML = `<div class="mc-empty">暂无待确认来信</div>`;
+src/main/resources/static/mailbox-chat.js:2240:            }).join("") : '<div class="mc-empty">暂无草稿</div>');
+src/main/resources/static/mailbox-chat.js:2693:            const actions = body.querySelector(".mc-actions");
+src/main/resources/static/mailbox-chat.js:2823:                anchor = trigger.closest(".mc-person") || trigger.closest(".mc-header");
+src/main/resources/static/mailbox-chat.js:2825:            if (!anchor && body) anchor = body.querySelector(".mc-header");
+src/main/resources/static/mailbox-chat.js:2925:                section = trigger.closest(".mailbox-suspend-card-footer") || trigger.closest(".mc-actions");
+src/main/resources/static/mailbox-chat.js:3197:                <div class="mc-scroll" tabindex="0" aria-label="待确认来信详情"><div class="mc-empty">请选择左侧待确认来信</div></div>
+src/main/resources/static/mailbox-chat.js:3262:                <div class="mc-scroll" tabindex="0" aria-label="待确认来信详情"><div class="mc-empty">正在加载来信详情…</div></div>
+src/main/resources/static/mailbox-chat.js:3267:                    <div class="mc-scroll" tabindex="0" aria-label="待确认来信详情"><div class="mc-empty" role="alert">来信处理面板不可用，请刷新页面重试</div></div>
+src/main/resources/static/mailbox-chat.js:3277:                scrollHost.innerHTML = `<div class="mc-empty" role="alert">来信处理面板不可用，请刷新页面重试</div>`;
+src/main/resources/static/mailbox-chat.js:3284:                    scrollHost.innerHTML = `<div class="mc-empty" role="alert">来信处理面板不可用，请刷新页面重试</div>`;
+src/main/resources/static/mailbox-chat.js:3331:            body.innerHTML = `<div class="mc-empty">未找到该专家${identity ? `（${escapeText(identity)}）` : ""}的会话记录，可能无访问权限或暂无邮件。</div>`;
+src/main/resources/static/mailbox-chat.js:3337:            body.innerHTML = '<div class="mc-empty">请选择左侧专家查看往来信件</div>';
+src/main/resources/static/mailbox-chat.js:3592:                <header class="mc-header"><div class="mc-identity"><h2>${escapeText(name)}</h2><p>正在加载往来信件…</p></div><div class="mc-actions"></div></header>
+src/main/resources/static/mailbox-chat.js:3594:                <div class="mc-scroll" tabindex="0" aria-label="往来信件滚动区"><div class="mc-empty">正在加载往来信件…</div></div>
+src/main/resources/static/mailbox-chat.js:3627:            const head = body.querySelector(".mc-header");
+src/main/resources/static/mailbox-chat.js:3636:            const actions = head.querySelector(".mc-actions");
+src/main/resources/static/mailbox-chat.js:3650:            const meta = head.querySelector(".mc-header-meta");
+src/main/resources/static/mailbox-chat.js:3883:                    const meta = body.querySelector(".mc-header-meta");
+src/main/resources/static/mailbox-chat.js:4046:            const meta = body.querySelector(".mc-header-meta");
+src/main/resources/static/mailbox-chat.js:4593:            const actions = body.querySelector(".mc-actions");
+src/main/resources/static/mailbox-chat.js:4800:            const bodyHtml = displayBody ? `<div class="mc-body">${messageDisplayHtml(displayBody)}</div>` : "";
+src/main/resources/static/mailbox-chat.js:4840:                <article class="mc-message" data-direction="${direction}" data-source="${escapeText(message.source)}" data-id="${escapeText(message.id)}" data-message-key="${escapeText(key)}">
+src/main/resources/static/mailbox-chat.js:4918:                    return '<div class="mc-timeline"><div class="mc-empty">正在加载往来信件…</div></div>';
+src/main/resources/static/mailbox-chat.js:4920:                return '<div class="mc-timeline"><div class="mc-empty">该专家暂无往来信件</div></div>';
+src/main/resources/static/mailbox-chat.js:4943:            const emptyBox = scroll.querySelector ? scroll.querySelector(".mc-error, .mc-empty") : null;
+src/main/resources/static/mailbox-chat.js:4964:                <header class="mc-header">
+src/main/resources/static/mailbox-chat.js:4966:                    <div class="mc-actions"></div>
+src/main/resources/static/mailbox-chat.js:4967:                    <div class="mc-header-meta"></div>
+src/main/resources/static/mailbox-chat.js:5075:            const articles = scroll.querySelectorAll ? scroll.querySelectorAll(".mc-message") : [];
+src/main/resources/static/mailbox-chat.js:5127:            const articles = scroll.querySelectorAll ? scroll.querySelectorAll(".mc-timeline .mc-message") : [];
+src/main/resources/static/mailbox-chat.js:5137:            const articles = scroll.querySelectorAll ? scroll.querySelectorAll(".mc-timeline .mc-message") : [];
+src/main/resources/static/mailbox-chat.js:5689:                    <div class="mc-section-content"><div class="mc-empty">正在加载操作日志…</div></div>
+src/main/resources/static/mailbox-chat.js:5705:                content.innerHTML = renderLogs ? renderLogs(records) : `<div class="mc-empty">暂无操作日志</div>`;
+src/main/resources/static/mailbox-chat.js:5707:                if (!instance.disposed) content.innerHTML = '<div class="mc-empty">日志加载失败</div>';
+src/main/resources/static/mailbox-chat.js:6009:                    const meta = body.querySelector(".mc-header-meta");
+src/main/resources/static/mailbox-chat.js:6229:            const meta = conversationBody() ? conversationBody().querySelector(".mc-header-meta") : null;
+src/main/resources/static/mailbox-chat.js:8586:                ? button.closest(".mc-message")
+src/main/resources/static/mailbox-chat.js:9181:                const article = typeof button.closest === "function" ? button.closest(".mc-message") : null;
+src/main/resources/static/app.js:21298:        view.classList.toggle("mc-refined", !!chatOn);
+src/test/js/mailboxChatBehavior.test.js:1813:    it("聊天挂载：七字段+查询按钮移入 popover、view 加 mc-refined、刷新按钮进 panel-head-actions", async () => {
+src/test/js/mailboxChatBehavior.test.js:1832:        assert.ok(dom.view.classList.contains("mc-refined"), "chatOn 时 view-mailbox 加 mc-refined");
+src/test/js/mailboxChatBehavior.test.js:1843:    it("unmount：字段/按钮还原旧 toolbar、mc-refined 移除、portal 移除", async () => {
+src/test/js/mailboxChatBehavior.test.js:1863:        assert.ok(!dom.view.classList.contains("mc-refined"), "unmount 移除 mc-refined");
+src/test/js/mailboxChatBehavior.test.js:1887:        const articles = ctx.host.querySelectorAll(".mc-message");
+src/test/js/mailboxChatBehavior.test.js:1892:        assert.doesNotMatch(pending.querySelector(".mc-body").innerHTML, /<script/, "正文安全转义");
+src/test/js/mailboxChatBehavior.test.js:1995:        const outMsg = outbound.querySelector(".mc-body").textContent;
+src/test/js/mailboxChatBehavior.test.js:2210:        assert.match(ctx.host.querySelector(".mc-header-meta").textContent, /已完成/, "头部同步");
+src/test/js/mailboxChatBehavior.test.js:3073:        assert.strictEqual(ctx.host.querySelector('.mc-header [data-action="mc-toggle-follow"]'), null, "详情无关注按钮");
+src/test/js/mailboxChatBehavior.test.js:3074:        assert.strictEqual(ctx.host.querySelector(".mc-header .mailbox-progress"), null, "详情无状态菜单");
+src/test/js/mailboxChatBehavior.test.js:3075:        assert.ok(ctx.host.querySelector('.mc-header [data-action="mc-open-materials"]'), "既有动作保留");
+src/test/js/mailboxChatBehavior.test.js:3202:        const articles = ctx.host.querySelectorAll(".mc-message");
+src/test/js/mailboxChatBehavior.test.js:3240:        const keys = ctx.host.querySelectorAll(".mc-message");
+src/test/js/mailboxChatBehavior.test.js:3265:        const beforeCount = ctx.host.querySelectorAll(".mc-message").length;
+src/test/js/mailboxChatBehavior.test.js:3271:        const afterCount = ctx.host.querySelectorAll(".mc-message").length;
+src/test/js/mailboxChatBehavior.test.js:3273:        const keys = Array.from(ctx.host.querySelectorAll(".mc-message")).map((el) => el.dataset.messageKey);
+src/test/js/mailboxChatBehavior.test.js:3353:        assert.ok(ctx.host.querySelectorAll(".mc-message").length === 60, "60 封历史完整渲染");
+src/test/js/mailboxChatBehavior.test.js:3599:        assert.strictEqual(emptyCtx.host.querySelector(".mc-expert-list .mc-empty").textContent, "暂无待确认来信");
+src/test/js/mailboxChatBehavior.test.js:3603:        assert.strictEqual(conversation.querySelector(".mc-empty").textContent, "请选择左侧待确认来信");
+src/test/js/mailboxChatBehavior.test.js:3691:        assert.strictEqual(ctx.host.querySelector(".mc-conversation .mc-empty").textContent, "请选择左侧待确认来信");
+src/test/js/mailboxChatBehavior.test.js:3806:        const alertEl = ctx.host.querySelector('.mc-conversation .mc-empty[role="alert"]');
+src/test/js/mailboxChatBehavior.test.js:5421:        const meta = ctx.host.querySelector(".mc-header-meta");
+src/test/js/mailboxChatBehavior.test.js:6399:        const layout = (shift) => ctx.host.querySelectorAll(".mc-message").forEach((el, i) => {
+src/test/js/mailboxChatBehavior.test.js:6415:        assert.match(ctx.host.querySelector(".mc-header h2").textContent, /专家B/);
+src/test/js/mailboxChatBehavior.test.js:6417:        assert.match(ctx.host.querySelector(".mc-header h2").textContent, /专家B/);
+src/test/js/mailboxChatBehavior.test.js:6743:.mail-chat .mc-header .mc-header-meta{min-width:0}
+src/main/resources/static/styles.css:12602:    .mail-chat.mobile-core-mailbox .mc-header,
+src/main/resources/static/styles.css:12603:    .mail-chat.mobile-core-mailbox .mc-actions,
+src/main/resources/static/styles.css:12605:    .mail-chat.mobile-core-mailbox .mc-message footer { flex-wrap: wrap; gap: 8px; }
+src/main/resources/static/styles.css:12606:    .mail-chat.mobile-core-mailbox .mc-header-meta { overflow-wrap: anywhere; }
+src/main/resources/static/styles.css:12619:    .mail-chat.mobile-core-mailbox .mc-body { font-size: 14px; line-height: 1.8; }
+src/main/resources/static/styles.css:12689:@media(min-width:761px){#view-mailbox.mc-refined .mail-chat{grid-template-columns:380px minmax(0,1fr)}}
+src/main/resources/static/styles.css:12690:#view-mailbox.mc-refined .mail-chat .mc-filters{flex-wrap:wrap;overflow-x:visible;row-gap:0}
+src/main/resources/static/styles.css:12871:#view-mailbox.mc-refined .mc-filters{display:flex;flex-wrap:nowrap;gap:4px;overflow-x:auto;scrollbar-width:thin}
+src/main/resources/static/styles.css:12872:#view-mailbox.mc-refined .mc-filter{flex:0 0 auto;min-height:36px;padding:7px 5px 10px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:#7d8ca2;font-size:12px;line-height:1.5;white-space:nowrap}
+src/main/resources/static/styles.css:12873:#view-mailbox.mc-refined .mc-filter:hover{background:#f4f7ff;color:#3762d8}
+src/main/resources/static/styles.css:12874:#view-mailbox.mc-refined .mc-filter:active{background:#e9efff}
+src/main/resources/static/styles.css:12875:#view-mailbox.mc-refined .mc-filter[aria-pressed=true]{background:transparent;border-bottom-color:#3762d8;color:#3762d8;font-weight:600}
+src/main/resources/static/styles.css:12876:#view-mailbox.mc-refined .mc-filter:disabled{opacity:.45;cursor:not-allowed}
+src/main/resources/static/styles.css:12877:#view-mailbox.mc-refined .mc-filter:focus-visible{outline:2px solid #9eb9ff;outline-offset:-2px}
+src/main/resources/static/styles.css:12879:#view-mailbox.mc-refined .mc-filter[aria-pressed=true] .mailbox-suspend-count{background:#e9efff;color:#3762d8}
+src/main/resources/static/styles.css:12888:#view-mailbox.mc-refined .mc-actions .mailbox-suspend-action{order:-1;min-height:32px;padding:6px 13px;border:1px solid #b8c4d3;border-radius:7px;background:#fff;color:#475569;font:inherit;font-size:12px;font-weight:500;line-height:1.5;box-shadow:none;cursor:pointer}
+src/main/resources/static/styles.css:12889:#view-mailbox.mc-refined .mc-actions .mailbox-suspend-action:hover:not(:disabled){border-color:#94a3b8;background:#f1f5f9;color:#334155;transform:none}
+src/main/resources/static/styles.css:12890:#view-mailbox.mc-refined .mc-actions .mailbox-suspend-action:active:not(:disabled){background:#e2e8f0}
+src/main/resources/static/styles.css:12892:.mailbox-suspend-card-action:disabled,#view-mailbox.mc-refined .mc-actions .mailbox-suspend-action:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
+src/main/resources/static/styles.css:12899:#view-mailbox.mc-refined .mc-filter[data-chip=suspended][aria-pressed=true]{color:#475569;border-bottom-color:#64748b}
+src/main/resources/static/styles.css:12900:#view-mailbox.mc-refined .mc-filter[data-chip=suspended][aria-pressed=true] .mailbox-suspend-count{color:#475569;background:#e2e8f0}
+src/main/resources/static/styles.css:12907:.mailbox-suspend-process-confirm{display:inline-flex;align-items:center;flex-wrap:wrap;gap:7px;margin-left:auto}.mailbox-suspend-process-confirm>span{color:#8a9bb2;font-size:11px;margin-right:3px}#view-mailbox.mc-refined .mc-message footer .mc-process{margin-left:auto}.mailbox-suspend-processed-label{margin-left:auto;color:#679481;font-size:11px;line-height:30px}
+src/main/resources/static/styles.css:12908:#view-mailbox.mc-refined .mc-message .mailbox-suspend-completion-line{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:14px 0 0;padding:14px;border:1px solid #dde4ec;border-radius:8px;background:#f1f5f9;text-align:left}.mailbox-suspend-completion-line>div:first-child{min-width:0}.mailbox-suspend-completion-line strong{display:block;color:#475569;font-size:12px;font-weight:600;line-height:1.6}.mailbox-suspend-completion-line small{display:block;color:#7c8a9d;font-size:10px;line-height:1.65;margin-top:3px}.mailbox-suspend-completion-actions{display:flex;flex:none;align-items:center;gap:7px}.mailbox-suspend-completion-line .mailbox-suspend-inline-secondary{border-color:#cbd5e1;color:#64748b;background:#ffffff}.mailbox-suspend-completion-line .mailbox-suspend-inline-secondary:hover:not(:disabled){background:#e9eef4}
+src/main/resources/static/styles.css:12909:#view-mailbox.mc-refined .mc-message footer .mailbox-suspend-pending-action{margin-left:auto;padding:4px 10px;border:1px solid #dbe4f4;border-radius:6px;background:#f7faff;color:#6c87b1;font-size:11px;line-height:1.5;cursor:pointer}
+src/main/resources/static/styles.css:12910:#view-mailbox.mc-refined .mc-message footer .mailbox-suspend-pending-action:hover:not(:disabled){background:#edf3ff;color:#3762d8;border-color:#bfd0f4}
+src/main/resources/static/styles.css:12911:#view-mailbox.mc-refined .mc-message footer .mailbox-suspend-pending-action:active:not(:disabled){background:#e1ebff}
+src/main/resources/static/styles.css:12912:#view-mailbox.mc-refined .mc-message footer .mailbox-suspend-pending-action:disabled{opacity:.5;cursor:not-allowed}
+src/main/resources/static/styles.css:12913:#view-mailbox.mc-refined .mc-message footer .mailbox-suspend-pending-action:focus-visible{outline:3px solid #9eb9ff;outline-offset:2px}
+src/main/resources/static/styles.css:12918:@media(max-width:760px){.mailbox-suspend-banner{margin:12px 12px 3px;padding:11px 12px}#view-mailbox.mc-refined .mc-filter{min-height:44px;padding-left:6px;padding-right:6px}.mailbox-suspend-card-action,#view-mailbox.mc-refined .mc-actions .mailbox-suspend-action,.mailbox-suspend-inline-secondary,.mailbox-suspend-inline-primary,#view-mailbox.mc-refined .mc-message footer .mailbox-suspend-pending-action{min-height:44px}.mailbox-suspend-inline-reason textarea{font-size:16px}.mailbox-suspend-inline-reason{margin:10px 12px}#view-mailbox.mc-refined .mc-message .mailbox-suspend-completion-line{flex-direction:column;align-items:flex-start;gap:10px}.mailbox-suspend-completion-actions{align-self:flex-end}.mailbox-suspend-process-confirm>span{flex-basis:100%;text-align:right}}
+src/main/resources/static/contact-details.css:99:#view-contacts .fp-mail-history .mc-body{font-size:12px}
+src/main/resources/static/contact-details.css:100:#view-contacts .fp-mail-history .mc-message{width:92%;padding:10px 12px}
+src/main/resources/static/contact-details.css:103:#view-contacts .fp-mail-history .mc-mail-extras>.mc-body{padding:8px 0}
+src/main/resources/static/contact-details.css:105:@media(max-width:760px){#view-contacts .fp-mail-history .mc-message{width:100%}#view-contacts .fp-mail-scroll{max-height:55vh}}
+src/main/resources/static/mailbox-chat.css:34:.mail-chat .mc-header{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:16px 18px;border-bottom:1px solid #e2e8f0}
+src/main/resources/static/mailbox-chat.css:38:.mail-chat .mc-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+src/main/resources/static/mailbox-chat.css:43:.mail-chat .mc-message{align-self:flex-start;width:min(88%,820px);min-width:0;padding:12px 14px;border:1px solid #dce4ef;border-radius:10px;background:#fff}
+src/main/resources/static/mailbox-chat.css:44:.mail-chat .mc-message[data-direction=OUTBOUND]{align-self:flex-end;background:#eff5ff;border-color:#cbdcf7}
+src/main/resources/static/mailbox-chat.css:45:.mail-chat .mc-message header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;color:#64748b;font-size:11px}
+src/main/resources/static/mailbox-chat.css:46:.mail-chat .mc-message h3{font-size:13px;color:#334155;font-weight:600;margin-bottom:8px;overflow-wrap:anywhere}
+src/main/resources/static/mailbox-chat.css:47:.mail-chat .mc-body{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.8;color:#334155}
+src/main/resources/static/mailbox-chat.css:48:.mail-chat .mc-message footer{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:10px;color:#64748b;font-size:11px}
+src/main/resources/static/mailbox-chat.css:58:.mail-chat .mc-empty{padding:40px 20px;color:#64748b;text-align:center}
+src/main/resources/static/mailbox-chat.css:69:@media(max-width:1100px){.mail-chat{grid-template-columns:280px minmax(0,1fr);gap:12px}.mail-chat .mc-header{padding:14px}.mail-chat .mc-scroll{padding:14px}.mail-chat .mc-message{width:94%}}
+src/main/resources/static/mailbox-chat.css:70:@media(max-width:760px){.mail-chat{display:flex;flex-direction:column;height:auto;min-height:0;gap:12px}.mail-chat .mc-experts{max-height:320px;min-height:240px}.mail-chat .mc-expert-list{min-height:100px}.mail-chat .mc-conversation{min-height:560px}.mail-chat .mc-scroll{max-height:none;overflow:visible;padding:12px}.mail-chat .mc-message{width:100%}.mail-chat .mc-header{padding:12px}.mail-chat .mc-identity{min-width:0;width:100%;flex-basis:100%}.mail-chat .mc-section-content{padding:12px}.mail-chat .mc-actions{width:100%}}
+src/main/resources/static/mailbox-chat.css:73:#view-mailbox.mc-refined #mailboxLegacyToolbar{display:none}
+src/main/resources/static/mailbox-chat.css:74:#view-mailbox.mc-refined #mailboxConversationPanel{overflow:visible}
+src/main/resources/static/mailbox-chat.css:75:#view-mailbox.mc-refined #mailboxList{padding:16px}
+src/main/resources/static/mailbox-chat.css:76:#view-mailbox:not(.mc-refined) .mc-filter-fields{display:contents}
+src/main/resources/static/mailbox-chat.css:102:.mail-chat .mc-header{flex:none;background:#fff;padding:17px 22px 14px}
+src/main/resources/static/mailbox-chat.css:103:.mail-chat .mc-header-meta{display:flex;align-items:center;flex-wrap:wrap;gap:8px;flex-basis:100%;font-size:11px;color:#8a9bb2}
+src/main/resources/static/mailbox-chat.css:113:.mail-chat .mc-message{width:min(92%,820px);padding:14px 17px;border-radius:11px;box-shadow:0 2px 6px #334b7210}
+src/main/resources/static/mailbox-chat.css:114:.mail-chat .mc-message h3{font-size:12px;color:#4d617d;font-weight:600;margin-bottom:11px;line-height:1.55}
+src/main/resources/static/mailbox-chat.css:115:.mail-chat .mc-body{font-size:13px;line-height:1.55;color:#465974}
+src/main/resources/static/mailbox-chat.css:116:.mail-chat .mc-message footer{justify-content:flex-start;gap:12px;margin-top:12px;padding-top:10px;border-top:1px solid #e7edf5}
+src/main/resources/static/mailbox-chat.css:121:.mail-chat .mc-tag-row .inbound-tag-chip,.mail-chat .mc-header-meta .expert-tag{font-size:10px;line-height:1.6;padding:2px 6px;border-radius:5px;margin:0}
+src/main/resources/static/mailbox-chat.css:150:@media(max-width:1100px){.mail-chat{grid-template-columns:275px minmax(0,1fr);gap:12px}.mail-chat .mc-header{padding:15px}.mail-chat .mc-timeline-head{padding:10px 15px}.mail-chat .mc-message{width:96%}.mail-chat .mc-header .button{font-size:11px;padding:0 8px}}
+src/main/resources/static/mailbox-chat.css:151:@media(max-width:760px){#view-mailbox.mc-refined #mailboxList{padding:12px}.mail-chat{height:auto;min-height:0}.mail-chat .mc-search-row{position:static}.mail-chat .mc-filter-popover{position:fixed;top:100px;left:16px;width:calc(100vw - 32px);max-width:none;max-height:calc(100dvh - 116px)}.mail-chat .mc-scroll{max-height:65dvh;overflow:auto}.mail-chat .mc-message{width:100%}.mail-chat .mc-timeline-head{padding:10px 12px}.mail-chat .mc-position-hint{display:none}.mail-chat .mc-status-grid{grid-template-columns:1fr}.mail-chat .mc-manage-dialog{max-height:calc(100dvh - 32px)}}
+src/main/resources/static/mailbox-chat.css:167:.mail-chat .mc-header .mc-header-meta{min-width:0}
+src/main/resources/static/contact-history.js:10:  return `<article class="mc-message" data-direction="${outbound?'OUTBOUND':'INBOUND'}"><header><span>${outbound?'发出邮件':'专家来信'} · ${esc(String(m.eventAt||'').replace('T',' '))}${m.accountCode?' · '+esc(m.accountCode):''}</span><span class="mc-badge">${esc(status)}</span></header><h3>${esc(m.subject||'(无主题)')}</h3><div class="mc-body">${renderMailBody(body,true)}</div>${m.cleanedBody&&m.body&&m.cleanedBody!==m.body?`<details class="mc-mail-extras"><summary>查看完整原文（含引用）</summary><div class="mc-body">${renderMailBody(m.body,true)}</div></details>`:''}${Number(m.attachmentCount)>0?`<details class="mc-mail-extras"><summary>附件 ${Number(m.attachmentCount)} 份</summary>${(m.firstAttachmentNames||[]).map(n=>`<div>${esc(n)}</div>`).join('')}<button type="button" class="button small" data-history-attachments>查看附件资料</button></details>`:''}${files.length?`<details class="mc-mail-extras"><summary>已发附件 ${files.length} 份</summary>${files.map(f=>`<div>${esc(f.filename||f.originalFilename||f.displayName||'附件')} ${downloadLink(f)}</div>`).join('')}<button type="button" class="button small" data-history-attachments>查看附件资料</button></details>`:''}${(m.tags||[]).length?`<div class="mc-tag-row">${m.tags.map(t=>`<span class="inbound-tag-chip">${esc(t.label)}</span>`).join('')}</div>`:''}</article>`;
+src/main/resources/static/contact-history.js:18: function latest(s){const el=s.box.querySelector('.fp-mail-scroll'),last=el.querySelector('.mc-message:last-child');if(last)el.scrollTop=last.offsetTop-el.offsetTop;}
+src/main/resources/static/contact-history.js:21:  s.box.querySelector('.mc-timeline').innerHTML=(s.more?'<button class="button mc-load-older" data-history-older>加载更早信件</button>':'<div class="mc-day">已显示全部历史</div>')+(content||'<div class="mc-empty">暂无往来信件</div>');
+src/test/js/mailboxChatStyle.test.js:146:        assert.ok(stylesSource.includes("#view-mailbox.mc-refined .mc-filter{flex:0 0 auto;min-height:36px;padding:7px 5px 10px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:#7d8ca2;font-size:12px;line-height:1.5;white-space:nowrap}"), "chip 基础规则保持不变");
+src/test/js/mailboxChatStyle.test.js:194:                || selectorPart.startsWith("#view-mailbox.mc-refined")
+src/test/js/mailboxChatStyle.test.js:195:                || selectorPart.startsWith("#view-mailbox:not(.mc-refined)")
+src/test/js/mailboxChatStyle.test.js:204:        const finalBodyRule = cssSource.slice(cssSource.lastIndexOf(".mail-chat .mc-body"));
+src/test/js/mailboxChatStyle.test.js:207:            /^\.mail-chat \.mc-body\{font-size:13px;line-height:1\.55;color:#465974\}/,
+src/test/js/mailboxChatStyle.test.js:430:        assert.ok(stylesSource.includes("@media(min-width:761px){#view-mailbox.mc-refined .mail-chat{grid-template-columns:380px minmax(0,1fr)}}"), "380px 规则保留");
+src/test/js/mailboxChatStyle.test.js:431:        assert.ok(stylesSource.includes("#view-mailbox.mc-refined .mail-chat .mc-filters{flex-wrap:wrap;overflow-x:visible;row-gap:0}"), "wrap 高优先级规则保留");
+src/test/js/sharepointFileCardDisplay.test.js:112:        assert.match(mailboxChatJs, /mc-body">\$\{messageDisplayHtml\(displayBody\)\}/);

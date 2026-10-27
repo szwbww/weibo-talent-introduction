@@ -1,0 +1,2 @@
+$ rg -n 'addResourceHandlers|addResourceHandler|static-locations|ResourceHttpRequestHandler|setLocations|"file:' src/main/kotlin src/main/resources/application.yml
+exit=1

@@ -1,0 +1,12 @@
+{
+  "file_counts": {
+    "user1-mail-01-access-boundary.md": 10,
+    "user1-mail-02-mail-queries.md": 6,
+    "user1-mail-03-readonly-ui.md": 7,
+    "user1-mail-04-admin-grant-ui.md": 3,
+    "user1-mail-05-account-activation.md": 4
+  },
+  "unique_planned_implementation_files": 28,
+  "source_hash_changes": [],
+  "failures": []
+}

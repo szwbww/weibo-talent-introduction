@@ -1,0 +1,39 @@
+$ rg -n 'EnabledIfSystemProperty|MySQLContainer|mysql:8|DynamicProperty|migration-it|mysql-it|migrationIt|mysqlIt' src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt pom.xml
+exit=0
+pom.xml:23:        <migrationIt>false</migrationIt>
+pom.xml:24:        <mysqlIt>false</mysqlIt>
+pom.xml:179:                        <migrationIt>${migrationIt}</migrationIt>
+pom.xml:180:                        <mysqlIt>${mysqlIt}</mysqlIt>
+pom.xml:244:            <id>migration-it</id>
+pom.xml:246:                <migrationIt>true</migrationIt>
+pom.xml:250:            <id>mysql-it</id>
+pom.xml:252:                <mysqlIt>true</mysqlIt>
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:16:import org.junit.jupiter.api.condition.EnabledIfSystemProperty
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:24:import org.springframework.test.context.DynamicPropertyRegistry
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:25:import org.springframework.test.context.DynamicPropertySource
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:35:import org.testcontainers.containers.MySQLContainer
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:46:@EnabledIfSystemProperty(named = "migrationIt", matches = "true")
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:60:            MySQLContainer<KotlinMySqlContainer>(image)
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:62:        private val mysql = KotlinMySqlContainer("mysql:8.0.36")
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:83:        @DynamicPropertySource
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:84:        fun registerDynamicProperties(registry: DynamicPropertyRegistry) {
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:27:import org.junit.jupiter.api.condition.EnabledIfSystemProperty
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:35:import org.springframework.test.context.DynamicPropertyRegistry
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:36:import org.springframework.test.context.DynamicPropertySource
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:45:import org.testcontainers.containers.MySQLContainer
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:59:@EnabledIfSystemProperty(named="mysqlIt",matches="true")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:69:        @JvmStatic @DynamicPropertySource fun properties(registry: DynamicPropertyRegistry) = mysql.properties(registry)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:533:    private class Mysql: MySQLContainer<Mysql>("mysql:8.0.36")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:536:    fun properties(registry: DynamicPropertyRegistry) {
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:10:import org.junit.jupiter.api.condition.EnabledIfSystemProperty
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:36: * 专家会话查询真实 MySQL 集成测试（fast-p 07；G-1 门禁，mysqlIt）。
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:38: * 走 mysqlIt 门禁显式启用（-Pmysql-it）连接 127.0.0.1:3306/talent_introduction
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:50: *   `mvn test` 全量执行，不依赖 mysqlIt 门禁）。
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:52:@EnabledIfSystemProperty(named = "mysqlIt", matches = "true")
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:1389: * 源码级兼容回归（无 DB、不依赖 mysqlIt 门禁）：两条 latest 查询不得再生成
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:1394: * [MailboxConversationRepositoryIT] 在真实 MySQL（mysqlIt）上证明。
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:56:import org.junit.jupiter.api.condition.EnabledIfSystemProperty
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:104: * 专家会话关注/查询 controller 集成测试（fast-p 07；mysqlIt 门禁）。
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:121:@EnabledIfSystemProperty(named = "mysqlIt", matches = "true")
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:173:    // 03 (T3): MailboxConversationService 新增依赖 —— mysqlIt context 缺此 bean 会启动失败；
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:1969:@EnabledIfSystemProperty(named = "mysqlIt", matches = "true")

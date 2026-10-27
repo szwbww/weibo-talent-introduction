@@ -1,0 +1,20 @@
+$ rg -n 'AuthInterceptor\(|AuthController\(|MailboxConversationController\(|MailboxConversationService\(|MailboxConversationRepository\(' src/main src/test
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/config/RestTemplateConfig.kt:125:                OpenAlexAuthInterceptor(
+src/main/kotlin/com/weibo/talentintroduction/config/RestTemplateConfig.kt:690:class OpenAlexAuthInterceptor(apiKey: String, baseUrl: String) : ClientHttpRequestInterceptor {
+src/main/kotlin/com/weibo/talentintroduction/auth/controller/AuthController.kt:16:class AuthController(
+src/main/kotlin/com/weibo/talentintroduction/auth/config/AuthWebConfig.kt:20:        return AuthInterceptor(authService, objectMapper)
+src/main/kotlin/com/weibo/talentintroduction/auth/config/AuthInterceptor.kt:8:class AuthInterceptor(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:45:class MailboxConversationService(
+src/test/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryPaperArchiveControllerTest.kt:32:            .addInterceptors(AuthInterceptor(auth,f.mapper)).build()
+src/test/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryVerificationControllerTest.kt:32:        .addInterceptors(AuthInterceptor(auth, mapper)).build()
+src/test/kotlin/com/weibo/talentintroduction/document/controller/ExpertMaterialArchiveFlowTest.kt:42:            .addInterceptors(AuthInterceptor(auth, mapper))
+src/test/kotlin/com/weibo/talentintroduction/document/controller/ManualExpertMaterialUploadFlowTest.kt:200:            .addInterceptors(AuthInterceptor(authService, ObjectMapper()))
+src/test/kotlin/com/weibo/talentintroduction/config/RestTemplateConfigTest.kt:198:        restTemplate.interceptors.add(OpenAlexAuthInterceptor("test-key", "https://api.openalex.org"))
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:25:class MailboxConversationRepository(
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:215:class MailboxConversationController(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftSendIntegrationTest.kt:431:            it.registerSingleton("conversationController",MailboxConversationController(mock(MailboxConversationService::class.java),
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:239:        conversationService = MailboxConversationService(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:256:            .addInterceptors(AuthInterceptor(authService, ObjectMapper()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentServiceTest.kt:103:            .addInterceptors(AuthInterceptor(authService, ObjectMapper()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ReplyIdentityServiceTest.kt:181:            .addInterceptors(com.weibo.talentintroduction.auth.config.AuthInterceptor(

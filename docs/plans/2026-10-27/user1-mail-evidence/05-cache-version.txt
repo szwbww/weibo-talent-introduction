@@ -1,0 +1,215 @@
+$ rg -n '20261026-discovery-recheck-recovery|\?v=|cache.key|cacheKey' src/main/resources/static/index.html src/test/js
+exit=0
+src/main/resources/static/index.html:11:    <link rel="stylesheet" href="styles.css?v=20261026-discovery-recheck-recovery">
+src/main/resources/static/index.html:12:    <link rel="stylesheet" href="expert-materials.css?v=20261026-discovery-recheck-recovery">
+src/main/resources/static/index.html:13:    <link rel="stylesheet" href="mailbox-chat.css?v=20261026-discovery-recheck-recovery">
+src/main/resources/static/index.html:14:    <link rel="stylesheet" href="meeting-confirmation.css?v=20261026-discovery-recheck-recovery">
+src/main/resources/static/index.html:15:    <link rel="stylesheet" href="world-clock.css?v=20261026-discovery-recheck-recovery">
+src/main/resources/static/index.html:16:<link rel="stylesheet" href="meeting-records.css?v=20261026-discovery-recheck-recovery">
+src/main/resources/static/index.html:17:<link rel="stylesheet" href="contact-details.css?v=20261026-discovery-recheck-recovery">
+src/main/resources/static/index.html:2518:<script src="trust-reply-workbench.js?v=20261026-discovery-recheck-recovery"></script>
+src/main/resources/static/index.html:2519:<script src="expert-materials.js?v=20261026-discovery-recheck-recovery"></script>
+src/main/resources/static/index.html:2520:<script src="meeting-confirmation.js?v=20261026-discovery-recheck-recovery"></script>
+src/main/resources/static/index.html:2521:<script src="mailbox-chat.js?v=20261026-discovery-recheck-recovery"></script>
+src/main/resources/static/index.html:2522:<script src="contact-history.js?v=20261026-discovery-recheck-recovery"></script>
+src/main/resources/static/index.html:2523:<script src="meeting-records.js?v=20261026-discovery-recheck-recovery"></script>
+src/main/resources/static/index.html:2524:<script src="contact-details.js?v=20261026-discovery-recheck-recovery"></script>
+src/main/resources/static/index.html:2525:<script src="discovery-papers.js?v=20261026-discovery-recheck-recovery"></script>
+src/main/resources/static/index.html:2526:<script src="discovery-recheck.js?v=20261026-discovery-recheck-recovery"></script>
+src/main/resources/static/index.html:2527:<script src="app.js?v=20261026-discovery-recheck-recovery"></script>
+src/main/resources/static/index.html:2528:<script src="world-clock.js?v=20261026-discovery-recheck-recovery"></script>
+src/test/js/mailboxServerDrafts.test.js:478:        const assetKeys = [...index.matchAll(/(?:href|src)="([^"]+)\?v=([^"]+)"/g)];
+src/test/js/expertManualProfile.test.js:33:// I-1（K-frontend-cache-key-triad）：缓存键字面量只允许出现在 index.html，测试从 index.html 动态取值；
+src/test/js/expertManualProfile.test.js:35:const CACHE_KEY = (INDEX_SOURCE.match(/styles\.css\?v=([^"'&<>]+)/) || [])[1];
+src/test/js/expertManualProfile.test.js:38:    if (!match) throw new Error("planned cache key not found in " + PLAN_PATH);
+src/test/js/expertManualProfile.test.js:927:        const keys = [...INDEX_SOURCE.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
+src/test/js/expertManualProfile.test.js:936:            const at = INDEX_SOURCE.indexOf(`${asset}?v=${CACHE_KEY}`);
+src/test/js/taskActivityCenter.test.js:17:    const match = htmlSource.match(/styles\.css\?v=([^"'&<>]+)/);
+src/test/js/taskActivityCenter.test.js:18:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/taskActivityCenter.test.js:36:/** 历史键必须零命中（K-frontend-cache-key-triad：新旧键不得混用）。 */
+src/test/js/taskActivityCenter.test.js:676:    it("I-8: all eleven versioned assets share the same cache key and the old one is gone", () => {
+src/test/js/taskActivityCenter.test.js:677:        const keys = htmlSource.match(/\?v=[^"']+/g) || [];
+src/test/js/taskActivityCenter.test.js:678:        keys.forEach((key) => assert.strictEqual(key, `?v=${CACHE_KEY}`));
+src/test/js/taskActivityCenter.test.js:682:        assert.ok(!htmlSource.includes("task-modal-runtime.js?v="));
+src/test/js/taskActivityCenter.test.js:687:            const at = htmlSource.indexOf(asset + "?v=" + CACHE_KEY);
+src/test/js/taskActivityCenter.test.js:693:            assert.ok(!htmlSource.includes(retired), "retired cache key must have zero hits in index.html: " + retired);
+src/test/js/taskActivityCenter.test.js:701:            "a cache key literal must live only in index.html — found in: " + stragglers.join(", "));
+src/test/js/taskActivityCenter.test.js:702:        assert.ok(/^[0-9]{8}-[a-z0-9-]+$/.test(CACHE_KEY), "cache key must be <yyyymmdd>-<slug>, got: " + CACHE_KEY);
+src/test/js/mailboxChatBehavior.test.js:6792:        const assets = [...html.matchAll(/(?:href|src)="([^"]+\?v=([^"]+))"/g)];
+src/test/js/expertMeetingVideo.test.js:39:// K-frontend-cache-key-triad：实值只从 index.html 派生，计划目标值从 05 计划正文解析。
+src/test/js/expertMeetingVideo.test.js:40:const CACHE_KEY = (INDEX_SOURCE.match(/styles\.css\?v=([^"'&<>]+)/) || [])[1];
+src/test/js/expertMeetingVideo.test.js:43:    if (!match) throw new Error("planned cache key not found in " + PLAN_PATH);
+src/test/js/expertMeetingVideo.test.js:999:        const keys = [...INDEX_SOURCE.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
+src/test/js/expertMeetingVideo.test.js:1008:            const at = INDEX_SOURCE.indexOf(`${asset}?v=${CACHE_KEY}`);
+src/test/js/expertMeetingVideo.test.js:1015:            "the 05 test must derive the cache key, never hard-code it");
+src/test/js/batchDemandProgress.test.js:156:    const keys = [...index.matchAll(/(?:src|href)="[^"?]+\?v=([^"&]+)"/g)].map(m => m[1]);
+src/test/js/overlayAndDialogContrast.test.js:22:// I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+src/test/js/overlayAndDialogContrast.test.js:24:    const match = html.match(/styles\.css\?v=([^"'&<>]+)/);
+src/test/js/overlayAndDialogContrast.test.js:25:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/overlayAndDialogContrast.test.js:63:        const keys = (html.match(/\?v=[^"]+/g) || []).map((k) => k.slice(3));
+src/test/js/overlayAndDialogContrast.test.js:71:            const at = html.indexOf(asset + "?v=" + CACHE_KEY);
+src/test/js/overlayAndDialogContrast.test.js:76:            "the old cache key must have zero hits in index.html");
+src/test/js/ragWorkbenchRender.test.js:20:// I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+src/test/js/ragWorkbenchRender.test.js:22:    const match = html.match(/styles\.css\?v=([^"'&<>]+)/);
+src/test/js/ragWorkbenchRender.test.js:23:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/ragWorkbenchRender.test.js:394:        const match = html.match(/src="trust-reply-workbench\.js\?v=([^"]+)"/);
+src/test/js/ragWorkbenchRender.test.js:395:        assert.ok(match, "index.html must include trust-reply-workbench.js?v=");
+src/test/js/ragWorkbenchRender.test.js:396:        const keys = [...html.matchAll(/\?v=([0-9a-z-]+)/g)].map((item) => item[1]);
+src/test/js/ragWorkbenchRender.test.js:403:            const at = html.indexOf(`${asset}?v=${CACHE_KEY}`);
+src/test/js/ragWorkbenchRender.test.js:408:            "the old cache key must have zero hits in index.html");
+src/test/js/meetingConfirmationAssets.test.js:4:// 1) index.html 恰好 11 个带 ?v= 资源（7 旧 + meeting-confirmation.css/.js 与
+src/test/js/meetingConfirmationAssets.test.js:5://    world-clock.css/.js），全部同值 index.html 的 styles.css?v= 键，无重复注册；
+src/test/js/meetingConfirmationAssets.test.js:24:// I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+src/test/js/meetingConfirmationAssets.test.js:26:    const match = html.match(/styles\.css\?v=([^"'&<>]+)/);
+src/test/js/meetingConfirmationAssets.test.js:27:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/meetingConfirmationAssets.test.js:38:    it(`恰好 11 个带 ?v= 资源且全部等于 ${CACHE_KEY}，无旧键残留`, () => {
+src/test/js/meetingConfirmationAssets.test.js:39:        const keys = [...html.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
+src/test/js/meetingConfirmationAssets.test.js:42:        assert.ok(html.indexOf("discovery-recheck.js?v=") < html.indexOf("app.js?v="), "重审组件必须先于宿主");
+src/test/js/meetingConfirmationAssets.test.js:49:        const linkRe = /<link rel="stylesheet" href="([^"]+\.css)\?v=([0-9a-z-]+)">/g;
+src/test/js/meetingConfirmationAssets.test.js:50:        const scriptRe = /<script src="([^"]+\.js)\?v=([0-9a-z-]+)"><\/script>/g;
+src/test/js/meetingConfirmationAssets.test.js:68:        const linkRe = new RegExp('<link rel="stylesheet" href="[^"]+\\.css\\?v=' + escapeRegExp(CACHE_KEY) + '">', "g");
+src/test/js/meetingConfirmationAssets.test.js:69:        const scriptRe = new RegExp('<script src="[^"]+\\.js\\?v=' + escapeRegExp(CACHE_KEY) + '"><\\/script>', "g");
+src/test/js/meetingConfirmationAssets.test.js:78:        const trustAt = html.indexOf("trust-reply-workbench.js?v=" + CACHE_KEY);
+src/test/js/meetingConfirmationAssets.test.js:81:        assert.ok(!html.includes("task-modal-runtime.js?v="),
+src/test/js/meetingConfirmationAssets.test.js:88:            const at = html.indexOf(`${asset}?v=${CACHE_KEY}`);
+src/test/js/meetingConfirmationAssets.test.js:98:            const at = html.indexOf(`${asset}?v=${CACHE_KEY}`);
+src/test/js/meetingConfirmationAssets.test.js:112:        assert.ok(html.includes(`meeting-confirmation.css?v=${CACHE_KEY}`),
+src/test/js/meetingConfirmationAssets.test.js:114:        assert.ok(html.includes(`meeting-confirmation.js?v=${CACHE_KEY}`),
+src/test/js/meetingConfirmationAssets.test.js:120:            line.includes("meeting-confirmation.css?v=") || line.includes("meeting-confirmation.js?v="));
+src/test/js/meetingConfirmationAssets.test.js:126:            assert.ok(line.includes(`?v=${CACHE_KEY}`), `注册行必须携带统一键: ${line.trim()}`);
+src/test/js/meetingConfirmationAssets.test.js:144:        const linkRe = /<link rel="stylesheet" href="([^"]+\.css)\?v=([0-9a-z-]+)">/g;
+src/test/js/meetingConfirmationAssets.test.js:145:        const scriptRe = /<script src="([^"]+\.js)\?v=([0-9a-z-]+)"><\/script>/g;
+src/test/js/meetingConfirmationAssets.test.js:163:        const lastOldCssAt = html.indexOf(`meeting-confirmation.css?v=${CACHE_KEY}`);
+src/test/js/meetingConfirmationAssets.test.js:164:        const clockCssAt = html.indexOf(`world-clock.css?v=${CACHE_KEY}`);
+src/test/js/meetingConfirmationAssets.test.js:167:        const appAt = html.indexOf(`app.js?v=${CACHE_KEY}`);
+src/test/js/meetingConfirmationAssets.test.js:168:        const clockJsAt = html.indexOf(`world-clock.js?v=${CACHE_KEY}`);
+src/test/js/meetingConfirmationAssets.test.js:172:        const scriptAt = html.indexOf(`meeting-confirmation.js?v=${CACHE_KEY}`);
+src/test/js/sharepointFileCardDisplay.test.js:13:// I-7：版本键的唯一来源是 index.html 的 styles.css?v=<key>；本文件不得写死历史键。
+src/test/js/sharepointFileCardDisplay.test.js:15:    const match = indexHtml.match(/styles\.css\?v=([^"'&<>]+)/);
+src/test/js/sharepointFileCardDisplay.test.js:16:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/sharepointFileCardDisplay.test.js:113:        assert.ok(indexHtml.includes(`mailbox-chat.js?v=${CACHE_KEY}`),
+src/test/js/discoveryApolloSettings.test.js:50:    const keys = [...html.matchAll(/\?v=([^"<>]+)/g)].map(m => m[1]);
+src/test/js/discoveryApolloSettings.test.js:51:    const currentKey = html.match(/styles\.css\?v=([^"<>]+)/)[1];
+src/test/js/checkRepliesRelocation.test.js:11:// I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+src/test/js/checkRepliesRelocation.test.js:13:    const match = html.match(/styles\.css\?v=([^"'&<>]+)/);
+src/test/js/checkRepliesRelocation.test.js:14:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/checkRepliesRelocation.test.js:70:        const keys = (html.match(/\?v=[^"]+/g) || []).map((k) => k.slice(3));
+src/test/js/checkRepliesRelocation.test.js:72:            assert.strictEqual(key, CACHE_KEY, "every cache key must equal " + CACHE_KEY);
+src/test/js/checkRepliesRelocation.test.js:79:            const at = html.indexOf(asset + "?v=" + CACHE_KEY);
+src/test/js/checkRepliesRelocation.test.js:84:            "the old cache key must have zero hits in index.html");
+src/test/js/contactTimingStyle.test.js:12:// 5) 资源登记：全部 ?v= 同值、无旧键残留、数量与位置不变。
+src/test/js/contactTimingStyle.test.js:31:    const match = indexSource.match(/styles\.css\?v=([^"'&<>\s]+)/);
+src/test/js/contactTimingStyle.test.js:32:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/contactTimingStyle.test.js:174:    it("全部 ?v= 同值，数量与位置不变，键格式合法", () => {
+src/test/js/contactTimingStyle.test.js:175:        const keys = Array.from(indexSource.matchAll(/\?v=([^"'&<>\s]+)/g)).map((match) => match[1]);
+src/test/js/contactTimingStyle.test.js:182:            (indexSource.match(/href="styles\.css\?v=/g) || []).length, 1,
+src/test/js/contactTimingStyle.test.js:185:        assert.strictEqual((indexSource.match(/src="mailbox-chat\.js\?v=/g) || []).length, 1);
+src/test/js/contactTimingStyle.test.js:186:        assert.strictEqual((indexSource.match(/src="app\.js\?v=/g) || []).length, 1);
+src/test/js/mailOpenTracking.test.js:274:test("all eleven versioned assets in index.html carry one cache key", () => {
+src/test/js/mailOpenTracking.test.js:275:    const versions = [...markup.matchAll(/\.(?:css|js)\?v=([A-Za-z0-9._-]+)/g)].map(match => match[1]);
+src/test/js/mailOpenTracking.test.js:276:    assert.equal(new Set(versions).size, 1, `assets must share one cache key, saw ${[...new Set(versions)].join(", ")}`);
+src/test/js/batchSenderFilter.test.js:233:        const keys = [...indexSource.matchAll(/\?v=([^"']+)/g)].map((m) => m[1]);
+src/test/js/mailboxTemplateReferenceStyle.test.js:8:// 4) S-4 资源登记：11 个 ?v= 同值且为新键（键值从 index.html 派生，不写死历史数量）；
+src/test/js/mailboxTemplateReferenceStyle.test.js:31:    const match = indexSource.match(/styles\.css\?v=([^"'&<>\s]+)/);
+src/test/js/mailboxTemplateReferenceStyle.test.js:32:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/mailboxTemplateReferenceStyle.test.js:156:        const keys = Array.from(indexSource.matchAll(/\?v=([^"'&<>\s]+)/g)).map((match) => match[1]);
+src/test/js/mailboxSuspensionStyle.test.js:37:const cacheKey = (() => {
+src/test/js/mailboxSuspensionStyle.test.js:38:    const match = indexSource.match(/styles\.css\?v=([^"'&<>]+)/);
+src/test/js/mailboxSuspensionStyle.test.js:39:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/mailboxSuspensionStyle.test.js:118:        const versioned = indexSource.match(/\?v=([^"'&<>]+)/g) || [];
+src/test/js/mailboxSuspensionStyle.test.js:120:        assert.deepStrictEqual(distinct, ["?v=" + cacheKey], "11 处必须同值");
+src/test/js/mailboxSuspensionStyle.test.js:121:        assert.ok(!cacheKey.includes("mobile-core"), "统一为 02 发布键，不得残留并行 mobile-core 键");
+src/test/js/mailboxSuspensionStyle.test.js:122:        assert.ok(/^\d{8}-[a-z0-9-]+$/.test(cacheKey), "键格式合法");
+src/test/js/trustReplyWorkbenchSharedMount.test.js:5:// 2) G-5 11 个缓存资源同值（index.html 的 styles.css?v= 键）；
+src/test/js/trustReplyWorkbenchSharedMount.test.js:22:// I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+src/test/js/trustReplyWorkbenchSharedMount.test.js:24:    const match = indexSource.match(/styles\.css\?v=([^"'&<>]+)/);
+src/test/js/trustReplyWorkbenchSharedMount.test.js:25:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/trustReplyWorkbenchSharedMount.test.js:181:        const keys = [...indexSource.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
+src/test/js/trustReplyWorkbenchSharedMount.test.js:190:            const at = indexSource.indexOf(`${asset}?v=${CACHE_KEY}`);
+src/test/js/trustReplyWorkbenchSharedMount.test.js:195:            "the old cache key must have zero hits in index.html");
+src/test/js/batchSendTaskConsoleVisualFix.test.js:12:// I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+src/test/js/batchSendTaskConsoleVisualFix.test.js:14:    const match = html.match(/styles\.css\?v=([^"'&<>]+)/);
+src/test/js/batchSendTaskConsoleVisualFix.test.js:15:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/batchSendTaskConsoleVisualFix.test.js:55:    it("bumps the stylesheet cache key", () => {
+src/test/js/batchSendTaskConsoleVisualFix.test.js:60:            assert.ok(html.includes(`${asset}?v=${CACHE_KEY}`), `${asset} must carry the unified key`);
+src/test/js/batchSendTaskConsoleVisualFix.test.js:67:            const at = html.indexOf(`${asset}?v=${CACHE_KEY}`);
+src/test/js/batchSendTaskConsoleVisualFix.test.js:71:        assert.ok(!html.includes("20260903-bounce-warning"), "the old cache key must have zero hits in index.html");
+src/test/js/batchRecipientStatisticsCache.test.js:53:const ready = (count = 100, extra = {}) => Object.assign({ state: "READY", cacheKey: "same-key", stale: false,
+src/test/js/batchRecipientStatisticsCache.test.js:71:    f.pending[0].resolve({ state: "MISS", cacheKey: "same-key", summary: null });
+src/test/js/batchRecipientStatisticsCache.test.js:135:    f.pending[2].reject({ status: 503, data: ready(999, { state: "ERROR", cacheKey: "wrong-key" }) }); await flush();
+src/test/js/batchRecipientStatisticsCache.test.js:146:    f.pending[0].resolve(ready(100, { cacheKey: "A" })); await flush();
+src/test/js/batchRecipientStatisticsCache.test.js:151:        state: "ERROR", cacheKey: "B", summary: null, cachedAt: null,
+src/test/js/batchRecipientStatisticsCache.test.js:163:    assert.equal(hint(f, kind).recipientStatistics.envelope.cacheKey, "B");
+src/test/js/batchRecipientStatisticsCache.test.js:174:    f.tick(); f.pending[1].resolve({ state: "MISS", cacheKey: "B" }); await flush();
+src/test/js/batchRecipientStatisticsCache.test.js:205:        f.pending.at(-1).resolve({ state, cacheKey: "empty" }); await flush();
+src/test/js/senderBindingDisplay.test.js:301:// K-frontend-cache-key-triad：缓存键不写死在测试里——从随包发布的 index.html 派生，
+src/test/js/senderBindingDisplay.test.js:304:    const match = indexHtmlSource.match(/styles\.css\?v=([^"'&<>]+)/);
+src/test/js/senderBindingDisplay.test.js:305:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/senderBindingDisplay.test.js:392:describe("static resource cache keys (I-5)", () => {
+src/test/js/senderBindingDisplay.test.js:394:        const keys = indexHtmlSource.match(/\?v=[^"']+/g) || [];
+src/test/js/senderBindingDisplay.test.js:395:        keys.forEach((key) => assert.strictEqual(key, `?v=${CACHE_KEY}`));
+src/test/js/senderBindingDisplay.test.js:396:        assert.ok(/^[0-9]{8}-[a-z0-9-]+$/.test(CACHE_KEY), `cache key must be <yyyymmdd>-<slug>, got: ${CACHE_KEY}`);
+src/test/js/senderBindingDisplay.test.js:405:        assert.ok(!indexHtmlSource.includes("task-modal-runtime.js?v="));
+src/test/js/mailboxGroupPush.test.js:86:    const keys = [...html.matchAll(/\?v=([^"']+)/g)].map(match => match[1]);
+src/test/js/mailboxGroupPush.test.js:89:    const resources = [...html.matchAll(/(?:src|href)="([^"']+)\?v=[^"']+"/g)].map(match => match[1]);
+src/test/js/batchSendTaskConsoleInteraction.test.js:1949:                    return { state: "READY", cacheKey: "gate", cachedAt: "2026-10-22T16:00:00",
+src/test/js/batchSendTaskConsoleInteraction.test.js:1980:        pending[1].resolve({ state: "READY", cacheKey: "new", summary: { totalSendable: 60 } });
+src/test/js/mailboxChatStyle.test.js:26:// I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+src/test/js/mailboxChatStyle.test.js:28:    const match = indexSource.match(/styles\.css\?v=([^"'&<>]+)/);
+src/test/js/mailboxChatStyle.test.js:29:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/mailboxChatStyle.test.js:96:            new RegExp('href="mailbox-chat\\.css\\?v=' + escapeRegExp(CACHE_KEY) + '"'),
+src/test/js/mailboxChatStyle.test.js:109:        const refs = [...indexSource.matchAll(/\?v=([^"'&<>]+)/g)].map((match) => match[1]);
+src/test/js/mailboxChatStyle.test.js:114:            indexSource.match(/mailbox-chat\.css\?v=([^"'&<>]+)/)[1],
+src/test/js/mailboxChatStyle.test.js:119:            indexSource.match(/app\.js\?v=([^"'&<>]+)/)[1],
+src/test/js/mailboxChatStyle.test.js:357:        const keys = Array.from(indexSource.matchAll(/\?v=([^"'&<>\s]+)/g)).map((match) => match[1]);
+src/test/js/mailboxChatStyle.test.js:364:            const at = indexSource.indexOf(`${asset}?v=${CACHE_KEY}`);
+src/test/js/mailboxReplyIdentity.test.js:511:        const keys = [...index.matchAll(/(?:src|href)="[^"\n]+\?v=([^"&]+)/g)].map((match) => match[1]);
+src/test/js/contactDetailsCache.test.js:3:const implementation=source.match(/function cachedRead\(cache,key,url\)\{[\s\S]*?return cache\.get\(key\);\}/)[0];
+src/test/js/recipientPreviewDiagnostics.test.js:76:    return { state: "READY", cacheKey: "fixture", cachedAt: "2026-10-22T16:00:00", summary: Object.assign({
+src/test/js/recipientPreviewDiagnostics.test.js:201:        sandbox.api = async () => ({ state: "READY", cacheKey: "legacy", summary: { pending: 5, retryable: 1, totalSendable: 6 } });
+src/test/js/recipientPreviewDiagnostics.test.js:280:    it("collapses the 17 versioned references onto one new cache key", () => {
+src/test/js/recipientPreviewDiagnostics.test.js:281:        const keyMatch = indexSource.match(/styles\.css\?v=([^"'&<>]+)/);
+src/test/js/recipientPreviewDiagnostics.test.js:282:        assert.ok(keyMatch, "index.html must register styles.css with a ?v= cache key");
+src/test/js/recipientPreviewDiagnostics.test.js:283:        const keys = [...indexSource.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
+src/test/js/recipientPreviewDiagnostics.test.js:285:            "all 17 resources must share the single new cache key, actual: " + keys.join(","));
+src/test/js/taskRecordsSemantics.test.js:335:        const versionedAssets = [...html.matchAll(/(?:href|src)="([^"]+\?v=([^"]+))"/g)];
+src/test/js/taskRecordsSemantics.test.js:339:            assert.ok(versionedAssets.some((match) => match[1] === `${asset}?v=${assetKey}`));
+src/test/js/taskRecordsSemantics.test.js:348:            + `<link rel="stylesheet" href="../../src/main/resources/static/styles.css?v=${assetKey}">`
+src/test/js/batchEmailVerification.test.js:946:        const keys = [...indexSource.matchAll(/\?v=([^"']+)/g)].map((match) => match[1]);
+src/test/js/batchEmailVerification.test.js:948:        const cacheKey = keys[0];
+src/test/js/batchEmailVerification.test.js:949:        assert.match(cacheKey, /^[0-9]{8}-[a-z0-9-]+$/, "the shared key must be <yyyymmdd>-<slug>");
+src/test/js/batchEmailVerification.test.js:950:        assert.ok(indexSource.includes('href="styles.css?v=' + cacheKey + '"'));
+src/test/js/batchEmailVerification.test.js:951:        assert.ok(indexSource.includes('src="app.js?v=' + cacheKey + '"'));
+src/test/js/batchEmailVerification.test.js:952:        assert.ok(indexSource.includes('src="trust-reply-workbench.js?v=' + cacheKey + '"'),
+src/test/js/batchEmailVerification.test.js:1119:                return { state: "READY", cacheKey: "verified", cachedAt: "2026-10-22T16:00:00",
+src/test/js/expertContactSharedNote.test.js:30:// 缓存键（K-frontend-cache-key-triad）：实值只从 index.html 派生，计划目标值从 03 计划正文解析，
+src/test/js/expertContactSharedNote.test.js:32:const CACHE_KEY = (INDEX_SOURCE.match(/styles\.css\?v=([^"'&<>]+)/) || [])[1];
+src/test/js/expertContactSharedNote.test.js:35:    if (!match) throw new Error("planned cache key not found in " + PLAN_PATH);
+src/test/js/expertContactSharedNote.test.js:767:        const keys = [...INDEX_SOURCE.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
+src/test/js/expertContactSharedNote.test.js:776:            const at = INDEX_SOURCE.indexOf(`${asset}?v=${CACHE_KEY}`);
+src/test/js/expertContactSharedNote.test.js:782:        // K-frontend-cache-key-triad：键字面量只允许出现在 index.html。
+src/test/js/expertContactSharedNote.test.js:784:            "the 03 test must derive the cache key, never hard-code it");
+src/test/js/discoveryReview.test.js:464:    it("keeps one cache key for all eighteen assets and other task modals at 700px", () => {
+src/test/js/discoveryReview.test.js:468:        assert.strictEqual(unique.length, 1, "all assets must share one cache key");
+src/test/js/discoveryReview.test.js:469:        assert.match(unique[0], /^[0-9]{8}-[a-z0-9-]+$/, "cache key must be <yyyymmdd>-<slug>");
+src/test/js/discoveryReview.test.js:1080:        const keys = [...indexHtml.matchAll(/\?v=([^"<>]+)/g)].map(match => match[1]);
+src/test/js/discoveryScheduleSetting.test.js:331:            const keys = [...indexHtml.matchAll(/\?v=([^"'&<>]+)/g)].map((match) => match[1]);
+src/test/js/discoveryScheduleSetting.test.js:333:            const cacheKey = keys[0];
+src/test/js/discoveryScheduleSetting.test.js:334:            assert.match(cacheKey, /^[0-9]{8}-[a-z0-9-]+$/, "the shared key must be <yyyymmdd>-<slug>");
+src/test/js/discoveryScheduleSetting.test.js:335:            assert.notStrictEqual(cacheKey, PREVIOUS_CACHE_KEY, "the released key must be bumped");
+src/test/js/discoveryScheduleSetting.test.js:341:                assert.ok(indexHtml.includes(`${asset}?v=${cacheKey}`), `${asset} must carry the shared key`);
+src/test/js/discoveryPapers.test.js:91:    assert.equal((html.match(/\?v=/g) || []).length, 18);
+src/test/js/discoveryVerification.test.js:91:    const values = [...html.matchAll(/\?v=([^"<>]+)/g)].map(m => m[1]);
+src/test/js/ragKnowledgeBasePage.test.js:12:// I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+src/test/js/ragKnowledgeBasePage.test.js:14:    const match = html.match(/styles\.css\?v=([^"'&<>]+)/);
+src/test/js/ragKnowledgeBasePage.test.js:15:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/ragKnowledgeBasePage.test.js:340:    it(`G-5：11 处 ?v= 缓存键同值且等于 ${CACHE_KEY}，注册顺序合规`, () => {
+src/test/js/ragKnowledgeBasePage.test.js:344:            assert.ok(html.includes(`${asset}?v=${CACHE_KEY}`), `${asset} key`);
+src/test/js/ragKnowledgeBasePage.test.js:346:        const keys = [...html.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
+src/test/js/ragKnowledgeBasePage.test.js:353:            const at = html.indexOf(`${asset}?v=${CACHE_KEY}`);
+src/test/js/manualReplySubjectPrefill.test.js:13:// I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+src/test/js/manualReplySubjectPrefill.test.js:15:    const match = html.match(/styles\.css\?v=([^"'&<>]+)/);
+src/test/js/manualReplySubjectPrefill.test.js:16:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/manualReplySubjectPrefill.test.js:92:        const keys = (html.match(/\?v=[^"]+/g) || []).map((k) => k.slice(3));
+src/test/js/manualReplySubjectPrefill.test.js:100:            const at = html.indexOf(asset + "?v=" + CACHE_KEY);
+src/test/js/manualReplySubjectPrefill.test.js:105:            "the old cache key must have zero hits in index.html");

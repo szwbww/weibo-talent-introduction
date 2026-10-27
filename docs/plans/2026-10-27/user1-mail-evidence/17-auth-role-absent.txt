@@ -1,0 +1,2 @@
+$ rg -n 'role|permission|权限|授权|user1' src/main/kotlin/com/weibo/talentintroduction/auth
+exit=1

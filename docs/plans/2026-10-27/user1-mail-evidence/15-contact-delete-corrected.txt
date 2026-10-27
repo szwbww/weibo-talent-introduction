@@ -1,0 +1,5 @@
+$ rg -n 'deleteById|deleteAll|DELETE FROM expert_contact|delete from expert_contact' src/main/kotlin/com/weibo/talentintroduction/campaign src/main/kotlin/com/weibo/talentintroduction/discovery src/main/resources/db/migration
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertMaterialService.kt:198:                    expertMaterialStatusRepository.deleteById(id)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertEmailAliasService.kt:82:        expertEmailAliasRepository.deleteById(aliasId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertMaterialStatusRepository.kt:8: * save/deleteById 复用 CrudRepository，更新已有状态保留其 id 走 Spring Data JDBC update。

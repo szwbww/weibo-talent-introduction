@@ -1,0 +1,111 @@
+$ rg -n 'AdminUser|admin_user|AUTH_USERNAME|AuthSessionKeys.USERNAME' src/main src/test/kotlin/com/weibo/talentintroduction/auth
+exit=0
+src/test/kotlin/com/weibo/talentintroduction/auth/service/AuthServiceTest.kt:3:import com.weibo.talentintroduction.auth.domain.AdminUser
+src/test/kotlin/com/weibo/talentintroduction/auth/service/AuthServiceTest.kt:4:import com.weibo.talentintroduction.auth.repository.AdminUserRepository
+src/test/kotlin/com/weibo/talentintroduction/auth/service/AuthServiceTest.kt:15:    private val adminUserRepository = mock(AdminUserRepository::class.java)
+src/test/kotlin/com/weibo/talentintroduction/auth/service/AuthServiceTest.kt:22:        val user = AdminUser(
+src/test/kotlin/com/weibo/talentintroduction/auth/service/AuthServiceTest.kt:31:        `when`(adminUserRepository.save(Mockito.any(AdminUser::class.java))).thenAnswer { it.arguments[0] }
+src/test/kotlin/com/weibo/talentintroduction/auth/service/AuthServiceTest.kt:51:        val user = AdminUser(
+src/test/kotlin/com/weibo/talentintroduction/auth/service/AuthServiceTest.kt:86:        val user = AdminUser(
+src/test/kotlin/com/weibo/talentintroduction/auth/service/AuthServiceTest.kt:95:        `when`(adminUserRepository.save(Mockito.any(AdminUser::class.java))).thenAnswer {
+src/test/kotlin/com/weibo/talentintroduction/auth/service/AuthServiceTest.kt:96:            val saved = it.arguments[0] as AdminUser
+src/test/kotlin/com/weibo/talentintroduction/auth/service/AuthServiceTest.kt:110:        val user = AdminUser(
+src/test/kotlin/com/weibo/talentintroduction/auth/service/AuthServiceTest.kt:128:        val user = AdminUser(
+src/test/kotlin/com/weibo/talentintroduction/auth/service/AuthServiceTest.kt:146:        val user = AdminUser(
+src/test/kotlin/com/weibo/talentintroduction/auth/service/AuthServiceTest.kt:164:        val user = AdminUser(
+src/test/kotlin/com/weibo/talentintroduction/auth/service/AuthServiceTest.kt:192:        val user = AdminUser(
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:5:import com.weibo.talentintroduction.auth.domain.AdminUser
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:6:import com.weibo.talentintroduction.auth.repository.AdminUserRepository
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:7:import com.weibo.talentintroduction.auth.service.AdminUserBootstrap
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:95:    private lateinit var adminUserRepository: AdminUserRepository
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:98:    private lateinit var adminUserBootstrap: AdminUserBootstrap
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:200:        assertEquals("admin", session.getAttribute(AuthSessionKeys.USERNAME))
+src/test/kotlin/com/weibo/talentintroduction/auth/service/AdminUserBootstrapTest.kt:3:import com.weibo.talentintroduction.auth.domain.AdminUser
+src/test/kotlin/com/weibo/talentintroduction/auth/service/AdminUserBootstrapTest.kt:4:import com.weibo.talentintroduction.auth.repository.AdminUserRepository
+src/test/kotlin/com/weibo/talentintroduction/auth/service/AdminUserBootstrapTest.kt:17:class AdminUserBootstrapTest {
+src/test/kotlin/com/weibo/talentintroduction/auth/service/AdminUserBootstrapTest.kt:19:    private val adminUserRepository = mock(AdminUserRepository::class.java)
+src/test/kotlin/com/weibo/talentintroduction/auth/service/AdminUserBootstrapTest.kt:21:    private val bootstrap = AdminUserBootstrap(adminUserRepository, passwordEncoder)
+src/test/kotlin/com/weibo/talentintroduction/auth/service/AdminUserBootstrapTest.kt:28:        `when`(adminUserRepository.save(Mockito.any(AdminUser::class.java))).thenAnswer { it.arguments[0] }
+src/test/kotlin/com/weibo/talentintroduction/auth/service/AdminUserBootstrapTest.kt:33:        verify(adminUserRepository, times(1)).save(Mockito.any(AdminUser::class.java))
+src/test/kotlin/com/weibo/talentintroduction/auth/service/AdminUserBootstrapTest.kt:38:        val user = AdminUser(
+src/test/kotlin/com/weibo/talentintroduction/auth/service/AdminUserBootstrapTest.kt:51:        verify(adminUserRepository, never()).save(Mockito.any(AdminUser::class.java))
+src/test/kotlin/com/weibo/talentintroduction/auth/service/AdminUserBootstrapTest.kt:58:            .thenReturn(AdminUser(
+src/test/kotlin/com/weibo/talentintroduction/auth/service/AdminUserBootstrapTest.kt:68:        `when`(adminUserRepository.save(Mockito.any(AdminUser::class.java)))
+src/test/kotlin/com/weibo/talentintroduction/auth/service/AdminUserBootstrapTest.kt:82:        `when`(adminUserRepository.save(Mockito.any(AdminUser::class.java)))
+src/test/kotlin/com/weibo/talentintroduction/auth/controller/AuthControllerMvcTest.kt:4:import com.weibo.talentintroduction.auth.domain.AdminUser
+src/test/kotlin/com/weibo/talentintroduction/auth/controller/AuthControllerMvcTest.kt:35:        val adminUser = AdminUser(
+src/test/kotlin/com/weibo/talentintroduction/auth/controller/AuthControllerMvcTest.kt:57:        assertEquals("admin", session?.getAttribute(AuthSessionKeys.USERNAME))
+src/test/kotlin/com/weibo/talentintroduction/auth/controller/AuthControllerMvcTest.kt:62:        val adminUser = AdminUser(
+src/test/kotlin/com/weibo/talentintroduction/auth/controller/AuthControllerMvcTest.kt:87:        assertEquals("admin", session?.getAttribute(AuthSessionKeys.USERNAME))
+src/test/kotlin/com/weibo/talentintroduction/auth/controller/AuthControllerMvcTest.kt:109:        assertTrue(session == null || session.getAttribute(AuthSessionKeys.USERNAME) == null)
+src/test/kotlin/com/weibo/talentintroduction/auth/controller/AuthControllerMvcTest.kt:123:        session.setAttribute(AuthSessionKeys.USERNAME, "admin")
+src/test/kotlin/com/weibo/talentintroduction/auth/controller/AuthControllerMvcTest.kt:125:        val adminUser = AdminUser(
+src/test/kotlin/com/weibo/talentintroduction/auth/controller/AuthControllerMvcTest.kt:145:        session.setAttribute(AuthSessionKeys.USERNAME, "admin")
+src/test/kotlin/com/weibo/talentintroduction/auth/controller/AuthControllerMvcTest.kt:160:        session.setAttribute(AuthSessionKeys.USERNAME, "admin")
+src/test/kotlin/com/weibo/talentintroduction/auth/controller/AuthControllerMvcTest.kt:184:        session.setAttribute(AuthSessionKeys.USERNAME, "admin")
+src/test/kotlin/com/weibo/talentintroduction/auth/controller/AuthControllerMvcTest.kt:200:        session.setAttribute(AuthSessionKeys.USERNAME, "admin")
+src/test/kotlin/com/weibo/talentintroduction/auth/config/AuthInterceptorTest.kt:4:import com.weibo.talentintroduction.auth.domain.AdminUser
+src/test/kotlin/com/weibo/talentintroduction/auth/config/AuthInterceptorTest.kt:69:        session.setAttribute(AuthSessionKeys.USERNAME, "admin")
+src/test/kotlin/com/weibo/talentintroduction/auth/config/AuthInterceptorTest.kt:84:        session.setAttribute(AuthSessionKeys.USERNAME, "admin")
+src/test/kotlin/com/weibo/talentintroduction/auth/config/AuthInterceptorTest.kt:86:        val user = AdminUser(
+src/test/kotlin/com/weibo/talentintroduction/auth/config/AuthInterceptorTest.kt:106:        session.setAttribute(AuthSessionKeys.USERNAME, "admin")
+src/test/kotlin/com/weibo/talentintroduction/auth/config/AuthInterceptorTest.kt:108:        val user = AdminUser(
+src/test/kotlin/com/weibo/talentintroduction/auth/config/AuthInterceptorTest.kt:139:        session.setAttribute(AuthSessionKeys.USERNAME, "admin")
+src/test/kotlin/com/weibo/talentintroduction/auth/config/AuthInterceptorTest.kt:141:        val user = AdminUser(
+src/main/kotlin/com/weibo/talentintroduction/document/controller/ExpertMeetingRecordController.kt:30:        (request.getSession(false)?.getAttribute(AuthSessionKeys.USERNAME) as? String)?.takeIf { it.isNotBlank() }
+src/main/kotlin/com/weibo/talentintroduction/auth/domain/AdminUser.kt:7:@Table("admin_user")
+src/main/kotlin/com/weibo/talentintroduction/auth/domain/AdminUser.kt:8:data class AdminUser(
+src/main/kotlin/com/weibo/talentintroduction/auth/repository/AdminUserRepository.kt:3:import com.weibo.talentintroduction.auth.domain.AdminUser
+src/main/kotlin/com/weibo/talentintroduction/auth/repository/AdminUserRepository.kt:6:interface AdminUserRepository : CrudRepository<AdminUser, Long> {
+src/main/kotlin/com/weibo/talentintroduction/auth/repository/AdminUserRepository.kt:7:    fun findByUsername(username: String): AdminUser?
+src/main/kotlin/com/weibo/talentintroduction/document/controller/ExpertMeetingVideoController.kt:40: * - 全部端点要求现有登录会话（`AuthSessionKeys.USERNAME`）；用户名只取服务端会话；
+src/main/kotlin/com/weibo/talentintroduction/document/controller/ExpertMeetingVideoController.kt:175:        (request.getSession(false)?.getAttribute(AuthSessionKeys.USERNAME) as? String)
+src/main/kotlin/com/weibo/talentintroduction/auth/service/AdminUserBootstrap.kt:3:import com.weibo.talentintroduction.auth.domain.AdminUser
+src/main/kotlin/com/weibo/talentintroduction/auth/service/AdminUserBootstrap.kt:4:import com.weibo.talentintroduction.auth.repository.AdminUserRepository
+src/main/kotlin/com/weibo/talentintroduction/auth/service/AdminUserBootstrap.kt:15:class AdminUserBootstrap(
+src/main/kotlin/com/weibo/talentintroduction/auth/service/AdminUserBootstrap.kt:16:    private val adminUserRepository: AdminUserRepository,
+src/main/kotlin/com/weibo/talentintroduction/auth/service/AdminUserBootstrap.kt:20:    private val logger = LoggerFactory.getLogger(AdminUserBootstrap::class.java)
+src/main/kotlin/com/weibo/talentintroduction/auth/service/AdminUserBootstrap.kt:26:                val admin = AdminUser(
+src/main/kotlin/com/weibo/talentintroduction/document/controller/ExpertMaterialController.kt:99:        val username = session?.getAttribute(AuthSessionKeys.USERNAME) as? String
+src/main/kotlin/com/weibo/talentintroduction/document/controller/ExpertMaterialController.kt:108:     * 身份只取会话 `AuthSessionKeys.USERNAME`（不接受客户端 uploadedBy）；未登录在到达本
+src/main/kotlin/com/weibo/talentintroduction/document/controller/ExpertMaterialController.kt:123:        val username = session?.getAttribute(AuthSessionKeys.USERNAME) as? String
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:88:        val username = servletRequest.getSession(false)?.getAttribute(AuthSessionKeys.USERNAME) as? String ?: "anonymous"
+src/main/kotlin/com/weibo/talentintroduction/auth/service/AuthService.kt:3:import com.weibo.talentintroduction.auth.domain.AdminUser
+src/main/kotlin/com/weibo/talentintroduction/auth/service/AuthService.kt:4:import com.weibo.talentintroduction.auth.repository.AdminUserRepository
+src/main/kotlin/com/weibo/talentintroduction/auth/service/AuthService.kt:12:    private val adminUserRepository: AdminUserRepository,
+src/main/kotlin/com/weibo/talentintroduction/auth/service/AuthService.kt:17:    fun login(username: String?, rawPassword: String?): AdminUser {
+src/main/kotlin/com/weibo/talentintroduction/auth/service/AuthService.kt:77:    fun findUser(username: String): AdminUser? {
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertManualProfileController.kt:30: * 01：人工档案读写 API。全部端点要求现有登录会话（`AuthSessionKeys.USERNAME`），
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertManualProfileController.kt:103:        (request.getSession(false)?.getAttribute(AuthSessionKeys.USERNAME) as? String)
+src/main/kotlin/com/weibo/talentintroduction/auth/controller/AuthController.kt:39:        session.setAttribute(AuthSessionKeys.USERNAME, adminUser.username)
+src/main/kotlin/com/weibo/talentintroduction/auth/controller/AuthController.kt:56:        val username = session?.getAttribute(AuthSessionKeys.USERNAME) as? String
+src/main/kotlin/com/weibo/talentintroduction/auth/controller/AuthController.kt:81:        val username = session?.getAttribute(AuthSessionKeys.USERNAME) as? String
+src/main/kotlin/com/weibo/talentintroduction/auth/config/AuthSessionKeys.kt:4:    const val USERNAME = "AUTH_USERNAME"
+src/main/kotlin/com/weibo/talentintroduction/auth/config/AuthInterceptor.kt:19:        val username = session?.getAttribute(AuthSessionKeys.USERNAME) as? String
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryPersonMaintenanceController.kt:63: * 沿用现有管理入口访问控制：要求登录态，actor 只取会话（[AuthSessionKeys.USERNAME]），
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryPersonMaintenanceController.kt:132:        (request.getSession(false)?.getAttribute(AuthSessionKeys.USERNAME) as? String)?.trim()?.takeIf { it.isNotEmpty() }
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryRecheckController.kt:92:        (request.getSession(false)?.getAttribute(AuthSessionKeys.USERNAME) as? String)?.trim()?.takeIf { it.isNotEmpty() }
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryReviewController.kt:26: * （`AuthSessionKeys.USERNAME`），绝不接受客户端伪造用户名；不发送任何邮件。
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryReviewController.kt:204:        (request.getSession(false)?.getAttribute(AuthSessionKeys.USERNAME) as? String)?.trim()?.takeIf { it.isNotEmpty() }
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryReviewCountsController.kt:43:        (request.getSession(false)?.getAttribute(AuthSessionKeys.USERNAME) as? String)?.trim()?.takeIf { it.isNotEmpty() }
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryIdentityRecoveryController.kt:27: * 02（I-3）：登录保护的旧名单回源维护 API。actor 只取会话（[AuthSessionKeys.USERNAME]），
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryIdentityRecoveryController.kt:67:        (request.getSession(false)?.getAttribute(AuthSessionKeys.USERNAME) as? String)?.trim()?.takeIf { it.isNotEmpty() }
+src/main/resources/db/migration/V121__create_expert_follow.sql:5:-- username = 登录会话 AUTH_USERNAME（仅当前 admin 单用户体系；不新增用户表，
+src/main/resources/db/migration/V121__create_expert_follow.sql:6:-- 也不加 admin_user 外键）。created_at = 首次关注时间；幂等重复 PUT 不刷新。
+src/main/resources/db/migration/V121__create_expert_follow.sql:11:    username           VARCHAR(64)  NOT NULL COMMENT '登录用户名（Session AUTH_USERNAME）',
+src/main/resources/db/migration/V25__create_admin_user.sql:1:CREATE TABLE admin_user (
+src/main/resources/db/migration/V25__create_admin_user.sql:9:    CONSTRAINT uk_admin_user_username UNIQUE (username)
+src/main/resources/db/migration/V147__create_expert_mailbox_suspension.sql:8:-- username = 登录会话 AUTH_USERNAME（沿 V121 expert_follow 的现有关注模式；
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/OutboundMailAttachment.kt:13: * （`AuthSessionKeys.USERNAME`）；请求体里的 operatorName 一律不参与身份（I-2）。
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/ExpertInboundNotificationController.kt:37:        (request.getSession(false)?.getAttribute(AuthSessionKeys.USERNAME) as? String)?.takeIf { it.isNotBlank() }
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactNoteController.kt:38:        (request.getSession(false)?.getAttribute(AuthSessionKeys.USERNAME) as? String)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentController.kt:39: * 身份只来自会话（`AuthSessionKeys.USERNAME`），不接受请求体里的 operatorName；本
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentController.kt:195:        (servletRequest.getSession(false)?.getAttribute(AuthSessionKeys.USERNAME) as? String)?.trim()
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactLocationController.kt:30: * 身份边界（I-4）：PUT 显式要求会话 username（`AuthSessionKeys.USERNAME`），
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactLocationController.kt:66:            ?.getAttribute(AuthSessionKeys.USERNAME) as? String
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt:302:        ?.getAttribute(AuthSessionKeys.USERNAME) as? String
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailReplyDraftController.kt:35:        val owner = request.getSession(false)?.getAttribute(AuthSessionKeys.USERNAME) as? String
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:207: * 专家会话查询与关注（fast-p 07）。身份沿现有 Session（AUTH_USERNAME）：
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:427:            ?.getAttribute(AuthSessionKeys.USERNAME) as? String
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionService.kt:56: * 身份严格取自 Session AUTH_USERNAME（controller 解析后传入），请求体/查询参数永不携带
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertFollowService.kt:38: * 身份严格取自 Session AUTH_USERNAME（由 controller 解析后传入），请求体永不携带

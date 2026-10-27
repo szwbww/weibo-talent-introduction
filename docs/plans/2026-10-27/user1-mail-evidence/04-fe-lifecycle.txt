@@ -1,0 +1,103 @@
+$ rg -n 'startAuthenticatedApp|stopAuthenticatedApp|setView|refreshCurrentView|loadMailbox|refreshMailboxChatList|unmountMailboxChatHosts|sessionUser|localStorage|sessionStorage|conversationCache|beforeunload|visibilitychange' src/main/resources/static/app.js src/main/resources/static/mailbox-chat.js
+exit=0
+src/main/resources/static/mailbox-chat.js:25: * - 位置缓存（I-5）：模块 Map（sessionUser/contactId/accountScope），≤10 会话 LRU，
+src/main/resources/static/mailbox-chat.js:26: *   每会话 ≤500 条已加载消息；不写 localStorage 正文。scroll/selectExpert/unmount/
+src/main/resources/static/mailbox-chat.js:107:    // 会话缓存（模块级）：key = `${sessionUser}|${accountScope}|${contactId}`
+src/main/resources/static/mailbox-chat.js:223:    // 不写 localStorage/sessionStorage；所有日期按显式时区（Asia/Shanghai /
+src/main/resources/static/mailbox-chat.js:260:            return (global.localStorage && global.localStorage.getItem("operatorName")) || "console";
+src/main/resources/static/mailbox-chat.js:743:    function sessionUserFromOptions(options) {
+src/main/resources/static/mailbox-chat.js:744:        const value = options && options.sessionUser ? String(options.sessionUser) : "";
+src/main/resources/static/mailbox-chat.js:757:    function conversationCacheKey(user, accountScope, contactId) {
+src/main/resources/static/mailbox-chat.js:769:        const key = conversationCacheKey(user, accountScope, contactId);
+src/main/resources/static/mailbox-chat.js:780:        const key = conversationCacheKey(user, accountScope, contactId);
+src/main/resources/static/mailbox-chat.js:827:        sessionStore.delete(conversationCacheKey(user, accountScope, contactId));
+src/main/resources/static/mailbox-chat.js:850:            user: sessionUserFromOptions(options),
+src/main/resources/static/mailbox-chat.js:858:            // 02（I-1）：默认 Tab 探测（实例级，不写 localStorage）。focus 深链接不探测。
+src/main/resources/static/mailbox-chat.js:886:            // 02（T3/I-7）：authenticated 身份只从 GET /api/auth/me 取（不读 localStorage 冒充）。
+src/main/resources/static/mailbox-chat.js:959:            // 不是持久 store，不写草稿 Map/localStorage/sessionStorage。
+src/main/resources/static/mailbox-chat.js:6439:         * I-2：异步发起前捕获 sessionUser/accountScope/contactId/targetKey 与原 draftsMap。
+src/main/resources/static/mailbox-chat.js:6458:                ownerKey: conversationCacheKey(instance.user, accountScope, contactId),
+src/main/resources/static/mailbox-chat.js:6468:            if (captured.ownerKey !== conversationCacheKey(instance.user, scope, contactId)) return false;
+src/main/resources/static/mailbox-chat.js:7148:                ownerKey: conversationCacheKey(instance.user, instance.conversation.accountScope || "", contactId),
+src/main/resources/static/mailbox-chat.js:7476:                ownerKey: conversationCacheKey(instance.user, instance.conversation.accountScope || "", context.contactId),
+src/main/resources/static/mailbox-chat.js:7575:                ownerKey: conversationCacheKey(instance.user, instance.conversation.accountScope || "", contactId),
+src/main/resources/static/mailbox-chat.js:8412:            const ownerKey = conversationCacheKey(instance.user, scope, contactId);
+src/main/resources/static/mailbox-chat.js:8787:            const ownerKey = conversationCacheKey(instance.user, instance.conversation.accountScope || "", contactId);
+src/main/resources/static/mailbox-chat.js:9661:            if (!flushed && !(next.sessionUser && String(next.sessionUser) !== instance.user)
+src/main/resources/static/mailbox-chat.js:9665:            if (next.sessionUser && String(next.sessionUser) !== instance.user) {
+src/main/resources/static/mailbox-chat.js:9677:                instance.user = String(next.sessionUser);
+src/main/resources/static/mailbox-chat.js:9835:            const applied = opts.filters || opts.focus || opts.sessionUser
+src/main/resources/static/mailbox-chat.js:9875:        global.addEventListener("beforeunload", (event) => {
+src/main/resources/static/app.js:706:    return window.localStorage.getItem("operatorName")?.trim() || "";
+src/main/resources/static/app.js:798:/** 全部为内存 UI 状态：不写 localStorage，不建通用 store。 */
+src/main/resources/static/app.js:976:                // 隐藏页暂停新请求；恢复可见时由 visibilitychange 立即补一轮。
+src/main/resources/static/app.js:1556:        globalBtn.addEventListener("click", () => setView("tasks"));
+src/main/resources/static/app.js:1600:    document.addEventListener("visibilitychange", () => {
+src/main/resources/static/app.js:5108:    setView(view);
+src/main/resources/static/app.js:5210:function setView(view) {
+src/main/resources/static/app.js:5212:    const sequence = setView.draftNavigationSequence = (setView.draftNavigationSequence || 0) + 1;
+src/main/resources/static/app.js:5229:        if (view !== "mailbox" && typeof unmountMailboxChatHosts === "function") {
+src/main/resources/static/app.js:5230:            unmountMailboxChatHosts();
+src/main/resources/static/app.js:5251:        refreshCurrentView();
+src/main/resources/static/app.js:5272:            if (sequence === setView.draftNavigationSequence) applyView();
+src/main/resources/static/app.js:5274:            if (sequence !== setView.draftNavigationSequence) return;
+src/main/resources/static/app.js:5283:async function refreshCurrentView() {
+src/main/resources/static/app.js:5290:            loadMailbox(),
+src/main/resources/static/app.js:7269:        operator: window.localStorage.getItem("operatorName") || "console"
+src/main/resources/static/app.js:7290:        body: JSON.stringify({ operator: window.localStorage.getItem("operatorName") || "console" })
+src/main/resources/static/app.js:7765:            operatorName: window.localStorage.getItem("operatorName") || "console"
+src/main/resources/static/app.js:8040:    return window.localStorage.getItem("operatorName") || "console";
+src/main/resources/static/app.js:12149:// I-1 单一来源：本页只有 GET /api/mail/contact-notes/{contactId}（无 PUT、无 localStorage 副本、无专家级 note）；
+src/main/resources/static/app.js:14581:    setView("contacts");
+src/main/resources/static/app.js:15941:    setView("mail-templates");
+src/main/resources/static/app.js:16577:    setView("mailbox");
+src/main/resources/static/app.js:16854:    const operatorName = window.localStorage.getItem("operatorName") || "console";
+src/main/resources/static/app.js:16863:    const operatorName = window.localStorage.getItem("operatorName") || "console";
+src/main/resources/static/app.js:17044: * 沿用跨视图范式 setView → 设过滤状态 → page = 0 → load<View>()（K-cross-view-drilldown-pattern）。
+src/main/resources/static/app.js:17055:    setView("mailbox");
+src/main/resources/static/app.js:17057:    loadMailbox().catch((e) => showStatus(e.message, "error"));
+src/main/resources/static/app.js:17341:    await loadMailbox();
+src/main/resources/static/app.js:18059:        const operatorName = window.localStorage.getItem("operatorName") || "console";
+src/main/resources/static/app.js:18088:        const operatorName = window.localStorage.getItem("operatorName") || "console";
+src/main/resources/static/app.js:18108:        const operatorName = window.localStorage.getItem("operatorName") || "console";
+src/main/resources/static/app.js:18378:        const operatorName = window.localStorage.getItem("operatorName") || "console";
+src/main/resources/static/app.js:19329:            setView("mailbox");
+src/main/resources/static/app.js:19332:            await loadMailbox();
+src/main/resources/static/app.js:19349:        refreshCurrentView();
+src/main/resources/static/app.js:20167:            setView("mailbox");
+src/main/resources/static/app.js:20170:            loadMailbox().catch((e) => showStatus(e.message, "error"));
+src/main/resources/static/app.js:20739:    document.addEventListener("visibilitychange", () => {
+src/main/resources/static/app.js:20800:        loadMailbox().catch((e) => showStatus(e.message, "error"));
+src/main/resources/static/app.js:20808:        loadMailbox().catch((e) => showStatus(e.message, "error"));
+src/main/resources/static/app.js:20810:    // B4（T2b-5）：清除按执行的批次过滤 → 提示条随 loadMailbox 隐藏，列表恢复全部邮件。
+src/main/resources/static/app.js:20815:        loadMailbox().catch((e) => showStatus(e.message, "error"));
+src/main/resources/static/app.js:20823:        loadMailbox().catch((e) => showStatus(e.message, "error"));
+src/main/resources/static/app.js:20832:            loadMailbox().catch((e) => showStatus(e.message, "error"));
+src/main/resources/static/app.js:20841:            loadMailbox().catch((e) => showStatus(e.message, "error"));
+src/main/resources/static/app.js:20849:        loadMailbox().catch((e) => showStatus(e.message, "error"));
+src/main/resources/static/app.js:20855:        loadMailbox().catch((e) => showStatus(e.message, "error"));
+src/main/resources/static/app.js:20866:            loadMailbox().catch((e) => showStatus(e.message, "error"));
+src/main/resources/static/app.js:20872:            loadMailbox().catch((e) => showStatus(e.message, "error"));
+src/main/resources/static/app.js:20886:            loadMailbox().catch((e) => showStatus(e.message, "error"));
+src/main/resources/static/app.js:20894:            loadMailbox().catch((e) => showStatus(e.message, "error"));
+src/main/resources/static/app.js:20987:            localStorage.setItem("contacts-list-width", targetWidth);
+src/main/resources/static/app.js:21042:        const savedWidth = Number(localStorage.getItem("contacts-list-width"));
+src/main/resources/static/app.js:21051:function startAuthenticatedApp(username) {
+src/main/resources/static/app.js:21077:        refreshCurrentView();
+src/main/resources/static/app.js:21081:function stopAuthenticatedApp() {
+src/main/resources/static/app.js:21105:window.stopAuthenticatedApp = stopAuthenticatedApp;
+src/main/resources/static/app.js:21120:                stopAuthenticatedApp();
+src/main/resources/static/app.js:21124:                startAuthenticatedApp(res.username);
+src/main/resources/static/app.js:21127:            stopAuthenticatedApp();
+src/main/resources/static/app.js:21132:        stopAuthenticatedApp();
+src/main/resources/static/app.js:21159:                stopAuthenticatedApp();
+src/main/resources/static/app.js:21164:                startAuthenticatedApp(res.username);
+src/main/resources/static/app.js:21212:        setView.draftNavigationSequence = (setView.draftNavigationSequence || 0) + 1;
+src/main/resources/static/app.js:21274:function unmountMailboxChatHosts() {
+src/main/resources/static/app.js:21322:function refreshMailboxChatList() {
+src/main/resources/static/app.js:21338:    // 沙箱里逐函数执行 refreshMailboxChatList，typeof 守卫让无绑定的沙箱安全回退空前缀。
+src/main/resources/static/app.js:21827:async function loadMailboxAccounts() {
+src/main/resources/static/app.js:21843:async function loadMailbox() {
+src/main/resources/static/app.js:21844:    await loadMailboxAccounts();
+src/main/resources/static/app.js:21854:        await refreshMailboxChatList();
+src/main/resources/static/app.js:21858:    if (typeof unmountMailboxChatHosts === "function") unmountMailboxChatHosts();
