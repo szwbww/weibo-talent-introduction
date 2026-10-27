@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-27/user1-mail-master.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-10-27/user1-mail-master.md (commit 4d1698bb7c51120e98cfe8f6a412a4589fc9defd)
 - Amendments: N/A
 - Master base: 128488eeac26781fbf7c6892ff9d3d4a3f5c7c10
@@ -9,18 +9,18 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-27T14:11:36Z
-- Current child: 01
+- Current child: 02
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: N/A
+- Pause reason: child 02 PLAN_CONFLICT — I-2 requires Controller.messages to pass session identity, but the mandatory-preserved AuthInterceptorTest.kt:377-385 (outside the 6 authorized files) stubs listMessages with only the 4 old args; updating the mock requires a 7th authorized file and a human-approved plan amendment
+- Resume from: 7203aae94edd32b5581d73d004207af8e0d5997d
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | 01 | docs/plans/2026-10-27/user1-mail-01-access-boundary.md | commit:4d1698bb7c51120e98cfe8f6a412a4589fc9defd | none | 1 | LIGHT_PASS_WITH_NOTES | 4d1698bb7c51120e98cfe8f6a412a4589fc9defd | b12b53625e2fb2e155f13e830c8647a453c13ddb | 0 | — | b12b53625e2fb2e155f13e830c8647a453c13ddb | ac23960b1a0c46b380bf516e3faf7e2cc07f3f39 | impl Child01Implementer; verify Child01Verifier; AUTO_FIX N/A; O-1..O-6 RECORD_ONLY |
-| 02 | docs/plans/2026-10-27/user1-mail-02-mail-queries.md | commit:4d1698bb7c51120e98cfe8f6a412a4589fc9defd | 01 | 1 | PENDING | | | 0 | — | | | |
+| 02 | docs/plans/2026-10-27/user1-mail-02-mail-queries.md | commit:4d1698bb7c51120e98cfe8f6a412a4589fc9defd | 01 | 1 | PAUSED_FOR_HUMAN | b12b53625e2fb2e155f13e830c8647a453c13ddb | | 0 | — | | | PLAN_CONFLICT C-1: AuthInterceptorTest.kt 4-arg listMessages stub; 6-file cap blocks the required mock update |
 | 03 | docs/plans/2026-10-27/user1-mail-03-readonly-ui.md | commit:4d1698bb7c51120e98cfe8f6a412a4589fc9defd | 01,02 | 1 | PENDING | | | 0 | — | | | |
 | 04 | docs/plans/2026-10-27/user1-mail-04-admin-grant-ui.md | commit:4d1698bb7c51120e98cfe8f6a412a4589fc9defd | 01,02,03 | 1 | PENDING | | | 0 | — | | | |
 | 05 | docs/plans/2026-10-27/user1-mail-05-account-activation.md | commit:4d1698bb7c51120e98cfe8f6a412a4589fc9defd | 01,02,03,04 | 1 | PENDING | | | 0 | — | | | |
@@ -41,3 +41,5 @@
 - 2026-10-27T14:38Z: child 01 IMPLEMENTER `Child01Implementer` acquired; dispatch succeeded; agent_attempt=0. Controller defect noted: the child brief had been written to the original worktree and was 0 bytes in the retained worktree at dispatch; the implementer used the master+child plans and the brief was restored before verification. No product deviation resulted (verifier O-1).
 - 2026-10-27T15:05Z: child 01 VERIFIER `Child01Verifier` acquired, distinct from the writer; agent_attempt=0; boundary 4d1698b..b12b536.
 - 2026-10-27T15:14Z: child 01 terminal LIGHT_PASS_WITH_NOTES / COMPLETE_CHILD; AUTO_FIX N/A; zero repair rounds; evidence ac23960.
+
+- 2026-10-27T15:50Z: child 02 IMPLEMENTER `Child02Implementer` acquired; agent_attempt=0. It produced uncommitted edits in 5 authorized product paths plus 1 new test and returned PLAN_CONFLICT C-1 before any commit. No fix_round consumed. Dirty product edits retained for resume; HEAD 7203aae.
