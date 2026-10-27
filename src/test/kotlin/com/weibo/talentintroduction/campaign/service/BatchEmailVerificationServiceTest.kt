@@ -436,7 +436,9 @@ class BatchEmailVerificationServiceTest {
     }
 
     @Test
-    fun `two consecutive 249 answers are an incomplete error and never a tag`() {
+    fun `four consecutive 249 answers are an incomplete error and never a tag`() {
+        client.respond(EmailableHttpResponse(249, """{"message":"incomplete"}"""))
+        client.respond(EmailableHttpResponse(249, """{"message":"incomplete"}"""))
         client.respond(EmailableHttpResponse(249, """{"message":"incomplete"}"""))
         client.respond(EmailableHttpResponse(249, """{"message":"incomplete"}"""))
         val subject = subject()
@@ -444,10 +446,10 @@ class BatchEmailVerificationServiceTest {
         val result = subject.verify(subject.beginExecution(7L) { false }, target(email = "a@b.com"))
 
         assertEquals(VerificationResult.ServiceFailure(100L, BatchEmailVerificationErrorCodes.INCOMPLETE), result)
-        assertEquals(2, client.requests.size)
+        assertEquals(4, client.requests.size)
         Mockito.verify(repository).recordDecision(
             Mockito.eq(100L), eqValue(BatchEmailVerificationDecision.ERROR), Mockito.isNull(), Mockito.isNull(),
-            Mockito.eq(BatchEmailVerificationErrorCodes.INCOMPLETE), Mockito.eq(2), Mockito.any(), anyTime()
+            Mockito.eq(BatchEmailVerificationErrorCodes.INCOMPLETE), Mockito.eq(4), Mockito.any(), anyTime()
         )
         Mockito.verify(repository, Mockito.never()).recordTag(Mockito.anyLong(), Mockito.anyString(), Mockito.any(), anyTime())
     }

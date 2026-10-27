@@ -36,7 +36,7 @@ import java.util.Locale
  *   HTTP 200 且返回 email 匹配时，deliverable/risky/unknown 按**本次快照允许集合**决定放行（`null` 集合 =
  *   旧请求三态全放行），只有 undeliverable 恒跳过；复用只复用供应商事实，决定每次按本次集合重算；
  *   unknown 是供应商明确结果，不等于 HTTP 超时（超时是 ERROR）。
- * - I-4 服务异常绝不当邮箱异常：249 最多两次物理请求；402/401/403/429/网络超时/5xx/非法 JSON 或 state/
+ * - I-4 服务异常绝不当邮箱异常：249 最多四次物理请求；402/401/403/429/网络超时/5xx/非法 JSON 或 state/
  *   邮箱不匹配一律 ERROR + 受控错误码；不做自动重试（249 除外）；供应商故障绝不追加「邮箱异常」标签。
  * - I-5 仅 undeliverable 追加 tags 中的「邮箱异常」：用真实 `esDocId` 做 `_mget`，只在真实 ID、ORCID、
  *   当前邮箱三者都匹配的已存在副本上调用现有 addTag；无匹配/读取异常/任一应写层返回 false 记 FAILED；
@@ -44,7 +44,7 @@ import java.util.Locale
  * - I-6 审计先落库：先插 PENDING → 请求 → 写 PASS/SKIP/ERROR → 再允许发送；审计不可用抛
  *   [EmailVerificationAuditException]，调用方必须停止发送，绝不静默降级。
  * - I-7 成本边界：只验证实际走到门禁的目标；同一执行内同邮箱可内存复用（复用行 requestCount=0，
- *   沿原结果时间）；跨执行查一年内原始结果，服务异常不缓存；单邮箱连续 249 最多 2 次；相邻物理请求开始间隔 ≥100ms；无并发池。
+ *   沿原结果时间）；跨执行查一年内原始结果，服务异常不缓存；单邮箱连续 249 最多 4 次；相邻物理请求开始间隔 ≥100ms；无并发池。
  * - I-8 密钥安全：EMAILABLE_API_KEY 只从后端环境读取，仅作为 Bearer 头，不进 URL / 请求快照 /
  *   异常日志 / 数据库；只保存允许字段与受控错误码，不保存完整 HTTP 请求或响应。
  */
@@ -279,7 +279,7 @@ class BatchEmailVerificationService(
     }
 
     /**
-     * 物理请求循环：249（供应商明确「未完成」）只再试一次，间隔 500ms；其它失败不重试。
+     * 物理请求循环：249（供应商明确「未完成」）最多请求四次，间隔 2000ms；其它失败不重试。
      * 返回 null 表示等待期间被取消（未验证者不标记）。requestCount 记物理请求次数。
      */
     private fun requestNewResult(
@@ -464,7 +464,7 @@ class BatchEmailVerificationService(
         const val STATE_RISKY = "risky"
         const val STATE_UNKNOWN = "unknown"
 
-        const val MAX_ATTEMPTS_PER_EMAIL = 2
+        const val MAX_ATTEMPTS_PER_EMAIL = 4
 
         private val REUSABLE_DECISIONS = setOf(
             BatchEmailVerificationDecision.PASS,
@@ -569,8 +569,8 @@ class ExecutionVerificationContext internal constructor(
         /** I-7：相邻物理请求开始间隔至少 100ms（无并发池时的成本/速率保护）。 */
         const val MIN_REQUEST_SPACING_MILLIS = 100L
 
-        /** I-4：249 只再试一次，间隔 500ms。 */
-        const val RETRY_DELAY_MILLIS = 500L
+        /** I-4：249 最多请求四次，重试间隔 2000ms。 */
+        const val RETRY_DELAY_MILLIS = 2_000L
 
         private const val MIN_REQUEST_SPACING_NANOS = MIN_REQUEST_SPACING_MILLIS * NANOS_PER_MILLI
         private const val RETRY_DELAY_NANOS = RETRY_DELAY_MILLIS * NANOS_PER_MILLI
@@ -629,7 +629,7 @@ object EmailableRequestFactory {
     private const val HEX_DIGITS = "0123456789ABCDEF"
 }
 
-/** 生产 HTTP 客户端：JDK11 HttpClient，连接超时 3s、单请求超时 12s，禁止重定向。 */
+/** 生产 HTTP 客户端：JDK11 HttpClient，连接超时 5s、单请求超时 25s，禁止重定向。 */
 @Component
 class EmailableHttpVerifyClient : EmailableVerifyClient {
     private val httpClient: HttpClient = HttpClient.newBuilder()
@@ -655,8 +655,8 @@ class EmailableHttpVerifyClient : EmailableVerifyClient {
     }
 
     companion object {
-        const val CONNECT_TIMEOUT_MILLIS = 3_000L
-        const val REQUEST_TIMEOUT_MILLIS = 12_000L
+        const val CONNECT_TIMEOUT_MILLIS = 5_000L
+        const val REQUEST_TIMEOUT_MILLIS = 25_000L
     }
 }
 
