@@ -213,7 +213,8 @@ class TaskExecutionSummaryExtractorTest {
         val expected = setOf(
             "EXPERT_REVALIDATION", "RAW_PROMOTION_SCAN", "EXPERT_DISCOVERY",
             "EXPERT_ENRICHMENT", "MANUAL_INITIAL_OUTREACH", "CHECK_REPLIES",
-            "EXPERT_CLASSIFICATION_BACKFILL", "DISCOVERY_REVIEW_PREPARE", "DISCOVERY_REVIEW_APPLY"
+            "EXPERT_CLASSIFICATION_BACKFILL", "DISCOVERY_REVIEW_PREPARE", "DISCOVERY_REVIEW_APPLY",
+            "DISCOVERY_RECHECK_PREPARE"
         )
         val actual = TaskTypeCatalog.entries.filter { it.value.hasProgressUi }.keys
         assertEquals(expected, actual)
@@ -233,13 +234,14 @@ class TaskExecutionSummaryExtractorTest {
         )
     }
 
-    /** 现状审计的全量 taskType 全集逐条声明（字面量断言；03 追加两个审核 taskType 后为 20）。 */
+    /** 现状审计的全量 taskType 全集逐条声明（字面量断言；03 追加两个审核 taskType、recheck 准备与审核统计后为 22）。 */
     @Test
     fun `catalog covers the audited task types`() {
         val auditedCodes = setOf(
             "AI_QA_EXTRACTION", "AUTO_REPLY_ACCOUNT", "AUTO_REPLY_ALL",
             "AUTO_REPLY_ALL_DISPATCH", "BOUNCE_COLLECTION", "CANDIDATE_OPERATOR_STATUS_SYNC",
-            "CHECK_REPLIES", "DAILY_COUNT_RESET", "DISCOVERY_REVIEW_PREPARE",
+            "CHECK_REPLIES", "DAILY_COUNT_RESET", "DISCOVERY_RECHECK_PREPARE",
+            "DISCOVERY_REVIEW_COUNTS", "DISCOVERY_REVIEW_PREPARE",
             "DISCOVERY_REVIEW_APPLY", "EXPERT_CLASSIFICATION_BACKFILL",
             "EXPERT_DISCOVERY", "EXPERT_ENRICHMENT",
             "EXPERT_REVALIDATION", "INITIAL_OUTREACH", "MANUAL_INITIAL_OUTREACH",
@@ -249,7 +251,7 @@ class TaskExecutionSummaryExtractorTest {
         assertEquals(auditedCodes, TaskTypeCatalog.entries.keys)
     }
 
-    /** I1-2 口径锁定：metricLabel 只在该类型存量计数可信时非 null；已核实的 6 项逐一断言。 */
+    /** I1-2 口径锁定：metricLabel 只在该类型存量计数可信时非 null；已核实的写入侧语义逐一断言。 */
     @Test
     fun `catalog metricLabel decisions are locked`() {
         val meta: (String) -> TaskTypeMeta = { code -> TaskTypeCatalog.byCode(code)!! }
@@ -258,10 +260,14 @@ class TaskExecutionSummaryExtractorTest {
         assertEquals("派发账号数/—", meta("AUTO_REPLY_ALL_DISPATCH").metricLabel)
         assertEquals("轮询账号/失败账号", meta("AUTO_REPLY_ALL").metricLabel)
         assertEquals("一致/异常", meta("OPERATOR_STATUS_RECONCILE").metricLabel)
+        // successCount = 冻结名单人数（DiscoveryRecheckService.finishTask），失败时为 1。
+        assertEquals("已准备人数/失败", meta("DISCOVERY_RECHECK_PREPARE").metricLabel)
+        // successCount = 已扫描人数（DiscoveryReviewCountsService.taskSuccessCount），失败时为 1。
+        assertEquals("已统计人数/失败", meta("DISCOVERY_REVIEW_COUNTS").metricLabel)
         assertNull(meta("INITIAL_OUTREACH").metricLabel)
         assertNull(meta("BOUNCE_COLLECTION").metricLabel)
         assertNull(meta("EXPERT_ENRICHMENT").metricLabel)
         assertNull(meta("DAILY_COUNT_RESET").metricLabel)
-        assertEquals(20, TaskTypeCatalog.entries.size)
+        assertEquals(22, TaskTypeCatalog.entries.size)
     }
 }
