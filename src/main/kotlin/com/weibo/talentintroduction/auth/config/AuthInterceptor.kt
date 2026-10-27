@@ -49,6 +49,20 @@ class AuthInterceptor(
             }
         }
 
+        // I-1/I-4：精确 user1 的已认证请求默认拒绝，仅放行白名单 handler
+        // （HandlerMethod 类名+方法名+HTTP method 精确匹配，非 URL 前缀）。
+        if (MailReadOnlyPolicy.isReader(username) &&
+            !MailReadOnlyPolicy.isReaderAllowed(handler, request.method)
+        ) {
+            writeErrorResponse(
+                response,
+                HttpServletResponse.SC_FORBIDDEN,
+                MailReadOnlyPolicy.READ_ONLY_FORBIDDEN,
+                "只读账号无权访问该资源"
+            )
+            return false
+        }
+
         return true
     }
 
