@@ -10,6 +10,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Which consumer is spending the shared OpenAlex budget. Callers name the context explicitly; it is never inferred
@@ -587,7 +588,7 @@ class OpenAlexRequestPolicy(
     @Volatile
     private var forceSyncBeforeNextReserve: Boolean = false
 
-    private var rateLimitBackoffMs: Long = 0
+    private val rateLimitBackoffMs = AtomicLong()
     private var listRequestsToday: Long = 0
     private var fulltextDownloadsToday: Long = 0
     private var countedDay: LocalDate? = null
@@ -703,7 +704,7 @@ class OpenAlexRequestPolicy(
                 storeOrDefer { store.applyCooldown(properties.accountScope, now.plusMillis(delayMs), now) }
             }
         } else if (creditsUsed != null) {
-            rateLimitBackoffMs = 0
+            rateLimitBackoffMs.set(0)
         }
 
         val settled = storeOrDefer {
@@ -741,7 +742,7 @@ class OpenAlexRequestPolicy(
                 storeOrDefer { store.applyCooldown(properties.accountScope, now.plusMillis(delayMs), now) }
             }
         } else if (creditsUsed != null) {
-            rateLimitBackoffMs = 0
+            rateLimitBackoffMs.set(0)
         }
         storeOrDefer {
             store.observeProvider(properties.accountScope, remaining, limit, configuredFreeLimitCredits(), now)
@@ -1038,8 +1039,13 @@ class OpenAlexRequestPolicy(
 
     private fun nextRateLimitBackoffMs(): Long {
         val cap = properties.rateLimitBackoffMaxMs.coerceAtLeast(0)
-        rateLimitBackoffMs = if (rateLimitBackoffMs <= 0) INITIAL_BACKOFF_MS else rateLimitBackoffMs * 2
-        return rateLimitBackoffMs.coerceAtMost(cap)
+        return rateLimitBackoffMs.updateAndGet { previous ->
+            when {
+                previous <= 0 -> INITIAL_BACKOFF_MS.coerceAtMost(cap)
+                previous >= cap || previous > cap / 2 -> cap
+                else -> previous * 2
+            }
+        }
     }
 
     /** I-2：官方日免费额度（静态估计：带 Key 10000 credits = $1，匿名 1000 credits = $0.10）。 */
