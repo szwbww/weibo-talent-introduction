@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-27/user1-mail-master.md
 
-- Status: RUNNING
+- Status: READY_FOR_HUMAN_REVIEW
 - Master plan: docs/plans/2026-10-27/user1-mail-master.md (commit 258f435c8faefb15c187c6cd34669ac0ad92a717)
 - Amendments: A1,A2,A3,A4,A5,A6,A7,A8
 - Master base: 128488eeac26781fbf7c6892ff9d3d4a3f5c7c10
@@ -13,7 +13,7 @@
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: Resolved — child 03 C-1 released by human-approved amendment A3/A4 (6 test files, 13-file cap); resume is epoch 2 with fix_round=0
+- Pause reason: N/A — all prior pauses resolved by A1–A8
 - Resume from: N/A
 
 ## Children
