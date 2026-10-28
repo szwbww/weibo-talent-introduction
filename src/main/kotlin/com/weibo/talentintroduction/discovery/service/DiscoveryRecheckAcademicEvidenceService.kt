@@ -8,6 +8,13 @@ import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Service
 import java.time.Instant
+import java.util.concurrent.CancellationException
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import javax.annotation.PreDestroy
 
 /** Decision/display data only. No profile writer or admission service is a dependency. */
 data class RecheckAcademicEvidence(val identityHash: String, val factFingerprint: String,
@@ -20,6 +27,108 @@ data class RecheckAcademicEvidence(val identityHash: String, val factFingerprint
 class DiscoveryRecheckAcademicEvidenceService(private val clients: ObjectProvider<OpenAlexDataSource>,
     private val properties: OpenAlexProperties = OpenAlexProperties(),
     private val clock: java.time.Clock = java.time.Clock.systemUTC()) {
+    private data class BatchKey(val executionId: Long, val mode: RecheckEvidenceMode, val evaluatedAt: Instant)
+    private class Pending(val snapshot: VerificationSnapshot, val guard: () -> Unit) {
+        val result = CompletableFuture<RecheckAcademicEvidence>()
+    }
+    private val closed = AtomicBoolean()
+    private val lock = Any()
+    private val pending = linkedMapOf<BatchKey, MutableList<Pending>>()
+    private val outstanding = mutableSetOf<Pending>()
+    private val dispatcher = Executors.newScheduledThreadPool(8) { runnable ->
+        Thread(runnable, "discovery-academic-batch").apply { isDaemon = true }
+    }
+    private fun checkActive(item: Pending) {
+        if (closed.get() || Thread.currentThread().isInterrupted || item.result.isDone)
+            throw CancellationException("Academic dispatch no longer authorized")
+        item.guard()
+    }
+
+    @PreDestroy fun close() {
+        if (!closed.compareAndSet(false, true)) return
+        synchronized(lock) {
+            outstanding.forEach { it.result.completeExceptionally(CancellationException("Academic batch closed")) }
+            outstanding.clear()
+            pending.clear()
+        }
+        dispatcher.shutdownNow()
+    }
+
+    /** Only the worker's already-authorized academic step enters the short gather window. */
+    fun collectCoalesced(executionId: Long, snapshot: VerificationSnapshot, mode: RecheckEvidenceMode,
+        evaluatedAt: Instant, beforeDispatch: () -> Unit): RecheckAcademicEvidence {
+        if (closed.get()) throw CancellationException("Academic batch closed")
+        if (mode == RecheckEvidenceMode.REUSE || trustedId(snapshot) == null) {
+            if (Thread.currentThread().isInterrupted) throw CancellationException("Academic request interrupted")
+            beforeDispatch()
+            return collect(listOf(snapshot), mode, evaluatedAt).getValue(snapshot.identityHash)
+        }
+        val item = Pending(snapshot, beforeDispatch)
+        val key = BatchKey(executionId, mode, evaluatedAt)
+        val accepted = synchronized(lock) {
+            if (closed.get()) throw CancellationException("Academic batch closed")
+            if (outstanding.size >= 8 || pending[key]?.any { it.snapshot.identityHash == snapshot.identityHash } == true) false
+            else {
+                val group = pending.getOrPut(key) { mutableListOf() }
+                group += item
+                outstanding += item
+                if (group.size == 1) dispatcher.schedule({ flush(key) }, 25, TimeUnit.MILLISECONDS)
+                if (group.size == 8) dispatcher.execute { flush(key) }
+                true
+            }
+        }
+        if (!accepted) return collect(listOf(snapshot), mode, evaluatedAt, beforeDispatch = {
+            if (closed.get() || Thread.currentThread().isInterrupted) throw CancellationException("Academic dispatch no longer authorized")
+            beforeDispatch()
+        }).getValue(snapshot.identityHash)
+        try { return item.result.get() }
+        catch (e: ExecutionException) { throw (e.cause ?: e) }
+        catch (e: InterruptedException) {
+            item.result.completeExceptionally(CancellationException("Academic batch interrupted"))
+            synchronized(lock) { pending[key]?.remove(item); outstanding.remove(item) }
+            Thread.currentThread().interrupt()
+            throw CancellationException("Academic batch interrupted")
+        }
+    }
+
+    private fun flush(key: BatchKey) {
+        val group = synchronized(lock) { pending.remove(key)?.toList().orEmpty() }
+        if (group.isEmpty()) return
+        fun finish(item: Pending, value: RecheckAcademicEvidence? = null, error: Throwable? = null) {
+            if (error == null) item.result.complete(requireNotNull(value)) else item.result.completeExceptionally(error)
+            synchronized(lock) { outstanding.remove(item) }
+        }
+        val live = group.filter { item ->
+            try { checkActive(item); true }
+            catch (e: Throwable) { finish(item, error = e); false }
+        }
+        if (live.isEmpty()) return
+        try {
+            val snapshots = live.map { it.snapshot }
+            val combined = collect(snapshots, key.mode, key.evaluatedAt, beforeDispatch = {
+                // A changed member invalidates the whole wire request. Survivors retry with fresh guards.
+                live.forEach(::checkActive)
+            })
+            live.forEach { item ->
+                try { checkActive(item); finish(item, combined.getValue(item.snapshot.identityHash)) }
+                catch (e: Throwable) { finish(item, error = e) }
+            }
+        } catch (error: Throwable) {
+            val survivors = live.filter { item ->
+                try { checkActive(item); true }
+                catch (e: Throwable) { finish(item, error = e); false }
+            }
+            if (survivors.size == live.size) survivors.forEach { finish(it, error = error) }
+            else survivors.forEach { item ->
+                try {
+                    val value = collect(listOf(item.snapshot), key.mode, key.evaluatedAt,
+                        beforeDispatch = { checkActive(item) }).getValue(item.snapshot.identityHash)
+                    checkActive(item)
+                    finish(item, value)
+                } catch (e: Throwable) { finish(item, error = e) }
+            }
+        }
+    }
     /** Trusted discovery IDs must be carried by the current, verified receipt, never guessed from names. */
     fun trustedId(snapshot: VerificationSnapshot): String? {
         if (!snapshot.identityValid || !DiscoveryIdentity.allowed(snapshot.profile)) return null

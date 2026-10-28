@@ -30,7 +30,9 @@ class DiscoveryVerificationProperties(
     /** Single deployment switch for the frozen-registration institution country supplement. */
     val countrySupplementEnabled: Boolean = false,
     val httpConnectTimeout: Duration = Duration.ofSeconds(3),
-    val httpReadTimeout: Duration = Duration.ofSeconds(15)
+    val httpReadTimeout: Duration = Duration.ofSeconds(15),
+    /** Maximum simultaneous verification leases on this process. */
+    val concurrency: Int = 4
 ) {
     init {
         require(requestsPerMinute in 1..100000 && requestsPerDay in 1..10000000)
@@ -39,6 +41,7 @@ class DiscoveryVerificationProperties(
         require(leaseSeconds in 31..86400 && pollMs in 100..3600000)
         require(httpConnectTimeout > Duration.ZERO && httpConnectTimeout <= Duration.ofMinutes(1))
         require(httpReadTimeout > Duration.ZERO && httpReadTimeout <= Duration.ofMinutes(5))
+        require(concurrency in 1..8)
         require(URI(orcidPublicBaseUrl).let { it.scheme == "https" && it.host != null && it.userInfo == null })
     }
     override fun toString(): String = "DiscoveryVerificationProperties(enabled=$enabled, workerEnabled=$workerEnabled, mode=$mode)"

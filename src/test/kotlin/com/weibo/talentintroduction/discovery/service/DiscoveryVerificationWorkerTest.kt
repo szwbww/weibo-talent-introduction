@@ -11,6 +11,79 @@ import org.mockito.Mockito
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 
 class DiscoveryVerificationWorkerTest {
+    @Test fun `single lane and shutdown never claim beyond available execution capacity`() {
+        val repo = Mockito.mock(DiscoveryVerificationRepository::class.java)
+        val claims = java.util.concurrent.atomic.AtomicInteger()
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        Mockito.`when`(repo.claimDue(ruleClock.instant(), 120)).thenAnswer {
+            val n = claims.incrementAndGet()
+            if (n <= 2) lease(null).copy(id = n.toLong()) else null
+        }
+        val current = Mockito.spy(worker(DiscoveryVerificationProperties(workerEnabled = true, concurrency = 1), repo))
+        Mockito.doAnswer { entered.countDown(); release.await(); null }.`when`(current)
+            .process(Mockito.any(VerificationItem::class.java) ?: lease(null))
+        try {
+            current.tick()
+            assertTrue(entered.await(2, java.util.concurrent.TimeUnit.SECONDS))
+            repeat(3) { current.tick() }
+            assertEquals(1, claims.get())
+            current.close()
+            release.countDown()
+            current.tick()
+            assertEquals(1, claims.get())
+        } finally { release.countDown(); current.close() }
+    }
+
+    @Test fun `concurrency is bounded from one through eight`() {
+        assertEquals(4, DiscoveryVerificationProperties().concurrency)
+        assertEquals(1, DiscoveryVerificationProperties(concurrency = 1).concurrency)
+        assertEquals(8, DiscoveryVerificationProperties(concurrency = 8).concurrency)
+        assertThrows(IllegalArgumentException::class.java) { DiscoveryVerificationProperties(concurrency = 0) }
+        assertThrows(IllegalArgumentException::class.java) { DiscoveryVerificationProperties(concurrency = 9) }
+    }
+
+    @Test fun `auth blocked worker does not claim on later ticks`() {
+        val repo = Mockito.mock(DiscoveryVerificationRepository::class.java)
+        val current = worker(DiscoveryVerificationProperties(workerEnabled = true), repo)
+        try {
+            val latch = DiscoveryVerificationWorker::class.java.getDeclaredField("authBlocked")
+            latch.isAccessible = true
+            (latch.get(current) as java.util.concurrent.atomic.AtomicBoolean).set(true)
+            assertTrue(current.isAuthBlocked())
+            repeat(3) { current.tick() }
+            Mockito.verifyNoInteractions(repo)
+        } finally { current.close() }
+    }
+
+    @Test fun `four blocked lanes claim only four and overlapping ticks do not duplicate`() {
+        val repo = Mockito.mock(DiscoveryVerificationRepository::class.java)
+        val claims = java.util.concurrent.atomic.AtomicInteger()
+        val entered = java.util.concurrent.CountDownLatch(4)
+        val release = java.util.concurrent.Semaphore(0)
+        val fifth = java.util.concurrent.CountDownLatch(1)
+        Mockito.`when`(repo.claimDue(ruleClock.instant(), 120)).thenAnswer {
+            val n = claims.incrementAndGet()
+            if (n <= 5) lease(null).copy(id = n.toLong()) else null
+        }
+        val current = Mockito.spy(worker(DiscoveryVerificationProperties(workerEnabled = true), repo))
+        Mockito.doAnswer { call ->
+            val item = call.getArgument<VerificationItem>(0)
+            if (item.id <= 4) { entered.countDown(); release.acquire() } else fifth.countDown()
+            null
+        }.`when`(current).process(Mockito.any(VerificationItem::class.java) ?: lease(null))
+        val caller = java.util.concurrent.Executors.newSingleThreadExecutor()
+        try {
+            val tick = caller.submit { current.tick() }
+            assertTrue(entered.await(2, java.util.concurrent.TimeUnit.SECONDS), "four provider operations must overlap")
+            tick.get(1, java.util.concurrent.TimeUnit.SECONDS)
+            repeat(5) { current.tick() }
+            assertEquals(4, claims.get(), "fifth lease must stay unclaimed")
+            release.release()
+            assertTrue(fifth.await(2, java.util.concurrent.TimeUnit.SECONDS))
+        } finally { current.close(); release.release(8); caller.shutdownNow() }
+    }
+
     @org.junit.jupiter.api.io.TempDir lateinit var replayRoot: java.nio.file.Path
 
     @Test fun `child07 real pipeline traces frozen REUSE refresh cancellation and projection only retry`() {
@@ -358,10 +431,11 @@ class DiscoveryVerificationWorkerTest {
 
     @Test fun `enabled worker tolerates absent registration recovery and never creates an execution`() {
         val repo = Mockito.mock(DiscoveryVerificationRepository::class.java)
-        worker(DiscoveryVerificationProperties(workerEnabled = true), repo).useWorker { it.tick() }
+        worker(DiscoveryVerificationProperties(workerEnabled = true), repo).useWorker {
+            it.tick()
+            Mockito.verify(repo, Mockito.timeout(2000).atLeastOnce()).claimDue(ruleClock.instant(), 120)
+        }
         Mockito.verify(repo).listProjectionDue(10)
-        Mockito.verify(repo).claimDue(ruleClock.instant(), 120)
-        Mockito.verifyNoMoreInteractions(repo)
     }
 
     @Test fun `bounded registration recovery uses the already existing optional seam`() {

@@ -17,6 +17,7 @@ import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import javax.annotation.PreDestroy
 
 /** Confirmed field evidence and provider cursors are deliberately separate JSON members. */
@@ -58,23 +59,53 @@ class DiscoveryVerificationWorker(
 ) {
     private val mapper = jacksonObjectMapper().findAndRegisterModules().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
     private val running = AtomicBoolean()
+    private val closed = AtomicBoolean()
+    private val activeLanes = AtomicInteger()
     private val authBlocked = AtomicBoolean()
     private val heartbeat = Executors.newSingleThreadScheduledExecutor { runnable -> Thread(runnable, "discovery-verification-lease").apply { isDaemon = true } }
-    @PreDestroy fun close() { heartbeat.shutdownNow() }
+    private val lanes = Executors.newFixedThreadPool(properties.concurrency) { runnable ->
+        Thread(runnable, "discovery-verification-worker").apply { isDaemon = true }
+    }
+    @PreDestroy fun close() {
+        if (closed.compareAndSet(false, true)) {
+            lanes.shutdownNow()
+            heartbeat.shutdownNow()
+        }
+    }
 
     /** Process-local current latch; observing it never resumes or claims work. */
     fun isAuthBlocked(): Boolean = authBlocked.get()
 
     @Scheduled(fixedDelayString = "\${talent-introduction.discovery-verification.poll-ms:5000}")
     fun tick() {
-        if (!properties.workerEnabled || authBlocked.get() || !running.compareAndSet(false, true)) return
+        if (!properties.workerEnabled || authBlocked.get() || closed.get() || !running.compareAndSet(false, true)) return
         try {
             recovery.getIfAvailable()?.recoverReserved(10)
             repository.listProjectionDue(10).forEach { commits.project(it) }
-            repeat(10) {
-                if (!properties.workerEnabled || authBlocked.get()) return
-                val lease = repository.claimDue(clock.instant(), properties.leaseSeconds) ?: return
-                process(lease)
+            repeat(properties.concurrency) {
+                if (closed.get() || !properties.workerEnabled || authBlocked.get()) return
+                if (activeLanes.incrementAndGet() > properties.concurrency) {
+                    activeLanes.decrementAndGet()
+                    return
+                }
+                try {
+                    lanes.execute {
+                        try {
+                            repeat(10) {
+                                if (closed.get() || !properties.workerEnabled || authBlocked.get() || Thread.currentThread().isInterrupted) return@execute
+                                val lease = repository.claimDue(clock.instant(), properties.leaseSeconds) ?: return@execute
+                                try { process(lease) }
+                                catch (_: InterruptedException) {
+                                    Thread.currentThread().interrupt()
+                                    return@execute
+                                }
+                            }
+                        } finally { activeLanes.decrementAndGet() }
+                    }
+                } catch (e: java.util.concurrent.RejectedExecutionException) {
+                    activeLanes.decrementAndGet()
+                    if (!closed.get()) throw e
+                }
             }
         } finally { running.set(false) }
     }
@@ -164,12 +195,17 @@ class DiscoveryVerificationWorker(
         fun ensureOwned() {
             if (lost.get() || lease.reviewEpoch > 0 && !repository.isOwned(lease.id, token, lease.generation, clock.instant())) throw LeaseLost()
         }
+        fun ensureDispatchAllowed() {
+            ensureOwned()
+            if (closed.get() || authBlocked.get() || Thread.currentThread().isInterrupted)
+                throw java.util.concurrent.CancellationException("Verification dispatch stopped")
+        }
         fun save() {
             ensureOwned()
             check(repository.saveProgress(lease.id, token, lease.generation, json(), entered, searched, candidatesAt, clock.instant())) { "Verification lease lost" }
         }
         fun reserve(provider: VerificationProvider, kind: VerificationQueryKind, page: Int, request: String): RequestPermit {
-            ensureOwned()
+            ensureDispatchAllowed()
             if (!properties.workerEnabled) throw BudgetDeferred(VerificationBudgetReason.LOCK_BUSY)
             val requestKey = "${lease.id}-${UUID.randomUUID()}"
             val requestNode = mapper.readTree(request) as com.fasterxml.jackson.databind.node.ObjectNode
@@ -418,11 +454,12 @@ class DiscoveryVerificationWorker(
                     ensureOwned()
                     val academicMode = if (recheck?.spec?.evidenceMode == RecheckEvidenceMode.REFRESH)
                         RecheckEvidenceMode.REFRESH else RecheckEvidenceMode.REUSE
-                    val collected = academic.collect(listOf(snapshot), academicMode, payload.executionContext!!.evaluationAt,
-                        beforeDispatch = {
+                    val collected = academic.collectCoalesced(lease.ownerExecutionId, snapshot, academicMode,
+                        payload.executionContext!!.evaluationAt) {
+                            ensureDispatchAllowed()
                             if (lease.reviewEpoch > 0 && !repository.isOwned(lease.id, token, lease.generation, clock.instant()))
                                 throw java.util.concurrent.CancellationException("Recheck dispatch no longer authorized")
-                        }).getValue(snapshot.identityHash)
+                        }
                     ensureOwned()
                     if (collected.retryAt == null) payload = payload.copy(executionContext = payload.executionContext!!.copy(academic = collected))
                     if (collected.retryAt != null) {
@@ -480,7 +517,8 @@ class DiscoveryVerificationWorker(
                         completed(permit, result, completion)
                     } else completed(permit, result)
                 }) { path -> reserve(VerificationProvider.ORCID, VerificationQueryKind.ORCID, 1, mapper.writeValueAsString(mapOf("path" to path))) }
-                if (read.failure != null) { retry(read.failure); return }
+                val readFailure = read.failure
+                if (readFailure != null) { retry(readFailure); return }
                 payload = payload.copy(evidence = parser.rebuild(snapshot,
                     (payload.orcidCompleted.mapNotNull { it.document } + read.documents).distinct(), payload.evidence))
                 val local = evaluate(snapshot)
@@ -548,6 +586,7 @@ class DiscoveryVerificationWorker(
                         continue
                     }
                     val permit = reserve(VerificationProvider.APOLLO, queryKind(index), query.page, mapper.writeValueAsString(query))
+                    ensureDispatchAllowed()
                     val result = apollo.search(query, permit)
                     if (result !is VerificationHttpResult.Success) {
                         val reason = when (result) {
@@ -660,6 +699,7 @@ class DiscoveryVerificationWorker(
                         }
                         val permit = reserve(VerificationProvider.APOLLO, VerificationQueryKind.DETAIL, 1,
                             mapper.writeValueAsString(mapOf("personId" to candidate.id, "matchingVersion" to 2)))
+                        ensureDispatchAllowed()
                         val result = apollo.detail(candidate.id, permit)
                         if (result is VerificationHttpResult.Success) {
                             val detail = result.value
