@@ -15,10 +15,13 @@ import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.file.*
+import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file.attribute.FileTime
 import java.nio.file.attribute.PosixFilePermissions
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
@@ -32,6 +35,7 @@ class DiscoveryPaperArchiveService(
     private val mapper: ObjectMapper
 ) {
     private val lock = ReentrantLock()
+    private val recoveryRunning = AtomicBoolean()
     private val activeWriters = mutableSetOf<Path>()
     private val analysisReaders = mutableMapOf<String, Int>()
     internal data class AnalysisBody(val attempt: ArchiveAttempt, val hash: String, val mediaType: String, val input: InputStream)
@@ -470,45 +474,115 @@ class DiscoveryPaperArchiveService(
             LOG.warn("event=DISCOVERY_PAPER_RECOVERY_UNAVAILABLE reasonCode={}", (e as? ArchiveException)?.code ?: "RECOVERY_FAILED")
         }
     }
-    @Scheduled(fixedDelay = 300000)
+    @Scheduled(fixedDelay = 300000, initialDelay = 300000)
     fun scheduledRecovery() {
         try { recover() } catch (e: Exception) {
             LOG.warn("event=DISCOVERY_PAPER_RECOVERY_UNAVAILABLE reasonCode={}", (e as? ArchiveException)?.code ?: "RECOVERY_FAILED")
         }
     }
-    fun recover() = mutation {
-        val base = root()
-        if (!Files.exists(base,LinkOption.NOFOLLOW_LINKS)) return@mutation
-        val now = Instant.now()
-        repository.blobs().forEach { blob ->
+    private data class RecoveryFileIdentity(val key: Any?, val size: Long, val modified: FileTime,
+        val created: FileTime, val regular: Boolean)
+    private data class RecoveryCheck(val blob: ArchiveBlob, val path: Path, val identity: RecoveryFileIdentity?)
+    internal var recoveryAttributes: (Path) -> BasicFileAttributes = {
+        Files.readAttributes(it, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+    }
+    private fun recoveryIdentity(path: Path): RecoveryFileIdentity? {
+        checkPath(path)
+        return try {
+            recoveryAttributes(path).let {
+                RecoveryFileIdentity(it.fileKey(), it.size(), it.lastModifiedTime(), it.creationTime(), it.isRegularFile)
+            }
+        } catch (_: NoSuchFileException) { null }
+    }
+    private fun recoverBlob(hash: String, now: Instant) {
+        val candidate = mutation {
+            // The scan snapshot may be stale after another short mutation; always read current state.
+            val blob = repository.blob(hash) ?: return@mutation null
             when {
-                (analysisReaders[blob.sha256] ?: 0) > 0 -> Unit
+                (analysisReaders[hash] ?: 0) > 0 -> null
                 blob.state == ArchiveBlobState.DELETING -> {
                     // Once DELETING commits, new references/protection are forbidden until this finishes.
-                    Files.deleteIfExists(blobPath(blob.sha256)); repository.finishDelete(blob.sha256,now)
+                    Files.deleteIfExists(blobPath(hash)); repository.finishDelete(hash, now)
+                    null
                 }
-                repository.references(blob.sha256).isEmpty() -> {
-                    Files.deleteIfExists(blobPath(blob.sha256)); repository.deleteUnreferencedBlob(blob.sha256)
+                repository.references(hash).isEmpty() -> {
+                    Files.deleteIfExists(blobPath(hash)); repository.deleteUnreferencedBlob(hash)
+                    null
                 }
-                blob.state == ArchiveBlobState.AVAILABLE -> validBlob(blob,true)
+                blob.state == ArchiveBlobState.AVAILABLE -> {
+                    val path = blobPath(hash)
+                    val identity = recoveryIdentity(path)
+                    analysisReaders[hash] = (analysisReaders[hash] ?: 0) + 1
+                    RecoveryCheck(blob, path, identity)
+                }
+                else -> null
+            }
+        } ?: return
+        try {
+            // Pin against deletion while hashing without the process or filesystem mutation lock.
+            failpoint("RECOVERY_BEFORE_HASH")
+            checkPath(candidate.path)
+            val valid = candidate.identity?.regular == true && candidate.identity.size == candidate.blob.sizeBytes &&
+                hashFile(candidate.path) == hash
+            failpoint("RECOVERY_AFTER_HASH")
+            if (!valid) mutation {
+                // A concurrent writer can repair/replace this path; never apply an old hash result to it.
+                if (repository.blob(hash) == candidate.blob && recoveryIdentity(candidate.path) == candidate.identity) {
+                    // Without a file key, equal timestamps/size cannot identify a repaired file.
+                    // Recheck just this blob under mutation before changing durable state.
+                    if (candidate.identity != null && candidate.identity.key == null) validBlob(candidate.blob, true)
+                    else repository.blobState(hash, ArchiveBlobState.MISSING)
+                }
+            }
+        } finally {
+            lock.withLock {
+                val remaining = analysisReaders.getValue(hash) - 1
+                if (remaining == 0) analysisReaders.remove(hash) else analysisReaders[hash] = remaining
             }
         }
-        val blobs = base.resolve("blobs")
-        if (Files.exists(blobs)) Files.walk(blobs).use { paths -> paths.forEach { path ->
-            checkPath(path)
-            if (Files.isRegularFile(path,LinkOption.NOFOLLOW_LINKS)) {
-                val hash = path.fileName.toString().removeSuffix(".bin")
-                if (repository.blob(hash) == null) Files.delete(path)
+    }
+    fun recover() {
+        if (!recoveryRunning.compareAndSet(false, true)) return
+        try {
+            val base = mutation { root().takeIf { Files.exists(it, LinkOption.NOFOLLOW_LINKS) } } ?: return
+            val now = Instant.now()
+            val candidates = mutation { repository.blobs().map { it.sha256 } }
+            candidates.forEach { recoverBlob(it, now) }
+            val blobs = base.resolve("blobs")
+            checkPath(blobs)
+            if (Files.exists(blobs, LinkOption.NOFOLLOW_LINKS)) Files.walk(blobs).use { paths -> paths.forEach { path ->
+                mutation {
+                    checkPath(path)
+                    if (Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
+                        val hash = path.fileName.toString().removeSuffix(".bin")
+                        if (repository.blob(hash) == null) Files.deleteIfExists(path)
+                    }
+                }
+            } }
+            val temp = base.resolve(".tmp")
+            checkPath(temp)
+            if (Files.exists(temp, LinkOption.NOFOLLOW_LINKS)) Files.list(temp).use { paths -> paths.forEach { path ->
+                mutation {
+                    checkPath(path)
+                    if (path !in activeWriters && Files.exists(path, LinkOption.NOFOLLOW_LINKS) &&
+                        Files.getLastModifiedTime(path, LinkOption.NOFOLLOW_LINKS).toInstant().isBefore(now.minusSeconds(3600)))
+                        Files.deleteIfExists(path)
+                }
+            } }
+            val recordIds = mutation { repository.records().map { it.id } }
+            recordIds.forEach { recordId ->
+                val attemptIds = mutation { repository.attempts(recordId).filter {
+                    it.status == ArchiveAttemptStatus.STARTED && it.updatedAt.isBefore(now.minusSeconds(3600))
+                }.map { it.id } }
+                attemptIds.forEach { attemptId -> mutation {
+                    val attempt = repository.attempt(attemptId)
+                    if (attempt?.status == ArchiveAttemptStatus.STARTED && attempt.updatedAt.isBefore(now.minusSeconds(3600)))
+                        repository.finishAttempt(attemptId, ArchiveAttemptStatus.SAVE_ERROR, "INTERRUPTED_WRITE", null, 0, now)
+                } }
             }
-        } }
-        val temp = base.resolve(".tmp")
-        if (Files.exists(temp)) Files.list(temp).use { paths -> paths.forEach { path ->
-            checkPath(path)
-            if (path !in activeWriters && Files.getLastModifiedTime(path,LinkOption.NOFOLLOW_LINKS).toInstant().isBefore(now.minusSeconds(3600))) Files.delete(path)
-        } }
-        repository.records().forEach { r -> repository.attempts(r.id).filter { it.status == ArchiveAttemptStatus.STARTED && it.updatedAt.isBefore(now.minusSeconds(3600)) }.forEach {
-            repository.finishAttempt(it.id,ArchiveAttemptStatus.SAVE_ERROR,"INTERRUPTED_WRITE",null,0,now)
-        } }
+        } catch (e: DataAccessException) { throw ArchiveException("DB_UNAVAILABLE", 503) }
+        catch (e: java.io.IOException) { throw ArchiveException("STORAGE_UNAVAILABLE", 503) }
+        finally { recoveryRunning.set(false) }
     }
     companion object {
         private val LOG = LoggerFactory.getLogger(DiscoveryPaperArchiveService::class.java)
