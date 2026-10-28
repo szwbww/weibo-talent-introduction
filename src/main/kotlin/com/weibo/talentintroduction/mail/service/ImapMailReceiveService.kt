@@ -575,6 +575,12 @@ class ImapMailReceiveService(
             return NodeResult(text, read.truncated, emptyList(), linkedMaterials)
         }
 
+        // 无文件名/附件标记的图片等非文本叶不属于正文，也不登记为专家材料。
+        // 必须在读取流前排除，避免把二进制按 UTF-8 解码后写入正文。
+        if (!contentType.startsWith("message/")) {
+            return NodeResult("", false, emptyList())
+        }
+
         // 其余 message/*（rfc822/global/…）：嵌套消息的内容整体只作为「正文源」
         // 走有界读（等效旧的 readPartAsText 兜底），从不把内部附件拆出来。
         return NodeResult(readBoundedText(part, metadataOnly, deadlineNanos).let { it.text }, false, emptyList())

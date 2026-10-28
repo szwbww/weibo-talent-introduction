@@ -254,7 +254,7 @@ class ImapMailReceiveServiceTest {
                 parts = listOf(
                     MimeBodyPart().apply { setText("Body with signature") },
                     MimeBodyPart().apply {
-                        setContent(ByteArray(0), "image/png")
+                        setContent(byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47, 0, 0xff.toByte()), "image/png")
                         disposition = Part.INLINE
                     }
                 )
@@ -263,6 +263,53 @@ class ImapMailReceiveServiceTest {
         val received = convert(message, metadataOnly = true)
         assertEquals("Body with signature", received.body)
         assertTrue(received.attachments.isEmpty())
+    }
+
+    @Test
+    fun `unnamed binary parts without disposition never contaminate body in either mode`() {
+        for (metadataOnly in listOf(false, true)) {
+            for (mimeType in listOf("image/png", "application/octet-stream", "audio/mpeg", "video/mp4")) {
+                val message = roundTrip(multipartMessage(parts = listOf(
+                    MimeBodyPart().apply { setText("Expert reply") },
+                    MimeBodyPart().apply {
+                        setContent(byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47, 0, 0xff.toByte()), mimeType)
+                    }
+                )))
+                val received = convert(message, metadataOnly = metadataOnly)
+                assertEquals("Expert reply", received.body, "$mimeType metadataOnly=$metadataOnly")
+                assertTrue(received.attachments.isEmpty())
+            }
+        }
+    }
+
+    @Test
+    fun `ignored binary leaf is never opened`() {
+        val binary = object : MimeBodyPart() {
+            override fun getInputStream(): InputStream = error("Binary content must not be read")
+            override fun getContent(): Any = error("Binary content must not be read")
+        }.apply { setHeader("Content-Type", "image/png") }
+        for (svc in listOf(service, metadataService)) {
+            val result = svc.walkContent(binary,
+                ImapMailReceiveService.MailSourceContext("unit-test-account", "Junk", 42, 506, null),
+                System.nanoTime() + 10_000_000_000L)
+            assertEquals("", result.bodyText)
+            assertTrue(result.attachments.isEmpty())
+        }
+    }
+
+    @Test
+    fun `named png remains an attachment in either mode`() {
+        val bytes = byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47)
+        for (metadataOnly in listOf(false, true)) {
+            val received = convert(roundTrip(multipartMessage(parts = listOf(
+                MimeBodyPart().apply { setText("Expert reply") },
+                MimeBodyPart().apply { setContent(bytes, "image/png"); fileName = "figure.png" }
+            ))), metadataOnly = metadataOnly)
+            assertEquals("Expert reply", received.body)
+            assertEquals("figure.png", received.attachments.single().fileName)
+            if (metadataOnly) assertNull(received.attachments.single().content)
+            else assertTrue(bytes.contentEquals(received.attachments.single().content!!))
+        }
     }
 
     @Test
