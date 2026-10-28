@@ -71,11 +71,7 @@ class AuthFlowProbeController {
         "talent-introduction.mail-queue.enabled=false",
         "talent-introduction.scheduling.enabled=false",
         "spring.rabbitmq.listener.simple.auto-startup=false",
-        "spring.flyway.placeholder-replacement=false",
-        // A5：测试源码树里的顶层 @Configuration（WorkerLifecycleTestConfig 的
-        // attachmentTransferWorker 等）会被组件扫描进完整 @SpringBootTest 上下文，
-        // 与产品 bean 同名。仅在本测试上下文中允许覆盖，产品代码不变。
-        "spring.main.allow-bean-definition-overriding=true"
+        "spring.flyway.placeholder-replacement=false"
     ]
 )
 class AuthFlowIntegrationTest {
