@@ -375,11 +375,13 @@ class AuthInterceptorTest {
             )
         ).thenReturn(ConversationListResponse(emptyList(), 0, 0, 20))
         Mockito.`when`(
+            // 02 (I-2)：Controller 从 session 显式传身份，stub 参数同步为 5 个（断言语义不变）。
             conversationService.listMessages(
                 contactId = 1L,
                 accountCode = null,
                 beforeCursor = null,
-                limit = 50
+                limit = 50,
+                username = MailReadOnlyPolicy.READER_USERNAME
             )
         ).thenReturn(ConversationMessageListResponse(emptyList(), null, false))
 

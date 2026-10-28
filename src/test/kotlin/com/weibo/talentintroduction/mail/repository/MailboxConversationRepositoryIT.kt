@@ -14,6 +14,7 @@ import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabas
 import org.springframework.context.annotation.Import
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.TestPropertySource
+import com.weibo.talentintroduction.auth.config.MailReadOnlyPolicy
 import com.weibo.talentintroduction.mail.service.MailboxProgressStatus
 import com.weibo.talentintroduction.mail.service.InboundAutoResponseDetector
 import com.weibo.talentintroduction.mail.service.ReceivedMail
@@ -1158,6 +1159,129 @@ class MailboxConversationRepositoryIT {
     }
 
     // ------------------------------------------------------------------
+    // 02 (I-1/I-2/I-4)：只读账号的 grant 成员过滤与准入读取
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `reader grant filter counts and pages only the twenty three interleaved grants`() {
+        val mailAt = "2026-09-01 09:00:00"
+        // 45 名有邮件专家（id 100..144），全部只有同一天发件（无来信 → 稳定 contactId DESC）。
+        for (id in 100L..144L) {
+            seedContact(id, "Expert $id", "expert$id@example.org", "0000-0000-0000-%04d".format(id))
+            insertOutbound(id, "acc-a", "INTRODUCTION", "SENT", "Intro $id", mailAt)
+        }
+        val granted = (100L..144L).filter { it % 2L == 0L }
+        assertEquals(23, granted.size, "23 名交错授权")
+        granted.forEach { insertReadAccess(it) }
+
+        // I-4：非 reader 身份口径完全不变；I-1：reader 只数有邮件且授权的专家。
+        assertEquals(45L, repository.countConversations("op1", emptyFilter()))
+        assertEquals(45L, repository.countConversations("", emptyFilter()))
+        assertEquals(23L, repository.countConversations(MailReadOnlyPolicy.READER_USERNAME, emptyFilter()))
+
+        val pages = listOf(0L, 20L, 40L).map { offset ->
+            page(emptyFilter(), size = 20, offset = offset, username = MailReadOnlyPolicy.READER_USERNAME)
+        }
+        assertEquals(listOf(20, 3, 0), pages.map { it.size }, "size=20 → 20 + 3 + 0")
+        val ids = pages.flatten().map { it.expertContactId }
+        assertEquals(23, ids.size)
+        assertEquals(23, ids.toSet().size, "页间无重复")
+        assertTrue(ids.all { it in granted }, "页内绝不出现未授权专家：$ids")
+    }
+
+    @Test
+    fun `reader without any grant sees zero experts while admin stays unchanged`() {
+        insertOutbound(1, "acc-a", "INTRODUCTION", "SENT", "s1", "2026-09-01 09:00:00")
+        insertOutbound(2, "acc-b", "INTRODUCTION", "SENT", "s2", "2026-09-02 09:00:00")
+
+        assertEquals(0L, repository.countConversations(MailReadOnlyPolicy.READER_USERNAME, emptyFilter()))
+        assertTrue(page(emptyFilter(), username = MailReadOnlyPolicy.READER_USERNAME).isEmpty())
+        assertEquals(2L, repository.countConversations("op1", emptyFilter()))
+    }
+
+    @Test
+    fun `reader acl ANDs with q account direction date subject keyword and status filters`() {
+        seedContact(5, "Eve Expert", "eve@example.org", "0000-0000-0000-0005")
+        seedContact(6, "Fay Expert", "fay@example.org", "0000-0000-0000-0006")
+        insertOutbound(5, "acc-a", "INTRODUCTION", "SENT", "Alpha intro", "2026-09-01 09:00:00")
+        insertOutbound(6, "acc-a", "INTRODUCTION", "SENT", "Beta intro", "2026-09-02 09:00:00")
+        insertProcessing(5, "acc-a", 5001, "MANUAL_REVIEW", "Re Alpha", "2026-09-03 09:00:00",
+            "acl-p5", "eve@example.org", body = "alpha keyword", cleanedBody = "alpha keyword")
+        insertReadAccess(5)
+        insertMark("user1", 5, "FOLLOWING")
+
+        val reader = MailReadOnlyPolicy.READER_USERNAME
+        // 姓名/邮箱 q：未授权专家的姓名与邮箱都不可见。
+        assertEquals(1L, repository.countConversations(reader, filter(q = "Eve")))
+        assertEquals(0L, repository.countConversations(reader, filter(q = "Fay")))
+        assertEquals(0L, repository.countConversations(reader, filter(q = "fay@example.org")))
+        // 账号范围：accepted 账号内也只在授权集内计数。
+        assertEquals(1L, repository.countConversations(reader, filter(accountCode = "acc-a")))
+        assertEquals(0L, repository.countConversations(reader, filter(accountCode = "acc-b")))
+        // 方向 + 主题 + 关键词 + 日期：只有已授权专家 5 的消息可命中。
+        assertEquals(1L, repository.countConversations(reader, filter(direction = "INBOUND")))
+        assertEquals(1L, repository.countConversations(reader, filter(subject = "Re Alpha")))
+        assertEquals(0L, repository.countConversations(reader, filter(subject = "Beta")))
+        assertEquals(1L, repository.countConversations(reader, filter(keyword = "alpha keyword")))
+        assertEquals(0L, repository.countConversations(reader, filter(keyword = "Beta")))
+        // 日期区间只覆盖未授权专家 6 的发件日 → reader 0，admin 1（ACL 与日期同时成立）。
+        val onlySecondDay = filter(
+            startTime = LocalDateTime.of(2026, 9, 2, 0, 0),
+            endTime = LocalDateTime.of(2026, 9, 3, 0, 0)
+        )
+        assertEquals(0L, repository.countConversations(reader, onlySecondDay))
+        assertEquals(1L, repository.countConversations("op1", onlySecondDay))
+        // 状态筛选与 ACL 同层 AND。
+        assertEquals(1L, repository.countConversations(reader, filter(pendingOnly = true)))
+        assertEquals(1L, repository.countConversations(reader, filter(followed = true)))
+
+        // 页面同样受 ACL：q=Fay 的空结果不是「先取全量页再过滤」的表象。
+        assertTrue(page(filter(q = "Fay"), username = reader).isEmpty())
+        assertEquals(listOf(5L), page(emptyFilter(), username = reader).map { it.expertContactId })
+    }
+
+    @Test
+    fun `reader explain keeps the grant exists in the plan`() {
+        for (id in 5L..24L) {
+            seedContact(id, "Expert $id", "expert$id@example.org", "0000-0000-0000-%04d".format(id))
+            insertOutbound(id, "acc-a", "INTRODUCTION", "SENT", "Intro $id", "2026-09-01 09:00:00")
+            insertReadAccess(id)
+        }
+        val plan = repository.explainConversationsPage(
+            MailReadOnlyPolicy.READER_USERNAME,
+            filter(accountCode = "acc-a"),
+            size = 20,
+            offset = 0
+        )
+        assertTrue(plan.isNotEmpty(), "EXPLAIN 必须产出计划行")
+        // MySQL 的 EXPLAIN `table` 列是 SQL 里的表**别名**（grant 子句用 `emra`），不是基表名；
+        // 只要计划里出现该半连接行即证明过滤是 SQL 层 EXISTS，而非应用层取全量再 filter。
+        assertTrue(
+            plan.any { (it["table"] as? String) == "emra" },
+            "grant 过滤必须是 SQL 层 EXISTS（不是应用层 filter）：$plan"
+        )
+        // 计划可重复执行（稳定性），且与 page 使用同一 SQL 形状。
+        val again = repository.explainConversationsPage(
+            MailReadOnlyPolicy.READER_USERNAME, filter(accountCode = "acc-a"), 20, 0
+        )
+        assertEquals(plan.size, again.size)
+        assertEquals(20, page(emptyFilter(), username = MailReadOnlyPolicy.READER_USERNAME).size)
+    }
+
+    @Test
+    fun `hasReadAccess is a parameterized existence read that honours revocation immediately`() {
+        assertFalse(repository.hasReadAccess(MailReadOnlyPolicy.READER_USERNAME, 1L))
+        insertReadAccess(1)
+        assertTrue(repository.hasReadAccess(MailReadOnlyPolicy.READER_USERNAME, 1L))
+        assertFalse(repository.hasReadAccess("op1", 1L), "grant 只属于固定只读账号")
+        assertFalse(repository.hasReadAccess(MailReadOnlyPolicy.READER_USERNAME, 999999L),
+            "专家不存在与无授权同为 false（统一 403，不泄露存在性）")
+        jdbcTemplate.update("DELETE FROM expert_mail_read_access WHERE expert_contact_id = 1")
+        assertFalse(repository.hasReadAccess(MailReadOnlyPolicy.READER_USERNAME, 1L),
+            "撤销后同一请求周期之后的读取立即不可见（无缓存）")
+    }
+
+    // ------------------------------------------------------------------
     // 工具
     // ------------------------------------------------------------------
 
@@ -1231,6 +1355,8 @@ class MailboxConversationRepositoryIT {
         jdbcTemplate.update("DELETE FROM expert_follow")
         // 01：挂起表 FK→expert_contact，必须在删联系人前清理。
         jdbcTemplate.update("DELETE FROM expert_mailbox_suspension")
+        // 02：grant 表 FK→expert_contact（ON DELETE CASCADE），显式清理保证用例间不串。
+        jdbcTemplate.update("DELETE FROM expert_mail_read_access")
         jdbcTemplate.update("DELETE FROM inbound_mail_tag")
         jdbcTemplate.update("DELETE FROM mail_attachment_transfer")
         jdbcTemplate.update("DELETE FROM expert_document")
@@ -1264,6 +1390,15 @@ class MailboxConversationRepositoryIT {
             VALUES (?, ?, ?, ?, ?, 'NEW')
             """.trimIndent(),
             id, id, orcid, email, name
+        )
+    }
+
+    /** 02 (I-1/I-2)：admin 授予固定只读账号的专家查看权（唯一写路径是 01 的服务，这里直接落库）。 */
+    private fun insertReadAccess(contactId: Long, username: String = MailReadOnlyPolicy.READER_USERNAME) {
+        jdbcTemplate.update(
+            "INSERT INTO expert_mail_read_access (username, expert_contact_id, granted_by, created_at) " +
+                "VALUES (?, ?, 'admin', ?)",
+            username, contactId, Timestamp.valueOf(LocalDateTime.of(2026, 10, 1, 9, 0))
         )
     }
 

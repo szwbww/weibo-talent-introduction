@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.mail.repository
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
+import com.weibo.talentintroduction.auth.config.MailReadOnlyPolicy
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import com.weibo.talentintroduction.mail.service.MailboxProgressStatus
 import java.sql.ResultSet
@@ -470,9 +471,34 @@ class MailboxConversationRepository(
     }
 
     // ------------------------------------------------------------------
-    // timeline（单专家消息）
+    // 读取准入（02 I-2）
     // ------------------------------------------------------------------
 
+    /**
+     * 只读账号对单个专家的授权读取（每次请求一次 `expert_mail_read_access` 查询，无缓存）。
+     *
+     * 关系即状态：行存在即允许。grant 缺失与专家不存在**都**返回 false —— 调用方统一映射
+     * 403 `MAIL_READ_FORBIDDEN`，绝不泄露专家是否存在。参数化 JDBC，username 只来自
+     * session 身份；本查询不写任何表。
+     */
+    fun hasReadAccess(username: String, contactId: Long): Boolean {
+        if (username.isBlank() || contactId <= 0L) return false
+        val count = jdbcTemplate.queryForObject(
+            """
+            SELECT COUNT(*) FROM expert_mail_read_access
+             WHERE username = :username AND expert_contact_id = :contactId
+            """.trimIndent(),
+            MapSqlParameterSource()
+                .addValue("username", username)
+                .addValue("contactId", contactId),
+            Long::class.java
+        ) ?: 0L
+        return count > 0L
+    }
+
+    // ------------------------------------------------------------------
+    // timeline（单专家消息）
+    // ------------------------------------------------------------------
     /**
      * 单个专家的往来消息（默认取最新窗口；before 为空取最新 limit 条）。
      * keyset (event_at DESC, source_rank DESC, id DESC) 严格更旧；同时间戳不丢不重。
@@ -750,6 +776,18 @@ class MailboxConversationRepository(
         val membershipClauses = listOfNotNull(eligibility.outboundClause, eligibility.inboundClause)
         if (membershipClauses.isNotEmpty()) {
             clauses += "(\n${membershipClauses.joinToString("\n      OR ")}\n      )"
+        }
+        // 02 (I-1)：只读账号的成员过滤必须在所有 OR 条件之外（每条既有子句都已带括号），
+        // 与 q/followed/provided/挂起/消息级 EXISTS 同层 AND。关系即状态：无 grant 行即
+        // 不可见，空授权集自然得到 total=0/items=[]（绝不在应用层取全量后再过滤）。
+        // `:username` 是固定绑定参数，绝不做字符串拼接。
+        if (MailReadOnlyPolicy.isReader(username)) {
+            clauses += """
+                EXISTS (
+                    SELECT 1 FROM expert_mail_read_access emra
+                     WHERE emra.username = :username
+                       AND emra.expert_contact_id = u.expert_contact_id)
+            """.trimIndent()
         }
         return clauses.joinToString("\n   AND ")
     }

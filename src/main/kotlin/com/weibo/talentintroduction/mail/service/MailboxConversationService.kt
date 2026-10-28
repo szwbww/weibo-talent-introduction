@@ -1,5 +1,7 @@
 package com.weibo.talentintroduction.mail.service
 
+import com.weibo.talentintroduction.auth.config.MailReadAccessDeniedException
+import com.weibo.talentintroduction.auth.config.MailReadOnlyPolicy
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.document.service.ExpertMaterialService
@@ -222,8 +224,24 @@ class MailboxConversationService(
         contactId: Long,
         accountCode: String?,
         beforeCursor: String?,
-        limit: Int
+        limit: Int,
+        /**
+         * 02 (I-2/I-4)：会话身份，只由 HTTP Controller 从 session 显式传入；默认 null 保持
+         * 既有内部调用/测试兼容（null 非 reader → 管理员语义）。admission 在 Service 内，
+         * 不新增绕行 HTTP 入口。
+         */
+        username: String? = null
     ): ConversationMessageListResponse {
+        // 02 (I-2/I-3)：只读账号的准入先于联系人存在检查、正文/标签/附件查询。grant 缺失与
+        // 专家不存在统一 403 MAIL_READ_FORBIDDEN（不泄露存在性）；每次请求都读 DB，
+        // 撤销提交后开始的新请求（含更早页/刷新）必然被拒，无缓存/推送。
+        val reader = MailReadOnlyPolicy.isReader(username)
+        if (reader && !repository.hasReadAccess(username.orEmpty(), contactId)) {
+            throw MailReadAccessDeniedException(
+                MailReadOnlyPolicy.MAIL_READ_FORBIDDEN,
+                "无权查看该专家的邮件"
+            )
+        }
         expertContactRepository.findById(contactId)
             .orElseThrow { NoSuchElementException("Expert contact not found: $contactId") }
         val activeCodes = activeAccountCodes()
@@ -250,10 +268,16 @@ class MailboxConversationService(
         // 03 (I-3/I-4)：只对当前窗口的 MAIL_RECORD+OUTBOUND+SENT 行按 id 集合批量读一次
         // 存档快照（findAllById 恰好一次；窗口无此类行不发请求）。INBOUND 行即使与
         // outbound 数值 id 相同也绝不读 outbound 快照（避免 source 碰撞串附件）。
-        val outboundSentRows = page.rows.filter {
-            it.source == MailboxConversationRepository.SOURCE_MAIL_RECORD &&
-                it.direction == MailboxConversationRepository.DIRECTION_OUTBOUND &&
-                it.sendStatus == SEND_STATUS_SENT
+        // 02 (I-3)：只读账号不做任何附件投影，因此这段仅用于日历/通用附件的快照读取
+        // 完全跳过（零交互），绝不为 reader 预读 mail_record。
+        val outboundSentRows = if (reader) {
+            emptyList()
+        } else {
+            page.rows.filter {
+                it.source == MailboxConversationRepository.SOURCE_MAIL_RECORD &&
+                    it.direction == MailboxConversationRepository.DIRECTION_OUTBOUND &&
+                    it.sendStatus == SEND_STATUS_SENT
+            }
         }
         val mailRecordRowsById = if (outboundSentRows.isEmpty()) {
             emptyMap()
@@ -270,7 +294,13 @@ class MailboxConversationService(
 
         // 行按 DESC（新→旧）返回；正序呈现最新窗口。
         val items = page.rows.asReversed().map { row ->
-            val attachments = expertMaterialService.resolveMessageAttachments(row.source, row.id)
+            // 02 (I-3/I-4)：reader 与附件能力同时关闭 —— 不解析附件、不读快照，四个附件
+            // 字段固定为 0/[]/null/[]；正文/主题/方向/时间/来源/发送状态与标签照常。
+            val attachments = if (reader) {
+                emptyList()
+            } else {
+                expertMaterialService.resolveMessageAttachments(row.source, row.id)
+            }
             ConversationMessageItemResponse(
                 source = row.source,
                 id = row.id,
@@ -294,9 +324,13 @@ class MailboxConversationService(
                 } else {
                     emptyList()
                 },
-                calendarAttachment = calendarAttachmentOf(row, mailRecordRowsById[row.id]),
+                calendarAttachment = if (reader) null else calendarAttachmentOf(row, mailRecordRowsById[row.id]),
                 // 06 (I-3)：同一批 findAllById 结果投影通用附件快照（零额外查询、不读磁盘）。
-                outboundAttachments = outboundAttachmentsOf(row, mailRecordRowsById[row.id])
+                outboundAttachments = if (reader) {
+                    emptyList()
+                } else {
+                    outboundAttachmentsOf(row, mailRecordRowsById[row.id])
+                }
             )
         }
         val nextBefore = if (page.hasMore) {
