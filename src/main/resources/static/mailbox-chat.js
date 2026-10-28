@@ -827,6 +827,17 @@
         sessionStore.delete(conversationCacheKey(user, accountScope, contactId));
     }
 
+    // 04（I-1/I-2/S-1）：user1 只读授权入口的固定操作者/目标与唯一文案矩阵。
+    const READ_ACCESS_ACTOR = "admin";
+    const READ_ACCESS_TARGET = "user1";
+    const READ_ACCESS_TEXT = {
+        loading: { button: "授权状态加载中…", badge: "user1：读取中" },
+        granted: { button: "取消 user1 授权", badge: "user1：可查看" },
+        denied: { button: "授权 user1 查看", badge: "user1：未授权" },
+        saving: { button: "保存中…" },
+        error: { button: "重试授权状态", badge: "user1：授权操作失败，请重试" }
+    };
+
     function createInstance(host, options) {
         const instance = {
             host,
@@ -838,6 +849,9 @@
             msgSeq: 0,
             convEpoch: 0,
             expertNote: { contactId: null, readSeq: 0, loaded: false, loading: false, error: "", data: null, saving: false, dialog: null },
+            // 04（I-1/I-2/I-3）：user1 只读授权入口状态。contactId/generation 绑定本次选择，
+            // 只有实例/身份/contact/generation 全匹配的回包才写当前 header；canRead 只来自服务端。
+            readAccess: { contactId: null, phase: "idle", canRead: null, generation: 0 },
             searchTimer: null,
             saveTimer: null,
             draftNavigationSeq: 0,
@@ -2741,6 +2755,9 @@
                     instance.auth.ready = true;
                     instance.auth.username = String(data.username);
                     instance.auth.failed = false;
+                    // 04（I-3）：身份就绪/变化即新代次，已选专家需按当前身份重新对账。
+                    if (instance.selectedContactId != null) beginReadAccess();
+                    else applyReadAccessView();
                     renderList();
                     renderPager();
                     renderSuspensionDetail();
@@ -3320,6 +3337,8 @@
             instance.selectedSummary = null;
             instance.conversation.contact = null;
             instance.draftsRef = null;
+            // 04（I-3）：清空选择即作废在途授权回包。
+            invalidateReadAccess();
         }
 
         function renderFocusMissed(focus) {
@@ -3479,6 +3498,8 @@
             instance.convEpoch += 1;
             const mySeq = instance.seq;
             const myEpoch = instance.convEpoch;
+            // 04（I-1/I-3）：换专家即新代次，并立即向服务端对账授权状态。
+            beginReadAccess();
             instance.conversation.accountScope = accountFilterFromOptions();
             instance.conversation.loading = true;
             instance.conversation.error = "";
@@ -3643,6 +3664,7 @@
                     <button class="button" type="button" data-action="mc-add-schedule">新增排期</button>
                     <button class="button" type="button" data-action="mc-edit-schedule">变更日期</button>
                     <button class="button danger" type="button" data-action="mc-cancel-schedule">取消排期</button>
+                    ${readAccessNodesHtml(contactId)}
                 `;
             }
             renderHeaderMeetingSummary();
@@ -3651,6 +3673,180 @@
             if (meta) {
                 renderHeaderMeta(meta);
             }
+        }
+
+        // --------------------------------------------------------------
+        // 04（I-1/I-2/I-3/S-1）：user1 只读授权入口
+        // 仅 instance.user === "admin" 渲染；目标固定 user1，contactId 捕获于点击时；
+        // UI 只反映服务端回包，失败一律进入「重试授权状态」，重试只重新 GET。
+        // --------------------------------------------------------------
+
+        function readAccessUrl(contactId) {
+            return `/api/mail/mailbox/conversations/${Number(contactId)}/read-access/${READ_ACCESS_TARGET}`;
+        }
+
+        function readAccessAdmin() {
+            return String(instance.user) === READ_ACCESS_ACTOR;
+        }
+
+        /** 当前选择是否可作为授权目标：仅 admin + 已选专家 + 非待匹配视图。 */
+        function readAccessTargetContactId() {
+            if (!readAccessAdmin() || isUnmatchedChip()) return 0;
+            const contactId = Number(instance.selectedContactId);
+            return Number.isFinite(contactId) && contactId > 0 ? contactId : 0;
+        }
+
+        function nextReadAccessState(contactId, phase, canRead) {
+            const generation = (instance.readAccess ? instance.readAccess.generation : 0) + 1;
+            return { contactId: contactId || null, phase, canRead, generation };
+        }
+
+        /** 换专家/清空选择/销毁/身份变化：作废一切在途读写的写回资格（I-3）。 */
+        function invalidateReadAccess() {
+            instance.readAccess = nextReadAccessState(0, "idle", null);
+            applyReadAccessView();
+        }
+
+        function readAccessView(contactId) {
+            const state = instance.readAccess || {};
+            const same = state.contactId != null && Number(state.contactId) === Number(contactId);
+            const phase = same ? state.phase : "loading";
+            const canRead = same ? state.canRead : null;
+            const lastBadge = canRead === true ? READ_ACCESS_TEXT.granted.badge
+                : canRead === false ? READ_ACCESS_TEXT.denied.badge
+                    : READ_ACCESS_TEXT.loading.badge;
+            if (phase === "saving") return { button: READ_ACCESS_TEXT.saving.button, badge: lastBadge, disabled: true };
+            if (phase === "error") return { button: READ_ACCESS_TEXT.error.button, badge: READ_ACCESS_TEXT.error.badge, disabled: false };
+            if (phase === "ready" && typeof canRead === "boolean") {
+                const copy = canRead ? READ_ACCESS_TEXT.granted : READ_ACCESS_TEXT.denied;
+                return { button: copy.button, badge: copy.badge, disabled: false };
+            }
+            return { button: READ_ACCESS_TEXT.loading.button, badge: READ_ACCESS_TEXT.loading.badge, disabled: true };
+        }
+
+        /** S-1：追加在原 header actions 末尾的两个节点；非 admin 不产出任何标记。 */
+        function readAccessNodesHtml(contactId) {
+            const id = Number(contactId);
+            if (!readAccessAdmin() || !(id > 0) || isUnmatchedChip()) return "";
+            const view = readAccessView(id);
+            return `<button class="button" type="button" data-action="mc-toggle-user1-read-access" data-contact-id="${escapeText(id)}"${view.disabled ? " disabled" : ""}>${view.button}</button><span class="mc-badge" data-role="mc-user1-read-access-status" aria-live="polite">${view.badge}</span>`;
+        }
+
+        /** 只改 textContent/disabled；不重建 header、不触发请求。 */
+        function applyReadAccessView() {
+            if (instance.disposed) return;
+            const body = conversationBody();
+            const actions = body && body.querySelector ? body.querySelector(".mc-actions") : null;
+            if (!actions) return;
+            const button = actions.querySelector('[data-action="mc-toggle-user1-read-access"]');
+            const badge = actions.querySelector('[data-role="mc-user1-read-access-status"]');
+            const contactId = readAccessTargetContactId();
+            if (!contactId) {
+                if (button && button.parentNode) button.parentNode.removeChild(button);
+                if (badge && badge.parentNode) badge.parentNode.removeChild(badge);
+                return;
+            }
+            const view = readAccessView(contactId);
+            if (button) {
+                if (button.dataset) button.dataset.contactId = String(contactId);
+                if (button.textContent !== view.button) button.textContent = view.button;
+                button.disabled = !!view.disabled;
+            }
+            if (badge && badge.textContent !== view.badge) badge.textContent = view.badge;
+        }
+
+        function readAccessContext(contactId) {
+            return { user: String(instance.user), contactId: Number(contactId), generation: instance.readAccess.generation };
+        }
+
+        /** 回包写回门槛：实例/身份/contact/generation 全匹配，且仍是当前选择（I-3）。 */
+        function readAccessContextAlive(ctx) {
+            if (instance.disposed || isUnmatchedChip()) return false;
+            if (String(instance.user) !== ctx.user) return false;
+            const state = instance.readAccess || {};
+            if (state.contactId == null || Number(state.contactId) !== ctx.contactId) return false;
+            if (state.generation !== ctx.generation) return false;
+            return Number(instance.selectedContactId) === ctx.contactId;
+        }
+
+        /** I-2：username/contactId/canRead 必须匹配预期，否则视为不可信回包。 */
+        function readAccessPayload(data, contactId) {
+            if (!data || typeof data !== "object") return null;
+            if (String(data.username == null ? "" : data.username) !== READ_ACCESS_TARGET) return null;
+            if (Number(data.contactId) !== Number(contactId)) return null;
+            if (typeof data.canRead !== "boolean") return null;
+            return data.canRead;
+        }
+
+        /** 初次/重试读取实际授权状态（唯一的重试动作）。 */
+        function loadReadAccess() {
+            const contactId = readAccessTargetContactId();
+            const state = instance.readAccess || {};
+            if (!contactId || state.contactId == null || Number(state.contactId) !== contactId) return;
+            state.phase = "loading";
+            applyReadAccessView();
+            const ctx = readAccessContext(contactId);
+            hostApi()(readAccessUrl(contactId)).then((data) => {
+                if (!readAccessContextAlive(ctx)) return;
+                const canRead = readAccessPayload(data, contactId);
+                if (canRead === null) {
+                    state.canRead = null;
+                    state.phase = "error";
+                } else {
+                    state.canRead = canRead;
+                    state.phase = "ready";
+                }
+                applyReadAccessView();
+            }).catch(() => {
+                if (!readAccessContextAlive(ctx)) return;
+                state.canRead = null;
+                state.phase = "error";
+                applyReadAccessView();
+            });
+        }
+
+        /** 选择新专家/身份变化：新代次 + loading，并立即向服务端对账。 */
+        function beginReadAccess() {
+            const contactId = readAccessTargetContactId();
+            instance.readAccess = nextReadAccessState(contactId, contactId ? "loading" : "idle", null);
+            applyReadAccessView();
+            if (contactId) loadReadAccess();
+        }
+
+        function toggleReadAccess(button) {
+            // I-1：目标捕获于本次点击（按钮自身 data-contact-id），不回读请求后的当前选择。
+            const contactId = Number(button && button.dataset ? button.dataset.contactId : NaN);
+            if (!readAccessAdmin() || !Number.isFinite(contactId) || contactId <= 0) return;
+            if (isUnmatchedChip() || Number(instance.selectedContactId) !== contactId) return;
+            const state = instance.readAccess || {};
+            if (state.contactId == null || Number(state.contactId) !== contactId) return;
+            if (state.phase === "loading" || state.phase === "saving") return;
+            if (state.phase === "error" || typeof state.canRead !== "boolean") {
+                // 失败后只允许重新对账，绝不自动重发上次 PUT/DELETE。
+                loadReadAccess();
+                return;
+            }
+            const grant = state.canRead !== true;
+            state.phase = "saving";
+            applyReadAccessView();
+            const ctx = readAccessContext(contactId);
+            hostApi()(readAccessUrl(contactId), { method: grant ? "PUT" : "DELETE" }).then((data) => {
+                const canRead = readAccessPayload(data, contactId);
+                if (!readAccessContextAlive(ctx)) return;
+                if (canRead === null || canRead !== grant) {
+                    state.canRead = null;
+                    state.phase = "error";
+                } else {
+                    state.canRead = canRead;
+                    state.phase = "ready";
+                }
+                applyReadAccessView();
+            }).catch(() => {
+                if (!readAccessContextAlive(ctx)) return;
+                state.canRead = null;
+                state.phase = "error";
+                applyReadAccessView();
+            });
         }
 
         function renderHeaderMeta(metaEl) {
@@ -9047,6 +9243,11 @@
                 dismissReplied(data.contactId, button);
                 return;
             }
+            // 04（I-1/I-2）：授权入口只走 01 的授权接口，不触碰挂起/邮件/草稿等既有入口。
+            if (action === "mc-toggle-user1-read-access") {
+                toggleReadAccess(button);
+                return;
+            }
             if (action === "mc-select-unmatched") {
                 const unmatchedId = Number(data.unmatchedId);
                 if (Number.isFinite(unmatchedId) && unmatchedId > 0) selectUnmatched(unmatchedId);
@@ -9729,6 +9930,8 @@
             closeProgressMenu({ restoreFocus: false });
             clearUnmatchedState();
             resetSuspensionState();
+            // 04（I-3）：unmount 后迟到回包不得再写 DOM（applyReadAccessView 亦被 disposed 拦下）。
+            instance.readAccess = nextReadAccessState(0, "idle", null);
             instance.disposed = true;
             clearTimeout(instance.searchTimer);
             clearTimeout(instance.saveTimer);
