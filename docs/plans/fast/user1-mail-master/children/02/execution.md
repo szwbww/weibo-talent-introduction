@@ -215,3 +215,90 @@ reader 固定空附件投影 + 正文/标签保留 + 附件依赖零交互；adm
 
 一旦裁决，剩余工作仅为：修正后的命令 1 复跑、命令 2（隔离 MySQL 127.0.0.1:3307）、
 `git diff --check`、以及 `feat(fast-p): implement 02` 提交（排除 `docs/plans/fast/**`）。
+
+---
+
+# Epoch 2 执行记录 — READY_FOR_VERIFICATION
+
+- 状态：**READY_FOR_VERIFICATION**（本地提交，未推送；`docs/plans/fast/**` 未纳入提交）
+- 计划：`docs/plans/2026-10-27/user1-mail-02-mail-queries.md`（amend 后 identity `commit:d66f54251af163f105c6244a6d06c4b28042518e`）
+- Brief：`docs/plans/fast/user1-mail-master/children/02/brief.md`（amend 后 7 文件授权）
+- 执行 epoch：RESUME（同一路径新内容 → 新执行 epoch，按 A1/A2 授权补第 7 个文件）
+- Base（child 01 Code head）：`b12b53625e2fb2e155f13e830c8647a453c13ddb`
+- 开工 HEAD：`d66f54251af163f105c6244a6d06c4b28042518e`
+- 实现提交：`8f5b514871fdddf5e78f86bd26fe7e9575194a94` `feat(fast-p): implement 02`（7 文件，`git show --stat` 复核）
+- 分支：`fast/user1-mail-master`（提交为该分支 HEAD，且 `git merge-base --is-ancestor` 通过）
+- 上一 epoch 的 §1 PLAN_CONFLICT 记录**原样保留**于本文件前部；其冲突已由 amend A1/A2 解决，不再是开放问题。
+
+## 1. 本 epoch 改动
+
+1. **保留 epoch 1 的 6 文件工作区实现**（未 reset/未重建），内容与 §4 记载一致，逐点复核：
+   Repository `expertPredicates` 尾部 `MailReadOnlyPolicy.isReader(username)` 分支追加 grant
+   `EXISTS`（`:username` 固定绑定，所有既有子句已带括号）；新增 `hasReadAccess(username, contactId)`
+   参数化 `COUNT(*)` 读取；Service `listMessages` 尾参 `username: String? = null`，reader 准入先于
+   `findById`；reader 跳过附件解析与 `findAllById` 快照读取并固定 4 个附件字段；Controller
+   `messages` 追加 `HttpServletRequest` 并传 `sessionUsername(request)`。
+2. **A1/A2（第 7 文件）**：`AuthInterceptorTest.kt:377-386` 的 `listMessages` stub 由 4 参数
+   同步为 5 参数（补 `username = MailReadOnlyPolicy.READER_USERNAME`），断言语义与白名单断言未改。
+3. **修正本 child 自带的新测试**：`MailboxConversationRepositoryIT.reader explain keeps the grant
+   exists in the plan` 首轮断言按基表名 `expert_mail_read_access` 匹配 EXPLAIN 的 `table` 列，
+   而 MySQL 该列返回的是 SQL 别名 `emra`；改为断言别名行存在（仍证明过滤在 SQL 层 EXPLAIN 计划中，
+   不是应用层 filter）。其余新增用例首轮即通过。
+4. 除上述外未新增/修改任何文件；未改数据库生产者、迁移、行号锁定文件；读取路径无持久写。
+
+## 2. 命令执行（本 epoch 全部重新执行）
+
+| # | 命令 | 退出码 | 结果 |
+|---|---|---|---|
+| 1 | `mvn -B -Dtest=MailboxReadAccessProjectionTest,OutboundAttachmentFlowTest,AuthInterceptorTest test`（JAVA_HOME=zulu-11） | 0 | BUILD SUCCESS（02:59）。`MailboxReadAccessProjectionTest` 6/0/0、`OutboundAttachmentFlowTest` 9/0/0、`AuthInterceptorTest` 19/0/0；同次 `mvn test` 生命周期内的 JS 门禁 `node --test` 1851 pass / 0 fail。 |
+| 2 | `DB_URL='jdbc:mysql://127.0.0.1:3307/talent_introduction_user1_it?...&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai' DB_USERNAME=root DB_PASSWORD=root mvn -B -Pmysql-it -Dtest=MailboxConversationRepositoryIT,MailboxConversationControllerTest,CalendarAttachmentIntegrationTest,MailReplyDraftSendIntegrationTest,ExpertMailReadAccessIT test` | 1 | `Tests run: 127, Failures: 0, Errors: 7`。0 个本 child 引起的失败；7 个 error 全部为既存缺陷（见 §3）。 |
+| 3 | `git diff --check` | 0 | 无空白/冲突标记问题（提交前最终状态）。 |
+
+命令 2 的分项计数（`target/surefire-reports`）：
+
+- `MailboxConversationRepositoryIT`：40 tests / 0 failures / 1 error（35 base + 5 新增；唯一 error 是
+  既存 `replied filter excludes followed and dismissed experts until a new inbound arrives`
+  → `DataIntegrityViolation`：`expert_replied_dismissal.dismissed_at` 无默认值）。
+- `MailboxConversationControllerTest`：45 tests / 0 / 0（含 4 个新增 reader 用例）。
+- `MailReplyDraftSendIntegrationTest`：27 / 0 / 0。
+- `ExpertMailReadAccessIT`：9 / 0 / 0。
+- `CalendarAttachmentIntegrationTest`：6 tests / 0 / **6 errors**（见 §3）。
+
+## 3. 既存失败（非本 child 引起，未修）
+
+1. `MailboxConversationRepositoryIT.replied filter ...`（1 error）—— 计划/brief 已点名的基线缺陷，
+   按要求不修不隐藏。
+2. `CalendarAttachmentIntegrationTest` 6 个 error —— **brief 的基线描述在此项上不准确**。该类的
+   `@WebMvcTest` context 缺 `PendingMailOperationService` 的 `@MockBean`（controller 构造参数 3），
+   启动即 `NoSuchBeanDefinitionException`。本 epoch 用只读临时 worktree 在 base
+   `b12b536` 上实测同一命令（`-Dtest=CalendarAttachmentIntegrationTest`），得到**完全相同**的
+   6 个 error 与相同根因：
+
+   ```
+   Tests run: 6, Failures: 0, Errors: 6, Skipped: 0   (base b12b536, 隔离 MySQL 3307)
+   Caused by: NoSuchBeanDefinitionException: No qualifying bean of type
+     'com.weibo.talentintroduction.mail.service.PendingMailOperationService' available
+   ```
+
+   即该缺失自 base 起就存在，与 02 的改动无关（base 与当前 controller 构造函数、
+   该类的 `@Import`/`@MockBean` 集合逐字相同）。修复它需要给该测试类补 mock（或改 slice 配置），
+   属于本 child 未授权的行为/范围扩张，故仅记录不修。
+
+## 4. 不变量证据映射
+
+- I-1：`MailboxConversationRepositoryIT` 真实 MySQL 45 名有邮件专家、23 名交错授权 → size20 返回
+  20/3/0、total=23、页间无重复且全部落在授权集；空授权 total=0/items=[]；q/account/direction/
+  date/subject/keyword/pending/followed 与 ACL 同时成立；EXPLAIN 计划含 `emra` 半连接行。
+- I-2：`MailboxReadAccessProjectionTest` 证明准入先于联系人/timeline/标签/附件/快照读取、缺 grant 与
+  缺专家同为 403、每次调用重读 grant、游标仍绑 contact/account；ControllerTest 证明未授权与不存在
+  contact 均 403 `MAIL_READ_FORBIDDEN`、撤销后新请求 403、跨专家游标 400、`q` 不可绕过。
+- I-3：两处测试断言 reader 四个附件字段固定 `0/[]/null/[]`、`resolveMessageAttachments` 与
+  `mailRecordRepository.findAllById` 零交互，正文与标签保留。
+- I-4：admin/默认 null 身份保留完整附件投影与快照读取，且从不查询授权表；`OutboundAttachmentFlowTest`
+  9 用例全绿证明附件外发链路未被改动；`activeAccountCodes` 逻辑未动；读取路径无写。
+
+## 5. 提交与边界
+
+- 提交只含 7 个授权文件（`git show --stat HEAD`：controller/repository/service 三个主文件 +
+  4 个测试文件），`docs/plans/fast/**` 未纳入。
+- 未推送、未合并、未 amend、未改写历史；未触碰其他 child。

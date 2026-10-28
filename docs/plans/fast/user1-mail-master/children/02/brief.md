@@ -23,7 +23,7 @@
 - Master I-5: login remains admin-only in this step; do not create user1 and do not change the login allowlist.
 - Scope: modify ONLY the 6 files in the child plan's `## 变更文件清单`. An unavoidable seventh file, new API, or plan conflict → return PLAN_CONFLICT/PAUSE; do not edit outside scope.
 
-## Authorized files (exactly these 6)
+## Authorized files (exactly these 7; 7th added by approved amendment A1/A2, commit d66f542)
 
 1. `src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt`
 2. `src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt`
@@ -31,6 +31,7 @@
 4. `src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt`
 5. `src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt`
 6. `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxReadAccessProjectionTest.kt` (new)
+7. `src/test/kotlin/com/weibo/talentintroduction/auth/config/AuthInterceptorTest.kt` (minimal `listMessages` mock sync only; no assertion semantics change)
 
 ## Child invariants (verbatim from the plan)
 
@@ -49,7 +50,7 @@
 
 ## Required commands (run fresh; record exit codes and counts)
 
-- `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -B -Dtest=MailboxReadAccessProjectionTest,OutboundAttachmentFlowTest test`
+- `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -B -Dtest=MailboxReadAccessProjectionTest,OutboundAttachmentFlowTest,AuthInterceptorTest test`
 - `DB_URL='jdbc:mysql://127.0.0.1:3307/talent_introduction_user1_it?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai' DB_USERNAME=root DB_PASSWORD=root JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -B -Pmysql-it -Dtest=MailboxConversationRepositoryIT,MailboxConversationControllerTest,CalendarAttachmentIntegrationTest,MailReplyDraftSendIntegrationTest,ExpertMailReadAccessIT test`
 - `git diff --check`
 
