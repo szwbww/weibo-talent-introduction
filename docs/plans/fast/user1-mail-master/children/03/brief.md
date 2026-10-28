@@ -25,7 +25,7 @@
 - Master I-5: this step keeps the live login allowlist admin-only; test with a pre-set reader session, not a real user1 login.
 - Scope: modify ONLY the 7 files below. No new production behavior outside the plan; a required 8th file is a PLAN_CONFLICT.
 
-## Authorized files (exactly these 7)
+## Authorized files (exactly these 13; 6 test-only files added by approved amendment A3/A4, commit d52463b)
 
 1. `src/main/resources/static/mailbox-readonly.js` (new)
 2. `src/main/resources/static/app.js`
@@ -34,8 +34,14 @@
 5. `src/test/js/mailboxReadOnly.test.js` (new)
 6. `src/test/js/authFlow.test.js`
 7. `src/test/js/mailboxChatStyle.test.js`
+8. `src/test/js/discoveryPapers.test.js` (asset list/count only)
+9. `src/test/js/discoveryReview.test.js` (asset list/count only)
+10. `src/test/js/mailboxChatBehavior.test.js` (asset list/count only)
+11. `src/test/js/mailboxGroupPush.test.js` (asset list/count only)
+12. `src/test/js/meetingConfirmationAssets.test.js` (asset list/count only)
+13. `src/test/js/trustReplyWorkbenchSharedMount.test.js` (asset list/count only)
 
-Do NOT modify `mailbox-chat.js`, existing CSS rules, or admin DOM ids/actions.
+Do NOT modify `mailbox-chat.js`, existing CSS rules, or admin DOM ids/actions. For files 8–13, only the mechanical 18→19 asset list/count sync and insertion of `mailbox-readonly.js` immediately before `app.js` are authorized; keep every other assertion intact.
 
 ## Child invariants (verbatim from the plan)
 
