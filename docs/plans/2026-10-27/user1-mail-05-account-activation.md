@@ -46,7 +46,7 @@
 
 1. **新增启动器（I-1/I-3）**：`B/auth/service/ReadOnlyUserBootstrap.kt`，与AdminUserBootstrap同条件`@ConditionalOnProperty("talent-introduction.auth.enabled",havingValue="true",matchIfMissing=true)`，使用现有AdminUserRepository/PasswordEncoder；不改原admin启动器。不存在时创建固定user1；已有则skip。唯一键并发处理复用现有模式；不要catch所有异常都当已存在成功。禁止日志打印密码/hash。若既有canonical名不是精确user1或首改密码标志冲突，发布前核对并停止账号验收，不自动修复数据。
 2. **开放登录（I-2/I-3）**：AuthController.login白名单从admin改为admin/user1；不放开所有用户。01响应字段及原异常文案/session轮换保持。AuthService.changePassword不改，user1 POST被01拒绝；不因7字符初始密码降低admin改密规则。
-3. **测试（I-1–I-4）**：新增ReadOnlyUserBootstrapTest覆盖初建/重复/并发/异常；AuthFlowIntegrationTest新增明确运行两个bootstrap的真实登录、匿名/错误密码、me、logout、重启不重置、user1权限负例。把01/02/03/04测试一同纳入最终门禁，不靠本步重写其测试。
+3. **测试（I-1–I-4）**：新增ReadOnlyUserBootstrapTest覆盖初建/重复/并发/异常；AuthFlowIntegrationTest新增明确运行两个bootstrap的真实登录、匿名/错误密码、me、logout、重启不重置、user1权限负例。把01/02/03/04测试一同纳入最终门禁，不靠本步重写其测试。既有 `AuthFlowIntegrationTest` 在基线因测试类路径上的顶层 `@Configuration` 泄漏而无法加载上下文（`AttachmentTransferWorker` 覆盖冲突，随后 `mailboxConversationNamedJdbc`/`expertMailReadAccessNamedJdbc` 二义）；为执行本步要求的真实登录门禁，允许仅在该授权测试文件内加入最小测试上下文接线：`spring.main.allow-bean-definition-overriding=true` 与一个 `@Primary NamedParameterJdbcTemplate` 测试 bean。该接线不改变产品代码；原命令的基线与修复后结果均须如实记录。
 4. **最终联调（I-3/I-4）**：隔离测试环境执行真实登录→admin UI授权→user1查看→admin撤销→user1失权；浏览器Network校验无越权业务请求、无附件内容。核对生产构建包含03脚本、04版本号；不要修改配置隐藏失败。完成机器门禁后导出master及子计划人工清单，由人确认；本轮不发布。
 
 ## 变更文件清单
