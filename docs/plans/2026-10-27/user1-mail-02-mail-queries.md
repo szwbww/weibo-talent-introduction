@@ -1,6 +1,6 @@
 # 02：会话查询授权过滤与只读投影
 
-状态：待审阅。依赖：01机器验证通过。后续：03。子系统：邮件查询（1）；实施文件6个。仍不创建账号或开放user1登录。
+状态：待审阅。依赖：01机器验证通过。后续：03。子系统：邮件查询（1）；实施文件7个。仍不创建账号或开放user1登录。
 
 ## 需求描述
 
@@ -59,7 +59,7 @@ count/page/explain已有共同入口，本步不复制三份SQL。q、pending/re
 2. **详情准入（I-2/I-4）**：Controller.messages追加HttpServletRequest，并调用`listMessages(..., username=sessionUsername(request))`。Service方法末尾新增`username:String?=null`；user1先检查grant再做原有findById/activeCodes/decodeKeyset/timeline。空grant一律抛01权限异常，不走404。Repository.timelineMessages保持既有签名和内部语义，本次唯一HTTP调用必须经Service准入；用检索02验明未新增绕行HTTP入口。
 3. **只读投影（I-3/I-4）**：Service按server-side isReader分支：跳过附件解析；只有admin继续获取用于calendar/outbound附件的mailRecordRowsById；reader DTO按I-3固定空值。保留正文、主题、方向、时间、消息来源及发送状态，既有标签只读信息不扩大到未授权专家。列表材料计数可保留为已有授权专家元数据，reader前端不展示材料入口；不能据此开放材料API。
 4. **撤销并发语义（I-1/I-2）**：以每次请求的grant读取准入为界，撤销前已准入的请求可能完成；撤销提交后开始的新请求必须拒绝。count/page非原子快照下授权同时变化，允许一次total与items瞬时不一致，但items绝不能包含其SQL查询时未授权专家；刷新修正。不添加缓存/推送/锁表。
-5. **测试（I-1–I-4）**：扩展RepositoryIT真实MySQL、多专家交错授权≥两页；扩展ControllerTest session传参/403；新MailboxReadAccessProjectionTest覆盖Service先准入、附件依赖零交互及admin完整投影。方法追加默认参数仍须修正mock参数匹配，不能跳过原测试。
+5. **测试（I-1–I-4）**：扩展RepositoryIT真实MySQL、多专家交错授权≥两页；扩展ControllerTest session传参/403；新MailboxReadAccessProjectionTest覆盖Service先准入、附件依赖零交互及admin完整投影。方法追加默认参数仍须修正mock参数匹配，不能跳过原测试：root MVC 白名单测试 `AuthInterceptorTest.kt` 的 `listMessages` 4 参数 stub 必须同步为新签名（仅 stub 参数，不改断言语义）。
 
 ## 变更文件清单
 
@@ -71,6 +71,7 @@ count/page/explain已有共同入口，本步不复制三份SQL。q、pending/re
 |4|src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt|真实SQL ACL场景|
 |5|src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt|MVC/参数传递回归|
 |6|src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxReadAccessProjectionTest.kt|新增Service投影/准入测试|
+|7|src/test/kotlin/com/weibo/talentintroduction/auth/config/AuthInterceptorTest.kt|仅同步 listMessages mock 为 5 参数，保留原白名单断言|
 
 ## 验收标准
 
@@ -78,7 +79,7 @@ count/page/explain已有共同入口，本步不复制三份SQL。q、pending/re
 - I-2：直接请求未授权/不存在contact均403；篡改username参数无效；对已授权A使用B游标被原游标校验拒绝；撤销后首次/更早页/刷新均403。mock验证未授权时联系人、timeline、标签、附件查询未发生。
 - I-3：带来件附件/已发通用附件/ICS的fixture，user1响应四个附件字段满足固定空值；附件解析与快照仓库零交互；admin仍返回原附件对象，且01直接附件接口拒绝继续通过。
 - I-4：旧排序同秒source_rank/id、cursor、历史邮箱、时间线正文不重复等原IT全部运行；Auth之外的定时业务无新增policy调用；未改数据库生产者或行号锁定文件。
-- 命令：Java11环境 `mvn -Dtest=MailboxReadAccessProjectionTest,OutboundAttachmentFlowTest test`；隔离MySQL `mvn -Pmysql-it -Dtest=MailboxConversationRepositoryIT,MailboxConversationControllerTest,CalendarAttachmentIntegrationTest,MailReplyDraftSendIntegrationTest,ExpertMailReadAccessIT test`。禁止把默认跳过IT当SQL验证通过。
+- 命令：Java11环境 `mvn -Dtest=MailboxReadAccessProjectionTest,OutboundAttachmentFlowTest,AuthInterceptorTest test`；隔离MySQL `mvn -Pmysql-it -Dtest=MailboxConversationRepositoryIT,MailboxConversationControllerTest,CalendarAttachmentIntegrationTest,MailReplyDraftSendIntegrationTest,ExpertMailReadAccessIT test`。禁止把默认跳过IT当SQL验证通过。
 
 ## 人工验收清单
 
