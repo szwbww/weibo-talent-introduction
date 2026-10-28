@@ -12,6 +12,42 @@ import org.springframework.test.web.client.match.MockRestRequestMatchers.*
 import org.springframework.test.web.client.response.MockRestResponseCreators.*
 
 class OrcidVerificationEvidenceClientTest {
+    @Test fun `cancellation after reservation stops the ORCID wire request and later endpoints`() {
+        val props = DiscoveryVerificationProperties()
+        val http = verificationRestTemplate(props)
+        val server = MockRestServiceServer.bindTo(http).build()
+        val client = OrcidVerificationEvidenceClient(props, http)
+        var reservations = 0
+        var responses = 0
+        assertThrows(java.util.concurrent.CancellationException::class.java) {
+            client.read(ruleSnapshot(), emptyList(), { _, _, _, _ -> responses++ },
+                beforeDispatch = { throw java.util.concurrent.CancellationException("ownership changed") }) {
+                reservations++; RequestPermit(reservations.toLong(), VerificationProvider.ORCID)
+            }
+        }
+        assertEquals(1, reservations)
+        assertEquals(0, responses)
+        server.verify()
+
+        val nextHttp = verificationRestTemplate(props)
+        val nextServer = MockRestServiceServer.bindTo(nextHttp).build()
+        nextServer.expect(requestTo("https://pub.orcid.org/v3.0/0000-0002-1825-0097/person"))
+            .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON))
+        reservations = 0
+        responses = 0
+        assertThrows(java.util.concurrent.CancellationException::class.java) {
+            OrcidVerificationEvidenceClient(props, nextHttp).read(ruleSnapshot(), emptyList(),
+                { _, _, _, _ -> responses++ }, beforeDispatch = {
+                    if (reservations == 2) throw java.util.concurrent.CancellationException("ownership changed")
+                }) {
+                reservations++; RequestPermit(reservations.toLong(), VerificationProvider.ORCID)
+            }
+        }
+        assertEquals(2, reservations)
+        assertEquals(1, responses)
+        nextServer.verify()
+    }
+
     @Test fun `only bound validated identity may request the allowlisted public endpoints`() {
         val props = DiscoveryVerificationProperties(orcidAccessToken = "private-token")
         val http = verificationRestTemplate(props)

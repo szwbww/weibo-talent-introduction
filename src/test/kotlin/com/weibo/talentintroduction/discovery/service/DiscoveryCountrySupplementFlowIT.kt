@@ -138,7 +138,7 @@ class DiscoveryCountrySupplementFlowIT {
     private class Fixture : AutoCloseable {
         private val mapper = jacksonObjectMapper()
         val props = DiscoveryVerificationProperties(enabled = true, workerEnabled = true, mode = VerificationMode.ENFORCE,
-            apolloApiKey = "fixture-key", requestsPerMinute = 1000, countrySupplementEnabled = true)
+            apolloApiKey = "fixture-key", requestsPerMinute = 1000, countrySupplementEnabled = true, concurrency = 1)
         val flow = VerificationFlowFixture(jdbc, manager, props)
         init { flow.saveApolloSettings(true, true) }
         private val http = countrySupplementRestTemplate()
@@ -327,7 +327,7 @@ class DiscoveryCountrySupplementFlowIT {
             assertEquals("OPENALEX", receipt.path("selectedSource").asText())
             assertEquals("US", receipt.path("afterCountry").asText())
             f.settle()
-            f.flow.worker().tick()
+            f.flow.worker().tickAndAwait()
             assertEquals(VerificationState.COMPLETED, f.flow.item(registration.item!!.id).state)
             assertEquals("US", f.flow.candidates.getValue("EMAIL-oa-doc")["country"])
             assertEquals(frozen.institutionEvidence, f.flow.candidates.getValue("EMAIL-oa-doc")["institutionEvidence"])
@@ -361,7 +361,7 @@ class DiscoveryCountrySupplementFlowIT {
             assertEquals("GB", f.raws.getValue("EMAIL-orcid-doc")["country"])
             assertEquals("GB", f.persistedProfile(registration.item!!).country)
             f.settle()
-            f.flow.worker().tick()
+            f.flow.worker().tickAndAwait()
             assertEquals("GB", f.flow.candidates.getValue("EMAIL-orcid-doc")["country"])
             assertEquals(1, f.supplementRequests.size)
         }

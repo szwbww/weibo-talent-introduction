@@ -41,9 +41,19 @@ class VerificationFlowClock : Clock() {
     override fun withZone(zone: ZoneId): Clock = this
 }
 
+/** A fixture tick keeps production scheduling and waits only for its finite worker lanes. */
+internal fun DiscoveryVerificationWorker.tickAndAwait() {
+    tick()
+    val field = DiscoveryVerificationWorker::class.java.getDeclaredField("activeLanes").apply { isAccessible = true }
+    val active = field.get(this) as java.util.concurrent.atomic.AtomicInteger
+    val deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(60)
+    while (active.get() != 0 && System.nanoTime() < deadline) Thread.sleep(5)
+    check(active.get() == 0) { "Verification fixture lanes did not finish within 60 seconds" }
+}
+
 /** Disposable MySQL plus the real worker, clients, policy/gate, CAS writer and transaction proxies. */
 class VerificationFlowFixture(val jdbc: JdbcTemplate, private val manager: DataSourceTransactionManager,
-    val props: DiscoveryVerificationProperties = DiscoveryVerificationProperties(workerEnabled = true, apolloApiKey = "fixture-key", requestsPerMinute = 1000)) : AutoCloseable {
+    val props: DiscoveryVerificationProperties = DiscoveryVerificationProperties(workerEnabled = true, apolloApiKey = "fixture-key", requestsPerMinute = 1000, concurrency = 1)) : AutoCloseable {
     val mapper = jacksonObjectMapper().findAndRegisterModules().disable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
     val clock = VerificationFlowClock()
     val apolloSettings = DiscoveryApolloSettingsService(DiscoveryApolloSettingRepository(jdbc, manager), props, clock)
@@ -228,11 +238,11 @@ class DiscoveryVerificationFlowIT {
                 VerificationFlowFixture(jdbc, manager).use { f ->
                     val item = f.seed(); f.repository.closeInput(2001, f.clock.instant()); f.failProjection = true
                     f.cached(VerificationWorkerEvidence(orcidCompleted = f.selfDocuments()))
-                    f.worker().tick()
+                    f.worker().tickAndAwait()
                     check(f.item(item.id).projectionState == VerificationProjection.ERROR)
                     val requests = f.apolloRequests.size
                     f.failProjection = false
-                    f.worker().tick()
+                    f.worker().tickAndAwait()
                     check(f.autoCount() == 1L && f.item(item.id).projectionState == VerificationProjection.PROJECTED)
                     check(f.apolloRequests.size == requests)
                     val done = f.item(item.id)
@@ -251,7 +261,7 @@ class DiscoveryVerificationFlowIT {
                 f.jobInstitution = long
                 f.apolloBody = """{"people":[{"id":"person-1","name":"Ada Lee","first_name":"Ada","last_name":"Lee","organization":{"name":"Gachon University"}}],"total_entries":1}"""
                 val item = f.seed("runtime-subject", institution = long)
-                f.worker().tick()
+                f.worker().tickAndAwait()
                 val done = f.item(item.id)
                 val payload = f.mapper.readValue(done.evidenceJson, VerificationWorkerEvidence::class.java)
                 check(done.outcome == VerificationOutcome.APOLLO_UNCLEAR) { "unexpected outcome ${done.outcome}" }
@@ -291,10 +301,10 @@ class DiscoveryVerificationFlowIT {
                 cli("apply", "--manifest", manifest.toString(), "--manifest-sha256", hash)
                 check(f.item(item.id).state == VerificationState.QUEUED)
                 cli("apply", "--manifest", manifest.toString(), "--manifest-sha256", hash)
-                f.failProjection = true; f.worker().tick()
+                f.failProjection = true; f.worker().tickAndAwait()
                 check(f.item(item.id).projectionState == VerificationProjection.ERROR)
                 val revision = f.item(item.id).admissionRevision
-                f.failProjection = false; f.worker().tick()
+                f.failProjection = false; f.worker().tickAndAwait()
                 cli("inspect", "--manifest", manifest.toString(), "--manifest-sha256", hash)
                 check(f.item(item.id).outcome == VerificationOutcome.APOLLO_UNCLEAR && f.autoCount() == 1L)
                 check(f.item(item.id).projectionState == VerificationProjection.PROJECTED)
@@ -329,7 +339,7 @@ class DiscoveryVerificationFlowIT {
                 jdbc.update("UPDATE discovery_verification_run SET settings_json=?", """{"apolloMatchingVersion":2,"institutionAliasVersion":$version}""")
                 f.apolloBody = """{"people":[{"id":"person-1","first_name":"Ada","last_name_obfuscated":"L**","title":"Scientist","organization":{"name":"Google"}}],"total_entries":1}"""
                 f.detailBody = """{"person":{"id":"person-1","name":"Ada Lee","first_name":"Ada","last_name":"Lee","title":"Scientist","organization":{"name":"Google"},"employment_history":[{"organization_name":"Technische Universität München","current":false,"end_date":"2023-01-01"}]}}"""
-                f.worker().tick()
+                f.worker().tickAndAwait()
                 val done = f.item(item.id)
                 assertEquals(if (version == 1) VerificationOutcome.APOLLO_CLEAR else VerificationOutcome.PENDING, done.outcome)
                 assertEquals(version.toLong(), f.autoCount())
@@ -351,7 +361,7 @@ class DiscoveryVerificationFlowIT {
             jdbc.update("UPDATE discovery_verification_run SET settings_json=?", """{"apolloMatchingVersion":2}""")
             f.apolloBody = """{"people":[{"id":"person-1","first_name":"Ada","last_name_obfuscated":"L**","title":"Professor of Physics","organization":{"name":"Example University"}}],"total_entries":1}"""
             f.detailStatus = 429
-            f.worker().tick()
+            f.worker().tickAndAwait()
             assertEquals(VerificationState.RETRY_WAIT, f.item(item.id).state)
             val searchRequests = f.apolloRequests.count { it.contains("mixed_people") }
             assertEquals(2, searchRequests)
@@ -360,7 +370,7 @@ class DiscoveryVerificationFlowIT {
             assertFalse(retry.search!!.detailsComplete)
             f.detailStatus = 200
             f.clock.now = f.clock.now.plusSeconds(60)
-            f.worker().tick()
+            f.worker().tickAndAwait()
             val done = f.item(item.id)
             assertEquals(VerificationOutcome.APOLLO_CLEAR, done.outcome)
             assertEquals(VerificationQualification.UNKNOWN, done.qualification)
@@ -392,7 +402,7 @@ class DiscoveryVerificationFlowIT {
                     else -> ""
                 }
                 f.detailBody = """{"person":{"id":"person-1","name":"Ada Lee","first_name":"Ada","last_name":"Lee","title":"Scientist","organization":{"name":"New University"}$extra}}"""
-                f.worker().tick()
+                f.worker().tickAndAwait()
                 val done = f.item(item.id)
                 assertEquals(when(case) { "history" -> VerificationOutcome.APOLLO_CLEAR; "specialty" -> VerificationOutcome.APOLLO_UNCLEAR; else -> VerificationOutcome.PENDING }, done.outcome, case + done.reasonsJson)
                 assertEquals(if(case == "name-only") 0L else 1L, f.autoCount(), case)
@@ -421,10 +431,10 @@ class DiscoveryVerificationFlowIT {
             val result = DiscoveryVerificationReplayTool.apply(frozen, jdbc, manager, f.clock)
             assertEquals(2, result.count { it.status == "QUEUED" })
             assertTrue(DiscoveryVerificationReplayTool.apply(frozen, jdbc, manager, f.clock).all { it.status != "QUEUED" })
-            f.failProjection = true; f.worker().tick()
+            f.failProjection = true; f.worker().tickAndAwait()
             val revisions = listOf(first, second).map { f.item(it.id).admissionRevision }
             assertTrue(revisions.all { it != null })
-            f.failProjection = false; f.worker().tick()
+            f.failProjection = false; f.worker().tickAndAwait()
             listOf(first, second).forEachIndexed { index, original ->
                 val done = f.item(original.id)
                 assertEquals(VerificationOutcome.APOLLO_UNCLEAR, done.outcome)
@@ -469,7 +479,7 @@ class DiscoveryVerificationFlowIT {
                         SELECT MIN(id),'0000-0002-1825-0097','ada@example.invalid' FROM campaign""")
                 }
                 val admission = f.admissions.findAdmission(original.expertDocId)
-                f.worker().tick()
+                f.worker().tickAndAwait()
                 assertNull(f.item(original.id).admissionRevision, scenario)
                 assertEquals(admission, f.admissions.findAdmission(original.expertDocId), scenario)
                 assertTrue(f.candidates.isEmpty(), scenario)
@@ -491,7 +501,7 @@ class DiscoveryVerificationFlowIT {
                 java.nio.file.Files.setPosixFilePermissions(frozen.directory, java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"))
             }
             assertEquals(VerificationState.QUEUED, f.item(original.id).state)
-            f.worker().tick()
+            f.worker().tickAndAwait()
             assertEquals(1, DiscoveryVerificationReplayTool.inspect(frozen, jdbc, manager, f.clock)["durableAdmissions"])
             assertEquals(beforeHash, DiscoveryVerificationReplayTool.sha(java.nio.file.Files.readAllBytes(frozen.directory.resolve("before.json"))))
             assertEquals("STALE_OR_ALREADY_APPLIED", DiscoveryVerificationReplayTool.apply(frozen, jdbc, manager, f.clock).single().status)
@@ -502,10 +512,10 @@ class DiscoveryVerificationFlowIT {
             f.jobRole = null; f.apolloBody = """{"people":[],"total_entries":0}"""; f.apolloStatus = 429
             val item = f.seed(); f.repository.closeInput(2001, f.clock.instant())
             jdbc.update("INSERT INTO task_execution (id,task_type,trigger_type,status,started_at) VALUES (2001,'EXPERT_DISCOVERY','MANUAL','SUCCESS',?)", f.clock.instant().verificationUtc())
-            f.worker().tick()
+            f.worker().tickAndAwait()
             assertEquals(VerificationState.RETRY_WAIT, f.item(item.id).state)
             assertEquals(0, f.item(item.id).transientAttempts)
-            f.apolloStatus = 200; f.clock.now = f.clock.now.plusSeconds(60); f.worker().tick()
+            f.apolloStatus = 200; f.clock.now = f.clock.now.plusSeconds(60); f.worker().tickAndAwait()
             assertEquals(VerificationOutcome.PENDING, f.item(item.id).outcome)
             assertNotNull(f.item(item.id).searchCompletedAt)
             assertEquals(2, f.apolloRequests.size); assertEquals(3, f.orcidRequests.size)
@@ -515,39 +525,39 @@ class DiscoveryVerificationFlowIT {
     }
     @Test fun `ES failure recovers projection only and existing candidates are not counted as new`() {
         VerificationFlowFixture(jdbc, manager).use { f ->
-            val item = f.seed(); f.failProjection = true; f.worker().tick()
+            val item = f.seed(); f.failProjection = true; f.worker().tickAndAwait()
             assertEquals(VerificationOutcome.APOLLO_UNCLEAR, f.item(item.id).outcome)
             assertEquals(VerificationProjection.ERROR, f.item(item.id).projectionState); assertEquals(1L, f.autoCount())
             val count = f.apolloRequests.size
-            f.failProjection = false; f.worker().tick()
+            f.failProjection = false; f.worker().tickAndAwait()
             assertEquals(VerificationProjection.PROJECTED, f.item(item.id).projectionState)
             assertEquals(count, f.apolloRequests.size); assertEquals(1L, f.autoCount()); assertEquals(1, f.candidates.size)
         }
         clean()
         VerificationFlowFixture(jdbc, manager).use { f ->
             val item = f.seed(); f.candidates[item.expertDocId] = f.raws.getValue(item.expertDocId)
-            f.worker().tick()
+            f.worker().tickAndAwait()
             assertEquals(VerificationProjection.ALREADY_PRESENT, f.item(item.id).projectionState)
             assertEquals(1, f.candidates.size)
         }
     }
     @Test fun `HOLD before response wins and HOLD after commit preserves history while stopping projection`() {
         VerificationFlowFixture(jdbc, manager).use { f ->
-            val item = f.seed(); f.onApollo = { f.manual(item) }; f.worker().tick()
+            val item = f.seed(); f.onApollo = { f.manual(item) }; f.worker().tickAndAwait()
             assertEquals("HOLD", f.admissions.findAdmission(item.expertDocId)!!.decision)
             assertEquals(VerificationOutcome.PROTECTED, f.item(item.id).outcome); assertEquals(0L, f.autoCount()); assertTrue(f.candidates.isEmpty())
         }
         clean()
         VerificationFlowFixture(jdbc, manager).use { f ->
-            val item = f.seed(); f.failProjection = true; f.worker().tick(); f.manual(item)
-            f.failProjection = false; val requests = f.apolloRequests.size; f.worker().tick()
+            val item = f.seed(); f.failProjection = true; f.worker().tickAndAwait(); f.manual(item)
+            f.failProjection = false; val requests = f.apolloRequests.size; f.worker().tickAndAwait()
             assertEquals("SUPERSEDED_BY_REVIEW", f.item(item.id).projectionError)
             assertEquals(1L, f.autoCount()); assertEquals(requests, f.apolloRequests.size); assertTrue(f.candidates.isEmpty())
         }
     }
     @Test fun `AUDIT stores suggestions but never writes admission or ES`() {
         VerificationFlowFixture(jdbc, manager).use { f ->
-            val item = f.seed(mode = VerificationMode.AUDIT); val raw = f.raws.toMap(); f.worker().tick()
+            val item = f.seed(mode = VerificationMode.AUDIT); val raw = f.raws.toMap(); f.worker().tickAndAwait()
             assertEquals(VerificationOutcome.APOLLO_UNCLEAR, f.item(item.id).outcome)
             assertNull(f.admissions.findAdmission(item.expertDocId)); assertEquals(0L, f.autoCount())
             assertEquals(raw, f.raws); assertTrue(f.candidates.isEmpty())
@@ -555,12 +565,12 @@ class DiscoveryVerificationFlowIT {
     }
     @Test fun `ORCID completion and cursor survive transient failure and worker reconstruction`() {
         VerificationFlowFixture(jdbc, manager).use { f ->
-            val item = f.seed(); f.orcidFailEndpoint = "employments"; f.worker().tick()
+            val item = f.seed(); f.orcidFailEndpoint = "employments"; f.worker().tickAndAwait()
             assertEquals(listOf("person", "employments"), f.orcidRequests)
             assertEquals(VerificationState.RETRY_WAIT, f.item(item.id).state)
             val saved = f.repository.findAttempts(item.id).first()
             assertEquals("OK", saved.resultCode); assertNotNull(saved.responseJson)
-            f.orcidFailEndpoint = null; f.clock.now = f.clock.now.plusSeconds(30); f.worker().tick()
+            f.orcidFailEndpoint = null; f.clock.now = f.clock.now.plusSeconds(30); f.worker().tickAndAwait()
             assertEquals(listOf("person", "employments", "employments", "educations"), f.orcidRequests)
             assertEquals(VerificationOutcome.APOLLO_UNCLEAR, f.item(item.id).outcome)
         }
@@ -569,7 +579,7 @@ class DiscoveryVerificationFlowIT {
         VerificationFlowFixture(jdbc, manager).use { f ->
             val item = f.seed()
             jdbc.execute("CREATE TRIGGER fail_attempt_complete BEFORE UPDATE ON discovery_verification_attempt FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='injected attempt persistence failure'")
-            f.worker().tick()
+            f.worker().tickAndAwait()
             assertEquals(listOf("person"), f.orcidRequests); assertTrue(f.apolloRequests.isEmpty())
             assertEquals(VerificationState.RUNNING, f.item(item.id).state)
             assertNull(f.item(item.id).evidenceJson)
@@ -618,7 +628,7 @@ class DiscoveryVerificationFlowIT {
         listOf("403", "invalid", "pages", "apollo-budget-exempt", "orcid-budget", "transient").forEach { scenario ->
             clean()
             val props = DiscoveryVerificationProperties(workerEnabled = true, apolloApiKey = "fixture", requestsPerMinute = 1000,
-                maxPagesPerQuery = 1, maxRequestsPerItem = when (scenario) {
+                maxPagesPerQuery = 1, concurrency = 1, maxRequestsPerItem = when (scenario) {
                     "apollo-budget-exempt" -> 3
                     "orcid-budget" -> 2
                     else -> 12
@@ -631,10 +641,10 @@ class DiscoveryVerificationFlowIT {
                     "pages" -> f.apolloBody = """{"people":[],"total_entries":101}"""
                     "transient" -> f.apolloStatus = 500
                 }
-                val worker = f.worker(); worker.tick()
+                val worker = f.worker(); worker.tickAndAwait()
                 if (scenario == "transient") {
-                    f.clock.now = f.clock.now.plusSeconds(30); worker.tick()
-                    f.clock.now = f.clock.now.plusSeconds(120); worker.tick()
+                    f.clock.now = f.clock.now.plusSeconds(30); worker.tickAndAwait()
+                    f.clock.now = f.clock.now.plusSeconds(120); worker.tickAndAwait()
                 }
                 val done = f.item(item.id)
                 if (scenario == "apollo-budget-exempt") {
@@ -689,7 +699,7 @@ class DiscoveryVerificationFlowIT {
                     assertEquals(3, done.transientAttempts)
                 }
                 if (scenario == "403") {
-                    f.seed("synthetic-2"); worker.tick()
+                    f.seed("synthetic-2"); worker.tickAndAwait()
                     assertEquals(1, f.apolloRequests.size)
                 }
             }
@@ -708,10 +718,10 @@ class DiscoveryVerificationFlowIT {
                 f.apolloBody = if (secondPage) """{"people":[{"id":"second"}],"total_entries":101}"""
                     else """{"people":[{"id":"first"}],"total_entries":101}"""
             }
-            f.worker().tick()
+            f.worker().tickAndAwait()
             assertEquals(VerificationState.RETRY_WAIT, f.item(item.id).state)
             assertNull(f.item(item.id).searchCompletedAt)
-            f.clock.now = f.clock.now.plusSeconds(60); f.worker().tick()
+            f.clock.now = f.clock.now.plusSeconds(60); f.worker().tickAndAwait()
             val saved = f.mapper.readTree(f.item(item.id).evidenceJson)
             assertEquals(setOf("first", "second"), saved.path("search").path("candidates").map { it.path("id").asText() }.toSet())
             assertNotNull(f.item(item.id).searchCompletedAt)
@@ -731,7 +741,7 @@ class DiscoveryVerificationFlowIT {
                     f.repository.reschedule(lease.id, lease.leaseToken!!, lease.generation, f.clock.instant(), 0,
                         f.mapper.writeValueAsString(VerificationWorkerEvidence(listOf(fact))), "[]", f.clock.instant())
                 } else f.jobRole = "Professor"
-                f.worker().tick()
+                f.worker().tickAndAwait()
                 assertEquals(VerificationOutcome.DIRECT_CLEAR, f.item(item.id).outcome)
                 assertEquals(1L, f.autoCount()); assertTrue(f.apolloRequests.isEmpty())
                 if (alreadyPersisted) assertTrue(f.orcidRequests.isEmpty())
@@ -807,7 +817,7 @@ class DiscoveryVerificationFlowIT {
                     else -> f.manual(item, protection)
                 }
                 val before = f.admissions.findAdmission(item.expertDocId)
-                f.worker().tick()
+                f.worker().tickAndAwait()
                 assertEquals(VerificationOutcome.PROTECTED, f.item(item.id).outcome, protection)
                 assertEquals(before, f.admissions.findAdmission(item.expertDocId), protection)
                 assertEquals(0L, f.autoCount()); assertTrue(f.candidates.isEmpty())
@@ -819,7 +829,7 @@ class DiscoveryVerificationFlowIT {
         VerificationFlowFixture(jdbc, manager).use { f ->
             f.orcidBodies["employments"] = f.selfDocuments()[1].document!!.body.toString()
             val item = f.seed(settingsJson = """{"ruleVersion":0}""")
-            f.worker().tick()
+            f.worker().tickAndAwait()
             val done = f.item(item.id)
             assertEquals(VerificationOutcome.APOLLO_UNCLEAR, done.outcome)
             assertEquals(VerificationQualification.UNKNOWN, done.qualification)
@@ -862,7 +872,7 @@ class DiscoveryVerificationFlowIT {
                     f.cached(VerificationWorkerEvidence(evidence = if (visibility == "public") emptyList() else listOf(stale),
                         search = if (stage == "DECIDE") ruleSearch() else null,
                         progress = VerificationProgress(stage), orcidCompleted = docs))
-                    f.worker().tick()
+                    f.worker().tickAndAwait()
                     val done = f.item(item.id)
                     val payload = f.mapper.readValue(done.evidenceJson, VerificationWorkerEvidence::class.java)
                     assertTrue(f.orcidRequests.isEmpty())
@@ -894,7 +904,7 @@ class DiscoveryVerificationFlowIT {
                     "orcid" -> f.apolloBody = """{"people":[{"id":"p1","name":"Ada Lee","organization":{"name":"Example University"}},{"id":"p2","name":"Ada Lee","orcid":"0000-0001-5109-3700","organization":{"name":"Example University"}}],"total_entries":2}"""
                     "name" -> f.orcidBodies["person"] = """{"name":{"given-names":{"value":"Other"},"family-name":{"value":"Person"},"visibility":"public"}}"""
                 }
-                f.worker().tick()
+                f.worker().tickAndAwait()
                 val payload = f.mapper.readValue(f.item(item.id).evidenceJson, VerificationWorkerEvidence::class.java)
                 assertEquals(0, payload.ruleVersion)
                 assertFalse(f.mapper.readTree(f.repository.findRun(2001)!!.settingsJson).has("apolloAccess"))
@@ -927,7 +937,7 @@ class DiscoveryVerificationFlowIT {
                 f.cached(VerificationWorkerEvidence(facts, ruleSearch().copy(complete = false),
                     VerificationProgress("APOLLO_SEARCH", 1, 2), docs, queries = if (legacy) null else frozen))
                 f.apolloBody = """{"people":[],"total_entries":0}"""
-                f.worker().tick()
+                f.worker().tickAndAwait()
                 assertEquals(1, f.apolloRequests.size)
                 assertTrue(f.apolloRequests.single().contains("page=2"))
                 assertTrue(f.apolloRequests.single().contains("Frozen%20Alias"))
@@ -970,7 +980,7 @@ class DiscoveryVerificationFlowIT {
                 f.orcidBodies["person"] = """{"other-names":{"other-name":[{"content":"ADA, Lee","visibility":"public"},{"content":"Known Alias","visibility":"public"},{"content":"known alias","visibility":"PUBLIC"},{"content":"Secret Alias","visibility":"private"}]}}"""
                 val broad = f.apolloBody
                 f.onApollo = { f.apolloBody = if (f.apolloRequests.last().contains("q_organization_name")) """{"people":[],"total_entries":0}""" else broad }
-                f.worker().tick()
+                f.worker().tickAndAwait()
                 assertEquals(if (multipleInstitutions) 2 else 3, f.apolloRequests.size)
                 assertEquals(1, f.apolloRequests.count { it.contains("q_person_name=Known%20Alias") })
                 assertEquals(if (multipleInstitutions) 0 else 1, f.apolloRequests.count { it.contains("q_organization_name") })
@@ -995,7 +1005,7 @@ class DiscoveryVerificationFlowIT {
             jdbc.update("UPDATE discovery_verification_item SET snapshot_json=? WHERE id=?", f.mapper.writeValueAsString(unbound), item.id)
             f.cached(VerificationWorkerEvidence(search = ruleSearch(), progress = VerificationProgress("DECIDE"),
                 orcidCompleted = f.selfDocuments()))
-            f.worker().tick()
+            f.worker().tickAndAwait()
             assertEquals(0L, f.autoCount()); assertTrue(f.candidates.isEmpty())
             assertEquals(VerificationOutcome.PENDING, f.item(item.id).outcome)
             assertTrue(f.item(item.id).reasonsJson!!.contains("IDENTITY_EVIDENCE_MISSING"))
@@ -1019,7 +1029,7 @@ class DiscoveryVerificationFlowIT {
             f.jobRole = "Researcher"; f.jobInstitution = gachonInstitution
             f.apolloBody = """{"people":[${person("person-1", "Gachon University")}],"total_entries":1}"""
             val item = f.seed("subject-gachon", institution = gachonInstitution)
-            f.worker().tick()
+            f.worker().tickAndAwait()
             val done = f.item(item.id)
             assertEquals(VerificationOutcome.APOLLO_UNCLEAR, done.outcome)
             assertEquals(VerificationQualification.UNKNOWN, done.qualification)
@@ -1086,14 +1096,14 @@ class DiscoveryVerificationFlowIT {
         for (case in cases) {
             clean()
             val props = DiscoveryVerificationProperties(workerEnabled = true, apolloApiKey = "fixture-key",
-                requestsPerMinute = 1000, maxPagesPerQuery = case.maxPages)
+                requestsPerMinute = 1000, maxPagesPerQuery = case.maxPages, concurrency = 1)
             VerificationFlowFixture(jdbc, manager, props).use { f ->
                 f.jobRole = if (case.job == null) null else "Researcher"
                 f.jobInstitution = case.job ?: "Example University"
                 f.jobEnd = case.end
                 f.apolloBody = case.apollo
                 val item = f.seed("negative-${case.id}", institution = case.profile)
-                f.worker().tick()
+                f.worker().tickAndAwait()
                 val done = f.item(item.id)
                 assertEquals(0L, f.autoCount(), case.id)
                 assertTrue(f.candidates.isEmpty(), case.id)
@@ -1136,7 +1146,7 @@ class DiscoveryVerificationFlowIT {
             // This record's outcome is identical under the previous comparison, so removing the member is a real legacy replay.
             f.apolloBody = """{"people":[${person("person-1", "Example University")}],"total_entries":1}"""
             val item = f.seed("gate-subject")
-            f.worker().tick()
+            f.worker().tickAndAwait()
             val done = f.item(item.id)
             assertEquals(1L, f.autoCount())
             val profile = ruleSnapshot().profile.copy(esDocId = item.expertDocId, researchFieldIds = listOf("22"),
@@ -1181,7 +1191,7 @@ class DiscoveryVerificationFlowIT {
             f.cached(VerificationWorkerEvidence(evidence = facts,
                 search = ApolloSearchEvidence(complete = false, broadComplete = true, queryNames = setOf("Ada Lee")),
                 progress = VerificationProgress("APOLLO_SEARCH", 1, 2)))
-            f.worker().tick()
+            f.worker().tickAndAwait()
             assertEquals(1, f.apolloRequests.size)
             assertTrue(f.apolloRequests.single().contains("page=2"), f.apolloRequests.single())
             assertTrue(f.apolloRequests.single().contains("q_organization_name=Example%20University"), f.apolloRequests.single())
@@ -1219,12 +1229,12 @@ class DiscoveryVerificationFlowIT {
                 f.apolloStatus = if (narrow && !failed) 429 else 200
                 if (narrow) failed = true
             }
-            f.worker().tick()
+            f.worker().tickAndAwait()
             assertEquals(VerificationState.RETRY_WAIT, f.item(item.id).state)
             val frozen = f.mapper.readValue(f.item(item.id).evidenceJson, VerificationWorkerEvidence::class.java)
             assertEquals("Gachon University", frozen.institutionNormalization!!.queryInstitution)
             f.onApollo = null; f.apolloStatus = 200; f.clock.now = f.clock.now.plusSeconds(60)
-            f.worker().tick()
+            f.worker().tickAndAwait()
             val done = f.item(item.id)
             assertEquals(VerificationOutcome.APOLLO_UNCLEAR, done.outcome)
             val narrow = f.apolloRequests.filter { it.contains("q_organization_name") }
@@ -1249,7 +1259,7 @@ class DiscoveryVerificationFlowIT {
             jdbc.execute("""CREATE TRIGGER fail_verification_complete BEFORE UPDATE ON discovery_verification_item FOR EACH ROW
                 BEGIN IF NEW.state='COMPLETED' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='injected completion failure'; END IF; END""")
             try {
-                f.worker().tick()
+                f.worker().tickAndAwait()
             } finally {
                 jdbc.execute("DROP TRIGGER IF EXISTS fail_verification_complete")
             }
@@ -1270,7 +1280,7 @@ class DiscoveryVerificationFlowIT {
         VerificationFlowFixture(jdbc, manager).use { f ->
             f.apolloBody = """{"people":[${person("person-1", "Example University")}],"total_entries":1}"""
             val item = f.seed("null-inputs")
-            f.worker().tick()
+            f.worker().tickAndAwait()
             val done = f.item(item.id)
             assertEquals(VerificationOutcome.APOLLO_UNCLEAR, done.outcome)
             val malformed = f.mapper.readTree(done.evidenceJson) as com.fasterxml.jackson.databind.node.ObjectNode
@@ -1306,7 +1316,7 @@ class DiscoveryVerificationFlowIT {
                 f.rules.identityEmployments(snapshot, evidence), emptyList())
             f.cached(VerificationWorkerEvidence(evidence = evidence, progress = VerificationProgress("DECIDE"),
                 institutionNormalization = context.copy(version = "INST_SUBJECT_V9")))
-            f.worker().tick()
+            f.worker().tickAndAwait()
             val failed = f.item(item.id)
             assertEquals(VerificationState.ERROR, failed.state)
             assertNull(failed.outcome)
@@ -1328,7 +1338,7 @@ class DiscoveryVerificationFlowIT {
                 f.rules.identityEmployments(snapshot, oldEvidence), emptyList())
             f.cached(VerificationWorkerEvidence(evidence = rebuiltEvidence, progress = VerificationProgress("DECIDE"),
                 institutionNormalization = frozen))
-            f.worker().tick()
+            f.worker().tickAndAwait()
             val drifted = f.item(item.id)
             assertEquals(VerificationState.COMPLETED, drifted.state)
             assertEquals(VerificationOutcome.PENDING, drifted.outcome)

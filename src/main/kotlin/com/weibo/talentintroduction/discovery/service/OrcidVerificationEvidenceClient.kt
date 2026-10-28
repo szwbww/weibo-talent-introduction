@@ -59,10 +59,11 @@ class OrcidVerificationEvidenceClient(private val properties: DiscoveryVerificat
 
     /** Existing callers retain aggregate semantics; durable callers acknowledge each response before another request. */
     fun read(snapshot: VerificationSnapshot, reserve: (String) -> RequestPermit?): OrcidEvidenceRead =
-        read(snapshot, emptyList(), { _, _, _, _ -> }, reserve)
+        read(snapshot, emptyList(), { _, _, _, _ -> }, reserve = reserve)
 
     fun read(snapshot: VerificationSnapshot, completed: List<OrcidEndpointCompletion>,
         onResponse: (String, RequestPermit, OrcidEvidenceDocument?, VerificationHttpResult<*>) -> Unit,
+        beforeDispatch: (() -> Unit)? = null,
         reserve: (String) -> RequestPermit?): OrcidEvidenceRead {
         val orcid = snapshot.boundOrcid ?: return OrcidEvidenceRead(emptyList(), false, listOf("IDENTITY_EVIDENCE_MISSING"))
         val documents = ArrayList<OrcidEvidenceDocument>()
@@ -86,6 +87,7 @@ class OrcidVerificationEvidenceClient(private val properties: DiscoveryVerificat
                 val headers = mutableMapOf("Accept" to "application/json")
                 if (properties.orcidAccessToken.isNotBlank()) headers["Authorization"] = "Bearer ${properties.orcidAccessToken}"
                 requests++
+                beforeDispatch?.invoke()
                 val result = transport.request(URI(properties.orcidPublicBaseUrl.trimEnd('/') + path), HttpMethod.GET, headers, permit, VerificationProvider.ORCID)
                 doc = (result as? VerificationHttpResult.Success)?.let {
                     OrcidEvidenceDocument(endpoint, selectedFields(it.value), it.responseSha256, clock.instant())

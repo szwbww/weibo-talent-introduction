@@ -16,6 +16,7 @@ import java.time.ZoneOffset
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import javax.annotation.PreDestroy
@@ -62,7 +63,9 @@ class DiscoveryVerificationWorker(
     private val closed = AtomicBoolean()
     private val activeLanes = AtomicInteger()
     private val authBlocked = AtomicBoolean()
-    private val heartbeat = Executors.newSingleThreadScheduledExecutor { runnable -> Thread(runnable, "discovery-verification-lease").apply { isDaemon = true } }
+    private val heartbeat = Executors.newScheduledThreadPool(properties.concurrency) { runnable ->
+        Thread(runnable, "discovery-verification-lease").apply { isDaemon = true }
+    }
     private val lanes = Executors.newFixedThreadPool(properties.concurrency) { runnable ->
         Thread(runnable, "discovery-verification-worker").apply { isDaemon = true }
     }
@@ -114,15 +117,21 @@ class DiscoveryVerificationWorker(
     private class BudgetDeferred(val reason: VerificationBudgetReason, val retryAt: Instant? = null) : IllegalStateException()
     private enum class ContextIssue { NONE, PARSER_DRIFT, INVALID_PROTOCOL }
 
+    internal fun scheduleLeaseRenewal(lease: VerificationItem, lost: AtomicBoolean,
+        initialDelayMillis: Long = 30_000): ScheduledFuture<*> {
+        val token = requireNotNull(lease.leaseToken)
+        return heartbeat.scheduleAtFixedRate({
+            try {
+                if (!repository.renewLease(lease.id, token, lease.generation, clock.instant(), properties.leaseSeconds)) lost.set(true)
+            } catch (_: Exception) { lost.set(true) }
+        }, initialDelayMillis, 30_000, TimeUnit.MILLISECONDS)
+    }
+
     /** Also used by the isolated runtime fixture. SQL reservations always precede provider calls. */
     internal fun process(lease: VerificationItem) {
         val token = requireNotNull(lease.leaseToken)
         val lost = AtomicBoolean()
-        val renewal = heartbeat.scheduleAtFixedRate({
-            try {
-                if (!repository.renewLease(lease.id, token, lease.generation, clock.instant(), properties.leaseSeconds)) lost.set(true)
-            } catch (_: Exception) { lost.set(true) }
-        }, 30, 30, TimeUnit.SECONDS)
+        val renewal = scheduleLeaseRenewal(lease, lost)
         var payload = VerificationWorkerEvidence(ruleVersion = 1)
         var rawPayload: String? = null
         var activePermit: RequestPermit? = null
@@ -461,10 +470,11 @@ class DiscoveryVerificationWorker(
                                 throw java.util.concurrent.CancellationException("Recheck dispatch no longer authorized")
                         }
                     ensureOwned()
-                    if (collected.retryAt == null) payload = payload.copy(executionContext = payload.executionContext!!.copy(academic = collected))
-                    if (collected.retryAt != null) {
-                        endStep(4, VerificationStepState.INSUFFICIENT, mapOf("retryAt" to collected.retryAt), collected.reasonCodes)
-                        repository.reschedule(lease.id, token, lease.generation, maxOf(clock.instant(), collected.retryAt),
+                    val academicRetryAt = collected.retryAt
+                    if (academicRetryAt == null) payload = payload.copy(executionContext = payload.executionContext!!.copy(academic = collected))
+                    if (academicRetryAt != null) {
+                        endStep(4, VerificationStepState.INSUFFICIENT, mapOf("retryAt" to academicRetryAt), collected.reasonCodes)
+                        repository.reschedule(lease.id, token, lease.generation, maxOf(clock.instant(), academicRetryAt),
                             lease.transientAttempts, json(), mapper.writeValueAsString(collected.reasonCodes), clock.instant())
                         return
                     }
@@ -516,7 +526,9 @@ class DiscoveryVerificationWorker(
                             evidence = parser.rebuild(snapshot, saved.mapNotNull { it.document }, payload.evidence))
                         completed(permit, result, completion)
                     } else completed(permit, result)
-                }) { path -> reserve(VerificationProvider.ORCID, VerificationQueryKind.ORCID, 1, mapper.writeValueAsString(mapOf("path" to path))) }
+                }, beforeDispatch = { ensureDispatchAllowed() }) { path ->
+                    reserve(VerificationProvider.ORCID, VerificationQueryKind.ORCID, 1, mapper.writeValueAsString(mapOf("path" to path)))
+                }
                 val readFailure = read.failure
                 if (readFailure != null) { retry(readFailure); return }
                 payload = payload.copy(evidence = parser.rebuild(snapshot,

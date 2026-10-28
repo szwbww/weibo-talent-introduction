@@ -11,6 +11,27 @@ import org.mockito.Mockito
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 
 class DiscoveryVerificationWorkerTest {
+    @Test fun `blocked renewal does not delay another active lease heartbeat`() {
+        val firstEntered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val secondRenewed = java.util.concurrent.CountDownLatch(1)
+        val repo = Mockito.mock(DiscoveryVerificationRepository::class.java) { call ->
+            if (call.method.name == "renewLease") {
+                if (call.getArgument<Long>(0) == 1L) { firstEntered.countDown(); release.await() }
+                else secondRenewed.countDown()
+                true
+            } else Mockito.RETURNS_DEFAULTS.answer(call)
+        }
+        val current = worker(DiscoveryVerificationProperties(workerEnabled = true, concurrency = 2), repo)
+        try {
+            val first = current.scheduleLeaseRenewal(lease(null).copy(id = 1), java.util.concurrent.atomic.AtomicBoolean(), 0)
+            assertTrue(firstEntered.await(2, java.util.concurrent.TimeUnit.SECONDS))
+            val second = current.scheduleLeaseRenewal(lease(null).copy(id = 2), java.util.concurrent.atomic.AtomicBoolean(), 0)
+            assertTrue(secondRenewed.await(2, java.util.concurrent.TimeUnit.SECONDS))
+            first.cancel(true); second.cancel(true)
+        } finally { release.countDown(); current.close() }
+    }
+
     @Test fun `single lane and shutdown never claim beyond available execution capacity`() {
         val repo = Mockito.mock(DiscoveryVerificationRepository::class.java)
         val claims = java.util.concurrent.atomic.AtomicInteger()
@@ -697,7 +718,7 @@ class DiscoveryVerificationWorkerTest {
                     assertEquals(VerificationProjection.ERROR, f.item(direct.id).projectionState)
                     f.failProjection = false
                     val orcid = f.seed("orcid-during-credit-pause")
-                    f.worker().tick()
+                    f.worker().tickAndAwait()
                     assertTrue(f.orcidRequests.isNotEmpty())
                     assertEquals(VerificationProjection.PROJECTED, f.item(direct.id).projectionState)
                     assertNotEquals(VerificationState.QUEUED, f.item(orcid.id).state)
