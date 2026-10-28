@@ -25,7 +25,7 @@ internal class PaperBridgeFixture(val f: ArchiveFixture) {
     val network = Mockito.mock(RestTemplate::class.java)
     val bounded = Mockito.mock(BoundedHttpExecutor::class.java)
     val pdf = PdfEmailExtractor(network,PlainTextEmailExtractor(),PdfExtractionProperties(),bounded)
-    val analyzer = PaperBodyAnalyzer(pdf,PaperQualificationEvidenceExtractor(),f.mapper)
+    val analyzer = Mockito.spy(PaperBodyAnalyzer(pdf,PaperQualificationEvidenceExtractor(),f.mapper))
     val bridge = PaperVerificationEvidenceService(f.repository,f.service,analyzer,f.mapper)
     val authors = listOf(PaperAuthor("Alice","Smith",null,null,openAlexAuthorId="A123"),
         PaperAuthor("Bob","Jones",null,null,openAlexAuthorId="A456"),PaperAuthor("Carol","White",null,null,openAlexAuthorId="A789"))
@@ -46,6 +46,39 @@ internal class PaperBridgeFixture(val f: ArchiveFixture) {
 
 class PaperVerificationEvidenceServiceTest {
     @BeforeEach fun clean() = ArchiveMysqlFixture.clean()
+    private fun parseCalls(analyzer: PaperBodyAnalyzer) = Mockito.mockingDetails(analyzer).invocations.count { it.method.name == "parse" }
+    @Test fun `shared body across people computes once while binding and diagnostics stay individual`() {
+        ArchiveFixture().use { f ->
+            f.enable(); val b = PaperBridgeFixture(f); val ref = b.paper()
+            val alice = evidenceSnapshot()
+            val bob = evidenceSnapshot("Bob Jones","bob@fixture.edu","A456")
+            val cold = b.collect(alice,listOf(ref))
+            val samePersonWarm = b.collect(alice,listOf(ref))
+            val warm = b.collect(bob,listOf(ref))
+            assertEquals(cold,samePersonWarm)
+            assertEquals(1,cold.parsedBodies); assertEquals(1,warm.parsedBodies)
+            assertEquals(3,cold.sources.single().evidence.size)
+            assertEquals(1,warm.sources.single().evidence.size)
+            assertEquals(alice.identityHash,cold.sources.single().evidence.first().identityHash)
+            assertEquals(bob.identityHash,warm.sources.single().evidence.first().identityHash)
+            assertEquals(1,parseCalls(b.analyzer))
+        }
+    }
+    @Test fun `same bytes with changed authors year kind or version recompute`() {
+        ArchiveFixture().use { f ->
+            f.enable(); val b = PaperBridgeFixture(f)
+            val base = b.paper("base")
+            val authors = b.paper("authors",people=b.authors.reversed())
+            val year = b.paper("year")
+            ArchiveMysqlFixture.jdbc.update("UPDATE discovery_paper_archive_record SET metadata_json=JSON_SET(metadata_json,'$.pubYear',2024) WHERE id=?",year.archiveRecordId)
+            val kind = b.paper("kind",kind=ArchiveAttemptKind.PMC_XML)
+            listOf(base,authors,year,kind).forEach { b.collect(evidenceSnapshot(),listOf(it)) }
+            assertEquals(4,parseCalls(b.analyzer))
+            Mockito.doReturn(mapOf("format" to 999)).`when`(b.analyzer).versions()
+            b.collect(evidenceSnapshot(),listOf(base))
+            assertEquals(5,parseCalls(b.analyzer))
+        }
+    }
     @Test fun `archive busy retains safe cause and retryability without confusing a missing body`() {
         ArchiveFixture().use { f ->
             f.enable(); val bridge = PaperBridgeFixture(f); val ref = bridge.paper()
@@ -139,6 +172,7 @@ class PaperVerificationEvidenceServiceTest {
                 assertEquals("VALIDATE_REFERENCE", failed.sources.single().failure!!.stage)
             }
             val path = f.root.resolve("blobs").resolve(ref.bodySha256.take(2)).resolve("${ref.bodySha256}.bin")
+            assertNull(b.collect(evidenceSnapshot(),listOf(ref)).sources.single().failure)
             Files.write(path,"changed".toByteArray())
             val s = evidenceSnapshot(); assertTrue(s.identityValid)
             assertEquals(listOf("SOURCE_UNAVAILABLE"),b.collect(s,listOf(ref)).reasonCodes)

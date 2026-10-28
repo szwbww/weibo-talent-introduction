@@ -25,6 +25,7 @@ data class PaperEvidenceRead(val sources: List<PaperSourceEvidence>, val reasonC
 @Service
 class PaperVerificationEvidenceService(private val repository: DiscoveryPaperArchiveRepository,
     private val archive: DiscoveryPaperArchiveService, private val analyzer: PaperBodyAnalyzer, private val mapper: ObjectMapper) {
+    private val computations = PaperBodyComputationCache(mapper)
     /** Bounded preparation helper. Historical reuse is declared in every returned ref, not hidden at execution. */
     fun locate(requests: List<PaperArchiveLookup>): Map<PaperArchiveLookup, List<PaperSourceRef>> {
         val originals = repository.lookupOriginal(requests)
@@ -113,9 +114,23 @@ class PaperVerificationEvidenceService(private val repository: DiscoveryPaperArc
                 group.forEach { results[it.ref] = PaperSourceEvidence(it.ref, null, null, emptyList(), listOf("SOURCE_METADATA_CONFLICT")) }
                 continue
             }
-            val parsed = analyzer.parse(group.first().body, group.first().metadata); parsedBodies++
+            val representative = group.first()
+            val versions = analyzer.versions()
+            val authors = representative.metadata.path("authors").mapNotNull {
+                if (it.isObject) mapper.treeToValue(it, PaperAuthor::class.java) else null
+            }
+            val yearNode = representative.metadata.get("pubYear") ?: representative.metadata.get("year")
+            val year = yearNode?.takeIf { it.isIntegralNumber }?.asInt()
+            val authorKey = mapper.writeValueAsString(authors)
+            val versionKey = mapper.writeValueAsString(versions.toSortedMap())
+            val parsedByKind = mutableMapOf<ArchiveAttemptKind, PaperBodyComputation>()
+            parsedBodies++
             for (read in group) {
-                val analysis = analyzer.assemble(mapOf(read.ref.bodySha256 to parsed), read.first, read.available, evaluatedAt)
+                val parsed = parsedByKind.getOrPut(read.body.kind) {
+                    val key = PaperComputationKey(read.ref.bodySha256, read.body.kind, authorKey, year, versionKey)
+                    computations.getOrCompute(key) { analyzer.parse(read.body, read.metadata) }
+                }
+                val analysis = analyzer.assemble(mapOf(read.ref.bodySha256 to parsed), read.first, read.available, evaluatedAt, versions)
                 val reasons = mutableListOf<String>()
                 val authors = read.metadata.path("authors")
                 fun name(n: JsonNode) = listOf(n.path("givenNames").asText(""), n.path("familyNames").asText("")).joinToString(" ").trim()
