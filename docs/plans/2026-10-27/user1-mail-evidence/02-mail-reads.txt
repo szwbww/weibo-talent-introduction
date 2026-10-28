@@ -1,0 +1,86 @@
+$ rg -n 'countConversations|pageConversations|expertPredicates|listMessages|timelineMessages|resolveMessageAttachments|latestMessageByContacts|latestInboundByContacts|materialCountByContacts' src/main src/test
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:125:     * resolveMessageAttachments 调用链内完成，本方法不读 doc。
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:257:    /** 全部 processing 候选（材料旧关系唯一匹配 + 07 resolveMessageAttachments 共用语义）。 */
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:695:    // resolveMessageAttachments：按消息（source/id）取附件（07 MailboxService
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:707:    fun resolveMessageAttachments(source: String, id: Long): List<MailAttachment> {
+src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialServiceTest.kt:899:    // resolveMessageAttachments（I-2：07 MailboxService 委托同一语义）
+src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialServiceTest.kt:903:    fun `resolveMessageAttachments returns bridged attachments of a processing message`() {
+src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialServiceTest.kt:914:        val result = service.resolveMessageAttachments("INBOUND_PROCESSING", 200)
+src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialServiceTest.kt:920:    fun `resolveMessageAttachments refuses ambiguous legacy attribution across accounts`() {
+src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialServiceTest.kt:936:        val result = service.resolveMessageAttachments("INBOUND_PROCESSING", 200)
+src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialServiceTest.kt:944:    fun `resolveMessageAttachments never treats sourceInboundId as a processing id`() {
+src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialServiceTest.kt:951:        val result = service.resolveMessageAttachments("MAIL_RECORD", 300)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:37: * （[ExpertMaterialService.resolveMessageAttachments]，与详情附件列表同一口径）。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:150:        val total = repository.countConversations(sessionUser, filter)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:155:        val rows = repository.pageConversations(sessionUser, filter, pageSize, offset)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:160:        val latestMessages = repository.latestMessageByContacts(contactIds, activeCodes, accountCode)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:161:        val latestInbounds = repository.latestInboundByContacts(contactIds, activeCodes, accountCode)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:163:        val materialCounts = repository.materialCountByContacts(contactIds)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:221:    fun listMessages(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:236:        val page = repository.timelineMessages(contactId, filter, before, pageLimit)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:273:            val attachments = expertMaterialService.resolveMessageAttachments(row.source, row.id)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxAttachmentService.kt:28: * （MailboxService.resolveAttachments → 07 委托 resolveMessageAttachments）保证。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:280:     * [com.weibo.talentintroduction.document.service.ExpertMaterialService.resolveMessageAttachments]
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:290:        return resolver.resolveMessageAttachments(source, id)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:271:    ): ConversationMessageListResponse = conversationService.listMessages(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:150:    fun countConversations(username: String, filter: ConversationFilter): Long {
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:158:                 WHERE ${expertPredicates(username, filter, eligibility)}
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:169:     * 由调用方按本页 contact id 集合追加查询（[latestMessageByContacts] 等）。
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:171:    fun pageConversations(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:196:             WHERE ${expertPredicates(username, filter, eligibility)}
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:211:     * 与 [pageConversations] 共用 [orderByClause]，保证诊断 SQL 与执行 SQL 的排序不漂移。
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:237:             WHERE ${expertPredicates(username, filter, eligibility)}
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:282:    fun latestMessageByContacts(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:323:     *  MySQL 5.7 兼容：候选与反连接对手都限 INBOUND_PROCESSING，见 [latestMessageByContacts]。 */
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:324:    fun latestInboundByContacts(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:394:    fun materialCountByContacts(contactIds: List<Long>): Map<Long, Long> {
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:482:    fun timelineMessages(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:678:    private fun expertPredicates(username: String, filter: ConversationFilter, eligibility: MembershipEligibility): String {
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:143:        val latestInbound = repository.latestInboundByContacts(listOf(1L, 2L, 3L, 4L), allAccounts, null)
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:150:        val latest = repository.latestMessageByContacts(listOf(1L, 2L, 3L, 4L), allAccounts, null)
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:250:        assertEquals(1L, repository.countConversations("op1", replied))
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:404:        val page1 = repository.timelineMessages(5L, filter, before = null, limit = 2)
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:415:        val page2 = repository.timelineMessages(5L, filter, before = keyset, limit = 2)
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:417:        val page3 = repository.timelineMessages(5L, filter,
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:489:        val latest = repository.latestMessageByContacts(listOf(1L), allAccounts, null)
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:495:        val inbound = repository.latestInboundByContacts(listOf(1L), allAccounts, null)
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:500:        val later = repository.latestMessageByContacts(listOf(1L), allAccounts, null)
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:503:        val inboundAfter = repository.latestInboundByContacts(listOf(1L), allAccounts, null)
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:507:        assertTrue(repository.latestMessageByContacts(emptyList(), allAccounts, null).isEmpty())
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:508:        assertTrue(repository.latestInboundByContacts(emptyList(), allAccounts, null).isEmpty())
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:519:        val narrowed = repository.latestMessageByContacts(listOf(1L), allAccounts, "acc-a")
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:522:        val narrowedInbound = repository.latestInboundByContacts(listOf(1L), allAccounts, "acc-a")
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:525:        val all = repository.latestMessageByContacts(listOf(1L), allAccounts, null)
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:528:        val allInbound = repository.latestInboundByContacts(listOf(1L), allAccounts, null)
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:550:        assertEquals(4L, repository.countConversations("op1", emptyFilter()))
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:581:        val latest = repository.latestMessageByContacts(listOf(3L), allAccounts, null)
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:588:        assertEquals(0L, repository.countConversations("", emptyFilter()))
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:618:        assertEquals(2L, repository.countConversations("", filter(keyword = "meeting-z9")))
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:689:        assertEquals(1L, repository.countConversations("op1", filter(followed = true, subject = "Quantum")))
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:705:        assertEquals(1L, repository.countConversations("", filter(keyword = "alpha-marker-77")))
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:707:        val latestInbound = repository.latestInboundByContacts(listOf(8L), allAccounts, null)
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:739:        assertEquals(1L, repository.countConversations("op1", filter(suspendedOnly = true)))
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:823:        assertEquals(suspendedIds.size.toLong(), repository.countConversations("op1", suspendedFilter),
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:872:        assertEquals(0L, repository.countConversations("op1", conflicting))
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:873:        assertEquals(1L, repository.countConversations("op1", filter(providedOnly = true)))
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:874:        assertEquals(1L, repository.countConversations("op1", filter(followed = true)))
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:887:        assertEquals(providedIds.size.toLong(), repository.countConversations("op1", f))
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:934:        assertEquals(1L, repository.countConversations(
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:1221:        repository.pageConversations(username, filter, size, offset)
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:1411:        for (method in listOf("latestMessageByContacts(", "latestInboundByContacts(")) {
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:1424:        val pageBody = methodBody(source, "fun pageConversations(")
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:345:        Mockito.`when`(expertMaterialService.resolveMessageAttachments(Mockito.anyString(), Mockito.anyLong()))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:801:            mailboxConversationRepository.timelineMessages(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:808:        val response = conversationService.listMessages(CONTACT_ID, null, null, 50)
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:219:        Mockito.`when`(expertMaterialService.resolveMessageAttachments(Mockito.anyString(), Mockito.anyLong()))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:783:        Mockito.`when`(expertMaterialService.resolveMessageAttachments("INBOUND_PROCESSING", processingIdOf("in-msg-att")))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:2098:        Mockito.`when`(expertMaterialService.resolveMessageAttachments(Mockito.anyString(), Mockito.anyLong()))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt:475:        Mockito.`when`(expertMaterialService.resolveMessageAttachments("MAIL_RECORD", 5L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt:523:        Mockito.`when`(expertMaterialService.resolveMessageAttachments("INBOUND_PROCESSING", 12L)).thenReturn(emptyList())
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt:574:        Mockito.`when`(expertMaterialService.resolveMessageAttachments("INBOUND_PROCESSING", 12L))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt:580:        Mockito.verify(expertMaterialService).resolveMessageAttachments("INBOUND_PROCESSING", 12L)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt:599:        Mockito.`when`(expertMaterialService.resolveMessageAttachments("INBOUND_PROCESSING", 12L))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt:606:        Mockito.verify(expertMaterialService).resolveMessageAttachments("INBOUND_PROCESSING", 12L)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt:614:        Mockito.`when`(expertMaterialService.resolveMessageAttachments("INBOUND_PROCESSING", 12L))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt:658:        Mockito.`when`(expertMaterialService.resolveMessageAttachments("INBOUND_PROCESSING", 12L))

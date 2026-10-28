@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.mail.controller
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.KotlinModule
 import com.weibo.talentintroduction.auth.config.AuthSessionKeys
+import com.weibo.talentintroduction.auth.config.MailReadOnlyPolicy
 import com.weibo.talentintroduction.auth.config.AuthWebConfig
 import com.weibo.talentintroduction.auth.domain.AdminUser
 import com.weibo.talentintroduction.auth.service.AuthService
@@ -13,6 +14,7 @@ import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
+import com.weibo.talentintroduction.mail.domain.MailAttachment
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
@@ -1002,6 +1004,155 @@ class MailboxConversationControllerTest {
     }
 
     // ------------------------------------------------------------------
+    // 02 (I-1–I-4)：只读账号的列表范围、详情准入与附件关闭
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `reader list only counts and pages granted experts and q cannot bypass the grant`() {
+        insertOutbound(1, "SENT", "2026-09-01 09:00:00", "grant-r1")
+        insertOutbound(2, "SENT", "2026-09-02 09:00:00", "grant-r2")
+        insertOutbound(3, "SENT", "2026-09-03 09:00:00", "grant-r3")
+        stubReader()
+
+        val none = objectMapper.readTree(
+            mockMvc.perform(get("/api/mail/mailbox/conversations").session(sessionOf("user1")))
+                .andExpect(status().isOk).andReturn().response.contentAsString
+        )
+        assertEquals(0, none["total"].asInt(), "无授权 → total=0（不泄露任何专家）")
+        assertEquals(0, none["items"].size())
+
+        insertReadAccess(2)
+        val scoped = objectMapper.readTree(
+            mockMvc.perform(get("/api/mail/mailbox/conversations?size=20").session(sessionOf("user1")))
+                .andExpect(status().isOk).andReturn().response.contentAsString
+        )
+        assertEquals(1, scoped["total"].asInt(), "total 只计有邮件且授权的专家")
+        assertEquals(2L, scoped["items"][0]["contactId"].asLong())
+
+        // 姓名/邮箱 q 不能把未授权专家带回来。
+        val searched = objectMapper.readTree(
+            mockMvc.perform(get("/api/mail/mailbox/conversations?q=Alice").session(sessionOf("user1")))
+                .andExpect(status().isOk).andReturn().response.contentAsString
+        )
+        assertEquals(0, searched["total"].asInt())
+        assertEquals(0, searched["items"].size())
+
+        // I-4：管理员口径逐字不变。
+        val admin = objectMapper.readTree(
+            mockMvc.perform(get("/api/mail/mailbox/conversations").session(sessionOf("op1")))
+                .andExpect(status().isOk).andReturn().response.contentAsString
+        )
+        assertEquals(3, admin["total"].asInt())
+    }
+
+    @Test
+    fun `reader detail denies ungranted and missing experts yet keeps body without attachments`() {
+        insertProcessing(1, "PROCESSED", "2026-09-02 09:00:00", "reader-detail-in")
+        val processingId = processingIdOf("reader-detail-in")
+        Mockito.`when`(expertMaterialService.resolveMessageAttachments("INBOUND_PROCESSING", processingId))
+            .thenReturn(
+                listOf(
+                    MailAttachment(
+                        id = 31L, mailRecordId = null, inboundProcessingId = processingId,
+                        fileName = "cv.pdf", contentType = "application/pdf", fileSize = 10L, storagePath = null
+                    )
+                )
+            )
+        stubReader()
+        insertReadAccess(1)
+
+        val readerBody = mockMvc.perform(
+            get("/api/mail/mailbox/conversations/1/messages").session(sessionOf("user1"))
+        ).andExpect(status().isOk).andReturn().response.contentAsString
+        val readerItem = objectMapper.readTree(readerBody)["items"][0]
+        assertEquals(0, readerItem["attachmentCount"].asInt(), "reader attachmentCount 固定 0")
+        assertEquals(0, readerItem["firstAttachmentNames"].size(), "reader firstAttachmentNames 固定 []")
+        assertTrue(readerItem["calendarAttachment"].isNull, "reader calendarAttachment 固定 null")
+        assertEquals(0, readerItem["outboundAttachments"].size(), "reader outboundAttachments 固定 []")
+        assertEquals("body", readerItem["body"].asText(), "正文允许（只关附件能力）")
+        verify(expertMaterialService, never()).resolveMessageAttachments(Mockito.anyString(), Mockito.anyLong())
+
+        // 未授权专家 → 403 MAIL_READ_FORBIDDEN
+        mockMvc.perform(
+            get("/api/mail/mailbox/conversations/2/messages").session(sessionOf("user1"))
+        )
+            .andExpect(status().isForbidden)
+            .andExpect(jsonPath("$.code").value(MailReadOnlyPolicy.MAIL_READ_FORBIDDEN))
+
+        // 不存在专家 → 同样 403（不泄露存在性）
+        mockMvc.perform(
+            get("/api/mail/mailbox/conversations/999999/messages").session(sessionOf("user1"))
+        )
+            .andExpect(status().isForbidden)
+            .andExpect(jsonPath("$.code").value(MailReadOnlyPolicy.MAIL_READ_FORBIDDEN))
+
+        // I-4：同一封邮件管理员仍拿到真实附件投影。
+        val adminBody = mockMvc.perform(
+            get("/api/mail/mailbox/conversations/1/messages").session(sessionOf("op1"))
+        ).andExpect(status().isOk).andReturn().response.contentAsString
+        val adminItem = objectMapper.readTree(adminBody)["items"][0]
+        assertEquals(1, adminItem["attachmentCount"].asInt())
+        assertEquals("cv.pdf", adminItem["firstAttachmentNames"][0].asText())
+
+        // 撤销后，开始于撤销提交之后的请求（含更早页/刷新）一律 403。
+        jdbcTemplate.update("DELETE FROM expert_mail_read_access WHERE expert_contact_id = 1")
+        mockMvc.perform(
+            get("/api/mail/mailbox/conversations/1/messages?limit=1").session(sessionOf("user1"))
+        )
+            .andExpect(status().isForbidden)
+            .andExpect(jsonPath("$.code").value(MailReadOnlyPolicy.MAIL_READ_FORBIDDEN))
+    }
+
+    @Test
+    fun `reader detail never reads calendar or outbound attachment snapshots`() {
+        val bytes = "会议资料".toByteArray(StandardCharsets.UTF_8)
+        val json = OutboundAttachmentSnapshotCodec.serialize(
+            listOf(outboundAttachmentSnapshot(OUTBOUND_ATTACHMENT_ID, bytes))
+        )
+        insertOutboundAttachmentRow(910101L, 1L, json, subject = "reader-rich")
+        stubOutboundAttachmentRecords(listOf(mailRecordRow(910101L, 1L, json)))
+        stubReader()
+        insertReadAccess(1)
+
+        val readerBody = mockMvc.perform(
+            get("/api/mail/mailbox/conversations/1/messages").session(sessionOf("user1"))
+        ).andExpect(status().isOk).andReturn().response.contentAsString
+        val readerItem = objectMapper.readTree(readerBody)["items"].single()
+        assertTrue(readerItem["calendarAttachment"].isNull)
+        assertEquals(0, readerItem["outboundAttachments"].size())
+        verify(mailRecordRepository, never()).findAllById(anyCollection())
+
+        val adminBody = mockMvc.perform(
+            get("/api/mail/mailbox/conversations/1/messages").session(sessionOf("op1"))
+        ).andExpect(status().isOk).andReturn().response.contentAsString
+        assertEquals(
+            1,
+            objectMapper.readTree(adminBody)["items"].single()["outboundAttachments"].size(),
+            "admin 保留通用附件快照投影"
+        )
+    }
+
+    @Test
+    fun `reader cursor stays bound to the granted expert even with two valid grants`() {
+        insertOutbound(1, "SENT", "2026-09-01 09:00:00", "cur-1a")
+        insertOutbound(1, "SENT", "2026-09-02 09:00:00", "cur-1b")
+        insertOutbound(2, "SENT", "2026-09-01 09:00:00", "cur-2a")
+        stubReader()
+        insertReadAccess(1)
+        insertReadAccess(2)
+
+        val pageBody = mockMvc.perform(
+            get("/api/mail/mailbox/conversations/1/messages?limit=1").session(sessionOf("user1"))
+        ).andExpect(status().isOk).andReturn().response.contentAsString
+        val cursor = objectMapper.readTree(pageBody)["nextBefore"].asText()
+        assertNotNull(cursor)
+        mockMvc.perform(
+            get("/api/mail/mailbox/conversations/2/messages?limit=1&before=$cursor")
+                .session(sessionOf("user1"))
+        ).andExpect(status().isBadRequest)
+    }
+
+    // ------------------------------------------------------------------
     // T3：历史 encoded subject 读兼容（I-4）
     // ------------------------------------------------------------------
 
@@ -1620,6 +1771,21 @@ class MailboxConversationControllerTest {
     // 工具
     // ------------------------------------------------------------------
 
+    /** 02 (I-2)：admin 授予固定只读账号的查看权；唯一生产写路径是 01 的服务，测试直接落库。 */
+    private fun insertReadAccess(contactId: Long, username: String = MailReadOnlyPolicy.READER_USERNAME) {
+        jdbcTemplate.update(
+            "INSERT INTO expert_mail_read_access (username, expert_contact_id, granted_by, created_at) " +
+                "VALUES (?, ?, 'admin', ?)",
+            username, contactId, Timestamp.valueOf(ts("2026-10-01 09:00:00"))
+        )
+    }
+
+    /** 只读账号必须能通过真实 AuthInterceptor 的身份校验（Session 只存用户名）。 */
+    private fun stubReader() {
+        Mockito.`when`(authService.findUser(MailReadOnlyPolicy.READER_USERNAME))
+            .thenReturn(adminUser(MailReadOnlyPolicy.READER_USERNAME))
+    }
+
     private fun sessionOf(username: String): MockHttpSession =
         MockHttpSession().apply { setAttribute(AuthSessionKeys.USERNAME, username) }
 
@@ -1750,6 +1916,8 @@ class MailboxConversationControllerTest {
         jdbcTemplate.update("DELETE FROM expert_follow")
         // 01：挂起表 FK→expert_contact，必须在删联系人前清理。
         jdbcTemplate.update("DELETE FROM expert_mailbox_suspension")
+        // 02：grant 表 FK→expert_contact（ON DELETE CASCADE），显式清理保证用例隔离。
+        jdbcTemplate.update("DELETE FROM expert_mail_read_access")
         jdbcTemplate.update("DELETE FROM mail_attachment")
         jdbcTemplate.update("DELETE FROM inbound_mail_tag")
         jdbcTemplate.update("DELETE FROM inbound_mail_processing")

@@ -1,0 +1,23 @@
+$ rg -n 'user1|qfuser1' src/main src/test
+exit=0
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceTest.kt:316:        val expert = validExpert("0010", "user10@oxford.ac.uk")
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceTest.kt:323:            "email" to "user10@oxford.ac.uk",
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceTest.kt:331:        `when`(emailValidationService.validate("user10@oxford.ac.uk")).thenReturn(EmailValidationResult(2, true))
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceTest.kt:366:        val expert = validExpert("", "user11@oxford.ac.uk")
+src/test/kotlin/com/weibo/talentintroduction/campaign/repository/BatchEmailVerificationRepositoryIT.kt:233:        assertEquals(listOf("user0@b.com", "user1@b.com"), first.map { it.email })
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMetadataFetchIT.kt:77:        username: String = "user1"
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMetadataFetchIT.kt:99:        server.addBox("user1", "pw", 901L,
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMetadataFetchIT.kt:109:        server.addBox("user1", "pw", 902L, emptyList())
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMetadataFetchIT.kt:116:        server.addBox("user1", "pw", 903L, listOf(old))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMetadataFetchIT.kt:119:        server.addBox("user1", "pw", 903L, listOf(old, server.mail(44L, "new", "new body", 0)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMetadataFetchIT.kt:126:        server.addBox("user1", "pw", 904L,
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMetadataFetchIT.kt:140:            username = "user1",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMetadataFetchIT.kt:190:            username = "user1",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMetadataFetchIT.kt:218:            username = "user1",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMetadataFetchIT.kt:240:            username = "user1",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMetadataFetchIT.kt:271:            username = "user1",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMetadataFetchIT.kt:307:            username = "user1",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMetadataFetchIT.kt:337:            username = "user1",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMetadataFetchIT.kt:372:            username = "user1",
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMetadataFetchIT.kt:386:                account = account(server.port(), code = "slow-account", username = "user1"),
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMetadataFetchIT.kt:417:            username = "user1",

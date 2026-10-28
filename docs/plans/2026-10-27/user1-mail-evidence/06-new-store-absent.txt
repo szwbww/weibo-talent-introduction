@@ -1,0 +1,2 @@
+$ rg -n 'expert_mail_read_access|MailReadOnlyPolicy|ExpertMailReadAccess|MailboxReadOnly|mail-read-only' src/main src/test
+exit=1

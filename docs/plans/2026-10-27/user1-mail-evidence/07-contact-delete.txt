@@ -1,0 +1,2 @@
+$ rg -n 'deleteById|deleteAll|DELETE FROM expert_contact|delete from expert_contact' src/main/kotlin/com/weibo/talentintroduction/expert src/main/resources/db/migration
+exit=1

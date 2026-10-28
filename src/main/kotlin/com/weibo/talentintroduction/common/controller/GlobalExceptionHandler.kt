@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.common.controller
 
+import com.weibo.talentintroduction.auth.config.MailReadAccessDeniedException
 import com.weibo.talentintroduction.document.service.AnalysisFailedException
 import com.weibo.talentintroduction.mail.service.ManualSendSafetyBlockedException
 import com.weibo.talentintroduction.mail.service.OutboundAttachmentException
@@ -26,6 +27,15 @@ class GlobalExceptionHandler {
     @ExceptionHandler(NoSuchElementException::class)
     fun handleNotFound(ex: NoSuchElementException): ResponseEntity<ApiErrorResponse> =
         error(HttpStatus.NOT_FOUND, "NOT_FOUND", ex.message ?: "Resource not found")
+
+    /**
+     * I-4：固定只读策略的权限异常必须显式映射 403，不能被通用 Exception handler
+     * 吞成 500；code 由异常携带（READ_ONLY_FORBIDDEN / MAIL_READ_FORBIDDEN /
+     * ADMIN_REQUIRED），message 为固定业务文案，不泄露 SQL/路径。
+     */
+    @ExceptionHandler(MailReadAccessDeniedException::class)
+    fun handleMailReadAccessDenied(ex: MailReadAccessDeniedException): ResponseEntity<ApiErrorResponse> =
+        error(HttpStatus.FORBIDDEN, ex.code, ex.message)
 
     @ExceptionHandler(AnalysisFailedException::class)
     fun handleAnalysisFailed(ex: AnalysisFailedException): ResponseEntity<ApiErrorResponse> =

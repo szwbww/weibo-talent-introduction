@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.auth.controller
 
 import com.weibo.talentintroduction.auth.config.AuthSessionKeys
+import com.weibo.talentintroduction.auth.config.MailReadOnlyPolicy
 import com.weibo.talentintroduction.auth.service.AuthService
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.GetMapping
@@ -28,7 +29,8 @@ class AuthController(
         if (username.isNullOrBlank() || password.isNullOrBlank()) {
             throw IllegalArgumentException("用户名或密码错误")
         }
-        if (username != "admin") {
+        // I-2：登录只对两个内置身份开放（trim 后精确匹配），其余 DB 用户一律拒绝。
+        if (username != MailReadOnlyPolicy.ADMIN_USERNAME && username != MailReadOnlyPolicy.READER_USERNAME) {
             throw IllegalArgumentException("用户名或密码错误")
         }
 
@@ -40,7 +42,8 @@ class AuthController(
 
         return LoginResponse(
             username = adminUser.username,
-            mustChangePassword = adminUser.mustChangePassword
+            mustChangePassword = adminUser.mustChangePassword,
+            mailReadOnly = MailReadOnlyPolicy.isReader(adminUser.username)
         )
     }
 
@@ -67,7 +70,8 @@ class AuthController(
         return MeResponse(
             authenticated = true,
             username = user.username,
-            mustChangePassword = user.mustChangePassword
+            mustChangePassword = user.mustChangePassword,
+            mailReadOnly = MailReadOnlyPolicy.isReader(user.username)
         )
     }
 
@@ -99,13 +103,17 @@ data class LoginRequest(
 
 data class LoginResponse(
     val username: String,
-    val mustChangePassword: Boolean
+    val mustChangePassword: Boolean,
+    // I-4：派生只读标记，尾部默认值兼容既有构造；仅精确 user1 为 true，不落库。
+    val mailReadOnly: Boolean = false
 )
 
 data class MeResponse(
     val authenticated: Boolean,
     val username: String?,
-    val mustChangePassword: Boolean
+    val mustChangePassword: Boolean,
+    // I-4：派生只读标记，尾部默认值兼容既有构造；匿名恒为 false。
+    val mailReadOnly: Boolean = false
 )
 
 data class ChangePasswordRequest(

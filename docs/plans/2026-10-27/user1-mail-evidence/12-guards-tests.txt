@@ -1,0 +1,118 @@
+$ rg -n 'mysql-it|mysqlIt|node --test|node-check|AuthFlow|alpha|beta|operator|MailboxService.kt|MailRecordRepository.kt|ExpertContactRepository.kt' pom.xml src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt src/test/kotlin/com/weibo/talentintroduction/auth src/test/kotlin/com/weibo/talentintroduction/mail/controller
+exit=0
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:11: * P-D（plan 02）：`expert_contact.operator_status` 唯一写入口守卫测试。
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:13: * 白名单闭包（I-1）：`src/main/kotlin` 下对 `ExpertContact.operatorStatus` 的赋值位置集合
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:25:     * T-2 白名单：`src/main/kotlin` 下对 `expert_contact.operator_status` 的唯一 DB 写入口文件集合。
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:53:        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 228, "operatorStatus = request.operatorStatus"),
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:69:        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 1155, "operatorStatus = operatorStatus"),
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:71:        NoiseSite("com/weibo/talentintroduction/mail/service/MailboxService.kt", 168, "operatorStatus = summary.operatorStatus"),
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:76:        NoiseSite("com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt", 644, "operatorStatus = operatorStatus"),
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:79:        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 80, "operatorStatus = operatorStatus"),
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:82:        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 477, "operatorStatus = operatorStatus ?: expert.operatorStatus"),
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:84:        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 108, "operatorStatus = contact?.operatorStatus ?: expert.operatorStatus"),
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:90:        NoiseSite("com/weibo/talentintroduction/discovery/service/DiscoveryPersonQueryService.kt", 288, "operatorStatus = contact?.operatorStatus ?: raw?.operatorStatus"),
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:92:        // （05 P-E 新增 operatorStatusFilter 使钉死点 :332 偏移至 :345，A5 授权行号修正；
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:98:        NoiseSite("com/weibo/talentintroduction/expert/service/ExpertSearchService.kt", 528, "operatorStatus = source.nullableText"),
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:100:        // 03 P-B T-3 后：ExpertIndexWriterService 的 operatorStatus 同步改为三层 doc 部分更新
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:101:        // （"operatorStatus" to operatorStatus），旧脚本行 ctx._source.operatorStatus = params.status
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:105:        NoiseSite("com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt", 56, "operator_status = :operatorStatus"),
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:106:        // SELECT 只读过滤：批量收件人读取按 operator_status 筛 EMAIL_INVALID，同样是读条件（非写入）。
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:109:        NoiseSite("com/weibo/talentintroduction/campaign/repository/BatchRecipientReadRepository.kt", 129, "operator_status = 'EMAIL_INVALID'"),
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:115:        NoiseSite("com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt", 628, "ec.operator_status AS operator_status"),
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:119:        NoiseSite("com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt", 685, "ec.operator_status, ec.current_index_level")
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:123:     * 属性声明排除：`val|var operatorStatus` 开头的声明是定义而非赋值写入（当前无命中，规则防未来）。
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:124:     * 函数形参（`operatorStatus: String = ...`）因 `=` 前是类型而非字段名，天然不命中
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:125:     * `operatorStatus = ` 命名参数模式，无需额外规则。
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:127:    private val DECLARATION_PREFIX = Regex("""(?<![.\w])(val|var)\s+operatorStatus\b""")
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:134:    fun `operator_status write sites exactly match whitelist`() {
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:150:                        // 两种写法的赋值命中：copy()/构造命名参数（`operatorStatus = `）与 SQL `operator_status`
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:151:                        if (!(line.contains("operatorStatus = ") || line.contains("operator_status"))) return@forEachIndexed
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:162:            appendLine("expert_contact.operator_status 写入口守卫失败（I-1 白名单闭包 / I-2 显式变更）")
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:163:            appendLine("src/main/kotlin 下对 operatorStatus 的赋值位置集合必须恰好等于 ALLOWED_WRITE_SITES。")
+src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt:176:            appendLine("  新增对 expert_contact.operator_status 的写入必须登记到 ALLOWED_WRITE_SITES 并在一行中文注释中写明理由；")
+pom.xml:24:        <mysqlIt>false</mysqlIt>
+pom.xml:180:                        <mysqlIt>${mysqlIt}</mysqlIt>
+pom.xml:202:                                <argument>node --test src/test/js/*.test.js</argument>
+pom.xml:208:                        <id>node-check-app</id>
+pom.xml:223:                        <id>node-check-task-modal-runtime</id>
+pom.xml:250:            <id>mysql-it</id>
+pom.xml:252:                <mysqlIt>true</mysqlIt>
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertInboundNotificationControllerTest.kt:31:    private fun session() = MockHttpSession().apply { setAttribute(AuthSessionKeys.USERNAME, "operator") }
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertInboundNotificationControllerTest.kt:33:        Mockito.`when`(auth.findUser("operator")).thenReturn(AdminUser(id = 1, username = "operator", passwordHash = "hash", mustChangePassword = false, createdAt = java.time.LocalDateTime.now(), updatedAt = java.time.LocalDateTime.now()))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertInboundNotificationControllerTest.kt:35:        Mockito.`when`(service.setEnabled(true, "operator")).thenReturn(ExpertInboundNotificationSettingsResponse(true, true, 1, null))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertInboundNotificationControllerTest.kt:50:        Mockito.verify(service).setEnabled(true, "operator")
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertInboundNotificationControllerTest.kt:69:        Mockito.`when`(auth.findUser("operator")).thenReturn(AdminUser(id = 1, username = "operator", passwordHash = "hash", mustChangePassword = true, createdAt = java.time.LocalDateTime.now(), updatedAt = java.time.LocalDateTime.now()))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertInboundNotificationControllerTest.kt:76:        Mockito.`when`(service.setEnabled(true, "operator")).thenThrow(ExpertInboundNotificationNotConfiguredException())
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertInboundNotificationControllerTest.kt:77:        Mockito.`when`(service.setEnabled(false, "operator")).thenReturn(ExpertInboundNotificationSettingsResponse(false, false, 0, null))
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:39:class AuthFlowProbeController {
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:56:class AuthFlowIntegrationTest {
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxControllerTest.kt:126:                    operatorStatus = "REPLIED",
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxControllerTest.kt:205:                    operatorStatus = "REPLIED",
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:127:    private val operatorActionLogService = Mockito.mock(OperatorActionLogService::class.java)
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:181:        operatorStatus = "CONTACTED",
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:221:            operatorActionLogService,
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:365:            operatorName = "display-op",
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:424:            operatorName = "display-op",
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:468:                operatorName = null,
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:480:                operatorName = null,
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:583:            operatorName = null,
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:605:            operatorName = null,
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:621:                operatorName = null,
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:635:                operatorName = null
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:647:    fun `sent download allows any logged in operator and disabled real account but rejects mismatches`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:653:            operatorName = null, attachmentIds = listOf(uploaded.id), authenticatedUsername = OWNER
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:696:            operatorName = null, attachmentIds = listOf(uploaded.id), authenticatedUsername = OWNER
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:751:            operatorName = null,
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMarkResolvedIdentityTest.kt:46:    private val operatorActionLogService = Mockito.mock(OperatorActionLogService::class.java)
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMarkResolvedIdentityTest.kt:62:        operatorActionLogService,
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMarkResolvedIdentityTest.kt:123:                .content("""{"resolvedBy":"other","operatorName":"other","note":"身份验收"}""")
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMarkResolvedIdentityTest.kt:131:        val operatorName = ArgumentCaptor.forClass(String::class.java)
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMarkResolvedIdentityTest.kt:135:            operatorName.capture(),
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMarkResolvedIdentityTest.kt:139:        assertEquals("admin", operatorName.value)
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMarkResolvedIdentityTest.kt:175:                .content("""{"resolvedBy":"legacy","operatorName":"legacyop","note":"legacy note"}""")
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMarkResolvedIdentityTest.kt:182:        val operatorName = ArgumentCaptor.forClass(String::class.java)
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMarkResolvedIdentityTest.kt:186:            operatorName.capture(),
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMarkResolvedIdentityTest.kt:190:        assertEquals("admin", operatorName.value)
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/BounceControllerTest.kt:17:    private val operatorActionLogService = Mockito.mock(OperatorActionLogService::class.java)
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/BounceControllerTest.kt:23:        operatorActionLogService
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:104: * 专家会话关注/查询 controller 集成测试（fast-p 07；mysqlIt 门禁）。
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:121:@EnabledIfSystemProperty(named = "mysqlIt", matches = "true")
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:173:    // 03 (T3): MailboxConversationService 新增依赖 —— mysqlIt context 缺此 bean 会启动失败；
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:1273:                     "operatorName":"op1"}
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:1343:                     "operatorName":"op1"}
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:1350:    // 06 (I-1/I-2)：attachmentIds 逐字转发，附件归属身份只取会话（请求体 operatorName 只是
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:1376:                     "operatorName":"body-op",
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:1969:@EnabledIfSystemProperty(named = "mysqlIt", matches = "true")
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt:2419:            operatorStatus = "CONTACTED",
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:42:    private val operatorActionLogService = Mockito.mock(OperatorActionLogService::class.java)
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:58:        operatorActionLogService,
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:95:            controller.sendQaReply(1L, PendingQaReplyRequest(qaRuleId = 10L, senderAccountCode = null, operatorName = "op"))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:111:                    operatorName = "op"
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:127:                    operatorInstruction = "shorter"
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:180:                operatorName = "op",
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:211:                operatorName = "op",
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:250:            textBody = "Test", operatorName = "op", qaRuleIds = listOf(10L)
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:282:            textBody = "Test", operatorName = "op"
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:314:            textBody = "Test", operatorName = "op"
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:338:                operatorName = "op",
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:370:                operatorName = "op",
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:385:            textBody = "Test", operatorName = "op"
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt:421:            textBody = "Test", operatorName = "op"
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactNoteControllerTest.kt:76:            .content("""{"note":"中文\n第二行","username":"root","operatorName":"root","updatedAt":"fake"}"""))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactLocationControllerTest.kt:47: * Session 身份（body 中的 username/operatorName 必须被忽略）。真实 SQL、迁移与外键由
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactLocationControllerTest.kt:48: * [com.weibo.talentintroduction.mail.service.ExpertContactLocationServiceIT]（mysqlIt 门禁）承担。
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactLocationControllerTest.kt:261:                .content("""{"countryCode":"BR","username":"root","operatorName":"root"}""")
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactLocationControllerTest.kt:268:            "身份只取 Session；body 里的 username/operatorName 必须被忽略"
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:61:    private val operatorActionLogService = Mockito.mock(OperatorActionLogService::class.java)
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:83:                operatorActionLogService
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:89:                operatorActionLogService
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:102:        operatorActionLogService,
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:802:        operatorActionLogService,
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:900:                operatorName = null
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:1398:                com.weibo.talentintroduction.llm.service.AiReplyReviewAuditService(operatorActionLogService)
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:1594:        val response = controller.aiReplyTurn(6L, AiReplyTurnRequest(operatorName = "op"))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:1651:            operatorActionLogService,
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:1665:        val response = failingController.aiReplyTurn(60L, AiReplyTurnRequest(operatorName = "op"))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:1710:            turns = listOf(AiReplyTurnDto(assistantDraft = "v1", operatorInstruction = "fix"))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:1757:            turns = listOf(AiReplyTurnDto(assistantDraft = "v1", operatorInstruction = "fix"))
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:1806:            turns = listOf(AiReplyTurnDto(assistantDraft = "v1", operatorInstruction = "fix"))

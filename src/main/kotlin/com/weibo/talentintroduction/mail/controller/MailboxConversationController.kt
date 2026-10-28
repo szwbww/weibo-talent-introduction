@@ -264,6 +264,8 @@ class MailboxConversationController(
 
     @GetMapping("/{contactId}/messages")
     fun messages(
+        // 02 (I-2)：身份只取 Session，绝不从 query/body 读取；Service 内部据此做准入。
+        request: HttpServletRequest,
         @PathVariable contactId: Long,
         @RequestParam(defaultValue = "50") limit: Int,
         @RequestParam(required = false) before: String?,
@@ -272,7 +274,8 @@ class MailboxConversationController(
         contactId = contactId,
         accountCode = accountCode,
         beforeCursor = before,
-        limit = limit
+        limit = limit,
+        username = sessionUsername(request)
     )
 
     @PutMapping("/{contactId}/follow")

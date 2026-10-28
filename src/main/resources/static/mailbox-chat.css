@@ -206,3 +206,18 @@
 /* mailbox-expert-note:S3 */
 @media(max-width:760px){.mail-chat .mc-note-row{flex-wrap:wrap}.mail-chat .mc-note-row .mc-note-slot{flex-basis:100%}.mail-chat .mc-note-row .contact-timing{margin-left:0}.mail-chat .mc-note-trigger{min-height:36px}.mc-note-dialog textarea{font-size:16px}.mc-note-dialog footer{flex-wrap:wrap}.mc-note-dialog .button{min-height:36px;height:36px}}
 /* mailbox-expert-note:S3:end */
+
+body[data-mail-read-only="true"] .nav-tab[data-view]:not([data-view="mailbox"]),
+body[data-mail-read-only="true"] .view:not(#view-mailbox),
+body[data-mail-read-only="true"] #mailboxLegacyToolbar,
+body[data-mail-read-only="true"] #mailboxExecutionFilterBar,
+body[data-mail-read-only="true"] #mailboxConversationPanel > .panel-head .panel-head-actions,
+body[data-mail-read-only="true"] #mailboxPagination,
+body[data-mail-read-only="true"] #unmatchedDetailPanel,
+body[data-mail-read-only="true"] #worldClockTrigger,
+body[data-mail-read-only="true"] #worldClockPanel {
+    display: none !important;
+}
+body[data-mail-read-only="true"] .mail-chat .mc-person {
+    grid-template-columns: minmax(0, 1fr);
+}

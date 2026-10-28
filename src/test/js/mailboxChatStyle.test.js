@@ -187,12 +187,17 @@ describe("S-6: DOM class 白名单与模板卫生", () => {
         const lines = cssSource.split("\n").map((line) => line.trim()).filter(Boolean);
         for (const line of lines) {
             if (line.startsWith("/*") || line.startsWith("*") || line.startsWith("//")) continue;
+            // 多行规则的右括号行不是选择器（S-2 reader 块为逐条多行书写）。
+            if (line === "}") continue;
+            if (line.endsWith(";")) continue;
             const selectorPart = line.slice(0, line.indexOf("{") === -1 ? line.length : line.indexOf("{"));
             if (!selectorPart) continue;
             if (selectorPart.startsWith("@media") || selectorPart.startsWith("@")) continue;
             const isScoped = selectorPart.includes(".mail-chat")
                 || selectorPart.startsWith("#view-mailbox.mc-refined")
                 || selectorPart.startsWith("#view-mailbox:not(.mc-refined)")
+                // fast-p 03（S-2）：reader 规则必须整条挂在 body[data-mail-read-only="true"] 下。
+                || selectorPart.startsWith('body[data-mail-read-only="true"]')
                 || /^\.mc-note-(?:dialog|body|hint|error)(?=[\s,{.:]|$)/.test(selectorPart);
             assert.ok(isScoped, `rule must stay mailbox-scoped: ${selectorPart}`);
         }
@@ -436,5 +441,163 @@ describe("02 · 三态标记 S-2 样式与结构契约", () => {
             assert.ok(chatSource.includes(`label: "${label}"`), `${label} 必须在 FILTER_CHIPS`);
         });
         assert.ok(!/label: "关注"/.test(chatSource), "旧「关注」展示名必须删除");
+    });
+});
+
+// ---------------------------------------------------------------------------
+// fast-p 2026-10-27 · user1 只读邮件视图（03 · I-5/S-1/S-2/S-3）
+// 1) S-2 逐字追加在 mailbox-chat.css 末尾，且仅由 body[data-mail-read-only="true"] 作用域。
+// 2) index.html 统一 ?v= 并保持脚本顺序：mailbox-readonly.js 紧接在 app.js 之前，
+//    world-clock.js 保持其后；版本键仍从 styles.css 派生（不写死字面量）。
+// 3) 模块只使用 S-1 声明的既有 class，无 inline style / innerHTML / 附件与外部链接。
+// 4) 真实 index.html 的 reader 壳节点存在，app.js 只做 S-3 声明的最小改写。
+// ---------------------------------------------------------------------------
+describe("03 · user1 只读邮件视图（S-1/S-2/S-3）", () => {
+    const PLAN_PATH = path.join(__dirname, "..", "..", "..", "docs", "plans", "2026-10-27", "user1-mail-03-readonly-ui.md");
+    const planSource = fs.readFileSync(PLAN_PATH, "utf-8");
+    const s2Block = planSource.match(/```css\n([\s\S]*?)```/)[1];
+    const moduleSource = fs.readFileSync(path.join(ROOT, "mailbox-readonly.js"), "utf-8");
+    const appSource = fs.readFileSync(path.join(ROOT, "app.js"), "utf-8");
+
+    // S-1 声明复用的 class（模块实际渲染集合，mc-actions 等仅 admin 使用的不在此列）。
+    const MODULE_CLASSES = [
+        "mail-chat",
+        "mc-experts",
+        "mc-list-tools",
+        "mc-search-row",
+        "mc-expert-list",
+        "mc-person",
+        "mc-person-main",
+        "mc-pager",
+        "mc-conversation",
+        "mc-header",
+        "mc-identity",
+        "mc-scroll",
+        "mc-timeline",
+        "mc-message",
+        "mc-body",
+        "mc-empty",
+        "mc-error",
+        "mc-load-older",
+        "mc-text-button",
+        "mc-badge",
+        "mc-note"
+    ];
+
+    const scriptTags = [...indexSource.matchAll(/<script src="([^"]+)"><\/script>/g)]
+        .map((match) => ({ src: match[1], index: match.index }));
+
+    it("S-2 逐字追加在 mailbox-chat.css 末尾", () => {
+        assert.ok(
+            cssSource.trimEnd().endsWith(s2Block.trimEnd()),
+            "S-2 全文必须是 mailbox-chat.css 的最后一段，且不得改写"
+        );
+        assert.strictEqual(
+            (cssSource.match(/body\[data-mail-read-only="true"\]/g) || []).length,
+            10,
+            "S-2 只允许计划中的 10 条 reader 作用域选择器"
+        );
+        assert.ok(cssSource.includes("body[data-mail-read-only=\"true\"] .mail-chat .mc-person {\n    grid-template-columns: minmax(0, 1fr);\n}"));
+    });
+
+    it("S-2 不引入 body 作用域之外的 reader 规则，admin 规则不变", () => {
+        const appended = cssSource.slice(cssSource.trimEnd().length - s2Block.trimEnd().length);
+        appended.split("\n").forEach((line) => {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed === "}") return;
+            if (!(trimmed.endsWith(",") || trimmed.endsWith("{"))) return;
+            assert.ok(
+                trimmed.startsWith("body[data-mail-read-only=\"true\"]"),
+                `S-2 的每条选择器都必须带 reader 作用域: ${trimmed}`
+            );
+        });
+        assert.ok(cssSource.includes("#view-mailbox.mc-refined #mailboxLegacyToolbar{display:none}"));
+    });
+
+    it("S-1 模块使用的 class 全部在既有 CSS 中定义", () => {
+        MODULE_CLASSES.forEach((className) => {
+            assert.ok(moduleSource.includes(className), `模块必须使用 S-1 声明的 ${className}`);
+            const defined = new RegExp(`\\.${escapeRegExp(className)}\\b`).test(cssSource)
+                || new RegExp(`\\.${escapeRegExp(className)}\\b`).test(stylesSource);
+            assert.ok(defined, `${className} 必须在 mailbox-chat.css 或 styles.css 已定义（不新增 class）`);
+        });
+    });
+
+    it("S-1 模块无 inline style、无 innerHTML、无附件/外链/远程资源", () => {
+        assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML/.test(moduleSource), "全部动态文本走 textContent");
+        assert.ok(!/style\s*=/.test(moduleSource), "不得使用 inline style");
+        assert.ok(!/\.style\b/.test(moduleSource), "不得写 style 属性");
+        assert.ok(!/<img|<a\s|href=|downloadUrl|attachmentCount|outboundAttachments/.test(moduleSource),
+            "不得渲染附件/下载链接/远程图片");
+        assert.ok(!/(localStorage|sessionStorage)\s*[.[]/.test(moduleSource), "不得持久化正文");
+    });
+
+    it("S-1 固定文案逐字存在", () => {
+        [
+            "暂无已授权的专家邮件",
+            "没有匹配的已授权专家",
+            "请选择左侧专家",
+            "暂无权限查看该专家邮件",
+            "加载失败，请刷新重试",
+            "加载中…",
+            "暂无往来邮件",
+            "只读：仅显示管理员授权的专家邮件",
+            "加载更早邮件"
+        ].forEach((copy) => assert.ok(moduleSource.includes(copy), `缺少固定文案: ${copy}`));
+    });
+
+    it("S-1 保留正文最终覆盖值（13px/1.55）与关键布局值", () => {
+        assert.match(cssSource, /\.mail-chat \.mc-body\{font-size:13px;line-height:1\.55;color:#465974\}/);
+        assert.match(cssSource, /\.mail-chat\{display:grid;grid-template-columns:306px minmax\(0,1fr\)/);
+        assert.match(cssSource, /\.mail-chat \.mc-person\[data-active=true\]\{border-color:#c2d3f2;border-left-color:#3c65cd;background:#eaf1ff\}/);
+        assert.match(cssSource, /\.mail-chat \.mc-message\[data-direction=OUTBOUND\]\{align-self:flex-end;background:#eff5ff/);
+        assert.match(cssSource, /@media\(max-width:760px\)\{\.mail-chat\{display:flex;flex-direction:column;height:auto/);
+    });
+
+    it("I-5 index 在所有 app 资产之前注册 mailbox-readonly.js 且版本同键", () => {
+        const readOnlyTags = scriptTags.filter((tag) => tag.src.startsWith("mailbox-readonly.js?"));
+        assert.strictEqual(readOnlyTags.length, 1, "mailbox-readonly.js 必须注册一次");
+        assert.strictEqual(readOnlyTags[0].src, `mailbox-readonly.js?v=${CACHE_KEY}`);
+
+        const appTag = scriptTags.find((tag) => tag.src.startsWith("app.js?"));
+        const chatTag = scriptTags.find((tag) => tag.src.startsWith("mailbox-chat.js?"));
+        const clockTag = scriptTags.find((tag) => tag.src.startsWith("world-clock.js?"));
+        assert.ok(appTag && chatTag && clockTag);
+        assert.ok(chatTag.index < readOnlyTags[0].index, "只读模块在 mailbox-chat.js 之后");
+        assert.ok(readOnlyTags[0].index < appTag.index, "只读模块必须紧接在 app.js 之前");
+        assert.ok(appTag.index < clockTag.index, "world-clock.js 顺序保持");
+        const between = indexSource.slice(readOnlyTags[0].index + indexSource.slice(readOnlyTags[0].index).indexOf("</script>") + 9, appTag.index);
+        assert.ok(/^\s*$/.test(between), "mailbox-readonly.js 与 app.js 之间不得插入其他资源");
+    });
+
+    it("I-5 mailbox-readonly.js 的版本键与 CACHE_KEY 一致", () => {
+        const versions = [...indexSource.matchAll(/mailbox-readonly\.js\?v=([^"'&<>]+)/g)].map((match) => match[1]);
+        assert.deepStrictEqual(versions, [CACHE_KEY]);
+        assert.ok(indexSource.includes(`app.js?v=${CACHE_KEY}`));
+    });
+
+    it("S-3 真实 index.html 存在 reader 壳需要的既有节点", () => {
+        assert.strictEqual((indexSource.match(/data-view="mailbox"/g) || []).length, 1);
+        assert.ok(indexSource.includes('<span>收发件箱</span>'));
+        assert.ok(indexSource.includes('<select id="mobileCoreView" aria-label="切换页面"></select>'));
+        assert.ok(indexSource.includes('id="mailboxConversationPanel"'));
+        assert.ok(indexSource.includes('id="mailboxList"'));
+        const panelHead = indexSource.slice(
+            indexSource.indexOf('id="mailboxConversationPanel"'),
+            indexSource.indexOf('id="mailboxList"')
+        );
+        assert.ok(/<div class="panel-head">\s*<h2>/.test(panelHead), "panel-head h2 是标题改写点");
+        assert.ok(indexSource.includes('id="logoutBtn"'));
+        assert.ok(indexSource.includes('id="currentUserDisplay"'));
+        assert.ok(!indexSource.includes('data-mail-read-only'), "body 标记只能由 app.js 在 reader 启动时写入");
+    });
+
+    it("S-3 app.js 只做声明的壳改写（body 标记/菜单/标题/mc-refined/挂载点）", () => {
+        assert.ok(appSource.includes('body.dataset.mailReadOnly = "true"'));
+        assert.ok(appSource.includes('mailboxView.classList.add("mc-refined")'));
+        assert.ok(appSource.includes('panelTitle.textContent = "收发邮件 · 只读"'));
+        assert.ok(appSource.includes('option.value = "mailbox"'));
+        assert.ok(appSource.includes('const host = $("#mailboxList");'));
+        assert.ok(appSource.includes('window.MailboxReadOnly'), "admin 模式必须在模块缺失时保持可选");
     });
 });

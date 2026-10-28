@@ -90,7 +90,7 @@ test("I-4: existing versioned resources retain order and share one current relea
     assert.deepEqual(resources, [
         "styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css", "world-clock.css", "meeting-records.css", "contact-details.css",
         "trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js",
-        "mailbox-chat.js", "contact-history.js", "meeting-records.js", "contact-details.js", "discovery-papers.js", "discovery-recheck.js", "app.js", "world-clock.js"
+        "mailbox-chat.js", "contact-history.js", "meeting-records.js", "contact-details.js", "discovery-papers.js", "discovery-recheck.js", "mailbox-readonly.js", "app.js", "world-clock.js"
     ]);
     assert.doesNotMatch(html, /20261006-wecom-inbound-notification/);
     assert.doesNotMatch(html, /20261006-discovery-review-merge/);

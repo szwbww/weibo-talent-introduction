@@ -236,7 +236,33 @@ function createSandbox() {
     vm.runInContext(extractFn("monitoringToday"), sandbox);
     vm.runInContext(extractFn("shiftMonitoringDate"), sandbox);
     vm.runInContext(extractFn("monitoringWindowParams"), sandbox);
+    injectMailReadOnlyHelpers(sandbox);
     return sandbox;
+}
+
+// 03（I-1/I-2）：reader 身份分支依赖的 app.js 函数与常量。
+const MAIL_READ_ONLY_FN_NAMES = [
+    "mailReadOnlyState",
+    "isMailReadOnlyMode",
+    "isMailReadOnlyRequestAllowed",
+    "showMailReadOnlyIdentityError",
+    "applyMailReadOnlyShell",
+    "renderMailReadOnlyLoadError",
+    "startMailReadOnlyApp",
+    "releaseMailReadOnly"
+];
+
+function injectMailReadOnlyHelpers(sandbox) {
+    vm.runInContext(
+        "var MAIL_READ_ONLY_USERNAME = 'user1';"
+        + " var MAIL_READ_ONLY_COPY = {"
+        + " identityError: '权限信息异常，请重新登录',"
+        + " moduleError: '只读邮件视图加载失败，请刷新' };",
+        sandbox
+    );
+    MAIL_READ_ONLY_FN_NAMES.forEach((name) => {
+        vm.runInContext(extractFn(name), sandbox);
+    });
 }
 
 // Create a sandbox with all bootstrap-relevant functions extracted from app.js.
@@ -337,6 +363,7 @@ function createBootstrapSandbox(authMeResponse) {
     vm.runInContext(extractFn("checkAuth"), sandbox);
     // Load the real bootstrap function (it calls the stubs above)
     vm.runInContext(extractFn("bootstrap"), sandbox);
+    injectMailReadOnlyHelpers(sandbox);
 
     return sandbox;
 }
@@ -697,5 +724,316 @@ describe("auth function unit tests", () => {
         sandbox.startAuthenticatedApp("admin");
         assert.strictEqual(badgeCalled, 1);
         assert.strictEqual(sandbox.refreshCurrentViewCalled, 1);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// fast-p 2026-10-27 · user1 只读邮件视图（03 · I-1/I-2/I-3）
+// 身份来自 login/me 元数据；user1 缺元数据不得进入 admin 分支；reader 生命周期
+// 早退在旧账号/群推/自动回复/草稿路径之前；app.api 在已知 reader 时本地拒绝越界请求。
+// ---------------------------------------------------------------------------
+
+function createReaderSandbox(meResponse) {
+    const sandbox = createSandbox();
+    sandbox.authMeResponse = meResponse;
+    sandbox.ensureVariableMeta = undefined;
+    return sandbox;
+}
+
+function stubReadOnlyModule(sandbox) {
+    const mounts = [];
+    sandbox.window.MailboxReadOnly = {
+        mount(host, options) {
+            mounts.push({ host, options });
+            return { refresh: () => Promise.resolve(), unmount() {} };
+        },
+        unmount() {}
+    };
+    sandbox.readOnlyMounts = mounts;
+    return mounts;
+}
+
+describe("reader identity branch (03 I-1/I-2)", () => {
+    it("me: user1 + mailReadOnly mounts only the readonly module and locks the view", async () => {
+        const sandbox = createReaderSandbox({
+            authenticated: true, username: "user1", mustChangePassword: false, mailReadOnly: true
+        });
+        const mounts = stubReadOnlyModule(sandbox);
+
+        await sandbox.checkAuth();
+
+        assert.strictEqual(sandbox.appStarted, true);
+        assert.strictEqual(sandbox.state.view, "mailbox");
+        assert.strictEqual(sandbox.state.mailReadOnly.active, true);
+        assert.strictEqual(sandbox.state.mailReadOnly.username, "user1");
+        assert.strictEqual(mounts.length, 1);
+        assert.strictEqual(mounts[0].options.sessionUser.username, "user1");
+        assert.strictEqual(typeof mounts[0].options.api, "function");
+        assert.strictEqual(sandbox.refreshCurrentViewCalled, 0, "admin refresh chain must not run");
+        assert.strictEqual(sandbox.updateUnmatchedBadgeCalled, 0);
+        assert.strictEqual(sandbox.elements.currentUserDisplay.textContent, "user1");
+        assert.strictEqual(sandbox.elements.loginOverlay.hidden, true);
+        assert.deepStrictEqual(sandbox.apiCalls.map((call) => call.path), ["/api/auth/me"]);
+    });
+
+    it("me: user1 without mailReadOnly shows the fixed error and never starts admin", async () => {
+        const sandbox = createReaderSandbox({
+            authenticated: true, username: "user1", mustChangePassword: false
+        });
+        const mounts = stubReadOnlyModule(sandbox);
+
+        await sandbox.checkAuth();
+
+        assert.strictEqual(mounts.length, 0);
+        assert.strictEqual(sandbox.appStarted, false);
+        assert.strictEqual(sandbox.elements.loginOverlay.hidden, false);
+        assert.strictEqual(sandbox.elements.loginError.textContent, "权限信息异常，请重新登录");
+        assert.strictEqual(sandbox.elements.loginError.hidden, false);
+        assert.strictEqual(sandbox.refreshCurrentViewCalled, 0);
+        assert.notStrictEqual(sandbox.state.view, "mailbox");
+    });
+
+    it("me: admin keeps the original admin startup even when metadata is inconsistent", async () => {
+        const sandbox = createReaderSandbox({
+            authenticated: true, username: "admin", mustChangePassword: false, mailReadOnly: true
+        });
+        stubReadOnlyModule(sandbox);
+
+        await sandbox.checkAuth();
+
+        assert.strictEqual(sandbox.state.view, "monitoring");
+        assert.strictEqual(sandbox.refreshCurrentViewCalled, 1);
+        assert.strictEqual(sandbox.updateUnmatchedBadgeCalled, 1);
+        assert.strictEqual(sandbox.state.mailReadOnly, undefined);
+    });
+
+    it("missing readonly module shows the fixed load error without any fallback", async () => {
+        const sandbox = createReaderSandbox({
+            authenticated: true, username: "user1", mustChangePassword: false, mailReadOnly: true
+        });
+        sandbox.api = async (path) => {
+            sandbox.apiCalls.push({ path });
+            return sandbox.authMeResponse;
+        };
+        sandbox.refreshCurrentView = () => { sandbox.refreshCurrentViewCalled++; };
+
+        await sandbox.checkAuth();
+
+        assert.strictEqual(sandbox.state.view, "mailbox");
+        assert.strictEqual(sandbox.elements.mailboxList.textContent, "只读邮件视图加载失败，请刷新");
+        assert.strictEqual(sandbox.refreshCurrentViewCalled, 0);
+    });
+
+    it("login response passes username + mailReadOnly to the host", async () => {
+        const handlers = {};
+        const elements = {
+            loginForm: { addEventListener: (type, handler) => { handlers[type] = handler; } },
+            loginUsername: { value: " user1 " },
+            loginPassword: { value: "secret" },
+            loginError: { hidden: true, textContent: "" },
+            changePasswordForm: { addEventListener() {} },
+            logoutBtn: { addEventListener() {} }
+        };
+        const startCalls = [];
+        const sandbox = {
+            apiCalls: [],
+            api: async (path, options) => {
+                sandbox.apiCalls.push({ path, options });
+                return { username: "user1", mailReadOnly: true, mustChangePassword: false };
+            },
+            startAuthenticatedApp: (username, mailReadOnly) => startCalls.push({ username, mailReadOnly }),
+            stopAuthenticatedApp: () => {},
+            showStatus: () => {},
+            isMailReadOnlyMode: () => false,
+            setView: function setViewStub() {},
+            flushMailboxChatDrafts: async () => {},
+            location: { reload() {} },
+            $: (selector) => elements[selector.replace("#", "")] || { addEventListener() {}, hidden: true, textContent: "", value: "" }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("bindAuthEvents"), sandbox);
+        vm.runInContext("bindAuthEvents()", sandbox);
+
+        await handlers.submit({ preventDefault() {} });
+
+        assert.deepStrictEqual(sandbox.apiCalls[0].path, "/api/auth/login");
+        assert.deepStrictEqual(startCalls, [{ username: "user1", mailReadOnly: true }]);
+    });
+});
+
+describe("reader lifecycle guards (03 I-2)", () => {
+    function fnSandbox(names, base) {
+        const sandbox = Object.assign({}, base);
+        vm.createContext(sandbox);
+        vm.runInContext(
+            "var MAIL_READ_ONLY_USERNAME = 'user1';"
+            + " var MAIL_READ_ONLY_COPY = {"
+            + " identityError: '权限信息异常，请重新登录',"
+            + " moduleError: '只读邮件视图加载失败，请刷新' };",
+            sandbox
+        );
+        vm.runInContext(extractFn("mailReadOnlyState"), sandbox);
+        vm.runInContext(extractFn("isMailReadOnlyMode"), sandbox);
+        names.forEach((name) => vm.runInContext(extractFn(name), sandbox));
+        return sandbox;
+    }
+    const readerState = () => ({ active: true, username: "user1", handle: null });
+
+    it("setView rejects every non-mailbox view in reader mode", () => {
+        const sandbox = fnSandbox(["setView"], {
+            state: { view: "mailbox", mailReadOnly: readerState() }
+        });
+        vm.runInContext('setView("accounts"); setView("contacts"); setView("tasks");', sandbox);
+        assert.strictEqual(sandbox.state.view, "mailbox");
+    });
+
+    it("refreshMailboxGroupPush does not call the settings endpoint", async () => {
+        const sandbox = fnSandbox(["refreshMailboxGroupPush"], {
+            state: { view: "mailbox", mailReadOnly: readerState() },
+            appStarted: true,
+            calls: [],
+            api: async (path) => { sandbox.calls.push(path); return {}; }
+        });
+        await vm.runInContext("refreshMailboxGroupPush()", sandbox);
+        assert.deepStrictEqual(sandbox.calls, []);
+    });
+
+    it("refreshAutoReplySummary does not call the summary endpoint", async () => {
+        const sandbox = fnSandbox(["refreshAutoReplySummary"], {
+            state: { view: "mailbox", mailReadOnly: readerState() },
+            calls: [],
+            api: async (path) => { sandbox.calls.push(path); return {}; },
+            $: () => ({ textContent: "", disabled: false })
+        });
+        await vm.runInContext("refreshAutoReplySummary()", sandbox);
+        assert.deepStrictEqual(sandbox.calls, []);
+    });
+
+    it("updateUnmatchedBadge never re-enters the pending-badge request", () => {
+        let badgeCalls = 0;
+        const sandbox = fnSandbox(["updateUnmatchedBadge"], {
+            state: { mailReadOnly: readerState() },
+            refreshUnmatchedBadge: () => { badgeCalls++; }
+        });
+        vm.runInContext("updateUnmatchedBadge(); updateUnmatchedBadge({}, 3);", sandbox);
+        assert.strictEqual(badgeCalls, 0);
+    });
+
+    it("loadMailbox refreshes only the readonly handle and never loads accounts", async () => {
+        let refreshed = 0;
+        let accountLoads = 0;
+        const sandbox = fnSandbox(["loadMailbox"], {
+            state: { view: "mailbox", mailReadOnly: { active: true, username: "user1", handle: { refresh: async () => { refreshed++; } } } },
+            loadMailboxAccounts: async () => { accountLoads++; }
+        });
+        await vm.runInContext("loadMailbox()", sandbox);
+        assert.strictEqual(refreshed, 1);
+        assert.strictEqual(accountLoads, 0);
+    });
+
+    it("refreshCurrentView refreshes only the readonly handle", async () => {
+        let refreshed = 0;
+        const sandbox = fnSandbox(["refreshCurrentView"], {
+            state: { view: "mailbox", mailReadOnly: { active: true, username: "user1", handle: { refresh: async () => { refreshed++; } } } },
+            loadAccounts: async () => { throw new Error("must not load accounts"); },
+            loadMailbox: async () => { throw new Error("must not run legacy mailbox"); }
+        });
+        await vm.runInContext("refreshCurrentView()", sandbox);
+        assert.strictEqual(refreshed, 1);
+    });
+
+    it("loadMailboxAccounts does not request sender accounts for reader", async () => {
+        const sandbox = fnSandbox(["loadMailboxAccounts"], {
+            state: { mailbox: {}, mailReadOnly: readerState() },
+            calls: [],
+            api: async (path) => { sandbox.calls.push(path); return []; }
+        });
+        await vm.runInContext("loadMailboxAccounts()", sandbox);
+        assert.deepStrictEqual(sandbox.calls, []);
+    });
+
+    it("bindMobileCoreNavigation keeps only the mailbox option for reader", () => {
+        const options = [];
+        const menu = {
+            replaceChildren() { options.length = 0; },
+            appendChild(option) { options.push(option); },
+            addEventListener() {},
+            value: ""
+        };
+        const tabs = [
+            { dataset: { view: "accounts", } },
+            { dataset: { view: "mailbox" } },
+            { dataset: { view: "tasks" } }
+        ];
+        const sandbox = fnSandbox(["bindMobileCoreNavigation"], {
+            state: { view: "accounts", mailReadOnly: readerState() },
+            mobileCoreNavigationBound: false,
+            viewMeta: { accounts: ["邮箱账号", ""], mailbox: ["收发件箱", ""], tasks: ["任务记录", ""] },
+            document: { createElement: () => ({ value: "", textContent: "" }) },
+            window: { matchMedia: () => ({ addEventListener() {} }) },
+            $: (selector) => (selector === "#mobileCoreView" ? menu : { addEventListener() {} }),
+            $$: () => tabs,
+            returnToMobileContactsList: () => {},
+            onMobileCoreViewportChange: () => {}
+        });
+        sandbox.mobileCoreNavigationBound = false;
+        vm.runInContext("bindMobileCoreNavigation()", sandbox);
+        assert.strictEqual(options.length, 1);
+        assert.strictEqual(options[0].value, "mailbox");
+        assert.strictEqual(options[0].textContent, "收发件箱");
+        assert.strictEqual(menu.value, "mailbox");
+    });
+});
+
+describe("reader api guard (03 I-2)", () => {
+    function apiSandbox(active) {
+        const sandbox = {
+            state: { mailReadOnly: { active, username: active ? "user1" : "admin", handle: null } },
+            contextPath: "",
+            fetchCalls: [],
+            fetch: async (url, options) => {
+                sandbox.fetchCalls.push({ url, options });
+                return { ok: true, status: 200, text: async () => "" };
+            },
+            handleAuthResponse: async () => {}
+        };
+        vm.createContext(sandbox);
+        ["mailReadOnlyState", "isMailReadOnlyMode", "isMailReadOnlyRequestAllowed", "api"].forEach((name) => {
+            vm.runInContext(extractFn(name), sandbox);
+        });
+        return sandbox;
+    }
+
+    it("rejects non-whitelisted business requests before fetch", async () => {
+        const sandbox = apiSandbox(true);
+        await assert.rejects(
+            () => vm.runInContext('api("/api/mail/sender-accounts")', sandbox),
+            (error) => error.status === 403 && error.data && error.data.code === "READ_ONLY_FORBIDDEN"
+        );
+        await assert.rejects(
+            () => vm.runInContext('api("/api/expert-inbound-notifications/settings", { method: "PUT" })', sandbox),
+            (error) => error.status === 403
+        );
+        assert.deepStrictEqual(sandbox.fetchCalls, []);
+    });
+
+    it("allows only the two conversation GETs plus auth login/me/logout", async () => {
+        const sandbox = apiSandbox(true);
+        const allowed = [
+            "/api/mail/mailbox/conversations?page=0&size=20",
+            "/api/mail/mailbox/conversations/7/messages?limit=50",
+            "/api/auth/me",
+            "/api/auth/logout"
+        ];
+        for (const path of allowed) {
+            await vm.runInContext(`api(${JSON.stringify(path)}, ${path === "/api/auth/logout" ? '{ method: "POST" }' : "{}"})`, sandbox);
+        }
+        assert.strictEqual(sandbox.fetchCalls.length, 4);
+    });
+
+    it("does not restrict the admin path", async () => {
+        const sandbox = apiSandbox(false);
+        await vm.runInContext('api("/api/mail/sender-accounts")', sandbox);
+        assert.strictEqual(sandbox.fetchCalls.length, 1);
     });
 });

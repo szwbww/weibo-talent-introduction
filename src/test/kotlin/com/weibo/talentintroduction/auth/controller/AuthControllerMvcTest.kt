@@ -1,6 +1,8 @@
 package com.weibo.talentintroduction.auth.controller
 
 import com.weibo.talentintroduction.auth.config.AuthSessionKeys
+import com.weibo.talentintroduction.auth.config.MailReadAccessDeniedException
+import com.weibo.talentintroduction.auth.config.MailReadOnlyPolicy
 import com.weibo.talentintroduction.auth.domain.AdminUser
 import com.weibo.talentintroduction.auth.service.AuthService
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -19,9 +21,22 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.RestController
 import java.time.LocalDateTime
 
-@WebMvcTest(AuthController::class)
+/**
+ * 仅用于验证权限异常经 GlobalExceptionHandler 固定映射 403（而非 500）；
+ * 不注册 [com.weibo.talentintroduction.auth.config.AuthWebConfig]，故无拦截器。
+ */
+@RestController
+class AuthDeniedProbeController {
+    @GetMapping("/api/auth-denied-probe")
+    fun denied(): Nothing =
+        throw MailReadAccessDeniedException(MailReadOnlyPolicy.MAIL_READ_FORBIDDEN, "无权查看该专家邮件")
+}
+
+@WebMvcTest(controllers = [AuthController::class, AuthDeniedProbeController::class])
 class AuthControllerMvcTest {
 
     @Autowired
@@ -50,6 +65,7 @@ class AuthControllerMvcTest {
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.username").value("admin"))
             .andExpect(jsonPath("$.mustChangePassword").value(true))
+            .andExpect(jsonPath("$.mailReadOnly").value(false))
             .andReturn()
 
         val session = result.request.getSession(false)
@@ -115,6 +131,7 @@ class AuthControllerMvcTest {
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.authenticated").value(false))
             .andExpect(jsonPath("$.username").isEmpty)
+            .andExpect(jsonPath("$.mailReadOnly").value(false))
     }
 
     @Test
@@ -137,6 +154,93 @@ class AuthControllerMvcTest {
             .andExpect(jsonPath("$.authenticated").value(true))
             .andExpect(jsonPath("$.username").value("admin"))
             .andExpect(jsonPath("$.mustChangePassword").value(false))
+            .andExpect(jsonPath("$.mailReadOnly").value(false))
+    }
+
+    @Test
+    fun `me reports mailReadOnly true only for the exact reader identity`() {
+        val session = MockHttpSession()
+        session.setAttribute(AuthSessionKeys.USERNAME, MailReadOnlyPolicy.READER_USERNAME)
+
+        val reader = AdminUser(
+            id = 2L,
+            username = MailReadOnlyPolicy.READER_USERNAME,
+            passwordHash = "hash",
+            mustChangePassword = false,
+            createdAt = LocalDateTime.now(),
+            updatedAt = LocalDateTime.now()
+        )
+        Mockito.`when`(authService.findUser(MailReadOnlyPolicy.READER_USERNAME)).thenReturn(reader)
+
+        mockMvc.perform(get("/api/auth/me").session(session))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.authenticated").value(true))
+            .andExpect(jsonPath("$.username").value(MailReadOnlyPolicy.READER_USERNAME))
+            .andExpect(jsonPath("$.mailReadOnly").value(true))
+    }
+
+    /**
+     * I-2：本步开放 user1 登录。白名单只到 admin/user1，验证仍由 AuthService 完成；
+     * 回包的 mailReadOnly 由服务端 policy 派生（不是前端角色）。
+     */
+    @Test
+    fun `reader login is accepted when AuthService validates it`() {
+        val reader = AdminUser(
+            id = 2L,
+            username = MailReadOnlyPolicy.READER_USERNAME,
+            passwordHash = "hash",
+            mustChangePassword = false,
+            createdAt = LocalDateTime.now(),
+            updatedAt = LocalDateTime.now()
+        )
+        Mockito.`when`(authService.login(MailReadOnlyPolicy.READER_USERNAME, "qfuser1")).thenReturn(reader)
+
+        val result = mockMvc.perform(
+            post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"username":"user1","password":"qfuser1"}""")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.username").value(MailReadOnlyPolicy.READER_USERNAME))
+            .andExpect(jsonPath("$.mustChangePassword").value(false))
+            .andExpect(jsonPath("$.mailReadOnly").value(true))
+            .andReturn()
+
+        val session = result.request.getSession(false)
+        assertNotNull(session)
+        assertEquals(MailReadOnlyPolicy.READER_USERNAME, session?.getAttribute(AuthSessionKeys.USERNAME))
+        Mockito.verify(authService).login(MailReadOnlyPolicy.READER_USERNAME, "qfuser1")
+    }
+
+    /**
+     * 白名单之外的数据库用户（含大小写/空白变体）仍在 controller 前置拒绝，
+     * 不触碰 AuthService、不创建已认证 session（不泄露账号是否存在）。
+     */
+    @Test
+    fun `non allowlisted usernames are still rejected without touching AuthService`() {
+        listOf("op1", "Admin", "user2", "user1x").forEach { username ->
+            val result = mockMvc.perform(
+                post("/api/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"username":"$username","password":"whatever"}""")
+            )
+                .andExpect(status().isBadRequest)
+                .andExpect(jsonPath("$.message").value("用户名或密码错误"))
+                .andReturn()
+
+            val session = result.request.getSession(false)
+            assertTrue(session == null || session.getAttribute(AuthSessionKeys.USERNAME) == null)
+        }
+
+        Mockito.verifyNoInteractions(authService)
+    }
+
+    @Test
+    fun `permission exception maps to fixed 403 code instead of 500`() {
+        mockMvc.perform(get("/api/auth-denied-probe"))
+            .andExpect(status().isForbidden)
+            .andExpect(jsonPath("$.code").value(MailReadOnlyPolicy.MAIL_READ_FORBIDDEN))
+            .andExpect(jsonPath("$.message").value("无权查看该专家邮件"))
     }
 
     @Test
