@@ -70,15 +70,16 @@ class ExpertInboundNotificationService(
         return ExpertInboundNotificationSettingsResponse(setting.enabled, target != null, setting.generation, setting.updatedAt)
     }
 
-    fun enqueueBestEffort(ownerCode: String, uidValidity: Long, uid: Long) {
+    fun enqueueBestEffort(ownerCode: String, uidValidity: Long, uid: Long, folder: String = "INBOX") {
         try {
             repository.inReceiptSavepoint {
                 if (ownerCode.isBlank() || uidValidity <= 0 || uid <= 0) return@inReceiptSavepoint
-                val source = inboundRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid(ownerCode, uidValidity, uid)
+                val source = (if (folder == "INBOX") inboundRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid(ownerCode, uidValidity, uid)
+                    else inboundRepository.findByMailboxOwnerCodeAndFolderAndUidValidityAndImapUid(ownerCode, folder, uidValidity, uid))
                     ?: return@inReceiptSavepoint
                 if (source.senderAccountCode == "SIMULATOR_NOOP") return@inReceiptSavepoint
                 val contactId = source.expertContactId ?: return@inReceiptSavepoint
-                if (source.id == null || source.mailboxOwnerCode != ownerCode || source.uidValidity != uidValidity || source.imapUid != uid) return@inReceiptSavepoint
+                if (source.id == null || source.mailboxOwnerCode != ownerCode || source.folder != folder || source.uidValidity != uidValidity || source.imapUid != uid) return@inReceiptSavepoint
                 val contact = contactRepository.findById(contactId).orElse(null) ?: return@inReceiptSavepoint
                 repository.enqueue(source) { id -> message(id, source, contact.expertName) }
             }

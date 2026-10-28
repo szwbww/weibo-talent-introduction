@@ -14,6 +14,19 @@ class MailInboxCursorServiceTest {
     private val service = MailInboxCursorService(repository)
 
     @Test
+    fun `junk cursor cannot consume inbox position and stops before a failed message`() {
+        Mockito.`when`(repository.findBySenderAccountCode("sender")).thenReturn(
+            MailInboxCursor(id = 1, senderAccountCode = "sender", uidValidity = 5, lastUid = 90, updatedAt = java.time.LocalDateTime.now()))
+        assertEquals(CursorState(null, 0), service.get("sender", "Junk"))
+        service.advance("sender", 5, listOf(3, 4, 5), setOf(3, 5), 0, "Junk")
+        val saved = ArgumentCaptor.forClass(MailInboxCursor::class.java)
+        Mockito.verify(repository).save(saved.capture())
+        assertEquals("Junk", saved.value.folder)
+        assertEquals(3L, saved.value.lastUid)
+        assertEquals(90L, service.get("sender").lastUid)
+    }
+
+    @Test
     fun `initialization uses insert-only boundary including empty mailbox`() {
         service.initializeIfAbsent("sender", InboxPosition(123L, 0L))
         Mockito.verify(repository).initializeIfAbsent("sender", 123L, 0L)

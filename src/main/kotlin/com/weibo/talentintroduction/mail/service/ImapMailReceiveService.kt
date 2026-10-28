@@ -34,6 +34,29 @@ class ImapMailReceiveService(
 ) : MailReceiveService {
     private val log = LoggerFactory.getLogger(ImapMailReceiveService::class.java)
 
+    override fun listReceiveFolders(account: MailSenderAccount): List<String> {
+        val store = Session.getInstance(imapProperties(account.imapPort)).getStore("imap")
+        try {
+            store.connect(account.imapHost, account.imapPort, account.imapUsername, account.imapPassword)
+            // LIST includes unsubscribed folders; LSUB can omit folders needing recovery.
+            return (listOf("INBOX") + store.defaultFolder.list("*").filter { folder ->
+                isReceiveFolder(folder.fullName, (folder as? IMAPFolder)?.attributes?.toList().orEmpty(),
+                    folder.type and Folder.HOLDS_MESSAGES != 0, folder.separator)
+            }.map { if (it.fullName.equals("INBOX", true)) "INBOX" else it.fullName }).distinct()
+        } finally {
+            if (store.isConnected) store.close()
+        }
+    }
+
+    internal fun isReceiveFolder(name: String, attributes: List<String>, holdsMessages: Boolean, separator: Char = '/'): Boolean {
+        if (!holdsMessages) return false
+        val excludedFlags = setOf("\\noselect", "\\sent", "\\drafts", "\\outbox")
+        if (attributes.any { it.lowercase() in excludedFlags }) return false
+        val excludedNames = setOf("sent", "sentmail", "sentitems", "sentmessages", "draft", "drafts", "outbox",
+            "已发送", "已发送邮件", "发件箱", "草稿", "草稿箱")
+        return name.split(separator).none { it.lowercase().replace(Regex("[\\s_-]"), "") in excludedNames }
+    }
+
     override fun currentInboxPosition(account: MailSenderAccount): InboxPosition =
         withAccountReceiveWindow(account, readOnly = true) { folder, budget ->
             val uidFolder = folder as? UIDFolder ?: error("IMAP INBOX does not support UID lookup")
@@ -48,13 +71,20 @@ class ImapMailReceiveService(
         account: MailSenderAccount,
         afterUid: Long,
         maxMessages: Int
+    ): InboundFetchResult = fetchInboundSince(account, afterUid, maxMessages, "INBOX")
+
+    override fun fetchInboundSince(
+        account: MailSenderAccount,
+        afterUid: Long,
+        maxMessages: Int,
+        folder: String
     ): InboundFetchResult {
         require(maxMessages in 1..100) { "maxMessages must be between 1 and 100" }
         require(afterUid >= 0) { "afterUid must be non-negative" }
 
         // I-2：每次账号接收建立独立 deadline（120s 默认）；到期 watchdog forceClose 该连接，
         // 阻塞中的读立即以异常结束，finally 清理，失败由调用方记 FAILED 后继续下一账号。
-        return withAccountReceiveWindow(account) { folder, budget ->
+        return withAccountReceiveWindow(account, folderName = folder, readOnly = true) { folder, budget ->
             val uidFolder = folder as? UIDFolder
                 ?: error("IMAP INBOX does not support UID lookup")
             val uidValidity = uidFolder.uidValidity
@@ -80,7 +110,7 @@ class ImapMailReceiveService(
             budget.check()
             val messages = candidates.map { (message, uid) ->
                 budget.check()
-                convertToReceivedMail(message, account, folder.name, uidValidity, uid)
+                convertToReceivedMail(message, account, folder.fullName, uidValidity, uid)
             }
             // 连接已被 watchdog 硬关但单信转换吞掉了 IO 异常时，这里按窗口超时显式失败，
             // 绝不让「读到空正文」冒充一次成功接收。
@@ -116,7 +146,7 @@ class ImapMailReceiveService(
             val byUid = messages.associateBy { uidFolder.getUID(it) }
             val result = uids.mapNotNull { byUid[it] }.map { msg ->
                 budget.check()
-                convertToReceivedMail(msg, account, folder.name, uidFolder.uidValidity, uidFolder.getUID(msg))
+                convertToReceivedMail(msg, account, folder.fullName, uidFolder.uidValidity, uidFolder.getUID(msg))
             }
             // 与 fetchInboundSince 一致：窗口超时后的转换不得冒充成功。
             budget.check()
@@ -175,6 +205,7 @@ class ImapMailReceiveService(
     private fun <T> withAccountReceiveWindow(
         account: MailSenderAccount,
         readOnly: Boolean = false,
+        folderName: String = "INBOX",
         block: (folder: Folder, budget: AccountReceiveBudget) -> T
     ): T {
         require(properties.accountReceiveTimeoutSeconds > 0) {
@@ -183,8 +214,13 @@ class ImapMailReceiveService(
         val session = Session.getInstance(imapProperties(account.imapPort))
         val store = session.getStore("imap")
         store.connect(account.imapHost, account.imapPort, account.imapUsername, account.imapPassword)
-        val folder = store.getFolder("INBOX")
-        folder.open(if (readOnly) Folder.READ_ONLY else Folder.READ_WRITE)
+        val folder = store.getFolder(folderName)
+        try {
+            folder.open(if (readOnly) Folder.READ_ONLY else Folder.READ_WRITE)
+        } catch (e: Exception) {
+            runCatching { store.close() }
+            throw e
+        }
         val budget = AccountReceiveBudget(account.accountCode, properties.accountReceiveTimeoutSeconds)
         budget.arm {
             // 预算到点：真关闭连接，打断阻塞中的读。实测 JavaMail 1.6.x 的
@@ -290,19 +326,14 @@ class ImapMailReceiveService(
         }
     }
 
-    override fun markSeen(account: MailSenderAccount, imapUid: Long) {
-        val session = Session.getInstance(imapProperties(account.imapPort))
-        val store = session.getStore("imap")
-        store.connect(account.imapHost, account.imapPort, account.imapUsername, account.imapPassword)
+    override fun markSeen(account: MailSenderAccount, imapUid: Long) = markSeen(account, imapUid, "INBOX")
 
-        store.use { connectedStore ->
-            val inbox = connectedStore.getFolder("INBOX")
-            inbox.open(Folder.READ_WRITE)
-            inbox.use { folder ->
-                val uidFolder = folder as? UIDFolder
-                    ?: error("IMAP INBOX does not support UID lookup")
-                uidFolder.getMessageByUID(imapUid)?.setFlag(Flags.Flag.SEEN, true)
-            }
+    override fun markSeen(account: MailSenderAccount, imapUid: Long, folder: String) {
+        // close(false) is essential when reading Trash: never expunge deleted messages.
+        withAccountReceiveWindow(account, folderName = folder) { opened, budget ->
+            val uidFolder = opened as? UIDFolder ?: error("IMAP folder does not support UID lookup")
+            uidFolder.getMessageByUID(imapUid)?.setFlag(Flags.Flag.SEEN, true)
+            budget.check()
         }
     }
 
@@ -348,7 +379,9 @@ class ImapMailReceiveService(
             bodyTruncated = extracted.bodyTruncated,
             linkedMaterials = extracted.linkedMaterials,
             autoSubmitted = AutoSubmittedHeader.normalize(headers.autoSubmitted),
-            receivedAtReliable = receivedAt != null
+            receivedAtReliable = receivedAt != null,
+            folder = if (folder.equals("INBOX", true)) "INBOX" else folder,
+            sourceAccountCode = account.accountCode
         )
     }
 

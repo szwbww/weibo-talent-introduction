@@ -11,5 +11,6 @@ data class MailInboxCursor(
     val senderAccountCode: String,
     val uidValidity: Long,
     val lastUid: Long = 0,
-    val updatedAt: LocalDateTime
+    val updatedAt: LocalDateTime,
+    val folder: String = "INBOX"
 )

@@ -74,13 +74,13 @@ class ExpertInboundNotificationRepository(
         if (!setting.enabled) return null
         val owner = source.mailboxOwnerCode
         require(!owner.isNullOrBlank() && source.uidValidity > 0 && source.imapUid > 0 && source.expertContactId != null && source.id != null)
-        val existing = jdbc.query("SELECT id FROM expert_inbound_notification_outbox WHERE mailbox_owner_code=? AND uid_validity=? AND imap_uid=? FOR UPDATE",
-            { rs, _ -> rs.getLong(1) }, owner, source.uidValidity, source.imapUid).firstOrNull()
+        val existing = jdbc.query("SELECT id FROM expert_inbound_notification_outbox WHERE mailbox_owner_code=? AND folder=? AND uid_validity=? AND imap_uid=? FOR UPDATE",
+            { rs, _ -> rs.getLong(1) }, owner, source.folder, source.uidValidity, source.imapUid).firstOrNull()
         if (existing != null) return null
         val now = now()
         val keys = GeneratedKeyHolder()
         jdbc.update({ connection ->
-            connection.prepareStatement("INSERT INTO expert_inbound_notification_outbox (inbound_processing_id,expert_contact_id,mailbox_owner_code,uid_validity,imap_uid,generation,payload,next_attempt_at,created_at,updated_at) VALUES (?,?,?,?,?,?,'',?,?,?)", arrayOf("id")).apply {
+            connection.prepareStatement("INSERT INTO expert_inbound_notification_outbox (inbound_processing_id,expert_contact_id,mailbox_owner_code,uid_validity,imap_uid,generation,payload,next_attempt_at,created_at,updated_at,folder) VALUES (?,?,?,?,?,?,'',?,?,?,?)", arrayOf("id")).apply {
                 setLong(1, source.id)
                 setLong(2, source.expertContactId)
                 setString(3, owner)
@@ -90,6 +90,7 @@ class ExpertInboundNotificationRepository(
                 setObject(7, now)
                 setObject(8, now)
                 setObject(9, now)
+                setString(10, source.folder)
             }
         }, keys)
         val id = requireNotNull(keys.key).toLong()

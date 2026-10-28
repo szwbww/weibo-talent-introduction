@@ -175,4 +175,12 @@ class ExpertInboundNotificationServiceTest {
         Mockito.doThrow(IllegalStateException(url)).`when`(repository).inReceiptSavepoint(Mockito.any<() -> Unit>() ?: {})
         assertDoesNotThrow { service().enqueueBestEffort("owner", 1, 2) }
     }
+
+    @Test fun `notification lookup includes source folder and cannot pick inbox UID collision`() {
+        Mockito.doAnswer { invocation -> invocation.getArgument<() -> Unit>(0).invoke(); null }
+            .`when`(repository).inReceiptSavepoint(Mockito.any<() -> Unit>() ?: {})
+        service().enqueueBestEffort("owner", 2, 3, "Junk")
+        Mockito.verify(inbound).findByMailboxOwnerCodeAndFolderAndUidValidityAndImapUid("owner", "Junk", 2, 3)
+        Mockito.verify(inbound, Mockito.never()).findByMailboxOwnerCodeAndUidValidityAndImapUid(Mockito.anyString(), Mockito.anyLong(), Mockito.anyLong())
+    }
 }

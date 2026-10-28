@@ -28,6 +28,19 @@ import javax.mail.internet.MimeMultipart
  */
 class ImapMailReceiveServiceTest {
     private val service = ImapMailReceiveService(MailAttachmentStorageProperties(metadataOnly = false))
+
+    @Test
+    fun `incoming folders include junk archive trash and custom folders but exclude outbound content`() {
+        listOf("INBOX", "Junk", "Spam", "Archive/Experts", "Trash", "垃圾邮件", "[Gmail]/All Mail").forEach {
+            assertTrue(service.isReceiveFolder(it, emptyList(), true), it)
+        }
+        listOf("Sent Items", "INBOX/Sent", "Drafts", "已发送邮件", "Outbox").forEach {
+            assertFalse(service.isReceiveFolder(it, emptyList(), true), it)
+        }
+        assertFalse(service.isReceiveFolder("Gesendet", listOf("\\Sent"), true))
+        assertFalse(service.isReceiveFolder("Container", emptyList(), false))
+        assertFalse(service.isReceiveFolder("Container", listOf("\\Noselect"), true))
+    }
     private val metadataService = ImapMailReceiveService(
         MailAttachmentStorageProperties(metadataOnly = true)
     )

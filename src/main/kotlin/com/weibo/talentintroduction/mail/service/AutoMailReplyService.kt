@@ -112,16 +112,21 @@ class AutoMailReplyService(
         notifyGroups: Boolean = false
     ): SinglePipelineResult {
         val owner = mailSenderAccountService.resolveInboundOwner(account)
+        val source = if (received.sourceAccountCode == account.accountCode) account else owner
+        require(received.sourceAccountCode == null || received.sourceAccountCode == source.accountCode) {
+            "Received mail source does not match the receiving account"
+        }
         // I-3/I-4：外链材料只在这里并入业务资料写链（MIME 之后，保持稳定顺序），
         // self-check/bounce/DMARC 位于调用前，仍只读真实 MIME attachments。
-        val businessMail = if (received.linkedMaterials.isEmpty()) {
+        val businessMail = (if (received.linkedMaterials.isEmpty()) {
             received
         } else {
             received.copy(
                 attachments = received.attachments + received.linkedMaterials,
                 linkedMaterials = emptyList()
             )
-        }
+        }).copy(
+            recoveryOnly = received.recoveryOnly || received.folder != "INBOX" || source.accountCode != owner.accountCode)
         // I-1：新接收必须携带真实 UIDVALIDITY（0 仅历史未知）。未知远端 source
         // fail-closed——不落 processing、不 markSeen，绝不反写 0/猜测代际。
         require(businessMail.uidValidity > 0) {
@@ -135,7 +140,7 @@ class AutoMailReplyService(
         // `markSeen(owner, uid)`；批量入口据返回结果把该 UID 纳入成功集以推进 owner 游标，
         // 失败或无正数 UIDVALIDITY 时绝不确认、绝不推进游标。
         if (selfCheckProbeDetector.isSelfCheckProbe(businessMail.from, businessMail.subject, groupMembers)) {
-            if (!skipImapAck) mailReceiveService.markSeen(owner, businessMail.imapUid)
+            if (!skipImapAck) acknowledge(source, businessMail)
             log.debug(
                 "Ignored self-check probe: owner={} uid={}",
                 owner.accountCode,
@@ -149,12 +154,24 @@ class AutoMailReplyService(
         }
         // I-3：入业务事务前先查物理键（V134 唯一键是并发兜底）；已确认物理 UID 重复到达
         // 只 markSeen，绝不重跑自动回复。
-        if (physicalInboundRowExists(owner, businessMail)) {
-            if (!skipImapAck) mailReceiveService.markSeen(owner, businessMail.imapUid)
+        if (physicalInboundRowExists(source, businessMail)) {
+            if (!skipImapAck) acknowledge(source, businessMail)
             return SinglePipelineResult.duplicate(businessMail.imapUid)
         }
         val result = try {
             transactionTemplate.execute {
+                // Serialize the physical group, including unmatched senders and upstream copies.
+                inboundMailProcessingRepository.lockReceivingGroup(owner.accountCode)
+                if (physicalInboundRowExists(source, businessMail)) {
+                    return@execute SinglePipelineResult.duplicate(businessMail.imapUid)
+                }
+                val messageIds = businessMail.messageId?.trim()?.takeIf { it.isNotEmpty() }
+                    ?.let { MessageIdNormalizer.candidatesFor(it) }
+                if (!messageIds.isNullOrEmpty() && inboundMailProcessingRepository.findReceivedCopy(
+                        groupMembers.map { it.accountCode }, messageIds, businessMail.from.trim()) != null) {
+                    return@execute SinglePipelineResult(outcome = SinglePipelineOutcome.DUPLICATE_INBOUND_MESSAGE,
+                        recorded = false, reason = "DUPLICATE_INBOUND_MESSAGE")
+                }
                 // I-4/I-7：本调用局部资格上下文（不用服务字段/ThreadLocal）；回调在
                 // processSingleCore 通过原安全/首发检查、且本封尚未写入时取得首封快照。
                 var firstReplyReason: String? = null
@@ -167,37 +184,44 @@ class AutoMailReplyService(
                 }
                 // I-3/I-4：原业务流程已完整执行；仅在本封新创建且仍为 MANUAL_REVIEW 时
                 // 于同一事务末尾调整待处理归类，绝不提前 return 绕过晋级/发送/附件/通知。
-                val classified = reclassifyFirstReplyAutoResponse(owner, businessMail, firstReplyReason, processed)
+                val classified = reclassifyFirstReplyAutoResponse(source, businessMail, firstReplyReason, processed)
                 if (notifyGroups && !skipImapAck && classified.expertContactId != null &&
                     owner.accountCode != "SIMULATOR_NOOP" && account.accountCode != "SIMULATOR_NOOP" &&
                     classified.outcome != SinglePipelineOutcome.DUPLICATE_IMAP_UID &&
                     classified.outcome != SinglePipelineOutcome.DUPLICATE_INBOUND_MESSAGE) {
                     checkNotNull(inboundNotificationService) { "Expert inbound notification service is required" }
-                        .enqueueBestEffort(owner.accountCode, businessMail.uidValidity, businessMail.imapUid)
+                        .enqueueBestEffort(source.accountCode, businessMail.uidValidity, businessMail.imapUid, businessMail.folder)
                 }
                 classified
             }
         } catch (e: DataIntegrityViolationException) {
             // I-3：唯一键异常只在确实存在同一物理键时视为并发重复，其余异常向外抛。
-            if (physicalInboundRowExists(owner, businessMail)) {
-                if (!skipImapAck) mailReceiveService.markSeen(owner, businessMail.imapUid)
+            if (physicalInboundRowExists(source, businessMail)) {
+                if (!skipImapAck) acknowledge(source, businessMail)
                 return SinglePipelineResult.duplicate(businessMail.imapUid)
             }
             throw e
         } ?: error(
             "processSingle transaction produced no result: account=${owner.accountCode} uid=${businessMail.imapUid}"
         )
-        if (!skipImapAck) mailReceiveService.markSeen(owner, businessMail.imapUid)
+        if (!skipImapAck) acknowledge(source, businessMail)
         return result
     }
 
     /** I-3：物理键存在性（事务外判重与并发唯一冲突复核共用同一判据）。 */
     private fun physicalInboundRowExists(owner: MailSenderAccount, received: ReceivedMail): Boolean =
-        inboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid(
-            owner.accountCode,
-            received.uidValidity,
-            received.imapUid
-        ) != null
+        findPhysicalRow(owner, received) != null
+
+    private fun findPhysicalRow(owner: MailSenderAccount, received: ReceivedMail): InboundMailProcessing? =
+        if (received.folder == "INBOX") inboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid(
+            owner.accountCode, received.uidValidity, received.imapUid)
+        else inboundMailProcessingRepository.findByMailboxOwnerCodeAndFolderAndUidValidityAndImapUid(
+            owner.accountCode, received.folder, received.uidValidity, received.imapUid)
+
+    private fun acknowledge(account: MailSenderAccount, received: ReceivedMail) {
+        if (received.folder == "INBOX") mailReceiveService.markSeen(account, received.imapUid)
+        else mailReceiveService.markSeen(account, received.imapUid, received.folder)
+    }
 
     /**
      * I-3/I-4：仅把本封**新创建**、仍为 MANUAL_REVIEW 的 processing 行改为
@@ -217,11 +241,7 @@ class AutoMailReplyService(
             return result
         }
         // 物理键在本事务前已判重为空，因此同键行只可能是本封新行；仍以当前读确认状态。
-        val created = inboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid(
-            owner.accountCode,
-            received.uidValidity,
-            received.imapUid
-        ) ?: return result
+        val created = findPhysicalRow(owner, received) ?: return result
         if (created.processStatus != "MANUAL_REVIEW") return result
         inboundMailProcessingRepository.save(
             created.copy(
@@ -253,10 +273,11 @@ class AutoMailReplyService(
         // 同 UID 且非空 Message-ID、from、秒级 receivedAt 全部吻合才认领同一代际（视为已
         // 处理）；否则转人工 LEGACY_UID_UNVERIFIABLE，绝不回填当前代际。
         var legacyUidUnverifiable = false
-        val legacySameUid = inboundMailProcessingRepository.findLegacyOwnerlessByGroupAndImapUid(
+        val legacySameUid = if (received.folder == "INBOX" && (received.sourceAccountCode == null || received.sourceAccountCode == owner.accountCode))
+            inboundMailProcessingRepository.findLegacyOwnerlessByGroupAndImapUid(
             groupMembers.map { it.accountCode },
             received.imapUid
-        )
+        ) else emptyList()
         for (legacy in legacySameUid) {
             if (legacy.uidValidity != 0L) {
                 continue
@@ -280,6 +301,10 @@ class AutoMailReplyService(
         // I-7：已匹配专家即先锁定既有 contact 行（只锁不改），必须早于本封任何写入；
         // 未匹配路径不取锁。该锁只串行同一专家的事务，不改变原分支结果。
         contact?.id?.let { inboundAutoResponseDetector.lockContact(it) }
+        if (received.recoveryOnly) {
+            return reviewManualOnly(account, received, contact?.id, "RECOVERED_MAIL",
+                SinglePipelineOutcome.RECOVERED_MAIL)
+        }
         // I-4：正文被有界截断（03 元数据模式）→ 一律人工 BODY_TRUNCATED，禁自动回复。
         if (received.bodyTruncated) {
             return reviewManualOnly(
@@ -917,39 +942,93 @@ class AutoMailReplyService(
         onPhase: ((String) -> Unit)? = null,
         isCancelled: (() -> Boolean)? = null
     ): AutoMailReplyBatchResult {
-        val account = mailSenderAccountService.getAutoReceiveAccount(accountCode)
-        val stored = mailInboxCursorService.get(account.accountCode)
+        val owner = mailSenderAccountService.getAutoReceiveAccount(accountCode)
+        val group = groupMembersOf(owner)
+        val sources = (listOf(owner) + group.filter { it.accountCode != owner.accountCode &&
+            it.imapHost.isNotBlank() && it.imapUsername.isNotBlank() && it.imapPassword.isNotBlank() })
+            .distinctBy { Triple(it.imapHost.lowercase(), it.imapPort, it.imapUsername) }
+        val results = mutableListOf<AutoMailReplyBatchResult>()
+        val failures = mutableListOf<String>()
+        for (source in sources) {
+            if (isCancelled?.invoke() == true) break
+            val folders = try {
+                mailReceiveService.listReceiveFolders(source).ifEmpty { listOf("INBOX") }
+            } catch (e: Exception) {
+                failures.add("${source.accountCode}:LIST")
+                log.warn("Could not list receiving folders for {}", source.accountCode, e)
+                listOf("INBOX") // Still service the known inbox if folder discovery fails.
+            }
+            for (folder in folders.distinct()) {
+                if (isCancelled?.invoke() == true) break
+                try {
+                    results.add(receiveFolder(source, folder, maxMessages,
+                        folder != "INBOX" || source.accountCode != owner.accountCode, onPhase, isCancelled))
+                } catch (e: Exception) {
+                    failures.add("${source.accountCode}:$folder")
+                    log.warn("Receiving failed for account={} folder={}", source.accountCode, folder, e)
+                }
+            }
+        }
+        if (failures.isNotEmpty()) error("Some receiving folders failed; will retry: ${failures.joinToString()}")
+        return AutoMailReplyBatchResult(results.sumOf { it.fetched }, results.sumOf { it.recorded },
+            results.sumOf { it.replied }, results.sumOf { it.manualReview }, results.sumOf { it.meetingInvitations },
+            results.flatMap { it.repliedExperts })
+    }
+
+    private fun receiveFolder(
+        account: MailSenderAccount,
+        folder: String,
+        maxMessages: Int,
+        recoveryOnly: Boolean,
+        onPhase: ((String) -> Unit)?,
+        isCancelled: (() -> Boolean)?
+    ): AutoMailReplyBatchResult {
+        val stored = mailInboxCursorService.get(account.accountCode, folder)
         onPhase?.invoke(AccountAutoMailReplyPhases.READING_METADATA)
-        if (stored.uidValidity == null) {
+        if (stored.uidValidity == null && !recoveryOnly) {
             val position = mailReceiveService.currentInboxPosition(account)
             mailInboxCursorService.initializeIfAbsent(account.accountCode, position)
             log.info("Initialized inbox cursor without importing history: account={} uidValidity={} lastUid={}",
                 account.accountCode, position.uidValidity, position.lastUid)
             return AutoMailReplyBatchResult(fetched = 0, recorded = 0, replied = 0, manualReview = 0)
         }
-        var fetch = mailReceiveService.fetchInboundSince(account, stored.lastUid, maxMessages)
+        fun fetchAfter(uid: Long) = if (folder == "INBOX") mailReceiveService.fetchInboundSince(account, uid, maxMessages)
+            else mailReceiveService.fetchInboundSince(account, uid, maxMessages, folder)
+        var fetch = fetchAfter(stored.lastUid)
+        require(fetch.uidValidity > 0) { "No positive UIDVALIDITY for receiving folder" }
         var start = mailInboxCursorService.resolveStart(stored, fetch.uidValidity)
         if (start == 0L && stored.lastUid > 0L) {
             onPhase?.invoke(AccountAutoMailReplyPhases.READING_METADATA)
-            fetch = mailReceiveService.fetchInboundSince(account, 0, maxMessages)
+            fetch = fetchAfter(0)
+            require(fetch.uidValidity > 0) { "No positive UIDVALIDITY for receiving folder" }
         }
 
         var recorded = 0
         var replied = 0
         var manualReview = 0
         var meetingInvitations = 0
+        var failedMessages = 0
         val repliedExperts = mutableListOf<RepliedExpertInfo>()
         val handledUids = mutableSetOf<Long>()
         val fetchedUids = fetch.mails.map { it.imapUid }
 
         onPhase?.invoke(AccountAutoMailReplyPhases.PROCESSING_MAIL)
-        for (mail in fetch.mails) {
+        val ownAddresses = (mailSenderAccountService.listAccounts() + account).map { it.senderEmail.lowercase() }.toSet()
+        for (fetchedMail in fetch.mails) {
+            val mail = fetchedMail.copy(folder = folder,
+                sourceAccountCode = if (account.inboundMailboxCode != null) account.accountCode else fetchedMail.sourceAccountCode,
+                recoveryOnly = recoveryOnly)
             // I-2：取消只在安全边界（本封邮件尚未开始处理）停止后续邮件；不中断进行中的事务。
             if (isCancelled?.invoke() == true) {
                 log.info("Auto reply cancelled at a safe boundary for account {}", account.accountCode)
                 break
             }
             try {
+                if (mail.from.trim().lowercase() in ownAddresses) {
+                    acknowledge(account, mail)
+                    handledUids.add(mail.imapUid)
+                    continue
+                }
                 val bounceSignal = bounceDetector.detect(mail.from, mail.subject, mail.body)
                 if (bounceSignal != null) {
                     bounceCollectionService.ingest(
@@ -960,7 +1039,7 @@ class AutoMailReplyService(
                         subject = mail.subject,
                         receivedAt = mail.receivedAt
                     )
-                    mailReceiveService.markSeen(account, mail.imapUid)
+                    acknowledge(account, mail)
                     log.debug("Ingested bounce during auto-reply poll: uid={}", mail.imapUid)
                     handledUids.add(mail.imapUid)
                     continue
@@ -980,7 +1059,7 @@ class AutoMailReplyService(
                             log.warn("DMARC parse failed uid={}", mail.imapUid, e)
                         }
                     }
-                    mailReceiveService.markSeen(account, mail.imapUid)
+                    acknowledge(account, mail)
                     handledUids.add(mail.imapUid)
                     continue
                 }
@@ -1004,6 +1083,7 @@ class AutoMailReplyService(
                 if (r.outcome == SinglePipelineOutcome.MEETING_INVITED) meetingInvitations++
                 if (r.outcome in MANUAL_REVIEW_OUTCOMES) manualReview++
             } catch (e: Exception) {
+                failedMessages++
                 log.error(
                     "Failed to process inbound mail uid={} account={}",
                     mail.imapUid,
@@ -1018,10 +1098,13 @@ class AutoMailReplyService(
             currentUidValidity = fetch.uidValidity,
             fetchedUids = fetchedUids,
             handledUids = handledUids,
-            oldStart = start
+            oldStart = start,
+            folder = folder
         )
 
-        val bounceResult = bounceCollectionService.collectBounces(account, start, fetch.uidValidity)
+        val bounceResult = if (folder == "INBOX" && !recoveryOnly)
+            bounceCollectionService.collectBounces(account, start, fetch.uidValidity)
+            else BounceCollectionResult(collected = 0, skippedDuplicate = 0)
         if (bounceResult.collected > 0) {
             log.info(
                 "Collected {} bounces for account {} after auto-reply",
@@ -1034,6 +1117,8 @@ class AutoMailReplyService(
         groupMembersOf(account).map { it.accountCode }.distinct().forEach { memberCode ->
             bounceRateMonitorService.checkAndWarn(memberCode)
         }
+
+        if (failedMessages > 0) error("$failedMessages inbound messages failed; cursor retained before first failure")
 
         return AutoMailReplyBatchResult(
             fetched = fetch.mails.size,
@@ -1388,9 +1473,9 @@ class AutoMailReplyService(
         val saved = inboundMailProcessingRepository.save(
             InboundMailProcessing(
                 senderAccountCode = account.accountCode,
-                // I-3：物理 owner 由逻辑账号唯一决定（单层归属），新行必须带物理键，
-                // 唯一键 (owner, uid_validity, imap_uid) 才能约束并发重复。
-                mailboxOwnerCode = mailSenderAccountService.resolveInboundOwner(account).accountCode,
+                // 真实抓取来源优先；兼容旧 INBOX 调用才回退到逻辑账号的转发组主邮箱。
+                mailboxOwnerCode = received.sourceAccountCode ?: mailSenderAccountService.resolveInboundOwner(account).accountCode,
+                folder = received.folder,
                 uidValidity = received.uidValidity,
                 imapUid = received.imapUid,
                 messageId = received.messageId,
@@ -1445,7 +1530,8 @@ class AutoMailReplyService(
             InboundMailProcessing(
                 senderAccountCode = account.accountCode,
                 // I-3：同 confirmManualReviewWithBody —— 新行必须带物理 owner 键。
-                mailboxOwnerCode = mailSenderAccountService.resolveInboundOwner(account).accountCode,
+                mailboxOwnerCode = received.sourceAccountCode ?: mailSenderAccountService.resolveInboundOwner(account).accountCode,
+                folder = received.folder,
                 uidValidity = received.uidValidity,
                 imapUid = received.imapUid,
                 messageId = received.messageId,
@@ -1614,6 +1700,7 @@ class AutoMailReplyService(
 private const val RECIPIENT_UNRESOLVED_REASON = "RECIPIENT_UNRESOLVED"
 
 enum class SinglePipelineOutcome {
+    RECOVERED_MAIL,
     DUPLICATE_IMAP_UID,
     DUPLICATE_INBOUND_MESSAGE,
     UNMATCHED_CONTACT,
@@ -1671,6 +1758,7 @@ data class SinglePipelineResult(
 }
 
 val MANUAL_REVIEW_OUTCOMES = setOf(
+    SinglePipelineOutcome.RECOVERED_MAIL,
     SinglePipelineOutcome.UNMATCHED_CONTACT,
     SinglePipelineOutcome.INTRODUCTION_NOT_SENT,
     SinglePipelineOutcome.GLOBAL_AUTO_REPLY_DISABLED,

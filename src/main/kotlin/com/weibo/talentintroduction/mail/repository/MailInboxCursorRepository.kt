@@ -6,7 +6,10 @@ import org.springframework.data.jdbc.repository.query.Modifying
 import org.springframework.data.jdbc.repository.query.Query
 
 interface MailInboxCursorRepository : CrudRepository<MailInboxCursor, Long> {
+    @Query("SELECT * FROM mail_inbox_cursor WHERE sender_account_code = :senderAccountCode AND folder = 'INBOX'")
     fun findBySenderAccountCode(senderAccountCode: String): MailInboxCursor?
+
+    fun findBySenderAccountCodeAndFolder(senderAccountCode: String, folder: String): MailInboxCursor?
 
     @Modifying
     @Query("""

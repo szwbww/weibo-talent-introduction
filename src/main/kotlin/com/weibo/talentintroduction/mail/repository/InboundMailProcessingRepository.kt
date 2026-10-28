@@ -18,14 +18,34 @@ data class SenderAccountLastReceived(
 
 interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing, Long> {
     /**
-     * I-3：新收信的物理身份判重 —— `(mailbox_owner_code, uid_validity, imap_uid)` 是
-     * V134 的唯一物理键（并发兜底），判重一律按物理键，禁止再按逻辑账号判重。
+     * 旧调用明确限定 INBOX；其他目录使用完整物理键查询，禁止按逻辑账号判重。
      */
+    @Query("""
+        SELECT * FROM inbound_mail_processing WHERE mailbox_owner_code = :mailboxOwnerCode
+          AND uid_validity = :uidValidity AND imap_uid = :imapUid AND folder = 'INBOX'
+    """)
     fun findByMailboxOwnerCodeAndUidValidityAndImapUid(
         mailboxOwnerCode: String,
         uidValidity: Long,
         imapUid: Long
     ): InboundMailProcessing?
+
+    fun findByMailboxOwnerCodeAndFolderAndUidValidityAndImapUid(
+        mailboxOwnerCode: String, folder: String, uidValidity: Long, imapUid: Long
+    ): InboundMailProcessing?
+
+    /** 同组跨目录/原邮箱与转发副本的内容判重；空 Message-ID 由调用方跳过。 */
+    @Query("""
+        SELECT * FROM inbound_mail_processing
+         WHERE sender_account_code IN (:accountCodes) AND message_id IN (:messageIds)
+           AND BINARY message_id IN (:messageIds)
+           AND LOWER(from_email) = LOWER(:fromEmail)
+         ORDER BY id LIMIT 1
+    """)
+    fun findReceivedCopy(accountCodes: List<String>, messageIds: List<String>, fromEmail: String): InboundMailProcessing?
+
+    @Query("SELECT account_code FROM mail_sender_account WHERE account_code = :accountCode FOR UPDATE")
+    fun lockReceivingGroup(accountCode: String): String?
 
     /**
      * I-3：组内历史空 owner 行（V134 之前）的严格指纹核验候选 —— 同一物理组的任意逻辑
@@ -36,6 +56,7 @@ interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing
     @Query("""
         SELECT * FROM inbound_mail_processing
          WHERE mailbox_owner_code IS NULL
+           AND folder = 'INBOX'
            AND sender_account_code IN (:senderAccountCodes)
            AND imap_uid = :imapUid
         ORDER BY id ASC

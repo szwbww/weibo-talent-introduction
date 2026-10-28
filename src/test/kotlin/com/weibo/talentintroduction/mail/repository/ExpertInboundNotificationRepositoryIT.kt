@@ -115,6 +115,21 @@ class ExpertInboundNotificationRepositoryIT {
         assertEquals(0L,repository.setEnabled(false,"operator").generation)
     }
 
+    @Test fun `inbox and junk sharing UID each enqueue once and retain source folder`() {
+        repository.setEnabled(true, "operator")
+        enqueue(101)
+        TransactionTemplate(transactions).execute {
+            val saved = inbound.save(source(101).copy(folder = "Junk", messageId = "different-reply"))
+            repository.inReceiptSavepoint {
+                assertNotNull(repository.enqueue(saved) { "Junk reply" })
+                assertNull(repository.enqueue(saved) { "Duplicate" })
+            }
+        }
+        assertEquals(2, count())
+        assertEquals(listOf("INBOX", "Junk"), jdbc.queryForList(
+            "SELECT folder FROM expert_inbound_notification_outbox ORDER BY id", String::class.java))
+    }
+
     @Test fun `savepoint follows receipt rollback and is invisible on another connection before commit`() {
         repository.setEnabled(true,"operator")
         TransactionTemplate(transactions).execute { outer ->

@@ -179,7 +179,7 @@ class AutoMailReplyServiceTest {
             Mockito.nullable(Long::class.java)
         )).thenReturn(emptyList())
         // Existing-mailbox fixtures have already initialized an empty inbox.
-        Mockito.`when`(cursorService.get(Mockito.anyString())).thenReturn(CursorState(1L, 0L))
+        Mockito.`when`(cursorService.get(Mockito.anyString(), eqValue("INBOX"))).thenReturn(CursorState(1L, 0L))
         Mockito.`when`(
             cursorService.resolveStart(
                 anyValue(CursorState(null, 0L)),
@@ -204,6 +204,7 @@ class AutoMailReplyServiceTest {
         assertEquals(AutoMailReplyBatchResult(0, 0, 0, 0), result)
         Mockito.verify(cursorService).initializeIfAbsent("owner", InboxPosition(81L, 250L))
         Mockito.verify(receiveService).currentInboxPosition(owner)
+        Mockito.verify(receiveService).listReceiveFolders(owner)
         Mockito.verifyNoMoreInteractions(receiveService)
         Mockito.verifyNoInteractions(bounceCollectionService, deliveryService, mailRecordRepository,
             inboundMailProcessingRepository)
@@ -221,6 +222,7 @@ class AutoMailReplyServiceTest {
         Mockito.verify(cursorService).get("owner")
         Mockito.verifyNoMoreInteractions(cursorService)
         Mockito.verify(receiveService).currentInboxPosition(owner)
+        Mockito.verify(receiveService).listReceiveFolders(owner)
         Mockito.verifyNoMoreInteractions(receiveService)
     }
 
@@ -536,10 +538,7 @@ class AutoMailReplyServiceTest {
             )
         ).thenThrow(IllegalStateException("SMTP unavailable"))
 
-        val result = service.receiveAndAutoReply("sender", 5)
-
-        assertEquals(1, result.fetched)
-        assertEquals(0, result.recorded)
+        assertThrows(IllegalStateException::class.java) { service.receiveAndAutoReply("sender", 5) }
         Mockito.verify(inboundMailProcessingRepository, Mockito.never())
             .save(Mockito.any(InboundMailProcessing::class.java))
         Mockito.verify(receiveService, Mockito.never()).markSeen(account, 101)
@@ -723,6 +722,7 @@ class AutoMailReplyServiceTest {
 
     @Test
     fun `first reply with material triggers promotion and sets MATERIALS_RECEIVED`() {
+        Mockito.`when`(autoReplySettingService.isGlobalEnabled()).thenReturn(false)
         val account = account("sender")
         val contact = ExpertContact(
             id = 11,
@@ -746,7 +746,7 @@ class AutoMailReplyServiceTest {
 
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
         Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(
-            inboundFetch(listOf(reply(body = "Here are my documents")))
+            inboundFetch(listOf(reply(body = "Here are my documents", attachments = listOf(mimeAttachment()))))
         )
         Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
             .thenReturn(contact)
@@ -787,6 +787,7 @@ class AutoMailReplyServiceTest {
 
     @Test
     fun `third reply triggers promotion by reply count`() {
+        Mockito.`when`(autoReplySettingService.isGlobalEnabled()).thenReturn(false)
         val account = account("sender")
         val contact = ExpertContact(
             id = 11,
@@ -1041,7 +1042,7 @@ class AutoMailReplyServiceTest {
         val created = createdManualReview(received)
         Mockito.`when`(
             inboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid("sender", 1L, 101L)
-        ).thenReturn(null, created)
+        ).thenReturn(null, null, created)
 
         val result = service.processSingle(account, received, skipImapAck = true)
 
@@ -1080,7 +1081,7 @@ class AutoMailReplyServiceTest {
         val created = createdManualReview(received)
         Mockito.`when`(
             inboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid("sender", 1L, 101L)
-        ).thenReturn(null, created)
+        ).thenReturn(null, null, created)
 
         val result = service.processSingle(account, received, skipImapAck = true)
 
@@ -1105,7 +1106,7 @@ class AutoMailReplyServiceTest {
         assertEquals("GLOBAL_AUTO_REPLY_DISABLED", result.reason)
         Mockito.verify(inboundMailProcessingRepository, Mockito.times(1))
             .save(Mockito.any(InboundMailProcessing::class.java))
-        Mockito.verify(inboundMailProcessingRepository, Mockito.times(1))
+        Mockito.verify(inboundMailProcessingRepository, Mockito.times(2))
             .findByMailboxOwnerCodeAndUidValidityAndImapUid("sender", 1L, 101L)
     }
 
@@ -1186,7 +1187,7 @@ class AutoMailReplyServiceTest {
         val created = createdManualReview(received)
         Mockito.`when`(
             inboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid("sender", 1L, 101L)
-        ).thenReturn(null, created)
+        ).thenReturn(null, null, created)
         Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
             .thenReturn(created)
             .thenThrow(IllegalStateException("reclassification write failed"))
@@ -1211,7 +1212,7 @@ class AutoMailReplyServiceTest {
         val created = createdManualReview(received)
         Mockito.`when`(
             inboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid("sender", 1L, 101L)
-        ).thenReturn(null, created)
+        ).thenReturn(null, null, created)
         Mockito.`when`(contactRepository.findById(11L))
             .thenReturn(java.util.Optional.of(contact))
 
@@ -1239,7 +1240,7 @@ class AutoMailReplyServiceTest {
         val created = createdManualReview(received)
         Mockito.`when`(
             inboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid("sender", 1L, 101L)
-        ).thenReturn(null, created)
+        ).thenReturn(null, null, created)
 
         val results = service.processByUids("sender", listOf(101L))
 
@@ -1249,6 +1250,7 @@ class AutoMailReplyServiceTest {
 
     @Test
     fun `promotion does not override completed operator status`() {
+        Mockito.`when`(autoReplySettingService.isGlobalEnabled()).thenReturn(false)
         val account = account("sender")
         val contact = ExpertContact(
             id = 11,
@@ -1970,14 +1972,14 @@ class AutoMailReplyServiceTest {
         Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
             .thenThrow(RuntimeException("boom"))
 
-        service.receiveAndAutoReply("sender", 5)
+        assertThrows(IllegalStateException::class.java) { service.receiveAndAutoReply("sender", 5) }
 
         Mockito.verify(cursorService).advance(
             eqValue("sender"),
             eqValue(1L),
             eqValue(listOf(10L, 11L)),
             eqValue(emptySet()),
-            eqValue(0L)
+            eqValue(0L), eqValue("INBOX")
         )
     }
 
@@ -2050,9 +2052,9 @@ class AutoMailReplyServiceTest {
         assertEquals(SinglePipelineOutcome.UNMATCHED_CONTACT, first.outcome)
         assertEquals(SinglePipelineOutcome.UNMATCHED_CONTACT, second.outcome)
         // 判重查询按真实代际身份执行（I-1：绝不按 account+uid 单独判重）
-        Mockito.verify(inboundMailProcessingRepository)
+        Mockito.verify(inboundMailProcessingRepository, Mockito.times(2))
             .findByMailboxOwnerCodeAndUidValidityAndImapUid("sender", 1L, 101L)
-        Mockito.verify(inboundMailProcessingRepository)
+        Mockito.verify(inboundMailProcessingRepository, Mockito.times(2))
             .findByMailboxOwnerCodeAndUidValidityAndImapUid("sender", 2L, 101L)
         val captor = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
         Mockito.verify(inboundMailProcessingRepository, Mockito.times(2)).save(captor.capture())
@@ -2507,12 +2509,114 @@ class AutoMailReplyServiceTest {
     // ------------------------------------------------------------------
 
     /** 共享组夹具（I-1/I-2）：owner 物理账号 + alias 逻辑账号（alias 归属 owner）。 */
+    @Test
+    fun `junk recovery preserves folder and attachments and never auto replies`() {
+        val owner = account("sender")
+        val contact = introSentContact()
+        val attachment = mimeAttachment().copy(source = mimeAttachment().source!!.copy(folder = "Archive/Junk"))
+        val mail = reply(attachments = listOf(attachment)).copy(folder = "Archive/Junk", sourceAccountCode = "sender")
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias(mail.from)).thenReturn(contact)
+        val result = service.processSingle(owner, mail, notifyGroups = true)
+        assertEquals(SinglePipelineOutcome.RECOVERED_MAIL, result.outcome)
+        val row = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
+        Mockito.verify(inboundMailProcessingRepository).save(row.capture())
+        assertEquals("Archive/Junk", row.value.folder)
+        assertEquals("sender", row.value.mailboxOwnerCode)
+        assertEquals("MANUAL_REVIEW", row.value.processStatus)
+        Mockito.verify(mailAttachmentService).saveUnmatchedAttachments(999L, listOf(attachment), contact.id)
+        Mockito.verify(receiveService).markSeen(owner, mail.imapUid, "Archive/Junk")
+        Mockito.verify(inboundNotificationService).enqueueBestEffort("sender", 1, mail.imapUid, "Archive/Junk")
+        Mockito.verifyNoInteractions(deliveryService, groundedAutoReplyDecisionService)
+    }
+
+    @Test
+    fun `cross folder copy is ignored before unmatched writes and auto replies`() {
+        val owner = account("sender")
+        val mail = reply().copy(folder = "Junk")
+        Mockito.`when`(inboundMailProcessingRepository.findReceivedCopy(
+            listOf("sender"), MessageIdNormalizer.candidatesFor(mail.messageId!!), mail.from))
+            .thenReturn(processingRow(mail.imapUid))
+        assertEquals(SinglePipelineOutcome.DUPLICATE_INBOUND_MESSAGE, service.processSingle(owner, mail).outcome)
+        Mockito.verify(inboundMailProcessingRepository, Mockito.never()).save(Mockito.any(InboundMailProcessing::class.java))
+        Mockito.verify(receiveService).markSeen(owner, mail.imapUid, "Junk")
+        Mockito.verifyNoInteractions(deliveryService, mailRecordRepository)
+        val ordered = Mockito.inOrder(inboundMailProcessingRepository)
+        ordered.verify(inboundMailProcessingRepository).lockReceivingGroup("sender")
+        ordered.verify(inboundMailProcessingRepository).findReceivedCopy(
+            listOf("sender"), MessageIdNormalizer.candidatesFor(mail.messageId!!), mail.from)
+    }
+
+    @Test
+    fun `mixed archive does not import own outgoing mail as a reply`() {
+        val owner = account("sender")
+        Mockito.`when`(accountService.getAutoReceiveAccount("sender")).thenReturn(owner)
+        Mockito.`when`(receiveService.listReceiveFolders(owner)).thenReturn(listOf("All Mail"))
+        Mockito.`when`(cursorService.get("sender", "All Mail")).thenReturn(CursorState(null, 0))
+        Mockito.`when`(receiveService.fetchInboundSince(owner, 0, 5, "All Mail"))
+            .thenReturn(inboundFetch(listOf(reply(from = owner.senderEmail))))
+        val result = service.receiveAndAutoReply("sender", 5)
+        assertEquals(0, result.recorded)
+        Mockito.verifyNoInteractions(inboundMailProcessingRepository, deliveryService)
+        Mockito.verify(receiveService).markSeen(owner, 101, "All Mail")
+    }
+
+    @Test
+    fun `same UID in inbox and junk is not a physical duplicate`() {
+        val owner = account("sender")
+        val mail = reply().copy(folder = "Junk")
+        Mockito.`when`(inboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid("sender", 1, mail.imapUid))
+            .thenReturn(processingRow(mail.imapUid))
+        assertEquals(SinglePipelineOutcome.RECOVERED_MAIL, service.processSingle(owner, mail).outcome)
+        Mockito.verify(inboundMailProcessingRepository, Mockito.times(2)).findByMailboxOwnerCodeAndFolderAndUidValidityAndImapUid("sender", "Junk", 1, mail.imapUid)
+    }
+
+    @Test
+    fun `poll scans upstream mailbox even when replies never reached the forwarding owner`() {
+        val owner = account("owner")
+        val alias = account("alias").copy(inboundMailboxCode = "owner")
+        Mockito.`when`(accountService.listAccounts()).thenReturn(listOf(owner, alias))
+        Mockito.`when`(accountService.getAutoReceiveAccount("owner")).thenReturn(owner)
+        Mockito.`when`(accountService.resolveInboundOwner(alias)).thenReturn(owner)
+        Mockito.`when`(receiveService.listReceiveFolders(owner)).thenReturn(listOf("INBOX"))
+        Mockito.`when`(receiveService.listReceiveFolders(alias)).thenReturn(listOf("INBOX", "Junk"))
+        Mockito.`when`(receiveService.fetchInboundSince(owner, 0, 5)).thenReturn(inboundFetch(emptyList()))
+        Mockito.`when`(receiveService.fetchInboundSince(alias, 0, 5)).thenReturn(inboundFetch(emptyList()))
+        Mockito.`when`(cursorService.get("alias", "Junk")).thenReturn(CursorState(null, 0))
+        val mail = reply(to = listOf(alias.senderEmail))
+        Mockito.`when`(receiveService.fetchInboundSince(alias, 0, 5, "Junk")).thenReturn(inboundFetch(listOf(mail)))
+        val result = service.receiveAndAutoReply("owner", 5)
+        assertEquals(1, result.recorded)
+        assertEquals(1, result.manualReview)
+        val row = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
+        Mockito.verify(inboundMailProcessingRepository).save(row.capture())
+        assertEquals("alias", row.value.mailboxOwnerCode)
+        assertEquals("alias", row.value.senderAccountCode)
+        assertEquals("Junk", row.value.folder)
+        Mockito.verify(receiveService).markSeen(alias, mail.imapUid, "Junk")
+        Mockito.verify(cursorService).advance("alias", 1, listOf(mail.imapUid), setOf(mail.imapUid), 0, "Junk")
+        Mockito.verifyNoInteractions(deliveryService)
+    }
+
+    @Test
+    fun `failed folder does not prevent recovery from another folder and failure stays visible`() {
+        val owner = account("sender")
+        Mockito.`when`(accountService.getAutoReceiveAccount("sender")).thenReturn(owner)
+        Mockito.`when`(receiveService.listReceiveFolders(owner)).thenReturn(listOf("INBOX", "Junk"))
+        Mockito.`when`(receiveService.fetchInboundSince(owner, 0, 5)).thenThrow(IllegalStateException("unavailable"))
+        Mockito.`when`(cursorService.get("sender", "Junk")).thenReturn(CursorState(null, 0))
+        Mockito.`when`(receiveService.fetchInboundSince(owner, 0, 5, "Junk")).thenReturn(inboundFetch(listOf(reply())))
+        assertThrows(IllegalStateException::class.java) { service.receiveAndAutoReply("sender", 5) }
+        Mockito.verify(receiveService).markSeen(owner, 101, "Junk")
+        Mockito.verify(cursorService).advance("sender", 1, listOf(101), setOf(101), 0, "Junk")
+        Mockito.verify(cursorService, Mockito.never()).advance("sender", 1, listOf(101), setOf(101), 0, "INBOX")
+    }
+
     private fun sharedGroup(
         ownerCode: String = "owner",
         aliasCode: String = "alias"
     ): Pair<MailSenderAccount, MailSenderAccount> {
         val owner = account(ownerCode)
-        val alias = account(aliasCode).copy(inboundMailboxCode = ownerCode)
+        val alias = account(aliasCode).copy(inboundMailboxCode = ownerCode, imapHost = "", imapUsername = "", imapPassword = "")
         Mockito.`when`(accountService.listAccounts()).thenReturn(listOf(owner, alias))
         Mockito.`when`(accountService.getEnabledAccount(ownerCode)).thenReturn(owner)
         Mockito.`when`(accountService.getAutoReceiveAccount(aliasCode)).thenReturn(owner)
@@ -2651,7 +2755,7 @@ class AutoMailReplyServiceTest {
             anyValue(1L),
             anyValue(listOf(received.imapUid)),
             anyValue(setOf(received.imapUid)),
-            anyValue(0L)
+            anyValue(0L), eqValue("INBOX")
         )
         Mockito.verify(cursorService, Mockito.never()).get("alias")
         Mockito.verify(cursorService, Mockito.never()).advance(
@@ -2659,7 +2763,7 @@ class AutoMailReplyServiceTest {
             anyValue(0L),
             anyValue(emptyList<Long>()),
             anyValue(emptySet<Long>()),
-            anyValue(0L)
+            anyValue(0L), eqValue("INBOX")
         )
     }
 
@@ -2841,7 +2945,7 @@ class AutoMailReplyServiceTest {
         val received = reply(to = listOf(owner.senderEmail), imapUid = 41L)
         Mockito.`when`(
             inboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid("owner", 1L, 41L)
-        ).thenReturn(null, processingRow(uid = 41L))
+        ).thenReturn(null, null, processingRow(uid = 41L))
         Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
             .thenThrow(DataIntegrityViolationException("uk_inbound_mail_processing_owner_uid"))
 
@@ -2938,7 +3042,7 @@ class AutoMailReplyServiceTest {
             anyValue(0L),
             anyValue(emptyList<Long>()),
             anyValue(emptySet<Long>()),
-            anyValue(0L)
+            anyValue(0L), eqValue("INBOX")
         )
         val captor = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
         Mockito.verify(inboundMailProcessingRepository).save(captor.capture())
@@ -3024,7 +3128,7 @@ class AutoMailReplyServiceTest {
             eqValue(1L),
             eqValue(listOf(302L)),
             eqValue(setOf(302L)),
-            eqValue(0L)
+            eqValue(0L), eqValue("INBOX")
         )
         Mockito.verify(cursorService, Mockito.never()).get("alias")
     }

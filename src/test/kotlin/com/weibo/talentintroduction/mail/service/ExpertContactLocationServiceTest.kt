@@ -359,6 +359,18 @@ class ExpertContactLocationServiceTest {
     }
 
     @Test
+    fun `different folders with the same physical UID remain distinct timing samples`() {
+        contactExists(1L)
+        rows(listOf("BR" to null))
+        accounts("acc-a")
+        inboundRows(listOf(
+            inboundSample(null, localSaoPaulo("2026-09-29T14:15"), "acc-a", 7, 900),
+            inboundSample(null, localSaoPaulo("2026-09-29T16:15"), "acc-a", 7, 900).copy(folder = "Junk")
+        ))
+        assertEquals(2, service.timingAt(CONTACT_ID, NOW).recommendation!!.sampleCount)
+    }
+
+    @Test
     fun `one thousand and one rows are truncated to the newest thousand`() {
         contactExists(1L)
         rows(listOf("BR" to null))
@@ -491,7 +503,8 @@ class ExpertContactLocationServiceTest {
         val mailboxOwnerCode: String?,
         val uidValidity: Long,
         val imapUid: Long,
-        val receivedAt: LocalDateTime
+        val receivedAt: LocalDateTime,
+        val folder: String = "INBOX"
     )
 
     private fun inboundSample(
@@ -516,6 +529,7 @@ class ExpertContactLocationServiceTest {
                 val rs = Mockito.mock(ResultSet::class.java)
                 Mockito.`when`(rs.getString("message_id")).thenReturn(row.messageId)
                 Mockito.`when`(rs.getString("mailbox_owner_code")).thenReturn(row.mailboxOwnerCode)
+                Mockito.`when`(rs.getString("folder")).thenReturn(row.folder)
                 Mockito.`when`(rs.getLong("uid_validity")).thenReturn(row.uidValidity)
                 Mockito.`when`(rs.getLong("imap_uid")).thenReturn(row.imapUid)
                 Mockito.`when`(rs.getObject("received_at", LocalDateTime::class.java)).thenReturn(row.receivedAt)

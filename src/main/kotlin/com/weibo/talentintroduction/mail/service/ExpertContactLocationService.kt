@@ -221,6 +221,7 @@ class ExpertContactLocationService(
         val mailboxOwnerCode: String?,
         val uidValidity: Long,
         val imapUid: Long,
+        val folder: String,
         val receivedAt: LocalDateTime
     ) {
         /** 非空 `trim(message_id)`；空串等价于没有 message-id（不改大小写）。 */
@@ -234,13 +235,14 @@ class ExpertContactLocationService(
                 return if (owner == null || owner.isBlank() || uidValidity <= 0) {
                     null
                 } else {
-                    PhysicalIdentity(owner, uidValidity, imapUid)
+                    PhysicalIdentity(owner, folder, uidValidity, imapUid)
                 }
             }
     }
 
     private data class PhysicalIdentity(
         val mailboxOwnerCode: String,
+        val folder: String,
         val uidValidity: Long,
         val imapUid: Long
     )
@@ -251,6 +253,7 @@ class ExpertContactLocationService(
             mailboxOwnerCode = rs.getString("mailbox_owner_code"),
             uidValidity = rs.getLong("uid_validity"),
             imapUid = rs.getLong("imap_uid"),
+            folder = rs.getString("folder"),
             receivedAt = rs.getObject("received_at", LocalDateTime::class.java)
         )
     }
@@ -288,7 +291,7 @@ class ExpertContactLocationService(
          * `id` 只用于稳定排序（`received_at` 相同时的后备次序），不进入响应。
          */
         const val TIMING_SAMPLES_SQL = """
-            SELECT id, message_id, mailbox_owner_code, uid_validity, imap_uid, received_at
+            SELECT id, message_id, mailbox_owner_code, folder, uid_validity, imap_uid, received_at
             FROM inbound_mail_processing
             WHERE expert_contact_id = :contactId
               AND sender_account_code IN (:accountCodes)

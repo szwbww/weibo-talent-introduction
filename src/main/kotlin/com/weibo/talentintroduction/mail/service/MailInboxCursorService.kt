@@ -22,8 +22,9 @@ class MailInboxCursorService(
         repository.initializeIfAbsent(accountCode, position.uidValidity, position.lastUid)
     }
 
-    fun get(accountCode: String): CursorState {
-        val row = repository.findBySenderAccountCode(accountCode)
+    fun get(accountCode: String, folder: String = "INBOX"): CursorState {
+        val row = if (folder == "INBOX") repository.findBySenderAccountCode(accountCode)
+            else repository.findBySenderAccountCodeAndFolder(accountCode, folder)
         return CursorState(
             uidValidity = row?.uidValidity,
             lastUid = row?.lastUid ?: 0L
@@ -47,7 +48,8 @@ class MailInboxCursorService(
         currentUidValidity: Long,
         fetchedUids: List<Long>,
         handledUids: Set<Long>,
-        oldStart: Long
+        oldStart: Long,
+        folder: String = "INBOX"
     ) {
         if (handledUids.isEmpty() || fetchedUids.isEmpty()) {
             return
@@ -61,11 +63,13 @@ class MailInboxCursorService(
         }
 
         val now = LocalDateTime.now()
-        val existing = repository.findBySenderAccountCode(accountCode)
+        val existing = if (folder == "INBOX") repository.findBySenderAccountCode(accountCode)
+            else repository.findBySenderAccountCodeAndFolder(accountCode, folder)
         repository.save(
             if (existing == null) {
                 MailInboxCursor(
                     senderAccountCode = accountCode,
+                    folder = folder,
                     uidValidity = currentUidValidity,
                     lastUid = newLastUid,
                     updatedAt = now

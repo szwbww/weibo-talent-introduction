@@ -12,6 +12,18 @@ interface MailReceiveService {
     fun fetchByUids(account: MailSenderAccount, uids: List<Long>): List<ReceivedMail>
 
     fun markSeen(account: MailSenderAccount, imapUid: Long)
+
+    fun listReceiveFolders(account: MailSenderAccount): List<String> = listOf("INBOX")
+
+    fun fetchInboundSince(account: MailSenderAccount, afterUid: Long, maxMessages: Int, folder: String): InboundFetchResult {
+        require(folder == "INBOX")
+        return fetchInboundSince(account, afterUid, maxMessages)
+    }
+
+    fun markSeen(account: MailSenderAccount, imapUid: Long, folder: String) {
+        require(folder == "INBOX")
+        markSeen(account, imapUid)
+    }
 }
 
 data class InboxPosition(val uidValidity: Long, val lastUid: Long)
@@ -56,7 +68,12 @@ data class ReceivedMail(
      * I-2：`receivedAt` 是否来自 IMAP 实际 `receivedDate`；false 表示缺失时间后的
      * fallback（now），绝不能用于五分钟窗口判断。
      */
-    val receivedAtReliable: Boolean = false
+    val receivedAtReliable: Boolean = false,
+    val folder: String = "INBOX",
+    /** 实际登录账号，不是业务收件人或转发组主账号。 */
+    val sourceAccountCode: String? = null,
+    /** 补收不自动发信。 */
+    val recoveryOnly: Boolean = false
 )
 
 /**

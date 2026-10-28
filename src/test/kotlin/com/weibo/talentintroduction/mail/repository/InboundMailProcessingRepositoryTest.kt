@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -54,6 +55,7 @@ class InboundMailProcessingRepositoryTest {
             registry.add("spring.datasource.username") { mysql.username }
             registry.add("spring.datasource.password") { mysql.password }
             registry.add("spring.flyway.enabled") { "true" }
+            registry.add("spring.flyway.placeholder-replacement") { "false" }
         }
     }
 
@@ -62,6 +64,42 @@ class InboundMailProcessingRepositoryTest {
 
     @Autowired
     lateinit var jdbc: JdbcTemplate
+
+    @Test
+    fun `physical uniqueness includes folder and actual source while legacy rows stay inbox`() {
+        val legacyId = insertRow(900L)
+        assertEquals("INBOX", repository.findById(legacyId).get().folder)
+        val template = repository.findById(legacyId).get().copy(id = null, mailboxOwnerCode = "physical-1", uidValidity = 7)
+        val inbox = repository.save(template)
+        val junk = repository.save(template.copy(folder = "Junk"))
+        val upstream = repository.save(template.copy(mailboxOwnerCode = "physical-2"))
+        assertEquals(inbox.id, repository.findByMailboxOwnerCodeAndUidValidityAndImapUid("physical-1", 7, 900)?.id)
+        assertEquals(junk.id, repository.findByMailboxOwnerCodeAndFolderAndUidValidityAndImapUid("physical-1", "Junk", 7, 900)?.id)
+        assertEquals(upstream.id, repository.findByMailboxOwnerCodeAndUidValidityAndImapUid("physical-2", 7, 900)?.id)
+        assertThrows(org.springframework.dao.DuplicateKeyException::class.java) {
+            jdbc.update("""INSERT INTO inbound_mail_processing
+                (sender_account_code,mailbox_owner_code,folder,uid_validity,imap_uid,from_email,received_at,process_status,process_reason)
+                VALUES ('sender-1','physical-1','Junk',7,900,'expert@test.com',NOW(),'MANUAL_REVIEW','RECOVERED_MAIL')""")
+        }
+    }
+
+    @Test
+    fun `copy lookup requires same group sender and case sensitive Message-ID`() {
+        val id = insertRow(901, fromEmail = "Expert@test.com")
+        assertEquals(id, repository.findReceivedCopy(listOf("sender-1"), listOf("msg-901"), "expert@test.com")?.id)
+        assertNull(repository.findReceivedCopy(listOf("sender-2"), listOf("msg-901"), "expert@test.com"))
+        assertNull(repository.findReceivedCopy(listOf("sender-1"), listOf("MSG-901"), "expert@test.com"))
+        assertNull(repository.findReceivedCopy(listOf("sender-1"), listOf("msg-901"), "other@test.com"))
+    }
+
+    @Test
+    fun `cursor migration retains inbox boundary and permits independent case sensitive folder positions`() {
+        jdbc.update("INSERT INTO mail_inbox_cursor(sender_account_code,uid_validity,last_uid,updated_at) VALUES ('folder-test',1,80,NOW())")
+        jdbc.update("INSERT INTO mail_inbox_cursor(sender_account_code,folder,uid_validity,last_uid,updated_at) VALUES ('folder-test','Junk',1,3,NOW()),('folder-test','junk',1,4,NOW())")
+        assertEquals(80L, jdbc.queryForObject("SELECT last_uid FROM mail_inbox_cursor WHERE sender_account_code='folder-test' AND folder='INBOX'", Long::class.java))
+        assertEquals(3L, jdbc.queryForObject("SELECT last_uid FROM mail_inbox_cursor WHERE sender_account_code='folder-test' AND folder='Junk'", Long::class.java))
+        assertEquals(4L, jdbc.queryForObject("SELECT last_uid FROM mail_inbox_cursor WHERE sender_account_code='folder-test' AND folder='junk'", Long::class.java))
+    }
 
     @BeforeEach
     fun cleanUp() {

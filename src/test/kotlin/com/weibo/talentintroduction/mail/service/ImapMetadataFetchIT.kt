@@ -111,6 +111,31 @@ class ImapMetadataFetchIT {
     }
 
     @Test
+    fun `folder discovery uses LIST and includes unsubscribed receiving folders`() {
+        server.addBox("user1", "pw", 905, emptyList())
+        assertEquals(listOf("INBOX", "Archive/Junk"), service(true).listReceiveFolders(account(server.port())))
+        assertTrue(server.commandLog().any { it.contains("LIST ") })
+        assertTrue(server.commandLog().none { it.contains("LSUB ") })
+    }
+
+    @Test
+    fun `nested recovery folder is opened read only and carried into body and attachment source`() {
+        server.addBox("user1", "pw", 905L, listOf(server.mail(42, "junk reply", "Already read reply", 1)))
+        val receiver = account(server.port())
+        val client = service(true)
+        val received = client.fetchInboundSince(receiver, 0, 5, "Archive/Junk").mails.single()
+        assertEquals("Archive/Junk", received.folder)
+        assertEquals(receiver.accountCode, received.sourceAccountCode)
+        assertEquals("Archive/Junk", received.attachments.single().source!!.folder)
+        assertTrue(server.commandLog().any { it.contains("EXAMINE Archive/Junk") })
+        assertTrue(server.commandLog().none { it.contains("UNSEEN") || it.contains("STORE ") })
+        client.markSeen(receiver, 42, "Archive/Junk")
+        assertTrue(server.commandLog().any { it.contains("SELECT Archive/Junk") })
+        assertTrue(server.commandLog().any { it.contains("STORE ") && it.contains("\\Seen") })
+        assertTrue(server.commandLog().none { it.contains("EXPUNGE") })
+    }
+
+    @Test
     fun `mail after initial snapshot remains eligible while old mail is skipped`() {
         val old = server.mail(42L, "old", "old body", 0)
         server.addBox("user1", "pw", 903L, listOf(old))
@@ -724,6 +749,12 @@ class MetadataFixtureServer : AutoCloseable {
                         } else {
                             writeLine(writer, "$tag NO LOGIN failed")
                         }
+                    } else if (command.startsWith("LIST ")) {
+                        writeLine(writer, "* LIST (\\HasNoChildren) \"/\" \"INBOX\"")
+                        writeLine(writer, "* LIST (\\HasNoChildren \\Junk) \"/\" \"Archive/Junk\"")
+                        writeLine(writer, "* LIST (\\HasNoChildren \\Sent) \"/\" \"Sent\"")
+                        writeLine(writer, "* LIST (\\HasNoChildren \\Drafts) \"/\" \"Drafts\"")
+                        ok(writer, tag, "LIST completed")
                     } else if (command.startsWith("SELECT ") || command.startsWith("EXAMINE ")) {
                         val current = box
                         if (current == null) {
