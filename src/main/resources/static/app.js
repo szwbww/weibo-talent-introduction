@@ -4847,6 +4847,14 @@ function focusMailboxProcessingPanel() {
 }
 
 async function api(path, options = {}) {
+    // I-2：已知 reader 时在 fetch 前本地拦截白名单之外的请求（真实安全仍在服务端 01/02）。
+    if (typeof isMailReadOnlyMode === "function" && isMailReadOnlyMode()
+        && !isMailReadOnlyRequestAllowed(path, options)) {
+        const denied = new Error("只读模式仅允许读取已授权专家的邮件");
+        denied.status = 403;
+        denied.data = { code: "READ_ONLY_FORBIDDEN" };
+        throw denied;
+    }
     // I-7（c3）：可选有限超时 —— 新模式的状态/启动请求必须有出口，旧模式耗时请求照旧不设超时。
     const { timeoutMs, ...fetchOptions } = options;
     const controller = timeoutMs ? new AbortController() : null;
@@ -5116,12 +5124,14 @@ function bindMobileCoreNavigation() {
         menu.replaceChildren();
         $$(".nav-tabs .nav-tab[data-view]").forEach((tab) => {
             if (!Object.prototype.hasOwnProperty.call(viewMeta, tab.dataset.view)) return;
+            // S-3：reader 的手机下拉只有「收发件箱」一个业务入口。
+            if (typeof isMailReadOnlyMode === "function" && isMailReadOnlyMode() && tab.dataset.view !== "mailbox") return;
             const option = document.createElement("option");
             option.value = tab.dataset.view;
             option.textContent = viewMeta[tab.dataset.view][0];
             menu.appendChild(option);
         });
-        menu.value = state.view;
+        menu.value = typeof isMailReadOnlyMode === "function" && isMailReadOnlyMode() ? "mailbox" : state.view;
         menu.addEventListener("change", () => navigateFromCoreMenu(menu.value));
     }
     $("#mobileContactsBack")?.addEventListener("click", returnToMobileContactsList);
@@ -5208,6 +5218,8 @@ function flushMailboxChatDrafts() {
 }
 
 function setView(view) {
+    // I-1：reader 只能停留在收发件箱，任何 tab/任务钻取都不能切换业务视图。
+    if (typeof isMailReadOnlyMode === "function" && isMailReadOnlyMode() && view !== "mailbox") return;
     if (!Object.prototype.hasOwnProperty.call(viewMeta, view)) return;
     const sequence = setView.draftNavigationSequence = (setView.draftNavigationSequence || 0) + 1;
     const applyView = () => {
@@ -5281,6 +5293,12 @@ function setView(view) {
 }
 
 async function refreshCurrentView() {
+    // I-2：reader 只刷新独立只读模块，绝不触发账号/任务/群推/自动回复等旧视图加载。
+    if (typeof isMailReadOnlyMode === "function" && isMailReadOnlyMode()) {
+        const handle = mailReadOnlyState().handle;
+        if (handle && typeof handle.refresh === "function") await handle.refresh();
+        return;
+    }
     try {
         if (state.view === "accounts") await loadAccounts();
         if (state.view === "mail-templates") await loadMailTemplatesView();
@@ -17160,6 +17178,8 @@ async function refreshUnmatchedBadge() {
 }
 
 function updateUnmatchedBadge(counts, total) {
+    // I-2：reader 不读取待处理工单计数（该入口在 S-2 中不可见）。
+    if (typeof isMailReadOnlyMode === "function" && isMailReadOnlyMode()) return;
     if (!counts) {
         return refreshUnmatchedBadge();
     }
@@ -20662,6 +20682,8 @@ function invalidateMailboxGroupPush() {
 }
 
 async function refreshMailboxGroupPush() {
+    // I-2：reader 无群推设置，visibility/focus 触发的群推请求必须早退。
+    if (typeof isMailReadOnlyMode === "function" && isMailReadOnlyMode()) return;
     if (state.view !== "mailbox" || !appStarted) return;
     const push = mailboxGroupPushState;
     // A refresh during a save must wait for its outcome, not race the write.
@@ -20743,6 +20765,8 @@ function initMailboxGroupPush() {
 }
 
 async function refreshAutoReplySummary() {
+    // I-2：reader 不读取自动回复汇总（无该按钮，也不参与任何写路径）。
+    if (typeof isMailReadOnlyMode === "function" && isMailReadOnlyMode()) return;
     const btn = $("#bulkAutoReplyBtn");
     if (!btn) return;
     try {
@@ -21048,7 +21072,151 @@ function initLayoutResizer() {
 
 let appStarted = false;
 
-function startAuthenticatedApp(username) {
+const MAIL_READ_ONLY_USERNAME = "user1";
+const MAIL_READ_ONLY_COPY = {
+    identityError: "权限信息异常，请重新登录",
+    moduleError: "只读邮件视图加载失败，请刷新"
+};
+
+// I-1/I-2：reader 状态只存在于本页内存（active/username/handle），不写任何 Storage。
+function mailReadOnlyState() {
+    if (!state.mailReadOnly) {
+        state.mailReadOnly = { active: false, username: null, handle: null };
+    }
+    return state.mailReadOnly;
+}
+
+function isMailReadOnlyMode() {
+    return mailReadOnlyState().active === true;
+}
+
+// I-2：已知 reader 时只允许两条会话 GET 与 auth login/me/logout，其余请求在 fetch 前拒绝。
+function isMailReadOnlyRequestAllowed(path, options) {
+    const raw = String(path ?? "");
+    const normalized = raw.split("?")[0];
+    const method = String((options && options.method) || "GET").toUpperCase();
+    if (method === "GET" && normalized === "/api/auth/me") return true;
+    if (method === "POST" && (normalized === "/api/auth/login" || normalized === "/api/auth/logout")) return true;
+    if (method !== "GET") return false;
+    if (normalized === "/api/mail/mailbox/conversations") return true;
+    return /^\/api\/mail\/mailbox\/conversations\/[^/]+\/messages$/.test(normalized);
+}
+
+function showMailReadOnlyIdentityError() {
+    $("#loginOverlay").hidden = false;
+    $("#changePasswordOverlay").hidden = true;
+    const errDiv = $("#loginError");
+    if (errDiv) {
+        errDiv.textContent = MAIL_READ_ONLY_COPY.identityError;
+        errDiv.hidden = false;
+    }
+}
+
+// S-3：复用既有应用壳 —— 只留「收发件箱」，重建手机下拉，标记 body 与正文面板标题。
+function applyMailReadOnlyShell() {
+    const body = document.body;
+    if (body && body.dataset) body.dataset.mailReadOnly = "true";
+    else if (body && typeof body.setAttribute === "function") body.setAttribute("data-mail-read-only", "true");
+    const mailboxView = document.getElementById("view-mailbox");
+    if (mailboxView && mailboxView.classList) mailboxView.classList.add("mc-refined");
+    $$(".nav-tab").forEach((tab) => {
+        if (!tab.classList) return;
+        const isMailbox = Boolean(tab.dataset) && tab.dataset.view === "mailbox";
+        tab.classList.toggle("active", isMailbox);
+    });
+    $$(".view").forEach((section) => {
+        if (!section.classList) return;
+        section.classList.toggle("active", section.id === "view-mailbox");
+    });
+    const panelTitle = document.querySelector("#mailboxConversationPanel > .panel-head h2");
+    if (panelTitle) panelTitle.textContent = "收发邮件 · 只读";
+    const menu = document.getElementById("mobileCoreView");
+    if (!menu) return;
+    if (typeof menu.replaceChildren === "function") menu.replaceChildren();
+    else menu.innerHTML = "";
+    if (typeof document.createElement !== "function") return;
+    const option = document.createElement("option");
+    option.value = "mailbox";
+    option.textContent = "收发件箱";
+    menu.appendChild(option);
+    menu.value = "mailbox";
+}
+
+function renderMailReadOnlyLoadError(host, message) {
+    if (!host) return;
+    if (typeof document.createElement !== "function" || typeof host.replaceChildren !== "function") {
+        host.textContent = message;
+        return;
+    }
+    const node = document.createElement("p");
+    node.className = "mc-error";
+    node.setAttribute("role", "alert");
+    node.textContent = message;
+    host.replaceChildren(node);
+}
+
+// I-2：模块缺失只显示固定错误，绝不回退到 MailboxChat/旧账号表格。
+function startMailReadOnlyApp(username) {
+    const readerState = mailReadOnlyState();
+    readerState.active = true;
+    readerState.username = username;
+    readerState.handle = null;
+    state.view = "mailbox";
+    applyMailReadOnlyShell();
+    const host = $("#mailboxList");
+    const module = typeof window !== "undefined" && window.MailboxReadOnly ? window.MailboxReadOnly : null;
+    if (!module || typeof module.mount !== "function") {
+        renderMailReadOnlyLoadError(host, MAIL_READ_ONLY_COPY.moduleError);
+        return;
+    }
+    let handle = null;
+    try {
+        handle = module.mount(host, { api, sessionUser: { username } });
+    } catch (error) {
+        handle = null;
+    }
+    if (!handle) {
+        renderMailReadOnlyLoadError(host, MAIL_READ_ONLY_COPY.moduleError);
+        return;
+    }
+    readerState.handle = handle;
+}
+
+// I-3：注销/停止时立即拆模块（abort 在途请求、清正文与监听）。
+function releaseMailReadOnly() {
+    const readerState = state.mailReadOnly;
+    if (!readerState) return;
+    try {
+        if (readerState.handle && typeof readerState.handle.unmount === "function") readerState.handle.unmount();
+        else if (readerState.active && typeof window !== "undefined" && window.MailboxReadOnly
+            && typeof window.MailboxReadOnly.unmount === "function") {
+            window.MailboxReadOnly.unmount($("#mailboxList"));
+        }
+    } catch (error) {
+        // 清理失败无后续影响：页面随后隐藏或重载。
+    }
+    readerState.active = false;
+    readerState.username = null;
+    readerState.handle = null;
+    const body = document.body;
+    if (body && body.dataset) delete body.dataset.mailReadOnly;
+}
+
+function startAuthenticatedApp(username, mailReadOnly) {
+    const reader = username === MAIL_READ_ONLY_USERNAME;
+    // I-1：固定 user1 的元数据缺失或不为 true 时不得进入 admin 分支。
+    if (reader && mailReadOnly !== true) {
+        stopAuthenticatedApp();
+        showMailReadOnlyIdentityError();
+        return;
+    }
+    // I-3：身份变化整页重载，禁止沿用上一身份的内存状态（正文/草稿/游标）。
+    const identity = (reader ? "reader:" : "admin:") + String(username ?? "");
+    if (state.authIdentity && state.authIdentity !== identity) {
+        location.reload();
+        return;
+    }
+    state.authIdentity = identity;
     $("#loginOverlay").hidden = true;
     $("#changePasswordOverlay").hidden = true;
     const userDisplay = $("#currentUserDisplay");
@@ -21058,6 +21226,12 @@ function startAuthenticatedApp(username) {
     const shell = $(".app-shell");
     if (shell) {
         shell.style.display = "grid";
+    }
+    if (reader) {
+        // 变量/徽标/任务/群推等 admin 启动链一律不执行。
+        appStarted = true;
+        startMailReadOnlyApp(username);
+        return;
     }
     if (!appStarted) {
         appStarted = true;
@@ -21082,6 +21256,8 @@ function stopAuthenticatedApp() {
     // 最前停止观察器：之后到达的 active/详情响应一律失效（I-5）。
     stopTaskActivityPolling();
     if (typeof invalidateMailboxGroupPush === "function") invalidateMailboxGroupPush();
+    // I-3：reader 模块立即卸载 —— 在途正文请求作废，正文与 cursor 清空。
+    releaseMailReadOnly();
     appStarted = false;
     const shell = $(".app-shell");
     if (shell) {
@@ -21121,7 +21297,7 @@ async function checkAuth() {
                 $("#changePasswordOverlay").hidden = false;
                 $("#loginOverlay").hidden = true;
             } else {
-                startAuthenticatedApp(res.username);
+                startAuthenticatedApp(res.username, res.mailReadOnly);
             }
         } else {
             stopAuthenticatedApp();
@@ -21161,7 +21337,7 @@ function bindAuthEvents() {
                 $("#changePasswordOverlay").hidden = false;
                 $("#changePasswordError").hidden = true;
             } else {
-                startAuthenticatedApp(res.username);
+                startAuthenticatedApp(res.username, res.mailReadOnly);
             }
         } catch (err) {
             errDiv.textContent = err.message || "登录失败，请检查用户名或密码";
@@ -21210,11 +21386,14 @@ function bindAuthEvents() {
 
     $("#logoutBtn")?.addEventListener("click", async () => {
         setView.draftNavigationSequence = (setView.draftNavigationSequence || 0) + 1;
-        try {
-            await flushMailboxChatDrafts();
-        } catch (error) {
-            showStatus(error.message || "保存失败，内容尚未同步到服务器", "error");
-            return;
+        // I-2：reader 没有草稿写路径，注销只发独立 auth POST，不触碰旧 chat 草稿 flush。
+        if (typeof isMailReadOnlyMode !== "function" || !isMailReadOnlyMode()) {
+            try {
+                await flushMailboxChatDrafts();
+            } catch (error) {
+                showStatus(error.message || "保存失败，内容尚未同步到服务器", "error");
+                return;
+            }
         }
         try {
             await api("/api/auth/logout", { method: "POST" });
@@ -21825,6 +22004,8 @@ function mcHostGetSenderName(accountCode) {
 }
 
 async function loadMailboxAccounts() {
+    // I-2：reader 不加载发件账号（无该筛选、无账号资料）。
+    if (typeof isMailReadOnlyMode === "function" && isMailReadOnlyMode()) return;
     if (state.mailbox.accountsLoaded) return;
     try {
         const accounts = await api("/api/mail/sender-accounts");
@@ -21841,6 +22022,12 @@ async function loadMailboxAccounts() {
 }
 
 async function loadMailbox() {
+    // I-2：reader 的收发件箱只有独立只读模块；绝不进入账号/旧表格/MailboxChat 分支。
+    if (typeof isMailReadOnlyMode === "function" && isMailReadOnlyMode()) {
+        const handle = mailReadOnlyState().handle;
+        if (handle && typeof handle.refresh === "function") await handle.refresh();
+        return;
+    }
     await loadMailboxAccounts();
     syncMailboxViewModeControls();
 

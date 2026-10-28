@@ -37,7 +37,7 @@ const ALL_ASSETS = [...CSS_ORDER, ...JS_ORDER];
 describe("T3: 11 个带版本资源统一键与注册（I-1/S-1）", () => {
     it(`恰好 11 个带 ?v= 资源且全部等于 ${CACHE_KEY}，无旧键残留`, () => {
         const keys = [...html.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
-        assert.strictEqual(keys.length, 18, `index.html 必须恰好注册 18 个带版本资源，实际 ${keys.length}`);
+        assert.strictEqual(keys.length, 19, `index.html 必须恰好注册 19 个带版本资源，实际 ${keys.length}`);
         assert.ok(keys.every((key) => key === CACHE_KEY), `全部键必须等于 ${CACHE_KEY}: ${keys}`);
         assert.ok(html.indexOf("discovery-recheck.js?v=") < html.indexOf("app.js?v="), "重审组件必须先于宿主");
         assert.ok(!html.includes("20260910-mailbox-spacing"),
@@ -51,13 +51,13 @@ describe("T3: 11 个带版本资源统一键与注册（I-1/S-1）", () => {
         let match;
         while ((match = linkRe.exec(html)) !== null) refs.push({ tag: "link", name: match[1] });
         while ((match = scriptRe.exec(html)) !== null) refs.push({ tag: "script", name: match[1] });
-        assert.strictEqual(refs.length, 18, "link+script 带版本注册行合计必须为 18");
+        assert.strictEqual(refs.length, 19, "link+script 带版本注册行合计必须为 19");
         for (const asset of ALL_ASSETS) {
             const hits = refs.filter((ref) => ref.name === asset).length;
             assert.strictEqual(hits, 1, `${asset} 必须恰好注册 1 次，实际 ${hits}`);
         }
         // 无重名：11 个名字互不重复
-        assert.strictEqual(new Set(refs.map((ref) => ref.name)).size, 18,
+        assert.strictEqual(new Set(refs.map((ref) => ref.name)).size, 19,
             "注册资源名不得重复");
     });
 

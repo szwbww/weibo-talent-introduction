@@ -88,7 +88,7 @@ test('exact approved HTML/CSS contract, real IDs and asset keys', () => {
     const blocks = [...plan.matchAll(/```html\n([\s\S]*?)\n```/g)].map(m => m[1]);
     for (const i of [0, 3, 5]) assert.ok(html.includes(i === 0 ? blocks[i].split('\n').slice(1).join('\n') : blocks[i]));
     assert.ok(app.includes(blocks[1]));
-    assert.equal((html.match(/\?v=/g) || []).length, 18);
+    assert.equal((html.match(/\?v=/g) || []).length, 19);
     assert.ok(!source.includes('localStorage')); assert.ok(!source.includes('innerHTML')); assert.ok(!source.includes('style.'));
 });
 
