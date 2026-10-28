@@ -29,7 +29,8 @@ class AuthController(
         if (username.isNullOrBlank() || password.isNullOrBlank()) {
             throw IllegalArgumentException("用户名或密码错误")
         }
-        if (username != "admin") {
+        // I-2：登录只对两个内置身份开放（trim 后精确匹配），其余 DB 用户一律拒绝。
+        if (username != MailReadOnlyPolicy.ADMIN_USERNAME && username != MailReadOnlyPolicy.READER_USERNAME) {
             throw IllegalArgumentException("用户名或密码错误")
         }
 

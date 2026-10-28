@@ -180,18 +180,57 @@ class AuthControllerMvcTest {
     }
 
     /**
-     * 本步仍只允许 admin 登录：user1 账号尚未创建，登录在 controller 前置拒绝且
-     * 不触碰 AuthService（不泄露账号是否存在）。
+     * I-2：本步开放 user1 登录。白名单只到 admin/user1，验证仍由 AuthService 完成；
+     * 回包的 mailReadOnly 由服务端 policy 派生（不是前端角色）。
      */
     @Test
-    fun `reader login is still rejected with generic credential error`() {
-        mockMvc.perform(
+    fun `reader login is accepted when AuthService validates it`() {
+        val reader = AdminUser(
+            id = 2L,
+            username = MailReadOnlyPolicy.READER_USERNAME,
+            passwordHash = "hash",
+            mustChangePassword = false,
+            createdAt = LocalDateTime.now(),
+            updatedAt = LocalDateTime.now()
+        )
+        Mockito.`when`(authService.login(MailReadOnlyPolicy.READER_USERNAME, "qfuser1")).thenReturn(reader)
+
+        val result = mockMvc.perform(
             post("/api/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""{"username":"user1","password":"qfuser1"}""")
         )
-            .andExpect(status().isBadRequest)
-            .andExpect(jsonPath("$.message").value("用户名或密码错误"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.username").value(MailReadOnlyPolicy.READER_USERNAME))
+            .andExpect(jsonPath("$.mustChangePassword").value(false))
+            .andExpect(jsonPath("$.mailReadOnly").value(true))
+            .andReturn()
+
+        val session = result.request.getSession(false)
+        assertNotNull(session)
+        assertEquals(MailReadOnlyPolicy.READER_USERNAME, session?.getAttribute(AuthSessionKeys.USERNAME))
+        Mockito.verify(authService).login(MailReadOnlyPolicy.READER_USERNAME, "qfuser1")
+    }
+
+    /**
+     * 白名单之外的数据库用户（含大小写/空白变体）仍在 controller 前置拒绝，
+     * 不触碰 AuthService、不创建已认证 session（不泄露账号是否存在）。
+     */
+    @Test
+    fun `non allowlisted usernames are still rejected without touching AuthService`() {
+        listOf("op1", "Admin", "user2", "user1x").forEach { username ->
+            val result = mockMvc.perform(
+                post("/api/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"username":"$username","password":"whatever"}""")
+            )
+                .andExpect(status().isBadRequest)
+                .andExpect(jsonPath("$.message").value("用户名或密码错误"))
+                .andReturn()
+
+            val session = result.request.getSession(false)
+            assertTrue(session == null || session.getAttribute(AuthSessionKeys.USERNAME) == null)
+        }
 
         Mockito.verifyNoInteractions(authService)
     }
