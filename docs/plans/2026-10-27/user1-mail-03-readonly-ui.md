@@ -181,3 +181,14 @@ body[data-mail-read-only="true"] .mail-chat .mc-person {
 - 操作步骤: 1. admin查看材料并保存草稿。2. 登出换user1。3. 返回admin并打开原草稿。4. 删除/阻断新脚本后看reader。
 - 预期结果: admin原功能保留；user1无旧admin正文/草稿和额外tab；admin草稿仍可恢复；reader脚本缺失只显示加载失败，不出现旧管理列表。
 - 覆盖: I-1/I-3/I-5；S-2/S-3。
+
+
+## 修正记录
+
+### 2026-10-29：用户明确要求 user1 专家身份仅显示姓名
+
+- 授权依据：本会话用户要求“user1 用户端目前不要展示专家的邮箱，只显示姓名”，并指定直接修改 main、不发布上线。
+- 覆盖原 I-4 / S-1 的身份展示约定：删除只读列表卡片的邮箱行及会话头部邮箱节点；姓名为空/null/纯空白时显示“未填写姓名”，不得用邮箱兜底。搜索提示改为“搜索专家姓名”；继续使用现有 q 查询，不修改服务端搜索语义。邮件主题/正文不改写，此项是身份展示调整，不是对邮件内容或 API 的邮箱脱敏。
+- 本次实施范围仅 mailbox-readonly.js、index.html、mailboxReadOnly.test.js。复用现有姓名/主题样式，不新增 CSS；同步现有 DOM 断言并验证缺名场景不回显邮箱。
+- I-5 缓存键采用当前格式统一升级为 `20261029-user1-mail-access`，保留全部静态资源及原有顺序；不修改管理员 MailboxChat、后端 API、权限数据、数据库或线上部署。
+- 本次验证范围：只读模块语法、姓名/缺名渲染、现有前端回归及资源版本一致性。运行 `node --check src/main/resources/static/mailbox-readonly.js` 与 `node --test src/test/js/*.test.js`；不重新执行未改动的后端迁移/鉴权集成测试。本次机器验证不重新声明整个原计划验收完成，人工 UI 验收仍待进行。

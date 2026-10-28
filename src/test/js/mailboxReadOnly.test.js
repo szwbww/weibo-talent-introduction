@@ -297,7 +297,7 @@ describe("S-1 DOM 骨架（真实模块渲染）", () => {
         const input = searchRow.children.find((child) => child.tagName === "INPUT");
         assert.strictEqual(input.getAttribute("type"), "search");
         assert.strictEqual(input.getAttribute("aria-label"), "搜索已授权专家");
-        assert.strictEqual(input.getAttribute("placeholder"), "搜索姓名或邮箱");
+        assert.strictEqual(input.getAttribute("placeholder"), "搜索专家姓名");
         assert.ok(byAction(tools, "search"));
         assert.ok(byAction(tools, "refresh"));
         assert.strictEqual(findOne(tools, "mc-note").textContent, "只读：仅显示管理员授权的专家邮件");
@@ -313,8 +313,9 @@ describe("S-1 DOM 骨架（真实模块渲染）", () => {
         const smalls = main.children.filter((child) => child.tagName === "SMALL");
         assert.strictEqual(main.children[0].tagName, "STRONG");
         assert.strictEqual(main.children[0].textContent, "张教授");
-        assert.strictEqual(smalls[0].textContent, "zhang@example.edu");
-        assert.strictEqual(smalls[1].textContent, "Re: 合作邀请");
+        assert.strictEqual(smalls.length, 1);
+        assert.strictEqual(smalls[0].textContent, "Re: 合作邀请");
+        assert.ok(!main.textContent.includes(EXPERT_A.email));
 
         const pager = findOne(aside, "mc-pager");
         assert.strictEqual(byAction(pager, "previous").textContent, "上一页");
@@ -329,7 +330,7 @@ describe("S-1 DOM 骨架（真实模块渲染）", () => {
         const header = findOne(conversation, "mc-header");
         const identity = findOne(header, "mc-identity");
         assert.strictEqual(identity.children[0].tagName, "H2");
-        assert.strictEqual(identity.children[1].tagName, "P");
+        assert.strictEqual(identity.children.length, 1);
         assert.strictEqual(findOne(header, "mc-badge").textContent, "只读");
         const scroll = findOne(conversation, "mc-scroll");
         assert.strictEqual(findOne(scroll, "mc-empty").textContent, "请选择左侧专家");
@@ -371,6 +372,10 @@ describe("S-1 DOM 骨架（真实模块渲染）", () => {
 
         const detailCall = harness.calls.find((call) => call.path.includes("/messages"));
         assert.strictEqual(detailCall.path, `${LIST_PATH}/7/messages?limit=50`);
+        const identity = findOne(harness.root, "mc-identity");
+        assert.strictEqual(identity.children.length, 1);
+        assert.strictEqual(identity.textContent, "张教授");
+        assert.ok(!harness.root.textContent.includes(EXPERT_A.email));
 
         const scroll = findOne(harness.root, "mc-scroll");
         const timeline = findOne(scroll, "mc-timeline");
@@ -399,6 +404,22 @@ describe("S-1 DOM 骨架（真实模块渲染）", () => {
 });
 
 describe("I-4 文本渲染安全", () => {
+    it("姓名缺失或空白时列表和头部不以邮箱兜底", async () => {
+        for (const name of [null, undefined, "", "   "]) {
+            const harness = createHarness();
+            harness.responder = async (requestPath) => requestPath.startsWith(`${LIST_PATH}?`)
+                ? listResponse([{ ...EXPERT_A, name }]) : detailResponse([]);
+            harness.mount();
+            await flush();
+            assert.strictEqual(findOne(harness.root, "mc-person-main").children[0].textContent, "未填写姓名");
+            clickAction(harness, "select-expert");
+            await flush();
+            assert.strictEqual(findOne(harness.root, "mc-identity").textContent, "未填写姓名");
+            assert.ok(!harness.root.textContent.includes(EXPERT_A.email));
+            harness.handle.unmount();
+        }
+    });
+
     it("含 img/script/链接的样本只作为文本，不产生子元素或属性", async () => {
         const harness = createHarness();
         const evil = '<img src="https://evil.example/x.png" onerror="alert(1)"><script>alert(2)</script> https://evil.example/link';

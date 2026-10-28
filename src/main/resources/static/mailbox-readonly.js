@@ -146,7 +146,7 @@
         var searchInput = makeNode(doc, "input");
         searchInput.setAttribute("type", "search");
         searchInput.setAttribute("aria-label", "搜索已授权专家");
-        searchInput.setAttribute("placeholder", "搜索姓名或邮箱");
+        searchInput.setAttribute("placeholder", "搜索专家姓名");
         var searchButton = buttonNode(doc, "search", "搜索");
         searchRow.appendChild(searchInput);
         searchRow.appendChild(searchButton);
@@ -178,9 +178,7 @@
         var header = makeNode(doc, "header", "mc-header");
         var identity = makeNode(doc, "div", "mc-identity");
         var identityName = makeNode(doc, "h2");
-        var identityEmail = makeNode(doc, "p");
         identity.appendChild(identityName);
-        identity.appendChild(identityEmail);
         var readOnlyBadge = makeNode(doc, "span", "mc-badge");
         setText(readOnlyBadge, "只读");
         header.appendChild(identity);
@@ -273,13 +271,10 @@
                 main.dataset.action = "select-expert";
                 main.dataset.contactId = String(item.contactId);
                 var name = makeNode(doc, "strong");
-                setText(name, item.name || item.email || "");
-                var email = makeNode(doc, "small");
-                setText(email, item.email || "");
+                setText(name, (item.name || "").trim() || "未填写姓名");
                 var subject = makeNode(doc, "small");
                 setText(subject, latestSubject(item));
                 main.appendChild(name);
-                main.appendChild(email);
                 main.appendChild(subject);
                 person.appendChild(main);
                 expertList.appendChild(person);
@@ -295,8 +290,7 @@
 
         // ---- 会话渲染 --------------------------------------------------------------
         function renderIdentity() {
-            setText(identityName, selected ? (selected.name || selected.email || "") : "");
-            setText(identityEmail, selected ? (selected.email || "") : "");
+            setText(identityName, selected ? ((selected.name || "").trim() || "未填写姓名") : "");
         }
 
         function renderConversation() {
@@ -462,8 +456,7 @@
             });
             selected = {
                 contactId: contactId,
-                name: item ? (item.name || "") : "",
-                email: item ? (item.email || "") : ""
+                name: item ? (item.name || "") : ""
             };
             detailSeq += 1;
             clearDetailBody();
