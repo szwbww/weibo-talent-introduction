@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.discovery.archive.PaperBodyComputation
 import com.weibo.talentintroduction.discovery.archive.PaperEvidenceStatus
 import java.util.LinkedHashMap
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
 
 internal data class PaperComputationKey(val verifiedSha: String, val kind: ArchiveAttemptKind,
@@ -43,7 +44,10 @@ internal class PaperBodyComputationCache(private val mapper: ObjectMapper,
             try {
                 return try { decode(active.get()) }
                 catch (error: ExecutionException) { throw (error.cause ?: error) }
-                catch (error: InterruptedException) { Thread.currentThread().interrupt(); throw error }
+                catch (error: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw CancellationException("Paper computation wait interrupted").apply { initCause(error) }
+                }
             }
             finally { synchronized(lock) { participants-- } }
         }

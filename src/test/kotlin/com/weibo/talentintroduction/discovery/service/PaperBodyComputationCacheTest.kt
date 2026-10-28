@@ -8,6 +8,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
@@ -98,6 +99,7 @@ class PaperBodyComputationCacheTest {
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
         val count = AtomicInteger()
+        val waiterInterrupted = java.util.concurrent.atomic.AtomicBoolean()
         val pool = Executors.newSingleThreadExecutor()
         try {
             val owner = pool.submit<PaperBodyComputation> { cache.getOrCompute(key()) {
@@ -107,7 +109,7 @@ class PaperBodyComputationCacheTest {
             val failure = AtomicReference<Throwable?>()
             val waiter = Thread {
                 try { cache.getOrCompute(key()) { count.incrementAndGet(); value() } }
-                catch (error: Throwable) { failure.set(error) }
+                catch (error: Throwable) { failure.set(error); waiterInterrupted.set(Thread.currentThread().isInterrupted) }
             }
             waiter.start()
             val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
@@ -115,7 +117,9 @@ class PaperBodyComputationCacheTest {
             assertEquals(Thread.State.WAITING,waiter.state)
             waiter.interrupt(); waiter.join(5000)
             assertFalse(waiter.isAlive)
-            assertTrue(failure.get() is InterruptedException)
+            assertTrue(failure.get() is CancellationException)
+            assertTrue(failure.get()?.cause is InterruptedException)
+            assertTrue(waiterInterrupted.get())
             release.countDown(); owner.get(5,TimeUnit.SECONDS)
             cache.getOrCompute(key()) { count.incrementAndGet(); value() }
             assertEquals(1,count.get())

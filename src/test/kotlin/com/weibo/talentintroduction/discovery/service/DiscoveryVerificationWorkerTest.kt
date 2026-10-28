@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.discovery.service
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import com.weibo.talentintroduction.config.DiscoveryVerificationProperties
+import com.weibo.talentintroduction.discovery.archive.*
 import com.weibo.talentintroduction.discovery.domain.*
 import com.weibo.talentintroduction.discovery.repository.DiscoveryVerificationRepository
 import org.junit.jupiter.api.Assertions.*
@@ -11,6 +12,78 @@ import org.mockito.Mockito
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 
 class DiscoveryVerificationWorkerTest {
+    @Test fun `interrupted paper cache follower keeps lease resumable and owner completes`() {
+        check(org.testcontainers.DockerClientFactory.instance().isDockerAvailable) { "Isolated Docker MySQL is required" }
+        DiagnosticMysql().withDatabaseName("paper_cancel").withUsername("test").withPassword("test")
+            .withCommand("--log-bin-trust-function-creators=1").use { mysql ->
+                mysql.start()
+                val ds = org.springframework.jdbc.datasource.DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
+                org.flywaydb.core.Flyway.configure().dataSource(ds).placeholderReplacement(false).target("161").load().migrate()
+                val jdbc = org.springframework.jdbc.core.JdbcTemplate(ds)
+                val manager = org.springframework.jdbc.datasource.DataSourceTransactionManager(ds)
+                VerificationFlowFixture(jdbc, manager).use { f ->
+                    val item = f.seed("paper-cancel")
+                    val ref = PaperSourceRef(1,1,"a".repeat(64),1,"OPENALEX","W1")
+                    f.cached(VerificationWorkerEvidence(ruleVersion = 1,
+                        executionContext = VerificationExecutionContext(f.clock.instant(),listOf(ref))))
+                    val lease = f.claim()
+                    val before = f.item(item.id)
+                    val cache = PaperBodyComputationCache(f.mapper)
+                    val key = PaperComputationKey(ref.bodySha256,ArchiveAttemptKind.EMBEDDED_TEXT,"[]",2023,"v1")
+                    val ownerEntered = java.util.concurrent.CountDownLatch(1)
+                    val releaseOwner = java.util.concurrent.CountDownLatch(1)
+                    val paperEntered = java.util.concurrent.CountDownLatch(1)
+                    val parseCount = java.util.concurrent.atomic.AtomicInteger()
+                    val value = PaperBodyComputation("TEXT",emptyList(),PaperQualificationResult(emptyList(),
+                        PaperAnalysisCoverage(PaperEvidenceStatus.NOT_FOUND)),emptyList())
+                    val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+                    val owner = executor.submit<PaperBodyComputation> { cache.getOrCompute(key) {
+                        parseCount.incrementAndGet(); ownerEntered.countDown()
+                        assertTrue(releaseOwner.await(10,java.util.concurrent.TimeUnit.SECONDS)); value
+                    } }
+                    assertTrue(ownerEntered.await(5,java.util.concurrent.TimeUnit.SECONDS))
+                    val papers = Mockito.mock(PaperVerificationEvidenceService::class.java) { call ->
+                        if (call.method.name == "collect") {
+                            paperEntered.countDown()
+                            cache.getOrCompute(key) { parseCount.incrementAndGet(); value }
+                            PaperEvidenceRead(emptyList(),emptyList(),0)
+                        } else Mockito.RETURNS_DEFAULTS.answer(call)
+                    }
+                    val observed = Mockito.mock(DiscoveryVerificationRepository::class.java,
+                        org.mockito.AdditionalAnswers.delegatesTo<DiscoveryVerificationRepository>(f.repository))
+                    val current = DiscoveryVerificationWorker(f.props,observed,
+                        Mockito.mock(OrcidVerificationEvidenceClient::class.java),
+                        Mockito.mock(ApolloPeopleSearchClient::class.java),
+                        Mockito.mock(QualificationEvidenceParser::class.java),f.rules,f.commits,
+                        DefaultListableBeanFactory().getBeanProvider(RegistrationRecovery::class.java),f.clock,papers=papers)
+                    val processThread = Thread { current.process(lease) }
+                    try {
+                        processThread.start()
+                        assertTrue(paperEntered.await(5,java.util.concurrent.TimeUnit.SECONDS))
+                        val deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5)
+                        while (processThread.state != Thread.State.WAITING && System.nanoTime() < deadline) Thread.yield()
+                        assertEquals(Thread.State.WAITING,processThread.state)
+                        processThread.interrupt(); processThread.join(5000)
+                        assertFalse(processThread.isAlive)
+                        assertEquals(VerificationState.RUNNING,f.item(item.id).state)
+                        assertEquals(before.evidenceJson,f.item(item.id).evidenceJson)
+                        assertEquals(lease.leaseToken,f.item(item.id).leaseToken)
+                        assertEquals(0,Mockito.mockingDetails(observed).invocations.count { it.method.name == "saveFailure" })
+                        assertEquals(0,Mockito.mockingDetails(observed).invocations.count { it.method.name == "reserveAttemptWithBudget" })
+                        f.clock.now = f.clock.now.plusSeconds(121)
+                        val reclaimed = f.repository.claimDue(f.clock.instant(),120)
+                        assertEquals(item.id,reclaimed?.id)
+                        assertNotEquals(lease.leaseToken,reclaimed?.leaseToken)
+                    } finally {
+                        releaseOwner.countDown(); current.close(); processThread.interrupt(); processThread.join(5000)
+                    }
+                    assertEquals(value,owner.get(5,java.util.concurrent.TimeUnit.SECONDS))
+                    assertEquals(value,cache.getOrCompute(key) { parseCount.incrementAndGet(); value })
+                    assertEquals(1,parseCount.get())
+                    executor.shutdownNow()
+                }
+            }
+    }
     @Test fun `blocked renewal does not delay another active lease heartbeat`() {
         val firstEntered = java.util.concurrent.CountDownLatch(1)
         val release = java.util.concurrent.CountDownLatch(1)
