@@ -1,6 +1,6 @@
 # 03：真实应用中的 user1 只读邮件视图
 
-状态：待审阅。依赖：01/02机器验证通过。后续：04。子系统：前端邮件宿主（1）；实施文件7个。页面使用现有index、CSS、真实API，不使用先前localhost静态预览作为生产实现。
+状态：待审阅。依赖：01/02机器验证通过。后续：04。子系统：前端邮件宿主（1）；实施文件13个。页面使用现有index、CSS、真实API，不使用先前localhost静态预览作为生产实现。
 
 ## 需求描述
 
@@ -132,7 +132,7 @@ body[data-mail-read-only="true"] .mail-chat .mc-person {
 4. **防御性前端请求界限（I-2/I-3）**：app.api在已知reader时，fetch前只允许GET两条会话路径及必要auth login/me/logout；其它调用本地返回带status403/code READ_ONLY_FORBIDDEN的错误，避免遗漏生命周期产生请求噪声。这个检查仅防误调用，真实安全仍是01/02。不要限制admin或未确定身份的原认证流程；禁止将403全局当强制登出，详情失权只清本会话。
 5. **刷新/错误/竞态（I-3，S-1）**：显式刷新和document visible/window focus都重新读列表及已选详情；合并同一时刻重复事件，只保留一组在途请求。刷新前清正文；更早页若403/网络失败也清正文，禁止旧缓存回退。每请求AbortController+15秒超时，沿现有api的signal传递，不叠加会替换signal的timeoutMs选项；unmount abort并递增generation。晚响应只能在instance/user/contact/request序号全部匹配时应用。选中后首次定位最新消息，更早页加载保留滚动位置；消息数量仅当前窗口，重选全部重读。
 6. **样式与版本（I-5，S-1–S-3）**：新增S-2原文，现有规则不改。index在app.js前增加版本化mailbox-readonly.js，所有已有?v=同改`20261027-user1-readonly`，保持其余顺序。来源K-frontend-cache-key-triad：重新扫描当前index+测试，不按旧知识猜脚本数量。
-7. **测试（I-1–I-5，S-1–S-3）**：新增行为测试；authFlow扩充login/me两入口；mailboxChatStyle扩充readerDOM/CSS和版本断言，保留admin原断言。用真实index提取检查节点，不用万能querySelector stub掩盖缺元素。
+7. **测试（I-1–I-5，S-1–S-3）**：新增行为测试；authFlow扩充login/me两入口；mailboxChatStyle扩充readerDOM/CSS和版本断言，保留admin原断言。用真实index提取检查节点，不用万能querySelector stub掩盖缺元素。index新增第19个资源后，6个既有测试的18资源清单/计数须同步为19（仅在`app.js`前插入`mailbox-readonly.js`，不改其它行为断言）。
 
 ## 变更文件清单
 
@@ -145,6 +145,12 @@ body[data-mail-read-only="true"] .mail-chat .mc-person {
 |5|src/test/js/mailboxReadOnly.test.js|新增行为与网络测试|
 |6|src/test/js/authFlow.test.js|双身份/缺元数据/退出回归|
 |7|src/test/js/mailboxChatStyle.test.js|真实DOM/规则/资源版本|
+|8|src/test/js/discoveryPapers.test.js|仅18→19资源清单/计数同步|
+|9|src/test/js/discoveryReview.test.js|仅18→19资源清单/计数同步|
+|10|src/test/js/mailboxChatBehavior.test.js|仅18→19资源清单/计数同步|
+|11|src/test/js/mailboxGroupPush.test.js|仅18→19资源清单/计数同步|
+|12|src/test/js/meetingConfirmationAssets.test.js|仅18→19资源清单/计数同步|
+|13|src/test/js/trustReplyWorkbenchSharedMount.test.js|仅18→19资源清单/计数同步|
 
 ## 验收标准
 
