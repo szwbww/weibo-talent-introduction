@@ -12,7 +12,7 @@
 3. 正文下方按历史邮件样式翻译、评论、查看变动历史；已审核且对话更新时弹确认框，确认不发送。
 必须保持：管理员原富文本工具/草稿/附件/人工发送，原时间线/筛选/chip；user1仍受限且不显示admin工具。
 不做：草稿列表弹窗、独立审核中心、第二富文本框、前端localStorage持久化、自动发送。
-本步6文件、1子系统（admin邮箱前端）；后端依赖01–03；已有共享存储新增字段0。
+本步7文件（含前置reader契约兼容调整）、1子系统（admin邮箱前端）；后端依赖01–03；已有共享存储新增字段0。
 
 ## 关键不变量
 继承01 I-1–I-7、02 I-8–I-10、03 I-11–I-15；新增：
@@ -168,6 +168,7 @@ approve发送expectedVersion及打开时服务端context token，409先刷新真
 ### T5：样式与验证（I-19–I-22，S-3/S-4/S-5）
 文件：`styles.css`、`index.html`、`mailReviewAdmin.test.js`、`mailboxServerDrafts.test.js`。
 仅新增S-5 CSS；04的共享块不改。统一所有版本资源为 `20261029-review-admin`；执行前按04当时键反查测试字面量。测试覆盖真实mode事件、旧回调、fetch序列，禁止仅搜“审核通过”字符串算通过。浏览器1440/390两宽实测native dialog、单editor、工具栏布局、取消/确认/重新确认。
+执行前反查证据：`grep pattern=20261029-review-reader path=src/test` 命中 `src/test/js/mailReviewReader.test.js:195` 的固定旧资源键断言；同文件191的 `endsWith(css)` 又与本步追加S-5必然冲突。追加授权该文件，仅保留所有资源键一致、S-1逐字块仍存在及真实DOM id存在性检查；退役旧键字面量/样式必须位于文件末尾的实现约束及固定标题源码措辞断言，不重钉新键/标题、不弱化安全权限或真实UI门禁。
 
 ## 变更文件清单
 | # | 文件（相对仓库根目录） | 操作 / 边界 |
@@ -178,6 +179,7 @@ approve发送expectedVersion及打开时服务端context token，409先刷新真
 | 4 | `src/main/resources/static/styles.css` | 仅追加S-5确认框CSS，复用04共享样式 |
 | 5 | `src/test/js/mailReviewAdmin.test.js` | 新增计数/模式/确认/翻译/生命周期行为和样式测试 |
 | 6 | `src/test/js/mailboxServerDrafts.test.js` | 原草稿与审核模式切换回归 |
+| 7 | `src/test/js/mailReviewReader.test.js` | 仅调整跨步资源键/逐字CSS块共存契约，退役固定旧键、文件尾位置及标题源码措辞断言 |
 
 ## 验收标准
 - I-19：3条/2人fixture；top3、卡2/1、分页expert total2；点击按钮不出现草稿弹框；退出恢复原chip；错误不显0。
@@ -236,3 +238,8 @@ node --test src/test/js/mailReviewAdmin.test.js src/test/js/mailboxServerDrafts.
 - 覆盖: 需求1/2/3、保持项；I-19/I-20/I-21/I-22；X12/X15/X16/X17。
 
 人工验收开始时才导出同前缀 `-acceptance.md`。
+
+## 修正记录
+
+- 2026-10-30：按用户“授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p”持续授权，执行前缓存键反查命中mailReviewReader.test.js:195；191的文件尾CSS锚定与05追加S-5冲突。05补此第7文件，仅保留跨步统一键/逐字S-1块/DOM存在性，退役固定版本/位置/标题措辞断言，不重钉、不扩大功能或削弱浏览器门禁；对应fast-p ledger A9/A10。
+
