@@ -21090,16 +21090,21 @@ function isMailReadOnlyMode() {
     return mailReadOnlyState().active === true;
 }
 
-// I-2：已知 reader 时只允许两条会话 GET 与 auth login/me/logout，其余请求在 fetch 前拒绝。
+// Reader permissions are exact method/path pairs; the backend independently enforces grants.
 function isMailReadOnlyRequestAllowed(path, options) {
-    const raw = String(path ?? "");
-    const normalized = raw.split("?")[0];
+    const normalized = String(path ?? "").split("?")[0];
     const method = String((options && options.method) || "GET").toUpperCase();
     if (method === "GET" && normalized === "/api/auth/me") return true;
     if (method === "POST" && (normalized === "/api/auth/login" || normalized === "/api/auth/logout")) return true;
-    if (method !== "GET") return false;
-    if (normalized === "/api/mail/mailbox/conversations") return true;
-    return /^\/api\/mail\/mailbox\/conversations\/[^/]+\/messages$/.test(normalized);
+    if (method === "GET" && normalized === "/api/mail/mailbox/conversations") return true;
+    if (method === "GET" && /^\/api\/mail\/mailbox\/conversations\/[1-9][0-9]*\/messages$/.test(normalized)) return true;
+    const base = "/api/mail/mailbox/review-drafts";
+    if (normalized === base) return method === "GET" || method === "POST";
+    if (/^\/api\/mail\/mailbox\/review-drafts\/[1-9][0-9]*$/.test(normalized)) {
+        return method === "GET" || method === "PUT" || method === "DELETE";
+    }
+    if (method === "GET" && /^\/api\/mail\/mailbox\/review-drafts\/[1-9][0-9]*\/events$/.test(normalized)) return true;
+    return method === "POST" && /^\/api\/mail\/mailbox\/review-drafts\/[1-9][0-9]*\/(submit|withdraw|comments)$/.test(normalized);
 }
 
 function showMailReadOnlyIdentityError() {
@@ -21129,7 +21134,7 @@ function applyMailReadOnlyShell() {
         section.classList.toggle("active", section.id === "view-mailbox");
     });
     const panelTitle = document.querySelector("#mailboxConversationPanel > .panel-head h2");
-    if (panelTitle) panelTitle.textContent = "收发邮件 · 只读";
+    if (panelTitle) panelTitle.textContent = "收发邮件";
     const menu = document.getElementById("mobileCoreView");
     if (!menu) return;
     if (typeof menu.replaceChildren === "function") menu.replaceChildren();
@@ -21386,14 +21391,17 @@ function bindAuthEvents() {
 
     $("#logoutBtn")?.addEventListener("click", async () => {
         setView.draftNavigationSequence = (setView.draftNavigationSequence || 0) + 1;
-        // I-2：reader 没有草稿写路径，注销只发独立 auth POST，不触碰旧 chat 草稿 flush。
-        if (typeof isMailReadOnlyMode !== "function" || !isMailReadOnlyMode()) {
-            try {
+        try {
+            if (typeof isMailReadOnlyMode === "function" && isMailReadOnlyMode()) {
+                const handle = mailReadOnlyState().handle;
+                if (handle && typeof handle.flushDrafts === "function") await handle.flushDrafts();
+            } else {
                 await flushMailboxChatDrafts();
-            } catch (error) {
-                showStatus(error.message || "保存失败，内容尚未同步到服务器", "error");
-                return;
             }
+        } catch (error) {
+            // Reader reports failure beside its editor, without an admin toast.
+            if (!isMailReadOnlyMode()) showStatus(error.message || "保存失败，内容尚未同步到服务器", "error");
+            return;
         }
         try {
             await api("/api/auth/logout", { method: "POST" });

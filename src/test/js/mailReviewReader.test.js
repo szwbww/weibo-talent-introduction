@@ -1,0 +1,222 @@
+"use strict";
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
+const assert = require("node:assert/strict");
+const { test } = require("node:test");
+// Reuse the finite node/tree model, not a querySelector that invents elements.
+const original = fs.readFileSync(path.join(__dirname, "mailboxReadOnly.test.js"), "utf8");
+const context = { require, __dirname, console, setTimeout, clearTimeout, AbortController };
+vm.createContext(context);
+vm.runInContext(original.slice(0, original.indexOf('describe("S-1')) + '\nglobalThis.tools = {createHarness, allNodes, clickAction, flush, deferred, listResponse, detailResponse, EXPERT_A, moduleSource};', context);
+const { createHarness, allNodes, clickAction, flush, deferred, listResponse, detailResponse, EXPERT_A, moduleSource } = context.tools;
+const BASE = "/api/mail/mailbox/review-drafts";
+const nodes = h => allNodes(h.root);
+const role = (h, name) => nodes(h).find(n => n.dataset.role === name);
+const action = (h, name, id) => nodes(h).find(n => n.dataset.reviewAction === name && (id === undefined || n.dataset.draftId === String(id)));
+const click = (h, name, id) => { const node = action(h, name, id); assert.ok(node, name); h.root.dispatch("click", { target: node, preventDefault() {} }); };
+const draftValue = (id = 1, version = 1, state = "DRAFT") => ({ id, contactId: 7, version, state, subject: "A", html: "<p>body</p>", text: "body", deleted: false, commentCount: 0, updatedAt: "2026-10-29T12:00:00" });
+async function setup({ sanitizer = true } = {}) {
+    const h = createHarness();
+    if (sanitizer) h.runtime.MailboxMeeting = { sanitizeDraftHtml(html) { h.sanitized.push(html); return html.replace(/<script[^>]*>[^]*?<\/script>/gi, "").replace(/ on\w+="[^"]*"/g, ""); } };
+    h.sanitized = [];
+    h.rows = new Map(); h.events = []; h.nextId = 1;
+    h.custom = null;
+    h.responder = async (url, options) => {
+        if (h.custom) { const result = h.custom(url, options); if (result !== undefined) return result; }
+        const method = options.method;
+        if (url.startsWith("/api/mail/mailbox/conversations?")) return listResponse([EXPERT_A, { contactId: 8, name: "乙" }]);
+        if (url.includes("/messages")) return detailResponse([{ source: "MAIL_RECORD", id: 1, direction: "INBOUND", body: "<b>literal</b>", subject: "mail" }]);
+        if (url.startsWith(BASE + "?")) return { items: [...h.rows.values()], total: h.rows.size };
+        if (url === BASE && method === "POST") { const row = draftValue(h.nextId++); h.rows.set(row.id, row); return row; }
+        const id = Number(url.slice(BASE.length + 1).split(/[/?]/)[0]);
+        const row = h.rows.get(id);
+        if (url.includes("/events")) return h.events;
+        if (method === "GET") return { ...row };
+        if (method === "DELETE") { h.rows.set(id, { ...row, deleted: true }); return { id, deleted: true }; }
+        const body = JSON.parse(options.body);
+        assert.equal(body.expectedVersion, row.version, "all mutations use the current server version");
+        if (url.endsWith("/comments")) return { id: 1 };
+        const next = { ...row, version: row.version + 1 };
+        if (method === "PUT") Object.assign(next, { subject: body.subject, html: body.html, text: body.html.replace(/<[^>]*>/g, "") });
+        if (url.endsWith("/submit")) next.state = "SUBMITTED";
+        if (url.endsWith("/withdraw")) next.state = "DRAFT";
+        h.rows.set(id, next); return next;
+    };
+    h.mount(); await flush(); clickAction(h, "select-expert"); await flush();
+    return h;
+}
+async function create(h) { click(h, "new"); await flush(); }
+function edit(h, text = "edited") {
+    role(h, "review-subject").value = text;
+    role(h, "review-editor").innerHTML = "<p>" + text + "</p>";
+    role(h, "review-editor").dispatch("input", {});
+}
+
+test("S-1 persistent exact DOM and empty state, no extra classes/capabilities/storage", async () => {
+    const h = await setup();
+    assert.equal(role(h, "review-state").textContent, "暂无草稿");
+    assert.equal(role(h, "review-editor").hidden, true);
+    assert.equal(role(h, "review-drafts").parentNode.className, "mc-scroll");
+    assert.equal(role(h, "review-compose").parentNode.className, "mc-section-content");
+    assert.equal(role(h, "review-history").hidden, true);
+    assert.equal(role(h, "review-discussion").hidden, true);
+    assert.equal(nodes(h).filter(n => n.dataset.role === "review-editor").length, 1);
+    assert.ok(!/(localStorage|sessionStorage)\s*[.[]/.test(moduleSource));
+    assert.ok(!/MailboxChat|sender-accounts|\/translate|\/approve|\/send|attachment/i.test(moduleSource.replace(/\/\*[\s\S]*?\*\//g, "")));
+    const allowed = new Set(["mail-review-controls", "mail-review-panel", "mail-review-entry", "mail-review-input", "mail-review-footer", "mail-review-actions"]);
+    for (const n of nodes(h)) {
+        assert.equal(n.getAttribute("style"), null);
+        for (const c of n.className.split(/\s+/)) if (c.startsWith("mail-review-")) assert.ok(allowed.has(c), c);
+    }
+    h.handle.unmount();
+});
+
+test("explicit save, latest-version submit, withdraw, two independent drafts and detail selection", async () => {
+    const h = await setup(); await create(h); edit(h);
+    assert.equal(h.handle.hasPendingDrafts(), true);
+    assert.equal(h.calls.filter(c => c.options.method === "PUT").length, 0);
+    click(h, "submit"); await flush();
+    const mutations = h.calls.filter(c => ["PUT", "POST"].includes(c.options.method));
+    assert.equal(mutations.at(-2).options.method, "PUT");
+    assert.equal(JSON.parse(mutations.at(-1).options.body).expectedVersion, 2);
+    assert.equal(role(h, "review-state").textContent, "已提交");
+    assert.equal(role(h, "review-editor").getAttribute("contenteditable"), "false");
+    assert.equal(action(h, "save").hidden, true); assert.equal(action(h, "withdraw").hidden, false);
+    click(h, "withdraw"); await flush(); await create(h); edit(h, "B"); click(h, "save"); await flush();
+    assert.equal(h.rows.size, 2); click(h, "history"); await flush(); click(h, "select", 1); await flush();
+    assert.equal(role(h, "review-subject").value, "edited");
+    assert.equal(role(h, "review-history").hidden, true);
+    assert.ok(h.calls.some(c => c.path === BASE + "/1" && c.options.method === "GET")); h.handle.unmount();
+});
+
+test("late save canonical baseline preserves newer input and dirty unload prompt", async () => {
+    const h = await setup(); await create(h); edit(h, "first"); const gate = deferred();
+    h.custom = (url, opt) => opt.method === "PUT" ? gate.promise : undefined;
+    click(h, "save"); await flush(); edit(h, "newer");
+    gate.resolve({ ...draftValue(1, 2), subject: "canonical", html: "<p>canonical</p>" }); await flush();
+    assert.equal(role(h, "review-subject").value, "newer");
+    assert.equal(role(h, "review-editor").innerHTML, "<p>newer</p>");
+    assert.equal(h.handle.hasPendingDrafts(), true);
+    let prevented = false; h.runtime.dispatchWindow("beforeunload", { preventDefault() { prevented = true; } }); assert.equal(prevented, true);
+    h.custom = null; h.rows.set(1, { ...h.rows.get(1), version: 2 }); await h.handle.flushDrafts();
+    prevented = false; h.runtime.dispatchWindow("beforeunload", { preventDefault() { prevented = true; } }); assert.equal(prevented, false);
+    h.handle.unmount();
+});
+
+for (const status of [0, 409]) test("failed save " + status + " preserves input and blocks navigation/refresh/create/submit", async () => {
+    const h = await setup(); await create(h); edit(h, "local");
+    h.custom = (url, opt) => opt.method === "PUT" ? Promise.reject(Object.assign(Error("failed"), { status })) : undefined;
+    const beta = nodes(h).find(n => n.dataset.action === "select-expert" && n.dataset.contactId === "8");
+    h.root.dispatch("click", { target: beta }); await flush();
+    assert.equal(role(h, "review-subject").value, "local");
+    assert.equal(nodes(h).find(n => n.className === "mc-identity").textContent, "张教授");
+    await assert.rejects(h.handle.flushDrafts()); await assert.rejects(h.handle.refresh());
+    click(h, "new"); await flush(); click(h, "submit"); await flush();
+    assert.equal(h.rows.size, 1); assert.ok(!h.calls.some(c => c.path.endsWith("/submit")));
+    assert.equal(role(h, "review-error").textContent, status === 409 ? "草稿已被更新，请重新加载" : "保存失败，内容尚未同步"); h.handle.unmount();
+});
+
+for (const status of [401, 403]) test("auth " + status + " clears timeline/editor/comments/cache and aborts pending requests", async () => {
+    const h = await setup(); await create(h); edit(h, "secret");
+    h.custom = (url, opt) => opt.method === "PUT" ? Promise.reject(Object.assign(Error("denied"), { status })) : undefined;
+    click(h, "save"); await flush();
+    assert.equal(role(h, "review-subject").value, ""); assert.equal(role(h, "review-editor").textContent, "");
+    assert.equal(role(h, "review-discussion").textContent, ""); assert.equal(role(h, "review-history").textContent, "");
+    assert.equal(nodes(h).filter(n => n.className === "mc-message").length, 0);
+    assert.equal(h.handle.hasPendingDrafts(), false); const count = h.calls.length;
+    h.runtime.dispatchWindow("focus", {}); await flush(); assert.equal(h.calls.length, count); h.handle.unmount();
+});
+
+test("focus keeps dirty editor/caret node, server version change locks submit without overwrite", async () => {
+    const h = await setup(); await create(h); edit(h, "local"); const editor = role(h, "review-editor");
+    h.rows.set(1, { ...h.rows.get(1), version: 3, state: "APPROVED" });
+    h.runtime.dispatchWindow("focus", {}); await flush();
+    assert.equal(role(h, "review-editor"), editor); assert.equal(editor.innerHTML, "<p>local</p>");
+    assert.equal(action(h, "submit").disabled, true); assert.equal(action(h, "reload").hidden, false);
+    assert.equal(role(h, "review-error").textContent, "草稿已被更新，请重新加载"); h.handle.unmount();
+});
+
+test("late detail/events/create responses cannot enter a different expert or unmounted owner", async () => {
+    for (const endpoint of ["detail", "events", "create"]) {
+        const h = await setup(); await create(h); const gate = deferred();
+        h.custom = (url, opt) => endpoint === "detail" && url === BASE + "/1" && opt.method === "GET" ? gate.promise
+            : endpoint === "events" && url.includes("/events") ? gate.promise
+            : endpoint === "create" && url === BASE && opt.method === "POST" ? gate.promise : undefined;
+        if (endpoint === "detail") h.runtime.dispatchWindow("focus", {});
+        if (endpoint === "events") click(h, "events");
+        if (endpoint === "create") click(h, "new");
+        await flush();
+        const beta = nodes(h).find(n => n.dataset.action === "select-expert" && n.dataset.contactId === "8");
+        h.root.dispatch("click", { target: beta }); await flush();
+        gate.resolve(endpoint === "events" ? [{ id: 99, eventType: "COMMENT", payload: { text: "OLD SECRET" } }] : { ...draftValue(1), subject: "OLD SECRET" }); await flush();
+        assert.equal(role(h, "review-subject").value, ""); assert.ok(!h.root.textContent.includes("OLD SECRET"));
+        h.handle.unmount(); assert.equal(h.host.children.length, 0);
+    }
+});
+
+for (const state of ["DRAFT", "RETURNED", "SUBMITTED", "APPROVED"]) test("server state matrix " + state, async () => {
+    const h = await setup(); await create(h);
+    h.rows.set(1, { ...h.rows.get(1), state, returnReason: state === "RETURNED" ? "补充时间" : null });
+    await h.handle.refresh(); click(h, "comments"); await flush();
+    const editable = ["DRAFT", "RETURNED"].includes(state);
+    assert.equal(role(h, "review-editor").getAttribute("contenteditable"), String(editable));
+    assert.equal(action(h, "save").hidden, !editable); assert.equal(action(h, "submit").hidden, !editable);
+    assert.equal(action(h, "withdraw").hidden, state !== "SUBMITTED"); assert.equal(action(h, "delete").hidden, state === "APPROVED");
+    assert.equal(nodes(h).some(n => n.tagName === "TEXTAREA"), state !== "APPROVED");
+    if (state === "RETURNED") assert.equal(role(h, "review-return-reason").textContent, "补充时间");
+    if (state === "APPROVED") assert.equal(role(h, "review-save-state").textContent, "已审核，不能修改"); h.handle.unmount();
+});
+
+test("deleted history remains event-readable but cannot open editor; event cursor is an id", async () => {
+    const h = await setup(); await create(h); edit(h); click(h, "save"); await flush(); click(h, "delete"); await flush();
+    h.events = Array.from({ length: 20 }, (_, i) => ({ id: 30 - i, actorUsername: "admin", eventType: "SAVE", payload: { html: "<p>version</p>", text: "version" } }));
+    click(h, "history"); await flush(); assert.equal(action(h, "select", 1), undefined);
+    assert.ok(role(h, "review-history").textContent.includes("已删除")); click(h, "events", 1); await flush();
+    assert.equal(role(h, "review-editor").hidden, true); assert.equal(nodes(h).filter(n => n.dataset.role === "review-version-body").length, 20);
+    click(h, "more-events"); await flush(); assert.ok(h.calls.some(c => c.path.includes("beforeId=11"))); h.handle.unmount();
+});
+
+test("missing sanitizer is text-only read-only, all HTML passes the shared sanitizer", async () => {
+    const h = await setup({ sanitizer: false }); await create(h);
+    assert.equal(role(h, "review-editor").getAttribute("contenteditable"), "false");
+    assert.equal(role(h, "review-editor").textContent, "body"); assert.equal(role(h, "review-error").textContent, "编辑组件加载失败"); h.handle.unmount();
+    const safe = await setup(); await create(safe); assert.ok(safe.sanitized.includes("<p>body</p>")); safe.handle.unmount();
+});
+
+test("S-1 literal CSS contract and S-2 production resource/shell contracts", () => {
+    const root = path.join(__dirname, "../../main/resources/static");
+    const plan = fs.readFileSync(path.join(__dirname, "../../../docs/plans/2026-10-29/draft-review-04-reader.md"), "utf8");
+    const css = plan.match(/```css\n([^]*?)```/)[1];
+    assert.ok(fs.readFileSync(path.join(root, "styles.css"), "utf8").endsWith(css));
+    const index = fs.readFileSync(path.join(root, "index.html"), "utf8");
+    assert.ok(index.includes("id=\"mailboxList\""));
+    const versions = [...index.matchAll(/\?v=([^\"]+)/g)].map(m => m[1]);
+    assert.ok(versions.length > 0 && versions.every(v => v === "20261029-review-reader"));
+    const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+    assert.ok(app.includes('panelTitle.textContent = "收发邮件"'));
+});
+
+test("after revoke, flush permits logout and explicit refresh starts from the authorized list only", async () => {
+    const h = await setup(); await create(h); edit(h);
+    h.custom = (url, opt) => opt.method === "PUT" ? Promise.reject(Object.assign(Error("revoked"), { status: 403 })) : undefined;
+    click(h, "save"); await flush(); await h.handle.flushDrafts();
+    h.custom = null; const start = h.calls.length;
+    await h.handle.refresh(); await flush();
+    assert.ok(h.calls.slice(start).every(c => c.path.startsWith("/api/mail/mailbox/conversations?")));
+    assert.equal(role(h, "review-drafts").hidden, true);
+    h.handle.unmount();
+});
+
+test("submit freezes native editing while awaiting server state, but explicit save permits later typing", async () => {
+    const h = await setup(); await create(h); edit(h);
+    const gate = deferred();
+    h.custom = (url) => url.endsWith("/submit") ? gate.promise : undefined;
+    click(h, "submit"); await flush();
+    assert.equal(role(h, "review-subject").disabled, true);
+    assert.equal(role(h, "review-editor").getAttribute("contenteditable"), "false");
+    assert.equal(action(h, "submit").disabled, true);
+    gate.resolve(draftValue(1, 3, "SUBMITTED")); await flush();
+    assert.equal(role(h, "review-state").textContent, "已提交");
+    h.handle.unmount();
+});
