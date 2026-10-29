@@ -12,7 +12,7 @@
 3. 正文下方按历史邮件样式翻译、评论、查看变动历史；已审核且对话更新时弹确认框，确认不发送。
 必须保持：管理员原富文本工具/草稿/附件/人工发送，原时间线/筛选/chip；user1仍受限且不显示admin工具。
 不做：草稿列表弹窗、独立审核中心、第二富文本框、前端localStorage持久化、自动发送。
-本步10文件（含跨步前端契约兼容调整）、1子系统（admin邮箱前端）；后端依赖01–03；已有共享存储新增字段0。
+本步12文件（含已证明的跨步前后端门禁兼容调整；仅此白名单例外超过10文件）、2子系统（admin邮箱前端、必跑后端契约测试）；后端依赖01–03；已有共享存储新增字段0。
 
 ## 关键不变量
 继承01 I-1–I-7、02 I-8–I-10、03 I-11–I-15；新增：
@@ -170,6 +170,7 @@ approve发送expectedVersion及打开时服务端context token，409先刷新真
 仅新增S-5 CSS；04的共享块不改。统一所有版本资源为 `20261029-review-admin`；执行前按04当时键反查测试字面量。测试覆盖真实mode事件、旧回调、fetch序列，禁止仅搜“审核通过”字符串算通过。浏览器1440/390两宽实测native dialog、单editor、工具栏布局、取消/确认/重新确认。
 执行前反查证据：`grep pattern=20261029-review-reader path=src/test` 命中 `src/test/js/mailReviewReader.test.js:195` 的固定旧资源键断言；同文件191的 `endsWith(css)` 又与本步追加S-5必然冲突。追加授权该文件，仅保留所有资源键一致、S-1逐字块仍存在及真实DOM id存在性检查；退役旧键字面量/样式必须位于文件末尾的实现约束及固定标题源码措辞断言，不重钉新键/标题、不弱化安全权限或真实UI门禁。
 全量门禁实测1951项/1947通过/4失败/0跳过（artifact://1151），其中3个已证明的未列旧契约追加授权：batchEntryRelocation.test.js:31–38的“检查回复必须首子节点”与S-3插入前置待审按钮冲突，只改为保留原按钮容器/相对顺序；discoveryRecheck.test.js:103把尾部所有CSS当作dr-recheck块，只限定该模块的逐字CSS块而不吸收后续S-1/S-5；mailboxMailReadAccess.test.js:1237固定旧键后缀，只退役此断言、保留统一键与脚本邻接。第四项是新mailReviewAdmin.test.js缓存键字面量违反既有守卫，在原授权文件去除固定字面量即可。不得改旧功能/旧模块CSS或跳过测试。
+首次JDK11全量mvn实测5715项/1失败/24错误/24默认opt-in跳过（artifact://1207，raw1206）。仅追加2个必跑测试：AuthInterceptorTest.kt的旧“三个handler”精确白名单须反映01已批准reader审核草稿路由，保留精确verb/handler与其他路由拒绝覆盖，不改生产权限；UnmatchedInboundTrustWorkbenchTest.kt只对4个InvalidUseOfMatchers失败stub补齐03当前发送seam实参matcher，保留422/503/409及dedup结果断言，不改生产发送签名/实现。另20个国家时区初始化错误来自本机旧Zulu11.0.15缺America/Coyhaique；使用临时目录的当前Zulu11补丁版（仍Java11）及真实tzdb解决，不修改时区源码/fixture、不跳过。保留失败收据，最终全量和显式IT仍须重新跑完。
 
 ## 变更文件清单
 | # | 文件（相对仓库根目录） | 操作 / 边界 |
@@ -184,6 +185,8 @@ approve发送expectedVersion及打开时服务端context token，409先刷新真
 | 8 | `src/test/js/batchEntryRelocation.test.js` | 仅兼容S-3前置待审按钮，保留原动作容器与按钮相对顺序 |
 | 9 | `src/test/js/discoveryRecheck.test.js` | 仅移除EOF位置耦合，保留dr-recheck逐字CSS/DOM契约 |
 | 10 | `src/test/js/mailboxMailReadAccess.test.js` | 仅退役固定旧缓存键后缀，保留统一键与脚本邻接/权限检查 |
+| 11 | `src/test/kotlin/com/weibo/talentintroduction/auth/config/AuthInterceptorTest.kt` | 仅将真实handler/verb精确权限矩阵与01已批准reader草稿API对齐，保留拒绝门禁 |
+| 12 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt` | 仅修复4个stub实参matcher与03当前seam兼容；保留HTTP错误及dedup行为断言 |
 
 ## 验收标准
 - I-19：3条/2人fixture；top3、卡2/1、分页expert total2；点击按钮不出现草稿弹框；退出恢复原chip；错误不显0。
@@ -248,4 +251,6 @@ node --test src/test/js/mailReviewAdmin.test.js src/test/js/mailboxServerDrafts.
 - 2026-10-30：按用户“授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p”持续授权，执行前缓存键反查命中mailReviewReader.test.js:195；191的文件尾CSS锚定与05追加S-5冲突。05补此第7文件，仅保留跨步统一键/逐字S-1块/DOM存在性，退役固定版本/位置/标题措辞断言，不重钉、不扩大功能或削弱浏览器门禁；对应fast-p ledger A9/A10。
 
 - 2026-10-30：持续授权下，基于首次全量node门禁1951/1947/4失败/0跳过收据（artifact://1151），补入上述3个旧前端契约文件，05由7文件变10文件；只修正首节点/EOF耦合与固定旧键断言，保留原按钮顺序、旧模块逐字样式和权限、统一资源及真实UI门禁。新测试自己引入的键字面量在原授权文件删除，不改守卫；对应ledger A11/A12。
+
+- 2026-10-30：持续授权下首次完整mvn收据5715/1失败/24错误/24默认opt-in跳过（artifact://1207）证明旧精确reader白名单与4个发送stub实参兼容问题；补入上述2个测试，05例外12文件/2子系统，只有必跑门禁测试增加，不改后端产品。20个时区错误通过临时当前Zulu11真实tzdb解决；全部原机器门禁/安全权限/发送断言不变。对应ledger A13/A14。
 
