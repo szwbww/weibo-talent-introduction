@@ -162,3 +162,10 @@ node --test src/test/js/ragAdoptSendBridge.test.js src/test/js/meetingConfirmati
 - 覆盖: 保持项；I-13/I-14/I-15；X10/X11。
 
 人工验收开始时才导出同前缀 `-acceptance.md`。
+
+## Dispatch Boundary and Necessary Predecessor Outputs
+
+Child base `1cc5e9f78518468be5fb60b042cf2e7be92ccd0b` is child02 terminal product head, not a docs commit. Child02 LIGHT_PASS evidence `f81d0a925246db47d53ae608f7c826bf244c4f97`; clean prefix checkpoint `f0394c4a708df8599fa368b09877400a0edc6f4a` VALID through02 with full five-child manifest. Child01 terminal LIGHT_PASS at c9454b6; current draft/context/session/controller contracts must be extended incrementally, not replaced from baseline.
+
+Governing master `2af9b9ca1025c5741086558365f92793357a307e`, amendments A1–A6. Read necessary preceding code/evidence for the context/approval/CAS/canonical DTO seams and query consumers. The current child03 exact plan identity is unchanged. User preauthorizes necessary in-goal bounded amendments through completion (“授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p”); message controller with exact evidence and required paths before any unlisted edit so it is recorded first. No repeated user confirmation needed for that bounded recording; no silent expansion, applied migration edit or gate weakening.
+
