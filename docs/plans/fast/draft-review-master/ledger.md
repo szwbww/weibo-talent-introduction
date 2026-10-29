@@ -1,20 +1,20 @@
 # Fast-P Ledger — master: docs/plans/2026-10-29/draft-review-master.md
 
 - Status: RUNNING
-- Master plan: docs/plans/2026-10-29/draft-review-master.md (commit 2af9b9ca1025c5741086558365f92793357a307e)
-- Amendments: A1,A2,A3,A4,A5,A6
+- Master plan: docs/plans/2026-10-29/draft-review-master.md (commit c17c9013ece5bf7967d6233cd97f5bfed47d1cab)
+- Amendments: A1,A2,A3,A4,A5,A6,A7,A8
 - Master base: b15bb069f43f89c45ee6859dba04a0baff5d774d
 - Branch: fast/draft-review-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-draft-review-master
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-29T18:00:45.890233+08:00
-- Current child: 03
+- Current child: 04
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
-- Resume from: 1cc5e9f78518468be5fb60b042cf2e7be92ccd0b
+- Resume from: f7b24c9c7364ea64adc4fa1013083343399756d7
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
@@ -22,7 +22,7 @@
 | 01 | docs/plans/2026-10-29/draft-review-01-workflow.md | commit:87a4ba94b070afebeb83d1c6b9fe885ed66a2aaa | none | 3 | LIGHT_PASS | b15bb069f43f89c45ee6859dba04a0baff5d774d | c9454b6d5dd193c73b78dfbc99dbe58c8c70ae26 | 0 | — | c9454b6d5dd193c73b78dfbc99dbe58c8c70ae26 | 72f87715e85df55ccf95678171cf597be7e78af5 | Independent verifier DraftReview01Verifier; all four gates PASS, fresh IT12 and auth/migration55 pass; no repairs |
 | 02 | docs/plans/2026-10-29/draft-review-02-query.md | commit:2af9b9ca1025c5741086558365f92793357a307e | 01 | 2 | LIGHT_PASS | c9454b6d5dd193c73b78dfbc99dbe58c8c70ae26 | 1cc5e9f78518468be5fb60b042cf2e7be92ccd0b | 0 | — | 1cc5e9f78518468be5fb60b042cf2e7be92ccd0b | f81d0a925246db47d53ae608f7c826bf244c4f97 | Independent DraftReview02Verifier LIGHT_PASS; fresh mandatory45/46 passed; no repairs |
 | 03 | docs/plans/2026-10-29/draft-review-03-send.md | sha256:f960f013f569b5de074722c605b41d5fa382da28c1637666b9de773c860515f7 | 01,02 | 1 | LIGHT_PASS | 1cc5e9f78518468be5fb60b042cf2e7be92ccd0b | f7b24c9c7364ea64adc4fa1013083343399756d7 | 0 | — | f7b24c9c7364ea64adc4fa1013083343399756d7 | 0b02b03c85bbe5825d7365b0eee2c1fc04623e6f | Independent DraftReview03Verifier LIGHT_PASS; fresh45/160/65 pass; no repairs |
-| 04 | docs/plans/2026-10-29/draft-review-04-reader.md | sha256:6f7bca6a57737934f983bd69ecc4834b0267fb109fc0b49f7e89c6b9cf3feae8 | 01,02,03 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
+| 04 | docs/plans/2026-10-29/draft-review-04-reader.md | commit:c17c9013ece5bf7967d6233cd97f5bfed47d1cab | 01,02,03 | 2 | LIGHT_PASS | f7b24c9c7364ea64adc4fa1013083343399756d7 | ae148e46ce143a73046c648d0a19500b37230c60 | 1 | a02477be34b3308899820fcc9bd3060ca5bccb70 | a02477be34b3308899820fcc9bd3060ca5bccb70 | 368984cbe5550f9353887ce91f02e40a5d961e32 | Independent DraftReview04Verifier2 LIGHT_PASS; fresh131 pass; F-01/F-02 closed after1 repair |
 | 05 | docs/plans/2026-10-29/draft-review-05-admin.md | sha256:1874295ce3c15424326c215636f4c9efd1f58cc525318f601d2cc339712b2c95 | 01,02,03,04 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 
 ## Amendments
@@ -34,6 +34,8 @@
 | A4 | docs/plans/2026-10-29/draft-review-01-workflow.md | commit:c21b3aa9059d453811f65bc2c3229e1c51fbd997 | commit:87a4ba94b070afebeb83d1c6b9fe885ed66a2aaa | I-23; I-24; 01 T4真实测试 | Align V120 test with applied V167 folder-scoped schema/uniqueness while retaining uid-validity and historical data checks | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — recorded 2026-10-29T21:38:28+08:00 |
 | A5 | docs/plans/2026-10-29/draft-review-master.md | commit:87a4ba94b070afebeb83d1c6b9fe885ed66a2aaa | commit:2af9b9ca1025c5741086558365f92793357a307e | I-23; I-24; 持续执行授权 | Add one proven required query-IT fixture compatibility file while retaining original gates and behaviors | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — recorded 2026-10-29T21:38:28+08:00; applied 2026-10-29T22:38:56+08:00 |
 | A6 | docs/plans/2026-10-29/draft-review-02-query.md | commit:f3417e2c630862d22397b63f72c549d7e8629beb | commit:2af9b9ca1025c5741086558365f92793357a307e | I-23; I-24; 02 T3 MySQL兼容测试 | Fix required fixture missing dismissed_at only; keep real behavior assertions and report measured query count without pinning statement-count implementation | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — recorded 2026-10-29T21:38:28+08:00; applied 2026-10-29T22:38:56+08:00 |
+| A7 | docs/plans/2026-10-29/draft-review-master.md | commit:2af9b9ca1025c5741086558365f92793357a307e | commit:c17c9013ece5bf7967d6233cd97f5bfed47d1cab | I-23; I-24; 持续执行授权 | Add already-required frontend test file solely to retire obsolete reader source/wording assertions conflicting with approved rich-text UI | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — recorded 2026-10-29T21:38:28+08:00; applied 2026-10-29T23:54:04+08:00 |
+| A8 | docs/plans/2026-10-29/draft-review-04-reader.md | commit:f3417e2c630862d22397b63f72c549d7e8629beb | commit:c17c9013ece5bf7967d6233cd97f5bfed47d1cab | I-16; S-1; S-2; 04 T3 | Retire obsolete global HTML/link prohibition and old fixed-copy/title assertions without repinning; preserve meaningful security/style behavior | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — recorded 2026-10-29T21:38:28+08:00; applied 2026-10-29T23:54:04+08:00 |
 
 ## Baseline
 - Authorization: explicit user `/fast-p docs/plans/2026-10-29/draft-review-master.md` invocation on 2026-10-29. Historical DRAFT headings retained without editing.
@@ -77,4 +79,16 @@
 - Child03 implementer READY_FOR_VERIFICATION atf7b24c9c7364ea64adc4fa1013083343399756d7; execution reports mandatory45/160/65 tests passed with no skips and actual HTTP/SMTP/IMAP dedup/UNKNOWN/context smoke. Fresh DraftReview03Verifier acquired after code commit; controller has not independently verified product.
 
 - Child03 terminal LIGHT_PASS/COMPLETE_CHILD, evidence0b02b03c85bbe5825d7365b0eee2c1fc04623e6f; checkpoint required before04, later04/05 remain PENDING.
+
+- Child04 IMPLEMENTER DraftReview04Implementer acquired after child03 complete-manifest dirty+clean checkpoint VALID; product basef7b24c9c7364ea64adc4fa1013083343399756d7, fix_round0. Child05 shared frontend files remain pending until04 terminal checkpoint.
+
+- Child04 required node gate found3 obsolete source/wording contracts failing among126 tests; c17c901 plan-only A7/A8 permits eighth file mailboxChatStyle.test.js solely for retirement, before editing. Existing new behavioral tests and actual browser remain required; current epoch2 fix_round0.
+
+- Child04 READY_FOR_VERIFICATION atae148e46ce143a73046c648d0a19500b37230c60; executor reports planned127 node tests pass and real production-browser/authenticated backend native editor/lifecycle1440/390 proof. Fresh independent DraftReview04Verifier acquired; no controller product verification.
+
+- Child04 Epoch2 Attempt1 LIGHT_FAIL/AUTO_FIX: fresh127 planned node tests pass, but module diagnostics prove null-draft recovery and noncanonical fallback UUID defects. Fresh writer DraftReview04Fix1 acquired for exactF-01/F-02 only; fix_round1/3, scope unchanged. New independent verifier required after commit.
+
+- Round1 writer DraftReview04Fix1 reports FIXED ata02477be34b3308899820fcc9bd3060ca5bccb70, fresh131 planned tests pass and authenticated browser/backend HTTP200 for unavailable-randomUUID creation plus failed-detail reload recovery. Fresh independent DraftReview04Verifier2 acquired; proof not yet terminal.
+
+- Child04 terminal LIGHT_PASS/COMPLETE_CHILD by DraftReview04Verifier2; evidence368984cbe5550f9353887ce91f02e40a5d961e32 preserves both attempts and round1. Required fresh131/131 pass; historical actual browser/native editor and changed-branch smoke retained. No RECORD_ONLY or open AUTO_FIX; child05 still pending until complete-manifest checkpoint validates.
 
