@@ -1,0 +1,71 @@
+ M CLAUDE.md
+ M docs/audits/2026-10-27-recheck-29524/repair.md
+ M docs/knowledge/audit/K-master-plan-shared-file-sequential-gates.md
+ M docs/knowledge/audit/K-plan-quantified-claims-need-grep-receipts.md
+ M docs/knowledge/campaign/K-batch-config-legacy-adapter-field-preservation.md
+ M docs/knowledge/campaign/K-batch-multi-value-filter-seams.md
+ M docs/knowledge/campaign/K-batch-send-filter-retry-parity.md
+ M docs/knowledge/campaign/K-batch-send-launch-template-revalidation.md
+ M docs/knowledge/campaign/K-batch-send-round-loop-symmetry.md
+ M docs/knowledge/common/K-flyway-gate-must-pass-on-fresh-db.md
+ M docs/knowledge/common/K-no-cache-framework-in-repo.md
+ M docs/knowledge/es-index/K-enrichment-write-three-layers.md
+ M docs/knowledge/es-index/K-es-dynamic-false.md
+ M docs/knowledge/es-index/K-es-mapping-single-declaration-source.md
+ M docs/knowledge/es-index/K-expert-profile-source-sync.md
+ M docs/knowledge/es-index/K-openalex-institution-two-sources.md
+ M docs/knowledge/es-index/K-promotion-source-passthrough.md
+ M docs/knowledge/es-index/K-sendable-gate-two-implementations.md
+ M docs/knowledge/frontend/K-ai-adopt-direct-send-no-residual-gates.md
+ M docs/knowledge/frontend/K-batch-console-diff-tag-normalization.md
+ M docs/knowledge/frontend/K-batch-picker-comma-delimited-contract.md
+ M docs/knowledge/frontend/K-dom-stub-tests-hide-dangling-refs.md
+ M docs/knowledge/frontend/K-expert-tag-editor-shared-render-contract.md
+ M docs/knowledge/frontend/K-frontend-cache-key-triad.md
+ M docs/knowledge/frontend/K-global-p-is-muted-in-dialogs.md
+ M docs/knowledge/frontend/K-html-string-truncation-breaks-cells.md
+ M docs/knowledge/frontend/K-js-test-invocation-surface.md
+ M docs/knowledge/frontend/K-panel-bg-token-is-translucent.md
+ M docs/knowledge/frontend/K-shared-workbench-fixed-mode-host-adapter.md
+ M docs/knowledge/frontend/K-task-launch-config-registration.md
+ M docs/knowledge/frontend/K-ui-removal-retires-obsolete-contract-tests.md
+ M docs/knowledge/llm/K-selectable-reply-frame-server-resolved-snapshot.md
+ M docs/knowledge/mail/K-ai-generation-observability-not-send-gate.md
+ M docs/knowledge/mail/K-backfill-readonly-inbound.md
+ M docs/knowledge/mail/K-inbound-processing-write-paths.md
+ M docs/knowledge/mail/K-inbound-seen-not-processed-marker.md
+ M docs/knowledge/mail/K-mail-record-source-inbound-id.md
+ M docs/knowledge/mail/K-manual-send-fingerprint-complete-identity.md
+ M docs/knowledge/mail/K-ops-plan-code-scope-boundary.md
+ M docs/knowledge/mail/K-preview-mirrors-pipeline.md
+ M docs/knowledge/mail/K-process-single-all-callers.md
+ M docs/knowledge/mail/K-sender-account-enabled-scope.md
+ M docs/knowledge/mail/K-unsubscribe-token-plaintext-email.md
+ M docs/knowledge/qa/K-manual-frame-three-consumers.md
+ M docs/knowledge/task/K-execution-detail-running-needs-progress-log.md
+ M docs/knowledge/task/K-progress-log-batchonly-two-readers.md
+ M docs/plans/2026-10-18/apollo-03-admission.md
+ M docs/plans/2026-10-18/apollo-04-worker.md
+ M docs/plans/2026-10-18/apollo-06-reporting.md
+ M docs/plans/2026-10-18/apollo-07-frontend.md
+ M docs/plans/2026-10-18/apollo-verification-master.md
+ M docs/releases.json
+ M src/main/resources/application.yml
+?? docs/audits/2026-10-20-reply-quality/
+?? docs/audits/2026-10-24-paper-archive/
+?? docs/audits/2026-10-27-recheck-29254/
+?? docs/audits/2026-10-27-recheck-29524/running-proof.png
+?? docs/audits/2026-10-27-recheck-29524/start-receipt.txt
+?? docs/audits/2026-10-28-recheck-throughput/deployment/
+?? docs/audits/2026-10-29-mime-filter/
+?? docs/audits/2026-10-29-recheck-comparison/
+?? docs/deploy/2026-10-26-recheck-recovery/
+?? docs/mockups/discovery-papers-preview/
+?? docs/mockups/discovery-rereview-preview/
+?? docs/mockups/recipient-manual-preview/
+?? docs/mockups/reply-identity-preview/
+?? docs/plans/2026-10-24/discovery-rereview-entry-preview.md
+?? docs/plans/2026-10-25/
+?? docs/plans/2026-10-29/
+?? scripts/create_qiming_program_information_pdf.py
+?? scripts/discovery_admission_probe/

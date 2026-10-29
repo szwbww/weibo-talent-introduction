@@ -1,0 +1,83 @@
+$ rg -n --hidden -g !.git/** (mailRecordRepository|inboundMailProcessingRepository|processingRepository|attemptRepository|mailSendAttemptRepository)\.(save|saveAll|delete\w*|update\w*|mark\w*|reopen\w*|insert\w*|reserve\w*)\( src/main src/test scripts
+exit=0
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:280:        Mockito.`when`(mailSendAttemptRepository.save(Mockito.any(MailSendAttempt::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:78:        Mockito.`when`(mailRecordRepository.save(anyValue(MailRecord(expertContactId = 0L, direction = "", mailType = "", senderAccountCode = "", triggeredBy = "", subject = "", body = "", sendStatus = "", messageId = null, inReplyTo = null, matchedQaRuleId = null, receivedAt = null, sentAt = null)))).thenAnswer { it.getArgument<MailRecord>(0) }
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:79:        Mockito.`when`(mailSendAttemptRepository.save(anyValue(MailSendAttempt(orcidId = "", mailType = "", accountCode = "", messageId = "", status = "")))).thenAnswer { it.getArgument<MailSendAttempt>(0) }
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:148:        Mockito.`when`(mailRecordRepository.save(anyValue(MailRecord(expertContactId = 0L, direction = "", mailType = "", senderAccountCode = "", triggeredBy = "", subject = "", body = "", sendStatus = "", messageId = null, inReplyTo = null, matchedQaRuleId = null, receivedAt = null, sentAt = null)))).thenAnswer { it.getArgument<MailRecord>(0) }
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:157:        Mockito.`when`(mailSendAttemptRepository.save(anyValue(MailSendAttempt(orcidId = "", mailType = "", accountCode = "", messageId = "", status = "")))).thenAnswer { it.getArgument<MailSendAttempt>(0) }
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:170:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { it.getArgument<MailRecord>(0) }
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:178:        Mockito.`when`(mailSendAttemptRepository.save(Mockito.any(MailSendAttempt::class.java))).thenAnswer { it.getArgument<MailSendAttempt>(0) }
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:205:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { it.getArgument<MailRecord>(0) }
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:239:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { it.getArgument<MailRecord>(0) }
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:248:        Mockito.`when`(mailSendAttemptRepository.save(Mockito.any(MailSendAttempt::class.java))).thenAnswer { it.getArgument<MailSendAttempt>(0) }
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:259:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { it.getArgument<MailRecord>(0) }
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:267:        Mockito.`when`(mailSendAttemptRepository.save(Mockito.any(MailSendAttempt::class.java))).thenAnswer { it.getArgument<MailSendAttempt>(0) }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:69:        mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:98:            mailSendAttemptRepository.save(attempt.copy(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:127:        mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:153:                mailSendAttemptRepository.save(attempt.copy(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:145:        mailRecordRepository.save(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:171:        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:452:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:526:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:568:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:620:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:655:        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:687:        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:756:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:819:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:866:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:909:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:1191:        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:1274:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:1705:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:1916:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:2242:        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:2296:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:2357:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:2389:        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:2419:        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:2677:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:2810:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:2949:        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:2962:        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt:3348:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1551:                    val attempt = mailSendAttemptRepository.save(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceTest.kt:204:        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceTest.kt:260:        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceTest.kt:919:        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceTest.kt:1271:        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceTest.kt:1326:        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:491:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:513:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:542:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:567:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptServiceTest.kt:1368:        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailServiceTest.kt:206:        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailServiceTest.kt:316:        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailServiceTest.kt:341:        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailServiceTest.kt:365:        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:2337:            inboundMailProcessingRepository.reopenManualResolved(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:2386:            inboundMailProcessingRepository.reopenManualResolved(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:2435:            inboundMailProcessingRepository.reopenManualResolved(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:2468:            inboundMailProcessingRepository.reopenManualResolved(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt:2496:            inboundMailProcessingRepository.reopenManualResolved(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceGateTest.kt:163:        Mockito.`when`(mailRecordRepository.save(anyValue(stubMailRecord)))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationServiceIT.kt:446:            inboundMailProcessingRepository.reopenManualResolved(unmatchedId, LocalDateTime.ofInstant(now, SHANGHAI)),
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:193:        val saved = inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:238:        val saved = inboundMailProcessingRepository.save(record.copy(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1618:        inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1689:        val updated = inboundMailProcessingRepository.reopenManualResolved(inboundProcessingId, now)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:134:        val saved = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:287:        attemptRepository.insertIgnore(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:457:        val savedRecord = mailRecordRepository.save(mailRecord)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:481:        attemptRepository.updateStatusAndError(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:558:        val savedRecord = mailRecordRepository.save(mailRecord)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:561:        attemptRepository.updateStatusAndError(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:246:        inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:524:        val inboundMailRecord = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:865:        val outboundRecord = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1212:    ): MailRecord = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1411:        val saved = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1473:        val saved = inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1529:        val saved = inboundMailProcessingRepository.save(
