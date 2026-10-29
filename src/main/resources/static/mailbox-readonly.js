@@ -189,7 +189,7 @@
 
         // Persistent composer: timeline refresh never replaces its native editing range.
         var REVIEW_PATH = "/api/mail/mailbox/review-drafts";
-        var draft = null, revision = 0, savedRevision = 0, conflict = false;
+        var draft = null, requestedDraftId = null, revision = 0, savedRevision = 0, conflict = false;
         var reviewSeq = 0, reviewReadSeq = 0, historySeq = 0, eventsSeq = 0, navigationSeq = 0;
         var saving = null, busy = false, denied = false, createRequest = null;
         var draftItems = [], draftPage = 0, draftTotal = 0, eventItems = [], eventBefore = null;
@@ -293,7 +293,7 @@
         }
         function resetReview() {
             reviewSeq += 1; historySeq += 1; eventsSeq += 1;
-            draft = null; revision = savedRevision = 0; conflict = false;
+            draft = null; requestedDraftId = null; revision = savedRevision = 0; conflict = false;
             saving = null; busy = false; createRequest = null; commentText = "";
             draftItems = []; draftPage = draftTotal = 0; eventItems = []; eventBefore = null;
             eventDraftId = null; panel = null;
@@ -322,6 +322,7 @@
             showReviewError(conflict ? "草稿已被更新，请重新加载" : "保存失败，内容尚未同步"); renderReview();
         }
         function loadDraft(id, preserve) {
+            requestedDraftId = id;
             var ctx = reviewContext(), seq = ++reviewReadSeq;
             return requestJson(REVIEW_PATH + "/" + id).then(function (data) {
                 if (!sameContext(ctx, true) || seq !== reviewReadSeq) return;
@@ -445,7 +446,10 @@
                 if (busy || denied || !selected) return;
                 if (!createRequest) createRequest = { contactId: Number(selected.contactId),
                     clientRequestId: global.crypto && global.crypto.randomUUID ? global.crypto.randomUUID()
-                        : Date.now().toString(36) + "-" + Math.random().toString(36).slice(2), subject: "", html: "" };
+                        : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (part) {
+                            var random = Math.floor(Math.random() * 16);
+                            return (part === "x" ? random : (random & 3) | 8).toString(16);
+                        }), subject: "", html: "" };
                 var ctx = reviewContext(); busy = true; renderReview();
                 return requestJson(REVIEW_PATH, "POST", createRequest).then(function (data) {
                     if (!sameContext(ctx, true)) return;
@@ -517,8 +521,10 @@
             if (["submit", "withdraw", "delete", "comment"].includes(action)) return mutateDraft(action);
             if (action === "select") return navigate(function () { resetReview(); return loadDraft(Number(node.dataset.draftId), false); });
             if (action === "reload") {
+                var id = draft ? draft.id : requestedDraftId;
+                if (!id || !selected || denied || destroyed) return;
                 if (!global.confirm("请先复制本地文字。重新加载将放弃未保存内容，继续？")) return;
-                var id = draft.id; resetReview(); return loadDraft(id, false);
+                resetReview(); return loadDraft(id, false);
             }
             if (action === "history") {
                 panel = panel === "history" ? null : "history"; renderReview(); if (panel) return loadDrafts(false);

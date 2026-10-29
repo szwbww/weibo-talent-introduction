@@ -220,3 +220,82 @@ test("submit freezes native editing while awaiting server state, but explicit sa
     assert.equal(role(h, "review-state").textContent, "已提交");
     h.handle.unmount();
 });
+
+test("initial history detail network failure retries the requested draft only after confirmation", async () => {
+    const h = await setup();
+    h.rows.set(17, { ...draftValue(17), subject: "Recovered draft" });
+    click(h, "history"); await flush();
+    let failed = false;
+    h.custom = (url, opt) => {
+        if (url === BASE + "/17" && opt.method === "GET" && !failed) {
+            failed = true; return Promise.reject(Error("network unavailable"));
+        }
+    };
+    click(h, "select", 17); await flush();
+    assert.equal(role(h, "review-editor").hidden, true);
+    assert.equal(action(h, "reload").hidden, false);
+    const before = h.calls.length;
+    h.runtime.confirm = () => false;
+    click(h, "reload"); await flush();
+    assert.equal(h.calls.length, before, "cancel never discards or requests detail");
+    h.runtime.confirm = () => true;
+    click(h, "reload"); await flush();
+    assert.equal(h.calls.length, before + 1);
+    assert.equal(h.calls.at(-1).path, BASE + "/17");
+    assert.equal(role(h, "review-subject").value, "Recovered draft");
+    assert.equal(role(h, "review-editor").getAttribute("contenteditable"), "true");
+    assert.equal(action(h, "reload").hidden, true);
+    h.handle.unmount();
+});
+
+test("detail recovery keeps conflict input until confirmation and clears it on revoked authorization", async () => {
+    const h = await setup(); await create(h); edit(h, "Local text to copy");
+    h.custom = (url, opt) => opt.method === "PUT" ? Promise.reject(Object.assign(Error("conflict"), { status: 409 })) : undefined;
+    click(h, "save"); await flush();
+    h.runtime.confirm = () => false;
+    click(h, "reload"); await flush();
+    assert.equal(role(h, "review-subject").value, "Local text to copy");
+    assert.equal(role(h, "review-editor").innerHTML, "<p>Local text to copy</p>");
+    h.custom = (url, opt) => url === BASE + "/1" && opt.method === "GET"
+        ? Promise.reject(Object.assign(Error("revoked"), { status: 403 })) : undefined;
+    h.runtime.confirm = () => true;
+    click(h, "reload"); await flush();
+    assert.equal(role(h, "review-drafts").hidden, true);
+    assert.equal(role(h, "review-subject").value, "");
+    assert.equal(role(h, "review-editor").textContent, "");
+    assert.equal(action(h, "reload").hidden, true);
+    const before = h.calls.length;
+    click(h, "reload"); await flush();
+    assert.equal(h.calls.length, before, "revocation removes the requested recovery identity");
+    h.handle.unmount();
+});
+
+for (const crypto of [undefined, {}]) test("creation without randomUUID uses a canonical retry-stable UUID with crypto " + (crypto ? "present" : "absent"), async () => {
+    const h = await setup();
+    h.runtime.crypto = crypto;
+    let random = 0;
+    h.runtime.Math = { floor: Math.floor, random: () => ((random++ % 16) + 0.5) / 16 };
+    const requests = [], persisted = new Map();
+    h.custom = (url, opt) => {
+        if (url !== BASE || opt.method !== "POST") return;
+        const body = JSON.parse(opt.body);
+        assert.match(body.clientRequestId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+        requests.push(body.clientRequestId);
+        if (!persisted.has(body.clientRequestId)) {
+            const row = draftValue(h.nextId++);
+            persisted.set(body.clientRequestId, row); h.rows.set(row.id, row);
+        }
+        if (requests.length === 1) return Promise.reject(Error("response lost after create"));
+        return persisted.get(body.clientRequestId);
+    };
+    await create(h);
+    assert.equal(role(h, "review-editor").hidden, true);
+    await create(h);
+    assert.equal(requests[0], requests[1], "ambiguous network failure retries the same identity");
+    assert.equal(h.rows.size, 1);
+    assert.equal(role(h, "review-editor").getAttribute("contenteditable"), "true");
+    await create(h);
+    assert.notEqual(requests[1], requests[2], "a separate new draft gets a new identity");
+    assert.equal(h.rows.size, 2);
+    h.handle.unmount();
+});
