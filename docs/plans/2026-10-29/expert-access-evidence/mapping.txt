@@ -1,0 +1,10 @@
+src/main/resources/es/trust_reply_unsupported_answer_v1.json:7:    "dynamic": "strict",
+src/main/resources/es/orcid_info_candidate.json:7:    "dynamic": false,
+src/main/resources/es/orcid_info_candidate.json:34:      "identityVerification": { "type": "object", "dynamic": false, "properties": {
+src/main/resources/es/orcid_info_candidate.json:47:      "tags": { "type": "keyword" },
+src/main/resources/es/orcid_info_application.json:7:    "dynamic": false,
+src/main/resources/es/orcid_info_application.json:45:      "identityVerification": { "type": "object", "dynamic": false, "properties": {
+src/main/resources/es/orcid_info_application.json:57:      "tags": { "type": "keyword" },
+src/main/resources/es/orcid_info_raw.json:7:    "dynamic": false,
+src/main/resources/es/orcid_info_raw.json:33:      "identityVerification": { "type": "object", "dynamic": false, "properties": {
+src/main/resources/es/orcid_info_raw.json:45:      "tags": { "type": "keyword" },

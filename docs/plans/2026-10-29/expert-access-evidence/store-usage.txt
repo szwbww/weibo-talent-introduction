@@ -1,0 +1,166 @@
+$ rg -n expert_mail_read_access|inbound_mail_processing|inbound_mail_tag|expert_document|outbound_attachment|mail_reply_draft|meeting_schedule src/main scripts
+exit=0
+scripts/reclassify-auto-responses.py:76:  FROM inbound_mail_processing
+scripts/reclassify-auto-responses.py:129:  FROM inbound_mail_processing
+scripts/reclassify-auto-responses.py:139:  FROM inbound_mail_processing
+scripts/reclassify-auto-responses.py:435:        UPDATE inbound_mail_processing
+scripts/reclassify-auto-responses.py:460:    cursor.execute("SELECT updated_at FROM inbound_mail_processing WHERE id = %s", (processing_id,))
+scripts/reclassify-auto-responses.py:580:                    UPDATE inbound_mail_processing
+scripts/test_reclassify_auto_responses.py:144:        elif normalized.startswith("UPDATE inbound_mail_processing"):
+scripts/test_reclassify_auto_responses.py:148:        elif normalized.startswith("SELECT updated_at FROM inbound_mail_processing"):
+src/main/resources/db/migration/V154__create_expert_meeting_video.sql:3:-- expert_document / expert_material_status，也不加 contact 外键（未联系专家同样可上传）。
+src/main/kotlin/com/weibo/talentintroduction/auth/service/ReadOnlyUserBootstrap.kt:21: * 只写 `admin_user` 一行：不写 `expert_mail_read_access`（无授权即看不到任何正文，
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/MeetingSchedule.kt:7:@Table("meeting_schedule")
+src/main/resources/db/migration/V13__merge_manual_review_into_handoff.sql:3:-- The MANUAL_REVIEW value used by inbound_mail_processing.process_status is a
+src/main/resources/db/migration/V14__contact_index_level_and_reason_type_and_qa_display_name.sql:36:-- 2. inbound_mail_processing 增加 reason_type 列，给前端按原因过滤用
+src/main/resources/db/migration/V14__contact_index_level_and_reason_type_and_qa_display_name.sql:37:ALTER TABLE inbound_mail_processing
+src/main/resources/db/migration/V14__contact_index_level_and_reason_type_and_qa_display_name.sql:43:UPDATE inbound_mail_processing
+src/main/resources/db/migration/V130__add_manual_expert_material_upload.sql:8:--      mail_attachment，材料类型/审核状态仍是 expert_document。
+src/main/resources/db/migration/V126__create_outbound_mail_attachment.sql:10:--   I-1 上传只写本表与 outbound/ 目录：不写 mail_attachment/expert_document，
+src/main/resources/db/migration/V120__scope_inbound_uid_by_validity.sql:2:-- V120 inbound_mail_processing: UID 唯一性以 UIDVALIDITY 界定（fast-p 04）
+src/main/resources/db/migration/V120__scope_inbound_uid_by_validity.sql:17:ALTER TABLE inbound_mail_processing
+src/main/resources/db/migration/V120__scope_inbound_uid_by_validity.sql:20:ALTER TABLE inbound_mail_processing
+src/main/resources/db/migration/V120__scope_inbound_uid_by_validity.sql:21:    DROP INDEX uk_inbound_mail_processing_uid,
+src/main/resources/db/migration/V120__scope_inbound_uid_by_validity.sql:22:    ADD UNIQUE KEY uk_inbound_mail_processing_uid_validity (sender_account_code, uid_validity, imap_uid);
+src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql:18:ALTER TABLE inbound_mail_processing
+src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql:23:UPDATE inbound_mail_processing
+src/main/resources/db/migration/V9__create_meeting_schedule_and_template.sql:1:CREATE TABLE meeting_schedule (
+src/main/resources/db/migration/V9__create_meeting_schedule_and_template.sql:14:    KEY idx_meeting_schedule_contact (expert_contact_id),
+src/main/resources/db/migration/V9__create_meeting_schedule_and_template.sql:15:    CONSTRAINT fk_meeting_schedule_contact FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id),
+src/main/resources/db/migration/V9__create_meeting_schedule_and_template.sql:16:    CONSTRAINT fk_meeting_schedule_mail FOREIGN KEY (source_mail_record_id) REFERENCES mail_record(id)
+src/main/resources/db/migration/V5__create_inbound_mail_processing.sql:1:CREATE TABLE inbound_mail_processing (
+src/main/resources/db/migration/V5__create_inbound_mail_processing.sql:16:    UNIQUE KEY uk_inbound_mail_processing_uid (sender_account_code, imap_uid),
+src/main/resources/db/migration/V5__create_inbound_mail_processing.sql:17:    KEY idx_inbound_mail_processing_status (process_status, received_at),
+src/main/resources/db/migration/V5__create_inbound_mail_processing.sql:18:    CONSTRAINT fk_inbound_mail_processing_contact
+src/main/resources/db/migration/V167__scope_inbound_by_folder.sql:7:ALTER TABLE inbound_mail_processing
+src/main/resources/db/migration/V167__scope_inbound_by_folder.sql:9:    DROP INDEX uk_inbound_mail_processing_owner_uid,
+src/main/resources/db/migration/V167__scope_inbound_by_folder.sql:10:    DROP INDEX uk_inbound_mail_processing_uid_validity,
+src/main/resources/db/migration/V167__scope_inbound_by_folder.sql:11:    ADD UNIQUE KEY uk_inbound_mail_processing_source (mailbox_owner_code, folder, uid_validity, imap_uid),
+src/main/resources/db/migration/V36__add_mail_attachment_inbound_processing_link.sql:12:        FOREIGN KEY (inbound_processing_id) REFERENCES inbound_mail_processing(id);
+src/main/resources/db/migration/V166__create_expert_mail_read_access.sql:2:-- V166 expert_mail_read_access：admin 授予内置 user1 的专家邮件查看权（01）
+src/main/resources/db/migration/V166__create_expert_mail_read_access.sql:17:CREATE TABLE expert_mail_read_access (
+src/main/resources/db/migration/V166__create_expert_mail_read_access.sql:23:    CONSTRAINT fk_expert_mail_read_access_contact
+src/main/resources/db/migration/V19__add_operator_status_and_action_log.sql:52:        FOREIGN KEY (inbound_processing_id) REFERENCES inbound_mail_processing(id)
+src/main/resources/db/migration/V7__create_mail_attachment_and_expert_document.sql:14:CREATE TABLE expert_document (
+src/main/resources/db/migration/V7__create_mail_attachment_and_expert_document.sql:23:    KEY idx_expert_document_contact (expert_contact_id, document_type, document_status),
+src/main/resources/db/migration/V7__create_mail_attachment_and_expert_document.sql:24:    CONSTRAINT fk_expert_document_contact
+src/main/resources/db/migration/V7__create_mail_attachment_and_expert_document.sql:26:    CONSTRAINT fk_expert_document_attachment
+src/main/resources/db/migration/V127__add_outbound_attachments_snapshot.sql:4:-- 只新增一列：outbound_attachments_json LONGTEXT NULL。
+src/main/resources/db/migration/V127__add_outbound_attachments_snapshot.sql:14:    ADD COLUMN outbound_attachments_json LONGTEXT NULL;
+src/main/resources/db/migration/V134__shared_inbox_owner.sql:2:-- V134 共享物理收件箱归属：mail_sender_account / inbound_mail_processing（fast-p 01）
+src/main/resources/db/migration/V134__shared_inbox_owner.sql:18:--     uk_inbound_mail_processing_uid_validity（逻辑账号 + 代际 + UID）。
+src/main/resources/db/migration/V134__shared_inbox_owner.sql:28:ALTER TABLE inbound_mail_processing
+src/main/resources/db/migration/V134__shared_inbox_owner.sql:32:ALTER TABLE inbound_mail_processing
+src/main/resources/db/migration/V134__shared_inbox_owner.sql:33:    ADD UNIQUE KEY uk_inbound_mail_processing_owner_uid (mailbox_owner_code, uid_validity, imap_uid);
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:98:        'inbound_mail_processing',
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:100:        'ALTER TABLE inbound_mail_processing ADD COLUMN in_reply_to VARCHAR(255) DEFAULT NULL AFTER message_id'
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:103:        'inbound_mail_processing',
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:105:        'ALTER TABLE inbound_mail_processing ADD COLUMN body TEXT DEFAULT NULL AFTER subject'
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:108:        'inbound_mail_processing',
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:110:        'ALTER TABLE inbound_mail_processing ADD COLUMN cleaned_body TEXT DEFAULT NULL AFTER body'
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:113:        'inbound_mail_processing',
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:115:        'ALTER TABLE inbound_mail_processing ADD COLUMN resolved_at DATETIME DEFAULT NULL AFTER process_reason'
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:118:        'inbound_mail_processing',
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:120:        'ALTER TABLE inbound_mail_processing ADD COLUMN resolved_by VARCHAR(100) DEFAULT NULL AFTER resolved_at'
+src/main/resources/db/migration/V53__inbound_mail_tag.sql:1:CREATE TABLE inbound_mail_tag (
+src/main/resources/db/migration/V119__create_mail_attachment_transfer.sql:62:        FOREIGN KEY (inbound_processing_id) REFERENCES inbound_mail_processing(id),
+src/main/kotlin/com/weibo/talentintroduction/document/domain/ExpertDocument.kt:7:@Table("expert_document")
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:31: * expert_document 归属展示材料；附件状态只来自 transfer 行 + 已验证的本地文件；
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:33: * 其唯一 owner（mail_record 或 inbound_mail_processing）→ contact。
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:590:     * 已确认材料（expert_document 归属）；任一外来/未知 ID 整批拒绝（400，
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:852:              FROM expert_document d
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:855:              LEFT JOIN inbound_mail_processing p ON p.id = COALESCE(t.inbound_processing_id, a.inbound_processing_id)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:865:                     SELECT p.id FROM inbound_mail_processing p
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:868:                     SELECT 1 FROM expert_document d
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:877:                     SELECT p.id FROM inbound_mail_processing p
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:880:                     SELECT 1 FROM expert_document d
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/InboundMailProcessing.kt:7:@Table("inbound_mail_processing")
+src/main/kotlin/com/weibo/talentintroduction/document/domain/ManualExpertMaterialUpload.kt:12: *   `expert_document.expert_contact_id` 同时等于请求的 contactId；
+src/main/kotlin/com/weibo/talentintroduction/document/domain/ManualExpertMaterialUpload.kt:15: *   `expert_document`，本表不重复。
+src/main/kotlin/com/weibo/talentintroduction/document/service/DocumentTextExtractor.kt:24: * 只有归属有效（expert_document → attachment → 唯一 owner → 该 contact）的
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:54:            // processing owner（04 已绑定专家附件）以 expert_document 为准。
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:53: *    `expert_document`（PENDING_REVIEW、沿用推断类型）。
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/InboundMailTag.kt:7:@Table("inbound_mail_tag")
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt:95:    /** 线上来信：inbound_mail_processing 行；必须已绑定联系人。 */
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt:101:                "inbound_mail_processing $sourceId does not exist"
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt:107:            "inbound_mail_processing $sourceId has no expert contact"
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/ExpertMailReadAccessController.kt:20: * 直接调用。所有端点只写 `expert_mail_read_access`，不改变关注/挂起/邮件状态/ES。
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:83:                    SELECT 1 FROM inbound_mail_tag t
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:84:                    JOIN inbound_mail_processing p ON p.id = t.inbound_processing_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:88:                    SELECT 1 FROM inbound_mail_tag t2
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:89:                    JOIN inbound_mail_processing p2 ON p2.id = t2.inbound_processing_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:117:                    SELECT 1 FROM inbound_mail_tag t
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:118:                    JOIN inbound_mail_processing p ON p.id = t.inbound_processing_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:122:                    SELECT 1 FROM inbound_mail_tag t2
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:123:                    JOIN inbound_mail_processing p2 ON p2.id = t2.inbound_processing_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:550:            FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:597:            FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:667:                FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:733:                FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:826:            FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:15: * 数据权威（I-1）：来信只取 linked inbound_mail_processing（排除未匹配与独立机器信；
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:394:    /** 每位专家全体资料数（expert_document；不随账号范围/筛选变化）。 */
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:399:              FROM expert_document
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:413:     * 2. `inbound_mail_processing JOIN mail_sender_account` 的 MANUAL_REVIEW 分组聚合 →
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:452:              FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:478:     * 只读账号对单个专家的授权读取（每次请求一次 `expert_mail_read_access` 查询，无缓存）。
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:488:            SELECT COUNT(*) FROM expert_mail_read_access
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:554:     * 归一化 UNION 基础：OUTBOUND mail_record UNION ALL linked inbound_mail_processing。
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:612:              FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:646:        // 入站匹配 inbound_mail_processing.from_email（别名）。recipientEmail/keyword 与
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:670:                SELECT 1 FROM inbound_mail_processing impi
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:683:                         SELECT 1 FROM inbound_mail_tag imt
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:700:     * join 其对应来源（inbound_mail_tag → processing），绝不因多标签产生重复行。
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:765:                    SELECT 1 FROM inbound_mail_processing imp_replied
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:787:                    SELECT 1 FROM expert_mail_read_access emra
+src/main/kotlin/com/weibo/talentintroduction/mail/service/InboundAutoResponseDetector.kt:16: * 专家全部逻辑账号与已绑定别名；已存在任意 `inbound_mail_processing` 或 INBOUND
+src/main/kotlin/com/weibo/talentintroduction/mail/service/InboundAutoResponseDetector.kt:136:            "SELECT id FROM inbound_mail_processing " +
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:24:        SELECT * FROM inbound_mail_processing WHERE mailbox_owner_code = :mailboxOwnerCode
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:39:        SELECT * FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:57:        SELECT * FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:71:        UPDATE inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:108:        SELECT * FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:125:        SELECT COUNT(*) FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:142:        SELECT * FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:161:        SELECT COUNT(*) FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:173:        FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:180:        SELECT COUNT(*) FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:188:        FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:197:        SELECT COUNT(*) FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:206:        SELECT COUNT(*) FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:215:        SELECT * FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:234:        SELECT COUNT(*) FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:250:          FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:259:        SELECT * FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:266:    @Query("SELECT COUNT(*) FROM inbound_mail_processing")
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:271:        SELECT p.* FROM inbound_mail_processing p
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:275:                SELECT 1 FROM inbound_mail_tag t
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:278:                SELECT 1 FROM inbound_mail_tag t2
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:297:        SELECT COUNT(*) FROM inbound_mail_processing p
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:301:                SELECT 1 FROM inbound_mail_tag t
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:304:                SELECT 1 FROM inbound_mail_tag t2
+src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentService.kt:32: * 本服务不写 `mail_attachment` / `expert_document`，不调用 SMTP、不建排期、不变更
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:55: * latestInbound.processingId 是真实 inbound_mail_processing.id（供可信工作台），
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailTagRepository.kt:35:        FROM inbound_mail_tag t
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailTagRepository.kt:45:        FROM inbound_mail_tag t
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailTagRepository.kt:46:        JOIN inbound_mail_processing p ON p.id = t.inbound_processing_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailTagRepository.kt:58:        FROM inbound_mail_tag t
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailTagRepository.kt:68:        FROM inbound_mail_tag t
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailTagRepository.kt:69:        JOIN inbound_mail_processing p ON p.id = t.inbound_processing_id
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:31: * 不触发 SMTP、send_attempt、mail_record、meeting_schedule、processing 状态、
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:781:            // 05 的 finalize 四分支据此写 mail_record.outbound_attachments_json。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:30: * - 推荐（[timing]）：只读配置、业务账号集合与 `inbound_mail_processing` 的窄投影，
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:84:     * 样本只来自指定 contact 的 `inbound_mail_processing`；账号集合复用
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:295:            FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:57:        /** 来信路径 = 真实 inbound_mail_processing.id；会话回信路径 = null（I-3）。 */
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailReadAccessService.kt:12: * `expert_mail_read_access` 的唯一写者与读者（I-2/I-3）。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailReadAccessService.kt:18: * 全部读写为参数化 JDBC；本服务只写 `expert_mail_read_access`，不触碰关注、挂起、
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailReadAccessService.kt:45:                INSERT INTO expert_mail_read_access (username, expert_contact_id, granted_by, created_at)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailReadAccessService.kt:70:            DELETE FROM expert_mail_read_access
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailReadAccessService.kt:98:            SELECT COUNT(*) FROM expert_mail_read_access
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertRepliedDismissalService.kt:27:            "SELECT MAX(id) FROM inbound_mail_processing WHERE expert_contact_id = :contactId",
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:139:        // `inbound_mail_processing`/`mail_record`/意图/标签/附件/专家状态，只在允许确认时
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionService.kt:64: *   inbound_mail_processing/ES（I-6）。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionService.kt:74:        /** 待处理权威谓词（复用 inbound_mail_processing 现有 MANUAL_REVIEW 口径 I-3）。 */
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionService.kt:127:              FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionService.kt:234:              FROM inbound_mail_processing imp

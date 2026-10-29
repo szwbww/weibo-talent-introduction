@@ -1,0 +1,11 @@
+$ rg -n review_draft|ReviewDraft|draft-review|reviewDraft src/main
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:444:    fun previewDraft(request: ComposeTemplatePreviewDraftRequest): ComposeTemplatePreviewDraftResult {
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:475:            return ComposeTemplatePreviewDraftResult(
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:523:        return ComposeTemplatePreviewDraftResult(
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:1071:data class ComposeTemplatePreviewDraftRequest(
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:1084:data class ComposeTemplatePreviewDraftResult(
+src/main/kotlin/com/weibo/talentintroduction/template/controller/MailComposeTemplateController.kt:3:import com.weibo.talentintroduction.template.service.ComposeTemplatePreviewDraftRequest
+src/main/kotlin/com/weibo/talentintroduction/template/controller/MailComposeTemplateController.kt:4:import com.weibo.talentintroduction.template.service.ComposeTemplatePreviewDraftResult
+src/main/kotlin/com/weibo/talentintroduction/template/controller/MailComposeTemplateController.kt:64:    fun previewDraft(@RequestBody request: ComposeTemplatePreviewDraftRequest): ComposeTemplatePreviewDraftResult =
+src/main/kotlin/com/weibo/talentintroduction/template/controller/MailComposeTemplateController.kt:65:        service.previewDraft(request)

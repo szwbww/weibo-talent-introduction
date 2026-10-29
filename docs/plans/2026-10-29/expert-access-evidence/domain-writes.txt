@@ -1,0 +1,146 @@
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertManualProfileController.kt:13:import com.weibo.talentintroduction.expert.service.ExpertManualProfileService
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertManualProfileController.kt:42:class ExpertManualProfileController(private val service: ExpertManualProfileService) {
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:41:        source["emailSource"] in sources || (source["tags"] as? Collection<*>)?.contains("discovered") == true
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertManualProfile.kt:6: * 19 项人工资料是首次建立的私有业务聚合（`expert_manual_profile`），只由
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertManualProfile.kt:7: * `ExpertManualProfileService` 写入；本文件同时是 PATCH 分组键集（I-3）与 DDL 漂移核对的唯一权威，
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertManualProfile.kt:15: * - [column]：`expert_manual_profile` 列名（服务 SQL 与本字段白名单的对应关系由迁移测试核对）；
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/MeetingSchedule.kt:7:@Table("meeting_schedule")
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:290:    fun addTag(@RequestBody request: ExpertTagMutationRequest): TagMutationResult {
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:296:        val ok = expertIndexWriterService.addTag(docId, request.tag.trim(), request.level)
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:304:    fun removeTag(@RequestBody request: ExpertTagMutationRequest): TagMutationResult {
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:310:        val ok = expertIndexWriterService.removeTag(docId, request.tag.trim(), request.level)
+src/main/resources/db/migration/V153__create_expert_manual_profile.sql:2:-- 只由 ExpertManualProfileService 读写；不加 contact 外键（未联系专家也要能存），不加全局人才编号唯一约束。
+src/main/resources/db/migration/V153__create_expert_manual_profile.sql:4:CREATE TABLE expert_manual_profile (
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertProfileIdentityResolver.kt:88:        const val PROFILE_EXISTS_SQL = "SELECT COUNT(*) FROM expert_manual_profile WHERE expert_key=:expertKey"
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPerson.kt:128:            (source["tags"] as? Collection<*>)?.any { it == DISCOVERED_TAG } == true
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:109:                        val tagged = expertIndexWriterService.addTag(docId, "verified", ExpertIndexLevel.CANDIDATE)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:288:        val existingTags = (rawDoc["tags"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:295:            put("tags", newTags)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertManualProfileService.kt:33: * 01（I-2/I-3/I-4）：`expert_manual_profile` 的唯一写者与读入口。
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertManualProfileService.kt:42:class ExpertManualProfileService(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertManualProfileService.kt:301:              FROM expert_manual_profile
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertManualProfileService.kt:306:            UPDATE expert_manual_profile
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertManualProfileService.kt:319:            UPDATE expert_manual_profile
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertManualProfileService.kt:335:            UPDATE expert_manual_profile
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertManualProfileService.kt:346:            UPDATE expert_manual_profile
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertManualProfileService.kt:357:            INSERT INTO expert_manual_profile (
+src/main/resources/db/migration/V126__create_outbound_mail_attachment.sql:2:-- V126 outbound_mail_attachment（fast-p 04：人工回复通用附件上传原件）
+src/main/resources/db/migration/V126__create_outbound_mail_attachment.sql:21:CREATE TABLE outbound_mail_attachment (
+src/main/resources/db/migration/V126__create_outbound_mail_attachment.sql:31:    KEY idx_outbound_mail_attachment_contact (expert_contact_id, created_at),
+src/main/resources/db/migration/V126__create_outbound_mail_attachment.sql:32:    CONSTRAINT fk_outbound_mail_attachment_contact
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:646:    fun addTag(docId: String, tag: String, level: ExpertIndexLevel): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:664:    fun removeTag(docId: String, tag: String, level: ExpertIndexLevel): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:833:                put("tags", ((this["tags"] as? List<*>)?.filterIsInstance<String>().orEmpty() + "auto_promoted").distinct())
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:908:            put("tags", (existingTags + DISCOVERY_TAG).distinct())
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:12:import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:45:    private val mailAttachmentRepository: MailAttachmentRepository,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:57:        val attachments = mailAttachmentRepository.findAll()
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:4:import com.weibo.talentintroduction.campaign.repository.MeetingScheduleRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:24:    private val meetingScheduleRepository: MeetingScheduleRepository,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:40:        return meetingScheduleRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:55:        return meetingScheduleRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:74:        return meetingScheduleRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:101:        val updatedSchedule = meetingScheduleRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:198:        val updatedSchedule = meetingScheduleRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:224:        val updatedSchedule = meetingScheduleRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:270:        val schedule = meetingScheduleRepository.findById(scheduleId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchEmailVerificationService.kt:402:            expertIndexWriterService.addTag(docId, EMAIL_ABNORMAL_TAG, level)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialArchiveService.kt:3:import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialArchiveService.kt:19:    private val attachmentRepository: MailAttachmentRepository
+src/main/resources/db/migration/V9__create_meeting_schedule_and_template.sql:1:CREATE TABLE meeting_schedule (
+src/main/resources/db/migration/V9__create_meeting_schedule_and_template.sql:14:    KEY idx_meeting_schedule_contact (expert_contact_id),
+src/main/resources/db/migration/V9__create_meeting_schedule_and_template.sql:15:    CONSTRAINT fk_meeting_schedule_contact FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id),
+src/main/resources/db/migration/V9__create_meeting_schedule_and_template.sql:16:    CONSTRAINT fk_meeting_schedule_mail FOREIGN KEY (source_mail_record_id) REFERENCES mail_record(id)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3654:            put("tags", (existingTags + "auto_promoted").distinct())
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:6:import com.weibo.talentintroduction.document.repository.ExpertDocumentRepository
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:11:import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:52:    private val expertDocumentRepository: ExpertDocumentRepository,
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:53:    private val mailAttachmentRepository: MailAttachmentRepository,
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:108:        val attachment = mailAttachmentRepository.findById(attachmentId)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:110:        val document = expertDocumentRepository.findFirstByMailAttachmentId(attachmentId)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:128:        val attachment = mailAttachmentRepository.findById(attachmentId)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:606:            val document = expertDocumentRepository.findFirstByMailAttachmentId(attachmentId)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:660:            if (expertDocumentRepository.findFirstByMailAttachmentId(candidate.attachmentId) != null) {
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:663:            expertDocumentRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:717:                mailAttachmentRepository.findAllByMailRecordIdOrderByCreatedAtAsc(id)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:720:                val byDirect = mailAttachmentRepository.findAllByInboundProcessingIdOrderByCreatedAtAsc(id)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:725:                    mailAttachmentRepository.findById(attachmentId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:746:                mailAttachmentRepository.findAllByMailRecordIdOrderByCreatedAtAsc(legacy.single())
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentAnalysisService.kt:10:import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentAnalysisService.kt:35:    private val mailAttachmentRepository: MailAttachmentRepository,
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentAnalysisService.kt:195:            mailAttachmentRepository.findById(attachmentId).orElse(null)?.fileName
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:8:import com.weibo.talentintroduction.document.repository.ExpertDocumentRepository
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:12:import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:66:    private val mailAttachmentRepository: MailAttachmentRepository,
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:67:    private val expertDocumentRepository: ExpertDocumentRepository,
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:112:                val attachment = mailAttachmentRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:126:                val document = expertDocumentRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:202:     * 列宽与 04 的 `outbound_mail_attachment.created_by` 同为 100 字符，复用同一常量。
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:10:import com.weibo.talentintroduction.campaign.repository.MeetingScheduleRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:14:import com.weibo.talentintroduction.document.repository.ExpertDocumentRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:20:import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:32:    private val mailAttachmentRepository: MailAttachmentRepository,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:33:    private val expertDocumentRepository: ExpertDocumentRepository,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:36:    private val meetingScheduleRepository: MeetingScheduleRepository,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:81:            documents = expertDocumentRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId),
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:90:            meetingSchedules = meetingScheduleRepository.findAllByExpertContactIdOrderByCreatedAtDesc(contactId),
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:3:import com.weibo.talentintroduction.document.repository.ExpertDocumentRepository
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:5:import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:41:    private val expertDocumentRepository: ExpertDocumentRepository,
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:42:    private val mailAttachmentRepository: MailAttachmentRepository,
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:47:        val documents = expertDocumentRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:50:            val attachment = mailAttachmentRepository.findById(doc.mailAttachmentId)
+src/main/kotlin/com/weibo/talentintroduction/document/repository/ExpertDocumentRepository.kt:6:interface ExpertDocumentRepository : CrudRepository<ExpertDocument, Long> {
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MeetingScheduleRepository.kt:6:interface MeetingScheduleRepository : CrudRepository<MeetingSchedule, Long> {
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/OutboundMailAttachment.kt:8: * outbound_mail_attachment：一行 = 一次成功上传的通用附件原件元数据（04 I-1）。
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/OutboundMailAttachment.kt:17:@Table("outbound_mail_attachment")
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentRepository.kt:6:interface MailAttachmentRepository : CrudRepository<MailAttachment, Long> {
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/OutboundMailAttachmentRepository.kt:10: * outbound_mail_attachment 的显式 JDBC 读写（04 T1）。
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/OutboundMailAttachmentRepository.kt:21:class OutboundMailAttachmentRepository(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/OutboundMailAttachmentRepository.kt:29:            INSERT INTO outbound_mail_attachment
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/OutboundMailAttachmentRepository.kt:64:              FROM outbound_mail_attachment
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailTagRepository.kt:19:interface InboundMailTagRepository : CrudRepository<InboundMailTag, Long> {
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryController.kt:157:    fun addTag(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentService.kt:6:import com.weibo.talentintroduction.mail.repository.OutboundMailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentService.kt:38:    private val repository: OutboundMailAttachmentRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:31: * 不触发 SMTP、send_attempt、mail_record、meeting_schedule、processing 状态、
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:13:import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:26:    private val mailAttachmentRepository: MailAttachmentRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:209:            mailAttachmentRepository.findAllByMailRecordIdOrderByCreatedAtAsc(recordId).isNotEmpty()
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:6:import com.weibo.talentintroduction.document.repository.ExpertDocumentRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:9:import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:38:    private val mailAttachmentRepository: MailAttachmentRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:39:    private val expertDocumentRepository: ExpertDocumentRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:129:        mailAttachmentRepository.findAllByInboundProcessingIdOrderByCreatedAtAsc(inboundProcessingId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:132:                if (expertDocumentRepository.findFirstByMailAttachmentId(attachmentId) == null) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:133:                    expertDocumentRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:232:            return mailAttachmentRepository.findById(existingAttachmentId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:236:        val attachment = mailAttachmentRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:279:        val existing = expertDocumentRepository.findFirstByMailAttachmentId(attachmentId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:283:        return expertDocumentRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:311:        val mailAttachment = mailAttachmentRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:322:        return expertDocumentRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:345:        return mailAttachmentRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:3:import com.weibo.talentintroduction.document.repository.ExpertDocumentRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:5:import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:35:    private val attachmentRepository: MailAttachmentRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:36:    private val expertDocumentRepository: ExpertDocumentRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:391:        val document = expertDocumentRepository.findFirstByMailAttachmentId(attachmentId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt:7:import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt:45:    private val mailAttachmentRepository: MailAttachmentRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/InboundMailTagService.kt:6:import com.weibo.talentintroduction.mail.repository.InboundMailTagRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/InboundMailTagService.kt:38:    private val inboundMailTagRepository: InboundMailTagRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/InboundMailTagService.kt:54:            if (inboundMailTagRepository.existsByInboundProcessingIdAndQaRuleId(inboundProcessingId, ruleId)) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/InboundMailTagService.kt:58:            inboundMailTagRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/InboundMailTagService.kt:78:        if (inboundMailTagRepository.existsByInboundProcessingIdAndQaRuleId(inboundProcessingId, qaRuleId)) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/InboundMailTagService.kt:81:        return inboundMailTagRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/InboundMailTagService.kt:98:        if (inboundMailTagRepository.existsByInboundProcessingIdAndTagTypeAndLabel(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/InboundMailTagService.kt:106:        return inboundMailTagRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/InboundMailTagService.kt:120:        if (!inboundMailTagRepository.existsById(tagId)) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/InboundMailTagService.kt:123:        inboundMailTagRepository.deleteById(tagId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/InboundMailTagService.kt:127:        val tags = inboundMailTagRepository.findAllByInboundProcessingIdOrderByIdAsc(inboundProcessingId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/InboundMailTagService.kt:150:        val tags = inboundMailTagRepository.findAllByInboundProcessingIdIn(inboundProcessingIds)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/InboundMailTagService.kt:174:        val qaCounts = inboundMailTagRepository.countQaTagsGroupedByRule(from, to)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/InboundMailTagService.kt:175:        val customCounts = inboundMailTagRepository.countCustomTagsGroupedByLabel(from, to)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/InboundMailTagService.kt:180:        val qaCounts = inboundMailTagRepository.countQaTagsGroupedByRule()
+src/main/kotlin/com/weibo/talentintroduction/mail/service/InboundMailTagService.kt:181:        val customCounts = inboundMailTagRepository.countCustomTagsGroupedByLabel()

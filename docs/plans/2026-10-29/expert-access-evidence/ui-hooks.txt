@@ -1,0 +1,117 @@
+$ rg -n FILTER_FIELDS|mcFilterPopover|mc-filter|read-access|ReadOnly|isReader|pending-badge|expertTags|renderExpertTagEditor src/main/resources/static/mailbox-chat.js src/main/resources/static/mailbox-readonly.js src/main/resources/static/app.js src/main/resources/static/mailbox-chat.css
+exit=0
+src/main/resources/static/mailbox-readonly.js:9: * 唯一导出：window.MailboxReadOnly = { mount(host, { api, sessionUser }), unmount(host) }。
+src/main/resources/static/mailbox-readonly.js:619:    global.MailboxReadOnly = {
+src/main/resources/static/mailbox-chat.css:9:.mail-chat .mc-filters{display:flex;flex-wrap:wrap;gap:6px}
+src/main/resources/static/mailbox-chat.css:10:.mail-chat .mc-filter{min-height:28px;padding:3px 8px;border:1px solid #dce4ef;border-radius:7px;background:#f8faff;color:#64748b;font:inherit;cursor:pointer}
+src/main/resources/static/mailbox-chat.css:11:.mail-chat .mc-filter:hover{border-color:#93b4ec;background:#eff5ff}
+src/main/resources/static/mailbox-chat.css:12:.mail-chat .mc-filter:active{background:#dbeafe}
+src/main/resources/static/mailbox-chat.css:13:.mail-chat .mc-filter[aria-pressed=true]{border-color:#1e40af;background:#eff5ff;color:#1e40af;font-weight:600}
+src/main/resources/static/mailbox-chat.css:14:.mail-chat .mc-filter:disabled{opacity:.45;cursor:not-allowed}
+src/main/resources/static/mailbox-chat.css:76:#view-mailbox:not(.mc-refined) .mc-filter-fields{display:contents}
+src/main/resources/static/mailbox-chat.css:85:.mail-chat .mc-filter-count{padding:0 4px;border-radius:8px;background:#2553c5;color:#fff;font-size:10px;line-height:16px}
+src/main/resources/static/mailbox-chat.css:86:.mail-chat .mc-filters{gap:12px;flex-wrap:nowrap}
+src/main/resources/static/mailbox-chat.css:87:.mail-chat .mc-filter{border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;padding:6px 5px 10px}
+src/main/resources/static/mailbox-chat.css:88:.mail-chat .mc-filter[aria-pressed=true]{border-bottom-color:#2e59c7;background:transparent;color:#244ca9}
+src/main/resources/static/mailbox-chat.css:89:.mail-chat .mc-filter-summary{display:flex;align-items:center;gap:8px;color:#7890b3;font-size:11px}
+src/main/resources/static/mailbox-chat.css:90:.mail-chat .mc-filter-popover{position:absolute;top:44px;left:0;z-index:var(--z-dropdown);width:430px;max-width:calc(100vw - 48px);max-height:calc(100dvh - 210px);overflow:auto;background:#fff;border:1px solid #dce5f1;border-radius:12px;box-shadow:0 14px 50px #20395d26}
+src/main/resources/static/mailbox-chat.css:91:.mail-chat .mc-filter-popover header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #edf1f7;font-size:14px;color:#475d79}
+src/main/resources/static/mailbox-chat.css:92:.mail-chat .mc-filter-popover .mc-filter-fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;padding:18px 20px}
+src/main/resources/static/mailbox-chat.css:96:.mail-chat .mc-filter-popover footer{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:14px 20px;border-top:1px solid #edf1f7}
+src/main/resources/static/mailbox-chat.css:97:.mail-chat .mc-filter-popover footer .mc-text-button{margin-right:auto}
+src/main/resources/static/mailbox-chat.css:149:.mail-chat .mc-manage-dialog .mc-inline-error,.mail-chat .mc-filter-popover .mc-inline-error{padding:0 20px 12px}
+src/main/resources/static/mailbox-chat.css:151:@media(max-width:760px){#view-mailbox.mc-refined #mailboxList{padding:12px}.mail-chat{height:auto;min-height:0}.mail-chat .mc-search-row{position:static}.mail-chat .mc-filter-popover{position:fixed;top:100px;left:16px;width:calc(100vw - 32px);max-width:none;max-height:calc(100dvh - 116px)}.mail-chat .mc-scroll{max-height:65dvh;overflow:auto}.mail-chat .mc-message{width:100%}.mail-chat .mc-timeline-head{padding:10px 12px}.mail-chat .mc-position-hint{display:none}.mail-chat .mc-status-grid{grid-template-columns:1fr}.mail-chat .mc-manage-dialog{max-height:calc(100dvh - 32px)}}
+src/main/resources/static/mailbox-chat.js:32: * - 专家标签行（S-7）：只读 summary.expertTags（[] 无占位、null 标签暂不可用），
+src/main/resources/static/mailbox-chat.js:95:    const FILTER_FIELDS = [
+src/main/resources/static/mailbox-chat.js:105:    const FILTER_KEYS = FILTER_FIELDS.map((field) => field.key);
+src/main/resources/static/mailbox-chat.js:1446:            FILTER_FIELDS.forEach((field) => {
+src/main/resources/static/mailbox-chat.js:1474:            FILTER_FIELDS.forEach((field) => {
+src/main/resources/static/mailbox-chat.js:1493:                const footer = host.querySelector ? host.querySelector("#mcFilterPopover footer") : null;
+src/main/resources/static/mailbox-chat.js:1511:            FILTER_FIELDS.forEach((field) => {
+src/main/resources/static/mailbox-chat.js:1536:            const footer = host.querySelector ? host.querySelector("#mcFilterPopover footer") : null;
+src/main/resources/static/mailbox-chat.js:1646:                return `<button class="mc-filter" type="button" data-action="mc-filter" data-chip="${chip.key}" aria-pressed="${instance.chip === chip.key ? "true" : "false"}">${escapeText(chip.label)}${countSpan}</button>`;
+src/main/resources/static/mailbox-chat.js:1654:                                <button class="mc-icon" type="button" data-action="mc-more-filters" title="更多筛选" aria-label="更多筛选" aria-expanded="false" aria-controls="mcFilterPopover">⋯<span class="mc-filter-count" hidden></span></button>
+src/main/resources/static/mailbox-chat.js:1655:                                <div class="mc-filter-popover" id="mcFilterPopover" role="dialog" aria-label="更多筛选" hidden>
+src/main/resources/static/mailbox-chat.js:1657:                                    <div class="mc-filter-fields" id="mailboxFilterFields"></div>
+src/main/resources/static/mailbox-chat.js:1662:                            <div class="mc-filters">
+src/main/resources/static/mailbox-chat.js:1665:                            <div class="mc-filter-summary" hidden></div>
+src/main/resources/static/mailbox-chat.js:1806:            const countBadge = host.querySelector ? host.querySelector(".mc-filter-count") : null;
+src/main/resources/static/mailbox-chat.js:1816:            const summary = host.querySelector ? host.querySelector(".mc-filter-summary") : null;
+src/main/resources/static/mailbox-chat.js:1830:            FILTER_FIELDS.forEach((field) => {
+src/main/resources/static/mailbox-chat.js:1838:            FILTER_FIELDS.forEach((field) => {
+src/main/resources/static/mailbox-chat.js:1847:            const popover = host.querySelector ? host.querySelector("#mcFilterPopover") : null;
+src/main/resources/static/mailbox-chat.js:1861:            const popover = host.querySelector ? host.querySelector("#mcFilterPopover") : null;
+src/main/resources/static/mailbox-chat.js:1871:            const popover = host.querySelector ? host.querySelector("#mcFilterPopover") : null;
+src/main/resources/static/mailbox-chat.js:1987:                const popover = host.querySelector ? host.querySelector("#mcFilterPopover") : null;
+src/main/resources/static/mailbox-chat.js:2002:                const popover = host.querySelector ? host.querySelector("#mcFilterPopover") : null;
+src/main/resources/static/mailbox-chat.js:2079:            const tags = item && Array.isArray(item.expertTags) ? item.expertTags : null;
+src/main/resources/static/mailbox-chat.js:2896:            const chip = host.querySelector ? host.querySelector(`.mc-filter[data-chip="${instance.chip}"]`) : null;
+src/main/resources/static/mailbox-chat.js:3685:            return `/api/mail/mailbox/conversations/${Number(contactId)}/read-access/${READ_ACCESS_TARGET}`;
+src/main/resources/static/mailbox-chat.js:3732:            return `<button class="button" type="button" data-action="mc-toggle-user1-read-access" data-contact-id="${escapeText(id)}"${view.disabled ? " disabled" : ""}>${view.button}</button><span class="mc-badge" data-role="mc-user1-read-access-status" aria-live="polite">${view.badge}</span>`;
+src/main/resources/static/mailbox-chat.js:3741:            const button = actions.querySelector('[data-action="mc-toggle-user1-read-access"]');
+src/main/resources/static/mailbox-chat.js:3742:            const badge = actions.querySelector('[data-role="mc-user1-read-access-status"]');
+src/main/resources/static/mailbox-chat.js:6427:            // 静默刷新会话 summary + 当前列表行（服务端 expertTags）
+src/main/resources/static/mailbox-chat.js:9247:            if (action === "mc-toggle-user1-read-access") {
+src/main/resources/static/mailbox-chat.js:9256:            if (action === "mc-filter") {
+src/main/resources/static/mailbox-chat.js:9645:            const popover = host.querySelector ? host.querySelector("#mcFilterPopover") : null;
+src/main/resources/static/mailbox-chat.js:9705:                const popover = host.querySelector ? host.querySelector("#mcFilterPopover") : null;
+src/main/resources/static/mailbox-chat.js:9773:            const inPopover = host.querySelector && host.querySelector("#mcFilterPopover");
+src/main/resources/static/mailbox-chat.js:9818:            host.querySelectorAll(".mc-filter[data-action=mc-filter]").forEach((button) => {
+src/main/resources/static/app.js:4851:    if (typeof isMailReadOnlyMode === "function" && isMailReadOnlyMode()
+src/main/resources/static/app.js:4852:        && !isMailReadOnlyRequestAllowed(path, options)) {
+src/main/resources/static/app.js:5128:            if (typeof isMailReadOnlyMode === "function" && isMailReadOnlyMode() && tab.dataset.view !== "mailbox") return;
+src/main/resources/static/app.js:5134:        menu.value = typeof isMailReadOnlyMode === "function" && isMailReadOnlyMode() ? "mailbox" : state.view;
+src/main/resources/static/app.js:5222:    if (typeof isMailReadOnlyMode === "function" && isMailReadOnlyMode() && view !== "mailbox") return;
+src/main/resources/static/app.js:5297:    if (typeof isMailReadOnlyMode === "function" && isMailReadOnlyMode()) {
+src/main/resources/static/app.js:5298:        const handle = mailReadOnlyState().handle;
+src/main/resources/static/app.js:7648:        const expertTags = (mail.expertTags || []).map((tag) =>
+src/main/resources/static/app.js:7661:                <div class="ai-training-mail-item-tags">${expertTags}${inboundTags}</div>
+src/main/resources/static/app.js:7683:    const expertTags = (mail.expertTags || []).map((tag) =>
+src/main/resources/static/app.js:7701:        ${(expertTags || inboundTags) ? `<div class="ai-training-mail-item-tags">${expertTags}${inboundTags}</div>` : ""}
+src/main/resources/static/app.js:8530:function renderExpertTagEditor(tags, orcidId, level, editorId = "expertTagEditor", profileMissing = false, layout = "section") {
+src/main/resources/static/app.js:8669:    editor.outerHTML = renderExpertTagEditor(tags, orcidId, level, editorId, false, layout);
+src/main/resources/static/app.js:9072:    return renderExpertTagEditor(tags, orcidId, level, editorId, profileMissing);
+src/main/resources/static/app.js:13799:    let expertTags = { found: false, tags: [] };
+src/main/resources/static/app.js:13802:            expertTags = await fetchExpertTagsFromEs(expert.orcidId, tagLevel);
+src/main/resources/static/app.js:13831:                ${expert.orcidId ? renderExpertTagEditor(expertTags.tags, expert.orcidId, tagLevel, "expertTagEditor", expertTags.found === false, "inline") : ""}
+src/main/resources/static/app.js:14276:    let expertTags = { found: false, tags: [] };
+src/main/resources/static/app.js:14279:            expertTags = await fetchExpertTagsFromEs(orcidId, tagLevel);
+src/main/resources/static/app.js:14401:                ${renderExpertTagEditor(expertTags.tags, orcidId, tagLevel, "expertTagEditor", expertTags.found === false, "inline")}
+src/main/resources/static/app.js:17173:        const data = await api("/api/mail/mailbox/conversations/pending-badge");
+src/main/resources/static/app.js:17182:    if (typeof isMailReadOnlyMode === "function" && isMailReadOnlyMode()) return;
+src/main/resources/static/app.js:20686:    if (typeof isMailReadOnlyMode === "function" && isMailReadOnlyMode()) return;
+src/main/resources/static/app.js:20769:    if (typeof isMailReadOnlyMode === "function" && isMailReadOnlyMode()) return;
+src/main/resources/static/app.js:21082:function mailReadOnlyState() {
+src/main/resources/static/app.js:21083:    if (!state.mailReadOnly) {
+src/main/resources/static/app.js:21084:        state.mailReadOnly = { active: false, username: null, handle: null };
+src/main/resources/static/app.js:21086:    return state.mailReadOnly;
+src/main/resources/static/app.js:21089:function isMailReadOnlyMode() {
+src/main/resources/static/app.js:21090:    return mailReadOnlyState().active === true;
+src/main/resources/static/app.js:21094:function isMailReadOnlyRequestAllowed(path, options) {
+src/main/resources/static/app.js:21105:function showMailReadOnlyIdentityError() {
+src/main/resources/static/app.js:21116:function applyMailReadOnlyShell() {
+src/main/resources/static/app.js:21118:    if (body && body.dataset) body.dataset.mailReadOnly = "true";
+src/main/resources/static/app.js:21145:function renderMailReadOnlyLoadError(host, message) {
+src/main/resources/static/app.js:21159:function startMailReadOnlyApp(username) {
+src/main/resources/static/app.js:21160:    const readerState = mailReadOnlyState();
+src/main/resources/static/app.js:21165:    applyMailReadOnlyShell();
+src/main/resources/static/app.js:21167:    const module = typeof window !== "undefined" && window.MailboxReadOnly ? window.MailboxReadOnly : null;
+src/main/resources/static/app.js:21169:        renderMailReadOnlyLoadError(host, MAIL_READ_ONLY_COPY.moduleError);
+src/main/resources/static/app.js:21179:        renderMailReadOnlyLoadError(host, MAIL_READ_ONLY_COPY.moduleError);
+src/main/resources/static/app.js:21186:function releaseMailReadOnly() {
+src/main/resources/static/app.js:21187:    const readerState = state.mailReadOnly;
+src/main/resources/static/app.js:21191:        else if (readerState.active && typeof window !== "undefined" && window.MailboxReadOnly
+src/main/resources/static/app.js:21192:            && typeof window.MailboxReadOnly.unmount === "function") {
+src/main/resources/static/app.js:21193:            window.MailboxReadOnly.unmount($("#mailboxList"));
+src/main/resources/static/app.js:21202:    if (body && body.dataset) delete body.dataset.mailReadOnly;
+src/main/resources/static/app.js:21205:function startAuthenticatedApp(username, mailReadOnly) {
+src/main/resources/static/app.js:21208:    if (reader && mailReadOnly !== true) {
+src/main/resources/static/app.js:21210:        showMailReadOnlyIdentityError();
+src/main/resources/static/app.js:21233:        startMailReadOnlyApp(username);
+src/main/resources/static/app.js:21260:    releaseMailReadOnly();
+src/main/resources/static/app.js:21300:                startAuthenticatedApp(res.username, res.mailReadOnly);
+src/main/resources/static/app.js:21340:                startAuthenticatedApp(res.username, res.mailReadOnly);
+src/main/resources/static/app.js:21390:        if (typeof isMailReadOnlyMode !== "function" || !isMailReadOnlyMode()) {
+src/main/resources/static/app.js:22008:    if (typeof isMailReadOnlyMode === "function" && isMailReadOnlyMode()) return;
+src/main/resources/static/app.js:22026:    if (typeof isMailReadOnlyMode === "function" && isMailReadOnlyMode()) {
+src/main/resources/static/app.js:22027:        const handle = mailReadOnlyState().handle;

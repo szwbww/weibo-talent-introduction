@@ -1,0 +1,325 @@
+src/main/resources/static/meeting-confirmation.js:1142:            var url = "/api/mail/meeting-confirmation/time-zones?date=" +
+src/main/resources/static/meeting-confirmation.js:1216:            var url = "/api/mail/unmatched-inbound/" + Number(state.openCtx.processingId) +
+src/main/resources/static/meeting-confirmation.js:1444:            var optsUrl = "/api/mail/unmatched-inbound/" + processingId +
+src/main/resources/static/meeting-confirmation.js:1453:            var zonesUrl = "/api/mail/meeting-confirmation/time-zones?date=" + encodeURIComponent(zoneDate);
+src/main/resources/static/expert-materials.js:9: * - GET /api/expert-contacts/{id}/materials 只读；任何 GET 不触发 POST/文件下载。
+src/main/resources/static/expert-materials.js:296:        return `/api/expert-contacts/${store.contactId}/materials?${query.toString()}`;
+src/main/resources/static/expert-materials.js:428:            const response = await cfg.api(`/api/expert-contacts/${store.contactId}/materials/transfers`, {
+src/main/resources/static/expert-materials.js:521:        return cfg.api(`/api/expert-contacts/${store.contactId}/materials/uploads`, {
+src/main/resources/static/expert-materials.js:1560:    function mountView(store, view, host) {
+src/main/resources/static/expert-materials.js:1647:    function mount(opts) {
+src/main/resources/static/contact-details.js:98:    const profileRead=cachedRead(listProfiles,key,`/api/experts/manual-profile?expertId=${encodeURIComponent(key)}&level=${encodeURIComponent(contact.indexLevel||document.getElementById('expertIndexLevel').value)}`);
+src/main/resources/static/contact-details.js:99:    const noteRead=contact.contactId?cachedRead(listNotes,noteKey,`/api/mail/contact-notes/${contact.contactId}`):null;
+src/main/resources/static/app.js:470:    return api(`/api/mail/unmatched-inbound/${recordId}/ai-reply/generations/${generationId}/cancel`, { method: "POST" });
+src/main/resources/static/app.js:497:    const response = await fetch(`${contextPath}/api/mail/unmatched-inbound/${recordId}/ai-reply/turn-stream`, {
+src/main/resources/static/app.js:963:        const data = await api(`/api/task-executions/active?page=${page}&size=${size}`);
+src/main/resources/static/app.js:1289:        const detail = await api(`/api/task-executions/${id}/detail`);
+src/main/resources/static/app.js:1443:        await api(`/api/task-executions/${id}/interrupt`, {
+src/main/resources/static/app.js:1503:        const logs = await api(`/api/task-progress/${encodeURIComponent(taskType)}/logs?executionId=${id}&batchOnly=true`);
+src/main/resources/static/app.js:1534:        const progress = await api(`/api/task-progress/${encodeURIComponent(taskType)}`);
+src/main/resources/static/app.js:1626:// 新模式的数据只用 GET /api/expert-discovery/pipeline（02 的 status），
+src/main/resources/static/app.js:1783:    const body = await api("/api/expert-discovery/pipeline", { timeoutMs: PIPELINE_STATUS_TIMEOUT_MS });
+src/main/resources/static/app.js:1873:            const body = await api("/api/expert-discovery/pipeline", { timeoutMs: PIPELINE_STATUS_TIMEOUT_MS });
+src/main/resources/static/app.js:1925:        const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
+src/main/resources/static/app.js:2071:    const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
+src/main/resources/static/app.js:2096:// I-1 唯一写路径是“保存定时”按钮的 PUT /api/expert-discovery/schedule（打开/输入/立即执行都不写）；
+src/main/resources/static/app.js:2100:const DISCOVERY_SCHEDULE_PATH = "/api/expert-discovery/schedule";
+src/main/resources/static/app.js:2338:            const url = `${contextPath}/api/task-progress/${taskType}`;
+src/main/resources/static/app.js:2431:const DISCOVERY_REVIEW_PATH = "/api/discovery/review";
+src/main/resources/static/app.js:2432:const DISCOVERY_REVIEW_TASK_EXECUTIONS_PATH = "/api/task-executions";
+src/main/resources/static/app.js:4313:            await api("/api/expert-discovery/pipeline/resume", {
+src/main/resources/static/app.js:4319:            await api(`/api/task-progress/${taskType}/cancel`, { method: "POST" });
+src/main/resources/static/app.js:4676:        const url = `${contextPath}/api/task-progress/${taskType}/executions?limit=10`;
+src/main/resources/static/app.js:4771:function mcHostReleaseUnmatchedDetail() {
+src/main/resources/static/app.js:4793:    mcHostReleaseUnmatchedDetail();
+src/main/resources/static/app.js:4797:async function mcHostMountUnmatchedDetail(hostEl, id) {
+src/main/resources/static/app.js:4805:    if (unmatchedDetailLease.panel === panel) mcHostReleaseUnmatchedDetail();
+src/main/resources/static/app.js:4815:        mcHostReleaseUnmatchedDetail();
+src/main/resources/static/app.js:5029:        const result = await api("/api/translate", {
+src/main/resources/static/app.js:5323:    state.accounts = await api("/api/mail/sender-accounts");
+src/main/resources/static/app.js:5519:    const readOnly = state.accountEditorMode === "view";
+src/main/resources/static/app.js:5521:        form[name].disabled = shared || readOnly;
+src/main/resources/static/app.js:5524:    $("#copySmtpToImapBtn").disabled = shared || readOnly;
+src/main/resources/static/app.js:5525:    document.querySelector('#accountForm .password-toggle[data-target="imapPassword"]').disabled = shared || readOnly;
+src/main/resources/static/app.js:5636:        await api(`/api/mail/sender-accounts/${encodeURIComponent(state.selectedAccount)}`, {
+src/main/resources/static/app.js:5641:        await api("/api/mail/sender-accounts", {
+src/main/resources/static/app.js:5655:        const account = await api(`/api/mail/sender-accounts/${encodeURIComponent(code)}`);
+src/main/resources/static/app.js:5659:        const account = await api(`/api/mail/sender-accounts/${encodeURIComponent(code)}`);
+src/main/resources/static/app.js:5663:        const result = await api(`/api/mail/sender-accounts/${encodeURIComponent(code)}/test-connectivity`, { method: "POST" });
+src/main/resources/static/app.js:5669:            await api(`/api/mail/sender-accounts/${encodeURIComponent(code)}/${enabled ? "disable" : "enable"}`, { method: "POST" });
+src/main/resources/static/app.js:5680:            await api(`/api/mail/sender-accounts/${encodeURIComponent(code)}`, { method: "DELETE" });
+src/main/resources/static/app.js:5688:        await api(`/api/mail/sender-accounts/${encodeURIComponent(code)}/reset-today-sent-count`, { method: "POST" });
+src/main/resources/static/app.js:5692:        await api(`/api/mail/sender-accounts/${encodeURIComponent(code)}/resume-auto-send`, { method: "POST" });
+src/main/resources/static/app.js:5771:        api("/api/qa/coverage-keys/controlled-groups"),
+src/main/resources/static/app.js:5772:        api("/api/qa/coverage-keys/authorities")
+src/main/resources/static/app.js:6027:        api("/api/qa/categories"),
+src/main/resources/static/app.js:6028:        api("/api/qa/rules"),
+src/main/resources/static/app.js:6029:        api("/api/qa/coverage-keys")
+src/main/resources/static/app.js:6058:    const report = await api(`/api/qa/audit/rule-usage?from=${encodeURIComponent(from)}T00:00:00&to=${encodeURIComponent(to)}T23:59:59`);
+src/main/resources/static/app.js:6192:    state.variableMeta = await api("/api/qa/template-variables-meta");
+src/main/resources/static/app.js:6674:function mountPreviewRail({ targetId, contactId, orcidId }) {
+src/main/resources/static/app.js:6818:    const result = await api("/api/qa/render-preview", {
+src/main/resources/static/app.js:6847:    const result = await api("/api/qa/preview/random-expert", {
+src/main/resources/static/app.js:6948:    const path = state.selectedRuleId ? `/api/qa/rules/${state.selectedRuleId}` : "/api/qa/rules";
+src/main/resources/static/app.js:6955:        await api(`/api/ai-training/unsupported-answers/pending-topics/${encodeURIComponent(topic)}/activate`, { method: "POST" });
+src/main/resources/static/app.js:6978:        await api(`/api/qa/rules/${id}/${enabled ? "disable" : "enable"}`, { method: "POST" });
+src/main/resources/static/app.js:7003:    state.replySnippets = await api("/api/reply-snippets");
+src/main/resources/static/app.js:7055:    const items = await api("/api/ai-training/dialogues");
+src/main/resources/static/app.js:7238:    const data = await api("/api/rag/facts");
+src/main/resources/static/app.js:7289:    await api(`/api/rag/facts/${encodeURIComponent(code)}`, {
+src/main/resources/static/app.js:7306:    await api(`/api/rag/facts/${encodeURIComponent(code)}/${action}`, {
+src/main/resources/static/app.js:7383:        const data = await api(`/api/ai-training/unsupported-answers?${params}`);
+src/main/resources/static/app.js:7495:        const data = await api("/api/ai-training/unsupported-answers/pending-topics?threshold=3");
+src/main/resources/static/app.js:7548:    const config = await api("/api/ai-training/prompt-config/effective");
+src/main/resources/static/app.js:7553:    await api("/api/ai-training/prompt-config", {
+src/main/resources/static/app.js:7596:        api("/api/experts/tags/aggregation?level=CANDIDATE"),
+src/main/resources/static/app.js:7597:        api("/api/experts/tags/aggregation?level=APPLICATION"),
+src/main/resources/static/app.js:7598:        api("/api/inbound-summary/tags/options")
+src/main/resources/static/app.js:7760:    const result = await api("/api/ai-training/simulate/evaluations", {
+src/main/resources/static/app.js:7816:function mountAiTrainingTrustReply(mail) {
+src/main/resources/static/app.js:7866:    const data = await api(`/api/ai-training/simulate/mails?${params}`);
+src/main/resources/static/app.js:7887:    await api("/api/ai-training/prompt-config", {
+src/main/resources/static/app.js:8035:    const data = await api("/api/rag/prompt-config");
+src/main/resources/static/app.js:8071:    await api("/api/rag/prompt-config", {
+src/main/resources/static/app.js:8080:    await api("/api/rag/prompt-config/reset", {
+src/main/resources/static/app.js:8244:        await api(`/api/reply-snippets/${state.selectedReplySnippetId}`, {
+src/main/resources/static/app.js:8249:        await api("/api/reply-snippets", {
+src/main/resources/static/app.js:8269:        await api(`/api/reply-snippets/${id}/${enabled ? "disable" : "enable"}`, { method: "POST" });
+src/main/resources/static/app.js:8274:        await api(`/api/reply-snippets/${id}/default`, { method: "POST" });
+src/main/resources/static/app.js:8281:        await api(`/api/reply-snippets/${id}`, { method: "DELETE" });
+src/main/resources/static/app.js:8316:    const data = await api(`/api/suppressions?${params}`);
+src/main/resources/static/app.js:8359:    const result = await api("/api/suppressions", { method: "POST", body: JSON.stringify(payload) });
+src/main/resources/static/app.js:8369:        const result = await api(`/api/suppressions?email=${encodeURIComponent(email)}`, { method: "DELETE" });
+src/main/resources/static/app.js:8435:            api(`/api/experts/email-providers?${params}`),
+src/main/resources/static/app.js:8437:                ? api(`/api/experts/email-providers?level=${encodeURIComponent(level)}`)
+src/main/resources/static/app.js:8479:        const regions = await api(`/api/experts/regions?${params}`);
+src/main/resources/static/app.js:8507:        const tags = await api(`/api/experts/tags/aggregation?${params}`);
+src/main/resources/static/app.js:8632:    const profile = await api(`/api/experts/profile?${params}`);
+src/main/resources/static/app.js:8641:    const endpoint = action === "add" ? "/api/experts/tags/add" : "/api/experts/tags/remove";
+src/main/resources/static/app.js:9208:        const data = await api(`/api/expert-contacts?${params}`);
+src/main/resources/static/app.js:9288:        const data = await api(`/api/experts?${params}`);
+src/main/resources/static/app.js:9500:        const response = await api("/api/mail/auto-reply/check-replies", {
+src/main/resources/static/app.js:9625:    return api("/api/experts/eligibility-filters", {
+src/main/resources/static/app.js:9724:            var filters = await api("/api/experts/eligibility-filters");
+src/main/resources/static/app.js:9737:            var filters = await api("/api/experts/eligibility-filters");
+src/main/resources/static/app.js:9772:            const stats = await api("/api/expert-discovery/enrich/stats");
+src/main/resources/static/app.js:9791:                api(`/api/mail/batch-send/types/${defaultType}/config`),
+src/main/resources/static/app.js:9792:                api(`/api/mail/batch-send/types/${defaultType}/status`),
+src/main/resources/static/app.js:9793:                api("/api/compose-templates"),
+src/main/resources/static/app.js:9795:                api(`/api/mail/batch-send/types/${defaultType}/pending-count`)
+src/main/resources/static/app.js:9978:        const page = await api("/api/task-executions?taskType=CANDIDATE_OPERATOR_STATUS_SYNC&size=1");
+src/main/resources/static/app.js:9984:        const task = await api(`/api/task-executions/${items[0].id}`);
+src/main/resources/static/app.js:10015:        const response = await api("/api/experts/backfill-operator-status", { method: "POST" });
+src/main/resources/static/app.js:10061:        const response = await api("/api/experts/revalidate-candidates", { method: "POST" });
+src/main/resources/static/app.js:10163:        const response = await api(`/api/expert-discovery/enrich${enrichScopeQuery}`, { method: "POST" });
+src/main/resources/static/app.js:10193:        const response = await api("/api/experts/promote-eligible-raw", { method: "POST" });
+src/main/resources/static/app.js:10236:        const sources = await api("/api/expert-discovery/sources", { timeoutMs: DISCOVERY_SOURCE_TIMEOUT_MS });
+src/main/resources/static/app.js:10345:        return await api(`/api/expert-discovery/run/by-keyword?${params}`, { method: "POST", ...timeout });
+src/main/resources/static/app.js:10350:    const url = query ? `/api/expert-discovery/run?${query}` : "/api/expert-discovery/run";
+src/main/resources/static/app.js:10652:        const p = await api(`/api/compose-templates/${templateId}/preview`);
+src/main/resources/static/app.js:10961:    return `/api/mail/batch-send/types/${sendType || batchSendType}`;
+src/main/resources/static/app.js:10969:    return api(`/api/experts/email-providers?${params}`);
+src/main/resources/static/app.js:11121:            api("/api/mail/batch-send/types/INTRODUCTION/status"),
+src/main/resources/static/app.js:11122:            api("/api/mail/batch-send/types/MATERIAL_REMINDER/status")
+src/main/resources/static/app.js:11151:        data = await api("/api/task-executions/recent-polls?limit=10");
+src/main/resources/static/app.js:11215:    const data = await api(`/api/task-executions/recent-polls/${id}/detail`);
+src/main/resources/static/app.js:11408:        const vars = await api(`/api/experts/template-variables?orcidId=${encodeURIComponent(orcidId)}&level=${level}`);
+src/main/resources/static/app.js:11447:// GET/PATCH /api/experts/manual-profile，不新增第二份资料来源（I-1/I-2）。
+src/main/resources/static/app.js:11452:const EXPERT_MANUAL_PROFILE_URL = "/api/experts/manual-profile";
+src/main/resources/static/app.js:12141:function mountExpertManualProfile(rootEl, context) {
+src/main/resources/static/app.js:12167:// I-1 单一来源：本页只有 GET /api/mail/contact-notes/{contactId}（无 PUT、无 localStorage 副本、无专家级 note）；
+src/main/resources/static/app.js:12175:const EXPERT_CONTACT_SHARED_NOTE_URL = "/api/mail/contact-notes";
+src/main/resources/static/app.js:12381:function mountExpertContactSharedNote(session) {
+src/main/resources/static/app.js:12423:const EXPERT_MEETING_VIDEO_URL = "/api/experts/meeting-videos";
+src/main/resources/static/app.js:12424:const EXPERT_MEETING_VIDEO_API_MARKER = "/api/experts/meeting-videos/";
+src/main/resources/static/app.js:13611:function mountExpertMeetingVideos(session) {
+src/main/resources/static/app.js:13755:        person = await api(`/api/experts/person?${params}`);
+src/main/resources/static/app.js:14115:    await api(`/api/expert-contacts/${contactId}/meeting-schedules/${scheduleId}/confirm-and-email`, {
+src/main/resources/static/app.js:14239:        const materials = await api(`/api/expert-contacts/${contactId}/material-requests/${materialCode}`, {
+src/main/resources/static/app.js:14255:        api(`/api/expert-contacts/${contactId}`),
+src/main/resources/static/app.js:14257:        api(`/api/expert-contacts/${contactId}/documents`).catch(() => []),
+src/main/resources/static/app.js:14258:        api(`/api/operator-action-logs?expertContactId=${contactId}&pageSize=50&pageOffset=0`).catch(() => ({ records: [] })),
+src/main/resources/static/app.js:14259:        api(`/api/expert-contacts/${contactId}/material-requests`).catch((error) => {
+src/main/resources/static/app.js:14263:        api(`/api/mail/mailbox/by-expert?expertContactId=${contactId}&page=0&size=1`).catch((error) => {
+src/main/resources/static/app.js:14291:        : await api("/api/mail/sender-accounts").catch(() => []);
+src/main/resources/static/app.js:14642:        const aliases = await api(`/api/expert-contacts/${contactId}/email-aliases`);
+src/main/resources/static/app.js:14706:function mountExpertMaterialsInline(contactId, rootEl) {
+src/main/resources/static/app.js:14820:        aiAnalysisState.documents = await api(`/api/expert-contacts/${contactId}/documents`).catch(() => []);
+src/main/resources/static/app.js:14821:        const existing = await api(`/api/expert-contacts/${contactId}/ai-analysis`).catch(() => ({ fields: [] }));
+src/main/resources/static/app.js:14831:    const existing = await api(`/api/expert-contacts/${contactId}/ai-analysis`).catch(() => ({ fields: [] }));
+src/main/resources/static/app.js:14968:            const result = await api(`/api/expert-contacts/${contactId}/ai-analysis`, {
+src/main/resources/static/app.js:15031:        const updated = await api(`/api/expert-contacts/${contactId}/ai-analysis/${fieldId}`, {
+src/main/resources/static/app.js:15053:        const created = await api(`/api/expert-contacts/${contactId}/ai-analysis/fields`, {
+src/main/resources/static/app.js:15387:        const result = await api(`/api/expert-contacts/${contactId}/ai-analysis`, {
+src/main/resources/static/app.js:15544:    state.mailSendOptions = await api("/api/expert-contacts/mail-send-options");
+src/main/resources/static/app.js:15824:        api("/api/expert-contacts").catch(() => ({ contacts: [] })),
+src/main/resources/static/app.js:15825:        api("/api/mail/sender-accounts").catch(() => [])
+src/main/resources/static/app.js:15836:    state.composeTemplates = await api("/api/compose-templates");
+src/main/resources/static/app.js:15913:        const result = await api("/api/compose-templates/preview-draft", {
+src/main/resources/static/app.js:16385:        const result = await api("/api/compose-templates/preview-draft", {
+src/main/resources/static/app.js:16408:    const result = await api("/api/qa/preview/random-expert", {
+src/main/resources/static/app.js:16479:        await api(`/api/compose-templates/${state.selectedComposeTemplateId}`, {
+src/main/resources/static/app.js:16486:        await api("/api/compose-templates", {
+src/main/resources/static/app.js:16510:        await api(`/api/compose-templates/${id}/${enabled ? "disable" : "enable"}`, { method: "POST" });
+src/main/resources/static/app.js:16516:        await api(`/api/compose-templates/${id}`, { method: "DELETE" });
+src/main/resources/static/app.js:16645:        await api(`/api/expert-contacts/${id}/manual-mail`, {
+src/main/resources/static/app.js:16660:        await api(`/api/expert-contacts/${id}/sender-account`, {
+src/main/resources/static/app.js:16670:        await api(`/api/expert-contacts/${id}/sender-account/clear-change-mark`, {
+src/main/resources/static/app.js:16740:            await api(`/api/expert-contacts/${id}/switch-to-manual`, {
+src/main/resources/static/app.js:16748:            await api(`/api/expert-contacts/${id}/switch-to-auto`, {
+src/main/resources/static/app.js:16759:        await api(`/api/expert-contacts/${id}/promote-to-candidate`, { method: "POST" });
+src/main/resources/static/app.js:16766:        await api(`/api/expert-contacts/${id}/promote-to-application`, { method: "POST" });
+src/main/resources/static/app.js:16775:        await api(`/api/expert-contacts/${id}/demote-to-raw`, { method: "POST" });
+src/main/resources/static/app.js:16785:        await api(`/api/expert-contacts/${id}/meeting-schedules`, {
+src/main/resources/static/app.js:16806:        await api(`/api/expert-contacts/${contactId}/meeting-schedules/${scheduleId}`, {
+src/main/resources/static/app.js:16824:        await api(`/api/expert-contacts/${contactId}/meeting-schedules/${scheduleId}/cancel`, {
+src/main/resources/static/app.js:16835:        await api(`/api/expert-contacts/${contactId}/meeting-schedules/${scheduleId}/complete`, {
+src/main/resources/static/app.js:16874:    await api(`/api/expert-contacts/${contactId}/operator-status`, {
+src/main/resources/static/app.js:16883:    await api(`/api/expert-contacts/${contactId}/index-level`, {
+src/main/resources/static/app.js:16969:    const options = await api("/api/task-executions/task-types");
+src/main/resources/static/app.js:16998:    const data = await api(`/api/task-executions?${params}`);
+src/main/resources/static/app.js:17095:        detail = await api(`/api/task-executions/${taskId}/detail`);
+src/main/resources/static/app.js:17173:        const data = await api("/api/mail/mailbox/conversations/pending-badge");
+src/main/resources/static/app.js:17249:        const detail = await api(`/api/mail/mailbox/${encodeURIComponent(source)}/${id}`);
+src/main/resources/static/app.js:17264:                    `/api/mail/mailbox/${encodeURIComponent(source)}/${id}/attachments`
+src/main/resources/static/app.js:17350:                        <a class="button small" href="${contextPath}/api/mail/mailbox/attachments/${encodeURIComponent(item.id)}/download" download>下载</a>
+src/main/resources/static/app.js:17544:        const result = await api(`/api/mail/unmatched-inbound/${recordId}/composed-reply/preflight`, {
+src/main/resources/static/app.js:17684:function mountLiveTrustReply(recordId) {
+src/main/resources/static/app.js:17743:    const detailPromise = api(`/api/mail/unmatched-inbound/${id}`);
+src/main/resources/static/app.js:17746:        api(`/api/operator-action-logs?inboundProcessingId=${id}&pageSize=50&pageOffset=0`).catch(() => ({ records: [] })),
+src/main/resources/static/app.js:17747:        api(`/api/inbound-summary/mails/${id}/thread`).catch(() => ({ tags: [] }))
+src/main/resources/static/app.js:17753:        ? await api(`/api/expert-contacts/${record.expertContactId}`).catch(() => null)
+src/main/resources/static/app.js:17977:        mcHostReleaseUnmatchedDetail();
+src/main/resources/static/app.js:17987:        await api(`/api/mail/unmatched-inbound/${id}/mark-resolved`, {
+src/main/resources/static/app.js:18002:        await api(`/api/mail/unmatched-inbound/${id}/cancel-resolved`, {
+src/main/resources/static/app.js:18015:        await api(`/api/mail/unmatched-inbound/${id}/bind`, {
+src/main/resources/static/app.js:18028:        const results = await api(`/api/mail/unmatched-inbound/search-contacts?query=${encodeURIComponent(query)}`);
+src/main/resources/static/app.js:18056:        await api(`/api/mail/unmatched-inbound/${id}/bind`, {
+src/main/resources/static/app.js:18083:                await api(`/api/mail/unmatched-inbound/${id}/operator-status`, {
+src/main/resources/static/app.js:18089:                await api(`/api/mail/unmatched-inbound/${id}/index-level`, {
+src/main/resources/static/app.js:18110:            await api(`/api/mail/unmatched-inbound/${id}/operator-status`, {
+src/main/resources/static/app.js:18130:            await api(`/api/mail/unmatched-inbound/${id}/index-level`, {
+src/main/resources/static/app.js:18213:            const result = await api(`/api/mail/unmatched-inbound/${id}/ai-reply/turn`, {
+src/main/resources/static/app.js:18349:        const readOnly = lockedSubject?.readOnly;
+src/main/resources/static/app.js:18351:        if (lockedSubject) lockedSubject.readOnly = true;
+src/main/resources/static/app.js:18353:            const result = await postManualRichReplySnapshot(`/api/mail/unmatched-inbound/${recordId}/manual-rich-reply`, requestBody);
+src/main/resources/static/app.js:18379:            if (lockedSubject) lockedSubject.readOnly = readOnly;
+src/main/resources/static/app.js:18452:    api(`/api/expert-contacts/${contactId}/email-aliases`).then((aliases) => {
+src/main/resources/static/app.js:18511:        api(`/api/mail-monitoring/summary?${windowParams}`),
+src/main/resources/static/app.js:18512:        api(`/api/mail-monitoring/sender-accounts?${dateParams}`),
+src/main/resources/static/app.js:18513:        api(`/api/mail-monitoring/provider-distribution?${windowParams}`).catch(() => ({ rows: [], unattributedBounceCount: 0 })),
+src/main/resources/static/app.js:18514:        api(`/api/mail-monitoring/region-distribution?${windowParams}`).catch(() => [])
+src/main/resources/static/app.js:18752:        const data = await api(`/api/mail-monitoring/reputation-history?${params}`);
+src/main/resources/static/app.js:18895:        const settings = await api("/api/mail-open-tracking/settings");
+src/main/resources/static/app.js:18921:        const settings = await api("/api/mail-open-tracking/settings", {
+src/main/resources/static/app.js:18999:        const snapshot = await api(`/api/mail-open-tracking/records?${query}`);
+src/main/resources/static/app.js:19066:    return api(`/api/mail-open-tracking/records/${id}`).then((row) => {
+src/main/resources/static/app.js:19097:    if (tab === "introductions") url = `/api/mail-monitoring/introductions?${params}`;
+src/main/resources/static/app.js:19098:    if (tab === "inbound") url = `/api/mail-monitoring/inbound?${params}`;
+src/main/resources/static/app.js:19099:    if (tab === "outbound") url = `/api/mail-monitoring/outbound-replies?${params}`;
+src/main/resources/static/app.js:19104:        url = `/api/mail/unmatched-inbound?${pendingParams}`;
+src/main/resources/static/app.js:19112:        url = `/api/mail/bounces?${bounceParams}`;
+src/main/resources/static/app.js:19114:    if (tab === "promotions") url = `/api/mail-monitoring/promotions?${params}`;
+src/main/resources/static/app.js:19224:                api(`/api/mail-monitoring/summary?${windowParams}`),
+src/main/resources/static/app.js:19225:                api(`/api/mail-monitoring/sender-accounts?${dateParams}`)
+src/main/resources/static/app.js:19326:            const result = await api("/api/mail/bounces/backfill", { method: "POST" });
+src/main/resources/static/app.js:19356:            await api(`/api/mail-monitoring/promotions/${target.dataset.id}/retry`, { method: "POST" });
+src/main/resources/static/app.js:19411:            await api(`/api/mail/sender-accounts/${encodeURIComponent(code)}`, { method: "DELETE" });
+src/main/resources/static/app.js:19754:                        await api(`/api/expert-contacts/${contactId}/switch-to-manual`, {
+src/main/resources/static/app.js:19759:                        await api(`/api/expert-contacts/${contactId}/switch-to-auto`, {
+src/main/resources/static/app.js:20214:            api(`/api/expert-contacts/${contactId}/email-aliases`, {
+src/main/resources/static/app.js:20228:            api(`/api/expert-contacts/${contactId}/email-aliases/${aliasId}`, {
+src/main/resources/static/app.js:20245:                const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
+src/main/resources/static/app.js:20280:    api("/api/compose-templates")
+src/main/resources/static/app.js:20386:            api(`/api/experts?${filtered}`),
+src/main/resources/static/app.js:20387:            api(`/api/experts?${base}`)
+src/main/resources/static/app.js:20412:            const data = await api(`/api/compose-templates/${id}/gate-fields`);
+src/main/resources/static/app.js:20698:        const settings = await api("/api/expert-inbound-notifications/settings", { cache: "no-store", timeoutMs: 10000 });
+src/main/resources/static/app.js:20725:        const settings = await api("/api/expert-inbound-notifications/settings", {
+src/main/resources/static/app.js:20773:        const summary = await api("/api/expert-contacts/auto-reply/summary");
+src/main/resources/static/app.js:20807:            const res = await api("/api/expert-contacts/auto-reply/bulk", {
+src/main/resources/static/app.js:20964:        const countRes = await api("/api/mail/manual-outreach/pending-count");
+src/main/resources/static/app.js:21098:    if (method === "GET" && normalized === "/api/auth/me") return true;
+src/main/resources/static/app.js:21099:    if (method === "POST" && (normalized === "/api/auth/login" || normalized === "/api/auth/logout")) return true;
+src/main/resources/static/app.js:21101:    if (normalized === "/api/mail/mailbox/conversations") return true;
+src/main/resources/static/app.js:21119:    else if (body && typeof body.setAttribute === "function") body.setAttribute("data-mail-read-only", "true");
+src/main/resources/static/app.js:21293:        const res = await api("/api/auth/me");
+src/main/resources/static/app.js:21330:            const res = await api("/api/auth/login", {
+src/main/resources/static/app.js:21375:            await api("/api/auth/change-password", {
+src/main/resources/static/app.js:21399:            await api("/api/auth/logout", { method: "POST" });
+src/main/resources/static/app.js:21537:function mcHostOpenMaterials(contactId) {
+src/main/resources/static/app.js:21562:async function mcHostOpenExpertDetail(contactId) {
+src/main/resources/static/app.js:21571:function mcHostMountWorkbench(hostEl, processingId, callbacks) {
+src/main/resources/static/app.js:21600:async function mcHostSendRichReply(processingId, requestBody) {
+src/main/resources/static/app.js:21601:    return submitManualRichReply(`/api/mail/unmatched-inbound/${processingId}/manual-rich-reply`, requestBody);
+src/main/resources/static/app.js:21606:async function mcHostSendConversationRichReply(contactId, requestBody) {
+src/main/resources/static/app.js:21609:    return submitManualRichReply(`/api/mail/mailbox/conversations/${id}/manual-rich-reply`, requestBody);
+src/main/resources/static/app.js:21615:function mcHostInspectReplyIdentity(payload) {
+src/main/resources/static/app.js:21616:    return api("/api/mail/reply-identity/inspect", { method: "POST", body: JSON.stringify(payload) });
+src/main/resources/static/app.js:21619:function mcHostPreviewReplyIdentityDefaults(payload) {
+src/main/resources/static/app.js:21620:    return api("/api/mail/reply-identity/defaults-preview", { method: "POST", body: JSON.stringify(payload) });
+src/main/resources/static/app.js:21629:async function mcHostLoadReplyIdentitySummary(node) {
+src/main/resources/static/app.js:21632:        const data = await api("/api/reply-snippets/identity-defaults");
+src/main/resources/static/app.js:21641:async function mcHostOpenReplyIdentitySettings(context) {
+src/main/resources/static/app.js:21685:            const data = await mcHostPreviewReplyIdentityDefaults({ ...context.payload, ...selections() });
+src/main/resources/static/app.js:21768:            const data = await api("/api/reply-snippets/identity-defaults", { method: "PUT", body: JSON.stringify(body) });
+src/main/resources/static/app.js:21803:        const data = await api("/api/reply-snippets/identity-defaults");
+src/main/resources/static/app.js:21912:async function mcHostOpenFollowUp(contactId) {
+src/main/resources/static/app.js:21919:// relativePath 必须命中 03 固定路由（/api/mail/conversations/{contactId}/
+src/main/resources/static/app.js:21932:    const response = await fetch(`${contextPath}/api/expert-contacts/${contactId}/materials/download-zip`, {
+src/main/resources/static/app.js:21966:async function mcHostDownloadCalendar(relativePath, filename) {
+src/main/resources/static/app.js:22001:function mcHostGetSenderName(accountCode) {
+src/main/resources/static/app.js:22011:        const accounts = await api("/api/mail/sender-accounts");
+src/main/resources/static/app.js:22121:            const data = await api(`/api/mail/mailbox/by-expert?${params}`);
+src/main/resources/static/app.js:22127:            const data = await api(`/api/mail/mailbox?${params}`);
+src/main/resources/static/app.js:22371:        api(`/api/inbound-summary/tags/stats?${params}`),
+src/main/resources/static/app.js:22372:        api(`/api/inbound-summary/tags/options?${params}`)
+src/main/resources/static/app.js:22388:    const data = await api(`/api/inbound-summary/mails?${params}`);
+src/main/resources/static/app.js:22505:    const threadData = await api(`/api/inbound-summary/mails/${inboundId}/thread`);
+src/main/resources/static/app.js:22560:function mcHostOpenInboundTagModal(adapter) {
+src/main/resources/static/app.js:22582:    const detail = await api(`/api/mail/mailbox/${encodeURIComponent(ctx.source)}/${ctx.id}`);
+src/main/resources/static/app.js:22596:        const result = await api(`/api/inbound-summary/mails/${inboundId}/tags/auto`, {
+src/main/resources/static/app.js:22608:    await api(`/api/inbound-summary/tags/${tagId}`, { method: "DELETE" });
+src/main/resources/static/app.js:22734:    const threadData = await api(`/api/inbound-summary/mails/${inboundId}/thread`);
+src/main/resources/static/app.js:22751:        const result = await api(`/api/inbound-summary/mails/${inboundId}/tags/auto`, {
+src/main/resources/static/app.js:22775:    await api(`/api/inbound-summary/tags/${tagId}`, { method: "DELETE" });
+src/main/resources/static/app.js:22803:        const data = await api("/api/qa/rules");
+src/main/resources/static/app.js:22829:    const result = await api(`/api/inbound-summary/mails/${inboundId}/tags`, {
+src/main/resources/static/app.js:23089:        var resp = await api("/api/compose-templates");
+src/main/resources/static/app.js:23099:        var accounts = await api("/api/mail/sender-accounts");
+src/main/resources/static/app.js:23144:        var configs = await api("/api/mail/batch-send/configs" + params);
+src/main/resources/static/app.js:23266:        var updated = await api("/api/mail/batch-send/configs/" + id + "/enabled", {
+src/main/resources/static/app.js:23282:        await api("/api/mail/batch-send/configs/" + id, { method: "DELETE" });
+src/main/resources/static/app.js:23496:        return api("/api/experts/tags/aggregation?level=" + encodeURIComponent(level)).catch(function(e) {
+src/main/resources/static/app.js:23788:    /* I-1：发件账号选项来自只读 GET /api/mail/sender-accounts；value 恒为原始 accountCode，
+src/main/resources/static/app.js:23988:        var res = await api("/api/mail/batch-send/cron/preview", {
+src/main/resources/static/app.js:24109:        data = await api("/api/compose-templates/" + id + "/gate-fields");
+src/main/resources/static/app.js:24483:    return api("/api/mail/batch-send/recipients/statistics?" + (refresh ? "refresh=true" : "cacheOnly=true"), {
+src/main/resources/static/app.js:24577:            await api("/api/mail/batch-send/configs/" + batchTaskState.editorId, {
+src/main/resources/static/app.js:24581:            await api("/api/mail/batch-send/configs", {
+src/main/resources/static/app.js:25084:        var response = await api("/api/mail/batch-send/manual-executions", {
+src/main/resources/static/app.js:25142:    var url = "/api/mail/batch-send/configs" + (q ? "?q=" + encodeURIComponent(q) : "");
+src/main/resources/static/app.js:25238:        var executions = await api("/api/mail/batch-send/executions?limit=50");
+src/main/resources/static/app.js:25311:        var response = await api("/api/mail/batch-send/executions/" + executionId + "/cancel", {
+src/main/resources/static/app.js:25330:        var executions = await api("/api/mail/batch-send/configs/" + configId + "/executions?limit=50");
+src/main/resources/static/app.js:25358:            ? "/api/mail/batch-send/executions/" + executionId
+src/main/resources/static/app.js:25359:            : "/api/mail/batch-send/configs/" + configId + "/executions/" + executionId;
+src/main/resources/static/app.js:25857:    var url = "/api/mail/batch-send/executions/" + encodeURIComponent(String(executionId)) + "/email-verifications" +
+src/main/resources/static/app.js:26202:// I-1 服务器权威：只有一套排期表单和一套 API adapter，日历页与收发件箱经 mcHost*
+src/main/resources/static/app.js:26332:        const data = await api(`/api/meeting-calendar/events?${params.toString()}`);
+src/main/resources/static/app.js:26341:    return api(`/api/meeting-calendar/events/${encodeURIComponent(String(id))}`);
+src/main/resources/static/app.js:26349:    const data = await api(`/api/meeting-calendar/summaries?contactIds=${encodeURIComponent(ids.join(","))}`);
+src/main/resources/static/app.js:26354:    return api("/api/meeting-calendar/events", { method: "POST", body: JSON.stringify(payload) });
+src/main/resources/static/app.js:26358:    return api(`/api/meeting-calendar/events/${encodeURIComponent(String(id))}`, {
+src/main/resources/static/app.js:26365:    return api(`/api/meeting-calendar/events/${encodeURIComponent(String(id))}/cancel`, {
+src/main/resources/static/app.js:26849:    meetingCalendarState.contactsPromise = Promise.resolve(api("/api/expert-contacts")).then((data) => {
+src/main/resources/static/app.js:27061:        mcHostMeetingScheduleChanged(payload.contactId);
+src/main/resources/static/app.js:27107:            mcHostMeetingScheduleChanged(contactId);
+src/main/resources/static/app.js:27277:function mcHostGetMeetingSummaries(contactIds) {
+src/main/resources/static/app.js:27282:function mcHostMeetingScheduleChanged(contactId) {
+src/main/resources/static/app.js:27294:async function mcHostOpenMeetingSchedule(contactId, options) {
+src/main/resources/static/app.js:27308:        mcHostMeetingScheduleChanged(id);
+src/main/resources/static/app.js:27335:    const data = await api(`/api/meeting-calendar/events?${params.toString()}`);
+src/main/resources/static/app.js:27349:// S-1–S-8: read-only ledger views, scoped to one modal generation and execution.
+src/main/resources/static/app.js:27353:const APV_PATH = "/api/expert-discovery/verification";
+src/main/resources/static/app.js:27965:        const logs = await apvGet(`/api/task-progress/${token.taskType}/logs?executionId=${token.executionId}&batchOnly=true`, token);
