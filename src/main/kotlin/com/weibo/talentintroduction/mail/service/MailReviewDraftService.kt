@@ -171,6 +171,66 @@ class MailReviewDraftService(
         return mapOf("ok" to result.ok, "translatedText" to result.text, "reason" to result.reason)
     }
 
+    @Transactional(readOnly = true)
+    fun prepareSend(actor: String?, id: Long, request: MailReviewSendRequest): MailReviewSendRef {
+        val username = requireAdmin(actor)
+        val row = repository.find(id)?.takeIf { it.ownerUsername == MailReadOnlyPolicy.READER_USERNAME } ?: notFound()
+        validateSendRow(row, request.expectedVersion)
+        return MailReviewSendRef(row, username, request.confirmationEventId)
+    }
+
+    /** Called within the attempt transaction; review row is always locked before attempt. */
+    fun lockForSend(ref: MailReviewSendRef): MailReviewDraftRow {
+        requireAdmin(ref.actor)
+        val row = access(ref.actor, ref.draft.id, true)
+        validateSendRow(row, ref.draft.version)
+        if (row.copy(sendAttemptId = null) != ref.draft.copy(sendAttemptId = null))
+            throw MailReviewDraftException(409, "REVIEW_CONTENT_CHANGED", "Approved content changed")
+        return row
+    }
+
+    /** Delivery has already happened: concurrent grant/target changes cannot discard its result. */
+    fun lockForSendResult(ref: MailReviewSendRef): MailReviewDraftRow {
+        val row = repository.find(ref.draft.id, true) ?: notFound()
+        version(row, ref.draft.version)
+        state(row, MailReviewDraftState.APPROVED)
+        check(row.subject == ref.draft.subject && row.html == ref.draft.html && row.text == ref.draft.text &&
+            row.contactId == ref.draft.contactId && row.targetId == ref.draft.targetId &&
+            row.targetKind == ref.draft.targetKind && row.accountCode == ref.draft.accountCode &&
+            row.sendRequestId == ref.draft.sendRequestId) { "Approved result identity changed" }
+        return row
+    }
+
+    private fun validateSendRow(row: MailReviewDraftRow, expectedVersion: Long) {
+        if (row.deletedAt != null) conflictState()
+        version(row, expectedVersion)
+        state(row, MailReviewDraftState.APPROVED)
+        grant(row.ownerUsername, row.contactId, false)
+        if (row.sendRequestId == null || !repository.validTarget(row))
+            throw MailReviewDraftException(422, "REVIEW_TARGET_NOT_FOUND", "The original reply target is no longer valid")
+    }
+
+    fun validateSendContext(row: MailReviewDraftRow, ref: MailReviewSendRef) {
+        val token = contextToken(row.contactId)
+        if (token == row.approvedContextToken) return
+        val event = ref.confirmationEventId?.let { repository.event(it) }
+        if (event == null || event.draftId != row.id || event.draftVersion != row.version ||
+            event.eventType != "CONTEXT_CONFIRMED" || event.actorUsername != ref.actor ||
+            event.payload["contextToken"] != token)
+            throw MailReviewDraftException(409, "REVIEW_CONTEXT_CHANGED", "Review and confirm the latest conversation before sending")
+    }
+
+    fun bindSend(row: MailReviewDraftRow, attemptId: Long, result: String) {
+        repository.bindAttempt(row, attemptId)
+        repository.appendEvent(row.id, row.version, "SEND_CLAIMED", "admin",
+            mapOf("attemptId" to attemptId, "result" to result), now())
+    }
+
+    fun recordSendResult(row: MailReviewDraftRow, attemptId: Long, result: String, mailRecordId: Long?) {
+        check(row.sendAttemptId == attemptId) { "Review attempt binding mismatch" }
+        repository.appendSendResult(row, attemptId, result, mailRecordId, now())
+    }
+
     private fun access(username: String, id: Long, lock: Boolean): MailReviewDraftRow {
         val observed = repository.find(id) ?: notFound()
         if (username == MailReadOnlyPolicy.READER_USERNAME) {
@@ -211,13 +271,15 @@ class MailReviewDraftService(
     private fun response(row: MailReviewDraftRow, username: String): Any {
         if (row.deletedAt != null) return MailReviewDraftDeleted(row.id)
         val admin = username == MailReadOnlyPolicy.ADMIN_USERNAME
+        val send = repository.sendProjection(row)
         return MailReviewDraftDetail(id = row.id, contactId = row.contactId, expertName = repository.contactName(row.contactId),
             ownerUsername = row.ownerUsername, version = row.version, state = row.state, subject = row.subject,
             html = row.html, text = row.text, accountCode = row.accountCode, targetKind = row.targetKind, targetId = row.targetId,
             submittedAt = row.submittedAt, returnReason = row.returnReason, reviewedAt = row.reviewedAt, deleted = false,
             createdAt = row.createdAt, updatedAt = row.updatedAt, commentCount = repository.commentCount(row.id),
             currentContextToken = if (admin) contextToken(row.contactId) else null,
-            approvedContextToken = if (admin) row.approvedContextToken else null)
+            approvedContextToken = if (admin) row.approvedContextToken else null,
+            sendStatus = send.sendStatus, sentMailRecordId = send.sentMailRecordId)
     }
 
     private data class Canonical(val subject: String, val html: String, val text: String)
@@ -230,7 +292,7 @@ class MailReviewDraftService(
         val cleaned = Jsoup.clean(html, "", safelist, Document.OutputSettings().prettyPrint(false))
         val normalized = content.normalizeManualRichHtmlLineBreaks(cleaned)
         size(normalized)
-        return Canonical(subject.replace("\r\n", "\n").replace('\r', '\n'), normalized,
+        return Canonical(subject.replace("\r\n", "\n").replace('\r', '\n').trim(), normalized,
             content.normalizeManualTextLineBreaks(content.htmlToPlainText(normalized)))
     }
 
@@ -239,9 +301,11 @@ class MailReviewDraftService(
         val texts = arrayOf(row.subject, row.html, row.text)
         try {
             texts.forEach { placeholders.requireValidPlaceholders(it) }
-            if (placeholders.placeholderKeysIn(*texts).isNotEmpty() || texts.any { placeholders.unknownPlaceholderTokens(it).isNotEmpty() }) invalid()
-        } catch (e: IllegalArgumentException) { invalid() }
-        if (texts.any { it.contains("\${") }) invalid()
+            if (placeholders.placeholderKeysIn(*texts).isNotEmpty())
+                throw MailReviewDraftException(422, "REVIEW_INVALID_CONTENT", "请填写实际内容后提交")
+        } catch (e: IllegalArgumentException) {
+            throw MailReviewDraftException(422, "REVIEW_INVALID_CONTENT", "请填写实际内容后提交")
+        }
         val hrefs = HREF_EXTRACTOR.findAll(row.html).map { match ->
             match.groupValues[1].ifEmpty { match.groupValues[2].ifEmpty { match.groupValues[3] } }
         }.toList()

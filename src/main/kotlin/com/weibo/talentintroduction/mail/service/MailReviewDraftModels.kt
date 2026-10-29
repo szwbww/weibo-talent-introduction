@@ -62,10 +62,28 @@ data class MailReviewDraftDetail(
     val updatedAt: LocalDateTime,
     val commentCount: Long,
     @get:JsonInclude(JsonInclude.Include.NON_NULL) val currentContextToken: String? = null,
-    @get:JsonInclude(JsonInclude.Include.NON_NULL) val approvedContextToken: String? = null
+    @get:JsonInclude(JsonInclude.Include.NON_NULL) val approvedContextToken: String? = null,
+    val sendStatus: String = "NOT_SENT",
+    @get:JsonInclude(JsonInclude.Include.NON_NULL) val sentMailRecordId: Long? = null
 )
 data class MailReviewDraftPage(val items: List<Any>, val total: Long, val page: Int, val size: Int)
 data class MailReviewDraftDeleted(val id: Long, val deleted: Boolean = true)
 data class MailReviewDraftContext(val currentToken: String, val approvedToken: String?, val changed: Boolean, val observedAt: LocalDateTime)
 data class MailReviewDraftConfirmation(val confirmationEventId: Long, val currentToken: String)
+
+data class MailReviewSendRequest(
+    val expectedVersion: Long,
+    val confirmationEventId: Long? = null,
+    val safetyWarningConfirmed: Boolean = false,
+    val strongConfirmationText: String? = null
+)
+
+/** Server-constructed frozen identity, never accepted from an HTTP payload. */
+data class MailReviewSendRef internal constructor(
+    val draft: MailReviewDraftRow,
+    val actor: String,
+    val confirmationEventId: Long?
+)
+
+data class MailReviewSendProjection(val sendStatus: String, val sentMailRecordId: Long?)
 class MailReviewDraftException(val status: Int, val code: String, message: String) : IllegalStateException(message)

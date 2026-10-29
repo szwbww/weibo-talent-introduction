@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.weibo.talentintroduction.auth.config.AuthSessionKeys
 import com.weibo.talentintroduction.mail.service.MailReviewDraftException
 import com.weibo.talentintroduction.mail.service.MailReviewDraftService
+import com.weibo.talentintroduction.mail.service.MailReviewSendRequest
+import com.weibo.talentintroduction.mail.service.MailReviewSendService
+import org.springframework.web.server.ResponseStatusException
 import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
 import org.springframework.web.bind.annotation.*
@@ -12,7 +15,7 @@ import javax.servlet.http.HttpServletRequest
 /** Session identity and strict integral parsing are local to this workflow. */
 @RestController
 @RequestMapping("/api/mail/mailbox/review-drafts")
-class MailReviewDraftController(private val service: MailReviewDraftService) {
+class MailReviewDraftController(private val service: MailReviewDraftService, private val sends: MailReviewSendService) {
     @PostMapping
     fun create(request: HttpServletRequest, @RequestBody body: JsonNode): Any {
         val actor = actor(request)
@@ -92,6 +95,29 @@ class MailReviewDraftController(private val service: MailReviewDraftService) {
         val actor = actor(request); fields(body, "expectedVersion")
         return service.translate(actor, id, integer(body, "expectedVersion"))
     }
+
+    @PostMapping("/{id}/send")
+    fun send(request: HttpServletRequest, @PathVariable id: Long, @RequestBody body: JsonNode): Any {
+        val actor = actor(request)
+        val allowed = setOf("expectedVersion", "confirmationEventId", "safetyWarningConfirmed", "strongConfirmationText")
+        if (!body.isObject || !body.has("expectedVersion") || body.fieldNames().asSequence().any { it !in allowed }) invalid()
+        val confirmed = body.get("safetyWarningConfirmed")?.let {
+            if (!it.isBoolean) invalid()
+            it.booleanValue()
+        } ?: false
+        return sends.send(actor, id, MailReviewSendRequest(integer(body, "expectedVersion"),
+            body.get("confirmationEventId")?.takeUnless { it.isNull }?.let { integer(body, "confirmationEventId") },
+            confirmed, body.get("strongConfirmationText")?.takeUnless { it.isNull }?.let { text(body, "strongConfirmationText") }))
+    }
+
+    @ExceptionHandler(ResponseStatusException::class)
+    fun sendError(error: ResponseStatusException): ResponseEntity<Any> = ResponseEntity.status(error.status)
+        .body(mapOf("code" to when (error.status.value()) {
+            409 -> "REVIEW_SEND_PENDING"
+            422 -> "REVIEW_SEND_REJECTED"
+            503 -> "REVIEW_SEND_SAFE_TO_RETRY"
+            else -> "REVIEW_SEND_BLOCKED"
+        }, "message" to error.reason))
 
     @ExceptionHandler(MailReviewDraftException::class)
     fun reviewError(error: MailReviewDraftException): ResponseEntity<Any> = ResponseEntity.status(error.status)

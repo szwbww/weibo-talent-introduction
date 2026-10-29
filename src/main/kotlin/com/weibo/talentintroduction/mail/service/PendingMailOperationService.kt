@@ -190,8 +190,11 @@ class PendingMailOperationService(
         // 绝不回退请求体里的 operatorName。
         attachmentIds: List<String> = emptyList(),
         authenticatedUsername: String? = null,
-        draftRef: MailReplyDraftRef? = null
+        draftRef: MailReplyDraftRef? = null,
+        reviewSendRef: MailReviewSendRef? = null
     ): PendingMailSendResult {
+        if (draftRef != null && reviewSendRef != null)
+            throw MailReviewDraftException(422, "REVIEW_SEND_REFERENCE_CONFLICT", "Conflicting draft references")
         val record = inboundMailProcessingRepository.findById(inboundProcessingId)
             .orElseThrow { error("Inbound mail processing not found: $inboundProcessingId") }
         val contactId = record.expertContactId
@@ -373,7 +376,8 @@ class PendingMailOperationService(
             previewAttachmentSha256 = previewAttachmentSha256,
             attachmentIds = attachmentIds,
             authenticatedUsername = authenticatedUsername,
-            draftSendRef = validatedDraft
+            draftSendRef = validatedDraft,
+            reviewSendRef = reviewSendRef
         )
     }
 
@@ -401,8 +405,11 @@ class PendingMailOperationService(
         // 06 (T1/I-2)：通用附件 id 与真实会话身份。空/空身份保持既有调用点零改动。
         attachmentIds: List<String> = emptyList(),
         authenticatedUsername: String? = null,
-        draftRef: MailReplyDraftRef? = null
+        draftRef: MailReplyDraftRef? = null,
+        reviewSendRef: MailReviewSendRef? = null
     ): PendingMailSendResult {
+        if (draftRef != null && reviewSendRef != null)
+            throw MailReviewDraftException(422, "REVIEW_SEND_REFERENCE_CONFLICT", "Conflicting draft references")
         val contact = expertContactRepository.findById(contactId)
             .orElseThrow { error("Expert contact not found: $contactId") }
         require(subject.isNotBlank()) { "Subject is required" }
@@ -427,7 +434,7 @@ class PendingMailOperationService(
             requireNotNull(mailReplyDraftService) { "Draft sending is not wired" }.completedBinding(
                 authenticatedUsername.orEmpty(),it,contactId,null,accountScope,completed?.attemptId)
         }
-        if (completed != null && (draftRef == null || trustedDraftAttempt == completed.attemptId)) {
+        if (reviewSendRef == null && completed != null && (draftRef == null || trustedDraftAttempt == completed.attemptId)) {
             val record = completed.mailRecord
             val originalSnapshots = OutboundAttachmentSnapshotCodec.parseOrThrow(
                 record.outboundAttachmentsJson
@@ -500,7 +507,8 @@ class PendingMailOperationService(
             evidence = ManualReplyEvidenceContext(runInboundSemanticChecks = false),
             attachmentIds = attachmentIds,
             authenticatedUsername = authenticatedUsername,
-            draftSendRef = validatedDraft
+            draftSendRef = validatedDraft,
+            reviewSendRef = reviewSendRef
         )
     }
 
@@ -607,7 +615,8 @@ class PendingMailOperationService(
         // claim 之前解析（同一文件集合同时喂 SendPayload 快照与 ComposedMail 载荷）。
         attachmentIds: List<String> = emptyList(),
         authenticatedUsername: String? = null,
-        draftSendRef: ValidatedDraftSendRef? = null
+        draftSendRef: ValidatedDraftSendRef? = null,
+        reviewSendRef: MailReviewSendRef? = null
     ): PendingMailSendResult {
         val contact = source.contact
         require(rawSubject.isNotBlank()) { "Subject is required" }
@@ -646,6 +655,18 @@ class PendingMailOperationService(
                 mailVariableService.renderHtmlForContact(htmlBody, source.account, contact)
         }.let { mailContentService.stripOpenTrackingImages(it) }
             .let { mailContentService.normalizeManualRichHtmlLineBreaks(it) }
+        reviewSendRef?.let { ref ->
+            val frozen = ref.draft
+            if (renderedSubject != frozen.subject || finalHtmlBody != frozen.html || finalTextBody != frozen.text)
+                throw MailReviewDraftException(409, "REVIEW_CONTENT_CHANGED", "Final content differs from the approved snapshot")
+            if (source.contactId != frozen.contactId || source.accountCode != frozen.accountCode ||
+                (if (source.inboundProcessingId != null) "INBOUND" else "OUTBOUND") != frozen.targetKind ||
+                (source.inboundProcessingId ?: source.anchorMailRecordId) != frozen.targetId ||
+                source.requestId != (if (frozen.targetKind == "OUTBOUND") frozen.sendRequestId else null) ||
+                authenticatedUsername != ref.actor || draftSendRef != null || attachmentIds.isNotEmpty() ||
+                meeting != null || evidence.canonicalFactIds.isNotEmpty() || evidence.ragMode || evidence.verifiedAssembly != null)
+                throw MailReviewDraftException(422, "REVIEW_SEND_REFERENCE_CONFLICT", "Review target or payload mismatch")
+        }
 
         val finalValidationText = buildFinalValidationText(renderedSubject, finalTextBody, finalHtmlBody)
         require(finalValidationText.isNotBlank()) { "Final validation text is empty after rendering" }
@@ -780,7 +801,7 @@ class PendingMailOperationService(
             // 06 (I-1)：与 ComposedMail.outboundAttachments 同一文件集合导出的有序快照；
             // 05 的 finalize 四分支据此写 mail_record.outbound_attachments_json。
             outboundAttachments = attachmentFileSet.snapshots
-        ).also { it.draftSendRef = draftSendRef }
+        ).also { it.draftSendRef = draftSendRef; it.reviewSendRef = reviewSendRef }
 
         val persistInReplyTo = source.persistInReplyTo
         if (persistInReplyTo != null && persistInReplyTo.length > 255) {
@@ -800,7 +821,7 @@ class PendingMailOperationService(
 
         // Preserve original risk/attachment/suppression priority. Only an exact completed
         // non-draft inbound payload may bypass a newly introduced identity reminder.
-        if (draftSendRef == null && source.inboundProcessingId != null) {
+        if (draftSendRef == null && (source.inboundProcessingId != null || reviewSendRef != null)) {
             manualReplySendAttemptService.findCompletedByPayload(payload)?.let {
                 return completedDraftResult(source.contactId, it)
             }

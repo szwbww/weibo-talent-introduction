@@ -85,6 +85,60 @@ class MailReviewDraftRepository(private val jdbc: NamedParameterJdbcTemplate, pr
                   AND a.account_code<>:simulator ORDER BY COALESCE(m.sent_at,m.created_at) DESC,m.id DESC LIMIT 1""")
     }
 
+    fun validTarget(row: MailReviewDraftRow): Boolean {
+        val target = when (row.targetKind) {
+            "INBOUND" -> """SELECT p.id FROM inbound_mail_processing p JOIN mail_sender_account a
+                ON a.account_code=p.sender_account_code JOIN expert_contact c ON c.id=p.expert_contact_id
+                WHERE p.id=:target AND p.expert_contact_id=:contact AND p.sender_account_code=:account"""
+            "OUTBOUND" -> """SELECT m.id FROM mail_record m JOIN mail_sender_account a
+                ON a.account_code=m.sender_account_code JOIN expert_contact c ON c.id=m.expert_contact_id
+                WHERE m.id=:target AND m.expert_contact_id=:contact AND m.sender_account_code=:account
+                AND m.direction='OUTBOUND' AND m.send_status='SENT'"""
+            else -> return false
+        }
+        return row.accountCode != MailSenderAccountService.SIMULATOR_ACCOUNT_CODE && jdbc.queryForList(target,
+            mapOf("target" to row.targetId, "contact" to row.contactId, "account" to row.accountCode)).size == 1
+    }
+
+    fun bindAttempt(row: MailReviewDraftRow, attemptId: Long) {
+        transaction()
+        check(jdbc.update("""UPDATE mailbox_review_draft SET send_attempt_id=:attempt
+            WHERE id=:id AND version=:version AND state='APPROVED' AND deleted_at IS NULL
+            AND (send_attempt_id IS NULL OR send_attempt_id=:attempt)""",
+            mapOf("id" to row.id, "version" to row.version, "attempt" to attemptId)) == 1) { "Review attempt binding conflict" }
+    }
+
+    fun sendProjection(row: MailReviewDraftRow): MailReviewSendProjection {
+        val attempt = row.sendAttemptId ?: return MailReviewSendProjection("NOT_SENT", null)
+        return jdbc.query("""SELECT a.status,m.id AS record_id FROM mail_send_attempt a
+            LEFT JOIN mail_record m ON m.mail_send_attempt_id=a.id AND m.send_status='SENT'
+                AND m.direction='OUTBOUND' AND m.expert_contact_id=:contact AND m.sender_account_code=:account
+                AND m.subject=:subject AND m.body=:text AND m.message_id=a.message_id
+            WHERE a.id=:attempt""", mapOf("attempt" to attempt, "contact" to row.contactId,
+            "account" to row.accountCode, "subject" to row.subject, "text" to row.text),
+            RowMapper { r, _ -> MailReviewSendProjection(r.getString("status"),
+                if (r.getString("status") == "SENT") (r.getObject("record_id") as? Number)?.toLong() else null) })
+            .singleOrNull() ?: MailReviewSendProjection("NOT_SENT", null)
+    }
+
+    fun event(id: Long): MailReviewDraftEvent? = jdbc.query(
+        "SELECT * FROM mailbox_review_draft_event WHERE id=:id", mapOf("id" to id), eventMapper).singleOrNull()
+
+    fun appendSendResult(row: MailReviewDraftRow, attemptId: Long, result: String, mailRecordId: Long?, now: LocalDateTime) {
+        transaction()
+        val type = if (result == "SENT") "SEND_SUCCEEDED" else "SEND_RESULT"
+        val exists = jdbc.queryForObject("""SELECT COUNT(*) FROM mailbox_review_draft_event
+            WHERE draft_id=:id AND draft_version=:version AND event_type=:type
+            AND JSON_EXTRACT(payload_json,'$.attemptId')=:attempt
+            AND JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.result'))=:result""",
+            mapOf("id" to row.id, "version" to row.version, "type" to type, "attempt" to attemptId, "result" to result), Long::class.java) ?: 0
+        if (exists == 0L) {
+            val payload = linkedMapOf<String, Any?>("attemptId" to attemptId, "result" to result)
+            if (mailRecordId != null) payload["mailRecordId"] = mailRecordId
+            appendEvent(row.id, row.version, type, "admin", payload, now)
+        }
+    }
+
     private fun visibility(actor: String, contactId: Long?, includeDeleted: Boolean): String {
         val role = when (actor) {
             "admin" -> "d.owner_username='user1' AND d.submitted_at IS NOT NULL"
@@ -142,7 +196,7 @@ class MailReviewDraftRepository(private val jdbc: NamedParameterJdbcTemplate, pr
             type in snapshots -> { required = setOf("subject", "html", "text", "state"); optional = setOf("reason") }
             type == "COMMENT" -> { required = setOf("text"); optional = emptySet() }
             type == "CONTEXT_CONFIRMED" -> { required = setOf("contextToken"); optional = emptySet() }
-            type in setOf("SEND_CLAIMED", "SEND_SUCCEEDED", "SEND_FAILED", "SEND_UNKNOWN") -> { required = setOf("attemptId", "result"); optional = setOf("mailRecordId") }
+            type in setOf("SEND_CLAIMED", "SEND_SUCCEEDED", "SEND_RESULT", "SEND_FAILED", "SEND_UNKNOWN") -> { required = setOf("attemptId", "result"); optional = setOf("mailRecordId") }
             else -> throw IllegalStateException("Unknown review event type")
         }
         require(payload.keys.containsAll(required) && payload.keys.all { it in required || it in optional }) { "Invalid review event schema" }

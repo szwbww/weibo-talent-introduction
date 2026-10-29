@@ -15,6 +15,7 @@ import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
+import org.springframework.transaction.annotation.Isolation
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionSynchronization
 import org.springframework.transaction.support.TransactionSynchronizationManager
@@ -32,7 +33,8 @@ class ManualReplySendAttemptService(
     // fast-p 02 (I-2): 成功事务内创建排期的唯一协作件（01 createFromSentMail 要求
     // 调用方已在事务中，本方法即调用方）。
     private val meetingCalendarService: MeetingCalendarService,
-    private val mailReplyDraftService: MailReplyDraftService? = null
+    private val mailReplyDraftService: MailReplyDraftService? = null,
+    private val mailReviewDraftService: MailReviewDraftService? = null
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(ManualReplySendAttemptService::class.java)
@@ -94,6 +96,7 @@ class ManualReplySendAttemptService(
     ) {
         // Server-only raw snapshot, deliberately absent from the fingerprint byte stream.
         internal var draftSendRef: ValidatedDraftSendRef? = null
+        internal var reviewSendRef: MailReviewSendRef? = null
     }
 
     /** findCompletedByRequestId 命中的已完成会话回信（attempt SENT + 唯一 mail_record）。 */
@@ -188,6 +191,11 @@ class ManualReplySendAttemptService(
                 appendLengthPrefix(data, attachment.sha256)
             }
         }
+        payload.reviewSendRef?.let {
+            appendLengthPrefix(data, "review-draft-v1")
+            appendLengthPrefix(data, it.draft.id.toString())
+            appendLengthPrefix(data, it.draft.version.toString())
+        }
         val fullHex = sha256Hex(data.toByteArray())
         val shortKey = if (inboundId != null) {
             MANUAL_RICH_MAIL_TYPE_PREFIX + fullHex.take(32)
@@ -242,7 +250,10 @@ class ManualReplySendAttemptService(
     }
 
     /** Exact completed-payload lookup only: never reserves an attempt or touches draft state. */
+    @Transactional
     fun findCompletedByPayload(payload: SendPayload): CompletedOutboundReply? {
+        val review = payload.reviewSendRef?.let { reviewService().lockForSend(it) }
+        validateReviewPayload(payload)
         val fingerprint = computeFingerprint(payload)
         val attempt = attemptRepository.findByOrcidIdAndMailType(payload.orcidId, fingerprint.shortKey)
             ?: return null
@@ -257,12 +268,40 @@ class ManualReplySendAttemptService(
         }
         if (attempt.status != MailSendAttemptStatus.SENT) return null
         val attemptId = attempt.id ?: return null
+        if (review != null) {
+            check(review.sendAttemptId == attemptId) { "Review is not bound to completed attempt" }
+            validateReviewRecord(payload, record = mailRecordRepository.findByMailSendAttemptId(attemptId)
+                ?: error("Completed review record missing"))
+        }
         val record = mailRecordRepository.findByMailSendAttemptId(attemptId) ?: return null
         return CompletedOutboundReply(attemptId, attempt.messageId, attempt.accountCode, record)
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
     fun prepareAndClaim(payload: SendPayload): ClaimedAttempt {
+        require(payload.draftSendRef == null || payload.reviewSendRef == null) { "Conflicting draft references" }
+        val reviewRef = payload.reviewSendRef
+        val review = reviewRef?.let { reviewService().lockForSend(it) }
+        validateReviewPayload(payload)
+        val fingerprint = computeFingerprint(payload)
+        if (review?.sendAttemptId != null) {
+            val bound = attemptRepository.findById(review.sendAttemptId).orElseThrow { IllegalStateException("Review attempt missing") }
+            require(bound.body == fingerprint.fullHex && bound.recipient == payload.normalizedRecipient &&
+                bound.contentType == FINGERPRINT_CONTENT_TYPE && bound.accountCode == payload.accountCode &&
+                bound.orcidId == payload.orcidId && bound.mailType == fingerprint.shortKey) { "Review attempt identity mismatch" }
+            val result = when (bound.status) {
+                MailSendAttemptStatus.SENT -> {
+                    validateReviewRecord(payload, mailRecordRepository.findByMailSendAttemptId(requireNotNull(bound.id))
+                        ?: error("Completed review record missing"))
+                    ClaimResult.DEDUP_SENT
+                }
+                MailSendAttemptStatus.DELIVERY_UNKNOWN -> ClaimResult.UNKNOWN
+                MailSendAttemptStatus.DELIVERY_IN_PROGRESS -> ClaimResult.IN_PROGRESS
+                else -> null
+            }
+            if (result != null) return ClaimedAttempt(requireNotNull(bound.id), bound.messageId, result)
+        }
+        if (review != null) reviewService().validateSendContext(review, requireNotNull(reviewRef))
         val draftRef = payload.draftSendRef
         val drafts = draftRef?.let { requireNotNull(mailReplyDraftService) { "Draft sending is not wired" } }
         val draftRow = draftRef?.let { requireNotNull(drafts).lockForClaim(it) }
@@ -281,7 +320,7 @@ class ManualReplySendAttemptService(
                 bound.status == MailSendAttemptStatus.FAILED || bound.status == MailSendAttemptStatus.SENT) { "Draft attempt cannot be replaced" }
             requireNotNull(drafts).releaseBinding(draftRow)
         }
-        val fingerprint = computeFingerprint(payload)
+        // Review identity is computed before checking its bound attempt.
         val now = LocalDateTime.now()
 
         attemptRepository.insertIgnore(
@@ -383,6 +422,16 @@ class ManualReplySendAttemptService(
                     result = ClaimResult.PERMANENT_FAILED
                 )
         }
+        if (review != null) {
+            check(review.sendAttemptId == null || review.sendAttemptId == claim.attemptId) { "Review attempt cannot be replaced" }
+            if (claim.result == ClaimResult.CLAIMED || claim.result == ClaimResult.SAFE_RETRY_CLAIMED)
+                reviewService().bindSend(review, claim.attemptId, claim.result.name)
+            else if (claim.result == ClaimResult.DEDUP_SENT) {
+                check(review.sendAttemptId == claim.attemptId) { "Unbound review completed attempt" }
+                validateReviewRecord(payload, mailRecordRepository.findByMailSendAttemptId(claim.attemptId)
+                    ?: error("Completed review record missing"))
+            }
+        }
         if (draftRef != null && (claim.result == ClaimResult.CLAIMED || claim.result == ClaimResult.SAFE_RETRY_CLAIMED || claim.result == ClaimResult.DEDUP_SENT)) {
             if (claim.result == ClaimResult.DEDUP_SENT) {
                 check(mailRecordRepository.findByMailSendAttemptId(claim.attemptId)?.sendStatus == "SENT") {
@@ -397,6 +446,9 @@ class ManualReplySendAttemptService(
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun finalizeSuccess(payload: SendPayload, attemptId: Long, messageId: String): Long {
+        val review = payload.reviewSendRef?.let { reviewService().lockForSendResult(it) }
+        validateReviewPayload(payload)
+        check(review == null || review.sendAttemptId == attemptId) { "Review attempt binding mismatch" }
         payload.draftSendRef?.let { requireNotNull(mailReplyDraftService).lockForFinalize(it) }
         val attempt = attemptRepository.findById(attemptId).orElseThrow {
             IllegalStateException("Mail send attempt not found: $attemptId")
@@ -485,6 +537,7 @@ class ManualReplySendAttemptService(
             now = now
         )
         payload.draftSendRef?.let { requireNotNull(mailReplyDraftService).closeSent(it,attemptId,now) }
+        if (review != null) reviewService().recordSendResult(review, attemptId, MailSendAttemptStatus.SENT, mailRecordId)
 
         return mailRecordId
     }
@@ -497,6 +550,9 @@ class ManualReplySendAttemptService(
         resultStatus: String,
         errorSummary: String?
     ): Long {
+        val review = payload.reviewSendRef?.let { reviewService().lockForSendResult(it) }
+        validateReviewPayload(payload)
+        check(review == null || review.sendAttemptId == attemptId) { "Review attempt binding mismatch" }
         payload.draftSendRef?.let { requireNotNull(mailReplyDraftService).lockForFinalize(it) }
         val attempt = attemptRepository.findById(attemptId).orElseThrow {
             IllegalStateException("Mail send attempt not found: $attemptId")
@@ -564,6 +620,7 @@ class ManualReplySendAttemptService(
             errorSummary = boundedError,
             now = now
         )
+        if (review != null) reviewService().recordSendResult(review, attemptId, resultStatus, mailRecordId)
 
         return mailRecordId
     }
@@ -701,6 +758,28 @@ class ManualReplySendAttemptService(
         } else {
             task()
         }
+    }
+
+    private fun reviewService() = requireNotNull(mailReviewDraftService) { "Review sending is not wired" }
+
+    private fun validateReviewPayload(payload: SendPayload) {
+        val ref = payload.reviewSendRef ?: return
+        val row = ref.draft
+        if (payload.draftSendRef != null || payload.contactId != row.contactId || payload.accountCode != row.accountCode ||
+            payload.subject != row.subject || payload.finalHtml != row.html || payload.finalText != row.text ||
+            payload.canonicalQaRuleIds.isNotEmpty() || payload.primaryRuleId != null || payload.calendarAttachment != null ||
+            payload.meetingEvent != null || payload.outboundAttachments.isNotEmpty() ||
+            (row.targetKind == "INBOUND" && (payload.inboundProcessingId != row.targetId || payload.sourceAnchor != null)) ||
+            (row.targetKind == "OUTBOUND" && (payload.inboundProcessingId != null ||
+                payload.sourceAnchor != "$SOURCE_ANCHOR_PREFIX${row.targetId}" || payload.idempotencyRequestId != row.sendRequestId)))
+            throw MailReviewDraftException(409, "REVIEW_CONTENT_CHANGED", "Send payload differs from approved content")
+    }
+
+    private fun validateReviewRecord(payload: SendPayload, record: MailRecord) {
+        check(record.sendStatus == "SENT" && record.direction == "OUTBOUND" &&
+            record.expertContactId == payload.contactId && record.senderAccountCode == payload.accountCode &&
+            record.subject == payload.subject && record.body == payload.finalText &&
+            record.calendarAttachmentJson == null && record.outboundAttachmentsJson == null) { "Review SENT record mismatch" }
     }
 
     private fun appendLengthPrefix(data: ByteArrayOutputStream, value: String) {
