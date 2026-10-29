@@ -207,3 +207,94 @@ The unrelated newly-added `/action` assertion was classified as incidental: no s
 - Remaining blocker: human-approved bounded amendment for the substantive V120/Flyway schema expectation after V167. No further product or authentication implementation blocker is known from the exercised evidence.
 - Next action: controller persists BLOCKED checkpoint and obtains the bounded schema-test decision. Then execute only the newly authorized repair and rerun all mandatory final gates before independent verification. Do not dispatch child 02 from this incomplete checkpoint.
 
+
+## Epoch 3 — Execution Result: READY_FOR_VERIFICATION
+
+This is execution evidence, not an independent verification PASS. Epochs 1 and 2 above remain unchanged.
+
+### Identities and authority
+
+- Plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-draft-review-master/docs/plans/2026-10-29/draft-review-01-workflow.md`
+- Plan SHA-256: `5259533f437110da772b8a2035c84957e6b24a3dbb0b79b1a455f7e1dd2d63fd`
+- Execution ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-draft-review-master/docs/plans/2026-10-29/draft-review-01-workflow.md@5259533f437110da772b8a2035c84957e6b24a3dbb0b79b1a455f7e1dd2d63fd`
+- Execution epoch: NEW; exact amended plan at `87a4ba94b070afebeb83d1c6b9fe885ed66a2aaa`, brief Epoch3 and current user assignment authorize this bounded continuation.
+- Executor: `DraftReview01Epoch3`, using execute-p only; no full review/verification skill invoked.
+- Target worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-draft-review-master`
+- Target branch: `fast/draft-review-master`
+- Git directory: `/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-draft-review-master`
+- Worktree ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-draft-review-master@fast/draft-review-master@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-draft-review-master`
+- Child aggregate product base: `b15bb069f43f89c45ee6859dba04a0baff5d774d`
+- Preserved pre-execution product SHA: `6205aaf437a0e80642518b7d35f1b230635b7f35`; not replayed.
+- Invocation HEAD: `e920b11a04ceb269463c43f9d9045f48747d469a`
+- Post-execution code SHA / current HEAD: `c9454b6d5dd193c73b78dfbc99dbe58c8c70ae26`
+- Product commit: `feat(fast-p): complete 01 migration gate`; only the authorized migration test was committed. Evidence excluded.
+- Evidence HEAD: no separate evidence commit created by this executor; report remains an append-only working-tree change for controller persistence.
+- Implementation boundary: aggregate `b15bb069f43f89c45ee6859dba04a0baff5d774d..c9454b6d5dd193c73b78dfbc99dbe58c8c70ae26`; continuation changes only the previously blocked V120 full-chain test.
+
+### Task Status
+
+| Requirement | Status | Files / execution evidence |
+|---|---|---|
+| T1–T3 / I-1–I-7 existing implementation | IMPLEMENTED, preserved | Prior product commit remains intact; fresh review and real-login suites below pass. No product behavior or applied migration changed in this epoch. |
+| T4 authorized V120/V167 alignment | IMPLEMENTED | `src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt`: assert obsolete index absence, exact unique physical-owner/folder/UIDVALIDITY/UID column order, same-UID generation isolation, duplicate rejection within one physical folder, cross-folder coexistence, and duplicate rejection in that second folder. |
+| T4 historical preservation | IMPLEMENTED | Historical UIDVALIDITY stays 0, owner stays NULL, folder becomes INBOX; original subject, sender, processing state/reason and contact association remain checked. Unknown-owner copies are allowed consistently with V134 NULL semantics and V167 removal of logical-account uniqueness; no historical owner is fabricated. Contact FK check retained. |
+| T4 required final gates | IMPLEMENTED | Both original mandatory commands executed freshly after final implementation; all target tests enabled and non-skipped. Review IT includes new-empty and V168-upgrade coverage. |
+| Fresh changed-path smoke | IMPLEMENTED | Real JDK11 application startup/Flyway + authenticated review API and independent MySQL folder/generation uniqueness exercise below. |
+| Scope / commit rules | IMPLEMENTED | One authorized test file in continuation product commit, no applied migration edits, skips, global bean override, plan/ledger/handoff/verifier edits, push, merge, or extra worktree. |
+
+### Commands
+
+All repository commands ran in the exact target worktree. Required Maven commands:
+
+```sh
+env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock mvn test -Dtest=MailReviewDraftIT -DmysqlIt=true -DargLine=-Dapi.version=1.41
+env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock mvn test -Dtest=AuthFlowIntegrationTest,FlywayMigrationIntegrationTest -DmigrationIt=true -DargLine=-Dapi.version=1.41
+```
+
+| Command | Result | Evidence |
+|---|---|---|
+| Required review IT command above | Exit 0 / BUILD SUCCESS | 12 tests, 0 failures, 0 errors, 0 skipped; completed 2026-10-29 21:45:21 +08:00; `artifact://917`. |
+| Required combined auth/migration command above | Exit 0 / BUILD SUCCESS | AuthFlow 9 and Flyway 46 tests, each 0 failures/errors/skipped; completed 2026-10-29 21:57:41 +08:00; `artifact://918` / background summary `artifact://922`. Bound JS phase additionally reported 1912 passed, 0 failed/skipped. |
+| `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn dependency:build-classpath -Dmdep.outputFile=/tmp/fast-draft01-epoch3-classpath -DincludeScope=test` | Exit 0 | Runtime smoke dependency classpath only; server used `target/classes`, not `target/test-classes`. Temporary file removed afterward. |
+| `git diff --check` | Exit 0 | Final implementation whitespace check before commit. |
+| Plan/worktree identity helpers, explicit-file staging, exact-subject commit, HEAD and branch ancestry checks | Exit 0 | `artifact://906`, `artifact://919`, `artifact://921`, `artifact://923`; final HEAD is the product commit and target-branch ancestor. |
+
+Surefire text report receipts were read after both commands: MailReviewDraftIT `12/0/0/0`, AuthFlowIntegrationTest `9/0/0/0`, FlywayMigrationIntegrationTest `46/0/0/0` (tests/failures/errors/skipped). Epoch2 failure was read as the baseline, not rerun merely to reconfirm.
+
+### Fresh smoke beyond tests
+
+Used throwaway Docker MySQL8.0.36 container `fast-draft01-epoch3-mysql`, localhost 33379, fresh `talent_introduction` database, and real production application classes under zulu-11, port 18093. Actual startup applied 168 migrations and reached v169. Command shape:
+
+```sh
+env DB_URL='jdbc:mysql://127.0.0.1:33379/talent_introduction?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC' DB_USERNAME=root DB_PASSWORD='<throwaway>' AUTH_ENABLED=true MAIL_SCHEDULING_ENABLED=false MAIL_QUEUE_ENABLED=false ES_BASE_URL=http://127.0.0.1:19298 \
+  /Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home/bin/java -cp 'target/classes:<generated dependency classpath>' \
+  com.weibo.talentintroduction.TalentIntroductionApplicationKt --server.port=18093 --spring.main.lazy-initialization=true --spring.rabbitmq.listener.simple.auto-startup=false
+```
+
+Observed via actual HTTP cookies, not MockMvc: anonymous review-list GET returned 401 UNAUTHORIZED; admin login 200; initial-password change 204; authenticated review-list GET returned 200 with `{items:[],total:0,page:0,size:20}`.
+
+Independent MySQL smoke queried information_schema and observed `uk_inbound_mail_processing_source` ordered columns `mailbox_owner_code,folder,uid_validity,imap_uid`. Inserted physical owner epoch3 / UID777 as INBOX generation5, Archive generation5, and INBOX generation6: all three persisted. A second Archive/generation5/UID777 insert failed with MySQL ERROR1062 for `uk_inbound_mail_processing_source`; final query showed exactly those three rows. This directly exercises the newly repaired full-chain folder/generation contract outside the JUnit suite.
+
+Smoke setup deviation disclosed: the first server launch omitted ES_BASE_URL and the existing bootstrap attempted configured external ES HEAD/mapping calls, which returned 403. No mail was sent. Stopped that process and relaunched with an explicit unused localhost ES endpoint before exercising HTTP/SQL smoke. No external ES success is claimed. Graceful shutdown exceeded the short timeout; both Java processes were explicitly killed and waited. Docker stop succeeded and --rm removed the sole smoke container/database; temporary classpath file was removed. No SMTP scenario was needed or exercised for this test-only migration repair; prior Epoch2 mail-transport smoke remains historical only.
+
+### Changed Files
+
+- `src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt` — bounded V120 full-chain expectation alignment with applied V167; uid-validity/history/schema assertions retained and made physically accurate.
+- `docs/plans/fast/draft-review-master/children/01/execution.md` — this separately authorized append-only evidence, excluded from product commit.
+
+### Deviations and Freshness
+
+- No scope or acceptance reduction. No implementation changes after either required command started; the local commit captured that identical tested state.
+- Plan identity rechecked: YES, unchanged exact SHA above.
+- Worktree identity rechecked: YES; root, branch, Git directory and HEAD match.
+- Reported product commit reachable from target branch: YES.
+- Required commands run this invocation: YES; all mandatory target suites non-skipped.
+- Historical evidence used only as baseline: YES.
+- Product working tree/index clean after commit; pre-existing controller-owned ledger modification preserved. This report is the only additional executor evidence change.
+- Remaining blocker: None known from execution evidence.
+- Next action: controller dispatches independent child verification under fast-p. READY_FOR_VERIFICATION does not constitute verifier PASS or human acceptance.
+
+## Epoch 3 — Controller Terminal Evidence Record
+
+Independent verifier DraftReview01Verifier returned LIGHT_PASS / COMPLETE_CHILD for `b15bb069f43f89c45ee6859dba04a0baff5d774d..c9454b6d5dd193c73b78dfbc99dbe58c8c70ae26`; full fresh-command report is preserved in verify-log.md. Automatic repair rounds: 0. This closing record does not claim whole-system verification or human acceptance.
+
