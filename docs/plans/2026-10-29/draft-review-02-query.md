@@ -10,7 +10,7 @@
 1. admin 会话接口返回待审核草稿总数、每位专家待审核草稿数，并可只返回有待审草稿的专家。
 必须保持：既有会话筛选/分页/邮件计数与 user1授权过滤；原“草稿”chip继续指管理员自己的草稿。
 不做：前端弹窗、审核中心页面、草稿作为左侧主列表、通知系统、轮询服务。
-本步5文件、1子系统（邮箱查询）、已有共享表新增字段0；可独立部署，默认参数保持旧客户端行为。
+本步6文件、1子系统（邮箱查询）、已有共享表新增字段0；包含用户持续授权下的必需旧IT fixture兼容修复，可独立部署，默认参数保持旧客户端行为。
 
 ## 关键不变量
 ### Invariant I-8: 数的是草稿，列表仍是专家
@@ -61,6 +61,7 @@ ConversationFilter新增reviewPendingOnly默认false。`expertPredicates` 增加
 ### T3：MySQL计数与兼容测试（I-8–I-10）
 文件：`MailReviewQueryIT.kt`、`MailboxConversationControllerTest.kt`。
 数据至少：专家甲2待审、乙1待审、丙仅未提交/退回/已审核；甲跨两个账号，其中一个disabled但非模拟器；另有模拟器和无授权专家；分页size=1。逐状态变更后直接重查，覆盖count/page/explain共享条件。
+用户持续授权下的有界基线修复：必跑MailboxConversationRepositoryIT的replied用例在expert_replied_dismissal INSERT漏写无默认值的dismissed_at，真实MySQL报错。仅给该fixture INSERT补dismissed_at和NOW()，不改生产schema、业务行为或既有断言。size100查询次数只记录真实测量，不新增固定语句条数的实现细节断言。
 
 ## 变更文件清单
 | # | 文件（相对仓库根目录） | 操作 / 边界 |
@@ -70,6 +71,7 @@ ConversationFilter新增reviewPendingOnly默认false。`expertPredicates` 增加
 | 3 | `src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt` | 复用成员条件，新增EXISTS和批量计数 |
 | 4 | `src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewQueryIT.kt` | 新增真实MySQL过滤/分页/计数测试 |
 | 5 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt` | 默认参数和reader回归 |
+| 6 | `src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt` | 仅修复既有replied用例fixture INSERT漏写dismissed_at；保留所有原行为断言 |
 
 ## 验收标准
 - I-8：全范围 reviewPendingTotal=3，total=2；size=1翻两页分别是甲/乙且counts=2/1；不会出现一页空但后面还有待审的前端过滤错误。
@@ -100,3 +102,7 @@ JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -
 - 覆盖: 需求1、保持项；I-8/I-9/I-10；X5/X6/X7。
 
 人工验收开始时才导出同前缀 `-acceptance.md`。
+
+## 修正记录
+- 2026-10-29：依用户“授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p”，补齐必跑MailboxConversationRepositoryIT.kt白名单，只允许对真实失败fixture补dismissed_at/NOW()；证据：DraftReview02Implementer实跑45tests/5failures/1error（artifact://950）及源码INSERT原文。原4个日期失败先恢复仓库默认timezone，不改测试口径；I-8–I-10及原门禁不变。
+
