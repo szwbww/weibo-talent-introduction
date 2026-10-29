@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-29/draft-review-master.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-10-29/draft-review-master.md (commit c21b3aa9059d453811f65bc2c3229e1c51fbd997)
 - Amendments: A1,A2
 - Master base: b15bb069f43f89c45ee6859dba04a0baff5d774d
@@ -13,13 +13,13 @@
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: b15bb069f43f89c45ee6859dba04a0baff5d774d
+- Pause reason: Child 01 implementer returned BLOCKED: FlywayMigrationIntegrationTest line 2328 requires an index explicitly dropped by applied V167. Current amendments authorize latest-version literal cleanup only; substantive schema-test amendment needed. Review IT and final auth gate pass; no independent verification.
+- Resume from: 6205aaf437a0e80642518b7d35f1b230635b7f35
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| 01 | docs/plans/2026-10-29/draft-review-01-workflow.md | commit:c21b3aa9059d453811f65bc2c3229e1c51fbd997 | none | 2 | WAITING_FOR_AGENT | b15bb069f43f89c45ee6859dba04a0baff5d774d | — | 0 | — | — | — | Resumed by user 授权; epoch 1 pause evidence a739704502c6b9e482f5c72daa22cd3bc2a891ea preserved |
+| 01 | docs/plans/2026-10-29/draft-review-01-workflow.md | commit:c21b3aa9059d453811f65bc2c3229e1c51fbd997 | none | 2 | PAUSED_FOR_HUMAN | b15bb069f43f89c45ee6859dba04a0baff5d774d | 6205aaf437a0e80642518b7d35f1b230635b7f35 | 0 | — | 6205aaf437a0e80642518b7d35f1b230635b7f35 | 1c77b2b9d535474279ac398089d9e27583138404 | Implementer DraftReview01Implementer BLOCKED; review IT 12 pass, final auth 9 pass, Flyway 46 with 1 failure; no verifier |
 | 02 | docs/plans/2026-10-29/draft-review-02-query.md | sha256:b9bbae9442d052c1ae1a122b25e42ac2020bf1973f0aff76d3bcd823adf79d91 | 01 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 | 03 | docs/plans/2026-10-29/draft-review-03-send.md | sha256:f960f013f569b5de074722c605b41d5fa382da28c1637666b9de773c860515f7 | 01,02 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 | 04 | docs/plans/2026-10-29/draft-review-04-reader.md | sha256:6f7bca6a57737934f983bd69ecc4834b0267fb109fc0b49f7e89c6b9cf3feae8 | 01,02,03 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
@@ -45,4 +45,8 @@
 
 ## Resume History
 - 2026-10-29T18:42:52+08:00: User 授权 releases the documented baseline scope pause. Exact retained branch/root/HEAD checked clean at 32176acd87388c62b3f9d84074ea1a5741c42623 before amendments. Plan-only amendment commit c21b3aa9059d453811f65bc2c3229e1c51fbd997. Child 01 restarts at epoch 2, fix_round=0; later children remain pending. No baseline re-run was used to reconfirm known errors.
+
+- Required agent acquired: child 01 epoch 2 IMPLEMENTER `DraftReview01Implementer`; dispatch succeeded, agent_attempt=0. Controller does not implement or verify product work inline.
+
+- Epoch 2 implementation returned BLOCKED at 6205aaf437a0e80642518b7d35f1b230635b7f35. Remaining V120 schema assertion expects uk_inbound_mail_processing_uid_validity after full migration while applied V167 drops it and introduces folder-scoped uk_inbound_mail_processing_source. Exact output and assertion/migration excerpts: children/01/execution.md lines 163–208. Authority sought: align this test's substantive schema/uniqueness checks with the already-applied V167 folder-scoped contract while preserving V120 uid-validity/data preservation coverage; no applied migration edits, skipped tests or new product behavior. Prior A1/A2 remain unchanged.
 
