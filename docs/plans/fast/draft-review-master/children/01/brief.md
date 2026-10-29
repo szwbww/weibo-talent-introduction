@@ -236,3 +236,12 @@ Current authorized files are exactly the amended child table (11 files); extra f
 
 Product base is `b15bb069f43f89c45ee6859dba04a0baff5d774d`. Append execution epoch 2 to `execution.md`; never replace epoch 1. Baseline failures are already proven in `baseline-reports.txt`; do not rerun to reconfirm them. Run all required commands freshly only after your final authorized changes, and exercise actual API smoke beyond tests. Local implementation commit is explicitly authorized as `feat(fast-p): implement 01`; exclude fast-p docs from that commit.
 
+
+## Epoch 3 — Authorized Remaining Gate
+
+Current exact child plan is `docs/plans/2026-10-29/draft-review-01-workflow.md` at `commit:87a4ba94b070afebeb83d1c6b9fe885ed66a2aaa`, overriding both historical embedded copies/identities. Master at the same commit and ledger amendments A3/A4 record exact human instruction “授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p”.
+
+Preserve already committed implementation `6205aaf437a0e80642518b7d35f1b230635b7f35`; do not replay it. Remaining authorized task: align existing V120 migration test's full-chain schema/uniqueness assertions with applied V167 folder-scoped contract while preserving uid-validity and historical data coverage. Same amended 11-file whitelist; no applied migration edit, skip, global bean override or new product behavior. Read Epoch2 execution evidence for exact remaining failure rather than rerunning merely to reconfirm it.
+
+Use execute-p for this exact current child identity. Append Epoch3 execution evidence; never rewrite old epochs. All mandatory child commands must run freshly after final changes; preserve earlier actual smoke as historical only and perform fresh relevant changed-path smoke. Commit remaining authorized implementation locally as `feat(fast-p): complete 01 migration gate`, excluding fast-p evidence. Child aggregate product base remains `b15bb069f43f89c45ee6859dba04a0baff5d774d`; this continuation starts at product `6205aaf437a0e80642518b7d35f1b230635b7f35` with later evidence HEAD.
+
