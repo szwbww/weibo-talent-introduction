@@ -227,3 +227,12 @@ JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -
 - 覆盖: 需求2；I-6/I-7；X3。
 
 人工验收开始时才导出本文件同前缀 `-acceptance.md`，当前不生成。
+
+## Epoch 2 — Authoritative Resume Contract
+
+The earlier embedded plan and identity above are preserved epoch-1 history, not the current execution contract. Read the complete current plan from `docs/plans/2026-10-29/draft-review-01-workflow.md` at `commit:c21b3aa9059d453811f65bc2c3229e1c51fbd997`; it overrides the historical embedded copy. Master identity: `docs/plans/2026-10-29/draft-review-master.md` at the same commit. Ledger amendments A1/A2 record the user's exact approval “授权” on 2026-10-29.
+
+Current authorized files are exactly the amended child table (11 files); extra file is FlywayMigrationIntegrationTest.kt only. Remove obsolete latest-version literals without repinning; preserve migration execution and meaningful schema/data assertions. Isolate conflicting test beans locally in AuthFlowIntegrationTest.kt; do not enable global overriding or edit another unlisted test configuration. Mandatory commands and all I-1–I-7 requirements remain unchanged.
+
+Product base is `b15bb069f43f89c45ee6859dba04a0baff5d774d`. Append execution epoch 2 to `execution.md`; never replace epoch 1. Baseline failures are already proven in `baseline-reports.txt`; do not rerun to reconfirm them. Run all required commands freshly only after your final authorized changes, and exercise actual API smoke beyond tests. Local implementation commit is explicitly authorized as `feat(fast-p): implement 01`; exclude fast-p docs from that commit.
+
