@@ -122,3 +122,17 @@ JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -
 - 覆盖: 需求1、保持项；I-8/I-9/I-10；X5/X6/X7。
 
 人工验收开始时才导出同前缀 `-acceptance.md`。
+
+## Dispatch Boundary and Predecessor Evidence
+
+Child product base: `c9454b6d5dd193c73b78dfbc99dbe58c8c70ae26` (child01 terminal Code head). Child01 evidence commit `72f87715e85df55ccf95678171cf597be7e78af5`; clean checkpoint `86f809eb9f1f6ae42eb676e426da2993ead7ae8c` validated complete manifest through01 with result VALID / CHILD_CHECKPOINT. Child01 LIGHT_PASS, zero repairs; implementation/context DTO/API contract is available in its committed sources and execution/verify-log. Preserve its streaming context reader in the shared MailboxConversationRepository.
+
+Governing master is at `87a4ba94b070afebeb83d1c6b9fe885ed66a2aaa`, with A1–A4; historical source-baseline text does not roll back child01. User instruction “授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p” preauthorizes necessary in-goal bounded amendments: if you discover required unlisted files or actual contract drift, message controller with exact evidence/paths so the controller records plan changes before you touch them. Do not silently widen scope.
+
+
+## Epoch 2 — Required Fixture Compatibility Amendment
+
+Current exact child plan is `docs/plans/2026-10-29/draft-review-02-query.md` at `commit:2af9b9ca1025c5741086558365f92793357a307e`, superseding the original embedded identity; master at the same commit, ledger A5/A6. Scope is now six files, adding MailboxConversationRepositoryIT.kt only for the proven fixture INSERT missing dismissed_at/NOW(). Preserve all semantic assertions; use repository-default timezone. New query-count instrumentation is measured evidence, not a permanent fixed statement-count assertion. Required commands/I-8–I-10 unchanged.
+
+Resume/reconcile existing uncommitted authorized implementation against this new execute-p identity; do not replay completed work or claim prior commands as current final verification. Preserve discovery/baseline failure history, append current execution epoch2, run all mandatory commands freshly after final changes and actual API/EXPLAIN/size100 smoke, then commit `feat(fast-p): implement 02` excluding fast-p docs.
+
