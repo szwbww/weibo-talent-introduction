@@ -2319,56 +2319,93 @@ class FlywayMigrationIntegrationTest {
                 "SELECT uid_validity FROM inbound_mail_processing WHERE imap_uid = 777"
             ))
 
-            // 唯一键替换：旧 (account, uid) 键移除，新 (account, uid_validity, uid) 键生效
+            // 完整迁移链经 V167 后，以物理邮箱、folder、UIDVALIDITY、UID 保证唯一性。
             assertEquals(0, connection.queryLong(
                 "SELECT COUNT(*) FROM information_schema.statistics " +
                     "WHERE table_schema = DATABASE() AND table_name = 'inbound_mail_processing' " +
                     "AND index_name = 'uk_inbound_mail_processing_uid'"
             ))
-            assertTrue(connection.indexExists("inbound_mail_processing", "uk_inbound_mail_processing_uid_validity"))
+            assertFalse(connection.indexExists("inbound_mail_processing", "uk_inbound_mail_processing_uid_validity"))
+            assertTrue(connection.indexExists("inbound_mail_processing", "uk_inbound_mail_processing_source"))
+            assertEquals("mailbox_owner_code,folder,uid_validity,imap_uid", connection.queryString(
+                "SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.statistics " +
+                    "WHERE table_schema = DATABASE() AND table_name = 'inbound_mail_processing' " +
+                    "AND index_name = 'uk_inbound_mail_processing_source' AND NON_UNIQUE = 0"
+            ))
+            assertEquals("INBOX", connection.queryString(
+                "SELECT folder FROM inbound_mail_processing WHERE message_id = 'historical-msg'"
+            ))
+            assertEquals("Old", connection.queryString(
+                "SELECT subject FROM inbound_mail_processing WHERE message_id = 'historical-msg'"
+            ))
 
-            // 同 UID 不同代际可以并存；同 (account, uid_validity, uid) 唯一
+            // 同 UID 不同代际可以并存；同一物理邮箱/folder 内相同代际仍唯一。
             connection.execute(
                 """
                 INSERT INTO inbound_mail_processing
-                    (sender_account_code, uid_validity, imap_uid, message_id, from_email,
+                    (sender_account_code, mailbox_owner_code, uid_validity, imap_uid, message_id, from_email,
                      received_at, process_status, process_reason)
-                VALUES ('sender', 5, 777, 'new-generation', 'one@example.com',
+                VALUES ('sender', 'sender', 5, 777, 'new-generation', 'one@example.com',
                         '2026-09-01 10:00:00', 'MANUAL_REVIEW', 'BODY_TRUNCATED')
                 """
             )
             connection.execute(
                 """
                 INSERT INTO inbound_mail_processing
-                    (sender_account_code, uid_validity, imap_uid, message_id, from_email,
+                    (sender_account_code, mailbox_owner_code, uid_validity, imap_uid, message_id, from_email,
                      received_at, process_status, process_reason)
-                VALUES ('sender', 6, 778, 'second-generation', 'one@example.com',
+                VALUES ('sender', 'sender', 6, 777, 'second-generation', 'one@example.com',
                         '2026-09-02 10:00:00', 'MANUAL_REVIEW', 'BODY_TRUNCATED')
                 """
             )
-            assertEquals(2L, connection.queryLong(
+            assertEquals(3L, connection.queryLong(
                 "SELECT COUNT(*) FROM inbound_mail_processing WHERE imap_uid = 777"
             ))
             assertThrows(SQLException::class.java) {
                 connection.execute(
                     """
                     INSERT INTO inbound_mail_processing
-                        (sender_account_code, uid_validity, imap_uid, message_id, from_email,
+                        (sender_account_code, mailbox_owner_code, uid_validity, imap_uid, message_id, from_email,
                          received_at, process_status, process_reason)
-                    VALUES ('sender', 5, 777, 'duplicate', 'one@example.com',
+                    VALUES ('sender', 'sender', 5, 777, 'duplicate', 'one@example.com',
                             '2026-09-03 10:00:00', 'MANUAL_REVIEW', 'BODY_TRUNCATED')
                     """
                 )
             }
-            // 历史 0 行仍保留原唯一性：0 代际同 UID 再插被拒绝
+            // 历史物理来源保持未知，不伪造 owner；V167 不再以逻辑账号限制未知来源。
+            assertEquals(1L, connection.queryLong(
+                "SELECT COUNT(*) FROM inbound_mail_processing WHERE message_id = 'historical-msg' " +
+                    "AND mailbox_owner_code IS NULL AND uid_validity = 0 AND folder = 'INBOX' " +
+                    "AND process_status = 'PROCESSED' AND process_reason = 'QA_AUTO_REPLIED' " +
+                    "AND expert_contact_id = 1 AND from_email = 'one@example.com'"
+            ))
+            connection.execute(
+                """
+                INSERT INTO inbound_mail_processing
+                    (sender_account_code, uid_validity, imap_uid, message_id, from_email,
+                     received_at, process_status, process_reason)
+                VALUES ('sender', 0, 777, 'unknown-source-copy', 'one@example.com',
+                        '2026-06-02 10:00:00', 'MANUAL_REVIEW', 'BODY_TRUNCATED')
+                """
+            )
+            // V167 允许同物理邮箱的不同 folder 复用同代际 UID。
+            connection.execute(
+                """
+                INSERT INTO inbound_mail_processing
+                    (sender_account_code, mailbox_owner_code, folder, uid_validity, imap_uid,
+                     message_id, from_email, received_at, process_status, process_reason)
+                VALUES ('sender', 'sender', 'Archive', 5, 777, 'other-folder', 'one@example.com',
+                        '2026-09-04 10:00:00', 'MANUAL_REVIEW', 'BODY_TRUNCATED')
+                """
+            )
             assertThrows(SQLException::class.java) {
                 connection.execute(
                     """
                     INSERT INTO inbound_mail_processing
-                        (sender_account_code, uid_validity, imap_uid, message_id, from_email,
-                         received_at, process_status, process_reason)
-                    VALUES ('sender', 0, 777, 'historical-dup', 'one@example.com',
-                            '2026-06-02 10:00:00', 'MANUAL_REVIEW', 'BODY_TRUNCATED')
+                        (sender_account_code, mailbox_owner_code, folder, uid_validity, imap_uid,
+                         message_id, from_email, received_at, process_status, process_reason)
+                    VALUES ('sender', 'sender', 'Archive', 5, 777, 'other-folder-dup', 'one@example.com',
+                            '2026-09-05 10:00:00', 'MANUAL_REVIEW', 'BODY_TRUNCATED')
                     """
                 )
             }
