@@ -110,8 +110,15 @@ class MailboxConversationService(
         /** 01 (T3/I-4)：只看当前用户挂起专家；默认 false 保持既有调用兼容。 */
         suspendedOnly: Boolean = false,
         /** 01 (T3/I-4)：只看当前用户已提供专家；默认 false 保持既有调用兼容。 */
-        providedOnly: Boolean = false
+        providedOnly: Boolean = false,
+        reviewPendingOnly: Boolean = false
     ): ConversationListResponse {
+        val reader = MailReadOnlyPolicy.isReader(username)
+        if (reader && reviewPendingOnly) {
+            throw MailReadAccessDeniedException(
+                MailReadOnlyPolicy.MAIL_READ_FORBIDDEN, "无权查看待审核草稿"
+            )
+        }
         validateDirection(direction)
         validateTextFilter("q", q)
         validateTextFilter("subject", subject)
@@ -146,17 +153,20 @@ class MailboxConversationService(
             recipientEmail = recipientEmailFilter,
             keyword = keywordFilter,
             suspendedOnly = suspendedOnly,
-            providedOnly = providedOnly
+            providedOnly = providedOnly,
+            reviewPendingOnly = reviewPendingOnly
         )
         val sessionUser = username.orEmpty()
+        // Toolbar counts ignore mutually exclusive chips, including an empty chip result/page.
+        val reviewPendingTotal = if (reader) 0L else repository.reviewPendingTotal(sessionUser, filter)
         val total = repository.countConversations(sessionUser, filter)
         if (total == 0L) {
-            return ConversationListResponse(emptyList(), 0, pageIndex, pageSize)
+            return ConversationListResponse(emptyList(), 0, pageIndex, pageSize, reviewPendingTotal)
         }
         val offset = pageIndex.toLong() * pageSize
         val rows = repository.pageConversations(sessionUser, filter, pageSize, offset)
         if (rows.isEmpty()) {
-            return ConversationListResponse(emptyList(), total, pageIndex, pageSize)
+            return ConversationListResponse(emptyList(), total, pageIndex, pageSize, reviewPendingTotal)
         }
         val contactIds = rows.map { it.expertContactId }
         val latestMessages = repository.latestMessageByContacts(contactIds, activeCodes, accountCode)
@@ -166,6 +176,8 @@ class MailboxConversationService(
         val expertTagsByContact = currentPageExpertTags(rows)
         // 01 (T3/I-3)：本页挂起摘要一次批量读取；新表无行也拿到真实跨账号 pending。
         val suspensionStates = repository.suspensionStatesByContacts(sessionUser, contactIds)
+        val reviewPendingCounts = if (reader) emptyMap() else
+            repository.reviewPendingCountsByContacts(contactIds, activeCodes, accountCode)
 
         val items = rows.map { row ->
             ConversationItemResponse(
@@ -210,10 +222,11 @@ class MailboxConversationService(
                 suspendReason = suspensionStates[row.expertContactId]?.suspendReason,
                 suspensionPendingCount = suspensionStates[row.expertContactId]?.suspensionPendingCount ?: 0L,
                 // 01 (I-1/I-4)：一次读取的 DB 真值；followed 由同一状态派生。
-                progressStatus = row.progressStatus
+                progressStatus = row.progressStatus,
+                reviewPendingCount = reviewPendingCounts[row.expertContactId] ?: 0L
             )
         }
-        return ConversationListResponse(items, total, pageIndex, pageSize)
+        return ConversationListResponse(items, total, pageIndex, pageSize, reviewPendingTotal)
     }
 
     // ------------------------------------------------------------------

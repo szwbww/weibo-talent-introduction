@@ -239,7 +239,7 @@ class MailboxConversationRepositoryIT {
         insertOutbound(3, "acc-a", "INTRODUCTION", "SENT", "Intro C", "2026-09-01 09:00:00")
         insertProcessing(4, "acc-a", 1804, "PROCESSED", "Incoming only", "2026-09-02 09:00:00", "incoming-d", "dan@example.org")
         jdbcTemplate.update("INSERT INTO expert_follow (username, expert_contact_id, created_at) VALUES ('op1', 1, NOW())")
-        jdbcTemplate.update("INSERT INTO expert_replied_dismissal (username, expert_contact_id, last_inbound_id) VALUES ('op1', 2, ?)", bInbound)
+        jdbcTemplate.update("INSERT INTO expert_replied_dismissal (username, expert_contact_id, last_inbound_id, dismissed_at) VALUES ('op1', 2, ?, NOW())", bInbound)
 
         val replied = MailboxConversationRepository.ConversationFilter(accountCodes = allAccounts, repliedOnly = true)
         assertTrue(page(replied, username = "op1").isEmpty())
