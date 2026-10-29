@@ -221,3 +221,17 @@ node --test src/test/js/mailReviewReader.test.js src/test/js/mailboxReadOnly.tes
 - 覆盖: 需求1/2、保持项；I-16/I-17；S-1/S-2。
 
 人工验收开始时才导出同前缀 `-acceptance.md`。
+
+## Dispatch Boundary and Required Live UI Evidence
+
+Child base `f7b24c9c7364ea64adc4fa1013083343399756d7` is child03 terminal product head. Child03 LIGHT_PASS evidence0b02b03c85bbe5825d7365b0eee2c1fc04623e6f; clean full-manifest prefix checkpointa32b4659daf647474ec59a72ecaf3a3b89a214c7 VALID through03. Existing API/state/context/send contracts and three child reports are necessary predecessor outputs; current child04 plan identity remains unchanged.
+
+Governing master2af9b9ca1025c5741086558365f92793357a307e, amendmentsA1–A6. User continuous authority allows needed in-goal bounded amendments: message controller exact evidence/file list BEFORE unlisted edits so plan/ledger is recorded. Preserve child03 immutable send behavior and do not add reader capabilities. Actual browser smoke must load production static app against the implemented authenticated real backend, not a mock/localStorage prototype; exercise contenteditable bold/list/safe paste/caret, two drafts/submit/locking/revoke/flush and 1440/390 surfaces to the extent required by this plan. Never mark human acceptance complete from machine browser proof.
+
+
+## Epoch 2 — Obsolete Reader Contract Retirement
+
+Current exact child04 plan at `commit:c17c9013ece5bf7967d6233cd97f5bfed47d1cab` overrides embedded original identity; master at same commit, ledger A7/A8. Scope eight files, adding mailboxChatStyle.test.js solely to retire obsolete all-HTML/link prohibition, fixed old-copy test and stale title assertion. Do not re-pin new wording/implementation. Preserve all unrelated styles/permissions; planned behavioral tests and actual browser must prove safe review HTML, text-only history, no attachments/Storage, original restricted shell and S-1/S-2.
+
+Reconcile existing implementation under fresh execute-p plan identity/epoch2 without replaying work; preserve failed discovery gate history. All original required node commands run freshly after final state, plus live authenticated backend browser smoke. No silent reduction and no broader edits.
+
