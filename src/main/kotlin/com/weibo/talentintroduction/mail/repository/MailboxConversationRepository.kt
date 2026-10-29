@@ -26,6 +26,51 @@ import java.time.LocalDateTime
 class MailboxConversationRepository(
     private val jdbcTemplate: NamedParameterJdbcTemplate
 ) {
+    /**
+     * Full real conversation fingerprint. Length-prefixed UTF-8 fields distinguish null,
+     * empty strings and field boundaries; processing labels/status deliberately do not participate.
+     */
+    fun reviewContext(contactId: Long, accountCodes: List<String>): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        val lengthPrefix = java.nio.ByteBuffer.allocate(4)
+        fun feed(value: String?) {
+            if (value == null) {
+                digest.update(lengthPrefix.clear().putInt(-1).array())
+            } else {
+                val bytes = value.toByteArray(Charsets.UTF_8)
+                digest.update(lengthPrefix.clear().putInt(bytes.size).array())
+                digest.update(bytes)
+            }
+        }
+        feed("mailbox-review-context-v1")
+        feed(contactId.toString())
+        if (accountCodes.isNotEmpty()) {
+            val sql = """
+                SELECT u.* FROM (${rangeUnionSql(includeBody = true)}) u
+                JOIN mail_sender_account a ON a.account_code=u.account_code
+                WHERE u.expert_contact_id=:contactId AND a.account_code<>:simulator
+                ORDER BY u.source_rank,u.id
+            """.trimIndent()
+            val p = MapSqlParameterSource().addValue("contactId", contactId)
+                .addValue("accountCodes", accountCodes).addValue("accountCode", null)
+                .addValue("simulator", MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
+            jdbcTemplate.query(sql, p, org.springframework.jdbc.core.RowCallbackHandler { rs ->
+                feed(rs.getString("source"))
+                feed(rs.getLong("id").toString())
+                feed(rs.getString("account_code"))
+                feed(rs.getString("direction"))
+                feed(rs.getTimestamp("event_at")?.toLocalDateTime()?.toString())
+                feed(rs.getString("message_id"))
+                feed(rs.getString("in_reply_to"))
+                feed(rs.getString("subject"))
+                feed(rs.getString("body"))
+                feed(rs.getString("cleaned_body"))
+                feed(rs.getString("send_status"))
+            })
+        }
+        return digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    }
+
     // ------------------------------------------------------------------
     // 参数与投影
     // ------------------------------------------------------------------

@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.auth.config
 
 import com.weibo.talentintroduction.auth.controller.AuthController
 import com.weibo.talentintroduction.mail.controller.MailboxConversationController
+import com.weibo.talentintroduction.mail.controller.MailReviewDraftController
 import org.springframework.web.method.HandlerMethod
 import java.util.Locale
 
@@ -12,6 +13,8 @@ import java.util.Locale
  * 绝不从 query/body/前端隐藏推导。`user1` 的已认证请求默认拒绝，仅放行：
  * - `GET` [MailboxConversationController.list]（会话列表）；
  * - `GET` [MailboxConversationController.messages]（会话时间线）；
+ * - 本人已授权专家的审核草稿读取、编辑、提交、撤回、删除与评论；
+ *   具体所有权、实时授权及状态由 MailReviewDraftService 逐次检查。
  * - `POST` [AuthController.logout]。
  *
  * 白名单按 `HandlerMethod.method.declaringClass + method.name + HTTP method` 精确匹配，
@@ -49,6 +52,15 @@ object MailReadOnlyPolicy {
     private val READER_ALLOWED_HANDLERS = listOf(
         AllowedHandler("GET", MailboxConversationController::class.java, "list"),
         AllowedHandler("GET", MailboxConversationController::class.java, "messages"),
+        AllowedHandler("POST", MailReviewDraftController::class.java, "create"),
+        AllowedHandler("GET", MailReviewDraftController::class.java, "list"),
+        AllowedHandler("GET", MailReviewDraftController::class.java, "detail"),
+        AllowedHandler("PUT", MailReviewDraftController::class.java, "save"),
+        AllowedHandler("POST", MailReviewDraftController::class.java, "submit"),
+        AllowedHandler("POST", MailReviewDraftController::class.java, "withdraw"),
+        AllowedHandler("DELETE", MailReviewDraftController::class.java, "delete"),
+        AllowedHandler("POST", MailReviewDraftController::class.java, "comment"),
+        AllowedHandler("GET", MailReviewDraftController::class.java, "events"),
         AllowedHandler("POST", AuthController::class.java, "logout")
     )
 
