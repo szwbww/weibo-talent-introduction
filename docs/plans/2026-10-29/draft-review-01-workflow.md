@@ -9,7 +9,7 @@
 2. admin 查看已提交过的草稿并审核/退回；批准仅冻结正文，绝不发送。
 必须保持：现有专家授权边界、user1 无发送/附件权限；管理员原草稿和人工发送不变。
 不做：用户管理页面、通用 RBAC、审批流引擎、附件草稿、恢复已删除草稿、自动提交、自动发送。
-本步 10 文件、2 子系统（邮件审核 + 认证白名单）；新增已有共享表字段 0。可以独立部署：只有 API，无 UI 入口、不调用 SMTP。
+本步 11 文件（2026-10-29用户“授权”的迁移测试基线修复例外）、2 子系统（邮件审核 + 认证白名单）；新增已有共享表字段 0。可以独立部署：只有 API，无 UI 入口、不调用 SMTP。
 
 ## 关键不变量
 ### Invariant I-1: 身份与专家授权
@@ -141,6 +141,7 @@ Detail 固定：id/contactId/expertName/ownerUsername/version/state/subject/html
 ### T4：真实测试（I-1–I-7）
 文件：`MailReviewDraftIT.kt`、`AuthFlowIntegrationTest.kt`。
 新 IT 采用已有 `@EnabledIfSystemProperty(named="mysqlIt",matches="true")` + MySQL8.0.36/Flyway方式；实测CAS双事务、授权撤销/评论与审批并发、事件失败回滚业务更新、软删历史、无效HTML清洗、context同时间戳插入/旧信修订/跨账号。auth测试用登录cookie请求所有handler，禁止只Mockito Controller当权限证明。
+基线修复（用户已授权）：FlywayMigrationIntegrationTest.kt移除过期的“最新版本=157”字面量断言，保留各用例的迁移执行与schema/data断言，不替换为169之类的新钉死值。AuthFlowIntegrationTest.kt在测试局部隔离WorkerLifecycleTestConfig造成的attachmentTransferWorker重复定义；不允许全局Bean覆盖、跳过测试或修改已应用迁移。修复后仍须完整运行下列原定门禁；新建空库与V168升级验证仍是必需。
 
 ## 变更文件清单
 | # | 文件（相对仓库根目录） | 操作 / 边界 |
@@ -155,6 +156,7 @@ Detail 固定：id/contactId/expertName/ownerUsername/version/state/subject/html
 | 8 | `src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt` | 只新增复用 rangeUnionSql 的 reviewContext 摘要读取；旧查询不变 |
 | 9 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt` | 新增 MySQL 真实事务、状态、存储、上下文集成测试 |
 | 10 | `src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt` | 扩充真实登录/白名单/失权回归 |
+| 11 | `src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt` | 用户授权的基线修复：移除过期最新版本字面量断言，保留实质迁移schema/data覆盖及迁移执行 |
 
 ## 验收标准
 - I-1：两身份、未登录、无授权、他人ID、已撤权、未提交admin读取矩阵全测；发送/附件/任意通用POST仍403。
@@ -205,3 +207,7 @@ JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -
 - 覆盖: 需求2；I-6/I-7；X3。
 
 人工验收开始时才导出本文件同前缀 `-acceptance.md`，当前不生成。
+
+## 修正记录
+- 2026-10-29：用户“授权”解除01实施前的基线失败暂停。新增上表第11文件，主计划I-23同步例外允许01共11文件；仅清理过期迁移版本断言及在已授权AuthFlowIntegrationTest.kt局部隔离重复Bean配置，原有权限/事务/迁移验收不降低。证据：docs/plans/fast/draft-review-master/children/01/baseline-reports.txt；审批与身份登记：fast-p ledger A1/A2。
+
