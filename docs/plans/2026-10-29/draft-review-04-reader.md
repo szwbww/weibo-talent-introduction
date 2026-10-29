@@ -11,7 +11,7 @@
 2. 双方评论与完整内容版本可读；user1已审核后不再修改或评论。
 必须保持：只有收发件箱tab、专家只显示姓名、不能发送/看或下载附件；已有邮件分页与失权清理。
 不做：图片/附件上传、字体字号工具、自动提交、admin界面改版、浏览器存储正文。
-本步7文件、1子系统（reader前端）；服务端依赖01；可独立部署使用已有API，admin仍可经API审核。
+本步8文件、1子系统（reader前端）；含持续授权下退役与本功能冲突的旧前端契约断言，服务端依赖01；可独立部署使用已有API，admin仍可经API审核。
 
 ## 关键不变量
 继承01 I-1–I-7（客户端不能放宽），本步额外约束：
@@ -139,6 +139,7 @@ requestJson支持method/body但调用点枚举固定；app白名单逐项对齐0
 文件：`index.html`、`mailboxReadOnly.test.js`、`authFlow.test.js`、`mailReviewReader.test.js`。
 当前缓存键精确反查0固定测试，所有已版本化资源统一改为 `20261029-review-reader`；不得顺手新增资源或替换旧模块。执行前若并行任务改变键/测试固定值，先重审文件白名单，不直接改白名单外文件。
 测试真实模块状态和DOM节点/网络请求；不可用永远返回元素的querySelector stub证明编辑器存在。除node测试，还需真实浏览器运行S-1粗体/列表/安全粘贴与光标保持验收；不声称VM用例能覆盖原生contenteditable行为。
+持续授权补充：必跑mailboxChatStyle.test.js中旧“全部动态内容禁止innerHTML/安全链接”、固定旧文案、旧只读标题断言与本步审核富文本/壳合同冲突。仅退役这些过期源文本/措辞断言，不重钉新措辞；保留无关CSS、布局、权限契约，新mailReviewReader行为测试与真实浏览器证明审核正文安全清洗、历史仍纯文本、无附件能力和Storage写入。
 
 ## 变更文件清单
 | # | 文件（相对仓库根目录） | 操作 / 边界 |
@@ -150,6 +151,7 @@ requestJson支持method/body但调用点枚举固定；app白名单逐项对齐0
 | 5 | `src/test/js/mailboxReadOnly.test.js` | 更新“两GET”旧期望，保留权限/失权/隔离检查 |
 | 6 | `src/test/js/authFlow.test.js` | reader新白名单与注销保存回归 |
 | 7 | `src/test/js/mailReviewReader.test.js` | 新增草稿交互、HTML安全、并发与样式合同测试 |
+| 8 | `src/test/js/mailboxChatStyle.test.js` | 仅退役与审核富文本/壳合同冲突的旧HTML全禁、固定旧文案、旧标题断言；不重钉措辞或修改无关样式/权限断言 |
 
 ## 验收标准
 - I-16：新API白名单逐项与01一致，send/approve/translate/attachment仍在fetch前拒绝；只有一个tab；姓名DOM无邮箱属性。
@@ -199,3 +201,7 @@ node --test src/test/js/mailReviewReader.test.js src/test/js/mailboxReadOnly.tes
 - 覆盖: 需求1/2、保持项；I-16/I-17；S-1/S-2。
 
 人工验收开始时才导出同前缀 `-acceptance.md`。
+
+## 修正记录
+- 2026-10-29：按用户持续授权，必跑节点门禁实测126项中3项旧reader源码/文案断言失败，补入mailboxChatStyle.test.js这一文件并仅退役过期断言（原526–546、598附近）。不以新字面量重钉实现；新行为测试和真实浏览器仍需覆盖安全HTML、历史纯文本、受限权限及S-1/S-2。对应ledger A7/A8。
+
