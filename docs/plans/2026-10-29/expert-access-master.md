@@ -1,6 +1,6 @@
 # 专家分级权限、个人待处理与标签只读 · 开发总计划
 
-状态：DRAFT，待批准实施。基线：`main@b15bb069f43f89c45ee6859dba04a0baff5d774d`。仅计划，不代表实现/测试已通过。
+状态：已获用户持续实施授权；不代表实现/测试已通过。执行基线：`59eb60cf00534a342c1019827a62f2b7b1db0f2b`，含已独立验证的draft-review 01–04及其已提交计划修订；原研究基线为`main@b15bb069f43f89c45ee6859dba04a0baff5d774d`。
 
 证据：[审计总表](expert-access-evidence/audit.md)、[逐字源码E01–E37](expert-access-evidence/source-excerpts.md)、[schema迁移链](expert-access-evidence/schema-chain.md)、[检索收据](expert-access-evidence/store-usage.txt)、[SHA256](expert-access-evidence/sha256.json)。
 
@@ -210,6 +210,7 @@
 
 | 顺序 | 子计划 | 文件数 |
 |---|---|---|
+| review05 | [前置审核管理员闭环](draft-review-05-admin.md) | 13（继承已批准的有界门禁例外） |
 | 1 | [只读标签展示](expert-access-01-read-labels.md) | 3 |
 | 2 | [授权等级与能力投影](expert-access-02-access-level.md) | 7 |
 | 3 | [精确资源守卫与人工发送](expert-access-03-resource-guard.md) | 8 |
@@ -433,3 +434,11 @@
 - 覆盖: I-5/I-6/I-12/X4/X5
 
 A-1覆盖最新“可读看标签不可改”；A-2/5/6/7覆盖FULL；A-3/4/9/15覆盖个人待处理；A-8/14覆盖最终UI；A-10/11覆盖审核交接；A-12/13覆盖权限生命周期和原业务回归。进入人工验收时再导出expert-access-master-acceptance.md；本轮不生成衍生清单。
+
+## 修正记录
+
+- 2026-10-30：用户“授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p”解除前置基线/范围修订阻塞。另一工作树draft-review 05仍在途，故本轮从已验证01–04的确定提交链`59eb60cf00534a342c1019827a62f2b7b1db0f2b`建立唯一分支`fast/expert-access-master`，不改写另一分支或复制其未提交代码；先在本轮独立实施并验证review05，再01→02→03→04a→04b→05→06→07→08。review05的依赖为none（01–04已在基线），01依赖review05，后续仍各依赖上一项。
+- review05仅复用其现有已提交13文件白名单及原机器门禁，继承此前有证据的13文件/3子系统有界例外；本轮九个专家权限子计划的文件上限、不变量、权限与真实MySQL门禁不变。前置审核store/V169已随基线01落地，不新增第二套实现。
+- 按本总计划I-9/I-11及§顺序、依赖与发布边界的最终UI裁决，review05不创建顶部mailboxReviewPendingBtn，暂用API/内部setReviewPendingOnly覆盖真实筛选；最终入口只由08的原popover提供。审核正文、单编辑框、评论、翻译、确认和显式发送均不减免。
+- 初始规划快照传输曾截断master末段，已在产品工作前以完整源字节恢复；恢复SHA256为`9143669bb109f81699ef7d4fa553ac4a19217347778c47c6b6da8625f1e0deb9`，所有原人工验收条目保留。恢复及本次基线/前置变更均在fast-p Amendments逐项留痕。
+- 全部子计划与最终artifact validator通过后，自动执行独立review-fast-p；机器审核不代替人工验收，不授权合并、推送或部署。

@@ -258,3 +258,10 @@ node --test src/test/js/mailReviewAdmin.test.js src/test/js/mailboxServerDrafts.
 
 - 2026-10-30：持续授权下，当前Zulu11显式MailReviewDraftIT12项/1失败/0错误/0跳过（artifact://1224/raw1238）证明原 `<p>${broken</p>` fixture不被拒；新增上述单个已有服务文件，05有界例外13文件/3子系统，复用已有严格校验只关闭继承I-5缺口。前次“无后端产品改动”的兼容限定仅对此单文件被本记录修正；共享placeholder实现/原失败测试/迁移/权限与发送均不改。对应ledger A15/A16。
 
+
+## expert-access组合执行的权威修正（2026-10-30）
+
+- 当前执行宿主为expert-access-master的review05前置子项，唯一工作树`/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-expert-access-master`，唯一分支`fast/expert-access-master`；01–04已经在执行基线通过独立验证，不重放。用户“授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p”授权此有界前置闭环与下列最终UI裁决。
+- 本节优先于本文I-19、S-3、T1、A-1中的顶部按钮要求：禁止创建mailboxReviewPendingBtn的DOM、绑定或对应按钮契约。保留真实服务端待审计数、先筛后分页、专家卡数量和窄setReviewPendingOnly状态接口；本阶段通过API/内部接口验证筛选，最终可见入口由expert-access-08的原更多筛选第一项实现。现有七字段、原toolbar按钮及原草稿chip不变。
+- 其余I-20/I-21/I-22与S-4/S-5完整执行，单编辑器、原稿/附件隔离、审批不发送、确认不发送、必须再次显式发送等门禁均不变。A-1/A-5中“点击顶部按钮”改用内部setReviewPendingOnly，最终人验仍由expert-access-08覆核。
+- 沿用本文13个Authorized Files及原完整node/JDK11/mysqlIt/migrationIt门禁；不扩展产品行为，不改其他子计划、共享CSS或已应用迁移。无缺失先例时不把旧源码/缓存键/EOF位置契约重新钉死。
