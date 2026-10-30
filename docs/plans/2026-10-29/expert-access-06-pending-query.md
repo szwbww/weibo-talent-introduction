@@ -69,8 +69,12 @@ E05/E06/E09与审计§2、§5。pending_flag→SUM→排序/HAVING/total同链�
 | 10 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/InboundPendingOwnerIT.kt` | 旧队列与新列表交叉验证 |
 | 11 | `src/main/kotlin/com/weibo/talentintroduction/auth/config/MailReadOnlyPolicy.kt` | 仅激活03暂缓的owner依赖精确handler/verb |
 | 12 | `src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailPermissionGuard.kt` | 仅接续上述精确key及现有session/FULL资源规则 |
+| 13 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt` | 真实JDBC owner fixture及个人pending行为迁移，退役op1/op2共享全局待处理pin，保留隔离/幂等/账号/无写副作用 |
+| 14 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailServiceTest.kt` | 必需actor参数matcher/调用接线，原账号/查询/分页行为保留，不加转发pin |
+| 15 | `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt` | 仅原unmatched-controller noise-site行号，路径/上下文/规则不变 |
+| 16 | `src/test/kotlin/com/weibo/talentintroduction/auth/config/AuthInterceptorTest.kt` | 精确矩阵只加已完成5个owner路由；现有READ挂起403及其他default-deny不变 |
 
-合计 **12 文件**；I-14仅为03→06 owner依赖的两个精确激活文件授予有界例外，auth/mail两个紧耦合子系统；新增共享store字段0。其余原文件及计数/归属语义不变。
+合计 **16 文件**；I-14例外仅为原10加03延迟路由的2个精确激活文件及4个已证明fixture消费者；产品能力/字段不扩大，auth/mail紧耦合边界不变。新增共享store字段0。
 
 ## 验收标准
 - I-2：真实AuthWebConfig+MVC逐个运行路由矩阵：NONE/READ/FULL/跨专家/admin；403之前SMTP、ES和文件流读取调用为0；未列端点仍403。
@@ -79,6 +83,7 @@ E05/E06/E09与审计§2、§5。pending_flag→SUM→排序/HAVING/total同链�
 - I-13：管理员全路径回归；user1无法打开其他tab及全局端点。定时收信与自动标签仍执行，READ附件响应仍空且直链403。
 
 门禁：JDK11 mvn test -Dtest=MailboxConversationRepositoryIT,MailboxSuspensionServiceIT,InboundPendingOwnerIT -DmysqlIt=true；原监控/来信汇总测试回归；不得跳过DB用内存假结果替代。
+追加MailboxConversationControllerTest、UnmatchedInboundMailServiceTest、OperatorStatusWriteSeamGuardTest、AuthInterceptorTest及真实InboundMailProcessingRepositoryTest原回归，按实际mysqlIt/migrationIt门禁显式启用、目标零skip。过滤计数复用原repository/JDBC/reviewPendingPredicate，无新增构造依赖或第二计数约定；全局历史统计与原监控验收不减。
 
 测试环境使用隔离MySQL/测试SMTP与临时附件目录；不得把mysqlIt连生产库。跳过/未运行必须记NOT_RUN，不能写PASS。
 
@@ -143,3 +148,4 @@ E05/E06/E09与审计§2、§5。pending_flag→SUM→排序/HAVING/total同链�
 
 ## 修正记录
 - 2026-10-30：按持续授权及03实际无owner SQL收据（fast-p children/03/execution.md Epoch1），将pendingBadge/suspension准入推迟至本步既定个人owner SQL后。补入policy/guard两个直接激活文件，10→12的I-14有界例外；既有owner IT增加真实AuthWebConfig准入回归，不以03暂拒变为最终缺失，不改最终UI/人工验收。
+- 2026-10-30：持续授权下补4个owner消费/参数/精确矩阵/行号fixture，12→16有界例外；完整grep、真实JDBC旧globalpending断言、matcher参数和handler精确集合/lineguard收据见fast-p children/06/execution.md Epoch1及addendum。只退役与owner=session直接冲突的全局pending pin，稳定READ/NONE/跨资源/账号/分页/幂等/拒绝副作用保持；不新增产品依赖，复用原SQL/JDBC/review谓词，所有新增fixture实际执行。

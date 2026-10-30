@@ -96,7 +96,7 @@
 - 来源: original
 
 ### Invariant I-14: 阶段边界与证据
-- Rule: 按顺序实施；默认每步≤10文件、≤2子系统、已有表每步≤1新增字段。有界例外仅为review05继承13文件；03的41（原8+33必需安全fixture）；04a的11（原5+6消费/行号fixture）；04b的16（原7+中央guard/8消费fixture）；05的12（原9+3窄UPDATE/锁消费者fixture）；06的12（原10+owner路由policy/guard激活）。只退役被正式能力取代的临时全局拒绝或实现次数/副本pin，稳定安全/业务行为不减；不扩大例外产品能力。核对SHA/迁移号/已有脏改；真实MySQL门禁skip不可算PASS；授权实施不授权部署。
+- Rule: 按顺序实施；默认每步≤10文件、≤2子系统、已有表每步≤1新增字段。有界例外仅为review05继承13文件；03的41（原8+33必需安全fixture）；04a的11（原5+6消费/行号fixture）；04b的16（原7+中央guard/8消费fixture）；05的12（原9+3窄UPDATE/锁消费fixture）；06的16（原10+2个owner路由激活文件+4个必需消费/矩阵/行号fixture）。只退役正式能力取代的临时全局拒绝/全局pending/实现次数pin，稳定安全/业务行为不减，不扩大产品能力。核对SHA/迁移号/已有脏改；MySQL目标skip不可算PASS；不授权部署。
 - Applies to: 实施/验证/发布报告
 - Violation consequence: 范围漂移、迁移冲突、无证据的完成声明
 - 来源: K-master-plan-shared-file-sequential-gates
@@ -217,7 +217,7 @@
 | 4a | [专家资料与标签目标守卫](expert-access-04a-profile-tags.md) | 11（原5+6个必要fixture/行号守卫例外） |
 | 4b | [日历、个人草稿与审核权限联动](expert-access-04b-calendar-drafts.md) | 16（原7+中央guard及8个必要消费fixture例外） |
 | 5 | [来信归属写入与撤权兜底](expert-access-05-pending-owner.md) | 12（原9+3个窄UPDATE/锁消费fixture例外） |
-| 6 | [待处理查询与筛选范围](expert-access-06-pending-query.md) | 12（原10+2个owner路由激活文件例外） |
+| 6 | [待处理查询与筛选范围](expert-access-06-pending-query.md) | 16（原10+2个owner路由激活+4个必要fixture例外） |
 | 7 | [用户可写会话复用与能力隔离](expert-access-07-user-workspace.md) | 10 |
 | 8 | [管理端最终下拉筛选与待处理角标](expert-access-08-admin-controls.md) | 7 |
 
@@ -450,3 +450,4 @@ A-1覆盖最新“可读看标签不可改”；A-2/5/6/7覆盖FULL；A-3/4/9/15
 - 2026-10-30：04a完整消费者审计需6个原名单外fixture（children/04a/execution.md Epoch1含全量grep/import/直调/lineguard证据），持续授权下I-14仅为5→11构造/MVC/session接线、已完成方法精确矩阵及原noise-site行号修正授予例外。产品范围不变，原权限/业务/版本/拒绝副作用不弱化，临时全局tag禁用pin退役、不重钉措辞；新增fixture原门禁均需实际执行。
 - 2026-10-30：04b完整消费审计证明原名单外中央PROCESSING guard登记及8个非空构造/Spring共享support/精确准入/行号fixture需要迁移（children/04b/execution.md Epoch1），持续授权下7→16的I-14有界例外；复用原guard/共享support，不新增能力/存储/fixture框架，不破坏原已开始SMTP的finalize。原稳定权限/owner/CAS/拒绝副作用保留，仅退役临时personal-draft全局禁用pin；全部新增fixture原门禁必须实际启用执行。
 - 2026-10-30：05既定窄UPDATE/回读/严格contact-first锁需要3个原名单外现有fixture迁移（children/05/execution.md Epoch1含完整save/mock/失败注入/重开锁收据），持续授权下I-14的9→12有界例外，产品/构造/API范围不变。退役save次数/副本实现pin、不换新转发pin；保留失败无ack/状态/UID/物理邮箱/审计/attention/归属安全行为，并fresh执行所有新增fixture。
+- 2026-10-30：06完整owner消费者及精确handler集合审计需4个原名单外fixture（children/06/execution.md Epoch1/addendum含全量参数/JDBC断言/矩阵/行号收据），持续授权下原12→16有界例外。SQL计数复用现有repository/JDBC/reviewPendingPredicate，不加产品依赖/新约定；只退役owner=session已取代的全局pending假设，原READ挂起403/default-deny/跨资源/账号/分页/幂等保持，新增fixture均须实际门禁。
