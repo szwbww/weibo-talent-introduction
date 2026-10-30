@@ -61,6 +61,7 @@ E13/E14/E16/E30–E34、审计§3/§4/§5。ExpertManualProfileController有catc
 3. UnmatchedInboundMailController.getUnmatchedDetail只对user1已绑定FULL专家返回本条record/contact/logs，不调用suggestCandidates，candidates=[]。mark/cancel-resolved的操作者来自session（I-2/I-4）。
 4. MailReviewDraftService沿既有前置计划，READ/FULL均可读自己的审核稿；APPROVED不可改删优先于FULL；升级不自动改SUBMITTED，也不发送。FULL新人工稿走mailbox_reply_draft，不能用reviewDraftRef绕过审核（I-11）。
 5. 上述守卫完备后，MailReadOnlyPolicy登记精确handler；ExpertScopedOperationsIT追加日历跨id/日期版本、草稿SQL分页/撤权、审核四态/升级用例；保留04a测试（I-2/I-4/I-8/I-11/I-13）。
+6. 复用03固定ExpertMailPermissionGuard的PROCESSING解析，将本步已去候选的getUnmatchedDetail按精确GET登记；不复制权限查询、不扩URL前缀。新增非空guard依赖时迁移下列已证明构造/Spring消费者；旧已开始SMTP的finalize不得被新增发送后权限复查打断。
 
 本步仅修改以下文件；与其他子计划共享的Auth策略/测试顺序累积，不能覆盖前一步。
 
@@ -75,8 +76,17 @@ E13/E14/E16/E30–E34、审计§3/§4/§5。ExpertManualProfileController有catc
 | 5 | `src/main/kotlin/com/weibo/talentintroduction/auth/config/MailReadOnlyPolicy.kt` | 本步任务明确的目标守卫/验证；其余原行为保留 |
 | 6 | `src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftService.kt` | 本步任务明确的目标守卫/验证；其余原行为保留 |
 | 7 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertScopedOperationsIT.kt` | 本步任务明确的目标守卫/验证；其余原行为保留 |
+| 8 | `src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailPermissionGuard.kt` | 仅接续本步完成的精确handler/真实资源解析，复用既有规则 |
+| 9 | `src/test/kotlin/com/weibo/talentintroduction/campaign/controller/MeetingCalendarControllerTest.kt` | 非空guard fixture接线，保留admin/CAS/日期与真实MySQL行为 |
+| 10 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailPermissionGuardTest.kt` | 日历直构造接线，保留归属/拒绝零副作用矩阵 |
+| 11 | `src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepositoryIT.kt` | 真实JDBC构造guard/access；原owner/CAS/admin/运行期契约不减 |
+| 12 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReplyDraftServiceTest.kt` | 非空guard接线及本步用户权限行为，原admin语义保留 |
+| 13 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt` | 仅draft service构造接线，保留原断言 |
+| 14 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt` | 原共享support导入真实guard/access供已有发送IT，不新建fixture类 |
+| 15 | `src/test/kotlin/com/weibo/talentintroduction/auth/config/AuthInterceptorTest.kt` | 精确已完成方法矩阵；退役临时personal-drafts全局拒绝pin，保留稳定安全/default-deny |
+| 16 | `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt` | 只改原unmatched-controller noise-site行号，原片段/规则不变 |
 
-共7文件；最多2子系统；共享store新增字段0。
+共16文件；I-14有界例外仅为原7加既有中央guard登记及8个已证明构造/Spring/安全矩阵/行号fixture；不增加本步产品能力，共享store新增字段0。
 
 ## 验收标准
 - I-2：真实AuthWebConfig+MVC逐个运行路由矩阵：NONE/READ/FULL/跨专家/admin；403之前SMTP、ES和文件流读取调用为0；未列端点仍403。
@@ -141,3 +151,6 @@ E13/E14/E16/E30–E34、审计§3/§4/§5。ExpertManualProfileController有catc
 跨阶段人工项引用的其他I/S条款，以总计划同编号定义为准；本步实现仍严格限定本文件清单。
 
 阶段验收说明：人工条目保留跨阶段最终行为；本步先执行其覆盖到的API路径，所有完整UI场景在08再验一次。
+
+## 修正记录
+- 2026-10-30：按持续授权，03真实中央guard登记、非空draft/calendar guard依赖与现有消费者需要补9个文件（完整构造/import/直调/精确矩阵/lineguard收据见fast-p children/04b/execution.md Epoch1），7→16授予I-14有界例外；保留原admin/owner/CAS/发送finalize/拒绝副作用，临时全局draft禁用pin退役。新增fixture原门禁均需执行，含MeetingCalendarControllerMysqlTest、MeetingCalendarServiceMysqlTest、ExpertMailPermissionGuardTest、MailReplyDraftRepositoryIT、MailReplyDraftSendIntegrationTest、MailReviewSendIT、MeetingCalendarSendIntegrationTest、MailReplyDraftServiceTest、PendingMailOperationServiceTest、AuthInterceptorTest、OperatorStatusWriteSeamGuardTest，显式mysqlIt/migrationIt、目标零skip；原必需门禁不减。
