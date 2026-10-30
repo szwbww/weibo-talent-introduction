@@ -291,3 +291,14 @@ Current child05/master identity `commit:59eb60cf00534a342c1019827a62f2b7b1db0f2b
 
 First fresh currentZulu11 enabled MailReviewDraftIT12/1fail/0error/0skip receipt1224/raw1238 retained. Reconcile approved identity/epoch5/fix_round0; run all final required commands fresh, actual changed safety-path smoke. Temporary genuineZulu11 home `/tmp/zulu11.92.109-ca-jdk11.0.33-macosx_aarch64/Contents/Home`, archiveSHA256 `4947b01fcb220ee69710dbf63375f4628688d84750fccd289f5a6d62b494aa94`; preserve for verifier/reviewer. Follow required code-intelligence references before exported symbol changes when available.
 
+
+## Epoch 6 — F-01 Retarget Closure and O-01 Mandatory Gate Arbitration
+
+Current child05/master identity `commit:32407a46d5b05971fc913cda1802b6ba002e8dc7`, ledgerA17/A18 supersedesEpoch5. Previous candidateae6898ffe92e6e31b45819e5edbde8ac77e0ebff and exactLIGHT_FAIL/PAUSE preserved in7a3f075b5a16355ad5df3d0a20c2a16b31dbefba. Same productbasea02477be34b3308899820fcc9bd3060ca5bccb70; new executionepoch6/fix_round0 under standinghumanauthority, not alteration of historical verdict.
+
+Fix exactF-01 I-20 delayedretarget in existingmailbox-chat.js and approvedbehavioraltest; verify oldGET/dialog cannot change capturedmanualtarget/owner afterreview/sourcechange, no lateconfirmation/newdraft/copiedattachment, restoreoriginaltarget/body/attachment. Prior diagnostic local://draft05-retarget-probe.cjs andartifact1412 document failure.
+
+Scope14files/3subsystems, adding onlyDiscoveryVerificationWorkerTest.kt firstcase63–65 removal of incidental JVMstate busy-wait/assert; paperEntered synchronization and all substantive interruption/lease/evidence/budget/reclaim/owner/cache assertions unchanged. Do not change Discovery production, sleeps/timeouts/othercases or suppressfailedtest. This adjudicates historicalO-01 mandatoryfullmvn receipt1407 without treating historicalsuccess as freshproof. No blind error-confirmation rerun.
+
+Read full amendedplan first, resumeexisting implementation with narrowcorrections, run everyoriginalrequiredcommand freshly finalstate inclfullmvn andexplicitnon-skippedITs. Actualchangedretarget browser/backend smoke required; prior fullUI/SMTP proof remainshistorical, not humanacceptance. Commit authorizedproductonly as `feat(fast-p): implement 05 epoch 6`, appendcompleteepoch6executionreport; controller laterfreshverifier. ExistingJDK11/runtimeenv unchanged.
+

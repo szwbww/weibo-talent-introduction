@@ -155,3 +155,131 @@ Actual files retained outside the product commit:
 
 Fresh independent DraftReview05Verifier reports `LIGHT_FAIL` / `PAUSE` at this candidate: proven I-20 delayed-retarget race F-01, and mandatory fullmvn5715/1failure/0errors/24defaultskips O-01 (outside-scope thread-state assertion). All other13 commands including363 explicitly enabled namedJVM targets pass, not overall PASS. Prior executor success remains historical; no later review or human acceptance declared. Controller records bounded plan arbitration under existing continuing human authority before any further product/test edits.
 
+
+## Epoch 6 — Execution Result: READY_FOR_VERIFICATION
+
+Plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-draft-review-master/docs/plans/2026-10-29/draft-review-05-admin.md`
+Plan SHA-256: `b9669ef5dac2ccb10b8f4a64cdd6c9d3b09d7881f489c5b3eee8c303fbcbf5f8`
+Execution ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-draft-review-master/docs/plans/2026-10-29/draft-review-05-admin.md@b9669ef5dac2ccb10b8f4a64cdd6c9d3b09d7881f489c5b3eee8c303fbcbf5f8`
+Execution epoch: **NEW / Epoch 6 / fix_round 0**.
+Approval basis: current user assignment and standing continuous authority, recorded BEFORE edits in ledger A17/A18 and governing plan-only commit `32407a46d5b05971fc913cda1802b6ba002e8dc7`.
+Executor: `DraftReview05Epoch6`.
+Target worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-draft-review-master`
+Target branch: `fast/draft-review-master`
+Worktree ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-draft-review-master@fast/draft-review-master@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-draft-review-master`
+Common Git directory: `/Users/lukai/IdeaProjects/weibo-talent-introduction/.git`
+Child product base: `a02477be34b3308899820fcc9bd3060ca5bccb70`.
+Pre-execution code SHA / ancestral implementation: `ae6898ffe92e6e31b45819e5edbde8ac77e0ebff`.
+Pre-execution HEAD: `32407a46d5b05971fc913cda1802b6ba002e8dc7`.
+Post-execution code SHA / evidence HEAD at executor handoff: **`bec9e40faae946b0971e95af9c3a9edec83cd888`**.
+Product commit: **`feat(fast-p): implement 05 epoch 6`**, only three newly changed authorized product/test files, 60 insertions / 7 deletions (`artifact://1507`). This append is not in that commit.
+Aggregate child product boundary: `a02477be34b3308899820fcc9bd3060ca5bccb70..bec9e40faae946b0971e95af9c3a9edec83cd888`; prior implementation remains ancestral, not replayed. Controller-only plan/evidence commits in this ancestry are not product changes.
+
+This is executor evidence only, not LIGHT_PASS, independent verification, whole-master review, deployment, or human acceptance. The historical Epoch5 report and LIGHT_FAIL/PAUSE remain unchanged.
+
+### Reconciliation, task status, and exact changed paths
+
+Read execute-p, the complete amended plan, the complete brief through Epoch6, Epoch5 F-01/O-01 and historical execution report. Identity/worktree helpers bound the exact current bytes and target root before editing (`artifact://1429`). The inherited thirteen-file implementation was reconciled using its actual product diff (`git diff --stat a02477be34b3308899820fcc9bd3060ca5bccb70 ae6898ffe92e6e31b45819e5edbde8ac77e0ebff -- src`, observed inline command output), not replaced.
+
+| Current requirement | Status | Exact newly changed path / evidence |
+|---|---|---|
+| T5 / F-01 / I-20 delayed manual retarget | IMPLEMENTED | `src/main/resources/static/mailbox-chat.js`: capture manual mode, review epoch/full review identity and original draft owner before navigation; recheck before starting, applying GET results, opening confirmation, applying confirmation results, and showing an async error. Review entry/exit or owner/target/session changes make the old operation ineligible. Existing manual retarget remains functional. |
+| T5 / F-01 controlled regressions | IMPLEMENTED | `src/test/js/mailboxServerDrafts.test.js`: three controlled pending paths (empty-target GET, existing-target GET, confirmation). Assert review remains B, no late confirmation, target90 restored, original body/ready attachment unchanged, no new/polluted destination or PUT/DELETE. Existing ordinary retarget regression retained. Fresh named suite334 and full1956 pass; actual production smoke below. |
+| T5 / O-01 adjudicated gate correction | IMPLEMENTED | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt`: ONLY remove original lines63–65 (deadline, JVM-state busy-wait, pinned WAITING assertion). Preserve paperEntered, interrupt/join and original timeouts, live lease/evidence/token, no failure/no budget, reclaim, owner completion and one-parse assertions. No Discovery production/other-case changes. Fresh full-Maven class23/0 failures/0 errors/0 skips (`artifact://1481:9892`). |
+| Inherited T1–T4, S-3–S-5, compatibility and I-5 implementation | INTENTIONALLY UNCHANGED IN THIS EPOCH | Prior thirteen-file implementation retained; every originally required command was freshly exercised on the final state, not satisfied by historical receipts. |
+
+Exact aggregate14-path receipt: `git diff --name-only a02477be34b3308899820fcc9bd3060ca5bccb70 bec9e40faae946b0971e95af9c3a9edec83cd888 -- src`; its observed output is copied verbatim as a path array in `/tmp/fast-draft05-epoch6-path-boundary.json`. It names the authorized fourteen paths only: MailReviewDraftService.kt; app.js; index.html; mailbox-chat.js; styles.css; batchEntryRelocation.test.js; discoveryRecheck.test.js; mailReviewAdmin.test.js; mailReviewReader.test.js; mailboxMailReadAccess.test.js; mailboxServerDrafts.test.js; AuthInterceptorTest.kt; DiscoveryVerificationWorkerTest.kt; UnmatchedInboundTrustWorkbenchTest.kt. The accompanying observed `git show --stat`/`git status --short` output lists the exact three-file epoch commit and only the controller-owned brief/ledger dirty before this append.
+
+No approved plan, migration, permission/controller authority, backend sending interface, unrelated Discovery implementation, skip annotation, polling replacement, sleep or timeout was modified.
+
+### Fresh runtime and exact mandatory commands
+
+Every repository command used the bound target worktree above. All commands below ran after the final product/test state was established. No build/test/lint/formatter was run mid-flight; no old failure was rerun just to confirm it. Maven invocations were sequential, with normal production/test compilation and no compile/test/Node skip flags.
+
+Exact common Maven environment:
+
+`JAVA_HOME=/tmp/zulu11.92.109-ca-jdk11.0.33-macosx_aarch64/Contents/Home MAVEN_OPTS=-Xmx3072m DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock`
+
+External-DB rows additionally used:
+
+`DB_URL='jdbc:mysql://127.0.0.1:33396/fast_review05?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai' DB_USERNAME=root DB_PASSWORD=review05-local`
+
+This was an owned real MySQL8 container, not a fake repository. Launch command:
+
+`env DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock docker run --rm -d --name fast-draft05-epoch6-mysql -p 127.0.0.1:33396:3306 -e MYSQL_ROOT_PASSWORD=review05-local -e MYSQL_DATABASE=fast_review05 mysql:8.0 --log-bin-trust-function-creators=1`
+
+Launch exited0; container `3eb421f5cd398e34b466089d31d1421783382cea8b6d358e0aa5712af8849693`. Testcontainers gates created their own normal disposable databases. The owned production smoke DB was dropped/recreated only after stopping its backend, before the external-DB test gates, so smoke fixtures did not contaminate tests.
+
+| # | Exact command (Maven uses common environment above) | Observed result | Fresh receipt / runtime |
+|---|---|---|---|
+| 1 | `node --check src/main/resources/static/mailbox-chat.js` | exit0 | successful chained command, `artifact://1430` |
+| 2 | `node --check src/main/resources/static/app.js` | exit0 | same |
+| 3 | `node --check src/main/resources/static/mailbox-readonly.js` | exit0 | same |
+| 4 | `node --test src/test/js/mailReviewAdmin.test.js src/test/js/mailboxServerDrafts.test.js src/test/js/mailboxChatStyle.test.js src/test/js/mailboxChatBehavior.test.js src/test/js/mailboxReadOnly.test.js src/test/js/authFlow.test.js` | exit0; **334 tests /334 pass /0 fail /0 skip** | `artifact://1430:439-452`; 1.963s |
+| 5 | `node --test src/test/js/mailReviewReader.test.js src/test/js/mailboxReadOnly.test.js src/test/js/authFlow.test.js src/test/js/mailboxChatStyle.test.js` | exit0; **131/131 /0 fail /0 skip** | `artifact://1430:628-635`; 1.059s |
+| 6 | `node --test src/test/js/ragAdoptSendBridge.test.js src/test/js/meetingConfirmationIntegration.test.js src/test/js/mailboxOutboundAttachments.test.js` | exit0; **65/65 /0 fail /0 skip** | `artifact://1430:737-744`; 0.838s |
+| 7 | `node --test src/test/js/*.test.js` | exit0; **1956/1956 /0 fail /0 skip** | `artifact://1430:3410-3417`; 3.834s |
+| 8 | `mvn test '-DargLine=-Xmx1536m -Dapi.version=1.41'` | exit0 /BUILD SUCCESS; **5715 JVM tests /0 failures /0 errors /24 default skips** (5691 passed); bound Node1956/1956 | `artifact://1481:12524,15193-15210`; 10:24; finished12:05:27+08:00 |
+| 9 | `mvn test -Dtest=MailReviewDraftIT -DmysqlIt=true '-DargLine=-Xmx1536m -Dapi.version=1.41'` | exit0 /BUILD SUCCESS; **12 /0 failures /0 errors /0 skips** | `/tmp/fast-draft05-epoch6-draft-it.log`; 215.74s; finished12:12:50+08:00 |
+| 10 | `mvn test -Dtest=AuthFlowIntegrationTest,FlywayMigrationIntegrationTest -DmigrationIt=true '-DargLine=-Xmx1536m -Dapi.version=1.41'` | exit0 /BUILD SUCCESS; **9+46=55 /0 failures /0 errors /0 skips** | `/tmp/fast-draft05-epoch6-auth-flyway.log`; 988.65s; finished12:29:18+08:00 |
+| 11 | **external DB** `mvn test -Dtest=MailReviewQueryIT,MailboxConversationRepositoryIT -DmysqlIt=true '-DargLine=-Xmx1536m -Dapi.version=1.41'` | exit0 /BUILD SUCCESS; **5+40=45 /0 failures /0 errors /0 skips** | `/tmp/fast-draft05-epoch6-query-repository.log`; 387.49s; finished12:35:46+08:00 |
+| 12 | **external DB** `mvn test -Dtest=MailboxConversationControllerTest -DmysqlIt=true '-DargLine=-Xmx1536m -Dapi.version=1.41'` | exit0 /BUILD SUCCESS; **46 /0 failures /0 errors /0 skips** | `/tmp/fast-draft05-epoch6-controller.log`; 305.02s; finished12:40:51+08:00 |
+| 13 | **external DB** `mvn test -Dtest=MailReviewSendIT,MailReplyDraftSendIntegrationTest -DmysqlIt=true '-DargLine=-Xmx1536m -Dapi.version=1.41'` | exit0 /BUILD SUCCESS; **18+27=45 /0 failures /0 errors /0 skips** | `/tmp/fast-draft05-epoch6-send.log`; 398.18s; finished12:47:29+08:00 |
+| 14 | `mvn test -Dtest=ManualReplySendAttemptServiceTest,PendingMailOperationServiceTest,PendingMailOperationServiceTrustWorkbenchTest '-DargLine=-Xmx1536m -Dapi.version=1.41'` | exit0 /BUILD SUCCESS; **58+42+60=160 /0 failures /0 errors /0 skips** | `/tmp/fast-draft05-epoch6-manual-pending.log`; 230.32s; finished12:51:20+08:00 |
+
+Exact required-command total: **14 executed /14 passed**, including seven sequential Maven invocations. All **363 named JVM target tests** in rows9–14 were enabled and non-skipped. Every successful Maven invocation freshly ran its configured Node1956 suite /0 fail /0 skip and configured syntax steps. Full-Maven's **24 default skips remain disclosed, not silently counted as executed**; the plan-required opt-in auth/migration/controller/draft/send gates are explicitly covered by rows9–13. This does not claim that unrelated default opt-in tests were all enabled.
+
+Complete six-command execution summaries, actual argv, exit codes, elapsed seconds and log paths: `/tmp/fast-draft05-epoch6-gates-results.json`, also `artifact://1503`. No command timed out; no planned command after an interrupted chain is inferred. Fresh query measurement: `/tmp/fast-draft05-epoch6-query-repository.log:749-750` gives `REVIEW_QUERY_SIZE100 rows=100 sqlCount=10 reviewSqlCount=2` and actual EXPLAIN using `idx_review_draft_pending` ref access /`Using where; Using index`.
+
+Genuine runtime checked freshly: `java -version` reports OpenJDK11.0.33 LTS /Zulu11.92+109-CA /11.0.33+9-LTS; archive `/tmp/fast-draft05-zulu11.tar.gz` SHA256 `4947b01fcb220ee69710dbf63375f4628688d84750fccd289f5a6d62b494aa94` (`/tmp/fast-draft05-epoch6-runtime-identity.json`, fresh exit0 version/checksum commands). This JDK/archive is retained for the fresh verifier/reviewer; no global JDK/tzdb change.
+
+### Fresh final-state production UI/backend retarget proof
+
+Normal `TalentIntroductionApplicationKt` ran on `127.0.0.1:33395`, genuine JDK11, against owned real migrated MySQL33396; startup applied168 migrations throughV169 (`artifact://1435`). No fake controller, repository, storage prototype, component internals, or localStorage draft replacement. Production ES was never contacted (`ES_BASE_URL=http://127.0.0.1:9`); LLM/automatic reply disabled. This is a retarget smoke, not another SMTP/IMAP lifecycle run.
+
+Real UI admin login/password change and separate localhost user1 login created real authenticated sessions. Disposable contact90001 has actual inbound processing90 and101 plus an ordinary successful outbound anchor. User1 created/submitted real review draft1/version2 through production HTTP. Admin's real saved manual draft1 targeted90 with subject `Original admin subject`, HTML `<p>Epoch6 original admin A</p>`; the existing UI file input uploaded38bytes as attachment `8171646a-ba1c-473d-9b55-31ceb1baadea`, SHA256 `bccf0d8644207ad427d8a7bfb806e8dfaa668b641b98c642ce68a3ccaf810252`. Server draft version2 and attachment metadata were captured before races.
+
+1. Clicked actual “为新来信另建草稿”. A temporary transport-only `window.fetch` wrapper held delivery of the **unchanged native Response from the actual authenticated GET** `/api/mail/mailbox/drafts/target?contactId=90001&kind=INBOUND&processingId=101&accountScope=acc1` (HTTP200). It did not fabricate a response or change application/storage state. Selected real `review:1` and observed reviewB rendered while GET remained held, original target `90001:90:acc1`.
+2. Released that original Response after review rendered: reviewB unchanged, target still90, **zero late dialogs**, exactly one editor, server list still one original manual row. Switched back: exact original HTML and attachment UI restored; full original detail JSON byte-equivalent under JSON serialization; target101 remained `id=null`. Temporary fetch wrapper restored afterward.
+3. Started ordinary retarget again and let the real native `#actionDialog` open. While its promise was pending, dispatched the existing review-selector change DOM event (necessary to exercise callback invalidation behind an inert native dialog), observed reviewB, then clicked its actual “确认执行”. Result: original dialog closed, no new popup/row/target mutation; switching back restored identical source body/attachment/detail.
+4. With manual source unchanged, clicked retarget and confirmed normally. It switched to101, kept A/attachment, changed subject to `Re: New inbound 101`, and persisted a separate destination draft2/version1. Original draft1/version2 remained identical. Thus ordinary manual retarget is preserved, not disabled to mask the race.
+
+All fifteen recorded runtime assertions are true in `/tmp/fast-draft05-epoch6-smoke-assertions.json`. Complete genuine before/held/after/restored HTTP/UI snapshots:
+
+- `/tmp/fast-draft05-epoch6-actual-get-race.json`
+- `/tmp/fast-draft05-epoch6-dialog-race.json`
+- `/tmp/fast-draft05-epoch6-ordinary-retarget.json`
+
+Fresh screenshots (successfully opened and visually inspected):
+
+- `/tmp/fast-draft05-epoch6-review-late-get-1440.webp` — one read-only review editor, no late retarget popup, original draft card remains90.
+- `/tmp/fast-draft05-epoch6-restored-1440.webp` — original adminA plus uploaded attachment restored.
+- `/tmp/fast-draft05-epoch6-review-late-dialog-390.webp` — mobile reviewB, tools disabled, no late popup, footer still target90.
+- `/tmp/fast-draft05-epoch6-ordinary-retarget-1440.webp` — ordinary target101 with A and original attachment; original90 card retained.
+
+Historical `/tmp/fast-draft05-resume-*` screenshots and outbound `.eml` remain preserved and **historical only**, not fresh SMTP delivery or human acceptance. No send was requested by this epoch's retarget smoke.
+
+### Preserved failures and runtime/tool deviations
+
+- Epoch5 `artifact://1407` (5715/1 failure/0 errors/24 skips), F-01 probe `local://draft05-retarget-probe.cjs` /`artifact://1412`, candidate `ae6898ff` and pause evidence `7a3f075b5a16355ad5df3d0a20c2a16b31dbefba` remain historical failure evidence. The diagnostic was read, not rerun to reconfirm failure. Only the amended corrections were implemented.
+- Initial disposable seed used a nonexistent `index_level` column; account/campaign inserts had already succeeded. Read real schema, resumed only remaining inserts using actual `current_index_level`; no repository/schema change.
+- Initial browser selectors were corrected from observed DOM; review creation first used a non-UUID request key and correctly returned422, then a real UUID succeeded. A stale admin browser session was reauthenticated through real login before the successful smoke. These failed fixture/automation actions are not claimed as successful product behavior.
+- Shared headless browser RAF/screenshot/raw interception attempts timed out. A dedicated owned headed Chrome rendered the actual production UI successfully. Native interception attempts are not claimed as completed race evidence; successful proof above uses an explicitly disclosed transport-only delay of the real native GET Response, restored afterward. No fake backend or fabricated response was used.
+- Despite `MAIL_SCHEDULING_ENABLED=false`, independent default discovery/bounce schedules fired at noon in the disposable runtime: local IMAP failed and background Discovery contacted public discovery sources. These were not part of the retarget proof and are not claimed as mail/Discovery successes. The owned application was stopped, its disposable DB recreated before gates, and no Discovery product/test repair was attempted. This is disclosed runtime noise, not concealed acceptance evidence.
+
+### Cleanup, commit boundary, freshness, and remaining work
+
+- Closed all three owned smoke tabs and killed the dedicated owned Chrome. Stopped only owned application service `draft05epoch6runtime` PID50947; proc reports exited137 after explicit tool stop, not a Maven timeout. Final PID50947/60729 checks returned no process; port33395 had no listener.
+- `docker stop fast-draft05-epoch6-mysql` exited0; `--rm` disposed its DB/container. Final exact-name listing was empty. No unrelated container/process/daemon was stopped or restarted.
+- Removed only owned `/tmp/fast-draft05-epoch6-runtime.py`, `...-gates.py`, upload fixture `...-attachment.txt`, and `...-storage` tree. Retained logs, JSON proof, screenshots, genuine JDK/archive and historical evidence. Cleanup receipt `/tmp/fast-draft05-epoch6-cleanup.json`.
+- Both background jobs completed; each sequential runner child was awaited. No timed-out Maven/JVM subtree was left running. No permanent scaffold or extra repository product file.
+- Product-scoped whitespace check exited0; exact plan hash rechecked unchanged before staging and after all commands. Worktree root/branch/Git directory rechecked before staging, immediately before commit, and final handoff (`artifact://1511`). New code commit is target HEAD and reachable from target branch; prior implementation is its ancestor.
+- Product/index clean at final check; only controller-owned `brief.md`/`ledger.md` and this separately authorized execution append remain outside product commit. This append does not rewrite the old report.
+- Required commands fresh this invocation: **YES**. Historical receipts used only as baseline: **YES**. No known remaining in-scope implementation/test failure.
+- **Next action:** controller dispatches a fresh isolated verifier for `a02477be..bec9e40f`; only that independent authority decides LIGHT_PASS/FAIL. Whole-master review and human acceptance remain separate.
+
+
+## Controller Terminal Checkpoint — Epoch 6
+
+Fresh independent DraftReview05Verifier6B `LIGHT_PASS` / `COMPLETE_CHILD` covers `a02477be34b3308899820fcc9bd3060ca5bccb70..bec9e40faae946b0971e95af9c3a9edec83cd888`. Four gates pass;14/14 required commands freshpass, fullnode1956/0fail0skip, fullmvn5715/0fail0error/24defaultopt-inskips, explicit363JVMtargets/0skip. HistoricalF-01 independently closed; O-01 exactA17/A18 adjudication and substantivechecks/fullgatepass retained. AUTO_FIX/RECORD_ONLY N/A at terminal attempt. Required-agent capability interruption preserved inledger/localreport; no fabricated commandrun. Controller did no productverification; actualexecutorbrowser/runtimeevidence not humanacceptance. Independent whole-master review remains next after finalartifactvalidation.
+

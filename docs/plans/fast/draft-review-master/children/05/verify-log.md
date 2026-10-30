@@ -111,3 +111,112 @@ Exact required-command count: **14 executed /13 passed /1 failed** =3 syntax che
 ### Required Action
 
 - PAUSE — Do not complete child05 or start the later whole-master review. Controller must route the bounded in-scope F-01 correction to an authorized writer and adjudicate the outside-scope O-01 full-suite failure; obtain a fresh passing full-Maven receipt and rerun the required affected/final gates after correction. No unrelated repair or blind failure-confirmation rerun is authorized by this report.
+
+## Light Verification: LIGHT_PASS
+
+Epoch: 6; Attempt: 2.
+Timestamp: 2026-10-30T13:46:12+08:00
+Child: 05 / `docs/plans/2026-10-29/draft-review-05-admin.md`
+Boundary: `a02477be34b3308899820fcc9bd3060ca5bccb70..bec9e40faae946b0971e95af9c3a9edec83cd888`
+Verifier: DraftReview05Verifier6B
+
+Read the complete amended child plan, authoritative brief through Epoch6, execution report and historical verify-log. Independently measured current plan SHA256 `b9669ef5dac2ccb10b8f4a64cdd6c9d3b09d7881f489c5b3eee8c303fbcbf5f8`, matching governing child/master commit `32407a46d5b05971fc913cda1802b6ba002e8dc7`; observed HEAD `bec9e40faae946b0971e95af9c3a9edec83cd888`. Prior unavailable DraftReview05Verifier6 Attempt1 is a capability failure only (0/14); none of its conclusions are adopted. Historical Epoch5 LIGHT_FAIL and F-01/O-01 remain intact.
+
+### Four Gates
+
+| Gate | Result | Evidence |
+|---|---|---|
+| Authorized scope | PASS | Fresh `git diff a02477be34b3308899820fcc9bd3060ca5bccb70 bec9e40faae946b0971e95af9c3a9edec83cd888 -- src` (`artifact://1521`) and independent name-only receipt identify exactly the plan's fourteen paths. Latest `git diff ae6898ffe92e6e31b45819e5edbde8ac77e0ebff bec9e40faae946b0971e95af9c3a9edec83cd888 -- src` (`artifact://1523`) has precisely mailbox-chat.js, mailboxServerDrafts.test.js and DiscoveryVerificationWorkerTest.kt, 60 insertions/7 deletions. No schema/migration/Discovery production change. |
+| Plan and invariants | PASS | I-19: mailbox-chat.js:2049–2055,5730–5757 and app.js:21527–21555 implement server total, expert filtering and captured-handle bridge. I-20: reviewCapture/reviewCurrent:5759–5767, selectAdminReview:5860–5887, manual callback guards:7019–7058,7227–7229 and retarget:9511–9552 isolate manual/review owners. I-21: renderAdminReview:5812–5844 removes ordinary send and uses status-specific dedicated send; mutateAdminReview:5951–5981 does not send. I-22: context/dialog/confirmation:5889–5950, translation/events:5983–6009 and send:6011–6042 recheck ownership, separate confirmation from send, and preserve the safety protocol. Fresh behavioral gates below cover these contracts, S-3/S-4/S-5, restricted-reader access and ordinary manual regression. F-01 is independently closed as detailed below. |
+| Required commands | PASS | All fourteen invocations ran freshly after inspection on the unchanged final candidate: 14 executed/14 passed. Full Maven 5715/0 failures/0 errors/24 disclosed default opt-in skips; all 363 explicitly enabled named JVM targets non-skipped. Exact receipts below. No historical result substitutes for a command. |
+| Downstream interfaces | PASS | onReviewPendingSummary({count,loading,error,active}) and setReviewPendingOnly remain the narrow app/component interface. Traced reviewPendingOnly through MailboxConversationController:246–266, service:114–157 (reader forbidden) and repository:808 onward. MailReviewDraftController:61–110 matches approve/context/confirm/translate and dedicated send payloads; MailReviewSendService:11–23 passes server-frozen content and safety fields to existing manual seams, without attachment/draftRef or ordinary-route fallback. Current placeholder correction remains the single strict-validator call at MailReviewDraftService:303 with complete-variable ban retained. No new shared-table columns or permission/send-authority widening. |
+
+### Exact cumulative product/test scope
+
+Fresh name-only command: `git diff --name-only a02477be34b3308899820fcc9bd3060ca5bccb70 bec9e40faae946b0971e95af9c3a9edec83cd888 -- src`. Observed output:
+
+```text
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftService.kt
+src/main/resources/static/app.js
+src/main/resources/static/index.html
+src/main/resources/static/mailbox-chat.js
+src/main/resources/static/styles.css
+src/test/js/batchEntryRelocation.test.js
+src/test/js/discoveryRecheck.test.js
+src/test/js/mailReviewAdmin.test.js
+src/test/js/mailReviewReader.test.js
+src/test/js/mailboxMailReadAccess.test.js
+src/test/js/mailboxServerDrafts.test.js
+src/test/kotlin/com/weibo/talentintroduction/auth/config/AuthInterceptorTest.kt
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt
+```
+
+The compatibility changes retire only approved obsolete cache-key/first-child/EOF constraints, preserve prior class/DOM/resource/permission checks, align the exact reader handler/verb matrix, and correct the four matcher arities. Controller/evidence ancestry is not confused with product scope.
+
+### Fresh command receipts
+
+Working directory for every invocation: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-draft-review-master`.
+
+Every Maven invocation used:
+
+`JAVA_HOME=/tmp/zulu11.92.109-ca-jdk11.0.33-macosx_aarch64/Contents/Home MAVEN_OPTS=-Xmx3072m DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock`
+
+Rows11–13 additionally used:
+
+`DB_URL='jdbc:mysql://127.0.0.1:33406/fast_review05?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai' DB_USERNAME=root DB_PASSWORD=review05-local`
+
+Independently owned real MySQL launch: `env DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock docker run --rm -d --name draft05-verifier6b-mysql -p 127.0.0.1:33406:3306 -e MYSQL_ROOT_PASSWORD=review05-local -e MYSQL_DATABASE=fast_review05 mysql:8.0 --log-bin-trust-function-creators=1`; exit0, container `f98c1e8ec320ccf32c2354371e5c80254327ce21deef148957c518c42babe4aa`. Readiness used mysqladmin ping before commands. Testcontainers targets created their own normal disposable databases.
+
+| # | Exact fresh command | Observed result | Durable receipt |
+|---|---|---|---|
+| 1 | `node --check src/main/resources/static/mailbox-chat.js` | exit0 | `/tmp/draft05-verifier6b-01.log` |
+| 2 | `node --check src/main/resources/static/app.js` | exit0 | `/tmp/draft05-verifier6b-02.log` |
+| 3 | `node --check src/main/resources/static/mailbox-readonly.js` | exit0 | `/tmp/draft05-verifier6b-03.log` |
+| 4 | `node --test src/test/js/mailReviewAdmin.test.js src/test/js/mailboxServerDrafts.test.js src/test/js/mailboxChatStyle.test.js src/test/js/mailboxChatBehavior.test.js src/test/js/mailboxReadOnly.test.js src/test/js/authFlow.test.js` | exit0; 334/334 pass,0 fail,0 skip | `/tmp/draft05-verifier6b-04.log:445–450` |
+| 5 | `node --test src/test/js/mailReviewReader.test.js src/test/js/mailboxReadOnly.test.js src/test/js/authFlow.test.js src/test/js/mailboxChatStyle.test.js` | exit0; 131/131 pass,0 fail,0 skip | `/tmp/draft05-verifier6b-05.log:176–181` |
+| 6 | `node --test src/test/js/ragAdoptSendBridge.test.js src/test/js/meetingConfirmationIntegration.test.js src/test/js/mailboxOutboundAttachments.test.js` | exit0; 65/65 pass,0 fail,0 skip | `/tmp/draft05-verifier6b-06.log:102–107` |
+| 7 | `node --test src/test/js/*.test.js` | exit0; 1956/1956 pass,0 fail,0 skip | `/tmp/draft05-verifier6b-07.log:2666–2671`; exact expanded argv retained in results JSON |
+| 8 | `mvn test '-DargLine=-Xmx1536m -Dapi.version=1.41'` | exit0 BUILD SUCCESS; 5715 JVM/0 failures/0 errors/24 default skips | `/tmp/draft05-verifier6b-08.log:12468,15150`; 678.00s |
+| 9 | `mvn test -Dtest=MailReviewDraftIT -DmysqlIt=true '-DargLine=-Xmx1536m -Dapi.version=1.41'` | exit0 BUILD SUCCESS; 12/0 failures/0 errors/0 skips | `/tmp/draft05-verifier6b-09.log:1287–1293,3975`; 272.39s |
+| 10 | `mvn test -Dtest=AuthFlowIntegrationTest,FlywayMigrationIntegrationTest -DmigrationIt=true '-DargLine=-Xmx1536m -Dapi.version=1.41'` | exit0 BUILD SUCCESS; 9+46=55/0 failures/0 errors/0 skips | `/tmp/draft05-verifier6b-10.log:1038,338156,338279,340961`; 906.55s |
+| 11 | external DB `mvn test -Dtest=MailReviewQueryIT,MailboxConversationRepositoryIT -DmysqlIt=true '-DargLine=-Xmx1536m -Dapi.version=1.41'` | exit0 BUILD SUCCESS; 5+40=45/0 failures/0 errors/0 skips | `/tmp/draft05-verifier6b-11.log:751,1022–1028,3710`; 247.17s |
+| 12 | external DB `mvn test -Dtest=MailboxConversationControllerTest -DmysqlIt=true '-DargLine=-Xmx1536m -Dapi.version=1.41'` | exit0 BUILD SUCCESS; 46/0 failures/0 errors/0 skips | `/tmp/draft05-verifier6b-12.log:610–614,3296`; 186.78s |
+| 13 | external DB `mvn test -Dtest=MailReviewSendIT,MailReplyDraftSendIntegrationTest -DmysqlIt=true '-DargLine=-Xmx1536m -Dapi.version=1.41'` | exit0 BUILD SUCCESS; 18+27=45/0 failures/0 errors/0 skips | `/tmp/draft05-verifier6b-13.log:881,1219–1227,3909`; 218.57s |
+| 14 | `mvn test -Dtest=ManualReplySendAttemptServiceTest,PendingMailOperationServiceTest,PendingMailOperationServiceTrustWorkbenchTest '-DargLine=-Xmx1536m -Dapi.version=1.41'` | exit0 BUILD SUCCESS; 58+42+60=160/0 failures/0 errors/0 skips | `/tmp/draft05-verifier6b-14.log:481,559–570,3252`; 174.25s |
+
+Every Maven invocation also freshly ran its configured Node suite1956/1956, zero failures/skips, and syntax executions. Normal production/test compilation remained enabled. Seven Maven runs were sequential; no global restart, unrelated resource change, compile skip or failure-confirmation rerun. Full Maven's 24 default opt-in skips are not counted as executed targets; the explicitly enabled groups above provide 363 non-skipped target tests. Fresh query receipt row11:749 prints `REVIEW_QUERY_SIZE100 rows=100 sqlCount=10 reviewSqlCount=2`.
+
+All actual argv/exit codes/timings are in `/tmp/draft05-verifier6b-results.json`; runner launch/cleanup receipt `artifact://1526`. Fresh java-version reports genuine OpenJDK11.0.33 /Zulu11.92+109-CA; official retained archive SHA256 freshly measured `4947b01fcb220ee69710dbf63375f4628688d84750fccd289f5a6d62b494aa94`.
+
+### F-01 and O-01 lineage
+
+**F-01 CLOSED:** independently inspected retargetManual:9511–9552. It captures review identity/epoch and original owner before navigation, checks them before starting, after target GET, after dialog completion and before late error presentation. Review entry increments epoch, so even a later switch back to manual cannot revive the original operation. No late original GET can open confirmation or apply an existing destination; no late confirmation can mutate target/copy attachments. Fresh row4/row7 exercise all three controlled regressions at mailboxServerDrafts.test.js:673–722: empty GET, existing GET and pending confirmation; assert no late dialog, original90/body/ready attachment restoration, unchanged destination and no PUT/DELETE. Existing ordinary-retarget coverage remains, and retained production ordinary-retarget JSON/screenshot shows target101 with original content/attachment while source90 is unchanged. This is closure of the historical finding, not its deletion.
+
+**O-01 ADJUDICATED/CLOSED:** A17/A18 explicitly authorize only the original first-case three-line Thread.state busy-wait/WAITING assertion retirement. Exact delta confirms only those three lines removed; DiscoveryVerificationWorkerTest.kt:62–79 retains paperEntered synchronization, interrupt/join, thread exit, RUNNING lease, original evidence/token, no saveFailure/budget reservation, reclaim with new token, owner completion and parseCount1/cache reuse. No Discovery production audit or repair performed. Fresh full-Maven class receipt row8:9836 is23 tests/0 failures/0 errors/0 skips; historical artifact1407 remains failure evidence, not fresh proof.
+
+### Historical executor runtime evidence inspected
+
+Read execution.md's actual authenticated production backend/native UI1440/390, two-session reader/admin, SMTP/IMAP and cleanup account. Independently checked all referenced retained PNG/WebP/MIME/JSON files exist with nonzero lengths. Opened desktop pending screenshot, mobile native dialog, restricted reader mobile, Epoch6 mobile late-dialog and desktop ordinary-retarget captures: original toolbar/cards, one displayed composer, disabled review tools, inline controls, white dialog and restricted-reader navigation are visible. Keyboard/native-dialog and HTTP ownership details are attributed to executor runtime snapshots plus fresh tests, not inferred solely from images.
+
+Inspected `/tmp/fast-draft05-epoch6-smoke-assertions.json` (all fifteen true) and actual-get-race/dialog-race/ordinary-retarget JSON: original90/version2/body/attachment identity retained, actual held GET HTTP200, no new destination after stale responses, and normal retarget creates101 without changing source. Transport-only delay of unchanged authenticated native Response and the production selector DOM event behind the pending native dialog are explicitly disclosed, not fabricated backend proof. These are historical executor observations, not fresh browser work by this verifier.
+
+Parsed historical outbound1 MIME: multipart/alternative text/plain+text/html, no attachment. Outbound2: multipart/mixed containing text/plain+text/html and original named attachment. This verifier's parser returned37 decoded attachment bytes; no new SMTP delivery or independent wire-byte-count assertion is made. No fresh browser execution, SMTP/IMAP delivery, deployment or human acceptance is claimed.
+
+### AUTO_FIX
+
+- N/A — historical F-01 closed; no new proven four-gate violation.
+
+### RECORD_ONLY
+
+- N/A — historical O-01 resolved by explicit A17/A18 bounded authorization and fresh passing full gate; not carried forward as an open outside-scope item.
+
+### Cleanup and evidence boundary
+
+All fourteen commands completed before cleanup. Owned `docker stop draft05-verifier6b-mysql` exited0; `--rm` disposed its database/container. No unrelated service/container/daemon was stopped. Only this repository verify-log append was changed; product/tests/index/Git/plans stayed read-only. Scratch runner/logs/results are outside the repository. This is a four-gate light result only, not full-master review or human acceptance.
+
+### Required Action
+
+- COMPLETE_CHILD
+
+All four gates pass on the exact final boundary. Controller may complete child05 and proceed to the separately required whole-plan review; no human acceptance is implied.
