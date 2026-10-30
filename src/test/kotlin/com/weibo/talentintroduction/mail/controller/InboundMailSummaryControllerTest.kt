@@ -35,6 +35,10 @@ class InboundMailSummaryControllerTest {
 
     @MockBean
     private lateinit var mailRecordRepository: MailRecordRepository
+    @MockBean
+    private lateinit var tagRepository: com.weibo.talentintroduction.mail.repository.InboundMailTagRepository
+    @MockBean
+    private lateinit var permissionGuard: com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard
 
     @Test
     fun `list mails accepts iso local datetime query params`() {

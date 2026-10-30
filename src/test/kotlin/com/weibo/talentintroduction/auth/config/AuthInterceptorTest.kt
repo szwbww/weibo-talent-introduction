@@ -179,6 +179,8 @@ class AuthInterceptorTest {
 
     @MockBean
     private lateinit var inboundMailTagService: InboundMailTagService
+    @MockBean
+    private lateinit var inboundMailTagRepository: com.weibo.talentintroduction.mail.repository.InboundMailTagRepository
 
     @MockBean
     private lateinit var bounceRecordRepository: BounceRecordRepository
@@ -440,12 +442,6 @@ class AuthInterceptorTest {
                 .content("""{"note":"x"}""")
         ).andExpect(status().isForbidden)
         mockMvc.perform(get("/api/inbound-summary/mails").session(session)).andExpect(status().isForbidden)
-        mockMvc.perform(
-            post("/api/inbound-summary/mails/1/tags")
-                .session(session)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("""{"tag":"x"}""")
-        ).andExpect(status().isForbidden)
         mockMvc.perform(get("/api/mail/bounces").session(session)).andExpect(status().isForbidden)
 
         // 发信 / 关注 / 挂起 / 备注 / 标签 / 监控：业务服务零交互。
@@ -540,11 +536,19 @@ class AuthInterceptorTest {
                 "ExpertDocumentBrowseController#download:GET",
                 "ExpertDocumentBrowseController#listDocuments:GET",
                 "ExpertDocumentBrowseController#preview:GET",
+                "ExpertIndexController#addTag:POST",
+                "ExpertIndexController#getExpertProfile:GET",
+                "ExpertIndexController#removeTag:POST",
+                "ExpertManualProfileController#get:GET",
+                "ExpertManualProfileController#patch:PATCH",
                 "ExpertMaterialController#downloadZip:POST",
                 "ExpertMaterialController#listMaterials:GET",
                 "ExpertMaterialController#reconcile:POST",
                 "ExpertMaterialController#requestTransfers:POST",
                 "ExpertMaterialController#uploadMaterial:POST",
+                "InboundMailSummaryController#addTag:POST",
+                "InboundMailSummaryController#autoApplyTags:POST",
+                "InboundMailSummaryController#deleteTag:DELETE",
                 "InboundMailSummaryController#tagOptions:GET",
                 "MailReviewDraftController#comment:POST",
                 "MailReviewDraftController#create:POST",

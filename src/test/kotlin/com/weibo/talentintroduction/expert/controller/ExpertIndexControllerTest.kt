@@ -50,9 +50,11 @@ class ExpertIndexControllerTest {
     private val schedulingProperties = MailSchedulingProperties(autoReplyAllCron = "-")
     private val objectMapper = ObjectMapper()
     private val taskExecutionService = TaskExecutionService(repository, objectMapper, schedulingProperties)
+    private val jdbc = Mockito.mock(org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate::class.java)
+    private val servletRequest = org.springframework.mock.web.MockHttpServletRequest()
     private val controller = ExpertIndexController(
         searchService, contactRepository, writerService, syncService,
-        revalidationService, taskExecutionService, progressStore, filterService, introductionMailComposer,
+        revalidationService, taskExecutionService, progressStore, filterService, introductionMailComposer, jdbc,
         personQueryService = personQueryService
     )
 
@@ -348,7 +350,7 @@ class ExpertIndexControllerTest {
                 orcidId = "orcid-1",
                 tag = "承诺回复材料",
                 level = ExpertIndexLevel.CANDIDATE
-            )
+            ), servletRequest
         )
 
         assertTrue(result.success)
@@ -377,7 +379,7 @@ class ExpertIndexControllerTest {
                 orcidId = "orcid-1",
                 tag = "承诺回复材料",
                 level = ExpertIndexLevel.CANDIDATE
-            )
+            ), servletRequest
         )
 
         assertTrue(result.success)
@@ -472,7 +474,7 @@ class ExpertIndexControllerTest {
         Mockito.`when`(searchService.findByOrcidId("orcid-1", ExpertIndexLevel.CANDIDATE))
             .thenReturn(profile)
 
-        val response = controller.getExpertProfile("orcid-1", ExpertIndexLevel.CANDIDATE)
+        val response = controller.getExpertProfile("orcid-1", ExpertIndexLevel.CANDIDATE, servletRequest)
 
         assertEquals("orcid-1", response.orcidId)
         assertEquals(true, response.found)
@@ -484,7 +486,7 @@ class ExpertIndexControllerTest {
         Mockito.`when`(searchService.findByOrcidId("orcid-absent", ExpertIndexLevel.CANDIDATE))
             .thenReturn(null)
 
-        val response = controller.getExpertProfile("orcid-absent", ExpertIndexLevel.CANDIDATE)
+        val response = controller.getExpertProfile("orcid-absent", ExpertIndexLevel.CANDIDATE, servletRequest)
 
         assertEquals("orcid-absent", response.orcidId)
         assertEquals(false, response.found)
@@ -497,7 +499,7 @@ class ExpertIndexControllerTest {
             .thenThrow(RuntimeException("es down"))
 
         assertThrows(RuntimeException::class.java) {
-            controller.getExpertProfile("orcid-err", ExpertIndexLevel.CANDIDATE)
+            controller.getExpertProfile("orcid-err", ExpertIndexLevel.CANDIDATE, servletRequest)
         }
     }
 }

@@ -1,5 +1,11 @@
 package com.weibo.talentintroduction.mail.controller
 
+import com.weibo.talentintroduction.auth.config.AuthSessionKeys
+import com.weibo.talentintroduction.auth.config.MailReadAccessDeniedException
+import com.weibo.talentintroduction.auth.config.MailReadOnlyPolicy
+import com.weibo.talentintroduction.mail.repository.InboundMailTagRepository
+import com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard
+import javax.servlet.http.HttpServletRequest
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.MailRecord
@@ -26,7 +32,9 @@ class InboundMailSummaryController(
     private val inboundMailProcessingRepository: InboundMailProcessingRepository,
     private val inboundMailTagService: InboundMailTagService,
     private val expertContactRepository: ExpertContactRepository,
-    private val mailRecordRepository: MailRecordRepository
+    private val mailRecordRepository: MailRecordRepository,
+    private val tagRepository: InboundMailTagRepository,
+    private val permissionGuard: ExpertMailPermissionGuard
 ) {
     @GetMapping("/mails")
     fun listMails(
@@ -144,30 +152,38 @@ class InboundMailSummaryController(
     @PostMapping("/mails/{inboundId}/tags/auto")
     fun autoApplyTags(
         @PathVariable inboundId: Long,
-        @RequestBody(required = false) request: TagOperatorRequest?
+        @RequestBody(required = false) request: TagOperatorRequest?,
+        servletRequest: HttpServletRequest
     ): TagListResponse {
         val inbound = inboundMailProcessingRepository.findById(inboundId)
             .orElseThrow { IllegalArgumentException("Inbound mail processing not found: $inboundId") }
+        val username = authorizeProcessing(servletRequest, inbound)
         val body = inbound.cleanedBody ?: inbound.body
-        val addedCount = inboundMailTagService.autoApplyQaTags(inboundId, body, request?.operatorName)
+        val addedCount = inboundMailTagService.autoApplyQaTags(inboundId, body, username ?: request?.operatorName)
         return TagListResponse(tags = inboundMailTagService.listTags(inboundId), addedCount = addedCount)
     }
 
     @PostMapping("/mails/{inboundId}/tags")
     fun addTag(
         @PathVariable inboundId: Long,
-        @RequestBody request: AddTagRequest
+        @RequestBody request: AddTagRequest,
+        servletRequest: HttpServletRequest
     ): TagListResponse {
+        val username = if (MailReadOnlyPolicy.isReader(sessionUsername(servletRequest))) {
+            val inbound = inboundMailProcessingRepository.findById(inboundId)
+                .orElseThrow { IllegalArgumentException("Inbound mail processing not found: $inboundId") }
+            authorizeProcessing(servletRequest, inbound)
+        } else sessionUsername(servletRequest)
         when {
             request.qaRuleId != null -> inboundMailTagService.addQaTag(
                 inboundId,
                 request.qaRuleId,
-                request.operatorName
+                username ?: request.operatorName
             )
             !request.label.isNullOrBlank() -> inboundMailTagService.addCustomTag(
                 inboundId,
                 request.label,
-                request.operatorName
+                username ?: request.operatorName
             )
             else -> throw IllegalArgumentException("Either qaRuleId or label is required")
         }
@@ -175,8 +191,29 @@ class InboundMailSummaryController(
     }
 
     @DeleteMapping("/tags/{tagId}")
-    fun deleteTag(@PathVariable tagId: Long) {
+    fun deleteTag(@PathVariable tagId: Long, servletRequest: HttpServletRequest) {
+        if (MailReadOnlyPolicy.isReader(sessionUsername(servletRequest))) {
+            val tag = tagRepository.findById(tagId)
+                .orElseThrow { IllegalArgumentException("Inbound mail tag not found: $tagId") }
+            val inbound = inboundMailProcessingRepository.findById(tag.inboundProcessingId)
+                .orElseThrow { IllegalArgumentException("Inbound mail processing not found: ${tag.inboundProcessingId}") }
+            authorizeProcessing(servletRequest, inbound)
+        }
         inboundMailTagService.deleteTag(tagId)
+    }
+
+    private fun sessionUsername(request: HttpServletRequest): String? =
+        request.getSession(false)?.getAttribute(AuthSessionKeys.USERNAME) as? String
+
+    private fun authorizeProcessing(request: HttpServletRequest, inbound: InboundMailProcessing): String? {
+        val username = sessionUsername(request)
+        if (MailReadOnlyPolicy.isReader(username)) {
+            val contactId = inbound.expertContactId ?: throw MailReadAccessDeniedException(
+                "MAIL_WRITE_FORBIDDEN", "无权操作未关联专家的邮件标签"
+            )
+            permissionGuard.requireFull(username, contactId)
+        }
+        return username
     }
 
     private fun parseTagKey(tagKey: String?): Pair<Long?, String?> {

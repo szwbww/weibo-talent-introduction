@@ -1,6 +1,8 @@
 package com.weibo.talentintroduction.auth.config
 
 import com.weibo.talentintroduction.auth.controller.AuthController
+import com.weibo.talentintroduction.expert.controller.ExpertIndexController
+import com.weibo.talentintroduction.expert.controller.ExpertManualProfileController
 import com.weibo.talentintroduction.mail.controller.MailboxConversationController
 import com.weibo.talentintroduction.mail.controller.MailReviewDraftController
 import com.weibo.talentintroduction.mail.controller.ExpertContactLocationController
@@ -63,6 +65,14 @@ object MailReadOnlyPolicy {
         AllowedHandler("GET", MailReviewDraftController::class.java, "events"),
         AllowedHandler("GET", ExpertContactLocationController::class.java, "countries"),
         AllowedHandler("GET", InboundMailSummaryController::class.java, "tagOptions"),
+        AllowedHandler("POST", InboundMailSummaryController::class.java, "addTag"),
+        AllowedHandler("POST", InboundMailSummaryController::class.java, "autoApplyTags"),
+        AllowedHandler("DELETE", InboundMailSummaryController::class.java, "deleteTag"),
+        AllowedHandler("POST", ExpertIndexController::class.java, "addTag"),
+        AllowedHandler("POST", ExpertIndexController::class.java, "removeTag"),
+        AllowedHandler("GET", ExpertIndexController::class.java, "getExpertProfile"),
+        AllowedHandler("GET", ExpertManualProfileController::class.java, "get"),
+        AllowedHandler("PATCH", ExpertManualProfileController::class.java, "patch"),
         AllowedHandler("GET", MeetingConfirmationController::class.java, "timeZones"),
         AllowedHandler("POST", TranslationController::class.java, "translate"),
         AllowedHandler("POST", AuthController::class.java, "logout")

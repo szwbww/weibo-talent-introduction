@@ -61,6 +61,7 @@ class ExpertManualProfileControllerTest {
 
     @Autowired private lateinit var mvc: MockMvc
     @MockBean private lateinit var service: ExpertManualProfileService
+    @MockBean private lateinit var jdbc: org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
     @MockBean private lateinit var authService: AuthService
 
     private val jackson = ObjectMapper()
@@ -299,7 +300,7 @@ class ExpertManualProfileControllerTest {
 
     @Test
     fun `controller independently refuses absent and blank session usernames`() {
-        val controller = ExpertManualProfileController(service)
+        val controller = ExpertManualProfileController(service, jdbc)
         listOf<String?>(null, " ", "\t").forEach { username ->
             val request = MockHttpServletRequest()
             if (username != null) request.getSession().setAttribute(AuthSessionKeys.USERNAME, username)

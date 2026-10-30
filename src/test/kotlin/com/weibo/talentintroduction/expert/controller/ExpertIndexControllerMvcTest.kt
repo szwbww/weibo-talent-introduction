@@ -38,6 +38,8 @@ class ExpertIndexControllerMvcTest {
 
     @Autowired
     private lateinit var mockMvc: MockMvc
+    @MockBean
+    private lateinit var jdbc: org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 
     @MockBean
     private lateinit var expertSearchService: ExpertSearchService

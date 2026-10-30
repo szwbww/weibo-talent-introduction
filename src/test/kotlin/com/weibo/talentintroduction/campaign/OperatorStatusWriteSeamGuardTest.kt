@@ -76,12 +76,12 @@ class OperatorStatusWriteSeamGuardTest {
         NoiseSite("com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt", 644, "operatorStatus = operatorStatus"),
         // ES 专家列表响应 DTO 构造：contact/ES 文档字段合并到响应 DTO
         // （repair R-9/R-10：索引/分页说明与完整性校验改动使钉死点 :91 平移至 :80，context 不变）
-        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 80, "operatorStatus = operatorStatus"),
+        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 86, "operatorStatus = operatorStatus"),
         // ES 专家详情响应 DTO 构造：同上
         // （repair R-9/R-10 行号钉随授权改动平移 +42：读投影/说明行变化使 :435 平移至 :477，context 不变）
-        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 477, "operatorStatus = operatorStatus ?: expert.operatorStatus"),
+        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 502, "operatorStatus = operatorStatus ?: expert.operatorStatus"),
         // ES 专家列表响应 DTO 构造：同一响应 DTO 的另一处只读投影（读 contact/ES 字段写入 DTO，非 DB 写入）
-        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 108, "operatorStatus = contact?.operatorStatus ?: expert.operatorStatus"),
+        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 114, "operatorStatus = contact?.operatorStatus ?: expert.operatorStatus"),
         // 人物详情响应 DTO 构造：只读投影（读 contact/档案字段写入 DTO，非 DB 写入）
         // （repair R-12：逐邮箱真值投影改动使该投影落在 :282）
         // （revised repair R-9：失效关系不得投影为可发送，新增 1 行注释 + 1 行 stale 局部变量，
