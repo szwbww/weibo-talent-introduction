@@ -95,6 +95,15 @@ class FakeElement {
         this.children.push(child);
         return child;
     }
+    replaceChild(child, previous) {
+        const index = this.children.indexOf(previous);
+        if (index < 0) throw new Error("missing child");
+        if (child.parentNode) child.parentNode.removeChild(child);
+        previous.parentNode = null;
+        this.children[index] = child;
+        child.parentNode = this;
+        return previous;
+    }
     replaceChildren(...nodes) {
         this.children.forEach((child) => { child.parentNode = null; });
         this.children = [];
@@ -266,6 +275,7 @@ const EXPERT_A = {
 
 function detailResponse(items, extra = {}) {
     return {
+        accessLevel: extra.accessLevel === undefined ? "READ" : extra.accessLevel,
         items,
         nextBefore: extra.nextBefore === undefined ? null : extra.nextBefore,
         hasMore: extra.hasMore === true
@@ -342,7 +352,9 @@ describe("S-1 DOM 骨架（真实模块渲染）", () => {
         const scroll = findOne(conversation, "mc-scroll");
         assert.strictEqual(findOne(scroll, "mc-empty").textContent, "请选择左侧专家");
 
-        assert.strictEqual(harness.calls.length, 1);
+        assert.deepStrictEqual(harness.calls.map(call => call.path), [
+            `${LIST_PATH}?page=0&size=20`, `${LIST_PATH}?page=0&size=1&pendingOnly=true`
+        ]);
         assert.strictEqual(harness.calls[0].path, `${LIST_PATH}?page=0&size=20`);
         assert.strictEqual(harness.calls[0].options.method, "GET");
     });
@@ -811,6 +823,7 @@ describe("I-3 失权/失败/竞态", () => {
         const gate = deferred();
         let listCalls = 0;
         harness.responder = async (requestPath) => {
+            if (requestPath.includes("pendingOnly=true")) return listResponse([], 0);
             if (requestPath.startsWith(`${LIST_PATH}?`)) {
                 listCalls += 1;
                 if (listCalls > 1) return gate.promise;

@@ -6871,3 +6871,99 @@ describe("待确认显示：旧标签映射与数据不变", () => {
         assert.strictEqual(queryOf(lastUnmatchedRequest(ctx).url).get("pageOffset"), "20", "分页仍为 page*20");
     });
 });
+
+describe("07 delegated conversation — fixed target and existing editor", () => {
+    async function delegated(overrides, mountOverrides) {
+        return bootChat(Object.assign({
+            authMe: { authenticated: true, username: "user1" },
+            messages: Object.assign(messagesA(), { accessLevel: "FULL" }), contact: contactA(),
+            route: (url, method, body, entry, next) => url.startsWith("/api/mail/mailbox/review-drafts?")
+                ? { items: [], total: 0 } : next(url, method, body)
+        }, overrides || {}), Object.assign({
+            mode: "delegated-conversation", contactId: 1, sessionUser: "user1", summary: expertA()
+        }, mountOverrides || {}));
+    }
+
+    it("mounts only S-4 right pane, no administrator bootstrap or identity metadata", async () => {
+        const ctx = await delegated();
+        const shell = ctx.host.querySelector('[data-role="delegated-conversation"]');
+        assert.ok(shell);
+        assert.strictEqual(shell.children.length, 1);
+        assert.strictEqual(shell.children[0].className, "mc-conversation");
+        assert.strictEqual(ctx.host.querySelector(".mc-experts"), null);
+        assert.strictEqual(ctx.host.querySelector("#mcFilterPopover"), null);
+        assert.strictEqual(ctx.host.querySelector('[data-section="workbench"]'), null);
+        assert.strictEqual(ctx.host.querySelector('[data-section="logs"]'), null);
+        assert.strictEqual(ctx.host.querySelector('[data-action="mc-open-template-reference"]'), null);
+        assert.strictEqual(ctx.host.querySelector('[data-action="mc-template-follow"]'), null);
+        assert.strictEqual(ctx.host.querySelector('[data-action="mc-reply-identity-settings"]'), null);
+        assert.strictEqual(ctx.host.querySelectorAll('[data-role="mc-editor"]').length, 1);
+        assert.ok(!ctx.host.querySelector(".mc-identity").textContent.includes("a@example.edu"));
+        assert.ok(!ctx.host.querySelector(".mc-identity").textContent.includes("acc1"));
+        assert.strictEqual(ctx.host.querySelector(".mc-identity").querySelector("p"), null);
+        assert.strictEqual(ctx.host.querySelectorAll('[data-role="last-reply-time"]').length, 1);
+        assert.ok(!ctx.calls.api.some(call => call.url.startsWith("/api/mail/mailbox/conversations?")));
+        assert.ok(!ctx.calls.api.some(call => call.url.startsWith("/api/mail/mailbox/drafts/summaries")));
+        assert.strictEqual(ctx.calls.workbenchMounts.length, 0);
+        ctx.api.unmount();
+    });
+
+    it("saves current user1 target and sends through the original rich reply adapter once", async () => {
+        const ctx = await delegated();
+        const editor = ctx.host.querySelector('[data-role="mc-editor"]');
+        editor.innerText = "Current expert human response";
+        inputEvent(editor);
+        await ctx.api.flushDrafts();
+        const saved = ctx.calls.api.filter(call => call.url.startsWith("/api/mail/mailbox/drafts/target?") && call.method === "PUT");
+        assert.ok(saved.length > 0);
+        assert.ok(saved.every(call => queryOf(call.url).get("contactId") === "1"));
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        assert.strictEqual(ctx.calls.sendRich.length, 1);
+        assert.strictEqual(ctx.calls.sendRich[0].processingId, 101);
+        assert.ok(ctx.calls.sendRich[0].body.draftRef);
+        assert.strictEqual(ctx.calls.sendConversation.length, 0);
+        ctx.api.unmount();
+    });
+
+    it("missing, READ and NONE detail authority never create a writable editor", async () => {
+        for (const accessLevel of [undefined, "READ", "NONE"]) {
+            let changed = 0;
+            const ctx = await delegated({ messages: Object.assign(messagesA(), { accessLevel }) },
+                { onAccessChanged: () => { changed += 1; } });
+            assert.strictEqual(ctx.host.querySelector('[contenteditable="true"]'), null);
+            assert.strictEqual(ctx.calls.sendRich.length, 0);
+            assert.strictEqual(changed, 1);
+            ctx.api.unmount();
+        }
+    });
+
+    it("late messages after unmount cannot restore content or pending draft timers", async () => {
+        let resolve;
+        const promise = new Promise(done => { resolve = done; });
+        const ctx = await delegated({
+            route: (url, method, body, entry, next) => url.includes("/messages?")
+                ? promise : next(url, method, body)
+        });
+        ctx.api.unmount();
+        resolve(Object.assign(messagesA(), { accessLevel: "FULL" }));
+        await flush();
+        ctx.runTimers();
+        await flush();
+        assert.strictEqual(ctx.host.innerHTML, "");
+        assert.ok(!ctx.calls.api.some(call => call.method === "PUT"));
+        assert.strictEqual(ctx.calls.sendRich.length, 0);
+    });
+
+    it("forbidden current target requests destroy the editor before revalidation", async () => {
+        let changed = 0;
+        const ctx = await delegated({
+            route: (url, method, body, entry, next) => url === "/api/mail/contact-notes/1"
+                ? Promise.reject(Object.assign(new Error("forbidden"), { status: 403 })) : next(url, method, body)
+        }, { onAccessChanged: () => { changed += 1; } });
+        assert.strictEqual(ctx.host.querySelector('[contenteditable="true"]'), null);
+        assert.strictEqual(ctx.calls.sendRich.length, 0);
+        assert.strictEqual(changed, 1);
+        ctx.api.unmount();
+    });
+});

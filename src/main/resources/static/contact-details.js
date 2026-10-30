@@ -8,13 +8,16 @@ function initContactDetailsLayout() {
  presets.forEach(button=>button.addEventListener('click',()=>markPreset(button.id)));
  document.getElementById('contactsLayoutResizer')?.addEventListener('pointermove',event=>{if(event.buttons)markPreset('');});
  const originalSection=expertManualProfileSectionTemplate;
- expertManualProfileShellTemplate=function(){
+ const nativeShell=expertManualProfileShellTemplate,nativeJump=expertManualProfileJump;
+ expertManualProfileShellTemplate=function(context){
+  if(context?.delegated)return nativeShell(context);
   const groups=EXPERT_MANUAL_PROFILE_GROUPS, matching=groups.find(g=>g.key==='matching'),other=groups.filter(g=>g.key!=='matching');
   return expertContactSharedNoteSectionTemplate()+originalSection(matching)+
    `<section class="ec-section fp-profile"><nav class="ec-nav" aria-label="联系详情分组"><h3>专家资料</h3>${other.map(g=>`<button type="button" class="button ${g.key==='identity'?'secondary':''}" aria-pressed="${g.key==='identity'}" data-ec-jump="${g.key}">${g.label}</button>`).join('')}<button class="button" type="button" data-ec-jump="contact-info" aria-pressed="false">联系信息</button><button class="button fp-meeting-jump" type="button" data-meeting-jump>会议记录 ↓</button></nav>${other.map(g=>originalSection(g).replace('<section ',`<section ${g.key==='identity'?'':'hidden '}`)).join('')}<section class="fp-contact-info" data-fp-info hidden><div class="metadata-grid"></div></section></section>`+
    '<div data-meeting-records></div>'+groups.map(expertManualProfileEditorTemplate).join('');
  };
  expertManualProfileJump=function(session,key){
+  if(session.delegated)return nativeJump(session,key);
   if(key==='matching')return session.editors.get(key)?.section.scrollIntoView({block:'nearest'});
   const info=session.host.querySelector('[data-fp-info]');if(info)info.hidden=key!=='contact-info';
   const infoButton=session.host.querySelector('[data-ec-jump="contact-info"]');infoButton?.classList.toggle('secondary',key==='contact-info');infoButton?.setAttribute('aria-pressed',String(key==='contact-info'));
@@ -72,13 +75,14 @@ function initContactDetailsLayout() {
  const nativeMount=mountExpertManualProfile;
  mountExpertManualProfile=function(root,context){
   const session=nativeMount(root,context);if(!session)return session;
+  if(session.delegated)return session;
   reorganizeContactPanel(root,session);
   ExpertMeetingRecords.mount(session);
   session.host.querySelector('[data-meeting-jump]')?.addEventListener('click',()=>session.host.querySelector('[data-meeting-records]').scrollIntoView({block:'start',behavior:'smooth'}));
   return session;
  };
  const nativeUnmount=unmountExpertManualProfileSession;
- unmountExpertManualProfileSession=function(session){if(session&&!session.closed)ExpertMeetingRecords.unmount();return nativeUnmount(session)};
+ unmountExpertManualProfileSession=function(session){if(session&&!session.closed&&!session.delegated)ExpertMeetingRecords.unmount();return nativeUnmount(session)};
  const listProfiles=new Map(),listNotes=new Map();
  function cachedRead(cache,key,url){if(!cache.has(key)){const pending=api(url).catch(e=>{if(cache.get(key)===pending)cache.delete(key);throw e});cache.set(key,pending);}return cache.get(key);}
  function matchingText(profile,name){return expertManualProfileFieldDisplay(EXPERT_MANUAL_PROFILE_FIELD_INDEX.get(name),profile);}

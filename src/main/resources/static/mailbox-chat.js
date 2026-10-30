@@ -246,7 +246,7 @@
         return typeof global[name] === "function" ? global[name] : null;
     }
 
-    function hostApi() {
+    function defaultHostApi() {
         return hostFn("api") || function () { return Promise.reject(new Error("api 不可用")); };
     }
 
@@ -839,6 +839,11 @@
     };
 
     function createInstance(host, options) {
+        const delegated = options && options.mode === "delegated-conversation";
+        const fixedContactId = delegated ? Number(options.contactId) : null;
+        if (delegated && (!Number.isSafeInteger(fixedContactId) || fixedContactId <= 0 || options.sessionUser !== "user1")) {
+            throw new Error("Invalid delegated conversation context");
+        }
         const instance = {
             host,
             root: null,
@@ -992,6 +997,20 @@
             disposed: false
         };
 
+        function hostApi() {
+            if (!delegated) return defaultHostApi();
+            return (path, requestOptions) => {
+                if (instance.disposed) return Promise.reject(new Error("会话已关闭"));
+                return Promise.resolve(defaultHostApi()(path, requestOptions)).catch((error) => {
+                    if (!instance.disposed && error && (error.status === 401 || error.status === 403)) {
+                        unmount();
+                        if (instance.options.onAccessChanged) instance.options.onAccessChanged();
+                    }
+                    throw error;
+                });
+            };
+        }
+
         const handlers = [];
         const portalHandlers = [];
 
@@ -1072,7 +1091,8 @@
         }
 
         function draftOwnerLive(rec) {
-            return rec.user === draftSessionUser && rec.epoch === draftSessionEpoch;
+            return rec.user === draftSessionUser && rec.epoch === draftSessionEpoch &&
+                (!delegated || (!instance.disposed && Number(rec.target.contactId) === fixedContactId));
         }
 
         function currentDraftRecord() {
@@ -1243,7 +1263,8 @@
 
         async function flushDrafts() {
             saveCurrentConversation();
-            const records = Array.from(draftSaves.values()).filter((rec) => rec.user === instance.user && draftOwnerLive(rec));
+            const records = Array.from(draftSaves.values()).filter((rec) => rec.user === instance.user && draftOwnerLive(rec)
+                && (!delegated || Number(rec.target.contactId) === fixedContactId));
             await Promise.all(records.map(async (rec) => {
                 while (rec.uploads.size) await Promise.all(Array.from(rec.uploads));
                 if (rec.seq !== rec.ack || rec.inflight) await persistDraft(rec);
@@ -1641,6 +1662,7 @@
         // --------------------------------------------------------------
 
         function skeletonHtml() {
+            if (delegated) return '<div class="mail-chat mc-delegated-conversation" data-role="delegated-conversation"><section class="mc-conversation" aria-label="专家往来信件"></section></div>';
             const chipButtons = FILTER_CHIPS.map((chip) => {
                 const countSpan = chip.key === CHIP_DRAFTS
                     ? '<span class="mailbox-draft-count" data-role="draft-total">0</span>'
@@ -2259,6 +2281,7 @@
         }
 
         function loadDraftSummaries() {
+            if (delegated) return;
             if (instance.disposed || !instance.auth.ready || instance.user !== draftSessionUser) return;
             const seq = instance.listSeq;
             const user = instance.user;
@@ -2392,6 +2415,10 @@
         }
 
         function fetchList(extra) {
+            if (delegated) {
+                if (!instance.disposed && instance.options.onChanged) instance.options.onChanged();
+                return Promise.resolve(null);
+            }
             const options = extra || {};
             const page = options.page != null ? options.page : instance.list.page;
             if (instance.chip === CHIP_DRAFTS) return fetchDraftList(page);
@@ -2469,6 +2496,7 @@
         }
 
         function loadList() {
+            if (delegated) return Promise.resolve();
             return fetchList({ page: instance.list.page }).then((data) => {
                 if (instance.disposed) return data;
                 if (instance.chip === CHIP_DRAFTS) return data;
@@ -3490,6 +3518,7 @@
         }
 
         function selectExpert(item, options) {
+            if (delegated && Number(item.contactId) !== fixedContactId) throw new Error("专家上下文不匹配");
             const opts = options || {};
             if (!opts.skipDraftFlush) return draftNavigation(() => selectExpert(item, Object.assign({}, opts, { skipDraftFlush: true })));
             const sameOwner = Number(instance.selectedContactId) === Number(item.contactId)
@@ -3552,6 +3581,13 @@
 
             Promise.all([contactPromise, messagesPromise]).then(([contact, msgData]) => {
                 if (instance.disposed || mySeq !== instance.seq || myEpoch !== instance.convEpoch) return;
+                if (delegated && (!msgData || msgData.accessLevel !== "FULL")) {
+                    instance.conversation.loading = false;
+                    teardownConversationSubViews();
+                    conversationBody().textContent = "暂无权限查看该专家邮件";
+                    if (instance.options.onAccessChanged) instance.options.onAccessChanged();
+                    return;
+                }
                 instance.conversation.contact = contact && contact.contact ? contact.contact : (contact || null);
                 instance.conversation.accountScope = accountFilter;
                 const serverItems = (msgData && Array.isArray(msgData.items)) ? msgData.items : [];
@@ -3622,7 +3658,7 @@
         function renderConversationScaffold() {
             const body = conversationBody();
             if (!body) return;
-            const name = (instance.selectedSummary && (instance.selectedSummary.name || instance.selectedSummary.email)) || "…";
+            const name = (instance.selectedSummary && (instance.selectedSummary.name || (delegated ? "未填写姓名" : instance.selectedSummary.email))) || "…";
             body.innerHTML = `
                 <header class="mc-header"><div class="mc-identity"><h2>${escapeText(name)}</h2><p>正在加载往来信件…</p></div><div class="mc-actions"></div></header>
                 <div class="mc-timeline-head"><span>往来信件</span><span class="mc-position-hint"></span><button class="mc-text-button" type="button" data-action="mc-latest">↓ 最新消息</button></div>
@@ -3634,6 +3670,7 @@
         function conversationSummaryInfo() {
             const summary = instance.selectedSummary || {};
             const parts = [];
+            if (delegated) return "";
             if (summary.email) parts.push(summary.email);
             const accounts = Array.isArray(summary.accountCodes) && summary.accountCodes.length
                 ? summary.accountCodes.join("、")
@@ -3663,7 +3700,9 @@
             if (!head) return;
             const identity = head.querySelector(".mc-identity");
             if (identity) {
-                identity.innerHTML = `<h2>${escapeText(summary.name || summary.email || "-")}</h2><p>${escapeText(conversationSummaryInfo() || "-")}</p><span class="mailbox-reply-detail" data-role="last-reply-time">${lastReplyDetailInner({ kind: "unavailable", text: LAST_REPLY_UNAVAILABLE_TEXT })}</span><span class="calendar-summary" data-role="meeting-summary"></span>`;
+                identity.innerHTML = delegated
+                    ? `<h2>${escapeText(summary.name || "未填写姓名")}</h2><span class="mailbox-reply-detail" data-role="last-reply-time">${lastReplyDetailInner({ kind: "unavailable", text: LAST_REPLY_UNAVAILABLE_TEXT })}</span><span class="calendar-summary" data-role="meeting-summary"></span>`
+                    : `<h2>${escapeText(summary.name || summary.email || "-")}</h2><p>${escapeText(conversationSummaryInfo() || "-")}</p><span class="mailbox-reply-detail" data-role="last-reply-time">${lastReplyDetailInner({ kind: "unavailable", text: LAST_REPLY_UNAVAILABLE_TEXT })}</span><span class="calendar-summary" data-role="meeting-summary"></span>`;
             }
             // I-4：优先取当前页同一行，回退身份匹配的 selectedSummary；都不可用保留默认文案。
             const selectedRow = contactId ? findSummaryByContactId(contactId) : null;
@@ -3874,7 +3913,7 @@
             const orcid = (contact && contact.orcidId) || summary.orcid || "";
             const expertTagSpans = headerExpertTagSpans();
             metaEl.innerHTML = `
-                <div class="mc-note-tags">${statusBadge}${levelBadge}${expertTagSpans}${orcid ? `<span>ORCID ${escapeText(orcid)}</span>` : ""}<button class="mc-text-button" type="button" data-action="mc-open-expert" data-contact-id="${escapeText(Number(instance.selectedContactId))}">查看专家详情 ↗</button></div>
+                <div class="mc-note-tags">${statusBadge}${levelBadge}${expertTagSpans}${orcid ? `<span>ORCID ${escapeText(orcid)}</span>` : ""}<button class="mc-text-button" type="button" data-action="mc-open-expert" data-contact-id="${escapeText(Number(instance.selectedContactId))}">${delegated ? "专家资料" : "查看专家详情 ↗"}</button></div>
                 <div class="mc-note-row"><section class="mc-note-slot" aria-label="专家备注">${noteMarkup()}</section>${contactTimingMarkup()}</div>
             `;
         }
@@ -4906,7 +4945,7 @@
             }
             const label = (instance.selectedSummary
                 && (instance.selectedSummary.name || instance.selectedSummary.email)) || "";
-            Promise.resolve(fn(contactId, { mode, expertLabel: label })).catch((error) => {
+            Promise.resolve(fn(contactId, { mode, expertLabel: label, delegated, isCurrent: () => !instance.disposed && Number(instance.selectedContactId) === contactId })).catch((error) => {
                 hostShowStatus(error && error.message ? error.message : "打开排期失败", "error");
             });
         }
@@ -5204,9 +5243,9 @@
             const scrollNode = body.querySelector(".mc-scroll");
             const failedNoItems = instance.conversation.error && (instance.conversation.items || []).length === 0;
             if (scrollNode && !failedNoItems) {
-                renderWorkbenchSectionInto(scrollNode);
+                if (!delegated) renderWorkbenchSectionInto(scrollNode);
                 renderManualSectionInto(scrollNode);
-                renderLogsBlockInto(scrollNode);
+                if (!delegated) renderLogsBlockInto(scrollNode);
             }
             rebindDetails();
             const record = opts.restoreRecord || null;
@@ -5691,7 +5730,7 @@
         }
 
         async function loadReviewDrafts(more) {
-            if (!readAccessAdmin() || !instance.selectedContactId) return;
+            if ((!readAccessAdmin() && !delegated) || !instance.selectedContactId) return;
             const capture = reviewCapture();
             const requestSeq = instance.review.listSeq = (instance.review.listSeq || 0) + 1;
             const page = more ? instance.review.page + 1 : 0;
@@ -5718,8 +5757,8 @@
 
         function reviewControlsHtml() {
             const review = instance.review;
-            return `<div class="mail-review-controls"><span class="mc-badge" data-role="review-state">${review.mode === "manual" ? "admin 自己撰写" : escapeText(review.detail ? review.detail.state : "审核草稿加载中")}</span>
-                <label>当前内容<select class="mail-review-select" aria-label="切换回复草稿" data-role="review-selection"><option value="manual">我的人工回复（admin）</option>
+            return `<div class="mail-review-controls"><span class="mc-badge" data-role="review-state">${review.mode === "manual" ? (delegated ? "我的人工回复" : "admin 自己撰写") : escapeText(review.detail ? review.detail.state : "审核草稿加载中")}</span>
+                <label>当前内容<select class="mail-review-select" aria-label="切换回复草稿" data-role="review-selection"><option value="manual">${delegated ? "我的新人工回复（直接发送）" : "我的人工回复（admin）"}</option>
                 ${review.items.filter((item) => !item.deleted).map((item) => `<option value="review:${Number(item.id)}"${review.detail && item.id === review.detail.id ? " selected" : ""}>${escapeText(item.state)} · 草稿 #${Number(item.id)}（${escapeText(item.ownerUsername)}）</option>`).join("")}</select></label>
                 <button class="mc-text-button" type="button" data-review-action="more-drafts"${review.items.length >= review.total ? " hidden" : ""}>加载更多草稿</button>
                 <button class="mc-text-button" type="button" data-review-action="history">草稿历史</button>
@@ -5727,7 +5766,7 @@
         }
 
         function renderReviewSelector() {
-            if (!readAccessAdmin()) return;
+            if (!readAccessAdmin() && !delegated) return;
             const compose = manualComposeEl();
             if (!compose) return;
             const old = compose.querySelector(".mail-review-controls");
@@ -5747,7 +5786,7 @@
         }
 
         async function selectReviewDraft(value) {
-            if (!readAccessAdmin()) return;
+            if (!readAccessAdmin() && !delegated) return;
             return draftNavigation(async () => {
                 const previous = instance.review;
                 instance.review = { mode: value === "manual" ? "manual" : "review", epoch: previous.epoch + 1,
@@ -5769,7 +5808,7 @@
                     if (detail.deleted || Number(detail.contactId) !== Number(capture.contact)) throw new Error("草稿不可用于回复");
                     instance.review.detail = detail;
                     redrawReviewCompose();
-                    if (detail.state === "APPROVED" && reviewSendRetryable(detail.sendStatus)) await checkReviewContext();
+                    if (!delegated && detail.state === "APPROVED" && reviewSendRetryable(detail.sendStatus)) await checkReviewContext();
                 } catch (error) {
                     if (capture.selection !== instance.review || instance.disposed) return;
                     instance.review.error = error.message || "审核草稿加载失败";
@@ -5781,20 +5820,20 @@
         function renderReviewCompose(scroll) {
             const review = instance.review, detail = review.detail;
             const status = detail && detail.sendStatus;
-            const submitted = detail && detail.state === "SUBMITTED";
-            const canSend = detail && detail.state === "APPROVED" && reviewSendRetryable(status) && !review.sendUncertain;
+            const submitted = !delegated && detail && detail.state === "SUBMITTED";
+            const canSend = !delegated && detail && detail.state === "APPROVED" && reviewSendRetryable(status) && !review.sendUncertain;
             const body = detail ? meetingRestoreEditorHtml(detail.html) || escapeText(detail.text) : "";
             scroll.insertAdjacentHTML("beforeend", `<details class="mc-section" data-section="manual" open><summary>人工回复</summary><div class="mc-section-content"><div class="mc-compose" data-role="manual-compose">
                 ${reviewControlsHtml()}<p class="mc-note" data-role="review-context">${escapeText(detail ? `${detail.ownerUsername} 提交 · ${status === "SENT" ? "已发送" : ["UNKNOWN", "DELIVERY_UNKNOWN", "DELIVERY_IN_PROGRESS"].includes(status) ? "发送结果待确认，请勿重复发送" : detail.state === "APPROVED" ? "已审核 · 尚未发送" : "审核通过后才显示发送按钮"}` : "正在读取审核草稿")}</p>
                 <label>主题<input aria-label="回复主题" disabled value="${escapeText(detail && detail.subject || "")}"></label>
                 <div class="mc-editor" contenteditable="false" role="textbox" aria-multiline="true" aria-label="人工回复正文" data-role="mc-editor">${body}</div>
-                <div class="mail-review-footer" data-role="review-footer"><button class="mc-text-button" type="button" data-review-action="translate">翻译</button><button class="mc-text-button" type="button" data-review-action="comments">评论 ${Number(detail && detail.commentCount) || 0}</button><button class="mc-text-button" type="button" data-review-action="events">变动历史</button></div>
+                <div class="mail-review-footer" data-role="review-footer">${delegated ? "" : '<button class="mc-text-button" type="button" data-review-action="translate">翻译</button>'}<button class="mc-text-button" type="button" data-review-action="comments">评论 ${Number(detail && detail.commentCount) || 0}</button><button class="mc-text-button" type="button" data-review-action="events">变动历史</button></div>
                 <div class="mc-translation" data-role="review-translation" hidden></div><div class="mail-review-panel" data-role="review-discussion" hidden></div><div class="mail-review-panel" data-role="review-history" hidden></div>
                 ${detail && detail.returnReason ? `<p class="mc-note">${escapeText(detail.returnReason)}</p>` : ""}
-                <div class="mail-review-actions" data-role="review-actions"${submitted ? "" : " hidden"}><button class="button" type="button" data-review-action="return">退回修改</button><button class="button primary" type="button" data-review-action="approve">审核通过</button></div>
-                <div class="mail-review-panel" data-role="review-return" hidden><label>退回原因<textarea class="mail-review-input" aria-label="退回原因" maxlength="2000"></textarea></label><div class="mail-review-actions"><button class="button" type="button" data-review-action="cancel-return">取消</button><button class="button primary" type="button" data-review-action="confirm-return">确认退回</button></div></div>
+                ${delegated ? "" : `<div class="mail-review-actions" data-role="review-actions"${submitted ? "" : " hidden"}><button class="button" type="button" data-review-action="return">退回修改</button><button class="button primary" type="button" data-review-action="approve">审核通过</button></div>
+                <div class="mail-review-panel" data-role="review-return" hidden><label>退回原因<textarea class="mail-review-input" aria-label="退回原因" maxlength="2000"></textarea></label><div class="mail-review-actions"><button class="button" type="button" data-review-action="cancel-return">取消</button><button class="button primary" type="button" data-review-action="confirm-return">确认退回</button></div></div>`}
                 <div class="mc-compose-footer">${canSend ? `<button class="button primary" type="button" data-review-action="send">发送已审核回复</button>` : ""}</div></div>
-                <dialog class="mail-review-confirm" aria-labelledby="mailReviewConfirmTitle" data-role="review-context-confirm"><h3 id="mailReviewConfirmTitle">对话已有更新</h3><p data-role="review-confirm-expert">该专家的往来邮件在审核后发生了变化。</p><p>请查看最新对话，确认这份回复仍然适用。确认后仍需手动点击发送。</p><p class="mc-error" role="alert" data-role="review-confirm-error" hidden></p><div class="mail-review-actions"><button class="button" type="button" data-review-action="context-cancel" autofocus>返回查看最新对话</button><button class="button primary" type="button" data-review-action="context-confirm">确认回复仍适用</button></div></dialog>
+                ${delegated ? "" : '<dialog class="mail-review-confirm" aria-labelledby="mailReviewConfirmTitle" data-role="review-context-confirm"><h3 id="mailReviewConfirmTitle">对话已有更新</h3><p data-role="review-confirm-expert">该专家的往来邮件在审核后发生了变化。</p><p>请查看最新对话，确认这份回复仍然适用。确认后仍需手动点击发送。</p><p class="mc-error" role="alert" data-role="review-confirm-error" hidden></p><div class="mail-review-actions"><button class="button" type="button" data-review-action="context-cancel" autofocus>返回查看最新对话</button><button class="button primary" type="button" data-review-action="context-confirm">确认回复仍适用</button></div></dialog>'}
                 </div></details>`);
             const dialog = host.querySelector('[data-role="review-context-confirm"]');
             if (dialog) dialog.addEventListener("cancel", (event) => { event.preventDefault(); cancelReviewContext(); });
@@ -5849,7 +5888,7 @@
             if (!panel) return;
             const html = events.map((item) => `<article class="mail-review-entry"><strong>${escapeText(item.actorUsername)} · ${escapeText(item.createdAt)} · ${escapeText(item.eventType)}</strong><div class="mc-body" data-role="review-version-body">${escapeText(item.payload && (item.payload.text || item.payload.reason || item.payload.subject || item.payload.result) || "")}</div></article>`).join("");
             if (more) panel.querySelector('[data-role="review-events"]').insertAdjacentHTML("beforeend", html);
-            else panel.innerHTML = `<div data-role="review-events">${html}</div>${historyId === capture.id ? '<textarea class="mail-review-input" aria-label="评论内容" maxlength="2000"></textarea><button class="button" type="button" data-review-action="comment">发布评论</button>' : ""}<button class="mc-text-button" type="button" data-review-action="more-events">加载更早历史</button>`;
+            else panel.innerHTML = `<div data-role="review-events">${html}</div>${historyId === capture.id && (!delegated || (review.detail && review.detail.state !== "APPROVED")) ? '<textarea class="mail-review-input" aria-label="评论内容" maxlength="2000"></textarea><button class="button" type="button" data-review-action="comment">发布评论</button>' : ""}<button class="mc-text-button" type="button" data-review-action="more-events">加载更早历史</button>`;
             panel.querySelector('[data-review-action="more-events"]').hidden = events.length < 20;
             panel.hidden = false;
         }
@@ -5868,6 +5907,8 @@
 
         async function handleReviewAction(button) {
             const action = button.dataset.reviewAction;
+            if (delegated && !["more-drafts", "history", "select", "history-events", "more-events", "comments", "events", "comment"].includes(action)) return;
+            if (delegated && action === "comment" && instance.review.detail && instance.review.detail.state === "APPROVED") return;
             if (action === "more-drafts") return loadReviewDrafts(true);
             if (action === "history") {
                 const panel = host.querySelector('[data-role="review-history"]');
@@ -6170,7 +6211,7 @@
             const targetInfo = isOutbound
                 ? `${manualTargetInfoText(null, account)} · 回复最近成功发件线程`
                 : manualTargetInfoText(processingId, account);
-            const templateFollowButton = isOutbound
+            const templateFollowButton = isOutbound && !delegated
                 ? `<button class="button" type="button" data-action="mc-template-follow" data-contact-id="${escapeText(instance.selectedContactId)}">选择模板发送跟进邮件</button>`
                 : "";
             // 会议确认只用于真实来信目标（inbound）：组件在场且非 outbound 才渲染会议 UI。
@@ -6187,10 +6228,10 @@
             }
             const meetingTrigger = ui ? meetingTriggerHtml() : "";
             // S-2：材料索取紧随会议按钮之后，仍在跟进按钮之前。
-            const materialTrigger = ui ? materialRequestTriggerHtml() : "";
+            const materialTrigger = ui && !delegated ? materialRequestTriggerHtml() : "";
             // S-1（fast-p 01 I-1）：引用模板入口只属于有真实来信的人工回复（outbound=false），
             // 不依赖会议组件；固定在材料索取之后、跟进按钮之前。
-            const templateReferenceTrigger = isOutbound
+            const templateReferenceTrigger = isOutbound || delegated
                 ? ""
                 : `<button class="button reply-template-trigger" type="button" data-action="mc-open-template-reference">引用模板</button>`;
             // S-1：跟进按钮只在当前专家确有成功发件时渲染，固定紧随既有会议按钮之后，
@@ -6216,9 +6257,9 @@
                         <button class="button outbound-upload" type="button" data-action="mc-upload-attachment" title="上传附件" aria-label="上传附件"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l10.6-10.6a4 4 0 0 1 5.66 5.66L9.41 17.41a2 2 0 0 1-2.83-2.83l9.19-9.19"/></svg></button>
                         <input type="file" data-role="outbound-file-input" multiple hidden>
                         ${meetingTrigger}${materialTrigger}${templateReferenceTrigger}${followUpButton}
-                        <button class="button" type="button" data-action="mc-complete-reply-identity">补全称呼与签名</button>
+                        ${delegated ? "" : '<button class="button" type="button" data-action="mc-complete-reply-identity">补全称呼与签名</button>'}
                     </div>
-                    <div class="reply-identity-defaults"><span>全局默认</span><strong data-role="reply-identity-default-summary">全局默认：加载中…</strong><button class="reply-identity-settings-link" type="button" data-action="mc-reply-identity-settings">默认设置</button></div>
+                    ${delegated ? "" : '<div class="reply-identity-defaults"><span>全局默认</span><strong data-role="reply-identity-default-summary">全局默认：加载中…</strong><button class="reply-identity-settings-link" type="button" data-action="mc-reply-identity-settings">默认设置</button></div>'}
                     <div class="mc-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="人工回复正文" data-role="mc-editor">${editorContent}</div>
                     ${anchorNote}
                     ${meetingAttachment}
@@ -6237,7 +6278,7 @@
                         <button class="button danger" type="button" data-action="mc-discard-draft">放弃草稿</button>
                     </div>
                     <div class="mc-compose-footer">
-                        <span data-role="target-info">回复账号与目标来信信息：${targetInfo}</span>
+                        <span data-role="target-info">${delegated ? "当前专家人工回复" : `回复账号与目标来信信息：${targetInfo}`}</span>
                         ${templateFollowButton}
                         <button class="button primary" type="button" data-action="mc-send-manual">发送人工回复</button>
                     </div>
@@ -6246,6 +6287,7 @@
         }
 
         function manualFollowUpHtml() {
+            if (delegated) return '<div class="mc-note">暂无可回复的真实邮件线程</div>';
             return `
                 <div data-role="manual-followup">
                     <div class="mc-note">该专家暂无来信。请使用既有模板发送跟进邮件；系统不会在没有真实来信时伪造可生成的人工富文本回复。</div>
@@ -6475,7 +6517,7 @@
 
         function buildManageHtml(contact) {
             const name = (instance.selectedSummary && instance.selectedSummary.name) || (contact && contact.expertName) || "-";
-            const sub = (instance.selectedSummary && instance.selectedSummary.email) || (contact && contact.expertEmail) || "";
+            const sub = delegated ? "" : ((instance.selectedSummary && instance.selectedSummary.email) || (contact && contact.expertEmail) || "");
             const statusValue = (contact && contact.operatorStatus) || "";
             const levelValue = (contact && contact.currentIndexLevel) || "";
             const statusOptions = optionsFromCatalog(statusCatalog(), statusValue);
@@ -6490,6 +6532,7 @@
                         </div>
                         <div class="mc-settings-tags" data-role="expert-tags"><p>正在加载专家标签…</p></div>
                         <p class="mc-manage-note">状态和层级点击保存；标签修改即时生效。</p>
+                        ${delegated ? '<div class="ec-profile" data-role="expert-manual-profile"></div>' : ""}
                         <p class="mc-inline-error" role="alert" hidden></p>
                         <footer class="mc-dialog-actions">
                             <button class="button" type="button" data-action="mc-close-manage">取消</button>
@@ -6534,6 +6577,10 @@
                     if (statusSelect) statusSelect.value = (loaded && loaded.operatorStatus) || "";
                     if (levelSelect) levelSelect.value = (loaded && loaded.currentIndexLevel) || "";
                     loadManageExpertTags(loaded);
+                    if (delegated) {
+                        const mountProfile = hostFn("mcHostMountDelegatedProfile");
+                        if (mountProfile) mountProfile(overlay, loaded, () => !instance.disposed && instance.manage.open && Number(instance.selectedContactId) === contactId);
+                    }
                     const dialog = overlay.querySelector(".mc-manage-dialog");
                     if (dialog && typeof dialog.focus === "function") dialog.focus();
                 }
@@ -6621,6 +6668,10 @@
             const wasOpen = instance.manage.open;
             instance.manage.open = false;
             const overlay = manageOverlayEl();
+            if (delegated) {
+                const releaseProfile = hostFn("unmountExpertManualProfilePanels");
+                if (releaseProfile && overlay) releaseProfile(overlay);
+            }
             if (overlay) overlay.hidden = true;
             const root = instance.elements.portalRoot;
             if (root) root.innerHTML = "";
@@ -6752,6 +6803,7 @@
             const editorId = editor.id || "mcManageExpertTagEditor";
             if (!orcidId) return;
             const contactId = Number(instance.selectedContactId);
+            const isCurrent = () => !instance.disposed && Number(instance.selectedContactId) === contactId;
             if (action === "expert-add-tag-open") {
                 const fetchTags = hostFn("fetchExpertTagsFromEs");
                 const openAdd = hostFn("openExpertTagAddDialog");
@@ -6760,22 +6812,26 @@
                 const setLoading = hostFn("setTagEditorLoading");
                 if (!fetchTags || !openAdd || !mutate) return;
                 fetchTags(orcidId, level).then((existing) => {
+                    if (delegated && !isCurrent()) return null;
                     if (existing && existing.found === false) {
                         hostShowStatus("该专家在 ES 中无画像文档，标签功能不可用", "warn");
                         return null;
                     }
                     return openAdd((existing && existing.tags) || []);
                 }).then((tag) => {
-                    if (!tag || !mutate) return;
+                    if (!tag || !mutate || (delegated && !isCurrent())) return;
                     if (setLoading && editor) setLoading(editor, true, "正在添加标签...");
-                    return mutate(orcidId, level, tag, "add").then((tags) => {
-                        if (instance.disposed || Number(instance.selectedContactId) !== contactId) return;
+                    return mutate(orcidId, level, tag, "add", { delegated }).then((tags) => {
+                        if (!isCurrent()) return;
                         if (updateEditor) updateEditor(orcidId, tags, level, editorId);
                         instance.headerTags = Array.isArray(tags) ? tags.slice() : [];
                         hostShowStatus("标签已添加", "ok");
                         refreshAfterExpertTagChange(contactId);
                     }).catch((err) => {
+                        if (!isCurrent()) return;
                         hostShowStatus(err && err.message ? err.message : "标签添加失败", "error");
+                    }).finally(() => {
+                        if (delegated && isCurrent() && setLoading) setLoading(editor, false);
                     });
                 }).catch(() => {});
                 return;
@@ -6786,13 +6842,14 @@
                 const mutate = hostFn("mutateExpertTag");
                 const updateEditor = hostFn("updateExpertTagEditor");
                 if (!mutate) return;
-                mutate(orcidId, level, tag, "remove").then((tags) => {
-                    if (instance.disposed || Number(instance.selectedContactId) !== contactId) return;
+                mutate(orcidId, level, tag, "remove", { delegated }).then((tags) => {
+                    if (!isCurrent()) return;
                     if (updateEditor) updateEditor(orcidId, tags, level, editorId);
                     instance.headerTags = Array.isArray(tags) ? tags.slice() : [];
                     hostShowStatus("标签已删除", "ok");
                     refreshAfterExpertTagChange(contactId);
                 }).catch((err) => {
+                    if (!isCurrent()) return;
                     hostShowStatus(err && err.message ? err.message : "标签删除失败", "error");
                 });
             }
@@ -6824,6 +6881,7 @@
         }
 
         function openExpertDetail(contactId) {
+            if (delegated) return openManageOverlay();
             const adapter = hostFn("mcHostOpenExpertDetail");
             if (adapter) adapter(contactId);
         }
@@ -9455,6 +9513,10 @@
             if (accountFilter) msgParams.set("accountCode", accountFilter);
             hostApi()(`/api/mail/mailbox/conversations/${contactId}/messages?${msgParams.toString()}`).then((msgData) => {
                 if (instance.disposed || myEpoch !== instance.convEpoch) return;
+                if (delegated && (!msgData || msgData.accessLevel !== "FULL")) {
+                    if (instance.options.onAccessChanged) instance.options.onAccessChanged();
+                    return;
+                }
                 const serverItems = (msgData && Array.isArray(msgData.items)) ? msgData.items : [];
                 instance.conversation.items = mergeServerIntoWindow(instance.conversation.items, serverItems);
                 instance.conversation.nextBefore = (msgData && msgData.nextBefore) || null;
@@ -9481,6 +9543,10 @@
             if (scopeAccount) params.set("accountCode", scopeAccount);
             hostApi()(`/api/mail/mailbox/conversations/${contactId}/messages?${params.toString()}`).then((msgData) => {
                 if (instance.disposed || myEpoch !== instance.convEpoch) return;
+                if (delegated && (!msgData || msgData.accessLevel !== "FULL")) {
+                    if (instance.options.onAccessChanged) instance.options.onAccessChanged();
+                    return;
+                }
                 const serverItems = (msgData && Array.isArray(msgData.items)) ? msgData.items : [];
                 if (serverItems.length === 0 && (instance.conversation.items || []).length === 0) {
                     instance.conversation.nextBefore = (msgData && msgData.nextBefore) || null;
@@ -10250,6 +10316,13 @@
 
         function applyOptions(options, flushed) {
             const next = options || {};
+            if (delegated) {
+                if (next.summary && Number(next.summary.contactId) === fixedContactId && !instance.disposed) {
+                    instance.selectedSummary = Object.assign({}, next.summary);
+                    renderHeader();
+                }
+                return next;
+            }
             if (!flushed && !(next.sessionUser && String(next.sessionUser) !== instance.user)
                 && next.filters && String(next.filters.accountCode || "") !== String(instance.filters.accountCode || "")) {
                 return draftNavigation(() => applyOptions(next, true));
@@ -10311,8 +10384,10 @@
 
         function unmount() {
             if (instance.disposed) return;
-            saveCurrentConversation();
-            flushDrafts().catch(() => {});
+            if (!delegated) {
+                saveCurrentConversation();
+                flushDrafts().catch(() => {});
+            }
             if (instance.mobileMedia) {
                 if (typeof instance.mobileMedia.removeEventListener === "function") instance.mobileMedia.removeEventListener("change", onMobileViewportChange);
                 else if (typeof instance.mobileMedia.removeListener === "function") instance.mobileMedia.removeListener(onMobileViewportChange);
@@ -10324,6 +10399,18 @@
             // 04（I-3）：unmount 后迟到回包不得再写 DOM（applyReadAccessView 亦被 disposed 拦下）。
             instance.readAccess = nextReadAccessState(0, "idle", null);
             instance.disposed = true;
+            if (delegated) {
+                draftSaves.forEach((rec, key) => {
+                    if (rec.user === instance.user && Number(rec.target.contactId) === fixedContactId) {
+                        clearTimeout(rec.timer);
+                        rec.map.delete(rec.key);
+                        draftSaves.delete(key);
+                    }
+                });
+                sessionStore.delete(conversationCacheKey(instance.user, instance.conversation.accountScope || "", fixedContactId));
+                const release = hostFn("mcHostReleaseDelegatedContext");
+                if (release) release(fixedContactId);
+            }
             clearTimeout(instance.searchTimer);
             clearTimeout(instance.saveTimer);
             teardownConversationSubViews();
@@ -10340,10 +10427,12 @@
                 doc.removeEventListener("keydown", onDocumentKeyDown);
                 doc.removeEventListener("meeting-calendar-changed", onMeetingScheduleChanged);
             }
-            restoreRefreshButton();
-            restoreLegacyFilterNodes();
+            if (!delegated) {
+                restoreRefreshButton();
+                restoreLegacyFilterNodes();
+            }
             removePortalRoot();
-            setRefined(false);
+            if (!delegated) setRefined(false);
             if (instance.host) instance.host.innerHTML = "";
             instances.delete(instance.host);
         }
@@ -10370,6 +10459,20 @@
 
 
         function attach() {
+            if (delegated) {
+                renderSkeleton();
+                bindFilterEvents();
+                ensurePortalRoot();
+                listenPortal("click", onClickPortal);
+                listenPortal("keydown", onPortalKeyDown);
+                const doc = docRoot();
+                if (doc && doc.addEventListener) doc.addEventListener("meeting-calendar-changed", onMeetingScheduleChanged);
+                instance.auth.ready = true;
+                instance.auth.username = instance.user;
+                setDraftSessionUser(instance.user);
+                selectExpert(Object.assign({}, instance.options.summary, { contactId: fixedContactId }), { skipDraftFlush: true, skipListReload: true, present: false });
+                return;
+            }
             renderSkeleton();
             bindMobileViewport();
             if (instance.options.focus && instance.options.focus.contactId != null) {
@@ -10401,7 +10504,7 @@
         }
 
         attach();
-        if (!(options && options.focus && options.focus.contactId != null)) {
+        if (!delegated && !(options && options.focus && options.focus.contactId != null)) {
             renderConversationEmpty();
         }
         return {

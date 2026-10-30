@@ -1784,3 +1784,54 @@ describe("contact profile 02 — I-4 字段、凭证与输入边界", () => {
         assert.strictEqual(lastPatchPayload(harness).values.talentCode, atLimit);
     });
 });
+
+describe("07 delegated manual profile — shared fields without whole-page consumers", () => {
+    it("reuses native profile editors and CAS, skips video/layout/history mount and unmount", async () => {
+        const h = createHarness();
+        const video = { mount: 0, unmount: 0, records: 0 };
+        h.sandbox.expertMeetingVideoNavTemplate = () => "VIDEO_NAV";
+        h.sandbox.expertMeetingVideoPanelTemplate = () => "VIDEO_PANEL";
+        h.sandbox.mountExpertMeetingVideos = () => { video.mount += 1; };
+        h.sandbox.unmountExpertMeetingVideos = () => { video.unmount += 1; };
+        h.sandbox.expertContactSharedNoteSectionTemplate = () => "";
+        h.sandbox.activateDetailSubTab = () => {};
+        h.sandbox.ExpertMeetingRecords = {
+            mount: () => { video.records += 1; },
+            unmount: () => { video.records += 1; }
+        };
+        h.sandbox.ContactHistory = { mount: () => { throw new Error("global history must not mount"); } };
+        const wrapper = fs.readFileSync(path.join(STATIC_DIR, "contact-details.js"), "utf8");
+        vm.runInContext(wrapper.slice(wrapper.indexOf(" const originalSection="), wrapper.indexOf(" const listProfiles=")), h.sandbox);
+        const effectiveShell = h.sandbox.expertManualProfileShellTemplate({ delegated: true });
+        assert.ok(!effectiveShell.includes("VIDEO_"));
+        assert.ok(!effectiveShell.includes("data-meeting-records"));
+        assert.ok(!effectiveShell.includes("data-fp-info"));
+        assert.ok(h.sandbox.expertManualProfileShellTemplate().includes("data-meeting-records"),
+            "default administrator shell retains its existing layout");
+        h.router.route("GET", "/api/experts/manual-profile", () => ({ status: 200, body: profileDto() }));
+        h.router.route("PATCH", "/api/experts/manual-profile", () => ({ status: 200, body: profileDto({ version: 4 }) }));
+        let current = true;
+        const session = h.mount({
+            delegated: true, isCurrent: () => current, expertId: profileDto().expertId,
+            contactId: 7, level: "APPLICATION", generation: -1
+        });
+        await session.ready;
+        assert.strictEqual(session.isStale(), false, "delegated owner is not the admin detail-page generation");
+        assert.strictEqual(session.editors.size, 4);
+        assert.strictEqual(video.mount, 0);
+        assert.strictEqual(video.records, 0);
+        const editor = openEditor(session, "identity");
+        setField(editor, "talentCode", "delegated-code");
+        submitEditor(editor);
+        await flush();
+        assert.strictEqual(patchRequests(h).length, 1);
+        assert.strictEqual(lastPatchPayload(h).expectedVersion, 3);
+        assert.strictEqual(lastPatchPayload(h).expertId, profileDto().expertId);
+        current = false;
+        assert.strictEqual(session.isStale(), true);
+        h.sandbox.unmountExpertManualProfileSession(session);
+        assert.strictEqual(video.unmount, 0);
+        assert.strictEqual(video.records, 0);
+        assert.strictEqual(session.closed, true);
+    });
+});

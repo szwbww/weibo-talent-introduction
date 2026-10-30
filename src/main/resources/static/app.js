@@ -8637,7 +8637,7 @@ async function refreshExpertTagsFromEs(orcidId, level) {
     return fetchExpertTagsFromEs(orcidId, level);
 }
 
-async function mutateExpertTag(orcidId, level, tag, action) {
+async function mutateExpertTag(orcidId, level, tag, action, options) {
     const endpoint = action === "add" ? "/api/experts/tags/add" : "/api/experts/tags/remove";
     const result = await api(endpoint, {
         method: "POST",
@@ -8646,14 +8646,16 @@ async function mutateExpertTag(orcidId, level, tag, action) {
     if (!result.success) {
         throw new Error(result.message || "标签操作失败");
     }
-    await loadContacts();
-    await loadExpertTagOptions(level, {
-        filters: {
-            operatorStatus: $("#contactStatusFilter")?.value || "",
-            emailDomain: $("#expertEmailDomainFilter")?.value || "",
-            region: $("#expertRegionFilter")?.value || ""
-        }
-    });
+    if (!options || options.delegated !== true) {
+        await loadContacts();
+        await loadExpertTagOptions(level, {
+            filters: {
+                operatorStatus: $("#contactStatusFilter")?.value || "",
+                emailDomain: $("#expertEmailDomainFilter")?.value || "",
+                region: $("#expertRegionFilter")?.value || ""
+            }
+        });
+    }
     const refreshed = await refreshExpertTagsFromEs(orcidId, level);
     const refreshedTags = refreshed.tags;
     if (action === "add") {
@@ -11676,7 +11678,7 @@ function expertManualProfileEditorTemplate(group) {
         `</dialog>`;
 }
 
-function expertManualProfileShellTemplate() {
+function expertManualProfileShellTemplate(context) {
     // 03（contact-profile-03-notes）：备注 section 前置于 nav，且沿用本文件既有的 typeof 守卫约定，
     // 使按区域/函数切片执行的既有测试在未加载 03 区域时保持原骨架（4 个 section / 4 个 editor / nav 四按钮）。
     // 05（contact-profile-05-video）：用同一守卫接入 nav「会议视频」按钮与视频 section/dialog，
@@ -11687,10 +11689,10 @@ function expertManualProfileShellTemplate() {
     const nav = EXPERT_MANUAL_PROFILE_GROUPS
         .map((group) => `<button type="button" class="button" data-ec-jump="${group.key}">${group.label}</button>`)
         .join("");
-    const videoNav = typeof expertMeetingVideoNavTemplate === "function" ? expertMeetingVideoNavTemplate() : "";
+    const videoNav = !(context && context.delegated) && typeof expertMeetingVideoNavTemplate === "function" ? expertMeetingVideoNavTemplate() : "";
     const sections = EXPERT_MANUAL_PROFILE_GROUPS.map(expertManualProfileSectionTemplate).join("");
     const editors = EXPERT_MANUAL_PROFILE_GROUPS.map(expertManualProfileEditorTemplate).join("");
-    const videoPanel = typeof expertMeetingVideoPanelTemplate === "function" ? expertMeetingVideoPanelTemplate() : "";
+    const videoPanel = !(context && context.delegated) && typeof expertMeetingVideoPanelTemplate === "function" ? expertMeetingVideoPanelTemplate() : "";
     return sharedNoteSection + `<nav class="ec-nav" aria-label="联系详情分组">${nav}${videoNav}</nav>` +
         sections + editors + videoPanel;
 }
@@ -11699,6 +11701,7 @@ function expertManualProfileShellTemplate() {
 function createExpertManualProfileSession(host, context) {
     const session = {
         host,
+        delegated: context.delegated === true,
         generation: context.generation,
         expertId: String(context.expertId == null ? "" : context.expertId).trim(),
         level: expertManualProfileLevel(context.level),
@@ -11721,6 +11724,7 @@ function createExpertManualProfileSession(host, context) {
     session.isStale = function () {
         if (session.closed) return true;
         if (!session.host || session.host.isConnected === false) return true;
+        if (session.delegated) return typeof context.isCurrent !== "function" || !context.isCurrent();
         return typeof isCurrentContactDetailPresentation === "function" &&
             !isCurrentContactDetailPresentation(session.generation);
     };
@@ -11737,7 +11741,7 @@ function unmountExpertManualProfileSession(session) {
         unmountExpertContactSharedNote(session);
     }
     // 05（I-4）：在途视频上传 XHR/队列随会话一并停止（未加载 05 区域时为 no-op）。
-    if (typeof unmountExpertMeetingVideos === "function") {
+    if (!session.delegated && typeof unmountExpertMeetingVideos === "function") {
         unmountExpertMeetingVideos(session);
     }
     session.controllers.forEach((controller) => {
@@ -12147,18 +12151,39 @@ function mountExpertManualProfile(rootEl, context) {
     unmountExpertManualProfilePanels(rootEl);
     const session = createExpertManualProfileSession(host, context || {});
     expertManualProfileSessions.add(session);
-    host.innerHTML = expertManualProfileShellTemplate();
+    host.innerHTML = expertManualProfileShellTemplate(context);
     expertManualProfileBind(session);
     // 03（I-1/I-2）：备注独立加载，不并入资料 Promise.all —— 备注失败不影响四组资料与旧材料。
     if (typeof mountExpertContactSharedNote === "function") {
         mountExpertContactSharedNote(session);
     }
     // 05（I-1/I-2）：会议视频列表独立加载，不并入资料 Promise.all —— 视频失败不影响四组资料/备注/旧材料。
-    if (typeof mountExpertMeetingVideos === "function") {
+    if (!session.delegated && typeof mountExpertMeetingVideos === "function") {
         mountExpertMeetingVideos(session);
     }
     session.ready = loadExpertManualProfile(session);
     return session;
+}
+
+function mcHostMountDelegatedProfile(root, contact, isCurrent) {
+    return mountExpertManualProfile(root, {
+        delegated: true, isCurrent,
+        contactId: contact.id, expertId: contact.orcidId,
+        level: contact.currentIndexLevel, name: contact.expertName,
+        nationality: contact.nationality, keyword: contact.keyword
+    });
+}
+
+function mcHostReleaseDelegatedContext(contactId) {
+    unmountExpertMaterialsHosts(document);
+    if (meetingCalendarState.dialog.open && Number(meetingCalendarState.dialog.contactId) === Number(contactId)) {
+        closeMeetingCalendarDialog({ restoreFocus: false });
+        meetingCalendarState.dialog.event = null;
+        meetingCalendarState.dialog.pickEvents = [];
+        meetingCalendarState.dialog.contactId = null;
+        const form = meetingCalendarFormEl();
+        if (form && typeof form.reset === "function") form.reset();
+    }
 }
 /* contact-profile-02-ui:end */
 
@@ -21098,6 +21123,49 @@ function isMailReadOnlyRequestAllowed(path, options) {
     if (method === "POST" && (normalized === "/api/auth/login" || normalized === "/api/auth/logout")) return true;
     if (method === "GET" && normalized === "/api/mail/mailbox/conversations") return true;
     if (method === "GET" && /^\/api\/mail\/mailbox\/conversations\/[1-9][0-9]*\/messages$/.test(normalized)) return true;
+    const scopedRoutes = [
+        ["GET", /^\/api\/mail\/mailbox\/conversations\/pending-badge$/],
+        ["POST", /^\/api\/mail\/mailbox\/conversations\/[1-9][0-9]*\/manual-rich-reply$/],
+        ["PUT", /^\/api\/mail\/mailbox\/conversations\/[1-9][0-9]*\/(follow|progress-status|replied-dismissal|suspension)$/],
+        ["DELETE", /^\/api\/mail\/mailbox\/conversations\/[1-9][0-9]*\/(follow|suspension)$/],
+        ["GET", /^\/api\/mail\/mailbox\/conversations\/[1-9][0-9]*\/suspension$/],
+        ["PATCH", /^\/api\/mail\/mailbox\/conversations\/[1-9][0-9]*\/suspension\/reason$/],
+        ["GET", /^\/api\/mail\/unmatched-inbound\/[1-9][0-9]*$/],
+        ["POST", /^\/api\/mail\/unmatched-inbound\/[1-9][0-9]*\/(manual-rich-reply|mark-resolved|cancel-resolved)$/],
+        ["GET", /^\/api\/mail\/mailbox\/(INBOUND_PROCESSING|MAIL_RECORD)\/[1-9][0-9]*\/attachments$/],
+        ["GET", /^\/api\/mail\/mailbox\/attachments\/[1-9][0-9]*\/download$/],
+        ["POST", /^\/api\/mail\/conversations\/[1-9][0-9]*\/outbound-attachments$/],
+        ["GET", /^\/api\/mail\/conversations\/[1-9][0-9]*\/outbound-attachments\/[A-Za-z0-9-]+\/download$/],
+        ["GET", /^\/api\/mail\/conversations\/[1-9][0-9]*\/messages\/[1-9][0-9]*\/outbound-attachments\/[A-Za-z0-9-]+\/download$/],
+        ["GET", /^\/api\/mail\/conversations\/[1-9][0-9]*\/messages\/[1-9][0-9]*\/calendar-attachment$/],
+        ["GET", /^\/api\/expert-contacts\/[1-9][0-9]*$/],
+        ["POST", /^\/api\/expert-contacts\/[1-9][0-9]*\/(operator-status|index-level)$/],
+        ["GET", /^\/api\/expert-contacts\/[1-9][0-9]*\/(materials|documents)$/],
+        ["GET", /^\/api\/expert-contacts\/[1-9][0-9]*\/attachments\/[1-9][0-9]*\/(download|preview)$/],
+        ["POST", /^\/api\/expert-contacts\/[1-9][0-9]*\/materials\/(transfers|uploads|download-zip|reconcile)$/],
+        ["GET", /^\/api\/mail\/contact-(notes|locations)\/[1-9][0-9]*$/],
+        ["PUT", /^\/api\/mail\/contact-(notes|locations)\/[1-9][0-9]*$/],
+        ["GET", /^\/api\/mail\/contact-locations\/([1-9][0-9]*\/timing|countries)$/],
+        ["GET", /^\/api\/experts\/(profile|manual-profile)$/],
+        ["PATCH", /^\/api\/experts\/manual-profile$/],
+        ["POST", /^\/api\/experts\/tags\/(add|remove)$/],
+        ["GET", /^\/api\/inbound-summary\/tags\/options$/],
+        ["POST", /^\/api\/inbound-summary\/mails\/[1-9][0-9]*\/tags(\/auto)?$/],
+        ["DELETE", /^\/api\/inbound-summary\/tags\/[1-9][0-9]*$/],
+        ["GET", /^\/api\/meeting-calendar\/(events|summaries)$/],
+        ["POST", /^\/api\/meeting-calendar\/events$/],
+        ["GET", /^\/api\/meeting-calendar\/events\/[1-9][0-9]*$/],
+        ["PUT", /^\/api\/meeting-calendar\/events\/[1-9][0-9]*$/],
+        ["POST", /^\/api\/meeting-calendar\/events\/[1-9][0-9]*\/cancel$/],
+        ["GET", /^\/api\/mail\/unmatched-inbound\/[1-9][0-9]*\/meeting-confirmation\/options$/],
+        ["POST", /^\/api\/mail\/unmatched-inbound\/[1-9][0-9]*\/meeting-confirmation\/preview$/],
+        ["GET", /^\/api\/mail\/meeting-confirmation\/time-zones$/],
+        ["GET", /^\/api\/mail\/mailbox\/drafts(\/(target|summaries|[1-9][0-9]*))?$/],
+        ["PUT", /^\/api\/mail\/mailbox\/drafts\/target$/],
+        ["DELETE", /^\/api\/mail\/mailbox\/drafts\/[1-9][0-9]*$/],
+        ["POST", /^\/api\/translate$/]
+    ];
+    if (scopedRoutes.some(([verb, route]) => verb === method && route.test(normalized))) return true;
     const base = "/api/mail/mailbox/review-drafts";
     if (normalized === base) return method === "GET" || method === "POST";
     if (/^\/api\/mail\/mailbox\/review-drafts\/[1-9][0-9]*$/.test(normalized)) {
@@ -26894,7 +26962,9 @@ function applyMeetingCalendarDialogMode() {
     const saving = !!ds.saving;
     const titleEl = dialog.querySelector("#meetingCalendarDialogTitle");
     if (titleEl) titleEl.textContent = meetingCalendarDialogTitle();
-    meetingCalendarSetHidden(dialog.querySelector('[data-role="expert-picker"]'), mode !== "create");
+    meetingCalendarSetHidden(dialog.querySelector('[data-role="expert-picker"]'), mode !== "create" || ds.delegated);
+    const contactField = meetingCalendarField("contactId");
+    if (contactField) contactField.disabled = ds.delegated === true;
     const showEventFields = mode === "create" || mode === "edit" || mode === "view";
     meetingCalendarSetHidden(meetingCalendarFieldLabel("startBeijing"), !showEventFields);
     meetingCalendarSetHidden(meetingCalendarFieldLabel("endBeijing"), !showEventFields);
@@ -26959,10 +27029,15 @@ function openMeetingCalendarDialog(options) {
         showStatus("当前浏览器不支持排期弹窗", "error");
         return null;
     }
-    const ds = meetingCalendarState.dialog;
+    const ds = opts.delegated || meetingCalendarState.dialog.delegated
+        ? Object.assign({}, meetingCalendarState.dialog) : meetingCalendarState.dialog;
+    if (opts.delegated && (typeof opts.isCurrent !== "function" || !opts.isCurrent())) return null;
+    meetingCalendarState.dialog = ds;
     ds.open = true;
     ds.mode = opts.mode || "create";
     ds.contactId = opts.contactId != null ? Number(opts.contactId) : null;
+    ds.delegated = opts.delegated === true;
+    ds.isCurrent = opts.isCurrent;
     ds.event = opts.event || null;
     ds.pickEvents = Array.isArray(opts.pickEvents) ? opts.pickEvents : [];
     ds.pickMode = opts.pickMode || "";
@@ -26973,7 +27048,7 @@ function openMeetingCalendarDialog(options) {
     setMeetingCalendarDialogError("");
     applyMeetingCalendarDialogMode();
     dialog.showModal();
-    if (ds.mode === "create") {
+    if (ds.mode === "create" && !ds.delegated) {
         loadMeetingCalendarContacts().then(() => {
             if (meetingCalendarState.dialog !== ds || !ds.open) return;
             renderMeetingCalendarContactOptions((meetingCalendarField("expertSearch") || {}).value || "");
@@ -27010,7 +27085,7 @@ function meetingCalendarDialogReadPayload() {
     const form = meetingCalendarFormEl();
     if (!form || !form.elements) return { error: "表单不可用" };
     const ds = meetingCalendarState.dialog;
-    const contactId = ds.mode === "create"
+    const contactId = ds.mode === "create" && !ds.delegated
         ? Number((form.elements.contactId || {}).value)
         : Number(ds.contactId);
     if (!Number.isFinite(contactId) || contactId <= 0) return { error: "请选择专家" };
@@ -27062,13 +27137,16 @@ function submitMeetingCalendarDialog(event) {
     const request = mode === "create"
         ? meetingCalendarCreateEvent(Object.assign({ contactId: payload.contactId }, body))
         : meetingCalendarUpdateEvent(eventId, Object.assign({ expectedUpdatedAt }, body));
+    const isCurrent = () => !ds.delegated || (meetingCalendarState.dialog === ds && ds.open && ds.isCurrent());
     Promise.resolve(request).then(() => {
+        if (!isCurrent()) return;
         ds.saving = false;
         closeMeetingCalendarDialog({ restoreFocus: true });
         showStatus(mode === "create" ? "已新增排期" : "已更新排期", "ok");
         mcHostMeetingScheduleChanged(payload.contactId);
     }).catch((error) => {
         ds.saving = false;
+        if (!isCurrent()) return;
         applyMeetingCalendarDialogMode();
         setMeetingCalendarDialogError(meetingCalendarDialogErrorMessage(error, "保存失败"));
     });
@@ -27105,10 +27183,12 @@ function confirmMeetingCalendarCancel() {
     Promise.resolve(meetingCalendarFetchEvent(event.id))
         .catch(() => event)
         .then((fresh) => {
+            if (ds.delegated && (meetingCalendarState.dialog !== ds || !ds.open || !ds.isCurrent())) return;
             const version = (fresh && fresh.updatedAt) ? fresh.updatedAt : event.updatedAt;
             return meetingCalendarCancelEvent(event.id, { expectedUpdatedAt: version, reason: reason || null });
         })
         .then(() => {
+            if (ds.delegated && (meetingCalendarState.dialog !== ds || !ds.open || !ds.isCurrent())) return;
             ds.saving = false;
             closeMeetingCalendarDialog({ restoreFocus: true });
             showStatus("已取消排期", "ok");
@@ -27116,6 +27196,7 @@ function confirmMeetingCalendarCancel() {
         })
         .catch((error) => {
             ds.saving = false;
+            if (ds.delegated && (meetingCalendarState.dialog !== ds || !ds.open || !ds.isCurrent())) return;
             applyMeetingCalendarDialogMode();
             setMeetingCalendarDialogError(meetingCalendarDialogErrorMessage(error, "取消失败"));
         });
@@ -27123,6 +27204,7 @@ function confirmMeetingCalendarCancel() {
 
 function selectMeetingCalendarDialogEvent(planId) {
     const ds = meetingCalendarState.dialog;
+    if (ds.delegated && (!ds.open || !ds.isCurrent())) return;
     const events = Array.isArray(ds.pickEvents) ? ds.pickEvents : [];
     const event = events.find((row) => String(row.id) === String(planId));
     if (!event) return;
@@ -27303,13 +27385,15 @@ async function mcHostOpenMeetingSchedule(contactId, options) {
     const opts = options || {};
     const id = Number(contactId);
     if (!Number.isFinite(id) || id <= 0) throw new Error("缺少专家标识");
+    if (opts.delegated && (typeof opts.isCurrent !== "function" || !opts.isCurrent())) return;
     const mode = (opts.mode === "edit" || opts.mode === "cancel") ? opts.mode : "create";
     const expertLabel = String(opts.expertLabel || "");
     if (mode === "create") {
-        openMeetingCalendarDialog({ mode: "create", contactId: id, expertLabel });
+        openMeetingCalendarDialog({ mode: "create", contactId: id, expertLabel, delegated: opts.delegated, isCurrent: opts.isCurrent });
         return;
     }
     const events = await meetingCalendarFetchExpertEvents(id);
+    if (opts.delegated && (!opts.isCurrent || !opts.isCurrent())) return;
     const active = (events || []).filter((event) => !meetingCalendarIsCancelled(event));
     if (active.length === 0) {
         showStatus("该专家暂无排期", "error");
@@ -27322,7 +27406,9 @@ async function mcHostOpenMeetingSchedule(contactId, options) {
             mode: mode === "cancel" ? "cancel" : "edit",
             contactId: id,
             event: active[0],
-            expertLabel: label
+            expertLabel: label,
+            delegated: opts.delegated,
+            isCurrent: opts.isCurrent,
         });
         return;
     }
@@ -27330,6 +27416,8 @@ async function mcHostOpenMeetingSchedule(contactId, options) {
         mode: "pick",
         contactId: id,
         expertLabel: label,
+        delegated: opts.delegated,
+        isCurrent: opts.isCurrent,
         pickEvents: active,
         pickMode: mode
     });

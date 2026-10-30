@@ -281,6 +281,8 @@ class MailboxReadAccessProjectionTest {
             )
         }
         Mockito.`when`(repository.countConversations(Mockito.eq("admin") ?: "", anyFilter())).thenReturn(3L)
+        Mockito.`when`(repository.filterCounts(listOf(ACCOUNT_CODE, OTHER_ACCOUNT_CODE)))
+            .thenReturn(0L to 0L)
         Mockito.`when`(repository.pageConversations(Mockito.eq("admin") ?: "", anyFilter(), Mockito.eq(20), Mockito.eq(0L)))
             .thenReturn(rows)
         Mockito.`when`(expertContactRepository.findAllById(ids)).thenReturn(emptyList())
