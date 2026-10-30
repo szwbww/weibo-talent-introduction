@@ -299,3 +299,319 @@ To approve and execute this repair, send:
 $execute-p docs/plans/fix/draft-review-master/repair.md
 
 No product code was modified.
+
+
+## Epoch 2 — 2026-10-30T21:17:52+08:00
+
+- Master plan: docs/plans/2026-10-29/draft-review-master.md; governing commit32407a46d5b05971fc913cda1802b6ba002e8dc7; sha256:a1a5c2473521af76e41ed4aa30d726cf6a93d1001fc9cc3248a21b8224854a1b
+- Master identity state: AMENDMENT_RECORDED; exact A1–A18 rule/reason/approval and per-file adjudications retained in this complete report; original invoked sha256:63472802e91831bff5295d9e3f63a9af81d60d69471c6cd8bb2ec76570e4f3ff, exact governing divergence artifact1541.
+- Boundary: b15bb069f43f89c45ee6859dba04a0baff5d774d..60142d42148b9ab94a358249ca784bb8da1f48cd
+- Reviewer: DraftReviewAggregateEpoch2
+- Result: PASS
+- Convergence: PROGRESSING; V-1 RESOLVED
+- Repair artifact/result: N/A — no new repair planning; approved repair sha256:52b488ad5e1fa4dc3eba3b1ae60e71dab62bec9bf493c8daed48b88047a02b9c unchanged
+- Repair evidence mode: DURABLE_HANDOFF; repair-execution.md sha256:47fee0cd9f9e965ea8632e503bc787841c1fb9bb6178ac82da6ffc19180cbbe4
+- Evidence parent before next commit: edab0286a671bad508697ffbfa90519d80b71f01
+- Human acceptance: PENDING
+- Complete returned expanded report source: /tmp/draft-review-aggregate-epoch2/aggregate-epoch2-report.md,51710bytes,sha256:65af9d1416f06158cf47b463b35e93483960cf35b48eb6b7bfad12d1ced5824b; preserved verbatim below.
+
+## Verification Result: PASS
+
+Plan: `docs/plans/2026-10-29/draft-review-master.md`, requested phase `aggregate/master`, under `review-p` → `verify-p`, applying the repository's `fix-v` constrained-verification discipline in read-only verification mode.
+
+Implementation boundary: `b15bb069f43f89c45ee6859dba04a0baff5d774d..60142d42148b9ab94a358249ca784bb8da1f48cd`.
+
+Convergence: **PROGRESSING**. Stable P1 **V-1 is RESOLVED**; its two original production lock-wait counterexamples now reject stale context. No new mandatory violation was established. The complete cumulative matrix and all prescribed commands were exercised freshly, not inherited from the executor or child LIGHT_PASS reports.
+
+Manual acceptance: **PENDING**. Machine review readiness: **READY_FOR_HUMAN_REVIEW**. This is not deployment, merge, release, or human acceptance authorization.
+
+Reviewer: `DraftReviewAggregateEpoch2`, a new independent reviewer acquired after the committed repair, distinct from the prior aggregate reviewer and recorded fast-p writers/verifiers. No executor conversation was inherited.
+
+### Authority, identity and repair evidence mode
+
+- Retained worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-draft-review-master`; branch `fast/draft-review-master`. Worktree resolution: `DISCOVERED_FROM_GIT_WORKTREES`; this review uses the exact retained-worktree contract supplied by `local://draft-review-aggregate-epoch2-input.md`.
+- Governing master identity: commit `32407a46d5b05971fc913cda1802b6ba002e8dc7`; actual SHA256 `a1a5c2473521af76e41ed4aa30d726cf6a93d1001fc9cc3248a21b8224854a1b`.
+- Invoked original-copy identity remains distinct: SHA256 `63472802e91831bff5295d9e3f63a9af81d60d69471c6cd8bb2ec76570e4f3ff`. The complete divergence in `artifact://1541:raw` was read; the recorded worktree master/A1–A18 govern, not the original copy's future permission/UI wording. The corrected historical absolute discovery selected this worktree; the earlier wrong relative-path NONE is not a second verdict.
+- All five ordered child plans, their complete brief/execution/verify/fix evidence, fast-p ledger and handoff, current review ledger, prior Epoch1 machine report, exact repair plan, and durable execution handoff were read. The approved amendments override the historical DRAFT headings and closed incidental-test decisions. No amendment was invented or reopened.
+- Ordered child identities: 01 `87a4ba94b070afebeb83d1c6b9fe885ed66a2aaa`; 02 `2af9b9ca1025c5741086558365f92793357a307e`; 03 SHA256 `f960f013f569b5de074722c605b41d5fa382da28c1637666b9de773c860515f7`; 04 `c17c9013ece5bf7967d6233cd97f5bfed47d1cab`; 05 `32407a46d5b05971fc913cda1802b6ba002e8dc7`, SHA256 `b9669ef5dac2ccb10b8f4a64cdd6c9d3b09d7881f489c5b3eee8c303fbcbf5f8`.
+- Complete aggregate code head: `60142d42148b9ab94a358249ca784bb8da1f48cd`; evidence HEAD: `edab0286a671bad508697ffbfa90519d80b71f01`. The original fast-p code head `bec9e40faae946b0971e95af9c3a9edec83cd888` and original final validator identity `d309757a23bfffd5c0086ce1682aa638dd7f851e` remain immutable historical lineage, not fresh aggregate evidence.
+- Repair evidence mode: **DURABLE_HANDOFF**. Exact artifact: `docs/plans/fix/draft-review-master/repair.md`, actual SHA256 `52b488ad5e1fa4dc3eba3b1ae60e71dab62bec9bf493c8daed48b88047a02b9c`. Handoff: `docs/plans/review/draft-review-master/repair-execution.md`, supplied SHA256 `47fee0cd9f9e965ea8632e503bc787841c1fb9bb6178ac82da6ffc19180cbbe4`. Pre-execution evidence HEAD `06e65de2896a39e6d31c0ef6ebd068d1f647eea4`; repair execution ID is the canonical artifact path plus `@52b488ad5e1fa4dc3eba3b1ae60e71dab62bec9bf493c8daed48b88047a02b9c`.
+- Exact human approval is reproduced in repair-execution.md:25–32:
+
+```text
+$execute-p docs/plans/fix/draft-review-master/repair.md
+授权执行计划内修复、指定本地提交及 repair-execution.md 交接记录。
+完成后在同一任务自动继续：
+$review-fast-p docs/plans/fast/draft-review-master/human-review-handoff.md
+```
+
+- Executor identity is exposed only as the prior parent-session execute-p controller; its agent/task identity is **UNAVAILABLE**, not fabricated. Executor `READY_FOR_VERIFICATION` and its test/runtime assertions were treated as historical claims, not this review's result.
+- Independent repair-scope receipt: `git diff --numstat bec9e40faae946b0971e95af9c3a9edec83cd888 60142d42148b9ab94a358249ca784bb8da1f48cd -- src pom.xml` returned exactly:
+
+```text
+4  2  src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftService.kt
+80 0  src/test/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftIT.kt
+```
+
+Both are the repair's exact Authorized Files. The production delta is the two READ_COMMITTED transaction annotations plus their import/comment; the test delta adds the two real lock-wait regressions and helper. No caller/API, new state/store, migration, frontend, shared rule, or unrelated repair was added. Receipt: `/tmp/draft-review-aggregate-epoch2/repair-scope-receipt.txt`.
+
+### Fresh command environment and receipts
+
+Audit/design of the entire matrix preceded every build/test/lint/syntax command. Fourteen prescribed commands then ran once, in order; all Maven invocations were sequential with normal compilation. No compiler/test suppression, weakened assertion, formatter, retry-to-hide-failure, or production code edit was used.
+
+Common environment:
+
+```text
+JAVA_HOME=/tmp/zulu11.92.109-ca-jdk11.0.33-macosx_aarch64/Contents/Home
+MAVEN_OPTS=-Xmx3072m
+DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock
+DB_URL=jdbc:mysql://127.0.0.1:33426/draft_epoch2?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+DB_USERNAME=root
+DB_PASSWORD=<reviewer-owned local fixture credential>
+```
+
+Genuine Java output: OpenJDK `11.0.33`, Zulu `11.92+109-CA`, build `11.0.33+9-LTS`. Official retained archive SHA256 independently calculated as `4947b01fcb220ee69710dbf63375f4628688d84750fccd289f5a6d62b494aa94`. No timezone stub or product workaround was introduced.
+
+Owned external MySQL container: `draft-review-aggregate-epoch2-mysql` (`mysql:8.0.36`, loopback33426), created specifically for this review; not another actor's schema. Testcontainers targets retained their normal own MySQL. Explicit JDBC Unicode/charset/SSL/public-key/timezone parameters were supplied. Runtime used a separate fresh `draft_runtime_e2` schema, never an executor's old schema.
+
+All unabridged command output is preserved under `/tmp/draft-review-aggregate-epoch2/C01.log` … `C14.log`; `commands.json` contains exact commands, exit codes, elapsed seconds and per-suite XML counts; `command-input.json` and `commands-driver.py` retain the invocation procedure. All full outputs were consumed for results; `command-summaries.json` is an index, not a replacement for the logs.
+
+| ID | Exact command | Result and fresh counts | Log |
+|---|---|---|---|
+| C01 | `node --check src/main/resources/static/mailbox-chat.js` | PASS, exit 0; syntax check; no test count; 0.24s | `C01.log` |
+| C02 | `node --check src/main/resources/static/app.js` | PASS, exit 0; syntax check; no test count; 0.14s | `C02.log` |
+| C03 | `node --check src/main/resources/static/mailbox-readonly.js` | PASS, exit 0; syntax check; no test count; 0.13s | `C03.log` |
+| C04 | `node --test src/test/js/mailReviewAdmin.test.js src/test/js/mailboxServerDrafts.test.js src/test/js/mailboxChatStyle.test.js src/test/js/mailboxChatBehavior.test.js src/test/js/mailboxReadOnly.test.js src/test/js/authFlow.test.js` | PASS, exit 0; 334 tests, 334 pass, 0 fail, 0 skip; 2.47s | `C04.log` |
+| C05 | `node --test src/test/js/mailReviewReader.test.js src/test/js/mailboxReadOnly.test.js src/test/js/authFlow.test.js src/test/js/mailboxChatStyle.test.js` | PASS, exit 0; 131 tests, 131 pass, 0 fail, 0 skip; 1.18s | `C05.log` |
+| C06 | `node --test src/test/js/ragAdoptSendBridge.test.js src/test/js/meetingConfirmationIntegration.test.js src/test/js/mailboxOutboundAttachments.test.js` | PASS, exit 0; 65 tests, 65 pass, 0 fail, 0 skip; 1.04s | `C06.log` |
+| C07 | `node --test src/test/js/*.test.js` | PASS, exit 0; 1956 tests, 1956 pass, 0 fail, 0 skip; 4.43s | `C07.log` |
+| C08 | `mvn test '-DargLine=-Xmx1536m -Dapi.version=1.41'` | PASS, exit 0; 5715 tests, 0 failures, 0 errors, 24 skipped; 674.49s | `C08.log` |
+| C09 | `mvn test -Dtest=MailReviewDraftIT -DmysqlIt=true '-DargLine=-Xmx1536m -Dapi.version=1.41'` | PASS, exit 0; 14 tests, 0 failures, 0 errors, 0 skipped; 281.97s | `C09.log` |
+| C10 | `mvn test -Dtest=AuthFlowIntegrationTest,FlywayMigrationIntegrationTest -DmigrationIt=true '-DargLine=-Xmx1536m -Dapi.version=1.41'` | PASS, exit 0; 55 tests, 0 failures, 0 errors, 0 skipped; 978.82s | `C10.log` |
+| C11 | `mvn test -Dtest=MailReviewQueryIT,MailboxConversationRepositoryIT -DmysqlIt=true '-DargLine=-Xmx1536m -Dapi.version=1.41'` | PASS, exit 0; 45 tests, 0 failures, 0 errors, 0 skipped; 282.86s | `C11.log` |
+| C12 | `mvn test -Dtest=MailboxConversationControllerTest -DmysqlIt=true '-DargLine=-Xmx1536m -Dapi.version=1.41'` | PASS, exit 0; 46 tests, 0 failures, 0 errors, 0 skipped; 233.93s | `C12.log` |
+| C13 | `mvn test -Dtest=MailReviewSendIT,MailReplyDraftSendIntegrationTest -DmysqlIt=true '-DargLine=-Xmx1536m -Dapi.version=1.41'` | PASS, exit 0; 45 tests, 0 failures, 0 errors, 0 skipped; 287.13s | `C13.log` |
+| C14 | `mvn test -Dtest=ManualReplySendAttemptServiceTest,PendingMailOperationServiceTest,PendingMailOperationServiceTrustWorkbenchTest '-DargLine=-Xmx1536m -Dapi.version=1.41'` | PASS, exit 0; 160 tests, 0 failures, 0 errors, 0 skipped; 190.83s | `C14.log` |
+
+Full-Maven C08: 5,715 JVM tests, 5,691 non-skipped, 0 failures/errors, **24 default opt-in skips disclosed**, plus the Maven-bound frontend executions. These default skips are not treated as enabled-IT proof. Fresh explicitly enabled target results:
+
+| Command | Target class | Tests / failures / errors / skips |
+|---|---|---|
+| C09 | MailReviewDraftIT | 14 / 0 / 0 / 0 |
+| C10 | AuthFlowIntegrationTest | 9 / 0 / 0 / 0 |
+| C10 | FlywayMigrationIntegrationTest | 46 / 0 / 0 / 0 |
+| C11 | MailReviewQueryIT | 5 / 0 / 0 / 0 |
+| C11 | MailboxConversationRepositoryIT | 40 / 0 / 0 / 0 |
+| C12 | MailboxConversationControllerTest | 46 / 0 / 0 / 0 |
+| C13 | MailReviewSendIT | 18 / 0 / 0 / 0 |
+| C13 | MailReplyDraftSendIntegrationTest | 27 / 0 / 0 / 0 |
+| C14 | ManualReplySendAttemptServiceTest | 58 / 0 / 0 / 0 |
+| C14 | PendingMailOperationServiceTest | 42 / 0 / 0 / 0 |
+| C14 | PendingMailOperationServiceTrustWorkbenchTest | 60 / 0 / 0 / 0 |
+
+Thus the explicitly named JVM targets contributed **365 non-skipped tests**, including the repair's two added lock-wait cases. C11 also printed `REVIEW_QUERY_SIZE100 rows=100 sqlCount=10 reviewSqlCount=2` and its real MySQL EXPLAIN, including `idx_review_draft_pending`. This is a fresh measured receipt, not a new statement-count acceptance constraint. The required build evidence is successful normal Maven compile/test compilation; a WAR package/deployment was not requested or claimed.
+
+### Contract Matrix — whole master and every child invariant
+
+Evidence abbreviations: `Service` = `src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftService.kt`; `Repo` = `src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewDraftRepository.kt`; `ConversationRepo` = its `MailboxConversationRepository.kt`; `Attempt` = `src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt`; `Pending` = same directory `PendingMailOperationService.kt`; frontend names below are under `src/main/resources/static/`. `RT` refers to this review's fresh `http-receipts.json`, `runtime-final.json`, `lock-races.json`, actual MIME files and browser/network receipts, not earlier execution evidence. All listed master invariants, implementation tasks, styles, keeping rules and machine criteria are mandatory; human A-items remain PENDING.
+
+| ID | Governing requirement | Verdict | Fresh evidence and inspected runtime path |
+|---|---|---|---|
+| R1 | Authorized user1 name-only mailbox; multiple rich drafts, save/submit/withdraw/return/resubmit/delete; comments and complete successful-save/state history; approved lock | PASS | Service:29–164/236–272; C05/C09/C10; RT private admin404, reader/send403, real full return/revise/resubmit, canonical save/conflict, approved mutation409, soft-delete retained events; native reader rich editor/history and live revocation |
+| R2 | Admin toolbar counts drafts; list remains experts; shared original composer; original admin body and attachment preserved | PASS | ConversationRepo:214ff/808ff; mailbox-chat.js:5728–6050/6191ff; C04/C11/C12; RT 3 drafts/2 experts/2+1 page counts; real pending toolbar and manual→review→manual body/attachment round trip with one editor |
+| R3 | Approval and context confirmation do not send; explicit reviewed send; latest context must be observed; inline translation/comments/history | PASS | Service:112–163; Attempt:280ff; C09/C13/C14; both fresh real lock-wait stale admissions409, fresh200 with SMTP0; actual new-IMAP-message confirmation invalidation, native modal and later explicit SMTP delivery |
+| I-1 | Session-only exact admin/user1 identity; current grants and ownership at every reader operation; private never-submitted drafts hidden from admin; narrow admin-only actions | PASS | Controller:19–110/130–145; Service:236–257; MailReadOnlyPolicy precise handlers; C09/C10/C12; RT anonymous401, private detail/events404, forbidden sender accounts/send403, revoked GET403 and full UI clearing |
+| I-2 | Exactly four review states, valid transition/action matrix, immutable approved body, user1 cannot mutate/comment/delete after approval | PASS | Service:69–164; C09 Cartesian/state/concurrency tests; actual withdraw/return/revise/resubmit/approve, post-approval reader comment/delete409, admin comment allowed; SMTP unchanged by approve |
+| I-3 | Exact integral version, CAS and complete canonical snapshot/event transaction; no-op save no event; comment does not increment version; failed write no partial history | PASS | Controller:137–154; Service:259–272; Repo CAS/event insert; C09 real dual-write races and event-trigger rollback; RT same-version no-op then stale409, full history through approved and send events |
+| I-4 | Only two new independent review tables; no old shared columns or review use of original draft store; soft-delete retains body/history; no cascade erasure | PASS | V169__create_mailbox_review_draft.sql; complete migration diff receipt contains only V169; C09 fresh/V168 migration preservation; actual DELETE leaves body/events; original administrator server draft/attachment retained |
+| I-5 | Server Safelist canonical HTML/text, strict fields, all placeholders/malformed tokens rejected on submit, UTF-8 and final length bounds, safe display | PASS | Service canonical normalizer and strict existing placeholder validator; controller local integral/field parsing; C09/C10; RT script/onerror/javascript stripped, malformed `${broken`422 with no event; native safe rich paste and stable canonical browser save |
+| I-6 | Complete real-mail streaming digest, filters do not narrow it, approval/confirmation compare current observed context after lock wait | PASS — V-1 resolved | ConversationRepo:33–69 streaming length-prefixed SHA256; Service:112/156/327–335; C09 includes full-history/same-time/old-edit/failure/account cases; both fresh HTTP/MySQL lock waits observed in performance_schema and stale tokens rejected with unchanged rows/events/attempts |
+| I-7 | Immutable identity and server-resolved fixed target/account; atomic review fields; original target not replaced; stable attempt binding | PASS | Service:29ff/176–233; Repo target lookup/validTarget/sendProjection; C09/C13; RT OUTBOUND anchor remains fixed after actual new inbound; frozen version and bound SENT attempt preserved |
+| I-8 | Pending total counts drafts, page total counts experts, per-card count; shared EXISTS before pagination | PASS | ConversationRepo:214ff/808ff; C11/C12 count/page/EXPLAIN; actual 3/2 with size1 cards2+1, no client-page filtering substitute |
+| I-9 | Admin-only pending filter; account/search/common filters retained; mutually exclusive chip semantics; disabled real accounts allowed; reader no review-summary work/leak | PASS | MailboxConversationService role branch and pending filter projection; shared SQL membership; C10–C12 with disabled/simulator/filter fixtures; RT reader restricted network, admin toolbar and ordinary chips |
+| I-10 | State writes immediately affect next query; revoked grants do not erase admin submitted queue; missing contact/account excluded; no cached truth | PASS | Repo writes→ConversationRepo membership direct reads; C11/C12; actual approve count3→2, browser approve further decrement, withdrawn/deleted history retained; live reader revocation403 without deleting admin review records |
+| I-11 | Only admin can explicitly send the current approved frozen DB version; strict request excludes body/recipient/account/attachments; approve/confirm SMTP0 | PASS | MailReviewSendService and Controller:99–110; Pending:658ff final byte comparison; C13/C14; actual forbidden reader send, approved frozen plain+HTML MIME with no attachment, approval/confirmation zero delivery delta |
+| I-12 | Same-transaction current context check before claim; exact draft/version/admin/token confirmation; reject stale/forged events; confirmation requires another manual click | PASS | Service:215–233; Attempt:280–304 READ_COMMITTED; C09/C13; actual old-event send409/no SMTP after existing safety gate confirmation; native confirm only then new inbound reopens modal; subsequent explicit send |
+| I-13 | Legacy fingerprint unchanged; reviewed domain/id/version segment; review-before-attempt lock/bind; SENT/UNKNOWN/IN_PROGRESS retain fixed idempotency and no blind retry | PASS | Attempt:194–198/254ff/280ff; Pending:437/824; C13/C14 actual concurrent/dedup/unknown/failure seams; RT SENT replay produces no extra SMTP and retains same attempt; no new frontend request ID |
+| I-14 | Real attempt/mail_record/send events atomic; approved state remains APPROVED; truthful SENT/UNKNOWN projection; no duplicate events from replay | PASS | Attempt:448ff/546ff; Service:195–233/273ff; C13/C14 transaction/error/DEDUP scenarios; RT SEND_CLAIMED/SEND_SUCCEEDED history, bound SENT projection and three real final SENT attempts; replay produces no new delivery |
+| I-15 | Null review-ref ordinary manual/AI adoption/attachments/meetings/QA/RAG/security routes retain existing semantics, no residual AI-approval gate | PASS | Pending nullable seams and final canonical comparison guarded by ref; legacy fingerprint branch; C06/C13/C14 and C08 full suite; RT ordinary unreviewed actual multipart attachment delivery with exact bytes, without review reference |
+| I-16 | Separate MailboxReadOnly lifecycle and precise pre-fetch allowlist; no admin tools/sender accounts/attachments/review send/translate; name-only DOM | PASS | app.js reader allowlist/lifecycle and mailbox-readonly.js:190ff; C05/C10; real reader1440/390 has only mailbox tab/mobile option, name-only header, no admin composer; saved network has no forbidden endpoint requests |
+| I-17 | One active draft identity, explicit canonical save; submit waits for latest save; failed save prevents navigation/logout; preserve late edits/caret | PASS | mailbox-readonly.js save/navigation/actions:461–539; C05 behavioral regressions; real native bold/list/save, focus keeps same editor/caret; offline expert switch stays on Expert1 and retains dirty text with explicit failure, online save recovers |
+| I-18 | Session/generation/contact/draft/version/sequence isolation; 401/403 clears all live content/cache; unmount abort/listener cleanup, no localStorage review persistence | PASS | mailbox-readonly.js captured contexts/request/teardown; C05/C10; actual grant removal + focus clears timeline/editor/comments/history and GET403; complete source guards and late-response tests, no new Storage path |
+| I-19 | Unique pending toolbar sets server-side filter/page/chip; preserves other conditions, list remains expert cards | PASS | app.js toolbar bridge; mailbox-chat.js summary/filter and list; C04/C11/C12; actual button opens two expert cards without a draft-list modal, per-expert pending badges and count decrement, mobile toolbar remains real |
+| I-20 | One original editor; review state separate from admin map; flush first, guard autosave/send/tools/retarget/late callbacks; restore original body+attachment | PASS | mailbox-chat.js:5728ff and guarded manual/tool/retarget entrypoints; C04 late retarget GET/confirmation/save/tool tests; actual single editor with submitted body and zero visible send buttons, then exact admin body+attachment restoration |
+| I-21 | Unapproved review has no send control; APPROVED dedicated route only, no automatic send; SENT removes control, UNKNOWN cannot resend; manual unchanged | PASS | mailbox-chat.js:5812–5844/6050ff; C04/C13; native SUBMITTED no send; browser approve SMTP0, explicit mobile send uses dedicated route422 safety→200, final SENT removes send control; ordinary manual separate |
+| I-22 | Native context modal cancel/Escape clears; confirm only, stale event reopens; captured translation/comments/history do not replace source | PASS | mailbox-chat.js:5906ff/5994ff and async capture guards; C04/C05; real white dialog1440/390, cancel/Escape, confirm zero SMTP then new real inbound reopens; translation 11px text action and source HTML unchanged; comment/history actual API |
+| I-23 | Ordered01→02→03→04→05; exact amended scope and no parallel shared-file writers; two new stores/no old columns | PASS | Complete fast-p checkpoint/code/evidence lineage, full cumulative diff and per-child `scope.json`:11/6/8/8/14 files, all in respective amended tables; union37 paths; exact two-file repair is separately approved. No unrelated scope expansion |
+| I-24 | Distinguish plan/prototype/evidence/runtime; approved amendments before changed scope, cache/migration source identity; never infer machine PASS/human acceptance | PASS | Exact identities/amendment commits and original-copy divergence audited; fresh command/runtime receipts below replace child claims as aggregate evidence; all versioned resources and literal style/DOM checks pass; approval and human acceptance remain distinct |
+| S-1 | Exact shared reader compose/history DOM and CSS, safe rich HTML only in new region, original timeline plain | PASS | C05/C07 literal CSS/real-ID and action tests; native reader1440/390 bold/list/paste, no second composer, timeline remains existing render |
+| S-2 | Restricted shell copy/tabs/inline error feedback, no new admin tools/toast | PASS | C05/C07, actual restricted wide/mobile shell and offline/revocation feedback |
+| S-3 | One toolbar button before preserved actions; expert pending badge, not review-center modal | PASS | index.html:800ff, C04/C07 including amended existing button-order contract; real desktop/mobile toolbar/card observations |
+| S-4 | Same manual editor, mode selector, inline comments/history, historical small translation styling | PASS | mailbox-chat.js:6191–6224, C04/C05 exact DOM/CSS; actual body/attachment restoration; translation button measured11px and no source mutation |
+| S-5 | Exact opaque white native dialog, viewport bounds, focus and Escape | PASS | C04/C07 literal CSS/DOM; native1440 dialog480px at x480, native390 dialog358px at x16/right374, background rgb(255,255,255), focus inside, Tab/Escape and no document horizontal overflow |
+| 01 T1–T4 | Two-table schema, local API/security/canonicalization, complete digest, real transactions/auth/migrations | PASS | Full source/migration scope; C09/C10 fresh enabled14+55; RT genuine controller/MySQL workflow and both repaired admission races |
+| 02 T1–T3 | Optional query/DTO compatibility, one membership predicate and bounded batch projections, real count/page/EXPLAIN/query measurement | PASS | C11/C12 fresh45+46; measured size100/10SQL/2reviewSQL; actual count/page API; no statement-count pin invented |
+| 03 T1–T4 | Dedicated frozen adapter, final-content seam, transactional attempt linkage/result/fingerprint and old send regression | PASS | C13/C14 fresh45+160; real reviewed and ordinary attachment MIME; exact nullable seam and retained old request semantics |
+| 04 T1–T3 | Precise request/lifecycle integration, persistent native reader/history, uniform assets and real-browser behavior | PASS | C03/C05/C07 and RT native rich editing/paste/caret/offline/revocation at both widths |
+| 05 T1–T5 | Toolbar/expert list/shared editor/actions/translation/context modal/explicit send/assets/regressions | PASS | C01/C02/C04/C07 plus real pending selection, original draft/attachment preservation, approval/confirmation SMTP0, mobile actual reviewed delivery |
+| Keep-1 | Existing manual/AI adoption/attachment/meeting/unsubscribe/security behavior | PASS | C06/C08/C13/C14; ordinary unreviewed actual attachment delivery and real existing safety422→confirmation→dedicated reviewed success |
+| Keep-2 | Original timeline/filter/pagination and user1 visibility restrictions | PASS | C04/C05/C10–C12; actual filter2 experts, name-only reader and no admin reads; existing timeline messages preserved |
+| Keep-3 | Original administrator draft persistence and truthful result/retry status | PASS | C04/C13/C14; actual admin saved server draft+attachment round trip, reviewed SENT replay and no duplicate mail |
+| NG | No role-management UI/general workflow/multilevel approval/push/queue/new ES index/review center/collaboration/automatic send/review attachments/deployment | PASS | Complete cumulative product diff is confined to amended feature scope; only review-local stores/APIs/components plus authorized compatibility tests; no push/merge/deploy performed |
+| Required gates | Every prescribed command fresh with explicitly enabled targets nonzero/zero skip | PASS | C01–C14 all exit0; target table above; default24 skips disclosed, not substituted |
+| Human-A | Master A-1/A-2 and child01 A-1…A-4;02 A-1/A-2;03 A-1…A-3;04 A-1…A-4;05 A-1…A-5 | PENDING | Machine runtime coverage does not replace human-originated acceptance; no human acceptance artifact or sign-off created |
+
+### Complete ordered-child interaction crosswalk
+
+| Interaction | Verdict | Evidence |
+|---|---|---|
+| X1 grant/revoke→review admission | PASS | C09/C10; actual revoked reader403 and full body clearing |
+| X2 reader CAS writes→admin reads→history | PASS | C09; actual no-op/stale409, return/revise/resubmit/comments/history |
+| X3 all real mail data→digest→approval/confirmation | PASS; V-1 RESOLVED | Complete streaming digest; C09; both fresh lock-contended HTTP admissions reject a token superseded before unlock |
+| X4 new review store vs original admin store | PASS | V169 and Repo separation; C04/C13; actual original admin body/attachment restored |
+| X5 lifecycle writes→count/page/badge | PASS | C11/C12 and actual3→2→1 count changes and soft delete |
+| X6 old filters/account visibility→pending membership | PASS | Shared predicates; C11/C12 disabled/simulator/account/chip/search fixtures |
+| X7 reader DTO extension without admin-workload leak | PASS | Service role branch, C10/C12, real reader network without admin endpoints |
+| X8 frozen approval→internal send ref→SMTP/record | PASS | C13/C14 and actual canonical multipart/alternative reviewed MIME without attachments |
+| X9 mail change→context→pre-claim confirmation | PASS | READ_COMMITTED prepare/claim; stale-event409 and zeroSMTP after real new inbound; repaired confirmation producer independently fresh |
+| X10 SMTP outcome→attempt transaction→detail/history | PASS | C13/C14; actual bound SENT/claim/result events and replay without extraSMTP |
+| X11 ordinary reply/draft without review ref | PASS | C06/C13/C14 and real ordinary unreviewed multipart attachment send |
+| X12 reader edit/save→admin approve→reader lock | PASS | C05/C09/C10 and RT native canonical save, approved reader write409 |
+| X13 grant/401/403→clear new UI state | PASS | C05/C10, actual live revoke/focus clears editor and timeline |
+| X14 focus/select/logout→flush/old-response isolation | PASS | C05; real native persistent caret and offline failed navigation with dirty preservation; captured sequence/abort teardown source |
+| X15 toolbar→filter→SQL→expert cards | PASS | C04/C11/C12, actual3 drafts/2 experts/2+1 and native toolbar filtering |
+| X16 manual map→review→restore incl late callbacks | PASS | C04 late-retarget GET/confirmation/save/tool tests; real exact body+attachment restoration |
+| X17 approval→count refresh→explicit send | PASS | Native approval decrements badge while retaining right-side draft; approvalSMTP0, later distinct dedicated send |
+| X18 new mail/confirm/new mail→409/reopen | PASS | Actual IMAP ingestion, native cancel/Escape/confirm-only/reconfirmation and stale-event409; V-1 producer defect resolved |
+| X19 user/expert/draft changes→translation/comments/detail isolation | PASS | C04/C05 captured identity and late-response tests; actual inline translation leaves canonical body unchanged and live revoked reader clears all content |
+
+### A1–A18 independent amendment adjudication
+
+Every amendment was checked against its exact Before/After plan-only commit, master rule, reason and recorded HUMAN authority in fast-p ledger:31–48. Complete plan-only patches are retained in `/tmp/draft-review-aggregate-epoch2/amendment-patches.txt`. These are not permissions inferred from test failure. The closed decisions are preserved; scope and substance were re-audited against current code.
+
+| Amendment | Recorded contract change and authority | Aggregate judgment |
+|---|---|---|
+| A1 | Master32176acd→c21b3aa; I-23/implementation preflight; human bounded 授权 adds migration-test exception | PASS. Only the named migration compatibility test added to01 scope, not applied migrations |
+| A2 | Child01 same boundary; I-23/I-24/auth+migration gate; obsolete version assertions and local auth isolation | PASS. No global bean override or skip; fresh C10 real auth+migrations all non-skipped |
+| A3 | Masterc21b3aa→87a4ba94; I-23/I-24; human continuous in-goal bounded continuation and later review-fast-p | PASS. Recorded before release of remaining folder-schema repair; no unlimited product authority inferred |
+| A4 | Child01 same plan boundary; V120 assertions aligned to appliedV167 folder UID uniqueness, preserving data/UID checks | PASS. Test matches current applied schema without editing old migrations or suppressing uniqueness failures; C10 |
+| A5 | Master87a4ba94→2af9b9ca; I-23/I-24 adds proved query-IT fixture path | PASS. Added test fixture only, not production schema or SQL behavior |
+| A6 | Child02f3417e2→2af9b9ca; missing dismissed_at fixture only; measured query count without pin | PASS. Exactly INSERT timestamp compatibility; C11 substantive tests and fresh measurement retained |
+| A7 | Master2af9b9ca→c17c9013; I-23/I-24 eighth reader test file for obsolete source/copy conflict | PASS. Bounded retirement only; no weakening of actual reader security/rich-text/shell contract |
+| A8 | Child04f3417e2→c17c9013; I-16/S-1/S-2/T3 removes old all-HTML/link prohibition and wording/title pins | PASS. Current canonical/sanitized review HTML and real native UI are tested; no repinned obsolete wording |
+| A9 | Masterc17c9013→0c6111bb; I-23/I-24 reader test added to05 cross-step asset/CSS scope | PASS. File's prior04 authorization was not treated as automatic05 authorization |
+| A10 | Child05f3417e2→0c6111bb; old key/EOF/title assertions retired, uniform resources/literalS1/realDOM retained | PASS. Only contradictory implementation-detail pins removed; C04/C05/C07 maintain style/DOM/resource checks |
+| A11 | Master0c6111bb→babdb2df; I-23/I-24 three additional failed old frontend contracts | PASS. Exactly the three named test paths, not broader frontend product changes |
+| A12 | Child05 same boundary; first-child/EOF/old-cache suffix coupling retired while order/CSS/resources/permissions kept | PASS. Changes obey recorded narrow purpose; fresh fullnode1,956 passes |
+| A13 | Masterbabdb2df→08aa4337; I-23/I-24 two backend test-compatibility files,12-file exception | PASS. Product backend behavior not expanded; genuine Java11 patch resolves tzdb without source workaround |
+| A14 | Child05 same boundary; reader exact route matrix and four Mockito matcher arities only | PASS. Allowlist matches approved01 handlers; negative HTTP/dedup assertions retained; C08/C10/C14 |
+| A15 | Master08aa4337→59eb60cf; inheritedI-5 proven malformed placeholder admission,13-file/3-subsystem exception | PASS. Existing strict-validator reuse only in existing review canonicalization; no shared placeholder behavior change |
+| A16 | Child05 same boundary; existing service validator closes broken-token gap, retaining complete-token/HTML/length guards | PASS. Actual malformed `${broken` submission422 with unchanged row/history plus C09; already-authorized01 service still separately authorized for05 |
+| A17 | Master59eb60cf→32407a46; I-23/I-24 mandatory fullmvn,14-file exception for incidental JVM thread-state assertion | PASS. Exact test-only retirement kept substantive cancellation/lease/cache/owner checks; fresh C08 passes; closed decision not reopened as product P1 |
+| A18 | Child05 same boundary; I-20 retarget correction remains original scope; O-01 only lines63–65 busywait/state retirement | PASS. No discovery production code, no test skip, no gate waiver; C04 delayed-retarget behavior and C08 full suite freshly pass |
+
+### Every amended/extra file individually checked
+
+| File | Amendment/master-rule scope | Judgment and current evidence |
+|---|---|---|
+| `src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt` | A1–A4,01 I-23/I-24/T4 | PASS. Retires stale latest=157 pins without replacing with169; V120 completed-chain index checks align appliedV167 folder uniqueness and retain UID/data preservation; C10 46/0/0/0 |
+| `src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt` | A1/A2 compatibility in an existing01-authorized file | PASS. Test-local conflicting worker isolation, not global overriding, and exact authenticated review-handler regression; C10 9/0/0/0 |
+| `src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt` | A5/A6,02 I-23/I-24 | PASS. Only missing mandatory dismissed_at/NOW() fixture supply, unchanged behavior assertions; C11 40/0/0/0 |
+| `src/test/js/mailboxChatStyle.test.js` | A7/A8,04 I-16/S-1/S-2/T3 | PASS. Removes obsolete global review-HTML ban/fixed copy/title constraints; retains actual shell/style/security assertions. C04/C05/C07 and native reader rich paste |
+| `src/test/js/mailReviewReader.test.js` | A9/A10,05 I-23/I-24/T5, although already04-authorized | PASS. Retires old key/EOF/title pins only, retains shared literalCSS/uniform assets/realDOM; C04/C05/C07 |
+| `src/test/js/batchEntryRelocation.test.js` | A11/A12,05 T5/S-3 | PASS. Preserves original button container/relative action order while permitting front pending button; C07 |
+| `src/test/js/discoveryRecheck.test.js` | A11/A12,05 T5 | PASS. Limits literal CSS comparison to its own dr-recheck block instead of unrelated EOF additions; actual block/DOM remain asserted; C07 |
+| `src/test/js/mailboxMailReadAccess.test.js` | A11/A12,05 T5 | PASS. Retires old cache suffix only; uniform key/script adjacency/permission checks preserved; C07 |
+| `src/test/kotlin/com/weibo/talentintroduction/auth/config/AuthInterceptorTest.kt` | A13/A14,05 fullmvn exact reader matrix | PASS. Precise approved handler/verb additions only; deny matrix retained, no production permission expansion; C08 |
+| `src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt` | A13/A14,05 fullmvn | PASS. Four matcher-argument updates for03 nullable seam; HTTP-error/dedup assertions not removed; C08 |
+| `src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReviewDraftService.kt` | A15/A16,05 inheritedI-5, despite prior01/03 ownership | PASS for amendment. Strict existing malformed-placeholder validator only; remaining later READ_COMMITTED change is separately covered by the explicit repair authorization, not laundered through A15/A16 |
+| `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt` | A17/A18,05 I-23/I-24/fullmvn | PASS. Only incidental lines63–65 thread-state busywait/assertion retired; substantive lease/cancellation/cache/owner completion retained. C08 succeeds, no discovery production edit |
+
+The full cumulative `git diff b15bb069f43f89c45ee6859dba04a0baff5d774d 60142d42148b9ab94a358249ca784bb8da1f48cd -- src pom.xml` was read, not just repair-touched paths or terminal child reports. Its complete patch was inspected through `artifact://1671` and ranged excerpts; `scope.json` records mechanical per-child actual-vs-authorized sets. Result:01 11,02 6,03 8,04 8,05 14 paths, no unauthorized product path in any child; cumulative union37 paths. Only V169 appears in the migration diff; there are two new review tables and zero added old-store columns. Complete union and amended-file judgments, rather than a “file was already authorized somewhere” shortcut, underpin I-23.
+
+### Fast-P RECORD_ONLY and previous decision reevaluation
+
+| Historical entry | Governing aggregate requirement | Current reevaluation |
+|---|---|---|
+| Child05 Epoch5 O-01, `DiscoveryVerificationWorkerTest` WAITING vs RUNNABLE, originally outside13-file child scope | Master mandatory full-Maven gate; later A17/A18 narrow test-only authority, not a waiver | RESOLVED as a closed incidental-test compatibility decision. Exact current test delta preserves substantive synchronization/results; fresh C08 all5,715/0fail/0error24defaultskip. No discovery product finding invented and no earlier failed receipt erased |
+| Child05 terminal Epoch6 RECORD_ONLY N/A | Same whole-master obligations still apply | Independently rechecked; not accepted merely because child LIGHT_PASS said N/A. Current full gate and I-20 delayed-retarget tests/runtime pass |
+| Children01/02/03 terminal RECORD_ONLY N/A | All inherited invariants remain mandatory at aggregate level | Complete child lineage and current full cumulative code audited; no additional open aggregate item established |
+| Child04 initial/terminal RECORD_ONLY N/A | I-17/I-18, canonical backend UUID admission | No blanket waiver. Historical AUTO_FIX F-01 failed-detail recovery and F-02 fallback UUID remain resolved by current behavioral C05 tests and current lifecycle/identity source; they are not new aggregate findings |
+| Child05 F-01 delayed manual retarget (AUTO_FIX, not RECORD_ONLY) | I-20 original-draft ownership and late callbacks | Resolved. Current code invalidates pending retarget GET/confirmation and original-save redraw; fresh C04 specifically executes both delayed retarget cases and original-save completion; real manual/review body+attachment round trip passes |
+| Earlier migration/auth/query/wording/cache/matcher/placeholder/timezone failures | Mandatory real gates plus A1–A16 bounded approvals | Historical failures retained; each approved correction independently checked above. Every required current command passed with genuine current Java11, no source/timezone or gate suppression |
+
+### Fresh production/runtime evidence
+
+This reviewer exercised the actual current `TalentIntroductionApplicationKt` with normal Spring authentication/controllers/services/JDBC repositories, real MySQL8, GreenMail1.6.15 SMTP+IMAP on loopback33428/33429, and a local translation HTTP fixture on33430. Runtime served the current final compiled product classes, not a copied preview, mock controller, localStorage prototype or prior actor's app. Separate authenticated admin/user1 HTTP cookie contexts were used; actual UI was driven through a restricted-reader Chromium context and an isolated administrator Chrome process/profile/CDP endpoint. ES was explicitly confined to loopback`:9`; LLM and scheduling were disabled; all mail recipients/providers were owned `.test` fixtures.
+
+Preserved fresh evidence:
+
+- `/tmp/draft-review-aggregate-epoch2/http-receipts.json`: full real HTTP statuses and bodies for authorization, draft/workflow/CAS/comments/history/counts, malformed placeholders, context/confirmation/send safety and delivery, soft delete.
+- `/tmp/draft-review-aggregate-epoch2/lock-races.json`: both actual InnoDB lock-wait schedules and stale/fresh token results.
+- `/tmp/draft-review-aggregate-epoch2/runtime-final.json`: complete runtime matrix and disclosed fixture diagnostics.
+- `/tmp/draft-review-aggregate-epoch2/browser-receipt.json`, `admin-network.json`, `reader-network.json`: native UI state, viewport/dialog measurements, actual network routing; the reader network contains no sender-account/attachment/approve/send requests.
+- `/tmp/draft-review-aggregate-epoch2/reviewed.eml`: received reviewed MIME multipart/alternative, exact frozen subject and canonical HTML/plain body (SMTP CRLF normalization only), no attachment.
+- `/tmp/draft-review-aggregate-epoch2/ordinary.eml`: received ordinary unreviewed reply with one original attachment whose exact22 bytes and hash were checked.
+- Native screenshots: `reader-wide.webp`, `reader-mobile.webp`, `reader-revoked.webp`, `admin-wide.webp`, `dialog-wide.webp`, `dialog-mobile.webp`, `admin-mobile-sent.webp` in the same scratch directory.
+
+Observed runtime details:
+
+1. Three submitted drafts across two experts returned toolbar3, expert total2 and per-expert2/1 via real size1 pages. Private never-submitted content/history stayed admin404; anonymous401 and reader generic/send403 held. Save no-op retained version, stale save returned409, malformed incomplete placeholder submit422 retained its sole CREATE event. Canonical XSS cleaning retained safe bold/list and stripped executable content.
+2. Real workflow covered reader comment, admin return with reason, reader revise/resubmit, approval, locked reader mutation rejection, admin comment after approval, inline translation with frozen HTML unchanged, and soft deletion with retained body/events. Runtime history included CREATE/SAVE/SUBMIT/RETURN/APPROVE/COMMENT/CONTEXT_CONFIRMED/SEND_CLAIMED/SEND_SUCCEEDED as appropriate.
+3. For **approve** and **confirm-context**, the independent blocker locked that exact review row; diagnostics observed one real waiting InnoDB request after the production request's initial access read. A separate commit revised an older existing mail body while the lock remained held, and a separate actual context GET showed the changed digest before unlock. The stale request then returned409 `REVIEW_CONTEXT_CHANGED`; full business row, complete events and attempts were unchanged. Fresh observed-token retry returned200; approval/confirmation alone delivered zero messages. This directly replays the prior defect, not just its new test assertion.
+4. Fresh GreenMail SMTP injection plus production `/api/mail/auto-reply` IMAP ingestion created actual current conversation messages. A stale confirmation could not authorize sending (409/noSMTP once the unchanged existing identity-safety prompt was confirmed). Fresh confirmation itself still delivered zero. Explicit reviewed send produced one real canonical MIME; repeated SENT request produced no extra delivery.
+5. Ordinary unreviewed manual send used the original route with a real uploaded attachment and delivered exactly those original bytes without any review identity. Total final recipient mail count was3: two independently reviewed replies and one ordinary attachment reply; final database had three SENT attempts and three new outbound records.
+6. Native reader at1440/390 used the real contenteditable editor: bold selection, unordered list, dangerous rich paste safely sanitized, explicit canonical save. A focus refresh preserved the same editor DOM node and caret containment. Dirty offline navigation was rejected while keeping the current expert and dirty text; returning online saved successfully. Removing the live grant and focusing cleared timeline/editor/discussion/history state; subsequent detail returned403. Only mailbox was available in the mobile menu, with no admin composer/tools or email in the expert header.
+7. Native admin pending toolbar kept expert-card layout. Administrator original text+uploaded attachment survived manual→submitted-review→manual; review contained one editor, its own frozen body and no visible send control. Native approval did not send, and the right-side approved content remained available while the pending count decreased. Translation used the inline11px text action, comments/history used the actual service, and original review HTML stayed unchanged.
+8. Context confirmation dialog was a true native modal: at1440 it measured480px wide; at390 it measured358px with x16/right374 and a fully opaque white background. Focus was inside; Tab/Escape/cancel were exercised. Cancel/Escape required the next send attempt to reopen. Confirm produced no SMTP; a subsequent real inbound invalidated it and reopened confirmation. Only a later explicit send entered the dedicated route, followed the existing safety422→confirmation→200 flow, delivered one message and removed the SENT send control. Mobile document scrollWidth remained390.
+
+Runtime diagnostic failures were not hidden or treated as product failures:
+
+- Two initial GreenMail launch configurations combined test presets with explicit protocol ports and failed duplicate-server setup before readiness; corrected to explicit owned protocol endpoints alone.
+- The first auto-reply call intentionally initialized an empty cursor without importing historical mail. The next UID exposed the fixture's unreachable local ES operator-status update; after inspecting the unchanged production precondition, only owned contacts were seeded as already REPLIED/application_indexed. The retained UID then ingested through the real pipeline, and subsequent fresh messages ingested normally. No production/source/network provider was enabled.
+- An initial attachment upload used a reviewer-mistyped storage environment name and failed at the default `/opt/talent` permission boundary. Only this reviewer's app was restarted with the actual `MAIL_ATTACHMENT_STORAGE_BASE_PATH` override. Successful upload, actual ordinary attachment SMTP and all UI/runtime checks followed; no filesystem permission/global configuration mutation was performed.
+- Harness corrections concerned actual DOM state wording/selectors, native tool syntax, asynchronous completion waits, separate browser context recovery, and MIME CRLF comparison. No assertions/product/tests were edited; successful operations were not replayed as replacements for fresh evidence. Existing safety gating legitimately preceded context rejection and was tested in that real order.
+
+### Finding Lineage
+
+| Finding | State | Evidence |
+|---|---|---|
+| **V-1** — approval and context confirmation accept unseen committed conversation update after draft-lock wait | **RESOLVED** | Prior Epoch1 FAIL/INITIAL counterexamples remain unchanged historical evidence. Current Service:112 and156 use READ_COMMITTED; repair tests at MailReviewDraftIT:325–401 freshly pass in C09; two independent actual production HTTP/MySQL lock-wait reproductions now return409 with no business/event/attempt mutation, fresh-token200 and SMTP0 |
+
+### Findings
+
+#### P1
+N/A — no persistent or new proven mandatory product violation established on this complete boundary.
+
+#### P2
+N/A — no additional actionable in-scope nonmandatory defect established. Approved incidental-test/wording/assertion retirements were not reopened as style preferences or product P1s.
+
+#### Observations
+
+- The genuine currentJava11 environment is important: the documented older system11.0.15 tzdb is not equivalent. All current command receipts use the supplied11.0.33, and the supplied archive hash was independently checked.
+- MySQL EXPLAIN and the size100 statement measurement are evidence for the approved query shape, not a new fixed optimizer-plan or statement-count contract.
+- Deliberately failing local ES and default-storage fixtures required owned-fixture corrections. These did not require or justify source repair, scope expansion, production access, or global Docker/OrbStack restart.
+
+### Evidence Boundaries and Cleanup
+
+- Machine verification is local to the exact retained-worktree code boundary, actual local production surfaces, disposable owned databases and `.test` mail fixtures. No assertion is made about a deployed production version, live provider delivery, production data, or human acceptance.
+- Prescribed failure/concurrency/UNKNOWN/rollback permutations were freshly exercised by the named real-transaction integration suites using their plan-authorized mocked delivery seam; actual SMTP/IMAP additionally proved the end-to-end production happy path, stale context, existing safety gate, deduplication and ordinary attachment path. A real-world ambiguous remote delivery was not manufactured against a provider and is not claimed.
+- Full-Maven default24 opt-in skips are explicitly disclosed; every named required enabled target ran nonzero tests with zero skips. No mandatory evidence item remains unavailable.
+- All owned app/mail/translation/Chrome services were stopped; all owned managed tabs and the raw isolated context were released. `docker stop draft-review-aggregate-epoch2-mysql && docker rm -v draft-review-aggregate-epoch2-mysql` exited0 and disposed only this reviewer's schemas/container. Cleanup receipt: `/tmp/draft-review-aggregate-epoch2/cleanup.json`.
+- No global daemon restart, unrelated process/resource mutation, production addresses/provider use, product/test/approved-plan/fast-p/review-evidence write, staging, commit, push, merge or deployment occurred. Scratch logs, downloaded fixture dependencies, local receipt/report artifacts, disposable DB records and ordinary test build outputs were the only writes.
+
+### Constrained-verification summary
+
+Build/normal compilation: PASS. Tests: PASS with disclosed default opt-in skips and all required explicit targets non-skipped. Accumulation check: PASS. State-machine check: PASS. Cross-plan check: PASS. Deleted-code/callsite audit: PASS. No extras: PASS. Scope compliance: PASS. Manual acceptance: PENDING.
+
+Prior blocking set `{V-1}` shrank to empty with both original production schedules materially corrected; no equal-or-higher regression or new required scope appeared. Therefore convergence is **PROGRESSING**, not an initial result, a renamed finding, or an inherited executor PASS.
+
+### Repair planning
+
+**Repair planning: N/A.** Current verification PASS does not route to repair-p. The previously approved single repair artifact remains unchanged; no new/overwritten repair plan, continuation, execution authorization or automatic repair was created.
+
+### Next Action
+
+The controller should preserve this complete Epoch2 report verbatim in its authorized append-only machine-verification evidence and proceed to the pending human acceptance of the complete master plan. Human acceptance remains **PENDING**; do not infer it from this PASS. No new execute-p action is needed or authorized by this review.
+
+**No product code was modified.**
