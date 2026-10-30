@@ -9,6 +9,7 @@ import org.jsoup.nodes.Document
 import org.jsoup.safety.Safelist
 import org.springframework.dao.DuplicateKeyException
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Isolation
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
@@ -107,7 +108,8 @@ class MailReviewDraftService(
         return MailReviewDraftDeleted(row.id)
     }
 
-    @Transactional
+    // The access read precedes the draft lock; context must see commits made while waiting for that lock.
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     fun approve(actor: String?, id: Long, expectedVersion: Long, observedContextToken: String): Any {
         val username = requireAdmin(actor)
         val row = writable(username, id, expectedVersion)
@@ -151,7 +153,7 @@ class MailReviewDraftService(
         return MailReviewDraftContext(token, row.approvedContextToken, token != row.approvedContextToken, now())
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     fun confirmContext(actor: String?, id: Long, expectedVersion: Long, observedContextToken: String): MailReviewDraftConfirmation {
         val username = requireAdmin(actor)
         val row = writable(username, id, expectedVersion)

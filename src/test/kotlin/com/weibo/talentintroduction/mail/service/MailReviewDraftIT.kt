@@ -23,6 +23,7 @@ import org.springframework.test.context.DynamicPropertySource
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
 import org.testcontainers.containers.MySQLContainer
+import java.sql.DriverManager
 import java.util.UUID
 import java.util.concurrent.Callable
 import java.util.concurrent.CountDownLatch
@@ -319,6 +320,85 @@ class MailReviewDraftIT {
         failure(409) { service.confirmContext("admin", id(a), version(a), frozen["approved_context_token"].toString()) }
         service.confirmContext("admin", id(a), version(a), token(a))
         assertEquals(frozen, row(id(a)), "Context confirmation appends evidence only")
+    }
+
+    @Test
+    fun approvalRejectsContextCommittedDuringDraftLockWait() {
+        rejectContextCommittedDuringDraftLockWait(submitted(), false) { inbound(20) }
+    }
+
+    @Test
+    fun confirmationRejectsContextCommittedDuringDraftLockWait() {
+        val draft = submitted()
+        val approved = node(service.approve("admin", id(draft), version(draft), token(draft)))
+        rejectContextCommittedDuringDraftLockWait(approved, true) {
+            jdbc.update("UPDATE mail_record SET body='Committed during confirmation lock wait' WHERE id=10")
+        }
+    }
+
+    private fun rejectContextCommittedDuringDraftLockWait(draft: JsonNode, confirmation: Boolean, change: () -> Unit) {
+        val observed = token(draft)
+        val before = row(id(draft))
+        val events = jdbc.queryForList("SELECT * FROM mailbox_review_draft_event WHERE draft_id=? ORDER BY id", id(draft))
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            lateinit var pending: java.util.concurrent.Future<MailReviewDraftException?>
+            lateinit var fresh: String
+            // Only the observer needs MySQL diagnostics privileges; production operations use the normal pool.
+            DriverManager.getConnection(mysql.jdbcUrl, "root", mysql.password).use { observer ->
+                TransactionTemplate(transactions).executeWithoutResult {
+                    val blocker = jdbc.queryForObject("SELECT CONNECTION_ID()", Long::class.java)!!
+                    jdbc.queryForList("SELECT id FROM mailbox_review_draft WHERE id=? FOR UPDATE", id(draft))
+                    pending = pool.submit(Callable {
+                        try {
+                            if (confirmation) service.confirmContext("admin", id(draft), version(draft), observed)
+                            else service.approve("admin", id(draft), version(draft), observed)
+                            null
+                        } catch (e: MailReviewDraftException) { e }
+                    })
+                    observer.prepareStatement("""SELECT COUNT(*) FROM performance_schema.data_lock_waits w
+                        JOIN performance_schema.data_locks requested ON requested.ENGINE=w.ENGINE
+                          AND requested.ENGINE_LOCK_ID=w.REQUESTING_ENGINE_LOCK_ID
+                        JOIN information_schema.innodb_trx blocking ON blocking.trx_id=w.BLOCKING_ENGINE_TRANSACTION_ID
+                        WHERE blocking.trx_mysql_thread_id=? AND requested.OBJECT_SCHEMA=DATABASE()
+                          AND requested.OBJECT_NAME='mailbox_review_draft'""").use { statement ->
+                        statement.setLong(1, blocker)
+                        statement.queryTimeout = 5
+                        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+                        var waiting = false
+                        while (!waiting && System.nanoTime() < deadline) {
+                            waiting = statement.executeQuery().use { it.next(); it.getLong(1) > 0 }
+                            if (!waiting) Thread.sleep(10)
+                        }
+                        assertTrue(waiting, "The production request must actually wait after its initial consistent read")
+                    }
+                    fresh = pool.submit(Callable { change(); token(draft) }).get(10, TimeUnit.SECONDS)
+                    assertNotEquals(observed, fresh, "The independent commit must be visible before releasing the draft lock")
+                }
+            }
+            val rejected = pending.get(20, TimeUnit.SECONDS)
+            assertNotNull(rejected, "A stale context must not be approved or confirmed after the lock wait")
+            assertEquals(409, rejected!!.status)
+            assertEquals("REVIEW_CONTEXT_CHANGED", rejected.code)
+            assertEquals(before, row(id(draft)), "Rejection must not change version, state or review fields")
+            assertEquals(events, jdbc.queryForList("SELECT * FROM mailbox_review_draft_event WHERE draft_id=? ORDER BY id", id(draft)))
+            assertEquals(fresh, token(draft))
+            if (confirmation) {
+                val confirmed = service.confirmContext("admin", id(draft), version(draft), fresh)
+                assertEquals(fresh, confirmed.currentToken)
+                assertEquals(before, row(id(draft)), "Successful confirmation appends evidence without changing the draft")
+            } else {
+                val approved = node(service.approve("admin", id(draft), version(draft), fresh))
+                assertEquals("APPROVED", approved["state"].asText())
+                assertEquals(version(draft) + 1, version(approved))
+                assertEquals(fresh, approved["approvedContextToken"].asText())
+            }
+            assertEquals(events.size + 1L, jdbc.queryForObject("SELECT COUNT(*) FROM mailbox_review_draft_event WHERE draft_id=?", Long::class.java, id(draft)))
+            org.mockito.Mockito.verifyNoInteractions(delivery)
+        } finally {
+            pool.shutdownNow()
+            assertTrue(pool.awaitTermination(10, TimeUnit.SECONDS), "Concurrent operations must terminate")
+        }
     }
 
     @Test
