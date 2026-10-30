@@ -1,15 +1,15 @@
 # Fast-P Ledger — master: docs/plans/2026-10-29/expert-access-master.md
 
 - Status: RUNNING
-- Master plan: docs/plans/2026-10-29/expert-access-master.md (commit c3afa57cfe2b448470b8968ac7cc47e24963bbc9)
-- Amendments: A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12,A13,A14
+- Master plan: docs/plans/2026-10-29/expert-access-master.md (commit e9f93fb260c6b25518ccbbf579c420c8aa6cb406)
+- Amendments: A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12,A13,A14,A15,A16
 - Master base: 59eb60cf00534a342c1019827a62f2b7b1db0f2b
 - Branch: fast/expert-access-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-expert-access-master
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-29T23:52:46.426Z
-- Current child: 04a
+- Current child: 04b
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
@@ -24,7 +24,7 @@
 | 02 | docs/plans/2026-10-29/expert-access-02-access-level.md | commit:4961c395096eb4bda13e3014319aad01390d44f3 | 01 | 3 | LIGHT_PASS_WITH_NOTES | 30c8af9b98f675f628d3ee98bd737f1716ecf54c | 6c0981eb4e148e9789c3af49e9d2dca9739c2508 | 0 | — | 6c0981eb4e148e9789c3af49e9d2dca9739c2508 | 3fc546f967e2b33a7602900456cc3d7e6a57865d | ExpertAccess02Verifier epoch3 attempt1 FourGatesPASS; fresh83 JVMzeroSkip, fullNode1961 each and explicit81; real29 authenticated HTTP. RECORD_ONLY O-1 unsupported POST method500, actual PUT403, outside scope; fix_round0. |
 | 03 | docs/plans/2026-10-29/expert-access-03-resource-guard.md | commit:42acd9796c75acf0603101b0ef97134477dba7d4 | 02 | 3 | LIGHT_PASS_WITH_NOTES | 6c0981eb4e148e9789c3af49e9d2dca9739c2508 | d5093a2509427526784254aba7dbe98ff2a9b1d9 | 0 | — | d5093a2509427526784254aba7dbe98ff2a9b1d9 | dd3f1c976cd3342642db13067cd336c6bf910799 | ExpertAccess03Verifier epoch3 attempt1 allFourGatesPASS;497freshJVMzeroSkip,Node1961;61 actualHTTP/2SMTP/three original owners/currentrevoke. RECORD_ONLY O-03-001 inherited anchor exception500 instead422 with zeroeffects, outside scope;fix_round0. |
 | 04a | docs/plans/2026-10-29/expert-access-04a-profile-tags.md | commit:c3afa57cfe2b448470b8968ac7cc47e24963bbc9 | 03 | 2 | LIGHT_PASS | d5093a2509427526784254aba7dbe98ff2a9b1d9 | 020bda37127f92187589e9d8f10e3bb3cbccb187 | 0 | — | 020bda37127f92187589e9d8f10e3bb3cbccb187 | fb17910048dd3ecb24ac4d8a586e243ec2f4706e | ExpertAccess04aVerifier epoch2 attempt1 FourGatesPASS; fresh5+116JVMzeroSkip andNode1961 each; actual48HTTP currentidentity/CAS/8handlerdowngrade; AUTO_FIX/RECORD_ONLY N/A;fix_round0. |
-| 04b | docs/plans/2026-10-29/expert-access-04b-calendar-drafts.md | sha256:3b01f10a42d1544992a23ff6166ccab9ba3638d504c75f67a3a8f26a3fa4b463 | 04a | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
+| 04b | docs/plans/2026-10-29/expert-access-04b-calendar-drafts.md | commit:e9f93fb260c6b25518ccbbf579c420c8aa6cb406 | 04a | 2 | LIGHT_PASS | 020bda37127f92187589e9d8f10e3bb3cbccb187 | a2d4b0e68691d115cff2a6ad3bcc115a06b28d27 | 0 | — | a2d4b0e68691d115cff2a6ad3bcc115a06b28d27 | 4391117d04d274e005f5f8a984f2da20dc479094 | ExpertAccess04bVerifyRetry epoch2 attempt2 FourGatesPASS;226JVMzeroSkip/Node1961, actual95HTTP+1SMTP personaldraft/CAS/confirmation/APPROVEDimmutability; interruptedattempt1DNS noverdict/no repair. AUTO_FIX/RECORD_ONLY N/A fix0. |
 | 05 | docs/plans/2026-10-29/expert-access-05-pending-owner.md | sha256:557020506b327615acea966f31c3983fd5b3095ba2b3e3d3b00b7c11ba72a7bb | 04b | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 | 06 | docs/plans/2026-10-29/expert-access-06-pending-query.md | commit:b8625c35f461816397b34d167493d62205e5f1d3 | 05 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 | 07 | docs/plans/2026-10-29/expert-access-07-user-workspace.md | sha256:9501f5077d62d7b7e24e9af9e1f22d626996f35b5c92671870edb11d6a82e7da | 06 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
@@ -47,6 +47,8 @@
 | A12 | docs/plans/2026-10-29/expert-access-03-resource-guard.md | commit:b8625c35f461816397b34d167493d62205e5f1d3 | commit:42acd9796c75acf0603101b0ef97134477dba7d4 | I-2; I-4; I-8; I-14 | 19 exact disjoint MVC/manual-context fixtures from full grep/import receipts; required original regressions; ExpertMailReadAccessIT interim FULL-denial retirement only, stable denials unchanged | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — received after the expert-access preflight blocker on 2026-10-29 |
 | A13 | docs/plans/2026-10-29/expert-access-master.md | commit:42acd9796c75acf0603101b0ef97134477dba7d4 | commit:c3afa57cfe2b448470b8968ac7cc47e24963bbc9 | I-2; I-3; I-4; I-14 bounded fixture exception | 04a five-to-eleven only six proven constructor/MVC/direct-method/precise-security-matrix/noise-line fixtures; production scope unchanged | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — received after the expert-access preflight blocker on 2026-10-29 |
 | A14 | docs/plans/2026-10-29/expert-access-04a-profile-tags.md | commit:42acd9796c75acf0603101b0ef97134477dba7d4 | commit:c3afa57cfe2b448470b8968ac7cc47e24963bbc9 | I-2; I-3; I-4; I-14 | Exact six consumers from complete grep receipts; preserve stable safety and version/admin behavior, retire temporary global tag deny; noise guard line-only with snippets/rules unchanged | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — received after the expert-access preflight blocker on 2026-10-29 |
+| A15 | docs/plans/2026-10-29/expert-access-master.md | commit:c3afa57cfe2b448470b8968ac7cc47e24963bbc9 | commit:e9f93fb260c6b25518ccbbf579c420c8aa6cb406 | I-2; I-4; I-8; I-11; I-14 | 04b seven-to-sixteen existing central guard registration plus eight proven mandatory consumer/line fixtures; capability unchanged, finalization preserved | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — received after the expert-access preflight blocker on 2026-10-29 |
+| A16 | docs/plans/2026-10-29/expert-access-04b-calendar-drafts.md | commit:c3afa57cfe2b448470b8968ac7cc47e24963bbc9 | commit:e9f93fb260c6b25518ccbbf579c420c8aa6cb406 | I-2; I-4; I-8; I-11; I-14 | Exact nine additional paths from constructor/import/direct-call/lineguard receipts; real shared support, precise registration and interim draft-denial retirement, fresh original gates | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — received after the expert-access preflight blocker on 2026-10-29 |
 
 ## Baseline
 - Source main worktree and its unrelated changes remain untouched. Original blocker/authorization records remain there as historical preflight evidence; this ledger in the retained execution worktree is the recovery authority.
@@ -83,3 +85,10 @@
 - 2026-10-30: acquired ExpertAccess04aResume child04a epoch2 plancommit:c3afa57cfe2b448470b8968ac7cc47e24963bbc9 based5093a2509427526784254aba7dbe98ff2a9b1d9.
 - 2026-10-30: ExpertAccess04aResume epoch2 READY_FOR_VERIFICATION code020bda37127f92187589e9d8f10e3bb3cbccb187 reports scoped5+original116 zeroSkip/fullNode1961 and51realHTTP; not independentPASS.
 - 2026-10-30: acquired fresh independent ExpertAccess04aVerifier child04a epoch2 boundaryd5093a2509427526784254aba7dbe98ff2a9b1d9..020bda37127f92187589e9d8f10e3bb3cbccb187.
+- 2026-10-30: acquired ExpertAccess04bImpl child04b epoch1 plansha256:3b01f10a42d1544992a23ff6166ccab9ba3638d504c75f67a3a8f26a3fa4b463 base020bda37127f92187589e9d8f10e3bb3cbccb187.
+- 2026-10-30: ExpertAccess04bImpl epoch1 prerequisite-only conflict no product mutation; exact9additional guard/consumer receipt. Plan-onlye9f93fb260c6b25518ccbbf579c420c8aa6cb406 A15/A16 before mutation authorizes16scope, no new capability or finalize gate. New epoch2fix0.
+- 2026-10-30: acquired ExpertAccess04bResume child04b epoch2 plancommit:e9f93fb260c6b25518ccbbf579c420c8aa6cb406 base020bda37127f92187589e9d8f10e3bb3cbccb187.
+- 2026-10-30: ExpertAccess04bResume epoch2 READY_FOR_VERIFICATION codea2d4b0e68691d115cff2a6ad3bcc115a06b28d27, reports226JVMzeroSkip/Node1961 and79HTTP/1SMTP;15of16authorizedpaths changed, reviewservice intentionally unchanged with regressionproof.
+- 2026-10-30: acquired fresh independent ExpertAccess04bVerifier child04b epoch2 boundary020bda37127f92187589e9d8f10e3bb3cbccb187..a2d4b0e68691d115cff2a6ad3bcc115a06b28d27.
+- 2026-10-30: ExpertAccess04bVerifier runtime ended providerDNS getaddrinfo ENOTFOUND chatgpt.com after24m27s, no published verdict (verify-log headeronly). This is agent availability interruption, not LIGHT_FAIL, no productrepair/fix_round. Historical transcript shows owned Docker removed, but replacement must reconcile exact owned leftovers before ownfixture setup. User继续 reaffirms continuation. Fresh independent replacement acquisition.
+- 2026-10-30: acquired fresh independent ExpertAccess04bVerifyRetry child04b epoch2 boundary020bda37127f92187589e9d8f10e3bb3cbccb187..a2d4b0e68691d115cff2a6ad3bcc115a06b28d27.
