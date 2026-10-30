@@ -114,8 +114,9 @@ E18–E21、audit§5：现有FILTER_FIELDS单一节点迁移，原mc-filter-coun
 | 5 | `src/test/js/mailboxMailReadAccess.test.js` | 旧按钮契约改为select成功/回滚/并发 |
 | 6 | `src/test/js/mailboxChatBehavior.test.js` | 原popover字段/AND/角标及审核入口 |
 | 7 | `src/test/js/mailboxChatStyle.test.js` | 新增CSS逐字契约及桌面手机布局 |
+| 8 | `src/test/js/mailReviewAdmin.test.js` | 既有两条待审入口改真实popover专家范围＋单Apply；fixture/query按expertScope/filterCounts接续，保留同框/历史/审核/翻译/确认/发送/跨页行为 |
 
-合计 **7 文件**；最多2个紧耦合子系统。新增共享store字段：0。
+合计 **8 文件**（原7+1个待审入口直接消费fixture，仍≤10）；最多2个紧耦合子系统。新增共享store字段：0。
 
 ## 验收标准
 - I-1：真实MySQL升级旧grant，断言均READ；并发重复PUT仅一行；旧PUT不降FULL；非法等级400且无写入；非admin管理403。
@@ -126,7 +127,7 @@ E18–E21、audit§5：现有FILTER_FIELDS单一节点迁移，原mc-filter-coun
 - S-2：新增CSS与上节逐字一致；实际DOM符合骨架，复用规则无diff；无新inline style/未声明class；按本步UI人工项核对桌面/手机/disabled。
 - S-3：新增CSS与上节逐字一致；实际DOM符合骨架，复用规则无diff；无新inline style/未声明class；按本步UI人工项核对桌面/手机/disabled。
 
-门禁：node --test src/test/js/mailboxMailReadAccess.test.js src/test/js/mailboxChatBehavior.test.js src/test/js/mailboxChatStyle.test.js；全量node --test src/test/js/*.test.js；1440/390px双账号A-8/9/10/14；最后JDK11 mvn test及全部mysqlIt/migrationIt针对性门禁。
+门禁：node --test src/test/js/mailboxMailReadAccess.test.js src/test/js/mailboxChatBehavior.test.js src/test/js/mailboxChatStyle.test.js；新增fixture独立fresh执行node --test src/test/js/mailReviewAdmin.test.js；全量node --test src/test/js/*.test.js；1440/390px双账号A-8/9/10/14；最后JDK11 mvn test及全部mysqlIt/migrationIt针对性门禁。
 
 测试环境使用隔离MySQL/测试SMTP与临时附件目录；不得把mysqlIt连生产库。跳过/未运行必须记NOT_RUN，不能写PASS。
 
@@ -192,3 +193,4 @@ E18–E21、audit§5：现有FILTER_FIELDS单一节点迁移，原mc-filter-coun
 
 ## 修正记录
 - 2026-10-30：持续授权下纠正既有pendingBadge总邮件wire字段为manualReviewTotal（不是total），完整DTO/app/grep证据见fast-p children/06/execution.md Epoch2；保留SSOT与已有调用方，不加alias/shim、不改变个人未挂起邮件数、0隐藏、失败不可用和最终S-3样式/交互。
+- 2026-10-31：完整src消费者核查证明mailReviewAdmin.test.js的既有两条入口仍直调setReviewPendingOnly/mock旧query，完整grep/稳定行为收据见fast-p children/08/execution.md Epoch1。持续授权下7→8仅该直接消费fixture，保留实际同框/审批/历史/翻译/确认/显式发送/跨页断言；改真实popover expertScope=PENDING_REVIEW＋单Apply/准确filterCounts，前端旧state/setter/export删除、不留alias或第二authority，后端兼容参数不变。新增fixture独立fresh及原全量/浏览器/MySQL门禁不减。

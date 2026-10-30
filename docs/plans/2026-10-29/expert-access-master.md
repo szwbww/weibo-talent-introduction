@@ -219,7 +219,7 @@
 | 5 | [来信归属写入与撤权兜底](expert-access-05-pending-owner.md) | 12（原9+3个窄UPDATE/锁消费fixture例外） |
 | 6 | [待处理查询与筛选范围](expert-access-06-pending-query.md) | 18（原10+2个owner路由激活+6个必要fixture例外） |
 | 7 | [用户可写会话复用与能力隔离](expert-access-07-user-workspace.md) | 15（原10+4个UI消费及1个非空等级投影fixture例外） |
-| 8 | [管理端最终下拉筛选与待处理角标](expert-access-08-admin-controls.md) | 7 |
+| 8 | [管理端最终下拉筛选与待处理角标](expert-access-08-admin-controls.md) | 8（原7+1个待审入口直接消费fixture） |
 
 ### 精确准入表（03/04共同执行，默认拒绝其余）
 以下是**拟开放名单**，不是声称现在已允许。每条同时需要method精确匹配、session和实际资源归属；目标解析后失败立即403/404，不先调用返回内容的方法。controller同名方法须以declaringClass区分。
@@ -458,3 +458,4 @@ A-1覆盖最新“可读看标签不可改”；A-2/5/6/7覆盖FULL；A-3/4/9/15
 - 2026-10-30：07真实focused232通过、style46通过/1失败发现同fixture的header单分支/源码时间槽次数pin与既定delegated隐藏email/account冲突；完整sourcegrep/行为DOM对照见children/07/execution.md Epoch2。持续授权下仅扩该已授权fixture343–353段退役范围，仍11文件；不重钉源码数量/分支/顺序，默认admin实际H2→P→时间→排期与唯一时间槽保留，delegated无身份P且唯一时间槽由真实DOM行为检查。原S-4/UI/权限/所有验收不减，保留部分实现与原失败，新身份fresh完成全部门禁/runtime。
 - 2026-10-30：07真实full JS1976/1972pass/4fail/0skip揭示3个原名单外直接消费fixture（children/07/execution.md Epoch3完整失败/grep/既有行为对照）：mailReviewReader的全局MailboxChat源码禁止、mailboxCalendarIntegration的骨架/订阅源码次数、mailboxReplyIdentity的无受限分支时按钮源码相邻pin。持续授权下11→14仅迁移该3fixture；不重钉3/2等计数/相邻源码，保留READ不挂FULL/附件/发送、admin实际工具栏/单实例订阅/卸载与delegated受限行为，原CSS/权限/API/人工验收不减。新增fixture必须独立fresh执行及full回归，新epoch继续部分实现并完成真实backend/browser/SMTP。
 - 2026-10-31：07额外宽泛opt-in全量命令揭示MailboxReadAccessProjectionTest的真实service/mock repo缺06新增filterCounts非空Pair stub，既有等级断言在291行NPE；完整全src/test grep/基线SHA/原因见children/07/execution.md Epoch4。持续授权下14→15仅补该消费fixture必需stub，保留真实等级投影断言，不加mock-echo计数断言/nullable产品shim。其他宽泛命令错误按原输出保留为aggregate观察，不扩大07修复范围、不计PASS；07仍须fresh原门禁/精确后台矩阵及全部实际浏览器/SMTP验收后提交。
+- 2026-10-31：08完整src消费者审计证明mailReviewAdmin.test.js仍直调旧setReviewPendingOnly并只mock旧query（children/08/execution.md Epoch1含逐字grep/行为收据）。持续授权下7→8仅加该fixture、仍在默认≤10内；现有两条审核入口改真实原popover expertScope=PENDING_REVIEW＋单Apply，原同编辑框/批准/历史/翻译/对话确认/显式发送/跨页断言保留。前端旧setter/state/export按既定单authority删除、不留shim，后端兼容参数不扩删；新增fixturefresh独立门禁及原全量/浏览器/精确MySQL门禁不减。
