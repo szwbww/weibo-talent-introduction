@@ -6817,7 +6817,7 @@
                         hostShowStatus("该专家在 ES 中无画像文档，标签功能不可用", "warn");
                         return null;
                     }
-                    return openAdd((existing && existing.tags) || []);
+                    return openAdd((existing && existing.tags) || [], delegated ? { delegatedContactId: contactId } : undefined);
                 }).then((tag) => {
                     if (!tag || !mutate || (delegated && !isCurrent())) return;
                     if (setLoading && editor) setLoading(editor, true, "正在添加标签...");

@@ -206,6 +206,109 @@ test("tag dialog completing after delegated unmount never mutates the old expert
     assert.equal(h.host.textContent, "");
 });
 
+function installActualTagDialog(h) {
+    const index = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+    for (const id of ["actionDialog", "actionDialogForm", "actionDialogTitle", "actionDialogBody"]) {
+        assert.ok(index.includes(`id="${id}"`), `${id} exists in the production shell`);
+    }
+    const dialog = h.doc.createElement("dialog");
+    dialog.setAttribute("id", "actionDialog");
+    dialog.innerHTML = `<form id="actionDialogForm"><h3 id="actionDialogTitle"></h3>
+        <div id="actionDialogBody"></div><button type="button" data-action="action-dialog-cancel">Cancel</button>
+        <button type="submit">Confirm</button></form>`;
+    h.doc.root.appendChild(dialog);
+    Object.defineProperty(dialog, "open", { get: () => dialog.hasAttribute("open") });
+    h.sandbox.EXPERT_PRESET_TAGS = ["Preset"];
+    h.sandbox.expertTagLabels = {};
+    h.sandbox.escapeHtml = value => String(value);
+    h.sandbox.unmountExpertMaterialsHosts = () => {};
+    h.sandbox.meetingCalendarState = { dialog: {} };
+    for (const name of ["openExpertTagAddDialog", "openActionDialog", "mcHostReleaseDelegatedContext"]) {
+        vm.runInContext(tools.extractFn(name, appSource), h.sandbox);
+    }
+    return dialog;
+}
+
+test("actual delegated tag dialog cancels with its conversation and releases promise, listeners and contents", async () => {
+    for (const release of ["focus", "visibility", "switch", "unmount"]) {
+        const h = await workspace();
+        const dialog = installActualTagDialog(h);
+        await h.choose(1);
+        tools.click(h.host.querySelector('[data-action="mc-open-expert"]'));
+        await tools.flush();
+        const open = h.sandbox.openExpertTagAddDialog;
+        let settled = false;
+        h.sandbox.openExpertTagAddDialog = (...args) => open(...args).then(value => {
+            assert.equal(value, null);
+            settled = true;
+            return value;
+        });
+        tools.click(h.doc.root.querySelector('[data-action="expert-add-tag-open"]'));
+        await tools.flush();
+        assert.equal(dialog.hasAttribute("open"), true);
+        const form = h.doc.getElementById("actionDialogForm");
+        const cancel = form.querySelector("[data-action='action-dialog-cancel']");
+        h.doc.getElementById("expertCustomTag").value = "Private unfinished tag";
+        h.levels[1] = "READ";
+        if (release === "focus") h.dispatchGlobal("focus", {});
+        if (release === "visibility") h.doc.root.dispatchEvent(new tools.MiniEvent("visibilitychange"));
+        if (release === "switch") await h.choose(2);
+        if (release === "unmount") h.handle.unmount();
+        assert.equal(dialog.hasAttribute("open"), false, `${release} closes the owned modal synchronously`);
+        await tools.flush();
+        assert.equal(settled, true, `${release} resolves the pending tag promise`);
+        assert.equal(h.doc.getElementById("actionDialogBody").innerHTML, "");
+        assert.equal(h.doc.getElementById("actionDialogTitle").textContent, "");
+        assert.equal((form.listeners.get("submit") || []).length, 0);
+        assert.equal((cancel.listeners.get("click") || []).length, 0);
+        assert.equal((dialog.listeners.get("cancel") || []).length, 0);
+        assert.equal((dialog.listeners.get("close") || []).length, 0);
+        form.dispatchEvent(new tools.MiniEvent("submit"));
+        assert.equal(h.calls.tagMutations.length, 0);
+        h.handle.unmount();
+    }
+});
+
+test("actual tag dialog preserves admin submit and isolates other context releases", async () => {
+    const h = await workspace();
+    const dialog = installActualTagDialog(h);
+    const pending = h.sandbox.openExpertTagAddDialog([], { delegatedContactId: 1 });
+    h.sandbox.mcHostReleaseDelegatedContext(2);
+    assert.equal(dialog.hasAttribute("open"), true);
+    tools.click(h.doc.root.querySelector("[data-action='action-dialog-cancel']"));
+    assert.equal(await pending, null);
+    const admin = h.sandbox.openExpertTagAddDialog([]);
+    h.sandbox.mcHostReleaseDelegatedContext(1);
+    assert.equal(dialog.hasAttribute("open"), true, "delegated release must not close the admin modal");
+    h.doc.getElementById("expertCustomTag").value = "Admin tag";
+    h.doc.getElementById("actionDialogForm").dispatchEvent(new tools.MiniEvent("submit"));
+    assert.equal(await admin, "Admin tag");
+    assert.equal(dialog.hasAttribute("open"), false);
+    h.handle.unmount();
+});
+
+test("replacement admin action dialog survives old delegated release and queued native close", async () => {
+    const h = await workspace();
+    const dialog = installActualTagDialog(h);
+    h.sandbox.ACTION_DIALOG_SCHEMAS = { admin: { title: "Admin action", fields: [] } };
+    const old = h.sandbox.openExpertTagAddDialog([], { delegatedContactId: 1 });
+    const replacement = h.sandbox.openActionDialog("admin");
+    assert.equal(await old, null);
+    h.sandbox.mcHostReleaseDelegatedContext(1);
+    dialog.dispatchEvent(new tools.MiniEvent("close"));
+    assert.equal(dialog.open, true);
+    assert.equal(h.doc.getElementById("actionDialogTitle").textContent, "Admin action");
+    assert.equal(dialog.expertTagSession, undefined);
+    tools.click(dialog.querySelector("[data-action='action-dialog-cancel']"));
+    assert.equal(await replacement, null);
+    const native = h.sandbox.openExpertTagAddDialog([], { delegatedContactId: 1 });
+    dialog.dispatchEvent(new tools.MiniEvent("cancel"));
+    assert.equal(await native, null);
+    assert.equal(dialog.open, false);
+    assert.equal(h.doc.getElementById("actionDialogBody").innerHTML, "");
+    h.handle.unmount();
+});
+
 test("admin tag mutation retains the existing global refresh behavior", async () => {
     const calls = [];
     const context = { URLSearchParams, $: selector => ({ value: selector === "#contactStatusFilter" ? "CONTACTED" : "" }),

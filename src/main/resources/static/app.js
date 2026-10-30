@@ -8579,12 +8579,13 @@ function renderExpertTagEditor(tags, orcidId, level, editorId = "expertTagEditor
     `;
 }
 
-function openExpertTagAddDialog(existingTags = []) {
+function openExpertTagAddDialog(existingTags = [], { delegatedContactId = null } = {}) {
     return new Promise((resolve) => {
         const dialog = document.getElementById("actionDialog");
         const form = document.getElementById("actionDialogForm");
         const titleEl = document.getElementById("actionDialogTitle");
         const bodyEl = document.getElementById("actionDialogBody");
+        if (dialog.expertTagSession) dialog.expertTagSession.cancel();
         titleEl.textContent = "添加专家标签";
         const availablePresets = EXPERT_PRESET_TAGS.filter(tag => !(existingTags || []).includes(tag));
         bodyEl.innerHTML = `
@@ -8601,7 +8602,11 @@ function openExpertTagAddDialog(existingTags = []) {
             </div>
         `;
 
-        const handleCancel = () => {
+        let settled = false;
+        const session = { contactId: delegatedContactId, cancel: () => handleCancel() };
+        const handleCancel = (event) => {
+            if (event?.type === "close" && dialog.open) return;
+            if (event) event.preventDefault();
             cleanup();
             resolve(null);
         };
@@ -8614,14 +8619,27 @@ function openExpertTagAddDialog(existingTags = []) {
             resolve(tag || null);
         };
         const cleanup = () => {
+            if (settled) return;
+            settled = true;
             form.removeEventListener("submit", handleSubmit);
             const cancelBtn = form.querySelector("[data-action='action-dialog-cancel']");
             cancelBtn.removeEventListener("click", handleCancel);
+            dialog.removeEventListener("cancel", handleCancel);
+            dialog.removeEventListener("close", handleCancel);
+            if (dialog.expertTagSession !== session) return;
+            delete dialog.expertTagSession;
+            if (delegatedContactId != null) {
+                bodyEl.replaceChildren();
+                titleEl.textContent = "";
+            }
             dialog.close();
         };
         const cancelBtn = form.querySelector("[data-action='action-dialog-cancel']");
         cancelBtn.addEventListener("click", handleCancel);
         form.addEventListener("submit", handleSubmit);
+        dialog.expertTagSession = session;
+        dialog.addEventListener("cancel", handleCancel);
+        dialog.addEventListener("close", handleCancel);
         dialog.showModal();
     });
 }
@@ -12175,6 +12193,10 @@ function mcHostMountDelegatedProfile(root, contact, isCurrent) {
 }
 
 function mcHostReleaseDelegatedContext(contactId) {
+    const tagSession = document.getElementById("actionDialog")?.expertTagSession;
+    if (tagSession && tagSession.contactId != null && Number(tagSession.contactId) === Number(contactId)) {
+        tagSession.cancel();
+    }
     unmountExpertMaterialsHosts(document);
     if (meetingCalendarState.dialog.open && Number(meetingCalendarState.dialog.contactId) === Number(contactId)) {
         closeMeetingCalendarDialog({ restoreFocus: false });
@@ -20552,6 +20574,7 @@ function openActionDialog(type, options = {}) {
             return;
         }
 
+        if (dialog.expertTagSession) dialog.expertTagSession.cancel();
         titleEl.textContent = schema.title;
         let settled = false;
         const cancelButton = form.querySelector("[data-action='action-dialog-cancel']");
