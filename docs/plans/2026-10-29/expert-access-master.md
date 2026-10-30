@@ -128,7 +128,7 @@
 ```
 - 加载中/保存中disabled；失败用既有mc-inline-error提示并恢复服务器已确认值。无需确认/保存按钮；授权本身不发送邮件。列表FULL标记复用`<span class="mc-badge">user1：可写</span>`。禁止大卡片、额外权限面板、inline style、未列class。
 ### S-3：原更多筛选第一项与邮件角标
-- 完整保留E18/E19：七个原字段及原Reset/Apply/关闭按钮；复用mailbox-chat.css:78–100的mc-icon、mc-filter-popover、mc-filter-fields、mc-field、mc-field-wide规则。430px面板/两列/gap14px/padding18px 20px/select34px/圆角7px均不改，手机沿原媒体规则。
+- 完整保留E18/E19：七个原字段及原Reset/Apply/关闭按钮；复用mailbox-chat.css:78–100的mc-icon、mc-filter-popover、mc-filter-fields、mc-field、mc-field-wide规则。430px面板/两列/gap14px/padding18px 20px/桌面select34px/圆角7px均不改，手机沿原媒体规则（既有mobile-core min-height:44px优先），不增加覆盖规则。
 - 在`#mailboxFilterFields`第一个子元素插入；选项数字来自服务器，未知不显示伪0：
 ```html
 <label class="mc-field mc-field-wide">专家筛选
@@ -423,7 +423,7 @@
 - 操作步骤:
   1. 对照本计划S-1–S-4观察。
   2. 打开popover，切权限，模拟失败与无标签。
-- 预期结果: popover桌面430px、手机不溢出；首项select34px；header权限select最大180px；角标18px；无大权限卡；null标签显示“标签暂不可用”，[]不显示；失败不伪造授权成功。
+- 预期结果: popover桌面430px、手机不溢出；首项select桌面34px、手机沿既有min-height:44px；header权限select最大180px；角标18px；无大权限卡；null标签显示“标签暂不可用”，[]不显示；失败不伪造授权成功。
 - 覆盖: I-3/I-9/I-10/S-1/S-2/S-3/S-4
 
 ### A-15: 并发归属不被旧保存覆盖
@@ -460,3 +460,4 @@ A-1覆盖最新“可读看标签不可改”；A-2/5/6/7覆盖FULL；A-3/4/9/15
 - 2026-10-31：07额外宽泛opt-in全量命令揭示MailboxReadAccessProjectionTest的真实service/mock repo缺06新增filterCounts非空Pair stub，既有等级断言在291行NPE；完整全src/test grep/基线SHA/原因见children/07/execution.md Epoch4。持续授权下14→15仅补该消费fixture必需stub，保留真实等级投影断言，不加mock-echo计数断言/nullable产品shim。其他宽泛命令错误按原输出保留为aggregate观察，不扩大07修复范围、不计PASS；07仍须fresh原门禁/精确后台矩阵及全部实际浏览器/SMTP验收后提交。
 - 2026-10-31：08完整src消费者审计证明mailReviewAdmin.test.js仍直调旧setReviewPendingOnly并只mock旧query（children/08/execution.md Epoch1含逐字grep/行为收据）。持续授权下7→8仅加该fixture、仍在默认≤10内；现有两条审核入口改真实原popover expertScope=PENDING_REVIEW＋单Apply，原同编辑框/批准/历史/翻译/对话确认/显式发送/跨页断言保留。前端旧setter/state/export按既定单authority删除、不留shim，后端兼容参数不扩删；新增fixturefresh独立门禁及原全量/浏览器/精确MySQL门禁不减。
 - 2026-10-31：08真实full JS1985/1983pass/2fail/0skip证明authFlow.test.js与mailboxServerDrafts.test.js实际提取执行logout闭包却缺新增pending-count请求作废seq/publisher环境（children/08/execution.md Epoch2全src/test grep/失败收据）。持续授权下8→10仅两消费fixture，保留flush失败不logout/reload、成功顺序与latest-intent行为，用真实producer/consumer证明当前session迟到计数失效；不加生产缺seq/helper fallback、不测mock echo。先前mailboxSuspensionFollowup额外文件请求因已有calendar DOM通知惯例撤回，不在授权清单；原完整门禁/实际验收不减。
+- 2026-10-31：08真实1440/390测量scope34/44、popover430/310；原styles.css mobile-core共享min-height44覆盖基础34，源grep及与产品base相同blob证据见children/08/execution.md Epoch3。持续授权下仅澄清S-3/A-14桌面34与手机沿原44最小触控高度，化解“首项34”与“手机沿原媒体/共享CSS不可变”的规划冲突；不改变任何产品CSS/白名单/尺寸token，不扩新覆盖。其余原验收、fresh门禁与最终实际浏览器要求不减，旧失败/部分实现保留后新epoch完成。
