@@ -72,8 +72,14 @@ E13/E14/E16/E30–E34、审计§3/§4/§5。ExpertManualProfileController有catc
 | 3 | `src/main/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryController.kt` | 本步任务明确的目标守卫/验证；其余原行为保留 |
 | 4 | `src/main/kotlin/com/weibo/talentintroduction/auth/config/MailReadOnlyPolicy.kt` | 本步任务明确的目标守卫/验证；其余原行为保留 |
 | 5 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertScopedOperationsIT.kt` | 本步任务明确的目标守卫/验证；其余原行为保留 |
+| 6 | `src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexControllerTest.kt` | 必需非空构造/session直调接线，保留原ES解析与错误契约 |
+| 7 | `src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexControllerMvcTest.kt` | MVC必需安全依赖接线，原admin/自动任务不变 |
+| 8 | `src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertManualProfileControllerTest.kt` | 构造/MVC接线，保留缺session401与version/admin/error契约 |
+| 9 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryControllerTest.kt` | MVC必需归属查询/安全依赖接线，保留summary/date/statistics |
+| 10 | `src/test/kotlin/com/weibo/talentintroduction/auth/config/AuthInterceptorTest.kt` | 必需controller依赖接线；精确准入安全矩阵只追加已完成04a方法；退役临时全局tag禁用pin，保留NONE/READ/跨资源403及拒绝零副作用 |
+| 11 | `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt` | 仅修正ExpertIndexController对应noise-site行号，路径/上下文片段/扫描规则不变 |
 
-共5文件；最多2子系统；共享store新增字段0。
+共11文件；I-14仅为上述6个已证明直接消费fixture及行号守卫授予有界例外，原产品范围不扩大，共享store新增字段0。不得用nullable/default安全依赖或改变scanner片段绕过接线。
 
 ## 验收标准
 - I-2：真实AuthWebConfig+MVC逐个运行路由矩阵：NONE/READ/FULL/跨专家/admin；403之前SMTP、ES和文件流读取调用为0；未列端点仍403。
@@ -84,6 +90,7 @@ E13/E14/E16/E30–E34、审计§3/§4/§5。ExpertManualProfileController有catc
 - I-13：管理员全路径回归；user1无法打开其他tab及全局端点。定时收信与自动标签仍执行，READ附件响应仍空且直链403。
 
 门禁：JDK11 mvn test -Dtest=ExpertScopedOperationsIT -DmysqlIt=true；ExpertManualProfileControllerTest/ServiceTest、原MeetingCalendar测试、MailReviewDraftIT回归。
+追加ExpertIndexControllerTest、ExpertIndexControllerMvcTest、InboundMailSummaryControllerTest、AuthInterceptorTest、OperatorStatusWriteSeamGuardTest原回归；所有相关opt-in显式启用、目标不得skip。原稳定安全/业务断言不削弱；不重新钉死临时全局拒绝或措辞。
 
 测试环境使用隔离MySQL/测试SMTP与临时附件目录；不得把mysqlIt连生产库。跳过/未运行必须记NOT_RUN，不能写PASS。
 
@@ -138,3 +145,6 @@ E13/E14/E16/E30–E34、审计§3/§4/§5。ExpertManualProfileController有catc
 跨阶段人工项引用的其他I/S条款，以总计划同编号定义为准；本步实现仍严格限定本文件清单。
 
 阶段验收说明：人工条目保留跨阶段最终行为；本步先执行其覆盖到的API路径，所有完整UI场景在08再验一次。
+
+## 修正记录
+- 2026-10-30：按用户持续授权，04a非空构造/MVC/session调用和精确准入表消费需要6个原名单外fixture（完整类型/构造/import/直调grep收据及lineguard机制见fast-p children/04a/execution.md Epoch1）。5→11授予仅fixture/原noise-site行号的I-14例外；产品范围不扩大，原稳定NONE/READ/跨资源/admin/version/拒绝副作用契约保留，仅退役被正式精确准入取代的全局tag禁用临时pin。所有新增fixture执行原门禁，修正必须在产品工作前记录/提交。
