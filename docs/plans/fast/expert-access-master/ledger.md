@@ -1,15 +1,15 @@
 # Fast-P Ledger — master: docs/plans/2026-10-29/expert-access-master.md
 
 - Status: RUNNING
-- Master plan: docs/plans/2026-10-29/expert-access-master.md (commit 4961c395096eb4bda13e3014319aad01390d44f3)
-- Amendments: A1,A2,A3,A4,A5,A6,A7
+- Master plan: docs/plans/2026-10-29/expert-access-master.md (commit 42acd9796c75acf0603101b0ef97134477dba7d4)
+- Amendments: A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12
 - Master base: 59eb60cf00534a342c1019827a62f2b7b1db0f2b
 - Branch: fast/expert-access-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-expert-access-master
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-29T23:52:46.426Z
-- Current child: 02
+- Current child: 03
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
@@ -22,11 +22,11 @@
 | review05 | docs/plans/2026-10-29/draft-review-05-admin.md | commit:08d6af05bae3349ca46f92df61b48ab0bac87183 | none | 1 | LIGHT_PASS_WITH_NOTES | 59eb60cf00534a342c1019827a62f2b7b1db0f2b | 036fc19c88b3a7f5509bbf167a68db6a8af7a20f | 0 | — | 036fc19c88b3a7f5509bbf167a68db6a8af7a20f | 8b96952d25d80d7526e89945b77633146c4b18d3 | ExpertBootstrap05Verifier COMPLETE_CHILD; O-1 disposable JDBC timezone fixture correction only; all four gatesPASS, no repairs |
 | 01 | docs/plans/2026-10-29/expert-access-01-read-labels.md | sha256:77aef654ed91794dbadcfde5207d16b540d191802e4c2e819ee80bf47f8af0a4 | review05 | 1 | LIGHT_PASS | 036fc19c88b3a7f5509bbf167a68db6a8af7a20f | af168d86f04f1e2f439e3291d6b7b940f5b60071 | 1 | 30c8af9b98f675f628d3ee98bd737f1716ecf54c | 30c8af9b98f675f628d3ee98bd737f1716ecf54c | 1bf59c1684393092e624b6d05bf649ef29cb219b | Fresh ExpertAccess01Reverify1 COMPLETE_CHILD; F-01 independently closed after1 bounded repair; node27 and actual1440/390 denial/late-response proof pass |
 | 02 | docs/plans/2026-10-29/expert-access-02-access-level.md | commit:4961c395096eb4bda13e3014319aad01390d44f3 | 01 | 3 | LIGHT_PASS_WITH_NOTES | 30c8af9b98f675f628d3ee98bd737f1716ecf54c | 6c0981eb4e148e9789c3af49e9d2dca9739c2508 | 0 | — | 6c0981eb4e148e9789c3af49e9d2dca9739c2508 | 3fc546f967e2b33a7602900456cc3d7e6a57865d | ExpertAccess02Verifier epoch3 attempt1 FourGatesPASS; fresh83 JVMzeroSkip, fullNode1961 each and explicit81; real29 authenticated HTTP. RECORD_ONLY O-1 unsupported POST method500, actual PUT403, outside scope; fix_round0. |
-| 03 | docs/plans/2026-10-29/expert-access-03-resource-guard.md | sha256:0033f9c3d1460f43b2fc1e26a00250a88f679fcb410be0b51f02a2b018055e47 | 02 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
+| 03 | docs/plans/2026-10-29/expert-access-03-resource-guard.md | commit:42acd9796c75acf0603101b0ef97134477dba7d4 | 02 | 3 | LIGHT_PASS_WITH_NOTES | 6c0981eb4e148e9789c3af49e9d2dca9739c2508 | d5093a2509427526784254aba7dbe98ff2a9b1d9 | 0 | — | d5093a2509427526784254aba7dbe98ff2a9b1d9 | dd3f1c976cd3342642db13067cd336c6bf910799 | ExpertAccess03Verifier epoch3 attempt1 allFourGatesPASS;497freshJVMzeroSkip,Node1961;61 actualHTTP/2SMTP/three original owners/currentrevoke. RECORD_ONLY O-03-001 inherited anchor exception500 instead422 with zeroeffects, outside scope;fix_round0. |
 | 04a | docs/plans/2026-10-29/expert-access-04a-profile-tags.md | sha256:0ffa45716aa98398dceab5a11f581d5630b870e73541babd99fbb2b2af52e4aa | 03 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 | 04b | docs/plans/2026-10-29/expert-access-04b-calendar-drafts.md | sha256:3b01f10a42d1544992a23ff6166ccab9ba3638d504c75f67a3a8f26a3fa4b463 | 04a | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 | 05 | docs/plans/2026-10-29/expert-access-05-pending-owner.md | sha256:557020506b327615acea966f31c3983fd5b3095ba2b3e3d3b00b7c11ba72a7bb | 04b | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
-| 06 | docs/plans/2026-10-29/expert-access-06-pending-query.md | sha256:64b5c7f138adf0a2b7a5b58fb1dc979a59f48b7f6fe7a16253979982ba2b7626 | 05 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
+| 06 | docs/plans/2026-10-29/expert-access-06-pending-query.md | commit:b8625c35f461816397b34d167493d62205e5f1d3 | 05 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 | 07 | docs/plans/2026-10-29/expert-access-07-user-workspace.md | sha256:9501f5077d62d7b7e24e9af9e1f22d626996f35b5c92671870edb11d6a82e7da | 06 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 | 08 | docs/plans/2026-10-29/expert-access-08-admin-controls.md | sha256:64f92e4adc592d15bf64f76f33fb5d6ceea106c101558e772a51f19181ba964c | 07 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 
@@ -40,6 +40,11 @@
 | A5 | docs/plans/2026-10-29/expert-access-02-access-level.md | commit:08d6af05bae3349ca46f92df61b48ab0bac87183 | commit:1fd83001f99533b787b7dc6099678a910648fca2 | I-1; I-4; I-14 | Update OutboundAttachmentFlowTest and MailReviewQueryIT constructor/real-level fixtures only and run original behavior regressions; exact grep receipt in child02 execution | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — received after the expert-access preflight blocker on 2026-10-29 |
 | A6 | docs/plans/2026-10-29/expert-access-master.md | commit:1fd83001f99533b787b7dc6099678a910648fca2 | commit:4961c395096eb4bda13e3014319aad01390d44f3 | I-14; inherited command gate | Authorize tenth-file inherited cache-literal test retirement only; keep taskActivityCenter guard/index unchanged, full gates required | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — received after the expert-access preflight blocker on 2026-10-29 |
 | A7 | docs/plans/2026-10-29/expert-access-02-access-level.md | commit:1fd83001f99533b787b7dc6099678a910648fca2 | commit:4961c395096eb4bda13e3014319aad01390d44f3 | I-14; no hardcoded cache release key | Unique observed Node failure: retire inherited fixed literal in mailboxReadOnly.test.js with dynamic uniform-key and actual module-reference assertions; exact Epoch2 receipt | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — received after the expert-access preflight blocker on 2026-10-29 |
+| A8 | docs/plans/2026-10-29/expert-access-master.md | commit:4961c395096eb4bda13e3014319aad01390d44f3 | commit:b8625c35f461816397b34d167493d62205e5f1d3 | I-2; I-7; I-13; I-14 bounded exception | Authorize03 original8+14 mandatory constructor fixtures only; stage unmatched detail04b and personal pending/suspension06;06 adds2 exact activation files, final capabilities unchanged | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — received after the expert-access preflight blocker on 2026-10-29 |
+| A9 | docs/plans/2026-10-29/expert-access-03-resource-guard.md | commit:4961c395096eb4bda13e3014319aad01390d44f3 | commit:b8625c35f461816397b34d167493d62205e5f1d3 | I-2; I-4; I-8; I-14 | 22-file scoped exception solely14 mechanical test constructor fixtures; no early unmatched controller, preserve assertions, mandatory nonnull security; material pre-side-effect all-member validation exercised | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — received after the expert-access preflight blocker on 2026-10-29 |
+| A10 | docs/plans/2026-10-29/expert-access-06-pending-query.md | commit:4961c395096eb4bda13e3014319aad01390d44f3 | commit:b8625c35f461816397b34d167493d62205e5f1d3 | I-2; I-7; I-13; I-14 | 12-file scoped exception adds existing policy/guard to activate exact pending/suspension keys only after real owner SQL; real AuthWebConfig ownerIT regression | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — received after the expert-access preflight blocker on 2026-10-29 |
+| A11 | docs/plans/2026-10-29/expert-access-master.md | commit:b8625c35f461816397b34d167493d62205e5f1d3 | commit:42acd9796c75acf0603101b0ef97134477dba7d4 | I-2; I-8; I-14; mandatory nonnull Spring consumers | Extend03 fixture-only exception22to41 for19 proven missing-bean contexts; production5 unchanged; retire only interim FULL global-denial pin, preserve stable safety | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — received after the expert-access preflight blocker on 2026-10-29 |
+| A12 | docs/plans/2026-10-29/expert-access-03-resource-guard.md | commit:b8625c35f461816397b34d167493d62205e5f1d3 | commit:42acd9796c75acf0603101b0ef97134477dba7d4 | I-2; I-4; I-8; I-14 | 19 exact disjoint MVC/manual-context fixtures from full grep/import receipts; required original regressions; ExpertMailReadAccessIT interim FULL-denial retirement only, stable denials unchanged | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — received after the expert-access preflight blocker on 2026-10-29 |
 
 ## Baseline
 - Source main worktree and its unrelated changes remain untouched. Original blocker/authorization records remain there as historical preflight evidence; this ledger in the retained execution worktree is the recovery authority.
@@ -66,3 +71,8 @@
 - 2026-10-30: child02 epoch2 exact JVM15pass/Node1fail inherited gate receipt; plan-only4961c395096eb4bda13e3014319aad01390d44f3 A6/A7 authorizes only tenth-file fixed-cache-literal retirement. Epoch3 retains earlier implementation, no product commit yet, fix_round0.
 - 2026-10-30: ExpertAccess02Impl completed epoch3 product6c0981eb4e148e9789c3af49e9d2dca9739c2508 READY_FOR_VERIFICATION;83 required JVM tests zero skips and fullNode1961, actual64 authenticated HTTP responses reported; not controller-verified. Fresh independent light verifier acquisition.
 - 2026-10-30: acquired fresh independent ExpertAccess02Verifier attempt1 for exact30c8af9..6c0981e boundary, epoch3; only verify-log writable.
+- 2026-10-30: child02 COMPLETE LIGHT_PASS_WITH_NOTES code6c0981e evidence3fc546f checkpointa2cc129; both full-manifest checkpoints VALID. Fresh ExpertAccess03Impl acquired for03 base6c0981e, original approved plan identity unchanged, epoch1.
+- 2026-10-30:03 epoch1 exact constructor14fixture/unmatched/owner prerequisites recorded before mutation. Controller reconciled existing04b redaction, rejected early23rd product file; plan-onlyb8625c35f461816397b34d167493d62205e5f1d3 A8/A9/A10 authorizes22fixture-only scope and06 exact12-file activation boundary under I-14 bounded exceptions. Restart03 epoch2, fix_round0.
+- 2026-10-30:03 epoch2 complete mandatory Spring consumer receipt proves19 additional non-scanning contexts. Plan-only42acd9796c75acf0603101b0ef97134477dba7d4 A11/A12 before product mutation,41 scoped paths with5 original product paths; original global-denial interim pin retirement explicit, all stable denials/zero sideeffects retained. Epoch3 startsfix0.
+- 2026-10-30: ExpertAccess03Impl epoch3 committed d5093a2509427526784254aba7dbe98ff2a9b1d9, reports497zeroSkip+Node1961 and51 actualHTTP/2SMTP; not independently verified. Required fresh light verifier acquisition.
+- 2026-10-30: acquired fresh independent ExpertAccess03Verifier epoch3 attempt1 for6c0981e..d5093a2, only verify-log writable.
