@@ -66,6 +66,45 @@ interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing
         imapUid: Long
     ): List<InboundMailProcessing>
 
+    @Query("SELECT id FROM expert_contact WHERE id = :contactId FOR UPDATE")
+    fun lockPendingContact(contactId: Long): Long?
+
+    /** A current read after the contact lock, not a repeatable-read snapshot. */
+    @Query("""
+        SELECT access_level FROM expert_mail_read_access
+         WHERE expert_contact_id = :contactId AND username = 'user1' FOR UPDATE
+    """)
+    fun currentPendingAccessLevel(contactId: Long): String?
+
+    @Modifying
+    @Query("""
+        UPDATE inbound_mail_processing
+           SET process_status = 'PROCESSED', process_reason = :reason,
+               reason_type = 'AUTO_RESPONSE', updated_at = :now
+         WHERE id = :id AND process_status = 'MANUAL_REVIEW'
+    """)
+    fun reclassifyAutoResponse(id: Long, reason: String, now: LocalDateTime): Int
+
+    @Modifying
+    @Query("""
+        UPDATE inbound_mail_processing
+           SET expert_contact_id = :contactId, process_status = 'MANUAL_REVIEW',
+               process_reason = 'MANUAL_BOUND', resolved_by = NULL,
+               resolved_at = NULL, updated_at = :now
+         WHERE id = :id AND expert_contact_id IS NULL
+    """)
+    fun bindPendingContact(id: Long, contactId: Long, now: LocalDateTime): Int
+
+    @Modifying
+    @Query("""
+        UPDATE inbound_mail_processing
+           SET process_status = 'PROCESSED', process_reason = 'MANUAL_RESOLVED',
+               reason_type = 'MANUAL_RESOLVED', resolved_by = :operator,
+               resolved_at = :now, updated_at = :now
+         WHERE id = :id AND process_status = 'MANUAL_REVIEW'
+    """)
+    fun resolvePending(id: Long, operator: String, now: LocalDateTime): Int
+
     @Modifying
     @Query("""
         UPDATE inbound_mail_processing
@@ -74,6 +113,12 @@ interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing
                reason_type = NULL,
                resolved_at = NULL,
                resolved_by = NULL,
+               pending_owner_username = CASE
+                   WHEN pending_owner_username = 'user1' AND NOT EXISTS (
+                       SELECT 1 FROM expert_mail_read_access a
+                        WHERE a.expert_contact_id = inbound_mail_processing.expert_contact_id
+                          AND a.username = 'user1' AND a.access_level = 'FULL'
+                   ) THEN 'admin' ELSE pending_owner_username END,
                updated_at = :now
          WHERE id = :id
            AND process_status = 'PROCESSED'

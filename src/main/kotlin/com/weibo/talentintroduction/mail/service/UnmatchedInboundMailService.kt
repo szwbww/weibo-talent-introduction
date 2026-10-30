@@ -159,6 +159,9 @@ class UnmatchedInboundMailService(
             .orElseThrow { error("Inbound mail processing not found: $recordId") }
         require(record.expertContactId == null) { "Already bound to a contact" }
 
+        check(inboundMailProcessingRepository.lockPendingContact(contactId) == contactId) {
+            "Expert contact not found: $contactId"
+        }
         val contact = expertContactRepository.findById(contactId)
             .orElseThrow { error("Expert contact not found: $contactId") }
 
@@ -190,16 +193,12 @@ class UnmatchedInboundMailService(
         expertContactRepository.save(currentContact)
 
         val now = LocalDateTime.now()
-        val saved = inboundMailProcessingRepository.save(
-            record.copy(
-                expertContactId = contactId,
-                processStatus = "MANUAL_REVIEW",
-                processReason = "MANUAL_BOUND",
-                resolvedBy = null,
-                resolvedAt = null,
-                updatedAt = now
-            )
-        )
+        check(inboundMailProcessingRepository.bindPendingContact(recordId, contactId, now) == 1) {
+            "Inbound mail changed concurrently: $recordId"
+        }
+        val saved = inboundMailProcessingRepository.findById(recordId).orElseThrow {
+            error("Inbound mail processing not found: $recordId")
+        }
 
         // 04（I-3/I-4）：开关启用时，按已有 processing-owner 附件幂等补 ExpertDocument——
         // 复用同一 attachmentId、零文件 I/O、不搬迁 owner/路径、不改 review/document
@@ -234,15 +233,18 @@ class UnmatchedInboundMailService(
         val record = inboundMailProcessingRepository.findById(recordId)
             .orElseThrow { error("Inbound mail processing not found: $recordId") }
         require(record.processStatus == "MANUAL_REVIEW") { "Record $recordId is not in MANUAL_REVIEW" }
+        record.expertContactId?.let { contactId ->
+            check(inboundMailProcessingRepository.lockPendingContact(contactId) == contactId) {
+                "Expert contact not found: $contactId"
+            }
+        }
         val now = LocalDateTime.now()
-        val saved = inboundMailProcessingRepository.save(record.copy(
-            processStatus = "PROCESSED",
-            processReason = "MANUAL_RESOLVED",
-            reasonType = "MANUAL_RESOLVED",
-            resolvedBy = resolvedBy,
-            resolvedAt = now,
-            updatedAt = now
-        ))
+        check(inboundMailProcessingRepository.resolvePending(recordId, resolvedBy, now) == 1) {
+            "Inbound mail changed concurrently: $recordId"
+        }
+        val saved = inboundMailProcessingRepository.findById(recordId).orElseThrow {
+            error("Inbound mail processing not found: $recordId")
+        }
 
         val contactId = record.expertContactId
         if (contactId != null) {

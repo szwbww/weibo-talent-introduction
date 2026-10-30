@@ -157,6 +157,7 @@ class PendingMailOperationServiceTrustWorkbenchTest {
 
     @BeforeEach
     fun setUp() {
+        Mockito.`when`(inboundMailProcessingRepository.lockPendingContact(1L)).thenReturn(1L)
         Mockito.`when`(inboundMailProcessingRepository.findById(100L)).thenReturn(Optional.of(inbound()))
         // Repair R-2 (V-2): 权威资格判定默认放行（用例用非资格版本显式断言的另设 stub）。
         Mockito.lenient().`when`(unsupportedAnswerIndexService.isArchiveEligible(Mockito.any(TrustReplyItemVersion::class.java) ?: operatorDirectedVersion()))

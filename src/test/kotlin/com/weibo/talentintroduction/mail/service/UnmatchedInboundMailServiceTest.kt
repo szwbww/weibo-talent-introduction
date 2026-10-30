@@ -41,6 +41,33 @@ class UnmatchedInboundMailServiceTest {
         mailAttachmentService = mailAttachmentService
     )
 
+    @org.junit.jupiter.api.BeforeEach
+    fun setUp() {
+        Mockito.`when`(inboundMailProcessingRepository.lockPendingContact(Mockito.anyLong()))
+            .thenAnswer { it.getArgument<Long>(0) }
+    }
+
+    private fun stubWrites(record: InboundMailProcessing) {
+        Mockito.`when`(inboundMailProcessingRepository.bindPendingContact(
+            Mockito.anyLong(), Mockito.anyLong(), Mockito.any(LocalDateTime::class.java) ?: LocalDateTime.now()
+        )).thenAnswer { invocation ->
+            val updated = record.copy(expertContactId = invocation.getArgument(1),
+                processStatus = "MANUAL_REVIEW", processReason = "MANUAL_BOUND",
+                resolvedBy = null, resolvedAt = null, updatedAt = invocation.getArgument(2))
+            Mockito.`when`(inboundMailProcessingRepository.findById(record.id!!)).thenReturn(Optional.of(updated))
+            1
+        }
+        Mockito.`when`(inboundMailProcessingRepository.resolvePending(
+            Mockito.anyLong(), Mockito.anyString(), Mockito.any(LocalDateTime::class.java) ?: LocalDateTime.now()
+        )).thenAnswer { invocation ->
+            val updated = record.copy(processStatus = "PROCESSED", processReason = "MANUAL_RESOLVED",
+                reasonType = "MANUAL_RESOLVED", resolvedBy = invocation.getArgument(1),
+                resolvedAt = invocation.getArgument(2), updatedAt = invocation.getArgument(2))
+            Mockito.`when`(inboundMailProcessingRepository.findById(record.id!!)).thenReturn(Optional.of(updated))
+            1
+        }
+    }
+
     private fun contact(id: Long, email: String) = ExpertContact(
         id = id, campaignId = 10L, orcidId = "orcid-$id",
         expertEmail = email, expertName = null
@@ -203,8 +230,7 @@ class UnmatchedInboundMailServiceTest {
             .thenReturn(ExpertEmailAlias(id = 100L, expertContactId = contactId, email = "alias@example.com", normalizedEmail = "alias@example.com"))
         Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
             .thenAnswer { it.getArgument<ExpertContact>(0) }
-        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
-            .thenAnswer { it.getArgument<InboundMailProcessing>(0) }
+        stubWrites(record)
 
         val result = service.bindToContact(recordId, contactId, "operator1")
         assertEquals(contactId, result.expertContactId)
@@ -313,15 +339,14 @@ class UnmatchedInboundMailServiceTest {
             .thenReturn(ExpertEmailAlias(id = 100L, expertContactId = contactId, email = "old@example.com", normalizedEmail = "old@example.com"))
         Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
             .thenAnswer { it.getArgument<ExpertContact>(0) }
-        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
-            .thenAnswer { it.getArgument<InboundMailProcessing>(0) }
+        stubWrites(record)
 
         val result = service.bindToContact(recordId, contactId, "operator1")
         assertEquals("MANUAL_REVIEW", result.processStatus)
         assertEquals("MANUAL_BOUND", result.processReason)
 
         Mockito.verify(expertEmailAliasService).bindAlias(contactId, "old@example.com", "MANUAL_BIND")
-        Mockito.verify(inboundMailProcessingRepository).save(Mockito.any(InboundMailProcessing::class.java))
+        assertEquals("admin", result.pendingOwnerUsername)
         Mockito.verify(mailAttachmentService).ensureDocumentsForProcessingAttachments(recordId, contactId)
     }
 
@@ -338,8 +363,7 @@ class UnmatchedInboundMailServiceTest {
             .thenReturn(ExpertEmailAlias(id = 100L, expertContactId = contactId, email = "expert@example.com", normalizedEmail = "expert@example.com"))
         Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
             .thenAnswer { it.getArgument<ExpertContact>(0) }
-        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
-            .thenAnswer { it.getArgument<InboundMailProcessing>(0) }
+        stubWrites(record)
 
         val result = service.bindToContact(recordId, contactId, "operator1")
 
@@ -362,8 +386,7 @@ class UnmatchedInboundMailServiceTest {
         val c = contact(contactId, "expert@example.com").copy(needsManualAttention = true)
 
         Mockito.`when`(inboundMailProcessingRepository.findById(recordId)).thenReturn(Optional.of(record))
-        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
-            .thenAnswer { it.getArgument<InboundMailProcessing>(0) }
+        stubWrites(record)
         Mockito.`when`(inboundMailProcessingRepository.countByExpertContactIdAndProcessStatus(contactId, "MANUAL_REVIEW"))
             .thenReturn(0L)
         Mockito.`when`(expertContactRepository.findById(contactId)).thenReturn(Optional.of(c))

@@ -482,8 +482,8 @@ class ExpertMailReadAccessIT {
             VALUES ('user1', 1, 'admin', '2020-01-01'), ('user1', 2, 'admin', '2020-01-02')
         """.trimIndent())
         val result = Flyway.configure().dataSource(dataSource).placeholderReplacement(false).load().migrate()
-        assertEquals("170", result.targetSchemaVersion)
-        assertEquals(1, result.migrationsExecuted)
+        assertEquals("171", result.targetSchemaVersion)
+        assertEquals(2, result.migrationsExecuted)
         assertEquals(2L, jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM expert_mail_read_access WHERE access_level='READ'", Long::class.java))
         assertEquals("2020-01-01 00:00:00", createdAt(1))
@@ -498,12 +498,45 @@ class ExpertMailReadAccessIT {
     }
 
     @Test
-    fun `fresh database applies the complete prefix through V170`() {
+    fun `fresh database applies the complete prefix through V171`() {
         val flyway = Flyway.configure().dataSource(dataSource).placeholderReplacement(false)
             .cleanDisabled(false).load()
         flyway.clean()
-        assertEquals("170", flyway.migrate().targetSchemaVersion)
+        assertEquals("171", flyway.migrate().targetSchemaVersion)
         assertEquals(0L, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM expert_mail_read_access", Long::class.java))
+    }
+
+    @Test
+    fun `downgrade revoke and repeated grants reclaim only unfinished delegated rows`() {
+        service.setAccessLevel("admin", 1, ExpertMailAccessLevel.FULL)
+        jdbcTemplate.update("""INSERT INTO inbound_mail_processing
+            (sender_account_code,imap_uid,from_email,received_at,process_status,process_reason,
+             expert_contact_id,pending_owner_username)
+            VALUES ('read-access-acc',1,'a@example.test',NOW(),'MANUAL_REVIEW','TEST',1,'user1'),
+                   ('read-access-acc',2,'a@example.test',NOW(),'PROCESSED','MANUAL_RESOLVED',1,'user1'),
+                   ('read-access-acc',3,'a@example.test',NOW(),'MANUAL_REVIEW','TEST',1,'admin')""")
+        service.setAccessLevel("admin", 1, ExpertMailAccessLevel.READ)
+        assertEquals(listOf("admin", "user1", "admin"), jdbcTemplate.queryForList(
+            "SELECT pending_owner_username FROM inbound_mail_processing ORDER BY imap_uid", String::class.java))
+        service.setAccessLevel("admin", 1, ExpertMailAccessLevel.FULL)
+        service.grant("admin", 1)
+        assertEquals("admin", jdbcTemplate.queryForObject(
+            "SELECT pending_owner_username FROM inbound_mail_processing WHERE imap_uid=1", String::class.java))
+        jdbcTemplate.update("UPDATE inbound_mail_processing SET pending_owner_username='user1' WHERE imap_uid=1")
+        val tx = org.springframework.transaction.support.TransactionTemplate(DataSourceTransactionManager(dataSource))
+        tx.execute { status ->
+            service.revoke("admin", 1)
+            assertEquals("admin", jdbcTemplate.queryForObject(
+                "SELECT pending_owner_username FROM inbound_mail_processing WHERE imap_uid=1", String::class.java))
+            status.setRollbackOnly()
+        }
+        assertEquals(ExpertMailAccessLevel.FULL, service.accessLevel(1))
+        assertEquals("user1", jdbcTemplate.queryForObject(
+            "SELECT pending_owner_username FROM inbound_mail_processing WHERE imap_uid=1", String::class.java))
+        service.revoke("admin", 1)
+        service.revoke("admin", 1)
+        assertEquals("admin", jdbcTemplate.queryForObject(
+            "SELECT pending_owner_username FROM inbound_mail_processing WHERE imap_uid=1", String::class.java))
     }
 
     // ------------------------------------------------------------------

@@ -157,6 +157,8 @@ class AutoMailReplyServiceTest {
         inboundAutoResponseDetector
     )
 
+    private val persistedProcessing = mutableMapOf<Long, InboundMailProcessing>()
+
     @org.junit.jupiter.api.BeforeEach
     fun setUp() {
         service.setInboundNotificationService(inboundNotificationService)
@@ -171,8 +173,19 @@ class AutoMailReplyServiceTest {
         Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
             .thenAnswer { invocation ->
                 val record = invocation.getArgument<InboundMailProcessing>(0)
-                record.copy(id = record.id ?: 999L)
+                record.copy(id = record.id ?: 999L).also { persistedProcessing[it.id!!] = it }
             }
+        Mockito.`when`(inboundMailProcessingRepository.reclassifyAutoResponse(
+            Mockito.anyLong(), Mockito.anyString(), anyValue(LocalDateTime.now())
+        )).thenAnswer { invocation ->
+            val id = invocation.getArgument<Long>(0)
+            val row = persistedProcessing[id] ?: return@thenAnswer 0
+            persistedProcessing[id] = row.copy(
+                processStatus = "PROCESSED", processReason = invocation.getArgument(1),
+                reasonType = "AUTO_RESPONSE", updatedAt = invocation.getArgument(2)
+            )
+            1
+        }
         Mockito.`when`(mailAttachmentService.saveUnmatchedAttachments(
             Mockito.anyLong(),
             Mockito.anyList(),
@@ -1052,21 +1065,17 @@ class AutoMailReplyServiceTest {
         assertEquals(11L, result.expertContactId)
         assertEquals(100L, result.inboundMailRecordId)
         assertFalse(result.outcome in MANUAL_REVIEW_OUTCOMES, "排除结果不得再计入待处理")
-        val captor = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
-        Mockito.verify(inboundMailProcessingRepository, Mockito.times(2)).save(captor.capture())
-        val original = captor.allValues.first()
-        assertEquals("MANUAL_REVIEW", original.processStatus)
-        assertEquals("GLOBAL_AUTO_REPLY_DISABLED", original.processReason)
-        val reclassified = captor.allValues.last()
-        assertEquals(created.id, reclassified.id)
+        val reclassified = persistedProcessing.getValue(created.id!!)
         assertEquals("PROCESSED", reclassified.processStatus)
         assertEquals(InboundAutoResponseDetector.REASON_TYPE_AUTO_RESPONSE, reclassified.reasonType)
         assertEquals(InboundAutoResponseDetector.AUTO_RESPONSE_HEADER, reclassified.processReason)
         assertNull(reclassified.resolvedAt, "绝不冒充人工处理")
         assertNull(reclassified.resolvedBy)
-        assertEquals(created.createdAt, reclassified.createdAt)
-        assertEquals(original.body, reclassified.body)
-        assertEquals(original.subject, reclassified.subject)
+        assertEquals(received.body, reclassified.body)
+        assertEquals(received.subject, reclassified.subject)
+        assertEquals("sender", reclassified.mailboxOwnerCode)
+        assertEquals(received.imapUid, reclassified.imapUid)
+        Mockito.verifyNoInteractions(deliveryService)
     }
 
     @Test
@@ -1087,9 +1096,7 @@ class AutoMailReplyServiceTest {
 
         assertEquals(SinglePipelineOutcome.AUTO_RESPONSE_PENDING_EXCLUDED, result.outcome)
         assertEquals(InboundAutoResponseDetector.AUTO_RESPONSE_FAST_5M, result.reason)
-        val captor = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
-        Mockito.verify(inboundMailProcessingRepository, Mockito.times(2)).save(captor.capture())
-        assertEquals("PROCESSED", captor.allValues.last().processStatus)
+        assertEquals("PROCESSED", persistedProcessing.getValue(created.id!!).processStatus)
     }
 
     @Test
@@ -1188,9 +1195,9 @@ class AutoMailReplyServiceTest {
         Mockito.`when`(
             inboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid("sender", 1L, 101L)
         ).thenReturn(null, null, created)
-        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
-            .thenReturn(created)
-            .thenThrow(IllegalStateException("reclassification write failed"))
+        Mockito.`when`(inboundMailProcessingRepository.reclassifyAutoResponse(
+            Mockito.anyLong(), Mockito.anyString(), anyValue(LocalDateTime.now())
+        )).thenThrow(IllegalStateException("reclassification write failed"))
 
         assertThrows(IllegalStateException::class.java) {
             service.processSingle(account, received)

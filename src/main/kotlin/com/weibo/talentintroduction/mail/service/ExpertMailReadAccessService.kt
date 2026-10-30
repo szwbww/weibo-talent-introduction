@@ -81,7 +81,8 @@ class ExpertMailReadAccessService(
         MailReadOnlyPolicy.requireAdmin(actorUsername)
         requireValidContactId(expertContactId)
         require(accessLevel != ExpertMailAccessLevel.NONE) { "accessLevel 必须为 READ 或 FULL" }
-        requireContactExists(expertContactId)
+        lockContact(expertContactId)
+        val previous = currentAccessLevel(expertContactId)
         // Only an explicit body can downgrade. Both statements are atomic upserts.
         val update = if (accessLevel == null) "expert_contact_id = expert_contact_id"
             else "access_level = VALUES(access_level)"
@@ -103,7 +104,10 @@ class ExpertMailReadAccessService(
         } catch (ex: DataIntegrityViolationException) {
             throw NoSuchElementException("Expert contact not found: $expertContactId")
         }
-        return accessLevel(expertContactId)
+        if (previous == ExpertMailAccessLevel.FULL && accessLevel == ExpertMailAccessLevel.READ) {
+            reclaimPending(expertContactId)
+        }
+        return currentAccessLevel(expertContactId)
     }
 
     /** DELETE：幂等撤销（无行也成功）；返回 canRead=false。 */
@@ -111,7 +115,8 @@ class ExpertMailReadAccessService(
     fun revoke(actorUsername: String?, expertContactId: Long): Boolean {
         MailReadOnlyPolicy.requireAdmin(actorUsername)
         requireValidContactId(expertContactId)
-        requireContactExists(expertContactId)
+        lockContact(expertContactId)
+        val previous = currentAccessLevel(expertContactId)
         jdbcTemplate.update(
             """
             DELETE FROM expert_mail_read_access
@@ -121,9 +126,38 @@ class ExpertMailReadAccessService(
                 .addValue("username", MailReadOnlyPolicy.READER_USERNAME)
                 .addValue("contactId", expertContactId)
         )
+        if (previous == ExpertMailAccessLevel.FULL) reclaimPending(expertContactId)
         return false
     }
 
+
+    private fun lockContact(contactId: Long) {
+        val rows = jdbcTemplate.queryForList(
+            "SELECT id FROM expert_contact WHERE id = :contactId FOR UPDATE",
+            MapSqlParameterSource("contactId", contactId), Long::class.java
+        )
+        if (rows.singleOrNull() != contactId) {
+            throw NoSuchElementException("Expert contact not found: $contactId")
+        }
+    }
+
+    private fun currentAccessLevel(contactId: Long): ExpertMailAccessLevel =
+        jdbcTemplate.queryForList(
+            """SELECT access_level FROM expert_mail_read_access
+                WHERE username = :username AND expert_contact_id = :contactId FOR UPDATE""",
+            MapSqlParameterSource("contactId", contactId)
+                .addValue("username", MailReadOnlyPolicy.READER_USERNAME),
+            String::class.java
+        ).singleOrNull()?.let { persistedLevel(it) } ?: ExpertMailAccessLevel.NONE
+
+    private fun reclaimPending(contactId: Long) {
+        jdbcTemplate.update(
+            """UPDATE inbound_mail_processing SET pending_owner_username = 'admin'
+                WHERE expert_contact_id = :contactId
+                  AND process_status = 'MANUAL_REVIEW' AND pending_owner_username = 'user1'""",
+            MapSqlParameterSource("contactId", contactId)
+        )
+    }
     private fun requireValidContactId(expertContactId: Long) {
         require(expertContactId > 0) { "expertContactId 必须为正数" }
     }

@@ -1638,19 +1638,17 @@ class PendingMailOperationService(
         val record = inboundMailProcessingRepository.findById(inboundProcessingId)
             .orElseThrow { error("Inbound mail processing not found: $inboundProcessingId") }
         require(record.processStatus == "MANUAL_REVIEW") { "Record $inboundProcessingId is not in MANUAL_REVIEW" }
+        record.expertContactId?.let { contactId ->
+            check(inboundMailProcessingRepository.lockPendingContact(contactId) == contactId) {
+                "Expert contact not found: $contactId"
+            }
+        }
 
         val actualOperator = operatorName?.takeIf { it.isNotBlank() } ?: resolvedBy ?: "UNKNOWN"
         val now = LocalDateTime.now()
-        inboundMailProcessingRepository.save(
-            record.copy(
-                processStatus = "PROCESSED",
-                processReason = "MANUAL_RESOLVED",
-                reasonType = "MANUAL_RESOLVED",
-                resolvedBy = actualOperator,
-                resolvedAt = now,
-                updatedAt = now
-            )
-        )
+        check(inboundMailProcessingRepository.resolvePending(inboundProcessingId, actualOperator, now) == 1) {
+            "Inbound mail changed concurrently: $inboundProcessingId"
+        }
 
         val contactId = record.expertContactId
         if (contactId != null) {
@@ -1708,6 +1706,11 @@ class PendingMailOperationService(
                 HttpStatus.CONFLICT,
                 "Record $inboundProcessingId is not manually resolved and cannot be cancelled"
             )
+        }
+        record.expertContactId?.let { contactId ->
+            check(inboundMailProcessingRepository.lockPendingContact(contactId) == contactId) {
+                "Expert contact not found: $contactId"
+            }
         }
 
         val actualOperator = operatorName?.takeIf { it.isNotBlank() } ?: "UNKNOWN"
