@@ -9,7 +9,7 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-29T23:52:46.426Z
-- Current child: review05
+- Current child: 01
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
@@ -20,7 +20,7 @@
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | review05 | docs/plans/2026-10-29/draft-review-05-admin.md | commit:08d6af05bae3349ca46f92df61b48ab0bac87183 | none | 1 | LIGHT_PASS_WITH_NOTES | 59eb60cf00534a342c1019827a62f2b7b1db0f2b | 036fc19c88b3a7f5509bbf167a68db6a8af7a20f | 0 | — | 036fc19c88b3a7f5509bbf167a68db6a8af7a20f | 8b96952d25d80d7526e89945b77633146c4b18d3 | ExpertBootstrap05Verifier COMPLETE_CHILD; O-1 disposable JDBC timezone fixture correction only; all four gatesPASS, no repairs |
-| 01 | docs/plans/2026-10-29/expert-access-01-read-labels.md | sha256:77aef654ed91794dbadcfde5207d16b540d191802e4c2e819ee80bf47f8af0a4 | review05 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
+| 01 | docs/plans/2026-10-29/expert-access-01-read-labels.md | sha256:77aef654ed91794dbadcfde5207d16b540d191802e4c2e819ee80bf47f8af0a4 | review05 | 1 | LIGHT_PASS | 036fc19c88b3a7f5509bbf167a68db6a8af7a20f | af168d86f04f1e2f439e3291d6b7b940f5b60071 | 1 | 30c8af9b98f675f628d3ee98bd737f1716ecf54c | 30c8af9b98f675f628d3ee98bd737f1716ecf54c | 1bf59c1684393092e624b6d05bf649ef29cb219b | Fresh ExpertAccess01Reverify1 COMPLETE_CHILD; F-01 independently closed after1 bounded repair; node27 and actual1440/390 denial/late-response proof pass |
 | 02 | docs/plans/2026-10-29/expert-access-02-access-level.md | sha256:ff1565438734fd5ef9a20f7ca275354ae8b9b38f6fa7ea4d1153f39e9761ef99 | 01 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 | 03 | docs/plans/2026-10-29/expert-access-03-resource-guard.md | sha256:0033f9c3d1460f43b2fc1e26a00250a88f679fcb410be0b51f02a2b018055e47 | 02 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 | 04a | docs/plans/2026-10-29/expert-access-04a-profile-tags.md | sha256:0ffa45716aa98398dceab5a11f581d5630b870e73541babd99fbb2b2af52e4aa | 03 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
@@ -53,3 +53,7 @@
 - 2026-10-30: replacement IMPLEMENTER ExpertBootstrap05Resume acquired successfully; agent_attempt reset0. Original writer remains recorded for verifier separation. Resumes the same child, plan identity and epoch; no product repair round.
 - 2026-10-30: review05 READY_FOR_VERIFICATION at036fc19c88b3a7f5509bbf167a68db6a8af7a20f; fresh VERIFIER ExpertBootstrap05Verifier acquired, distinct from both writers. Executor command/runtime evidence is in execution.md; controller has not verified product work inline.
 - 2026-10-30: review05 terminal LIGHT_PASS_WITH_NOTES / COMPLETE_CHILD from ExpertBootstrap05Verifier; no AUTO_FIX. O-1 records corrected disposable fixture timezone, not product failure. Child artifact checkpoint is required before01; all later children remain PENDING.
+- 2026-10-30: child01 IMPLEMENTER ExpertAccess01Impl acquired after dirty+clean full-manifest review05 checkpoint VALID; base036fc19c88b3a7f5509bbf167a68db6a8af7a20f; no prior product replay.
+- 2026-10-30: child01 READY_FOR_VERIFICATION ataf168d86f04f1e2f439e3291d6b7b940f5b60071; fresh independent ExpertAccess01Verifier acquired. Executor reports23 node tests and actual1440/390 authenticated runtime proof; no controller inline product verification.
+- 2026-10-30: ExpertAccess01Verifier returned LIGHT_FAIL/AUTO_FIX F-01 (tag snapshot survives403). Required FIXER ExpertAccess01Fix1 acquired; fix_round incremented1 immediately for actual bounded repair. No unrelated findings supplied.
+- 2026-10-30: child01 repair1 FIXED at30c8af9b98f675f628d3ee98bd737f1716ecf54c; required fresh REVERIFIER ExpertAccess01Reverify1 acquired after fix commit; bounded node27 and denial-path browser executor evidence in fix-log, independent verdict pending.
