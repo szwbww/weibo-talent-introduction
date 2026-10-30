@@ -619,6 +619,48 @@ describe("I-4 文本渲染安全", () => {
 });
 
 describe("I-3 失权/失败/竞态", () => {
+    for (const endpoint of ["list", "detail"]) {
+        for (const status of [403, 401]) {
+            it(`${endpoint} ${status} 撤权清除已显示标签但保留姓名与拒绝提示`, async () => {
+                const harness = createHarness();
+                const expert = { ...EXPERT_A, expertTags: ["撤权前标签"] };
+                let denied = false;
+                harness.responder = async (requestPath) => {
+                    const isList = requestPath.startsWith(`${LIST_PATH}?`);
+                    if (denied && isList === (endpoint === "list")) {
+                        const error = new Error("access denied");
+                        error.status = status;
+                        throw error;
+                    }
+                    if (isList) return listResponse([expert]);
+                    return detailResponse([{
+                        source: "MAIL_RECORD", id: 41, direction: "OUTBOUND",
+                        subject: "已授权", cleanedBody: "授权正文", eventAt: "2026-10-02T10:00:00"
+                    }], { hasMore: true, nextBefore: "cursor-a" });
+                };
+                harness.mount();
+                await flush();
+                clickAction(harness, "select-expert");
+                await flush();
+                assert.strictEqual(findAll(harness.root, "expert-tag").length, 2);
+                assert.strictEqual(findAll(harness.root, "mc-message").length, 1);
+
+                denied = true;
+                await harness.handle.refresh();
+                await flush();
+
+                assert.strictEqual(findAll(harness.root, "expert-tag").length, 0);
+                assert.ok(!harness.root.textContent.includes("撤权前标签"));
+                assert.ok(!harness.root.textContent.includes("标签暂不可用"));
+                assert.ok(harness.root.textContent.includes(EXPERT_A.name));
+                assert.strictEqual(findAll(harness.root, "mc-message").length, 0);
+                assert.strictEqual(findOne(harness.root, "mc-load-older"), null);
+                assert.strictEqual(findOne(harness.root, "mc-error").textContent, "暂无权限查看该专家邮件");
+                harness.handle.unmount();
+            });
+        }
+    }
+
     it("详情 403 立即清空正文并显示固定提示，cursor 同时清空", async () => {
         const harness = createHarness();
         harness.responder = async (requestPath) => {

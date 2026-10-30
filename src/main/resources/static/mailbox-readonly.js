@@ -340,6 +340,7 @@
             inflight.forEach(function (controller) { controller.abort(); });
             clearDetailBody(); detailSeq += 1; listSeq += 1;
             listItems = []; listTotal = 0; listLoading = false;
+            if (selected) selected.expertTags = [];
             resetReview(); detailStatus = "forbidden"; renderList(); renderConversation();
         }
         function acceptDraft(data, replace) {
