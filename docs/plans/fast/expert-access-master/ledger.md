@@ -1,15 +1,15 @@
 # Fast-P Ledger — master: docs/plans/2026-10-29/expert-access-master.md
 
 - Status: RUNNING
-- Master plan: docs/plans/2026-10-29/expert-access-master.md (commit e9f93fb260c6b25518ccbbf579c420c8aa6cb406)
-- Amendments: A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12,A13,A14,A15,A16
+- Master plan: docs/plans/2026-10-29/expert-access-master.md (commit 6b950d7e0ce1e460e197645a6bcaca485ae83088)
+- Amendments: A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12,A13,A14,A15,A16,A17,A18
 - Master base: 59eb60cf00534a342c1019827a62f2b7b1db0f2b
 - Branch: fast/expert-access-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-expert-access-master
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-29T23:52:46.426Z
-- Current child: 04b
+- Current child: 05
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
@@ -25,7 +25,7 @@
 | 03 | docs/plans/2026-10-29/expert-access-03-resource-guard.md | commit:42acd9796c75acf0603101b0ef97134477dba7d4 | 02 | 3 | LIGHT_PASS_WITH_NOTES | 6c0981eb4e148e9789c3af49e9d2dca9739c2508 | d5093a2509427526784254aba7dbe98ff2a9b1d9 | 0 | — | d5093a2509427526784254aba7dbe98ff2a9b1d9 | dd3f1c976cd3342642db13067cd336c6bf910799 | ExpertAccess03Verifier epoch3 attempt1 allFourGatesPASS;497freshJVMzeroSkip,Node1961;61 actualHTTP/2SMTP/three original owners/currentrevoke. RECORD_ONLY O-03-001 inherited anchor exception500 instead422 with zeroeffects, outside scope;fix_round0. |
 | 04a | docs/plans/2026-10-29/expert-access-04a-profile-tags.md | commit:c3afa57cfe2b448470b8968ac7cc47e24963bbc9 | 03 | 2 | LIGHT_PASS | d5093a2509427526784254aba7dbe98ff2a9b1d9 | 020bda37127f92187589e9d8f10e3bb3cbccb187 | 0 | — | 020bda37127f92187589e9d8f10e3bb3cbccb187 | fb17910048dd3ecb24ac4d8a586e243ec2f4706e | ExpertAccess04aVerifier epoch2 attempt1 FourGatesPASS; fresh5+116JVMzeroSkip andNode1961 each; actual48HTTP currentidentity/CAS/8handlerdowngrade; AUTO_FIX/RECORD_ONLY N/A;fix_round0. |
 | 04b | docs/plans/2026-10-29/expert-access-04b-calendar-drafts.md | commit:e9f93fb260c6b25518ccbbf579c420c8aa6cb406 | 04a | 2 | LIGHT_PASS | 020bda37127f92187589e9d8f10e3bb3cbccb187 | a2d4b0e68691d115cff2a6ad3bcc115a06b28d27 | 0 | — | a2d4b0e68691d115cff2a6ad3bcc115a06b28d27 | 4391117d04d274e005f5f8a984f2da20dc479094 | ExpertAccess04bVerifyRetry epoch2 attempt2 FourGatesPASS;226JVMzeroSkip/Node1961, actual95HTTP+1SMTP personaldraft/CAS/confirmation/APPROVEDimmutability; interruptedattempt1DNS noverdict/no repair. AUTO_FIX/RECORD_ONLY N/A fix0. |
-| 05 | docs/plans/2026-10-29/expert-access-05-pending-owner.md | sha256:557020506b327615acea966f31c3983fd5b3095ba2b3e3d3b00b7c11ba72a7bb | 04b | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
+| 05 | docs/plans/2026-10-29/expert-access-05-pending-owner.md | commit:6b950d7e0ce1e460e197645a6bcaca485ae83088 | 04b | 2 | LIGHT_PASS | a2d4b0e68691d115cff2a6ad3bcc115a06b28d27 | e4c5d83a580228a92f1dd2c427538829651a40a6 | 0 | — | e4c5d83a580228a92f1dd2c427538829651a40a6 | 3a30bd4db8ac89480c8fc86a80995fa04942f735 | ExpertAccess05Verifier epoch2 attempt1 FourGatesPASS; fresh23+310JVMzeroSkip/Node1961each; actualproductiontwo-receiptsinks+realAuthHTTP/JDBC/UID/currentrights/reclaim/reopen/wholeexpertattention noSMTP. AUTO_FIX/RECORD_ONLY N/A;fix0. |
 | 06 | docs/plans/2026-10-29/expert-access-06-pending-query.md | commit:b8625c35f461816397b34d167493d62205e5f1d3 | 05 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 | 07 | docs/plans/2026-10-29/expert-access-07-user-workspace.md | sha256:9501f5077d62d7b7e24e9af9e1f22d626996f35b5c92671870edb11d6a82e7da | 06 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 | 08 | docs/plans/2026-10-29/expert-access-08-admin-controls.md | sha256:64f92e4adc592d15bf64f76f33fb5d6ceea106c101558e772a51f19181ba964c | 07 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
@@ -49,6 +49,8 @@
 | A14 | docs/plans/2026-10-29/expert-access-04a-profile-tags.md | commit:42acd9796c75acf0603101b0ef97134477dba7d4 | commit:c3afa57cfe2b448470b8968ac7cc47e24963bbc9 | I-2; I-3; I-4; I-14 | Exact six consumers from complete grep receipts; preserve stable safety and version/admin behavior, retire temporary global tag deny; noise guard line-only with snippets/rules unchanged | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — received after the expert-access preflight blocker on 2026-10-29 |
 | A15 | docs/plans/2026-10-29/expert-access-master.md | commit:c3afa57cfe2b448470b8968ac7cc47e24963bbc9 | commit:e9f93fb260c6b25518ccbbf579c420c8aa6cb406 | I-2; I-4; I-8; I-11; I-14 | 04b seven-to-sixteen existing central guard registration plus eight proven mandatory consumer/line fixtures; capability unchanged, finalization preserved | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — received after the expert-access preflight blocker on 2026-10-29 |
 | A16 | docs/plans/2026-10-29/expert-access-04b-calendar-drafts.md | commit:c3afa57cfe2b448470b8968ac7cc47e24963bbc9 | commit:e9f93fb260c6b25518ccbbf579c420c8aa6cb406 | I-2; I-4; I-8; I-11; I-14 | Exact nine additional paths from constructor/import/direct-call/lineguard receipts; real shared support, precise registration and interim draft-denial retirement, fresh original gates | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — received after the expert-access preflight blocker on 2026-10-29 |
+| A17 | docs/plans/2026-10-29/expert-access-master.md | commit:e9f93fb260c6b25518ccbbf579c420c8aa6cb406 | commit:6b950d7e0ce1e460e197645a6bcaca485ae83088 | I-5; I-6; I-12; I-14 | 05nine-to-twelve only3 proven narrowUPDATE/reread/contact-first-lock test consumers; no product/constructor/API widening, retire savecount pins preserve behavior | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — received after the expert-access preflight blocker on 2026-10-29 |
+| A18 | docs/plans/2026-10-29/expert-access-05-pending-owner.md | commit:e9f93fb260c6b25518ccbbf579c420c8aa6cb406 | commit:6b950d7e0ce1e460e197645a6bcaca485ae83088 | I-5; I-6; I-12; I-14 | Exact AutoMailReply/Unmatched/PendingTrust fixture receipts; actual new failure seam and persisted reread, no replacement mockecho/savecount pins; all original gates fresh | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — received after the expert-access preflight blocker on 2026-10-29 |
 
 ## Baseline
 - Source main worktree and its unrelated changes remain untouched. Original blocker/authorization records remain there as historical preflight evidence; this ledger in the retained execution worktree is the recovery authority.
@@ -92,3 +94,8 @@
 - 2026-10-30: acquired fresh independent ExpertAccess04bVerifier child04b epoch2 boundary020bda37127f92187589e9d8f10e3bb3cbccb187..a2d4b0e68691d115cff2a6ad3bcc115a06b28d27.
 - 2026-10-30: ExpertAccess04bVerifier runtime ended providerDNS getaddrinfo ENOTFOUND chatgpt.com after24m27s, no published verdict (verify-log headeronly). This is agent availability interruption, not LIGHT_FAIL, no productrepair/fix_round. Historical transcript shows owned Docker removed, but replacement must reconcile exact owned leftovers before ownfixture setup. User继续 reaffirms continuation. Fresh independent replacement acquisition.
 - 2026-10-30: acquired fresh independent ExpertAccess04bVerifyRetry child04b epoch2 boundary020bda37127f92187589e9d8f10e3bb3cbccb187..a2d4b0e68691d115cff2a6ad3bcc115a06b28d27.
+- 2026-10-30: acquired ExpertAccess05Impl child05 epoch1 plansha256:557020506b327615acea966f31c3983fd5b3095ba2b3e3d3b00b7c11ba72a7bb basea2d4b0e68691d115cff2a6ad3bcc115a06b28d27.
+- 2026-10-30: ExpertAccess05Impl epoch1 pre-mutationPLAN_CONFLICT3 narrowwrite/lockfixture consumers, exactreceipts. Plan-only6b950d7e0ce1e460e197645a6bcaca485ae83088 A17/A18 authorizes12scope, no productexpansion; implementation-copy/count pins retired not re-pinned. Epoch2fix0.
+- 2026-10-30: acquired ExpertAccess05Resume child05 epoch2 plancommit:6b950d7e0ce1e460e197645a6bcaca485ae83088 basea2d4b0e68691d115cff2a6ad3bcc115a06b28d27.
+- 2026-10-30: ExpertAccess05Resume epoch2 READY_FOR_VERIFICATION codee4c5d83a580228a92f1dd2c427538829651a40a6; reports23+310JVMzeroSkip/Node1961 and productionactualtwo-sink receipt/auth/downgrade/reopen runtime noSMTP, notindependentPASS.
+- 2026-10-30: acquired fresh independent ExpertAccess05Verifier child05 epoch2 boundarya2d4b0e68691d115cff2a6ad3bcc115a06b28d27..e4c5d83a580228a92f1dd2c427538829651a40a6.
