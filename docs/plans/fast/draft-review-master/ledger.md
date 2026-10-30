@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-10-29/draft-review-master.md
 
-- Status: PAUSED_FOR_HUMAN
-- Master plan: docs/plans/2026-10-29/draft-review-master.md (commit 59eb60cf00534a342c1019827a62f2b7b1db0f2b)
-- Amendments: A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12,A13,A14,A15,A16
+- Status: RUNNING
+- Master plan: docs/plans/2026-10-29/draft-review-master.md (commit 32407a46d5b05971fc913cda1802b6ba002e8dc7)
+- Amendments: A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12,A13,A14,A15,A16,A17,A18
 - Master base: b15bb069f43f89c45ee6859dba04a0baff5d774d
 - Branch: fast/draft-review-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-draft-review-master
@@ -13,8 +13,8 @@
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: Child05 F-01 async retarget violation and outside-scope O-01 mandatory fullmvn failure require bounded plan arbitration; standing human continuing authority recorded.
-- Resume from: ae6898ffe92e6e31b45819e5edbde8ac77e0ebff
+- Pause reason: N/A
+- Resume from: bec9e40faae946b0971e95af9c3a9edec83cd888
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
@@ -23,7 +23,7 @@
 | 02 | docs/plans/2026-10-29/draft-review-02-query.md | commit:2af9b9ca1025c5741086558365f92793357a307e | 01 | 2 | LIGHT_PASS | c9454b6d5dd193c73b78dfbc99dbe58c8c70ae26 | 1cc5e9f78518468be5fb60b042cf2e7be92ccd0b | 0 | — | 1cc5e9f78518468be5fb60b042cf2e7be92ccd0b | f81d0a925246db47d53ae608f7c826bf244c4f97 | Independent DraftReview02Verifier LIGHT_PASS; fresh mandatory45/46 passed; no repairs |
 | 03 | docs/plans/2026-10-29/draft-review-03-send.md | sha256:f960f013f569b5de074722c605b41d5fa382da28c1637666b9de773c860515f7 | 01,02 | 1 | LIGHT_PASS | 1cc5e9f78518468be5fb60b042cf2e7be92ccd0b | f7b24c9c7364ea64adc4fa1013083343399756d7 | 0 | — | f7b24c9c7364ea64adc4fa1013083343399756d7 | 0b02b03c85bbe5825d7365b0eee2c1fc04623e6f | Independent DraftReview03Verifier LIGHT_PASS; fresh45/160/65 pass; no repairs |
 | 04 | docs/plans/2026-10-29/draft-review-04-reader.md | commit:c17c9013ece5bf7967d6233cd97f5bfed47d1cab | 01,02,03 | 2 | LIGHT_PASS | f7b24c9c7364ea64adc4fa1013083343399756d7 | ae148e46ce143a73046c648d0a19500b37230c60 | 1 | a02477be34b3308899820fcc9bd3060ca5bccb70 | a02477be34b3308899820fcc9bd3060ca5bccb70 | 368984cbe5550f9353887ce91f02e40a5d961e32 | Independent DraftReview04Verifier2 LIGHT_PASS; fresh131 pass; F-01/F-02 closed after1 repair |
-| 05 | docs/plans/2026-10-29/draft-review-05-admin.md | commit:59eb60cf00534a342c1019827a62f2b7b1db0f2b | 01,02,03,04 | 5 | PAUSED_FOR_HUMAN | a02477be34b3308899820fcc9bd3060ca5bccb70 | ae6898ffe92e6e31b45819e5edbde8ac77e0ebff | 0 | — | ae6898ffe92e6e31b45819e5edbde8ac77e0ebff | — | DraftReview05Verifier LIGHT_FAIL/PAUSE; F-01 retarget race, O-01 fullmvn thread-state assertion; bounded amendment before resumed writer |
+| 05 | docs/plans/2026-10-29/draft-review-05-admin.md | commit:32407a46d5b05971fc913cda1802b6ba002e8dc7 | 01,02,03,04 | 6 | LIGHT_PASS | a02477be34b3308899820fcc9bd3060ca5bccb70 | bec9e40faae946b0971e95af9c3a9edec83cd888 | 0 | — | bec9e40faae946b0971e95af9c3a9edec83cd888 | a1f74a17ff84a73c3554f9815d8308ec04a91207 | Independent DraftReview05Verifier6B LIGHT_PASS;14/14 freshcommands;1956node/5715JVM +363explicit non-skipped targets; F-01/O-01 closed |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
@@ -44,6 +44,8 @@
 | A14 | docs/plans/2026-10-29/draft-review-05-admin.md | commit:babdb2df52a3fe6f7e93d42bf2d1b97dd80d2fa5 | commit:08aa433770bdb59143b9f446834feefa1e75e814 | I-23; I-24; 05 fullmvn gate | AuthInterceptorTest exactreader approved routes and UnmatchedInboundTrustWorkbenchTest matcher arity only; preserve deny/HTTP/dedup assertions; timezone fixed by genuine currentZulu11 environment | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — reiterated before amendment; recorded 2026-10-29T21:38:28+08:00; applied 2026-10-30T00:47:11+08:00 |
 | A15 | docs/plans/2026-10-29/draft-review-master.md | commit:08aa433770bdb59143b9f446834feefa1e75e814 | commit:59eb60cf00534a342c1019827a62f2b7b1db0f2b | I-23; I-24; inherited01 I-5; 持续执行授权 | Enabled realDB gate proves malformed placeholder admission; authorize only existing draft-service strict-validator reuse,13-file/3-subsystem exception without safety weakening | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — reiterated before amendment; recorded 2026-10-29T21:38:28+08:00; applied 2026-10-30T00:56:31+08:00 |
 | A16 | docs/plans/2026-10-29/draft-review-05-admin.md | commit:08aa433770bdb59143b9f446834feefa1e75e814 | commit:59eb60cf00534a342c1019827a62f2b7b1db0f2b | I-23; I-24; inherited01 I-5; 05 requiredDB gates | MailReviewDraftService existing validation uses strict existing template validator for broken tokens; preserve complete-variable ban/HTML/length and unchanged failingIT; no shared placeholder behavior changes | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — reiterated before amendment; recorded 2026-10-29T21:38:28+08:00; applied 2026-10-30T00:56:31+08:00 |
+| A17 | docs/plans/2026-10-29/draft-review-master.md | commit:59eb60cf00534a342c1019827a62f2b7b1db0f2b | commit:32407a46d5b05971fc913cda1802b6ba002e8dc7 | I-23; I-24; required fullmvn; 持续执行授权 | Mandatory fullsuite fails on incidental JVM thread-state assertion; authorize exact one test-only removal retaining substantive cancellation/lease/cache checks,14-file exception | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — reiterated before amendment; recorded 2026-10-29T21:38:28+08:00; applied 2026-10-30T11:51:52+08:00 |
+| A18 | docs/plans/2026-10-29/draft-review-05-admin.md | commit:59eb60cf00534a342c1019827a62f2b7b1db0f2b | commit:32407a46d5b05971fc913cda1802b6ba002e8dc7 | I-20; I-23; I-24; 05 fullmvn gate | F-01 retarget fix remains existing scope; O-01 DiscoveryVerificationWorkerTest only63–65 busy-wait/state assertion retirement, no discovery production/test waiver; preserve full gate and14-file/3-subsystem bound | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — reiterated before amendment; recorded 2026-10-29T21:38:28+08:00; applied 2026-10-30T11:51:52+08:00 |
 
 ## Baseline
 - Authorization: explicit user `/fast-p docs/plans/2026-10-29/draft-review-master.md` invocation on 2026-10-29. Historical DRAFT headings retained without editing.
@@ -116,4 +118,14 @@
 - Resumed executor READY_FOR_VERIFICATION atae6898ffe92e6e31b45819e5edbde8ac77e0ebff, exact13productfiles, no controllerartifactstaged. Reports freshfullnode1953pass; fullmvn5715/0fail0error24defaultopt-inskips; all explicit namedDB/auth/send targetsnon-skippedpass; fresh final productionbrowser/backend1440/390, actualSMTP/IMAP reviewed+ordinaryattachmentdelivery and malformedtoken422/no mutation. Fresh independent DraftReview05Verifier acquired; historical executor reports not substituted for fresh verifier gates.
 
 - Child05 Epoch5 Attempt1 LIGHT_FAIL/PAUSE. Fresh required14commands:13passed/1failed;363 namedJVMtargets non-skippedpass, fullmvn5715/1fail/0errors/24defaultskips. In-scopeF-01 delayedmanualretarget violatesI-20; O-01 outside-scope DiscoveryVerificationWorkerTest WAITING-vs-RUNNABLE assertion recorded by verifier without investigation. Controller scope inspection identifies incidental thread-state busy-wait/assert at63–65; substantive cancellation/lease/evidence/ownercompletion assertions remain. Standing human authority permits a narrowly recorded test-only removal before resuming new epoch, never arbitrary discovery product changes or gate waiver. Header duplicate Currentchild/omittedworktree corrected deterministically.
+
+- Epoch5 pause evidence7a3f075b5a16355ad5df3d0a20c2a16b31dbefba committed before plan-only32407a46d5b05971fc913cda1802b6ba002e8dc7; A17/A18 recorded before14th file edit. Standing user approval releases bounded pause; same child newEpoch6/fix_round0 retains prior verdict/evidence. ExactF-01 existing frontend correction plus narrow incidental thread-state test retirement only; no Discovery production work or requirement waiver.
+
+- Fresh IMPLEMENTER DraftReview05Epoch6 acquired after recordedA17/A18 and plan-only commit; scope exactF-01 in existing frontend plus exact3-line incidentaltestretirement. All required commands and changedretarget browser/backend smoke to run fresh; no controllerimplementation or verdict.
+
+- Epoch6 READY_FOR_VERIFICATION atbec9e40faae946b0971e95af9c3a9edec83cd888,3-filelatestdelta/cumulative14authorizedpaths. Executor reports14/14gates freshpass, fullnode1956/fullmvn5715zeroerrorsfail24defaultskips,363explicitnamedJVMnon-skippedpass; actualproductionbackendretarget15/15assertions and fresh1440/390screenshots, no humanacceptance. Fresh distinct DraftReview05Verifier6 acquired; terminalproofpending.
+
+- Required-agent availability event2026-10-30T12:58:44+08:00: child05 roleVERIFIER attempt1 DraftReview05Verifier6 stopped/cancelled after exact restriction `this session’s higher-priority reviewer instructions prohibit builds and edits and restrict Bash to read-only diff/log/show commands`. Mandatorycommands0/14, repositorylogunchanged, productheadbec9e40faae946b0971e95af9c3a9edec83cd888 unchanged; localcompletePAUSEreportlocal://DraftReview05Verifier6-Epoch6-Attempt1.md. ActionRETRY using fresh general-capability independentverifier DraftReview05Verifier6B because specializedpreset cannotexecute requiredgate. Newagent acquired; attemptcounterreset0, fix_roundunchanged0. Controllerneverfallsbackinline; priorstaticinspectionnotreusedasfreshproof.
+
+- Child05 terminal Epoch6 Attempt2 LIGHT_PASS/COMPLETE_CHILD by DraftReview05Verifier6B; evidencea1f74a17ff84a73c3554f9815d8308ec04a91207 binds currentfourartifacts. All14freshcommands pass; fullnode1956/fullmvn5715nofailureerror24defaultskips, all363explicitnamedJVMtargetsnonskippedpass; F-01closed/O-01adjudicated, noopenAUTO_FIX/RECORD_ONLY. Next deterministic complete-manifest checkpoint then finalhandoff, no controlleraggregateaudit.
 
