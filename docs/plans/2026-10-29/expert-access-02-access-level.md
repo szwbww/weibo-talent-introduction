@@ -48,6 +48,7 @@ E01–E05及审计§1：V166只有行存在性；writer只有grant/revoke（另F
 2. ExpertMailReadAccessService增加单个/批量等级与requireFull；NONE=无行。保留旧Boolean方法适配既有调用，新PUT以可选body区别旧调用和显式等级。授予/撤销仍只admin且正contactId（I-1/I-2/I-4）。取得等级不通过N+1，详情每请求实时重查。
 3. controller响应保留username/contactId/canRead，并增加accessLevel；list items及message wrapper增加同名等级（admin视角是user1在此专家的等级）。MailboxConversationService附件门控从全局reader改为`reader && level!=FULL`，保留原件feature flag/账号约束（I-1/I-4）；后续下载权限03另行控制。
 4. 两个测试文件覆盖升级、幂等、无body PUT、不存在专家、非法等级、READ零附件服务调用、FULL沿原投影（I-1/I-2/I-4/I-14）。
+5. 为真实等级查询注入非空ExpertMailReadAccessService依赖，同时更新下列两个现有直接构造fixture；不加nullable/default服务、伪造NONE/READ或绕过真实FULL投影。仅改构造依赖和相应真实等级stub，保留原附件、审核查询和查询计数行为断言。
 
 仅以下文件可变更；每个任务同时受其引用的不变量/样式契约约束。共享文件按本步前置版本接续，不覆盖上一阶段改动。
 
@@ -62,8 +63,10 @@ E01–E05及审计§1：V166只有行存在性；writer只有grant/revoke（另F
 | 5 | `src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt` | 批量等级投影；详情本次请求等级；FULL附件投影 |
 | 6 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailReadAccessIT.kt` | 真实迁移/兼容/并发/身份 |
 | 7 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxReadAccessProjectionTest.kt` | READ与FULL附件投影及批量标签 |
+| 8 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt` | 仅补非空等级服务构造依赖及原reader真实等级fixture，保持附件/归属断言 |
+| 9 | `src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewQueryIT.kt` | 仅补真实等级服务构造依赖，复用现有counted真实JDBC，不改变查询语义或弱化断言 |
 
-合计 **7 文件**；最多2个紧耦合子系统。新增共享store字段：access_level一列。
+合计 **9 文件**；最多2个紧耦合子系统。新增共享store字段：access_level一列。
 
 ## 验收标准
 - I-1：真实MySQL升级旧grant，断言均READ；并发重复PUT仅一行；旧PUT不降FULL；非法等级400且无写入；非admin管理403。
@@ -71,7 +74,7 @@ E01–E05及审计§1：V166只有行存在性；writer只有grant/revoke（另F
 - I-4：用A的路径搭配B的processing/tag/attachment/schedule/draft/expertId；均无副作用。三种附件owner各测一次，保留原件路径和快照校验。
 - I-14：逐项核对文件清单/迁移号/SHA/测试exit及skip；不改变application.yml、部署脚本与现有未提交改动。
 
-门禁：JDK11 mvn test -Dtest=ExpertMailReadAccessIT -DmysqlIt=true；MailboxReadAccessProjectionTest；FlywayMigrationIntegrationTest -DmigrationIt=true，分别保留全新库/到V169旧库升级证据。
+门禁：JDK11 mvn test -Dtest=ExpertMailReadAccessIT -DmysqlIt=true；MailboxReadAccessProjectionTest；FlywayMigrationIntegrationTest -DmigrationIt=true，分别保留全新库/到V169旧库升级证据；追加OutboundAttachmentFlowTest与MailReviewQueryIT -DmysqlIt=true的原行为回归，目标IT不得跳过。
 
 测试环境使用隔离MySQL/测试SMTP与临时附件目录；不得把mysqlIt连生产库。跳过/未运行必须记NOT_RUN，不能写PASS。
 
@@ -98,3 +101,6 @@ E01–E05及审计§1：V166只有行存在性；writer只有grant/revoke（另F
 本节为权威清单；进入人工验收时才导出同名前缀-acceptance.md，本次不生成衍生表。涉及尚未到本步的UI，使用同会话API执行等价动作并在最终08再次通过UI验证。
 
 跨阶段人工项引用的其他I/S条款，以总计划同编号定义为准；本步实现仍严格限定本文件清单。
+
+## 修正记录
+- 2026-10-30：按用户“授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p”持续授权，补入上述两个直接构造fixture，7文件改9文件，仍满足I-14。不引入兼容shim或默认为NONE/READ的投影，等级查询保持非空真实依赖。证据为fast-p children/02/execution.md的Epoch1完整`functions.grep`收据：pattern=`MailboxConversationService\(`、path=`src/test`，命中OutboundAttachmentFlowTest:239、MailReviewQueryIT:71及已授权MailboxReadAccessProjectionTest:75。仅前两者是补充白名单，原业务与门禁不减免。
