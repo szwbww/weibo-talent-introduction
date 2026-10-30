@@ -237,7 +237,7 @@ class UnmatchedInboundTrustWorkbenchTest {
                 Mockito.isNull(), Mockito.isNull(),
                 // 06 (A2/A3): 追加 attachmentIds(List<String> 非空) 与 authenticatedUsername(String?) 两个尾参后，
                 // mock 桩按 23 参等量补齐 matcher；非空 Kotlin 参数按本仓约定用 anyValue 兜实值（避免 Mockito.any 返回 null）。
-                anyValue(emptyList()), Mockito.isNull(), Mockito.isNull()
+                anyValue(emptyList()), Mockito.isNull(), Mockito.isNull(), reviewSendRef = Mockito.isNull()
             )
         ).thenThrow(
             ResponseStatusException(
@@ -272,7 +272,7 @@ class UnmatchedInboundTrustWorkbenchTest {
                 Mockito.isNull(), Mockito.isNull(),
                 // 06 (A2/A3): 追加 attachmentIds(List<String> 非空) 与 authenticatedUsername(String?) 两个尾参后，
                 // mock 桩按 23 参等量补齐 matcher；非空 Kotlin 参数按本仓约定用 anyValue 兜实值（避免 Mockito.any 返回 null）。
-                anyValue(emptyList()), Mockito.isNull(), Mockito.isNull()
+                anyValue(emptyList()), Mockito.isNull(), Mockito.isNull(), reviewSendRef = Mockito.isNull()
             )
         ).thenThrow(
             ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "\u53d1\u9001\u6682\u65f6\u5931\u8d25\uff0c\u53ef\u5b89\u5168\u91cd\u8bd5")
@@ -304,7 +304,7 @@ class UnmatchedInboundTrustWorkbenchTest {
                 Mockito.isNull(), Mockito.isNull(),
                 // 06 (A2/A3): 追加 attachmentIds(List<String> 非空) 与 authenticatedUsername(String?) 两个尾参后，
                 // mock 桩按 23 参等量补齐 matcher；非空 Kotlin 参数按本仓约定用 anyValue 兜实值（避免 Mockito.any 返回 null）。
-                anyValue(emptyList()), Mockito.isNull(), Mockito.isNull()
+                anyValue(emptyList()), Mockito.isNull(), Mockito.isNull(), reviewSendRef = Mockito.isNull()
             )
         ).thenThrow(
             ResponseStatusException(HttpStatus.CONFLICT, "\u53d1\u9001\u72b6\u6001\u672a\u77e5\uff0c\u8bf7\u52ff\u91cd\u590d\u53d1\u9001 (Message-ID: <test@weibo.com>)")
@@ -407,7 +407,7 @@ class UnmatchedInboundTrustWorkbenchTest {
                 Mockito.isNull(), Mockito.isNull(),
                 // 06 (A2/A3): 追加 attachmentIds(List<String> 非空) 与 authenticatedUsername(String?) 两个尾参后，
                 // mock 桩按 23 参等量补齐 matcher；非空 Kotlin 参数按本仓约定用 anyValue 兜实值（避免 Mockito.any 返回 null）。
-                anyValue(emptyList()), Mockito.isNull(), Mockito.isNull()
+                anyValue(emptyList()), Mockito.isNull(), Mockito.isNull(), reviewSendRef = Mockito.isNull()
             )
         ).thenReturn(
             PendingMailSendResult(

@@ -1,13 +1,8 @@
 /*
- * user1 只读邮件视图（fast-p 03 · I-2/I-3/I-4 · S-1）。
- *
- * 独立模块，不 mount MailboxChat / 工作台 / 专家材料 / 联系人详情，也不读写任何
- * localStorage/sessionStorage。当前正文只存在于本实例内存：切专家、刷新、
- * focus/visible、翻更早页都重新请求后端；403 立即清空正文与分页 cursor，
- * 401 交由宿主 api 的既有 handleAuthResponse 收口。
- *
- * 唯一导出：window.MailboxReadOnly = { mount(host, { api, sessionUser }), unmount(host) }。
- * mount 返回的 handle 只暴露 refresh（重新读取列表与已选专家）与 unmount。
+ * Restricted reader mailbox and explicit review drafts.
+ * No admin workbench, sending, attachment or translation capabilities.
+ * All draft content lives only in this mounted instance; ownership and request
+ * epochs isolate every response. History mail stays text-only.
  */
 (function (global) {
     "use strict";
@@ -152,7 +147,7 @@
         searchRow.appendChild(searchButton);
         var refreshButton = buttonNode(doc, "refresh", "刷新");
         var note = makeNode(doc, "p", "mc-note");
-        setText(note, "只读：仅显示管理员授权的专家邮件");
+        setText(note, "仅显示管理员授权的专家邮件");
         tools.appendChild(searchRow);
         tools.appendChild(refreshButton);
         tools.appendChild(note);
@@ -180,18 +175,371 @@
         var identityName = makeNode(doc, "h2");
         identity.appendChild(identityName);
         var readOnlyBadge = makeNode(doc, "span", "mc-badge");
-        setText(readOnlyBadge, "只读");
+        setText(readOnlyBadge, "可查看 · 可提交草稿");
         header.appendChild(identity);
         header.appendChild(readOnlyBadge);
         var scroll = makeNode(doc, "div", "mc-scroll");
+        var messages = makeNode(doc, "div");
+        scroll.appendChild(messages);
         conversation.appendChild(header);
         conversation.appendChild(scroll);
 
         root.appendChild(aside);
         root.appendChild(conversation);
 
+        // Persistent composer: timeline refresh never replaces its native editing range.
+        var REVIEW_PATH = "/api/mail/mailbox/review-drafts";
+        var draft = null, requestedDraftId = null, revision = 0, savedRevision = 0, conflict = false;
+        var reviewSeq = 0, reviewReadSeq = 0, historySeq = 0, eventsSeq = 0, navigationSeq = 0;
+        var saving = null, busy = false, denied = false, createRequest = null;
+        var draftItems = [], draftPage = 0, draftTotal = 0, eventItems = [], eventBefore = null;
+        var eventDraftId = null, panel = null, commentText = "";
+        var sanitizer = global.MailboxMeeting && global.MailboxMeeting.sanitizeDraftHtml;
+        var review = makeNode(doc, "section", "mc-section");
+        review.dataset.role = "review-drafts";
+        var reviewContent = makeNode(doc, "div", "mc-section-content");
+        var compose = makeNode(doc, "div", "mc-compose");
+        compose.dataset.role = "review-compose";
+        review.appendChild(reviewContent); reviewContent.appendChild(compose);
+        scroll.appendChild(review);
+        function reviewButton(parent, action, label, className, id) {
+            var node = makeNode(doc, "button", className || "button");
+            node.setAttribute("type", "button"); node.dataset.reviewAction = action;
+            if (id !== undefined) node.dataset.draftId = String(id);
+            setText(node, label); parent.appendChild(node); return node;
+        }
+        function roleNode(parent, tag, className, role) {
+            var node = makeNode(doc, tag, className);
+            node.dataset.role = role; parent.appendChild(node); return node;
+        }
+        var controls = makeNode(doc, "div", "mail-review-controls"); compose.appendChild(controls);
+        var historyButton = reviewButton(controls, "history", "草稿历史");
+        historyButton.setAttribute("aria-expanded", "false");
+        var newButton = reviewButton(controls, "new", "新增草稿");
+        var stateBadge = roleNode(controls, "span", "mc-badge", "review-state");
+        var historyPanel = roleNode(compose, "div", "mail-review-panel", "review-history");
+        var subjectLabel = makeNode(doc, "label"); setText(subjectLabel, "主题");
+        var subjectInput = roleNode(subjectLabel, "input", "", "review-subject");
+        subjectInput.setAttribute("aria-label", "草稿主题"); compose.appendChild(subjectLabel);
+        var editorTools = makeNode(doc, "div", "mc-editor-tools"); compose.appendChild(editorTools);
+        [["bold", "B"], ["italic", "I"], ["insertUnorderedList", "列表"], ["createLink", "链接"]].forEach(function (entry) {
+            var node = makeNode(doc, "button", "button");
+            node.setAttribute("type", "button"); node.dataset.reviewCommand = entry[0];
+            setText(node, entry[1]); editorTools.appendChild(node);
+        });
+        var editor = roleNode(compose, "div", "mc-editor", "review-editor");
+        editor.setAttribute("role", "textbox"); editor.setAttribute("aria-multiline", "true");
+        editor.setAttribute("aria-label", "草稿正文");
+        var reason = roleNode(compose, "p", "mc-note", "review-return-reason");
+        var reviewError = roleNode(compose, "p", "mc-error", "review-error"); reviewError.setAttribute("role", "alert");
+        var footer = makeNode(doc, "div", "mail-review-footer"); compose.appendChild(footer);
+        var commentsButton = reviewButton(footer, "comments", "评论 0", "mc-text-button");
+        reviewButton(footer, "events", "变动历史", "mc-text-button");
+        var discussion = roleNode(compose, "div", "mail-review-panel", "review-discussion");
+        var composeFooter = makeNode(doc, "div", "mc-compose-footer"); compose.appendChild(composeFooter);
+        var saveState = roleNode(composeFooter, "span", "mc-note", "review-save-state"); saveState.setAttribute("role", "status");
+        var actions = makeNode(doc, "div", "mail-review-actions"); composeFooter.appendChild(actions);
+        var deleteButton = reviewButton(actions, "delete", "删除草稿", "button danger");
+        var saveButton = reviewButton(actions, "save", "保存草稿");
+        var withdrawButton = reviewButton(actions, "withdraw", "取消提交");
+        var submitButton = reviewButton(actions, "submit", "提交审核", "button primary");
+        var reloadButton = reviewButton(actions, "reload", "重新加载");
+
+        function pending() { return revision !== savedRevision || Boolean(saving); }
+        function editable() {
+            return Boolean(draft && !draft.deleted && !denied && !conflict && sanitizer
+                && (draft.state === "DRAFT" || draft.state === "RETURNED"));
+        }
+        function reviewContext() {
+            return { owner: sessionUser, gen: generation, contact: selected && String(selected.contactId),
+                id: draft && draft.id, version: draft && draft.version, rev: revision, seq: reviewSeq };
+        }
+        function sameContext(ctx, checkVersion) {
+            return !destroyed && !denied && ctx.owner === sessionUser && ctx.gen === generation
+                && ctx.contact === (selected && String(selected.contactId)) && ctx.seq === reviewSeq
+                && ctx.id === (draft && draft.id) && (!checkVersion || ctx.version === (draft && draft.version));
+        }
+        function showReviewError(text) { setText(reviewError, text); reviewError.hidden = !text; }
+        function safeBody(node, html, text) {
+            if (sanitizer) node.innerHTML = sanitizer(String(html || ""));
+            else setText(node, text || "");
+        }
+        function stateLabel(item) {
+            if (item && item.deleted) return "已删除";
+            return { DRAFT: "未提交", RETURNED: "已退回", SUBMITTED: "已提交", APPROVED: "已审核" }[item && item.state] || "暂无草稿";
+        }
+        function renderReview() {
+            review.hidden = !selected || denied;
+            historyPanel.hidden = panel !== "history";
+            discussion.hidden = panel !== "comments" && panel !== "events";
+            historyButton.setAttribute("aria-expanded", String(panel === "history"));
+            setText(stateBadge, stateLabel(draft));
+            subjectLabel.hidden = editorTools.hidden = editor.hidden = footer.hidden = !draft;
+            subjectInput.disabled = !editable() || busy;
+            editor.setAttribute("contenteditable", String(editable() && !busy));
+            editorTools.hidden = !draft || !editable();
+            Array.from(editorTools.children).forEach(function (node) { node.disabled = !editable() || busy; });
+            reason.hidden = !draft || !draft.returnReason; setText(reason, draft && draft.returnReason);
+            setText(commentsButton, "评论 " + (draft ? draft.commentCount : 0));
+            deleteButton.hidden = !draft || draft.deleted || draft.state === "APPROVED";
+            saveButton.hidden = submitButton.hidden = !draft || draft.deleted || !["DRAFT", "RETURNED"].includes(draft.state);
+            withdrawButton.hidden = !draft || draft.deleted || draft.state !== "SUBMITTED";
+            reloadButton.hidden = !conflict;
+            Array.from(actions.children).forEach(function (node) { node.disabled = busy || Boolean(saving); });
+            saveButton.disabled = submitButton.disabled = busy || Boolean(saving) || !editable();
+            newButton.disabled = busy || Boolean(saving) || denied;
+            setText(saveState, !draft ? "暂无草稿" : draft.state === "APPROVED" ? "已审核，不能修改"
+                : saving ? "保存中…" : revision !== savedRevision ? "尚未保存" : "已保存");
+        }
+        function resetReview() {
+            reviewSeq += 1; historySeq += 1; eventsSeq += 1;
+            draft = null; requestedDraftId = null; revision = savedRevision = 0; conflict = false;
+            saving = null; busy = false; createRequest = null; commentText = "";
+            draftItems = []; draftPage = draftTotal = 0; eventItems = []; eventBefore = null;
+            eventDraftId = null; panel = null;
+            subjectInput.value = ""; setText(editor, ""); historyPanel.replaceChildren(); discussion.replaceChildren();
+            showReviewError(""); renderReview();
+        }
+        function revokeAccess() {
+            generation += 1; denied = true; navigationSeq += 1;
+            inflight.forEach(function (controller) { controller.abort(); });
+            clearDetailBody(); detailSeq += 1; listSeq += 1;
+            listItems = []; listTotal = 0; listLoading = false;
+            resetReview(); detailStatus = "forbidden"; renderList(); renderConversation();
+        }
+        function acceptDraft(data, replace) {
+            draft = data;
+            if (replace) {
+                subjectInput.value = data.subject || ""; safeBody(editor, data.html, data.text);
+                revision = savedRevision = 0;
+            }
+            conflict = false; showReviewError(sanitizer ? "" : "编辑组件加载失败"); renderReview();
+            if (panel === "comments" || panel === "events") renderDiscussion();
+        }
+        function reviewFailure(error) {
+            if (error && (error.status === 401 || error.status === 403)) return;
+            if (error && error.status === 409) conflict = true;
+            showReviewError(conflict ? "草稿已被更新，请重新加载" : "保存失败，内容尚未同步"); renderReview();
+        }
+        function loadDraft(id, preserve) {
+            requestedDraftId = id;
+            var ctx = reviewContext(), seq = ++reviewReadSeq;
+            return requestJson(REVIEW_PATH + "/" + id).then(function (data) {
+                if (!sameContext(ctx, true) || seq !== reviewReadSeq) return;
+                if (preserve && pending()) {
+                    if (!draft || data.version !== draft.version || data.state !== draft.state || data.deleted) {
+                        // Retain the local version/body for copying, but immediately honor a server lock.
+                        draft = Object.assign({}, draft, { state: data.state, deleted: data.deleted, returnReason: data.returnReason });
+                        conflict = true; showReviewError("草稿已被更新，请重新加载"); renderReview();
+                        renderDiscussion();
+                    }
+                    if (draft && data.version === draft.version) {
+                        draft = Object.assign({}, draft, { commentCount: data.commentCount });
+                        renderReview();
+                        if (panel === "comments" || panel === "events") loadEvents(data.id, false);
+                    }
+                    return;
+                }
+                acceptDraft(data, true);
+                if (panel === "comments" || panel === "events") loadEvents(data.id, false);
+            }, function (error) {
+                if (sameContext(ctx, true) && seq === reviewReadSeq) {
+                    conflict = true; reviewFailure(error);
+                }
+            });
+        }
+        function saveDraft() {
+            if (saving) return saving.then(function () { return saveDraft(); });
+            if (!draft || revision === savedRevision) return Promise.resolve();
+            if (!editable()) return Promise.reject(new Error("草稿已被更新，请重新加载"));
+            var ctx = reviewContext();
+            var body = { expectedVersion: draft.version, subject: subjectInput.value, html: editor.innerHTML };
+            var promise = requestJson(REVIEW_PATH + "/" + draft.id, "PUT", body).then(function (data) {
+                if (!sameContext(ctx, true)) return;
+                draft = data; savedRevision = ctx.rev;
+                if (revision === ctx.rev) { subjectInput.value = data.subject; safeBody(editor, data.html, data.text); }
+                showReviewError("");
+            }, function (error) {
+                if (sameContext(ctx, true)) reviewFailure(error);
+                throw error;
+            }).finally(function () { if (saving === promise) { saving = null; renderReview(); } });
+            saving = promise; renderReview(); return promise;
+        }
+        function flushDrafts() {
+            if (!pending()) return Promise.resolve();
+            var ctx = reviewContext();
+            return saveDraft().then(function () {
+                if (!sameContext(ctx, false)) {
+                    if (destroyed || denied) throw new Error("暂无权限查看该专家邮件");
+                    return;
+                }
+                if (pending()) return flushDrafts();
+            }).catch(function (error) {
+                if (sameContext(ctx, false)) reviewFailure(error);
+                throw error;
+            });
+        }
+        function navigate(action) {
+            var seq = ++navigationSeq, ctx = reviewContext();
+            return flushDrafts().then(function () {
+                if (seq !== navigationSeq || !sameContext(ctx, false)) return;
+                return action();
+            }).catch(function (error) { if (sameContext(ctx, false)) reviewFailure(error); });
+        }
+        function renderHistory() {
+            historyPanel.replaceChildren();
+            if (!draftItems.length) historyPanel.appendChild(statusNode(doc, "mc-note", "暂无草稿"));
+            draftItems.forEach(function (item) {
+                var entry = makeNode(doc, "article", "mail-review-entry"), label = makeNode(doc, "span");
+                setText(label, "草稿 #" + item.id + " · " + stateLabel(item) + " · " + formatTime(item.updatedAt));
+                entry.appendChild(label);
+                if (!item.deleted) reviewButton(entry, "select", "打开草稿", "mc-text-button", item.id);
+                reviewButton(entry, "events", "变动历史", "mc-text-button", item.id); historyPanel.appendChild(entry);
+            });
+            if (draftItems.length < draftTotal) reviewButton(historyPanel, "more-drafts", "加载更多草稿", "mc-text-button");
+        }
+        function loadDrafts(more) {
+            if (!selected || denied) return Promise.resolve();
+            var ctx = reviewContext(), seq = ++historySeq, page = more ? draftPage + 1 : 0;
+            return requestJson(REVIEW_PATH + "?contactId=" + ctx.contact + "&includeDeleted=true&page=" + page + "&size=20").then(function (data) {
+                if (!sameContext(ctx, true) || seq !== historySeq) return;
+                draftItems = more ? draftItems.concat(data.items || []) : (data.items || []);
+                draftTotal = data.total; draftPage = page; renderHistory();
+            }, function (error) { if (sameContext(ctx, true) && seq === historySeq) reviewFailure(error); });
+        }
+        function renderDiscussion() {
+            discussion.replaceChildren();
+            eventItems.forEach(function (item) {
+                if (panel === "comments" && item.eventType !== "COMMENT") return;
+                var entry = makeNode(doc, "article", "mail-review-entry"), title = makeNode(doc, "strong");
+                setText(title, item.actorUsername + " · " + formatTime(item.createdAt) + " · " + item.eventType);
+                entry.appendChild(title);
+                var payload = item.payload || {}, body = makeNode(doc, "div", "mc-body");
+                setText(body, payload.text || payload.reason || payload.subject || ""); entry.appendChild(body);
+                if (panel === "events" && (payload.html !== undefined || payload.text !== undefined)) {
+                    var versionBody = roleNode(entry, "div", "mc-body", "review-version-body"); safeBody(versionBody, payload.html, payload.text);
+                }
+                discussion.appendChild(entry);
+            });
+            if (draft && eventDraftId === draft.id && !draft.deleted && draft.state !== "APPROVED") {
+                var input = makeNode(doc, "textarea", "mail-review-input");
+                input.setAttribute("aria-label", "评论内容"); input.setAttribute("maxlength", "2000");
+                input.value = commentText; input.disabled = busy;
+                input.addEventListener("input", function () { commentText = input.value; }); discussion.appendChild(input);
+                var post = reviewButton(discussion, "comment", "发布评论"); post.disabled = busy || conflict;
+            }
+            if (eventBefore) reviewButton(discussion, "more-events", "加载更早历史", "mc-text-button");
+        }
+        function loadEvents(id, more) {
+            var ctx = reviewContext(), seq = ++eventsSeq;
+            if (!more) { eventItems = []; eventBefore = null; eventDraftId = Number(id); discussion.replaceChildren(); }
+            var before = more && eventBefore ? "&beforeId=" + eventBefore : "";
+            return requestJson(REVIEW_PATH + "/" + id + "/events?limit=20" + before).then(function (data) {
+                if (!sameContext(ctx, true) || seq !== eventsSeq || eventDraftId !== Number(id)) return;
+                var items = Array.isArray(data) ? data : [];
+                eventItems = more ? eventItems.concat(items) : items;
+                eventBefore = items.length === 20 ? items[items.length - 1].id : null; renderDiscussion();
+            }, function (error) { if (sameContext(ctx, true) && seq === eventsSeq) reviewFailure(error); });
+        }
+        function createDraft() {
+            return navigate(function () {
+                if (busy || denied || !selected) return;
+                if (!createRequest) createRequest = { contactId: Number(selected.contactId),
+                    clientRequestId: global.crypto && global.crypto.randomUUID ? global.crypto.randomUUID()
+                        : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (part) {
+                            var random = Math.floor(Math.random() * 16);
+                            return (part === "x" ? random : (random & 3) | 8).toString(16);
+                        }), subject: "", html: "" };
+                var ctx = reviewContext(); busy = true; renderReview();
+                return requestJson(REVIEW_PATH, "POST", createRequest).then(function (data) {
+                    if (!sameContext(ctx, true)) return;
+                    resetReview(); acceptDraft(data, true);
+                }, function (error) { if (sameContext(ctx, true)) reviewFailure(error); })
+                    .finally(function () { if (sameContext(ctx, false)) { busy = false; renderReview(); } });
+            });
+        }
+        function mutateDraft(action) {
+            if (busy || saving || !draft || draft.deleted || draft.state === "APPROVED" || conflict) return Promise.resolve();
+            busy = true; renderReview(); if (!discussion.hidden) renderDiscussion();
+            var ctx = reviewContext();
+            return (action === "submit" ? flushDrafts() : Promise.resolve()).then(function () {
+                if (!sameContext(ctx, false)) return;
+                ctx = reviewContext();
+                var path = REVIEW_PATH + "/" + draft.id, body = { expectedVersion: draft.version }, method = "POST";
+                if (action === "delete") { method = "DELETE"; path += "?expectedVersion=" + draft.version; body = undefined; }
+                else path += "/" + (action === "comment" ? "comments" : action);
+                if (action === "comment") body.text = commentText;
+                return requestJson(path, method, body).then(function (data) {
+                    if (!sameContext(ctx, true)) return;
+                    if (action === "delete") { resetReview(); return loadDrafts(false); }
+                    if (action === "comment") { commentText = ""; return loadDraft(draft.id, true); }
+                    if (revision !== ctx.rev) {
+                        draft = data; conflict = true;
+                        showReviewError("草稿已被更新，请重新加载"); renderReview();
+                    } else acceptDraft(data, true);
+                });
+            }).catch(function (error) { if (sameContext(ctx, false)) reviewFailure(error); })
+                .finally(function () {
+                    if (sameContext(ctx, false)) { busy = false; renderReview(); if (!discussion.hidden) renderDiscussion(); }
+                });
+        }
+        function onReviewInput() {
+            if (!editable()) return;
+            revision += 1; showReviewError(""); renderReview();
+        }
+        function onBeforeUnload(event) {
+            if (!pending()) return;
+            event.preventDefault(); event.returnValue = "";
+        }
+        function onEditorPaste(event) {
+            if (!editable()) { event.preventDefault(); return; }
+            event.preventDefault();
+            var clipboard = event.clipboardData, html = clipboard && clipboard.getData("text/html");
+            if (html) doc.execCommand("insertHTML", false, sanitizer(html));
+            else doc.execCommand("insertText", false, clipboard ? clipboard.getData("text/plain") : "");
+        }
+        function onReviewMouseDown(event) {
+            if (event.target && event.target.closest("[data-review-command]")) event.preventDefault();
+        }
+        function onReviewClick(event) {
+            var target = event.target, command = target && target.closest("[data-review-command]");
+            if (command) {
+                if (!editable() || busy) return;
+                var value = null;
+                if (command.dataset.reviewCommand === "createLink") {
+                    value = global.prompt("链接 URL（http/https/mailto）");
+                    if (!value || !/^(https?:\/\/|mailto:)[^\s]+$/i.test(value.trim())) return;
+                    value = value.trim();
+                }
+                editor.focus(); doc.execCommand(command.dataset.reviewCommand, false, value); return;
+            }
+            var node = target && target.closest("[data-review-action]");
+            if (!node || node.disabled) return;
+            var action = node.dataset.reviewAction;
+            if (action === "save") return saveDraft().catch(function () {});
+            if (action === "new") return createDraft();
+            if (["submit", "withdraw", "delete", "comment"].includes(action)) return mutateDraft(action);
+            if (action === "select") return navigate(function () { resetReview(); return loadDraft(Number(node.dataset.draftId), false); });
+            if (action === "reload") {
+                var id = draft ? draft.id : requestedDraftId;
+                if (!id || !selected || denied || destroyed) return;
+                if (!global.confirm("请先复制本地文字。重新加载将放弃未保存内容，继续？")) return;
+                resetReview(); return loadDraft(id, false);
+            }
+            if (action === "history") {
+                panel = panel === "history" ? null : "history"; renderReview(); if (panel) return loadDrafts(false);
+            }
+            if (action === "events" || action === "comments") {
+                var eventId = Number(node.dataset.draftId || (draft && draft.id)); if (!eventId) return;
+                panel = panel === action && eventDraftId === eventId ? null : action; renderReview();
+                if (panel) return loadEvents(eventId, false);
+            }
+            if (action === "more-drafts") return loadDrafts(true);
+            if (action === "more-events") return loadEvents(eventDraftId, true);
+        }
+
         // ---- 请求（AbortController + 15s 超时；signal 沿既有 api 传递） -------------
-        function requestJson(path) {
+        function requestJson(path, method, body) {
             var controller = new AbortController();
             var timedOut = false;
             var timer = setTimeout(function () {
@@ -205,7 +553,9 @@
             };
             return Promise.resolve()
                 .then(function () {
-                    return api(path, { method: "GET", cache: "no-store", signal: controller.signal });
+                    var options = { method: method || "GET", cache: "no-store", signal: controller.signal };
+                    if (body !== undefined) options.body = JSON.stringify(body);
+                    return api(path, options);
                 })
                 .then(function (data) {
                     settle();
@@ -215,6 +565,7 @@
                     // 跨 realm 的 Error 不保证 instanceof，保留原始错误对象上的 status/data。
                     var failure = error && typeof error === "object" ? error : new Error(String(error));
                     failure.timedOut = timedOut;
+                    if (!destroyed && (failure.status === 401 || failure.status === 403)) revokeAccess();
                     throw failure;
                 });
         }
@@ -294,22 +645,22 @@
         }
 
         function renderConversation() {
-            scroll.replaceChildren();
+            messages.replaceChildren();
             renderIdentity();
             if (!selected) {
-                scroll.appendChild(statusNode(doc, "mc-empty", COPY.noSelection));
+                messages.appendChild(statusNode(doc, "mc-empty", COPY.noSelection));
                 return;
             }
             if (detailStatus === "loading") {
-                scroll.appendChild(statusNode(doc, "mc-empty", COPY.loading));
+                messages.appendChild(statusNode(doc, "mc-empty", COPY.loading));
                 return;
             }
             if (detailStatus === "forbidden") {
-                scroll.appendChild(statusNode(doc, "mc-error", COPY.forbidden, "alert"));
+                messages.appendChild(statusNode(doc, "mc-error", COPY.forbidden, "alert"));
                 return;
             }
             if (detailStatus === "error") {
-                scroll.appendChild(statusNode(doc, "mc-error", COPY.network, "alert"));
+                messages.appendChild(statusNode(doc, "mc-error", COPY.network, "alert"));
                 return;
             }
             var timeline = makeNode(doc, "div", "mc-timeline");
@@ -340,7 +691,7 @@
                 article.appendChild(body);
                 timeline.appendChild(article);
             });
-            scroll.appendChild(timeline);
+            messages.appendChild(timeline);
         }
 
         function scrollToLatest() {
@@ -441,35 +792,35 @@
         }
 
         function clearSelection() {
+            resetReview();
             selected = null;
             detailSeq += 1;
             clearDetailBody();
             detailStatus = "idle";
-            renderList();
-            renderConversation();
+            renderList(); renderConversation(); renderReview();
         }
 
         function selectExpert(contactId) {
-            var item = null;
-            listItems.forEach(function (candidate) {
-                if (String(candidate.contactId) === String(contactId)) item = candidate;
+            return navigate(function () {
+                var item = null;
+                listItems.forEach(function (candidate) {
+                    if (String(candidate.contactId) === String(contactId)) item = candidate;
+                });
+                resetReview();
+                selected = { contactId: contactId, name: item ? (item.name || "") : "" };
+                detailSeq += 1; clearDetailBody();
+                renderList(); renderConversation(); renderReview();
+                return loadSelectedDetail();
             });
-            selected = {
-                contactId: contactId,
-                name: item ? (item.name || "") : ""
-            };
-            detailSeq += 1;
-            clearDetailBody();
-            renderList();
-            renderConversation();
-            return loadSelectedDetail();
         }
 
         function reloadAll() {
-            if (destroyed) return Promise.resolve();
+            if (destroyed || denied) return Promise.resolve();
             var tasks = [loadList()];
-            if (selected) tasks.push(loadSelectedDetail());
-            else renderConversation();
+            if (selected) {
+                tasks.push(loadSelectedDetail());
+                if (draft && !saving && !busy) tasks.push(loadDraft(draft.id, true));
+            } else renderConversation();
             return Promise.all(tasks);
         }
 
@@ -492,14 +843,14 @@
             if (!actionNode || !actionNode.dataset) return;
             var action = actionNode.dataset.action;
             if (action === "search") {
-                listQuery = String(searchInput.value || "").trim();
-                listPage = 0;
-                clearSelection();
-                return loadList();
+                return navigate(function () {
+                    listQuery = String(searchInput.value || "").trim(); listPage = 0;
+                    clearSelection(); return loadList();
+                });
             }
             if (action === "refresh") {
-                // 刷新保留已选专家并重新读取列表与正文（正文先清后取，I-3）。
-                return scheduleReload();
+                if (denied) { denied = false; clearSelection(); return scheduleReload(); }
+                return navigate(scheduleReload);
             }
             if (action === "select-expert") {
                 return selectExpert(actionNode.dataset.contactId);
@@ -523,10 +874,7 @@
         function onSearchKeydown(event) {
             if (event && event.key === "Enter") {
                 event.preventDefault();
-                listQuery = String(searchInput.value || "").trim();
-                listPage = 0;
-                clearSelection();
-                loadList();
+                onClick({ target: searchButton });
             }
         }
 
@@ -542,6 +890,13 @@
 
         function start() {
             root.addEventListener("click", onClick);
+            root.addEventListener("click", onReviewClick);
+            root.addEventListener("mousedown", onReviewMouseDown);
+            subjectInput.addEventListener("input", onReviewInput);
+            editor.addEventListener("input", onReviewInput);
+            editor.addEventListener("paste", onEditorPaste);
+            global.addEventListener("beforeunload", onBeforeUnload);
+            renderReview();
             searchInput.addEventListener("keydown", onSearchKeydown);
             global.addEventListener("focus", onFocus);
             if (typeof doc.addEventListener === "function") {
@@ -566,6 +921,13 @@
             });
             inflight.clear();
             root.removeEventListener("click", onClick);
+            root.removeEventListener("click", onReviewClick);
+            root.removeEventListener("mousedown", onReviewMouseDown);
+            subjectInput.removeEventListener("input", onReviewInput);
+            editor.removeEventListener("input", onReviewInput);
+            editor.removeEventListener("paste", onEditorPaste);
+            global.removeEventListener("beforeunload", onBeforeUnload);
+            resetReview();
             searchInput.removeEventListener("keydown", onSearchKeydown);
             global.removeEventListener("focus", onFocus);
             if (typeof doc.removeEventListener === "function") {
@@ -586,8 +948,11 @@
             handle: {
                 refresh: function () {
                     if (destroyed) return Promise.resolve();
-                    return scheduleReload();
+                    if (denied) { denied = false; clearSelection(); return scheduleReload(); }
+                    return flushDrafts().then(scheduleReload);
                 },
+                flushDrafts: flushDrafts,
+                hasPendingDrafts: pending,
                 unmount: function () {
                     unmount(host);
                 }

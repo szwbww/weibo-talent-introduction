@@ -1008,6 +1008,51 @@ class MailboxConversationControllerTest {
     // ------------------------------------------------------------------
 
     @Test
+    fun `review projection defaults preserve mail counts and reader cannot select review queue`() {
+        insertOutbound(1, "SENT", "2026-09-01 09:00:00")
+        insertOutbound(2, "SENT", "2026-09-02 09:00:00")
+        insertOutbound(3, "SENT", "2026-09-03 09:00:00")
+        repeat(3) { index ->
+            jdbcTemplate.update("""
+                INSERT INTO mailbox_review_draft(owner_username,expert_contact_id,client_request_id,target_kind,target_id,
+                    account_code,version,state,subject,html_body,text_body,submitted_at,created_at,updated_at)
+                VALUES('user1',?,?,'OUTBOUND',1,'acc-a',1,'SUBMITTED','Review','<p>Body</p>','Body',NOW(3),NOW(3),NOW(3))
+            """.trimIndent(), if (index < 2) 1L else 2L, java.util.UUID.randomUUID().toString())
+        }
+        mockMvc.perform(get("/api/mail/mailbox/conversations").session(sessionOf("op1")))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.total").value(3))
+            .andExpect(jsonPath("$.reviewPendingTotal").value(3))
+            .andExpect(jsonPath("$.items[0].contactId").value(3))
+            .andExpect(jsonPath("$.items[0].reviewPendingCount").value(0))
+            .andExpect(jsonPath("$.items[0].sentCount").value(1))
+            .andExpect(jsonPath("$.items[0].receivedCount").value(0))
+            .andExpect(jsonPath("$.items[0].pendingCount").value(0))
+        val pages = (0..1).map { page ->
+            objectMapper.readTree(mockMvc.perform(get("/api/mail/mailbox/conversations")
+                .param("reviewPendingOnly", "true").param("size", "1").param("page", page.toString())
+                .session(sessionOf("op1")))
+                .andExpect(status().isOk).andExpect(jsonPath("$.total").value(2))
+                .andExpect(jsonPath("$.reviewPendingTotal").value(3)).andReturn().response.contentAsString)
+        }
+        assertEquals(mapOf(1L to 2L, 2L to 1L), pages.associate {
+            it["items"][0]["contactId"].asLong() to it["items"][0]["reviewPendingCount"].asLong()
+        })
+        mockMvc.perform(get("/api/mail/mailbox/conversations?followed=true").session(sessionOf("op1")))
+            .andExpect(status().isOk).andExpect(jsonPath("$.total").value(0))
+            .andExpect(jsonPath("$.reviewPendingTotal").value(3))
+        stubReader()
+        insertReadAccess(1)
+        mockMvc.perform(get("/api/mail/mailbox/conversations").session(sessionOf("user1")))
+            .andExpect(status().isOk).andExpect(jsonPath("$.total").value(1))
+            .andExpect(jsonPath("$.reviewPendingTotal").value(0))
+            .andExpect(jsonPath("$.items[0].reviewPendingCount").value(0))
+        mockMvc.perform(get("/api/mail/mailbox/conversations?reviewPendingOnly=true").session(sessionOf("user1")))
+            .andExpect(status().isForbidden)
+            .andExpect(jsonPath("$.code").value(MailReadOnlyPolicy.MAIL_READ_FORBIDDEN))
+    }
+
+    @Test
     fun `reader list only counts and pages granted experts and q cannot bypass the grant`() {
         insertOutbound(1, "SENT", "2026-09-01 09:00:00", "grant-r1")
         insertOutbound(2, "SENT", "2026-09-02 09:00:00", "grant-r2")
@@ -1912,6 +1957,8 @@ class MailboxConversationControllerTest {
         )!!
 
     private fun cleanup() {
+        jdbcTemplate.update("DELETE FROM mailbox_review_draft_event")
+        jdbcTemplate.update("DELETE FROM mailbox_review_draft")
         jdbcTemplate.update("DELETE FROM expert_replied_dismissal")
         jdbcTemplate.update("DELETE FROM expert_follow")
         // 01：挂起表 FK→expert_contact，必须在删联系人前清理。

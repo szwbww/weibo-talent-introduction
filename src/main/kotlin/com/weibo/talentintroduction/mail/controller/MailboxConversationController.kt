@@ -90,7 +90,8 @@ data class ConversationItemResponse(
      * （MailboxConversationService）必须显式传入同一份读取结果，绝不二次查询。
      */
     val progressStatus: MailboxProgressStatus =
-        if (followed) MailboxProgressStatus.FOLLOWING else MailboxProgressStatus.NONE
+        if (followed) MailboxProgressStatus.FOLLOWING else MailboxProgressStatus.NONE,
+    val reviewPendingCount: Long = 0
 )
 
 /**
@@ -135,7 +136,8 @@ data class ConversationListResponse(
     val items: List<ConversationItemResponse>,
     val total: Long,
     val page: Int,
-    val size: Int
+    val size: Int,
+    val reviewPendingTotal: Long = 0
 )
 
 data class ConversationMessageItemResponse(
@@ -240,7 +242,8 @@ class MailboxConversationController(
         @RequestParam(required = false) keyword: String?,
         @RequestParam(defaultValue = "false") suspendedOnly: Boolean,
         /** 01 (T3/I-4)：只看已提供三态标记的专家；默认 false 保持既有调用兼容。 */
-        @RequestParam(defaultValue = "false") providedOnly: Boolean
+        @RequestParam(defaultValue = "false") providedOnly: Boolean,
+        @RequestParam(defaultValue = "false") reviewPendingOnly: Boolean = false
     ): ConversationListResponse = conversationService.listConversations(
         username = sessionUsername(request),
         q = q,
@@ -259,7 +262,8 @@ class MailboxConversationController(
         page = page,
         size = size,
         suspendedOnly = suspendedOnly,
-        providedOnly = providedOnly
+        providedOnly = providedOnly,
+        reviewPendingOnly = reviewPendingOnly
     )
 
     @GetMapping("/{contactId}/messages")

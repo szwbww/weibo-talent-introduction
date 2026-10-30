@@ -1,0 +1,185 @@
+$ rg -n --hidden -g !.git/** mc-editor|mc-compose|mc-text-button|mc-translation|mailReadOnly|draftSaves|draftOwners|draftSessionEpoch|panel-head-actions src/main src/test scripts
+exit=0
+src/test/js/mailboxServerDrafts.test.js:472:        assert.ok(children.indexOf(row) < children.indexOf(ctx.host.querySelector(".mc-compose-footer")));
+src/test/js/mailboxChatBehavior.test.js:674:    actions.setAttribute("class", "panel-head-actions");
+src/test/js/mailboxChatBehavior.test.js:1813:    it("聊天挂载：七字段+查询按钮移入 popover、view 加 mc-refined、刷新按钮进 panel-head-actions", async () => {
+src/test/js/mailboxChatBehavior.test.js:1833:        const actions = dom.panel.querySelector(".panel-head-actions");
+src/test/js/mailboxChatBehavior.test.js:1834:        assert.strictEqual(actions.firstChild.getAttribute("id"), "mailboxRefreshBtn", "刷新按钮移到 panel-head-actions 最前");
+src/test/js/mailboxChatBehavior.test.js:1864:        const actions = dom.panel.querySelector(".panel-head-actions");
+src/test/js/mailboxChatBehavior.test.js:1865:        assert.strictEqual(actions.firstChild.getAttribute("id"), "checkRepliesBtn", "panel-head-actions 还原");
+src/test/js/mailboxChatBehavior.test.js:2003:        const translation = freshOutbound.querySelector(".mc-translation");
+src/test/js/mailboxChatBehavior.test.js:2015:        assert.match(ctx.host.querySelector('[data-message-key="MAIL_RECORD:87"] .mc-translation').textContent, /译文：/);
+src/test/js/mailboxChatBehavior.test.js:2051:        assert.match(ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"] .mc-translation').textContent, /译文：cleaned question/);
+src/test/js/mailboxChatBehavior.test.js:2334:        const compose = conversation.querySelector(".mc-compose");
+src/test/js/mailboxChatBehavior.test.js:2374:        const compose = conversation.querySelector(".mc-compose");
+src/test/js/mailboxChatBehavior.test.js:2395:        assert.ok(!conversation.querySelector(".mc-compose"), "仅失败发件不显示编辑器");
+src/test/js/mailboxChatBehavior.test.js:4105:        const tools = ctx.host.querySelector(".mc-editor-tools");
+src/test/js/mailboxChatBehavior.test.js:4367:        const editorEl = ctx.host.querySelector('[data-role="mc-editor"]');
+src/test/js/mailboxChatBehavior.test.js:4369:        const footerEl = composeEl.querySelector(".mc-compose-footer");
+src/test/js/materialRequestIntegration.test.js:768:    return ctx.host.querySelectorAll('[data-role="manual-compose"] .mc-editor-tools button[data-action]');
+src/test/js/mailboxSuspension.test.js:652:    actions.setAttribute("class", "panel-head-actions");
+src/test/js/mailboxReadOnly.test.js:386:        assert.ok(classes(older).includes("mc-text-button"));
+src/test/js/batchEntryRelocation.test.js:31:    it("I3-2: both head buttons live in .panel-head-actions, 检查回复 before 批量发送", () => {
+src/test/js/batchEntryRelocation.test.js:34:            `<div class="panel-head-actions">\\s*` +
+src/test/js/batchEntryRelocation.test.js:38:        assert.match(html, headPattern, "panel-head must wrap both buttons in .panel-head-actions with 检查回复 first");
+src/test/js/unmatchedDetailResolvedAction.test.js:28:        assert.match(source, /class="panel-head-actions"/);
+src/test/js/checkRepliesRelocation.test.js:87:    it("S-1: exactly one .panel-head-actions in index.html, 检查回复 to the left of 批量发送", () => {
+src/test/js/checkRepliesRelocation.test.js:88:        assert.strictEqual((html.match(/class="panel-head-actions"/g) || []).length, 1,
+src/test/js/checkRepliesRelocation.test.js:89:            ".panel-head-actions must be used exactly once");
+src/test/js/checkRepliesRelocation.test.js:98:    it("S-1: .panel-head-actions rule block is present verbatim in styles.css", () => {
+src/test/js/checkRepliesRelocation.test.js:99:        assert.ok(css.includes(".panel-head-actions {\n    display: inline-flex;\n    align-items: center;\n    gap: 8px;\n    flex-shrink: 0;\n}"),
+src/test/js/meetingConfirmationIntegration.test.js:665:    actions.setAttribute("class", "panel-head-actions");
+src/test/js/meetingConfirmationIntegration.test.js:1454:        const tools = ctx.host.querySelectorAll('[data-role="manual-compose"] .mc-editor-tools .button[data-command]');
+src/test/js/meetingConfirmationIntegration.test.js:1505:        const tools = compose.querySelector('.mc-editor-tools').querySelectorAll("button");
+src/test/js/meetingConfirmationIntegration.test.js:1515:        const footer = compose.querySelector(".mc-compose-footer");
+src/test/js/mailboxChatStyle.test.js:390:    assert.match(stylesSource, /@media \(max-width: 760px\) \{\s*\.mail-chat\.mobile-core-mailbox div\.mc-editor\[contenteditable="true"\] \{ min-height: 160px; max-height: 40dvh; \}/);
+src/test/js/mailboxChatStyle.test.js:482:        "mc-text-button",
+src/test/js/mailboxChatStyle.test.js:596:        assert.ok(appSource.includes('body.dataset.mailReadOnly = "true"'));
+src/test/js/mailboxOutboundAttachments.test.js:657:    actions.setAttribute("class", "panel-head-actions");
+src/test/js/mailboxOutboundAttachments.test.js:1619:        const tools = compose.querySelectorAll(".mc-editor-tools button[data-action]");
+src/test/js/mailboxOutboundAttachments.test.js:1639:        assert.ok(children.indexOf(files) < children.indexOf(compose.querySelector(".mc-compose-footer")), "附件卡在发送 footer 之前");
+src/test/js/contactTimingStyle.test.js:73:        assert.match(S1_CSS, /\.mail-chat \.contact-timing \.mc-text-button:disabled\{opacity:\.45;cursor:not-allowed\}/);
+src/test/js/contactTimingStyle.test.js:74:        assert.match(S1_CSS, /\.mail-chat \.contact-timing \.mc-text-button:focus-visible\{outline:2px solid #6389d3;outline-offset:2px\}/);
+src/test/js/contactTimingStyle.test.js:107:    it("S-2 复用既有 .button/.primary/.mc-text-button，不新增按钮基类", () => {
+src/test/js/contactTimingStyle.test.js:109:        assert.ok(chatCssSource.includes(".mail-chat .mc-text-button{"), "复用既有 .mc-text-button");
+src/test/js/contactTimingStyle.test.js:130:        assert.ok(chatSource.includes('class="mc-text-button contact-timing-location" type="button" data-action="mc-contact-location" aria-haspopup="dialog"'));
+src/test/js/contactTimingStyle.test.js:131:        assert.ok(chatSource.includes('class="mc-text-button contact-timing-info" type="button" data-action="mc-contact-timing-evidence" aria-label="查看推荐依据" aria-haspopup="dialog"'));
+src/main/kotlin/com/weibo/talentintroduction/auth/controller/AuthController.kt:46:            mailReadOnly = MailReadOnlyPolicy.isReader(adminUser.username)
+src/main/kotlin/com/weibo/talentintroduction/auth/controller/AuthController.kt:74:            mailReadOnly = MailReadOnlyPolicy.isReader(user.username)
+src/main/kotlin/com/weibo/talentintroduction/auth/controller/AuthController.kt:108:    val mailReadOnly: Boolean = false
+src/main/kotlin/com/weibo/talentintroduction/auth/controller/AuthController.kt:116:    val mailReadOnly: Boolean = false
+src/test/js/authFlow.test.js:245:    "mailReadOnlyState",
+src/test/js/authFlow.test.js:757:    it("me: user1 + mailReadOnly mounts only the readonly module and locks the view", async () => {
+src/test/js/authFlow.test.js:759:            authenticated: true, username: "user1", mustChangePassword: false, mailReadOnly: true
+src/test/js/authFlow.test.js:767:        assert.strictEqual(sandbox.state.mailReadOnly.active, true);
+src/test/js/authFlow.test.js:768:        assert.strictEqual(sandbox.state.mailReadOnly.username, "user1");
+src/test/js/authFlow.test.js:779:    it("me: user1 without mailReadOnly shows the fixed error and never starts admin", async () => {
+src/test/js/authFlow.test.js:798:            authenticated: true, username: "admin", mustChangePassword: false, mailReadOnly: true
+src/test/js/authFlow.test.js:807:        assert.strictEqual(sandbox.state.mailReadOnly, undefined);
+src/test/js/authFlow.test.js:812:            authenticated: true, username: "user1", mustChangePassword: false, mailReadOnly: true
+src/test/js/authFlow.test.js:827:    it("login response passes username + mailReadOnly to the host", async () => {
+src/test/js/authFlow.test.js:842:                return { username: "user1", mailReadOnly: true, mustChangePassword: false };
+src/test/js/authFlow.test.js:844:            startAuthenticatedApp: (username, mailReadOnly) => startCalls.push({ username, mailReadOnly }),
+src/test/js/authFlow.test.js:860:        assert.deepStrictEqual(startCalls, [{ username: "user1", mailReadOnly: true }]);
+src/test/js/authFlow.test.js:875:        vm.runInContext(extractFn("mailReadOnlyState"), sandbox);
+src/test/js/authFlow.test.js:884:            state: { view: "mailbox", mailReadOnly: readerState() }
+src/test/js/authFlow.test.js:892:            state: { view: "mailbox", mailReadOnly: readerState() },
+src/test/js/authFlow.test.js:903:            state: { view: "mailbox", mailReadOnly: readerState() },
+src/test/js/authFlow.test.js:915:            state: { mailReadOnly: readerState() },
+src/test/js/authFlow.test.js:926:            state: { view: "mailbox", mailReadOnly: { active: true, username: "user1", handle: { refresh: async () => { refreshed++; } } } },
+src/test/js/authFlow.test.js:937:            state: { view: "mailbox", mailReadOnly: { active: true, username: "user1", handle: { refresh: async () => { refreshed++; } } } },
+src/test/js/authFlow.test.js:947:            state: { mailbox: {}, mailReadOnly: readerState() },
+src/test/js/authFlow.test.js:969:            state: { view: "accounts", mailReadOnly: readerState() },
+src/test/js/authFlow.test.js:991:            state: { mailReadOnly: { active, username: active ? "user1" : "admin", handle: null } },
+src/test/js/authFlow.test.js:1001:        ["mailReadOnlyState", "isMailReadOnlyMode", "isMailReadOnlyRequestAllowed", "api"].forEach((name) => {
+src/test/js/mailboxReplyIdentity.test.js:75:const editor = (ctx) => ctx.host.querySelector('[data-role="mc-editor"]');
+src/test/js/mailboxReplyIdentity.test.js:98:            const tools = ctx.host.querySelector(".mc-editor-tools");
+src/test/js/mailboxReplyIdentity.test.js:238:                draftSessionEpoch: field === "sessionEpoch" ? 2 : 1, replyIdentityCapture: () => now };
+src/test/js/mailboxReplyIdentity.test.js:270:                draftSessionEpoch: 2, draftSessionUser: "admin",
+src/main/resources/static/app.js:5298:        const handle = mailReadOnlyState().handle;
+src/main/resources/static/app.js:17866:            <div class="panel-head-actions">
+src/main/resources/static/app.js:20822:        // 聊天模式：刷新按钮已迁入 panel-head-actions 并由组件静默刷新
+src/main/resources/static/app.js:21082:function mailReadOnlyState() {
+src/main/resources/static/app.js:21083:    if (!state.mailReadOnly) {
+src/main/resources/static/app.js:21084:        state.mailReadOnly = { active: false, username: null, handle: null };
+src/main/resources/static/app.js:21086:    return state.mailReadOnly;
+src/main/resources/static/app.js:21090:    return mailReadOnlyState().active === true;
+src/main/resources/static/app.js:21118:    if (body && body.dataset) body.dataset.mailReadOnly = "true";
+src/main/resources/static/app.js:21160:    const readerState = mailReadOnlyState();
+src/main/resources/static/app.js:21187:    const readerState = state.mailReadOnly;
+src/main/resources/static/app.js:21202:    if (body && body.dataset) delete body.dataset.mailReadOnly;
+src/main/resources/static/app.js:21205:function startAuthenticatedApp(username, mailReadOnly) {
+src/main/resources/static/app.js:21208:    if (reader && mailReadOnly !== true) {
+src/main/resources/static/app.js:21300:                startAuthenticatedApp(res.username, res.mailReadOnly);
+src/main/resources/static/app.js:21340:                startAuthenticatedApp(res.username, res.mailReadOnly);
+src/main/resources/static/app.js:22027:        const handle = mailReadOnlyState().handle;
+src/main/resources/static/mailbox-chat.css:60:.mail-chat .mc-compose{display:flex;flex-direction:column;gap:10px;min-width:0}
+src/main/resources/static/mailbox-chat.css:61:.mail-chat .mc-compose label{display:flex;flex-direction:column;gap:6px;color:#64748b;font-size:12px}
+src/main/resources/static/mailbox-chat.css:62:.mail-chat .mc-compose input{width:100%;height:32px;min-height:32px;padding:0 10px;border:1px solid #dce4ef;border-radius:7px;background:#fff;color:#334155;font:inherit}
+src/main/resources/static/mailbox-chat.css:63:.mail-chat .mc-editor-tools{display:flex;flex-wrap:wrap;gap:6px}
+src/main/resources/static/mailbox-chat.css:64:.mail-chat .mc-editor{min-height:160px;max-height:360px;overflow:auto;padding:12px;border:1px solid #dce4ef;border-radius:7px;background:#fff;color:#334155;font-size:12px;line-height:1.8;overflow-wrap:anywhere}
+src/main/resources/static/mailbox-chat.css:65:.mail-chat .mc-compose-footer{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+src/main/resources/static/mailbox-chat.css:97:.mail-chat .mc-filter-popover footer .mc-text-button{margin-right:auto}
+src/main/resources/static/mailbox-chat.css:109:.mail-chat .mc-text-button{display:inline-flex;align-items:center;gap:4px;border:0;border-radius:4px;background:transparent;color:#6482b2;font:inherit;font-size:11px;line-height:1.5;padding:3px 0;cursor:pointer}
+src/main/resources/static/mailbox-chat.css:110:.mail-chat .mc-text-button:hover{color:#244ca9;background:#edf3ff}
+src/main/resources/static/mailbox-chat.css:111:.mail-chat .mc-text-button:active{background:#dbeafe}
+src/main/resources/static/mailbox-chat.css:112:.mail-chat .mc-text-button:disabled{opacity:.45;cursor:not-allowed}
+src/main/resources/static/mailbox-chat.css:119:.mail-chat .mc-translation{white-space:pre-wrap;overflow-wrap:anywhere;padding:12px 14px;margin-top:12px;border-left:2px solid #b8ccef;border-radius:0 7px 7px 0;background:#f3f7ff;color:#59708f;font-size:12px;line-height:1.85}
+src/main/resources/static/mailbox-chat.css:130:.mail-chat .mc-editor{min-height:100px;max-height:240px}
+src/main/resources/static/mailbox-chat.css:214:body[data-mail-read-only="true"] #mailboxConversationPanel > .panel-head .panel-head-actions,
+src/main/resources/static/mailbox-chat.js:5: * #mailboxRefreshBtn 移到 panel-head-actions 首位，退出还原；唯一筛选节点
+src/main/resources/static/mailbox-chat.js:111:    const draftOwners = new Map();
+src/main/resources/static/mailbox-chat.js:112:    const draftSaves = new Map();
+src/main/resources/static/mailbox-chat.js:114:    let draftSessionEpoch = 0;
+src/main/resources/static/mailbox-chat.js:119:        draftSessionEpoch += 1;
+src/main/resources/static/mailbox-chat.js:120:        draftSaves.forEach((rec) => clearTimeout(rec.timer));
+src/main/resources/static/mailbox-chat.js:121:        draftSaves.clear();
+src/main/resources/static/mailbox-chat.js:122:        draftOwners.clear();
+src/main/resources/static/mailbox-chat.js:1040:            if (!draftOwners.has(instance.user)) draftOwners.set(instance.user, new Map());
+src/main/resources/static/mailbox-chat.js:1041:            return draftOwners.get(instance.user);
+src/main/resources/static/mailbox-chat.js:1056:            let rec = draftSaves.get(ownerKey);
+src/main/resources/static/mailbox-chat.js:1058:                rec = { user: instance.user, epoch: draftSessionEpoch, key, target: draftTargetFromKey(key),
+src/main/resources/static/mailbox-chat.js:1062:                draftSaves.set(ownerKey, rec);
+src/main/resources/static/mailbox-chat.js:1073:            return rec.user === draftSessionUser && rec.epoch === draftSessionEpoch;
+src/main/resources/static/mailbox-chat.js:1237:            return Array.from(draftSaves.values()).some((rec) => rec.user === instance.user && draftOwnerLive(rec)
+src/main/resources/static/mailbox-chat.js:1243:            const records = Array.from(draftSaves.values()).filter((rec) => rec.user === instance.user && draftOwnerLive(rec));
+src/main/resources/static/mailbox-chat.js:1280:            compose.querySelectorAll(".mc-editor-tools button").forEach((button) => {
+src/main/resources/static/mailbox-chat.js:1403:            const actions = panel.querySelector ? panel.querySelector(".panel-head-actions") : null;
+src/main/resources/static/mailbox-chat.js:1659:                                    <footer><button class="mc-text-button" type="button" data-action="mc-reset-filters">重置</button><button class="button primary" type="button" id="mailboxSearchBtn">应用筛选</button></footer>
+src/main/resources/static/mailbox-chat.js:1820:                    summary.innerHTML = `<span>${count} 项筛选已生效</span><button class="mc-text-button" type="button" data-action="mc-clear-filters">清除</button>`;
+src/main/resources/static/mailbox-chat.js:1992:                        error.innerHTML = '<span>标签选项加载失败，请重试。</span><button class="mc-text-button" type="button" data-action="mc-retry-tag-options">重试</button>';
+src/main/resources/static/mailbox-chat.js:2007:                        error.innerHTML = '<span>标签选项加载失败，请重试。</span><button class="mc-text-button" type="button" data-action="mc-retry-tag-options">重试</button>';
+src/main/resources/static/mailbox-chat.js:2166:                        ${instance.chip === CHIP_REPLIED ? `<button class="mc-text-button" type="button" data-action="mc-dismiss-replied" data-contact-id="${escapeText(item.contactId)}" aria-label="将${escapeText(item.name || item.email || "该专家")}移出已回复" title="移出已回复，仍可在全部查看">移出</button>` : ""}
+src/main/resources/static/mailbox-chat.js:3614:                <div class="mc-timeline-head"><span>往来信件</span><span class="mc-position-hint"></span><button class="mc-text-button" type="button" data-action="mc-latest">↓ 最新消息</button></div>
+src/main/resources/static/mailbox-chat.js:3863:                <div class="mc-note-tags">${statusBadge}${levelBadge}${expertTagSpans}${orcid ? `<span>ORCID ${escapeText(orcid)}</span>` : ""}<button class="mc-text-button" type="button" data-action="mc-open-expert" data-contact-id="${escapeText(Number(instance.selectedContactId))}">查看专家详情 ↗</button></div>
+src/main/resources/static/mailbox-chat.js:4130:                extra = `<span class="contact-timing-note">${escapeText(error)}</span><button class="mc-text-button" type="button" data-action="mc-contact-timing-retry">重试</button>`;
+src/main/resources/static/mailbox-chat.js:4135:                extra = `<span class="contact-timing-recommend">建议北京 <strong title="${escapeText(contactBeijingRangeTitle(rec))}">${escapeText(contactBeijingRangeShort(rec))}</strong></span><button class="mc-text-button contact-timing-info" type="button" data-action="mc-contact-timing-evidence" aria-label="查看推荐依据" aria-haspopup="dialog">ⓘ</button>`;
+src/main/resources/static/mailbox-chat.js:4137:            return `<div class="contact-timing" data-role="contact-timing" aria-live="polite"><button class="mc-text-button contact-timing-location" type="button" data-action="mc-contact-location" aria-haspopup="dialog">${escapeText(label)} ▾</button>${extra}</div>`;
+src/main/resources/static/mailbox-chat.js:5010:                footerButtons.push(`<button class="mc-text-button" type="button" data-action="mc-translate" data-message-key="${escapeText(key)}">${escapeText(translateButtonLabel(translationStateFor))}</button>`);
+src/main/resources/static/mailbox-chat.js:5013:                footerButtons.push(`<button class="mc-text-button" type="button" data-action="mc-add-mail-tag" data-message-key="${escapeText(key)}">＋ 添加标签</button>`);
+src/main/resources/static/mailbox-chat.js:5025:                    footerButtons.push(`<button class="mc-text-button mc-process mailbox-suspend-pending-action" type="button" data-action="mc-mark-resolved" data-message-key="${escapeText(key)}"${pendingDisabled}>待处理</button>`);
+src/main/resources/static/mailbox-chat.js:5098:                return `<div class="mc-translation">翻译中…</div>`;
+src/main/resources/static/mailbox-chat.js:5102:                return `<div class="mc-translation">${escapeText(state.text)}</div>`;
+src/main/resources/static/mailbox-chat.js:5167:                <div class="mc-timeline-head"><span>往来信件</span><span class="mc-position-hint"></span><button class="mc-text-button" type="button" data-action="mc-latest">↓ 最新消息</button></div>
+src/main/resources/static/mailbox-chat.js:5824:            // S-3：草稿携带跟进锚点时，在 .mc-editor 之后、会议附件之前显示所选邮件提示。
+src/main/resources/static/mailbox-chat.js:5832:                <div class="mc-compose" data-role="manual-compose" data-target-key="${escapeText(targetKey)}">
+src/main/resources/static/mailbox-chat.js:5834:                    <div class="mc-editor-tools">
+src/main/resources/static/mailbox-chat.js:5845:                    <div class="mc-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="人工回复正文" data-role="mc-editor">${editorContent}</div>
+src/main/resources/static/mailbox-chat.js:5857:                        <button class="mc-text-button" type="button" data-action="mc-retry-draft" hidden>重试保存</button>
+src/main/resources/static/mailbox-chat.js:5858:                        <button class="mc-text-button" type="button" data-action="mc-reload-draft" hidden>重新加载</button>
+src/main/resources/static/mailbox-chat.js:5862:                    <div class="mc-compose-footer">
+src/main/resources/static/mailbox-chat.js:6210:                tagsRoot.innerHTML = '<p class="mc-note">标签加载失败。<button class="mc-text-button" type="button" data-action="mc-retry-manage-tags">重试</button></p>';
+src/main/resources/static/mailbox-chat.js:7067:        /** S-3：draft 有锚点时把提示插入 `.mc-editor` 之后、会议附件之前；无则移除。 */
+src/main/resources/static/mailbox-chat.js:7071:            const editor = composeEl.querySelector('[data-role="mc-editor"]');
+src/main/resources/static/mailbox-chat.js:7671:                user: instance.user, sessionEpoch: draftSessionEpoch, draftsMap: currentDraftsMap(),
+src/main/resources/static/mailbox-chat.js:7686:            if (!captured || instance.disposed || captured.user !== draftSessionUser || captured.sessionEpoch !== draftSessionEpoch) return false;
+src/main/resources/static/mailbox-chat.js:8576:                composeEl.querySelectorAll(".mc-editor-tools .button").forEach((button) => {
+src/main/resources/static/mailbox-chat.js:10080:            const pending = Array.from(draftSaves.values()).some((rec) => rec.user === draftSessionUser
+src/main/resources/static/mailbox-chat.js:10081:                && rec.epoch === draftSessionEpoch && (rec.seq !== rec.ack || rec.inflight || rec.uploads.size));
+src/main/resources/static/mailbox-chat.js:10086:            draftSaves.forEach((rec) => {
+src/main/resources/static/mailbox-chat.js:10087:                if (rec.user === draftSessionUser && rec.epoch === draftSessionEpoch && rec.persist) rec.persist().catch(() => {});
+src/main/resources/static/mailbox-readonly.js:317:                var older = buttonNode(doc, "older", "加载更早邮件", "mc-text-button mc-load-older");
+src/main/resources/static/styles.css:979:.panel-head-actions {
+src/main/resources/static/styles.css:12462:.mail-chat .contact-timing .mc-text-button:hover{color:#244ca9;background:#edf3ff}
+src/main/resources/static/styles.css:12463:.mail-chat .contact-timing .mc-text-button:active{background:#dbeafe}
+src/main/resources/static/styles.css:12464:.mail-chat .contact-timing .mc-text-button:disabled{opacity:.45;cursor:not-allowed}
+src/main/resources/static/styles.css:12465:.mail-chat .contact-timing .mc-text-button:focus-visible{outline:2px solid #6389d3;outline-offset:2px}
+src/main/resources/static/styles.css:12586:    #view-mailbox .panel-head-actions,
+src/main/resources/static/styles.css:12604:    .mail-chat.mobile-core-mailbox .mc-compose-footer,
+src/main/resources/static/styles.css:12618:    .mail-chat.mobile-core-mailbox .mc-editor { min-height: 160px; max-height: 40dvh; }
+src/main/resources/static/styles.css:12620:    .mail-chat.mobile-core-mailbox .mc-compose-footer > [data-role="target-info"] { width: 100%; overflow-wrap: anywhere; }
+src/main/resources/static/styles.css:12636:    .mail-chat.mobile-core-mailbox div.mc-editor[contenteditable="true"] { min-height: 160px; max-height: 40dvh; }
+src/main/resources/static/styles.css:12868:#mailboxConversationPanel > .panel-head > .panel-head-actions { flex-wrap: wrap; min-width: 0; max-width: 100%; }
+src/main/resources/static/contact-history.js:5: function downloadLink(file){const raw=String(file.downloadUrl||'');if(!raw)return '';try{const url=new URL(raw.startsWith('/api/')?contextPath+raw:raw,location.href);if(url.origin!==location.origin||!url.pathname.startsWith(contextPath+'/api/'))return '';return `<a class="mc-text-button" href="${esc(url.href)}" download>下载</a>`;}catch{return '';}}
+src/main/resources/static/contact-history.js:14:  box.innerHTML='<div class="mc-timeline-head"><strong>往来信件</strong><span data-history-count></span><button class="mc-text-button" data-history-first>最早已加载</button><button class="mc-text-button" data-history-latest>↓ 最新消息</button><button class="button small" data-history-refresh>刷新</button></div><div class="fp-mail-scroll" tabindex="0" aria-label="往来信件历史"><div class="mc-timeline">切换到跟进记录加载历史信件</div></div>';
+src/main/resources/static/index.html:799:                    <div class="panel-head-actions">
+src/main/resources/static/meeting-confirmation.css:100:.mail-chat [data-role=manual-compose][data-meeting-sending=true] .mc-editor{background:#f8faff;cursor:wait}
+src/test/kotlin/com/weibo/talentintroduction/auth/controller/AuthControllerMvcTest.kt:68:            .andExpect(jsonPath("$.mailReadOnly").value(false))
+src/test/kotlin/com/weibo/talentintroduction/auth/controller/AuthControllerMvcTest.kt:134:            .andExpect(jsonPath("$.mailReadOnly").value(false))
+src/test/kotlin/com/weibo/talentintroduction/auth/controller/AuthControllerMvcTest.kt:157:            .andExpect(jsonPath("$.mailReadOnly").value(false))
+src/test/kotlin/com/weibo/talentintroduction/auth/controller/AuthControllerMvcTest.kt:161:    fun `me reports mailReadOnly true only for the exact reader identity`() {
+src/test/kotlin/com/weibo/talentintroduction/auth/controller/AuthControllerMvcTest.kt:179:            .andExpect(jsonPath("$.mailReadOnly").value(true))
+src/test/kotlin/com/weibo/talentintroduction/auth/controller/AuthControllerMvcTest.kt:184:     * 回包的 mailReadOnly 由服务端 policy 派生（不是前端角色）。
+src/test/kotlin/com/weibo/talentintroduction/auth/controller/AuthControllerMvcTest.kt:206:            .andExpect(jsonPath("$.mailReadOnly").value(true))
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:461:            .andExpect(jsonPath("$.mailReadOnly").value(true))
+src/test/kotlin/com/weibo/talentintroduction/auth/AuthFlowIntegrationTest.kt:475:            .andExpect(jsonPath("$.mailReadOnly").value(true))

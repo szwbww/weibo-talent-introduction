@@ -31,11 +31,11 @@ describe("batch entry relocation (a3)", () => {
     it("I3-2: both head buttons live in .panel-head-actions, 检查回复 before 批量发送", () => {
         const headPattern = new RegExp(
             `<div class="panel-head">\\s*<h2>${PANEL_HEADER}</h2>\\s*` +
-            `<div class="panel-head-actions">\\s*` +
+            `<div class="panel-head-actions">(?:(?!</div>)[\\s\\S])*?` +
             `<button class="button" id="checkRepliesBtn" onclick="handleCheckReplies\\(\\)">检查回复</button>\\s*` +
             `${BUTTON_TAG.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`
         );
-        assert.match(html, headPattern, "panel-head must wrap both buttons in .panel-head-actions with 检查回复 first");
+        assert.match(html, headPattern, "panel-head must wrap both buttons in .panel-head-actions with 检查回复 before 批量发送");
     });
 
     it("I3-2: 自动回复 sits immediately after 批量发送 inside the same actions container", () => {

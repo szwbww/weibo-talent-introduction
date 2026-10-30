@@ -1,0 +1,2 @@
+$ rg -n --hidden -g !.git/** mailbox_review_draft|MailReviewDraft|reviewPendingOnly src/main src/test scripts
+exit=1

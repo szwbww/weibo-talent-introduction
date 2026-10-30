@@ -66,6 +66,7 @@ class FakeElement {
         this.className = "";
         this.classList = new FakeClassList(this);
         this._scrollTop = 0;
+        this._html = "";
     }
     get textContent() {
         if (!this.children.length) return this._text;
@@ -76,6 +77,9 @@ class FakeElement {
         this.children = [];
         this._text = value === null || value === undefined ? "" : String(value);
     }
+    get innerHTML() { return this._html; }
+    set innerHTML(value) { this._html = String(value); this.textContent = this._html.replace(/<[^>]*>/g, ""); }
+    focus() { this.ownerDocument.activeElement = this; }
     get scrollTop() {
         return this._scrollTop;
     }
@@ -130,6 +134,8 @@ class FakeElement {
         let node = this;
         while (node) {
             if (selector === "[data-action]" && node.dataset && node.dataset.action !== undefined) return node;
+            if (selector === "[data-review-action]" && node.dataset.reviewAction !== undefined) return node;
+            if (selector === "[data-review-command]" && node.dataset.reviewCommand !== undefined) return node;
             if (selector.startsWith(".") && node.classList && node.classList.contains(selector.slice(1))) return node;
             node = node.parentNode;
         }
@@ -300,7 +306,7 @@ describe("S-1 DOM 骨架（真实模块渲染）", () => {
         assert.strictEqual(input.getAttribute("placeholder"), "搜索专家姓名");
         assert.ok(byAction(tools, "search"));
         assert.ok(byAction(tools, "refresh"));
-        assert.strictEqual(findOne(tools, "mc-note").textContent, "只读：仅显示管理员授权的专家邮件");
+        assert.strictEqual(findOne(tools, "mc-note").textContent, "仅显示管理员授权的专家邮件");
 
         const list = findOne(aside, "mc-expert-list");
         const person = findOne(list, "mc-person");
@@ -331,7 +337,7 @@ describe("S-1 DOM 骨架（真实模块渲染）", () => {
         const identity = findOne(header, "mc-identity");
         assert.strictEqual(identity.children[0].tagName, "H2");
         assert.strictEqual(identity.children.length, 1);
-        assert.strictEqual(findOne(header, "mc-badge").textContent, "只读");
+        assert.strictEqual(findOne(header, "mc-badge").textContent, "可查看 · 可提交草稿");
         const scroll = findOne(conversation, "mc-scroll");
         assert.strictEqual(findOne(scroll, "mc-empty").textContent, "请选择左侧专家");
 
@@ -652,7 +658,7 @@ describe("I-3 失权/失败/竞态", () => {
 });
 
 describe("I-2 请求范围与状态隔离", () => {
-    it("只发起列表/详情两条 GET；不触碰任何存储", async () => {
+    it("默认仅发起列表/详情 GET；草稿请求由显式交互触发且不触碰任何存储", async () => {
         const harness = createHarness();
         harness.responder = async (requestPath) => {
             if (requestPath.startsWith(`${LIST_PATH}?`)) return listResponse([EXPERT_A]);

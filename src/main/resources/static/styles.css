@@ -13541,3 +13541,24 @@ body.preview-available:not(.preview-docked) .preview-rail {
 .dr-recheck .rr-detail-content{max-height:64vh;overflow:auto}
 @media(max-width:760px){.dr-recheck .rr-actions{margin-left:0}.dr-recheck .rr-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.dr-recheck .rr-metrics strong{display:block;margin-left:0}.dr-recheck .rr-dialog{max-height:94vh}.dr-recheck .rr-head,.dr-recheck .rr-content,.dr-recheck .rr-foot,.dr-recheck .rr-step-body{padding:14px}.dr-recheck .rr-detail-grid{grid-template-columns:1fr;min-height:0}.dr-recheck .rr-steps{display:grid;grid-template-columns:1fr 1fr;padding:10px;border-right:0;border-bottom:1px solid #e2e8f0}.dr-recheck .rr-step{margin:0}.dr-recheck .rr-facts{grid-template-columns:75px minmax(0,1fr)}.dr-recheck .rr-delta{grid-template-columns:1fr}.dr-recheck .button{min-height:36px}}
 
+.mail-chat .mail-review-controls{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.mail-chat .mail-review-select{min-width:180px;max-width:100%;height:32px;padding:0 10px;border:1px solid #dce4ef;border-radius:7px;background:#fff;color:#334155;font:inherit;font-size:12px}
+.mail-chat .mail-review-select:focus-visible{outline:2px solid #3b82f6;outline-offset:2px}
+.mail-chat .mail-review-select:disabled{opacity:.45;cursor:not-allowed}
+.mail-chat .mail-review-footer{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-top:12px;padding-top:10px;border-top:1px solid #e7edf5}
+.mail-chat .mail-review-panel{display:flex;flex-direction:column;gap:10px;padding:12px;border:1px solid #dce4ef;border-radius:7px;background:#fff}
+.mail-chat .mail-review-entry{display:flex;flex-direction:column;gap:6px;padding:10px 0;border-bottom:1px solid #e7edf5;color:#475569;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.mail-chat .mail-review-input{width:100%;min-height:80px;resize:vertical;padding:10px;border:1px solid #dce4ef;border-radius:7px;background:#fff;color:#334155;font:inherit;font-size:12px;line-height:1.8}
+.mail-chat .mail-review-input:focus-visible{outline:2px solid #3b82f6;outline-offset:2px}
+.mail-chat .mail-review-input:disabled{opacity:.45;cursor:not-allowed}
+.mail-chat .mail-review-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px}
+.mail-chat .mail-review-panel[hidden],.mail-chat .mail-review-footer[hidden],.mail-chat .mail-review-actions[hidden]{display:none}
+@media(max-width:760px){.mail-chat .mail-review-controls{align-items:stretch}.mail-chat .mail-review-select{width:100%;min-width:0}.mail-chat .mail-review-input{font-size:16px}.mail-chat .mail-review-actions .button{min-height:36px;height:auto}}
+
+.mail-chat .mail-review-confirm{width:min(480px,calc(100vw - 32px));max-height:85dvh;overflow:auto;margin:auto;padding:20px;border:1px solid #d9e3f1;border-radius:14px;background:#fff;color:#475d79;box-shadow:0 20px 90px #17325730}
+.mail-chat .mail-review-confirm::backdrop{background:#172c4738;backdrop-filter:blur(2px)}
+.mail-chat .mail-review-confirm h3{margin:0 0 12px;font-size:16px;font-weight:600;line-height:1.5}
+.mail-chat .mail-review-confirm p{margin:0 0 12px;font-size:12px;line-height:1.8;overflow-wrap:anywhere}
+.mail-chat .mail-review-confirm .mail-review-actions{margin-top:16px}
+@media(max-width:760px){.mail-chat .mail-review-confirm{padding:16px}.mail-chat .mail-review-confirm .button{min-height:44px;height:auto;white-space:normal}}
+

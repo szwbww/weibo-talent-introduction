@@ -1,0 +1,2 @@
+$ rg -n -F 20261029-user1-mail-access src/test
+exit=1

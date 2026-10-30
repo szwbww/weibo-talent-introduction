@@ -858,6 +858,9 @@
             draftPages: { drafts: 0, conversations: 0 },
             draftCounts: new Map(),
             draftTotal: 0,
+            reviewPendingOnly: false,
+            reviewSummary: { count: null, loading: true, error: false, seq: 0 },
+            review: { mode: "manual", epoch: 0, items: [], page: -1, total: 0 },
             openedDraft: null,
             existingTargetDraft: null,
             searchText: "",
@@ -1125,6 +1128,7 @@
         }
 
         function renderDraftEditor(rec) {
+            if (instance.review.mode !== "manual") return;
             if (instance.disposed || instance.user !== rec.user || currentTargetKey() !== rec.key) return;
             const content = host.querySelector('.mc-section[data-section="manual"] .mc-section-content');
             if (!content) return;
@@ -1137,6 +1141,7 @@
             refreshMeetingAttachmentCard();
             refreshOutboundFilesCard();
             refreshDraftStatus();
+            renderReviewChoices();
         }
 
         function loadDraftRecord(rec, detail) {
@@ -1256,6 +1261,7 @@
         }
 
         function refreshDraftStatus() {
+            if (instance.review.mode !== "manual") return;
             const rec = currentDraftRecord();
             const compose = manualComposeEl();
             if (!rec || !compose) return;
@@ -2043,6 +2049,7 @@
             params.set("size", String(sizeOverride != null ? sizeOverride : PAGE_SIZE));
             const q = instance.searchText.trim();
             if (q) params.set("q", q);
+            if (instance.reviewPendingOnly && chipOverride == null) params.set("reviewPendingOnly", "true");
             const chipValues = chipParams(chipOverride != null ? chipOverride : instance.chip);
             if (chipValues.providedOnly) params.set("providedOnly", "true");
             if (chipValues.followed) params.set("followed", "true");
@@ -2150,7 +2157,7 @@
             return `
                 <div class="mc-person mailbox-progress-card" data-replied="${instance.chip === CHIP_REPLIED ? "true" : "false"}" data-active="${active ? "true" : "false"}" data-contact-id="${escapeText(item.contactId)}">
                     <button class="mc-person-main" type="button" data-action="mc-select-expert" data-contact-id="${escapeText(item.contactId)}" aria-label="${escapeText(ariaLabel)}"${active ? ' aria-current="true"' : ""}>
-                        <span class="mc-person-heading"><strong title="${escapeText(cardName)}">${escapeText(cardName)}</strong></span>
+                        <span class="mc-person-heading"><strong title="${escapeText(cardName)}">${escapeText(cardName)}</strong>${Number(item.reviewPendingCount) > 0 ? `<span class="mc-badge" data-tone="pending" data-role="review-pending-count">待审核 ${Number(item.reviewPendingCount)}</span>` : ""}</span>
                         <small>${escapeText(accounts)}</small>
                         <small>${escapeText(latestLine)}</small>
                         ${lastReplyListMarkup(item)}
@@ -2390,6 +2397,7 @@
         function fetchList(extra) {
             const options = extra || {};
             const page = options.page != null ? options.page : instance.list.page;
+            loadReviewSummary();
             if (instance.chip === CHIP_DRAFTS) return fetchDraftList(page);
             instance.listSeq += 1;
             const mySeq = instance.listSeq;
@@ -2765,6 +2773,7 @@
                     const rec = currentDraftRecord();
                     if (rec && !rec.loaded) loadDraftRecord(rec).catch(() => {});
                     loadDraftSummaries();
+                    loadReviewSummary();
                     if (changedIdentity) loadList();
                 } else {
                     if (data && data.authenticated === false && instance.auth.username) {
@@ -3328,6 +3337,7 @@
         // --------------------------------------------------------------
 
         function clearSelectedConversation() {
+            resetAdminReview();
             instance.seq += 1;
             instance.convEpoch += 1;
             instance.pendingPosition = null;
@@ -3385,6 +3395,9 @@
                         selectExpert(freshSummary, { skipListReload: true, present: false, force: true });
                     } else if (!instance.conversation.loading) refreshConversationQuiet();
                 } else {
+                    if (instance.reviewPendingOnly && instance.review.mode === "review") {
+                        instance.review.message = "该专家暂无待审核草稿"; renderAdminReview(); return;
+                    }
                     // 当前筛选不再包含该专家：先保存，再回到“请选择专家”空态
                     saveCurrentConversation();
                     clearSelectedConversation();
@@ -3483,10 +3496,12 @@
                 && String(instance.conversation.accountScope || "") === accountFilterFromOptions();
             if (sameOwner && !opts.force && !instance.conversation.error) {
                 if (opts.present !== false) setMobilePane("detail", opts.trigger);
+                if (instance.reviewPendingOnly && instance.review.mode === "manual") loadReviewDrafts(false, true);
                 return;
             }
             // DOM 草稿必须在切换旧 owner 之前采集。
             saveCurrentConversation();
+            resetAdminReview();
             if (opts.present !== false) setMobilePane("detail", opts.trigger);
             teardownConversationSubViews();
             instance.pendingPosition = null;
@@ -3562,6 +3577,7 @@
                     instance.conversation.loading = false;
                     renderConversationContent({ locateLatest: true });
                 }
+                loadReviewDrafts(false, instance.reviewPendingOnly);
                 // 02（I-3）：时间线就绪后重算完成提示锚点位置。
                 renderSuspensionDetail();
                 if (!opts.skipListReload) {
@@ -5706,6 +5722,346 @@
                 else if (instance.auth.ready) loadDraftRecord(rec, instance.openedDraft).catch(() => {});
                 else refreshDraftStatus();
             }
+            renderAdminReview();
+        }
+
+        // Review selections are separate from the administrator's persisted draft map.
+        const REVIEW_PATH = "/api/mail/mailbox/review-drafts";
+        function emitReviewSummary() {
+            const callback = instance.options.onReviewPendingSummary;
+            if (typeof callback === "function") callback({ count: instance.reviewSummary.count,
+                loading: instance.reviewSummary.loading, error: instance.reviewSummary.error, active: instance.reviewPendingOnly });
+        }
+        function loadReviewSummary() {
+            if (typeof instance.options.onReviewPendingSummary !== "function") return Promise.resolve();
+            if (!instance.auth.ready) { emitReviewSummary(); return Promise.resolve(); }
+            const state = instance.reviewSummary, seq = ++state.seq, user = instance.user;
+            state.loading = true; state.error = false; emitReviewSummary();
+            const params = conversationsParams(0, CHIP_ALL, 1); params.set("reviewPendingOnly", "true");
+            return hostApi()(`/api/mail/mailbox/conversations?${params}`).then((data) => {
+                if (instance.disposed || user !== instance.user || seq !== state.seq) return;
+                if (!data || !Number.isFinite(Number(data.reviewPendingTotal))) throw new Error("数量不可用");
+                state.count = Number(data.reviewPendingTotal); state.loading = false; emitReviewSummary();
+            }).catch(() => {
+                if (instance.disposed || user !== instance.user || seq !== state.seq) return;
+                state.count = null; state.loading = false; state.error = true; emitReviewSummary();
+            });
+        }
+        function setReviewPendingOnly(active) {
+            return draftNavigation(() => {
+                instance.reviewPendingOnly = !!active;
+                if (isUnmatchedChip()) leaveUnmatchedMode();
+                instance.chip = CHIP_ALL; instance.chipUserTouched = true; freezeDefaultProbe();
+                instance.list.page = 0; syncChipButtons(); syncSearchChrome(); emitReviewSummary();
+                return loadList();
+            });
+        }
+        function reviewCapture() {
+            const r = instance.review;
+            return { user: instance.user, session: draftSessionEpoch, contact: instance.selectedContactId,
+                target: currentTargetKey(), conversation: instance.convEpoch, epoch: r.epoch,
+                id: r.detail && r.detail.id, version: r.detail && r.detail.version };
+        }
+        function reviewCurrent(ctx) {
+            const now = reviewCapture();
+            return !instance.disposed && ctx.user === draftSessionUser && Object.keys(now).every((key) => now[key] === ctx[key]);
+        }
+        function reviewNode(role) { return host.querySelector(`[data-role="${role}"]`); }
+        function reviewButton(action) { return host.querySelector(`[data-review-action="${action}"]`); }
+        function reviewError(message) {
+            const node = reviewNode("review-error");
+            if (node) { node.textContent = message || ""; node.hidden = !message; }
+        }
+        function reviewLabel(draft) {
+            if (draft.deleted) return "已删除";
+            if (draft.sendStatus === "SENT") return "已发送";
+            if (["UNKNOWN", "DELIVERY_UNKNOWN", "IN_PROGRESS", "DELIVERY_IN_PROGRESS"].includes(draft.sendStatus)) return "发送结果待确认，请勿重复发送";
+            return { DRAFT: "未提交", RETURNED: "已退回", SUBMITTED: "已提交", APPROVED: "已审核 · 尚未发送" }[draft.state] || "状态不可用";
+        }
+        function reviewSendable(draft) {
+            return draft && !draft.deleted && draft.state === "APPROVED" && ["NOT_SENT", "PREPARED", "FAILED_SAFE_TO_RETRY"].includes(draft.sendStatus);
+        }
+        function closeReviewConfirmation() {
+            const dialog = reviewNode("review-context-confirm");
+            if (!dialog) return;
+            if (dialog) { if (dialog.open) dialog.close(); dialog.remove(); }
+            const captured = instance.review.confirmTrigger;
+            const trigger = captured && captured.isConnected ? captured : reviewNode("review-selection");
+            instance.review.confirmTrigger = null;
+            if (trigger && typeof trigger.focus === "function") trigger.focus();
+        }
+        function resetAdminReview() {
+            closeReviewConfirmation();
+            instance.review = { mode: "manual", epoch: instance.review.epoch + 1, items: [], page: -1, total: 0 };
+        }
+        function renderReviewChoices() {
+            const r = instance.review, selection = reviewNode("review-selection");
+            if (!selection) return;
+            const choices = r.items.map((item) => r.detail && item.id === r.detail.id ? r.detail : item).filter((item) => !item.deleted);
+            if (r.detail && !choices.some((item) => item.id === r.detail.id)) choices.push(r.detail);
+            selection.innerHTML = '<option value="manual">我的人工回复（admin）</option>' + choices.map((item) =>
+                `<option value="review:${Number(item.id)}">${escapeText(reviewLabel(item))} · 草稿 #${Number(item.id)}（${escapeText(item.ownerUsername)}）</option>`).join("");
+            selection.value = r.mode === "manual" ? "manual" : `review:${r.requestedId}`;
+            const more = reviewButton("more-drafts"); if (more) more.hidden = r.items.length >= r.total;
+            const history = reviewNode("review-history");
+            if (history) {
+                history.hidden = r.panel !== "history";
+                history.innerHTML = r.items.map((item) => `<article class="mail-review-entry"><span>草稿 #${Number(item.id)} · ${escapeText(reviewLabel(item))} · ${escapeText(item.updatedAt || "")}</span>${!item.deleted ? `<button class="mc-text-button" type="button" data-review-action="select" data-draft-id="${Number(item.id)}">打开草稿</button>` : ""}<button class="mc-text-button" type="button" data-review-action="events" data-draft-id="${Number(item.id)}">变动历史</button></article>`).join("");
+            }
+        }
+        function renderAdminReview() {
+            const r = instance.review, compose = manualComposeEl();
+            if (!compose) return;
+            renderReviewChoices(); if (r.mode === "manual") return;
+            const draft = r.detail, subject = compose.querySelector('input[aria-label="回复主题"]'), editor = reviewNode("mc-editor");
+            subject.disabled = true; editor.setAttribute("contenteditable", "false");
+            subject.value = draft ? draft.subject : "";
+            editor.innerHTML = draft ? meetingRestoreEditorHtml(draft.html) || escapeText(draft.text) : "";
+            compose.querySelectorAll(".mc-editor-tools button").forEach((button) => { button.disabled = true; });
+            [".reply-identity-defaults", ".mailbox-draft-status-row", '[data-role="meeting-attachment"]',
+                '[data-role="outbound-draft-files"]', '[data-role="followup-anchor-note"]'].forEach((selector) => {
+                const node = compose.querySelector(selector); if (node) node.hidden = true;
+            });
+            compose.querySelectorAll('[data-action="mc-template-follow"], [data-action="mc-retarget-draft"], [data-action="mc-open-existing-draft"], [data-role="draft-load-retry"]').forEach((node) => { node.hidden = true; });
+            ["draft-load-error", "draft-target-warning", "draft-send-unknown"].forEach((role) => {
+                const node = reviewNode(role); if (node) node.hidden = true;
+            });
+            const oldSend = compose.querySelector('[data-action="mc-send-manual"]'); if (oldSend) oldSend.remove();
+            const previousSend = reviewButton("send"); if (previousSend) previousSend.remove();
+            if (reviewSendable(draft)) {
+                compose.querySelector(".mc-compose-footer").insertAdjacentHTML("beforeend", '<button class="button primary" type="button" data-review-action="send">发送已审核回复</button>');
+            }
+            reviewNode("review-state").textContent = draft ? reviewLabel(draft) : "草稿加载中…";
+            const note = reviewNode("review-context"); note.hidden = false;
+            note.textContent = r.message || (draft ? `${draft.ownerUsername} 提交 · ${draft.returnReason || "审核通过后才显示发送按钮"}` : "正在读取审核草稿");
+            reviewNode("review-footer").hidden = !draft;
+            reviewButton("comments").textContent = `评论 ${Number(draft && draft.commentCount) || 0}`;
+            reviewNode("review-actions").hidden = !draft || draft.state !== "SUBMITTED" || draft.deleted;
+            reviewNode("review-return").hidden = r.panel !== "return";
+            const translation = reviewNode("review-translation"); translation.textContent = r.translation || ""; translation.hidden = !r.translationOpen;
+            reviewButton("translate").textContent = r.translating ? "翻译中…" : r.translationOpen ? "收起译文" : r.translationFailed ? "翻译失败，重试" : "翻译";
+            compose.querySelectorAll("[data-review-action]").forEach((button) => { button.disabled = !!r.busy; });
+        }
+        async function loadReviewDrafts(more, choosePending) {
+            if (!instance.selectedContactId || instance.user !== "admin") return;
+            const r = instance.review, ctx = reviewCapture(), page = more ? r.page + 1 : 0, seq = r.listSeq = (r.listSeq || 0) + 1;
+            try {
+                const data = await hostApi()(`${REVIEW_PATH}?contactId=${ctx.contact}&includeDeleted=true&page=${page}&size=20`);
+                if (!reviewCurrent(ctx) || seq !== r.listSeq) return;
+                r.items = more ? r.items.concat(data.items || []) : data.items || [];
+                r.page = page; r.total = Number(data.total) || 0; renderReviewChoices();
+                if (choosePending) {
+                    const pending = r.items.find((item) => !item.deleted && item.state === "SUBMITTED");
+                    if (pending) return selectAdminReview(`review:${pending.id}`);
+                    if (r.items.length < r.total) return loadReviewDrafts(true, true);
+                }
+            } catch (error) { if (reviewCurrent(ctx)) reviewError(error.message || "草稿列表加载失败，请重试"); }
+        }
+        function selectAdminReview(value) {
+            return draftNavigation(async () => {
+                if (instance.review.mode === "manual" && instance.manual.busy) return;
+                closeReviewConfirmation();
+                const previous = instance.review;
+                const r = instance.review = { mode: previous.mode, epoch: previous.epoch + 1,
+                    items: previous.items, page: previous.page, total: previous.total,
+                    events: [], translation: "", message: "", busy: false };
+                instance.meeting.editorRevision += 1;
+                closeFollowUpDialog({ restoreFocus: false }); closeMaterialRequestDialog({ restoreFocus: false });
+                closeTemplateReferenceDialog({ restoreFocus: false }); teardownMeetingViews();
+                const panel = reviewNode("review-discussion"); if (panel) { panel.hidden = true; panel.innerHTML = ""; }
+                if (value === "manual") {
+                    r.mode = "manual"; r.requestedId = null;
+                    const rec = currentDraftRecord(); if (rec) renderDraftEditor(rec);
+                    renderReviewChoices(); return;
+                }
+                r.mode = "review"; r.requestedId = Number(String(value).split(":")[1]);
+                renderAdminReview(); reviewError("");
+                const ctx = reviewCapture();
+                try {
+                    const detail = await hostApi()(`${REVIEW_PATH}/${r.requestedId}`);
+                    if (!reviewCurrent(ctx)) return;
+                    if (detail.deleted || Number(detail.contactId) !== Number(ctx.contact)) throw new Error("该草稿仅可查看历史");
+                    r.detail = detail; renderAdminReview();
+                    if (reviewSendable(detail)) await checkReviewContext(true);
+                } catch (error) { if (reviewCurrent(ctx)) reviewError(error.message || "草稿加载失败，请重试"); }
+            });
+        }
+        async function checkReviewContext(open) {
+            const r = instance.review, ctx = reviewCapture(), context = await hostApi()(`${REVIEW_PATH}/${ctx.id}/context`);
+            if (!reviewCurrent(ctx)) return false;
+            r.context = context;
+            if (context.changed && (!r.confirmationEventId || r.confirmedToken !== context.currentToken)) {
+                r.confirmationEventId = null; r.confirmedToken = null;
+                if (open) openReviewConfirmation(); return false;
+            }
+            return true;
+        }
+        function openReviewConfirmation() {
+            closeReviewConfirmation();
+            const r = instance.review, root = host.querySelector(".mail-chat"); if (!root) return;
+            r.confirmTrigger = reviewButton("send") || reviewNode("review-selection");
+            root.insertAdjacentHTML("beforeend", `<dialog class="mail-review-confirm" aria-labelledby="mailReviewConfirmTitle" data-role="review-context-confirm">
+                <h3 id="mailReviewConfirmTitle">对话已有更新</h3><p data-role="review-confirm-expert"></p>
+                <p>请查看最新对话，确认这份回复仍然适用。确认后仍需手动点击发送。</p>
+                <p class="mc-error" role="alert" data-role="review-confirm-error" hidden></p>
+                <div class="mail-review-actions"><button class="button" type="button" data-review-action="context-cancel">返回查看最新对话</button><button class="button primary" type="button" data-review-action="context-confirm">确认回复仍适用</button></div>
+            </dialog>`);
+            const dialog = reviewNode("review-context-confirm");
+            reviewNode("review-confirm-expert").textContent = `${instance.selectedSummary.name || "该专家"}的往来邮件在审核后发生了变化。`;
+            dialog.addEventListener("cancel", (event) => { event.preventDefault(); cancelReviewConfirmation(); });
+            dialog.addEventListener("keydown", (event) => {
+                if (event.key !== "Tab") return;
+                event.preventDefault();
+                const buttons = Array.from(dialog.querySelectorAll("button")).filter((button) => !button.disabled);
+                if (!buttons.length) { dialog.focus(); return; }
+                const current = buttons.indexOf(host.ownerDocument.activeElement);
+                const next = current < 0 ? (event.shiftKey ? buttons.length - 1 : 0)
+                    : (current + (event.shiftKey ? -1 : 1) + buttons.length) % buttons.length;
+                buttons[next].focus();
+            });
+            dialog.showModal(); reviewButton("context-cancel").focus();
+        }
+        function cancelReviewConfirmation() {
+            instance.review.confirmationEventId = null; instance.review.confirmedToken = null;
+            closeReviewConfirmation(); refreshConversationQuiet();
+        }
+        async function confirmReviewContext() {
+            const r = instance.review, ctx = reviewCapture(), dialog = reviewNode("review-context-confirm");
+            if (!r.context || !dialog || r.confirming) return;
+            r.confirming = true; r.confirmationEventId = null; r.confirmedToken = null;
+            dialog.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+            reviewButton("context-confirm").textContent = "确认中…";
+            try {
+                const result = await hostApi()(`${REVIEW_PATH}/${ctx.id}/confirm-context`, { method: "POST", body: JSON.stringify({ expectedVersion: ctx.version, observedContextToken: r.context.currentToken }) });
+                if (!reviewCurrent(ctx) || dialog !== reviewNode("review-context-confirm")) return;
+                r.confirmationEventId = result.confirmationEventId; r.confirmedToken = result.currentToken;
+                closeReviewConfirmation(); r.message = "已确认最新对话，请再次手动点击发送"; renderAdminReview();
+            } catch (error) {
+                if (!reviewCurrent(ctx) || dialog !== reviewNode("review-context-confirm")) return;
+                const node = reviewNode("review-confirm-error"); node.textContent = error.message || "确认失败，请重试"; node.hidden = false;
+                try { await checkReviewContext(false); } catch (_) { /* no credential on failure */ }
+            } finally {
+                if (reviewCurrent(ctx)) r.confirming = false;
+                if (dialog === reviewNode("review-context-confirm")) {
+                    dialog.querySelectorAll("button").forEach((button) => { button.disabled = false; });
+                    reviewButton("context-confirm").textContent = "确认回复仍适用";
+                }
+            }
+        }
+        async function mutateAdminReview(action) {
+            const r = instance.review, ctx = reviewCapture(); if (!r.detail || r.busy) return;
+            const body = { expectedVersion: ctx.version };
+            if (action === "approve") {
+                if (r.detail.state !== "SUBMITTED") return; body.observedContextToken = r.detail.currentContextToken;
+            } else if (action === "return") {
+                body.reason = reviewNode("review-return").querySelector("textarea").value.trim();
+                if (!body.reason) { reviewError("请填写退回原因"); return; }
+            } else if (action === "comments") {
+                const input = reviewNode("review-discussion").querySelector("textarea"); body.text = input && input.value.trim();
+                if (!body.text) { reviewError("请输入评论"); return; }
+            }
+            r.busy = true; renderAdminReview(); reviewError("");
+            try {
+                const result = await hostApi()(`${REVIEW_PATH}/${ctx.id}/${action}`, { method: "POST", body: JSON.stringify(body) });
+                if (!reviewCurrent(ctx)) return;
+                if (action === "comments") { r.detail.commentCount += 1; await loadReviewEvents(ctx.id, false); }
+                else {
+                    r.detail = result; r.epoch += 1; r.panel = null; r.confirmationEventId = null; r.confirmedToken = null;
+                    r.translation = ""; r.translationOpen = false; r.translating = false;
+                    r.items = r.items.map((item) => item.id === result.id ? result : item);
+                    r.message = action === "approve" ? "已审核 · 尚未发送" : result.returnReason;
+                    await fetchList({ page: instance.list.page });
+                    if (instance.review === r && instance.reviewPendingOnly && !findSummaryByContactId(ctx.contact)) r.message += "；该专家暂无待审核草稿";
+                }
+            } catch (error) {
+                if (reviewCurrent(ctx)) {
+                    if (error.status === 409) { refreshConversationQuiet(); r.detail = null; r.epoch += 1; }
+                    reviewError(error.status === 409 ? "对话或草稿已更新，请重新打开草稿审阅" : error.message);
+                }
+            } finally { if (instance.review === r) { r.busy = false; renderAdminReview(); } }
+        }
+        async function loadReviewEvents(id, more) {
+            const r = instance.review, ctx = reviewCapture(), seq = r.eventsSeq = (r.eventsSeq || 0) + 1;
+            const before = more && r.eventBefore ? `&beforeId=${r.eventBefore}` : "";
+            try {
+                const data = await hostApi()(`${REVIEW_PATH}/${Number(id)}/events?limit=20${before}`);
+                if (!reviewCurrent(ctx) || seq !== r.eventsSeq) return;
+                const items = Array.isArray(data) ? data : [];
+                r.eventId = id; r.events = more ? (r.events || []).concat(items) : items;
+                r.eventBefore = items.length === 20 ? items[items.length - 1].id : null;
+                const panel = reviewNode("review-discussion"); panel.hidden = false;
+                panel.innerHTML = r.events.filter((item) => r.panel !== "comments" || item.eventType === "COMMENT").map((item) =>
+                    `<article class="mail-review-entry"><strong>${escapeText(item.actorUsername)} · ${escapeText(item.createdAt)} · ${escapeText(item.eventType)}</strong><div class="mc-body">${escapeText(item.payload && (item.payload.reason || item.payload.text || item.payload.subject) || "")}</div>${r.panel === "events" && item.payload && item.payload.html != null ? `<div class="mc-body" data-role="review-version-body">${meetingRestoreEditorHtml(item.payload.html) || escapeText(item.payload.text || "")}</div>` : ""}</article>`).join("")
+                    + (r.detail && Number(id) === r.detail.id ? '<textarea class="mail-review-input" aria-label="评论内容" maxlength="2000"></textarea><button class="button" type="button" data-review-action="comment">发布评论</button>' : "")
+                    + (r.eventBefore ? '<button class="mc-text-button" type="button" data-review-action="more-events">加载更早历史</button>' : "");
+            } catch (error) { if (reviewCurrent(ctx)) reviewError(error.message || "历史加载失败，请重试"); }
+        }
+        async function translateAdminReview() {
+            const r = instance.review, ctx = reviewCapture(); if (!r.detail || r.translating) return;
+            if (r.translation) { r.translationOpen = !r.translationOpen; renderAdminReview(); return; }
+            r.translating = true; renderAdminReview();
+            try {
+                const data = await hostApi()(`${REVIEW_PATH}/${ctx.id}/translate`, { method: "POST", body: JSON.stringify({ expectedVersion: ctx.version }) });
+                if (!reviewCurrent(ctx)) return;
+                if (!data.ok || !data.translatedText) throw new Error("翻译失败");
+                r.translation = data.translatedText; r.translationOpen = true; r.translationFailed = false;
+            } catch (error) { if (reviewCurrent(ctx)) r.translationFailed = true; }
+            finally { if (reviewCurrent(ctx)) { r.translating = false; renderAdminReview(); } }
+        }
+        async function sendAdminReview() {
+            const r = instance.review, ctx = reviewCapture(); if (!reviewSendable(r.detail) || r.busy) return;
+            r.busy = true; renderAdminReview(); reviewError("");
+            try {
+                if (!await checkReviewContext(true) || !reviewCurrent(ctx)) return;
+                const body = { expectedVersion: ctx.version, confirmationEventId: r.confirmationEventId || null };
+                let result;
+                try { result = await hostApi()(`${REVIEW_PATH}/${ctx.id}/send`, { method: "POST", body: JSON.stringify(body) }); }
+                catch (error) {
+                    if (!reviewCurrent(ctx)) return;
+                    const data = error.data, confirm = hostFn("confirmManualReplySafety");
+                    if (!data || data.code !== "MANUAL_SEND_SAFETY_BLOCKED" || !Array.isArray(data.findings) || !confirm) throw error;
+                    const confirmation = await confirm(data);
+                    if (!confirmation || !reviewCurrent(ctx)) return;
+                    if (!await checkReviewContext(true) || !reviewCurrent(ctx)) return;
+                    result = await hostApi()(`${REVIEW_PATH}/${ctx.id}/send`, { method: "POST", body: JSON.stringify({ ...body, ...confirmation }) });
+                }
+                if (!reviewCurrent(ctx) || result === null) return;
+                const detail = await hostApi()(`${REVIEW_PATH}/${ctx.id}`); if (!reviewCurrent(ctx)) return;
+                r.detail = detail; r.epoch += 1; r.confirmationEventId = null; r.confirmedToken = null;
+                r.message = "";
+                refreshConversationQuiet(); await fetchList({ page: instance.list.page });
+            } catch (error) {
+                if (!reviewCurrent(ctx)) return;
+                if (error.data && error.data.code === "REVIEW_CONTEXT_CHANGED") {
+                    r.confirmationEventId = null; r.confirmedToken = null; await checkReviewContext(true);
+                } else {
+                    try { const detail = await hostApi()(`${REVIEW_PATH}/${ctx.id}`); if (reviewCurrent(ctx)) r.detail = detail; }
+                    catch (_) { if (reviewCurrent(ctx)) r.detail = { ...r.detail, sendStatus: "UNKNOWN" }; }
+                    if (reviewCurrent(ctx)) reviewError(error.message || "发送结果待确认，请刷新查看");
+                }
+            } finally { if (instance.review === r) { r.busy = false; renderAdminReview(); } }
+        }
+        function onAdminReviewAction(button) {
+            const action = button.dataset.reviewAction, r = instance.review;
+            if (action === "select") return selectAdminReview(`review:${button.dataset.draftId}`);
+            if (action === "more-drafts") return loadReviewDrafts(true, false);
+            if (action === "history") { r.panel = r.panel === "history" ? null : "history"; renderReviewChoices(); return; }
+            if (action === "context-cancel") return cancelReviewConfirmation();
+            if (action === "context-confirm") return confirmReviewContext();
+            if (action === "events" || action === "comments") {
+                r.panel = r.panel === action ? null : action;
+                const panel = reviewNode("review-discussion"); panel.hidden = !r.panel;
+                if (r.panel) return loadReviewEvents(Number(button.dataset.draftId || r.detail && r.detail.id), false);
+                return;
+            }
+            if (action === "more-events") return loadReviewEvents(r.eventId, true);
+            if (r.mode !== "review" || !r.detail || r.busy) return;
+            if (action === "translate") return translateAdminReview();
+            if (action === "comment") return mutateAdminReview("comments");
+            if (action === "approve") return mutateAdminReview("approve");
+            if (action === "return" || action === "cancel-return") { r.panel = action === "return" ? "return" : null; renderAdminReview(); return; }
+            if (action === "confirm-return") return mutateAdminReview("return");
+            if (action === "send") return sendAdminReview();
         }
 
         function manualTargetInfoText(processingId, account) {
@@ -5830,6 +6186,14 @@
             const outboundFiles = outboundDraftFilesHtml(draft ? outboundAttachmentDraftOf(draft).items : []);
             return `
                 <div class="mc-compose" data-role="manual-compose" data-target-key="${escapeText(targetKey)}">
+                    <div class="mail-review-controls">
+                        <span class="mc-badge" data-role="review-state">admin 自己撰写</span>
+                        <label>当前内容<select class="mail-review-select" aria-label="切换回复草稿" data-role="review-selection"><option value="manual">我的人工回复（admin）</option></select></label>
+                        <button class="mc-text-button" type="button" data-review-action="more-drafts" hidden>加载更多草稿</button>
+                        <button class="mc-text-button" type="button" data-review-action="history">草稿历史</button>
+                    </div>
+                    <p class="mc-note" data-role="review-context" hidden></p>
+                    <p class="mc-error" data-role="review-error" role="alert" hidden></p>
                     <label>主题<input aria-label="回复主题" value="${escapeText(subjectValue)}"></label>
                     <div class="mc-editor-tools">
                         <button class="button" type="button" data-action="mc-rich-command" data-command="bold">B</button>
@@ -5843,6 +6207,22 @@
                     </div>
                     <div class="reply-identity-defaults"><span>全局默认</span><strong data-role="reply-identity-default-summary">全局默认：加载中…</strong><button class="reply-identity-settings-link" type="button" data-action="mc-reply-identity-settings">默认设置</button></div>
                     <div class="mc-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="人工回复正文" data-role="mc-editor">${editorContent}</div>
+                    <div class="mail-review-footer" data-role="review-footer" hidden>
+                        <button class="mc-text-button" type="button" data-review-action="translate">翻译</button>
+                        <button class="mc-text-button" type="button" data-review-action="comments">评论 0</button>
+                        <button class="mc-text-button" type="button" data-review-action="events">变动历史</button>
+                    </div>
+                    <div class="mc-translation" data-role="review-translation" hidden></div>
+                    <div class="mail-review-panel" data-role="review-discussion" hidden></div>
+                    <div class="mail-review-panel" data-role="review-history" hidden></div>
+                    <div class="mail-review-actions" data-role="review-actions" hidden>
+                        <button class="button" type="button" data-review-action="return">退回修改</button>
+                        <button class="button primary" type="button" data-review-action="approve">审核通过</button>
+                    </div>
+                    <div class="mail-review-panel" data-role="review-return" hidden>
+                        <label>退回原因<textarea class="mail-review-input" aria-label="退回原因" maxlength="2000"></textarea></label>
+                        <div class="mail-review-actions"><button class="button" type="button" data-review-action="cancel-return">取消</button><button class="button primary" type="button" data-review-action="confirm-return">确认退回</button></div>
+                    </div>
                     ${anchorNote}
                     ${meetingAttachment}
                     ${outboundFiles}
@@ -6637,6 +7017,7 @@
          * 切换的专家，LRU 淘汰后也不会有任何 live 落点。
          */
         function captureOutboundOwner(targetKey) {
+            if (instance.review.mode !== "manual") return null;
             const contactId = Number(instance.selectedContactId);
             if (!targetKey || !Number.isFinite(contactId) || contactId <= 0) return null;
             if (!getDraft(targetKey)) {
@@ -6658,6 +7039,7 @@
 
         /** 捕获是否仍是当前 owner —— 只决定要不要动 DOM/提示，不决定要不要写草稿。 */
         function outboundOwnerIsCurrent(captured) {
+            if (instance.review.mode !== "manual") return false;
             if (!captured || instance.disposed) return false;
             const contactId = Number(instance.selectedContactId);
             const scope = instance.conversation.accountScope || "";
@@ -6670,6 +7052,7 @@
         }
 
         function refreshSendAvailability() {
+            if (instance.review.mode !== "manual") return;
             const rec = currentDraftRecord();
             const meeting = manualMeetingSnapshot();
             setSendButtonDisabled(!!instance.manual.busy || outboundAttachmentsBlockSend() || !!(meeting && meeting.state !== "ready")
@@ -6842,6 +7225,7 @@
         }
 
         function manualInputs(composeEl) {
+            if (instance.review.mode !== "manual") return null;
             const root = composeEl || manualComposeEl();
             if (!root || !root.querySelector) return null;
             const subjectInput = root.querySelector('input[aria-label="回复主题"]');
@@ -7339,6 +7723,7 @@
 
         /** I-3：打开时捕获的会话身份（owner/contact/target/编辑器 revision）。 */
         function materialRequestIdentity() {
+            if (instance.review.mode !== "manual") return null;
             const contactId = Number(instance.selectedContactId);
             return {
                 ownerKey: conversationCacheKey(instance.user, instance.conversation.accountScope || "", contactId),
@@ -7349,7 +7734,7 @@
         }
 
         function materialRequestIdentityMatches(captured) {
-            if (!captured) return false;
+            if (!captured || instance.review.mode !== "manual") return false;
             const now = materialRequestIdentity();
             return now.ownerKey === captured.ownerKey
                 && now.contactId === captured.contactId
@@ -7796,7 +8181,7 @@
         /** I-6：在途回包只承认「弹框仍打开 + seq 未变 + owner/target/epoch 仍匹配」。 */
         function templateReferenceSeqMatches(seq) {
             const state = instance.templateReference;
-            if (instance.disposed || !state.open || state.seq !== seq) return false;
+            if (instance.disposed || instance.review.mode !== "manual" || !state.open || state.seq !== seq) return false;
             const captured = state.identity;
             if (!captured) return false;
             const now = templateReferenceIdentity();
@@ -8836,6 +9221,7 @@
         }
 
         function sendManualReply() {
+            if (instance.review.mode !== "manual") return;
             const rec = currentDraftRecord();
             if (!rec || rec.preparing || rec.sending || rec.conflict || rec.closed || !rec.loaded || rec.error === "load" || rec.readOnly) return;
             if (outboundAttachmentsBlockSend()) {
@@ -9123,23 +9509,27 @@
         }
 
         function retargetManual(newProcessingId, newAccount) {
+            if (instance.review.mode !== "manual") return;
+            const captured = reviewCapture(), owner = currentDraftRecord();
+            const isCurrent = () => instance.review.mode === "manual" && reviewCurrent(captured)
+                && owner && draftOwnerLive(owner) && currentDraftRecord() === owner;
             return draftNavigation(async () => {
+                if (!isCurrent()) return;
                 const oldKey = currentTargetKey();
                 const draft = oldKey ? getDraft(oldKey) : null;
                 const contactId = Number(instance.selectedContactId);
                 const newKey = `${contactId}:${newProcessingId}:${newAccount}`;
                 const rec = draftRecord(newKey);
-                const epoch = instance.convEpoch;
                 try {
                     const detail = await hostApi()(draftTargetUrl(rec.target));
-                    if (instance.disposed || epoch !== instance.convEpoch || !draftOwnerLive(rec)) return;
+                    if (!isCurrent() || !draftOwnerLive(rec)) return;
                     if (detail.id && detail.state === "ACTIVE") {
                         instance.existingTargetDraft = detail;
                         refreshDraftStatus();
                         return;
                     }
                     if (!await openDialog("confirm", { message: "为新来信另建草稿，原草稿会保留，是否继续？" })) return;
-                    if (instance.disposed || epoch !== instance.convEpoch || !draftOwnerLive(rec)) return;
+                    if (!isCurrent() || !draftOwnerLive(rec)) return;
                     acceptDraftDetail(rec, detail, true);
                     if (detail.state && detail.state !== "ACTIVE") {
                         instance.existingTargetDraft = detail;
@@ -9159,7 +9549,7 @@
                     instance.manual.qa = migrated.qa || null;
                     markDraft(rec, migrated);
                     renderDraftEditor(rec);
-                } catch (err) { hostShowStatus("草稿加载失败，请重试", "error"); }
+                } catch (err) { if (isCurrent()) hostShowStatus("草稿加载失败，请重试", "error"); }
             });
         }
 
@@ -9190,6 +9580,16 @@
         function onClick(event) {
             if (instance.disposed) return;
             const target = event.target;
+            if (target && target.closest && target.closest('[data-role="review-selection"]')) return;
+            const reviewButton = target && target.closest ? target.closest("[data-review-action]") : null;
+            if (reviewButton) {
+                if (!reviewButton.disabled) onAdminReviewAction(reviewButton);
+                return;
+            }
+            if (instance.review.mode !== "manual" && target && target.closest && target.closest('[data-role="manual-compose"]')) {
+                event.preventDefault();
+                return;
+            }
             const button = target && typeof target.closest === "function"
                 ? target.closest("[data-action]")
                 : null;
@@ -9257,6 +9657,8 @@
                 const chip = data.chip || CHIP_ALL;
                 const nextChip = FILTER_CHIPS.some((entry) => entry.key === chip) ? chip : CHIP_ALL;
                 draftNavigation(() => {
+                    instance.reviewPendingOnly = false;
+                    emitReviewSummary();
                     const previousGroup = instance.chip === CHIP_DRAFTS ? "drafts" : "conversations";
                     const nextGroup = nextChip === CHIP_DRAFTS ? "drafts" : "conversations";
                     instance.draftPages[previousGroup] = instance.list.page;
@@ -9764,6 +10166,10 @@
             if (instance.disposed) return;
             const target = event.target;
             if (!target) return;
+            if (target.dataset && target.dataset.role === "review-selection") {
+                selectAdminReview(target.value);
+                return;
+            }
             // S-1/I-1：隐藏 input 的选择结果只入草稿队列；取消选择（零文件）不改任何状态。
             if (target.getAttribute && target.getAttribute("data-role") === "outbound-file-input") {
                 handleOutboundFileSelection(target);
@@ -9859,6 +10265,7 @@
 
         function applyOptions(options, flushed) {
             const next = options || {};
+            if (Object.prototype.hasOwnProperty.call(next, "reviewPendingOnly")) return setReviewPendingOnly(next.reviewPendingOnly);
             if (!flushed && !(next.sessionUser && String(next.sessionUser) !== instance.user)
                 && next.filters && String(next.filters.accountCode || "") !== String(instance.filters.accountCode || "")) {
                 return draftNavigation(() => applyOptions(next, true));
@@ -9922,6 +10329,7 @@
             if (instance.disposed) return;
             saveCurrentConversation();
             flushDrafts().catch(() => {});
+            resetAdminReview();
             if (instance.mobileMedia) {
                 if (typeof instance.mobileMedia.removeEventListener === "function") instance.mobileMedia.removeEventListener("change", onMobileViewportChange);
                 else if (typeof instance.mobileMedia.removeListener === "function") instance.mobileMedia.removeListener(onMobileViewportChange);
@@ -10019,6 +10427,7 @@
             refresh,
             refreshFromHost,
             loadList,
+            setReviewPendingOnly,
             flushDrafts,
             hasPendingDrafts,
             unmount,
@@ -10035,7 +10444,7 @@
         const existing = instances.get(host);
         if (existing) {
             const opts = options || {};
-            const applied = opts.filters || opts.focus || opts.sessionUser
+            const applied = opts.filters || opts.focus || opts.sessionUser || Object.prototype.hasOwnProperty.call(opts, "reviewPendingOnly")
                 ? existing.applyOptions(opts) : null;
             if (applied && typeof applied.then === "function") applied.then(() => existing.loadList());
             else if (typeof existing.loadList === "function") existing.loadList();
@@ -10047,6 +10456,7 @@
             refresh: () => { if (controller) return controller.refresh(); return undefined; },
             refreshFromHost: () => { if (controller) return controller.refreshFromHost(); return undefined; },
             loadList: () => { if (controller) return controller.loadList(); return undefined; },
+            setReviewPendingOnly: (active) => controller.setReviewPendingOnly(active),
             flushDrafts: () => controller.flushDrafts(),
             hasPendingDrafts: () => controller.hasPendingDrafts(),
             unmount: () => { if (controller) controller.unmount(); },

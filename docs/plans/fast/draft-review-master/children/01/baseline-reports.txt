@@ -1,0 +1,174 @@
+-------------------------------------------------------------------------------
+Test set: com.weibo.talentintroduction.auth.AuthFlowIntegrationTest
+-------------------------------------------------------------------------------
+Tests run: 8, Failures: 0, Errors: 8, Skipped: 0, Time elapsed: 17.082 s <<< FAILURE! - in com.weibo.talentintroduction.auth.AuthFlowIntegrationTest
+reader without a grant sees an empty list and every timeline is forbidden  Time elapsed: 0.016 s  <<< ERROR!
+java.lang.IllegalStateException: Failed to load ApplicationContext
+Caused by: org.springframework.beans.factory.support.BeanDefinitionOverrideException: Invalid bean definition with name 'attachmentTransferWorker' defined in class path resource [com/weibo/talentintroduction/mail/service/WorkerLifecycleTestConfig.class]: Cannot register bean definition [Root bean: class [null]; scope=; abstract=false; lazyInit=null; autowireMode=3; dependencyCheck=0; autowireCandidate=true; primary=false; factoryBeanName=workerLifecycleTestConfig; factoryMethodName=attachmentTransferWorker; initMethodName=null; destroyMethodName=(inferred); defined in class path resource [com/weibo/talentintroduction/mail/service/WorkerLifecycleTestConfig.class]] for bean 'attachmentTransferWorker': There is already [Generic bean: class [com.weibo.talentintroduction.mail.service.AttachmentTransferWorker]; scope=singleton; abstract=false; lazyInit=null; autowireMode=0; dependencyCheck=0; autowireCandidate=true; primary=false; factoryBeanName=null; factoryMethodName=null; initMethodName=null; destroyMethodName=null; defined in file [/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-draft-review-master/target/classes/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.class]] bound.
+
+test admin bootstrap creation and idempotency  Time elapsed: 0 s  <<< ERROR!
+java.lang.IllegalStateException: Failed to load ApplicationContext
+Caused by: org.springframework.beans.factory.support.BeanDefinitionOverrideException: Invalid bean definition with name 'attachmentTransferWorker' defined in class path resource [com/weibo/talentintroduction/mail/service/WorkerLifecycleTestConfig.class]: Cannot register bean definition [Root bean: class [null]; scope=; abstract=false; lazyInit=null; autowireMode=3; dependencyCheck=0; autowireCandidate=true; primary=false; factoryBeanName=workerLifecycleTestConfig; factoryMethodName=attachmentTransferWorker; initMethodName=null; destroyMethodName=(inferred); defined in class path resource [com/weibo/talentintroduction/mail/service/WorkerLifecycleTestConfig.class]] for bean 'attachmentTransferWorker': There is already [Generic bean: class [com.weibo.talentintroduction.mail.service.AttachmentTransferWorker]; scope=singleton; abstract=false; lazyInit=null; autowireMode=0; dependencyCheck=0; autowireCandidate=true; primary=false; factoryBeanName=null; factoryMethodName=null; initMethodName=null; destroyMethodName=null; defined in file [/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-draft-review-master/target/classes/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.class]] bound.
+
+bootstraps create exactly the two built-in accounts  Time elapsed: 0 s  <<< ERROR!
+java.lang.IllegalStateException: Failed to load ApplicationContext
+Caused by: org.springframework.beans.factory.support.BeanDefinitionOverrideException: Invalid bean definition with name 'attachmentTransferWorker' defined in class path resource [com/weibo/talentintroduction/mail/service/WorkerLifecycleTestConfig.class]: Cannot register bean definition [Root bean: class [null]; scope=; abstract=false; lazyInit=null; autowireMode=3; dependencyCheck=0; autowireCandidate=true; primary=false; factoryBeanName=workerLifecycleTestConfig; factoryMethodName=attachmentTransferWorker; initMethodName=null; destroyMethodName=(inferred); defined in class path resource [com/weibo/talentintroduction/mail/service/WorkerLifecycleTestConfig.class]] for bean 'attachmentTransferWorker': There is already [Generic bean: class [com.weibo.talentintroduction.mail.service.AttachmentTransferWorker]; scope=singleton; abstract=false; lazyInit=null; autowireMode=0; dependencyCheck=0; autowireCandidate=true; primary=false; factoryBeanName=null; factoryMethodName=null; initMethodName=null; destroyMethodName=null; defined in file [/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-draft-review-master/target/classes/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.class]] bound.
+
+test full authentication flow and interceptor gate  Time elapsed: 0 s  <<< ERROR!
+java.lang.IllegalStateException: Failed to load ApplicationContext
+Caused by: org.springframework.beans.factory.support.BeanDefinitionOverrideException: Invalid bean definition with name 'attachmentTransferWorker' defined in class path resource [com/weibo/talentintroduction/mail/service/WorkerLifecycleTestConfig.class]: Cannot register bean definition [Root bean: class [null]; scope=; abstract=false; lazyInit=null; autowireMode=3; dependencyCheck=0; autowireCandidate=true; primary=false; factoryBeanName=workerLifecycleTestConfig; factoryMethodName=attachmentTransferWorker; initMethodName=null; destroyMethodName=(inferred); defined in class path resource [com/weibo/talentintroduction/mail/service/WorkerLifecycleTestConfig.class]] for bean 'attachmentTransferWorker': There is already [Generic bean: class [com.weibo.talentintroduction.mail.service.AttachmentTransferWorker]; scope=singleton; abstract=false; lazyInit=null; autowireMode=0; dependencyCheck=0; autowireCandidate=true; primary=false; factoryBeanName=null; factoryMethodName=null; initMethodName=null; destroyMethodName=null; defined in file [/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-draft-review-master/target/classes/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.class]] bound.
+
+reader has no send attachment follow or change-password ability  Time elapsed: 0 s  <<< ERROR!
+java.lang.IllegalStateException: Failed to load ApplicationContext
+Caused by: org.springframework.beans.factory.support.BeanDefinitionOverrideException: Invalid bean definition with name 'attachmentTransferWorker' defined in class path resource [com/weibo/talentintroduction/mail/service/WorkerLifecycleTestConfig.class]: Cannot register bean definition [Root bean: class [null]; scope=; abstract=false; lazyInit=null; autowireMode=3; dependencyCheck=0; autowireCandidate=true; primary=false; factoryBeanName=workerLifecycleTestConfig; factoryMethodName=attachmentTransferWorker; initMethodName=null; destroyMethodName=(inferred); defined in class path resource [com/weibo/talentintroduction/mail/service/WorkerLifecycleTestConfig.class]] for bean 'attachmentTransferWorker': There is already [Generic bean: class [com.weibo.talentintroduction.mail.service.AttachmentTransferWorker]; scope=singleton; abstract=false; lazyInit=null; autowireMode=0; dependencyCheck=0; autowireCandidate=true; primary=false; factoryBeanName=null; factoryMethodName=null; initMethodName=null; destroyMethodName=null; defined in file [/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-draft-review-master/target/classes/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.class]] bound.
+
+admin grant scopes the reader to exactly one expert and revoke closes it  Time elapsed: 0 s  <<< ERROR!
+java.lang.IllegalStateException: Failed to load ApplicationContext
+Caused by: org.springframework.beans.factory.support.BeanDefinitionOverrideException: Invalid bean definition with name 'attachmentTransferWorker' defined in class path resource [com/weibo/talentintroduction/mail/service/WorkerLifecycleTestConfig.class]: Cannot register bean definition [Root bean: class [null]; scope=; abstract=false; lazyInit=null; autowireMode=3; dependencyCheck=0; autowireCandidate=true; primary=false; factoryBeanName=workerLifecycleTestConfig; factoryMethodName=attachmentTransferWorker; initMethodName=null; destroyMethodName=(inferred); defined in class path resource [com/weibo/talentintroduction/mail/service/WorkerLifecycleTestConfig.class]] for bean 'attachmentTransferWorker': There is already [Generic bean: class [com.weibo.talentintroduction.mail.service.AttachmentTransferWorker]; scope=singleton; abstract=false; lazyInit=null; autowireMode=0; dependencyCheck=0; autowireCandidate=true; primary=false; factoryBeanName=null; factoryMethodName=null; initMethodName=null; destroyMethodName=null; defined in file [/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-draft-review-master/target/classes/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.class]] bound.
+
+restart does not reset the built-in accounts nor touch grants  Time elapsed: 0 s  <<< ERROR!
+java.lang.IllegalStateException: Failed to load ApplicationContext
+Caused by: org.springframework.beans.factory.support.BeanDefinitionOverrideException: Invalid bean definition with name 'attachmentTransferWorker' defined in class path resource [com/weibo/talentintroduction/mail/service/WorkerLifecycleTestConfig.class]: Cannot register bean definition [Root bean: class [null]; scope=; abstract=false; lazyInit=null; autowireMode=3; dependencyCheck=0; autowireCandidate=true; primary=false; factoryBeanName=workerLifecycleTestConfig; factoryMethodName=attachmentTransferWorker; initMethodName=null; destroyMethodName=(inferred); defined in class path resource [com/weibo/talentintroduction/mail/service/WorkerLifecycleTestConfig.class]] for bean 'attachmentTransferWorker': There is already [Generic bean: class [com.weibo.talentintroduction.mail.service.AttachmentTransferWorker]; scope=singleton; abstract=false; lazyInit=null; autowireMode=0; dependencyCheck=0; autowireCandidate=true; primary=false; factoryBeanName=null; factoryMethodName=null; initMethodName=null; destroyMethodName=null; defined in file [/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-draft-review-master/target/classes/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.class]] bound.
+
+reader can log in me and log out while wrong credentials are rejected  Time elapsed: 0 s  <<< ERROR!
+java.lang.IllegalStateException: Failed to load ApplicationContext
+Caused by: org.springframework.beans.factory.support.BeanDefinitionOverrideException: Invalid bean definition with name 'attachmentTransferWorker' defined in class path resource [com/weibo/talentintroduction/mail/service/WorkerLifecycleTestConfig.class]: Cannot register bean definition [Root bean: class [null]; scope=; abstract=false; lazyInit=null; autowireMode=3; dependencyCheck=0; autowireCandidate=true; primary=false; factoryBeanName=workerLifecycleTestConfig; factoryMethodName=attachmentTransferWorker; initMethodName=null; destroyMethodName=(inferred); defined in class path resource [com/weibo/talentintroduction/mail/service/WorkerLifecycleTestConfig.class]] for bean 'attachmentTransferWorker': There is already [Generic bean: class [com.weibo.talentintroduction.mail.service.AttachmentTransferWorker]; scope=singleton; abstract=false; lazyInit=null; autowireMode=0; dependencyCheck=0; autowireCandidate=true; primary=false; factoryBeanName=null; factoryMethodName=null; initMethodName=null; destroyMethodName=null; defined in file [/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-draft-review-master/target/classes/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.class]] bound.
+
+
+
+-------------------------------------------------------------------------------
+Test set: com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest
+-------------------------------------------------------------------------------
+Tests run: 46, Failures: 33, Errors: 0, Skipped: 0, Time elapsed: 521.459 s <<< FAILURE! - in com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest
+V154 creates the expert meeting video table preserving profile and note rows  Time elapsed: 9.684 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V154 creates the expert meeting video table preserving profile and note rows(FlywayMigrationIntegrationTest.kt:602)
+
+V142 preserves old config as false and stores enabled historical exclusion  Time elapsed: 10.291 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V142 preserves old config as false and stores enabled historical exclusion(FlywayMigrationIntegrationTest.kt:117)
+
+database at original V23 upgrades to V122 without repair  Time elapsed: 11.499 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.database at original V23 upgrades to V122 without repair(FlywayMigrationIntegrationTest.kt:1863)
+
+V127 adds nullable outbound attachments json column leaving history null  Time elapsed: 9.239 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V127 adds nullable outbound attachments json column leaving history null(FlywayMigrationIntegrationTest.kt:975)
+
+V122 does not overwrite a pre-existing manual meeting template configuration  Time elapsed: 12.1 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V122 does not overwrite a pre-existing manual meeting template configuration(FlywayMigrationIntegrationTest.kt:2564)
+
+V139 adds the email verification switch backfilling existing configs with false  Time elapsed: 9.542 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V139 adds the email verification switch backfilling existing configs with false(FlywayMigrationIntegrationTest.kt:1510)
+
+V129 widens the material code check to twelve codes without touching stored rows  Time elapsed: 9.188 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V129 widens the material code check to twelve codes without touching stored rows(FlywayMigrationIntegrationTest.kt:1017)
+
+fresh database migrates through the latest version  Time elapsed: 10.129 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.fresh database migrates through the latest version(FlywayMigrationIntegrationTest.kt:199)
+
+V157 creates the discovery person outreach guard table with composite primary key  Time elapsed: 11.325 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V157 creates the discovery person outreach guard table with composite primary key(FlywayMigrationIntegrationTest.kt:2957)
+
+V141 upgrades V140 history without backfilling and enforces unique association  Time elapsed: 10.277 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V141 upgrades V140 history without backfilling and enforces unique association(FlywayMigrationIntegrationTest.kt:854)
+
+V124 allows material attached promotion audit trigger  Time elapsed: 14.278 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V124 allows material attached promotion audit trigger(FlywayMigrationIntegrationTest.kt:1645)
+
+ambiguous V23 data fails before persistent V24 DDL and can rerun after repair  Time elapsed: 14.587 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.ambiguous V23 data fails before persistent V24 DDL and can rerun after repair(FlywayMigrationIntegrationTest.kt:1960)
+
+V150 schema preserves V149 data and enforces note ownership  Time elapsed: 11.128 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V150 schema preserves V149 data and enforces note ownership(FlywayMigrationIntegrationTest.kt:2783)
+
+V153 creates the expert manual profile table and preserves note and draft rows  Time elapsed: 13.194 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V153 creates the expert manual profile table and preserves note and draft rows(FlywayMigrationIntegrationTest.kt:259)
+
+V118 allows metadata-only attachments preserving historical values and owner XOR  Time elapsed: 9.458 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V118 allows metadata-only attachments preserving historical values and owner XOR(FlywayMigrationIntegrationTest.kt:2036)
+
+V135 adds the sender account codes column backfilling existing rows with an empty array  Time elapsed: 10.661 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V135 adds the sender account codes column backfilling existing rows with an empty array(FlywayMigrationIntegrationTest.kt:1409)
+
+V136 preserves existing template subject and initializes reference as null  Time elapsed: 13.784 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V136 preserves existing template subject and initializes reference as null(FlywayMigrationIntegrationTest.kt:887)
+
+database at original V24 upgrades to V122 without repair  Time elapsed: 12.494 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.database at original V24 upgrades to V122 without repair(FlywayMigrationIntegrationTest.kt:1879)
+
+V138 creates the batch email verification table with its keys and cascade  Time elapsed: 11.436 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V138 creates the batch email verification table with its keys and cascade(FlywayMigrationIntegrationTest.kt:1448)
+
+V147 creates expert_mailbox_suspension as an empty table with composite key and FK  Time elapsed: 13.275 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V147 creates expert_mailbox_suspension as an empty table with composite key and FK(FlywayMigrationIntegrationTest.kt:2605)
+
+V145 adds a nullable allow list column without backfilling old configs  Time elapsed: 10.959 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V145 adds a nullable allow list column without backfilling old configs(FlywayMigrationIntegrationTest.kt:159)
+
+V121 creates expert_follow with composite ownership key and contact FK  Time elapsed: 10.241 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V121 creates expert_follow with composite ownership key and contact FK(FlywayMigrationIntegrationTest.kt:2387)
+
+V140 adds nullable reuse origin without changing existing verification results  Time elapsed: 10.51 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V140 adds nullable reuse origin without changing existing verification results(FlywayMigrationIntegrationTest.kt:89)
+
+V130 adds the manual upload owner table switching the owner check to three-way  Time elapsed: 13.585 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V130 adds the manual upload owner table switching the owner check to three-way(FlywayMigrationIntegrationTest.kt:1114)
+
+V120 scopes inbound uid uniqueness by uid validity without backfilling history  Time elapsed: 11.354 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V120 scopes inbound uid uniqueness by uid validity without backfilling history(FlywayMigrationIntegrationTest.kt:2297)
+
+V152 creates durable owner target draft table without business changes or foreign keys  Time elapsed: 12.078 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V152 creates durable owner target draft table without business changes or foreign keys(FlywayMigrationIntegrationTest.kt:211)
+
+V117 clears only BOUNCE_RATE_HIGH pauses and keeps other pause reasons  Time elapsed: 9.298 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V117 clears only BOUNCE_RATE_HIGH pauses and keeps other pause reasons(FlywayMigrationIntegrationTest.kt:1756)
+
+V131 creates the enrichment job table on a V130 database leaving existing contacts untouched  Time elapsed: 11.031 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V131 creates the enrichment job table on a V130 database leaving existing contacts untouched(FlywayMigrationIntegrationTest.kt:1287)
+
+V156 creates the three discovery person tables without touching business rows  Time elapsed: 9.185 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V156 creates the three discovery person tables without touching business rows(FlywayMigrationIntegrationTest.kt:2897)
+
+V123 adds nullable calendar attachment json column leaving history null  Time elapsed: 13.332 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V123 adds nullable calendar attachment json column leaving history null(FlywayMigrationIntegrationTest.kt:1610)
+
+V149 upgrades old follows to FOLLOWING without losing ownership or created_at  Time elapsed: 11.155 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V149 upgrades old follows to FOLLOWING without losing ownership or created_at(FlywayMigrationIntegrationTest.kt:2719)
+
+V119 creates mail_attachment_transfer with the persistence contract  Time elapsed: 12.389 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V119 creates mail_attachment_transfer with the persistence contract(FlywayMigrationIntegrationTest.kt:2152)
+
+V23 historical records are linked and SENT quota is backfilled  Time elapsed: 13.108 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <157> but was: <168>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V23 historical records are linked and SENT quota is backfilled(FlywayMigrationIntegrationTest.kt:1914)
+

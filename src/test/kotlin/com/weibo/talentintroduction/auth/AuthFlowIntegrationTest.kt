@@ -1,6 +1,11 @@
 package com.weibo.talentintroduction.auth
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.weibo.talentintroduction.TalentIntroductionApplication
+import com.weibo.talentintroduction.mail.service.WorkerLifecycleTestConfig
+import org.springframework.boot.autoconfigure.EnableAutoConfiguration
+import org.springframework.context.annotation.ComponentScan
+import org.springframework.context.annotation.FilterType
 import com.weibo.talentintroduction.auth.config.AuthSessionKeys
 import com.weibo.talentintroduction.auth.config.MailReadOnlyPolicy
 import com.weibo.talentintroduction.auth.domain.AdminUser
@@ -61,7 +66,10 @@ class AuthFlowProbeController {
     fun probe() = mapOf("ok" to true)
 }
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
+@SpringBootTest(
+    classes = [AuthFlowIntegrationTest.AuthFlowApplication::class],
+    webEnvironment = SpringBootTest.WebEnvironment.MOCK
+)
 @AutoConfigureMockMvc
 @EnabledIfSystemProperty(named = "migrationIt", matches = "true")
 @Import(AuthFlowIntegrationTest.AuthFlowTestJdbcConfig::class)
@@ -75,6 +83,25 @@ class AuthFlowProbeController {
     ]
 )
 class AuthFlowIntegrationTest {
+
+    @org.springframework.context.annotation.Configuration(proxyBeanMethods = false)
+    @org.springframework.boot.test.context.TestComponent
+    @EnableAutoConfiguration
+    @org.springframework.boot.autoconfigure.AutoConfigurationPackage(basePackages = ["com.weibo.talentintroduction"])
+    @ComponentScan(
+        basePackages = ["com.weibo.talentintroduction"],
+        excludeFilters = [
+            ComponentScan.Filter(
+                type = FilterType.CUSTOM,
+                classes = [org.springframework.boot.context.TypeExcludeFilter::class]
+            ),
+            ComponentScan.Filter(
+                type = FilterType.ASSIGNABLE_TYPE,
+                classes = [TalentIntroductionApplication::class, WorkerLifecycleTestConfig::class]
+            )
+        ]
+    )
+    class AuthFlowApplication
 
     companion object {
         private class KotlinMySqlContainer(image: String) :
@@ -640,6 +667,79 @@ class AuthFlowIntegrationTest {
             .andExpect(jsonPath("$.total").value(2))
     }
 
+    @Test
+    fun `review handlers use real login and enforce roles and current grants`() {
+        seedConversationFixtures()
+        runBothBootstraps()
+        completeAdminFirstLogin()
+        val admin = loginAs("admin", "admin")
+        val reader = loginAs("user1", READER_INITIAL_PASSWORD)
+        val mapper = ObjectMapper()
+        val base = "/api/mail/mailbox/review-drafts"
+        fun call(method: String, suffix: String, session: MockHttpSession?, body: Any? = null, expected: Int = 200): com.fasterxml.jackson.databind.JsonNode {
+            val request = org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .request(org.springframework.http.HttpMethod.valueOf(method), base + suffix)
+            if (session != null) request.session(session)
+            if (body != null) request.contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsBytes(body))
+            val response = mockMvc.perform(request).andExpect(status().`is`(expected)).andReturn().response
+            return if (response.contentAsString.isBlank()) mapper.createObjectNode() else mapper.readTree(response.contentAsString)
+        }
+        val content = mapOf("contactId" to 1, "clientRequestId" to java.util.UUID.randomUUID().toString(), "subject" to "s", "html" to "<p>body</p>")
+        val handlers = listOf("POST" to "", "GET" to "?contactId=1", "GET" to "/999", "PUT" to "/999",
+            "POST" to "/999/submit", "POST" to "/999/withdraw", "DELETE" to "/999?expectedVersion=1",
+            "POST" to "/999/approve", "POST" to "/999/return", "POST" to "/999/comments",
+            "GET" to "/999/events", "GET" to "/999/context", "POST" to "/999/confirm-context", "POST" to "/999/translate")
+        handlers.forEach { (method, suffix) -> call(method, suffix, null, content, 401) }
+        listOf("approve", "return", "context", "confirm-context", "translate").forEach {
+            call(if (it == "context") "GET" else "POST", "/999/$it", reader, mapOf("expectedVersion" to 1), 403)
+        }
+        call("POST", "", reader, content, 403)
+        mockMvc.perform(put("/api/mail/mailbox/conversations/1/read-access/user1").session(admin)).andExpect(status().isOk)
+        val draft = call("POST", "", reader, content)
+        val id = draft["id"].asLong()
+        var v = draft["version"].asLong()
+        assertFalse(draft.has("expertEmail"))
+        assertFalse(draft.has("recipientEmail"))
+        listOf("/$id", "/$id/events", "/$id/context").forEach { call("GET", it, admin, expected = 404) }
+        call("GET", "?contactId=1", reader)
+        call("GET", "/$id", reader)
+        listOf<Any>(1.2, -1, "1", java.math.BigInteger("9223372036854775808"), true).forEach { bad ->
+            call("PUT", "/$id", reader, mapOf("expectedVersion" to bad, "subject" to "s", "html" to "<p>b</p>"), 422)
+        }
+        call("PUT", "/$id", reader, mapOf("expectedVersion" to v, "subject" to "s", "html" to "<p>b</p>", "ownerUsername" to "admin"), 422)
+        call("POST", "", reader, content + ("contactId" to 2) + ("clientRequestId" to java.util.UUID.randomUUID().toString()), 403)
+        call("POST", "", admin, content, 403)
+        call("PUT", "/$id", admin, mapOf("expectedVersion" to v, "subject" to "s", "html" to "<p>b</p>"), 403)
+        v = call("PUT", "/$id", reader, mapOf("expectedVersion" to v, "subject" to "updated", "html" to "<p>Updated</p>"))["version"].asLong()
+        v = call("POST", "/$id/submit", reader, mapOf("expectedVersion" to v))["version"].asLong()
+        call("GET", "?contactId=1", admin)
+        call("GET", "/$id", admin)
+        call("GET", "/$id/events", admin)
+        call("POST", "/$id/comments", reader, mapOf("expectedVersion" to v, "text" to "reader comment"))
+        call("POST", "/$id/comments", admin, mapOf("expectedVersion" to v, "text" to "admin comment"))
+        call("GET", "/$id/events", reader)
+        call("POST", "/$id/translate", admin, mapOf("expectedVersion" to v))
+        v = call("POST", "/$id/withdraw", reader, mapOf("expectedVersion" to v))["version"].asLong()
+        call("GET", "/$id", admin)
+        v = call("POST", "/$id/submit", reader, mapOf("expectedVersion" to v))["version"].asLong()
+        v = call("POST", "/$id/return", admin, mapOf("expectedVersion" to v, "reason" to "revise"))["version"].asLong()
+        v = call("POST", "/$id/submit", reader, mapOf("expectedVersion" to v))["version"].asLong()
+        val token = call("GET", "/$id/context", admin)["currentToken"].asText()
+        v = call("POST", "/$id/approve", admin, mapOf("expectedVersion" to v, "observedContextToken" to token))["version"].asLong()
+        call("POST", "/$id/confirm-context", admin, mapOf("expectedVersion" to v, "observedContextToken" to token))
+        val other = call("POST", "", reader, content + ("clientRequestId" to java.util.UUID.randomUUID().toString()))
+        call("DELETE", "/${other["id"].asLong()}?expectedVersion=1", reader)
+        call("GET", "/${other["id"].asLong()}/events", reader)
+        mockMvc.perform(delete("/api/mail/mailbox/conversations/1/read-access/user1").session(admin)).andExpect(status().isOk)
+        listOf("/$id", "/$id/events", "?contactId=1").forEach {
+            val denied = call("GET", it, reader, expected = 403)
+            assertFalse(denied.has("html"))
+            assertFalse(denied.has("text"))
+        }
+        call("POST", "/$id/comments", reader, mapOf("expectedVersion" to v, "text" to "revoked"), 403)
+        assertEquals(2L, countRows("mail_record"), "Approval must not send mail")
+    }
+
     // ------------------------------------------------------------------
     // 工具
     // ------------------------------------------------------------------
@@ -727,6 +827,8 @@ class AuthFlowIntegrationTest {
         jdbc.queryForObject("SELECT COUNT(*) FROM $table", Long::class.java) ?: 0L
 
     private fun cleanupBusinessRows() {
+        jdbc.update("DELETE FROM mailbox_review_draft_event")
+        jdbc.update("DELETE FROM mailbox_review_draft")
         jdbc.update("DELETE FROM expert_mail_read_access")
         jdbc.update("DELETE FROM expert_mailbox_suspension")
         jdbc.update("DELETE FROM expert_replied_dismissal")

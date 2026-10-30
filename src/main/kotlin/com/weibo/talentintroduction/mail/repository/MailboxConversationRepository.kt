@@ -26,6 +26,51 @@ import java.time.LocalDateTime
 class MailboxConversationRepository(
     private val jdbcTemplate: NamedParameterJdbcTemplate
 ) {
+    /**
+     * Full real conversation fingerprint. Length-prefixed UTF-8 fields distinguish null,
+     * empty strings and field boundaries; processing labels/status deliberately do not participate.
+     */
+    fun reviewContext(contactId: Long, accountCodes: List<String>): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        val lengthPrefix = java.nio.ByteBuffer.allocate(4)
+        fun feed(value: String?) {
+            if (value == null) {
+                digest.update(lengthPrefix.clear().putInt(-1).array())
+            } else {
+                val bytes = value.toByteArray(Charsets.UTF_8)
+                digest.update(lengthPrefix.clear().putInt(bytes.size).array())
+                digest.update(bytes)
+            }
+        }
+        feed("mailbox-review-context-v1")
+        feed(contactId.toString())
+        if (accountCodes.isNotEmpty()) {
+            val sql = """
+                SELECT u.* FROM (${rangeUnionSql(includeBody = true)}) u
+                JOIN mail_sender_account a ON a.account_code=u.account_code
+                WHERE u.expert_contact_id=:contactId AND a.account_code<>:simulator
+                ORDER BY u.source_rank,u.id
+            """.trimIndent()
+            val p = MapSqlParameterSource().addValue("contactId", contactId)
+                .addValue("accountCodes", accountCodes).addValue("accountCode", null)
+                .addValue("simulator", MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
+            jdbcTemplate.query(sql, p, org.springframework.jdbc.core.RowCallbackHandler { rs ->
+                feed(rs.getString("source"))
+                feed(rs.getLong("id").toString())
+                feed(rs.getString("account_code"))
+                feed(rs.getString("direction"))
+                feed(rs.getTimestamp("event_at")?.toLocalDateTime()?.toString())
+                feed(rs.getString("message_id"))
+                feed(rs.getString("in_reply_to"))
+                feed(rs.getString("subject"))
+                feed(rs.getString("body"))
+                feed(rs.getString("cleaned_body"))
+                feed(rs.getString("send_status"))
+            })
+        }
+        return digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    }
+
     // ------------------------------------------------------------------
     // 参数与投影
     // ------------------------------------------------------------------
@@ -49,7 +94,8 @@ class MailboxConversationRepository(
         /** 01 (I-4)：只看当前用户的挂起专家；默认 false 保持既有调用兼容。 */
         val suspendedOnly: Boolean = false,
         /** 01 (I-4)：只看当前用户的“已提供”专家；与 followed 同层 AND（同传得空集）。 */
-        val providedOnly: Boolean = false
+        val providedOnly: Boolean = false,
+        val reviewPendingOnly: Boolean = false
     )
 
     data class ConversationSummarySqlRow(
@@ -163,6 +209,57 @@ class MailboxConversationRepository(
         """.trimIndent()
         return jdbcTemplate.queryForObject(sql, params(username, filter), Long::class.java) ?: 0L
     }
+
+    /** Page projection: one query for all contacts, without loading any draft content. */
+    fun reviewPendingCountsByContacts(
+        contactIds: List<Long>,
+        accountCodes: List<String>,
+        accountCode: String?
+    ): Map<Long, Long> {
+        if (contactIds.isEmpty() || accountCodes.isEmpty()) return emptyMap()
+        val p = params("", ConversationFilter(accountCodes, accountCode))
+            .addValue("contactIds", contactIds)
+        return jdbcTemplate.query("""
+            SELECT d.expert_contact_id, COUNT(*) AS pending_count
+              FROM mailbox_review_draft d
+              JOIN expert_contact ec ON ec.id = d.expert_contact_id
+             WHERE d.expert_contact_id IN (:contactIds) AND ${reviewPendingPredicate()}
+             GROUP BY d.expert_contact_id
+        """.trimIndent(), p) { rs, _ -> rs.getLong("expert_contact_id") to rs.getLong("pending_count") }.toMap()
+    }
+
+    /** Draft count over the complete non-chip candidate scope, not merely the current page. */
+    fun reviewPendingTotal(username: String, filter: ConversationFilter): Long {
+        if (MailReadOnlyPolicy.isReader(username) || filter.accountCodes.isEmpty()) return 0L
+        val scope = filter.copy(
+            followed = false, providedOnly = false, repliedOnly = false,
+            pendingOnly = false, waitingReply = false, suspendedOnly = false
+        )
+        val eligibility = membership(scope)
+        if (eligibility.impossible) return 0L
+        val sql = """
+            SELECT COUNT(*) FROM mailbox_review_draft d
+              JOIN (
+                  SELECT DISTINCT u.expert_contact_id
+                    FROM (${rangeUnionSql(includeBody = false)}) u
+                    JOIN expert_contact ec ON ec.id = u.expert_contact_id
+                   WHERE ${expertPredicates(username, scope, eligibility)}
+              ) candidates ON candidates.expert_contact_id = d.expert_contact_id
+             WHERE ${reviewPendingPredicate()}
+        """.trimIndent()
+        return jdbcTemplate.queryForObject(sql, params(username, scope), Long::class.java) ?: 0L
+    }
+
+    /** Account existence, not automatic-send eligibility, determines review visibility. */
+    private fun reviewPendingPredicate(): String = """
+        d.state = 'SUBMITTED' AND d.deleted_at IS NULL
+        AND d.account_code IN (:accountCodes)
+        AND (:accountCode IS NULL OR d.account_code = :accountCode)
+        AND EXISTS (
+            SELECT 1 FROM mail_sender_account review_account
+             WHERE review_account.account_code = d.account_code
+               AND review_account.account_code <> '${MailSenderAccountService.SIMULATOR_ACCOUNT_CODE}')
+    """.trimIndent()
 
     /**
      * 会话专家分页 summary（先 DB 聚合专家再分页）。每行只含聚合口径字段与最新事件
@@ -708,6 +805,13 @@ class MailboxConversationRepository(
              OR ec.expert_name LIKE CONCAT('%', :q, '%')
              OR ec.expert_email LIKE CONCAT('%', :q, '%'))
         """.trimIndent()
+        if (filter.reviewPendingOnly) {
+            clauses += """
+                EXISTS (
+                    SELECT 1 FROM mailbox_review_draft d
+                     WHERE d.expert_contact_id = ec.id AND ${reviewPendingPredicate()})
+            """.trimIndent()
+        }
         clauses += """
             (:followed = 0 OR EXISTS (
                 SELECT 1 FROM expert_follow eff

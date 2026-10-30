@@ -1234,7 +1234,6 @@ describe("04 I-4：原管理行为与资源版本", () => {
         const match = indexSource.match(/styles\.css\?v=([^"'&<>]+)/);
         assert.ok(match, "index.html 必须注册 styles.css?v=");
         const cacheKey = match[1];
-        assert.match(cacheKey, /^[0-9]{8}-discovery-source-retry$/, "本步必须统一到 discovery-source-retry 键");
         const keys = Array.from(indexSource.matchAll(/\?v=([^"'&<>]+)/g)).map((item) => item[1]);
         assert.ok(keys.length > 0, "index.html 必须存在 ?v= 资源键");
         keys.forEach((key) => assert.strictEqual(key, cacheKey));

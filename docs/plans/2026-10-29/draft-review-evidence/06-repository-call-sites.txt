@@ -1,0 +1,157 @@
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt:78:        val mail = mailRecordRepository.findById(sourceId).orElseThrow {
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt:97:        val inbound = inboundMailProcessingRepository.findById(sourceId).orElseThrow {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:69:        mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:96:        val attempt = mailSendAttemptRepository.findById(attemptId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:98:            mailSendAttemptRepository.save(attempt.copy(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:127:        mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:151:            val attempt = mailSendAttemptRepository.findById(attemptId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:153:                mailSendAttemptRepository.save(attempt.copy(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:56:        val mailRecords = mailRecordRepository.findAll()
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:145:        mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:81:            return mailRecordRepository.findByIdOrNull(attachment.mailRecordId)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:259:        inboundMailProcessingRepository.findAllByExpertContactId(contactId)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:477:                val processing = inboundMailProcessingRepository.findById(candidate.id).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:710:                val record = mailRecordRepository.findByIdOrNull(id)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:730:                val processing = inboundMailProcessingRepository.findById(id).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1550:                    val existingAttempt = mailSendAttemptRepository.findByOrcidIdAndMailType(normOrcid, "INTRODUCTION")
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1551:                    val attempt = mailSendAttemptRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:2007:                    val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contact.id!!)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:2227:        val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:2272:            mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:2408:                val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contact.id!!)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:2557:        val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:71:        val mails = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:76:            introductions = mailRecordRepository.countOutboundByMailTypeBetween("INTRODUCTION", start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:77:            inboundReplies = mailRecordRepository.countInboundBetween(start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:78:            repliedExperts = mailRecordRepository.countDistinctRepliedExpertsBetween(start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:79:            autoReplies = mailRecordRepository.countAutoRepliesBetween(start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:80:            operatorOutbound = mailRecordRepository.countOperatorOutboundBetween(start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:81:            meetingInvitations = mailRecordRepository.countOutboundByMailTypeBetween("MEETING_INVITATION", start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:82:            manualReviewInbound = inboundMailProcessingRepository.countManualReviewBetween(start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:83:            unmatchedInbound = inboundMailProcessingRepository.countUnmatchedBetween(start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:84:            failedOutbound = mailRecordRepository.countFailedOutboundBetween(start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:97:        val records = mailRecordRepository.listIntroductions(start, end, senderAccountCode, pageSize.safeLimit(), pageOffset.safeOffset())
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:124:            totalCount = mailRecordRepository.countIntroductions(start, end, senderAccountCode)
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:139:        val records = mailRecordRepository.listOutboundReplies(
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:145:            ?.let { mailRecordRepository.findAllById(it).associateBy { record -> record.id } }
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:180:            totalCount = mailRecordRepository.countOutboundReplies(start, end, triggeredBy, mailType, senderAccountCode, sendStatus)
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:193:        val records = inboundMailProcessingRepository.listInboundActivity(
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:222:            totalCount = inboundMailProcessingRepository.countInboundActivity(start, end, processStatus, reasonType)
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:253:        val stats = mailRecordRepository.aggregateSenderAccountStats(from, to).associateBy { it.senderAccountCode }
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:254:        val lastReceived = inboundMailProcessingRepository.findLastReceivedAtPerAccount()
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:280:        val sentCount = mailRecordRepository.countSentByAccountSince(accountCode, since)
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:297:        mailRecordRepository.aggregateIntroCohortByDomain(start, end, matureBefore).forEach { row ->
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:306:        mailRecordRepository.aggregateUndeliveredByDomain(start, end).forEach { row ->
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:334:        val countryRows = mailRecordRepository.aggregateIntroCohortByCountry(start, end, matureBefore)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:57:                val mailRecord = mailRecordRepository.findByIdOrNull(mailRecordId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:285:            mailRecordRepository.findAllById(outboundSentRows.map { it.id })
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:121:        val records = mailRecordRepository.findInboundMailsForSimulation(
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:129:        val total = mailRecordRepository.countInboundMailsForSimulation(
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:177:        val contactIds = mailRecordRepository.findExpertContactIdsWithInboundMail(normalizedKeyword, normalizedLimit)
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:184:            val latestInbound = mailRecordRepository.findLatestInboundByExpertContactId(contactId)
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:197:            val mail = mailRecordRepository.findById(request.mailRecordId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:211:            val latest = mailRecordRepository.findLatestInboundByExpertContactId(contactId)
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:218:        val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:410:                ?: inboundMailProcessingRepository.findAllByExpertContactId(contactId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceRateMonitorService.kt:39:        val sentCount = mailRecordRepository.countSentByAccountSince(accountCode, since)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/GroundedAutoReplyDecisionService.kt:214:        val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contact.id!!)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:263:        val processing = inboundMailProcessingRepository.findById(processingId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceBackfillService.kt:23:        val total = inboundMailProcessingRepository.countAll()
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceBackfillService.kt:25:            val batch = inboundMailProcessingRepository.findAllPagedOrderByReceivedAtAsc(batchSize, offset)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:134:        val saved = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:364:            contact.id?.let { mailRecordRepository.findLatestInboundByExpertContactId(it) }
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiQaExtractionService.kt:50:        val contactIds = mailRecordRepository.findExpertContactIdsWithInboundMail(null, limit)
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiQaExtractionService.kt:56:                val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:225:        val attempt = attemptRepository.findByOrcidIdAndMailType(orcidId, shortKey) ?: return null
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:228:        val record = mailRecordRepository.findByMailSendAttemptId(attemptId) ?: return null
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:238:        val attempt = attemptRepository.findById(attemptId).orElse(null) ?: return null
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:240:        val record = mailRecordRepository.findByMailSendAttemptId(attemptId) ?: return null
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:247:        val attempt = attemptRepository.findByOrcidIdAndMailType(payload.orcidId, fingerprint.shortKey)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:260:        val record = mailRecordRepository.findByMailSendAttemptId(attemptId) ?: return null
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:271:            val bound = attemptRepository.findById(draftRow.sendAttemptId).orElseThrow {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:287:        attemptRepository.insertIgnore(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:301:        val attempt = attemptRepository.findByOrcidIdAndMailTypeForUpdate(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:325:                val affected = attemptRepository.claimStatus(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:349:                val affected = attemptRepository.claimStatus(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:388:                check(mailRecordRepository.findByMailSendAttemptId(claim.attemptId)?.sendStatus == "SENT") {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:401:        val attempt = attemptRepository.findById(attemptId).orElseThrow {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:419:        val existingRecord = mailRecordRepository.findByMailSendAttemptId(attemptId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:457:        val savedRecord = mailRecordRepository.save(mailRecord)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:481:        attemptRepository.updateStatusAndError(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:501:        val attempt = attemptRepository.findById(attemptId).orElseThrow {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:519:        val existingRecord = mailRecordRepository.findByMailSendAttemptId(attemptId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:558:        val savedRecord = mailRecordRepository.save(mailRecord)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:561:        attemptRepository.updateStatusAndError(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:53:        val rows = mailRecordRepository.listMailbox(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:65:        val total = mailRecordRepository.countMailbox(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:109:        val total = mailRecordRepository.countMailboxExperts(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:125:        val summaries = mailRecordRepository.listMailboxExpertSummaries(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:144:        val mailRows = mailRecordRepository.listMailboxByExpertContactIds(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:192:        val items = mailRecordRepository.findAllByTaskExecutionIdOrderByIdAsc(taskExecutionId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:265:                val record = mailRecordRepository.findByIdOrNull(id)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:270:                val record = inboundMailProcessingRepository.findById(id)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutomaticApplicationPromotionService.kt:34:        val replyCount = mailRecordRepository.countInboundReplies(contactId)
+src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt:2356:        val mail = mailRecordRepository.findById(source.sourceId).orElseThrow {
+src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt:2373:        val inbound = inboundMailProcessingRepository.findById(source.sourceId).orElseThrow {
+src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt:2401:        val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/CalendarAttachmentController.kt:50:        val record = mailRecordRepository.findById(mailRecordId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:128:        val record = inboundMailProcessingRepository.findById(inboundProcessingId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:148:        val record = inboundMailProcessingRepository.findById(inboundProcessingId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:195:        val record = inboundMailProcessingRepository.findById(inboundProcessingId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:515:            mailRecordRepository.findById(anchorMailRecordId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:518:            mailRecordRepository.findLatestSentOutboundAnchor(contactId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:528:            val processing = inboundMailProcessingRepository.findById(requireNotNull(request.inboundProcessingId))
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1004:                val existingRecord = mailRecordRepository.findByMailSendAttemptId(claim.attemptId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1131:        val record = inboundMailProcessingRepository.findById(inboundProcessingId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1147:        val record = inboundMailProcessingRepository.findById(inboundProcessingId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1268:        val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(requireNotNull(contact.id))
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1612:        val record = inboundMailProcessingRepository.findById(inboundProcessingId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1618:        inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1631:            val remaining = inboundMailProcessingRepository.countByExpertContactIdAndProcessStatus(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1670:        val record = inboundMailProcessingRepository.findById(inboundProcessingId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1689:        val updated = inboundMailProcessingRepository.reopenManualResolved(inboundProcessingId, now)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1750:        val record = inboundMailProcessingRepository.findById(inboundProcessingId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:51:                inboundMailProcessingRepository.findUnmatchedManualReviewQueue(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:53:                ) to inboundMailProcessingRepository.countUnmatchedManualReviewQueue(activeCodes, normalizedQuery)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:56:            inboundMailProcessingRepository.findManualReviewQueue(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:62:            ) to inboundMailProcessingRepository.countManualReviewQueue(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:71:            val total = inboundMailProcessingRepository.countManualReviewByAccounts(activeCodes)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:72:            val grouped = inboundMailProcessingRepository.countGroupedByReasonTypeForAccounts(activeCodes)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:85:        val record = inboundMailProcessingRepository.findById(id)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:96:                .firstNotNullOfOrNull { mailRecordRepository.findByMessageId(it) }
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:158:        val record = inboundMailProcessingRepository.findById(recordId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:193:        val saved = inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:234:        val record = inboundMailProcessingRepository.findById(recordId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:238:        val saved = inboundMailProcessingRepository.save(record.copy(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:249:            val remaining = inboundMailProcessingRepository.countByExpertContactIdAndProcessStatus(contactId, "MANUAL_REVIEW")
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt:50:        val record = inboundMailProcessingRepository.findById(inboundProcessingId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt:182:        mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt:189:        mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:164:                inboundMailProcessingRepository.lockReceivingGroup(owner.accountCode)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:170:                if (!messageIds.isNullOrEmpty() && inboundMailProcessingRepository.findReceivedCopy(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:216:        if (received.folder == "INBOX") inboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:218:        else inboundMailProcessingRepository.findByMailboxOwnerCodeAndFolderAndUidValidityAndImapUid(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:246:        inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:277:            inboundMailProcessingRepository.findLegacyOwnerlessByGroupAndImapUid(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:491:        val duplicateInbound = mailRecordRepository.findRecentDuplicateInbound(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:524:        val inboundMailRecord = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:865:        val outboundRecord = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1212:    ): MailRecord = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1250:        mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1257:        mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1411:        val saved = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1473:        val saved = inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1529:        val saved = inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1598:            .flatMap { mailRecordRepository.findOutboundCandidatesByMessageId(it) }
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt:392:        val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/InboundMailTagService.kt:242:        if (!inboundMailProcessingRepository.existsById(inboundProcessingId)) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertInboundNotificationService.kt:77:                val source = (if (folder == "INBOX") inboundRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid(ownerCode, uidValidity, uid)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertInboundNotificationService.kt:78:                    else inboundRepository.findByMailboxOwnerCodeAndFolderAndUidValidityAndImapUid(ownerCode, folder, uidValidity, uid))
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:394:            return mailRecordRepository.findByIdOrNull(mailRecordId)?.expertContactId
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryController.kt:40:        val records = inboundMailProcessingRepository.listInboundSummary(
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryController.kt:48:        val totalCount = inboundMailProcessingRepository.countInboundSummary(
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryController.kt:83:        val inbound = inboundMailProcessingRepository.findById(inboundId)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryController.kt:87:            inboundMailProcessingRepository.findAllByExpertContactId(inbound.expertContactId)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryController.kt:98:            mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(inbound.expertContactId)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryController.kt:149:        val inbound = inboundMailProcessingRepository.findById(inboundId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionService.kt:213:            for (record in mailRecordRepository.findOutboundCandidatesByMessageId(candidate)) {

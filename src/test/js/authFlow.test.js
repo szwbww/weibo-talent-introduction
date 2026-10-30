@@ -1017,23 +1017,62 @@ describe("reader api guard (03 I-2)", () => {
         assert.deepStrictEqual(sandbox.fetchCalls, []);
     });
 
-    it("allows only the two conversation GETs plus auth login/me/logout", async () => {
+    it("allows exact reader draft method/path pairs and rejects forbidden capabilities before fetch", async () => {
         const sandbox = apiSandbox(true);
+        const base = "/api/mail/mailbox/review-drafts";
         const allowed = [
-            "/api/mail/mailbox/conversations?page=0&size=20",
-            "/api/mail/mailbox/conversations/7/messages?limit=50",
-            "/api/auth/me",
-            "/api/auth/logout"
+            ["GET", "/api/mail/mailbox/conversations?page=0&size=20"],
+            ["GET", "/api/mail/mailbox/conversations/7/messages?limit=50"],
+            ["GET", "/api/auth/me"], ["POST", "/api/auth/login"], ["POST", "/api/auth/logout"],
+            ["GET", base + "?contactId=7"], ["POST", base], ["GET", base + "/1"],
+            ["PUT", base + "/1"], ["DELETE", base + "/1?expectedVersion=2"],
+            ["GET", base + "/1/events"], ["POST", base + "/1/submit"],
+            ["POST", base + "/1/withdraw"], ["POST", base + "/1/comments"]
         ];
-        for (const path of allowed) {
-            await vm.runInContext(`api(${JSON.stringify(path)}, ${path === "/api/auth/logout" ? '{ method: "POST" }' : "{}"})`, sandbox);
+        for (const [method, path] of allowed) {
+            await vm.runInContext(`api(${JSON.stringify(path)}, {method:${JSON.stringify(method)}})`, sandbox);
         }
-        assert.strictEqual(sandbox.fetchCalls.length, 4);
+        assert.strictEqual(sandbox.fetchCalls.length, allowed.length);
+        for (const suffix of ["send", "approve", "return", "translate", "context", "confirm-context",
+            "events/1", "attachments", "comments/1"]) {
+            for (const method of ["GET", "POST", "PUT", "DELETE"]) {
+                await assert.rejects(() => vm.runInContext(`api("${base}/1/${suffix}",{method:"${method}"})`, sandbox),
+                    error => error.status === 403);
+            }
+        }
+        for (const path of [base + "/0", base + "/01", base + "/-1", base + "/x", base + "/1/",
+            "/api/mail/mailbox/conversations/x/messages", "/api/mail/attachments/1",
+            "/api/mail/mailbox/reply-drafts/1"]) {
+            await assert.rejects(() => vm.runInContext(`api(${JSON.stringify(path)})`, sandbox), error => error.status === 403);
+        }
+        assert.strictEqual(sandbox.fetchCalls.length, allowed.length);
     });
 
     it("does not restrict the admin path", async () => {
         const sandbox = apiSandbox(false);
         await vm.runInContext('api("/api/mail/sender-accounts")', sandbox);
         assert.strictEqual(sandbox.fetchCalls.length, 1);
+    });
+});
+
+describe("reader logout flush (04 I-17)", () => {
+    it("awaits reader flush, aborts logout on failure, and never flushes admin drafts", async () => {
+        let handler, fail = true;
+        const calls = [];
+        const sandbox = {
+            $: selector => selector === "#logoutBtn" ? { addEventListener(type, fn) { handler = fn; } } : null,
+            setView: {}, isMailReadOnlyMode: () => true,
+            mailReadOnlyState: () => ({ handle: { async flushDrafts() { calls.push("flush"); if (fail) throw Error("offline"); } } }),
+            flushMailboxChatDrafts: () => { throw Error("admin flush"); },
+            api: async path => calls.push(path), location: { reload() { calls.push("reload"); } }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("bindAuthEvents"), sandbox);
+        sandbox.bindAuthEvents();
+        await handler();
+        assert.deepStrictEqual(calls, ["flush"]);
+        fail = false;
+        await handler();
+        assert.deepStrictEqual(calls, ["flush", "flush", "/api/auth/logout", "reload"]);
     });
 });
