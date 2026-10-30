@@ -258,3 +258,36 @@ node --test src/test/js/mailReviewAdmin.test.js src/test/js/mailboxServerDrafts.
 - 覆盖: 需求1/2/3、保持项；I-19/I-20/I-21/I-22；X12/X15/X16/X17。
 
 人工验收开始时才导出同前缀 `-acceptance.md`。
+
+## Authoritative Dispatch Boundary
+
+Child05 product base `a02477be34b3308899820fcc9bd3060ca5bccb70`; predecessor child04 evidence `368984cbe5550f9353887ce91f02e40a5d961e32`; complete five-child manifest through04 validated both artifact-dirty and clean at checkpoint `f27775f40bfb040827f4b2cd18218bb234581a28`. Child04 closed F-01/F-02 in one repair; new reader flush handles must remain compatible.
+
+Governing master `commit:c17c9013ece5bf7967d6233cd97f5bfed47d1cab`, amendments A1–A8. Child05 unchanged exact approved sha256 above; original six-file whitelist applies until controller records a necessary bounded amendment. User continuous authority: “授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p”; message controller exact evidence/file boundary BEFORE unlisted edit. Do not pause for repeat user approval, weaken assertions, fix unrelated baseline code, or alter applied migrations.
+
+Every planned command fresh after final implementation, including full node suite, JDK11 mvn test and explicit non-skipped01–03 MySQL/Flyway gates; record actual failures rather than suppress/skip. Use default Asia/Shanghai datasource timezone. Docker OrbStack DOCKER_HOST and api.version1.41 as above. Actual1440/390 browser UI must use real authenticated backend and test SMTP/IMAP with disposable data, two authenticated contexts for complete cross-user lifecycle and ordinary manual path; preserve original draft/attachments, single editor, dialog confirm-no-send then explicit send and stale-response isolation. No fake frontend/localStorage/SMTP call counter as substitute for actual production paths. Machine smoke is not human acceptance.
+
+
+## Epoch 2 — Cross-step Reader Contract Compatibility
+
+Current governing child05/master identity `commit:0c6111bb749050352bd675fabdd7dcbe415e6145`, ledger A9/A10, supersedes original seed identity. Seven authorized files: original six plus mailReviewReader.test.js only within amended T5. Retire obsolete exact resource revision, file-tail CSS placement, fixed title source-wording assertions; do not re-pin replacements. Preserve uniform resource versions, exact S-1 CSS block coexistence with appended S-5, real DOM IDs, all behavior/safety/permission/browser/full-suite requirements. Existing pre-implementation discovery is retained; reconcile execute-p identity as epoch2, fix_round0. Release only after controller message.
+
+
+## Epoch 3 — Proven Full-node Compatibility
+
+Current child05/master identity `commit:babdb2df52a3fe6f7e93d42bf2d1b97dd80d2fa5`, ledgerA11/A12 supersedes prior epoch2 identity. Scope10 files: prior7 plus batchEntryRelocation.test.js (only first-child coupling; preserve original action relative order/container), discoveryRecheck.test.js (only EOF coupling; retain exact old module CSS/DOM), mailboxMailReadAccess.test.js (retire old fixed key suffix; retain uniform assets/adjacency/permissions). No old product behavior/style changes and no re-pinning. Initial fullnode receipt1951/1947/4fail/0skip retained. New mailReviewAdmin test literal is original authorized file, remove literal without changing taskActivityCenter guard. Still initial implementation/fix_round0, all commands fresh after final state and actual browser unchanged.
+
+
+## Epoch 4 — Mandatory Backend Test Compatibility and JDK11 tzdb
+
+Current child05/master identity `commit:08aa433770bdb59143b9f446834feefa1e75e814`, ledgerA13/A14; scope12-file bounded exception,2 subsystems, supersedes prior epoch3. Only added AuthInterceptorTest.kt exact handler/verb matrix compatibility with already-approved01 reader routes (all other denial checks preserved), and four stub matcher arity corrections in UnmatchedInboundTrustWorkbenchTest.kt for03 current seam (422/503/409/dedup behavior preserved). No production backend changes.
+
+Original fullmvn5715/1fail/24errors/24defaultopt-in-skips retained. Twenty errors attributable to genuine installed oldZulu11 tzdb absence America/Coyhaique: use temporary currentZulu11 patch runtime, official Azul archive, no global overwrite, no source/fixture workaround. Record exact JAVA_HOME/java-version/archivechecksum/real ZoneId smoke; leave temporaryJDK accessible for fresh verifier/reviewer, reportpath. Fresh all mandatoryfullmvn + explicitIT gates after final state, no skips/weakening. Still initial implementation/fix_round0.
+
+
+## Epoch 5 — Inherited I-5 Malformed Placeholder Admission
+
+Current child05/master identity `commit:59eb60cf00534a342c1019827a62f2b7b1db0f2b`, ledgerA15/A16 supersedes epoch4;13-file/3-subsystem exact narrow exception. Only new path MailReviewDraftService.kt, existing normalization validator call must reuse existing strict requireValidTemplatePlaceholders to reject broken tokens; unchanged subsequent complete-variable ban, HTML sanitation and final-length check. No global MailPlaceholderService edits, no test changes to failing fixture, no migration/backend authority/send behavior changes. This explicitly amends earlier no-backend-product condition only for this single inheritedI-5 correction; not new scope.
+
+First fresh currentZulu11 enabled MailReviewDraftIT12/1fail/0error/0skip receipt1224/raw1238 retained. Reconcile approved identity/epoch5/fix_round0; run all final required commands fresh, actual changed safety-path smoke. Temporary genuineZulu11 home `/tmp/zulu11.92.109-ca-jdk11.0.33-macosx_aarch64/Contents/Home`, archiveSHA256 `4947b01fcb220ee69710dbf63375f4628688d84750fccd289f5a6d62b494aa94`; preserve for verifier/reviewer. Follow required code-intelligence references before exported symbol changes when available.
+

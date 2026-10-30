@@ -1,20 +1,20 @@
 # Fast-P Ledger — master: docs/plans/2026-10-29/draft-review-master.md
 
-- Status: RUNNING
-- Master plan: docs/plans/2026-10-29/draft-review-master.md (commit c17c9013ece5bf7967d6233cd97f5bfed47d1cab)
-- Amendments: A1,A2,A3,A4,A5,A6,A7,A8
+- Status: PAUSED_FOR_HUMAN
+- Master plan: docs/plans/2026-10-29/draft-review-master.md (commit 59eb60cf00534a342c1019827a62f2b7b1db0f2b)
+- Amendments: A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12,A13,A14,A15,A16
 - Master base: b15bb069f43f89c45ee6859dba04a0baff5d774d
 - Branch: fast/draft-review-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-draft-review-master
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-29T18:00:45.890233+08:00
-- Current child: 04
+- Current child: 05
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: f7b24c9c7364ea64adc4fa1013083343399756d7
+- Pause reason: Child05 F-01 async retarget violation and outside-scope O-01 mandatory fullmvn failure require bounded plan arbitration; standing human continuing authority recorded.
+- Resume from: ae6898ffe92e6e31b45819e5edbde8ac77e0ebff
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
@@ -23,7 +23,7 @@
 | 02 | docs/plans/2026-10-29/draft-review-02-query.md | commit:2af9b9ca1025c5741086558365f92793357a307e | 01 | 2 | LIGHT_PASS | c9454b6d5dd193c73b78dfbc99dbe58c8c70ae26 | 1cc5e9f78518468be5fb60b042cf2e7be92ccd0b | 0 | — | 1cc5e9f78518468be5fb60b042cf2e7be92ccd0b | f81d0a925246db47d53ae608f7c826bf244c4f97 | Independent DraftReview02Verifier LIGHT_PASS; fresh mandatory45/46 passed; no repairs |
 | 03 | docs/plans/2026-10-29/draft-review-03-send.md | sha256:f960f013f569b5de074722c605b41d5fa382da28c1637666b9de773c860515f7 | 01,02 | 1 | LIGHT_PASS | 1cc5e9f78518468be5fb60b042cf2e7be92ccd0b | f7b24c9c7364ea64adc4fa1013083343399756d7 | 0 | — | f7b24c9c7364ea64adc4fa1013083343399756d7 | 0b02b03c85bbe5825d7365b0eee2c1fc04623e6f | Independent DraftReview03Verifier LIGHT_PASS; fresh45/160/65 pass; no repairs |
 | 04 | docs/plans/2026-10-29/draft-review-04-reader.md | commit:c17c9013ece5bf7967d6233cd97f5bfed47d1cab | 01,02,03 | 2 | LIGHT_PASS | f7b24c9c7364ea64adc4fa1013083343399756d7 | ae148e46ce143a73046c648d0a19500b37230c60 | 1 | a02477be34b3308899820fcc9bd3060ca5bccb70 | a02477be34b3308899820fcc9bd3060ca5bccb70 | 368984cbe5550f9353887ce91f02e40a5d961e32 | Independent DraftReview04Verifier2 LIGHT_PASS; fresh131 pass; F-01/F-02 closed after1 repair |
-| 05 | docs/plans/2026-10-29/draft-review-05-admin.md | sha256:1874295ce3c15424326c215636f4c9efd1f58cc525318f601d2cc339712b2c95 | 01,02,03,04 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
+| 05 | docs/plans/2026-10-29/draft-review-05-admin.md | commit:59eb60cf00534a342c1019827a62f2b7b1db0f2b | 01,02,03,04 | 5 | PAUSED_FOR_HUMAN | a02477be34b3308899820fcc9bd3060ca5bccb70 | ae6898ffe92e6e31b45819e5edbde8ac77e0ebff | 0 | — | ae6898ffe92e6e31b45819e5edbde8ac77e0ebff | — | DraftReview05Verifier LIGHT_FAIL/PAUSE; F-01 retarget race, O-01 fullmvn thread-state assertion; bounded amendment before resumed writer |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
@@ -36,6 +36,14 @@
 | A6 | docs/plans/2026-10-29/draft-review-02-query.md | commit:f3417e2c630862d22397b63f72c549d7e8629beb | commit:2af9b9ca1025c5741086558365f92793357a307e | I-23; I-24; 02 T3 MySQL兼容测试 | Fix required fixture missing dismissed_at only; keep real behavior assertions and report measured query count without pinning statement-count implementation | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — recorded 2026-10-29T21:38:28+08:00; applied 2026-10-29T22:38:56+08:00 |
 | A7 | docs/plans/2026-10-29/draft-review-master.md | commit:2af9b9ca1025c5741086558365f92793357a307e | commit:c17c9013ece5bf7967d6233cd97f5bfed47d1cab | I-23; I-24; 持续执行授权 | Add already-required frontend test file solely to retire obsolete reader source/wording assertions conflicting with approved rich-text UI | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — recorded 2026-10-29T21:38:28+08:00; applied 2026-10-29T23:54:04+08:00 |
 | A8 | docs/plans/2026-10-29/draft-review-04-reader.md | commit:f3417e2c630862d22397b63f72c549d7e8629beb | commit:c17c9013ece5bf7967d6233cd97f5bfed47d1cab | I-16; S-1; S-2; 04 T3 | Retire obsolete global HTML/link prohibition and old fixed-copy/title assertions without repinning; preserve meaningful security/style behavior | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — recorded 2026-10-29T21:38:28+08:00; applied 2026-10-29T23:54:04+08:00 |
+| A9 | docs/plans/2026-10-29/draft-review-master.md | commit:c17c9013ece5bf7967d6233cd97f5bfed47d1cab | commit:0c6111bb749050352bd675fabdd7dcbe415e6145 | I-23; I-24; 持续执行授权 | Add one reader test for required cross-step resource-key/CSS compatibility, preserving exact shared CSS and security | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — recorded 2026-10-29T21:38:28+08:00; applied 2026-10-30T00:21:55+08:00 |
+| A10 | docs/plans/2026-10-29/draft-review-05-admin.md | commit:f3417e2c630862d22397b63f72c549d7e8629beb | commit:0c6111bb749050352bd675fabdd7dcbe415e6145 | I-23; I-24; 05 T5 | mailReviewReader.test.js old key and endsWith CSS conflict with required05 assets/S5 append; retire key/position/title wording pins, preserve uniform assets/literal S1/DOM checks | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — recorded 2026-10-29T21:38:28+08:00; applied 2026-10-30T00:21:55+08:00 |
+| A11 | docs/plans/2026-10-29/draft-review-master.md | commit:0c6111bb749050352bd675fabdd7dcbe415e6145 | commit:babdb2df52a3fe6f7e93d42bf2d1b97dd80d2fa5 | I-23; I-24; 持续执行授权 | Required fullnode gate proves three old source contracts conflict with new toolbar/append-only CSS/cache revision; add exactly their tests without altering product scope | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — recorded 2026-10-29T21:38:28+08:00; applied 2026-10-30T00:32:16+08:00 |
+| A12 | docs/plans/2026-10-29/draft-review-05-admin.md | commit:0c6111bb749050352bd675fabdd7dcbe415e6145 | commit:babdb2df52a3fe6f7e93d42bf2d1b97dd80d2fa5 | I-23; I-24; 05 T5 | Bounded test-only retirement of first-child/EOF/old cache suffix coupling in batchEntryRelocation/discoveryRecheck/mailboxMailReadAccess; preserve relative order/literal CSS/resources/permissions | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — recorded 2026-10-29T21:38:28+08:00; applied 2026-10-30T00:32:16+08:00 |
+| A13 | docs/plans/2026-10-29/draft-review-master.md | commit:babdb2df52a3fe6f7e93d42bf2d1b97dd80d2fa5 | commit:08aa433770bdb59143b9f446834feefa1e75e814 | I-23; I-24; 持续执行授权 | Mandatory fullmvn proves two prior-API test incompatibilities; add only their tests as12-file exception, no backend production changes | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — reiterated before amendment; recorded 2026-10-29T21:38:28+08:00; applied 2026-10-30T00:47:11+08:00 |
+| A14 | docs/plans/2026-10-29/draft-review-05-admin.md | commit:babdb2df52a3fe6f7e93d42bf2d1b97dd80d2fa5 | commit:08aa433770bdb59143b9f446834feefa1e75e814 | I-23; I-24; 05 fullmvn gate | AuthInterceptorTest exactreader approved routes and UnmatchedInboundTrustWorkbenchTest matcher arity only; preserve deny/HTTP/dedup assertions; timezone fixed by genuine currentZulu11 environment | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — reiterated before amendment; recorded 2026-10-29T21:38:28+08:00; applied 2026-10-30T00:47:11+08:00 |
+| A15 | docs/plans/2026-10-29/draft-review-master.md | commit:08aa433770bdb59143b9f446834feefa1e75e814 | commit:59eb60cf00534a342c1019827a62f2b7b1db0f2b | I-23; I-24; inherited01 I-5; 持续执行授权 | Enabled realDB gate proves malformed placeholder admission; authorize only existing draft-service strict-validator reuse,13-file/3-subsystem exception without safety weakening | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — reiterated before amendment; recorded 2026-10-29T21:38:28+08:00; applied 2026-10-30T00:56:31+08:00 |
+| A16 | docs/plans/2026-10-29/draft-review-05-admin.md | commit:08aa433770bdb59143b9f446834feefa1e75e814 | commit:59eb60cf00534a342c1019827a62f2b7b1db0f2b | I-23; I-24; inherited01 I-5; 05 requiredDB gates | MailReviewDraftService existing validation uses strict existing template validator for broken tokens; preserve complete-variable ban/HTML/length and unchanged failingIT; no shared placeholder behavior changes | HUMAN:授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p — reiterated before amendment; recorded 2026-10-29T21:38:28+08:00; applied 2026-10-30T00:56:31+08:00 |
 
 ## Baseline
 - Authorization: explicit user `/fast-p docs/plans/2026-10-29/draft-review-master.md` invocation on 2026-10-29. Historical DRAFT headings retained without editing.
@@ -91,4 +99,21 @@
 - Round1 writer DraftReview04Fix1 reports FIXED ata02477be34b3308899820fcc9bd3060ca5bccb70, fresh131 planned tests pass and authenticated browser/backend HTTP200 for unavailable-randomUUID creation plus failed-detail reload recovery. Fresh independent DraftReview04Verifier2 acquired; proof not yet terminal.
 
 - Child04 terminal LIGHT_PASS/COMPLETE_CHILD by DraftReview04Verifier2; evidence368984cbe5550f9353887ce91f02e40a5d961e32 preserves both attempts and round1. Required fresh131/131 pass; historical actual browser/native editor and changed-branch smoke retained. No RECORD_ONLY or open AUTO_FIX; child05 still pending until complete-manifest checkpoint validates.
+
+- Child04 full-manifest through04 dirty and clean VALID atf27775f40bfb040827f4b2cd18218bb234581a28. Child05 fresh IMPLEMENTER DraftReview05Implementer acquired, product basea02477be34b3308899820fcc9bd3060ca5bccb70, fix_round0; all final full-suite and authenticated browser/SMTP gates remain mandatory.
+
+- Child05 pre-edit reverse lookup confirmed old literal resource key in mailReviewReader.test.js195 and obsolete file-tail CSS contract191; plan-only0c6111bb749050352bd675fabdd7dcbe415e6145 adds seventh file solely for compatibility retirement. A9/A10 recorded before release; epoch2 fix_round0. No required gate weakened.
+
+- Child05 first final fullnode1951/1947 pass/4fail/0skip receiptartifact://1151: three old unlisted test contracts only. Plan-onlybabdb2df52a3fe6f7e93d42bf2d1b97dd80d2fa5 adds exact3 test paths; A11/A12 recorded before release. Fourth own newly introduced literal in already-authorized test removed without changing守卫. Epoch3 still initial implementation, fix_round0; failed receipts retained, all mandatory gates must rerun final state.
+
+- Child05 first fullmvn5715/1fail/24errors/24defaultopt-in-skips receipt1207/raw1206. Exact old reader-handler matrix and4 Mockito stub errors authorize only2 test additions via plan-only08aa433770bdb59143b9f446834feefa1e75e814/A13/A14 before release; total12-file exception. Disposable genuine currentZulu11 environment resolution for20 America/Coyhaique errors assigned, proof pending; no source/test bypass. Epoch4 initialimplementation/fix_round0; fresh finalfullmvn and explicit non-skippedITs remain required.
+
+- CurrentZulu11 enabled draftIT12/1fail/0errors/0skip receipt1224/raw1238 exposes unchanged broken-placeholder fixture admission. Plan-only59eb60cf00534a342c1019827a62f2b7b1db0f2b/A15/A16 recorded before service edit; only existing strict-validator reuse, complete-token ban remains. Epoch5 initialimplementation/fix_round0. Executor reports currentZulu11 path /tmp/zulu11.92.109-ca-jdk11.0.33-macosx_aarch64/Contents/Home, archiveSHA2564947b01fcb220ee69710dbf63375f4628688d84750fccd289f5a6d62b494aa94 and realZoneId proof; final mandatory gates still pending.
+
+- Infrastructure interruption: DraftReview05Implementer acquired then failed with exact error `[openai-codex/gpt-6.1-sol] Retry budget exhausted after 10 retries: OpenAI Codex SSE stream stalled while waiting for the next event`. Current source13 authorized paths retained uncommitted, evidenceHEAD59eb60cf00534a342c1019827a62f2b7b1db0f2b; no READY/productcommit or child verdict inferred. Agent's reported Docker/host timeouts and chained commands not reached remain historical failures, not PASS.
+- Separate infrastructure authority: user selected `允许正常重启` in explicit prompt disclosing interruption to other OrbStack containers/Linux machines, noforce/reset/data deletion. Controller `orbctl stop && orbctl start` exit0; post-restart Docker unixsocket `_ping` returned `OK`. No repository product edits by controller. Fresh writer DraftReview05Resume acquired after recovery to reconcile existing epoch5 edits and complete all gates/runtime/evidence; fix_round remains0, not an automatic repair.
+
+- Resumed executor READY_FOR_VERIFICATION atae6898ffe92e6e31b45819e5edbde8ac77e0ebff, exact13productfiles, no controllerartifactstaged. Reports freshfullnode1953pass; fullmvn5715/0fail0error24defaultopt-inskips; all explicit namedDB/auth/send targetsnon-skippedpass; fresh final productionbrowser/backend1440/390, actualSMTP/IMAP reviewed+ordinaryattachmentdelivery and malformedtoken422/no mutation. Fresh independent DraftReview05Verifier acquired; historical executor reports not substituted for fresh verifier gates.
+
+- Child05 Epoch5 Attempt1 LIGHT_FAIL/PAUSE. Fresh required14commands:13passed/1failed;363 namedJVMtargets non-skippedpass, fullmvn5715/1fail/0errors/24defaultskips. In-scopeF-01 delayedmanualretarget violatesI-20; O-01 outside-scope DiscoveryVerificationWorkerTest WAITING-vs-RUNNABLE assertion recorded by verifier without investigation. Controller scope inspection identifies incidental thread-state busy-wait/assert at63–65; substantive cancellation/lease/evidence/ownercompletion assertions remain. Standing human authority permits a narrowly recorded test-only removal before resuming new epoch, never arbitrary discovery product changes or gate waiver. Header duplicate Currentchild/omittedworktree corrected deterministically.
 
