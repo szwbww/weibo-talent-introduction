@@ -132,7 +132,7 @@ E17/E24–E27/E31/E33/E34及audit§5：独立模块是已实现事实；完整Ma
 | 8 | `src/test/js/mailboxChatBehavior.test.js` | 受限模式/发送/取消挂载 |
 | 9 | `src/test/js/expertManualProfile.test.js` | delegated资料DOM与禁止旁路 |
 | 10 | `src/test/js/expertAccessWorkspace.test.js` | 新增跨两模块真实请求白名单与生命周期 |
-| 11 | `src/test/js/mailboxChatStyle.test.js` | 仅退役reader CSS历史EOF/suffix位置pin，保留原CSS字节、作用域/隐藏及稳定DOM/cache/安全契约，不替换为新顺序/数量pin |
+| 11 | `src/test/js/mailboxChatStyle.test.js` | 仅退役reader CSS历史EOF/suffix及header单分支源码次数pin；保留原CSS字节/作用域/隐藏及稳定DOM/cache/安全契约，admin/delegated实际DOM由行为用例证明，不替换新源码顺序/数量pin |
 
 合计 **11 文件**（原10+1个CSS直接消费fixture有界例外）；最多2个紧耦合子系统。新增共享store字段：0。
 
@@ -250,3 +250,4 @@ E17/E24–E27/E31/E33/E34及audit§5：独立模块是已实现事实；完整Ma
 ## 修正记录
 - 2026-10-30：持续授权下纠正继承规划pendingBadge.total误名为既有pendingBadge.manualReviewTotal；DTO/app/完整grep证据见fast-p children/06/execution.md Epoch2。无alias/wire迁移，邮件/专家/草稿数量单位、权限与最终UI行为不变。
 - 2026-10-30：静态完整消费者核查发现原名单外mailboxChatStyle.test.js的reader CSS endsWith/末段偏移位置pin，完整grep与相关消费者收据见fast-p children/07/execution.md Epoch1；持续授权下10→11仅该fixture例外，删旧EOF/顺序假设、不重钉新位置/数量。原reader CSS字节、作用域/隐藏行为、admin默认及DOM/cache/安全检查不减；新S-4/生命周期由原授权行为用例及真实浏览器证明，新增fixture必需fresh门禁，产品范围不变。
+- 2026-10-30：同fixture343–353的header单分支/源码时间槽次数pin在既定delegated隐藏email/account后冲突（真实focused232pass/style46pass1fail，完整grep/DOM对照见fast-p children/07/execution.md Epoch2）。持续授权下仍11文件，仅退役该旧实现pin，不重钉分支/源码计数；保留默认admin实际H2→P→时间→排期/唯一时间槽，受限模式无身份P/唯一时间槽由已有授权行为文件验证。原失败及部分实现保留，fresh全部门禁与1440/390真实浏览器/后端/SMTP验收不减。
