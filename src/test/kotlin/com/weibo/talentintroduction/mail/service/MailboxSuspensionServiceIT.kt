@@ -81,11 +81,12 @@ class MailboxSuspensionServiceIT {
         assertEquals("等待材料", repeated.suspendReason)
         assertEquals(1L, suspensionRows("op1", 1L))
 
-        // 另一用户看到未挂起但同样的跨账号 pending。
+        // 另一用户无本人待处理；不能挂起只有他人待处理的专家。
         val other = service.get("op2", 1L)
         assertFalse(other.suspended)
         assertNull(other.suspendReason)
-        assertEquals(1L, other.suspensionPendingCount)
+        assertEquals(0L, other.suspensionPendingCount)
+        assertThrows(MailboxSuspensionConflictException::class.java) { service.suspend("op2", 1L, null) }
 
         // DELETE 幂等：第二次仍 suspended=false。
         assertEquals(false, service.resume("op1", 1L).suspended)
@@ -127,6 +128,7 @@ class MailboxSuspensionServiceIT {
         ))
 
         // 空白 → null；null 原样为 null（未填写原因，绝不表示未挂起 I-1）。
+        insertProcessing(2, "acc-a", 103, "MANUAL_REVIEW", "2026-09-01 09:00:00", "susp-it-blank")
         val blank = service.suspend("op1", 2L, "   ")
         assertTrue(blank.suspended)
         assertNull(blank.suspendReason)
@@ -149,8 +151,8 @@ class MailboxSuspensionServiceIT {
         service.suspend("op1", 1L, null)
         assertEquals(2L, service.get("op1", 1L).suspensionPendingCount,
             "acc-a 与 disabled inactive-acc 计入；模拟器/不存在账号/已处理不计")
-        // 未挂起行也拿到真实跨账号 pending。
-        assertEquals(2L, service.get("op2", 1L).suspensionPendingCount)
+        // 未挂起不代表能读取另一处理人的待处理。
+        assertEquals(0L, service.get("op2", 1L).suspensionPendingCount)
 
         // 处理一封后计数下降，但挂起行仍在（I-2 无自动结束）。
         jdbcTemplate.update(
@@ -246,7 +248,7 @@ class MailboxSuspensionServiceIT {
         assertEquals(1L, badge.countsByReasonType["UNMATCHED_CONTACT"])
         assertEquals(1L, badge.countsByReasonType["UNKNOWN"])
         assertFalse(badge.countsByReasonType.containsKey("QA_NO_MATCH"))
-        assertEquals(4L, service.pendingBadge("op2").manualReviewTotal)
+        assertEquals(0L, service.pendingBadge("op2").manualReviewTotal)
         service.resume("op1", 1)
         assertEquals(4L, service.pendingBadge("op1").manualReviewTotal)
     }
@@ -355,10 +357,8 @@ class MailboxSuspensionServiceIT {
         assertEquals(1L, after.suspensionPendingCount)
         assertEquals(1L, service.pendingBadge("op1").manualReviewTotal)
         val otherUserBadge = service.pendingBadge("op2")
-        assertEquals(2L, otherUserBadge.manualReviewTotal,
-            "未挂起 op2 的导航角标同时减少被排除的首封")
-        assertEquals(1L, otherUserBadge.countsByReasonType["UNMATCHED_CONTACT"],
-            "未关联来信保持原待处理")
+        assertEquals(0L, otherUserBadge.manualReviewTotal)
+        assertTrue(otherUserBadge.countsByReasonType.isEmpty())
     }
 
     // ------------------------------------------------------------------
@@ -421,18 +421,19 @@ class MailboxSuspensionServiceIT {
         imapUid: Long,
         processStatus: String,
         receivedAt: String,
-        messageId: String
+        messageId: String,
+        owner: String = "op1"
     ) {
         jdbcTemplate.update(
             """
             INSERT INTO inbound_mail_processing
                 (sender_account_code, uid_validity, imap_uid, message_id, from_email, subject,
-                 body, cleaned_body, received_at, process_status, process_reason, expert_contact_id)
-            VALUES (?, 1, ?, ?, 'expert@example.org', 'subject', 'body', 'cleaned', ?, ?, 'QA_AUTO_REPLIED', ?)
+                 body, cleaned_body, received_at, process_status, process_reason, expert_contact_id, pending_owner_username)
+            VALUES (?, 1, ?, ?, 'expert@example.org', 'subject', 'body', 'cleaned', ?, ?, 'QA_AUTO_REPLIED', ?, ?)
             """.trimIndent(),
             accountCode, imapUid, messageId,
             Timestamp.valueOf(LocalDateTime.parse(receivedAt.replace(' ', 'T'))),
-            processStatus, contactId
+            processStatus, contactId, owner
         )
     }
 

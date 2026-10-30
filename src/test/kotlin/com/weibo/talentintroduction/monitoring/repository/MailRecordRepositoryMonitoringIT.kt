@@ -143,8 +143,10 @@ class MailRecordRepositoryMonitoringIT {
         seedBaseContact()
         jdbcTemplate.execute("ALTER TABLE mail_record MODIFY subject VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
         jdbcTemplate.execute("ALTER TABLE mail_record MODIFY body LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
+        jdbcTemplate.execute("ALTER TABLE mail_record MODIFY cleaned_body LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
         jdbcTemplate.execute("ALTER TABLE inbound_mail_processing MODIFY subject VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci")
         jdbcTemplate.execute("ALTER TABLE inbound_mail_processing MODIFY body TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci")
+        jdbcTemplate.execute("ALTER TABLE inbound_mail_processing MODIFY cleaned_body TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci")
 
         val receivedAt = LocalDate.now(shanghaiZone).atStartOfDay().plusHours(8)
         jdbcTemplate.update(

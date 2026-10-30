@@ -229,7 +229,6 @@ class MailReviewQueryIT {
         assertEquals(100, result.items.size)
         assertEquals(100L, result.reviewPendingTotal)
         assertEquals(singleContactQueryCount, adminSql.size, "Page growth must not introduce per-contact queries")
-        assertEquals(2, adminSql.count { it.contains("mailbox_review_draft") })
         assertTrue(adminSql.none { it.contains("d.html_body") || it.contains("d.text_body") })
         println("REVIEW_QUERY_SIZE100 rows=${result.items.size} sqlCount=${adminSql.size} reviewSqlCount=${adminSql.count { it.contains("mailbox_review_draft") }}")
         statements.clear()

@@ -1022,6 +1022,23 @@ class MailboxConversationControllerTest {
                 VALUES('user1',?,?,'OUTBOUND',1,'acc-a',1,'SUBMITTED','Review','<p>Body</p>','Body',NOW(3),NOW(3),NOW(3))
             """.trimIndent(), if (index < 2) 1L else 2L, java.util.UUID.randomUUID().toString())
         }
+        Mockito.`when`(authService.findUser("admin")).thenReturn(adminUser("admin"))
+        insertReadAccess(1)
+        jdbcTemplate.update("UPDATE expert_mail_read_access SET access_level='FULL' WHERE expert_contact_id=1")
+        for (scope in listOf("ALL", "USER1_FULL", "PENDING_REVIEW")) {
+            mockMvc.perform(get("/api/mail/mailbox/conversations").session(sessionOf("admin"))
+                .param("expertScope", scope).param("q", "no-such-expert").param("page", "20"))
+                .andExpect(status().isOk).andExpect(jsonPath("$.total").value(0))
+                .andExpect(jsonPath("$.filterCounts.user1FullExpertCount").value(1))
+                .andExpect(jsonPath("$.filterCounts.pendingReviewDraftCount").value(3))
+        }
+        mockMvc.perform(get("/api/mail/mailbox/conversations").session(sessionOf("admin"))
+            .param("expertScope", "USER1_FULL")).andExpect(status().isOk)
+            .andExpect(jsonPath("$.total").value(1)).andExpect(jsonPath("$.items[0].contactId").value(1))
+        mockMvc.perform(get("/api/mail/mailbox/conversations").session(sessionOf("admin"))
+            .param("expertScope", "PENDING_REVIEW")).andExpect(status().isOk).andExpect(jsonPath("$.total").value(2))
+        mockMvc.perform(get("/api/mail/mailbox/conversations").session(sessionOf("admin"))
+            .param("expertScope", "user1_full")).andExpect(status().isBadRequest)
         mockMvc.perform(get("/api/mail/mailbox/conversations").session(sessionOf("op1")))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.total").value(3))
@@ -1045,11 +1062,16 @@ class MailboxConversationControllerTest {
             .andExpect(status().isOk).andExpect(jsonPath("$.total").value(0))
             .andExpect(jsonPath("$.reviewPendingTotal").value(3))
         stubReader()
-        insertReadAccess(1)
+        // The existing FULL grant remains readable; admin statistics are never returned to user1.
         mockMvc.perform(get("/api/mail/mailbox/conversations").session(sessionOf("user1")))
             .andExpect(status().isOk).andExpect(jsonPath("$.total").value(1))
             .andExpect(jsonPath("$.reviewPendingTotal").value(0))
             .andExpect(jsonPath("$.items[0].reviewPendingCount").value(0))
+            .andExpect(jsonPath("$.filterCounts").doesNotExist())
+        for (scope in listOf("USER1_FULL", "PENDING_REVIEW")) {
+            mockMvc.perform(get("/api/mail/mailbox/conversations").session(sessionOf("user1"))
+                .param("expertScope", scope)).andExpect(status().isForbidden)
+        }
         mockMvc.perform(get("/api/mail/mailbox/conversations?reviewPendingOnly=true").session(sessionOf("user1")))
             .andExpect(status().isForbidden)
             .andExpect(jsonPath("$.code").value(MailReadOnlyPolicy.MAIL_READ_FORBIDDEN))
@@ -1619,7 +1641,7 @@ class MailboxConversationControllerTest {
         mockMvc.perform(get(badge).session(sessionOf("op1")))
             .andExpect(status().isOk).andExpect(jsonPath("$.manualReviewTotal").value(0))
         mockMvc.perform(get(badge).session(sessionOf("op2")))
-            .andExpect(status().isOk).andExpect(jsonPath("$.manualReviewTotal").value(1))
+            .andExpect(status().isOk).andExpect(jsonPath("$.manualReviewTotal").value(0))
         mockMvc.perform(patch(reason).session(sessionOf("op1")).contentType(MediaType.APPLICATION_JSON)
             .content("""{"reason":" 补充材料 "}"""))
             .andExpect(status().isOk).andExpect(jsonPath("$.suspended").value(true))
@@ -1691,7 +1713,7 @@ class MailboxConversationControllerTest {
         )
         assertFalse(op2Body["suspended"].asBoolean())
         assertTrue(op2Body["suspendReason"].isNull)
-        assertEquals(1L, op2Body["suspensionPendingCount"].asLong())
+        assertEquals(0L, op2Body["suspensionPendingCount"].asLong())
 
         // 会话用户名不存在 → 401（AuthInterceptor findUser null）。
         mockMvc.perform(get("/api/mail/mailbox/conversations/1/suspension").session(sessionOf("ghost-user")))
@@ -2051,8 +2073,8 @@ class MailboxConversationControllerTest {
             INSERT INTO inbound_mail_processing
                 (sender_account_code, uid_validity, imap_uid, message_id, from_email,
                  subject, body, cleaned_body, received_at, process_status, process_reason,
-                 expert_contact_id)
-            VALUES ('acc-a', 1, ?, ?, 'expert@example.org', ?, 'body', 'cleaned', ?, ?, 'QA_AUTO_REPLIED', ?)
+                 expert_contact_id, pending_owner_username)
+            VALUES ('acc-a', 1, ?, ?, 'expert@example.org', ?, 'body', 'cleaned', ?, ?, 'QA_AUTO_REPLIED', ?, 'op1')
             """.trimIndent(),
             900L + contactId, messageId, subject,
             Timestamp.valueOf(ts(eventAt)), processStatus, contactId
@@ -2077,8 +2099,8 @@ class MailboxConversationControllerTest {
             INSERT INTO inbound_mail_processing
                 (sender_account_code, uid_validity, imap_uid, message_id, from_email,
                  subject, body, cleaned_body, received_at, process_status, process_reason,
-                 expert_contact_id)
-            VALUES ('acc-a', 1, ?, ?, 'expert@example.org', ?, 'body', 'cleaned', ?, ?, 'QA_AUTO_REPLIED', ?)
+                 expert_contact_id, pending_owner_username)
+            VALUES ('acc-a', 1, ?, ?, 'expert@example.org', ?, 'body', 'cleaned', ?, ?, 'QA_AUTO_REPLIED', ?, 'op1')
             """.trimIndent(),
             imapUid, messageId, subject,
             Timestamp.valueOf(ts(eventAt)), processStatus, contactId

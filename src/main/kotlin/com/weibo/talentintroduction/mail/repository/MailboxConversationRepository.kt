@@ -54,6 +54,7 @@ class MailboxConversationRepository(
             val p = MapSqlParameterSource().addValue("contactId", contactId)
                 .addValue("accountCodes", accountCodes).addValue("accountCode", null)
                 .addValue("simulator", MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
+                .addValue("username", "")
             jdbcTemplate.query(sql, p, org.springframework.jdbc.core.RowCallbackHandler { rs ->
                 feed(rs.getString("source"))
                 feed(rs.getLong("id").toString())
@@ -95,7 +96,8 @@ class MailboxConversationRepository(
         val suspendedOnly: Boolean = false,
         /** 01 (I-4)：只看当前用户的“已提供”专家；与 followed 同层 AND（同传得空集）。 */
         val providedOnly: Boolean = false,
-        val reviewPendingOnly: Boolean = false
+        val reviewPendingOnly: Boolean = false,
+        val expertScope: String = "ALL"
     )
 
     data class ConversationSummarySqlRow(
@@ -248,6 +250,22 @@ class MailboxConversationRepository(
              WHERE ${reviewPendingPredicate()}
         """.trimIndent()
         return jdbcTemplate.queryForObject(sql, params(username, scope), Long::class.java) ?: 0L
+    }
+
+    /** Admin toolbar units over all real conversations, independent of list filters/page. */
+    fun filterCounts(accountCodes: List<String>): Pair<Long, Long> {
+        if (accountCodes.isEmpty()) return 0L to 0L
+        val scope = ConversationFilter(accountCodes)
+        val writable = jdbcTemplate.queryForObject("""
+            SELECT COUNT(DISTINCT u.expert_contact_id)
+              FROM (${rangeUnionSql(includeBody = false)}) u
+              JOIN expert_contact ec ON ec.id = u.expert_contact_id
+             WHERE EXISTS (
+                 SELECT 1 FROM expert_mail_read_access access_grant
+                  WHERE access_grant.expert_contact_id = ec.id
+                    AND access_grant.username = 'user1' AND access_grant.access_level = 'FULL')
+        """.trimIndent(), params("", scope), Long::class.java) ?: 0L
+        return writable to reviewPendingTotal("admin", scope)
     }
 
     /** Account existence, not automatic-send eligibility, determines review visibility. */
@@ -412,6 +430,7 @@ class MailboxConversationRepository(
             .addValue("contactIds", contactIds)
             .addValue("accountCodes", accountCodes)
             .addValue("accountCode", accountCode)
+            .addValue("username", "")
         return jdbcTemplate.query(sql, p) { rs, _ ->
             rs.getLong("expert_contact_id") to rs.toLatestMessageRow()
         }.toMap()
@@ -451,6 +470,7 @@ class MailboxConversationRepository(
             .addValue("contactIds", contactIds)
             .addValue("accountCodes", accountCodes)
             .addValue("accountCode", accountCode)
+            .addValue("username", "")
         return jdbcTemplate.query(sql, p) { rs, _ ->
             rs.getLong("expert_contact_id") to ConversationLatestInboundRow(
                 processingId = rs.getLong("processing_id"),
@@ -479,6 +499,7 @@ class MailboxConversationRepository(
             .addValue("contactIds", contactIds)
             .addValue("accountCodes", accountCodes)
             .addValue("accountCode", accountCode)
+            .addValue("username", "")
         return jdbcTemplate.query(sql, p) { rs, _ ->
             val codes = rs.getString("account_codes")
                 ?.split(",")
@@ -550,6 +571,12 @@ class MailboxConversationRepository(
               JOIN mail_sender_account msa ON msa.account_code = imp.sender_account_code
              WHERE imp.expert_contact_id IN (:contactIds)
                AND imp.process_status = :manualReviewStatus
+               AND imp.pending_owner_username = :username
+               AND (:username <> 'user1' OR EXISTS (
+                   SELECT 1 FROM expert_mail_read_access owner_access
+                    WHERE owner_access.username = :username
+                      AND owner_access.expert_contact_id = imp.expert_contact_id
+                      AND owner_access.access_level = 'FULL'))
                AND msa.account_code <> :simulatorCode
              GROUP BY imp.expert_contact_id
         """.trimIndent()
@@ -557,6 +584,7 @@ class MailboxConversationRepository(
             pendingSql,
             MapSqlParameterSource()
                 .addValue("contactIds", contactIds)
+                .addValue("username", username)
                 .addValue("manualReviewStatus", PROCESS_STATUS_MANUAL_REVIEW)
                 .addValue("simulatorCode", MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
         ) { rs, _ -> rs.getLong("expert_contact_id") to rs.getLong("pending_count") }
@@ -705,7 +733,14 @@ class MailboxConversationRepository(
                    0 AS sent_flag,
                    0 AS failed_flag,
                    1 AS received_flag,
-                   CASE WHEN imp.process_status = 'MANUAL_REVIEW' THEN 1 ELSE 0 END AS pending_flag$inboundBody
+                   CASE WHEN imp.process_status = 'MANUAL_REVIEW'
+                             AND imp.pending_owner_username = :username
+                             AND (:username <> 'user1' OR EXISTS (
+                                 SELECT 1 FROM expert_mail_read_access owner_access
+                                  WHERE owner_access.username = :username
+                                    AND owner_access.expert_contact_id = imp.expert_contact_id
+                                    AND owner_access.access_level = 'FULL'))
+                        THEN 1 ELSE 0 END AS pending_flag$inboundBody
               FROM inbound_mail_processing imp
              WHERE imp.expert_contact_id IS NOT NULL
                AND imp.sender_account_code IN (:accountCodes)
@@ -805,11 +840,19 @@ class MailboxConversationRepository(
              OR ec.expert_name LIKE CONCAT('%', :q, '%')
              OR ec.expert_email LIKE CONCAT('%', :q, '%'))
         """.trimIndent()
-        if (filter.reviewPendingOnly) {
+        if (filter.reviewPendingOnly || filter.expertScope == "PENDING_REVIEW") {
             clauses += """
                 EXISTS (
                     SELECT 1 FROM mailbox_review_draft d
                      WHERE d.expert_contact_id = ec.id AND ${reviewPendingPredicate()})
+            """.trimIndent()
+        }
+        if (filter.expertScope == "USER1_FULL") {
+            clauses += """
+                EXISTS (
+                    SELECT 1 FROM expert_mail_read_access full_access
+                     WHERE full_access.expert_contact_id = ec.id
+                       AND full_access.username = 'user1' AND full_access.access_level = 'FULL')
             """.trimIndent()
         }
         clauses += """

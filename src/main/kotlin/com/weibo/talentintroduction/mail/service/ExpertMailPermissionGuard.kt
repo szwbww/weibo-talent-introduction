@@ -36,7 +36,10 @@ class ExpertMailPermissionGuard(
             route(conversation, "unfollow", "DELETE", Target.CONTACT)
             route(conversation, "setProgressStatus", "PUT", Target.CONTACT)
             route(conversation, "dismissReplied", "PUT", Target.CONTACT)
-            // Personal pending/suspension SQL is activated by child06, not a global count here.
+            route(conversation, "suspension", "GET", Target.CONTACT)
+            route(conversation, "suspend", "PUT", Target.CONTACT)
+            route(conversation, "updateSuspensionReason", "PATCH", Target.CONTACT)
+            route(conversation, "resumeSuspension", "DELETE", Target.CONTACT)
             val unmatched = UnmatchedInboundMailController::class.java
             route(unmatched, "getUnmatchedDetail", "GET", Target.PROCESSING)
             route(unmatched, "sendManualRichReply", "POST", Target.PROCESSING)

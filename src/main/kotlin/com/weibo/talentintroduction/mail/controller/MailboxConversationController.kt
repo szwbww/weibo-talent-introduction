@@ -140,7 +140,14 @@ data class ConversationListResponse(
     val total: Long,
     val page: Int,
     val size: Int,
-    val reviewPendingTotal: Long = 0
+    val reviewPendingTotal: Long = 0,
+    @get:com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    val filterCounts: ConversationFilterCounts? = null
+)
+
+data class ConversationFilterCounts(
+    val user1FullExpertCount: Long,
+    val pendingReviewDraftCount: Long
 )
 
 data class ConversationMessageItemResponse(
@@ -247,7 +254,8 @@ class MailboxConversationController(
         @RequestParam(defaultValue = "false") suspendedOnly: Boolean,
         /** 01 (T3/I-4)：只看已提供三态标记的专家；默认 false 保持既有调用兼容。 */
         @RequestParam(defaultValue = "false") providedOnly: Boolean,
-        @RequestParam(defaultValue = "false") reviewPendingOnly: Boolean = false
+        @RequestParam(defaultValue = "false") reviewPendingOnly: Boolean = false,
+        @RequestParam(defaultValue = "ALL") expertScope: String = "ALL"
     ): ConversationListResponse = conversationService.listConversations(
         username = sessionUsername(request),
         q = q,
@@ -267,7 +275,8 @@ class MailboxConversationController(
         size = size,
         suspendedOnly = suspendedOnly,
         providedOnly = providedOnly,
-        reviewPendingOnly = reviewPendingOnly
+        reviewPendingOnly = reviewPendingOnly,
+        expertScope = expertScope
     )
 
     @GetMapping("/{contactId}/messages")

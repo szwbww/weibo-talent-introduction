@@ -118,7 +118,7 @@ class UnmatchedInboundMailServiceTest {
         assertEquals(4L, result.totalCount)
         assertEquals(4L, result.manualReviewTotal)
         Mockito.verify(inboundMailProcessingRepository, Mockito.never())
-            .findUnmatchedManualReviewQueue(Mockito.anyList(), Mockito.any(), Mockito.anyInt(), Mockito.anyInt())
+            .findUnmatchedManualReviewQueue(Mockito.anyList(), Mockito.any(), Mockito.anyInt(), Mockito.anyInt(), Mockito.anyString())
     }
 
     @Test
@@ -150,7 +150,7 @@ class UnmatchedInboundMailServiceTest {
         Mockito.verify(senderAccountRepository)
             .findAllByAccountCodeNot(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
         Mockito.verify(inboundMailProcessingRepository, Mockito.never())
-            .findManualReviewQueue(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.anyInt(), Mockito.anyInt())
+            .findManualReviewQueue(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.anyInt(), Mockito.anyInt(), Mockito.anyString())
     }
 
     @Test
@@ -186,9 +186,9 @@ class UnmatchedInboundMailServiceTest {
         assertEquals(0L, result.manualReviewTotal)
         assertTrue(result.countsByReasonType.isEmpty())
         Mockito.verify(inboundMailProcessingRepository, Mockito.never())
-            .findUnmatchedManualReviewQueue(Mockito.anyList(), Mockito.any(), Mockito.anyInt(), Mockito.anyInt())
+            .findUnmatchedManualReviewQueue(Mockito.anyList(), Mockito.any(), Mockito.anyInt(), Mockito.anyInt(), Mockito.anyString())
         Mockito.verify(inboundMailProcessingRepository, Mockito.never())
-            .countUnmatchedManualReviewQueue(Mockito.anyList(), Mockito.any())
+            .countUnmatchedManualReviewQueue(Mockito.anyList(), Mockito.any(), Mockito.anyString())
     }
 
     @Test

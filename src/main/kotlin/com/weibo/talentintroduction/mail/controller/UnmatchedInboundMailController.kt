@@ -92,6 +92,7 @@ class UnmatchedInboundMailController(
     private val logger = org.slf4j.LoggerFactory.getLogger(UnmatchedInboundMailController::class.java)
     @GetMapping("/unmatched-inbound")
     fun list(
+        servletRequest: HttpServletRequest,
         @RequestParam(required = false) reasonType: String?,
         @RequestParam(required = false) email: String?,
         @RequestParam(required = false) subject: String?,
@@ -107,7 +108,9 @@ class UnmatchedInboundMailController(
             pageSize = pageSize,
             pageOffset = pageOffset,
             unmatchedOnly = unmatchedOnly,
-            query = query
+            query = query,
+            actor = servletRequest.sessionUsernameOrNull()?.takeIf { it.isNotBlank() }
+                ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "未登录")
         )
         val contactIds = result.records.mapNotNull { it.expertContactId }.distinct()
         val contactsMap = if (contactIds.isNotEmpty()) {

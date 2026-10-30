@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
+import com.weibo.talentintroduction.document.service.ExpertMaterialService
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
@@ -75,6 +76,120 @@ class InboundPendingOwnerIT {
             expertContactId = if (linked) contactId else null, pendingOwnerUsername = owner, createdAt = now, updatedAt = now))
     private fun persisted(id: Long) = inbound.findById(id).get()
     private fun received(uid: Long) = inbound.findByMailboxOwnerCodeAndUidValidityAndImapUid("owner-test", 7, uid)!!
+
+    @org.springframework.web.servlet.config.annotation.EnableWebMvc
+    class OwnerMvcConfig
+
+    @Test fun `real AuthWebConfig owner routes enforce FULL and legacy queues match personal counts`() {
+        jdbc.update("INSERT INTO expert_contact (id,campaign_id,orcid_id,expert_email,expert_name) VALUES (9202,9201,'owner-other','other@example.test','Other') ON DUPLICATE KEY UPDATE id=id")
+        access.setAccessLevel("admin", contactId, ExpertMailAccessLevel.FULL)
+        val adminMail = row(600, "admin")
+        val readerMail = row(601)
+        val secondReaderMail = row(602)
+        val unmatched = row(603, "admin", linked = false)
+        val accountRepository = Mockito.mock(com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository::class.java)
+        Mockito.`when`(accountRepository.findAllByAccountCodeNot(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE))
+            .thenReturn(listOf(account().copy(enabled = false)))
+        val queue = consumer(UnmatchedInboundMailService::class.java, extra = mapOf(
+            com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository::class.java to accountRepository))
+        assertEquals(setOf(adminMail.id, unmatched.id), queue.listManualReviewQueue(actor = "admin").records.map { it.id }.toSet())
+        assertEquals(2L, queue.listManualReviewQueue(actor = "admin").manualReviewTotal)
+        assertEquals(2L, queue.listManualReviewQueue(actor = "user1").totalCount)
+        assertEquals(1L, queue.listManualReviewQueue(actor = "admin", unmatchedOnly = true).totalCount)
+        assertEquals(0L, queue.listManualReviewQueue(actor = "user1", unmatchedOnly = true).totalCount)
+        val named = NamedParameterJdbcTemplate(dataSource)
+        val repository = com.weibo.talentintroduction.mail.repository.MailboxConversationRepository(named)
+        val suspension = MailboxSuspensionService(named)
+        val search = Mockito.mock(com.weibo.talentintroduction.expert.service.ExpertSearchService::class.java)
+        val materials = Mockito.mock(ExpertMaterialService::class.java)
+        val delivery = Mockito.mock(MailDeliveryService::class.java)
+        val conversations = consumer(MailboxConversationService::class.java, extra = mapOf(
+            com.weibo.talentintroduction.mail.repository.MailboxConversationRepository::class.java to repository,
+            com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository::class.java to accountRepository,
+            ExpertMailReadAccessService::class.java to access,
+            com.weibo.talentintroduction.expert.service.ExpertSearchService::class.java to search,
+            ExpertMaterialService::class.java to materials))
+        val controller = consumer(com.weibo.talentintroduction.mail.controller.MailboxConversationController::class.java,
+            extra = mapOf(MailboxConversationService::class.java to conversations,
+                MailboxSuspensionService::class.java to suspension))
+        val auth = Mockito.mock(com.weibo.talentintroduction.auth.service.AuthService::class.java)
+        for (username in listOf("admin", "user1")) {
+            Mockito.`when`(auth.findUser(username)).thenReturn(com.weibo.talentintroduction.auth.domain.AdminUser(
+                username = username, passwordHash = "unused", mustChangePassword = false, createdAt = now, updatedAt = now))
+        }
+        val context = org.springframework.web.context.support.GenericWebApplicationContext()
+        context.servletContext = org.springframework.mock.web.MockServletContext()
+        context.beanFactory.registerSingleton("auth", auth)
+        context.beanFactory.registerSingleton("mapper", com.fasterxml.jackson.module.kotlin.jacksonObjectMapper())
+        context.beanFactory.registerSingleton("guard", ExpertMailPermissionGuard(access, named))
+        context.beanFactory.registerSingleton("controller", controller)
+        context.beanFactory.registerSingleton("errors", com.weibo.talentintroduction.common.controller.GlobalExceptionHandler())
+        org.springframework.context.annotation.AnnotatedBeanDefinitionReader(context).register(
+            OwnerMvcConfig::class.java, com.weibo.talentintroduction.auth.config.AuthWebConfig::class.java)
+        context.refresh()
+        try {
+            val mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppContextSetup(context).build()
+            fun session(username: String) = org.springframework.mock.web.MockHttpSession().apply {
+                setAttribute(com.weibo.talentintroduction.auth.config.AuthSessionKeys.USERNAME, username)
+            }
+            val mapper = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper()
+            val base = "/api/mail/mailbox/conversations"
+            val methods = listOf("GET", "PUT", "PATCH", "DELETE")
+            for (level in listOf(ExpertMailAccessLevel.NONE, ExpertMailAccessLevel.READ, ExpertMailAccessLevel.FULL)) {
+                if (level == ExpertMailAccessLevel.NONE) access.revoke("admin", contactId)
+                else access.setAccessLevel("admin", contactId, level)
+                if (level == ExpertMailAccessLevel.FULL) {
+                    jdbc.update("UPDATE inbound_mail_processing SET pending_owner_username='user1' WHERE id IN (?,?)",
+                        readerMail.id, secondReaderMail.id)
+                }
+                for (target in listOf(contactId, 9202L)) {
+                    for (method in methods) {
+                        val url = "$base/$target/suspension" + if (method == "PATCH") "/reason" else ""
+                        val request = org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                            .request(org.springframework.http.HttpMethod.valueOf(method), url).session(session("user1"))
+                            .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content("""{"reason":"Waiting"}""")
+                        val response = mvc.perform(request).andReturn().response
+                        if (level != ExpertMailAccessLevel.FULL || target != contactId) assertEquals(403, response.status, "$level $method $target")
+                        else assertEquals(200, response.status, "$method ${response.contentAsString}")
+                    }
+                }
+            }
+            Mockito.verifyNoInteractions(search, materials, delivery)
+            for (method in methods) {
+                val url = "$base/$contactId/suspension" + if (method == "PATCH") "/reason" else ""
+                assertEquals(200, mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                    .request(org.springframework.http.HttpMethod.valueOf(method), url).session(session("admin"))
+                    .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content("""{"reason":"Admin waiting"}"""))
+                    .andReturn().response.status, "admin $method")
+            }
+            // Restore the two personal items after the downgrade test reclaimed them.
+            jdbc.update("UPDATE inbound_mail_processing SET pending_owner_username='user1' WHERE id<>? AND expert_contact_id=?", adminMail.id, contactId)
+            fun badge(user: String) = mapper.readTree(mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .get("$base/pending-badge").session(session(user)).param("username", "admin")).andReturn().response.contentAsString)["manualReviewTotal"].asLong()
+            assertEquals(2L, badge("user1"))
+            assertEquals(2L, badge("admin"))
+            assertEquals(2L, suspension.get("user1", contactId).suspensionPendingCount)
+            suspension.suspend("user1", contactId, "Wait")
+            assertEquals(0L, badge("user1"))
+            assertEquals(2L, badge("admin"))
+            suspension.resume("user1", contactId)
+            val personal = repository.pageConversations("user1",
+                com.weibo.talentintroduction.mail.repository.MailboxConversationRepository.ConversationFilter(listOf("owner-test"), pendingOnly = true), 20, 0)
+            assertEquals(1, personal.size)
+            assertEquals(2L, personal.single().pendingCount)
+            assertEquals(3L, personal.single().receivedCount)
+            access.setAccessLevel("admin", contactId, ExpertMailAccessLevel.READ)
+            assertEquals(0L, badge("user1"))
+            assertEquals(4L, badge("admin"))
+            assertEquals(0L, queue.listManualReviewQueue(actor = "user1").totalCount)
+            assertEquals("admin", persisted(readerMail.id!!).pendingOwnerUsername)
+            access.setAccessLevel("admin", contactId, ExpertMailAccessLevel.FULL)
+            assertEquals(0L, badge("user1"))
+            assertEquals(4L, badge("admin"))
+            assertEquals(200, mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .get("$base/$contactId/suspension").session(session("admin"))).andReturn().response.status)
+        } finally { context.close() }
+    }
 
     /** Same constructor wiring convention as ExpertInboundNotificationRepositoryIT, no production shim. */
     private fun <T> consumer(type: Class<T>, repository: InboundMailProcessingRepository = inbound,

@@ -112,9 +112,12 @@ class MailboxConversationService(
         suspendedOnly: Boolean = false,
         /** 01 (T3/I-4)：只看当前用户已提供专家；默认 false 保持既有调用兼容。 */
         providedOnly: Boolean = false,
-        reviewPendingOnly: Boolean = false
+        reviewPendingOnly: Boolean = false,
+        expertScope: String = "ALL"
     ): ConversationListResponse {
         val reader = MailReadOnlyPolicy.isReader(username)
+        require(expertScope in setOf("ALL", "USER1_FULL", "PENDING_REVIEW")) { "非法 expertScope" }
+        if (expertScope != "ALL") MailReadOnlyPolicy.requireAdmin(username)
         if (reader && reviewPendingOnly) {
             throw MailReadAccessDeniedException(
                 MailReadOnlyPolicy.MAIL_READ_FORBIDDEN, "无权查看待审核草稿"
@@ -133,8 +136,13 @@ class MailboxConversationService(
         validateTextFilter("recipientEmail", recipientEmailFilter)
         validateTextFilter("keyword", keywordFilter)
         val activeCodes = activeAccountCodes()
+        val filterCounts = if (MailReadOnlyPolicy.isAdmin(username)) {
+            val counts = repository.filterCounts(activeCodes)
+            com.weibo.talentintroduction.mail.controller.ConversationFilterCounts(counts.first, counts.second)
+        } else null
         if (activeCodes.isEmpty() || (accountCode != null && accountCode !in activeCodes)) {
-            return ConversationListResponse(emptyList(), 0, page.coerceAtLeast(0), size.coerceIn(1, MAX_PAGE_SIZE))
+            return ConversationListResponse(emptyList(), 0, page.coerceAtLeast(0), size.coerceIn(1, MAX_PAGE_SIZE),
+                filterCounts = filterCounts)
         }
         val pageIndex = page.coerceAtLeast(0)
         val pageSize = size.coerceIn(1, MAX_PAGE_SIZE)
@@ -155,19 +163,20 @@ class MailboxConversationService(
             keyword = keywordFilter,
             suspendedOnly = suspendedOnly,
             providedOnly = providedOnly,
-            reviewPendingOnly = reviewPendingOnly
+            reviewPendingOnly = reviewPendingOnly,
+            expertScope = expertScope
         )
         val sessionUser = username.orEmpty()
         // Toolbar counts ignore mutually exclusive chips, including an empty chip result/page.
         val reviewPendingTotal = if (reader) 0L else repository.reviewPendingTotal(sessionUser, filter)
         val total = repository.countConversations(sessionUser, filter)
         if (total == 0L) {
-            return ConversationListResponse(emptyList(), 0, pageIndex, pageSize, reviewPendingTotal)
+            return ConversationListResponse(emptyList(), 0, pageIndex, pageSize, reviewPendingTotal, filterCounts)
         }
         val offset = pageIndex.toLong() * pageSize
         val rows = repository.pageConversations(sessionUser, filter, pageSize, offset)
         if (rows.isEmpty()) {
-            return ConversationListResponse(emptyList(), total, pageIndex, pageSize, reviewPendingTotal)
+            return ConversationListResponse(emptyList(), total, pageIndex, pageSize, reviewPendingTotal, filterCounts)
         }
         val contactIds = rows.map { it.expertContactId }
         val accessLevels = readAccessService.accessLevels(contactIds)
@@ -229,7 +238,7 @@ class MailboxConversationService(
                 accessLevel = accessLevels.getValue(row.expertContactId)
             )
         }
-        return ConversationListResponse(items, total, pageIndex, pageSize, reviewPendingTotal)
+        return ConversationListResponse(items, total, pageIndex, pageSize, reviewPendingTotal, filterCounts)
     }
 
     // ------------------------------------------------------------------

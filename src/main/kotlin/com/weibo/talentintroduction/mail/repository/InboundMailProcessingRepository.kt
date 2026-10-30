@@ -152,10 +152,16 @@ interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing
     @Query("""
         SELECT * FROM inbound_mail_processing
         WHERE process_status = 'MANUAL_REVIEW'
+          AND pending_owner_username = :actor
+          AND EXISTS (SELECT 1 FROM mail_sender_account a
+                       WHERE a.account_code = sender_account_code AND a.account_code <> 'SIMULATOR_NOOP')
+          AND (:actor <> 'user1' OR EXISTS (
+              SELECT 1 FROM expert_mail_read_access g WHERE g.username = :actor
+                AND g.expert_contact_id = inbound_mail_processing.expert_contact_id AND g.access_level = 'FULL'))
           AND (:reasonType IS NULL OR reason_type = :reasonType)
           AND (:email IS NULL OR from_email LIKE CONCAT('%', :email, '%'))
           AND (:subject IS NULL OR subject LIKE CONCAT('%', :subject, '%'))
-        ORDER BY received_at DESC
+        ORDER BY received_at DESC, id DESC
         LIMIT :limit OFFSET :offset
     """)
     fun findManualReviewQueue(
@@ -163,12 +169,19 @@ interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing
         email: String?,
         subject: String?,
         limit: Int,
-        offset: Int
+        offset: Int,
+        actor: String = "admin"
     ): List<InboundMailProcessing>
 
     @Query("""
         SELECT COUNT(*) FROM inbound_mail_processing
         WHERE process_status = 'MANUAL_REVIEW'
+          AND pending_owner_username = :actor
+          AND EXISTS (SELECT 1 FROM mail_sender_account a
+                       WHERE a.account_code = sender_account_code AND a.account_code <> 'SIMULATOR_NOOP')
+          AND (:actor <> 'user1' OR EXISTS (
+              SELECT 1 FROM expert_mail_read_access g WHERE g.username = :actor
+                AND g.expert_contact_id = inbound_mail_processing.expert_contact_id AND g.access_level = 'FULL'))
           AND (:reasonType IS NULL OR reason_type = :reasonType)
           AND (:email IS NULL OR from_email LIKE CONCAT('%', :email, '%'))
           AND (:subject IS NULL OR subject LIKE CONCAT('%', :subject, '%'))
@@ -176,7 +189,8 @@ interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing
     fun countManualReviewQueue(
         reasonType: String?,
         email: String?,
-        subject: String?
+        subject: String?,
+        actor: String = "admin"
     ): Long
 
     /**
@@ -186,6 +200,8 @@ interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing
     @Query("""
         SELECT * FROM inbound_mail_processing
         WHERE process_status = 'MANUAL_REVIEW'
+          AND pending_owner_username = :actor
+          AND :actor <> 'user1'
           AND expert_contact_id IS NULL
           AND sender_account_code IN (:accountCodes)
           AND (:query IS NULL
@@ -198,20 +214,23 @@ interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing
         accountCodes: List<String>,
         query: String?,
         limit: Int,
-        offset: Int
+        offset: Int,
+        actor: String = "admin"
     ): List<InboundMailProcessing>
 
     /** 同上 WHERE 的计数（I-8：过滤必须在 LIMIT/OFFSET 之前）。 */
     @Query("""
         SELECT COUNT(*) FROM inbound_mail_processing
         WHERE process_status = 'MANUAL_REVIEW'
+          AND pending_owner_username = :actor
+          AND :actor <> 'user1'
           AND expert_contact_id IS NULL
           AND sender_account_code IN (:accountCodes)
           AND (:query IS NULL
                OR from_email LIKE CONCAT('%', :query, '%')
                OR subject LIKE CONCAT('%', :query, '%'))
     """)
-    fun countUnmatchedManualReviewQueue(accountCodes: List<String>, query: String?): Long
+    fun countUnmatchedManualReviewQueue(accountCodes: List<String>, query: String?, actor: String = "admin"): Long
 
     @Query("""
         SELECT reason_type, COUNT(*) as count
@@ -224,18 +243,26 @@ interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing
     @Query("""
         SELECT COUNT(*) FROM inbound_mail_processing
         WHERE process_status = 'MANUAL_REVIEW'
+          AND pending_owner_username = :actor
+          AND (:actor <> 'user1' OR EXISTS (
+              SELECT 1 FROM expert_mail_read_access g WHERE g.username = :actor
+                AND g.expert_contact_id = inbound_mail_processing.expert_contact_id AND g.access_level = 'FULL'))
           AND sender_account_code IN (:accountCodes)
     """)
-    fun countManualReviewByAccounts(accountCodes: List<String>): Long
+    fun countManualReviewByAccounts(accountCodes: List<String>, actor: String = "admin"): Long
 
     @Query("""
         SELECT reason_type, COUNT(*) as count
         FROM inbound_mail_processing
         WHERE process_status = 'MANUAL_REVIEW' AND reason_type IS NOT NULL
+          AND pending_owner_username = :actor
+          AND (:actor <> 'user1' OR EXISTS (
+              SELECT 1 FROM expert_mail_read_access g WHERE g.username = :actor
+                AND g.expert_contact_id = inbound_mail_processing.expert_contact_id AND g.access_level = 'FULL'))
           AND sender_account_code IN (:accountCodes)
         GROUP BY reason_type
     """)
-    fun countGroupedByReasonTypeForAccounts(accountCodes: List<String>): List<ReasonTypeCount>
+    fun countGroupedByReasonTypeForAccounts(accountCodes: List<String>, actor: String = "admin"): List<ReasonTypeCount>
 
     @Query(
         """

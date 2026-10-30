@@ -35,8 +35,10 @@ class UnmatchedInboundMailService(
         pageSize: Int = 20,
         pageOffset: Int = 0,
         unmatchedOnly: Boolean = false,
-        query: String? = null
+        query: String? = null,
+        actor: String = "admin"
     ): ManualReviewQueueResult {
+        require(actor.isNotBlank()) { "未登录" }
         // I-2：账号范围与顶部 badge 同源（非模拟器），不附加 enabled 条件。
         val activeCodes = senderAccountRepository
             .findAllByAccountCodeNot(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
@@ -49,8 +51,8 @@ class UnmatchedInboundMailService(
                 emptyList<InboundMailProcessing>() to 0L
             } else {
                 inboundMailProcessingRepository.findUnmatchedManualReviewQueue(
-                    activeCodes, normalizedQuery, pageSize, pageOffset
-                ) to inboundMailProcessingRepository.countUnmatchedManualReviewQueue(activeCodes, normalizedQuery)
+                    activeCodes, normalizedQuery, pageSize, pageOffset, actor
+                ) to inboundMailProcessingRepository.countUnmatchedManualReviewQueue(activeCodes, normalizedQuery, actor)
             }
         } else {
             inboundMailProcessingRepository.findManualReviewQueue(
@@ -58,18 +60,20 @@ class UnmatchedInboundMailService(
                 email = email,
                 subject = subject,
                 limit = pageSize,
-                offset = pageOffset
+                offset = pageOffset,
+                actor = actor
             ) to inboundMailProcessingRepository.countManualReviewQueue(
                 reasonType = reasonType,
                 email = email,
-                subject = subject
+                subject = subject,
+                actor = actor
             )
         }
         val (manualReviewTotal, counts) = if (activeCodes.isEmpty()) {
             0L to emptyMap()
         } else {
-            val total = inboundMailProcessingRepository.countManualReviewByAccounts(activeCodes)
-            val grouped = inboundMailProcessingRepository.countGroupedByReasonTypeForAccounts(activeCodes)
+            val total = inboundMailProcessingRepository.countManualReviewByAccounts(activeCodes, actor)
+            val grouped = inboundMailProcessingRepository.countGroupedByReasonTypeForAccounts(activeCodes, actor)
                 .associate { it.reasonType to it.count }
             total to grouped
         }

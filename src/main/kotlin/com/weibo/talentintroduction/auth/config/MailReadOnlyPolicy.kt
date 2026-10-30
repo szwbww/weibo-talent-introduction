@@ -56,6 +56,7 @@ object MailReadOnlyPolicy {
     private val READER_ALLOWED_HANDLERS = listOf(
         AllowedHandler("GET", MailboxConversationController::class.java, "list"),
         AllowedHandler("GET", MailboxConversationController::class.java, "messages"),
+        AllowedHandler("GET", MailboxConversationController::class.java, "pendingBadge"),
         AllowedHandler("POST", MailReviewDraftController::class.java, "create"),
         AllowedHandler("GET", MailReviewDraftController::class.java, "list"),
         AllowedHandler("GET", MailReviewDraftController::class.java, "detail"),
