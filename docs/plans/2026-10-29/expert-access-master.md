@@ -54,7 +54,7 @@
 - 来源: original
 
 ### Invariant I-7: 计数按处理人、数量单位明确
-- Rule: 我的待处理=MANUAL_REVIEW且pending_owner_username=session，排除SIMULATOR_NOOP/不存在账号，保留禁用真实邮箱；user1再受可读/FULL准入约束。图标角标复用当前账号pendingBadge.total（邮件条数，含既有挂起排除），不受列表搜索/分页影响；0隐藏，失败显示不可用而非0。待处理tab数字仍为专家数，待审核是SUBMITTED草稿数。count/page/explain共用条件，All保留历史邮件。监控、来信汇总不变。
+- Rule: 我的待处理=MANUAL_REVIEW且pending_owner_username=session，排除SIMULATOR_NOOP/不存在账号，保留禁用真实邮箱；user1再受可读/FULL准入约束。图标角标复用当前账号pendingBadge.manualReviewTotal（邮件条数，含既有挂起排除），不受列表搜索/分页影响；0隐藏，失败显示不可用而非0。待处理tab数字仍为专家数，待审核是SUBMITTED草稿数。count/page/explain共用条件，All保留历史邮件。监控、来信汇总不变。
 - Applies to: 会话聚合/排序/分页、挂起、旧队列、顶栏及更多图标
 - Violation consequence: 列表与角标不一致或user1邮件仍进admin待处理
 - 来源: K-mailbox-inbound-source-authority
@@ -252,7 +252,7 @@
 ### 数据、接口和前端交接
 - 02提供accessLevel；NONE无行，READ/FULL有行。保持canRead兼容字段；list和messages实时能力由后端提供，不在localStorage记权限。
 - 05写owner，06统一消费：All不隐藏已委派专家；pendingOnly/排序/pendingCount/挂起个人数/旧队列按owner；needsManualAttention及全局历史统计维持专家整体语义。
-- 06提供expertScope及filterCounts，08只绑定现有popover第一项。filterCounts的可写单位是专家、待审单位是草稿；⋯复用pendingBadge.total单位是邮件。不复用mc-filter-count原“筛选项数”。
+- 06提供expertScope及filterCounts，08只绑定现有popover第一项。filterCounts的可写单位是专家、待审单位是草稿；⋯复用pendingBadge.manualReviewTotal单位是邮件。不复用mc-filter-count原“筛选项数”。
 - 07复用右侧现有发送/附件/管理/排期UI，只有一个富文本。READ标签可见但操作缺席；FULL服务端准入同样必须通过，即使前端旧页面还显示按钮。
 - 当前只读用户名/认证响应中的mailReadOnly用于识别受限账号壳，保持兼容；不把它改false来“让user1进入admin”。具体是否可写取当前专家accessLevel。
 
@@ -451,3 +451,4 @@ A-1覆盖最新“可读看标签不可改”；A-2/5/6/7覆盖FULL；A-3/4/9/15
 - 2026-10-30：04b完整消费审计证明原名单外中央PROCESSING guard登记及8个非空构造/Spring共享support/精确准入/行号fixture需要迁移（children/04b/execution.md Epoch1），持续授权下7→16的I-14有界例外；复用原guard/共享support，不新增能力/存储/fixture框架，不破坏原已开始SMTP的finalize。原稳定权限/owner/CAS/拒绝副作用保留，仅退役临时personal-draft全局禁用pin；全部新增fixture原门禁必须实际启用执行。
 - 2026-10-30：05既定窄UPDATE/回读/严格contact-first锁需要3个原名单外现有fixture迁移（children/05/execution.md Epoch1含完整save/mock/失败注入/重开锁收据），持续授权下I-14的9→12有界例外，产品/构造/API范围不变。退役save次数/副本实现pin、不换新转发pin；保留失败无ack/状态/UID/物理邮箱/审计/attention/归属安全行为，并fresh执行所有新增fixture。
 - 2026-10-30：06完整owner消费者及精确handler集合审计需4个原名单外fixture（children/06/execution.md Epoch1/addendum含全量参数/JDBC断言/矩阵/行号收据），持续授权下原12→16有界例外。SQL计数复用现有repository/JDBC/reviewPendingPredicate，不加产品依赖/新约定；只退役owner=session已取代的全局pending假设，原READ挂起403/default-deny/跨资源/账号/分页/幂等保持，新增fixture均须实际门禁。
+- 2026-10-30：真实既有MailboxPendingBadge DTO与app refreshUnmatchedBadge消费的是manualReviewTotal，不存在total（完整DTO/app/grep收据见children/06/execution.md Epoch2）。持续授权下仅纠正master/06/07/08的pendingBadge.total规划误名为pendingBadge.manualReviewTotal，保留原wire，不加alias/shim、不迁移DTO/额外调用方；个人未挂起邮件数/0隐藏/失败不可用/专家数与草稿数分离等行为不变。06部分已授权实现于新epoch对齐后继续，旧epoch未测不算PASS。

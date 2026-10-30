@@ -21,7 +21,7 @@
 - 来源: K-session-auth-does-not-imply-mail-authorization
 
 ### Invariant I-7: 计数按处理人、数量单位明确
-- Rule: 我的待处理=MANUAL_REVIEW且pending_owner_username=session，排除SIMULATOR_NOOP/不存在账号，保留禁用真实邮箱；user1再受可读/FULL准入约束。图标角标复用当前账号pendingBadge.total（邮件条数，含既有挂起排除），不受列表搜索/分页影响；0隐藏，失败显示不可用而非0。待处理tab数字仍为专家数，待审核是SUBMITTED草稿数。count/page/explain共用条件，All保留历史邮件。监控、来信汇总不变。
+- Rule: 我的待处理=MANUAL_REVIEW且pending_owner_username=session，排除SIMULATOR_NOOP/不存在账号，保留禁用真实邮箱；user1再受可读/FULL准入约束。图标角标复用当前账号pendingBadge.manualReviewTotal（邮件条数，含既有挂起排除），不受列表搜索/分页影响；0隐藏，失败显示不可用而非0。待处理tab数字仍为专家数，待审核是SUBMITTED草稿数。count/page/explain共用条件，All保留历史邮件。监控、来信汇总不变。
 - Applies to: 会话聚合/排序/分页、挂起、旧队列、顶栏及更多图标
 - Violation consequence: 列表与角标不一致或user1邮件仍进admin待处理
 - 来源: K-mailbox-inbound-source-authority
@@ -47,7 +47,7 @@ E05/E06/E09与审计§2、§5。pending_flag→SUM→排序/HAVING/total同链�
 1. MailboxConversationRepository把owner条件作用于pending_flag，不删rangeUnion中的其他来信；count/page/explain一致注入session参数，All仍含原timeline。suspensionStatesByContacts亦按本人owner统计；保留当前账号筛选对列表pendingCount的影响，跨账号suspensionPendingCount仍跨账号但只本人（I-7）。
 2. MailboxSuspensionService.pendingBadge保留原真实邮箱join与用户挂起排除，再加owner；pendingCount/contact准入按当前用户owner，不能挂起只有另一人的pending。旧队列Repository list/count/reason totals增加actor参数，Service/Controller从session显式传入，内部旧调用默认admin只作兼容；不把user1无contact来信开放（I-2/I-7）。
 3. conversation list新增expertScope=ALL/USER1_FULL/PENDING_REVIEW，严格枚举；仅admin可请求后两项（user1用现有权限过滤+个人pending）。USER1_FULL用grant EXISTS；PENDING_REVIEW复用既有review-only SQL，不能查出来后内存过滤；所有筛选AND，count/page/explain同一谓词（I-7）。
-4. 为更多筛选提供管理员计数`user1FullExpertCount`（拥有真实会话的FULL专家数）及`pendingReviewDraftCount`（可见SUBMITTED草稿数），计数不受当前页/q/普通筛选影响，沿全部非SIMULATOR真实账号口径；必须由SQL/既有审核Service真实读取。放在conversation list响应增加可选filterCounts，空页仍返回；user1不返回管理员统计。全局pendingBadge.total仍由既有独立端点，和草稿数分开（I-7）。
+4. 为更多筛选提供管理员计数`user1FullExpertCount`（拥有真实会话的FULL专家数）及`pendingReviewDraftCount`（可见SUBMITTED草稿数），计数不受当前页/q/普通筛选影响，沿全部非SIMULATOR真实账号口径；必须由SQL/既有审核Service真实读取。放在conversation list响应增加可选filterCounts，空页仍返回；user1不返回管理员统计。全局pendingBadge.manualReviewTotal仍由既有独立端点，和草稿数分开（I-7）。
 5. 三个现有IT测试扩大数据矩阵：同专家双方owner、两页、多账号/disabled、挂起、provided、reopen、同日期排序；真实EXPLAIN记录归属索引与count/page结果，验证全局来信汇总未改变（I-7/I-12/I-13）。
 6. 仅在个人owner SQL/挂起准入完成后，接续03暂缓的精确key：pendingBadge GET只取session；suspension GET、suspend PUT、updateSuspensionReason PATCH、resumeSuspension DELETE均先验FULL path contact并由本步服务限制本人pending。只改policy登记/guard固定规则，不新增flag/schema探测/宽泛前缀；既有InboundPendingOwnerIT加载真实AuthWebConfig证明准入与跨专家/READ拒绝。
 
@@ -149,3 +149,4 @@ E05/E06/E09与审计§2、§5。pending_flag→SUM→排序/HAVING/total同链�
 ## 修正记录
 - 2026-10-30：按持续授权及03实际无owner SQL收据（fast-p children/03/execution.md Epoch1），将pendingBadge/suspension准入推迟至本步既定个人owner SQL后。补入policy/guard两个直接激活文件，10→12的I-14有界例外；既有owner IT增加真实AuthWebConfig准入回归，不以03暂拒变为最终缺失，不改最终UI/人工验收。
 - 2026-10-30：持续授权下补4个owner消费/参数/精确矩阵/行号fixture，12→16有界例外；完整grep、真实JDBC旧globalpending断言、matcher参数和handler精确集合/lineguard收据见fast-p children/06/execution.md Epoch1及addendum。只退役与owner=session直接冲突的全局pending pin，稳定READ/NONE/跨资源/账号/分页/幂等/拒绝副作用保持；不新增产品依赖，复用原SQL/JDBC/review谓词，所有新增fixture实际执行。
+- 2026-10-30：Epoch2真实DTO/app/完整grep证明既有字段manualReviewTotal而非total；持续授权下规划命名对齐，不加alias/shim或wire切换，所有计数/权限/失败行为不减。旧epoch部分授权实现保持未验证，按新身份epoch3完成已有16文件与全部fresh门禁/runtime。

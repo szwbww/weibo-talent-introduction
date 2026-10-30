@@ -21,7 +21,7 @@
 - 来源: original
 
 ### Invariant I-7: 计数按处理人、数量单位明确
-- Rule: 我的待处理=MANUAL_REVIEW且pending_owner_username=session，排除SIMULATOR_NOOP/不存在账号，保留禁用真实邮箱；user1再受可读/FULL准入约束。图标角标复用当前账号pendingBadge.total（邮件条数，含既有挂起排除），不受列表搜索/分页影响；0隐藏，失败显示不可用而非0。待处理tab数字仍为专家数，待审核是SUBMITTED草稿数。count/page/explain共用条件，All保留历史邮件。监控、来信汇总不变。
+- Rule: 我的待处理=MANUAL_REVIEW且pending_owner_username=session，排除SIMULATOR_NOOP/不存在账号，保留禁用真实邮箱；user1再受可读/FULL准入约束。图标角标复用当前账号pendingBadge.manualReviewTotal（邮件条数，含既有挂起排除），不受列表搜索/分页影响；0隐藏，失败显示不可用而非0。待处理tab数字仍为专家数，待审核是SUBMITTED草稿数。count/page/explain共用条件，All保留历史邮件。监控、来信汇总不变。
 - Applies to: 会话聚合/排序/分页、挂起、旧队列、顶栏及更多图标
 - Violation consequence: 列表与角标不一致或user1邮件仍进admin待处理
 - 来源: K-mailbox-inbound-source-authority
@@ -97,7 +97,7 @@ E18–E21、audit§5：现有FILTER_FIELDS单一节点迁移，原mc-filter-coun
 ## 实现方案
 1. mailbox-chat将readAccess Boolean状态改三态level，header按S-2直接select；change立即PUT body（NONE用DELETE），saving禁用。捕获user/contact/generation；成功刷新列表和统计，失败恢复已确认等级并显示错误，晚回包不得改另一专家（I-1/I-9/I-10、S-2）。
 2. FILTER_FIELDS最前新增expertScope项，mount时只插入一个节点；原七个字段迁移/还原逻辑保留。ALL清除scope；USER1_FULL/PENDING_REVIEW映射06参数，应用后page=0；Reset将scope回ALL并按原规则保留tab/q；原旧reviewOnly状态与新scope只有一个authority（I-9/I-11、S-3）。
-3. 更多图标新增S-3角标，数据复用当前session pendingBadge.total，由app的既有成功刷新路径通知当前host；首次mount主动读取，mark/reopen/挂起/撤权/刷新后重读；不要先开popover才取数。停止显示原筛选数badge，原filter-summary仍可读已选条件。总数与当前页无关；请求失败角标不可冒充0（I-7/I-9/I-10）。
+3. 更多图标新增S-3角标，数据复用当前session pendingBadge.manualReviewTotal，由app的既有成功刷新路径通知当前host；首次mount主动读取，mark/reopen/挂起/撤权/刷新后重读；不要先开popover才取数。停止显示原筛选数badge，原filter-summary仍可读已选条件。总数与当前页无关；请求失败角标不可冒充0（I-7/I-9/I-10）。
 4. 两个scope选项counts来自06.filterCounts；pending-review仍右侧同专家/同编辑器，不弹草稿列表。逐条待审标记、翻译小文字按钮、批准后确认规则沿原review05。不再生成mailboxReviewPendingBtn或刷新旁下拉（I-11/S-3）。
 5. app/index移除旧顶部review按钮生成/绑定路径（若前置计划按本修正已不生成，则不造再删）；保留审核模块加载。更新旧按钮契约测试，不弱化成仅检索新文本；样式只新增S-2/S-3，既有mc-icon/mc-filter-count规则不改（I-9/S-2/S-3）。
 
@@ -189,3 +189,6 @@ E18–E21、audit§5：现有FILTER_FIELDS单一节点迁移，原mc-filter-coun
 本节为权威清单；进入人工验收时才导出同名前缀-acceptance.md，本次不生成衍生表。涉及尚未到本步的UI，使用同会话API执行等价动作并在最终08再次通过UI验证。
 
 跨阶段人工项引用的其他I/S条款，以总计划同编号定义为准；本步实现仍严格限定本文件清单。
+
+## 修正记录
+- 2026-10-30：持续授权下纠正既有pendingBadge总邮件wire字段为manualReviewTotal（不是total），完整DTO/app/grep证据见fast-p children/06/execution.md Epoch2；保留SSOT与已有调用方，不加alias/shim、不改变个人未挂起邮件数、0隐藏、失败不可用和最终S-3样式/交互。

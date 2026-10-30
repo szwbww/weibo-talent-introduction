@@ -39,7 +39,7 @@
 - 来源: K-manual-send-success-transaction-and-dedup
 
 ### Invariant I-7: 计数按处理人、数量单位明确
-- Rule: 我的待处理=MANUAL_REVIEW且pending_owner_username=session，排除SIMULATOR_NOOP/不存在账号，保留禁用真实邮箱；user1再受可读/FULL准入约束。图标角标复用当前账号pendingBadge.total（邮件条数，含既有挂起排除），不受列表搜索/分页影响；0隐藏，失败显示不可用而非0。待处理tab数字仍为专家数，待审核是SUBMITTED草稿数。count/page/explain共用条件，All保留历史邮件。监控、来信汇总不变。
+- Rule: 我的待处理=MANUAL_REVIEW且pending_owner_username=session，排除SIMULATOR_NOOP/不存在账号，保留禁用真实邮箱；user1再受可读/FULL准入约束。图标角标复用当前账号pendingBadge.manualReviewTotal（邮件条数，含既有挂起排除），不受列表搜索/分页影响；0隐藏，失败显示不可用而非0。待处理tab数字仍为专家数，待审核是SUBMITTED草稿数。count/page/explain共用条件，All保留历史邮件。监控、来信汇总不变。
 - Applies to: 会话聚合/排序/分页、挂起、旧队列、顶栏及更多图标
 - Violation consequence: 列表与角标不一致或user1邮件仍进admin待处理
 - 来源: K-mailbox-inbound-source-authority
@@ -245,3 +245,6 @@ E17/E24–E27/E31/E33/E34及audit§5：独立模块是已实现事实；完整Ma
 本节为权威清单；进入人工验收时才导出同名前缀-acceptance.md，本次不生成衍生表。涉及尚未到本步的UI，使用同会话API执行等价动作并在最终08再次通过UI验证。
 
 跨阶段人工项引用的其他I/S条款，以总计划同编号定义为准；本步实现仍严格限定本文件清单。
+
+## 修正记录
+- 2026-10-30：持续授权下纠正继承规划pendingBadge.total误名为既有pendingBadge.manualReviewTotal；DTO/app/完整grep证据见fast-p children/06/execution.md Epoch2。无alias/wire迁移，邮件/专家/草稿数量单位、权限与最终UI行为不变。
