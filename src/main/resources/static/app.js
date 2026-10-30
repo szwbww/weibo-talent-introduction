@@ -21459,6 +21459,8 @@ function mailboxChatEligible() {
 }
 
 function unmountMailboxChatHosts() {
+    const reviewButton = $("#mailboxReviewPendingBtn");
+    if (reviewButton) { reviewButton.hidden = true; reviewButton.onclick = null; }
     if (!mailboxChatAvailable()) return;
     const list = $("#mailboxList");
     if (!list) return;
@@ -21477,6 +21479,8 @@ function syncMailboxChatChrome(chatOn) {
     if (viewControls) viewControls.hidden = !!chatOn;
     const pagination = $("#mailboxPagination");
     if (pagination) pagination.hidden = !!chatOn;
+    const reviewButton = $("#mailboxReviewPendingBtn");
+    if (reviewButton && !chatOn) { reviewButton.hidden = true; reviewButton.onclick = null; }
     let view = typeof document.getElementById === "function" ? document.getElementById("view-mailbox") : null;
     if (!view && typeof document.querySelector === "function") {
         view = document.querySelector("#view-mailbox");
@@ -21520,7 +21524,24 @@ function refreshMailboxChatList() {
             return Promise.resolve();
         }
     }
-    const mountOptions = { filters: mailboxChatFilterSnapshot() };
+    let handle;
+    const reviewButton = $("#mailboxReviewPendingBtn");
+    const mountOptions = { filters: mailboxChatFilterSnapshot(),
+        onReviewPendingSummary: (summary) => {
+            if (!reviewButton) return;
+            reviewButton.hidden = false;
+            reviewButton.disabled = summary.loading && summary.count == null;
+            reviewButton.textContent = summary.error ? "待审核 · 加载失败"
+                : summary.count == null ? "待审核 …" : `待审核 ${summary.count}`;
+            reviewButton.setAttribute("aria-pressed", String(summary.active));
+            reviewButton.classList.toggle("primary", summary.active);
+            reviewButton.onclick = () => {
+                if (!handle || !state.mailbox.chatMounted) return;
+                if (summary.error) return handle.refresh();
+                return handle.setReviewPendingOnly(!summary.active);
+            };
+        }
+    };
     // contextPath 是 app.js 顶层 const 词法绑定（非 window 属性）：宿主守卫测试在隔离
     // 沙箱里逐函数执行 refreshMailboxChatList，typeof 守卫让无绑定的沙箱安全回退空前缀。
     if (typeof contextPath !== "undefined") mountOptions.contextPath = contextPath;
@@ -21531,7 +21552,7 @@ function refreshMailboxChatList() {
         };
     }
     try {
-        MailboxChat.mount(list, mountOptions);
+        handle = MailboxChat.mount(list, mountOptions);
         state.mailbox.chatMounted = true;
         return Promise.resolve();
     } catch (e) {

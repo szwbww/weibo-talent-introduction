@@ -8,13 +8,13 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20261029-review-reader">
-    <link rel="stylesheet" href="expert-materials.css?v=20261029-review-reader">
-    <link rel="stylesheet" href="mailbox-chat.css?v=20261029-review-reader">
-    <link rel="stylesheet" href="meeting-confirmation.css?v=20261029-review-reader">
-    <link rel="stylesheet" href="world-clock.css?v=20261029-review-reader">
-<link rel="stylesheet" href="meeting-records.css?v=20261029-review-reader">
-<link rel="stylesheet" href="contact-details.css?v=20261029-review-reader">
+    <link rel="stylesheet" href="styles.css?v=20261029-review-admin">
+    <link rel="stylesheet" href="expert-materials.css?v=20261029-review-admin">
+    <link rel="stylesheet" href="mailbox-chat.css?v=20261029-review-admin">
+    <link rel="stylesheet" href="meeting-confirmation.css?v=20261029-review-admin">
+    <link rel="stylesheet" href="world-clock.css?v=20261029-review-admin">
+<link rel="stylesheet" href="meeting-records.css?v=20261029-review-admin">
+<link rel="stylesheet" href="contact-details.css?v=20261029-review-admin">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -797,6 +797,7 @@
                 <div class="panel-head">
                     <h2>已激活账号收发邮件记录</h2>
                     <div class="panel-head-actions">
+                        <button class="button" id="mailboxReviewPendingBtn" type="button" aria-pressed="false" hidden>待审核 <span data-role="review-pending-count">0</span></button>
                         <button class="button" id="checkRepliesBtn" onclick="handleCheckReplies()">检查回复</button>
                         <button class="button primary" id="bulkOutreachBtn" onclick="handleBulkOutreach()">批量发送</button>
                         <button class="button" id="bulkAutoReplyBtn">自动回复：加载中...</button>
@@ -2515,17 +2516,17 @@
 <dialog id="playerDialog" class="cr-dialog cr-player-dialog"><header class="cr-dialoghead"><h2 id="playerTitle">会议视频</h2><button class="button cr-iconbtn" type="button" data-close="playerDialog" aria-label="关闭视频">×</button></header><video id="player" controls preload="metadata"></video><p class="cr-hint" id="playerHint">若浏览器不支持该编码，可下载原视频观看。</p></dialog>
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20261029-review-reader"></script>
-<script src="expert-materials.js?v=20261029-review-reader"></script>
-<script src="meeting-confirmation.js?v=20261029-review-reader"></script>
-<script src="mailbox-chat.js?v=20261029-review-reader"></script>
-<script src="contact-history.js?v=20261029-review-reader"></script>
-<script src="meeting-records.js?v=20261029-review-reader"></script>
-<script src="contact-details.js?v=20261029-review-reader"></script>
-<script src="discovery-papers.js?v=20261029-review-reader"></script>
-<script src="discovery-recheck.js?v=20261029-review-reader"></script>
-<script src="mailbox-readonly.js?v=20261029-review-reader"></script>
-<script src="app.js?v=20261029-review-reader"></script>
-<script src="world-clock.js?v=20261029-review-reader"></script>
+<script src="trust-reply-workbench.js?v=20261029-review-admin"></script>
+<script src="expert-materials.js?v=20261029-review-admin"></script>
+<script src="meeting-confirmation.js?v=20261029-review-admin"></script>
+<script src="mailbox-chat.js?v=20261029-review-admin"></script>
+<script src="contact-history.js?v=20261029-review-admin"></script>
+<script src="meeting-records.js?v=20261029-review-admin"></script>
+<script src="contact-details.js?v=20261029-review-admin"></script>
+<script src="discovery-papers.js?v=20261029-review-admin"></script>
+<script src="discovery-recheck.js?v=20261029-review-admin"></script>
+<script src="mailbox-readonly.js?v=20261029-review-admin"></script>
+<script src="app.js?v=20261029-review-admin"></script>
+<script src="world-clock.js?v=20261029-review-admin"></script>
 </body>
 </html>

@@ -12,7 +12,7 @@ const harnessSource = fs.readFileSync(harnessPath, "utf8");
 const harness = { require, __dirname, console, URL, URLSearchParams, setImmediate };
 vm.createContext(harness);
 vm.runInContext(harnessSource.slice(0, harnessSource.indexOf('describe("mailbox chat mount')) +
-    '\nglobalThis.helpers = { createDraftServer, createDom, mountChat, bootChat, flush, click, inputEvent, setEditorContent, expertA, expertB, messagesA, contactA, chipButton, toggleOpen, extractFn };', harness);
+    '\nglobalThis.helpers = { createDraftServer, createDom, mountChat, bootChat, flush, click, inputEvent, changeEvent, setEditorContent, expertA, expertB, messagesA, contactA, chipButton, toggleOpen, extractFn };', harness);
 const H = harness.helpers;
 const ROOT = path.join(__dirname, "../../main/resources/static");
 const appSource = fs.readFileSync(path.join(ROOT, "app.js"), "utf8");
@@ -502,6 +502,7 @@ describe("server drafts I-3: real app navigation and logout closures", () => {
             $: (selector) => doc.querySelector(selector),
             $$: (selector) => doc.querySelectorAll(selector),
             mailboxChatAvailable: () => true,
+            isMailReadOnlyMode: () => false,
             MailboxChat: { hasPendingDrafts: () => true, flushDrafts: flush },
             refreshCurrentView: () => calls.push(["view", sandbox.state.view]),
             unmountAiTrainingTrustReply: () => {},
@@ -665,5 +666,36 @@ describe("server drafts I-2/I-6: generated OUTBOUND requestId save ordering", ()
         assert.equal(captured.body.textBody, captured.row.content.text);
         assert.ok(captured.writes.some((entry) => entry.body.content.context.requestId === captured.body.requestId), "idempotency id reached server before send");
         assert.equal(read(server, target).state, "ACTIVE"); assert.equal(editor(ctx).innerText, "outbound request bytes");
+    });
+});
+
+describe("review I-20: original server draft ownership", () => {
+    it("a pending original save finishes before entering review; later status refresh cannot enable or overwrite it", async () => {
+        const server = H.createDraftServer(), hold = firstHold(server);
+        const review = { id: 501, contactId: 1, version: 1, ownerUsername: "user1", state: "SUBMITTED",
+            subject: "User subject", html: "<p>User review B</p>", text: "User review B", commentCount: 0, sendStatus: "NOT_SENT" };
+        const ctx = await boot(server, { route: (url, method, body, entry, next) => {
+            if (url.startsWith("/api/mail/mailbox/review-drafts?")) return Promise.resolve({ items: [review], total: 1 });
+            if (url === "/api/mail/mailbox/review-drafts/501") return Promise.resolve(review);
+            return next(url, method, body, entry);
+        } });
+        type(ctx, "Admin original A");
+        const selection = ctx.host.querySelector('[data-role="review-selection"]');
+        selection.value = "review:501";
+        H.changeEvent(selection);
+        await H.flush();
+        assert.equal(editor(ctx).innerText, "Admin original A");
+        assert.equal(puts(server).length, 1);
+        hold.release(); await H.flush();
+        assert.equal(read(server).content.text, "Admin original A");
+        assert.match(editor(ctx).textContent, /User review B/);
+        assert.equal(editor(ctx).getAttribute("contenteditable"), "false");
+        ctx.runTimers(); await H.flush();
+        assert.equal(puts(server).length, 1);
+        assert.equal(ctx.host.querySelector('[data-action="mc-send-manual"]'), null);
+        assert.equal(ctx.host.querySelector('[data-review-action="send"]'), null);
+        ctx.sandbox.MailboxChat.unmount(ctx.host);
+        await H.flush();
+        assert.equal(read(server).content.text, "Admin original A");
     });
 });

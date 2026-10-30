@@ -100,7 +100,9 @@ test('approved exact root, full CSS, real IDs, only allowed classes and no inlin
         .replace('<button class="button secondary" type="button" data-rr="prepare">', '<button class="button secondary" type="button" data-rr="cancel-preparation" disabled>取消当前任务</button><button class="button secondary" type="button" data-rr="prepare">');
     assert.ok(html.includes(amended));
     const expectedCss = plan.match(/```css\n([\s\S]*?)\n```/)[1];
-    assert.equal(css.slice(css.indexOf('.dr-recheck{')).trimEnd(), expectedCss.trimEnd());
+    const moduleStart = css.indexOf('.dr-recheck{');
+    assert.ok(moduleStart >= 0);
+    assert.equal(css.slice(moduleStart, moduleStart + expectedCss.trimEnd().length), expectedCss.trimEnd());
     const d = dom();
     for (const id of ['discoveryRecheckRoot', 'recheckConfigTitle', 'recheckHistoryTitle', 'recheckDetailTitle']) assert.ok(d.getElementById(id), id);
     const root = d.getElementById('discoveryRecheckRoot');

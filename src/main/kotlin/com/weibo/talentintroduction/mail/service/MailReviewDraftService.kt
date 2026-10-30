@@ -300,7 +300,7 @@ class MailReviewDraftService(
         if (row.subject.isBlank() || row.text.isBlank()) invalid()
         val texts = arrayOf(row.subject, row.html, row.text)
         try {
-            texts.forEach { placeholders.requireValidPlaceholders(it) }
+            texts.forEach { placeholders.requireValidTemplatePlaceholders(it) }
             if (placeholders.placeholderKeysIn(*texts).isNotEmpty())
                 throw MailReviewDraftException(422, "REVIEW_INVALID_CONTENT", "请填写实际内容后提交")
         } catch (e: IllegalArgumentException) {
