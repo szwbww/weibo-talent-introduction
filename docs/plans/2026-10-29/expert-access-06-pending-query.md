@@ -74,8 +74,9 @@ E05/E06/E09与审计§2、§5。pending_flag→SUM→排序/HAVING/total同链�
 | 15 | `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt` | 仅原unmatched-controller noise-site行号，路径/上下文/规则不变 |
 | 16 | `src/test/kotlin/com/weibo/talentintroduction/auth/config/AuthInterceptorTest.kt` | 精确矩阵只加已完成5个owner路由；现有READ挂起403及其他default-deny不变 |
 | 17 | `src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewQueryIT.kt` | 仅退役旧精确2条review SQL的实现pin；保留小/大页恒定批量、no-body SQL、reader零review查询/跨资源拒绝；不得重钉3 |
+| 18 | `src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt` | 仅补已有DDL中每来源cleaned_body与body相同collation，仍保持outbound unicode_ci/inbound general_ci不同及全部原断言；不改产品SQL |
 
-合计 **17 文件**；I-14例外仅为原10加2个延迟owner路由激活文件及5个已证明fixture消费者；不扩大产品能力/字段，auth/mail边界不变，新增共享store字段0。
+合计 **18 文件**；I-14例外仅为原10加2个延迟owner路由激活文件及6个已证明必需fixture；不扩大产品能力/字段，auth/mail边界不变，新增共享store字段0。
 
 ## 验收标准
 - I-2：真实AuthWebConfig+MVC逐个运行路由矩阵：NONE/READ/FULL/跨专家/admin；403之前SMTP、ES和文件流读取调用为0；未列端点仍403。
@@ -86,6 +87,7 @@ E05/E06/E09与审计§2、§5。pending_flag→SUM→排序/HAVING/total同链�
 门禁：JDK11 mvn test -Dtest=MailboxConversationRepositoryIT,MailboxSuspensionServiceIT,InboundPendingOwnerIT -DmysqlIt=true；原监控/来信汇总测试回归；不得跳过DB用内存假结果替代。
 追加MailboxConversationControllerTest、UnmatchedInboundMailServiceTest、OperatorStatusWriteSeamGuardTest、AuthInterceptorTest及真实InboundMailProcessingRepositoryTest原回归，按实际mysqlIt/migrationIt门禁显式启用、目标零skip。过滤计数复用原repository/JDBC/reviewPendingPredicate，无新增构造依赖或第二计数约定；全局历史统计与原监控验收不减。
 MailReviewQueryIT亦须fresh -DmysqlIt=true、目标零skip；新未过滤管理员toolbar草稿数与原过滤total/页内投影语义不同，保留真实统计，不为旧精确查询数pin省略统计或改成新数量pin。仍保留恒定批量、禁止正文列、reader不读管理员review统计等行为。
+监控fixture使用自有mysql:8.0.36；仅在原body ALTER旁同步各来源cleaned_body，不能用连接参数、skip或产品SQL补丁掩盖1267。保持不同来源collation验收及所有原断言，重新实际执行监控/汇总必需门禁。
 
 测试环境使用隔离MySQL/测试SMTP与临时附件目录；不得把mysqlIt连生产库。跳过/未运行必须记NOT_RUN，不能写PASS。
 
@@ -153,3 +155,4 @@ MailReviewQueryIT亦须fresh -DmysqlIt=true、目标零skip；新未过滤管理
 - 2026-10-30：持续授权下补4个owner消费/参数/精确矩阵/行号fixture，12→16有界例外；完整grep、真实JDBC旧globalpending断言、matcher参数和handler精确集合/lineguard收据见fast-p children/06/execution.md Epoch1及addendum。只退役与owner=session直接冲突的全局pending pin，稳定READ/NONE/跨资源/账号/分页/幂等/拒绝副作用保持；不新增产品依赖，复用原SQL/JDBC/review谓词，所有新增fixture实际执行。
 - 2026-10-30：Epoch2真实DTO/app/完整grep证明既有字段manualReviewTotal而非total；持续授权下规划命名对齐，不加alias/shim或wire切换，所有计数/权限/失败行为不减。旧epoch部分授权实现保持未验证，按新身份epoch3完成已有16文件与全部fresh门禁/runtime。
 - 2026-10-30：Epoch3完整grep/实读证明MailReviewQueryIT:232钉死2条review SQL，与新增未过滤toolbar计数不相容（完整语义/调用链收据见children/06/execution.md Epoch3）；持续授权下只补该第17个fixture，退役精确次数pin、不重钉3、不删除恒定批量/no-body/reader零查询行为。既有unmapped POST→500不是本功能HandlerMethod准入，退役新fixture的错误403假设，不改global error mapping；保留真实资源矩阵与纯policy错verb/default-deny。部分实现epoch4完成fresh门禁/runtime。
+- 2026-10-30：Epoch4 owner60及消费者101通过，但原必需监控门禁220/5error/0skip，均为未改动MailRecordRepositoryMonitoringIT自有库夹具只ALTER body、遗漏cleaned_body的SQL1267；完整源/诊断/同base哈希收据见children/06/execution.md Epoch4。持续授权下17→18仅该fixture的对应cleaned_body DDL，不改产品SQL/已应用迁移/断言、不以连接设置或skip掩盖。原跨来源unicode_ci/general_ci差异保留；并未承诺支持任意同来源混合column collation。新epoch5完成fresh门禁/runtime，历史失败如实保留。
