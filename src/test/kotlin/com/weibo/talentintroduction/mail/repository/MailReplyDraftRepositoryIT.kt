@@ -57,6 +57,7 @@ class MailReplyDraftRepositoryIT {
     }
     private val jdbc by lazy { JdbcTemplate(dataSource) }
     private val repository by lazy { MailReplyDraftRepository(NamedParameterJdbcTemplate(dataSource)) }
+    private val guard by lazy { NamedParameterJdbcTemplate(dataSource).let { ExpertMailPermissionGuard(ExpertMailReadAccessService(it),it) } }
     private val tx by lazy { TransactionTemplate(DataSourceTransactionManager(dataSource)) }
     private val now = LocalDateTime.of(2026,10,8,12,0)
     private val target = MailReplyDraftTarget(9101,MailReplyDraftKind.OUTBOUND)
@@ -83,7 +84,7 @@ class MailReplyDraftRepositoryIT {
         `when`(contacts.existsById(9101)).thenReturn(true)
         val metadata = OutboundMailAttachmentRepository(NamedParameterJdbcTemplate(dataSource))
         val attachmentService = OutboundAttachmentService(MailAttachmentStorageProperties(basePath="/nonexistent/draft-test-no-file-access"),metadata,contacts)
-        val service = MailReplyDraftService(repository,contacts,mock(InboundMailProcessingRepository::class.java),mock(MailSenderAccountRepository::class.java),attachmentService)
+        val service = MailReplyDraftService(repository,contacts,mock(InboundMailProcessingRepository::class.java),mock(MailSenderAccountRepository::class.java),attachmentService,guard)
         val ownId = java.util.UUID.randomUUID().toString()
         val foreignId = java.util.UUID.randomUUID().toString()
         listOf(ownId to "A",foreignId to "B").forEach { (id,owner) ->
@@ -176,7 +177,7 @@ class MailReplyDraftRepositoryIT {
     @Test fun `runtime HTTP sessions restore conflict discard reopen and business isolation`() {
         val contacts = mock(ExpertContactRepository::class.java)
         `when`(contacts.existsById(9101)).thenAnswer { jdbc.queryForObject("SELECT COUNT(*) FROM expert_contact WHERE id=9101",Long::class.java)!! > 0 }
-        val serviceTarget = MailReplyDraftService(repository,contacts,mock(InboundMailProcessingRepository::class.java),mock(MailSenderAccountRepository::class.java),mock(OutboundAttachmentService::class.java))
+        val serviceTarget = MailReplyDraftService(repository,contacts,mock(InboundMailProcessingRepository::class.java),mock(MailSenderAccountRepository::class.java),mock(OutboundAttachmentService::class.java),guard)
         val service = ProxyFactory(serviceTarget).apply {
             isProxyTargetClass = true
             addAdvice(TransactionInterceptor(tx.transactionManager!!,AnnotationTransactionAttributeSource()))

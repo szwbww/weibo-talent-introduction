@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.mail.repository
 
+import com.weibo.talentintroduction.auth.config.MailReadOnlyPolicy
 import com.weibo.talentintroduction.mail.service.*
 import org.springframework.jdbc.core.RowMapper
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
@@ -47,10 +48,18 @@ class MailReplyDraftRepository(private val jdbc: NamedParameterJdbcTemplate) {
         WHERE id=:id AND username=:owner AND version=:version AND state='ACTIVE'""", mapOf("owner" to owner,"id" to id,"version" to version,"now" to now)) == 1
 
     private fun scopeSql(scope: String?) = if (scope == null) "" else " AND d.account_scope=:scope"
+    private fun accessSql(owner: String) = if (!MailReadOnlyPolicy.isReader(owner)) "" else """
+        AND EXISTS (SELECT 1 FROM expert_mail_read_access access
+            JOIN expert_contact contact ON contact.id=access.expert_contact_id
+            WHERE access.username=:owner AND access.expert_contact_id=d.expert_contact_id AND access.access_level='FULL')
+        AND (d.target_kind='OUTBOUND' OR EXISTS (SELECT 1 FROM inbound_mail_processing source
+            WHERE source.id=d.inbound_processing_id AND source.expert_contact_id=d.expert_contact_id
+                AND source.sender_account_code=d.account_scope))
+    """
     private fun listParams(owner: String, scope: String?, search: String?): Map<String, Any?> = mapOf("owner" to owner,"scope" to scope,
         "search" to ("%" + search.orEmpty().replace("!","!!").replace("%","!%").replace("_","!_") + "%"))
     fun list(owner: String, scope: String?, search: String?, page: Int, size: Int): MailReplyDraftList {
-        val filter = " WHERE d.username=:owner AND d.state='ACTIVE'" + scopeSql(scope) +
+        val filter = " WHERE d.username=:owner AND d.state='ACTIVE'" + scopeSql(scope) + accessSql(owner) +
             if (search.isNullOrEmpty()) "" else " AND (c.expert_name LIKE :search ESCAPE '!' OR c.expert_email LIKE :search ESCAPE '!' OR d.subject LIKE :search ESCAPE '!')"
         val params = listParams(owner,scope,search) + mapOf("limit" to size,"offset" to page.toLong()*size)
         val total = jdbc.queryForObject("SELECT COUNT(*) FROM mailbox_reply_draft d LEFT JOIN expert_contact c ON c.id=d.expert_contact_id$filter",params,Long::class.java) ?: 0
@@ -64,7 +73,7 @@ class MailReplyDraftRepository(private val jdbc: NamedParameterJdbcTemplate) {
         return MailReplyDraftList(items,total,page,size)
     }
     fun summaries(owner: String, scope: String?, contacts: List<Long>): MailReplyDraftSummaries {
-        val filter = " WHERE d.username=:owner AND d.state='ACTIVE'" + scopeSql(scope)
+        val filter = " WHERE d.username=:owner AND d.state='ACTIVE'" + scopeSql(scope) + accessSql(owner)
         val params = mapOf("owner" to owner,"scope" to scope,"contacts" to contacts)
         val total = jdbc.queryForObject("SELECT COUNT(*) FROM mailbox_reply_draft d$filter",params,Long::class.java) ?: 0
         val counts = if (contacts.isEmpty()) emptyMap() else jdbc.query("SELECT d.expert_contact_id,COUNT(*) AS n FROM mailbox_reply_draft d$filter AND d.expert_contact_id IN (:contacts) GROUP BY d.expert_contact_id",params,

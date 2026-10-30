@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.mail.controller
 import com.weibo.talentintroduction.audit.domain.OperatorActionLog
 import com.weibo.talentintroduction.audit.service.OperatorActionLogService
 import com.weibo.talentintroduction.auth.config.AuthSessionKeys
+import com.weibo.talentintroduction.auth.config.MailReadOnlyPolicy
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.ExpertEmailAlias
 import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
@@ -131,9 +132,10 @@ class UnmatchedInboundMailController(
     }
 
     @GetMapping("/unmatched-inbound/{id}")
-    fun getUnmatchedDetail(@PathVariable id: Long): UnmatchedDetailResponse {
+    fun getUnmatchedDetail(@PathVariable id: Long, servletRequest: HttpServletRequest): UnmatchedDetailResponse {
         val record = unmatchedInboundMailService.getDetail(id)
-        val candidates = unmatchedInboundMailService.suggestCandidates(record)
+        val candidates = if (MailReadOnlyPolicy.isReader(servletRequest.sessionUsernameOrNull())) emptyList()
+            else unmatchedInboundMailService.suggestCandidates(record)
         val contact = record.expertContactId?.let { expertContactRepository.findById(it).orElse(null) }
         val logs = operatorActionLogService.search(
             expertContactId = null,
@@ -194,11 +196,14 @@ class UnmatchedInboundMailController(
     @PostMapping("/unmatched-inbound/{id}/cancel-resolved")
     fun cancelResolved(
         @PathVariable id: Long,
-        @RequestBody request: CancelResolvedRequest
+        @RequestBody request: CancelResolvedRequest,
+        servletRequest: HttpServletRequest
     ) {
+        val sessionUsername = servletRequest.sessionUsernameOrNull()?.takeIf { it.isNotBlank() }
+            ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "未登录")
         pendingMailOperationService.cancelResolved(
             inboundProcessingId = id,
-            operatorName = request.operatorName,
+            operatorName = sessionUsername,
             note = request.note
         )
     }

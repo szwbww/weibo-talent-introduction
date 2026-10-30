@@ -24,7 +24,7 @@ class ExpertMailPermissionGuard(
     companion object {
         const val MAIL_WRITE_FORBIDDEN = "MAIL_WRITE_FORBIDDEN"
 
-        private enum class Target { CONTACT, PROCESSING, MESSAGE, ATTACHMENT, DOCUMENT, MAIL, OUTBOUND, SENT_OUTBOUND, EVENTS, SUMMARIES, EVENT, MEETING_OPTIONS }
+        private enum class Target { CONTACT, PROCESSING, MESSAGE, ATTACHMENT, DOCUMENT, MAIL, OUTBOUND, SENT_OUTBOUND, EVENTS, SUMMARIES, EVENT, MEETING_OPTIONS, MEETING_PREVIEW }
         private data class Key(val controller: Class<*>, val method: String, val verb: String)
         private val targets = buildMap<Key, Target> {
             fun route(controller: Class<*>, method: String, verb: String, target: Target) {
@@ -38,10 +38,10 @@ class ExpertMailPermissionGuard(
             route(conversation, "dismissReplied", "PUT", Target.CONTACT)
             // Personal pending/suspension SQL is activated by child06, not a global count here.
             val unmatched = UnmatchedInboundMailController::class.java
+            route(unmatched, "getUnmatchedDetail", "GET", Target.PROCESSING)
             route(unmatched, "sendManualRichReply", "POST", Target.PROCESSING)
             route(unmatched, "markResolved", "POST", Target.PROCESSING)
             route(unmatched, "cancelResolved", "POST", Target.PROCESSING)
-            // Detail's candidate redaction and legacy draft admission belong to child04b.
             route(MailboxAttachmentController::class.java, "listAttachments", "GET", Target.MESSAGE)
             route(MailboxAttachmentController::class.java, "download", "GET", Target.ATTACHMENT)
             route(OutboundAttachmentController::class.java, "upload", "POST", Target.CONTACT)
@@ -74,6 +74,7 @@ class ExpertMailPermissionGuard(
             route(calendar, "update", "PUT", Target.EVENT)
             route(calendar, "cancel", "POST", Target.EVENT)
             route(MeetingConfirmationController::class.java, "options", "GET", Target.MEETING_OPTIONS)
+            route(MeetingConfirmationController::class.java, "preview", "POST", Target.MEETING_PREVIEW)
         }
 
         private fun target(handler: Any?, verb: String?): Target? {
@@ -143,8 +144,8 @@ class ExpertMailPermissionGuard(
                 requireFull(username, parsed)
             }
             Target.SUMMARIES -> {
-                val ids = request.getParameter("contactIds")?.takeIf { it.isNotBlank() } ?: forbidden()
-                ids.split(',').map { positive(it.trim(), "contactIds") }.distinct().forEach {
+                val ids = request.getParameterValues("contactIds")?.takeIf { it.isNotEmpty() && it.all(String::isNotBlank) } ?: forbidden()
+                ids.flatMap { it.split(',') }.map { positive(it.trim(), "contactIds") }.distinct().forEach {
                     requireContact(it)
                     requireFull(username, it)
                 }
@@ -155,6 +156,7 @@ class ExpertMailPermissionGuard(
                 requireFull(username, actual)
                 match(positive(request.getParameter("contactId"), "contactId"), actual)
             }
+            Target.MEETING_PREVIEW -> requireFull(username, owner("inbound_mail_processing", id("processingId")))
         }
     }
 

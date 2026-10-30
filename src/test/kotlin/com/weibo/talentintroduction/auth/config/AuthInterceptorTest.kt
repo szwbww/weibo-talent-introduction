@@ -425,7 +425,6 @@ class AuthInterceptorTest {
         // 旧 mailbox / 草稿 / 附件 / 发件账号 / 备注 / 标签 / 监控
         mockMvc.perform(get("/api/mail/mailbox").session(session)).andExpect(status().isForbidden)
         mockMvc.perform(get("/api/mail/mailbox/by-expert").session(session)).andExpect(status().isForbidden)
-        mockMvc.perform(get("/api/mail/mailbox/drafts").session(session)).andExpect(status().isForbidden)
         mockMvc.perform(get("/api/mail/mailbox/MAIL_RECORD/1/attachments").session(session))
             .andExpect(status().isForbidden)
         mockMvc.perform(get("/api/mail/mailbox/attachments/1/download").session(session))
@@ -550,6 +549,12 @@ class AuthInterceptorTest {
                 "InboundMailSummaryController#autoApplyTags:POST",
                 "InboundMailSummaryController#deleteTag:DELETE",
                 "InboundMailSummaryController#tagOptions:GET",
+                "MailReplyDraftController#detail:GET",
+                "MailReplyDraftController#discard:DELETE",
+                "MailReplyDraftController#list:GET",
+                "MailReplyDraftController#save:PUT",
+                "MailReplyDraftController#summaries:GET",
+                "MailReplyDraftController#target:GET",
                 "MailReviewDraftController#comment:POST",
                 "MailReviewDraftController#create:POST",
                 "MailReviewDraftController#delete:DELETE",
@@ -569,17 +574,20 @@ class AuthInterceptorTest {
                 "MailboxConversationController#setProgressStatus:PUT",
                 "MailboxConversationController#unfollow:DELETE",
                 "MeetingCalendarController#cancel:POST",
+                "MeetingCalendarController#create:POST",
                 "MeetingCalendarController#event:GET",
                 "MeetingCalendarController#events:GET",
                 "MeetingCalendarController#summaries:GET",
                 "MeetingCalendarController#update:PUT",
                 "MeetingConfirmationController#options:GET",
+                "MeetingConfirmationController#preview:POST",
                 "MeetingConfirmationController#timeZones:GET",
                 "OutboundAttachmentController#downloadDraft:GET",
                 "OutboundAttachmentController#downloadSentAttachment:GET",
                 "OutboundAttachmentController#upload:POST",
                 "TranslationController#translate:POST",
                 "UnmatchedInboundMailController#cancelResolved:POST",
+                "UnmatchedInboundMailController#getUnmatchedDetail:GET",
                 "UnmatchedInboundMailController#markResolved:POST",
                 "UnmatchedInboundMailController#sendManualRichReply:POST"
             ),

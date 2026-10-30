@@ -693,7 +693,8 @@ class ToggleableMeetingCalendarService(
 
 /** 真实 MySQL 集成测试的窄配置：唯一 calendar 服务（真实实现 + 失败开关）与审计替身。 */
 @TestConfiguration
-@Import(com.weibo.talentintroduction.mail.repository.OutboundMailAttachmentRepository::class)
+@Import(com.weibo.talentintroduction.mail.repository.OutboundMailAttachmentRepository::class,
+    ExpertMailPermissionGuard::class, ExpertMailReadAccessService::class)
 class MeetingCalendarSendIntegrationTestSupport {
 
     @Bean

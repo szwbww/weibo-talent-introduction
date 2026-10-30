@@ -13,6 +13,15 @@ import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.*
 import com.weibo.talentintroduction.mail.controller.InboundMailSummaryController
+import com.weibo.talentintroduction.campaign.controller.MeetingCalendarController
+import com.weibo.talentintroduction.campaign.controller.MeetingCalendarExceptionHandler
+import com.weibo.talentintroduction.campaign.service.MeetingCalendarService
+import com.weibo.talentintroduction.campaign.repository.MeetingCalendarEventRepository
+import com.weibo.talentintroduction.mail.controller.MailReplyDraftController
+import com.weibo.talentintroduction.mail.controller.MeetingConfirmationController
+import com.weibo.talentintroduction.mail.repository.MailReplyDraftRepository
+import com.weibo.talentintroduction.mail.repository.MailReviewDraftRepository
+import com.weibo.talentintroduction.mail.repository.MailboxConversationRepository
 import com.weibo.talentintroduction.qa.service.QaMatchService
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.task.service.TaskProgressStore
@@ -49,12 +58,19 @@ class ExpertScopedOperationsIT {
     @org.springframework.context.annotation.Configuration(proxyBeanMethods = false)
     @org.springframework.boot.test.context.TestComponent
     @EnableAutoConfiguration
+    @org.springframework.boot.context.properties.EnableConfigurationProperties(com.weibo.talentintroduction.config.LlmProperties::class)
     @EnableJdbcRepositories(basePackages = ["com.weibo.talentintroduction.mail.repository",
         "com.weibo.talentintroduction.campaign.repository", "com.weibo.talentintroduction.qa.repository"])
     @Import(AuthWebConfig::class, GlobalExceptionHandler::class, ExpertMailPermissionGuard::class,
         ExpertMailReadAccessService::class, ExpertIndexController::class, ExpertManualProfileController::class,
         InboundMailSummaryController::class, ExpertManualProfileService::class,
-        ExpertProfileIdentityResolver::class, InboundMailTagService::class)
+        ExpertProfileIdentityResolver::class, InboundMailTagService::class,
+        MeetingCalendarController::class, MeetingCalendarExceptionHandler::class, MeetingCalendarService::class,
+        MeetingCalendarEventRepository::class, MailReplyDraftController::class, MailReplyDraftService::class,
+        MailReplyDraftRepository::class, MailReviewDraftService::class, MailReviewDraftRepository::class,
+        MailboxConversationRepository::class, MailContentService::class, MailPlaceholderService::class,
+        MeetingConfirmationController::class, MeetingConfirmationService::class,
+        com.weibo.talentintroduction.mail.controller.UnmatchedInboundMailController::class)
     class Config
 
     companion object {
@@ -85,6 +101,28 @@ class ExpertScopedOperationsIT {
     @MockBean private lateinit var persons: DiscoveryPersonQueryService
     @MockBean private lateinit var qa: QaMatchService
     @MockBean private lateinit var delivery: MailDeliveryService
+    @MockBean private lateinit var attachments: OutboundAttachmentService
+    @MockBean private lateinit var translation: MailTranslationService
+    @MockBean private lateinit var senderAccounts: MailSenderAccountService
+    @MockBean private lateinit var templates: com.weibo.talentintroduction.template.service.MailComposeTemplateService
+    @MockBean private lateinit var variables: MailVariableService
+    @MockBean private lateinit var unmatched: UnmatchedInboundMailService
+    @MockBean private lateinit var aliases: com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
+    @MockBean private lateinit var pending: PendingMailOperationService
+    @MockBean private lateinit var logs: com.weibo.talentintroduction.audit.service.OperatorActionLogService
+    @MockBean private lateinit var autoPreview: AutoReplyPreviewService
+    @MockBean private lateinit var aiDraft: com.weibo.talentintroduction.llm.service.AiReplyDraftService
+    @MockBean private lateinit var aiPreview: com.weibo.talentintroduction.llm.service.AiReplyDraftPreviewService
+    @MockBean private lateinit var aiBuilder: com.weibo.talentintroduction.llm.service.AiReplyContextBuilder
+    @MockBean private lateinit var aiTraining: com.weibo.talentintroduction.llm.service.AiTrainingQaService
+    @MockBean private lateinit var aiContext: com.weibo.talentintroduction.llm.service.AiReplyContextService
+    @MockBean private lateinit var aiAudit: com.weibo.talentintroduction.llm.service.AiReplyReviewAuditService
+    @MockBean(name = "aiReplyStreamExecutor") private lateinit var streamExecutor: java.util.concurrent.ExecutorService
+    @MockBean(name = "aiReplyStreamScheduler") private lateinit var streamScheduler: java.util.concurrent.ScheduledExecutorService
+    @Autowired private lateinit var inboundRepository: com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
+    @Autowired private lateinit var drafts: MailReplyDraftService
+    @Autowired private lateinit var draftRepository: MailReplyDraftRepository
+    @Autowired private lateinit var reviews: MailReviewDraftService
 
     private val mapper = jacksonObjectMapper()
     private fun session(user: String = "user1") = MockHttpSession().apply { setAttribute(AuthSessionKeys.USERNAME, user) }
@@ -96,7 +134,8 @@ class ExpertScopedOperationsIT {
         """{"expertId":"$key","level":"$level","group":"identity","expectedVersion":$version,"values":{"talentCode":"0042","chineseName":null,"birthDateText":null,"documentNumber":null,"sourceCountry":null}}"""
 
     @BeforeEach fun seed() {
-        listOf("expert_manual_profile", "inbound_mail_tag", "expert_mail_read_access", "inbound_mail_processing",
+        listOf("mailbox_review_draft_event", "mailbox_review_draft", "mailbox_reply_draft", "meeting_calendar_event",
+            "expert_manual_profile", "inbound_mail_tag", "expert_mail_read_access", "inbound_mail_processing",
             "mail_record", "expert_contact", "campaign", "mail_sender_account").forEach { jdbc.update("DELETE FROM $it") }
         jdbc.update("""INSERT INTO mail_sender_account(account_code,sender_email,sender_name,smtp_host,smtp_port,smtp_username,smtp_password,imap_host,imap_port,imap_username,imap_password)
             VALUES('scoped','sender@example.test','Fixture','127.0.0.1',1,'fixture','unused','127.0.0.1',1,'fixture','unused')""")
@@ -226,5 +265,184 @@ class ExpertScopedOperationsIT {
         mvc.perform(post("/api/experts/reindex-applications").session(session())).andExpect(status().isForbidden)
         mvc.perform(get("/api/experts/profile").param("orcidId", "expert-a")).andExpect(status().isUnauthorized)
         Mockito.verifyNoInteractions(delivery, tasks, persons)
+    }
+
+    private fun calendarBody(contact: Long = 1, version: String? = null): String = mapper.writeValueAsString(
+        linkedMapOf<String, Any?>("contactId" to contact, "startBeijing" to "2026-11-02T10:00",
+            "endBeijing" to "2026-11-02T10:30", "note" to "Scoped calendar").apply {
+            if (version != null) put("expectedUpdatedAt", version)
+        })
+
+    @Test fun `calendar current FULL body query and actual event ownership preserve CAS with no send`() {
+        for (contact in listOf(2L, 3L, 4L)) {
+            mvc.perform(post("/api/meeting-calendar/events").session(session()).contentType(MediaType.APPLICATION_JSON)
+                .content(calendarBody(contact))).andExpect(status().isForbidden)
+        }
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM meeting_calendar_event", Int::class.java))
+        mvc.perform(get("/api/meeting-calendar/events").session(session())).andExpect(status().isForbidden)
+        mvc.perform(get("/api/meeting-calendar/summaries").session(session())).andExpect(status().isForbidden)
+        mvc.perform(get("/api/meeting-calendar/summaries?contactIds=1,2").session(session())).andExpect(status().isForbidden)
+        val created = mapper.readTree(mvc.perform(post("/api/meeting-calendar/events").session(session())
+            .contentType(MediaType.APPLICATION_JSON).content(calendarBody())).andExpect(status().isCreated)
+            .andExpect(jsonPath("$.startUtc").value("2026-11-02T02:00:00Z")).andReturn().response.contentAsString)
+        val id = created["id"].asLong()
+        val version = created["updatedAt"].asText()
+        mvc.perform(get("/api/meeting-calendar/events/$id").session(session("admin"))).andExpect(status().isOk)
+        mvc.perform(get("/api/meeting-calendar/events?contactId=1").session(session())).andExpect(status().isOk)
+        mvc.perform(get("/api/meeting-calendar/summaries?contactIds=1").session(session()))
+            .andExpect(status().isOk).andExpect(jsonPath("$[0].activeCount").value(1))
+        val updated = mapper.readTree(mvc.perform(put("/api/meeting-calendar/events/$id").session(session())
+            .contentType(MediaType.APPLICATION_JSON).content(calendarBody(version = version).replace("Scoped calendar", "Changed calendar"))).andExpect(status().isOk)
+            .andReturn().response.contentAsString)
+        mvc.perform(put("/api/meeting-calendar/events/$id").session(session()).contentType(MediaType.APPLICATION_JSON)
+            .content(calendarBody(version = version))).andExpect(status().isConflict)
+        mvc.perform(post("/api/meeting-calendar/events/$id/cancel").session(session()).contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(mapOf("expectedUpdatedAt" to updated["updatedAt"].asText()))))
+            .andExpect(status().isOk).andExpect(jsonPath("$.status").value("CANCELLED"))
+        jdbc.update("UPDATE expert_mail_read_access SET access_level='READ' WHERE expert_contact_id=1")
+        mvc.perform(get("/api/meeting-calendar/events/$id").session(session())).andExpect(status().isForbidden)
+        mvc.perform(put("/api/meeting-calendar/events/$id").session(session()).contentType(MediaType.APPLICATION_JSON)
+            .content(calendarBody(version = version))).andExpect(status().isForbidden)
+        Mockito.verifyNoInteractions(delivery, attachments)
+    }
+
+    @Test fun `personal drafts filter FULL and real target in SQL before page count and summaries then revoke all entry points`() {
+        val content = MailReplyDraftContent(subject = "Scoped", html = "<p>Body</p>", text = "Body")
+        val now = LocalDateTime.now()
+        for (contact in listOf(2L, 3L, 4L, 1L)) draftRepository.insert("user1",
+            MailReplyDraftTarget(contact, MailReplyDraftKind.OUTBOUND), content,
+            MailReplyDraftContextCodec.serialize(content.context), now.plusSeconds(contact))
+        draftRepository.insert("admin", MailReplyDraftTarget(3, MailReplyDraftKind.OUTBOUND), content,
+            MailReplyDraftContextCodec.serialize(content.context), now)
+        val own = drafts.list("user1", null, null, 0, 1)
+        assertEquals(1L, own.total)
+        assertEquals(1L, own.items.single().target.contactId)
+        assertTrue(drafts.list("user1", null, null, 1, 1).items.isEmpty())
+        val summaries = drafts.summaries("user1", listOf(1, 2, 3, 4), null)
+        assertEquals(1L, summaries.total)
+        assertEquals(listOf(1L, 0L, 0L, 0L), summaries.items.map { it.count })
+        assertEquals(1L, drafts.list("admin", null, null, 0, 20).total)
+        val t = MailReplyDraftTarget(1, MailReplyDraftKind.INBOUND, 1, "scoped")
+        val saved = drafts.save("user1", t, MailReplyDraftSaveRequest(0, content))
+        assertEquals(2L, drafts.list("user1", null, null, 0, 20).total)
+        jdbc.update("UPDATE inbound_mail_processing SET expert_contact_id=2 WHERE id=1")
+        assertEquals(1L, drafts.list("user1", null, null, 0, 20).total)
+        assertThrows(MailReplyDraftException::class.java) { drafts.get("user1", saved.id!!) }
+        jdbc.update("UPDATE inbound_mail_processing SET expert_contact_id=1 WHERE id=1")
+        jdbc.update("UPDATE expert_mail_read_access SET access_level='READ' WHERE expert_contact_id=1")
+        assertEquals(0L, drafts.list("user1", null, null, 0, 20).total)
+        assertEquals(0L, drafts.summaries("user1", listOf(1, 2), null).total)
+        val ref = MailReplyDraftRef(saved.id!!, saved.version)
+        for (action in listOf<() -> Unit>(
+            { drafts.get("user1", saved.id!!) }, { drafts.getTarget("user1", t) },
+            { drafts.save("user1", t, MailReplyDraftSaveRequest(saved.version, content)) },
+            { drafts.discard("user1", saved.id!!, saved.version) },
+            { drafts.completedBinding("user1", ref, 1, 1, "scoped") },
+            { drafts.validateConversationSend("user1", ref, 1, "scoped", "request", 1, "Scoped", "<p>Body</p>", "Body", emptyList()) }
+        )) assertThrows(com.weibo.talentintroduction.auth.config.MailReadAccessDeniedException::class.java, action)
+        mvc.perform(get("/api/mail/mailbox/drafts/${saved.id}").session(session())).andExpect(status().isForbidden)
+        assertEquals(1L, draftRepository.findOwned("user1", saved.id!!)!!.version)
+        Mockito.verifyNoInteractions(attachments, delivery)
+    }
+
+    @Test fun `READ review four states remain independently locked after FULL upgrade without automatic delivery`() {
+        jdbc.update("UPDATE expert_mail_read_access SET access_level='READ' WHERE expert_contact_id=1")
+        fun draft() = reviews.create("user1", 1, java.util.UUID.randomUUID().toString(), "Subject", "<p>Body</p>") as MailReviewDraftDetail
+        val unsubmitted = draft()
+        val submitted = draft().let { reviews.submit("user1", it.id, it.version) as MailReviewDraftDetail }
+        val returned = draft().let { reviews.submit("user1", it.id, it.version) as MailReviewDraftDetail }
+            .let { reviews.returnDraft("admin", it.id, it.version, "Please revise") as MailReviewDraftDetail }
+        val approved = draft().let { reviews.submit("user1", it.id, it.version) as MailReviewDraftDetail }
+            .let { reviews.approve("admin", it.id, it.version, reviews.context("admin", it.id).currentToken) as MailReviewDraftDetail }
+        jdbc.update("UPDATE expert_mail_read_access SET access_level='FULL' WHERE expert_contact_id=1")
+        for (d in listOf(unsubmitted, submitted, returned, approved)) {
+            assertEquals(d.state, (reviews.detail("user1", d.id) as MailReviewDraftDetail).state)
+            assertTrue(reviews.events("user1", d.id).isNotEmpty())
+        }
+        for (action in listOf<() -> Unit>(
+            { reviews.save("user1", approved.id, approved.version, "Changed", "<p>Changed</p>") },
+            { reviews.softDelete("user1", approved.id, approved.version) },
+            { reviews.comment("user1", approved.id, approved.version, "Changed") }
+        )) assertEquals(409, assertThrows(MailReviewDraftException::class.java, action).status)
+        assertEquals(MailReviewDraftState.SUBMITTED, (reviews.detail("user1", submitted.id) as MailReviewDraftDetail).state)
+        reviews.save("user1", unsubmitted.id, unsubmitted.version, "Editable", "<p>Editable</p>")
+        reviews.save("user1", returned.id, returned.version, "Revised", "<p>Revised</p>")
+        reviews.confirmContext("admin", approved.id, approved.version, reviews.context("admin", approved.id).currentToken)
+        assertNotNull(drafts.save("user1", MailReplyDraftTarget(1, MailReplyDraftKind.OUTBOUND),
+            MailReplyDraftSaveRequest(0, MailReplyDraftContent(text = "New personal draft"))).id)
+        Mockito.verifyNoInteractions(delivery)
+    }
+
+    @Test fun `meeting confirmation precise routes reject wrong owner and body equality before account or template access`() {
+        val prefix = "/api/mail/unmatched-inbound"
+        for (processing in listOf(2, 3, 4)) {
+            mvc.perform(get("$prefix/$processing/meeting-confirmation/options?contactId=$processing").session(session()))
+                .andExpect(status().isForbidden)
+            mvc.perform(post("$prefix/$processing/meeting-confirmation/preview").session(session())
+                .contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isForbidden)
+        }
+        mvc.perform(get("$prefix/1/meeting-confirmation/options?contactId=2").session(session())).andExpect(status().isForbidden)
+        mvc.perform(post("$prefix/1/meeting-confirmation/preview").session(session()).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"contactId":2,"meeting":{"zoneId":"Asia/Shanghai","startLocal":"2026-11-02T10:00","endLocal":"2026-11-02T10:30","zoomUrl":"https://zoom.test","generatedAt":"2026-10-30T08:00:00Z"}}"""))
+            .andExpect(status().isBadRequest).andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("会议确认对象与来信处理不匹配")))
+        Mockito.verifyNoInteractions(senderAccounts, templates, variables, delivery)
+        mvc.perform(get("/api/mail/meeting-confirmation/time-zones?date=2026-11-02").session(session())).andExpect(status().isOk)
+    }
+
+    @Test fun `unmatched FULL detail never suggests candidates and resolve actions use authenticated session`() {
+        for (id in listOf(2, 3, 4)) {
+            mvc.perform(get("/api/mail/unmatched-inbound/$id").session(session())).andExpect(status().isForbidden)
+        }
+        jdbc.update("UPDATE inbound_mail_processing SET expert_contact_id=NULL WHERE id=4")
+        mvc.perform(get("/api/mail/unmatched-inbound/4").session(session())).andExpect(status().isForbidden)
+        Mockito.verifyNoInteractions(unmatched, logs, pending)
+        Mockito.`when`(unmatched.getDetail(1)).thenReturn(inboundRepository.findById(1).get())
+        Mockito.`when`(logs.search(null, 1, null, null, null, null, 50, 0)).thenReturn(emptyList<com.weibo.talentintroduction.audit.domain.OperatorActionLog>() to 0L)
+        mvc.perform(get("/api/mail/unmatched-inbound/1").session(session())).andExpect(status().isOk)
+            .andExpect(jsonPath("$.record.id").value(1)).andExpect(jsonPath("$.contact.contactId").value(1))
+            .andExpect(jsonPath("$.candidates").isEmpty)
+        Mockito.verify(unmatched, Mockito.never()).suggestCandidates(Mockito.any(com.weibo.talentintroduction.mail.domain.InboundMailProcessing::class.java)
+            ?: inboundRepository.findById(1).get())
+        mvc.perform(post("/api/mail/unmatched-inbound/1/mark-resolved").session(session()).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"resolvedBy":"admin","operatorName":"admin","note":"test"}""")).andExpect(status().isOk)
+        Mockito.verify(pending).markResolved(1, "user1", "user1", "test")
+        mvc.perform(post("/api/mail/unmatched-inbound/1/cancel-resolved").session(session()).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"operatorName":"admin","note":"undo"}""")).andExpect(status().isOk)
+        Mockito.verify(pending).cancelResolved(1, "user1", "undo")
+        jdbc.update("UPDATE expert_mail_read_access SET access_level='READ' WHERE expert_contact_id=1")
+        Mockito.clearInvocations(unmatched, logs, pending)
+        mvc.perform(get("/api/mail/unmatched-inbound/1").session(session())).andExpect(status().isForbidden)
+        Mockito.verifyNoInteractions(unmatched, logs, pending)
+    }
+
+    @Test fun `personal draft exact HTTP routes retain owner CAS current FULL and admin access`() {
+        val prefix = "/api/mail/mailbox/drafts"
+        val target = "$prefix/target?contactId=1&kind=OUTBOUND"
+        for (id in listOf(2, 3, 4)) {
+            mvc.perform(get("$prefix/target?contactId=$id&kind=OUTBOUND").session(session())).andExpect(status().isForbidden)
+            mvc.perform(put("$prefix/target?contactId=$id&kind=OUTBOUND").session(session()).contentType(MediaType.APPLICATION_JSON)
+                .content("""{"expectedVersion":0,"content":{"text":"Denied"}}""")).andExpect(status().isForbidden)
+        }
+        mvc.perform(get(target).session(session())).andExpect(status().isOk).andExpect(jsonPath("$.version").value(0))
+        val saved = mapper.readTree(mvc.perform(put(target).session(session()).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"expectedVersion":0,"content":{"subject":"Subject","html":"<p>Body</p>","text":"Body"}}"""))
+            .andExpect(status().isOk).andReturn().response.contentAsString)
+        val id = saved["id"].asLong()
+        mvc.perform(get("$prefix/$id").session(session())).andExpect(status().isOk).andExpect(jsonPath("$.content.text").value("Body"))
+        mvc.perform(get(prefix).session(session())).andExpect(status().isOk).andExpect(jsonPath("$.total").value(1))
+        mvc.perform(get("$prefix/summaries?contactIds=1,2").session(session())).andExpect(status().isOk)
+            .andExpect(jsonPath("$.total").value(1)).andExpect(jsonPath("$.items[1].count").value(0))
+        mvc.perform(put(target).session(session()).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"expectedVersion":0,"content":{"text":"Stale"}}""")).andExpect(status().isConflict)
+        mvc.perform(get("$prefix/$id").session(session("admin"))).andExpect(status().isNotFound)
+        mvc.perform(delete("$prefix/$id?expectedVersion=1").session(session())).andExpect(status().isOk)
+            .andExpect(jsonPath("$.state").value("DISCARDED"))
+        mvc.perform(put(target).session(session()).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"expectedVersion":2,"reopen":true,"content":{"text":"Reopened"}}""")).andExpect(status().isOk)
+        jdbc.update("DELETE FROM expert_mail_read_access WHERE expert_contact_id=1")
+        mvc.perform(delete("$prefix/$id?expectedVersion=3").session(session())).andExpect(status().isForbidden)
+        mvc.perform(get("$prefix/$id").session(session())).andExpect(status().isForbidden)
+        mvc.perform(get(prefix).session(session())).andExpect(status().isOk).andExpect(jsonPath("$.total").value(0))
+        Mockito.verifyNoInteractions(delivery, attachments)
     }
 }

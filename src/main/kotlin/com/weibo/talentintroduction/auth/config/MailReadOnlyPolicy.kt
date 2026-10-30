@@ -5,6 +5,8 @@ import com.weibo.talentintroduction.expert.controller.ExpertIndexController
 import com.weibo.talentintroduction.expert.controller.ExpertManualProfileController
 import com.weibo.talentintroduction.mail.controller.MailboxConversationController
 import com.weibo.talentintroduction.mail.controller.MailReviewDraftController
+import com.weibo.talentintroduction.mail.controller.MailReplyDraftController
+import com.weibo.talentintroduction.campaign.controller.MeetingCalendarController
 import com.weibo.talentintroduction.mail.controller.ExpertContactLocationController
 import com.weibo.talentintroduction.mail.controller.InboundMailSummaryController
 import com.weibo.talentintroduction.mail.controller.MeetingConfirmationController
@@ -73,6 +75,13 @@ object MailReadOnlyPolicy {
         AllowedHandler("GET", ExpertIndexController::class.java, "getExpertProfile"),
         AllowedHandler("GET", ExpertManualProfileController::class.java, "get"),
         AllowedHandler("PATCH", ExpertManualProfileController::class.java, "patch"),
+        AllowedHandler("POST", MeetingCalendarController::class.java, "create"),
+        AllowedHandler("GET", MailReplyDraftController::class.java, "target"),
+        AllowedHandler("PUT", MailReplyDraftController::class.java, "save"),
+        AllowedHandler("GET", MailReplyDraftController::class.java, "detail"),
+        AllowedHandler("DELETE", MailReplyDraftController::class.java, "discard"),
+        AllowedHandler("GET", MailReplyDraftController::class.java, "list"),
+        AllowedHandler("GET", MailReplyDraftController::class.java, "summaries"),
         AllowedHandler("GET", MeetingConfirmationController::class.java, "timeZones"),
         AllowedHandler("POST", TranslationController::class.java, "translate"),
         AllowedHandler("POST", AuthController::class.java, "logout")

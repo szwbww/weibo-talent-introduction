@@ -114,7 +114,7 @@ class ExpertMailPermissionGuardTest {
             beans.registerSingleton("materials", ExpertMaterialController(material.material, archiveService = material.archive))
             beans.registerSingleton("documents", ExpertDocumentBrowseController(ExpertDocumentBrowseService(
                 material.documents, material.attachments, material.records, material.material)))
-            beans.registerSingleton("calendar", MeetingCalendarController(calendar))
+            beans.registerSingleton("calendar", MeetingCalendarController(calendar, guard))
             beans.registerSingleton("meetings", MeetingConfirmationController(meetings))
             beans.registerSingleton("outbound", OutboundAttachmentController(outbound))
         }
@@ -164,6 +164,10 @@ class ExpertMailPermissionGuardTest {
         mvc.perform(get("/api/meeting-calendar/events").session(session())).andExpect(status().isForbidden)
         mvc.perform(get("/api/meeting-calendar/events?contactId=2").session(session())).andExpect(status().isForbidden)
         mvc.perform(get("/api/meeting-calendar/summaries?contactIds=1,2").session(session())).andExpect(status().isForbidden)
+        mvc.perform(get("/api/meeting-calendar/summaries").param("contactIds", "1", "2").session(session())).andExpect(status().isForbidden)
+        mvc.perform(post("/api/meeting-calendar/events").session(session()).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"contactId":2,"startBeijing":"2026-11-02T10:00","endBeijing":"2026-11-02T10:30"}"""))
+            .andExpect(status().isForbidden)
         mvc.perform(get("/api/meeting-calendar/events/503").session(session())).andExpect(status().isForbidden)
         mvc.perform(put("/api/meeting-calendar/events/502").session(session()).contentType(MediaType.APPLICATION_JSON).content("{}"))
             .andExpect(status().isForbidden)
