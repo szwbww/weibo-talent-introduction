@@ -133,8 +133,11 @@ E17/E24–E27/E31/E33/E34及audit§5：独立模块是已实现事实；完整Ma
 | 9 | `src/test/js/expertManualProfile.test.js` | delegated资料DOM与禁止旁路 |
 | 10 | `src/test/js/expertAccessWorkspace.test.js` | 新增跨两模块真实请求白名单与生命周期 |
 | 11 | `src/test/js/mailboxChatStyle.test.js` | 仅退役reader CSS历史EOF/suffix及header单分支源码次数pin；保留原CSS字节/作用域/隐藏及稳定DOM/cache/安全契约，admin/delegated实际DOM由行为用例证明，不替换新源码顺序/数量pin |
+| 12 | `src/test/js/mailReviewReader.test.js` | 仅退役全局MailboxChat源码禁止；保留READ不挂FULL/发送/附件及审核状态/安全行为 |
+| 13 | `src/test/js/mailboxCalendarIntegration.test.js` | 仅退役骨架/订阅源码次数pin，不重钉计数；保留admin/delegated实际单实例/广播/卸载与原CSS/操作 |
+| 14 | `src/test/js/mailboxReplyIdentity.test.js` | 仅退役无受限分支时按钮源码相邻pin；保留admin实际工具栏/身份行为、delegated隐藏全局控件及原CSS/cache |
 
-合计 **11 文件**（原10+1个CSS直接消费fixture有界例外）；最多2个紧耦合子系统。新增共享store字段：0。
+合计 **14 文件**（原10+4个UI直接消费fixture有界例外）；最多2个紧耦合子系统。新增共享store字段：0。
 
 ## 验收标准
 - I-2：真实AuthWebConfig+MVC逐个运行路由矩阵：NONE/READ/FULL/跨专家/admin；403之前SMTP、ES和文件流读取调用为0；未列端点仍403。
@@ -149,7 +152,7 @@ E17/E24–E27/E31/E33/E34及audit§5：独立模块是已实现事实；完整Ma
 - S-4：新增CSS与上节逐字一致；实际DOM符合骨架，复用规则无diff；无新inline style/未声明class；按本步UI人工项核对桌面/手机/disabled。
 - S-5：新增CSS与上节逐字一致；实际DOM符合骨架，复用规则无diff；无新inline style/未声明class；按本步UI人工项核对桌面/手机/disabled。
 
-门禁：node --test src/test/js/mailboxReadOnly.test.js src/test/js/mailboxChatBehavior.test.js src/test/js/expertManualProfile.test.js src/test/js/expertAccessWorkspace.test.js；新增fixture独立fresh执行node --test src/test/js/mailboxChatStyle.test.js；修改JS逐个node --check；全部现有JS回归；真实浏览器双账号网络记录A-5/6/7/12/14。
+门禁：node --test src/test/js/mailboxReadOnly.test.js src/test/js/mailboxChatBehavior.test.js src/test/js/expertManualProfile.test.js src/test/js/expertAccessWorkspace.test.js；新增fixture独立fresh执行node --test src/test/js/mailboxChatStyle.test.js及node --test src/test/js/mailReviewReader.test.js src/test/js/mailboxCalendarIntegration.test.js src/test/js/mailboxReplyIdentity.test.js；修改JS逐个node --check；全部现有JS回归；真实浏览器双账号网络记录A-5/6/7/12/14。
 
 测试环境使用隔离MySQL/测试SMTP与临时附件目录；不得把mysqlIt连生产库。跳过/未运行必须记NOT_RUN，不能写PASS。
 
@@ -251,3 +254,4 @@ E17/E24–E27/E31/E33/E34及audit§5：独立模块是已实现事实；完整Ma
 - 2026-10-30：持续授权下纠正继承规划pendingBadge.total误名为既有pendingBadge.manualReviewTotal；DTO/app/完整grep证据见fast-p children/06/execution.md Epoch2。无alias/wire迁移，邮件/专家/草稿数量单位、权限与最终UI行为不变。
 - 2026-10-30：静态完整消费者核查发现原名单外mailboxChatStyle.test.js的reader CSS endsWith/末段偏移位置pin，完整grep与相关消费者收据见fast-p children/07/execution.md Epoch1；持续授权下10→11仅该fixture例外，删旧EOF/顺序假设、不重钉新位置/数量。原reader CSS字节、作用域/隐藏行为、admin默认及DOM/cache/安全检查不减；新S-4/生命周期由原授权行为用例及真实浏览器证明，新增fixture必需fresh门禁，产品范围不变。
 - 2026-10-30：同fixture343–353的header单分支/源码时间槽次数pin在既定delegated隐藏email/account后冲突（真实focused232pass/style46pass1fail，完整grep/DOM对照见fast-p children/07/execution.md Epoch2）。持续授权下仍11文件，仅退役该旧实现pin，不重钉分支/源码计数；保留默认admin实际H2→P→时间→排期/唯一时间槽，受限模式无身份P/唯一时间槽由已有授权行为文件验证。原失败及部分实现保留，fresh全部门禁与1440/390真实浏览器/后端/SMTP验收不减。
+- 2026-10-30：真实full JS1976/1972pass/4fail/0skip证明另3个直接消费fixture需迁移（fast-p children/07/execution.md Epoch3含完整grep/失败/行为保障收据）；持续授权下11→14，仅退役mailReviewReader全局MailboxChat禁止、mailboxCalendarIntegration骨架/订阅源码计数、mailboxReplyIdentity无受限分支时按钮源码相邻pin，不重钉新计数/源码位置。READ真实不挂FULL/发送/附件、admin实际工具栏/单实例订阅/卸载、delegated受限能力与原CSS/cache/审核安全均保留；新增fixture独立fresh执行，原完整回归及真实backend/browser1440/390/SMTP验收不减。保留11部分文件与原失败，新身份接续。

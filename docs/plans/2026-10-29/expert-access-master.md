@@ -96,7 +96,7 @@
 - 来源: original
 
 ### Invariant I-14: 阶段边界与证据
-- Rule: 按顺序实施；默认每步≤10文件、≤2子系统、已有表每步≤1新增字段。有界例外仅为review05继承13文件；03的41（原8+33必需安全fixture）；04a的11（原5+6消费/行号fixture）；04b的16（原7+中央guard/8消费fixture）；05的12（原9+3窄UPDATE/锁消费fixture）；06的18（原10+2个owner路由激活+6个必需fixture，含原监控collation夹具完整性修正）；07的11（原10+1个UI直接消费fixture，仅退役历史EOF位置及无受限模式时单分支源码pin）。只退役正式能力取代的临时全局拒绝/全局pending/实现次数/位置pin，稳定安全/业务行为不减，不扩大产品能力。核对SHA/迁移号/已有脏改；MySQL目标skip不可算PASS；不授权部署。
+- Rule: 按顺序实施；默认每步≤10文件、≤2子系统、已有表每步≤1新增字段。有界例外仅为review05继承13文件；03的41（原8+33必需安全fixture）；04a的11（原5+6消费/行号fixture）；04b的16（原7+中央guard/8消费fixture）；05的12（原9+3窄UPDATE/锁消费fixture）；06的18（原10+2个owner路由激活+6个必需fixture，含原监控collation夹具完整性修正）；07的14（原10+4个UI直接消费fixture，仅退役历史EOF位置、全局FULL复用禁止及单分支源码次数/相邻pin）。只退役正式能力取代的临时全局拒绝/全局pending/实现次数/位置pin，稳定安全/业务行为不减，不扩大产品能力。核对SHA/迁移号/已有脏改；MySQL目标skip不可算PASS；不授权部署。
 - Applies to: 实施/验证/发布报告
 - Violation consequence: 范围漂移、迁移冲突、无证据的完成声明
 - 来源: K-master-plan-shared-file-sequential-gates
@@ -218,7 +218,7 @@
 | 4b | [日历、个人草稿与审核权限联动](expert-access-04b-calendar-drafts.md) | 16（原7+中央guard及8个必要消费fixture例外） |
 | 5 | [来信归属写入与撤权兜底](expert-access-05-pending-owner.md) | 12（原9+3个窄UPDATE/锁消费fixture例外） |
 | 6 | [待处理查询与筛选范围](expert-access-06-pending-query.md) | 18（原10+2个owner路由激活+6个必要fixture例外） |
-| 7 | [用户可写会话复用与能力隔离](expert-access-07-user-workspace.md) | 11（原10+1个CSS直接消费fixture例外） |
+| 7 | [用户可写会话复用与能力隔离](expert-access-07-user-workspace.md) | 14（原10+4个UI直接消费fixture例外） |
 | 8 | [管理端最终下拉筛选与待处理角标](expert-access-08-admin-controls.md) | 7 |
 
 ### 精确准入表（03/04共同执行，默认拒绝其余）
@@ -456,3 +456,4 @@ A-1覆盖最新“可读看标签不可改”；A-2/5/6/7覆盖FULL；A-3/4/9/15
 - 2026-10-30：06必需监控门禁真实220/5error/0skip，原自有mysql:8.0.36 fixture只改body collation未同步cleaned_body，导致COALESCE/LIKE1267；完整源/独立诊断/同base哈希见children/06/execution.md Epoch4。持续授权下17→18仅监控fixture已有DDL旁补对应cleaned_body collations，仍outbound unicode_ci/inbound general_ci不同、原断言不减；不改产品SQL/迁移或用skip/连接设置伪过，不扩任意同来源混合collation能力。新epoch完成真实门禁/runtime后才可READY。
 - 2026-10-30：07静态完整消费者核查发现mailboxChatStyle.test.js的reader CSS EOF/suffix位置pin（children/07/execution.md Epoch1含grep原文与全部相关消费者收据）。持续授权下10→11仅该fixture有界例外；退役EOF/末段偏移假设、不重钉顺序/数量，原reader CSS字节/作用域/隐藏行为及admin默认/DOM/cache/安全契约保留，S-4新增布局范围不变。新增fixture必须fresh执行，浏览器1440/390与真实权限/副作用验收不减，未改产品的epoch1不计PASS。
 - 2026-10-30：07真实focused232通过、style46通过/1失败发现同fixture的header单分支/源码时间槽次数pin与既定delegated隐藏email/account冲突；完整sourcegrep/行为DOM对照见children/07/execution.md Epoch2。持续授权下仅扩该已授权fixture343–353段退役范围，仍11文件；不重钉源码数量/分支/顺序，默认admin实际H2→P→时间→排期与唯一时间槽保留，delegated无身份P且唯一时间槽由真实DOM行为检查。原S-4/UI/权限/所有验收不减，保留部分实现与原失败，新身份fresh完成全部门禁/runtime。
+- 2026-10-30：07真实full JS1976/1972pass/4fail/0skip揭示3个原名单外直接消费fixture（children/07/execution.md Epoch3完整失败/grep/既有行为对照）：mailReviewReader的全局MailboxChat源码禁止、mailboxCalendarIntegration的骨架/订阅源码次数、mailboxReplyIdentity的无受限分支时按钮源码相邻pin。持续授权下11→14仅迁移该3fixture；不重钉3/2等计数/相邻源码，保留READ不挂FULL/附件/发送、admin实际工具栏/单实例订阅/卸载与delegated受限行为，原CSS/权限/API/人工验收不减。新增fixture必须独立fresh执行及full回归，新epoch继续部分实现并完成真实backend/browser/SMTP。
