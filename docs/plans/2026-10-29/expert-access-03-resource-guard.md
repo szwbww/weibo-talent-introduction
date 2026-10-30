@@ -79,8 +79,27 @@ E01/E12/E15/E28/E29及审计§3/§4；默认白名单阻断全部写，附件有
 | 20 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt` | 同上 |
 | 21 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt` | 同上 |
 | 22 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/ReplyIdentityServiceTest.kt` | 同上 |
+| 23 | `src/test/kotlin/com/weibo/talentintroduction/campaign/controller/MeetingCalendarControllerTest.kt` | 仅必需非空guard bean/context接线，保留稳定安全与业务断言 |
+| 24 | `src/test/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryIdentityRecoveryControllerTest.kt` | 同上 |
+| 25 | `src/test/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryPersonMaintenanceControllerTest.kt` | 同上 |
+| 26 | `src/test/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryRecheckControllerTest.kt` | 同上 |
+| 27 | `src/test/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryReviewControllerTest.kt` | 同上 |
+| 28 | `src/test/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryReviewCountsControllerTest.kt` | 同上 |
+| 29 | `src/test/kotlin/com/weibo/talentintroduction/document/controller/ExpertMeetingVideoControllerTest.kt` | 同上 |
+| 30 | `src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertClassificationAdminControllerTest.kt` | 同上 |
+| 31 | `src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertManualProfileControllerTest.kt` | 同上 |
+| 32 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/EmailSuppressionControllerAuthTest.kt` | 同上 |
+| 33 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactLocationControllerTest.kt` | 同上 |
+| 34 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertContactNoteControllerTest.kt` | 同上 |
+| 35 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/ExpertInboundNotificationControllerTest.kt` | 同上 |
+| 36 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailOpenTrackingControllerTest.kt` | 同上 |
+| 37 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt` | 两个MVC slice均补必需guard，保留稳定安全与业务断言 |
+| 38 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/MeetingConfirmationControllerTest.kt` | 仅必需非空guard bean/context接线，保留稳定安全与业务断言 |
+| 39 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailReadAccessIT.kt` | 真实guard/依赖接线；仅退役已被03取代的FULL临时全局写禁用断言，保留NONE/READ/跨专家/admin/撤权及拒绝零副作用 |
+| 40 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckFlowIT.kt` | 仅非扫描manual context必需guard singleton接线 |
+| 41 | `src/test/kotlin/com/weibo/talentintroduction/reply/service/ReplyIdentityDefaultsIntegrationTest.kt` | 同上 |
 
-合计 **22 文件**；I-14仅为上述14个直接构造fixture接线授予有界例外，原产品文件范围不扩大，产品仍为auth/mail两个紧耦合子系统；新增共享store字段0。不得以例外增改fixture原行为断言、放宽权限或加入nullable/default安全依赖。
+合计 **41 文件**；I-14例外仅为14个直接构造fixture加19个确需bean接线的MVC/manual context（完整证据见Epoch2），原5个产品文件及auth/mail产品子系统不扩大，新增共享store字段0。除下述明确取代的临时断言外，不弱化既有权限/业务断言、不加入nullable/default安全依赖。
 
 ## 验收标准
 - I-2：真实AuthWebConfig+MVC逐个运行路由矩阵：NONE/READ/FULL/跨专家/admin；403之前SMTP、ES和文件流读取调用为0；未列端点仍403。
@@ -90,6 +109,7 @@ E01/E12/E15/E28/E29及审计§3/§4；默认白名单阻断全部写，附件有
 
 门禁：JDK11 mvn test -Dtest=AuthInterceptorTest,AuthFlowIntegrationTest,ExpertMailPermissionGuardTest；现有人工发送与附件测试回归。真实MVC必须加载AuthWebConfig，不能只用孤立controller。
 追加上述直接构造fixture原测试回归（DiscoveryApolloSettingsIT、MailReviewSendIT等按其实际门禁显式启用，目标不得跳过）；保持原管理员/内部调用、附件、审核、幂等断言。阶段性尚未开放能力以实际03运行smoke记录，不新增钉死临时阶段缺省状态的永久契约测试；06在既有owner IT中以真实AuthWebConfig验证延迟路由激活。
+新增context fixture亦须原测试回归，实际opt-in门禁显式启用、目标零skip。ExpertMailReadAccessIT:425–459原READ/FULL循环中的FULL follow/rich-send统一403是02临时禁用状态，随03正式开放必须退役；保留READ403、NONE/跨专家403、授权管理admin-only、live等级、撤权及拒绝零副作用，FULL正向/幂等由本步原测试证明。若仅旧全局MAIL_READ_ONLY文字与本步明确MAIL_WRITE_FORBIDDEN契约冲突，退役旧文字断言而不重钉措辞，保留403及资源/副作用安全断言；不得据此删除稳定权限检查。
 
 测试环境使用隔离MySQL/测试SMTP与临时附件目录；不得把mysqlIt连生产库。跳过/未运行必须记NOT_RUN，不能写PASS。
 
@@ -128,3 +148,4 @@ E01/E12/E15/E28/E29及审计§3/§4；默认白名单阻断全部写，附件有
 ## 修正记录
 - 2026-10-30：按用户持续授权，非空安全依赖必然影响14个未列直接构造fixture；完整grep工具pattern/path/output及路径清单见fast-p children/03/execution.md Epoch1。追加上述仅接线文件，8→22，明确I-14有界例外，不引入nullable/default shim或测试权限旁路，不修改原业务/断言。原请求中的第23个产品controller不提前纳入：04b第3项已有getUnmatchedDetail去候选职责，03先拒绝该handler。
 - 2026-10-30：pendingBadge/suspension原SQL无owner条件（同报告含逐点收据），按I-2/I-7/I-13在03保持拒绝，06完成既定owner SQL后再激活精确方法；对应06名单追加policy/guard，仅用于该激活。材料批量端点沿已存在全成员同contact校验，必须以混入越权id证明副作用前拒绝。没有降低最终08/人工验收。
+- 2026-10-30：非空依赖完整Spring消费审计还发现19个真正缺guard的context fixture（17个WebMvcTest、2个无扫描manual context），而完整ComponentScan/无AuthWebConfig测试不纳入；完整grep/逐文件最小import或注册证据见children/03/execution.md Epoch2。按持续授权补这19文件，22→41，仅必要fixture接线，产品仍原5文件。另明确退役ExpertMailReadAccessIT的02临时FULL全局写禁用pin，稳定拒绝/跨资源/管理权限/撤权断言不减；不借fixture例外扩大产品。

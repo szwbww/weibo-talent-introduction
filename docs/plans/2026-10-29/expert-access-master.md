@@ -96,7 +96,7 @@
 - 来源: original
 
 ### Invariant I-14: 阶段边界与证据
-- Rule: 按子计划顺序实施；默认每步≤10文件、≤2子系统、每张已有表每步≤1新增字段。明确有界例外仅为前置review05继承13文件边界、03的22文件（原8加14个安全依赖直接构造fixture，仅接线）、06的12文件（原10加03暂缓owner路由的policy/guard精确激活）。不增加这些例外的产品行为范围或弱化断言。新增表/字段/API是拟实现而非现状；先核对SHA/迁移号/已有脏改。没有通过真实MySQL门禁不能把跳过算PASS；原规划阶段不上线，授权实施仍不授权部署。
+- Rule: 按子计划顺序实施；默认每步≤10文件、≤2子系统、每张已有表每步≤1新增字段。明确有界例外仅为前置review05继承13文件边界、03的41文件（原8加14直接构造fixture及19个必需MVC/manual context接线；仅明确退役02临时FULL全局写禁用pin，稳定安全断言保留）、06的12文件（原10加03暂缓owner路由的policy/guard精确激活）。不扩大例外的产品行为或弱化稳定断言。新增表/字段/API是拟实现而非现状；先核对SHA/迁移号/已有脏改。没有通过真实MySQL门禁不能把跳过算PASS；原规划阶段不上线，授权实施仍不授权部署。
 - Applies to: 实施/验证/发布报告
 - Violation consequence: 范围漂移、迁移冲突、无证据的完成声明
 - 来源: K-master-plan-shared-file-sequential-gates
@@ -213,7 +213,7 @@
 | review05 | [前置审核管理员闭环](draft-review-05-admin.md) | 13（继承已批准的有界门禁例外） |
 | 1 | [只读标签展示](expert-access-01-read-labels.md) | 3 |
 | 2 | [授权等级与能力投影](expert-access-02-access-level.md) | 10 |
-| 3 | [精确资源守卫与人工发送](expert-access-03-resource-guard.md) | 22（原8+14个直接构造fixture接线例外） |
+| 3 | [精确资源守卫与人工发送](expert-access-03-resource-guard.md) | 41（原8+14直接构造+19必要context fixture接线例外） |
 | 4a | [专家资料与标签目标守卫](expert-access-04a-profile-tags.md) | 5 |
 | 4b | [日历、个人草稿与审核权限联动](expert-access-04b-calendar-drafts.md) | 7 |
 | 5 | [来信归属写入与撤权兜底](expert-access-05-pending-owner.md) | 9 |
@@ -446,3 +446,4 @@ A-1覆盖最新“可读看标签不可改”；A-2/5/6/7覆盖FULL；A-3/4/9/15
 - 2026-10-30：I-1真实等级投影需要MailboxConversationService注入非空等级服务；完整constructor grep收据在fast-p children/02/execution.md。按持续授权，02追加OutboundAttachmentFlowTest.kt、MailReviewQueryIT.kt两个直接构造fixture文件，仅接续新依赖/真实等级fixture与原行为回归，7→9文件，仍≤10/2子系统，不使用nullable/default兼容shim、不扩大权限与产品行为；对应子计划修正及fast-p Amendments留痕。
 - 2026-10-30：02实际门禁发现01继承的mailboxReadOnly.test.js固定缓存键与现有taskActivityCenter全局guard冲突（完整证据见children/02/execution.md Epoch2），按持续授权将该测试加入02第10文件；仅退役固定版本字面量，保留动态同键/实际module契约，guard/index与前端产品不动。原整命令失败如实保留，最终门禁必须通过；不消耗light-verifier修复轮次（仍是实现阶段，尚未首次提交/验证）。
 - 2026-10-30：03完整构造grep显示非空安全依赖需要14个原名单外fixture（收据见children/03/execution.md Epoch1）；持续授权下I-14为03的8→22仅构造接线授予例外，不改原产品范围/断言。04b原第3项已负责unmatched候选隐藏，故03暂拒getUnmatchedDetail而不提前扩产品controller。个人pendingBadge/挂起原SQL未按owner，03暂拒，06以既定owner SQL后精确激活；06增加policy/guard两个文件，10→12有界例外，真实AuthWebConfig回归。材料已有全成员同contact校验沿用且测越权混入。最终能力/人工验收均不删减，原例外请求23由已有04b职责消解为22。
+- 2026-10-30：03在产品变更前完成Spring全消费者核查，另19个必需context fixture（17个WebMvcTest/2个无扫描manual context）缺新增guard，完整grep与最小import/注册证明见children/03/execution.md Epoch2；持续授权下例外22→41，原5个产品文件不扩大。仅退役02 ExpertMailReadAccessIT临时FULL follow/rich-send全局拒绝pin及被精确资源守卫取代的旧全局文字，不削弱NONE/READ/跨资源/admin/撤权/拒绝副作用断言；每个新增fixture执行原门禁、不得以skip冒充通过。前次22身份保留，epoch3按新身份接续，产品尚未变更。
