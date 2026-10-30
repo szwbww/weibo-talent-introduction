@@ -495,6 +495,7 @@ describe("server drafts I-3: real app navigation and logout closures", () => {
         mobile.value = "mailbox";
         const sandbox = {
             document: doc,
+            CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
             state: { view: "mailbox", monitoring: { autoRefreshTimer: null, loadSeq: 0, activitySeq: 0, openTracking: { requestSeq: 0, settingsSeq: 0 } } },
             viewMeta: { mailbox: ["Mailbox", "Mail"], contacts: ["Contacts", "Experts"], tasks: ["Tasks", "Jobs"] },
             mobileContactPresentation: { generation: 0 },
@@ -518,6 +519,8 @@ describe("server drafts I-3: real app navigation and logout closures", () => {
             location: { reload: () => calls.push(["reload"]) }
         };
         vm.createContext(sandbox);
+        vm.runInContext("let unmatchedBadgeRefreshSeq = 0;", sandbox);
+        vm.runInContext(H.extractFn("publishMailboxPendingBadge", appSource), sandbox);
         for (const name of ["flushMailboxChatDrafts", "setView", "bindAuthEvents"]) vm.runInContext(H.extractFn(name, appSource), sandbox);
         sandbox.bindAuthEvents();
         return { sandbox, calls, logout: () => [...doc.getElementById("logoutBtn").listeners.get("click")][0](), host, mobile };

@@ -17220,7 +17220,18 @@ async function refreshUnmatchedBadge() {
         const data = await api("/api/mail/mailbox/conversations/pending-badge");
         if (seq !== unmatchedBadgeRefreshSeq) return;
         updateUnmatchedBadge(data.countsByReasonType, data.manualReviewTotal);
+        publishMailboxPendingBadge(data.manualReviewTotal);
     } catch (_) {
+        if (seq === unmatchedBadgeRefreshSeq) publishMailboxPendingBadge(null);
+    }
+}
+
+function publishMailboxPendingBadge(total) {
+    if (typeof CustomEvent === "function" && typeof document !== "undefined" && document
+        && typeof document.dispatchEvent === "function") {
+        document.dispatchEvent(new CustomEvent("mailbox-pending-badge-changed", {
+            detail: { manualReviewTotal: Number.isSafeInteger(total) && total >= 0 ? total : null }
+        }));
     }
 }
 
@@ -21481,6 +21492,8 @@ function bindAuthEvents() {
     });
 
     $("#logoutBtn")?.addEventListener("click", async () => {
+        unmatchedBadgeRefreshSeq += 1;
+        publishMailboxPendingBadge(null);
         setView.draftNavigationSequence = (setView.draftNavigationSequence || 0) + 1;
         try {
             if (typeof isMailReadOnlyMode === "function" && isMailReadOnlyMode()) {

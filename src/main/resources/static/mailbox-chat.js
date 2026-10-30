@@ -830,13 +830,7 @@
     // 04（I-1/I-2/S-1）：user1 只读授权入口的固定操作者/目标与唯一文案矩阵。
     const READ_ACCESS_ACTOR = "admin";
     const READ_ACCESS_TARGET = "user1";
-    const READ_ACCESS_TEXT = {
-        loading: { button: "授权状态加载中…", badge: "user1：读取中" },
-        granted: { button: "取消 user1 授权", badge: "user1：可查看" },
-        denied: { button: "授权 user1 查看", badge: "user1：未授权" },
-        saving: { button: "保存中…" },
-        error: { button: "重试授权状态", badge: "user1：授权操作失败，请重试" }
-    };
+    const READ_ACCESS_LEVELS = ["NONE", "READ", "FULL"];
 
     function createInstance(host, options) {
         const delegated = options && options.mode === "delegated-conversation";
@@ -856,14 +850,15 @@
             expertNote: { contactId: null, readSeq: 0, loaded: false, loading: false, error: "", data: null, saving: false, dialog: null },
             // 04（I-1/I-2/I-3）：user1 只读授权入口状态。contactId/generation 绑定本次选择，
             // 只有实例/身份/contact/generation 全匹配的回包才写当前 header；canRead 只来自服务端。
-            readAccess: { contactId: null, phase: "idle", canRead: null, generation: 0 },
+            readAccess: { contactId: null, phase: "idle", accessLevel: null, error: "", generation: 0 },
             searchTimer: null,
             saveTimer: null,
             draftNavigationSeq: 0,
             draftPages: { drafts: 0, conversations: 0 },
             draftCounts: new Map(),
             draftTotal: 0,
-            reviewPendingOnly: false,
+            filterCounts: null,
+            pendingBadge: { total: null, seq: 0 },
             review: { mode: "manual", epoch: 0, items: [], page: 0, total: 0, detail: null, error: "", busy: false },
             openedDraft: null,
             existingTargetDraft: null,
@@ -1586,6 +1581,17 @@
                 const migrated = migrateLegacyFilterNodes();
                 if (!migrated) createFallbackFilterFields();
             }
+            if (!fieldsRoot.querySelector("#mailboxFilterExpertScope")) {
+                const label = docRoot().createElement("label");
+                label.setAttribute("class", "mc-field mc-field-wide");
+                label.appendChild(docRoot().createTextNode("专家筛选"));
+                const select = docRoot().createElement("select");
+                select.setAttribute("id", "mailboxFilterExpertScope");
+                select.setAttribute("aria-label", "专家筛选");
+                label.appendChild(select);
+                fieldsRoot.insertBefore(label, fieldsRoot.firstChild);
+                renderExpertScope();
+            }
             // 账号/方向下拉的默认值（从真实节点读，不写死）
             const doc = docRoot();
             const accountSelect = filterControl("mailboxFilterAccountCode");
@@ -1676,12 +1682,12 @@
                         <div class="mc-list-tools">
                             <div class="mc-search-row">
                                 <input type="search" aria-label="搜索专家" placeholder="搜索专家姓名、邮箱">
-                                <button class="mc-icon" type="button" data-action="mc-more-filters" title="更多筛选" aria-label="更多筛选" aria-expanded="false" aria-controls="mcFilterPopover">⋯<span class="mc-filter-count" hidden></span></button>
+                                <button class="mc-icon mc-pending-trigger" type="button" data-action="mc-more-filters" title="更多筛选，待处理邮件数量不可用" aria-label="更多筛选，待处理邮件数量不可用" aria-expanded="false" aria-controls="mcFilterPopover">⋯<span class="mc-pending-count" aria-hidden="true" hidden></span></button>
                                 <div class="mc-filter-popover" id="mcFilterPopover" role="dialog" aria-label="更多筛选" hidden>
                                     <header><strong>更多筛选</strong><button class="mc-close" type="button" data-action="mc-close-filters" aria-label="关闭筛选">×</button></header>
                                     <div class="mc-filter-fields" id="mailboxFilterFields"></div>
                                     <p class="mc-inline-error" role="alert" hidden></p>
-                                    <footer><button class="mc-text-button" type="button" data-action="mc-reset-filters">重置</button><button class="button primary" type="button" id="mailboxSearchBtn">应用筛选</button></footer>
+                                    <footer><button class="mc-text-button" type="button" data-action="mc-reset-filters">重置</button></footer>
                                 </div>
                             </div>
                             <div class="mc-filters">
@@ -1823,21 +1829,11 @@
 
         function committedFilterCount() {
             const filters = instance.filters || {};
-            return FILTER_KEYS.filter((key) => String(filters[key] || "").trim() !== "").length;
+            return FILTER_KEYS.filter((key) => String(filters[key] || "").trim() !== "").length + (instance.filters.expertScope ? 1 : 0);
         }
 
         function renderFilterChrome() {
             const count = committedFilterCount();
-            const countBadge = host.querySelector ? host.querySelector(".mc-filter-count") : null;
-            if (countBadge) {
-                if (count > 0) {
-                    countBadge.textContent = String(count);
-                    countBadge.hidden = false;
-                } else {
-                    countBadge.textContent = "";
-                    countBadge.hidden = true;
-                }
-            }
             const summary = host.querySelector ? host.querySelector(".mc-filter-summary") : null;
             if (summary) {
                 if (count > 0) {
@@ -1850,12 +1846,63 @@
             }
         }
 
+        function renderExpertScope() {
+            const select = filterControl("mailboxFilterExpertScope");
+            if (!select) return;
+            const value = select.value || instance.filters.expertScope || "ALL";
+            const counts = instance.filterCounts;
+            const suffix = (key, unit) => counts && Number.isSafeInteger(counts[key]) && counts[key] >= 0 ? `（${counts[key]}${unit}）` : "";
+            select.innerHTML = `<option value="ALL">全部专家</option><option value="USER1_FULL">user1可写${suffix("user1FullExpertCount", "位")}</option><option value="PENDING_REVIEW">待审核${suffix("pendingReviewDraftCount", "条")}</option>`;
+            select.value = value;
+        }
+
+        function renderPendingBadge() {
+            const trigger = host.querySelector('[data-action="mc-more-filters"]');
+            const badge = host.querySelector(".mc-pending-count");
+            if (!trigger || !badge) return;
+            const total = instance.pendingBadge.total;
+            const label = total === null ? "更多筛选，待处理邮件数量不可用" : `更多筛选，${total}条待处理邮件`;
+            trigger.setAttribute("aria-label", label);
+            trigger.setAttribute("title", label);
+            badge.hidden = total === null || total === 0;
+            badge.textContent = total === null || total === 0 ? "" : total > 99 ? "99+" : String(total);
+        }
+
+        function onPendingBadgeChanged(event) {
+            if (instance.disposed || delegated) return;
+            const data = event && event.detail;
+            const total = data && data.manualReviewTotal;
+            instance.pendingBadge.seq += 1;
+            instance.pendingBadge.total = Number.isSafeInteger(total) && total >= 0 ? total : null;
+            renderPendingBadge();
+        }
+
+        function loadPendingBadge() {
+            if (delegated || instance.disposed) return;
+            const seq = ++instance.pendingBadge.seq;
+            const user = instance.user;
+            instance.pendingBadge.total = null;
+            renderPendingBadge();
+            hostApi()("/api/mail/mailbox/conversations/pending-badge").then((data) => {
+                if (instance.disposed || user !== instance.user || seq !== instance.pendingBadge.seq) return;
+                const total = data && data.manualReviewTotal;
+                instance.pendingBadge.total = Number.isSafeInteger(total) && total >= 0 ? total : null;
+                renderPendingBadge();
+            }).catch(() => {
+                if (instance.disposed || user !== instance.user || seq !== instance.pendingBadge.seq) return;
+                instance.pendingBadge.total = null;
+                renderPendingBadge();
+            });
+        }
+
         function currentFieldValues() {
             const values = {};
             FILTER_FIELDS.forEach((field) => {
                 const el = filterControl(field.id);
                 values[field.key] = el ? String(el.value || "") : "";
             });
+            const scope = filterControl("mailboxFilterExpertScope");
+            values.expertScope = scope && scope.value !== "ALL" ? String(scope.value || "") : "";
             return values;
         }
 
@@ -1865,6 +1912,8 @@
                 if (!el) return;
                 el.value = String(instance.filters[field.key] || "");
             });
+            const scope = filterControl("mailboxFilterExpertScope");
+            if (scope) scope.value = instance.filters.expertScope || "ALL";
         }
 
         function setPopoverOpen(open) {
@@ -1944,6 +1993,7 @@
                 const value = String(values[key] || "").trim();
                 if (value) next[key] = value;
             });
+            if (values.expertScope) next.expertScope = values.expertScope;
             const prevAccount = String(instance.filters.accountCode || "");
             saveBeforeScopeChange(prevAccount, next.accountCode);
             instance.filters = next;
@@ -2074,7 +2124,7 @@
             if (chipValues.repliedOnly) params.set("repliedOnly", "true");
             if (chipValues.pendingOnly) params.set("pendingOnly", "true");
             if (chipValues.suspendedOnly) params.set("suspendedOnly", "true");
-            if (instance.reviewPendingOnly) params.set("reviewPendingOnly", "true");
+            if (instance.filters.expertScope && instance.filters.expertScope !== "ALL") params.set("expertScope", instance.filters.expertScope);
             const filters = instance.filters || {};
             if (filters.accountCode) params.set("accountCode", filters.accountCode);
             if (filters.direction) params.set("direction", filters.direction);
@@ -2177,6 +2227,7 @@
                 <div class="mc-person mailbox-progress-card" data-replied="${instance.chip === CHIP_REPLIED ? "true" : "false"}" data-active="${active ? "true" : "false"}" data-contact-id="${escapeText(item.contactId)}">
                     <button class="mc-person-main" type="button" data-action="mc-select-expert" data-contact-id="${escapeText(item.contactId)}" aria-label="${escapeText(ariaLabel)}"${active ? ' aria-current="true"' : ""}>
                         <span class="mc-person-heading"><strong title="${escapeText(cardName)}">${escapeText(cardName)}</strong>${Number(item.reviewPendingCount) > 0 ? `<span class="mc-badge" data-tone="pending" data-role="review-pending-count">待审核 ${Number(item.reviewPendingCount)}</span>` : ""}</span>
+                        ${item.accessLevel === "FULL" ? '<span class="mc-badge">user1：可写</span>' : ""}
                         <small>${escapeText(accounts)}</small>
                         <small>${escapeText(latestLine)}</small>
                         ${lastReplyListMarkup(item)}
@@ -2435,6 +2486,10 @@
             return hostApi()(url).then((data) => {
                 if (instance.disposed || mySeq !== instance.listSeq || data == null) return null;
                 if (!unmatched) reviewSummary({ count: data.reviewPendingTotal, loading: false, error: null });
+                if (!unmatched) {
+                    instance.filterCounts = data.filterCounts || null;
+                    renderExpertScope();
+                }
                 instance.list.items = unmatched
                     ? ((data && Array.isArray(data.records)) ? data.records : [])
                     : ((data && Array.isArray(data.items)) ? data.items : []);
@@ -2479,6 +2534,10 @@
                 instance.list.loading = false;
                 instance.list.error = err && err.message ? err.message : "加载失败";
                 if (!unmatched) reviewSummary({ count: null, loading: false, error: instance.list.error });
+                if (!unmatched) {
+                    instance.filterCounts = null;
+                    renderExpertScope();
+                }
                 renderList();
                 renderPager();
                 hostShowStatus(
@@ -2502,6 +2561,7 @@
                 if (instance.chip === CHIP_DRAFTS) return data;
                 if (isUnmatchedChip()) resolveUnmatchedSelection();
                 else resolveFocusAndSelection();
+                if (instance.filters.expertScope === "PENDING_REVIEW" && instance.review.mode === "manual") loadReviewDrafts();
                 return data;
             });
         }
@@ -3392,7 +3452,7 @@
         }
 
         function resolveFocusAndSelection() {
-            if (instance.reviewPendingOnly && instance.review.mode === "review" && instance.review.detail
+            if (instance.filters.expertScope === "PENDING_REVIEW" && instance.review.mode === "review" && instance.review.detail
                 && !instance.list.items.some((item) => Number(item.contactId) === Number(instance.selectedContactId))) {
                 hostShowStatus("该专家暂无待审核草稿", "ok");
                 return;
@@ -3749,9 +3809,9 @@
             return Number.isFinite(contactId) && contactId > 0 ? contactId : 0;
         }
 
-        function nextReadAccessState(contactId, phase, canRead) {
+        function nextReadAccessState(contactId, phase, accessLevel) {
             const generation = (instance.readAccess ? instance.readAccess.generation : 0) + 1;
-            return { contactId: contactId || null, phase, canRead, generation };
+            return { contactId: contactId || null, phase, accessLevel, error: "", generation };
         }
 
         /** 换专家/清空选择/销毁/身份变化：作废一切在途读写的写回资格（I-3）。 */
@@ -3762,50 +3822,44 @@
 
         function readAccessView(contactId) {
             const state = instance.readAccess || {};
-            const same = state.contactId != null && Number(state.contactId) === Number(contactId);
-            const phase = same ? state.phase : "loading";
-            const canRead = same ? state.canRead : null;
-            const lastBadge = canRead === true ? READ_ACCESS_TEXT.granted.badge
-                : canRead === false ? READ_ACCESS_TEXT.denied.badge
-                    : READ_ACCESS_TEXT.loading.badge;
-            if (phase === "saving") return { button: READ_ACCESS_TEXT.saving.button, badge: lastBadge, disabled: true };
-            if (phase === "error") return { button: READ_ACCESS_TEXT.error.button, badge: READ_ACCESS_TEXT.error.badge, disabled: false };
-            if (phase === "ready" && typeof canRead === "boolean") {
-                const copy = canRead ? READ_ACCESS_TEXT.granted : READ_ACCESS_TEXT.denied;
-                return { button: copy.button, badge: copy.badge, disabled: false };
-            }
-            return { button: READ_ACCESS_TEXT.loading.button, badge: READ_ACCESS_TEXT.loading.badge, disabled: true };
+            const same = Number(state.contactId) === Number(contactId);
+            return {
+                accessLevel: same ? state.accessLevel : null,
+                disabled: !same || state.phase === "loading" || state.phase === "saving" || !READ_ACCESS_LEVELS.includes(state.accessLevel),
+                error: same ? state.error : ""
+            };
         }
 
-        /** S-1：追加在原 header actions 末尾的两个节点；非 admin 不产出任何标记。 */
         function readAccessNodesHtml(contactId) {
             const id = Number(contactId);
             if (!readAccessAdmin() || !(id > 0) || isUnmatchedChip()) return "";
             const view = readAccessView(id);
-            return `<button class="button" type="button" data-action="mc-toggle-user1-read-access" data-contact-id="${escapeText(id)}"${view.disabled ? " disabled" : ""}>${view.button}</button><span class="mc-badge" data-role="mc-user1-read-access-status" aria-live="polite">${view.badge}</span>`;
+            const labels = ["user1：未授权", "user1：查看＋草稿", "user1：可写"];
+            return `<select class="mc-access-select" data-action="mc-set-user1-access" data-contact-id="${escapeText(id)}" aria-label="user1专家权限"${view.disabled ? " disabled" : ""}>${READ_ACCESS_LEVELS.map((level, index) => `<option value="${level}"${view.accessLevel === level ? " selected" : ""}>${labels[index]}</option>`).join("")}</select><span class="mc-inline-error" data-role="mc-access-error"${view.error ? "" : " hidden"}>${escapeText(view.error || "")}</span>`;
         }
 
-        /** 只改 textContent/disabled；不重建 header、不触发请求。 */
         function applyReadAccessView() {
             if (instance.disposed) return;
             const body = conversationBody();
             const actions = body && body.querySelector ? body.querySelector(".mc-actions") : null;
             if (!actions) return;
-            const button = actions.querySelector('[data-action="mc-toggle-user1-read-access"]');
-            const badge = actions.querySelector('[data-role="mc-user1-read-access-status"]');
+            const select = actions.querySelector('[data-action="mc-set-user1-access"]');
+            const error = actions.querySelector('[data-role="mc-access-error"]');
             const contactId = readAccessTargetContactId();
             if (!contactId) {
-                if (button && button.parentNode) button.parentNode.removeChild(button);
-                if (badge && badge.parentNode) badge.parentNode.removeChild(badge);
+                if (select && select.parentNode) select.parentNode.removeChild(select);
+                if (error && error.parentNode) error.parentNode.removeChild(error);
                 return;
             }
             const view = readAccessView(contactId);
-            if (button) {
-                if (button.dataset) button.dataset.contactId = String(contactId);
-                if (button.textContent !== view.button) button.textContent = view.button;
-                button.disabled = !!view.disabled;
+            if (select) {
+                select.value = view.accessLevel || "";
+                select.disabled = view.disabled;
             }
-            if (badge && badge.textContent !== view.badge) badge.textContent = view.badge;
+            if (error) {
+                error.textContent = view.error || "";
+                error.hidden = !view.error;
+            }
         }
 
         function readAccessContext(contactId) {
@@ -3822,38 +3876,34 @@
             return Number(instance.selectedContactId) === ctx.contactId;
         }
 
-        /** I-2：username/contactId/canRead 必须匹配预期，否则视为不可信回包。 */
+        /** Require the exact current target and a consistent server-derived level. */
         function readAccessPayload(data, contactId) {
             if (!data || typeof data !== "object") return null;
-            if (String(data.username == null ? "" : data.username) !== READ_ACCESS_TARGET) return null;
-            if (Number(data.contactId) !== Number(contactId)) return null;
-            if (typeof data.canRead !== "boolean") return null;
-            return data.canRead;
+            if (data.username !== READ_ACCESS_TARGET || Number(data.contactId) !== Number(contactId)) return null;
+            if (!READ_ACCESS_LEVELS.includes(data.accessLevel)) return null;
+            if (data.canRead !== (data.accessLevel !== "NONE")) return null;
+            return data.accessLevel;
         }
 
-        /** 初次/重试读取实际授权状态（唯一的重试动作）。 */
         function loadReadAccess() {
             const contactId = readAccessTargetContactId();
             const state = instance.readAccess || {};
-            if (!contactId || state.contactId == null || Number(state.contactId) !== contactId) return;
+            if (!contactId || Number(state.contactId) !== contactId) return;
             state.phase = "loading";
+            state.error = "";
             applyReadAccessView();
             const ctx = readAccessContext(contactId);
             hostApi()(readAccessUrl(contactId)).then((data) => {
                 if (!readAccessContextAlive(ctx)) return;
-                const canRead = readAccessPayload(data, contactId);
-                if (canRead === null) {
-                    state.canRead = null;
-                    state.phase = "error";
-                } else {
-                    state.canRead = canRead;
-                    state.phase = "ready";
-                }
+                const level = readAccessPayload(data, contactId);
+                if (level === null) throw new Error("授权状态不可用");
+                state.accessLevel = level;
+                state.phase = "ready";
                 applyReadAccessView();
             }).catch(() => {
                 if (!readAccessContextAlive(ctx)) return;
-                state.canRead = null;
                 state.phase = "error";
+                state.error = "授权状态加载失败，请刷新重试";
                 applyReadAccessView();
             });
         }
@@ -3866,38 +3916,39 @@
             if (contactId) loadReadAccess();
         }
 
-        function toggleReadAccess(button) {
-            // I-1：目标捕获于本次点击（按钮自身 data-contact-id），不回读请求后的当前选择。
-            const contactId = Number(button && button.dataset ? button.dataset.contactId : NaN);
+        function setReadAccess(select) {
+            const contactId = Number(select && select.dataset ? select.dataset.contactId : NaN);
             if (!readAccessAdmin() || !Number.isFinite(contactId) || contactId <= 0) return;
             if (isUnmatchedChip() || Number(instance.selectedContactId) !== contactId) return;
             const state = instance.readAccess || {};
-            if (state.contactId == null || Number(state.contactId) !== contactId) return;
-            if (state.phase === "loading" || state.phase === "saving") return;
-            if (state.phase === "error" || typeof state.canRead !== "boolean") {
-                // 失败后只允许重新对账，绝不自动重发上次 PUT/DELETE。
-                loadReadAccess();
+            const level = String(select.value);
+            if (Number(state.contactId) !== contactId || !READ_ACCESS_LEVELS.includes(state.accessLevel)) return;
+            if (state.phase === "loading" || state.phase === "saving") {
+                applyReadAccessView();
                 return;
             }
-            const grant = state.canRead !== true;
+            if (!READ_ACCESS_LEVELS.includes(level) || level === state.accessLevel) {
+                applyReadAccessView();
+                return;
+            }
             state.phase = "saving";
+            state.error = "";
             applyReadAccessView();
             const ctx = readAccessContext(contactId);
-            hostApi()(readAccessUrl(contactId), { method: grant ? "PUT" : "DELETE" }).then((data) => {
-                const canRead = readAccessPayload(data, contactId);
+            const request = level === "NONE" ? { method: "DELETE" }
+                : { method: "PUT", body: JSON.stringify({ accessLevel: level }) };
+            hostApi()(readAccessUrl(contactId), request).then((data) => {
                 if (!readAccessContextAlive(ctx)) return;
-                if (canRead === null || canRead !== grant) {
-                    state.canRead = null;
-                    state.phase = "error";
-                } else {
-                    state.canRead = canRead;
-                    state.phase = "ready";
-                }
+                if (readAccessPayload(data, contactId) !== level) throw new Error("授权状态不一致");
+                state.accessLevel = level;
+                state.phase = "ready";
                 applyReadAccessView();
+                refreshSuspensionBadge();
+                return fetchList({ page: instance.list.page });
             }).catch(() => {
                 if (!readAccessContextAlive(ctx)) return;
-                state.canRead = null;
-                state.phase = "error";
+                state.phase = "ready";
+                state.error = "授权保存失败，已恢复原权限";
                 applyReadAccessView();
             });
         }
@@ -5709,25 +5760,12 @@
         }
 
         function reviewSummary(summary) {
-            instance.reviewSummary = Object.assign({}, instance.reviewSummary, summary, { active: instance.reviewPendingOnly });
+            instance.reviewSummary = Object.assign({}, instance.reviewSummary, summary, { active: instance.filters.expertScope === "PENDING_REVIEW" });
             if (typeof instance.options.onReviewPendingSummary === "function") {
                 instance.options.onReviewPendingSummary(instance.reviewSummary);
             }
         }
 
-        function setReviewPendingOnly(active) {
-            if (!readAccessAdmin()) return Promise.resolve();
-            return draftNavigation(() => {
-                instance.reviewPendingOnly = !!active;
-                instance.chip = CHIP_ALL;
-                freezeDefaultProbe();
-                instance.list.page = 0;
-                syncChipButtons();
-                return loadList().then(() => {
-                    if (instance.reviewPendingOnly && instance.review.mode === "manual") return loadReviewDrafts();
-                });
-            });
-        }
 
         async function loadReviewDrafts(more) {
             if ((!readAccessAdmin() && !delegated) || !instance.selectedContactId) return;
@@ -5743,7 +5781,7 @@
                 instance.review.total = result.total;
                 instance.review.error = "";
                 renderReviewSelector();
-                if (instance.reviewPendingOnly && instance.review.mode === "manual") {
+                if (instance.filters.expertScope === "PENDING_REVIEW" && instance.review.mode === "manual") {
                     const submitted = instance.review.items.find((item) => !item.deleted && item.state === "SUBMITTED");
                     if (submitted) await selectReviewDraft("review:" + submitted.id);
                     else if (items.length && instance.review.items.length < instance.review.total) await loadReviewDrafts(true);
@@ -9695,11 +9733,6 @@
                 dismissReplied(data.contactId, button);
                 return;
             }
-            // 04（I-1/I-2）：授权入口只走 01 的授权接口，不触碰挂起/邮件/草稿等既有入口。
-            if (action === "mc-toggle-user1-read-access") {
-                toggleReadAccess(button);
-                return;
-            }
             if (action === "mc-select-unmatched") {
                 const unmatchedId = Number(data.unmatchedId);
                 if (Number.isFinite(unmatchedId) && unmatchedId > 0) selectUnmatched(unmatchedId);
@@ -9710,7 +9743,6 @@
                 const nextChip = FILTER_CHIPS.some((entry) => entry.key === chip) ? chip : CHIP_ALL;
                 draftNavigation(() => {
                     const previousGroup = instance.chip === CHIP_DRAFTS ? "drafts" : "conversations";
-                    instance.reviewPendingOnly = false;
                     const nextGroup = nextChip === CHIP_DRAFTS ? "drafts" : "conversations";
                     instance.draftPages[previousGroup] = instance.list.page;
                     if (nextChip !== instance.chip) {
@@ -10217,6 +10249,10 @@
             if (instance.disposed) return;
             const target = event.target;
             if (!target) return;
+            if (target.getAttribute && target.getAttribute("data-action") === "mc-set-user1-access") {
+                setReadAccess(target);
+                return;
+            }
             if (target.getAttribute && target.getAttribute("data-role") === "review-selection") {
                 selectReviewDraft(target.value);
                 return;
@@ -10426,6 +10462,7 @@
                 doc.removeEventListener("click", onOutsideFilterClick);
                 doc.removeEventListener("keydown", onDocumentKeyDown);
                 doc.removeEventListener("meeting-calendar-changed", onMeetingScheduleChanged);
+                doc.removeEventListener("mailbox-pending-badge-changed", onPendingBadgeChanged);
             }
             if (!delegated) {
                 restoreRefreshButton();
@@ -10440,6 +10477,8 @@
         function refreshFromHost() {
             if (instance.disposed) return;
             saveConversationState();
+            loadPendingBadge();
+            beginReadAccess();
             return fetchList({ page: instance.list.page }).then((data) => {
                 if (instance.disposed) return data;
                 if (instance.selectedContactId != null) refreshConversationQuiet();
@@ -10450,6 +10489,8 @@
         function refresh() {
             if (instance.disposed) return Promise.resolve();
             instance.list.page = 0;
+            loadPendingBadge();
+            beginReadAccess();
             return loadList();
         }
 
@@ -10482,6 +10523,7 @@
             rememberLegacyFilterTexts();
             ensureFilterFieldsPresent();
             renderFilterChrome();
+            loadPendingBadge();
             syncSearchChrome();
             const doc = docRoot();
             if (doc && typeof doc.addEventListener === "function") {
@@ -10489,6 +10531,7 @@
                 doc.addEventListener("keydown", onDocumentKeyDown);
                 // fast-p 03（I-1/I-3）：排期写成功后由宿主广播，组件只刷新自己当前 owner
                 doc.addEventListener("meeting-calendar-changed", onMeetingScheduleChanged);
+                doc.addEventListener("mailbox-pending-badge-changed", onPendingBadgeChanged);
             }
             bindFilterEvents();
             loadAuthenticatedUser();
@@ -10514,7 +10557,6 @@
             refreshFromHost,
             loadList,
             flushDrafts,
-            setReviewPendingOnly,
             hasPendingDrafts,
             unmount,
             isMounted: () => true
@@ -10543,7 +10585,6 @@
             refreshFromHost: () => { if (controller) return controller.refreshFromHost(); return undefined; },
             loadList: () => { if (controller) return controller.loadList(); return undefined; },
             flushDrafts: () => controller.flushDrafts(),
-            setReviewPendingOnly: (active) => controller.setReviewPendingOnly(active),
             hasPendingDrafts: () => controller.hasPendingDrafts(),
             unmount: () => { if (controller) controller.unmount(); },
             isMounted: () => { if (controller) return controller.isMounted(); return false; }

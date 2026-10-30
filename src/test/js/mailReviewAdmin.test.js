@@ -29,8 +29,10 @@ async function boot(options = {}) {
                 if (state.listError) return Promise.reject(new Error("list offline"));
                 const params = new URL(url, "http://test").searchParams;
                 const items = [H.expertA(), H.expertB()].map(item => Object.assign(item, { reviewPendingCount: rows.filter(r => r.contactId === item.contactId && !r.deleted && r.state === "SUBMITTED").length }));
-                const selected = params.has("reviewPendingOnly") ? items.filter(item => item.reviewPendingCount) : items;
-                return Promise.resolve({ items: selected, total: selected.length, reviewPendingTotal: rows.filter(r => !r.deleted && r.state === "SUBMITTED").length });
+                const selected = params.get("expertScope") === "PENDING_REVIEW" ? items.filter(item => item.reviewPendingCount) : items;
+                const pendingReviewDraftCount = rows.filter(r => !r.deleted && r.state === "SUBMITTED").length;
+                return Promise.resolve({ items: selected, total: selected.length, reviewPendingTotal: pendingReviewDraftCount,
+                    filterCounts: { user1FullExpertCount: 0, pendingReviewDraftCount } });
             }
             if (!url.includes("/review-drafts")) return next(url, method, raw);
             const parsed = new URL(url, "http://test");
@@ -66,20 +68,28 @@ async function select(ctx, value = "review:11") {
 }
 async function press(ctx, name) { const button = action(ctx, name); assert.ok(button, name); H.click(button); await H.flush(); }
 
-test("internal pending filter uses server counts, retains conditions, expert cards and current approved editor", async () => {
+async function applyExpertScope(ctx, scope) {
+    H.click(ctx.host.querySelector('[data-action="mc-more-filters"]')); await H.flush();
+    const select = ctx.host.querySelector("#mailboxFilterExpertScope");
+    assert.ok(select);
+    assert.equal(ctx.host.querySelectorAll("#mailboxSearchBtn").length, 1);
+    select.value = scope; H.changeEvent(select);
+    H.click(ctx.host.querySelector("#mailboxSearchBtn")); await H.flush();
+}
+test("popover pending scope uses server counts, retains conditions, expert cards and current approved editor", async () => {
     const ctx = await boot({ filters: { accountCode: "acc1", country: "Japan" } });
-    await ctx.api.setReviewPendingOnly(true); await H.flush();
+    await applyExpertScope(ctx, "PENDING_REVIEW");
     assert.equal(ctx.reviewState.summary.count, 3);
     assert.equal(ctx.host.querySelectorAll(".mc-person").length, 2);
     assert.equal(ctx.host.querySelectorAll('.mc-person [data-role="review-pending-count"]').length, 2);
     assert.ok(node(ctx, "review-context"));
-    const params = new URL(ctx.calls.api.filter(r => r.url.includes("conversations?") && r.url.includes("reviewPendingOnly")).at(-1).url, "http://test").searchParams;
+    const params = new URL(ctx.calls.api.filter(r => r.url.includes("conversations?") && r.url.includes("expertScope=PENDING_REVIEW")).at(-1).url, "http://test").searchParams;
     assert.equal(params.get("accountCode"), "acc1"); assert.equal(params.get("page"), "0");
     await press(ctx, "approve");
     await select(ctx, "review:12"); await press(ctx, "approve");
     assert.ok(node(ctx, "review-selection").querySelector('option[value="review:12"][selected]'), "last approval cannot change reviewed recipient/draft");
     assert.ok(action(ctx, "send")); assert.equal(ctx.host.querySelectorAll(".mc-person").length, 1);
-    const chip = ctx.host.querySelector('[data-action="mc-filter"][data-chip="all"]'); H.click(chip); await H.flush();
+    await applyExpertScope(ctx, "ALL");
     assert.equal(ctx.reviewState.summary.active, false);
     ctx.reviewState.listError = true; await ctx.api.refresh(); await H.flush();
     assert.equal(ctx.reviewState.summary.count, null); assert.match(ctx.reviewState.summary.error, /offline/);
@@ -193,7 +203,7 @@ test("stale translation and event replies after changing draft, expert or sessio
 
 test("pagination can find submitted draft beyond the first page and preserves all selectable history", async () => {
     const rows = Array.from({ length: 23 }, (_, i) => detail(i + 11, 1, { state: i === 22 ? "SUBMITTED" : "RETURNED" }));
-    const ctx = await boot({ rows }); await ctx.api.setReviewPendingOnly(true); await H.flush();
+    const ctx = await boot({ rows }); await applyExpertScope(ctx, "PENDING_REVIEW");
     assert.ok(node(ctx, "review-selection").querySelector('option[value="review:33"][selected]')); assert.equal(node(ctx, "review-selection").querySelectorAll("option").length, 24);
     assert.ok(reviews(ctx).some(r => r.url.includes("page=1")));
 });

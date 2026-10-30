@@ -575,3 +575,21 @@ describe("03 · user1 只读邮件视图（S-1/S-2/S-3）", () => {
         assert.ok(appSource.includes('window.MailboxReadOnly'), "admin 模式必须在模块缺失时保持可选");
     });
 });
+
+describe("08 · 管理员最终控件样式", () => {
+    const plan = fs.readFileSync(path.join(__dirname, "..", "..", "..", "docs", "plans", "2026-10-29", "expert-access-08-admin-controls.md"), "utf-8");
+    for (const section of ["S-2", "S-3"]) {
+        it(`${section} 新增CSS逐字符合审批合同`, () => {
+            const block = plan.slice(plan.indexOf(`### ${section}`)).match(/```css\n([\s\S]*?)```/)[1].trimEnd();
+            assert.ok(cssSource.includes(block), `${section} CSS must be verbatim`);
+        });
+    }
+    it("原popover布局与手机规则保留，新控件使用原字段及按钮宿主", () => {
+        assert.match(cssSource, /\.mc-filter-popover\{[^}]*width:430px/);
+        assert.match(cssSource, /\.mc-filter-fields\{[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(0,1fr\);gap:14px;padding:18px 20px/);
+        assert.ok(chatSource.includes('label.setAttribute("class", "mc-field mc-field-wide")'));
+        assert.ok(chatSource.includes('select.setAttribute("id", "mailboxFilterExpertScope")'));
+        assert.ok(!indexSource.includes("mailboxReviewPendingBtn"));
+        assert.ok(!chatSource.includes("mc-toggle-user1-read-access"));
+    });
+});
