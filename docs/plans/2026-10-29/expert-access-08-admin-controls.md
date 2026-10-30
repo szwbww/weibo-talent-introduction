@@ -61,7 +61,7 @@
 .mail-chat .mc-access-select:focus-visible{outline:2px solid #3b82f6;outline-offset:2px}
 .mail-chat .mc-access-select:disabled{opacity:.45;cursor:not-allowed}
 ```
-- 加载中/保存中disabled；失败用既有mc-inline-error提示并恢复服务器已确认值。无需确认/保存按钮；授权本身不发送邮件。列表FULL标记复用`<span class="mc-badge">user1：可写</span>`。禁止大卡片、额外权限面板、inline style、未列class。
+- 加载中/保存中disabled；失败用既有mc-inline-error提示并恢复服务器已确认值。无需确认/保存按钮；授权本身不发送邮件。列表FULL标记复用`<span class="mc-badge">user1：可写</span>`。桌面权限select最大180px；手机继承既有mobile-core的max-width:100%及44px最小高度，不增加覆盖规则，须保持在视口内。禁止大卡片、额外权限面板、inline style、未列class。
 ### S-3：原更多筛选第一项与邮件角标
 - 完整保留E18/E19：七个原字段及原Reset/Apply/关闭按钮；复用mailbox-chat.css:78–100的mc-icon、mc-filter-popover、mc-filter-fields、mc-field、mc-field-wide规则。430px面板/两列/gap14px/padding18px 20px/桌面select34px/圆角7px均不改，手机沿原媒体规则（既有mobile-core min-height:44px优先），不增加覆盖规则。
 - 在`#mailboxFilterFields`第一个子元素插入；选项数字来自服务器，未知不显示伪0：
@@ -186,7 +186,7 @@ E18–E21、audit§5：现有FILTER_FIELDS单一节点迁移，原mc-filter-coun
 - 操作步骤:
   1. 对照本计划S-1–S-4观察。
   2. 打开popover，切权限，模拟失败与无标签。
-- 预期结果: popover桌面430px、手机不溢出；首项select桌面34px、手机沿既有min-height:44px；header权限select最大180px；角标18px；无大权限卡；null标签显示“标签暂不可用”，[]不显示；失败不伪造授权成功。
+- 预期结果: popover桌面430px、手机不溢出；首项select桌面34px、手机沿既有min-height:44px；header权限select桌面最大180px、手机沿既有max-width:100%且不溢出；角标18px；无大权限卡；null标签显示“标签暂不可用”，[]不显示；失败不伪造授权成功。
 - 覆盖: I-3/I-9/I-10/S-1/S-2/S-3/S-4
 
 本节为权威清单；进入人工验收时才导出同名前缀-acceptance.md，本次不生成衍生表。涉及尚未到本步的UI，使用同会话API执行等价动作并在最终08再次通过UI验证。
@@ -198,3 +198,4 @@ E18–E21、audit§5：现有FILTER_FIELDS单一节点迁移，原mc-filter-coun
 - 2026-10-31：完整src消费者核查证明mailReviewAdmin.test.js的既有两条入口仍直调setReviewPendingOnly/mock旧query，完整grep/稳定行为收据见fast-p children/08/execution.md Epoch1。持续授权下7→8仅该直接消费fixture，保留实际同框/审批/历史/翻译/确认/显式发送/跨页断言；改真实popover expertScope=PENDING_REVIEW＋单Apply/准确filterCounts，前端旧state/setter/export删除、不留alias或第二authority，后端兼容参数不变。新增fixture独立fresh及原全量/浏览器/MySQL门禁不减。
 - 2026-10-31：真实full JS1985/1983pass/2fail/0skip证明authFlow/serverDrafts两个实际执行logout闭包的直接consumer缺新增pending计数seq/publisher环境，完整grep/原失败见fast-p children/08/execution.md Epoch2；持续授权下8→10仅两fixture接线，保留flush失败无logout/reload、成功顺序与latest-intent行为，以真实producer/consumer验证当前session迟到计数失效，不加生产缺seq/helper fallback或mock-echo断言。额外mailboxSuspensionFollowup请求已因既有calendar DOM通知惯例撤回，不加该文件；新增fixturefresh独立及原全量/JDK11/精确MySQL/实际1440/390验收不减。
 - 2026-10-31：真实1440/390测量scope34/44，原styles.css mobile-core min-height44覆盖基础34，与产品base相同blob及完整grep/测量见fast-p children/08/execution.md Epoch3。持续授权下仅澄清S-3/A-14桌面34/手机沿原44最小触控高度，保留原手机媒体/共享CSS，禁止新增覆盖或修改未授权styles.css；产品范围/字面新增CSS与其余验收不变，旧证据保留、新身份fresh完成全部门禁/实际验收。
+- 2026-10-31：settled真实header桌面180×34、手机308×44/max-width100%，同一未改mobile-core高specificity规则覆盖新字面max180，完整grep/baseblob/测量见fast-p children/08/execution.md Epoch4。持续授权下仅澄清S-2/A-14桌面最大180、手机沿原100%且不溢出，禁止新增specificity覆盖或改共享CSS/白名单；所有权限/单Apply/其余布局/实际验收与fresh原门禁不变，新身份完成提交与独立验证。
