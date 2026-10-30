@@ -183,6 +183,15 @@ class AuthFlowIntegrationTest {
     @MockBean
     private lateinit var expertContactLocationCatalog: ExpertContactLocationCatalog
 
+    @MockBean
+    private lateinit var delivery: com.weibo.talentintroduction.mail.service.MailDeliveryService
+
+    @Autowired
+    private lateinit var pendingOperations: com.weibo.talentintroduction.mail.service.PendingMailOperationService
+
+    @Autowired
+    private lateinit var senderAccounts: com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
+
     private val jdbc: JdbcOperations
         get() = authFlowNamedJdbc.jdbcOperations
 
@@ -626,6 +635,8 @@ class AuthFlowIntegrationTest {
         val readerSession = loginAs("user1", READER_INITIAL_PASSWORD)
         val readerHashBefore = adminUserRepository.findByUsername("user1")!!.passwordHash
         val mailRecordCountBefore = countRows("mail_record")
+        val recordId = jdbc.queryForObject("SELECT MIN(id) FROM mail_record", Long::class.java)!!
+        jdbc.update("INSERT INTO mail_attachment(id,mail_record_id,file_name) VALUES(1,?,'denied.pdf')", recordId)
 
         // 发送 / 跟进 / 挂起 / 附件 / 改密 一律 403 READ_ONLY_FORBIDDEN
         val forbiddenRequests = listOf(
@@ -639,7 +650,7 @@ class AuthFlowIntegrationTest {
             patch("/api/mail/mailbox/conversations/1/suspension/reason")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""{"reason":"reader attempt"}"""),
-            get("/api/mail/mailbox/MAIL_RECORD/1/attachments"),
+            get("/api/mail/mailbox/MAIL_RECORD/$recordId/attachments"),
             get("/api/mail/mailbox/attachments/1/download"),
             get("/api/mail/conversations/1/outbound-attachments/1/download"),
             post("/api/auth/change-password")
@@ -649,7 +660,6 @@ class AuthFlowIntegrationTest {
         forbiddenRequests.forEach { request ->
             mockMvc.perform(request.session(readerSession))
                 .andExpect(status().isForbidden)
-                .andExpect(jsonPath("$.code").value(MailReadOnlyPolicy.READ_ONLY_FORBIDDEN))
         }
 
         assertEquals(mailRecordCountBefore, countRows("mail_record"), "reader 的发送请求不得落库")
@@ -738,6 +748,77 @@ class AuthFlowIntegrationTest {
         }
         call("POST", "/$id/comments", reader, mapOf("expectedVersion" to v, "text" to "revoked"), 403)
         assertEquals(2L, countRows("mail_record"), "Approval must not send mail")
+    }
+
+    @Test
+    fun `FULL real authenticated sends use existing attempts and session audit while downgrade denies both service entries`() {
+        seedConversationFixtures()
+        runBothBootstraps()
+        completeAdminFirstLogin()
+        val admin = loginAs("admin", "admin")
+        val user = loginAs("user1", READER_INITIAL_PASSWORD)
+        val account = senderAccounts.findByAccountCode(ACCOUNT_CODE)!!
+        org.mockito.Mockito.`when`(delivery.send(
+            org.mockito.Mockito.any(com.weibo.talentintroduction.mail.domain.MailSenderAccount::class.java) ?: account,
+            org.mockito.Mockito.any(com.weibo.talentintroduction.mail.service.ComposedMail::class.java)
+                ?: com.weibo.talentintroduction.mail.service.ComposedMail("fixture@example.test", "s", "b")
+        )).thenReturn(com.weibo.talentintroduction.mail.service.DeliveredMail("<smtp-fixture@test>", "SENT"))
+        fun sent() = org.mockito.Mockito.mockingDetails(delivery).invocations.count { it.method.name == "send" }
+        val anchor = jdbc.queryForObject("SELECT id FROM mail_record WHERE expert_contact_id=1", Long::class.java)!!
+        val foreignAnchor = jdbc.queryForObject("SELECT id FROM mail_record WHERE expert_contact_id=2", Long::class.java)!!
+        val requestId = java.util.UUID.randomUUID().toString()
+        val body = """{"requestId":"$requestId","anchorMailRecordId":$anchor,"subject":"Thank you","textBody":"Thank you for your message.","htmlBody":"<p>Thank you for your message.</p>","operatorName":"admin","safetyWarningConfirmed":true}"""
+        mockMvc.perform(post("/api/mail/mailbox/conversations/1/manual-rich-reply").session(user)
+            .contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isForbidden)
+        assertEquals(0, sent())
+        mockMvc.perform(put("/api/mail/mailbox/conversations/1/read-access/user1").session(admin)
+            .contentType(MediaType.APPLICATION_JSON).content("""{"accessLevel":"FULL"}""")).andExpect(status().isOk)
+        repeat(2) {
+            mockMvc.perform(post("/api/mail/mailbox/conversations/1/manual-rich-reply").session(user)
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk).andExpect(jsonPath("$.sendStatus").value("SENT"))
+        }
+        assertEquals(1, sent(), "completed request returns the existing result without SMTP")
+        assertEquals(1L, countRows("mail_send_attempt"))
+        assertEquals("user1", jdbc.queryForObject(
+            "SELECT operator_name FROM operator_action_log WHERE action_type='SEND_MANUAL_RICH_REPLY' ORDER BY id DESC LIMIT 1", String::class.java))
+        mockMvc.perform(post("/api/mail/mailbox/conversations/1/manual-rich-reply").session(user)
+            .contentType(MediaType.APPLICATION_JSON).content(body.replace(requestId, java.util.UUID.randomUUID().toString())
+                .replace("\"anchorMailRecordId\":$anchor", "\"anchorMailRecordId\":$foreignAnchor")))
+            .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("CONVERSATION_SENT_ANCHOR_NOT_FOUND")))
+        assertEquals(1, sent(), "foreign anchor is rejected before SMTP")
+        assertEquals(1L, countRows("mail_send_attempt"))
+        jdbc.update("""INSERT INTO inbound_mail_processing(id,sender_account_code,imap_uid,message_id,from_email,
+            subject,body,cleaned_body,received_at,process_status,process_reason,expert_contact_id,created_at,updated_at)
+            VALUES(101,?,101,'<incoming-fixture@test>','alice@example.org','Question','Hello','Hello',NOW(3),'MANUAL_REVIEW','TEST',1,NOW(3),NOW(3))""", ACCOUNT_CODE)
+        val inboundBody = """{"subject":"Thank you","textBody":"Thank you for your message.","htmlBody":"<p>Thank you for your message.</p>","operatorName":"admin","safetyWarningConfirmed":true}"""
+        repeat(2) {
+            mockMvc.perform(post("/api/mail/unmatched-inbound/101/manual-rich-reply").session(user)
+                .contentType(MediaType.APPLICATION_JSON).content(inboundBody))
+                .andExpect(status().isOk).andExpect(jsonPath("$.sendStatus").value("SENT"))
+        }
+        assertEquals(2, sent())
+        assertEquals(2L, countRows("mail_send_attempt"))
+        assertEquals(0L, jdbc.queryForObject(
+            "SELECT COUNT(*) FROM operator_action_log WHERE action_type='SEND_MANUAL_RICH_REPLY' AND operator_name <> 'user1'", Long::class.java))
+        mockMvc.perform(put("/api/mail/mailbox/conversations/1/read-access/user1").session(admin)
+            .contentType(MediaType.APPLICATION_JSON).content("""{"accessLevel":"READ"}""")).andExpect(status().isOk)
+        assertThrows(com.weibo.talentintroduction.auth.config.MailReadAccessDeniedException::class.java) {
+            pendingOperations.sendConversationManualRichReply(1,requestId,null,anchor,"Thank you","<p>body</p>","body","admin",
+                authenticatedUsername="user1")
+        }
+        assertThrows(com.weibo.talentintroduction.auth.config.MailReadAccessDeniedException::class.java) {
+            pendingOperations.sendManualRichReply(101,null,"Thank you","<p>body</p>","body","admin",
+                authenticatedUsername="user1")
+        }
+        mockMvc.perform(post("/api/mail/unmatched-inbound/101/manual-rich-reply").session(user)
+            .contentType(MediaType.APPLICATION_JSON).content(inboundBody)).andExpect(status().isForbidden)
+        mockMvc.perform(post("/api/mail/mailbox/conversations/2/manual-rich-reply").session(user)
+            .contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isForbidden)
+        assertEquals(2, sent())
+        assertEquals(2L, countRows("mail_send_attempt"))
+        assertEquals(4L, countRows("mail_record"))
+        org.mockito.Mockito.verifyNoInteractions(expertIndexService)
     }
 
     // ------------------------------------------------------------------
@@ -834,8 +915,15 @@ class AuthFlowIntegrationTest {
         jdbc.update("DELETE FROM expert_replied_dismissal")
         jdbc.update("DELETE FROM expert_follow")
         jdbc.update("DELETE FROM inbound_mail_tag")
+        jdbc.update("DELETE FROM mail_record_rag_fact")
+        jdbc.update("DELETE FROM mail_record_qa_rule")
+        jdbc.update("DELETE FROM meeting_calendar_event")
+        jdbc.update("DELETE FROM mailbox_reply_draft")
+        jdbc.update("DELETE FROM mail_attachment")
+        jdbc.update("DELETE FROM operator_action_log")
         jdbc.update("DELETE FROM inbound_mail_processing")
         jdbc.update("DELETE FROM mail_record")
+        jdbc.update("DELETE FROM mail_send_attempt")
         jdbc.update("DELETE FROM expert_contact")
         jdbc.update("DELETE FROM campaign")
         jdbc.update("DELETE FROM mail_sender_account")

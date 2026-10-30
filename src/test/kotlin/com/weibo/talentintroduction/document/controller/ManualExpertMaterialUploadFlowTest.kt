@@ -197,7 +197,7 @@ class ManualExpertMaterialUploadFlowTest {
         )
         mockMvc = MockMvcBuilders
             .standaloneSetup(ExpertMaterialController(materialService, service))
-            .addInterceptors(AuthInterceptor(authService, ObjectMapper()))
+            .addInterceptors(AuthInterceptor(authService, ObjectMapper(), org.mockito.Mockito.mock(com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard::class.java)))
             .setControllerAdvice(GlobalExceptionHandler())
             // 生产由 Spring Boot 配置 Jackson（Kotlin + JavaTimeModule，LocalDateTime 为
             // ISO-8601 字符串）；standalone MockMvc 的默认 mapper 会把它写成数字数组，

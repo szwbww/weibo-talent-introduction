@@ -26,6 +26,8 @@ import java.util.UUID
 @Import(AuthWebConfig::class)
 @TestPropertySource(properties = ["talent-introduction.auth.enabled=true"])
 class DiscoveryReviewCountsControllerTest {
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private lateinit var resourceGuard: com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard
     @Autowired private lateinit var mvc: MockMvc
     @MockBean private lateinit var service: DiscoveryReviewCountsService
     @MockBean private lateinit var authService: AuthService

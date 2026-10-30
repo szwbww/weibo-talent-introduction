@@ -261,6 +261,8 @@ class MeetingCalendarControllerTest {
 )
 @TestPropertySource(properties = ["talent-introduction.auth.enabled=true"])
 class MeetingCalendarControllerMysqlTest {
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private lateinit var resourceGuard: com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard
 
     @Autowired
     private lateinit var mockMvc: MockMvc

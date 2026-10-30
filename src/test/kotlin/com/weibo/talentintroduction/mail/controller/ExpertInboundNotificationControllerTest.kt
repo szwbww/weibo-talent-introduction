@@ -24,6 +24,8 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.*
 @WebMvcTest(ExpertInboundNotificationController::class, properties = ["talent-introduction.auth.enabled=true"])
 @Import(AuthWebConfig::class)
 class ExpertInboundNotificationControllerTest {
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private lateinit var resourceGuard: com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard
     @Autowired lateinit var mvc: MockMvc
     @MockBean lateinit var service: ExpertInboundNotificationService
     @MockBean lateinit var auth: AuthService

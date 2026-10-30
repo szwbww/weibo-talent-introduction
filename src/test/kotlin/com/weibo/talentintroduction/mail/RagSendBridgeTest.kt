@@ -159,6 +159,7 @@ class RagSendBridgeTest {
         emailSuppressionService,
         meetingConfirmationService,
         org.mockito.Mockito.mock(com.weibo.talentintroduction.mail.service.ReplyIdentityService::class.java),
+        org.mockito.Mockito.mock(com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard::class.java),
         mailRecordRagFactRepository = mailRecordRagFactRepository,
         ragKnowledgeBase = ragKnowledgeBase,
         outboundAttachmentService = outboundAttachmentService

@@ -56,6 +56,8 @@ import java.time.LocalDateTime
 @Import(AuthWebConfig::class, ExpertMeetingVideoControllerTest.KotlinObjectMapperConfig::class)
 @TestPropertySource(properties = ["talent-introduction.auth.enabled=true"])
 class ExpertMeetingVideoControllerTest {
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private lateinit var resourceGuard: com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard
 
     @TestConfiguration
     class KotlinObjectMapperConfig {

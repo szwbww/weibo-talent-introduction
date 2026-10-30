@@ -2,12 +2,14 @@ package com.weibo.talentintroduction.auth.config
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.auth.service.AuthService
+import com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard
 import org.springframework.web.servlet.HandlerInterceptor
 import javax.servlet.http.HttpServletRequest
 import javax.servlet.http.HttpServletResponse
 class AuthInterceptor(
     private val authService: AuthService,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    private val expertMailPermissionGuard: ExpertMailPermissionGuard
 ) : HandlerInterceptor {
 
     override fun preHandle(request: HttpServletRequest, response: HttpServletResponse, handler: Any): Boolean {
@@ -61,6 +63,11 @@ class AuthInterceptor(
                 "只读账号无权访问该资源"
             )
             return false
+        }
+        if (MailReadOnlyPolicy.isReader(username) &&
+            ExpertMailPermissionGuard.isResourceHandler(handler, request.method)
+        ) {
+            expertMailPermissionGuard.authorize(username, handler, request)
         }
 
         return true

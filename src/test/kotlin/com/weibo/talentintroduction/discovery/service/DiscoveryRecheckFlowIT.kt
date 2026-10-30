@@ -606,6 +606,7 @@ class DiscoveryRecheckFlowIT {
             web.addBeanFactoryPostProcessor { factory ->
                 factory.registerSingleton("objectMapper", f.mapper)
                 factory.registerSingleton("authService", auth)
+                factory.registerSingleton("expertMailPermissionGuard", Mockito.mock(com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard::class.java))
                 factory.registerSingleton("recheckController", DiscoveryRecheckController(service, queries))
                 factory.registerSingleton("manualController", DiscoveryReviewController(f.review))
             }

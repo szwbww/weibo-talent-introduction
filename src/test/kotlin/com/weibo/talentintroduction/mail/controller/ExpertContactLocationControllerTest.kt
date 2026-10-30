@@ -51,6 +51,8 @@ import java.time.LocalDateTime
 @Import(AuthWebConfig::class, ExpertContactLocationControllerTest.KotlinObjectMapperConfig::class)
 @TestPropertySource(properties = ["talent-introduction.auth.enabled=true"])
 class ExpertContactLocationControllerTest {
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private lateinit var resourceGuard: com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard
 
     /**
      * 本 slice 需要解析 Kotlin data class @RequestBody；测试侧显式提供带 KotlinModule 的

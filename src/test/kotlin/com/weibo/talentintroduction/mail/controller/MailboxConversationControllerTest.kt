@@ -128,6 +128,7 @@ import org.springframework.test.web.servlet.MvcResult
     MailboxConversationRealJdbcConfig::class,
     MailboxConversationRepository::class,
     MailboxConversationService::class,
+    com.weibo.talentintroduction.mail.service.ExpertMailReadAccessService::class,
     ExpertFollowService::class,
     ExpertRepliedDismissalService::class,
     // 01 (T2/T4)：三个挂起端点走真实服务 + 真实 MySQL JDBC（不只 mock HTTP 成功）。
@@ -135,6 +136,8 @@ import org.springframework.test.web.servlet.MvcResult
 )
 @TestPropertySource(properties = ["talent-introduction.auth.enabled=true"])
 class MailboxConversationControllerTest {
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private lateinit var resourceGuard: com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard
 
     /**
      * 本 slice 需要解析 Kotlin data class @RequestBody（ConversationManualRichReplyRequest）。
@@ -2188,10 +2191,13 @@ class MailboxConversationControllerTest {
     ObjectMapper::class,
     MailboxConversationRealJdbcConfig::class,
     MailboxConversationRepository::class,
-    MailboxConversationService::class
+    MailboxConversationService::class,
+    com.weibo.talentintroduction.mail.service.ExpertMailReadAccessService::class
 )
 @TestPropertySource(properties = ["talent-introduction.auth.enabled=true"])
 class CalendarAttachmentIntegrationTest {
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private lateinit var resourceGuard: com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard
 
     @Autowired
     private lateinit var mockMvc: MockMvc
@@ -2232,6 +2238,9 @@ class CalendarAttachmentIntegrationTest {
     // 01 (T2/T4)：controller 新增构造依赖；本 context 不测挂起端点，仅满足装配。
     @MockBean
     private lateinit var mailboxSuspensionService: MailboxSuspensionService
+
+    @MockBean
+    private lateinit var pendingMailOperationService: PendingMailOperationService
 
     private val meetingTemplateId = 9001L
     private val variableServiceForMeeting = Mockito.mock(MailVariableService::class.java)

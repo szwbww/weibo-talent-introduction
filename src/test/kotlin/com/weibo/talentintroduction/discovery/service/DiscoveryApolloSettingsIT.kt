@@ -306,7 +306,7 @@ private class ApolloSettingsFixture : AutoCloseable {
         context.register(ApolloSettingsHttpConfiguration::class.java)
         context.addBeanFactoryPostProcessor { beans ->
             beans.registerSingleton("apolloController", DiscoveryApolloSettingsController(activeService))
-            beans.registerSingleton("authWebConfig", AuthWebConfig(auth, APOLLO_MAPPER))
+            beans.registerSingleton("authWebConfig", AuthWebConfig(auth, APOLLO_MAPPER, Mockito.mock(com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard::class.java)))
         }
         val dispatcher = servletContext.addServlet("dispatcher", DispatcherServlet(context))
         dispatcher.setLoadOnStartup(1)

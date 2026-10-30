@@ -100,6 +100,21 @@ class AuthProbeController {
 @Import(AuthWebConfig::class, AuthInterceptorTest.KotlinObjectMapperConfig::class)
 @TestPropertySource(properties = ["talent-introduction.auth.enabled=true"])
 class AuthInterceptorTest {
+    @MockBean
+    private lateinit var resourceGuard: com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard
+
+    @org.junit.jupiter.api.BeforeEach
+    fun denyUnassignedResourceOperations() {
+        Mockito.doAnswer {
+            throw MailReadAccessDeniedException(
+                com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard.MAIL_WRITE_FORBIDDEN,
+                "无权操作该专家的邮件资源"
+            )
+        }.`when`(resourceGuard).authorize(
+            Mockito.anyString(), Mockito.any() ?: Any(),
+            Mockito.any(javax.servlet.http.HttpServletRequest::class.java) ?: org.springframework.mock.web.MockHttpServletRequest()
+        )
+    }
 
     /** 解析 Kotlin data class @RequestBody 需要 KotlinModule（生产由 Boot 注册）。 */
     @TestConfiguration
@@ -512,6 +527,25 @@ class AuthInterceptorTest {
         assertEquals(
             listOf(
                 "AuthController#logout:POST",
+                "CalendarAttachmentController#download:GET",
+                "ExpertContactLocationController#countries:GET",
+                "ExpertContactLocationController#get:GET",
+                "ExpertContactLocationController#save:PUT",
+                "ExpertContactLocationController#timing:GET",
+                "ExpertContactManagementController#changeIndexLevel:POST",
+                "ExpertContactManagementController#changeOperatorStatus:POST",
+                "ExpertContactManagementController#getContactDetail:GET",
+                "ExpertContactNoteController#get:GET",
+                "ExpertContactNoteController#save:PUT",
+                "ExpertDocumentBrowseController#download:GET",
+                "ExpertDocumentBrowseController#listDocuments:GET",
+                "ExpertDocumentBrowseController#preview:GET",
+                "ExpertMaterialController#downloadZip:POST",
+                "ExpertMaterialController#listMaterials:GET",
+                "ExpertMaterialController#reconcile:POST",
+                "ExpertMaterialController#requestTransfers:POST",
+                "ExpertMaterialController#uploadMaterial:POST",
+                "InboundMailSummaryController#tagOptions:GET",
                 "MailReviewDraftController#comment:POST",
                 "MailReviewDraftController#create:POST",
                 "MailReviewDraftController#delete:DELETE",
@@ -521,8 +555,29 @@ class AuthInterceptorTest {
                 "MailReviewDraftController#save:PUT",
                 "MailReviewDraftController#submit:POST",
                 "MailReviewDraftController#withdraw:POST",
+                "MailboxAttachmentController#download:GET",
+                "MailboxAttachmentController#listAttachments:GET",
+                "MailboxConversationController#conversationManualRichReply:POST",
+                "MailboxConversationController#dismissReplied:PUT",
+                "MailboxConversationController#follow:PUT",
                 "MailboxConversationController#list:GET",
-                "MailboxConversationController#messages:GET"
+                "MailboxConversationController#messages:GET",
+                "MailboxConversationController#setProgressStatus:PUT",
+                "MailboxConversationController#unfollow:DELETE",
+                "MeetingCalendarController#cancel:POST",
+                "MeetingCalendarController#event:GET",
+                "MeetingCalendarController#events:GET",
+                "MeetingCalendarController#summaries:GET",
+                "MeetingCalendarController#update:PUT",
+                "MeetingConfirmationController#options:GET",
+                "MeetingConfirmationController#timeZones:GET",
+                "OutboundAttachmentController#downloadDraft:GET",
+                "OutboundAttachmentController#downloadSentAttachment:GET",
+                "OutboundAttachmentController#upload:POST",
+                "TranslationController#translate:POST",
+                "UnmatchedInboundMailController#cancelResolved:POST",
+                "UnmatchedInboundMailController#markResolved:POST",
+                "UnmatchedInboundMailController#sendManualRichReply:POST"
             ),
             allowed.toList()
         )

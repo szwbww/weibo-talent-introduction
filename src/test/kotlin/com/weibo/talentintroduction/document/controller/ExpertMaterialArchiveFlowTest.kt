@@ -39,7 +39,7 @@ class ExpertMaterialArchiveFlowTest {
         val auth = Mockito.mock(AuthService::class.java)
         Mockito.`when`(auth.findUser("tester")).thenReturn(AdminUser(username = "tester", passwordHash = "unused", mustChangePassword = false, createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()))
         mvc = MockMvcBuilders.standaloneSetup(ExpertMaterialController(f.material, archiveService = f.archive))
-            .addInterceptors(AuthInterceptor(auth, mapper))
+            .addInterceptors(AuthInterceptor(auth, mapper, org.mockito.Mockito.mock(com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard::class.java)))
             .setControllerAdvice(ExpertMaterialHttpExceptionAdvice(), GlobalExceptionHandler())
             .setMessageConverters(MappingJackson2HttpMessageConverter(mapper)).build()
     }

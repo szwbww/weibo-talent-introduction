@@ -28,6 +28,8 @@ import javax.imageio.ImageIO
 @Import(AuthWebConfig::class)
 @TestPropertySource(properties = ["talent-introduction.auth.enabled=true"])
 class MailOpenTrackingControllerTest {
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private lateinit var resourceGuard: com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard
     @Autowired lateinit var mvc: MockMvc
     @MockBean lateinit var service: MailOpenTrackingService
     @MockBean lateinit var authService: AuthService

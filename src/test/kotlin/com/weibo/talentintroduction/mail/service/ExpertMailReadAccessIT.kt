@@ -77,6 +77,7 @@ import java.util.Optional
 @Import(
     AuthWebConfig::class,
     ExpertMailReadAccessService::class,
+    ExpertMailPermissionGuard::class,
     MailboxConversationService::class,
     MailboxConversationRepository::class,
     ExpertMailReadAccessRealJdbcConfig::class
@@ -448,11 +449,13 @@ class ExpertMailReadAccessIT {
             mockMvc.perform(get("/api/mail/mailbox/conversations/2/messages").session(user))
                 .andExpect(status().isForbidden)
             Mockito.clearInvocations(materials, search, records, pending, follows)
-            mockMvc.perform(put("/api/mail/mailbox/conversations/1/follow").session(user))
-                .andExpect(status().isForbidden)
-            mockMvc.perform(post("/api/mail/mailbox/conversations/1/manual-rich-reply").session(user)
-                .contentType(MediaType.APPLICATION_JSON).content("""{"operatorName":"admin"}"""))
-                .andExpect(status().isForbidden)
+            if (level == ExpertMailAccessLevel.READ) {
+                mockMvc.perform(put("/api/mail/mailbox/conversations/1/follow").session(user))
+                    .andExpect(status().isForbidden)
+                mockMvc.perform(post("/api/mail/mailbox/conversations/1/manual-rich-reply").session(user)
+                    .contentType(MediaType.APPLICATION_JSON).content("""{"operatorName":"admin"}"""))
+                    .andExpect(status().isForbidden)
+            }
             mockMvc.perform(put("/api/mail/mailbox/conversations/1/read-access/user1").session(user)
                 .contentType(MediaType.APPLICATION_JSON).content("""{"accessLevel":"FULL"}"""))
                 .andExpect(status().isForbidden)
