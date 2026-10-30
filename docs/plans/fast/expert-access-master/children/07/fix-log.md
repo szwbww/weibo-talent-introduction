@@ -23,3 +23,8 @@
   - Safety/cleanup: SMTP DATA exactly0; ES writes0. Browser page errors empty in final user capture. Both managed browser tabs released; owned Java terminated (143), ES/SMTP shutdown/server_close, owned Docker removal exit0; temporary runtime args/log/attachments and classpath removed. No owned services/scaffolds remain.
 - Result: FIXED.
 - Notes: F-07-1 bounded repair only; no new product files, plan change, push/merge/amend/squash or unrelated master-feature replay. Required precise repair-covering frontend commands and actual lifecycle runtime are fresh; broad opt-in Maven aggregate and unrelated acceptance not rerun or claimed. Independent post-repair verification remains controller-owned.
+
+### Controller canonical lineage correction — 2026-10-31
+- Fix commit: be6437501d88a3eb283ede009eedf5cbca16b117
+- The original decorated human-readable fix entry above is preserved. The checkpoint parser requires a standalone bare SHA line within this exact epoch/round; this line supplies that binding without changing repair facts or history.
+- First evidence commit 75442c1ef4ce55f62d7762df4749e9aa91a5d34f failed only this artifact binding check. No product/test/runtime verification was rerun or altered; terminal independent verdict and actual repair count remain unchanged.

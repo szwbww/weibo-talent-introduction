@@ -562,3 +562,6 @@ Exit0, artifact2877:6 tests/zero failures/errors/skips, no source mutation. Epoc
 - Final child code head: be6437501d88a3eb283ede009eedf5cbca16b117
 - Actual repair rounds: 1; fix commits: be6437501d88a3eb283ede009eedf5cbca16b117.
 - This closing entry records existing execution/fix/verifier evidence; no product command was rerun by the controller.
+
+## Controller checkpoint artifact correction — 2026-10-31
+- First evidence75442c1ef4ce55f62d7762df4749e9aa91a5d34f failed solely because repair log used a decorated SHA rather than the validator bare-line binding. Added canonical binding inside existing epoch5round1, preserving historical text. No product/test edit or rerun. Independent LIGHT_PASS_WITH_NOTES/fix1/F-07-1 closure unchanged.
