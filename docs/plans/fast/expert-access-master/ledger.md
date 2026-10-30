@@ -10,7 +10,7 @@
 - Finalization repair parent: N/A
 - Started: 2026-10-29T23:52:46.426Z
 - Current child: review05
-- Waiting role: IMPLEMENTER
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -19,7 +19,7 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| review05 | docs/plans/2026-10-29/draft-review-05-admin.md | commit:08d6af05bae3349ca46f92df61b48ab0bac87183 | none | 1 | WAITING_FOR_AGENT | 59eb60cf00534a342c1019827a62f2b7b1db0f2b | — | 0 | — | — | — | Required implementer acquisition pending; current exact plan incorporates approved final-UI override |
+| review05 | docs/plans/2026-10-29/draft-review-05-admin.md | commit:08d6af05bae3349ca46f92df61b48ab0bac87183 | none | 1 | LIGHT_PASS_WITH_NOTES | 59eb60cf00534a342c1019827a62f2b7b1db0f2b | 036fc19c88b3a7f5509bbf167a68db6a8af7a20f | 0 | — | 036fc19c88b3a7f5509bbf167a68db6a8af7a20f | 8b96952d25d80d7526e89945b77633146c4b18d3 | ExpertBootstrap05Verifier COMPLETE_CHILD; O-1 disposable JDBC timezone fixture correction only; all four gatesPASS, no repairs |
 | 01 | docs/plans/2026-10-29/expert-access-01-read-labels.md | sha256:77aef654ed91794dbadcfde5207d16b540d191802e4c2e819ee80bf47f8af0a4 | review05 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 | 02 | docs/plans/2026-10-29/expert-access-02-access-level.md | sha256:ff1565438734fd5ef9a20f7ca275354ae8b9b38f6fa7ea4d1153f39e9761ef99 | 01 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
 | 03 | docs/plans/2026-10-29/expert-access-03-resource-guard.md | sha256:0033f9c3d1460f43b2fc1e26a00250a88f679fcb410be0b51f02a2b018055e47 | 02 | 1 | PENDING | — | — | 0 | — | — | — | Not dispatched |
@@ -47,3 +47,9 @@
 - Validator --help exit0; --through-child supported. Baseline product failures are documented in exact inherited review05 plan T5; do not rerun merely to reconfirm them. Every post-change mandatory command must run freshly.
 - Original approved expert plan hashes were matched before amendment. Initial snapshot master truncation was corrected in docs-only6ba13dc before product work; A1 records it truthfully.
 - Only one execution worktree /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-expert-access-master, branch fast/expert-access-master. All writers and verifiers must use this root explicitly.
+
+## Agent Availability Events
+- 2026-10-30: child review05, role IMPLEMENTER, attempt 1, agent ExpertBootstrap05Impl. Exact error: `[openai-codex/gpt-6.1-sol] getaddrinfo ENOTFOUND chatgpt.com`; task failed exit1 after partial authorized edits. Retained HEAD e706afc87b3696ded01af140ecbff9254c368138; no implementation commit or execution result exists. Action RETRY same role, same plan identity/epoch; fix_round remains0. Current user instruction: 继续.
+- 2026-10-30: replacement IMPLEMENTER ExpertBootstrap05Resume acquired successfully; agent_attempt reset0. Original writer remains recorded for verifier separation. Resumes the same child, plan identity and epoch; no product repair round.
+- 2026-10-30: review05 READY_FOR_VERIFICATION at036fc19c88b3a7f5509bbf167a68db6a8af7a20f; fresh VERIFIER ExpertBootstrap05Verifier acquired, distinct from both writers. Executor command/runtime evidence is in execution.md; controller has not verified product work inline.
+- 2026-10-30: review05 terminal LIGHT_PASS_WITH_NOTES / COMPLETE_CHILD from ExpertBootstrap05Verifier; no AUTO_FIX. O-1 records corrected disposable fixture timezone, not product failure. Child artifact checkpoint is required before01; all later children remain PENDING.
