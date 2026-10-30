@@ -104,6 +104,41 @@
         return merged;
     }
 
+    function appendExpertTags(doc, parent, tags) {
+        if (!Array.isArray(tags)) {
+            parent.appendChild(statusNode(doc, "mc-note", "标签暂不可用"));
+            return;
+        }
+        if (!tags.length) return;
+        var row = makeNode(doc, "div", "mc-tag-row");
+        row.dataset.role = "readonly-expert-tags";
+        tags.forEach(function (tag) {
+            var value = String(tag == null ? "" : tag);
+            var label = typeof expertTagLabels !== "undefined" && expertTagLabels &&
+                Object.prototype.hasOwnProperty.call(expertTagLabels, value) ? expertTagLabels[value] : value;
+            var chip = makeNode(doc, "span", "expert-tag");
+            setText(chip, label);
+            chip.setAttribute("title", label);
+            row.appendChild(chip);
+        });
+        parent.appendChild(row);
+    }
+
+    function appendMailTags(doc, parent, message) {
+        if (!message || message.source !== "INBOUND_PROCESSING" ||
+                !Array.isArray(message.tags) || !message.tags.length) return;
+        var row = makeNode(doc, "div", "mc-tag-row");
+        row.dataset.role = "readonly-mail-tags";
+        message.tags.forEach(function (tag) {
+            var className = "inbound-tag-chip " + (tag && tag.tagType === "QA" ? "qa" : "custom");
+            if (tag && tag.active === false) className += " inactive";
+            var chip = makeNode(doc, "span", className);
+            setText(chip, tag && tag.label);
+            row.appendChild(chip);
+        });
+        parent.appendChild(row);
+    }
+
     function createInstance(host, options) {
         var doc = host.ownerDocument || global.document;
         var api = options.api;
@@ -627,6 +662,7 @@
                 setText(subject, latestSubject(item));
                 main.appendChild(name);
                 main.appendChild(subject);
+                appendExpertTags(doc, main, item.expertTags);
                 person.appendChild(main);
                 expertList.appendChild(person);
             });
@@ -642,6 +678,8 @@
         // ---- 会话渲染 --------------------------------------------------------------
         function renderIdentity() {
             setText(identityName, selected ? ((selected.name || "").trim() || "未填写姓名") : "");
+            identity.replaceChildren(identityName);
+            if (selected) appendExpertTags(doc, identity, selected.expertTags);
         }
 
         function renderConversation() {
@@ -689,6 +727,7 @@
                 article.appendChild(head);
                 article.appendChild(subject);
                 article.appendChild(body);
+                appendMailTags(doc, article, message);
                 timeline.appendChild(article);
             });
             messages.appendChild(timeline);
@@ -713,6 +752,13 @@
                 listTotal = normalized.total;
                 listLoading = false;
                 listFailed = false;
+                if (selected) {
+                    listItems.forEach(function (item) {
+                        if (String(item.contactId) !== String(selected.contactId)) return;
+                        selected.expertTags = Array.isArray(item.expertTags) ? item.expertTags.slice() : null;
+                    });
+                    renderIdentity();
+                }
                 renderList();
             }, function (error) {
                 if (isStale(gen, seq, currentListSeq)) return;
@@ -807,7 +853,11 @@
                     if (String(candidate.contactId) === String(contactId)) item = candidate;
                 });
                 resetReview();
-                selected = { contactId: contactId, name: item ? (item.name || "") : "" };
+                selected = {
+                    contactId: contactId,
+                    name: item ? (item.name || "") : "",
+                    expertTags: item && Array.isArray(item.expertTags) ? item.expertTags.slice() : null
+                };
                 detailSeq += 1; clearDetailBody();
                 renderList(); renderConversation(); renderReview();
                 return loadSelectedDetail();
