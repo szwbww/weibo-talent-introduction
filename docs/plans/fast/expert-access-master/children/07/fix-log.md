@@ -28,3 +28,4 @@
 - Fix commit: be6437501d88a3eb283ede009eedf5cbca16b117
 - The original decorated human-readable fix entry above is preserved. The checkpoint parser requires a standalone bare SHA line within this exact epoch/round; this line supplies that binding without changing repair facts or history.
 - First evidence commit 75442c1ef4ce55f62d7762df4749e9aa91a5d34f failed only this artifact binding check. No product/test/runtime verification was rerun or altered; terminal independent verdict and actual repair count remain unchanged.
+- Evidence correction 2: replacement 8f2dcca49ceaff5bd17da6bee5c9d9a5b32c63af had the correct binding but omitted a changed verify-log entry in that commit. This closing record accompanies all required execution/verification/fix artifacts in the next docs-only evidence commit; repair SHA/count/facts remain unchanged.

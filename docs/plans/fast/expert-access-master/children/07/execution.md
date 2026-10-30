@@ -565,3 +565,4 @@ Exit0, artifact2877:6 tests/zero failures/errors/skips, no source mutation. Epoc
 
 ## Controller checkpoint artifact correction — 2026-10-31
 - First evidence75442c1ef4ce55f62d7762df4749e9aa91a5d34f failed solely because repair log used a decorated SHA rather than the validator bare-line binding. Added canonical binding inside existing epoch5round1, preserving historical text. No product/test edit or rerun. Independent LIGHT_PASS_WITH_NOTES/fix1/F-07-1 closure unchanged.
+- Evidence correction 2: replacement 8f2dcca49ceaff5bd17da6bee5c9d9a5b32c63af fixed the SHA binding but did not change verify-log.md in that commit. The validator requires execution, verification and nonzero-round fix logs changed together; the next replacement records these closing facts in all three. No new verification or product change.

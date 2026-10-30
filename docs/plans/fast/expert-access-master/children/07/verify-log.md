@@ -190,3 +190,7 @@ Independent actual production runtime, not writer receipts or tests relabeled as
 
 ### Required Action
 - COMPLETE_CHILD
+
+### Controller evidence closing record — 2026-10-31
+- Independent verdict/action above remain unchanged: LIGHT_PASS_WITH_NOTES / COMPLETE_CHILD, epoch5 attempt2, terminal code be6437501d88a3eb283ede009eedf5cbca16b117 and one repair.
+- Checkpoint correction 2 records this unchanged verifier report together with execution/fix closing facts. Previous replacement 8f2dcca49ceaff5bd17da6bee5c9d9a5b32c63af lacked a verify-log change in that commit. No controller product verification, test rerun or new finding is asserted.
