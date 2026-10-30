@@ -13555,3 +13555,10 @@ body.preview-available:not(.preview-docked) .preview-rail {
 .mail-chat .mail-review-panel[hidden],.mail-chat .mail-review-footer[hidden],.mail-chat .mail-review-actions[hidden]{display:none}
 @media(max-width:760px){.mail-chat .mail-review-controls{align-items:stretch}.mail-chat .mail-review-select{width:100%;min-width:0}.mail-chat .mail-review-input{font-size:16px}.mail-chat .mail-review-actions .button{min-height:36px;height:auto}}
 
+.mail-chat .mail-review-confirm{width:min(480px,calc(100vw - 32px));max-height:85dvh;overflow:auto;margin:auto;padding:20px;border:1px solid #d9e3f1;border-radius:14px;background:#fff;color:#475d79;box-shadow:0 20px 90px #17325730}
+.mail-chat .mail-review-confirm::backdrop{background:#172c4738;backdrop-filter:blur(2px)}
+.mail-chat .mail-review-confirm h3{margin:0 0 12px;font-size:16px;font-weight:600;line-height:1.5}
+.mail-chat .mail-review-confirm p{margin:0 0 12px;font-size:12px;line-height:1.8;overflow-wrap:anywhere}
+.mail-chat .mail-review-confirm .mail-review-actions{margin-top:16px}
+@media(max-width:760px){.mail-chat .mail-review-confirm{padding:16px}.mail-chat .mail-review-confirm .button{min-height:44px;height:auto;white-space:normal}}
+

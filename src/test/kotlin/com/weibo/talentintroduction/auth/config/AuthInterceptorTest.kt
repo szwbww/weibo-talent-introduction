@@ -315,7 +315,7 @@ class AuthInterceptorTest {
     }
 
     // ------------------------------------------------------------------
-    // I-1：精确 user1 默认拒绝（除三个白名单 handler）
+    // I-1：精确 user1 默认拒绝，只有逐项登记的 handler 可访问。
     // ------------------------------------------------------------------
 
     @Test
@@ -487,11 +487,11 @@ class AuthInterceptorTest {
 
     // ------------------------------------------------------------------
     // 白名单必须与真实映射绑定：扫描全部 @RestController 的真实方法，
-    // 只有三个 HandlerMethod 在对应 HTTP method 下可通过（不是 URL 前缀）。
+    // 仅精确 HandlerMethod/HTTP verb 配对可通过（不是 URL 前缀）。
     // ------------------------------------------------------------------
 
     @Test
-    fun `reader allowlist matches exactly the three real mapped handler methods`() {
+    fun `reader allowlist matches exactly the approved real mapped handler methods`() {
         val allowed = sortedSetOf<String>()
         var mappedMethodCount = 0
 
@@ -512,6 +512,15 @@ class AuthInterceptorTest {
         assertEquals(
             listOf(
                 "AuthController#logout:POST",
+                "MailReviewDraftController#comment:POST",
+                "MailReviewDraftController#create:POST",
+                "MailReviewDraftController#delete:DELETE",
+                "MailReviewDraftController#detail:GET",
+                "MailReviewDraftController#events:GET",
+                "MailReviewDraftController#list:GET",
+                "MailReviewDraftController#save:PUT",
+                "MailReviewDraftController#submit:POST",
+                "MailReviewDraftController#withdraw:POST",
                 "MailboxConversationController#list:GET",
                 "MailboxConversationController#messages:GET"
             ),

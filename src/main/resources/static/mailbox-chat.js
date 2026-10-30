@@ -858,6 +858,8 @@
             draftPages: { drafts: 0, conversations: 0 },
             draftCounts: new Map(),
             draftTotal: 0,
+            reviewPendingOnly: false,
+            review: { mode: "manual", epoch: 0, items: [], page: 0, total: 0, detail: null, error: "", busy: false },
             openedDraft: null,
             existingTargetDraft: null,
             searchText: "",
@@ -1132,6 +1134,7 @@
             instance.manual.qa = draft && draft.qa ? snapshotQa(draft.qa) : null;
             content.innerHTML = manualComposeHtml(rec.key, rec.target.kind === "INBOUND" ? rec.target.processingId : null,
                 rec.target.accountScope, draft, instance.manual.defaultSubject || "Re:", rec.target.kind === "OUTBOUND");
+            renderReviewSelector();
             const values = readManualValues();
             rec.baseline = values;
             refreshMeetingAttachmentCard();
@@ -2049,6 +2052,7 @@
             if (chipValues.repliedOnly) params.set("repliedOnly", "true");
             if (chipValues.pendingOnly) params.set("pendingOnly", "true");
             if (chipValues.suspendedOnly) params.set("suspendedOnly", "true");
+            if (instance.reviewPendingOnly) params.set("reviewPendingOnly", "true");
             const filters = instance.filters || {};
             if (filters.accountCode) params.set("accountCode", filters.accountCode);
             if (filters.direction) params.set("direction", filters.direction);
@@ -2150,7 +2154,7 @@
             return `
                 <div class="mc-person mailbox-progress-card" data-replied="${instance.chip === CHIP_REPLIED ? "true" : "false"}" data-active="${active ? "true" : "false"}" data-contact-id="${escapeText(item.contactId)}">
                     <button class="mc-person-main" type="button" data-action="mc-select-expert" data-contact-id="${escapeText(item.contactId)}" aria-label="${escapeText(ariaLabel)}"${active ? ' aria-current="true"' : ""}>
-                        <span class="mc-person-heading"><strong title="${escapeText(cardName)}">${escapeText(cardName)}</strong></span>
+                        <span class="mc-person-heading"><strong title="${escapeText(cardName)}">${escapeText(cardName)}</strong>${Number(item.reviewPendingCount) > 0 ? `<span class="mc-badge" data-tone="pending" data-role="review-pending-count">待审核 ${Number(item.reviewPendingCount)}</span>` : ""}</span>
                         <small>${escapeText(accounts)}</small>
                         <small>${escapeText(latestLine)}</small>
                         ${lastReplyListMarkup(item)}
@@ -2397,11 +2401,13 @@
             instance.list.error = "";
             // 请求模式在发出时固化；晚到的另一模式响应由 listSeq 拒绝（I-3）。
             const unmatched = isUnmatchedChip();
+            reviewSummary({ loading: true, error: null });
             const url = unmatched
                 ? `/api/mail/unmatched-inbound?${unmatchedParams(page).toString()}`
                 : `/api/mail/mailbox/conversations?${conversationsParams(page).toString()}`;
             return hostApi()(url).then((data) => {
-                if (instance.disposed || mySeq !== instance.listSeq) return null;
+                if (instance.disposed || mySeq !== instance.listSeq || data == null) return null;
+                if (!unmatched) reviewSummary({ count: data.reviewPendingTotal, loading: false, error: null });
                 instance.list.items = unmatched
                     ? ((data && Array.isArray(data.records)) ? data.records : [])
                     : ((data && Array.isArray(data.items)) ? data.items : []);
@@ -2445,6 +2451,7 @@
                 if (instance.disposed || mySeq !== instance.listSeq) return null;
                 instance.list.loading = false;
                 instance.list.error = err && err.message ? err.message : "加载失败";
+                if (!unmatched) reviewSummary({ count: null, loading: false, error: instance.list.error });
                 renderList();
                 renderPager();
                 hostShowStatus(
@@ -3357,6 +3364,11 @@
         }
 
         function resolveFocusAndSelection() {
+            if (instance.reviewPendingOnly && instance.review.mode === "review" && instance.review.detail
+                && !instance.list.items.some((item) => Number(item.contactId) === Number(instance.selectedContactId))) {
+                hostShowStatus("该专家暂无待审核草稿", "ok");
+                return;
+            }
             const items = instance.list.items || [];
             const focus = instance.options.focus;
             if (focus && focus.contactId != null
@@ -3452,6 +3464,7 @@
         }
 
         function teardownConversationSubViews() {
+            resetReview();
             instance.replyIdentity.seq += 1;
             instance.replyIdentity.busy = null;
             closeExpertNoteDialog({ restoreFocus: false, force: true });
@@ -3562,6 +3575,7 @@
                     instance.conversation.loading = false;
                     renderConversationContent({ locateLatest: true });
                 }
+                loadReviewDrafts();
                 // 02（I-3）：时间线就绪后重算完成提示锚点位置。
                 renderSuspensionDetail();
                 if (!opts.skipListReload) {
@@ -5630,10 +5644,372 @@
             }
         }
 
+        function resetReview() {
+            const dialog = host.querySelector('[data-role="review-context-confirm"]');
+            if (dialog && dialog.open) dialog.close();
+            instance.review = { mode: "manual", epoch: instance.review.epoch + 1, items: [], page: 0, total: 0, detail: null, error: "", busy: false };
+        }
+
+        function reviewCapture() {
+            const detail = instance.review.detail;
+            return { selection: instance.review, user: instance.user, session: draftSessionEpoch,
+                contact: instance.selectedContactId, target: instance.manual.targetKey, epoch: instance.convEpoch,
+                id: detail && detail.id, version: detail && detail.version };
+        }
+
+        function reviewCurrent(capture) {
+            const now = reviewCapture();
+            return !instance.disposed && capture.selection === now.selection && capture.user === now.user
+                && capture.user === draftSessionUser && capture.session === now.session && capture.contact === now.contact
+                && capture.target === now.target && capture.epoch === now.epoch && capture.id === now.id && capture.version === now.version;
+        }
+
+        function reviewRequest(id, action, body) {
+            return hostApi()(`/api/mail/mailbox/review-drafts/${Number(id)}${action ? "/" + action : ""}`,
+                body === undefined ? undefined : { method: "POST", body: JSON.stringify(body) });
+        }
+
+        function reviewSummary(summary) {
+            instance.reviewSummary = Object.assign({}, instance.reviewSummary, summary, { active: instance.reviewPendingOnly });
+            if (typeof instance.options.onReviewPendingSummary === "function") {
+                instance.options.onReviewPendingSummary(instance.reviewSummary);
+            }
+        }
+
+        function setReviewPendingOnly(active) {
+            if (!readAccessAdmin()) return Promise.resolve();
+            return draftNavigation(() => {
+                instance.reviewPendingOnly = !!active;
+                instance.chip = CHIP_ALL;
+                freezeDefaultProbe();
+                instance.list.page = 0;
+                syncChipButtons();
+                return loadList().then(() => {
+                    if (instance.reviewPendingOnly && instance.review.mode === "manual") return loadReviewDrafts();
+                });
+            });
+        }
+
+        async function loadReviewDrafts(more) {
+            if (!readAccessAdmin() || !instance.selectedContactId) return;
+            const capture = reviewCapture();
+            const requestSeq = instance.review.listSeq = (instance.review.listSeq || 0) + 1;
+            const page = more ? instance.review.page + 1 : 0;
+            try {
+                const result = await hostApi()(`/api/mail/mailbox/review-drafts?contactId=${Number(capture.contact)}&page=${page}&size=20&includeDeleted=true`);
+                if (!reviewCurrent(capture) || requestSeq !== instance.review.listSeq) return;
+                const items = Array.isArray(result && result.items) ? result.items : [];
+                instance.review.items = more ? instance.review.items.concat(items) : items;
+                instance.review.page = page;
+                instance.review.total = result.total;
+                instance.review.error = "";
+                renderReviewSelector();
+                if (instance.reviewPendingOnly && instance.review.mode === "manual") {
+                    const submitted = instance.review.items.find((item) => !item.deleted && item.state === "SUBMITTED");
+                    if (submitted) await selectReviewDraft("review:" + submitted.id);
+                    else if (items.length && instance.review.items.length < instance.review.total) await loadReviewDrafts(true);
+                }
+            } catch (error) {
+                if (!reviewCurrent(capture) || requestSeq !== instance.review.listSeq) return;
+                instance.review.error = error.message || "审核草稿加载失败，请重试";
+                renderReviewSelector();
+            }
+        }
+
+        function reviewControlsHtml() {
+            const review = instance.review;
+            return `<div class="mail-review-controls"><span class="mc-badge" data-role="review-state">${review.mode === "manual" ? "admin 自己撰写" : escapeText(review.detail ? review.detail.state : "审核草稿加载中")}</span>
+                <label>当前内容<select class="mail-review-select" aria-label="切换回复草稿" data-role="review-selection"><option value="manual">我的人工回复（admin）</option>
+                ${review.items.filter((item) => !item.deleted).map((item) => `<option value="review:${Number(item.id)}"${review.detail && item.id === review.detail.id ? " selected" : ""}>${escapeText(item.state)} · 草稿 #${Number(item.id)}（${escapeText(item.ownerUsername)}）</option>`).join("")}</select></label>
+                <button class="mc-text-button" type="button" data-review-action="more-drafts"${review.items.length >= review.total ? " hidden" : ""}>加载更多草稿</button>
+                <button class="mc-text-button" type="button" data-review-action="history">草稿历史</button>
+                ${review.error ? `<p class="mc-error" role="alert">${escapeText(review.error)}</p>` : ""}</div>`;
+        }
+
+        function renderReviewSelector() {
+            if (!readAccessAdmin()) return;
+            const compose = manualComposeEl();
+            if (!compose) return;
+            const old = compose.querySelector(".mail-review-controls");
+            if (old) old.remove();
+            if (instance.review.mode === "manual" && !compose.querySelector('[data-role="review-history"]')) {
+                compose.insertAdjacentHTML("beforeend", '<div class="mail-review-panel" data-role="review-history" hidden></div><div class="mail-review-panel" data-role="review-discussion" hidden></div>');
+            }
+            compose.insertAdjacentHTML("afterbegin", reviewControlsHtml());
+        }
+
+        function redrawReviewCompose() {
+            const scroll = scrollEl();
+            if (!scroll) return;
+            const section = scroll.querySelector('[data-section="manual"]');
+            if (section) section.remove();
+            renderManualSectionInto(scroll);
+        }
+
+        async function selectReviewDraft(value) {
+            if (!readAccessAdmin()) return;
+            return draftNavigation(async () => {
+                const previous = instance.review;
+                instance.review = { mode: value === "manual" ? "manual" : "review", epoch: previous.epoch + 1,
+                    items: previous.items, page: previous.page, total: previous.total, detail: null, busy: false, error: "" };
+                instance.review.manualTarget = previous.manualTarget || (instance.manual.targetKey ? draftTargetFromKey(instance.manual.targetKey) : null);
+                const dialog = host.querySelector('[data-role="review-context-confirm"]');
+                if (dialog && dialog.open) dialog.close();
+                teardownMeetingViews();
+                instance.replyIdentity.seq += 1;
+                closeFollowUpDialog({ restoreFocus: false });
+                closeMaterialRequestDialog({ restoreFocus: false });
+                closeTemplateReferenceDialog({ restoreFocus: false });
+                redrawReviewCompose();
+                if (value === "manual") return;
+                const capture = reviewCapture();
+                try {
+                    const detail = await reviewRequest(value.slice(7));
+                    if (!reviewCurrent(capture)) return;
+                    if (detail.deleted || Number(detail.contactId) !== Number(capture.contact)) throw new Error("草稿不可用于回复");
+                    instance.review.detail = detail;
+                    redrawReviewCompose();
+                    if (detail.state === "APPROVED" && reviewSendRetryable(detail.sendStatus)) await checkReviewContext();
+                } catch (error) {
+                    if (capture.selection !== instance.review || instance.disposed) return;
+                    instance.review.error = error.message || "审核草稿加载失败";
+                    redrawReviewCompose();
+                }
+            });
+        }
+
+        function renderReviewCompose(scroll) {
+            const review = instance.review, detail = review.detail;
+            const status = detail && detail.sendStatus;
+            const submitted = detail && detail.state === "SUBMITTED";
+            const canSend = detail && detail.state === "APPROVED" && reviewSendRetryable(status) && !review.sendUncertain;
+            const body = detail ? meetingRestoreEditorHtml(detail.html) || escapeText(detail.text) : "";
+            scroll.insertAdjacentHTML("beforeend", `<details class="mc-section" data-section="manual" open><summary>人工回复</summary><div class="mc-section-content"><div class="mc-compose" data-role="manual-compose">
+                ${reviewControlsHtml()}<p class="mc-note" data-role="review-context">${escapeText(detail ? `${detail.ownerUsername} 提交 · ${status === "SENT" ? "已发送" : ["UNKNOWN", "DELIVERY_UNKNOWN", "DELIVERY_IN_PROGRESS"].includes(status) ? "发送结果待确认，请勿重复发送" : detail.state === "APPROVED" ? "已审核 · 尚未发送" : "审核通过后才显示发送按钮"}` : "正在读取审核草稿")}</p>
+                <label>主题<input aria-label="回复主题" disabled value="${escapeText(detail && detail.subject || "")}"></label>
+                <div class="mc-editor" contenteditable="false" role="textbox" aria-multiline="true" aria-label="人工回复正文" data-role="mc-editor">${body}</div>
+                <div class="mail-review-footer" data-role="review-footer"><button class="mc-text-button" type="button" data-review-action="translate">翻译</button><button class="mc-text-button" type="button" data-review-action="comments">评论 ${Number(detail && detail.commentCount) || 0}</button><button class="mc-text-button" type="button" data-review-action="events">变动历史</button></div>
+                <div class="mc-translation" data-role="review-translation" hidden></div><div class="mail-review-panel" data-role="review-discussion" hidden></div><div class="mail-review-panel" data-role="review-history" hidden></div>
+                ${detail && detail.returnReason ? `<p class="mc-note">${escapeText(detail.returnReason)}</p>` : ""}
+                <div class="mail-review-actions" data-role="review-actions"${submitted ? "" : " hidden"}><button class="button" type="button" data-review-action="return">退回修改</button><button class="button primary" type="button" data-review-action="approve">审核通过</button></div>
+                <div class="mail-review-panel" data-role="review-return" hidden><label>退回原因<textarea class="mail-review-input" aria-label="退回原因" maxlength="2000"></textarea></label><div class="mail-review-actions"><button class="button" type="button" data-review-action="cancel-return">取消</button><button class="button primary" type="button" data-review-action="confirm-return">确认退回</button></div></div>
+                <div class="mc-compose-footer">${canSend ? `<button class="button primary" type="button" data-review-action="send">发送已审核回复</button>` : ""}</div></div>
+                <dialog class="mail-review-confirm" aria-labelledby="mailReviewConfirmTitle" data-role="review-context-confirm"><h3 id="mailReviewConfirmTitle">对话已有更新</h3><p data-role="review-confirm-expert">该专家的往来邮件在审核后发生了变化。</p><p>请查看最新对话，确认这份回复仍然适用。确认后仍需手动点击发送。</p><p class="mc-error" role="alert" data-role="review-confirm-error" hidden></p><div class="mail-review-actions"><button class="button" type="button" data-review-action="context-cancel" autofocus>返回查看最新对话</button><button class="button primary" type="button" data-review-action="context-confirm">确认回复仍适用</button></div></dialog>
+                </div></details>`);
+            const dialog = host.querySelector('[data-role="review-context-confirm"]');
+            if (dialog) dialog.addEventListener("cancel", (event) => { event.preventDefault(); cancelReviewContext(); });
+        }
+
+        function reviewSendRetryable(status) {
+            return ["NOT_SENT", "PREPARED", "FAILED", "FAILED_SAFE_TO_RETRY"].includes(status);
+        }
+
+        async function checkReviewContext() {
+            const capture = reviewCapture();
+            const context = await reviewRequest(capture.id, "context");
+            if (!reviewCurrent(capture)) return false;
+            instance.review.context = context;
+            if (context.changed && instance.review.confirmedToken !== context.currentToken) {
+                instance.review.confirmationEventId = null;
+                instance.review.confirmedToken = null;
+                const errorNode = host.querySelector('[data-role="review-confirm-error"]');
+                if (errorNode) errorNode.hidden = true;
+                const dialog = host.querySelector('[data-role="review-context-confirm"]');
+                if (dialog && !dialog.open) { dialog.showModal(); dialog.querySelector("[autofocus]").focus(); }
+                return false;
+            }
+            return true;
+        }
+
+        function cancelReviewContext() {
+            instance.review.confirmSeq = (instance.review.confirmSeq || 0) + 1;
+            instance.review.confirmationEventId = null;
+            instance.review.confirmedToken = null;
+            const dialog = host.querySelector('[data-role="review-context-confirm"]');
+            if (dialog) dialog.close();
+            refreshConversationQuiet();
+            const selector = host.querySelector('[data-role="review-selection"]');
+            if (selector) selector.focus();
+        }
+
+        async function reviewEvents(more, id) {
+            const capture = reviewCapture();
+            const review = instance.review;
+            const historyId = more ? review.historyId : (id || capture.id);
+            if (!historyId) return;
+            const before = more && review.beforeId;
+            if (more && !before) return;
+            const requestSeq = review.eventsSeq = (review.eventsSeq || 0) + 1;
+            const result = await reviewRequest(historyId, "events" + (before ? "?beforeId=" + Number(before) : ""));
+            if (!reviewCurrent(capture) || requestSeq !== review.eventsSeq) return;
+            const events = Array.isArray(result) ? result : [];
+            review.historyId = historyId;
+            review.beforeId = events.length ? events[events.length - 1].id : null;
+            const panel = host.querySelector('[data-role="review-discussion"]');
+            if (!panel) return;
+            const html = events.map((item) => `<article class="mail-review-entry"><strong>${escapeText(item.actorUsername)} · ${escapeText(item.createdAt)} · ${escapeText(item.eventType)}</strong><div class="mc-body" data-role="review-version-body">${escapeText(item.payload && (item.payload.text || item.payload.reason || item.payload.subject || item.payload.result) || "")}</div></article>`).join("");
+            if (more) panel.querySelector('[data-role="review-events"]').insertAdjacentHTML("beforeend", html);
+            else panel.innerHTML = `<div data-role="review-events">${html}</div>${historyId === capture.id ? '<textarea class="mail-review-input" aria-label="评论内容" maxlength="2000"></textarea><button class="button" type="button" data-review-action="comment">发布评论</button>' : ""}<button class="mc-text-button" type="button" data-review-action="more-events">加载更早历史</button>`;
+            panel.querySelector('[data-review-action="more-events"]').hidden = events.length < 20;
+            panel.hidden = false;
+        }
+
+        function updateReviewDetail(detail) {
+            const review = instance.review;
+            if (!review.detail || review.detail.version !== detail.version) {
+                review.translation = null;
+                review.confirmationEventId = null;
+                review.confirmedToken = null;
+            }
+            review.detail = detail;
+            review.items = review.items.map((item) => item.id === detail.id ? detail : item);
+            redrawReviewCompose();
+        }
+
+        async function handleReviewAction(button) {
+            const action = button.dataset.reviewAction;
+            if (action === "more-drafts") return loadReviewDrafts(true);
+            if (action === "history") {
+                const panel = host.querySelector('[data-role="review-history"]');
+                if (!panel) return;
+                panel.hidden = !panel.hidden;
+                panel.innerHTML = instance.review.items.map((item) => `<article class="mail-review-entry"><span>草稿 #${Number(item.id)} · ${escapeText(item.state || "")}${item.deleted ? " · 已删除" : ""} · ${escapeText(item.updatedAt || "")}</span>${item.deleted ? "" : `<button class="mc-text-button" type="button" data-review-action="select" data-draft-id="${Number(item.id)}">打开草稿</button>`}<button class="mc-text-button" type="button" data-review-action="history-events" data-draft-id="${Number(item.id)}">变动历史</button></article>`).join("");
+                return;
+            }
+            if (action === "select") return selectReviewDraft("review:" + button.dataset.draftId);
+            if (action === "history-events") return reviewEvents(false, Number(button.dataset.draftId)).catch((error) => hostShowStatus(error.message, "error"));
+            if (action === "more-events" && instance.review.mode === "manual") return reviewEvents(true).catch((error) => hostShowStatus(error.message, "error"));
+            const review = instance.review;
+            if (review.mode !== "review" || !review.detail) return;
+            if (action === "context-cancel") return cancelReviewContext();
+            if (review.busy) return;
+            if (action === "return" || action === "cancel-return") {
+                host.querySelector('[data-role="review-return"]').hidden = action === "cancel-return";
+                return;
+            }
+            const capture = reviewCapture();
+            review.busy = true;
+            button.disabled = true;
+            let sendAttempted = false;
+            try {
+                if (action === "translate") {
+                    const panel = host.querySelector('[data-role="review-translation"]');
+                    if (!panel.hidden) { panel.hidden = true; button.textContent = "翻译"; return; }
+                    button.textContent = "翻译中…";
+                    const result = review.translation || await reviewRequest(capture.id, "translate", { expectedVersion: capture.version });
+                    if (!reviewCurrent(capture)) return;
+                    if (!result.ok) throw new Error(result.reason || "翻译失败");
+                    review.translation = result;
+                    panel.textContent = result.translatedText;
+                    panel.hidden = false;
+                    button.textContent = "收起译文";
+                } else if (action === "comments" || action === "events" || action === "more-events") {
+                    await reviewEvents(action === "more-events");
+                } else if (action === "context-confirm") {
+                    const confirmSeq = review.confirmSeq || 0;
+                    review.confirmationEventId = null;
+                    review.confirmedToken = null;
+                    button.textContent = "正在确认…";
+                    const result = await reviewRequest(capture.id, "confirm-context", { expectedVersion: capture.version, observedContextToken: review.context.currentToken });
+                    if (!reviewCurrent(capture) || confirmSeq !== (review.confirmSeq || 0)) return;
+                    review.confirmationEventId = result.confirmationEventId;
+                    review.confirmedToken = result.currentToken;
+                    host.querySelector('[data-role="review-context-confirm"]').close();
+                    hostShowStatus("已确认最新对话，请再次手动点击发送", "ok");
+                    host.querySelector('[data-role="review-selection"]').focus();
+                } else if (action === "send") {
+                    if (review.detail.state !== "APPROVED" || !reviewSendRetryable(review.detail.sendStatus) || review.sendUncertain) return;
+                    if (!await checkReviewContext() || !reviewCurrent(capture)) return;
+                    const body = { expectedVersion: capture.version, confirmationEventId: review.confirmationEventId || null };
+                    sendAttempted = true;
+                    try { await reviewRequest(capture.id, "send", body); }
+                    catch (error) {
+                        if (!reviewCurrent(capture)) return;
+                        if (error.data && error.data.code === "MANUAL_SEND_SAFETY_BLOCKED") {
+                            const confirm = hostFn("confirmManualReplySafety");
+                            const safety = confirm && await confirm(error.data);
+                            if (!safety || !reviewCurrent(capture)) return;
+                            if (!await checkReviewContext() || !reviewCurrent(capture)) return;
+                            await reviewRequest(capture.id, "send", Object.assign({}, body, safety));
+                        } else throw error;
+                    }
+                    if (!reviewCurrent(capture)) return;
+                    const detail = await reviewRequest(capture.id);
+                    if (!reviewCurrent(capture)) return;
+                    updateReviewDetail(detail);
+                    refreshConversationQuiet();
+                } else if (action === "approve" || action === "confirm-return" || action === "comment") {
+                    const body = { expectedVersion: capture.version };
+                    let endpoint = action;
+                    if (action === "approve") body.observedContextToken = review.detail.currentContextToken;
+                    if (action === "confirm-return") {
+                        endpoint = "return";
+                        body.reason = host.querySelector('[aria-label="退回原因"]').value.trim();
+                        if (!body.reason) throw new Error("请填写退回原因");
+                    }
+                    if (action === "comment") {
+                        endpoint = "comments";
+                        body.text = host.querySelector('[aria-label="评论内容"]').value.trim();
+                        if (!body.text) throw new Error("请填写评论内容");
+                    }
+                    const result = await reviewRequest(capture.id, endpoint, body);
+                    if (!reviewCurrent(capture)) return;
+                    if (action === "comment") {
+                        review.detail.commentCount = Number(review.detail.commentCount || 0) + 1;
+                        const comments = host.querySelector('[data-review-action="comments"]');
+                        if (comments) comments.textContent = "评论 " + review.detail.commentCount;
+                        await reviewEvents(false);
+                    } else {
+                        updateReviewDetail(result);
+                        await fetchList({ page: instance.list.page });
+                        if (capture.selection === instance.review) resolveFocusAndSelection();
+                    }
+                }
+            } catch (error) {
+                if (!reviewCurrent(capture)) return;
+                if (action === "translate") button.textContent = "翻译失败，重试";
+                if (error.data && error.data.code === "REVIEW_CONTEXT_CHANGED" || action === "approve" && error.status === 409) {
+                    review.confirmedToken = null;
+                    review.confirmationEventId = null;
+                    refreshConversationQuiet();
+                    if (review.detail.state === "APPROVED") {
+                        await checkReviewContext().catch(() => {});
+                    } else {
+                        const detail = await reviewRequest(capture.id).catch(() => null);
+                        if (!reviewCurrent(capture)) return;
+                        if (detail) updateReviewDetail(detail);
+                    }
+                } else if (sendAttempted) {
+                    const detail = await reviewRequest(capture.id).catch(() => null);
+                    if (!reviewCurrent(capture)) return;
+                    review.sendUncertain = !detail;
+                    if (detail) updateReviewDetail(detail);
+                    else {
+                        review.error = "发送状态暂不可用，请重新打开草稿确认，勿重复发送";
+                        redrawReviewCompose();
+                    }
+                }
+                if (capture.selection !== instance.review || instance.disposed) return;
+                const errorNode = host.querySelector('[data-role="review-confirm-error"]');
+                if (action === "context-confirm" && errorNode) { errorNode.textContent = error.message; errorNode.hidden = false; }
+                hostShowStatus(error.message || "审核操作失败，请重试", "error");
+            } finally {
+                if (capture.selection === instance.review) {
+                    review.busy = false;
+                    button.disabled = false;
+                    if (action === "context-confirm") button.textContent = "确认回复仍适用";
+                }
+            }
+        }
+
         function renderManualSectionInto(scroll) {
             if (!scroll) return;
+            if (instance.review.mode === "review") {
+                renderReviewCompose(scroll);
+                return;
+            }
             const summary = instance.selectedSummary || {};
-            const restoredTarget = instance.openedDraft && instance.openedDraft.target;
+            const restoredTarget = instance.review.manualTarget || (instance.openedDraft && instance.openedDraft.target);
             if (restoredTarget) {
                 let newestInbound = null;
                 (instance.conversation.items || []).forEach((message) => {
@@ -5695,6 +6071,7 @@
                     <div class="mc-section-content">${manualContent}</div>
                 </details>
             `);
+            renderReviewSelector();
             // 会议卡（组件缺席时无容器，refresh 为空操作）
             refreshMeetingAttachmentCard();
             // 通用附件卡：渲染后按草稿字段重建（含上传中/失败态）并刷新发送可用性
@@ -5703,7 +6080,7 @@
                 const rec = draftRecord(targetKey);
                 rec.baseline = readManualValues();
                 if (rec.seq !== rec.ack || rec.inflight || rec.closed || rec.conflict) refreshDraftStatus();
-                else if (instance.auth.ready) loadDraftRecord(rec, instance.openedDraft).catch(() => {});
+                else if (instance.auth.ready) loadDraftRecord(rec, instance.review.manualTarget ? null : instance.openedDraft).catch(() => {});
                 else refreshDraftStatus();
             }
         }
@@ -6658,7 +7035,7 @@
 
         /** 捕获是否仍是当前 owner —— 只决定要不要动 DOM/提示，不决定要不要写草稿。 */
         function outboundOwnerIsCurrent(captured) {
-            if (!captured || instance.disposed) return false;
+            if (!captured || instance.disposed || instance.review.mode !== "manual") return false;
             const contactId = Number(instance.selectedContactId);
             const scope = instance.conversation.accountScope || "";
             if (captured.ownerKey !== conversationCacheKey(instance.user, scope, contactId)) return false;
@@ -6831,6 +7208,7 @@
         // --------------------------------------------------------------
 
         function currentTargetKey() {
+            if (instance.review.mode !== "manual") return null;
             const mode = instance.manual.mode;
             return (mode === "inbound" || mode === "outbound") && instance.manual.targetKey
                 ? instance.manual.targetKey
@@ -6842,6 +7220,7 @@
         }
 
         function manualInputs(composeEl) {
+            if (instance.review.mode !== "manual") return null;
             const root = composeEl || manualComposeEl();
             if (!root || !root.querySelector) return null;
             const subjectInput = root.querySelector('input[aria-label="回复主题"]');
@@ -8612,13 +8991,15 @@
                 : "";
             let controller = instance.meeting.controller;
             if (!controller) {
+                const reviewSession = instance.review;
                 controller = lib.create({
                     api: hostApi(),
                     contextPath: (instance.options && instance.options.contextPath)
                         ? String(instance.options.contextPath)
                         : "",
-                    onApply: (capturedTargetKey, payload) => applyMeetingFromDialog(capturedTargetKey, payload),
-                    onStatus: (message, type) => hostShowStatus(message, type)
+                    onApply: (capturedTargetKey, payload) => instance.review === reviewSession && instance.review.mode === "manual"
+                        && applyMeetingFromDialog(capturedTargetKey, payload),
+                    onStatus: (message, type) => { if (instance.review === reviewSession && instance.review.mode === "manual") hostShowStatus(message, type); }
                 });
                 instance.meeting.controller = controller;
             }
@@ -8836,6 +9217,7 @@
         }
 
         function sendManualReply() {
+            if (instance.review.mode !== "manual") return;
             const rec = currentDraftRecord();
             if (!rec || rec.preparing || rec.sending || rec.conflict || rec.closed || !rec.loaded || rec.error === "load" || rec.readOnly) return;
             if (outboundAttachmentsBlockSend()) {
@@ -9190,6 +9572,10 @@
         function onClick(event) {
             if (instance.disposed) return;
             const target = event.target;
+            const reviewButton = event.target && event.target.closest && event.target.closest("[data-review-action]");
+            if (reviewButton) { event.preventDefault(); handleReviewAction(reviewButton); return; }
+            if (instance.review.mode === "review" && event.target && event.target.closest
+                && event.target.closest('[data-role="manual-compose"]')) return;
             const button = target && typeof target.closest === "function"
                 ? target.closest("[data-action]")
                 : null;
@@ -9258,6 +9644,7 @@
                 const nextChip = FILTER_CHIPS.some((entry) => entry.key === chip) ? chip : CHIP_ALL;
                 draftNavigation(() => {
                     const previousGroup = instance.chip === CHIP_DRAFTS ? "drafts" : "conversations";
+                    instance.reviewPendingOnly = false;
                     const nextGroup = nextChip === CHIP_DRAFTS ? "drafts" : "conversations";
                     instance.draftPages[previousGroup] = instance.list.page;
                     if (nextChip !== instance.chip) {
@@ -9764,6 +10151,10 @@
             if (instance.disposed) return;
             const target = event.target;
             if (!target) return;
+            if (target.getAttribute && target.getAttribute("data-role") === "review-selection") {
+                selectReviewDraft(target.value);
+                return;
+            }
             // S-1/I-1：隐藏 input 的选择结果只入草稿队列；取消选择（零文件）不改任何状态。
             if (target.getAttribute && target.getAttribute("data-role") === "outbound-file-input") {
                 handleOutboundFileSelection(target);
@@ -10020,6 +10411,7 @@
             refreshFromHost,
             loadList,
             flushDrafts,
+            setReviewPendingOnly,
             hasPendingDrafts,
             unmount,
             isMounted: () => true
@@ -10048,6 +10440,7 @@
             refreshFromHost: () => { if (controller) return controller.refreshFromHost(); return undefined; },
             loadList: () => { if (controller) return controller.loadList(); return undefined; },
             flushDrafts: () => controller.flushDrafts(),
+            setReviewPendingOnly: (active) => controller.setReviewPendingOnly(active),
             hasPendingDrafts: () => controller.hasPendingDrafts(),
             unmount: () => { if (controller) controller.unmount(); },
             isMounted: () => { if (controller) return controller.isMounted(); return false; }
