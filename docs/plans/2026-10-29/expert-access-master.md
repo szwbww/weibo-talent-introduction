@@ -96,7 +96,7 @@
 - 来源: original
 
 ### Invariant I-14: 阶段边界与证据
-- Rule: 按顺序实施；默认每步≤10文件、≤2子系统、已有表每步≤1新增字段。有界例外仅为review05继承13文件；03的41（原8+33必需安全fixture）；04a的11（原5+6消费/行号fixture）；04b的16（原7+中央guard/8消费fixture）；05的12（原9+3窄UPDATE/锁消费fixture）；06的16（原10+2个owner路由激活文件+4个必需消费/矩阵/行号fixture）。只退役正式能力取代的临时全局拒绝/全局pending/实现次数pin，稳定安全/业务行为不减，不扩大产品能力。核对SHA/迁移号/已有脏改；MySQL目标skip不可算PASS；不授权部署。
+- Rule: 按顺序实施；默认每步≤10文件、≤2子系统、已有表每步≤1新增字段。有界例外仅为review05继承13文件；03的41（原8+33必需安全fixture）；04a的11（原5+6消费/行号fixture）；04b的16（原7+中央guard/8消费fixture）；05的12（原9+3窄UPDATE/锁消费fixture）；06的17（原10+2个owner路由激活文件+5个必需消费/矩阵/行号fixture）。只退役正式能力取代的临时全局拒绝/全局pending/实现次数pin，稳定安全/业务行为不减，不扩大产品能力。核对SHA/迁移号/已有脏改；MySQL目标skip不可算PASS；不授权部署。
 - Applies to: 实施/验证/发布报告
 - Violation consequence: 范围漂移、迁移冲突、无证据的完成声明
 - 来源: K-master-plan-shared-file-sequential-gates
@@ -217,7 +217,7 @@
 | 4a | [专家资料与标签目标守卫](expert-access-04a-profile-tags.md) | 11（原5+6个必要fixture/行号守卫例外） |
 | 4b | [日历、个人草稿与审核权限联动](expert-access-04b-calendar-drafts.md) | 16（原7+中央guard及8个必要消费fixture例外） |
 | 5 | [来信归属写入与撤权兜底](expert-access-05-pending-owner.md) | 12（原9+3个窄UPDATE/锁消费fixture例外） |
-| 6 | [待处理查询与筛选范围](expert-access-06-pending-query.md) | 16（原10+2个owner路由激活+4个必要fixture例外） |
+| 6 | [待处理查询与筛选范围](expert-access-06-pending-query.md) | 17（原10+2个owner路由激活+5个必要fixture例外） |
 | 7 | [用户可写会话复用与能力隔离](expert-access-07-user-workspace.md) | 10 |
 | 8 | [管理端最终下拉筛选与待处理角标](expert-access-08-admin-controls.md) | 7 |
 
@@ -452,3 +452,4 @@ A-1覆盖最新“可读看标签不可改”；A-2/5/6/7覆盖FULL；A-3/4/9/15
 - 2026-10-30：05既定窄UPDATE/回读/严格contact-first锁需要3个原名单外现有fixture迁移（children/05/execution.md Epoch1含完整save/mock/失败注入/重开锁收据），持续授权下I-14的9→12有界例外，产品/构造/API范围不变。退役save次数/副本实现pin、不换新转发pin；保留失败无ack/状态/UID/物理邮箱/审计/attention/归属安全行为，并fresh执行所有新增fixture。
 - 2026-10-30：06完整owner消费者及精确handler集合审计需4个原名单外fixture（children/06/execution.md Epoch1/addendum含全量参数/JDBC断言/矩阵/行号收据），持续授权下原12→16有界例外。SQL计数复用现有repository/JDBC/reviewPendingPredicate，不加产品依赖/新约定；只退役owner=session已取代的全局pending假设，原READ挂起403/default-deny/跨资源/账号/分页/幂等保持，新增fixture均须实际门禁。
 - 2026-10-30：真实既有MailboxPendingBadge DTO与app refreshUnmatchedBadge消费的是manualReviewTotal，不存在total（完整DTO/app/grep收据见children/06/execution.md Epoch2）。持续授权下仅纠正master/06/07/08的pendingBadge.total规划误名为pendingBadge.manualReviewTotal，保留原wire，不加alias/shim、不迁移DTO/额外调用方；个人未挂起邮件数/0隐藏/失败不可用/专家数与草稿数分离等行为不变。06部分已授权实现于新epoch对齐后继续，旧epoch未测不算PASS。
+- 2026-10-30：06新增未过滤toolbar草稿计数触及MailReviewQueryIT原精确2条review SQL pin（children/06/execution.md Epoch3完整grep与语义收据），持续授权下16→17仅该fixture例外；退役精确数、不重钉3，保留恒定批量/no-body/reader零review查询。新fixture误用无HandlerMethod的POST期望403予以退役，既有global method-error→500不在功能修复范围；真实资源/错verb/default-deny安全验收不减，部分实现于新epoch完成。
