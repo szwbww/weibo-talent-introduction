@@ -49,6 +49,7 @@ E05/E06/E09与审计§2、§5。pending_flag→SUM→排序/HAVING/total同链�
 3. conversation list新增expertScope=ALL/USER1_FULL/PENDING_REVIEW，严格枚举；仅admin可请求后两项（user1用现有权限过滤+个人pending）。USER1_FULL用grant EXISTS；PENDING_REVIEW复用既有review-only SQL，不能查出来后内存过滤；所有筛选AND，count/page/explain同一谓词（I-7）。
 4. 为更多筛选提供管理员计数`user1FullExpertCount`（拥有真实会话的FULL专家数）及`pendingReviewDraftCount`（可见SUBMITTED草稿数），计数不受当前页/q/普通筛选影响，沿全部非SIMULATOR真实账号口径；必须由SQL/既有审核Service真实读取。放在conversation list响应增加可选filterCounts，空页仍返回；user1不返回管理员统计。全局pendingBadge.total仍由既有独立端点，和草稿数分开（I-7）。
 5. 三个现有IT测试扩大数据矩阵：同专家双方owner、两页、多账号/disabled、挂起、provided、reopen、同日期排序；真实EXPLAIN记录归属索引与count/page结果，验证全局来信汇总未改变（I-7/I-12/I-13）。
+6. 仅在个人owner SQL/挂起准入完成后，接续03暂缓的精确key：pendingBadge GET只取session；suspension GET、suspend PUT、updateSuspensionReason PATCH、resumeSuspension DELETE均先验FULL path contact并由本步服务限制本人pending。只改policy登记/guard固定规则，不新增flag/schema探测/宽泛前缀；既有InboundPendingOwnerIT加载真实AuthWebConfig证明准入与跨专家/READ拒绝。
 
 仅以下文件可变更；每个任务同时受其引用的不变量/样式契约约束。共享文件按本步前置版本接续，不覆盖上一阶段改动。
 
@@ -66,8 +67,10 @@ E05/E06/E09与审计§2、§5。pending_flag→SUM→排序/HAVING/total同链�
 | 8 | `src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt` | 混合归属/组合分页/EXPLAIN |
 | 9 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxSuspensionServiceIT.kt` | 挂起计数/邮件badge口径 |
 | 10 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/InboundPendingOwnerIT.kt` | 旧队列与新列表交叉验证 |
+| 11 | `src/main/kotlin/com/weibo/talentintroduction/auth/config/MailReadOnlyPolicy.kt` | 仅激活03暂缓的owner依赖精确handler/verb |
+| 12 | `src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailPermissionGuard.kt` | 仅接续上述精确key及现有session/FULL资源规则 |
 
-合计 **10 文件**；最多2个紧耦合子系统。新增共享store字段：0。
+合计 **12 文件**；I-14仅为03→06 owner依赖的两个精确激活文件授予有界例外，auth/mail两个紧耦合子系统；新增共享store字段0。其余原文件及计数/归属语义不变。
 
 ## 验收标准
 - I-2：真实AuthWebConfig+MVC逐个运行路由矩阵：NONE/READ/FULL/跨专家/admin；403之前SMTP、ES和文件流读取调用为0；未列端点仍403。
@@ -137,3 +140,6 @@ E05/E06/E09与审计§2、§5。pending_flag→SUM→排序/HAVING/total同链�
 本节为权威清单；进入人工验收时才导出同名前缀-acceptance.md，本次不生成衍生表。涉及尚未到本步的UI，使用同会话API执行等价动作并在最终08再次通过UI验证。
 
 跨阶段人工项引用的其他I/S条款，以总计划同编号定义为准；本步实现仍严格限定本文件清单。
+
+## 修正记录
+- 2026-10-30：按持续授权及03实际无owner SQL收据（fast-p children/03/execution.md Epoch1），将pendingBadge/suspension准入推迟至本步既定个人owner SQL后。补入policy/guard两个直接激活文件，10→12的I-14有界例外；既有owner IT增加真实AuthWebConfig准入回归，不以03暂拒变为最终缺失，不改最终UI/人工验收。

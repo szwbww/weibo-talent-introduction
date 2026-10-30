@@ -96,7 +96,7 @@
 - 来源: original
 
 ### Invariant I-14: 阶段边界与证据
-- Rule: 按子计划顺序实施；每步≤10文件、≤2子系统、每张已有表每步≤1新增字段。新增表/字段/API是拟实现而非现状；先核对SHA/迁移号/已有脏改。没有通过真实MySQL门禁不能把跳过算PASS；本次只写计划及知识，不上线。
+- Rule: 按子计划顺序实施；默认每步≤10文件、≤2子系统、每张已有表每步≤1新增字段。明确有界例外仅为前置review05继承13文件边界、03的22文件（原8加14个安全依赖直接构造fixture，仅接线）、06的12文件（原10加03暂缓owner路由的policy/guard精确激活）。不增加这些例外的产品行为范围或弱化断言。新增表/字段/API是拟实现而非现状；先核对SHA/迁移号/已有脏改。没有通过真实MySQL门禁不能把跳过算PASS；原规划阶段不上线，授权实施仍不授权部署。
 - Applies to: 实施/验证/发布报告
 - Violation consequence: 范围漂移、迁移冲突、无证据的完成声明
 - 来源: K-master-plan-shared-file-sequential-gates
@@ -213,11 +213,11 @@
 | review05 | [前置审核管理员闭环](draft-review-05-admin.md) | 13（继承已批准的有界门禁例外） |
 | 1 | [只读标签展示](expert-access-01-read-labels.md) | 3 |
 | 2 | [授权等级与能力投影](expert-access-02-access-level.md) | 10 |
-| 3 | [精确资源守卫与人工发送](expert-access-03-resource-guard.md) | 8 |
+| 3 | [精确资源守卫与人工发送](expert-access-03-resource-guard.md) | 22（原8+14个直接构造fixture接线例外） |
 | 4a | [专家资料与标签目标守卫](expert-access-04a-profile-tags.md) | 5 |
 | 4b | [日历、个人草稿与审核权限联动](expert-access-04b-calendar-drafts.md) | 7 |
 | 5 | [来信归属写入与撤权兜底](expert-access-05-pending-owner.md) | 9 |
-| 6 | [个人待处理查询、计数与筛选](expert-access-06-pending-query.md) | 10 |
+| 6 | [待处理查询与筛选范围](expert-access-06-pending-query.md) | 12（原10+2个owner路由激活文件例外） |
 | 7 | [用户可写会话复用与能力隔离](expert-access-07-user-workspace.md) | 10 |
 | 8 | [管理端最终下拉筛选与待处理角标](expert-access-08-admin-controls.md) | 7 |
 
@@ -247,6 +247,7 @@
 | TranslationController翻译、AuthController.logout | 原审核计划精确方法/登录身份 | 不扩大成全局API prefix；翻译只处理提交文本 |
 
 请求body的权限不能在HandlerInterceptor里偷读inputStream；04用已反序列化的DTO检查。普通path/id归属在固定守卫里统一处理。新增守卫只读MySQL/既有身份解析器，不加入一个可配置权限引擎。现有全局只读AI、模板、sender-account元数据若不在表内，FULL右栏不生成依赖这些接口的控件；不能为了消除403直接放开整类接口。
+分阶段规则：getUnmatchedDetail由04b第3项完成user1 candidates=[]/跳过suggestCandidates后开放；03不提前加入名单。pendingBadge及suspension/suspend/updateSuspensionReason/resumeSuspension由06完成个人owner SQL后精确开放，03保持拒绝。已有FULL path contact且原服务在任何副作用前验证全部成员同contact的材料transfer/ZIP沿既有校验在03可开放，必须覆盖混入外专家id的拒绝；真正缺失DTO目标授权的方法仍等04。上述均不删除最终准入表能力。
 
 ### 数据、接口和前端交接
 - 02提供accessLevel；NONE无行，READ/FULL有行。保持canRead兼容字段；list和messages实时能力由后端提供，不在localStorage记权限。
@@ -295,7 +296,7 @@
 
 最终执行：JDK11 `mvn test`；`node --test src/test/js/*.test.js`；隔离MySQL的授权/归属/会话/挂起/审核IT（显式`-DmysqlIt=true`）；`FlywayMigrationIntegrationTest -DmigrationIt=true`。本轮仅产出计划，未运行这些实现验收，不能写测试已通过。
 
-范围自检：9步均≤10文件；02和05各只改一张共享store的一列；frontend步骤具备逐字样式与DOM；X1–X12分别映射A-1～A-15；无业务代码/部署/配置修改。原脏文件见baseline.txt，交付前复核不能覆盖。
+范围自检：原规划9步均≤10文件；授权实施以I-14明确列出的03/06有界例外为准，其他步骤上限不变。02和05各只改一张共享store的一列；frontend步骤具备逐字样式与DOM；X1–X12分别映射A-1～A-15。原脏文件见baseline.txt，不能覆盖；无部署/配置修改授权。
 
 ## 人工验收清单
 ### A-1: READ标签可见且不可写
@@ -444,3 +445,4 @@ A-1覆盖最新“可读看标签不可改”；A-2/5/6/7覆盖FULL；A-3/4/9/15
 - 全部子计划与最终artifact validator通过后，自动执行独立review-fast-p；机器审核不代替人工验收，不授权合并、推送或部署。
 - 2026-10-30：I-1真实等级投影需要MailboxConversationService注入非空等级服务；完整constructor grep收据在fast-p children/02/execution.md。按持续授权，02追加OutboundAttachmentFlowTest.kt、MailReviewQueryIT.kt两个直接构造fixture文件，仅接续新依赖/真实等级fixture与原行为回归，7→9文件，仍≤10/2子系统，不使用nullable/default兼容shim、不扩大权限与产品行为；对应子计划修正及fast-p Amendments留痕。
 - 2026-10-30：02实际门禁发现01继承的mailboxReadOnly.test.js固定缓存键与现有taskActivityCenter全局guard冲突（完整证据见children/02/execution.md Epoch2），按持续授权将该测试加入02第10文件；仅退役固定版本字面量，保留动态同键/实际module契约，guard/index与前端产品不动。原整命令失败如实保留，最终门禁必须通过；不消耗light-verifier修复轮次（仍是实现阶段，尚未首次提交/验证）。
+- 2026-10-30：03完整构造grep显示非空安全依赖需要14个原名单外fixture（收据见children/03/execution.md Epoch1）；持续授权下I-14为03的8→22仅构造接线授予例外，不改原产品范围/断言。04b原第3项已负责unmatched候选隐藏，故03暂拒getUnmatchedDetail而不提前扩产品controller。个人pendingBadge/挂起原SQL未按owner，03暂拒，06以既定owner SQL后精确激活；06增加policy/guard两个文件，10→12有界例外，真实AuthWebConfig回归。材料已有全成员同contact校验沿用且测越权混入。最终能力/人工验收均不删减，原例外请求23由已有04b职责消解为22。
