@@ -4739,6 +4739,23 @@ function renderBySourceTable(bySource, container) {
         : "未记录";
     const rows = Object.entries(bySource).map(([name, sourceStats]) => {
         const stats = sourceStats && typeof sourceStats === "object" ? sourceStats : {};
+        const retry = stats.retry && typeof stats.retry === "object" ? stats.retry : {};
+        const failure = stats.lastFailure && typeof stats.lastFailure === "object" ? stats.lastFailure : null;
+        const hasRetry = Number.isInteger(retry.round) && retry.round > 0
+            && Number.isInteger(retry.maxRounds) && retry.maxRounds > 0;
+        const retriesExhausted = hasRetry && retry.round >= retry.maxRounds
+            && ["SEARCH_FAILED", "DEDUP_INCOMPLETE"].includes(stats.stopReason)
+            && failure?.retryable === true;
+        const recoveryStatus = stats.stopReason === "EXHAUSTED" ? "数据耗尽"
+            : stats.stopReason === "RETRY_WAIT" ? (retry.nextRetryAt ? "等待重试" : "正在重试")
+                : retriesExhausted ? "重试耗尽；保留检查点，可续跑"
+                    : stats.pendingWork === true ? "未耗尽，可续跑" : "";
+        const retryDetail = hasRetry ? `<div>恢复轮次：${count(retry.round)} / ${count(retry.maxRounds)}；原因：${text(retry.reason)}</div>`
+            + (stats.stopReason === "RETRY_WAIT" && retry.nextRetryAt
+                ? `<div>计划重试时间：${escapeHtml(formatBeijingInstant(retry.nextRetryAt))}（北京时间）</div>` : "") : "";
+        const failureStage = failure ? ({ SEARCH: "搜索", DEDUP: "查重" }[failure.stage] || failure.stage) : null;
+        const failureDetail = failure ? `<div>最近失败：${text(failureStage)}；异常：${text(failure.exceptionType)}；HTTP：${count(failure.httpStatus)}</div>`
+            + `<div>耗时：${count(failure.elapsedMs)} ms；批次：${count(failure.batchNumber)}；尝试：${count(failure.attempt)}；可重试：${failure.retryable === true ? "是" : failure.retryable === false ? "否" : "未记录"}</div>` : "";
         return `
             <tr>
                 <td>${escapeHtml(name)}</td>
@@ -4748,7 +4765,7 @@ function renderBySourceTable(bySource, container) {
                 <td>${count(stats.emailsValid)}</td>
                 <td>${count(stats.indexed)}</td>
                 <td>${count(stats.promoted)}</td>
-                <td><details><summary>查看原因</summary><div>过滤：${reasons(stats.filterReasons)}</div><div>失败：${reasons(stats.failureReasons)}</div><div>停止：${text(stats.stopReason)}</div></details></td>
+                <td><details><summary>查看原因${recoveryStatus ? " · " + escapeHtml(recoveryStatus) : ""}</summary><div>过滤：${reasons(stats.filterReasons)}</div><div>失败：${reasons(stats.failureReasons)}</div><div>停止：${text(stats.stopReason)}</div>${retryDetail}${failureDetail}</details></td>
             </tr>
         `;
     }).join("");
@@ -27886,8 +27903,32 @@ function apvTrafficHtml(executionId) {
 
 function apvCollectionHtml(logs) {
     const batches = new Map();
-    (logs || []).forEach(log => { if (Number(log.batchNumber) > 0) batches.set(Number(log.batchNumber), log); });
-    return Array.from(batches.entries()).sort(([a], [b]) => a - b).map(([, log]) => {
+    const events = [];
+    // The dedicated collection view includes retry observations (batch 0), while only positive
+    // batch numbers participate in the existing last-snapshot-per-batch rendering.
+    (logs || []).forEach((log, index) => {
+        const batch = Number(log.batchNumber);
+        if (batch > 0) {
+            batches.set(batch, { log, index });
+        } else if (Number.isFinite(batch)) {
+            let details = {};
+            try { details = JSON.parse(log.detailsJson || "{}"); } catch (_) { /* Legacy diagnostics may be absent. */ }
+            const bySource = details?.bySource;
+            if (!bySource || typeof bySource !== "object" || Array.isArray(bySource)) return;
+            const diagnosticSources = Object.fromEntries(Object.entries(bySource).filter(([, stats]) =>
+                stats && typeof stats === "object" && (Number(stats.retry?.round) > 0 || stats.lastFailure)));
+            if (Object.keys(diagnosticSources).length > 0) events.push({ log, index, diagnosticSources });
+        }
+    });
+    const rows = events.length > 0
+        ? [...batches.values(), ...events].sort((a, b) => a.index - b.index)
+        : Array.from(batches.entries()).sort(([a], [b]) => a - b).map(([, row]) => row);
+    return rows.map(({ log, diagnosticSources }) => {
+        if (diagnosticSources) {
+            const output = { innerHTML: "" };
+            renderBySourceTable(diagnosticSources, output);
+            return `<tr><td>${Number(log.batchNumber) < 0 ? "采集结束" : "恢复记录"}</td><td colspan="5"><p>${escapeHtml(log.message || "采集状态更新")}</p>${output.innerHTML}</td><td>${apvTime(log.createdAt)}</td></tr>`;
+        }
         let reasons = {};
         try { reasons = JSON.parse(log.batchRejectReasonsJson || "{}"); } catch (_) { /* Original log is unavailable, not an admission decision. */ }
         return `<tr><td>${apvNumber(log.batchNumber)}</td><td>${apvNumber(log.batchProcessed)}</td><td>${apvNumber(log.batchPassed)}</td><td>${apvNumber(log.batchRejected)}</td><td>${apvNumber(log.processedCount)} / ${apvNumber(log.totalCount)}（论文/记录）</td><td><details class="apv-rules"><summary>查看全部原因</summary>${Object.entries(reasons).map(([code, count]) => `<p>${escapeHtml(code)}：${apvNumber(count)}</p>`).join("") || '<p>未记录原因</p>'}</details></td><td>${apvTime(log.createdAt)}</td></tr>`;
@@ -27962,7 +28003,7 @@ async function apvRefresh() {
 
 async function apvLoadCollection(token) {
     try {
-        const logs = await apvGet(`/api/task-progress/${token.taskType}/logs?executionId=${token.executionId}&batchOnly=true`, token);
+        const logs = await apvGet(`/api/task-progress/${token.taskType}/logs?executionId=${token.executionId}&batchOnly=false`, token);
         if (!apvIsCurrent(token) || logs == null) return;
         document.getElementById(`apv-collection-${token.executionId}`)?.querySelector(".apv-alert")?.remove();
         currentTaskModal.batchLogsByExecutionId[token.executionId] = logs;

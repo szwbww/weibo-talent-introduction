@@ -78,7 +78,7 @@ function createSandbox({ apiImpl, stateOverrides, elementsOverrides }) {
         "escapeHtml", "badge", "labelStatus", "renderTaskPager",
         "loadTaskTypeOptions", "loadTasks", "renderTaskDetailRawBlocks", "toggleTaskDetail",
         "normalizeDiscoveryResultSummary", "renderDiscoverySummaryText", "renderBySourceTable",
-        "isEnrichmentBySource", "renderEnrichmentSourceTable", "normalizeEnrichmentResultSummary"
+        "isEnrichmentBySource", "renderEnrichmentSourceTable", "normalizeEnrichmentResultSummary", "formatBeijingInstant"
     ]) {
         vm.runInContext(extractFn(name), sandbox);
     }
@@ -240,6 +240,72 @@ describe("task records semantics (b2)", () => {
         assert.ok(container.innerHTML.includes(">论文</th>") && container.innerHTML.includes(">收录</th>"),
             "discovery bySource must keep the discovery columns");
         assert.ok(!container.innerHTML.includes(">入队</th>"), "discovery bySource must not render enrichment columns");
+    });
+
+    it("discovery retries distinguish waiting, active recovery, exhaustion and retained cursor", () => {
+        const { sandbox } = createSandbox({ apiImpl: async () => null });
+        const render = (stats) => {
+            const container = { innerHTML: "" };
+            sandbox.renderBySourceTable({ CROSSREF: stats }, container);
+            return container.innerHTML;
+        };
+        const retry = { round: 1, maxRounds: 3, nextRetryAt: "2026-10-30T02:03:00Z", reason: "NETWORK_IO" };
+        const waiting = render({ stopReason: "RETRY_WAIT", pendingWork: true, retry });
+        assert.ok(waiting.includes("等待重试"));
+        assert.ok(waiting.includes("恢复轮次：1 / 3"));
+        assert.ok(waiting.includes("2026-10-30 10:03（北京时间）"));
+        assert.ok(waiting.includes("NETWORK_IO"));
+        const active = render({ stopReason: "RETRY_WAIT", pendingWork: true, retry: { ...retry, nextRetryAt: null } });
+        assert.ok(active.includes("正在重试"));
+        assert.ok(!active.includes("计划重试时间"));
+        const exhausted = render({ stopReason: "SEARCH_FAILED", pendingWork: true,
+            retry: { ...retry, round: 3, nextRetryAt: null }, lastFailure: { retryable: true } });
+        assert.ok(exhausted.includes("重试耗尽"));
+        assert.ok(exhausted.includes("保留检查点，可续跑"));
+        assert.ok(!exhausted.includes("数据耗尽"));
+        const permanent = render({ stopReason: "SEARCH_FAILED", pendingWork: true,
+            retry: { ...retry, round: 3, nextRetryAt: null }, lastFailure: { retryable: false } });
+        assert.ok(!permanent.includes("重试耗尽"), "a permanent failure after prior retries is not retry exhaustion");
+        const dedup = render({ stopReason: "DEDUP_INCOMPLETE", pendingWork: true,
+            retry: { ...retry, round: 3, nextRetryAt: null }, lastFailure: { retryable: true } });
+        assert.ok(dedup.includes("重试耗尽"));
+        const budget = render({ stopReason: "TIME_BUDGET", pendingWork: true,
+            retry: { ...retry, round: 3, nextRetryAt: null } });
+        assert.ok(budget.includes("未耗尽，可续跑"));
+        assert.ok(!budget.includes("重试耗尽"));
+        const complete = render({ stopReason: "EXHAUSTED", pendingWork: false,
+            retry: { ...retry, round: 3, nextRetryAt: null } });
+        assert.ok(complete.includes("数据耗尽"));
+        assert.ok(!complete.includes("重试耗尽"));
+    });
+
+    it("discovery failure diagnostics render escaped allowed fields for live and historical results", async () => {
+        const bySource = { OPENALEX: { stopReason: "DEDUP_INCOMPLETE", pendingWork: true,
+            lastFailure: { stage: "DEDUP", exceptionType: "SocketTimeoutException", httpStatus: 503,
+                elapsedMs: 1350, batchNumber: 8, attempt: 3, retryable: true } } };
+        const { sandbox } = createSandbox({ apiImpl: async () => null });
+        const live = { innerHTML: "" };
+        sandbox.renderBySourceTable(bySource, live);
+        for (const value of ["最近失败", "查重", "SocketTimeoutException", "HTTP：503", "耗时：1350 ms", "批次：8", "尝试：3", "可重试：是"]) {
+            assert.ok(live.innerHTML.includes(value), `missing diagnosis: ${value}`);
+        }
+        let historyRow = null;
+        const { sandbox: history } = createSandbox({
+            apiImpl: async () => ({ rawResultSummary: JSON.stringify({ stats: { bySource } }) })
+        });
+        await history.toggleTaskDetail({ dataset: { taskId: "29971", taskType: "EXPERT_DISCOVERY" },
+            nextElementSibling: null, after: (row) => { historyRow = row; } });
+        assert.ok(historyRow.innerHTML.includes(live.innerHTML));
+        const hostile = { innerHTML: "" };
+        sandbox.renderBySourceTable({ CROSSREF: { stopReason: "SEARCH_FAILED",
+            retry: { round: 1, maxRounds: 3, nextRetryAt: '<img src=x onerror=alert(1)>', reason: '<svg onload=alert(1)>' },
+            lastFailure: { stage: '<script>alert(1)</script>', exceptionType: '<img src=x>',
+                elapsedMs: Infinity, httpStatus: '<svg>', batchNumber: -1, attempt: NaN,
+                message: 'SECRET_UNAPPROVED_FIELD', retryable: false } } }, hostile);
+        assert.ok(!/<script|<img|<svg/i.test(hostile.innerHTML));
+        assert.ok(hostile.innerHTML.includes("&lt;img"));
+        assert.ok(!hostile.innerHTML.includes("SECRET_UNAPPROVED_FIELD"));
+        assert.ok(!hostile.innerHTML.includes("Infinity") && !hostile.innerHTML.includes("NaN"));
     });
 
     it("S1-1: task type dropdown keeps the placeholder option and preserves selection", async () => {

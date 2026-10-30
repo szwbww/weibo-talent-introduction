@@ -1,0 +1,44 @@
+{
+  "kotlin": [
+    {
+      "class": "ExpertDiscoveryServiceTest",
+      "tests": "201",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "72.351"
+    },
+    {
+      "class": "DiscoveryPipelineServiceTest",
+      "tests": "52",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "4.196"
+    },
+    {
+      "class": "DiscoveryPromotionProgressServiceTest",
+      "tests": "12",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "0.084"
+    }
+  ],
+  "node": {
+    "tests": 356,
+    "failures": 0,
+    "skipped": 0
+  },
+  "sourceHashes": {
+    "src/main/kotlin/com/weibo/talentintroduction/config/ExpertDiscoveryProperties.kt": "226392640a97d29f87e5dc987a4771d7e80373434608eb1f1caae5b1abe3ea7e",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/domain/SourceStats.kt": "fa9c50fb839115c24d983dcfaedd79b1934b828a0da73e0c74c948f062ddd1c3",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt": "a6fa6518d0f7aeaa19ccd206d62c300ba6b0676299cdf5e9ff1baaf97049b17b",
+    "src/main/resources/static/app.js": "0a85c27e8f6f123f0195178283f12c2c2295c35ab6d597f71afaa7e44a5bd10a",
+    "src/main/resources/static/index.html": "891cce0e0a2b510c778f1a6dc93a252109a0e972ec16ff6631ba7c896c934e34",
+    "src/main/resources/static/task-modal-runtime.js": "709a2f69f26f6bf3d5970b7b959f00177b0eff86f02473f24508dcd72c9ad5e9",
+    "src/test/js/discoveryVerification.test.js": "f74e87da9ed4c6118f499c882219342aee0d57b6dff54e1aa6e22a26b5d4d9e9",
+    "src/test/js/taskRecordsSemantics.test.js": "d6379b9ded498f47bb369019789de8f353989db4833dd4e3d68d0c40a04fda1d",
+    "src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt": "c8db59bd4fc0ff025f45a9c254fbd345e50294b51836eb3f014f081519aca434"
+  }
+}

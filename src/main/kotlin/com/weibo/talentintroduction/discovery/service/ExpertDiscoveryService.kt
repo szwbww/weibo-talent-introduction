@@ -20,6 +20,7 @@ import com.weibo.talentintroduction.discovery.domain.ExpertAcademicEnrichmentJob
 import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.domain.PaperSearchResult
+import com.weibo.talentintroduction.discovery.domain.SourceRequestFailure
 import com.weibo.talentintroduction.discovery.domain.SourceRetryState
 import com.weibo.talentintroduction.discovery.domain.SourceStats
 import com.weibo.talentintroduction.discovery.domain.SourceUnit
@@ -247,7 +248,7 @@ class ExpertDiscoveryService(
         data class Exists(val docId: String?, val source: com.fasterxml.jackson.databind.JsonNode? = null) : DedupResult()
 
         object NotFound : DedupResult()
-        object Error : DedupResult()
+        data class Error(val retryable: Boolean) : DedupResult()
     }
 
     private fun snapshotErrors(stats: DiscoveryStats): List<String> {
@@ -300,6 +301,7 @@ class ExpertDiscoveryService(
                 "emailsRejected" to ss.emailsRejected,
                 "duplicates" to ss.duplicates,
                 "dedupErrors" to ss.dedupErrors,
+                "lastFailure" to ss.lastFailure,
                 "indexed" to ss.indexed,
                 "rawWriteFailed" to ss.rawWriteFailed,
                 "promoted" to ss.promoted,
@@ -477,7 +479,9 @@ class ExpertDiscoveryService(
                     outcome.resumeCursor?.take(50) ?: "null")
                 // I-1：待恢复项只登记在本轮内存里，等所有来源（含 ORCID）停稳后才消费。
                 outcome.retry?.let { pending ->
-                    val deferred = DeferredSourceRecovery(source, runQuota, pending)
+                    val deferred = DeferredSourceRecovery(source.sourceName, pending) { resume ->
+                        discoverFromSource(source, criteria, stats, runQuota, deadline, verification, resume)
+                    }
                     deferredRecoveries[source.sourceName] = deferred
                     stats.refreshGlobalCounts()
                     writeRetryEvent(stats, deferred, retryWaitMessage(deferred), execId)
@@ -485,7 +489,13 @@ class ExpertDiscoveryService(
             }
 
             DiscoveryTrafficMeter.measure(trafficSession, "ORCID", DiscoveryTrafficMeter.Category.METADATA) {
-                discoverFromOrcid(criteria, stats, deadline, verification)
+                discoverFromOrcid(criteria, stats, deadline, verification)?.retry?.let { pending ->
+                    val deferred = DeferredSourceRecovery("ORCID", pending) { resume ->
+                        requireNotNull(discoverFromOrcid(criteria, stats, deadline, verification, resume))
+                    }
+                    deferredRecoveries["ORCID"] = deferred
+                    writeRetryEvent(stats, deferred, retryWaitMessage(deferred), execId)
+                }
             }
             // I-1/I-2：其他来源已经耗过的等待时间就是等待时间，回访时不重复睡；这里也可能因取消/超时
             // 而一个请求都不发（保留游标并给真实停止原因）。
@@ -671,6 +681,55 @@ class ExpertDiscoveryService(
      * 此时到界按全局 cap 命名，而不是谎称本源上限用尽。
      * c9（I-3）：[deadline] 到点即按 `TIME_BUDGET` 停在进入页，不推进未消费的半页。
      */
+    private class DedupPageContext(val deadline: Instant, val batchNumber: Int) {
+        val pending = mutableListOf<() -> ConsumeOutcomeResult>()
+        var permanentFailure = false
+    }
+
+    private fun pendingConsumption(context: DedupPageContext, sourceStats: SourceStats): () -> String? = {
+        var stop: String? = null
+        val iterator = context.pending.iterator()
+        while (iterator.hasNext() && stop == null) {
+            stop = requestStop(context.deadline)
+            if (stop == null) {
+                // Replace the prior unresolved lookup with this attempt's outcome, not another author.
+                sourceStats.dedupErrors--
+                val result = iterator.next().invoke()
+                stop = when {
+                    result.dedupFailed -> DiscoveryStopReason.DEDUP_INCOMPLETE
+                    result.rawWriteFailed -> DiscoveryStopReason.RAW_WRITE_INCOMPLETE
+                    result.enqueueFailed -> DiscoveryStopReason.ENQUEUE_INCOMPLETE
+                    result.identityRepairFailed -> DiscoveryStopReason.IDENTITY_REPAIR_INCOMPLETE
+                    result.registrationFailed -> DiscoveryStopReason.PERSON_REGISTRATION_INCOMPLETE
+                    else -> null
+                }
+                if (!result.dedupFailed) iterator.remove()
+            }
+        }
+        stop
+    }
+
+    private fun deferredConsumption(
+        resume: SourceRetryPending, sourceStats: SourceStats, criteria: PaperSearchCriteria
+    ): SourceRunOutcome? {
+        val consume = resume.consumePending ?: return null
+        val stop = consume()
+        if (stop == null) {
+            persistSourceCheckpoint(sourceStats.sourceName, criteria, resume.consumedNextCursor,
+                resume.consumedNextCursor == null, 0)
+            return null
+        }
+        val retry = if (stop == DiscoveryStopReason.DEDUP_INCOMPLETE && sourceStats.lastFailure?.retryable == true) {
+            planDeferredRecovery(resume.round, "DEDUP_" + failureReasonCode(sourceStats), resume.resumeCursor,
+                sourceStats.papersSearched, resume.batchBaseline)?.copy(consumePending = consume, consumedNextCursor = resume.consumedNextCursor)
+        } else null
+        sourceStats.stopReason = if (retry == null) stop else DiscoveryStopReason.RETRY_WAIT
+        sourceStats.pendingWork = true
+        sourceStats.retry = retry?.let { SourceRetryState(it.round, it.maxRounds, it.nextRetryAt.toString(), it.reason) }
+            ?: sourceStats.retry?.copy(nextRetryAt = null)
+        return SourceRunOutcome(resume.resumeCursor, false, sourceStats.stopReason!!, retry)
+    }
+
     private fun discoverFromSource(
         source: AcademicDataSource,
         criteria: PaperSearchCriteria,
@@ -689,13 +748,21 @@ class ExpertDiscoveryService(
         val quotaBoundByGlobalCap = sourceLimit < source.maxPapersPerSource
         sourceStats.runBudget = sourceLimit
 
+        if (resume?.consumePending != null) {
+            deferredConsumption(resume, sourceStats, criteria)?.let { return it }
+            if (resume.consumedNextCursor == null) {
+                sourceStats.pendingWork = false
+                sourceStats.stopReason = DiscoveryStopReason.EXHAUSTED
+                return SourceRunOutcome(null, true, DiscoveryStopReason.EXHAUSTED)
+            }
+        }
         val checkpoint = loadSourceCheckpoint(source.sourceName, criteria)
         // I-2: 检查点是游标权威；EXHAUSTED 表示本次扫描周期从头重开，
         // 调用方显式给出的 cursor 只在本次运行起点生效（保持既有入口行为）。
         // 恢复回访用本轮内存里的确切页入口（[SourceRetryPending.resumeCursor]），不依赖再查库成功；
         // 其中的 null 是合法的「第一页」，绝不用检查点里的旧值替代。
         val enteringCursor: String? = if (resume != null) {
-            resume.resumeCursor
+            if (resume.consumePending != null) resume.consumedNextCursor else resume.resumeCursor
         } else if (checkpoint.exhausted) {
             criteria.cursor
         } else {
@@ -728,7 +795,7 @@ class ExpertDiscoveryService(
         // I-3: 恢复片段从上一片段的累计量起步 —— 既不重新获得完整额度，也不重复累计论文
         // （页面入口停止意味着此前处理量都已落盘，故两个基线同一个值）。
         var persistedPapers = resume?.processedBaseline ?: 0
-        var batchNumber = 0
+        var batchNumber = resume?.batchBaseline ?: 0
         var sourcePapersProcessed = resume?.processedBaseline ?: 0
         var consecutiveFailures = 0
         var openAlexPageAttempts = 0
@@ -779,11 +846,12 @@ class ExpertDiscoveryService(
                 break
             }
 
-            if (source is OpenAlexDataSource) openAlexPageAttempts++
+            if (supportsSearchRecovery(source)) openAlexPageAttempts++
             sourceStats.apiRequests++
 
             var batch: PaperSearchResult? = null
             var corePage: CoreDataSource.CoreSearchPage? = null
+            val searchStarted = timeSource.now()
             try {
                 if (source is CoreDataSource) {
                     // I-1/I-4: CORE 走 offset 分片协议；分片触达供应商窗口必须显式记录，不能当成穷尽。
@@ -805,7 +873,8 @@ class ExpertDiscoveryService(
                     stopReason = DiscoveryStopReason.BUDGET_DEFERRED
                     break
                 }
-                val retryableOpenAlex = source is OpenAlexDataSource && code in OPENALEX_RETRYABLE_HTTP_STATUS
+                val retryableOpenAlex = supportsSearchRecovery(source) && (code in OPENALEX_RETRYABLE_HTTP_STATUS || code == 429)
+                recordRequestFailure(sourceStats, "SEARCH", e, searchStarted, batchNumber + 1, openAlexPageAttempts.coerceAtLeast(1), retryableOpenAlex)
                 if (retryableOpenAlex && openAlexPageAttempts < OPENALEX_MAX_PAGE_ATTEMPTS) {
                     log.warn("[{}] 同页重试 {}/{}，异常类型={}", source.sourceName, openAlexPageAttempts,
                         OPENALEX_MAX_PAGE_ATTEMPTS, e.javaClass.simpleName)
@@ -822,7 +891,8 @@ class ExpertDiscoveryService(
                         groupsScheduled = recoveryGroupsScheduled,
                         reason = retryReasonCode(e),
                         resumeCursor = resumeCursor,
-                        processedBaseline = sourceStats.papersSearched
+                        processedBaseline = sourceStats.papersSearched,
+                        batchBaseline = batchNumber
                     )
                     if (deferred != null) {
                         recoveryGroupsScheduled = deferred.round
@@ -834,7 +904,7 @@ class ExpertDiscoveryService(
                         break
                     }
                 }
-                if (source !is OpenAlexDataSource && (code == 429 || code == 503)) {
+                if (!supportsSearchRecovery(source) && (code == 429 || code == 503)) {
                     consecutiveFailures++
                     sourceStats.failureReasons.merge("RATE_LIMITED", 1) { a, b -> a + b }
                     if (consecutiveFailures >= 5) {
@@ -849,13 +919,14 @@ class ExpertDiscoveryService(
                 }
                 recordTerminalSourceFailure(sourceStats, "SEARCH_FAILED")
                 log.error("[{}] 搜索失败: attempt={}/{}, 异常类型={}", source.sourceName,
-                    if (source is OpenAlexDataSource) openAlexPageAttempts else 1,
-                    if (source is OpenAlexDataSource) OPENALEX_MAX_PAGE_ATTEMPTS else 1,
+                    if (supportsSearchRecovery(source)) openAlexPageAttempts else 1,
+                    if (supportsSearchRecovery(source)) OPENALEX_MAX_PAGE_ATTEMPTS else 1,
                     e.javaClass.simpleName)
                 stopReason = DiscoveryStopReason.SEARCH_FAILED
                 break
             } catch (e: Exception) {
-                val retryableSearchFailure = source is OpenAlexDataSource && isRetryableOpenAlexFailure(e)
+                val retryableSearchFailure = supportsSearchRecovery(source) && isRetryableOpenAlexFailure(e)
+                recordRequestFailure(sourceStats, "SEARCH", e, searchStarted, batchNumber + 1, openAlexPageAttempts.coerceAtLeast(1), retryableSearchFailure)
                 if (retryableSearchFailure && openAlexPageAttempts < OPENALEX_MAX_PAGE_ATTEMPTS) {
                     log.warn("[{}] 同页重试 {}/{}，异常类型={}", source.sourceName, openAlexPageAttempts,
                         OPENALEX_MAX_PAGE_ATTEMPTS, e.javaClass.simpleName)
@@ -873,7 +944,8 @@ class ExpertDiscoveryService(
                         groupsScheduled = recoveryGroupsScheduled,
                         reason = retryReasonCode(e),
                         resumeCursor = resumeCursor,
-                        processedBaseline = sourceStats.papersSearched
+                        processedBaseline = sourceStats.papersSearched,
+                        batchBaseline = batchNumber
                     )
                     if (deferred != null) {
                         recoveryGroupsScheduled = deferred.round
@@ -887,8 +959,8 @@ class ExpertDiscoveryService(
                 }
                 recordTerminalSourceFailure(sourceStats, "SEARCH_FAILED")
                 log.error("[{}] 搜索失败: attempt={}/{}, 异常类型={}", source.sourceName,
-                    if (source is OpenAlexDataSource) openAlexPageAttempts else 1,
-                    if (source is OpenAlexDataSource) OPENALEX_MAX_PAGE_ATTEMPTS else 1,
+                    if (supportsSearchRecovery(source)) openAlexPageAttempts else 1,
+                    if (supportsSearchRecovery(source)) OPENALEX_MAX_PAGE_ATTEMPTS else 1,
                     e.javaClass.simpleName)
                 stopReason = DiscoveryStopReason.SEARCH_FAILED
                 break
@@ -942,6 +1014,7 @@ class ExpertDiscoveryService(
                 DiscoverySampleContext(it, source.sourceName, DiscoverySampleEntry.SYNC, batchNumber, null)
             }
             val extractions = parallelExtractOutcomes(batch.papers, source, sampleContext)
+            val dedupContext = DedupPageContext(deadline, batchNumber)
             for ((paper, extraction) in extractions) {
                 if (consumedInBatch % 10 == 0 && progressStore.isCancelled("EXPERT_DISCOVERY")) { limitReached = true; break }
                 if (timeBudgetReached(deadline)) { timeBudgetExpired = true; break }
@@ -965,7 +1038,7 @@ class ExpertDiscoveryService(
                 sourcePapersProcessed++
                 consumedInBatch++
                 consumeOutcome(paper, extraction, source, stats, sourceStats, verification,
-                    envelopeForPaper(source.sourceName, paper, Int.MAX_VALUE).itemKey).let {
+                    envelopeForPaper(source.sourceName, paper, Int.MAX_VALUE).itemKey, dedupContext).let {
                     if (it.identityRepairFailed) identityRepairFailedInPage = true
                     if (it.registrationFailed) personRegistrationFailedInPage = true
                 }
@@ -1040,7 +1113,15 @@ class ExpertDiscoveryService(
                 break
             }
             if (dedupErrorsInPage > 0) {
-                stopReason = DiscoveryStopReason.DEDUP_INCOMPLETE
+                val aborted = requestStop(deadline)
+                if (aborted != null) { stopReason = aborted; break }
+                val canRecover = !dedupContext.permanentFailure && dedupContext.pending.size == dedupErrorsInPage &&
+                    !limitReached && !timeBudgetExpired && !identityRepairFailedInPage && !personRegistrationFailedInPage
+                retryPending = if (canRecover) planDeferredRecovery(recoveryGroupsScheduled,
+                    "DEDUP_" + failureReasonCode(sourceStats), resumeCursor, sourceStats.papersSearched, batchNumber)
+                    ?.copy(consumePending = pendingConsumption(dedupContext, sourceStats), consumedNextCursor = batch.nextCursor)
+                    else null
+                stopReason = if (retryPending != null) DiscoveryStopReason.RETRY_WAIT else DiscoveryStopReason.DEDUP_INCOMPLETE
                 break
             }
             if (identityRepairFailedInPage) {
@@ -1102,9 +1183,9 @@ class ExpertDiscoveryService(
      * 待恢复信息（页入口游标、已处理基线、恢复组轮次/计划时刻/脱敏原因）。
      */
     private class DeferredSourceRecovery(
-        val source: AcademicDataSource,
-        val runBudget: Int,
-        var pending: SourceRetryPending
+        val sourceName: String,
+        var pending: SourceRetryPending,
+        val resume: (SourceRetryPending) -> SourceRunOutcome
     )
 
     /**
@@ -1125,42 +1206,42 @@ class ExpertDiscoveryService(
         for (round in 1..discoveryProperties.openAlexSearchRecoveryDelays.size) {
             val waiting = deferred.values.filter { it.pending.round == round }
             if (waiting.isEmpty()) continue
-            val waitStop = awaitRetryAt(waiting.minOf { it.pending.nextRetryAt }, deadline)
-            if (waitStop != null) {
-                // I-7：取消/时间预算一旦发生，之后不得再发出任何恢复请求。
-                waiting.forEach { stopDeferredRecovery(it, waitStop, stats) }
-                return
-            }
             for (item in waiting) {
+                // Each source was scheduled at a different time; never borrow an earlier source's delay.
+                val waitStop = awaitRetryAt(item.pending.nextRetryAt, deadline)
+                if (waitStop != null) {
+                    deferred.values.forEach { stopDeferredRecovery(it, waitStop, stats) }
+                    return
+                }
                 stats.refreshGlobalCounts()
                 val blocked = when {
                     progressStore.isCancelled("EXPERT_DISCOVERY") -> DiscoveryStopReason.CANCELLED
                     timeBudgetReached(deadline) -> DiscoveryStopReason.TIME_BUDGET
-                    stats.totalPapers >= discoveryProperties.maxPapersPerRun -> DiscoveryStopReason.GLOBAL_PAPER_LIMIT
-                    stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun -> DiscoveryStopReason.GLOBAL_AUTHOR_LIMIT
+                    item.pending.consumePending == null && stats.totalPapers >= discoveryProperties.maxPapersPerRun -> DiscoveryStopReason.GLOBAL_PAPER_LIMIT
+                    item.pending.consumePending == null && stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun -> DiscoveryStopReason.GLOBAL_AUTHOR_LIMIT
                     else -> null
                 }
                 if (blocked != null) {
                     stopDeferredRecovery(item, blocked, stats)
                     log.info("[{}] 恢复回访未开始: 停止原因={}, 保留游标 {}",
-                        item.source.sourceName, blocked, item.pending.resumeCursor?.take(50) ?: "null")
+                        item.sourceName, blocked, item.pending.resumeCursor?.take(50) ?: "null")
                     continue
                 }
                 beginRetryAttempt(stats, item, execId)
                 val outcome = DiscoveryTrafficMeter.measure(
-                    trafficSession, item.source.sourceName, DiscoveryTrafficMeter.Category.METADATA
+                    trafficSession, item.sourceName, DiscoveryTrafficMeter.Category.METADATA
                 ) {
-                    discoverFromSource(item.source, criteria, stats, item.runBudget, deadline, verification, resume = item.pending)
+                    item.resume(item.pending)
                 }
                 log.info("[{}] 恢复回访结束: stopReason={}, exhausted={}, resumeCursor={}",
-                    item.source.sourceName, outcome.stopReason, outcome.exhausted,
+                    item.sourceName, outcome.stopReason, outcome.exhausted,
                     outcome.resumeCursor?.take(50) ?: "null")
                 stats.refreshGlobalCounts()
                 val next = outcome.retry
                 if (next == null) {
-                    deferred.remove(item.source.sourceName)
+                    deferred.remove(item.sourceName)
                     writeRetryEvent(stats, item,
-                        "[${item.source.sourceName}] 恢复结束: 停止原因 ${outcome.stopReason}", execId)
+                        "[${item.sourceName}] 恢复结束: 停止原因 ${outcome.stopReason}", execId)
                 } else {
                     item.pending = next
                     writeRetryEvent(stats, item, retryWaitMessage(item), execId)
@@ -1197,10 +1278,10 @@ class ExpertDiscoveryService(
      * expectedExecutionId 的进度事件（等待期间不按 100ms 落日志）。
      */
     private fun beginRetryAttempt(stats: DiscoveryStats, item: DeferredSourceRecovery, execId: Long?) {
-        val sourceStats = stats.bySource[item.source.sourceName]
+        val sourceStats = stats.bySource[item.sourceName]
         val retry = sourceStats?.retry
         if (sourceStats != null && retry != null) sourceStats.retry = retry.copy(nextRetryAt = null)
-        writeRetryEvent(stats, item, "[${item.source.sourceName}] 开始恢复回访 " +
+        writeRetryEvent(stats, item, "[${item.sourceName}] 开始恢复回访 " +
             "${item.pending.round}/${item.pending.maxRounds}（原因 ${item.pending.reason}）", execId)
     }
 
@@ -1209,7 +1290,7 @@ class ExpertDiscoveryService(
      * 不因先前的短暂失败记 SEARCH_FAILED，也不新增 sourceFailureCount。
      */
     private fun stopDeferredRecovery(item: DeferredSourceRecovery, reason: String, stats: DiscoveryStats) {
-        val sourceStats = stats.bySource[item.source.sourceName] ?: return
+        val sourceStats = stats.bySource[item.sourceName] ?: return
         sourceStats.stopReason = reason
         sourceStats.pendingWork = true
         val retry = sourceStats.retry
@@ -1240,7 +1321,7 @@ class ExpertDiscoveryService(
             processedCount = stats.totalPapers.toLong(),
             totalCount = discoveryProperties.maxPapersPerRun.toLong(),
             message = message,
-            details = buildProgressDetails(stats, item.source.sourceName, item.source.emailExtractionMethod),
+            details = buildProgressDetails(stats, item.sourceName, stats.bySource[item.sourceName]?.extractionMethod ?: ""),
             errors = snapshotErrors(stats)
         ), execId)
     }
@@ -1248,7 +1329,7 @@ class ExpertDiscoveryService(
     /** I-5：等待恢复的运营端文案（轮次、计划重试时间按北京时间显示）。 */
     private fun retryWaitMessage(item: DeferredSourceRecovery): String {
         val pending = item.pending
-        return "[${item.source.sourceName}] 搜索${retryReasonLabel(pending.reason)}，等待恢复 " +
+        return "[${item.sourceName}] ${if (pending.reason.startsWith("DEDUP_")) "查重" else "搜索"}${retryReasonLabel(pending.reason.removePrefix("DEDUP_"))}，等待恢复 " +
             "${pending.round}/${pending.maxRounds}，计划重试时间 ${displayTime(pending.nextRetryAt.toString())}" +
             "（北京时间）；先处理其他来源"
     }
@@ -1268,7 +1349,8 @@ class ExpertDiscoveryService(
         groupsScheduled: Int,
         reason: String,
         resumeCursor: String?,
-        processedBaseline: Int
+        processedBaseline: Int,
+        batchBaseline: Int
     ): SourceRetryPending? {
         val delays = discoveryProperties.openAlexSearchRecoveryDelays
         if (groupsScheduled >= delays.size) return null
@@ -1279,7 +1361,8 @@ class ExpertDiscoveryService(
             nextRetryAt = timeSource.now().plus(delays[round - 1]),
             reason = reason,
             resumeCursor = resumeCursor,
-            processedBaseline = processedBaseline
+            processedBaseline = processedBaseline,
+            batchBaseline = batchBaseline
         )
     }
 
@@ -1304,7 +1387,8 @@ class ExpertDiscoveryService(
      * EXHAUSTED 允许下一个扫描周期重开并靠去重避免重复收录。
      */
     private fun discoverFromOrcid(criteria: PaperSearchCriteria, stats: DiscoveryStats, deadline: Instant,
-                                  verification: DiscoveryVerificationExecution): SourceRunOutcome? {
+                                  verification: DiscoveryVerificationExecution,
+                                  resume: SourceRetryPending? = null): SourceRunOutcome? {
         val orcid = orcidProvider.getIfAvailable() ?: return null
         if (criteria.sources.isNotEmpty() && !criteria.sources.contains(orcid.sourceName)) return null
 
@@ -1312,8 +1396,18 @@ class ExpertDiscoveryService(
         val execId = verification.executionId
         val sourceStartTime = System.currentTimeMillis()
 
+        if (resume?.consumePending != null) {
+            deferredConsumption(resume, sourceStats, criteria)?.let { return it }
+            if (resume.consumedNextCursor == null) {
+                sourceStats.pendingWork = false
+                sourceStats.stopReason = DiscoveryStopReason.EXHAUSTED
+                return SourceRunOutcome(null, true, DiscoveryStopReason.EXHAUSTED)
+            }
+        }
         val checkpoint = loadSourceCheckpoint(orcid.sourceName, criteria)
-        val enteringCursor: String? = if (checkpoint.exhausted) {
+        val enteringCursor: String? = if (resume != null) {
+            if (resume.consumePending != null) resume.consumedNextCursor else resume.resumeCursor
+        } else if (checkpoint.exhausted) {
             criteria.cursor
         } else {
             checkpoint.cursor ?: criteria.cursor
@@ -1332,11 +1426,12 @@ class ExpertDiscoveryService(
         sourceStats.runBudget = orcidLimit
         var cursor: String? = enteringCursor ?: "0"
         var resumeCursor: String? = enteringCursor
-        var persistedRecords = 0
-        var batchNumber = 0
-        var recordsProcessed = 0
+        var persistedRecords = resume?.processedBaseline ?: 0
+        var batchNumber = resume?.batchBaseline ?: 0
+        var recordsProcessed = resume?.processedBaseline ?: 0
         var exhausted = false
         var stopReason = DiscoveryStopReason.EXHAUSTED
+        var retryPending: SourceRetryPending? = null
 
         fun persistCheckpoint(nextOffset: String?, reason: String, pageExhausted: Boolean) {
             val delta = sourceStats.papersSearched - persistedRecords
@@ -1409,6 +1504,7 @@ class ExpertDiscoveryService(
             var identityRepairFailedInPage = false
             // 05（I-3）：本页是否有可重试登记失败（STALE/FAILED）；有则本页不推进、不记成功。
             var personRegistrationFailedInPage = false
+            val dedupContext = DedupPageContext(deadline, batchNumber)
             for (record in records) {
                 if (progressStore.isCancelled("EXPERT_DISCOVERY")) break
                 if (recordsProcessed >= orcidLimit) {
@@ -1446,9 +1542,19 @@ class ExpertDiscoveryService(
                     sourceStats.emailsValid++
 
                     // I-1（08）：与论文路径对称 —— 重复命中只按匹配文档真实 `_id` 补建缺失任务。
-                    val duplicate = when (val emailDedup = existsInRawIndexByEmail(authorEmail.email)) {
+                    val duplicate = when (val emailDedup = existsInRawIndexByEmail(authorEmail.email, sourceStats, deadline, batchNumber)) {
                         is DedupResult.Exists -> emailDedup
-                        DedupResult.Error -> { sourceStats.dedupErrors++; continue }
+                        is DedupResult.Error -> {
+                            sourceStats.dedupErrors++
+                            if (emailDedup.retryable) {
+                                dedupContext.pending += {
+                                    consumeOutcomeInternal(listOf(authorEmail), null, null, true, 0, orcid.sourceName,
+                                        stats, sourceStats, verification, record.orcidId, orcidIdentityFactory(record),
+                                        dedupContext, countEvidence = false, countAuthor = false)
+                                }
+                            } else dedupContext.permanentFailure = true
+                            continue
+                        }
                         DedupResult.NotFound -> null
                     }
                     if (duplicate != null) {
@@ -1535,6 +1641,18 @@ class ExpertDiscoveryService(
                 log.warn("[{}] 批次 {} 内有 {} 条补全任务入队失败，保留进入该页的 offset 以便重放补建",
                     orcid.sourceName, batchNumber, enqueueFailedInPage)
             }
+            if (pageFullyConsumed && limitReason == null && !timeBudgetExpired && requestStop(deadline) == null &&
+                rawWriteFailedInPage == 0 && enqueueFailedInPage == 0 && !identityRepairFailedInPage &&
+                !personRegistrationFailedInPage && dedupErrorsInPage > 0 && !dedupContext.permanentFailure &&
+                dedupContext.pending.size == dedupErrorsInPage) {
+                retryPending = planDeferredRecovery(resume?.round ?: 0, "DEDUP_" + failureReasonCode(sourceStats),
+                    resumeCursor, sourceStats.papersSearched, batchNumber)?.copy(
+                        consumePending = pendingConsumption(dedupContext, sourceStats), consumedNextCursor = page.nextCursor)
+                if (retryPending != null) {
+                    stopReason = DiscoveryStopReason.RETRY_WAIT
+                    break
+                }
+            }
             if (pageFullyConsumed && limitReason == null && !timeBudgetExpired && rawWriteFailedInPage == 0 &&
                 enqueueFailedInPage == 0 && dedupErrorsInPage == 0 && !identityRepairFailedInPage &&
                 !personRegistrationFailedInPage) {
@@ -1554,6 +1672,7 @@ class ExpertDiscoveryService(
                         progressStore.isCancelled("EXPERT_DISCOVERY") -> DiscoveryStopReason.CANCELLED
                         rawWriteFailedInPage > 0 -> DiscoveryStopReason.RAW_WRITE_INCOMPLETE
                         enqueueFailedInPage > 0 -> DiscoveryStopReason.ENQUEUE_INCOMPLETE
+                        requestStop(deadline) != null -> requestStop(deadline)!!
                         dedupErrorsInPage > 0 -> DiscoveryStopReason.DEDUP_INCOMPLETE
                         identityRepairFailedInPage -> DiscoveryStopReason.IDENTITY_REPAIR_INCOMPLETE
                         personRegistrationFailedInPage -> DiscoveryStopReason.PERSON_REGISTRATION_INCOMPLETE
@@ -1572,6 +1691,8 @@ class ExpertDiscoveryService(
         persistCheckpoint(resumeCursor, stopReason, exhausted)
         sourceStats.pendingWork = !exhausted
         sourceStats.stopReason = stopReason
+        sourceStats.retry = retryPending?.let { SourceRetryState(it.round, it.maxRounds, it.nextRetryAt.toString(), it.reason) }
+            ?: sourceStats.retry?.copy(nextRetryAt = null)
 
         log.info("[{}] 完成: 耗时 ${elapsed}ms | " +
             "漏斗: 记录 ${recordsProcessed} → 邮箱 ${sourceStats.authorsExtracted}" +
@@ -1582,7 +1703,7 @@ class ExpertDiscoveryService(
             (if (sourceStats.failureReasons.isNotEmpty()) ", 失败原因 ${sourceStats.failureReasons}" else ""),
             orcid.sourceName)
 
-        return SourceRunOutcome(resumeCursor, exhausted, stopReason)
+        return SourceRunOutcome(resumeCursor, exhausted, stopReason, retryPending)
     }
 
     /** I-1/I-2（01b）：ORCID 的 `institution-name` 只表达来源关联，不证明当前雇主/职位，也不是国籍证据。 */
@@ -1719,7 +1840,8 @@ class ExpertDiscoveryService(
         stats: DiscoveryStats,
         sourceStats: SourceStats,
         verification: DiscoveryVerificationExecution,
-        sourceItemKey: String
+        sourceItemKey: String,
+        dedupContext: DedupPageContext? = null
     ): ConsumeOutcomeResult {
         if (extraction.extractionError != null) {
             stats.errors += "[${source.sourceName}] 提取失败: ${extraction.extractionError}"
@@ -1738,7 +1860,8 @@ class ExpertDiscoveryService(
             sourceStats = sourceStats,
             verification = verification,
             sourceItemKey = sourceItemKey,
-            identityFactory = paperIdentityFactory(paper)
+            identityFactory = paperIdentityFactory(paper),
+            dedupContext = dedupContext
         )
     }
 
@@ -1775,11 +1898,14 @@ class ExpertDiscoveryService(
         sourceStats: SourceStats,
         verification: DiscoveryVerificationExecution,
         sourceItemKey: String,
-        identityFactory: ConsumeIdentityFactory
+        identityFactory: ConsumeIdentityFactory,
+        dedupContext: DedupPageContext? = null,
+        countEvidence: Boolean = true,
+        countAuthor: Boolean = true
     ): ConsumeOutcomeResult {
         val executionId = verification.executionId
-        sourceStats.fulltextAttempted++
-        sourceStats.apiRequests += httpRequests
+        if (countEvidence) sourceStats.fulltextAttempted++
+        if (countEvidence) sourceStats.apiRequests += httpRequests
 
         if (failureReason != null) {
             sourceStats.failureReasons.merge(failureReason, 1) { a, b -> a + b }
@@ -1811,7 +1937,7 @@ class ExpertDiscoveryService(
             )
         }
 
-        sourceStats.fulltextObtained++
+        if (countEvidence) sourceStats.fulltextObtained++
 
         var emailsValid = 0
         var indexed = 0
@@ -1827,8 +1953,8 @@ class ExpertDiscoveryService(
 
         for (authorEmail in authorEmails) {
             stats.refreshGlobalCounts()
-            if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
-            sourceStats.authorsExtracted++
+            if (countAuthor && stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
+            if (countAuthor) sourceStats.authorsExtracted++
 
             val identityReject = identityRejection(authorEmail)
             if (identityReject != null) {
@@ -1838,13 +1964,24 @@ class ExpertDiscoveryService(
             }
             val emailResult = emailValidationService.validate(authorEmail.email)
             if (!emailResult.valid) { sourceStats.emailsRejected++; continue }
-            sourceStats.emailsValid++
+            if (countAuthor) sourceStats.emailsValid++
             emailsValid++
 
             // I-1（08）：重复命中时只按匹配文档的真实 `_id` 补建缺失任务，不重写整份专家、不算新增。
-            val duplicate = when (val emailDedup = existsInRawIndexByEmail(authorEmail.email)) {
+            val duplicate = when (val emailDedup = existsInRawIndexByEmail(authorEmail.email, sourceStats, dedupContext?.deadline, dedupContext?.batchNumber ?: 0)) {
                 is DedupResult.Exists -> emailDedup
-                DedupResult.Error -> { sourceStats.dedupErrors++; dedupFailed = true; continue }
+                is DedupResult.Error -> {
+                    sourceStats.dedupErrors++
+                    dedupFailed = true
+                    if (emailDedup.retryable && countAuthor && dedupContext != null) {
+                        dedupContext.pending += {
+                            consumeOutcomeInternal(listOf(authorEmail), null, null, true, 0, sourceName,
+                                stats, sourceStats, verification, sourceItemKey, identityFactory, dedupContext,
+                                countEvidence = false, countAuthor = false)
+                        }
+                    } else if (!emailDedup.retryable) dedupContext?.permanentFailure = true
+                    continue
+                }
                 DedupResult.NotFound -> null
             }
             if (duplicate != null) {
@@ -2670,6 +2807,31 @@ class ExpertDiscoveryService(
         }
         return progressStore.isCancelled(taskType)
     }
+    private fun supportsSearchRecovery(source: AcademicDataSource) =
+        source is OpenAlexDataSource || source is CrossrefDataSource || source is ArxivDataSource
+
+    private fun requestStop(deadline: Instant): String? = when {
+        progressStore.isCancelled("EXPERT_DISCOVERY") || Thread.currentThread().isInterrupted -> DiscoveryStopReason.CANCELLED
+        timeBudgetReached(deadline) -> DiscoveryStopReason.TIME_BUDGET
+        else -> null
+    }
+
+    private fun failureReasonCode(stats: SourceStats): String = stats.lastFailure?.let {
+        it.httpStatus?.let { code -> "HTTP_$code" } ?: if (it.exceptionType.contains("Timeout")) "TIMEOUT" else "NETWORK_IO"
+    } ?: "NETWORK_IO"
+
+    private fun recordRequestFailure(stats: SourceStats, stage: String, error: Throwable, started: Instant,
+        batchNumber: Int, attempt: Int, retryable: Boolean) {
+        val causes = generateSequence(error) { it.cause }.take(16).toList()
+        val failure = SourceRequestFailure(stage, causes.last().javaClass.simpleName.take(80),
+            (error as? HttpStatusCodeException)?.statusCode?.value(),
+            Duration.between(started, timeSource.now()).toMillis().coerceAtLeast(0), batchNumber, attempt, retryable)
+        stats.lastFailure = failure
+        log.warn("[{}] request_failed stage={} exceptionType={} httpStatus={} elapsedMs={} batch={} attempt={} retryable={}",
+            stats.sourceName, failure.stage, failure.exceptionType, failure.httpStatus, failure.elapsedMs,
+            failure.batchNumber, failure.attempt, failure.retryable)
+    }
+
     private fun waitForOpenAlexRetry(attempt: Int, deadline: Instant): String? {
         var remaining = attempt * 1000L + ThreadLocalRandom.current().nextLong(201L)
         while (remaining > 0L) {
@@ -3523,15 +3685,15 @@ class ExpertDiscoveryService(
             restTemplate.exchange(url, HttpMethod.HEAD, HttpEntity(null, esHeaders()), Void::class.java)
             DedupResult.Exists(orcid)
         } catch (e: HttpClientErrorException) {
-            if (e.statusCode == HttpStatus.NOT_FOUND) DedupResult.NotFound else DedupResult.Error
-        } catch (e: Exception) { DedupResult.Error }
+            if (e.statusCode == HttpStatus.NOT_FOUND) DedupResult.NotFound else DedupResult.Error(false)
+        } catch (e: Exception) { DedupResult.Error(false) }
     }
 
     /**
      * I-1（08）：命中时取回匹配文档的真实 `_id`（`size=1` + 不取 `_source`，命中判据仍是 `total`）。
      * 只做去重读取，绝不按新论文的身份改写已入库文档；`_id` 读不到时按 [DedupResult.Exists.docId] 为空处理。
      */
-    private fun existsInRawIndexByEmail(email: String): DedupResult {
+    private fun existsInRawIndexByEmail(email: String, sourceStats: SourceStats, deadline: Instant?, batchNumber: Int): DedupResult {
         val indices = ExpertIndexLevel.values().joinToString(",") { expertIndexService.indexName(it) }
         val url = "${esProperties.baseUrl}/$indices/_search?ignore_unavailable=true"
         val query = mapOf(
@@ -3539,19 +3701,30 @@ class ExpertDiscoveryService(
             "size" to 1,
             "_source" to listOf("email", "givenNames", "familyNames", "identityVerification", "externalIds", "emailSource", "tags")
         )
-        return try {
+        for (attempt in 1..OPENALEX_MAX_PAGE_ATTEMPTS) {
+            if (deadline != null && requestStop(deadline) != null) return DedupResult.Error(false)
+            val started = timeSource.now()
+            try {
             val response = restTemplate.exchange(url, HttpMethod.POST, HttpEntity(query, esHeaders()),
                 com.fasterxml.jackson.databind.JsonNode::class.java).body
             val hits = response?.path("hits")
             val total = hits?.path("total")?.path("value")?.asInt(0) ?: 0
-            if (total > 0) {
+            return if (total > 0) {
                 DedupResult.Exists(hits?.path("hits")?.firstOrNull()?.path("_id")?.asText()?.takeIf { it.isNotBlank() }, hits?.path("hits")?.firstOrNull()?.path("_source"))
             } else {
                 DedupResult.NotFound
             }
-        } catch (e: HttpClientErrorException) {
-            if (e.statusCode == HttpStatus.NOT_FOUND) DedupResult.NotFound else DedupResult.Error
-        } catch (e: Exception) { DedupResult.Error }
+            } catch (e: Exception) {
+                if (e is HttpClientErrorException && e.statusCode == HttpStatus.NOT_FOUND) return DedupResult.NotFound
+                val retryable = (e is HttpStatusCodeException && (e.statusCode.value() == 429 || e.statusCode.value() in 500..599)) ||
+                    isRetryableOpenAlexFailure(e)
+                recordRequestFailure(sourceStats, "DEDUP", e, started, batchNumber, attempt, retryable)
+                if (!retryable || attempt == OPENALEX_MAX_PAGE_ATTEMPTS) return DedupResult.Error(retryable)
+                val stop = waitForOpenAlexRetry(attempt, deadline ?: Instant.MAX)
+                if (stop != null) return DedupResult.Error(false)
+            }
+        }
+        return DedupResult.Error(false)
     }
 
     private fun buildExternalIds(paper: PaperMetadata, authorEmail: AuthorEmail): String? {
@@ -3903,7 +4076,11 @@ data class SourceRetryPending(
     val nextRetryAt: Instant,
     val reason: String,
     val resumeCursor: String?,
-    val processedBaseline: Int
+    val processedBaseline: Int,
+    /** Source-local completed/consumed batch baseline; a failed search has not entered its next batch yet. */
+    val batchBaseline: Int = 0,
+    @get:com.fasterxml.jackson.annotation.JsonIgnore val consumePending: (() -> String?)? = null,
+    val consumedNextCursor: String? = null
 )
 
 /** I-1: 单来源运行的停止原因，与主方案「每种约束各自给原因」对齐。 */

@@ -127,7 +127,10 @@ async function fetchJsonForCurrentTaskModal(taskType, generation, url, options) 
 }
 
 async function fetchAndCacheBatchLogs(taskType, executionId, generation) {
-    const url = `${contextPath}/api/task-progress/${taskType}/logs?executionId=${executionId}&batchOnly=true`;
+    // Discovery retry observations use batch 0; every writer of its shared log cache must
+    // fetch those observations. Other task views keep their positive-batch-only contract.
+    const batchOnly = taskType !== "EXPERT_DISCOVERY";
+    const url = `${contextPath}/api/task-progress/${taskType}/logs?executionId=${executionId}&batchOnly=${batchOnly}`;
     const logs = await fetchJsonForCurrentTaskModal(taskType, generation, url);
     if (logs == null) return false;
 

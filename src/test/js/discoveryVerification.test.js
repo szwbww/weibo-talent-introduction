@@ -45,7 +45,7 @@ function sandbox(handler = async () => []) {
     // Function is called as a global, not a method in the VM.
     context.isCurrentTaskModal = (type, generation) => context.currentTaskModal?.taskType === type && context.currentTaskModal?.generation === generation;
     vm.createContext(context);
-    vm.runInContext(extractFn("escapeHtml") + "\n" + section + "\n;globalThis.state = () => apvState;", context);
+    vm.runInContext(["escapeHtml", "renderBySourceTable", "isEnrichmentBySource", "renderEnrichmentSourceTable"].map(extractFn).join("\n") + "\n" + section + "\n;globalThis.state = () => apvState;", context);
     context.apvInit("EXPERT_DISCOVERY", 1);
     context.elements = elements; context.calls = calls; context.timers = timers; context.views = views;
     return context;
@@ -153,6 +153,58 @@ test("S5 collection reasons and traffic preserve complete source/host lists", ()
     const collection = s.apvCollectionHtml([{ batchNumber: 1, batchRejectReasonsJson: JSON.stringify(reasons) }]);
     assert.match(collection, /&lt;CODE-4&gt;/); assert.doesNotMatch(collection, /style=|ellipsis|<CODE/);
     assert.match(s.apvTrafficHtml(3001), /five 1 B/); assert.match(s.apvTrafficHtml(3001), /Apollo\/ORCID/);
+});
+
+test("collection recovery events are visible without becoming paper batches", async () => {
+    const source = { OPENALEX: { papersSearched: 800, stopReason: "RETRY_WAIT", pendingWork: true,
+        retry: { round: 1, maxRounds: 3, nextRetryAt: "2026-10-30T02:03:00Z", reason: "DEDUP_TIMEOUT" },
+        lastFailure: { stage: "DEDUP", exceptionType: "SocketTimeoutException", httpStatus: null,
+            elapsedMs: 3000, batchNumber: 8, attempt: 3, retryable: true } } };
+    const logs = [
+        { id: 1, batchNumber: 0, message: "initialization without diagnostics" },
+        { id: 2, batchNumber: 8, batchProcessed: 50, processedCount: 750 },
+        { id: 3, batchNumber: 8, batchProcessed: 100, processedCount: 800 },
+        { id: 4, batchNumber: 0, message: '<img src=x>等待恢复', detailsJson: JSON.stringify({ bySource: source }) },
+        { id: 5, batchNumber: 9, batchProcessed: 100, processedCount: 900 },
+        { id: 6, batchNumber: -1, message: '任务结束', detailsJson: JSON.stringify({ bySource: {
+            OPENALEX: { ...source.OPENALEX, stopReason: "SEARCH_FAILED", retry: { round: 3, maxRounds: 3, nextRetryAt: null, reason: "TIMEOUT" } }
+        } }) },
+        { id: 7, batchNumber: 0, message: 'invalid details ignored', detailsJson: '{broken' }
+    ];
+    const s = sandbox(async () => logs); seed(s);
+    const body = node(); s.elements.set("batch-body-3001", body);
+    s.elements.set("apv-collection-3001", node());
+    await s.apvLoadCollection(s.apvToken());
+    assert.match(s.calls[0].url, /executionId=3001&batchOnly=false$/);
+    const output = body.innerHTML;
+    assert.match(output, /恢复记录/); assert.match(output, /采集结束/);
+    assert.match(output, /等待重试/); assert.match(output, /重试耗尽/);
+    assert.match(output, /DEDUP_TIMEOUT/); assert.match(output, /SocketTimeoutException/);
+    assert.match(output, /&lt;img/); assert.doesNotMatch(output, /<img/);
+    assert.doesNotMatch(output, /initialization without diagnostics|invalid details ignored/);
+    assert.equal((output.match(/<tr><td>8<\/td>/g) || []).length, 1, "duplicate batch snapshots remain one batch row");
+    assert.ok(output.indexOf('<tr><td>8</td>') < output.indexOf('恢复记录'));
+    assert.ok(output.indexOf('恢复记录') < output.indexOf('<tr><td>9</td>'));
+    assert.doesNotMatch(output, /<tr><td>(?:0|-1)<\/td>/, "recovery events never use batch numbering");
+    const generalRuntime = fs.readFileSync(path.join(root, "task-modal-runtime.js"), "utf8");
+    const helper = generalRuntime.match(/async function fetchAndCacheBatchLogs\([^)]*\)\s*\{[\s\S]*?\n\}/)[0];
+    const sharedQueries = [];
+    s.contextPath = "";
+    s.fetchJsonForCurrentTaskModal = async (_type, _generation, url) => {
+        sharedQueries.push(url);
+        return url.endsWith("batchOnly=false") ? logs : logs.filter(log => log.batchNumber > 0);
+    };
+    vm.runInContext(extractFn("updateTaskModalLogs") + "\n" + helper, s);
+    // Both the three-second poll and terminal finalization call this same helper. Neither may
+    // overwrite the full cache with a batch-only subset after the dedicated tab has rendered.
+    for (const phase of ["running poll", "terminal finalization"]) {
+        await s.fetchAndCacheBatchLogs("EXPERT_DISCOVERY", 3001, 1);
+        assert.match(sharedQueries.at(-1), /batchOnly=false$/, phase);
+        assert.match(body.innerHTML, /恢复记录/, phase + " must preserve retry events");
+        assert.match(body.innerHTML, /采集结束/, phase + " must preserve terminal diagnostics");
+    }
+    await s.fetchAndCacheBatchLogs("EXPERT_ENRICHMENT", 3002, 1);
+    assert.match(sharedQueries.at(-1), /batchOnly=true$/, "other task views keep their existing batch-only contract");
 });
 
 test("I2 four-part identity and Abort isolate old task, generation, execution and filter", async () => {

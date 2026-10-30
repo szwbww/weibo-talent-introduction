@@ -23,6 +23,17 @@ data class SourceRetryState(
     val reason: String
 )
 
+/** Last failed request only; low-cardinality diagnostics, never URLs, messages or identities. */
+data class SourceRequestFailure(
+    val stage: String,
+    val exceptionType: String,
+    val httpStatus: Int?,
+    val elapsedMs: Long,
+    val batchNumber: Int,
+    val attempt: Int,
+    val retryable: Boolean
+)
+
 data class SourceStats(
     val sourceName: String,
     val extractionMethod: String,
@@ -61,5 +72,6 @@ data class SourceStats(
     /** I-1: 本次运行的停止原因，取值见 DiscoveryStopReason。 */
     var stopReason: String? = null,
     /** I-5: 唯一的重试观察对象（等待时的轮次/计划时间/原因）；null 表示本源本轮没有待恢复项。 */
-    var retry: SourceRetryState? = null
+    var retry: SourceRetryState? = null,
+    var lastFailure: SourceRequestFailure? = null
 )

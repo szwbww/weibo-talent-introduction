@@ -25,10 +25,10 @@ data class ExpertDiscoveryProperties(
      */
     val timeBudget: Duration = Duration.ofHours(4),
     /**
-     * I-1：OpenAlex 元数据搜索的**有限延迟恢复间隔**。3 次短尝试用尽后，同一页按这些间隔依次安排
+     * I-1：来源搜索（OpenAlex / Crossref / arXiv）及查重的**有限延迟恢复间隔**。3 次短尝试用尽后按这些间隔依次安排
      * 最多 3 个恢复组；空列表表示关闭延迟恢复（回退既有「3 次短尝试后终止」）。每项必须是正数、
      * 非递减、不超过 5 分钟；超过 3 项、零/负值或递减都会在启动时直接报配置错误。
-     * 它是进程级配置（与数据库字段、补全退避参数无关），不控制任何其他来源。
+     * 沿用既有配置名以保持部署兼容；它是进程级配置，与数据库字段、补全退避参数无关。
      */
     val openAlexSearchRecoveryDelays: List<Duration> = DEFAULT_OPENALEX_SEARCH_RECOVERY_DELAYS,
     /**

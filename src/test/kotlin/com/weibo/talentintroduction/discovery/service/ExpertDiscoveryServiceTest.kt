@@ -2796,7 +2796,7 @@ class ExpertDiscoveryServiceTest {
 
     @Test
     fun `dedup search error retains entering page and records actionable partial status`() {
-        val svc = createService()
+        val svc = createService(discoveryProperties.copy(openAlexSearchRecoveryDelays = emptyList()), timeSource = FakeTime())
         val p1 = paper("PMC1", "Test")
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
@@ -2817,6 +2817,7 @@ class ExpertDiscoveryServiceTest {
         val source = result.stats.bySource["EUROPE_PMC"]!!
         val checkpoint = storedCheckpointFor("EUROPE_PMC")
         assertEquals(0, result.stats.indexed)
+        assertEquals(3, dedupRequests.size, "transient failure receives three short attempts")
         assertEquals(1, source.dedupErrors)
         assertEquals(DiscoveryStopReason.DEDUP_INCOMPLETE, source.stopReason)
         assertTrue(source.pendingWork)
@@ -2831,7 +2832,7 @@ class ExpertDiscoveryServiceTest {
                 .joinToString("") { "%02x".format(it) },
             "actual" to mapOf(
                 "pageRequest" to mapOf("source" to "EUROPE_PMC", "cursor" to null, "paperId" to p1.pmcId),
-                "dedupSearchRequest" to dedupRequests.single(),
+                "dedupSearchRequest" to dedupRequests.first(),
                 "dedupSearchResponse" to "HTTP_500",
                 "dedupErrors" to source.dedupErrors,
                 "indexed" to source.indexed,
@@ -2865,7 +2866,7 @@ class ExpertDiscoveryServiceTest {
                         Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
                     )
 
-                val result = createService().discover(criteria, "TEST", 42L)
+                val result = createService(discoveryProperties.copy(openAlexSearchRecoveryDelays = emptyList()), timeSource = FakeTime()).discover(criteria, "TEST", 42L)
                 val source = result.stats.bySource["EUROPE_PMC"]!!
                 val checkpoint = storedCheckpointFor("EUROPE_PMC", criteria)
                 assertEquals(entering, checkpoint.cursor)
@@ -2912,8 +2913,8 @@ class ExpertDiscoveryServiceTest {
         Mockito.doAnswer {
             when (searchCall++) {
                 0 -> ResponseEntity.ok(objectMapper.readTree("""{"hits":{"total":{"value":0}}}"""))
-                1 -> throw org.springframework.web.client.HttpClientErrorException(HttpStatus.INTERNAL_SERVER_ERROR)
-                2 -> ResponseEntity.ok(existingResponse)
+                1, 2, 3 -> throw org.springframework.web.client.HttpClientErrorException(HttpStatus.INTERNAL_SERVER_ERROR)
+                4 -> ResponseEntity.ok(existingResponse)
                 else -> ResponseEntity.ok(objectMapper.readTree("""{"hits":{"total":{"value":0}}}"""))
             }
         }.`when`(restTemplate).exchange(
@@ -2921,7 +2922,7 @@ class ExpertDiscoveryServiceTest {
             Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
         )
 
-        val svc = createService()
+        val svc = createService(discoveryProperties.copy(openAlexSearchRecoveryDelays = emptyList()), timeSource = FakeTime())
         val first = svc.discover(criteria, "TEST", 42L)
         assertEquals(1, first.stats.bySource["EUROPE_PMC"]?.indexed)
         assertEquals(DiscoveryStopReason.DEDUP_INCOMPLETE, first.stats.bySource["EUROPE_PMC"]?.stopReason)
@@ -2961,7 +2962,7 @@ class ExpertDiscoveryServiceTest {
                 Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
             )
 
-        val result = createService(c4Props()).discover(criteria, "TEST", 42L)
+        val result = createService(c4Props().copy(openAlexSearchRecoveryDelays = emptyList()), timeSource = FakeTime()).discover(criteria, "TEST", 42L)
         val source = result.stats.bySource["ORCID"]!!
         val checkpoint = storedCheckpointFor("ORCID", criteria)
         assertEquals(1, source.dedupErrors)
@@ -4912,6 +4913,262 @@ class ExpertDiscoveryServiceTest {
             "stopReason" to sourceStats?.stopReason,
             "taskStatus" to result.taskFinalStatus
         )))
+    }
+
+    @Test
+    fun `Crossref and Arxiv retry transient same-page search then recover after other sources`() {
+        val time = FakeTime()
+        val crossref = Mockito.mock(CrossrefDataSource::class.java)
+        val arxiv = Mockito.mock(ArxivDataSource::class.java)
+        Mockito.doReturn(crossref).`when`(crossrefProvider).getIfAvailable()
+        Mockito.doReturn(arxiv).`when`(arxivProvider).getIfAvailable()
+        val requests = mutableListOf<Pair<String, Instant>>()
+        val cursors = mutableListOf<String?>()
+        val planned = mutableMapOf<String, Instant>()
+        for ((name, source) in listOf<Pair<String, AcademicDataSource>>("CROSSREF" to crossref, "ARXIV" to arxiv)) {
+            Mockito.doReturn(name).`when`(source).sourceName
+            Mockito.doReturn("PDF_PARSE").`when`(source).emailExtractionMethod
+            Mockito.doReturn(100).`when`(source).maxPapersPerSource
+            var attempt = 0
+            Mockito.doAnswer { invocation ->
+                requests += name to time.now()
+                cursors += (invocation.getArgument(0) as PaperSearchCriteria).cursor
+                attempt++
+                if (attempt <= 3) {
+                    if (attempt == 3) planned[name] = time.now().plusSeconds(30)
+                    throw ResourceAccessException("secret URL must not be retained", SocketTimeoutException("secret"))
+                }
+                PaperSearchResult(emptyList(), null, 0)
+            }.`when`(source).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        }
+        val criteria = PaperSearchCriteria(sources = listOf("CROSSREF", "ARXIV"), cursor = "SAME")
+        val result = createService(discoveryProperties.copy(maxPapersPerRun = 300,
+            openAlexSearchRecoveryDelays = listOf(Duration.ofSeconds(30))), timeSource = time)
+            .discover(criteria, "TEST", 42L, false)
+        assertEquals(listOf("CROSSREF", "CROSSREF", "CROSSREF", "ARXIV", "ARXIV", "ARXIV", "CROSSREF", "ARXIV"), requests.map { it.first })
+        assertTrue(cursors.all { it == "SAME" })
+        for (name in listOf("CROSSREF", "ARXIV")) {
+            assertTrue(!requests.last { it.first == name }.second.isBefore(planned.getValue(name)))
+            val ss = result.stats.bySource.getValue(name)
+            assertEquals(DiscoveryStopReason.EXHAUSTED, ss.stopReason)
+            assertEquals(0, ss.sourceFailureCount)
+            assertEquals("SocketTimeoutException", ss.lastFailure?.exceptionType)
+            assertEquals("SEARCH", ss.lastFailure?.stage)
+            assertEquals(3, ss.lastFailure?.attempt)
+            assertFalse(objectMapper.writeValueAsString(ss.lastFailure).contains("secret"))
+        }
+    }
+
+    @Test
+    fun `search recovery preserves second-page failure batch and advances it after successful consumption`() {
+        val crossref = Mockito.mock(CrossrefDataSource::class.java)
+        Mockito.doReturn(crossref).`when`(crossrefProvider).getIfAvailable()
+        Mockito.doReturn("CROSSREF").`when`(crossref).sourceName
+        Mockito.doReturn("PDF_PARSE").`when`(crossref).emailExtractionMethod
+        Mockito.doReturn(100).`when`(crossref).maxPapersPerSource
+        DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(crossref, "NO_EMAIL_IN_FULLTEXT")
+        var secondPageAttempts = 0
+        Mockito.doAnswer { invocation ->
+            when ((invocation.getArgument(0) as PaperSearchCriteria).cursor) {
+                null -> PaperSearchResult(listOf(paper("P1", "First")), "C2", 3)
+                "C2" -> {
+                    if (++secondPageAttempts <= 4) throw ResourceAccessException("timeout", SocketTimeoutException("timeout"))
+                    PaperSearchResult(listOf(paper("P2", "Second")), "C3", 3)
+                }
+                else -> throw HttpClientErrorException(HttpStatus.BAD_REQUEST)
+            }
+        }.`when`(crossref).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        val captured = mutableListOf<TaskProgress>()
+        DiscoveryMockHelper.captureProgressUpdates(progressStore, captured)
+        val result = createService(discoveryProperties.copy(openAlexSearchRecoveryDelays = listOf(Duration.ofSeconds(1))),
+            timeSource = FakeTime()).discover(PaperSearchCriteria(sources = listOf("CROSSREF")), "TEST", 42L, false)
+        val recorded = captured.mapNotNull {
+            val sources = it.details?.get("bySource") as? Map<*, *>
+            val stats = sources?.get("CROSSREF") as? Map<*, *>
+            stats?.get("lastFailure") as? com.weibo.talentintroduction.discovery.domain.SourceRequestFailure
+        }
+        assertTrue(recorded.any { it.exceptionType == "SocketTimeoutException" })
+        assertTrue(recorded.filter { it.exceptionType == "SocketTimeoutException" }.all { it.batchNumber == 2 })
+        assertEquals(3, result.stats.bySource["CROSSREF"]?.lastFailure?.batchNumber)
+        assertEquals(400, result.stats.bySource["CROSSREF"]?.lastFailure?.httpStatus)
+        assertEquals(2, result.stats.bySource["CROSSREF"]?.papersSearched)
+        assertEquals(5, secondPageAttempts)
+    }
+
+    @Test
+    fun `paper and ORCID dedup recovery retain batch baseline before next page failure`() {
+        for (sourceName in listOf("EUROPE_PMC", "ORCID")) {
+            setUp()
+            installInMemoryCursorStore()
+            val authors = listOf(
+                verifiedAuthorEmail("first@ox.ac.uk", "First", "Author", true, "Oxford", null),
+                verifiedAuthorEmail("second@ox.ac.uk", "Second", "Author", true, "Oxford", null)
+            )
+            if (sourceName == "ORCID") {
+                val orcid = Mockito.mock(OrcidDataSource::class.java)
+                Mockito.doReturn("ORCID").`when`(orcid).sourceName
+                Mockito.doReturn(100).`when`(orcid).maxRecordsPerRun
+                Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
+                val records = authors.mapIndexed { index, author ->
+                    OrcidDataSource.OrcidRecord("ORCID-$index", author.givenNames, author.familyNames,
+                        listOf(author.email), "Oxford", "GB")
+                }
+                Mockito.doReturn(OrcidDataSource.OrcidSearchPage(listOf(records[0]), "NEXT", 1))
+                    .doReturn(OrcidDataSource.OrcidSearchPage(listOf(records[1]), null, 1))
+                    .`when`(orcid).searchOrcidPage(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+                records.forEachIndexed { index, record ->
+                    Mockito.doReturn(listOf(authors[index])).`when`(orcid).orcidRecordToAuthorEmails(record)
+                }
+            } else {
+                val papers = listOf(paper("P1", "First"), paper("P2", "Second"))
+                Mockito.doReturn(PaperSearchResult(listOf(papers[0]), "NEXT", 2))
+                    .doReturn(PaperSearchResult(listOf(papers[1]), null, 2))
+                    .`when`(europePmc).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+                papers.forEachIndexed { index, paper ->
+                    Mockito.doReturn(currentExtraction(listOf(authors[index]), "FULLTEXT_XML"))
+                        .`when`(europePmc).extractAuthorEmails(paper)
+                }
+            }
+            authors.forEach { DiscoveryMockHelper.stubValidateEmail(emailValidationService, it.email, EmailValidationResult(2, true)) }
+            DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+            Mockito.doReturn(true).`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+            var firstAttempts = 0
+            Mockito.doAnswer { invocation ->
+                val body = objectMapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(invocation.getArgument<HttpEntity<*>>(2).body)
+                if (body.path("query").path("term").path("email").asText() == "second@ox.ac.uk") {
+                    throw HttpClientErrorException(HttpStatus.FORBIDDEN)
+                }
+                if (++firstAttempts <= 3) throw ResourceAccessException("timeout", SocketTimeoutException("timeout"))
+                ResponseEntity.ok(objectMapper.readTree("""{"hits":{"total":{"value":0}}}"""))
+            }.`when`(restTemplate).exchange(Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST), Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+            val criteria = PaperSearchCriteria(sources = listOf(sourceName))
+            val result = createService(discoveryProperties.copy(openAlexSearchRecoveryDelays = listOf(Duration.ofSeconds(1))),
+                timeSource = FakeTime()).discover(criteria, "TEST", 42L, false)
+            val stats = result.stats.bySource.getValue(sourceName)
+            assertEquals(2, stats.lastFailure?.batchNumber, sourceName)
+            assertEquals(403, stats.lastFailure?.httpStatus, sourceName)
+            assertEquals(false, stats.lastFailure?.retryable, sourceName)
+            assertEquals(1, stats.indexed, sourceName)
+            assertEquals(2, stats.papersSearched, sourceName)
+            assertEquals("NEXT", storedCheckpointFor(sourceName, criteria).cursor, sourceName)
+            assertFalse(storedCheckpointFor(sourceName, criteria).exhausted, sourceName)
+            assertEquals(4, firstAttempts)
+        }
+    }
+
+    @Test
+    fun `Crossref invalid HTTP request is terminal without retry`() {
+        val source = Mockito.mock(CrossrefDataSource::class.java)
+        Mockito.doReturn(source).`when`(crossrefProvider).getIfAvailable()
+        Mockito.doReturn("CROSSREF").`when`(source).sourceName
+        Mockito.doReturn("PDF_PARSE").`when`(source).emailExtractionMethod
+        Mockito.doReturn(100).`when`(source).maxPapersPerSource
+        Mockito.doThrow(HttpClientErrorException(HttpStatus.BAD_REQUEST)).`when`(source)
+            .searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        val result = createService(timeSource = FakeTime()).discover(PaperSearchCriteria(sources = listOf("CROSSREF")), "TEST", 42L, false)
+        Mockito.verify(source, Mockito.times(1)).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        assertEquals(400, result.stats.bySource["CROSSREF"]?.lastFailure?.httpStatus)
+        assertEquals(false, result.stats.bySource["CROSSREF"]?.lastFailure?.retryable)
+        assertNull(result.stats.bySource["CROSSREF"]?.retry)
+    }
+
+    @Test
+    fun `dedup delayed recovery consumes only failed author without redownloading or recounting page`() {
+        val time = FakeTime()
+        val authors = listOf(
+            verifiedAuthorEmail("first@ox.ac.uk", "First", "Author", true, "Oxford", null),
+            verifiedAuthorEmail("second@ox.ac.uk", "Second", "Author", false, "Oxford", null)
+        )
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(paper("P1", "Paper")), null, 1))
+        DiscoveryMockHelper.stubExtractAuthorEmails(europePmc, authors)
+        authors.forEach { DiscoveryMockHelper.stubValidateEmail(emailValidationService, it.email, EmailValidationResult(2, true)) }
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        Mockito.doReturn(true).`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+        val calls = mutableListOf<String>()
+        var secondAttempts = 0
+        Mockito.doAnswer { invocation ->
+            val body = objectMapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(invocation.getArgument<HttpEntity<*>>(2).body)
+            val email = body.path("query").path("term").path("email").asText()
+            calls += email
+            if (email == "second@ox.ac.uk" && ++secondAttempts <= 3) throw ResourceAccessException("secret", SocketTimeoutException("secret"))
+            ResponseEntity.ok(objectMapper.readTree("""{"hits":{"total":{"value":0}}}"""))
+        }.`when`(restTemplate).exchange(Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST), Mockito.any(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        installInMemoryCursorStore()
+        val captured = mutableListOf<TaskProgress>()
+        DiscoveryMockHelper.captureProgressUpdates(progressStore, captured)
+        val result = createService(discoveryProperties.copy(maxAuthorsPerRun = 2,
+            openAlexSearchRecoveryDelays = listOf(Duration.ofSeconds(1))), timeSource = time)
+            .discover(PaperSearchCriteria(sources = listOf("EUROPE_PMC")), "TEST", 42L, false)
+        val ss = result.stats.bySource.getValue("EUROPE_PMC")
+        assertEquals(1, ss.papersSearched)
+        assertEquals(1, ss.fulltextAttempted)
+        assertEquals(1, ss.fulltextObtained)
+        assertEquals(2, ss.authorsExtracted)
+        assertEquals(2, ss.emailsValid)
+        assertEquals(2, ss.indexed)
+        assertEquals(0, ss.dedupErrors)
+        assertEquals(1, calls.count { it == "first@ox.ac.uk" })
+        assertEquals(4, secondAttempts)
+        Mockito.verify(europePmc, Mockito.times(1)).extractAuthorEmails(Mockito.any(PaperMetadata::class.java) ?: paper("fallback", "fallback"))
+        Mockito.verify(indexWriterService, Mockito.times(2)).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+        assertEquals(DiscoveryStopReason.EXHAUSTED, ss.stopReason)
+        assertTrue(storedCheckpointFor("EUROPE_PMC", PaperSearchCriteria(sources = listOf("EUROPE_PMC"))).exhausted)
+        assertTrue(captured.any { it.message?.contains("查重") == true && it.message?.contains("等待恢复") == true })
+        assertTrue(objectMapper.writeValueAsString(result).contains("lastFailure"))
+        assertFalse(objectMapper.writeValueAsString(result).contains("consumePending"))
+    }
+
+    @Test
+    fun `ORCID dedup delayed recovery does not refetch record or count author twice`() {
+        val orcid = Mockito.mock(OrcidDataSource::class.java)
+        Mockito.doReturn("ORCID").`when`(orcid).sourceName
+        Mockito.doReturn(100).`when`(orcid).maxRecordsPerRun
+        Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
+        val record = OrcidDataSource.OrcidRecord("0000-0001", "John", "Smith", listOf("john@ox.ac.uk"), "Oxford", "GB")
+        stubOrcid(orcid, listOf(record))
+        Mockito.doReturn(listOf(verifiedAuthorEmail("john@ox.ac.uk", "John", "Smith", true, "Oxford", record.orcidId)))
+            .`when`(orcid).orcidRecordToAuthorEmails(record)
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "john@ox.ac.uk", EmailValidationResult(2, true))
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        Mockito.doReturn(true).`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+        var calls = 0
+        Mockito.doAnswer {
+            if (++calls <= 3) throw ResourceAccessException("secret", SocketTimeoutException("secret"))
+            ResponseEntity.ok(objectMapper.readTree("""{"hits":{"total":{"value":0}}}"""))
+        }.`when`(restTemplate).exchange(Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST), Mockito.any(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        val result = createService(discoveryProperties.copy(openAlexSearchRecoveryDelays = listOf(Duration.ofSeconds(1))),
+            timeSource = FakeTime()).discover(PaperSearchCriteria(sources = listOf("ORCID")), "TEST", 42L, false)
+        val ss = result.stats.bySource.getValue("ORCID")
+        assertEquals(4, calls)
+        assertEquals(1, ss.papersSearched)
+        assertEquals(1, ss.authorsExtracted)
+        assertEquals(1, ss.indexed)
+        assertEquals(0, ss.dedupErrors)
+        assertEquals(DiscoveryStopReason.EXHAUSTED, ss.stopReason)
+        Mockito.verify(orcid, Mockito.times(1)).searchOrcidPage(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+    }
+
+    @Test
+    fun `dedup timeout respects deadline before another lookup and preserves page entry`() {
+        val criteria = PaperSearchCriteria(sources = listOf("EUROPE_PMC"), cursor = "ENTRY")
+        stubStoredCheckpoint("EUROPE_PMC", "ENTRY", criteria)
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(paper("P1", "Paper")), "NEXT", 1))
+        DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
+            listOf(verifiedAuthorEmail("john@ox.ac.uk", "John", "Smith", true, "Oxford", null)))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "john@ox.ac.uk", EmailValidationResult(2, true))
+        Mockito.doThrow(ResourceAccessException("timeout", SocketTimeoutException("timeout")))
+            .`when`(restTemplate).exchange(Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST), Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        val result = createService(discoveryProperties.copy(timeBudget = Duration.ofMillis(500)), timeSource = FakeTime())
+            .discover(criteria, "TEST", 42L, false)
+        Mockito.verify(restTemplate, Mockito.times(1)).exchange(Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST), Mockito.any(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        assertEquals("ENTRY", storedCheckpointFor("EUROPE_PMC", criteria).cursor)
+        assertEquals(DiscoveryStopReason.TIME_BUDGET, result.stats.bySource["EUROPE_PMC"]?.stopReason)
+        assertEquals(0, result.stats.indexed)
     }
 
     @Test
