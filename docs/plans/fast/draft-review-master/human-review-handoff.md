@@ -1,32 +1,41 @@
 # Fast-P Human Review Handoff
 
-- Outcome: PAUSED_FOR_HUMAN
+- Outcome: READY_FOR_HUMAN_REVIEW
+- Master plan: docs/plans/2026-10-29/draft-review-master.md (commit 32407a46d5b05971fc913cda1802b6ba002e8dc7)
 - Master base: b15bb069f43f89c45ee6859dba04a0baff5d774d
-- Current/final code head: 6205aaf437a0e80642518b7d35f1b230635b7f35
+- Current/final code head: bec9e40faae946b0971e95af9c3a9edec83cd888
 - Branch/worktree: fast/draft-review-master / /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-draft-review-master
+- Ledger: docs/plans/fast/draft-review-master/ledger.md
+- Amendments: A1,A2,A3,A4,A5,A6,A7,A8,A9,A10,A11,A12,A13,A14,A15,A16,A17,A18
+- Finalization mode: NORMAL
+- Finalization repair parent: N/A
 
 ## Child Status
 | Child | Status | Code boundary | Fix rounds | Evidence commit |
 |---|---|---|---:|---|
-| 01 | PAUSED_FOR_HUMAN | b15bb069f43f89c45ee6859dba04a0baff5d774d..6205aaf437a0e80642518b7d35f1b230635b7f35 | 0 | 1c77b2b9d535474279ac398089d9e27583138404 |
-| 02 | PENDING | N/A | 0 | — |
-| 03 | PENDING | N/A | 0 | — |
-| 04 | PENDING | N/A | 0 | — |
-| 05 | PENDING | N/A | 0 | — |
+| 01 | LIGHT_PASS | b15bb069f43f89c45ee6859dba04a0baff5d774d..c9454b6d5dd193c73b78dfbc99dbe58c8c70ae26 | 0 | 72f87715e85df55ccf95678171cf597be7e78af5 |
+| 02 | LIGHT_PASS | c9454b6d5dd193c73b78dfbc99dbe58c8c70ae26..1cc5e9f78518468be5fb60b042cf2e7be92ccd0b | 0 | f81d0a925246db47d53ae608f7c826bf244c4f97 |
+| 03 | LIGHT_PASS | 1cc5e9f78518468be5fb60b042cf2e7be92ccd0b..f7b24c9c7364ea64adc4fa1013083343399756d7 | 0 | 0b02b03c85bbe5825d7365b0eee2c1fc04623e6f |
+| 04 | LIGHT_PASS | f7b24c9c7364ea64adc4fa1013083343399756d7..a02477be34b3308899820fcc9bd3060ca5bccb70 | 1 | 368984cbe5550f9353887ce91f02e40a5d961e32 |
+| 05 | LIGHT_PASS | a02477be34b3308899820fcc9bd3060ca5bccb70..bec9e40faae946b0971e95af9c3a9edec83cd888 | 0 | a1f74a17ff84a73c3554f9815d8308ec04a91207 |
 
 ## RECORD_ONLY Index
 | Observation | Child | Evidence | Source report |
 |---|---|---|---|
-| N/A — no independent verification performed | 01 | Implementer returned BLOCKED before verifier dispatch | children/01/execution.md |
+| O-01 historical mandatory full-Maven WAITING/RUNNABLE assertion failure; adjudicated by A17/A18 and closed by exact test-only retirement plus fresh full gate. Re-evaluate at aggregate review; not a permanent waiver. | 05 | Epoch5 artifact1407; Epoch6 full Maven5715/0fail/0error/24default opt-in skips; class23 pass; explicit named363/0skip | children/05/verify-log.md, Epoch5 Attempt1 and Epoch6 Attempt2 |
+
+Terminal reports for01–04 contain no RECORD_ONLY items. Child05 terminal report records N/A after historical O-01 closure. All prior failures, pauses, amendments and agent-availability interruptions remain in the ledger and append-only child logs.
+
+## Evidence Locations
+Each children/01 through children/05 directory contains brief.md, execution.md, verify-log.md and fix-log.md, bound by the corresponding evidence commit. Governing child identities and exact amendment Before/After authority are in the canonical ledger.
+
+Child05 final independent light attempt freshly passed all14 required commands: full Node1956 with0 failures/skips; full Maven5715 with0 failures/errors and24 disclosed default opt-in skips; all363 explicitly enabled named JVM targets with0 failures/errors/skips. These are child-gate receipts, not an aggregate verdict. Required actual authenticated production-browser/backend1440/390 and SMTP/IMAP evidence is indexed in execution.md; screenshots/MIME are historical executor evidence, not human acceptance. Epoch6 retarget runtime proof preserves original target/body/attachment and ordinary retarget; prior F-01 closed independently.
 
 ## Pause/Resume
-- Reason: Epoch 2 implementation reached commit 6205aaf437a0e80642518b7d35f1b230635b7f35 but required migration gate has one substantive schema assertion failure. FlywayMigrationIntegrationTest:2328 requires uk_inbound_mail_processing_uid_validity; applied V167 drops it and introduces folder-scoped uk_inbound_mail_processing_source. Current amendments A1/A2 authorize latest-version literal cleanup only.
-- Resume from: child 01, new epoch 3 after human-approved bounded amendment, code 6205aaf437a0e80642518b7d35f1b230635b7f35; preserve earlier implementation and evidence, execute only remaining authorized repair, rerun mandatory final gates, then acquire an independent verifier.
-- Needed authority: align the V120 test's schema and uniqueness assertions with the already-applied V167 folder-scoped contract while preserving uid-validity/data preservation coverage. Same already-listed FlywayMigrationIntegrationTest.kt file; no additional file or applied migration change needed. No skipped tests, new product behavior or weakened migration coverage.
-- Executor results, not independent verification: MailReviewDraftIT 12/0/0/0; final AuthFlowIntegrationTest 9/0/0/0; FlywayMigrationIntegrationTest 46/1/0/0. Combined gate remains failed; authentication-only rerun does not replace it.
-- Actual runtime smoke recorded by executor: real authenticated HTTP draft lifecycle, GreenMail SMTP→IMAP ingestion, stale context rejected/fresh approval accepted, no additional outbound mail. Provider translation remained disabled, so successful translation is not claimed. Throwaway infrastructure cleaned.
-- Implementation commit: 6205aaf437a0e80642518b7d35f1b230635b7f35. Implementer DraftReview01Implementer; no verifier or automatic repair round. Original main working tree preserved.
-- Prior epoch-1 baseline pause was released by user 授权 and committed as plan amendments c21b3aa9059d453811f65bc2c3229e1c51fbd997, recorded A1/A2 in ledger. Historical logs are preserved, not rewritten.
-- No checkpoint/final readiness validation is claimed: no child has reached terminal light-pass. No later child started.
+- Reason: N/A
+- Resume from: N/A
+- Next authorized phase: independent review-fast-p against the master, expressly requested by the user after all children complete. No product repair, push, merge or deployment is authorized by this handoff.
 
 No whole-system verification was performed.
+
+This last statement refers to the independent aggregate/master phase, which is deferred to review-fast-p; it does not erase the child05 full-suite and runtime receipts above. This handoff copies recorded facts only. Human acceptance is PENDING; no machine test or browser run is a human sign-off.
