@@ -212,7 +212,7 @@
 |---|---|---|
 | review05 | [前置审核管理员闭环](draft-review-05-admin.md) | 13（继承已批准的有界门禁例外） |
 | 1 | [只读标签展示](expert-access-01-read-labels.md) | 3 |
-| 2 | [授权等级与能力投影](expert-access-02-access-level.md) | 9 |
+| 2 | [授权等级与能力投影](expert-access-02-access-level.md) | 10 |
 | 3 | [精确资源守卫与人工发送](expert-access-03-resource-guard.md) | 8 |
 | 4a | [专家资料与标签目标守卫](expert-access-04a-profile-tags.md) | 5 |
 | 4b | [日历、个人草稿与审核权限联动](expert-access-04b-calendar-drafts.md) | 7 |
@@ -443,3 +443,4 @@ A-1覆盖最新“可读看标签不可改”；A-2/5/6/7覆盖FULL；A-3/4/9/15
 - 初始规划快照传输曾截断master末段，已在产品工作前以完整源字节恢复；恢复SHA256为`9143669bb109f81699ef7d4fa553ac4a19217347778c47c6b6da8625f1e0deb9`，所有原人工验收条目保留。恢复及本次基线/前置变更均在fast-p Amendments逐项留痕。
 - 全部子计划与最终artifact validator通过后，自动执行独立review-fast-p；机器审核不代替人工验收，不授权合并、推送或部署。
 - 2026-10-30：I-1真实等级投影需要MailboxConversationService注入非空等级服务；完整constructor grep收据在fast-p children/02/execution.md。按持续授权，02追加OutboundAttachmentFlowTest.kt、MailReviewQueryIT.kt两个直接构造fixture文件，仅接续新依赖/真实等级fixture与原行为回归，7→9文件，仍≤10/2子系统，不使用nullable/default兼容shim、不扩大权限与产品行为；对应子计划修正及fast-p Amendments留痕。
+- 2026-10-30：02实际门禁发现01继承的mailboxReadOnly.test.js固定缓存键与现有taskActivityCenter全局guard冲突（完整证据见children/02/execution.md Epoch2），按持续授权将该测试加入02第10文件；仅退役固定版本字面量，保留动态同键/实际module契约，guard/index与前端产品不动。原整命令失败如实保留，最终门禁必须通过；不消耗light-verifier修复轮次（仍是实现阶段，尚未首次提交/验证）。

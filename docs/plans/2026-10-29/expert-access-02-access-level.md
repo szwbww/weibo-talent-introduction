@@ -65,8 +65,9 @@ E01–E05及审计§1：V166只有行存在性；writer只有grant/revoke（另F
 | 7 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxReadAccessProjectionTest.kt` | READ与FULL附件投影及批量标签 |
 | 8 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt` | 仅补非空等级服务构造依赖及原reader真实等级fixture，保持附件/归属断言 |
 | 9 | `src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailReviewQueryIT.kt` | 仅补真实等级服务构造依赖，复用现有counted真实JDBC，不改变查询语义或弱化断言 |
+| 10 | `src/test/js/mailboxReadOnly.test.js` | 仅移除继承的缓存键固定字面量，保留同键契约与真实module引用的动态断言，不改guard/index或功能测试 |
 
-合计 **9 文件**；最多2个紧耦合子系统。新增共享store字段：access_level一列。
+合计 **10 文件**；最多2个紧耦合子系统。新增共享store字段：access_level一列。附加前端文件仅消除继承的门禁冲突，无前端产品改动。
 
 ## 验收标准
 - I-1：真实MySQL升级旧grant，断言均READ；并发重复PUT仅一行；旧PUT不降FULL；非法等级400且无写入；非admin管理403。
@@ -75,6 +76,7 @@ E01–E05及审计§1：V166只有行存在性；writer只有grant/revoke（另F
 - I-14：逐项核对文件清单/迁移号/SHA/测试exit及skip；不改变application.yml、部署脚本与现有未提交改动。
 
 门禁：JDK11 mvn test -Dtest=ExpertMailReadAccessIT -DmysqlIt=true；MailboxReadAccessProjectionTest；FlywayMigrationIntegrationTest -DmigrationIt=true，分别保留全新库/到V169旧库升级证据；追加OutboundAttachmentFlowTest与MailReviewQueryIT -DmysqlIt=true的原行为回归，目标IT不得跳过。
+继承JS门禁修正后，执行mailboxReadOnly.test.js与taskActivityCenter.test.js及Maven绑定全量Node门禁；不得替换固定版本字面量、放宽既有guard或跳过用例。
 
 测试环境使用隔离MySQL/测试SMTP与临时附件目录；不得把mysqlIt连生产库。跳过/未运行必须记NOT_RUN，不能写PASS。
 
@@ -104,3 +106,4 @@ E01–E05及审计§1：V166只有行存在性；writer只有grant/revoke（另F
 
 ## 修正记录
 - 2026-10-30：按用户“授权 继续 后续改动都授权 直到自子计划全部完成 可以执行 review-fast-p”持续授权，补入上述两个直接构造fixture，7文件改9文件，仍满足I-14。不引入兼容shim或默认为NONE/READ的投影，等级查询保持非空真实依赖。证据为fast-p children/02/execution.md的Epoch1完整`functions.grep`收据：pattern=`MailboxConversationService\(`、path=`src/test`，命中OutboundAttachmentFlowTest:239、MailReviewQueryIT:71及已授权MailboxReadAccessProjectionTest:75。仅前两者是补充白名单，原业务与门禁不减免。
+- 2026-10-30：真实ExpertMailReadAccessIT为15/15零skip，但Maven绑定Node阶段报1960/1961、唯一失败taskActivityCenter.test.js:700：继承mailboxReadOnly.test.js:541–542固定缓存键违背既有全局guard。完整命令、报错及`functions.grep`收据见children/02/execution.md Epoch2。按持续授权，追加该测试为第10文件，仅将固定版本断言退役为同键集合大小及使用实际key的module引用断言；不改guard、不重新钉版本、不扩大产品行为。先前未通过的整命令不记PASS，修正后保留最终门禁证据。
