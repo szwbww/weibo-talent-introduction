@@ -70,7 +70,8 @@ class MailReviewQueryIT {
         Mockito.`when`(contacts.findAllById(Mockito.anyCollection())).thenReturn(emptyList())
         conversations = MailboxConversationService(repository, senders, contacts,
             Mockito.mock(ExpertMaterialService::class.java), Mockito.mock(InboundMailTagService::class.java),
-            Mockito.mock(ExpertSearchService::class.java), Mockito.mock(MailRecordRepository::class.java))
+            Mockito.mock(ExpertSearchService::class.java), Mockito.mock(MailRecordRepository::class.java),
+            ExpertMailReadAccessService(named))
     }
 
     @AfterAll fun stop() { if (mysql.isRunning) mysql.stop() }

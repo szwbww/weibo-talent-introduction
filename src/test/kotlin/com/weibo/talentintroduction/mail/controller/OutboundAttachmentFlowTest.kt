@@ -243,7 +243,11 @@ class OutboundAttachmentFlowTest {
             expertMaterialService,
             inboundMailTagService,
             expertSearchService,
-            mailRecordRepository
+            mailRecordRepository,
+            Mockito.mock(com.weibo.talentintroduction.mail.service.ExpertMailReadAccessService::class.java).also {
+                Mockito.`when`(it.accessLevel(CONTACT_ID))
+                    .thenReturn(com.weibo.talentintroduction.mail.service.ExpertMailAccessLevel.NONE)
+            }
         )
         mockMvc = MockMvcBuilders
             .standaloneSetup(

@@ -62,6 +62,7 @@ class MailboxReadAccessProjectionTest {
     private lateinit var expertSearchService: ExpertSearchService
     private lateinit var mailRecordRepository: MailRecordRepository
     private lateinit var service: MailboxConversationService
+    private lateinit var readAccessService: ExpertMailReadAccessService
 
     @BeforeEach
     fun setUp() {
@@ -72,6 +73,8 @@ class MailboxReadAccessProjectionTest {
         inboundMailTagService = Mockito.mock(InboundMailTagService::class.java)
         expertSearchService = Mockito.mock(ExpertSearchService::class.java)
         mailRecordRepository = Mockito.mock(MailRecordRepository::class.java)
+        readAccessService = Mockito.mock(ExpertMailReadAccessService::class.java)
+        Mockito.`when`(readAccessService.accessLevel(anyLong())).thenReturn(ExpertMailAccessLevel.NONE)
         service = MailboxConversationService(
             repository,
             senderAccountRepository,
@@ -79,7 +82,8 @@ class MailboxReadAccessProjectionTest {
             expertMaterialService,
             inboundMailTagService,
             expertSearchService,
-            mailRecordRepository
+            mailRecordRepository,
+            readAccessService
         )
         Mockito.`when`(
             senderAccountRepository.findAllByAccountCodeNot(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
@@ -96,8 +100,8 @@ class MailboxReadAccessProjectionTest {
 
     @Test
     fun `reader without grant is denied before contact timeline and attachment reads`() {
-        Mockito.`when`(repository.hasReadAccess(MailReadOnlyPolicy.READER_USERNAME, CONTACT_ID))
-            .thenReturn(false)
+        Mockito.`when`(readAccessService.accessLevel(CONTACT_ID))
+            .thenReturn(ExpertMailAccessLevel.NONE)
 
         val ex = assertThrows(MailReadAccessDeniedException::class.java) {
             service.listMessages(CONTACT_ID, null, null, 50, MailReadOnlyPolicy.READER_USERNAME)
@@ -116,8 +120,8 @@ class MailboxReadAccessProjectionTest {
     @Test
     fun `missing expert and missing grant are both forbidden without leaking existence`() {
         // grant 查询为唯一准入事实：专家不存在同样只回 403（不是 404）。
-        Mockito.`when`(repository.hasReadAccess(MailReadOnlyPolicy.READER_USERNAME, 999999L))
-            .thenReturn(false)
+        Mockito.`when`(readAccessService.accessLevel(999999L))
+            .thenReturn(ExpertMailAccessLevel.NONE)
         Mockito.`when`(expertContactRepository.findById(999999L)).thenReturn(Optional.empty())
 
         val ex = assertThrows(MailReadAccessDeniedException::class.java) {
@@ -129,8 +133,8 @@ class MailboxReadAccessProjectionTest {
 
     @Test
     fun `grant is re-read on every request so a revoked expert is denied on the next page`() {
-        Mockito.`when`(repository.hasReadAccess(MailReadOnlyPolicy.READER_USERNAME, CONTACT_ID))
-            .thenReturn(true, false)
+        Mockito.`when`(readAccessService.accessLevel(CONTACT_ID))
+            .thenReturn(ExpertMailAccessLevel.READ, ExpertMailAccessLevel.NONE)
         Mockito.`when`(
             repository.timelineMessages(anyLong(), anyFilter(), Mockito.any(), anyInt())
         ).thenReturn(TimelinePage(emptyList(), false))
@@ -145,15 +149,15 @@ class MailboxReadAccessProjectionTest {
         }
         assertEquals(MailReadOnlyPolicy.MAIL_READ_FORBIDDEN, ex.code)
 
-        verify(repository, times(2)).hasReadAccess(MailReadOnlyPolicy.READER_USERNAME, CONTACT_ID)
+        verify(readAccessService, times(2)).accessLevel(CONTACT_ID)
     }
 
     @Test
     fun `reader cursor stays bound to the expert even when the grant is valid`() {
-        Mockito.`when`(repository.hasReadAccess(MailReadOnlyPolicy.READER_USERNAME, CONTACT_ID))
-            .thenReturn(true)
-        Mockito.`when`(repository.hasReadAccess(MailReadOnlyPolicy.READER_USERNAME, OTHER_CONTACT_ID))
-            .thenReturn(true)
+        Mockito.`when`(readAccessService.accessLevel(CONTACT_ID))
+            .thenReturn(ExpertMailAccessLevel.READ)
+        Mockito.`when`(readAccessService.accessLevel(OTHER_CONTACT_ID))
+            .thenReturn(ExpertMailAccessLevel.READ)
         Mockito.`when`(expertContactRepository.findById(OTHER_CONTACT_ID))
             .thenReturn(Optional.of(contact(OTHER_CONTACT_ID)))
 
@@ -178,8 +182,8 @@ class MailboxReadAccessProjectionTest {
 
     @Test
     fun `reader gets body and tags but fixed empty attachments with zero attachment interaction`() {
-        Mockito.`when`(repository.hasReadAccess(MailReadOnlyPolicy.READER_USERNAME, CONTACT_ID))
-            .thenReturn(true)
+        Mockito.`when`(readAccessService.accessLevel(CONTACT_ID))
+            .thenReturn(ExpertMailAccessLevel.READ)
         val inbound = inboundRow(id = 31L, messageId = "in-31")
         val outbound = outboundSentRow(id = 77L, subject = "Me: intro")
         Mockito.`when`(
@@ -190,6 +194,7 @@ class MailboxReadAccessProjectionTest {
 
         val response = service.listMessages(CONTACT_ID, null, null, 50, MailReadOnlyPolicy.READER_USERNAME)
 
+        assertEquals(ExpertMailAccessLevel.READ, response.accessLevel)
         assertEquals(2, response.items.size)
         for (item in response.items) {
             assertEquals(0, item.attachmentCount, "reader attachmentCount 固定 0")
@@ -211,7 +216,7 @@ class MailboxReadAccessProjectionTest {
     }
 
     @Test
-    fun `admin and default identity keep the full attachment projection and snapshot read`() {
+    fun `FULL reader admin and default identity share original attachment projection`() {
         Mockito.`when`(
             repository.timelineMessages(anyLong(), anyFilter(), Mockito.any(), anyInt())
         ).thenReturn(TimelinePage(listOf(outboundSentRow(id = 77L, subject = "Me: intro")), false))
@@ -244,8 +249,12 @@ class MailboxReadAccessProjectionTest {
         )
         Mockito.`when`(mailRecordRepository.findAllById(listOf(77L))).thenReturn(listOf(record))
 
-        for (username in listOf(MailReadOnlyPolicy.ADMIN_USERNAME, null)) {
+        for (username in listOf(MailReadOnlyPolicy.ADMIN_USERNAME, null, MailReadOnlyPolicy.READER_USERNAME)) {
+            val level = if (username == MailReadOnlyPolicy.READER_USERNAME) ExpertMailAccessLevel.FULL
+                else ExpertMailAccessLevel.READ
+            Mockito.`when`(readAccessService.accessLevel(CONTACT_ID)).thenReturn(level)
             val response = service.listMessages(CONTACT_ID, null, null, 50, username)
+            assertEquals(level, response.accessLevel)
             val item = response.items.single()
             assertEquals(1, item.attachmentCount)
             assertEquals(listOf("cv.pdf"), item.firstAttachmentNames)
@@ -255,11 +264,49 @@ class MailboxReadAccessProjectionTest {
             assertEquals("会议资料.txt", item.outboundAttachments[0].filename)
         }
 
-        verify(expertMaterialService, times(2))
+        verify(expertMaterialService, times(3))
             .resolveMessageAttachments(MailboxConversationRepository.SOURCE_MAIL_RECORD, 77L)
-        verify(mailRecordRepository, times(2)).findAllById(listOf(77L))
-        // 非 reader 永不查询只读授权表。
+        verify(mailRecordRepository, times(3)).findAllById(listOf(77L))
+        // Existence-only lookup is no longer the projection/admission source.
         verify(repository, never()).hasReadAccess(anyString(), anyLong())
+    }
+
+    @Test
+    fun `summary levels use one bulk lookup and preserve SQL order tags and pagination`() {
+        val ids = listOf(OTHER_CONTACT_ID, CONTACT_ID, 9L)
+        val rows = ids.map { id ->
+            MailboxConversationRepository.ConversationSummarySqlRow(
+                id, "Expert $id", "expert$id@example.org", "orcid-$id",
+                1, 2, 0, 1, LocalDateTime.of(2026, 10, 1, 9, 0), MailboxProgressStatus.NONE
+            )
+        }
+        Mockito.`when`(repository.countConversations(Mockito.eq("admin") ?: "", anyFilter())).thenReturn(3L)
+        Mockito.`when`(repository.pageConversations(Mockito.eq("admin") ?: "", anyFilter(), Mockito.eq(20), Mockito.eq(0L)))
+            .thenReturn(rows)
+        Mockito.`when`(expertContactRepository.findAllById(ids)).thenReturn(emptyList())
+        Mockito.`when`(readAccessService.accessLevels(ids)).thenReturn(
+            mapOf(OTHER_CONTACT_ID to ExpertMailAccessLevel.FULL,
+                CONTACT_ID to ExpertMailAccessLevel.READ, 9L to ExpertMailAccessLevel.NONE)
+        )
+        val result = service.listConversations("admin", null, false, false, false, false,
+            null, null, null, null, null, null, null, null, 0, 20)
+        assertEquals(ids, result.items.map { it.contactId })
+        assertEquals(listOf(ExpertMailAccessLevel.FULL, ExpertMailAccessLevel.READ, ExpertMailAccessLevel.NONE),
+            result.items.map { it.accessLevel })
+        assertEquals(3L, result.total)
+        assertEquals(20, result.size)
+        assertTrue(result.items.all { it.expertTags == null })
+        verify(readAccessService).accessLevels(ids)
+        verify(readAccessService, never()).accessLevel(anyLong())
+    }
+
+    @Test
+    fun `empty timeline account scope still returns current level without attachment reads`() {
+        Mockito.`when`(readAccessService.accessLevel(CONTACT_ID)).thenReturn(ExpertMailAccessLevel.FULL)
+        val result = service.listMessages(CONTACT_ID, "missing-account", null, 50, "user1")
+        assertEquals(ExpertMailAccessLevel.FULL, result.accessLevel)
+        assertTrue(result.items.isEmpty())
+        verifyNoInteractions(expertMaterialService, mailRecordRepository)
     }
 
     // ------------------------------------------------------------------

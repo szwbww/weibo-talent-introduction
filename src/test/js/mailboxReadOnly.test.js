@@ -538,8 +538,8 @@ describe("expert-access 01 I-3/S-1 只读标签", () => {
         const index = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
         const keys = Array.from(index.matchAll(/(?:href|src)="[^"]+\?v=([^"]+)"/g), (match) => match[1]);
         assert.ok(keys.length > 0);
-        assert.deepStrictEqual(Array.from(new Set(keys)), ["20261030-expert-access-01"]);
-        assert.ok(index.includes('src="mailbox-readonly.js?v=20261030-expert-access-01"'));
+        assert.strictEqual(new Set(keys).size, 1);
+        assert.ok(index.includes(`src="mailbox-readonly.js?v=${keys[0]}"`));
     });
 });
 

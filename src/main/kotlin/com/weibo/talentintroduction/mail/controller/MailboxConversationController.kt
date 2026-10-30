@@ -5,6 +5,7 @@ import com.weibo.talentintroduction.common.controller.ApiErrorResponse
 import com.weibo.talentintroduction.mail.service.ExpertFollowService
 import com.weibo.talentintroduction.mail.service.ExpertRepliedDismissalService
 import com.weibo.talentintroduction.mail.service.MailboxConversationService
+import com.weibo.talentintroduction.mail.service.ExpertMailAccessLevel
 import com.weibo.talentintroduction.mail.service.MailboxProgressStatus
 import com.weibo.talentintroduction.mail.service.MailboxSuspensionConflictException
 import com.weibo.talentintroduction.mail.service.MailboxSuspensionRequest
@@ -91,7 +92,9 @@ data class ConversationItemResponse(
      */
     val progressStatus: MailboxProgressStatus =
         if (followed) MailboxProgressStatus.FOLLOWING else MailboxProgressStatus.NONE,
-    val reviewPendingCount: Long = 0
+    val reviewPendingCount: Long = 0,
+    /** Current user1 grant, also when viewed by admin. Not an admin capability flag. */
+    val accessLevel: ExpertMailAccessLevel = ExpertMailAccessLevel.NONE
 )
 
 /**
@@ -176,7 +179,8 @@ data class ConversationMessageItemResponse(
 data class ConversationMessageListResponse(
     val items: List<ConversationMessageItemResponse>,
     val nextBefore: String?,
-    val hasMore: Boolean
+    val hasMore: Boolean,
+    val accessLevel: ExpertMailAccessLevel = ExpertMailAccessLevel.NONE
 )
 
 /**
@@ -219,7 +223,7 @@ class MailboxConversationController(
     private val expertFollowService: ExpertFollowService,
     private val expertRepliedDismissalService: ExpertRepliedDismissalService,
     private val pendingMailOperationService: PendingMailOperationService,
-    // 01 (T2)：独立挂起服务；MailboxConversationService 构造保持不变（I-6）。
+    // Independent suspension service; level projection does not change its behavior.
     private val mailboxSuspensionService: MailboxSuspensionService
 ) {
     @GetMapping

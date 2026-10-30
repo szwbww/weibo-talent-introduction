@@ -8,55 +8,102 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
 
+/** NONE is represented by an absent row, never a persisted grant value. */
+enum class ExpertMailAccessLevel {
+    NONE, READ, FULL;
+
+    val canRead: Boolean get() = this != NONE
+}
+
 /**
- * `expert_mail_read_access` 的唯一写者与读者（I-2/I-3）。
- *
- * 关系即状态：行存在 = 允许内置 `user1` 查看该专家邮件；不存在 = 禁止。`username`
- * 恒为 [MailReadOnlyPolicy.READER_USERNAME]，绝不来自请求体/查询参数；`granted_by`
- * 只取调用方传入的 admin session 用户名。
- *
- * 全部读写为参数化 JDBC；本服务只写 `expert_mail_read_access`，不触碰关注、挂起、
- * 邮件状态、联系人或 ES，也不引入权限缓存。PUT 用单条 `INSERT ... ON DUPLICATE KEY
- * UPDATE`（并发重复仅一行且不刷新 `created_at`）；DELETE 幂等；联系人在存在性校验
- * 后被并发删除时，FK 拒绝写入并统一转成 404（不泄露 SQL）。
+ * Single/bulk access-level reads and the sole explicit grant writer. No permission cache.
+ * Legacy grants only ensure READ, preserving an existing FULL and first-grant metadata.
+ * Explicit levels may switch READ/FULL; revocation deletes the row.
  */
 @Service
 class ExpertMailReadAccessService(
     private val jdbcTemplate: NamedParameterJdbcTemplate
 ) {
 
-    /** GET：无授权行返回 false；专家不存在 404。 */
-    fun getAccess(actorUsername: String?, expertContactId: Long): Boolean {
+    fun getAccess(actorUsername: String?, expertContactId: Long): Boolean =
+        getAccessLevel(actorUsername, expertContactId).canRead
+
+    fun getAccessLevel(actorUsername: String?, expertContactId: Long): ExpertMailAccessLevel {
         MailReadOnlyPolicy.requireAdmin(actorUsername)
         requireValidContactId(expertContactId)
         requireContactExists(expertContactId)
-        return grantCount(expertContactId) > 0
+        return accessLevel(expertContactId)
     }
 
-    /** PUT：幂等授予，只保留首次 granted_by/created_at；返回 canRead=true。 */
+    /** Internal resource lookup: absence (including a missing contact) is NONE. */
+    fun accessLevel(expertContactId: Long): ExpertMailAccessLevel =
+        accessLevels(listOf(expertContactId)).getValue(expertContactId)
+
+    /** One query per page, including explicit NONE for requested contacts without a row. */
+    fun accessLevels(expertContactIds: Collection<Long>): Map<Long, ExpertMailAccessLevel> {
+        if (expertContactIds.isEmpty()) return emptyMap()
+        val levels = expertContactIds.associateWith { ExpertMailAccessLevel.NONE }.toMutableMap()
+        jdbcTemplate.query(
+            """
+            SELECT expert_contact_id, access_level FROM expert_mail_read_access
+             WHERE username = :username AND expert_contact_id IN (:contactIds)
+            """.trimIndent(),
+            MapSqlParameterSource()
+                .addValue("username", MailReadOnlyPolicy.READER_USERNAME)
+                .addValue("contactIds", levels.keys)
+        ) { rs ->
+            levels[rs.getLong("expert_contact_id")] = persistedLevel(rs.getString("access_level"))
+        }
+        return levels
+    }
+
+    fun requireRead(expertContactId: Long): ExpertMailAccessLevel =
+        accessLevel(expertContactId).also {
+            if (!it.canRead) forbidden()
+        }
+
+    fun requireFull(expertContactId: Long): ExpertMailAccessLevel =
+        accessLevel(expertContactId).also {
+            if (it != ExpertMailAccessLevel.FULL) forbidden()
+        }
+
+    /** Legacy Boolean API, preserving first-grant identity and existing FULL. */
     @Transactional
-    fun grant(actorUsername: String?, expertContactId: Long): Boolean {
+    fun grant(actorUsername: String?, expertContactId: Long): Boolean =
+        setAccessLevel(actorUsername, expertContactId, null).canRead
+
+    @Transactional
+    fun setAccessLevel(
+        actorUsername: String?,
+        expertContactId: Long,
+        accessLevel: ExpertMailAccessLevel?
+    ): ExpertMailAccessLevel {
         MailReadOnlyPolicy.requireAdmin(actorUsername)
         requireValidContactId(expertContactId)
+        require(accessLevel != ExpertMailAccessLevel.NONE) { "accessLevel 必须为 READ 或 FULL" }
         requireContactExists(expertContactId)
+        // Only an explicit body can downgrade. Both statements are atomic upserts.
+        val update = if (accessLevel == null) "expert_contact_id = expert_contact_id"
+            else "access_level = VALUES(access_level)"
         try {
             jdbcTemplate.update(
                 """
-                INSERT INTO expert_mail_read_access (username, expert_contact_id, granted_by, created_at)
-                VALUES (:username, :contactId, :grantedBy, :createdAt)
-                ON DUPLICATE KEY UPDATE expert_contact_id = expert_contact_id
+                INSERT INTO expert_mail_read_access
+                    (username, expert_contact_id, granted_by, created_at, access_level)
+                VALUES (:username, :contactId, :grantedBy, :createdAt, :accessLevel)
+                ON DUPLICATE KEY UPDATE $update
                 """.trimIndent(),
                 MapSqlParameterSource()
                     .addValue("username", MailReadOnlyPolicy.READER_USERNAME)
                     .addValue("contactId", expertContactId)
                     .addValue("grantedBy", actorUsername)
                     .addValue("createdAt", LocalDateTime.now())
+                    .addValue("accessLevel", (accessLevel ?: ExpertMailAccessLevel.READ).name)
             )
         } catch (ex: DataIntegrityViolationException) {
-            // 存在性校验后联系人被并发删除：FK 拒绝，统一按专家不存在处理。
             throw NoSuchElementException("Expert contact not found: $expertContactId")
         }
-        return true
+        return accessLevel(expertContactId)
     }
 
     /** DELETE：幂等撤销（无行也成功）；返回 canRead=false。 */
@@ -92,15 +139,15 @@ class ExpertMailReadAccessService(
         }
     }
 
-    private fun grantCount(expertContactId: Long): Long =
-        jdbcTemplate.queryForObject(
-            """
-            SELECT COUNT(*) FROM expert_mail_read_access
-             WHERE username = :username AND expert_contact_id = :contactId
-            """.trimIndent(),
-            MapSqlParameterSource()
-                .addValue("username", MailReadOnlyPolicy.READER_USERNAME)
-                .addValue("contactId", expertContactId),
-            Long::class.java
-        ) ?: 0L
+    private fun persistedLevel(value: String?): ExpertMailAccessLevel =
+        when (value) {
+            "READ" -> ExpertMailAccessLevel.READ
+            "FULL" -> ExpertMailAccessLevel.FULL
+            else -> throw IllegalStateException("无效的专家邮件授权等级")
+        }
+
+    private fun forbidden(): Nothing =
+        throw com.weibo.talentintroduction.auth.config.MailReadAccessDeniedException(
+            MailReadOnlyPolicy.MAIL_READ_FORBIDDEN, "无权访问该专家的邮件"
+        )
 }
