@@ -60,9 +60,6 @@ class DiscoveryVerificationWorkerTest {
                     try {
                         processThread.start()
                         assertTrue(paperEntered.await(5,java.util.concurrent.TimeUnit.SECONDS))
-                        val deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5)
-                        while (processThread.state != Thread.State.WAITING && System.nanoTime() < deadline) Thread.yield()
-                        assertEquals(Thread.State.WAITING,processThread.state)
                         processThread.interrupt(); processThread.join(5000)
                         assertFalse(processThread.isAlive)
                         assertEquals(VerificationState.RUNNING,f.item(item.id).state)

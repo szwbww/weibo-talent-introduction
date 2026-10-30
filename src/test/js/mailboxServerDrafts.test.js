@@ -670,6 +670,58 @@ describe("server drafts I-2/I-6: generated OUTBOUND requestId save ordering", ()
 });
 
 describe("review I-20: original server draft ownership", () => {
+    for (const pending of ["empty target GET", "existing target GET", "confirmation"]) {
+        it(`review entry invalidates a pending retarget ${pending} and restores the captured source`, async () => {
+            const server = H.createDraftServer(), held = deferred();
+            const attachment = { key: "of-7", id: "7", filename: "original.txt", state: "ready", byteLength: 3 };
+            const old = server.seed("admin", inbound(90), content("original old-target body", {
+                context: { schemaVersion: 1, outboundAttachmentDraft: { revision: 1, items: [attachment] } }
+            }));
+            if (pending === "existing target GET") server.seed("admin", inbound(), content("unrelated latest draft"));
+            const original = json(read(server, inbound(90))), latest = json(read(server));
+            const review = { id: 501, contactId: 1, version: 1, ownerUsername: "user1", state: "SUBMITTED",
+                subject: "Review subject", html: "<p>Review B</p>", text: "Review B", commentCount: 0, sendStatus: "NOT_SENT" };
+            const ctx = await boot(server, {
+                dialogResults: { confirm: () => held.promise },
+                route: (url, method, body, entry, next) => {
+                    if (url.startsWith("/api/mail/mailbox/review-drafts?")) return Promise.resolve({ items: [review], total: 1 });
+                    if (url === "/api/mail/mailbox/review-drafts/501") return Promise.resolve(review);
+                    return next(url, method, body, entry);
+                }
+            }, 0);
+            H.click(H.chipButton(ctx, "drafts")); await H.flush();
+            H.click(ctx.host.querySelector(`[data-action="mc-open-draft"][data-draft-id="${old.id}"]`)); await H.flush();
+            let releaseGet;
+            server.intercept = (entry, execute) => {
+                if (pending !== "confirmation" && entry.method === "GET" && entry.url.includes("/target?") && entry.url.includes("processingId=101")) {
+                    releaseGet = () => held.resolve(execute());
+                    return held.promise;
+                }
+                return execute();
+            };
+            H.click(action(ctx, "mc-retarget-draft")); await H.flush();
+            assert.equal(ctx.calls.dialogs.length, pending === "confirmation" ? 1 : 0);
+            const select = (value) => { const node = ctx.host.querySelector('[data-role="review-selection"]'); node.value = value; H.changeEvent(node); };
+            select("review:501"); await H.flush();
+            assert.match(editor(ctx).textContent, /Review B/);
+            if (releaseGet) releaseGet(); else held.resolve(true);
+            await H.flush(); ctx.runTimers(); await H.flush();
+            assert.equal(ctx.calls.dialogs.length, pending === "confirmation" ? 1 : 0, "no late confirmation");
+            assert.equal(ctx.host.querySelector('[data-role="manual-compose"]').dataset.targetKey, "1:90:acc1");
+            assert.match(editor(ctx).textContent, /Review B/);
+            assert.equal(ctx.host.querySelector('[data-action="mc-send-manual"]'), null);
+            select("manual"); await H.flush(); await save(ctx);
+            assert.equal(ctx.host.querySelector('[data-role="manual-compose"]').dataset.targetKey, "1:90:acc1");
+            assert.equal(editor(ctx).innerText, "original old-target body");
+            assert.deepEqual(json(read(server, inbound(90))), original, "source body and attachment remain untouched");
+            assert.match(ctx.host.querySelector('[data-role="outbound-draft-files"]').textContent, /original.txt/);
+            assert.deepEqual(json(read(server)), latest, "no new draft or pollution of an existing destination");
+            assert.equal(puts(server).length, 0);
+            assert.equal(deletes(server).length, 0);
+            ctx.sandbox.MailboxChat.unmount(ctx.host);
+        });
+    }
+
     it("a pending original save finishes before entering review; later status refresh cannot enable or overwrite it", async () => {
         const server = H.createDraftServer(), hold = firstHold(server);
         const review = { id: 501, contactId: 1, version: 1, ownerUsername: "user1", state: "SUBMITTED",

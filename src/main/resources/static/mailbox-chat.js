@@ -9509,23 +9509,27 @@
         }
 
         function retargetManual(newProcessingId, newAccount) {
+            if (instance.review.mode !== "manual") return;
+            const captured = reviewCapture(), owner = currentDraftRecord();
+            const isCurrent = () => instance.review.mode === "manual" && reviewCurrent(captured)
+                && owner && draftOwnerLive(owner) && currentDraftRecord() === owner;
             return draftNavigation(async () => {
+                if (!isCurrent()) return;
                 const oldKey = currentTargetKey();
                 const draft = oldKey ? getDraft(oldKey) : null;
                 const contactId = Number(instance.selectedContactId);
                 const newKey = `${contactId}:${newProcessingId}:${newAccount}`;
                 const rec = draftRecord(newKey);
-                const epoch = instance.convEpoch;
                 try {
                     const detail = await hostApi()(draftTargetUrl(rec.target));
-                    if (instance.disposed || epoch !== instance.convEpoch || !draftOwnerLive(rec)) return;
+                    if (!isCurrent() || !draftOwnerLive(rec)) return;
                     if (detail.id && detail.state === "ACTIVE") {
                         instance.existingTargetDraft = detail;
                         refreshDraftStatus();
                         return;
                     }
                     if (!await openDialog("confirm", { message: "为新来信另建草稿，原草稿会保留，是否继续？" })) return;
-                    if (instance.disposed || epoch !== instance.convEpoch || !draftOwnerLive(rec)) return;
+                    if (!isCurrent() || !draftOwnerLive(rec)) return;
                     acceptDraftDetail(rec, detail, true);
                     if (detail.state && detail.state !== "ACTIVE") {
                         instance.existingTargetDraft = detail;
@@ -9545,7 +9549,7 @@
                     instance.manual.qa = migrated.qa || null;
                     markDraft(rec, migrated);
                     renderDraftEditor(rec);
-                } catch (err) { hostShowStatus("草稿加载失败，请重试", "error"); }
+                } catch (err) { if (isCurrent()) hostShowStatus("草稿加载失败，请重试", "error"); }
             });
         }
 
