@@ -45,7 +45,7 @@
 - 来源: original
 
 ### Invariant I-14: 阶段边界与证据
-- Rule: 按子计划顺序实施；每步≤10文件、≤2子系统、每张已有表每步≤1新增字段。新增表/字段/API是拟实现而非现状；先核对SHA/迁移号/已有脏改。没有通过真实MySQL门禁不能把跳过算PASS；本次只写计划及知识，不上线。
+- Rule: 顺序实施、默认每步≤10文件/≤2子系统/已有表每步≤1新增字段；本步仅为已证明的3个窄UPDATE/锁消费者fixture授予9→12文件有界例外，产品范围不扩大。核对SHA/迁移号/已有脏改；真实MySQL目标skip不能算PASS；授权实施不授权部署。
 - Applies to: 实施/验证/发布报告
 - Violation consequence: 范围漂移、迁移冲突、无证据的完成声明
 - 来源: K-master-plan-shared-file-sequential-gates
@@ -77,8 +77,11 @@ E07–E11及constructors/repository-calls收据列明六save+一个窄UPDATE。p
 | 7 | `src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailReadAccessService.kt` | 等级变更锁contact、撤权事务回收待办 |
 | 8 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/InboundPendingOwnerIT.kt` | 新增事务并发、旧库升级、六save路径覆盖 |
 | 9 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertMailReadAccessIT.kt` | 等级降级与队列兜底联动 |
+| 10 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt` | 退役仅save次数/第二实体副本pin；迁移实际重分类失败注入，保留状态、物理源/UID/ack/通知/标签/无SMTP行为 |
+| 11 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailServiceTest.kt` | narrow UPDATE后真实结果fixture/reread，保留绑定/alias/材料桥接/完成/整体attention；不重新钉mock转发或save次数 |
+| 12 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTrustWorkbenchTest.kt` | linked-contact非空锁fixture接线；保留重开triplet、0行409、missing404、null-contact/审计/attention |
 
-合计 **9 文件**；最多2个紧耦合子系统。新增共享store字段：pending_owner_username一列。
+合计 **12 文件**；I-14例外仅为上述3个现有必需写路径/锁消费者fixture，产品仍原范围。新增共享store字段：pending_owner_username一列。
 
 ## 验收标准
 - I-1：真实MySQL升级旧grant，断言均READ；并发重复PUT仅一行；旧PUT不降FULL；非法等级400且无写入；非admin管理403。
@@ -89,6 +92,7 @@ E07–E11及constructors/repository-calls收据列明六save+一个窄UPDATE。p
 - I-14：逐项核对文件清单/迁移号/SHA/测试exit及skip；不改变application.yml、部署脚本与现有未提交改动。
 
 门禁：JDK11 mvn test -Dtest=InboundPendingOwnerIT,ExpertMailReadAccessIT -DmysqlIt=true；FlywayMigrationIntegrationTest -DmigrationIt=true；AutoMailReplyService/Unmatched/Pending现有相关测试。
+上述3个fixture的原回归必须fresh执行、相关opt-in显式启用、目标零skip。实现细节save次数/转发副本断言退役，不改成新窄UPDATE调用次数pin；consumer状态/失败恢复/ack/审计/归属不覆盖以行为断言和真实MySQL并发证明。
 
 测试环境使用隔离MySQL/测试SMTP与临时附件目录；不得把mysqlIt连生产库。跳过/未运行必须记NOT_RUN，不能写PASS。
 
@@ -131,3 +135,6 @@ E07–E11及constructors/repository-calls收据列明六save+一个窄UPDATE。p
 本节为权威清单；进入人工验收时才导出同名前缀-acceptance.md，本次不生成衍生表。涉及尚未到本步的UI，使用同会话API执行等价动作并在最终08再次通过UI验证。
 
 跨阶段人工项引用的其他I/S条款，以总计划同编号定义为准；本步实现仍严格限定本文件清单。
+
+## 修正记录
+- 2026-10-30：持续授权下补3个已证明写路径/锁消费者fixture，9→12的I-14有界例外；完整save/mock/failure注入/重开锁收据见fast-p children/05/execution.md Epoch1。产品/构造/端点不扩大，既定I-12窄UPDATE不能保留旧两save和陈旧回读fixture；退役实现次数/副本pin，不重新钉窄调用，保留全部状态/失败无ack/物理邮箱/审计/attention安全行为。原门禁不减，新增fixture必须执行。
