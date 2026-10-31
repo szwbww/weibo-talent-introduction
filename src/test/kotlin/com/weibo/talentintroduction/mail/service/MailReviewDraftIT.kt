@@ -59,6 +59,7 @@ class MailReviewDraftIT {
         @JvmStatic @AfterAll fun stop() { if (mysql.isRunning) mysql.stop() }
     }
 
+    @Autowired private lateinit var conversations: MailboxConversationRepository
     @Autowired private lateinit var service: MailReviewDraftService
     @Autowired private lateinit var jdbc: JdbcTemplate
     @Autowired private lateinit var transactions: PlatformTransactionManager
@@ -111,6 +112,36 @@ class MailReviewDraftIT {
         jdbc.update("""INSERT INTO inbound_mail_processing(id,sender_account_code,folder,uid_validity,imap_uid,message_id,from_email,subject,body,cleaned_body,received_at,process_status,process_reason,expert_contact_id)
             VALUES(?,?,'INBOX',1,?,?, 'expert1@example.test','Inbound','Inbound body','Inbound clean','2026-09-01 09:00:00','MANUAL_REVIEW','Review fixture',1)""",
             processingId, account, processingId, "in-$processingId")
+    }
+
+    @Test
+    fun `user draft membership count paging and navigation share owner and live access`() {
+        val readDraft = create(contact = 1)
+        outbound(3, mailId = 30)
+        val previousReview = create(contact = 3)
+        outbound(2, mailId = 20)
+        jdbc.update("UPDATE expert_mail_read_access SET access_level='FULL' WHERE expert_contact_id=3")
+        fun manual(owner: String, contact: Long) {
+            jdbc.update("""INSERT INTO mailbox_reply_draft(username,expert_contact_id,target_kind,inbound_processing_id,account_scope,version,state,subject,html_body,text_body,created_at,updated_at)
+                VALUES (?,?,'OUTBOUND',0,'',1,'ACTIVE','Normal','Body','Body',NOW(3),NOW(3))""", owner, contact)
+        }
+        manual("user1", 3); manual("admin", 3); manual("user1", 1); manual("user1", 2)
+        val filter = MailboxConversationRepository.ConversationFilter(listOf("real-a", "real-b"), draftsOnly = true)
+        assertEquals(2L, conversations.countConversations("user1", filter))
+        val pages = (0L..1L).flatMap { conversations.pageConversations("user1", filter, 1, it) }
+        assertEquals(setOf(1L, 3L), pages.map { it.expertContactId }.toSet())
+        assertEquals(1L, conversations.countConversations("user1", filter.copy(accessLevel = "READ")))
+        assertEquals(1L, conversations.countConversations("user1", filter.copy(accessLevel = "FULL")))
+        assertEquals(0L, conversations.countConversations("user1", filter.copy(q = "Expert 2")))
+        val drafts = conversations.ownDraftsByContacts("user1", listOf(1, 2, 3))
+        assertEquals(listOf(id(readDraft)), drafts.getValue(1).map { it.id })
+        assertEquals(listOf("MANUAL"), drafts.getValue(3).map { it.kind })
+        assertFalse(drafts.containsKey(2))
+        jdbc.update("UPDATE expert_mail_read_access SET access_level='READ' WHERE expert_contact_id=3")
+        assertEquals(listOf(id(previousReview)), conversations.ownDraftsByContacts("user1", listOf(3)).getValue(3).map { it.id })
+        jdbc.update("DELETE FROM expert_mail_read_access WHERE expert_contact_id=1")
+        assertEquals(1L, conversations.countConversations("user1", filter))
+        assertTrue(conversations.ownDraftsByContacts("user1", listOf(1)).isEmpty())
     }
 
     @Test

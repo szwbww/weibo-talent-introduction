@@ -6891,8 +6891,8 @@ describe("07 delegated conversation — fixed target and existing editor", () =>
         assert.strictEqual(shell.children[0].className, "mc-conversation");
         assert.strictEqual(ctx.host.querySelector(".mc-experts"), null);
         assert.strictEqual(ctx.host.querySelector("#mcFilterPopover"), null);
-        assert.strictEqual(ctx.host.querySelector('[data-section="workbench"]'), null);
-        assert.strictEqual(ctx.host.querySelector('[data-section="logs"]'), null);
+        assert.ok(ctx.host.querySelector('[data-section="workbench"]'));
+        assert.ok(ctx.host.querySelector('[data-section="logs"]'));
         assert.strictEqual(ctx.host.querySelector('[data-action="mc-open-template-reference"]'), null);
         assert.strictEqual(ctx.host.querySelector('[data-action="mc-template-follow"]'), null);
         assert.strictEqual(ctx.host.querySelector('[data-action="mc-reply-identity-settings"]'), null);

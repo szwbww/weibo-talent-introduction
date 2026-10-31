@@ -113,9 +113,12 @@ class MailboxConversationService(
         /** 01 (T3/I-4)：只看当前用户已提供专家；默认 false 保持既有调用兼容。 */
         providedOnly: Boolean = false,
         reviewPendingOnly: Boolean = false,
-        expertScope: String = "ALL"
+        expertScope: String = "ALL",
+        accessLevel: String = "ALL",
+        draftsOnly: Boolean = false
     ): ConversationListResponse {
         val reader = MailReadOnlyPolicy.isReader(username)
+        require(accessLevel in setOf("ALL", "READ", "FULL")) { "非法 accessLevel" }
         require(expertScope in setOf("ALL", "USER1_FULL", "PENDING_REVIEW")) { "非法 expertScope" }
         if (expertScope != "ALL") MailReadOnlyPolicy.requireAdmin(username)
         if (reader && reviewPendingOnly) {
@@ -164,7 +167,9 @@ class MailboxConversationService(
             suspendedOnly = suspendedOnly,
             providedOnly = providedOnly,
             reviewPendingOnly = reviewPendingOnly,
-            expertScope = expertScope
+            expertScope = expertScope,
+            accessLevel = accessLevel,
+            draftsOnly = draftsOnly
         )
         val sessionUser = username.orEmpty()
         // Toolbar counts ignore mutually exclusive chips, including an empty chip result/page.
@@ -180,6 +185,7 @@ class MailboxConversationService(
         }
         val contactIds = rows.map { it.expertContactId }
         val accessLevels = readAccessService.accessLevels(contactIds)
+        val ownDrafts = if (reader) repository.ownDraftsByContacts(sessionUser, contactIds).orEmpty() else emptyMap()
         val latestMessages = repository.latestMessageByContacts(contactIds, activeCodes, accountCode)
         val latestInbounds = repository.latestInboundByContacts(contactIds, activeCodes, accountCode)
         val accountCodesByContact = repository.accountCodesByContacts(contactIds, activeCodes, accountCode)
@@ -235,7 +241,8 @@ class MailboxConversationService(
                 // 01 (I-1/I-4)：一次读取的 DB 真值；followed 由同一状态派生。
                 progressStatus = row.progressStatus,
                 reviewPendingCount = reviewPendingCounts[row.expertContactId] ?: 0L,
-                accessLevel = accessLevels.getValue(row.expertContactId)
+                accessLevel = accessLevels.getValue(row.expertContactId),
+                ownDrafts = ownDrafts[row.expertContactId].orEmpty()
             )
         }
         return ConversationListResponse(items, total, pageIndex, pageSize, reviewPendingTotal, filterCounts)

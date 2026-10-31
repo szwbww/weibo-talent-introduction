@@ -2229,7 +2229,7 @@
                 <div class="mc-person mailbox-progress-card" data-replied="${instance.chip === CHIP_REPLIED ? "true" : "false"}" data-active="${active ? "true" : "false"}" data-contact-id="${escapeText(item.contactId)}">
                     <button class="mc-person-main" type="button" data-action="mc-select-expert" data-contact-id="${escapeText(item.contactId)}" aria-label="${escapeText(ariaLabel)}"${active ? ' aria-current="true"' : ""}>
                         <span class="mc-person-heading"><strong title="${escapeText(cardName)}">${escapeText(cardName)}</strong>${Number(item.reviewPendingCount) > 0 ? `<span class="mc-badge" data-tone="pending" data-role="review-pending-count">待审核 ${Number(item.reviewPendingCount)}</span>` : ""}</span>
-                        ${item.accessLevel === "FULL" ? '<span class="mc-badge">user1：可写</span>' : ""}
+                        ${item.accessLevel === "FULL" ? '<span class="mc-badge">user1: 写</span>' : ""}
                         <small>${escapeText(accounts)}</small>
                         <small>${escapeText(latestLine)}</small>
                         ${lastReplyListMarkup(item)}
@@ -2334,8 +2334,11 @@
         }
 
         function loadDraftSummaries() {
-            if (delegated) return;
             if (instance.disposed || !instance.auth.ready || instance.user !== draftSessionUser) return;
+            if (delegated) {
+                if (instance.options.onChanged) instance.options.onChanged();
+                return;
+            }
             const seq = instance.listSeq;
             const user = instance.user;
             const ids = instance.chip === CHIP_DRAFTS || isUnmatchedChip() ? []
@@ -2395,7 +2398,7 @@
                     const detail = await hostApi()(`/api/mail/mailbox/drafts/${Number(id)}`);
                     if (instance.disposed || user !== instance.user || user !== draftSessionUser || seq !== instance.draftNavigationSeq) return;
                     const target = detail.target;
-                    const row = findSummaryByContactId(target.contactId);
+                    const row = delegated ? instance.selectedSummary || instance.options.summary : findSummaryByContactId(target.contactId);
                     const summary = row || { contactId: target.contactId, name: detail.expertName || detail.expertEmail || "原专家已不存在",
                         email: detail.expertEmail || "", sentCount: target.kind === "OUTBOUND" ? 1 : 0,
                         latestInbound: target.kind === "INBOUND" ? { processingId: target.processingId, accountCode: target.accountScope } : null };
@@ -3764,7 +3767,7 @@
             const identity = head.querySelector(".mc-identity");
             if (identity) {
                 identity.innerHTML = delegated
-                    ? `<h2>${escapeText(summary.name || "未填写姓名")}</h2><span class="mailbox-reply-detail" data-role="last-reply-time">${lastReplyDetailInner({ kind: "unavailable", text: LAST_REPLY_UNAVAILABLE_TEXT })}</span><span class="calendar-summary" data-role="meeting-summary"></span>`
+                    ? `<h2>${escapeText(summary.name || "未填写姓名")} <span class="mc-badge mc-access-full">可写</span></h2><span class="mailbox-reply-detail" data-role="last-reply-time">${lastReplyDetailInner({ kind: "unavailable", text: LAST_REPLY_UNAVAILABLE_TEXT })}</span><span class="calendar-summary" data-role="meeting-summary"></span>`
                     : `<h2>${escapeText(summary.name || summary.email || "-")}</h2><p>${escapeText(conversationSummaryInfo() || "-")}</p><span class="mailbox-reply-detail" data-role="last-reply-time">${lastReplyDetailInner({ kind: "unavailable", text: LAST_REPLY_UNAVAILABLE_TEXT })}</span><span class="calendar-summary" data-role="meeting-summary"></span>`;
             }
             // I-4：优先取当前页同一行，回退身份匹配的 selectedSummary；都不可用保留默认文案。
@@ -3837,7 +3840,7 @@
             const id = Number(contactId);
             if (!readAccessAdmin() || !(id > 0) || isUnmatchedChip()) return "";
             const view = readAccessView(id);
-            const labels = ["user1：未授权", "user1：查看＋草稿", "user1：可写"];
+            const labels = ["user1: 无", "user1: 读", "user1: 写"];
             return `<select class="mc-access-select" data-action="mc-set-user1-access" data-contact-id="${escapeText(id)}" aria-label="user1专家权限"${view.disabled ? " disabled" : ""}>${READ_ACCESS_LEVELS.map((level, index) => `<option value="${level}"${view.accessLevel === level ? " selected" : ""}>${labels[index]}</option>`).join("")}</select><span class="mc-inline-error" data-role="mc-access-error"${view.error ? "" : " hidden"}>${escapeText(view.error || "")}</span>`;
         }
 
@@ -3967,7 +3970,7 @@
             const orcid = (contact && contact.orcidId) || summary.orcid || "";
             const expertTagSpans = headerExpertTagSpans();
             metaEl.innerHTML = `
-                <div class="mc-note-tags">${statusBadge}${levelBadge}${expertTagSpans}${orcid ? `<span>ORCID ${escapeText(orcid)}</span>` : ""}<button class="mc-text-button" type="button" data-action="mc-open-expert" data-contact-id="${escapeText(Number(instance.selectedContactId))}">${delegated ? "专家资料" : "查看专家详情 ↗"}</button></div>
+                <div class="mc-note-tags">${statusBadge}${levelBadge}${expertTagSpans}${!delegated && orcid ? `<span>ORCID ${escapeText(orcid)}</span>` : ""}${delegated ? "" : `<button class="mc-text-button" type="button" data-action="mc-open-expert" data-contact-id="${escapeText(Number(instance.selectedContactId))}">查看专家详情 ↗</button>`}</div>
                 <div class="mc-note-row"><section class="mc-note-slot" aria-label="专家备注">${noteMarkup()}</section>${contactTimingMarkup()}</div>
             `;
         }
@@ -5297,9 +5300,9 @@
             const scrollNode = body.querySelector(".mc-scroll");
             const failedNoItems = instance.conversation.error && (instance.conversation.items || []).length === 0;
             if (scrollNode && !failedNoItems) {
-                if (!delegated) renderWorkbenchSectionInto(scrollNode);
+                renderWorkbenchSectionInto(scrollNode);
                 renderManualSectionInto(scrollNode);
-                if (!delegated) renderLogsBlockInto(scrollNode);
+                renderLogsBlockInto(scrollNode);
             }
             rebindDetails();
             const record = opts.restoreRecord || null;
@@ -5729,6 +5732,7 @@
             const adapter = hostFn("mcHostMountWorkbench");
             if (!adapter) return;
             const controller = adapter(hostEl, processingId, {
+                contactId: instance.selectedContactId,
                 onComplete: (assembly) => adoptAssembly(processingId, assembly)
             });
             if (controller) {
@@ -5865,6 +5869,15 @@
             selection.innerHTML = `<option value="manual">${delegated ? "我的新人工回复（直接发送）" : "我的人工回复（admin）"}</option>` + choices.map((item) =>
                 `<option value="review:${Number(item.id)}"${r.requestedId === item.id ? " selected" : ""}>${escapeText(reviewLabel(item))} · 草稿 #${Number(item.id)}（${escapeText(item.ownerUsername)}）</option>`).join("");
             selection.value = r.mode === "manual" ? "manual" : `review:${r.requestedId}`;
+            const controls = reviewNode("review-controls");
+            if (controls) controls.hidden = r.mode === "manual";
+            selection.hidden = choices.length <= 1;
+            const entry = reviewButton("open-review");
+            if (entry) {
+                const pending = Number(instance.selectedSummary && instance.selectedSummary.reviewPendingCount) || 0;
+                entry.hidden = r.mode !== "manual" || (!pending && !choices.length);
+                entry.textContent = pending ? `待审核 ${pending}` : "审核草稿";
+            }
             const more = reviewButton("more-drafts"); if (more) more.hidden = r.items.length >= r.total;
             const history = reviewNode("review-history");
             if (history) {
@@ -5908,7 +5921,7 @@
             compose.querySelectorAll("[data-review-action]").forEach((button) => { button.disabled = !!r.busy; });
         }
         async function loadReviewDrafts(more, choosePending) {
-            if (!instance.selectedContactId || !instance.auth.ready || (!delegated && instance.user !== "admin")) return;
+            if (delegated || !instance.selectedContactId || !instance.auth.ready || instance.user !== "admin") return;
             const r = instance.review, ctx = reviewCapture(), page = more ? r.page + 1 : 0, seq = r.listSeq = (r.listSeq || 0) + 1;
             try {
                 const data = await hostApi()(`${REVIEW_PATH}?contactId=${ctx.contact}&includeDeleted=true&page=${page}&size=20`);
@@ -5923,7 +5936,7 @@
             } catch (error) { if (reviewCurrent(ctx)) reviewError(error.message || "草稿列表加载失败，请重试"); }
         }
         function selectAdminReview(value) {
-            if (!delegated && instance.user !== "admin") return;
+            if (delegated || instance.user !== "admin") return;
             return draftNavigation(async () => {
                 if (instance.review.mode === "manual" && instance.manual.busy) return;
                 closeReviewConfirmation();
@@ -5937,7 +5950,13 @@
                 const panel = reviewNode("review-discussion"); if (panel) { panel.hidden = true; panel.innerHTML = ""; }
                 if (value === "manual") {
                     r.mode = "manual"; r.requestedId = null;
-                    const rec = currentDraftRecord(); if (rec) renderDraftEditor(rec);
+                    const section = host.querySelector('.mc-section[data-section="manual"]');
+                    if (section) section.remove();
+                    const scroll = scrollEl();
+                    renderManualSectionInto(scroll);
+                    const logs = scroll && scroll.querySelector('.mc-section[data-section="logs"]');
+                    const manual = scroll && scroll.querySelector('.mc-section[data-section="manual"]');
+                    if (logs && manual) scroll.insertBefore(manual, logs);
                     renderReviewChoices(); return;
                 }
                 r.mode = "review"; r.requestedId = Number(String(value).split(":")[1]);
@@ -6111,6 +6130,13 @@
             const action = button.dataset.reviewAction, r = instance.review;
             if (delegated && !["select", "more-drafts", "history", "events", "comments", "more-events", "comment"].includes(action)) return;
             if (delegated && action === "comment" && r.detail && r.detail.state === "APPROVED") return;
+            if (action === "manual") return selectAdminReview("manual");
+            if (action === "open-review") {
+                if (Number(instance.selectedSummary && instance.selectedSummary.reviewPendingCount) > 0) return loadReviewDrafts(false, true);
+                const item = r.items.find((item) => !item.deleted && item.state === "SUBMITTED") || r.items.find((item) => !item.deleted);
+                if (item) return selectAdminReview(`review:${item.id}`);
+                return;
+            }
             if (action === "select") return selectAdminReview(`review:${button.dataset.draftId}`);
             if (action === "more-drafts") return loadReviewDrafts(true, false);
             if (action === "history") { r.panel = r.panel === "history" ? null : "history"; renderReviewChoices(); return; }
@@ -6254,15 +6280,17 @@
             const outboundFiles = outboundDraftFilesHtml(draft ? outboundAttachmentDraftOf(draft).items : []);
             return `
                 <div class="mc-compose" data-role="manual-compose" data-target-key="${escapeText(targetKey)}">
-                    ${instance.user === "admin" || delegated ? `<div class="mail-review-controls">
-                        <span class="mc-badge" data-role="review-state">${delegated ? "我的人工回复" : "admin 自己撰写"}</span>
-                        <label>当前内容<select class="mail-review-select" aria-label="切换回复草稿" data-role="review-selection"><option value="manual">${delegated ? "我的新人工回复（直接发送）" : "我的人工回复（admin）"}</option></select></label>
-                        <button class="mc-text-button" type="button" data-review-action="more-drafts" hidden>加载更多草稿</button>
+                    ${!delegated && instance.user === "admin" ? `<button class="mc-text-button mc-review-entry" type="button" data-review-action="open-review" hidden></button>
+                    <div class="mail-review-controls" data-role="review-controls" hidden>
+                        <span class="mc-badge" data-role="review-state"></span>
+                        <select class="mail-review-select" aria-label="切换审核草稿" data-role="review-selection"></select>
+                        <button class="mc-text-button" type="button" data-review-action="more-drafts" hidden>更多</button>
                         <button class="mc-text-button" type="button" data-review-action="history">草稿历史</button>
+                        <button class="mc-text-button" type="button" data-review-action="manual">返回人工回复</button>
                     </div>` : ""}
                     <p class="mc-note" data-role="review-context" hidden></p>
                     <p class="mc-error" data-role="review-error" role="alert" hidden></p>
-                    <label>主题<input aria-label="回复主题" value="${escapeText(subjectValue)}"></label>
+                    <details class="mc-subject"><summary>主题</summary><label>主题<input aria-label="回复主题" value="${escapeText(subjectValue)}"></label></details>
                     <div class="mc-editor-tools">
                         <button class="button" type="button" data-action="mc-rich-command" data-command="bold">B</button>
                         <button class="button" type="button" data-action="mc-rich-command" data-command="italic">I</button>
@@ -6562,7 +6590,6 @@
                         </div>
                         <div class="mc-settings-tags" data-role="expert-tags"><p>正在加载专家标签…</p></div>
                         <p class="mc-manage-note">状态和层级点击保存；标签修改即时生效。</p>
-                        ${delegated ? '<div class="ec-profile" data-role="expert-manual-profile"></div>' : ""}
                         <p class="mc-inline-error" role="alert" hidden></p>
                         <footer class="mc-dialog-actions">
                             <button class="button" type="button" data-action="mc-close-manage">取消</button>
@@ -6607,10 +6634,6 @@
                     if (statusSelect) statusSelect.value = (loaded && loaded.operatorStatus) || "";
                     if (levelSelect) levelSelect.value = (loaded && loaded.currentIndexLevel) || "";
                     loadManageExpertTags(loaded);
-                    if (delegated) {
-                        const mountProfile = hostFn("mcHostMountDelegatedProfile");
-                        if (mountProfile) mountProfile(overlay, loaded, () => !instance.disposed && instance.manage.open && Number(instance.selectedContactId) === contactId);
-                    }
                     const dialog = overlay.querySelector(".mc-manage-dialog");
                     if (dialog && typeof dialog.focus === "function") dialog.focus();
                 }
@@ -10358,6 +10381,7 @@
         function applyOptions(options, flushed) {
             const next = options || {};
             if (delegated) {
+                if (next.draftId && !instance.disposed) openServerDraft(next.draftId);
                 if (next.summary && Number(next.summary.contactId) === fixedContactId && !instance.disposed) {
                     instance.selectedSummary = Object.assign({}, next.summary);
                     renderHeader();
@@ -10517,7 +10541,8 @@
                 instance.auth.ready = true;
                 instance.auth.username = instance.user;
                 setDraftSessionUser(instance.user);
-                selectExpert(Object.assign({}, instance.options.summary, { contactId: fixedContactId }), { skipDraftFlush: true, skipListReload: true, present: false });
+                if (instance.options.draftId) openServerDraft(instance.options.draftId);
+                else selectExpert(Object.assign({}, instance.options.summary, { contactId: fixedContactId }), { skipDraftFlush: true, skipListReload: true, present: false });
                 return;
             }
             renderSkeleton();

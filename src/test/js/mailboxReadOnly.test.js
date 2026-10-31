@@ -317,7 +317,8 @@ describe("S-1 DOM 骨架（真实模块渲染）", () => {
         assert.strictEqual(input.getAttribute("placeholder"), "搜索专家姓名");
         assert.ok(byAction(tools, "search"));
         assert.ok(byAction(tools, "refresh"));
-        assert.strictEqual(findOne(tools, "mc-note").textContent, "仅显示管理员授权的专家邮件");
+        assert.strictEqual(findOne(tools, "mc-note"), null);
+        assert.strictEqual(byAction(tools, "refresh").parentNode, searchRow);
 
         const list = findOne(aside, "mc-expert-list");
         const person = findOne(list, "mc-person");
@@ -328,8 +329,8 @@ describe("S-1 DOM 骨架（真实模块渲染）", () => {
         assert.strictEqual(main.dataset.action, "select-expert");
         assert.strictEqual(main.dataset.contactId, "7");
         const smalls = main.children.filter((child) => child.tagName === "SMALL");
-        assert.strictEqual(main.children[0].tagName, "STRONG");
-        assert.strictEqual(main.children[0].textContent, "张教授");
+        assert.strictEqual(main.children[0].children[0].tagName, "STRONG");
+        assert.strictEqual(main.children[0].children[0].textContent, "张教授");
         assert.strictEqual(smalls.length, 1);
         assert.strictEqual(smalls[0].textContent, "Re: 合作邀请");
         assert.ok(!main.textContent.includes(EXPERT_A.email));
@@ -348,12 +349,12 @@ describe("S-1 DOM 骨架（真实模块渲染）", () => {
         const identity = findOne(header, "mc-identity");
         assert.strictEqual(identity.children[0].tagName, "H2");
         assert.strictEqual(identity.children.length, 1);
-        assert.strictEqual(findOne(header, "mc-badge").textContent, "可查看 · 可提交草稿");
+        assert.strictEqual(findOne(header, "mc-badge").textContent, "可读 · 提交草稿");
         const scroll = findOne(conversation, "mc-scroll");
         assert.strictEqual(findOne(scroll, "mc-empty").textContent, "请选择左侧专家");
 
         assert.deepStrictEqual(harness.calls.map(call => call.path), [
-            `${LIST_PATH}?page=0&size=20`, `${LIST_PATH}?page=0&size=1&pendingOnly=true`
+            `${LIST_PATH}?page=0&size=20`, `${LIST_PATH}?page=0&size=1&pendingOnly=true`, `${LIST_PATH}?page=0&size=1&draftsOnly=true`
         ]);
         assert.strictEqual(harness.calls[0].path, `${LIST_PATH}?page=0&size=20`);
         assert.strictEqual(harness.calls[0].options.method, "GET");
@@ -563,7 +564,7 @@ describe("I-4 文本渲染安全", () => {
                 ? listResponse([{ ...EXPERT_A, name }]) : detailResponse([]);
             harness.mount();
             await flush();
-            assert.strictEqual(findOne(harness.root, "mc-person-main").children[0].textContent, "未填写姓名");
+            assert.strictEqual(findOne(harness.root, "mc-person-main").children[0].children[0].textContent, "未填写姓名");
             clickAction(harness, "select-expert");
             await flush();
             assert.strictEqual(findOne(harness.root, "mc-identity").textContent, "未填写姓名");
@@ -603,7 +604,7 @@ describe("I-4 文本渲染安全", () => {
         const message = findOne(root, "mc-message");
         assert.strictEqual(message.children.find((child) => child.tagName === "H3").textContent, evil);
         assert.strictEqual(findOne(message, "mc-body").textContent, evil);
-        assert.strictEqual(findOne(root, "mc-person-main").children[0].textContent, "<b>张</b>");
+        assert.strictEqual(findOne(root, "mc-person-main").children[0].children[0].textContent, "<b>张</b>");
     });
 
     it("正文缺失显示空文本而不是 undefined", async () => {
@@ -823,7 +824,7 @@ describe("I-3 失权/失败/竞态", () => {
         const gate = deferred();
         let listCalls = 0;
         harness.responder = async (requestPath) => {
-            if (requestPath.includes("pendingOnly=true")) return listResponse([], 0);
+            if (requestPath.includes("pendingOnly=true") || requestPath.includes("draftsOnly=true")) return listResponse([], 0);
             if (requestPath.startsWith(`${LIST_PATH}?`)) {
                 listCalls += 1;
                 if (listCalls > 1) return gate.promise;

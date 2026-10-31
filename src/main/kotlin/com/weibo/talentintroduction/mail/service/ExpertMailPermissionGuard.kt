@@ -2,6 +2,8 @@ package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.auth.config.MailReadAccessDeniedException
 import com.weibo.talentintroduction.auth.config.MailReadOnlyPolicy
+import com.weibo.talentintroduction.audit.controller.OperatorActionLogController
+import com.weibo.talentintroduction.reply.controller.ReplySnippetController
 import com.weibo.talentintroduction.campaign.controller.ExpertContactManagementController
 import com.weibo.talentintroduction.campaign.controller.MeetingCalendarController
 import com.weibo.talentintroduction.document.controller.ExpertDocumentBrowseController
@@ -24,12 +26,14 @@ class ExpertMailPermissionGuard(
     companion object {
         const val MAIL_WRITE_FORBIDDEN = "MAIL_WRITE_FORBIDDEN"
 
-        private enum class Target { CONTACT, PROCESSING, MESSAGE, ATTACHMENT, DOCUMENT, MAIL, OUTBOUND, SENT_OUTBOUND, EVENTS, SUMMARIES, EVENT, MEETING_OPTIONS, MEETING_PREVIEW }
+        private enum class Target { CONTACT, PROCESSING, MESSAGE, ATTACHMENT, DOCUMENT, MAIL, OUTBOUND, SENT_OUTBOUND, EVENTS, SUMMARIES, EVENT, MEETING_OPTIONS, MEETING_PREVIEW, LOGS, SNIPPETS }
         private data class Key(val controller: Class<*>, val method: String, val verb: String)
         private val targets = buildMap<Key, Target> {
             fun route(controller: Class<*>, method: String, verb: String, target: Target) {
                 put(Key(controller, method, verb), target)
             }
+            route(OperatorActionLogController::class.java, "search", "GET", Target.LOGS)
+            route(ReplySnippetController::class.java, "list", "GET", Target.SNIPPETS)
             val conversation = MailboxConversationController::class.java
             route(conversation, "conversationManualRichReply", "POST", Target.CONTACT)
             route(conversation, "follow", "PUT", Target.CONTACT)
@@ -109,6 +113,11 @@ class ExpertMailPermissionGuard(
         fun contact(): Long = id("contactId").also { requireContact(it); requireFull(username, it) }
         fun match(actual: Long?, expected: Long) { if (actual == null || actual != expected) forbidden() }
         when (rule) {
+            Target.LOGS, Target.SNIPPETS -> {
+                val contactId = positive(request.getParameter(if (rule == Target.LOGS) "expertContactId" else "contactId"), "contactId")
+                requireContact(contactId)
+                requireFull(username, contactId)
+            }
             Target.CONTACT -> contact()
             Target.PROCESSING -> requireFull(username, owner("inbound_mail_processing", id("id")))
             Target.MESSAGE -> {

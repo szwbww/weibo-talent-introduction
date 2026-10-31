@@ -53,11 +53,26 @@ function edit(h, text = "edited") {
     role(h, "review-editor").dispatch("input", {});
 }
 
+test("review mutations refresh the draft tab without replacing the active editor", async () => {
+    const h = await setup();
+    h.custom = (url) => url.includes("draftsOnly=true")
+        ? { items: [], total: [...h.rows.values()].some(row => !row.deleted) ? 1 : 0 } : undefined;
+    const editor = role(h, "review-editor");
+    await create(h);
+    assert.equal(role(h, "reader-draft-experts").textContent, "1");
+    edit(h, "keep this input"); click(h, "save"); await flush();
+    assert.equal(role(h, "review-editor"), editor);
+    assert.equal(role(h, "review-subject").value, "keep this input");
+    click(h, "delete"); await flush();
+    assert.equal(role(h, "reader-draft-experts").textContent, "0");
+    h.handle.unmount();
+});
+
 test("S-1 persistent exact DOM and empty state, no extra classes/capabilities/storage", async () => {
     const h = await setup();
     assert.equal(role(h, "review-state").textContent, "暂无草稿");
     assert.equal(role(h, "review-editor").hidden, true);
-    assert.equal(role(h, "review-drafts").parentNode.className, "mc-scroll");
+    assert.equal(role(h, "review-drafts").parentNode.className, "mc-conversation");
     assert.equal(role(h, "review-compose").parentNode.className, "mc-section-content");
     assert.equal(role(h, "review-history").hidden, true);
     assert.equal(role(h, "review-discussion").hidden, true);

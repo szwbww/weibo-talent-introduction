@@ -1,0 +1,10 @@
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.788 s - in com.weibo.talentintroduction.mail.controller.MailReplyDraftControllerTest
+[INFO] Tests run: 15, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 57.167 s - in com.weibo.talentintroduction.mail.service.MailReviewDraftIT
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.272 s - in com.weibo.talentintroduction.mail.service.MailboxReadAccessProjectionTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 12.994 s - in com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuardTest
+[INFO] Tests run: 14, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.049 s - in com.weibo.talentintroduction.mail.service.MailReplyDraftServiceTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.026 s - in com.weibo.talentintroduction.rag.DelegatedWorkbenchAccessTest
+[INFO] Tests run: 52, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+[INFO] Total time:  04:43 min
+[INFO] Finished at: 2026-10-31T17:58:52+08:00

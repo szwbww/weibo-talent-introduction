@@ -85,8 +85,12 @@ test("READ/FULL switches use the real shared editor and exact request gate witho
     assert.ok(!h.host.querySelector('[data-role="delegated-conversation"] .mc-identity').textContent.includes("a@example.edu"));
     writable(h).innerText = "Only A manual content";
     tools.inputEvent(writable(h));
+    const countsBefore = h.calls.api.filter(call => call.url.includes("draftsOnly=true")).length;
     await h.handle.flushDrafts();
+    await tools.flush();
     assert.ok(h.calls.api.some(call => call.method === "PUT" && call.url.includes("/drafts/target?contactId=1")));
+    assert.ok(h.calls.api.filter(call => call.url.includes("draftsOnly=true")).length > countsBefore,
+        "saved ordinary draft refreshes the outer draft tab count");
     await h.choose(2);
     assert.equal(writable(h), null);
     assert.equal(h.host.querySelector('[data-role="delegated-conversation"]'), null);
@@ -128,27 +132,25 @@ test("delayed A FULL authority after selecting B cannot mount a writable convers
     h.handle.unmount();
 });
 
-test("FULL review history remains immutable and separate from the new manual draft", async () => {
+test("FULL uses ordinary drafts and the three original sections, manual open by default", async () => {
     const h = await workspace();
     await h.choose(1);
-    const selector = h.host.querySelector('[data-role="review-selection"]');
-    assert.ok(selector);
-    selector.value = "review:41";
-    tools.changeEvent(selector);
-    await tools.flush();
-    assert.equal(writable(h), null);
-    assert.ok(h.host.textContent.includes("Approved review body"));
-    for (const action of ["send", "approve", "return", "confirm-return", "context-confirm"]) {
-        assert.equal(h.host.querySelector(`[data-review-action="${action}"]`), null);
-    }
-    assert.equal(h.calls.sendRich.length, 0);
-    assert.equal(h.calls.sendConversation.length, 0);
-    const back = h.host.querySelector('[data-role="review-selection"]');
-    back.value = "manual";
-    tools.changeEvent(back);
-    await tools.flush();
+    assert.equal(h.host.querySelector('[data-role="review-selection"]'), null);
+    assert.equal(h.calls.api.filter(call => call.url.includes("review-drafts")).length, 0);
+    assert.deepEqual(Array.from(h.host.querySelectorAll('details.mc-section'), node => node.dataset.section), ["workbench", "manual", "logs"]);
+    assert.equal(h.host.querySelector('[data-section="manual"]').hasAttribute("open"), true);
+    assert.equal(h.host.querySelector('[data-section="workbench"]').hasAttribute("open"), false);
+    assert.equal(h.host.querySelector('[data-section="logs"]').hasAttribute("open"), false);
+    assert.equal(h.host.querySelector('.mc-subject').hasAttribute("open"), false);
     assert.ok(writable(h));
-    assert.ok(!writable(h).textContent.includes("Approved review body"));
+    assert.ok(h.host.querySelector('[data-action="mc-send-manual"]'));
+    assert.ok(h.host.querySelector('.mc-delegated-host'));
+    assert.ok(h.host.querySelector('.mc-identity').textContent.includes("可写"));
+    tools.click(h.host.querySelector('[data-action="mc-manage-expert"]')); await tools.flush();
+    assert.ok(h.doc.root.querySelector('[data-role="status-select"]'));
+    assert.ok(h.doc.root.querySelector('[data-role="level-select"]'));
+    assert.ok(h.doc.root.querySelector('[data-role="expert-tags"]'));
+    assert.equal(h.doc.root.querySelector('[data-role="expert-manual-profile"]'), null);
     h.handle.unmount();
 });
 
@@ -178,7 +180,7 @@ test("delegated expert tag host uses the real mutation helper without global adm
         vm.runInContext(tools.extractFn(name, appSource), h.sandbox);
     }
     await h.choose(1);
-    tools.click(h.host.querySelector('[data-action="mc-open-expert"]'));
+    tools.click(h.host.querySelector('[data-action="mc-manage-expert"]'));
     await tools.flush();
     tools.click(h.doc.root.querySelector('[data-action="expert-add-tag-open"]'));
     await tools.flush();
@@ -194,7 +196,7 @@ test("tag dialog completing after delegated unmount never mutates the old expert
     let finish;
     h.sandbox.openExpertTagAddDialog = () => new Promise(resolve => { finish = resolve; });
     await h.choose(1);
-    tools.click(h.host.querySelector('[data-action="mc-open-expert"]'));
+    tools.click(h.host.querySelector('[data-action="mc-manage-expert"]'));
     await tools.flush();
     tools.click(h.doc.root.querySelector('[data-action="expert-add-tag-open"]'));
     await tools.flush();
@@ -234,7 +236,7 @@ test("actual delegated tag dialog cancels with its conversation and releases pro
         const h = await workspace();
         const dialog = installActualTagDialog(h);
         await h.choose(1);
-        tools.click(h.host.querySelector('[data-action="mc-open-expert"]'));
+        tools.click(h.host.querySelector('[data-action="mc-manage-expert"]'));
         await tools.flush();
         const open = h.sandbox.openExpertTagAddDialog;
         let settled = false;
@@ -457,4 +459,26 @@ test("delegated calendar revoke during cancel version fetch prevents the subsequ
     await tools.flush();
     assert.deepEqual(h.calls.cancel, []);
     assert.deepEqual(h.calls.changed, []);
+});
+
+test("reader draft and access tabs send server filters, count experts and open an owned review draft", async () => {
+    const seen = [];
+    const h = await workspace({ route(url) {
+        if (url.startsWith("/api/mail/mailbox/conversations?")) {
+            const q = new URLSearchParams(url.split("?")[1]); seen.push(q);
+            if (q.get("draftsOnly") === "true") return { items: [{ ...tools.expertB(), accessLevel: "READ", ownDrafts: [{id: 42, kind: "REVIEW", state: "DRAFT", subject: "Owned draft"}] }], total: 24 };
+        }
+        if (url === "/api/mail/mailbox/review-drafts/42") return { id: 42, contactId: 2, ownerUsername: "user1", version: 1, state: "DRAFT", subject: "Owned draft", html: "<p>Saved read draft</p>", text: "Saved read draft" };
+    } });
+    assert.equal(h.host.querySelector('[data-role="reader-draft-experts"]').textContent, "24");
+    for (const access of ["read", "full"]) {
+        tools.click(h.host.querySelector(`[data-action="reader-${access}"]`)); await tools.flush();
+        assert.ok(seen.some(q => q.get("accessLevel") === access.toUpperCase()));
+    }
+    tools.click(h.host.querySelector('[data-action="reader-drafts"]')); await tools.flush();
+    assert.ok(h.host.textContent.includes("24 位专家"));
+    tools.click(h.host.querySelector('[data-action="reader-open-draft"]')); await tools.flush();
+    assert.equal(h.host.querySelector('[data-role="review-subject"]').value, "Owned draft");
+    assert.ok(h.calls.api.some(call => call.url.endsWith("review-drafts/42")));
+    h.handle.unmount();
 });

@@ -54,6 +54,7 @@ object MailReadOnlyPolicy {
     )
 
     private val READER_ALLOWED_HANDLERS = listOf(
+        AllowedHandler("POST", com.weibo.talentintroduction.rag.controller.RagReplyController::class.java, "compose"),
         AllowedHandler("GET", MailboxConversationController::class.java, "list"),
         AllowedHandler("GET", MailboxConversationController::class.java, "messages"),
         AllowedHandler("GET", MailboxConversationController::class.java, "pendingBadge"),

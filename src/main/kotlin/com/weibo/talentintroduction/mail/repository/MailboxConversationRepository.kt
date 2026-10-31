@@ -97,7 +97,9 @@ class MailboxConversationRepository(
         /** 01 (I-4)：只看当前用户的“已提供”专家；与 followed 同层 AND（同传得空集）。 */
         val providedOnly: Boolean = false,
         val reviewPendingOnly: Boolean = false,
-        val expertScope: String = "ALL"
+        val expertScope: String = "ALL",
+        val accessLevel: String = "ALL",
+        val draftsOnly: Boolean = false
     )
 
     data class ConversationSummarySqlRow(
@@ -833,8 +835,46 @@ class MailboxConversationRepository(
      * outbound/inbound 两个方向 EXISTS 是 OR 互补组：组外加整层括号后再与 q/followed
      * AND（X1），否则 SQL 优先级会让单个方向 EXISTS 绕过 q/followed。
      */
+    // Shared by membership/count and per-page navigation. Ordinary drafts require FULL;
+    // review drafts remain available only in the READ workflow. Never mix owners.
+    private fun ownDraftRows(): String = """
+        SELECT d.expert_contact_id, d.id,
+               CONVERT('MANUAL' USING utf8mb4) COLLATE utf8mb4_unicode_ci AS kind,
+               CONVERT(d.subject USING utf8mb4) COLLATE utf8mb4_unicode_ci AS subject,
+               CONVERT(d.state USING utf8mb4) COLLATE utf8mb4_unicode_ci AS state, d.updated_at
+          FROM mailbox_reply_draft d
+          JOIN expert_mail_read_access a ON a.expert_contact_id=d.expert_contact_id AND a.username=:username
+         WHERE d.username=:username AND d.state='ACTIVE' AND a.access_level='FULL'
+           AND (d.target_kind='OUTBOUND' OR EXISTS (SELECT 1 FROM inbound_mail_processing source
+                WHERE source.id=d.inbound_processing_id AND source.expert_contact_id=d.expert_contact_id
+                  AND source.sender_account_code=d.account_scope))
+        UNION ALL
+        SELECT d.expert_contact_id, d.id,
+               CONVERT('REVIEW' USING utf8mb4) COLLATE utf8mb4_unicode_ci AS kind,
+               CONVERT(d.subject USING utf8mb4) COLLATE utf8mb4_unicode_ci AS subject,
+               CONVERT(d.state USING utf8mb4) COLLATE utf8mb4_unicode_ci AS state, d.updated_at
+          FROM mailbox_review_draft d
+          JOIN expert_mail_read_access a ON a.expert_contact_id=d.expert_contact_id AND a.username=:username
+         WHERE d.owner_username=:username AND d.deleted_at IS NULL AND a.access_level='READ'
+    """.trimIndent()
+
+    fun ownDraftsByContacts(username: String, contactIds: List<Long>): Map<Long, List<com.weibo.talentintroduction.mail.controller.ConversationOwnDraft>> {
+        if (contactIds.isEmpty()) return emptyMap()
+        return jdbcTemplate.query("SELECT * FROM (${ownDraftRows()}) drafts WHERE expert_contact_id IN (:contacts) ORDER BY updated_at DESC, id DESC",
+            mapOf("username" to username, "contacts" to contactIds)) { rs, _ ->
+            rs.getLong("expert_contact_id") to com.weibo.talentintroduction.mail.controller.ConversationOwnDraft(
+                rs.getLong("id"), rs.getString("kind"), rs.getString("subject"), rs.getString("state"))
+        }.groupBy({ it.first }, { it.second })
+    }
+
     private fun expertPredicates(username: String, filter: ConversationFilter, eligibility: MembershipEligibility): String {
         val clauses = mutableListOf<String>()
+        if (filter.accessLevel != "ALL") {
+            clauses += "EXISTS (SELECT 1 FROM expert_mail_read_access a WHERE a.expert_contact_id=ec.id AND a.username='user1' AND a.access_level=:accessLevel)"
+        }
+        if (filter.draftsOnly) {
+            clauses += "EXISTS (SELECT 1 FROM (${ownDraftRows()}) own_draft WHERE own_draft.expert_contact_id=ec.id)"
+        }
         clauses += """
             (:q IS NULL OR :q = ''
              OR ec.expert_name LIKE CONCAT('%', :q, '%')
@@ -955,6 +995,7 @@ class MailboxConversationRepository(
     private fun params(username: String, filter: ConversationFilter): MapSqlParameterSource =
         MapSqlParameterSource()
             .addValue("username", username)
+            .addValue("accessLevel", filter.accessLevel)
             .addValue("accountCodes", filter.accountCodes)
             .addValue("accountCode", filter.accountCode)
             .addValue("q", filter.q?.takeIf { it.isNotBlank() })

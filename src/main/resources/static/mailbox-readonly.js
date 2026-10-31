@@ -165,8 +165,11 @@
         var detailSeq = 0;
         var delegated = null;
         var pendingOnly = false;
+        var listScope = "all";
+        var draftTotalExperts = null;
         var pendingTotal = null;
         var pendingSeq = 0;
+        var draftCountSeq = 0;
 
         function releaseDelegated() {
             if (delegated) delegated.unmount();
@@ -189,20 +192,26 @@
         var searchButton = buttonNode(doc, "search", "搜索");
         searchRow.appendChild(searchInput);
         searchRow.appendChild(searchButton);
-        var refreshButton = buttonNode(doc, "refresh", "刷新");
+        var refreshButton = buttonNode(doc, "refresh", "↻");
+        refreshButton.setAttribute("aria-label", "刷新");
+        refreshButton.setAttribute("title", "刷新");
         var note = makeNode(doc, "p", "mc-note");
         setText(note, "仅显示管理员授权的专家邮件");
         tools.appendChild(searchRow);
-        tools.appendChild(refreshButton);
-        tools.appendChild(note);
+        searchRow.appendChild(refreshButton);
         var scopes = makeNode(doc, "div", "mc-filters");
         scopes.setAttribute("aria-label", "专家会话范围");
         var allButton = buttonNode(doc, "reader-all", "全部", "mc-filter");
+        var draftsButton = buttonNode(doc, "reader-drafts", "草稿 ", "mc-filter");
+        var draftsCount = makeNode(doc, "span", "mailbox-suspend-count");
+        draftsCount.dataset.role = "reader-draft-experts"; draftsButton.appendChild(draftsCount);
+        var readButton = buttonNode(doc, "reader-read", "可读", "mc-filter");
+        var fullButton = buttonNode(doc, "reader-full", "可写", "mc-filter");
         var pendingButton = buttonNode(doc, "reader-pending", "待处理 ", "mc-filter");
         var pendingCount = makeNode(doc, "span", "mailbox-suspend-count");
         pendingCount.dataset.role = "reader-pending-experts";
         pendingButton.appendChild(pendingCount);
-        scopes.appendChild(allButton); scopes.appendChild(pendingButton);
+        scopes.appendChild(allButton); scopes.appendChild(draftsButton); scopes.appendChild(readButton); scopes.appendChild(fullButton); scopes.appendChild(pendingButton);
         tools.appendChild(scopes);
 
         var expertList = makeNode(doc, "div", "mc-expert-list");
@@ -228,7 +237,7 @@
         var identityName = makeNode(doc, "h2");
         identity.appendChild(identityName);
         var readOnlyBadge = makeNode(doc, "span", "mc-badge");
-        setText(readOnlyBadge, "可查看 · 可提交草稿");
+        setText(readOnlyBadge, "可读 · 提交草稿");
         header.appendChild(identity);
         header.appendChild(readOnlyBadge);
         var scroll = makeNode(doc, "div", "mc-scroll");
@@ -239,7 +248,7 @@
 
         root.appendChild(aside);
         root.appendChild(conversation);
-        var delegatedHost = makeNode(doc, "div");
+        var delegatedHost = makeNode(doc, "div", "mc-delegated-host");
         function restoreReadDetail() {
             releaseDelegated();
             if (delegatedHost.parentNode) delegatedHost.parentNode.replaceChild(conversation, delegatedHost);
@@ -259,7 +268,7 @@
         var compose = makeNode(doc, "div", "mc-compose");
         compose.dataset.role = "review-compose";
         review.appendChild(reviewContent); reviewContent.appendChild(compose);
-        scroll.appendChild(review);
+        conversation.appendChild(review);
         function reviewButton(parent, action, label, className, id) {
             var node = makeNode(doc, "button", className || "button");
             node.setAttribute("type", "button"); node.dataset.reviewAction = action;
@@ -278,7 +287,10 @@
         var historyPanel = roleNode(compose, "div", "mail-review-panel", "review-history");
         var subjectLabel = makeNode(doc, "label"); setText(subjectLabel, "主题");
         var subjectInput = roleNode(subjectLabel, "input", "", "review-subject");
-        subjectInput.setAttribute("aria-label", "草稿主题"); compose.appendChild(subjectLabel);
+        subjectInput.setAttribute("aria-label", "草稿主题");
+        var subjectDetails = makeNode(doc, "details", "mc-subject");
+        var subjectSummary = makeNode(doc, "summary"); setText(subjectSummary, "主题");
+        subjectDetails.appendChild(subjectSummary); subjectDetails.appendChild(subjectLabel); compose.appendChild(subjectDetails);
         var editorTools = makeNode(doc, "div", "mc-editor-tools"); compose.appendChild(editorTools);
         [["bold", "B"], ["italic", "I"], ["insertUnorderedList", "列表"], ["createLink", "链接"]].forEach(function (entry) {
             var node = makeNode(doc, "button", "button");
@@ -332,7 +344,7 @@
             discussion.hidden = panel !== "comments" && panel !== "events";
             historyButton.setAttribute("aria-expanded", String(panel === "history"));
             setText(stateBadge, stateLabel(draft));
-            subjectLabel.hidden = editorTools.hidden = editor.hidden = footer.hidden = !draft;
+            subjectDetails.hidden = subjectLabel.hidden = editorTools.hidden = editor.hidden = footer.hidden = composeFooter.hidden = !draft;
             subjectInput.disabled = !editable() || busy;
             editor.setAttribute("contenteditable", String(editable() && !busy));
             editorTools.hidden = !draft || !editable();
@@ -419,6 +431,7 @@
                 draft = data; savedRevision = ctx.rev;
                 if (revision === ctx.rev) { subjectInput.value = data.subject; safeBody(editor, data.html, data.text); }
                 showReviewError("");
+                refreshDraftList();
             }, function (error) {
                 if (sameContext(ctx, true)) reviewFailure(error);
                 throw error;
@@ -515,6 +528,7 @@
                 return requestJson(REVIEW_PATH, "POST", createRequest).then(function (data) {
                     if (!sameContext(ctx, true)) return;
                     resetReview(); acceptDraft(data, true);
+                    refreshDraftList();
                 }, function (error) { if (sameContext(ctx, true)) reviewFailure(error); })
                     .finally(function () { if (sameContext(ctx, false)) { busy = false; renderReview(); } });
             });
@@ -532,6 +546,7 @@
                 if (action === "comment") body.text = commentText;
                 return requestJson(path, method, body).then(function (data) {
                     if (!sameContext(ctx, true)) return;
+                    if (action !== "comment") refreshDraftList();
                     if (action === "delete") { resetReview(); return loadDrafts(false); }
                     if (action === "comment") { commentText = ""; return loadDraft(draft.id, true); }
                     if (revision !== ctx.rev) {
@@ -547,6 +562,9 @@
         function onReviewInput() {
             if (!editable()) return;
             revision += 1; showReviewError(""); renderReview();
+        }
+        function refreshDraftList() {
+            if (!destroyed && !denied) { loadList(); loadDraftCount(); }
         }
         function onBeforeUnload(event) {
             if (!pending()) return;
@@ -649,12 +667,16 @@
         function currentDetailSeq() { return detailSeq; }
 
         function listUrl() {
-            allButton.setAttribute("aria-pressed", String(!pendingOnly));
+            [[allButton, "all"], [draftsButton, "drafts"], [readButton, "read"], [fullButton, "full"]].forEach(function (entry) {
+                entry[0].setAttribute("aria-pressed", String(listScope === entry[1]));
+            });
             pendingButton.setAttribute("aria-pressed", String(pendingOnly));
             setText(pendingCount, pendingTotal === null ? "不可用" : pendingTotal);
             var query = "?page=" + encodeURIComponent(String(listPage)) + "&size=" + LIST_PAGE_SIZE;
             if (listQuery) query += "&q=" + encodeURIComponent(listQuery);
             if (pendingOnly) query += "&pendingOnly=true";
+            if (listScope === "drafts") query += "&draftsOnly=true";
+            if (listScope === "read" || listScope === "full") query += "&accessLevel=" + listScope.toUpperCase();
             return LIST_PATH + query;
         }
 
@@ -693,8 +715,11 @@
                 setText(name, (item.name || "").trim() || "未填写姓名");
                 var subject = makeNode(doc, "small");
                 setText(subject, latestSubject(item));
-                main.appendChild(name);
-                main.appendChild(subject);
+                var nameRow = makeNode(doc, "div", "mc-reader-name");
+                nameRow.appendChild(name);
+                var access = makeNode(doc, "span", "mc-badge" + (item.accessLevel === "FULL" ? " mc-access-full" : ""));
+                setText(access, item.accessLevel === "FULL" ? "可写" : "可读"); nameRow.appendChild(access);
+                main.appendChild(nameRow); main.appendChild(subject);
                 if (Number(item.pendingCount) > 0) {
                     var count = makeNode(doc, "small");
                     setText(count, Number(item.pendingCount) + "条待处理");
@@ -702,6 +727,19 @@
                 }
                 appendExpertTags(doc, main, item.expertTags);
                 person.appendChild(main);
+                var ownDrafts = Array.isArray(item.ownDrafts) ? item.ownDrafts : [];
+                if (ownDrafts.length) {
+                    if (listScope === "drafts") {
+                        ownDrafts.forEach(function (entry) {
+                            var label = entry.kind === "MANUAL" ? "草稿" : ({DRAFT: "未提交", SUBMITTED: "已提交", RETURNED: "已退回", APPROVED: "已审核"}[entry.state] || "草稿");
+                            var open = buttonNode(doc, "reader-open-draft", label + " · " + (entry.subject || "无主题"), "mc-text-button mc-reader-draft");
+                            open.dataset.contactId = String(item.contactId); open.dataset.draftId = String(entry.id); open.dataset.draftKind = entry.kind;
+                            person.appendChild(open);
+                        });
+                    } else {
+                        var draftBadge = makeNode(doc, "small", "mc-reader-draft-count"); setText(draftBadge, "草稿 " + ownDrafts.length); main.appendChild(draftBadge);
+                    }
+                }
                 expertList.appendChild(person);
             });
             updatePager();
@@ -778,6 +816,13 @@
         }
 
         // ---- 读取 ------------------------------------------------------------------
+        function loadDraftCount() {
+            var gen = generation, seq = ++draftCountSeq;
+            return requestJson(LIST_PATH + "?page=0&size=1&draftsOnly=true").then(function (data) {
+                if (destroyed || gen !== generation || seq !== draftCountSeq) return;
+                draftTotalExperts = Number(data && data.total); setText(draftsCount, Number.isFinite(draftTotalExperts) ? draftTotalExperts : "");
+            }, function () { if (!destroyed && gen === generation && seq === draftCountSeq) setText(draftsCount, ""); });
+        }
         function loadPendingCount() {
             var gen = generation, seq = ++pendingSeq;
             return requestJson(LIST_PATH + "?page=0&size=1&pendingOnly=true").then(function (data) {
@@ -843,6 +888,8 @@
                 if (!data || (data.accessLevel !== "READ" && data.accessLevel !== "FULL")) {
                     detailStatus = "forbidden"; renderConversation(); return;
                 }
+                var openDraft = selected.openDraft;
+                delete selected.openDraft;
                 if (data.accessLevel === "FULL") {
                     resetReview();
                     if (!global.MailboxChat || typeof global.MailboxChat.mount !== "function") {
@@ -853,13 +900,14 @@
                         mode: "delegated-conversation", contactId: Number(contactId),
                         sessionUser: sessionUser.username,
                         summary: Object.assign({}, selected),
+                        draftId: openDraft && openDraft.kind === "MANUAL" ? openDraft.id : null,
                         onAccessChanged: function () {
                             if (!destroyed && gen === generation && seq === detailSeq && selected && String(selected.contactId) === String(contactId)) {
                                 restoreReadDetail(); detailStatus = "forbidden"; renderConversation();
                                 scheduleReload();
                             }
                         },
-                        onChanged: function () { if (!destroyed) { loadList(); loadPendingCount(); } }
+                        onChanged: function () { if (!destroyed) { loadList(); loadPendingCount(); loadDraftCount(); } }
                     });
                     return;
                 }
@@ -870,6 +918,7 @@
                 renderConversation();
                 renderReview();
                 scrollToLatest();
+                if (openDraft && openDraft.kind === "REVIEW") return loadDraft(openDraft.id, false);
             }, function (error) {
                 if (isStale(gen, seq, currentDetailSeq)) return;
                 if (!selected || String(selected.contactId) !== String(contactId)) return;
@@ -927,7 +976,7 @@
             renderList(); renderConversation(); renderReview();
         }
 
-        function selectExpert(contactId) {
+        function selectExpert(contactId, ownDraft) {
             return navigate(function () {
                 var item = null;
                 listItems.forEach(function (candidate) {
@@ -936,6 +985,7 @@
                 resetReview();
                 selected = Object.assign({}, item, {
                     contactId: contactId,
+                    openDraft: ownDraft || (listScope === "drafts" && item && Array.isArray(item.ownDrafts) ? item.ownDrafts[0] : null),
                     name: item ? (item.name || "") : "",
                     expertTags: item && Array.isArray(item.expertTags) ? item.expertTags.slice() : null
                 });
@@ -947,7 +997,7 @@
 
         function reloadAll() {
             if (destroyed || denied) return Promise.resolve();
-            var tasks = [loadList(), loadPendingCount()];
+            var tasks = [loadList(), loadPendingCount(), loadDraftCount()];
             if (selected) {
                 tasks.push(loadSelectedDetail());
                 if (draft && !saving && !busy) tasks.push(loadDraft(draft.id, true));
@@ -973,10 +1023,13 @@
             var actionNode = target && typeof target.closest === "function" ? target.closest("[data-action]") : null;
             if (!actionNode || !actionNode.dataset) return;
             var action = actionNode.dataset.action;
-            if (action === "reader-all" || action === "reader-pending") {
+            if (action === "reader-open-draft") {
+                return selectExpert(actionNode.dataset.contactId, { id: Number(actionNode.dataset.draftId), kind: actionNode.dataset.draftKind });
+            }
+            if (["reader-all", "reader-pending", "reader-drafts", "reader-read", "reader-full"].includes(action)) {
                 return navigate(function () {
-                    pendingOnly = action === "reader-pending"; listPage = 0;
-                    clearSelection(); return Promise.all([loadList(), loadPendingCount()]);
+                    listScope = action.slice(7); pendingOnly = listScope === "pending"; listPage = 0;
+                    clearSelection(); return Promise.all([loadList(), loadPendingCount(), loadDraftCount()]);
                 });
             }
             if (action === "search") {
@@ -1043,7 +1096,7 @@
             renderList();
             renderConversation();
             loadList();
-            loadPendingCount();
+            loadPendingCount(); loadDraftCount();
         }
 
         function destroy() {

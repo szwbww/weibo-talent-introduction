@@ -52,6 +52,8 @@ class ExpertMailPermissionGuardTest {
     private lateinit var calendar: MeetingCalendarService
     private lateinit var meetings: MeetingConfirmationService
     private lateinit var outbound: OutboundAttachmentService
+    private lateinit var logs: com.weibo.talentintroduction.audit.service.OperatorActionLogService
+    private lateinit var snippets: com.weibo.talentintroduction.reply.service.ReplySnippetService
     @TempDir lateinit var root: Path
 
     @org.springframework.boot.test.context.TestConfiguration(proxyBeanMethods = false)
@@ -117,6 +119,11 @@ class ExpertMailPermissionGuardTest {
             beans.registerSingleton("calendar", MeetingCalendarController(calendar, guard))
             beans.registerSingleton("meetings", MeetingConfirmationController(meetings))
             beans.registerSingleton("outbound", OutboundAttachmentController(outbound))
+            logs = Mockito.mock(com.weibo.talentintroduction.audit.service.OperatorActionLogService::class.java)
+            snippets = Mockito.mock(com.weibo.talentintroduction.reply.service.ReplySnippetService::class.java)
+            Mockito.`when`(logs.search(1L, null, null, null, null, null, 20, 0)).thenReturn(emptyList<com.weibo.talentintroduction.audit.domain.OperatorActionLog>() to 0L)
+            beans.registerSingleton("logs", com.weibo.talentintroduction.audit.controller.OperatorActionLogController(logs))
+            beans.registerSingleton("snippets", com.weibo.talentintroduction.reply.controller.ReplySnippetController(snippets))
         }
         context.register(MvcConfig::class.java, AuthWebConfig::class.java, GlobalExceptionHandler::class.java,
             ExpertMaterialHttpExceptionAdvice::class.java)
@@ -125,6 +132,21 @@ class ExpertMailPermissionGuardTest {
     }
     @AfterEach fun close() { context.close() }
     private fun session(user: String = "user1") = MockHttpSession().apply { setAttribute(AuthSessionKeys.USERNAME, user) }
+
+    @Test fun `logs and workbench options require an explicit currently writable expert`() {
+        for ((path, parameter) in listOf("/api/operator-action-logs" to "expertContactId", "/api/reply-snippets" to "contactId")) {
+            mvc.perform(get(path).session(session()).param(parameter, "1")).andExpect(status().isOk)
+            for (id in listOf("2", "3")) {
+                mvc.perform(get(path).session(session()).param(parameter, id)).andExpect(status().isForbidden)
+            }
+            mvc.perform(get(path).session(session())).andExpect(status().isBadRequest)
+        }
+        jdbc.update("UPDATE expert_mail_read_access SET access_level='READ' WHERE expert_contact_id=1")
+        mvc.perform(get("/api/operator-action-logs").session(session()).param("expertContactId", "1")).andExpect(status().isForbidden)
+        mvc.perform(get("/api/reply-snippets").session(session()).param("contactId", "1")).andExpect(status().isForbidden)
+        mvc.perform(post("/api/reply-snippets").session(session()).contentType(MediaType.APPLICATION_JSON).content("{}"))
+            .andExpect(status().isForbidden)
+    }
 
     @Test fun `three actual attachment owners download exact bytes and downgrade revokes before file service`() {
         for ((id, text) in listOf(301 to "record-bytes", 302 to "processing-bytes", 303 to "manual-bytes")) {

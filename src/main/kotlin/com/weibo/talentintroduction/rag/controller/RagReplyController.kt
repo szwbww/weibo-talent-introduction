@@ -43,11 +43,16 @@ class RagReplyController(
     private val mailRecordRepository: MailRecordRepository,
     private val inboundMailProcessingRepository: InboundMailProcessingRepository,
     private val expertContactRepository: ExpertContactRepository,
-    private val llmProperties: LlmProperties
+    private val llmProperties: LlmProperties,
+    private val permissionGuard: com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard
 ) {
 
     @PostMapping("/compose")
-    fun compose(@RequestBody request: RagReplyComposeRequest): RagComposeResult {
+    fun compose(@RequestBody request: RagReplyComposeRequest, httpRequest: javax.servlet.http.HttpServletRequest): RagComposeResult {
+        val username = httpRequest.getSession(false)?.getAttribute(com.weibo.talentintroduction.auth.config.AuthSessionKeys.USERNAME) as? String
+        if (com.weibo.talentintroduction.auth.config.MailReadOnlyPolicy.isReader(username) && request.sourceType != RAG_SOURCE_TYPE_LIVE_INBOUND) {
+            throw com.weibo.talentintroduction.auth.config.MailReadAccessDeniedException("MAIL_WRITE_FORBIDDEN", "仅可生成已授权专家的来信回复")
+        }
         val sourceType = request.sourceType?.trim()?.uppercase()
         val resolved = when (sourceType) {
             RAG_SOURCE_TYPE_TRAINING_MAIL -> resolveTrainingMail(request.sourceId)
@@ -58,6 +63,7 @@ class RagReplyController(
                 "sourceType must be TRAINING_MAIL or LIVE_INBOUND"
             )
         }
+        permissionGuard.requireFull(username, requireNotNull(resolved.contact.id))
         validateFactCodes(request.forcedFactCodes, "forcedFactCodes")
         validateFactCodes(request.excludedFactCodes, "excludedFactCodes")
 

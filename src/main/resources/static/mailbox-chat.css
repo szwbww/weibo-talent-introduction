@@ -232,3 +232,34 @@ body[data-mail-read-only="true"] .mail-chat .mc-person {
 .mail-chat .mc-pending-trigger{position:relative}
 .mail-chat .mc-pending-count{position:absolute;top:-5px;right:-5px;min-width:18px;height:18px;box-sizing:border-box;padding:0 4px;border:2px solid #fff;border-radius:9px;background:#ea8a23;color:#fff;font-size:10px;font-weight:600;line-height:14px;text-align:center;pointer-events:none}
 .mail-chat .mc-pending-count[hidden]{display:none}
+
+/* Restricted workspace shares the original conversation sections and manual editor. */
+.mail-chat>.mc-delegated-host{min-width:0;min-height:0;height:100%;overflow:hidden}
+.mail-chat[data-role="readonly-mailbox"] .mc-search-row{display:flex;align-items:center;gap:8px;min-width:0}
+.mail-chat[data-role="readonly-mailbox"] .mc-search-row input{flex:1;min-width:0}
+.mail-chat[data-role="readonly-mailbox"] .mc-search-row .button{flex:none}
+.mail-chat .mc-reader-name{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.mail-chat .mc-reader-name strong{min-width:0}
+.mail-chat .mc-reader-name .mc-badge{flex:none}
+.mail-chat .mc-access-full{color:#315fcb;background:#edf3ff;border-color:#bad0ff}
+.mail-chat .mc-identity h2 .mc-badge{vertical-align:middle;font-weight:500;font-size:11px;margin-left:6px}
+.mail-chat .mc-reader-draft{display:block;max-width:100%;padding:4px 10px;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mail-chat .mc-reader-draft-count{color:#a26917}
+.mail-chat .mc-access-select{width:100px;min-width:100px;max-width:100px}
+.mail-chat .mc-compose .mc-subject{margin:0 0 8px;border:0;background:transparent}
+.mail-chat .mc-subject>summary{width:max-content;color:#6f89af;cursor:pointer;font-size:11px;list-style:none}
+.mail-chat .mc-subject>summary::after{content:' ▾'}
+.mail-chat .mc-subject[open]>summary::after{content:' ▴'}
+.mail-chat .mc-subject label{display:flex;gap:10px;align-items:center;margin-top:8px}
+.mail-chat .mc-subject input{flex:1;min-width:0}
+.mail-chat .mc-compose .mc-editor{min-height:160px;max-height:420px;overflow:auto;font-size:13px;line-height:1.7}
+.mail-chat .mc-compose .mail-review-controls{justify-content:flex-start;gap:8px;padding-bottom:10px}
+.mail-chat .mc-compose .mail-review-controls .mail-review-select{min-width:0;max-width:280px}
+.mail-chat .mc-review-entry{display:block;margin:0 0 8px auto}
+.mail-chat[data-role="readonly-mailbox"]>.mc-conversation>[data-role="review-drafts"]{flex:none;max-height:55%;overflow:auto;margin:0;border:0;border-top:1px solid #dce4ef;border-radius:0}
+.mail-chat[data-role="readonly-mailbox"]>.mc-conversation>[data-role="review-drafts"] .mc-section-content{padding:12px 16px}
+@media(max-width:760px){
+ .mail-chat>.mc-delegated-host{min-height:480px}
+ .mail-chat .mc-compose .mc-editor{min-height:140px;max-height:320px}
+ .mail-chat .mc-compose .mail-review-controls .mail-review-select{max-width:100%}
+}

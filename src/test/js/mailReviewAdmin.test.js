@@ -472,3 +472,32 @@ test("final composition has no obsolete top review button and keeps literal opaq
     assert.ok(fs.readFileSync(path.join(root, "styles.css"), "utf8").includes(css));
 });
 }
+
+test("normal reply review entry uses server count and finds pending drafts beyond a deleted first page", async () => {
+    const rows = Array.from({ length: 20 }, (_, i) => draft(100 + i, 1, { deleted: true }));
+    rows.push(draft(200));
+    const h = await setup({ rows });
+    assert.equal(action(h, "open-review").hidden, false);
+    assert.equal(action(h, "open-review").textContent, "待审核 1");
+    await click(h, "open-review");
+    assert.match(editor(h).textContent, /User body 200/);
+    assert.equal(action(h, "send"), null);
+    finish(h);
+});
+
+test("ordinary admin reply hides review toolbar and subject; review entry restores the same normal draft on return", async () => {
+    const h = await setup();
+    assert.equal(role(h, "review-controls").hidden, true);
+    assert.equal(h.host.querySelector('.mc-subject').hasAttribute("open"), false);
+    assert.equal(h.host.querySelector('[data-section="manual"]').hasAttribute("open"), true);
+    H.setEditorContent(editor(h), "Original admin draft", "<p>Original admin draft</p>"); H.inputEvent(editor(h));
+    await click(h, "open-review");
+    assert.equal(role(h, "review-controls").hidden, false);
+    assert.equal(action(h, "send"), null);
+    assert.equal(h.host.querySelector('[data-action="mc-send-manual"]'), null);
+    await click(h, "manual");
+    assert.equal(role(h, "review-controls").hidden, true);
+    assert.ok(editor(h).textContent.includes("Original admin draft"));
+    assert.ok(h.host.querySelector('[data-action="mc-send-manual"]'));
+    finish(h);
+});

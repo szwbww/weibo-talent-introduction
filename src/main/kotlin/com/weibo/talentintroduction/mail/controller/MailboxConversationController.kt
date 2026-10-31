@@ -94,8 +94,12 @@ data class ConversationItemResponse(
         if (followed) MailboxProgressStatus.FOLLOWING else MailboxProgressStatus.NONE,
     val reviewPendingCount: Long = 0,
     /** Current user1 grant, also when viewed by admin. Not an admin capability flag. */
-    val accessLevel: ExpertMailAccessLevel = ExpertMailAccessLevel.NONE
+    val accessLevel: ExpertMailAccessLevel = ExpertMailAccessLevel.NONE,
+    val ownDrafts: List<ConversationOwnDraft> = emptyList()
 )
+
+/** Owner-scoped navigation only; bodies are loaded through the existing guarded draft endpoints. */
+data class ConversationOwnDraft(val id: Long, val kind: String, val subject: String, val state: String)
 
 /**
  * 01 (T2/I-1/I-2)：显式三态写入请求体。`status` 用枚举：非法值与缺失 status 都由
@@ -255,7 +259,9 @@ class MailboxConversationController(
         /** 01 (T3/I-4)：只看已提供三态标记的专家；默认 false 保持既有调用兼容。 */
         @RequestParam(defaultValue = "false") providedOnly: Boolean,
         @RequestParam(defaultValue = "false") reviewPendingOnly: Boolean = false,
-        @RequestParam(defaultValue = "ALL") expertScope: String = "ALL"
+        @RequestParam(defaultValue = "ALL") expertScope: String = "ALL",
+        @RequestParam(defaultValue = "ALL") accessLevel: String = "ALL",
+        @RequestParam(defaultValue = "false") draftsOnly: Boolean = false
     ): ConversationListResponse = conversationService.listConversations(
         username = sessionUsername(request),
         q = q,
@@ -276,7 +282,9 @@ class MailboxConversationController(
         suspendedOnly = suspendedOnly,
         providedOnly = providedOnly,
         reviewPendingOnly = reviewPendingOnly,
-        expertScope = expertScope
+        expertScope = expertScope,
+        accessLevel = accessLevel,
+        draftsOnly = draftsOnly
     )
 
     @GetMapping("/{contactId}/messages")

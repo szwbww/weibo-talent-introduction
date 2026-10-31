@@ -434,7 +434,7 @@
             if (disposed.value) return;
             const controller = new global.AbortController();
             controllers.add(controller);
-            const url = `${contextPath}${SNIPPET_PATH}`;
+            const url = `${contextPath}${SNIPPET_PATH}${options.contactId ? "?contactId=" + encodeURIComponent(options.contactId) : ""}`;
             global.fetch(url, {
                 method: "GET",
                 headers: { "Accept": "application/json" },

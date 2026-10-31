@@ -21176,6 +21176,7 @@ function isMailReadOnlyRequestAllowed(path, options) {
     if (method === "GET" && /^\/api\/mail\/mailbox\/conversations\/[1-9][0-9]*\/messages$/.test(normalized)) return true;
     const scopedRoutes = [
         ["GET", /^\/api\/mail\/mailbox\/conversations\/pending-badge$/],
+        ["GET", /^\/api\/operator-action-logs$/],
         ["POST", /^\/api\/mail\/mailbox\/conversations\/[1-9][0-9]*\/manual-rich-reply$/],
         ["PUT", /^\/api\/mail\/mailbox\/conversations\/[1-9][0-9]*\/(follow|progress-status|replied-dismissal|suspension)$/],
         ["DELETE", /^\/api\/mail\/mailbox\/conversations\/[1-9][0-9]*\/(follow|suspension)$/],
@@ -21252,6 +21253,10 @@ function applyMailReadOnlyShell() {
         if (!section.classList) return;
         section.classList.toggle("active", section.id === "view-mailbox");
     });
+    const title = document.getElementById("viewTitle");
+    const subtitle = document.getElementById("viewSubtitle");
+    if (title) title.textContent = "收发件箱";
+    if (subtitle) subtitle.textContent = "查看已授权专家的往来邮件，按权限处理回复与草稿。";
     const panelTitle = document.querySelector("#mailboxConversationPanel > .panel-head h2");
     if (panelTitle) panelTitle.textContent = "收发邮件";
     const menu = document.getElementById("mobileCoreView");
@@ -21706,6 +21711,7 @@ function mcHostMountWorkbench(hostEl, processingId, callbacks) {
         source: { sourceType: "LIVE_INBOUND", sourceId: Number(processingId) },
         contextPath,
         autoBootstrap: false,
+        contactId: callbacks && callbacks.contactId,
         onUnauthorized: trustReplyUnauthorized,
         onComplete: async (assembly) => {
             if (callbacks && typeof callbacks.onComplete === "function") {
