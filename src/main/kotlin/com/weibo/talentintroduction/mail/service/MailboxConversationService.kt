@@ -53,7 +53,8 @@ class MailboxConversationService(
     private val expertSearchService: ExpertSearchService,
     // 03 (T2/I-3/I-4): 会话时间线单独日历附件元数据 —— 按 MAIL_RECORD OUTBOUND SENT
     // id 集合批量读一次存档快照。
-    private val mailRecordRepository: MailRecordRepository
+    private val mailRecordRepository: MailRecordRepository,
+    private val readAccessService: ExpertMailReadAccessService
 ) {
     private val log = LoggerFactory.getLogger(MailboxConversationService::class.java)
     companion object {
@@ -111,9 +112,12 @@ class MailboxConversationService(
         suspendedOnly: Boolean = false,
         /** 01 (T3/I-4)：只看当前用户已提供专家；默认 false 保持既有调用兼容。 */
         providedOnly: Boolean = false,
-        reviewPendingOnly: Boolean = false
+        reviewPendingOnly: Boolean = false,
+        expertScope: String = "ALL"
     ): ConversationListResponse {
         val reader = MailReadOnlyPolicy.isReader(username)
+        require(expertScope in setOf("ALL", "USER1_FULL", "PENDING_REVIEW")) { "非法 expertScope" }
+        if (expertScope != "ALL") MailReadOnlyPolicy.requireAdmin(username)
         if (reader && reviewPendingOnly) {
             throw MailReadAccessDeniedException(
                 MailReadOnlyPolicy.MAIL_READ_FORBIDDEN, "无权查看待审核草稿"
@@ -132,8 +136,13 @@ class MailboxConversationService(
         validateTextFilter("recipientEmail", recipientEmailFilter)
         validateTextFilter("keyword", keywordFilter)
         val activeCodes = activeAccountCodes()
+        val filterCounts = if (MailReadOnlyPolicy.isAdmin(username)) {
+            val counts = repository.filterCounts(activeCodes)
+            com.weibo.talentintroduction.mail.controller.ConversationFilterCounts(counts.first, counts.second)
+        } else null
         if (activeCodes.isEmpty() || (accountCode != null && accountCode !in activeCodes)) {
-            return ConversationListResponse(emptyList(), 0, page.coerceAtLeast(0), size.coerceIn(1, MAX_PAGE_SIZE))
+            return ConversationListResponse(emptyList(), 0, page.coerceAtLeast(0), size.coerceIn(1, MAX_PAGE_SIZE),
+                filterCounts = filterCounts)
         }
         val pageIndex = page.coerceAtLeast(0)
         val pageSize = size.coerceIn(1, MAX_PAGE_SIZE)
@@ -154,21 +163,23 @@ class MailboxConversationService(
             keyword = keywordFilter,
             suspendedOnly = suspendedOnly,
             providedOnly = providedOnly,
-            reviewPendingOnly = reviewPendingOnly
+            reviewPendingOnly = reviewPendingOnly,
+            expertScope = expertScope
         )
         val sessionUser = username.orEmpty()
         // Toolbar counts ignore mutually exclusive chips, including an empty chip result/page.
         val reviewPendingTotal = if (reader) 0L else repository.reviewPendingTotal(sessionUser, filter)
         val total = repository.countConversations(sessionUser, filter)
         if (total == 0L) {
-            return ConversationListResponse(emptyList(), 0, pageIndex, pageSize, reviewPendingTotal)
+            return ConversationListResponse(emptyList(), 0, pageIndex, pageSize, reviewPendingTotal, filterCounts)
         }
         val offset = pageIndex.toLong() * pageSize
         val rows = repository.pageConversations(sessionUser, filter, pageSize, offset)
         if (rows.isEmpty()) {
-            return ConversationListResponse(emptyList(), total, pageIndex, pageSize, reviewPendingTotal)
+            return ConversationListResponse(emptyList(), total, pageIndex, pageSize, reviewPendingTotal, filterCounts)
         }
         val contactIds = rows.map { it.expertContactId }
+        val accessLevels = readAccessService.accessLevels(contactIds)
         val latestMessages = repository.latestMessageByContacts(contactIds, activeCodes, accountCode)
         val latestInbounds = repository.latestInboundByContacts(contactIds, activeCodes, accountCode)
         val accountCodesByContact = repository.accountCodesByContacts(contactIds, activeCodes, accountCode)
@@ -223,10 +234,11 @@ class MailboxConversationService(
                 suspensionPendingCount = suspensionStates[row.expertContactId]?.suspensionPendingCount ?: 0L,
                 // 01 (I-1/I-4)：一次读取的 DB 真值；followed 由同一状态派生。
                 progressStatus = row.progressStatus,
-                reviewPendingCount = reviewPendingCounts[row.expertContactId] ?: 0L
+                reviewPendingCount = reviewPendingCounts[row.expertContactId] ?: 0L,
+                accessLevel = accessLevels.getValue(row.expertContactId)
             )
         }
-        return ConversationListResponse(items, total, pageIndex, pageSize, reviewPendingTotal)
+        return ConversationListResponse(items, total, pageIndex, pageSize, reviewPendingTotal, filterCounts)
     }
 
     // ------------------------------------------------------------------
@@ -245,22 +257,22 @@ class MailboxConversationService(
          */
         username: String? = null
     ): ConversationMessageListResponse {
-        // 02 (I-2/I-3)：只读账号的准入先于联系人存在检查、正文/标签/附件查询。grant 缺失与
-        // 专家不存在统一 403 MAIL_READ_FORBIDDEN（不泄露存在性）；每次请求都读 DB，
-        // 撤销提交后开始的新请求（含更早页/刷新）必然被拒，无缓存/推送。
+        // Read the current grant once before contact/body/tag/attachment reads. No cached
+        // capability from the list or an earlier page can authorize this request.
         val reader = MailReadOnlyPolicy.isReader(username)
-        if (reader && !repository.hasReadAccess(username.orEmpty(), contactId)) {
+        val accessLevel = readAccessService.accessLevel(contactId)
+        if (reader && !accessLevel.canRead) {
             throw MailReadAccessDeniedException(
-                MailReadOnlyPolicy.MAIL_READ_FORBIDDEN,
-                "无权查看该专家的邮件"
+                MailReadOnlyPolicy.MAIL_READ_FORBIDDEN, "无权查看该专家的邮件"
             )
         }
+        val hideAttachments = reader && accessLevel != ExpertMailAccessLevel.FULL
         expertContactRepository.findById(contactId)
             .orElseThrow { NoSuchElementException("Expert contact not found: $contactId") }
         val activeCodes = activeAccountCodes()
         val pageLimit = limit.coerceIn(1, MAX_MESSAGE_LIMIT)
         if (activeCodes.isEmpty() || (accountCode != null && accountCode !in activeCodes)) {
-            return ConversationMessageListResponse(emptyList(), null, false)
+            return ConversationMessageListResponse(emptyList(), null, false, accessLevel)
         }
         val before = decodeKeyset(beforeCursor, contactId, accountCode)
         val filter = ConversationFilter(accountCodes = activeCodes, accountCode = accountCode)
@@ -281,9 +293,8 @@ class MailboxConversationService(
         // 03 (I-3/I-4)：只对当前窗口的 MAIL_RECORD+OUTBOUND+SENT 行按 id 集合批量读一次
         // 存档快照（findAllById 恰好一次；窗口无此类行不发请求）。INBOUND 行即使与
         // outbound 数值 id 相同也绝不读 outbound 快照（避免 source 碰撞串附件）。
-        // 02 (I-3)：只读账号不做任何附件投影，因此这段仅用于日历/通用附件的快照读取
-        // 完全跳过（零交互），绝不为 reader 预读 mail_record。
-        val outboundSentRows = if (reader) {
+        // READ skips every attachment-only lookup; FULL uses the original source checks.
+        val outboundSentRows = if (hideAttachments) {
             emptyList()
         } else {
             page.rows.filter {
@@ -307,9 +318,8 @@ class MailboxConversationService(
 
         // 行按 DESC（新→旧）返回；正序呈现最新窗口。
         val items = page.rows.asReversed().map { row ->
-            // 02 (I-3/I-4)：reader 与附件能力同时关闭 —— 不解析附件、不读快照，四个附件
-            // 字段固定为 0/[]/null/[]；正文/主题/方向/时间/来源/发送状态与标签照常。
-            val attachments = if (reader) {
+            // Only READ suppresses attachment projection; source/snapshot validation stays shared.
+            val attachments = if (hideAttachments) {
                 emptyList()
             } else {
                 expertMaterialService.resolveMessageAttachments(row.source, row.id)
@@ -337,9 +347,9 @@ class MailboxConversationService(
                 } else {
                     emptyList()
                 },
-                calendarAttachment = if (reader) null else calendarAttachmentOf(row, mailRecordRowsById[row.id]),
+                calendarAttachment = if (hideAttachments) null else calendarAttachmentOf(row, mailRecordRowsById[row.id]),
                 // 06 (I-3)：同一批 findAllById 结果投影通用附件快照（零额外查询、不读磁盘）。
-                outboundAttachments = if (reader) {
+                outboundAttachments = if (hideAttachments) {
                     emptyList()
                 } else {
                     outboundAttachmentsOf(row, mailRecordRowsById[row.id])
@@ -357,7 +367,7 @@ class MailboxConversationService(
                 )
             } else null
         } else null
-        return ConversationMessageListResponse(items, nextBefore, page.hasMore)
+        return ConversationMessageListResponse(items, nextBefore, page.hasMore, accessLevel)
     }
 
     // ------------------------------------------------------------------

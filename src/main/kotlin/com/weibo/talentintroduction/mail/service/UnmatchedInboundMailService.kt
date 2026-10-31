@@ -35,8 +35,10 @@ class UnmatchedInboundMailService(
         pageSize: Int = 20,
         pageOffset: Int = 0,
         unmatchedOnly: Boolean = false,
-        query: String? = null
+        query: String? = null,
+        actor: String = "admin"
     ): ManualReviewQueueResult {
+        require(actor.isNotBlank()) { "未登录" }
         // I-2：账号范围与顶部 badge 同源（非模拟器），不附加 enabled 条件。
         val activeCodes = senderAccountRepository
             .findAllByAccountCodeNot(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
@@ -49,8 +51,8 @@ class UnmatchedInboundMailService(
                 emptyList<InboundMailProcessing>() to 0L
             } else {
                 inboundMailProcessingRepository.findUnmatchedManualReviewQueue(
-                    activeCodes, normalizedQuery, pageSize, pageOffset
-                ) to inboundMailProcessingRepository.countUnmatchedManualReviewQueue(activeCodes, normalizedQuery)
+                    activeCodes, normalizedQuery, pageSize, pageOffset, actor
+                ) to inboundMailProcessingRepository.countUnmatchedManualReviewQueue(activeCodes, normalizedQuery, actor)
             }
         } else {
             inboundMailProcessingRepository.findManualReviewQueue(
@@ -58,18 +60,20 @@ class UnmatchedInboundMailService(
                 email = email,
                 subject = subject,
                 limit = pageSize,
-                offset = pageOffset
+                offset = pageOffset,
+                actor = actor
             ) to inboundMailProcessingRepository.countManualReviewQueue(
                 reasonType = reasonType,
                 email = email,
-                subject = subject
+                subject = subject,
+                actor = actor
             )
         }
         val (manualReviewTotal, counts) = if (activeCodes.isEmpty()) {
             0L to emptyMap()
         } else {
-            val total = inboundMailProcessingRepository.countManualReviewByAccounts(activeCodes)
-            val grouped = inboundMailProcessingRepository.countGroupedByReasonTypeForAccounts(activeCodes)
+            val total = inboundMailProcessingRepository.countManualReviewByAccounts(activeCodes, actor)
+            val grouped = inboundMailProcessingRepository.countGroupedByReasonTypeForAccounts(activeCodes, actor)
                 .associate { it.reasonType to it.count }
             total to grouped
         }
@@ -159,6 +163,9 @@ class UnmatchedInboundMailService(
             .orElseThrow { error("Inbound mail processing not found: $recordId") }
         require(record.expertContactId == null) { "Already bound to a contact" }
 
+        check(inboundMailProcessingRepository.lockPendingContact(contactId) == contactId) {
+            "Expert contact not found: $contactId"
+        }
         val contact = expertContactRepository.findById(contactId)
             .orElseThrow { error("Expert contact not found: $contactId") }
 
@@ -190,16 +197,12 @@ class UnmatchedInboundMailService(
         expertContactRepository.save(currentContact)
 
         val now = LocalDateTime.now()
-        val saved = inboundMailProcessingRepository.save(
-            record.copy(
-                expertContactId = contactId,
-                processStatus = "MANUAL_REVIEW",
-                processReason = "MANUAL_BOUND",
-                resolvedBy = null,
-                resolvedAt = null,
-                updatedAt = now
-            )
-        )
+        check(inboundMailProcessingRepository.bindPendingContact(recordId, contactId, now) == 1) {
+            "Inbound mail changed concurrently: $recordId"
+        }
+        val saved = inboundMailProcessingRepository.findById(recordId).orElseThrow {
+            error("Inbound mail processing not found: $recordId")
+        }
 
         // 04（I-3/I-4）：开关启用时，按已有 processing-owner 附件幂等补 ExpertDocument——
         // 复用同一 attachmentId、零文件 I/O、不搬迁 owner/路径、不改 review/document
@@ -234,15 +237,18 @@ class UnmatchedInboundMailService(
         val record = inboundMailProcessingRepository.findById(recordId)
             .orElseThrow { error("Inbound mail processing not found: $recordId") }
         require(record.processStatus == "MANUAL_REVIEW") { "Record $recordId is not in MANUAL_REVIEW" }
+        record.expertContactId?.let { contactId ->
+            check(inboundMailProcessingRepository.lockPendingContact(contactId) == contactId) {
+                "Expert contact not found: $contactId"
+            }
+        }
         val now = LocalDateTime.now()
-        val saved = inboundMailProcessingRepository.save(record.copy(
-            processStatus = "PROCESSED",
-            processReason = "MANUAL_RESOLVED",
-            reasonType = "MANUAL_RESOLVED",
-            resolvedBy = resolvedBy,
-            resolvedAt = now,
-            updatedAt = now
-        ))
+        check(inboundMailProcessingRepository.resolvePending(recordId, resolvedBy, now) == 1) {
+            "Inbound mail changed concurrently: $recordId"
+        }
+        val saved = inboundMailProcessingRepository.findById(recordId).orElseThrow {
+            error("Inbound mail processing not found: $recordId")
+        }
 
         val contactId = record.expertContactId
         if (contactId != null) {

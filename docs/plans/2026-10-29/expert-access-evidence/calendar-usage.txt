@@ -1,0 +1,17 @@
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MeetingCalendarEventRepository.kt:126:        UPDATE meeting_calendar_event
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MeetingCalendarEventRepository.kt:151:        UPDATE meeting_calendar_event
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MeetingCalendarEventRepository.kt:183:              FROM meeting_calendar_event e
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MeetingCalendarEventRepository.kt:188:            INSERT INTO meeting_calendar_event
+src/main/resources/static/app.js:26322:async function meetingCalendarFetchEvents(query) {
+src/main/resources/static/app.js:26340:async function meetingCalendarFetchEvent(id) {
+src/main/resources/static/app.js:26344:async function meetingCalendarFetchSummaries(contactIds) {
+src/main/resources/static/app.js:26712:        const items = await meetingCalendarFetchEvents({
+src/main/resources/static/app.js:27097:    Promise.resolve(meetingCalendarFetchEvent(event.id))
+src/main/resources/static/app.js:27144:    Promise.resolve(meetingCalendarFetchEvent(id)).then(open).catch((error) => {
+src/main/resources/static/app.js:27278:    return meetingCalendarFetchSummaries(contactIds);
+src/main/resources/static/app.js:27294:async function mcHostOpenMeetingSchedule(contactId, options) {
+src/main/resources/static/app.js:27304:    const events = await meetingCalendarFetchExpertEvents(id);
+src/main/resources/static/app.js:27330:async function meetingCalendarFetchExpertEvents(contactId) {
+src/main/resources/db/migration/V125__create_meeting_calendar_event.sql:1:CREATE TABLE meeting_calendar_event (
+src/main/resources/static/mailbox-chat.js:4888:            const fn = hostFn("mcHostOpenMeetingSchedule");
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:478:            meetingCalendarService.createFromSentMail(savedRecord, event)

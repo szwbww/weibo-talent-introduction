@@ -234,6 +234,7 @@ class ReplyIdentityDefaultsIntegrationTest {
             factory.registerSingleton("identityService", service)
             factory.registerSingleton("authService", auth)
             factory.registerSingleton("objectMapper", mapper)
+            factory.registerSingleton("expertMailPermissionGuard", org.mockito.Mockito.mock(com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard::class.java))
         }
         context.register(IdentityDefaultsMvc::class.java, ReplySnippetController::class.java, AuthWebConfig::class.java, GlobalExceptionHandler::class.java)
         context.refresh()

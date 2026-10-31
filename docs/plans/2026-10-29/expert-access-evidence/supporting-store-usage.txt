@@ -1,0 +1,29 @@
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MeetingCalendarEventRepository.kt:126:        UPDATE meeting_calendar_event
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MeetingCalendarEventRepository.kt:151:        UPDATE meeting_calendar_event
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MeetingCalendarEventRepository.kt:183:              FROM meeting_calendar_event e
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MeetingCalendarEventRepository.kt:188:            INSERT INTO meeting_calendar_event
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactNoteService.kt:73:            "SELECT note, updated_by, updated_at FROM expert_contact_note WHERE expert_contact_id=:contactId"
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactNoteService.kt:74:        private const val DELETE_SQL = "DELETE FROM expert_contact_note WHERE expert_contact_id=:contactId"
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactNoteService.kt:76:            INSERT INTO expert_contact_note (expert_contact_id, note, updated_by, updated_at)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:182:            "SELECT country_code, zone_id FROM expert_contact_location WHERE expert_contact_id = :contactId",
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:281:            INSERT INTO expert_contact_location (expert_contact_id, country_code, zone_id)
+src/main/resources/db/migration/V146__create_expert_contact_location.sql:1:CREATE TABLE expert_contact_location (
+src/main/resources/db/migration/V146__create_expert_contact_location.sql:6:    CONSTRAINT fk_expert_contact_location_contact
+src/main/resources/db/migration/V152__create_mailbox_reply_draft.sql:1:CREATE TABLE mailbox_reply_draft (
+src/main/resources/db/migration/V152__create_mailbox_reply_draft.sql:19:    UNIQUE KEY uk_mailbox_reply_draft_target (username, expert_contact_id, target_kind, inbound_processing_id, account_scope),
+src/main/resources/db/migration/V152__create_mailbox_reply_draft.sql:20:    KEY idx_mailbox_reply_draft_list (username, state, updated_at, id)
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt:26:        a.status AS send_attempt_status FROM mailbox_reply_draft d
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt:36:        jdbc.update("""INSERT INTO mailbox_reply_draft (username,expert_contact_id,target_kind,inbound_processing_id,account_scope,version,state,subject,html_body,text_body,context_json,created_at,updated_at)
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt:42:        return jdbc.update("""UPDATE mailbox_reply_draft SET version=version+1,state='ACTIVE',subject=:subject,html_body=:html,text_body=:text,context_json=:context,updated_at=:now$resetBinding
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt:46:    fun discard(owner: String, id: Long, version: Long, now: LocalDateTime): Boolean = jdbc.update("""UPDATE mailbox_reply_draft SET state='DISCARDED',version=version+1,subject=NULL,html_body=NULL,text_body=NULL,context_json=NULL,updated_at=:now
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt:56:        val total = jdbc.queryForObject("SELECT COUNT(*) FROM mailbox_reply_draft d LEFT JOIN expert_contact c ON c.id=d.expert_contact_id$filter",params,Long::class.java) ?: 0
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt:60:            FROM mailbox_reply_draft d LEFT JOIN expert_contact c ON c.id=d.expert_contact_id$filter ORDER BY d.updated_at DESC,d.id DESC LIMIT :limit OFFSET :offset""",params,
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt:69:        val total = jdbc.queryForObject("SELECT COUNT(*) FROM mailbox_reply_draft d$filter",params,Long::class.java) ?: 0
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt:70:        val counts = if (contacts.isEmpty()) emptyMap() else jdbc.query("SELECT d.expert_contact_id,COUNT(*) AS n FROM mailbox_reply_draft d$filter AND d.expert_contact_id IN (:contacts) GROUP BY d.expert_contact_id",params,
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt:80:        jdbc.queryForList("SELECT id FROM mailbox_reply_draft WHERE username=:owner AND id=:id FOR UPDATE",mapOf("owner" to owner,"id" to id))
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt:86:        return jdbc.update("""UPDATE mailbox_reply_draft SET send_attempt_id=:attempt,send_version=:version
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt:94:        return jdbc.update("""UPDATE mailbox_reply_draft SET state='SENT',version=version+1,subject=NULL,html_body=NULL,text_body=NULL,context_json=NULL,updated_at=:now
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailReplyDraftRepository.kt:101:        return jdbc.update("UPDATE mailbox_reply_draft SET send_attempt_id=NULL,send_version=NULL WHERE username=:owner AND id=:id AND send_attempt_id=:attempt AND send_version=:version",
+src/main/resources/db/migration/V125__create_meeting_calendar_event.sql:1:CREATE TABLE meeting_calendar_event (
+src/main/resources/db/migration/V150__create_expert_contact_note.sql:1:CREATE TABLE expert_contact_note (
+src/main/resources/db/migration/V150__create_expert_contact_note.sql:7:    CONSTRAINT fk_expert_contact_note_contact

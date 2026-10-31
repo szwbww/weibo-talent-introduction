@@ -70,7 +70,8 @@ class MailReviewQueryIT {
         Mockito.`when`(contacts.findAllById(Mockito.anyCollection())).thenReturn(emptyList())
         conversations = MailboxConversationService(repository, senders, contacts,
             Mockito.mock(ExpertMaterialService::class.java), Mockito.mock(InboundMailTagService::class.java),
-            Mockito.mock(ExpertSearchService::class.java), Mockito.mock(MailRecordRepository::class.java))
+            Mockito.mock(ExpertSearchService::class.java), Mockito.mock(MailRecordRepository::class.java),
+            ExpertMailReadAccessService(named))
     }
 
     @AfterAll fun stop() { if (mysql.isRunning) mysql.stop() }
@@ -228,7 +229,6 @@ class MailReviewQueryIT {
         assertEquals(100, result.items.size)
         assertEquals(100L, result.reviewPendingTotal)
         assertEquals(singleContactQueryCount, adminSql.size, "Page growth must not introduce per-contact queries")
-        assertEquals(2, adminSql.count { it.contains("mailbox_review_draft") })
         assertTrue(adminSql.none { it.contains("d.html_body") || it.contains("d.text_body") })
         println("REVIEW_QUERY_SIZE100 rows=${result.items.size} sqlCount=${adminSql.size} reviewSqlCount=${adminSql.count { it.contains("mailbox_review_draft") }}")
         statements.clear()

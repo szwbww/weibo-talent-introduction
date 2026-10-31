@@ -35,5 +35,7 @@ data class InboundMailProcessing(
     val createdAt: LocalDateTime? = null,
     val updatedAt: LocalDateTime? = null,
     /** 完整 IMAP 路径；同一 UID 在不同目录中表示不同邮件。 */
-    val folder: String = "INBOX"
+    val folder: String = "INBOX",
+    /** Business queue ownership, independent of the physical mailbox source. */
+    val pendingOwnerUsername: String = "admin"
 )

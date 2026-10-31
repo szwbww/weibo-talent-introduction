@@ -1,0 +1,137 @@
+$ rg -n @(Get|Put|Post|Delete|Patch|Request)Mapping|fun  src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailReplyDraftController.kt
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:48:@RequestMapping("/api/expert-contacts")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:60:    @GetMapping
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:61:    fun listContacts(
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:119:    private fun requirePersonQuery(): DiscoveryPersonQueryService =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:122:    @GetMapping("/{contactId}")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:123:    fun getContactDetail(@PathVariable contactId: Long): ExpertContactDetailResponse =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:126:    @PostMapping("/{contactId}/manual-handoff")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:127:    fun createManualHandoff(
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:133:    @PostMapping("/{contactId}/manual-handoff/assign")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:134:    fun assignManualHandoff(
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:140:    @PostMapping("/{contactId}/manual-handoff/complete")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:141:    fun completeManualHandoff(
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:147:    @PostMapping("/{contactId}/pause-auto-reply")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:148:    fun pauseAutoReply(@PathVariable contactId: Long): ExpertContactResponse =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:151:    @PostMapping("/{contactId}/resume-auto-reply")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:152:    fun resumeAutoReply(@PathVariable contactId: Long): ExpertContactResponse =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:155:    @PostMapping("/{contactId}/mark-follow-up")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:156:    fun markFollowUp(@PathVariable contactId: Long): ExpertContactResponse =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:159:    @DeleteMapping("/{contactId}/mark-follow-up")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:160:    fun unmarkFollowUp(@PathVariable contactId: Long): ExpertContactResponse =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:163:    @GetMapping("/auto-reply/summary")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:164:    fun getAutoReplySummary(): AutoReplySummary =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:167:    @PostMapping("/auto-reply/bulk")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:168:    fun bulkUpdateAutoReply(
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:176:    @PostMapping("/{contactId}/promote-to-application")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:177:    fun promoteToApplication(@PathVariable contactId: Long): ExpertContactResponse =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:180:    @PostMapping("/{contactId}/promote-to-candidate")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:181:    fun promoteToCandidate(@PathVariable contactId: Long): ExpertContactResponse =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:184:    @PostMapping("/{contactId}/demote-to-raw")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:185:    fun demoteToRaw(@PathVariable contactId: Long): ExpertContactResponse =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:188:    @PostMapping("/{contactId}/switch-to-manual")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:189:    fun switchToManual(
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:195:    @PostMapping("/{contactId}/switch-to-auto")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:196:    fun switchToAuto(
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:202:    @PostMapping("/{contactId}/operator-status")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:203:    fun changeOperatorStatus(
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:211:    @PostMapping("/{contactId}/index-level")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:212:    fun changeIndexLevel(
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:220:    @PostMapping("/{contactId}/sender-account")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:221:    fun rebindSenderAccount(
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:227:    @PostMapping("/{contactId}/sender-account/clear-change-mark")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:228:    fun clearSenderChangeMark(
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:236:    @GetMapping("/mail-send-options")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:237:    fun listMailSendOptions(): List<ManualMailOption> =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:240:    @PostMapping("/{contactId}/manual-mail")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:241:    fun sendManualMail(
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:247:    @PostMapping("/batch-mail")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:248:    fun sendBatchMail(@RequestBody request: BatchMailSendRequest): BatchMailSendResult =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:251:    @PostMapping("/sender-account/migrate")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:252:    fun migrateSenderAccount(@RequestBody request: MigrateSenderAccountRequest): MigrateResult =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:255:    @PostMapping("/{contactId}/meeting-schedules")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:256:    fun createMeetingSchedule(
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:262:    @PutMapping("/{contactId}/meeting-schedules/{scheduleId}")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:263:    fun updateMeetingSchedule(
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:270:    @PostMapping("/{contactId}/meeting-schedules/{scheduleId}/confirm-and-email")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:271:    fun confirmMeetingAndEmail(
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:278:    @PostMapping("/{contactId}/meeting-schedules/{scheduleId}/complete")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:279:    fun completeMeeting(
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:285:    @PostMapping("/{contactId}/meeting-schedules/{scheduleId}/cancel")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:286:    fun cancelMeeting(
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:293:    fun listMaterials(@PathVariable contactId: Long): List<ExpertMaterialItem> =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:296:    @PutMapping("/{contactId}/materials/{materialCode}")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:297:    fun updateMaterialStatus(
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:305:    @GetMapping("/{contactId}/material-requests")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:306:    fun listMaterialRequests(@PathVariable contactId: Long): List<ExpertMaterialRequestItem> =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:309:    @PutMapping("/{contactId}/material-requests/{code}")
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:310:    fun updateMaterialRequestStatus(
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:323:    fun toCommand(): ManualHandoffCreateCommand =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:331:    fun toCommand(): ManualHandoffAssignCommand =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:340:    fun toCommand(): ManualHandoffCompleteCommand =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:371:) { fun toCommand() = RebindCommand(senderAccountCode, operatorName, note) }
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:383:) { fun toCommand() = MigrateCommand(fromAccountCode, toAccountCode, operatorName, reason) }
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:392:    fun toCommand(): ManualMailSendCommand =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:408:    fun toCommand(): ManualMailSendCommand =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:436:    fun toCommand(): CreateMeetingCommand =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:455:    fun toCommand(): UpdateMeetingCommand =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:472:    fun toCommand(): ConfirmMeetingCommand =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:601:private fun ExpertContactDetail.toResponse(): ExpertContactDetailResponse =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:613:private fun MeetingSchedule.toResponse(): MeetingScheduleResponse =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:629:private fun ExpertContact.toResponse(latestManualReviewReasonType: String? = null): ExpertContactResponse =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:654:private fun MailRecord.toResponse(): MailRecordResponse =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:672:private fun sanitizeErrorSummary(summary: String?): String? {
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:681:private fun MailAttachment.toResponse(): MailAttachmentResponse =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:692:private fun ExpertDocument.toResponse(): ExpertDocumentResponse =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:704:private fun ManualHandoff.toResponse(): ManualHandoffResponse =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:714:private fun ExpertContactStatusHistory.toResponse(): ExpertContactStatusHistoryResponse =
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:32:@RequestMapping("/api/mail")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:45:    @PostMapping("/backfill-uids")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:46:    fun backfillUids(@RequestBody request: BackfillUidsRequest): Map<String, Any> {
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:62:    @PostMapping("/initial-outreach")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:63:    fun sendInitialOutreach(
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:69:    @PostMapping("/auto-reply")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:70:    fun receiveAndAutoReply(
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:76:    @PostMapping("/auto-reply/all")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:77:    fun receiveAndAutoReplyAll(
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:82:    @PostMapping("/initial-outreach/async")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:83:    fun enqueueInitialOutreach(
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:89:    @PostMapping("/auto-reply/async")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:90:    fun enqueueAutoReply(
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:96:    @PostMapping("/auto-reply/all/async")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:97:    fun enqueueAutoReplyAll(
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:102:    @PostMapping("/auto-reply/check-replies")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:103:    fun checkReplies(
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:177:                        fun publishRunning(
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:377:    @GetMapping("/manual-outreach/pending-count")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:378:    fun getManualOutreachPendingCount(): PendingOutreachSummary =
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:381:    @PostMapping("/manual-outreach/start")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:382:    fun startManualOutreach(): ResponseEntity<Map<String, String>> =
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:389:    @PostMapping("/batch-send/pause")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:390:    fun pauseBatchSend(): ResponseEntity<Map<String, String>> =
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:397:    @PostMapping("/batch-send/manual")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:398:    fun runManualOnce(): ResponseEntity<Map<String, String>> =
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:404:    @PostMapping("/batch-send/start-auto")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:405:    fun startAutoBatchSend(): ResponseEntity<Map<String, String>> =
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:412:    @PostMapping("/batch-send/resume-schedule")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:413:    fun resumeBatchSendSchedule(): ResponseEntity<Map<String, String>> =
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:420:    @PostMapping("/batch-send/pause-schedule")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:421:    fun pauseBatchSendSchedule(): ResponseEntity<Map<String, String>> =
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:428:    @GetMapping("/batch-send/status")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:429:    fun getBatchSendStatus(): BatchSendStatusView =
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:432:    private fun queuePublisher(): MailQueuePublisher =
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailReplyDraftController.kt:12:@RequestMapping("/api/mail/mailbox/drafts")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailReplyDraftController.kt:14:    @GetMapping("/target")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailReplyDraftController.kt:15:    fun target(request: HttpServletRequest, @RequestParam contactId: Long, @RequestParam kind: MailReplyDraftKind,
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailReplyDraftController.kt:18:    @PutMapping("/target")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailReplyDraftController.kt:19:    fun save(request: HttpServletRequest, @RequestParam contactId: Long, @RequestParam kind: MailReplyDraftKind,
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailReplyDraftController.kt:23:    @GetMapping("/{id}")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailReplyDraftController.kt:24:    fun detail(request: HttpServletRequest, @PathVariable id: Long): ResponseEntity<Any> = respond(request) { service.get(it,id) }
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailReplyDraftController.kt:25:    @DeleteMapping("/{id}")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailReplyDraftController.kt:26:    fun discard(request: HttpServletRequest, @PathVariable id: Long, @RequestParam expectedVersion: Long): ResponseEntity<Any> = respond(request) { service.discard(it,id,expectedVersion) }
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailReplyDraftController.kt:27:    @GetMapping
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailReplyDraftController.kt:28:    fun list(request: HttpServletRequest, @RequestParam(required=false) search: String?, @RequestParam(required=false) accountScope: String?,
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailReplyDraftController.kt:30:    @GetMapping("/summaries")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailReplyDraftController.kt:31:    fun summaries(request: HttpServletRequest, @RequestParam(required=false) contactIds: List<Long>?, @RequestParam(required=false) accountScope: String?): ResponseEntity<Any> = respond(request) { service.summaries(it,contactIds.orEmpty(),accountScope) }
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailReplyDraftController.kt:34:    private fun respond(request: HttpServletRequest, action: (String) -> Any): ResponseEntity<Any> {

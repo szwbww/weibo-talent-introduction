@@ -1,0 +1,27 @@
+$ rg -n InboundMailProcessing\(|reopenManualResolved|confirmManualReviewWithBody|confirmProcessed src/main/kotlin
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/InboundMailProcessing.kt:8:data class InboundMailProcessing(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:83:    fun reopenManualResolved(id: Long, now: LocalDateTime): Int
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1689:        val updated = inboundMailProcessingRepository.reopenManualResolved(inboundProcessingId, now)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:331:            val inboundProcessing = confirmManualReviewWithBody(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:401:            confirmProcessed(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:464:                confirmProcessed(account, received, contactId, "MANUAL_REVIEW", reason, "UNCLEAR_INTENT")
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:473:                confirmProcessed(account, received, contactId, "MANUAL_REVIEW", reason, "UNCLEAR_INTENT")
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:507:            confirmProcessed(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:584:            confirmManualReviewWithBody(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:616:                confirmManualReviewWithBody(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:648:                confirmManualReviewWithBody(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:679:                    confirmManualReviewWithBody(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:702:                    confirmManualReviewWithBody(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:740:                confirmProcessed(account, received, contactId, "PROCESSED", "AUTO_MEETING_INVITED", "AUTO_MEETING_INVITED")
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:803:            confirmManualReviewWithBody(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:826:            confirmManualReviewWithBody(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:912:        confirmProcessed(account, received, contactId, "PROCESSED", "QA_AUTO_REPLIED", "AUTO_QA_REPLIED")
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1461:        confirmProcessed(account, received, expertContactId, "MANUAL_REVIEW", reason, reasonType, bridgeMetadata)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1463:    private fun confirmManualReviewWithBody(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1474:            InboundMailProcessing(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1517:    private fun confirmProcessed(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1530:            InboundMailProcessing(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1532:                // I-3：同 confirmManualReviewWithBody —— 新行必须带物理 owner 键。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1619:        val processing = confirmManualReviewWithBody(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1647:        val processing = confirmManualReviewWithBody(

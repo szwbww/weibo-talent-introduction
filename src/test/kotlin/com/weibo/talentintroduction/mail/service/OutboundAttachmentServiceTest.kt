@@ -100,7 +100,7 @@ class OutboundAttachmentServiceTest {
         Mockito.`when`(authService.findUser(OTHER_USER)).thenReturn(adminUser(OTHER_USER))
         mockMvc = MockMvcBuilders
             .standaloneSetup(OutboundAttachmentController(service))
-            .addInterceptors(AuthInterceptor(authService, ObjectMapper()))
+            .addInterceptors(AuthInterceptor(authService, ObjectMapper(), org.mockito.Mockito.mock(ExpertMailPermissionGuard::class.java)))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
     }

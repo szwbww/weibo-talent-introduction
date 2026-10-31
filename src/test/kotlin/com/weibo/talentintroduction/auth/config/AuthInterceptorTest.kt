@@ -100,6 +100,21 @@ class AuthProbeController {
 @Import(AuthWebConfig::class, AuthInterceptorTest.KotlinObjectMapperConfig::class)
 @TestPropertySource(properties = ["talent-introduction.auth.enabled=true"])
 class AuthInterceptorTest {
+    @MockBean
+    private lateinit var resourceGuard: com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard
+
+    @org.junit.jupiter.api.BeforeEach
+    fun denyUnassignedResourceOperations() {
+        Mockito.doAnswer {
+            throw MailReadAccessDeniedException(
+                com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard.MAIL_WRITE_FORBIDDEN,
+                "无权操作该专家的邮件资源"
+            )
+        }.`when`(resourceGuard).authorize(
+            Mockito.anyString(), Mockito.any() ?: Any(),
+            Mockito.any(javax.servlet.http.HttpServletRequest::class.java) ?: org.springframework.mock.web.MockHttpServletRequest()
+        )
+    }
 
     /** 解析 Kotlin data class @RequestBody 需要 KotlinModule（生产由 Boot 注册）。 */
     @TestConfiguration
@@ -164,6 +179,8 @@ class AuthInterceptorTest {
 
     @MockBean
     private lateinit var inboundMailTagService: InboundMailTagService
+    @MockBean
+    private lateinit var inboundMailTagRepository: com.weibo.talentintroduction.mail.repository.InboundMailTagRepository
 
     @MockBean
     private lateinit var bounceRecordRepository: BounceRecordRepository
@@ -315,7 +332,7 @@ class AuthInterceptorTest {
     }
 
     // ------------------------------------------------------------------
-    // I-1：精确 user1 默认拒绝（除三个白名单 handler）
+    // I-1：精确 user1 默认拒绝，只有逐项登记的 handler 可访问。
     // ------------------------------------------------------------------
 
     @Test
@@ -408,7 +425,6 @@ class AuthInterceptorTest {
         // 旧 mailbox / 草稿 / 附件 / 发件账号 / 备注 / 标签 / 监控
         mockMvc.perform(get("/api/mail/mailbox").session(session)).andExpect(status().isForbidden)
         mockMvc.perform(get("/api/mail/mailbox/by-expert").session(session)).andExpect(status().isForbidden)
-        mockMvc.perform(get("/api/mail/mailbox/drafts").session(session)).andExpect(status().isForbidden)
         mockMvc.perform(get("/api/mail/mailbox/MAIL_RECORD/1/attachments").session(session))
             .andExpect(status().isForbidden)
         mockMvc.perform(get("/api/mail/mailbox/attachments/1/download").session(session))
@@ -425,12 +441,6 @@ class AuthInterceptorTest {
                 .content("""{"note":"x"}""")
         ).andExpect(status().isForbidden)
         mockMvc.perform(get("/api/inbound-summary/mails").session(session)).andExpect(status().isForbidden)
-        mockMvc.perform(
-            post("/api/inbound-summary/mails/1/tags")
-                .session(session)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("""{"tag":"x"}""")
-        ).andExpect(status().isForbidden)
         mockMvc.perform(get("/api/mail/bounces").session(session)).andExpect(status().isForbidden)
 
         // 发信 / 关注 / 挂起 / 备注 / 标签 / 监控：业务服务零交互。
@@ -512,6 +522,39 @@ class AuthInterceptorTest {
         assertEquals(
             listOf(
                 "AuthController#logout:POST",
+                "CalendarAttachmentController#download:GET",
+                "ExpertContactLocationController#countries:GET",
+                "ExpertContactLocationController#get:GET",
+                "ExpertContactLocationController#save:PUT",
+                "ExpertContactLocationController#timing:GET",
+                "ExpertContactManagementController#changeIndexLevel:POST",
+                "ExpertContactManagementController#changeOperatorStatus:POST",
+                "ExpertContactManagementController#getContactDetail:GET",
+                "ExpertContactNoteController#get:GET",
+                "ExpertContactNoteController#save:PUT",
+                "ExpertDocumentBrowseController#download:GET",
+                "ExpertDocumentBrowseController#listDocuments:GET",
+                "ExpertDocumentBrowseController#preview:GET",
+                "ExpertIndexController#addTag:POST",
+                "ExpertIndexController#getExpertProfile:GET",
+                "ExpertIndexController#removeTag:POST",
+                "ExpertManualProfileController#get:GET",
+                "ExpertManualProfileController#patch:PATCH",
+                "ExpertMaterialController#downloadZip:POST",
+                "ExpertMaterialController#listMaterials:GET",
+                "ExpertMaterialController#reconcile:POST",
+                "ExpertMaterialController#requestTransfers:POST",
+                "ExpertMaterialController#uploadMaterial:POST",
+                "InboundMailSummaryController#addTag:POST",
+                "InboundMailSummaryController#autoApplyTags:POST",
+                "InboundMailSummaryController#deleteTag:DELETE",
+                "InboundMailSummaryController#tagOptions:GET",
+                "MailReplyDraftController#detail:GET",
+                "MailReplyDraftController#discard:DELETE",
+                "MailReplyDraftController#list:GET",
+                "MailReplyDraftController#save:PUT",
+                "MailReplyDraftController#summaries:GET",
+                "MailReplyDraftController#target:GET",
                 "MailReviewDraftController#comment:POST",
                 "MailReviewDraftController#create:POST",
                 "MailReviewDraftController#delete:DELETE",
@@ -521,8 +564,37 @@ class AuthInterceptorTest {
                 "MailReviewDraftController#save:PUT",
                 "MailReviewDraftController#submit:POST",
                 "MailReviewDraftController#withdraw:POST",
+                "MailboxAttachmentController#download:GET",
+                "MailboxAttachmentController#listAttachments:GET",
+                "MailboxConversationController#conversationManualRichReply:POST",
+                "MailboxConversationController#dismissReplied:PUT",
+                "MailboxConversationController#follow:PUT",
                 "MailboxConversationController#list:GET",
-                "MailboxConversationController#messages:GET"
+                "MailboxConversationController#messages:GET",
+                "MailboxConversationController#pendingBadge:GET",
+                "MailboxConversationController#resumeSuspension:DELETE",
+                "MailboxConversationController#setProgressStatus:PUT",
+                "MailboxConversationController#suspend:PUT",
+                "MailboxConversationController#suspension:GET",
+                "MailboxConversationController#unfollow:DELETE",
+                "MailboxConversationController#updateSuspensionReason:PATCH",
+                "MeetingCalendarController#cancel:POST",
+                "MeetingCalendarController#create:POST",
+                "MeetingCalendarController#event:GET",
+                "MeetingCalendarController#events:GET",
+                "MeetingCalendarController#summaries:GET",
+                "MeetingCalendarController#update:PUT",
+                "MeetingConfirmationController#options:GET",
+                "MeetingConfirmationController#preview:POST",
+                "MeetingConfirmationController#timeZones:GET",
+                "OutboundAttachmentController#downloadDraft:GET",
+                "OutboundAttachmentController#downloadSentAttachment:GET",
+                "OutboundAttachmentController#upload:POST",
+                "TranslationController#translate:POST",
+                "UnmatchedInboundMailController#cancelResolved:POST",
+                "UnmatchedInboundMailController#getUnmatchedDetail:GET",
+                "UnmatchedInboundMailController#markResolved:POST",
+                "UnmatchedInboundMailController#sendManualRichReply:POST"
             ),
             allowed.toList()
         )

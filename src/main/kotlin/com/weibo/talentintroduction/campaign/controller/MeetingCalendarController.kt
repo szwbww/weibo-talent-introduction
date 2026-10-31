@@ -3,6 +3,9 @@ package com.weibo.talentintroduction.campaign.controller
 import com.weibo.talentintroduction.campaign.repository.MeetingCalendarEventRepository.EventRow
 import com.weibo.talentintroduction.campaign.service.MeetingCalendarService
 import com.weibo.talentintroduction.common.controller.ApiErrorResponse
+import com.weibo.talentintroduction.auth.config.AuthSessionKeys
+import com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard
+import javax.servlet.http.HttpServletRequest
 import org.springframework.core.annotation.Order
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -21,7 +24,8 @@ import org.springframework.core.Ordered
 @RestController
 @RequestMapping("/api/meeting-calendar")
 class MeetingCalendarController(
-    private val service: MeetingCalendarService
+    private val service: MeetingCalendarService,
+    private val permissionGuard: ExpertMailPermissionGuard
 ) {
     @GetMapping("/events")
     fun events(
@@ -47,10 +51,12 @@ class MeetingCalendarController(
     }
 
     @PostMapping("/events")
-    fun create(@RequestBody request: CreateMeetingCalendarRequest): ResponseEntity<MeetingCalendarEventResponse> =
-        ResponseEntity.status(HttpStatus.CREATED).body(
+    fun create(@RequestBody request: CreateMeetingCalendarRequest, servletRequest: HttpServletRequest): ResponseEntity<MeetingCalendarEventResponse> {
+        permissionGuard.requireFull(servletRequest.getSession(false)?.getAttribute(AuthSessionKeys.USERNAME) as? String, request.contactId)
+        return ResponseEntity.status(HttpStatus.CREATED).body(
             response(service.createManual(request.contactId, request.startBeijing, request.endBeijing, request.meetingLink, request.note))
         )
+    }
 
     @PutMapping("/events/{id}")
     fun update(@PathVariable id: Long, @RequestBody request: UpdateMeetingCalendarRequest): MeetingCalendarEventResponse =

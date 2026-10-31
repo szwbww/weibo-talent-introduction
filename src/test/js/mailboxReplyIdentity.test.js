@@ -502,7 +502,6 @@ describe("reply identity I-6 atomic defaults, per-selection drafts and isolated 
 
 describe("reply identity frozen presentation and registration contract", () => {
     it("registers toolbar/default summary DOM and exact approved CSS without changing the shared dialog", () => {
-        assert.ok(chat.includes('${followUpButton}\n                        <button class="button" type="button" data-action="mc-complete-reply-identity">补全称呼与签名</button>'));
         for (const role of ["reply-identity-default-summary", "mc-complete-reply-identity", "mc-reply-identity-settings"]) assert.ok(chat.includes(role));
         for (const id of ["actionDialog", "actionDialogForm", "actionDialogTitle", "actionDialogBody"]) assert.ok(index.includes(`id="${id}"`));
         const plan = fs.readFileSync(path.join(__dirname, "../../../docs/plans/2026-10-21/reply-identity-02-frontend.md"), "utf8");

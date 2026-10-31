@@ -20,6 +20,8 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 @Import(AuthWebConfig::class, ObjectMapper::class)
 @TestPropertySource(properties = ["talent-introduction.auth.enabled=true"])
 class EmailSuppressionControllerAuthTest {
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private lateinit var resourceGuard: com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard
 
     @Autowired
     private lateinit var mockMvc: MockMvc

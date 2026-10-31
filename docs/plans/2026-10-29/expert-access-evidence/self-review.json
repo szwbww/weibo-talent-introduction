@@ -1,0 +1,30 @@
+{
+  "children": 9,
+  "fileCounts": {
+    "01-read-labels": 3,
+    "02-access-level": 7,
+    "03-resource-guard": 8,
+    "04a-profile-tags": 5,
+    "04b-calendar-drafts": 7,
+    "05-pending-owner": 9,
+    "06-pending-query": 10,
+    "07-user-workspace": 10,
+    "08-admin-controls": 7
+  },
+  "uniqueExecutionPaths": 46,
+  "structuralIssues": [],
+  "brokenLocalLinks": [],
+  "businessSourceChangedSinceEvidence": [],
+  "implementationTests": "NOT_RUN (plan-only)",
+  "reviewDependency": "draft-review 01-05 unimplemented in baseline; migration V169 precedes V170/V171",
+  "newFields": {
+    "expert_mail_read_access": [
+      "access_level"
+    ],
+    "inbound_mail_processing": [
+      "pending_owner_username"
+    ]
+  },
+  "invariantStyleVerificationIssues": [],
+  "selfReviewScope": "结构、文件数、链接、I/S逐项验收及业务源码SHA；非实现测试"
+}

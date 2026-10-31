@@ -1059,18 +1059,31 @@ describe("reader logout flush (04 I-17)", () => {
     it("awaits reader flush, aborts logout on failure, and never flushes admin drafts", async () => {
         let handler, fail = true;
         const calls = [];
+        const pendingCounts = [], badgeUpdates = [];
+        let resolveBadge;
         const sandbox = {
             $: selector => selector === "#logoutBtn" ? { addEventListener(type, fn) { handler = fn; } } : null,
             setView: {}, isMailReadOnlyMode: () => true,
             mailReadOnlyState: () => ({ handle: { async flushDrafts() { calls.push("flush"); if (fail) throw Error("offline"); } } }),
             flushMailboxChatDrafts: () => { throw Error("admin flush"); },
-            api: async path => calls.push(path), location: { reload() { calls.push("reload"); } }
+            api: async path => path.endsWith("/pending-badge") ? new Promise(resolve => { resolveBadge = resolve; }) : calls.push(path),
+            document: { dispatchEvent(event) { pendingCounts.push(event.detail.manualReviewTotal); } },
+            CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
+            updateUnmatchedBadge: (counts, total) => badgeUpdates.push(total),
+            location: { reload() { calls.push("reload"); } }
         };
         vm.createContext(sandbox);
+        vm.runInContext("let unmatchedBadgeRefreshSeq = 0;", sandbox);
+        for (const name of ["refreshUnmatchedBadge", "publishMailboxPendingBadge"]) vm.runInContext(extractFn(name), sandbox);
         vm.runInContext(extractFn("bindAuthEvents"), sandbox);
         sandbox.bindAuthEvents();
+        const lateBadge = sandbox.refreshUnmatchedBadge();
         await handler();
         assert.deepStrictEqual(calls, ["flush"]);
+        resolveBadge({ countsByReasonType: {}, manualReviewTotal: 37 });
+        await lateBadge;
+        assert.deepStrictEqual(pendingCounts, [null], "logout invalidates the real producer's prior-session response");
+        assert.deepStrictEqual(badgeUpdates, [], "late count cannot reach the badge consumer");
         fail = false;
         await handler();
         assert.deepStrictEqual(calls, ["flush", "flush", "/api/auth/logout", "reload"]);

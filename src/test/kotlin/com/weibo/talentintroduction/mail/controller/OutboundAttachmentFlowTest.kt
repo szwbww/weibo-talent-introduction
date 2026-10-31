@@ -234,6 +234,7 @@ class OutboundAttachmentFlowTest {
             emailSuppressionService,
             meetingConfirmationService,
             Mockito.mock(com.weibo.talentintroduction.mail.service.ReplyIdentityService::class.java),
+            Mockito.mock(com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard::class.java),
             outboundAttachmentService = attachmentService
         )
         conversationService = MailboxConversationService(
@@ -243,7 +244,11 @@ class OutboundAttachmentFlowTest {
             expertMaterialService,
             inboundMailTagService,
             expertSearchService,
-            mailRecordRepository
+            mailRecordRepository,
+            Mockito.mock(com.weibo.talentintroduction.mail.service.ExpertMailReadAccessService::class.java).also {
+                Mockito.`when`(it.accessLevel(CONTACT_ID))
+                    .thenReturn(com.weibo.talentintroduction.mail.service.ExpertMailAccessLevel.NONE)
+            }
         )
         mockMvc = MockMvcBuilders
             .standaloneSetup(
@@ -253,7 +258,7 @@ class OutboundAttachmentFlowTest {
                     mailSenderAccountRepository
                 )
             )
-            .addInterceptors(AuthInterceptor(authService, ObjectMapper()))
+            .addInterceptors(AuthInterceptor(authService, ObjectMapper(), Mockito.mock(com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard::class.java)))
             .setControllerAdvice(GlobalExceptionHandler())
             .build()
 

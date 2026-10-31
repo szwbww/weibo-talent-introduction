@@ -134,7 +134,7 @@ class MailReplyDraftSendIntegrationTest {
             mock(ExpertIndexLevelOperationService::class.java),accounts,delivery,records,mock(MailRecordQaRuleRepository::class.java),audit,
             rules,categories,factSelection,mock(AiReplyDraftService::class.java),aiContext,AiReplyHighRiskClaimValidator(rules),
             MailBodyCleaner(),MailContentService(),variables,attempts,mock(TrustReplyWorkbenchService::class.java),
-            mock(UnsupportedAnswerIndexService::class.java),suppression,meetings,identityGuard,ragKnowledgeBase=ragKnowledge,
+            mock(UnsupportedAnswerIndexService::class.java),suppression,meetings,identityGuard,mock(ExpertMailPermissionGuard::class.java),ragKnowledgeBase=ragKnowledge,
             outboundAttachmentService=attachments,mailReplyDraftService=drafts)
     }
     @AfterEach fun teardown() { jdbc.execute("DROP TRIGGER IF EXISTS reject_draft_sent"); cleanup() }

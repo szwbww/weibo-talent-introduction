@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.mail.service
 
+import com.weibo.talentintroduction.auth.config.MailReadOnlyPolicy
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
 import org.springframework.transaction.annotation.Propagation
@@ -19,20 +20,23 @@ class MailReplyDraftService(
     private val contacts: ExpertContactRepository,
     private val inbound: InboundMailProcessingRepository,
     private val accounts: MailSenderAccountRepository,
-    private val attachments: OutboundAttachmentService
+    private val attachments: OutboundAttachmentService,
+    private val permissionGuard: ExpertMailPermissionGuard
 ) {
     private val mailContent = MailContentService()
     fun getTarget(owner: String, target: MailReplyDraftTarget): MailReplyDraftDetail {
         identity(owner); targetShape(target)
+        authorizeTarget(owner, target)
         val row = repository.findTarget(owner,target)
         if (row != null) return detail(row)
         validateTarget(target)
         return MailReplyDraftDetail(target=target)
     }
-    fun get(owner: String, id: Long): MailReplyDraftDetail { identity(owner); return detail(owned(owner,id)) }
+    fun get(owner: String, id: Long): MailReplyDraftDetail { identity(owner); return detail(authorizedOwned(owner,id)) }
     // Each write is one atomic CAS statement; conflict rereads must not use an old REPEATABLE READ snapshot.
     fun save(owner: String, target: MailReplyDraftTarget, request: MailReplyDraftSaveRequest): MailReplyDraftDetail {
         identity(owner); targetShape(target)
+        authorizeTarget(owner, target)
         if (request.expectedVersion < 0) invalid("非法 expectedVersion")
         val existing = repository.findTarget(owner,target)
         if (existing == null) {
@@ -62,7 +66,7 @@ class MailReplyDraftService(
     fun discard(owner: String, id: Long, expectedVersion: Long): MailReplyDraftDetail {
         identity(owner)
         repository.lockOwned(owner,id)
-        val row = owned(owner,id)
+        val row = authorizedOwned(owner,id)
         if (expectedVersion <= 0 || row.version != expectedVersion) conflict(row)
         if (row.state != MailReplyDraftState.ACTIVE) return detail(row)
         if (row.sendAttemptStatus == MailSendAttemptStatus.DELIVERY_IN_PROGRESS) {
@@ -123,7 +127,7 @@ class MailReplyDraftService(
     internal fun completedBinding(owner: String, ref: MailReplyDraftRef, contactId: Long,
         processingId: Long?, scope: String?, attemptId: Long? = null): Long? {
         identity(owner)
-        val row = owned(owner,ref.id)
+        val row = authorizedOwned(owner,ref.id)
         val targetMatches = if (processingId != null) row.target == MailReplyDraftTarget(contactId,MailReplyDraftKind.INBOUND,processingId,scope.orEmpty())
             else conversationTarget(row,contactId,scope)
         if (!targetMatches) mismatch(row)
@@ -137,6 +141,7 @@ class MailReplyDraftService(
     /** Caller already owns the sending transaction; take the draft lock before touching attempts. */
     internal fun lockForClaim(ref: ValidatedDraftSendRef): MailReplyDraftRow {
         val row = locked(ref.owner,ref.id)
+        authorizeTarget(ref.owner, row.target)
         if (row.state != MailReplyDraftState.ACTIVE || row.version != ref.version) conflict(row)
         if (row.target != ref.target || content(row) != ref.content) mismatch(row)
         return row
@@ -160,7 +165,7 @@ class MailReplyDraftService(
     }
     private fun activeSend(owner: String, ref: MailReplyDraftRef): MailReplyDraftRow {
         identity(owner)
-        val row = owned(owner,ref.id)
+        val row = authorizedOwned(owner,ref.id)
         if (ref.version <= 0 || row.version != ref.version || row.state != MailReplyDraftState.ACTIVE) conflict(row)
         return row
     }
@@ -197,6 +202,12 @@ class MailReplyDraftService(
     }
     private fun filterScope(scope: String?) { if (scope != null && (scope.length > 100 || scope != scope.trim())) invalid("非法账号范围") }
     private fun owned(owner: String, id: Long): MailReplyDraftRow = repository.findOwned(owner,id) ?: throw MailReplyDraftException(HttpStatus.NOT_FOUND,"NOT_FOUND","草稿不存在")
+    private fun authorizeTarget(owner: String, target: MailReplyDraftTarget) {
+        permissionGuard.requireFull(owner, target.contactId)
+        if (MailReadOnlyPolicy.isReader(owner)) validateTarget(target)
+    }
+    private fun authorizedOwned(owner: String, id: Long): MailReplyDraftRow =
+        owned(owner, id).also { authorizeTarget(owner, it.target) }
     private fun normalizeAttachments(owner: String, target: MailReplyDraftTarget, content: MailReplyDraftContent, existing: MailReplyDraftRow?): MailReplyDraftContent {
         MailReplyDraftContextCodec.validate(content.context)
         val field = content.context.outboundAttachmentDraft ?: return content

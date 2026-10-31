@@ -86,6 +86,7 @@ class PendingMailOperationService(
     // processing 与 01 validateAndBuild 重算（禁止默认 null 让生产依赖悄悄消失）。
     private val meetingConfirmationService: MeetingConfirmationService,
     private val replyIdentityService: ReplyIdentityService,
+    private val expertMailPermissionGuard: ExpertMailPermissionGuard,
     // 03b (I-40/I-41/I-43): RAG 发送路径的协作件。可空默认 null 仅为让既有的直接
     // 构造单元测试（不触碰 RAG 分支）保持零改动；Spring 运行时按主构造器完整注入，
     // RAG 分支入口 requireNotNull 防御性校验。
@@ -201,6 +202,7 @@ class PendingMailOperationService(
             ?: error("Inbound mail not bound to a contact")
         val contact = expertContactRepository.findById(contactId)
             .orElseThrow { error("Expert contact not found: $contactId") }
+        expertMailPermissionGuard.requireFull(authenticatedUsername, contactId)
         if (draftRef != null) {
             val bound = requireNotNull(mailReplyDraftService) { "Draft sending is not wired" }.completedBinding(
                 authenticatedUsername.orEmpty(),draftRef,contactId,inboundProcessingId,
@@ -351,7 +353,8 @@ class PendingMailOperationService(
             rawSubject = subject,
             htmlBody = htmlBody,
             textBody = textBody,
-            operatorName = operatorName,
+            operatorName = if (com.weibo.talentintroduction.auth.config.MailReadOnlyPolicy.isReader(authenticatedUsername))
+                authenticatedUsername else operatorName,
             safetyWarningConfirmed = safetyWarningConfirmed,
             strongConfirmationText = strongConfirmationText,
             evidence = ManualReplyEvidenceContext(
@@ -412,6 +415,7 @@ class PendingMailOperationService(
             throw MailReviewDraftException(422, "REVIEW_SEND_REFERENCE_CONFLICT", "Conflicting draft references")
         val contact = expertContactRepository.findById(contactId)
             .orElseThrow { error("Expert contact not found: $contactId") }
+        expertMailPermissionGuard.requireFull(authenticatedUsername, contactId)
         require(subject.isNotBlank()) { "Subject is required" }
         require(htmlBody.isNotBlank()) { "HTML body is required" }
         require(subject.trim().length <= 255) { "Subject exceeds 255 characters" }
@@ -501,7 +505,8 @@ class PendingMailOperationService(
             rawSubject = subject,
             htmlBody = htmlBody,
             textBody = textBody,
-            operatorName = operatorName,
+            operatorName = if (com.weibo.talentintroduction.auth.config.MailReadOnlyPolicy.isReader(authenticatedUsername))
+                authenticatedUsername else operatorName,
             safetyWarningConfirmed = safetyWarningConfirmed,
             strongConfirmationText = strongConfirmationText,
             evidence = ManualReplyEvidenceContext(runInboundSemanticChecks = false),
@@ -1633,19 +1638,17 @@ class PendingMailOperationService(
         val record = inboundMailProcessingRepository.findById(inboundProcessingId)
             .orElseThrow { error("Inbound mail processing not found: $inboundProcessingId") }
         require(record.processStatus == "MANUAL_REVIEW") { "Record $inboundProcessingId is not in MANUAL_REVIEW" }
+        record.expertContactId?.let { contactId ->
+            check(inboundMailProcessingRepository.lockPendingContact(contactId) == contactId) {
+                "Expert contact not found: $contactId"
+            }
+        }
 
         val actualOperator = operatorName?.takeIf { it.isNotBlank() } ?: resolvedBy ?: "UNKNOWN"
         val now = LocalDateTime.now()
-        inboundMailProcessingRepository.save(
-            record.copy(
-                processStatus = "PROCESSED",
-                processReason = "MANUAL_RESOLVED",
-                reasonType = "MANUAL_RESOLVED",
-                resolvedBy = actualOperator,
-                resolvedAt = now,
-                updatedAt = now
-            )
-        )
+        check(inboundMailProcessingRepository.resolvePending(inboundProcessingId, actualOperator, now) == 1) {
+            "Inbound mail changed concurrently: $inboundProcessingId"
+        }
 
         val contactId = record.expertContactId
         if (contactId != null) {
@@ -1703,6 +1706,11 @@ class PendingMailOperationService(
                 HttpStatus.CONFLICT,
                 "Record $inboundProcessingId is not manually resolved and cannot be cancelled"
             )
+        }
+        record.expertContactId?.let { contactId ->
+            check(inboundMailProcessingRepository.lockPendingContact(contactId) == contactId) {
+                "Expert contact not found: $contactId"
+            }
         }
 
         val actualOperator = operatorName?.takeIf { it.isNotBlank() } ?: "UNKNOWN"

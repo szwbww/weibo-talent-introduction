@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.auth.config
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.auth.service.AuthService
+import com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -12,12 +13,13 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
 @ConditionalOnProperty("talent-introduction.auth.enabled", havingValue = "true", matchIfMissing = true)
 class AuthWebConfig(
     private val authService: AuthService,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    private val expertMailPermissionGuard: ExpertMailPermissionGuard
 ) : WebMvcConfigurer {
 
     @Bean
     fun authInterceptor(): AuthInterceptor {
-        return AuthInterceptor(authService, objectMapper)
+        return AuthInterceptor(authService, objectMapper, expertMailPermissionGuard)
     }
 
     override fun addInterceptors(registry: InterceptorRegistry) {

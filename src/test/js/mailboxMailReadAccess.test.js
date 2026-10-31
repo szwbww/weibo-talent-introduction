@@ -267,6 +267,10 @@ class MiniElement {
     }
 
     get value() {
+        if (this.tagName === "SELECT" && !this._value) {
+            const selected = this.querySelectorAll("option").find(option => option.selected || option.hasAttribute("selected"));
+            return selected ? selected.value : "";
+        }
         return this._value;
     }
     set value(value) {
@@ -678,7 +682,8 @@ function createGrantSandbox(options) {
     const grantResponse = (contactId) => ({
         username: "user1",
         contactId: Number(contactId),
-        canRead: access[contactId] === true
+        accessLevel: access[contactId] || "NONE",
+        canRead: ["READ", "FULL"].includes(access[contactId])
     });
 
     function defaultRoute(url, method, body) {
@@ -691,8 +696,8 @@ function createGrantSandbox(options) {
         if (grant) {
             const id = Number(grant[1]);
             if (opts.readAccessError) return Promise.reject(new Error(opts.readAccessError));
-            if (method === "PUT") access[id] = true;
-            if (method === "DELETE") access[id] = false;
+            if (method === "PUT") access[id] = JSON.parse(body).accessLevel;
+            if (method === "DELETE") access[id] = "NONE";
             return Promise.resolve(grantResponse(id));
         }
         if (url.startsWith("/api/mail/mailbox/conversations?")) {
@@ -818,12 +823,22 @@ function actionsEl(host) {
     return host.querySelector(".mc-actions");
 }
 
-function grantButton(host) {
-    return host.querySelector('[data-action="mc-toggle-user1-read-access"]');
+function grantSelect(host) {
+    return host.querySelector('[data-action="mc-set-user1-access"]');
 }
 
-function grantBadge(host) {
-    return host.querySelector('[data-role="mc-user1-read-access-status"]');
+function grantError(host) {
+    return host.querySelector('[data-role="mc-access-error"]');
+}
+
+function setLevel(ctx, level) {
+    const select = grantSelect(ctx.host);
+    select.value = level;
+    select.dispatchEvent(new MiniEvent("change", { bubbles: true }));
+}
+
+function accessPayload(contactId, accessLevel) {
+    return { username: "user1", contactId, accessLevel, canRead: accessLevel !== "NONE" };
 }
 
 function grantRequests(ctx) {
@@ -846,387 +861,188 @@ const ORIGINAL_ACTIONS = [
 // S-1：追加节点、文案矩阵、复用既有 class
 // ════════════════════════════════════════════════════════════════════════
 
-describe("04 S-1：admin 专家头部授权入口", () => {
-    it("加载态：末尾两个节点为固定按钮 + 徽标，且按钮禁用", async () => {
+describe("08 S-2：admin 三态直接授权", () => {
+    it("加载中禁用，服务端确认后启用；原头部动作保留在权限入口之前", async () => {
         const gate = deferred();
-        const ctx = mountChat({
-            route: (url, method, body, next) => (/\/read-access\/user1$/.test(url) && method === "GET")
-                ? gate.promise
-                : next(url, method, body)
-        });
-        await settle(ctx);
+        const ctx = await boot({ route: (url, method, body, next) =>
+            url === grantUrl(1) && method === "GET" ? gate.promise : next(url, method, body) });
         selectPerson(ctx.host, 1);
         await flush();
-
+        const select = grantSelect(ctx.host);
+        assert.equal(select.tagName, "SELECT");
+        assert.equal(select.className, "mc-access-select");
+        assert.equal(select.getAttribute("aria-label"), "user1专家权限");
+        assert.equal(select.disabled, true);
+        assert.deepEqual(select.querySelectorAll("option").map(option => option.value), ["NONE", "READ", "FULL"]);
         const actions = actionsEl(ctx.host);
-        assert.ok(actions, "header 必须有 .mc-actions");
-        const children = actions.children;
-        const button = children[children.length - 2];
-        const badge = children[children.length - 1];
-        assert.strictEqual(button.tagName, "BUTTON");
-        assert.strictEqual(button.getAttribute("data-action"), "mc-toggle-user1-read-access");
-        assert.strictEqual(button.getAttribute("data-contact-id"), "1");
-        assert.strictEqual(button.getAttribute("type"), "button");
-        assert.ok(button.classList.contains("button"));
-        assert.strictEqual(button.disabled, true, "加载中必须禁用");
-        assert.strictEqual(button.textContent, "授权状态加载中…");
-
-        assert.strictEqual(badge.tagName, "SPAN");
-        assert.ok(badge.classList.contains("mc-badge"));
-        assert.strictEqual(badge.getAttribute("data-role"), "mc-user1-read-access-status");
-        assert.strictEqual(badge.getAttribute("aria-live"), "polite");
-        assert.strictEqual(badge.textContent, "user1：读取中");
-
-        gate.resolve({ username: "user1", contactId: 1, canRead: true });
-        await flush();
-        assert.strictEqual(button.textContent, "取消 user1 授权");
-        assert.strictEqual(button.disabled, false);
-        assert.strictEqual(badge.textContent, "user1：可查看");
-    });
-
-    it("canRead=false：授权 user1 查看 / user1：未授权 / 可点击；原动作全部保留且在其之前", async () => {
-        const ctx = await boot({ access: { 1: false } });
-        selectPerson(ctx.host, 1);
-        await settle(ctx);
-
-        const actions = actionsEl(ctx.host);
-        const button = grantButton(ctx.host);
-        const badge = grantBadge(ctx.host);
-        assert.ok(button && badge);
-        assert.strictEqual(button.textContent, "授权 user1 查看");
-        assert.strictEqual(button.disabled, false);
-        assert.strictEqual(badge.textContent, "user1：未授权");
-
-        // 原 header 动作保持存在，且都排在新节点之前（S-1：追加在最后）。
-        const children = actions.children;
-        const buttonIndex = children.indexOf(button);
-        ORIGINAL_ACTIONS.forEach((action) => {
+        ORIGINAL_ACTIONS.forEach(action => {
             const node = actions.querySelector(`[data-action="${action}"]`);
-            assert.ok(node, `原动作 ${action} 必须保留`);
-            assert.ok(children.indexOf(node) < buttonIndex, `${action} 必须位于授权入口之前`);
+            assert.ok(node);
+            assert.ok(actions.children.indexOf(node) < actions.children.indexOf(select));
         });
-        assert.strictEqual(children[children.length - 1], badge);
-
-        // 复用既有 class / 无新 CSS / 无 inline style。
-        const html = actions.innerHTML;
-        assert.doesNotMatch(html, /style=/);
-        assert.doesNotMatch(html, /data-tone=/);
-        assert.strictEqual(button.className, "button");
-        assert.strictEqual(badge.className, "mc-badge");
-        assert.ok(chatCssSource.includes(".mail-chat .mc-actions{display:flex"));
-        assert.ok(chatCssSource.includes(".mail-chat .mc-badge{"));
-        assert.ok(chatCssSource.includes(".mail-chat .button:disabled{opacity:.45"));
-        assert.ok(chatCssSource.includes("outline:2px solid #3b82f6"));
+        assert.doesNotMatch(actions.innerHTML, /style=/);
+        gate.resolve(accessPayload(1, "READ"));
+        await settle(ctx);
+        assert.equal(select.value, "READ");
+        assert.equal(select.disabled, false);
+        assert.equal(grantError(ctx.host).hidden, true);
     });
 
-    it("container id 与文案矩阵在真实源码中唯一（无第二套文案）", () => {
-        assert.ok(chatSource.includes('data-action="mc-toggle-user1-read-access"'));
-        assert.ok(chatSource.includes('data-role="mc-user1-read-access-status"'));
-        assert.ok(chatSource.includes("授权状态加载中…"));
-        assert.ok(chatSource.includes("取消 user1 授权"));
-        assert.ok(chatSource.includes("授权 user1 查看"));
-        assert.ok(chatSource.includes("user1：可查看"));
-        assert.ok(chatSource.includes("user1：未授权"));
-        assert.ok(chatSource.includes("user1：授权操作失败，请重试"));
-        assert.ok(chatSource.includes("重试授权状态"));
+    it("NONE → READ → FULL → NONE：固定目标、明确body，只有撤权使用DELETE", async () => {
+        const ctx = await boot();
+        selectPerson(ctx.host, 1); await settle(ctx);
+        for (const level of ["READ", "FULL", "NONE"]) {
+            setLevel(ctx, level); await settle(ctx);
+            assert.equal(grantSelect(ctx.host).value, level);
+            assert.equal(grantSelect(ctx.host).disabled, false);
+        }
+        const writes = grantRequests(ctx).filter(entry => entry.method !== "GET");
+        assert.deepEqual(writes.map(entry => [entry.url, entry.method]), [
+            [grantUrl(1), "PUT"], [grantUrl(1), "PUT"], [grantUrl(1), "DELETE"]
+        ]);
+        assert.deepEqual(writes.slice(0, 2).map(entry => JSON.parse(entry.body)), [
+            { accessLevel: "READ" }, { accessLevel: "FULL" }
+        ]);
+        assert.equal(writes[2].body, undefined);
+        assert.equal(ctx.access[1], "NONE");
     });
-});
 
-// ════════════════════════════════════════════════════════════════════════
-// I-1：仅 admin 渲染；目标捕获于点击时
-// ════════════════════════════════════════════════════════════════════════
+    it("保存期间禁用并保持确认等级；重复change只产生一次写入", async () => {
+        const gate = deferred();
+        const ctx = await boot({ access: { 1: "READ" }, route: (url, method, body, next) =>
+            url === grantUrl(1) && method === "PUT" ? gate.promise : next(url, method, body) });
+        selectPerson(ctx.host, 1); await settle(ctx);
+        setLevel(ctx, "FULL"); setLevel(ctx, "FULL"); await flush();
+        assert.equal(grantSelect(ctx.host).disabled, true);
+        assert.equal(grantSelect(ctx.host).value, "READ");
+        assert.equal(grantRequests(ctx).filter(entry => entry.method === "PUT").length, 1);
+        gate.resolve(accessPayload(1, "FULL")); await settle(ctx);
+        assert.equal(grantSelect(ctx.host).value, "FULL");
+        assert.equal(grantSelect(ctx.host).disabled, false);
+    });
 
-describe("04 I-1：身份与目标不能错位", () => {
-    it("非 admin（reader/未知身份）不渲染入口、零 grant 请求，伪造按钮也不发请求", async () => {
+    it("保存失败回滚已确认等级并行内报错，不自动重试或发送邮件", async () => {
+        const ctx = await boot({ access: { 1: "READ" }, route: (url, method, body, next) =>
+            url === grantUrl(1) && method === "PUT" ? Promise.reject(new Error("offline")) : next(url, method, body) });
+        selectPerson(ctx.host, 1); await settle(ctx);
+        setLevel(ctx, "FULL"); await settle(ctx);
+        assert.equal(grantSelect(ctx.host).value, "READ");
+        assert.equal(grantSelect(ctx.host).disabled, false);
+        assert.equal(grantError(ctx.host).hidden, false);
+        assert.match(grantError(ctx.host).textContent, /保存失败/);
+        assert.deepEqual(grantMethods(ctx), ["GET", "PUT"]);
+        assert.equal(ctx.access[1], "READ");
+        assert.ok(!ctx.requests.some(entry => /rich-reply|\/send$/.test(entry.url)));
+    });
+
+    it("加载失败保持不可写，刷新只重新GET而非重发写入", async () => {
+        let count = 0;
+        const ctx = await boot({ route: (url, method, body, next) => {
+            if (url === grantUrl(1) && method === "GET" && ++count === 1) return Promise.reject(new Error("offline"));
+            return next(url, method, body);
+        } });
+        selectPerson(ctx.host, 1); await settle(ctx);
+        assert.equal(grantSelect(ctx.host).disabled, true);
+        assert.match(grantError(ctx.host).textContent, /加载失败/);
+        await ctx.api.refreshFromHost(); await settle(ctx);
+        assert.equal(grantSelect(ctx.host).disabled, false);
+        assert.equal(grantSelect(ctx.host).value, "NONE");
+        assert.ok(grantMethods(ctx).every(method => method === "GET"));
+    });
+
+    it("非法、不一致或错目标响应不能升级权限", async () => {
+        const valid = accessPayload(1, "FULL");
+        for (const payload of [
+            Object.assign({}, valid, { username: "admin" }),
+            Object.assign({}, valid, { contactId: 2 }),
+            Object.assign({}, valid, { canRead: "yes" }),
+            Object.assign({}, valid, { accessLevel: "ADMIN" }),
+            Object.assign({}, valid, { canRead: false })
+        ]) {
+            const ctx = await boot({ route: (url, method, body, next) =>
+                url === grantUrl(1) && method === "GET" ? Promise.resolve(payload) : next(url, method, body) });
+            selectPerson(ctx.host, 1); await settle(ctx);
+            assert.equal(grantSelect(ctx.host).disabled, true, JSON.stringify(payload));
+            assert.equal(grantError(ctx.host).hidden, false);
+        }
+    });
+
+    it("PUT不一致回包按失败回滚，不画成成功", async () => {
+        const ctx = await boot({ access: { 1: "READ" }, route: (url, method, body, next) =>
+            url === grantUrl(1) && method === "PUT" ? Promise.resolve(accessPayload(1, "NONE")) : next(url, method, body) });
+        selectPerson(ctx.host, 1); await settle(ctx);
+        setLevel(ctx, "FULL"); await settle(ctx);
+        assert.equal(grantSelect(ctx.host).value, "READ");
+        assert.equal(grantError(ctx.host).hidden, false);
+    });
+
+    it("非admin不渲染授权入口；伪造select不产生授权请求", async () => {
         for (const username of ["user1", "console"]) {
             const ctx = await boot({ authMe: { authenticated: true, username } }, { sessionUser: username });
-            selectPerson(ctx.host, 1);
-            await settle(ctx);
-
-            assert.strictEqual(grantButton(ctx.host), null, `${username} 不得出现授权按钮`);
-            assert.strictEqual(grantBadge(ctx.host), null, `${username} 不得出现授权徽标`);
-            assert.strictEqual(grantRequests(ctx).length, 0);
-
-            const actions = actionsEl(ctx.host);
-            actions.insertAdjacentHTML("beforeend",
-                '<button class="button" data-action="mc-toggle-user1-read-access" data-contact-id="1">伪造</button>');
-            click(grantButton(ctx.host));
-            await flush();
-            assert.strictEqual(grantRequests(ctx).length, 0, `${username} 伪造点击不得触发授权请求`);
+            selectPerson(ctx.host, 1); await settle(ctx);
+            assert.equal(grantSelect(ctx.host), null);
+            assert.equal(grantRequests(ctx).length, 0);
+            actionsEl(ctx.host).insertAdjacentHTML("beforeend", '<select data-action="mc-set-user1-access" data-contact-id="1"><option value="FULL">伪造</option></select>');
+            setLevel(ctx, "FULL"); await settle(ctx);
+            assert.equal(grantRequests(ctx).length, 0);
         }
     });
 
-    it("点击请求的 URL 固定为点击时的专家 + 目标 user1", async () => {
-        const ctx = await boot({ access: { 1: false } });
-        selectPerson(ctx.host, 1);
-        await settle(ctx);
-        click(grantButton(ctx.host));
-        await settle(ctx);
-        const writes = grantRequests(ctx).filter((entry) => entry.method !== "GET");
-        assert.strictEqual(writes.length, 1);
-        assert.strictEqual(writes[0].url, grantUrl(1));
-        assert.strictEqual(writes[0].body, undefined, "不得在请求体里携带 actor/role/user");
-    });
-});
-
-// ════════════════════════════════════════════════════════════════════════
-// I-2：服务端状态为准
-// ════════════════════════════════════════════════════════════════════════
-
-describe("04 I-2：只显示服务端返回的 canRead", () => {
-    it("GET false → PUT true → DELETE false 闭环", async () => {
-        const ctx = await boot({ access: { 1: false } });
-        selectPerson(ctx.host, 1);
-        await settle(ctx);
-        assert.deepStrictEqual(grantMethods(ctx), ["GET"]);
-        assert.strictEqual(grantButton(ctx.host).textContent, "授权 user1 查看");
-
-        click(grantButton(ctx.host));
-        await settle(ctx);
-        assert.deepStrictEqual(grantMethods(ctx), ["GET", "PUT"]);
-        let button = grantButton(ctx.host);
-        assert.strictEqual(button.textContent, "取消 user1 授权");
-        assert.strictEqual(button.disabled, false);
-        assert.strictEqual(grantBadge(ctx.host).textContent, "user1：可查看");
-
-        click(button);
-        await settle(ctx);
-        assert.deepStrictEqual(grantMethods(ctx), ["GET", "PUT", "DELETE"]);
-        button = grantButton(ctx.host);
-        assert.strictEqual(button.textContent, "授权 user1 查看");
-        assert.strictEqual(button.disabled, false);
-        assert.strictEqual(grantBadge(ctx.host).textContent, "user1：未授权");
-    });
-
-    it("在途写入：保存中… + 保留上次确认徽标 + 禁用；双击只有一笔在途写", async () => {
+    it("A慢GET切B，迟到A不能覆盖B；回A必须重新读取", async () => {
         const gate = deferred();
-        const ctx = mountChat({
-            access: { 1: false },
-            route: (url, method, body, next) => (method === "PUT" && /\/read-access\/user1$/.test(url))
-                ? gate.promise
-                : next(url, method, body)
-        });
-        await settle(ctx);
-        selectPerson(ctx.host, 1);
-        await settle(ctx);
-
-        const button = grantButton(ctx.host);
-        click(button);
-        click(button);
-        await flush();
-        assert.strictEqual(grantRequests(ctx).filter((entry) => entry.method === "PUT").length, 1, "双击只允许一笔在途写");
-        assert.strictEqual(button.textContent, "保存中…");
-        assert.strictEqual(button.disabled, true);
-        assert.strictEqual(grantBadge(ctx.host).textContent, "user1：未授权", "保存期间保留上次已确认文字");
-
-        gate.resolve({ username: "user1", contactId: 1, canRead: true });
-        await flush();
-        assert.strictEqual(button.textContent, "取消 user1 授权");
-        assert.strictEqual(button.disabled, false);
-        assert.strictEqual(grantBadge(ctx.host).textContent, "user1：可查看");
+        let reads = 0;
+        const ctx = await boot({ access: { 1: "READ", 2: "FULL" }, route: (url, method, body, next) =>
+            url === grantUrl(1) && method === "GET" && ++reads === 1 ? gate.promise : next(url, method, body) });
+        selectPerson(ctx.host, 1); await flush();
+        selectPerson(ctx.host, 2); await settle(ctx);
+        assert.equal(grantSelect(ctx.host).value, "FULL");
+        gate.resolve(accessPayload(1, "NONE")); await settle(ctx);
+        assert.equal(grantSelect(ctx.host).dataset.contactId, "2");
+        assert.equal(grantSelect(ctx.host).value, "FULL");
+        selectPerson(ctx.host, 1); await settle(ctx);
+        assert.equal(grantSelect(ctx.host).value, "READ");
+        assert.equal(reads, 2);
     });
 
-    it("读取失败进入重试态；重试只重新 GET，不重发写入", async () => {
-        let getCalls = 0;
-        const ctx = await boot({
-            route: (url, method, body, next) => {
-                if (!/\/read-access\/user1$/.test(url)) return next(url, method, body);
-                if (method !== "GET") return next(url, method, body);
-                getCalls += 1;
-                if (getCalls === 1) return Promise.reject(new Error("offline"));
-                return next(url, method, body);
-            }
-        });
-        selectPerson(ctx.host, 1);
-        await settle(ctx);
-
-        let button = grantButton(ctx.host);
-        assert.strictEqual(button.textContent, "重试授权状态");
-        assert.strictEqual(button.disabled, false);
-        assert.strictEqual(grantBadge(ctx.host).textContent, "user1：授权操作失败，请重试");
-
-        click(button);
-        await settle(ctx);
-        assert.deepStrictEqual(grantMethods(ctx), ["GET", "GET"], "失败重试只能重新 GET");
-        button = grantButton(ctx.host);
-        assert.strictEqual(button.textContent, "授权 user1 查看");
-        assert.strictEqual(grantBadge(ctx.host).textContent, "user1：未授权");
+    it("A写入在途切B，保存仍落A且回包不画到B", async () => {
+        const gate = deferred();
+        const ctx = await boot({ access: { 1: "READ", 2: "NONE" }, route: (url, method, body, next) =>
+            url === grantUrl(1) && method === "PUT" ? gate.promise.then(() => next(url, method, body)) : next(url, method, body) });
+        selectPerson(ctx.host, 1); await settle(ctx);
+        setLevel(ctx, "FULL"); await flush();
+        selectPerson(ctx.host, 2); await settle(ctx);
+        gate.resolve(); await settle(ctx);
+        assert.equal(ctx.access[1], "FULL");
+        assert.equal(grantSelect(ctx.host).dataset.contactId, "2");
+        assert.equal(grantSelect(ctx.host).value, "NONE");
+        selectPerson(ctx.host, 1); await settle(ctx);
+        assert.equal(grantSelect(ctx.host).value, "FULL");
     });
 
-    it("写入失败不乐观翻转，且只能 GET 重试", async () => {
-        const ctx = await boot({
-            route: (url, method, body, next) => (method === "PUT" && /\/read-access\/user1$/.test(url))
-                ? Promise.reject(new Error("网络不可用"))
-                : next(url, method, body)
-        });
-        selectPerson(ctx.host, 1);
-        await settle(ctx);
-        click(grantButton(ctx.host));
-        await settle(ctx);
-
-        let button = grantButton(ctx.host);
-        assert.strictEqual(button.textContent, "重试授权状态");
-        assert.strictEqual(grantBadge(ctx.host).textContent, "user1：授权操作失败，请重试");
-        assert.strictEqual(grantButton(ctx.host).disabled, false);
-
-        click(button);
-        await settle(ctx);
-        assert.deepStrictEqual(grantMethods(ctx), ["GET", "PUT", "GET"], "失败后点击只能是 GET 重试");
-        assert.strictEqual(grantButton(ctx.host).textContent, "授权 user1 查看", "服务端仍为未授权");
-    });
-
-    it("回包形状不匹配（username/contactId/canRead）视为错误，不显示成功", async () => {
-        const cases = [
-            { username: "admin", contactId: 1, canRead: true },
-            { username: "user1", contactId: 2, canRead: true },
-            { username: "user1", contactId: 1, canRead: "yes" }
-        ];
-        for (const payload of cases) {
-            const ctx = await boot({
-                route: (url, method, body, next) => (/\/read-access\/user1$/.test(url) && method === "GET")
-                    ? Promise.resolve(payload)
-                    : next(url, method, body)
-            });
-            selectPerson(ctx.host, 1);
-            await settle(ctx);
-            assert.strictEqual(grantButton(ctx.host).textContent, "重试授权状态", JSON.stringify(payload));
-            assert.strictEqual(grantBadge(ctx.host).textContent, "user1：授权操作失败，请重试");
+    it("unmount后GET/PUT迟到都不能恢复节点", async () => {
+        for (const pending of ["GET", "PUT"]) {
+            const gate = deferred();
+            const ctx = await boot({ access: { 1: "READ" }, route: (url, method, body, next) =>
+                url === grantUrl(1) && method === pending ? gate.promise : next(url, method, body) });
+            selectPerson(ctx.host, 1); await settle(ctx);
+            if (pending === "PUT") setLevel(ctx, "FULL");
+            await flush(); ctx.api.unmount();
+            gate.resolve(accessPayload(1, "FULL")); await settle(ctx);
+            assert.equal(ctx.host.innerHTML, "");
+            assert.equal(grantSelect(ctx.host), null);
         }
     });
-
-    it("PUT 回包 canRead 与预期不符视为错误", async () => {
-        const ctx = await boot({
-            access: { 1: false },
-            route: (url, method, body, next) => (method === "PUT" && /\/read-access\/user1$/.test(url))
-                ? Promise.resolve({ username: "user1", contactId: 1, canRead: false })
-                : next(url, method, body)
-        });
-        selectPerson(ctx.host, 1);
-        await settle(ctx);
-        click(grantButton(ctx.host));
-        await settle(ctx);
-        assert.strictEqual(grantButton(ctx.host).textContent, "重试授权状态");
-        assert.strictEqual(grantBadge(ctx.host).textContent, "user1：授权操作失败，请重试");
-    });
 });
-
-// ════════════════════════════════════════════════════════════════════════
-// I-3：跨专家异步结果隔离
-// ════════════════════════════════════════════════════════════════════════
-
-describe("04 I-3：快切专家/卸载/身份", () => {
-    it("A 慢 GET 后切 B：A 回包不覆盖 B；回 A 重新 GET", async () => {
-        const gates = { 1: deferred(), 2: deferred() };
-        const ctx = mountChat({
-            route: (url, method, body, next) => {
-                const match = url.match(/^\/api\/mail\/mailbox\/conversations\/(\d+)\/read-access\/user1$/);
-                if (match && method === "GET") return gates[Number(match[1])].promise;
-                return next(url, method, body);
-            }
-        });
-        await settle(ctx);
-        selectPerson(ctx.host, 1);
-        await flush();
-        selectPerson(ctx.host, 2);
-        await flush();
-
-        gates[2].resolve({ username: "user1", contactId: 2, canRead: true });
-        await flush();
-        assert.strictEqual(grantButton(ctx.host).getAttribute("data-contact-id"), "2");
-        assert.strictEqual(grantButton(ctx.host).textContent, "取消 user1 授权");
-        assert.strictEqual(grantBadge(ctx.host).textContent, "user1：可查看");
-
-        gates[1].resolve({ username: "user1", contactId: 1, canRead: false });
-        await flush();
-        assert.strictEqual(grantButton(ctx.host).getAttribute("data-contact-id"), "2", "迟到的 A 回包不得改写 B");
-        assert.strictEqual(grantButton(ctx.host).textContent, "取消 user1 授权");
-        assert.strictEqual(grantBadge(ctx.host).textContent, "user1：可查看");
-
-        selectPerson(ctx.host, 1);
-        await flush();
-        assert.strictEqual(grantButton(ctx.host).getAttribute("data-contact-id"), "1");
-        assert.strictEqual(grantButton(ctx.host).textContent, "授权 user1 查看");
-        assert.strictEqual(grantRequests(ctx).length, 3, "回到 A 必须重新 GET 最新状态");
-    });
-
-    it("A 写入在途时切 B：写入仍落到 A，B 显示自己的状态", async () => {
-        const gate = deferred();
-        let ctx = null;
-        ctx = mountChat({
-            access: { 1: false, 2: false },
-            route: (url, method, body, next) => (method === "PUT" && /\/read-access\/user1$/.test(url))
-                ? gate.promise.then((value) => { ctx.access[1] = value.canRead; return value; })
-                : next(url, method, body)
-        });
-        await settle(ctx);
-        selectPerson(ctx.host, 1);
-        await settle(ctx);
-        click(grantButton(ctx.host));
-        await flush();
-
-        selectPerson(ctx.host, 2);
-        await settle(ctx);
-        assert.strictEqual(grantButton(ctx.host).getAttribute("data-contact-id"), "2");
-        assert.strictEqual(grantButton(ctx.host).textContent, "授权 user1 查看");
-
-        gate.resolve({ username: "user1", contactId: 1, canRead: true });
-        await settle(ctx);
-        const writes = grantRequests(ctx).filter((entry) => entry.method !== "GET");
-        assert.strictEqual(writes.length, 1);
-        assert.strictEqual(writes[0].url, grantUrl(1), "写入目标仍是点击时的 A");
-        assert.strictEqual(grantButton(ctx.host).getAttribute("data-contact-id"), "2");
-        assert.strictEqual(grantButton(ctx.host).textContent, "授权 user1 查看", "A 的写入结果不得画到 B");
-
-        selectPerson(ctx.host, 1);
-        await settle(ctx);
-        assert.strictEqual(grantButton(ctx.host).textContent, "取消 user1 授权", "回 A 重新 GET 得到最新状态");
-    });
-
-    it("unmount 后的迟到回包不创建/更新节点", async () => {
-        const gate = deferred();
-        const ctx = mountChat({
-            route: (url, method, body, next) => (/\/read-access\/user1$/.test(url) && method === "GET")
-                ? gate.promise
-                : next(url, method, body)
-        });
-        await settle(ctx);
-        selectPerson(ctx.host, 1);
-        await flush();
-        ctx.api.unmount();
-        gate.resolve({ username: "user1", contactId: 1, canRead: true });
-        await settle(ctx);
-        assert.strictEqual(ctx.host.innerHTML, "");
-        assert.strictEqual(grantButton(ctx.host), null);
-    });
-});
-
-// ════════════════════════════════════════════════════════════════════════
-// I-4：原 header 行为、资源版本与 reader 隔离
-// ════════════════════════════════════════════════════════════════════════
 
 describe("04 I-4：原管理行为与资源版本", () => {
-    it("原 header 动作可点击；授权点击不触发草稿/发信/材料等其他请求", async () => {
-        const ctx = await boot({ access: { 1: false } });
-        selectPerson(ctx.host, 1);
-        await settle(ctx);
-
-        click(actionsEl(ctx.host).querySelector('[data-action="mc-open-materials"]'));
-        await settle(ctx);
-        assert.deepStrictEqual(ctx.calls.materials, [1], "原材料入口必须仍可用");
-
-        const before = ctx.requests.length;
-        click(grantButton(ctx.host));
-        await settle(ctx);
-        const newRequests = ctx.requests.slice(before);
-        assert.ok(newRequests.length > 0);
-        newRequests.forEach((entry) => {
-            assert.match(entry.url, /\/read-access\/user1$/, `授权不得触发 ${entry.url}`);
-            assert.doesNotMatch(entry.url, /drafts|send|suspension|follow/);
-        });
-        // 授权后原动作节点未被替换。
-        ORIGINAL_ACTIONS.forEach((action) => {
-            assert.ok(actionsEl(ctx.host).querySelector(`[data-action="${action}"]`), `${action} 必须保留`);
-        });
+    it("原材料入口与授权后的原动作保留，授权本身不发信", async () => {
+        const ctx = await boot();
+        selectPerson(ctx.host, 1); await settle(ctx);
+        click(actionsEl(ctx.host).querySelector('[data-action="mc-open-materials"]')); await settle(ctx);
+        assert.deepEqual(ctx.calls.materials, [1]);
+        setLevel(ctx, "FULL"); await settle(ctx);
+        ORIGINAL_ACTIONS.forEach(action => assert.ok(actionsEl(ctx.host).querySelector(`[data-action="${action}"]`)));
+        assert.ok(!ctx.requests.some(entry => /rich-reply|\/send$/.test(entry.url)));
     });
 
     it("index.html 本地资源统一缓存键且 mailbox-readonly.js 仍紧邻 app.js", () => {

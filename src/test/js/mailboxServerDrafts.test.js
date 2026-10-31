@@ -495,6 +495,7 @@ describe("server drafts I-3: real app navigation and logout closures", () => {
         mobile.value = "mailbox";
         const sandbox = {
             document: doc,
+            CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
             state: { view: "mailbox", monitoring: { autoRefreshTimer: null, loadSeq: 0, activitySeq: 0, openTracking: { requestSeq: 0, settingsSeq: 0 } } },
             viewMeta: { mailbox: ["Mailbox", "Mail"], contacts: ["Contacts", "Experts"], tasks: ["Tasks", "Jobs"] },
             mobileContactPresentation: { generation: 0 },
@@ -518,6 +519,8 @@ describe("server drafts I-3: real app navigation and logout closures", () => {
             location: { reload: () => calls.push(["reload"]) }
         };
         vm.createContext(sandbox);
+        vm.runInContext("let unmatchedBadgeRefreshSeq = 0;", sandbox);
+        vm.runInContext(H.extractFn("publishMailboxPendingBadge", appSource), sandbox);
         for (const name of ["flushMailboxChatDrafts", "setView", "bindAuthEvents"]) vm.runInContext(H.extractFn(name, appSource), sandbox);
         sandbox.bindAuthEvents();
         return { sandbox, calls, logout: () => [...doc.getElementById("logoutBtn").listeners.get("click")][0](), host, mobile };
@@ -749,5 +752,35 @@ describe("review I-20: original server draft ownership", () => {
         ctx.sandbox.MailboxChat.unmount(ctx.host);
         await H.flush();
         assert.equal(read(server).content.text, "Admin original A");
+    });
+});
+
+describe("review editor preserves original server draft ownership", () => {
+    it("waits for original in-flight save and never persists review body through autosave/unmount", async () => {
+        const server = H.createDraftServer();
+        const review = { id: 11, contactId: 1, ownerUsername: "user1", version: 2, state: "SUBMITTED",
+            html: "<p>Review B</p>", text: "Review B", subject: "Review", sendStatus: "NOT_SENT" };
+        const ctx = await boot(server, { route(url, method, body, entry, next) {
+            if (url.startsWith("/api/mail/mailbox/review-drafts?")) return Promise.resolve({ items: [review], total: 1 });
+            if (url === "/api/mail/mailbox/review-drafts/11") return Promise.resolve(review);
+            return next(url, method, body);
+        } });
+        type(ctx, "Admin A");
+        const hold = firstHold(server);
+        const selector = ctx.host.querySelector('[data-role="review-selection"]');
+        selector.value = "review:11";
+        selector.dispatchEvent({ type: "change", bubbles: true });
+        await H.flush();
+        assert.equal(ctx.host.querySelector('[data-role="review-context"]').hidden, true);
+        hold.release(); await H.flush();
+        assert.ok(ctx.host.querySelector('[data-role="review-context"]'));
+        assert.match(editor(ctx).textContent, /Review B/);
+        H.inputEvent(editor(ctx));
+        await ctx.api.flushDrafts();
+        assert.equal(read(server).content.text, "Admin A");
+        const count = puts(server).length;
+        ctx.sandbox.MailboxChat.unmount(ctx.host); await H.flush();
+        assert.equal(puts(server).length, count);
+        assert.equal(read(server).content.text, "Admin A");
     });
 });

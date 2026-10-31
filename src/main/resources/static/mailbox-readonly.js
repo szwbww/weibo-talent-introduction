@@ -1,8 +1,8 @@
 /*
- * Restricted reader mailbox and explicit review drafts.
- * No admin workbench, sending, attachment or translation capabilities.
- * All draft content lives only in this mounted instance; ownership and request
- * epochs isolate every response. History mail stays text-only.
+ * Restricted mailbox: READ review drafts, FULL delegated conversation.
+ * The independent list never enters the administrator bootstrap.
+ * All content lives only in the mounted instance; ownership and request
+ * epochs isolate every response. READ history mail stays text-only.
  */
 (function (global) {
     "use strict";
@@ -104,6 +104,41 @@
         return merged;
     }
 
+    function appendExpertTags(doc, parent, tags) {
+        if (!Array.isArray(tags)) {
+            parent.appendChild(statusNode(doc, "mc-note", "标签暂不可用"));
+            return;
+        }
+        if (!tags.length) return;
+        var row = makeNode(doc, "div", "mc-tag-row");
+        row.dataset.role = "readonly-expert-tags";
+        tags.forEach(function (tag) {
+            var value = String(tag == null ? "" : tag);
+            var label = typeof expertTagLabels !== "undefined" && expertTagLabels &&
+                Object.prototype.hasOwnProperty.call(expertTagLabels, value) ? expertTagLabels[value] : value;
+            var chip = makeNode(doc, "span", "expert-tag");
+            setText(chip, label);
+            chip.setAttribute("title", label);
+            row.appendChild(chip);
+        });
+        parent.appendChild(row);
+    }
+
+    function appendMailTags(doc, parent, message) {
+        if (!message || message.source !== "INBOUND_PROCESSING" ||
+                !Array.isArray(message.tags) || !message.tags.length) return;
+        var row = makeNode(doc, "div", "mc-tag-row");
+        row.dataset.role = "readonly-mail-tags";
+        message.tags.forEach(function (tag) {
+            var className = "inbound-tag-chip " + (tag && tag.tagType === "QA" ? "qa" : "custom");
+            if (tag && tag.active === false) className += " inactive";
+            var chip = makeNode(doc, "span", className);
+            setText(chip, tag && tag.label);
+            row.appendChild(chip);
+        });
+        parent.appendChild(row);
+    }
+
     function createInstance(host, options) {
         var doc = host.ownerDocument || global.document;
         var api = options.api;
@@ -128,6 +163,15 @@
         var detailHasMore = false;
         var detailStatus = "idle"; // idle | loading | loadingOlder | ready | forbidden | error
         var detailSeq = 0;
+        var delegated = null;
+        var pendingOnly = false;
+        var pendingTotal = null;
+        var pendingSeq = 0;
+
+        function releaseDelegated() {
+            if (delegated) delegated.unmount();
+            delegated = null;
+        }
 
         // ---- S-1 DOM 骨架（静态壳一次构建，动态文案全部 textContent） ----------------
         var root = makeNode(doc, "div", "mail-chat");
@@ -151,6 +195,15 @@
         tools.appendChild(searchRow);
         tools.appendChild(refreshButton);
         tools.appendChild(note);
+        var scopes = makeNode(doc, "div", "mc-filters");
+        scopes.setAttribute("aria-label", "专家会话范围");
+        var allButton = buttonNode(doc, "reader-all", "全部", "mc-filter");
+        var pendingButton = buttonNode(doc, "reader-pending", "待处理 ", "mc-filter");
+        var pendingCount = makeNode(doc, "span", "mailbox-suspend-count");
+        pendingCount.dataset.role = "reader-pending-experts";
+        pendingButton.appendChild(pendingCount);
+        scopes.appendChild(allButton); scopes.appendChild(pendingButton);
+        tools.appendChild(scopes);
 
         var expertList = makeNode(doc, "div", "mc-expert-list");
 
@@ -186,6 +239,11 @@
 
         root.appendChild(aside);
         root.appendChild(conversation);
+        var delegatedHost = makeNode(doc, "div");
+        function restoreReadDetail() {
+            releaseDelegated();
+            if (delegatedHost.parentNode) delegatedHost.parentNode.replaceChild(conversation, delegatedHost);
+        }
 
         // Persistent composer: timeline refresh never replaces its native editing range.
         var REVIEW_PATH = "/api/mail/mailbox/review-drafts";
@@ -245,9 +303,9 @@
         var submitButton = reviewButton(actions, "submit", "提交审核", "button primary");
         var reloadButton = reviewButton(actions, "reload", "重新加载");
 
-        function pending() { return revision !== savedRevision || Boolean(saving); }
+        function pending() { return delegated ? delegated.hasPendingDrafts() : revision !== savedRevision || Boolean(saving); }
         function editable() {
-            return Boolean(draft && !draft.deleted && !denied && !conflict && sanitizer
+            return Boolean(draft && !draft.deleted && !denied && detailStatus === "ready" && !conflict && sanitizer
                 && (draft.state === "DRAFT" || draft.state === "RETURNED"));
         }
         function reviewContext() {
@@ -269,7 +327,7 @@
             return { DRAFT: "未提交", RETURNED: "已退回", SUBMITTED: "已提交", APPROVED: "已审核" }[item && item.state] || "暂无草稿";
         }
         function renderReview() {
-            review.hidden = !selected || denied;
+            review.hidden = !selected || denied || detailStatus !== "ready";
             historyPanel.hidden = panel !== "history";
             discussion.hidden = panel !== "comments" && panel !== "events";
             historyButton.setAttribute("aria-expanded", String(panel === "history"));
@@ -301,10 +359,12 @@
             showReviewError(""); renderReview();
         }
         function revokeAccess() {
+            restoreReadDetail();
             generation += 1; denied = true; navigationSeq += 1;
             inflight.forEach(function (controller) { controller.abort(); });
             clearDetailBody(); detailSeq += 1; listSeq += 1;
             listItems = []; listTotal = 0; listLoading = false;
+            if (selected) selected.expertTags = [];
             resetReview(); detailStatus = "forbidden"; renderList(); renderConversation();
         }
         function acceptDraft(data, replace) {
@@ -366,6 +426,7 @@
             saving = promise; renderReview(); return promise;
         }
         function flushDrafts() {
+            if (delegated) return delegated.flushDrafts();
             if (!pending()) return Promise.resolve();
             var ctx = reviewContext();
             return saveDraft().then(function () {
@@ -502,6 +563,7 @@
             if (event.target && event.target.closest("[data-review-command]")) event.preventDefault();
         }
         function onReviewClick(event) {
+            if (detailStatus !== "ready" || delegated) return;
             var target = event.target, command = target && target.closest("[data-review-command]");
             if (command) {
                 if (!editable() || busy) return;
@@ -540,6 +602,7 @@
 
         // ---- 请求（AbortController + 15s 超时；signal 沿既有 api 传递） -------------
         function requestJson(path, method, body) {
+            var requestGeneration = generation, requestOwner = selected;
             var controller = new AbortController();
             var timedOut = false;
             var timer = setTimeout(function () {
@@ -565,7 +628,8 @@
                     // 跨 realm 的 Error 不保证 instanceof，保留原始错误对象上的 status/data。
                     var failure = error && typeof error === "object" ? error : new Error(String(error));
                     failure.timedOut = timedOut;
-                    if (!destroyed && (failure.status === 401 || failure.status === 403)) revokeAccess();
+                    if (!destroyed && requestGeneration === generation && requestOwner === selected &&
+                            (failure.status === 401 || failure.status === 403)) revokeAccess();
                     throw failure;
                 });
         }
@@ -585,8 +649,12 @@
         function currentDetailSeq() { return detailSeq; }
 
         function listUrl() {
+            allButton.setAttribute("aria-pressed", String(!pendingOnly));
+            pendingButton.setAttribute("aria-pressed", String(pendingOnly));
+            setText(pendingCount, pendingTotal === null ? "不可用" : pendingTotal);
             var query = "?page=" + encodeURIComponent(String(listPage)) + "&size=" + LIST_PAGE_SIZE;
             if (listQuery) query += "&q=" + encodeURIComponent(listQuery);
+            if (pendingOnly) query += "&pendingOnly=true";
             return LIST_PATH + query;
         }
 
@@ -627,6 +695,12 @@
                 setText(subject, latestSubject(item));
                 main.appendChild(name);
                 main.appendChild(subject);
+                if (Number(item.pendingCount) > 0) {
+                    var count = makeNode(doc, "small");
+                    setText(count, Number(item.pendingCount) + "条待处理");
+                    main.appendChild(count);
+                }
+                appendExpertTags(doc, main, item.expertTags);
                 person.appendChild(main);
                 expertList.appendChild(person);
             });
@@ -642,9 +716,12 @@
         // ---- 会话渲染 --------------------------------------------------------------
         function renderIdentity() {
             setText(identityName, selected ? ((selected.name || "").trim() || "未填写姓名") : "");
+            identity.replaceChildren(identityName);
+            if (selected) appendExpertTags(doc, identity, selected.expertTags);
         }
 
         function renderConversation() {
+            renderReview();
             messages.replaceChildren();
             renderIdentity();
             if (!selected) {
@@ -689,6 +766,7 @@
                 article.appendChild(head);
                 article.appendChild(subject);
                 article.appendChild(body);
+                appendMailTags(doc, article, message);
                 timeline.appendChild(article);
             });
             messages.appendChild(timeline);
@@ -700,6 +778,17 @@
         }
 
         // ---- 读取 ------------------------------------------------------------------
+        function loadPendingCount() {
+            var gen = generation, seq = ++pendingSeq;
+            return requestJson(LIST_PATH + "?page=0&size=1&pendingOnly=true").then(function (data) {
+                if (destroyed || gen !== generation || seq !== pendingSeq) return;
+                pendingTotal = Number.isFinite(Number(data && data.total)) ? Number(data.total) : null;
+                setText(pendingCount, pendingTotal === null ? "不可用" : pendingTotal);
+            }, function () {
+                if (destroyed || gen !== generation || seq !== pendingSeq) return;
+                pendingTotal = null; setText(pendingCount, "不可用");
+            });
+        }
         function loadList() {
             var gen = generation;
             var seq = ++listSeq;
@@ -713,6 +802,18 @@
                 listTotal = normalized.total;
                 listLoading = false;
                 listFailed = false;
+                if (selected) {
+                    listItems.forEach(function (item) {
+                        if (String(item.contactId) !== String(selected.contactId)) return;
+                        Object.assign(selected, item);
+                        if (delegated) {
+                            if (item.accessLevel === "FULL") delegated.applyOptions({ summary: item });
+                            else loadSelectedDetail();
+                        }
+                        selected.expertTags = Array.isArray(item.expertTags) ? item.expertTags.slice() : null;
+                    });
+                    renderIdentity();
+                }
                 renderList();
             }, function (error) {
                 if (isStale(gen, seq, currentListSeq)) return;
@@ -729,6 +830,7 @@
             var gen = generation;
             var seq = ++detailSeq;
             var contactId = selected.contactId;
+            restoreReadDetail();
             // 刷新/重选先清正文：任何失败都不能回退到旧内容（I-3）。
             detailItems = [];
             detailNextBefore = null;
@@ -738,11 +840,35 @@
             return requestJson(detailUrl(contactId)).then(function (data) {
                 if (isStale(gen, seq, currentDetailSeq)) return;
                 if (!selected || String(selected.contactId) !== String(contactId)) return;
+                if (!data || (data.accessLevel !== "READ" && data.accessLevel !== "FULL")) {
+                    detailStatus = "forbidden"; renderConversation(); return;
+                }
+                if (data.accessLevel === "FULL") {
+                    resetReview();
+                    if (!global.MailboxChat || typeof global.MailboxChat.mount !== "function") {
+                        detailStatus = "error"; renderConversation(); return;
+                    }
+                    conversation.parentNode.replaceChild(delegatedHost, conversation);
+                    delegated = global.MailboxChat.mount(delegatedHost, {
+                        mode: "delegated-conversation", contactId: Number(contactId),
+                        sessionUser: sessionUser.username,
+                        summary: Object.assign({}, selected),
+                        onAccessChanged: function () {
+                            if (!destroyed && gen === generation && seq === detailSeq && selected && String(selected.contactId) === String(contactId)) {
+                                restoreReadDetail(); detailStatus = "forbidden"; renderConversation();
+                                scheduleReload();
+                            }
+                        },
+                        onChanged: function () { if (!destroyed) { loadList(); loadPendingCount(); } }
+                    });
+                    return;
+                }
                 detailItems = mergeMessages([], data && data.items);
                 detailNextBefore = data && data.nextBefore ? data.nextBefore : null;
                 detailHasMore = Boolean(data && data.hasMore) && Boolean(detailNextBefore);
                 detailStatus = "ready";
                 renderConversation();
+                renderReview();
                 scrollToLatest();
             }, function (error) {
                 if (isStale(gen, seq, currentDetailSeq)) return;
@@ -792,6 +918,7 @@
         }
 
         function clearSelection() {
+            restoreReadDetail();
             resetReview();
             selected = null;
             detailSeq += 1;
@@ -807,7 +934,11 @@
                     if (String(candidate.contactId) === String(contactId)) item = candidate;
                 });
                 resetReview();
-                selected = { contactId: contactId, name: item ? (item.name || "") : "" };
+                selected = Object.assign({}, item, {
+                    contactId: contactId,
+                    name: item ? (item.name || "") : "",
+                    expertTags: item && Array.isArray(item.expertTags) ? item.expertTags.slice() : null
+                });
                 detailSeq += 1; clearDetailBody();
                 renderList(); renderConversation(); renderReview();
                 return loadSelectedDetail();
@@ -816,7 +947,7 @@
 
         function reloadAll() {
             if (destroyed || denied) return Promise.resolve();
-            var tasks = [loadList()];
+            var tasks = [loadList(), loadPendingCount()];
             if (selected) {
                 tasks.push(loadSelectedDetail());
                 if (draft && !saving && !busy) tasks.push(loadDraft(draft.id, true));
@@ -842,6 +973,12 @@
             var actionNode = target && typeof target.closest === "function" ? target.closest("[data-action]") : null;
             if (!actionNode || !actionNode.dataset) return;
             var action = actionNode.dataset.action;
+            if (action === "reader-all" || action === "reader-pending") {
+                return navigate(function () {
+                    pendingOnly = action === "reader-pending"; listPage = 0;
+                    clearSelection(); return Promise.all([loadList(), loadPendingCount()]);
+                });
+            }
             if (action === "search") {
                 return navigate(function () {
                     listQuery = String(searchInput.value || "").trim(); listPage = 0;
@@ -906,10 +1043,12 @@
             renderList();
             renderConversation();
             loadList();
+            loadPendingCount();
         }
 
         function destroy() {
             if (destroyed) return;
+            restoreReadDetail();
             destroyed = true;
             generation += 1;
             inflight.forEach(function (controller) {
@@ -952,7 +1091,7 @@
                     return flushDrafts().then(scheduleReload);
                 },
                 flushDrafts: flushDrafts,
-                hasPendingDrafts: pending,
+                hasPendingDrafts: function () { return delegated ? delegated.hasPendingDrafts() : pending(); },
                 unmount: function () {
                     unmount(host);
                 }

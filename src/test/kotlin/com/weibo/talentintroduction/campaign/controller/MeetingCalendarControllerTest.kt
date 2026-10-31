@@ -75,6 +75,9 @@ class MeetingCalendarControllerTest {
     @MockBean
     private lateinit var service: MeetingCalendarService
 
+    @MockBean
+    private lateinit var permissionGuard: com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard
+
     @Test
     fun `POST events returns 201 with the stored UTC instants`() {
         stubCreate("2026-09-18T10:00", "2026-09-18T10:30", "https://meet.example/a", "note")
@@ -261,6 +264,8 @@ class MeetingCalendarControllerTest {
 )
 @TestPropertySource(properties = ["talent-introduction.auth.enabled=true"])
 class MeetingCalendarControllerMysqlTest {
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private lateinit var resourceGuard: com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard
 
     @Autowired
     private lateinit var mockMvc: MockMvc

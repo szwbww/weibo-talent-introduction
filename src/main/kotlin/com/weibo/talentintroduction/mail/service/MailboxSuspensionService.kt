@@ -43,7 +43,7 @@ data class MailboxSuspensionRequest(
 )
 
 /**
- * 首次挂起时该专家全球待处理为 0（I-5，409）。
+ * 首次挂起时该专家本人的待处理为 0（I-5，409）。
  *
  * 继承 [IllegalStateException]（面向运营的业务异常；未被 controller 显式捕获时仍映射为 400，
  * 不会落到全局 `Exception` handler 的 500）。controller 在 PUT 边界显式映射为 409。
@@ -57,7 +57,7 @@ class MailboxSuspensionConflictException(message: String) : IllegalStateExceptio
  * username。全部读写为参数化 JDBC（禁止拼接用户输入）。
  *
  * - PUT：[suspend] 先校验/trim 原因长度，再回读已有行（已有行原样返回，不覆盖原因），
- *   无行才校验全球 pending（0 → 409）并 INSERT IGNORE（并发重复只产生一行）。
+ *   无行才校验本人 pending（0 → 409）并 INSERT IGNORE（并发重复只产生一行）。
  * - DELETE：[resume] 只按 Session+contact 删除并回读实时状态；可重复，第二次仍
  *   suspended=false。
  * - 只写新表；不写 expert_contact/expert_follow/expert_replied_dismissal/mail_record/
@@ -86,7 +86,7 @@ class MailboxSuspensionService(
         if (existing.first) {
             return stateOf(contactId, username, suspended = true, reason = existing.second)
         }
-        if (pendingCount(contactId) == 0L) {
+        if (pendingCount(username, contactId) == 0L) {
             throw MailboxSuspensionConflictException("该专家当前没有待处理来信，无法挂起")
         }
         jdbcTemplate.update(
@@ -127,6 +127,12 @@ class MailboxSuspensionService(
               FROM inbound_mail_processing imp
               JOIN mail_sender_account msa ON msa.account_code = imp.sender_account_code
              WHERE imp.process_status = :status
+               AND imp.pending_owner_username = :username
+               AND (:username <> 'user1' OR EXISTS (
+                   SELECT 1 FROM expert_mail_read_access owner_access
+                    WHERE owner_access.username = :username
+                      AND owner_access.expert_contact_id = imp.expert_contact_id
+                      AND owner_access.access_level = 'FULL'))
                AND msa.account_code <> :simulatorCode
                AND NOT EXISTS (
                    SELECT 1 FROM expert_mailbox_suspension ems
@@ -186,7 +192,7 @@ class MailboxSuspensionService(
             contactId = contactId,
             suspended = suspended,
             suspendReason = if (suspended) reason else null,
-            suspensionPendingCount = pendingCount(contactId),
+            suspensionPendingCount = pendingCount(username, contactId),
             followed = progressStatus == MailboxProgressStatus.FOLLOWING,
             progressStatus = progressStatus
         )
@@ -227,7 +233,7 @@ class MailboxSuspensionService(
      * 跨账号真实待处理计数（I-3）：JOIN mail_sender_account 排除不存在账号，显式排除
      * SIMULATOR_NOOP；不带 enabled / 当前账号 / date / q。
      */
-    private fun pendingCount(contactId: Long): Long =
+    private fun pendingCount(username: String, contactId: Long): Long =
         jdbcTemplate.queryForObject(
             """
             SELECT COUNT(*)
@@ -235,10 +241,17 @@ class MailboxSuspensionService(
               JOIN mail_sender_account msa ON msa.account_code = imp.sender_account_code
              WHERE imp.expert_contact_id = :contactId
                AND imp.process_status = :status
+               AND imp.pending_owner_username = :username
+               AND (:username <> 'user1' OR EXISTS (
+                   SELECT 1 FROM expert_mail_read_access owner_access
+                    WHERE owner_access.username = :username
+                      AND owner_access.expert_contact_id = imp.expert_contact_id
+                      AND owner_access.access_level = 'FULL'))
                AND msa.account_code <> :simulatorCode
             """.trimIndent(),
             MapSqlParameterSource()
                 .addValue("contactId", contactId)
+                .addValue("username", username)
                 .addValue("status", PROCESS_STATUS_MANUAL_REVIEW)
                 .addValue("simulatorCode", MailSenderAccountService.SIMULATOR_ACCOUNT_CODE),
             Long::class.java

@@ -179,7 +179,8 @@ class ReplyIdentityControllerTest {
         val protectedMvc = MockMvcBuilders.standaloneSetup(ReplyIdentityController(operations))
             .setControllerAdvice(GlobalExceptionHandler())
             .addInterceptors(com.weibo.talentintroduction.auth.config.AuthInterceptor(
-                mock(com.weibo.talentintroduction.auth.service.AuthService::class.java),com.fasterxml.jackson.databind.ObjectMapper())).build()
+                mock(com.weibo.talentintroduction.auth.service.AuthService::class.java),com.fasterxml.jackson.databind.ObjectMapper(),
+                mock(ExpertMailPermissionGuard::class.java))).build()
         listOf("inspect","defaults-preview").forEach { endpoint ->
             protectedMvc.perform(post("/api/mail/reply-identity/$endpoint").contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isUnauthorized)

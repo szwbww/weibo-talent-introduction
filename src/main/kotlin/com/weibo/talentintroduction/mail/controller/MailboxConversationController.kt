@@ -5,6 +5,7 @@ import com.weibo.talentintroduction.common.controller.ApiErrorResponse
 import com.weibo.talentintroduction.mail.service.ExpertFollowService
 import com.weibo.talentintroduction.mail.service.ExpertRepliedDismissalService
 import com.weibo.talentintroduction.mail.service.MailboxConversationService
+import com.weibo.talentintroduction.mail.service.ExpertMailAccessLevel
 import com.weibo.talentintroduction.mail.service.MailboxProgressStatus
 import com.weibo.talentintroduction.mail.service.MailboxSuspensionConflictException
 import com.weibo.talentintroduction.mail.service.MailboxSuspensionRequest
@@ -91,7 +92,9 @@ data class ConversationItemResponse(
      */
     val progressStatus: MailboxProgressStatus =
         if (followed) MailboxProgressStatus.FOLLOWING else MailboxProgressStatus.NONE,
-    val reviewPendingCount: Long = 0
+    val reviewPendingCount: Long = 0,
+    /** Current user1 grant, also when viewed by admin. Not an admin capability flag. */
+    val accessLevel: ExpertMailAccessLevel = ExpertMailAccessLevel.NONE
 )
 
 /**
@@ -137,7 +140,14 @@ data class ConversationListResponse(
     val total: Long,
     val page: Int,
     val size: Int,
-    val reviewPendingTotal: Long = 0
+    val reviewPendingTotal: Long = 0,
+    @get:com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    val filterCounts: ConversationFilterCounts? = null
+)
+
+data class ConversationFilterCounts(
+    val user1FullExpertCount: Long,
+    val pendingReviewDraftCount: Long
 )
 
 data class ConversationMessageItemResponse(
@@ -176,7 +186,8 @@ data class ConversationMessageItemResponse(
 data class ConversationMessageListResponse(
     val items: List<ConversationMessageItemResponse>,
     val nextBefore: String?,
-    val hasMore: Boolean
+    val hasMore: Boolean,
+    val accessLevel: ExpertMailAccessLevel = ExpertMailAccessLevel.NONE
 )
 
 /**
@@ -219,7 +230,7 @@ class MailboxConversationController(
     private val expertFollowService: ExpertFollowService,
     private val expertRepliedDismissalService: ExpertRepliedDismissalService,
     private val pendingMailOperationService: PendingMailOperationService,
-    // 01 (T2)：独立挂起服务；MailboxConversationService 构造保持不变（I-6）。
+    // Independent suspension service; level projection does not change its behavior.
     private val mailboxSuspensionService: MailboxSuspensionService
 ) {
     @GetMapping
@@ -243,7 +254,8 @@ class MailboxConversationController(
         @RequestParam(defaultValue = "false") suspendedOnly: Boolean,
         /** 01 (T3/I-4)：只看已提供三态标记的专家；默认 false 保持既有调用兼容。 */
         @RequestParam(defaultValue = "false") providedOnly: Boolean,
-        @RequestParam(defaultValue = "false") reviewPendingOnly: Boolean = false
+        @RequestParam(defaultValue = "false") reviewPendingOnly: Boolean = false,
+        @RequestParam(defaultValue = "ALL") expertScope: String = "ALL"
     ): ConversationListResponse = conversationService.listConversations(
         username = sessionUsername(request),
         q = q,
@@ -263,7 +275,8 @@ class MailboxConversationController(
         size = size,
         suspendedOnly = suspendedOnly,
         providedOnly = providedOnly,
-        reviewPendingOnly = reviewPendingOnly
+        reviewPendingOnly = reviewPendingOnly,
+        expertScope = expertScope
     )
 
     @GetMapping("/{contactId}/messages")

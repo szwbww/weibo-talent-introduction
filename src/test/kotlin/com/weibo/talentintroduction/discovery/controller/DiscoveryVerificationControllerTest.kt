@@ -29,7 +29,7 @@ class DiscoveryVerificationControllerTest {
     private val query = DiscoveryVerificationQueryService(repository, admissions, DiscoveryVerificationProperties())
     private val mvc = MockMvcBuilders.standaloneSetup(DiscoveryVerificationController(query))
         .setMessageConverters(MappingJackson2HttpMessageConverter(mapper))
-        .addInterceptors(AuthInterceptor(auth, mapper)).build()
+        .addInterceptors(AuthInterceptor(auth, mapper, mock(com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard::class.java))).build()
     private val base = "/api/expert-discovery/verification"
     private fun session(): MockHttpSession {
         val now = LocalDateTime.now()

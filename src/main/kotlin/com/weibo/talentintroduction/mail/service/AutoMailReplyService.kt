@@ -243,14 +243,9 @@ class AutoMailReplyService(
         // 物理键在本事务前已判重为空，因此同键行只可能是本封新行；仍以当前读确认状态。
         val created = findPhysicalRow(owner, received) ?: return result
         if (created.processStatus != "MANUAL_REVIEW") return result
-        inboundMailProcessingRepository.save(
-            created.copy(
-                processStatus = "PROCESSED",
-                processReason = reason,
-                reasonType = InboundAutoResponseDetector.REASON_TYPE_AUTO_RESPONSE,
-                updatedAt = LocalDateTime.now()
-            )
-        )
+        check(inboundMailProcessingRepository.reclassifyAutoResponse(
+            checkNotNull(created.id), reason, LocalDateTime.now()
+        ) == 1) { "Inbound auto-response changed concurrently" }
         return result.copy(
             outcome = SinglePipelineOutcome.AUTO_RESPONSE_PENDING_EXCLUDED,
             reason = reason
@@ -1489,6 +1484,7 @@ class AutoMailReplyService(
                 processReason = reason,
                 reasonType = reasonType,
                 expertContactId = expertContactId,
+                pendingOwnerUsername = allocatePendingOwner(expertContactId),
                 createdAt = now,
                 updatedAt = now
             )
@@ -1545,6 +1541,7 @@ class AutoMailReplyService(
                 processReason = reason,
                 reasonType = reasonType,
                 expertContactId = expertContactId,
+                pendingOwnerUsername = allocatePendingOwner(expertContactId),
                 createdAt = now,
                 updatedAt = now
             )
@@ -1555,6 +1552,16 @@ class AutoMailReplyService(
             mailAttachmentService.bridgeInboundProcessing(savedId, received.attachments)
         }
         return saved
+    }
+
+    /** processSingleCore already holds this contact lock before either sink or any other write. */
+    private fun allocatePendingOwner(contactId: Long?): String {
+        if (contactId == null) return "admin"
+        return if (inboundMailProcessingRepository.currentPendingAccessLevel(contactId) == "FULL") {
+            "user1"
+        } else {
+            "admin"
+        }
     }
 
     // ------------------------------------------------------------------

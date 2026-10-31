@@ -130,7 +130,7 @@ class MailReviewSendIT {
             mock(ExpertIndexLevelOperationService::class.java),accounts,delivery,records,mock(MailRecordQaRuleRepository::class.java),audit,
             rules,categories,selection,mock(AiReplyDraftService::class.java),context,AiReplyHighRiskClaimValidator(rules),
             MailBodyCleaner(),content,variables,attempts,mock(TrustReplyWorkbenchService::class.java),
-            mock(UnsupportedAnswerIndexService::class.java),suppression,meetings,identity)
+            mock(UnsupportedAnswerIndexService::class.java),suppression,meetings,identity,mock(ExpertMailPermissionGuard::class.java))
         sends = MailReviewSendService(drafts,pending)
         mvc = MockMvcBuilders.standaloneSetup(MailReviewDraftController(drafts,sends)).setControllerAdvice(GlobalExceptionHandler()).build()
     }

@@ -1,0 +1,150 @@
+# 专家分级权限 · 专家资料与标签目标守卫
+
+状态：DRAFT，待批准实施。基线：`main@b15bb069f43f89c45ee6859dba04a0baff5d774d`。仅计划，不代表实现/测试已通过。
+
+证据：[审计总表](expert-access-evidence/audit.md)、[逐字源码E01–E37](expert-access-evidence/source-excerpts.md)、[schema迁移链](expert-access-evidence/schema-chain.md)、[检索收据](expert-access-evidence/store-usage.txt)、[SHA256](expert-access-evidence/sha256.json)。
+
+前置：03；既有draft-review-01/02/03后端已完成并通过各自验证。本文件是可执行边界，先读[总计划](expert-access-master.md)的协议/最终UI与依赖修正。
+
+## 需求描述
+FULL可以修改当前专家人工资料、专家标签和该专家来信标签；READ只能查看。两个子系统：专家资料/ES标签、邮件标签。
+
+必须保持：admin原接口、其他专家无写权限、标签投影、版本冲突校验、READ附件禁止；审核锁规则仍有效。
+
+不做：其他子计划的改动；不加业务表/ES字段；不开放全局搜索、账户与批量操作。
+
+## 关键不变量
+### Invariant I-2: 精确接口与资源权限同时成立
+- Rule: user1仍是user1，仅邮箱导航。认证开启时默认拒绝未列出的HandlerMethod+HTTP method；允许handler后仍查目标专家当前权限。READ只能读授权邮件/标签与审核草稿；FULL只操作该专家。不得按URL前缀、按钮可见性或请求体operatorName授权。管理员授权接口永不向user1放行。
+- Applies to: AuthInterceptor/Policy、目标守卫、body专用校验、app请求闸门
+- Violation consequence: 横向越权或变相全局管理员
+- 来源: K-session-auth-does-not-imply-mail-authorization
+
+### Invariant I-3: 标签可见不等于可写
+- Rule: READ显示summary.expertTags和真实来信tags；空数组不显示占位，expertTags=null显示“标签暂不可用”。全部标签文字转义。READ无新增/删除/自动打标控件，手工调用写API返回403且DB/ES不变；FULL才可改当前专家标签。
+- Applies to: 用户列表、头部、邮件标签、ExpertIndexController、InboundMailSummaryController
+- Violation consequence: 只读用户修改数据或标签丢失
+- 来源: K-expert-tag-editor-shared-render-contract
+
+### Invariant I-4: 由真实实体解析授权对象
+- Rule: processing→contact、mailRecord→contact、tag→processing→contact、attachment三种owner→contact、schedule→contact、草稿owner+target均由DB解析。请求contactId必须与解析结果一致。expertId经现有Normalizer/IdentityResolver规范化后匹配FULL contact的orcid与当前层级；无匹配拒绝。同一专家共享档案/标签不是新增contact邮箱授权。
+- Applies to: 所有新放行详情、编辑、文件与发送入口
+- Violation consequence: 换id访问别人的邮件、附件或资料
+- 来源: K-expert-document-ownership-chain
+
+### Invariant I-8: FULL发送复用现有事务链
+- Rule: FULL可直接人工发送，无需草稿审核；仍复用两个现有rich-reply入口及attempt幂等、附件/锚点归属、安全确认。鉴权位于业务副作用前，服务入口用authenticatedUsername再次校验；请求体operatorName不代表身份，user1审计写session名。已获准开始的SMTP请求不承诺被后续撤权召回；撤权后的新请求403。
+- Applies to: PendingMailOperationService两个入口、旧草稿绑定、下载
+- Violation consequence: 重复发送或绕过安全/资源校验
+- 来源: K-manual-send-success-transaction-and-dedup
+
+### Invariant I-11: 审核是明确依赖，不伪造已实现
+- Rule: READ审核流程沿既有draft-review计划；FULL新人工稿走原mailbox_reply_draft。已提交审核稿不因升级自动发送/自动撤回；已审核稿对user1始终不可改（即使FULL），要发送新内容需新建人工稿。管理员仍在同一富文本框审核/人工回复，审核通过不自动发，批准后对话更新须确认。待审入口只搬进原popover顶部，原admin草稿tab含义不变。
+- Applies to: MailReviewDraftService、两端宿主、pendingReviewOnly查询
+- Violation consequence: 绕过审批锁或把原型当生产功能
+- 来源: original
+
+### Invariant I-13: 不扩大成全局管理
+- Rule: FULL范围为当前专家人工邮件/附件资料/人工档案/标签/备注位置/排期/现有单专家状态管理；全局邮箱账号配置、批量发送、任务/AI训练、模板配置、全局专家搜索、人工接管分派、会议视频库不开放。自动收发/晋级/标签流程不受user1交互授权守卫影响。READ附件仍不可查看下载，邮件正文邮箱不做脱敏承诺。
+- Applies to: 精确路由表、用户宿主菜单、后台任务
+- Violation consequence: 无关功能扩权或后台任务中断
+- 来源: original
+
+## 现状审计
+E13/E14/E16/E30–E34、审计§3/§4/§5。ExpertManualProfileController有catch(Exception)会把权限异常映射500，须在同文件保留明确403。MeetingCalendar新建contactId在body、events查询可省contactId，必须修正user1准入；旧MeetingSchedule不替代本次入口。原mailbox_reply_draft仅owner隔离还不够；审核store依赖原draft-review方案，不能自行新造另一套。X2/X6/X8/X9/X12。
+
+全量读写清单是本计划的组成部分：[审计§1–§5](expert-access-evidence/audit.md)。其中每张表列明schema、显式写者、FK/后台写入、读取与X交互点；未列为本步变更的writer保持原逻辑，不能因grant扩权改变后台任务。
+
+## 实现方案
+1. ExpertIndexController的addTag/removeTag/getExpertProfile按session+规范orcid+真实层级匹配FULL；不放行搜索/聚合。ExpertManualProfileController.get/patch匹配规范expert_key和FULL联系人，保存保留expectedVersion；权限异常明确映射403，不能被本地catch(Exception)转500（I-2/I-3/I-4）。
+2. InboundMailSummaryController.addTag/autoApplyTags/deleteTag按processing或tag真实行找contact再查FULL；创建审计用session。READ继续消费messages.tags，不能调用写接口（I-3/I-4）。
+3. 上述body守卫落地后，MailReadOnlyPolicy才登记这几项精确handler/verb及只读tagOptions；其余仍默认拒绝（I-2/I-13）。
+4. ExpertScopedOperationsIT在本步新增，仅覆盖本步资料/专家标签/邮件标签、403无副作用、version冲突及同一规范专家多contact邮箱不扩权；04b在同文件追加草稿/日历用例（I-2/I-3/I-4）。
+
+本步仅修改以下文件；与其他子计划共享的Auth策略/测试顺序累积，不能覆盖前一步。
+
+## 变更文件清单
+
+| # | 路径 | 工作 |
+|---|---|---|
+| 1 | `src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt` | 本步任务明确的目标守卫/验证；其余原行为保留 |
+| 2 | `src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertManualProfileController.kt` | 本步任务明确的目标守卫/验证；其余原行为保留 |
+| 3 | `src/main/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryController.kt` | 本步任务明确的目标守卫/验证；其余原行为保留 |
+| 4 | `src/main/kotlin/com/weibo/talentintroduction/auth/config/MailReadOnlyPolicy.kt` | 本步任务明确的目标守卫/验证；其余原行为保留 |
+| 5 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertScopedOperationsIT.kt` | 本步任务明确的目标守卫/验证；其余原行为保留 |
+| 6 | `src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexControllerTest.kt` | 必需非空构造/session直调接线，保留原ES解析与错误契约 |
+| 7 | `src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexControllerMvcTest.kt` | MVC必需安全依赖接线，原admin/自动任务不变 |
+| 8 | `src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertManualProfileControllerTest.kt` | 构造/MVC接线，保留缺session401与version/admin/error契约 |
+| 9 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryControllerTest.kt` | MVC必需归属查询/安全依赖接线，保留summary/date/statistics |
+| 10 | `src/test/kotlin/com/weibo/talentintroduction/auth/config/AuthInterceptorTest.kt` | 必需controller依赖接线；精确准入安全矩阵只追加已完成04a方法；退役临时全局tag禁用pin，保留NONE/READ/跨资源403及拒绝零副作用 |
+| 11 | `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt` | 仅修正ExpertIndexController对应noise-site行号，路径/上下文片段/扫描规则不变 |
+
+共11文件；I-14仅为上述6个已证明直接消费fixture及行号守卫授予有界例外，原产品范围不扩大，共享store新增字段0。不得用nullable/default安全依赖或改变scanner片段绕过接线。
+
+## 验收标准
+- I-2：真实AuthWebConfig+MVC逐个运行路由矩阵：NONE/READ/FULL/跨专家/admin；403之前SMTP、ES和文件流读取调用为0；未列端点仍403。
+- I-3：同一专家含ES标签和QA/CUSTOM邮件标签；断言READ可见且不存在编辑/删除节点，直接POST/DELETE均403；空/null/恶意HTML分别验证。
+- I-4：用A的路径搭配B的processing/tag/attachment/schedule/draft/expertId；均无副作用。三种附件owner各测一次，保留原件路径和快照校验。
+- I-8：SMTP mock证明FULL一次发送、READ/NONE/换专家0次；重试/DEDUP_SENT/DELIVERY_UNKNOWN维持原语义；user1审计不是body伪造的admin。
+- I-11：审核四态/评论/历史/退回/撤销与旧方案回归；升级FULL不能改APPROVED；新人工稿可发送；审核通过与确认对话更新均不自动SMTP。
+- I-13：管理员全路径回归；user1无法打开其他tab及全局端点。定时收信与自动标签仍执行，READ附件响应仍空且直链403。
+
+门禁：JDK11 mvn test -Dtest=ExpertScopedOperationsIT -DmysqlIt=true；ExpertManualProfileControllerTest/ServiceTest、原MeetingCalendar测试、MailReviewDraftIT回归。
+追加ExpertIndexControllerTest、ExpertIndexControllerMvcTest、InboundMailSummaryControllerTest、AuthInterceptorTest、OperatorStatusWriteSeamGuardTest原回归；所有相关opt-in显式启用、目标不得skip。原稳定安全/业务断言不削弱；不重新钉死临时全局拒绝或措辞。
+
+测试环境使用隔离MySQL/测试SMTP与临时附件目录；不得把mysqlIt连生产库。跳过/未运行必须记NOT_RUN，不能写PASS。
+
+## 人工验收清单
+### A-1: READ标签可见且不可写
+- 前置条件: 测试库有授权READ专家甲，ES标签“新发现”“瑞典”，一封来信带QA标签“薪资”和CUSTOM标签“补充材料”。
+- 操作步骤:
+  1. user1登录，选甲。
+  2. 查看列表/头部与来信。
+  3. 用同会话请求新增/删除专家标签和邮件标签。
+- 预期结果: 上述四个标签出现在对应区域；无新增/×控件；两类写接口403，admin刷新标签未变；无附件下载按钮。
+- 覆盖: I-2/I-3/I-13/S-1/X2/X8
+
+### A-5: 同专家直接发送及越权拒绝
+- 前置条件: 甲FULL、乙READ、丙未授权；测试SMTP收集器启用；准备各自附件/排期/来信id。
+- 操作步骤:
+  1. user1对甲写人工回复并显式发送。
+  2. 把请求中的来信/附件/锚点/排期id分别换成乙或丙。
+  3. 对乙尝试发送。
+- 预期结果: 甲收到一次测试发送记录；审计user1；越权请求403或既有资源不匹配错误，无新增SMTP/文件内容；乙没有发送能力。
+- 覆盖: I-2/I-4/I-8/X6/X7
+
+### A-7: 资料、标签、排期管理
+- 前置条件: 甲FULL且有currentIndexLevel和有效ORCID；丙未授权；甲人工档案version已记录。
+- 操作步骤:
+  1. user1修改甲人工资料与标签，新增/改期/取消一个测试排期。
+  2. admin回读。
+  3. 用旧version保存，换丙expertId或scheduleId请求。
+- 预期结果: admin看到同一甲资料/标签/排期；旧version409；跨专家无修改；普通保存/改期/取消不发送邮件；user1仍只有收发件箱tab。
+- 覆盖: I-2/I-3/I-4/I-13/X8/X9
+
+### A-11: FULL升级不解锁旧审核稿
+- 前置条件: 甲READ，有UNSUBMITTED/SUBMITTED/RETURNED/APPROVED审核稿各一份。
+- 操作步骤:
+  1. admin升级甲FULL。
+  2. user1打开旧APPROVED稿尝试改删。
+  3. 新建人工稿并在测试SMTP显式发送。
+- 预期结果: APPROVED仍不可改删；SUBMITTED仍待审，不自动发送；FULL新人工稿可以直接发送；降READ后旧人工稿不可再通过发送API绕过审核。
+- 覆盖: I-8/I-11/X7/X12
+
+### A-13: 管理员与自动流程不回归
+- 前置条件: admin现有人工草稿/挂起/筛选与测试自动收信可用；准备禁用真实邮箱和SIMULATOR。
+- 操作步骤:
+  1. admin按原流程保存并发测试草稿、查看附件、筛选挂起。
+  2. 执行测试收信、自动标签、UID补收。
+  3. 查看全局来信汇总及个人待处理。
+- 预期结果: 旧人工草稿/幂等/附件保持；自动流程不因无user1 session失败；禁用真实邮箱邮件仍可见、SIMULATOR不计；全局汇总保留所有人，个人待处理分归属。
+- 覆盖: I-5/I-7/I-8/I-12/I-13/X3/X4/X7
+
+本节为权威清单；进入人工验收时才导出同名前缀-acceptance.md，本次不生成衍生表。涉及尚未到本步的UI，使用同会话API执行等价动作并在最终08再次通过UI验证。
+
+跨阶段人工项引用的其他I/S条款，以总计划同编号定义为准；本步实现仍严格限定本文件清单。
+
+阶段验收说明：人工条目保留跨阶段最终行为；本步先执行其覆盖到的API路径，所有完整UI场景在08再验一次。
+
+## 修正记录
+- 2026-10-30：按用户持续授权，04a非空构造/MVC/session调用和精确准入表消费需要6个原名单外fixture（完整类型/构造/import/直调grep收据及lineguard机制见fast-p children/04a/execution.md Epoch1）。5→11授予仅fixture/原noise-site行号的I-14例外；产品范围不扩大，原稳定NONE/READ/跨资源/admin/version/拒绝副作用契约保留，仅退役被正式精确准入取代的全局tag禁用临时pin。所有新增fixture执行原门禁，修正必须在产品工作前记录/提交。

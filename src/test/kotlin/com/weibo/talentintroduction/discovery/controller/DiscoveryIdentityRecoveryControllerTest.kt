@@ -37,6 +37,8 @@ import java.time.LocalDateTime
 @Import(AuthWebConfig::class, DiscoveryIdentityRecoveryControllerTest.KotlinObjectMapperConfig::class)
 @TestPropertySource(properties = ["talent-introduction.auth.enabled=true"])
 class DiscoveryIdentityRecoveryControllerTest {
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private lateinit var resourceGuard: com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard
 
     @TestConfiguration
     class KotlinObjectMapperConfig {

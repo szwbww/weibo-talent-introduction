@@ -1,6 +1,10 @@
 package com.weibo.talentintroduction.expert.controller
 
 import com.weibo.talentintroduction.auth.config.AuthSessionKeys
+import com.weibo.talentintroduction.auth.config.MailReadAccessDeniedException
+import com.weibo.talentintroduction.auth.config.MailReadOnlyPolicy
+import com.weibo.talentintroduction.expert.service.ExpertIdNormalizer
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import com.weibo.talentintroduction.common.controller.ApiErrorResponse
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertManualProfileGroup
@@ -39,7 +43,10 @@ import javax.servlet.http.HttpServletRequest
  */
 @RestController
 @RequestMapping("/api/experts/manual-profile")
-class ExpertManualProfileController(private val service: ExpertManualProfileService) {
+class ExpertManualProfileController(
+    private val service: ExpertManualProfileService,
+    private val jdbc: NamedParameterJdbcTemplate
+) {
 
     @GetMapping
     fun get(
@@ -47,7 +54,8 @@ class ExpertManualProfileController(private val service: ExpertManualProfileServ
         @RequestParam(required = false) expertId: String?,
         @RequestParam(required = false) level: ExpertIndexLevel?
     ): ResponseEntity<Any> {
-        sessionUsername(request) ?: return unauthorized()
+        val username = sessionUsername(request) ?: return unauthorized()
+        requireFullProfile(username, expertId, level ?: ExpertIndexLevel.RAW)
         return ResponseEntity.ok(service.get(expertId, level ?: ExpertIndexLevel.RAW))
     }
 
@@ -58,8 +66,29 @@ class ExpertManualProfileController(private val service: ExpertManualProfileServ
     ): ResponseEntity<Any> {
         val username = sessionUsername(request) ?: return unauthorized()
         val payload = body ?: throw ExpertManualProfileInvalidRequestException("请求体无效")
-        return ResponseEntity.ok(service.patch(payload.toCommand(), username))
+        val command = payload.toCommand()
+        requireFullProfile(username, command.expertId, command.level)
+        return ResponseEntity.ok(service.patch(command, username))
     }
+
+    private fun requireFullProfile(username: String, expertId: String?, level: ExpertIndexLevel) {
+        if (!MailReadOnlyPolicy.isReader(username)) return
+        val key = ExpertIdNormalizer.normalize(expertId.orEmpty())
+        val identities = jdbc.queryForList(
+            """SELECT c.orcid_id FROM expert_contact c
+               JOIN expert_mail_read_access a ON a.expert_contact_id = c.id
+               WHERE a.username = :username AND a.access_level = 'FULL' AND c.current_index_level = :level
+                 AND UPPER(TRIM(c.orcid_id)) = UPPER(:key)""",
+            mapOf("username" to username, "level" to level.name, "key" to key), String::class.java
+        )
+        if (key.isEmpty() || identities.none { ExpertIdNormalizer.normalize(it) == key }) {
+            throw MailReadAccessDeniedException("MAIL_WRITE_FORBIDDEN", "无权操作该专家的人工档案")
+        }
+    }
+
+    @ExceptionHandler(MailReadAccessDeniedException::class)
+    fun handleForbidden(ex: MailReadAccessDeniedException): ResponseEntity<ApiErrorResponse> =
+        error(HttpStatus.FORBIDDEN, ex.code, ex.message)
 
     @ExceptionHandler(ExpertManualProfileInvalidRequestException::class)
     fun handleInvalidRequest(ex: ExpertManualProfileInvalidRequestException): ResponseEntity<ApiErrorResponse> =

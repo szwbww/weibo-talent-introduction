@@ -1,5 +1,10 @@
 package com.weibo.talentintroduction.expert.controller
 
+import com.weibo.talentintroduction.auth.config.AuthSessionKeys
+import com.weibo.talentintroduction.auth.config.MailReadAccessDeniedException
+import com.weibo.talentintroduction.auth.config.MailReadOnlyPolicy
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
+import javax.servlet.http.HttpServletRequest
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.OperatorStatusReconcileService
 import com.weibo.talentintroduction.discovery.service.DiscoveryPersonDetail
@@ -47,6 +52,7 @@ class ExpertIndexController(
     private val progressStore: TaskProgressStore,
     private val eligibilityFilterService: EligibilityFilterService,
     private val introductionMailComposer: IntroductionMailComposer,
+    private val jdbc: NamedParameterJdbcTemplate,
     // 尾部可空默认参数（照 ManualExpertMailService.mailVariableService 先例）：
     // 生产由 Spring 注入 @Service bean；既有 ExpertIndexControllerTest 以 9 个位置参数直接构造，
     // 加默认值后无需改动该未授权测试文件。端点内 requireNotNull 兜底（生产必非空）。
@@ -287,7 +293,8 @@ class ExpertIndexController(
     }
 
     @PostMapping("/tags/add")
-    fun addTag(@RequestBody request: ExpertTagMutationRequest): TagMutationResult {
+    fun addTag(@RequestBody request: ExpertTagMutationRequest, servletRequest: HttpServletRequest): TagMutationResult {
+        requireFullExpert(servletRequest, request.orcidId, request.level)
         require(request.orcidId.isNotBlank()) { "orcidId is required" }
         require(request.tag.isNotBlank()) { "tag is required" }
         val profile = expertSearchService.findByOrcidId(request.orcidId, request.level)
@@ -301,7 +308,8 @@ class ExpertIndexController(
     }
 
     @PostMapping("/tags/remove")
-    fun removeTag(@RequestBody request: ExpertTagMutationRequest): TagMutationResult {
+    fun removeTag(@RequestBody request: ExpertTagMutationRequest, servletRequest: HttpServletRequest): TagMutationResult {
+        requireFullExpert(servletRequest, request.orcidId, request.level)
         require(request.orcidId.isNotBlank()) { "orcidId is required" }
         require(request.tag.isNotBlank()) { "tag is required" }
         val profile = expertSearchService.findByOrcidId(request.orcidId, request.level)
@@ -359,8 +367,10 @@ class ExpertIndexController(
     @GetMapping("/profile")
     fun getExpertProfile(
         @RequestParam orcidId: String,
-        @RequestParam(defaultValue = "CANDIDATE") level: ExpertIndexLevel
+        @RequestParam(defaultValue = "CANDIDATE") level: ExpertIndexLevel,
+        servletRequest: HttpServletRequest
     ): ExpertProfileTagsResponse {
+        requireFullExpert(servletRequest, orcidId, level)
         require(orcidId.isNotBlank()) { "orcidId is required" }
         val profile = expertSearchService.findByOrcidId(orcidId, level)
         return ExpertProfileTagsResponse(
@@ -373,6 +383,21 @@ class ExpertIndexController(
     // 06：人物口径查询服务仅在注入缺失（既有直接构造测试）时为 null；生产必非空。
     private fun requirePersonQuery(): DiscoveryPersonQueryService =
         requireNotNull(personQueryService) { "DiscoveryPersonQueryService 未注入" }
+    private fun requireFullExpert(request: HttpServletRequest, expertId: String, level: ExpertIndexLevel) {
+        val username = request.getSession(false)?.getAttribute(AuthSessionKeys.USERNAME) as? String
+        if (!MailReadOnlyPolicy.isReader(username)) return
+        val key = ExpertIdNormalizer.normalize(expertId)
+        val identities = jdbc.queryForList(
+            """SELECT c.orcid_id FROM expert_contact c
+               JOIN expert_mail_read_access a ON a.expert_contact_id = c.id
+               WHERE a.username = :username AND a.access_level = 'FULL' AND c.current_index_level = :level
+                 AND UPPER(TRIM(c.orcid_id)) = UPPER(:key)""",
+            mapOf("username" to username, "level" to level.name, "key" to key), String::class.java
+        )
+        if (key.isEmpty() || identities.none { ExpertIdNormalizer.normalize(it) == key }) {
+            throw MailReadAccessDeniedException("MAIL_WRITE_FORBIDDEN", "无权操作该专家的资料或标签")
+        }
+    }
 }
 
 data class ExpertListResponse(

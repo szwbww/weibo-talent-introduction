@@ -105,7 +105,8 @@ class PendingMailOperationServiceTest {
     private val outboundAttachmentService = Mockito.mock(OutboundAttachmentService::class.java)
     private val draftRepository = Mockito.mock(com.weibo.talentintroduction.mail.repository.MailReplyDraftRepository::class.java)
     private val draftService = MailReplyDraftService(draftRepository,expertContactRepository,inboundMailProcessingRepository,
-        Mockito.mock(com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository::class.java),outboundAttachmentService)
+        Mockito.mock(com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository::class.java),outboundAttachmentService,
+        Mockito.mock(ExpertMailPermissionGuard::class.java))
     // 03 (T3/I-1): 真实 01 生成器（validateAndBuild + ICS 字节/语义 hash 全真实），只 mock
     // 模板目录的 listEnabled（启用门禁）—— 不以 mock 返回一模一样硬编码字串替代真实生成。
     private val meetingTemplateService = Mockito.mock(MailComposeTemplateService::class.java)
@@ -142,6 +143,7 @@ class PendingMailOperationServiceTest {
         emailSuppressionService,
         meetingConfirmationService,
         org.mockito.Mockito.mock(ReplyIdentityService::class.java),
+        Mockito.mock(ExpertMailPermissionGuard::class.java),
         outboundAttachmentService = outboundAttachmentService,
         mailReplyDraftService = draftService
     )

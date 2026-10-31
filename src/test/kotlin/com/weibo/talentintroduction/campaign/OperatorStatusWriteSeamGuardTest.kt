@@ -50,7 +50,7 @@ class OperatorStatusWriteSeamGuardTest {
         // javax.servlet.http.HttpServletRequest(:47) 两行，使本噪声行 :219 平移至 :221，path/context 不变。
         // 01b (A3, 行号钉随授权改动平移 +5): 94378f6 重写 markResolved（:171-192，会话身份校验 +
         // MarkResolvedResponse 返回）净增 5 行，使本噪声行 :221 平移至 :226，path/context 不变。
-        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 228, "operatorStatus = request.operatorStatus"),
+        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 236, "operatorStatus = request.operatorStatus"),
         // 响应 DTO 构造：把当前值原样回显到出参 DTO
         // （守卫误报修正：行号登记 1098 → 实际 1099，2026-08-20 人工回复透传新增一行导致偏移；
         //   2026-08-27 取消处理计划新增 CancelResolvedRequest/cancel-resolved endpoint 使 :1099 偏移至 :1116）
@@ -66,7 +66,7 @@ class OperatorStatusWriteSeamGuardTest {
         // 01b (A3, 行号钉随授权改动平移 +11): 94378f6 在同一文件 markResolved 段（:171-192）净增 5 行、
         // MarkResolvedRequest 默认值 + 新增 MarkResolvedResponse（:897-911）净增 6 行，合计使本噪声行
         // :1137 平移至 :1148，path/context 不变。
-        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 1155, "operatorStatus = operatorStatus"),
+        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 1163, "operatorStatus = operatorStatus"),
         // 邮箱汇总响应 DTO 构造：把汇总行字段映射到响应 DTO
         NoiseSite("com/weibo/talentintroduction/mail/service/MailboxService.kt", 168, "operatorStatus = summary.operatorStatus"),
         // 专家联系人列表响应 DTO 构造：查询参数回显到 DTO
@@ -76,12 +76,12 @@ class OperatorStatusWriteSeamGuardTest {
         NoiseSite("com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt", 644, "operatorStatus = operatorStatus"),
         // ES 专家列表响应 DTO 构造：contact/ES 文档字段合并到响应 DTO
         // （repair R-9/R-10：索引/分页说明与完整性校验改动使钉死点 :91 平移至 :80，context 不变）
-        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 80, "operatorStatus = operatorStatus"),
+        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 86, "operatorStatus = operatorStatus"),
         // ES 专家详情响应 DTO 构造：同上
         // （repair R-9/R-10 行号钉随授权改动平移 +42：读投影/说明行变化使 :435 平移至 :477，context 不变）
-        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 477, "operatorStatus = operatorStatus ?: expert.operatorStatus"),
+        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 502, "operatorStatus = operatorStatus ?: expert.operatorStatus"),
         // ES 专家列表响应 DTO 构造：同一响应 DTO 的另一处只读投影（读 contact/ES 字段写入 DTO，非 DB 写入）
-        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 108, "operatorStatus = contact?.operatorStatus ?: expert.operatorStatus"),
+        NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 114, "operatorStatus = contact?.operatorStatus ?: expert.operatorStatus"),
         // 人物详情响应 DTO 构造：只读投影（读 contact/档案字段写入 DTO，非 DB 写入）
         // （repair R-12：逐邮箱真值投影改动使该投影落在 :282）
         // （revised repair R-9：失效关系不得投影为可发送，新增 1 行注释 + 1 行 stale 局部变量，

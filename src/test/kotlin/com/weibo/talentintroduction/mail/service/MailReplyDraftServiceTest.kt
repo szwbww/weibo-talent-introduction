@@ -16,7 +16,9 @@ class MailReplyDraftServiceTest {
     private val inbound = mock(InboundMailProcessingRepository::class.java)
     private val accounts = mock(MailSenderAccountRepository::class.java)
     private val attachments = mock(OutboundAttachmentService::class.java)
-    private val service = MailReplyDraftService(repository,contacts,inbound,accounts,attachments)
+    private val access = mock(ExpertMailReadAccessService::class.java)
+    private val guard = ExpertMailPermissionGuard(access, mock(org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate::class.java))
+    private val service = MailReplyDraftService(repository,contacts,inbound,accounts,attachments,guard)
     private val target = MailReplyDraftTarget(11,MailReplyDraftKind.OUTBOUND)
     private val now = LocalDateTime.of(2026,10,8,12,0)
     private fun row(version: Long = 1, state: MailReplyDraftState = MailReplyDraftState.ACTIVE, content: MailReplyDraftContent = MailReplyDraftContent()) =
@@ -120,6 +122,43 @@ class MailReplyDraftServiceTest {
         verify(repository).summaries("A",null,listOf(1L))
         failure(HttpStatus.UNPROCESSABLE_ENTITY) { service.summaries("A",(1L..101L).toList(),null) }
         failure(HttpStatus.UNPROCESSABLE_ENTITY) { service.list("A",null,null,0,101) }
+    }
+    @Test fun `restricted draft entry points recheck current FULL before body restoration or writes`() {
+        val own = row().copy(username = "user1")
+        `when`(repository.findOwned("user1", 10)).thenReturn(own)
+        `when`(access.accessLevel(11)).thenReturn(ExpertMailAccessLevel.READ)
+        val denied = com.weibo.talentintroduction.auth.config.MailReadAccessDeniedException::class.java
+        assertThrows(denied) { service.getTarget("user1", target) }
+        assertThrows(denied) { service.save("user1", target, MailReplyDraftSaveRequest(1, MailReplyDraftContent())) }
+        assertThrows(denied) { service.get("user1", 10) }
+        assertThrows(denied) { service.discard("user1", 10, 1) }
+        assertThrows(denied) { service.completedBinding("user1", MailReplyDraftRef(10, 1), 11, null, null) }
+        verifyNoInteractions(attachments, contacts, inbound, accounts)
+        verify(repository, never()).findTarget("user1", target)
+        verify(repository, never()).discard(anyString(), anyLong(), anyLong(), anyTime())
+    }
+
+    @Test fun `restricted draft real inbound target is checked even when an existing row is found`() {
+        `when`(access.accessLevel(11)).thenReturn(ExpertMailAccessLevel.FULL)
+        `when`(contacts.existsById(11)).thenReturn(true)
+        val t = MailReplyDraftTarget(11, MailReplyDraftKind.INBOUND, 7, "real")
+        `when`(inbound.findById(7)).thenReturn(Optional.of(InboundMailProcessing(senderAccountCode = "real",
+            imapUid = 1, messageId = null, fromEmail = "expert@test", subject = null, receivedAt = now,
+            processStatus = "MANUAL_REVIEW", processReason = "TEST", expertContactId = 12)))
+        failure(HttpStatus.UNPROCESSABLE_ENTITY) { service.getTarget("user1", t) }
+        verify(repository, never()).findTarget("user1", t)
+        verifyNoInteractions(attachments)
+    }
+
+    @Test fun `already admitted SMTP finalization does not reauthorize after revocation`() {
+        val own = row().copy(username = "user1", sendAttemptId = 71, sendVersion = 1)
+        val ref = ValidatedDraftSendRef("user1", 10, 1, target, MailReplyDraftContent(), 71, 1)
+        `when`(repository.lockOwned("user1", 10)).thenReturn(own)
+        `when`(repository.closeSent("user1", 10, 1, 71, now)).thenReturn(true)
+        service.lockForFinalize(ref)
+        service.closeSent(ref, 71, now)
+        verify(repository).closeSent("user1", 10, 1, 71, now)
+        verifyNoInteractions(access, contacts, inbound, attachments)
     }
     private fun anyTarget(): MailReplyDraftTarget = org.mockito.ArgumentMatchers.any(MailReplyDraftTarget::class.java) ?: target
     private fun anyContent(): MailReplyDraftContent = org.mockito.ArgumentMatchers.any(MailReplyDraftContent::class.java) ?: MailReplyDraftContent()

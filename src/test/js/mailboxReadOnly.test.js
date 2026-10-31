@@ -95,6 +95,15 @@ class FakeElement {
         this.children.push(child);
         return child;
     }
+    replaceChild(child, previous) {
+        const index = this.children.indexOf(previous);
+        if (index < 0) throw new Error("missing child");
+        if (child.parentNode) child.parentNode.removeChild(child);
+        previous.parentNode = null;
+        this.children[index] = child;
+        child.parentNode = this;
+        return previous;
+    }
     replaceChildren(...nodes) {
         this.children.forEach((child) => { child.parentNode = null; });
         this.children = [];
@@ -260,11 +269,13 @@ const EXPERT_A = {
     contactId: 7,
     name: "张教授",
     email: "zhang@example.edu",
+    expertTags: [],
     latestMessage: { subject: "Re: 合作邀请", time: "2026-10-20T09:00:00" }
 };
 
 function detailResponse(items, extra = {}) {
     return {
+        accessLevel: extra.accessLevel === undefined ? "READ" : extra.accessLevel,
         items,
         nextBefore: extra.nextBefore === undefined ? null : extra.nextBefore,
         hasMore: extra.hasMore === true
@@ -341,7 +352,9 @@ describe("S-1 DOM 骨架（真实模块渲染）", () => {
         const scroll = findOne(conversation, "mc-scroll");
         assert.strictEqual(findOne(scroll, "mc-empty").textContent, "请选择左侧专家");
 
-        assert.strictEqual(harness.calls.length, 1);
+        assert.deepStrictEqual(harness.calls.map(call => call.path), [
+            `${LIST_PATH}?page=0&size=20`, `${LIST_PATH}?page=0&size=1&pendingOnly=true`
+        ]);
         assert.strictEqual(harness.calls[0].path, `${LIST_PATH}?page=0&size=20`);
         assert.strictEqual(harness.calls[0].options.method, "GET");
     });
@@ -406,6 +419,139 @@ describe("S-1 DOM 骨架（真实模块渲染）", () => {
         assert.strictEqual(messages[1].children[0].children[0].textContent, "发件");
         assert.strictEqual(findOne(messages[1], "mc-body").textContent, "原始发件正文",
             "cleanedBody 空白时回退 body（不是 undefined）");
+    });
+});
+
+describe("expert-access 01 I-3/S-1 只读标签", () => {
+    function rows(root, role) {
+        return allNodes(root).filter((node) => node.dataset.role === role);
+    }
+
+    function assertReadOnly(row) {
+        assert.strictEqual(row.tagName, "DIV");
+        assert.strictEqual(row.className, "mc-tag-row");
+        row.children.forEach((chip) => {
+            assert.strictEqual(chip.tagName, "SPAN");
+            assert.strictEqual(chip.children.length, 0, "labels are text-only");
+        });
+        allNodes(row).forEach((node) => {
+            assert.strictEqual(node.dataset.action, undefined);
+            assert.strictEqual(node.getAttribute("style"), null);
+            assert.ok(!["BUTTON", "INPUT", "IMG", "SCRIPT", "A"].includes(node.tagName));
+        });
+    }
+
+    it("列表和头部复用专家标签映射与完整 title，恶意/未知值保持纯文本", async () => {
+        const harness = createHarness();
+        harness.runtime.expertTagLabels = { discovered: "新发现" };
+        const evil = '<img src=x onerror="alert(1)"><script>alert(2)</script>';
+        const expert = { ...EXPERT_A, expertTags: ["discovered", "瑞典", "constructor", evil] };
+        harness.responder = async (requestPath) => requestPath.startsWith(`${LIST_PATH}?`)
+            ? listResponse([expert]) : detailResponse([]);
+        harness.mount();
+        await flush();
+        clickAction(harness, "select-expert");
+        await flush();
+        const tagRows = rows(harness.root, "readonly-expert-tags");
+        assert.strictEqual(tagRows.length, 2, "list and identity each show the same tags");
+        tagRows.forEach((row) => {
+            assertReadOnly(row);
+            assert.deepStrictEqual(row.children.map((chip) => chip.textContent), ["新发现", "瑞典", "constructor", evil]);
+            row.children.forEach((chip) => {
+                assert.strictEqual(chip.className, "expert-tag");
+                assert.strictEqual(chip.getAttribute("title"), chip.textContent);
+            });
+        });
+        assert.strictEqual(findOne(harness.root, "mc-identity").children[0].textContent, EXPERT_A.name);
+        assert.ok(!harness.root.textContent.includes(EXPERT_A.email));
+        harness.calls.forEach((call) => {
+            assert.strictEqual(call.options.method, "GET");
+            assert.ok(call.path.startsWith(LIST_PATH), call.path);
+        });
+        harness.handle.unmount();
+    });
+
+    it("空数组无标签行/占位；null 在列表和头部显示固定不可用提示", async () => {
+        for (const expertTags of [[], null]) {
+            const harness = createHarness();
+            harness.responder = async (requestPath) => requestPath.startsWith(`${LIST_PATH}?`)
+                ? listResponse([{ ...EXPERT_A, expertTags }]) : detailResponse([]);
+            harness.mount();
+            await flush();
+            clickAction(harness, "select-expert");
+            await flush();
+            assert.strictEqual(rows(harness.root, "readonly-expert-tags").length, 0);
+            const notes = findAll(harness.root, "mc-note").filter((node) => node.textContent === "标签暂不可用");
+            assert.strictEqual(notes.length, expertTags === null ? 2 : 0);
+            if (expertTags === null) {
+                assert.ok(notes.every((node) => node.tagName === "P"));
+                assert.ok(findOne(harness.root, "mc-person-main").children.includes(notes[0]));
+                assert.ok(findOne(harness.root, "mc-identity").children.includes(notes[1]));
+            }
+            harness.handle.unmount();
+        }
+    });
+
+    it("仅真实来信显示 QA/CUSTOM/失效标签，不调用共享可编辑 renderer 或标签 API", async () => {
+        const harness = createHarness();
+        harness.runtime.renderInboundTagChip = () => { throw new Error("editable renderer is forbidden"); };
+        const evil = '<a href="javascript:alert(1)">未知标签</a>';
+        const tags = [
+            { tagId: 1, tagType: "QA", label: "薪资", active: true },
+            { tagId: 2, tagType: "CUSTOM", label: "补充材料", active: true },
+            { tagId: 3, tagType: "QA", label: evil, active: false }
+        ];
+        harness.responder = async (requestPath) => requestPath.startsWith(`${LIST_PATH}?`)
+            ? listResponse([EXPERT_A]) : detailResponse([
+                { source: "INBOUND_PROCESSING", id: 1, direction: "INBOUND", tags, eventAt: "2026-10-01" },
+                { source: "MAIL_RECORD", id: 2, direction: "INBOUND", tags, eventAt: "2026-10-02" },
+                { source: "INBOUND_PROCESSING", id: 3, direction: "INBOUND", tags: [], eventAt: "2026-10-03" },
+                { source: "INBOUND_PROCESSING", id: 4, direction: "INBOUND", tags: null, eventAt: "2026-10-04" }
+            ]);
+        harness.mount();
+        await flush();
+        clickAction(harness, "select-expert");
+        await flush();
+        const tagRows = rows(harness.root, "readonly-mail-tags");
+        assert.strictEqual(tagRows.length, 1);
+        assertReadOnly(tagRows[0]);
+        assert.deepStrictEqual(tagRows[0].children.map((chip) => chip.textContent), ["薪资", "补充材料", evil]);
+        assert.deepStrictEqual(tagRows[0].children.map((chip) => chip.className),
+            ["inbound-tag-chip qa", "inbound-tag-chip custom", "inbound-tag-chip qa inactive"]);
+        harness.calls.forEach((call) => {
+            assert.strictEqual(call.options.method, "GET");
+            assert.ok(call.path.startsWith(LIST_PATH), call.path);
+        });
+        harness.handle.unmount();
+    });
+
+    it("刷新从最新 summary 同步头部标签，null 不复用旧标签", async () => {
+        const harness = createHarness();
+        let expertTags = ["旧标签"];
+        harness.responder = async (requestPath) => requestPath.startsWith(`${LIST_PATH}?`)
+            ? listResponse([{ ...EXPERT_A, expertTags }]) : detailResponse([]);
+        harness.mount();
+        await flush();
+        clickAction(harness, "select-expert");
+        await flush();
+        assert.ok(findOne(harness.root, "mc-identity").textContent.includes("旧标签"));
+        expertTags = ["新标签"];
+        await harness.handle.refresh();
+        assert.ok(findOne(harness.root, "mc-identity").textContent.includes("新标签"));
+        assert.ok(!harness.root.textContent.includes("旧标签"));
+        expertTags = null;
+        await harness.handle.refresh();
+        assert.strictEqual(rows(harness.root, "readonly-expert-tags").length, 0);
+        assert.ok(findOne(harness.root, "mc-identity").textContent.includes("标签暂不可用"));
+        harness.handle.unmount();
+    });
+
+    it("统一更新 index 中全部已有资源缓存键，保留真实模块入口", () => {
+        const index = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+        const keys = Array.from(index.matchAll(/(?:href|src)="[^"]+\?v=([^"]+)"/g), (match) => match[1]);
+        assert.ok(keys.length > 0);
+        assert.strictEqual(new Set(keys).size, 1);
+        assert.ok(index.includes(`src="mailbox-readonly.js?v=${keys[0]}"`));
     });
 });
 
@@ -485,6 +631,48 @@ describe("I-4 文本渲染安全", () => {
 });
 
 describe("I-3 失权/失败/竞态", () => {
+    for (const endpoint of ["list", "detail"]) {
+        for (const status of [403, 401]) {
+            it(`${endpoint} ${status} 撤权清除已显示标签但保留姓名与拒绝提示`, async () => {
+                const harness = createHarness();
+                const expert = { ...EXPERT_A, expertTags: ["撤权前标签"] };
+                let denied = false;
+                harness.responder = async (requestPath) => {
+                    const isList = requestPath.startsWith(`${LIST_PATH}?`);
+                    if (denied && isList === (endpoint === "list")) {
+                        const error = new Error("access denied");
+                        error.status = status;
+                        throw error;
+                    }
+                    if (isList) return listResponse([expert]);
+                    return detailResponse([{
+                        source: "MAIL_RECORD", id: 41, direction: "OUTBOUND",
+                        subject: "已授权", cleanedBody: "授权正文", eventAt: "2026-10-02T10:00:00"
+                    }], { hasMore: true, nextBefore: "cursor-a" });
+                };
+                harness.mount();
+                await flush();
+                clickAction(harness, "select-expert");
+                await flush();
+                assert.strictEqual(findAll(harness.root, "expert-tag").length, 2);
+                assert.strictEqual(findAll(harness.root, "mc-message").length, 1);
+
+                denied = true;
+                await harness.handle.refresh();
+                await flush();
+
+                assert.strictEqual(findAll(harness.root, "expert-tag").length, 0);
+                assert.ok(!harness.root.textContent.includes("撤权前标签"));
+                assert.ok(!harness.root.textContent.includes("标签暂不可用"));
+                assert.ok(harness.root.textContent.includes(EXPERT_A.name));
+                assert.strictEqual(findAll(harness.root, "mc-message").length, 0);
+                assert.strictEqual(findOne(harness.root, "mc-load-older"), null);
+                assert.strictEqual(findOne(harness.root, "mc-error").textContent, "暂无权限查看该专家邮件");
+                harness.handle.unmount();
+            });
+        }
+    }
+
     it("详情 403 立即清空正文并显示固定提示，cursor 同时清空", async () => {
         const harness = createHarness();
         harness.responder = async (requestPath) => {
@@ -564,13 +752,14 @@ describe("I-3 失权/失败/竞态", () => {
     it("慢 A 响应不能覆盖已切换到 B 的正文", async () => {
         const harness = createHarness();
         const slow = deferred();
-        const expertB = { contactId: 8, name: "李教授", email: "li@example.edu", latestMessage: { subject: "B" } };
+        const expertB = { contactId: 8, name: "李教授", email: "li@example.edu", expertTags: ["B标签"], latestMessage: { subject: "B" } };
         harness.responder = async (requestPath) => {
-            if (requestPath.startsWith(`${LIST_PATH}?`)) return listResponse([EXPERT_A, expertB]);
+            if (requestPath.startsWith(`${LIST_PATH}?`)) return listResponse([{ ...EXPERT_A, expertTags: ["A标签"] }, expertB]);
             if (requestPath.includes("/7/messages")) return slow.promise;
             return detailResponse([{
                 source: "INBOUND_PROCESSING", id: 61, direction: "INBOUND",
-                subject: "B 的邮件", cleanedBody: "B 的正文", body: "B 的正文", eventAt: "2026-10-05T10:00:00"
+                subject: "B 的邮件", cleanedBody: "B 的正文", body: "B 的正文", eventAt: "2026-10-05T10:00:00",
+                tags: [{ tagType: "QA", label: "B邮件标签", active: true }],
             }]);
         };
         harness.mount();
@@ -587,13 +776,19 @@ describe("I-3 失权/失败/竞态", () => {
 
         slow.resolve(detailResponse([{
             source: "INBOUND_PROCESSING", id: 71, direction: "INBOUND",
-            subject: "A 的迟到邮件", cleanedBody: "A 的正文", body: "A 的正文", eventAt: "2026-10-01T10:00:00"
+            subject: "A 的迟到邮件", cleanedBody: "A 的正文", body: "A 的正文", eventAt: "2026-10-01T10:00:00",
+            tags: [{ tagType: "CUSTOM", label: "A迟到标签", active: true }],
         }]));
         await flush();
 
         assert.strictEqual(findOne(harness.root, "mc-identity").children[0].textContent, "李教授");
         assert.strictEqual(findOne(harness.root, "mc-body").textContent, "B 的正文");
         assert.strictEqual(findAll(harness.root, "mc-message").length, 1);
+        const identity = findOne(harness.root, "mc-identity");
+        assert.ok(identity.textContent.includes("B标签"));
+        assert.ok(harness.root.textContent.includes("B邮件标签"));
+        assert.ok(!identity.textContent.includes("A标签"));
+        assert.ok(!harness.root.textContent.includes("A迟到标签"));
     });
 
     it("unmount 中止在途请求、清空 DOM，迟到响应不再渲染", async () => {
@@ -628,6 +823,7 @@ describe("I-3 失权/失败/竞态", () => {
         const gate = deferred();
         let listCalls = 0;
         harness.responder = async (requestPath) => {
+            if (requestPath.includes("pendingOnly=true")) return listResponse([], 0);
             if (requestPath.startsWith(`${LIST_PATH}?`)) {
                 listCalls += 1;
                 if (listCalls > 1) return gate.promise;

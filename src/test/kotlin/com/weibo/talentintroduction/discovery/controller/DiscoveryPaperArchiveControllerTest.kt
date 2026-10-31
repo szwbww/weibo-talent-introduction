@@ -29,7 +29,7 @@ class DiscoveryPaperArchiveControllerTest {
             createdAt=LocalDateTime.now(),updatedAt=LocalDateTime.now()))
         session=MockHttpSession(); session.setAttribute(AuthSessionKeys.USERNAME,"fixture")
         mvc=MockMvcBuilders.standaloneSetup(DiscoveryPaperArchiveController(f.service))
-            .addInterceptors(AuthInterceptor(auth,f.mapper)).build()
+            .addInterceptors(AuthInterceptor(auth,f.mapper,Mockito.mock(com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard::class.java))).build()
     }
     @AfterEach fun cleanup() { f.close() }
     @Test fun `all new API routes keep authentication`() {

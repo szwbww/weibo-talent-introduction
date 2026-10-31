@@ -99,6 +99,66 @@ class MailboxConversationRepositoryIT {
     // ------------------------------------------------------------------
 
     @Test
+    fun `owner pending and expert scopes share SQL paging while All preserves both owners`() {
+        jdbcTemplate.update("UPDATE mail_sender_account SET enabled=FALSE WHERE account_code='acc-b'")
+        seedAccount("SIMULATOR_NOOP")
+        for (id in 1L..3L) {
+            insertReadAccess(id)
+            jdbcTemplate.update("UPDATE expert_mail_read_access SET access_level='FULL' WHERE expert_contact_id=?", id)
+            insertProcessing(id, "acc-a", 8000 + id, "MANUAL_REVIEW", "Topic", "2026-10-01 09:00:00",
+                "admin-$id", "expert$id@example.org", owner = "admin")
+            insertProcessing(id, "acc-b", 8100 + id, "MANUAL_REVIEW", "Topic", "2026-10-01 09:00:00",
+                "reader-$id", "expert$id@example.org", owner = "user1")
+        }
+        insertProcessing(1, "SIMULATOR_NOOP", 8201, "MANUAL_REVIEW", "Simulator", "2026-10-01 09:00:00",
+            "sim", "expert1@example.org", owner = "admin")
+        val all = emptyFilter()
+        val pending = all.copy(pendingOnly = true)
+        for (actor in listOf("admin", "user1")) {
+            assertEquals(3L, repository.countConversations(actor, pending))
+            val pages = listOf(0L, 2L).flatMap { repository.pageConversations(actor, pending, 2, it) }
+            assertEquals(listOf(3L, 2L, 1L), pages.map { it.expertContactId })
+            assertTrue(pages.all { it.pendingCount == 1L && it.receivedCount == 2L })
+            val plan = repository.explainConversationsPage(actor, pending, 2, 0)
+            assertTrue(plan.isNotEmpty())
+            println("OWNER_EXPLAIN $actor $plan")
+        }
+        val ownerIndex = jdbcTemplate.queryForList("EXPLAIN SELECT id FROM inbound_mail_processing WHERE pending_owner_username='user1' AND process_status='MANUAL_REVIEW' AND expert_contact_id=1")
+        assertTrue(ownerIndex.any { it["possible_keys"]?.toString()?.contains("idx_inbound_pending_owner") == true })
+        println("OWNER_INDEX_EXPLAIN $ownerIndex")
+        assertEquals(2, repository.timelineMessages(1, all, null, 10).rows.size)
+        assertTrue(repository.pageConversations("admin", pending.copy(accountCode = "acc-b"), 10, 0).isEmpty())
+        assertEquals(3L, repository.countConversations("user1", pending.copy(accountCode = "acc-b")))
+        insertSuspension("user1", 2, "Waiting")
+        insertMark("admin", 1, "PROVIDED")
+        assertEquals(2L, repository.countConversations("user1", pending))
+        assertEquals(3L, repository.countConversations("admin", pending))
+        assertEquals(1L, repository.countConversations("admin", pending.copy(providedOnly = true)))
+        assertEquals(0L, repository.countConversations("user1", pending.copy(providedOnly = true)))
+        jdbcTemplate.update("UPDATE expert_mail_read_access SET access_level='READ' WHERE expert_contact_id=3")
+        assertEquals(1L, repository.countConversations("user1", pending))
+        assertEquals(3L, repository.countConversations("user1", all))
+        val full = all.copy(expertScope = "USER1_FULL", direction = "INBOUND", keyword = "Topic", accountCode = "acc-b")
+        assertEquals(2L, repository.countConversations("admin", full))
+        assertEquals(listOf(2L, 1L), repository.pageConversations("admin", full, 10, 0).map { it.expertContactId })
+        assertTrue(repository.explainConversationsPage("admin", full, 10, 0).isNotEmpty())
+        for ((id, account, state) in listOf(Triple(1L, "acc-a", "SUBMITTED"),
+                Triple(1L, "acc-b", "SUBMITTED"), Triple(2L, "acc-a", "DRAFT"),
+                Triple(3L, "SIMULATOR_NOOP", "SUBMITTED"), Triple(3L, "missing", "SUBMITTED"))) {
+            jdbcTemplate.update("""INSERT INTO mailbox_review_draft
+                (owner_username,expert_contact_id,client_request_id,target_kind,target_id,account_code,version,state,subject,html_body,text_body,created_at,updated_at)
+                VALUES ('user1',?,?,'INBOUND',1,?,1,?,'Subject','Body','Body',NOW(),NOW())""",
+                id, java.util.UUID.randomUUID().toString(), account, state)
+        }
+        val review = all.copy(expertScope = "PENDING_REVIEW")
+        assertEquals(1L, repository.countConversations("admin", review))
+        assertEquals(listOf(1L), repository.pageConversations("admin", review, 10, 0).map { it.expertContactId })
+        assertEquals(0L, repository.countConversations("admin", review.copy(q = "Bob")))
+        assertTrue(repository.explainConversationsPage("admin", review, 10, 0).isNotEmpty())
+        assertEquals(2L to 2L, repository.filterCounts(allAccounts))
+    }
+
+    @Test
     fun `mixed record kinds aggregate by source authority with full-history counts`() {
         // A(1)：2 封 SENT + 无来信 → sent=2 / received=0 / waitingReply 命中
         insertOutbound(1, "acc-a", "INTRODUCTION", "SENT", "Intro A1", "2026-09-01 09:00:00")
@@ -796,10 +856,10 @@ class MailboxConversationRepositoryIT {
         assertFalse(states[1L]!!.suspended)
         assertEquals(0L, states[1L]!!.suspensionPendingCount)
 
-        // 跨账号 pending 与用户无关；挂起状态按用户隔离。
+        // 挂起和待处理均按当前处理人隔离。
         val op2 = repository.suspensionStatesByContacts("op2", listOf(4L))
         assertFalse(op2[4L]!!.suspended, "op1 的挂起不属于 op2")
-        assertEquals(2L, op2[4L]!!.suspensionPendingCount)
+        assertEquals(0L, op2[4L]!!.suspensionPendingCount)
 
         // 空集合短路：不执行 IN ()。
         assertTrue(repository.suspensionStatesByContacts("op1", emptyList()).isEmpty())
@@ -1232,7 +1292,8 @@ class MailboxConversationRepositoryIT {
         assertEquals(0L, repository.countConversations(reader, onlySecondDay))
         assertEquals(1L, repository.countConversations("op1", onlySecondDay))
         // 状态筛选与 ACL 同层 AND。
-        assertEquals(1L, repository.countConversations(reader, filter(pendingOnly = true)))
+        assertEquals(0L, repository.countConversations(reader, filter(pendingOnly = true)),
+            "READ grant does not transfer another actor's pending mail")
         assertEquals(1L, repository.countConversations(reader, filter(followed = true)))
 
         // 页面同样受 ACL：q=Fay 的空结果不是「先取全量页再过滤」的表象。
@@ -1340,7 +1401,7 @@ class MailboxConversationRepositoryIT {
         filter: MailboxConversationRepository.ConversationFilter,
         size: Int = 100,
         offset: Long = 0,
-        username: String = ""
+        username: String = "op1"
     ): List<MailboxConversationRepository.ConversationSummarySqlRow> =
         repository.pageConversations(username, filter, size, offset)
 
@@ -1351,6 +1412,8 @@ class MailboxConversationRepositoryIT {
     }
 
     private fun cleanup() {
+        jdbcTemplate.update("DELETE FROM mailbox_review_draft_event")
+        jdbcTemplate.update("DELETE FROM mailbox_review_draft")
         jdbcTemplate.update("DELETE FROM expert_replied_dismissal")
         jdbcTemplate.update("DELETE FROM expert_follow")
         // 01：挂起表 FK→expert_contact，必须在删联系人前清理。
@@ -1463,17 +1526,18 @@ class MailboxConversationRepositoryIT {
         messageId: String,
         fromEmail: String,
         body: String = "body",
-        cleanedBody: String = "cleaned"
+        cleanedBody: String = "cleaned",
+        owner: String = "op1"
     ): Long = insertAndGetKey(
         """
         INSERT INTO inbound_mail_processing
             (sender_account_code, uid_validity, imap_uid, message_id, from_email, subject,
-             body, cleaned_body, received_at, process_status, process_reason, expert_contact_id)
-        VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, 'QA_AUTO_REPLIED', ?)
+             body, cleaned_body, received_at, process_status, process_reason, expert_contact_id, pending_owner_username)
+        VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, 'QA_AUTO_REPLIED', ?, ?)
         """.trimIndent(),
         accountCode, imapUid, messageId, fromEmail, subject, body, cleanedBody,
         Timestamp.valueOf(LocalDateTime.parse(receivedAt.replace(' ', 'T'))),
-        processStatus, contactId
+        processStatus, contactId, owner
     )
 
     private fun insertTag(processingId: Long, tagType: String, label: String) {

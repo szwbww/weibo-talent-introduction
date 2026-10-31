@@ -1729,9 +1729,8 @@ describe("S-2 高级筛选 popover（草稿语义）", () => {
         assert.strictEqual(q.get("endDate"), "2026-09-30");
         assert.strictEqual(q.get("subject"), null, "不再 keyword→subject");
         assert.strictEqual(q.get("waitingReply"), null);
-        const countBadge = ctx.host.querySelector(".mc-filter-count");
-        assert.strictEqual(countBadge.hidden, false);
-        assert.strictEqual(countBadge.textContent, "7");
+        assert.strictEqual(ctx.host.querySelector(".mc-filter-count"), null, "邮件角标不再冒充筛选项数");
+        assert.match(ctx.host.querySelector('[data-action="mc-more-filters"]').getAttribute("aria-label"), /数量不可用/);
         const summary = ctx.host.querySelector(".mc-filter-summary");
         assert.match(summary.textContent, /7 项筛选已生效/);
         assert.ok(ctx.host.querySelector("#mcFilterPopover").getAttribute("hidden") !== null, "应用后 popover 关闭");
@@ -6869,5 +6868,174 @@ describe("待确认显示：旧标签映射与数据不变", () => {
         click(ctx.host.querySelector('[data-action="mc-page-next"]'));
         await flush();
         assert.strictEqual(queryOf(lastUnmatchedRequest(ctx).url).get("pageOffset"), "20", "分页仍为 page*20");
+    });
+});
+
+describe("07 delegated conversation — fixed target and existing editor", () => {
+    async function delegated(overrides, mountOverrides) {
+        return bootChat(Object.assign({
+            authMe: { authenticated: true, username: "user1" },
+            messages: Object.assign(messagesA(), { accessLevel: "FULL" }), contact: contactA(),
+            route: (url, method, body, entry, next) => url.startsWith("/api/mail/mailbox/review-drafts?")
+                ? { items: [], total: 0 } : next(url, method, body)
+        }, overrides || {}), Object.assign({
+            mode: "delegated-conversation", contactId: 1, sessionUser: "user1", summary: expertA()
+        }, mountOverrides || {}));
+    }
+
+    it("mounts only S-4 right pane, no administrator bootstrap or identity metadata", async () => {
+        const ctx = await delegated();
+        const shell = ctx.host.querySelector('[data-role="delegated-conversation"]');
+        assert.ok(shell);
+        assert.strictEqual(shell.children.length, 1);
+        assert.strictEqual(shell.children[0].className, "mc-conversation");
+        assert.strictEqual(ctx.host.querySelector(".mc-experts"), null);
+        assert.strictEqual(ctx.host.querySelector("#mcFilterPopover"), null);
+        assert.strictEqual(ctx.host.querySelector('[data-section="workbench"]'), null);
+        assert.strictEqual(ctx.host.querySelector('[data-section="logs"]'), null);
+        assert.strictEqual(ctx.host.querySelector('[data-action="mc-open-template-reference"]'), null);
+        assert.strictEqual(ctx.host.querySelector('[data-action="mc-template-follow"]'), null);
+        assert.strictEqual(ctx.host.querySelector('[data-action="mc-reply-identity-settings"]'), null);
+        assert.strictEqual(ctx.host.querySelectorAll('[data-role="mc-editor"]').length, 1);
+        assert.ok(!ctx.host.querySelector(".mc-identity").textContent.includes("a@example.edu"));
+        assert.ok(!ctx.host.querySelector(".mc-identity").textContent.includes("acc1"));
+        assert.strictEqual(ctx.host.querySelector(".mc-identity").querySelector("p"), null);
+        assert.strictEqual(ctx.host.querySelectorAll('[data-role="last-reply-time"]').length, 1);
+        assert.ok(!ctx.calls.api.some(call => call.url.startsWith("/api/mail/mailbox/conversations?")));
+        assert.ok(!ctx.calls.api.some(call => call.url.startsWith("/api/mail/mailbox/drafts/summaries")));
+        assert.strictEqual(ctx.calls.workbenchMounts.length, 0);
+        ctx.api.unmount();
+    });
+
+    it("saves current user1 target and sends through the original rich reply adapter once", async () => {
+        const ctx = await delegated();
+        const editor = ctx.host.querySelector('[data-role="mc-editor"]');
+        editor.innerText = "Current expert human response";
+        inputEvent(editor);
+        await ctx.api.flushDrafts();
+        const saved = ctx.calls.api.filter(call => call.url.startsWith("/api/mail/mailbox/drafts/target?") && call.method === "PUT");
+        assert.ok(saved.length > 0);
+        assert.ok(saved.every(call => queryOf(call.url).get("contactId") === "1"));
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        assert.strictEqual(ctx.calls.sendRich.length, 1);
+        assert.strictEqual(ctx.calls.sendRich[0].processingId, 101);
+        assert.ok(ctx.calls.sendRich[0].body.draftRef);
+        assert.strictEqual(ctx.calls.sendConversation.length, 0);
+        ctx.api.unmount();
+    });
+
+    it("missing, READ and NONE detail authority never create a writable editor", async () => {
+        for (const accessLevel of [undefined, "READ", "NONE"]) {
+            let changed = 0;
+            const ctx = await delegated({ messages: Object.assign(messagesA(), { accessLevel }) },
+                { onAccessChanged: () => { changed += 1; } });
+            assert.strictEqual(ctx.host.querySelector('[contenteditable="true"]'), null);
+            assert.strictEqual(ctx.calls.sendRich.length, 0);
+            assert.strictEqual(changed, 1);
+            ctx.api.unmount();
+        }
+    });
+
+    it("late messages after unmount cannot restore content or pending draft timers", async () => {
+        let resolve;
+        const promise = new Promise(done => { resolve = done; });
+        const ctx = await delegated({
+            route: (url, method, body, entry, next) => url.includes("/messages?")
+                ? promise : next(url, method, body)
+        });
+        ctx.api.unmount();
+        resolve(Object.assign(messagesA(), { accessLevel: "FULL" }));
+        await flush();
+        ctx.runTimers();
+        await flush();
+        assert.strictEqual(ctx.host.innerHTML, "");
+        assert.ok(!ctx.calls.api.some(call => call.method === "PUT"));
+        assert.strictEqual(ctx.calls.sendRich.length, 0);
+    });
+
+    it("forbidden current target requests destroy the editor before revalidation", async () => {
+        let changed = 0;
+        const ctx = await delegated({
+            route: (url, method, body, entry, next) => url === "/api/mail/contact-notes/1"
+                ? Promise.reject(Object.assign(new Error("forbidden"), { status: 403 })) : next(url, method, body)
+        }, { onAccessChanged: () => { changed += 1; } });
+        assert.strictEqual(ctx.host.querySelector('[contenteditable="true"]'), null);
+        assert.strictEqual(ctx.calls.sendRich.length, 0);
+        assert.strictEqual(changed, 1);
+        ctx.api.unmount();
+    });
+});
+
+describe("08 final expert scope and independent pending mail badge", () => {
+    it("scope is first, retains seven fields and single Apply; all conditions AND and Reset preserves search/tab", async () => {
+        const ctx = await bootChat({ conversations: { items: [expertA()], total: 1,
+            filterCounts: { user1FullExpertCount: 2, pendingReviewDraftCount: 5 } } });
+        click(ctx.host.querySelector('[data-action="mc-more-filters"]')); await flush();
+        const fields = ctx.host.querySelector("#mailboxFilterFields");
+        assert.equal(fields.children.length, 8);
+        assert.equal(fields.children[0].querySelector("select").getAttribute("id"), "mailboxFilterExpertScope");
+        assert.equal(ctx.host.querySelectorAll("#mailboxSearchBtn").length, 1);
+        const scope = popoverField(ctx, "mailboxFilterExpertScope");
+        assert.deepEqual(scope.querySelectorAll("option").map(option => option.textContent), ["全部专家", "user1可写（2位）", "待审核（5条）"]);
+        scope.value = "USER1_FULL";
+        popoverField(ctx, "mailboxFilterAccountCode").value = "acc1";
+        popoverField(ctx, "mailboxFilterDirection").value = "INBOUND";
+        popoverField(ctx, "mailboxFilterRecipient").value = "expert@example.edu";
+        popoverField(ctx, "mailboxFilterKeyword").value = "question";
+        popoverField(ctx, "mailboxFilterStartDate").value = "2026-10-01";
+        popoverField(ctx, "mailboxFilterEndDate").value = "2026-10-31";
+        click(docById(ctx, "mailboxSearchBtn")); await flush();
+        const query = queryOf(lastConversationsRequest(ctx).url);
+        assert.equal(query.get("expertScope"), "USER1_FULL");
+        assert.equal(query.get("accountCode"), "acc1");
+        assert.equal(query.get("direction"), "INBOUND");
+        assert.equal(query.get("recipientEmail"), "expert@example.edu");
+        assert.equal(query.get("keyword"), "question");
+        assert.equal(query.get("startDate"), "2026-10-01");
+        assert.equal(query.get("endDate"), "2026-10-31");
+        assert.equal(query.get("page"), "0");
+        click(ctx.host.querySelector('[data-action="mc-more-filters"]')); await flush();
+        click(ctx.host.querySelector('[data-action="mc-reset-filters"]')); await flush();
+        const reset = queryOf(lastConversationsRequest(ctx).url);
+        assert.equal(reset.get("expertScope"), null);
+        assert.equal(reset.get("accountCode"), null);
+        assert.equal(reset.get("pendingOnly"), query.get("pendingOnly"));
+        assert.equal(popoverField(ctx, "mailboxFilterExpertScope").value, "ALL");
+    });
+
+    it("real app publisher updates mounted mail-count badge, preserves failure/zero and ignores old request", async () => {
+        const ctx = await bootChat({ conversations: { items: [expertA()], total: 1 } });
+        const app = fs.readFileSync(path.join(ROOT, "app.js"), "utf-8");
+        ctx.doc.dispatchEvent = event => ctx.doc.root.dispatchEvent(event);
+        ctx.sandbox.HIGH_PRIORITY_REASON_TYPES = new Set(["NOT_INTERESTED", "QA_NO_MATCH"]);
+        ctx.sandbox.$ = selector => ctx.doc.querySelector(selector);
+        ctx.sandbox.CustomEvent = class extends MiniEvent {
+            constructor(type, options) { super(type); this.detail = options.detail; }
+        };
+        vm.runInContext(app.slice(app.indexOf("let unmatchedBadgeRefreshSeq"), app.indexOf("const MAILBOX_TAG_BADGE_CLASS")), ctx.sandbox);
+        let resolves = [];
+        ctx.sandbox.api = () => new Promise((resolve, reject) => resolves.push({ resolve, reject }));
+        const first = ctx.sandbox.refreshUnmatchedBadge();
+        const second = ctx.sandbox.refreshUnmatchedBadge();
+        resolves[1].resolve({ manualReviewTotal: 103, countsByReasonType: {} }); await second;
+        const badge = ctx.host.querySelector(".mc-pending-count");
+        const trigger = ctx.host.querySelector('[data-action="mc-more-filters"]');
+        assert.equal(badge.textContent, "99+");
+        assert.match(trigger.getAttribute("aria-label"), /103条待处理邮件/);
+        resolves[0].resolve({ manualReviewTotal: 1, countsByReasonType: {} }); await first;
+        assert.equal(badge.textContent, "99+");
+        let request = ctx.sandbox.refreshUnmatchedBadge();
+        resolves[2].reject(new Error("offline")); await request;
+        assert.equal(badge.hidden, true);
+        assert.match(trigger.getAttribute("title"), /数量不可用/);
+        request = ctx.sandbox.refreshUnmatchedBadge();
+        resolves[3].resolve({ manualReviewTotal: 0, countsByReasonType: {} }); await request;
+        assert.equal(badge.hidden, true);
+        assert.match(trigger.getAttribute("aria-label"), /0条待处理邮件/);
+        ctx.api.unmount();
+        request = ctx.sandbox.refreshUnmatchedBadge();
+        resolves[4].resolve({ manualReviewTotal: 4, countsByReasonType: {} }); await request;
+        assert.equal(ctx.host.innerHTML, "");
     });
 });
