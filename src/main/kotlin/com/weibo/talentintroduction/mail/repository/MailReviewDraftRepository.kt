@@ -85,6 +85,16 @@ class MailReviewDraftRepository(private val jdbc: NamedParameterJdbcTemplate, pr
                   AND a.account_code<>:simulator ORDER BY COALESCE(m.sent_at,m.created_at) DESC,m.id DESC LIMIT 1""")
     }
 
+    /** Resolve only the immutable reply target, never a caller-supplied subject or latest unrelated mail. */
+    fun targetSubject(contactId: Long, kind: String, targetId: Long, account: String): String {
+        val table = when (kind) { "INBOUND" -> "inbound_mail_processing"; "OUTBOUND" -> "mail_record"; else -> error("Invalid target") }
+        val subjects = jdbc.query("SELECT subject FROM $table WHERE id=:id AND expert_contact_id=:contact AND sender_account_code=:account",
+            mapOf("id" to targetId, "contact" to contactId, "account" to account), RowMapper { r, _ -> r.getString("subject").orEmpty() })
+        if (subjects.size != 1) throw MailReviewDraftException(422, "REVIEW_TARGET_NOT_FOUND", "原邮件不存在，无法创建回复")
+        val subject = MailSubjectDecoder.decode(subjects.single()).orEmpty().trim()
+        return if (subject.startsWith("Re:", ignoreCase = true)) subject else "Re: $subject".trim()
+    }
+
     fun validTarget(row: MailReviewDraftRow): Boolean {
         val target = when (row.targetKind) {
             "INBOUND" -> """SELECT p.id FROM inbound_mail_processing p JOIN mail_sender_account a

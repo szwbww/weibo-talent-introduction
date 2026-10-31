@@ -17237,17 +17237,18 @@ async function refreshUnmatchedBadge() {
         const data = await api("/api/mail/mailbox/conversations/pending-badge");
         if (seq !== unmatchedBadgeRefreshSeq) return;
         updateUnmatchedBadge(data.countsByReasonType, data.manualReviewTotal);
-        publishMailboxPendingBadge(data.manualReviewTotal);
+        publishMailboxPendingBadge(data.manualReviewTotal, data.pendingReviewDraftCount);
     } catch (_) {
         if (seq === unmatchedBadgeRefreshSeq) publishMailboxPendingBadge(null);
     }
 }
 
-function publishMailboxPendingBadge(total) {
+function publishMailboxPendingBadge(total, reviewCount) {
     if (typeof CustomEvent === "function" && typeof document !== "undefined" && document
         && typeof document.dispatchEvent === "function") {
         document.dispatchEvent(new CustomEvent("mailbox-pending-badge-changed", {
-            detail: { manualReviewTotal: Number.isSafeInteger(total) && total >= 0 ? total : null }
+            detail: { manualReviewTotal: Number.isSafeInteger(total) && total >= 0 ? total : null,
+                pendingReviewDraftCount: Number.isSafeInteger(reviewCount) && reviewCount >= 0 ? reviewCount : null }
         }));
     }
 }
@@ -21173,8 +21174,9 @@ function isMailReadOnlyRequestAllowed(path, options) {
     if (method === "GET" && normalized === "/api/auth/me") return true;
     if (method === "POST" && (normalized === "/api/auth/login" || normalized === "/api/auth/logout")) return true;
     if (method === "GET" && normalized === "/api/mail/mailbox/conversations") return true;
-    if (method === "GET" && /^\/api\/mail\/mailbox\/conversations\/[1-9][0-9]*\/messages$/.test(normalized)) return true;
+    if (method === "GET" && /^\/api\/mail\/mailbox\/conversations\/[1-9][0-9]*\/(messages|access)$/.test(normalized)) return true;
     const scopedRoutes = [
+        ["POST", /^\/api\/mail\/reply-identity\/inspect$/],
         ["GET", /^\/api\/mail\/mailbox\/conversations\/pending-badge$/],
         ["GET", /^\/api\/operator-action-logs$/],
         ["POST", /^\/api\/mail\/mailbox\/conversations\/[1-9][0-9]*\/manual-rich-reply$/],

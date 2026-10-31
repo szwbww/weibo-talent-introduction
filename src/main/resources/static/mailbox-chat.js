@@ -989,6 +989,7 @@
             loadOlderBusy: false,
             pendingPrompt: null,
             dismissedNewInbound: null,
+            accessLocked: false,
             disposed: false
         };
 
@@ -996,6 +997,7 @@
             if (!delegated) return defaultHostApi();
             return (path, requestOptions) => {
                 if (instance.disposed) return Promise.reject(new Error("会话已关闭"));
+                if (instance.accessLocked) return Promise.reject(new Error("专家权限已变化，请保留正文后刷新"));
                 return Promise.resolve(defaultHostApi()(path, requestOptions)).catch((error) => {
                     if (!instance.disposed && error && (error.status === 401 || error.status === 403)) {
                         unmount();
@@ -1684,7 +1686,7 @@
                         <div class="mc-list-tools">
                             <div class="mc-search-row">
                                 <input type="search" aria-label="搜索专家" placeholder="搜索专家姓名、邮箱">
-                                <button class="mc-icon mc-pending-trigger" type="button" data-action="mc-more-filters" title="更多筛选，待处理邮件数量不可用" aria-label="更多筛选，待处理邮件数量不可用" aria-expanded="false" aria-controls="mcFilterPopover">⋯<span class="mc-pending-count" aria-hidden="true" hidden></span></button>
+                                <button class="mc-icon mc-pending-trigger" type="button" data-action="mc-more-filters" title="更多筛选，待审核草稿数量不可用" aria-label="更多筛选，待审核草稿数量不可用" aria-expanded="false" aria-controls="mcFilterPopover">⋯<span class="mc-pending-count" aria-hidden="true" hidden></span></button>
                                 <div class="mc-filter-popover" id="mcFilterPopover" role="dialog" aria-label="更多筛选" hidden>
                                     <header><strong>更多筛选</strong><button class="mc-close" type="button" data-action="mc-close-filters" aria-label="关闭筛选">×</button></header>
                                     <div class="mc-filter-fields" id="mailboxFilterFields"></div>
@@ -1863,7 +1865,7 @@
             const badge = host.querySelector(".mc-pending-count");
             if (!trigger || !badge) return;
             const total = instance.pendingBadge.total;
-            const label = total === null ? "更多筛选，待处理邮件数量不可用" : `更多筛选，${total}条待处理邮件`;
+            const label = total === null ? "更多筛选，待审核草稿数量不可用" : `更多筛选，${total}条待审核草稿`;
             trigger.setAttribute("aria-label", label);
             trigger.setAttribute("title", label);
             badge.hidden = total === null || total === 0;
@@ -1872,8 +1874,7 @@
 
         function onPendingBadgeChanged(event) {
             if (instance.disposed || delegated) return;
-            const data = event && event.detail;
-            const total = data && data.manualReviewTotal;
+            const total = event && event.detail && event.detail.pendingReviewDraftCount;
             instance.pendingBadge.seq += 1;
             instance.pendingBadge.total = Number.isSafeInteger(total) && total >= 0 ? total : null;
             renderPendingBadge();
@@ -1887,7 +1888,7 @@
             renderPendingBadge();
             hostApi()("/api/mail/mailbox/conversations/pending-badge").then((data) => {
                 if (instance.disposed || user !== instance.user || seq !== instance.pendingBadge.seq) return;
-                const total = data && data.manualReviewTotal;
+                const total = data && data.pendingReviewDraftCount;
                 instance.pendingBadge.total = Number.isSafeInteger(total) && total >= 0 ? total : null;
                 renderPendingBadge();
             }).catch(() => {
@@ -2229,7 +2230,7 @@
                 <div class="mc-person mailbox-progress-card" data-replied="${instance.chip === CHIP_REPLIED ? "true" : "false"}" data-active="${active ? "true" : "false"}" data-contact-id="${escapeText(item.contactId)}">
                     <button class="mc-person-main" type="button" data-action="mc-select-expert" data-contact-id="${escapeText(item.contactId)}" aria-label="${escapeText(ariaLabel)}"${active ? ' aria-current="true"' : ""}>
                         <span class="mc-person-heading"><strong title="${escapeText(cardName)}">${escapeText(cardName)}</strong>${Number(item.reviewPendingCount) > 0 ? `<span class="mc-badge" data-tone="pending" data-role="review-pending-count">待审核 ${Number(item.reviewPendingCount)}</span>` : ""}</span>
-                        ${item.accessLevel === "FULL" ? '<span class="mc-badge">user1: 写</span>' : ""}
+                        ${item.accessLevel === "FULL" ? '<span class="mc-badge mc-grant-badge">user1: 写</span>' : ""}
                         <small>${escapeText(accounts)}</small>
                         <small>${escapeText(latestLine)}</small>
                         ${lastReplyListMarkup(item)}
@@ -3736,7 +3737,6 @@
         function conversationSummaryInfo() {
             const summary = instance.selectedSummary || {};
             const parts = [];
-            if (delegated) return "";
             if (summary.email) parts.push(summary.email);
             const accounts = Array.isArray(summary.accountCodes) && summary.accountCodes.length
                 ? summary.accountCodes.join("、")
@@ -3767,7 +3767,7 @@
             const identity = head.querySelector(".mc-identity");
             if (identity) {
                 identity.innerHTML = delegated
-                    ? `<h2>${escapeText(summary.name || "未填写姓名")} <span class="mc-badge mc-access-full">可写</span></h2><span class="mailbox-reply-detail" data-role="last-reply-time">${lastReplyDetailInner({ kind: "unavailable", text: LAST_REPLY_UNAVAILABLE_TEXT })}</span><span class="calendar-summary" data-role="meeting-summary"></span>`
+                    ? `<h2>${escapeText(summary.name || "未填写姓名")} <span class="mc-badge mc-access-full">可写</span></h2><p>${escapeText(conversationSummaryInfo())}</p><span class="mailbox-reply-detail" data-role="last-reply-time">${lastReplyDetailInner({ kind: "unavailable", text: LAST_REPLY_UNAVAILABLE_TEXT })}</span><span class="calendar-summary" data-role="meeting-summary"></span>`
                     : `<h2>${escapeText(summary.name || summary.email || "-")}</h2><p>${escapeText(conversationSummaryInfo() || "-")}</p><span class="mailbox-reply-detail" data-role="last-reply-time">${lastReplyDetailInner({ kind: "unavailable", text: LAST_REPLY_UNAVAILABLE_TEXT })}</span><span class="calendar-summary" data-role="meeting-summary"></span>`;
             }
             // I-4：优先取当前页同一行，回退身份匹配的 selectedSummary；都不可用保留默认文案。
@@ -6299,7 +6299,7 @@
                         <button class="button outbound-upload" type="button" data-action="mc-upload-attachment" title="上传附件" aria-label="上传附件"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l10.6-10.6a4 4 0 0 1 5.66 5.66L9.41 17.41a2 2 0 0 1-2.83-2.83l9.19-9.19"/></svg></button>
                         <input type="file" data-role="outbound-file-input" multiple hidden>
                         ${meetingTrigger}${materialTrigger}${templateReferenceTrigger}${followUpButton}
-                        ${delegated ? "" : '<button class="button" type="button" data-action="mc-complete-reply-identity">补全称呼与签名</button>'}
+                        <button class="button" type="button" data-action="mc-complete-reply-identity">补全称呼与签名</button>
                     </div>
                     ${delegated ? "" : '<div class="reply-identity-defaults"><span>全局默认</span><strong data-role="reply-identity-default-summary">全局默认：加载中…</strong><button class="reply-identity-settings-link" type="button" data-action="mc-reply-identity-settings">默认设置</button></div>'}
                     <div class="mc-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="人工回复正文" data-role="mc-editor">${editorContent}</div>
@@ -10589,6 +10589,17 @@
             loadList,
             flushDrafts,
             hasPendingDrafts,
+            lockAccess: () => {
+                if (instance.accessLocked) return;
+                instance.accessLocked = true;
+                const release = hostFn("mcHostReleaseDelegatedContext");
+                if (release) release(fixedContactId);
+                host.querySelectorAll("button,select,input").forEach((node) => { node.disabled = true; });
+                host.querySelectorAll('[contenteditable="true"]').forEach((node) => node.setAttribute("contenteditable", "false"));
+                const note = doc.createElement("p"); note.className = "mc-error";
+                note.textContent = "专家权限已变化，请保留正文后点击刷新";
+                host.appendChild(note);
+            },
             unmount,
             isMounted: () => true
         };
@@ -10617,6 +10628,7 @@
             loadList: () => { if (controller) return controller.loadList(); return undefined; },
             flushDrafts: () => controller.flushDrafts(),
             hasPendingDrafts: () => controller.hasPendingDrafts(),
+            lockAccess: () => controller.lockAccess(),
             unmount: () => { if (controller) controller.unmount(); },
             isMounted: () => { if (controller) return controller.isMounted(); return false; }
         };

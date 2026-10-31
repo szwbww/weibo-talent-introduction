@@ -95,6 +95,13 @@ class FakeElement {
         this.children.push(child);
         return child;
     }
+    insertBefore(child, before) {
+        if (child.parentNode) child.parentNode.removeChild(child);
+        const index = this.children.indexOf(before);
+        child.parentNode = this;
+        if (index < 0) this.children.push(child); else this.children.splice(index, 0, child);
+        return child;
+    }
     replaceChild(child, previous) {
         const index = this.children.indexOf(previous);
         if (index < 0) throw new Error("missing child");
@@ -234,6 +241,9 @@ const flush = async () => {
 
 const LIST_PATH = "/api/mail/mailbox/conversations";
 
+function isMetadataPath(path) {
+    return path.startsWith("/api/meeting-calendar/summaries?") || path.startsWith("/api/mail/contact-notes/") || path.startsWith("/api/mail/contact-locations/") || path.startsWith("/api/mail/mailbox/review-drafts") || path.endsWith("/access");
+}
 function createHarness() {
     const document = createDocument();
     const runtime = loadRuntime(document);
@@ -244,10 +254,15 @@ function createHarness() {
         runtime,
         host,
         calls,
+        metadataResponder: async (path) => path.endsWith("/access") ? { accessLevel: "READ" }
+            : path.startsWith("/api/meeting-calendar/") ? [{ contactId: 7, activeCount: 0 }]
+            : path.startsWith("/api/mail/mailbox/review-drafts") ? { items: [], total: 0 }
+            : {},
         responder: async () => ({ items: [], total: 0, page: 0, size: 20 })
     };
     harness.api = (requestPath, options = {}) => {
         calls.push({ path: requestPath, options });
+        if (isMetadataPath(requestPath)) return harness.metadataResponder(requestPath, options);
         return harness.responder(requestPath, options);
     };
     harness.mount = () => {
@@ -353,7 +368,7 @@ describe("S-1 DOM 骨架（真实模块渲染）", () => {
         const scroll = findOne(conversation, "mc-scroll");
         assert.strictEqual(findOne(scroll, "mc-empty").textContent, "请选择左侧专家");
 
-        assert.deepStrictEqual(harness.calls.map(call => call.path), [
+        assert.deepStrictEqual(harness.calls.filter(call => !isMetadataPath(call.path)).map(call => call.path), [
             `${LIST_PATH}?page=0&size=20`, `${LIST_PATH}?page=0&size=1&pendingOnly=true`, `${LIST_PATH}?page=0&size=1&draftsOnly=true`
         ]);
         assert.strictEqual(harness.calls[0].path, `${LIST_PATH}?page=0&size=20`);
@@ -393,8 +408,8 @@ describe("S-1 DOM 骨架（真实模块渲染）", () => {
         const detailCall = harness.calls.find((call) => call.path.includes("/messages"));
         assert.strictEqual(detailCall.path, `${LIST_PATH}/7/messages?limit=50`);
         const identity = findOne(harness.root, "mc-identity");
-        assert.strictEqual(identity.children.length, 1);
-        assert.strictEqual(identity.textContent, "张教授");
+        assert.strictEqual(identity.children[0].textContent, "张教授");
+        assert.ok(identity.textContent.includes("暂无排期"));
         assert.ok(!harness.root.textContent.includes(EXPERT_A.email));
 
         const scroll = findOne(harness.root, "mc-scroll");
@@ -467,7 +482,7 @@ describe("expert-access 01 I-3/S-1 只读标签", () => {
         assert.ok(!harness.root.textContent.includes(EXPERT_A.email));
         harness.calls.forEach((call) => {
             assert.strictEqual(call.options.method, "GET");
-            assert.ok(call.path.startsWith(LIST_PATH), call.path);
+            assert.ok(call.path.startsWith(LIST_PATH) || isMetadataPath(call.path), call.path);
         });
         harness.handle.unmount();
     });
@@ -487,7 +502,7 @@ describe("expert-access 01 I-3/S-1 只读标签", () => {
             if (expertTags === null) {
                 assert.ok(notes.every((node) => node.tagName === "P"));
                 assert.ok(findOne(harness.root, "mc-person-main").children.includes(notes[0]));
-                assert.ok(findOne(harness.root, "mc-identity").children.includes(notes[1]));
+                assert.ok(allNodes(findOne(harness.root, "mc-identity")).includes(notes[1]));
             }
             harness.handle.unmount();
         }
@@ -521,7 +536,7 @@ describe("expert-access 01 I-3/S-1 只读标签", () => {
             ["inbound-tag-chip qa", "inbound-tag-chip custom", "inbound-tag-chip qa inactive"]);
         harness.calls.forEach((call) => {
             assert.strictEqual(call.options.method, "GET");
-            assert.ok(call.path.startsWith(LIST_PATH), call.path);
+            assert.ok(call.path.startsWith(LIST_PATH) || isMetadataPath(call.path), call.path);
         });
         harness.handle.unmount();
     });
@@ -567,7 +582,7 @@ describe("I-4 文本渲染安全", () => {
             assert.strictEqual(findOne(harness.root, "mc-person-main").children[0].children[0].textContent, "未填写姓名");
             clickAction(harness, "select-expert");
             await flush();
-            assert.strictEqual(findOne(harness.root, "mc-identity").textContent, "未填写姓名");
+            assert.strictEqual(findOne(harness.root, "mc-identity").children[0].textContent, "未填写姓名");
             assert.ok(!harness.root.textContent.includes(EXPERT_A.email));
             harness.handle.unmount();
         }
@@ -819,43 +834,37 @@ describe("I-3 失权/失败/竞态", () => {
         assert.strictEqual(harness.host.children.length, 0);
     });
 
-    it("重复 focus/visibility 事件合并为一组在途请求", async () => {
+    it("focus/visibility 只合并权限检查，保留正文节点和滚动，不刷新列表", async () => {
         const harness = createHarness();
         const gate = deferred();
-        let listCalls = 0;
-        harness.responder = async (requestPath) => {
-            if (requestPath.includes("pendingOnly=true") || requestPath.includes("draftsOnly=true")) return listResponse([], 0);
-            if (requestPath.startsWith(`${LIST_PATH}?`)) {
-                listCalls += 1;
-                if (listCalls > 1) return gate.promise;
-                return listResponse([EXPERT_A]);
-            }
-            return detailResponse([]);
+        let accessCalls = 0;
+        const defaults = harness.metadataResponder;
+        harness.metadataResponder = (path) => {
+            if (!path.endsWith("/access")) return defaults(path);
+            accessCalls++; return gate.promise;
         };
-        harness.mount();
-        await flush();
-        assert.strictEqual(listCalls, 1);
-
+        harness.responder = async path => path.startsWith(`${LIST_PATH}?`)
+            ? listResponse([EXPERT_A]) : detailResponse([{source:"MAIL_RECORD",id:1,direction:"OUTBOUND",body:"保留正文"}]);
+        harness.mount(); await flush(); clickAction(harness,"select-expert"); await flush();
+        const message = findOne(harness.root,"mc-message"), scroll = findOne(harness.root,"mc-scroll");
+        scroll.scrollTop = 123;
+        const callsBefore = harness.calls.filter(c => !isMetadataPath(c.path)).length;
         harness.runtime.dispatchWindow("focus", {});
         harness.document.dispatch("visibilitychange", {});
         harness.runtime.dispatchWindow("focus", {});
         await flush();
-        assert.strictEqual(listCalls, 2, "同时刻重复事件只产生一组请求");
-
-        gate.resolve(listResponse([EXPERT_A]));
-        await flush();
-        assert.strictEqual(harness.host.children.length, 1);
-
-        harness.handle.unmount();
-        harness.runtime.dispatchWindow("focus", {});
-        harness.document.dispatch("visibilitychange", {});
-        await flush();
-        assert.strictEqual(listCalls, 2, "unmount 后不再响应 focus/visible");
+        assert.strictEqual(accessCalls, 1);
+        gate.resolve({accessLevel:"READ"}); await flush();
+        assert.strictEqual(harness.calls.filter(c => !isMetadataPath(c.path)).length,callsBefore);
+        assert.strictEqual(findOne(harness.root,"mc-message"),message);
+        assert.strictEqual(scroll.scrollTop,123);
+        harness.handle.unmount(); harness.runtime.dispatchWindow("focus",{}); await flush();
+        assert.strictEqual(accessCalls,1);
     });
 });
 
 describe("I-2 请求范围与状态隔离", () => {
-    it("默认仅发起列表/详情 GET；草稿请求由显式交互触发且不触碰任何存储", async () => {
+    it("加载仅发起授权信息/草稿列表 GET，不写存储或产生草稿", async () => {
         const harness = createHarness();
         harness.responder = async (requestPath) => {
             if (requestPath.startsWith(`${LIST_PATH}?`)) return listResponse([EXPERT_A]);
@@ -872,7 +881,7 @@ describe("I-2 请求范围与状态隔离", () => {
             assert.strictEqual(call.options.method, "GET");
             const normalized = call.path.split("?")[0];
             assert.ok(
-                normalized === LIST_PATH || /^\/api\/mail\/mailbox\/conversations\/[^/]+\/messages$/.test(normalized),
+                isMetadataPath(call.path) || normalized === LIST_PATH || /^\/api\/mail\/mailbox\/conversations\/[^/]+\/messages$/.test(normalized),
                 `unexpected request ${call.path}`
             );
             assert.ok(call.options.signal, "every request carries an abort signal");
@@ -1018,4 +1027,24 @@ describe("I-2 请求范围与状态隔离", () => {
         await flush();
         assert.strictEqual(findOne(harness.root, "mc-timeline").children[0].textContent, "暂无往来邮件");
     });
+});
+
+it("READ 显示共享摘要和纯文本备注；FULL 列表显示邮箱，READ 不显示且不提供编辑", async () => {
+    const h = createHarness();
+    const read = {...EXPERT_A, accessLevel:"READ", accountCodes:["acc1"], receivedCount:2,sentCount:3,
+        latestInbound:{receivedAt:"2026-10-31T10:30:00"},displayPendingCount:4,displayPendingOwner:"admin",
+        displaySuspended:true,displaySuspendReason:"等待材料",operatorStatus:"REPLIED",currentIndexLevel:"APPLICATION",progressStatus:"FOLLOWING"};
+    h.runtime.operatorStatusOptions=[["REPLIED","已回复"]];h.runtime.indexLevelOptions=[["APPLICATION","有效"]];
+    h.responder = async path => path.startsWith(`${LIST_PATH}?`) ? listResponse([read,{...EXPERT_A,contactId:8,name:"可写专家",email:"writable@example.test",accessLevel:"FULL"}]) : detailResponse([]);
+    const metadata = h.metadataResponder;
+    h.metadataResponder = async path => path.includes("contact-notes/") ? {note:"<img src=x>合作说明"}
+        : path.includes("/timing") ? {location:{configured:true,countryLabel:"英国"},recommendation:{beijingStart:"2026-11-01T17:00:00+08:00",beijingEnd:"2026-11-02T01:00:00+08:00"}}
+        : metadata(path);
+    h.mount();await flush();clickAction(h,"select-expert");await flush();
+    const identity=findOne(h.root,"mc-identity"),card=findOne(h.root,"mc-person-main");
+    ["acc1","2026-10-31 10:30","收 2 · 发 3","4 条待处理","等待材料"].forEach(text=>assert.ok(card.textContent.includes(text),text));
+    ["已回复","有效","跟进中","英国","17:00","01:00","<img src=x>合作说明"].forEach(text=>assert.ok(identity.textContent.includes(text),text));
+    assert.ok(!h.root.textContent.includes(EXPERT_A.email));assert.ok(h.root.textContent.includes("writable@example.test"));
+    assert.ok(!allNodes(identity).some(n=>["IMG","BUTTON","INPUT"].includes(n.tagName)));
+    assert.ok(h.calls.every(c=>c.options.method==="GET"));h.handle.unmount();
 });

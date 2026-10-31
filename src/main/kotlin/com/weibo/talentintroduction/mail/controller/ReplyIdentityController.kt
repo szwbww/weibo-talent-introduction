@@ -11,9 +11,11 @@ import org.springframework.web.bind.annotation.RestController
 /** AuthInterceptor protects both API endpoints. Neither endpoint mutates a draft or sends mail. */
 @RestController
 @RequestMapping("/api/mail/reply-identity")
-class ReplyIdentityController(private val operations: PendingMailOperationService) {
+class ReplyIdentityController(private val operations: PendingMailOperationService,
+    private val guard: com.weibo.talentintroduction.mail.service.ExpertMailPermissionGuard) {
     @PostMapping("/inspect")
-    fun inspect(@RequestBody request: ReplyIdentityInspectRequest) = operations.inspectReplyIdentity(request.also {
+    fun inspect(@RequestBody request: ReplyIdentityInspectRequest, servletRequest: javax.servlet.http.HttpServletRequest) = operations.inspectReplyIdentity(request.also {
+        guard.requireFull(servletRequest.getSession(false)?.getAttribute(com.weibo.talentintroduction.auth.config.AuthSessionKeys.USERNAME) as? String, it.contactId)
         it.contextRequest().validate()
         require(it.textBody.length <= 100000 && it.htmlBody.length <= 100000) { "Body exceeds 100000 characters" }
     })

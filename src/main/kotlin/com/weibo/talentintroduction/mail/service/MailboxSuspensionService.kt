@@ -34,7 +34,8 @@ data class MailboxSuspensionState(
 
 data class MailboxPendingBadge(
     val manualReviewTotal: Long,
-    val countsByReasonType: Map<String, Long>
+    val countsByReasonType: Map<String, Long>,
+    val pendingReviewDraftCount: Long = 0
 )
 
 /** PUT 请求体：`{ "reason": null }` 或字符串；缺省按 null。username 永不出现在请求体。 */
@@ -144,7 +145,13 @@ class MailboxSuspensionService(
                 .addValue("status", PROCESS_STATUS_MANUAL_REVIEW)
                 .addValue("simulatorCode", MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
         ) { rs, _ -> rs.getString("reason_type") to rs.getLong("mail_count") }.toMap()
-        return MailboxPendingBadge(grouped.values.sum(), grouped)
+        val reviewCount = if (username == "admin") jdbcTemplate.queryForObject("""
+            SELECT COUNT(*) FROM mailbox_review_draft d
+            JOIN expert_contact c ON c.id = d.expert_contact_id
+            JOIN mail_sender_account a ON a.account_code = d.account_code
+            WHERE d.state = 'SUBMITTED' AND d.deleted_at IS NULL AND a.account_code <> :simulator
+        """.trimIndent(), mapOf("simulator" to MailSenderAccountService.SIMULATOR_ACCOUNT_CODE), Long::class.java) ?: 0L else 0L
+        return MailboxPendingBadge(grouped.values.sum(), grouped, reviewCount)
     }
 
     /** DELETE：显式取消（幂等；不删除/更新其它任何表 I-2/I-6）。 */

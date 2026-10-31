@@ -57,6 +57,8 @@ object MailReadOnlyPolicy {
         AllowedHandler("POST", com.weibo.talentintroduction.rag.controller.RagReplyController::class.java, "compose"),
         AllowedHandler("GET", MailboxConversationController::class.java, "list"),
         AllowedHandler("GET", MailboxConversationController::class.java, "messages"),
+        AllowedHandler("GET", MailboxConversationController::class.java, "access"),
+        AllowedHandler("POST", com.weibo.talentintroduction.mail.controller.ReplyIdentityController::class.java, "inspect"),
         AllowedHandler("GET", MailboxConversationController::class.java, "pendingBadge"),
         AllowedHandler("POST", MailReviewDraftController::class.java, "create"),
         AllowedHandler("GET", MailReviewDraftController::class.java, "list"),

@@ -173,10 +173,10 @@ class ReplyIdentityServiceTest {
 /** A separate top-level Surefire selector: real MVC request conversion, controller and global advice. */
 class ReplyIdentityControllerTest {
     private val operations = mock(PendingMailOperationService::class.java)
-    private val mvc = MockMvcBuilders.standaloneSetup(ReplyIdentityController(operations))
+    private val mvc = MockMvcBuilders.standaloneSetup(ReplyIdentityController(operations, mock(ExpertMailPermissionGuard::class.java)))
         .setControllerAdvice(GlobalExceptionHandler()).build()
     @Test fun `authentication interceptor protects both endpoints`() {
-        val protectedMvc = MockMvcBuilders.standaloneSetup(ReplyIdentityController(operations))
+        val protectedMvc = MockMvcBuilders.standaloneSetup(ReplyIdentityController(operations, mock(ExpertMailPermissionGuard::class.java)))
             .setControllerAdvice(GlobalExceptionHandler())
             .addInterceptors(com.weibo.talentintroduction.auth.config.AuthInterceptor(
                 mock(com.weibo.talentintroduction.auth.service.AuthService::class.java),com.fasterxml.jackson.databind.ObjectMapper(),

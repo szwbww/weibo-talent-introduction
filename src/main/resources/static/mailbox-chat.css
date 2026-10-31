@@ -263,3 +263,32 @@ body[data-mail-read-only="true"] .mail-chat .mc-person {
  .mail-chat .mc-compose .mc-editor{min-height:140px;max-height:320px}
  .mail-chat .mc-compose .mail-review-controls .mail-review-select{max-width:100%}
 }
+
+/* Reader summaries and shared review composer: match the existing mailbox cards. */
+.mail-chat .mc-person-main>.mc-grant-badge{align-self:flex-start;justify-self:start;width:max-content;max-width:100%;padding:2px 7px;border-radius:6px;color:#3564b9;background:#edf3ff;border-color:#bfd2f5;font-size:11px;line-height:1.6}
+.mail-chat .mc-reader-meta{color:#7d90aa;font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+.mail-chat .mc-reader-reply-time,.mail-chat .mc-reader-schedule{font-size:11px;color:#3159c5;line-height:1.8}
+.mail-chat .mc-reader-note{font-size:12px;color:#64748b;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:6px}
+.mail-chat .mc-reader-badges{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:8px 0}
+.mail-chat .mc-reader-review{margin-top:14px;background:#fff;flex:none}
+.mail-chat .mc-reader-review>summary{display:flex;align-items:center;gap:9px;list-style:none}
+.mail-chat .mc-reader-review>summary::after{content:'⌄';margin-left:auto;color:#8da3c1}
+.mail-chat .mc-reader-review[open]>summary::after{content:'⌃'}
+.mail-chat .mc-reader-review .mc-section-content{padding:12px 14px}
+.mail-chat .mc-reader-review .mail-review-controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:0}
+.mail-chat .mc-reader-review .mail-review-controls>.mail-review-select{width:auto;max-width:260px;min-width:160px;margin:0 auto 0 0}
+.mail-chat .mc-reader-subject{display:flex;gap:8px;align-items:center;color:#8a9bb4;font-size:11px}
+.mail-chat .mc-reader-subject>label{white-space:nowrap;display:flex;flex-direction:row;align-items:center;gap:8px;flex:1;min-width:0}
+.mail-chat .mc-reader-subject input{border:0;background:transparent;padding:0;color:#6f829c;height:auto;min-height:24px;text-overflow:ellipsis;opacity:1}
+.mail-chat .mc-reader-subject>span{white-space:nowrap}
+.mail-chat .mc-reader-state-hint,.mail-chat .mc-reader-save-state{color:#8496ad;font-size:11px}
+.mail-chat .mc-reader-review .mc-compose{gap:10px}
+.mail-chat .mc-reader-review .mc-compose-footer{border-top:1px solid #e5edf6;margin-top:2px;padding-top:10px;justify-content:flex-start;gap:12px}
+.mail-chat .mc-reader-review .mc-compose-footer>.mail-review-actions{margin-left:auto;display:flex;gap:8px;align-items:center}
+.mail-chat .mc-reader-review .mc-compose-footer>.mail-review-footer{padding:0;border:0;margin:0;display:flex;gap:10px}
+.mail-chat .mc-reader-review .mc-text-button.danger{color:#d16b77}
+.mail-chat .mc-reader-review .mc-editor[contenteditable=false]{background:#f8faff}
+@media(max-width:760px){.mail-chat .mc-reader-subject{flex-wrap:wrap}.mail-chat .mc-reader-review .mc-compose-footer>.mail-review-actions{width:100%;justify-content:flex-end}}
+
+.mail-chat .mc-reader-review .mc-editor{color:#334155}
+.mail-chat .mc-reader-review .mc-editor :is(p,div,li,blockquote){color:inherit}

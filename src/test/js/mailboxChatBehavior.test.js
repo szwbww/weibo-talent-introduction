@@ -6883,7 +6883,7 @@ describe("07 delegated conversation — fixed target and existing editor", () =>
         }, mountOverrides || {}));
     }
 
-    it("mounts only S-4 right pane, no administrator bootstrap or identity metadata", async () => {
+    it("mounts fixed right pane with writable identity metadata, without administrator bootstrap", async () => {
         const ctx = await delegated();
         const shell = ctx.host.querySelector('[data-role="delegated-conversation"]');
         assert.ok(shell);
@@ -6897,9 +6897,9 @@ describe("07 delegated conversation — fixed target and existing editor", () =>
         assert.strictEqual(ctx.host.querySelector('[data-action="mc-template-follow"]'), null);
         assert.strictEqual(ctx.host.querySelector('[data-action="mc-reply-identity-settings"]'), null);
         assert.strictEqual(ctx.host.querySelectorAll('[data-role="mc-editor"]').length, 1);
-        assert.ok(!ctx.host.querySelector(".mc-identity").textContent.includes("a@example.edu"));
-        assert.ok(!ctx.host.querySelector(".mc-identity").textContent.includes("acc1"));
-        assert.strictEqual(ctx.host.querySelector(".mc-identity").querySelector("p"), null);
+        assert.ok(ctx.host.querySelector(".mc-identity").textContent.includes("a@example.edu"));
+        assert.ok(ctx.host.querySelector(".mc-identity").textContent.includes("acc1"));
+        assert.ok(ctx.host.querySelector(".mc-identity").querySelector("p"));
         assert.strictEqual(ctx.host.querySelectorAll('[data-role="last-reply-time"]').length, 1);
         assert.ok(!ctx.calls.api.some(call => call.url.startsWith("/api/mail/mailbox/conversations?")));
         assert.ok(!ctx.calls.api.some(call => call.url.startsWith("/api/mail/mailbox/drafts/summaries")));
@@ -7004,7 +7004,7 @@ describe("08 final expert scope and independent pending mail badge", () => {
         assert.equal(popoverField(ctx, "mailboxFilterExpertScope").value, "ALL");
     });
 
-    it("real app publisher updates mounted mail-count badge, preserves failure/zero and ignores old request", async () => {
+    it("real app publisher updates mounted review-draft badge, preserves failure/zero and ignores old request", async () => {
         const ctx = await bootChat({ conversations: { items: [expertA()], total: 1 } });
         const app = fs.readFileSync(path.join(ROOT, "app.js"), "utf-8");
         ctx.doc.dispatchEvent = event => ctx.doc.root.dispatchEvent(event);
@@ -7018,21 +7018,21 @@ describe("08 final expert scope and independent pending mail badge", () => {
         ctx.sandbox.api = () => new Promise((resolve, reject) => resolves.push({ resolve, reject }));
         const first = ctx.sandbox.refreshUnmatchedBadge();
         const second = ctx.sandbox.refreshUnmatchedBadge();
-        resolves[1].resolve({ manualReviewTotal: 103, countsByReasonType: {} }); await second;
+        resolves[1].resolve({ manualReviewTotal: 7, pendingReviewDraftCount: 103, countsByReasonType: {} }); await second;
         const badge = ctx.host.querySelector(".mc-pending-count");
         const trigger = ctx.host.querySelector('[data-action="mc-more-filters"]');
         assert.equal(badge.textContent, "99+");
-        assert.match(trigger.getAttribute("aria-label"), /103条待处理邮件/);
-        resolves[0].resolve({ manualReviewTotal: 1, countsByReasonType: {} }); await first;
+        assert.match(trigger.getAttribute("aria-label"), /103条待审核草稿/);
+        resolves[0].resolve({ manualReviewTotal: 1, pendingReviewDraftCount: 1, countsByReasonType: {} }); await first;
         assert.equal(badge.textContent, "99+");
         let request = ctx.sandbox.refreshUnmatchedBadge();
         resolves[2].reject(new Error("offline")); await request;
         assert.equal(badge.hidden, true);
         assert.match(trigger.getAttribute("title"), /数量不可用/);
         request = ctx.sandbox.refreshUnmatchedBadge();
-        resolves[3].resolve({ manualReviewTotal: 0, countsByReasonType: {} }); await request;
+        resolves[3].resolve({ manualReviewTotal: 5, pendingReviewDraftCount: 0, countsByReasonType: {} }); await request;
         assert.equal(badge.hidden, true);
-        assert.match(trigger.getAttribute("aria-label"), /0条待处理邮件/);
+        assert.match(trigger.getAttribute("aria-label"), /0条待审核草稿/);
         ctx.api.unmount();
         request = ctx.sandbox.refreshUnmatchedBadge();
         resolves[4].resolve({ manualReviewTotal: 4, countsByReasonType: {} }); await request;

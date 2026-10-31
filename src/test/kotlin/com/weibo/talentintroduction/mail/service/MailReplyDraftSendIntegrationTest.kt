@@ -430,7 +430,7 @@ class MailReplyDraftSendIntegrationTest {
             it.registerSingleton("draftController",MailReplyDraftController(drafts))
             it.registerSingleton("conversationController",MailboxConversationController(mock(MailboxConversationService::class.java),
                 mock(ExpertFollowService::class.java),mock(ExpertRepliedDismissalService::class.java),pending,mock(MailboxSuspensionService::class.java)))
-            it.registerSingleton("identityController",com.weibo.talentintroduction.mail.controller.ReplyIdentityController(pending))
+            it.registerSingleton("identityController",com.weibo.talentintroduction.mail.controller.ReplyIdentityController(pending, mock(ExpertMailPermissionGuard::class.java)))
         }
         val dispatcher=Tomcat.addServlet(context,"dispatcher",DispatcherServlet(app)); dispatcher.loadOnStartup=1; context.addServletMappingDecoded("/","dispatcher")
         val login=object: HttpServlet() { override fun doGet(req: HttpServletRequest,res: HttpServletResponse) { req.getSession(true).setAttribute(AuthSessionKeys.USERNAME,req.getParameter("user")); res.writer.write("ok") } }

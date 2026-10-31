@@ -31,11 +31,11 @@ class MailReviewDraftService(
         grant(username, contactId, true)
         val requestId = try { UUID.fromString(clientRequestId).toString() } catch (e: IllegalArgumentException) { invalid() }
         if (requestId != clientRequestId) invalid()
-        val canonical = canonical(subject, html)
+        val canonical = canonical("", html)
         repository.findByRequest(username, requestId)?.let { previous ->
             if (previous.contactId != contactId) conflictVersion()
             val initial = repository.creationEvent(previous.id) ?: error("Missing review creation snapshot")
-            if (initial.payload["subject"] != canonical.subject || initial.payload["html"] != canonical.html || initial.payload["text"] != canonical.text) conflictVersion()
+            if (initial.payload["html"] != canonical.html || initial.payload["text"] != canonical.text) conflictVersion()
             return response(previous, username)
         }
         val target = repository.resolveTarget(contactId)
@@ -45,7 +45,7 @@ class MailReviewDraftService(
             repository.insert(MailReviewDraftRow(ownerUsername = username, contactId = contactId,
                 clientRequestId = requestId, targetKind = target.targetKind, targetId = target.targetId,
                 accountCode = target.accountCode, state = MailReviewDraftState.DRAFT,
-                subject = canonical.subject, html = canonical.html, text = canonical.text, createdAt = now, updatedAt = now))
+                subject = repository.targetSubject(contactId, target.targetKind, target.targetId, target.accountCode), html = canonical.html, text = canonical.text, createdAt = now, updatedAt = now))
         } catch (e: DuplicateKeyException) { conflictVersion() }
         snapshot(row, "CREATE", username)
         return response(row, username)
@@ -71,7 +71,7 @@ class MailReviewDraftService(
         val username = requireReader(actor)
         val row = writable(username, id, expectedVersion)
         state(row, MailReviewDraftState.DRAFT, MailReviewDraftState.RETURNED)
-        val value = canonical(subject, html)
+        val value = canonical(replySubject(row), html)
         if (value.subject == row.subject && value.html == row.html && value.text == row.text) return response(row, username)
         return response(change(row, row.copy(subject = value.subject, html = value.html, text = value.text), "SAVE", username), username)
     }
@@ -81,8 +81,9 @@ class MailReviewDraftService(
         val username = requireReader(actor)
         val row = writable(username, id, expectedVersion)
         state(row, MailReviewDraftState.DRAFT, MailReviewDraftState.RETURNED)
-        validateSubmission(row)
-        return response(change(row, row.copy(state = MailReviewDraftState.SUBMITTED, submittedAt = row.submittedAt ?: now(), returnReason = null), "SUBMIT", username), username)
+        val submitted = row.copy(subject = replySubject(row))
+        validateSubmission(submitted)
+        return response(change(row, submitted.copy(state = MailReviewDraftState.SUBMITTED, submittedAt = row.submittedAt ?: now(), returnReason = null), "SUBMIT", username), username)
     }
 
     @Transactional
@@ -275,7 +276,7 @@ class MailReviewDraftService(
         val admin = username == MailReadOnlyPolicy.ADMIN_USERNAME
         val send = repository.sendProjection(row)
         return MailReviewDraftDetail(id = row.id, contactId = row.contactId, expertName = repository.contactName(row.contactId),
-            ownerUsername = row.ownerUsername, version = row.version, state = row.state, subject = row.subject,
+            ownerUsername = row.ownerUsername, version = row.version, state = row.state, subject = if (row.subject.isNotBlank() || row.state == MailReviewDraftState.APPROVED) row.subject else replySubject(row),
             html = row.html, text = row.text, accountCode = row.accountCode, targetKind = row.targetKind, targetId = row.targetId,
             submittedAt = row.submittedAt, returnReason = row.returnReason, reviewedAt = row.reviewedAt, deleted = false,
             createdAt = row.createdAt, updatedAt = row.updatedAt, commentCount = repository.commentCount(row.id),
@@ -283,6 +284,8 @@ class MailReviewDraftService(
             approvedContextToken = if (admin) row.approvedContextToken else null,
             sendStatus = send.sendStatus, sentMailRecordId = send.sentMailRecordId)
     }
+
+    private fun replySubject(row: MailReviewDraftRow) = repository.targetSubject(row.contactId, row.targetKind, row.targetId, row.accountCode)
 
     private data class Canonical(val subject: String, val html: String, val text: String)
 
@@ -299,7 +302,7 @@ class MailReviewDraftService(
     }
 
     private fun validateSubmission(row: MailReviewDraftRow) {
-        if (row.subject.isBlank() || row.text.isBlank()) invalid()
+        if (row.text.isBlank()) throw MailReviewDraftException(422, "REVIEW_INVALID_CONTENT", "请填写回复正文后提交审核")
         val texts = arrayOf(row.subject, row.html, row.text)
         try {
             texts.forEach { placeholders.requireValidTemplatePlaceholders(it) }

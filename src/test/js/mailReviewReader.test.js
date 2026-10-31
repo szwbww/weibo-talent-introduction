@@ -43,12 +43,13 @@ async function setup({ sanitizer = true } = {}) {
         if (url.endsWith("/withdraw")) next.state = "DRAFT";
         h.rows.set(id, next); return next;
     };
+    const metadata = h.metadataResponder;
+    h.metadataResponder = (url, options) => url.startsWith(BASE) ? h.responder(url, options) : metadata(url, options);
     h.mount(); await flush(); clickAction(h, "select-expert"); await flush();
     return h;
 }
 async function create(h) { click(h, "new"); await flush(); }
 function edit(h, text = "edited") {
-    role(h, "review-subject").value = text;
     role(h, "review-editor").innerHTML = "<p>" + text + "</p>";
     role(h, "review-editor").dispatch("input", {});
 }
@@ -62,7 +63,7 @@ test("review mutations refresh the draft tab without replacing the active editor
     assert.equal(role(h, "reader-draft-experts").textContent, "1");
     edit(h, "keep this input"); click(h, "save"); await flush();
     assert.equal(role(h, "review-editor"), editor);
-    assert.equal(role(h, "review-subject").value, "keep this input");
+    assert.equal(role(h, "review-subject").value, "A");
     click(h, "delete"); await flush();
     assert.equal(role(h, "reader-draft-experts").textContent, "0");
     h.handle.unmount();
@@ -72,14 +73,14 @@ test("S-1 persistent exact DOM and empty state, no extra classes/capabilities/st
     const h = await setup();
     assert.equal(role(h, "review-state").textContent, "暂无草稿");
     assert.equal(role(h, "review-editor").hidden, true);
-    assert.equal(role(h, "review-drafts").parentNode.className, "mc-conversation");
+    assert.equal(role(h, "review-drafts").parentNode.className, "mc-scroll");
     assert.equal(role(h, "review-compose").parentNode.className, "mc-section-content");
     assert.equal(role(h, "review-history").hidden, true);
     assert.equal(role(h, "review-discussion").hidden, true);
     assert.equal(nodes(h).filter(n => n.dataset.role === "review-editor").length, 1);
     assert.ok(!/(localStorage|sessionStorage)\s*[.[]/.test(moduleSource));
     assert.ok(!/sender-accounts|\/translate|\/approve|\/send|attachment/i.test(moduleSource.replace(/\/\*[\s\S]*?\*\//g, "")));
-    const allowed = new Set(["mail-review-controls", "mail-review-panel", "mail-review-entry", "mail-review-input", "mail-review-footer", "mail-review-actions"]);
+    const allowed = new Set(["mail-review-controls", "mail-review-panel", "mail-review-entry", "mail-review-input", "mail-review-footer", "mail-review-actions", "mail-review-select"]);
     for (const n of nodes(h)) {
         assert.equal(n.getAttribute("style"), null);
         for (const c of n.className.split(/\s+/)) if (c.startsWith("mail-review-")) assert.ok(allowed.has(c), c);
@@ -100,7 +101,7 @@ test("explicit save, latest-version submit, withdraw, two independent drafts and
     assert.equal(action(h, "save").hidden, true); assert.equal(action(h, "withdraw").hidden, false);
     click(h, "withdraw"); await flush(); await create(h); edit(h, "B"); click(h, "save"); await flush();
     assert.equal(h.rows.size, 2); click(h, "history"); await flush(); click(h, "select", 1); await flush();
-    assert.equal(role(h, "review-subject").value, "edited");
+    assert.equal(role(h, "review-subject").value, "A");
     assert.equal(role(h, "review-history").hidden, true);
     assert.ok(h.calls.some(c => c.path === BASE + "/1" && c.options.method === "GET")); h.handle.unmount();
 });
@@ -110,7 +111,7 @@ test("late save canonical baseline preserves newer input and dirty unload prompt
     h.custom = (url, opt) => opt.method === "PUT" ? gate.promise : undefined;
     click(h, "save"); await flush(); edit(h, "newer");
     gate.resolve({ ...draftValue(1, 2), subject: "canonical", html: "<p>canonical</p>" }); await flush();
-    assert.equal(role(h, "review-subject").value, "newer");
+    assert.equal(role(h, "review-subject").value, "A");
     assert.equal(role(h, "review-editor").innerHTML, "<p>newer</p>");
     assert.equal(h.handle.hasPendingDrafts(), true);
     let prevented = false; h.runtime.dispatchWindow("beforeunload", { preventDefault() { prevented = true; } }); assert.equal(prevented, true);
@@ -124,12 +125,12 @@ for (const status of [0, 409]) test("failed save " + status + " preserves input 
     h.custom = (url, opt) => opt.method === "PUT" ? Promise.reject(Object.assign(Error("failed"), { status })) : undefined;
     const beta = nodes(h).find(n => n.dataset.action === "select-expert" && n.dataset.contactId === "8");
     h.root.dispatch("click", { target: beta }); await flush();
-    assert.equal(role(h, "review-subject").value, "local");
-    assert.equal(nodes(h).find(n => n.className === "mc-identity").textContent, "张教授");
+    assert.equal(role(h, "review-subject").value, "A");
+    assert.equal(nodes(h).find(n => n.className === "mc-identity").children[0].textContent, "张教授");
     await assert.rejects(h.handle.flushDrafts()); await assert.rejects(h.handle.refresh());
     click(h, "new"); await flush(); click(h, "submit"); await flush();
     assert.equal(h.rows.size, 1); assert.ok(!h.calls.some(c => c.path.endsWith("/submit")));
-    assert.equal(role(h, "review-error").textContent, status === 409 ? "草稿已被更新，请重新加载" : "保存失败，内容尚未同步"); h.handle.unmount();
+    assert.equal(role(h, "review-error").textContent, status === 409 ? "草稿已被更新，请重新加载" : "保存草稿失败：failed"); h.handle.unmount();
 });
 
 for (const status of [401, 403]) test("auth " + status + " clears timeline/editor/comments/cache and aborts pending requests", async () => {
@@ -143,12 +144,16 @@ for (const status of [401, 403]) test("auth " + status + " clears timeline/edito
     h.runtime.dispatchWindow("focus", {}); await flush(); assert.equal(h.calls.length, count); h.handle.unmount();
 });
 
-test("focus keeps dirty editor/caret node, server version change locks submit without overwrite", async () => {
+test("focus preserves draft input; stale version is rejected on save without overwrite", async () => {
     const h = await setup(); await create(h); edit(h, "local"); const editor = role(h, "review-editor");
-    h.rows.set(1, { ...h.rows.get(1), version: 3, state: "APPROVED" });
+    const start = h.calls.length;
     h.runtime.dispatchWindow("focus", {}); await flush();
     assert.equal(role(h, "review-editor"), editor); assert.equal(editor.innerHTML, "<p>local</p>");
+    assert.deepEqual(Array.from(h.calls.slice(start),c=>c.path),["/api/mail/mailbox/conversations/7/access"]);
+    h.custom = (url, opt) => opt.method === "PUT" ? Promise.reject(Object.assign(Error("version conflict"),{status:409})) : undefined;
+    click(h,"save"); await flush();
     assert.equal(action(h, "submit").disabled, true); assert.equal(action(h, "reload").hidden, false);
+    assert.equal(editor.innerHTML,"<p>local</p>");
     assert.equal(role(h, "review-error").textContent, "草稿已被更新，请重新加载"); h.handle.unmount();
 });
 
@@ -216,7 +221,7 @@ test("after revoke, flush permits logout and explicit refresh starts from the au
     click(h, "save"); await flush(); await h.handle.flushDrafts();
     h.custom = null; const start = h.calls.length;
     await h.handle.refresh(); await flush();
-    assert.ok(h.calls.slice(start).every(c => c.path.startsWith("/api/mail/mailbox/conversations?")));
+    assert.ok(h.calls.slice(start).every(c => c.path.startsWith("/api/mail/mailbox/conversations?") || c.path.startsWith("/api/meeting-calendar/summaries?")));
     assert.equal(role(h, "review-drafts").hidden, true);
     h.handle.unmount();
 });
@@ -267,7 +272,7 @@ test("detail recovery keeps conflict input until confirmation and clears it on r
     click(h, "save"); await flush();
     h.runtime.confirm = () => false;
     click(h, "reload"); await flush();
-    assert.equal(role(h, "review-subject").value, "Local text to copy");
+    assert.equal(role(h, "review-subject").value, "A");
     assert.equal(role(h, "review-editor").innerHTML, "<p>Local text to copy</p>");
     h.custom = (url, opt) => url === BASE + "/1" && opt.method === "GET"
         ? Promise.reject(Object.assign(Error("revoked"), { status: 403 })) : undefined;
@@ -310,5 +315,17 @@ for (const crypto of [undefined, {}]) test("creation without randomUUID uses a c
     await create(h);
     assert.notEqual(requests[1], requests[2], "a separate new draft gets a new identity");
     assert.equal(h.rows.size, 2);
+    h.handle.unmount();
+});
+
+test("主题不可编辑；提交失败保持已保存状态并显示真实提交错误", async () => {
+    const h = await setup(); await create(h);
+    assert.equal(role(h,"review-subject").disabled,true);
+    assert.equal(role(h,"review-subject").getAttribute("readonly"),"");
+    h.custom = url => url.endsWith("/submit") ? Promise.reject(Object.assign(Error("validation"),{status:422,data:{message:"请填写回复正文后提交审核"}})) : undefined;
+    click(h,"submit"); await flush();
+    assert.equal(role(h,"review-save-state").textContent,"已保存");
+    assert.equal(role(h,"review-error").textContent,"提交审核失败：请填写回复正文后提交审核");
+    assert.equal(role(h,"review-editor").innerHTML,"<p>body</p>");
     h.handle.unmount();
 });

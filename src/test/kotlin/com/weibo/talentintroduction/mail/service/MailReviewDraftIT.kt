@@ -42,7 +42,8 @@ class MailReviewDraftIT {
     @EnableAutoConfiguration
     @EnableJdbcRepositories(basePackages = ["com.weibo.talentintroduction.mail.repository"])
     @Import(MailReviewDraftService::class, MailReviewDraftRepository::class,
-        MailboxConversationRepository::class, MailContentService::class, MailPlaceholderService::class)
+        MailboxConversationRepository::class, MailContentService::class, MailPlaceholderService::class,
+        ExpertMailReadAccessService::class, MailboxSuspensionService::class)
     class Config
 
     companion object {
@@ -59,6 +60,8 @@ class MailReviewDraftIT {
         @JvmStatic @AfterAll fun stop() { if (mysql.isRunning) mysql.stop() }
     }
 
+    @Autowired private lateinit var access: ExpertMailReadAccessService
+    @Autowired private lateinit var suspension: MailboxSuspensionService
     @Autowired private lateinit var conversations: MailboxConversationRepository
     @Autowired private lateinit var service: MailReviewDraftService
     @Autowired private lateinit var jdbc: JdbcTemplate
@@ -112,6 +115,76 @@ class MailReviewDraftIT {
         jdbc.update("""INSERT INTO inbound_mail_processing(id,sender_account_code,folder,uid_validity,imap_uid,message_id,from_email,subject,body,cleaned_body,received_at,process_status,process_reason,expert_contact_id)
             VALUES(?,?,'INBOX',1,?,?, 'expert1@example.test','Inbound','Inbound body','Inbound clean','2026-09-01 09:00:00','MANUAL_REVIEW','Review fixture',1)""",
             processingId, account, processingId, "in-$processingId")
+    }
+
+
+    @Test
+    fun `V172 moves only existing FULL unresolved real mail and preserves processed records`() {
+        val old = Flyway.configure().dataSource(mysql.jdbcUrl, mysql.username, mysql.password)
+            .placeholderReplacement(false).cleanDisabled(false).target("171").load()
+        old.clean(); old.migrate(); seed()
+        jdbc.update("UPDATE expert_mail_read_access SET access_level='FULL' WHERE expert_contact_id=1")
+        inbound(50); inbound(51, "real-b"); inbound(52, "SIMULATOR_NOOP"); inbound(53); inbound(54)
+        jdbc.update("UPDATE inbound_mail_processing SET process_status='PROCESSED' WHERE id=53")
+        jdbc.update("UPDATE inbound_mail_processing SET expert_contact_id=3 WHERE id=54")
+        Flyway.configure().dataSource(mysql.jdbcUrl, mysql.username, mysql.password).placeholderReplacement(false).load().migrate()
+        assertEquals(listOf("user1", "user1", "admin", "admin", "admin"), jdbc.queryForList("SELECT pending_owner_username FROM inbound_mail_processing ORDER BY id", String::class.java))
+    }
+
+    @Test
+    fun `historical reply subject is fixed across create save newer incoming and legacy blank drafts`() {
+        val d = create(subject = "forged")
+        assertEquals("Re: Original", d["subject"].asText())
+        inbound(50)
+        val saved = node(service.save("user1", id(d), version(d), "unrelated", "<p>Updated</p>"))
+        assertEquals("Re: Original", saved["subject"].asText())
+        assertEquals(10L, saved["targetId"].asLong())
+        jdbc.update("UPDATE mailbox_review_draft SET subject='' WHERE id=?", id(d))
+        assertEquals("Re: Original", node(service.detail("user1", id(d)))["subject"].asText())
+        val submitted = node(service.submit("user1", id(d), version(saved)))
+        assertEquals("Re: Original", row(id(d))["subject"])
+        val approved = node(service.approve("admin", id(d), version(submitted), token(submitted)))
+        jdbc.update("UPDATE mail_record SET subject='Later mutation' WHERE id=10")
+        assertEquals(approved["subject"], node(service.detail("user1", id(d)))["subject"])
+        assertEquals("Re: Inbound", create()["subject"].asText())
+    }
+
+    @Test
+    fun `FULL grant transfers unresolved mail only and downgrade or revoke reclaims it`() {
+        inbound(50); inbound(51, "real-b"); inbound(52, "SIMULATOR_NOOP"); inbound(53)
+        jdbc.update("UPDATE inbound_mail_processing SET process_status='PROCESSED' WHERE id=53")
+        access.setAccessLevel("admin", 1, ExpertMailAccessLevel.READ)
+        assertEquals(4, jdbc.queryForObject("SELECT COUNT(*) FROM inbound_mail_processing WHERE pending_owner_username='admin'", Int::class.java))
+        access.setAccessLevel("admin", 1, ExpertMailAccessLevel.FULL)
+        assertEquals(listOf("user1", "user1", "admin", "admin"), jdbc.queryForList("SELECT pending_owner_username FROM inbound_mail_processing ORDER BY id", String::class.java))
+        assertEquals(2L, suspension.pendingBadge("user1").manualReviewTotal)
+        access.setAccessLevel("admin", 1, ExpertMailAccessLevel.READ)
+        assertEquals(4, jdbc.queryForObject("SELECT COUNT(*) FROM inbound_mail_processing WHERE pending_owner_username='admin'", Int::class.java))
+        access.setAccessLevel("admin", 1, ExpertMailAccessLevel.FULL)
+        access.revoke("admin", 1)
+        assertEquals(0L, suspension.pendingBadge("user1").manualReviewTotal)
+        assertEquals(2L, suspension.pendingBadge("admin").manualReviewTotal)
+    }
+
+    @Test
+    fun `admin review badge counts submitted undeleted drafts only independently of pending mail`() {
+        inbound(50)
+        val d = create()
+        assertEquals(0L, suspension.pendingBadge("admin").pendingReviewDraftCount)
+        assertEquals(1L, suspension.pendingBadge("admin").manualReviewTotal)
+        var state = node(service.submit("user1", id(d), version(d)))
+        assertEquals(1L, suspension.pendingBadge("admin").pendingReviewDraftCount)
+        state = node(service.withdraw("user1", id(d), version(state)))
+        assertEquals(0L, suspension.pendingBadge("admin").pendingReviewDraftCount)
+        state = node(service.submit("user1", id(d), version(state)))
+        state = node(service.returnDraft("admin", id(d), version(state), "补充说明"))
+        assertEquals(0L, suspension.pendingBadge("admin").pendingReviewDraftCount)
+        state = node(service.submit("user1", id(d), version(state)))
+        service.softDelete("user1", id(d), version(state))
+        assertEquals(0L, suspension.pendingBadge("admin").pendingReviewDraftCount)
+        val approved = submitted()
+        service.approve("admin", id(approved), version(approved), token(approved))
+        assertEquals(0L, suspension.pendingBadge("admin").pendingReviewDraftCount)
     }
 
     @Test
@@ -215,7 +288,8 @@ class MailReviewDraftIT {
         val request = UUID.randomUUID().toString()
         val first = create(request = request)
         assertEquals(first, create(request = request))
-        failure(409) { create("Different", request = request) }
+        assertEquals(first, create("Different", request = request))
+        failure(409) { create(html = "<p>Different</p>", request = request) }
         val second = create()
         assertNotEquals(id(first), id(second))
         val unchanged = node(service.save("user1", id(first), 1, "Subject", "<p>Body</p>"))
@@ -237,7 +311,7 @@ class MailReviewDraftIT {
         val events = node(service.events("user1", id(first), null, 100))
         assertEquals(7, events.size())
         val payloads = jdbc.queryForList("SELECT payload_json FROM mailbox_review_draft_event WHERE draft_id=? ORDER BY id", String::class.java, id(first)).map(mapper::readTree)
-        assertEquals("Subject", payloads[0]["subject"].asText())
+        assertEquals("Re: Original", payloads[0]["subject"].asText())
         assertEquals(saved["html"].asText(), payloads[1]["html"].asText())
         val page = node(service.list("user1", 1, 0, 20, false))
         assertEquals(1L, page["total"].asLong())
@@ -295,21 +369,21 @@ class MailReviewDraftIT {
         failure(413) { create(html = "<p>" + "界".repeat(350000) + "</p>") }
         // Escaping bare ampersands expands canonical HTML beyond the limit despite a small raw payload.
         failure(413) { create(html = "<p>" + "&".repeat(220000) + "</p>") }
-        failure(422) { create(subject = "x".repeat(256)) }
+        assertEquals("Re: Original", create(subject = "x".repeat(256))["subject"].asText())
         val byteLimit = 1024 * 1024
         val atLimit = "<p>" + "x".repeat(byteLimit - 7) + "</p>"
         create(html = atLimit)
         failure(413) { create(html = atLimit + "x") }
-        val boundary = create(subject = "S", html = "<p>" + "x".repeat(9998) + "</p>")
+        val boundary = create(subject = "S", html = "<p>" + "x".repeat(9993) + "</p>")
         service.submit("user1", id(boundary), 1)
-        val linked = create(subject = "S", html = "<p>" + "x".repeat(9998) + "</p><a href='https://example.test'></a>")
+        val linked = create(subject = "S", html = "<p>" + "x".repeat(9993) + "</p><a href='https://example.test'></a>")
         failure(422) { service.submit("user1", id(linked), 1) }
         for (htmlBody in listOf("<p></p>", "<p>\${expertName}</p>", "<p>\${unknown}</p>", "<p>\${broken</p>", "<p>" + "x".repeat(10000) + "</p>")) {
             val invalid = create(html = htmlBody)
             failure(422) { service.submit("user1", id(invalid), version(invalid)) }
         }
         val blank = create(subject = "")
-        failure(422) { service.submit("user1", id(blank), 1) }
+        assertEquals("SUBMITTED", node(service.submit("user1", id(blank), 1))["state"].asText())
         listOf("", " ", "x".repeat(2001)).forEach { text ->
             failure(422) { service.comment("user1", id(d), 1, text) }
             val s = submitted()
@@ -553,7 +627,7 @@ class MailReviewDraftIT {
                 assertTrue(started.await(10, TimeUnit.SECONDS))
             }
             assertEquals(1, revoke.get(20, TimeUnit.SECONDS))
-            assertEquals("Committed first", row(id(d))["subject"])
+            assertEquals("Re: Original", row(id(d))["subject"])
             assertEquals(2L, count("mailbox_review_draft_event"))
             failure(403) { service.detail("user1", id(d)) }
         } finally { pool.shutdownNow() }

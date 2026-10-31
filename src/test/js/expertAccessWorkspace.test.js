@@ -43,6 +43,8 @@ async function workspace(options = {}) {
                 return { items: (pending ? rows.slice(0, 1) : rows).map(row => ({ ...row, accessLevel: levels[row.contactId] })),
                     total: pending ? 1 : 2 };
             }
+            const access = url.match(/conversations\/([12])\/access$/);
+            if (access) return { accessLevel: levels[access[1]] };
             const messages = url.match(/conversations\/([12])\/messages/);
             if (messages) return { ...tools.messagesA(), accessLevel: levels[messages[1]] };
             if (url.startsWith("/api/mail/mailbox/review-drafts?")) return { items: [review], total: 1 };
@@ -82,7 +84,7 @@ test("READ/FULL switches use the real shared editor and exact request gate witho
     assert.ok(writable(h));
     assert.equal(h.host.querySelectorAll('[data-role="manual-compose"]').length, 1);
     assert.equal(h.host.querySelector('[data-role="review-compose"]'), null);
-    assert.ok(!h.host.querySelector('[data-role="delegated-conversation"] .mc-identity').textContent.includes("a@example.edu"));
+    assert.ok(h.host.querySelector('[data-role="delegated-conversation"] .mc-identity').textContent.includes("a@example.edu"));
     writable(h).innerText = "Only A manual content";
     tools.inputEvent(writable(h));
     const countsBefore = h.calls.api.filter(call => call.url.includes("draftsOnly=true")).length;
@@ -107,7 +109,7 @@ test("focus and visibility downgrade before restoring controls, logout clears me
     assert.ok(writable(h));
     h.levels[1] = "READ";
     h.dispatchGlobal("focus", {});
-    assert.equal(writable(h), null, "writable controls are removed synchronously before the permission request");
+    assert.ok(writable(h), "focus preserves editor until authority response arrives");
     await tools.flush();
     assert.equal(writable(h), null);
     h.doc.root.dispatchEvent(new tools.MiniEvent("visibilitychange"));
@@ -161,7 +163,7 @@ test("personal pending chip is a server expert count, not per-page mail count", 
     await tools.flush();
     assert.equal(h.host.querySelector('[data-action="reader-pending"]').getAttribute("aria-pressed"), "true");
     assert.ok(h.calls.api.some(call => call.url === "/api/mail/mailbox/conversations?page=0&size=20&pendingOnly=true"));
-    assert.ok(h.host.textContent.includes("1条待处理"));
+    assert.ok(h.host.textContent.includes("1 条待处理"));
     tools.click(h.host.querySelector('[data-action="reader-all"]'));
     await tools.flush();
     assert.equal(h.host.querySelector('[data-action="reader-all"]').getAttribute("aria-pressed"), "true");
@@ -256,7 +258,8 @@ test("actual delegated tag dialog cancels with its conversation and releases pro
         if (release === "visibility") h.doc.root.dispatchEvent(new tools.MiniEvent("visibilitychange"));
         if (release === "switch") await h.choose(2);
         if (release === "unmount") h.handle.unmount();
-        assert.equal(dialog.hasAttribute("open"), false, `${release} closes the owned modal synchronously`);
+        await tools.flush();
+        assert.equal(dialog.hasAttribute("open"), false, `${release} closes the owned modal after confirmed loss of permission`);
         await tools.flush();
         assert.equal(settled, true, `${release} resolves the pending tag promise`);
         assert.equal(h.doc.getElementById("actionDialogBody").innerHTML, "");

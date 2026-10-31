@@ -155,6 +155,8 @@ class InboundPendingOwnerIT {
                 }
             }
             Mockito.verifyNoInteractions(search, materials, delivery)
+            // Explicit mixed-owner fixture for admin suspension routes; FULL grant now transfers old pending items.
+            jdbc.update("UPDATE inbound_mail_processing SET pending_owner_username='admin' WHERE id=?", adminMail.id)
             for (method in methods) {
                 val url = "$base/$contactId/suspension" + if (method == "PATCH") "/reason" else ""
                 assertEquals(200, mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
@@ -184,8 +186,8 @@ class InboundPendingOwnerIT {
             assertEquals(0L, queue.listManualReviewQueue(actor = "user1").totalCount)
             assertEquals("admin", persisted(readerMail.id!!).pendingOwnerUsername)
             access.setAccessLevel("admin", contactId, ExpertMailAccessLevel.FULL)
-            assertEquals(0L, badge("user1"))
-            assertEquals(4L, badge("admin"))
+            assertEquals(3L, badge("user1"))
+            assertEquals(1L, badge("admin"))
             assertEquals(200, mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
                 .get("$base/$contactId/suspension").session(session("admin"))).andReturn().response.status)
         } finally { context.close() }
@@ -225,9 +227,12 @@ class InboundPendingOwnerIT {
                 assertEquals("owner-test", original.mailboxOwnerCode)
                 assertEquals(message.body, original.body)
                 access.setAccessLevel("admin", contactId, ExpertMailAccessLevel.FULL)
+                val transferred = received(message.imapUid)
+                assertEquals("user1", transferred.pendingOwnerUsername)
+                assertEquals(original.copy(pendingOwnerUsername = "user1", updatedAt = transferred.updatedAt), transferred)
                 assertEquals(SinglePipelineOutcome.DUPLICATE_IMAP_UID,
                     pipeline.processSingle(account(), message, skipImapAck = true).outcome)
-                assertEquals(original, received(message.imapUid))
+                assertEquals(transferred, received(message.imapUid))
             }
             val unknown = mail(uid++, withBody, matched = false)
             pipeline.processSingle(account(), unknown, skipImapAck = true)
@@ -253,7 +258,7 @@ class InboundPendingOwnerIT {
         }
     }
 
-    @Test fun `receipt winning contact lock retains admin on grant and is reclaimed on downgrade or revoke`() {
+    @Test fun `receipt winning contact lock is transferred on grant and reclaimed on downgrade or revoke`() {
         var uid = 200L
         for (withBody in listOf(true, false)) {
             for (level in listOf(ExpertMailAccessLevel.FULL, ExpertMailAccessLevel.READ, ExpertMailAccessLevel.NONE)) {
@@ -287,7 +292,7 @@ class InboundPendingOwnerIT {
                     release.countDown()
                     receipt.get(20, TimeUnit.SECONDS)
                     change.get(20, TimeUnit.SECONDS)
-                    assertEquals("admin", received(message.imapUid).pendingOwnerUsername)
+                    assertEquals(if (level == ExpertMailAccessLevel.FULL) "user1" else "admin", received(message.imapUid).pendingOwnerUsername)
                 } finally { release.countDown(); pool.shutdownNow() }
             }
         }
@@ -391,7 +396,7 @@ class InboundPendingOwnerIT {
         assertNull(reopened.resolvedBy)
         assertEquals(0, inbound.reopenManualResolved(auto.id!!, now))
         access.setAccessLevel("admin", contactId, ExpertMailAccessLevel.FULL)
-        assertEquals("admin", persisted(completed.id!!).pendingOwnerUsername)
+        assertEquals("user1", persisted(completed.id!!).pendingOwnerUsername)
         assertEquals(2L, inbound.countByExpertContactIdAndProcessStatus(contactId, "MANUAL_REVIEW"))
     }
 
@@ -409,17 +414,17 @@ class InboundPendingOwnerIT {
         } finally { jdbc.execute("DROP TRIGGER owner_reclaim_failure") }
     }
 
-    @Test fun `V170 legacy rows upgrade to admin independently of received date and FULL grant`() {
+    @Test fun `V170 legacy rows upgrade through V172 with current FULL ownership`() {
         val previous = Flyway.configure().dataSource(dataSource).placeholderReplacement(false).cleanDisabled(false).target("170").load()
         previous.clean()
         previous.migrate()
         setup()
-        access.setAccessLevel("admin", contactId, ExpertMailAccessLevel.FULL)
+        jdbc.update("INSERT INTO expert_mail_read_access(username,expert_contact_id,granted_by,created_at,access_level) VALUES('user1',?,'admin',NOW(),'FULL')", contactId)
         jdbc.update("INSERT INTO inbound_mail_processing (sender_account_code,imap_uid,from_email,received_at,process_status,process_reason,expert_contact_id) VALUES ('owner-test',900,'expert@example.test','2099-01-01','MANUAL_REVIEW','LEGACY',9201),('owner-test',901,'expert@example.test','2000-01-01','PROCESSED','LEGACY',9201)")
         val result = Flyway.configure().dataSource(dataSource).placeholderReplacement(false).load().migrate()
-        assertEquals("171", result.targetSchemaVersion)
-        assertEquals(1, result.migrationsExecuted)
-        assertEquals(listOf("admin", "admin"), jdbc.queryForList("SELECT pending_owner_username FROM inbound_mail_processing ORDER BY imap_uid", String::class.java))
+        assertEquals("172", result.targetSchemaVersion)
+        assertEquals(2, result.migrationsExecuted)
+        assertEquals(listOf("user1", "admin"), jdbc.queryForList("SELECT pending_owner_username FROM inbound_mail_processing ORDER BY imap_uid", String::class.java))
         assertEquals("NO", jdbc.queryForObject("SELECT IS_NULLABLE FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='inbound_mail_processing' AND column_name='pending_owner_username'", String::class.java))
         assertEquals("admin", jdbc.queryForObject("SELECT COLUMN_DEFAULT FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='inbound_mail_processing' AND column_name='pending_owner_username'", String::class.java))
         assertEquals(listOf("pending_owner_username", "process_status", "expert_contact_id", "sender_account_code"), jdbc.queryForList("SELECT COLUMN_NAME FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name='inbound_mail_processing' AND index_name='idx_inbound_pending_owner' ORDER BY seq_in_index", String::class.java))

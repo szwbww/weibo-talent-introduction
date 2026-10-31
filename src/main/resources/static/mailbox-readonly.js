@@ -262,13 +262,15 @@
         var draftItems = [], draftPage = 0, draftTotal = 0, eventItems = [], eventBefore = null;
         var eventDraftId = null, panel = null, commentText = "";
         var sanitizer = global.MailboxMeeting && global.MailboxMeeting.sanitizeDraftHtml;
-        var review = makeNode(doc, "section", "mc-section");
+        var review = makeNode(doc, "details", "mc-section mc-reader-review");
+        review.setAttribute("open", "");
+        var reviewSummary = makeNode(doc, "summary"); setText(reviewSummary, "回复草稿"); review.appendChild(reviewSummary);
         review.dataset.role = "review-drafts";
         var reviewContent = makeNode(doc, "div", "mc-section-content");
         var compose = makeNode(doc, "div", "mc-compose");
         compose.dataset.role = "review-compose";
         review.appendChild(reviewContent); reviewContent.appendChild(compose);
-        conversation.appendChild(review);
+        scroll.appendChild(review);
         function reviewButton(parent, action, label, className, id) {
             var node = makeNode(doc, "button", className || "button");
             node.setAttribute("type", "button"); node.dataset.reviewAction = action;
@@ -280,17 +282,25 @@
             node.dataset.role = role; parent.appendChild(node); return node;
         }
         var controls = makeNode(doc, "div", "mail-review-controls"); compose.appendChild(controls);
-        var historyButton = reviewButton(controls, "history", "草稿历史");
+        var historyButton = reviewButton(controls, "history", "草稿历史", "mc-text-button");
         historyButton.setAttribute("aria-expanded", "false");
-        var newButton = reviewButton(controls, "new", "新增草稿");
-        var stateBadge = roleNode(controls, "span", "mc-badge", "review-state");
+        var newButton = reviewButton(controls, "new", "＋ 新增草稿");
+        var stateBadge = roleNode(reviewSummary, "span", "mc-badge", "review-state");
+        var draftSelect = makeNode(doc, "select", "mail-review-select");
+        draftSelect.setAttribute("aria-label", "选择回复草稿");
+        controls.insertBefore(draftSelect, historyButton);
+        draftSelect.addEventListener("change", function () {
+            if (draftSelect.value) navigate(function () { return loadDraft(Number(draftSelect.value), false); });
+        });
         var historyPanel = roleNode(compose, "div", "mail-review-panel", "review-history");
         var subjectLabel = makeNode(doc, "label"); setText(subjectLabel, "主题");
         var subjectInput = roleNode(subjectLabel, "input", "", "review-subject");
         subjectInput.setAttribute("aria-label", "草稿主题");
-        var subjectDetails = makeNode(doc, "details", "mc-subject");
-        var subjectSummary = makeNode(doc, "summary"); setText(subjectSummary, "主题");
-        subjectDetails.appendChild(subjectSummary); subjectDetails.appendChild(subjectLabel); compose.appendChild(subjectDetails);
+        subjectInput.setAttribute("readonly", "");
+        var subjectDetails = makeNode(doc, "div", "mc-reader-subject");
+        var subjectSummary = makeNode(doc, "span"); setText(subjectSummary, "沿用原邮件主题");
+        subjectDetails.appendChild(subjectLabel); subjectDetails.appendChild(subjectSummary); compose.appendChild(subjectDetails);
+        var stateHint = roleNode(compose, "p", "mc-reader-state-hint", "review-state-hint");
         var editorTools = makeNode(doc, "div", "mc-editor-tools"); compose.appendChild(editorTools);
         [["bold", "B"], ["italic", "I"], ["insertUnorderedList", "列表"], ["createLink", "链接"]].forEach(function (entry) {
             var node = makeNode(doc, "button", "button");
@@ -307,9 +317,10 @@
         reviewButton(footer, "events", "变动历史", "mc-text-button");
         var discussion = roleNode(compose, "div", "mail-review-panel", "review-discussion");
         var composeFooter = makeNode(doc, "div", "mc-compose-footer"); compose.appendChild(composeFooter);
-        var saveState = roleNode(composeFooter, "span", "mc-note", "review-save-state"); saveState.setAttribute("role", "status");
+        var saveState = roleNode(composeFooter, "span", "mc-reader-save-state", "review-save-state"); saveState.setAttribute("role", "status");
+        composeFooter.appendChild(footer);
         var actions = makeNode(doc, "div", "mail-review-actions"); composeFooter.appendChild(actions);
-        var deleteButton = reviewButton(actions, "delete", "删除草稿", "button danger");
+        var deleteButton = reviewButton(actions, "delete", "删除草稿", "mc-text-button danger");
         var saveButton = reviewButton(actions, "save", "保存草稿");
         var withdrawButton = reviewButton(actions, "withdraw", "取消提交");
         var submitButton = reviewButton(actions, "submit", "提交审核", "button primary");
@@ -343,9 +354,24 @@
             historyPanel.hidden = panel !== "history";
             discussion.hidden = panel !== "comments" && panel !== "events";
             historyButton.setAttribute("aria-expanded", String(panel === "history"));
-            setText(stateBadge, stateLabel(draft));
+            setText(stateBadge, draft ? stateLabel(draft) : draftItems.some(function (item) { return !item.deleted; }) ? "未选择草稿" : "暂无草稿");
             subjectDetails.hidden = subjectLabel.hidden = editorTools.hidden = editor.hidden = footer.hidden = composeFooter.hidden = !draft;
-            subjectInput.disabled = !editable() || busy;
+            subjectInput.disabled = true;
+            stateHint.hidden = !draft;
+            setText(stateHint, draft ? ({ DRAFT: "提交后由管理员审核，通过前不会发送邮件。", SUBMITTED: "已提交，等待管理员审核。取消提交后可继续编辑。", RETURNED: "请按退回意见修改后重新提交。", APPROVED: "已审核，内容已锁定。审核通过不代表邮件已发送。" }[draft.state] || "") : "");
+            setText(submitButton, draft && draft.state === "RETURNED" ? "重新提交" : "提交审核");
+            draftSelect.replaceChildren();
+            var choices = draftItems.filter(function (item) { return !item.deleted; });
+            if (draft && !choices.some(function (item) { return item.id === draft.id; })) choices.unshift(draft);
+            if (!draft) {
+                var placeholder = makeNode(doc, "option"); placeholder.value = ""; placeholder.disabled = true;
+                setText(placeholder, choices.length ? "选择已有草稿" : "暂无草稿"); draftSelect.appendChild(placeholder);
+            }
+            choices.forEach(function (item) {
+                var option = makeNode(doc, "option"); option.value = String(item.id);
+                setText(option, "草稿 #" + item.id + " · " + stateLabel(item)); draftSelect.appendChild(option);
+            });
+            draftSelect.value = draft ? String(draft.id) : ""; draftSelect.disabled = !choices.length || busy || Boolean(saving);
             editor.setAttribute("contenteditable", String(editable() && !busy));
             editorTools.hidden = !draft || !editable();
             Array.from(editorTools.children).forEach(function (node) { node.disabled = !editable() || busy; });
@@ -388,10 +414,11 @@
             conflict = false; showReviewError(sanitizer ? "" : "编辑组件加载失败"); renderReview();
             if (panel === "comments" || panel === "events") renderDiscussion();
         }
-        function reviewFailure(error) {
+        function reviewFailure(error, operation) {
             if (error && (error.status === 401 || error.status === 403)) return;
             if (error && error.status === 409) conflict = true;
-            showReviewError(conflict ? "草稿已被更新，请重新加载" : "保存失败，内容尚未同步"); renderReview();
+            var detail = error && error.data && error.data.message || error && error.message || "请稍后重试";
+            showReviewError(conflict ? "草稿已被更新，请重新加载" : (error && error.reviewOperation || operation || "操作") + "失败：" + detail); renderReview();
         }
         function loadDraft(id, preserve) {
             requestedDraftId = id;
@@ -433,7 +460,8 @@
                 showReviewError("");
                 refreshDraftList();
             }, function (error) {
-                if (sameContext(ctx, true)) reviewFailure(error);
+                if (error) error.reviewOperation = "保存草稿";
+                if (sameContext(ctx, true)) reviewFailure(error, "保存草稿");
                 throw error;
             }).finally(function () { if (saving === promise) { saving = null; renderReview(); } });
             saving = promise; renderReview(); return promise;
@@ -478,7 +506,7 @@
             return requestJson(REVIEW_PATH + "?contactId=" + ctx.contact + "&includeDeleted=true&page=" + page + "&size=20").then(function (data) {
                 if (!sameContext(ctx, true) || seq !== historySeq) return;
                 draftItems = more ? draftItems.concat(data.items || []) : (data.items || []);
-                draftTotal = data.total; draftPage = page; renderHistory();
+                draftTotal = data.total; draftPage = page; renderHistory(); renderReview();
             }, function (error) { if (sameContext(ctx, true) && seq === historySeq) reviewFailure(error); });
         }
         function renderDiscussion() {
@@ -554,7 +582,7 @@
                         showReviewError("草稿已被更新，请重新加载"); renderReview();
                     } else acceptDraft(data, true);
                 });
-            }).catch(function (error) { if (sameContext(ctx, false)) reviewFailure(error); })
+            }).catch(function (error) { if (sameContext(ctx, false)) reviewFailure(error, {submit: "提交审核", withdraw: "取消提交", delete: "删除草稿", comment: "添加评论"}[action]); })
                 .finally(function () {
                     if (sameContext(ctx, false)) { busy = false; renderReview(); if (!discussion.hidden) renderDiscussion(); }
                 });
@@ -686,6 +714,60 @@
             return LIST_PATH + "/" + encodeURIComponent(String(contactId)) + "/messages" + query;
         }
 
+        var schedules = new Map(), schedulesSeq = 0, infoSeq = 0;
+        var readInfo = { contactId: null, note: "备注加载中…", timing: "所在地加载中…" };
+        function catalogLabel(catalog, value) {
+            var pair = (Array.isArray(catalog) ? catalog : []).find(function (item) { return item[0] === value; });
+            return pair ? pair[1] : (value || "");
+        }
+        function scheduleText(id) { return schedules.get(String(id)) || "排期加载中…"; }
+        function loadScheduleSummaries(items) {
+            var ids = items.map(function (item) { return item.contactId; }), seq = ++schedulesSeq, gen = generation;
+            schedules.clear();
+            if (!ids.length) return;
+            requestJson("/api/meeting-calendar/summaries?contactIds=" + ids.join(",")).then(function (rows) {
+                if (destroyed || seq !== schedulesSeq || gen !== generation) return;
+                (Array.isArray(rows) ? rows : []).forEach(function (row) {
+                    var when = row.next && row.next.startUtc;
+                    var short = when && typeof global.formatBeijingMeetingShort === "function" ? global.formatBeijingMeetingShort(when) : "";
+                    schedules.set(String(row.contactId), Number(row.activeCount) > 0 ? "已有排期 · " + row.activeCount + "场" + (short ? " · " + short : "") : "暂无排期");
+                });
+                ids.forEach(function (id) { if (!schedules.has(String(id))) schedules.set(String(id), "排期暂不可用"); });
+                renderList(); renderIdentity();
+            }).catch(function () {
+                if (destroyed || seq !== schedulesSeq || gen !== generation) return;
+                ids.forEach(function (id) { schedules.set(String(id), "排期暂不可用"); }); renderList(); renderIdentity();
+            });
+        }
+        function loadReadInfo(contactId) {
+            var seq = ++infoSeq, gen = generation;
+            readInfo = { contactId: String(contactId), note: "备注加载中…", timing: "所在地加载中…" };
+            function current() { return !destroyed && !denied && gen === generation && seq === infoSeq && selected && String(selected.contactId) === String(contactId); }
+            requestJson("/api/mail/contact-notes/" + contactId).then(function (data) {
+                if (!current()) return;
+                readInfo.note = data.note || "暂无备注"; renderIdentity();
+            }).catch(function () { if (current()) { readInfo.note = "备注暂不可用"; renderIdentity(); } });
+            requestJson("/api/mail/contact-locations/" + contactId + "/timing").then(function (data) {
+                if (!current()) return;
+                var location = data.location || {}, rec = data.recommendation;
+                readInfo.timing = location.configured ? location.countryLabel || location.countryCode : "暂未配置所在地";
+                if (rec && rec.beijingStart && rec.beijingEnd) {
+                    var a = formatTime(rec.beijingStart), b = formatTime(rec.beijingEnd);
+                    readInfo.timing += " · 建议北京 " + a + " — " + b;
+                }
+                renderIdentity();
+            }).catch(function () { if (current()) { readInfo.timing = "所在地暂不可用"; renderIdentity(); } });
+        }
+        function appendText(parent, text, className) {
+            var node = makeNode(doc, "div", className || "mc-reader-meta"); setText(node, text); parent.appendChild(node); return node;
+        }
+        function pendingText(item) {
+            var count = Number(item.displayPendingCount === undefined ? item.pendingCount : item.displayPendingCount) || 0;
+            var owner = item.displayPendingOwner === "user1" ? "由你处理" : "管理员处理";
+            return (item.displaySuspended ? "已挂起 · " : "") + count + " 条待处理" + (count ? " · " + owner : "")
+                + (item.displaySuspendReason ? " · " + item.displaySuspendReason : "");
+        }
+
         // ---- 列表渲染 --------------------------------------------------------------
         function renderList() {
             expertList.replaceChildren();
@@ -719,13 +801,15 @@
                 nameRow.appendChild(name);
                 var access = makeNode(doc, "span", "mc-badge" + (item.accessLevel === "FULL" ? " mc-access-full" : ""));
                 setText(access, item.accessLevel === "FULL" ? "可写" : "可读"); nameRow.appendChild(access);
-                main.appendChild(nameRow); main.appendChild(subject);
-                if (Number(item.pendingCount) > 0) {
-                    var count = makeNode(doc, "small");
-                    setText(count, Number(item.pendingCount) + "条待处理");
-                    main.appendChild(count);
-                }
+                main.appendChild(nameRow);
+                appendText(main, (item.accountCodes || []).join("、"));
+                if (item.accessLevel === "FULL" && item.email) appendText(main, item.email);
+                main.appendChild(subject);
+                appendText(main, "上次回复 " + (item.latestInbound && item.latestInbound.receivedAt ? formatTime(item.latestInbound.receivedAt) + " 北京时间" : "暂无回复"), "mc-reader-reply-time");
+                appendText(main, "收 " + (Number(item.receivedCount) || 0) + " · 发 " + (Number(item.sentCount) || 0));
                 appendExpertTags(doc, main, item.expertTags);
+                appendText(main, scheduleText(item.contactId), "mc-reader-schedule");
+                appendText(main, pendingText(item));
                 person.appendChild(main);
                 var ownDrafts = Array.isArray(item.ownDrafts) ? item.ownDrafts : [];
                 if (ownDrafts.length) {
@@ -755,7 +839,20 @@
         function renderIdentity() {
             setText(identityName, selected ? ((selected.name || "").trim() || "未填写姓名") : "");
             identity.replaceChildren(identityName);
-            if (selected) appendExpertTags(doc, identity, selected.expertTags);
+            if (selected) {
+                appendText(identity, "账号 " + (selected.accountCodes || []).join("、"));
+                appendText(identity, "专家上次回复 " + (selected.latestInbound && selected.latestInbound.receivedAt ? formatTime(selected.latestInbound.receivedAt) + " 北京时间" : "暂无回复"), "mc-reader-reply-time");
+                appendText(identity, scheduleText(selected.contactId), "mc-reader-schedule");
+                var badges = makeNode(doc, "div", "mc-reader-badges"); identity.appendChild(badges);
+                [catalogLabel(global.operatorStatusOptions, selected.operatorStatus), catalogLabel(global.indexLevelOptions, selected.currentIndexLevel),
+                    { NONE: "未标记", FOLLOWING: "跟进中", PROVIDED: "已提供" }[selected.progressStatus]].filter(Boolean).forEach(function (text) { appendText(badges, text, "mc-badge"); });
+                appendExpertTags(doc, badges, selected.expertTags);
+                appendText(identity, pendingText(selected));
+                if (readInfo.contactId === String(selected.contactId)) {
+                    appendText(identity, "备注：" + readInfo.note, "mc-reader-note");
+                    appendText(identity, readInfo.timing);
+                }
+            }
         }
 
         function renderConversation() {
@@ -844,6 +941,7 @@
                 if (isStale(gen, seq, currentListSeq)) return;
                 var normalized = normalizeList(data);
                 listItems = normalized.items;
+                loadScheduleSummaries(listItems);
                 listTotal = normalized.total;
                 listLoading = false;
                 listFailed = false;
@@ -915,9 +1013,11 @@
                 detailNextBefore = data && data.nextBefore ? data.nextBefore : null;
                 detailHasMore = Boolean(data && data.hasMore) && Boolean(detailNextBefore);
                 detailStatus = "ready";
+                loadReadInfo(contactId);
                 renderConversation();
                 renderReview();
                 scrollToLatest();
+                loadDrafts(false);
                 if (openDraft && openDraft.kind === "REVIEW") return loadDraft(openDraft.id, false);
             }, function (error) {
                 if (isStale(gen, seq, currentDetailSeq)) return;
@@ -1068,15 +1168,22 @@
             }
         }
 
-        function onFocus() {
-            if (doc.hidden) return;
-            scheduleReload();
+        var accessCheck = null;
+        function checkCurrentAccess() {
+            if (doc.hidden || destroyed || denied || !selected || accessCheck) return;
+            var ctx = reviewContext(), expected = delegated ? "FULL" : "READ";
+            accessCheck = requestJson(LIST_PATH + "/" + selected.contactId + "/access").then(function (data) {
+                if (!sameContext(ctx, false)) return;
+                if (!data || data.accessLevel !== expected) {
+                    // Do not silently discard edits when a grant changes; retain the local draft until explicit reload.
+                    if (delegated && delegated.lockAccess) delegated.lockAccess();
+                    conflict = true; showReviewError("专家权限已变化，请保留正文后点击刷新"); renderReview();
+                }
+            }).catch(function () { /* requestJson already handles session expiry and revoked access */ })
+                .finally(function () { accessCheck = null; });
         }
-
-        function onVisibilityChange() {
-            if (doc.hidden) return;
-            scheduleReload();
-        }
+        function onFocus() { checkCurrentAccess(); }
+        function onVisibilityChange() { checkCurrentAccess(); }
 
         function start() {
             root.addEventListener("click", onClick);

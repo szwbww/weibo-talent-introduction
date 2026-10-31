@@ -56,6 +56,14 @@ class MailboxConversationService(
     private val mailRecordRepository: MailRecordRepository,
     private val readAccessService: ExpertMailReadAccessService
 ) {
+    fun currentAccess(contactId: Long, username: String?): ExpertMailAccessLevel {
+        require(contactId > 0)
+        val level = readAccessService.accessLevel(contactId)
+        if (MailReadOnlyPolicy.isReader(username) && !level.canRead)
+            throw MailReadAccessDeniedException(MailReadOnlyPolicy.MAIL_READ_FORBIDDEN, "暂无权限查看该专家邮件")
+        return level
+    }
+
     private val log = LoggerFactory.getLogger(MailboxConversationService::class.java)
     companion object {
         const val DEFAULT_PAGE_SIZE = 20
@@ -196,7 +204,11 @@ class MailboxConversationService(
         val reviewPendingCounts = if (reader) emptyMap() else
             repository.reviewPendingCountsByContacts(contactIds, activeCodes, accountCode)
 
+        val sharedContacts = if (reader) expertContactRepository.findAllById(contactIds).associateBy { it.id } else emptyMap()
+        val adminStates = if (reader) repository.suspensionStatesByContacts("admin", contactIds) else emptyMap()
         val items = rows.map { row ->
+            val displayOwner = if (reader && accessLevels[row.expertContactId] != ExpertMailAccessLevel.FULL) "admin" else sessionUser
+            val displayState = if (displayOwner == "admin" && reader) adminStates[row.expertContactId] else suspensionStates[row.expertContactId]
             ConversationItemResponse(
                 contactId = row.expertContactId,
                 name = row.expertName,
@@ -240,6 +252,12 @@ class MailboxConversationService(
                 suspensionPendingCount = suspensionStates[row.expertContactId]?.suspensionPendingCount ?: 0L,
                 // 01 (I-1/I-4)：一次读取的 DB 真值；followed 由同一状态派生。
                 progressStatus = row.progressStatus,
+                operatorStatus = sharedContacts[row.expertContactId]?.operatorStatus,
+                currentIndexLevel = sharedContacts[row.expertContactId]?.currentIndexLevel,
+                displayPendingCount = displayState?.suspensionPendingCount ?: 0L,
+                displayPendingOwner = displayOwner,
+                displaySuspended = displayState?.suspended ?: false,
+                displaySuspendReason = displayState?.suspendReason,
                 reviewPendingCount = reviewPendingCounts[row.expertContactId] ?: 0L,
                 accessLevel = accessLevels.getValue(row.expertContactId),
                 ownDrafts = ownDrafts[row.expertContactId].orEmpty()

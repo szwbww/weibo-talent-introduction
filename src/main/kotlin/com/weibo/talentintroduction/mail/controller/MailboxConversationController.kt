@@ -95,7 +95,13 @@ data class ConversationItemResponse(
     val reviewPendingCount: Long = 0,
     /** Current user1 grant, also when viewed by admin. Not an admin capability flag. */
     val accessLevel: ExpertMailAccessLevel = ExpertMailAccessLevel.NONE,
-    val ownDrafts: List<ConversationOwnDraft> = emptyList()
+    val ownDrafts: List<ConversationOwnDraft> = emptyList(),
+    val operatorStatus: String? = null,
+    val currentIndexLevel: String? = null,
+    val displayPendingCount: Long = 0,
+    val displayPendingOwner: String? = null,
+    val displaySuspended: Boolean = false,
+    val displaySuspendReason: String? = null
 )
 
 /** Owner-scoped navigation only; bodies are loaded through the existing guarded draft endpoints. */
@@ -237,6 +243,10 @@ class MailboxConversationController(
     // Independent suspension service; level projection does not change its behavior.
     private val mailboxSuspensionService: MailboxSuspensionService
 ) {
+    @GetMapping("/{contactId}/access")
+    fun access(request: HttpServletRequest, @PathVariable contactId: Long): Any =
+        mapOf("accessLevel" to conversationService.currentAccess(contactId, sessionUsername(request)))
+
     @GetMapping
     fun list(
         request: HttpServletRequest,

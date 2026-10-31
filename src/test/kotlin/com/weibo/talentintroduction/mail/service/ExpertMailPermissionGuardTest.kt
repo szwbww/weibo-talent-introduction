@@ -13,6 +13,8 @@ import com.weibo.talentintroduction.document.controller.ExpertMaterialController
 import com.weibo.talentintroduction.document.controller.ExpertMaterialHttpExceptionAdvice
 import com.weibo.talentintroduction.document.service.ExpertDocumentBrowseService
 import com.weibo.talentintroduction.document.service.MaterialArchiveFixture
+import com.weibo.talentintroduction.mail.controller.ExpertContactNoteController
+import com.weibo.talentintroduction.mail.controller.ExpertContactLocationController
 import com.weibo.talentintroduction.mail.controller.MailboxAttachmentController
 import com.weibo.talentintroduction.mail.controller.MeetingConfirmationController
 import com.weibo.talentintroduction.mail.controller.OutboundAttachmentController
@@ -116,6 +118,8 @@ class ExpertMailPermissionGuardTest {
             beans.registerSingleton("materials", ExpertMaterialController(material.material, archiveService = material.archive))
             beans.registerSingleton("documents", ExpertDocumentBrowseController(ExpertDocumentBrowseService(
                 material.documents, material.attachments, material.records, material.material)))
+            beans.registerSingleton("notes", ExpertContactNoteController(Mockito.mock(ExpertContactNoteService::class.java)))
+            beans.registerSingleton("locations", ExpertContactLocationController(Mockito.mock(ExpertContactLocationService::class.java), Mockito.mock(ExpertContactLocationCatalog::class.java)))
             beans.registerSingleton("calendar", MeetingCalendarController(calendar, guard))
             beans.registerSingleton("meetings", MeetingConfirmationController(meetings))
             beans.registerSingleton("outbound", OutboundAttachmentController(outbound))
@@ -182,11 +186,24 @@ class ExpertMailPermissionGuardTest {
         Mockito.verifyNoInteractions(attachmentService)
     }
 
+    @Test fun `READ can see notes timing and summaries but cannot modify notes location or schedules`() {
+        for (path in listOf("/api/mail/contact-notes/", "/api/mail/contact-locations/")) {
+            mvc.perform(get(path + "2").session(session())).andExpect(status().isOk)
+            mvc.perform(get(path + "3").session(session())).andExpect(status().isForbidden)
+            mvc.perform(put(path + "2").session(session()).contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isForbidden)
+        }
+        mvc.perform(get("/api/mail/contact-locations/2/timing").session(session())).andExpect(status().isOk)
+        mvc.perform(get("/api/mail/contact-locations/3/timing").session(session())).andExpect(status().isForbidden)
+        mvc.perform(get("/api/meeting-calendar/summaries?contactIds=1,2").session(session())).andExpect(status().isOk)
+        mvc.perform(get("/api/meeting-calendar/summaries?contactIds=1,3").session(session())).andExpect(status().isForbidden)
+    }
+
     @Test fun `calendar query arrays and event IDs are resolved before service execution`() {
         mvc.perform(get("/api/meeting-calendar/events").session(session())).andExpect(status().isForbidden)
         mvc.perform(get("/api/meeting-calendar/events?contactId=2").session(session())).andExpect(status().isForbidden)
-        mvc.perform(get("/api/meeting-calendar/summaries?contactIds=1,2").session(session())).andExpect(status().isForbidden)
-        mvc.perform(get("/api/meeting-calendar/summaries").param("contactIds", "1", "2").session(session())).andExpect(status().isForbidden)
+        mvc.perform(get("/api/meeting-calendar/summaries?contactIds=1,3").session(session())).andExpect(status().isForbidden)
+        mvc.perform(get("/api/meeting-calendar/summaries").param("contactIds", "1", "3").session(session())).andExpect(status().isForbidden)
         mvc.perform(post("/api/meeting-calendar/events").session(session()).contentType(MediaType.APPLICATION_JSON)
             .content("""{"contactId":2,"startBeijing":"2026-11-02T10:00","endBeijing":"2026-11-02T10:30"}"""))
             .andExpect(status().isForbidden)

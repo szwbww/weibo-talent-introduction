@@ -104,6 +104,12 @@ class ExpertMailReadAccessService(
         } catch (ex: DataIntegrityViolationException) {
             throw NoSuchElementException("Expert contact not found: $expertContactId")
         }
+        if (currentAccessLevel(expertContactId) == ExpertMailAccessLevel.FULL) {
+            jdbcTemplate.update("""UPDATE inbound_mail_processing SET pending_owner_username = 'user1'
+                WHERE expert_contact_id = :contactId AND process_status = 'MANUAL_REVIEW'
+                  AND pending_owner_username = 'admin' AND sender_account_code <> :simulator""",
+                mapOf("contactId" to expertContactId, "simulator" to MailSenderAccountService.SIMULATOR_ACCOUNT_CODE))
+        }
         if (previous == ExpertMailAccessLevel.FULL && accessLevel == ExpertMailAccessLevel.READ) {
             reclaimPending(expertContactId)
         }

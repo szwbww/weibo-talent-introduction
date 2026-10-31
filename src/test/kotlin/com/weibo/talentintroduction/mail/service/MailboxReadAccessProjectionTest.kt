@@ -303,6 +303,32 @@ class MailboxReadAccessProjectionTest {
     }
 
     @Test
+    fun `reader summaries expose shared metadata while personal pending membership stays separate`() {
+        val ids = listOf(CONTACT_ID, OTHER_CONTACT_ID)
+        val rows = ids.map { id -> MailboxConversationRepository.ConversationSummarySqlRow(
+            id, "Expert $id", "expert$id@example.org", "orcid-$id", 2, 3, 0, 0,
+            LocalDateTime.of(2026, 10, 1, 9, 0), MailboxProgressStatus.NONE) }
+        Mockito.`when`(repository.countConversations(Mockito.eq("user1") ?: "", anyFilter())).thenReturn(2L)
+        Mockito.`when`(repository.pageConversations(Mockito.eq("user1") ?: "", anyFilter(), Mockito.eq(20), Mockito.eq(0L))).thenReturn(rows)
+        Mockito.`when`(expertContactRepository.findAllById(ids)).thenReturn(ids.map(::contact))
+        Mockito.`when`(readAccessService.accessLevels(ids)).thenReturn(mapOf(CONTACT_ID to ExpertMailAccessLevel.READ, OTHER_CONTACT_ID to ExpertMailAccessLevel.FULL))
+        Mockito.`when`(repository.suspensionStatesByContacts("admin", ids)).thenReturn(mapOf(CONTACT_ID to
+            MailboxConversationRepository.ConversationSuspensionStateRow(CONTACT_ID, true, "等待材料", 4)))
+        Mockito.`when`(repository.suspensionStatesByContacts("user1", ids)).thenReturn(mapOf(OTHER_CONTACT_ID to
+            MailboxConversationRepository.ConversationSuspensionStateRow(OTHER_CONTACT_ID, false, null, 2)))
+        val items = service.listConversations("user1", null, false, false, false, false,
+            null, null, null, null, null, null, null, null, 0, 20).items
+        assertEquals(0, items[0].pendingCount.toInt())
+        assertEquals(4L, items[0].displayPendingCount)
+        assertEquals("admin", items[0].displayPendingOwner)
+        assertEquals("等待材料", items[0].displaySuspendReason)
+        assertTrue(items[0].displaySuspended)
+        assertEquals(contact(CONTACT_ID).currentIndexLevel, items[0].currentIndexLevel)
+        assertEquals(2L, items[1].displayPendingCount)
+        assertEquals("user1", items[1].displayPendingOwner)
+    }
+
+    @Test
     fun `empty timeline account scope still returns current level without attachment reads`() {
         Mockito.`when`(readAccessService.accessLevel(CONTACT_ID)).thenReturn(ExpertMailAccessLevel.FULL)
         val result = service.listMessages(CONTACT_ID, "missing-account", null, 50, "user1")

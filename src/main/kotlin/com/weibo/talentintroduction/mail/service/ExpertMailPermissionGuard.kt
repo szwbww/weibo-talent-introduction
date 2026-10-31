@@ -26,7 +26,7 @@ class ExpertMailPermissionGuard(
     companion object {
         const val MAIL_WRITE_FORBIDDEN = "MAIL_WRITE_FORBIDDEN"
 
-        private enum class Target { CONTACT, PROCESSING, MESSAGE, ATTACHMENT, DOCUMENT, MAIL, OUTBOUND, SENT_OUTBOUND, EVENTS, SUMMARIES, EVENT, MEETING_OPTIONS, MEETING_PREVIEW, LOGS, SNIPPETS }
+        private enum class Target { READ_CONTACT, CONTACT, PROCESSING, MESSAGE, ATTACHMENT, DOCUMENT, MAIL, OUTBOUND, SENT_OUTBOUND, EVENTS, SUMMARIES, EVENT, MEETING_OPTIONS, MEETING_PREVIEW, LOGS, SNIPPETS }
         private data class Key(val controller: Class<*>, val method: String, val verb: String)
         private val targets = buildMap<Key, Target> {
             fun route(controller: Class<*>, method: String, verb: String, target: Target) {
@@ -69,11 +69,11 @@ class ExpertMailPermissionGuard(
             route(contacts, "getContactDetail", "GET", Target.CONTACT)
             route(contacts, "changeOperatorStatus", "POST", Target.CONTACT)
             route(contacts, "changeIndexLevel", "POST", Target.CONTACT)
-            route(ExpertContactNoteController::class.java, "get", "GET", Target.CONTACT)
+            route(ExpertContactNoteController::class.java, "get", "GET", Target.READ_CONTACT)
             route(ExpertContactNoteController::class.java, "save", "PUT", Target.CONTACT)
-            route(ExpertContactLocationController::class.java, "get", "GET", Target.CONTACT)
+            route(ExpertContactLocationController::class.java, "get", "GET", Target.READ_CONTACT)
             route(ExpertContactLocationController::class.java, "save", "PUT", Target.CONTACT)
-            route(ExpertContactLocationController::class.java, "timing", "GET", Target.CONTACT)
+            route(ExpertContactLocationController::class.java, "timing", "GET", Target.READ_CONTACT)
             val calendar = MeetingCalendarController::class.java
             route(calendar, "events", "GET", Target.EVENTS)
             route(calendar, "summaries", "GET", Target.SUMMARIES)
@@ -103,6 +103,10 @@ class ExpertMailPermissionGuard(
         if (accessService.accessLevel(contactId) != ExpertMailAccessLevel.FULL) forbidden()
     }
 
+    fun requireRead(username: String?, contactId: Long) {
+        if (MailReadOnlyPolicy.isReader(username) && !accessService.accessLevel(contactId).canRead) forbidden()
+    }
+
     fun authorize(username: String, handler: Any, request: HttpServletRequest) {
         if (!MailReadOnlyPolicy.isReader(username)) return
         val rule = target(handler, request.method) ?: forbidden()
@@ -118,6 +122,7 @@ class ExpertMailPermissionGuard(
                 requireContact(contactId)
                 requireFull(username, contactId)
             }
+            Target.READ_CONTACT -> id("contactId").also { requireContact(it); requireRead(username, it) }
             Target.CONTACT -> contact()
             Target.PROCESSING -> requireFull(username, owner("inbound_mail_processing", id("id")))
             Target.MESSAGE -> {
@@ -159,7 +164,7 @@ class ExpertMailPermissionGuard(
                 val ids = request.getParameterValues("contactIds")?.takeIf { it.isNotEmpty() && it.all(String::isNotBlank) } ?: forbidden()
                 ids.flatMap { it.split(',') }.map { positive(it.trim(), "contactIds") }.distinct().forEach {
                     requireContact(it)
-                    requireFull(username, it)
+                    requireRead(username, it)
                 }
             }
             Target.EVENT -> requireFull(username, owner("meeting_calendar_event", id("id")))
