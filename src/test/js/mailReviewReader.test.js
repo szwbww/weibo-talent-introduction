@@ -329,3 +329,25 @@ test("主题不可编辑；提交失败保持已保存状态并显示真实提�
     assert.equal(role(h,"review-editor").innerHTML,"<p>body</p>");
     h.handle.unmount();
 });
+
+test("discussion renders text safely, author/time separately and empty comments cannot submit", async () => {
+    const h = await setup(); await create(h);
+    h.events = [{id:2, actorUsername:"user1", eventType:"COMMENT", createdAt:"2026-10-31T16:45:00",payload:{text:"回复意见"}},
+        {id:1, actorUsername:"admin", eventType:"COMMENT", createdAt:"2026-10-31T16:42:00",payload:{text:"<img src=x>补充时间"}}];
+    click(h,"comments"); await flush();
+    const panel = role(h,"review-discussion");
+    assert.ok(panel.classList.contains('mc-discussion'));
+    assert.ok(panel.textContent.includes('仅内部可见'));
+    assert.ok(!panel.textContent.includes('COMMENT'));
+    assert.ok(!nodes(h).some(n => n.tagName === 'IMG'));
+    const bodies = nodes(h).filter(n => n.classList.contains('mc-comment-body'));
+    assert.equal(bodies[0].textContent,'<img src=x>补充时间');
+    const input = nodes(h).find(n => n.tagName === 'TEXTAREA');
+    assert.equal(action(h,'comment').disabled,true);
+    input.value='  ';input.dispatch('input',{});assert.equal(action(h,'comment').disabled,true);
+    input.value='已补充';input.dispatch('input',{});assert.equal(action(h,'comment').disabled,false);
+    assert.ok(panel.textContent.includes('3 / 2000'));
+    click(h,'comment');await flush();
+    assert.ok(h.calls.some(c=>c.path.endsWith('/comments') && JSON.parse(c.options.body).text==='已补充'));
+    h.handle.unmount();
+});

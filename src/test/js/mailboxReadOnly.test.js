@@ -346,8 +346,8 @@ describe("S-1 DOM 骨架（真实模块渲染）", () => {
         const smalls = main.children.filter((child) => child.tagName === "SMALL");
         assert.strictEqual(main.children[0].children[0].tagName, "STRONG");
         assert.strictEqual(main.children[0].children[0].textContent, "张教授");
-        assert.strictEqual(smalls.length, 1);
-        assert.strictEqual(smalls[0].textContent, "Re: 合作邀请");
+        assert.strictEqual(smalls.length, 2);
+        assert.strictEqual(smalls[1].textContent, "最近发件：Re: 合作邀请");
         assert.ok(!main.textContent.includes(EXPERT_A.email));
 
         const pager = findOne(aside, "mc-pager");
@@ -444,8 +444,8 @@ describe("expert-access 01 I-3/S-1 只读标签", () => {
     }
 
     function assertReadOnly(row) {
-        assert.strictEqual(row.tagName, "DIV");
-        assert.strictEqual(row.className, "mc-tag-row");
+        assert.strictEqual(row.tagName, row.classList.contains("mc-person-tags") ? "SPAN" : "DIV");
+        assert.ok(["mc-tag-row", "mc-person-tags"].includes(row.className));
         row.children.forEach((chip) => {
             assert.strictEqual(chip.tagName, "SPAN");
             assert.strictEqual(chip.children.length, 0, "labels are text-only");
@@ -474,7 +474,7 @@ describe("expert-access 01 I-3/S-1 只读标签", () => {
             assertReadOnly(row);
             assert.deepStrictEqual(row.children.map((chip) => chip.textContent), ["新发现", "瑞典", "constructor", evil]);
             row.children.forEach((chip) => {
-                assert.strictEqual(chip.className, "expert-tag");
+                assert.strictEqual(chip.className, row.classList.contains("mc-person-tags") ? "mc-person-tag" : "expert-tag");
                 assert.strictEqual(chip.getAttribute("title"), chip.textContent);
             });
         });
@@ -670,14 +670,14 @@ describe("I-3 失权/失败/竞态", () => {
                 await flush();
                 clickAction(harness, "select-expert");
                 await flush();
-                assert.strictEqual(findAll(harness.root, "expert-tag").length, 2);
+                assert.strictEqual(findAll(harness.root, "expert-tag").concat(findAll(harness.root, "mc-person-tag")).length, 2);
                 assert.strictEqual(findAll(harness.root, "mc-message").length, 1);
 
                 denied = true;
                 await harness.handle.refresh();
                 await flush();
 
-                assert.strictEqual(findAll(harness.root, "expert-tag").length, 0);
+                assert.strictEqual(findAll(harness.root, "expert-tag").concat(findAll(harness.root, "mc-person-tag")).length, 0);
                 assert.ok(!harness.root.textContent.includes("撤权前标签"));
                 assert.ok(!harness.root.textContent.includes("标签暂不可用"));
                 assert.ok(harness.root.textContent.includes(EXPERT_A.name));
@@ -1042,7 +1042,7 @@ it("READ 显示共享摘要和纯文本备注；FULL 列表显示邮箱，READ �
         : metadata(path);
     h.mount();await flush();clickAction(h,"select-expert");await flush();
     const identity=findOne(h.root,"mc-identity"),card=findOne(h.root,"mc-person-main");
-    ["acc1","2026-10-31 10:30","收 2 · 发 3","4 条待处理","等待材料"].forEach(text=>assert.ok(card.textContent.includes(text),text));
+    ["acc1","2026-10-31 10:30","收 2 · 发 3","4 条待处理","等待材料"].forEach(text=>assert.ok(card.parentNode.textContent.includes(text),text));
     ["已回复","有效","跟进中","英国","17:00","01:00","<img src=x>合作说明"].forEach(text=>assert.ok(identity.textContent.includes(text),text));
     assert.ok(!h.root.textContent.includes(EXPERT_A.email));assert.ok(h.root.textContent.includes("writable@example.test"));
     assert.ok(!allNodes(identity).some(n=>["IMG","BUTTON","INPUT"].includes(n.tagName)));

@@ -104,19 +104,19 @@
         return merged;
     }
 
-    function appendExpertTags(doc, parent, tags) {
+    function appendExpertTags(doc, parent, tags, compact) {
         if (!Array.isArray(tags)) {
             parent.appendChild(statusNode(doc, "mc-note", "标签暂不可用"));
             return;
         }
         if (!tags.length) return;
-        var row = makeNode(doc, "div", "mc-tag-row");
+        var row = makeNode(doc, compact ? "span" : "div", compact ? "mc-person-tags" : "mc-tag-row");
         row.dataset.role = "readonly-expert-tags";
         tags.forEach(function (tag) {
             var value = String(tag == null ? "" : tag);
             var label = typeof expertTagLabels !== "undefined" && expertTagLabels &&
                 Object.prototype.hasOwnProperty.call(expertTagLabels, value) ? expertTagLabels[value] : value;
-            var chip = makeNode(doc, "span", "expert-tag");
+            var chip = makeNode(doc, "span", compact ? "mc-person-tag" : "expert-tag");
             setText(chip, label);
             chip.setAttribute("title", label);
             row.appendChild(chip);
@@ -325,6 +325,7 @@
         var withdrawButton = reviewButton(actions, "withdraw", "取消提交");
         var submitButton = reviewButton(actions, "submit", "提交审核", "button primary");
         var reloadButton = reviewButton(actions, "reload", "重新加载");
+        compose.appendChild(discussion);
 
         function pending() { return delegated ? delegated.hasPendingDrafts() : revision !== savedRevision || Boolean(saving); }
         function editable() {
@@ -511,6 +512,37 @@
         }
         function renderDiscussion() {
             discussion.replaceChildren();
+            discussion.classList.toggle("mc-discussion", panel === "comments");
+            if (panel === "comments") {
+                var commentItems = eventItems.filter(function (item) { return item.eventType === "COMMENT"; });
+                var discussionHead = makeNode(doc, "div", "mc-discussion-head"), discussionTitle = makeNode(doc, "strong");
+                setText(discussionTitle, "草稿讨论"); discussionHead.appendChild(discussionTitle);
+                var countLabel = makeNode(doc, "span", "mc-badge"); setText(countLabel, (draft && eventDraftId === draft.id ? draft.commentCount : commentItems.length) || 0); discussionHead.appendChild(countLabel);
+                var hint = makeNode(doc, "span", "mc-discussion-hint"); setText(hint, "仅内部可见"); discussionHead.appendChild(hint); discussion.appendChild(discussionHead);
+                var comments = makeNode(doc, "div", "mc-comment-list"); discussion.appendChild(comments);
+                commentItems.slice().reverse().forEach(function (item) {
+                    var row = makeNode(doc, "article", "mc-comment"), avatar = makeNode(doc, "span", "mc-comment-avatar");
+                    setText(avatar, (item.actorUsername || "?").charAt(0).toUpperCase()); row.appendChild(avatar);
+                    var content = makeNode(doc, "div", "mc-comment-content"), head = makeNode(doc, "div", "mc-comment-head");
+                    var author = makeNode(doc, "strong"); setText(author, item.actorUsername); head.appendChild(author);
+                    var role = makeNode(doc, "span", "mc-badge"); setText(role, item.actorUsername === sessionUser.username ? "我" : item.actorUsername === "admin" ? "管理员" : "用户"); head.appendChild(role);
+                    var time = makeNode(doc, "time"); setText(time, formatTime(item.createdAt)); head.appendChild(time); content.appendChild(head);
+                    var body = makeNode(doc, "div", "mc-comment-body"); setText(body, (item.payload || {}).text || ""); content.appendChild(body); row.appendChild(content); comments.appendChild(row);
+                });
+                if (!commentItems.length) { var empty = makeNode(doc, "div", "mc-discussion-hint"); setText(empty, "暂无评论，可在这里与管理员沟通草稿修改意见。"); comments.appendChild(empty); }
+                if (draft && eventDraftId === draft.id && !draft.deleted && draft.state !== "APPROVED") {
+                    var form = makeNode(doc, "div", "mc-comment-compose"), input = makeNode(doc, "textarea", "mail-review-input");
+                    input.setAttribute("aria-label", "评论内容"); input.setAttribute("placeholder", "添加修改说明，或回复管理员…"); input.setAttribute("maxlength", "2000"); input.setAttribute("rows", "3");
+                    input.value = commentText; input.disabled = busy || conflict; form.appendChild(input);
+                    var footer = makeNode(doc, "div", "mc-comment-footer"), counter = makeNode(doc, "span", "mc-discussion-hint");
+                    setText(counter, commentText.length + " / 2000"); footer.appendChild(counter);
+                    var post = reviewButton(footer, "comment", "发布评论", "button primary"); post.disabled = busy || conflict || !commentText.trim();
+                    input.addEventListener("input", function () { commentText = input.value; setText(counter, commentText.length + " / 2000"); post.disabled = busy || conflict || !commentText.trim(); });
+                    form.appendChild(footer); discussion.appendChild(form);
+                }
+                if (eventBefore) reviewButton(discussion, "more-events", "加载更早评论", "mc-text-button");
+                return;
+            }
             eventItems.forEach(function (item) {
                 if (panel === "comments" && item.eventType !== "COMMENT") return;
                 var entry = makeNode(doc, "article", "mail-review-entry"), title = makeNode(doc, "strong");
@@ -592,7 +624,7 @@
             revision += 1; showReviewError(""); renderReview();
         }
         function refreshDraftList() {
-            if (!destroyed && !denied) { loadList(); loadDraftCount(); }
+            if (!destroyed && !denied) { loadList(true); loadDraftCount(); }
         }
         function onBeforeUnload(event) {
             if (!pending()) return;
@@ -770,6 +802,7 @@
 
         // ---- 列表渲染 --------------------------------------------------------------
         function renderList() {
+            var previousScroll = expertList.scrollTop;
             expertList.replaceChildren();
             if (listLoading) {
                 expertList.appendChild(statusNode(doc, "mc-empty", COPY.loading));
@@ -787,30 +820,42 @@
                 return;
             }
             listItems.forEach(function (item) {
-                var person = makeNode(doc, "div", "mc-person");
+                var person = makeNode(doc, "div", "mc-person mailbox-progress-card");
                 person.dataset.active = selected && String(selected.contactId) === String(item.contactId) ? "true" : "false";
                 var main = makeNode(doc, "button", "mc-person-main");
-                main.setAttribute("type", "button");
-                main.dataset.action = "select-expert";
+                main.setAttribute("type", "button"); main.dataset.action = "select-expert";
                 main.dataset.contactId = String(item.contactId);
-                var name = makeNode(doc, "strong");
-                setText(name, (item.name || "").trim() || "未填写姓名");
-                var subject = makeNode(doc, "small");
-                setText(subject, latestSubject(item));
-                var nameRow = makeNode(doc, "div", "mc-reader-name");
-                nameRow.appendChild(name);
-                var access = makeNode(doc, "span", "mc-badge" + (item.accessLevel === "FULL" ? " mc-access-full" : ""));
-                setText(access, item.accessLevel === "FULL" ? "可写" : "可读"); nameRow.appendChild(access);
-                main.appendChild(nameRow);
-                appendText(main, (item.accountCodes || []).join("、"));
+                var heading = makeNode(doc, "span", "mc-person-heading");
+                var name = makeNode(doc, "strong"); setText(name, (item.name || "").trim() || "未填写姓名");
+                name.setAttribute("title", name.textContent); heading.appendChild(name); main.appendChild(heading);
+                var account = makeNode(doc, "small"); setText(account, (item.accountCodes || []).join("、")); main.appendChild(account);
                 if (item.accessLevel === "FULL" && item.email) appendText(main, item.email);
-                main.appendChild(subject);
-                appendText(main, "上次回复 " + (item.latestInbound && item.latestInbound.receivedAt ? formatTime(item.latestInbound.receivedAt) + " 北京时间" : "暂无回复"), "mc-reader-reply-time");
-                appendText(main, "收 " + (Number(item.receivedCount) || 0) + " · 发 " + (Number(item.sentCount) || 0));
-                appendExpertTags(doc, main, item.expertTags);
-                appendText(main, scheduleText(item.contactId), "mc-reader-schedule");
-                appendText(main, pendingText(item));
+                var subject = makeNode(doc, "small");
+                setText(subject, (item.latestMessage && item.latestMessage.direction === "INBOUND" ? "最近来信：" : "最近发件：") + latestSubject(item)); main.appendChild(subject);
+                var reply = makeNode(doc, "span", "mailbox-reply-list"), replyLabel = makeNode(doc, "span");
+                setText(replyLabel, "上次回复"); reply.appendChild(replyLabel);
+                var receivedAt = item.latestInbound && item.latestInbound.receivedAt;
+                var formatted = global.MailboxChat && global.MailboxChat.formatLastReplyTime
+                    ? global.MailboxChat.formatLastReplyTime(receivedAt)
+                    : receivedAt ? { display: formatTime(receivedAt), datetime: receivedAt, title: "北京时间" } : null;
+                var replyValue = makeNode(doc, formatted ? "time" : "span", formatted ? "" : "mailbox-reply-empty");
+                setText(replyValue, formatted ? formatted.display : "暂无回复");
+                if (formatted) { replyValue.setAttribute("datetime", formatted.datetime); replyValue.setAttribute("title", formatted.title); }
+                reply.appendChild(replyValue); main.appendChild(reply);
+                var meta = makeNode(doc, "span", "mc-person-meta"), counts = makeNode(doc, "span", "mc-person-counts");
+                setText(counts, "收 " + (Number(item.receivedCount) || 0) + " · 发 " + (Number(item.sentCount) || 0)); meta.appendChild(counts);
+                if (Array.isArray(item.expertTags)) appendExpertTags(doc, meta, item.expertTags, true);
+                else appendExpertTags(doc, main, item.expertTags);
+                main.appendChild(meta);
+                var calendar = makeNode(doc, "span", "calendar-summary"); setText(calendar, scheduleText(item.contactId)); main.appendChild(calendar);
                 person.appendChild(main);
+                var progress = makeNode(doc, "span"); progress.dataset.role = "person-actions";
+                var status = makeNode(doc, "span", "mailbox-progress-status"); status.dataset.access = item.accessLevel;
+                setText(status, item.accessLevel === "FULL" ? "可写" : "可读"); progress.appendChild(status); person.appendChild(progress);
+                if (Number(item.displayPendingCount === undefined ? item.pendingCount : item.displayPendingCount) > 0 || item.displaySuspended) {
+                    var foot = makeNode(doc, "div", "mailbox-suspend-card-footer"), pending = makeNode(doc, "span", "mailbox-suspend-state");
+                    pending.dataset.pending = String(!item.displaySuspended); setText(pending, pendingText(item)); foot.appendChild(pending); person.appendChild(foot);
+                }
                 var ownDrafts = Array.isArray(item.ownDrafts) ? item.ownDrafts : [];
                 if (ownDrafts.length) {
                     if (listScope === "drafts") {
@@ -826,6 +871,7 @@
                 }
                 expertList.appendChild(person);
             });
+            expertList.scrollTop = previousScroll;
             updatePager();
         }
 
@@ -931,12 +977,12 @@
                 pendingTotal = null; setText(pendingCount, "不可用");
             });
         }
-        function loadList() {
+        function loadList(background) {
             var gen = generation;
             var seq = ++listSeq;
-            listLoading = true;
+            listLoading = !background || !listItems.length;
             listFailed = false;
-            renderList();
+            if (listLoading) renderList();
             return requestJson(listUrl()).then(function (data) {
                 if (isStale(gen, seq, currentListSeq)) return;
                 var normalized = normalizeList(data);
@@ -1005,7 +1051,11 @@
                                 scheduleReload();
                             }
                         },
-                        onChanged: function () { if (!destroyed) { loadList(); loadPendingCount(); loadDraftCount(); } }
+                        onChanged: function (change) {
+                            if (destroyed || gen !== generation || seq !== detailSeq) return;
+                            loadList(true); loadDraftCount();
+                            if (!change || change.source !== "draft") loadPendingCount();
+                        }
                     });
                     return;
                 }

@@ -485,3 +485,53 @@ test("reader draft and access tabs send server filters, count experts and open a
     assert.ok(h.calls.api.some(call => call.url.endsWith("review-drafts/42")));
     h.handle.unmount();
 });
+
+test("body-only delegated autosave preserves the list, scroll and editor without list GETs", async () => {
+    const h = await workspace();
+    await h.choose(1);
+    const editor = writable(h);
+    editor.innerText = "First saved reply"; tools.inputEvent(editor);
+    await h.handle.flushDrafts(); await tools.flush();
+    const list = h.host.querySelector('.mc-expert-list');
+    const card = h.host.querySelector('[data-action="select-expert"][data-contact-id="1"]');
+    list.scrollTop = 120;
+    const listCalls = () => h.calls.api.filter(c => c.url.startsWith('/api/mail/mailbox/conversations?')).length;
+    const before = listCalls();
+    editor.innerText = "Second body edit"; tools.inputEvent(editor);
+    await h.handle.flushDrafts(); await tools.flush();
+    assert.equal(listCalls(), before, "body edits must not reload list or counters");
+    assert.equal(h.host.querySelector('[data-action="select-expert"][data-contact-id="1"]'), card);
+    assert.equal(list.scrollTop, 120);
+    assert.equal(writable(h), editor);
+    assert.equal(editor.innerText, "Second body edit");
+    h.handle.unmount();
+});
+
+test("new draft refresh is silent while pending; discard still refreshes membership", async () => {
+    let hold = false, release;
+    const h = await workspace({route: url => {
+        if (hold && url === '/api/mail/mailbox/conversations?page=0&size=20') {
+            hold = false; return new Promise(resolve => { release = resolve; });
+        }
+    }});
+    await h.choose(1);
+    const card = h.host.querySelector('[data-action="select-expert"][data-contact-id="1"]');
+    const list = h.host.querySelector('.mc-expert-list'); list.scrollTop = 80;
+    hold = true;
+    writable(h).innerText = 'New draft'; tools.inputEvent(writable(h));
+    await h.handle.flushDrafts(); await tools.flush();
+    assert.ok(release, 'new draft causes a background membership refresh');
+    assert.equal(h.host.querySelector('[data-action="select-expert"][data-contact-id="1"]'), card);
+    assert.ok(!list.textContent.includes('加载中'));
+    const saved = [...h.draftServer.rows.values()][0];
+    release({items:[{...tools.expertA(),accessLevel:'FULL',ownDrafts:[{id:saved.id,kind:'MANUAL',state:'ACTIVE',subject:'reply'}]}],total:1});
+    await tools.flush();
+    assert.equal(list.scrollTop,80);
+    assert.ok(list.textContent.includes('草稿 1'));
+    const before=h.calls.api.filter(c=>c.url.startsWith('/api/mail/mailbox/conversations?')).length;
+    tools.click(h.host.querySelector('[data-action="mc-discard-draft"]')); await tools.flush();
+    assert.ok(h.calls.api.some(c=>c.method==='DELETE' && c.url.includes('/drafts/')));
+    assert.ok(h.calls.api.filter(c=>c.url.startsWith('/api/mail/mailbox/conversations?')).length>before);
+    assert.ok(!list.textContent.includes('草稿 1'));
+    h.handle.unmount();
+});

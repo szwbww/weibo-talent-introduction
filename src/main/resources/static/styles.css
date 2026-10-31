@@ -13562,3 +13562,11 @@ body.preview-available:not(.preview-docked) .preview-rail {
 .mail-chat .mail-review-confirm .mail-review-actions{margin-top:16px}
 @media(max-width:760px){.mail-chat .mail-review-confirm{padding:16px}.mail-chat .mail-review-confirm .button{min-height:44px;height:auto;white-space:normal}}
 
+
+/* Restricted mailbox layout and access indicator. */
+body[data-mail-read-only="true"] .main{padding:18px 24px 20px;max-width:none}
+body[data-mail-read-only="true"] .topbar{padding-bottom:12px;margin-bottom:4px;flex-shrink:0}
+body[data-mail-read-only="true"] #mailboxConversationPanel>.panel-head{padding:12px 18px;min-height:0}
+.mail-chat[data-role="readonly-mailbox"] span.mailbox-progress-status{cursor:default}
+.mail-chat .mailbox-progress-status[data-access="FULL"]{color:#1e40af;background:#eff4ff;border-color:#d3dff6}
+body[data-mail-read-only="true"] #view-mailbox.mc-refined #mailboxList{padding:12px}

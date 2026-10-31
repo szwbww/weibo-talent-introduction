@@ -292,3 +292,26 @@ body[data-mail-read-only="true"] .mail-chat .mc-person {
 
 .mail-chat .mc-reader-review .mc-editor{color:#334155}
 .mail-chat .mc-reader-review .mc-editor :is(p,div,li,blockquote){color:inherit}
+
+/* User mailbox: reuse admin card typography, keep permission visible. */
+#view-mailbox.mc-refined .mail-chat[data-role="readonly-mailbox"]{grid-template-columns:380px minmax(0,1fr);gap:16px;height:calc(100dvh - 246px)}
+.mail-chat[data-role="readonly-mailbox"] .mc-person-main>.mc-badge{align-self:flex-start;width:max-content}
+@media(max-width:1000px){#view-mailbox.mc-refined .mail-chat[data-role="readonly-mailbox"]{grid-template-columns:320px minmax(0,1fr)}}
+@media(max-width:760px){#view-mailbox.mc-refined .mail-chat[data-role="readonly-mailbox"]{display:flex;height:auto}.mail-chat[data-role="readonly-mailbox"] .mc-experts{max-height:350px}}
+.mail-chat .mail-review-panel.mc-discussion{padding:0;border:0;border-top:1px solid #e2e8f0;border-radius:0;background:transparent;margin-top:4px;gap:0}
+.mail-chat .mc-discussion-head{display:flex;align-items:center;gap:8px;padding:16px 0 8px;color:#475569}
+.mail-chat .mc-discussion-head>.mc-discussion-hint{margin-left:auto}
+.mail-chat .mc-discussion-hint{color:#8494aa;font:inherit}
+.mail-chat .mc-comment-list{display:flex;flex-direction:column;gap:0}
+.mail-chat .mc-comment{display:flex;gap:10px;padding:14px 0;border-bottom:1px solid #edf1f7}
+.mail-chat .mc-comment-avatar{display:flex;align-items:center;justify-content:center;flex:none;width:30px;height:30px;background:#edf3ff;border:1px solid #dce5f3;border-radius:7px;color:#5476ba;font-weight:600}
+.mail-chat .mc-comment-content{min-width:0;flex:1}
+.mail-chat .mc-comment-head{display:flex;align-items:center;gap:7px;margin-bottom:5px;color:#334155}
+.mail-chat .mc-comment-head time{margin-left:auto;color:#8a9bb2;font:inherit}
+.mail-chat .mc-comment-body{color:#475569;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere}
+.mail-chat .mc-comment-compose{margin-top:14px}
+.mail-chat .mc-comment-compose textarea{width:100%;min-height:76px;resize:vertical;border:1px solid #dce4ef;background:#fff;border-radius:7px;padding:10px 12px;font:inherit;color:#334155;line-height:1.7}
+.mail-chat .mc-comment-compose textarea::placeholder{color:#94a3b8}
+.mail-chat .mc-comment-footer{display:flex;align-items:center;justify-content:space-between;margin-top:8px}
+
+.mail-chat[data-role="readonly-mailbox"] .mc-reader-draft{grid-column:1 / -1}

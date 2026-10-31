@@ -1206,7 +1206,7 @@
             if (rec.closed) throw new Error("邮件已发送，新修改尚未保存");
             if (rec.paused || rec.seq === rec.ack) return;
             const captured = { user: rec.user, target: rec.target, id: rec.id, version: rec.version, seq: rec.seq,
-                snapshot: draftContent(rec.map.get(rec.key)) };
+                snapshot: draftContent(rec.map.get(rec.key)), previousDetail: rec.detail };
             rec.submitted = captured;
             rec.error = "";
             rec.inflight = Promise.resolve().then(async () => {
@@ -1225,7 +1225,7 @@
                 acceptDraftDetail(rec, detail, false);
                 rec.ack = captured.seq;
                 rec.reopen = false;
-                loadDraftSummaries();
+                loadDraftSummaries(detail, captured.previousDetail);
             }).catch(async (err) => {
                 if (!draftOwnerLive(rec)) throw err;
                 const code = err && err.data && err.data.code;
@@ -1397,7 +1397,7 @@
                 rec.map.delete(rec.key);
                 rec.ack = rec.seq;
                 renderDraftEditor(rec);
-                loadDraftSummaries();
+                loadDraftSummaries(detail);
                 fetchList({ page: instance.list.page });
             } catch (err) {
                 if (draftOwnerLive(rec)) {
@@ -2334,10 +2334,14 @@
             }).join("") : '<div class="mc-empty">暂无草稿</div>');
         }
 
-        function loadDraftSummaries() {
+        function loadDraftSummaries(detail, previousDetail) {
             if (instance.disposed || !instance.auth.ready || instance.user !== draftSessionUser) return;
             if (delegated) {
-                if (instance.options.onChanged) instance.options.onChanged();
+                // Body-only autosaves do not change list membership or its draft labels.
+                if (!detail) return;
+                if (previousDetail && detail.id === previousDetail.id && detail.state === previousDetail.state
+                    && (detail.content || {}).subject === (previousDetail.content || {}).subject) return;
+                if (instance.options.onChanged) instance.options.onChanged({ source: "draft" });
                 return;
             }
             const seq = instance.listSeq;
@@ -10670,6 +10674,7 @@
     }
 
     global.MailboxChat = Object.freeze({
+        formatLastReplyTime,
         mount,
         unmount,
         isMounted,
