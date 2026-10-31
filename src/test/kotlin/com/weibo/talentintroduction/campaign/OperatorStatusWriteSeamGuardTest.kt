@@ -69,6 +69,9 @@ class OperatorStatusWriteSeamGuardTest {
         NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 1163, "operatorStatus = operatorStatus"),
         // 邮箱汇总响应 DTO 构造：把汇总行字段映射到响应 DTO
         NoiseSite("com/weibo/talentintroduction/mail/service/MailboxService.kt", 168, "operatorStatus = summary.operatorStatus"),
+        // 邮箱会话列表响应 DTO 构造：读取 findAllById 得到的 expert_contact 行原样透传到出参，
+        // 该文件只有 findById/findAllById 读取，无 save（53ea83f 新增本投影时未登记，导致守卫误报）
+        NoiseSite("com/weibo/talentintroduction/mail/service/MailboxConversationService.kt", 255, "operatorStatus = sharedContacts[row.expertContactId]?.operatorStatus"),
         // 专家联系人列表响应 DTO 构造：查询参数回显到 DTO
         // （plan 01 新增 materials GET/PUT 端点与 UpdateExpertMaterialStatusRequest DTO 使 :549 偏移至 :564）
         // （repair R-11 行号钉随授权改动平移：listContacts 的人物核验分组分支新增核验/回退说明与
