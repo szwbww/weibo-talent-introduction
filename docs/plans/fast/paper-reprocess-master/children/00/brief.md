@@ -100,3 +100,12 @@ Use JDK11 explicitly: ambient Maven defaults to Java25. Skip build/lint/test/for
 
 ## Execution and Evidence
 Use execute-p against the exact child plan. Commit only authorized implementation files as `feat(fast-p): implement 00`; exclude all fast-p artifacts. Append execution result to `docs/plans/fast/paper-reprocess-master/children/00/execution.md`; never overwrite historical entries. A separate fresh verifier receives only the brief and committed boundary. Do not self-declare PASS.
+
+## Resolved Runtime Inputs — Child 00 Handoff
+- Original-byte directory: `/Users/lukai/.local/share/paper-reprocess-30711` (outside Git); manifest: `docs/audits/2026-11-01-discovery-30711-pdf/production-replay-manifest.json`.
+- Retained baseline/candidate receipts: `/tmp/paper-reprocess-30711-baseline.json`, `/tmp/paper-reprocess-30711-candidate.json`; runtime inventory evidence: `/tmp/paper-reprocess-30711-runtime.json`.
+- Actual replay command shape (use a fresh output path per run): `/usr/bin/time -l /Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home/bin/java -Xmx1536m -cp 'target/classes:target/weibo-talent-introduction-1.0.0-SNAPSHOT/WEB-INF/lib/*' com.weibo.talentintroduction.discovery.service.DiscoveryPaperIdentityReplayTool /Users/lukai/.local/share/paper-reprocess-30711 docs/audits/2026-11-01-discovery-30711-pdf/production-replay-manifest.json <fresh-output.json>`.
+- Actual reconciliation command shape: `/usr/bin/time -l python3 scripts/discovery_admission_probe/reconcile_paper_identity_replay.py --manifest docs/audits/2026-11-01-discovery-30711-pdf/production-replay-manifest.json --old-replay <fresh-baseline.json> --new-replay <fresh-candidate.json> --audit-directory docs/audits/2026-11-01-discovery-30711-pdf --csv <fresh-output.csv> --report <fresh-output.md> --runtime-evidence /tmp/paper-reprocess-30711-runtime.json`.
+- Receipts/reports reject overwriting. Verifier outputs must stay temporary; never overwrite committed report inputs.
+- Baseline command evidence before product changes: runtime versions and validator help passed; no prior focused test result exists. Writer command results are execution evidence, not independent verification.
+- Identity-helper infrastructure failure: `worktree_identity.py:30` resolves an unrelated stale registered publish path with strict=True. Exact target identity can be proved with native read-only Git assertions; no stale-path pruning or helper modification.
