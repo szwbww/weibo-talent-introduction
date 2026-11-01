@@ -125,3 +125,9 @@ Use execute-p against the exact child plan. Commit only authorized implementatio
 - Skip build/lint/test/formatters mid-flight, run after final implementation. Execute-p allows correction of your own uniquely determined in-scope implementation errors; do not misclassify ordinary self-check failures as an independent-verifier repair round.
 - New strictly necessary scope conflicts should be evidenced and sent to controller for a separately committed, standing-user-approved amendment; do not alter plans or unrelated files yourself.
 - Do not run review-fast-p, review-p, verify-p or repair-p; fresh fast-p verifier owns the light verdict, final aggregate review is deferred.
+
+## Epoch 2 — Resolved Runtime Command
+- Required final suite: `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=RetainedPaperIdentityServiceTest,DiscoveryVerificationWorkerTest,DiscoveryVerificationCommitServiceTest,DiscoveryVerificationQueryServiceTest,DiscoveryVerificationIntegrationTest -DmysqlIt=true -DtrimStackTrace=false -Dstyle.color=never`.
+- Standalone smoke entry: JDK11 `java -DmysqlIt=true -cp target/test-classes:target/classes:<test-dependencies> com.weibo.talentintroduction.discovery.service.DiscoveryVerificationIntegrationTest --retained-identity-smoke`; resolve dependencies freshly via Maven dependency:build-classpath or inspect `/tmp/paper-identity02e2-classpath.txt`.
+- Prior writer runtime log `/tmp/paper-identity02e2-runtime.log` is execution evidence, not a substitute for verifier run. Uses real MySQL/services/parser with loopback HTTP ES CAS fixture, not live ES/browser; disclose that boundary.
+- Source-backed record 31372 legitimately remains PENDING; separate synthetic current qualification fixtures cover controlled admission/rollback. No real corpus admission claim follows from identity binding.
