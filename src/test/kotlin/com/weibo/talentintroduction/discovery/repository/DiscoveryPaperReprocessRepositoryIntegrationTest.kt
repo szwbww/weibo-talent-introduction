@@ -306,6 +306,18 @@ class DiscoveryPaperReprocessRepositoryIntegrationTest {
         assertEquals(ReprocessState.INTERRUPTED, interrupted.state)
         assertEquals(ReprocessItemState.COMPLETE, repository.item(run.executionId, first.id)!!.state)
         assertEquals(2L, repository.summary(run.executionId).paperErrors)
+        val recovered = repository.item(run.executionId, second.id)!!
+        val persisted = f.mapper.readTree(f.jdbc.queryForObject(
+            "SELECT result_json FROM discovery_paper_reprocess_item WHERE id=?", String::class.java, second.id))
+        assertEquals(persisted, recovered.result)
+        assertEquals("EXECUTION_LOST", persisted.path("reasonCode").asText())
+        assertTrue(persisted.path("reason").asText().length in 1..256)
+        assertTrue(persisted.path("reason").asText().any { it in '\u4e00'..'\u9fff' })
+        assertEquals(1, persisted.path("schemaVersion").asInt())
+        assertEquals((1..6).toList(), persisted.path("trace").map { it.path("stepNo").asInt() })
+        assertEquals(listOf("ERROR") + List(5) { "NOT_STARTED" }, persisted.path("trace").map { it.path("state").asText() })
+        assertEquals(second.input.path("bodies").map { it.path("attemptId") to it.path("hash") },
+            persisted.path("attempts").map { it.path("attemptId") to it.path("hash") })
         assertEquals("INTERRUPTED", f.tasks.findById(run.executionId).get().status)
         assertEquals(3, f.tasks.findById(run.executionId).get().successCount)
         assertEquals(2, f.tasks.findById(run.executionId).get().failureCount)
@@ -411,6 +423,16 @@ class DiscoveryPaperReprocessRepositoryIntegrationTest {
             repository.addTarget(run.executionId, owner.leaseToken!!, owner.generation, f.hash("large-input"), largeInput)
         }.code)
         val original = f.jdbc.queryForObject("SELECT result_json FROM discovery_paper_reprocess_item WHERE id=?", String::class.java, item.id)!!
+        val saved = f.mapper.readTree(original)
+        assertEquals(repository.item(run.executionId, item.id)!!.result, saved)
+        assertEquals(1, saved.path("schemaVersion").asInt())
+        assertTrue(saved.path("reason").asText().length in 1..256)
+        assertTrue(saved.path("reason").asText().any { it in '\u4e00'..'\u9fff' })
+        assertTrue(original.toByteArray(Charsets.UTF_8).size <= 4 * 1024 * 1024)
+        assertEquals((1..6).toList(), saved.path("trace").map { it.path("stepNo").asInt() })
+        assertEquals(listOf("ERROR") + List(5) { "NOT_STARTED" }, saved.path("trace").map { it.path("state").asText() })
+        assertEquals(item.input.path("bodies").map { it.path("attemptId") to it.path("hash") },
+            saved.path("attempts").map { it.path("attemptId") to it.path("hash") })
         val raw = f.result().put("schemaVersion", 999).toString()
         f.jdbc.update("UPDATE discovery_paper_reprocess_item SET result_json=? WHERE id=?", raw, item.id)
         assertEquals("INVALID_SCHEMA", assertThrows(ReprocessException::class.java) { repository.item(run.executionId, item.id) }.code)

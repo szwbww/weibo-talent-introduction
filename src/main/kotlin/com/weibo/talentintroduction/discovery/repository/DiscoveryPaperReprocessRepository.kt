@@ -491,7 +491,14 @@ class DiscoveryPaperReprocessRepository(
         }
     }
     private fun errorResult(reason: String, state: ReprocessItemState, input: JsonNode? = null): ObjectNode =
-        mapper.createObjectNode().put("schemaVersion", 1).put("reasonCode", reason.take(64)).also { result ->
+        mapper.createObjectNode().put("schemaVersion", 1).put("reasonCode", reason.take(64)).put("reason", when (reason) {
+            "RESULT_TOO_LARGE" -> "解析结果超过存储上限，已保留来源引用，未截断有效证据"
+            "SCOPE_CHANGED" -> "来源范围已变化，本次处理已停止"
+            "CANCELLED" -> "任务已取消，已完成的结果仍保留"
+            "INTERRUPTED", "EXECUTION_LOST" -> "任务执行已中断，未完成项需显式重试"
+            "FAILED" -> "任务处理失败，请查看任务详情"
+            else -> "工作项未能完成，请结合错误代码查看任务详情"
+        }.take(256)).also { result ->
             val trace = result.putArray("trace")
             (1..6).forEach { step -> trace.addObject().put("stepNo", step).put("state", if (state == ReprocessItemState.CANCELLED) "CANCELLED" else if (step == 1) "ERROR" else "NOT_STARTED").put("reasonCode", reason.take(64)) }
             val attempts = result.putArray("attempts")

@@ -125,6 +125,33 @@ class DiscoveryPaperReprocessServiceTest {
             .andExpect(status().isBadRequest)
         Mockito.verifyNoInteractions(service)
     }
+
+    @Test
+    @org.junit.jupiter.api.condition.EnabledIfSystemProperty(named = "paperReprocessIt", matches = "true")
+    fun `repository API errors retain stable status and code with bounded Chinese operator explanations`() {
+        Paper03RuntimeFixture().use { f ->
+            val mvc = MockMvcBuilders.standaloneSetup(f.controller).build()
+            val root = "/api/expert-discovery/paper-reprocess"
+            val missing = mvc.perform(get("$root/preview").param("sourceExecutionId", "404"))
+                .andExpect(status().isNotFound).andReturn().response
+            f.db.jdbc.update("UPDATE task_execution SET status='RUNNING' WHERE id=?", f.sourceId)
+            val running = mvc.perform(get("$root/preview").param("sourceExecutionId", f.sourceId.toString()))
+                .andExpect(status().isConflict).andReturn().response
+            f.db.jdbc.update("UPDATE task_execution SET status='SUCCESS' WHERE id=?", f.sourceId)
+            val run = f.create()
+            val conflict = mvc.perform(post("$root/runs/${run.executionId}/cancel")
+                .contentType(MediaType.APPLICATION_JSON).content("""{"revision":${run.revision + 1}}"""))
+                .andExpect(status().isConflict).andReturn().response
+            for ((response, code) in listOf(missing to "SOURCE_NOT_FOUND", running to "SOURCE_RUNNING", conflict to "REVISION_CONFLICT")) {
+                val error = f.mapper.readTree(response.contentAsByteArray)
+                assertEquals(code, error.path("code").asText())
+                val message = error.path("message").asText()
+                assertTrue(message.length in 1..256)
+                assertNotEquals(code, message)
+                assertTrue(message.any { it in '\u4e00'..'\u9fff' })
+            }
+        }
+    }
 }
 
 /** Isolated disposable MySQL + real archive; no production Spring context or provider configuration. */
@@ -453,11 +480,24 @@ object Paper03RuntimeSmoke {
                 val root = "/api/expert-discovery/paper-reprocess"
                 http("GET", "$root/preview?sourceExecutionId=${f.sourceId}", expected = 401)
                 http("GET", "/fixture-login", expected = 204)
+                val missing = http("GET", "$root/preview?sourceExecutionId=404", expected = 404)
+                f.db.jdbc.update("UPDATE task_execution SET status='RUNNING' WHERE id=?", f.sourceId)
+                val running = http("GET", "$root/preview?sourceExecutionId=${f.sourceId}", expected = 409)
+                f.db.jdbc.update("UPDATE task_execution SET status='SUCCESS' WHERE id=?", f.sourceId)
+                for ((error, code) in listOf(missing to "SOURCE_NOT_FOUND", running to "SOURCE_RUNNING")) {
+                    check(error.path("code").asText() == code)
+                    check(error.path("message").asText().length in 1..256)
+                    check(error.path("message").asText().any { it in '\u4e00'..'\u9fff' })
+                }
                 val preview = http("GET", "$root/preview?sourceExecutionId=${f.sourceId}&q=only-one-paper&page=6")
                 check(preview.path("recordCount").asInt() == 121)
                 val request = """{"requestKey":"${java.util.UUID.randomUUID()}","sourceExecutionId":${f.sourceId},"mode":"AUDIT","expectedScopeHash":"${preview.path("expectedScopeHash").asText()}"}"""
                 val run = http("POST", "$root/runs", request, 202)
                 val id = run.path("executionId").asLong()
+                val conflict = http("POST", "$root/runs/$id/cancel", """{"revision":${run.path("revision").asLong() + 1}}""", 409)
+                check(conflict.path("code").asText() == "REVISION_CONFLICT")
+                check(conflict.path("message").asText().length in 1..256)
+                check(conflict.path("message").asText().any { it in '\u4e00'..'\u9fff' })
                 check(http("POST", "$root/runs", request, 202).path("executionId").asLong() == id)
                 check(http("GET", "/api/task-executions/active?size=50").path("items").any { it.path("id").asLong() == id })
                 val before = f.records.associate { it.id to f.archiveRepository.record(it.id) }
@@ -480,6 +520,34 @@ object Paper03RuntimeSmoke {
                 check(f.db.tasks.findById(id).get().status == "SUCCESS")
                 Mockito.verifyNoInteractions(f.network, f.bounded)
                 println("PAPER03_RUNTIME_HTTP_OK records=121 pages=7 sourceFrozen=true duplicateRunId=$id conflicts=true actualNew=0 actualUpdated=0 actualAdmitted=0 providerCalls=0 archiveMutations=0")
+                val correction = f.create()
+                val owner = f.claim()
+                while (!f.repository.freezePage(owner.executionId, owner.leaseToken!!, owner.generation)) { }
+                check(f.repository.setPhase(owner.executionId, owner.leaseToken!!, owner.generation, PaperReprocessPhase.PARSE))
+                val oversized = f.repository.claimItem(owner.executionId, owner.leaseToken!!, owner.generation, ReprocessKind.PAPER)!!
+                check(f.repository.completeItem(owner.executionId, owner.leaseToken!!, owner.generation,
+                    oversized.id, oversized.leaseToken!!, oversized.generation, ReprocessItemState.COMPLETE,
+                    f.db.result().put("evidence", "a".repeat(4 * 1024 * 1024))))
+                val interrupted = f.repository.claimItem(owner.executionId, owner.leaseToken!!, owner.generation, ReprocessKind.PAPER)!!
+                f.db.jdbc.update("UPDATE discovery_paper_reprocess_run SET lease_until=UTC_TIMESTAMP(3)-INTERVAL 1 SECOND WHERE execution_id=?", correction.executionId)
+                check(f.repository.claimRun("correction-recovery") == null)
+                for ((item, code) in listOf(oversized to "RESULT_TOO_LARGE", interrupted to "EXECUTION_LOST")) {
+                    val apiItem = http("GET", "$root/runs/${correction.executionId}/items/${item.id}")
+                    val raw = f.db.jdbc.queryForObject("SELECT result_json FROM discovery_paper_reprocess_item WHERE id=?", String::class.java, item.id)!!
+                    val persisted = f.mapper.readTree(raw)
+                    check(apiItem.path("state").asText() == "ERROR")
+                    check(apiItem.path("result") == persisted)
+                    check(persisted.path("schemaVersion").asInt() == 1)
+                    check(persisted.path("reasonCode").asText() == code)
+                    check(persisted.path("reason").asText().length in 1..256)
+                    check(persisted.path("reason").asText().any { it in '\u4e00'..'\u9fff' })
+                    check(raw.toByteArray(Charsets.UTF_8).size <= 4 * 1024 * 1024)
+                    check(persisted.path("trace").map { it.path("stepNo").asInt() } == (1..6).toList())
+                    check(persisted.path("trace").map { it.path("state").asText() } == listOf("ERROR") + List(5) { "NOT_STARTED" })
+                    check(persisted.path("attempts").map { it.path("attemptId") to it.path("hash") } ==
+                        item.input.path("bodies").map { it.path("attemptId") to it.path("hash") })
+                }
+                println("PAPER03_CORRECTION_HTTP_SQL_OK codes=SOURCE_NOT_FOUND,SOURCE_RUNNING,REVISION_CONFLICT statuses=404,409,409 chinese=true durable=RESULT_TOO_LARGE,EXECUTION_LOST schema=1 trace=6 refsPreserved=true bounded=true")
             } finally {
                 tomcat.stop(); tomcat.destroy(); spring.close(); Paper03RuntimeMvc.auth = null; f.db.stop()
             }
