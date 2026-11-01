@@ -1,13 +1,13 @@
 # Child 04 execution brief
 
 - Exact approved plan: docs/plans/2026-11-01/paper-reprocess-04-apply.md
-- Plan identity: sha256:77f145af6d11dec017b7f52596af0713b3ec40e68ce4370be60f05c68d9e6162
+- Plan identity: commit:5a31faaebf28001fb05d34c6b2aa195cc2a0e01d
 - Master plan: docs/plans/2026-11-01/paper-reprocess-master.md
 - Approval: user invocation `/fast-p docs/plans/2026-11-01/paper-reprocess-master.md` on 2026-11-01.
 - Target worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master
 - Target branch: fast/paper-reprocess-master
 - Depends on: 03
-- Amendments: N/A
+- Amendments: A8,A9; current epoch2, original pre-edit conflict retained.
 
 Read the complete exact child plan from this worktree. Links written as absolute paths into the original main worktree are planning references; resolve repository-relative sources here, never edit the original worktree.
 
@@ -22,6 +22,9 @@ Read the complete exact child plan from this worktree. Links written as absolute
 - `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperBackfillServiceTest.kt`
 - `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckServiceTest.kt`
 - `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationIntegrationTest.kt`
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperReprocessRepository.kt`
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt`
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt`
 
 No other product/test/plan files may change. An unlisted necessary file or behavior requires PLAN_CONFLICT, not an improvised fix. Original PDFs stay outside Git in a safe local directory. No release, production write, original-file deletion, Apollo requests, push, merge, history rewriting, or modifications of unrelated user changes.
 
@@ -114,3 +117,7 @@ Use execute-p against the exact child plan. Commit only authorized implementatio
 - Known worktree identity helper line30 fails resolving unrelated stale publish path `/private/var/folders/r_/p27w33t543l9r08_h0sxjmf40000gn/T/multi-ai-kit-publish-weibo-talent-introduction-2ccc4a976cde-lt1m864b`. Invoke helper as required then use strict native exact root/branch/gitdir/common-dir/registered target/HEAD/ancestry assertions at staging/commit/final checkpoints. Do not prune/change registrations/helpers/config; actual target mismatch stops.
 - Expected gitdir `/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-paper-reprocess-master`; common-dir `/Users/lukai/IdeaProjects/weibo-talent-introduction/.git`.
 - Do not run review-fast-p, review-p, verify-p or repair-p; fresh fast-p light verifier owns child verdict and final aggregate review belongs to the user's other agent.
+
+## Epoch 2 — Approved Parent-Owned Shared Seams
+- Exact master+child plan-only identity `5a31faaebf28001fb05d34c6b2aa195cc2a0e01d`, A8/A9 cap13. New repository receipt/REVIEW lifecycle, original consume-chain parent checks/owned resume and feature-owned ordinary-worker dispatch/late-response permission are narrowly authorized.
+- Prior epoch1 has no product edits/commands to inherit; read its complete dependency receipts, implement entire current contract and run all final tests/runtime freshly. No generic bypass/callback from HTTP, second writer, foreign-owned resume or changed unrelated epoch0 semantics.
