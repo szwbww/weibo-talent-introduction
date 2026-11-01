@@ -1,13 +1,13 @@
 # Child 03 execution brief
 
 - Exact approved plan: docs/plans/2026-11-01/paper-reprocess-03-batch.md
-- Plan identity: commit:41ebff5468b8b57a56785bbb8e0bda961bd96815
+- Plan identity: commit:a6e14b63448fecfa0cd1319074c8d0b5bb2026be
 - Master plan: docs/plans/2026-11-01/paper-reprocess-master.md
 - Approval: user invocation `/fast-p docs/plans/2026-11-01/paper-reprocess-master.md` on 2026-11-01.
 - Target worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master
 - Target branch: fast/paper-reprocess-master
 - Depends on: 02
-- Amendments: A3,A4,A5; historical pre-edit conflicts retained, current epoch3.
+- Amendments: A3,A4,A5,A6,A7; historical conflicts retained, current epoch4 resuming partial implementation.
 
 Read the complete exact child plan from this worktree. Links written as absolute paths into the original main worktree are planning references; resolve repository-relative sources here, never edit the original worktree.
 
@@ -25,11 +25,12 @@ Read the complete exact child plan from this worktree. Links written as absolute
 - `src/main/kotlin/com/weibo/talentintroduction/discovery/archive/PaperBodyAnalyzer.kt`
 - `src/main/kotlin/com/weibo/talentintroduction/discovery/archive/PaperQualificationEvidenceExtractor.kt`
 - `src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt`
+- `src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt`
 
 No other product/test/plan files may change. An unlisted necessary file or behavior requires PLAN_CONFLICT, not an improvised fix. Original PDFs stay outside Git in a safe local directory. No release, production write, original-file deletion, Apollo requests, push, merge, history rewriting, or modifications of unrelated user changes.
 
 ## Required Commands and Runtime Evidence
-- JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=DiscoveryPaperReprocessServiceTest,DiscoveryPaperReprocessRepositoryIntegrationTest
+- `env JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=DiscoveryPaperReprocessServiceTest,DiscoveryPaperReprocessRepositoryIntegrationTest,TaskExecutionSummaryExtractorTest -DmysqlIt=true`.
 - Run real MySQL migration/lease/idempotency scenarios and actual API smoke with 121 records; follow test opt-in configuration.
 
 Use JDK11 explicitly: ambient Maven defaults to Java25. Skip build/lint/test/formatter runs mid-flight; run the required commands after the final changes as one verification phase. Missing evidence must be reported, never turned into PASS. Use actual runtime smoke in addition to tests.
@@ -127,3 +128,8 @@ Use execute-p against the exact child plan. Commit only authorized implementatio
 - Exact master+child plan-only identity `41ebff5468b8b57a56785bbb8e0bda961bd96815`; A4/A5 authorize thirteen files including three optional parser-chain checkpoint seams. Preserve default callers, parser rules/versions and normal error behavior; narrowly propagate cancellation/budget signals.
 - Prior epoch2 stopped before product edits. Its exact grep/signature/catch receipts are append-only execution history. No test or runtime acceptance inherited; implement and verify the complete current plan freshly.
 - These three added seams are not permission for parser repairs, cache invalidation or independent unrelated changes. Cover actual page cancellation/budget and default behavior through the existing authorized tests.
+
+## Epoch 4 — Directly Affected Catalog Tests
+- Exact master/child plan identity `a6e14b63448fecfa0cd1319074c8d0b5bb2026be`; A6/A7 cap14 authorize directly affected TaskExecutionSummaryExtractorTest. Retire obsolete incidental fixed key/progress lists and count assertions, never re-pin to new copies/count23; preserve meaningful summary/progress behavior coverage.
+- Resume existing authorized partial13-file work in this same worktree; do not reset it. Prior epoch3 final focused13test command passed, but no runtime/current acceptance is inherited. Complete newly authorized test changes, run amended three-suite command with real MySQL and actual121-record API runtime freshly.
+- Base remains prior terminal code `47393695c8157c7033147ae4b041e5c5b3c52aa9`; there is no epoch3 implementation commit. Preserve all historical execution entries and controller artifact edits.

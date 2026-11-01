@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-11-01/paper-reprocess-master.md
 
 - Status: RUNNING
-- Master plan: docs/plans/2026-11-01/paper-reprocess-master.md (commit 41ebff5468b8b57a56785bbb8e0bda961bd96815)
-- Amendments: A1,A2,A3,A4,A5
+- Master plan: docs/plans/2026-11-01/paper-reprocess-master.md (commit a6e14b63448fecfa0cd1319074c8d0b5bb2026be)
+- Amendments: A1,A2,A3,A4,A5,A6,A7
 - Master base: 3a425461dbe6088e4d4dda1a53141416a392670c
 - Branch: fast/paper-reprocess-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master
@@ -22,7 +22,7 @@
 | 00 | docs/plans/2026-11-01/paper-reprocess-00-replay.md | sha256:f9cb78a3c967c67fbbeab0c272a0894cb4928cd6a650e05ae419853dee6a2132 | none | 1 | LIGHT_PASS | 3a425461dbe6088e4d4dda1a53141416a392670c | 1f73037375bc53082ab07f0603debad684f5fc3e | 0 | — | 1f73037375bc53082ab07f0603debad684f5fc3e | 53b8cd304132f830ca344c5008e9a571af7e7e1e | Four-gate PASS; dirty and clean artifact checkpoints VALID |
 | 01 | docs/plans/2026-11-01/paper-reprocess-01-parser.md | sha256:508fd62d84283bd223aca0970c9e265944762f6c48f36ffaf127ba2b88260608 | 00 | 1 | LIGHT_PASS_WITH_NOTES | 1f73037375bc53082ab07f0603debad684f5fc3e | 41c24f879591062b0efbe39eb9df4ef3d802754d | 2 | 7ec1e868c877529849fe2c81acf1a9975ff961de,1979768f08ffe58ca3c919326bb0eebbc833e3a1 | 1979768f08ffe58ca3c919326bb0eebbc833e3a1 | 55ee1ffd35d131c8126c38b68d31120e51c6045a | F-01/F-02 resolved; O-01/O-02 RECORD_ONLY; both artifact checkpoints VALID |
 | 02 | docs/plans/2026-11-01/paper-reprocess-02-identity.md | commit:9ce385c729c4b3a4c6fd0fff3aa06c126773cec3 | 01 | 2 | LIGHT_PASS | 1979768f08ffe58ca3c919326bb0eebbc833e3a1 | 25fe0ef0d89257536bf0cf56a2d6ec5da80c8961 | 2 | b065357c8c6816cf7fea0651b370a924b7e920f0,47393695c8157c7033147ae4b041e5c5b3c52aa9 | 47393695c8157c7033147ae4b041e5c5b3c52aa9 | 03168d167a423fca98c1d593e9b3113e5e2a271e | F-01/F-02/F-03 resolved; fresh four-gate PASS |
-| 03 | docs/plans/2026-11-01/paper-reprocess-03-batch.md | commit:41ebff5468b8b57a56785bbb8e0bda961bd96815 | 02 | 3 | PENDING | — | — | 0 | — | — | — | Epoch2 pre-edit checkpoint plumbing conflict resolved A4/A5; no product changes |
+| 03 | docs/plans/2026-11-01/paper-reprocess-03-batch.md | commit:a6e14b63448fecfa0cd1319074c8d0b5bb2026be | 02 | 4 | PENDING | — | — | 0 | — | — | — | A6/A7 directly affected catalog test scope approved; epoch3 partial13files preserved uncommitted |
 | 04 | docs/plans/2026-11-01/paper-reprocess-04-apply.md | sha256:77f145af6d11dec017b7f52596af0713b3ec40e68ce4370be60f05c68d9e6162 | 03 | 1 | PENDING | — | — | 0 | — | — | — | Awaiting ordered dispatch |
 | 05 | docs/plans/2026-11-01/paper-reprocess-05-frontend.md | sha256:3ee9c93f3ce58d0ae2eb8ad4ae7ebea9215248529333a19d614ac446aed4a615 | 04 | 1 | PENDING | — | — | 0 | — | — | — | Awaiting ordered dispatch |
 | 06 | docs/plans/2026-11-01/paper-reprocess-06-verification.md | sha256:ea13bb67c166e8cb541cc068d1367432497ed0fb3f303b61c3ba52d2f4493791 | 05 | 1 | PENDING | — | — | 0 | — | — | — | Awaiting ordered dispatch |
@@ -35,6 +35,8 @@
 | A3 | docs/plans/2026-11-01/paper-reprocess-03-batch.md | commit:3a425461dbe6088e4d4dda1a53141416a392670c | commit:6a5f08774ae58b2dac3fb0743efe58837bf56922 | I-2/I-5/X-1/X-5 and 顺序与门禁 | Allocate unused V173 because existing V172 is occupied; preserve applied migration, schema, scope count and acceptance | HUMAN:继续 后续授权都继续 直到所有子计划都完成且可以运行review-fast-p的阶段 不要执行review-fast-p，我会交给其他agent执行 — 2026-11-01T23:28:37+08:00 |
 | A4 | docs/plans/2026-11-01/paper-reprocess-master.md | commit:9ce385c729c4b3a4c6fd0fff3aa06c126773cec3 | commit:41ebff5468b8b57a56785bbb8e0bda961bd96815 | I-4/I-5/X-1/X-5 and 顺序与门禁 | Authorize child03 cap13 for existing parser-chain page cancellation/budget checkpoints only | HUMAN:继续 后续授权都继续 直到所有子计划都完成且可以运行review-fast-p的阶段 不要执行review-fast-p，我会交给其他agent执行 — 2026-11-01T23:28:37+08:00 |
 | A5 | docs/plans/2026-11-01/paper-reprocess-03-batch.md | commit:6a5f08774ae58b2dac3fb0743efe58837bf56922 | commit:41ebff5468b8b57a56785bbb8e0bda961bd96815 | I-4/I-5/X-1/X-5 | Add three proven parser checkpoint seams, preserve default behavior/rules/versions, retain all acceptance | HUMAN:继续 后续授权都继续 直到所有子计划都完成且可以运行review-fast-p的阶段 不要执行review-fast-p，我会交给其他agent执行 — 2026-11-01T23:28:37+08:00 |
+| A6 | docs/plans/2026-11-01/paper-reprocess-master.md | commit:41ebff5468b8b57a56785bbb8e0bda961bd96815 | commit:a6e14b63448fecfa0cd1319074c8d0b5bb2026be | I-5/I-7/X-6 and 顺序与门禁 | Authorize child03 cap14 for directly broken task catalog contract tests, no acceptance reduction | HUMAN:继续 后续授权都继续 直到所有子计划都完成且可以运行review-fast-p的阶段 不要执行review-fast-p，我会交给其他agent执行 — 2026-11-01T23:28:37+08:00 |
+| A7 | docs/plans/2026-11-01/paper-reprocess-03-batch.md | commit:41ebff5468b8b57a56785bbb8e0bda961bd96815 | commit:a6e14b63448fecfa0cd1319074c8d0b5bb2026be | I-5/I-7/X-6 | Add affected TaskExecutionSummaryExtractorTest and covering command; retire incidental fixed lists/count instead of re-pinning | HUMAN:继续 后续授权都继续 直到所有子计划都完成且可以运行review-fast-p的阶段 不要执行review-fast-p，我会交给其他agent执行 — 2026-11-01T23:28:37+08:00 |
 
 ## Baseline
 - Repository original revision: b758eb0f1d62f2beda39742085b441fcbbdff5ea.
@@ -98,3 +100,5 @@ None.
 - Child03 epoch1 pre-edit PLAN_CONFLICT: full migration inventory highestV172, firstfreeV173; no product edits/tests. A3 standing-approved plan-only6a5f08774ae58b2dac3fb0743efe58837bf56922 resolves collision. Restart epoch2 under exact new identity.
 - Child03 epoch2 implementation agent PaperBatchImplementer03E2 acquired successfully under amended6a5f08774ae58b2dac3fb0743efe58837bf56922; currentmetadataHEAD7f78bb0, prior terminalcodeBase unchanged.
 - Child03 epoch2 pre-edit PLAN_CONFLICT proven by parser signature/catch receipts; no other unavoidable conflict evidenced. Standing authority A4/A5 resolves optional checkpoint chain and cap13 in plan-only41ebff5468b8b57a56785bbb8e0bda961bd96815; restart epoch3, no product changes retained.
+- Child03 epoch3 PaperBatchImplementer03E3 acquired; exact master/child41ebff5468b8b57a56785bbb8e0bda961bd96815, metadata00a2974, same productBase. No implementer/verifier dispatch failure.
+- Child03 epoch3 necessary catalog-test conflict: fixed code/progress sets and count22 exclude newtype. A6/A7 plan-onlya6e14b63448fecfa0cd1319074c8d0b5bb2026be authorizes direct test synchronization, not incidental re-pinning. Partial implementation preserved; epoch3 focused13tests pass but no current acceptance inherited. New epoch4 must run amended command and runtime freshly.
