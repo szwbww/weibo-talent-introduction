@@ -103,3 +103,15 @@ Use JDK11 explicitly: ambient Maven defaults to Java25. Skip build/lint/test/for
 
 ## Execution and Evidence
 Use execute-p against the exact child plan. Commit only authorized implementation files as `feat(fast-p): implement 02`; exclude all fast-p artifacts. Append execution result to `docs/plans/fast/paper-reprocess-master/children/02/execution.md`; never overwrite historical entries. A separate fresh verifier receives only the brief and committed boundary. Do not self-declare PASS.
+
+## Completed Dependencies 00/01
+- Product base for this child: `1979768f08ffe58ca3c919326bb0eebbc833e3a1` (child 01 terminal code head).
+- Child 01 evidence commit: `55ee1ffd35d131c8126c38b68d31120e51c6045a`; checkpoint commit: `3065dae4f67eb075ede4395e5586ee0311731b46`.
+- Child 01 terminal independent verdict: LIGHT_PASS_WITH_NOTES by PaperParserReverifier01R2 after two bounded repairs. F-01/F-02 resolved; optional older corpus and pre-existing numbered reference heading remain RECORD_ONLY, not repair authority.
+- Complete 00..06 manifest checkpoint through 01 passed both dirty-artifact and clean modes, exit 0 / VALID / CHILD_CHECKPOINT.
+- Frozen manifest: `docs/audits/2026-11-01-discovery-30711-pdf/production-replay-manifest.json`; SHA-256 `de85addd76afe6123dce7b78ee0b2731e602a2fe0b2bf8aac442a7a4f506027c`; original-byte directory `/Users/lukai/.local/share/paper-reprocess-30711`.
+- Prior reports: committed child 00 audit manifest/results/report; child 01 `children/01/verify-log.md` latest attempt 3 for independently observed consumer/version/gain evidence.
+- Latest independent parser replay `/tmp/paper-parser01-verifier-e1-a3-replay.json`; complete keyed deltas `/tmp/paper-parser01-verifier-e1-a3-delta.json`; gain source/evidence `/tmp/paper-parser01-verifier-e1-a3-gain-evidence.json`.
+- Prior outcome: 49 repaired combinations within frozen reproduced truth, 281 still unresolved, plus one excluded incidental gain. No business/new-expert/admission result is implied. Parser version 20261101; identity version 20260925 and cache extraction version 20261004 remain unchanged.
+- Use an isolated source-backed existing-empty-name fixture as required by this child, not live production writes. Preserve original corpus and previous child evidence.
+- execute-p worktree helper is known to fail at line 30 strictly resolving an unrelated stale registered publish worktree. Invoke as required and record equivalent exact native read-only root/branch/gitdir/common-dir/registration/HEAD/reachability assertions at all checkpoints. Do not prune worktrees or modify the helper; actual identity mismatch still stops.
