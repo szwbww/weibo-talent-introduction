@@ -100,3 +100,20 @@ Use JDK11 explicitly: ambient Maven defaults to Java25. Skip build/lint/test/for
 
 ## Execution and Evidence
 Use execute-p against the exact child plan. Commit only authorized implementation files as `feat(fast-p): implement 01`; exclude all fast-p artifacts. Append execution result to `docs/plans/fast/paper-reprocess-master/children/01/execution.md`; never overwrite historical entries. A separate fresh verifier receives only the brief and committed boundary. Do not self-declare PASS.
+
+## Completed Dependency 00
+- Product base: `1f73037375bc53082ab07f0603debad684f5fc3e`.
+- Evidence commit: `53b8cd304132f830ca344c5008e9a571af7e7e1e`; checkpoint commit: `7f8b0f2d6204ba8ecac79bc533ddc2f7989bd159`.
+- Independent verifier PaperReplayVerifier00: LIGHT_PASS. Both precommit and clean full-manifest checkpoint commands returned exit 0 / VALID / CHILD_CHECKPOINT through 00.
+- Frozen original-byte manifest: `docs/audits/2026-11-01-discovery-30711-pdf/production-replay-manifest.json`, SHA-256 `de85addd76afe6123dce7b78ee0b2731e602a2fe0b2bf8aac442a7a4f506027c`.
+- Read the committed `production-replay-results.csv` and `production-replay-report.md` in that audit directory for actual rows and categories. Independent replay: 337 rows, 330 REPRODUCED, 1 ALREADY_RECOVERED, 6 NOT_REPRODUCED; these are not corrected bindings or admissions. Six non-reproduced rows and 47 unconfirmed column candidates remain excluded from repair truth.
+- Original source directory: `/Users/lukai/.local/share/paper-reprocess-30711`; retained old replay `/tmp/paper-reprocess-30711-baseline.json`; runtime evidence `/tmp/paper-reprocess-30711-runtime.json`.
+- Current replay command (fresh output path): `/usr/bin/time -l /Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home/bin/java -Xmx1536m -cp 'target/classes:target/weibo-talent-introduction-1.0.0-SNAPSHOT/WEB-INF/lib/*' com.weibo.talentintroduction.discovery.service.DiscoveryPaperIdentityReplayTool /Users/lukai/.local/share/paper-reprocess-30711 docs/audits/2026-11-01-discovery-30711-pdf/production-replay-manifest.json <fresh-output.json>`.
+- Reconcile against retained old replay using `scripts/discovery_admission_probe/reconcile_paper_identity_replay.py --manifest <frozen-manifest> --old-replay /tmp/paper-reprocess-30711-baseline.json --new-replay <fresh-output.json> --audit-directory docs/audits/2026-11-01-discovery-30711-pdf --csv <fresh-output.csv> --report <fresh-output.md> --runtime-evidence /tmp/paper-reprocess-30711-runtime.json`. Preserve all existing artifacts; record new output paths in execution log, not unlisted tracked files.
+- execute-p worktree helper is known to fail at line 30 strictly resolving an unrelated stale registered publish worktree. Invoke as required; record equivalent native read-only exact root/branch/gitdir/common-dir/registration/HEAD/reachability assertions at all checkpoints. No pruning/helper mutation. An actual target mismatch still stops execution.
+
+## Resolved Child 01 Runtime Evidence
+- Candidate receipt: `/tmp/paper-reprocess-30711-child01-final.json`; keyed deltas: `/tmp/paper-reprocess-30711-child01-delta.json`; current runtime evidence: `/tmp/paper-reprocess-30711-child01-runtime.json`.
+- Reconciliation report/CSV: `/tmp/paper-reprocess-30711-child01-final.md` and `.csv`. Frozen child 00 truth remains authoritative; the candidate run's diagnostic labels must not redefine it.
+- Real PAPER/RECORD consumer smoke: `/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home/bin/java @/tmp/paper-reprocess-30711-child01-smoke.args`. Verify classpath/source and run against the committed candidate; do not treat an email-gate rejection as admission.
+- Use fresh temporary output filenames for independent replay/reconciliation and compare by the complete frozen combination key. Preserve prior outputs, original bytes and completed child logs.
