@@ -133,3 +133,8 @@ Use execute-p against the exact child plan. Commit only authorized implementatio
 - Exact master/child plan identity `a6e14b63448fecfa0cd1319074c8d0b5bb2026be`; A6/A7 cap14 authorize directly affected TaskExecutionSummaryExtractorTest. Retire obsolete incidental fixed key/progress lists and count assertions, never re-pin to new copies/count23; preserve meaningful summary/progress behavior coverage.
 - Resume existing authorized partial13-file work in this same worktree; do not reset it. Prior epoch3 final focused13test command passed, but no runtime/current acceptance is inherited. Complete newly authorized test changes, run amended three-suite command with real MySQL and actual121-record API runtime freshly.
 - Base remains prior terminal code `47393695c8157c7033147ae4b041e5c5b3c52aa9`; there is no epoch3 implementation commit. Preserve all historical execution entries and controller artifact edits.
+
+## Epoch 4 — Resolved Partial Runtime Inputs
+- Actual new integration opt-in is `-DpaperReprocessIt=true`; final amended three-suite command MUST include that in addition to `-DmysqlIt=true` to prevent skipped SQL evidence.
+- Prior writer identifies opt-in `DiscoveryPaperReprocessRuntimeScenarios` and standalone `Paper03RuntimeSmoke` entries within the authorized test files. Inspect their actual interfaces before invocation; run both freshly, including actual HTTP 121-record/seven-page smoke. Classpath dependency receipt `/tmp/paper03-epoch3-classpath.txt` is old execution context only; resolve freshly as needed.
+- Epoch3 current files include canonical JSON immutable-input equality correction, preserving genuine input conflicts, and fixture-only packet/deletion expectation corrections; independent verifier has not accepted any of this yet.
