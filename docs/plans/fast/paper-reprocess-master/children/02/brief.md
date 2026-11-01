@@ -1,13 +1,13 @@
 # Child 02 execution brief
 
 - Exact approved plan: docs/plans/2026-11-01/paper-reprocess-02-identity.md
-- Plan identity: sha256:3bc964760b6cbb1fb290809821569381e676a4f2b88d62121ea0d59a2dd35e48
+- Plan identity: commit:9ce385c729c4b3a4c6fd0fff3aa06c126773cec3
 - Master plan: docs/plans/2026-11-01/paper-reprocess-master.md
 - Approval: user invocation `/fast-p docs/plans/2026-11-01/paper-reprocess-master.md` on 2026-11-01.
 - Target worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master
 - Target branch: fast/paper-reprocess-master
 - Depends on: 01
-- Amendments: N/A
+- Amendments: A1,A2; execution epoch 2 after explicit user approval.
 
 Read the complete exact child plan from this worktree. Links written as absolute paths into the original main worktree are planning references; resolve repository-relative sources here, never edit the original worktree.
 
@@ -22,6 +22,7 @@ Read the complete exact child plan from this worktree. Links written as absolute
 - `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationCommitServiceTest.kt`
 - `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationQueryServiceTest.kt`
 - `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationIntegrationTest.kt`
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt`
 
 No other product/test/plan files may change. An unlisted necessary file or behavior requires PLAN_CONFLICT, not an improvised fix. Original PDFs stay outside Git in a safe local directory. No release, production write, original-file deletion, Apollo requests, push, merge, history rewriting, or modifications of unrelated user changes.
 
@@ -115,3 +116,12 @@ Use execute-p against the exact child plan. Commit only authorized implementatio
 - Prior outcome: 49 repaired combinations within frozen reproduced truth, 281 still unresolved, plus one excluded incidental gain. No business/new-expert/admission result is implied. Parser version 20261101; identity version 20260925 and cache extraction version 20261004 remain unchanged.
 - Use an isolated source-backed existing-empty-name fixture as required by this child, not live production writes. Preserve original corpus and previous child evidence.
 - execute-p worktree helper is known to fail at line 30 strictly resolving an unrelated stale registered publish worktree. Invoke as required and record equivalent exact native read-only root/branch/gitdir/common-dir/registration/HEAD/reachability assertions at all checkpoints. Do not prune worktrees or modify the helper; actual identity mismatch still stops.
+
+## Epoch 2 — Approved Resume
+- Exact approved child and master bytes are bound to plan-only commit `9ce385c729c4b3a4c6fd0fff3aa06c126773cec3`; read complete current plan again, not the previous epoch contract.
+- User approval: “继续 后续授权都继续 直到所有子计划都完成且可以运行review-fast-p的阶段 不要执行review-fast-p，我会交给其他agent执行”, recorded 2026-11-01T23:28:37+08:00. Ledger A1/A2 authorize eleven files and narrow DiscoveryReviewService persisted-admission seam. All prior invariants remain; no generic identity-guard bypass.
+- Epoch 1 made no product edits. Implement every requirement, including real controlled old-admission identity change and rejection/rollback cases in the existing authorized tests; do not narrow to experts with no prior admission.
+- Actual SQL integration command must include the existing opt-in `-DmysqlIt=true`; ordinary mvn test skips are not proof. Exercise real MySQL CAS/lease and an actual isolated original-recheck runtime path.
+- Skip build/lint/test/formatters mid-flight, run after final implementation. Execute-p allows correction of your own uniquely determined in-scope implementation errors; do not misclassify ordinary self-check failures as an independent-verifier repair round.
+- New strictly necessary scope conflicts should be evidenced and sent to controller for a separately committed, standing-user-approved amendment; do not alter plans or unrelated files yourself.
+- Do not run review-fast-p, review-p, verify-p or repair-p; fresh fast-p verifier owns the light verdict, final aggregate review is deferred.
