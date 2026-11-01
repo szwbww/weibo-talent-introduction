@@ -56,7 +56,8 @@ class DiscoveryVerificationWorker(
     private val clock: Clock = Clock.systemUTC(),
     private val traces: com.weibo.talentintroduction.discovery.repository.DiscoveryVerificationTraceRepository? = null,
     private val papers: PaperVerificationEvidenceService? = null,
-    private val academic: DiscoveryRecheckAcademicEvidenceService? = null
+    private val academic: DiscoveryRecheckAcademicEvidenceService? = null,
+    private val retainedIdentity: RetainedPaperIdentityService? = null
 ) {
     private val mapper = jacksonObjectMapper().findAndRegisterModules().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
     private val running = AtomicBoolean()
@@ -128,7 +129,8 @@ class DiscoveryVerificationWorker(
     }
 
     /** Also used by the isolated runtime fixture. SQL reservations always precede provider calls. */
-    internal fun process(lease: VerificationItem) {
+    internal fun process(initialLease: VerificationItem) {
+        var lease = initialLease
         val token = requireNotNull(lease.leaseToken)
         val lost = AtomicBoolean()
         val renewal = scheduleLeaseRenewal(lease, lost)
@@ -342,7 +344,7 @@ class DiscoveryVerificationWorker(
             rawPayload = lease.evidenceJson
             payload = lease.evidenceJson?.let { mapper.readValue<VerificationWorkerEvidence>(it) } ?: payload
             rawPayload = null
-            val snapshot = mapper.readValue<VerificationSnapshot>(lease.snapshotJson)
+            var snapshot = mapper.readValue<VerificationSnapshot>(lease.snapshotJson)
             require(snapshot.identityHash == lease.identityHash && snapshot.factFingerprint == lease.factFingerprint) { "STALE_INPUT" }
             val run = repository.findRun(lease.ownerExecutionId) ?: error("Verification run missing")
             ensureOwned()
@@ -445,8 +447,52 @@ class DiscoveryVerificationWorker(
                     "parsedBodies" to paperRead?.parsedBodies, "evidenceRef" to "executionContext.paper"),
                 paperRead?.reasonCodes.orEmpty().ifEmpty { if (paperRead == null) listOf("SOURCE_UNAVAILABLE") else emptyList() })
             startStep(3, mapOf("identityHash" to snapshot.identityHash))
+            if (lease.reviewEpoch > 0 && retainedIdentity != null) {
+                val saved = RetainedPaperIdentityService.supplement(lease)
+                // Recovery uses the original immutable proposal, even when ES completed before SQL.
+                val proposal = saved?.proposal ?: retainedIdentity.propose(lease.expertDocId, snapshot,
+                    payload.executionContext?.paperSourceRefs.orEmpty(), payload.executionContext!!.evaluationAt,
+                    lease.ownerExecutionId, lease.sourceName, lease.sourceItemKey)
+                if (proposal.incoming != null) {
+                    val previousIdentity = snapshot.identityHash to snapshot.factFingerprint
+                    val before = saved?.beforeSnapshot?.let { mapper.treeToValue(it, VerificationSnapshot::class.java) } ?: snapshot
+                    lease = repository.stageIdentity(lease, proposal, clock.instant()) ?: throw LeaseLost()
+                    ensureOwned()
+                    val receipt = if (run.mode == VerificationMode.AUDIT)
+                        RetainedIdentityReceipt("PROPOSED", proposal.reason,
+                            effective = retainedIdentity.virtual(lease.expertDocId, before, proposal.incoming))
+                    else retainedIdentity.apply(lease.expertDocId, proposal)
+                    ensureOwned()
+                    lease = repository.completeIdentity(lease, receipt, clock.instant()) ?: throw LeaseLost()
+                    snapshot = mapper.readValue(lease.snapshotJson, VerificationSnapshot::class.java)
+                    if (receipt.phase == "PARTIAL") {
+                        endStep(3, VerificationStepState.INSUFFICIENT, RetainedPaperIdentityService.supplement(lease)!!,
+                            listOf("IDENTITY_REPAIR_PARTIAL"), true)
+                        repository.reschedule(lease.id, token, lease.generation, clock.instant().plusSeconds(30),
+                            lease.transientAttempts, json(), "[\"IDENTITY_REPAIR_PARTIAL\"]", clock.instant())
+                        return
+                    }
+                    if (snapshot.identityHash != previousIdentity.first || snapshot.factFingerprint != previousIdentity.second) {
+                        // Never carry old owner conclusions, provider hits, cursors or identity-bound facts forward.
+                        val oldContext = requireNotNull(payload.executionContext)
+                        val reboundPaper = papers?.collect(snapshot, proposal.sourceRefs, mode, oldContext.evaluationAt)
+                        payload = VerificationWorkerEvidence(ruleVersion = payload.ruleVersion,
+                            executionContext = VerificationExecutionContext(oldContext.evaluationAt, proposal.sourceRefs, reboundPaper,
+                                cacheReasons = listOf("IDENTITY_CHANGED_CACHE_NOT_REUSED")),
+                            evidence = reboundPaper?.sources.orEmpty().flatMap { it.evidence })
+                        entered = null; searched = null; candidatesAt = null
+                        save()
+                    }
+                } else {
+                    // Unavailable sources leave the established ORCID/Apollo path intact.
+                    lease = repository.stageIdentity(lease, proposal, clock.instant()) ?: throw LeaseLost()
+                    lease = repository.completeIdentity(lease, RetainedIdentityReceipt(proposal.phase, proposal.reason),
+                        clock.instant()) ?: throw LeaseLost()
+                }
+            }
             endStep(3, if (snapshot.identityValid) VerificationStepState.SUCCESS else VerificationStepState.INSUFFICIENT,
-                mapOf("reliableIdentity" to snapshot.identityValid, "paperBindings" to paperRead?.sources.orEmpty().map {
+                mapOf("reliableIdentity" to snapshot.identityValid, "identitySupplement" to RetainedPaperIdentityService.supplement(lease),
+                    "paperBindings" to payload.executionContext?.paper?.sources.orEmpty().map {
                     mapOf("source" to it.source, "authorIndex" to it.boundAuthorIndex, "method" to it.bindingMethod) }),
                 if (snapshot.identityValid) emptyList() else listOf("IDENTITY_EVIDENCE_MISSING"), !snapshot.identityValid)
             if (!snapshot.identityValid) {

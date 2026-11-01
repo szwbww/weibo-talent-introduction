@@ -975,6 +975,84 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     fun isOwned(itemId: Long, token: String, generation: Long, now: Instant): Boolean =
         findItem(itemId)?.let { owns(it, token, generation, now) } == true
 
+    /** Two short SQL phases around external ES CAS; neither transaction performs external work. */
+    @Transactional
+    fun stageIdentity(lease: VerificationItem, proposal: com.weibo.talentintroduction.discovery.service.RetainedIdentityProposal,
+        now: Instant): VerificationItem? {
+        require(lease.reviewEpoch > 0) { "Ordinary discovery cannot rebind identity" }
+        val item = lockForCommit(lease.id)
+        if (item.reviewEpoch != lease.reviewEpoch || !owns(item, requireNotNull(lease.leaseToken), lease.generation, now) || item.snapshotJson != lease.snapshotJson) return null
+        val service = com.weibo.talentintroduction.discovery.service.RetainedPaperIdentityService
+        val root = service.codec.readTree(item.snapshotJson) as ObjectNode
+        val prior = service.supplement(item)
+        if (prior != null) require(prior.proposalHash == service.hash(proposal)) { "Frozen proposal changed" }
+        val before = prior?.beforeSnapshot ?: root.deepCopy()
+        val review = before.path("reviewInput")
+        require(review.isObject && review.has("expectedAdmissionRevision"))
+        val admission = jdbc.query("SELECT identity_hash,revision FROM expert_discovery_admission WHERE expert_doc_id=? FOR UPDATE",
+            RowMapper { rs, _ -> rs.getString(1) to rs.getLong(2) }, item.expertDocId).singleOrNull()
+        val revisionNode = review.path("expectedAdmissionRevision")
+        require(revisionNode.isNull || revisionNode.isIntegralNumber && revisionNode.canConvertToLong() && revisionNode.longValue() >= 0)
+        val revision = revisionNode.takeUnless { it.isNull }?.longValue()
+        if (admission?.second != revision || admission != null && admission.first != before.path("identityHash").asText() ||
+            prior != null && admission?.first != prior.beforeAdmissionIdentity) return null
+        val s = com.weibo.talentintroduction.discovery.service.IdentitySupplement(item.id, item.reviewEpoch, item.generation,
+            replayHash(lease.leaseToken), before, before.path("identityHash").asText(), before.path("factFingerprint").asText(),
+            revision, prior?.beforeAdmissionIdentity ?: admission?.first, proposal, service.hash(proposal),
+            if (item.policyVersion == VerificationMode.AUDIT.policyVersion) VerificationMode.AUDIT else VerificationMode.ENFORCE,
+            if (item.policyVersion == VerificationMode.AUDIT.policyVersion) "PROPOSED" else "APPLYING")
+        root.set<com.fasterxml.jackson.databind.JsonNode>("identitySupplement", replayMapper.valueToTree(s))
+        jdbc.update("UPDATE discovery_verification_item SET snapshot_json=?,updated_at=? WHERE id=?", root.toString(), now.verificationUtc(), item.id)
+        bump(item.ownerExecutionId, now)
+        return findItem(item.id)
+    }
+
+    @Transactional
+    fun completeIdentity(lease: VerificationItem, receipt: com.weibo.talentintroduction.discovery.service.RetainedIdentityReceipt,
+        now: Instant): VerificationItem? {
+        require(lease.reviewEpoch > 0)
+        val item = lockForCommit(lease.id)
+        if (item.reviewEpoch != lease.reviewEpoch || !owns(item, requireNotNull(lease.leaseToken), lease.generation, now) || item.snapshotJson != lease.snapshotJson) return null
+        val service = com.weibo.talentintroduction.discovery.service.RetainedPaperIdentityService
+        val s = requireNotNull(service.supplement(item))
+        require(s.generation == item.generation && s.ownerHash == replayHash(item.leaseToken)) { "Repair ownership changed" }
+        require(s.proposalHash == service.hash(s.proposal)) { "Frozen proposal changed during persistence" }
+        val admission = jdbc.query("SELECT identity_hash,revision FROM expert_discovery_admission WHERE expert_doc_id=? FOR UPDATE",
+            RowMapper { rs, _ -> rs.getString(1) to rs.getLong(2) }, item.expertDocId).singleOrNull()
+        if (admission?.first != s.beforeAdmissionIdentity || admission?.second != s.beforeAdmissionRevision) return null
+        val root = service.codec.readTree(item.snapshotJson) as ObjectNode
+        val effective = receipt.effective
+        val rebind = effective != null && (s.mode == VerificationMode.AUDIT && receipt.phase == "PROPOSED" ||
+            s.mode == VerificationMode.ENFORCE && receipt.phase == "APPLIED")
+        if (rebind) {
+            val before = replayMapper.treeToValue(s.beforeSnapshot, VerificationSnapshot::class.java)
+            val incoming = requireNotNull(s.proposal.incoming)
+            val profile = effective!!.profile
+            require(profile.copy(givenNames = before.profile.givenNames, familyNames = before.profile.familyNames,
+                identityVerification = before.profile.identityVerification) == before.profile) { "Non-identity baseline changed" }
+            require(profile.givenNames == incoming.givenNames && profile.familyNames == incoming.familyNames &&
+                profile.identityVerification == com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.verified(
+                    incoming.email, incoming.givenNames, incoming.familyNames, requireNotNull(incoming.identityEvidence),
+                    incoming.orcidId, incoming.openAlexAuthorId)) { "Receipt differs from frozen proposal" }
+        }
+        val updated = s.copy(phase = receipt.phase, repairReceipt = receipt,
+            effectiveProfile = if (rebind) effective!!.profile else null, effectiveHash = if (rebind) effective!!.identityHash else null)
+        if (rebind) {
+            root.set<com.fasterxml.jackson.databind.JsonNode>("profile", replayMapper.valueToTree(effective!!.profile))
+            root.put("identityHash", effective.identityHash); root.put("factFingerprint", effective.factFingerprint)
+            // The original review cache remains solely under beforeSnapshot, not available to the new identity.
+            val review = root.path("reviewInput") as ObjectNode
+            review.remove(listOf("evidence", "evidenceHash"))
+        }
+        root.set<com.fasterxml.jackson.databind.JsonNode>("identitySupplement", replayMapper.valueToTree(updated))
+        jdbc.update("""UPDATE discovery_verification_item SET snapshot_json=?,identity_hash=?,fact_fingerprint=?,
+            evidence_json=IF(? ,NULL,evidence_json),updated_at=? WHERE id=?""", root.toString(),
+            if (rebind) effective!!.identityHash else item.identityHash, if (rebind) effective!!.factFingerprint else item.factFingerprint,
+            rebind && (effective!!.identityHash != item.identityHash || effective.factFingerprint != item.factFingerprint), now.verificationUtc(), item.id)
+        bump(item.ownerExecutionId, now)
+        return findItem(item.id)
+    }
+
     /**
      * A cancelled worker may acknowledge only its already dispatched request, once. The ownership
      * receipt was frozen before dispatch. No item, run revision, lease, cursor or admission is touched.

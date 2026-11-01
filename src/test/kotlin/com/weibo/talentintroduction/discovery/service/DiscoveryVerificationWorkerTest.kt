@@ -12,6 +12,28 @@ import org.mockito.Mockito
 import org.springframework.beans.factory.support.DefaultListableBeanFactory
 
 class DiscoveryVerificationWorkerTest {
+    @Test fun `rebound review rejects an old identity cache even when its serialized cache hash is valid`() {
+        val mapper = jacksonObjectMapper().findAndRegisterModules()
+        val old = ruleSnapshot()
+        val changed = old.copy(identityHash = "d".repeat(64))
+        val cached = VerificationWorkerEvidence(evidence = listOf(ruleJob("Professor")))
+        val root = mapper.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(changed)
+        root.set<com.fasterxml.jackson.databind.JsonNode>("reviewInput", mapper.valueToTree(VerificationReviewInput(null,
+            evidence = cached, evidenceHash = DiscoveryVerificationRepository.replayHash(mapper.writeValueAsString(cached)))))
+        val row = lease(null).copy(snapshotJson = root.toString(), identityHash = changed.identityHash, reviewEpoch = 1)
+        val recheck = RecheckRun(RecheckSpec("fixture", "key", "{}", RecheckEvidenceMode.REUSE,
+            ruleClock.instant(), "code", "parser"), RecheckControl(RecheckPhase.RUNNING, "a".repeat(64)))
+        val run = VerificationRun(1, VerificationMode.ENFORCE, VerificationMode.ENFORCE.policyVersion, false,
+            "{}", true, 1, ruleClock.instant(), ruleClock.instant(), mapper.writeValueAsString(recheck))
+        val repo = Mockito.mock(DiscoveryVerificationRepository::class.java)
+        Mockito.`when`(repo.findRun(1)).thenReturn(run)
+        Mockito.`when`(repo.recheck(run)).thenReturn(recheck)
+        Mockito.`when`(repo.isOwned(row.id, row.leaseToken!!, row.generation, ruleClock.instant())).thenReturn(true)
+        worker(DiscoveryVerificationProperties(), repo).useWorker { it.process(row) }
+        val failure = Mockito.mockingDetails(repo).invocations.single { it.method.name == "saveFailure" }
+        assertEquals(VerificationState.ERROR, (failure.arguments[3] as VerificationResult).state)
+        assertTrue(Mockito.mockingDetails(repo).invocations.none { it.method.name.startsWith("reserveAttempt") })
+    }
     @Test fun `interrupted paper cache follower keeps lease resumable and owner completes`() {
         check(org.testcontainers.DockerClientFactory.instance().isDockerAvailable) { "Isolated Docker MySQL is required" }
         DiagnosticMysql().withDatabaseName("paper_cancel").withUsername("test").withPassword("test")

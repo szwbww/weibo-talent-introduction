@@ -50,17 +50,22 @@ class DiscoveryVerificationIntegrationTest {
             check(DockerClientFactory.instance().isDockerAvailable) { "Docker is required; skip is not PASS" }
             mysql.start()
             val ds = DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
-            Flyway.configure().dataSource(ds).placeholderReplacement(false).target("161").load().migrate()
+            Flyway.configure().dataSource(ds).placeholderReplacement(false).target("164").load().migrate()
             jdbc = JdbcTemplate(ds)
             manager = DataSourceTransactionManager(ds)
         }
         @JvmStatic @AfterAll fun stop() { if (mysql.isRunning) mysql.stop() }
         /** Separate runtime entry; never starts the production Spring application. */
         @JvmStatic fun main(args: Array<String>) {
-            require(args.contentEquals(arrayOf("--queue-access-smoke")))
+            require(args.contentEquals(arrayOf("--queue-access-smoke")) || args.contentEquals(arrayOf("--retained-identity-smoke")))
             start()
             try {
-                DiscoveryVerificationIntegrationTest().queueVersionAccessScenario()
+                if (args[0] == "--retained-identity-smoke") {
+                    DiscoveryVerificationIntegrationTest().clean()
+                    RetainedRuntime().use { it.originalButtonScenario(VerificationMode.AUDIT) }
+                    DiscoveryVerificationIntegrationTest().clean()
+                    RetainedRuntime().use { it.originalButtonScenario(VerificationMode.ENFORCE) }
+                } else DiscoveryVerificationIntegrationTest().queueVersionAccessScenario()
             } finally { stop() }
         }
     }
@@ -68,8 +73,11 @@ class DiscoveryVerificationIntegrationTest {
     @BeforeEach fun clean() {
         jdbc.execute("DROP TRIGGER IF EXISTS fail_registration_reserve")
         jdbc.execute("DROP TRIGGER IF EXISTS fail_registration_activate")
+        jdbc.execute("DROP TRIGGER IF EXISTS fail_controlled_attach")
+        listOf("discovery_paper_archive_attempt", "discovery_paper_archive_record", "discovery_paper_archive_blob",
+            "discovery_paper_archive_setting").forEach { jdbc.update("DELETE FROM $it") }
         listOf("discovery_apollo_setting", "discovery_paper_job", "discovery_collection_stream", "discovery_pipeline", "discovery_source_cursor",
-            "expert_email_alias", "expert_contact", "discovery_verification_attempt", "discovery_verification_item",
+            "expert_email_alias", "expert_contact", "discovery_recheck_input", "discovery_verification_attempt", "discovery_verification_item",
             "discovery_verification_run", "expert_discovery_admission", "task_execution").forEach { jdbc.update("DELETE FROM $it") }
     }
 
@@ -597,6 +605,390 @@ class DiscoveryVerificationIntegrationTest {
             assertEquals("[\"QUALIFICATION_EVIDENCE_MISSING\"]", completed.reasonsJson)
             assertTrue(f.flow.orcidRequests.isNotEmpty(), "Bound ORCID remains available to the worker")
             assertTrue(f.flow.apolloRequests.isEmpty())
+        }
+    }
+
+    /** Source-backed, isolated runtime: original controller prepare/start -> real SQL -> worker -> query.
+     * The loopback ES implements version CAS and rejects any unexpected operation. Providers fail closed.
+     */
+    private class RetainedRuntime : AutoCloseable {
+        val f = VerificationFlowFixture(jdbc, manager, DiscoveryVerificationProperties(enabled = true,
+            workerEnabled = true, apolloApiKey = "fixture-key", requestsPerMinute = 1000, concurrency = 1))
+        val root = java.nio.file.Files.createTempDirectory("retained-identity-runtime-").toRealPath()
+        val mapper = f.mapper
+        val doc = "EMAIL-retained-empty-31372"
+        val docs = linkedMapOf("raw" to linkedMapOf<String, MutableMap<String, Any?>>(),
+            "candidate" to linkedMapOf<String, MutableMap<String, Any?>>(), "application" to linkedMapOf<String, MutableMap<String, Any?>>())
+        val versions = mutableMapOf<Pair<String, String>, Long>()
+        var identityWrites = 0
+        var providerCalls = 0
+        var failCandidate = false
+        var beforeUpdate: (() -> Unit)? = null
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
+        val props: ElasticsearchProperties
+        val writer: ExpertIndexWriterService
+        val review: DiscoveryReviewService
+        val commits: DiscoveryVerificationCommitService
+        val archiveRepo = com.weibo.talentintroduction.discovery.archive.DiscoveryPaperArchiveRepository(jdbc, manager)
+        val archive = com.weibo.talentintroduction.discovery.archive.DiscoveryPaperArchiveService(archiveRepo,
+            DiscoveryPaperArchiveProperties(root.resolve("archive").toString()), DiscoverySampleProperties(directory = root.resolve("samples").toString()), mapper)
+        val analyzer = DiscoveryHistoricalReplayTool.analyzer()
+        val papers = PaperVerificationEvidenceService(archiveRepo, archive, analyzer, mapper)
+        val contacts = Mockito.mock(com.weibo.talentintroduction.campaign.repository.ExpertContactRepository::class.java)
+        val aliases = Mockito.mock(com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService::class.java)
+        val retained: RetainedPaperIdentityService
+        val queries = DiscoveryVerificationQueryService(f.repository, f.admissions, f.props)
+        val tasks = Mockito.mock(TaskExecutionRepository::class.java)
+        val taskRows = mutableMapOf<Long, TaskExecution>()
+        var nextTask = 7000L
+        val service: DiscoveryRecheckService
+        val controller: com.weibo.talentintroduction.discovery.controller.DiscoveryRecheckController
+        val request = org.springframework.mock.web.MockHttpServletRequest().apply {
+            getSession(true).setAttribute(com.weibo.talentintroduction.auth.config.AuthSessionKeys.USERNAME, "isolated-operator")
+        }
+        val source: PaperSourceRef
+        val original: VerificationSnapshot
+        val historyId: Long
+        val historyBefore: Map<String, Any?>
+        val workers = mutableListOf<DiscoveryVerificationWorker>()
+        init {
+            server.createContext("/") { exchange ->
+                var status = 200
+                val path = exchange.requestURI.path.trim('/').split('/')
+                val body = exchange.requestBody.use { it.readBytes() }.takeIf { it.isNotEmpty() }?.let { mapper.readTree(it) }
+                val answer: Any
+                if (path.last() == "_search") {
+                    val email = body!!.path("query").path("term").path("email").asText()
+                    val hits = docs.flatMap { (index, values) -> values.filterValues { it["email"] == email }.map { (id, source) ->
+                        mapOf("_index" to index, "_id" to id, "_source" to source) } }
+                    answer = mapOf("timed_out" to false, "_shards" to mapOf("failed" to 0), "hits" to mapOf("hits" to hits))
+                } else {
+                    check(path.size == 3 && path[0] in docs && path[1] in listOf("_doc", "_update")) { "Unexpected ES route ${exchange.requestURI}" }
+                    val index = path[0]; val id = path[2]; val key = index to id
+                    val current = docs.getValue(index)[id]
+                    when (exchange.requestMethod) {
+                        "GET", "HEAD" -> {
+                            if (current == null) { status = 404; answer = mapOf("found" to false) }
+                            else answer = mapOf("_source" to current, "_seq_no" to versions.getOrPut(key) { 1L }, "_primary_term" to 1)
+                        }
+                        "POST" -> {
+                            check(path[1] == "_update")
+                            beforeUpdate?.also { beforeUpdate = null; it() }
+                            val expected = exchange.requestURI.rawQuery.orEmpty().split('&').associate { it.substringBefore('=') to it.substringAfter('=') }
+                            if (current == null) { status = 404; answer = emptyMap<String, Any>() }
+                            else if (expected["if_seq_no"]?.toLong() != versions.getOrPut(key) { 1L } || expected["if_primary_term"] != "1") {
+                                status = 409; answer = emptyMap<String, Any>()
+                            } else if (index == "candidate" && failCandidate) { status = 503; answer = emptyMap<String, Any>() }
+                            else {
+                                @Suppress("UNCHECKED_CAST") val patch = mapper.convertValue(body!!.path("doc"), Map::class.java) as Map<String, Any?>
+                                check(patch.keys.all { it in setOf("givenNames", "familyNames", "identityVerification") })
+                                current.putAll(patch); versions[key] = versions.getValue(key) + 1; identityWrites++
+                                answer = mapOf("result" to "updated", "_seq_no" to versions[key], "_primary_term" to 1)
+                            }
+                        }
+                        "PUT" -> {
+                            check(index == "candidate" && current == null && exchange.requestURI.rawQuery == "op_type=create")
+                            @Suppress("UNCHECKED_CAST") val value = mapper.convertValue(body, Map::class.java) as Map<String, Any?>
+                            docs.getValue(index)[id] = value.toMutableMap(); versions[key] = 1
+                            answer = mapOf("result" to "created")
+                        }
+                        else -> error("Unexpected ES method ${exchange.requestMethod}")
+                    }
+                }
+                val bytes = mapper.writeValueAsBytes(answer)
+                exchange.responseHeaders.add("Content-Type", "application/json")
+                exchange.sendResponseHeaders(status, if (exchange.requestMethod == "HEAD") -1 else bytes.size.toLong())
+                exchange.responseBody.use { if (exchange.requestMethod != "HEAD") it.write(bytes) }
+            }
+            server.start()
+            props = f.esProperties.copy(baseUrl = "http://127.0.0.1:${server.address.port}")
+            val http = RestTemplate()
+            val indices = ExpertIndexService(props, http, mapper)
+            writer = ExpertIndexWriterService(http, props, indices, mapper, Mockito.mock(ExpertPromotionAuditService::class.java), contacts)
+            review = DiscoveryReviewService(f.admissions, f.policy, writer, http, props, indices, mapper, f.clock, jdbcTemplate = jdbc)
+            val proxy = ProxyFactory(DiscoveryVerificationCommitService(f.repository, f.admissions, review, f.policy, writer, jdbc, f.clock))
+            proxy.isProxyTargetClass = true
+            proxy.addAdvice(TransactionInterceptor(manager, AnnotationTransactionAttributeSource()))
+            commits = proxy.proxy as DiscoveryVerificationCommitService
+            retained = RetainedPaperIdentityService(archive, archiveRepo, analyzer, papers, writer,
+                DiscoveryIdentityRepairService(writer), contacts, aliases, f.admissions, f.policy)
+            val sourceDir = java.nio.file.Paths.get(System.getProperty("retainedOriginalDirectory",
+                "/Users/lukai/.local/share/paper-reprocess-30711"))
+            val record = mapper.readTree(java.nio.file.Files.readAllBytes(sourceDir.resolve("31372.json")))
+            val metadata = mapper.readTree(record.path("metadataRaw").asText())
+            val hash = record.path("bodySha256").asText()
+            check(hash == "488b16702960051e2613220ff837bfb0abd229bc738b4983ace6dc5f15dc42c7")
+            val bytes = java.nio.file.Files.readAllBytes(sourceDir.resolve("$hash.bin"))
+            check(com.weibo.talentintroduction.discovery.archive.DiscoveryPaperArchiveService.sha(bytes) == hash)
+            val setting = archive.settings()
+            archive.updateSettings(com.weibo.talentintroduction.discovery.archive.ArchiveSettingsRequest(setting.revision, true, setting.maxBytes, setting.minFreeBytes))
+            val archived = archive.beginRecord(30711, "CROSSREF", "retained-31372", metadata)
+            val attempt = archive.beginAttempt(archived.id, java.util.UUID.randomUUID(), 1,
+                com.weibo.talentintroduction.discovery.archive.ArchiveAttemptKind.PDF_URL, "https://fixture.invalid/original.pdf")
+            archive.saveBody(attempt.id, bytes, "application/pdf")
+            archive.finishExtraction(archived.id, mapper.readTree(record.path("outcomeRaw").asText()))
+            source = PaperSourceRef(archived.id, attempt.id, hash, 30711, "CROSSREF", "retained-31372")
+            val raw = linkedMapOf<String, Any?>("orcidId" to doc, "givenNames" to "", "familyNames" to "",
+                "email" to "e.martinez-paneda@imperial.ac.uk", "emailSource" to "PAPER_FULLTEXT", "dataSource" to "CROSSREF",
+                "tags" to listOf("discovered"), "lastPublicationYear" to 2026, "institution" to "Example University",
+                "externalIds" to mapOf("doi" to metadata.path("doi").asText()))
+            docs.getValue("raw")[doc] = raw
+            original = DiscoveryVerificationAdmissionGate.snapshot(doc, writer.discoveryProfile(doc, raw), f.policy.currentConfigSnapshot())
+            jdbc.update("""INSERT INTO expert_discovery_admission (expert_doc_id,identity_hash,decision,revision,policy_version,updated_at)
+                VALUES (?,?,'NEEDS_REVIEW',7,?,?)""", doc, original.identityHash, DiscoveryVerificationAdmissionGate.POLICY_VERSION, f.clock.instant().verificationUtc())
+            f.repository.createRun(6000, VerificationMode.ENFORCE, false, "{}", f.clock.instant())
+            val historical = f.repository.reserveItem(VerificationReservation(6000, doc, original.identityHash,
+                VerificationMode.ENFORCE.policyVersion, "CROSSREF", "retained-31372", mapper.writeValueAsString(original),
+                original.factFingerprint), f.clock.instant())
+            val oldEvidence = VerificationWorkerEvidence(evidence = listOf(ruleJob("Professor", AssertionSource.SELF).copy(
+                identityHash = original.identityHash, factFingerprint = original.factFingerprint)), search = ruleSearch(),
+                ruleVersion = 4, executionContext = VerificationExecutionContext(f.clock.instant(), listOf(source)))
+            jdbc.update("""UPDATE discovery_verification_item SET state='COMPLETED',outcome='PENDING',qualification='UNKNOWN',
+                evidence_json=?,completed_at=? WHERE id=?""", mapper.writeValueAsString(oldEvidence), f.clock.instant().verificationUtc(), historical.id)
+            historyId = historical.id
+            historyBefore = jdbc.queryForMap("SELECT * FROM discovery_verification_item WHERE id=?", historyId)
+            Mockito.doAnswer { call ->
+                val task = call.getArgument<TaskExecution>(0).let { it.copy(id = it.id ?: ++nextTask) }
+                taskRows[task.id!!] = task
+                jdbc.update("""INSERT INTO task_execution (id,task_type,trigger_type,status,started_at,owner_token)
+                    VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE status=VALUES(status)""",
+                    task.id, task.taskType, task.triggerType, task.status, task.startedAt, task.ownerToken)
+                task
+            }.`when`(tasks).save(Mockito.any(TaskExecution::class.java))
+            Mockito.doAnswer { java.util.Optional.ofNullable(taskRows[it.getArgument<Long>(0)]) }.`when`(tasks).findById(Mockito.anyLong())
+            Mockito.doAnswer { call ->
+                val id = call.getArgument<Long>(0); val status = call.getArgument<String>(2)
+                taskRows[id] = taskRows.getValue(id).copy(status = status)
+                jdbc.update("UPDATE task_execution SET status=?,error_message=? WHERE id=?", status, call.getArgument<String?>(6), id)
+            }.`when`(tasks).finishOwned(Mockito.anyLong(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(),
+                Mockito.anyInt(), Mockito.anyInt(), Mockito.nullable(String::class.java),
+                Mockito.any(java.time.LocalDateTime::class.java) ?: java.time.LocalDateTime.now())
+            f.saveApolloSettings(false, false)
+            service = DiscoveryRecheckService(f.repository, f.admissions, writer,
+                DiscoveryReviewScanService(f.admissions, f.policy, writer, http, props, indices, mapper),
+                f.policy, f.apolloSettings, f.props, tasks, TransactionTemplate(manager), queries, commits, Executor { it.run() },
+                DefaultListableBeanFactory().apply { registerSingleton("retainedRuntimeWorker", worker()) }
+                    .getBeanProvider(DiscoveryVerificationWorker::class.java), papers, f.clock)
+            controller = com.weibo.talentintroduction.discovery.controller.DiscoveryRecheckController(service, queries)
+        }
+        fun worker(refreshFixture: Boolean = false): DiscoveryVerificationWorker {
+            val denied = RestTemplate().apply { interceptors.add(org.springframework.http.client.ClientHttpRequestInterceptor { request, _, _ ->
+                providerCalls++
+                check(refreshFixture && request.uri.host != "api.apollo.io" &&
+                    request.uri.path.contains("0000-0002-1562-097X")) { "Unexpected provider dispatch ${request.uri}" }
+                org.springframework.mock.http.client.MockClientHttpResponse("{}".toByteArray(), org.springframework.http.HttpStatus.OK)
+                    .apply { headers.contentType = MediaType.APPLICATION_JSON }
+            }) }
+            return DiscoveryVerificationWorker(f.props, f.repository, OrcidVerificationEvidenceClient(f.props, denied, f.clock),
+                ApolloPeopleSearchClient(f.props, denied, f.clock), QualificationEvidenceParser(f.clock), f.rules, commits,
+                DefaultListableBeanFactory().getBeanProvider(RegistrationRecovery::class.java), f.clock,
+                DiscoveryVerificationTraceRepository(jdbc), papers, retainedIdentity = retained).also { workers += it }
+        }
+        fun launch(mode: VerificationMode = VerificationMode.ENFORCE, evidenceMode: RecheckEvidenceMode = RecheckEvidenceMode.REUSE): VerificationItem {
+            val prepared = controller.prepare(request, RecheckPrepareRequest(java.util.UUID.randomUUID().toString(),
+                docIds = listOf(doc), mode = mode, evidenceMode = evidenceMode)).body as RecheckRunView
+            check(prepared.phase == RecheckPhase.READY) { prepared.toString() }
+            check(identityWrites == 0 || docs.getValue("raw").getValue(doc)["givenNames"] != "")
+            val run = f.repository.findRun(prepared.runId)!!
+            controller.start(request, run.executionId, RecheckStartRequest(f.repository.recheck(run).control.scopeHash!!, run.revision))
+            return f.claim()
+        }
+        fun rebind(lease: VerificationItem, audit: Boolean = false): VerificationItem {
+            val proposal = retained.propose(doc, original, listOf(source), f.clock.instant())
+            check(proposal.incoming != null) { proposal.toString() }
+            val staged = f.repository.stageIdentity(lease, proposal, f.clock.instant())!!
+            val receipt = if (audit) RetainedIdentityReceipt("PROPOSED", proposal.reason,
+                effective = retained.virtual(doc, original, proposal.incoming!!)) else retained.apply(doc, proposal)
+            check(receipt.phase == if (audit) "PROPOSED" else "APPLIED") { receipt.toString() }
+            return f.repository.completeIdentity(staged, receipt, f.clock.instant())!!
+        }
+        fun qualified(item: VerificationItem): VerificationResult {
+            val snapshot = mapper.readValue(item.snapshotJson, VerificationSnapshot::class.java)
+            val facts = listOf(ruleJob("Professor", AssertionSource.SELF)).map {
+                it.copy(identityHash = snapshot.identityHash, factFingerprint = snapshot.factFingerprint) }
+            val payload = VerificationWorkerEvidence(evidence = facts, ruleVersion = 4,
+                executionContext = VerificationExecutionContext(f.clock.instant(), listOf(source)))
+            val decision = f.rules.evaluate(snapshot, facts, ruleVersion = 4, evaluatedAt = f.clock.instant())
+            check(decision.outcome == VerificationOutcome.DIRECT_CLEAR)
+            return VerificationResult(VerificationState.COMPLETED, decision.outcome, decision.qualification, decision.route,
+                mapper.writeValueAsString(payload), mapper.writeValueAsString(decision.reasonCodes))
+        }
+        fun originalButtonScenario(mode: VerificationMode) {
+            val beforeArchive = archiveRepo.record(source.archiveRecordId)
+            val lease = launch(mode)
+            val rosterHash = f.repository.recheck(f.repository.findRun(lease.ownerExecutionId)!!).control.scopeHash
+            val originalJson = lease.snapshotJson
+            check(docs.getValue("raw").getValue(doc)["givenNames"] == "" && identityWrites == 0)
+            worker().process(lease)
+            val done = f.item(lease.id)
+            check(done.state == VerificationState.COMPLETED) { done.toString() }
+            val s = RetainedPaperIdentityService.supplement(done)!!
+            check(s.effectiveProfile!!.givenNames == "Emilio")
+            check(s.beforeSnapshot == RetainedPaperIdentityService.codec.readTree(originalJson))
+            check(s.proposal.sourceEvidence.any { it.path("sentences").any { sentence -> sentence.path("page").asInt() == 1 &&
+                sentence.path("contactText").asText().contains("e.martinez-paneda@imperial.ac.uk") } })
+            check(s.phase == if (mode == VerificationMode.AUDIT) "PROPOSED" else "APPLIED")
+            check(identityWrites == if (mode == VerificationMode.AUDIT) 0 else 1)
+            check(f.admissions.findAdmission(doc)!!.revision == 7L && done.admissionRevision == null)
+            check(f.repository.recheck(f.repository.findRun(lease.ownerExecutionId)!!).control.scopeHash == rosterHash)
+            check(archiveRepo.record(source.archiveRecordId) == beforeArchive)
+            check(jdbc.queryForMap("SELECT * FROM discovery_verification_item WHERE id=?", historyId) == historyBefore)
+            val payload = mapper.readValue(done.evidenceJson, VerificationWorkerEvidence::class.java)
+            check(payload.executionContext!!.cacheReasons.contains("IDENTITY_CHANGED_CACHE_NOT_REUSED"))
+            check(payload.search?.candidates.orEmpty().none { it.id == "person-1" })
+            check(payload.evidence.all { it.identityHash == done.identityHash && it.factFingerprint == done.factFingerprint })
+            check(providerCalls == 0)
+            val view = queries.recheckItem(done.ownerExecutionId, done.id)
+            check(mapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(view).toString().contains("identitySupplement"))
+            check(queries.recheckManifest(done.ownerExecutionId, 0, 20).items.isNotEmpty())
+            println("RETAINED_IDENTITY_RUNTIME mode=$mode originalControllerPrepareStart=true isolatedMySQL=true loopbackEsCAS=true sourceSha=${source.bodySha256} evidencePage=1 beforeNameEmpty=true effectiveName=Emilio phase=${s.phase} identityWrites=$identityWrites outcome=${done.outcome} applied=false admissionRevision=7 providers=$providerCalls rosterHashUnchanged=true archiveUnchanged=true queryTrace=true")
+        }
+        override fun close() {
+            workers.forEach { it.close() }; server.stop(0); f.close()
+            check(root.toFile().deleteRecursively())
+        }
+    }
+
+    @Test fun `original retained recheck uses virtual audit identity and enforce repairs without inventing qualification`() {
+        RetainedRuntime().use { it.originalButtonScenario(VerificationMode.AUDIT) }
+        clean()
+        RetainedRuntime().use { it.originalButtonScenario(VerificationMode.ENFORCE) }
+    }
+
+    @Test fun `controlled old automatic admission changes identity through real persisted seam and projects`() {
+        RetainedRuntime().use { r ->
+            jdbc.update("UPDATE expert_discovery_admission SET decision='AUTO_PASSED' WHERE expert_doc_id=?", r.doc)
+            val lease = r.launch()
+            val originalHash = DiscoveryVerificationRepository.replayHash(lease.snapshotJson)
+            val rebound = r.rebind(lease)
+            assertNotEquals(lease.identityHash, rebound.identityHash)
+            assertEquals(lease.identityHash, RetainedPaperIdentityService.supplement(rebound)!!.beforeIdentityHash)
+            val done = r.commits.commit(rebound, r.qualified(rebound), r.commits.prepare(rebound))!!
+            assertEquals(8L, done.admissionRevision)
+            assertEquals(rebound.identityHash, r.f.admissions.findAdmission(r.doc)!!.identityHash)
+            assertEquals(originalHash, DiscoveryVerificationRepository.replayHash(
+                RetainedPaperIdentityService.supplement(done)!!.beforeSnapshot.toString()))
+            r.commits.project(done)
+            assertEquals(VerificationProjection.PROJECTED, r.f.item(done.id).projectionState)
+        }
+    }
+
+    @Test fun `SQL rebind rejects ordinary epoch stale token cancellation and resumes same frozen proposal after external success`() {
+        RetainedRuntime().use { r ->
+            val lease = r.launch()
+            val p = r.retained.propose(r.doc, r.original, listOf(r.source), r.f.clock.instant())
+            assertThrows(IllegalArgumentException::class.java) { r.f.repository.stageIdentity(lease.copy(reviewEpoch = 0), p, r.f.clock.instant()) }
+            assertNull(r.f.repository.stageIdentity(lease.copy(leaseToken = "obsolete"), p, r.f.clock.instant()))
+            val staged = r.f.repository.stageIdentity(lease, p, r.f.clock.instant())!!
+            val receipt = r.retained.apply(r.doc, p)
+            assertEquals("APPLIED", receipt.phase)
+            assertEquals(1, r.identityWrites)
+            r.f.clock.now = r.f.clock.now.plusSeconds(121)
+            val recovered = r.f.claim()
+            assertNull(r.f.repository.completeIdentity(staged, receipt, r.f.clock.instant()))
+            val resumed = r.f.repository.stageIdentity(recovered, p, r.f.clock.instant())!!
+            val replayed = r.retained.apply(r.doc, p)
+            assertEquals("ALREADY_VERIFIED", replayed.reason)
+            val rebound = r.f.repository.completeIdentity(resumed, replayed, r.f.clock.instant())!!
+            assertEquals(1, r.identityWrites)
+            assertFalse(RetainedPaperIdentityService.supplement(rebound)!!.beforeSnapshot.has("identitySupplement"))
+            r.service.cancel(rebound.ownerExecutionId)
+            assertNull(r.commits.commit(rebound, r.qualified(rebound), r.commits.prepare(rebound)))
+            assertEquals(7L, r.f.admissions.findAdmission(r.doc)!!.revision)
+        }
+    }
+
+    @Test fun `missing receipt manual history revision contact and changed ES block admission and ordinary guard rolls back`() {
+        for (change in listOf("missing", "manual", "history", "revision", "contact", "es", "rollback")) {
+            clean()
+            RetainedRuntime().use { r ->
+                val rebound = r.rebind(r.launch())
+                val proposed = r.qualified(rebound)
+                when (change) {
+                    "missing" -> jdbc.update("UPDATE discovery_verification_item SET snapshot_json=JSON_REMOVE(snapshot_json,'$.identitySupplement') WHERE id=?", rebound.id)
+                    "manual" -> jdbc.update("UPDATE expert_discovery_admission SET decision='HOLD',revision=8 WHERE expert_doc_id=?", r.doc)
+                    "history" -> jdbc.update("UPDATE expert_discovery_admission SET decision='LEGACY_APPROVED' WHERE expert_doc_id=?", r.doc)
+                    "revision" -> jdbc.update("UPDATE expert_discovery_admission SET revision=8 WHERE expert_doc_id=?", r.doc)
+                    "contact" -> jdbc.update("""INSERT INTO expert_contact (campaign_id,orcid_id,expert_email)
+                        SELECT MIN(id),?,? FROM campaign""", r.doc, r.original.profile.email)
+                    "es" -> r.docs.getValue("raw").getValue(r.doc)["givenNames"] = "Concurrent"
+                    "rollback" -> {
+                        val before = r.f.admissions.findAdmission(r.doc)
+                        assertThrows(IllegalStateException::class.java) {
+                            TransactionTemplate(manager).executeWithoutResult {
+                                r.review.recordAutomaticPersisted(r.doc, r.mapper.readValue(rebound.snapshotJson, VerificationSnapshot::class.java).profile,
+                                    r.f.policy.evaluate(r.doc, r.mapper.readValue(rebound.snapshotJson, VerificationSnapshot::class.java).profile))
+                            }
+                        }
+                        assertEquals(before, r.f.admissions.findAdmission(r.doc))
+                        assertEquals(VerificationState.RUNNING, r.f.item(rebound.id).state)
+                        return@use
+                    }
+                }
+                val done = r.commits.commit(rebound, proposed, r.commits.prepare(rebound))!!
+                assertNull(done.admissionRevision, change)
+                assertTrue(done.outcome in setOf(VerificationOutcome.PROTECTED, VerificationOutcome.PENDING), change)
+                assertEquals(r.original.identityHash, r.f.admissions.findAdmission(r.doc)!!.identityHash, change)
+            }
+        }
+    }
+
+    @Test fun `controlled identity admission and item attachment roll back together on SQL failure`() {
+        RetainedRuntime().use { r ->
+            jdbc.update("UPDATE expert_discovery_admission SET decision='AUTO_PASSED' WHERE expert_doc_id=?", r.doc)
+            val rebound = r.rebind(r.launch())
+            val before = r.f.admissions.findAdmission(r.doc)
+            jdbc.execute("""CREATE TRIGGER fail_controlled_attach BEFORE UPDATE ON discovery_verification_item
+                FOR EACH ROW BEGIN IF NEW.admission_revision IS NOT NULL THEN
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='CONTROLLED_ATTACH_FAILURE'; END IF; END""")
+            assertThrows(org.springframework.dao.DataAccessException::class.java) {
+                r.commits.commit(rebound, r.qualified(rebound), r.commits.prepare(rebound))
+            }
+            assertEquals(before, r.f.admissions.findAdmission(r.doc))
+            assertEquals(VerificationState.RUNNING, r.f.item(rebound.id).state)
+            assertNull(r.f.item(rebound.id).admissionRevision)
+        }
+    }
+
+    @Test fun `partial ES repair retries only missing layer and SQL effective snapshot changes atomically`() {
+        RetainedRuntime().use { r ->
+            r.docs.getValue("candidate")[r.doc] = r.docs.getValue("raw").getValue(r.doc).toMutableMap()
+            val lease = r.launch()
+            val p = r.retained.propose(r.doc, r.original, listOf(r.source), r.f.clock.instant())
+            val staged = r.f.repository.stageIdentity(lease, p, r.f.clock.instant())!!
+            r.failCandidate = true
+            val partial = r.retained.apply(r.doc, p)
+            assertEquals("PARTIAL", partial.phase)
+            val saved = r.f.repository.completeIdentity(staged, partial, r.f.clock.instant())!!
+            assertEquals(lease.identityHash, saved.identityHash)
+            assertEquals(lease.factFingerprint, saved.factFingerprint)
+            assertNull(RetainedPaperIdentityService.supplement(saved)!!.effectiveHash)
+            r.failCandidate = false
+            val restaged = r.f.repository.stageIdentity(saved, p, r.f.clock.instant())!!
+            val complete = r.retained.apply(r.doc, p)
+            val rebound = r.f.repository.completeIdentity(restaged, complete, r.f.clock.instant())!!
+            assertEquals(2, r.identityWrites)
+            assertEquals(rebound.identityHash, r.mapper.readTree(rebound.snapshotJson).path("identityHash").asText())
+            assertEquals(rebound.factFingerprint, r.mapper.readTree(rebound.snapshotJson).path("factFingerprint").asText())
+            assertEquals(7L, r.f.admissions.findAdmission(r.doc)!!.revision)
+        }
+    }
+
+    @Test fun `refresh after retained identity change fetches only effective ORCID and preserves frozen Apollo switches`() {
+        RetainedRuntime().use { r ->
+            val lease = r.launch(evidenceMode = RecheckEvidenceMode.REFRESH)
+            val settings = r.f.repository.findRun(lease.ownerExecutionId)!!.settingsJson
+            r.f.saveApolloSettings(true, true)
+            r.worker(refreshFixture = true).process(lease)
+            val done = r.f.item(lease.id)
+            assertEquals(VerificationState.COMPLETED, done.state)
+            assertEquals("APPLIED", RetainedPaperIdentityService.supplement(done)!!.phase)
+            assertTrue(r.providerCalls > 0)
+            assertEquals(settings, r.f.repository.findRun(lease.ownerExecutionId)!!.settingsJson)
+            assertNull(done.admissionRevision)
+            val payload = r.mapper.readValue(done.evidenceJson, VerificationWorkerEvidence::class.java)
+            assertTrue(payload.executionContext!!.cacheReasons.contains("IDENTITY_CHANGED_CACHE_NOT_REUSED"))
+            assertTrue(payload.evidence.none { it.identityHash == r.original.identityHash })
         }
     }
 }
