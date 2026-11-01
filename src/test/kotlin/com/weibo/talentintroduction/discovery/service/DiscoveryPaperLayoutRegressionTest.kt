@@ -72,6 +72,48 @@ class DiscoveryPaperLayoutRegressionTest {
         assertEquals("Alice", wrapped.single().givenNames)
     }
 
+    @Test fun `inline reference headings preserve clues without named ownership`() {
+        for (heading in listOf("References", "Bibliography")) {
+            val rows = listOf(LayoutPdfFixtures.Row("$heading: Alice Smith (opaque@sample.edu)", 600f))
+            val result = extractOwnershipContent(LayoutPdfFixtures.bytes(rows),
+                org.springframework.http.MediaType.APPLICATION_PDF, LayoutPdfFixtures.authors).emails.single()
+            assertEquals("opaque@sample.edu", result.email)
+            assertNull(result.givenNames)
+            assertNull(result.identityEvidence)
+        }
+    }
+
+    @Test fun `explicit split domain contact stays within physical boundaries`() {
+        val anchor = LayoutPdfFixtures.Row("Alice Smith: opaque@", 600f)
+        val domain = LayoutPdfFixtures.Row("sample.edu", 612f)
+        fun resolve(rows: List<LayoutPdfFixtures.Row>) = extractOwnershipContent(
+            LayoutPdfFixtures.bytes(rows), org.springframework.http.MediaType.APPLICATION_PDF,
+            LayoutPdfFixtures.authors).emails
+        for (rows in listOf(listOf(anchor, domain),
+            listOf(LayoutPdfFixtures.Row("Alice Smith: opaque@sample.edu", 600f)))) {
+            val result = resolve(rows).single()
+            assertEquals("opaque@sample.edu", result.email)
+            assertEquals("Alice", result.givenNames)
+            assertTrue(com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.validEvidence(result.identityEvidence))
+        }
+        val contact = LayoutPdfFixtures.contacts(listOf(anchor, domain)).single()
+        assertEquals("Alice Smith: opaque@\nsample.edu", contact.contactText)
+        val negatives = listOf(
+            listOf(anchor, domain.copy(x = 340f)),
+            listOf(anchor, domain.copy(y = 20f, page = 1)),
+            listOf(anchor, domain.copy(y = 630f)),
+            listOf(anchor, LayoutPdfFixtures.Row("Bob Jones", 612f), domain.copy(y = 624f)),
+            listOf(anchor, LayoutPdfFixtures.Row("Unknown Owner is with Another Institute", 612f), domain.copy(y = 624f)),
+            listOf(anchor, LayoutPdfFixtures.Row("Abstract", 612f), domain.copy(y = 624f)),
+            listOf(anchor, LayoutPdfFixtures.Row("References", 612f), domain.copy(y = 624f)),
+            listOf(anchor, LayoutPdfFixtures.Row("Bibliography: cited work", 612f), domain.copy(y = 624f))
+        )
+        negatives.forEachIndexed { index, rows ->
+            assertTrue(resolve(rows).all { it.givenNames == null && it.identityEvidence == null }, "boundary $index")
+            assertTrue(LayoutPdfFixtures.contacts(rows).isEmpty(), "physical boundary $index")
+        }
+    }
+
     @Test fun `superscript ownership still counts unknown signatures and shared markers`() {
         fun pdf(shared: Boolean) = PDDocument().use { doc ->
             doc.addPage(PDPage())

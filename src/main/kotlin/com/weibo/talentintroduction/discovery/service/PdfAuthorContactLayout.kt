@@ -143,14 +143,17 @@ internal object PdfAuthorContactLayout {
     /** Named syntax is shared with text extraction; only geometry may join physical PDF lines. */
     private fun namedContactEntries(lines: List<Line>, authors: List<PaperAuthor>): List<Contact> {
         val contacts = mutableListOf<Contact>()
-        val referenceY = lines.firstOrNull { it.text.matches(Regex("(?i)\\s*(?:references|bibliography)\\s*[:.]?")) }?.y
+        val referenceHeading = Regex("(?i)^\\s*(?:references|bibliography)\\b")
+        val referenceY = lines.firstOrNull { referenceHeading.containsMatchIn(it.text) }?.y
         val prefix = Regex("(?i)^[*∗†‡§\\s]*(?:corresponding\\s+author|correspondence|contact)\\s*(?::|to\\b)")
+        val mailboxLocalEnd = Regex("[A-Za-z0-9._%+\\-]+@$")
+        val mailboxDomain = Regex("[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,}")
         for ((index, line) in lines.withIndex()) {
             if (referenceY != null && line.y >= referenceY) break
             val block = mutableListOf(line)
             fun collect() {
                 val original = block.joinToString("\n") { it.text }
-                val text = block.joinToString(" ") { it.text }
+                val text = emailExtractor.normalizeContactText(original).replace('\n', ' ')
                 for (claim in SourceAuthorEmailResolver.textClaims(text, authors, continuations = false)) {
                     contacts += Contact(claim.email, claim.authorIndex, line.page,
                         fullName(authors[claim.authorIndex]).orEmpty(), original, "PDF_NAMED_CONTACT")
@@ -158,23 +161,26 @@ internal object PdfAuthorContactLayout {
             }
             collect()
             val namedPrefix = prefix.containsMatchIn(line.text) && authors.any { containsName(line.text, it) }
+            val splitDomain = mailboxLocalEnd.containsMatchIn(line.text) &&
+                authors.any { containsName(line.text, it) }
             // A trailing label/wrapped mailbox may continue exactly once; an explicit named
             // correspondence block may contain affiliation lines. Neither follows arbitrary prose.
             val wrappedContinuation = mailbox.containsMatchIn(line.text) ||
                 authors.any { fullName(it)?.let { name -> line.text.trimEnd().endsWith(name, ignoreCase = true) } == true }
-            if (!namedPrefix && !wrappedContinuation) continue
+            if (!namedPrefix && !wrappedContinuation && !splitDomain) continue
             for (next in lines.drop(index + 1)) {
                 if (next.y <= line.y + 1f) continue
                 if (next.y - block.last().y > 16f) break
                 if (kotlin.math.abs(next.x - line.x) > 24f || next.right < line.x || next.x > line.right) continue
                 if (contactBoundary.containsMatchIn(next.text) || paragraphBoundary.containsMatchIn(next.text) ||
                     prefix.containsMatchIn(next.text) || markerGlyph.containsMatchIn(next.text)) break
-                if (!namedPrefix && !next.text.trimStart().startsWith("(") &&
+                if (splitDomain && !mailboxDomain.matches(next.text)) break
+                if (!namedPrefix && !splitDomain && !next.text.trimStart().startsWith("(") &&
                     !next.text.trimStart().startsWith("<")) break
                 if (namedPrefix && authors.any { containsName(next.text, it) }) break
                 block += next
                 collect()
-                if (!namedPrefix || mailbox.containsMatchIn(next.text) || block.size == 5) break
+                if (splitDomain || !namedPrefix || mailbox.containsMatchIn(next.text) || block.size == 5) break
             }
         }
         return contacts.distinct()
