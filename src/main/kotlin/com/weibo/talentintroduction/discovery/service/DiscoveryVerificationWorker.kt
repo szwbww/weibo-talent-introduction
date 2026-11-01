@@ -800,14 +800,10 @@ class DiscoveryVerificationWorker(
                 for (number in 4..7) skipStep(number, "STALE_INPUT")
                 startStep(8, mapOf("reason" to "STALE_INPUT", "applied" to false))
                 val record = activeSteps.remove(8)
-                if (repository.saveEvidenceAndOutcome(lease.id, token, lease.generation,
+                commits.finishStaleIdentity(lease,
                     VerificationResult(VerificationState.COMPLETED, VerificationOutcome.PENDING,
                         VerificationQualification.UNKNOWN, VerificationRoute.NONE, json(), "[\"STALE_INPUT\"]",
-                        entered, searched, candidatesAt), clock.instant())) {
-                    record?.let { traces!!.finishCommittedStep(lease.id, lease.generation, it.id,
-                        VerificationStepState.SUCCESS, mapper.writeValueAsString(mapOf("applied" to false,
-                            "projection" to "NOT_REQUIRED", "reason" to "STALE_INPUT")), null, clock.instant()) }
-                }
+                        entered, searched, candidatesAt), record?.id)
             }
         } catch (_: LeaseLost) {
             // A replacement token owns recovery; no stale writes.

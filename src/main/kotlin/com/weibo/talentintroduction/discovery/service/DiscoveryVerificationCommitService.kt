@@ -167,6 +167,23 @@ class DiscoveryVerificationCommitService(
         return persisted
     }
 
+    /** Baseline refusal is terminal only while the original run/lease still owns the item. */
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
+    fun finishStaleIdentity(lease: VerificationItem, result: VerificationResult, stepId: Long?): Boolean {
+        require(lease.reviewEpoch > 0 && result.state == VerificationState.COMPLETED &&
+            result.outcome == VerificationOutcome.PENDING && result.admissionRevision == null &&
+            result.reasonsJson == "[\"STALE_INPUT\"]")
+        if (!repository.lockRunAccepting(lease.ownerExecutionId)) return false
+        val now = clock.instant()
+        if (!repository.saveEvidenceAndOutcome(lease.id, requireNotNull(lease.leaseToken), lease.generation, result, now)) return false
+        stepId?.let {
+            check(traces.finishCommittedStep(lease.id, lease.generation, it, VerificationStepState.SUCCESS,
+                mapper.writeValueAsString(mapOf("applied" to false, "projection" to "NOT_REQUIRED",
+                    "reason" to "STALE_INPUT")), null, now))
+        }
+        return true
+    }
+
     /** Projection retries never redo qualification or call providers. Historical admission events stay intact. */
     fun project(item: VerificationItem) {
         val revision = item.admissionRevision ?: return

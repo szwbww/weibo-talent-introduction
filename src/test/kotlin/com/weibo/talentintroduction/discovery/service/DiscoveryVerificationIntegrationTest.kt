@@ -68,6 +68,12 @@ class DiscoveryVerificationIntegrationTest {
                     for (afterEs in listOf(false, true)) {
                         DiscoveryVerificationIntegrationTest().clean()
                         RetainedRuntime().use { it.baselineDriftScenario(afterEs) }
+                        DiscoveryVerificationIntegrationTest().clean()
+                        RetainedRuntime().use { it.baselineTraceRollbackScenario(afterEs) }
+                        for (cancel in listOf(false, true)) {
+                            DiscoveryVerificationIntegrationTest().clean()
+                            RetainedRuntime().use { it.baselineFenceScenario(afterEs, cancel) }
+                        }
                     }
                     for (field in listOf("givenNames", "familyNames")) for (mode in VerificationMode.values()) {
                         DiscoveryVerificationIntegrationTest().clean()
@@ -82,6 +88,7 @@ class DiscoveryVerificationIntegrationTest {
         jdbc.execute("DROP TRIGGER IF EXISTS fail_registration_reserve")
         jdbc.execute("DROP TRIGGER IF EXISTS fail_registration_activate")
         jdbc.execute("DROP TRIGGER IF EXISTS fail_controlled_attach")
+        jdbc.execute("DROP TRIGGER IF EXISTS fail_stale_trace")
         listOf("discovery_paper_archive_attempt", "discovery_paper_archive_record", "discovery_paper_archive_blob",
             "discovery_paper_archive_setting").forEach { jdbc.update("DELETE FROM $it") }
         listOf("discovery_apollo_setting", "discovery_paper_job", "discovery_collection_stream", "discovery_pipeline", "discovery_source_cursor",
@@ -637,6 +644,10 @@ class DiscoveryVerificationIntegrationTest {
         val writer: ExpertIndexWriterService
         val review: DiscoveryReviewService
         val commits: DiscoveryVerificationCommitService
+        val traces = ProxyFactory(DiscoveryVerificationTraceRepository(jdbc)).apply {
+            isProxyTargetClass = true
+            addAdvice(TransactionInterceptor(manager, AnnotationTransactionAttributeSource()))
+        }.proxy as DiscoveryVerificationTraceRepository
         val archiveRepo = com.weibo.talentintroduction.discovery.archive.DiscoveryPaperArchiveRepository(jdbc, manager)
         val archive = com.weibo.talentintroduction.discovery.archive.DiscoveryPaperArchiveService(archiveRepo,
             DiscoveryPaperArchiveProperties(root.resolve("archive").toString()), DiscoverySampleProperties(directory = root.resolve("samples").toString()), mapper)
@@ -714,7 +725,7 @@ class DiscoveryVerificationIntegrationTest {
             val indices = ExpertIndexService(props, http, mapper)
             writer = ExpertIndexWriterService(http, props, indices, mapper, Mockito.mock(ExpertPromotionAuditService::class.java), contacts)
             review = DiscoveryReviewService(f.admissions, f.policy, writer, http, props, indices, mapper, f.clock, jdbcTemplate = jdbc)
-            val proxy = ProxyFactory(DiscoveryVerificationCommitService(f.repository, f.admissions, review, f.policy, writer, jdbc, f.clock))
+            val proxy = ProxyFactory(DiscoveryVerificationCommitService(f.repository, f.admissions, review, f.policy, writer, jdbc, f.clock, traces))
             proxy.isProxyTargetClass = true
             proxy.addAdvice(TransactionInterceptor(manager, AnnotationTransactionAttributeSource()))
             commits = proxy.proxy as DiscoveryVerificationCommitService
@@ -790,7 +801,7 @@ class DiscoveryVerificationIntegrationTest {
             return DiscoveryVerificationWorker(f.props, f.repository, OrcidVerificationEvidenceClient(f.props, denied, f.clock),
                 ApolloPeopleSearchClient(f.props, denied, f.clock), QualificationEvidenceParser(f.clock), f.rules, commits,
                 DefaultListableBeanFactory().getBeanProvider(RegistrationRecovery::class.java), f.clock,
-                DiscoveryVerificationTraceRepository(jdbc), papers, retainedIdentity = retained).also { workers += it }
+                traces, papers, retainedIdentity = retained).also { workers += it }
         }
         fun launch(mode: VerificationMode = VerificationMode.ENFORCE, evidenceMode: RecheckEvidenceMode = RecheckEvidenceMode.REUSE): VerificationItem {
             val prepared = controller.prepare(request, RecheckPrepareRequest(java.util.UUID.randomUUID().toString(),
@@ -863,6 +874,9 @@ class DiscoveryVerificationIntegrationTest {
             check(done.state == VerificationState.COMPLETED && done.outcome == VerificationOutcome.PENDING) { done.toString() }
             check(mapper.readTree(done.reasonsJson).any { it.asText() == "STALE_INPUT" })
             check(done.admissionRevision == null && done.projectionState == VerificationProjection.NOT_REQUIRED)
+            val terminal = traces.read(done.id).steps.single { it.stepNo == 8 }
+            check(terminal.state == VerificationStepState.SUCCESS && terminal.finishedAt != null)
+            check(mapper.readTree(terminal.outputJson).path("value").path("applied").asBoolean(true).not())
             check(identityWrites == if (afterEs) 1 else 0)
             val business = docs.getValue("raw").getValue(doc).toMap()
             val admission = f.admissions.findAdmission(doc)!!
@@ -872,7 +886,54 @@ class DiscoveryVerificationIntegrationTest {
             worker().process(lease)
             check(f.item(lease.id) == done && docs.getValue("raw").getValue(doc) == business)
             check(f.admissions.findAdmission(doc) == admission && identityWrites == if (afterEs) 1 else 0)
-            println("IDENTITY_BASELINE_REJECTION_RUNTIME afterEs=$afterEs state=${done.state} reason=STALE_INPUT noReclaim=true admissionUnchanged=true identityWrites=$identityWrites")
+            check(traces.read(done.id).steps.single { it.stepNo == 8 } == terminal && providerCalls == 0)
+            println("IDENTITY_BASELINE_REJECTION_RUNTIME afterEs=$afterEs state=${done.state} step8=${terminal.state} transactionProxiedTrace=true exception=NONE reason=STALE_INPUT noReclaim=true admissionUnchanged=true identityWrites=$identityWrites")
+        }
+
+        fun baselineTraceRollbackScenario(afterEs: Boolean) {
+            val lease = launch()
+            val drift = {
+                jdbc.update("UPDATE expert_discovery_admission SET decision='HOLD',revision=8 WHERE expert_doc_id=?", doc)
+                Unit
+            }
+            if (afterEs) beforeUpdate = drift else drift()
+            jdbc.execute("""CREATE TRIGGER fail_stale_trace BEFORE UPDATE ON discovery_verification_step
+                FOR EACH ROW BEGIN IF NEW.step_no=8 AND NEW.state='SUCCESS' THEN
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='stale trace failure'; END IF; END""")
+            try {
+                val failure = assertThrows(org.springframework.dao.DataAccessException::class.java) { worker().process(lease) }
+                check(generateSequence<Throwable>(failure) { it.cause }.any { it.message.orEmpty().contains("stale trace failure") })
+            } finally {
+                jdbc.execute("DROP TRIGGER fail_stale_trace")
+            }
+            val rolledBack = f.item(lease.id)
+            check(rolledBack.state == VerificationState.RUNNING && rolledBack.outcome == null && rolledBack.completedAt == null)
+            check(rolledBack.leaseToken == lease.leaseToken && rolledBack.generation == lease.generation)
+            check(rolledBack.admissionRevision == null && traces.read(lease.id).steps.single { it.stepNo == 8 }.state == VerificationStepState.RUNNING)
+            check(f.admissions.findAdmission(doc)!!.let { it.decision == "HOLD" && it.revision == 8L && it.identityHash == original.identityHash })
+            check(identityWrites == if (afterEs) 1 else 0)
+            check(providerCalls == 0)
+            println("IDENTITY_BASELINE_TRACE_ROLLBACK_RUNTIME afterEs=$afterEs state=${rolledBack.state} outcome=null step8=RUNNING transactionProxiedTrace=true atomicRollback=true admissionUnchanged=true identityWrites=$identityWrites")
+        }
+
+        fun baselineFenceScenario(afterEs: Boolean, cancel: Boolean) {
+            val lease = launch()
+            val change = {
+                jdbc.update("UPDATE expert_discovery_admission SET decision='HOLD',revision=8 WHERE expert_doc_id=?", doc)
+                if (cancel) service.cancel(lease.ownerExecutionId) else f.clock.now = f.clock.now.plusSeconds(121)
+                Unit
+            }
+            if (afterEs) beforeUpdate = change else change()
+            worker().process(lease)
+            val done = f.item(lease.id)
+            check(done.state == if (cancel) VerificationState.CANCELLED else VerificationState.RUNNING)
+            check(done.outcome == null && done.admissionRevision == null)
+            val terminal = traces.read(done.id).steps.single { it.stepNo == 8 }
+            check(terminal.state == if (cancel) VerificationStepState.SKIPPED else VerificationStepState.NOT_STARTED)
+            check(identityWrites == if (afterEs) 1 else 0)
+            check(f.admissions.findAdmission(doc)!!.let { it.revision == 8L && it.decision == "HOLD" && it.identityHash == original.identityHash })
+            check(providerCalls == 0)
+            println("IDENTITY_BASELINE_FENCE_RUNTIME afterEs=$afterEs cancel=$cancel state=${done.state} step8=${terminal.state} transactionProxiedTrace=true exception=NONE admissionUnchanged=true identityWrites=$identityWrites")
         }
 
         fun frozenNameScenario(field: String, mode: VerificationMode) {
@@ -1051,6 +1112,13 @@ class DiscoveryVerificationIntegrationTest {
         }
     }
 
+    @Test fun `stale outcome rolls back atomically when transaction-proxied terminal trace fails`() {
+        for (afterEs in listOf(false, true)) {
+            clean()
+            RetainedRuntime().use { it.baselineTraceRollbackScenario(afterEs) }
+        }
+    }
+
     @Test fun `frozen nonempty names conflict after live fields clear in audit and enforce`() {
         for (field in listOf("givenNames", "familyNames")) for (mode in VerificationMode.values()) {
             clean()
@@ -1061,24 +1129,7 @@ class DiscoveryVerificationIntegrationTest {
     @Test fun `baseline rejection never finalizes lost lease or cancelled work`() {
         for (afterEs in listOf(false, true)) for (cancel in listOf(false, true)) {
             clean()
-            RetainedRuntime().use { r ->
-                val lease = r.launch()
-                val change = {
-                    jdbc.update("UPDATE expert_discovery_admission SET decision='HOLD',revision=8 WHERE expert_doc_id=?", r.doc)
-                    if (cancel) r.service.cancel(lease.ownerExecutionId)
-                    else r.f.clock.now = r.f.clock.now.plusSeconds(121)
-                    Unit
-                }
-                if (afterEs) r.beforeUpdate = change else change()
-                r.worker().process(lease)
-                val done = r.f.item(lease.id)
-                assertEquals(if (cancel) VerificationState.CANCELLED else VerificationState.RUNNING, done.state)
-                assertNull(done.outcome)
-                assertNull(done.admissionRevision)
-                assertEquals(if (afterEs) 1 else 0, r.identityWrites)
-                assertEquals(8L, r.f.admissions.findAdmission(r.doc)!!.revision)
-                assertEquals("HOLD", r.f.admissions.findAdmission(r.doc)!!.decision)
-            }
+            RetainedRuntime().use { it.baselineFenceScenario(afterEs, cancel) }
         }
     }
 }
