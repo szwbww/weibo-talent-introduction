@@ -10,7 +10,7 @@
 - Finalization repair parent: N/A
 - Started: 2026-11-01T21:03:54+08:00
 - Current child: 00
-- Waiting role: IMPLEMENTER
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -19,7 +19,7 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| 00 | docs/plans/2026-11-01/paper-reprocess-00-replay.md | sha256:f9cb78a3c967c67fbbeab0c272a0894cb4928cd6a650e05ae419853dee6a2132 | none | 1 | PENDING | 3a425461dbe6088e4d4dda1a53141416a392670c | — | 0 | — | — | — | Awaiting ordered dispatch |
+| 00 | docs/plans/2026-11-01/paper-reprocess-00-replay.md | sha256:f9cb78a3c967c67fbbeab0c272a0894cb4928cd6a650e05ae419853dee6a2132 | none | 1 | LIGHT_PASS | 3a425461dbe6088e4d4dda1a53141416a392670c | 1f73037375bc53082ab07f0603debad684f5fc3e | 0 | — | 1f73037375bc53082ab07f0603debad684f5fc3e | 53b8cd304132f830ca344c5008e9a571af7e7e1e | Four-gate PASS by PaperReplayVerifier00; precommit checkpoint VALID |
 | 01 | docs/plans/2026-11-01/paper-reprocess-01-parser.md | sha256:508fd62d84283bd223aca0970c9e265944762f6c48f36ffaf127ba2b88260608 | 00 | 1 | PENDING | — | — | 0 | — | — | — | Awaiting ordered dispatch |
 | 02 | docs/plans/2026-11-01/paper-reprocess-02-identity.md | sha256:3bc964760b6cbb1fb290809821569381e676a4f2b88d62121ea0d59a2dd35e48 | 01 | 1 | PENDING | — | — | 0 | — | — | — | Awaiting ordered dispatch |
 | 03 | docs/plans/2026-11-01/paper-reprocess-03-batch.md | sha256:512e600d760bd2862fbd749e94deb3f5e6a50fd1543b0356c4280690ea914201 | 02 | 1 | PENDING | — | — | 0 | — | — | — | Awaiting ordered dispatch |
@@ -43,3 +43,13 @@
 
 ## Agent Availability Events
 None.
+
+## Agent Identities
+- Child 00 epoch 1 implementer: PaperReplayImplementer00; acquired successfully; fix_round=0.
+- Child 00 epoch 1 verifier attempt 1: PaperReplayVerifier00; distinct from writer; acquired successfully; fix_round=0.
+
+## Infrastructure Events
+- Child 00: execute-p worktree identity helper failed at `worktree_identity.py:30` while strictly resolving an unrelated stale registered publish worktree already visible in preflight. No worktree pruning or helper mutation authorized. Implementer must record equivalent native read-only assertions for target root, branch, Git/common directories, registration, HEAD and reachability at all required checkpoints; any actual target mismatch remains a stop condition.
+
+## Artifact Checkpoints
+- Child 00 full approved 00..06 manifest, `--through-child 00 --allow-dirty-artifacts`: exit 0, result VALID, validation_scope CHILD_CHECKPOINT. Clean-tree recheck required immediately after this ledger commit.
