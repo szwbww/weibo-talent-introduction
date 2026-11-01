@@ -103,3 +103,9 @@ Use JDK11 explicitly: ambient Maven defaults to Java25. Skip build/lint/test/for
 
 ## Execution and Evidence
 Use execute-p against the exact child plan. Commit only authorized implementation files as `feat(fast-p): implement 03`; exclude all fast-p artifacts. Append execution result to `docs/plans/fast/paper-reprocess-master/children/03/execution.md`; never overwrite historical entries. A separate fresh verifier receives only the brief and committed boundary. Do not self-declare PASS.
+
+## Controller Standing Authority and Identity Check
+- User authorized continuation and necessary in-objective amendments on 2026-11-01: “继续 后续授权都继续 直到所有子计划都完成且可以运行review-fast-p的阶段 不要执行review-fast-p，我会交给其他agent执行”. Report newly evidenced scope conflicts to controller for a separately committed amendment; do not edit plans yourself.
+- Known helper infrastructure defect: `execute-p/scripts/worktree_identity.py:30` resolves unrelated stale publish worktree `/private/var/folders/r_/p27w33t543l9r08_h0sxjmf40000gn/T/multi-ai-kit-publish-weibo-talent-introduction-2ccc4a976cde-lt1m864b` and fails. Invoke helper as required, then assert native exact root, branch, gitdir, common-dir, target worktree registration, HEAD and expected commit ancestry before staging/commit and at final handoff. Do not repair/prune unrelated worktree registration or modify helpers/config. Any actual target mismatch remains a stop.
+- Expected gitdir `/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-paper-reprocess-master`; common dir `/Users/lukai/IdeaProjects/weibo-talent-introduction/.git`.
+- Do not run review-fast-p, review-p, verify-p or repair-p; no aggregate final reviewer. Fresh fast-p verifier owns each four-gate verdict; final review is reserved to the user's other agent.
