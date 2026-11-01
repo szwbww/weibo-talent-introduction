@@ -22,12 +22,12 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.annotation.PreDestroy
 
-/** AUDIT has no expert writer, provider client, admission service or discovery consumer dependency. */
+/** AUDIT never invokes the apply adapter, consumer or provider. Both modes share the owned lifecycle. */
 @Service
 class DiscoveryPaperReprocessService(private val repository: DiscoveryPaperReprocessRepository,
     private val archive: DiscoveryPaperArchiveService, private val analyzer: PaperBodyAnalyzer,
     private val mapper: ObjectMapper, private val apolloSettings: DiscoveryApolloSettingsService,
-    private val progress: TaskProgressStore) {
+    private val progress: TaskProgressStore, private val apply: DiscoveryPaperReprocessApplyService? = null) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val owner = UUID.randomUUID().toString()
     private val stopping = AtomicBoolean(false)
@@ -56,14 +56,21 @@ class DiscoveryPaperReprocessService(private val repository: DiscoveryPaperRepro
             if (it.requestHash != requestHash) throw ReprocessException("REQUEST_KEY_CONFLICT", 409, "相同请求标识对应不同参数")
             return it
         }
-        if (request.mode != ReprocessMode.AUDIT) throw ReprocessException("APPLY_NOT_AVAILABLE", 503, "正式补录尚未开放，请使用仅解析对照")
+        if (request.mode == ReprocessMode.ENFORCE && apply == null) throw ReprocessException("APPLY_NOT_AVAILABLE", 503, "正式补录尚未开放，请使用仅解析对照")
         val w = repository.watermark(request.sourceExecutionId)
         if (w.scopeHash != request.expectedScopeHash) throw ReprocessException("SCOPE_CHANGED", 409, "原文范围已变化，请重新预览")
         val scope = mapper.createObjectNode().put("schemaVersion", 1).put("upperRecordId", w.upperRecordId)
             .put("cursor", 0).put("frozen", false).put("frozenCount", 0).put("expectedScopeHash", w.scopeHash)
             .put("maxAttemptId", w.maxAttemptId).put("scopeHash", w.scopeHash).put("codeVersion", CODE_VERSION).put("evaluationAt", Instant.now().toString())
         scope.set<JsonNode>("parserVersions", mapper.valueToTree(analyzer.versions().toSortedMap()))
-        scope.set<JsonNode>("apolloAccess", apolloSettings.freeze().toJson(mapper))
+        val access = apolloSettings.freeze()
+        scope.set<JsonNode>("apolloAccess", access.toJson(mapper))
+        if (request.mode == ReprocessMode.ENFORCE) {
+            val settings = try { requireNotNull(apply).freezeSettings(access) }
+                catch (_: IllegalStateException) { throw ReprocessException("VERIFICATION_UNAVAILABLE", 503, "核验服务或配置不可用，未创建正式任务") }
+            scope.set<JsonNode>("verificationSettings", settings)
+            scope.put("policyVersion", VerificationMode.ENFORCE.policyVersion)
+        }
         return repository.create(request, requestHash, scope, owner)
     }
     fun detail(id: Long): ReprocessDetail {
@@ -85,7 +92,10 @@ class DiscoveryPaperReprocessService(private val repository: DiscoveryPaperRepro
         return repository.item(id, itemId) ?: throw ReprocessException("NOT_FOUND", 404, "记录不存在或不属于本任务")
     }
     fun cancel(id: Long, revision: Long): ReprocessRun {
-        requireRun(id); revision(revision); return repository.cancel(id, revision)
+        val run = requireRun(id); revision(revision)
+        val cancelled = repository.cancel(id, revision)
+        if (run.mode == ReprocessMode.ENFORCE) requireNotNull(apply).cancel(id)
+        return cancelled
     }
     fun retry(id: Long, revision: Long): ReprocessRun {
         requireRun(id); revision(revision)
@@ -272,6 +282,24 @@ class DiscoveryPaperReprocessService(private val repository: DiscoveryPaperRepro
                 input.set<JsonNode>("paperRefs", mapper.valueToTree(refs))
                 if (!repository.addTarget(id, token, run.generation, hash(email), input)) throw PaperParseCheckpointException("LEASE_LOST")
             }
+            if (run.mode == ReprocessMode.ENFORCE) {
+                phase(PaperReprocessPhase.APPLY)
+                while (!requireNotNull(apply).apply(requireRun(id))) {
+                    publish(id)
+                    if (repository.find(id)?.leaseToken == null) return
+                    checkpoint()
+                    try { Thread.sleep(250) } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        throw CancellationException("EXECUTION_INTERRUPTED")
+                    }
+                }
+                checkpoint(); phase(PaperReprocessPhase.SAVE)
+                val summary = repository.summary(id)
+                repository.finish(id, token, run.generation, if (summary.targetErrors > 0)
+                    ReprocessState.COMPLETED_WITH_ERRORS else ReprocessState.COMPLETED)
+                publish(id)
+                return
+            }
             while (true) {
                 checkpoint()
                 val target = repository.claimItem(id, token, run.generation, ReprocessKind.TARGET) ?: break
@@ -300,6 +328,12 @@ class DiscoveryPaperReprocessService(private val repository: DiscoveryPaperRepro
         } catch (e: PaperParseCheckpointException) {
             val state = if (e.code == "CANCELLED") ReprocessState.CANCELLED else ReprocessState.INTERRUPTED
             repository.finish(id, token, run.generation, state, e.code)
+            publish(id)
+        } catch (e: CancellationException) {
+            val cancelled = repository.find(id)?.cancelRequested == true
+            if (cancelled && run.mode == ReprocessMode.ENFORCE) requireNotNull(apply).cancel(id)
+            repository.finish(id, token, run.generation, if (cancelled) ReprocessState.CANCELLED else ReprocessState.INTERRUPTED,
+                if (cancelled) "CANCELLED" else "LEASE_LOST")
             publish(id)
         } catch (e: Exception) {
             log.warn("Paper reprocess execution {} stopped ({})", id, e.javaClass.simpleName)

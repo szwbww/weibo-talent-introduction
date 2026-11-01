@@ -149,4 +149,16 @@ class DiscoveryRecheckServiceTest {
         assertFalse(Mockito.mockingDetails(tasks).invocations.any { it.method.name.startsWith("heartbeat") })
     }
 
+    @Test fun `paper batches reject unsorted oversized or incomplete ref rosters before SQL`() {
+        val at = Instant.now()
+        val parent = ReprocessRun(1, 2, key, "a".repeat(64), ReprocessMode.ENFORCE, ReprocessState.RUNNING,
+            PaperReprocessPhase.APPLY, jacksonObjectMapper().createObjectNode(), 1, "lease", at.plusSeconds(60), 1,
+            false, at, at, null)
+        for (ids in listOf(emptyList(), listOf("b", "a"), (1..101).map { "d$it" }.sorted(), listOf("a"))) {
+            assertThrows(IllegalArgumentException::class.java) {
+                service().prepareFromPaperReprocess(parent, ids, emptyMap())
+            }
+        }
+        Mockito.verifyNoInteractions(repository, writer, admissions, tasks, commits, papers)
+    }
 }

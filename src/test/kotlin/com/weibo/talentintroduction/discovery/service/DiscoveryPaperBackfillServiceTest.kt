@@ -68,4 +68,18 @@ class DiscoveryPaperBackfillServiceTest {
         Files.write(Paths.get(paper.path), "changed".toByteArray())
         assertThrows(IllegalArgumentException::class.java) { parsed.requireMatches(paper.metadata, parsed.emails, paper.source) }
     }
+    @Test fun `legacy permit binds complete source identity and exact metadata`() {
+        val paper = HistoricalReplayFixtures.paper(root)
+        val parsed = ParsedArchivedPaper.parse(paper, DiscoveryHistoricalReplayTool.analyzer())
+        assertThrows(IllegalArgumentException::class.java) {
+            parsed.requireMatches(paper.metadata.copy(title = "changed"), parsed.emails, paper.source)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parsed.requireMatches(paper.metadata, parsed.emails, paper.source.copy(sourceExecutionId = paper.source.sourceExecutionId + 1))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parsed.requireMatches(paper.metadata, parsed.emails, paper.source.copy(sourceItemKey = "foreign-paper"))
+        }
+        parsed.requireMatches(paper.metadata, parsed.emails, paper.source)
+    }
 }

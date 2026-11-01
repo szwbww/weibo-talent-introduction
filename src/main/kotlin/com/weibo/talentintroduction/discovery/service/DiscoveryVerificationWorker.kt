@@ -203,8 +203,10 @@ class DiscoveryVerificationWorker(
             return rules.evaluate(snapshot, payload.evidence, payload.search, ruleVersion = payload.ruleVersion,
                 evaluatedAt = payload.executionContext?.evaluationAt)
         }
+        val parentOwned = repository.isPaperReprocessOwned(lease.ownerExecutionId)
         fun ensureOwned() {
-            if (lost.get() || lease.reviewEpoch > 0 && !repository.isOwned(lease.id, token, lease.generation, clock.instant())) throw LeaseLost()
+            if (lost.get() || (lease.reviewEpoch > 0 || parentOwned) &&
+                !repository.isOwned(lease.id, token, lease.generation, clock.instant())) throw LeaseLost()
         }
         fun ensureDispatchAllowed() {
             ensureOwned()
@@ -249,7 +251,7 @@ class DiscoveryVerificationWorker(
                 is VerificationHttpResult.PermanentFailure -> result.diagnostic
                 else -> null
             })?.let { mapper.writeValueAsString(it) }
-            if (lease.reviewEpoch > 0 && !repository.isOwned(lease.id, token, lease.generation, clock.instant())) {
+            if ((lease.reviewEpoch > 0 || parentOwned) && !repository.isOwned(lease.id, token, lease.generation, clock.instant())) {
                 repository.completeDispatchedDiagnostic(lease.id, token, lease.generation, permit.attemptId,
                     requireNotNull(requestKeys[permit.attemptId]), status, code, responseJson,
                     (result as? VerificationHttpResult.Success)?.responseSha256, clock.instant())
@@ -260,7 +262,7 @@ class DiscoveryVerificationWorker(
             val persisted = repository.completeAttemptAndProgress(lease.id, token, lease.generation, permit.attemptId, status, code,
                 responseJson, (result as? VerificationHttpResult.Success)?.responseSha256,
                 json(), entered, searched, candidatesAt, clock.instant())
-            if (!persisted && lease.reviewEpoch > 0) {
+            if (!persisted && (lease.reviewEpoch > 0 || parentOwned)) {
                 repository.completeDispatchedDiagnostic(lease.id, token, lease.generation, permit.attemptId,
                     requireNotNull(requestKeys[permit.attemptId]), status, code, responseJson,
                     (result as? VerificationHttpResult.Success)?.responseSha256, clock.instant())
@@ -423,7 +425,7 @@ class DiscoveryVerificationWorker(
                     else emptyList()))
                 else if (ordinary != null) payload = payload.copy(executionContext = ordinary)
             }
-            val mode = recheck?.spec?.evidenceMode ?: RecheckEvidenceMode.REUSE
+            val mode = recheck?.spec?.evidenceMode ?: if (parentOwned) RecheckEvidenceMode.REFRESH else RecheckEvidenceMode.REUSE
             val context = payload.executionContext
             startStep(2, mapOf("sources" to context?.paperSourceRefs.orEmpty()))
             if (context != null && context.paper == null) {
@@ -507,12 +509,12 @@ class DiscoveryVerificationWorker(
                 startStep(4, mapOf("mode" to mode, "evidenceRef" to "item:${lease.id}/evidence_json"))
                 if (payload.executionContext != null && payload.executionContext!!.academic == null && academic != null) {
                     ensureOwned()
-                    val academicMode = if (recheck?.spec?.evidenceMode == RecheckEvidenceMode.REFRESH)
+                    val academicMode = if (parentOwned || recheck?.spec?.evidenceMode == RecheckEvidenceMode.REFRESH)
                         RecheckEvidenceMode.REFRESH else RecheckEvidenceMode.REUSE
                     val collected = academic.collectCoalesced(lease.ownerExecutionId, snapshot, academicMode,
                         payload.executionContext!!.evaluationAt) {
                             ensureDispatchAllowed()
-                            if (lease.reviewEpoch > 0 && !repository.isOwned(lease.id, token, lease.generation, clock.instant()))
+                            if ((lease.reviewEpoch > 0 || parentOwned) && !repository.isOwned(lease.id, token, lease.generation, clock.instant()))
                                 throw java.util.concurrent.CancellationException("Recheck dispatch no longer authorized")
                         }
                     ensureOwned()

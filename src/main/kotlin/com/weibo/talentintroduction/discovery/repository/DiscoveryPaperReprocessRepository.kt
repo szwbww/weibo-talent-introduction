@@ -131,6 +131,63 @@ class DiscoveryPaperReprocessRepository(
     fun item(runId: Long, itemId: Long): ReprocessItem? = jdbc.query(
         "SELECT * FROM discovery_paper_reprocess_item WHERE execution_id=? AND id=?", itemMapper, runId, itemId).firstOrNull()
 
+    fun paper(runId: Long, recordId: Long): ReprocessItem? = jdbc.query(
+        "SELECT * FROM discovery_paper_reprocess_item WHERE execution_id=? AND kind='PAPER' AND item_key=?",
+        itemMapper, runId, recordId.toString()).singleOrNull()
+
+    /** SQL permission, never supplied by an HTTP caller. Keep this lock before verification run/item locks. */
+    fun requirePermission(parent: ReprocessRun): ReprocessRun = transaction {
+        val current = owned(parent.executionId, requireNotNull(parent.leaseToken), parent.generation)
+            ?: throw java.util.concurrent.CancellationException("PAPER_REPROCESS_LEASE_LOST")
+        if (current.mode != ReprocessMode.ENFORCE || current.cancelRequested || current.state != ReprocessState.RUNNING ||
+            current.scope.path("codeVersion") != parent.scope.path("codeVersion"))
+            throw java.util.concurrent.CancellationException("PAPER_REPROCESS_PERMISSION_LOST")
+        current
+    }
+
+    /** An action receipt is durable while its TARGET remains RUNNING. input_json is never rewritten. */
+    fun receipt(parent: ReprocessRun, target: ReprocessItem, result: JsonNode): Boolean = transaction {
+        requirePermission(parent)
+        require(target.kind == ReprocessKind.TARGET && target.executionId == parent.executionId)
+        val time = now()
+        jdbc.update("""UPDATE discovery_paper_reprocess_item SET result_json=?,revision=revision+1,updated_at=?
+            WHERE execution_id=? AND id=? AND state='RUNNING' AND lease_token=? AND generation=? AND lease_until>?""",
+            json(result, "RESULT_TOO_LARGE", true), db(time), parent.executionId, target.id, target.leaseToken,
+            target.generation, db(time)) == 1
+    }
+
+    fun claimTarget(parent: ReprocessRun, id: Long): ReprocessItem? = transaction {
+        requirePermission(parent)
+        val time = now()
+        val changed = jdbc.update("""UPDATE discovery_paper_reprocess_item SET state='RUNNING',lease_token=?,lease_until=?,
+            generation=?,revision=revision+1,updated_at=? WHERE execution_id=? AND id=? AND kind='TARGET' AND
+            (state='PENDING' OR state='ERROR' AND JSON_EXTRACT(result_json,'$.applicationError')=true
+                AND JSON_EXTRACT(result_json,'$.verificationItemId') IS NOT NULL)""",
+            UUID.randomUUID().toString(), db(time.plusSeconds(60)), parent.generation, db(time), parent.executionId, id)
+        if (changed == 1) item(parent.executionId, id) else null
+    }
+
+    fun releaseTarget(parent: ReprocessRun, target: ReprocessItem): Boolean = transaction {
+        requirePermission(parent)
+        jdbc.update("""UPDATE discovery_paper_reprocess_item SET state='PENDING',lease_token=NULL,lease_until=NULL,
+            revision=revision+1,updated_at=? WHERE execution_id=? AND id=? AND state='RUNNING' AND lease_token=? AND generation=?""",
+            db(now()), parent.executionId, target.id, target.leaseToken, target.generation) == 1
+    }
+
+    /** REVIEW is a durable wait, not completion. Workers may only act while a poll owns a live parent lease. */
+    fun waitForReview(parent: ReprocessRun, reason: String, releaseLease: Boolean = false): Boolean = transaction {
+        requirePermission(parent)
+        val scope = find(parent.executionId)!!.scope.deepCopy<ObjectNode>().put("reasonCode", reason)
+        jdbc.update("""UPDATE discovery_paper_reprocess_item SET state='PENDING',lease_token=NULL,lease_until=NULL,
+            revision=revision+1,updated_at=? WHERE execution_id=? AND kind='TARGET' AND state='RUNNING'""",
+            db(now()), parent.executionId)
+        jdbc.update("""UPDATE discovery_paper_reprocess_run SET phase='REVIEW',scope_json=?,
+            lease_token=IF(?,NULL,lease_token),lease_until=IF(?,NULL,lease_until),
+            revision=revision+1,updated_at=? WHERE execution_id=?""",
+            json(scope, "INPUT_TOO_LARGE"), releaseLease, releaseLease, db(now()), parent.executionId)
+        true
+    }
+
     /** true means freezing is complete; each transaction reads at most 100 archive records. */
     fun freezePage(runId: Long, token: String, generation: Long): Boolean {
         var changed = false
@@ -375,10 +432,16 @@ class DiscoveryPaperReprocessRepository(
                 val time = now()
                 // Targets are derived only after every paper has parsed. Unfinished candidates must
                 // be regenerated, never overwritten in place with new refs after an error retry.
-                jdbc.update("DELETE FROM discovery_paper_reprocess_item WHERE execution_id=? AND kind='TARGET' AND state<>'COMPLETE'", runId)
-                jdbc.update("""UPDATE discovery_paper_reprocess_item SET state='PENDING',result_json=NULL,lease_token=NULL,
-                    lease_until=NULL,generation=generation+1,revision=revision+1,updated_at=?,completed_at=NULL
-                    WHERE execution_id=? AND state NOT IN ('COMPLETE','SKIPPED')""", db(time), runId)
+                if (run.mode == ReprocessMode.AUDIT) {
+                    jdbc.update("DELETE FROM discovery_paper_reprocess_item WHERE execution_id=? AND kind='TARGET' AND state<>'COMPLETE'", runId)
+                    jdbc.update("""UPDATE discovery_paper_reprocess_item SET state='PENDING',result_json=NULL,lease_token=NULL,
+                        lease_until=NULL,generation=generation+1,revision=revision+1,updated_at=?,completed_at=NULL
+                        WHERE execution_id=? AND state NOT IN ('COMPLETE','SKIPPED')""", db(time), runId)
+                } else {
+                    jdbc.update("""UPDATE discovery_paper_reprocess_item SET state='PENDING',lease_token=NULL,
+                        lease_until=NULL,generation=generation+1,revision=revision+1,updated_at=?,completed_at=NULL
+                        WHERE execution_id=? AND state NOT IN ('COMPLETE','SKIPPED')""", db(time), runId)
+                }
                 val state = if (run.scope.path("frozen").asBoolean()) "RUNNING" else "PREPARING"
                 jdbc.update("""UPDATE discovery_paper_reprocess_run SET active_key='PAPER_REPROCESS',state=?,phase=?,cancel_requested=0,
                     lease_token=NULL,lease_until=NULL,generation=generation+1,revision=revision+1,updated_at=?,finished_at=NULL WHERE execution_id=?""",
@@ -407,10 +470,28 @@ class DiscoveryPaperReprocessRepository(
             COALESCE(SUM(kind='PAPER' AND state='ERROR'),0) paper_errors,
             COALESCE(SUM(kind='PAPER' AND state='CANCELLED'),0) paper_cancelled,
             COALESCE(SUM(kind='TARGET'),0) targets, COALESCE(SUM(kind='TARGET' AND state='COMPLETE'),0) target_complete,
-            COALESCE(SUM(kind='TARGET' AND state='ERROR'),0) target_errors
+            COALESCE(SUM(kind='TARGET' AND state='ERROR'),0) target_errors,
+            COALESCE(SUM(CASE WHEN kind='TARGET' THEN COALESCE(JSON_EXTRACT(result_json,'$.actualNew'),0) ELSE 0 END),0) actual_new,
+            COALESCE(SUM(CASE WHEN kind='TARGET' THEN COALESCE(JSON_EXTRACT(result_json,'$.actualUpdated'),0) ELSE 0 END),0) actual_updated,
+            COALESCE(SUM(CASE WHEN kind='TARGET' THEN COALESCE(JSON_EXTRACT(result_json,'$.actualAdmitted'),0) ELSE 0 END),0) actual_admitted
             FROM discovery_paper_reprocess_item WHERE execution_id=?""", runId)
         fun n(key: String) = (row.getValue(key) as Number).toLong()
-        return ReprocessSummary(n("papers"), n("paper_complete"), n("paper_errors"), n("paper_cancelled"), n("targets"), n("target_complete"), n("target_errors"))
+        val business = if (find(runId)?.mode == ReprocessMode.ENFORCE) jdbc.queryForMap("""SELECT
+            COALESCE(SUM(COALESCE(JSON_EXTRACT(t.result_json,'$.alreadyAdmitted'),0)=0 AND EXISTS(
+                SELECT 1 FROM discovery_verification_item v JOIN discovery_verification_run r ON r.execution_id=v.owner_execution_id
+                WHERE JSON_EXTRACT(r.settings_json,'$.paperReprocessParentId')=? AND v.admission_revision IS NOT NULL
+                AND v.expert_doc_id=COALESCE(JSON_UNQUOTE(JSON_EXTRACT(t.result_json,'$.docId')),
+                    JSON_UNQUOTE(JSON_EXTRACT(t.result_json,'$.proposedDocId'))))),0) admitted,
+            COALESCE(SUM(EXISTS(SELECT 1 FROM discovery_verification_item v JOIN discovery_verification_run r ON r.execution_id=v.owner_execution_id
+                WHERE JSON_EXTRACT(r.settings_json,'$.paperReprocessParentId')=? AND
+                v.expert_doc_id=JSON_UNQUOTE(JSON_EXTRACT(t.result_json,'$.docId')) AND
+                JSON_UNQUOTE(JSON_EXTRACT(v.snapshot_json,'$.identitySupplement.phase'))='APPLIED' AND
+                JSON_UNQUOTE(JSON_EXTRACT(v.snapshot_json,'$.identitySupplement.repairReceipt.reason'))='REPAIRED')),0) repaired
+            FROM discovery_paper_reprocess_item t WHERE t.execution_id=? AND t.kind='TARGET'""", runId, runId, runId) else null
+        return ReprocessSummary(n("papers"), n("paper_complete"), n("paper_errors"), n("paper_cancelled"), n("targets"), n("target_complete"), n("target_errors"),
+            n("actual_new").coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+            (business?.get("repaired") as? Number)?.toInt() ?: n("actual_updated").coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+            (business?.get("admitted") as? Number)?.toInt() ?: n("actual_admitted").coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
     }
 
     private fun progress(runId: Long, time: Instant) {
@@ -438,7 +519,9 @@ class DiscoveryPaperReprocessRepository(
             if (rows.isEmpty()) return
             rows.forEach { item ->
                 if (item.state in from) {
-                    val result = json(errorResult(reason, state, item.input), "RESULT_TOO_LARGE", result = true)
+                    val preserved = if (item.kind == ReprocessKind.TARGET && item.result != null)
+                        item.result.deepCopy<ObjectNode>().put("interruptionReason", reason.take(64)) else errorResult(reason, state, item.input)
+                    val result = json(preserved, "RESULT_TOO_LARGE", result = true)
                     if (jdbc.update("""UPDATE discovery_paper_reprocess_item SET state=?,result_json=?,lease_token=NULL,lease_until=NULL,
                         revision=revision+1,updated_at=?,completed_at=? WHERE execution_id=? AND id=? AND state=?""",
                             state.name, result, db(time), db(time), runId, item.id, item.state.name) != 1)

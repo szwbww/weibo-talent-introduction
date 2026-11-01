@@ -1865,6 +1865,7 @@ class ExpertDiscoveryService(
         )
     }
 
+    internal var paperReprocessAfterEffect: (String) -> Unit = {}
     /** Retained-body backfill only; the normal consumer still owns validation, dedup and every write. */
     internal fun consumeArchivedPaper(paper: PaperMetadata, authorEmails: List<AuthorEmail>, sourceName: String,
         originalPaperKey: String, newExecutionContext: DiscoveryVerificationExecution): ConsumeOutcomeResult {
@@ -1875,6 +1876,7 @@ class ExpertDiscoveryService(
             originalPaperKey == archived.source.sourceItemKey)
         // The permit has a private constructor and is minted only by the production body parser.
         archived.parsed.requireMatches(paper, authorEmails, archived.source)
+        if (archived.parent != null) requireNotNull(verificationRegistration) { "VERIFICATION_UNAVAILABLE" }
         val stats = DiscoveryStats()
         return consumeOutcomeInternal(authorEmails, null, null, true, 0, sourceName, stats,
             stats.getOrCreateSourceStats(sourceName, "ARCHIVE_REUSE"), newExecutionContext, originalPaperKey,
@@ -1952,6 +1954,7 @@ class ExpertDiscoveryService(
         val enqueueFailedBefore = sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0
 
         for (authorEmail in authorEmails) {
+            verificationRegistration?.requirePaperPermission(verification)
             stats.refreshGlobalCounts()
             if (countAuthor && stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
             if (countAuthor) sourceStats.authorsExtracted++
@@ -1984,18 +1987,31 @@ class ExpertDiscoveryService(
                 }
                 DedupResult.NotFound -> null
             }
+            var ownedRegistration: DiscoveryRegistration? = null
             if (duplicate != null) {
                 sourceStats.duplicates++
                 duplicates++
-                val disposition = recordIdentityDuplicate(duplicate, authorEmail, sourceStats, sourceName, executionId, sourceItemKey)
-                if (disposition.retryable) identityRepairFailed = true
-                personCounts.fold(disposition.person)
-                continue
+                if (verification.archivedPaper?.parent != null) {
+                    // Crash recovery is not the generic duplicate repair path. A foreign RAW is never adopted.
+                    ownedRegistration = duplicate.docId?.let {
+                        verificationRegistration?.ownedPaperRegistration(verification, it, authorEmail)
+                    }
+                    if (ownedRegistration == null) {
+                        sourceStats.failureReasons.merge("PAPER_REPROCESS_FOREIGN_DUPLICATE", 1, Int::plus)
+                        continue
+                    }
+                } else {
+                    val disposition = recordIdentityDuplicate(duplicate, authorEmail, sourceStats, sourceName, executionId, sourceItemKey)
+                    if (disposition.retryable) identityRepairFailed = true
+                    personCounts.fold(disposition.person)
+                    continue
+                }
             }
 
             val identity = identityFactory.create(authorEmail, emailResult.level)
             val registration = try {
-                verificationRegistration?.reserve(verification, identity.esDocId, identity.profile, sourceName, sourceItemKey,
+                verificationRegistration?.requirePaperPermission(verification)
+                ownedRegistration ?: verificationRegistration?.reserve(verification, identity.esDocId, identity.profile, sourceName, sourceItemKey,
                     identity.paper)
                     ?: DiscoveryRegistration()
             } catch (e: DiscoveryRegistrationException) {
@@ -2004,23 +2020,35 @@ class ExpertDiscoveryService(
                 continue
             }
             if (registration.protected) continue
+            verificationRegistration?.recordPaperEffect(verification, registration, identity.esDocId, "RESERVED")
             // I-2: eligibility, RAW and admission all consume the profile frozen by registration.
             val finalProfile = registration.preparedProfile ?: identity.profile
             val eligibility = eligibilityService.evaluateEligibility(finalProfile)
             val filterResult = if (eligibility.eligible) "PASSED" else "REJECTED"
             val rejectReasons = if (eligibility.eligible) emptyList() else eligibility.rejectReasons
             val profileMap = toIndexMap(finalProfile, identity.paper, identity.esDocId, filterResult, rejectReasons)
-            if (!expertIndexWriterService.indexToRaw(identity.esDocId, profileMap)) {
-                sourceStats.rawWriteFailed++
-                rawWriteFailed = true
-                continue
+            if (ownedRegistration == null) {
+                verificationRegistration?.requirePaperPermission(verification)
+                if (!expertIndexWriterService.indexToRaw(identity.esDocId, profileMap)) {
+                    sourceStats.rawWriteFailed++
+                    rawWriteFailed = true
+                    continue
+                }
+                sourceStats.indexed++
+                indexed++
+                if (verification.archivedPaper?.parent != null) paperReprocessAfterEffect("AFTER_RAW")
+                verificationRegistration?.recordPaperEffect(verification, registration, identity.esDocId, "RAW")
             }
-            sourceStats.indexed++
-            indexed++
             // I-1（08）：RAW 落库成功后才入队；入队失败不推进本页（见 enqueueEnrichmentJob）。
+            verificationRegistration?.requirePaperPermission(verification)
             enqueueEnrichmentJob(identity.esDocId, sourceName, executionId, sourceStats)
+            if ((sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0) == enqueueFailedBefore)
+                verificationRegistration?.recordPaperEffect(verification, registration, identity.esDocId, "ENRICHMENT_ENQUEUED")
             try {
+                verificationRegistration?.requirePaperPermission(verification)
                 verificationRegistration?.activate(registration)
+                verificationRegistration?.recordPaperEffect(verification, registration, identity.esDocId, "ACTIVATED")
+                if (verification.archivedPaper?.parent != null) paperReprocessAfterEffect("AFTER_ACTIVATE")
             } catch (e: DiscoveryRegistrationException) {
                 sourceStats.failureReasons.merge("VERIFICATION_REGISTRATION_FAILED", 1, Int::plus)
                 verificationFailed = true
@@ -2034,8 +2062,11 @@ class ExpertDiscoveryService(
                 promoted++
             }
 
+            verificationRegistration?.requirePaperPermission(verification)
             // 05（I-1/I-2）：ES 事实已持久化后统一登记人物关系（同 ORCID 的后续邮箱挂接同一人物）。
             personCounts.fold(registerPerson(sourceName, identity.esDocId, sourceStats))
+            verificationRegistration?.recordPaperEffect(verification, registration, identity.esDocId, "PERSON_ATTEMPTED")
+            if (verification.archivedPaper?.parent != null) paperReprocessAfterEffect("AFTER_PERSON")
         }
 
         enqueueFailed = (sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0) > enqueueFailedBefore

@@ -61,23 +61,49 @@ class DiscoveryRecheckService(
     private val owner = UUID.randomUUID().toString()
     private val preparingThreads = ConcurrentHashMap<Long, Thread>()
 
-    fun prepare(submitted: RecheckPrepareRequest, actor: String): RecheckRunView {
+    fun prepare(submitted: RecheckPrepareRequest, actor: String): RecheckRunView =
+        prepareInternal(submitted, actor, null, emptyMap())
+
+    internal fun prepareFromPaperReprocess(parent: ReprocessRun, orderedDocIds: List<String>,
+        verifiedPaperRefs: Map<String, List<PaperSourceRef>>): RecheckRunView {
+        require(orderedDocIds == orderedDocIds.distinct().sorted() && orderedDocIds.size in 1..100 &&
+            verifiedPaperRefs.keys == orderedDocIds.toSet())
+        transactions.executeWithoutResult {
+            repository.requirePaperParent(parent)
+            verifiedPaperRefs.forEach { (docId, refs) -> repository.requirePaperSources(parent.executionId, docId, refs) }
+        }
+        val key = UUID.nameUUIDFromBytes(("paper-reprocess:${parent.executionId}:" + orderedDocIds.joinToString("\n"))
+            .toByteArray(Charsets.UTF_8)).toString()
+        return prepareInternal(RecheckPrepareRequest(key, docIds = orderedDocIds, mode = VerificationMode.ENFORCE,
+            evidenceMode = RecheckEvidenceMode.REFRESH), "paper-reprocess", parent, verifiedPaperRefs)
+    }
+
+    private fun prepareInternal(submitted: RecheckPrepareRequest, actor: String, parent: ReprocessRun?,
+        paperRefs: Map<String, List<PaperSourceRef>>): RecheckRunView {
         val request = normalizedRequest(submitted)
-        val canonical = canonicalSpec(request, actor)
+        val canonical = if (parent == null) canonicalSpec(request, actor) else
+            (mapper.readTree(canonicalSpec(request, actor)) as com.fasterxml.jackson.databind.node.ObjectNode)
+                .put("paperReprocessParentId", parent.executionId).also {
+                    it.set<com.fasterxml.jackson.databind.JsonNode>("paperSourceRefs", mapper.valueToTree(paperRefs.toSortedMap()))
+                }.toString()
         var taskId: Long? = null
         val registration = try {
-            repository.registerRecheck(request.requestKey, canonical) {
+            fun register() = repository.registerRecheck(request.requestKey, canonical) {
                 // All configuration reads are local SQL; ES/provider work is outside this transaction and lock.
-                val access = try { apolloSettings.freeze() } catch (_: DiscoveryApolloSettingsUnavailable) {
+                val access = try { if (parent == null) apolloSettings.freeze() else
+                    FrozenApolloAccess.parse(parent.scope.path("verificationSettings").path("apolloAccess")) } catch (_: DiscoveryApolloSettingsUnavailable) {
                     conflict("APOLLO_SETTINGS_UNAVAILABLE")
                 }
-                val now = clock.instant()
+                val now = parent?.let { java.time.Instant.parse(it.scope.path("evaluationAt").asText()) } ?: clock.instant()
                 val task = tasks.save(TaskExecution(taskType = TASK_TYPE, triggerType = "MANUAL", status = "RUNNING",
                     requestPayload = canonical, resultSummary = null, startedAt = LocalDateTime.now(),
                     createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now(), ownerToken = owner,
                     heartbeatAt = LocalDateTime.now()))
                 taskId = requireNotNull(task.id)
-                val settings = mapper.writeValueAsString(linkedMapOf(
+                val settings = if (parent != null) parent.scope.path("verificationSettings")
+                    .deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>().put("paperReprocessParentId", parent.executionId)
+                    .put("evaluationAt", parent.scope.path("evaluationAt").asText()).toString()
+                else mapper.writeValueAsString(linkedMapOf(
                     "mode" to request.mode, "policyVersion" to request.mode.policyVersion, "ruleVersion" to 4,
                     "apolloMatchingVersion" to 2, "institutionAliasVersion" to DiscoveryInstitutionNormalizer.ALIAS_VERSION,
                     "apolloLimitPolicy" to "PROVIDER", "apolloAccess" to access.toJson(mapper),
@@ -91,6 +117,10 @@ class DiscoveryRecheckService(
                     RecheckSpec(actor, request.requestKey, scope.toString(), request.evidenceMode, now,
                         CODE_VERSION, "layout-${PdfAuthorContactLayout.RULE_VERSION}"), now)
             }
+            if (parent == null) register() else transactions.execute {
+                repository.requirePaperParent(parent)
+                register()
+            }!!
         } catch (ex: Exception) {
             // Normally task+run both roll back. If a task was persisted by a caller's repository, never strand it.
             taskId?.let { finishTask(it, "FAILED", 0, "RUN_REGISTRATION_FAILED") }
@@ -100,7 +130,10 @@ class DiscoveryRecheckService(
         val frozen = mapper.readTree(repository.recheck(run).spec.scope).deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>()
         frozen.remove("specHash")
         if (frozen != mapper.readTree(canonical)) conflict("SPEC_CONFLICT")
-        if (registration.second) {
+        if (parent != null && repository.recheck(run).control.phase == RecheckPhase.PREPARING) {
+            // The caller already runs on the bounded paper executor, never an HTTP thread.
+            freeze(run, request)
+        } else if (registration.second) {
             try { executor.execute {
                 preparingThreads[run.executionId] = Thread.currentThread()
                 try { freeze(run, request) }
@@ -201,7 +234,10 @@ class DiscoveryRecheckService(
                     val sourceName = old?.sourceName ?: profile.dataSource?.uppercase()?.takeIf { it.matches(Regex("[A-Z_0-9]{1,32}")) } ?: "UNKNOWN"
                     val sourceKey = old?.sourceItemKey ?: listOfNotNull(external?.path("doi")?.asText(null),
                         external?.path("pmid")?.asText(null), external?.path("pmcId")?.asText(null)).firstOrNull()?.take(128) ?: input.docId
-                    val refs = cache?.executionContext?.paperSourceRefs?.takeIf { it.isNotEmpty() }
+                    val parentRefs = mapper.readTree(repository.recheck(run).spec.scope).path("paperSourceRefs").get(input.docId)
+                    val refs = parentRefs?.let { mapper.convertValue(it, mapper.typeFactory.constructCollectionType(
+                        List::class.java, PaperSourceRef::class.java)) as List<PaperSourceRef> }
+                        ?: cache?.executionContext?.paperSourceRefs?.takeIf { it.isNotEmpty() }
                         ?: located[lookups[input.docId]].orEmpty()
                     require(refs.size <= 100) { "SOURCE_LOOKUP_LIMIT" }
                     val review = mapper.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(VerificationReviewInput(
@@ -282,6 +318,7 @@ class DiscoveryRecheckService(
 
     private fun ensurePreparing(id: Long) {
         val run = repository.findRun(id) ?: error("RUN_NOT_FOUND")
+        if (repository.isPaperReprocessOwned(id)) check(repository.paperRunPermission(id)) { "PAPER_PARENT_PERMISSION_LOST" }
         check(repository.recheck(run).control.phase == RecheckPhase.PREPARING && !run.inputClosed &&
             tasks.findById(id).orElseThrow().status == "RUNNING" && !Thread.currentThread().isInterrupted) { "PREPARE_INTERRUPTED" }
     }
@@ -349,6 +386,16 @@ class DiscoveryRecheckService(
     }
 
     private fun conflict(code: String): Nothing = throw ResponseStatusException(HttpStatus.CONFLICT, code)
+    internal fun startFromPaperReprocess(parent: ReprocessRun, childId: Long): RecheckRunView {
+        transactions.executeWithoutResult {
+            repository.requirePaperParent(parent)
+            require(repository.paperReprocessRuns(parent.executionId).any { it.executionId == childId && it.recheckJson != null })
+        }
+        val current = repository.findRun(childId) ?: error("RUN_NOT_FOUND")
+        val control = repository.recheck(current).control
+        if (control.phase == RecheckPhase.READY) return start(childId, RecheckStartRequest(requireNotNull(control.scopeHash), current.revision))
+        return queries.recheckRun(childId)
+    }
     companion object {
         const val TASK_TYPE = "DISCOVERY_RECHECK_PREPARE"
         const val CODE_VERSION = "discovery-recheck-v1-rule4"

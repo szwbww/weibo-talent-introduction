@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.discovery.service
 import com.weibo.talentintroduction.config.*
 import com.weibo.talentintroduction.discovery.controller.ExpertDiscoveryController
 import com.weibo.talentintroduction.discovery.domain.*
+import com.weibo.talentintroduction.discovery.archive.PaperEvidenceStatus
 import com.weibo.talentintroduction.discovery.repository.*
 import com.weibo.talentintroduction.expert.domain.*
 import com.weibo.talentintroduction.expert.service.*
@@ -50,17 +51,26 @@ class DiscoveryVerificationIntegrationTest {
             check(DockerClientFactory.instance().isDockerAvailable) { "Docker is required; skip is not PASS" }
             mysql.start()
             val ds = DriverManagerDataSource(mysql.jdbcUrl, mysql.username, mysql.password)
-            Flyway.configure().dataSource(ds).placeholderReplacement(false).target("164").load().migrate()
+            Flyway.configure().dataSource(ds).placeholderReplacement(false).target("173").load().migrate()
             jdbc = JdbcTemplate(ds)
             manager = DataSourceTransactionManager(ds)
         }
         @JvmStatic @AfterAll fun stop() { if (mysql.isRunning) mysql.stop() }
         /** Separate runtime entry; never starts the production Spring application. */
         @JvmStatic fun main(args: Array<String>) {
-            require(args.contentEquals(arrayOf("--queue-access-smoke")) || args.contentEquals(arrayOf("--retained-identity-smoke")))
+            require(args.contentEquals(arrayOf("--queue-access-smoke")) || args.contentEquals(arrayOf("--retained-identity-smoke")) ||
+                args.contentEquals(arrayOf("--paper-reprocess-smoke")))
             start()
             try {
-                if (args[0] == "--retained-identity-smoke") {
+                if (args[0] == "--paper-reprocess-smoke") {
+                    DiscoveryVerificationIntegrationTest().paperBatchEndToEnd()
+                    DiscoveryVerificationIntegrationTest().paperBatchFaults()
+                    DiscoveryVerificationIntegrationTest().paperBatchCancellation()
+                    DiscoveryVerificationIntegrationTest().paperBatchOwnership()
+                    DiscoveryVerificationIntegrationTest().paperBatchGroups()
+                    DiscoveryVerificationIntegrationTest().paperBatchIdentityPartial()
+                    println("PAPER04_RUNTIME_OK realSQL=true loopbackEsFixture=true originalRetainedPDF=true consumer=true recheck=true worker=true commit=true projection=true legacyCLI=true paidCalls=0")
+                } else if (args[0] == "--retained-identity-smoke") {
                     DiscoveryVerificationIntegrationTest().clean()
                     RetainedRuntime().use { it.originalButtonScenario(VerificationMode.AUDIT) }
                     DiscoveryVerificationIntegrationTest().clean()
@@ -89,6 +99,9 @@ class DiscoveryVerificationIntegrationTest {
         jdbc.execute("DROP TRIGGER IF EXISTS fail_registration_activate")
         jdbc.execute("DROP TRIGGER IF EXISTS fail_controlled_attach")
         jdbc.execute("DROP TRIGGER IF EXISTS fail_stale_trace")
+        listOf("discovery_paper_reprocess_item", "discovery_paper_reprocess_run",
+            "discovery_person_author_key", "discovery_person_member", "discovery_person",
+            "expert_academic_enrichment_job").forEach { jdbc.update("DELETE FROM $it") }
         listOf("discovery_paper_archive_attempt", "discovery_paper_archive_record", "discovery_paper_archive_blob",
             "discovery_paper_archive_setting").forEach { jdbc.update("DELETE FROM $it") }
         listOf("discovery_apollo_setting", "discovery_paper_job", "discovery_collection_stream", "discovery_pipeline", "discovery_source_cursor",
@@ -626,7 +639,7 @@ class DiscoveryVerificationIntegrationTest {
     /** Source-backed, isolated runtime: original controller prepare/start -> real SQL -> worker -> query.
      * The loopback ES implements version CAS and rejects any unexpected operation. Providers fail closed.
      */
-    private class RetainedRuntime : AutoCloseable {
+    private class RetainedRuntime(val batchMode: Boolean = false) : AutoCloseable {
         val f = VerificationFlowFixture(jdbc, manager, DiscoveryVerificationProperties(enabled = true,
             workerEnabled = true, apolloApiKey = "fixture-key", requestsPerMinute = 1000, concurrency = 1))
         val root = java.nio.file.Files.createTempDirectory("retained-identity-runtime-").toRealPath()
@@ -636,6 +649,7 @@ class DiscoveryVerificationIntegrationTest {
             "candidate" to linkedMapOf<String, MutableMap<String, Any?>>(), "application" to linkedMapOf<String, MutableMap<String, Any?>>())
         val versions = mutableMapOf<Pair<String, String>, Long>()
         var identityWrites = 0
+        var rawWrites = 0
         var providerCalls = 0
         var failCandidate = false
         var beforeUpdate: (() -> Unit)? = null
@@ -680,7 +694,8 @@ class DiscoveryVerificationIntegrationTest {
                     val email = body!!.path("query").path("term").path("email").asText()
                     val hits = docs.flatMap { (index, values) -> values.filterValues { it["email"] == email }.map { (id, source) ->
                         mapOf("_index" to index, "_id" to id, "_source" to source) } }
-                    answer = mapOf("timed_out" to false, "_shards" to mapOf("failed" to 0), "hits" to mapOf("hits" to hits))
+                    answer = mapOf("timed_out" to false, "_shards" to mapOf("failed" to 0),
+                        "hits" to mapOf("total" to mapOf("value" to hits.size), "hits" to hits))
                 } else {
                     check(path.size == 3 && path[0] in docs && path[1] in listOf("_doc", "_update")) { "Unexpected ES route ${exchange.requestURI}" }
                     val index = path[0]; val id = path[2]; val key = index to id
@@ -706,10 +721,15 @@ class DiscoveryVerificationIntegrationTest {
                             }
                         }
                         "PUT" -> {
-                            check(index == "candidate" && current == null && exchange.requestURI.rawQuery == "op_type=create")
-                            @Suppress("UNCHECKED_CAST") val value = mapper.convertValue(body, Map::class.java) as Map<String, Any?>
-                            docs.getValue(index)[id] = value.toMutableMap(); versions[key] = 1
-                            answer = mapOf("result" to "created")
+                            check(current == null && (index == "candidate" && exchange.requestURI.rawQuery == "op_type=create" ||
+                                batchMode && index == "raw"))
+                            if (index == "candidate" && failCandidate) { status = 503; answer = emptyMap<String, Any>() }
+                            else {
+                                @Suppress("UNCHECKED_CAST") val value = mapper.convertValue(body, Map::class.java) as Map<String, Any?>
+                                docs.getValue(index)[id] = value.toMutableMap(); versions[key] = 1
+                                if (index == "raw") rawWrites++
+                                answer = mapOf("result" to "created")
+                            }
                         }
                         else -> error("Unexpected ES method ${exchange.requestMethod}")
                     }
@@ -1130,6 +1150,454 @@ class DiscoveryVerificationIntegrationTest {
         for (afterEs in listOf(false, true)) for (cancel in listOf(false, true)) {
             clean()
             RetainedRuntime().use { it.baselineFenceScenario(afterEs, cancel) }
+        }
+    }
+
+    private class PaperCrash : Error("isolated crash after committed effect")
+
+    /** Real SQL, retained original PDF and strict loopback ES; provider HTTP is deterministic and never leaves this process. */
+    private class PaperBatchRuntime : AutoCloseable {
+        val r = RetainedRuntime(batchMode = true)
+        val f = r.f
+        val context = org.springframework.context.annotation.AnnotationConfigApplicationContext().also {
+            it.registerBean("dataSource", javax.sql.DataSource::class.java, java.util.function.Supplier { manager.dataSource!! })
+            it.register(Paper04JdbcConfig::class.java)
+            it.refresh()
+        }
+        val tasks = context.getBean(TaskExecutionRepository::class.java)
+        val repository = DiscoveryPaperReprocessRepository(jdbc, manager, f.mapper, tasks)
+        val registration = DiscoveryVerificationRegistrationService(f.props, f.repository, r.writer, f.policy,
+            f.admissions, jdbc, TransactionTemplate(manager), f.apolloSettings, f.clock, traces = r.traces,
+            papers = r.papers, paperReprocess = repository)
+        private fun <T : Any> tx(value: T): T {
+            @Suppress("UNCHECKED_CAST")
+            return ProxyFactory(value).apply { isProxyTargetClass = true
+                addAdvice(TransactionInterceptor(manager, AnnotationTransactionAttributeSource())) }.proxy as T
+        }
+        val persons = DiscoveryPersonRegistrationService(r.writer,
+            DiscoveryPersonService(tx(DiscoveryPersonRepository(jdbc)), r.writer, r.contacts, r.aliases, f.clock),
+            tx(DiscoveryPersonRepository(jdbc)), DiscoveryPersonFeatureGate(true))
+        val providerUris = mutableListOf<String>()
+        var beforeProviderResponse: (() -> Unit)? = null
+        val http = RestTemplate().apply { interceptors.add(org.springframework.http.client.ClientHttpRequestInterceptor { request, _, _ ->
+            providerUris += request.uri.toString()
+            val body = if (request.uri.host == "api.apollo.io") {
+                check(request.uri.path.endsWith("api_search")) { "Paid detail dispatch forbidden: ${request.uri}" }
+                beforeProviderResponse?.also { beforeProviderResponse = null; it() }
+                """{"people":[],"total_entries":0}"""
+            } else {
+                check(request.uri.host == "pub.orcid.org")
+                if (request.uri.path.contains("0000-0002-1825-0097")) f.selfDocuments().firstOrNull {
+                    request.uri.path.endsWith("/${it.endpoint}") }?.document?.body?.toString() ?: "{}" else "{}"
+            }
+            org.springframework.mock.http.client.MockClientHttpResponse(body.toByteArray(), org.springframework.http.HttpStatus.OK)
+                .apply { headers.contentType = MediaType.APPLICATION_JSON }
+        }) }
+        val retained = RetainedPaperIdentityService(r.archive, r.archiveRepo, r.analyzer, r.papers, r.writer,
+            DiscoveryIdentityRepairService(r.writer, persons), r.contacts, r.aliases, f.admissions, f.policy)
+        val worker = DiscoveryVerificationWorker(f.props, f.repository, OrcidVerificationEvidenceClient(f.props, http, f.clock),
+            ApolloPeopleSearchClient(f.props, http, f.clock), QualificationEvidenceParser(f.clock), f.rules, r.commits,
+            DefaultListableBeanFactory().getBeanProvider(RegistrationRecovery::class.java), f.clock, r.traces, r.papers,
+            retainedIdentity = retained)
+        val beans = DefaultListableBeanFactory().apply { registerSingleton("paperWorker", worker) }
+        val rechecks = DiscoveryRecheckService(f.repository, f.admissions, r.writer,
+            DiscoveryReviewScanService(f.admissions, f.policy, r.writer, RestTemplate(), r.props,
+                ExpertIndexService(r.props, RestTemplate(), f.mapper), f.mapper), f.policy, f.apolloSettings, f.props,
+            tasks, TransactionTemplate(manager), r.queries, r.commits, Executor { it.run() },
+            beans.getBeanProvider(DiscoveryVerificationWorker::class.java), r.papers, f.clock)
+        val consumer: ExpertDiscoveryService
+        val apply: DiscoveryPaperReprocessApplyService
+        val service: DiscoveryPaperReprocessService
+        val originalArchive = r.archiveRepo.record(r.source.archiveRecordId)
+        val originalTask: Map<String, Any?>
+        val freshEmail = "ada.paper04@fixture.edu"
+        val freshDoc = ExpertIdGenerator.generate(null, freshEmail)
+        init {
+            jdbc.update("""INSERT INTO task_execution (id,task_type,trigger_type,status,started_at,finished_at)
+                VALUES (30711,'EXPERT_DISCOVERY','MANUAL','SUCCESS',NOW(),NOW())""")
+            originalTask = jdbc.queryForMap("SELECT * FROM task_execution WHERE id=30711")
+            f.saveApolloSettings(true, false)
+            val validation = Mockito.mock(EmailValidationService::class.java)
+            Mockito.doReturn(EmailValidationResult(3, true)).`when`(validation).validate(Mockito.anyString())
+            val indices = ExpertIndexService(r.props, RestTemplate(), f.mapper)
+            consumer = ExpertDiscoveryService(Mockito.mock(EuropePmcDataSource::class.java),
+                beans.getBeanProvider(OpenAlexDataSource::class.java), beans.getBeanProvider(CrossrefDataSource::class.java),
+                beans.getBeanProvider(ArxivDataSource::class.java), beans.getBeanProvider(PmcOaDataSource::class.java),
+                beans.getBeanProvider(OrcidDataSource::class.java), beans.getBeanProvider(CoreDataSource::class.java),
+                validation, f.eligibility, r.writer, indices, Mockito.mock(ExpertRevalidationService::class.java),
+                Mockito.mock(ExpertSearchService::class.java), ExpertClassificationService(), RestTemplate(), r.props,
+                ExpertDiscoveryProperties(enabled = true, includeRawScan = false, maxAuthorsPerRun = 500),
+                OpenAlexProperties(enabled = false), f.mapper, Mockito.mock(TaskProgressStore::class.java),
+                Mockito.mock(DiscoverySourceCursorRepository::class.java),
+                tx(ExpertAcademicEnrichmentJobService(context.getBean(ExpertAcademicEnrichmentJobRepository::class.java))),
+                context.getBean(ExpertAcademicEnrichmentJobRepository::class.java), Executor { it.run() }, EuropePmcProperties(enabled = false),
+                discoveryReviewService = r.review, personRegistrationService = persons, verificationRegistration = registration)
+            apply = DiscoveryPaperReprocessApplyService(repository, f.repository, registration, consumer, rechecks, r.writer,
+                f.admissions, r.archive, r.analyzer, f.mapper, jdbc, beans.getBeanProvider(DiscoveryVerificationWorker::class.java))
+            service = DiscoveryPaperReprocessService(repository, r.archive, r.analyzer, f.mapper, f.apolloSettings,
+                Mockito.mock(TaskProgressStore::class.java), apply)
+            repeat(3) { addPaper("fresh-$it", freshEmail) }
+        }
+        fun addPaper(key: String, email: String, given: String = "Ada", orcid: Boolean = true, facts: String = ""): PaperSourceRef {
+            val metadata = PaperMetadata(null, null, "10.fixture/$key", "Isolated paper $key", 2026, null,
+                listOf(PaperAuthor(given, "Lee", if (orcid) "0000-0002-1825-0097" else null, "Example University", true)), "CROSSREF")
+            val xml = """<article><front><article-meta><contrib-group><contrib contrib-type="author">
+                <name><surname>Lee</surname><given-names>$given</given-names></name>
+                ${if (orcid) """<contrib-id contrib-id-type="orcid">0000-0002-1825-0097</contrib-id>""" else ""}
+                <email>$email</email><xref ref-type="aff" rid="a1"/></contrib></contrib-group>
+                <aff id="a1"><institution content-type="university">Example University</institution><country>United Kingdom</country></aff>
+                </article-meta></front><body>$facts</body></article>""".toByteArray()
+            val record = r.archive.beginRecord(30711, "CROSSREF", key,
+                f.mapper.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(metadata).put("schemaVersion", 1))
+            val attempt = r.archive.beginAttempt(record.id, java.util.UUID.randomUUID(), 1,
+                com.weibo.talentintroduction.discovery.archive.ArchiveAttemptKind.PMC_XML, "https://fixture.invalid/$key.xml")
+            r.archive.saveBody(attempt.id, xml, "application/xml")
+            r.archive.finishExtraction(record.id, f.mapper.createObjectNode().put("schemaVersion", 1))
+            return PaperSourceRef(record.id, attempt.id, com.weibo.talentintroduction.discovery.archive.DiscoveryPaperArchiveService.sha(xml),
+                30711, "CROSSREF", key)
+        }
+        fun create(): ReprocessRun = service.create(CreateReprocessRequest(java.util.UUID.randomUUID().toString(),
+            30711, ReprocessMode.ENFORCE, service.preview(30711).expectedScopeHash))
+        fun await(message: String, action: () -> Boolean) {
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(300)
+            while (!action()) {
+                check(System.nanoTime() < deadline) { "$message: ${repository.active()} targets=${repository.active()?.let { repository.items(it.executionId, ReprocessKind.TARGET, 0, 100) }}" }
+                Thread.sleep(20)
+            }
+        }
+        fun pump(id: Long, expected: ReprocessState = ReprocessState.COMPLETED) {
+            await("parent completion") {
+                service.poll()
+                val lease = f.repository.claimDue(f.clock.instant(), 120)
+                if (lease != null) {
+                    check(f.repository.isPaperReprocessOwned(lease.ownerExecutionId)) { "Foreign claim in isolated runtime" }
+                    worker.process(lease)
+                }
+                repository.find(id)!!.state !in setOf(ReprocessState.PREPARING, ReprocessState.RUNNING, ReprocessState.CANCELLING)
+            }
+            check(repository.find(id)!!.state == expected) { repository.find(id).toString() }
+        }
+        fun target(id: Long, email: String) = repository.items(id, ReprocessKind.TARGET, 0, 100).items.single { it.input.path("email").asText() == email }
+        fun verifyEffects(id: Long) {
+            check(repository.summary(id).actualNew == 1) { repository.summary(id).toString() }
+            check(repository.summary(id).actualUpdated == 1)
+            check(repository.summary(id).actualAdmitted == 1)
+            check(r.rawWrites == 1)
+            check(jdbc.queryForObject("SELECT COUNT(*) FROM discovery_person_member WHERE expert_doc_id=?", Long::class.java, freshDoc) == 1L)
+            check(jdbc.queryForObject("SELECT COUNT(*) FROM expert_academic_enrichment_job WHERE expert_doc_id=?", Long::class.java, freshDoc) == 1L)
+            check(f.repository.paperReprocessRuns(id).count { it.recheckJson != null } == 1)
+            check(f.repository.findItemsByDocIds(listOf(freshDoc)).count { it.ownerExecutionId == id } == 1)
+            check(f.repository.findItemsByDocIds(listOf(freshDoc)).none { it.reviewEpoch > 0 })
+            check(f.repository.paperReprocessRuns(id).all { !it.frozenApolloAccess(f.mapper).detailEnabled &&
+                it.frozenApolloAccess(f.mapper).searchEnabled })
+            check(r.archiveRepo.record(r.source.archiveRecordId) == originalArchive)
+            check(jdbc.queryForMap("SELECT * FROM task_execution WHERE id=30711") == originalTask)
+            check(target(id, freshEmail).input.path("paperRefs").size() == 3)
+            check(target(id, "e.martinez-paneda@imperial.ac.uk").result!!.path("targetOutcome").asText() == "REPAIRED")
+        }
+        fun legacyCli() {
+            val config = f.mapper.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(f.policy.currentConfigSnapshot())
+            jdbc.queryForList("SELECT setting_key,setting_value FROM eligibility_filter_setting").forEach { row ->
+                val key = row["setting_key"].toString().substringAfter('.')
+                if (config.has(key)) {
+                    if (config.path(key).isBoolean) config.put(key, row["setting_value"].toString().toBoolean())
+                    else config.put(key, row["setting_value"].toString().toInt())
+                }
+            }
+            val frozenConfig = f.mapper.treeToValue(config, AdmissionConfigSnapshot::class.java)
+            val profile = r.writer.discoveryProfile(freshDoc, r.writer.readDiscoveryDocument(ExpertIndexLevel.RAW, freshDoc)!!.source)
+            val identity = DiscoveryVerificationAdmissionGate.snapshot(freshDoc, profile, frozenConfig)
+            val paper = HistoricalReplayFixtures.paper(r.root, 9801, email = freshEmail)
+            val scope = DiscoveryHistoricalReplayTool.Scope(listOf(paper), listOf(DiscoveryHistoricalReplayTool.Expert(
+                freshDoc, identity.identityHash, identity.factFingerprint, f.admissions.findAdmission(freshDoc)?.revision, profile)),
+                true, true, mapOf("admission" to f.mapper.writeValueAsString(frozenConfig)), java.time.Instant.now())
+            val legacy = DiscoveryHistoricalReplayTool.freeze(scope, r.root.resolve("legacy-frozen"))
+            val output = r.root.resolve("legacy-cli.log")
+            val command = ProcessBuilder("/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home/bin/java", "-cp",
+                System.getProperty("surefire.test.class.path") ?: System.getProperty("java.class.path"),
+                DiscoveryHistoricalReplayTool::class.java.name, "apply-bindings", "--manifest", legacy.directory.resolve("manifest.json").toString(),
+                "--manifest-hash", legacy.hash)
+            command.environment().putAll(mapOf("REPLAY_DB_URL" to mysql.jdbcUrl, "REPLAY_DB_USERNAME" to mysql.username,
+                "REPLAY_DB_PASSWORD" to mysql.password, "REPLAY_ES_URL" to r.props.baseUrl, "REPLAY_ES_USERNAME" to "fixture",
+                "REPLAY_ES_PASSWORD" to "fixture", "ES_RAW_INDEX_NAME" to "raw", "ES_CANDIDATE_INDEX_NAME" to "candidate",
+                "ES_APPLICATION_INDEX_NAME" to "application", "CANDIDATE_REQUIRE_DOCTORAL_DEGREE" to "true",
+                "CANDIDATE_REQUIRE_VALID_EMAIL" to "false", "CANDIDATE_ENABLE_AGE_FILTER" to "true"))
+            val process = command.redirectErrorStream(true).redirectOutput(output.toFile()).start()
+            check(process.waitFor(90, TimeUnit.SECONDS)) { "Legacy CLI did not finish" }
+            val text = java.nio.file.Files.readString(output)
+            check(process.exitValue() == 0) { "Legacy CLI failed: $text" }
+            val old = jdbc.queryForObject("""SELECT execution_id FROM discovery_verification_run WHERE
+                JSON_UNQUOTE(JSON_EXTRACT(recheck_json,'$.spec.actor'))='historical-bindings' ORDER BY execution_id DESC LIMIT 1""",
+                Long::class.java)!!
+            val run = f.repository.findRun(old)!!
+            check(run.mode == VerificationMode.AUDIT)
+            check(f.repository.recheck(run).spec.evidenceMode == RecheckEvidenceMode.REUSE)
+            check(f.repository.recheck(run).control.phase == RecheckPhase.READY)
+            check(f.repository.recheckItems(old, 0, 100).second.all { it.activatedAt == null })
+            check(r.rawWrites == 1)
+            println("PAPER04_LEGACY_CLI actualProcessExit=0 mode=AUDIT evidence=REUSE phase=READY neverStarted=true paidCalls=0")
+        }
+        override fun close() { service.shutdown(); worker.close(); context.close(); r.close() }
+    }
+
+    @Test fun paperBatchEndToEnd() {
+        clean()
+        PaperBatchRuntime().use { p ->
+            p.r.failCandidate = true
+            val parent = p.create()
+            val settings = parent.scope.path("verificationSettings")
+            p.f.saveApolloSettings(true, true)
+            p.pump(parent.executionId)
+            p.verifyEffects(parent.executionId)
+            check(p.repository.find(parent.executionId)!!.scope.path("verificationSettings") == settings)
+            val done = p.f.repository.findItemsByDocIds(listOf(p.freshDoc)).single()
+            check(done.admissionRevision != null && done.projectionState == VerificationProjection.ERROR)
+            check(p.target(parent.executionId, p.freshEmail).result!!.path("syncFailure").asInt() == 1)
+            val before = p.providerUris.toList()
+            p.r.failCandidate = false
+            p.r.commits.project(done)
+            check(p.f.repository.findItem(done.id)!!.projectionState == VerificationProjection.PROJECTED)
+            check(p.providerUris == before)
+            check(p.r.queries.item(done.id).admissionRevision == done.admissionRevision)
+            p.f.saveApolloSettings(true, false)
+            val second = p.create()
+            p.pump(second.executionId)
+            check(p.repository.summary(second.executionId).actualNew == 0)
+            check(p.repository.summary(second.executionId).actualAdmitted == 0)
+            check(p.r.rawWrites == 1)
+            p.legacyCli()
+            println("PAPER04_E2E parent=${parent.executionId} originalSHA=${p.r.source.bodySha256} new=1 repaired=1 actualAdmitted=1 pending=1 repeatNew=0 rawWrites=1 frozenSearch=true frozenDetail=false syncRetryProviderDelta=0 loopbackES=${p.r.props.baseUrl}")
+        }
+    }
+
+    @Test fun paperBatchIdentityPartial() {
+        clean()
+        PaperBatchRuntime().use { p ->
+            val ref = p.addPaper("identity-partial", "identity-only@fixture.edu", orcid = false,
+                facts = "x".repeat(2 * 1024 * 1024 + 1))
+            p.r.archive.analysisLease(ref.archiveRecordId, listOf(ref.attemptId to ref.bodySha256)).use { lease ->
+                val body = lease.bodies.single()
+                val bytes = body.input.readBytes()
+                val metadata = DiscoveryHistoricalReplayTool.mapper.treeToValue(
+                    DiscoveryHistoricalReplayTool.mapper.readTree(lease.record.metadataJson), PaperMetadata::class.java)
+                val parsed = p.r.analyzer.parse(com.weibo.talentintroduction.discovery.archive.PaperBodyInput(
+                    ref.bodySha256, body.attempt.kind, bytes), p.f.mapper.valueToTree(metadata))
+                check(parsed.reasons.isEmpty() && parsed.emails.size == 1)
+                check(parsed.qualification.coverage.status == PaperEvidenceStatus.PARTIAL)
+                val path = p.r.root.resolve("legacy-partial.xml")
+                java.nio.file.Files.write(path, bytes)
+                assertThrows(IllegalArgumentException::class.java) {
+                    ParsedArchivedPaper.parse(DiscoveryHistoricalReplayTool.Paper(ref, path.toString(), body.attempt.kind,
+                        metadata, emptyList()), p.r.analyzer)
+                }
+            }
+            val parent = p.create()
+            p.pump(parent.executionId)
+            val result = p.target(parent.executionId, "identity-only@fixture.edu").result!!
+            check(result.path("qualificationCoverage").path("status").asText() == "PARTIAL")
+            check(result.path("actualNew").asInt() == 1)
+            check(result.path("actualAdmitted").asInt() == 0)
+            check(result.path("verificationState").asText() == "COMPLETED")
+            check(p.repository.summary(parent.executionId).actualNew == 2)
+            check(p.repository.summary(parent.executionId).actualAdmitted == 1)
+            println("PAPER04_IDENTITY complete=true qualificationCoverage=PARTIAL newRaw=1 admission=0 legacyPermitStillRejectsPartial=true")
+        }
+    }
+
+    @Test fun paperBatchFaults() {
+        for (stage in listOf("AFTER_RAW", "AFTER_PREPARE", "AFTER_START", "AFTER_ADMISSION_OBSERVED")) {
+            clean()
+            PaperBatchRuntime().use { p ->
+                val crashed = java.util.concurrent.atomic.AtomicBoolean(false)
+                val hook: (String) -> Unit = { point ->
+                    if (point == stage && (point != "AFTER_ADMISSION_OBSERVED" || p.f.autoCount() == 1L) && crashed.compareAndSet(false, true))
+                        throw PaperCrash()
+                }
+                p.consumer.paperReprocessAfterEffect = hook
+                p.apply.afterEffect = hook
+                val parent = p.create()
+                p.await("fault $stage") {
+                    p.service.poll()
+                    p.f.repository.claimDue(p.f.clock.instant(), 120)?.let { p.worker.process(it) }
+                    crashed.get()
+                }
+                Thread.sleep(50)
+                jdbc.update("UPDATE discovery_paper_reprocess_run SET lease_until=DATE_SUB(NOW(),INTERVAL 1 MINUTE) WHERE execution_id=?", parent.executionId)
+                p.repository.claimRun("isolated-recovery")
+                val interrupted = p.repository.find(parent.executionId)!!
+                check(interrupted.state == ReprocessState.INTERRUPTED)
+                p.consumer.paperReprocessAfterEffect = {}
+                p.apply.afterEffect = {}
+                p.service.retry(parent.executionId, interrupted.revision)
+                p.pump(parent.executionId)
+                p.verifyEffects(parent.executionId)
+                check(p.f.autoCount() == 1L)
+                println("PAPER04_RECOVERY stage=$stage rawWrites=1 ownedRechecks=1 admissionEvents=1 preservedReceipts=true")
+            }
+        }
+    }
+
+    @Test fun paperBatchCancellation() {
+        clean()
+        PaperBatchRuntime().use { p ->
+            val independent = p.r.service.prepare(RecheckPrepareRequest(java.util.UUID.randomUUID().toString(),
+                docIds = listOf(p.r.doc), mode = VerificationMode.ENFORCE), "foreign-operator")
+            p.r.service.start(independent.runId, RecheckStartRequest(independent.rosterHash!!, independent.revision))
+            val parent = p.create()
+            p.consumer.paperReprocessAfterEffect = { if (it == "AFTER_ACTIVATE") {
+                p.service.cancel(parent.executionId, p.repository.find(parent.executionId)!!.revision)
+            } }
+            p.await("cancel parent") {
+                p.service.poll()
+                p.repository.find(parent.executionId)!!.state == ReprocessState.CANCELLED
+            }
+            check(p.r.rawWrites == 1)
+            val item = p.f.repository.findItemsByDocIds(listOf(p.freshDoc)).single()
+            check(item.state == VerificationState.CANCELLED && item.admissionRevision == null)
+            assertThrows(DiscoveryRegistrationException::class.java) { p.registration.activate(DiscoveryRegistration(item)) }
+            check(p.f.repository.recheck(p.f.repository.findRun(independent.runId)!!).control.phase == RecheckPhase.RUNNING)
+            check(p.f.repository.recheckItems(independent.runId, 0, 100).second.single().state == VerificationState.QUEUED)
+            check(p.providerUris.isEmpty())
+            println("PAPER04_CANCEL ownedOrdinaryCancelled=true lateActivateRejected=true committedRawPreserved=true foreignRunUnchanged=true")
+        }
+        clean()
+        PaperBatchRuntime().use { p ->
+            val parent = p.create()
+            p.beforeProviderResponse = {
+                check(p.f.autoCount() == 1L) { "Cancellation fixture must retain an already committed admission" }
+                p.service.cancel(parent.executionId, p.repository.find(parent.executionId)!!.revision)
+            }
+            p.await("cancel during provider response") {
+                p.service.poll()
+                p.f.repository.claimDue(p.f.clock.instant(), 120)?.let { p.worker.process(it) }
+                p.repository.find(parent.executionId)!!.state == ReprocessState.CANCELLED
+            }
+            check(p.f.autoCount() == 1L)
+            check(p.repository.summary(parent.executionId).actualAdmitted == 1)
+            check(p.f.repository.paperReprocessRuns(parent.executionId).all {
+                p.f.repository.recheckCounts(it.executionId).queued == 0L })
+            check(p.f.repository.findItemsByDocIds(listOf(p.r.doc)).filter { it.reviewEpoch > 0 }
+                .all { it.state == VerificationState.CANCELLED })
+            println("PAPER04_LATE_RESPONSE parentCancelled=true admittedPreserved=1 lateResponseNoAdmission=true")
+        }
+        for (stage in listOf("AFTER_PREPARE", "AFTER_START")) {
+            clean()
+            PaperBatchRuntime().use { p ->
+                val parent = p.create()
+                val committedAtCancel = java.util.concurrent.atomic.AtomicLong(-1)
+                p.apply.afterEffect = { point -> if (point == stage) {
+                    p.service.cancel(parent.executionId, p.repository.find(parent.executionId)!!.revision)
+                    committedAtCancel.set(requireNotNull(p.f.autoCount()))
+                } }
+                p.await("cancel $stage") {
+                    p.service.poll()
+                    p.f.repository.claimDue(p.f.clock.instant(), 120)?.let { p.worker.process(it) }
+                    p.repository.find(parent.executionId)!!.state == ReprocessState.CANCELLED
+                }
+                val child = p.f.repository.paperReprocessRuns(parent.executionId).single { it.recheckJson != null }
+                check(p.f.repository.recheck(child).control.phase == RecheckPhase.CANCELLED)
+                check(p.f.repository.recheckCounts(child.executionId).queued == 0L)
+                check(p.target(parent.executionId, "e.martinez-paneda@imperial.ac.uk").result!!.path("childRunId").asLong() == child.executionId)
+                check(committedAtCancel.get() >= 0 && p.f.autoCount() == committedAtCancel.get() && p.r.rawWrites == 1)
+                assertThrows(java.util.concurrent.CancellationException::class.java) {
+                    p.rechecks.startFromPaperReprocess(parent, child.executionId)
+                }
+                assertThrows(java.util.concurrent.CancellationException::class.java) {
+                    p.rechecks.prepareFromPaperReprocess(parent, listOf(p.r.doc), mapOf(p.r.doc to listOf(p.r.source)))
+                }
+                println("PAPER04_CANCEL_CHILD stage=$stage durableRegistration=true ownedChildCancelled=true latePrepareStartRejected=true committedAdmissionPreserved=${committedAtCancel.get()}")
+            }
+        }
+    }
+
+    @Test fun paperBatchOwnership() {
+        clean()
+        PaperBatchRuntime().use { p ->
+            p.addPaper("conflict", "conflict@fixture.edu", "Other", orcid = false)
+            p.r.docs.getValue("raw")["foreign-conflict"] = p.r.docs.getValue("raw").getValue(p.r.doc).toMutableMap().apply {
+                put("email", "conflict@fixture.edu"); put("givenNames", "Different"); put("familyNames", "Lee")
+            }
+            p.addPaper("protected", "protected@fixture.edu", "Protected", orcid = false)
+            p.r.docs.getValue("application")["foreign-protected"] = p.r.docs.getValue("raw").getValue(p.r.doc).toMutableMap().apply {
+                put("email", "protected@fixture.edu"); put("givenNames", "Protected"); put("familyNames", "Lee")
+            }
+            val before = p.f.mapper.writeValueAsString(p.r.docs.getValue("application"))
+            val parent = p.create()
+            p.pump(parent.executionId)
+            check(p.target(parent.executionId, "conflict@fixture.edu").result!!.path("targetOutcome").asText() == "CONFLICT")
+            check(p.target(parent.executionId, "protected@fixture.edu").result!!.path("targetOutcome").asText() == "PROTECTED")
+            check(before == p.f.mapper.writeValueAsString(p.r.docs.getValue("application")))
+            check(p.r.rawWrites == 1)
+            println("PAPER04_PROTECTION conflictsZeroWrites=true applicationZeroWrites=true noForeignOwnership=true")
+        }
+        clean()
+        PaperBatchRuntime().use { p ->
+            jdbc.update("""INSERT INTO task_execution (id,task_type,trigger_type,status,started_at)
+                VALUES (90001,'EXPERT_DISCOVERY','MANUAL','RUNNING',NOW())""")
+            val foreignRegistration = DiscoveryVerificationRegistrationService(DiscoveryVerificationProperties(enabled = true,
+                workerEnabled = true, mode = VerificationMode.ENFORCE, apolloApiKey = "fixture-key", requestsPerMinute = 1000),
+                p.f.repository, p.r.writer, p.f.policy, p.f.admissions, jdbc, TransactionTemplate(manager),
+                p.f.apolloSettings, p.f.clock, traces = p.r.traces)
+            val context = foreignRegistration.begin(90001, PaperSearchCriteria())
+            val record = p.r.archiveRepo.records().single { it.paperKey == "fresh-0" }
+            val hash = p.r.archiveRepo.attempts(record.id).single().blobSha256!!
+            val profile = ExpertProfile(esDocId = p.freshDoc, orcidId = p.freshDoc, email = p.freshEmail,
+                givenNames = "Ada", familyNames = "Lee", country = "United Kingdom", keyword = null, employment = null,
+                institution = "Example University", emailSource = "PAPER_FULLTEXT",
+                identityVerification = DiscoveryIdentity.verified(p.freshEmail, "Ada", "Lee", "JATS_SHA256:$hash",
+                    "0000-0002-1825-0097", null))
+            val foreign = foreignRegistration.reserve(context, p.freshDoc, profile, "CROSSREF", "fresh-0").item!!
+            val before = p.f.repository.findItem(foreign.id)!!
+            val parent = p.create()
+            p.pump(parent.executionId, ReprocessState.COMPLETED_WITH_ERRORS)
+            check(p.repository.summary(parent.executionId).actualNew == 0)
+            check(p.r.rawWrites == 0)
+            check(p.f.repository.findItem(foreign.id) == before)
+            check(p.f.repository.findItemsByDocIds(listOf(p.freshDoc)).single().ownerExecutionId == 90001L)
+            check(p.target(parent.executionId, p.freshEmail).result!!.path("targetOutcome").asText() == "ERROR")
+            check(jdbc.queryForObject("SELECT COUNT(*) FROM expert_academic_enrichment_job WHERE expert_doc_id=?",
+                Long::class.java, p.freshDoc) == 0L)
+            println("PAPER04_FOREIGN_RESERVED sameIdentity=true parentNew=0 rawWrites=0 foreignItemUnchanged=true noForeignResume=true")
+        }
+    }
+
+    @Test fun paperBatchGroups() {
+        clean()
+        PaperBatchRuntime().use { p ->
+            repeat(100) { index ->
+                val email = "group-${index.toString().padStart(3, '0')}@fixture.edu"
+                p.addPaper("group-$index", email, orcid = false)
+                p.r.docs.getValue("raw")["group-${index.toString().padStart(3, '0')}"] =
+                    p.r.docs.getValue("raw").getValue(p.r.doc).toMutableMap().apply {
+                        put("email", email); put("givenNames", "Ada"); put("familyNames", "Lee")
+                    }
+            }
+            // The existing user's active roster must be waited on, never cancelled to make room.
+            val foreign = p.r.service.prepare(RecheckPrepareRequest(java.util.UUID.randomUUID().toString(), docIds = listOf(p.r.doc)),
+                "paper-reprocess")
+            val parent = p.create()
+            p.await("recheck slot") {
+                p.service.poll()
+                p.f.repository.claimDue(p.f.clock.instant(), 120)?.let { p.worker.process(it) }
+                p.repository.find(parent.executionId)!!.scope.path("reasonCode").asText() == "WAITING_RECHECK_SLOT"
+            }
+            check(p.repository.find(parent.executionId)!!.state == ReprocessState.RUNNING)
+            check(p.f.repository.recheck(p.f.repository.findRun(foreign.runId)!!).control.phase == RecheckPhase.READY)
+            p.r.service.cancel(foreign.runId)
+            p.pump(parent.executionId)
+            val runs = p.f.repository.paperReprocessRuns(parent.executionId).filter { it.recheckJson != null }
+            check(runs.size == 2)
+            check(runs.map { p.f.repository.recheckCounts(it.executionId).total }.sorted() == listOf(1L, 100L))
+            for (run in runs) {
+                val ids = p.f.repository.recheckItems(run.executionId, 0, 100).second.map { it.expertDocId }.sorted()
+                val expected = java.util.UUID.nameUUIDFromBytes(("paper-reprocess:${parent.executionId}:" + ids.joinToString("\n")).toByteArray()).toString()
+                check(p.f.repository.recheck(run).spec.requestKey == expected)
+                check(ids.all { doc -> (0..1).flatMap { page -> p.repository.items(parent.executionId, ReprocessKind.TARGET, page, 100).items }
+                    .single { it.result?.path("docId")?.asText() == doc }.result!!.path("childRunId").asLong() == run.executionId })
+            }
+            check(p.repository.summary(parent.executionId).actualNew == 1)
+            check(p.r.rawWrites == 1)
+            println("PAPER04_SLOT WAITING_RECHECK_SLOT=true parentReviewNonterminal=true foreignNotCancelledByParent=true sortedGroups=100,1 stableKeys=true durableChildrenBeforeStart=true")
         }
     }
 }
