@@ -61,6 +61,7 @@
 5. **冻结配置（I-3）**：新增内部入口复用现有设置序列化/校验方法，不复制资格规则。冻结settings、policy/code/parser/evaluationAt写入scope_json；新普通run与child recheck读取此值；REUSE/REFRESH按照本功能选择：AUDIT仅复用原文；ENFORCE自动重审按REFRESH且严格遵从search/detail设置。配置停用/鉴权异常作为错误，不偷偷降级后宣布通过。
 6. **观察与终态（I-4）**：定期从registration items/child rechecks读取终态、admissionRevision和projection；按本轮有效提交计actualAdmitted，已批准旧记录为alreadyAdmitted另列。总处理日志6步第5步链接现有8步逐人核验，不能改V161步骤范围。候选同步ERROR展示“已准入，候选同步失败”；只沿用syncRetry，不能重走Apollo。
 7. **取消与重试（I-2/I-4）**：先CAS父取消，再停止新补录/新child派发；cancel已登记为本父拥有的child。**现有cancelRecheckItem要求reviewEpoch>0，不能用于普通新注册。** 在DiscoveryVerificationRepository新增仅允许已登记DISCOVERY_PAPER_REPROCESS父任务的cancelPaperReprocessOrdinaryRun：父许可→verification run→item固定锁序；封口输入，取消未提交准入的RESERVED/QUEUED/RUNNING/RETRY_WAIT项并使租约失效、结束未完成trace/attempt，保留已有admissionRevision和终态。Registration的该内部入口reserve/activate必须在同一父许可检查下提交，取消后不能迟到入队。严禁变更所有epoch0任务的默认语义。已提交准入与补名保留；重试只处理明确可重试步骤。所有side-effect前复查父run许可，dispatch与cancel竞态需补偿取消新建立的本任务child。
+   - 共享接缝补全：ReprocessRepository在当前父租约/generation下持久化TARGET动作前后收据，保持input不变；interrupt/cancel/retry不得抹除已生效收据，REVIEW等待可释放当前工作租约但不提前终态，统计由SQL落库结果复算。ExpertDiscoveryService只在本功能受控archived消费上下文中逐副作用检查服务端父许可，崩溃续接仅认领已证明属于该父run的身份一致档案；不走通用duplicate修复、更不复制writer。Worker仅对已确证DISCOVERY_PAPER_REPROCESS归属的epoch0核验加入dispatch/late-response父许可，其他epoch0语义保持不变；权限不可从HTTP输入或通用allow标记获得。
 8. **旧CLI回归（I-5）**：原 `HistoricalBindingsRuntime.open` 不在Web调用；旧工具结果仍AUDIT/REUSE READY，不被新参数默认值变成ENFORCE。
 
 ## 变更文件清单
@@ -77,8 +78,11 @@
 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperBackfillServiceTest.kt` | 旧CLI语义与新permit隔离 |
 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckServiceTest.kt` | 受控内部入口/外部参数隔离 |
 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationIntegrationTest.kt` | 新建/旧档案→准入→投影端到端 |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperReprocessRepository.kt` | 父租约围栏下动作收据、REVIEW续接、取消/重试保留既有副作用及SQL汇总 |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt` | 仅原archived消费链的服务端父许可逐副作用检查及确证归属续接，不新增writer |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt` | 仅本功能拥有epoch0核验的dispatch/late-response围栏，其他普通核验保持不变 |
 
-共 10 个文件。未列文件禁止扩改；新增问题先记录证据并修订范围。
+共 13 个文件。新增共享接缝仅实现既定父许可、收据与取消/恢复要求；未列文件禁止扩改，新增问题先记录证据并修订范围。
 
 ## 验收标准
 
@@ -111,3 +115,6 @@
 
 
 人工验收开始时才从此处导出同前缀 `-acceptance.md`；本次不生成衍生勾选文件。
+
+## 修正记录
+- 2026-11-02：按用户“后续授权都继续”的在目标内授权，补入ReprocessRepository/ExpertDiscoveryService/VerificationWorker三个已证实必要接缝，文件上限13；04执行日志epoch1的完整grep/read回执证明原仓库无持久动作收据更新、retry会清TARGET结果、consume多副作用缺父许可、epoch0 worker跳过普通SQL ownership检查。仅补全既定I-2/I-4/I-6，默认普通任务、CLI、资格与保护不变，所有故障注入验收保留；决定A8/A9见fast-p ledger。
