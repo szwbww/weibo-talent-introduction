@@ -20,6 +20,7 @@ data class PaperBodyComputation(val format: String, val emails: List<AuthorEmail
 @Component
 class PaperBodyAnalyzer(private val pdf: PdfEmailExtractor,
     private val qualification: PaperQualificationEvidenceExtractor, private val mapper: ObjectMapper) {
+    // pdfLayout versions the shared named-contact syntax as well as its physical PDF boundaries.
     fun versions(): Map<String, Int> = mapOf("identityExtraction" to DiscoveryIdentity.EXTRACTION_VERSION,
         "pdfLayout" to PdfAuthorContactLayout.RULE_VERSION, "format" to PaperContentFormat.VERSION,
         "qualification" to PaperQualificationEvidenceExtractor.RULE_VERSION)
@@ -35,7 +36,10 @@ class PaperBodyAnalyzer(private val pdf: PdfEmailExtractor,
         val reasons = mutableListOf<String>()
         val emails = try {
             when (format) {
-                "PDF" -> pdf.extractEmailsFromBytes(body.bytes, authors, null)
+                "PDF" -> pdf.extractContactsFromBytes(body.bytes, authors, null).let {
+                    if (it.selectedPages.size < it.totalPages) reasons += "PAGE_NOT_SCANNED"
+                    it.emails
+                }
                 "XML" -> { qualification.safeText(body.bytes, "XML"); JatsXmlEmailParser.parse(body.bytes) }
                 "HTML" -> SourceAuthorEmailResolver.resolveHtml(body.bytes.toString(Charsets.UTF_8), authors)
                 else -> SourceAuthorEmailResolver.resolveText(body.bytes.toString(Charsets.UTF_8), authors)

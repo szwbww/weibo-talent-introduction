@@ -36,6 +36,38 @@ internal class AnalysisFixture(val f: ArchiveFixture) {
 
 class DiscoveryPaperAnalysisServiceTest {
     @BeforeEach fun clean() = ArchiveMysqlFixture.clean()
+    @Test fun `30711 original analyzer equals first extraction without changing historical facts or first`() {
+        val input = com.weibo.talentintroduction.discovery.service.ReprocessOriginalInputs.load(31372)
+        val mapper = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper()
+        val facts = PaperQualificationEvidenceExtractor()
+        val analyzer = PaperBodyAnalyzer(input.extractor, facts, mapper)
+        val hash = DiscoveryPaperArchiveService.sha(input.bytes)
+        val firstBefore = input.first.toString()
+        val body = PaperBodyInput(hash, ArchiveAttemptKind.PDF_URL, input.bytes)
+        val parsed = analyzer.parse(body, input.metadata)
+        val firstExtraction = input.extractor.extractEmailsFromBytes(input.bytes, input.authors, null)
+        assertEquals(firstExtraction, parsed.emails)
+        assertEquals(facts.extract(input.bytes, "PDF", input.authors, input.metadata.path("pubYear").asInt(), hash),
+            parsed.qualification)
+        assertTrue(parsed.emails.any { it.givenNames == "Emilio" })
+        assertEquals(20261101, analyzer.versions()["pdfLayout"])
+        assertEquals(20261004, analyzer.versions()["identityExtraction"])
+        val result = analyzer.compute(listOf(body), input.metadata, input.first,
+            input.first.path("attemptIds").map { it.asLong() }.toSet(), java.time.Instant.EPOCH)
+        assertTrue("PAGE_NOT_SCANNED" in result.reasons)
+        assertTrue(result.after.any { it.authorName == "Emilio Martínez‐Pañeda" })
+        assertEquals(firstBefore, input.first.toString())
+        assertEquals(hash, DiscoveryPaperArchiveService.sha(input.bytes))
+
+        val middle = com.weibo.talentintroduction.discovery.service.ReprocessOriginalInputs.load(34257)
+        val coverage = middle.extractor.extractContactsFromBytes(middle.bytes, middle.authors, null)
+        assertFalse(15 in coverage.selectedPages)
+        val middleResult = PaperBodyAnalyzer(middle.extractor, facts, mapper).parse(
+            PaperBodyInput(DiscoveryPaperArchiveService.sha(middle.bytes), ArchiveAttemptKind.PDF_URL, middle.bytes), middle.metadata)
+        assertTrue("PAGE_NOT_SCANNED" in middleResult.reasons)
+        assertEquals(coverage.emails, middleResult.emails)
+    }
+
     @Test fun `pure kernel equals explicit saved result and never changes baseline or body`() {
         ArchiveFixture().use { f ->
             f.enable(); val a = AnalysisFixture(f); val p = a.paper("pure"); val b = a.body(p)
@@ -73,7 +105,7 @@ class DiscoveryPaperAnalysisServiceTest {
             var parsed = false
             a.analysis.beforeParse = { parsed = true }
             assertEquals(2,a.post(p).path("analysisVersion").asInt()); assertTrue(parsed)
-            for (key in listOf("format", "qualification")) {
+            for (key in listOf("format", "qualification", "pdfLayout")) {
                 val stale = result.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>()
                 (stale.path("parserVersion") as com.fasterxml.jackson.databind.node.ObjectNode).put(key,0)
                 f.service.saveAnalysis(p.id,f.repository.record(p.id)!!.revision,stale)

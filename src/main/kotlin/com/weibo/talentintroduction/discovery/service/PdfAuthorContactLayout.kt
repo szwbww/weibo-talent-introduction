@@ -9,7 +9,7 @@ import java.util.Locale
 
 /** Bounded, same-page author/contact evidence; no inference from the article body or reference list. */
 internal object PdfAuthorContactLayout {
-    const val RULE_VERSION = 20261024
+    const val RULE_VERSION = 20261101
 
     data class Contact(val email: String, val authorIndex: Int, val page: Int, val authorText: String, val contactText: String, val rule: String? = null) {
         val evidenceText get() = "PDF_PAGE:$page\nAUTHOR:$authorText\nCONTACT:$contactText" +
@@ -69,6 +69,7 @@ internal object PdfAuthorContactLayout {
             val height = document.getPage(page - 1).mediaBox.height
             val width = document.getPage(page - 1).mediaBox.width
             val lines = toLines(page, glyphs, width)
+            contacts += namedContactEntries(lines, authors)
             contacts += adjacentAuthorContacts(lines, authors)
             contacts += endContactBlocks(page, pageText, authors)
             val header = authorHeader(lines, height, authors) ?: continue
@@ -137,6 +138,46 @@ internal object PdfAuthorContactLayout {
             }
         }
         return contacts
+    }
+
+    /** Named syntax is shared with text extraction; only geometry may join physical PDF lines. */
+    private fun namedContactEntries(lines: List<Line>, authors: List<PaperAuthor>): List<Contact> {
+        val contacts = mutableListOf<Contact>()
+        val referenceY = lines.firstOrNull { it.text.matches(Regex("(?i)\\s*(?:references|bibliography)\\s*[:.]?")) }?.y
+        val prefix = Regex("(?i)^[*∗†‡§\\s]*(?:corresponding\\s+author|correspondence|contact)\\s*(?::|to\\b)")
+        for ((index, line) in lines.withIndex()) {
+            if (referenceY != null && line.y >= referenceY) break
+            val block = mutableListOf(line)
+            fun collect() {
+                val original = block.joinToString("\n") { it.text }
+                val text = block.joinToString(" ") { it.text }
+                for (claim in SourceAuthorEmailResolver.textClaims(text, authors, continuations = false)) {
+                    contacts += Contact(claim.email, claim.authorIndex, line.page,
+                        fullName(authors[claim.authorIndex]).orEmpty(), original, "PDF_NAMED_CONTACT")
+                }
+            }
+            collect()
+            val namedPrefix = prefix.containsMatchIn(line.text) && authors.any { containsName(line.text, it) }
+            // A trailing label/wrapped mailbox may continue exactly once; an explicit named
+            // correspondence block may contain affiliation lines. Neither follows arbitrary prose.
+            val wrappedContinuation = mailbox.containsMatchIn(line.text) ||
+                authors.any { fullName(it)?.let { name -> line.text.trimEnd().endsWith(name, ignoreCase = true) } == true }
+            if (!namedPrefix && !wrappedContinuation) continue
+            for (next in lines.drop(index + 1)) {
+                if (next.y <= line.y + 1f) continue
+                if (next.y - block.last().y > 16f) break
+                if (kotlin.math.abs(next.x - line.x) > 24f || next.right < line.x || next.x > line.right) continue
+                if (contactBoundary.containsMatchIn(next.text) || paragraphBoundary.containsMatchIn(next.text) ||
+                    prefix.containsMatchIn(next.text) || markerGlyph.containsMatchIn(next.text)) break
+                if (!namedPrefix && !next.text.trimStart().startsWith("(") &&
+                    !next.text.trimStart().startsWith("<")) break
+                if (namedPrefix && authors.any { containsName(next.text, it) }) break
+                block += next
+                collect()
+                if (!namedPrefix || mailbox.containsMatchIn(next.text) || block.size == 5) break
+            }
+        }
+        return contacts.distinct()
     }
 
     private fun adjacentAuthorContacts(lines: List<Line>, authors: List<PaperAuthor>): List<Contact> {
@@ -369,6 +410,35 @@ internal object PdfAuthorContactLayout {
             val row = rows.lastOrNull()?.takeIf { kotlin.math.abs(it.first().yDirAdj - position.yDirAdj) < 5f }
                 ?: mutableListOf<TextPosition>().also { rows += it }
             row += position
+        }
+        // 32137: PDFBox emits the small superscript marker row separately from its baseline.
+        // Reattach only marker-only glyph rows whose vertical extent overlaps the following
+        // larger signature glyphs. This is not a wider column/paragraph distance threshold.
+        val superscripts = rows.filter { row ->
+            row.all { it.unicode.matches(Regex("[\\d,*∗†‡§\\s]+")) }
+        }
+        for (row in superscripts) {
+            val baseline = rows.firstOrNull { candidate ->
+                candidate !== row && candidate.first().yDirAdj > row.first().yDirAdj &&
+                    candidate.any { it.unicode.any(Char::isLetter) } &&
+                    row.all { mark ->
+                        candidate.any { glyph ->
+                            glyph.fontSizeInPt > mark.fontSizeInPt &&
+                                glyph.yDirAdj - mark.yDirAdj in 0f..glyph.heightDir
+                        }
+                    }
+            } ?: continue
+            val left = baseline.minOf { it.xDirAdj }
+            val right = baseline.maxOf { it.xDirAdj + it.widthDirAdj }
+            val ordered = row.sortedBy { it.xDirAdj }
+            // A contiguous `1,*` is one suffix: constrain its start, not each later glyph.
+            val groupStarts = ordered.filterIndexed { index, glyph ->
+                index == 0 || glyph.xDirAdj - (ordered[index - 1].xDirAdj + ordered[index - 1].widthDirAdj) > 24f
+            }
+            if (groupStarts.all { it.xDirAdj >= left && it.xDirAdj <= right + it.widthDirAdj * 2 }) {
+                baseline += row
+                rows.remove(row)
+            }
         }
         val lines = mutableListOf<Line>()
         for (row in rows) {

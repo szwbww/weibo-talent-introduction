@@ -257,6 +257,39 @@ internal fun pdfPositiveControls(): List<PdfPositiveControl> {
 }
 
 class SourceAuthorEmailResolverTest {
+    @Test fun `30711 original parenthesized owners retain exact metadata names and evidence`() {
+        for (id in listOf(31372L, 31375L)) {
+            val input = ReprocessOriginalInputs.load(id)
+            val text = org.apache.pdfbox.pdmodel.PDDocument.load(input.bytes).use { doc ->
+                org.apache.pdfbox.text.PDFTextStripper().apply { startPage = 1; endPage = 1 }.getText(doc)
+            }
+            val named = SourceAuthorEmailResolver.resolveText(text, input.authors).filter { it.givenNames != null }
+            assertTrue(named.isNotEmpty(), "$id")
+            assertTrue(named.all { com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.validEvidence(it.identityEvidence) })
+            val expected = if (id == 31372L) "Emilio Martínez‐Pañeda" else "Atia‐tul Wahab"
+            assertTrue(named.any { "${it.givenNames} ${it.familyNames}" == expected }, "$id $named")
+            assertReprocessConsumer(named, input.metadata)
+        }
+    }
+
+    @Test fun `named syntax rejects ambiguous initials shared mailboxes and paragraph boundaries`() {
+        val alice = PaperAuthor("Alice", "Smith", null, null, false)
+        val bob = PaperAuthor("Bob", "Jones", null, null, false)
+        val roster = listOf(alice, bob)
+        val positive = listOf("alice@sample.edu (AS)", "Alice Smith (alice@sample.edu) received her PhD.",
+            "*Corresponding author: Alice Smith, Department of Science,\nUniversity. Email: alice@sample.edu")
+        positive.forEach { assertEquals("Alice", SourceAuthorEmailResolver.resolveText(it, roster).single().givenNames, it) }
+        val negative = listOf("Alice Smith and Bob Jones (shared@sample.edu)",
+            "Alice Smith: shared@sample.edu\nBob Jones: shared@sample.edu",
+            "Corresponding author: Alice Smith\nAbstract\nEmail: shared@sample.edu",
+            "Corresponding author: Alice Smith\u000cEmail: shared@sample.edu",
+            "References\nAlice Smith (shared@sample.edu)",
+            "Alice Smith\nUniversity\nshared@sample.edu")
+        negative.forEach { assertTrue(SourceAuthorEmailResolver.resolveText(it, roster).all { row -> row.givenNames == null }, it) }
+        assertNull(SourceAuthorEmailResolver.resolveText("shared@sample.edu (AS)",
+            listOf(alice, PaperAuthor("Andrew", "Smith", null, null, false))).single().givenNames)
+    }
+
     @Test
     fun `explicit trailing owner labels are unique and mailbox local`() {
         val bernd = PaperAuthor("Bernd", "Bayerlein", null, null, false)
@@ -294,8 +327,11 @@ class SourceAuthorEmailResolverTest {
             LayoutPdfFixtures.Row("alice@sample.edu", 312f)))
         assertEquals(1, fresh.size)
         val text = "Bob Jones: alice@sample.edu"
-        assertEquals("Bob", SourceAuthorEmailResolver.resolvePdf(text, authors, emptyList()).single().givenNames)
-        assertNull(SourceAuthorEmailResolver.resolvePdf(text, authors, fresh).single().givenNames)
+        val named = LayoutPdfFixtures.contacts(listOf(LayoutPdfFixtures.Row(text, 350f)))
+        assertNull(SourceAuthorEmailResolver.resolvePdf(text, authors, emptyList()).single().givenNames,
+            "Flattened text without physical contact evidence is not ownership")
+        assertEquals("Bob", SourceAuthorEmailResolver.resolvePdf(text, authors, named).single().givenNames)
+        assertNull(SourceAuthorEmailResolver.resolvePdf(text, authors, named + fresh).single().givenNames)
         val marker = PdfAuthorContactLayout.Contact("alice@sample.edu", 1, 1, "Bob Jones*", "* alice@sample.edu")
         assertNull(SourceAuthorEmailResolver.resolvePdf("alice@sample.edu", authors, listOf(marker) + fresh).single().givenNames)
         assertEquals("Alice", SourceAuthorEmailResolver.resolvePdf("alice@sample.edu", authors, fresh).single().givenNames)
@@ -387,6 +423,8 @@ class SourceAuthorEmailResolverTest {
                     "nour.moustafa@unsw.edu.au" to "Nour Moustafa",
                     "marwa.hassan@student.unsw.edu.au" to "Marwa Keshk")
                 "nguyen" -> mapOf(
+                    // Original line explicitly labels this mailbox "(D.B)", without the final dot.
+                    "damien.bouchabou@imt-atlantique.fr" to "Damien Bouchabou",
                     "nguyensmai@gmail.com" to "Sao Mai Nguyen",
                     "christophe.lohr@imt-atlantique.fr" to "Christophe Lohr",
                     "ioannis.kanellos@imt-atlantique.fr" to "Ioannis Kanellos")
@@ -552,8 +590,12 @@ class SourceAuthorEmailResolverTest {
     @Test fun `PDF contact claims are rejected when they conflict with existing source claims`() {
         val contact = PdfAuthorContactLayout.Contact("opaque@uni.edu", 1, 1,
             "Jane Doe* John Smith", "*Correspondence: opaque@uni.edu")
+        val named = org.apache.pdfbox.pdmodel.PDDocument.load(positionedPdf(listOf(
+            Triple(50f, 600f, "Jane Doe: opaque@uni.edu")))).use {
+            PdfAuthorContactLayout.collect(it, 1, listOf(jane, john))
+        }
         val result = SourceAuthorEmailResolver.resolvePdf(
-            "Jane Doe: opaque@uni.edu", listOf(jane, john), listOf(contact))
+            "Jane Doe: opaque@uni.edu", listOf(jane, john), listOf(contact) + named)
         assertNull(result.single().givenNames)
         assertNull(result.single().identityEvidence)
     }
@@ -791,7 +833,7 @@ class SourceAuthorEmailResolverTest {
         assertEquals("Jane Doe", contactOwner("questionMarkOutsideAuthorAreaDoesNotBlock", "jane@uni.edu"))
 
         // I-2/I-4：损坏标记使标记证明不可用，但独立的 `Jane Doe: a@uni.edu` 记录仍凭自身绑定。
-        assertTrue(contacts("damagedMarkerKeepsIndependentNameRecord").isEmpty())
+        assertEquals("Jane Doe", contactOwner("damagedMarkerKeepsIndependentNameRecord", "jane@uni.edu"))
         val independent = row("damagedMarkerKeepsIndependentNameRecord", "jane@uni.edu")
         assertEquals("Jane", independent["givenNames"])
         assertTrue((independent["identityEvidence"] as String).startsWith("SOURCE_SHA256:"))

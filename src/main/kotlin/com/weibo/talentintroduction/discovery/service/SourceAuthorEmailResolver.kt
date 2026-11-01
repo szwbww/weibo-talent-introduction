@@ -16,10 +16,13 @@ import javax.swing.text.html.parser.ParserDelegator
 internal object SourceAuthorEmailResolver {
     private val emails = PlainTextEmailExtractor()
     private val mailbox = Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}")
-    private val prefix = Regex("(?i)^(?:(?:corresponding author|correspondence|contact)\\s*:\\s*)?")
+    private val prefix = Regex("(?i)^[*∗†‡§\\s]*(?:(?:corresponding\\s+author|correspondence|contact)\\s*(?::|to\\b)\\s*)")
     private val separator = Regex("(?i)^\\s*(?::|[–—]|<|\\(|\\[|(?:e-?mail|email address)\\s*:)\\s*(?:e-?mail\\s*:\\s*)?")
-    private val emailLine = Regex("(?i)^e-?mail\\s*:")
-    private val shared = Regex("(?i)\\b(?:the authors|corresponding authors|equal contribution|all authors)\\b")
+    private val emailLine = Regex("(?i)\\be-?mail(?: address)?\\s*:")
+    private val shared = Regex("(?i)\\b(?:the\\s+authors|corresponding\\s+authors|equal\\s+contribution|all\\s+authors)\\b")
+    private val sectionBoundary = Regex("(?i)^\\s*(?:references|bibliography|abstract|keywords?|introduction)\\b")
+    private val affiliation = Regex("(?i)\\b(?:university|department|institute|school|laboratory|college|faculty|centre|center)\\b")
+    private val labelledMailbox = Regex("([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,})\\s*\\(([^()\\r\\n]+)\\)")
     // Swing's legacy HTML parser can discard late elements in a complete HTML5 article.
     // Bound the observed adjacent heading/list region before parsing its named links.
     private val namedContactRegion = Regex(
@@ -39,7 +42,9 @@ internal object SourceAuthorEmailResolver {
         blacklist: List<String> = emptyList()
     ): List<AuthorEmail> {
         val normalized = emails.normalizeContactText(text)
-        val claims = textClaims(text, authors) + contacts.map {
+        // Flattened PDF text supplies mailbox clues only. All ownership, including named
+        // text syntax, is collected from bounded physical lines by the layout collector.
+        val claims = contacts.map {
             Claim(it.email.lowercase(Locale.ROOT), it.authorIndex, it.evidenceText)
         }
         return results(emails.extract(normalized, blacklist), claims, authors)
@@ -104,14 +109,17 @@ internal object SourceAuthorEmailResolver {
         return normalized.takeIf { emails.extract(address, blacklist).singleOrNull() == it }
     }
 
-    private data class Claim(val email: String, val authorIndex: Int, val entry: String)
+    internal data class Claim(val email: String, val authorIndex: Int, val entry: String)
 
-    private fun textClaims(originalText: String, authors: List<PaperAuthor>): List<Claim> {
-        val originalLines = originalText.replace('\u00a0', ' ').lines().map { it.trim() }
+    internal fun textClaims(originalText: String, authors: List<PaperAuthor>, continuations: Boolean = true): List<Claim> {
+        if ('\u000c' in originalText) return originalText.split('\u000c').flatMap { textClaims(it, authors, continuations) }
+        val originalLines = originalText.replace('\u00a0', ' ').split(Regex("\\r?\\n"))
+            .map { it.trim() }.takeWhile { !it.matches(Regex("(?i)(?:references|bibliography)\\s*[:.]?")) }
         val entries = mutableListOf<Pair<String, String>>()
         var line = 0
         while (line < originalLines.size) {
-            if (line + 1 < originalLines.size) {
+            if (continuations && line + 1 < originalLines.size && '\u000c' !in originalLines[line] &&
+                '\u000c' !in originalLines[line + 1]) {
                 val originalPair = originalLines[line] + "\n" + originalLines[line + 1]
                 val normalizedPair = emails.normalizeContactText(originalPair)
                 if (!normalizedPair.contains('\n')) {
@@ -123,41 +131,68 @@ internal object SourceAuthorEmailResolver {
             entries += originalLines[line] to emails.normalizeContactText(originalLines[line]).trim()
             line++
         }
-        // Require an explicit contact label: an author list next to Email: is not ownership.
-        for (i in 0 until entries.lastIndex) {
-            if (prefix.find(entries[i].second)?.value?.isNotBlank() == true &&
-                authors.any { fullName(it) == normalize(prefix.replaceFirst(entries[i].second, "")) } &&
-                emailLine.containsMatchIn(entries[i + 1].second)) {
-                entries += (entries[i].first + ": " + entries[i + 1].first) to
-                    (entries[i].second + ": " + entries[i + 1].second)
+        // Only a named, explicitly labelled contact block may cross text lines.
+        // PDF callers supply already bounded physical blocks instead.
+        if (continuations) for (i in entries.indices.toList()) {
+            if (!prefix.containsMatchIn(entries[i].second)) continue
+            val block = mutableListOf(entries[i])
+            for (next in entries.drop(i + 1).take(5)) {
+                if (next.second.isBlank() || '\u000c' in next.first || sectionBoundary.containsMatchIn(next.second) ||
+                    prefix.containsMatchIn(next.second) ||
+                    authors.any { fullName(it).isNotEmpty() && normalize(next.second).startsWith(fullName(it)) }) break
+                block += next
+                if (mailbox.containsMatchIn(next.second)) break
             }
+            if (block.size > 1) entries += block.joinToString("\n") { it.first } to block.joinToString(" ") { it.second }
         }
         val claims = mutableListOf<Claim>()
         for ((originalEntry, entry) in entries) {
             if (entry.length > 1000 || shared.containsMatchIn(entry)) continue
             // A trailing parenthesized owner belongs only to the immediately preceding mailbox.
             // Initials are admitted only here, never from the metadata roster alone.
-            val labelledMailbox = Regex("([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,})\\s*\\(([^()\\r\\n]+)\\)")
-            for (label in labelledMailbox.findAll(entry)) {
+            val comparable = contactNameText(entry)
+            for (label in labelledMailbox.findAll(comparable)) {
                 val ownerLabel = label.groupValues[2]
                 val owner = authors.indices.singleOrNull { matchesExplicitLabel(ownerLabel, authors[it]) } ?: continue
                 val email = emails.extract(label.groupValues[1]).singleOrNull() ?: continue
                 claims += Claim(email, owner, originalEntry)
             }
-            val body = prefix.replaceFirst(entry, "").trim()
-            for ((index, author) in authors.withIndex()) {
+            val body = prefix.replaceFirst(comparable, "").trim()
+            for (author in authors) {
                 if (author.givenNames.isNullOrBlank() || author.familyNames.isNullOrBlank()) continue
-                val namePattern = (author.givenNames + " " + author.familyNames).trim().split(Regex("\\s+"))
+                val namePattern = contactNameText(author.givenNames + " " + author.familyNames).trim().split(Regex("\\s+"))
                     .joinToString("\\s+") { Regex.escape(it) }
-                val name = Regex("^$namePattern(?=\\s|:|<|\\(|\\[|–|—|$)", RegexOption.IGNORE_CASE).find(body) ?: continue
+                val owner = authors.indices.singleOrNull { fullName(authors[it]) == fullName(author) } ?: continue
+                // Full name + a closed mailbox delimiter is a self-contained contact, even in a biography.
+                val wrapped = Regex("(?<![\\p{L}])$namePattern\\s*(?:<($mailbox)>|\\(($mailbox)\\))", RegexOption.IGNORE_CASE)
+                for (match in wrapped.findAll(comparable)) {
+                    val preceding = comparable.substring(0, match.range.first).substringAfterLast('>')
+                        .substringAfterLast(')').substringAfterLast(';')
+                    if (Regex("(?i)(?:\\band|&)\\s*$").containsMatchIn(preceding) ||
+                        authors.any { other -> fullName(other).isNotEmpty() && normalize(preceding).contains(fullName(other)) }) continue
+                    val email = emails.extract(match.value).singleOrNull() ?: continue
+                    claims += Claim(email, owner, originalEntry)
+                }
+                val name = Regex("^$namePattern(?=\\s|:|,|<|\\(|\\[|–|—|$)", RegexOption.IGNORE_CASE).find(body) ?: continue
                 val tail = body.substring(name.range.last + 1)
+                val emailLabel = emailLine.find(tail)
+                if (prefix.containsMatchIn(comparable) && tail.trimStart().startsWith(",") &&
+                    emailLabel != null && affiliation.containsMatchIn(tail.substring(0, emailLabel.range.first))) {
+                    val beforeEmail = tail.substring(0, emailLabel.range.first)
+                    if (authors.indices.none { it != owner && fullName(authors[it]).isNotEmpty() &&
+                            normalize(beforeEmail).contains(fullName(authors[it])) } &&
+                        !Regex("(?i)\\b(?:is|are)\\s+with\\b").containsMatchIn(beforeEmail)) {
+                        val addressField = tail.substring(emailLabel.range.last + 1).trim()
+                        if (mailbox.replace(addressField, "").matches(Regex("[\\s,;.]*")))
+                            emails.extract(addressField).forEach { claims += Claim(it, owner, originalEntry) }
+                    }
+                }
                 val delimiter = separator.find(tail) ?: continue
                 val addressField = tail.substring(delimiter.range.last + 1)
                 // Reject prose, other names and shared brace lists. No positional matching.
                 if (mailbox.findAll(addressField).none()) continue
                 val residue = mailbox.replace(addressField, "").replace(Regex("[\\s,;<>()\\[\\].]+"), "")
                 if (residue.isNotEmpty()) continue
-                val owner = authors.indices.singleOrNull { fullName(authors[it]) == fullName(author) } ?: continue
                 for (email in emails.extract(addressField)) claims += Claim(email, owner, originalEntry)
             }
         }
@@ -167,13 +202,13 @@ internal object SourceAuthorEmailResolver {
     private fun matchesExplicitLabel(label: String, author: PaperAuthor): Boolean {
         if (author.givenNames.isNullOrBlank() || author.familyNames.isNullOrBlank()) return false
         if (normalize(label) == fullName(author)) return true
-        val given = author.givenNames.split(Regex("[\\s.-]+")).filter { it.isNotBlank() }
-        val family = author.familyNames.split(Regex("[\\s.-]+")).filter { it.isNotBlank() }
-        val givenInitials = given.joinToString("\\s*") { Regex.escape(it.first().toString()) + "\\." }
+        val given = contactNameText(author.givenNames).split(Regex("[\\s.-]+")).filter { it.isNotBlank() }
+        val family = contactNameText(author.familyNames).split(Regex("[\\s.-]+")).filter { it.isNotBlank() }
+        val givenInitials = given.joinToString("\\s*") { Regex.escape(it.first().toString()) + "\\.?" }
         val familyName = family.joinToString("\\s+") { Regex.escape(it) }
-        if (Regex("$givenInitials\\s*$familyName", RegexOption.IGNORE_CASE).matches(label.trim())) return true
-        val allInitials = (given + family).joinToString("\\s*") { Regex.escape(it.first().toString()) + "\\." }
-        return Regex(allInitials, RegexOption.IGNORE_CASE).matches(label.trim())
+        if (Regex("$givenInitials\\s*$familyName", RegexOption.IGNORE_CASE).matches(contactNameText(label).trim())) return true
+        val allInitials = (given + family).joinToString("\\s*") { Regex.escape(it.first().toString()) + "\\.?" }
+        return Regex(allInitials, RegexOption.IGNORE_CASE).matches(contactNameText(label).trim())
     }
 
     private fun results(found: List<String>, claims: List<Claim>, authors: List<PaperAuthor>): List<AuthorEmail> =
@@ -195,7 +230,10 @@ internal object SourceAuthorEmailResolver {
         if (author.givenNames.isNullOrBlank() || author.familyNames.isNullOrBlank()) ""
         else normalize("${author.givenNames} ${author.familyNames}")
 
-    private fun normalize(value: String) = Normalizer.normalize(value, Normalizer.Form.NFKC)
+    private fun contactNameText(value: String) = Normalizer.normalize(value, Normalizer.Form.NFKC)
+        .replace(Regex("[\\u2010\\u2011]"), "-").replace(Regex("\\s*-\\s*"), "-")
+
+    private fun normalize(value: String) = contactNameText(value)
         .trim().lowercase(Locale.ROOT).replace(Regex("\\s+"), " ")
 
     private class Node(val tag: String, val attributes: Map<String, String> = emptyMap()) {

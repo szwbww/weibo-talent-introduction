@@ -319,7 +319,12 @@ class PdfEmailExtractor(
     internal fun selectedPages(pageCount: Int): List<Int> =
         PdfAuthorContactLayout.selectedPages(pageCount, properties.maxPages, properties.tailPages)
 
-    internal fun extractEmailsFromBytes(bytes: ByteArray, knownAuthors: List<PaperAuthor>, deadline: Instant?): List<AuthorEmail> {
+    internal data class ParsedContacts(val emails: List<AuthorEmail>, val selectedPages: List<Int>, val totalPages: Int)
+
+    internal fun extractEmailsFromBytes(bytes: ByteArray, knownAuthors: List<PaperAuthor>, deadline: Instant?): List<AuthorEmail> =
+        extractContactsFromBytes(bytes, knownAuthors, deadline).emails
+
+    internal fun extractContactsFromBytes(bytes: ByteArray, knownAuthors: List<PaperAuthor>, deadline: Instant?): ParsedContacts {
         ByteArrayInputStream(bytes).use { stream ->
             PDDocument.load(stream).use { doc ->
                 val text = StringBuilder()
@@ -330,8 +335,9 @@ class PdfEmailExtractor(
                         if (deadlineExpired(deadline)) throw FulltextDeadlineExceededException(requestIssued = true)
                     },
                     onPage = { page, pageText ->
-                        if (page <= properties.maxPages) text.append(pageText).append('\n')
-                        else clues += plainTextExtractor.extract(pageText, properties.blacklistPrefixes)
+                        // Preserve selected page boundaries and include already-selected tail contacts.
+                        // Ownership is resolved from the same layout collector, never flattened pages.
+                        text.append(pageText).append('\u000c')
                         for (annotation in doc.getPage(page - 1).annotations) {
                             val uri = ((annotation as? PDAnnotationLink)?.action as? PDActionURI)?.uri ?: continue
                             if (!uri.startsWith("mailto:", ignoreCase = true)) continue
@@ -342,10 +348,10 @@ class PdfEmailExtractor(
                         }
                     }
                 )
-                return SourceAuthorEmailResolver.resolvePdf(
+                return ParsedContacts(SourceAuthorEmailResolver.resolvePdf(
                     text.append('\n').append(clues.joinToString("\n")).toString(),
                     knownAuthors, contacts, properties.blacklistPrefixes
-                )
+                ), selectedPages(doc.numberOfPages), doc.numberOfPages)
             }
         }
     }
