@@ -49,12 +49,12 @@
 - `DiscoveryPaperArchiveService.kt:60–79` 的 analysisLease 会限定 first.attemptIds；不能拿它默认为“整批全部留存attempt”。新增显式选择重载，不改变单篇旧默认行为。
 - `DiscoveryPaperArchiveRepository.kt:61` records()全表读取；新功能必须使用新repository中的有界execution/id查询，禁止套用此方法。
 - `TaskExecutionRepository.kt:133,157` 提供定向heartbeatExecution/finishOwned；活动卡片 `TaskActivityController.kt:66–80` 只接受同executionId进度（X-6）。
-- 新两表无现有读者；唯一写读所有权均归新repository，task catalog+前端/API为消费者。共享archive、task表不加列。最新本地迁移号V171；V172如被他任务占用，必须先修订本计划清单，不能改已应用迁移。
+- 新两表无现有读者；唯一写读所有权均归新repository，task catalog+前端/API为消费者。共享archive、task表不加列。执行前发现V172已由`V172__transfer_existing_full_access_pending.sql`占用；本功能使用首次空闲的V173，不改已应用迁移。
 
 ## 实现方案
 
 1. **API与权限（I-1/I-2）**：新增 `/api/expert-discovery/paper-reprocess`：GET `/preview?sourceExecutionId=...` 返回只读范围数量/当前活动任务；POST `/runs` 接受 `{requestKey,sourceExecutionId,mode,expectedScopeHash}`，返回202和runId；GET `/runs?sourceExecutionId=&active=&requestKey=&page=&size=`、GET `/runs/{id}`、GET `/runs/{id}/items?kind=&page=&size=`、GET `/runs/{id}/items/{itemId}`；POST `/runs/{id}/cancel` 和 `/runs/{id}/retry`，需revision。沿用已有认证拦截器，不新增匿名或公开原文地址；item必须属于run。size1..100默认20，页码非负；缺源404、并发版本409、不可用503，前端中文原因+code。
-2. **新增schema（I-2/I-3）**：V172只建本功能独占两表，不改共享表。
+2. **新增schema（I-2/I-3）**：V173只建本功能独占两表，不改共享表。
    - run：execution_id BIGINT PK；source_execution_id BIGINT索引；request_key CHAR(36) UNIQUE；request_hash CHAR(64)；active_key VARCHAR(32) NULL UNIQUE（活动值固定PAPER_REPROCESS）；mode VARCHAR(16)、state VARCHAR(32)、phase VARCHAR(16)；scope_json MEDIUMTEXT（upperRecordId、cursor、frozen完成标志、sourcesHash、parserVersions、codeVersion、evaluationAt、Apollo冻结设置）；revision BIGINT默认0；lease_token VARCHAR(64) NULL、lease_until DATETIME(3) NULL、generation BIGINT默认0；cancel_requested bool默认false；created/updated/finished时间。JSON不保存key/password。
    - item：id BIGINT自增PK；execution_id BIGINT；kind VARCHAR(8)；item_key VARCHAR(128)；state VARCHAR(16)；input_json MEDIUMTEXT；result_json MEDIUMTEXT NULL；lease_token/lease_until/generation/revision同上；created/updated/completed时间；UNIQUE(execution_id,kind,item_key)，索引(execution_id,kind,state,id)、(state,lease_until,id)。PAPER输入存record与body清单、metadata、原first摘要；TARGET输入存唯一邮箱候选及paper refs，结果保存before/after/receipt、verification item/run引用。无跨业务表级联删除；状态合法性应用层强制校验；DB CHECK在支持时增加，实际MySQL版本与约束是否生效须由迁移测试确认，不能依赖MySQL 5.7会忽略的CHECK。mode/state/phase/kind取值按I-2/I-3；时间按UTC DATETIME(3)；JSON每项最大4MiB，超限显式RESULT_TOO_LARGE而非截断有效证据；输入超限INPUT_TOO_LARGE。request_key不含邮箱，target item_key使用SHA-256。body字节不入SQL；trace保留有限原句与记录定位，不复制全文。
 3. **持久化范围（I-1/I-2）**：preview只对sourceExecutionId、maxRecordId、maxAttemptId、记录revision合计/数量及源任务终态生成范围token（expectedScopeHash），不在HTTP请求里读所有原文/metadata；create短事务重核这些水位。后台固定完成后另存完整manifestHash；二者名称和用途不得混用；大清单后台keyset每100条固定并落PAPER项，记录cursor与进度“已固定N篇”。PREPARING崩溃只接续cursor；冻结结束再核对同一范围token，期间被删除/修改导致token变化则FAILED/SCOPE_CHANGED，禁止带部分变动清单进入补录。冻结完成前不解析、不补录。发生原文删除/变化标SOURCE_CHANGED/SOURCE_MISSING，不悄悄换同DOI另一批原文。
@@ -69,7 +69,7 @@
 
 | 文件（仓库根目录相对路径） | 改动 |
 |---|---|
-| `src/main/resources/db/migration/V172__create_discovery_paper_reprocess.sql` | 新增本功能独占run/item两表；执行前核对编号未被占用 |
+| `src/main/resources/db/migration/V173__create_discovery_paper_reprocess.sql` | 新增本功能独占run/item两表；V172已被既有迁移占用 |
 | `src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPaperReprocess.kt` | 请求/返回DTO、状态、JSON证据契约 |
 | `src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperReprocessRepository.kt` | 任务幂等/固定范围/分页/租约/CAS/统计 |
 | `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperReprocessService.kt` | 后台固定范围、纯解析、归并与恢复 |
@@ -112,3 +112,6 @@
 
 
 人工验收开始时才从此处导出同前缀 `-acceptance.md`；本次不生成衍生勾选文件。
+
+## 修正记录
+- 2026-11-02：按用户“后续授权都继续”的在目标内授权，将迁移文件从V172改为V173；PaperBatchImplementer03的完整`glob src/main/resources/db/migration/V*.sql`回执证明最高V172，且现有`V172__transfer_existing_full_access_pending.sql`不可修改。仅新迁移编号变化，表结构、文件数及验收不变；决定A3，见`docs/plans/fast/paper-reprocess-master/ledger.md`。
