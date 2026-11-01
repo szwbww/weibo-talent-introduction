@@ -1,18 +1,18 @@
 # Child 03 execution brief
 
 - Exact approved plan: docs/plans/2026-11-01/paper-reprocess-03-batch.md
-- Plan identity: sha256:512e600d760bd2862fbd749e94deb3f5e6a50fd1543b0356c4280690ea914201
+- Plan identity: commit:6a5f08774ae58b2dac3fb0743efe58837bf56922
 - Master plan: docs/plans/2026-11-01/paper-reprocess-master.md
 - Approval: user invocation `/fast-p docs/plans/2026-11-01/paper-reprocess-master.md` on 2026-11-01.
 - Target worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master
 - Target branch: fast/paper-reprocess-master
 - Depends on: 02
-- Amendments: N/A
+- Amendments: A3; original pre-edit V172 conflict retained in epoch1 execution log, current epoch2.
 
 Read the complete exact child plan from this worktree. Links written as absolute paths into the original main worktree are planning references; resolve repository-relative sources here, never edit the original worktree.
 
 ## Authorized Files
-- `src/main/resources/db/migration/V172__create_discovery_paper_reprocess.sql`
+- `src/main/resources/db/migration/V173__create_discovery_paper_reprocess.sql`
 - `src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPaperReprocess.kt`
 - `src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperReprocessRepository.kt`
 - `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperReprocessService.kt`
@@ -115,3 +115,7 @@ Use execute-p against the exact child plan. Commit only authorized implementatio
 - Read sibling02 execution/fix/verify logs for exact new retained-identity interfaces; original beforeSnapshot/roster/history preserved, effective identity two-phase rebase, controlled server-derived admission receipt, STALE_INPUT convergence and transaction-proxied terminal trace established. Do not change that contract.
 - Child01 parser code included in Base; PARSER_VERSION=20261101, identity/cache compatibility versions unchanged; frozen-corpus gains are binding opportunities, not admissions. Child00 immutable manifest at `docs/audits/2026-11-01-discovery-30711-pdf/production-replay-manifest.json`, original retained sources `/Users/lukai/.local/share/paper-reprocess-30711`.
 - Prior parser optional legacy corpus absent and pre-existing numbered References notes are RECORD_ONLY, not new repair tasks. No baseline failure exemption exists for this child's required tests.
+
+## Epoch 2 — Authorized Migration Collision Resolution
+- Plan-only commit `6a5f08774ae58b2dac3fb0743efe58837bf56922` replaces occupied V172 with first-free V173. All ten files, schema/behavior/commands/acceptance remain otherwise unchanged.
+- Prior epoch1 stopped before product edits. Append epoch2 report; use current exact plan bytes/identity. Standing user authority and A3 bind the change; do not modify existing V172.
