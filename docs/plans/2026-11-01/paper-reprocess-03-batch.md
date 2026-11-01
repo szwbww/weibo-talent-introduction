@@ -83,8 +83,9 @@
 | `src/main/kotlin/com/weibo/talentintroduction/discovery/archive/PaperBodyAnalyzer.kt` | 可选checkpoint透传与取消/预算异常窄传播，默认行为不变 |
 | `src/main/kotlin/com/weibo/talentintroduction/discovery/archive/PaperQualificationEvidenceExtractor.kt` | PDF逐页调用checkpoint，不吞取消/预算异常 |
 | `src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt` | 联系解析beforePage透传可选checkpoint，保留旧默认和规则 |
+| `src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt` | 同步受新catalog类型直接影响的测试；删除过时固定条数/拷贝白名单断言，不重钉新条数，保留真实摘要与进度行为覆盖 |
 
-共 13 个文件。新增三个解析链接缝仅为I-5按页取消/预算执行，不扩大解析算法目标；未列文件禁止扩改，新增问题先记录证据并修订范围。
+共 14 个文件。新增解析链接缝仅为I-5按页取消/预算执行，task测试仅同步直接受影响契约，不扩大业务目标；未列文件禁止扩改，新增问题先记录证据并修订范围。
 
 ## 验收标准
 
@@ -93,6 +94,7 @@
 - I-4：同hash3论文不算1；COMPARE实际档案/准入计数全0；paper/target两类单独统计。
 - I-5：取消、重启、删除竞争没有越权写；旧token不能覆盖新结果；所有AUDIT外部客户端调用0。
 - X-1/X-5/X-6：归档读→新审计存储→API/任务活动可读；同页旧解析对照和删除仍走旧路径。03的repository集成测试必须实际跑新增迁移与状态约束；06再覆盖项目Flyway空库/升级门，不能仅凭编译通过。
+- 必跑命令补充：`JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=DiscoveryPaperReprocessServiceTest,DiscoveryPaperReprocessRepositoryIntegrationTest,TaskExecutionSummaryExtractorTest -DmysqlIt=true`；不替代真实API/归档/SQL smoke。
 
 ## 人工验收清单
 
@@ -120,3 +122,4 @@
 ## 修正记录
 - 2026-11-02：按用户“后续授权都继续”的在目标内授权，将迁移文件从V172改为V173；PaperBatchImplementer03的完整`glob src/main/resources/db/migration/V*.sql`回执证明最高V172，且现有`V172__transfer_existing_full_access_pending.sql`不可修改。仅新迁移编号变化，表结构、文件数及验收不变；决定A3，见`docs/plans/fast/paper-reprocess-master/ledger.md`。
 - 2026-11-02：按用户后续必要授权，追加三个已证实缺失的checkpoint传递接缝并将文件上限改为13；PaperBatchImplementer03E2的专用grep回执与签名/catch证据见fast-p执行日志epoch2，原白名单无法实现第6步按页取消。只允许默认兼容、窄异常传播；解析规则/版本、保护与验收不变。决定A4/A5见ledger。
+- 2026-11-02：按用户后续必要授权，新增TaskExecutionSummaryExtractorTest作为直接受catalog变更影响的第14文件，并加入必跑命令；执行者grep/read回执证明固定集合/数量断言必红。仅退役不应重钉的incidental断言、保留真实摘要/进度行为；见ledger A6/A7和epoch3执行日志。
