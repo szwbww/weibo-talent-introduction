@@ -1,0 +1,262 @@
+$ rg -n --no-ignore TaskTypeCatalog|DISCOVERY_RECHECK_PREPARE|TaskProgressStore|finishOwned|heartbeat|DISCOVERY_PAPER_BACKFILL src/main src/test scripts --glob !**/__pycache__/**
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:1170:            Mockito.mock(com.weibo.talentintroduction.task.service.TaskProgressStore::class.java), filters
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationBackfillServiceTest.kt:8:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationBackfillServiceTest.kt:32:    private val progressStore = Mockito.mock(TaskProgressStore::class.java)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationScheduler.kt:7:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationScheduler.kt:41:    private val progressStore: TaskProgressStore,
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceTest.kt:21:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceTest.kt:126:    private val progressStore = mock(TaskProgressStore::class.java)
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ClassificationWireFormatTest.kt:19:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ClassificationWireFormatTest.kt:164:        openAlexProperties = OpenAlexProperties(), objectMapper = mapper, progressStore = mock<TaskProgressStore>(),
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceBehaviorTest.kt:7:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceBehaviorTest.kt:24:    private val progressStore = mock(TaskProgressStore::class.java)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:18:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:28:    private val progressStore: TaskProgressStore,
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationSchedulerTest.kt:9:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationSchedulerTest.kt:34:    private lateinit var progressStore: TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationSchedulerTest.kt:47:        progressStore = Mockito.mock(TaskProgressStore::class.java)
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationSchedulerTest.kt:281:            .withBean(TaskProgressStore::class.java, Supplier {
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationSchedulerTest.kt:282:                Mockito.mock(TaskProgressStore::class.java)
+src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexControllerMvcTest.kt:21:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexControllerMvcTest.kt:63:    private lateinit var progressStore: TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertClassificationAdminControllerTest.kt:18:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertClassificationAdminControllerTest.kt:59:    private lateinit var progressStore: TaskProgressStore
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationBackfillService.kt:7:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationBackfillService.kt:83:    private val progressStore: TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexControllerTest.kt:29:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexControllerTest.kt:46:    private val progressStore = Mockito.mock(TaskProgressStore::class.java)
+src/main/kotlin/com/weibo/talentintroduction/config/AiReplyStreamingConfig.kt:30:            Thread(runnable, "ai-reply-heartbeat-").apply { isDaemon = true }
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertClassificationAdminController.kt:10:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertClassificationAdminController.kt:36:    private val progressStore: TaskProgressStore,
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:30:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:52:    private val progressStore: TaskProgressStore,
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyGenerationCoordinator.kt:71:        control.heartbeatFuture = scheduler.scheduleAtFixedRate({
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyGenerationCoordinator.kt:152:    var heartbeatFuture: ScheduledFuture<*>? = null
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyGenerationCoordinator.kt:237:            sendLocked("heartbeat", mapOf("generationId" to generationId, "progress" to progressMap(snapshot)))
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyGenerationCoordinator.kt:268:            heartbeatFuture?.cancel(false)
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyGenerationCoordinator.kt:283:        heartbeatFuture?.cancel(false)
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyGenerationCoordinator.kt:289:        heartbeatFuture?.cancel(false)
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyGenerationCoordinator.kt:309:            heartbeatFuture?.cancel(false)
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:62:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:174:    private val progressStore = Mockito.mock(TaskProgressStore::class.java)
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:2689:        // 注意：TaskProgressStore.update 是 Kotlin 非空参数接口，Mockito.any(Class)（返回 null）
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:3894:        private val ctrlProgressStore = Mockito.mock(com.weibo.talentintroduction.task.service.TaskProgressStore::class.java)
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:4215:        private val mutexProgressStore = Mockito.mock(com.weibo.talentintroduction.task.service.TaskProgressStore::class.java)
+src/main/kotlin/com/weibo/talentintroduction/task/domain/TaskExecution.kt:26:    val heartbeatAt: LocalDateTime? = null,
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardServiceTest.kt:36:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/DiscoveryPersonOutreachGuardServiceTest.kt:1128:            progressStore = Mockito.mock(TaskProgressStore::class.java),
+src/main/kotlin/com/weibo/talentintroduction/task/domain/TaskTypeCatalog.kt:37:object TaskTypeCatalog {
+src/main/kotlin/com/weibo/talentintroduction/task/domain/TaskTypeCatalog.kt:55:        TaskTypeMeta("DISCOVERY_RECHECK_PREPARE", "重新审核名单准备", "MANUAL", "已准备人数/失败", null, true, null),
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:12:import com.weibo.talentintroduction.task.domain.TaskTypeCatalog
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:73:                    label = TaskTypeCatalog.byCode(count.taskType)?.label ?: count.taskType,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:110:        val drilldown = TaskTypeCatalog.byCode(exec.taskType)?.drilldown
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:115:            taskTypeLabel = TaskTypeCatalog.byCode(exec.taskType)?.label ?: exec.taskType,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:123:            metricLabel = TaskTypeCatalog.byCode(exec.taskType)?.metricLabel,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:491:        taskTypeLabel = TaskTypeCatalog.byCode(taskType)?.label ?: taskType,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:496:        metricLabel = TaskTypeCatalog.byCode(taskType)?.metricLabel,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:9:import com.weibo.talentintroduction.task.domain.TaskTypeCatalog
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:15:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:32:    private val progressStore: TaskProgressStore,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:44:     * M-3 / I1-1：白名单从 TaskTypeCatalog 派生（成员集合保持既有 6 项不变，N1-2），
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:48:        TaskTypeCatalog.entries.filter { it.value.hasProgressUi }.keys
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendControlServiceTest.kt:8:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendControlServiceTest.kt:25:    private val progressStore = Mockito.mock(TaskProgressStore::class.java)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendControlService.kt:13:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendControlService.kt:31:    private val progressStore: TaskProgressStore,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskActivityController.kt:3:import com.weibo.talentintroduction.task.domain.TaskTypeCatalog
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskActivityController.kt:7:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskActivityController.kt:34:    private val taskProgressStore: TaskProgressStore
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskActivityController.kt:82:        val meta = TaskTypeCatalog.byCode(taskType)
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStore.kt:12:class TaskProgressStore(
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStore.kt:17:    private val log = LoggerFactory.getLogger(TaskProgressStore::class.java)
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendLiveExecutionViewTest.kt:8:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendLiveExecutionViewTest.kt:27:    private val progressStore = Mockito.mock(TaskProgressStore::class.java)
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:122:        UPDATE task_execution SET heartbeat_at = :now, updated_at = :now
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:125:    fun heartbeatOwned(ownerToken: String, now: LocalDateTime): Int
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:130:        UPDATE task_execution SET heartbeat_at = :now, updated_at = :now
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:133:    fun heartbeatExecution(id: Long, ownerToken: String, now: LocalDateTime): Int
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:142:          AND COALESCE(heartbeat_at, started_at) < :cutoff
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:156:    fun finishOwned(
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:171:             AND COALESCE(heartbeat_at, started_at) < :cutoff)
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:6:import com.weibo.talentintroduction.task.domain.TaskTypeCatalog
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:16: * [TaskTypeCatalog] 的 `summaryRule`）。取数顺序固定为 I1-3 的三级优先级：
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:69:            when (TaskTypeCatalog.byCode(taskType)?.summaryRule) {
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:166:                when (TaskTypeCatalog.byCode(taskType)?.summaryRule) {
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionRecoveryScheduler.kt:33:            log.warn("Task execution heartbeat/recovery failed; will retry", ex)
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:26:        repository.heartbeatOwned(ownerToken, now)
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:159:                heartbeatAt = startedAt
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:190:            val saved = finishOwned(
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:204:            finishOwned(
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:238:                heartbeatAt = startedAt
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:269:            finishOwned(
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:281:            finishOwned(
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:293:    private fun finishOwned(next: TaskExecution): TaskExecution {
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:295:        val changed = repository.finishOwned(
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskRuntimeIntegrationTest.kt:44:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskRuntimeIntegrationTest.kt:470:        val progressStore: TaskProgressStore,
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskRuntimeIntegrationTest.kt:505:        val progressStore = Mockito.mock(TaskProgressStore::class.java)
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskRuntimeIntegrationTest.kt:561:        val progressStore = Mockito.mock(TaskProgressStore::class.java)
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskRuntimeIntegrationTest.kt:628:        val progressStore = Mockito.mock(TaskProgressStore::class.java)
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskRuntimeIntegrationTest.kt:724:            Mockito.mock(TaskProgressStore::class.java), ManualOutreachProperties(0),
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:59:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:119:    private val progressStore: TaskProgressStore,
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchDemandExecutionTest.kt:266:        private val progress = mock(TaskProgressStore::class.java)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationIntegrationTest.kt:143:        val progress = Mockito.mock(TaskProgressStore::class.java)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewCountsServiceTest.kt:240:            "finishOwned" -> {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckFlowIT.kt:400:                com.weibo.talentintroduction.task.service.TaskProgressStore(app.getBean(com.weibo.talentintroduction.task.repository.TaskProgressLogRepository::class.java), f.mapper),
+src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveFlowIT.kt:12:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveFlowIT.kt:58:    val progress=Mockito.mock(TaskProgressStore::class.java)
+src/test/java/com/weibo/talentintroduction/expert/service/ScrollExpertsMockHelper.java:4:import com.weibo.talentintroduction.task.service.TaskProgressStore;
+src/test/java/com/weibo/talentintroduction/expert/service/ScrollExpertsMockHelper.java:151:    public static void stubEnrichmentCancelOnBackoffMessage(TaskProgressStore mock) {
+src/test/java/com/weibo/talentintroduction/expert/service/ScrollExpertsMockHelper.java:169:        TaskProgressStore mock,
+src/test/kotlin/com/weibo/talentintroduction/task/domain/TaskTypeCatalogTest.kt:8:class TaskTypeCatalogTest {
+src/test/kotlin/com/weibo/talentintroduction/task/domain/TaskTypeCatalogTest.kt:12:        val meta = TaskTypeCatalog.byCode("EXPERT_CLASSIFICATION_BACKFILL")
+src/test/kotlin/com/weibo/talentintroduction/task/domain/TaskTypeCatalogTest.kt:13:            ?: error("EXPERT_CLASSIFICATION_BACKFILL 未在 TaskTypeCatalog 登记")
+src/test/kotlin/com/weibo/talentintroduction/task/domain/TaskTypeCatalogTest.kt:26:        val allowed = TaskTypeCatalog.entries.filter { it.value.hasProgressUi }.keys
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationReportingIT.kt:161:        val store = Mockito.mock(com.weibo.talentintroduction.task.service.TaskProgressStore::class.java)
+src/test/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryControllerTest.kt:27:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryControllerTest.kt:44:    private val progressStore = Mockito.mock(TaskProgressStore::class.java)
+src/test/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryControllerMvcTest.kt:27:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryControllerMvcTest.kt:59:    private lateinit var progressStore: TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryControllerMvcTest.kt:213:    private lateinit var progressStore: TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryControllerMvcTest.kt:486:    private lateinit var progressStore: TaskProgressStore
+src/test/java/com/weibo/talentintroduction/discovery/service/DiscoveryMockHelper.java:15:import com.weibo.talentintroduction.task.service.TaskProgressStore;
+src/test/java/com/weibo/talentintroduction/discovery/service/DiscoveryMockHelper.java:201:    public static void captureProgressUpdates(TaskProgressStore mock, List<TaskProgress> captured) {
+src/test/java/com/weibo/talentintroduction/discovery/service/DiscoveryMockHelper.java:300:    public static void stubCancelledAfterNCalls(TaskProgressStore mock, int falseCount) {
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:17:class TaskProgressStoreTest {
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:24:        val store = TaskProgressStore(progressLogRepository, objectMapper)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:32:        val store = TaskProgressStore(progressLogRepository, objectMapper)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:40:        val store = TaskProgressStore(progressLogRepository, objectMapper)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:51:        val store = TaskProgressStore(progressLogRepository, objectMapper)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:60:        val store = TaskProgressStore(progressLogRepository, objectMapper)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:90:        val store = TaskProgressStore(progressLogRepository, objectMapper)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:100:        val store = TaskProgressStore(progressLogRepository, objectMapper)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:111:        val store = TaskProgressStore(progressLogRepository, objectMapper)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:121:        val store = TaskProgressStore(progressLogRepository, objectMapper)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:135:        val store = TaskProgressStore(progressLogRepository, objectMapper)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:147:        val store = TaskProgressStore(progressLogRepository, objectMapper)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:174:        val store = TaskProgressStore(progressLogRepository, objectMapper)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:195:        val store = TaskProgressStore(progressLogRepository, objectMapper)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:214:        val store = TaskProgressStore(progressLogRepository, objectMapper)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:221:        val store = TaskProgressStore(progressLogRepository, objectMapper)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:236:        val store = TaskProgressStore(progressLogRepository, objectMapper)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:256:        val store = TaskProgressStore(progressLogRepository, objectMapper)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:277:        val store = TaskProgressStore(progressLogRepository, objectMapper)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:297:        val store = TaskProgressStore(progressLogRepository, objectMapper)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:312:        val store = TaskProgressStore(progressLogRepository, objectMapper)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:326:        val store = TaskProgressStore(progressLogRepository, objectMapper)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:354:        val store = TaskProgressStore(progressLogRepository, objectMapper)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:383:        val store = TaskProgressStore(progressLogRepository, objectMapper)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:404:        val store = TaskProgressStore(progressLogRepository, objectMapper)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:430:        val store = TaskProgressStore(progressLogRepository, objectMapper)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreTest.kt:451:        val store = TaskProgressStore(progressLogRepository, objectMapper)
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt:511:            VALUES (?,'DISCOVERY_RECHECK_PREPARE','MANUAL','RUNNING',?)""", id, NOW.verificationUtc())
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt:799:                    VALUES (?,'DISCOVERY_RECHECK_PREPARE','MANUAL','RUNNING',?)""", id, NOW.verificationUtc())
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt:966:    @Test fun `execution heartbeat isolates task identity owner and terminal state in real SQL`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt:969:        jdbc.update("UPDATE task_execution SET owner_token='worker-a',heartbeat_at=?",initial)
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt:971:        assertEquals(0,tasks.heartbeatExecution(5951,"wrong-owner",later))
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt:972:        assertEquals(1,tasks.heartbeatExecution(5951,"worker-a",later))
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt:973:        assertEquals(later,tasks.findById(5951).orElseThrow().heartbeatAt)
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt:974:        assertEquals(initial,tasks.findById(5952).orElseThrow().heartbeatAt)
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt:976:        assertEquals(0,tasks.heartbeatExecution(5951,"worker-a",NOW.plusSeconds(60).verificationUtc()))
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepositoryIT.kt:977:        assertEquals(later,tasks.findById(5951).orElseThrow().heartbeatAt)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreRebindTest.kt:14:class TaskProgressStoreRebindTest {
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStoreRebindTest.kt:17:    private val store = TaskProgressStore(repository, ObjectMapper())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:55:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:134:    private lateinit var progressStore: TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:195:        progressStore = Mockito.mock(TaskProgressStore::class.java)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:17:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:61:    private val progressStore = Mockito.mock(TaskProgressStore::class.java)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:63:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:953:            Mockito.mock(TaskProgressStore::class.java), cursorRepository,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1046:        val progressStore: TaskProgressStore,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1085:        val progressStore = Mockito.mock(TaskProgressStore::class.java)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckServiceTest.kt:97:        assertFalse(Mockito.mockingDetails(tasks).invocations.any { it.method.name.startsWith("heartbeat") })
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckServiceTest.kt:119:            com.weibo.talentintroduction.task.domain.TaskExecution(id=42, taskType="DISCOVERY_RECHECK_PREPARE",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckServiceTest.kt:128:        val terminal = Mockito.mockingDetails(tasks).invocations.filter { it.method.name == "finishOwned" }
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckServiceTest.kt:134:    @Test fun `heartbeat targets only live preparation execution and stops after removal`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckServiceTest.kt:142:        val heartbeats = Mockito.mockingDetails(tasks).invocations.filter { it.method.name.startsWith("heartbeat") }
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckServiceTest.kt:143:        assertEquals(1,heartbeats.size)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckServiceTest.kt:144:        assertEquals("heartbeatExecution",heartbeats.single().method.name)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckServiceTest.kt:145:        assertEquals(42L,heartbeats.single().arguments[0])
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckServiceTest.kt:149:        assertFalse(Mockito.mockingDetails(tasks).invocations.any { it.method.name.startsWith("heartbeat") })
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:66:    private val heartbeat = Executors.newScheduledThreadPool(properties.concurrency) { runnable ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:75:            heartbeat.shutdownNow()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorker.kt:123:        return heartbeat.scheduleAtFixedRate({
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionServiceTest.kt:23:    fun `recovery heartbeats this owner before expiring lost executions`() {
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionServiceTest.kt:27:        assertEquals("heartbeatOwned", invocations[0].method.name)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionServiceTest.kt:346:        val finish = Mockito.mockingDetails(repository).invocations.single { it.method.name == "finishOwned" }
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorkerTest.kt:12:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorkerTest.kt:29:    private lateinit var progressStore: TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorkerTest.kt:41:        progressStore = Mockito.mock(TaskProgressStore::class.java)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorkerTest.kt:126:        Mockito.verify(repository).finishOwned(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorkerTest.kt:206:        Mockito.verify(repository).finishOwned(
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt:6:import com.weibo.talentintroduction.task.domain.TaskTypeCatalog
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt:20: * 迁移前逐字一致）+ TaskTypeCatalog 断言（原 TaskTypeCatalogTest 合并于此文件）。
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt:208:    // ---- TaskTypeCatalog 断言（原 TaskTypeCatalogTest 合并于此） ----
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt:217:            "DISCOVERY_RECHECK_PREPARE"
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt:219:        val actual = TaskTypeCatalog.entries.filter { it.value.hasProgressUi }.keys
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt:226:        val ruleKeys = TaskTypeCatalog.entries.values.filter { it.summaryRule != null }.map { it.summaryRule }.toSet()
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt:243:            "CHECK_REPLIES", "DAILY_COUNT_RESET", "DISCOVERY_RECHECK_PREPARE",
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt:251:        assertEquals(auditedCodes, TaskTypeCatalog.entries.keys)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt:257:        val meta: (String) -> TaskTypeMeta = { code -> TaskTypeCatalog.byCode(code)!! }
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt:264:        assertEquals("已准备人数/失败", meta("DISCOVERY_RECHECK_PREPARE").metricLabel)
+src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt:271:        assertEquals(22, TaskTypeCatalog.entries.size)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorker.kt:7:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorker.kt:21: * - **与人工补全同锁**：经 [TaskProgressStore.tryStartWithToken] 拿 EXPERT_ENRICHMENT 的任务锁，
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorker.kt:39:    private val progressStore: TaskProgressStore,
+src/test/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressControllerExecutionsTest.kt:9:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressControllerExecutionsTest.kt:19:    private val progressStore = Mockito.mock(TaskProgressStore::class.java)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckService.kt:58:    private val progressStore: com.weibo.talentintroduction.task.service.TaskProgressStore? = null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckService.kt:78:                    heartbeatAt = LocalDateTime.now()))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckService.kt:268:            // Best effort after stack unwinds; if persistence also fails, no live heartbeat masks lease expiry.
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckService.kt:302:        tasks.finishOwned(id, owner, status, mapper.writeValueAsString(mapOf("runId" to id, "frozen" to count,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckService.kt:346:            if (thread.isAlive) tasks.heartbeatExecution(id, owner, LocalDateTime.now())
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckService.kt:353:        const val TASK_TYPE = "DISCOVERY_RECHECK_PREPARE"
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryVerificationWorkerTest.kt:84:    @Test fun `blocked renewal does not delay another active lease heartbeat`() {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:33:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:107:    private val progressStore: TaskProgressStore,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3258:     *   （worker / 人工入口）用 [TaskProgressStore.tryStartWithToken] 的同一把锁保证。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:11:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:76:    private val progressStore: TaskProgressStore,
+src/test/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressControllerTest.kt:13:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressControllerTest.kt:37:    private lateinit var progressStore: TaskProgressStore
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:54: * （计划 §实现方案 2/4；TaskProgressStore 只用于实时进度，不是审核权威）。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:256: * 中文名/进度白名单只在 [com.weibo.talentintroduction.task.domain.TaskTypeCatalog] 声明。
+src/test/kotlin/com/weibo/talentintroduction/task/controller/TaskActivityControllerTest.kt:12:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/task/controller/TaskActivityControllerTest.kt:34: * 1. 真实 controller 逻辑 + **真实** [TaskProgressStore]（只 mock 日志仓库）——进度匹配规则
+src/test/kotlin/com/weibo/talentintroduction/task/controller/TaskActivityControllerTest.kt:44:    private val store = TaskProgressStore(progressLogRepository, ObjectMapper())
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:30:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:61:    private val progressStore: TaskProgressStore,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:31:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:290:    private val progressStore: TaskProgressStore,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryHistoricalReplayTool.kt:239:    com.weibo.talentintroduction.task.service.TaskProgressStore::class,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryHistoricalReplayTool.kt:331:        val task = tasks.save(com.weibo.talentintroduction.task.domain.TaskExecution(taskType = "DISCOVERY_PAPER_BACKFILL",
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryHistoricalReplayTool.kt:338:        require(task.taskType == "DISCOVERY_PAPER_BACKFILL")
+src/main/resources/db/migration/V133__create_discovery_paper_queue.sql:17:--   I-3 job 状态机 PENDING→RUNNING→{SUCCEEDED|RETRY_WAIT|FAILED}；claim/heartbeat/finish/
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertScopedOperationsIT.kt:27:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/mail/service/ExpertScopedOperationsIT.kt:97:    @MockBean private lateinit var progress: TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailOpenTrackingPersistenceTest.kt:15:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailOpenTrackingPersistenceTest.kt:170:        val progress = Mockito.mock(TaskProgressStore::class.java)
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:535:        "SELECT status,error_message FROM task_execution WHERE id=? AND task_type='DISCOVERY_RECHECK_PREPARE'",
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryVerificationRepository.kt:588:            WHERE id=? AND task_type='DISCOVERY_RECHECK_PREPARE' AND status IN ('RUNNING','CANCELLING')""",
+src/main/resources/static/app.js:523:                } else if (item.event === "heartbeat") {
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:511:    fun `terminal event is sent once and heartbeat stays silent until running`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:537:    fun `active cancel cancels worker heartbeat and token`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:541:        val heartbeat = Mockito.mock(ScheduledFuture::class.java) as ScheduledFuture<*>
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:546:            setField(control, "heartbeatFuture", heartbeat)
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundAiReplyTurnKnowledgeTest.kt:552:            Mockito.verify(heartbeat, Mockito.atLeastOnce()).cancel(false)
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationControllerTest.kt:32:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationControllerTest.kt:44:    private val progressStore = Mockito.mock(TaskProgressStore::class.java)
+src/main/resources/db/migration/V137__task_execution_interruption_recovery.sql:3:    ADD COLUMN heartbeat_at DATETIME NULL,
+src/main/resources/db/migration/V137__task_execution_interruption_recovery.sql:9:CREATE INDEX idx_te_active_heartbeat ON task_execution (status, heartbeat_at);
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:20:import com.weibo.talentintroduction.task.service.TaskProgressStore
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:40:    private val progressStore: TaskProgressStore,
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt:418:     * requesting cancellation from TaskProgressStore.
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt:566:        control.heartbeatFuture = aiReplyStreamScheduler.scheduleAtFixedRate({
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt:655:    var heartbeatFuture: ScheduledFuture<*>? = null
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt:742:            sendLocked("heartbeat", mapOf("generationId" to generationId, "progress" to progressMap(snapshot)))
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt:773:            heartbeatFuture?.cancel(false)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt:788:        heartbeatFuture?.cancel(false)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt:794:        heartbeatFuture?.cancel(false)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt:814:            heartbeatFuture?.cancel(false)

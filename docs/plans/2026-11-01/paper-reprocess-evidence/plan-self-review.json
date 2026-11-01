@@ -1,0 +1,89 @@
+{
+  "date": "2026-11-01",
+  "head": "b758eb0f1d62f2beda39742085b441fcbbdff5ea",
+  "purpose": "create-p plan self-review; NOT implementation verification",
+  "plans": [
+    {
+      "file": "paper-reprocess-00-replay.md",
+      "files": 6,
+      "invariants": 3,
+      "manual_checks": 2,
+      "sha256": "f9cb78a3c967c67fbbeab0c272a0894cb4928cd6a650e05ae419853dee6a2132",
+      "structure_ok": true
+    },
+    {
+      "file": "paper-reprocess-01-parser.md",
+      "files": 7,
+      "invariants": 3,
+      "manual_checks": 3,
+      "sha256": "508fd62d84283bd223aca0970c9e265944762f6c48f36ffaf127ba2b88260608",
+      "structure_ok": true
+    },
+    {
+      "file": "paper-reprocess-02-identity.md",
+      "files": 10,
+      "invariants": 5,
+      "manual_checks": 4,
+      "sha256": "3bc964760b6cbb1fb290809821569381e676a4f2b88d62121ea0d59a2dd35e48",
+      "structure_ok": true
+    },
+    {
+      "file": "paper-reprocess-03-batch.md",
+      "files": 10,
+      "invariants": 5,
+      "manual_checks": 3,
+      "sha256": "512e600d760bd2862fbd749e94deb3f5e6a50fd1543b0356c4280690ea914201",
+      "structure_ok": true
+    },
+    {
+      "file": "paper-reprocess-04-apply.md",
+      "files": 10,
+      "invariants": 5,
+      "manual_checks": 3,
+      "sha256": "77f145af6d11dec017b7f52596af0713b3ec40e68ce4370be60f05c68d9e6162",
+      "structure_ok": true
+    },
+    {
+      "file": "paper-reprocess-05-frontend.md",
+      "files": 7,
+      "invariants": 4,
+      "manual_checks": 4,
+      "sha256": "3ee9c93f3ce58d0ae2eb8ad4ae7ebea9215248529333a19d614ac446aed4a615",
+      "structure_ok": true
+    },
+    {
+      "file": "paper-reprocess-06-verification.md",
+      "files": 4,
+      "invariants": 3,
+      "manual_checks": 3,
+      "sha256": "ea13bb67c166e8cb541cc068d1367432497ed0fb3f303b61c3ba52d2f4493791",
+      "structure_ok": true
+    },
+    {
+      "file": "paper-reprocess-master.md",
+      "files": 7,
+      "invariants": 9,
+      "manual_checks": 6,
+      "sha256": "d1e17452a5484eae56b37bca5671e8c767fd3f744594232e4b57dac4826b1aa6",
+      "structure_ok": true
+    }
+  ],
+  "unique_planned_production_files": 27,
+  "unique_planned_test_files": 18,
+  "new_css_classes": 17,
+  "new_dom_classes_without_css": [],
+  "source_changed_since_audit": [],
+  "errors": [],
+  "status": "PLAN_STRUCTURAL_CHECK_PASS",
+  "implementation": "NOT_STARTED",
+  "production_replay": "NOT_RUN; child00 is mandatory evidence gate",
+  "knowledge": {
+    "loaded": 13,
+    "decay_archived": 0,
+    "promotion_crossings": 0,
+    "new_entries": 1,
+    "stale_corrected": 1,
+    "merge": "No set of 5 entries with same reusable rule; retained distinct identity/cache/task/style boundaries",
+    "role_pointer": "No agents/*.md or templates/project-CLAUDE.md found; no new role file created"
+  }
+}

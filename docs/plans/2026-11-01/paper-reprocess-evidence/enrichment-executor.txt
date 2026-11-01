@@ -1,0 +1,69 @@
+$ rg -n expert_academic_enrichment_job|ExpertAcademicEnrichmentJobRepository|Qualifier|taskExecutor src/main/kotlin/com/weibo/talentintroduction/discovery src/main/kotlin/com/weibo/talentintroduction/config src/main/resources/db/migration/V131__create_expert_academic_enrichment_job.sql
+src/main/resources/db/migration/V131__create_expert_academic_enrichment_job.sql:29:CREATE TABLE expert_academic_enrichment_job (
+src/main/resources/db/migration/V131__create_expert_academic_enrichment_job.sql:44:    UNIQUE KEY uk_expert_academic_enrichment_job_doc (expert_doc_id),
+src/main/resources/db/migration/V131__create_expert_academic_enrichment_job.sql:45:    KEY idx_expert_academic_enrichment_job_due (status, next_attempt_at, id),
+src/main/resources/db/migration/V131__create_expert_academic_enrichment_job.sql:46:    CONSTRAINT chk_expert_academic_enrichment_job_status
+src/main/kotlin/com/weibo/talentintroduction/config/RestTemplateConfig.kt:4:import org.springframework.beans.factory.annotation.Qualifier
+src/main/kotlin/com/weibo/talentintroduction/config/RestTemplateConfig.kt:67:    @Qualifier("europePmcRestTemplate")
+src/main/kotlin/com/weibo/talentintroduction/config/RestTemplateConfig.kt:85:    @Qualifier("pdfDownloadRestTemplate")
+src/main/kotlin/com/weibo/talentintroduction/config/RestTemplateConfig.kt:103:    @Qualifier("translationRestTemplate")
+src/main/kotlin/com/weibo/talentintroduction/config/RestTemplateConfig.kt:115:    @Qualifier("openAlexRestTemplate")
+src/main/kotlin/com/weibo/talentintroduction/config/RestTemplateConfig.kt:146:        @Qualifier("openAlexRestTemplate") openAlexRestTemplate: RestTemplate,
+src/main/kotlin/com/weibo/talentintroduction/config/LlmClientConfig.kt:3:import org.springframework.beans.factory.annotation.Qualifier
+src/main/kotlin/com/weibo/talentintroduction/config/LlmClientConfig.kt:17:    @Qualifier("llmRestTemplate")
+src/main/kotlin/com/weibo/talentintroduction/config/OpenAlexRequestPolicy.kt:362:    /** I-5：测试可控的待补全任务数（生产由 expert_academic_enrichment_job 统计）。 */
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepository.kt:10: * expert_academic_enrichment_job 的全部状态写路径（I-1/I-2/I-3）。
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepository.kt:26: * 排序 `(next_attempt_at, id)` 与队列索引 `idx_expert_academic_enrichment_job_due` 同形；
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepository.kt:29:interface ExpertAcademicEnrichmentJobRepository : CrudRepository<ExpertAcademicEnrichmentJob, Long> {
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepository.kt:31:    @Query("SELECT expert_doc_id, source FROM expert_academic_enrichment_job WHERE discovery_execution_id = :executionId")
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepository.kt:34:    @Query("SELECT * FROM expert_academic_enrichment_job WHERE expert_doc_id = :docId")
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepository.kt:44:        INSERT INTO expert_academic_enrichment_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepository.kt:64:        UPDATE expert_academic_enrichment_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepository.kt:86:        SELECT * FROM expert_academic_enrichment_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepository.kt:102:        UPDATE expert_academic_enrichment_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepository.kt:123:        UPDATE expert_academic_enrichment_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepository.kt:145:        UPDATE expert_academic_enrichment_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepository.kt:174:        UPDATE expert_academic_enrichment_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:33:import org.springframework.beans.factory.annotation.Qualifier
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:62:    @Qualifier("enrichmentExecutor")
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/ExpertAcademicEnrichmentJob.kt:8: * expert_academic_enrichment_job：一行 = 一个专家文档（真实 ES `_id`）的学术补全生命周期。
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/ExpertAcademicEnrichmentJob.kt:26:@Table("expert_academic_enrichment_job")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewCountsService.kt:9:import org.springframework.beans.factory.annotation.Qualifier
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewCountsService.kt:66:    @Qualifier("discoveryReviewCountsExecutor") private val executor: Executor
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/OpenAlexBudgetRepository.kt:319:            SELECT COUNT(*) FROM expert_academic_enrichment_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckService.kt:18:import org.springframework.beans.factory.annotation.Qualifier
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckService.kt:54:    @Qualifier("discoveryRecheckPrepareExecutor") private val executor: Executor,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:19:import org.springframework.beans.factory.annotation.Qualifier
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:27:    @Qualifier("europePmcRestTemplate")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryInstitutionNormalizer.kt:94:    private val campusQualifier = Regex("(?i)\\b(?:campus|college|school|faculty|institute|laborator(?:y|ies)|cent(?:er|re))\\b")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryInstitutionNormalizer.kt:415:        val retainQualifier = trailingParts.isNotEmpty() && !tailRemovable &&
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryInstitutionNormalizer.kt:416:            (isSystemName(parts[lastOrg]) || trailingParts.any(::isCampusQualifier))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryInstitutionNormalizer.kt:426:                retainQualifier -> qualifiers += part
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryInstitutionNormalizer.kt:465:        if (qualifiers.any(::isCampusQualifier) || isSystemName(organisation)) return false
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryInstitutionNormalizer.kt:477:    private fun isCampusQualifier(part: String): Boolean =
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryInstitutionNormalizer.kt:478:        campusQualifier.containsMatchIn(part)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:13:import org.springframework.beans.factory.annotation.Qualifier
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:85:    @Qualifier("taskScheduler") private val taskScheduler: TaskScheduler? = null,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewQuerySnapshotService.kt:6:import org.springframework.beans.factory.annotation.Qualifier
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewQuerySnapshotService.kt:26:    @Qualifier("discoveryReviewQueryExecutor") private val executor: Executor
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentJobService.kt:4:import com.weibo.talentintroduction.discovery.repository.ExpertAcademicEnrichmentJobRepository
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentJobService.kt:33:    private val repository: ExpertAcademicEnrichmentJobRepository
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:33:import org.springframework.beans.factory.annotation.Qualifier
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:294:    @Qualifier("pipelineCoordinatorExecutor") private val coordinatorExecutor: Executor,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:295:    @Qualifier("pipelineCollectionExecutor") private val collectionExecutor: Executor,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:296:    @Qualifier("pipelineFetchExecutor") private val fetchExecutor: Executor,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:22:import org.springframework.beans.factory.annotation.Qualifier
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:36:    @Qualifier("openAlexRestTemplate") private val restTemplate: RestTemplate,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:36:import org.springframework.beans.factory.annotation.Qualifier
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryReviewService.kt:269:    @Qualifier("enrichmentExecutor") private val executor: Executor? = null,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPromotionProgressService.kt:8:import com.weibo.talentintroduction.discovery.repository.ExpertAcademicEnrichmentJobRepository
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPromotionProgressService.kt:27:    private val jobs: ExpertAcademicEnrichmentJobRepository,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorker.kt:9:import org.springframework.beans.factory.annotation.Qualifier
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorker.kt:40:    @Qualifier(AUTO_ENRICHMENT_EXECUTOR)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:18:import org.springframework.beans.factory.annotation.Qualifier
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:34:    @Qualifier("pdfDownloadRestTemplate")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:46:import com.weibo.talentintroduction.discovery.repository.ExpertAcademicEnrichmentJobRepository
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:56:import org.springframework.beans.factory.annotation.Qualifier
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:118:    private val enrichmentJobRepository: ExpertAcademicEnrichmentJobRepository,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:119:    @Qualifier("discoveryFetchExecutor")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:155:     * 只是 `/enrich/stats` 的进程内观测值，任务生命周期的唯一事实仍是 expert_academic_enrichment_job。

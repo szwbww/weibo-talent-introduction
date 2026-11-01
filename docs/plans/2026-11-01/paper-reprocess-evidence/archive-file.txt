@@ -1,0 +1,53 @@
+$ rg -n --no-ignore blobs/|blobPath\(|saveBody\(|analysisReaders|DiscoveryPaperBackfillService|HistoricalSqlBindingsTarget src/main src/test scripts --glob !**/__pycache__/**
+src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveRepositoryIT.kt:63:        return service.saveBody(attempt.id,bytes,media)
+src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveCaptureTest.kt:58:            assertEquals("ARCHIVE_DISABLED", assertThrows(ArchiveException::class.java) { f.service.saveBody(direct.id, f.pdf(), "application/pdf") }.code)
+src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveCaptureTest.kt:78:                FileChannel.open(f.root.resolve("blobs/filler.bin"), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE).use {
+src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveServiceTest.kt:26:    private fun path(a: ArchiveAttempt) = f.root.resolve("blobs/${a.blobSha256!!.take(2)}/${a.blobSha256}.bin")
+src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveServiceTest.kt:126:        code("ARCHIVE_STORAGE_BLOCKED") { f.service.saveBody(attempt.id,bytes,"application/pdf") }
+src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveServiceTest.kt:129:        f.service.saveBody(attempt.id,bytes,"application/pdf")
+src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveServiceTest.kt:137:        val filler=f.root.resolve("blobs/filler.bin")
+src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveServiceTest.kt:146:                try { f.service.saveBody(attempt.id,f.pdf(fill=(65+i).toByte()),"application/pdf"); true }
+src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveServiceTest.kt:162:            assertThrows(Crash::class.java) { f.service.saveBody(a.id,f.pdf(fill=(65+i).toByte()),"application/pdf") }
+src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveServiceTest.kt:190:        code("SAVE_ERROR") { service.saveBody(attempt.id,f.pdf(2048,66),"application/pdf") }
+src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveServiceTest.kt:206:            code("DELETE_IN_PROGRESS") { f.service.saveBody(other.id,f.pdf(fill=(65+i).toByte()),"application/pdf") }
+src/test/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveRecoveryConcurrencyTest.kt:82:    private fun path(blob: ArchiveBlob) = root.resolve("blobs/${blob.sha256.take(2)}/${blob.sha256}.bin")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckFlowIT.kt:360:                archive.saveBody(attempt.id, Files.readAllBytes(java.nio.file.Paths.get(p.path)), "text/plain")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckFlowIT.kt:411:            val target = HistoricalSqlBindingsTarget(tasks, registration, f.repository, f.admissions, writer, f.policy, rechecks)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryRecheckFlowIT.kt:425:            val backfill = DiscoveryPaperBackfillService(discovery, analyzer, target)
+src/test/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryPaperArchiveControllerTest.kt:87:        val path=f.root.resolve("blobs/${missing.blobSha256!!.take(2)}/${missing.blobSha256}.bin")
+src/test/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryPaperArchiveControllerTest.kt:92:        val link=f.root.resolve("blobs/${symlink.blobSha256!!.take(2)}/${symlink.blobSha256}.bin")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperBackfillServiceTest.kt:11:class DiscoveryPaperBackfillServiceTest {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperBackfillServiceTest.kt:36:        val service = DiscoveryPaperBackfillService(consumer, DiscoveryHistoricalReplayTool.analyzer(), target)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperBackfillServiceTest.kt:41:        val second = DiscoveryPaperBackfillService(consumer, DiscoveryHistoricalReplayTool.analyzer(), target).apply(frozen, frozen.hash)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperBackfillServiceTest.kt:50:        val consumer = consumer(); val target = Target(); val service = DiscoveryPaperBackfillService(consumer, DiscoveryHistoricalReplayTool.analyzer(), target)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperBackfillService.kt:48:class DiscoveryPaperBackfillService(private val discovery: ExpertDiscoveryService, private val analyzer: PaperBodyAnalyzer,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryHistoricalReplayTool.kt:266:    val service: DiscoveryPaperBackfillService) : AutoCloseable {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryHistoricalReplayTool.kt:289:                val target = HistoricalSqlBindingsTarget(context.getBean(com.weibo.talentintroduction.task.repository.TaskExecutionRepository::class.java),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryHistoricalReplayTool.kt:296:                return HistoricalBindingsRuntime(context, DiscoveryPaperBackfillService(context.getBean(ExpertDiscoveryService::class.java),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryHistoricalReplayTool.kt:303:class HistoricalSqlBindingsTarget(
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveRepository.kt:136:    fun saveBody(attemptId: Long, hash: String, bytes: Long, media: String, reused: Boolean, now: Instant) = transaction {
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:40:    private val analysisReaders = mutableMapOf<String, Int>()
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:47:                    val n = analysisReaders.getValue(body.hash) - 1
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:48:                    if (n == 0) analysisReaders.remove(body.hash) else analysisReaders[body.hash] = n
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:56:            Files.isRegularFile(blobPath(b.sha256), LinkOption.NOFOLLOW_LINKS) &&
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:57:            Files.size(blobPath(b.sha256)) == b.sizeBytes && hashFile(blobPath(b.sha256)) == b.sha256)
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:71:                    Files.newInputStream(blobPath(hash), LinkOption.NOFOLLOW_LINKS))
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:73:                analysisReaders[hash] = (analysisReaders[hash] ?: 0) + 1
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:111:    private fun blobPath(hash: String): Path {
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:219:    fun saveBody(attemptId: Long, bytes: ByteArray, mediaType: String): ArchiveAttempt =
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:239:            repository.saveBody(attemptId, hash, reusable.sizeBytes, reusable.mediaType, true, Instant.now())
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:257:            val final = blobPath(hash); directory(final.parent)
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:264:            repository.saveBody(attemptId, hash, bytes.size.toLong(), media, false, Instant.now())
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:284:        val path = blobPath(blob.sha256)
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:392:        Files.newInputStream(blobPath(b.sha256), LinkOption.NOFOLLOW_LINKS).use { input ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:395:            Files.newInputStream(blobPath(b.sha256), LinkOption.NOFOLLOW_LINKS).use { body -> action(ArchiveContent(if (pdf) "application/pdf" else "text/plain;charset=UTF-8",b.sizeBytes,"paper-$recordId-$attemptId.${if (pdf) "pdf" else "txt"}"), body) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:432:                (analysisReaders[hash] ?: 0) > 0 -> busy += hash
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:448:                reasons += if (a.any { (analysisReaders[it.blobSha256] ?: 0) > 0 }) "BUSY" else "DELETE_IN_PROGRESS"
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:463:                Files.deleteIfExists(blobPath(blob.sha256))
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:502:                (analysisReaders[hash] ?: 0) > 0 -> null
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:505:                    Files.deleteIfExists(blobPath(hash)); repository.finishDelete(hash, now)
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:509:                    Files.deleteIfExists(blobPath(hash)); repository.deleteUnreferencedBlob(hash)
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:513:                    val path = blobPath(hash)
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:515:                    analysisReaders[hash] = (analysisReaders[hash] ?: 0) + 1
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:539:                val remaining = analysisReaders.getValue(hash) - 1
+src/main/kotlin/com/weibo/talentintroduction/discovery/archive/DiscoveryPaperArchiveService.kt:540:                if (remaining == 0) analysisReaders.remove(hash) else analysisReaders[hash] = remaining
