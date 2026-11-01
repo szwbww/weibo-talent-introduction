@@ -21,6 +21,7 @@ internal object SourceAuthorEmailResolver {
     private val emailLine = Regex("(?i)\\be-?mail(?: address)?\\s*:")
     private val shared = Regex("(?i)\\b(?:the\\s+authors|corresponding\\s+authors|equal\\s+contribution|all\\s+authors)\\b")
     private val sectionBoundary = Regex("(?i)^\\s*(?:references|bibliography|abstract|keywords?|introduction)\\b")
+    private val referenceBoundary = Regex("(?i)^(?:references|bibliography)\\b")
     private val affiliation = Regex("(?i)\\b(?:university|department|institute|school|laboratory|college|faculty|centre|center)\\b")
     private val labelledMailbox = Regex("([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,})\\s*\\(([^()\\r\\n]+)\\)")
     // Swing's legacy HTML parser can discard late elements in a complete HTML5 article.
@@ -114,7 +115,7 @@ internal object SourceAuthorEmailResolver {
     internal fun textClaims(originalText: String, authors: List<PaperAuthor>, continuations: Boolean = true): List<Claim> {
         if ('\u000c' in originalText) return originalText.split('\u000c').flatMap { textClaims(it, authors, continuations) }
         val originalLines = originalText.replace('\u00a0', ' ').split(Regex("\\r?\\n"))
-            .map { it.trim() }.takeWhile { !it.matches(Regex("(?i)(?:references|bibliography)\\s*[:.]?")) }
+            .map { it.trim() }.takeWhile { !referenceBoundary.containsMatchIn(it) }
         val entries = mutableListOf<Pair<String, String>>()
         var line = 0
         while (line < originalLines.size) {

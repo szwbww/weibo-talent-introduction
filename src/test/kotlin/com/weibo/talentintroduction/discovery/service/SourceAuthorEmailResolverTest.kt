@@ -290,6 +290,35 @@ class SourceAuthorEmailResolverTest {
             listOf(alice, PaperAuthor("Andrew", "Smith", null, null, false))).single().givenNames)
     }
 
+    @Test fun `inline references retain mailbox clues without text or html ownership`() {
+        val authors = listOf(PaperAuthor("Alice", "Smith", null, null, false))
+        for (heading in listOf("References", "Bibliography")) {
+            val reference = "$heading: Alice Smith (opaque@sample.edu)"
+            for (resolved in listOf(
+                SourceAuthorEmailResolver.resolveText(reference, authors),
+                SourceAuthorEmailResolver.resolveHtml("<html><p>$reference</p></html>", authors)
+            )) {
+                val row = resolved.single()
+                assertEquals("opaque@sample.edu", row.email)
+                assertNull(row.givenNames, reference)
+                assertNull(row.familyNames, reference)
+                assertFalse(com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.validEvidence(row.identityEvidence))
+            }
+            val contact = "Alice Smith (legitimate@sample.edu)"
+            for (resolved in listOf(
+                SourceAuthorEmailResolver.resolveText("$contact\n$reference", authors),
+                SourceAuthorEmailResolver.resolveHtml("<html><p>$contact</p><p>$reference</p></html>", authors)
+            )) {
+                assertEquals(setOf("legitimate@sample.edu", "opaque@sample.edu"), resolved.map { it.email }.toSet())
+                val legitimate = resolved.single { it.email == "legitimate@sample.edu" }
+                assertEquals("Alice", legitimate.givenNames)
+                assertEquals("Smith", legitimate.familyNames)
+                assertTrue(com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.validEvidence(legitimate.identityEvidence))
+                assertNull(resolved.single { it.email == "opaque@sample.edu" }.givenNames)
+            }
+        }
+    }
+
     @Test
     fun `explicit trailing owner labels are unique and mailbox local`() {
         val bernd = PaperAuthor("Bernd", "Bayerlein", null, null, false)
