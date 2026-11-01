@@ -61,6 +61,7 @@
 4. **读原文（I-3/I-5）**：archive新增显式attemptId/hash列表的lease，只开放服务层调用。校验路径与所有hash后打开，保持analysisReaders计数；不向客户端暴露文件路径。冻结后新增attempt忽略；所有指定body逐个解析，必须包含HTML/XML/PDF/TEXT现有格式，不重复下载。first锚点仅作旧结果baseline，不限制新重处理范围。同步修改 `PaperVerificationEvidenceService.collect`：按当前固定source refs给archive请求显式attempt lease，而非默认first-only lease；否则新任务选中的后续attempt在自动重审时仍可能被排除。原单篇AnalysisService继续调用旧默认lease。
 5. **解析/跨文档归并（I-3/I-4）**：复用01，每篇完整存新绑定、首次绑定、gain/loss、覆盖范围、冲突。解析阶段全部结束后才能建立TARGET的唯一候选集；跨论文同邮箱不同姓名/作者ID标CONFLICT，不选择某个覆盖另一个。在ServiceTest中用真实PaperVerificationEvidenceService验证非first的明确attempt可用于后续核验；不同hash/record仍拒绝。没有基线为BASELINE_UNAVAILABLE，只显示当前解析，不虚构“新增”。AUDIT只给wouldCreate/wouldRepair候选与理由，不运行资格外呼，实际业务计数全0。
 6. **任务生命周期（I-2/I-5）**：使用已有task repository的owner+heartbeat；Service内部专用ThreadPoolExecutor(1线程、ArrayBlockingQueue容量1)执行解析，scheduler只做快速claim/投递；拒绝投递必须释放或延期当前lease。不得占用共享定时线程或discoveryRecheckPrepareExecutor来跑PDF；@PreDestroy停止claim并关闭线程池，未完成由租约恢复。5秒轮询、heartbeat至多15秒一次，lease60秒且每次提交校验generation。解析page回调检查取消/预算；不要catch Throwable继续。超时或进程退出置INTERRUPTED并由显式retry恢复同源/同版本；版本变更不可接续旧job，返回VERSION_CHANGED让新建一轮。心跳不依赖页面。task_activity实时数据不匹配时可为空，但详情必须从新表显示进度。
+   - 按页取消/预算检查仅经可选checkpoint从PaperBodyAnalyzer传递至资格提取与PDF联系提取；回调默认无操作，保留旧调用形态、解析规则、缓存/身份/解析版本与普通异常处理。只对取消/预算的明确异常窄传播，禁止通用catch吞掉它们。原授权ServiceTest覆盖取消/budget实际生效及旧默认调用不变，不新增测试文件。
 7. **取消/重试（I-2/I-3）**：cancel先CAS CANCELLING，禁止再claim；正在读取的项安全退出，未开始项CANCELLED；已有COMPLETE保留。retry仅恢复ERROR/因中断未完成项，成功项不重跑；用户取消后的续跑须显式retry同run并重获active_key。纯对照阶段同样不创建任何新专家。
 8. **统计（I-4）**：用item落库状态聚合，不靠前端累加。阶段前没有total显示“统计中”，不显示虚假0%；错误行有有限reasonCode和中文解释。任务表状态映射：PREPARING/RUNNING→RUNNING，CANCELLING→CANCELLING，COMPLETED→SUCCESS，COMPLETED_WITH_ERRORS/FAILED→FAILED，INTERRUPTED→INTERRUPTED，CANCELLED→CANCELLED；result_summary保留更细状态与成功数。与任务活动catalog使用 `DISCOVERY_PAPER_REPROCESS / 论文重新解析与补录 / 已处理论文/失败`。
 9. **测试（I-1–I-5）**：范围121篇、每页20；同hash跨3记录仍3篇；2个attempt同hash仅解码一次但两条引用均保留；多任务双击/两tab、断网后重送requestKey、lease过期、取消与删除竞争均使用真SQL或接口fixture验证。
@@ -79,8 +80,11 @@
 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperReprocessServiceTest.kt` | 只读、租约、取消、范围、冲突及MockMvc权限/参数测试 |
 | `src/main/kotlin/com/weibo/talentintroduction/discovery/service/PaperVerificationEvidenceService.kt` | collect按固定refs读取显式attempt；保持默认单篇分析行为 |
 | `src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperReprocessRepositoryIntegrationTest.kt` | 真实SQL约束/重启/分批范围固定 |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/archive/PaperBodyAnalyzer.kt` | 可选checkpoint透传与取消/预算异常窄传播，默认行为不变 |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/archive/PaperQualificationEvidenceExtractor.kt` | PDF逐页调用checkpoint，不吞取消/预算异常 |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt` | 联系解析beforePage透传可选checkpoint，保留旧默认和规则 |
 
-共 10 个文件。未列文件禁止扩改；新增问题先记录证据并修订范围。
+共 13 个文件。新增三个解析链接缝仅为I-5按页取消/预算执行，不扩大解析算法目标；未列文件禁止扩改，新增问题先记录证据并修订范围。
 
 ## 验收标准
 
@@ -115,3 +119,4 @@
 
 ## 修正记录
 - 2026-11-02：按用户“后续授权都继续”的在目标内授权，将迁移文件从V172改为V173；PaperBatchImplementer03的完整`glob src/main/resources/db/migration/V*.sql`回执证明最高V172，且现有`V172__transfer_existing_full_access_pending.sql`不可修改。仅新迁移编号变化，表结构、文件数及验收不变；决定A3，见`docs/plans/fast/paper-reprocess-master/ledger.md`。
+- 2026-11-02：按用户后续必要授权，追加三个已证实缺失的checkpoint传递接缝并将文件上限改为13；PaperBatchImplementer03E2的专用grep回执与签名/catch证据见fast-p执行日志epoch2，原白名单无法实现第6步按页取消。只允许默认兼容、窄异常传播；解析规则/版本、保护与验收不变。决定A4/A5见ledger。
