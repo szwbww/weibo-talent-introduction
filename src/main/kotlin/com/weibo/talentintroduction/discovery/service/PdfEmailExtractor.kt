@@ -324,7 +324,8 @@ class PdfEmailExtractor(
     internal fun extractEmailsFromBytes(bytes: ByteArray, knownAuthors: List<PaperAuthor>, deadline: Instant?): List<AuthorEmail> =
         extractContactsFromBytes(bytes, knownAuthors, deadline).emails
 
-    internal fun extractContactsFromBytes(bytes: ByteArray, knownAuthors: List<PaperAuthor>, deadline: Instant?): ParsedContacts {
+    internal fun extractContactsFromBytes(bytes: ByteArray, knownAuthors: List<PaperAuthor>, deadline: Instant?,
+        checkpoint: () -> Unit = {}): ParsedContacts {
         ByteArrayInputStream(bytes).use { stream ->
             PDDocument.load(stream).use { doc ->
                 val text = StringBuilder()
@@ -332,6 +333,7 @@ class PdfEmailExtractor(
                 val contacts = PdfAuthorContactLayout.collect(
                     doc, properties.maxPages, knownAuthors, properties.tailPages,
                     beforePage = {
+                        checkpoint()
                         if (deadlineExpired(deadline)) throw FulltextDeadlineExceededException(requestIssued = true)
                     },
                     onPage = { page, pageText ->

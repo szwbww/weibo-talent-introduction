@@ -52,6 +52,7 @@ object TaskTypeCatalog {
      *   显式声明「无统计」比继续显示反射猜出来的 0/0 诚实。
      */
     val entries: Map<String, TaskTypeMeta> = listOf(
+        TaskTypeMeta("DISCOVERY_PAPER_REPROCESS", "论文重新解析与补录", "MANUAL", "已处理论文/失败", null, true, null),
         TaskTypeMeta("DISCOVERY_RECHECK_PREPARE", "重新审核名单准备", "MANUAL", "已准备人数/失败", null, true, null),
         TaskTypeMeta("DISCOVERY_REVIEW_COUNTS", "审核数量统计", "MANUAL", "已统计人数/失败", null, false, null),
         TaskTypeMeta(
