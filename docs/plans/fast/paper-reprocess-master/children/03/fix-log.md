@@ -28,3 +28,5 @@
   - The correction smoke sends actual authenticated error HTTP requests, then creates a second isolated AUDIT run, completes an oversized PAPER result, expires a running item's lease and invokes recovery. Item HTTP results equal raw persisted SQL JSON with unchanged codes, schema, six-step states, attempt IDs/hashes and size bounds.
 - Result: FIXED
 - Notes: No auth/status/retry/validation/business/provider/catalog changes, new files, production operations, push/merge/history rewrite, later child or aggregate review. Existing execution/verify/ledger edits preserved and excluded. Non-fatal pre-existing Tomcat reflective-access/acceptor shutdown warnings persisted; runtime exited0 and fixture cleanup completed. This is repair execution evidence, not an independent verification verdict. Fresh verifier must evaluate the new complete boundary.
+- Controller binding correction: the earlier line's parenthetical subject is explanatory; the canonical machine-readable bare SHA is below. This is the same round1 commit, not a new repair or command run.
+- Fix commit: ff7e67506545a31bc38a3d3f674056c522c57917
