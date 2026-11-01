@@ -99,6 +99,7 @@ class RetainedPaperIdentityService(private val archive: DiscoveryPaperArchiveSer
         if (matches.map { listOf(it.givenNames, it.familyNames, it.orcidId, it.openAlexAuthorId) }.distinct().size != 1)
             return result("CONFLICT", "SOURCE_OWNER_CONFLICT", refs)
         val incoming = matches.first()
+        if (frozenNameConflict(snapshot, incoming)) return result("CONFLICT", "FROZEN_NONEMPTY_IDENTITY_CONFLICT", refs)
         val blocked = inspect(docId, incoming)
         if (blocked != null) return result(blocked.first, blocked.second, refs)
         val effective = virtual(docId, snapshot, incoming)
@@ -107,6 +108,7 @@ class RetainedPaperIdentityService(private val archive: DiscoveryPaperArchiveSer
     }
 
     fun virtual(docId: String, before: VerificationSnapshot, incoming: AuthorEmail): VerificationSnapshot {
+        require(!frozenNameConflict(before, incoming)) { "FROZEN_NONEMPTY_IDENTITY_CONFLICT" }
         val profile = before.profile.copy(givenNames = incoming.givenNames, familyNames = incoming.familyNames,
             identityVerification = DiscoveryIdentity.verified(incoming.email, incoming.givenNames, incoming.familyNames,
                 requireNotNull(incoming.identityEvidence), incoming.orcidId, incoming.openAlexAuthorId))
@@ -173,6 +175,10 @@ class RetainedPaperIdentityService(private val archive: DiscoveryPaperArchiveSer
             }
         }
     } catch (_: Exception) { "UNAVAILABLE" to "PROTECTION_READ_FAILED" }
+
+    private fun frozenNameConflict(snapshot: VerificationSnapshot, incoming: AuthorEmail): Boolean =
+        listOf(snapshot.profile.givenNames to incoming.givenNames, snapshot.profile.familyNames to incoming.familyNames)
+            .any { (before, after) -> !before.isNullOrBlank() && before != after }
 
     private fun external(source: Map<String, Any?>): JsonNode = source["externalIds"]?.let {
         if (it is String) mapper.readTree(it) else mapper.valueToTree(it)

@@ -103,6 +103,17 @@ class RetainedPaperIdentityServiceTest {
         Mockito.verifyNoInteractions(repair, archive, papers)
     }
 
+    @Test fun `virtual identity refuses either incompatible frozen name even when live names are empty`() {
+        for (profile in listOf(
+            ruleSnapshot().profile.copy(givenNames = "FrozenWrong", familyNames = "", identityVerification = null),
+            ruleSnapshot().profile.copy(givenNames = "", familyNames = "FrozenWrong", identityVerification = null))) {
+            val before = DiscoveryVerificationAdmissionGate.snapshot("doc", profile, gate.policy.evaluate("doc", profile).configSnapshot)
+            assertEquals("FROZEN_NONEMPTY_IDENTITY_CONFLICT",
+                assertThrows(IllegalArgumentException::class.java) { service.virtual("doc", before, incoming) }.message)
+        }
+        Mockito.verifyNoInteractions(writer, repair, admissions)
+    }
+
     @Test fun `proposal hash preserves timestamp and decimal precision across persisted JSON round trip`() {
         val codec = RetainedPaperIdentityService.codec
         val value = codec.valueToTree<com.fasterxml.jackson.databind.node.ObjectNode>(mapOf(

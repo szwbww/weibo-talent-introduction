@@ -995,7 +995,8 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         require(revisionNode.isNull || revisionNode.isIntegralNumber && revisionNode.canConvertToLong() && revisionNode.longValue() >= 0)
         val revision = revisionNode.takeUnless { it.isNull }?.longValue()
         if (admission?.second != revision || admission != null && admission.first != before.path("identityHash").asText() ||
-            prior != null && admission?.first != prior.beforeAdmissionIdentity) return null
+            prior != null && admission?.first != prior.beforeAdmissionIdentity)
+            throw java.util.ConcurrentModificationException("IDENTITY_BASELINE_CHANGED")
         val s = com.weibo.talentintroduction.discovery.service.IdentitySupplement(item.id, item.reviewEpoch, item.generation,
             replayHash(lease.leaseToken), before, before.path("identityHash").asText(), before.path("factFingerprint").asText(),
             revision, prior?.beforeAdmissionIdentity ?: admission?.first, proposal, service.hash(proposal),
@@ -1019,7 +1020,8 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         require(s.proposalHash == service.hash(s.proposal)) { "Frozen proposal changed during persistence" }
         val admission = jdbc.query("SELECT identity_hash,revision FROM expert_discovery_admission WHERE expert_doc_id=? FOR UPDATE",
             RowMapper { rs, _ -> rs.getString(1) to rs.getLong(2) }, item.expertDocId).singleOrNull()
-        if (admission?.first != s.beforeAdmissionIdentity || admission?.second != s.beforeAdmissionRevision) return null
+        if (admission?.first != s.beforeAdmissionIdentity || admission?.second != s.beforeAdmissionRevision)
+            throw java.util.ConcurrentModificationException("IDENTITY_BASELINE_CHANGED")
         val root = service.codec.readTree(item.snapshotJson) as ObjectNode
         val effective = receipt.effective
         val rebind = effective != null && (s.mode == VerificationMode.AUDIT && receipt.phase == "PROPOSED" ||

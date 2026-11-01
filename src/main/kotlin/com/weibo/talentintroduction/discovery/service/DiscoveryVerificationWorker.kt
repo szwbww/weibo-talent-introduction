@@ -791,6 +791,24 @@ class DiscoveryVerificationWorker(
                 payload = payload.copy(evidence = parser.rebuild(snapshot, payload.orcidCompleted.mapNotNull { it.document }, payload.evidence))
                 finish(evaluate(snapshot))
             }
+        } catch (rejected: java.util.ConcurrentModificationException) {
+            // Baseline refusal is not lease loss. Finalize only under the original ownership/run fences;
+            // never retry ES or admission work against an operator's newer admission.
+            if (rejected.message != "IDENTITY_BASELINE_CHANGED") throw rejected
+            if (!lost.get() && repository.isOwned(lease.id, token, lease.generation, clock.instant())) {
+                endStep(3, VerificationStepState.INSUFFICIENT, codes = listOf("STALE_INPUT"), blocking = true)
+                for (number in 4..7) skipStep(number, "STALE_INPUT")
+                startStep(8, mapOf("reason" to "STALE_INPUT", "applied" to false))
+                val record = activeSteps.remove(8)
+                if (repository.saveEvidenceAndOutcome(lease.id, token, lease.generation,
+                    VerificationResult(VerificationState.COMPLETED, VerificationOutcome.PENDING,
+                        VerificationQualification.UNKNOWN, VerificationRoute.NONE, json(), "[\"STALE_INPUT\"]",
+                        entered, searched, candidatesAt), clock.instant())) {
+                    record?.let { traces!!.finishCommittedStep(lease.id, lease.generation, it.id,
+                        VerificationStepState.SUCCESS, mapper.writeValueAsString(mapOf("applied" to false,
+                            "projection" to "NOT_REQUIRED", "reason" to "STALE_INPUT")), null, clock.instant()) }
+                }
+            }
         } catch (_: LeaseLost) {
             // A replacement token owns recovery; no stale writes.
         } catch (deferred: BudgetDeferred) {

@@ -65,6 +65,14 @@ class DiscoveryVerificationIntegrationTest {
                     RetainedRuntime().use { it.originalButtonScenario(VerificationMode.AUDIT) }
                     DiscoveryVerificationIntegrationTest().clean()
                     RetainedRuntime().use { it.originalButtonScenario(VerificationMode.ENFORCE) }
+                    for (afterEs in listOf(false, true)) {
+                        DiscoveryVerificationIntegrationTest().clean()
+                        RetainedRuntime().use { it.baselineDriftScenario(afterEs) }
+                    }
+                    for (field in listOf("givenNames", "familyNames")) for (mode in VerificationMode.values()) {
+                        DiscoveryVerificationIntegrationTest().clean()
+                        RetainedRuntime().use { it.frozenNameScenario(field, mode) }
+                    }
                 } else DiscoveryVerificationIntegrationTest().queueVersionAccessScenario()
             } finally { stop() }
         }
@@ -843,6 +851,51 @@ class DiscoveryVerificationIntegrationTest {
             check(queries.recheckManifest(done.ownerExecutionId, 0, 20).items.isNotEmpty())
             println("RETAINED_IDENTITY_RUNTIME mode=$mode originalControllerPrepareStart=true isolatedMySQL=true loopbackEsCAS=true sourceSha=${source.bodySha256} evidencePage=1 beforeNameEmpty=true effectiveName=Emilio phase=${s.phase} identityWrites=$identityWrites outcome=${done.outcome} applied=false admissionRevision=7 providers=$providerCalls rosterHashUnchanged=true archiveUnchanged=true queryTrace=true")
         }
+        fun baselineDriftScenario(afterEs: Boolean) {
+            val lease = launch()
+            val drift = {
+                jdbc.update("UPDATE expert_discovery_admission SET decision='HOLD',revision=8 WHERE expert_doc_id=?", doc)
+                Unit
+            }
+            if (afterEs) beforeUpdate = drift else drift()
+            worker().process(lease)
+            val done = f.item(lease.id)
+            check(done.state == VerificationState.COMPLETED && done.outcome == VerificationOutcome.PENDING) { done.toString() }
+            check(mapper.readTree(done.reasonsJson).any { it.asText() == "STALE_INPUT" })
+            check(done.admissionRevision == null && done.projectionState == VerificationProjection.NOT_REQUIRED)
+            check(identityWrites == if (afterEs) 1 else 0)
+            val business = docs.getValue("raw").getValue(doc).toMap()
+            val admission = f.admissions.findAdmission(doc)!!
+            check(admission.decision == "HOLD" && admission.revision == 8L && admission.identityHash == original.identityHash)
+            f.clock.now = f.clock.now.plusSeconds(121)
+            check(f.repository.claimDue(f.clock.instant(), 120) == null)
+            worker().process(lease)
+            check(f.item(lease.id) == done && docs.getValue("raw").getValue(doc) == business)
+            check(f.admissions.findAdmission(doc) == admission && identityWrites == if (afterEs) 1 else 0)
+            println("IDENTITY_BASELINE_REJECTION_RUNTIME afterEs=$afterEs state=${done.state} reason=STALE_INPUT noReclaim=true admissionUnchanged=true identityWrites=$identityWrites")
+        }
+
+        fun frozenNameScenario(field: String, mode: VerificationMode) {
+            val raw = docs.getValue("raw").getValue(doc)
+            raw[field] = "FrozenWrong"
+            val frozenProfile = writer.discoveryProfile(doc, raw)
+            val frozen = DiscoveryVerificationAdmissionGate.snapshot(doc, frozenProfile, f.policy.evaluate(doc, frozenProfile).configSnapshot)
+            jdbc.update("UPDATE expert_discovery_admission SET identity_hash=? WHERE expert_doc_id=?", frozen.identityHash, doc)
+            val lease = launch(mode)
+            raw[field] = ""
+            val proposal = retained.propose(doc, mapper.readValue(lease.snapshotJson, VerificationSnapshot::class.java),
+                listOf(source), f.clock.instant())
+            check(proposal.phase == "CONFLICT" && proposal.reason == "FROZEN_NONEMPTY_IDENTITY_CONFLICT" && proposal.incoming == null)
+            val admission = f.admissions.findAdmission(doc)
+            worker().process(lease)
+            val done = f.item(lease.id)
+            check(done.state == VerificationState.COMPLETED && done.outcome in setOf(VerificationOutcome.PENDING, VerificationOutcome.PROTECTED))
+            check(RetainedPaperIdentityService.supplement(done)!!.phase == "CONFLICT")
+            check(identityWrites == 0 && raw["givenNames"] == "" && raw["familyNames"] == "")
+            check(done.admissionRevision == null && f.admissions.findAdmission(doc) == admission)
+            println("IDENTITY_FROZEN_CONFLICT_RUNTIME field=$field mode=$mode phase=CONFLICT identityWrites=0 admissionUnchanged=true")
+        }
+
         override fun close() {
             workers.forEach { it.close() }; server.stop(0); f.close()
             check(root.toFile().deleteRecursively())
@@ -989,6 +1042,43 @@ class DiscoveryVerificationIntegrationTest {
             val payload = r.mapper.readValue(done.evidenceJson, VerificationWorkerEvidence::class.java)
             assertTrue(payload.executionContext!!.cacheReasons.contains("IDENTITY_CHANGED_CACHE_NOT_REUSED"))
             assertTrue(payload.evidence.none { it.identityHash == r.original.identityHash })
+        }
+    }
+    @Test fun `owned admission drift before stage and after ES converges stale without reclaim or overwrite`() {
+        for (afterEs in listOf(false, true)) {
+            clean()
+            RetainedRuntime().use { it.baselineDriftScenario(afterEs) }
+        }
+    }
+
+    @Test fun `frozen nonempty names conflict after live fields clear in audit and enforce`() {
+        for (field in listOf("givenNames", "familyNames")) for (mode in VerificationMode.values()) {
+            clean()
+            RetainedRuntime().use { it.frozenNameScenario(field, mode) }
+        }
+    }
+
+    @Test fun `baseline rejection never finalizes lost lease or cancelled work`() {
+        for (afterEs in listOf(false, true)) for (cancel in listOf(false, true)) {
+            clean()
+            RetainedRuntime().use { r ->
+                val lease = r.launch()
+                val change = {
+                    jdbc.update("UPDATE expert_discovery_admission SET decision='HOLD',revision=8 WHERE expert_doc_id=?", r.doc)
+                    if (cancel) r.service.cancel(lease.ownerExecutionId)
+                    else r.f.clock.now = r.f.clock.now.plusSeconds(121)
+                    Unit
+                }
+                if (afterEs) r.beforeUpdate = change else change()
+                r.worker().process(lease)
+                val done = r.f.item(lease.id)
+                assertEquals(if (cancel) VerificationState.CANCELLED else VerificationState.RUNNING, done.state)
+                assertNull(done.outcome)
+                assertNull(done.admissionRevision)
+                assertEquals(if (afterEs) 1 else 0, r.identityWrites)
+                assertEquals(8L, r.f.admissions.findAdmission(r.doc)!!.revision)
+                assertEquals("HOLD", r.f.admissions.findAdmission(r.doc)!!.decision)
+            }
         }
     }
 }
