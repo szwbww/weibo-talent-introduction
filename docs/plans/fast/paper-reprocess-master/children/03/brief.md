@@ -1,13 +1,13 @@
 # Child 03 execution brief
 
 - Exact approved plan: docs/plans/2026-11-01/paper-reprocess-03-batch.md
-- Plan identity: commit:6a5f08774ae58b2dac3fb0743efe58837bf56922
+- Plan identity: commit:41ebff5468b8b57a56785bbb8e0bda961bd96815
 - Master plan: docs/plans/2026-11-01/paper-reprocess-master.md
 - Approval: user invocation `/fast-p docs/plans/2026-11-01/paper-reprocess-master.md` on 2026-11-01.
 - Target worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master
 - Target branch: fast/paper-reprocess-master
 - Depends on: 02
-- Amendments: A3; original pre-edit V172 conflict retained in epoch1 execution log, current epoch2.
+- Amendments: A3,A4,A5; historical pre-edit conflicts retained, current epoch3.
 
 Read the complete exact child plan from this worktree. Links written as absolute paths into the original main worktree are planning references; resolve repository-relative sources here, never edit the original worktree.
 
@@ -22,6 +22,9 @@ Read the complete exact child plan from this worktree. Links written as absolute
 - `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperReprocessServiceTest.kt`
 - `src/main/kotlin/com/weibo/talentintroduction/discovery/service/PaperVerificationEvidenceService.kt`
 - `src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperReprocessRepositoryIntegrationTest.kt`
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/archive/PaperBodyAnalyzer.kt`
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/archive/PaperQualificationEvidenceExtractor.kt`
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt`
 
 No other product/test/plan files may change. An unlisted necessary file or behavior requires PLAN_CONFLICT, not an improvised fix. Original PDFs stay outside Git in a safe local directory. No release, production write, original-file deletion, Apollo requests, push, merge, history rewriting, or modifications of unrelated user changes.
 
@@ -119,3 +122,8 @@ Use execute-p against the exact child plan. Commit only authorized implementatio
 ## Epoch 2 — Authorized Migration Collision Resolution
 - Plan-only commit `6a5f08774ae58b2dac3fb0743efe58837bf56922` replaces occupied V172 with first-free V173. All ten files, schema/behavior/commands/acceptance remain otherwise unchanged.
 - Prior epoch1 stopped before product edits. Append epoch2 report; use current exact plan bytes/identity. Standing user authority and A3 bind the change; do not modify existing V172.
+
+## Epoch 3 — Authorized Page Checkpoint Plumbing
+- Exact master+child plan-only identity `41ebff5468b8b57a56785bbb8e0bda961bd96815`; A4/A5 authorize thirteen files including three optional parser-chain checkpoint seams. Preserve default callers, parser rules/versions and normal error behavior; narrowly propagate cancellation/budget signals.
+- Prior epoch2 stopped before product edits. Its exact grep/signature/catch receipts are append-only execution history. No test or runtime acceptance inherited; implement and verify the complete current plan freshly.
+- These three added seams are not permission for parser repairs, cache invalidation or independent unrelated changes. Cover actual page cancellation/budget and default behavior through the existing authorized tests.
