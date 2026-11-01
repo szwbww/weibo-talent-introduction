@@ -561,6 +561,7 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     @Transactional
     fun savePreparationInputs(executionId: Long, inputs: List<Pair<String, String>>, now: Instant) {
         val run = lockRun(executionId)
+        check(paperAllowed(run, locked = true)) { "PAPER_PARENT_PERMISSION_LOST" }
         check(recheck(run).control.phase == RecheckPhase.PREPARING && !run.inputClosed)
         inputs.forEach { (docId, json) ->
             jdbc.update("INSERT INTO discovery_recheck_input(execution_id,doc_id,payload_json) VALUES (?,?,?) ON DUPLICATE KEY UPDATE doc_id=doc_id",
@@ -802,6 +803,7 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
     @Transactional
     fun reserveRecheckItem(input: VerificationReservation, now: Instant): VerificationItem {
         val run = lockRun(input.ownerExecutionId)
+        check(paperAllowed(run, locked = true)) { "PAPER_PARENT_PERMISSION_LOST" }
         val config = recheck(run)
         require(run.policyVersion == input.policyVersion)
         val existing = jdbc.query("""SELECT * FROM discovery_verification_item WHERE expert_doc_id=?
@@ -975,13 +977,20 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
         val candidates = jdbc.query("""SELECT i.* FROM discovery_verification_item i
             JOIN discovery_verification_run r ON r.execution_id=i.owner_execution_id
             WHERE (i.review_epoch=0 OR (r.input_closed=1 AND JSON_UNQUOTE(JSON_EXTRACT(r.recheck_json,'$.control.phase'))='RUNNING'))
+            AND (JSON_EXTRACT(r.settings_json,'$.paperReprocessParentId') IS NULL OR EXISTS (
+                SELECT 1 FROM discovery_paper_reprocess_run p JOIN task_execution t ON t.id=p.execution_id
+                WHERE p.execution_id=JSON_EXTRACT(r.settings_json,'$.paperReprocessParentId')
+                  AND t.task_type='DISCOVERY_PAPER_REPROCESS' AND p.mode='ENFORCE' AND p.state='RUNNING'
+                  AND p.cancel_requested=0 AND p.lease_token IS NOT NULL AND p.lease_until>?
+                  AND JSON_REMOVE(r.settings_json,'$.paperReprocessParentId','$.evaluationAt')=
+                      JSON_EXTRACT(p.scope_json,'$.verificationSettings')))
             AND (i.state='QUEUED' OR (i.state='RETRY_WAIT' AND i.next_attempt_at<=?) OR (i.state='RUNNING' AND i.lease_until<=?)) ORDER BY i.id LIMIT 100""",
-            itemMapper, now.verificationUtc(), now.verificationUtc())
+            itemMapper, Instant.now().verificationUtc(), now.verificationUtc(), now.verificationUtc())
         // One run per transaction, even when all of its candidates lost a race.
         val owner = candidates.firstOrNull()?.ownerExecutionId ?: return null
         val run = lockRun(owner)
         if (run.recheckJson != null && !recheckRunning(run)) return null
-        if (!paperAllowed(run)) return null
+        if (!paperAllowed(run, locked = true)) return null
         for (candidate in candidates.filter { it.ownerExecutionId == owner }) {
             val item = lockedItem(candidate.id)
             if (!(item.state == VerificationState.QUEUED ||
@@ -1257,7 +1266,19 @@ class DiscoveryVerificationRepository(private val jdbc: JdbcTemplate) {
 
     fun listReserved(limit: Int): List<VerificationItem> {
         require(limit in 1..500)
-        return jdbc.query("SELECT * FROM discovery_verification_item WHERE review_epoch=0 AND state='RESERVED' ORDER BY id LIMIT ?", itemMapper, limit)
+        // Filter before LIMIT: a full recovery window of parked parents must not hide
+        // unrelated reservations. Activation retains the authoritative locked check.
+        return jdbc.query("""SELECT i.* FROM discovery_verification_item i
+            JOIN discovery_verification_run r ON r.execution_id=i.owner_execution_id
+            WHERE i.review_epoch=0 AND i.state='RESERVED'
+            AND (JSON_EXTRACT(r.settings_json,'$.paperReprocessParentId') IS NULL OR EXISTS (
+                SELECT 1 FROM discovery_paper_reprocess_run p JOIN task_execution t ON t.id=p.execution_id
+                WHERE p.execution_id=JSON_EXTRACT(r.settings_json,'$.paperReprocessParentId')
+                  AND t.task_type='DISCOVERY_PAPER_REPROCESS' AND p.mode='ENFORCE' AND p.state='RUNNING'
+                  AND p.cancel_requested=0 AND p.lease_token IS NOT NULL AND p.lease_until>?
+                  AND JSON_REMOVE(r.settings_json,'$.paperReprocessParentId','$.evaluationAt')=
+                      JSON_EXTRACT(p.scope_json,'$.verificationSettings')))
+            ORDER BY i.id LIMIT ?""", itemMapper, Instant.now().verificationUtc(), limit)
     }
 
     /** Recovery may terminate an unactivated registration only after its owner's input is closed. */

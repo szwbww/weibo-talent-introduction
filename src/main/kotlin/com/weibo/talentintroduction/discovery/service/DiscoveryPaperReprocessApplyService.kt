@@ -53,14 +53,19 @@ class DiscoveryPaperReprocessApplyService(private val repository: DiscoveryPaper
             val target = repository.claimTarget(parent, saved.id) ?: continue
             val result = target.result?.deepCopy<ObjectNode>() ?: result(target)
             try {
-                if (!result.path("applied").asBoolean()) applyTarget(parent, target, result, context)
+                if (!result.path("applied").asBoolean()) {
+                    if (result.path("applicationError").asBoolean()) result.remove(listOf("reasonCode", "reason"))
+                    applyTarget(parent, target, result, context)
+                    result.put("applicationError", false).put("retryable", false)
+                    save(parent, target, result)
+                }
                 observe(parent, target, result)
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
                 repository.item(parent.executionId, target.id)?.result?.let { result.setAll<ObjectNode>(it as ObjectNode) }
                 result.put("targetOutcome", "ERROR").put("reasonCode", if (e is ArchiveException) e.code else "APPLY_FAILED")
                     .put("reason", "补录或登记失败，已生效收据保留；请查看原因并重试")
-                    .put("retryable", true).put("applicationError", true).put("applied", true)
+                    .put("retryable", true).put("applicationError", true).put("applied", result.path("applied").asBoolean())
                 trace(result, 4, "ERROR")
                 save(parent, target, result)
                 complete(parent, target, result, ReprocessItemState.ERROR)
@@ -269,8 +274,8 @@ class DiscoveryPaperReprocessApplyService(private val repository: DiscoveryPaper
             save(parent, target, result)
             afterEffect("AFTER_ADMISSION_OBSERVED")
         }
-        val awaiting = item?.state?.let { it !in TERMINAL } ?: (result.path("needsRecheck").asBoolean() ||
-            result.path("targetOutcome").asText() == "NEW")
+        val awaiting = item?.let { it.state !in TERMINAL || it.projectionState == VerificationProjection.PENDING }
+            ?: (result.path("needsRecheck").asBoolean() || result.path("targetOutcome").asText() == "NEW")
         if (awaiting) {
             save(parent, target, result)
             check(repository.releaseTarget(parent, target))

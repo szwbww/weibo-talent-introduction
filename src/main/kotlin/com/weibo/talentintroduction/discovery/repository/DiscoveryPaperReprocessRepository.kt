@@ -161,8 +161,7 @@ class DiscoveryPaperReprocessRepository(
         val time = now()
         val changed = jdbc.update("""UPDATE discovery_paper_reprocess_item SET state='RUNNING',lease_token=?,lease_until=?,
             generation=?,revision=revision+1,updated_at=? WHERE execution_id=? AND id=? AND kind='TARGET' AND
-            (state='PENDING' OR state='ERROR' AND JSON_EXTRACT(result_json,'$.applicationError')=true
-                AND JSON_EXTRACT(result_json,'$.verificationItemId') IS NOT NULL)""",
+            state='PENDING'""",
             UUID.randomUUID().toString(), db(time.plusSeconds(60)), parent.generation, db(time), parent.executionId, id)
         if (changed == 1) item(parent.executionId, id) else null
     }
@@ -438,6 +437,35 @@ class DiscoveryPaperReprocessRepository(
                         lease_until=NULL,generation=generation+1,revision=revision+1,updated_at=?,completed_at=NULL
                         WHERE execution_id=? AND state NOT IN ('COMPLETE','SKIPPED')""", db(time), runId)
                 } else {
+                    // Explicit retry may need a missing ordinary reservation after the first pass
+                    // sealed input. Reopen only this parent's owned run, never a foreign/recheck run.
+                    // Successful apply receipts remain sealed and are observed without replay.
+                    jdbc.update("""UPDATE discovery_verification_run SET input_closed=0,revision=revision+1,updated_at=?
+                        WHERE execution_id=? AND recheck_json IS NULL
+                        AND JSON_UNQUOTE(JSON_EXTRACT(settings_json,'$.paperReprocessParentId'))=?
+                        AND EXISTS(SELECT 1 FROM discovery_paper_reprocess_item i WHERE i.execution_id=?
+                            AND i.kind='TARGET' AND i.state NOT IN ('COMPLETE','SKIPPED')
+                            AND JSON_EXTRACT(i.result_json,'$.applicationError')=true
+                            AND COALESCE(JSON_EXTRACT(i.result_json,'$.applied'),false)=false)""",
+                        db(time), runId, runId.toString(), runId)
+                    // The first pass terminalizes RAW-missing reservations so the parent can
+                    // report its caught failure. Only explicit retry may resume that same,
+                    // never-activated owned identity; committed verification is never reset.
+                    jdbc.update("""UPDATE discovery_verification_item v
+                        JOIN discovery_verification_run r ON r.execution_id=v.owner_execution_id
+                        JOIN discovery_paper_reprocess_item t ON t.execution_id=r.execution_id
+                            AND JSON_EXTRACT(t.result_json,'$.verificationItemId')=v.id
+                        SET v.state='RESERVED',v.reasons_json=NULL,v.completed_at=NULL,
+                            v.generation=v.generation+1,v.updated_at=?
+                        WHERE r.execution_id=? AND r.recheck_json IS NULL
+                            AND JSON_UNQUOTE(JSON_EXTRACT(r.settings_json,'$.paperReprocessParentId'))=?
+                            AND v.review_epoch=0 AND v.state='ERROR' AND v.activated_at IS NULL
+                            AND v.admission_revision IS NULL AND JSON_LENGTH(v.reasons_json)=1
+                            AND JSON_UNQUOTE(JSON_EXTRACT(v.reasons_json,'$[0]'))='REGISTRATION_RAW_MISSING'
+                            AND t.kind='TARGET' AND t.state NOT IN ('COMPLETE','SKIPPED')
+                            AND JSON_EXTRACT(t.result_json,'$.applicationError')=true
+                            AND COALESCE(JSON_EXTRACT(t.result_json,'$.applied'),false)=false""",
+                        db(time), runId, runId.toString())
                     jdbc.update("""UPDATE discovery_paper_reprocess_item SET state='PENDING',lease_token=NULL,
                         lease_until=NULL,generation=generation+1,revision=revision+1,updated_at=?,completed_at=NULL
                         WHERE execution_id=? AND state NOT IN ('COMPLETE','SKIPPED')""", db(time), runId)

@@ -418,5 +418,11 @@ class DiscoveryVerificationRegistrationService(
         return true
     }
 
-    override fun recoverReserved(limit: Int): Int = repository.listReserved(limit).count { recover(it) }
+    override fun recoverReserved(limit: Int): Int = repository.listReserved(limit).count { item ->
+        // Interrupted paper parents park reservations; they must not abort shared recovery.
+        // Activation still rechecks permission under the parent lock before any write.
+        if (repository.isPaperReprocessOwned(item.ownerExecutionId) &&
+            !repository.paperRunPermission(item.ownerExecutionId)) false
+        else recover(item)
+    }
 }

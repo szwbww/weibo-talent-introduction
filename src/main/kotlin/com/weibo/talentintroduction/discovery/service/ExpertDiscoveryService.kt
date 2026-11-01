@@ -25,6 +25,7 @@ import com.weibo.talentintroduction.discovery.domain.SourceRetryState
 import com.weibo.talentintroduction.discovery.domain.SourceStats
 import com.weibo.talentintroduction.discovery.domain.SourceUnit
 import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
+import com.weibo.talentintroduction.discovery.domain.VerificationState
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.domain.EligibilityResult
@@ -2020,6 +2021,7 @@ class ExpertDiscoveryService(
                 continue
             }
             if (registration.protected) continue
+            val paperEffects = verification.archivedPaper?.takeIf { it.parent != null }?.target?.result?.path("effects")
             verificationRegistration?.recordPaperEffect(verification, registration, identity.esDocId, "RESERVED")
             // I-2: eligibility, RAW and admission all consume the profile frozen by registration.
             val finalProfile = registration.preparedProfile ?: identity.profile
@@ -2040,15 +2042,20 @@ class ExpertDiscoveryService(
                 verificationRegistration?.recordPaperEffect(verification, registration, identity.esDocId, "RAW")
             }
             // I-1（08）：RAW 落库成功后才入队；入队失败不推进本页（见 enqueueEnrichmentJob）。
-            verificationRegistration?.requirePaperPermission(verification)
-            enqueueEnrichmentJob(identity.esDocId, sourceName, executionId, sourceStats)
-            if ((sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0) == enqueueFailedBefore)
-                verificationRegistration?.recordPaperEffect(verification, registration, identity.esDocId, "ENRICHMENT_ENQUEUED")
-            try {
+            if (paperEffects?.path("ENRICHMENT_ENQUEUED")?.asBoolean() != true) {
                 verificationRegistration?.requirePaperPermission(verification)
-                verificationRegistration?.activate(registration)
-                verificationRegistration?.recordPaperEffect(verification, registration, identity.esDocId, "ACTIVATED")
-                if (verification.archivedPaper?.parent != null) paperReprocessAfterEffect("AFTER_ACTIVATE")
+                enqueueEnrichmentJob(identity.esDocId, sourceName, executionId, sourceStats)
+                if ((sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0) == enqueueFailedBefore)
+                    verificationRegistration?.recordPaperEffect(verification, registration, identity.esDocId, "ENRICHMENT_ENQUEUED")
+            }
+            try {
+                if (paperEffects?.path("ACTIVATED")?.asBoolean() != true) {
+                    verificationRegistration?.requirePaperPermission(verification)
+                    if (registration.item == null || registration.item.state == VerificationState.RESERVED)
+                        verificationRegistration?.activate(registration)
+                    verificationRegistration?.recordPaperEffect(verification, registration, identity.esDocId, "ACTIVATED")
+                    if (verification.archivedPaper?.parent != null) paperReprocessAfterEffect("AFTER_ACTIVATE")
+                }
             } catch (e: DiscoveryRegistrationException) {
                 sourceStats.failureReasons.merge("VERIFICATION_REGISTRATION_FAILED", 1, Int::plus)
                 verificationFailed = true
@@ -2062,11 +2069,13 @@ class ExpertDiscoveryService(
                 promoted++
             }
 
-            verificationRegistration?.requirePaperPermission(verification)
-            // 05（I-1/I-2）：ES 事实已持久化后统一登记人物关系（同 ORCID 的后续邮箱挂接同一人物）。
-            personCounts.fold(registerPerson(sourceName, identity.esDocId, sourceStats))
-            verificationRegistration?.recordPaperEffect(verification, registration, identity.esDocId, "PERSON_ATTEMPTED")
-            if (verification.archivedPaper?.parent != null) paperReprocessAfterEffect("AFTER_PERSON")
+            if (paperEffects?.path("PERSON_ATTEMPTED")?.asBoolean() != true) {
+                verificationRegistration?.requirePaperPermission(verification)
+                // Resume only the missing original-chain action; successful receipts are immutable evidence.
+                personCounts.fold(registerPerson(sourceName, identity.esDocId, sourceStats))
+                verificationRegistration?.recordPaperEffect(verification, registration, identity.esDocId, "PERSON_ATTEMPTED")
+                if (verification.archivedPaper?.parent != null) paperReprocessAfterEffect("AFTER_PERSON")
+            }
         }
 
         enqueueFailed = (sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0) > enqueueFailedBefore
