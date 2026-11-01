@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-11-01/paper-reprocess-master.md
 
-- Status: PAUSED_FOR_HUMAN
+- Status: RUNNING
 - Master plan: docs/plans/2026-11-01/paper-reprocess-master.md (sha256 d1e17452a5484eae56b37bca5671e8c767fd3f744594232e4b57dac4826b1aa6)
 - Amendments: N/A
 - Master base: 3a425461dbe6088e4d4dda1a53141416a392670c
@@ -13,7 +13,7 @@
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: Child 02 requires controlled changed-identity admission through recordAutomaticPersisted, but DiscoveryReviewService.kt rejects identityChanged and is outside the authorized file list; human-approved scope/contract amendment required.
+- Pause reason: N/A
 - Resume from: 1979768f08ffe58ca3c919326bb0eebbc833e3a1
 
 ## Children
@@ -21,7 +21,7 @@
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | 00 | docs/plans/2026-11-01/paper-reprocess-00-replay.md | sha256:f9cb78a3c967c67fbbeab0c272a0894cb4928cd6a650e05ae419853dee6a2132 | none | 1 | LIGHT_PASS | 3a425461dbe6088e4d4dda1a53141416a392670c | 1f73037375bc53082ab07f0603debad684f5fc3e | 0 | — | 1f73037375bc53082ab07f0603debad684f5fc3e | 53b8cd304132f830ca344c5008e9a571af7e7e1e | Four-gate PASS; dirty and clean artifact checkpoints VALID |
 | 01 | docs/plans/2026-11-01/paper-reprocess-01-parser.md | sha256:508fd62d84283bd223aca0970c9e265944762f6c48f36ffaf127ba2b88260608 | 00 | 1 | LIGHT_PASS_WITH_NOTES | 1f73037375bc53082ab07f0603debad684f5fc3e | 41c24f879591062b0efbe39eb9df4ef3d802754d | 2 | 7ec1e868c877529849fe2c81acf1a9975ff961de,1979768f08ffe58ca3c919326bb0eebbc833e3a1 | 1979768f08ffe58ca3c919326bb0eebbc833e3a1 | 55ee1ffd35d131c8126c38b68d31120e51c6045a | F-01/F-02 resolved; O-01/O-02 RECORD_ONLY; both artifact checkpoints VALID |
-| 02 | docs/plans/2026-11-01/paper-reprocess-02-identity.md | sha256:3bc964760b6cbb1fb290809821569381e676a4f2b88d62121ea0d59a2dd35e48 | 01 | 1 | PAUSED_FOR_HUMAN | 1979768f08ffe58ca3c919326bb0eebbc833e3a1 | — | 0 | — | 1979768f08ffe58ca3c919326bb0eebbc833e3a1 | 4326da6cbfcadaf99f11648478b68be22879043c | PLAN_CONFLICT before product edits; no child implementation or independent verification |
+| 02 | docs/plans/2026-11-01/paper-reprocess-02-identity.md | sha256:3bc964760b6cbb1fb290809821569381e676a4f2b88d62121ea0d59a2dd35e48 | 01 | 2 | PENDING | 1979768f08ffe58ca3c919326bb0eebbc833e3a1 | — | 0 | — | — | — | User approved resumption; epoch 1 pause evidence retained in 4326da6cbfcadaf99f11648478b68be22879043c; prefix validation before amendment |
 | 03 | docs/plans/2026-11-01/paper-reprocess-03-batch.md | sha256:512e600d760bd2862fbd749e94deb3f5e6a50fd1543b0356c4280690ea914201 | 02 | 1 | PENDING | — | — | 0 | — | — | — | Awaiting ordered dispatch |
 | 04 | docs/plans/2026-11-01/paper-reprocess-04-apply.md | sha256:77f145af6d11dec017b7f52596af0713b3ec40e68ce4370be60f05c68d9e6162 | 03 | 1 | PENDING | — | — | 0 | — | — | — | Awaiting ordered dispatch |
 | 05 | docs/plans/2026-11-01/paper-reprocess-05-frontend.md | sha256:3ee9c93f3ce58d0ae2eb8ad4ae7ebea9215248529333a19d614ac446aed4a615 | 04 | 1 | PENDING | — | — | 0 | — | — | — | Awaiting ordered dispatch |
@@ -74,3 +74,8 @@ None.
 - Pause capture: target root/branch/gitdir/HEAD matched; index empty; working-tree changes only child 02 brief/execution and this ledger before pause-log creation.
 - Whole-system verification and release were not performed.
 - Pause evidence commit: 4326da6cbfcadaf99f11648478b68be22879043c
+
+## Resume Authorization
+- User instruction: 继续 后续授权都继续 直到所有子计划都完成且可以运行review-fast-p的阶段 不要执行review-fast-p，我会交给其他agent执行
+- Approval scope: previously proposed child 02 narrow DiscoveryReviewService seam and 11-file exception; subsequent strictly necessary in-objective file/contract amendments may be recorded and executed without another confirmation. No scope reduction, guard weakening, production writes, push/merge/release or review-fast-p authorization.
+- Resume preserves completed 00/01 logs, commits and test evidence. No child replay; child 02 begins a new epoch after exact plan amendment lineage is recorded.
