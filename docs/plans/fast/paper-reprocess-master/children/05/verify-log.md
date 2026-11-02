@@ -98,3 +98,67 @@ Impact: source-missing/deleted cases can fail silently for the user, and the rep
 ### Verdict
 
 **FAIL** — two P1 plan failures (F-01, F-02) and two bounded P2 defects (F-03, F-04) remain in authorized child05 code/read-only seams. The fresh required commands and CSS/DOM/readonly/missing-source/eight-step portions pass, and the disclosed environment limits are not the cause of the failure. A bounded repair plan should first reconcile the pending request object with the displayed mode and current preview hash, and make the authoritative summary expose the proposed counts the plan requires (including the production writer contract), then add focused regressions. No product/test/plan/ledger repair or review-fast-p was performed here.
+
+## Epoch 2 — Attempt 2 — PaperFrontendVerifier05
+
+## Independent Re-verification: LIGHT_PASS_WITH_NOTES
+
+Child: 05 — docs/plans/2026-11-01/paper-reprocess-05-frontend.md
+Plan identity: commit:d678780155fc4fac5ecc4896135806729efaee2f (unchanged; A10/A11)
+Plan SHA-256: b329427077b2011fd2b8d1b828698351eb86c362d91d5dd519e354f47657bd5b
+Master SHA-256: dd89f8c5807824dcacb59a149b302dc6f98d54dd9c8771403dd751968b6358fb
+Product repair: 46bcb8a3875a6957ed18494200d158de09dd0f38 (`fix(fast-p): repair child05 verification findings`), seven authorized files
+Evidence: aec7617c4d22d5ee0efe46ff30c8b924fcce92de; ledger a8b56578d80c5a5450365a6ca8b40f7fa77aa8e0; 9502 evidence deletion e6ced758bccd03d09e20f13c2ff041abfab65a83
+Base: 736535ce9487782e52a73af6cb52517fa799b194
+Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-paper-reprocess-master
+Branch: fast/paper-reprocess-master
+Worktree HEAD at verification: e6ced758bccd03d09e20f13c2ff041abfab65a83
+Verifier: PaperFrontendVerifier05
+Re-verification timestamp: 2026-11-02T04:47:00Z
+
+Fresh independent re-verification of the repair boundary only. The unchanged plan/master, A10/A11, brief, attempt1 report, repair diff, new execution evidence and runtime JSON were read. Product files were not edited; only this append is owned by the verifier. No review-fast-p/review-p/verify-p/repair-p, push, merge, release, production write, Apollo/ES call, or browser rerun was performed. The repair touched seven files, all inside the nineteen-file authorization; `git diff --name-status 87873b0 46bcb8a` returned only those seven.
+
+### Four Gates
+
+| Gate | Result | Evidence |
+|---|---|---|
+| Authorized scope | PASS | Repair files: repository summary, reprocess UI, papers reader seam, and four directly affected tests. All are within the nineteen authorized paths; no migration/controller/worker/shared schema change. Working tree clean before this append. |
+| Plan and invariants | PASS with notes | F-01..F-04 from attempt1 have direct code/test/runtime fixes below. One P2 recovery edge (F-05) and evidence-consistency notes remain; they do not reproduce the explicit-mode/audit-no-write or dead-proposal defects. |
+| Required commands | PASS | Fresh `node --check` exit0; focused 44/44; full 2035/2035; JDK11 Maven BUILD SUCCESS with fresh surefire 12/0/0/0 integration and 6/0/0/0 service, real testcontainers MySQL; CSS contract still byte-exact 5444/5444. |
+| Downstream interfaces | PASS with notes | Real AUDIT writer -> repository summary -> JSON now yields wouldCreate=1/wouldRepair=1; real ENFORCE UI says proposals are AUDIT-only and uses actual counts. Pending mode is visible/locked and deterministic 4xx uses a fresh UUID. Reader SHA/catch and eight-step/pane seams remain wired. F-05 is a 5xx recovery edge. |
+
+### Resolved Attempt-1 Findings
+
+- **F-01 (P1) resolved.** `DiscoveryPaperReprocessRepository.kt:539-546` now counts `wouldCreate`/`wouldRepair` booleans without requiring `businessExistenceEvaluated=true`. `runtime-9003.json` is a real UI-created AUDIT writer run (121 papers, 2 targets) with `wouldCreate=1`, `wouldRepair=1`, actuals 0. `paper03WholeSourceScenario` now asserts the positive values from production rows. The UI displays proposals for AUDIT and for ENFORCE explicitly states “正式补录按实际结果统计；拟变化仅对照模式提供”, so the earlier misleading “—” claim is gone. The focused tests and real-writer scenario pass.
+- **F-02 (P1) resolved.** `discovery-paper-reprocess.js:159-163` restores the pending mode and locks both radios; `start` locks immediately on pending creation; the hint names the pending mode. The new test closes/reopens an uncertain ENFORCE submission and asserts ENFORCE checked, AUDIT unchecked, both disabled, and the next POST reuses the same key/mode. `rp05-pending-enforce-1440.png` shows the locked ENFORCE state. No visible-AUDIT/replayed-ENFORCE counterexample remains.
+- **F-03 (P2) resolved for deterministic 4xx.** The start catch now treats 4xx as rejected-before-durable, deletes the pending key/hash, unlocks the mode, re-reads preview, and the new test proves a fresh UUID after 409. The old stale-hash wedge on `SCOPE_CHANGED`/`VERSION_CHANGED` is closed.
+- **F-04 (P2) resolved.** `itemEvidence` carries `bodySha256`; `openPaper` routes SHA-bearing reprocess refs through the existing fixed archive-record SHA/readability checks; invalid SHA rejects; the click handler catches and writes the Chinese error to `detailSubtitle`. New tests assert `PAPER_SHA_CONFLICT`, invalid SHA, and visible rejection. The hash-less fallback remains only for legacy refs with no SHA and is still caught by the UI.
+
+### Remaining Finding
+
+#### F-05 [P2] Deterministic 5xx ENFORCE rejection retains the pending key and locks the mode
+
+`discovery-paper-reprocess.js:196-212` classifies only 4xx as deterministic. A 503 from `create` (`APPLY_NOT_AVAILABLE` / `VERIFICATION_UNAVAILABLE`, or controller `DataAccessException`) takes the non-deterministic branch: the pending object and its `ENFORCE` mode are retained, `lockMode(true)` remains, and the user gets “提交结果未知；重试仍使用同一请求标识及模式”. The retry can repeat the same 503 indefinitely; switching to AUDIT requires a full page reload. The plan’s ENFORCE flow is explicit and the backend’s 503 is raised before a durable run for these codes, so this is a recoverable UI state, not a write bug. P2.
+
+### Observations
+
+- O-07: Browser zoom evidence is duplicated. SHA-256 equality confirms `rp05-audit-complete-1440-100.png == ...-125.png`, `rp05-confirm-1440-100 == ...-125`, `rp05-running-1440-100 == ...-125`, `rp05-empty-1440-100 == ...-125`, and `rp05-six-steps-390-100 == ...-125`. These pairs cannot demonstrate 100%/125% layout separately, although other pairs (confirm-390, eight-step, reader) differ.
+- O-08: Execution log lines 117/119 still cite 9502 and null proposals, while 9502 JSON was deleted and repaired runtime is 9003 with proposals 1/1. Line 133 still claims Apollo revision 1 / searchEnabled=true, while `runtime-apollo.json` and the new confirm screenshot show revision 0 / DEPLOYMENT_DEFAULT / searchEnabled=false. The product GET/display path is covered, but the new browser evidence no longer demonstrates the A-4 saved search=true/detail=false setting.
+- O-09: `rp05-audit-complete-1440-100/125.png` shows the run card and 121/121/0/0/0/0 stats but not the summary line; positive “拟补录 1 / 拟补齐 1” is proven by `runtime-9003.json`, the repository/service tests, and code inspection, not by a visible screenshot. The focused UI fixture still uses `wouldCreate:null`, so no UI test asserts positive AUDIT proposal text.
+- O-10: The F-01 summary documentation still says null proposals mean “not evaluated”; after the repair AUDIT can be non-null by design. Minor wording debt.
+- O-11: The disclosed 401/JDK 11.0.32/synthetic 9600 limits remain fairly disclosed and are not the cause of any remaining note.
+
+### Fresh Commands
+
+| Command | Result |
+|---|---|
+| `node --check src/main/resources/static/discovery-paper-reprocess.js` | exit 0 |
+| `node --test src/test/js/discoveryPaperReprocess.test.js src/test/js/discoveryPapers.test.js src/test/js/discoveryRecheck.test.js` | 44 passed / 0 failed |
+| `node --test src/test/js/*.test.js` | 2035 passed / 0 failed / 354 suites |
+| `JAVA_HOME=.../zulu-11.jdk/Contents/Home mvn test -Dtest=DiscoveryPaperReprocessServiceTest,DiscoveryPaperReprocessRepositoryIntegrationTest -DpaperReprocessIt=true -DmysqlIt=true` | BUILD SUCCESS; 12 integration / 0 failures / 0 errors / 0 skipped; 6 service / 0 failures / 0 errors / 0 skipped; fresh report timestamps 12:46; real MySQL fixture |
+| Plan S-5 vs `styles.css` extraction | exact equality, 5444/5444 bytes |
+| `git diff --name-status 87873b0 46bcb8a`; `git status --short` | exactly seven authorized repair paths; clean worktree |
+
+### Verdict
+
+**LIGHT_PASS_WITH_NOTES** — the two P1 defects are closed and F-03/F-04 are fixed with focused regressions and fresh command proof. One P2 5xx-mode recovery edge (F-05) and evidence-consistency notes (O-07/O-08/O-09) remain; they should be fixed in a future bounded change or accepted explicitly. No product/test/plan/ledger repair, review-fast-p, or aggregate review was performed here.
