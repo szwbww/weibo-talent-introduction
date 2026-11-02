@@ -153,10 +153,10 @@
 | 02 | [原重审补绑](/Users/lukai/IdeaProjects/weibo-talent-introduction/docs/plans/2026-11-01/paper-reprocess-02-identity.md) | 11 | 原专家重审可补齐既有档案；含既有 persisted-admission 的受控身份修复窄接缝 |
 | 03 | [整批任务](/Users/lukai/IdeaProjects/weibo-talent-introduction/docs/plans/2026-11-01/paper-reprocess-03-batch.md) | 14 | API整批只读对照，含解析按页checkpoint及直接受影响的任务catalog测试，原页面不受影响 |
 | 04 | [补录+自动重审](/Users/lukai/IdeaProjects/weibo-talent-introduction/docs/plans/2026-11-01/paper-reprocess-04-apply.md) | 13 | API正式处理；含持久收据/REVIEW、既有consume链父许可、专属epoch0 worker围栏 |
-| 05 | [前端](/Users/lukai/IdeaProjects/weibo-talent-introduction/docs/plans/2026-11-01/paper-reprocess-05-frontend.md) | 7 | 完整真实页面与日志，不改变后台算法 |
+| 05 | [前端](/Users/lukai/IdeaProjects/weibo-talent-introduction/docs/plans/2026-11-01/paper-reprocess-05-frontend.md) | 19 | 真实页面及既有详情只读打开接缝、权威只读统计/preview与直接受影响测试；不改业务写算法 |
 | 06 | [总复验](/Users/lukai/IdeaProjects/weibo-talent-introduction/docs/plans/2026-11-01/paper-reprocess-06-verification.md) | 4 | 固定清单的逐人效果报告及发布依据 |
 
-严格00→01→02→03→04→05→06。共享文件（Worker/Repository/IntegrationTest/Service）顺序修改，不并行写。每个子计划在前一计划核验通过后才实施；除用户批准的02≤11、03≤14和04≤13文件外，每个≤10文件，均≤2子系统。新增共享store字段只有02的snapshot_json.identitySupplement一个结构化字段；03两张owned新表不属于共享store字段扩张。主计划不作为无界代码白名单。
+严格00→01→02→03→04→05→06。共享文件（Worker/Repository/IntegrationTest/Service）顺序修改，不并行写。每个子计划在前一计划核验通过后才实施；除用户批准的02≤11、03≤14、04≤13和05≤19文件外，每个≤10文件，均≤2子系统。05仅覆盖UI及其权威只读查询接缝。新增共享store字段只有02的snapshot_json.identitySupplement一个结构化字段；03两张owned新表不属于共享store字段扩张。主计划不作为无界代码白名单。
 
 ### 最小实现决策
 1. **I-1/I-2**：生产解析器一个、现有资格引擎一个；不把审计Python算法直接搬成第二套长期判断。
@@ -200,7 +200,7 @@
 - I-7：逐项结果可与统计复算，六步骤与八步骤对应可追溯；部分错误不伪装全成功。
 - I-8：配置冻结前后与实际外部queryKind吻合；detail=false时详情请求为0。
 - I-9/S-1..S-6：05最终CSS块逐字比较、DOM/可访问性/截图通过。
-- 每子计划文件数≤10，02受控准入接缝例外≤11，03解析checkpoint及受影响测试例外≤14，04持久收据与既有写路径父许可例外≤13；子系统均≤2，共享文件串行。迁移MySQL验证、JDK11业务测试、Node测试、WAR打包及人工验收分别记录，任一NOT_RUN不算PASS。
+- 每子计划文件数≤10，02受控准入接缝例外≤11，03解析checkpoint及受影响测试例外≤14，04持久收据/父许可例外≤13，05只读展示接缝与直接受影响测试例外≤19；子系统均≤2，共享文件串行。迁移MySQL验证、JDK11业务测试、Node测试、WAR打包及人工验收分别记录，任一NOT_RUN不算PASS。
 - 效果报告必须回答：可读取多少、正确新增绑定多少、已有补齐多少、实际新建多少、实际准入多少、剩余每种明确原因多少。没有执行前不填成功率或时长。
 
 
@@ -250,3 +250,4 @@
 - 2026-11-02：按用户后续必要授权，03加入PaperBodyAnalyzer、PaperQualificationEvidenceExtractor、PdfEmailExtractor的可选checkpoint传递及取消/预算异常窄传播，文件上限13；原默认调用、解析规则与版本不变。执行者证据证明现有签名无调用者checkpoint且catch会吞取消，原I-5按页安全退出要求无法在原白名单内实现；见fast-p ledger A4/A5及03执行日志epoch2。不减少验收。
 - 2026-11-02：03新增TaskTypeCatalog直接触发既有TaskExecutionSummaryExtractorTest的固定类型集合/条数断言；批准第14文件，仅退役旧 incidental catalog数量/拷贝白名单断言并保留真实摘要/进度行为测试，不重新钉新数量。执行回执见03日志epoch3，决定A6/A7；原范围和验收不减。
 - 2026-11-02：04补入DiscoveryPaperReprocessRepository、ExpertDiscoveryService、DiscoveryVerificationWorker三个已证实必要的共享接缝，文件上限13；分别承担可恢复收据/REVIEW、原consume链逐副作用父许可与确证归属续接、本功能epoch0 dispatch/late-response围栏。原十文件无法完成I-2/I-4/I-6要求；执行者完整grep/read回执见04日志epoch1，A8/A9。无第二套写规则、不改无关普通任务语义、不减少故障验收。
+- 2026-11-02：05前置审计证明原8步详情仅private openDetail、API缺必要汇总与缺源计数、增加脚本使多处固定资源总数/全集测试失效；批准19文件例外，仅增加既有详情只读公开接缝、基于持久item/核验结果的权威只读summary/preview及直接受影响测试，严禁前端抓全部页自算业务统计、改业务writer/规则或重钉资源总数。完整grep/read回执见05日志epoch1，A10/A11；S-1..S-6逐字契约和浏览器验收不减。

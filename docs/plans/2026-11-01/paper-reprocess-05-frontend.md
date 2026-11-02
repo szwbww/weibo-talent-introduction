@@ -171,7 +171,9 @@
 4. **日志（I-3；S-3/S-4）**：首次关联与本次关联同时显示，原first统计不覆盖；newRecords、repairedRecords、admitted、pendingVerification独立。辅助摘要注明“准入按档案计数，不等于去重人数”，并显示无变化/冲突/保护/失败/取消、候选同步失败、本批实际处理进度。AUDIT展示“仅对照，未应用”及wouldCreate/wouldRepair，业务卡片保持0。论文分页与档案分页分别维护，页大小20。
 5. **逐项详情（I-3/I-4；S-4/S-6）**：固定6步：读取、解析、身份、补档、资格、保存；step1/2包含record/attempt/页数/版本，step3原文证据，step4原/新档案与receipt，step5按真实runId/itemId打开既有8步核验。无核验item时显示“未进入资格重审：原因”，不造链接。查看原文调用existing openPaper(ref)，只读不自动分析。
 6. **交互和样式（I-2/I-4；S-1..S-6）**：完整复制CSS和DOM；禁inline style；输入未准备时点击、双击、Escape、焦点回归、手机宽屏横向滚动必须覆盖。index脚本顺序reprocess在discovery-papers之前；更新styles/app/相关JS版本，避免缓存旧DOM。
+   - 原8步`openDetail(runId,itemId,trigger)`通过既有DiscoveryRecheck模块只读公开，app只转发；保留其ownership/lifecycle，不复制引擎。资源版本变更同步直接受影响测试，删除过时的固定总数/全集拷贝断言，不重钉新总数。
 7. **验证（I-1..I-4；S-1..S-6）**：运行Node测试；用真实后端测试数据截图1440px和390px，核验范围/按钮/数字/状态均来自API。沿用preview作为布局对照但不将示例100/12/8/6替换真实数。
+8. **权威展示查询接缝（I-1/I-3）**：只读扩展既有Reprocess DTO/repository/service的summary与preview；pendingVerification/wouldCreate/wouldRepair/unchanged/conflict/protected/syncFailure/qualification/missing分类由持久TARGET/PAPER及其已关联核验项计算，明确论文/目标单位与可重叠子统计、totalKnown语义，不把解析身份数当准入。preview.missingSourcePapers按全source没有SAVED/AVAILABLE descriptor的record计数，沿用freeze相同选择条件，包含DELETED/SAVE_ERROR，不以旧archive NOT_STORED计数替代。HTTP不解析正文；不写业务、不新增策略/准入状态或共享列。前端不得拉全部item页自行聚合这些权威数；两类明细仍独立20条分页。原source筛选不缩scope；Apollo仅读现有已保存设置endpoint。
 
 ## 变更文件清单
 
@@ -184,8 +186,20 @@
 | `src/test/js/discoveryPaperReprocess.test.js` | 异步/重复请求/恢复/分页/文案/只读测试 |
 | `src/test/js/discoveryPapers.test.js` | 原下载/删除/保护/解析/开关回归 |
 | `src/main/resources/static/app.js` | 窄接缝将既有逐人核验打开函数传给archive子组件 |
+| `src/main/resources/static/discovery-recheck.js` | 只读公开既有openDetail，保留8步引擎与生命周期 |
+| `src/test/js/discoveryRecheck.test.js` | 真实公开入口的上下文/生命周期行为回归 |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryPaperReprocess.kt` | 权威只读summary/preview展示字段及单位/未知语义 |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperReprocessRepository.kt` | 基于持久结果与关联核验的只读分类汇总、全source缺descriptor记录数 |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperReprocessService.kt` | 只读preview/summary映射，不改写路径、策略或生命周期 |
+| `src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperReprocessRepositoryIntegrationTest.kt` | 跨页/分类重叠/未知/缺源的真实SQL汇总行为 |
+| `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPaperReprocessServiceTest.kt` | preview缺源与权威展示契约行为 |
+| `src/test/js/discoveryReview.test.js` | 删除被新脚本直接触发的固定资源总数/全集拷贝断言，保留真实行为 |
+| `src/test/js/mailboxChatBehavior.test.js` | 同步直接受影响资源测试，不重钉新总数/全集 |
+| `src/test/js/mailboxGroupPush.test.js` | 同步直接受影响资源测试，不重钉新总数/全集 |
+| `src/test/js/meetingConfirmationAssets.test.js` | 同步直接受影响资源测试，不重钉新总数/全集 |
+| `src/test/js/trustReplyWorkbenchSharedMount.test.js` | 同步直接受影响资源测试，不重钉新总数/全集 |
 
-共 7 个文件。未列文件禁止扩改；新增问题先记录证据并修订范围。
+共 19 个文件。新增范围仅UI/其权威只读查询与直接受影响测试，业务写算法、S-1..S-6及验收不变；未列文件禁止扩改，新增问题先记录证据并修订范围。
 
 ## 验收标准
 
@@ -195,6 +209,7 @@
 - I-4/S-1..S-6：提取styles内契约标记块与本计划S-5逐字比较；DOM class/层级与S-6一致；新增节点无inline style/未声明class；原通用规则diff为0。
 - X-5/X-6/X-8/X-9：后端→新组件→原原文/原8步详情回跳不丢任务；运行 `node --test src/test/js/discoveryPaperReprocess.test.js src/test/js/discoveryPapers.test.js src/test/js/discoveryRecheck.test.js`。
 - 截图是独立证据：1440/390宽、缩放100%/125%、长中文原因、空数据、进行中、失败、完成均无操作按钮被滚出不可达。
+- 补充必跑：`node --test src/test/js/*.test.js`（覆盖直接受影响资源测试）；JDK11 `mvn test -Dtest=DiscoveryPaperReprocessServiceTest,DiscoveryPaperReprocessRepositoryIntegrationTest -DpaperReprocessIt=true -DmysqlIt=true`，真实SQL覆盖跨页权威汇总和preview缺源；不替代浏览器验收。
 
 ## 人工验收清单
 
@@ -224,3 +239,6 @@
 
 
 人工验收开始时才从此处导出同前缀 `-acceptance.md`；本次不生成衍生勾选文件。
+
+## 修正记录
+- 2026-11-02：按用户后续必要授权，05扩为19文件以接通已private的原8步详情、补齐缺失权威只读summary/preview及直接受影响资源测试。05执行日志epoch1保留确切grep/read回执：字面cachekey检索0命中，语义检索找到固定资源19/全集断言；旧archive缺源统计仅NOT_STORED，不含DELETED/SAVE_ERROR。只读服务端统计替代前端全页派生，删除incidental断言而非重钉；所有CSS/DOM/浏览器/保护/无业务写要求不减，A10/A11见ledger。
